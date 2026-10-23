@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * worktree-sweep.js — las carpetas de trabajo (worktrees de git) que ya se mergearon se borran solas.
  *
@@ -13,7 +15,7 @@
  *     repos de la máquina (`scripts/lib/repos-root.js`) hasta dos niveles, y el del cwd— y en cada uno sus carpetas de
  *     trabajo. Borra (`git worktree remove` + `git branch -d`) las que están LIMPIAS y con su HEAD ya en origin/main.
  *     Las que tienen cambios o commits sin mergear sólo las nombra, en una línea. Silencio si no hay nada.
- *   · Al cerrar una story (`/tycon-pipeline close`, paso 9): `--story <N.M>` limita a las carpetas cuya rama nombra
+ *   · Al cerrar una story (`/tycon-pipeline close`, «Cerrar la historia»): `--story <N.M>` limita a las carpetas cuya rama nombra
  *     la story, trae origin primero (`git fetch`) y dice qué hizo con cada una.
  *
  * ── LO QUE NUNCA TOCA ────────────────────────────────────────────────────────────────────────────────────────────

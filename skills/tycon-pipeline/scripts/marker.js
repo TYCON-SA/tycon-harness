@@ -97,21 +97,21 @@
  *                                                  mark-adversarial-result con confirmados exige
  *                                                  --tests k --deferred d --reason "…" (k+d=N,
  *                                                  k = lo promovido acá, no lo declarado).
- *   marker.js set-flag <flag> <true|false>       → flags de sub-steps no-enteros
- *   marker.js start-warning <time-tracking|ado> "<mensaje>" → una parte del Arranque que falló (queda a la vista)
- *                                                  (workSignalStarted | adoMarkedActive) para que
- *                                                  resume/`pipeline.js next` no re-ejecute 0b/0c.
- *                                                  `deepReviewDone` NO: el 5b lo cierran
+ *   marker.js set-flag <flag> <true|false>       → las banderas de estado de la ejecución (lib/external-flags.js).
+ *                                                  Las de hechos externos (workSignalStarted | adoMarkedActive) NO:
+ *                                                  las ponen `pipeline.js work-signal start` y `ado-mark-active`.
+ *                                                  `deepReviewDone` NO: el pase adversarial lo cierran
  *                                                  los dos comandos de abajo, con constancia.
+ *   marker.js start-warning <time-tracking|ado> "<motivo>" → una parte del Arranque que falló (queda a la vista)
  *   marker.js mark-adversarial-result <N> --type 5b --tests k [--own p --in "<rutas>"]
  *                                   [--deferred d --reason "…"] [--classes k] [--separate n]
- *                                                → anota el resultado del pase y CIERRA el 5b
+ *                                                → anota el resultado del pase y lo CIERRA
  *                                                  (k+p+d=N; p = pruebas escritas a mano, verificadas).
  *   marker.js mark-adversarial-skipped --files <archivos de código del diff>
- *                                                → el 5b sin pase, si el PORTÓN lo decide
+ *                                                → cierra sin pase, si el PORTÓN lo decide
  *                                                  (deep-review-gate como proceso; con el pase
  *                                                  lanzado sólo con el interruptor = abandono).
- *   `complete-step 8` bloquea sin una de las dos constancias (freno adversarial-result-gate).
+ *   `complete-step prepare-commit` bloquea sin una de las dos constancias (freno adversarial-result-gate).
  *   marker.js mark-adversarial-gate '<json>'      → el veredicto del portón en `adversarialGate`.
  *                                                  Lo llaman deep-review-gate y next; no es una constancia.
  *
@@ -126,6 +126,14 @@
  * Write atómico tmp+rename. Cada `set` purga archivos de sesiones stale (>24h),
  * advisor-runs/*.jsonl viejos (>7d) y *.tmp huérfanos (>1d).
  */
+
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
+// Sin `?.` ni `??`: este guion lo tiene que poder leer un Node viejo hasta llegar a la guarda. Misma semántica: sólo null
+// y undefined cuentan como «no hay» (0, '' y false se quedan).
+const isNil = (v) => v === undefined || v === null;
+const nn = (v, d) => (isNil(v) ? d : v);
+const at = (o, k) => (isNil(o) ? undefined : o[k]);
 
 const fs = require('fs');
 const os = require('os');
@@ -320,25 +328,71 @@ function cmdSet(payloadJson) {
     console.error('marker.js set: payload.storyId requerido');
     process.exit(2);
   }
+  // Cómo terminó la ejecución lo escriben `clear` y el camino de la deuda, nunca un `set` a mano: con él, una ejecución
+  // abierta quedaría archivada como completa.
+  if (Object.prototype.hasOwnProperty.call(payload, 'cierre')) {
+    delete payload.cierre;
+    console.error('marker.js set: `cierre` no se escribe con set (lo deja `clear`): se descartó.');
+    appendLog('bypass.log', { kind: 'MARKER_SET_CIERRE_DISCARDED', storyId: payload.storyId });
+  }
   // Pasos por nombre sin `stepScheme` (un `set` a mano para retomar): es el esquema 2.
   if (payload.stepScheme === undefined) {
     const items = [payload.stepsCompleted, payload.stepsPending].filter(Array.isArray).flat().map(String);
     if (items.length && items.every((x) => STEPS_LIB.byId(x))) payload.stepScheme = STEPS_LIB.SCHEME;
   }
-  // La aprobación de la maqueta la escriben sólo `complete-step 3` y `approve-mockup`.
+  // La aprobación de la maqueta la escriben sólo `complete-step approve-plan` y `approve-mockup`.
   for (const k of ['mockupApproval', 'mockupDecision']) {
-    if (payload[k] !== undefined) console.error(`marker.js set: «${k}» no se acepta en el payload (lo escriben sólo complete-step 3 y approve-mockup): descartado.`);
+    if (payload[k] !== undefined) console.error(`marker.js set: «${k}» no se acepta en el payload (lo escriben sólo complete-step approve-plan y approve-mockup): descartado.`);
   }
   let existing = readMarker();
   const existingBefore = existing;
+  // Las banderas de hechos externos tampoco se escriben con set: las pone el arnés cuando hizo el trabajo. Un
+  // `get | … | set` que las trae como estaban no cambia nada y pasa.
+  {
+    const ext = require('./lib/external-flags.js');
+    for (const k of [...ext.EXTERNAL_FLAGS, ...Object.keys(OLD_FLAGS)]) {
+      if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
+      const tenia = existing && existing.storyId === payload.storyId ? existing[k] : undefined;
+      if (payload[k] === tenia) continue;
+      delete payload[k];
+      console.error(`marker.js set: «${k}» no se escribe con set (la pone el arnés: ${ext.HARNESS_COMMAND[nn(OLD_FLAGS[k], k)]}): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_EXTERNAL_FLAG_DISCARDED', flag: k, storyId: payload.storyId });
+    }
+  }
   // 🔴 Anti-leak cross-story: el spread de abajo preserva
   // campos ante un `set` de la MISMA story — pero si esta sesión arranca una story NUEVA sobre un
-  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes del Step 8), la story B
-  // heredaría el ciclo de vida de la A: `deepReviewDone=true` heredado → computeNext saltea el 5b
+  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el commit»), la story B
+  // heredaría el ciclo de vida de la A: `deepReviewDone=true` heredado → computeNext saltea el pase adversarial
   // de B EN SILENCIO; `checks.build=green` y `dodRuntimeChecked` heredados → gates mintiendo.
   // Por eso, al cambiar de storyId, los campos de CICLO DE VIDA DE
   // CORRIDA se resetean (la identidad de sesión y el startedAt se conservan).
   if (existing && payload.storyId !== existing.storyId) {
+    // Una ejecución que ya avanzó no se reemplaza sin pedirlo: el reinicio borraría sus pasos, sus controles y su
+    // pase adversarial sin que nadie lo vea. Con `--replace` se reemplaza; siempre queda la copia del anterior.
+    const hechos = Array.isArray(existing.stepsCompleted) ? existing.stepsCompleted.length : 0;
+    if (hechos > 0 && !process.argv.includes('--replace')) {
+      console.error(`marker.js set: esta sesión tiene la ejecución de la story ${existing.storyId} con ${hechos} paso(s) hecho(s), y el pedido es de la ${payload.storyId}: no la reemplazo.`);
+      console.error('  Si la de antes terminó o se abandona: marker.js clear y volvé a pedirlo, o el mismo set con --replace (deja una copia del marcador anterior).');
+      process.exit(3);
+    }
+    const copia = path.join(STATE_DIR, 'replaced', `${SID}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    fs.mkdirSync(path.dirname(copia), { recursive: true });
+    fs.writeFileSync(copia, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+    appendLog('gates.log', { name: 'marker-replace', from: existing.storyId, to: payload.storyId, stepsCompleted: hechos, copy: copia });
+    console.error(`marker.js set: la copia del marcador de la ${existing.storyId} quedó en ${copia}`);
+    // Otra historia sobre una ejecución que no terminó: la anterior queda dicha como abortada. Sin esto, el reset de
+    // abajo la lavaría y un `clear` después la archivaría como completa.
+    try {
+      const rc = require('./lib/run-close.js');
+      // una con `cierre` escrito (la deuda) ya dijo cómo terminó
+      if (!existing.cierre && rc.abierta(rc.estado(existing))) {
+        const c = rc.cierreDe(existing, { sid: SID });
+        appendLog('gates.log', { name: 'run-close', estado: c.estado, story: existing.storyId, motivo: `reemplazada por la historia ${payload.storyId} sin cerrarla: ${c.motivo || ''}`, via: c.via });
+        console.error(`marker.js set: la ejecución de ${existing.storyId} no había terminado (${c.motivo}): queda anotada como ${c.estado}.`);
+      }
+    } catch (e) {
+      appendLog('gates.log', { name: 'run-close', estado: 'abortada', story: existing.storyId, motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
+    }
     const {
       adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass,
       checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
@@ -349,17 +403,20 @@ function cmdSet(payloadJson) {
       // nueva arranques de la vieja, y `anotarArranque` se niega a pisar uno existente.
       stepTimings,
       // Lo del pase adversarial es de la corrida. Heredado, B contaría como suyas las pruebas
-      // promovidas de A en `--tests`, y con el freno del paso 8 heredaría el salteo de A y cerraría su
-      // paso 8 sin su propio 5b.
+      // promovidas de A en `--tests`, y con el freno de «Preparar el commit» heredaría el salteo de A y cerraría ese
+      // paso sin su propio pase adversarial.
       adversarialPasses, adversarialRegressions, adversarialSkip,
       // El veredicto del portón (y el temprano apagado) son de la corrida: heredado, `next` le pediría a
       // la story nueva lanzar el pase con los archivos de la vieja, o le dejaría apagado el temprano.
       adversarialGate,
-      // La maqueta aprobada y la decisión del paso 3 son de la story. Heredadas, la story B usaría la
-      // maqueta de A (o su «sin pantalla») en el paso 8.
+      // La maqueta aprobada y la decisión de «Aprobar el plan» son de la story. Heredadas, la story B usaría la
+      // maqueta de A (o su «sin pantalla») en «Preparar el commit».
       mockupApproval, mockupDecision,
       // el tamaño de la corrida (y su forzado a mano) es de la story.
       size, size_reason, estimate_min, estimate_source, sizeForced,
+      // el modelo y la sesión de Codex son de la corrida: heredados, los revisores de la story nueva correrían con el
+      // proveedor de la anterior
+      sessionModel, codexSession,
       ...carryOver
     } = existing;
     console.error(
@@ -370,19 +427,32 @@ function cmdSet(payloadJson) {
   }
   // 🔴 Mismo storyId + stepsPending entrante (típico: `pipeline.js start` re-corrido tras PIPE-C0/C5 o
   // tras una compactación): NO reabrir steps ya completados. Sin esto, `start` pisaría stepsPending con
-  // [0..8] y el portón de plan volvería a cerrar en medio del Step 4, obligando a re-aprobar el plan.
+  // [0..8] y el portón de plan volvería a cerrar en medio de la implementación, obligando a re-aprobar el plan.
   if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsPending)) {
     const done = new Set((existing.stepsCompleted || []).map(String));
     payload.stepsPending = payload.stepsPending.filter((n) => !done.has(String(n)));
+    // ni cerrar los que seguían pendientes: un paso se cierra con `complete-step`, no borrándolo de la lista
+    const nuevos = new Set(payload.stepsPending.map(String));
+    for (const p of existing.stepsPending || []) if (!nuevos.has(String(p))) payload.stepsPending.push(p);
   }
-  // Marker NUEVO que arranca sin el Step 3 (plan aprobado) pendiente ni completado = un pipeline
+  // Los controles, el pase y el modo autónomo de la misma historia tienen sus comandos (`run-check`,
+  // `mark-adversarial-*`, `set-autonomous`, que el freno de seguridad mira): un `set` no los pisa.
+  if (existing && payload.storyId === existing.storyId) {
+    for (const k of ['checks', 'checksProvenance', 'autonomous', 'adversarial']) {
+      if (payload[k] === undefined) continue;
+      delete payload[k];
+      console.error(`marker.js set: «${k}» no se cambia con set en la misma historia (tiene su comando): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_FIELD_DISCARDED', field: k, storyId: payload.storyId });
+    }
+  }
+  // Marker NUEVO que arranca sin el paso «Aprobar el plan» pendiente ni completado = un pipeline
   // "manual" que se saltea el HITL del plan. No se bloquea (adopt/resume legítimos pasan por acá),
   // pero queda en bypass.log y avisa; el portón de carril no frena código en esta sesión.
   // Dos formas de "saltearse el plan" con un set: un marker NUEVO (o de
-  // OTRA story) que arranca sin 3 pendiente ni completado, y un set de la MISMA story que OMITE el 3 que
-  // estaba pendiente. Ninguna se bloquea (adopt/resume legítimos), pero las dos quedan en bypass.log.
+  // OTRA story) que arranca sin «Aprobar el plan» pendiente ni completado, y un set de la MISMA story que OMITE ese paso
+  // cuando estaba pendiente. Ninguna se bloquea (adopt/resume legítimos), pero las dos quedan en bypass.log.
   if (Array.isArray(payload.stepsPending)) {
-    // el plan aprobado es `approve-plan` en un marcador nuevo y el 3 en uno viejo: lo dice lib/steps.js
+    // el plan aprobado es `approve-plan` en un marcador nuevo y su equivalente en uno viejo: lo dice lib/steps.js
     const scheme = payload.stepScheme !== undefined ? payload.stepScheme : (existingBefore && existingBefore.storyId === payload.storyId ? existingBefore.stepScheme : undefined);
     const conPlan = (pend, done) => {
       const m = { stepScheme: scheme, stepsPending: pend || [], stepsCompleted: done || [] };
@@ -394,7 +464,7 @@ function cmdSet(payloadJson) {
       && !conPlan(payload.stepsPending, payload.stepsCompleted);
     if (freshWithoutPlan || dropsPlan) {
       appendLog('bypass.log', { kind: dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN', storyId: payload.storyId, stepsPending: payload.stepsPending, cwd: process.cwd() });
-      console.error(`⚠️  marker.js set: el marker queda SIN el Step 3 («Aprobar el plan») ${dropsPlan ? 'que estaba pendiente' : 'desde el arranque'} — el portón de carril`);
+      console.error(`⚠️  marker.js set: el marker queda SIN el paso «Aprobar el plan» ${dropsPlan ? 'que estaba pendiente' : 'desde el arranque'} — el portón de carril`);
       console.error(`    no va a exigir aprobación del plan en esta sesión. Queda en bypass.log (${dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN'}).`);
       console.error('    Pipeline real → `pipeline.js start` (deja pendientes los pasos que siguen al Arranque). Retomando una ejecución que YA aprobó');
       console.error('    el plan → pasá `stepsCompleted` con los pasos hechos (incluido approve-plan) en el mismo set: así no avisa.');
@@ -418,52 +488,56 @@ function cmdSet(payloadJson) {
     // re-correr build + suite completa.
     ...(existing || {}),
     storyId: payload.storyId,
-    storyPath: payload.storyPath || existing?.storyPath || null,
-    repoPath: path.resolve(payload.repoPath || existing?.repoPath || process.cwd()),
+    storyPath: payload.storyPath || at(existing, 'storyPath') || null,
+    repoPath: path.resolve(payload.repoPath || at(existing, 'repoPath') || process.cwd()),
     // Dónde nace la evidencia de cierre: el repo de la STORY, aunque el código viva en
-    // otro. Lo escribe `pipeline.js start`; lo leen el step 7c, el macro y `mark-dod-runtime-checked`.
+    // otro. Lo escribe `pipeline.js start`; lo leen el paso «Probar en vivo», el macro y `mark-dod-runtime-checked`.
     // 🔴 El spread de arriba preserva lo EXISTENTE, no lo que trae el payload: sin esta línea el
     // campo se pierde en silencio, aunque la prosa prometa un `marker.js get → evidenceDir`. Es estado
     // de corrida: se resetea por story.
-    evidenceDir: payload.evidenceDir || existing?.evidenceDir || null,
+    evidenceDir: payload.evidenceDir || at(existing, 'evidenceDir') || null,
     // Commit en el que arrancó la corrida: la base contra la que
     // test-gate.sh mide las «líneas tocadas» (lib/coverage-base.js). Lo anota `pipeline.js start`.
     // Es estado de corrida: el bloque de arriba lo descarta al cambiar de story. Y gana el EXISTENTE:
     // re-correr `start` sobre la misma story (retomar) no puede mover la base al HEAD de ahora, o lo
     // commiteado durante la corrida dejaría de contar como tocado.
-    baseSha: existing?.baseSha || payload.baseSha || null,
-    sprint: payload.sprint ?? existing?.sprint ?? null,
+    baseSha: at(existing, 'baseSha') || payload.baseSha || null,
+    sprint: nn(payload.sprint, nn(at(existing, 'sprint'), null)),
     sessionId: SID,
-    startedAt: existing?.startedAt || nowIso(),
+    startedAt: at(existing, 'startedAt') || nowIso(),
     lastTouch: nowIso(),
     // el esquema lo trae `pipeline.js start` (2: pasos por nombre); un marcador viejo sigue sin él hasta terminar
     ...(payload.stepScheme !== undefined ? { stepScheme: payload.stepScheme } : {}),
-    stepsCompleted: payload.stepsCompleted || existing?.stepsCompleted || [],
-    stepsPending: payload.stepsPending || existing?.stepsPending || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    filesTouched: payload.filesTouched || existing?.filesTouched || [],
+    stepsCompleted: payload.stepsCompleted || at(existing, 'stepsCompleted') || [],
+    stepsPending: payload.stepsPending || at(existing, 'stepsPending') || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    filesTouched: payload.filesTouched || at(existing, 'filesTouched') || [],
     // Los sellos de contenido (hash + hora por toque, piso de frescura por contenido)
     // viven y mueren con la story: si cambia la story, los de la anterior no valen para ésta.
-    filesTouchedAt: (payload.storyId && existing?.storyId && payload.storyId !== existing.storyId)
+    filesTouchedAt: (payload.storyId && at(existing, 'storyId') && payload.storyId !== existing.storyId)
       ? (payload.filesTouchedAt || {})
-      : (payload.filesTouchedAt || existing?.filesTouchedAt || {}),
+      : (payload.filesTouchedAt || at(existing, 'filesTouchedAt') || {}),
     // Foto de archivos por iteración para los revisores del smart re-loop.
     // Map { "<N>": { ts, filesSnapshot: [abs-paths] } }. Permite computar delta
     // entre iters N y N-1 → pipeline.js smart-reloop decide qué advisors re-correr.
-    iterations: payload.iterations || existing?.iterations || {},
+    iterations: payload.iterations || at(existing, 'iterations') || {},
     // fileEvents: un `set`
     // mid-pipeline NO debe borrar los eventos de edición de la iteración — si se
     // pierden, computeSmartReloop elige el path fileEvents con datos truncados y
     // SUPRIME el fallback por mtime (re-ediciones caen del delta en silencio).
-    fileEvents: payload.fileEvents || existing?.fileEvents || [],
+    fileEvents: payload.fileEvents || at(existing, 'fileEvents') || [],
     // el tamaño de la corrida y su estimado los anota `pipeline.js start`. Un forzado a mano
     // (`set-size`) gana sobre un `start` re-corrido de la misma story: re-clasificar no deshace una decisión con motivo.
     ...(() => {
       const keep = existing && existing.sizeForced;
-      const pick = (k) => (keep && k !== 'estimate_min' && k !== 'estimate_source' ? existing[k] : (payload[k] ?? existing?.[k]));
+      const pick = (k) => (keep && k !== 'estimate_min' && k !== 'estimate_source' ? existing[k] : nn(payload[k], at(existing, k)));
       const out = {};
       for (const k of ['size', 'size_reason', 'estimate_min', 'estimate_source']) if (pick(k) !== undefined) out[k] = pick(k);
       return out;
     })(),
+    // el modelo de la sesión y, en Codex, su proveedor: los anota `pipeline.js start` (los usan el registro de revisores y
+    // `reviewers-run`)
+    ...(payload.sessionModel !== undefined ? { sessionModel: payload.sessionModel } : {}),
+    ...(payload.codexSession !== undefined ? { codexSession: payload.codexSession } : {}),
   };
   // Un marcador que no es de ningún esquema (números y nombres mezclados, o un paso que la tabla no conoce) no se
   // escribe: los portones no sabrían si el plan está aprobado.
@@ -472,8 +546,8 @@ function cmdSet(payloadJson) {
     console.error(`  stepsCompleted=${JSON.stringify(marker.stepsCompleted)} stepsPending=${JSON.stringify(marker.stepsPending)}${marker.stepScheme !== undefined ? ` stepScheme=${marker.stepScheme}` : ''}`);
     process.exit(2);
   }
-  // El paso 0 arranca cuando nace la corrida. Nadie lo pide con `next` (start lo cierra
-  // enseguida); sin esto el paso 0 sale siempre «estimado» y toda corrida real «parcial».
+  // El Arranque arranca cuando nace la corrida. Nadie lo pide con `next` (start lo cierra
+  // enseguida); sin esto el Arranque sale siempre «estimado» y toda corrida real «parcial».
   if (STEPS_LIB.isPending(marker, 'start')) {
     const conArranque = anotarArranque(marker, STEPS_LIB.schemeOf(marker) === 2 ? 'start' : '0', marker.startedAt);
     if (conArranque) marker.stepTimings = conArranque.stepTimings;
@@ -484,7 +558,7 @@ function cmdSet(payloadJson) {
 
 // Snapshot de los archivos al cierre de la iteración, para el smart re-loop.
 // Llamado por el orquestador justo después de invocar el set de advisors de iter N
-// (típicamente al final del Step 5 / Step 7b). Idempotente: re-llamar para iter N
+// (típicamente al final del paso de revisores, en cada vuelta). Idempotente: re-llamar para iter N
 // re-toma el snapshot (overwrites). pipeline.js smart-reloop --iter N+1 lo lee
 // para computar el delta.
 //
@@ -510,7 +584,7 @@ function cmdSnapshotIter(nRaw, flags) {
   marker.iterations = marker.iterations || {};
   // Los probes transitorios del pase adversarial NO entran a la foto: son archivos `__probe*`/`_probe_*`
   // que nadie escribió y se borran solos. Contaminan el insumo del re-loop y hacen parecer sano un
-  // registro ciego. Convención de nombres: steps/step-08-adversarial-pass.md.
+  // registro ciego. Convención de nombres: la guía del paso «Pase adversarial».
   const honesty = require('./lib/ledger-honesty.js');
   const todos = [...(marker.filesTouched || [])];
   const foto = honesty.sinProbes(todos);
@@ -670,7 +744,7 @@ function cmdSnapshotIter(nRaw, flags) {
 
 function cmdGet() {
   const marker = readMarker();
-  process.stdout.write(JSON.stringify(marker ?? {}, null, 2));
+  process.stdout.write(JSON.stringify(nn(marker, {}), null, 2));
 }
 
 function cmdTouch() {
@@ -680,7 +754,7 @@ function cmdTouch() {
   writeMarker(marker);
 }
 
-// ¿El 5b quedó atendido? Vive en lib/adversarial-verdict.js: `next` lo usa también,
+// ¿El pase adversarial quedó atendido? Vive en lib/adversarial-verdict.js: `next` lo usa también,
 // y una segunda copia del criterio se separa sola.
 const { veredictoPaseAdversarial, paseAtendido } = require('./lib/adversarial-verdict.js');
 
@@ -699,7 +773,7 @@ function mensajeDelPaseAdversarial(v) {
     return;
   }
   if (v.motivo === 'no-atendido') {
-    e('marker.js complete-step prepare-commit BLOQUEADO — el 5b no está atendido: ni lanzado ni salteado por el portón (el pase adversarial).');
+    e('marker.js complete-step prepare-commit BLOQUEADO — el pase adversarial no está atendido: ni lanzado ni salteado por el portón.');
     e('  (la bandera deepReviewDone sola no cuenta: es la que se escribía suelta y dejaba el pase sin constancia)');
     e('  Si el pase corrió, anotá su resultado:');
     e(`    ${cmdResultado}`);
@@ -718,7 +792,7 @@ function mensajeDelPaseAdversarial(v) {
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch');
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …');
     e(`  Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`);
-    e('  Abandonarlo es una decisión: TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files … (queda en bypass.log).');
+    e('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»).');
     return;
   }
   if (v.motivo === 'resultado-de-otro-lanzamiento') {
@@ -728,7 +802,7 @@ function mensajeDelPaseAdversarial(v) {
   }
   e('  Cada confirmado va a la suite (prueba promovida o prueba propia) o se difiere con motivo:');
   e(`    ${cmdResultado}`);
-  e('  Abandonarlo es una decisión: TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files … (queda en bypass.log).');
+  e('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»).');
 }
 
 // Cada aprobación que el pipeline ya pide queda en `approvals.jsonl`, en la carpeta de la corrida, como
@@ -738,7 +812,7 @@ function mensajeDelPaseAdversarial(v) {
 const { PLAN_FILE } = require('./lib/plan-display.js');
 
 /**
- * El plan escrito del paso 2, en la carpeta de la corrida: `{ file }`, o `{ error }` si la carpeta no se puede
+ * El plan escrito del paso «Armar el plan», en la carpeta de la corrida: `{ file }`, o `{ error }` si la carpeta no se puede
  * calcular (ahí pedir que se escriba el plan mandaría a buscar un archivo que no va a aparecer).
  */
 function planDeLaCorrida(marker) {
@@ -845,10 +919,28 @@ function cmdCompleteStep(nRaw, flags) {
   const paso = ids[ids.length - 1];
   const controles = new Set(ids.flatMap((id) => CONTROLES_DEL_PASO[id] || []));
   const opts = Array.isArray(flags) ? flags : [];
-  const optVal = (name) => { const i = opts.indexOf(name); return i >= 0 ? (opts[i + 1] ?? '') : null; };
+  const optVal = (name) => { const i = opts.indexOf(name); return i >= 0 ? nn(opts[i + 1], '') : null; };
 
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
+
+  // Un rojo esperado (`expect-red`) vale sólo en una ejecución en deuda: sin la deuda escrita es un rojo como cualquiera.
+  if (controles.has('commit')) {
+    const esperados = Object.entries(marker.checks || {}).filter(([, v]) => /^rojo-esperado/.test(String(v)));
+    const enDeuda = !!marker.cierre && marker.cierre.estado === 'deuda';
+    if (esperados.length && !enDeuda) {
+      appendLog('gates.log', { name: 'expected-red', status: 'blocked', story: marker.storyId, checks: esperados.map(([k]) => k) });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${esperados.map(([k, v]) => `${k}=${v}`).join(', ')} sin una ejecución en deuda.`);
+      console.error('  Un rojo esperado vale sólo con la historia cerrada como deuda (marker.js close-as-debt, con la frase de la persona).');
+      process.exit(1);
+    }
+    for (const [k, v] of esperados) {
+      appendLog('gates.log', { name: 'expected-red', status: 'accepted', story: marker.storyId, check: k, deuda: marker.cierre.deuda });
+      console.error(`⚠️  ${k}: ${v} — aceptado por la deuda ${marker.cierre.deuda} (${((marker.expectedRed || {})[k] || {}).tests || []})`);
+    }
+    // la deuda llega al commit: la línea exacta que lleva el mensaje
+    if (enDeuda) console.error(`📌 El mensaje de commit lleva esta línea: Deuda: ${marker.cierre.deuda} — ${marker.cierre.motivo}`);
+  }
 
   // ── ORDEN — no se cierra un paso con su predecesor GATEADO todavía pendiente ────────
   // Frena el patrón "empieza el pipeline, toma confianza y se saltea etapas".
@@ -870,7 +962,7 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── Step 3 (plan aprobado) — la aprobación es del USER y queda citada ──────────────────────────
+  // ── «Aprobar el plan» — la aprobación es del USER y queda citada ──────────────────────────
   // `--approved "<cita>"` (HITL) o `--auto-approved "<criterios>"` (Nivel 2, SOLO LOW-risk — se verifica
   // con risk-class, no se declara). Sin esto, cerrar el 3 sería un comando vacío y el
   // portón de carril (código antes del plan) se abría sin que nadie hubiera aprobado nada.
@@ -909,7 +1001,7 @@ function cmdCompleteStep(nRaw, flags) {
       try { html = fs.readFileSync(p.mockup, 'utf8'); } catch (_e) {
         bloquear3(`story con pantalla: falta su maqueta (${p.mockup}).`, [
           `Armala: node ${path.join(__dirname, 'mockup.js')} render --data <modelo.json> --story ${sc.story}   (la forma: mockup.js schema)`,
-          'Mostrásela al dueño con el plan (la ruta y la lista de mockup.js texts) y cerrá con --mockup-approved "<cita>". Ver steps/step-04-approve-plan.md.',
+          'Mostrásela al dueño con el plan (la ruta y la lista de mockup.js texts) y cerrá con --mockup-approved "<cita>". Ver la guía del paso «Aprobar el plan».',
         ]);
       }
       const v = mk.validateMockupHtml(html);
@@ -951,7 +1043,7 @@ function cmdCompleteStep(nRaw, flags) {
       if (!planTxt.trim()) {
         appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'plan sin escribir' });
         console.error(`marker.js complete-step ${n} BLOQUEADO — el plan se aprueba solo, pero se muestra igual: falta escribirlo en ${plan.file}.`);
-        console.error('  Escribí ahí el plan del paso 2, mostráselo a la persona en tu respuesta y volvé a correr este comando.');
+        console.error('  Escribí ahí el plan del paso «Armar el plan», mostráselo a la persona en tu respuesta y volvé a correr este comando.');
         process.exit(1);
       }
       const visto = planVisto(marker, planTxt);
@@ -1021,7 +1113,7 @@ function cmdCompleteStep(nRaw, flags) {
     if (mockupPlan) {
       anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLasOpciones(optVal) });
     }
-    // La decisión se anota SIEMPRE, para que el paso 8 vea una pantalla que apareció después del plan.
+    // La decisión se anota SIEMPRE, para que «Preparar el commit» vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
     if (mockupPlan) {
       marker.mockupApproval = { file: mockupPlan.p.mockup, sha256: mockupPlan.sha, mode: 'user', text: mockupCita, at: at3 };
@@ -1034,12 +1126,12 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── Step 5 (advisors) — el set esperado corrió DE VERDAD, y en ESTA iteración ──────────────────
+  // ── Revisores (advisors) — el set esperado corrió DE VERDAD, y en ESTA iteración ──────────────────
   // `checks.advisors` lo pone `run-check advisors -- pipeline.js check-count …` (ground-truth del log
   // de spawns, CF-2). Sin esto, cerrar el 5 no exigía nada y el Stop-gate sólo mira checks REGISTRADOS
   // en rojo (ausente = pasa). Se rechaza `trust-ran` (self-report) y el green de una iteración
   // anterior: al re-cerrar el 5 tras fixes (loop D.i) el check tiene que ser posterior
-  // al cierre previo del 5. Escape consciente: `set-check advisors green --force-manual`.
+  // al cierre previo del 5. Declararlo a mano (`--force-manual`) lo decide la persona: lo frena ESC-C3 sin su frase.
   if (controles.has('advisors')) {
     const st = marker.checks && marker.checks.advisors;
     const prov = (marker.checksProvenance && marker.checksProvenance.advisors) || null;
@@ -1057,8 +1149,8 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('    marker.js run-check advisors -- node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js check-count \\');
       console.error('      --repo <repo> --story <story_path> --files <archivos modificados…>');
       console.error('  Set esperado vacío (mech-check sin advisors aplicables): check-count sale 0 con el expected:[] persistido.');
-      console.error('  `--trust-ran` / `--ran` NO alcanzan (provenance trust-ran = self-report). Escape consciente y logueado:');
-      console.error('    marker.js set-check advisors green --force-manual');
+      console.error('  Una lista de revisores dada por vos (provenance trust-ran = self-report) NO alcanza. Declarar el control');
+      console.error('  a mano lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo force-manual»).');
       process.exit(1);
     }
   }
@@ -1127,7 +1219,7 @@ function cmdCompleteStep(nRaw, flags) {
     // es exactamente donde se esconden las fallas.
     //
     // Se acepta `test-gate` (el gate corrió la suite entera y capturó el exit code real) y
-    // `manual-forced` (escape consciente y logueado: `set-check tests green --force-manual`).
+    // `manual-forced` (declarado a mano y logueado; lo decide la persona: ESC-C3 frena `--force-manual` sin su frase).
     // Se RECHAZA `run-check` a secas y `manual`: son verdes parciales o auto-declarados.
     const testsCheck = marker.checks && marker.checks.tests;
     const testsProv = (marker.checksProvenance && marker.checksProvenance.tests) || null;
@@ -1146,8 +1238,8 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  El control es el gate, que corre TODO y captura el exit code real:');
       console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <story-path>');
       console.error('');
-      console.error('  Escape consciente (el repo no tiene suite completa, o hay que cerrar igual):');
-      console.error('    marker.js set-check tests green --force-manual   (queda en gates.log)');
+      console.error('  Si el repo no tiene suite completa, o hay que cerrar igual: lo decide la persona, no el agente.');
+      console.error('  Si quiere, lo dice en su mensaje («autorizo force-manual»); queda en gates.log.');
       process.exit(1);
     }
 
@@ -1190,7 +1282,7 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── Steps 7 y 8 — un crítico lo decide una persona ──
+  // ── Hallazgos y «Preparar el commit» — un crítico lo decide una persona ──
   // Cada CRITICAL `waived` de findings.json tiene que tener su constancia (`waive-critical`, con el ok de una persona).
   // No hay exención automática «sin nombrar»: dejaría que el agente se eximiera solo. El 8 lo vuelve a mirar porque el 7 sólo corre con críticos y findings.json se puede
   // reescribir a mano después. No poder leer los hallazgos se dice (en el 7 siempre tienen que estar).
@@ -1236,14 +1328,41 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // Gate de DoD — Step 8 (commit prep). El orquestador puede llegar a
-  // Step 8 sin pasar Step 7c DoD. Dos regímenes:
+  // Gate de DoD — «Preparar el commit». El orquestador puede llegar a
+  // ese paso sin pasar «Probar en vivo» (DoD). Dos regímenes:
   //   - Story de UI (DODRT-C5.1): exige el gate `dod` en VERDE por run-check
   //     (el exit code REAL de un `npx playwright test`, no falseable) o `--force-manual` (escape
   //     explícito y logueado). NO alcanza `dodRuntimeChecked` — ese flag lo satisface un archivo de
   //     evidencia de texto (agente-escribible), un agujero que esta regla cierra.
-  //   - Story no-UI: mantiene el gate `dodRuntimeChecked` (Step 7c corrido).
+  //   - Story no-UI: mantiene el gate `dodRuntimeChecked` («Probar en vivo» corrido).
   if (controles.has('commit')) {
+    // Lo que cambió en el repo y nadie declaró: un archivo reescrito por la terminal, por un gestor de paquetes o por un
+    // comando que el freno no reconoce. Va primero y sin DOD_BYPASS: la salida es nombrarlo o revertirlo.
+    {
+      const uc = require('./lib/undeclared-changes.js');
+      const registrados = [].concat(marker.filesTouched || [], (marker.fileEvents || []).map((e) => e && e.path)).filter(Boolean);
+      const consola = uc.consoleWritesOf(STATE_DIR, SID);
+      const r = uc.computeUndeclared({
+        repo: marker.repoPath || null, baseSha: marker.baseSha || null, startedAt: marker.startedAt || null,
+        // una historia que no se encuentra no es «nada declarado»: la ruta llega igual y el control dice que no la leyó
+        storyPath: resolveStoryPath(marker.storyPath, marker) || marker.storyPath || null, registrados,
+        consola: consola.lineas, consolaProblemas: consola.problemas, consolaApagada: process.env.TYCON_NO_RUN_CHANGE === '1',
+      });
+      for (const a of r.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
+      if (!r.medido) {
+        console.error(`⚠️  complete-step ${n}: cambios sin declarar: no medido: ${r.motivo}. No es «no sobra nada»: es «no lo pude mirar».`);
+        appendLog('gates.log', { name: 'undeclared-changes', action: 'no-medido', story: marker.storyId || null, motivo: r.motivo, deletes: r.borrados.length });
+      } else if (r.sobra.length) {
+        appendLog('gates.log', { name: 'undeclared-changes', action: 'bloqueo', story: marker.storyId || null, files: r.sobra, deletes: r.borrados.length });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — cambios sin declarar: ${r.sobra.length} archivo(s) cambiaron en el repo sin pasar por Edit/Write y la historia no los nombra:`);
+        for (const f of r.sobra) console.error(`   · ${f}`);
+        console.error('   Si son parte de la historia, sumalos al File List del Dev Agent Record (o a files_to_modify); si no, revertilos.');
+        console.error('   Un lock cuenta como declarado cuando su manifiesto lo está.');
+        process.exit(1);
+      } else {
+        appendLog('gates.log', { name: 'undeclared-changes', action: 'verde', story: marker.storyId || null, deletes: r.borrados.length });
+      }
+    }
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
     // tope, con el ok de una persona) o lo exime una persona (waive-critical). Venga del revisor o del pase adversarial.
     {
@@ -1274,7 +1393,7 @@ function cmdCompleteStep(nRaw, flags) {
     let blocked = null;
     // La maqueta en el cierre. Lo decide mockup.screenStory (la detección de la revisión de la pantalla)
     // ANTES de llamar a qa-guide.js, que sale 0 igual con «no toca UI» y con «todo bien»:
-    //   - el paso 3 anotó «sin pantalla» y hoy la story tiene una → frena (sin DOD_BYPASS): nadie vio la maqueta.
+    //   - «Aprobar el plan» anotó «sin pantalla» y hoy la story tiene una → frena (sin DOD_BYPASS): nadie vio la maqueta.
     //   - con maqueta aprobada y sin pantalla detectada, no se compara, se dice y queda en gates.log.
     const maqueta = require('./mockup.js').mockupStep8(marker, resolveStoryPath(marker.storyPath, marker) || marker.storyPath);
     let bloqueoMaqueta = null;
@@ -1297,7 +1416,7 @@ function cmdCompleteStep(nRaw, flags) {
 
     // 🔴 `findings.json` lo exige el FRENO, no una instrucción del step. Un artefacto que se puede
     // escribir vacío a propósito («un run sin hallazgos igual escribe el archivo») y un `findings-status`
-    // que vive sólo en el markdown del step-08 dependen de que el orquestador se acuerde de correrlo:
+    // que vive sólo en el markdown de la guía de «Preparar el commit» dependen de que el orquestador se acuerde de correrlo:
     // algunas corridas no lo dejan. Y
     // sin el archivo «no escribí» y «no encontré nada» son indistinguibles: la tabla por regla de
     // `poda.js` decide retiros con media muestra y puede retirar una regla porque su revisor «nunca
@@ -1317,24 +1436,24 @@ function cmdCompleteStep(nRaw, flags) {
       });
       if (!storyPathF || !st || st.error || st.key_error) {
         const motivoNoMedido = (st && (st.error || (st.key_error && `sin clave de la carpeta de corrida: ${st.key_error}`))) || 'sin story path en el marker';
-        console.error(`⚠️  complete-step 8: NO pude mirar si está el findings.json del Step 6 (${motivoNoMedido}). No es «está»: es «no lo vi».`);
+        console.error(`⚠️  complete-step prepare-commit: NO pude mirar si está el findings.json del paso de hallazgos (${motivoNoMedido}). No es «está»: es «no lo vi».`);
         anotar('no-medido', motivoNoMedido);
       } else if (!st.run_dir) {
-        console.error('⚠️  complete-step 8: no hay run dir bajo .advisors/pipeline-runs/, así que no pude mirar el findings.json.');
+        console.error('⚠️  complete-step prepare-commit: no hay run dir bajo .advisors/pipeline-runs/, así que no pude mirar el findings.json.');
         anotar('no-medido', 'sin run dir');
       } else if (!st.exists || !st.valid) {
         blocked = 'findings';
-        console.error(`marker.js complete-step ${n} BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del Step 6'} en ${st.run_dir}.`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del paso de hallazgos'} en ${st.run_dir}.`);
         console.error('  Sin ese archivo, «no encontré nada» y «no lo escribí» son lo mismo: el criterio de poda del catálogo');
         console.error('  decide retiros de reglas con media muestra. Un run sin hallazgos igual lo escribe, con [].');
         console.error(`    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-findings --story ${storyPathF} --findings -`);
-        console.error('    (el array sale del reporte consolidado del Step 6, con la disposition final de cada hallazgo)');
+        console.error('    (el array sale del reporte consolidado del paso de hallazgos, con la disposition final de cada hallazgo)');
         anotar('bloqueo', st.exists ? 'findings.json inválido' : 'findings.json ausente');
       }
     }
     // 🔴 El pase adversarial ATENDIDO. Lanzado → su resultado anotado después del último
     // lanzamiento; no lanzado → el salteo que decidió el portón. Sin este control, un pase cerrado sin
-    // resultado pasa el paso 8. Se evalúa SIEMPRE (no sólo si
+    // resultado pasa a «Preparar el commit». Se evalúa SIEMPRE (no sólo si
     // los frenos de arriba pasaron: los dos mensajes salen en la misma corrida), deja su línea en toda llamada, y
     // NO se abre con DOD_BYPASS: el arreglo siempre está a mano y esa variable la puede poner el propio agente.
     let bloqueoAdversarial = null;
@@ -1361,15 +1480,15 @@ function cmdCompleteStep(nRaw, flags) {
         console.log(bt.debtLine(deuda));
         bt.recordDebtUse(STATE_DIR, deuda, 'complete-step 8');
       } else if (!okUi) {
-        if (deuda && deuda.motivo && !/no declara/.test(deuda.motivo)) console.error(`marker.js complete-step 8: la prueba con navegador pendiente no vale — ${deuda.motivo}.`);
+        if (deuda && deuda.motivo && !/no declara/.test(deuda.motivo)) console.error(`marker.js complete-step prepare-commit: la prueba con navegador pendiente no vale — ${deuda.motivo}.`);
         blocked = 'ui';
         console.error(`marker.js complete-step ${n} BLOQUEADO — story de UI sin el gate \`dod\` en verde por run-check.`);
         console.error('');
         console.error(`  Estado actual: checks.dod=${dodCheck || '(ausente)'} provenance=${dodProv || '(ausente)'}`);
         console.error('  Una story de UI exige el EXIT CODE REAL del Playwright — no un flag ni un archivo de texto:');
         console.error('    marker.js run-check dod -- npx playwright test <spec> --workers=1');
-        console.error('  Escape consciente (marcada UI pero sin superficie de UI real):');
-        console.error('    marker.js set-check dod green --force-manual   (queda manual-forced en gates.log)');
+        console.error('  Marcada UI pero sin superficie de UI real: declararla a mano lo decide la persona, no el agente');
+        console.error('    («autorizo force-manual» en su mensaje; queda manual-forced en gates.log).');
         console.error('  Si el repo no tiene cómo probar en un navegador: la persona decide en la oferta (e2e-setup.js prepare|defer).');
       }
     } else if (marker.dodRuntimeChecked !== true) {
@@ -1377,13 +1496,13 @@ function cmdCompleteStep(nRaw, flags) {
       console.error(`marker.js complete-step ${n} BLOQUEADO — «Probar en vivo» no se ejecutó.`);
       console.error('');
       console.error('El marker no tiene dodRuntimeChecked=true. Acciones permitidas:');
-      console.error('  (a) Correr Step 7c — invocar tycon-dod-runtime-checker advisor +');
+      console.error('  (a) Correr el paso «Probar en vivo» — invocar tycon-dod-runtime-checker advisor +');
       console.error('      ejecutar E2E specs + capturar evidencia. Después:');
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<path>"}\'');
       // Setear `marker.dodRuntimeChecked` a mano con `set` no es una exención válida: esta es la forma.
       // Queda escrito como exención (evidencePath «exenta: …») y sólo vale para una story sin UI.
-      console.error('  (b) Story exenta (sin UI ni endpoints — step-07c): en el frontmatter');
-      console.error('      dod_runtime_exempt: true  y  dod_runtime_exempt_reason: "<razón concreta>". Después:');
+      console.error('  (b) Story exenta (sin UI ni endpoints — «Probar en vivo»): eximirla ya en implementación lo decide la');
+      console.error('      persona («autorizo dod_runtime_exempt» en su mensaje), con dod_runtime_exempt_reason en el frontmatter. Después:');
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <razón>"}\'');
     }
     // DODRT-C6 — la matriz
@@ -1397,7 +1516,7 @@ function cmdCompleteStep(nRaw, flags) {
       const storyPath = resolveStoryPath(marker.storyPath, marker);
       if (!storyPath) {
         blocked = 'acmatrix-nostory';
-        console.error(`marker.js complete-step ${n} BLOQUEADO — no puedo computar la matriz runtime: marker.storyPath ausente o inexistente (crudo: ${marker.storyPath ?? '(vacío)'}; base: ${marker.repoPath ?? process.cwd()}).`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — no puedo computar la matriz runtime: marker.storyPath ausente o inexistente (crudo: ${nn(marker.storyPath, '(vacío)')}; base: ${nn(marker.repoPath, process.cwd())}).`);
         console.error('  Seteá el path de la story en el marker (pipeline.js start lo hace) y reintentá.');
       } else {
         let matrix;
@@ -1450,7 +1569,7 @@ function cmdCompleteStep(nRaw, flags) {
         console.error(`marker.js complete-step ${n} BLOQUEADO — la guía de prueba manual del tester (DODRT-C7) NO está lista (ver arriba).`);
         console.error('  Escribí/corregí los pasos en criollo en specs/qa/<sid>-pasos.md y corré la review de legibilidad.');
         // La pantalla también se revisa; sus marcas se arreglan en el código, no reescribiendo la guía.
-        console.error('  Y la de la PANTALLA (specs/qa/<sid>-legibilidad-ui.md, paso 7c.7): sus marcas se resuelven EN LA PANTALLA, no en la guía.');
+        console.error('  Y la de la PANTALLA (specs/qa/<sid>-legibilidad-ui.md, «Probar en vivo», parte 7): sus marcas se resuelven EN LA PANTALLA, no en la guía.');
       }
     }
     // La marca a mano: si la organización lo pide (qa.manual_check: required), una persona marca cada criterio de la guía
@@ -1494,13 +1613,14 @@ function cmdCompleteStep(nRaw, flags) {
         console.error('     limpiamente): la verificación runtime es obligatoria. La única salida es el waiver TTY del usuario.');
         process.exit(2);
       }
-      console.error('  Bypass excepcional: setear DOD_BYPASS=1 (queda had_dod_bypass=true en bypass.log).');
+      console.error('  Saltear este bloqueo lo decide la persona, no el agente: si quiere, lo dice en su mensaje');
+      console.error('  («autorizo DOD_BYPASS»); queda had_dod_bypass=true en bypass.log.');
       console.error('');
       console.error(`Ver: ~/.claude/agent-skills/skills/tycon-pipeline/steps/${STEPS_LIB.byId('live-check').file}`);
       if (process.env.DOD_BYPASS !== '1') {
         process.exit(2);
       }
-      console.error(`⚠ DOD_BYPASS=1 detectado — permitiendo complete-step ${n} con flag had_dod_bypass=true`);
+      console.error(`⚠ DOD_BYPASS=1 detectado (lo autorizó la persona o lo puso el dev en su ambiente) — permitiendo complete-step ${n} con flag had_dod_bypass=true`);
       marker.hadDodBypass = true;
       // Rastro DURABLE del bypass: el marker se borra al cerrar el pipeline;
       // bypass.log sobrevive y on-prompt puede reportarlo.
@@ -1551,8 +1671,9 @@ function cmdCompleteStep(nRaw, flags) {
  * la primera consulta es la que marca, y las siguientes (el orquestador pregunta `next` varias veces)
  * no pueden correrlo hacia adelante y esconder el tiempo que ya pasó.
  */
-// Los sub-pasos (0b, 0c, 5b, 7c) se cierran con una BANDERA, no con complete-step: tienen arranque y
-// no fin propio. Sin arranque, su trabajo (el pase adversarial del 5b dura ~30 min) caería como «tiempo
+// Los sub-pasos del marcador viejo (el reloj, el pedido en ADO, el pase adversarial y la prueba en vivo) se cierran con
+// una BANDERA, no con complete-step: tienen arranque y no fin propio. Sin arranque, su trabajo (el pase adversarial
+// dura ~30 min) caería como «tiempo
 // entre pasos» en la cuenta.
 // En un marcador nuevo arranca cualquier paso de la tabla, por su nombre.
 const PASO_ARRANCABLE = /^(\d|0b|0c|5b|7c)$/;
@@ -1602,8 +1723,8 @@ function cmdStartStep(nRaw) {
 // ============================================================
 
 /**
- * Marca el marker actual como "DoD runtime verified" — Step 7c del pipeline
- * pasó. Es pre-condición para `complete-step 8`.
+ * Marca el marker actual como "DoD runtime verified" — el paso «Probar en vivo» del pipeline
+ * pasó. Es pre-condición para `complete-step prepare-commit`.
  *
  * Payload JSON esperado:
  *   {
@@ -1612,7 +1733,7 @@ function cmdStartStep(nRaw) {
  *     "gatesRun": ["DODRT-C1", "DODRT-C2", ...]
  *   }
  *
- * Solo PASS desbloquea Step 8. PARTIAL requiere waiver explícito del user
+ * Solo PASS desbloquea «Preparar el commit». PARTIAL requiere waiver explícito del user
  * (manejado en el step file).
  */
 function cmdMarkDodRuntimeChecked(payloadJson) {
@@ -1635,7 +1756,7 @@ function cmdMarkDodRuntimeChecked(payloadJson) {
   // DODRT-C5.1 — para una story de UI, un verdict PASS NO se acepta como
   // self-assertion a ciegas: exige que el evidencePath EXISTA y contenga evidencia Playwright real
   // (espejo del check del hook on-pre-commit). Sin esto, `mark-dod-runtime-checked
-  // {verdict:PASS}` desbloquea complete-step 8 (commit prep) SIN haber corrido el E2E. Un PASS
+  // {verdict:PASS}` desbloquea complete-step prepare-commit SIN haber corrido el E2E. Un PASS
   // se valida por contenido, nunca por `verdict === 'PASS'` a secas.
   if (wantsPass && markerStoryIsUi(marker)) {
     const ev = verifyPlaywrightEvidence(marker, payload.evidencePath);
@@ -1644,8 +1765,8 @@ function cmdMarkDodRuntimeChecked(payloadJson) {
       console.error('  evidencia Playwright REAL (DODRT-C5.1). ' + ev.reason);
       console.error('  Corré el E2E y apuntá evidencePath a un archivo .advisors/dod-runtime/<story>-*.md');
       console.error('  que documente el resultado (debe mencionar playwright / tests/e2e / @story- / E2E-N).');
-      console.error('  Una story de UI no se exime (step-07c). Si está marcada UI y no tiene superficie de UI real,');
-      console.error('  el escape consciente es: marker.js set-check dod green --force-manual  (queda en gates.log).');
+      console.error('  Una story de UI no se exime («Probar en vivo»). Si está marcada UI y no tiene superficie de UI real,');
+      console.error('  declararla a mano lo decide la persona («autorizo force-manual» en su mensaje; queda en gates.log).');
       process.exit(2);
     }
   }
@@ -1678,7 +1799,7 @@ function cmdSetAutonomous(valRaw) {
   const on = valRaw === 'true' || valRaw === '1' || valRaw === 'on';
   const marker = readMarker();
   if (!marker) {
-    console.error('marker.js set-autonomous: no hay marker activo (corré `set` en Step 0 primero)');
+    console.error('marker.js set-autonomous: no hay marker activo (corré `set` en el Arranque primero)');
     process.exit(1);
   }
   marker.autonomous = on;
@@ -1699,13 +1820,13 @@ const VALID_CHECKS = ['build', 'tests', 'advisors', 'dod', 'acmatrix'];
 // DODRT-C5.1 — verifica que el evidencePath de una story de UI sea evidencia
 // Playwright REAL: el archivo EXISTE (resuelto relativo a marker.repoPath si el path es relativo) y su
 // CONTENIDO menciona playwright / tests/e2e / @story- / E2E-N. Espejo del check del hook
-// on-pre-commit.js:578 — así el gate del marker (complete-step 8) y el gate del commit exigen lo mismo.
+// on-pre-commit.js:578 — así el gate del marker (complete-step prepare-commit) y el gate del commit exigen lo mismo.
 /**
  * Resuelve el `storyPath` del marker a una ruta USABLE.
  *
  * 🔴 `pipeline.js start` lo guarda RELATIVO al repo (`specs/<epic>/<story>.md`), así que cualquier
  * `fs.existsSync(marker.storyPath)` falla salvo que el proceso corra parado justo en la raíz del
- * repo. Eso rompería en silencio 3 sitios distintos: el gate de `complete-step 8`, el check de la
+ * repo. Eso rompería en silencio 3 sitios distintos: el gate de `complete-step prepare-commit`, el check de la
  * guía de QA, y el fallback de `runtime-waiver` (que además le echaría la culpa al usuario con un
  * "el marker no lo tiene"). `runtime-matrix.js` resuelve lo mismo con su propio `path.resolve`.
  *
@@ -1760,7 +1881,7 @@ function verifyPlaywrightEvidence(marker, evidencePath) {
 // declarados en las listas de archivos, campos estructurados y tandas; la prosa sólo de respaldo;
 // escenarios de navegador en el spec). Acá no se copia ninguna regla ni ningún nombre de producto.
 // Volver a aprobar la maqueta (cambió después de aprobada, o un arreglo de legibilidad cambió un
-// texto), o aprobarla por primera vez si la story ganó una pantalla después del paso 3. La aprueba quien aprueba
+// texto), o aprobarla por primera vez si la story ganó una pantalla después de aprobar el plan. La aprueba quien aprueba
 // el plan: el dueño, o quien tenga su delegación en modo autónomo; la cita dice quién y por qué vía.
 function cmdApproveMockup(flags) {
   const marker = readMarker();
@@ -1803,7 +1924,7 @@ function cmdApproveMockup(flags) {
   if (!marker.mockupDecision || marker.mockupDecision.screen !== true) marker.mockupDecision = { screen: true, signal: sc.signal || null, at };
   appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}) });
   {
-    const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? (opts[k + 1] ?? '') : null; };
+    const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? nn(opts[k + 1], '') : null; };
     anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: 'approve-mockup', ...quienDeLasOpciones(optVal) });
   }
   writeMarker(marker);
@@ -1832,7 +1953,7 @@ function screenRule() {
 // La baja de pantalla nunca es muda. Si la story dejó de contar como de pantalla porque la
 // palabra del frente sólo está en la prosa o en documentos, se dice en UNA
 // línea por stderr, sin bloquear. Se llama una sola vez por comando, al nivel del comando: NO dentro de
-// markerStoryIsUi, que `complete-step 8` llama más de una vez.
+// markerStoryIsUi, que `complete-step prepare-commit` llama más de una vez.
 function avisarBajaDePantalla(marker) {
   try {
     const p = marker && resolveStoryPath(marker.storyPath, marker);
@@ -1850,7 +1971,7 @@ function avisarBajaDePantalla(marker) {
 /**
  * `mark-tests-not-scoped`: la salida 7 de test-gate.sh es «sin acotar» (una corrida cruzada no pudo acotarse a lo tocado
  * y no corrió nada). `run-check` la registra como `red:exit=7`; acá pasa a `sin-acotar`, que no es verde ni un rojo
- * para arreglar: la cubre la CI del pedido (complete-step 4 lo anuncia). Sólo lo llama test-gate.sh, y sólo cambia un
+ * para arreglar: la cubre la CI del pedido (complete-step run-tests lo anuncia). Sólo lo llama test-gate.sh, y sólo cambia un
  * `red:exit=7` puesto por el portón: no puede tapar ningún otro rojo.
  */
 function cmdMarkTestsNotScoped(motivo) {
@@ -1877,10 +1998,10 @@ function cmdMarkTestsNotScoped(motivo) {
 /**
  * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
  * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
- * pie. No es verde ni un rojo para arreglar: complete-step 4 y el paso 8 lo anuncian (nunca un verde callado). Sólo lo
+ * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el commit» lo anuncian (nunca un verde callado). Sólo lo
  * llama test-gate.sh.
  */
-/** La línea que dicen el paso 4 y el paso 8 cuando el check `tests` quedó «sin medir». */
+/** La línea que dicen «Correr las pruebas» y «Preparar el commit» cuando el check `tests` quedó «sin medir». */
 function testsNotMeasuredLine(marker) {
   const r = String((marker && marker.testsNotMeasuredReason) || '');
   const m = r.match(/no encontré (un proyecto de [^.]*?)(?:\. |$)/);
@@ -1917,11 +2038,11 @@ function cmdSetCheck(name, status, flag) {
     process.exit(2);
   }
   if (name === 'acmatrix') {
-    // La matriz runtime NO se ASERTA — se COMPUTA. complete-step 8 la re-computa en proceso;
+    // La matriz runtime NO se ASERTA — se COMPUTA. complete-step prepare-commit la re-computa en proceso;
     // un set-check acmatrix green sería un breadcrumb engañoso (y una vía de forja). Rechazado.
     console.error("marker.js set-check: 'acmatrix' no se puede setear a mano — se computa.");
     console.error('  Para VER el estado: run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <spec>');
-    console.error('  El gate real de complete-step 8 re-computa la matriz solo; no confía en el check.');
+    console.error('  El gate real de complete-step prepare-commit re-computa la matriz solo; no confía en el check.');
     process.exit(2);
   }
   if (status !== 'green' && !status.startsWith('red')) {
@@ -1952,7 +2073,7 @@ function cmdSetCheck(name, status, flag) {
     console.error("  CADA AC de UI (regla DODRT-C5.1). Usá:");
     console.error("    marker.js run-check dod -- npx playwright test <spec> --workers=1");
     console.error("  (captura el exit code real → provenance=run-check, no falseable).");
-    console.error("  Excepción consciente (raro, p.ej. story sin superficie de UI real): --force-manual");
+    console.error("  Una excepción (raro, p.ej. story sin superficie de UI real) la decide la persona («autorizo force-manual»).");
     console.error("  (queda logueado como provenance=manual-forced en gates.log).");
     process.exit(2);
   }
@@ -2117,7 +2238,7 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
   process.exitCode = exitCode;
 }
 
-// Flags booleanos de sub-steps no-enteros (0b clocki / 0c ADO) — el resume y
+// Flags booleanos de las partes del Arranque (el reloj / el pedido en ADO) — el resume y
 // `pipeline.js next` los leen para no re-ejecutar (evita doble timer / doble
 // transición de WI al retomar cross-session).
 // `atddBypass`: escape consciente del portón pre-edit de ATDD (on-atdd-preedit.js) —
@@ -2133,27 +2254,32 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
 // Este flag es de UN SOLO USO y lo CONSUME el Stop-hook: deja cerrar ese turno sin tocar
 // `autonomous`, y se apaga solo. Mismo patrón que `ALLOW_DOD_EVIDENCE_WRITE`.
 //
-// 🔴 `deepReviewDone` NO se escribe a mano. Es la bandera que cierra el 5b, y cualquiera que la escriba
-// la cierra sin anotar qué encontró el pase, y el paso 8 la da por buena. La escriben sólo los dos
-// comandos que cierran el 5b con constancia: `mark-adversarial-result` (el pase corrió y se anota su
+// 🔴 `deepReviewDone` NO se escribe a mano. Es la bandera que cierra el pase adversarial, y cualquiera que la escriba
+// la cierra sin anotar qué encontró el pase, y «Preparar el commit» la da por buena. La escriben sólo los dos
+// comandos que cierran el pase con constancia: `mark-adversarial-result` (el pase corrió y se anota su
 // resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
-const VALID_FLAGS = ['workSignalStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman', 'heavyValidationRequested'];
-// El nombre viejo de la bandera del 0b, de cuando el paso era el reloj de una herramienta: se sigue aceptando y escribe la
-// nueva. `next` y el cartel también leen la vieja en un marker de una corrida en vuelo (no se reabre el aviso de trabajo).
+// Las banderas, en dos listas (lib/external-flags.js): las de hechos externos las pone sólo el arnés cuando hizo el
+// trabajo; las de estado de la ejecución, el modelo, cada una con su motivo. `next` y el cartel también leen el nombre
+// viejo de la bandera del reloj en un marker de una corrida en vuelo (no se reabre el aviso de trabajo).
+const { VALID_FLAGS, EXTERNAL_FLAGS, HARNESS_COMMAND } = require('./lib/external-flags.js');
+// El nombre viejo de la bandera del reloj, de cuando el paso era el reloj de una herramienta.
 const OLD_FLAGS = { clockiStarted: 'workSignalStarted' };
 
 function cmdSetFlag(flag, valRaw) {
   if (flag === 'deepReviewDone') {
     // Antes de leer el marker: el comando no escribe NADA, ni el `lastTouch`.
-    console.error('marker.js set-flag: `deepReviewDone` ya no se escribe a mano — cierra el 5b uno de estos dos comandos:');
+    console.error('marker.js set-flag: `deepReviewDone` ya no se escribe a mano — cierra el pase adversarial uno de estos dos comandos:');
     console.error('  el pase corrió  → marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
     console.error('  el pase no corre → marker.js mark-adversarial-skipped --files <archivos de código del diff>   (decide el portón)');
-    console.error('  (story 1.8: con la bandera suelta, 4 de 9 corridas cerraron el 5b sin anotar qué encontró el pase)');
+    console.error('  (story 1.8: con la bandera suelta, 4 de 9 ejecuciones cerraron el pase sin anotar qué encontró el pase)');
     process.exit(2);
   }
-  if (OLD_FLAGS[flag]) {
-    console.error(`marker.js set-flag: «${flag}» es el nombre viejo; escribo ${OLD_FLAGS[flag]}`);
-    flag = OLD_FLAGS[flag];
+  const real = OLD_FLAGS[flag] || flag;
+  if (EXTERNAL_FLAGS.includes(real)) {
+    // Antes de leer el marker: el comando no escribe NADA. La bandera dice que algo de afuera se hizo; la pone el arnés.
+    console.error(`marker.js set-flag: \`${flag}\` no se escribe a mano — la pone el arnés cuando hizo el trabajo: ${HARNESS_COMMAND[real]}.`);
+    console.error(`  Si la herramienta está caída o falta: marker.js start-warning ${real === 'adoMarkedActive' ? 'ado' : 'time-tracking'} "<motivo>" y seguí.`);
+    process.exit(2);
   }
   if (!flag || !VALID_FLAGS.includes(flag)) {
     console.error(`marker.js set-flag: flag inválido '${flag}' — válidos: ${VALID_FLAGS.join(' | ')}`);
@@ -2170,9 +2296,10 @@ function cmdSetFlag(flag, valRaw) {
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
 }
 
-// Una parte opcional del Arranque que corrió y falló: `start-warning <time-tracking|ado> "<mensaje>"`. El Arranque
+// Una parte opcional del Arranque que corrió y falló: `start-warning <time-tracking|ado> "<motivo>"`. El Arranque
 // cierra igual (la falla de una parte nunca frenó la ejecución), pero el aviso queda a la vista hasta el cierre: en
-// `next`, en el cartel, en /pipeline y en la salida de `complete-step prepare-commit`.
+// `next`, en el cartel, en /pipeline y en la salida de `complete-step prepare-commit`. Sin motivo, o sobre una parte que
+// ya corrió, no se escribe nada; el mismo motivo dos veces no suma otra línea a gates.log.
 function cmdStartWarning(part, mensaje) {
   if (!STEPS_LIB.START_PARTS[part]) {
     console.error(`marker.js start-warning: parte inválida '${part}' — válidas: ${Object.keys(STEPS_LIB.START_PARTS).join(' | ')}`);
@@ -2183,11 +2310,123 @@ function cmdStartWarning(part, mensaje) {
     console.error('marker.js start-warning: no hay marker activo para esta sesión');
     process.exit(1);
   }
-  const previos = Array.isArray(marker.startWarnings) ? marker.startWarnings.filter((w) => w && w.part !== part) : [];
-  marker.startWarnings = [...previos, { part, message: String(mensaje || '').slice(0, 300) }];
+  const motivo = String(nn(mensaje, '')).trim().slice(0, 300);
+  if (!motivo) {
+    console.error(`marker.js start-warning: falta el motivo — uso: start-warning ${part} "<qué no anduvo: el MCP no contesta, az no está, 401…>"`);
+    process.exit(2);
+  }
+  if (STEPS_LIB.START_PARTS[part].flags.some((f) => marker[f] === true)) {
+    console.error(`marker.js start-warning: ${STEPS_LIB.START_PARTS[part].name} ya corrió (su bandera está puesta): no hay nada que declarar`);
+    process.exit(2);
+  }
+  const lista = Array.isArray(marker.startWarnings) ? marker.startWarnings : [];
+  if (lista.some((w) => w && w.part === part && w.message === motivo)) {
+    process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [{ part }] })[0]}\n`);
+    return;
+  }
+  marker.startWarnings = [...lista.filter((w) => w && w.part !== part), { part, message: motivo }];
   marker.lastTouch = nowIso();
   writeMarker(marker);
+  appendLog('gates.log', { name: 'start-warning', part, motivo, at: nowIso(), story: nn(marker.storyId, null) });
   process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [{ part }] })[0]}\n`);
+}
+
+// El valor de una opción `--<nombre> <valor>` de la línea, recortado; '' si falta.
+function opcion(args, nombre) {
+  const i = args.indexOf(`--${nombre}`);
+  return i >= 0 ? String(nn(args[i + 1], '')).trim() : '';
+}
+
+// Cerrar una historia por su salida prevista: `close-as-debt --reason "<texto>" --debt <DEF-id>`. La frase de la persona
+// la pide el freno de seguridad (ESC-C4) antes de que esto corra. El marcador recibe `cierre = deuda` y la ejecución
+// SIGUE: la deuda tiene que llegar al commit (revisores sobre lo que sí cambió, el pase y la línea `Deuda:`); el
+// `clear` del final conserva el cierre escrito. La deuda tiene que estar anotada antes: en la historia o en el
+// `tasks/todo.md` de su repo.
+function cmdCloseAsDebt(args) {
+  // el motivo y la deuda viajan en el volcado que sube al buzón: sin rutas, credenciales ni correos (el saneador de la
+  // subida); sin él en este árbol, el texto como vino
+  let sanear = (t) => t;
+  try { sanear = require(path.join(__dirname, '..', '..', '..', 'scripts', 'metrics', 'tokens-digest.js')).sanear; } catch (_) { /* sin el saneador */ }
+  const motivo = String(sanear(opcion(args, 'reason'))).slice(0, 300);
+  const deuda = String(sanear(opcion(args, 'debt'))).slice(0, 80);
+  if (!motivo || !deuda) {
+    console.error('marker.js close-as-debt: uso: close-as-debt --reason "<qué quedó pendiente y por qué>" --debt <DEF-id>');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js close-as-debt: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const story = resolveStoryPath(marker.storyPath, marker);
+  let raiz = story ? path.dirname(path.dirname(story)) : null;
+  if (story) {
+    try { raiz = require('child_process').execFileSync('git', ['-C', path.dirname(story), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta de arriba */ }
+  }
+  const todo = raiz ? path.join(raiz, 'tasks', 'todo.md') : null;
+  // el id entero, como palabra: el comienzo de un id anotado no es ese id, y una letra suelta no es una deuda
+  if (!/^[A-Za-z][\w.-]{3,}$/.test(deuda)) {
+    console.error(`marker.js close-as-debt: «${deuda}» no parece el id de una deuda (por ejemplo DEF-9.9-angular): pasá el id entero que anotaste`);
+    process.exit(2);
+  }
+  const palabra = new RegExp(`(^|[^\\w.-])${deuda.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-]|\\.(?![\\w-]))`);
+  const tiene = (f) => { try { return palabra.test(fs.readFileSync(f, 'utf8')); } catch (_) { return false; } };
+  if (!((story && tiene(story)) || (todo && tiene(todo)))) {
+    console.error(`marker.js close-as-debt: la deuda ${deuda} no está anotada. Anotala antes en el Dev Agent Record de la historia`);
+    console.error(`  (${story || marker.storyPath || 'la historia'})${todo ? ` o en ${todo}` : ''}, con lo que quedó pendiente, y volvé a correr esto.`);
+    console.error('  El repo puede no tener tasks/todo.md: alcanza con la historia.');
+    process.exit(2);
+  }
+  const frenos = require('./lib/run-close.js').leerFrenos();
+  const l = frenos ? require('./lib/run-close.js').escapeDeCierre(frenos, SID, marker.startedAt, 'cerrar-como-deuda') : null;
+  const via = l && ['persona', 'reenvio'].includes(l.via) ? l.via : null;
+  // la frase la juzga el freno; acá se exige su constancia: si el freno no vio la llamada (un nombre armado, otra copia
+  // del guion), la deuda no se cierra sin que una persona la haya autorizado
+  if (!via) {
+    console.error(frenos
+      ? 'marker.js close-as-debt: no encuentro la constancia de que una persona autorizó esta deuda («autorizo cerrar como deuda», regla ESC-C4 del freno de seguridad). Pedile la frase y volvé a correr el comando tal cual.'
+      : 'marker.js close-as-debt: no pude leer el registro de escapes del freno de seguridad: sin él no sé si una persona autorizó la deuda.');
+    process.exit(2);
+  }
+  marker.cierre = { estado: 'deuda', motivo, deuda, via, ...(l.relevo ? { relevo: l.relevo } : {}), at: nowIso() };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'close-as-debt', story: nn(marker.storyId, null), deuda, motivo, via });
+  process.stdout.write(`cierre: deuda (${deuda}) — la ejecución sigue hasta el commit: revisores sobre lo que sí cambió, el pase y la línea «Deuda:» del mensaje.\n`);
+}
+
+// Un control en rojo que la historia en deuda deja así a propósito: `expect-red <control> --tests <T2,T5>`. Sólo en una
+// ejecución en deuda y sobre un control en rojo; queda `rojo-esperado:exit=N` con la lista, que el cierre del turno y
+// `prepare-commit` aceptan sólo con la deuda escrita. Antes, el paso pide ajustar las pruebas para que verifiquen la
+// deuda: esto es para cuando no se puede.
+function cmdExpectRed(args) {
+  const check = String(nn(args[0], '')).trim();
+  const tests = opcion(args, 'tests').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!check || check.startsWith('--') || !tests.length) {
+    console.error('marker.js expect-red: uso: expect-red <control> --tests <T2,T5>   (las pruebas que quedan en rojo a propósito)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js expect-red: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  if (!marker.cierre || marker.cierre.estado !== 'deuda') {
+    console.error('marker.js expect-red: sólo en una ejecución en deuda — primero marker.js close-as-debt --reason "<texto>" --debt <DEF-id> (con la frase de la persona)');
+    process.exit(2);
+  }
+  const actual = String(nn(at(marker.checks, check), ''));
+  const m = /^red:exit=(\d+)/.exec(actual);
+  if (!m) {
+    console.error(`marker.js expect-red: el control ${check} no está en rojo (${actual || 'sin registrar'}): no hay rojo que esperar`);
+    process.exit(2);
+  }
+  marker.checks[check] = `rojo-esperado:exit=${m[1]}`;
+  marker.expectedRed = Object.assign({}, marker.expectedRed, { [check]: { tests, deuda: marker.cierre.deuda, at: nowIso() } });
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check, tests, deuda: marker.cierre.deuda });
+  process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}\n`);
 }
 
 // Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"`. Sin motivo no se
@@ -2277,14 +2516,14 @@ function cmdMarkModelsWarned(keys) {
   process.stdout.write(`modelsWarned: ${marker.modelsWarned.join(', ')}\n`);
 }
 
-// Estado estructurado del pase adversarial 5b
-// cuando se lanza TEMPRANO (al cierre del Step 4, en paralelo con el Step 5).
+// Estado estructurado del pase adversarial
+// cuando se lanza TEMPRANO (al cierre de «Correr las pruebas», en paralelo con los revisores).
 //
 // marker.adversarial = { launchedAtStep, runId, sessionId, launchedAt }
 //
 // El sessionId es la clave de la DETECCIÓN DE ORFANDAD: el resume de un Workflow es
 // same-session-only (memoria del equipo: un runId de otra sesión no se puede joinear
-// ni resumir — re-corre todo). El step-05b (join) compara adversarial.sessionId con la
+// ni resumir — re-corre todo). El paso «Pase adversarial» (join) compara adversarial.sessionId con la
 // sesión actual: igual → join pasivo (esperar la notificación); distinto → el workflow
 // quedó huérfano de una sesión muerta, se anuncia y se RELANZA (este comando permite el
 // overwrite cross-session exactamente para eso). Sin este campo, la sesión nueva no
@@ -2292,8 +2531,8 @@ function cmdMarkModelsWarned(keys) {
 // colgaría esperando algo que jamás llega.
 //
 // Guard anti-doble-lanzamiento: re-llamar DESDE LA MISMA SESIÓN es un bug del
-// orquestador (el 5b corre UNA vez por corrida) → exit 2. El campo NO se borra al
-// completar el 5b (deepReviewDone=true) — queda como evidencia de auditoría.
+// orquestador (el pase corre UNA vez por ejecución) → exit 2. El campo NO se borra al
+// completar el pase (deepReviewDone=true) — queda como evidencia de auditoría.
 function cmdMarkAdversarialLaunched(runId, stepRaw) {
   if (!runId) {
     console.error('marker.js mark-adversarial-launched: runId requerido (1er argumento posicional)');
@@ -2301,7 +2540,7 @@ function cmdMarkAdversarialLaunched(runId, stepRaw) {
   }
   // Whitelist explícita del step: el campo es evidencia de auditoría ("¿se lanzó temprano o en el
   // lugar clásico?") — basura o typos ('banana', '5B') NO caen a 4 en silencio.
-  const stepArg = String(stepRaw ?? '4').toLowerCase();
+  const stepArg = String(nn(stepRaw, '4')).toLowerCase();
   if (!['4', '5b'].includes(stepArg)) {
     console.error(`marker.js mark-adversarial-launched: step inválido '${stepRaw}' — debe ser 4 o 5b`);
     process.exit(2);
@@ -2319,7 +2558,7 @@ function cmdMarkAdversarialLaunched(runId, stepRaw) {
     console.error(
       `marker.js mark-adversarial-launched: el pase adversarial YA se lanzó en esta sesión ` +
       `(runId ${marker.adversarial.runId}, step ${marker.adversarial.launchedAtStep}). ` +
-      `Corre UNA vez por corrida — el join es step-05b, no un re-lanzamiento. ` +
+      `Corre UNA vez por corrida — el join es el paso «Pase adversarial», no un re-lanzamiento. ` +
       `Si el relanzamiento es legítimo (no-op por files vacío / diff stale), usá --relaunch (queda en bypass.log).`
     );
     process.exit(2);
@@ -2339,7 +2578,7 @@ function cmdMarkAdversarialLaunched(runId, stepRaw) {
     );
   }
   marker.adversarial = {
-    // 4 = lanzamiento temprano (cierre del Step 4) · '5b' = fallback / relanzamiento.
+    // 4 = lanzamiento temprano (cierre de «Correr las pruebas») · '5b' = fallback / relanzamiento.
     launchedAtStep: stepArg === '5b' ? '5b' : 4,
     runId: String(runId),
     sessionId: SID,
@@ -2352,9 +2591,9 @@ function cmdMarkAdversarialLaunched(runId, stepRaw) {
 
 // marker.js mark-adversarial-skipped --files <archivos de código del diff> [--no-deep-review]
 //
-// El 5b sin pase: lo decide el PORTÓN, no quien lo anota. Un salteo tiene que venir del portón: una
+// El cierre sin pase: lo decide el PORTÓN, no quien lo anota. Un salteo tiene que venir del portón: una
 // bandera suelta sería igual para «el portón lo salteó», «me olvidé» y «lo dejé corriendo y no miré
-// qué encontró». Mismo principio que `complete-step 3 --auto-approved`, que no cree en el «LOW»
+// qué encontró». Mismo principio que `complete-step approve-plan --auto-approved`, que no cree en el «LOW»
 // declarado y recomputa.
 //
 // 🔴 El portón se llama como PROCESO (`pipeline.js deep-review-gate`), no como función: así hereda su guarda
@@ -2367,7 +2606,7 @@ function cmdMarkAdversarialLaunched(runId, stepRaw) {
 function cmdMarkAdversarialSkipped(argsGate) {
   const marker = readMarker();
   if (!marker) {
-    console.error('marker.js mark-adversarial-skipped: no hay corrida del pipeline en esta sesión — el salteo del 5b se anota sobre una corrida');
+    console.error('marker.js mark-adversarial-skipped: no hay corrida del pipeline en esta sesión — el salteo del pase adversarial se anota sobre una ejecución');
     process.exit(2);
   }
   const args = [...(argsGate || [])];
@@ -2376,7 +2615,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   if (lanzado && !forzado) {
     console.error(`marker.js mark-adversarial-skipped: el pase adversarial YA se lanzó (runId ${lanzado.runId || '?'}, ${lanzado.launchedAt || 'sin fecha'}) — un pase lanzado se cierra con su resultado:`);
     console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
-    console.error('  Abandonarlo es una decisión, no un salteo: se toma con el interruptor (TYCON_NO_DEEP_REVIEW=1 o --no-deep-review)');
+    console.error('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»),');
     console.error('  y queda en bypass.log como ADVERSARIAL_ABANDONADO.');
     process.exit(2);
   }
@@ -2399,7 +2638,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   }
   if (gate.run !== false) {
     console.error(`marker.js mark-adversarial-skipped: el portón dice que el pase CORRE — ${gate.reason || '(sin reason)'}`);
-    console.error('  No se saltea: se lanza (step-04 §Lanzamiento temprano, o step-05b §Acción) y se registra con');
+    console.error('  No se saltea: se lanza (guía del pase adversarial §Lanzamiento temprano o §Acción) y se registra con');
     console.error('    marker.js mark-adversarial-launched <runId> 4');
     console.error('  No se anotó el salteo (el veredicto del portón sí queda en la corrida: `next` pide el lanzamiento).');
     process.exit(2);
@@ -2418,7 +2657,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   // Se relee: el portón que se acaba de lanzar anota su veredicto en el marker (`adversarialGate`), y
   // escribir la copia leída antes lo pisaría.
   const fresco = readMarker() || marker;
-  // UNA escritura: el salteo y el cierre del 5b nacen juntos — no hay un instante con uno y sin el otro.
+  // UNA escritura: el salteo y el cierre del pase nacen juntos — no hay un instante con uno y sin el otro.
   fresco.adversarialSkip = salteo;
   fresco.deepReviewDone = true;
   fresco.lastTouch = at;
@@ -2440,11 +2679,11 @@ function cmdMarkAdversarialSkipped(argsGate) {
 // marker.js mark-adversarial-gate '<json>'   ({ run?: bool, files?: [..], early_env?: '0'|'1'|null })
 //
 // El veredicto del portón del pase, anotado en la corrida. Lo llaman `pipeline.js
-// deep-review-gate` (con `run` y `files`, después del paso 4) y `pipeline.js next` (sólo `early_env`, cuando ve la
+// deep-review-gate` (con `run` y `files`, después de «Correr las pruebas») y `pipeline.js next` (sólo `early_env`, cuando ve la
 // variable): `next` no tiene los archivos del cambio y no recalcula el portón, lee esto.
 //
 // 🔴 Va en un campo PROPIO, `adversarialGate`, nunca dentro de `marker.adversarial`: para el salteo, el freno del
-// paso 8, `next` y el paso 5, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
+// «Preparar el commit», `next` y el paso de revisores, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
 //
 // El temprano apagado (`TYCON_5B_EARLY=0`) se lee del entorno de UN comando, y en una sesión de agente el entorno no
 // pasa de un comando al siguiente (un `next` suelto no lleva la variable que tuvo el comando anterior).
@@ -2491,13 +2730,13 @@ function cmdMarkAdversarialGate(raw) {
 // dejan línea en gates.log: sin esta constancia, el pase y su veredicto son invisibles para la retrospectiva.
 //
 // El veredicto sale de un NÚMERO, no de prosa: con hallazgos confirmados, lo que se revisó no estaba
-// listo. Sirve igual para el 5b del pipeline y para una revisión lanzada a mano después del cierre
+// listo. Sirve igual para el pase adversarial del pipeline y para una revisión lanzada a mano después del cierre
 // (sin marker hay que decir de qué story es: una línea sin story no la puede cruzar nadie).
 // `head` es el commit sobre el que se anotó: lo que permite comparar después contra el merge.
 function cmdMarkAdversarialResult(countRaw) {
   const argv = process.argv;
   const flag = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
-  if (!/^\d+$/.test(String(countRaw ?? ''))) {
+  if (!/^\d+$/.test(String(nn(countRaw, '')))) {
     console.error('marker.js mark-adversarial-result: <confirmados> tiene que ser un entero ≥ 0 (los hallazgos que el pase confirmó)');
     process.exit(2);
   }
@@ -2514,20 +2753,20 @@ function cmdMarkAdversarialResult(countRaw) {
     process.exit(2);
   }
   // El pase es de la corrida sólo si es de SU story: con
-  // `--story B` en una corrida de A, el resultado de B se sumaba a A y le cerraba el 5b. De otra story: sólo la
+  // `--story B` en una corrida de A, el resultado de B se sumaba a A y le cerraba el pase. De otra story: sólo la
   // línea de gates.log, como una revisión sin corrida.
   const corrida = marker && storyId === marker.storyId ? marker : null;
   // 🔴 EL NÚMERO SALE DEL RESULTADO, NO DE QUIEN LO ANOTA. Con `<N>` solo, un pase cuyos
-  // agentes murieron (Codex en su tope) se anotaba `0` y salía `listo`: nada leía lo que devolvió el pase. El 5b exige
+  // agentes murieron (Codex en su tope) se anotaba `0` y salía `listo`: nada leía lo que devolvió el pase. El pase adversarial exige
   // `--result <archivo>` —el JSON del pase, `<RUN_DIR>/step-05b-adversarial.json`—; de ahí salen los confirmados
   // (tienen que coincidir con `<N>`), las lentes sin medir y los hallazgos sin veredicto. Con alguno de los dos la
-  // línea queda `no-medido`, que NO cierra el 5b. Una revisión a mano (`--type revision`) no lo exige.
+  // línea queda `no-medido`, que NO cierra el pase. Una revisión a mano (`--type revision`) no lo exige.
   const resultadoRuta = flag('--result');
   let medicion = null;
   if (tipo === '5b' || resultadoRuta !== undefined) {
     const { medicionDelResultado, SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
     if (!resultadoRuta) {
-      console.error('marker.js mark-adversarial-result: el 5b se anota con --result <archivo>: el JSON que devolvió el pase (<RUN_DIR>/step-05b-adversarial.json). El número sale de ahí, no del que anota.');
+      console.error('marker.js mark-adversarial-result: el pase adversarial se anota con --result <archivo>: el JSON que devolvió el pase (<RUN_DIR>/step-05b-adversarial.json). El número sale de ahí, no del que anota.');
       console.error(`  Si el pase no corrió entero: relanzalo, o ${SALIDA_APROBADA}.`);
       process.exit(2);
     }
@@ -2555,7 +2794,7 @@ function cmdMarkAdversarialResult(countRaw) {
     medicion.ruta = abs;
   }
   // 🔴 CADA CONFIRMADO TERMINA EN LA SUITE O SE DIFIERE CON MOTIVO.
-  // El step-05b pide un test de regresión por cada bug confirmado, y este comando lo verifica: si el
+  // El paso «Pase adversarial» pide un test de regresión por cada bug confirmado, y este comando lo verifica: si el
   // verificador borrara su prueba, el pipeline no puede seguir. Con hallazgos, este comando no
   // anota el pase sin que se declare cuántos ya tienen su prueba en la suite (`--tests k`,
   // promovidas con `promote-probe`, que es lo que se cuenta — no lo que se dice) y cuántos se
@@ -2577,7 +2816,7 @@ function cmdMarkAdversarialResult(countRaw) {
     process.exit(2);
   }
   const propias = propiasRaw !== undefined ? parseInt(propiasRaw, 10) : 0;
-  const enPedidas = hayEn ? String(argv[iEn + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const enPedidas = hayEn ? String(nn(argv[iEn + 1], '')).split(',').map((s) => s.trim()).filter(Boolean) : [];
   if (propias > 0 && !hayEn) {
     console.error(`marker.js mark-adversarial-result: --own ${propias} sin --in — decí en qué archivo(s) de prueba quedaron: --in "<ruta>[,<ruta>…]" (relativas al repo)`);
     process.exit(2);
@@ -2597,12 +2836,12 @@ function cmdMarkAdversarialResult(countRaw) {
   let pruebas = 0, diferidos = 0, motivo = null;
   if (confirmados > 0) {
     const k = flag('--tests'), d = flag('--deferred');
-    if (!/^\d+$/.test(String(k ?? ''))) {
+    if (!/^\d+$/.test(String(nn(k, '')))) {
       console.error(`marker.js mark-adversarial-result: con ${confirmados} confirmado(s) hace falta --tests <k> (cuántos ya tienen su prueba de regresión en la suite, promovida con promote-probe), --own <p> --in "<rutas>" para los arreglados con una prueba escrita a mano y, si falta alguno, --deferred <d> --reason "<por qué>"`);
       process.exit(2);
     }
     pruebas = parseInt(k, 10);
-    diferidos = /^\d+$/.test(String(d ?? '')) ? parseInt(d, 10) : 0;
+    diferidos = /^\d+$/.test(String(nn(d, ''))) ? parseInt(d, 10) : 0;
     motivo = flag('--reason') || null;
     if (pruebas + propias + diferidos !== confirmados) {
       console.error(`marker.js mark-adversarial-result: --tests ${pruebas} + --own ${propias} + --deferred ${diferidos} ≠ ${confirmados} confirmados — cada hallazgo confirmado termina en la suite (promovida o escrita a mano) o se difiere con motivo, no hay otra opción`);
@@ -2688,9 +2927,9 @@ function cmdMarkAdversarialResult(countRaw) {
   appendLog('gates.log', { name: 'adversarial-pass', storyId, ...pase });
   if (corrida) {
     corrida.adversarialPasses = [...(corrida.adversarialPasses || []), { ts: nowIso(), ...pase }];
-    // El resultado del 5b CIERRA el 5b, en la misma escritura que la entrada nueva: no hay un
-    // instante con el pase anotado y el 5b abierto, ni al revés. Una revisión a mano (`--type revision`) no
-    // es el 5b de la corrida y no lo toca.
+    // El resultado del pase CIERRA el pase, en la misma escritura que la entrada nueva: no hay un
+    // instante con el pase anotado y el paso abierto, ni al revés. Una revisión a mano (`--type revision`) no
+    // es el pase de la ejecución y no lo toca.
     // Un pase no medido NO lo cierra, y si ya estaba cerrado lo REABRE: el último resultado manda.
     if (tipo === '5b') corrida.deepReviewDone = pase.veredicto !== 'no-medido';
     corrida.lastTouch = nowIso();
@@ -2759,7 +2998,7 @@ function verificarPruebasPropias(rutas, marker, tipo) {
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     return r.status === 0 && String(r.stdout || '').trim() ? canon(String(r.stdout).trim()) : null;
   };
-  // La (d) sólo existe con un lanzamiento anotado del 5b: una revisión a mano no tiene lanzamiento que anotar.
+  // La (d) sólo existe con un lanzamiento anotado del pase: una revisión a mano no tiene lanzamiento que anotar.
   const lanz = tipo === '5b' && marker && marker.adversarial && typeof marker.adversarial === 'object' ? marker.adversarial : null;
   const desde = lanz ? Date.parse(lanz.launchedAt) : NaN;
   const conFecha = Number.isFinite(desde);
@@ -2767,7 +3006,7 @@ function verificarPruebasPropias(rutas, marker, tipo) {
     ? tocadasEventos.filter((ev) => Date.parse(ev.ts) > desde).map((ev) => clave(ev.path))
     : []);
   const en = [];
-  // `(<repo>) <ruta>`: la forma que el step-05b pide escribir para una prueba del repo hermano; sin este caso
+  // `(<repo>) <ruta>`: la forma que el paso «Pase adversarial» pide escribir para una prueba del repo hermano; sin este caso
   // se tomaría como una ruta relativa al repo («no existe»). <repo> se prueba como hermano declarado, como ruta y
   // como carpeta vecina (lib/companion-repos.js); lo que resuelve pasa por las mismas cuatro verificaciones.
   const companionLib = require('./lib/companion-repos.js');
@@ -3041,7 +3280,7 @@ function guardarCambioDeCorrida(archivo, dump) {
  */
 function avisarCierreSinPasos(marker) {
   try {
-    // el Arranque: `start` en un marcador nuevo; el 0, 0b y 0c en uno viejo
+    // el Arranque: `start` en un marcador nuevo; sus tres partes viejas, en uno viejo
     const arranque = (s) => String(s) === 'start' || String(s).startsWith('0');
     if ((marker.stepsCompleted || []).some((s) => !arranque(s))) return;
     const repo = marker.repoPath && fs.existsSync(marker.repoPath) ? marker.repoPath : null;
@@ -3119,7 +3358,7 @@ function cmdClear() {
         if (e.code !== 'ENOENT') costo.registro = `no se pudo leer (${e.code || e.message})`;
       }
       // las vueltas: las que lanzaron revisores (las fotos de iteración), la misma cuenta que pipeline.js review-rounds; un
-      // arranque del paso 5 sin revisores no es una vuelta
+      // arranque del paso de revisores sin revisores no es una vuelta
       costo.iteraciones = require('./lib/review-rounds.js').vueltas(marker);
       // La revisión adversarial de la historia antes de programar: su constancia, o null dicho. Lo no medido es null.
       let revisionPrevia = null;
@@ -3132,8 +3371,22 @@ function cmdClear() {
         notaPrevia = `no se pudo leer la constancia de la revisión previa (${e.message})`;
         process.stderr.write(`[marker] ${notaPrevia}\n`);
       }
+      // Cómo terminó la ejecución (lib/run-close.js): completa, o abortada con su motivo y quién autorizó cerrar. Un
+      // cierre ya escrito (la deuda de close-as-debt) no se pisa. Que falle no frena el archivo: queda dicho.
+      try {
+        marker.cierre = require('./lib/run-close.js').cierreDe(marker, { sid: SID });
+        const c = marker.cierre;
+        appendLog('gates.log', { name: 'run-close', estado: c.estado, story: String(marker.storyId), motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { deuda: c.deuda } : {}) });
+      } catch (e) {
+        // sin poder calcularlo, la ejecución no cuenta como terminada: queda abortada y el motivo lo dice
+        marker.cierre = { estado: 'abortada', motivo: `no pude determinar cómo terminó (${e.message})`, via: 'sin-registro', at: nowIso() };
+        process.stderr.write(`[marker] no pude armar el cierre de la ejecución (${e.message}): queda como abortada\n`);
+      }
+      // El repo real de la carpeta (un worktree o un clon cuentan como su repo) para agrupar las ejecuciones en la vista.
+      let repo = null;
+      try { repo = require('./lib/repo-attrib.js').realRepo(marker.repoPath); } catch (_e) { /* sin él, la vista deduce de la carpeta */ }
       const dump = {
-        archivedAt: nowIso(), marker, gates, costo,
+        archivedAt: nowIso(), marker, gates, costo, ...(repo ? { repo } : {}),
         revision_previa: revisionPrevia, ...(revisionPrevia ? {} : { revision_previa_nota: notaPrevia }),
       };
       const safeStory = String(marker.storyId).replace(/[^\w.-]/g, '_');
@@ -3496,7 +3749,7 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
 }
 
 // El estado de una tanda del bloque `pipelines:` de la story (lista de `- name: X` con su `status:`). Lo usa el cierre
-// (paso 9) para pasar a `done` las tandas que ya están en main: `deferrals-open` frena con cualquiera que no lo esté.
+// («Cerrar la historia») para pasar a `done` las tandas que ya están en main: `deferrals-open` frena con cualquiera que no lo esté.
 const VALID_PIPELINE_STATUSES = ['done', 'in-progress', 'blocked', 'pending'];
 
 function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
@@ -3633,7 +3886,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
 // Un crítico lo decide una persona
 // ============================================================
 // `waive-critical --rule <id> --file <f> --reason "<r>"` deja la constancia de que una persona eximió ese CRITICAL, y
-// sólo así `write-findings` y los cierres de los pasos 7 y 8 aceptan un CRITICAL `waived`. Tres caminos, en este orden:
+// sólo así `write-findings` y los cierres de «Hallazgos» y «Preparar el commit» aceptan un CRITICAL `waived`. Tres caminos, en este orden:
 //   1. `--approved-by "<el dev>" --quote "<sus palabras>"`: la cita, textual, en un mensaje escrito por el dev en esta
 //      conversación (lib/person-ok.js). Manual, a su nombre, con la cita y la hora del mensaje.
 //   2. lo mismo + `--relayed-by <rol>`: la cita llegó en un mensaje de la sesión designada en esta máquina para el rol
@@ -3870,7 +4123,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     // 🔴 El mensaje no manda a `--story <abs path .md>`: ese flag NO EXISTE, el argumento es
     // POSICIONAL. Y no le echa la culpa al marker: el problema suele ser que el path guardado es relativo.
     console.error('marker.js runtime-waiver: no encuentro la story.');
-    console.error(`  Recibido: ${crudo ?? '(nada — ni argumento ni marker)'}`);
+    console.error(`  Recibido: ${nn(crudo, '(nada — ni argumento ni marker)')}`);
     console.error('  El path va POSICIONAL (no hay flag `--story`) y conviene ABSOLUTO:');
     console.error(`    node ${__filename} runtime-waiver /abs/path/a/la-story.md`);
     process.exit(2);
@@ -4195,18 +4448,13 @@ function cmdAdhoc(sub, payloadJson) {
 // marca que dejaría la invocación de tycon-create-story, pero con skill:'bypass' + la razón, y queda
 // en bypass.log (STORY_SKILL_BYPASS). La razón tiene que venir del USER (mismo contrato que
 // `adhoc set`): es el user quien decide que ESTA story se escribe a mano, no el agente.
-function cmdStorySkillBypass(reasonRaw) {
-  const reason = String(reasonRaw || '').trim();
-  if (reason.length < 8) {
-    console.error('marker.js story-skill-bypass: "razón" requerida (≥8 caracteres) — en palabras del USER, no tuyas.');
-    console.error('  Uso: marker.js story-skill-bypass "<por qué esta story se escribe sin el skill>"');
-    process.exit(2);
-  }
-  const sio = require('./lib/story-skill-gate-io.js');
-  const mark = sio.writeMark(STATE_DIR, SID, { skill: 'bypass', reason, at: nowIso(), sessionId: SID, cwd: process.cwd(), via: 'bypass' });
-  appendLog('bypass.log', { kind: 'STORY_SKILL_BYPASS', reason, cwd: process.cwd() });
-  console.error(`⚠️  story-skill-gate: bypass declarado para esta sesión (queda en bypass.log): ${reason}`);
-  process.stdout.write(JSON.stringify(mark, null, 2) + '\n');
+function cmdStorySkillBypass() {
+  // Escribir una historia sin la skill lo decide la persona, y este comando ya no deja constancia: un modelo frenado lo
+  // corrió solo con una razón inventada («el usuario lo pidió»). Con «autorizo story-skill-bypass» escrita por la persona
+  // en un turno suyo, el freno mismo deja pasar la historia: él sabe qué pedido juzga y lo ancla en la conversación.
+  console.error('🚫 marker.js story-skill-bypass: no deja constancia — escribir la historia sin la skill lo decide la persona.');
+  console.error('   Usá la skill tycon-create-story. Si la persona quiere la historia sin la skill, lo dice ella en su mensaje y el freno la deja pasar.');
+  process.exit(1);
 }
 
 // La nota de «repensar el enfoque» de una vuelta de revisores (desde la tercera la exige `pipeline.js smart-reloop`).
@@ -4345,6 +4593,12 @@ switch (cmd) {
   case 'start-warning':
     cmdStartWarning(arg1, arg2);
     break;
+  case 'close-as-debt':
+    cmdCloseAsDebt(process.argv.slice(3));
+    break;
+  case 'expect-red':
+    cmdExpectRed(process.argv.slice(3));
+    break;
   case 'set-size':
     cmdSetSize(process.argv.slice(3));
     break;
@@ -4391,7 +4645,7 @@ switch (cmd) {
     cmdDoing(arg1, arg2);
     break;
   case 'story-skill-bypass':
-    cmdStorySkillBypass(arg1);
+    cmdStorySkillBypass();
     break;
   case 'approve-mockup':
     cmdApproveMockup(process.argv.slice(3));

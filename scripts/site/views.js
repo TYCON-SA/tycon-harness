@@ -108,19 +108,33 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   // sin lo que informa cada máquina la cuenta no se sabe: «no medido», nunca 0
   else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, T('inicio.maquinasSinInforme')));
   else filas.push(filaMedida('maquinas_sin_confirmar', tMaq, m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
-  filas.push(filaNoMedida('retrospectivas', T('inicio.retrospectivas'), T('inicio.retrospectivasMotivo')));
+  // las retrospectivas viven en la máquina de quien mergeó: sólo con la foto del día (`.dashboard/retros/`) hay cuenta
+  const ret = m.retros;
+  if (medida(ret) && Array.isArray(ret.pendientes)) filas.push(filaMedida('retrospectivas', T('inicio.retrospectivas'), ret.pendientes.length, { fecha: ret.fecha }));
+  else filas.push(filaNoMedida('retrospectivas', T('inicio.retrospectivas'), T('inicio.retrospectivasMotivo')));
   // los proyectos cuyos pedidos asignados la noche no pudo medir: a cada dev le falta lo suyo de ahí
   const sinMedir = m.pedidos && Array.isArray(m.pedidos.sin_medir) ? m.pedidos.sin_medir : [];
   if (sinMedir.length) filas.push(filaNoMedida('pedidos_asignados_sin_medir', T('inicio.loAsignado'), T('inicio.asignadoSinMedir', { proyectos: sinMedir.join(', ') })));
-  // dónde se decide cada cosa: lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés;
-  // los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
-  const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', prs_trabados: '#prs-trabados', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
-  for (const f of filas) {
-    const d = DONDE[f.clave];
-    f.enlace = d === 'ops' ? enlaceOperaciones || null : (d || null);
-  }
+  // dónde se decide cada cosa: lo de las colas y lo declarado, en su lista de abajo, una ficha por renglón con el enlace
+  // a SU pedido (listasDeDecision; nunca la portada del repo de operaciones, donde no se ve qué decidir); lo del arnés,
+  // en Arnés; los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
+  const DONDE = { prs_trabados: '#prs-trabados', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
+  for (const clave of Object.keys(LISTAS_DE_DECISION)) DONDE[clave] = `#decidir-${clave}`;
+  void enlaceOperaciones;
+  for (const f of filas) f.enlace = DONDE[f.clave] || null;
   return filas;
 }
+
+// Las tarjetas de «Qué decidir hoy» que llevan a una lista de fichas: su fuente y su rubro en decisions.js
+const LISTAS_DE_DECISION = Object.freeze({
+  dependencias_nuevas: { fuente: 'dependencias', rubro: 'nuevos' },
+  dependencias_aceptadas_sin_resolver: { fuente: 'dependencias', rubro: 'aceptadas_sin_resolver' },
+  dependencias_rechazadas_sin_deuda: { fuente: 'dependencias', rubro: 'rechazadas_sin_deuda' },
+  vigilante_pendientes: { fuente: 'vigilante', rubro: 'pendientes' },
+  vigilante_aceptadas_sin_story: { fuente: 'vigilante', rubro: 'aceptadas_sin_story' },
+  pedidos_cerrados_con_vivas: { fuente: 'dependencias', rubro: 'pedidos_cerrados_con_vivas' },
+  declarados_por_vencer: { declarados: true },
+});
 
 /** Inicio de un dev: lo suyo, con cantidades. */
 function inicioDev(m, { ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
@@ -349,13 +363,49 @@ function prsTrabados(prs, idioma) {
   return seccion(titulo, lista.length ? `<ul class="lista">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`, T('vista.fuenteDel', { fecha: prs.fecha }), 'prs-trabados');
 }
 
+/**
+ * Las listas a las que llevan las tarjetas de «Qué decidir hoy»: una sección por tarjeta (`#decidir-<clave>`), una
+ * ficha por renglón con el enlace a su pedido o el motivo por el que no lo tiene (decisions.js). Lo declarado se decide
+ * en un archivo de cada repo, no en un pedido: la sección lo dice y lista los que vencen.
+ */
+function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = null, ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
+  const T = (k, v) => t(idioma, k, v);
+  const DEC = require('./decisions.js');
+  const todas = DEC.decisiones(m, { operationsRepo: enlaceOperaciones, remoto: remotoOperaciones });
+  const medidas = m.decisiones && m.decisiones.estado === 'medido';
+  const ul = (items) => (items.length ? `<ul class="lista">${items.join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  const out = [];
+  for (const [clave, def] of Object.entries(LISTAS_DE_DECISION)) {
+    const titulo = T(`inicio.${clave}`);
+    if (def.declarados) {
+      const dec = m.declarados;
+      const vencen = medida(dec) ? (dec.lista || []).filter((d) => { const x = Date.parse(`${d.review_before}T00:00:00Z`); return Number.isFinite(x) && x - ahora <= 7 * DIA; }) : [];
+      const cuerpo = medida(dec)
+        ? `<p class="q-note">${esc(T('decidir.declaradosDonde'))}</p>${ul(vencen.map((d) => `<li>${esc(d.id)} · ${esc(T('decidir.vence', { fecha: d.review_before }))}</li>`))}`
+        : `<p class="q-note">${esc(conFecha(dec, idioma))}</p>`;
+      out.push(seccion(titulo, cuerpo, null, `decidir-${clave}`));
+      continue;
+    }
+    if (!medidas) { out.push(seccion(titulo, `<p class="q-note">${esc(conFecha(m.decisiones, idioma))}</p>`, null, `decidir-${clave}`)); continue; }
+    const suyas = todas.filter((d) => d.fuente === def.fuente && d.rubro === def.rubro);
+    const fila = (d) => {
+      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null].filter(Boolean).join(' · ');
+      return d.enlace && enlace(d.enlace)
+        ? `<li><a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a> · ${nombre}</li>`
+        : `<li>${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</li>`;
+    };
+    out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.fuenteDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
+  }
+  return out.join('');
+}
+
 function paginaInicio(ctx) {
   const idioma = idiomaDe(ctx);
   const T = (k, v) => t(idioma, k, v);
   const m = ctx.modelo || {};
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma });
-    return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma), T('inicio.ledeMantiene'));
+    return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');
@@ -378,6 +428,61 @@ function paginaInicio(ctx) {
     seccion(T('inicio.loAsignado'), `${ped}${Array.isArray(d.pedidos.sin_medir) && d.pedidos.sin_medir.length ? `<p class="q-note">${esc(T('inicio.asignadoSinMedir', { proyectos: d.pedidos.sin_medir.join(', ') }))}</p>` : ''}<p class="q-note">${esc(T('inicio.asignadoAtraso'))}</p>`),
     seccion(T('inicio.tusProyectos'), proy),
   ].join(''), T('inicio.ledePersona'));
+}
+
+/**
+ * Las estimaciones de cada producto, de las fotos por proyecto: una fila por repo de historias y épica (el id de una
+ * épica sólo la nombra dentro de su repo) y el total del producto. Un repo sin registro dice «sin estimaciones»; una
+ * foto vieja, o anterior a las estimaciones, «no medido»: no se midió. Devuelve `[{ producto, repos: [{ repo, estado,
+ * texto, ilegibles, filas }], total }]`.
+ */
+function filasEstimaciones(m, { idioma = POR_DEFECTO } = {}) {
+  const T = (k, v) => t(idioma, k, v);
+  const productos = Array.isArray(m.productos) ? m.productos : [];
+  const snaps = medida(m.proyectos) && Array.isArray(m.proyectos.lista) ? m.proyectos.lista : [];
+  const redondo = (n) => Math.round(n * 100) / 100;
+  return productos.map((p) => {
+    const suyas = snaps.filter((s) => (p.proyectos || []).includes(s.proyecto));
+    const repos = suyas.map((s) => {
+      const e = s.estimaciones;
+      if (s.vieja) return { repo: s.repo, estado: 'no_medido', texto: T('vista.noMedidoCon', { motivo: T('proyectos.est.fotoVieja', { fecha: s.fecha || T('proyectos.sinFecha') }) }), ilegibles: 0, filas: [] };
+      if (!e) return { repo: s.repo, estado: 'no_medido', texto: T('vista.noMedidoCon', { motivo: T('proyectos.est.fotoAnterior') }), ilegibles: 0, filas: [] };
+      if (e.estado === 'no_medido') return { repo: s.repo, estado: 'no_medido', texto: T('vista.noMedidoCon', { motivo: e.motivo || T('vista.noMedido') }), ilegibles: 0, filas: [] };
+      const filas = (s.epicas || []).filter((x) => x && x.estimacion).map((x) => ({ epica: x.id, titulo: x.titulo || null, ...x.estimacion }));
+      if (e.estado === 'sin_registro' || !filas.length) return { repo: s.repo, estado: 'sin_estimaciones', texto: T('proyectos.est.sinEstimaciones'), ilegibles: e.ilegibles || 0, filas: [] };
+      return { repo: s.repo, estado: 'medido', texto: null, ilegibles: e.ilegibles || 0, filas };
+    });
+    const filas = repos.flatMap((r) => r.filas);
+    let total = null;
+    if (filas.length) {
+      const unidades = [...new Set(filas.map((f) => f.unidad))];
+      const suma = (vals) => { const v = vals.filter((x) => x !== null && x !== undefined); return v.length ? redondo(v.reduce((a, b) => a + b, 0)) : null; };
+      // lo real del producto es parcial si alguna épica sigue abierta: se suma lo que hay y se dice
+      const real = suma(filas.map((f) => f.real && f.real.suma));
+      const parcial = (vals) => vals.some((x) => x === null || x === undefined);
+      if (unidades.length === 1 && unidades[0]) {
+        const conRango = filas.filter((f) => f.rango);
+        total = { unidad: unidades[0], min: suma(conRango.map((f) => f.rango.min)), max: suma(conRango.map((f) => f.rango.max)), plan: suma(filas.map((f) => f.suma_plan)), vigente: suma(filas.map((f) => f.suma_vigente)), real,
+          parciales: { rango: conRango.length < filas.length, plan: parcial(filas.map((f) => f.suma_plan)), vigente: parcial(filas.map((f) => f.suma_vigente)) } };
+      } else if (filas.every((f) => f.en_horas)) {
+        total = { unidad: 'hours', min: suma(filas.map((f) => f.en_horas.min)), max: suma(filas.map((f) => f.en_horas.max)), plan: suma(filas.map((f) => f.en_horas.plan)), vigente: suma(filas.map((f) => f.en_horas.vigente)), real,
+          parciales: { rango: parcial(filas.map((f) => f.en_horas.min)), plan: parcial(filas.map((f) => f.en_horas.plan)), vigente: parcial(filas.map((f) => f.en_horas.vigente)) } };
+      } else {
+        // alguna no pasa a horas (puntos sin tasa): las sumas de lo vigente por unidad, sin un total inventado
+        const porUnidad = {};
+        for (const f of filas) {
+          if (f.unidad && f.suma_vigente !== null) porUnidad[f.unidad] = redondo((porUnidad[f.unidad] || 0) + f.suma_vigente);
+          for (const [u, v] of Object.entries(f.sumas_por_unidad || {})) porUnidad[u] = redondo((porUnidad[u] || 0) + v);
+        }
+        // una épica que no suma nada (sólo un rango, sin historias estimadas) deja la suma parcial
+        total = { unidad: null, por_unidad: porUnidad, real, parciales: { vigente: filas.some((f) => f.suma_vigente === null && !Object.keys(f.sumas_por_unidad || {}).length) } };
+      }
+      total.parciales.real = filas.some((f) => !f.real || !f.real.cerrada);
+      // un repo del producto que no se midió deja todo el total parcial: faltan sus épicas
+      if (repos.some((r) => r.estado === 'no_medido')) for (const k of ['rango', 'plan', 'vigente', 'real']) total.parciales[k] = true;
+    }
+    return { producto: p.producto, repos, total, sin_fotos: !suyas.length };
+  });
 }
 
 function paginaProyectos(ctx) {
@@ -409,7 +514,53 @@ function paginaProyectos(ctx) {
   const cab = ['producto', 'enCurso', 'paradas', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: PARADA_DIAS }))}</th>`).join('');
   const tabla = `<label class="filtro">${esc(T('proyectos.filtrar'))} <input type="search" data-filtro="proyectos"></label><div class="card tbl-wrap"><table class="tabla" id="proyectos"><thead><tr>${cab}</tr></thead><tbody>${filasHtml}</tbody></table></div>`;
   const pie = `<p class="q-note">${esc(T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p>`;
-  return layout(ctx, titulo, fichas + seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`), T('proyectos.lede'));
+  return layout(ctx, titulo, fichas + seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`) + seccionEstimaciones(m, idioma), T('proyectos.lede'));
+}
+
+/** La sección «Estimaciones» de Proyectos: por producto, una fila por repo y épica, y el total del producto. */
+function seccionEstimaciones(m, idioma) {
+  const T = (k, v) => t(idioma, k, v);
+  const productos = filasEstimaciones(m, { idioma });
+  if (!productos.length) return '';
+  const U = { hours: T('proyectos.est.u.hours'), days: T('proyectos.est.u.days'), points: T('proyectos.est.u.points') };
+  const con = (v, u) => (v === null || v === undefined ? '—' : `${v} ${U[u] || ''}`.trim());
+  const rango = (min, max, u) => (min === null || min === undefined || max === null || max === undefined ? T('proyectos.est.sinRango') : `${min}–${max} ${U[u] || ''}`.trim());
+  const porUnidad = (o) => Object.entries(o || {}).map(([u, v]) => con(v, u)).join(' · ') || '—';
+  const vigente = (f) => {
+    const marca = f.fuera === 'encima' ? T('proyectos.est.encima', { por: con(f.por, f.unidad) }) : (f.fuera === 'debajo' ? T('proyectos.est.debajo', { por: con(f.por, f.unidad) }) : null);
+    const valor = f.unidad ? con(f.suma_vigente, f.unidad) : porUnidad(f.sumas_por_unidad);
+    return `${esc(valor)}${marca ? ` · <b>${esc(marca)}</b>` : ''}${f.motivo ? ` <span class="nota">${esc(f.motivo)}</span>` : ''}`;
+  };
+  const real = (r) => {
+    if (!r) return '—';
+    if (r.cerrada) return esc(con(r.suma, 'hours'));
+    return esc(`${r.suma === null ? '—' : con(r.suma, 'hours')} · ${T('proyectos.est.abierta', { n: r.faltan === null ? '?' : r.faltan })}`);
+  };
+  const cab = [T('proyectos.est.col.producto'), T('proyectos.est.col.repoYEpica'), T('proyectos.est.col.rango'), T('proyectos.est.col.plan'), T('proyectos.est.col.vigente'), T('proyectos.est.col.real')].map((x) => `<th>${esc(x)}</th>`).join('');
+  const filas = [];
+  for (const p of productos) {
+    if (p.sin_fotos) { filas.push(`<tr><th scope="row">${esc(p.producto)}</th><td class="nm" colspan="5">${esc(T('vista.noMedidoCon', { motivo: T('proyectos.sinFoto') }))}</td></tr>`); continue; }
+    for (const r of p.repos) {
+      const ileg = r.ilegibles ? ` <span class="nota">${esc(T('proyectos.est.ilegibles', { n: r.ilegibles }))}</span>` : '';
+      if (!r.filas.length) { filas.push(`<tr><th scope="row">${esc(p.producto)}</th><td>${esc(r.repo)}</td><td${r.estado === 'no_medido' ? ' class="nm"' : ''} colspan="4">${esc(r.texto)}${ileg}</td></tr>`); continue; }
+      r.filas.forEach((f, i) => {
+        const nombre = `${r.repo} · ${T('proyectos.est.epica', { id: f.epica })}${f.titulo ? ` — ${f.titulo}` : ''}`;
+        const u = f.unidad || (f.rango && f.rango.unidad);
+        filas.push(`<tr><th scope="row">${esc(p.producto)}</th><td>${esc(nombre)}${i === 0 ? ileg : ''}</td><td>${esc(f.rango ? rango(f.rango.min, f.rango.max, f.unidad ? f.unidad : f.rango.unidad) : T('proyectos.est.sinRango'))}</td><td>${esc(f.unidad ? con(f.suma_plan, u) : '—')}</td><td>${vigente(f)}</td><td>${real(f.real)}</td></tr>`);
+      });
+    }
+    if (p.total) {
+      const tt = p.total;
+      // una suma a la que le falta alguna épica lo dice: un total parcial no se lee como completo
+      const marca = (texto, falta) => (falta && texto !== '—' ? `${texto} ${T('proyectos.est.parcial')}` : texto);
+      const celdas = tt.unidad
+        ? `<td>${esc(marca(rango(tt.min, tt.max, tt.unidad), tt.parciales.rango))}</td><td>${esc(marca(con(tt.plan, tt.unidad), tt.parciales.plan))}</td><td>${esc(marca(con(tt.vigente, tt.unidad), tt.parciales.vigente))}</td>`
+        : `<td colspan="3">${esc(marca(T('proyectos.est.porUnidad', { sumas: porUnidad(tt.por_unidad) }), tt.parciales.vigente))}</td>`;
+      filas.push(`<tr class="total"><th scope="row">${esc(p.producto)}</th><td><b>${esc(T('proyectos.est.totalDelProducto'))}</b></td>${celdas}<td>${esc(marca(tt.real === null ? '—' : con(tt.real, 'hours'), tt.parciales.real))}</td></tr>`);
+    }
+  }
+  const tabla = `<div class="card tbl-wrap"><table class="tabla" id="tabla-estimaciones"><thead><tr>${cab}</tr></thead><tbody>${filas.join('')}</tbody></table></div>`;
+  return seccion(T('proyectos.estimaciones'), `<p class="q-note">${esc(T('proyectos.est.lede'))}</p>${tabla}`, null, 'estimaciones');
 }
 
 function paginaArnes(ctx) {
@@ -472,8 +623,8 @@ const paginaFrenado = ({ desde, idioma = POR_DEFECTO, url = null }) => layout({ 
 const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, t(idiomaDe(ctx), 'cargando.titulo'), `<p class="lede">${esc(t(idiomaDe(ctx), 'cargando.texto'))}</p>`);
 
 module.exports = {
-  hora, FRASES, frasesEn, fraseDe, conFecha, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
-  paginaInicio, paginaProyectos, paginaArnes, inicioJson,
+  hora, FRASES, frasesEn, fraseDe, conFecha, filasInicioMantenedor, inicioDev, filasProyectos, filasEstimaciones, filasArnes,
+  paginaInicio, paginaProyectos, paginaArnes, inicioJson, listasDeDecision,
   paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSaliste, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
   idiomaDe, selectorDeIdioma,
 };

@@ -165,6 +165,13 @@ test('T3 SpanishNames_Detect_UnlistedWordPluralAndAmbiguous — cuenta lo no lis
   assert.ok(d.isSpanish(`numer${'ación'}`).spanish, 'una palabra con acento cuenta');
 });
 
+test('T26 SpanishNames_Tokens_Sha256IsNotAWord @story-8.98 @ac-4 — un sha256 entero (las firmas del dueño se llaman así) no se parte en palabras', () => {
+  const sha256 = '5c9d43741acc762b17188bfa883c78003e247220ecc26a1453b17ca35c02e1f5';
+  assert.deepStrictEqual(sn.tokens(`.github/control-changes/${sha256}.json`), ['github', 'control', 'changes', 'json']);
+  assert.deepStrictEqual(sn.tokens(`x-${'a1'.repeat(20)}`), ['x'], 'un sha1 de 40 tampoco, como antes');
+  assert.ok(sn.tokens(`x-${'a1'.repeat(33)}`).length > 1, 'más de 64 no es un sha: se sigue partiendo');
+});
+
 // ── T4 · sin diccionario ─────────────────────────────────────────────────────────────────────────────────────────
 test('T4 SpanishNames_Detect_NoDictionaryFallsBackAndSays — sin /usr/share/dict/words usa sólo words, y lo dice', () => {
   const words = sn.loadWords(JSON.stringify(LAB_WORDS), 'lab.json');

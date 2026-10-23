@@ -236,3 +236,71 @@ test('T8 Encuentra_ConMayusculasYUnidad @story-2.67 @ac-6: rutas de Windows se c
   assert.strictEqual(U.sameRepo('/Repos/Acme', '/repos/acme', 'linux'), false);
   assert.strictEqual(U.sameRepo('D:\\Repos\\Acme\\', 'D:\\Repos\\Acme', 'win32'), true);
 });
+
+test('T26 Subida_SinCerrar_Abandonada @story-8.93 @ac-14: sube como abandonada; en deuda, conserva la deuda y su motivo', () => {
+  const m = machine();
+  const r = repo(m, 'x', { ignored: true });
+  session(m, r, 's-1');
+  runDir(r, '5.1', 48);
+  gate(m, r, '5.1', 's-77', 47);
+  const d = U.buildDump(U.findUnclosed(opts(m)).runs[0]);
+  assert.deepStrictEqual(d.marker.cierre, { estado: 'abandonada', via: 'subida', motivo: 'sesión sin cerrar' });
+  // la sesión estaba en deuda cuando murió: gana abandonada, y la deuda viaja
+  const m2 = machine();
+  const r2 = repo(m2, 'y', { ignored: true });
+  session(m2, r2, 's-2');
+  runDir(r2, '6.1', 48);
+  gate(m2, r2, '6.1', 's-88', 47);
+  gate(m2, r2, '6.1', 's-88', 46, { name: 'close-as-debt', deuda: 'DEF-6.1-x', motivo: 'sin versión compatible' });
+  const d2 = U.buildDump(U.findUnclosed(opts(m2)).runs[0]);
+  assert.deepStrictEqual(d2.marker.cierre, { estado: 'abandonada', via: 'subida', motivo: 'sin versión compatible', deuda: 'DEF-6.1-x' });
+  // el texto que escribió el agente sube saneado: sin rutas ni credenciales
+  const m3 = machine();
+  const r3 = repo(m3, 'z', { ignored: true });
+  session(m3, r3, 's-3');
+  runDir(r3, '6.2', 48);
+  gate(m3, r3, '6.2', 's-99', 47);
+  gate(m3, r3, '6.2', 's-99', 46, { name: 'close-as-debt', deuda: 'DEF-6.2-x', motivo: 'falla en /Users/dev/Clientes/AcmeSA/app.ts con Bearer abc123' });
+  const d3 = U.buildDump(U.findUnclosed(opts(m3)).runs[0]);
+  assert.doesNotMatch(d3.marker.cierre.motivo, /AcmeSA|abc123/, d3.marker.cierre.motivo);
+  // y la subida lo lleva tal cual: el volcado que deja para subir trae el cierre
+  const UP = require(path.join(ROOT, 'scripts', 'metrics', 'upload-runs.js'));
+  const dest = path.join(m2.state, 'timing-history');
+  UP.prepararSinCerrar({ ...opts(m2), origen: dest, log: () => {} });
+  const f = fs.readdirSync(dest).find((x) => /-sin-cerrar\.json$/.test(x));
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dest, f), 'utf8')).marker.cierre.estado, 'abandonada');
+});
+
+// Un volcado de cierre de juguete, como lo deja `marker.js clear`.
+function volcado(dir, nombre, marker) {
+  fs.writeFileSync(path.join(dir, `${nombre}.json`), JSON.stringify({ archivedAt: '2026-10-19T12:00:00Z', marker: {
+    sessionId: `s-${nombre}`, storyId: nombre, repoPath: '/repos/acme', startedAt: '2026-10-19T10:00:00Z', lastTouch: '2026-10-19T11:00:00Z', ...marker,
+  }, gates: [] }));
+}
+
+test('T27 Tablero_SoloCompletaCuenta @story-8.93 @ac-14: sólo una ejecución completa cuenta como terminada', () => {
+  const dir = tmp('ucr-tablero-');
+  const hechos = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check', 'prepare-commit'];
+  for (const [n, estado] of [['9.1', 'completa'], ['9.2', 'deuda'], ['9.3', 'abortada'], ['9.4', 'abandonada']]) {
+    volcado(dir, n, { stepScheme: 2, stepsCompleted: hechos, stepsPending: [], cierre: { estado, at: '2026-10-19T11:00:00Z' } });
+  }
+  const V = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'runs.js'));
+  const M = V.modelo(dir, { sinHilos: true });
+  assert.strictEqual(M.corridas.length, 4, JSON.stringify(M.corridas.map((c) => c.story)));
+  assert.strictEqual(M.corridas.filter((c) => c.terminada).length, 1);
+  assert.deepStrictEqual(M.corridas.filter((c) => c.terminada).map((c) => c.cierre), ['completa']);
+  assert.strictEqual(M.corridas.filter((c) => c.llego_al_final).length, 1, 'llegó al final = terminó completa');
+  assert.match(V.render(M), /Llegaron al final:<\/b> 1 /);
+});
+
+test('T28 Tablero_VolcadoViejo_Incompleta @story-8.93 @ac-14: un volcado sin cierre, archivado con pasos pendientes, sale incompleta', () => {
+  const dir = tmp('ucr-viejo-');
+  volcado(dir, '7.1', { stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 6, 7, 8] });
+  volcado(dir, '7.2', { stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7, 8], stepsPending: [9] });
+  const V = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'runs.js'));
+  const M = V.modelo(dir, { sinHilos: true });
+  const por = Object.fromEntries(M.corridas.map((c) => [c.story, c]));
+  assert.strictEqual(por['7.1'].cierre, 'incompleta');
+  assert.strictEqual(por['7.1'].terminada, false);
+  assert.strictEqual(por['7.2'].cierre, 'completa', 'el cierre de la historia, después del merge, no cuenta como pendiente');
+});

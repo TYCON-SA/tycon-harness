@@ -3,7 +3,7 @@
  * test-deps.js — compara lo que piden las pruebas de una story con lo que el proyecto tiene declarado.
  * Casos: skills/tycon-pipeline/scripts/tests/test-deps.test.js
  *
- * Lo corre `pipeline.js validators` en el paso 1, sin modelo: que un paquete esté declarado es una comparación exacta.
+ * Lo corre `pipeline.js validators` en el paso «Validar la historia», sin modelo: que un paquete esté declarado es una comparación exacta.
  * La tabla de lo que cada herramienta exige sin que nadie lo escriba vive en `test-deps.json`.
  *
  * Qué mira:

@@ -69,6 +69,8 @@
 
 // ── el piso de Node, ANTES de cargar nada: un node viejo imprime una línea y sale 2 ────────────────────────────
 const NODE_FLOOR = 20;
+// con el Node propio del arnés presente, un Node viejo vuelve a lanzar con él; sin él, sigue la línea de abajo
+if (require.main === module) { try { require('../lib/node-floor.js').guard({ onlyReexec: true }); } catch (_) { /* un árbol sin el piso: la línea de abajo */ } }
 {
   const major = parseInt(String(process.versions.node).split('.')[0], 10);
   if (!(major >= NODE_FLOOR)) {
@@ -299,6 +301,16 @@ function separateSkills(ctx, tree) {
   const out = String(r.stdout || '').trim();
   if (r.status !== 0 || !out || out.includes('\n') || !path.isAbsolute(out)) return null;
   try { return fs.statSync(out).isDirectory() ? out : null; } catch (_) { return null; }
+}
+
+/** Lo que el aplicador tiene que saber del juez que va a leer su informe: los prefijos de hook que entiende. */
+function applierReportEnv(log = null) {
+  let prefixes = [];
+  try { prefixes = mod('health').HOOK_PREFIXES || []; } catch (e) {
+    // sin salud el aplicador informa sólo lo que entiende cualquier juez; se dice, porque entonces nadie revisa los demás
+    if (log) log(`aplicador: no pude leer qué prefijos de hook entiende la salud (${e.code || e.message}): el informe va sin ellos`);
+  }
+  return { TYCON_REPORT_HOOK_PREFIXES: prefixes.join(',') };
 }
 
 /** ¿El aplicador del árbol conoce `--report-json`? Uno viejo, que no la trae, no se rompe por la opción. */
@@ -574,7 +586,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
   // (en la forma con enlaces, en Windows, los Node que lance el aplicador conservan `~/.tycon/harness` en
   // `__dirname`: lo que escriban nombra el enlace, no la carpeta numerada)
   // (`baseEnv` trae `TYCON_NODE_BIN` cuando el Node del arnés quedó sano: un atajo para el aplicador)
-  const env = Object.assign({}, mod('tycon-home').keepLinkPathsEnv(baseEnv), { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' });
+  // `TYCON_REPORT_HOOK_PREFIXES`: los prefijos de hook que entiende la salud de ESTE programa; sin la variable (un
+  // harness.js viejo) el aplicador deja afuera del informe los que un juez viejo no sabe resolver
+  const env = Object.assign({}, mod('tycon-home').keepLinkPathsEnv(baseEnv), { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' }, applierReportEnv(log));
   if (snapshotDir) env.TYCON_HARNESS_SNAPSHOT_DIR = snapshotDir; else delete env.TYCON_HARNESS_SNAPSHOT_DIR;
   delete env[SHARED_DONE_ENV];
   // lo de Codex: `done` = lo enchufa este programa, salteá tu bloque; `off` = esta máquina no lo
@@ -1024,14 +1038,27 @@ function installQuestions(ctx, tree, existing) {
   // una configuración rota la dice el plan (sale 2 con el motivo): acá no se decide nada sobre ella
   if (config.errores && config.errores.length) return out;
   out.config = config;
-  out.order = Array.isArray(C.LAS_OCHO) ? [...C.LAS_OCHO] : [];
+  // las herramientas de horas que se pueden elegir, de los manifiestos del árbol (sin la biblioteca, ninguna)
+  let timeChoices = [];
+  const timeNote = [];
+  const intLib = path.join(tree, 'scripts', 'lib', 'integrations.js');
+  if (fs.existsSync(intLib)) {
+    try {
+      const listing = require(intLib).listManifests({ dir: path.join(tree, 'integrations') });
+      timeChoices = Q.timeToolChoices(listing.manifests);
+      for (const b of listing.problems) timeNote.push(`la integración ${b.name} tiene el manifiesto roto (${b.reasons.join('; ')}): no se ofrece`);
+    } catch (e) { timeNote.push(`no pude cargar scripts/lib/integrations.js (${e.code || e.message}): no se ofrece ninguna herramienta de horas`); }
+  }
+  const timeNames = timeChoices.map((c) => c.name);
+  // la herramienta de horas va en su propia línea (`integrations.timeTracking`): su llave vieja no se lista como integración
+  out.order = Array.isArray(C.LAS_OCHO) ? C.LAS_OCHO.filter((k) => !timeNames.includes(k)) : [];
   const offered = Q.offeredIntegrations(mod('managed').readIntegrations(tree));
   const keys = offered.map((x) => x.key);
   const v = config.valores, o = config.origenes, vars = config.variables || {};
   const fail = (line) => Object.assign(out, { code: 2, lines: [`harness.js install: ${line}`] });
 
   // (1) las opciones, antes de preguntar nada
-  const wantI = Q.checkIntegrationsOption(ctx.opts.integrations, keys);
+  const wantI = Q.checkIntegrationsOption(ctx.opts.integrations, keys, typeof C.timeTracking === 'function' ? timeNames : null);
   if (wantI && wantI.error) return fail(wantI.error);
   const installedPacks = (() => { try { const PP = require(path.join(tree, 'scripts', 'lib', 'pack-pieces.js')); return PP.listPacks(PP.packsDirOf(tree)).packs.map((x) => x.name); } catch (_) { return null; } })();
   const wantP = Q.checkPacksOption(ctx.opts.packs, installedPacks);
@@ -1044,6 +1071,13 @@ function installQuestions(ctx, tree, existing) {
     if (o[ruta] === 'env' && (cur === true || cur === 'detect') !== desiredI[k]) {
       return fail(`--integrations ${ctx.opts.integrations} y la variable ${vars[ruta]}=${ctx.env[vars[ruta]]} dicen cosas distintas de ${k}: la variable le ganaría a lo que escriba (sacala, o cambiá --integrations)`);
     }
+  }
+  // la herramienta de horas: la que lee la configuración (la llave nueva o la vieja)
+  const timeNow = typeof C.timeTracking === 'function' ? (C.sinAnotar || ((f) => f()))(() => C.timeTracking(config)) : null;
+  const wantT = wantI && wantI.time ? wantI.time : null;
+  // sólo la variable nueva le gana a lo que se escriba: la vieja (`legacy`) pierde contra la llave nueva
+  if (wantT && timeNow && timeNow.origin === 'env' && !timeNow.legacy && wantT !== timeNow.value) {
+    return fail(`--integrations ${ctx.opts.integrations} y la variable ${(vars['integraciones.timeTracking']) || 'TYCON_TIME_TRACKING'} dicen herramientas de horas distintas: la variable le ganaría a lo que escriba (sacala, o cambiá --integrations)`);
   }
   if (wantP && o['packs.default'] === 'env' && !Q.samePacks(v.packs.default, wantP.value)) {
     return fail(`--packs ${Q.packsText(wantP.value)} y la variable ${vars['packs.default']}=${Q.packsText(v.packs.default)} dicen cosas distintas: la variable le ganaría a lo que escriba (sacala, o pedí --packs ${Q.packsText(v.packs.default)})`);
@@ -1073,14 +1107,19 @@ function installQuestions(ctx, tree, existing) {
   const asked = {};
   // con `--yes` no se pregunta nada aunque haya terminal (`--yes` acepta el plan, no elige): lo que no vino por opción queda
   // como está, igual que sin terminal
-  if (out.guided && P.isTerminal() && !ctx.opts.yes && !ctx.opts.defaults) {
+  // la herramienta de horas: se ofrece en la misma pregunta, una sola; a quien ya eligió una (por la llave nueva o la vieja)
+  // no se le pregunta
+  const canAsk = out.guided && P.isTerminal() && !ctx.opts.yes && !ctx.opts.defaults;
+  const timePlan = timeNow ? Q.timeToolPlan({ current: timeNow, choices: timeChoices, option: wantT, canAsk: canAsk && !wantI }) : { ask: false, write: null, keep: null };
+  let timeWrite = timePlan.write;
+  if (canAsk) {
     if (!wantI) {
-      const open = offered.filter((x) => o[`integraciones.${x.key}`] === 'apagado');
+      const open = offered.filter((x) => o[`integraciones.${x.key}`] === 'apagado').concat(timePlan.ask ? timeChoices : []);
       if (open.length) {
         out.asked = true;
-        const r = Q.askIntegrations({ offered: open, read: () => P.readAnswer(), write });
+        const r = Q.askIntegrations({ offered: open, read: () => P.readAnswer(), write, exclusive: timePlan.ask ? timeNames : [] });
         if (r.names === null) return fail('sin una respuesta válida a las integraciones no escribo nada (sin terminal: --integrations <lista|none>)');
-        for (const k of r.names) asked[k] = true;
+        for (const k of r.names) if (timeNames.includes(k)) timeWrite = { value: k, via: 'respuesta' }; else asked[k] = true;
         if (r.eof) out.eof = true;
       }
     }
@@ -1123,7 +1162,15 @@ function installQuestions(ctx, tree, existing) {
     out.writes.push({ key: 'packs.default', ruta: 'packs.default', value: packsWant, via, had: o['packs.default'] === 'maquina', envVar: VAR('packs.default'), envValue: Q.packsText(packsWant) });
     out.over['packs.default'] = { value: packsWant, via };
   }
+  if (timeWrite && !(timeNow && timeNow.origin === 'env' && !timeNow.legacy)) {
+    const ruta = 'integraciones.timeTracking';
+    out.writes.push({ key: 'integrations.timeTracking', ruta, value: timeWrite.value, via: timeWrite.via, had: o[ruta] === 'maquina', envVar: VAR(ruta), envValue: timeWrite.value });
+    out.over[ruta] = timeWrite;
+  }
   out.head = Q.configLines(config, out.over, out.order);
+  if (timeWrite) out.head.push(`herramienta de horas: ${timeWrite.value === 'none' ? 'ninguna' : timeWrite.value} (${timeWrite.via})`);
+  else if (timePlan.keep) out.head.push(timePlan.keep);
+  out.head.push(...timeNote);
   if (packsNote) out.head.push(packsNote);
   // CodeGraph prendido por la organización y sin el binario: un renglón más del plan, cubierto por el mismo «¿Instalo?»
   // (sin pregunta nueva). Lo instala `codegraphInstall` después del sí.
@@ -1287,6 +1334,8 @@ function dropForProfile(ctx, state, tree, applied, log, profileValue) {
     if (!Array.isArray(applied.report)) { if (log) log('perfil: el aplicador no entregó su reporte de piezas: no sé qué sobra, no quito nada'); return null; }
     const eff = mod('managed').readEffects(tree);
     if (!eff.ok) { if (log) log(`perfil: no pude leer qué trae cada perfil (${eff.reason}): no quito nada`); return null; }
+    // sin los hooks de una integración que no se pudo leer, la lista está incompleta: no se decide qué sobra con ella
+    if (eff.problems.length) { if (log) log(`perfil: no pude leer qué trae cada perfil de las integraciones (${eff.problems.join('; ')}): no quito nada`); return null; }
     const drop = mod('profile').toRemove(state.managed, mod('shared').union(applied.report, applied.shared), (p) => isOwnPiece(ctx, p), { effects: eff.effects, profile: profileValue });
     const r = drop.length ? mod('remove').removePieces(drop, { home: ctx.home, env: ctx.env, tree, log, platform: ctx.platform }) : { removed: [], kept: [] };
     if (drop.length && log) log(`perfil: quité ${r.removed.length} pieza(s) que el perfil nuevo no trae${r.kept.length ? `; quedaron ${r.kept.length}: ${r.kept.map((k) => k.why).join(' · ')}` : ''}`);
@@ -3270,7 +3319,7 @@ function cmdUpdate(ctx) {
 
 /**
  * Qué cambia en el comportamiento con la versión nueva: la lista de efectos instalada contra la de
- * la versión nueva del arnés, leída con `git show <commit nuevo>:scripts/setup/install-effects.json`. Si el arnés no se
+ * la versión nueva del arnés, leída de git (`install-effects.json` y los manifiestos de sus integraciones). Si el arnés no se
  * mueve (sólo las skills) o alguna de las dos no se puede leer, lo dice.
  */
 function behaviorDiff(ctx, state, u) {
@@ -3280,14 +3329,13 @@ function behaviorDiff(ctx, state, u) {
   if (!h) return [`${head} el arnés no se mueve en esta versión (sólo cambian las skills)`];
   const before = M.readEffects(state.tree);
   if (!before.ok) return [`${head} no pude leer la lista de efectos instalada (${before.reason})`];
-  const rel = M.EFFECTS_FILE.split(path.sep).join('/');
-  const r = spawnSync('git', ['-C', h.src.dir, 'show', `${h.c.to}:${rel}`], { windowsHide: true, encoding: 'utf8', env: ctx.env, stdio: ['ignore', 'pipe', 'pipe'] });
-  if (r.status !== 0) return [`${head} no pude leer la lista de efectos de la versión nueva (${(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`})`];
-  let doc;
-  try { doc = JSON.parse(String(r.stdout).replace(/^﻿/, '')); } catch (e) { return [`${head} la lista de efectos de la versión nueva es ilegible (${e.message})`]; }
-  const problems = M.effectProblems(doc);
-  if (problems.length) return [`${head} la lista de efectos de la versión nueva no pasa su validación (${problems[0]})`];
-  return PL.describeEffectsDiff(PL.effectsDiff(before.effects, doc.effects));
+  // sin los hooks de una integración instalada, la diferencia los daría por nuevos: no se compara
+  if (before.problems.length) return [`${head} no pude leer la lista de efectos instalada (${before.problems.join('; ')})`];
+  // la de la versión nueva, con los textos de los hooks de sus integraciones (de sus manifiestos)
+  const after = M.effectsAtCommit(h.src.dir, h.c.to, { tree: state.tree, env: ctx.env });
+  if (!after.ok) return [`${head} ${after.reason}`];
+  // lo que de la versión nueva no se pudo leer se dice: sus hooks saldrían como sacados
+  return PL.describeEffectsDiff(PL.effectsDiff(before.effects, after.effects)).concat(after.problems.map((p) => `${head} de la versión nueva, ${p}`));
 }
 
 function cmdApply(ctx) {
@@ -3979,6 +4027,7 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
     const M = mod('managed'), SL = mod('startup-line');
     const eff = M.readEffects(tree);
     if (!eff.ok) { add('warn', `controles que frenan: no pude leer la lista de efectos (${eff.reason})`); return; }
+    for (const p of eff.problems) add('warn', `controles que frenan: ${p}: sus hooks no se cuentan`);
     const { effectFor } = mod('plan');
     const opts = { home: ctx.home, env: ctx.env, isStartupLine: SL.isNew };
     const registered = (Array.isArray(state.managed) ? state.managed : [])
@@ -4949,4 +4998,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems };
+module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff };

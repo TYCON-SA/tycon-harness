@@ -47,6 +47,8 @@
  * (`inbox/watcher/`) y el aviso los pone la organización.
  */
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 
 const fs = require('fs');
 const path = require('path');
@@ -123,6 +125,9 @@ function huella(producto, plugin, endpoint, estado, mensaje) {
   const base = [producto, plugin || '?', endpoint || '?', estado, normalizarMensaje(mensaje)].join('|');
   return crypto.createHash('sha1').update(base).digest('hex').slice(0, 8);
 }
+
+/** `v`, o `d` si `v` es null o undefined (sin `??`: este guion lo tiene que poder leer un Node viejo). */
+function nn(v, d) { return v === undefined || v === null ? d : v; }
 
 /** Campo tolerante a mayúsculas/minúsculas: la API puede devolver PascalCase o camelCase. */
 function campo(obj, ...nombres) {
@@ -288,16 +293,16 @@ async function traerProducto(prod, cfg, fixtureDir, desdeIso) {
     salud[p.nombre] = h.ok
       ? { estado: campo(h.data, 'status', 'Status') || 'desconocido',
           ultimoPedido: campo(h.data, 'lastRequestAt', 'LastRequestAt') || null,
-          pedidos: campo(h.data, 'requestCount', 'RequestCount') ?? null }
+          pedidos: nn(campo(h.data, 'requestCount', 'RequestCount'), null) }
       : `no medido — ${h.motivo}`;
     const st = await pedir(`${prod.url}/api/admin/plugins/${p.id}/executions/stats?days=1`, T);
     if (st.ok) {
       stats[p.nombre] = {
-        total: campo(st.data, 'totalExecutions', 'TotalExecutions') ?? null,
-        fallidos: campo(st.data, 'failedExecutions', 'FailedExecutions') ?? null,
+        total: nn(campo(st.data, 'totalExecutions', 'TotalExecutions'), null),
+        fallidos: nn(campo(st.data, 'failedExecutions', 'FailedExecutions'), null),
         porCodigo: campo(st.data, 'executionsByStatusCode', 'ExecutionsByStatusCode') || {},
         porEndpoint: campo(st.data, 'executionsByEndpoint', 'ExecutionsByEndpoint') || {},
-        duracionMediaMs: campo(st.data, 'averageDurationMs', 'AverageDurationMs') ?? null,
+        duracionMediaMs: nn(campo(st.data, 'averageDurationMs', 'AverageDurationMs'), null),
       };
     }
   }
@@ -314,7 +319,7 @@ async function traerProducto(prod, cfg, fixtureDir, desdeIso) {
     degradada = `no se pudo leer el detalle de errores (${ej.motivo}) — quedan sólo estadísticas y salud`;
   } else {
     const crudas = Array.isArray(ej.data) ? ej.data : (ej.data.data || ej.data.items || ej.data.value || []);
-    const total = (ej.data && (ej.data.total ?? ej.data.Total)) ?? null;
+    const total = nn(ej.data && nn(ej.data.total, ej.data.Total), null);
     if (crudas.length) { filas = crudas.map(normalizarEjecucion); fuente = 'ejecuciones'; }
     else if (total) {
       // El total del host cuenta desde 400 (su `onlyErrors` es >= 400), así que NO es comparable
@@ -419,7 +424,7 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
           regla: m === null || m === 0 ? 'deriva' : 'goteo', producto, plugin, endpoint: null, ya_alertado: false,
           huella: fp, severidad: cant >= umbral * 2 ? 'alta' : 'media',
           senal: { errores: cant, estado_http: Number(codigo), total_pedidos: st.total, linea_base_mediana: m, umbral_aplicado: umbral },
-          diagnostico: `${cant} × ${codigo} en el plugin "${plugin}" en 24 h sobre ${st.total ?? '?'} pedidos (mediana previa ${m === null ? 'sin historia' : m}, umbral ${umbral}). Sin el detalle por pedido no se puede decir en qué endpoint ni con qué mensaje: el host no lo está entregando.`,
+          diagnostico: `${cant} × ${codigo} en el plugin "${plugin}" en 24 h sobre ${nn(st.total, '?')} pedidos (mediana previa ${m === null ? 'sin historia' : m}, umbral ${umbral}). Sin el detalle por pedido no se puede decir en qué endpoint ni con qué mensaje: el host no lo está entregando.`,
           evidencia: [],
         });
       }
@@ -438,7 +443,7 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
     const n = g.filas.length;
     const m = base[g.fp] === undefined ? null : base[g.fp];
     const umbral = Math.max(piso, Math.ceil(cfg.factor * (m || 0)));
-    const total = totales[`${g.plugin}|${g.endpoint}`] ?? null;
+    const total = nn(totales[`${g.plugin}|${g.endpoint}`], null);
 
     // (2) DERIVA — un tipo de error que NUNCA se había visto. La señal más limpia del corpus
     // (por ejemplo, una MissingMethodException nueva tras un update del framework).
@@ -840,7 +845,7 @@ async function cmdRun(a) {
   // que gastarlo contra un aviso que nadie recibe es quemarlo en silencio — la falla que este
   // recordatorio venía justamente a cerrar.
   const mudo = process.env.TYCON_WATCHER_QUIET === '1';
-  const porRecordar = mudo ? [] : pendientesQueEnvejecen(a.pending, hoy, cfg.dias_recordatorio_pendiente ?? 3);
+  const porRecordar = mudo ? [] : pendientesQueEnvejecen(a.pending, hoy, nn(cfg.dias_recordatorio_pendiente, 3));
   resultado.aviso = construirAviso(hoy, avisables, resultado.no_medido, cfg, porRecordar);
   resultado.recordados = (!a.dryRun && resultado.aviso) ? marcarRecordados(porRecordar, hoy) : 0;
 

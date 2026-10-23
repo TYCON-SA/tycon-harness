@@ -39,8 +39,8 @@ function stepFile(archivo) { return `${STEPS_DIR.split(path.sep).join('/')}/${ar
 const INTEGRATION_PIECES = Object.freeze([
   // las dos de horas son de la herramienta que elija la organización (`timeTool`): el núcleo no las ata a ninguna
   { id: 'timeTrackingStart', step: 'start', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-01-start.md') },
-  { id: 'adoWorkItemActive', step: 'start', integration: 'ado', textKey: 'piezaOrg.pedidoAdoActivo', code: stepFile('step-01-start.md') },
-  { id: 'adoWorkItemClose', step: 'close-work-item', integration: 'ado', textKey: 'piezaOrg.pedidoAdoCierra', code: stepFile('close-work-item.md') },
+  { id: 'workItemActive', step: 'start', integration: 'ado', textKey: 'piezaOrg.pedidoDeTrabajoActivo', code: stepFile('step-01-start.md') },
+  { id: 'workItemClose', step: 'close-work-item', integration: 'ado', textKey: 'piezaOrg.pedidoDeTrabajoCierra', code: stepFile('close-work-item.md') },
   { id: 'timeTrackingClose', step: 'close-work-item', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('close-work-item.md') },
 ].map(Object.freeze));
 
@@ -140,8 +140,13 @@ function integrationPieces(treeDir) {
     return {
       // el nombre para mostrar de cada herramienta de horas, del campo `label` de su manifiesto
       timeLabels: Object.fromEntries(manifests.filter((m) => m.kind === 'timeTracking').map((m) => [m.name, m.label])),
-      hooks: manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' })),
-      dispatch: (mode) => manifests.flatMap((m) => INT.dispatchEntries(m, mode).map((d) => Object.assign(d, { timeTool: timeKinds.has(m.name) }))),
+      // cada hook con qué hace, de su manifiesto (`control`): lo que muestra «Cómo trabaja», sin nombrar la herramienta.
+      // Uno sin `control` muestra su `label` y queda dicho en `problems`: los textos del sitio no traen los de las integraciones
+      hooks: manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' }).map((e) => {
+        const h = m.hooks.find((x) => `${INT.INT_PREFIX}${m.name}/${x.script}` === e.spec && x.event === e.event);
+        return Object.assign(e, { control: (h && h.control) || { es: e.label, en: e.label }, controlMissing: !(h && h.control) });
+      })),
+      dispatch: (mode) => manifests.flatMap((m) => INT.dispatchEntries(m, mode).map((d) => Object.assign(d, { timeTool: timeKinds.has(m.name), control: d.control || { es: d.name, en: d.name }, controlMissing: !d.control }))),
       problems: listing.problems.map((b) => ({ spec: `integrations/${b.name}`, message: `el manifiesto está roto (${b.reasons.join('; ')}): sus controles no se muestran` })),
     };
   } catch (e) {
@@ -181,11 +186,13 @@ function readControls(treeDir) {
     if (cadena && !chains[cadena[1]]) problems.push({ spec: h.spec, message: `despacha la cadena «${cadena[1]}», que dispatch.js no tiene` });
     if (cadena && chains[cadena[1]]) {
       for (const c of chains[cadena[1]]) {
-        controls.push({ spec: c.name, script: rel(path.relative(treeDir, c.path)), event: h.event, steps: c.steps, effect: c.effect, integration: c.integration || null, optional: null, viaDispatcher: h.spec, timeTool: Boolean(c.timeTool) });
+        controls.push({ spec: c.name, script: rel(path.relative(treeDir, c.path)), event: h.event, steps: c.steps, effect: c.effect, integration: c.integration || null, optional: null, viaDispatcher: h.spec, timeTool: Boolean(c.timeTool), control: c.control || null });
+        if (c.controlMissing) problems.push({ spec: c.name, message: 'su manifiesto no dice qué hace el control («control», en castellano y en inglés): se muestra su nombre' });
       }
       continue;
     }
-    controls.push({ spec: h.spec, script, event: h.event, steps: h.steps, effect: h.effect, integration: integrationOf(h.when), optional: optionalOf(h), viaDispatcher: null, timeTool: String(h.when || '').startsWith('time:') });
+    controls.push({ spec: h.spec, script, event: h.event, steps: h.steps, effect: h.effect, integration: integrationOf(h.when), optional: optionalOf(h), viaDispatcher: null, timeTool: String(h.when || '').startsWith('time:'), control: h.control || null });
+    if (h.controlMissing) problems.push({ spec: h.spec, message: 'su manifiesto no dice qué hace el control («control», en castellano y en inglés): se muestra su «label»' });
   }
   return { controls, problems, timeLabels: ints.timeLabels };
 }
@@ -226,8 +233,8 @@ const conStory = (fn) => (mod, probe, ctx) => fn(mod, ctx.story, ctx.content, ct
 const STORY_CONDITIONALS = Object.freeze([
   { id: 'adoWorkItem', steps: ['start'], code: 'skills/tycon-pipeline/steps/step-01-start.md', guide: 'guides/integrations/ado-projects.md', textKey: 'segun.pedidoAdo',
     decider: { module: 'skills/tycon-pipeline/scripts/pipeline.js', fn: 'parseFrontmatterPipeline' },
-    decide: conStory((fn, story, content) => Boolean(fn(content).ado_work_item)),
-    probes: { yes: { story: '---\nstory: "9.9"\nado_work_item: 1234\n---\n' }, no: { story: '---\nstory: "9.9"\n---\n' } } },
+    decide: conStory((fn, story, content) => Boolean(require(path.join(CODE, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fn(content)))),
+    probes: { yes: { story: '---\nstory: "9.9"\nwork_item: 1234\n---\n' }, no: { story: '---\nstory: "9.9"\n---\n' } } },
   { id: 'mockup', steps: ['plan'], code: 'skills/tycon-pipeline/scripts/mockup.js', guide: 'skills/tycon-pipeline/steps/step-04-approve-plan.md', textKey: 'segun.pantalla',
     decider: { module: 'skills/tycon-pipeline/scripts/mockup.js', fn: 'screenStory' },
     decide: conStory((fn, story) => fn(story).screen === true), probes: { yes: PROBE_SCREEN, no: PROBE_NO_SCREEN } },
@@ -425,14 +432,15 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   // piezas de horas; sin perfil no se sabe, y se ven «según tu organización»
   const toolLabel = org && org.integrationsKnown && typeof org.timeTracking === 'string' ? (timeLabels[org.timeTracking] || null) : null;
   const piezaApagada = (f) => (f.timeTool ? Boolean(org && org.integrationsKnown && !toolLabel) : apagada(f.integration));
-  // el validador de stories del paso 1 sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
+  // el validador de stories del paso «Validar la historia» sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
   const validadores = (() => {
     const prev = process.env.TYCON_PACKS_DIR;
     const vacio = fs.mkdtempSync(path.join(os.tmpdir(), 'how-it-works-packs-'));
     process.env.TYCON_PACKS_DIR = vacio;
     const story = path.join(vacio, 'story.md');
     fs.writeFileSync(story, '---\nstory: "9.9"\n---\n\n# Story 9.9\n');
-    try { return PIPE.computeValidadores({ story, repo: vacio, todos: true }).validadores; } finally {
+    // la vista muestra qué validadores hay, no archivos de una historia: sin consultar la lista de código deprecado
+    try { return PIPE.computeValidadores({ story, repo: vacio, todos: true, deprecados: false }).validadores; } finally {
       if (prev === undefined) delete process.env.TYCON_PACKS_DIR; else process.env.TYCON_PACKS_DIR = prev;
       fs.rmSync(vacio, { recursive: true, force: true });
     }

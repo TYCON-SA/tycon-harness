@@ -1,0 +1,19 @@
+{
+  "agent": "tycon-spec-first-checker",
+  "file": "agents/tycon-spec-first-checker.md",
+  "hash": "98ec6ebb0d3b131944b8a7c9fa48f63d554520e7",
+  "passed": 3,
+  "total": 3,
+  "score": 1,
+  "baseline": {
+    "passed": 3,
+    "total": 3,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-spec-first-checker::spec-c1-endpoint-nuevo-sin-ac": true,
+    "tycon-spec-first-checker::spec-c2-componente-nuevo-sin-mencion": true,
+    "tycon-spec-first-checker::limpio-endpoint-documentado-sin-c1": true
+  }
+}

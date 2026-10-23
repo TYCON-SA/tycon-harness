@@ -1,6 +1,6 @@
 {
   "archivos": 84,
-  "lineas": 352,
+  "lineas": 316,
   "porArchivo": {
     "INDEX.md": 1,
     "README.es.md": 1,
@@ -53,6 +53,7 @@
     "scripts/lib/harness-repo.js": 4,
     "scripts/lib/operations-config.js": 3,
     "scripts/lib/org-config.js": 3,
+    "scripts/lib/platform/work-items-config.js": 3,
     "scripts/lib/repo-proposal.js": 8,
     "scripts/lib/team-repos.js": 1,
     "scripts/lib/tycon-config.js": 4,
@@ -77,14 +78,13 @@
     "scripts/tools/merge-pr.js": 1,
     "scripts/tools/site-guide-captures.js": 2,
     "scripts/tools/work-in-progress.js": 6,
-    "skills/tycon-ado-story-wi/SKILL.md": 28,
-    "skills/tycon-ado-story-wi/scripts/on-story-create.js": 1,
     "skills/tycon-merge-to-main/steps/step-09b-create-pr.md": 12,
-    "skills/tycon-pipeline/SKILL.md": 1,
     "skills/tycon-pipeline/scripts/dispatch.js": 2,
     "skills/tycon-pipeline/scripts/lib/how-it-works.js": 1,
-    "skills/tycon-pipeline/steps/step-00c-ado-mark-active.md": 14,
-    "skills/tycon-pipeline/steps/step-09-ado-story-closure.md": 21,
+    "skills/tycon-pipeline/steps/close-work-item.md": 3,
+    "skills/tycon-pipeline/steps/step-01-start.md": 3,
+    "skills/tycon-story-work-item/SKILL.md": 19,
+    "skills/tycon-story-work-item/scripts/on-story-create.js": 1,
     "story-format.md": 1
   }
 }

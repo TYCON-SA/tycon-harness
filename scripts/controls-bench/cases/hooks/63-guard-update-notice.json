@@ -1,0 +1,53 @@
+{
+  "__doc": "Aviso de arranque de la actualización del freno sin contraseña (story 8.88, AC 33). Compara la marca de root /opt/tycon/production/auto-update.json (la deja install-guard.sh --allow-auto-update) con guard.update del perfil del equipo, en las dos direcciones, y da el comando exacto; nunca cambia nada. La raíz de sistema es falsa (TYCON_PROD_ROOT, dentro del caso) y el perfil es el del árbol copiado al lado del aviso (TYCON_GUIDES_DIR).",
+  "hooks": [
+    {
+      "hook": "guard-update-notice.js (el permiso de actualizar el freno sin contraseña contra lo que eligió la organización)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/guard-update-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "permiso-puesto-con-la-organizacion-en-password-pide-sacarlo",
+          "type": "must-emit",
+          "__doc": "T58 · AC 33. La máquina tiene la marca y la organización volvió a «con la contraseña»: el aviso lo dice con el comando exacto para sacar el permiso. ROJO PREVIO: callar, y la máquina sigue actualizándose sola sin que nadie se entere.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf '{ \"guard\": { \"update\": \"password\" } }\\n' > tcg/team-profile.json && printf '{}\\n' > sys/opt/tycon/production/auto-update.json"
+          ],
+          "stdin": { "source": "startup" },
+          "env": { "TYCON_PROD_ROOT": "${FIXTURE}/sys", "TYCON_GUIDES_DIR": "${FIXTURE}/tcg" },
+          "expect": {
+            "stdout_re": ["eligió «con la contraseña» y esta máquina tiene el permiso", "sudo bash .*install-guard\\.sh --remove-auto-update"]
+          }
+        },
+        {
+          "id": "sin-permiso-con-la-organizacion-en-auto-pide-instalarlo",
+          "type": "must-emit",
+          "__doc": "T58 · AC 33. La organización eligió «solo» y la máquina no tiene la marca: el aviso da el comando para instalar el permiso, con la contraseña de su persona. ROJO PREVIO: callar, o instalarlo solo (el sitio no puede dar root).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf '{ \"guard\": { \"update\": \"auto\" } }\\n' > tcg/team-profile.json"
+          ],
+          "stdin": { "source": "startup" },
+          "env": { "TYCON_PROD_ROOT": "${FIXTURE}/sys", "TYCON_GUIDES_DIR": "${FIXTURE}/tcg" },
+          "expect": {
+            "stdout_re": ["eligió «solo» y esta máquina no tiene el permiso", "sudo bash .*install-guard\\.sh --allow-auto-update", "pide tu contraseña"]
+          }
+        },
+        {
+          "id": "de-fabrica-sin-permiso-calla",
+          "type": "must-stay-quiet",
+          "__doc": "T58 · AC 33. Lo de fábrica: sin marca y con «con la contraseña» (sin la clave en el perfil). El aviso calla. ROJO PREVIO: hablar en cada arranque de todas las máquinas con el freno — un aviso de todos los días se deja de leer.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf '{}\\n' > tcg/team-profile.json"
+          ],
+          "stdin": { "source": "startup" },
+          "env": { "TYCON_PROD_ROOT": "${FIXTURE}/sys", "TYCON_GUIDES_DIR": "${FIXTURE}/tcg" },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ first time. First it tells what it is and how to use it; then, how to install it
 
 - **[Using the site](#what-it-is-and-what-it-is-for):** what it is, signing in for the first time, each tab, the
   configuration, what each person sees and the common problems.
+- **[The demo site](#the-demo-site):** the same site with example data, open and without an account, to show it.
 - **[Installing it](#what-you-need-first):** what you need, how to try it on your machine and how to get it running.
 
 Every step in this guide comes from the code or from a real run. What has not been tested for real yet says so on the
@@ -207,6 +208,12 @@ others: what one does and the rest do not.
 Maintainers also see, above the table, «How the organization is doing»: the night dashboard cards that are about the
 whole organization (see «The dashboard cards»).
 
+Further down, **Estimates** (*Estimaciones*): per product, one row per story repo and epic, with the range the epic was
+given, the plan total, the current total (each story's adjustment, or its plan) and the actual hours of what was
+closed; at the end, the product total. An epic whose current total falls outside its range is marked with how much
+(«above by 25 h»). A repo without a log says «no estimates»; an old snapshot, or one from before estimates, says «not
+measured». How to estimate: `guides/estimates.en.md`.
+
 **What to do:** a stopped or blocked story gets unstuck in its repo, with its team; the site only shows it.
 
 ### Harness (Arnés)
@@ -398,7 +405,8 @@ The sections, in the order of the screen:
   are not here, with any sign-in. Maintainers see the Configuration tab and propose changes; devs see their own things.
   A person gets in with any of their emails and sees the same. To add someone: Configuration, in People, "Who gets into
   the site" → **+ Add person** (*+ Agregar persona*), their email and their role; it is done here, without the Microsoft
-  portal. The first time, the section brings the list built from what there was before (the maintainers and each person
+  portal. For someone from outside the organization's directory, **Invite** (below, "Inviting someone") adds them and
+  sends them the Microsoft invitation. The first time, the section brings the list built from what there was before (the maintainers and each person
   with a confirmed machine) and warns that it is not saved yet: it is saved when you propose it. If someone leaves the
   list, as soon as the request is approved and the site refreshes (at most 15 minutes), their next page is "Your
   account is not in the list", with no data. Above the list you see how people sign in to the site; that is changed at
@@ -458,6 +466,18 @@ Below are **Products** (*Productos*: the ones the night checks) and **What the o
 organización*: the skills, reviewers, onboarding guides and packs of the profile repo, each with its link). They are view
 only: they are changed with a request in their repo.
 
+**The configuration of each repo** (*La configuración de cada repo*) shows, for each product repo, what the
+`.tycon/advisors.yaml` of its main branch says. The repos are those of the dependency review and of `team-repos.json`,
+without the public one, the profile repo or the operations repo. Each repo is read only when you open it. Today it edits
+the **deprecated code** (`deprecated`): the old folders or files the agent must not copy or touch without a reason. It
+goes row by row: path, level (frozen or dead), reason and a date to review it; on top, whether editing deprecated code
+without a story warns or blocks. "Review changes" validates with the same reader the harness uses: a badly written row
+says what it is missing and is not proposed. A row whose path no longer exists on the main branch, or whose date has
+passed, is marked, but it can be proposed anyway. The request changes only that block of the file: the other keys and
+the comments stay as they are. Without the file, the request creates it. Whoever maintains the site proposes it, with
+`SITE_PRODUCTS_WRITE_TOKEN` (below); without that secret, the section shows what is declared and the file as it would
+be, to copy it and open the request by hand.
+
 ![Repos and products](sitio-de-la-organizacion/capturas/configuracion-repos.png)
 
 ### Notices and night runs (Avisos y la noche)
@@ -502,8 +522,8 @@ only: they are changed with a request in their repo.
 - **Which model each pipeline job uses** (*Qué modelo usa cada trabajo del pipeline*): the model of the reviewers, the
   adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
   «the default» keeps the one the installed version comes with. There are four levels, written in the file as
-  `economy`, `balanced`, `strong` and `max` (the Spanish page shows económico, equilibrado, potente, máximo). Each tool translates them to its own models,
-  and a small line next to each selector says which: «Claude: sonnet · Codex: gpt-5.6-luna». A configuration saved with
+  `economy`, `balanced`, `strong` and `max` (the Spanish page shows económico, equilibrado, potente, máximo). Each provider translates them to its own models,
+  and a small line next to each selector says which: «Anthropic: sonnet · OpenAI: gpt-5.6-luna · Ollama: the dev’s · Cursor: the dev’s». A configuration saved with
   Claude's names (sonnet, opus) still works: it shows as levels and the next change to the section saves it as levels.
   With levels, the profile has to require the harness version that reads them; otherwise the site does not let you
   propose and says which one to require. With the required ceiling, a job set above the ceiling is marked in red and
@@ -512,6 +532,22 @@ only: they are changed with a request in their repo.
   «like the first round» lets it follow the general level. The list comes folded and opens by itself if the
   organization changed any. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it, looking at the
   cost.
+- **Which model each level is, by provider** (*Qué modelo es cada nivel, por proveedor*): below the job tables, one
+  table per provider (Anthropic, OpenAI, Ollama, Cursor) with one row per level (`models.providers.<provider>.<level>`).
+  Jobs still choose a level; this table says which model that level is in each provider, and each machine uses its
+  provider's table (`models.provider` in `~/.claude/tycon.json`, or `TYCON_MODEL_PROVIDER`; undeclared, Codex is OpenAI
+  and everything else Anthropic). Anthropic's is fixed: each level is its alias. OpenAI's comes with today's models.
+  Ollama's and Cursor's start as «the dev's» (`inherit`): with no model loaded, each dev keeps their own. Cursor's is
+  saved but not applied yet. Below each table, the provider's **allowed models list** (`models.allowed`,
+  comma-separated): with a list, the site does not let you propose a model outside it, and a machine that still gets
+  one uses the dev's and warns. With tables, allowed lists or the nightly row, the profile has to require the harness
+  version that reads them.
+- **The nightly process** (*El proceso de la noche*): one row with its provider (Anthropic or Ollama) and its level
+  (`models.nightly`). The model comes from the same table: «today: gemma4:31b-cloud», or «no model loaded for this
+  level», which blocks proposing (at night there is no dev, so «the dev's» does not apply). Switching from Ollama to
+  Haiku is choosing Anthropic in that row. The row also names the secret variable the nightly pipeline needs
+  (`OLLAMA_API_KEY` or `ANTHROPIC_API_KEY`); the key is created in the pipeline and never goes through the profile.
+  Without the row, the nightly run does not run.
 - **Where the full tests run on merge** (*Dónde corren las pruebas completas antes de sumar un cambio*): on the machine or on the
   server, repo by repo, one row per repo (✎ opens its details). A repo without a full tests pipeline says what happens
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
@@ -535,6 +571,12 @@ only: they are changed with a request in their repo.
   `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
+  Below it is **delegated signing of control changes** (*Firma delegada de cambios de control*,
+  `approvals.delegated_signing`). "Off" is the default. "On" lets that session sign again, on the owner's behalf, a pull
+  request the owner already signed, when the only new thing is that main was brought in; its sentence is recorded.
+  Anything new, a conflict resolved by hand and loosening a control still wait for the owner. The fixed notice says so:
+  "Loosening a control is always signed by a person, at their terminal; this does not change that." Without a
+  designated session, "on" does nothing, and the section warns about it. It counts only from here, never from a machine.
 - **Hand-testing each criterion** (*Prueba a mano de cada punto*): whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,
@@ -553,6 +595,11 @@ only: they are changed with a request in their repo.
 - **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
+- **Estimates** (*Estimaciones*): the unit your organization estimates in (hours, days or points), the hours in a
+  working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
+  calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
+  It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
+  reads the key. A maintainer reviews it.
 
 ![How the agent works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 
@@ -618,6 +665,21 @@ What the person sees in the section, and what the agent does when asked for a to
 - **The organization's packs** (*Paquetes de la organización*): which harness packs (the reviewers and guides of a
   product or a client) are turned on on every machine. It lives in `team-profile.json`, in the profile repo. A
   maintainer reviews it.
+- **How the production guard updates** (*Cómo se actualiza el freno de producción*, `guard.update`): how the guard that
+  protects the production databases gets up to date on the authorized machines. The two options, each with its cost:
+  - "With the person's password" (the default, the safest): each update is done by that machine's person, typing their
+    password. Until someone does it, the machine keeps the old guard.
+  - "On its own, from the published version": the machine updates itself, with no password, using the published
+    version, checked against the team's repository. The cost: a looser published guard arrives without anyone approving
+    it on that machine, and any program running as the person's user can ask for the update (it cannot choose what gets
+    installed). Each update is recorded and the startup notice shows it.
+  Choosing "on its own" changes no machine: each person installs the permission once, with their password
+  (`install-guard.sh --allow-auto-update`), and the startup notice gives them the command. If the organization goes
+  back to "with the password", the notice on each machine with the permission says how to remove it
+  (`--remove-auto-update`). It counts only from here, never from a machine. It lives in `team-profile.json` →
+  `guard.update`, in the profile repo.
+
+By default, both new options are at the safest setting: delegated signing off and the guard with the password.
 
 Below is **Which harness version each machine has** (*Qué versión del arnés tiene cada máquina*), the one each machine
 reported with its last run. It is view only: the machines update themselves on start.
@@ -764,6 +826,56 @@ tell a maintainer (the installation guide, in the Azure recipe, says how to fix 
 wakes it up.
 
 **What to do:** wait; the next pages open quickly.
+
+## The demo site
+
+It is the same site, with example data from a made-up organization (**Acme**), open to anyone with a link and with **no
+account**, to show what it does without giving access to anything real. It runs as a separate instance: it is not the
+organization's site and does not replace it, and nothing you see in it exists.
+
+**What you see.** Every tab with the example data: Home, Runs (with their detail and their texts), Projects, Harness, How
+it works, Configuration and Help. At the top of every page a fixed strip says **Example data**, and so does the title of the
+browser tab. The **View as** selector lets you look at the site as its maintainer (everything, with Configuration) or as a
+team member ("Yours", without Configuration). The buttons that change something (**Propose** in Configuration and in How it
+works, **Invite** and **Revoke**) check as usual and show what would happen, and say that the demo site writes nothing.
+
+**What it does not do.**
+
+- **It writes nothing.** Not to a repo and not to disk, except in its own temporary folder, which is deleted when it shuts
+  down. The language you pick lives only in the browser cookie.
+- **It does not reach out.** It opens no outside connections and launches no `git` or any other process: what the real site
+  asks the platform (pipelines, stages, request types, the review policy) is answered from inside, with example data. If
+  something tried, it is logged and fails.
+- **It has no accounts and no credentials.** It starts only with `SITE_DEMO=1` (with any other value it does not start, and
+  the real site says `demo: false` in its startup line and in `/livez`). It accepts only `SITE_DEMO`, `PORT` and
+  `SITE_PUBLIC_URL`: with any other site variable, or a platform identity, it does not start and says which.
+- **The bare minimum of a public site.** It asks search engines not to index it (`noindex`) and limits each address to 60
+  requests per minute (the last one in `X-Forwarded-For`, the one the platform's entry point adds).
+
+**Try it on your machine.** From the harness clone: `SITE_DEMO=1 PORT=8080 node scripts/site/server.js` and open
+`http://localhost:8080`. Under another machine name, add `SITE_PUBLIC_URL=http://<name>:8080`: the buttons compare the
+origin of the request with that address.
+
+**Install it on Azure Container Apps.** It is a separate instance; give it its own resource group. With the installer of the
+Azure recipe, in two phases and with a configuration file without secrets (`subscription`, `resourceGroup`, `location`,
+`environment`, `app`, `logAnalyticsWorkspace`, `logAnalyticsQuotaGb` and `image`, the published image by its digest
+`@sha256:…`, from a version that carries the demo mode):
+
+1. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase ambiente --dry-run` and then `--apply`:
+   creates the environment. Ignore the two Entra ID redirect URIs it prints: the demo has no sign-in.
+2. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase demo --dry-run` and then `--apply`:
+   creates the app and prints the link.
+
+The app comes up with **no lock** from the platform, **no disk**, **no identity** and no secrets; open from the start
+(HTTPS only) and scaling to zero: it switches itself off when unused (zero replicas), and the first visit after a while takes
+a few seconds to wake it. The configuration file does not accept a mailbox, a repo, a tenant or a disk: if it has them, it
+does not run and says which. Running the `demo` phase again on an instance that already exists updates it (it does not create
+another); if a step fails, it stops, says which one and what was created, and running it again finishes the job. It never
+touches an app that is not a demo instance.
+
+**Deleting it.** Everything of the demo is in its resource group: `az group delete --name <group> --subscription
+<subscription>` deletes it all (it asks for confirmation). Do it only if that group is the demo's own. Without deleting it,
+it is already off: with zero replicas no container runs.
 
 ## What you need first
 
@@ -947,6 +1059,7 @@ Each installation says where each one is stored and how its value gets in. **No 
 | `SITE_PROFILE_REPO` and `SITE_PROFILE_TOKEN` | reading the team profile (where each repo lives, the packs) | part of the normal installation: without them the Configuration tab says "falta el repo del perfil" (the profile repo is missing). The address of the profile repo and a read-only code token on that repo (it can be the same permission as the operations repo's, if both live in the same organization) |
 | `SITE_PIPELINES_TOKEN` | read the pipelines, to choose them by name in the Configuration tab («Tests at merge» and «Deployments») and to see the name of each stage | part of the normal installation on Azure DevOps: only *Build: Read*, for the organization, 90 days; it can be the same token as the operations repo's with *Build: Read* added. Without it, the tab asks for the pipeline number by hand and says what is missing, and the saved stages show their identifier |
 | `SITE_PROFILE_WRITE_TOKEN` | propose changes to the team profile | off by default: empty or commented out, never with a value; one dedicated identity and one repo per credential |
+| `SITE_PRODUCTS_WRITE_TOKEN` | read and propose the `.tycon/advisors.yaml` of the product repos ("The configuration of each repo") | optional. On Azure DevOps, *Code: Read & write* and nothing else, only on the projects of the product repos; on GitHub, fine-grained on those repos with `contents: write` and `pull_requests: write`. Without it, the section reads with the operations credential (if it reaches those repos) and does not propose |
 
 `SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the site's list
 (`site.access` in `operations.json`) has nobody who maintains. Remove it afterwards.
@@ -1037,6 +1150,71 @@ with "A maintainer's changes" on (below): off, the author would approve it witho
 it. Without the permission, each section says
 "To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
 hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
+
+The product repos have their own secret, `SITE_PRODUCTS_WRITE_TOKEN`. To set it up:
+
+1. Create the credential with the least permission. On Azure DevOps, an organization token with *Code: Read & write*
+   and nothing else, limited to the projects of the product repos. On GitHub, a fine-grained one with *Contents: Read
+   and write* and *Pull requests: Read and write*, only on those repos. The repos are the ones "The configuration of
+   each repo" shows.
+2. Load it as a site secret with that name and restart the site.
+3. Check that the main branch of each repo requires at least one reviewer other than whoever creates the request.
+   Without that policy, the site does not propose to that repo and says so.
+
+With that secret the site only creates `team-config/...` branches and opens requests. It never writes `main` or
+completes the request, even with "A maintainer's changes" on: that option applies to the profile and to operations, not
+to the product repos.
+
+### Inviting someone
+
+With Microsoft in "organization only", someone from outside the directory (a personal account, someone from another
+company) gets in only once they are in the directory and on the site's list. In Configuration → People, "Who gets into
+the site" → **Invite someone** (*Invitar a alguien*): their email and their products. "Invite" opens a request that adds
+them to the list as a dev, with their products and a mark (`site.invitations`: who invited and when). Once the request
+is approved and the site reads the new list, the site sends them the Microsoft invitation, which brings them to the
+site. Next to their email you see the status: "invitation sent, has not signed in yet", "accepted" (signed in),
+"waiting for tomorrow's limit" or "could not be sent" with the reason; a failure is retried on the next refresh (if
+Microsoft never answered, the person may get a second email). Up to 10
+invitations a day (`SITE_INVITATIONS_PER_DAY`); the rest wait for the next day.
+
+- An email from one of the organization's own domains is not invited: that person needs an account in the organization's
+  Microsoft 365, and the screen says so.
+- An email that is not a Microsoft account accepts with a **one-time passcode** Microsoft emails to them, if the
+  directory has it on. The installer reads it and leaves it in `SITE_INVITE_EMAIL_CODE`; if it is off or unknown, the
+  screen warns when inviting and says where to turn it on.
+- **Revoke** (*Revocar*) opens a request that removes them from the list and deletes their mark; if the invitation has
+  not gone out yet, it no longer does. It does not delete them from the directory: for that, the Entra portal, with the
+  link the screen gives.
+- With another sign-in there is no button: with "any account" from Microsoft no invitation is needed (add them to the
+  list); with Google or GitHub, add them to the list and they sign in with their Google or GitHub account for that email;
+  without a managed identity, invite by hand in the portal and add them to the list.
+
+### The invite permission
+
+To send the invitation, the site's managed identity needs **one** Microsoft Graph permission: `User.Invite.All`, an
+application permission. No other: the site does not read, change or delete users.
+
+**Its risk, plainly**: whoever controls the site's identity can invite **any email** as a guest to the whole directory,
+not just to this site. An accepted guest gets into any of the organization's applications that do not require
+assignment, and sees what the organization shares with "everyone, including guests". How it is kept small: only
+maintainers see the button; the invitation goes out only once the request is approved; the code calls Graph in one
+place, with a fixed body (guest, back to the site, no groups or roles); the token lives only in memory; there is a daily
+limit. Recommended: the directory's tightest guest restrictions, and requiring assignment in the other applications.
+
+**How it is granted**: a directory administrator (Privileged Role Administrator or Global Administrator) grants it once,
+with the installer and their `az` session:
+
+```bash
+node scripts/site/deploy/azure-container-apps.js --config <your file> --phase permiso-de-invitar --dry-run   # what it does
+node scripts/site/deploy/azure-container-apps.js --config <your file> --phase permiso-de-invitar --apply
+```
+
+It assigns the role to the site's identity and leaves `SITE_INVITE_EMAIL_CODE`. Without the administrator role it says
+so and changes nothing. While it is missing, the button says "The invite permission is missing", who grants it and this
+command.
+
+**To remove it**: in Entra → Enterprise applications → the site's identity → Permissions, revoke `User.Invite.All`. The
+button says it is missing again, and nothing else changes.
 
 ### Changes that apply by themselves
 

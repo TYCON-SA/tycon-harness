@@ -3,7 +3,7 @@
  * tycon-pipeline PreToolUse hook (matcher: Edit|Write) — portón PREVENTIVO de ATDD.
  *
  * DENIEGA la edición del primer archivo de código de una corrida de pipeline si todavía no se tocó
- * ningún archivo de test. Es la capa que faltaba: las otras dos (`complete-step 4` y el gate de
+ * ningún archivo de test. Es la capa que faltaba: las otras dos (`complete-step implement` y el gate de
  * commit) detectan la inversión cuando la implementación ya está escrita; ésta la hace imposible.
  * Una implementación completa antes de ningún test no la caza el harness sino quien lee el
  * transcript. Ver `lib/atdd-preedit.js` (la
@@ -21,11 +21,11 @@
  *
  * Evidencia de "qué se editó antes": la UNIÓN de `marker.fileEvents` (dentro del pipeline) y el
  * `.jsonl` por sesión de `atdd-commit-gate.js` (que `on-edit.js` graba SIEMPRE, haya marker o no).
- * Sin la unión, los tests escritos ANTES de crear el marker (Step 0/1, o el reminder de "seteá el
+ * Sin la unión, los tests escritos ANTES de crear el marker (Arranque o «Validar la historia», o el reminder de "seteá el
  * marker AHORA") no contarían y el portón denegaría un ATDD impecable — falso positivo.
  *
  * Escapes: marker flag `atddBypass` (marker.js set-flag atddBypass true — cada edición que el
- * bypass deja pasar queda en bypass.log, y el MISMO flag satisface el gate del complete-step 4) ·
+ * bypass deja pasar queda en bypass.log, y el MISMO flag satisface el gate del complete-step implement) ·
  * env TYCON_ATDD_PREEDIT_GATE=off (apaga la capa entera, p.ej. para debug del propio harness).
  */
 

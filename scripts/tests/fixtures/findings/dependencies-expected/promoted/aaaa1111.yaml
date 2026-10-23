@@ -1,0 +1,18 @@
+id: aaaa1111
+detectado: 2026-10-10
+veredicto: util
+paquete: lodash
+severidad: high
+noches: 3
+resuelto: 2026-10-20
+motivo: "la vulnerabilidad dejó de aparecer en todos sus repos, medidos esta noche"
+ids:
+  - aaaa1111
+repos:
+  - acme/acme
+avisos:
+  - https://x/GHSA-aaaa
+# Qué decidir: se arregla (subir el paquete) o se declara como deuda en el
+# vulnerabilidades-pendientes.json del repo, con motivo y fecha de revisión.
+# Lo que NO se decide vuelve a aparecer todas las noches, y a los 7 días
+# se archiva como 'ignorado' — que cuenta PEOR que descartado con motivo.

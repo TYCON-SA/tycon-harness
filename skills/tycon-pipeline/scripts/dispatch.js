@@ -165,11 +165,14 @@ const CHAINS = {
     { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['live-check'], effect: 'blocks' },
     { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['live-check', 'prepare-commit'], effect: 'blocks' },
     // Portón ATDD preventivo: deniega el PRIMER archivo de código de una corrida de
-    // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step 4, commit)
+    // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step run-tests, commit)
     // detectan; ésta impide. Ver on-atdd-preedit.js + lib/atdd-preedit.js.
     { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['implement'], effect: 'blocks' },
     { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns' },
     { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns' },
+    // Código deprecado del repo (lib/deprecated.js): con `deprecated.edit: block`, editarlo sin una historia que lo pida
+    // frena acá; con `warn`, el aviso sale después de editar (en post-edit), que es el que le llega al modelo.
+    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'blocks' },
   ],
   'post-edit': [
     // antes de esta tabla van las entradas de la integración de horas elegida (integrationEntries)
@@ -178,6 +181,8 @@ const CHAINS = {
     // superficie que puede apagar frenos y NO dispara revisores (un commit que sólo la toca se
     // clasifica como docs). Determinístico, sin modelo, avisa y nunca bloquea.
     { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns' },
+    // Código deprecado editado sin una historia que lo pida, con `deprecated.edit: warn`: se le dice a la persona y al modelo
+    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'warns' },
     // El plan escrito se lo muestra el arnés a la persona en pantalla (el agente no siempre lo hace: medido)
     { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // El crítico que se quiere eximir se lo muestra el arnés a la persona al escribirse el pedido (instalación mínima)
@@ -189,7 +194,7 @@ const CHAINS = {
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla
     { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra)
-    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
+    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-story-work-item', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
     { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['validate-story'], effect: 'records' },
   ],
 };

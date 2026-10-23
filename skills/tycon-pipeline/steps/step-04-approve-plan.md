@@ -5,7 +5,7 @@
 
 > ⏱️ **Espera humana**: este paso es uno de los dos que miden cuánto se esperó a una
 > persona. Antes de presentar el plan: cerrá el paso anterior y consultá `pipeline.js next` (anota el
-> arranque del paso 3). Si se presenta primero y se cierra el anterior después, la espera queda
+> arranque de «Aprobar el plan»). Si se presenta primero y se cierra el anterior después, la espera queda
 > contada como trabajo del paso anterior.
 
 ## Política Nivel 2 — auto-aprobación de planes LOW-risk
@@ -16,7 +16,7 @@ ANTES de pausar, correr:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class --story <story_path>
 ```
 
-- **risk=LOW** (criterios: sin `.sql`/drizzle en scope, sin `signed_for_sprint` ni `signed_ac_ref`, ≤6 archivos en scope, sin paths auth/security/payment, sin bloque `pipelines:`) → el plan se **AUTO-APRUEBA** y continúa a Step 4 **sin esperar respuesta**. El gate adicional de backend "patrón de referencia verificado" (abajo) aplica igual antes de auto-aprobar.
+- **risk=LOW** (criterios: sin `.sql`/drizzle en scope, sin `signed_for_sprint` ni `signed_ac_ref`, ≤6 archivos en scope, sin paths auth/security/payment, sin bloque `pipelines:`) → el plan se **AUTO-APRUEBA** y continúa a «Implementar» **sin esperar respuesta**. El gate adicional de backend "patrón de referencia verificado" (abajo) aplica igual antes de auto-aprobar.
 - 📋 **El plan se muestra siempre, aunque se apruebe solo.** Es lo único que la persona ve de qué se va a hacer. Con
   LOW, el orden es: (1) el plan escrito en `step-02-bmad-plan.md` de la carpeta de la corrida; (2) **un mensaje de texto
   tuyo** con una línea «El plan se aprobó solo (riesgo bajo: <criterios en llano>)» y debajo ese plan tal cual, sin
@@ -60,7 +60,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
 ## Acción
 
 Presentar al usuario:
-1. El plan generado por BMAD en Step 2
+1. El plan generado por BMAD en «Armar el plan»
 2. La lista de archivos que va a modificar/crear
 3. Pregunta explícita. Aprobar un plan es una decisión importante (fija el diseño de la story), así que lleva su forma:
    «Recomiendo aprobarlo: {por qué}. {El contexto: qué hace el plan y qué deja afuera.} {Si hay caminos alternativos,
@@ -72,7 +72,7 @@ Usar la tool `AskUserQuestion` si está disponible, o simplemente pedir respuest
 
 Hoy la pantalla se ve recién construida, y un error de diseño se descubre cuando ya está programado. En una story que
 agrega o cambia una pantalla, el pipeline arma una **maqueta**: un HTML local, de un archivo, sin red y sin código, con
-los textos reales de la pantalla. Se aprueba junto con el plan, y la revisión de la pantalla (paso 7c.7, capas 9 y 10)
+los textos reales de la pantalla. Se aprueba junto con el plan, y la revisión de la pantalla («Probar en vivo», parte 7, capas 9 y 10)
 compara lo construido contra ella.
 
 1. **¿Corre?** `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/mockup.js status --story <spec> --json`. Con
@@ -104,12 +104,12 @@ compara lo construido contra ella.
    coordinadora, por delegación del dueño». El guion no valida quién es: la cita es la constancia.
 6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"` (o
    `--auto-approved "<criterios>" --mockup-approved "<cita>"` con LOW). Sin la maqueta, con una maqueta que no pasa
-   `mockup.js check`, o sin `--mockup-approved`, el paso 3 no cierra. Queda la huella en el marcador y en
+   `mockup.js check`, o sin `--mockup-approved`, «Aprobar el plan» no cierra. Queda la huella en el marcador y en
    `<clave>-mockup-approval.json` (sin la cita), que va en el commit con la maqueta.
 
 Si la maqueta cambia después (un arreglo de legibilidad cambió un texto), se le muestra de nuevo a quien la aprueba y
 `marker.js approve-mockup --approved "<cita>"`. Es el mismo comando si la story ganó una pantalla después de aprobar el
-plan: el paso 8 lo frena hasta que esté.
+plan: «Preparar el commit» lo frena hasta que esté.
 
 ## Superficie visual del plan (opt-in — `visual_plan`)
 
@@ -128,7 +128,7 @@ sin mandar nada a `plan.agent-native.com` — el plan del cliente NUNCA sale de 
 
 **Flujo cuando aplica:**
 
-1. Construir un JSON con el contenido del plan BMAD (Step 2). Schema: `node scripts/visual-plan.js schema`.
+1. Construir un JSON con el contenido del plan BMAD («Armar el plan»). Schema: `node scripts/visual-plan.js schema`.
    Mapear: `objetivo`, `fileMap` (de la lista de archivos a crear/modificar), `tasks` (de las Tasks/Subtasks
    de la story), `flow` si el plan tiene un pipeline de datos claro, `code` para 1-2 snippets clave, y
    **`questions`** con las decisiones genuinas que el plan deja abiertas (contradicciones de la story,
@@ -145,17 +145,17 @@ sin mandar nada a `plan.agent-native.com` — el plan del cliente NUNCA sale de 
    `--story` autocompleta los pills (priority/sprint/epic/approach/ADO) desde el frontmatter.
 3. Pedir al usuario que revise, marque y toque **"Exportar feedback"**, y **pegue el texto de vuelta**.
 4. Parsear el feedback pegado: el campo **Decisión** mapea a las decisiones de abajo
-   (`APROBADO…` → aprobado; `CAMBIOS…` → volver a Step 2 con las respuestas como feedback;
+   (`APROBADO…` → aprobado; `CAMBIOS…` → volver a «Armar el plan» con las respuestas como feedback;
    `BLOQUEADO…` → tratar como cancelar/escalar). Las respuestas a las preguntas abiertas se
    incorporan al plan antes de ejecutar.
 
 El plan en texto se sigue presentando como respaldo — el HTML es una superficie adicional, no
-un reemplazo del registro textual del Step 2 (que queda en `step-02-bmad-plan.md`).
+un reemplazo del registro textual de «Armar el plan» (que queda en `step-02-bmad-plan.md`).
 
 ## Decisiones del usuario
 
-- **"Sí" / "dale" / "adelante"**: proceder a Step 4.
-- **"No" / "esperá" / "cambiá X"**: **volver a Step 2** con el feedback del usuario. BMAD re-itera el plan.
+- **"Sí" / "dale" / "adelante"**: proceder a «Implementar».
+- **"No" / "esperá" / "cambiá X"**: **volver a «Armar el plan»** con el feedback del usuario. BMAD re-itera el plan.
 - **"cancelar" / "ya no"**: terminar el pipeline limpiamente. Registrar en el log de la corrida.
 
 ## Criterio de aprobación
@@ -171,13 +171,13 @@ un reemplazo del registro textual del Step 2 (que queda en `step-02-bmad-plan.md
 - [ ] Toda decisión estructural del plan está respaldada por un patrón hermano **verificado** — `archivo:línea` (o `grep` con comando exacto) en NimboBackend / TotoraBackend / FRESNOBZExtBackend / el repo del framework, abierto/corrido y citado. **Ninguna decisión estructural se apoya en una asunción** ("asumo", "probablemente", "no pude confirmar").
 - [ ] El plan es consistente con la sección "Patrón de referencia verificado" de la story (§9.2).
 
-Si alguna no se cumple → **no presentar el plan como aprobable**: volver a Step 2 con el feedback "verificar el patrón hermano con evidencia dura antes de aprobar". El plan de un backend story con una decisión estructural sin patrón verificado **no se aprueba**: es el escenario del que sale un fix inventado.
+Si alguna no se cumple → **no presentar el plan como aprobable**: volver a «Armar el plan» con el feedback "verificar el patrón hermano con evidencia dura antes de aprobar". El plan de un backend story con una decisión estructural sin patrón verificado **no se aprueba**: es el escenario del que sale un fix inventado.
 
 ### Gate adicional para toda story — lo que el plan agrega
 
 Antes de presentar el plan, con cualquier stack:
 
-- [ ] El plan enumera cada excepción, filtro, campo de respuesta y servicio/hook nuevo con el AC que lo declara; lo que no cite AC se le muestra al usuario y se suma a la story sólo con su visto bueno. Vale también con risk=LOW: si el plan trae algo sin AC, no se auto-aprueba (Nivel 2) — se presenta y se espera la respuesta. Es el momento barato: en el paso 4 el ejecutor no puede tocar los AC y lo no declarado lo frena el revisor de alcance (SPEC-C3/C5/C7/C9).
+- [ ] El plan enumera cada excepción, filtro, campo de respuesta y servicio/hook nuevo con el AC que lo declara; lo que no cite AC se le muestra al usuario y se suma a la story sólo con su visto bueno. Vale también con risk=LOW: si el plan trae algo sin AC, no se auto-aprueba (Nivel 2) — se presenta y se espera la respuesta. Es el momento barato: en «Implementar» el ejecutor no puede tocar los AC y lo no declarado lo frena el revisor de alcance (SPEC-C3/C5/C7/C9).
 
 ## Edge cases
 
@@ -186,7 +186,7 @@ Antes de presentar el plan, con cualquier stack:
 
 ## Cierre del step — la aprobación queda CITADA en el marker (2026-08-19)
 
-🔒 El portón de carril DENIEGA cualquier Edit/Write de código del repo mientras el Step 3 siga pendiente en el marker. Cerrarlo exige decir quién aprobó:
+🔒 El portón de carril DENIEGA cualquier Edit/Write de código del repo mientras «Aprobar el plan» siga pendiente en el marker. Cerrarlo exige decir quién aprobó:
 
 ```bash
 # HITL — el user aprobó con palabras claras de proceder:
@@ -233,7 +233,7 @@ manuales, a nombre del usuario de la terminal.
 
 - `approved: true|false`
 - Feedback del usuario si pidió cambios
-- Path al plan aprobado (para referencia en Step 4)
+- Path al plan aprobado (para referencia en «Implementar»)
 - `marker.planApproval` seteado (`complete-step approve-plan --approved|--auto-approved`) y la línea `plan` en `approvals.jsonl`
 
-Pasar al Step 4 solo si `approved: true`.
+Pasar a «Implementar» solo si `approved: true`.

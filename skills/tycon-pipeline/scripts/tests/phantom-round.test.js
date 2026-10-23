@@ -116,6 +116,8 @@ test('T2 CorridaNueva_ValidadorDelPaso1_NoTomaLaFoto: start de otra story y el v
   const g = spawnSync(process.execPath, [GUION, 'write', '--repo', repo, '--answers', answers], { env: entorno(home), encoding: 'utf8' });
   assert.strictEqual(g.status, 0, g.stderr);
   const story = JSON.parse(g.stdout).path;
+  // el guion la deja en borrador; el recorrido la pasa a ready-for-dev después del validador
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace(/^status: draft$/m, 'status: ready-for-dev'));
 
   const s = spawnSync(process.execPath, [PIPELINE, 'start', '--story', story, '--repo', repo], { env: entorno(home), encoding: 'utf8', cwd: repo });
   const inicio = JSON.parse(s.stdout);
@@ -142,6 +144,8 @@ test('T3 Start_MismaStory_NoHeredaVueltas: la misma story corrida otra vez en la
   const g = spawnSync(process.execPath, [GUION, 'write', '--repo', repo, '--answers', answers], { env: entorno(home), encoding: 'utf8' });
   assert.strictEqual(g.status, 0, g.stderr);
   const story = JSON.parse(g.stdout).path;
+  // el guion la deja en borrador; el recorrido la pasa a ready-for-dev después del validador
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace(/^status: draft$/m, 'status: ready-for-dev'));
   const arrancar = () => {
     const s = spawnSync(process.execPath, [PIPELINE, 'start', '--story', story, '--repo', repo], { env: entorno(home), encoding: 'utf8', cwd: repo });
     assert.strictEqual(JSON.parse(s.stdout).ready, true, s.stdout);

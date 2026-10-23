@@ -70,7 +70,7 @@ aprobado.
 **Condición de salteo mecánica (verificable, NO inferencia)**: el chequeo previo al código se SALTEA si se cumplen LAS
 DOS:
 1. «Validar la historia» de ESTA MISMA ejecución cerró con **0 CRITICAL** (verificar en el log:
-   `grep -il critical <repo>/.advisors/pipeline-runs/<run>/step-01*.md` → sin coincidencias de hallazgos abiertos, o el
+   `grep -il critical <repo>/.advisors/pipeline-runs/<run>/step-01-validator*.md` → sin coincidencias de hallazgos abiertos, o el
    log registra el cierre limpio de la re-validación).
 2. El plan aprobado NO toca archivos fuera de `files_to_create` + `files_to_modify` del frontmatter (comparar la lista
    de archivos del plan contra el frontmatter, diff de listas, comando concreto; si el plan agrega UN archivo no
@@ -200,7 +200,7 @@ Invocar el skill BMAD nuevamente, esta vez en modo ejecución (no plan):
 ```
 Skill(
   skill: "<bmad_skill_name>",
-  args: "Ejecutar el plan aprobado sobre story {story_path}. PROCEDER con la implementación. Modificar archivos según el plan. Iterar con los tests SCOPED (los scaffolds del sub-paso 4.0) hasta verde y reportar resultado — la suite completa la corre el orquestador UNA vez, en «Correr las pruebas» (test-gate.sh). Criterio de diseño: el cambio más chico que cumple la story, sin fusionar bloques parecidos que cambian por razones distintas. Nada que la story no declare — ni excepciones, campos de respuesta, filtros ni servicios nuevos; si hace falta uno, frená y proponelo al usuario para sumarlo a la story (gate de «Implementar»): no lo agregues vos. Excepción: un filtro de seguridad que falte entra igual, con entrada en el Change Log. Ningún refactor más allá del que el cambio necesita; lo demás va a tasks/todo.md con formato DEF."
+  args: "Ejecutar el plan aprobado sobre story {story_path}. PROCEDER con la implementación. Modificar archivos según el plan. Iterar con los tests SCOPED (los scaffolds de las pruebas primero) hasta verde y reportar resultado — la suite completa la corre el orquestador UNA vez, en «Correr las pruebas» (test-gate.sh). Criterio de diseño: el cambio más chico que cumple la story, sin fusionar bloques parecidos que cambian por razones distintas. Nada que la story no declare — ni excepciones, campos de respuesta, filtros ni servicios nuevos; si hace falta uno, frená y proponelo al usuario para sumarlo a la story (gate de «Implementar»): no lo agregues vos. Excepción: un filtro de seguridad que falte entra igual, con entrada en el Change Log. Ningún refactor más allá del que el cambio necesita; lo demás va a tasks/todo.md con formato DEF."
 )
 ```
 
@@ -214,6 +214,24 @@ forma de presentarlos. La forma sale de la story y de la guía del stack del pro
 (`presentation: "layer"`, «Se abre encima de … con …»), se construye una capa que se abre con ese botón o enlace;
 donde no marca nada, la story y la guía dicen si va en la página o encima. Agregá esto a los `args` del skill cuando la
 story tiene maqueta.
+
+## Si la historia termina por su salida prevista
+
+Algunas historias traen una salida escrita («si no se puede, queda como deuda»): una dependencia sin versión
+compatible, un servicio externo que no está. Cuando se activa, la ejecución no se apaga ni se cierra a medias: se
+cierra como deuda y **sigue hasta el commit**.
+
+1. Anotar la deuda en el Dev Agent Record de la historia, con un id `DEF-…` y lo que quedó pendiente (o en
+   `tasks/todo.md` del repo de la historia, si lo tiene).
+2. Explicarle a la persona qué no se pudo hacer y por qué, y pedirle la frase «autorizo cerrar como deuda»: el freno de
+   seguridad la pide (regla ESC-C4).
+3. `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js close-as-debt --reason "<qué quedó pendiente>" --debt <DEF-id>`.
+4. Las pruebas: primero, ajustarlas para que verifiquen la deuda mantenida y documentada (verde normal). Sólo si no se
+   puede, con la misma frase: `marker.js expect-red <control> --tests <T2,T5>`, que registra el rojo como esperado.
+5. Seguir el pipeline: los revisores corren sobre lo que sí cambió (pruebas, historia, documentación), el pase
+   adversarial con su regla de siempre, y «Preparar el commit» pone la línea `Deuda: <DEF-id> — <motivo>`.
+
+Apagar el modo autónomo o cerrar la ejecución no es una salida: deja la historia como si hubiera terminado, sin deuda.
 
 ## Acción — build gate
 

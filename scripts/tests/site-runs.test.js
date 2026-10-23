@@ -564,7 +564,7 @@ test('T14 Fuga_NingunMarcadorDeOtroLlegaAlDev @story-2.27 @ac-14', async () => {
 
 // ── lo que viaja y cuándo ─────────────────────────────────────────────────────────────────────────────────────────
 
-const LISTA_BLANCA = ['id', 'story', 'producto', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema'];
+const LISTA_BLANCA = ['id', 'story', 'producto', 'grupo', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'paso_en_curso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema'];
 
 test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   const espejo = mundo({ marcadores: false });
@@ -1344,4 +1344,43 @@ test('Cambios_RenglonesDelHilo_SinElTextoEntero — los renglones de la conversa
     const esperado = t.split('\n'); if (esperado[esperado.length - 1] === '') esperado.pop();
     assert.deepStrictEqual([...renglonesDe(Buffer.from(t, 'utf8'))], esperado, JSON.stringify(t.slice(0, 30)));
   }
+});
+
+// El texto del error de un hook viaja en la conversación subida, que leen sólo quienes administran el buzón; en el
+// sitio no lo ve el dev dueño de la máquina. 🔴 Falla con: que la lista, el detalle, los textos o la página de una ejecución empiecen a
+// mostrar los adjuntos de la conversación sin mirar el rol.
+test('4.10-T30b SitioNoMuestraElTextoDelHookAlDev @story-4.10 @ac-28', async () => {
+  const espejo = mundo();
+  const hook = JSON.stringify({ type: 'attachment', timestamp: iso('2026-08-05T09:00:00.000Z', 30),
+    attachment: { type: 'hook_non_blocking_error', hookName: 'Stop', hookEvent: 'Stop', exitCode: 1, categoria: 'carga', texto: 'zqx-texto-de-hook: Cannot find module' } });
+  escribir(path.join(espejo, 'maq-a'), 'a1.hilo.jsonl.gz', gz(hilo('2026-08-05T09:00:00.000Z', '/Users/dev/SourceCode/Alfa/FrontEnd/src/Pago.ts', 'const viejo = 0;', 'const NUEVO_DE_A = 1;') + hook + '\n'));
+  await conPestana({ fuentes: fuentesCon({ espejo }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const lista = await h.pedir('/api/corridas', { cookie: dev });
+    assert.ok(lista.json.corridas.length > 0, 'el dev ve sus ejecuciones');
+    const servido = [lista.texto, (await h.pedir('/corridas', { cookie: dev })).texto];
+    for (const c of lista.json.corridas) {
+      servido.push((await h.pedir(`/api/corridas/${c.id}`, { cookie: dev })).texto);
+      const t = await h.pedir(`/api/corridas/${c.id}/textos`, { cookie: dev });
+      servido.push(t.texto);
+      if (t.json) for (const b of [t.json.texto, t.json.textoGit]) if (b) servido.push(zlib.gunzipSync(Buffer.from(b, 'base64')).toString('utf8'));
+    }
+    // control positivo: el sitio sí leyó esa conversación (el antes/después de la edición llega al dev)
+    assert.ok(servido.some((s) => String(s || '').includes('NUEVO_DE_A')), 'el sitio leyó la conversación de la prueba');
+    for (const s of servido) assert.ok(!String(s || '').includes('zqx-texto-de-hook'), 'el texto del hook no le llega al dev');
+  });
+});
+
+// rojo si: la pestaña del sitio no agrupa con los productos de repos.json (el filtro queda todo en «otros repos») o
+// mete en un producto lo que es del laboratorio.
+test('Filtro_ProductosDeReposJson_AgrupanLaLista', async () => {
+  const fuentes = fuentesCon({ espejo: mundo() });
+  fuentes.st.personas = { informados: H.informados(INFORMADOS), repos: [{ producto: 'Cliente A', ruta: 'Alfa/FrontEnd', ado: '' }] };
+  await conPestana({ fuentes }, async ({ h, entrar }) => {
+    const l = (await h.pedir('/api/corridas', { cookie: await entrar(LEAD) })).json;
+    const alfa = l.corridas.filter((c) => c.producto === 'Alfa/FrontEnd');
+    assert.ok(alfa.length > 0, 'el mundo de prueba trae ejecuciones de Alfa/FrontEnd');
+    assert.deepStrictEqual([...new Set(alfa.map((c) => c.grupo))], ['Cliente A']);
+    assert.ok(l.corridas.every((c) => c.producto === 'Alfa/FrontEnd' || c.grupo !== 'Cliente A'), 'sólo su repo cae en el producto');
+  });
 });

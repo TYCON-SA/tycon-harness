@@ -19,24 +19,19 @@
  * La regla del equipo es la de siempre: un control que hay que acordarse de respetar es un control
  * que no corre — así que esto DENIEGA, como el portón de carril y el gate de ATDD.
  *
- * ── DISEÑO A: la constancia la escribe el HARNESS, no el agente ─────────────────────────────────
- * Claude Code SÍ emite
- * PreToolUse/PostToolUse para la tool `Skill`, con `tool_name: "Skill"` y `tool_input.skill` = el
- * nombre del skill (se ve en el grabador de instincts, `~/.claude/tycon-observations`,
- * un PostToolUse sin matcher). Entonces `on-skill-invoke.js`
- * (PostToolUse, matcher `Skill`) deja una MARCA por sesión cuando el skill invocado es uno de los
- * que crean stories, y este freno exige esa marca para dejar nacer un `.md` con identidad de story.
- * El agente no puede fabricar la marca con Write/heredoc: vive bajo `~/.claude/.tycon-pipeline/`,
- * que el portón de carril bloquea en las dos puertas (state-dir). Las formas legítimas de obtenerla
- * son la tool Skill, el slash del user (`/tycon-create-story` — lo ve `on-prompt.js`, porque el slash
- * NO pasa por la tool) y el escape explícito (`marker.js story-skill-bypass "<razón>"`, `bypass.log`).
- * Sí se puede fabricar alimentando a mano el hook por stdin —esto es anti-olvido, no anti-evasión—;
- * por eso TODA marca deja una línea `mark-written` en gates.log con su `via`: se puede auditar.
+ * ── LA CONSTANCIA ES EL VALIDADOR, NO LA LLAMADA A LA SKILL ─────────────────────────────────────
+ * Llamar a la skill no prueba que se siguieron sus pasos: un modelo abierto la invocó, no hizo nada de lo
+ * que dice, escribió la historia y dijo «creada y verificada». Lo que prueba que la historia se revisó es
+ * que el validador de historias corrió sobre ese archivo después de su última escritura, y eso queda en la
+ * cadena de la conversación que guarda la herramienta, donde el agente no escribe (`validator-record.js`).
+ * Por eso: una historia nueva sin esa constancia sólo nace en borrador (`status: draft`), y pasar un
+ * borrador a cualquier otro estado la pide. El pipeline no arranca sobre un borrador, y el cierre del turno
+ * insiste con la orden concreta mientras quede uno sin validar (`story-claim-check.js`).
  *
  * ── CALIBRADO (dónde NO frena — cada punto es un falso positivo que mataría el control) ─────────
  *   1. EDITAR ≠ CREAR. El pipeline edita stories existentes todo el tiempo (status, Change Log,
- *      follow-ups, Dev Agent Record, `ado_work_item:`). El discriminante es que el archivo NO exista
- *      en disco. Un `>>` a una story existente también pasa.
+ *      follow-ups, Dev Agent Record, `ado_work_item:`). Una historia que existe y no está en borrador pasa
+ *      siempre; un borrador se edita libre mientras no le cambien el estado.
  *   2. Sólo lo que DECLARA identidad de story (`story:` en el frontmatter cerrado — el criterio
  *      canónico de `lib/story-discovery.js`, jamás la ruta). Un PRD, un épico, una guía: pasan.
  *   3. La forma del id NO abre el portón: un id que no sigue la numeración del repo (`isWorkStoryId` +
@@ -45,12 +40,8 @@
  *      trabajo. El material de evaluación vive en los repos del arnés (punto 4) o pasa con el escape.
  *   4. Sólo en repos bajo el arnés (`.tycon/` o stories Mary+GOLD descubiertas). Un repo suelto
  *      pasa (medido como `unknown`). Los repos del propio harness pasan siempre (plantillas, casos).
- *   5. La marca vence: TTL de 2 horas por default (`TYCON_STORY_SKILL_MARK_TTL_MIN`). Es largo a
- *      propósito — un `tycon-create-story` con elicitación puede durar más de media hora, y una
- *      marca que vence a mitad del flujo frena la story legítima. El costo de una marca vieja es
- *      chico: habilita una story a mano dentro de la MISMA sesión que ya invocó el skill hace <2h.
- *   6. Escapes: `marker.js story-skill-bypass "<razón en palabras del user>"` (auditado en
- *      bypass.log) · env `TYCON_STORY_SKILL_GATE=off` (el dev; el agente no setea env de hooks) ·
+ *   5. Escapes: «autorizo story-skill-bypass» escrita por la persona en un turno suyo (`escape-ok.js`;
+ *      auditado en bypass.log; `marker.js story-skill-bypass` ya no deja constancia) · env `TYCON_STORY_SKILL_GATE=off` (el dev; el agente no setea env de hooks) ·
  *      `.tycon/advisors.yaml → pipeline.story_skill_gate: false` COMMITEADO (misma regla que el
  *      portón de carril: leído con `git show HEAD:`, nunca del working tree).
  *
@@ -63,17 +54,13 @@
  *   `stories/*.md`): puede frenar un índice o una nota con ese nombre. El mensaje lo dice ("por el
  *   nombre parece") y el log lo distingue (`*-by-name`) para medir cuánto ruido mete. Renombrar o
  *   copiar una story EXISTENTE (`mv a.md b.md`) pasa y queda medido (`unknown-rename`).
+ * · La constancia prueba que el validador corrió, no qué dijo: una respuesta con problemas cuenta igual.
+ *   Y se busca en la conversación de la sesión que escribe: un validador de otra sesión no se ve.
  * · Codex:
- * Codex no expone la invocación de skills como tool call (un skill se carga por mención, sin evento
- * de hook), así que del lado Codex NO hay constancia mecánica posible. Frenar ahí obligaría al
- * bypass en CADA story legítima — el comando se volvería rutina y el log, ruido. Decisión: bajo
- * Codex el freno NO bloquea y deja la línea `unknown` en gates.log (asimetría DECLARADA en
- * `adapters/codex/hooks.json`). Si algún día Codex emite el evento, se saca la excepción y listo.
- *
- * ── ANTI-OLVIDO, NO ANTI-EVASIÓN ────────────────────────────────────────────────────────────────
- * El agente puede correr el bypass él mismo. Lo que cambia es que saltear el skill deja de ser una
- * omisión silenciosa —"sólo falta tipear el archivo"— y pasa a ser un comando explícito, logueado,
- * con una razón que tiene que venir del user. Mismo contrato que el carril ad-hoc.
+ * Codex no expone la llamada a un revisor como evento ni deja leer la conversación, así que del lado
+ * Codex NO hay constancia mecánica posible. Frenar ahí obligaría al escape en CADA story legítima.
+ * Decisión: bajo Codex el freno NO bloquea y deja la línea `unknown-codex` en gates.log (asimetría
+ * DECLARADA en `adapters/codex/hooks.json`).
  */
 
 'use strict';
@@ -135,92 +122,115 @@ function markState(mark, nowMs, ttlMs) {
 }
 
 /**
+ * El `status:` del frontmatter de un texto, o null si no lo declara. Es LA lectura del estado para el freno, el cierre
+ * del turno y el arranque del pipeline: si leyeran distinto, un borrador podría pasar el freno como borrador y arrancar
+ * como listo. Acepta el BOM, `---` con espacios al final, un espacio antes de `:` y un comentario `# …`. Con dos
+ * renglones `status:` distintos devuelve `mixed`: no es un borrador limpio, y en disco cuenta como borrador.
+ */
+function statusOf(text) {
+  const fm = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(String(text || '').replace(/^﻿/, ''));
+  if (!fm) return null;
+  const vals = [];
+  for (const l of fm[1].split(/\r?\n/)) {
+    const m = /^status[ \t]*:[ \t]*(.*)$/.exec(l);
+    if (m) vals.push(m[1].replace(/[ \t]+#.*$/, '').trim().replace(/^["']|["']$/g, '').trim().toLowerCase());
+  }
+  if (!vals.length) return null;
+  return vals.every((v) => v === vals[0]) ? vals[0] : 'mixed';
+}
+
+/** ¿El estado en disco es de borrador? (`mixed` también: pasarlo a otro estado pide la constancia) */
+const isDraftStatus = (s) => s === 'draft' || s === 'mixed';
+
+/**
  * Veredicto del freno. PURA — recibe todo lo que necesita y devuelve la decisión.
+ *
+ * Una historia nueva sin la constancia del validador nace sólo en borrador (`status: draft`); pasar un borrador a
+ * cualquier otro estado pide la constancia (`record`: el validador corrió sobre ese archivo después de su última
+ * escritura, `validator-record.js`). Una historia que ya existe y no está en borrador se edita siempre: el pipeline la
+ * toca todo el tiempo. La llamada a la skill no abre el freno: no prueba que se siguieron sus pasos.
  *
  * @param {object} a
  * @param {string}  a.filePath          archivo que el tool call quiere escribir
  * @param {boolean} a.existsOnDisk      ya existe → editar, no crear
+ * @param {string|null} a.prevStatus    el estado en disco (si existe)
+ * @param {string|null} a.status        el estado que queda después de escribir (null = no se puede ver: terminal)
  * @param {boolean} a.isStoryCandidate  el contenido (o, por Bash, el nombre) declara identidad de story
  * @param {boolean} a.isHarness         vive en un repo del propio harness
  * @param {boolean} a.repoUnderHarness  el repo trabaja con el arnés (.tycon/ o stories descubiertas)
  * @param {boolean} a.idIsWork          el id declarado sigue la numeración del repo (null = no se pudo leer); sólo cambia el texto
- * @param {object|null} a.mark          marca de la sesión ({skill, at}) o null
- * @param {number}  a.nowMs
- * @param {number}  a.ttlMs
+ * @param {boolean} [a.record]          hay constancia del validador
  * @param {boolean} [a.gateEnabled]     config commiteada del repo (default true)
- * @param {boolean} [a.isCodex]         herramienta sin evento de skill → no se frena (unknown)
+ * @param {boolean} [a.isCodex]         herramienta sin la conversación legible → no se frena (unknown)
  * @returns {{action:'pass'|'block', kind:string, reason:string}}
  */
 function computeStorySkillGate({
-  filePath, existsOnDisk, isStoryCandidate, isHarness, repoUnderHarness, idIsWork,
-  mark, nowMs, ttlMs, gateEnabled = true, isCodex = false,
+  filePath, existsOnDisk, prevStatus = null, status = null, isStoryCandidate, isHarness, repoUnderHarness, idIsWork,
+  record = false, gateEnabled = true, isCodex = false,
 }) {
   if (!isStoryCandidate) return { action: 'pass', kind: 'not-story', reason: 'no declara identidad de story' };
-  if (existsOnDisk) return { action: 'pass', kind: 'exists', reason: 'la story ya existe — editar no es crear' };
+  if (existsOnDisk && !isDraftStatus(prevStatus)) return { action: 'pass', kind: 'exists', reason: 'la story ya existe y no está en borrador — editar no es crear' };
   if (isHarness) return { action: 'pass', kind: 'harness', reason: 'repo del propio harness (plantillas, casos del banco)' };
   if (!gateEnabled) return { action: 'pass', kind: 'repo-off', reason: 'apagado por .tycon/advisors.yaml (pipeline.story_skill_gate: false, commiteado)' };
   if (repoUnderHarness === false) return { action: 'pass', kind: 'unknown-no-harness', reason: 'el repo no trabaja con el arnés (sin .tycon/ ni stories) — no se frena, queda medido' };
-  // Un id con otra forma que la del repo NO abre el portón: un modelo que se saltea la skill también inventa el número
-  // (G-1 en un repo que numera por épica). Medido en el registro de este freno: las 12 veces que esa excepción dejó pasar
-  // algo, eran historias de trabajo de verdad, y ninguna era material de evaluación.
-
-  // La marca vigente se mira ANTES de la excepción de Codex: un bypass declarado con marker.js (que
-  // en Codex también corre) tiene que quedar auditado como bypass, no diluido en `unknown-codex`.
-  const st = markState(mark, nowMs, ttlMs);
-  if (st === 'valid') {
-    return mark.skill === 'bypass'
-      ? { action: 'pass', kind: 'bypass', reason: `bypass declarado: ${mark.reason || '(sin razón)'}` }
-      : { action: 'pass', kind: 'mark', reason: `constancia de ${mark.skill} en esta sesión` };
+  const name = path.basename(String(filePath || ''));
+  if (existsOnDisk) {
+    if (status === 'draft') return { action: 'pass', kind: 'draft-edit', reason: 'editar un borrador sin cambiarle el estado' };
+    if (record) return { action: 'pass', kind: 'validated', reason: 'el validador corrió sobre la historia después de su última escritura' };
+    if (isCodex) return { action: 'pass', kind: 'unknown-codex', reason: 'Codex no deja leer la conversación — sin constancia posible del validador, no se frena, queda medido' };
+    return {
+      action: 'block', kind: 'draft-promote',
+      reason: status == null
+        ? `escribir sobre el borrador ${name} desde la terminal (no se ve qué cambia) sin constancia del validador`
+        : `pasar el borrador ${name} a ${status} sin constancia del validador`,
+    };
   }
-  if (isCodex) return { action: 'pass', kind: 'unknown-codex', reason: 'Codex no expone la invocación de skills como tool call — sin constancia mecánica posible, no se frena, queda medido' };
-  if (st === 'expired') {
-    return { action: 'block', kind: 'mark-expired', reason: `la constancia de ${mark.skill} venció (TTL ${Math.round(ttlMs / 60000)} min)` };
-  }
+  // Un id con otra forma que la del repo no abre el portón: un modelo que se saltea la skill también inventa el número
+  // (G-1 en un repo que numera por épica); el mensaje lo dice.
+  if (status === 'draft') return { action: 'pass', kind: 'new-draft', reason: 'historia nueva en borrador' };
+  if (record) return { action: 'pass', kind: 'validated', reason: 'el validador corrió sobre la historia después de su última escritura' };
+  if (isCodex) return { action: 'pass', kind: 'unknown-codex', reason: 'Codex no deja leer la conversación — sin constancia posible del validador, no se frena, queda medido' };
   return {
-    action: 'block', kind: 'no-skill',
-    reason: `story nueva (${path.basename(String(filePath || ''))}) sin constancia de tycon-create-story en esta sesión` +
+    action: 'block', kind: 'new-not-draft',
+    reason: `story nueva (${name}) en ${status || 'un estado que no se ve'} sin constancia del validador` +
       (idIsWork === false ? ' (y su número no sigue la numeración de las historias del repo)' : ''),
   };
 }
 
-/** Texto del bloqueo: qué pasó, por qué frena, y las salidas concretas. */
-function blockMessage(r, { filePath, via, ttlMs, byName = false } = {}) {
+/** Texto del bloqueo: qué pasó, por qué frena, y la salida concreta. */
+function blockMessage(r, { filePath, via, byName = false } = {}) {
   const rel = path.basename(String(filePath || ''));
-  const cause = /^mark-expired/.test(r.kind)
-    ? `la constancia del skill en esta sesión VENCIÓ (TTL ${Math.round((ttlMs || 0) / 60000) || DEFAULT_TTL_MIN} min)`
-    : 'en esta sesión NO consta que se haya invocado el skill que crea stories';
-  const what = byName
-    ? `por el NOMBRE parece una story Mary+GOLD NUEVA (no pude leer su contenido desde este comando)`
-    : 'es una story Mary+GOLD NUEVA';
+  const promote = /^draft-promote/.test(r.kind);
+  const terminal = promote && /terminal/.test(r.reason || '');
+  const what = promote
+    ? (terminal ? `está en borrador (status: draft) y este comando escribe sobre ella` : `está en borrador y la querés pasar a otro estado`)
+    : byName
+      ? 'por el NOMBRE parece una story Mary+GOLD NUEVA (no pude leer su contenido desde este comando)'
+      : 'es una story Mary+GOLD NUEVA que no está en borrador';
   return [
-    `🔴 STORY A MANO — escritura DENEGADA: "${rel}" ${what} y ${cause}.`,
+    `🔴 HISTORIA SIN VALIDAR — escritura DENEGADA: "${rel}" ${what}, y en esta conversación no consta que el validador`,
+    '   de historias (tycon-story-validator) haya corrido sobre ese archivo después de su última escritura.',
     via ? `   (vía ${via})` : '',
     /numeración/.test(r.reason || '') ? '   Además, su número no sigue la numeración de las historias del repo: el que corresponde lo elige la skill.' : '',
     byName ? '   Si NO es una story (un índice, una nota): escribila con la tool Write, o renombrala con `git mv` — el nombre es lo único que este comando deja ver.' : '',
     '',
-    '   Por qué frena: dos veces en dos días (AS-1 y PERF-1, Totora 2026-08-28/30) la story se escribió',
-    '   con un heredoc siguiendo story-format.md de memoria. Quedó bien formada — y sin el análisis de',
-    '   artefactos, la inteligencia de la story previa ni el checklist de validación en contexto fresco',
-    '   que el skill hace. El contexto que ya relevaste NO reemplaza al skill: es su input ideal.',
+    '   Por qué frena: una historia escrita sin los pasos de la skill (tycon-create-story) llegaba al pipeline como si',
+    '   estuviera revisada, y el agente decía «creada y verificada» sin que el validador la hubiera visto.',
     '',
     '   Qué hacer AHORA:',
     '',
-    '   (a) Invocá el skill y dejá que ÉL escriba el archivo:  Skill → tycon-create-story',
-    '       (Bob/SM "CS", bmad-create-epics-and-stories o bmad-correct-course también valen).',
-    '       Pasale todo lo que ya relevaste — anclas, mediciones, decisiones del dev — como contexto.',
-    '       La constancia la deja el harness solo (hook PostToolUse sobre la tool Skill): el portón se abre.',
+    promote
+      ? (terminal ? '   (a) Editala con la tool Edit, no por la terminal. Para pasarla a ready-for-dev, primero corré el validador.'
+        : '   (a) Corré el validador de historias (tycon-story-validator) sobre ese archivo y, si pasa, volvé a hacer este cambio.')
+      : '   (a) Escribila con `status: draft`. Después corré el validador de historias (tycon-story-validator) sobre ese\n' +
+        '       archivo y, si pasa, pasala a ready-for-dev. La skill tycon-create-story hace esos pasos en orden.',
     '',
-    '   (b) Si el USER decidió explícitamente que esta story se escriba a mano (y con esas palabras),',
-    '       declaralo — queda en bypass.log con la razón, no es un skip silencioso:',
-    '',
-    `         node ${MARKER_JS} story-skill-bypass "<la razón, en palabras del user>"`,
-    '',
-    '   Kill-switch del dev: TYCON_STORY_SKILL_GATE=off · por repo (commiteado): .tycon/advisors.yaml →',
-    '   pipeline.story_skill_gate: false.',
+    '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, tiene que escribir en su mensaje',
+    '       «autorizo story-skill-bypass»; con esa frase suya, este freno la deja pasar solo y lo anota.',
   ].filter((l) => l !== '').join('\n');
 }
 
 module.exports = {
   CREATOR_SKILLS, DEFAULT_TTL_MIN, MARKER_JS,
-  isCreatorSkill, ttlMsFrom, markState, computeStorySkillGate, blockMessage,
+  isCreatorSkill, ttlMsFrom, markState, statusOf, isDraftStatus, computeStorySkillGate, blockMessage,
 };

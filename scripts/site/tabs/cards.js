@@ -160,8 +160,29 @@ function fichasDelClon({ clon, dirBuzon = null, buzonLeido = false, ocultas = []
       config = undefined;
       log(`el sources.json de la copia de operaciones no se pudo leer (${(e && e.code) || (e && e.name) || 'error'}): las fichas usan el del arnés`);
     }
+    // el examen y los casos del banco que trae la copia de operaciones, si los trae (la poda de reglas; la imagen del sitio
+    // no trae los del arnés); sin ellos, el camino de siempre. Un enlace de la copia no lleva a leer fuera de ella: ni el
+    // archivo, ni una carpeta de más arriba (la ruta real queda adentro), ni un caso de la carpeta (todos archivos comunes)
+    const banco = path.join(clon, 'scripts', 'controls-bench');
+    const delBanco = (rel, carpeta) => {
+      const p = path.join(banco, rel);
+      try {
+        const s = fs.lstatSync(p);
+        if (carpeta ? !s.isDirectory() : !s.isFile()) return undefined;
+        const raiz = fs.realpathSync(clon);
+        const real = fs.realpathSync(p);
+        if (real !== path.join(raiz, path.relative(clon, p))) { log(`${path.relative(clon, p)} de la copia de operaciones pasa por un enlace: la poda usa el del arnés`); return undefined; }
+        if (carpeta && fs.readdirSync(p, { withFileTypes: true }).some((e) => !e.isFile())) { log(`${path.relative(clon, p)} de la copia de operaciones trae algo que no es un archivo común: la poda usa los del arnés`); return undefined; }
+        return p;
+      } catch (e) {
+        // que no esté es lo normal; cualquier otra falla se anota y se sigue con el camino de siempre
+        if (e && e.code !== 'ENOENT') log(`${path.relative(clon, p)} de la copia de operaciones no se pudo mirar (${e.code || e.name || 'error'}): la poda usa el del arnés`);
+        return undefined;
+      }
+    };
     const d = dashboard.colectar({
       dir: path.join(clon, '.dashboard'), raiz: clon, nocturno: true, config, ahora,
+      examen: delBanco('ultimo-examen.json', false), casos: delBanco(path.join('cases', 'advisors'), true),
       hoy: new Date(ahora).toISOString().slice(0, 10),
       mailbox: dirBuzon || undefined,
       estadoBuzon: buzonLeido && dirBuzon ? { estado: 'leido' } : { estado: 'no_leido', motivo: 'el sitio no tiene el buzón de ejecuciones' },

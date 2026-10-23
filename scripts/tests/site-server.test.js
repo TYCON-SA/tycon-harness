@@ -171,8 +171,9 @@ test('T7 Codigo_SinValoresDeUnaOrganizacion', () => {
   recorrer(SITE);
   recorrer(path.join(ROOT, 'scripts', 'nightly', 'assigned'));
   // los únicos GUID admitidos son ids PÚBLICOS de Microsoft, los mismos para todas las organizaciones: la aplicación de
-  // Azure DevOps en Entra, y el inquilino de las cuentas personales (el emisor de `consumers`)
-  const GUID_PUBLICO = new Set(['499b84ac-1321-427f-aa17-267ca6975798', '9188040d-6c67-4c5b-b112-36a304b66dad']);
+  // Azure DevOps en Entra, el inquilino de las cuentas personales (el emisor de `consumers`) y la aplicación de
+  // Microsoft Graph (la invitación desde Personas)
+  const GUID_PUBLICO = new Set(['499b84ac-1321-427f-aa17-267ca6975798', '9188040d-6c67-4c5b-b112-36a304b66dad', '00000003-0000-0000-c000-000000000000']);
   const terminos = (() => {
     const deny = path.join(ROOT, 'scripts', 'publishing', 'denylist.json');
     if (!fs.existsSync(deny)) return [];
@@ -275,7 +276,7 @@ test('T42 Vida_NoDependeDelFreno', async () => {
     const h = await H.arrancarSitio({ env: H.envBase(), fuentes });
     try {
       const vida = await h.pedir('/livez');
-      assert.deepStrictEqual([vida.status, vida.json], [200, { ok: true }], `${caso}: /livez`);
+      assert.deepStrictEqual([vida.status, vida.json], [200, { ok: true, demo: false }], `${caso}: /livez`);
       const hz = await h.pedir('/healthz');
       assert.strictEqual(hz.status, esperado.healthz, `${caso}: /healthz`);
       if (caso === 'frenado') assert.match(hz.json.motivo, /^la configuración de la organización no valida desde /);

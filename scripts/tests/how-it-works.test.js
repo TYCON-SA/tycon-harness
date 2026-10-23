@@ -966,7 +966,7 @@ test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada
 
 test('T30 ComoTrabaja_CadaControlDeclaraSuIntegracion @story-2.61.3 @ac-4 — un control de ADO o del registro de horas lo declara', () => {
   const { controls } = HIW().readControls(ROOT);
-  const deIntegracion = { 'tycon-ado-story-wi/': 'ado', 'clocki/': 'clockify' };
+  const deIntegracion = { 'tycon-story-work-item/': 'ado', 'clocki/': 'clockify' };
   for (const c of controls) {
     for (const [parte, integ] of Object.entries(deIntegracion)) {
       if (c.script.includes(parte)) assert.strictEqual(c.integration, integ, `${c.spec} (${c.script})`);
@@ -981,8 +981,11 @@ test('T31 ComoTrabaja_CadaControlDiceQueHace @story-2.61.3 @ac-5 — el título 
   assert.ok(especs.length > 40, `${especs.length} controles`);
   for (const spec of especs) {
     let es; let en;
-    try { es = TX().t('es', `control.${spec}`); en = TX().t('en', `control.${spec}`); } catch (e) {
-      assert.fail(`${spec}: le falta su texto en llano (control.${spec} en scripts/site/texts.js, en castellano y en inglés)`);
+    // el de una integración lo trae su manifiesto (`control`); el del arnés, los textos del sitio
+    const deManifiesto = controls.find((c) => c.spec === spec && c.control);
+    if (deManifiesto) ({ es, en } = deManifiesto.control);
+    else try { es = TX().t('es', `control.${spec}`); en = TX().t('en', `control.${spec}`); } catch (e) {
+      assert.fail(`${spec}: le falta su texto en llano (control.${spec} en scripts/site/texts.js, o «control» en su manifiesto, en castellano y en inglés)`);
     }
     assert.ok(es && en && es !== en, `${spec}: dos idiomas`);
     assert.ok(hasSpanish(es) && !hasSpanish(en), `${spec}: el castellano en castellano y el inglés en inglés`);
@@ -992,7 +995,7 @@ test('T31 ComoTrabaja_CadaControlDiceQueHace @story-2.61.3 @ac-5 — el título 
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
   for (const c of [...m.allSteps.controls, ...m.steps.flatMap((x) => x.controls)]) {
     const li = html.split(`data-piece="${c.script}"`)[1].split('</li>')[0];
-    assert.ok(li.includes(`<span class="ct-nom sans">${TX().t('es', `control.${c.spec}`)}</span>`), `${c.spec}: su título`);
+    assert.ok(li.includes(`<span class="ct-nom sans">${c.control ? c.control.es : TX().t('es', `control.${c.spec}`)}</span>`), `${c.spec}: su título`);
     assert.ok(li.includes(`<span class="ct-archivo">${c.script}</span>`), `${c.spec}: el archivo debajo`);
   }
 });

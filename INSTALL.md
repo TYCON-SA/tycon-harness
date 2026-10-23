@@ -137,7 +137,7 @@ pero sin los controles que corren al commitear. `harness.js doctor` te dice si q
 **3. engram y la herramienta de horas son opcionales.** engram (memoria entre sesiones) se prende con `TYCON_ENGRAM=1` o
 `"integrations": { "engram": true }` en `~/.claude/tycon.json`; la herramienta de horas, con `TYCON_TIME_TRACKING=<nombre>` y
 `guides/integrations/clockify-mcp.md`. Apagados, las guías que los nombran siguen de largo y el pipeline saltea solo su paso de
-horas. Sin Azure DevOps, el pipeline también saltea su parte (el paso 0c y el cierre en Azure DevOps) y una story
+horas. Sin Azure DevOps, el pipeline también saltea su parte (el pedido en ADO del Arranque y el cierre en Azure DevOps) y una story
 nueva no te pide crear un work item.
 
 ### 4b. La configuración del arnés: rutas e integraciones
@@ -229,6 +229,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno; anota y no avisa | No | full | `TYCON_READ_METER=0` |
 | `harness-bootstrap-heal.sh` | SessionStart | Si la línea de arranque hace los `git pull` pero no corre el instalador, le agrega la llamada (con copia de seguridad) | No | minimal y full | `TYCON_NO_BOOTSTRAP_HEAL=1` |
 | `branch-guard-notice.js` | SessionStart | Avisa si el clon del arnés o el de las skills no está en `main`, o está atrasado; con `paths.maintainers`, pone al día de fondo el clon de mantenimiento (sólo en full) | No | minimal y full | `TYCON_BRANCH_GUARD=0` · `TYCON_MAINTAINERS_SYNC=0` |
+| `deprecated-session-notice.js` | SessionStart | Si el repo declara código deprecado (`deprecated` en `.tycon/advisors.yaml`), le da al modelo la lista y la regla; una vez por día avisa las entradas que ya no apuntan a nada o pasaron su fecha | No | full | — (sin la clave, calla) |
 | `retro-pending.js` | PostToolUse (Bash) | Anota cada `git push` a `main` de un repo bajo el arnés | No | full | `TYCON_RETRO_PENDING=0` |
 | `retro-pending.js` | Stop | No deja cerrar el turno si un merge a `main` no tiene su archivo de métricas (tope: tres veces seguidas) | Sí | full | `TYCON_RETRO_PENDING=0` |
 | `retro-pending.js` | SessionStart | Lista los merges a `main` que no tienen su archivo de métricas | No | full | `TYCON_RETRO_PENDING=0` |
@@ -240,6 +241,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `owner-email-notice.js` | SessionStart | Dice una vez que la máquina informa al equipo el correo global de git, y cómo verlo o cambiarlo; otra vez sólo si cambia | No | minimal y full | `TYCON_OWNER_EMAIL_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `unclosed-runs-notice.js` | SessionStart | Dice una vez por día si alguna corrida del pipeline quedó sin cerrar, de qué stories y qué hacer; esas corridas se suben marcadas | No | minimal y full | `TYCON_UNCLOSED_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `produccion-notice.js` | SessionStart | Regenera el índice de servidores de producción declarados y, en las máquinas autorizadas, avisa si el freno de producción falta | No | full | `TYCON_PRODUCTION_NOTICE=0` |
+| `guard-update-notice.js` | SessionStart | En las máquinas con el freno de producción, compara el permiso de actualizarlo sin contraseña con lo que eligió la organización y da el comando para corregirlo | No | full | `TYCON_GUARD_UPDATE_NOTICE=0` |
 | `lane-llm-notice.js` | SessionStart | Avisa si el desempate por modelo del portón de carril abrió permisos | No | full | `TYCON_LANE_LLM_NOTICE=0` |
 | `engram-drift-notice.js` | SessionStart | Revisa la memoria de engram una vez por día: proyectos sin nombre fijo, memoria repartida, observaciones sin exportar | No | minimal y full | `TYCON_ENGRAM_DRIFT=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `unpushed-work-notice.js` | SessionStart | Avisa las ramas del repo y de su grupo con commits que no están en el remoto | No | full | `TYCON_UNPUSHED_NOTICE=0` |
@@ -249,11 +251,12 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `unpushed-work-notice.js` | Stop | Si la sesión commiteó y quedó algo sin subir, frena el cierre una vez por repo y rama | Sí, una vez | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `worktree-sweep.js` | SessionStart | Una vez por día borra las carpetas de trabajo (worktrees) limpias y ya mergeadas, con su rama; las que tienen trabajo sólo las nombra | No | full | `TYCON_WORKTREE_SWEEP=0` |
 | `missing-path-notice.js` | PostToolUse (Bash) | Avisa cuando un comando de lectura nombró una ruta que no existe | No | full | `TYCON_MISSING_PATH_NOTICE=0` |
+| `deprecated-read-notice.js` | PostToolUse (Read, Bash) | Al leer un archivo deprecado, le recuerda al modelo el motivo y que no lo copie | No | full | — (sin la clave, calla) |
 | `failed-query-notice.js` | PostToolUse (Bash) | Avisa cuando una consulta a un servicio volvió vacía con el código de salida tapado | No | full | `TYCON_FAILED_QUERY_NOTICE=0` |
 | `rebuild-before-verify.js` | PostToolUse (Edit\|Write, Bash) | Marca el frontend como «sucio» al editar un componente y lo limpia al correr el build de desarrollo que declara el repo | No | full | `TYCON_REBUILD_VERIFY=0` |
 | `rebuild-before-verify.js` | UserPromptSubmit | Con el frontend sucio, recuerda correr el build antes de pedir una verificación visual | No | full | `TYCON_REBUILD_VERIFY=0` |
 | `artifact-archive.js` | PostToolUse (Artifact) | Al publicar un artefacto, copia su fuente a la carpeta artifacts del repo, sin commitear | No | full | `TYCON_ARTIFACT_ARCHIVE=0` |
-| `safety-guard-pre.sh` | PreToolUse (Bash) | Freno de mano: bloquea comandos destructivos o riesgosos (`rm -rf /`, `git push --force` a `main`, `curl \| bash`, `DROP DATABASE`, leer `.env` o `.ssh`…) | Sí | minimal y full | `TYCON_SAFETY_GUARD=0` · puntual: `TYCON_SAFETY_OFF=1` pegado al comando |
+| `safety-guard-pre.sh` | PreToolUse (Bash) | Freno de mano: bloquea comandos destructivos o riesgosos (`rm -rf /`, `git push --force` a `main`, `curl \| bash`, `DROP DATABASE`, leer `.env` o `.ssh`…) | Sí | minimal y full | `TYCON_SAFETY_GUARD=0` · puntual: `TYCON_SAFETY_OFF=1` pegado al comando, con la frase «autorizo TYCON_SAFETY_OFF» de la persona en el chat |
 | `test-scope-guard-pre.sh` | PreToolUse (Bash) | Bloquea correr pruebas sin filtro (`npm test`, `vitest run` o `dotnet test` pelados) | Sí | full | `TYCON_TEST_SCOPE_GUARD=0` · la suite completa a propósito: `TYCON_FULL_SUITE=1` pegado al comando |
 | `engram-pre-commit.sh` | PreToolUse (Bash) | En un `git commit` de un repo con su archivo .engram-project, exporta la memoria y la suma al commit; frena si el commit pierde una entrada del índice de memoria | Sí, por el índice | minimal y full | `TYCON_ENGRAM_HOOK=0` · sólo el freno del índice: `TYCON_ENGRAM_MANIFEST_GUARD=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `telegram-zombie-sweep.sh` | SessionStart | Sólo en máquinas con el plugin oficial de Telegram: cierra sus lanzadores huérfanos | No | full | `TYCON_TG_ZOMBIE_SWEEP=0` |
@@ -548,7 +551,7 @@ que viven solo en una guía y el modelo nunca ve (H20).
 1. **H20 — no escondas reglas operativas solo en guías.** Si una regla la necesita el modelo
    en TODA sesión → va en el índice, `INDEX.md` (que se carga). Las guías son para profundidad/detalle
    topical. Y si un step del pipeline o un advisor DEPENDE de una guía, ese step DEBE
-   referenciarla explícitamente (ej: `step-07c` → `definition-of-done.md`, `step-01` →
+   referenciarla explícitamente (ej: `step-10-live-check` → `definition-of-done.md`, `step-02-validate-story` →
    `story-format.md`) para que se lea on-demand al ejecutarse.
 2. **H3 — una sola fuente canónica por regla.** Cada regla vive textual en UN solo archivo;
    el resto la referencia con un puntero (`Ver guides/X.md`), NO la re-escribe. **Y la copia

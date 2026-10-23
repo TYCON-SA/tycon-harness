@@ -229,18 +229,96 @@ function Get-SyncResponse([string]$Reader) {
 
 # Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida; el marcador
 # nunca se copia. No se pudo saber: la fila queda como estaba en el destino (espejo de filter_rows del .sh).
-function Select-SyncRows([string]$Body, [string]$Existing, [string]$Reader) {
+function Select-SyncRows([string]$Body, [string]$Existing, [string]$Reader, [string]$Tree) {
     # con mayúsculas y minúsculas distintas no es la misma fila (un @{} de PowerShell las confunde; el .sh y el .js no)
     $kept = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     if ($Existing) { foreach ($l in $Existing.Split([char]10)) { [void]$kept.Add($l.TrimEnd([char]13)) } }
-    $out = foreach ($line in $Body.Split([char]10)) {
-        $m = [regex]::Match($line, '^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$')
+    $tools = @(Get-SyncTimeTools $Tree)
+    if ($Body -match '(?m)^<!--\s*time-tool-rows\s*-->\s*$') {
+        [void](Get-SyncTimeToolState '' $Reader)
+        $v = $script:SyncTimeTool.Value
+        if ($v -and $v -ne 'none' -and -not ($tools -contains $v)) { Write-Host "! tycon: la herramienta de horas elegida («$v») no es una integracion de horas de este arnes: la tabla de nombres de tools no trae filas suyas" }
+    }
+    $out = foreach ($line in (Expand-SyncTimeRows $Body $Tree $tools).Split([char]10)) {
+        $m = [regex]::Match($line, '^(.*\|)[ \t]*<!--\s*integration:\s*([a-z0-9-]+)\s*-->\s*$')
         if (-not $m.Success) { $line; continue }
         $row = $m.Groups[1].Value.TrimEnd()
-        $st = Get-SyncIntegrationState $m.Groups[2].Value $Reader
+        $name = $m.Groups[2].Value
+        # una herramienta de horas va si es la elegida; sin saber cuál, la fila queda como estaba
+        $st = if ($script:SyncTimeUnknown -contains $name) { @{ State = 'unknown'; Why = 'no pude leer sus archivos' } } elseif ($tools -contains $name) { Get-SyncTimeToolState $name $Reader } else { Get-SyncIntegrationState $name $Reader }
         if ($st.State -eq 'on' -or ($st.State -eq 'unknown' -and $kept.Contains($row))) { $row }
     }
     return (@($out) -join "`n")
+}
+
+# Las herramientas de horas: las integraciones de horas de integrations/ (su manifiesto lo dice). Sus filas de la tabla de
+# nombres de tools viven en su carpeta (tool-names.md) y van donde la plantilla dice <!-- time-tool-rows --> (espejo del .sh).
+# Una carpeta con nombre valido cuyo manifiesto no se lee entra como «no se sabe» ($script:SyncTimeUnknown): sus filas
+# quedan como estaban en el destino (espejo del .sh)
+function Get-SyncTimeTools([string]$Tree) {
+    if ($null -ne $script:SyncTimeTools) { return $script:SyncTimeTools }
+    $names = @(); $script:SyncTimeUnknown = @()
+    foreach ($d in @(Get-ChildItem -Path (Join-Path $Tree 'integrations') -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
+        if ($d.Name -cnotmatch '^[a-z0-9-]+\z') { continue }   # otro nombre no es una integracion (no seria un marcador reconocible)
+        $mf = Join-Path $d.FullName 'integration.json'
+        if (-not (Test-Path $mf)) { continue }
+        try {
+            $m = [IO.File]::ReadAllText($mf) | ConvertFrom-Json
+            if ($m -isnot [array] -and $m.kind -ceq 'timeTracking' -and $m.name -ceq $d.Name) { $names += $d.Name }
+        } catch {
+            Write-Host "! tycon: no pude leer integrations/$($d.Name)/integration.json ($($_.Exception.Message)): si es una herramienta de horas, sus filas de la tabla de nombres de tools quedan como estaban"
+            $names += $d.Name; $script:SyncTimeUnknown += $d.Name
+        }
+    }
+    $script:SyncTimeTools = $names
+    return $names
+}
+# Solo las filas de tabla (abren y cierran con |, sin comentarios): otra linea del archivo no se copia, y se dice
+function Expand-SyncTimeRows([string]$Body, [string]$Tree, $Tools) {
+    $out = foreach ($line in $Body.Split([char]10)) {
+        if ($line.TrimEnd([char]13) -notmatch '^<!--\s*time-tool-rows\s*-->\s*$') { $line; continue }
+        foreach ($n in $Tools) {
+            $f = Join-Path (Join-Path (Join-Path $Tree 'integrations') $n) 'tool-names.md'
+            if (-not (Test-Path $f)) { continue }   # sin nombres de tools, sin filas
+            $text = $null
+            try { $text = [IO.File]::ReadAllText($f) } catch { Write-Host "! tycon: no pude leer integrations/$n/tool-names.md ($($_.Exception.Message)): la tabla de nombres de tools no trae sus filas"; continue }
+            foreach ($r in $text.Split([char]10)) {
+                $r = $r.TrimEnd()
+                if (-not $r.Trim()) { continue }
+                if ($r -match '^\|.*\|\s*$' -and -not $r.Contains('<!--')) { "$r <!-- integration: $n -->" }
+                else { Write-Host "! tycon: integrations/$n/tool-names.md trae una linea que no es una fila de tabla («$($r.Trim().Substring(0, [Math]::Min(60, $r.Trim().Length)))»): no se copia" }
+            }
+        }
+    }
+    return (@($out) -join "`n")
+}
+# La herramienta de horas elegida, como la da el lector (time-tracking, que ya lee la llave vieja): on si es ésta
+function Get-SyncTimeToolState([string]$Name, [string]$Reader) {
+    if ($null -eq $script:SyncTimeTool) {
+        $v = $null; $why = $null
+        # viene en la misma respuesta de las integraciones (también la que pasó el aplicador); un lector anterior no la
+        # trae y se le pregunta aparte
+        [void](Get-SyncIntegrationState 'ado' $Reader)
+        $d = $script:SyncIntegrations.Data
+        $p = if ($null -ne $d) { $d.PSObject.Properties['timeTracking'] } else { $null }
+        if ($null -ne $p -and ([string]$p.Value) -cmatch '^[a-z0-9-]+\z') { $script:SyncTimeTool = @{ Value = [string]$p.Value; Why = $null } }
+    }
+    if ($null -eq $script:SyncTimeTool) {
+        $v = $null; $why = $null
+        if (-not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
+        elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
+        else {
+            $out = & node $Reader time-tracking 2>$null
+            $rc = $LASTEXITCODE
+            $txt = ($out | Out-String).Trim()
+            if ($rc -eq 0 -and $txt -cmatch '^[a-z0-9-]+\z') { $v = $txt }
+            elseif ($rc -eq 2) { $why = 'configuración rota: `node scripts/lib/tycon-config.js validate` dice qué' }
+            else { $why = "el lector de configuración no dijo la herramienta de horas (exit $rc)" }
+        }
+        $script:SyncTimeTool = @{ Value = $v; Why = $why }
+    }
+    if ($null -eq $script:SyncTimeTool.Value) { return @{ State = 'unknown'; Why = $script:SyncTimeTool.Why } }
+    return @{ State = $(if ($script:SyncTimeTool.Value -eq $Name) { 'on' } else { 'off' }); Why = $null }
 }
 
 # Los bloques de los paquetes activos, una sola vez: @{ Data = @{ active; blocks } ; Why } (Data $null si no se pudo saber).
@@ -346,7 +424,7 @@ try {
             $n = [long]$resp.Data.max_chars
             $body = $body.Replace('{{max_chars}}', "$n").Replace('{{max_lines}}', "$([long][Math]::Floor(($n + 50) / 100))")
         }
-        $body = Select-SyncRows $body $existingBody $configReader
+        $body = Select-SyncRows $body $existingBody $configReader $treeDir
         $requires = $block.Requires
         $profiles = $block.Profiles
         $badMarker = $block.BadMarker

@@ -321,7 +321,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <action>Fill the YAML frontmatter completely: epic, story, title, status, sprint, priority, approach,
   depends_on, files_to_create, files_to_modify. Add followup_of + followup_reason if the story corrects,
   recalibrates or extends another one (§1.2), and a pipelines block if it ships in batches (§1.1).
-  Do NOT write ado_work_item (tycon-ado-story-wi adds it). No double quotes inside YAML comments or
+  Do NOT write work_item (tycon-story-work-item adds it; the old name ado_work_item is never written). No double quotes inside YAML comments or
   inside the title value (§1.0).</action>
   <action>Keep every Mary+GOLD section of the template. Backend stories MUST fill "Patron de referencia
   verificado" with real anchors opened in the sibling plugins, or the explicit "No aplica" (§9.2).
@@ -370,10 +370,43 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <template-output file="{default_output_file}">
   story_completion_status</template-output>
 
-  <!-- CRITICAL: ready-for-dev is set in step 6, after the adversarial review of the story is recorded -->
-  <action>Leave story Status as "backlog": step 6 sets "ready-for-dev" once the review record is written</action>
+  <!-- CRITICAL: ready-for-dev is set in step 6, after the validator and the adversarial review of the story -->
+  <action>Write the story with Status as "draft" (frontmatter `status: draft` and the `Status:` line under the title):
+  the harness only lets a new story without the validator's record be written as a draft, and only lets a draft move
+  to "ready-for-dev" after `tycon-story-validator` ran on that file. Step 6 sets "ready-for-dev". The entry in
+  {{sprint_status}} stays "backlog" while the file is a draft</action>
   <action>Add completion note: "Ultimate
   context engine analysis completed - comprehensive developer guide created"</action>
+
+  <!-- Estimate: after the draft is written and before step 6 validates it. The estimate goes to the repo's
+       .tycon/estimates.jsonl register, never into the story file, so it does not touch what the validator reads. -->
+  <action>Estimate the story. Let H = `${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}`. Run
+  `node "$H/scripts/lib/similar-stories.js" --repo {project-root} --story {default_output_file} --json`: it returns up to
+  five closed stories of this repo with their real hours (`real_horas`), their last estimate and why each one looks like
+  this one. If it returns candidates, propose ONE value in the organization's unit (the one `estimates.js` writes), naming
+  the stories it is based on and their real hours. The unit and its rates are the organization's `estimates` key in
+  `$H/team-repos.json` (`unit`, `hours_per_day`, `hours_per_point`; without the key, hours). If the unit is `points` and
+  the organization has no `hours_per_point`, show the candidates with their hours and make no proposal ("sin tasa de horas por punto: no hay propuesta"). If the list
+  is empty, say so in one line (its `motivo`) and let the person estimate.</action>
+  <action>Ask the person, in one question with three answers: confirm the proposed value, correct it (with the value), or
+  skip. In autonomous mode under a coordinator, the question goes to whoever approves, never to a blocking dialog.</action>
+  <check if="the person confirmed or corrected">
+    <action>Run `node "$H/scripts/lib/estimates.js" story --repo {project-root} --story {{story_id}} --proposed
+    <the proposed value, omitted if there was none> --value <the value that stays> --base <the candidate ids used,
+    comma-separated> --confirmed-by <who answered>`. Every value the person gave and every id taken from a file goes in
+    single quotes, with any single quote inside written as `'\''`, and the paths too: the command line must not run
+    anything but the command. `estimates.js` checks the shape of `--base` (story ids) and `--confirmed-by` (a name or an
+    email) and exits 2 without writing if they do not fit. It appends one line to `.tycon/estimates.jsonl`.</action>
+    <action>Run `node "$H/scripts/lib/estimates.js" report --repo {project-root} --epic {{epic_num}} --json` and show one
+    line: the epic's current total against its range ("la épica suma 58 h; rango 40–70 h"), saying so if it falls
+    outside. If the report does not compare (`dentro: null`: no range, no estimated stories, or units without a rate),
+    show its `motivo` instead of the total.</action>
+  </check>
+  <check if="the person skipped">
+    <action>Write nothing and go on.</action>
+  </check>
+  <action>If `similar-stories.js` or `estimates.js` exits with 2 or 3, say it in one line with its reason and go on without
+  estimating: a missing estimate never stops the story.</action>
 </step>
 
 <step n="6" goal="Update sprint status and finalize">
@@ -418,8 +451,13 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     the record says `medido: false`). A reviewer that died or did not answer what was asked is `--result no-medido`:
     say it in one line and go on (step 1 of the pipeline launches it again).</action>
   </check>
-  <action>Only after the record is written (and nothing is `pendiente`), set the story Status and the sprint status
-  to "ready-for-dev"</action>
+  <check if="the story file changed after the validator's last run (fixes from the adversarial review, or any other edit)">
+    <action>Run the `tycon-story-validator` subagent again on {default_output_file}, naming that path in the prompt, right
+    before setting "ready-for-dev": every edit makes the validator's record stale, and the harness does not let a draft
+    move to "ready-for-dev" without a current one. If it reports a CRITICAL, fix it and run it again.</action>
+  </check>
+  <action>Only after the record is written (and nothing is `pendiente`), set the story Status (frontmatter and the
+  `Status:` line, from "draft") and the sprint status to "ready-for-dev"</action>
 
   <!-- Update sprint status -->
   <check if="sprint status file exists">

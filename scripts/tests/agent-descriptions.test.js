@@ -38,7 +38,7 @@ const TRIGGERS = {
   'tycon-e2e-realness-checker': ['tests/e2e', 'spec.ts'],
   'tycon-signed-scope-audit': ['sprint-plan.md'],
   'i18n-hardcoded-text-reviewer': ['i18n.required'],
-  'tycon-spec-first-checker': ['Step 4'],
+  'tycon-spec-first-checker': ['«Implementar»'],
   'llm-cost-reviewer': ['@anthropic-ai/sdk'],
   'tycon-story-validator': ['bmad-dev-story'],
   'tycon-deferral-tracker': ['pipelines', '.skip()'],

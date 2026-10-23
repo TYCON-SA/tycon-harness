@@ -28,7 +28,7 @@ sería peor que no tenerlo.
 | Chequeo | Qué atrapa |
 |---|---|
 | **Frontmatter legible** | Una story cuyo frontmatter no cierra. Las tools del arnés no dan error con eso: la **saltean en silencio** (medido en un producto del equipo: 4 stories invisibles durante 2 meses, una tapando una deuda de evidencia). |
-| **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado del dev: `dod_runtime_exempt: true` + razón. |
+| **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado: `dod_runtime_exempt: true` + razón, que lo decide la persona (en una story ya en implementación, el arnés le pide «autorizo dod_runtime_exempt»). |
 | **Constancia de revisores** | Una story que pasa a `done` sin una corrida del pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local). Escape: `advisors_exempt: true` + razón. |
 
 | **Índice de memoria** (2026-09-17) | Un cambio que deja la memoria de engram a medio declarar: entradas que la rama base declara y este cambio ya no, o archivos de memoria nuevos sin entrada. `engram sync --import` lee el ÍNDICE, no la carpeta, así que un archivo sin entrada **no existe para las demás máquinas y no da error**; y una entrada perdida no vuelve sola. Mismo criterio que el freno del commit (`scripts/lib/manifest-engram.js`) y misma asimetría: lo que este cambio ROMPE frena, lo heredado y lo no comparable avisan. Sólo lee algo si el diff toca `.engram/`. **Acá importa especialmente**: es lo único que ve los commits hechos fuera del asistente — la web de Azure, otra máquina, un hook salteado. |
@@ -94,7 +94,7 @@ Medido: **los cinco repos de specs** de la organización tenían el mismo muro.
 **La regla.** La evidencia de cierre **nace en el repo git que CONTIENE la story**, aunque el
 código esté en otro. No se copia: el ledger de smokes crece con cada corrida y dos copias
 divergen. El pipeline lo resuelve solo (`pipeline.js evidence-dir --story <spec> --repo <repo>
---plain`, y el marker lo guarda en `evidenceDir`); el step 7c usa ese directorio en todos los
+--plain`, y el marker lo guarda en `evidenceDir`); el paso «Probar en vivo» usa ese directorio en todos los
 runners (macro, gate E2E, smoke-run). Para el freno local no cambia nada: la evidencia del repo
 de la story es "propia" por definición. Para `done`, el arnés **proyecta** al repo de la story
 sólo `review-roster.json` y `findings.json` de la corrida (`write-findings` y el hook

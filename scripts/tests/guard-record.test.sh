@@ -340,6 +340,7 @@ lineas_limpias(){ HOME="$CASA" node -e '
   if(!fs.existsSync(p)){process.stdout.write("sin-registro");process.exit(0)}
   const ok=["ts","freno","regla","veredicto","sha256"].join(",");
   const malas=fs.readFileSync(p,"utf8").trim().split("\n").filter(Boolean).map(l=>JSON.parse(l))
+    .filter(l=>l.regla!=="estado-a-mano")
     .filter(l=>Object.keys(l).sort().join(",")!==ok.split(",").sort().join(",")
       || !/^[0-9a-f]{64}$|^$/.test(l.sha256||"") || /historia-confidencial|\/|specs/.test(l.freno+l.regla+l.veredicto));
   process.stdout.write(String(malas.length));
@@ -352,9 +353,10 @@ else
   # ── T1 — Constancia_HooksDelCierre_AnotanBloqueoYPaso ─────────────────────────────────────
   # 🔴 Rojo si los hooks de agent-skills no anotan: cero líneas.
   mundo; R="$TMP/r72"; repo72 "$R"
-  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" node "$FW" >/dev/null 2>&1); ec_sin=$?
+  # mide las reglas de la evidencia, no el freno del estado a mano (8.109): ése se apaga en el ambiente del gancho
+  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" TYCON_STATUS_GATE=off node "$FW" >/dev/null 2>&1); ec_sin=$?
   echo "# evidencia" > "$R/.advisors/dod-runtime/9.1-20260916-1200.md"
-  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" node "$FW" >/dev/null 2>&1); ec_con=$?
+  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" TYCON_STATUS_GATE=off node "$FW" >/dev/null 2>&1); ec_con=$?
   fw="$(de72 on-frontmatter-write)"
   # on-pre-commit: story a done con corrida de revisores posterior al corte y SIN roster → frena por roster
   R2="$TMP/r72b"; repo72 "$R2"
@@ -376,7 +378,7 @@ else
      && echo "$pc" | grep '"regla":"roster","veredicto":"bloqueo"' >/dev/null \
      && echo "$eg" | grep '"regla":"escritura-manual","veredicto":"bloqueo"' >/dev/null \
      && echo "$eg" | grep '"regla":"archivo-exento","veredicto":"paso"' >/dev/null \
-     && [ "$(lineas)" = "5" ] && [ "$limpias" = "0" ]; then
+     && [ "$(grep -vc '"regla":"estado-a-mano"' "$(REG)")" = "5" ] && [ "$limpias" = "0" ]; then
     ok "7.2-T1 los tres hooks del cierre anotan cada decisión (bloqueo y paso), una línea cada una, sin ruta ni story"
   else
     no "7.2-T1 exits sin/con/pc/eg=$ec_sin/$ec_con/$ec_pc/$ec_eg líneas=$(lineas) sucias=$limpias fw=[$fw] pc=[$pc] eg=[$eg]"
@@ -385,9 +387,9 @@ else
   # ── T2 — Constancia_SinLib_ElHookDecideIgual ──────────────────────────────────────────────
   # La lib no está (TYCON_GUIDES_DIR a una carpeta vacía): mismo exit y mismo stderr, y sin registro.
   mundo; R="$TMP/r72c"; repo72 "$R"; VACIA="$TMP/vacia"; mkdir -p "$VACIA"
-  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" node "$FW" 2>"$TMP/err-con" >"$TMP/out-con"); e1=$?
+  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" TYCON_STATUS_GATE=off node "$FW" 2>"$TMP/err-con" >"$TMP/out-con"); e1=$?
   rm -f "$(REG)"
-  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$VACIA" node "$FW" 2>"$TMP/err-sin" >"$TMP/out-sin"); e2=$?
+  ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$VACIA" TYCON_STATUS_GATE=off node "$FW" 2>"$TMP/err-sin" >"$TMP/out-sin"); e2=$?
   if [ "$e1" = "2" ] && [ "$e1" = "$e2" ] && cmp -s "$TMP/err-con" "$TMP/err-sin" && cmp -s "$TMP/out-con" "$TMP/out-sin" && [ ! -f "$(REG)" ]; then
     ok "7.2-T2 sin la lib el hook decide igual (mismo exit, misma salida) y no deja registro"
   else

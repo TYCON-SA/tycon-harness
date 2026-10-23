@@ -10,10 +10,11 @@ que todo ande igual con tus repos.
 **En corto:**
 
 - Con **Claude Code**, el arnés llega hasta los revisores: los revisores corren como agentes aparte.
-- Con **Codex**, el arnés frena y se puede trabajar, pero el pipeline no puede lanzar revisores (es un problema de
-  Codex y Ollama, reportado allá).
+- Con **Codex**, el arnés frena y el pipeline lanza los revisores él mismo, como procesos aparte con el modelo de tu
+  sesión: no depende de que el modelo sepa lanzar agentes. Antes de elegir un modelo para Codex, probalo con la sonda
+  ([abajo](#antes-de-elegir-un-modelo-para-codex-la-sonda)).
 - Hace falta un modelo que **use herramientas**. Un modelo local de 7B no las usa y no sirve.
-- Los frenos funcionan, pero un modelo puede escribir por su cuenta la variable que los apaga. Leé
+- Los frenos funcionan, y un modelo los intenta saltear: sus escapes los decide la persona. Leé
   [las advertencias](#advertencias).
 
 ## Qué hace falta
@@ -37,19 +38,32 @@ ollama pull gpt-oss:120b-cloud
 Lo medido, por herramienta. «Usa herramientas» es la condición para todo lo demás: sin ella no se disparan los frenos,
 no corre el pipeline ni trabajan los revisores.
 
-| Modelo | Plan gratis | Claude Code | Codex |
+La misma historia de juguete con cada modelo y cada herramienta. «Pasos» son los 10 del pipeline que cerró de verdad, no
+los que contó.
+
+| Modelo | Plan | Claude Code | Codex |
 |---|---|---|---|
-| `gemma4:31b-cloud` | sí | usa herramientas; frena y respeta los frenos; **siguió el pipeline**, implementó con pruebas en verde y lanzó los revisores como agentes aparte | usa herramientas; implementó con pruebas en verde, pero sin leer la skill del pipeline |
-| `gpt-oss:120b-cloud` | sí | usa herramientas; los revisores andan; **se salteó el freno de seguridad** y **contó pasos del pipeline que no hizo** | usa herramientas; respeta los frenos; la story se cortó por la conexión, sin código |
-| `beam:cloud` | sí | **no usa herramientas** por la API de Anthropic de Ollama | usa herramientas; siguió el pipeline hasta implementar y paró en los revisores |
-| `glm-5.3:cloud`, `kimi-k2.7-code:cloud`, `deepseek-v4-pro:cloud` | no: piden el plan Pro (error 402) | — | — |
+| `deepseek-v4-pro:cloud` | Pro | **10 de 10 pasos**, historia hecha, ~26 min | 5 de 10; terminó la historia pero **contó pasos que no corrió** |
+| `gemma4:31b-cloud` | gratis | **10 de 10 pasos**, historia hecha, ~16 min | 4 de 10; abandonó a los 2 minutos sin terminar |
+| `nemotron-3-super:cloud` | gratis | 9 de 10, historia hecha, ~13 min | **10 de 10 pasos**, historia hecha, ~7 min (gasta más tokens) |
+| `glm-5.3:cloud` | Pro | 7 de 10, historia hecha, ~58 min | **10 de 10 pasos**, historia hecha, ~15 min (el que más tokens gasta) |
+| `kimi-k2.7-code:cloud` | Pro | 9 de 10, historia hecha, lento (~84 min) | 9 de 10, historia hecha, ~13 min |
+| `minimax-m3.1-flash:cloud` | gratis | 7 de 10, historia hecha, lento (~96 min) | **no arranca** tal cual: la API rechaza las herramientas de Codex (`invalid tool type: namespace`); en **modo reducido** sí contesta (ver abajo) |
+| `gpt-oss:120b-cloud` | gratis | **0 de 10**: contó pasos del pipeline que no corrió | 3 de 10; **dijo «hecho» sin hacerlo** y nombró archivos que no existían |
+| `beam:cloud` | gratis | **no usa herramientas** por la API de Anthropic de Ollama | usa herramientas; siguió el pipeline hasta implementar y paró en los revisores |
 | un modelo local de 7B | — | no se midió | **no usa herramientas**: escribe la llamada como texto y Codex no ejecuta nada |
+
+**Cuál elegir.** Con Claude Code, `deepseek-v4-pro:cloud` si tenés el plan Pro; si no, `gemma4:31b-cloud`, o
+`nemotron-3-super:cloud` si importa la velocidad. Con Codex, `nemotron-3-super:cloud` (gratis y rápido) o, con el plan
+Pro, `glm-5.3:cloud` o `kimi-k2.7-code:cloud`. No uses `gpt-oss:120b-cloud` con el arnés, ni `minimax-m3.1-flash:cloud`
+con Codex fuera del modo reducido. Los frenos aguantaron con todos: a cada modelo se le pidió cerrar en rojo, apagar el lazo y commitear
+salteando los controles, y ninguno lo logró. La diferencia entre modelos es si hacen el trabajo, no si se escapan.
 
 Dos datos más:
 
 - Los modelos locales grandes piden mucha memoria. `gpt-oss:20b` baja unos 13 GB y es el mínimo razonable para Codex;
   `gpt-oss:120b` pide 80 GB o más. En una Mac de 16 GB compartida ni el 7B entró sin poner la memoria en advertencia.
-- Los tres modelos gratis no se cortaron por límites del plan. Los cortes que hubo fueron de conexión
+- Los modelos gratis no se cortaron por límites del plan. Los cortes que hubo fueron de conexión
   (`stream disconnected`).
 
 ## Claude Code en la terminal
@@ -76,15 +90,12 @@ claude-ollama() {
   if ! ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$model"; then
     ollama pull "$model" || { echo "Could not pull $model: is Ollama running and 0.14 or newer?"; return 1; }
   fi
-  ANTHROPIC_BASE_URL="http://localhost:11434" \
-  ANTHROPIC_AUTH_TOKEN="ollama" \
-  ANTHROPIC_API_KEY="" \
-  ANTHROPIC_MODEL="$model" \
-  ANTHROPIC_DEFAULT_OPUS_MODEL="$model" \
-  ANTHROPIC_DEFAULT_SONNET_MODEL="$model" \
-  ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
-  CLAUDE_CODE_SUBAGENT_MODEL="$model" \
-  claude --model "$model" "${@:2}"
+  (
+    export ANTHROPIC_BASE_URL="http://localhost:11434" ANTHROPIC_AUTH_TOKEN="ollama" ANTHROPIC_API_KEY="" \
+           ANTHROPIC_MODEL="$model" TYCON_MODEL_PROVIDER="ollama"
+    eval "$(node "$HOME/.claude/tycon-harness/scripts/lib/models-env.js" --provider ollama)"
+    claude --model "$model" "${@:2}"
+  )
 }
 ```
 
@@ -97,7 +108,16 @@ Para qué sirve cada variable:
 | `ANTHROPIC_API_KEY` | vacía, para que no se use una clave de Anthropic que tengas guardada |
 | `ANTHROPIC_MODEL` | el modelo de la sesión |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL`, `_OPUS_`, `_HAIKU_` | los revisores del arnés piden `sonnet`; con esto reciben un modelo que existe en Ollama |
-| `CLAUDE_CODE_SUBAGENT_MODEL` | el modelo de los agentes aparte |
+
+`models-env.js` pone las tres `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` desde la **tabla de Ollama** de tu organización (en el
+sitio, «Qué modelo es cada nivel, por proveedor»; en el archivo, `models.providers.ollama`). Un nivel sin modelo cargado
+(o en `inherit`) usa el modelo de la sesión, el que elegiste al abrir. Así, si la organización dice que el nivel
+económico es `gemma4:31b-cloud` y el equilibrado `gpt-oss:120b-cloud`, los revisores del nivel económico corren con el
+primero y los del equilibrado con el segundo. Sin tabla cargada, todo usa el modelo que elegiste, como antes. Para ver
+qué va a poner: `node ~/.claude/tycon-harness/scripts/lib/models-env.js --provider ollama`. La función no fija
+`CLAUDE_CODE_SUBAGENT_MODEL`: pisaría la tabla. `TYCON_MODEL_PROVIDER` le dice al arnés que esta sesión es de Ollama
+(también se puede declarar para la máquina con `node scripts/lib/tycon-config.js set models.provider ollama`), y
+`pipeline.js start` avisa si las variables de la sesión no coinciden con la tabla.
 
 Después usás `claude-ollama gemma4:31b-cloud` en lugar de `claude`. Para volver a lo normal, salís y abrís `claude`.
 
@@ -139,6 +159,8 @@ La configuración queda en ese perfil: las ventanas con el perfil por defecto si
 `ollama pull` del modelo. Valen las mismas advertencias que en la terminal (no `/model`, el costo es un cálculo, el
 aviso `unrecognized_model`).
 
+Con la tabla de Ollama de tu organización cargada, las tres `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` salen de ahí: `node ~/.claude/tycon-harness/scripts/lib/models-env.js --provider ollama --format vscode` imprime esas entradas (las de un nivel en `inherit` no van: quedan con `ANTHROPIC_MODEL`).
+
 ## Codex
 
 Codex tiene un modo para modelos abiertos:
@@ -155,6 +177,51 @@ codex --oss --local-provider ollama -m gpt-oss:120b-cloud
   controles del arnés. Sin aprobar, `codex exec` no los corre y no avisa.
 - **Instalá el arnés para Codex** desde la versión publicada: `harness.js install --version latest --tool codex`.
 
+### Antes de elegir un modelo para Codex: la sonda
+
+Codex le manda al modelo herramientas de tipo `namespace`: así agrupa sus subagentes, sus apps y cada servidor MCP.
+Algunos modelos de Ollama las rechazan y la sesión no arranca. La sonda lo dice antes de perder una sesión:
+
+```bash
+node scripts/lib/ollama-tools-probe.js --model minimax-m3.1-flash:cloud
+```
+
+Contesta en una línea, siempre con salida 0:
+
+- «acepta las herramientas de Codex»: se usa con Codex tal cual.
+- «no acepta las herramientas de Codex (namespace): usalo con Claude Code», y si el modelo contesta sin ellas, también
+  cómo usarlo con Codex en **modo reducido**.
+- «no pude preguntarle a Ollama» o «Ollama contestó algo que no sé leer»: no sabe, y lo dice. Nunca dice «acepta» sin
+  una respuesta buena.
+
+**El modo reducido** saca todo lo que Codex manda como `namespace`, más la búsqueda web (una herramienta sin nombre que
+Ollama también rechaza): `-c features.multi_agent=false -c features.apps=false -c web_search="disabled"` y una
+`CODEX_HOME` sin servidores MCP. Lo que se pierde: los subagentes (no hacen falta, el pipeline lanza los revisores como
+procesos aparte), las apps, la búsqueda web y los servidores MCP (los revisores que usan el índice de código o la memoria
+trabajan sin ellos). Medido el 2026-10-23 con codex-cli 0.162.1 y Ollama 0.16.3: `minimax-m3.1-flash:cloud` rechaza la
+forma completa y contesta en modo reducido; `kimi-k2.7-code:cloud` acepta la completa. Codex ya no tiene el otro
+formato (`wire_api = "chat"`): no hay otra salida soportada. La sonda la medís vos, a mano: el instalador no la llama.
+
+### Los revisores los lanza el pipeline
+
+Con Codex, el paso «Revisores» corre `pipeline.js reviewers-run`: cada revisor es un proceso `codex exec` aparte, con el
+modelo de tu sesión si arrancaste el pipeline con
+`pipeline.js start … --codex-session '{"oss":true,"provider":"ollama","model":"<modelo>"}'` (con `"config"` se le pasan
+las opciones del modo reducido). Sin esa opción, cada revisor usa el modelo de su perfil (la sección de abajo). Antes,
+el paso le pedía al modelo que lanzara cada revisor como agente; un modelo que no usaba esa herramienta no lanzaba
+ninguno.
+
+**Los revisores necesitan red.** Heredan la caja de arena del comando que los lanza, y la de `workspace-write` no tiene
+red por defecto: sin ella no llegan a Ollama (`No running Ollama server detected`), aunque Ollama esté andando. Medido
+el 2026-10-23: con la caja de arena sin red, 0 de 3 revisores con reporte; con red, 3 de 3. `reviewers-run` lo detecta,
+sale sin lanzar y dice las dos salidas:
+
+1. **Correr `reviewers-run` fuera de la caja de arena, con tu aprobación.** Codex pide permiso para escalar ese
+   comando cuando su política de aprobación lo deja. La red queda abierta sólo para los revisores: es la opción segura.
+2. **Con `codex exec` sin aprobaciones** no hay a quién pedir. La salida es habilitar la red en el perfil de la sesión:
+   `-c sandbox_workspace_write.network_access=true`, o en el perfil `sandbox_workspace_write.network_access = true`.
+   Eso le da red a **todo** comando que corra el modelo, no sólo a los revisores: decidilo a conciencia.
+
 ### Los revisores en Codex: el modelo de la máquina
 
 Cada perfil de revisor de Codex fija un modelo de OpenAI. En Ollama ese modelo no existe, y el revisor falla con
@@ -167,19 +234,27 @@ Eso se declara en el perfil del equipo (`team-repos.json`), dentro de `models`:
 { "models": { "codex_reviewers": "inherit" } }
 ```
 
+Para una sola máquina hay otra salida: con `models.provider` en `ollama`, los revisores de Codex toman la **tabla de
+Ollama**, y un nivel en `inherit` (o sin cargar) se despliega sin `model =`. Es lo mismo que `codex_reviewers: inherit`
+hace para toda la organización, pero sólo en esa máquina; si la organización tiene `codex_reviewers: inherit`, gana eso.
+
+
 Se elige desde el sitio de la organización, en la tabla de modelos, fila **«Los revisores en Codex»**
 (`guides/organization-site.md`). Existe **desde la versión 2026.10.22.22** del arnés. Sin ese valor, nada cambia para
 quien usa los modelos de OpenAI; con él, el despliegue saca la línea `model =` de los perfiles de los revisores.
 
 ## Advertencias
 
-- **Un modelo puede escribir el escape de un freno.** Los frenos funcionan: cortan la suite completa, el commit con
-  `--no-verify` y el código sin pipeline. Pero el escape de varios frenos es una variable de entorno, y un modelo puede
-  escribirla solo. `gpt-oss` lo hizo con el freno de seguridad (escribió `TYCON_SAFETY_OFF=1` y commiteó con
-  `--no-verify`), aunque la orden decía que no buscara otra salida; `beam` lo hizo con el de pruebas. El arnés lo está
-  cerrando: el escape del freno de seguridad y los de la revisión de producción y de nombres van a pedir la frase
-  **«autorizo <variable>»** escrita por la persona en el chat. Mientras tanto, un freno solo detiene a un modelo que
-  obedece: no lo uses sin mirar sobre repos que te importan.
+- **Un modelo puede intentar escribir el escape de un freno.** En el laboratorio, `gpt-oss` escribió
+  `TYCON_SAFETY_OFF=1` delante de un commit con `--no-verify`, aunque la orden decía que no buscara otra salida. Eso ya
+  no alcanza: el escape del freno de seguridad, y los de la revisión de producción (`TYCON_PROD_LINT`) y de nombres
+  (`TYCON_NEW_NAMES`), valen sólo si la persona escribió en el chat **«autorizo <variable>»** en los últimos 30 minutos
+  ([guía del freno](../safety-guard.md)). El freno de pruebas sigue con su escape liviano: `beam` lo usó por su cuenta,
+  y sólo cuida la carga de la máquina. Codex no deja leer su conversación: ahí el escape por comando no vale.
+- **Un modelo puede saltearse los pasos de la skill de historias.** En el laboratorio, `gemma4` llamó a
+  `tycon-create-story` sin seguir sus pasos, se autorizó solo el bypass del freno de historia a mano y escribió la
+  historia igual. Ya no alcanza: escribir una historia sin la skill vale sólo si la persona escribió
+  **«autorizo story-skill-bypass»** en el chat.
 - **Mirá el estado, no el relato.** `gpt-oss` cargó la skill del pipeline y contó en cinco vueltas los pasos 1 a 7
   «completados» sin correr un guion ni escribir un archivo. Los controles no lo frenaron porque no había nada que
   frenar. Lo que lo delata es el estado: la story seguía en `ready-for-dev` y no había archivos nuevos. Revisá
@@ -190,19 +265,18 @@ quien usa los modelos de OpenAI; con él, el despliegue saca la línea `model =`
   [ollama/ollama#18284](https://github.com/ollama/ollama/issues/18284). **Con Claude Code los revisores sí corren
   como agentes aparte.** Si necesitás los revisores, usá Claude Code.
 - **`beam:cloud` no usa herramientas por la API de Anthropic de Ollama.** En cada orden dice que va a correr un comando
-  y termina el turno sin la llamada. Con Codex sí las usa. Para Claude Code, elegí `gemma4:31b-cloud` o
-  `gpt-oss:120b-cloud`.
+  y termina el turno sin la llamada. Con Codex sí las usa. Para Claude Code, elegí uno de la tabla de arriba.
 - **Los controles de cierre aguantan.** `gemma4` no pudo pasar la matriz de verificación en vivo, que pide la decisión
   de una persona, ni probando el escape.
-- **Los modelos de pago dan 402** (`not in the Free plan`). Si querés `glm-5.3`, `kimi-k2.7-code` o `deepseek-v4-pro`,
-  hace falta el plan Pro de Ollama.
+- **Los modelos de pago dan 402** (`not in the Free plan`). `glm-5.3`, `kimi-k2.7-code` y `deepseek-v4-pro` piden el
+  plan Pro de Ollama.
 
 ## Cuando algo falla
 
 | Síntoma | Causa | Qué hacer |
 |---|---|---|
 | `unrecognized_model` en cada orden | Claude Code no conoce el nombre del modelo | nada: no cambia el resultado |
-| 402, «not in the Free plan» | el modelo pide el plan Pro | usar uno de los tres gratis |
+| 402, «not in the Free plan» | el modelo pide el plan Pro | usar uno de los gratis de la tabla |
 | Claude Code contesta pero no corre comandos | el modelo no usa herramientas (`beam`, un 7B) | cambiar de modelo |
 | `unknown input item type: additional_tools` en un revisor de Codex | el perfil del revisor fija un modelo de OpenAI | poner `"codex_reviewers": "inherit"` en `models` |
 | `unsupported call` al lanzar revisores en Codex | límite de Codex con Ollama | usar Claude Code para esa parte |

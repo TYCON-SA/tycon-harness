@@ -2,7 +2,7 @@
 /**
  * pipeline.js — comandos mecánicos del pipeline.
  *
- * Saca del LLM la DECISIÓN de qué advisors correr en el Step 5. El LLM no infiere
+ * Saca del LLM la DECISIÓN de qué advisors correr en el paso de revisores. El LLM no infiere
  * ni cuenta a mano (reglas D.i/E.i/B/C); le pregunta a este script.
  *
  *   node pipeline.js advisors --repo <dir> --story <spec.md> --files a.cs b.tsx ...
@@ -13,7 +13,7 @@
  *     → exit 0 si `ran` ⊇ `all` esperado; exit 2 + lista de faltantes si no.
  *       Es el post-flight count-check, sin que el LLM lo haga a mano (Regla C).
  *
- * Fuente de verdad de la matriz: este archivo. step-07-reviewers.md la
+ * Fuente de verdad de la matriz: este archivo. La guía del paso de revisores la
  * describe en prosa pero la AUTORIDAD es computeAdvisorSet() acá (el step la referencia).
  *
  * Determinismo de SELECCIÓN (mismo diff → mismo set), NO de output (los advisors son LLMs).
@@ -22,6 +22,44 @@
  * plugins Bizuit, plugins hermanos, el adaptador de un cliente) NO están en este archivo: viven en `packs/<nombre>/pack.json`
  * (lib/packs.js) y se suman al set por manifiesto. La salida de `advisors` lleva `packs`.
  */
+
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
+// Sin `?.` ni `??`: este guion lo tiene que poder leer un Node viejo hasta llegar a la guarda. Misma semántica: sólo null
+// y undefined cuentan como «no hay» (0, '' y false se quedan).
+const isNil = (v) => v === undefined || v === null;
+const nn = (v, d) => (isNil(v) ? d : v);
+const at = (o, k) => (isNil(o) ? undefined : o[k]);
+
+/**
+ * `--codex-session '{"oss":true,"provider":"ollama","model":"<m>","config":["k=v"]}'`: la sesión de Codex con que
+ * corren los revisores de `reviewers-run`. Una forma que no se entiende frena: lanzar con otro modelo en silencio
+ * sería peor que no arrancar.
+ */
+function parseCodexSession(raw) {
+  let s;
+  try { s = JSON.parse(String(raw)); } catch (e) { process.stderr.write(`--codex-session no es JSON (${e.message})\n`); process.exit(2); }
+  const ok = s && typeof s === 'object' && !Array.isArray(s)
+    && (s.oss === undefined || typeof s.oss === 'boolean')
+    && ['provider', 'model'].every((k) => s[k] === undefined || (typeof s[k] === 'string' && s[k].trim() && !s[k].startsWith('-')))
+    && (s.config === undefined || (Array.isArray(s.config) && s.config.every((c) => typeof c === 'string' && /^[\w.-]+=/.test(c))));
+  if (!ok) {
+    process.stderr.write('--codex-session: se espera {"oss":bool,"provider":"…","model":"…","config":["clave=valor"]}\n');
+    process.exit(2);
+  }
+  // un proveedor sólo se pasa con `--oss`: aceptarlo sin él lanzaría con el proveedor por defecto de Codex en silencio
+  if (s.provider && s.oss !== true) {
+    process.stderr.write('--codex-session: "provider" va con "oss": true (sin él Codex usa su proveedor por defecto)\n');
+    process.exit(2);
+  }
+  // los revisores corren con el sandbox y la aprobación de su perfil: una opción de la sesión no los afloja
+  const floja = (s.config || []).filter((c) => /^(sandbox|approval)/i.test(c));
+  if (floja.length) {
+    process.stderr.write(`--codex-session: ${floja.join(', ')} cambiaría el sandbox o la aprobación de los revisores; eso lo fija su perfil\n`);
+    process.exit(2);
+  }
+  return s;
+}
 
 const fs = require('fs');
 const path = require('path');
@@ -34,13 +72,32 @@ const stackConfig = require('./lib/stack-config.js');     // lo que sume la orga
 
 // ── log de invocaciones reales de advisors ─────────────────
 // El hook on-advisor-run.js (PreToolUse Task) registra cada subagent spawneado acá.
-// `advisors` marca el inicio del Step 5; `check-count` lee lo corrido DESDE esa marca
+// `advisors` marca el inicio del paso de revisores; `check-count` lee lo corrido DESDE esa marca
 // como ground-truth, en vez de confiar en el `--ran` que el LLM redacta.
 const RUNS_DIR = path.join(stateDirOf(os.homedir()), 'advisor-runs');
 function sessionLogPath() {
   const sid = sessionIdFileKey();
   return path.join(RUNS_DIR, `${sid}.jsonl`);
 }
+
+// Bajo Codex los revisores no los lanza el modelo: los lanza `reviewers-run`. La salida de `advisors` y `smart-reloop`
+// y el error de `check-count` dan el comando listo para pegar; un modelo sin la herramienta de agentes no lo deduce.
+const esCodex = () => require('./lib/external-flags.js').esCodex(process.env);
+function lanzadorCodex(args) {
+  const q = (s) => (/^[\w@%+=:,./-]+$/.test(String(s)) ? String(s) : `'${String(s).replace(/'/g, `'\\''`)}'`);
+  // sin --story en la llamada, el comando tampoco lo lleva: reviewers-run toma la story del marcador
+  return ['node', q(path.resolve(__filename)), 'reviewers-run', '--repo', q(path.resolve(args.repo || '.')),
+    ...(args.story ? ['--story', q(args.story)] : [])].join(' ');
+}
+const BATCH_RULE_CODEX = 'Bajo Codex los revisores NO los lanza el modelo: correr el comando de `launch` (pipeline.js reviewers-run). ' +
+  'Aplica la ventana (4 vivos; 2 con el pase adversarial en vuelo), anota cada lanzamiento para check-count y deja los reportes ' +
+  'en step-05-advisor-reports/. Necesita red: si la caja de arena no la tiene, sale 2 sin lanzar y dice qué hacer.';
+function conLanzadorCodex(out, args) {
+  if (!esCodex()) return;
+  out.launch = lanzadorCodex(args);
+  out.batch_rule = BATCH_RULE_CODEX;
+}
+
 // `expected`: el set ESPERADO de esta iteración queda persistido en la línea step5-start.
 // check-count valida contra ESE expected (que en un smart-reloop legítimo es el
 // subset `rerun`), no contra el set completo recomputado — sin esto, tras un
@@ -78,7 +135,7 @@ function logRunStart(story) {
 // — sawStart=true + ran=[] → pipeline.js SÍ corrió pero el hook no registró NINGÚN
 //   spawn: o no se corrieron los advisors o la registración está rota. El caller
 //   (check-count) FALLA CERRADO en este caso: caer en silencio al --ran del LLM
-//   dejaría pasar un Step 5 sin ningún spawn registrado.
+//   dejaría pasar un paso de revisores sin ningún spawn registrado.
 function advisorsRunSinceStart() {
   let raw;
   try { raw = fs.readFileSync(sessionLogPath(), 'utf8'); } catch { return { sawStart: false, expected: null, ran: [] }; }
@@ -87,9 +144,31 @@ function advisorsRunSinceStart() {
   const startIdx = require('./lib/advisor-round.js').inicioDeLaRonda(lines);
   // `nuevaCorrida`: el registro tiene una ronda, pero de la corrida anterior; ésta todavía no corrió `advisors`
   if (startIdx === -1) return { sawStart: false, expected: null, ran: [], nuevaCorrida: lines.some((e) => e.event === 'step5-start') };
-  const ran = lines.slice(startIdx).filter((e) => e.advisor).map((e) => e.advisor);
+  // Una línea del lanzador de Codex (`launcher: 'pipeline'`) cuenta sólo si el proceso salió 0 y dejó su reporte: una
+  // línea escrita a mano, un tope de tiempo o una salida distinta no son un revisor corrido. Las que no cuentan quedan
+  // nombradas con su motivo (las tapa una corrida buena posterior del mismo revisor).
+  const ran = [];
+  const fallidos = {};
+  for (const e of lines.slice(startIdx)) {
+    // un revisor que el lanzador de Codex no pudo correr: se nombra, salvo que una corrida posterior lo tape
+    if (e.event === 'launch-failed' && e.failed_advisor) {
+      if (!ran.includes(e.failed_advisor)) fallidos[e.failed_advisor] = motivoLanzamientoInvalido(e) || 'falló';
+      continue;
+    }
+    if (!e.advisor) continue;
+    const motivo = e.launcher === 'pipeline' ? motivoLanzamientoInvalido(e) : null;
+    if (motivo) { fallidos[e.advisor] = motivo; continue; }
+    ran.push(e.advisor);
+    delete fallidos[e.advisor];
+  }
   const expected = Array.isArray(lines[startIdx].expected) ? lines[startIdx].expected : null;
-  return { sawStart: true, expected, ran: [...new Set(ran)] };
+  return { sawStart: true, expected, ran: [...new Set(ran)], fallidos };
+}
+
+function motivoLanzamientoInvalido(e) {
+  if (e.exit !== 0) return e.exit === 'timeout' ? 'timeout' : `salió ${e.exit}`;
+  try { if (fs.statSync(e.report).size > 0) return null; } catch { /* sin archivo */ }
+  return 'sin reporte';
 }
 
 // ── helpers de lectura (todas fail-safe: nunca tiran) ────────────────────────
@@ -208,6 +287,18 @@ function computeGitignoreNeeds(probe) {
   }
 
   return { append, notices };
+}
+
+/**
+ * PIPE-C2 · el texto que se agrega al final de un `.gitignore`, con el fin de línea del archivo: el de su primer salto
+ * (CRLF o LF); vacío o sin saltos, LF. Un archivo sin salto final recibe uno antes. Un LF metido en un archivo CRLF
+ * hace que git en Windows lo vea reescrito entero.
+ */
+function gitignoreAppendText(actual, lineas) {
+  const primero = /\r?\n/.exec(actual);
+  const eol = primero ? primero[0] : '\n';
+  const antes = actual === '' || /\n$/.test(actual) ? '' : eol;
+  return antes + lineas.join(eol) + eol;
 }
 
 /** El `probe` real: le pregunta a git. 0 = ignorada · 1 = no · cualquier otra cosa = no sé. */
@@ -377,7 +468,7 @@ function hasPlaywrightSpecs(repo) {
 
 // ── gate E2E de PROYECTO (agnóstico) — .tycon/advisors.yaml → e2e.{gate,frontend_dir,critical_manifest} ──
 // El gate E2E es OWNED por cada proyecto (script + specs + stack viven en SU repo). Los skills
-// compartidos (step-07c, tycon-merge-to-main) lo resuelven acá y corren lo que el proyecto declare —
+// compartidos («Probar en vivo», tycon-merge-to-main) lo resuelven acá y corren lo que el proyecto declare —
 // sin conocer puertos/specs/stack de NINGÚN repo. Sin bloque `e2e:` (o sin `gate:`) → {} → no-op.
 // Mismo parser-YAML-mínimo-sin-deps que i18nRequired (los valores son paths, sin espacios → \S+).
 // Las llaves que el arnés LEE del bloque `e2e:`. Todo lo demás se avisa:
@@ -569,7 +660,7 @@ function selectE2eApps(cfg, changedFiles) {
   // truthy): el loop del gate iteraría CERO veces y saldría 0. O sea: el control diría verde
   // habiendo ejercido nada, la clase de bug que esta función existe para evitar.
   //
-  // Y no es un caso teórico: `step-07c` documenta `marker.filesTouched` como fuente válida de
+  // Y no es un caso teórico: el paso «Probar en vivo» documenta `marker.filesTouched` como fuente válida de
   // `--changed`, y esos paths son ABSOLUTOS por construcción (`on-edit.js` descarta los que no
   // lo son antes de guardarlos).
   //
@@ -868,7 +959,7 @@ function detectStack(repo, files) {
 // este archivo; una sola fuente.
 const BANDERAS_DETECCION = require('./lib/packs.js').BANDERAS;
 
-// ── set BASE (matriz top-down de step-05) ─────────────────────────────────────
+// ── set BASE (matriz top-down del paso de revisores) ─────────────────────────────────────
 // `extras`: los revisores del grupo `base` de los paquetes activos cuya condición se cumplió.
 // Van PRIMERO — el orden
 // no es contrato (check-count y el marker comparan conjuntos).
@@ -907,7 +998,7 @@ function computeCompletitud(storyPath, repo, files) {
   const sc = require('./lib/story-checks.js');
   const isGold = sc.storySection(story, 'criteria') !== null || sc.storySection(story, 'tests') !== null;
 
-  // story-validator post-impl + spec-first SIEMPRE en Mary+GOLD (ver step-05)
+  // story-validator post-impl + spec-first SIEMPRE en Mary+GOLD (ver el paso de revisores)
   if (story) {
     out.push('tycon-story-validator');
     out.push('tycon-spec-first-checker');
@@ -1088,7 +1179,7 @@ function coreReviewersDrift({ table = CORE_REVIEWERS } = {}) {
 
 // ── Smart re-loop advisors (refinement de regla D.i) ──
 //
-// Cuando iter N>1 del Step 5 corre (fix-loop post-HITL), regla D.i.1 obliga el set
+// Cuando iter N>1 del paso de revisores corre (fix-loop post-HITL), regla D.i.1 obliga el set
 // completo de iter 1 (no cherry-pick). Pero si los fixes son no-impl (specs, tests
 // añadidos, docs), muchos advisors no tienen surface nueva que evaluar y devuelven
 // reportes idénticos. El smart-reloop computa el delta de files iter N vs iter N-1 (snapshot
@@ -1152,7 +1243,7 @@ const ADVISOR_AUDITED_SURFACE = {
 //
 // Patrón Anthropic "executor + advisor on-demand": el executor barato corre la
 // inspección mecánica; el advisor caro entra solo en juicio sintético. Acá lo
-// aplicamos al nivel del set Step 5 — cada advisor declara su `tier`:
+// aplicamos al nivel del set del paso de revisores — cada advisor declara su `tier`:
 //   - 'lean': grep/parse/checks binarios. Haiku safe.
 //   - 'standard': razonamiento intermedio. Sonnet.
 //   - 'deep': juicio sintético, judgment calls, cross-file synthesis. Opus.
@@ -1206,7 +1297,7 @@ const TIER_TO_MODEL = MODELOS.TIERS;
 // importan este módulo por otras funciones no la disparan.
 const packsLib = require('./lib/packs.js');
 
-// Los que necesitan la story completa además del contexto compartido (step-05). Los de paquetes lo
+// Los que necesitan la story completa además del contexto compartido (paso de revisores). Los de paquetes lo
 // declaran con `needsStory: true` en su manifiesto.
 const NECESITAN_STORY_NUCLEO = ['tycon-spec-first-checker'];
 
@@ -1235,8 +1326,8 @@ function resumenPaquetes(activos) {
     })),
   }));
 }
-// La entrada del paso 5 de un revisor de paquete (la del grupo validacion no tiene superficie ni
-// profundidad: el paso 1 no tiene vueltas).
+// La entrada del paso de revisores de un revisor de paquete (la del grupo validacion no tiene superficie ni
+// profundidad: el paso «Validar la historia» no tiene vueltas).
 function revisorDePaquete(nombre) {
   for (const p of paquetesInstalados()) {
     for (const r of p.revisores) if (r.agente === nombre && r.grupo !== 'validacion') return r;
@@ -1275,13 +1366,13 @@ function necesitanStory(activos) {
   ]);
 }
 
-// ── pipeline.js validators — los revisores de validación del paso 1 ────────────────
-// El paso 1 lanza al validador de stories y, si la story es de backend, a los revisores del grupo
+// ── pipeline.js validators — los revisores de validación del paso «Validar la historia» ────────────────
+// El paso «Validar la historia» lanza al validador de stories y, si la story es de backend, a los revisores del grupo
 // `validacion` de los paquetes activos (hoy: el de plugins hermanos, del paquete clients). El step corre
 // este comando y lanza lo que
 // devuelve. «Story de backend» = la story nombra .cs/.csproj, o el repo tiene *.csproj / *Plugin.cs:
 // esos archivos son el contexto sobre el que se evalúa `when` (`added` lee el archivo entero:
-// en el paso 1 no hay diff).
+// en «Validar la historia» no hay diff).
 function archivosDotnetDelRepo(repo, tope = 200) {
   const out = [];
   const SALTAR = new Set(['node_modules', '.git', 'bin', 'obj', 'dist', 'packages', '.advisors']);
@@ -1317,8 +1408,8 @@ function hermanosDelRepo(activos) {
   return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
 }
 
-/** `todos`: la lista de lo que PUEDE correr en el paso 1 (la página del arnés), sin mirar la máquina ni la constancia. */
-function computeValidadores({ story, repo, todos = false }) {
+/** `todos`: la lista de lo que PUEDE correr en «Validar la historia» (la página del arnés), sin mirar la máquina ni la constancia. */
+function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   if (!story) throw new Error('validators: falta --story <spec.md>');
   // Una ruta mal tipeada no puede dar un set «válido» a medias:
   // sin story legible o sin repo no hay contexto sobre el que decidir nada.
@@ -1366,6 +1457,9 @@ function computeValidadores({ story, repo, todos = false }) {
     packs_nota: packsLib.notaDePaquetes({ repo, instalados: paquetesInstalados(), activos }),
     contexto: { files, detection: det },
     dependencias_de_pruebas: require('./lib/test-deps.js').dependenciasDePruebas({ repo, storyText: content }),
+    // los archivos declarados que están deprecados en el repo: el validador los reporta como VAL-C9. `deprecados: false`
+    // lo pide quien sólo muestra qué validadores hay (la vista del sitio): consultar la lista lanza git y anota en gates.log
+    archivos_deprecados: deprecados ? require('./lib/deprecated.js').archivosDeHistoria({ repo, storyText: content }) : [],
   };
 }
 
@@ -1438,9 +1532,9 @@ function computeMechDiscount(allList, args) {
 // Medido: en los re-loops, después de
 // DOS veredictos limpios seguidos del validador tras implementar, trajo algo nuevo en 2 de 24 lanzamientos
 // (ninguno bloqueante); con menos veredictos limpios seguidos, trajo algo nuevo en 62 de 125. Entonces, desde la vuelta 2: si sus dos últimos
-// veredictos sobre ESTA story desde el arranque del paso 5 dicen `limpio` y VAL-C5/VAL-C6 salen limpios sin
+// veredictos sobre ESTA story desde el arranque del paso de revisores dicen `limpio` y VAL-C5/VAL-C6 salen limpios sin
 // modelo, el validador sale del set (y del `expected`). Todo lo demás INVOCA: no poder leer la
-// conversación, faltar el arnés o el arranque del paso 5, un chequeo que no pudo mirar. La duda va hacia más
+// conversación, faltar el arnés o el arranque del paso de revisores, un chequeo que no pudo mirar. La duda va hacia más
 // control. Cualquier veredicto que no sea `limpio` —hallazgos, inconsistente, sin
 // veredicto, un lanzamiento que no volvió— corta la racha.
 //
@@ -1476,7 +1570,7 @@ function decidirValidadorEnReloop({ args, marker, sessionId, guidesDir, projects
     // los revisores: `reviewers` en un marcador nuevo, el 5 en uno viejo
     const tRev = marker && marker.stepTimings && (marker.stepTimings.reviewers || marker.stepTimings['5']);
     const desde = Date.parse((tRev && tRev.startedAt) || '');
-    if (!Number.isFinite(desde)) return invoca('no sé cuándo arrancó el paso 5 (el marcador no lo anotó): se invoca');
+    if (!Number.isFinite(desde)) return invoca('no sé cuándo arrancó el paso de revisores (el marcador no lo anotó): se invoca');
     const libs = libsDelArnes(guidesDir);
     if (libs.error) return invoca(`${libs.error}: se invoca`);
     const ubi = libs.digest.ubicarTranscripcion(sessionId, projectsDir || path.join(os.homedir(), '.claude', 'projects'));
@@ -1530,7 +1624,7 @@ function aplicarDecisionValidador(salida, clave, args, { anotar = true } = {}) {
 // el path mode='smart-reloop'. Sin ellos, los paths force-full-reloop y `advisors --iter N>1`
 // (exactamente los que se usan cuando smart-reloop no aplica, el caso más caro)
 // correrían los tier 'deep' a Opus precio pleno.
-// El orquestador DEBE pasarlos como `model:` al Agent() (step-05) salvo
+// El orquestador DEBE pasarlos como `model:` al Agent() (paso de revisores) salvo
 // que el delta toque specs (juicio de scope nuevo → Opus se justifica).
 function reloopHintsFor(list, iter, costTier) {
   if (!iter || iter <= 1) return null;
@@ -1574,6 +1668,52 @@ function orgModels(opts = {}) {
   } catch (e) {
     return { ...SIN_ORG, problem: `no pude leer la configuración de la organización (${String((e && e.message) || e).split('\n')[0]}): uso los valores de hoy` };
   }
+}
+
+/**
+ * El proveedor de modelos de esta máquina y lo que su entorno no dice igual que la tabla:
+ * `{ models_provider: { provider, origin }, warnings }`. Con Ollama, cada `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` distinta del
+ * modelo de la tabla para su nivel es un aviso (`provider-env:<VARIABLE>`); sin proveedor declarado y con
+ * `ANTHROPIC_BASE_URL` en otro host que api.anthropic.com, un aviso que dice cómo declararlo (`provider-undeclared`). El
+ * arnés no cambia el proveedor ni el entorno: avisa. Nunca tira ni frena. opts: env · home · tree.
+ */
+const VARIABLES_DE_NIVEL = [['economy', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'], ['balanced', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['strong', 'ANTHROPIC_DEFAULT_OPUS_MODEL']];
+function proveedorDeModelos(org, opts = {}) {
+  const env = opts.env || process.env;
+  const warnings = [];
+  let prov = { provider: 'anthropic', origin: 'derivado', problem: null };
+  try {
+    const dir = opts.tree || require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
+    const lector = dir ? path.join(dir, 'scripts', 'lib', 'tycon-config.js') : null;
+    // sin el lector, «no pude consultar» no se lee como «Anthropic»: se dice
+    if (lector && fs.existsSync(lector)) prov = require(lector).modelProvider({ env, home: opts.home });
+    else prov = { provider: 'anthropic', origin: 'derivado', problem: `no encontré el lector de la configuración de la máquina (${lector || 'sin arnés'})` };
+  } catch (e) {
+    prov = { provider: null, origin: 'rota', problem: String((e && e.message) || e).split('\n')[0] };
+  }
+  if (prov.problem) {
+    warnings.push({ key: 'provider-unreadable', message: `el proveedor de modelos de la máquina no se pudo leer (${prov.problem}): sigo como Anthropic` });
+    prov = { ...prov, provider: 'anthropic' };
+  }
+  const data = org && org.declared ? org.data : null;
+  if (prov.provider === 'ollama') {
+    for (const [level, variable] of VARIABLES_DE_NIVEL) {
+      const r = MODELOS.resolveProviderModel({ org: data, provider: 'ollama', level, warnings });
+      if (!r.model || r.model === MODELOS.INHERIT) continue;
+      const tiene = env[variable];
+      if (tiene !== r.model) {
+        warnings.push({ key: `provider-env:${variable}`, message: `${variable} es ${tiene ? tiene : '(sin poner)'} y la tabla de Ollama dice ${r.model} para ${level}: abrí la sesión con la función claude-ollama de la guía (usa \`eval "$(node scripts/lib/models-env.js)"\`)` });
+      }
+    }
+  }
+  if (prov.origin === 'derivado' && env.ANTHROPIC_BASE_URL) {
+    let host = null;
+    try { host = new URL(env.ANTHROPIC_BASE_URL).hostname; } catch (_) { host = String(env.ANTHROPIC_BASE_URL); }
+    if (host && host !== 'api.anthropic.com') {
+      warnings.push({ key: 'provider-undeclared', message: `ANTHROPIC_BASE_URL apunta a ${host}: si es Ollama, declaralo con \`node scripts/lib/tycon-config.js set models.provider ollama\`` });
+    }
+  }
+  return { models_provider: { provider: prov.provider, origin: prov.origin }, warnings };
 }
 
 /** El pedido del dev para esta corrida (`marker.js set-models`), o null. */
@@ -1653,6 +1793,38 @@ function anotarModelosAvisados(keys) {
   } catch (_) { /* sin marcador o ilegible: se vuelve a avisar, que es lo de menos */ }
 }
 
+/**
+ * Pone una bandera de hecho externo en el marcador de esta sesión (y saca el aviso de su parte, si lo había), con una
+ * línea en gates.log. La llaman sólo los comandos del arnés que hicieron el trabajo. → true si escribió.
+ */
+function marcarHechoExterno(flag, detalle, campos = {}) {
+  const r = anotarEnMarker(campos, (x) => STEPS_TABLE.setExternalFlag(x, flag));
+  if (!r.ok) return r;
+  logGate({ name: 'external-flag', flag, storyId: nn(r.marker.storyId, null), ...detalle });
+  return r;
+}
+
+/**
+ * Escribe campos en el marcador de esta sesión (y, si viene, aplica `cambio`). → `{ ok, marker }` o `{ ok: false,
+ * motivo }`: un marcador que no está no es lo mismo que uno que no se pudo leer o escribir, y el motivo lo dice.
+ */
+function anotarEnMarker(campos, cambio) {
+  const markerPath = path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`);
+  let m;
+  try { m = JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch (e) {
+    return { ok: false, motivo: e && e.code === 'ENOENT' ? 'no hay marker activo para esta sesión' : `no pude leer el marcador de esta sesión (${(e && (e.code || e.message)) || 'error'})` };
+  }
+  Object.assign(m, campos);
+  if (cambio) cambio(m);
+  m.lastTouch = new Date().toISOString();
+  try {
+    const tmp = `${markerPath}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
+    fs.renameSync(tmp, markerPath);
+  } catch (e) { return { ok: false, motivo: `no pude escribir el marcador de esta sesión (${(e && (e.code || e.message)) || 'error'})` }; }
+  return { ok: true, marker: m };
+}
+
 /** Lo que la línea de comandos le pasa a las funciones que deciden: la configuración y el pedido de la corrida. */
 function conModelosDeLaCorrida(args) {
   return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()) };
@@ -1676,59 +1848,7 @@ function modelHintsForSet({ all, tier }) {
   return Object.keys(hints).length ? hints : null;
 }
 
-// Glob-to-regex simple matcher (no deps). Soporta:
-//   **/  → cualquier dir prefix (0+ dirs)
-//   **   → cualquier path (con o sin /)
-//   *    → cualquier filename char excepto /
-//   {a,b} → alternancia
-// Match anchored al final + opcional dir prefix al inicio (para que `**/*.cs` matchee `Services/X.cs`).
-function matchGlob(filePath, pattern) {
-  // Normalizar barras (Windows defensive).
-  const f = String(filePath).replace(/\\/g, '/');
-  const p = String(pattern).replace(/\\/g, '/');
-  // Escapar metachars regex excepto los nuestros.
-  let re = '';
-  for (let i = 0; i < p.length; i++) {
-    const c = p[i];
-    if (c === '*') {
-      if (p[i + 1] === '*') {
-        // ** o **/
-        if (p[i + 2] === '/') {
-          re += '(?:.*/)?'; // **/  → optional dir prefix
-          i += 2;
-        } else {
-          re += '.*'; // ** → cualquier path
-          i += 1;
-        }
-      } else {
-        re += '[^/]*'; // * → no slash
-      }
-    } else if (c === '{') {
-      const end = p.indexOf('}', i);
-      if (end > i) {
-        const alts = p.slice(i + 1, end).split(',').map((a) => a.replace(/([.+?^${}()|[\]\\])/g, '\\$1'));
-        re += `(?:${alts.join('|')})`;
-        i = end;
-      } else {
-        re += '\\{';
-      }
-    } else if ('.+?^$()|[]\\'.includes(c)) {
-      re += '\\' + c;
-    } else {
-      re += c;
-    }
-  }
-  // Anchor: full path match (no permitir prefijo random), pero permitir que el archivo
-  // viva en cualquier subdir si el pattern empieza con **/.
-  const fullRe = new RegExp(`^${re}$`);
-  if (fullRe.test(f)) return true;
-  // Fallback: match contra basename si el pattern no tiene `/` (ej `*.cs` matchea `foo/bar.cs`)
-  if (!p.includes('/')) {
-    const base = f.split('/').pop();
-    return fullRe.test(base);
-  }
-  return false;
-}
+const { matchGlob } = require('./lib/match-glob.js');   // la comparación de rutas contra globs (también la usa la lista de deprecados)
 
 function advisorAffectedByDelta(advisorName, deltaFiles) {
   const surface = superficieDe(advisorName);
@@ -1837,7 +1957,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
 
   const marker = readSessionMarker();
-  const prevSnapshot = marker?.iterations?.[String(iter - 1)]?.filesSnapshot;
+  const prevSnapshot = at(at(at(marker, 'iterations'), String(iter - 1)), 'filesSnapshot');
   if (!prevSnapshot) {
     const out = {
       ...fullSet,
@@ -1865,7 +1985,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // 3, y en todas, porque la foto se re-filtra y la lista cruda no. Efecto: delta fantasma
   // de 3 archivos sin que nadie haya editado nada, un advisor de más por iteración, y de yapa
   // apagaría el guard `suspect_empty_delta`. O sea que filtrar a medias reintroduciría la contaminación que viene a cerrar.
-  // 🔴 Lo que cae FUERA del repo tampoco es trabajo del repo: los cazadores del pase 5b escriben
+  // 🔴 Lo que cae FUERA del repo tampoco es trabajo del repo: los cazadores del pase adversarial escriben
   // `/tmp/probe.*`, el hook de ediciones los registra y la
   // iteración 2 los contaría en el delta. Esos nombres no siguen la convención de probes, así que el filtro
   // por nombre no los ve; el filtro por lugar sí. Se conserva la carpeta de la story: en los productos
@@ -1879,7 +1999,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const raicesDelDelta = [repo, ...(story ? [path.dirname(path.resolve(String(story)))] : []), ...hermanosDelDelta];
   const workingTreeDeTodos = () => [repo, ...hermanosDelDelta].flatMap((r) => gitArchivosDelWorkingTree(r));
   const delRepo = (files) => files.filter((f) => raicesDelDelta.some((r) => honesty.esDelRepo(f, r)));
-  const currentFiles = delRepo(honesty.sinProbes(marker.filesTouched || []));
+  // sin los probes del pase adversarial ni lo que el pipeline escribe en .advisors/: no es trabajo del repo
+  const currentFiles = delRepo(honesty.sinRuido(marker.filesTouched || []));
   const prevSet = new Set(prevSnapshot);
   // Delta por NOMBRES nuevos (legacy) — atrapa archivos que aparecieron en iter N.
   const deltaByName = currentFiles.filter((f) => !prevSet.has(f));
@@ -1933,7 +2054,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   if (prevTs) {
     const cutoff = fotoTardia ? ultimoRevisorMs : prevTsMs;
     if (Array.isArray(marker.fileEvents) && marker.fileEvents.length) {
-      deltaByEvents = delRepo(honesty.sinProbes([...new Set(
+      deltaByEvents = delRepo(honesty.sinRuido([...new Set(
         marker.fileEvents
           .filter((e) => e && e.path && e.ts && new Date(e.ts).getTime() > cutoff)
           .map((e) => e.path),
@@ -1955,7 +2076,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     // 4ta fuente: el working tree según git, filtrado por mtime posterior a la foto.
     // Las tres de arriba iteran sobre `filesTouched` — si el hook nunca vio el archivo, ninguna lo
     // encuentra. Ésta sí. Los probes del pase adversarial NO cuentan (no son trabajo del repo).
-    for (const f of honesty.sinProbes(workingTreeDeTodos())) {
+    for (const f of honesty.sinRuido(workingTreeDeTodos())) {
       try {
         const mt = fs.statSync(f).mtimeMs;
         if (mt > cutoff) { deltaByGit.push(f); if (!horaDe.has(f)) horaDe.set(f, mt); }
@@ -2033,9 +2154,9 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     };
     // Las mismas fuentes que el delta (registro de ediciones, mtime, git), con los mismos filtros.
     for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
-      if (e && e.path && e.ts && delRepo(honesty.sinProbes([e.path])).length) anotarEdicion(e.path, new Date(e.ts).getTime());
+      if (e && e.path && e.ts && delRepo(honesty.sinRuido([e.path])).length) anotarEdicion(e.path, new Date(e.ts).getTime());
     }
-    for (const f of [...currentFiles, ...honesty.sinProbes(workingTreeDeTodos())]) {
+    for (const f of [...currentFiles, ...honesty.sinRuido(workingTreeDeTodos())]) {
       try { anotarEdicion(f, fs.statSync(f).mtimeMs); } catch { /* borrado → si es nuevo, lo cubre el delta por nombre */ }
     }
   }
@@ -2080,7 +2201,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // Hint de modelo para re-loops:
   // los advisors tier 'deep' (Opus) corren en CADA iteración por ser always:true.
   // El juicio sintético grande ya pasó en iter 1; el re-check sobre un delta de fix
-  // es más angosto → Sonnet alcanza. El orquestador DEBE aplicarlo (step-05) salvo
+  // es más angosto → Sonnet alcanza. El orquestador DEBE aplicarlo (paso de revisores) salvo
   // que el delta incluya specs editadas.
   const reloopModelHints = reloopHintsFor(rerun.map((r) => r.name), iter, costTier) || {};
 
@@ -2455,7 +2576,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // «… is outside repository» y se perdería el diff de TODOS los archivos, también los del repo; el texto de reemplazo
     // diría «repo sin git» y un revisor lo repetiría como causa.
     // Por eso los archivos se agrupan por su repo git; el del `--repo` va como siempre y cada
-    // hermano en su propia sección, con sus archivos escritos `(<nombre>) <ruta>`, la forma del step-05b. Si git falla
+    // hermano en su propia sección, con sus archivos escritos `(<nombre>) <ruta>`, la forma del paso «Pase adversarial». Si git falla
     // en un repo, se dice cuál y por qué, y los demás conservan su diff.
     const grupos = companionLib.groupByRepo(files, repo);
     const propios = grupos.filter((g) => g.propio).flatMap((g) => g.files.map((x) => x.original));
@@ -2635,6 +2756,8 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '',
       ...shownFiles.map((f) => `- ${f}`),
       '',
+      // los del repo que están deprecados, marcados (los de un hermano se leen con la lista de su propio repo)
+      require('./lib/deprecated.js').seccionParaRevisores({ repo, files: shownFiles.filter((f) => !f.startsWith('(')) }),
       '## Story digest (frontmatter + ACs + Tests + Tasks + verificación)',
       '',
       digest || '(sin story)',
@@ -2761,22 +2884,22 @@ function notaCierre3(marker) {
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
-// El 7c tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre del paso 8 exige
-// `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar el 7c por
+// La prueba en vivo tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre de «Preparar el commit» exige
+// `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar la prueba en vivo por
 // salteado y mandar al 8: chocaría contra ese freno después de obedecer a `next`. El motivo mecánico del salteo sigue a la vista en `skip_mechanical`.
 const NOTA_CIERRE_7C = 'marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<ruta de la evidencia>"}\'';
 const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_runtime_exempt: true): no hay nada que correr, pero el cierre '
   + 'de «Preparar el commit» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
 
 /**
- * Qué le falta al pase adversarial, para `next`. Sólo con el paso 4 cerrado.
+ * Qué le falta al pase adversarial, para `next`. Sólo con «Correr las pruebas» cerrado.
  *
- * El lanzamiento temprano es un párrafo del paso 4 que el agente no recuerda por sí solo (52 de 208 corridas con pase
+ * El lanzamiento temprano es un párrafo de la guía de «Correr las pruebas» que el agente no recuerda por sí solo (52 de 208 corridas con pase
  * lo lanzaron más de 2 minutos después del primer revisor): `next` lo pide, ANTES del primer revisor, con el
  * veredicto que el portón dejó anotado (`adversarialGate`): no lo recalcula, porque no tiene los archivos del cambio.
  * Sin veredicto, lo que pide es consultar el portón —la falta de veredicto no es «no corre»—.
  *
- * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea el paso 8), y ante un lanzamiento de otra sesión
+ * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea «Preparar el commit»), y ante un lanzamiento de otra sesión
  * sin resultado aplica la regla de `lib/adversarial-verdict.js` sin preguntarle a nadie.
  * → `{ pending_action?: { kind, message, command?, rule?, why? }, adversarial_note?: string }`
  */
@@ -2790,7 +2913,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
     return {
       pending_action: {
         kind: 'relanzar-pase-no-medido',
-        message: `el pase adversarial quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}; resultado en ${p.resultado || '?'}): relanzalo en su paso (5b) y anotalo con mark-adversarial-launched <runId> 5b --relaunch. Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`,
+        message: `el pase adversarial quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}; resultado en ${p.resultado || '?'}): relanzalo en su paso («Pase adversarial») y anotalo con mark-adversarial-launched <runId> 5b --relaunch. Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`,
       },
     };
   }
@@ -2804,7 +2927,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   }
   const adv = marker.adversarial && typeof marker.adversarial === 'object' ? marker.adversarial : null;
   if (adv && adv.sessionId !== sidNow) return { pending_action: reglaPaseAjeno(adv) };
-  if (adv) return {};   // lanzado por esta sesión y en vuelo: el join es el paso del pase (5b)
+  if (adv) return {};   // lanzado por esta sesión y en vuelo: el join es el paso del pase adversarial
 
   if (!marker.storyPath) {
     return { adversarial_note: 'no pude leer la story: el marcador está sin ruta de story — no se pide lanzar el pase (el portón la necesita)' };
@@ -2815,7 +2938,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
 
   const gate = marker.adversarialGate && typeof marker.adversarialGate === 'object' ? marker.adversarialGate : null;
   if (gate && gate.early_launch === false) {
-    return { adversarial_note: `lanzamiento temprano APAGADO para esta corrida (${gate.early_origin || 'TYCON_5B_EARLY=0'}): el pase se lanza en su paso (5b)` };
+    return { adversarial_note: `lanzamiento temprano APAGADO para esta ejecución (${gate.early_origin || 'TYCON_5B_EARLY=0'}): el pase se lanza en su paso («Pase adversarial»)` };
   }
   const yo = path.join(__dirname, 'pipeline.js');
   if (!gate || typeof gate.run !== 'boolean') {
@@ -2841,8 +2964,8 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
 }
 
 /**
- * Lo que cambia en el paso por el tamaño de la corrida, o null. Paso 4 de una liviana: las tandas van
- * juntas. Paso 8 de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
+ * Lo que cambia en el paso por el tamaño de la corrida, o null. «Correr las pruebas» de una liviana: las tandas van
+ * juntas. «Preparar el commit» de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
  * (`marker.js set-flag heavyValidationRequested true`).
  */
 function notaDelTamano(marker, nextStep) {
@@ -2875,7 +2998,7 @@ function computeNext() {
   const timeTool = harnessTimeTool();
   const startParts = STEPS_TABLE.startPartsPending(marker, {
     'time-tracking': timeTool === null || timeTool.chosen === true,
-    ado: !!(story && fm.ado_work_item),
+    ado: !!(story && require(path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fm)),
   });
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
@@ -2908,18 +3031,20 @@ function computeNext() {
     preconditions.push({ id: 'dodRuntimeChecked', satisfied: marker.dodRuntimeChecked === true, detail: '«Probar en vivo» debe haber pasado (marker.dodRuntimeChecked)' });
     const checks = marker.checks || {};
     for (const c of ['build', 'tests', 'advisors']) {
-      // «sin-acotar» (tests) se acepta anunciándolo: la cubre la CI del pedido (complete-step 4 lo dijo y lo anotó).
+      // «sin-acotar» (tests) se acepta anunciándolo: la cubre la CI del pedido (complete-step run-tests lo dijo y lo anotó).
       const sinAcotar = c === 'tests' && checks[c] === 'sin-acotar';
       // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; se acepta diciéndolo, y el cierre
       // de la historia copia la línea (nunca un verde callado)
       const sinMedir = c === 'tests' && checks[c] === 'sin-medir';
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}` });
+      // «rojo-esperado» (expect-red): lo aceptan el cierre del turno y prepare-commit sólo con la deuda escrita; acá, igual
+      const esperado = /^rojo-esperado/.test(String(checks[c])) && !!marker.cierre && marker.cierre.estado === 'deuda';
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}` });
     }
   }
 
   // El estado del pase adversarial viaja en el
-  // comando canónico "¿qué sigue?" — el cap de ventana del Step 5 y el JOIN de 3 ramas del
-  // step-05b dependen de él, y sin esto habría que acordarse de un `marker.js get` extra.
+  // comando canónico "¿qué sigue?" — el cap de ventana del paso de revisores y el JOIN de 3 ramas del
+  // el paso «Pase adversarial» dependen de él, y sin esto habría que acordarse de un `marker.js get` extra.
   const adv = marker.adversarial || null;
   const sidNow = resolveSessionId();
   const advIsOurs = adv ? adv.sessionId === sidNow : null;
@@ -2934,10 +3059,28 @@ function computeNext() {
     if (st.step === 'reviewers') return 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step reviewers (bloquea sin el verde real)';
     return `marker.js complete-step ${st.step}`;
   };
+  // El arnés viejo (lib/harness-freshness.js): pasos leídos de otra carpeta que la del arnés que corre frenan; el aviso
+  // de una versión nueva o de una actualización que falló sale una vez por ejecución, antes de las partes del Arranque.
+  let avisoArnes = null;
+  // con ~/.claude/agent-skills presente se mira siempre (un enlace roto o una carpeta sin los pasos son el arnés viejo);
+  // sin él (una casa de prueba, una CI) no hay de dónde leer pasos que comparar
+  let hayAgentSkills = false;
+  try { fs.lstatSync(path.join(os.homedir(), '.claude', 'agent-skills')); hayAgentSkills = true; } catch (_) { hayAgentSkills = false; }
+  if (hayAgentSkills) {
+    const f = require('./lib/harness-freshness.js').revisar({ stepsDir: STEPS_DIR, nextFile: nextStep ? nextStep.file : null, scriptDir: __dirname });
+    if (f.error) return { error: f.error, harness_stale: true };
+    const linea = f.aviso || f.sinEstado;
+    if (linea && marker.harnessFreshnessNoted !== true) {
+      avisoArnes = linea;
+      // sin la marca el aviso se repite en cada `next`: que diga por qué
+      const a = anotarEnMarker({ harnessFreshnessNoted: true });
+      if (!a.ok) avisoArnes = `${linea} (se va a repetir: ${a.motivo})`;
+    }
+  }
   // Las partes del Arranque que corren y faltan se hacen antes de seguir (o mientras valida la story, como dice su paso).
-  const partes = startParts.length
+  const partes = (avisoArnes ? `${avisoArnes} ` : '') + (startParts.length
     ? `ANTES, lo que falta del Arranque: ${startParts.map((p) => p.name).join(' y ')} (${STEPS_TABLE.byId('start').file}); si una parte falla, marker.js start-warning <time-tracking|ado> "<motivo>" y seguí. `
-    : '';
+    : '');
 
   return {
     story_id: marker.storyId,
@@ -2958,6 +3101,7 @@ function computeNext() {
     step_scheme: scheme,
     preconditions,
     steps: stepState,
+    ...(avisoArnes ? { harness_notice: avisoArnes } : {}),
     ...(startParts.length ? { start_parts: startParts } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...(pending ? { pending_action: pending } : {}),
@@ -2972,7 +3116,7 @@ function computeNext() {
 }
 
 // ── pipeline.js start — preflight mecánico en UN comando ─
-// Colapsa los 5 checks de step-00 (PIPE-C0 cross-session, C1 branch guard,
+// Colapsa los 5 checks del Arranque (PIPE-C0 cross-session, C1 branch guard,
 // C2 gitignore, C4 marker, C5 status in-progress) que el LLM ejecutaría
 // check-por-check en prosa (5 turnos → 1). PAUSA (ready:false, sin mutar nada)
 // solo ante conflicto cross-session, rama protegida o pipeline abandonado.
@@ -3026,16 +3170,17 @@ function computeStart(args) {
   }
   const content = readText(storyPath);
   const fm = parseFrontmatterPipeline(content);
-  const storyId = fm.story || path.basename(storyPath, '.md');
+  // La identidad de una story es `story:` en su frontmatter, en todo el arnés. Sin ella no se arranca: el nombre del
+  // archivo como número dejaría una ejecución que ningún otro control reconoce como de esta story.
+  if (!fm.story) {
+    const motivo = fm.storyId
+      ? `declara \`storyId:\` y no \`story:\` (la clave que lee el arnés). Renombrala a \`story:\``
+      : 'no trae `story:` en su frontmatter (o no tiene frontmatter). Agregalo, con el número de la story';
+    return { ready: false, error: `${path.basename(storyPath)} ${motivo}, y volvé a correr start. No arranqué nada.` };
+  }
+  const storyId = fm.story;
   const pauses = [];
   const actions = [];
-  // La identidad de una story es `story:` en todo el arnés: `storyId:` no se lee. Si el
-  // archivo sólo trae ésa, se dice — si no, la corrida arranca con el nombre del archivo como número sin que nadie lo note.
-  if (!fm.story && fm.storyId) {
-    const aviso = `⚠️ ${path.basename(storyPath)} declara \`storyId:\` y no \`story:\`: para el arnés no es una story (el portón de Azure no la revisa). Renombrá la clave a \`story:\`; mientras tanto el número es el nombre del archivo (${storyId}).`;
-    actions.push(aviso);
-    process.stderr.write(`${aviso}\n`);
-  }
 
   // PIPE-C0: cross-session conflict.
   // «La misma story» es el mismo número Y la misma ruta dentro de su repo: en los repos que numeran por
@@ -3145,6 +3290,19 @@ function computeStart(args) {
     pauses.push({ id: 'PIPE-C1-branch-guard', detail: `Estás en rama protegida '${branch}' — NO implementar acá. Creá/checkout una rama de trabajo primero.${aMano}` });
   }
 
+  // PIPE-C5 (lectura): una historia en borrador no está validada; la pasa a ready-for-dev quien corre el validador.
+  // El estado se lee como lo lee el freno de historia (statusOf): si leyeran distinto, un borrador arrancaría como listo.
+  let draftStatus = String(fm.status || '').toLowerCase() === 'draft';
+  try { draftStatus = draftStatus || require('./lib/story-skill-gate.js').isDraftStatus(require('./lib/story-skill-gate.js').statusOf(fs.readFileSync(storyPath, 'utf8'))); } catch (e) {
+    actions.push(`PIPE-C5-draft: no pude leer el estado como lo lee el freno (${e.message}); vale sólo el del frontmatter`);
+  }
+  if (draftStatus) {
+    pauses.push({
+      id: 'PIPE-C5-draft',
+      detail: `La historia está en borrador (status: draft): no está validada. Corré el validador de historias (tycon-story-validator) sobre ${storyPath} y, si pasa, pasala a ready-for-dev; después volvé a correr start.`,
+    });
+  }
+
   // PIPE-C5 (lectura): pipeline abandonado.
   if (fm.status === 'in-progress' && !others.length) {
     pauses.push({
@@ -3186,11 +3344,13 @@ function computeStart(args) {
       const { append, notices } = computeGitignoreNeeds(gitIgnoraProbe(r));
       const donde = r === repo ? '' : ` (repo de la story: ${r})`;
       if (append.length) {
-        fs.appendFileSync(giPath, (gi.endsWith('\n') || gi === '' ? '' : '\n') + append.join('\n') + '\n', 'utf8');
+        fs.appendFileSync(giPath, gitignoreAppendText(gi, append), 'utf8');
         actions.push(`PIPE-C2: agregado a .gitignore${donde}: ${append.filter((l) => !l.startsWith('#')).join(', ')}`);
       }
       for (const n of notices) actions.push(donde ? `${n}${donde}` : n);
-    } catch { /* ignore */ }
+    } catch (e) {
+      actions.push(`PIPE-C2: no pude agregar al .gitignore de ${r} (${e.code || String(e.message || e).split('\n')[0]}): revisalo a mano`);
+    }
   }
   if (evid.crossRepo) {
     actions.push(`EVIDENCIA-EN-REPO-DE-LA-STORY: la story vive en ${evid.storyRepo} y el código en ${repo} → `
@@ -3200,8 +3360,28 @@ function computeStart(args) {
     actions.push(`⚠️ EVIDENCIA: ${evid.warning}`);
   }
 
+  // PIPE-C4 (lectura): esta sesión tiene a medias la ejecución de otra story. Reemplazarla borraría sus pasos y sus
+  // controles: se decide a propósito (`marker.js set` lo frena igual, sin `--replace`).
+  {
+    const actual = readSessionMarker();
+    const hechos = actual && Array.isArray(actual.stepsCompleted) ? actual.stepsCompleted.length : 0;
+    if (actual && String(actual.storyId) !== String(storyId) && hechos > 0) {
+      pauses.push({
+        id: 'PIPE-C4-otra-ejecucion',
+        detail: `Esta sesión tiene a medias la ejecución de la story ${actual.storyId} (${hechos} paso(s) hecho(s)). Para arrancar la ${storyId}, primero cerrala o abandonala a propósito: marker.js clear y re-corré start.`,
+      });
+    }
+  }
+
+  // Lo que falta antes de arrancar: sale con pausas y sin ellas, y no frena.
+  const faltasNoMedidas = [];
+  const faltas = computeMissingBeforeStart({ repo, fm, noMedido: faltasNoMedidas });
+  const faltasOut = faltas.length ? { missing_before_start: faltas } : {};
+  if (faltas.length) actions.push(missingBeforeStartLine(faltas));
+  if (faltasNoMedidas.length) actions.push(`Falta antes de arrancar: no pude mirar ${faltasNoMedidas.join(' ni ')}; no es «está todo»`);
+
   if (pauses.length) {
-    return { ready: false, story_id: storyId, branch, pauses, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
+    return { ready: false, story_id: storyId, branch, pauses, ...faltasOut, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
   }
 
   // el tamaño de la corrida y su tiempo estimado, ANTES de lanzar nada; quedan en el marcador.
@@ -3219,7 +3399,7 @@ function computeStart(args) {
   const esquema = sigueVieja
     ? { stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8], arranque: '0' }
     // los que se cierran con su bandera no van en la lista: ninguna bandera la vacía, y una ejecución terminada tiene que
-    // quedar con la lista vacía para todos los que la miran (como el 5b y el 7c en el marcador viejo)
+    // quedar con la lista vacía para todos los que la miran (como el pase adversarial y la prueba en vivo en el marcador viejo)
     : { stepScheme: STEPS_TABLE.SCHEME, stepsPending: STEPS_TABLE.STEPS.filter((s) => !s.flag).map((s) => s.id), arranque: 'start' };
   try {
     // marker.js con el mismo Node que corre este programa, no el del PATH
@@ -3231,7 +3411,7 @@ function computeStart(args) {
       // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
       storyId, storyPath: path.resolve(storyPath), repoPath: repo, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
       // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
-      // esté en otro. Lo leen los steps 7c/8 para no tener que adivinarlo.
+      // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el commit» para no tener que adivinarlo.
       evidenceDir: evid.dir || null,
       // Commit de partida: la base de las «líneas tocadas» que mide test-gate.sh.
       // Sin git queda null y test-gate cae a HEAD diciéndolo.
@@ -3246,6 +3426,10 @@ function computeStart(args) {
       // las vueltas de revisores son de esta ejecución: una ejecución anterior de la misma sesión no las hereda
       iterations: {},
       size: runSize.size, size_reason: runSize.reason, estimate_min: runSize.estimate_min, estimate_source: runSize.estimate_source,
+      // el modelo de la sesión tal como vino (el registro de revisores lo usa antes que la conversación) y, en Codex, la
+      // sesión con su proveedor: los revisores que lanza `reviewers-run` corren con el mismo
+      ...(args.sessionModel ? { sessionModel: args.sessionModel } : {}),
+      ...(args.codexSession ? { codexSession: args.codexSession } : {}),
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
@@ -3294,6 +3478,7 @@ function computeStart(args) {
       ? { models: { helpers: MODELOS.resolveHelpers({ org: args.orgModels && args.orgModels.declared ? args.orgModels.data : null, requests: args.modelRequests }) } }
       : {}),
     tooling: computeToolingExpected(repo),
+    ...faltasOut,
     actions_done: actions,
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
     spec_stale: stale,
@@ -3351,6 +3536,7 @@ function recortarStart(result) {
   if (result.models) breve.models = result.models;
   if (result.models_problem) breve.models_problem = result.models_problem;
   if (result.models_warnings) breve.models_warnings = result.models_warnings;
+  if (result.models_provider) breve.models_provider = result.models_provider;
   if (result.model_hint) {
     breve.modelo = result.model_hint.recommended_session_model;
     breve.effort = result.model_hint.effort || null;
@@ -3365,6 +3551,7 @@ function recortarStart(result) {
     const missing = result.tooling.expected.filter((x) => (x.kind === 'skill' || x.kind === 'manifest') && x.present === false);
     if (missing.length) breve.skills_faltantes = missing.map((x) => `${x.name} → ${x.action}`);
   }
+  if (result.missing_before_start) breve.missing_before_start = result.missing_before_start;
   if (result.e2e_gap) breve.e2e_gap = result.e2e_gap;
   if (result.spec_stale) breve.spec_stale = result.spec_stale;
   breve.acciones = result.actions_done || [];
@@ -3374,12 +3561,12 @@ function recortarStart(result) {
 }
 
 // ── pipeline.js risk-class — Autonomía Nivel 2 ───
-// Clasifica la story para el auto-approve CONDICIONAL del plan (Step 3):
-// LOW-risk → step-03 se auto-aprueba y el plan se muestra igual; cualquier criterio
+// Clasifica la story para el auto-approve CONDICIONAL del plan (paso «Aprobar el plan»):
+// LOW-risk → ese paso se auto-aprueba y el plan se muestra igual; cualquier criterio
 // fallido → NORMAL → checkpoint HITL como siempre. Reglas de oro intactas:
 // git push y cambios de scope firmado SIEMPRE human-gate (regla #0).
 // Criterios del diseño pipeline-autonomy-design.md §9 (validator verde es
-// pre-requisito del flujo — Step 1 corre antes que Step 3, no se re-evalúa acá).
+// pre-requisito del flujo — «Validar la historia» corre antes que «Aprobar el plan», no se re-evalúa acá).
 // ── El tamaño de la corrida: liviana (sólo documentación) o completa. Lo clasifica lib/run-size.js por
 // lo que la story DECLARA; `args.runSize` (el forzado del marcador, que sólo leen las ramas de línea de comandos)
 // manda. Sin story legible, completa. El repo aporta sus superficies del pase adversarial.
@@ -3489,7 +3676,7 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
   };
 }
 
-/** El pedido al revisor de historias en el paso 1, donde corre en el mismo mensaje que el validador (el del paso 6 lo trae su guía). */
+/** El pedido al revisor de historias en «Validar la historia», donde corre en el mismo mensaje que el validador (el de `tycon-create-story` lo trae su guía). */
 function promptRevisorDeHistorias({ story, repo }) {
   return `Revisá la historia ${story} contra el repo ${repo}, antes de programarla. Una sola pasada, de sólo lectura. ` +
     'Corrés en paralelo con el validador de stories: no repitas lo que es de su catálogo (VAL-*). ' +
@@ -3499,7 +3686,7 @@ function promptRevisorDeHistorias({ story, repo }) {
 
 // ── pipeline.js tooling-expected — aviso de tooling no disponible ──
 // El pipeline ASUME herramientas del harness (CodeGraph para symbol lookup, engram
-// para memoria persistente, la tool Workflow para el 5b). Si están declaradas pero
+// para memoria persistente, la tool Workflow para el pase adversarial). Si están declaradas pero
 // NO disponibles en la sesión, el orquestador degrada a fallbacks (grep / sin
 // memoria / sin pase adversarial), y sin aviso el user no se entera
 // de que el run corre más lento o con menos cobertura. Contrato (PIPE-C9):
@@ -3508,8 +3695,8 @@ function promptRevisorDeHistorias({ story, repo }) {
 // no en el shell) → él la verifica y AVISA al user ANTES de degradar.
 // ── Las skills de terceros que el pipeline invoca por nombre ──
 // Lo ajeno sale de agent-skills y lo restituye el paso del instalador desde el manifiesto del arnés
-// (scripts/publishing/third-party-skills.json). Si una skill que el pipeline invoca (Steps 2 y 4, el portón de
-// stories, el Step 5 a pedido) no está, el pipeline no puede enterarse en silencio: se suma al tooling esperado con
+// (scripts/publishing/third-party-skills.json). Si una skill que el pipeline invoca (los pasos «Armar el plan» e «Implementar», el portón de
+// stories, el paso de revisores a pedido) no está, el pipeline no puede enterarse en silencio: se suma al tooling esperado con
 // `present` y la acción. Sin manifiesto legible, una entrada que lo dice. opts: { skillsDir, manifestPath } (pruebas).
 // El manifiesto vive en scripts/publishing; una copia atrasada del arnés lo tiene en scripts/publicacion (un `.json` no tiene reemplazo):
 // primero publishing, luego publicacion; sin ninguna, publishing (el aviso la nombra).
@@ -3624,6 +3811,105 @@ function harnessTimeTool(opts = {}) {
   return { chosen: false, reason: `ninguna herramienta de horas: ${c.warning}` };
 }
 
+/**
+ * Lo que la ejecución va a necesitar y esta máquina no tiene, antes de arrancar: `[{ id, falta, sin_eso, como }]`, vacía
+ * si está todo. Tres cosas: el programa de la plataforma del pedido de trabajo (la primera palabra de los `rawCommands`
+ * del conector que elige la capa: el núcleo no nombra herramientas), con la misma condición con que `next` pide esa
+ * parte; la configuración de BMAD del repo (`_bmad/bmm/config.yaml`, sin la que `bmad-dev-story` se frena); y el
+ * servidor MCP de la herramienta de horas elegida, donde lo lee Claude Code. Un detector que no puede preguntar no
+ * inventa una falta: deja su motivo en `noMedido`. Nunca frena.
+ * @param {object} o repo · fm (frontmatter de la historia) · env · home · noMedido (lista donde quedan los detectores
+ *   que no pudieron mirar, con su motivo)
+ */
+function computeMissingBeforeStart({ repo, fm, env = process.env, home = os.homedir(), noMedido = [] }) {
+  const out = [];
+  const motivo = (e) => (e && e.code) || String((e && e.message) || e).split('\n')[0];
+
+  try {
+    const lib = path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'platform');
+    if (require(path.join(lib, 'work-item-field.js')).idOf(fm)) {
+      const platform = require(path.join(lib, 'platform.js'));
+      const elegida = platform.choose('work-item.update', { env, home });
+      const m = elegida.ok ? platform.connector(elegida.value.connector, env).manifest : null;
+      const prog = m && m.rawCommands && m.rawCommands.length ? String(m.rawCommands[0]).trim().split(/\s+/)[0] : null;
+      if (prog && !require('./lib/portable-tools.js').findBinary(prog, { env })) {
+        out.push({
+          id: 'plataforma',
+          falta: `\`${prog}\` en el PATH (lo usa el conector de ${m.label} para el pedido de trabajo de la historia)`,
+          sin_eso: 'la parte del pedido de trabajo se declara con `marker.js start-warning ado "<motivo>"` y el pipeline sigue',
+          como: `instalá \`${prog}\`, abrí una terminal nueva y volvé a correr start`,
+        });
+      }
+    }
+  } catch (e) { noMedido.push(`el programa de la plataforma (${motivo(e)})`); }
+
+  if (!fs.existsSync(path.join(repo, '_bmad', 'bmm', 'config.yaml'))) {
+    out.push({
+      id: 'bmad',
+      falta: `la configuración de BMAD del repo (\`_bmad/bmm/config.yaml\` en ${repo})`,
+      sin_eso: 'el plan lo arma el orquestador, sin BMAD: el skill de BMAD se frena sin esa configuración',
+      como: 'corré el skill `bmad-init` en el repo',
+    });
+  }
+
+  // En Codex los servidores viven en su propia configuración, que despliega el instalador: acá no se mira.
+  const esCodex = !!env.CODEX_SESSION_ID && !env.CLAUDE_CODE_SESSION_ID;
+  try {
+    const h = esCodex ? null : harnessWorkSignal({ env, home });
+    let c = null;
+    if (!esCodex) {
+      if (!h) noMedido.push('el servidor MCP de la herramienta de horas (no encontré el evento de trabajo del arnés)');
+      else if (h.loadError) noMedido.push(`el servidor MCP de la herramienta de horas (el evento de trabajo no carga: ${h.loadError})`);
+      else {
+        c = h.ws.chosen({ env, home });
+        if (!c.config) { noMedido.push(`el servidor MCP de la herramienta de horas (${c.warning || 'la configuración no se lee'})`); c = null; }
+      }
+    }
+    const server = c && c.manifest && c.manifest.mcp ? c.manifest.mcp.server : null;
+    // Un archivo que no está no declara nada; uno que está y no se lee no dice que falte.
+    const leer = (p) => {
+      let texto;
+      try { texto = fs.readFileSync(p, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return {}; throw new Error(`${path.basename(p)}: ${e.code || e.message}`); }
+      try { return JSON.parse(texto); } catch (e) { throw new Error(`${path.basename(p)} no es JSON válido`); }
+    };
+    if (server) {
+      const cfg = leer(path.join(home, '.claude.json')) || {};
+      const delRepo = leer(path.join(repo, '.mcp.json')) || {};
+      // Claude Code guarda cada proyecto con la ruta real, con `/` en Windows, y la del repo principal en un worktree.
+      const clave = (p) => { const s = String(p).replace(/\\/g, '/').replace(/\/+$/, ''); return process.platform === 'win32' ? s.toLowerCase() : s; };
+      const candidatas = new Set([path.resolve(repo)]);
+      try { candidatas.add(fs.realpathSync.native(repo)); } catch { /* sin ruta real: queda la resuelta */ }
+      try {
+        const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        if (path.basename(comun) === '.git') {
+          candidatas.add(path.dirname(comun));
+          try { candidatas.add(fs.realpathSync.native(path.dirname(comun))); } catch { /* idem */ }
+        }
+      } catch { /* sin git no hay repo principal que buscar */ }
+      const buscadas = new Set([...candidatas].map(clave));
+      const proyectos = cfg.projects && typeof cfg.projects === 'object' ? cfg.projects : {};
+      const deProyecto = Object.keys(proyectos).filter((k) => buscadas.has(clave(k))).map((k) => proyectos[k] && proyectos[k].mcpServers);
+      const declarado = [cfg.mcpServers, ...deProyecto, delRepo.mcpServers]
+        .some((s) => s && typeof s === 'object' && Object.prototype.hasOwnProperty.call(s, server));
+      if (!declarado) {
+        out.push({
+          id: 'horas',
+          falta: `el servidor MCP \`${server}\` de ${c.manifest.label}, la herramienta de horas de la organización`,
+          sin_eso: 'la parte de horas se declara con `marker.js start-warning time-tracking "<motivo>"` y el pipeline sigue sin registrar',
+          como: c.manifest.offer && c.manifest.offer.needs ? `${c.manifest.offer.needs}; registrado, abrí una sesión nueva` : 'registrá el servidor en Claude Code y abrí una sesión nueva',
+        });
+      }
+    }
+  } catch (e) { noMedido.push(`el servidor MCP de la herramienta de horas (${motivo(e)})`); }
+
+  return out;
+}
+
+/** La línea de las acciones del arranque con lo que falta, o null. */
+function missingBeforeStartLine(faltas) {
+  return faltas.length ? `Falta antes de arrancar: ${faltas.map((f) => `${f.falta} → ${f.sin_eso}; ${f.como}`).join(' · ')}` : null;
+}
+
 /** Las horas para `CompletedWork` del pedido después de un `stop`: las que tenía más los segundos informados, o null. */
 function completedWorkHours(current, stopResult) {
   const s = stopResult && stopResult.seconds;
@@ -3632,8 +3918,8 @@ function completedWorkHours(current, stopResult) {
 }
 
 /**
- * `pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]`: el evento de trabajo de una historia (paso 0b y
- * paso 9), con la historia, el título, el repo y la sesión. Sin `--story`, los de la corrida (el marker); el paso 9 corre
+ * `pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]`: el evento de trabajo de una historia (el aviso de trabajo del Arranque y
+ * «Cerrar la historia»), con la historia, el título, el repo y la sesión. Sin `--story`, los de la corrida (el marker); «Cerrar la historia» corre
  * después del merge, cuando el marker ya se borró, y pasa la story. → `{ ran, seconds?, hours?, action?, warnings }`;
  * `hours` son los segundos de `stop` en horas, para sumar a `CompletedWork`. Una herramienta que falla nunca frena la
  * historia.
@@ -3643,7 +3929,7 @@ function workSignalForRun(event, opts = {}) {
   const field = (fm, key) => ((new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, 'm').exec(fm) || [])[1] || '').replace(/^(["'])(.*)\1$/, '$2');
   // con los finales de renglón de Windows y la marca de orden de bytes, como los demás lectores de frontmatter
   const frontmatter = (p) => ((/^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(p ? readText(p) : '') || [])[1] || '').replace(/\r/g, '');
-  // la sesión, con la misma cadena que el marker (Claude Code, el banco y Codex): el 0b abrió con ésa
+  // la sesión, con la misma cadena que el marker (Claude Code, el banco y Codex): el Arranque abrió con ésa
   const sid = resolveSessionId();
   const session = sid === '_nosession' ? null : sid;
   let run;
@@ -3655,18 +3941,38 @@ function workSignalForRun(event, opts = {}) {
   } else {
     const marker = opts.marker || readSessionMarker();
     if (!marker || !marker.storyId) return { error: 'sin marker activo en esta sesión — pasá la story: pipeline.js work-signal <start|stop> --story <spec> --repo <dir>' };
-    run = { storyId: String(marker.storyId), title: field(frontmatter(marker.storyPath), 'title'), repo: marker.repoPath || null,
-      sessionId: marker.sessionId || session };
+    // la ruta del marker puede estar escrita contra su repo: se resuelve como la resuelve marker.js, no contra la carpeta
+    const spec = marker.storyPath ? path.resolve(marker.repoPath || process.cwd(), marker.storyPath) : null;
+    run = { storyId: String(marker.storyId), title: field(frontmatter(spec), 'title'), repo: marker.repoPath || null,
+      sessionId: marker.sessionId || session, spec };
   }
+  const spec = opts.storyPath || run.spec || null;
   const h = harnessWorkSignal(opts);
-  if (!h) return { ran: false, warnings: ['aviso de trabajo: el arnés de esta máquina no trae el evento de trabajo (scripts/lib/work-signal.js); sigo sin registrar'] };
-  if (h.loadError) return { ran: false, warnings: [`aviso de trabajo: el evento de trabajo del arnés no carga (${h.loadError}); sigo sin registrar`] };
-  const r = h.ws.emit(event, { storyId: run.storyId, title: run.title || null, repo: run.repo, sessionId: run.sessionId }, { env: opts.env || process.env });
+  if (!h) return constanciaDeHoras(event, spec, {}, opts, { ran: false, warnings: ['aviso de trabajo: el arnés de esta máquina no trae el evento de trabajo (scripts/lib/work-signal.js); sigo sin registrar'] });
+  if (h.loadError) return constanciaDeHoras(event, spec, {}, opts, { ran: false, warnings: [`aviso de trabajo: el evento de trabajo del arnés no carga (${h.loadError}); sigo sin registrar`] });
+  let r;
+  try { r = h.ws.emit(event, { storyId: run.storyId, title: run.title || null, repo: run.repo, sessionId: run.sessionId }, { env: opts.env || process.env }); } catch (e) {
+    constanciaDeHoras(event, spec, {}, opts, { warnings: [] });
+    throw e;
+  }
   const out = { ran: r.ran, warnings: r.warnings };
   if (r.result.action) out.action = r.result.action;
   if (event === 'stop' && Number.isInteger(r.result.seconds)) {
     out.seconds = r.result.seconds;
     out.hours = completedWorkHours(0, r.result);
+  }
+  return constanciaDeHoras(event, spec, r.result, opts, out);
+}
+
+/**
+ * La constancia de lo real de un `stop`: lo que contestó la herramienta (o nada, si no contestó), para que estimate-real
+ * no dependa del modelo y valga siempre el último `stop`. Devuelve `out` con el aviso si no se pudo dejar.
+ */
+function constanciaDeHoras(event, spec, result, opts, out) {
+  if (event !== 'stop') return out;
+  if (!spec) return { ...out, warnings: [...out.warnings, 'horas reales: sin la ruta de la historia no dejo constancia; lo real no se va a anotar (pasá --story <spec>)'] };
+  try { require('./lib/real-hours.js').record(opts.home || os.homedir(), spec, result); } catch (e) {
+    return { ...out, warnings: [...out.warnings, `horas reales: no pude dejar la constancia (${e.code || e.message}); lo real de esta historia no se va a anotar`] };
   }
   return out;
 }
@@ -3736,10 +4042,10 @@ function computeToolingExpected(repo, opts = {}) {
     expected.push({
       name: 'engram',
       mcp_prefix: 'mcp__plugin_engram_engram__',
-      why: 'protocolo de memoria persistente SIEMPRE activo (guides/integrations/engram-workflow.md) — el Step 2 inyecta gotchas previos del repo y el cierre guarda session_summary',
+      why: 'protocolo de memoria persistente SIEMPRE activo (guides/integrations/engram-workflow.md) — el paso «Armar el plan» inyecta gotchas previos del repo y el cierre guarda session_summary',
       binary_found: bin,
       cli_fallback: KNOWN_CLI.engram.cli,
-      fallback: 'run sin memoria persistente (Step 2 pierde las lecciones previas; el cierre no guarda summary)',
+      fallback: 'run sin memoria persistente (el paso «Armar el plan» pierde las lecciones previas; el cierre no guarda summary)',
       raise_it: raisePlaybook(bin, KNOWN_CLI.engram),
       if_unavailable: 'AVISAR al user en 1 línea ANTES de seguir: "engram MCP no disponible → este run pierde memoria persistente". Después seguir `raise_it` (el CLI engram cubre search/sync para este run).',
     });
@@ -3747,12 +4053,12 @@ function computeToolingExpected(repo, opts = {}) {
   expected.push({
     name: 'workflow-tool',
     mcp_prefix: 'Workflow',
-    why: 'el Step 5b (adversarial deep-verify) corre vía la tool Workflow — sin ella el pase adversarial NO corre y se pierde la capa que cazó los bugs de E1',
+    why: 'el paso «Pase adversarial» (adversarial deep-verify) corre vía la tool Workflow — sin ella el pase adversarial NO corre y se pierde la capa que cazó los bugs de E1',
     binary_found: null,
     cli_fallback: null,
-    fallback: 'skip del 5b (cobertura reducida: solo los advisors single-pass)',
+    fallback: 'saltear el pase adversarial (cobertura reducida: solo los advisors single-pass)',
     raise_it: 'sin CLI alternativo (es una tool del harness) — si no está, PREGUNTAR al user si sigue sin el pase adversarial.',
-    if_unavailable: 'AVISAR al user — esto NO es un skip silencioso legítimo: "la tool Workflow no está disponible → el pase adversarial 5b no puede correr; el run queda solo con los advisors single-pass. ¿Sigo igual?" El user decide.',
+    if_unavailable: 'AVISAR al user — esto NO es un skip silencioso legítimo: "la tool Workflow no está disponible → el pase adversarial no puede correr; la ejecución queda solo con los advisors single-pass. ¿Sigo igual?" El user decide.',
   });
   // Genérico: TODO MCP server que el
   // repo declare en su .mcp.json o en la config del proyecto (~/.claude.json →
@@ -3794,17 +4100,17 @@ function computeToolingExpected(repo, opts = {}) {
 }
 
 // ── pipeline.js model-hint — sugerencia de modelo de sesión por complejidad ──
-// Los steps 2-4 (plan BMAD + implementación) corren
+// Los pasos de armar el plan, aprobarlo e implementar (plan BMAD + implementación) corren
 // INLINE en el main loop (tool Skill, no subagentes) → su modelo es el DE LA
 // SESIÓN y solo el user puede cambiarlo con /model. Este comando computa la
-// recomendación MECÁNICA para que el Step 0 (preflight) la compare con el modelo
+// recomendación MECÁNICA para que el Arranque (preflight) la compare con el modelo
 // real de la sesión (el orquestador lo sabe por su system prompt) y sugiera el
 // switch ANTES de gastar contexto — con sesión fresca por pipeline el
 // preflight es el momento exacto para elegir modelo; /model conserva sesión y
 // marker, no se pierde nada.
 //
 // Tiers (razón: el plan es el punto de mayor apalancamiento — un plan malo
-// cascadea a re-loops del Step 5 — y la implementación es el mayor consumidor
+// cascadea a re-loops del paso de revisores — y la implementación es el mayor consumidor
 // de tokens; opus ~1.7x sonnet):
 //   LOW           → sonnet alcanza (opus también ok — no molestar si ya está ahí)
 //   NORMAL común  → opus
@@ -3874,7 +4180,7 @@ function computeModelHint(args) {
         ? `NORMAL + ${heavyCount} señales pesadas (${signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) → ${recommended} con más esfuerzo`
         : 'NORMAL común → opus (sonnet se queda corto en el plan)',
     note: (deLaOrg ? `la sugerencia sale de la configuración de la organización (session.${band}${MODELOS.ceilingOf(org) ? `, techo ${MODELOS.ceilingOf(org)}` : ''}): ${recommended}. ` : '') +
-      'ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
+      'ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
     ...extra,
   };
   if (avisos.length) Object.defineProperty(out, '_avisos', { value: avisos, enumerable: false });
@@ -3887,8 +4193,8 @@ function equivalenciasDeModelos() {
   catch (_) { return {}; }
 }
 
-// ── pipeline.js deep-review-gate — Step 5b adversarial ──
-// Decide si corre el pase adversarial reproduce-or-refute (step-08-adversarial-pass.md),
+// ── pipeline.js deep-review-gate — pase adversarial ──
+// Decide si corre el pase adversarial reproduce-or-refute (la guía del paso «Pase adversarial»),
 // que EJECUTA el código (bundlea/parsea/probe) en vez de LEER el diff como los 6 advisors
 // single-pass: así encuentra falsos negativos (p.ej. un traversal en lanes/participants) que ellos no ven.
 //
@@ -3904,7 +4210,7 @@ function equivalenciasDeModelos() {
 //      gana sobre el criterio por tamaño de diff, que puede dejar pasar un defecto en superficie compartida.
 //   5) default → risk-class (NORMAL run / LOW skip). Si el repo NO declaró superficie compartida,
 //      el skip por LOW se decide a ciegas y el veredicto lo dice (`shared_surface_declared:false`).
-// Corre UNA vez por corrida (default: se lanza al cierre del Step 4 y step-05b es el join; TYCON_5B_EARLY=0 → se lanza en 5b), NUNCA por re-loop D.i
+// Corre UNA vez por corrida (default: se lanza al cierre de «Correr las pruebas» y el paso del pase adversarial es el join; TYCON_5B_EARLY=0 → se lanza en su paso), NUNCA por re-loop D.i
 // (re-correr el workflow sería ~N× su costo; los fixes los verifican los advisors del re-loop).
 function deepReviewConfig(repo) {
   const txt = readText(path.join(repo, '.tycon', 'advisors.yaml')) ||
@@ -4063,12 +4369,12 @@ function computeDeepReviewGate(args) {
   else if (args.ultracode) modelReason = 'ultracode ON → hunters en Opus';
   else if (hint.heavy) modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`;
   else modelReason = 'default (recorta $ ~5x vs Opus)';
-  // Lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
+  // Lanzamiento temprano del pase adversarial al cierre de «Correr las pruebas» — DEFAULT ON con
   // kill-switch (las mitigaciones
   // están cableadas — cap 2 de ventana, verificadores en ventana de 3, candado
   // anti-full-suite — y la primera corrida NORMAL ES la medición del cap). El switch queda
   // MECÁNICO acá (mismo patrón que TYCON_NO_DEEP_REVIEW), no en prosa que nadie lee:
-  // export TYCON_5B_EARLY=0 → lanzamiento clásico en 5b; sin la env → temprano en el Step 4.
+  // export TYCON_5B_EARLY=0 → lanzamiento clásico en su paso; sin la env → temprano al cerrar «Correr las pruebas».
   const extras = {
     model_reason: modelReason,
     early_launch: process.env.TYCON_5B_EARLY !== '0',
@@ -4078,7 +4384,7 @@ function computeDeepReviewGate(args) {
   // 2) Config por repo.
   const cfg = deepReviewConfig(args.repo);
   if (cfg === 'off') {
-    // Si el repo apagó el 5b Y declaró superficie compartida, las dos cosas no pueden convivir en
+    // Si el repo apagó el pase adversarial Y declaró superficie compartida, las dos cosas no pueden convivir en
     // silencio: la lista queda publicada y muerta, y el dueño del repo cree tener una protección
     // que no tiene. El `off` gana —es la decisión explícita del
     // dueño— pero se dice.
@@ -4164,7 +4470,7 @@ function computeDeepReviewGate(args) {
       reason: 'no pude medir la densidad del diff: me invocaste sin `--files`. Sin la lista de '
         + 'archivos de código no hay nada que contar, y un «0 líneas» acá sería un número que nadie '
         + 'calculó — se usaría para saltear el pase adversarial sin haber mirado. Pasá los archivos '
-        + 'del diff (ver step-04 §Lanzamiento temprano y step-05b), o decidí explícito con '
+        + 'del diff (ver la guía del pase adversarial §Lanzamiento temprano), o decidí explícito con '
         + '`--deep-review` / `--no-deep-review`.',
     };
   }
@@ -4293,7 +4599,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
 
 // ── pipeline.js timing-report — instrumentación ─
 // Desglosa dónde se fue el wall-clock de la corrida: steps (marker.stepTimings),
-// iteraciones del Step 5 (marker.iterations) y gates ejecutados (gates.log).
+// iteraciones del paso de revisores (marker.iterations) y gates ejecutados (gates.log).
 // Sin esto, los "25 min" son anécdota y los speedups se priorizan a ciegas.
 function computeTimingReport() {
   const marker = readSessionMarker();
@@ -4374,7 +4680,7 @@ function detectarWordSplit(args) {
     `  partido por espacios: ${pedazos.length} paths, ${existen.length} existen en disco.\n` +
     'Causa: zsh NO word-splitea $VAR sin comillas — usá ${=VAR} o pasá los paths explícitos.\n' +
     'Por qué ABORTA y no sigue: con 1 archivo contado, risk-class da LOW y eso apaga DOS frenos\n' +
-    'a la vez — el checkpoint HITL del plan (auto_approve_plan) y el pase adversarial del 5b\n' +
+    'a la vez — el checkpoint HITL del plan (auto_approve_plan) y el pase adversarial\n' +
     '(deep-review-gate) — sin dejar rastro de que se apagaron por un error de parseo.\n'
     );
   }
@@ -4485,7 +4791,7 @@ function validateFilesExist(args, opts) {
 // bmad-dev-story HALTea si la implementación agrega dependencias fuera del spec
 // ("new dependencies beyond story specifications → HALT: need user approval"). TYCON no
 // tiene check equivalente: los advisors de seguridad atrapan un paquete VULNERABLE, no un
-// paquete legítimo que nadie aprobó. Corre en Step 4 (post-build): diffea las dependencias
+// paquete legítimo que nadie aprobó. Corre en «Correr las pruebas» (post-build): diffea las dependencias
 // AGREGADAS en package.json / *.csproj / Directory.Packages.props vs HEAD contra el texto de
 // la story. Un paquete nuevo cuyo nombre NO aparezca en la story → undeclared → PAUSA HITL.
 // Regla mecánica y verificable (no inferencia, estilo E.i): "declarado" = el nombre del
@@ -4701,14 +5007,14 @@ function computeNextStory(args) {
 // La mejor idea de bmad-dev-story: el ciclo dev↔review vive DENTRO del artefacto
 // (su sección "Review Follow-ups (AI)" con checkboxes por severidad) y sobrevive
 // sesiones. Sin esto los findings viven solo en .advisors/pipeline-runs/ — si el
-// pipeline muere post-Step 6 con un CRITICAL waived o WARNINGs abiertos, la próxima
+// pipeline muere después del paso de hallazgos con un CRITICAL waived o WARNINGs abiertos, la próxima
 // sesión no tiene lista accionable en la story (hay que arqueologizar el audit trail).
-// Step 6/7 escribe los no-resueltos acá (write-followups); Step 0/1 los detecta al
+// El paso de hallazgos escribe los no-resueltos acá (write-followups); el Arranque y «Validar la historia» los detectan al
 // retomar (followups-status). Solo toca el BODY de la story — NUNCA el frontmatter
 // contractual (esa transición sigue siendo exclusiva del orquestador vía marker.js).
 const FOLLOWUPS_HEADING = '## Review Follow-ups (Advisors)';
 // Normaliza un finding a la forma canónica del writer, tolerando tanto el shape del
-// findings.json del Step 6 ({rule_id, severity, advisor, file, disposition, reason})
+// findings.json del paso de hallazgos ({rule_id, severity, advisor, file, disposition, reason})
 // como el shape directo ({ruleId, severity, file, line, summary, resolved}).
 function normalizeFinding(f) {
   const disposition = String(f.disposition || '').toLowerCase();
@@ -4888,7 +5194,7 @@ function leerMarcadorDeLaCorrida() {
 }
 
 /**
- * ¿Quedan deudas abiertas de la story? En el step 9 evita relanzar dos revisores con modelo para
+ * ¿Quedan deudas abiertas de la story? En «Cerrar la historia» evita relanzar dos revisores con modelo para
  * contestar lo que es un grep: tags `[story-<id>-…]` vivos en `tasks/todo.md` (no tachados ni marcados
  * `[x]`) o tandas del bloque `pipelines:` con `status != done`. `open` en true = hay deuda.
  */
@@ -4969,7 +5275,7 @@ function writeFollowups(args) {
   if (!merged.length && !parsed) {
     return { wrote: false, note: 'Sin findings y sin sección previa — no se escribió nada.' };
   }
-  const banner = '<!-- tycon-pipeline: generado por Step 6/7. Cada item = finding advisor no resuelto (CRITICAL waived o WARNING). Al resolver el finding en el código, marcá [x]. Step 0/1 detecta los abiertos al retomar (pipeline.js followups-status). -->';
+  const banner = '<!-- tycon-pipeline: generado por el paso de hallazgos. Cada item = finding advisor no resuelto (CRITICAL waived o WARNING). Al resolver el finding en el código, marcá [x]. El Arranque y «Validar la historia» detectan los abiertos al retomar (pipeline.js followups-status). -->';
   const sectionLines = [FOLLOWUPS_HEADING, '', banner, '', ...merged, ''];
   const lines = content.split(/\r?\n/);
   let out;
@@ -4984,13 +5290,13 @@ function writeFollowups(args) {
   return { wrote: true, story_path: storyPath, total: merged.length, open, resolved: merged.length - open };
 }
 
-// ── findings.json del Step 6 — write determinista + gate de existencia ──────
+// ── findings.json del paso de hallazgos — write determinista + gate de existencia ──────
 // El findings.json ({rule_id, severity, advisor, file, disposition, reason}) es el insumo
 // machine-parseable del retrospective-capturer (advisor_warnings_per_story / actioned_ratio,
-// determinista sin LLM). Como WRITE MANUAL del orquestador en Step 6 se olvidaría y rompería el conteo.
+// determinista sin LLM). Como WRITE MANUAL del orquestador en el paso de hallazgos se olvidaría y rompería el conteo.
 // `write-findings` lo
 // vuelve una llamada de script validada + ubicada sola; `findings-status` lo enforcea como
-// pre-condición mecánica de Step 8 (exit 3 si falta → el orquestador lo escribe antes del commit).
+// pre-condición mecánica de «Preparar el commit» (exit 3 si falta → el orquestador lo escribe antes del commit).
 const VALID_SEVERITY = new Set(['CRITICAL', 'WARNING']);
 // 'refuted': hallazgo reportado,
 // investigado y RETIRADO por falso (típicamente por el propio advisor). No es 'fixed' (no hubo
@@ -5391,7 +5697,7 @@ function normalizeFindingRecord(raw, warnings, ctx) {
   };
 }
 
-// write-findings: escribe (validado) el findings.json del Step 6 en el run dir. Input via --findings
+// write-findings: escribe (validado) el findings.json del paso de hallazgos en el run dir. Input via --findings
 // (archivo JSON o '-' = stdin). Tolera el shape {ruleId|rule} y normaliza severity/disposition.
 // ── La constancia de los revisores viaja al repo de la STORY ────────────────
 // El run dir (`.advisors/pipeline-runs/<story>-<sello>/`) nace en el repo donde CORRE el pipeline
@@ -5691,7 +5997,7 @@ function recordRefutation(args) {
       : "El verificador reprodujo el hallazgo: queda 'fixed' (con su prueba) u 'open'; 'refuted' y 'waived' se rechazan." };
 }
 
-// findings-status: pre-condición mecánica de Step 8. ¿El run tiene findings.json válido?
+// findings-status: pre-condición mecánica de «Preparar el commit». ¿El run tiene findings.json válido?
 function computeFindingsStatus(args) {
   const storyId = deriveStoryId(args.story);
   if (!storyId) return { error: `--story inválido o sin frontmatter: ${args.story}` };
@@ -5704,12 +6010,12 @@ function computeFindingsStatus(args) {
   }
   if (!runDir) {
     return { exists: false, valid: false, story_id: storyId, run_dir: null,
-      note: `⚠️ No hay run dir bajo .advisors/pipeline-runs/ para ${storyId}. Escribí el findings.json del Step 6: pipeline.js write-findings --story ${args.story} --findings <array.json|->.` };
+      note: `⚠️ No hay run dir bajo .advisors/pipeline-runs/ para ${storyId}. Escribí el findings.json del paso de hallazgos: pipeline.js write-findings --story ${args.story} --findings <array.json|->.` };
   }
   const p = path.join(runDir, 'findings.json');
   if (!exists(p)) {
     return { exists: false, valid: false, story_id: storyId, run_dir: runDir, path: p,
-      note: `🛑 findings.json FALTA en ${runDir}. Escribilo antes del commit (Step 6): pipeline.js write-findings --story ${args.story} --findings <array.json|->. Es el insumo del retrospective-capturer (advisor_warnings_per_story) — sin él el conteo degrada a reconstrucción manual (BUG-PIPELINE-006).` };
+      note: `🛑 findings.json FALTA en ${runDir}. Escribilo antes del commit (paso de hallazgos): pipeline.js write-findings --story ${args.story} --findings <array.json|->. Es el insumo del retrospective-capturer (advisor_warnings_per_story) — sin él el conteo degrada a reconstrucción manual (BUG-PIPELINE-006).` };
   }
   let arr = null;
   try { arr = JSON.parse(readText(p)); } catch { arr = null; }
@@ -5768,6 +6074,9 @@ function parseArgs(argv) {
     else if (t === '--target-pipeline-done') a.targetPipelineDone = argv[++i];
     else if (t === '--cost-tier') a.costTier = argv[++i];
     else if (t === '--trust-ran') a.trustRan = true;
+    else if (t === '--reopen') a.reopen = true;                      // ado-mark-active: reabrir un pedido cerrado
+    else if (t === '--assign-to') a.assignTo = argv[++i];            // ado-mark-active: con auto_assign, a quién
+    else if (t === '--action-done') a.actionDone = nn(argv[++i], ''); // work-signal start: el id que devolvió la herramienta
     else if (t === '--autonomous') a.autonomous = true;
     else if (t === '--no-autonomous') a.autonomous = false;   // opt-out por corrida (default es ON)
     else if (t === '--allow-missing-files') a.allowMissingFiles = true;
@@ -5783,25 +6092,28 @@ function parseArgs(argv) {
     else if (t === '--verifier') a.verificador = argv[++i];        // record-refutation: el id del lanzamiento del verificador (<agente>@<ts> del registro de spawns)
     else if (t === '--verifier-model') a.modeloVerificador = argv[++i];
     else if (t === '--model') a.modelo = argv[++i];                // verify-finding: modelo del verificador (default sonnet)
-    else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el step-05b (aun en LOW)
-    else if (t === '--no-deep-review') a.noDeepReview = true;      // fuerza OFF el step-05b
+    else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el pase adversarial (aun en LOW)
+    else if (t === '--no-deep-review') a.noDeepReview = true;      // fuerza OFF el pase adversarial
     else if (t === '--deep-review-opus') a.deepReviewOpus = true;  // hunters/verifiers en Opus (default sonnet)
     else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero
-    else if (t === '--session-model') a.sessionModel = argv[++i] ?? '';   // start / model-hint: el modelo de la sesión
+    else if (t === '--session-model') a.sessionModel = nn(argv[++i], '');   // start / model-hint: el modelo de la sesión
+    else if (t === '--codex-session') a.codexSession = parseCodexSession(argv[++i]); // start: la sesión de Codex (proveedor y modelo)
     else if (t === '--run-dir') a.runDir = argv[++i];              // write-findings/findings-status: dir de la corrida (default: auto-resolve)
     else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta más allá del tope que autoriza una persona
     else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: quién la autorizó
     else if (t === '--quote') a.quote = argv[++i];                // con --extra-round: sus palabras, textuales
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff
-    else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
+    else if (t === '--scope') a.scope = nn(argv[++i], '');          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
     else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas
     else if (t === '--reason') a.motivo = argv[++i];              // story-review-record: el motivo de un salteo
     else if (t === '--model-reason') a.modelReason = argv[++i];   // story-review-record: de dónde salió el modelo
     else if (t === '--tokens') a.tokens = argv[++i];              // story-review-record: lo que gastó el revisor
     else if (t === '--duration-ms') a.duracionMs = argv[++i];     // story-review-record: lo que tardó
     else if (t === '--risk') a.riesgo = argv[++i];                // story-review-record: el riesgo que dio el portón
+    else if (t === '--run') a.run = argv[++i];                    // estimate-real: la ejecución que cierra la historia
+    else if (t === '--hours') { a.hoursGiven = true; i++; }        // estimate-real: no existe; se reconoce para negarlo
     // e2e-config: archivos que la entrega tocó (repo-relativos) para elegir qué apps del
     // monorepo ejerce el gate. Admite `--changed a b c` y `--changed a,b,c`.
     else if (t === '--changed') {
@@ -5874,7 +6186,7 @@ function main() {
       set.mech_discounted = disc.discounted;
       set.mech_findings = disc.mech_findings;
       set.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del set/expected (checks mecánicos, 0 tokens). ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del Step 6.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del paso de hallazgos.` : 'Sin findings mecánicos.');
     } else if (disc && disc.mech_findings.length) {
       set.mech_findings = disc.mech_findings;
       set.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — van DIRECTO al reporte consolidado.`;
@@ -5903,7 +6215,7 @@ function main() {
     // primario en vez de re-leer story completa + re-correr git diff cada uno.
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
-    // dev en una línea si no está `presente`; nunca frena — step-05 §Reglas del repo).
+    // dev en una línea si no está `presente`; nunca frena — guía del paso de revisores §Reglas del repo).
     set.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
     if (ctx) {
       set.context_file = ctx.context_file;
@@ -5912,7 +6224,8 @@ function main() {
       set.context_file_overrides = ctx.overrides;
     }
     // Regla de batcheo (máquina dev 8c/16GB): ventana deslizante de ≤4 vivos.
-    set.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial 5b fue lanzado en el Step 4 y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: el step-05 §Cap reducido manda. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.';
+    set.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial fue lanzado al cerrar «Correr las pruebas» y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: manda la guía del paso de revisores §Cap reducido. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.';
+    conLanzadorCodex(set, args);
     // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
     aplicarDecisionValidador(set, 'all', args);
     if (set.reviewer_models) {
@@ -5928,12 +6241,13 @@ function main() {
     // set: el descuento mecánico de arriba no mira el tamaño).
     aplicarTamanoALosRevisores(set, { ...args, runSize: runSizeDelMarcador(args.story) });
     decirModelos(set, conModelos.orgModels, avisosModelos);
-    logStep5Start(set.all, { mode: 'advisors', iter: args.iter }); // expected persistido (post-descuento)
+    // expected persistido (post-descuento); el contexto también, para que `reviewers-run` lance lo mismo
+    logStep5Start(set.all, { mode: 'advisors', iter: args.iter, context_file: set.context_file, context_file_overrides: set.context_file_overrides });
     salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
     return;
   }
 
-  // Los revisores de validación del paso 1 salen de acá, no de la prosa del step.
+  // Los revisores de validación del paso «Validar la historia» salen de acá, no de la prosa del step.
   //   node pipeline.js validators --story <spec.md> --repo <dir>
   //     → { validadores: ['tycon-story-validator', ...], lanzamientos: [{agente, paquete, modelo, prompt, nota}], packs }
   // siblings — los hermanos declarados de los paquetes activos en el repo, en su ruta esperada (para el revisor que no
@@ -5995,10 +6309,10 @@ function main() {
       result.mech_discounted = disc.discounted;
       result.mech_findings = disc.mech_findings;
       result.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del rerun/expected. ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del Step 6.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del paso de hallazgos.` : 'Sin findings mecánicos.');
     } else if (disc && disc.mech_findings.length) {
       result.mech_findings = disc.mech_findings;
-      result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del Step 6.`;
+      result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del paso de hallazgos.`;
     }
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     result.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
@@ -6006,7 +6320,8 @@ function main() {
       result.context_file = ctx.context_file;
       result.context_file_overrides = ctx.overrides;
     }
-    result.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB); reponer el slot al llegar cada notificación de término. ⚠️ Cap 2 si el pase adversarial 5b sigue en vuelo (el step-05 §Cap reducido manda).';
+    result.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB); reponer el slot al llegar cada notificación de término. ⚠️ Cap 2 si el pase adversarial sigue en vuelo (manda la guía del paso de revisores §Cap reducido).';
+    conLanzadorCodex(result, args);
     // expected = el SUBSET legítimo de esta iteración (rerun) — check-count valida
     // contra esto, no contra el set completo.
     // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
@@ -6022,7 +6337,7 @@ function main() {
       for (const r of Object.keys(result.reviewer_models)) if (!(result.rerun || []).includes(r)) delete result.reviewer_models[r];
     }
     decirModelos(result, conModelos.orgModels, avisosModelos);
-    logStep5Start(result.rerun, { mode: result.mode, iter: args.iter });
+    logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, context_file: result.context_file, context_file_overrides: result.context_file_overrides });
     salidaGrande(JSON.stringify(result, null, 2) + '\n', 0);
     return;
   }
@@ -6039,6 +6354,17 @@ function main() {
     const result = computePreflightFrontmatter(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.ready_to_edit === false ? 1 : 0);
+  }
+
+  // ── reviewers-run — bajo Codex, el pipeline lanza los revisores de la vuelta ──
+  // Cada revisor del set de `advisors` como un proceso `codex exec` aparte; la constancia queda en el mismo registro que
+  // lee `check-count`. Bajo Claude Code el paso no lo usa: lanza con Agent(...). Ver lib/codex-reviewers.js.
+  if (cmd === 'reviewers-run') {
+    require('./lib/codex-reviewers.js').run({ repo: args.repo, story: args.story }).then((r) => {
+      process.stdout.write(JSON.stringify({ launched: r.launched, skipped: r.skipped, results: r.results, reports_dir: r.reports_dir || null, ...(r.error ? { error: r.error } : {}) }, null, 2) + '\n');
+      process.exitCode = r.code;
+    }, (e) => { process.stderr.write(`reviewers-run: ${(e && e.message) || e}\n`); process.exitCode = 2; });
+    return;
   }
 
   if (cmd === 'check-count') {
@@ -6086,10 +6412,21 @@ function main() {
     let ran;
     let source;
     if (!state.sawStart) {
-      // Sin marca step5-start: pipeline.js advisors no corrió (o log inaccesible).
-      // Único caso donde el --ran del LLM es admisible — con warning fuerte.
-      ran = args.ran;
-      source = '⚠️ --ran self-reportado por el LLM (sin step5-start en el log — ¿corriste pipeline.js advisors?)';
+      // Sin marca step5-start: `pipeline.js advisors` no corrió en esta corrida (o el registro no se puede leer). No
+      // hay nada contra qué contar: un OK acá es un verde sobre nada, y la lista que pasa el agente (--ran) no es
+      // evidencia. Falla cerrado; el único camino es el override consciente, que queda a la vista en la salida.
+      if (args.trustRan && args.ran.length) {
+        ran = args.ran;
+        source = '⚠️⚠️ --trust-ran EXPLÍCITO sin step5-start: el caller pidió confiar en --ran (sin verificación real)';
+      } else {
+        process.stderr.write(
+          '🛑 check-count FALLÓ CERRADO — no hay step5-start en el registro: `pipeline.js advisors` no corrió en esta corrida.\n' +
+          'Sin ese registro no hay set esperado ni spawns contra qué contar, y un OK sería un verde sobre nada.\n' +
+          'Corré `pipeline.js advisors --repo <r> --story <s> --files <…>`, lanzá los revisores y volvé a contar.\n' +
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
+        );
+        process.exit(2);
+      }
     } else if (state.ran.length === 0 && expected.length === 0) {
       ran = [];
       source = 'set esperado vacío — nada que correr';
@@ -6097,18 +6434,26 @@ function main() {
       // FAIL-CLOSED: pipeline.js corrió (hay step5-start) pero
       // el hook on-advisor-run.js no registró NINGÚN spawn. El fallback silencioso al
       // --ran dejaría pasar un set sin spawns (ej.: 6 step5-start, 0 spawns, todo
-      // "pasó"). Override consciente: --trust-ran (queda en el output, auditable).
+      // "pasó"). --trust-ran lo decide la persona: ESC-C3 lo frena sin su frase (queda en el output, auditable).
       if (args.trustRan && args.ran.length) {
         ran = args.ran;
         source = '⚠️⚠️ --trust-ran EXPLÍCITO: el log no registró spawns pero el caller pidió confiar en --ran (sin verificación real)';
       } else {
         process.stderr.write(
           '🛑 check-count FALLÓ CERRADO — hay step5-start en el log pero CERO spawns registrados.\n' +
-          'O los advisors NO se corrieron, o el hook on-advisor-run.js está roto/no instalado.\n' +
-          'Verificá:\n' +
-          '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
-          '  2. ¿on-advisor-run.js está en settings.json (PreToolUse Task|Agent)? → install-tycon-hooks.sh --check\n' +
-          'Override consciente (queda auditable): re-corré con --trust-ran --ran a,b,c\n',
+          (Object.keys(state.fallidos || {}).length
+            ? 'Lanzados por el pipeline que no cuentan:\n' + Object.entries(state.fallidos).map(([a, m]) => `  - ${a}: ${m}`).join('\n') + '\n'
+            : '') +
+          (esCodex()
+            ? 'Bajo Codex los revisores los lanza el pipeline, no el modelo: corré\n' +
+              `  ${lanzadorCodex(args)}\n` +
+              'Si ya lo corriste y salió 2 porque la caja de arena no tiene red (sin red no llega al modelo), seguí la salida\n' +
+              'que dio ese mensaje: volver a correr check-count no cambia nada.\n'
+            : 'O los advisors NO se corrieron, o el hook on-advisor-run.js está roto/no instalado.\n' +
+              'Verificá:\n' +
+              '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
+              '  2. ¿on-advisor-run.js está en settings.json (PreToolUse Task|Agent)? → install-tycon-hooks.sh --check\n') +
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
         );
         process.exit(2);
       }
@@ -6133,13 +6478,13 @@ function main() {
     if (missing.length > 0) {
       process.stderr.write(
         `🛑 check-count FALLÓ — faltan ${missing.length} advisor(s) del set esperado:\n` +
-        missing.map((m) => `  - ${m}`).join('\n') + '\n\n' +
+        missing.map((m) => `  - ${m}${state.fallidos && state.fallidos[m] ? ` (lanzado por el pipeline: ${state.fallidos[m]})` : ''}`).join('\n') + '\n\n' +
         `Fuente del "corridos": ${source}\n` +
         `Esperado [${expectedSource}] (${expected.length}): ${expected.join(', ')}\n` +
         `Corridos (${ran.length}): ${ran.join(', ') || '(ninguno)'}\n` +
         (extra.length ? `Corridos de más (OK pero raro): ${extra.join(', ')}\n` : '') +
         discrepancy +
-        `\nNO avanzar a Step 6 hasta correr los faltantes.\n`,
+        `\nNO avanzar al paso de hallazgos hasta correr los faltantes.\n`,
       );
       process.exit(2);
     }
@@ -6265,7 +6610,7 @@ function main() {
     const result = computeNext();
     // Consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
-    // anotado ni arrancar un paso completo. Los sub-pasos (0b/0c/5b/7c) también: su trabajo no puede
+    // anotado ni arrancar un paso completo. Las partes del arranque, el pase adversarial y la prueba en vivo también: su trabajo no puede
     // caer como «tiempo entre pasos». Best-effort: medir nunca puede romper la consulta.
     // el paso por su nombre de máquina (o el número de un marcador viejo): marker.js decide qué arranque anotar
     if (!result.error && (STEPS_TABLE.byId(result.next_step) || /^(\d|0b|0c|5b|7c)$/.test(String(result.next_step || '')))) {
@@ -6275,26 +6620,89 @@ function main() {
       } catch { /* sin arranque: la cuenta lo rotula «estimada», no lo inventa */ }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-    process.exit(result.error ? 1 : 0);
+    if (result.harness_stale) process.stderr.write(`next: ${result.error}\n`);
+    process.exit(result.harness_stale ? 2 : result.error ? 1 : 0);
   }
   if (cmd === 'work-signal') {
     const event = process.argv[3];
     if (!['start', 'stop'].includes(event)) {
-      process.stderr.write('uso: pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]   (paso 0b: start · paso 9: stop)\n');
+      process.stderr.write('uso: pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]   (Arranque: start · «Cerrar la historia»: stop)\n');
       process.exit(2);
+    }
+    // la acción que hizo el agente con la herramienta de horas: marca sólo con el id en un resultado de la conversación
+    if (event === 'start' && !isNil(args.actionDone)) {
+      const EF = require('./lib/external-flags.js');
+      const v = EF.actionDone({ id: args.actionDone });
+      if (!v.ok) { process.stderr.write(`work-signal start --action-done: no marco — ${v.motivo}\n`); process.exit(1); }
+      if (!v.verificado) process.stderr.write(`work-signal start --action-done: marco sin verificar — ${v.motivo}\n`);
+      // sin verificar (Codex) queda dicho también en el marcador, no sólo en gates.log
+      const m = marcarHechoExterno('workSignalStarted', { via: 'action-done', id: String(args.actionDone).trim().slice(0, 120), herramienta: nn(v.herramienta, null), verificado: v.verificado },
+        { workSignalVerified: v.verificado });
+      if (!m.ok) { process.stderr.write(`work-signal start --action-done: no marco — ${m.motivo}\n`); process.exit(1); }
+      process.stdout.write(JSON.stringify({ marked: true, verificado: v.verificado, herramienta: nn(v.herramienta, null) }) + '\n');
+      process.exit(0);
     }
     let r;
     try { r = workSignalForRun(event, args.story ? { storyPath: path.resolve(args.story), repo: args.repo ? path.resolve(args.repo) : null } : {}); } catch (e) { r = { ran: false, warnings: [`aviso de trabajo: falló (${e.code || e.message}); sigo sin registrar`] }; }
     if (r.error) { process.stderr.write(`work-signal: ${r.error}\n`); process.exit(1); }
     for (const w of r.warnings) process.stderr.write(`${w}\n`);
+    // la bandera del aviso de trabajo la pone el arnés: con el evento atendido sin avisos y sin acción pendiente
+    if (event === 'start' && !args.story && r.ran && !r.warnings.length) {
+      if (r.action) process.stderr.write('work-signal start: hacé la acción y cerrá con pipeline.js work-signal start --action-done "<id que devolvió la herramienta>" (si no se puede, marker.js start-warning time-tracking "<motivo>")\n');
+      else {
+        const m = marcarHechoExterno('workSignalStarted', { via: 'work-signal' });
+        r.marked = m.ok;
+        if (!m.ok) process.stderr.write(`work-signal start: el aviso salió pero no marqué la parte — ${m.motivo}\n`);
+      }
+    }
     process.stdout.write(JSON.stringify(r) + '\n');
     process.exit(0);
+  }
+
+  // El pedido de Azure DevOps de la historia, a su estado activo: el arnés lo transiciona y recién ahí marca.
+  if (cmd === 'ado-mark-active') {
+    const marker = readSessionMarker();
+    const storyPath = args.story ? path.resolve(args.story) : (marker && marker.storyPath) || null;
+    if (!storyPath) { process.stderr.write('ado-mark-active: sin marker activo en esta sesión — pasá --story <spec>\n'); process.exit(1); }
+    // el id con el lector común (`work_item:` y su nombre viejo), y la capa de plataforma del árbol que corre
+    const raiz = path.join(__dirname, '..', '..', '..');
+    let wi = null;
+    // directo del archivo: `readText` devuelve '' cuando no puede leer, y eso se vería como «no tiene pedido»
+    try { wi = require(path.join(raiz, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fs.readFileSync(storyPath, 'utf8')); } catch (e) {
+      // no poder leerlo no es «no tiene pedido»: se dice
+      process.stderr.write(`ado-mark-active: no pude leer el pedido de trabajo de la historia (${(e && (e.code || e.message)) || 'error'}); si no se puede, marker.js start-warning ado "<motivo>"\n`);
+      process.exit(1);
+    }
+    let repoDir = path.dirname(path.dirname(storyPath));
+    try { repoDir = require('child_process').execFileSync('git', ['-C', path.dirname(storyPath), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || repoDir; } catch (_) { /* sin git: la carpeta de arriba */ }
+    const r = require('./lib/external-flags.js').adoMarkActive({ workItem: wi, repoDir, reopen: !!args.reopen, assignTo: args.assignTo || null,
+      platformJs: path.join(raiz, 'scripts', 'lib', 'platform', 'platform.js') });
+    if (r.marked) {
+      const m = marcarHechoExterno('adoMarkedActive', { via: 'ado-mark-active', workItem: wi });
+      if (!m.ok) { process.stderr.write(`ado-mark-active: el pedido quedó activo pero no marqué la parte — ${m.motivo}\n`); process.exit(1); }
+    }
+    (r.code === 0 ? process.stdout : process.stderr).write(`${r.line}\n`);
+    if (r.code === 3) process.stdout.write(`${r.line}\n`);
+    process.exit(r.code);
+  }
+  if (cmd === 'estimate-real') {
+    // lo real de la historia al cerrarla, con las horas de la constancia de work-signal stop (nunca un número a mano)
+    const { code, result } = require('./lib/real-hours.js').estimateReal({
+      storyPath: args.story ? path.resolve(args.story) : null, run: args.run, hoursGiven: !!args.hoursGiven,
+      repo: process.argv.includes('--repo') ? args.repo : null, home: os.homedir(),
+    });
+    if (code !== 0) process.stderr.write(`estimate-real: ${result.reason}\n`);
+    process.stdout.write(JSON.stringify(result) + '\n');
+    process.exitCode = code;
+    return;
   }
   if (cmd === 'start') {
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeStart(conModelos);
     if (result.model_hint && result.model_hint.session_warning) process.stderr.write(`start: ${result.model_hint.session_warning}\n`);
-    decirModelos(result, conModelos.orgModels, (result.model_hint && result.model_hint._avisos) || []);
+    const proveedor = proveedorDeModelos(conModelos.orgModels);
+    result.models_provider = proveedor.models_provider;
+    decirModelos(result, conModelos.orgModels, [...((result.model_hint && result.model_hint._avisos) || []), ...proveedor.warnings]);
     const salida = args.breve ? recortarStart(result) : result;
     process.stdout.write(JSON.stringify(salida, null, 2) + '\n');
     // exitCode y no exit(): con la salida en un pipe, exit() corta lo que todavía no se
@@ -6305,7 +6713,7 @@ function main() {
   if (cmd === 'risk-class') {
     // Guarda de aridad/existencia: sin esto un --files mal expandido cuenta 1
     // archivo → LOW → `auto_approve_plan: true` (se saltea el checkpoint del plan) Y skip del
-    // 5b, los dos en silencio. Sólo si vino --files: sin el flag, risk-class cae legítimamente
+    // pase adversarial, los dos en silencio. Sólo si vino --files: sin el flag, risk-class cae legítimamente
     // al frontmatter de la story (files_to_create/files_to_modify) y no hay nada que validar.
     // SÓLO la guarda de aridad, no la validación de existencia completa.
     // Estos dos comandos salen `exit 0` salvo por esta guarda, y un diff que BORRA
@@ -6374,10 +6782,10 @@ function main() {
     process.exit(0);
   }
   if (cmd === 'deep-review-gate') {
-    // Step 5b: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
+    // Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
     // NORMAL + overrides. exit 0 siempre (informativo); el orquestador lee `run`.
     // Misma guarda que risk-class: el default de este gate ES risk-class, así que
-    // un --files mal expandido produce un LOW silencioso y sella el 5b como hecho
+    // un --files mal expandido produce un LOW silencioso y sella el pase adversarial como hecho
     // (`deepReviewDone`). Abortar es correcto AUNQUE el comando sea informativo: un veredicto
     // computado sobre entrada rota es peor que no tener veredicto.
     const wsErr = detectarWordSplit(args);   // ídem risk-class: la guarda de aridad…
@@ -6396,7 +6804,7 @@ function main() {
       process.stderr.write(`deep-review-gate: ${result.reason}\n`);
       process.exit(2);
     }
-    // Con una corrida activa de ESTA story y el paso 4 cerrado, el veredicto queda anotado
+    // Con una corrida activa de ESTA story y «Correr las pruebas» cerrado, el veredicto queda anotado
     // (`adversarialGate`) para que `next` pida el lanzamiento sin recalcular el portón. Lo escribe marker.js (un
     // solo escritor del marker); `computeDeepReviewGate` sigue sin tocarlo. Sin corrida no se anota ni se avisa. El
     // temprano que se imprime es el que vale para la corrida: visto apagado una vez, sigue apagado.
@@ -6419,7 +6827,7 @@ function main() {
         && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
       try {
         const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
-          JSON.stringify({ run: result.run, files: args.files, early_env: process.env.TYCON_5B_EARLY ?? null })],
+          JSON.stringify({ run: result.run, files: args.files, early_env: nn(process.env.TYCON_5B_EARLY, null) })],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
         const anotado = JSON.parse(out || '{}');
         if ('early_launch' in result && typeof anotado.early_launch === 'boolean' && anotado.early_launch !== result.early_launch) {
@@ -6597,7 +7005,7 @@ function main() {
   if (cmd === 'e2e-config') {
     // Resuelve el gate E2E del proyecto (.tycon/advisors.yaml → e2e.*). Salida JSON
     // {gate, frontend_dir, frontend_dirs, critical_manifest} con paths absolutos, o {} si el
-    // repo no declara gate. Lo consumen step-07c (scoped) y tycon-merge-to-main (critical+full).
+    // repo no declara gate. Lo consumen la prueba en vivo (scoped) y tycon-merge-to-main (critical+full).
     //
     // Con `--changed <archivos...>` agrega `frontend_dirs_selected`: las apps del
     // monorepo que ESA entrega tocó. Sin el flag, `selected` == todas (fail-safe: correr de más
@@ -6620,7 +7028,7 @@ function main() {
   }
 
   // ── dep-gate — gate mecánico de dependencias nuevas ─
-  // Corre en Step 4 (post-build). exit 2 si hay dependencias no declaradas en la story
+  // Corre en «Correr las pruebas» (post-build). exit 2 si hay dependencias no declaradas en la story
   // (PAUSA HITL), exit 0 si pass/skip. Ver computeDepGate.
   if (cmd === 'dep-gate') {
     const result = computeDepGate({ repo: args.repo, story: args.story });
@@ -6651,16 +7059,16 @@ function main() {
   }
 
   // ── Review Follow-ups persistidos en la story ────────
-  // write-followups: Step 6/7 escribe los findings no resueltos como sección checkbox.
-  // followups-status: Step 0/1 detecta los abiertos al retomar.
+  // write-followups: el paso de hallazgos escribe los findings no resueltos como sección checkbox.
+  // followups-status: el Arranque y «Validar la historia» detectan los abiertos al retomar.
   if (cmd === 'write-followups') {
     const result = writeFollowups(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.error ? 1 : 0);
   }
-  // ── findings.json del Step 6 ─────────────────────────────────
-  // write-findings: escribe el artefacto machine-parseable (Step 6). findings-status:
-  // pre-condición de Step 8 — exit 3 si falta (para que el orquestador lo escriba).
+  // ── findings.json del paso de hallazgos ─────────────────────────────────
+  // write-findings: escribe el artefacto machine-parseable (paso de hallazgos). findings-status:
+  // pre-condición de «Preparar el commit» — exit 3 si falta (para que el orquestador lo escriba).
   if (cmd === 'write-findings') {
     const result = writeFindings(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -6728,6 +7136,11 @@ function main() {
   if (cmd === 'mech-check') {
     const { runStoryChecks } = require('./lib/story-checks.js');
     const result = runStoryChecks({ repo: args.repo, storyPath: args.story, files: args.files });
+    // DEPR-W1: lo vivo que nombra lo deprecado. Aviso: no frena ni escala a un revisor.
+    try { result.findings.push(...require('./lib/deprecated.js').vivoQueNombraDeprecado({ repo: args.repo, files: args.files || [] })); } catch (e) {
+      // sin la lista no hay aviso, pero queda dicho: «no pude mirar» no es «no hay nada»
+      result.ambiguous.push({ rule: 'DEPR-W1', detail: `no se pudo mirar lo deprecado: ${(e && e.message) || e}` });
+    }
     const escalate = [...new Set(result.ambiguous.map((a) => a.rule.split('-')[0]))];
     const ESCALATION_ADVISOR = { ACCOV: 'tycon-ac-coverage-checker', DEFTR: 'tycon-deferral-tracker', MECH: 'tycon-ac-coverage-checker' };
     // una familia que no es del núcleo (WIRING: el revisor de cableado) la escala el revisor de un paquete ACTIVO que declara
@@ -6764,19 +7177,19 @@ function main() {
     '       (próximo step + step_file + skips MECÁNICOS evaluados + checks del marker.\n' +
     '       El LLM sigue siendo el loop (H17): lee SOLO el step file que esto indica.)\n' +
     '  node pipeline.js risk-class     --story <spec.md> [--files ...]\n' +
-    '       (Nivel 2 autonomía: LOW → step-03 plan auto-aprobado con anuncio; cualquier\n' +
+    '       (Nivel 2 autonomía: LOW → plan auto-aprobado con anuncio; cualquier\n' +
     '       criterio fallido → NORMAL → HITL. Push/scope firmado SIEMPRE human-gate.)\n' +
     '  node pipeline.js tooling-expected --repo <dir>\n' +
     '       (PIPE-C9: qué tooling ESPERA el pipeline acá — codegraph si hay .codegraph/, engram,\n' +
-    '       tool Workflow p/ 5b. El orquestador cruza contra su harness y AVISA al user si algo\n' +
+    '       tool Workflow p/ el pase adversarial. El orquestador cruza contra su harness y AVISA al user si algo\n' +
     '       esperado no está disponible ANTES de degradar al fallback. `start` ya lo incluye.)\n' +
     '  node pipeline.js model-hint     --story <spec.md> [--files ...]\n' +
     '       (sugerencia de modelo de SESIÓN por complejidad: LOW→sonnet · NORMAL→opus ·\n' +
     '       NORMAL+≥2 señales pesadas→opus. Advisory: el orquestador compara con su modelo\n' +
-    '       real y sugiere /model al user en Step 0. NUNCA bloquea. `start` ya lo incluye.)\n' +
+    '       real y sugiere /model al user en el Arranque. NUNCA bloquea. `start` ya lo incluye.)\n' +
     '  node pipeline.js deep-review-gate --repo <dir> --story <spec.md> [--files ...]\n' +
     '                                  [--deep-review|--no-deep-review|--ultracode|--deep-review-opus|--deep-review-fable]\n' +
-    '       (Step 5b: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n' +
+    '       (Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n' +
     '       {run, model, model_reason, reason}. Modelo: sonnet default; story pesada → opus\n' +
     '       automático. Fable no se ofrece nunca: sólo corre con --deep-review-fable.\n' +
     '       Kill-switch: TYCON_NO_DEEP_REVIEW=1. Repo: .tycon/advisors.yaml deep_review:)\n' +
@@ -6786,9 +7199,9 @@ function main() {
     '       mech-check inline y DESCUENTA advisors cubiertos (MECH-2) del set/expected;\n' +
     '       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n' +
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
-    '  node pipeline.js check-count    [--trust-ran --ran a,b,c]\n' +
+    '  node pipeline.js check-count    [--ran a,b,c]\n' +
     '       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n' +
-    '       si hay step5-start sin spawns registrados — override consciente: --trust-ran)\n' +
+    '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona: «autorizo trust-ran»)\n' +
     '  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n' +
     '                                  [--allow-missing-files]\n' +
     '       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n' +
@@ -6803,13 +7216,13 @@ function main() {
     '  node pipeline.js timing-report\n' +
     '       (Fase 0 — desglose de wall-clock por step/iter/gate de la corrida en curso.)\n' +
     '  node pipeline.js dep-gate       --repo <dir> --story <spec.md>\n' +
-    '       (adopción BMAD — Step 4: dependencias NUEVAS (package.json/*.csproj) no declaradas\n' +
+    '       (adopción BMAD — «Correr las pruebas»: dependencias NUEVAS (package.json/*.csproj) no declaradas\n' +
     '       en la story → exit 2 PAUSA HITL. Match conservador por nombre en el texto de la story.)\n' +
     '  node pipeline.js next-story     [--specs-dir <dir>] [--repo <dir>]\n' +
     '       (adopción BMAD — próxima story ready-for-dev en specs/stories/ (orden numérico) +\n' +
     '       menú de recuperación si no hay. NO arranca el pipeline: devuelve el path para `start`.)\n' +
     '  node pipeline.js write-findings    --story <spec.md> --repo <dir> --findings <array.json|->\n' +
-    '       (Step 6 — escribe el findings.json machine-parseable en el run dir (auto-resuelto):\n' +
+    '       (paso de hallazgos — escribe el findings.json machine-parseable en el run dir (auto-resuelto):\n' +
     '       array de {rule_id,severity,advisor,file,disposition,reason}. Valida schema. Es el\n' +
     '       insumo del retrospective-capturer — reemplaza el WRITE MANUAL olvidable (BUG-PIPELINE-006).)\n' +
     '  node pipeline.js verify-finding    --finding <hallazgo.json> [--repo <dir>] [--model sonnet]\n' +
@@ -6820,16 +7233,16 @@ function main() {
     '       (valida lo que devolvió el verificador {refuted, command, output} y guarda <corrida>/refutations/<id>.json:\n' +
     '       sin esa constancia write-findings no deja un hallazgo como refuted.)\n' +
     '  node pipeline.js findings-status   --story <spec.md> --repo <dir>\n' +
-    '       (pre-condición de Step 8 — exit 3 si falta el findings.json del run. El orquestador lo\n' +
+    '       (pre-condición de «Preparar el commit» — exit 3 si falta el findings.json del run. El orquestador lo\n' +
     '       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n' +
     '  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n' +
     '       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n' +
     '       story (idempotente por fkey ruleId|file, preserva [x] previos). Solo toca el body.)\n' +
     '  node pipeline.js followups-status  --story <spec.md>\n' +
-    '       (adopción BMAD — Step 0/1: cuenta review follow-ups abiertos/resueltos. exit 3 si\n' +
+    '       (adopción BMAD — Arranque y «Validar la historia»: cuenta review follow-ups abiertos/resueltos. exit 3 si\n' +
     '       hay abiertos (priorizarlos sobre tasks nuevas), 0 si limpio.)\n' +
     '  node pipeline.js validators        --story <spec.md> --repo <dir>\n' +
-    '       (story 8.2 — Step 1: el validador de stories + los revisores del grupo `validacion`\n' +
+    '       (story 8.2 — «Validar la historia»: el validador de stories + los revisores del grupo `validacion`\n' +
     '       de los paquetes activos (packs/), con su prompt rendido y su modelo. Un paquete roto\n' +
     '       o uno que el repo nombra y no está instalado → exit 2 con archivo, revisor y motivo.)\n',
   );
@@ -6844,7 +7257,7 @@ module.exports = {
   orgModels,
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
-  completedWorkHours, harnessTimeTool,
+  completedWorkHours, harnessTimeTool, gitignoreAppendText, computeMissingBeforeStart,
   // tests/unit.test.js «T43 ThirdPartyManifestPath_*».
   thirdPartyManifestPath,
   // El hook on-advisor-run.js escribe el review-roster en el MISMO run dir que usa el pipeline:
@@ -6905,7 +7318,7 @@ module.exports = {
   // Exportados para regresión.
   findRepoRootsForStory,
   computePreflightFrontmatter,
-  // Step 5b adversarial — exportado para unit test del gate.
+  // Pase adversarial — exportado para unit test del gate.
   computeDeepReviewGate,
   deepReviewConfig,
   // model-hint por complejidad — exportado para unit tests.

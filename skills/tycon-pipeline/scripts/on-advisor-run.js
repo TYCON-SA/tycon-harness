@@ -11,7 +11,7 @@
  * GOBIERNO DE SPAWNS AD-HOC — medición sobre 58 runs / 795 spawns:
  *   - El subagent más spawneado del pipeline NO es un advisor: es `general-purpose`,
  *     156 de 795 (20%). Sumando `Explore` (30) son 186 — el 23% del total.
- *   - 133 de esos 156 ocurren ANTES del `step5-start`, o sea en los Steps 0-4, donde
+ *   - 133 de esos 156 ocurren ANTES del `step5-start`, o sea en los pasos de «Arranque» a «Correr las pruebas», donde
  *     NO hay ninguna de las reglas de costo del pipeline (ni context curado, ni
  *     model hints, ni mech-check, ni batch_rule).
  *   - Un spawn cuesta ~60.000-100.000 tokens ANTES de leer nada (baseline medido):
@@ -92,7 +92,7 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
         sessionId,
         headSha,
         treeSha,
-        implementerModel: roster.modelFromTranscript(transcriptPath),
+        implementerModel: roster.implementerModel({ marker: m, transcriptPath }),
       });
       // Story en OTRO repo (las stories en un repo, el código en otro) → el portón de
       // CI del repo de la story exige esta constancia AHÍ. Se proyectan sólo roster y
@@ -140,6 +140,141 @@ function retroTarget(prompt) {
   return (repo || mSha) ? { repo, sha: mSha ? mSha[1] : null } : null;
 }
 
+/**
+ * La constancia de un lanzamiento de revisor: la línea del registro de la sesión (la que lee `check-count`), el
+ * registro de autoría y la foto de la vuelta cuando la ronda se completa, y la vuelta manual. La llaman este gancho (al
+ * lanzar un agente) y el lanzador de revisores de Codex (`lib/codex-reviewers.js`, al terminar cada proceso), para
+ * que los dos caminos dejen lo mismo. `o.extra` va a la línea del registro (el lanzador suma `launcher`, `exit` y
+ * `report`). Nunca tira: un fallo de registro no rompe un lanzamiento.
+ *
+ * @param {{sessionId?: string, cwd?: string, advisor: string, model?: string|null, transcriptPath?: string|null,
+ *          prompt?: string|null, extra?: object}} o
+ * @returns {{sessionId: string, cwd: string, logPath: string, repo: string|null, story: string|null, ok: boolean,
+ *            error?: string}} `ok: false` si la línea del registro no se pudo escribir
+ */
+function recordLaunch(o) {
+  const advisor = o.advisor;
+  const model = o.model || null;
+  const sessionId = sessionIdFileKey(o.sessionId);
+  const cwd = o.cwd || process.cwd();
+  const dir = path.join(stateDirOf(os.homedir()), 'advisor-runs');
+  const logPath = path.join(dir, `${sessionId}.jsonl`);
+  // REPO y STORY en cada línea. Sin esto el registro no puede contestar "¿corrieron los revisores
+  // de la story X?". El dato está a mano — el marker de la sesión lo tiene, y si no
+  // hay marker la raíz de git del cwd alcanza para el repo. Se estampa acá, en el momento del
+  // spawn REAL, no en un comando que alguien tiene que acordarse de tipear.
+  const { repo, story } = attribution(sessionId, cwd);
+  // 🔴 EL BLANCO de una retrospectiva no es el repo de la sesión. `attribution()` contesta "¿en qué repo
+  // está trabajando esta sesión?" — perfecto para los advisors, MENTIRA para el capturer: se lanza
+  // POST-merge, muchas veces desde el workspace-root (que no es repo git → `repo: null`, en cerca de
+  // la mitad de los spawns del capturer) o con el marker de una story de OTRO repo, que gana sobre el
+  // cwd. Sobre ese dato, el freno de retrospectiva (retro-pending.js) empareja merge↔retro: con
+  // `null` empareja cualquier cosa, y con el repo del marker empareja la equivocada.
+  // El dato correcto ya viaja en el prompt del propio spawn (lo arma `launchHint`): a qué repo y a
+  // qué merge apunta la retrospectiva. Se estampa aparte, sin tocar `repo`/`story` — de los que
+  // dependen el roster de revisores y el snapshot de iteración.
+  const retro = advisor === 'tycon-retrospective-capturer' ? retroTarget(o.prompt) : null;
+  let lineError = null;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(
+      logPath,
+      JSON.stringify({
+        ts: new Date().toISOString(), advisor, model, repo, story,
+        ...(o.extra || {}),
+        ...(retro && retro.repo ? { retro_repo: retro.repo } : {}),
+        ...(retro && retro.sha ? { retro_sha: retro.sha } : {}),
+      }) + '\n',
+      'utf8',
+    );
+  } catch (e) {
+    // best-effort — un fallo de log nunca debe romper el spawn del subagent; quien llama se entera por `ok: false`
+    lineError = (e && e.message) || String(e);
+  }
+
+  // ── La FOTO del estado auditado, tomada sola ──────────────────────────────
+  // 🔴 `snapshot-iter N` tiene un único momento correcto: ronda de advisors terminada, ANTES del
+  // primer fix. Depender de que el orquestador se acuerde falla con el mismo síntoma:
+  // delta vacío en el re-loop y recuperación a mano con `--force-full-reloop` — el set completo de
+  // advisors donde el delta real son dos archivos.
+  // El dato para detectarlo vive en este mismo log.
+  // Se dispara en el SPAWN del último advisor esperado: entre ese spawn y el primer fix no se toca
+  // código, así que la foto sale del estado correcto. Kill-switch: TYCON_AUTO_SNAPSHOT=0.
+  // 🔴 Dos cosas cuelgan del MISMO momento (ronda completa) pero tienen interruptores distintos y
+  // a propósito: apagar la foto no puede apagar el registro de autoría, que es la evidencia que el
+  // portón de CI exige para cerrar una story. Meterlos bajo el mismo `if` dejaría el control
+  // sin cobertura con sólo poner TYCON_AUTO_SNAPSHOT=0 (que es exactamente lo que hace el banco de controles).
+  try {
+    const { rondaCompleta } = require('./lib/advisor-round.js');
+    const r = rondaCompleta(fs.readFileSync(logPath, 'utf8').split('\n'));
+    if (r.completa && !r.yaFotografiada && r.iter !== null) {
+      // 🔴 El registro de autoría va PRIMERO, y en su propio try: es EVIDENCIA (el portón la
+      // exige), la foto es una optimización. Al revés, un fallo del snapshot (timeout de 10 s en un
+      // repo grande, marker.js con exit ≠ 0) tragaría todo y el roster no se escribiría NI dejaría
+      // constancia, que es justo la falla que esta pieza predica evitar.
+      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: o.transcriptPath });
+      let rechazada = false;
+      if (process.env.TYCON_AUTO_SNAPSHOT !== '0') {
+        const { execFileSync } = require('child_process');
+        try {
+          execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(r.iter)], {
+            stdio: 'ignore', timeout: 10000, env: { ...process.env, CLAUDE_CODE_SESSION_ID: sessionId },
+          });
+        } catch (e) {
+          // Salida 2 es una DECISIÓN de snapshot-iter, ya anotada en gates.log: hay código posterior al último
+          // revisor y no hay foto buena que conservar, así que el re-loop corre el set completo. Reintentarla en
+          // cada spawn siguiente no la cambia, y el reintento que llegaba después del `start` de otra corrida
+          // tomaba la foto sobre el marcador nuevo. Cualquier otra falla (sin marcador, tiempo agotado) se reintenta.
+          if (!(e && e.status === 2)) throw e;
+          rechazada = true;
+        }
+        process.stderr.write(rechazada
+          ? `📸 tycon-pipeline: la foto de la iteración ${r.iter} no se tomó (hay código editado después del último revisor; ` +
+            'el motivo quedó en gates.log). La próxima vuelta corre el set completo de revisores.\n'
+          : `📸 tycon-pipeline: foto del estado auditado tomada sola (iteración ${r.iter}, ${r.esperados} advisors).\n` +
+            '   Es el insumo del re-loop reducido. Si arreglás algo ahora, el delta de la próxima vuelta sale bien.\n');
+      }
+      // El sello que impide repetir la ronda. Va DESPUÉS de las dos: si alguna falla, la ronda
+      // queda sin sellar y el próximo spawn lo reintenta.
+      fs.appendFileSync(
+        logPath,
+        JSON.stringify({ ts: new Date().toISOString(), event: 'auto-snapshot', iter: r.iter, ...(rechazada ? { foto: 'rechazada' } : {}) }) + '\n',
+        'utf8',
+      );
+    } else if (r.completa && r.yaFotografiada && !ADHOC.has(advisor)) {
+      // 🔴 Un revisor llamado DESPUÉS del sello (el de la prueba en vivo, o una vuelta manual) también entra
+      // al registro de autoría: sin eso, `write-findings` lo rechaza como firmante y su hallazgo termina firmado como
+      // «orquestador». La escritura mezcla con el registro anterior.
+      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: o.transcriptPath });
+    }
+  } catch { /* fail-open: nada de esto puede romper un spawn — el freno real vive en el portón */ }
+
+  // ── Las VUELTAS MANUALES también cuentan ──
+  // Después del sello de la ronda formal, los revisores que se vuelven a llamar «a mano» (dos o tres
+  // puntuales tras el pase adversarial, hasta que confirman limpio) no completan ninguna ronda y no
+  // dejarían rastro (con cinco vueltas reales, la métrica daría dos). Cada vuelta manual
+  // sella `manual-iter` en el ledger y escribe su `advisors-iter` en gates.log con iter `<N>.<k>`,
+  // que el capturador cuenta como un iter distinto sin cambiar su fórmula. Sin foto: la foto es
+  // del re-loop formal. Kill-switch compartido con la foto: TYCON_AUTO_SNAPSHOT=0 apaga las dos.
+  if (process.env.TYCON_AUTO_SNAPSHOT !== '0') {
+    try {
+      const { vueltaManual } = require('./lib/advisor-round.js');
+      const v = vueltaManual(fs.readFileSync(logPath, 'utf8').split('\n'));
+      if (v.abre) {
+        // sin `advisor`: en el ledger «línea con advisor» ES un spawn para summarize/cost-report/contarRondas
+        fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'manual-iter', iter: v.iter, abierta_por: advisor }) + '\n', 'utf8');
+        fs.appendFileSync(
+          path.join(path.dirname(dir), 'gates.log'),
+          JSON.stringify({ ts: new Date().toISOString(), sessionId, name: 'advisors-iter', storyId: story || null, iter: v.iter, manual: true, repoPath: repo || null, advisor }) + '\n',
+          'utf8',
+        );
+      }
+    } catch { /* fail-open: un fallo de conteo no puede romper un spawn */ }
+  }
+
+  return { sessionId, cwd, logPath, repo, story, ok: !lineError, ...(lineError ? { error: lineError } : {}) };
+}
+
 function main() {
   let event;
   try {
@@ -170,120 +305,7 @@ function main() {
   const advisor = event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
   const model = (event.tool_input && event.tool_input.model) || null;
 
-  const sessionId = sessionIdFileKey(event.session_id);
-  const cwd = event.cwd || process.cwd();
-  const dir = path.join(stateDirOf(os.homedir()), 'advisor-runs');
-  const logPath = path.join(dir, `${sessionId}.jsonl`);
-  // REPO y STORY en cada línea. Sin esto el registro no puede contestar "¿corrieron los revisores
-  // de la story X?". El dato está a mano — el marker de la sesión lo tiene, y si no
-  // hay marker la raíz de git del cwd alcanza para el repo. Se estampa acá, en el momento del
-  // spawn REAL, no en un comando que alguien tiene que acordarse de tipear.
-  const { repo, story } = attribution(sessionId, cwd);
-  // 🔴 EL BLANCO de una retrospectiva no es el repo de la sesión. `attribution()` contesta "¿en qué repo
-  // está trabajando esta sesión?" — perfecto para los advisors, MENTIRA para el capturer: se lanza
-  // POST-merge, muchas veces desde el workspace-root (que no es repo git → `repo: null`, en cerca de
-  // la mitad de los spawns del capturer) o con el marker de una story de OTRO repo, que gana sobre el
-  // cwd. Sobre ese dato, el freno de retrospectiva (retro-pending.js) empareja merge↔retro: con
-  // `null` empareja cualquier cosa, y con el repo del marker empareja la equivocada.
-  // El dato correcto ya viaja en el prompt del propio spawn (lo arma `launchHint`): a qué repo y a
-  // qué merge apunta la retrospectiva. Se estampa aparte, sin tocar `repo`/`story` — de los que
-  // dependen el roster de revisores y el snapshot de iteración.
-  const retro = advisor === 'tycon-retrospective-capturer' ? retroTarget(ti.prompt) : null;
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(
-      logPath,
-      JSON.stringify({
-        ts: new Date().toISOString(), advisor, model, repo, story,
-        ...(retro && retro.repo ? { retro_repo: retro.repo } : {}),
-        ...(retro && retro.sha ? { retro_sha: retro.sha } : {}),
-      }) + '\n',
-      'utf8',
-    );
-  } catch {
-    // best-effort — un fallo de log nunca debe romper el spawn del subagent.
-  }
-
-  // ── La FOTO del estado auditado, tomada sola ──────────────────────────────
-  // 🔴 `snapshot-iter N` tiene un único momento correcto: ronda de advisors terminada, ANTES del
-  // primer fix. Depender de que el orquestador se acuerde falla con el mismo síntoma:
-  // delta vacío en el re-loop y recuperación a mano con `--force-full-reloop` — el set completo de
-  // advisors donde el delta real son dos archivos.
-  // El dato para detectarlo vive en este mismo log.
-  // Se dispara en el SPAWN del último advisor esperado: entre ese spawn y el primer fix no se toca
-  // código, así que la foto sale del estado correcto. Kill-switch: TYCON_AUTO_SNAPSHOT=0.
-  // 🔴 Dos cosas cuelgan del MISMO momento (ronda completa) pero tienen interruptores distintos y
-  // a propósito: apagar la foto no puede apagar el registro de autoría, que es la evidencia que el
-  // portón de CI exige para cerrar una story. Meterlos bajo el mismo `if` dejaría el control
-  // sin cobertura con sólo poner TYCON_AUTO_SNAPSHOT=0 (que es exactamente lo que hace el banco de controles).
-  try {
-    const { rondaCompleta } = require('./lib/advisor-round.js');
-    const r = rondaCompleta(fs.readFileSync(logPath, 'utf8').split('\n'));
-    if (r.completa && !r.yaFotografiada && r.iter !== null) {
-      // 🔴 El registro de autoría va PRIMERO, y en su propio try: es EVIDENCIA (el portón la
-      // exige), la foto es una optimización. Al revés, un fallo del snapshot (timeout de 10 s en un
-      // repo grande, marker.js con exit ≠ 0) tragaría todo y el roster no se escribiría NI dejaría
-      // constancia, que es justo la falla que esta pieza predica evitar.
-      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
-      let rechazada = false;
-      if (process.env.TYCON_AUTO_SNAPSHOT !== '0') {
-        const { execFileSync } = require('child_process');
-        try {
-          execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(r.iter)], {
-            stdio: 'ignore', timeout: 10000, env: { ...process.env, CLAUDE_CODE_SESSION_ID: sessionId },
-          });
-        } catch (e) {
-          // Salida 2 es una DECISIÓN de snapshot-iter, ya anotada en gates.log: hay código posterior al último
-          // revisor y no hay foto buena que conservar, así que el re-loop corre el set completo. Reintentarla en
-          // cada spawn siguiente no la cambia, y el reintento que llegaba después del `start` de otra corrida
-          // tomaba la foto sobre el marcador nuevo. Cualquier otra falla (sin marcador, tiempo agotado) se reintenta.
-          if (!(e && e.status === 2)) throw e;
-          rechazada = true;
-        }
-        process.stderr.write(rechazada
-          ? `📸 tycon-pipeline: la foto de la iteración ${r.iter} no se tomó (hay código editado después del último revisor; ` +
-            'el motivo quedó en gates.log). La próxima vuelta corre el set completo de revisores.\n'
-          : `📸 tycon-pipeline: foto del estado auditado tomada sola (iteración ${r.iter}, ${r.esperados} advisors).\n` +
-            '   Es el insumo del re-loop reducido. Si arreglás algo ahora, el delta de la próxima vuelta sale bien.\n');
-      }
-      // El sello que impide repetir la ronda. Va DESPUÉS de las dos: si alguna falla, la ronda
-      // queda sin sellar y el próximo spawn lo reintenta.
-      fs.appendFileSync(
-        logPath,
-        JSON.stringify({ ts: new Date().toISOString(), event: 'auto-snapshot', iter: r.iter, ...(rechazada ? { foto: 'rechazada' } : {}) }) + '\n',
-        'utf8',
-      );
-    } else if (r.completa && r.yaFotografiada && !ADHOC.has(advisor)) {
-      // 🔴 Un revisor llamado DESPUÉS del sello (el de la prueba en vivo del paso 7c, o una vuelta manual) también entra
-      // al registro de autoría: sin eso, `write-findings` lo rechaza como firmante y su hallazgo termina firmado como
-      // «orquestador». La escritura mezcla con el registro anterior.
-      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
-    }
-  } catch { /* fail-open: nada de esto puede romper un spawn — el freno real vive en el portón */ }
-
-  // ── Las VUELTAS MANUALES también cuentan ──
-  // Después del sello de la ronda formal, los revisores que se vuelven a llamar «a mano» (dos o tres
-  // puntuales tras el pase adversarial, hasta que confirman limpio) no completan ninguna ronda y no
-  // dejarían rastro (con cinco vueltas reales, la métrica daría dos). Cada vuelta manual
-  // sella `manual-iter` en el ledger y escribe su `advisors-iter` en gates.log con iter `<N>.<k>`,
-  // que el capturador cuenta como un iter distinto sin cambiar su fórmula. Sin foto: la foto es
-  // del re-loop formal. Kill-switch compartido con la foto: TYCON_AUTO_SNAPSHOT=0 apaga las dos.
-  if (process.env.TYCON_AUTO_SNAPSHOT !== '0') {
-    try {
-      const { vueltaManual } = require('./lib/advisor-round.js');
-      const v = vueltaManual(fs.readFileSync(logPath, 'utf8').split('\n'));
-      if (v.abre) {
-        // sin `advisor`: en el ledger «línea con advisor» ES un spawn para summarize/cost-report/contarRondas
-        fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'manual-iter', iter: v.iter, abierta_por: advisor }) + '\n', 'utf8');
-        fs.appendFileSync(
-          path.join(path.dirname(dir), 'gates.log'),
-          JSON.stringify({ ts: new Date().toISOString(), sessionId, name: 'advisors-iter', storyId: story || null, iter: v.iter, manual: true, repoPath: repo || null, advisor }) + '\n',
-          'utf8',
-        );
-      }
-    } catch { /* fail-open: un fallo de conteo no puede romper un spawn */ }
-  }
-
+  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt });
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') return;
 
   // ── El techo de la organización ───────────────────────────────────────────
@@ -324,7 +346,7 @@ function main() {
 
   // ── Aviso (b) — cuántos ad-hoc van en esta fase ───────────────────────────
   // "Fase" = desde el último step5-start (o desde el arranque de la sesión si no hubo).
-  // Es el corte de la medición de arriba: Steps 0-4 vs la revisión.
+  // Es el corte de la medición de arriba: los pasos previos a la revisión vs la revisión.
   let adhocEnFase = 0;
   try {
     const lines = fs.readFileSync(logPath, 'utf8').split('\n');
@@ -376,5 +398,9 @@ function main() {
   } catch { /* nunca romper el spawn */ }
 }
 
-try { main(); } catch { /* fail-safe */ }
-process.exit(0);
+module.exports = { recordLaunch };
+
+if (require.main === module) {
+  try { main(); } catch { /* fail-safe */ }
+  process.exit(0);
+}

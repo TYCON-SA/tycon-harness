@@ -1,0 +1,20 @@
+{
+  "agent": "tycon-e2e-realness-checker",
+  "file": "agents/tycon-e2e-realness-checker.md",
+  "hash": "af7e430533db270cd117d2f0cf0536b2522ef938",
+  "passed": 4,
+  "total": 4,
+  "score": 1,
+  "baseline": {
+    "passed": 1,
+    "total": 1,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-e2e-realness-checker::real-c1-api-only-sin-interacciones-ui": true,
+    "tycon-e2e-realness-checker::real-c2-backend-de-negocio-mockeado": true,
+    "tycon-e2e-realness-checker::limpio-ui-real-contra-backend-sin-c2": true,
+    "tycon-e2e-realness-checker::real-c8-skip-si-el-backend-no-responde": true
+  }
+}

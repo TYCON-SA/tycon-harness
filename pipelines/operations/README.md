@@ -303,3 +303,22 @@ automático o sólo aviso: la guía del sitio («Cómo se mantiene al día»).
    Render: `SITE_PLATFORM=render` y la variable secreta `SITE_RENDER_DEPLOY_HOOK`.
 3. **El modo**: sin `site.update` en `operations.json`, sólo aviso. `"auto"` se elige desde la pestaña Configuración,
    después de una actualización a mano que salió bien.
+
+## 11. La revisión nocturna de las ejecuciones (opcional)
+
+Si tu organización junta en un buzón las ejecuciones de las máquinas del equipo, `runs-review.yml` las revisa cada
+noche a las 03:00 UTC y dice cuáles tuvieron fallas del arnés: un hook que falló, un Node viejo, un paso apagado, una
+bandera puesta sin su acción, un cierre con pasos pendientes, un control salteado. No usa modelo y no copia texto de las
+conversaciones: deja una ficha por ejecución en `inbox/runs-review/pending/` y el estado de la pasada en
+`inbox/runs-review/last-run.json`. La ficha la decide quien mantiene el arnés, moviéndola a `promoted/` (terminó en
+trabajo) o a `archived/` (no).
+
+Para prenderla:
+
+1. Copiá `runs-review.yml` a `pipelines/` del repo de operaciones y cambiá la línea marcada, como los otros.
+2. Dalo de alta como los demás (nombre sugerido: `runs-review`) y pasale el parámetro `mailboxConnection`: la misma
+   conexión de sólo lectura sobre el buzón que usa el tablero. Autorizala para este pipeline también (*Project settings →
+   Service connections → la conexión → Security → Pipeline permissions*): una conexión autorizada sólo para el tablero
+   deja a éste en rojo. Sin buzón, la ejecución sale en rojo: no hay qué revisar.
+3. Nada más: desde que existe `inbox/runs-review/`, el resumen de la mañana (`dependency-audit.yml`, 04:00) suma la línea
+   de las ejecuciones, agrupada por causa. Si una noche la revisión no corrió, el resumen lo dice en vez de «0 con fallas».

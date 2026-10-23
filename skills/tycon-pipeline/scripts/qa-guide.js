@@ -24,6 +24,8 @@
  */
 
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -690,7 +692,7 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
 // El dueño aprueba una maqueta con el plan (mockup.js) y queda su
 // huella; acá se exige que (9) la maqueta aprobada esté intacta, y (10) lo construido tenga sus textos. Sin aprobación
 // anotada (stories sin aprobación, o el chequeo corrido fuera del pipeline) no se compara y se dice; con
-// `--mockup-sha` (lo pasa el paso 8 desde el marcador) borrar el archivo de aprobación no saltea la comparación.
+// `--mockup-sha` (lo pasa «Preparar el commit» desde el marcador) borrar el archivo de aprobación no saltea la comparación.
 function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   const mk = require(path.join(__dirname, 'mockup.js'));
   const problems = []; const notes = [];
@@ -830,7 +832,7 @@ function main() {
   }
 
   // ── MODO --ui-texts: los textos que ve el usuario en cada pantalla de la story, sin el código alrededor.
-  // Es el insumo de la pasada del "tester no técnico" sobre la pantalla (paso 7c.7), junto con las capturas del gate.
+  // Es el insumo de la pasada del "tester no técnico" sobre la pantalla («Probar en vivo», parte 7), junto con las capturas del gate.
   if (argv.includes('--ui-texts')) {
     const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
     const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');

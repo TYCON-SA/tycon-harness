@@ -48,7 +48,7 @@
           {
             "type": "command",
             "command": "/opt/tycon/node-shim.sh",
-            "timeout": 10
+            "timeout": 30
           }
         ]
       }

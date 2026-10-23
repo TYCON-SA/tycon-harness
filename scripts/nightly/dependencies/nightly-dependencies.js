@@ -45,6 +45,7 @@
  *   node nightly-dependencies.js run       [--root <dir>] [--config <f>] [--out <dir>]
  *                                           [--pending <dir>] [--json] [--dry-run] [--today <fecha>]
  *                                           [--bugs <bugs-<fecha>.json>]   (por defecto <out>/bugs-<hoy>.json)
+ *                                           [--operations <operations.json>] (por defecto el de la raíz)
  *   node nightly-dependencies.js pr-text   --draft <archivo> [--destination pr|pr-github] [--pr-repo <dueño>/<repo>]
  *   node nightly-dependencies.js report    [--pending <dir>] [--json]
  *   node nightly-dependencies.js clone-list [--config <f>]   (lo que el pipeline clona, cada ruta una vez)
@@ -60,6 +61,8 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const cycle = require('../findings/cycle.js');
+const sources = require('../findings/sources.js');
 
 const RAIZ_REPO = path.resolve(__dirname, '..', '..', '..');
 // repos.json vive al lado de este guion, en scripts/nightly/dependencies/, y las
@@ -67,6 +70,8 @@ const RAIZ_REPO = path.resolve(__dirname, '..', '..', '..');
 const CONFIG_DEF = path.join(RAIZ_REPO, 'scripts', 'nightly', 'dependencies', 'repos.json');
 const OUT_DEF = path.join(RAIZ_REPO, '.dashboard', 'dependencias');
 const PENDING_DEF = path.join(RAIZ_REPO, 'inbox', 'dependencies');
+// de acá sale N, las noches medidas sin aparecer que resuelven una ficha (findings.resolve_after_nights)
+const OPERATIONS_DEF = path.join(RAIZ_REPO, 'operations.json');
 const GUION = path.join(RAIZ_REPO, 'scripts', 'ci', 'audit-dependencies.js');
 const DIAS_PARA_IGNORADO = 7;
 // el archivo de la deuda declarada de un repo (el mismo nombre que lee audit-dependencies.js por defecto)
@@ -75,7 +80,7 @@ const ARCHIVO_DEUDA = 'vulnerabilidades-pendientes.json';
 // ── utilidades ─────────────────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const a = { cmd: argv[2] || 'help', raiz: null, config: CONFIG_DEF, out: OUT_DEF, pending: PENDING_DEF,
+  const a = { cmd: argv[2] || 'help', raiz: null, config: CONFIG_DEF, out: OUT_DEF, pending: PENDING_DEF, operations: OPERATIONS_DEF,
               borrador: null, json: false, dryRun: false, hoy: null, guion: GUION,
               ficha: null, pr: null, rechazado: null, motivo: null, prCerrado: null, quitarRechazo: false, bugs: null };
   for (let i = 3; i < argv.length; i++) {
@@ -84,6 +89,7 @@ function parseArgs(argv) {
     else if (v === '--config') a.config = path.resolve(argv[++i]);
     else if (v === '--out') a.out = path.resolve(argv[++i]);
     else if (v === '--pending') a.pending = path.resolve(argv[++i]);
+    else if (v === '--operations') a.operations = path.resolve(argv[++i]);
     else if (v === '--draft') a.borrador = path.resolve(argv[++i]);
     else if (v === '--script') a.guion = path.resolve(argv[++i]);
     else if (v === '--bugs') a.bugs = path.resolve(argv[++i]);
@@ -118,102 +124,10 @@ function huella(paquete, severidad, advisories) {
 
 // ── la ficha: lectura y escritura POR SECCIÓN ──────────────────────────────────────────────────
 //
-// 🔴 No hay biblioteca de YAML acá, y es a propósito: CUATRO lectores por expresión regular
-// dependen del formato línea a línea (este guion, `dependencies-notice.js`, `pr-text` y un `sed`
-// del pipeline). Las listas se leen POR CLAVE, como hace `prTexto`:
-// tomar como repo CUALQUIER línea `  - x` del archivo que no sea una URL
-// haría que, con la lista `ids:`, un IDENTIFICADOR se exigiera "medido" — y como
-// un id nunca está entre los repos medidos, la ficha no se resolvería nunca.
+// El formato vive en la pieza común del ciclo (scripts/nightly/findings/cycle.js): dependencias lo usa con
+// su orden de claves y sus listas de hoy (sources.js). El porqué de cada regla está ahí.
 
-const CLAVES_LISTA = ['ids', 'repos', 'declarada_en', 'avisos'];
-
-/** El orden canónico de las claves. Sólo se usa para saber DÓNDE insertar una clave que no está. */
-const ORDEN_FICHA = ['id', 'detectado', 'veredicto', 'paquete', 'severidad', 'noches',
-  // La identidad del pull request y la decisión que una persona tomó sobre él. Van
-  // juntas y arriba porque son lo que el pipeline lee ANTES de decidir si abre uno nuevo.
-  'pr', 'pr_repo', 'rechazado', 'motivo_rechazo', 'pr_cerrado', 'alineado',
-  'reaparecido', 'bloqueada_por', 'resuelto', 'resuelto_antes', 'descartado', 'descartado_antes',
-  'motivo', 'motivo_antes', 'pr_antes', 'pr_repo_antes', 'rechazado_antes', 'motivo_rechazo_antes',
-  'ids', 'repos', 'declarada_en', 'avisos'];
-
-const reLista = (k) => new RegExp(`^${k}:[ \\t]*\\n((?:[ \\t]+-[ \\t].*\\n)*)`, 'm');
-const reEscalar = (k) => new RegExp(`^${k}:[ \\t]*(.*)$`, 'm');
-
-function listaDe(txt, k) {
-  const m = txt.match(reLista(k));
-  if (!m) return [];
-  return m[1].split('\n').filter((l) => l.trim()).map((l) => l.replace(/^[ \t]*-[ \t]*/, '').trim());
-}
-
-/** `{ escalares, listas }`. Una clave de lista NUNCA aparece en `escalares` y viceversa. */
-function leerFicha(txt) {
-  const listas = {};
-  for (const k of CLAVES_LISTA) listas[k] = listaDe(txt, k);
-  const escalares = {};
-  for (const m of txt.matchAll(/^([a-z_]+):[ \t]*(.+)$/gm)) {
-    if (CLAVES_LISTA.includes(m[1])) continue;          // `repos:` con algo detrás no es un escalar
-    let v = m[2].trim();
-    // 🔴 Un comentario al final de la línea es un comentario, no parte del valor. El caso 21 de la
-    // suite escribe `veredicto: pendiente # decision-en-curso` justamente para probar que una nota
-    // de una persona sobrevive; leyendo la línea entera, esa ficha dejaría de ser "pendiente" y la
-    // vigilancia se la saltearía ENTERA, en silencio. Dentro de comillas el `#` no es comentario.
-    if (!v.startsWith('"')) v = v.replace(/\s+#.*$/, '').trim();
-    escalares[m[1]] = v.replace(/^"([\s\S]*)"$/, '$1');
-  }
-  return { escalares, listas };
-}
-
-/** Dónde insertar una clave que todavía no está: antes de la primera POSTERIOR que sí esté. */
-function insertarClave(txt, clave, texto) {
-  const i = ORDEN_FICHA.indexOf(clave);
-  if (i >= 0) {
-    for (const k of ORDEN_FICHA.slice(i + 1)) {
-      const m = txt.match(new RegExp(`^${k}:`, 'm'));
-      if (m) return txt.slice(0, m.index) + texto + txt.slice(m.index);
-    }
-  }
-  // Ninguna posterior: antes de los comentarios del pie, o al final.
-  const c = txt.match(/^#/m);
-  if (c) return txt.slice(0, c.index) + texto + txt.slice(c.index);
-  return txt.endsWith('\n') || txt === '' ? txt + texto : `${txt}\n${texto}`;
-}
-
-function ponerEscalar(txt, clave, valor) {
-  const linea = `${clave}: ${valor}\n`;
-  // 🔴 La cadena de reemplazo va por una FUNCIÓN. Con la forma `txt.replace(re, cadena)`,
-  // `String.replace` interpreta los patrones `$&`, `$'`, `` $` `` y `$$` que traiga el valor — y
-  // `motivo_rechazo:` es el comentario de un pull request, o sea texto escrito por cualquiera que
-  // pueda comentarlo. En el vigilante ese mismo patrón SÍ muerde: `$'` copia el resto entero de
-  // la ficha adentro del valor y la deja con claves duplicadas.
-  //
-  // Acá hoy no se dispara —`note --rejected` no reescribe un `rechazado:` que ya está, y los
-  // renombres pasan por `insertarClave`, que concatena— pero la clase se cierra entera, no hasta
-  // donde llega hoy: el chequeo que lo tapa está a un refactor de distancia de desaparecer.
-  return reEscalar(clave).test(txt) ? txt.replace(reEscalar(clave), () => linea.trimEnd()) : insertarClave(txt, clave, linea);
-}
-
-function quitarClave(txt, clave) {
-  if (CLAVES_LISTA.includes(clave)) return txt.replace(reLista(clave), '');
-  return txt.replace(new RegExp(`^${clave}:[ \\t]*.*\\n`, 'm'), '');
-}
-
-/** Reemplaza (o agrega, o borra si viene vacía) UNA sección, sin tocar las otras ni los comentarios. */
-function ponerLista(txt, clave, items) {
-  // 🔴 Vaciar borra la sección ENTERA (cabecera + ítems), esté o no la clave en CLAVES_LISTA: por
-  // construcción, lo que pasa por acá es una lista. Con `quitarClave` a secas, una clave fuera de esa lista
-  // (`visto_cerrado:`, `avisado_cerrado_vivo:`) pierde sólo la cabecera y sus ítems quedan pegados a la
-  // lista anterior, creciendo con cada reapertura.
-  if (!items.length) return reLista(clave).test(txt) ? txt.replace(reLista(clave), '') : quitarClave(txt, clave);
-  const bloque = `${clave}:\n${items.map((x) => `  - ${x}`).join('\n')}\n`;
-  return reLista(clave).test(txt) ? txt.replace(reLista(clave), () => bloque) : insertarClave(txt, clave, bloque);
-}
-
-/** Renombra una clave conservando su valor (los campos de cierre al reactivar: `resuelto_antes:`). */
-function renombrarClave(txt, de, a) {
-  const m = txt.match(reEscalar(de));
-  if (!m) return txt;
-  return ponerEscalar(quitarClave(txt, de), a, m[1].trim());
-}
+const { reEscalar, listaDe, leerFicha, quitarClave, ponerEscalar, ponerLista, renombrarClave } = sources.FUENTES.dependencias.formato;
 
 const soloRepo = (linea) => String(linea).replace(/\s*\(vence[^)]*\)\s*$/, '').trim();
 
@@ -873,11 +787,18 @@ function correr(a) {
   // pull request mergeado, ni una deuda declarada, ni un id que se movió resuelven nada.
   // lo que vuelve comparte el tope con lo nuevo: el cupo de altas que dejó el camino del tope
   const cupo = { restante: previo ? Math.max(0, tope - elegidos.filter((x) => x.h.severidad !== 'critical').length) : 0, nuevas };
+  // N se lee cada noche: si cambió, rige desde hoy y lo ya contado se conserva.
+  const resolver = cycle.nochesParaResolver(a.operations);
   const vig = a.dryRun
-    ? { resueltos: [], descartados: [], aceptadas_sin_resolver: [], reaparecidos: [], rechazadas_sin_deuda: [], postergados: [] }
-    : vigilarFichas(a.pending, hoy, snapshot, apagadosEtiq, cfg, new Set(reaparecidos), cupo);
+    ? { resueltos: [], descartados: [], aceptadas_sin_resolver: [], reaparecidos: [], rechazadas_sin_deuda: [], postergados: [],
+      esperando_resolver: [], sin_resolver_por_configuracion: [], ilegibles: [] }
+    : vigilarFichas(a.pending, hoy, snapshot, apagadosEtiq, cfg, new Set(reaparecidos), cupo, resolver);
   for (const id of vig.postergados) if (!snapshot.postergados_por_presupuesto.includes(id)) snapshot.postergados_por_presupuesto.push(id);
   snapshot.resueltos_ids = vig.resueltos;
+  snapshot.resolver_tras = resolver.ok ? { n: resolver.n, origen: resolver.origen } : { n: null, motivo: resolver.motivo };
+  snapshot.esperando_resolver = vig.esperando_resolver;
+  snapshot.sin_resolver_por_configuracion = vig.sin_resolver_por_configuracion;
+  snapshot.fichas_ilegibles = [...new Set([...vig.ilegibles, ...leerTodasLasFichas(a.pending).ilegibles])].sort();
   snapshot.descartados_ids = vig.descartados;
   snapshot.aceptadas_sin_resolver = vig.aceptadas_sin_resolver;
   // Siempre presente, aunque vacía: una clave ausente y una lista vacía se leen igual desde
@@ -962,20 +883,27 @@ function escribirBorradores(pendingDir, aAnunciar, snapshot) {
 
 const ESTADOS_FICHA = ['pending', 'promoted', 'archived'];
 
+/**
+ * Las fichas de las tres carpetas. Una que no se puede leer no tumba a quien llama: va a `out.ilegibles`
+ * (`carpeta/archivo`), que la corrida publica. `contando`: dejó de aparecer y está contando
+ * sus noches para resolverse; no se le pide un pedido de trabajo.
+ */
 function leerTodasLasFichas(pendingDir) {
   const out = [];
+  out.ilegibles = [];
   for (const estado of ESTADOS_FICHA) {
     const dir = path.join(pendingDir, estado);
     if (!fs.existsSync(dir)) continue;
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.yaml'))) {
       const p = path.join(dir, f);
-      const txt = fs.readFileSync(p, 'utf8');
+      let txt;
+      try { txt = fs.readFileSync(p, 'utf8'); } catch { out.ilegibles.push(`${estado}/${f}`); continue; }
       const fi = leerFicha(txt);
       const idFicha = fi.escalares.id || f.replace(/\.yaml$/, '');
       const viva = estado === 'pending' ? fi.escalares.veredicto === 'pendiente'
         : estado === 'promoted' ? !fi.escalares.resuelto
         : false;
-      out.push({ archivo: p, nombre: f, estado, txt, fi, idFicha, viva,
+      out.push({ archivo: p, nombre: f, estado, txt, fi, idFicha, viva, contando: !!fi.escalares.noches_sin_aparecer,
                  ids: fi.listas.ids.length ? fi.listas.ids : [idFicha] });
     }
   }
@@ -1029,6 +957,7 @@ function refrescarFicha(f) {
   f.viva = f.estado === 'pending' ? f.fi.escalares.veredicto === 'pendiente'
     : f.estado === 'promoted' ? !f.fi.escalares.resuelto
     : false;
+  f.contando = !!f.fi.escalares.noches_sin_aparecer;
 }
 
 /**
@@ -1094,9 +1023,10 @@ function reactivarFicha(f, h, hoy, pendingDir) {
  *   (c) presente, y declarada en TODOS los repos    → `archived/` como descartado por deuda (declarar no es pagar)
  *   (d) presente sin declarar en alguno             → viva: se refrescan los hechos de esta noche
  */
-function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivados, cupo = { restante: Infinity, nuevas: new Set() }) {
+function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivados, cupo = { restante: Infinity, nuevas: new Set() },
+  resolver = { ok: true, n: cycle.NOCHES_POR_DEFECTO }) {
   const res = { resueltos: [], descartados: [], aceptadas_sin_resolver: [], reaparecidos: [],
-    rechazadas_sin_deuda: [], postergados: [] };
+    rechazadas_sin_deuda: [], postergados: [], esperando_resolver: [], sin_resolver_por_configuracion: [], ilegibles: [] };
   // Una ficha que esta misma corrida ya movió (a `archived/` por deuda, a `promoted/` al resolverse)
   // NO se vuelve a juzgar cuando el recorrido llega a esa carpeta: se decidió hace un instante.
   const decididasHoy = new Set();
@@ -1111,7 +1041,10 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
     if (!fs.existsSync(dir)) continue;
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.yaml'))) {
       const p = path.join(dir, f);
-      let txt = fs.readFileSync(p, 'utf8');
+      let txt;
+      // 🔴 Una ficha que no se puede leer se cuenta y la noche sigue con las demás: una sola
+      // tumbaba la corrida entera, con los repos ya auditados y nada escrito.
+      try { txt = fs.readFileSync(p, 'utf8'); } catch { res.ilegibles.push(`${estado}/${f}`); continue; }
       const fi = leerFicha(txt);
       // 🔴 LAS FICHAS CERRADAS TAMBIÉN SE MIRAN, para detectar que el problema VOLVIÓ.
       //
@@ -1223,6 +1156,9 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       // (a) sin medir todo: no se decide nada. El repo APAGADO se dice (es un estado, no una alarma);
       //     el marcador se borra la noche en que ese repo vuelve a medirse.
       if (apagados.length || sinMedir.length) {
+        // La causa se vio en un repo medido: el contador de noches sin aparecer vuelve a cero aunque la noche no
+        // decida nada. Si no, la próxima noche limpia la resolvería con menos de N noches seguidas.
+        if (porRepo.size) txt = quitarClave(quitarClave(txt, 'noches_sin_aparecer'), 'noche_contada');
         txt = apagados.length
           ? ponerEscalar(txt, 'bloqueada_por', `"repo apagado: ${apagados.join(', ')}"`)
           : quitarClave(txt, 'bloqueada_por');
@@ -1237,8 +1173,31 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       }
       txt = quitarClave(txt, 'bloqueada_por');
 
-      // (b) ningún id aparece en ningún repo, y TODOS los repos de la ficha se midieron: se pagó.
+      // (b) ningún id aparece en ningún repo, y TODOS los repos de la ficha se midieron: una noche sin aparecer.
+      //     Se pagó recién a las N noches medidas seguidas: una noche de suerte no es un arreglo.
+      //     Sin N confiable (operations.json que no valida) no se resuelve nada ni se cuenta la noche.
       if (porRepo.size === 0) {
+        const cuenta = resolver.ok
+          ? cycle.contarNoche({ contador: Number(fi.escalares.noches_sin_aparecer) || 0, presente: false, medida: true,
+            n: resolver.n, hoy, nocheContada: fi.escalares.noche_contada })
+          : null;
+        if (!cuenta || !cuenta.resuelta) {
+          if (cuenta) {
+            txt = ponerEscalar(txt, 'noches_sin_aparecer', cuenta.contador);
+            txt = ponerEscalar(txt, 'noche_contada', hoy);
+            res.esperando_resolver.push({ id: idFicha, noches_sin_aparecer: cuenta.contador, n: resolver.n });
+          } else {
+            res.sin_resolver_por_configuracion.push(idFicha);
+          }
+          escribirSiCambio(p, txt);
+          if (estado === 'promoted') {
+            res.aceptadas_sin_resolver.push({
+              id: idFicha, paquete: fi.escalares.paquete || null, desde: fi.escalares.detectado || null, bloqueada_por: null,
+            });
+          }
+          continue;
+        }
+        txt = quitarClave(quitarClave(txt, 'noches_sin_aparecer'), 'noche_contada');
         txt = ponerEscalar(txt, 'resuelto', hoy);
         txt = ponerEscalar(txt, 'motivo', '"la vulnerabilidad dejó de aparecer en todos sus repos, medidos esta noche"');
         if (estado === 'pending') {
@@ -1253,6 +1212,9 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
         res.resueltos.push(idFicha);
         continue;
       }
+
+      // La causa sigue apareciendo: el contador de noches sin aparecer vuelve a cero.
+      txt = quitarClave(quitarClave(txt, 'noches_sin_aparecer'), 'noche_contada');
 
       // (c) presente en todos lados pero DECLARADA en todos ellos: no se pagó, se decidió postergar.
       if (!sinDeclarar.length) {
@@ -1283,7 +1245,9 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       }
     }
   }
-  res.resueltos.sort(); res.descartados.sort(); res.reaparecidos.sort();
+  res.resueltos.sort(); res.descartados.sort(); res.reaparecidos.sort(); res.ilegibles.sort();
+  res.sin_resolver_por_configuracion.sort();
+  res.esperando_resolver.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   // Y sale de la lista la que ESTA MISMA noche se cerró: resuelta por medición (b) o archivada por
   // deuda declarada en todos sus repos (c). Rechazar no la saca de `main`, pero cerrarla sí.
   const cerradasHoy = new Set([...res.resueltos, ...res.descartados]);
@@ -1341,11 +1305,15 @@ function archivarIgnorados(pendingDir, hoy, cfg, volcado, frenados = []) {
   const exigirPedido = pedidosActivos(cfg);
   const ids = [];
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.yaml'))) {
-    const txt = fs.readFileSync(path.join(dir, f), 'utf8');
+    let txt;
+    try { txt = fs.readFileSync(path.join(dir, f), 'utf8'); } catch { continue; }   // ilegible: ya la publicó la corrida
     // 🔴 RECHAZAR ES MIRAR. `ignorado` cuenta PEOR que descartado porque mide "a nadie
     // le importó"; una ficha cuyo pull request una persona se tomó el trabajo de rechazar es
     // exactamente lo contrario, y archivarla ahí mentiría en el único número que juzga a la pieza.
     if (/^rechazado:/m.test(txt)) continue;
+    // 🔴 La que está contando sus noches sin aparecer tampoco: dejó de aparecer porque alguien la arregló, y en N
+    // noches se resuelve sola. Archivarla como ignorada contaría un arreglo como «nadie la miró».
+    if (/^noches_sin_aparecer:/m.test(txt)) continue;
     if (exigirPedido) {
       const conPedido = new Set(leerPedidos(txt).map((x) => x.proyecto));
       // Sólo los proyectos a los que se les PUEDE pedir: un repo fuera de la config nunca va a tener
@@ -1475,7 +1443,8 @@ function cruzarPedidos({ pendingDir, hoy, snapshot, volcado, cfg, apagadosEtiq =
     if (!fs.existsSync(dir)) continue;
     for (const nombre of fs.readdirSync(dir).filter((x) => x.endsWith('.yaml')).sort()) {
       const archivo = path.join(dir, nombre);
-      const txt = fs.readFileSync(archivo, 'utf8');
+      let txt;
+      try { txt = fs.readFileSync(archivo, 'utf8'); } catch { continue; }   // ilegible: ya la publicó la corrida
       const fi = leerFicha(txt);
       if (estado === 'pending' && fi.escalares.veredicto !== 'pendiente') continue;
       const idFicha = fi.escalares.id || nombre.replace(/\.yaml$/, '');
@@ -1627,6 +1596,10 @@ function imprimirCorrida(s, aAnunciar, postergados) {
   }
   if (postergados.length) console.log(`\n⏳ ${postergados.length} postergado(s) por el presupuesto de ruido — entran primero mañana, no se pierden.`);
   if (s.resueltos_ids && s.resueltos_ids.length) console.log(`\n✅ ${s.resueltos_ids.length} borrador(es) RESUELTO(s): la vulnerabilidad dejó de aparecer con todos sus repos medidos — ${s.resueltos_ids.join(', ')}`);
+  const rt = s.resolver_tras || {};
+  if (rt.n === null) console.log(`⚠️ ${rt.motivo}: esta noche no se resolvió ninguna ficha (${(s.sin_resolver_por_configuracion || []).length} esperaban). No medido nunca es limpio.`);
+  if ((s.esperando_resolver || []).length) console.log(`⏳ ${s.esperando_resolver.length} ficha(s) sin aparecer, contando sus ${rt.n} noches para darse por resueltas: ${s.esperando_resolver.map((x) => `${x.id} (${x.noches_sin_aparecer}/${x.n})`).join(', ')}`);
+  if ((s.fichas_ilegibles || []).length) console.log(`⚠️ ${s.fichas_ilegibles.length} ficha(s) que no se pudieron leer (las demás siguieron): ${s.fichas_ilegibles.join(', ')}`);
   // 🔴 Descartar por deuda declarada NO es un arreglo: es una decisión de postergar, con fecha. Se
   // dice con otras palabras a propósito, porque contarlo como trabajo real es el defecto 2.
   if (s.descartados_ids && s.descartados_ids.length) console.log(`\n🗂️ ${s.descartados_ids.length} ficha(s) DESCARTADO por deuda declarada (la vulnerabilidad sigue ahí, con plazo) — ${s.descartados_ids.join(', ')}`);
@@ -1938,16 +1911,20 @@ function report(a) {
   const leerDir = (sub) => {
     const d = path.join(a.pending, sub);
     if (!fs.existsSync(d)) return [];
-    return fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => {
-      const t = fs.readFileSync(path.join(d, f), 'utf8');
+    return fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).flatMap((f) => {
+      let t;
+      try { t = fs.readFileSync(path.join(d, f), 'utf8'); } catch {
+        console.error(`⚠️ ficha que no se pudo leer: ${sub}/${f} (no entra en la cuenta)`);
+        return [];
+      }
       const fi = leerFicha(t);
-      return {
+      return [{
         id: f.replace(/\.yaml$/, ''), estado: sub,
         veredicto: fi.escalares.veredicto || '', severidad: fi.escalares.severidad || '',
         paquete: fi.escalares.paquete || '', resuelto: fi.escalares.resuelto || '',
         motivo: fi.escalares.motivo || '', bloqueada_por: fi.escalares.bloqueada_por || '',
         rechazado: fi.escalares.rechazado || '',
-      };
+      }];
     });
   };
   const todos = [...leerDir('pending'), ...leerDir('promoted'), ...leerDir('archived')];
@@ -2031,6 +2008,8 @@ no mirar una: "exclude": [{ "path": "<carpeta>", "reason": "<motivo>" }] en esa 
   --root <dir>     dónde están los repos (por defecto, el de repos.json)
   --out <dir>      dónde va el snapshot (por defecto .dashboard/dependencias)
   --pending <dir>  dónde van los borradores (por defecto inbox/dependencies/)
+  --operations <f> de dónde sale N, las noches medidas sin aparecer que resuelven una ficha
+                   (findings.resolve_after_nights; por defecto operations.json de la raíz; sin él, 3)
   --today <fecha>  fija la fecha de la ejecución (sólo para pruebas)
   --dry-run        dice qué haría sin escribir nada
   --json           salida en JSON
@@ -2076,7 +2055,7 @@ if (require.main === module) {
 // Lo que sigue a `parseArgs` lo reusa `work-items.js`: la ficha se lee y se
 // escribe con UN solo código, y el texto del Bug sale del mismo generador que el del pull request.
 module.exports = { huella, agruparHallazgos, agruparPresencias, proyectoDe, leerFicha, snapshotAnterior, parseArgs, ubicarRepo,
-  listaDe, ponerLista, etiqueta, soloRepo, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml, archivarIgnorados,
+  listaDe, ponerLista, etiqueta, soloRepo, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml, archivarIgnorados, vigilarFichas,
   proyectoAzureDe,
   // el cruce
   presenciaDeFicha, leerVolcado, cruzarPedidos, motivoParaNoIgnorar, CATEGORIAS_ABIERTAS, CATEGORIAS_CERRADAS,

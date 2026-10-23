@@ -13,7 +13,7 @@
  *   · la respuesta de la persona vale si es posterior a esa muestra, nombra cada criterio y no lo niega (`juez`).
  *   · `marker.js mark-tested` deja un renglón por criterio en `<corrida>/manual-checks.jsonl` y su par `manual-check`, con
  *     la huella del renglón, en `gates.log`. Un renglón del archivo sin su par no cuenta (`validas`).
- *   · `freno(...)`: lo que mira el cierre (`complete-step 8`).
+ *   · `freno(...)`: lo que mira el cierre (`complete-step prepare-commit`).
  */
 const crypto = require('crypto');
 const fs = require('fs');

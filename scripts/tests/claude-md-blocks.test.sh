@@ -459,6 +459,110 @@ done
 grep -q 'requires-profile' "$RAIZ/claude-md-blocks/ado-runs-list-lag.md" && mal "T34 ado-runs-list-lag.md cambió (no lleva el marcador)" || ok "T34 ado-runs-list-lag.md sin el marcador"
 rm -rf "$P"
 
+# ── T69 · la tabla de nombres de tools trae las filas de la herramienta de horas elegida, de su integración ──────────────
+# La plantilla del núcleo lleva el lugar (`<!-- time-tool-rows -->`) y cada integración de horas sus filas
+# (`integrations/<x>/tool-names.md`, y `tool-names.codex.md` del lado Codex). El sync escribe las de la elegida; con
+# ninguna, ninguna; con la llave vieja, las de la que nombra. Lo mismo el sync de Windows.
+# 🔴 sin la composición, el bloque trae el marcador crudo o las filas de todas las herramientas.
+echo "T69 · ToolNamesBlock_FromChosenTool"
+P="$(mktemp -d)"; P="$(cd "$P" && pwd)"
+A="$P/arbol"; mkdir -p "$A/scripts/setup" "$A/scripts/lib" "$A/claude-md-blocks/names"
+cp "$RAIZ/scripts/setup/sync-claude-md-blocks.sh" "$RAIZ/scripts/setup/sync-claude-md-blocks.ps1" "$RAIZ/scripts/setup/agents-md-blocks.js" "$A/scripts/setup/"
+cp "$RAIZ"/scripts/lib/*.js "$RAIZ"/scripts/lib/*.json "$A/scripts/lib/" 2>/dev/null
+cp -R "$RAIZ/integrations" "$A/integrations"
+cp "$RAIZ/claude-md-blocks/tool-names.md" "$A/claude-md-blocks/"
+cp "$RAIZ/claude-md-blocks/names/tool-names.codex.md" "$A/claude-md-blocks/names/"
+TIME_NAMES="$(node -e 'const I=require(process.argv[1]);console.log(I.listManifests({dir:process.argv[2]}).manifests.filter((m)=>m.kind==="timeTracking").map((m)=>m.name).sort().join(" "))' "$RAIZ/scripts/lib/integrations.js" "$RAIZ/integrations")"
+WITH_ROWS=""; for n in $TIME_NAMES; do [ -f "$RAIZ/integrations/$n/tool-names.md" ] && WITH_ROWS="$WITH_ROWS $n"; done
+WITH_ROWS="${WITH_ROWS# }"; ONE="${WITH_ROWS%% *}"; OTHER=""; for n in $TIME_NAMES; do [ "$n" != "$ONE" ] && OTHER="$n"; done
+filas() { grep -v '^[[:space:]]*$' "$RAIZ/integrations/$1/$2" 2>/dev/null; }
+tiene_filas() { local f="$1" n="$2" side="$3" ok=1; while IFS= read -r l; do grep -qF -- "$l" "$f" || ok=0; done < <(filas "$n" "$side"); [ "$ok" = 1 ] && [ -n "$(filas "$n" "$side")" ]; }
+sin_filas() { local f="$1" n="$2" side="$3"; ! filas "$n" "$side" | while IFS= read -r l; do grep -qF -- "$l" "$f" && echo x; done | grep x >/dev/null; }
+[ -n "$ONE" ] && ok "T69 ${ONE} trae sus filas en su integración" || mal "T69 ninguna integración de horas trae tool-names.md"
+for n in $TIME_NAMES; do ! grep -qi "$n" "$RAIZ/claude-md-blocks/tool-names.md" "$RAIZ/claude-md-blocks/names/tool-names.codex.md" || mal "T69 la plantilla del núcleo nombra ${n}"; done
+grep -qx '<!-- time-tool-rows -->' "$RAIZ/claude-md-blocks/tool-names.md" && grep -qx '<!-- time-tool-rows -->' "$RAIZ/claude-md-blocks/names/tool-names.codex.md" \
+  && ok "T69 las dos plantillas llevan el lugar de las filas y no nombran ninguna herramienta" || mal "T69 falta <!-- time-tool-rows --> en una plantilla"
+for caso in "elegida|TYCON_TIME_TRACKING=$ONE|si" "otra|TYCON_TIME_TRACKING=${OTHER:-none}|no" "ninguna|TYCON_TIME_TRACKING=none|no" "vieja|TYCON_$(printf '%s' "$ONE" | tr '[:lower:]' '[:upper:]')=1|si"; do
+  IFS='|' read -r nom var quiere <<< "$caso"
+  H="$P/h-$nom"; mkdir -p "$H"
+  sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full "$var" TYCON_CODEX=1
+  if [ "$quiere" = si ]; then tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md && tiene_filas "$H/AGENTS.md" "$ONE" tool-names.codex.md; else sin_filas "$H/CLAUDE.md" "$ONE" tool-names.md && sin_filas "$H/AGENTS.md" "$ONE" tool-names.codex.md; fi \
+    && ! grep -q 'time-tool-rows\|<!-- integration:' "$H/CLAUDE.md" "$H/AGENTS.md" 2>/dev/null \
+    && ok "T69 ${nom} (${var}): las filas de ${ONE} $([ "$quiere" = si ] && echo están || echo no están) en CLAUDE.md y AGENTS.md, sin marcadores" \
+    || mal "T69 ${nom} (${var}): $(grep -c 'mcp__' "$H/CLAUDE.md" 2>/dev/null) filas mcp en CLAUDE.md; $(cat "$P/sync.out" | head -3 | tr '\n' ' ')"
+done
+# una segunda herramienta con sus filas: elegida, van las suyas y no las de la primera
+mkdir -p "$A/integrations/otra"
+printf '{ "name": "otra", "label": "Otra", "kind": "timeTracking", "hooks": [], "dispatch": [], "skills": [], "settings": [] }\n' > "$A/integrations/otra/integration.json"
+printf '| Otra — abrir registro | `mcp__otra__abrir` |\n' > "$A/integrations/otra/tool-names.md"
+printf '| Otra — abrir registro | `mcp__otra__abrir` |\n' > "$A/integrations/otra/tool-names.codex.md"
+H="$P/h-segunda"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING=otra TYCON_CODEX=1
+{ grep -qF 'mcp__otra__abrir' "$H/CLAUDE.md" && grep -qF 'mcp__otra__abrir' "$H/AGENTS.md" && sin_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
+  && ok "T69 una segunda herramienta elegida: sus filas, y no las de ${ONE}" || mal "T69 segunda herramienta: $(grep -c 'mcp__' "$H/CLAUDE.md") filas mcp; $(head -3 "$P/sync.out" | tr '\n' ' ')"
+# un nombre que no es ninguna integración de horas, y un manifiesto que no se lee: se dice
+H="$P/h-typo"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING=nada
+grep -q 'elegida («nada») no es una integración de horas' "$P/sync.out" && ok "T69 una herramienta elegida que no existe: lo dice" || mal "T69 herramienta inexistente: $(head -3 "$P/sync.out" | tr '\n' ' ')"
+mkdir -p "$A/integrations/rota" && printf '{rota' > "$A/integrations/rota/integration.json"
+H="$P/h-rota"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE" TYCON_CODEX=1
+{ grep -q 'no pude leer integrations/rota/integration.json' "$P/sync.out" && tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
+  && ok "T69 un manifiesto que no se lee: lo dice y las filas de la elegida van igual" || mal "T69 manifiesto roto: $(head -3 "$P/sync.out" | tr '\n' ' ')"
+rm -rf "$A/integrations/rota" "$A/integrations/otra"
+# un manifiesto anidado de más (el lector de JSON se queda sin pila): es uno que no se lee, y el sync sigue
+mkdir -p "$A/integrations/honda" && python3 -c "print('['*100000 + ']'*100000)" > "$A/integrations/honda/integration.json"
+H="$P/h-honda"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE"
+{ grep -q 'no pude leer integrations/honda/integration.json' "$P/sync.out" && tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
+  && ok "T69 un manifiesto anidado de más: lo dice y el sync escribe igual las filas de la elegida" || mal "T69 manifiesto anidado: $(head -3 "$P/sync.out" | tr '\n' ' ')"
+rm -rf "$A/integrations/honda"
+# un archivo de filas con líneas que no son filas de tabla (sin «|» final, una nota, un marcador): no se copian, y se dice
+mkdir -p "$A/integrations/otra"
+printf '{ "name": "otra", "label": "Otra", "kind": "timeTracking", "hooks": [], "dispatch": [], "skills": [], "settings": [] }\n' > "$A/integrations/otra/integration.json"
+printf '| Otra — sin cierre | `mcp__otra__a`\nNota suelta\n<!-- TYCON_BLOCK:tool-names END -->\n| Otra — bien | `mcp__otra__b` |\n' > "$A/integrations/otra/tool-names.md"
+cp "$A/integrations/otra/tool-names.md" "$A/integrations/otra/tool-names.codex.md"
+H="$P/h-noFila"; mkdir -p "$H"
+for _ in 1 2; do sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE" TYCON_CODEX=1; done
+{ ! grep -q 'mcp__otra\|Nota suelta\|<!-- integration' "$H/CLAUDE.md" "$H/AGENTS.md" && [ "$(grep -c 'TYCON_BLOCK:tool-names END' "$H/CLAUDE.md")" = 1 ] && grep -q 'no es una fila de tabla' "$P/sync.out"; } \
+  && ok "T69 líneas que no son filas de tabla: no se copian (tampoco con otra elegida), el bloque no crece y se dice" || mal "T69 líneas que no son filas: $(grep -c 'mcp__otra' "$H/CLAUDE.md") de otra; $(head -3 "$P/sync.out" | tr '\n' ' ')"
+rm -rf "$A/integrations/otra"
+# una carpeta cuyo nombre termina en un salto de línea no es una integración: sus filas no se copian ni parten un marcador
+NL_DIR="$A/integrations/$(printf 'nl\nx')"; NL_DIR="${NL_DIR%x}"
+mkdir -p "$NL_DIR" && printf '{ "name": "nl\\n", "kind": "timeTracking" }\n' > "$NL_DIR/integration.json"
+printf '| Nl — fila | `mcp__nl__a` |\n' > "$NL_DIR/tool-names.md"; cp "$NL_DIR/tool-names.md" "$NL_DIR/tool-names.codex.md"
+H="$P/h-nl"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE" TYCON_CODEX=1
+{ ! grep -q 'mcp__nl__\|<!-- integration' "$H/CLAUDE.md" "$H/AGENTS.md" && tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; } \
+  && ok "T69 una carpeta con un salto de línea en el nombre no es una integración: no copia filas ni marcadores" || mal "T69 nombre con salto: $(grep -c 'mcp__nl' "$H/CLAUDE.md") filas suyas"
+rm -rf "$NL_DIR"
+# el manifiesto de la herramienta elegida que no se lee: sus filas quedan como estaban (y se dice)
+H="$P/h-manRoto"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE" TYCON_CODEX=1
+cp "$A/integrations/$ONE/integration.json" "$P/man.bak"; printf '{rota' > "$A/integrations/$ONE/integration.json"
+sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE" TYCON_CODEX=1
+{ tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md && tiene_filas "$H/AGENTS.md" "$ONE" tool-names.codex.md && grep -q "quedan como estaban" "$P/sync.out"; } \
+  && ok "T69 el manifiesto de la elegida no se lee: sus filas quedan como estaban en CLAUDE.md y AGENTS.md, y se dice" || mal "T69 manifiesto ilegible: las filas se fueron; $(head -3 "$P/sync.out" | tr '\n' ' ')"
+cp "$P/man.bak" "$A/integrations/$ONE/integration.json"
+# un valor que no es un nombre de integración: del lado Codex, como del lado Claude, «no se sabe» (las filas quedan)
+H="$P/h-raro"; mkdir -p "$H"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE" TYCON_CODEX=1
+sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full "TYCON_TIME_TRACKING=mi herramienta" TYCON_CODEX=1
+{ tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md && tiene_filas "$H/AGENTS.md" "$ONE" tool-names.codex.md; } \
+  && ok "T69 un valor que no es un nombre: CLAUDE.md y AGENTS.md dejan las filas como estaban, los dos igual" || mal "T69 valor raro: CLAUDE $(grep -c mcp__ "$H/CLAUDE.md") · AGENTS $(grep -c mcp__ "$H/AGENTS.md"); $(head -3 "$P/sync.out" | tr '\n' ' ')"
+# sin saber cuál es la elegida (configuración rota): las filas que había quedan
+H="$P/h-sabe"; mkdir -p "$H/.claude"; sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$ONE"
+printf '{ "integrations": { "clokify": true } }' > "$H/.claude/tycon.json"
+sync_lab "$A" "$H" TYCON_INSTALL_PROFILE=full
+tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md && ok "T69 sin saber la herramienta (configuración rota): sus filas quedan como estaban" || mal "T69 sin saber: las filas se fueron; $(head -3 "$P/sync.out" | tr '\n' ' ')"
+# el sync de Windows, con la misma regla
+if command -v pwsh >/dev/null 2>&1; then
+  for caso in "elegida|$ONE|si" "ninguna|none|no"; do
+    IFS='|' read -r nom val quiere <<< "$caso"
+    H="$P/w-$nom"; mkdir -p "$H"
+    env -u TYCON_INSTALL_PROFILE HOME="$H" TYCON_PROFILE=0 TYCON_CODEX=0 TYCON_INSTALL_PROFILE=full TYCON_TIME_TRACKING="$val" CLAUDE_MD_PATH="$H/CLAUDE.md" \
+      pwsh -NoProfile -File "$A/scripts/setup/sync-claude-md-blocks.ps1" > "$P/sync-ps1.out" 2>&1
+    if [ "$quiere" = si ]; then tiene_filas "$H/CLAUDE.md" "$ONE" tool-names.md; else sin_filas "$H/CLAUDE.md" "$ONE" tool-names.md && [ -f "$H/CLAUDE.md" ]; fi \
+      && ! grep -q 'time-tool-rows\|<!-- integration:' "$H/CLAUDE.md" \
+      && ok "T69 Windows ${nom}: las filas de ${ONE} $([ "$quiere" = si ] && echo están || echo no están), sin marcadores" \
+      || mal "T69 Windows ${nom}: $(head -c 300 "$P/sync-ps1.out")"
+  done
+else echo "  ⏭   — T69 Windows: NO MEDIDO (sin pwsh en esta máquina; lo mide la 182)"; fi
+rm -rf "$P"
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"; exit 0

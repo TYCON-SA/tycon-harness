@@ -121,6 +121,71 @@
           }
         }
       ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-frontmatter-write (el estado a mano)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "edit-a-done-frena",
+          "type": "must-block",
+          "_por_que": "8.109: pasar una historia a done con la herramienta de edición salteaba los controles del cierre.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\nqa_guide: off\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who person --text \"cerrala\"",
+            "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who command"
+          ],
+          "stdin": {
+            "session_id": "bench-escape",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/story-1.1-resta.md",
+              "old_string": "status: in-progress\nqa",
+              "new_string": "status: done\nqa"
+            },
+            "tool_use_id": "bench-tu"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "update-story-status"
+            ]
+          }
+        },
+        {
+          "id": "edit-a-done-con-frase-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.109: con «autorizo cambiar el estado» de la persona pasa (gemelo del anterior).",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\nqa_guide: off\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who person --text \"autorizo cambiar el estado\"",
+            "node \"$TCG/scripts/controls-bench/conversation-fixture.js\" --who command"
+          ],
+          "stdin": {
+            "session_id": "bench-escape",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/story-1.1-resta.md",
+              "old_string": "status: in-progress\nqa",
+              "new_string": "status: done\nqa"
+            },
+            "tool_use_id": "bench-tu"
+          },
+          "expect": {
+            "exit": 0
+          },
+          "tools": [
+            "claude"
+          ],
+          "asymmetry": "La frase de la persona se lee de la conversación que guarda Claude Code; bajo Codex no hay conversación legible y el escape no vale."
+        }
+      ]
     }
   ]
 }

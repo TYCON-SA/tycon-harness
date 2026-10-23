@@ -173,7 +173,7 @@
     "scripts/tools/rules-distill.js": 7,
     "scripts/tools/tycon-backfill-followups.js": 2,
     "scripts/tools/tycon-worktree.sh": 1,
-    "skills/tycon-ado-story-wi/scripts/on-story-create.js": 1,
+    "skills/tycon-story-work-item/scripts/on-story-create.js": 1,
     "skills/tycon-pipeline/scripts/dispatch.js": 2,
     "skills/tycon-pipeline/scripts/lib/atdd-commit-gate.js": 1,
     "skills/tycon-pipeline/scripts/lib/atdd-preedit.js": 1,

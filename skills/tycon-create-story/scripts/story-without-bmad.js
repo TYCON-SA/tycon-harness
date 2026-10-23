@@ -345,7 +345,8 @@ function render(a, number, verify, exists = () => false) {
     `epic: ${EPIC}`,
     `story: "${number}"`,
     `title: "${oneLine(a.title)}"`,
-    'status: ready-for-dev',
+    // nace en borrador: la pasa a ready-for-dev quien corre el validador sobre este archivo (first-time.md, paso 4)
+    'status: draft',
     `created: ${today()}`,
     'sprint: 1',
     'priority: "P2"',
@@ -358,7 +359,7 @@ function render(a, number, verify, exists = () => false) {
     '',
     `# Story ${number}: ${oneLine(a.title)}`,
     '',
-    'Status: ready-for-dev',
+    'Status: draft',
     '',
     '## Story',
     '',

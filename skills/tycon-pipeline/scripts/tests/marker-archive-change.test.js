@@ -289,3 +289,21 @@ test('T16b MarkerClear_ThreadRescue_RetryIsBounded — sale 2 de las dos formas:
   assert.strictEqual(exit9.calls.length, 1, 'un rescate que se rompe no se repite');
   assert.strictEqual(exit9.dump.consumo.estado, 'no_medido');
 });
+
+// ── T17 · el volcado lleva el repo real: un worktree cuenta como su repo, y el remoto viaja sin el token ──────────────
+// rojo si: marker.js no anota `repo` (la vista agrupa por carpeta y cada worktree sale aparte) o lo anota con la URL entera.
+test('T17 MarkerClear_Worktree_DumpCarriesRealRepoWithoutCredentials', () => {
+  const raiz = corral();
+  const r = repo(raiz);
+  git(r, ['remote', 'add', 'origin', 'https://usuario:TOKEN_SEMBRADO@dev.azure.example/org/Proj/_git/acme']);
+  const wt = path.join(raiz, 'repo-wt-127');
+  git(r, ['worktree', 'add', '-q', '-b', 'tanda', wt]);
+  marcarCorrida(raiz, wt);
+  const c = correrMarker(['clear'], raiz, path.join(raiz, 'guides'));
+  assert.strictEqual(c.status, 0, `el clear no debe fallar: ${c.stderr}`);
+  const vs = volcados(raiz);
+  assert.strictEqual(vs.length, 1, 'el volcado existe');
+  const d = JSON.parse(fs.readFileSync(vs[0], 'utf8'));
+  assert.deepStrictEqual(d.repo, { path: fs.realpathSync(r), remote: 'Proj/acme' });
+  assert.ok(!fs.readFileSync(vs[0], 'utf8').includes('TOKEN_SEMBRADO'), 'el token del remoto no va al volcado');
+});

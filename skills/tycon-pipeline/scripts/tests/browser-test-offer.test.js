@@ -435,7 +435,8 @@ test('Cierre_NoDeLaPersona_PasaYLoDice @story-8.67 @ac-6', () => {
   const pasoAReview = () => spawnSync('node', [path.join(SCRIPTS, 'on-frontmatter-write.js')], {
     cwd: t.repo, encoding: 'utf8',
     input: JSON.stringify({ session_id: 's-cierre', tool_name: 'Write', cwd: t.repo, tool_input: { file_path: t.story, content: nuevo } }),
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-cierre' },
+    // mide la evidencia, no el freno del estado a mano (8.109): ése se apaga en el ambiente del gancho
+    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-cierre', TYCON_STATUS_GATE: 'off' },
   });
   assert.equal(pasoAReview().status, 2);
   fs.mkdirSync(path.join(t.repo, '.advisors', 'dod-runtime'), { recursive: true });

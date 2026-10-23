@@ -12,7 +12,7 @@
 - `adversarial_confirmed[]` (si «Pase adversarial» corrió): los findings CONFIRMED del pase reproduce-or-refute. Se
   foldean al reporte como una "fuente" más: cada uno se cita `[adversarial-verify:<lens>]` con `file:line` +
   `summary` + el `repro` observado. `severity: bug` → cuenta como **CRITICAL de correctitud**; `robustness` →
-  WARNING. Disparan el re-loop D.i igual que un finding de advisor (pero el 5b NO se re-corre — ver step-05b).
+  WARNING. Disparan el re-loop D.i igual que un finding de advisor (pero el pase adversarial NO se re-corre — ver `step-08-adversarial-pass.md`).
 
 ## Lógica de consolidación
 
@@ -166,7 +166,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-find
 `write-findings` valida el firmante de cada hallazgo contra el `review-roster.json` de ESA corrida.
 No hay que hacer nada nuevo: se escribe el nombre del advisor y el comando resuelve el resto.
 
-- **Vale**: un revisor de la ronda del paso 5, un agente de los pasos previos (paso 1, validación de
+- **Vale**: un revisor de la ronda de Revisores, un agente de los pasos previos («Validar la historia», validación de
   la story), o una fuente propia del pipeline (`mech-check`, `pase adversarial`, `orquestador`,
   `runtime-matrix`, `e2e-runtime`, `ensayo runtime`, `adversarial-verify`, `pipeline`).
 - **No vale**: cualquier otro texto. El comando FALLA, nombra el valor que recibió, lista los
@@ -212,7 +212,7 @@ Después de escribir `findings.json`, persistir los findings **no resueltos** (d
 `waived` / `deferred` / `open`) como sección checkbox DENTRO de la story. Es la mejor idea de
 `bmad-dev-story`: el ciclo dev↔review vive en el artefacto y sobrevive sesiones — si el
 pipeline muere post-Hallazgos con un CRITICAL waived o WARNINGs abiertos, la próxima sesión los
-ve en la story (Step 0/1 los detecta), no hay que arqueologizar `.advisors/pipeline-runs/`.
+ve en la story (el Arranque y «Validar la historia» los detectan), no hay que arqueologizar `.advisors/pipeline-runs/`.
 
 ```bash
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-followups \
@@ -297,7 +297,10 @@ quita la fricción, no la trazabilidad.
      pone en pantalla un bloque «Te piden eximir un crítico» con la regla, su nombre en llano, el archivo, lo que dijo
      el revisor y tu motivo. El comando frena hasta que el dev conteste a ESE bloque. Si el bloque no apareció (la
      instalación mínima no trae la puerta de comandos), escribí con Write `exencion-pedida.json` en la carpeta de la
-     corrida con `{ "rule", "file", "reason" }` y el arnés lo muestra. Con su respuesta,
+     corrida con `{ "rule", "file", "reason" }` y el arnés lo muestra. El bloque trae, además, **todos los otros
+     críticos abiertos de la corrida** que todavía no se mostraron ni se eximieron: pedí la muestra UNA vez, antes de
+     pedirle el ok a nadie, y la persona contesta uno por mensaje o todos en uno («eximo TEST-C1. eximo ADV-C1»). Un
+     código largo del pase adversarial se nombra entero, tal como está en findings.json. Con su respuesta,
      `marker.js waive-critical … --approved-by "<el dev>" --quote "<sus palabras, textuales>"`. La cita vale si está
      en un mensaje escrito por el dev (no en lo que escribiste vos, una herramienta, un subagente u otra sesión),
      **posterior a la muestra**, y si ese mensaje **dice que exime ese crítico**: una frase con «exim…» y su regla
@@ -353,7 +356,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-foll
 ```
 
 Así, si el pipeline avanza a commit con un CRITICAL waived, la próxima sesión ve ese waive en la
-story (no solo en el pipeline log) y «Arranque» lo levanta. Idempotente — si Step 6 ya lo escribió
+story (no solo en el pipeline log) y «Arranque» lo levanta. Idempotente — si «Hallazgos» ya lo escribió
 esta corrida, re-correrlo solo actualiza dispociones. (En un re-loop D.i el write del informe de la
 siguiente iteración ya cubre esto; este write explícito es para el caso "waive + avanzar" sin
 re-loop.)

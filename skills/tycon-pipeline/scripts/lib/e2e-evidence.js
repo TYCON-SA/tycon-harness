@@ -74,7 +74,7 @@ function totals(reportJson) {
  * el gate NO puede decir que pasó: `SIN_EJERCER`, con exit != 0. Alcanza con UN test ejecutado para
  * que un verde sea legítimo — saltear algunos es normal y está declarado en los specs.
  *
- * 🔴 Los códigos de salida NO son libres: el contrato del step 7c (`steps/step-10-live-check.md`)
+ * 🔴 Los códigos de salida NO son libres: el contrato del paso «Probar en vivo» (`steps/step-10-live-check.md`)
  * le da significado a cada uno, y el orquestador ACTÚA según el número. `SIN_EJERCER` no usa
  * exit 3: 3 significa «el stack no levantó», y el remedio que ese código manda a
  * hacer es levantar servicios que están perfectamente arriba, re-correr, y sacar 3 otra vez. Un

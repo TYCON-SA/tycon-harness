@@ -5,6 +5,7 @@ Primero cuenta qué es y cómo se usa; después, cómo se instala.
 
 - **[Usar el sitio](#qué-es-y-para-qué-sirve):** qué es, el primer ingreso, cada pestaña, la configuración, qué ve
   cada persona y los problemas comunes.
+- **[El sitio demo](#el-sitio-demo):** el mismo sitio con datos de ejemplo, abierto y sin cuenta, para mostrarlo.
 - **[Instalarlo](#qué-hace-falta-antes):** qué hace falta, cómo probarlo en tu máquina y cómo dejarlo andando.
 
 Cada paso de esta guía sale del código o de una ejecución real. Lo que todavía no se probó en real lo dice en la misma
@@ -202,6 +203,12 @@ ve los productos en los que trabaja. La **paridad** compara cada producto con lo
 Quien mantiene ve además, arriba de la tabla, «Cómo va la organización»: las fichas del tablero de la noche que son de
 toda la organización (ver «Las fichas del tablero»).
 
+Más abajo, **Estimaciones**: por producto, una fila por repo de historias y épica, con el rango que se le dio a la
+épica, la suma del plan, la suma vigente (el ajuste de cada historia, o su plan) y las horas reales de lo cerrado; al
+final, el total del producto. Una épica cuya suma vigente cae fuera de su rango lo marca y dice por cuánto («encima por
+25 h»). Un repo sin registro dice «sin estimaciones»; una foto vieja, o de antes de las estimaciones, dice «no medido».
+Cómo se estima: `guides/estimates.md`.
+
 **Qué hacer:** una story parada o bloqueada se destraba en su repo, con su equipo; el sitio sólo la muestra.
 
 ### Arnés
@@ -391,7 +398,8 @@ Las secciones, en el orden de la pantalla:
   mantenían y cada persona con una máquina confirmada) y avisa que todavía no está guardada: se guarda al proponerla.
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
-  sitio; eso se cambia en la instalación. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
+  sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
+  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
   vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
@@ -442,6 +450,17 @@ Debajo están **Productos** (los que revisa la noche) y **Lo que trae la organiz
 las guías del alta y los paquetes del repo del perfil, cada uno con su enlace). Son para mirar: se cambian con un pedido
 en su repo.
 
+**La configuración de cada repo** muestra, por cada repo de producto, lo que dice el `.tycon/advisors.yaml` de su rama
+principal. Los repos son los de la revisión de dependencias y los de `team-repos.json`, sin el público, el del perfil ni
+el de operaciones. Cada repo se lee recién cuando lo abrís. Hoy se edita el **código deprecado** (`deprecated`): las
+carpetas o archivos viejos que el agente no tiene que copiar ni tocar sin motivo. Va fila por fila: ruta, nivel
+(congelado o muerto), motivo y una fecha para revisarlo; arriba, si editar algo deprecado sin una historia avisa o frena.
+«Revisar cambios» valida con el mismo lector que usa el arnés: una fila mal escrita dice qué le falta y no se propone. Una
+fila cuya ruta ya no existe en la rama principal, o cuya fecha pasó, se marca, pero se puede proponer igual. El pedido
+cambia sólo ese bloque del archivo: las otras claves y los comentarios quedan como están. Sin el archivo, el pedido lo
+crea. Lo propone quien mantiene el sitio, con `SITE_PRODUCTS_WRITE_TOKEN` (abajo); sin ese secreto, la sección muestra
+lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano.
+
 ![Repos y productos](sitio-de-la-organizacion/capturas/configuracion-repos.png)
 
 ### Avisos y la noche
@@ -483,8 +502,8 @@ en su repo.
 - **Qué modelo usa cada trabajo del pipeline**: el nivel de los revisores, del pase adversarial, de los ayudantes y de
   la sesión, en una tabla por grupo con el valor por defecto de cada trabajo al lado; «el por defecto» deja el que trae
   la versión instalada. Los niveles son cuatro: económico, equilibrado, potente y máximo (en el archivo, en inglés:
-  `economy`, `balanced`, `strong`, `max`). Cada herramienta los traduce a sus modelos, y al costado de cada selector,
-  en chico, dice a cuál: «Claude: sonnet · Codex: gpt-5.6-luna». Una
+  `economy`, `balanced`, `strong`, `max`). Cada proveedor los traduce a sus modelos, y al costado de cada selector,
+  en chico, dice a cuál: «Anthropic: sonnet · OpenAI: gpt-5.6-luna · Ollama: el del dev · Cursor: el del dev». Una
   configuración guardada con los nombres de Claude (sonnet, opus) sigue valiendo: se ve en niveles y el próximo cambio
   de la sección la guarda en niveles. Con niveles, el perfil tiene que pedir la versión del arnés que los lee; si no, el
   sitio no deja proponer y dice cuál pedir. Con el tope obligatorio, un trabajo elegido por encima del tope se marca en
@@ -493,6 +512,21 @@ en su repo.
   y su desplegable; «como la primera vuelta» lo deja seguir el nivel general. La lista viene plegada y se abre sola si la
   organización cambió alguno. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene, mirando el
   costo.
+- **Qué modelo es cada nivel, por proveedor**: debajo de las tablas de trabajos, una tabla por proveedor (Anthropic,
+  OpenAI, Ollama, Cursor) con una fila por nivel (`models.providers.<proveedor>.<nivel>`). Los trabajos siguen eligiendo
+  un nivel; esta tabla dice qué modelo es ese nivel en cada proveedor, y cada máquina usa la de su proveedor
+  (`models.provider` en `~/.claude/tycon.json`, o `TYCON_MODEL_PROVIDER`; sin declarar, Codex es OpenAI y lo demás
+  Anthropic). La de Anthropic es fija: cada nivel es su alias. La de OpenAI trae los de hoy. Las de Ollama y Cursor
+  vienen en «el del dev» (`inherit`): sin modelo cargado, cada dev sigue con el suyo. La de Cursor se guarda pero
+  todavía no se aplica. Debajo de cada tabla, la **lista de modelos permitidos** del proveedor (`models.allowed`,
+  separados por coma): con una lista, el sitio no deja proponer un modelo que no esté en ella, y una máquina que igual
+  lo reciba usa el del dev y avisa. Con tablas, permitidos o la fila de la noche, el perfil tiene que pedir la versión
+  del arnés que los lee.
+- **El proceso de la noche**: una fila con su proveedor (Anthropic u Ollama) y su nivel (`models.nightly`). El modelo
+  sale de la misma tabla: «hoy: gemma4:31b-cloud», o «sin modelo cargado para este nivel», que no deja proponer (de
+  noche no hay dev, así que «el del dev» no vale). Pasar de Ollama a Haiku es elegir Anthropic en esa fila. La fila
+  dice también el nombre de la variable secreta que el pipeline de la noche necesita (`OLLAMA_API_KEY` o
+  `ANTHROPIC_API_KEY`); la llave se crea en el pipeline y nunca pasa por el perfil. Sin la fila, la noche no corre.
 - **Dónde corren las pruebas completas antes de sumar un cambio** (antes de mergear: de sumarlo a la rama principal): en la máquina o en el servidor, repo por repo, un renglón por repo
   (✎ abre sus datos). Un repo sin pipeline de pruebas completas dice qué pasa con su regla. Queda en
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
@@ -515,6 +549,11 @@ en su repo.
   `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
+  Debajo está la **firma delegada de cambios de control** (`approvals.delegated_signing`). «Apagada» es lo de fábrica.
+  «Prendida» deja que esa sesión vuelva a firmar, en nombre del dueño, un pedido que el dueño ya firmó, cuando lo único
+  nuevo es que se trajo main; su frase queda registrada. Lo nuevo, un choque resuelto a mano y aflojar un control siguen
+  esperando al dueño. El aviso fijo lo dice: «Aflojar un control siempre lo firma una persona, en su terminal; esto no lo
+  cambia.» Sin sesión designada, «prendida» no sirve, y la sección lo avisa. Vale sólo desde acá, nunca desde una máquina.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
@@ -531,6 +570,11 @@ en su repo.
   también `requires.harness` del perfil a la primera versión que los lee.
 - **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
   Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
+  mantiene.
+- **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
+  1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
+  unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. Queda en `team-repos.json` →
+  `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
 
 ![Cómo trabaja el agente](sitio-de-la-organizacion/capturas/configuracion-claude.png)
@@ -596,6 +640,20 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
   cada uno. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Paquetes de la organización**: qué paquetes del arnés (los revisores y las guías de un producto o de un cliente)
   se activan en todas las máquinas. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Cómo se actualiza el freno de producción** (`guard.update`): cómo se pone al día el freno que protege las bases de
+  producción en las máquinas autorizadas. Las dos opciones, cada una con su costo:
+  - «Con la contraseña de la persona» (de fábrica, lo más seguro): cada actualización la hace la persona de esa máquina
+    escribiendo su contraseña. Mientras nadie lo haga, la máquina sigue con el freno viejo.
+  - «Solo, desde la versión publicada»: la máquina se pone al día sola, sin contraseña, con la versión publicada y
+    verificada contra el repositorio del equipo. El costo: un freno publicado más flojo llega sin que nadie lo apruebe en
+    esa máquina, y cualquier programa que corra con el usuario de la persona puede pedir la actualización (no puede elegir
+    qué se instala). Cada actualización queda registrada y el aviso de arranque la muestra.
+  Elegir «solo» no cambia ninguna máquina: cada persona instala el permiso una vez, con su contraseña
+  (`install-guard.sh --allow-auto-update`), y el aviso de arranque le dice el comando. Si la organización vuelve a «con
+  la contraseña», el aviso de cada máquina con el permiso dice cómo sacarlo (`--remove-auto-update`). Vale sólo desde
+  acá, nunca desde una máquina. Queda en `team-profile.json` → `guard.update`, en el repo del perfil.
+
+De fábrica, las dos opciones nuevas están en lo más seguro: la firma delegada apagada y el freno con la contraseña.
 
 Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una con su última ejecución. Es para mirar:
 las máquinas se actualizan solas al arrancar.
@@ -736,6 +794,57 @@ organización. Si dice que lo rechazó lo que está delante del sitio y sigue de
 visita la despierta.
 
 **Qué hacer:** esperar; las páginas siguientes abren rápido.
+
+## El sitio demo
+
+Es el mismo sitio, con datos de ejemplo de una organización inventada (**Acme**), abierto con un link y **sin cuenta**,
+para mostrar qué hace sin dar acceso a nada real. Corre como una instancia aparte: no es el sitio de la organización ni
+lo reemplaza, y nada de lo que se ve en él existe.
+
+**Qué se ve.** Todas las pestañas con los datos de ejemplo: Inicio, Ejecuciones (con su detalle y sus textos), Proyectos,
+Arnés, Cómo trabaja, Configuración y Ayuda. Arriba de cada página, una franja fija dice **Datos de ejemplo**, y el título
+de la pestaña del navegador también. El selector **Ver como** deja mirar el sitio como quien lo mantiene (todo, con
+Configuración) o como una persona del equipo («Lo tuyo», sin Configuración). Los botones que cambian algo (**Proponer** en
+Configuración y en Cómo trabaja, **Invitar** y **Revocar**) revisan como siempre y muestran lo que pasaría, y dicen que en
+el sitio demo no se escribe.
+
+**Qué no hace.**
+
+- **No escribe.** Ni en un repo ni en el disco, salvo en una carpeta temporal propia que se borra al apagarse. El idioma
+  que se elige vale sólo en la cookie del navegador.
+- **No sale.** No abre conexiones hacia afuera y no lanza `git` ni ningún otro proceso: lo que el sitio real le pregunta a
+  la plataforma (pipelines, stages, tipos de pedido, la política de revisión) se contesta de adentro, con datos de ejemplo.
+  Si algo lo intentara, queda en el registro y falla.
+- **No tiene cuentas ni credenciales.** Arranca sólo con `SITE_DEMO=1` (con otro valor no arranca, y el sitio real dice
+  `demo: false` en su línea de arranque y en `/livez`). Acepta únicamente `SITE_DEMO`, `PORT` y `SITE_PUBLIC_URL`: con
+  cualquier otra variable del sitio, o una identidad de la plataforma, no arranca y dice cuál.
+- **Lo mínimo de un sitio público.** Pide a los buscadores que no lo indexen (`noindex`) y limita a 60 pedidos por minuto
+  por dirección (la última de `X-Forwarded-For`, que es la que agrega la entrada de la plataforma).
+
+**Probarlo en tu máquina.** Desde el clon del arnés: `SITE_DEMO=1 PORT=8080 node scripts/site/server.js` y abrir
+`http://localhost:8080`. Con otro nombre de máquina, agregá `SITE_PUBLIC_URL=http://<nombre>:8080`: los botones comparan el
+origen del pedido con esa dirección.
+
+**Instalarlo en Azure Container Apps.** Es una instancia aparte; conviene darle su propio grupo de recursos. Con el
+instalador de la receta de Azure, en dos fases y con un archivo de configuración sin secretos (`subscription`,
+`resourceGroup`, `location`, `environment`, `app`, `logAnalyticsWorkspace`, `logAnalyticsQuotaGb` e `image`, la imagen
+publicada por su huella `@sha256:…`, de una versión que traiga el modo demo):
+
+1. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase ambiente --dry-run` y después `--apply`:
+   crea el ambiente. Ignorá las dos vueltas de Entra ID que imprime: el demo no tiene inicio de sesión.
+2. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase demo --dry-run` y después `--apply`:
+   crea la aplicación e imprime el link.
+
+La aplicación sale **sin candado** de la plataforma, **sin disco**, **sin identidad** administrada y sin secretos; abierta
+desde el principio (sólo HTTPS) y con escala a cero: se apaga sola sin uso (cero réplicas) y la primera visita después de
+un rato tarda unos segundos en despertarla. No acepta buzón, repo, inquilino ni disco en el archivo de configuración: si
+los trae, no corre y dice cuáles. Repetir la fase `demo` sobre una instancia que ya existe la actualiza (no crea otra);
+si un paso falla, se detiene, dice cuál y qué quedó creado, y correrla de nuevo la completa. Nunca toca una aplicación que
+no sea una instancia demo.
+
+**Borrarlo.** Todo lo del demo está en su grupo de recursos: `az group delete --name <grupo> --subscription <suscripción>`
+lo borra entero (pide confirmación). Hacelo sólo si ese grupo es propio del demo. Sin borrarlo, apagado ya está: con cero
+réplicas no corre ningún contenedor.
 
 ## Qué hace falta antes
 
@@ -921,6 +1030,7 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN` | leer el perfil del equipo (dónde vive cada repo, los paquetes) | parte de la instalación normal: sin ellos la pestaña Configuración dice «falta el repo del perfil». La dirección del repo del perfil y un token de sólo lectura de código sobre ese repo (puede ser el mismo permiso que el del repo de operaciones, si los dos viven en la misma organización) |
 | `SITE_PIPELINES_TOKEN` | leer los pipelines, para elegirlos por nombre en la pestaña Configuración («Pruebas al mergear» y «Despliegues») y ver el nombre de cada paso | parte de la instalación normal en Azure DevOps: sólo *Build: Read*, de la organización, 90 días; puede ser el mismo permiso que el del repo de operaciones con *Build: Read* sumado. Sin él, la pestaña pide el número del pipeline a mano y dice qué falta, y los pasos guardados se ven por su identificador |
 | `SITE_PROFILE_WRITE_TOKEN` | proponer cambios al perfil del equipo | apagada por defecto: vacía o comentada, nunca con un valor; una identidad dedicada y un repo por credencial |
+| `SITE_PRODUCTS_WRITE_TOKEN` | leer y proponer el `.tycon/advisors.yaml` de los repos de producto («La configuración de cada repo») | opcional. En Azure DevOps, *Code: Read & write* y nada más, sólo en los proyectos de los repos de producto; en GitHub, de grano fino sobre esos repos con `contents: write` y `pull_requests: write`. Sin ella, la sección lee con la credencial de operaciones (si llega a esos repos) y no propone |
 
 `SITE_FIRST_MAINTAINER` no es un secreto: es el correo de quien entra primero como mantenedor, mientras la lista del sitio
 (`site.access` de `operations.json`) no tiene a nadie que mantenga. Sacala después.
@@ -1010,6 +1120,70 @@ cambios de un mantenedor» prendida (abajo): apagada, lo aprobaría el mismo aut
 pedido. Sin el permiso, cada sección dice «Para
 proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
 mano».
+
+Los repos de producto llevan su propio secreto, `SITE_PRODUCTS_WRITE_TOKEN`. Para darlo de alta:
+
+1. Creá la credencial con el menor permiso. En Azure DevOps, un permiso de la organización con *Code: Read & write* y
+   nada más, limitado a los proyectos de los repos de producto. En GitHub, uno de grano fino con *Contents: Read and
+   write* y *Pull requests: Read and write*, sólo sobre esos repos. Los repos son los que muestra «La configuración de
+   cada repo».
+2. Cargala como secreto del sitio con ese nombre y reiniciá el sitio.
+3. Mirá que la rama principal de cada repo pida al menos un revisor que no sea quien crea el pedido. Sin esa política,
+   el sitio no propone a ese repo y lo dice.
+
+Con ese secreto el sitio sólo crea ramas `team-config/...` y abre pedidos. Nunca escribe `main` ni completa el pedido,
+aunque «Los cambios de un mantenedor» esté prendida: esa opción vale para el perfil y para operaciones, no para los
+repos de producto.
+
+### Invitar a alguien
+
+Con Microsoft en «sólo la organización», alguien de afuera del directorio (una cuenta personal, alguien de otra
+empresa) entra recién cuando está en el directorio y en la lista del sitio. En Configuración → Personas, «Quién entra al
+sitio» → **Invitar a alguien**: su correo y sus productos. «Invitar» abre un pedido que lo suma a la lista como dev, con
+sus productos y una marca (`site.invitations`: quién invitó y cuándo). Cuando el pedido se aprueba y el sitio lee la
+lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. Al lado de su correo se ve el estado:
+«invitación enviada, todavía no entró», «aceptada» (ya entró), «esperando el tope de mañana» o «no se pudo enviar» con
+el motivo; una falla se reintenta sola en el próximo refresco (si Microsoft no llegó a contestar, la persona puede
+recibir un segundo correo). Hasta 10 invitaciones por día
+(`SITE_INVITATIONS_PER_DAY`); las que pasan esperan al día siguiente.
+
+- Un correo de un dominio de la propia organización no se invita: esa persona necesita una cuenta en el Microsoft 365
+  de la organización, y la pantalla lo dice.
+- Un correo que no es cuenta de Microsoft acepta con un **código de un solo uso** que Microsoft le manda al correo, si
+  el directorio lo tiene prendido. El instalador lo lee y lo deja en `SITE_INVITE_EMAIL_CODE`; si está apagado o no se
+  sabe, la pantalla avisa al invitar y dice dónde se prende.
+- **Revocar** abre un pedido que lo saca de la lista y borra su marca; si la invitación todavía no salió, ya no sale.
+  No lo borra del directorio: para eso, el portal de Entra, con el enlace que da la pantalla.
+- Con otro inicio de sesión no hay botón: con «cualquier cuenta» de Microsoft no hace falta invitar (se suma a la
+  lista); con Google o GitHub, se suma a la lista y entra con su cuenta de Google o GitHub de ese correo; sin identidad
+  administrada, se invita a mano en el portal y se suma a la lista.
+
+### El permiso de invitar
+
+Para mandar la invitación, la identidad administrada del sitio necesita **un** permiso de Microsoft Graph:
+`User.Invite.All`, de aplicación. Ninguno más: el sitio no lee, cambia ni borra usuarios.
+
+**Su riesgo, en llano**: quien controle la identidad del sitio puede invitar **cualquier correo** como invitado al
+directorio entero, no sólo a este sitio. Un invitado aceptado entra a cualquier aplicación de la organización que no
+pida asignación, y ve lo que la organización comparte con «todos, incluidos los invitados». Cómo se acota: sólo quien
+mantiene ve el botón; la invitación sale recién cuando el pedido se aprueba; el código llama a Graph en un solo lugar,
+con el cuerpo fijo (invitado, de vuelta al sitio, sin grupos ni roles); el token vive sólo en memoria; hay un tope por
+día. Recomendado: las restricciones de invitados más cerradas del directorio y pedir asignación en las otras
+aplicaciones.
+
+**Cómo se da**: lo da, una vez, un administrador del directorio (Administrador de roles con privilegios o Administrador
+global), con el instalador y su sesión de `az`:
+
+```bash
+node scripts/site/deploy/azure-container-apps.js --config <tu archivo> --phase permiso-de-invitar --dry-run   # qué hace
+node scripts/site/deploy/azure-container-apps.js --config <tu archivo> --phase permiso-de-invitar --apply
+```
+
+Asigna el rol a la identidad del sitio y deja `SITE_INVITE_EMAIL_CODE`. Sin el rol de administrador, lo dice y no cambia
+nada. Mientras falta, el botón dice «Falta el permiso de invitar», quién lo da y este comando.
+
+**Para sacarlo**: en Entra → Aplicaciones empresariales → la identidad del sitio → Permisos, revocá `User.Invite.All`.
+El botón vuelve a decir que falta, y nada más cambia.
 
 ### Los cambios que se aplican solos
 

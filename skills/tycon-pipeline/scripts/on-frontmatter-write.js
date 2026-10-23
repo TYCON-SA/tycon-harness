@@ -21,6 +21,8 @@
  *      sobre el current. Si Write → el new_string del tool_input ES el state final.
  *   4. Detectar transición de status frontmatter o líneas `status: done`/`review`
  *      en bloques `pipelines.X` que NO existían antes.
+ *   4b. Una transición a review/done escrita a mano frena antes que todo lo demás: el estado lo cambia
+ *      `marker.js update-story-status` (o la persona con «autorizo cambiar el estado»).
  *   5. Si la story requiere runtime evidence (markers Playwright/E2E/smoke
  *      detectados en el contenido) y NO existe `.advisors/dod-runtime/<storyId>-*.md`
  *      → BLOQUEAR (exit 2) con mensaje accionable.
@@ -84,6 +86,53 @@ function storyRequiresRuntimeEvidence(content) {
 
 function storyIsExempt(content) {
   return /^dod_runtime_exempt:\s*true\b/m.test(content);
+}
+
+// La exención como la reconoce el más ancho de los lectores que la conceden (este hook, on-pre-commit, el portón de CI,
+// runtime-matrix, pipeline.js): en cualquier renglón del archivo, con sangría, con o sin comillas y con lo que siga
+// (un comentario). Si este control mirara menos que ellos, una forma que no ve pasaría sin la frase y valdría igual.
+const EXENTA = /^\s*dod_runtime_exempt:\s*["']?true\b/m;
+const EN_IMPLEMENTACION = new Set(['in-progress', 'review', 'done']);
+// El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
+const estadoDe = (c) => { const m = /^status:\s*["']?([\w-]+)/m.exec(fmBlock(c)); return m ? m[1].toLowerCase() : ''; };
+
+/**
+ * La exención de la prueba en vivo que se agrega a una historia que ya está en implementación (pasa de ausente o
+ * `false` a `true`) la decide la persona: sin «autorizo dod_runtime_exempt» en su mensaje, `{ block }`; con la frase,
+ * pasa (null) y queda la constancia con la sesión. Mientras la historia se escribe (nueva, `draft`, `ready-for-dev`) no
+ * se pide: ahí la miran el validador y la revisión adversarial de la historia.
+ */
+function exencionNueva(event, oldContent, newContent) {
+  if (!oldContent || !EXENTA.test(newContent) || EXENTA.test(oldContent)) return null;
+  // el estado de antes o el de después: pasar la historia a implementación en la misma escritura no la saltea
+  const antes = estadoDe(oldContent);
+  const despues = estadoDe(newContent);
+  const estado = EN_IMPLEMENTACION.has(antes) ? antes : despues;
+  if (!EN_IMPLEMENTACION.has(estado)) return null;
+  const sid = event.session_id;
+  let r = { ok: false };
+  try {
+    r = require('./lib/escape-ok.js').escapeAutorizado({ variable: 'dod_runtime_exempt', sesion: sid, pedido: event.tool_use_id });
+  } catch { r = { ok: false }; }
+  const ok = r.ok === true;
+  const storyId = parseFrontmatter(newContent).story || '';
+  try {
+    const { rutaDeLaLib } = require('./lib/closing-record.js');
+    // el camino es el que dio la autorización: la persona o el reenvío de la sesión designada
+    require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', veredicto: ok ? 'escape' : 'bloqueo',
+      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.via || 'persona', relevo: r.relevo, sesion: sid, escape: 'dod_runtime_exempt' } : {}) });
+  } catch { /* ayuda, no evidencia */ }
+  if (ok) return null;
+  return {
+    block: [
+      `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`,
+      '',
+      'Eximir una historia que ya está en implementación lo decide la persona, no el agente: si quiere,',
+      'lo dice en su mensaje («autorizo dod_runtime_exempt»).',
+      'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
+      '(marker.js close-as-debt).',
+    ].join('\n') + '\n',
+  };
 }
 
 // 🔴 Qué es «evidencia de cierre» lo decide UNA función compartida. Un hook que aceptara cualquier
@@ -284,6 +333,195 @@ function isCriticalStatus(s) {
   return s === 'review' || s === 'done';
 }
 
+/**
+ * El archivo como queda después del `apply_patch` de Codex (`scripts/lib/hook-io.js` lo pasa como un Edit por archivo,
+ * con el parche entero en `tool_input`): cada tramo `@@` reemplaza sus renglones ` `/`-` por los ` `/`+`, en orden. Si un
+ * tramo no se encuentra, el resultado es el archivo de antes con los renglones `status:` que el parche agrega puestos en
+ * el encabezado: lo que no se pudo aplicar se juzga por lo que el parche escribe.
+ */
+function contenidoPorParche(event, filePath, oldContent) {
+  const ti = event.tool_input || {};
+  const parche = String(ti.command || ti.patch || ti.input || '').replace(/\r\n/g, '\n');
+  const cwd = (event.cwd && String(event.cwd)) || process.cwd();
+  const bloque = parche.split(/\n(?=\*\*\* (?:Add|Update|Delete) File: )/).find((b) => {
+    const m = b.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/m);
+    return m && path.resolve(cwd, m[1].trim()) === path.resolve(filePath);
+  });
+  if (!bloque) return oldContent;
+  // un archivo agregado entero: sus renglones `+` son el archivo
+  if (/^\*\*\* Add File: /.test(bloque)) {
+    return bloque.replace(/\n\*\*\* End Patch[\s\S]*$/, '').split('\n').filter((r) => r.startsWith('+')).map((r) => r.slice(1)).join('\n');
+  }
+  let texto = oldContent;
+  let desde = 0;
+  const tramos = bloque.split(/^@@.*$/m).slice(1);
+  // sin tramos no hay de dónde leer el cambio: se juzga por lo que escribe
+  let aplicado = tramos.length > 0;
+  for (const tramo of tramos) {
+    const renglones = tramo.replace(/\n\*\*\* End Patch[\s\S]*$/, '').split('\n').filter((r) => /^[ +-]/.test(r));
+    const antes = renglones.filter((r) => r[0] !== '+').map((r) => r.slice(1)).join('\n');
+    const despues = renglones.filter((r) => r[0] !== '-').map((r) => r.slice(1)).join('\n');
+    const i = texto.indexOf(antes, desde);
+    if (!antes || i < 0) { aplicado = false; break; }
+    texto = texto.slice(0, i) + despues + texto.slice(i + antes.length);
+    desde = i + despues.length;
+  }
+  if (aplicado) return texto;
+  const agregados = bloque.split('\n').filter((r) => /^\+\s*status:/.test(r)).map((r) => r.slice(1));
+  if (!agregados.length) return oldContent;
+  // el estado nuevo reemplaza al del encabezado; uno con sangría es del bloque pipelines: se suma al final del encabezado
+  let fm = oldContent;
+  for (const r of agregados) {
+    fm = /^\s/.test(r) ? fm.replace(/\n---/, () => `\n${r}\n---`) : fm.replace(/^status:.*$/m, () => r);
+  }
+  return fm;
+}
+
+/**
+ * El estado de una historia como lo lee una persona: sin la marca de orden de bytes, con fines de renglón de Windows,
+ * con el valor entre comillas simples o dobles y con un comentario al final. `{ story, status, tandas }`, con `tandas` el
+ * estado de cada tanda del bloque `pipelines` (por su nombre). null si no hay encabezado.
+ */
+function estadosDe(content) {
+  const texto = String(content || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const m = /^---\n([\s\S]*?)\n---/.exec(texto);
+  if (!m) return null;
+  const crudo = (v) => String(v || '').replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+  const valor = (v) => crudo(v).toLowerCase();
+  // el primer `status:` es el que leen marker.js y el freno del commit; uno repetido queda anotado (`estados`)
+  const out = { story: null, status: '', estados: [], tandas: new Map() };
+  let enPipelines = false;
+  let tanda = null;
+  let sangriaTanda = null;
+  for (const renglon of m[1].split('\n')) {
+    // la clave con o sin comillas y con espacios antes de los dos puntos (`status : done`, `"status": done`)
+    const tope = /^(["']?)([A-Za-z_][\w-]*)\1\s*:\s*(.*)$/.exec(renglon);
+    if (tope) {
+      enPipelines = tope[2] === 'pipelines';
+      tanda = null; sangriaTanda = null;
+      // el id con sus mayúsculas: el patrón de ids del repo las distingue
+      if (tope[2] === 'story' && out.story === null) out.story = crudo(tope[3]) || null;
+      if (tope[2] === 'status') { out.estados.push(valor(tope[3])); if (out.estados.length === 1) out.status = out.estados[0]; }
+      continue;
+    }
+    if (!enPipelines) continue;
+    const anidado = /^(\s+)-?\s*(["']?)([\w.-]+)\2\s*:\s*(.*)$/.exec(renglon);
+    if (!anidado) continue;
+    const sangria = anidado[1].length;
+    if (anidado[3] === 'status' && tanda !== null && sangria > sangriaTanda) { out.tandas.set(tanda, valor(anidado[4])); continue; }
+    if (sangriaTanda === null || sangria <= sangriaTanda) { tanda = anidado[3]; sangriaTanda = sangria; }
+  }
+  return out;
+}
+
+/**
+ * ¿La escritura cambia a mano el estado de una historia? `{ storyId, estado }` o null. Cuenta:
+ * - su `status:` pasa a `review` o `done`, o una tanda del bloque `pipelines` queda en `done` sin haberlo estado;
+ * - una historia en implementación (`in-progress`, `review`, `done`) cambia a otro estado (volver a `draft` y después
+ *   escribirla por consola sería el mismo cierre en dos pasos);
+ * - una historia pierde su encabezado o su `story:`, o le cambia el id (sacarlo o cambiarlo a uno que no es de trabajo y
+ *   reponerlo después sería el mismo cierre en dos pasos).
+ * Es una historia si el id de antes o el de después es de trabajo. Si no se puede leer y el texto nuevo dice `review` o
+ * `done`, o el de antes estaba en implementación, cuenta.
+ */
+function transicionAMano(filePath, oldContent, newContent) {
+  try {
+    const antes = estadosDe(oldContent);
+    const despues = estadosDe(newContent);
+    const { isWorkStoryId, storiesConfigForGate, findRepoRoot } = require('./lib/story-discovery.js');
+    const patron = storiesConfigForGate(findRepoRoot(filePath)).idPattern;
+    const deTrabajo = (s) => !!s && isWorkStoryId(s, patron);
+    const idAntes = antes && antes.story;
+    const idDespues = despues && despues.story;
+    if (!deTrabajo(idAntes) && !deTrabajo(idDespues)) return null;
+    const id = deTrabajo(idAntes) ? idAntes : idDespues;
+    if (deTrabajo(idAntes) && (!despues || idDespues !== idAntes)) return { storyId: id, estado: idDespues ? `otro id (${idDespues})` : 'sin encabezado' };
+    const viejo = antes || { status: '', estados: [], tandas: new Map() };
+    // un `status:` repetido que no estaba: cada lector puede quedarse con uno distinto
+    const distintos = (e) => new Set(e.estados).size;
+    if (distintos(despues) > 1 && distintos(despues) > distintos(viejo)) return { storyId: id, estado: `estado repetido (${despues.estados.join(', ')})` };
+    if (isCriticalStatus(despues.status) && despues.status !== viejo.status) return { storyId: id, estado: despues.status };
+    if (EN_IMPLEMENTACION.has(viejo.status) && despues.status !== viejo.status) return { storyId: id, estado: despues.status || 'sin estado' };
+    for (const [nombre, estado] of despues.tandas) {
+      if (estado === 'done' && viejo.tandas.get(nombre) !== 'done') return { storyId: id, estado: `pipelines.${nombre}` };
+    }
+    return null;
+  } catch (e) {
+    // del lado que frena: un error al leer no deja pasar un `review`/`done` escrito, y queda en hook-errors.log
+    try {
+      fs.mkdirSync(stateDirOf(os.homedir()), { recursive: true });
+      fs.appendFileSync(path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
+        `[${new Date().toISOString()}] on-frontmatter-write transicionAMano: ${(e && e.stack) || e}\n\n`, 'utf8');
+    } catch { /* el registro no cambia la decisión */ }
+    const estadoEnTexto = (t) => (/^\s*["']?status["']?\s*:\s*["']?([\w-]+)/m.exec(String(t || '')) || [])[1] || '';
+    const nuevo = estadoEnTexto(newContent).toLowerCase();
+    const viejo = estadoEnTexto(oldContent).toLowerCase();
+    return isCriticalStatus(nuevo) || (EN_IMPLEMENTACION.has(viejo) && nuevo !== viejo)
+      ? { storyId: '?', estado: `${nuevo || 'sin estado'} (no se pudo leer la historia)` } : null;
+  }
+}
+
+/**
+ * Una historia cuyo estado cambia con la herramienta de edición (ver `transicionAMano`). El estado lo cambia el
+ * orquestador, que corre los controles del cierre: `marker.js update-story-status`, `update-pipeline-status` o
+ * `/tycon-pipeline close`. A mano lo decide la persona («autorizo cambiar el estado»): con la frase pasa, queda la
+ * constancia y siguen las reglas de la evidencia. `TYCON_STATUS_GATE=off` en el ambiente del gancho lo apaga, y queda
+ * anotado; escrito en un comando, lo frena el freno de seguridad.
+ */
+function estadoAMano(event, filePath, oldContent, newContent) {
+  const apagado = String(process.env.TYCON_STATUS_GATE || '').toLowerCase() === 'off';
+  const t = transicionAMano(filePath, oldContent, newContent);
+  if (!t) return null;
+  const sid = event.session_id;
+  let r = { ok: false };
+  if (!apagado) {
+    try {
+      r = require('./lib/escape-ok.js').escapeAutorizado({ variable: 'cambiar el estado', sesion: sid, pedido: event.tool_use_id });
+    } catch { r = { ok: false }; }
+  }
+  const ok = apagado || r.ok === true;
+  const via = apagado ? 'ambiente' : (r.via || 'persona');
+  // La constancia con las reglas de la biblioteca del cierre: apagada con TYCON_CLOSURE_RECORD=off (las suites que
+  // llaman al gancho con el HOME real) y callada sin la biblioteca (el gancho decide igual). Con la biblioteca, un escape
+  // que no quedó anotado no pasa callado
+  try {
+    const legacy = require('./lib/legacy-names.js');
+    const apagada = String(legacy.readEnv('TYCON_CLOSURE_RECORD', { where: 'skills/tycon-pipeline/scripts/on-frontmatter-write.js' }) || '').toLowerCase() === 'off';
+    const { rutaDeLaLib } = require('./lib/closing-record.js');
+    const lib = rutaDeLaLib();
+    if (!apagada && fs.existsSync(lib)) {
+      const res = require(lib).anotar({ freno: 'on-frontmatter-write', regla: 'estado-a-mano', veredicto: ok ? 'escape' : 'bloqueo',
+        cmd: `${t.storyId}\0${t.estado}`,
+        ...(ok ? { via, relevo: r.relevo, sesion: sid, escape: apagado ? 'TYCON_STATUS_GATE' : 'cambiar-el-estado' } : {}) });
+      if (ok && res && res.escrito === false) {
+        process.stderr.write(`⚠️ on-frontmatter-write: no pude anotar el escape del estado a mano (${res.motivo || 'el registro no se escribió'}).\n`);
+      }
+    }
+  } catch (e) {
+    try {
+      fs.mkdirSync(stateDirOf(os.homedir()), { recursive: true });
+      fs.appendFileSync(path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
+        `[${new Date().toISOString()}] on-frontmatter-write estado-a-mano: la constancia no se anotó (${(e && e.message) || e})\n`, 'utf8');
+    } catch { /* ayuda, no evidencia */ }
+  }
+  if (ok) return null;
+  const marker = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+  const destino = isCriticalStatus(t.estado) || !/^pipelines\./.test(t.estado) ? t.estado : `done en ${t.estado}`;
+  return {
+    block: [
+      `🚨 BLOQUEADO — la story ${t.storyId} pasa a ${destino} escribiendo el archivo a mano.`,
+      '',
+      'El estado de una historia lo cambia el orquestador, que corre los controles del cierre. Usá en su lugar:',
+      `  · node ${marker} update-story-status ${filePath} <estado>`,
+      `  · node ${marker} update-pipeline-status ${filePath} <tanda|--all> <estado>   (el bloque pipelines)`,
+      '  · /tycon-pipeline close <id> para pasarla a done después del merge',
+      'Si el comando frena porque la ejecución está en rojo, cerrarla igual lo decide la persona; si la historia no',
+      'se puede terminar, la salida es dejarla como deuda (marker.js close-as-debt).',
+      'Escribirla a mano lo decide la persona («autorizo cambiar el estado»).',
+    ].join('\n') + '\n',
+  };
+}
+
 // ── Constancia ───────────────────────────────────────────────────────────────────────────────
 // Cada decisión sobre una transición a review/done deja UNA línea en frenos.jsonl (sólo la huella:
 // id de story + estado nuevo). Ayuda, no evidencia: no toca la decisión ni la salida del hook.
@@ -346,6 +584,10 @@ function handle(event) {
 
   if (tool === 'Write') {
     newContent = event.tool_input.content || '';
+  } else if (event.tool_name_raw === 'apply_patch') {
+    // Codex: el Edit trae el parche, no el reemplazo. Sin poder aplicarlo, un `+status: review|done` cuenta como el
+    // paso a ese estado (del lado que frena)
+    newContent = contenidoPorParche(event, filePath, oldContent);
   } else {
     // Edit — aplicar mentalmente el reemplazo.
     const oldStr = event.tool_input.old_string || '';
@@ -362,6 +604,14 @@ function handle(event) {
       ? oldContent.split(oldStr).join(newStr)
       : oldContent.replace(oldStr, () => newStr);
   }
+
+  // La exención nueva en una historia que ya está en implementación la decide la persona.
+  const exencion = exencionNueva(event, oldContent, newContent);
+  if (exencion) return exencion;
+
+  // Pasar una historia a review o done a mano también: el camino es el comando del orquestador.
+  const aMano = estadoAMano(event, filePath, oldContent, newContent);
+  if (aMano) return aMano;
 
   // Exención explícita.
   if (storyIsExempt(newContent)) {
@@ -461,7 +711,7 @@ function handle(event) {
       pl.push('Por default corre los specs SCOPED a la story (two-tier 2026-06-09); la suite');
       pl.push('COMPLETA corre 1 vez en /tycon-merge-to-main. Exit !=0 si hay rojos → fix antes de done.');
       pl.push('');
-      pl.push('Escape único: dod_runtime_exempt: true (solo si la story NO tiene UI/E2E reales).');
+      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona («autorizo dod_runtime_exempt»).');
       pl.push('');
       pl.push('Caso disparador: Ceibo Stories 4.2 + 4.3.1 (2026-05-20) — E2E declarados "PASS"');
       pl.push('sin correrse / con mocks. Freshness agregada 2026-06-09 (evidencia vieja');
@@ -493,9 +743,8 @@ function handle(event) {
   lines.push('Acciones (en orden de preferencia):');
   lines.push('  (a) Invocar tycon-dod-runtime-checker advisor (auto-captura evidencia).');
   lines.push('  (b) Ejecutar E2E specs + capturar log → escribir manualmente el archivo.');
-  lines.push('  (c) Si la story NO tiene UI/E2E reales → agregar al frontmatter:');
-  lines.push('        dod_runtime_exempt: true');
-  lines.push('        dod_runtime_exempt_reason: "<razón concreta>"');
+  lines.push('  (c) Si la story NO tiene UI/E2E reales: eximirla de la prueba en vivo lo decide la persona,');
+  lines.push('      no el agente (en una historia ya en implementación, con «autorizo dod_runtime_exempt» en su mensaje).');
   lines.push('');
   lines.push('Caso disparador: Ceibo Story 4.2 2026-05-20 — Claude marcó done sin');
   lines.push('ejecutar E2E. Este hook es la infra que lo enforce. Docs:');

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 // team-repos.js — dónde vive cada repo del arnés de una organización.
 //
 // POR QUÉ EXISTE: el nombre de cada repo del arnés no se escribe a mano en lugares distintos —ni en una lista
@@ -28,7 +30,12 @@
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
 //       "adversarial"?: { "model"?, "heavy"?, "story"?: <modelo> }, "helpers"?: <modelo>,   ("fable_question": retirada, se acepta)
 //       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> },
-//       "codex_reviewers"?: «inherit» }   los revisores de Codex con el modelo de cada máquina (lo lee build/generate.js)
+//       "codex_reviewers"?: «inherit»,    los revisores de Codex con el modelo de cada máquina (lo lee build/generate.js)
+//       "providers"?: { "<proveedor>": { "<nivel>": <id> | «inherit» } },   qué modelo es cada nivel en cada proveedor
+//       "allowed"?: { "<proveedor>": [<id>, …] },   los modelos permitidos de un proveedor (lo frena el sitio)
+//       "nightly"?: { "provider": «anthropic» | «ollama», "level"?: <nivel> } }   el modelo del proceso de la noche
+//   <proveedor> = «openai» | «ollama» | «cursor» (PROVIDERS; la tabla de «anthropic» es fija y no se declara).
+//   <id> = el nombre de un modelo del proveedor: 1 a 100 caracteres, letras, números y . _ : / @ + -, sin espacios.
 //   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre del
 //   modelo, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
@@ -69,7 +76,7 @@ const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates'];
 // La revisión de la semana: prendida o no, el tope en dólares de su única corrida del agente y el tope de material en
 // caracteres. Lo lee scripts/nightly/weekly-review/weekly-review.js; sin la clave, prendida, 5 y 600.000: con 600.000
 // entra casi toda una semana de mucho movimiento por menos de la mitad del tope en dólares.
@@ -77,6 +84,13 @@ const WEEKLY_REVIEW_KEYS = ['enabled', 'budget_usd', 'max_chars'];
 const WEEKLY_REVIEW_DEFAULTS = Object.freeze({ enabled: true, budget_usd: 5, max_chars: 600000 });
 const WEEKLY_REVIEW_MAX_USD = 100;
 const WEEKLY_REVIEW_CHARS = [10000, 2000000];
+// La unidad en que estima la organización y sus tasas a horas. Lo lee scripts/lib/estimates.js; sin la clave, horas,
+// 8 horas por día y ninguna tasa por punto (con puntos sin tasa no se pasa a horas). Una clave mal escrita va aparte,
+// en `sectionProblems.estimates`, como `models`.
+const ESTIMATES_KEYS = ['unit', 'hours_per_day', 'hours_per_point'];
+const ESTIMATES_UNITS = ['hours', 'days', 'points'];
+// un día de trabajo tiene entre 1 y 24 horas: fuera de eso, pasar días a horas da un total que no es de nadie
+const ESTIMATES_HOURS_PER_DAY = [1, 24];
 // El plazo del aviso de espera: minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 const WAIT_NOTICE_KEYS = ['minutes'];
 const WAIT_NOTICE_MAX = 120;
@@ -175,7 +189,16 @@ const MODEL_LEVELS = ['economy', 'balanced', 'strong', 'max'];
 /** La posición de un nivel o de un nombre (los dos en el mismo orden); -1 si no es ninguno. */
 const modelRank = (v) => (MODEL_LEVELS.includes(v) ? MODEL_LEVELS.indexOf(v) : MODEL_NAMES.indexOf(v));
 const levelName = (v) => MODEL_LEVELS[modelRank(v)];
-const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'reviewers_reloop', 'adversarial', 'helpers', 'session', 'codex_reviewers'];
+const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'reviewers_reloop', 'adversarial', 'helpers', 'session', 'codex_reviewers', 'providers', 'allowed', 'nightly'];
+// Copia de `PROVIDERS` de models.js, en su orden (T6 las compara): de quién es el modelo de cada nivel. La tabla de
+// Anthropic es fija (el alias de cada nivel): no se declara
+const PROVIDERS = ['anthropic', 'openai', 'ollama', 'cursor'];
+const INHERIT = 'inherit';
+// el nombre de un modelo de un proveedor: 1 a 100 caracteres, sin espacios («gemma4:31b-cloud», «hf.co/acme/x:Q4»)
+const MODEL_ID_RE = /^[A-Za-z0-9._:/@+-]{1,100}$/;
+// los proveedores que puede usar el proceso de la noche (`models.nightly.provider`)
+const NIGHTLY_PROVIDERS = ['anthropic', 'ollama'];
+const NIGHTLY_KEYS = ['provider', 'level'];
 // `codex_reviewers: "inherit"`: los revisores de Codex usan el modelo de cada máquina (su config.toml), no el equivalente
 // del nivel. Sirve con Codex sobre otro proveedor, como Ollama, donde el modelo de OpenAI no existe. Es el único valor
 const CODEX_REVIEWERS = ['inherit'];
@@ -289,6 +312,94 @@ function mergeSuitesFor(data, identity) {
 
 const modelProblem = (v, at) => (modelRank(v) >= 0 ? [] : [{ path: at, message: `tiene que ser ${MODEL_LEVELS.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v)})` }]);
 
+const modelIdProblem = (v, at) => (typeof v === 'string' && MODEL_ID_RE.test(v) ? [] : [{ path: at, message: `tiene que ser «inherit» o el nombre de un modelo (1 a 100 caracteres: letras, números y . _ : / @ + -, sin espacios) (es ${JSON.stringify(v)})` }]);
+const providerUnknown = (p, at) => ({ path: `${at}.${p}`, message: `proveedor desconocido (válidos: ${PROVIDERS.join(', ')})` });
+
+/** `models.providers`: `{ <proveedor>: { <nivel>: <modelo> | «inherit» } }`, sin Anthropic (su tabla es fija). */
+function providersProblems(v, at) {
+  if (!isObject(v)) return [{ path: at, message: `tiene que ser un objeto { "<proveedor>": { "<nivel>": "<modelo>" } } (proveedores: ${PROVIDERS.filter((p) => p !== 'anthropic').join(', ')})` }];
+  const out = [];
+  for (const [p, tabla] of Object.entries(v)) {
+    if (fieldComment(p, tabla)) continue;
+    if (p === 'anthropic') { out.push({ path: `${at}.${p}`, message: 'la tabla de Anthropic es fija (haiku, sonnet, opus, fable); no se declara' }); continue; }
+    if (!PROVIDERS.includes(p)) { out.push(providerUnknown(p, at)); continue; }
+    if (!isObject(tabla)) { out.push({ path: `${at}.${p}`, message: `tiene que ser un objeto { "<nivel>": "<modelo>" } (niveles: ${MODEL_LEVELS.join(', ')})` }); continue; }
+    for (const [n, m] of Object.entries(tabla)) {
+      if (fieldComment(n, m)) continue;
+      if (!MODEL_LEVELS.includes(n)) out.push({ path: `${at}.${p}.${n}`, message: `nivel desconocido (válidos: ${MODEL_LEVELS.join(', ')})` });
+      else out.push(...modelIdProblem(m, `${at}.${p}.${n}`));
+    }
+  }
+  return out;
+}
+
+/** `models.allowed`: `{ <proveedor>: [<modelo>, …] }`, una lista no vacía por proveedor. */
+function allowedProblems(v, at) {
+  if (!isObject(v)) return [{ path: at, message: 'tiene que ser un objeto { "<proveedor>": ["<modelo>", …] }' }];
+  const out = [];
+  for (const [p, lista] of Object.entries(v)) {
+    if (fieldComment(p, lista)) continue;
+    if (!PROVIDERS.includes(p)) { out.push(providerUnknown(p, at)); continue; }
+    if (!Array.isArray(lista)) { out.push({ path: `${at}.${p}`, message: 'tiene que ser una lista de nombres de modelo' }); continue; }
+    if (!lista.length) { out.push({ path: `${at}.${p}`, message: 'una lista vacía no permite nada: sacá la clave' }); continue; }
+    lista.forEach((m, i) => {
+      if (typeof m !== 'string' || m === INHERIT || !MODEL_ID_RE.test(m)) out.push({ path: `${at}.${p}.${i}`, message: `tiene que ser el nombre de un modelo (1 a 100 caracteres: letras, números y . _ : / @ + -, sin espacios) (es ${JSON.stringify(m)})` });
+    });
+  }
+  return out;
+}
+
+/** `models.nightly`: `{ provider: «anthropic» | «ollama», level?: <nivel> }` (sin `level`, `economy`). */
+function nightlyProblems(v, at) {
+  if (!isObject(v)) return [{ path: at, message: `tiene que ser un objeto { "provider": ${NIGHTLY_PROVIDERS.map((p) => `«${p}»`).join(' o ')}, "level"?: <nivel> }` }];
+  const out = [];
+  for (const k of Object.keys(v)) if (!fieldComment(k, v[k]) && !NIGHTLY_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: `clave desconocida (válidas: ${NIGHTLY_KEYS.join(', ')})` });
+  if (!NIGHTLY_PROVIDERS.includes(v.provider)) out.push({ path: `${at}.provider`, message: `tiene que ser ${NIGHTLY_PROVIDERS.map((p) => `«${p}»`).join(' o ')} (es ${JSON.stringify(v.provider)})` });
+  if (v.level !== undefined && !MODEL_LEVELS.includes(v.level)) out.push({ path: `${at}.level`, message: `tiene que ser ${MODEL_LEVELS.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v.level)})` });
+  return out;
+}
+
+/**
+ * El nivel con que corre la noche: `models.nightly.level` (sin él, `economy`) recortado al tope obligatorio, como lo
+ * recorta scripts/lib/nightly-model.js antes de buscar el modelo. Así el sitio decide con el mismo nivel que la noche.
+ */
+function nightlyLevel(value) {
+  const noche = isObject(value) && isObject(value.nightly) ? value.nightly : {};
+  const nivel = MODEL_LEVELS.includes(noche.level) ? noche.level : 'economy';
+  const tope = isObject(value) && value.mandatory_ceiling === true ? modelRank(value.ceiling) : -1;
+  return tope >= 0 && MODEL_LEVELS.indexOf(nivel) > tope ? MODEL_LEVELS[tope] : nivel;
+}
+
+/**
+ * Los modelos declarados que la lista `allowed` de su proveedor no trae: `[{ path, message }]`. Mira las tablas de
+ * `providers` y el modelo de la noche (el de Anthropic es el alias de su nivel). «inherit» siempre vale. NO entra en
+ * `modelsProblems`, como el tope: con un problema ahí cada máquina descarta toda la configuración de modelos; en las
+ * máquinas un modelo fuera de la lista cae a «inherit» y se avisa. Lo usa el sitio, que no deja proponerlo.
+ */
+function modelsOutsideAllowed(value) {
+  if (!isObject(value) || !isObject(value.allowed)) return [];
+  const permitidos = (p) => (Array.isArray(value.allowed[p]) && value.allowed[p].length ? value.allowed[p] : null);
+  const out = [];
+  const ver = (p, m, at) => {
+    const lista = permitidos(p);
+    if (lista && typeof m === 'string' && m !== INHERIT && !lista.includes(m)) out.push({ path: at, message: `${m} no está entre los permitidos de ${p}` });
+  };
+  if (isObject(value.providers)) {
+    for (const [p, tabla] of Object.entries(value.providers)) {
+      if (!isObject(tabla) || !PROVIDERS.includes(p)) continue;
+      for (const n of MODEL_LEVELS) if (tabla[n] !== undefined) ver(p, tabla[n], `models.providers.${p}.${n}`);
+    }
+  }
+  const noche = value.nightly;
+  if (isObject(noche) && NIGHTLY_PROVIDERS.includes(noche.provider)) {
+    const nivel = nightlyLevel(value);
+    const m = noche.provider === 'anthropic' ? MODEL_NAMES[MODEL_LEVELS.indexOf(nivel)]
+      : (isObject(value.providers) && isObject(value.providers[noche.provider]) ? value.providers[noche.provider][nivel] : undefined);
+    ver(noche.provider, m, 'models.nightly');
+  }
+  return out;
+}
+
 /** Los problemas de `models`; `[]` si está bien. Cada uno con la ruta de su clave. */
 function modelsProblems(value) {
   if (!isObject(value)) return [{ path: 'models', message: 'tiene que ser un objeto (los modelos de cada trabajo del pipeline)' }];
@@ -302,6 +413,12 @@ function modelsProblems(value) {
       if (typeof v !== 'boolean') out.push({ path: at, message: `tiene que ser true o false (es ${JSON.stringify(v)})` });
     } else if (k === 'codex_reviewers') {
       if (!CODEX_REVIEWERS.includes(v)) out.push({ path: at, message: `el único valor es «inherit» (los revisores de Codex usan el modelo de cada máquina); sin la clave, el equivalente de cada nivel (es ${JSON.stringify(v)})` });
+    } else if (k === 'providers') {
+      out.push(...providersProblems(v, at));
+    } else if (k === 'allowed') {
+      out.push(...allowedProblems(v, at));
+    } else if (k === 'nightly') {
+      out.push(...nightlyProblems(v, at));
     } else if (k === 'reviewer') {
       if (!isObject(v)) { out.push({ path: at, message: 'tiene que ser un objeto { "<revisor>": <modelo> }' }); continue; }
       for (const [r, m] of Object.entries(v)) {
@@ -372,6 +489,20 @@ function suitesWithRule(rule) {
   if (rule === 'siempre-en-la-maquina') return 'machine-always';
   if (rule === 'confiar-en-el-servidor') return 'server-only';
   return null;
+}
+
+/** Los problemas de `estimates`; `[]` si está bien. Casos: scripts/tests/estimates.test.js T5 y team-repos.test.js Estimates_ValidoYProblemas. */
+function estimatesProblems(value) {
+  if (!isObject(value)) return [{ path: 'estimates', message: 'tiene que ser un objeto (la unidad de las estimaciones)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !ESTIMATES_KEYS.includes(k)) out.push({ path: `estimates.${k}`, message: 'clave desconocida' });
+  if (value.unit !== undefined && !ESTIMATES_UNITS.includes(value.unit)) out.push({ path: 'estimates.unit', message: `tiene que ser ${ESTIMATES_UNITS.join(', ')} (es ${JSON.stringify(value.unit)})` });
+  const [desde, hasta] = ESTIMATES_HOURS_PER_DAY;
+  const dia = value.hours_per_day;
+  if (dia !== undefined && !(typeof dia === 'number' && Number.isFinite(dia) && dia >= desde && dia <= hasta)) out.push({ path: 'estimates.hours_per_day', message: `tiene que ser un número de horas de ${desde} a ${hasta} (es ${JSON.stringify(dia)})` });
+  const punto = value.hours_per_point;
+  if (punto !== undefined && !(typeof punto === 'number' && Number.isFinite(punto) && punto > 0)) out.push({ path: 'estimates.hours_per_point', message: `tiene que ser un número de horas mayor que 0 (es ${JSON.stringify(punto)})` });
+  return out;
 }
 
 /** Los problemas de `wait_notice`; `[]` si está bien. */
@@ -540,12 +671,15 @@ function parse(text) {
   const sectionStack = isObject(doc) && doc.stack !== undefined ? stackProblems(doc.stack) : [];
   // y con `weekly_review`: un tope mal escrito deja la revisión con los valores por defecto, y lo dice
   const sectionWeekly = isObject(doc) && doc.weekly_review !== undefined ? weeklyReviewProblems(doc.weekly_review) : [];
+  // y con `estimates`: una unidad mal escrita no deja sin el archivo; quien estima lo dice y no escribe
+  const sectionEstimates = isObject(doc) && doc.estimates !== undefined ? estimatesProblems(doc.estimates) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length)) {
     data = { ...doc };
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
     if (sectionWeekly.length) delete data.weekly_review;
+    if (sectionEstimates.length) delete data.estimates;
     if (sectionCoverage.length) delete data.coverage;
     if (sectionReview.length) delete data.review;
     if (sectionStack.length) {
@@ -560,6 +694,7 @@ function parse(text) {
     ...(sectionReview.length ? { review: sectionReview } : {}),
     ...(sectionStack.length ? { stack: sectionStack } : {}),
     ...(sectionWeekly.length ? { weekly_review: sectionWeekly } : {}),
+    ...(sectionEstimates.length ? { estimates: sectionEstimates } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -607,7 +742,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

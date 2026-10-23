@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * tycon-ado-story-wi — PostToolUse hook (matcher: Write).
+ * tycon-story-work-item — PostToolUse hook (matcher: Write).
  *
  * Cuando el agente hace Write de un archivo `.md`, detecta si es una story
- * Mary+GOLD recién creada SIN `ado_work_item:` en el frontmatter. Si lo es,
- * emite un system-reminder instruyendo crear el work item en Azure DevOps
- * via el skill `tycon-ado-story-wi`.
+ * Mary+GOLD recién creada SIN `work_item:` (ni su nombre viejo `ado_work_item:`) en el frontmatter. Si lo es,
+ * emite un system-reminder instruyendo crear el pedido de trabajo en la plataforma del equipo
+ * via el skill `tycon-story-work-item`.
  *
  * Detección por CONTENIDO, no por path — así funciona en TODOS los proyectos
  * TYCON sin mantener una lista de directorios de stories.
@@ -15,7 +15,7 @@
  *
  * Por qué `Write` y no `Edit|Write`: una story se CREA con un Write (primer
  * volcado del archivo). Los Edit posteriores (status updates, Dev Agent
- * Record) no deben re-disparar. El guard `sin ado_work_item:` es defensa
+ * Record) no deben re-disparar. El guard `sin work_item:` es defensa
  * adicional contra re-triggers.
  *
  * Output: system-reminder en stdout o nada. Exit 0 siempre (no bloqueante).
@@ -89,14 +89,22 @@ const fm = extractFrontmatter(content);
 if (!fm) process.exit(0);
 
 // Firma Mary+GOLD: una story tiene epic + story + status + approach.
-const hasStory = /^story:\s*\S/m.test(fm);
-const hasEpic = /^epic:\s*\S/m.test(fm);
-const hasStatus = /^status:\s*\S/m.test(fm);
-const hasApproach = /^approach:\s*\S/m.test(fm);
+// `[ \t]*` y no `\s*`: un campo vacío seguido de otra clave no cuenta como presente (`\s` cruzaría el salto de línea)
+const hasStory = /^story:[ \t]*\S/m.test(fm);
+const hasEpic = /^epic:[ \t]*\S/m.test(fm);
+const hasStatus = /^status:[ \t]*\S/m.test(fm);
+const hasApproach = /^approach:[ \t]*\S/m.test(fm);
 if (!(hasStory && hasEpic && hasStatus && hasApproach)) process.exit(0);
 
-// Ya linkeada → nada que hacer (también evita re-trigger en re-writes).
-if (/^ado_work_item:\s*\S/m.test(fm)) process.exit(0);
+// Ya linkeada → nada que hacer (también evita re-trigger en re-writes). El campo, con su nombre o el viejo, y con
+// cualquier valor (también `TBD`: alguien ya lo anotó). Los dos nombres los da el lector del arnés; una skill que vive
+// en un clon aparte, sin scripts/ al lado, usa los mismos dos escritos acá.
+let nombres = ['work_item', 'ado_work_item'];
+try {
+  const CAMPO = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'platform', 'work-item-field.js'));
+  nombres = [CAMPO.NAME, CAMPO.LEGACY];
+} catch { /* sin el arnés al lado: los nombres escritos arriba */ }
+if (new RegExp(`^(${nombres.join('|')}):[ \\t]*\\S`, 'm').test(fm)) process.exit(0);
 
 // Extraer story id + título para el reminder.
 const storyMatch = fm.match(/^story:\s*"?([^"\n]+)"?/m);
@@ -105,21 +113,21 @@ const storyId = storyMatch ? storyMatch[1].trim() : path.basename(filePath, '.md
 const title = titleMatch ? titleMatch[1].trim() : '(sin título)';
 
 emit(
-  `tycon-ado-story-wi STORY-CREATE-detect: se creó una story Mary+GOLD sin ` +
-    `\`ado_work_item:\` en el frontmatter.\n\n` +
+  `tycon-story-work-item STORY-CREATE-detect: se creó una story Mary+GOLD sin ` +
+    `\`work_item:\` en el frontmatter.\n\n` +
     `   • Story: ${storyId} — ${title}\n` +
     `   • Archivo: ${filePath}\n\n` +
-    `Acción: crear el work item en Azure DevOps para esta story. Invocá el skill:\n` +
-    `   Skill(skill="tycon-ado-story-wi", args="${filePath}")\n\n` +
-    `El skill resuelve la config ADO del repo (\`.tycon/ado-config.yaml\`), detecta el ` +
-    `tipo de WI por process template, te muestra título/tipo/proyecto destino y PIDE TU ` +
-    `CONFIRMACIÓN antes de crear. Tras crear, escribe \`ado_work_item: <id>\` de vuelta ` +
+    `Acción: crear el pedido de trabajo de esta story en la plataforma del equipo. Invocá el skill:\n` +
+    `   Skill(skill="tycon-story-work-item", args="${filePath}")\n\n` +
+    `El skill lee dónde van los pedidos del repo (\`.tycon/work-items.yaml\`, o \`.tycon/ado-config.yaml\` ` +
+    `con el nombre viejo), te muestra título, tipo y destino y PIDE TU CONFIRMACIÓN antes de crear; ` +
+    `la creación la hace la capa de plataforma. Tras crear, escribe \`work_item: <id>\` de vuelta ` +
     `en este frontmatter.\n\n` +
-    `Si este repo NO trackea en ADO → el skill hace silent-skip al no resolver config ` +
-    `(no bloquea nada).\n` +
+    `Si este repo no lleva pedidos de trabajo, o la organización no eligió plataforma, el skill lo dice ` +
+    `en una línea y sigue (no bloquea nada).\n` +
     `Si se crearon VARIAS stories de una (ej: bmad-create-epics-and-stories), invocá el ` +
     `skill UNA sola vez — escanea el directorio y procesa en batch todas las que falten ` +
-    `\`ado_work_item:\`.`,
+    `\`work_item:\`.`,
 );
 
 process.exit(0);

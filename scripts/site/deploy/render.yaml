@@ -65,3 +65,5 @@ services:
         sync: false
       - key: SITE_PIPELINES_TOKEN
         sync: false
+      - key: SITE_PRODUCTS_WRITE_TOKEN
+        sync: false

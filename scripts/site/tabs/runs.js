@@ -102,7 +102,8 @@ async function armarEnElHilo({ buzon, skillsDir = null, sinHilos = false, umbral
 function armarEnWorker(opts) {
   return new Promise((resolve, reject) => {
     let listo = false;
-    const w = new Worker(__filename, { workerData: { __armarCorridas: true, ...opts }, resourceLimits: { maxOldGenerationSizeMb: opts.memoriaMb || 768 } });
+    // el hilo no hereda el freno del modo demo: lo pone él mismo con la carpeta del proceso (demo-guard.js)
+    const w = new Worker(__filename, { workerData: { __armarCorridas: true, __frenoDemo: frenoDemo(), ...opts }, resourceLimits: { maxOldGenerationSizeMb: opts.memoriaMb || 768 } });
     const fin = (fn, x) => { if (listo) return; listo = true; clearTimeout(corte); fn(x); };
     const corte = setTimeout(() => { fin(reject, Object.assign(new Error(FRASE_FALLA), { code: 'TIEMPO_AGOTADO' })); w.terminate(); }, opts.tiempoMs || 600000);
     if (corte.unref) corte.unref();
@@ -112,7 +113,11 @@ function armarEnWorker(opts) {
   });
 }
 
+/** El freno del modo demo de este proceso (`{ dir }`), o null: se lo pasa a cada hilo aparte. */
+const frenoDemo = () => { const f = require('../demo-guard.js').frenoActual(); return f ? { dir: f.dir } : null; };
+
 if (!isMainThread && workerData && workerData.__armarCorridas) {
+  if (workerData.__frenoDemo) require('../demo-guard.js').ponerFreno(workerData.__frenoDemo);
   armarEnElHilo(workerData).then((r) => parentPort.postMessage(r)).catch((e) => parentPort.postMessage({ error: codigoDe(e) }));
 }
 
@@ -255,7 +260,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
       st.error = { codigo: codigoDe(e), desde: new Date(ahora()).toISOString() };
       st.huellaFallida = huella;
       borrar(textosDir, 'del armado fallado');
-      log(`ejecuciones: ${FRASE_FALLA} (${st.error.codigo})`);
+      log(`ejecuciones: ${FRASE_FALLA} (${st.error.codigo}${st.error.codigo === 'EDEMO_FRENO' ? ': lo frenó el freno del sitio demo, un hilo quiso salir o escribir afuera' : ''})`);
     }).finally(() => { st.armando = null; });
   }
 
@@ -349,6 +354,8 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     if (!g || g.deps.some((d, i) => d !== deps[i])) {
       const reglas = access.crearReglas({ config, modelo: modeloFondo, personas });
       const vis = access.filtrarCorridas(M, ctx.quien, reglas);
+      // el grupo del filtro, con los productos de repos.json, sobre los nombres ya unificados de lo que ve
+      if (vis) runs.agruparRepos(vis.corridas, personas && personas.repos);
       // la última bajada no terminó entera: se sirve el último armado entero, y la respuesta dice que puede faltar alguna
       if (vis && !completo) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), parcial: true, ...(ctx.quien.rol === 'maintainer' ? { incompleto: true } : {}) };
       g = { deps, vis, salidas: {} };

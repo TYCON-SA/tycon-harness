@@ -63,8 +63,11 @@ const SECCIONES = Object.freeze([
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
   // cuál sesión es, se designa en cada máquina)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
+  // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
+  // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
+  Object.freeze({ id: 'frenoProduccion', titulo: 'Cómo se actualiza el freno de producción', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['guard'], rutas: Object.freeze(['guard.update']), idCorto: 'profile', necesita: ['guard'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta el agente', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
   Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.timeTracking', 'integrations.notify', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
@@ -95,6 +98,8 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'cobertura', titulo: 'Cobertura de las pruebas', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['coverage'], idCorto: 'repos', necesita: ['coverage'] }),
   // el tope de vueltas de revisores de una story y los prefijos de reglas que cuentan como seguridad o datos
   Object.freeze({ id: 'revision', titulo: 'Vueltas de revisores', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['review'], idCorto: 'repos', necesita: ['review'] }),
+  // la unidad en que estima la organización (horas, días o puntos) y sus tasas a horas
+  Object.freeze({ id: 'estimaciones', titulo: 'Estimaciones', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['estimates'], idCorto: 'repos', necesita: ['estimates'] }),
   // la tecnología de la organización: terminaciones que también son código, herramientas de prueba y las reglas
   Object.freeze({ id: 'tecnologia', titulo: 'Tu tecnología', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['stack'], idCorto: 'repos', necesita: ['stack'] }),
 ]);
@@ -177,7 +182,15 @@ const MODEL_LEVELS_SINCE = '2026.10.21.9';
 // `models.codex_reviewers` («inherit»): un lector anterior la ve como clave desconocida y descarta toda la configuración
 // de modelos. Se pide sólo si el archivo la trae. Provisoria hasta la etiqueta del merge que la trae al lector
 const CODEX_REVIEWERS_SINCE = '2026.10.22.22';
-const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
+// los modelos por proveedor (`models.providers`, `allowed`, `nightly`): un lector anterior los ve como claves
+// desconocidas y descarta toda la configuración de modelos (techo incluido). Se pide sólo si el archivo trae alguna.
+// Provisoria hasta la etiqueta del merge que los trae al lector: está puesta para frenar de más, no de menos
+const MODEL_PROVIDERS_SINCE = '2026.10.22.48';
+const CLAVES_DE_PROVEEDORES = Object.freeze(['providers', 'allowed', 'nightly']);
+// `estimates`: un lector anterior la ve como clave desconocida y descarta el archivo entero. Provisoria hasta la etiqueta
+// del merge que la trae al lector: está puesta para frenar de más, no de menos
+const ESTIMATES_SINCE = '2026.10.23.40';
+const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE], ['estimates', ESTIMATES_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
   let version = TEAM_REPOS_SINCE; const claves = [];
@@ -188,6 +201,7 @@ function versionQuePide(doc) {
   }
   if (isObject(doc) && conNivelDeModelo(doc.models) && !versionAtLeast(version, MODEL_LEVELS_SINCE)) version = MODEL_LEVELS_SINCE;
   if (isObject(doc) && isObject(doc.models) && doc.models.codex_reviewers !== undefined && !versionAtLeast(version, CODEX_REVIEWERS_SINCE)) version = CODEX_REVIEWERS_SINCE;
+  if (isObject(doc) && isObject(doc.models) && CLAVES_DE_PROVEEDORES.some((k) => doc.models[k] !== undefined) && !versionAtLeast(version, MODEL_PROVIDERS_SINCE)) version = MODEL_PROVIDERS_SINCE;
   return { version, claves };
 }
 /** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
@@ -199,11 +213,43 @@ function conNivelDeModelo(v) {
  * `models` con cada nombre de Claude pasado a su nivel, con el lector del árbol (`MODEL_NAMES` y `MODEL_LEVELS`, en el
  * mismo orden): lo que la pantalla muestra y propone. Un lector sin niveles lo deja como está.
  */
-function modelosEnNiveles(v, lector) {
+function modelosEnNiveles(v, lector, top = true) {
   if (!lector || !Array.isArray(lector.MODEL_LEVELS) || !Array.isArray(lector.MODEL_NAMES)) return v;
   if (typeof v === 'string') return lector.MODEL_NAMES.includes(v) ? lector.MODEL_LEVELS[lector.MODEL_NAMES.indexOf(v)] : v;
   if (!isObject(v)) return v;
-  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k.startsWith('_') ? x : modelosEnNiveles(x, lector)]));
+  // las tablas por proveedor, la lista de permitidos y la noche traen nombres de modelos de cada proveedor: no se tocan
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k.startsWith('_') || (top && CLAVES_DE_PROVEEDORES.includes(k)) ? x : modelosEnNiveles(x, lector, false)]));
+}
+/**
+ * Lo que la pantalla necesita de cada proveedor, del árbol que sirve el sitio: `{ porDefecto, secretos,
+ * noche, motivo }`. `porDefecto.<proveedor>.<nivel>` = el modelo sin tabla cargada (con el traductor de models.js del
+ * árbol: Anthropic fija, OpenAI de build/equivalences.json, Ollama y Cursor «inherit»); `secretos` = el nombre de la
+ * llave de cada proveedor de la noche (scripts/lib/nightly-model.js). Un árbol sin esas piezas trae `motivo`.
+ */
+function proveedoresDe(tree) {
+  const out = { porDefecto: null, secretos: null, noche: null, motivo: null };
+  const archivo = buscarModelsJs(tree);
+  if (!archivo) { out.motivo = M('org.sinModelosDeHoy'); return out; }
+  try {
+    const Mod = require(archivo);
+    if (typeof Mod.resolveProviderModel !== 'function' || !Array.isArray(Mod.PROVIDERS)) { out.motivo = M('org.sinModelosDeHoy'); return out; }
+    // las equivalencias que no se pudieron leer dejan la tabla de OpenAI sin valores de hoy: el motivo se dice
+    const e = equivalenciasDe(tree);
+    if (e.motivo) out.motivo = e.motivo;
+    out.porDefecto = Object.fromEntries(Mod.PROVIDERS.map((p) => [p, Object.fromEntries(Mod.LEVELS.map((n) => [n, Mod.resolveProviderModel({ org: null, provider: p, level: n, equivalences: e.equivalencias || {} }).model]))]));
+  } catch (e) { out.motivo = M('org.skillsIlegibles', { codigo: (e && e.code) || 'error' }); return out; }
+  const nm = path.join(String(tree), 'scripts', 'lib', 'nightly-model.js');
+  try {
+    const NM = require(nm);
+    out.secretos = { ...NM.NIGHTLY_SECRETS };
+    out.noche = Object.keys(NM.NIGHTLY_SECRETS);
+  } catch (e) {
+    // un árbol anterior sin la pieza no trae la llave de la noche; una pieza que está y no carga, se dice
+    out.secretos = null;
+    // (la primera línea nombra el archivo que falta; las siguientes, la cadena de quién lo pidió)
+    if (!(e && e.code === 'MODULE_NOT_FOUND' && String(e.message).split('\n')[0].includes(nm))) out.motivo = M('org.modelsNoCarga', { archivo: 'scripts/lib/nightly-model.js', error: String((e && e.message) || e).split('\n')[0] });
+  }
+  return out;
 }
 /**
  * Las equivalencias de Codex del árbol que sirve el sitio (`build/equivalences.json → models`, por modelo de Claude):
@@ -265,6 +311,11 @@ const APPROVALS_SINCE = '2026.10.20.3';
  */
 const QA_SINCE = '2026.10.20.39';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `guard` y `approvals.delegated_signing`: la etiqueta del merge que
+ * las trae, como QA_SINCE.
+ */
+const GUARD_SINCE = '2026.10.22.46';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -286,10 +337,9 @@ const NOTIFY_SINCE = '2026.10.21.52';
 const cambiaAvisos = cambiaIntegracion('notify');
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.platform` (la plataforma del equipo por área). Una
- * máquina anterior rechazaría el perfil entero con la clave nueva. Se fija con la etiqueta real del merge que trae el
- * lector; mientras tanto, una cota que ninguna versión anterior alcanza (una máquina al día espera hasta esa versión).
+ * máquina anterior rechazaría el perfil entero con la clave nueva. Es la etiqueta del merge que trajo el lector.
  */
-const PLATFORM_SINCE = '2026.10.23.1';
+const PLATFORM_SINCE = '2026.10.22.42';
 const cambiaPlataforma = cambiaIntegracion('platform');
 /** La versión que tiene que pedir la capa para el pedido: la mayor de las claves nuevas que cambia, o null. */
 function versionDeLaCapa({ actual, doc }) {
@@ -333,8 +383,12 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
   if (paquetes) return paquetes;
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
+  // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
+  const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
+  const firmaAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_signing : undefined;
+  if (firma !== undefined && (!isObject(actual) || canonico(firma) !== canonico(firmaAntes))) pedidas.push(['approvals.delegated_signing', GUARD_SINCE, 'org.capaSinGuard']);
   if (!pedidas.length) return null;
   let decl;
   try { decl = JSON.parse(String(layerText)); } catch (e) {
@@ -607,7 +661,25 @@ function problemasDeSeccion(seccion, r, actual, doc) {
  */
 function problemasDelTope(seccion, lector, doc) {
   if (!seccion || seccion.id !== 'modelos' || !lector || typeof lector.modelsAboveCeiling !== 'function' || !isObject(doc)) return [];
-  return lector.modelsAboveCeiling(doc.models);
+  return [...lector.modelsAboveCeiling(doc.models), ...problemasDeProveedores(lector, doc.models)];
+}
+/**
+ * Lo que el sitio no deja proponer de los modelos por proveedor, como el tope: un modelo fuera de la lista
+ * de permitidos (`modelsOutsideAllowed` del lector) y una noche de Ollama sin modelo cargado para su nivel (en la noche
+ * «inherit» no vale). Ninguno de los dos anula la configuración en las máquinas: lo frena sólo el sitio.
+ */
+function problemasDeProveedores(lector, models) {
+  if (!isObject(models)) return [];
+  const out = typeof lector.modelsOutsideAllowed === 'function' ? [...lector.modelsOutsideAllowed(models)] : [];
+  const noche = models.nightly;
+  if (isObject(noche) && noche.provider === 'ollama' && !out.some((p) => p.path === 'models.nightly')) {
+    // el nivel con que va a correr: recortado al tope, como lo recorta la noche
+    const nivel = typeof lector.nightlyLevel === 'function' ? lector.nightlyLevel(models) : (noche.level === undefined ? 'economy' : noche.level);
+    const tabla = isObject(models.providers) && isObject(models.providers.ollama) ? models.providers.ollama : {};
+    const m = tabla[nivel];
+    if (typeof m !== 'string' || !m || m === 'inherit') out.push({ path: 'models.nightly', message: M('org.nocheSinModelo', { proveedor: 'Ollama', nivel }) });
+  }
+  return out;
 }
 
 /**
@@ -640,6 +712,32 @@ function canonico(v) {
  * único skill que lo trae; se busca por el archivo para no nombrar el skill acá). `null` si el árbol no lo trae.
  * `motivoDeHoy(tree)` dice por qué no están: «no pude leer» nunca se muestra igual que «no hay».
  */
+/** La ruta del `models.js` del skill del pipeline en el árbol (el primero que lo trae), o null. */
+function buscarModelsJs(tree) {
+  if (!tree) return null;
+  let skills = [];
+  try { skills = fs.readdirSync(path.join(String(tree), 'skills')).sort(); } catch (_) { return null; }
+  for (const n of skills) {
+    const f = path.join(String(tree), 'skills', n, 'scripts', 'lib', 'models.js');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+/**
+ * La unidad de las estimaciones que leen hoy las máquinas: `estimates` del `team-repos.json` del árbol, con el
+ * `estimates.js` del sitio (sin archivo, los valores de fábrica). `{ hoy, motivo }`: si no se lee, `hoy` es null y el
+ * motivo lo dice; nunca los de fábrica callados.
+ */
+function estimacionesDeHoy(tree) {
+  if (!tree) return { hoy: null, motivo: M('org.sinArbol') };
+  const E = require(path.join(__dirname, 'estimates.js'));
+  const archivo = path.join(String(tree), 'team-repos.json');
+  try {
+    return { hoy: fs.existsSync(archivo) ? E.orgEstimates(archivo) : { ...E.DEFAULTS }, motivo: null };
+  } catch (e) {
+    return { hoy: null, motivo: M('org.estimacionesIlegibles', { error: String((e && e.message) || e).split('\n')[0] }) };
+  }
+}
 function modelosDeHoy(tree) { return buscarModelosDeHoy(tree).hoy; }
 function motivoDeHoy(tree) { return buscarModelosDeHoy(tree).motivo; }
 function buscarModelosDeHoy(tree) {
@@ -949,6 +1047,122 @@ function diferencia(antes, despues, contexto) {
   return out;
 }
 
+// ── las claves del advisors.yaml de cada repo de producto ────────────────────────────────────────────────────────
+/**
+ * Lo que la sección por repo deja editar del `advisors.yaml` de un repo de producto (scripts/lib/repo-config-readers.js). Cada clave se describe acá
+ * y la pantalla la dibuja desde su descripción: sumar una clave es sumar una entrada, no una pantalla.
+ *   · `clave`: la clave de primer nivel del archivo; `titulo`: cómo se llama en la pantalla.
+ *   · `lector`: el archivo del árbol del arnés que la lee (o el nombre de uno inyectado en `lectores`). Exporta
+ *     `leerClave(texto)` → `{ presente, ilegible, valor, problemas: [{ fila, motivo }] }`, `revisarValor(valor)` →
+ *     `{ generales: [motivo], filas: [[motivo]] }`, `escribirClave(valor)` → el bloque con su salto final y, si sabe,
+ *     `podridasDelValor(valor, archivos, hoy)` → `[{ fila, motivo }]`. Es el MISMO lector que usa el arnés.
+ *   · `forma`: `modo` (un campo con `opciones`) y `lista` (el campo de la lista y sus `columnas`, cada una con `campo`,
+ *     `tipo` texto | opcion | fecha, `opciones` y `opcional`).
+ */
+const CLAVES_DEL_REPO = Object.freeze([
+  Object.freeze({
+    clave: 'deprecated', titulo: 'Código deprecado', lector: 'deprecated',
+    forma: Object.freeze({
+      modo: Object.freeze({ campo: 'edit', opciones: Object.freeze(['warn', 'block']) }),
+      lista: Object.freeze({ campo: 'paths', columnas: Object.freeze([
+        Object.freeze({ campo: 'path', tipo: 'texto' }),
+        Object.freeze({ campo: 'level', tipo: 'opcion', opciones: Object.freeze(['frozen', 'dead']) }),
+        Object.freeze({ campo: 'reason', tipo: 'texto' }),
+        Object.freeze({ campo: 'review_by', tipo: 'fecha', opcional: true }),
+      ]) }),
+    }),
+  }),
+]);
+
+/**
+ * El lector de una clave del repo: el inyectado manda; si no, el que resuelve `scripts/lib/repo-config-readers.js` del
+ * árbol por su nombre. null si esta versión no lo trae.
+ */
+function lectorDeClave(tree, descriptor, lectores) {
+  if (lectores && Object.prototype.hasOwnProperty.call(lectores, descriptor.lector)) return lectores[descriptor.lector];
+  const f = path.join(tree, 'scripts', 'lib', 'repo-config-readers.js');
+  if (!fs.existsSync(f)) return null;
+  const r = require(f).lectorDeClave(descriptor.lector);
+  return r && typeof r.leerClave === 'function' && typeof r.escribirClave === 'function' && typeof r.revisarValor === 'function' ? r : null;
+}
+
+/**
+ * Cambia SÓLO el bloque de primer nivel `clave:` de un texto YAML: lo de antes y lo de después (otras claves,
+ * comentarios, líneas en blanco, el fin de línea) queda byte por byte. El bloque termina en su último renglón con
+ * sangría; los comentarios y blancos que lo siguen son de lo que viene. Sin la clave, el bloque va al final; sin
+ * archivo, es el archivo. `{ texto }`, o `{ ilegible }` si la clave está escrita en otra forma (`clave: {}`). PURA.
+ */
+function reemplazarBloque(texto, clave, bloque) {
+  if (texto === null || texto === undefined || texto === '') return { texto: bloque };
+  // cada renglón con su propio fin de línea: un archivo con finales mezclados queda igual fuera del bloque
+  const renglones = [];
+  const rx = /([^\r\n]*)(\r\n|\n|$)/g;
+  let m;
+  while ((m = rx.exec(texto)) && (m[0] !== '' || rx.lastIndex < texto.length)) { renglones.push({ l: m[1], fin: m[2] }); if (!m[2]) break; }
+  const nuevo = bloque.replace(/\n$/, '').split('\n');
+  const cabeza = new RegExp(`^${clave.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:(.*)$`);
+  const i = renglones.findIndex((r) => cabeza.test(r.l));
+  const unir = (lista) => lista.map((r) => r.l + r.fin).join('');
+  if (i < 0) {
+    const eol = (renglones.find((r) => r.fin) || { fin: '\n' }).fin;
+    const base = texto.endsWith('\n') ? texto : `${texto}${eol}`;
+    return { texto: `${base}${eol}${nuevo.join(eol)}${eol}` };
+  }
+  if (!/^\s*(#.*)?$/.test(cabeza.exec(renglones[i].l)[1])) return { ilegible: `la clave \`${clave}\` está escrita en una forma que la pantalla no reescribe: cambiala a mano` };
+  let fin = i + 1;
+  for (let j = i + 1; j < renglones.length; j++) {
+    if (/^\S/.test(renglones[j].l) && !/^#/.test(renglones[j].l)) break;
+    if (/^\s+\S/.test(renglones[j].l) && !/^\s+#/.test(renglones[j].l)) fin = j + 1;
+  }
+  // el bloque nuevo usa el fin de línea de su cabeza; su último renglón, el del último renglón que reemplaza
+  const eol = renglones[i].fin || '\n';
+  const ultimo = renglones[fin - 1].fin;
+  const bloqueNuevo = nuevo.map((l, k) => l + (k === nuevo.length - 1 ? ultimo : eol)).join('');
+  return { texto: unir(renglones.slice(0, i)) + bloqueNuevo + unir(renglones.slice(fin)) };
+}
+
+/**
+ * Revisa lo que se va a proponer de una clave: el lector fila por fila, y después el archivo entero como quedaría,
+ * leído de nuevo con el mismo lector (que se lea igual que lo que se escribió). `{ ok, generales, filas, texto }`. PURA.
+ */
+function revisarClaveDelRepo({ descriptor, lector, texto, valor }) {
+  const r = lector.revisarValor(valor);
+  const generales = [...r.generales];
+  const filas = r.filas;
+  if (generales.length || filas.some((f) => f.length)) return { ok: false, generales, filas, texto: null };
+  const bloque = lector.escribirClave(valor);
+  const reemplazo = reemplazarBloque(texto, descriptor.clave, bloque);
+  if (reemplazo.ilegible) return { ok: false, generales: [reemplazo.ilegible], filas, texto: null };
+  // el archivo entero, releído, tiene que decir lo mismo que el bloque solo: así nada del resto del archivo se mete en
+  // la clave (lo que el lector normaliza, como `./` al principio de una ruta, se normaliza igual en los dos)
+  const vuelta = lector.leerClave(reemplazo.texto);
+  const solo = lector.leerClave(bloque);
+  if (vuelta.ilegible || vuelta.problemas.length || canonicoDeValor(vuelta.valor) !== canonicoDeValor(solo.valor)) {
+    return { ok: false, generales: [`lo escrito no se vuelve a leer igual${vuelta.ilegible ? ` (${vuelta.ilegible})` : ''}: no se propone`], filas, texto: null };
+  }
+  return { ok: true, generales, filas, texto: reemplazo.texto };
+}
+// un valor como se compara: las claves en orden y sin los campos opcionales vacíos
+function canonicoDeValor(v) {
+  const ordenado = (x) => (Array.isArray(x) ? x.map(ordenado) : (x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().filter((k) => x[k] !== '' && x[k] !== undefined).map((k) => [k, ordenado(x[k])])) : x));
+  return JSON.stringify(ordenado(v));
+}
+
+/** El identificador de un repo de producto en las rutas y en la carpeta de su clon: legible y sin choques. */
+function idDeRepo(e) {
+  const partes = [e.platform, e.org, e.project || '', e.repo].map((x) => String(x || ''));
+  const legible = partes.filter(Boolean).join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  const huella = require('crypto').createHash('sha256').update(partes.join('\0').toLowerCase()).digest('hex').slice(0, 8);
+  return `${legible}-${huella}`;
+}
+
+/** La dirección https de un repo de producto, armada desde su identidad (la de team-repos.json o la de dependencias). */
+function urlDeRepo(e) {
+  if (e.platform === 'github') return `https://github.com/${encodeURIComponent(e.org)}/${encodeURIComponent(e.repo)}`;
+  if (e.platform === 'azure' && e.project) return `https://dev.azure.com/${encodeURIComponent(e.org)}/${encodeURIComponent(e.project)}/_git/${encodeURIComponent(e.repo)}`;
+  return null;
+}
+
 // ── el código de pantalla ────────────────────────────────────────────────────────────────────────────────────────
 /**
  * El JS de la pestaña Configuración, servido por el sitio como `/static/config.js`: un solo archivo, sin nada de
@@ -1015,7 +1229,9 @@ function pantalla(idioma = 'es') {
   // un cambio de afuera; recuperar: lo que quedó guardado de antes de recargar, hasta que la persona elige
   // abiertos: el texto con que se abrió cada bloque de texto de una sección (por sección y clave): «Ver qué cambió»
   // compara contra él aunque la pantalla se vuelva a dibujar con el borrador
-  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {} };
+  // «fila»: la máquina de «Por confirmar» cuyo «Confirmar» está en curso ({ maquina, persona }); mientras tanto, la nota
+  // y la propuesta de la sección Personas se dibujan en su renglón y no al pie
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {}, fila: null };
   function olvidarAbiertos(id) { Object.keys(S.abiertos).forEach(function (k) { if (k.indexOf(id + '\u0000') === 0) delete S.abiertos[k]; }); }
   // cuánto espera la página antes de cada consulta por el pedido de una propuesta cortada; la prueba pasa los suyos
   var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
@@ -1090,10 +1306,12 @@ function pantalla(idioma = 'es') {
     espera: { t: T('pantalla.avisoDeEspera'), d: T('pantalla.llegaATodasLasMaquinas4'), corto: T('pantalla.avisoDeEspera') },
     cobertura: { t: T('pantalla.coberturaDeLasPruebas'), d: T('pantalla.llegaATodasLasMaquinas5'), corto: T('pantalla.coberturaDeLasPruebas') },
     revision: { t: T('pantalla.vueltasDeRevisores'), d: T('pantalla.vueltasDeRevisoresAyuda'), corto: T('pantalla.vueltasDeRevisores') },
+    estimaciones: { t: T('pantalla.estimaciones'), d: T('pantalla.estimacionesAyuda'), corto: T('pantalla.estimaciones') },
     tecnologia: { t: T('pantalla.tecTuTecnologia'), d: T('pantalla.tecLlegaATodasLasMaquinas'), corto: T('pantalla.tecTuTecnologia') },
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
     aprobaciones: { t: T('pantalla.quienReenviaElOkTitulo'), d: T('pantalla.quienReenviaElOkDescripcion'), corto: T('pantalla.quienReenviaElOkTitulo') },
     pruebaAMano: { t: T('pantalla.pruebaAManoTitulo'), d: T('pantalla.pruebaAManoDescripcion'), corto: T('pantalla.pruebaAManoTitulo') },
+    frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
     actualizacion: { t: T('pantalla.comoSeActualizanLasMaquinas'), d: T('pantalla.queVersionTomaCadaMaquina'), corto: T('pantalla.actualizacion') },
@@ -1106,7 +1324,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos', 'estimaciones'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1142,7 +1360,7 @@ function pantalla(idioma = 'es') {
     work_items: T('pantalla.pedidosDeVulnerabilidades'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
-    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
     stack: T('pantalla.tecTuTecnologia2'), code_extensions: T('pantalla.tecTerminaciones'), test_runners: T('pantalla.tecHerramientasDePrueba'), rules: T('pantalla.tecReglas'), test_names: T('pantalla.tecEstiloDeNombres2'), screen_test: T('pantalla.tecPantallasConPrueba'), ui_language: T('pantalla.tecIdiomaDeLaApp2'), name: T('pantalla.tecNombre2'), detect: T('pantalla.tecArchivoQueLaDetecta2'), command: T('pantalla.tecComando2'), results: T('pantalla.tecReporte'), format: T('pantalla.tecFormato'), path: T('pantalla.tecRuta'),
@@ -1254,11 +1472,77 @@ function pantalla(idioma = 'es') {
   // correos como etiquetas con su ✕ y un + para sumar otro, y el ✕ que quita a la persona. Sólo cambia cómo se ve: cada
   // entrada sigue siendo { role, emails[] }
   var CORREO_A_ENFOCAR = null;
+  // «Invitar a alguien»: lo escrito, si está mandando y la respuesta del sitio; y la de cada «Revocar»
+  var INVITAR = { correo: '', productos: '', enviando: false, nota: null };
+  var REVOCADOS = {};
+  // lo escrito en un campo; el documento de las pruebas sólo tiene el atributo
+  function textoDelCampo(c) { return c.value !== undefined && c.value !== null ? c.value : (c.attrs ? c.attrs.value : ''); }
+  /** El alta de alguien de afuera del directorio, como pedido: la invitación sale cuando el pedido se aprueba. */
+  function bloqueInvitar(inv) {
+    var caja = el('div', { class: 'sub invitar' }, el('p', { class: 'sub-t', text: T('pantalla.invitarAlguien') }));
+    if (!inv.boton) { caja.appendChild(el('p', { class: 'sub-d', text: inv.texto || '' })); return caja; }
+    if (inv.permiso && !inv.permiso.ok) {
+      var falta = aviso('warn', T('pantalla.faltaPermisoInvitar'), inv.permiso.texto || '');
+      if (inv.permiso.comando) falta.appendChild(el('pre', { text: inv.permiso.comando }));
+      caja.appendChild(falta);
+      return caja;
+    }
+    caja.appendChild(el('p', { class: 'sub-d', text: T('pantalla.invitarAyuda') }));
+    var correo = el('input', { type: 'email', value: INVITAR.correo, placeholder: T('pantalla.correo'), 'aria-label': T('pantalla.correoAInvitar'), oninput: function (ev) { INVITAR.correo = ev.target.value; } });
+    var productos = el('input', { value: INVITAR.productos, placeholder: T('pantalla.productosSeparados'), 'aria-label': T('pantalla.productosDeLaPersona'), oninput: function (ev) { INVITAR.productos = ev.target.value; } });
+    var boton = el('button', { type: 'button', text: INVITAR.enviando ? T('pantalla.invitando') : T('pantalla.invitar'), disabled: INVITAR.enviando ? 'disabled' : undefined, onclick: function () { invitar(textoDelCampo(correo), textoDelCampo(productos)); } });
+    caja.appendChild(el('div', { class: 'bar' }, correo, productos, boton));
+    var n = INVITAR.nota;
+    if (n) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad'), role: 'status' }, el('b', { text: n.text || '' }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      if (n.aviso) nota.appendChild(el('p', { text: n.aviso }));
+      if (n.comando) nota.appendChild(el('pre', { text: n.comando }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
+  function invitar(correo, productos) {
+    if (INVITAR.enviando) return;
+    INVITAR.correo = correo; INVITAR.productos = productos; INVITAR.enviando = true; INVITAR.nota = null; render();
+    var lista = String(productos || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+    return api('/invitar', { correo: correo, productos: lista, marca: nuevaMarca() }).then(function (r) {
+      INVITAR.enviando = false;
+      INVITAR.nota = { ok: !!r.ok, text: r.ok ? r.message : (mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado')), enlace: r.enlace || null, aviso: r.aviso || null, comando: r.comando || null };
+      if (r.ok) { INVITAR.correo = ''; INVITAR.productos = ''; }
+      render();
+    });
+  }
+  function revocar(correo) {
+    if (REVOCADOS[correo] && REVOCADOS[correo].enviando) return;
+    REVOCADOS[correo] = { enviando: true }; render();
+    return api('/revocar', { correo: correo, marca: nuevaMarca() }).then(function (r) {
+      REVOCADOS[correo] = { ok: !!r.ok, text: r.ok ? r.message : (mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado')), enlace: r.enlace || null, portal: r.portal || null };
+      render();
+    });
+  }
+  /** Al lado de un correo invitado: su estado, «Revocar» y lo que contestó el sitio. */
+  function estadoDeInvitado(correo, inv) {
+    var e = inv && inv.estados ? inv.estados[String(correo).trim().toLowerCase()] : null;
+    if (!e) return null;
+    var caja = el('span', { class: 'invitado', 'data-estado': e.estado }, el('span', { class: 'dato', text: e.texto }));
+    var rv = REVOCADOS[String(correo).trim().toLowerCase()];
+    if (!rv) caja.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.revocar'), title: T('pantalla.revocar') + ' ' + correo, onclick: function () { revocar(String(correo).trim().toLowerCase()); } }));
+    else if (rv.enviando) caja.appendChild(el('span', { class: 'dato', text: T('pantalla.proponiendo') }));
+    else {
+      var nota = el('span', { class: 'msg ' + (rv.ok ? 'ok' : 'bad'), role: 'status' }, el('b', { text: rv.text }));
+      if (rv.enlace) nota.appendChild(el('a', { href: rv.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      if (rv.portal) nota.appendChild(el('a', { href: rv.portal, text: T('pantalla.verEnElPortal') }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
   function editorAcceso(site, pr, ex) {
     var box = el('div', { class: 'pila' });
     if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.conQueSeEntra') + ex.inicioDeSesion.texto + T('pantalla.estoSeCambiaEnLa') }));
     if (ex.migracion) box.appendChild(aviso('warn', T('pantalla.laListaTodaviaNoEsta'), ex.migracion));
     box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.nadieEntraSiNoEsta') }));
+    if (ex.invitaciones) box.appendChild(bloqueInvitar(ex.invitaciones));
     var acc = site.access = site.access || [];
     var tabla = el('div', { class: 'personas', role: 'table', 'aria-label': T('pantalla.lasPersonas') },
       el('div', { class: 'h', role: 'row' }, el('span', { role: 'columnheader', text: T('pantalla.rol') }), el('span', { role: 'columnheader', text: T('pantalla.correos') }), el('span', { role: 'columnheader' })));
@@ -1303,6 +1587,8 @@ function pantalla(idioma = 'es') {
         }
         correos.appendChild(el('span', { class: 'correo' + (con(ruta) ? ' bad' : ''), title: m, 'data-path': ruta }, el('span', { text: m }),
           el('button', { class: 'chip-x', type: 'button', text: '✕', title: T('pantalla.quitarCorreo') + ' ' + m, 'aria-label': T('pantalla.quitarCorreo') + ' ' + m, onclick: function () { e.emails.splice(j, 1); render(); } })));
+        var invitado = estadoDeInvitado(m, ex.invitaciones);
+        if (invitado) correos.appendChild(invitado);
       });
       correos.appendChild(el('button', { class: 'sumar', type: 'button', text: '+', title: T('pantalla.agregarCorreoUno'), 'aria-label': T('pantalla.agregarCorreoUno'), onclick: function () { if (!Array.isArray(e.emails)) e.emails = []; e.emails.push(''); CORREO_A_ENFOCAR = p + '.emails.' + (e.emails.length - 1); render(); } }));
       fila.appendChild(correos);
@@ -1453,6 +1739,36 @@ function pantalla(idioma = 'es') {
     else { var ent = lista.filter(function (e) { return e.pipeline === nombre; })[0]; if (ent) { if (ent.stages.indexOf(id) < 0) ent.stages.push(id); } else lista.push({ pipeline: nombre, stages: [id] }); }
     render();
   }
+  // lo escrito en un campo; el documento de las pruebas sólo tiene el atributo
+  function valorDe(campo) { return campo.value !== undefined && campo.value !== null ? campo.value : (campo.attrs ? campo.attrs.value : ''); }
+  /** «Confirmar» de una máquina: revisa y, si está bien, deja en su renglón la confirmación del pedido. */
+  function confirmarMaquina(s, d, maquina, persona) {
+    if (S.proponiendo[s.id]) return;
+    S.fila = { maquina: maquina, persona: String(persona || '') };
+    S.notas[s.id] = null;
+    return revisarSeccion(s, { accion: 'confirm', maquina: maquina, person: persona, people: d.people }).then(function (r) {
+      if (!r || !r.ok || !S.fila || S.fila.maquina !== maquina) return;
+      S.marcas[s.id] = nuevaMarca();
+      S.notas[s.id] = { confirmar: true, ok: true, text: T('pantalla.estoAbreUnPedidoMaquina', { maquina: maquina, persona: String(persona || '').trim().toLowerCase() }) };
+      render();
+    });
+  }
+  /** Lo de la confirmación en curso, para su renglón: la propuesta con su botón, «proponiendo…», o el resultado. */
+  function resultadoDeLaFila(s) {
+    var caja = el('div', { class: 'fila-resultado', role: 'status' });
+    var n = S.notas[s.id];
+    if (!n) return caja;
+    var proponiendo = !!S.proponiendo[s.id];
+    if (n.text && !proponiendo) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      caja.appendChild(nota);
+    }
+    if (!n.ok) (S.problemas[s.id] || []).forEach(function (x) { caja.appendChild(el('div', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); });
+    if (proponiendo) caja.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.proponiendo') })));
+    if (n.confirmar) caja.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { S.notas[s.id] = null; S.fila = null; render(); } })));
+    return caja;
+  }
   function editorPersonas(s, d, pr) {
     d.people = d.people || {};
     var box = el('div', { class: 'pila' });
@@ -1460,11 +1776,18 @@ function pantalla(idioma = 'es') {
     if (ex.vencido) box.appendChild(aviso('bad', T('pantalla.laListaDePersonasEsta'), ex.vencido));
     if (ex.ultimoBueno) box.appendChild(aviso('warn', T('pantalla.seMuestraLaUltimaVersion'), ex.ultimoBueno));
     var pc = el('ul', { class: 'renglones' });
+    var enCurso = S.fila;
+    var sigue = enCurso && (ex.porConfirmar || []).some(function (m) { return m.maquina === enCurso.maquina; });
     (ex.porConfirmar || []).forEach(function (m) {
-      var persona = el('input', { value: m.correo || '', placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
-      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
-        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
+      var mia = enCurso && enCurso.maquina === m.maquina;
+      var persona = el('input', { value: mia ? enCurso.persona : (m.correo || ''), placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
+      var li = el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
+        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { confirmarMaquina(s, d, m.maquina, valorDe(persona)); } })));
+      if (mia) li.appendChild(resultadoDeLaFila(s));
+      pc.appendChild(li);
     });
+    // la máquina ya no está por confirmar (el pedido entró y se releyó): su resultado queda arriba de la lista
+    if (enCurso && !sigue) box.appendChild(resultadoDeLaFila(s));
     box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.porConfirmar2') }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
     // las que nunca dieron señales (sin place.json, sin fecha, sin corridas): suelen ser laboratorios o pruebas que
     // escribieron en el buzón; se nombran, sin ofrecer confirmarlas
@@ -1801,6 +2124,22 @@ function pantalla(idioma = 'es') {
       ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
     }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
     box.appendChild(ayuda);
+    // la firma delegada (story 8.88): apagada de fábrica; el aviso de que aflojar un control no se delega va siempre
+    var firma = (d.approvals || {}).delegated_signing;
+    box.appendChild(selector(T('pantalla.firmaDelegada'), firma === 'refresh-after-main' ? 'refresh-after-main' : '', [['', T('pantalla.firmaDelegadaNo')], ['refresh-after-main', T('pantalla.firmaDelegadaSi')]], function (x) { hoja(d, 'approvals', 'delegated_signing', x); render(); }, 'approvals.delegated_signing', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaAviso') }));
+    if (firma === 'refresh-after-main') {
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaCosto') }));
+      if (!rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
+    }
+    return box;
+  }
+  function editorFrenoProduccion(s, d, pr) {
+    // dos valores, cada uno con su costo debajo, en llano: quien elige tiene que entender qué acepta (decisión 17)
+    var v = (d.guard || {}).update;
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.frenoProduccion'), v === 'auto' ? 'auto' : '', [['', T('pantalla.frenoProduccionPassword')], ['auto', T('pantalla.frenoProduccionAuto')]], function (x) { hoja(d, 'guard', 'update', x); }, 'guard.update', pr));
+    box.appendChild(el('p', { class: 'muted' }, el('strong', { text: T('pantalla.frenoProduccionPassword') + ': ' }), el('span', { text: T('pantalla.frenoProduccionPasswordCosto') })));
+    box.appendChild(el('p', { class: 'muted' }, el('strong', { text: T('pantalla.frenoProduccionAuto') + ': ' }), el('span', { text: T('pantalla.frenoProduccionAutoCosto') })));
     return box;
   }
   function editorPruebaAMano(s, d, pr) {
@@ -2128,16 +2467,29 @@ function pantalla(idioma = 'es') {
       box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
       return box;
     }
-    d.models = enNiveles(d.models || {});
+    // las tablas por proveedor, los permitidos y la noche traen nombres de modelos de cada proveedor: no pasan a niveles
+    // (se convierte en su lugar, clave por clave: el archivo propuesto conserva el orden de las claves)
+    if (!esObjeto(d.models)) d.models = {};
+    Object.keys(d.models).forEach(function (k) { if (['providers', 'allowed', 'nightly'].indexOf(k) < 0 && k !== 'fable_question' && k.charAt(0) !== '_') d.models[k] = enNiveles(d.models[k]); });
     var m = d.models;
     var equiv = (s.extras && s.extras.equivalencias) || null;
-    // la línea chica debajo de un selector: a qué modelo equivale el nivel en cada herramienta (sin nivel, ninguna)
+    // story 2.73: lo que el servidor sabe de cada proveedor (el modelo de cada nivel sin tabla, la llave de la noche)
+    var prov = (s.extras && s.extras.proveedores) || {};
+    var porDefecto = prov.porDefecto || null;
+    var PROVEEDORES = ['anthropic', 'openai', 'ollama', 'cursor'];
+    function tablaDelProveedor(p) { return esObjeto(m.providers) && esObjeto(m.providers[p]) ? m.providers[p] : {}; }
+    function permitidosDe(p) { return esObjeto(m.allowed) && Array.isArray(m.allowed[p]) ? m.allowed[p] : []; }
+    function mostrarModelo(v) { return !v || v === 'inherit' ? T('pantalla.elDelDev') : v; }
+    // la línea chica debajo de un selector: a qué modelo equivale el nivel en cada proveedor (sin nivel, ninguna)
     var motivoEquiv = (s.extras && s.extras.motivoEquivalencias) || null;
     function lineaEquiv(v) {
       var mod = modeloDe(v);
       if (!mod) return '';
-      var codex = equiv && Object.prototype.hasOwnProperty.call(equiv, mod) && equiv[mod] ? equiv[mod] : (motivoEquiv || T('pantalla.sinEquivalenciaCodex'));
-      return T('pantalla.equivalenciaDelNivel', { claude: mod, codex: codex });
+      var nivel = nivelDe(mod);
+      var deOpenai = tablaDelProveedor('openai')[nivel];
+      var openai = typeof deOpenai === 'string' && deOpenai ? mostrarModelo(deOpenai)
+        : equiv && Object.prototype.hasOwnProperty.call(equiv, mod) && equiv[mod] ? equiv[mod] : (motivoEquiv || T('pantalla.sinEquivalenciaCodex'));
+      return T('pantalla.equivalenciaDelNivel', { anthropic: mod, openai: openai, ollama: mostrarModelo(tablaDelProveedor('ollama')[nivel]), cursor: mostrarModelo(tablaDelProveedor('cursor')[nivel]) });
     }
     if (!hoy) box.appendChild(el('p', { class: 'muted', text: T('pantalla.noSeLosModelosDe') + ((s.extras && s.extras.motivoHoy) || T('pantalla.sinMotivo')) + T('pantalla.sinDeclararUsaLosDe') }));
     var DE_MODELOS = [['', T('pantalla.elPorDefecto')]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
@@ -2251,6 +2603,88 @@ function pantalla(idioma = 'es') {
     fila(cdx, el('span', { text: T('pantalla.losRevisoresEnCodex') }), T('pantalla.losRevisoresEnCodex'), 'codex_reviewers', null,
       [['', T('pantalla.elEquivalenteDeCadaNivel')], ['inherit', T('pantalla.elModeloDeCadaMaquina')]], T('pantalla.elEquivalenteDeCadaNivel'), null, false);
     box.appendChild(cdx);
+
+    // story 2.73: qué modelo es cada nivel en cada proveedor. Anthropic es fija (sus alias); OpenAI trae los de hoy;
+    // Ollama y Cursor, «el del dev». Una celda es texto libre: vacía, el de por defecto. Debajo, la lista de permitidos
+    // del proveedor (también las sugerencias de sus celdas)
+    function ponerCelda(p, n, v) {
+      v = String(v == null ? '' : v).trim();
+      m.providers = esObjeto(m.providers) ? m.providers : {};
+      var t = esObjeto(m.providers[p]) ? m.providers[p] : (m.providers[p] = {});
+      if (v) t[n] = v; else delete t[n];
+      if (!Object.keys(t).length) delete m.providers[p];
+      if (!Object.keys(m.providers).length) delete m.providers;
+    }
+    function ponerPermitidos(p, v) {
+      var lista = String(v == null ? '' : v).split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      m.allowed = esObjeto(m.allowed) ? m.allowed : {};
+      if (lista.length) m.allowed[p] = lista; else delete m.allowed[p];
+      if (!Object.keys(m.allowed).length) delete m.allowed;
+    }
+    box.appendChild(el('p', { class: 'sub-t', text: T('pantalla.porProveedor') }));
+    box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.porProveedorAyuda') }));
+    PROVEEDORES.forEach(function (p) {
+      var nombreP = T('pantalla.proveedor.' + p);
+      var t = tabla('modelos proveedores', nombreP, [T('pantalla.nivel2'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
+      t.setAttribute('data-proveedor', p);
+      var permitidos = permitidosDe(p);
+      var listaId = 'permitidos-' + p;
+      NIVELES.forEach(function (n) {
+        var ruta = 'models.providers.' + p + '.' + n;
+        var mios = problemasEn(pr, ruta);
+        var hoyTxt = porDefecto && porDefecto[p] ? mostrarModelo(porDefecto[p][n]) : '—';
+        var acc = el('div', { class: 'acc', role: 'cell' });
+        if (p === 'anthropic') acc.appendChild(el('span', { class: 'muted', text: hoyTxt }));
+        else {
+          var attrs = { value: tablaDelProveedor(p)[n] || '', 'aria-label': nombreP + ' · ' + T('pantalla.nivel.' + n), 'data-path': ruta, placeholder: hoyTxt, oninput: function (e) { ponerCelda(p, n, e.target.value); } };
+          if (permitidos.length) attrs.list = listaId;
+          var inp = el('input', attrs);
+          if (mios.length) inp.setAttribute('class', 'bad');
+          acc.appendChild(inp);
+        }
+        t.appendChild(renglon([el('div', { class: 'que', role: 'cell', text: nombreNivel(n) }), el('div', { class: 'hoy', role: 'cell', text: hoyTxt }), acc], mios));
+      });
+      box.appendChild(t);
+      if (p === 'anthropic') box.appendChild(el('p', { class: 'muted', text: T('pantalla.anthropicFija') }));
+      // «no pude leer» no se ve igual que «no hay»: sin las equivalencias, la tabla de OpenAI dice por qué está vacía
+      if (p === 'openai' && prov.motivo) box.appendChild(el('p', { class: 'err', text: prov.motivo }));
+      if (p === 'cursor') box.appendChild(el('p', { class: 'muted', text: T('pantalla.cursorNoSeAplica') }));
+      if (permitidos.length) {
+        var dl = el('datalist', { id: listaId });
+        permitidos.forEach(function (x) { dl.appendChild(el('option', { value: x })); });
+        box.appendChild(dl);
+      }
+      box.appendChild(campo(T('pantalla.permitidos') + ' · ' + nombreP, permitidos.join(', '), function (v) { ponerPermitidos(p, v); }, 'models.allowed.' + p, pr, { placeholder: T('pantalla.permitidosAyuda') }));
+    });
+
+    // el proceso de la noche: su proveedor y su nivel; el modelo sale de la misma tabla. Sin modelo para ese nivel, el
+    // servidor no deja proponer (en la noche «inherit» no vale)
+    var secretos = prov.secretos || {};
+    var tn = tabla('modelos noche', T('pantalla.elProcesoDeLaNoche'), [T('pantalla.trabajo'), T('pantalla.nocheProveedor'), T('pantalla.nivel2')]);
+    var lineaNoche = el('small', { class: 'glosa noche-hoy' });
+    function pintarNoche() {
+      var n0 = esObjeto(m.nightly) ? m.nightly : null;
+      if (!n0 || !n0.provider) { lineaNoche.textContent = T('pantalla.nocheSinConfigurar'); return; }
+      var nivel = n0.level || 'economy';
+      // con el tope obligatorio, el nivel con que va a correr (como lo recorta la noche)
+      var tope = m.mandatory_ceiling === true ? NIVELES.indexOf(nivelDe(m.ceiling)) : -1;
+      if (tope >= 0 && NIVELES.indexOf(nivel) > tope) nivel = NIVELES[tope];
+      var mod = n0.provider === 'anthropic' ? modeloDe(nivel) : tablaDelProveedor(n0.provider)[nivel];
+      var hoyN = mod && mod !== 'inherit' ? T('pantalla.nocheHoy', { modelo: mod }) : T('pantalla.nocheSinModelo');
+      lineaNoche.textContent = hoyN + (secretos[n0.provider] ? ' · ' + T('pantalla.nocheLlave', { variable: secretos[n0.provider] }) : '');
+    }
+    var noche = esObjeto(m.nightly) ? m.nightly : null;
+    var deNoche = [['', T('pantalla.nocheSinConfigurar')]].concat((prov.noche || ['anthropic', 'ollama']).map(function (x) { return [x, T('pantalla.proveedor.' + x)]; }));
+    var selP = corto(T('pantalla.nocheProveedor'), noche ? noche.provider : '', deNoche, function (v) {
+      if (!v) delete m.nightly;
+      else { m.nightly = esObjeto(m.nightly) ? m.nightly : {}; m.nightly.provider = v; if (!m.nightly.level) m.nightly.level = 'economy'; }
+      pintarNoche();
+    }, 'models.nightly.provider', pr);
+    var selN = corto(T('pantalla.nivel2'), noche && noche.level ? noche.level : 'economy', NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }), function (v) { if (esObjeto(m.nightly)) m.nightly.level = v; pintarNoche(); }, 'models.nightly.level', pr);
+    pintarNoche();
+    tn.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('span', { text: T('pantalla.elProcesoDeLaNoche') }), lineaNoche),
+      el('div', { class: 'acc', role: 'cell' }, selP.sel), el('div', { class: 'acc', role: 'cell' }, selN.sel)], problemasEn(pr, 'models.nightly').concat(selP.mios, selN.mios)));
+    box.appendChild(tn);
 
     // el tope obligatorio, un renglón al pie: la casilla, «ningún trabajo pasa de» y el modelo
     var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.topeObligatorio'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
@@ -2480,6 +2914,27 @@ function pantalla(idioma = 'es') {
     }, 'review.blocking_prefixes', pr, T('pantalla.prefijoEjemplo'), T('pantalla.agregarPrefijo'), T('pantalla.ningunaAgregadaLoNormal')));
     return box;
   }
+  // las estimaciones: la unidad (vacío, horas) y sus dos tasas a horas; la línea de abajo dice lo que leen hoy las máquinas.
+  // Una clave que queda vacía se saca: no se propone un «{}»
+  function editorEstimaciones(s, d, pr) {
+    var e = esObjeto(d.estimates) ? d.estimates : {};
+    function poner(k, v) {
+      if (v === '') { if (esObjeto(d.estimates)) { delete d.estimates[k]; if (!Object.keys(d.estimates).length) delete d.estimates; } return; }
+      if (!esObjeto(d.estimates)) d.estimates = {};
+      d.estimates[k] = k === 'unit' ? v : numOTexto(v);
+    }
+    var box = el('div', { class: 'pila' },
+      selector(T('pantalla.unidadDeLasEstimaciones'), e.unit, [['', T('pantalla.unidadDeFabrica')], ['hours', T('pantalla.unidadHoras')], ['days', T('pantalla.unidadDias')], ['points', T('pantalla.unidadPuntos')]], function (v) { poner('unit', v); render(); }, 'estimates.unit', pr),
+      campo(T('pantalla.horasPorDia'), e.hours_per_day, function (v) { poner('hours_per_day', v); }, 'estimates.hours_per_day', pr, { inputmode: 'decimal', placeholder: '8' }),
+      campo(T('pantalla.horasPorPunto'), e.hours_per_point, function (v) { poner('hours_per_point', v); }, 'estimates.hours_per_point', pr, { inputmode: 'decimal' }));
+    var ex = s.extras || {};
+    var hoy = ex.hoy;
+    var u = { hours: T('pantalla.unidadHoras'), days: T('pantalla.unidadDias'), points: T('pantalla.unidadPuntos') };
+    box.appendChild(el('p', { class: 'muted', text: hoy
+      ? T('pantalla.hoy') + (u[hoy.unit] || hoy.unit) + ' · ' + hoy.hours_per_day + T('pantalla.estHorasPorDia') + ' · ' + (hoy.hours_per_point ? hoy.hours_per_point + T('pantalla.estHorasPorPunto') : T('pantalla.estSinTasaPorPunto'))
+      : T('pantalla.hoy') + (ex.motivoHoy || T('pantalla.estSinLeer')) }));
+    return box;
+  }
   // «Tu tecnología»: lo que el arnés ya conoce, las terminaciones de la organización, las herramientas de prueba (de
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
@@ -2649,7 +3104,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -2887,6 +3342,9 @@ function pantalla(idioma = 'es') {
     // story 2.30: con una política con filtro de ruta, el estado del archivo de la sección manda sobre el del repo
     if (prop && prop.porArchivo && prop.porArchivo[s.archivo]) prop = prop.porArchivo[s.archivo];
     var habilitado = prop && prop.habilitado;
+    // la confirmación de una máquina se dibuja en su renglón (editorPersonas): acá no va nada de ella.
+    var enLaFila = s.id === 'personas' && !!S.fila;
+    if (enLaFila) n = null;
     var confirmando = n && n.confirmar;
     if (!confirmando && n && n.text) {
       var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
@@ -2894,7 +3352,7 @@ function pantalla(idioma = 'es') {
       sec.appendChild(nota);
     }
     if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
-      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarSeccion(s); } }));
+      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { if (s.id === 'personas') S.fila = null; revisarSeccion(s); } }));
       bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', title: S.textos[s.id] ? undefined : T('pantalla.descargarSePrende'), onclick: function () { descargar(s); } }));
       if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { empezarAProponer(s); } }));
       bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));
@@ -2923,6 +3381,127 @@ function pantalla(idioma = 'es') {
   function kpi(clase, href, lab, val, den) {
     var a = el(href ? 'a' : 'div', { class: 'card kpi ' + clase, href: href || undefined }, el('span', { class: 'lab', text: lab }), el('span', { class: 'val', text: String(val) }), el('span', { class: 'den', text: den }));
     return a;
+  }
+  // ── la configuración de cada repo de producto: su advisors.yaml, clave por clave ──
+  // Cada clave se dibuja desde su forma (un campo de modo y una lista de filas con sus columnas): una clave nueva no pide
+  // código acá. Se lee al abrir el repo; «Revisar» valida en el servidor con el lector del arnés y trae la diferencia.
+  var R = {};
+  function hayTexto(k) { return Object.prototype.hasOwnProperty.call(TX, k); }
+  function etiquetaDe(campo) { return hayTexto('repoCampo_' + campo) ? TX['repoCampo_' + campo] : campo; }
+  function claveR(id, clave) { return 'repo:' + id + ':' + clave; }
+  function abrirRepo(id) {
+    var r = R[id] = R[id] || {};
+    if (r.abierto) { r.abierto = false; render(); return Promise.resolve(); }
+    r.abierto = true; r.cargando = true; r.datos = null; r.borradores = {}; r.revision = {}; r.notas = {}; render();
+    return api('/repo?id=' + encodeURIComponent(id)).then(function (j) {
+      r.cargando = false; r.datos = j;
+      (j.claves || []).forEach(function (c) { if (c.estado === 'ok') r.borradores[c.clave] = copia(c.valor); });
+      render();
+    });
+  }
+  function revisarRepo(id, c) {
+    var r = R[id];
+    r.notas[c.clave] = null;
+    return api('/repo/revisar', { id: id, clave: c.clave, valor: r.borradores[c.clave], oid: r.datos.oid }).then(function (j) {
+      r.revision[c.clave] = j;
+      S.diferencias[claveR(id, c.clave)] = j.diferencia || []; S.resumenes[claveR(id, c.clave)] = []; S.textos[claveR(id, c.clave)] = j.texto || null;
+      render();
+    });
+  }
+  function proponerRepo(id, c) {
+    var r = R[id];
+    r.proponiendo = true; r.notas[c.clave] = { ok: true, text: T('pantalla.proponiendo') }; render();
+    return api('/repo/proponer', { id: id, clave: c.clave, valor: r.borradores[c.clave], oid: r.datos.oid, marca: nuevaMarca() }).then(function (j) {
+      r.proponiendo = false;
+      r.notas[c.clave] = { ok: !!j.ok, text: j.message || '', enlace: j.enlace || null };
+      if (j.ok) r.revision[c.clave] = null;
+      render();
+    });
+  }
+  function campoDeFila(col, fila, alCambiar) {
+    var v = fila[col.campo] == null ? '' : String(fila[col.campo]);
+    var etiqueta = etiquetaDe(col.campo);
+    if (col.tipo === 'opcion') {
+      var sel = el('select', { 'aria-label': etiqueta, onchange: function (ev) { alCambiar(ev.target.value); } });
+      [''].concat(col.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: o === '' ? '—' : (hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] + ' (' + o + ')' : o), selected: o === v ? 'selected' : undefined })); });
+      return sel;
+    }
+    return el('input', { type: col.tipo === 'fecha' ? 'date' : 'text', value: v, 'aria-label': etiqueta, placeholder: col.opcional ? T('pantalla.repoOpcional') : etiqueta, oninput: function (ev) { alCambiar(ev.target.value); } });
+  }
+  function editorDeClave(id, c) {
+    var r = R[id];
+    var caja = el('div', { class: 'repo-clave', id: 'repo-' + id + '-' + c.clave }, el('h5', { text: c.titulo }));
+    if (c.estado !== 'ok') { caja.appendChild(aviso('bad', T('pantalla.repoClaveNoSeEdita'), c.motivo || '')); return caja; }
+    var v = r.borradores[c.clave];
+    var forma = c.forma || {};
+    var rev = r.revision[c.clave];
+    var tocar = function () { r.revision[c.clave] = null; r.notas[c.clave] = null; };
+    if (forma.modo) {
+      var m = forma.modo;
+      var sel = el('select', { 'aria-label': etiquetaDe(m.campo), onchange: function (ev) { v[m.campo] = ev.target.value; tocar(); render(); } });
+      (m.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] + ' (' + o + ')' : o, selected: o === v[m.campo] ? 'selected' : undefined })); });
+      caja.appendChild(el('label', { class: 'campo' }, el('span', { text: etiquetaDe(m.campo) }), sel));
+    }
+    if (forma.lista) {
+      var l = forma.lista;
+      var filas = v[l.campo] = Array.isArray(v[l.campo]) ? v[l.campo] : [];
+      var podridas = {};
+      (c.podridas || []).forEach(function (p) { var f = (c.valor[l.campo] || [])[p.fila]; if (f) podridas[f.path] = p.motivo; });
+      var lista = el('ul', { class: 'repo-filas' });
+      filas.forEach(function (f, i) {
+        var li = el('li', { class: 'repo-fila' });
+        l.columnas.forEach(function (col) { li.appendChild(campoDeFila(col, f, function (x) { if (x === '' && col.opcional) delete f[col.campo]; else f[col.campo] = x; tocar(); })); });
+        li.appendChild(quitar(function () { filas.splice(i, 1); tocar(); render(); }));
+        if (f.path && podridas[f.path]) li.appendChild(el('span', { class: 'aviso-fila warn', text: hayTexto('repoPodrida_' + podridas[f.path]) ? TX['repoPodrida_' + podridas[f.path]] : podridas[f.path] }));
+        // antes de revisar, lo que el archivo de main ya trae mal escrito; después, lo que dice la revisión
+        var malos = rev && rev.filas ? rev.filas[i] || [] : (c.problemas || []).filter(function (p) { return p.fila === i; }).map(function (p) { return p.motivo; });
+        malos.forEach(function (x) { li.appendChild(el('span', { class: 'aviso-fila bad', text: x })); });
+        lista.appendChild(li);
+      });
+      caja.appendChild(lista);
+      caja.appendChild(el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.repoAgregarFila'), onclick: function () { var nueva = {}; l.columnas.forEach(function (col) { if (!col.opcional) nueva[col.campo] = ''; }); filas.push(nueva); tocar(); render(); } })));
+    }
+    var delArchivo = (c.problemas || []).filter(function (p) { return p.fila === null || p.fila === undefined || p.fila < 0; }).map(function (p) { return p.motivo; });
+    if (!rev && delArchivo.length) caja.appendChild(aviso('warn', T('pantalla.repoNoPasa'), delArchivo.join(' · ')));
+    if (rev && !rev.ok && (rev.problemas || []).length) caja.appendChild(aviso('bad', T('pantalla.repoNoPasa'), rev.problemas.join(' · ')));
+    else if (rev && !rev.ok) caja.appendChild(aviso('bad', T('pantalla.repoNoPasa'), T('pantalla.repoMiraLasFilas')));
+    var prop = r.datos.proponer || {};
+    var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarRepo(id, c); } }));
+    if (rev && rev.ok) {
+      caja.appendChild(vistaDeLaDiferencia({ id: claveR(id, c.clave), texto: r.datos.texto, oid: r.datos.oid }));
+      if (prop.habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: r.proponiendo ? 'disabled' : undefined, onclick: function () { proponerRepo(id, c); } }));
+      else caja.appendChild(el('textarea', { class: 'repo-texto', readonly: 'readonly', rows: '8', 'aria-label': T('pantalla.repoElArchivo'), text: rev.texto || '' }));
+    }
+    bar.appendChild(el('span', { class: 'por-que', text: !prop.habilitado ? (prop.motivo || '') : (rev && rev.ok ? T('pantalla.miraLaDiferenciaAntesDe') : T('pantalla.primeroRevisaAsiSabesSi')) }));
+    caja.appendChild(bar);
+    var n = r.notas[c.clave];
+    if (n && n.text) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
+  function bloqueRepos(info) {
+    var sec = el('section', { class: 'card form-block', id: 'repos-de-producto' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: T('pantalla.repoTitulo') }), el('p', { class: 'reach', text: T('pantalla.repoAyuda') }))));
+    if (info.motivo) sec.appendChild(aviso('warn', T('pantalla.repoListaIncompleta'), info.motivo));
+    if (!(info.lista || []).length) { sec.appendChild(el('p', { class: 'muted', text: T('pantalla.nadaQueMostrar') })); return sec; }
+    (info.lista || []).forEach(function (e) {
+      var r = R[e.id] || {};
+      var caja = el('div', { class: 'repo-producto', id: 'repo-' + e.id }, el('div', { class: 'bar' }, el('b', { class: 'quien', text: e.nombre }), el('button', { class: 'sec', type: 'button', text: r.abierto ? T('pantalla.repoCerrar') : T('pantalla.repoAbrir'), onclick: function () { abrirRepo(e.id); } })));
+      if (r.abierto && r.cargando) caja.appendChild(el('p', { class: 'muted', text: T('pantalla.repoLeyendo') }));
+      if (r.abierto && r.datos) {
+        var d = r.datos;
+        if (!d.ok || d.estado === 'no_se_pudo') caja.appendChild(aviso('bad', T('pantalla.repoNoSePudoLeer'), d.motivo || d.message || ''));
+        else {
+          if (d.estado === 'nuevo') caja.appendChild(el('p', { class: 'muted', text: T('pantalla.repoSinArchivo') }));
+          if (d.enlace) caja.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: d.enlace, text: T('pantalla.repoVerArchivo') })));
+          (d.claves || []).forEach(function (c) { caja.appendChild(editorDeClave(e.id, c)); });
+        }
+      }
+      sec.appendChild(caja);
+    });
+    return sec;
   }
   function render() {
     var ex = S.extras || {};
@@ -2967,6 +3546,7 @@ function pantalla(idioma = 'es') {
       var pila = el('div', { class: 'pila' });
       secs.forEach(function (s) { pila.appendChild(seccion(s)); });
       panel.appendChild(pila);
+      if (p[0] === 'repos' && ex.reposDeProducto) panel.appendChild(bloqueRepos(ex.reposDeProducto));
       var mirar = p[3].filter(function (t) { return tablas[t]; });
       if (mirar.length) {
         panel.appendChild(el('h3', { class: 'block' }, el('span', { text: T('pantalla.paraMirar2') }), el('span', { class: 'aside', text: T('pantalla.noSeCambiaDesdeAca') })));
@@ -3033,8 +3613,8 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
-  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
-  SIN_NOTICIAS_DIAS,
+  SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
 };

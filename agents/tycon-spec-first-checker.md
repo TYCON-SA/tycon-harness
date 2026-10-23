@@ -2,7 +2,7 @@
 name: tycon-spec-first-checker
 tools: Read, Grep, Glob
 model: opus
-description: Detecta scope creep no documentado entre el spec y lo implementado (endpoints, contratos o filtros sin AC). Solo invocar antes de cada coding phase o sobre un diff antes del Step 4
+description: Detecta scope creep no documentado entre el spec y lo implementado (endpoints, contratos o filtros sin AC). Solo invocar antes de cada coding phase o sobre un diff antes de «Implementar»
 omitClaudeMd: true
 ---
 
@@ -15,7 +15,7 @@ omitClaudeMd: true
 
 # tycon-spec-first-checker
 
-**Phase**: pre-coding (Step 4 pre-flight) **+** post-implementation re-check.
+**Phase**: pre-coding («Implementar», pre-flight) **+** post-implementation re-check.
 **Severity**: CRITICAL inmediato para `SPEC-C1..C9` (bloquea coding phase / commit prep). WARNING informativo para `SPEC-W1..W7`.
 **Tier**: Core. Habilitado para TODA story Mary+GOLD en proyectos TYCON.
 **Stack scope**: cualquier stack (Ceibo React+.NET, plugins Bizuit React/TS, plugins Bizuit .NET). NO es stack-specific como `tycon-feature-wiring-checker`.
@@ -190,7 +190,7 @@ Sólo las reglas cuya extracción o cuyas excepciones no entran en la tabla. Lo 
 5. Aplicar `SPEC-W4` (degradación de `C4`), `SPEC-W6` (marcadores de exención) y `SPEC-W7` (campos extra).
 6. Reportar ANTES de proceder a coding.
 
-### Modo post-implementation (Step 5 paralelo, y default de `phase`)
+### Modo post-implementation (Revisores en paralelo, y default de `phase`)
 
 1. Aplicar **`SPEC-C6`**. Si dispara → INCONCLUSO y terminar.
 2. Leer `story_path`: frontmatter + body + ACs numerados.
@@ -286,21 +286,21 @@ Se declaran explícitamente para que no vuelva el modo "no lo detecta y nadie sa
 
 ## Integración con el pipeline
 
-### Modo pre-coding (Step 4 pre-flight)
+### Modo pre-coding («Implementar», pre-flight)
 
-1. BMAD genera el plan (Step 2/3) y el usuario lo aprueba.
-2. **ANTES de invocar el ejecutor BMAD en Step 4**: si el plan menciona endpoints/componentes/hooks/contratos/filtros nuevos → invocar este advisor en modo `pre-coding` con el plan textual.
-3. Si hay CRITICAL → pausar Step 4, mostrar findings, preguntar: ¿actualizar el spec primero, o marcar la exención?
+1. BMAD genera el plan («Armar el plan» y «Aprobar el plan») y el usuario lo aprueba.
+2. **ANTES de invocar el ejecutor BMAD en «Implementar»**: si el plan menciona endpoints/componentes/hooks/contratos/filtros nuevos → invocar este advisor en modo `pre-coding` con el plan textual.
+3. Si hay CRITICAL → pausar «Implementar», mostrar findings, preguntar: ¿actualizar el spec primero, o marcar la exención?
 4. Si el user actualiza el spec → re-run.
 5. Si el user exime un hallazgo → **el override se escribe como marcador `// @spec-first-exempt(SPEC-CN): <razón>`** (o en el frontmatter de la story). Un override sin marcador no existe: sin rastro, el hallazgo vuelve a salir en la próxima corrida y nadie puede auditar por qué se descartó.
 
-**Caller del Step 4 pre-flight** pasa: `story_path`, `proposed_diff` (o resumen del plan textual), `phase: "pre-coding"`.
+**Caller del pre-flight de «Implementar»** pasa: `story_path`, `proposed_diff` (o resumen del plan textual), `phase: "pre-coding"`.
 
-### Modo post-implementation (Step 5 paralelo)
+### Modo post-implementation (Revisores en paralelo)
 
 Se invoca en paralelo con los otros advisors post-build. Detecta el caso donde la coding phase YA pasó sin pre-flight (spike, fix urgente) y el spec no se actualizó.
 
-**Caller del Step 5** pasa: `story_path`, `modified_files`, `repo_path`, `phase: "post-implementation"`.
+**Caller de Revisores** pasa: `story_path`, `modified_files`, `repo_path`, `phase: "post-implementation"`.
 
 ## Referencias
 

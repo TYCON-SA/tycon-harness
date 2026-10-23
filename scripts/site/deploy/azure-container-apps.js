@@ -13,6 +13,11 @@
  *   el disco en `SITE_DATA_DIR`, las dos sondas a `/livez`, los secretos y la identidad del sistema, con la
  *   ENTRADA INTERNA; el rol «Storage Blob Data Reader» sobre el CONTENEDOR del buzón; el inicio integrado de Microsoft
  *   (un inquilino, el secreto por nombre); y por último la entrada externa. Si un paso falla, la entrada sigue interna.
+ * · `demo`: el sitio demo (SITE_DEMO=1), una instancia APARTE en el ambiente que dejó la fase `ambiente`:
+ *   la aplicación con la imagen por su huella, abierta (entrada externa desde el principio), sin el candado de la plataforma,
+ *   sin disco, sin identidad administrada, sin secretos, mínimo 0 y máximo 1 réplica (se apaga sola sin uso) y las sondas a
+ *   `/livez`. Sólo lleva `SITE_DEMO` y `SITE_PUBLIC_URL`. No acepta buzón, repo, inquilino ni disco: es una instancia de
+ *   datos de ejemplo. Nunca toca una aplicación que no sea demo (la de la organización con el mismo nombre).
  * Correr una fase de nuevo saltea lo que ya existe (pregunta antes de crear), salvo la aplicación: si ya existe, se
  * actualiza con la configuración de hoy (la imagen, los secretos y las variables), dice qué cambió y deja la entrada como
  * estaba. Así se actualiza el sitio.
@@ -44,7 +49,9 @@
  * 🔴 Nada de esto se corrió todavía contra Azure: lo prueba la primera instalación real.
  *
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
- *   node scripts/site/deploy/azure-container-apps.js --config <archivo.json> --phase ambiente|sitio --dry-run|--apply
+ *   node scripts/site/deploy/azure-container-apps.js --config <archivo.json> --phase ambiente|sitio|demo|permiso-de-invitar --dry-run|--apply
+ *   `permiso-de-invitar` (aparte, la corre un administrador del directorio): le da a la identidad del sitio el rol
+ *   `User.Invite.All` de Graph para «Invitar» en Personas, y deja SITE_INVITE_EMAIL_CODE (ver fasePermisoDeInvitar).
  *   --dry-run imprime, en orden, las órdenes de esa fase y los archivos que mandaría (los secretos tapados), sin llamar
  *   a az. --apply las corre con la sesión de `az` de quien la lanza; sin sesión, sale 1 y lo dice (no abre un login).
  *   SALIDA: 0 hecho · 1 configuración o variable que falta, o un paso que falló (dice qué quedó creado) · 2 uso.
@@ -55,6 +62,8 @@
  *   operationsCopy { resourceGroup, account, container }: la cuenta de la copia con la llave apagada),
  *   firstMaintainer (opcional), profileRepo (opcional), microsoftAccounts (opcional: organization, por defecto, o any).
  *   Ningún secreto.
+ *   Para la fase `demo` alcanza lo común (suscripción, grupo de recursos, región, ambiente, aplicación, área de registros y
+ *   su tope) más `image`; el archivo no lleva buzón, repo, inquilino, disco ni correos (si los trae, no corre y dice cuáles).
  *   Con `microsoftAccounts: any`, después de poner la aplicación: lee que el registro pida `email` y
  *   `xms_edov`, lo pasa a cualquier cuenta de Microsoft con tokens v2 (`az rest` contra Graph, con la sesión de quien
  *   instala, dueña del registro), saca la asignación requerida del principal de servicio y pone el candado en el emisor
@@ -90,7 +99,12 @@ const { RUTAS_SIN_SESION } = require('../server.js');
 const SECRETOS = [['SITE_SESSION_KEY', 'site-session-key'], ['SITE_OIDC_CLIENT_SECRET', 'site-oidc-client-secret']];
 const SECRETO_TOKEN = ['SITE_OPERATIONS_TOKEN', 'site-operations-token'];
 const OPCIONALES = [['SITE_OPERATIONS_WRITE_TOKEN', 'site-operations-write-token'], ['SITE_PROFILE_TOKEN', 'site-profile-token'],
-  ['SITE_PROFILE_WRITE_TOKEN', 'site-profile-write-token'], ['SITE_PIPELINES_TOKEN', 'site-pipelines-token']];
+  ['SITE_PROFILE_WRITE_TOKEN', 'site-profile-write-token'], ['SITE_PIPELINES_TOKEN', 'site-pipelines-token'],
+  ['SITE_PRODUCTS_WRITE_TOKEN', 'site-products-write-token']];
+
+// lo que sólo es de la instancia de la organización: la fase `demo` no lo acepta
+const DE_LA_ORGANIZACION = ['mailbox', 'operationsRepo', 'operationsIdentity', 'operationsCopy', 'tenantId', 'oidcClientId', 'storageAccount', 'fileShare', 'fileShareQuotaGb',
+  'firstMaintainer', 'profileRepo', 'microsoftAccounts'];
 
 class Falla extends Error {}
 
@@ -147,6 +161,11 @@ function problemas(c, fase) {
       // como la del repo de operaciones: una credencial adentro viajaría como variable común y en el plan impreso
       if (!u || u.protocol !== 'https:' || u.username || u.password) p.push('profileRepo: una dirección https, sin credencial');
     }
+  }
+  if (fase === 'demo') {
+    pide('image', IMAGEN, 'la imagen por su huella (<registro>/<nombre>@sha256:…), nunca por etiqueta');
+    // la instancia demo no usa nada de lo de la organización: ni buzón, ni repo, ni inquilino, ni disco
+    for (const k of DE_LA_ORGANIZACION) if (c[k] !== undefined) p.push(`${k}: la instancia demo no usa buzón, repo, inquilino ni disco (son datos de ejemplo): sacalo del archivo de configuración`);
   }
   return p;
 }
@@ -337,6 +356,9 @@ function faseSitio(c, run, salida, env, sec) {
   // la aplicación: se crea con la entrada interna; si ya existe, se actualiza con la misma configuración (imagen, secretos
   // y variables), así volver a correr la fase aplica los cambios en vez de saltearlos
   const yaExiste = run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)]);
+  // lo que dejó la fase permiso-de-invitar (si el directorio acepta el código por correo) se conserva al actualizar:
+  // el --yaml reemplaza todas las variables
+  const codigoPorCorreo = yaExiste ? run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', "properties.template.containers[0].env[?name=='SITE_INVITE_EMAIL_CODE'].value | [0]", '-o', 'tsv', ...SUB(c)], '') : '';
   {
     const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', cualquiera ? COMUN : `https://login.microsoftonline.com/${tenant}/v2.0`],
       ...(cualquiera ? [['SITE_AUTH_MICROSOFT_ACCOUNTS', 'any'], ['SITE_AUTH_MICROSOFT_TENANT', tenant]] : []),
@@ -344,7 +366,8 @@ function faseSitio(c, run, salida, env, sec) {
       ...(c.operationsIdentity === 'managed' ? [['SITE_OPERATIONS_IDENTITY', 'managed']] : []),
       ...(c.operationsIdentity === 'copy' ? [['SITE_OPERATIONS_SOURCE', 'copy'], ['SITE_OPERATIONS_COPY', `${c.operationsCopy.account}/${c.operationsCopy.container}`]] : []),
       ...(c.firstMaintainer ? [['SITE_FIRST_MAINTAINER', c.firstMaintainer]] : []),
-      ...(c.profileRepo ? [['SITE_PROFILE_REPO', c.profileRepo]] : [])];
+      ...(c.profileRepo ? [['SITE_PROFILE_REPO', c.profileRepo]] : []),
+      ...(['on', 'off', 'unknown'].includes(codigoPorCorreo) ? [['SITE_INVITE_EMAIL_CODE', codigoPorCorreo]] : [])];
     const yaml = {
       location: c.location,
       identity: { type: 'SystemAssigned' },
@@ -454,7 +477,117 @@ function faseSitio(c, run, salida, env, sec) {
   salida('Esperá unos diez minutos (lo que tarda en valer el rol) y probalo sin sesión: node scripts/site/check-deploy.js --url ' + publica);
 }
 
+// ── el sitio demo ─────────────────────────────────────────────────────────────────────────────────
+/**
+ * La instancia demo: una aplicación aparte con datos de ejemplo, abierta, de sólo lectura. Sin candado de la
+ * plataforma, sin disco, sin identidad administrada y sin secretos: lo único que lleva es SITE_DEMO=1 y su dirección pública.
+ * Si ya existe una instancia demo con ese nombre, la actualiza; si existe una aplicación que no lo es, no la toca.
+ */
+function faseDemo(c, run, salida, ensayo) {
+  const g = ['-g', c.resourceGroup];
+  if (!ensayo && !run.existe(['containerapp', 'env', 'show', ...g, '-n', c.environment, ...SUB(c)])) {
+    throw new Falla(`el ambiente ${c.environment} no existe en ${c.resourceGroup}: corré antes la fase ambiente`);
+  }
+  const dominio = run.leer(['containerapp', 'env', 'show', ...g, '-n', c.environment, '--query', 'properties.defaultDomain', '-o', 'tsv', ...SUB(c)], '<defaultDomain del ambiente>');
+  const idAmbiente = run.leer(['containerapp', 'env', 'show', ...g, '-n', c.environment, '--query', 'id', '-o', 'tsv', ...SUB(c)], `<id del ambiente ${c.environment}>`);
+  const publica = `https://${c.app}.${dominio}`;
+  const yaExiste = run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)]);
+  if (yaExiste) {
+    // una aplicación con ese nombre que no es una instancia demo es la de la organización: no se toca
+    const esDemo = run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', "properties.template.containers[0].env[?name=='SITE_DEMO'].value | [0]", '-o', 'tsv', ...SUB(c)], '1');
+    if (esDemo !== '1') throw new Falla(`la aplicación ${c.app} ya existe y no es una instancia demo (no trae SITE_DEMO=1): no la toco; elegí otro nombre para app`);
+  }
+  const variables = [['SITE_DEMO', '1'], ['SITE_PUBLIC_URL', publica]];
+  const yaml = {
+    location: c.location,
+    properties: {
+      managedEnvironmentId: idAmbiente,
+      workloadProfileName: 'Consumption',
+      // abierta desde el principio: no hay nada que proteger (datos de ejemplo) ni candado de la plataforma
+      configuration: { ingress: { external: true, targetPort: 8080, allowInsecure: false, transport: 'auto' } },
+      template: {
+        containers: [{
+          name: 'sitio',
+          image: c.image,
+          resources: { cpu: 0.5, memory: '1Gi' },
+          env: variables.map(([name, value]) => ({ name, value })),
+          probes: [
+            { type: 'Liveness', httpGet: { path: '/livez', port: 8080 }, initialDelaySeconds: 10, periodSeconds: 30, timeoutSeconds: 5, failureThreshold: 5 },
+            { type: 'Readiness', httpGet: { path: '/livez', port: 8080 }, initialDelaySeconds: 2, periodSeconds: 5, timeoutSeconds: 5, failureThreshold: 3 },
+          ],
+        }],
+        // se apaga sola sin uso: la primera visita después de un rato la despierta
+        scale: { minReplicas: 0, maxReplicas: 1 },
+      },
+    },
+  };
+  if (!yaExiste) {
+    run.paso({ que: 'crear la aplicación del sitio demo (abierta, sin candado, sin disco ni identidad; escala a cero)', args: ['containerapp', 'create', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+  } else {
+    const q = (consulta, siNo) => run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', consulta, '-o', 'tsv', ...SUB(c)], siNo);
+    const lista = (t) => String(t || '').split(/\s+/).filter(Boolean).sort();
+    const antes = { imagen: q('properties.template.containers[0].image', '<la imagen de hoy>'), variables: lista(q('properties.template.containers[0].env[].name', '')) };
+    const ahora = variables.map(([n]) => n).sort();
+    const mas = ahora.filter((x) => !antes.variables.includes(x));
+    const menos = antes.variables.filter((x) => !ahora.includes(x));
+    const cambios = [antes.imagen !== c.image ? `imagen: ${antes.imagen} → ${c.image}` : 'imagen: la misma',
+      mas.length || menos.length ? `variables: ${[...mas.map((x) => `+${x}`), ...menos.map((x) => `-${x}`)].join(' ')}` : 'variables: las mismas'];
+    salida(`La aplicación ya existe: se actualiza.\n${cambios.map((x) => `  · ${x}`).join('\n')}`);
+    run.paso({ que: 'actualizar la aplicación del sitio demo (la imagen y sus dos variables)', args: ['containerapp', 'update', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+  }
+  salida(`\nEl sitio demo: ${publica}`);
+  salida('Se apaga solo sin uso (cero réplicas): la primera visita después de un rato tarda unos segundos en despertarlo.');
+  salida(`Para borrarlo entero: borrá su grupo de recursos (${c.resourceGroup}) con la orden de grupos de az, sólo si ese grupo es propio del sitio demo; la guía dice cómo.`);
+}
+
+// ── el permiso de invitar ─────────────────────────────────────────────────────────────────────────
+// el id público de la aplicación de Microsoft Graph (el mismo en todos los inquilinos): lo define el proveedor
+const { GRAPH_APP } = require('../auth-providers/microsoft.js');
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+// la política del código de un solo uso por correo (allowExternalIdToUseEmailOtp): «default» es prendida
+const CODIGO_POR_CORREO = { enabled: 'on', default: 'on', disabled: 'off' };
+const json = (t) => { try { return JSON.parse(t); } catch { return null; } };
+
+/**
+ * Le da a la identidad del sitio el rol de aplicación `User.Invite.All` de Graph (y nada más), con la sesión de `az` de
+ * quien la corre, que tiene que ser un administrador del directorio; y deja en la aplicación `SITE_INVITE_EMAIL_CODE`
+ * (on, off o unknown) leyendo la política del código por correo. Si la asignación falla, no cambia nada más.
+ */
+function fasePermisoDeInvitar(c, run, salida, ensayo) {
+  const g = ['-g', c.resourceGroup];
+  salida('Esto le da a la identidad del sitio UN permiso de Microsoft Graph: User.Invite.All (invitar invitados al directorio).');
+  salida('Lo puede dar sólo un administrador del directorio (Administrador de roles con privilegios o Administrador global), con su sesión de az.\n');
+  const identidad = run.leer(['containerapp', 'show', '-n', c.app, ...g, '--query', 'identity.principalId', '-o', 'tsv', ...SUB(c)], `<la identidad del sitio ${c.app}>`);
+  if (!identidad || identidad === 'None') throw new Falla(`la aplicación ${c.app} no tiene identidad del sistema: corré antes la fase sitio`);
+  const graph = run.leer(['ad', 'sp', 'show', '--id', GRAPH_APP, '--query', 'id', '-o', 'tsv'], '<el principal de Microsoft Graph en tu directorio>');
+  const rol = run.leer(['ad', 'sp', 'show', '--id', GRAPH_APP, '--query', "appRoles[?value=='User.Invite.All'].id | [0]", '-o', 'tsv'], '<el id del rol User.Invite.All>');
+  const asignaciones = `${GRAPH}/servicePrincipals/${identidad}/appRoleAssignments`;
+  const hoy = ensayo ? null : json(run.leer(['rest', '--method', 'get', '--url', asignaciones], '{}'));
+  const ya = hoy && Array.isArray(hoy.value) && hoy.value.some((a) => a && a.appRoleId === rol && a.resourceId === graph);
+  if (ya) salida('• la identidad del sitio ya tiene el permiso de invitar: no se asigna de nuevo');
+  else {
+    run.paso({
+      que: 'asignar el rol User.Invite.All de Graph a la identidad del sitio (appRoleAssignments)',
+      args: ['rest', '--method', 'post', '--url', asignaciones, '--body', '@ARCHIVO', '--headers', 'Content-Type=application/json', '-o', 'none'],
+      archivo: { principalId: identidad, resourceId: graph, appRoleId: rol }, nombreArchivo: 'permiso-de-invitar.json',
+    });
+  }
+  // la política se lee con la misma sesión; si no la deja leer, queda «unknown» y el sitio avisa en cada invitación así
+  let codigo = 'unknown';
+  if (!ensayo) {
+    try {
+      const p = json(run.leer(['rest', '--method', 'get', '--url', `${GRAPH}/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/email`], '{}'));
+      codigo = (p && CODIGO_POR_CORREO[String(p.allowExternalIdToUseEmailOtp)]) || 'unknown';
+    } catch (e) { if (!(e instanceof Falla)) throw e; }
+  }
+  run.paso({ que: `dejar en la aplicación SITE_INVITE_EMAIL_CODE=${ensayo ? '<on|off|unknown>' : codigo} (si el directorio acepta el código de un solo uso por correo)`,
+    args: ['containerapp', 'update', '-n', c.app, ...g, '--set-env-vars', `SITE_INVITE_EMAIL_CODE=${ensayo ? 'unknown' : codigo}`, '-o', 'none', ...SUB(c)] });
+  if (codigo === 'unknown' && !ensayo) salida('No pude leer si el directorio acepta el código de un solo uso por correo: miralo en el portal de Entra → External Identities → Todos los proveedores de identidad → Código de acceso de un solo uso por correo.');
+  salida('\nListo. Para sacarlo: borrá esa asignación (Entra → Aplicaciones empresariales → la identidad del sitio → Permisos), o az rest --method delete sobre la asignación.');
+}
+
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
+const FASES = ['ambiente', 'sitio', 'demo', 'permiso-de-invitar'];
 function main(argv) {
   let config = null; let fase = null; let modo = null; let error = null;
   for (let i = 0; i < argv.length; i++) {
@@ -465,9 +598,9 @@ function main(argv) {
     else error = `opción desconocida: ${v}`;
   }
   const salida = (t) => process.stdout.write(`${t}\n`);
-  if (error || !config || !['ambiente', 'sitio'].includes(fase) || !['dry-run', 'apply'].includes(modo)) {
+  if (error || !config || !FASES.includes(fase) || !['dry-run', 'apply'].includes(modo)) {
     if (error) process.stderr.write(`${error}\n`);
-    process.stderr.write('uso: azure-container-apps.js --config <archivo.json> --phase ambiente|sitio --dry-run|--apply\n');
+    process.stderr.write('uso: azure-container-apps.js --config <archivo.json> --phase ambiente|sitio|demo|permiso-de-invitar --dry-run|--apply\n');
     return 2;
   }
   let c;
@@ -504,16 +637,24 @@ function main(argv) {
   const run = corredor({ ensayo, salida, dirTmp });
   try {
     if (fase === 'ambiente') faseAmbiente(c, run, salida, ensayo);
+    else if (fase === 'permiso-de-invitar') fasePermisoDeInvitar(c, run, salida, ensayo);
+    else if (fase === 'demo') faseDemo(c, run, salida, ensayo);
     else faseSitio(c, run, salida, process.env, sec);
     return 0;
   } catch (e) {
     if (!(e instanceof Falla)) throw e;
     process.stderr.write(`\n🔴 falló: ${e.message}\n`);
+    if (fase === 'permiso-de-invitar') {
+      if (/Authorization_RequestDenied|Insufficient privileges|\b403\b/i.test(e.message)) process.stderr.write('   Dar el permiso pide un administrador del directorio (Administrador de roles con privilegios o Administrador global): la sesión de az no lo es. No se cambió nada.\n');
+      process.stderr.write(`   Lo que quedó hecho: ${run.creados.length ? run.creados.join(' · ') : 'nada'}.\n`);
+      return 1;
+    }
     if (/roleAssignments|AuthorizationFailed|\b403\b/.test(e.message)) {
       process.stderr.write('   Para asignar el rol hace falta Owner o User Access Administrator sobre la cuenta del buzón (no alcanza Contributor).\n');
     }
     process.stderr.write(`   Lo que quedó creado: ${run.creados.length ? run.creados.join(' · ') : 'nada'}.\n`);
     if (fase === 'sitio') process.stderr.write('   El sitio no es alcanzable desde afuera: la entrada sigue interna. Corré la fase de nuevo: sigue desde donde quedó.\n');
+    if (fase === 'demo') process.stderr.write('   Corré la fase de nuevo: sigue desde donde quedó (una instancia demo que ya existe se actualiza, no se crea otra).\n');
     return 1;
   } finally {
     fs.rmSync(dirTmp, { recursive: true, force: true });

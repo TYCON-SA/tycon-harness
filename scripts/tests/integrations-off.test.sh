@@ -103,9 +103,15 @@ done
 sleep 3   # las tandas de fondo del instalador (si alguna se lanzó) ya escribieron
 if [ -s "$LLAMADAS" ]; then no "T9 con todo apagado alguien llamó a un servicio: $(sort -u "$LLAMADAS" | head -5 | tr '\n' ' ')"
 else ok "T9 cero llamadas a az/engram/curl/codex/claude/codegraph (incluido el refresco de proyectos del instalador)"; fi
-if grep -qE 'integraciones.*apagadas:.*ado.*clockify.*engram.*codegraph.*mailbox.*codex.*nightly.*telegram' "$C1/instalador.out" \
-   && grep -qE 'prendidas: *\(ninguna\)' "$C1/instalador.out"; then ok "T9 el instalador dice en una línea qué integraciones quedaron apagadas (las ocho)"
+if grep -qE 'integraciones.*apagadas:.*ado.*engram.*codegraph.*mailbox.*codex.*nightly.*telegram' "$C1/instalador.out" \
+   && grep -qE 'prendidas: *\(ninguna\)' "$C1/instalador.out"; then ok "T9 el instalador dice en una línea qué integraciones quedaron apagadas"
 else no "T9 el instalador no resume las integraciones: $(grep -i 'integraciones' "$C1/instalador.out" | head -2 | tr '\n' ' ')"; fi
+# T70 · la línea dice la herramienta de horas, no la llave vieja (InstallerStatusLine_SaysTimeTool)
+TIME_NAMES="$(node -e 'const I=require(process.argv[1]);console.log(I.listManifests({dir:process.argv[2]}).manifests.filter((m)=>m.kind==="timeTracking").map((m)=>m.name).join(" "))' "$RAIZ/scripts/lib/integrations.js" "$RAIZ/integrations")"
+LINEA="$(grep -m1 'integraciones — prendidas' "$C1/instalador.out")"
+VIEJA=0; for n in $TIME_NAMES; do case "$LINEA" in *" $n"*) VIEJA=1 ;; esac; done
+if [ "$VIEJA" = 0 ] && grep -q 'herramienta de horas: ninguna' "$C1/instalador.out"; then ok "T70 la línea del instalador dice «herramienta de horas: ninguna» y no lista la llave vieja"
+else no "T70 la línea del instalador: «${LINEA}» · $(grep -m1 'herramienta de horas' "$C1/instalador.out")"; fi
 
 # `explain` lista las ocho como apagadas
 EXPL="$(afuera "$C1" -- node "$CFG" explain 2>&1)"; RC=$?
@@ -200,7 +206,7 @@ else ok "T10 ningún comando apagado llamó a az/engram/curl"; fi
 
 # el paso de work item (prosa de agent-skills): resuelve la organización por la configuración y, apagada, lo dice y se saltea;
 # no hay un «default por proyecto conocido»
-for f in skills/tycon-pipeline/steps/step-01-start.md skills/tycon-pipeline/steps/close-work-item.md skills/tycon-ado-story-wi/SKILL.md; do
+for f in skills/tycon-pipeline/steps/step-01-start.md skills/tycon-pipeline/steps/close-work-item.md skills/tycon-story-work-item/SKILL.md; do
   p="$SK_REPO/$f"
   if [ ! -f "$p" ]; then echo "  ℹ NO MEDIDO — $f no está en $SK_REPO"; continue; fi
   if grep -qiE 'default por proyecto conocido|defaults conocidos' "$p"; then no "T10 $f: sigue teniendo el «default por proyecto conocido»"; else ok "T10 $f: sin «default por proyecto conocido»"; fi
@@ -403,6 +409,8 @@ for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.md"))):
     import re
     fila = re.compile(r"^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$")
     lines = [(fila.match(l).group(1).rstrip() if fila.match(l) else l) for l in lines if not (fila.match(l) and fila.match(l).group(2) != "ado")]
+    # el lugar de las filas de la herramienta de horas: acá no hay ninguna elegida, así que no queda nada
+    lines = [l for l in lines if not re.match(r"^<!--\s*time-tool-rows\s*-->\s*$", l)]
     start = ("<!-- TYCON_BLOCK:%s START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · "
              "NO EDITAR A MANO (se pisa en el próximo SessionStart); editá claude-md-blocks/%s.md y commiteá -->" % (n, n))
     out = out.rstrip("\n") + "\n\n" + start + "\n" + "\n".join(lines).strip("\n") + "\n<!-- TYCON_BLOCK:%s END -->\n" % n

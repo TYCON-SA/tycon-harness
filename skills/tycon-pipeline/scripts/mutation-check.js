@@ -47,7 +47,7 @@
  * falla → exit 2 gritando con el path y el backup. Nada importa más que esto:
  * un runner que deja el repo mutado es un desastre.
  *
- * Cableado: lo invoca `marker.js complete-step 4` vía lib/mutation-gate.js
+ * Cableado: lo invoca `marker.js complete-step run-tests` vía lib/mutation-gate.js
  * (AVISA, NO FRENA — la semántica del gate vive allá). JSON de salida:
  *   { total, killed, survived: [{file, line, operator, before, after}],
  *     skipped: [...], verdict }

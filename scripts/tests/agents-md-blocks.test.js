@@ -291,7 +291,8 @@ test('con los bloques de verdad del arnés: todos entre marcas y la variante de 
   for (const n of names) assert.ok(t.includes(startOf(n)) && t.includes(endOf(n)), `falta ${n}`);
   for (const v of fs.readdirSync(path.join(blocks, 'names')).filter((f) => f.endsWith('.codex.md'))) {
     // con todas las integraciones prendidas, cada fila sin su marca de integración
-    const body = read(path.join(blocks, 'names', v)).replace(/^\n+|\n+$/g, '').replace(/[ \t]*<!--\s*integration:\s*[a-z]+\s*-->/g, '');
+    // (sin decir la herramienta de horas, el lugar de sus filas no deja ninguna: el destino estaba vacío)
+    const body = read(path.join(blocks, 'names', v)).replace(/^\n+|\n+$/g, '').replace(/[ \t]*<!--\s*integration:\s*[a-z]+\s*-->/g, '').replace(/^<!--\s*time-tool-rows\s*-->\n/m, '');
     assert.strictEqual(between(t, v.replace(/\.codex\.md$/, '')).replace(/\n$/, ''), body, `la variante ${v} es el cuerpo del bloque`);
   }
   assert.ok(!t.split('\n').some((line) => line.startsWith('@')), 'ningún @import');

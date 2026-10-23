@@ -502,15 +502,18 @@ test('Effects_EveryEntryHasProfiles_InstallTableColumnMatches', () => {
 });
 
 // ── Las integraciones que `install` ofrece en su pregunta ───────────────────────────────
-// `integrations` de la lista nombra las ocho llaves de scripts/lib/tycon-config.js una vez cada una; se ofrecen sólo las
-// que se prenden con un sí (clockify, engram, codegraph, codex), cada una con qué hace y qué pide; ado y telegram no
-// (piden un dato) y mailbox y nightly tampoco (son del equipo). Una lista mal armada no pasa la validación.
+// `integrations` de la lista nombra las llaves de scripts/lib/tycon-config.js una vez cada una, salvo la vieja de la
+// herramienta de horas (se elige con `timeTracking`, entre las de los manifiestos); se ofrecen sólo las que se prenden con
+// un sí (engram, codegraph, codex), cada una con qué hace y qué pide; ado y telegram no (piden un dato) y mailbox y
+// nightly tampoco (son del equipo). Una lista mal armada no pasa la validación.
 // 🔴 Sin `integrations` en la lista, o sin `readIntegrations`, esta prueba da rojo.
 test('8.16 D · Effects_Integrations_OfferedAreTheFourWithASwitch_AllEightNamed', () => {
   const config = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'));
   const list = managed.readIntegrations(ROOT);
-  assert.deepStrictEqual(list.map((x) => x.key).sort(), [...config.LAS_OCHO].sort(), 'las ocho llaves de la configuración, una vez cada una');
-  assert.deepStrictEqual(list.filter((x) => x.offered).map((x) => x.key), ['clockify', 'engram', 'codegraph', 'codex']);
+  const INT = require(path.join(ROOT, 'scripts', 'lib', 'integrations.js'));
+  const timeNames = INT.listManifests({ dir: path.join(ROOT, 'integrations') }).manifests.filter((m) => m.kind === 'timeTracking').map((m) => m.name);
+  assert.deepStrictEqual(list.map((x) => x.key).sort(), config.LAS_OCHO.filter((k) => !timeNames.includes(k)).sort(), 'las llaves de la configuración, una vez cada una');
+  assert.deepStrictEqual(list.filter((x) => x.offered).map((x) => x.key), ['engram', 'codegraph', 'codex']);
   for (const k of ['ado', 'telegram']) assert.match(list.find((x) => x.key === k).how || '', new RegExp(`tycon-config\\.js set ${k === 'ado' ? 'ado\\.org' : 'telegram\\.chat_id'}`), `${k}: cómo se prende`);
   for (const k of ['mailbox', 'nightly']) assert.match(list.find((x) => x.key === k).why, /del equipo/, `${k}: es del equipo`);
   assert.match(list.find((x) => x.key === 'instincts').why, /perfil del equipo/, 'instincts: la prende el perfil del equipo, no la pregunta de install');

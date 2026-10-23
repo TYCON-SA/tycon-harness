@@ -8,7 +8,8 @@
  * Levanta el sitio REAL en esta máquina, con todo lo que trae la imagen: el servidor (server.js), sus fuentes (sources.js,
  * que clona por HTTP el repo de operaciones y el del perfil y baja el buzón de corridas) y las dos pestañas con código
  * propio (tabs/config.js y tabs/runs.js). Lo que el sitio lee es de laboratorio: la organización `acme`, con personas,
- * máquinas, productos y repos inventados, servidos en esta máquina (un emisor de inicio de sesión, dos repos git por HTTP,
+ * máquinas, productos y repos inventados (los datos viven en scripts/site/demo/data.js, los mismos que muestra el sitio
+ * demo), servidos en esta máquina (un emisor de inicio de sesión, dos repos git por HTTP,
  * un buzón y una API de GitHub de mentira). Nada habla con la red, y ninguna captura muestra una organización real.
  *
  * Un navegador sin ventana (Chromium, con playwright-core) entra como cada persona y saca cada captura de CAPTURAS con su
@@ -33,12 +34,10 @@ const { spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const req = (rel) => require(path.join(ROOT, rel));
 
-const LEAD = 'lead@acme.example';
-const ANA = 'ana@acme.example';
-const BRUNO = 'bruno@acme.example';
-// los datos son de hoy: una foto más vieja que su plazo sale «no medido» en la captura
-const HOY = new Date().toISOString().slice(0, 10);
-const AYER = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+// Los datos de «acme» (personas, máquinas, ejecuciones, repos y perfil) viven con los del sitio demo, en
+// scripts/site/demo/data.js: un solo juego de datos de ejemplo. Son de hoy: una foto más vieja que su plazo sale «no medido»
+const DATOS = req('scripts/site/demo/data.js');
+const { LEAD, ANA, BRUNO } = DATOS;
 
 // Las capturas, en el orden de la guía. `espera`: un texto que la pantalla tiene que mostrar a la vista; si no está, la
 // captura no se guarda (una pantalla de error o la de otra pestaña no pasa por buena). `sitio`: con qué laboratorio (normal, sin política de revisión en el perfil, falla,
@@ -73,61 +72,14 @@ const CAPTURAS = [
 ];
 
 // ── los datos de laboratorio ────────────────────────────────────────────────────────────────────────────────────────
-const iso = (t0, min) => new Date(Date.parse(t0) + min * 60000).toISOString();
-/** Una corrida del pipeline como la sube upload-runs.js: su marcador, sus controles, su costo y su consumo. */
-function volcado(sid, inicio, { story, repo, pasos = [0, 1, 2, 3, 4, 5, 6, 7, 8], rojo = false } = {}) {
-  const m = (x) => iso(inicio, x);
-  const tiempos = Object.fromEntries(pasos.map((p, i) => [p, { completedAt: m(5 + i * 12) }]));
-  return JSON.stringify({
-    archivedAt: m(130),
-    marker: { storyId: story, storyPath: `/home/dev/acme/specs/story-${story}-una-mejora.md`, repoPath: `/home/dev/acme/${repo}`, sessionId: sid, startedAt: m(0), lastTouch: m(120),
-      stepsCompleted: pasos, stepsPending: [], stepTimings: tiempos },
-    gates: [
-      { ts: m(20), sessionId: sid, check: 'build', status: 'green', exit: 0, durationMs: 11000 },
-      { ts: m(40), sessionId: sid, check: 'tests', status: rojo ? 'red:exit=1' : 'green', exit: rojo ? 1 : 0, durationMs: 61000 },
-    ],
-    costo: { spawns: 8, adhoc: 0, iteraciones: 1, por_tipo: {} },
-    consumo: { estado: 'medido', respuestas: 40, sinteticos: 0, lineas_ilegibles: 0, tokens: { in: 900, out: 30000, cache_new: 100000, cache_read: 1800000 },
-      por_modelo: {}, por_paso: { 4: 50000, 5: 60000 }, fuera_de_ventana: 0, hilo_hasta: m(126), medido_en: m(300) },
-  });
-}
-/** El comienzo de una corrida de hace `n` horas, en hora redonda. */
-const haceHoras = (n) => new Date(Math.floor((Date.now() - n * 36e5) / 36e5) * 36e5).toISOString();
-const lugar = (correo) => JSON.stringify({ day: HOY, owner: { email: correo }, folder: null });
+const operaciones = (extra = {}) => DATOS.operaciones({ access: extra.access });
 
-/** El buzón: tres máquinas (la de ana, confirmada; la de bruno, sin confirmar; la de quien mantiene), con sus corridas. */
-function blobsDelBuzon() {
-  const b = {};
-  const sid = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
-  const corridas = [
-    ['mac-ana', '1.4', 'Producto-X/FrontEnd', haceHoras(50), {}],
-    ['mac-ana', '1.5', 'Producto-X/FrontEnd', haceHoras(28), { rojo: true }],
-    ['mac-ana', '2.1', 'Producto-Y/Backend', haceHoras(6), { pasos: [0, 1, 2, 3, 4] }],
-    ['mac-bruno', '2.2', 'Producto-Y/Backend', haceHoras(8), {}],
-    ['mac-lead', '3.1', 'Producto-X/Backend', haceHoras(75), {}],
-  ];
-  corridas.forEach(([maq, story, repo, inicio, extra], i) => { b[`${maq}/${sid(i + 1)}.json`] = volcado(sid(i + 1), inicio, { story, repo, ...extra }); });
-  b['mac-ana/registros/place.json'] = lugar(ANA);
-  b['mac-bruno/registros/place.json'] = lugar(BRUNO);
-  b['mac-lead/registros/place.json'] = lugar(LEAD);
-  return b;
-}
-
-const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
 /** La API de pedidos de trabajo de mentira: los tipos de cada proyecto y los campos del tipo «Riesgo», con sus valores. */
 async function azureFalso() {
-  const CAMPOS = [
-    { referenceName: 'Custom.Categoria', name: 'Categoría', allowedValues: ['Calidad', 'Operacional', 'Seguridad', 'Técnico'] },
-    { referenceName: 'Custom.Probabilidad', name: 'Probabilidad', allowedValues: ['1', '2', '3', '4', '5'] },
-    { referenceName: 'Custom.Impacto', name: 'Impacto', allowedValues: ['1', '2', '3', '4', '5'] },
-    { referenceName: 'Custom.Prioridad', name: 'Prioridad del riesgo', allowedValues: ['🔴 Crítico (21-25)', '🟠 Alto (15-20)', '🟡 Medio (8-14)', '🟢 Bajo (1-7)'] },
-    { referenceName: 'Custom.Disparador', name: 'Disparador' },
-    { referenceName: 'Custom.PlanDeMitigacion', name: 'Plan de mitigación' },
-  ];
   const server = require('http').createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
     const doc = /\/workitemtypecategories\//.test(u.pathname) ? { workItemTypes: [] }
-      : /\/workitemtypes\/Riesgo\/fields$/.test(u.pathname) ? { value: CAMPOS }
+      : /\/workitemtypes\/Riesgo\/fields$/.test(u.pathname) ? { value: DATOS.CAMPOS_DE_RIESGO }
         : /\/workitemtypes$/.test(u.pathname) ? { value: [{ name: 'Bug' }, { name: 'Riesgo' }, { name: 'Tarea' }] } : null;
     // lo demás (los pipelines de cada proyecto) contesta «sin permiso», como sin la credencial: las otras capturas no cambian
     res.writeHead(doc ? 200 : 401, { 'Content-Type': 'application/json' });
@@ -136,58 +88,6 @@ async function azureFalso() {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   return { base: `http://127.0.0.1:${server.address().port}`, cerrar: () => new Promise((r) => server.close(r)) };
 }
-/** Los archivos del repo de operaciones. `extra.access`: la lista de quién entra en lugar de la de antes (site.maintainers). */
-function operaciones(extra = {}) {
-  const H = req('scripts/tests/lib/site-harness.js');
-  const ops = {
-    version: 1,
-    owners: { default: LEAD },
-    site: { maintainers: [LEAD], url: 'https://sitio.acme.example', refresh_minutes: 15, brand: { name: 'Acme' },
-      mailbox: { provider: 'azure-blob', account: 'acmecorridas', container: 'corridas', threads: false } },
-    people: { machines: {
-      'mac-ana': { person: ANA, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' },
-      'mac-lead': { person: LEAD, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' },
-    } },
-    // los pedidos de vulnerabilidades, con el tipo y los campos que devuelve la plataforma de mentira (azureFalso)
-    work_items: { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Seguridad', 'Custom.Probabilidad': 3 }, by_severity: {
-      critical: { 'Custom.Impacto': 5, 'Custom.Prioridad': '🔴 Crítico (21-25)' }, high: { 'Custom.Impacto': 4, 'Custom.Prioridad': '🟠 Alto (15-20)' },
-      moderate: { 'Custom.Impacto': 3, 'Custom.Prioridad': '🟡 Medio (8-14)' }, low: { 'Custom.Impacto': 2, 'Custom.Prioridad': '🟢 Bajo (1-7)' } } },
-  };
-  if (extra.access) { delete ops.site.maintainers; ops.site.access = extra.access; }
-  const archivos = H.archivosDeOperaciones({ hoy: HOY, ayer: AYER, config: ops });
-  // los proyectos del día: dos productos con sus stories (sólo número, estado y días en el estado)
-  delete archivos['.dashboard/proyectos/Proyecto X__Repo X.json'];
-  // la organización con la forma del archivo real; los pedidos se leen de azureFalso, nunca de la red
-  archivos['scripts/nightly/dependencies/repos.json'] = { azure: { org: 'https://dev.azure.com/acme' }, repos: [
-    { producto: 'Producto X', ruta: 'Producto-X/FrontEnd', ado: 'Producto X/FrontEnd', tipo: 'npm', activo: true },
-    { producto: 'Producto Y', ruta: 'Producto-Y/Backend', ado: 'Producto Y/Backend', tipo: 'nuget', activo: true },
-  ] };
-  archivos['.dashboard/proyectos/Producto X__FrontEnd.json'] = { v: 1, generated_at: `${HOY}T06:00:00Z`, proyecto: 'Producto X', repo: 'FrontEnd', stories: [
-    { id: '1.4', titulo: 'una mejora', grupo: 'en_curso', canonico: 'in-progress', dias_en_estado: 2 },
-    { id: '1.5', titulo: 'otra mejora', grupo: 'en_revision', canonico: 'review', dias_en_estado: 1 },
-    { id: '1.2', titulo: 'una vieja', grupo: 'parado', canonico: 'in-progress', dias_en_estado: 12 },
-  ] };
-  archivos['.dashboard/proyectos/Producto Y__Backend.json'] = { v: 1, generated_at: `${HOY}T06:00:00Z`, proyecto: 'Producto Y', repo: 'Backend', stories: [
-    { id: '2.1', titulo: 'una mejora', grupo: 'en_curso', canonico: 'in-progress', dias_en_estado: 1 },
-    { id: '2.2', titulo: 'otra', grupo: 'bloqueado', canonico: 'blocked', dias_en_estado: 4 },
-  ] };
-  return archivos;
-}
-
-const PERFIL = {
-  ado: { org: 'https://dev.azure.com/acme' },
-  integrations: { timeTracking: 'none', engram: true, mailbox: true, codex: 'detect', nightly: true },
-  update: { channel: 'latest', apply: 'auto' }, packs: { default: 'all' }, install: { profile: 'full' },
-};
-// una herramienta de prueba agregada por la organización: la tabla de «Cómo se corren las pruebas» la muestra junto a
-// las internas y las recetas de fábrica
-const RECETA_NETFX = {
-  name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', detect_depth: 1,
-  command: 'bash -c \'vstest.console.exe $(find . -path "*/bin/Debug/*Tests.dll") --logger:trx "--ResultsDirectory:{results}"\'',
-  results: { format: 'trx', path: '{results}/**/*.trx' },
-};
-const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: GH('operaciones'), stack: { test_runners: [RECETA_NETFX] } };
-
 /**
  * Un laboratorio: el sitio real con las fuentes reales sobre los datos de arriba. `variante`:
  *   normal       todo bien, con política de revisión en el perfil (se puede proponer)
@@ -218,14 +118,11 @@ async function laboratorio(variante, opciones = {}) {
   if (variante === 'frenado') archivosOps['operations.json'] = { version: 1, owners: { default: 'esto no es un correo' }, site: { maintainers: [LEAD] } };
   const json = (o) => (typeof o === 'string' ? o : ORG.formatJson(o));
   const ops = await crearRepoHttp({ raiz: path.join(raiz, 'ops'), nombre: 'operaciones.git', cabecera: CAB, archivos: Object.fromEntries(Object.entries(archivosOps).map(([k, v]) => [k, json(v)])) });
-  const perfil = await crearRepoHttp({ raiz: path.join(raiz, 'perfil'), nombre: 'perfil.git', cabecera: CAB, archivos: {
-    'team-profile.json': json(PERFIL), 'team-repos.json': json({ ...REPOS, ...(opciones.repos || {}) }), 'team-layer.json': json({ requires: { harness: `>= ${ORG.RESPONSE_SINCE}` } }),
-    'skills/acme-guia/SKILL.md': '# una skill de la organización\n', 'agents/acme-revisor.md': '# un revisor de la organización\n', 'onboarding/step-0-mac.md': '# el alta\n',
-    ...Object.fromEntries(Object.entries(opciones.profileFiles || {}).map(([k, v]) => [k, json(v)])),
-  } });
+  const perfil = await crearRepoHttp({ raiz: path.join(raiz, 'perfil'), nombre: 'perfil.git', cabecera: CAB, archivos: Object.fromEntries(Object.entries(
+    DATOS.archivosDelPerfil({ repos: opciones.repos, extra: opciones.profileFiles })).map(([k, v]) => [k, json(v)])) });
   const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'perfil' });
   if (variante !== 'sinPolitica') gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
-  const buzon = await H.arrancarBuzon({ blobs: blobsDelBuzon(), contenedor: 'corridas' });
+  const buzon = await H.arrancarBuzon({ blobs: DATOS.blobsDelBuzon(), contenedor: 'corridas' });
   if (variante === 'cargando') buzon.st.demora = 10 * 60 * 1000;
   const emisor = await arrancarEmisor();
   const dataDir = path.join(raiz, 'datos');

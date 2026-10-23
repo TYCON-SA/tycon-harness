@@ -35,13 +35,13 @@ Si todas las padres ya tienen el back-link → silent skip (no-op, idempotente).
 - Archivos bajo `~/.claude/**` o del propio arnés (docs/templates, no stories reales).
 - Edits posteriores al primer Write (PostToolUse matcher es Write, no Edit) — re-escrituras no re-disparan. Si se cambia el `followup_of:` después, correr `tycon-backfill-followups.js` a mano.
 
-## Cómo convive con `tycon-ado-story-wi`
+## Cómo convive con `tycon-story-work-item`
 
 Ambos hooks corren en PostToolUse Write y son ortogonales:
 
 | Hook | Trigger | Acción |
 |---|---|---|
-| `tycon-ado-story-wi/scripts/on-story-create.js` | story SIN `ado_work_item:` | Crear WI en Azure DevOps |
+| `tycon-story-work-item/scripts/on-story-create.js` | story SIN `work_item:` | Crear el pedido de trabajo en la plataforma del equipo |
 | `tycon-story-followup-link/scripts/on-story-create.js` | story CON `followup_of:` sin back-link recíproco | Actualizar `followed_up_by:` en la padre |
 
 Una story nueva puede disparar AMBOS reminders al mismo tiempo (si es follow-up Y no tiene WI todavía). Cada uno se procesa por separado.

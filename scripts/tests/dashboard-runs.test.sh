@@ -472,6 +472,46 @@ import json,sys; c=json.loads(sys.argv[1])['corridas'][0]; assert c['ultimo_paso
 generar "${T}/r" "${T}/o.html" "${T}/log"; grep -q 'quedó en Hallazgos' "${T}/o.html" && ok "T22 la fila dice «quedó en Hallazgos»" || mal "T22 la fila no dice «quedó en Hallazgos»"
 rm -rf "${T}"
 
+# ── T22b · «quedó en» el paso que arrancó y no terminó, no en el último terminado ─────────────
+# 🔴 Falla con: tomar sólo stepsCompleted → una ejecución archivada a mitad de implementar dice «quedó en Aprobar
+#    el plan», y la trama dice «sin marca» por pasos que nunca corrieron (caso real de la pestaña Ejecuciones).
+for CASO in '4|Implementar + pruebas' 'implement|Implementar'; do
+  PASO="${CASO%%|*}"; NOMBRE="${CASO#*|}"
+  T=$(mktemp -d)
+  volcado "${T}/r" "${S1}" "" '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z","stepsCompleted":[0,1,2,3],"stepTimings":{"0":{"startedAt":"2026-10-22T14:10:37.000Z","completedAt":"2026-10-22T14:11:16.000Z"},"1":{"completedAt":"2026-10-22T14:13:46.000Z"},"2":{"startedAt":"2026-10-22T14:14:03.000Z","completedAt":"2026-10-22T14:49:12.000Z"},"3":{"completedAt":"2026-10-22T14:50:03.000Z"},"4":null,"5":null,"6":null,"7":null,"8":null,"'"${PASO}"'":{"startedAt":"2026-10-22T14:50:03.600Z","completedAt":null},"0b":{"startedAt":"2026-10-22T14:10:45.000Z"}}}}'
+  generar "${T}/r" "${T}/o.html" "${T}/log"
+  grep -q "quedó en ${NOMBRE}<" "${T}/o.html" && ok "T22b (${PASO}) la fila dice «quedó en ${NOMBRE}»" || mal "T22b (${PASO}) la fila no dice «quedó en ${NOMBRE}»: $(grep -o 'quedó en [^<]*' "${T}/o.html" | head -1)"
+  grep -q "${NOMBRE} quedó sin terminar; [1-9] paso(s) no se llegaron a correr\"" "${T}/o.html" && ok "T22b (${PASO}) la trama dice qué quedó sin terminar y cuántos no corrieron" || mal "T22b (${PASO}) la trama no lo dice: $(grep -o 'title="[^"]*sin terminar[^"]*"' "${T}/o.html" | head -1)"
+  D="$(cliente "${T}/o.html" detail 0)"
+  grep -q "quedó en ${NOMBRE}" <<< "${D}" && grep -q "${NOMBRE} quedó sin terminar; [1-9] paso(s) no se llegaron a correr" <<< "${D}" && ok "T22b (${PASO}) el detalle dice lo mismo" || mal "T22b (${PASO}) el detalle no lo dice"
+  rm -rf "${T}"
+done
+
+# ── T22c · los otros casos de «quedó en» y de la trama ─────────────────────────────────────────
+# 🔴 Falla con: contar como «no se llegaron a correr» las filas anteriores a donde quedó (corrieron sin marca); tomar
+#    un arranque viejo sin cierre, o una fecha inválida, como el paso en curso; no ver la otra vuelta de revisores.
+caso_22c() {  # $1 nombre · $2 parche del marcador · $3 «quedó en» esperado · $4 trama esperada (sin el title=)
+  local T; T=$(mktemp -d)
+  volcado "${T}/r" "${S1}" "" "$2"
+  generar "${T}/r" "${T}/o.html" "${T}/log"
+  grep -q "quedó en $3<" "${T}/o.html" && grep -q "title=\"$4\"" "${T}/o.html" && ok "T22c $1" || mal "T22c $1: $(grep -o 'quedó en [^<]*' "${T}/o.html" | head -1) · $(grep -o 'class="falta"[^>]*title="[^"]*"' "${T}/o.html" | head -1)"
+  rm -rf "${T}"
+}
+BASE22='"stepsCompleted":[0,1,2,3],"stepTimings":{"0":{"startedAt":"2026-10-22T14:10:37.000Z","completedAt":"2026-10-22T14:11:16.000Z"},"1":{"completedAt":"2026-10-22T14:13:46.000Z"},"2":{"startedAt":"2026-10-22T14:14:03.000Z","completedAt":"2026-10-22T14:49:12.000Z"},"3":{"completedAt":"2026-10-22T14:50:03.000Z"},"4":null,"5":null,"6":null,"7":null,"8":null'
+caso_22c 'sin paso a medias: «no se llegaron a correr», sin nombrar ninguno' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"'}}}' 'Aprobar el plan' '4 paso(s) no se llegaron a correr'
+caso_22c 'un arranque viejo sin cierre, anterior a lo terminado, no es el paso en curso' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"1":{"startedAt":"2026-10-22T14:12:00.000Z","completedAt":null}}}}' 'Aprobar el plan' '4 paso(s) no se llegaron a correr; 1 paso(s) sin marca'
+caso_22c 'una fecha de arranque inválida no cuenta como arrancado' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"4":{"startedAt":"ayer"}}}}' 'Aprobar el plan' '3 paso(s) no se llegaron a correr'
+caso_22c 'otra vuelta de revisores, arrancada después de cerrar Hallazgos' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z","stepsCompleted":[0,1,2,3,4,5,6],"stepTimings":{"5":{"startedAt":"2026-10-22T16:00:00.000Z","completedAt":"2026-10-22T15:00:00.000Z"},"6":{"completedAt":"2026-10-22T15:30:00.000Z"},"7":null,"8":null}}}' 'Revisores' 'Revisores quedó sin terminar; 1 paso(s) no se llegaron a correr'
+# la ejecución que llegó al final, con una fila sin marca: corrió, así que sigue diciendo «sin marca»
+T=$(mktemp -d); volcado "${T}/r" "${S1}" "" '{"marker":{"stepTimings":{"2":null}}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+grep -q 'class="falta" style="width:6px" title="1 paso(s) sin marca"' "${T}/o.html" && ok "T22c la ejecución que llegó al final sigue diciendo «sin marca»" || mal "T22c la que llegó al final: $(grep -o 'class="falta"[^>]*title="[^"]*"' "${T}/o.html" | head -1)"
+rm -rf "${T}"
+
 # ── T23 · sin hora de inicio, las evaluaciones NO desaparecen ─────────────────────────────────
 # 🔴 Falla con: off() → null → todas van a «anteriores al inicio» y el detalle dice «ningún control encontró un error».
 T=$(mktemp -d); volcado "${T}/r" "${S1}" "" '{"marker":{"startedAt":null}}'
@@ -1175,6 +1215,55 @@ const rutas=['/Users/devb/Proyectos/FRESNO/Codigo/FRESNOBZExtBackend','/Users/a/
 const cs=rutas.map(r=>({producto:p(r)}));u(cs);console.log(cs.map(c=>c.producto).join('|'))")"
 [ "${R}" = "FRESNO/FRESNOBZExtBackend|FRESNO/FRESNOBZExtBackend|FRESNO/FRESNOBZExtForms|tycon-claude-guides|tycon-claude-guides|||Ceibo/CeiboBackend|Ceibo/CeiboBackend|PluginHost|PluginHost|PluginHost|Tucan/Backend|Totora/Backend" ] \
   && ok "PRODUCTO-T1 un repo es una entrada: sin carpeta genérica, sin sufijo de worktree, el clon del scratchpad es su repo, mayúsculas y nombre suelto unificados, dos Backend distintos siguen distintos" || mal "PRODUCTO-T1 dio: ${R}"
+
+# ── REPOS-T1 · un repo con sus worktrees es UN renglón; el repo real del volcado manda sobre la carpeta ──
+# 🔴 Falla con: `arnes-wt-127` y `arnes--wt-x` salen como repos aparte, `c825a2c-impl` como un repo propio, o el
+#    `repo.path` del volcado ignorado (un worktree con nombre libre, `otra-carpeta`, no cae en su repo).
+T=$(mktemp -d)
+volcado "${T}/r" "11111111-1111-4111-8111-111111111111" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/arnes"}}' a.json
+volcado "${T}/r" "22222222-2222-4222-8222-222222222222" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/arnes-wt-127"}}' b.json
+volcado "${T}/r" "33333333-3333-4333-8333-333333333333" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/arnes--wt-x"}}' c.json
+volcado "${T}/r" "44444444-4444-4444-8444-444444444444" "" '{"marker":{"repoPath":"/Users/Otro/Proyectos/ClienteA/Backend/c825a2c-impl"}}' d.json
+volcado "${T}/r" "55555555-5555-4555-8555-555555555555" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/otra-carpeta"},"repo":{"path":"/Users/dev/SourceCode/arnes","remote":"acme/arnes"}}' e.json
+volcado "${T}/r" "66666666-6666-4666-8666-666666666666" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/ClienteA/Backend"}}' f.json
+R="$(node -e "
+const r=require('${RAIZ}/scripts/nightly/dashboard/runs.js');
+const M=r.modelo('${T}/r',{repos:[]});const c={};for(const x of M.corridas)c[x.producto]=(c[x.producto]||0)+1;
+console.log(Object.keys(c).sort().map(k=>k+':'+c[k]).join('|'))")"
+[ "${R}" = "ClienteA/Backend:2|arnes:4" ] && ok "REPOS-T1 tres worktrees y una carpeta con su repo real dan UN renglón; la carpeta de implementación cae en su repo" || mal "REPOS-T1 dio: ${R}"
+rm -rf "${T}"
+
+# ── REPOS-T2 · el producto sale de repos.json; un repo que no está queda sin producto ──
+# 🔴 Falla con: un producto inventado para el repo ausente, el cruce por remoto ignorado, o `Backend` suelto cruzado con
+#    uno de los dos `Backend` de la lista (es de varios: no se sabe de cuál).
+R="$(node -e "
+const r=require('${RAIZ}/scripts/nightly/dashboard/runs.js');
+const repos=[{producto:'Cliente A',ruta:'ClienteA/Backend',ado:'Cliente%20A/ClienteABackend'},{producto:'Cliente B',ruta:'ClienteB/Backend',ado:'ClienteB/Backend'},{producto:'Viejo',ruta:'Viejo/Web',activo:false}];
+const cs=[{producto:'ClienteA/Backend'},{producto:'clientea/backend'},{producto:'otro-nombre',remoto:'Cliente A/ClienteABackend'},{producto:'Backend'},{producto:'Viejo/Web'},{producto:'suelto'},{producto:'Otro/Backend'},{producto:'Web'}];
+r.agruparRepos(cs,repos);r.agruparRepos(cs,repos);console.log(cs.map(c=>c.grupo).join('|'))")"
+[ "${R}" = "Cliente A|Cliente A|Cliente A|||||" ] && ok "REPOS-T2 producto por ruta y por remoto, sin inventar: el ausente, el inactivo, el nombre ambiguo y otro repo con el mismo último tramo quedan sin producto" || mal "REPOS-T2 dio: ${R}"
+
+# ── REPOS-T3 · el laboratorio va aparte, y lo decide la RUTA aunque el clon traiga un remoto real ──
+# 🔴 Falla con: `acme-tienda` o un clon de /tmp mezclados con los productos, o el clon descartable de una sesión sacado del
+#    laboratorio porque su `.git` apunta al repo de un producto.
+T=$(mktemp -d)
+volcado "${T}/r" "11111111-1111-4111-8111-111111111111" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/acme-tienda"}}' a.json
+volcado "${T}/r" "22222222-2222-4222-8222-222222222222" "" '{"marker":{"repoPath":"/private/var/folders/x1/T/ensayo-1/arnes"}}' b.json
+volcado "${T}/r" "33333333-3333-4333-8333-333333333333" "" '{"marker":{"repoPath":"/private/tmp/claude-501/-Users-dev-SourceCode-arnes/00000000-0000-4000-8000-000000000003/scratchpad/clon"},"repo":{"path":"/private/tmp/claude-501/-Users-dev-SourceCode-arnes/00000000-0000-4000-8000-000000000003/scratchpad/clon","remote":"Cliente%20A/ClienteABackend"}}' c.json
+volcado "${T}/r" "44444444-4444-4444-8444-444444444444" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/ClienteA/Backend"}}' d.json
+R="$(node -e "
+const r=require('${RAIZ}/scripts/nightly/dashboard/runs.js');
+const M=r.modelo('${T}/r',{repos:[{producto:'Cliente A',ruta:'ClienteA/Backend',ado:'Cliente%20A/ClienteABackend'}]});
+console.log(M.corridas.map(c=>c.producto+'='+c.grupo).sort().join('|'))")"
+[ "${R}" = "ClienteA/Backend=Cliente A|acme-tienda=laboratorio|arnes=laboratorio|arnes=laboratorio" ] && ok "REPOS-T3 acme-tienda, el clon de la carpeta temporal de macOS y el clon de una sesión con remoto real van a laboratorio" || mal "REPOS-T3 dio: ${R}"
+# el filtro: un grupo por producto, «otros repos» y «laboratorio» al final; el valor del laboratorio no se junta con el repo
+volcado "${T}/r" "55555555-5555-4555-8555-555555555555" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/arnes"}}' e.json
+volcado "${T}/r" "77777777-7777-4777-8777-777777777777" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/acme-lab/arnes"}}' g.json
+generar "${T}/r" "${T}/o.html" "${T}/log"
+R="$(cliente "${T}/o.html" container f-repo | grep -o '<optgroup label="[^"]*"\|value="[^"]*"' | tr '\n' ' ')"
+[ "${R}" = 'value="" <optgroup label="otros repos" value="arnes" value="ClienteA/Backend" <optgroup label="laboratorio" value="laboratorio/acme-lab/arnes" value="laboratorio/acme-tienda" ' ] \
+  && ok "REPOS-T3 el filtro agrupa con optgroup: otros repos y laboratorio al final, con el valor del laboratorio aparte, y el nombre de un ensayo no se le pega al repo de verdad" || mal "REPOS-T3 el filtro salió: ${R}"
+rm -rf "${T}"
 
 # ── LOCAL-T1 · sin buzón, la vista va a ~/.claude y nunca al repo del equipo ──────────────
 # 🔴 Falla con: SALIDA_DEFAULT en artifacts/ → cada máquina commitea su foto parcial (18 o 232 corridas

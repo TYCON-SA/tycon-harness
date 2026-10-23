@@ -1,6 +1,6 @@
 # Revisores
 
-**Objetivo**: correr los advisors post-implementación sobre el diff resultante de «Implementar» (paso 5). A.i: siempre se corren los aplicables al tipo de proyecto, sin flags para saltear.
+**Objetivo**: correr los advisors post-implementación sobre el diff resultante de «Implementar». A.i: siempre se corren los aplicables al tipo de proyecto, sin flags para saltear.
 
 ## Inputs
 
@@ -47,7 +47,7 @@ El script además:
 - **`reglas_revisores`** — **§Reglas del repo**: el estado de la sección
   `## Reglas para revisores` del `CLAUDE.md` del repo. Con `estado: 'presente'`, el `context_file`
   y cada override **ya empiezan** con esas reglas marcadas como «reglas a verificar» — no hay que
-  hacer nada más: los revisores del paso 5 ya no cargan el `CLAUDE.md` (`omitClaudeMd: true`), y
+  hacer nada más: los revisores ya no cargan el `CLAUDE.md` (`omitClaudeMd: true`), y
   esas reglas les llegan sólo por acá. **Si el estado NO es `presente`, decíselo al dev en UNA
   línea, una vez por corrida, y seguí**: *«este repo no tiene «Reglas para revisores»: los
   revisores no ven sus reglas propias»* (con `no_medido`, agregá el `motivo`). Nunca frena. Por
@@ -63,28 +63,28 @@ El script además:
   paralelo si supera 4. `check-count` no depende del orden (valida membership por nombre
   contra `expected[]`), así que la reposición por slot no toca el accounting.
 
-  🔴 **Cap reducido con el 5b en vuelo (Fase B, 2026-07-30)**: si `marker.adversarial`
+  🔴 **Cap reducido con el pase adversarial en vuelo (Fase B, 2026-07-30)**: si `marker.adversarial`
   existe (visible en el output de `pipeline.js next`, o con `marker.js get`) y **todavía
   no llegó la notificación de término del workflow en esta sesión**, el pase adversarial
-  lanzado en el Step 4 sigue corriendo — y ese workflow NO es 1 proceso: son 6 hunters
+  lanzado al cerrar «Implementar» sigue corriendo — y ese workflow NO es 1 proceso: son 6 hunters
   concurrentes + verificadores en ventana de 3. Mientras esté vivo, la ventana baja a **MÁXIMO
   2 vivos** (valor conservador A MEDIR — la primera corrida real cuenta procesos pesados
   simultáneos, no solo cronometra, y con esa medición se fija el cap definitivo).
 
   **La señal de término es la NOTIFICACIÓN del workflow, NO `deepReviewDone`** — ese flag
-  lo marca recién el step-05b al procesar el output (después de este step): usarlo como
+  lo marca recién el pase adversarial al procesar el output (después de este step): usarlo como
   condición dejaría el cap en 2 hasta el final aunque el workflow haya terminado hace 20
   minutos. `deepReviewDone` solo sirve como señal en un retome en frío (sesión nueva,
   donde la notificación ya no se puede observar); ahí, si `adversarial_is_ours: false`
-  en `pipeline.js next`, el workflow está muerto → cap 4 (y el step-05b va a relanzarlo).
+  en `pipeline.js next`, el workflow está muerto → cap 4 (y el pase adversarial va a relanzarlo).
 
   🔴 **Al llegar la notificación del workflow durante este step**: la ventana vuelve a 4,
   y **en ese mismo turno se escribe el output crudo a `<RUN_DIR>/step-05b-adversarial.md`**
   (`confirmed[]` + `all_lenses[]` + runId). Es el ÚNICO momento en que ese contenido
-  existe — una compactación de contexto en un Step 5 largo lo borra del transcript y el
-  Step 6 consolidaría sin los findings adversariales sin que nadie se entere. El step-05b
+  existe — una compactación de contexto en unos revisores largos lo borra del transcript y
+  «Hallazgos» consolidaría sin los findings adversariales sin que nadie se entere. El pase adversarial
   lo lee de ese archivo, no del transcript. NO procesar los findings acá (eso es del
-  step-05b) ni marcar `deepReviewDone`.
+  pase adversarial) ni marcar `deepReviewDone`.
 - **Persiste `expected[]`** en la línea `step5-start` del log — es contra eso que
   `check-count` valida después.
 
@@ -108,7 +108,7 @@ Checks deterministas: ACCOV-C1 (cada test de la tabla `### Tests` existe — por
 Trait/tag/T-ID/nombre), ACCOV-C5 (AC sin test), DEFTR-C1/C2 (deferrals), WIRING-C1
 (componente exportado sin uso). Output:
 
-- `findings` **confirmados** → van DIRECTO al reporte consolidado de Step 6, sin advisor.
+- `findings` **confirmados** → van DIRECTO al reporte consolidado de «Hallazgos», sin advisor.
 - `ambiguous` + `llm_escalation` → lista de advisors a invocar SOLO si hay ambiguos.
 
 **Consecuencia (MECH-2, cableado 2026-06-11; recalibrado el mismo día por la
@@ -128,7 +128,7 @@ inline y DESCUENTAN del set/expected automáticamente:
 - Si mech-check NO pudo correr (story ilegible → ambiguo familia MECH) → CERO
   descuentos (fail-closed).
 El output trae `mech_discounted` + `mech_findings`; los findings confirmados van
-DIRECTO al reporte de Step 6. Anunciar el resultado junto al anuncio de la regla B.
+DIRECTO al informe de «Hallazgos». Anunciar el resultado junto al anuncio de la regla B.
 
 Después de que todos devuelvan, en vez del count-check manual (Regla C), corré:
 
@@ -142,9 +142,9 @@ Task loguea cada uno desde el `step5-start` que marca `advisors`), NO un `--ran`
 así el LLM **no puede falsear el conteo** (CF-2 2026-05-21). Valida contra el **`expected[]`
 persistido del último `step5-start`** — NO contra "el set completo": un subset legítimo tras
 `smart-reloop` pasa, porque el expected de esa iteración ya es el reducido. **FALLA CERRADO
-(exit 2) si hay `step5-start` con 0 spawns registrados** — sin log no hay verde. Override
-consciente (queda auditable): `--trust-ran --ran a,b,c`. Exit 2 + lista de faltantes → NO avanzar
-a Step 6 hasta exit 0. **Verifica la completitud del set de forma mecánica, no por disciplina**.
+(exit 2) si hay `step5-start` con 0 spawns registrados** — sin log no hay verde. Confiar en la
+lista del agente lo decide la persona («autorizo trust-ran»). Exit 2 + lista de faltantes → NO avanzar
+a «Hallazgos» hasta exit 0. **Verifica la completitud del set de forma mecánica, no por disciplina**.
 Residual: nada *fuerza* a invocar `pipeline.js`/correr los advisors — eso lo
 cierra la máquina de estados del pipeline.
 
@@ -241,7 +241,7 @@ Si la detección resulta ambigua (ej: monorepo con `.cs` y `.tsx` pero ningún f
 
 ### C — Post-flight count check
 
-Después de recibir reportes de todos los advisors invocados, **antes de avanzar a Step 6**, el orquestador DEBE chequear:
+Después de recibir reportes de todos los advisors invocados, **antes de avanzar a «Hallazgos»**, el orquestador DEBE chequear:
 
 ```
 Revisores, verificación:
@@ -258,12 +258,12 @@ El "esperado" NO se infiere: es el `expected[]` que `pipeline.js advisors` persi
 línea `step5-start` del log — lo mismo que `check-count` valida mecánicamente (un subset
 legítimo tras `smart-reloop` es válido porque el expected de esa iteración ya es el reducido).
 
-Si `M < N` (faltan advisors) → **STOP y NO avanzar a Step 6**. Reportar al user qué advisor falta + razón (olvido / técnico). Después invocar el/los faltantes en mensaje paralelo separado, esperar reportes, recontar. Solo avanzar a Step 6 cuando `M == N`.
+Si `M < N` (faltan advisors) → **STOP y NO avanzar a «Hallazgos»**. Reportar al user qué advisor falta + razón (olvido / técnico). Después invocar el/los faltantes en mensaje paralelo separado, esperar reportes, recontar. Solo avanzar a «Hallazgos» cuando `M == N`.
 
 **Anti-patrones**:
 
 - Invocar advisors "a ojo" sin leer esta tabla saltea alguno (por ejemplo `react-conventions`). Lo cierra la regla B (anuncio explícito).
-- Correr sólo el set base y saltear en silencio los de completitud (`tycon-story-validator post-impl`, `tycon-spec-first-checker`, `tycon-deferral-tracker` y, con su paquete activo, el revisor de cableado). Lo cierran la regla C (count check post-flight) y la sección hard-listed al top de SKILL.md, para no depender de que el agente lea el step-05 completo.
+- Correr sólo el set base y saltear en silencio los de completitud (`tycon-story-validator post-impl`, `tycon-spec-first-checker`, `tycon-deferral-tracker` y, con su paquete activo, el revisor de cableado). Lo cierran la regla C (count check post-flight) y la sección hard-listed al top de SKILL.md, para no depender de que el agente lea este paso completo.
 
 Dejar estos pasos implícitos es causa de bugs silenciosos (bypass de reglas de convenciones + completitud). NO se pueden inferir desde "el set base suficiente" o "esto parece simple". Las 3 reglas A+B+C son no-negociables.
 
@@ -292,7 +292,7 @@ Set final paralelo: el set de base + cada revisor de paquete que entró (con su 
 `adversarial` en el output de `pipeline.js next` (o `marker.js get`) → si `marker.adversarial`
 existe y el workflow sigue en vuelo (ver §Cap reducido arriba), el cap es **2**; si no, **4**.
 🔴 **El cap resuelto acá GANA sobre el número del `batch_rule` del script** — el script no conoce
-el estado del 5b. Los advisors se invocan con tool calls `Agent(...)` en background (COMM.iii)
+el estado del pase adversarial. Los advisors se invocan con tool calls `Agent(...)` en background (COMM.iii)
 bajo **ventana deslizante de `<cap>` vivos**: los primeros `<cap>` salen en un solo mensaje
 paralelo; al llegar cada notificación de término se lanza el siguiente del set en ese turno,
 manteniendo ≤`<cap>` vivos hasta agotar el set. A cada uno se le pasa el `context_file` como
@@ -317,7 +317,32 @@ MECH-2 en iter≥2): **no lo invoques igual**.
 - `tycon-story-validator` en `phase: post-implementation` para chequear Gate 1 del DoD (VAL-C5 — deferrals abiertos en código + VAL-C6 — pipeline blocked sin `blocked_by` + VAL-W15 — la story no dice lo que se implementó). En los re-loops, el script lo saca del set después de dos veredictos limpios seguidos (ver §«Story-validator post-implementation»).
 - `tycon-deferral-tracker` (CRITICAL inmediato) — **iter 1: SIEMPRE que aplique** (per-item + engram + DEFTR-W1..W3 son juicio LLM no mecanizable); **iter≥2: solo si `mech-check` lo escaló** (el descuento del expected lo aplica `pipeline.js` — MECH-2). Las condiciones de aplicación las evalúa el script.
 - `tycon-ac-coverage-checker` (CRITICAL inmediato — Gate 1.5) — **iter 1: SIEMPRE que aplique** (ACCOV-C2/C3/C6 son juicio LLM); **iter≥2: solo si `mech-check` lo escaló** (descuento MECH-2 automático en el expected). Por qué: sin él, una story se marca `done` con ACs/Tests sin implementación que sólo detecta una revisión manual.
-- `tycon-spec-first-checker` (CRITICAL inmediato — re-check post-implementation) sobre cada story Mary+GOLD. Cierra el loop **código → spec** detectando scope creep no documentado. Ejemplos de lo que atrapa: wiring implementado antes del spec, un error mapping sin AC, un filtro por tenant sin AC, un response shape decidido durante la implementación. El advisor también corre pre-coding en Step 4 — este re-check captura drift residual de coding phases sin pre-flight (spikes, runtime fixes).
+- `tycon-spec-first-checker` (CRITICAL inmediato — re-check post-implementation) sobre cada story Mary+GOLD. Cierra el loop **código → spec** detectando scope creep no documentado. Ejemplos de lo que atrapa: wiring implementado antes del spec, un error mapping sin AC, un filtro por tenant sin AC, un response shape decidido durante la implementación. El advisor también corre pre-coding en «Implementar» — este re-check captura drift residual de coding phases sin pre-flight (spikes, runtime fixes).
+
+### Bajo Codex — los revisores los lanza el pipeline
+
+Con Codex **no** se le pide al modelo que lance agentes: un modelo que no usa esa herramienta no lanzaba ninguno y el
+conteo quedaba vacío. Después de `pipeline.js advisors` (o `smart-reloop`), el paso corre:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js reviewers-run --repo <repo> --story <story>
+```
+
+Lanza cada revisor del set de la vuelta como un proceso `codex exec -p <revisor>` aparte (entrada cerrada), con la misma
+ventana (4 vivos; 2 con el pase adversarial en vuelo), el `context_file` de la vuelta y el modelo de la sesión de Codex
+si `start` la recibió con `--codex-session` (si no, el del perfil). Anuncia el set y el modelo de cada uno antes de
+lanzar (regla B), deja cada reporte en `step-05-advisor-reports/<revisor>.md` y anota cada uno en el registro que lee
+`check-count`: un revisor que salió distinto de 0, que pasó su tope (`TYCON_REVIEWER_TIMEOUT_MS`, 15 min) o que no dejó
+reporte no cuenta. Si se corta, volver a correrlo corta lo que quedó vivo y saltea los ya hechos. Sin `codex` o sin el
+perfil de un revisor sale 2 sin lanzar nada. Con Claude Code este comando no se usa: los revisores van con `Agent(...)`.
+La salida de `advisors` y `smart-reloop` trae el comando armado en `launch`.
+
+**Necesita red.** Los revisores son procesos de Codex que llaman al modelo, y heredan la caja de arena del comando que los
+lanza. En la caja de arena sin red (la de `workspace-write` por defecto) no llegan ni a Ollama ni a la nube:
+`reviewers-run` lo detecta, sale 2 sin lanzar y lo dice. Correr el comando fuera de la caja de arena, con la aprobación de
+la persona: la red queda abierta sólo para ese comando. Bajo `codex exec` sin aprobaciones no hay a quién pedir; la salida
+es `sandbox_workspace_write.network_access = true` en el perfil de la sesión, que le da red a todo comando del modelo:
+eso lo decide la persona. Volver a correr `check-count` no cambia nada.
 
 ### 🔴 Formato de salida de CADA advisor — obligatorio en el prompt (COMM.iii, 2026-07-27)
 
@@ -331,7 +356,7 @@ Formato de tu final report — el mensaje que devolvés, NO el archivo:
 arrancá con 1-3 bullets en castellano llano: qué encontraste y si bloquea. Sin rule IDs, sin
 archivo:línea, sin nombres de regla. Después, la acción, si la hay, en una línea. El DETALLE
 COMPLETO (rule IDs, archivo:línea, tablas, repros) NO va en el reporte: escribilo a
-`<RUN_DIR>/step-05-<advisor>.md` y cerrá con "detalle completo en <esa ruta>". Tu reporte
+`<RUN_DIR>/step-05-advisor-reports/<advisor>.md` y cerrá con "detalle completo en <esa ruta>". Tu reporte
 entero tiene que entrar en menos de 1000 caracteres de prosa. Si no hay hallazgos, "limpio,
 0 hallazgos" alcanza y no hace falta escribir archivo — no enumeres lo que revisaste y salió bien.
 ```
@@ -356,13 +381,13 @@ diversidad.
 
 Si el repo declara `advisor_model_diversity: true` en `.tycon/advisors.yaml` (o el user lo pide),
 en **iter 1** correr AL MENOS un advisor CRITICAL de detección pura —`tycon-plugin-security-basics`
-o `tycon-silent-failure-hunter`— con `model:` distinto al que implementó la story (Step 4). El
+o `tycon-silent-failure-hunter`— con `model:` distinto al que implementó la story («Implementar»). El
 mecanismo ya existe (`model:` en `Agent()`); esto es una regla de proceso, no código nuevo.
 Anunciarlo en la regla B. **No es mandatory** — se mantiene opt-in a propósito para no inflar la
 superficie del pipeline (reglas mandatorias + opt-in mal calibradas degradan).
 
 ```
-# Arranque de la ventana (<cap> tool calls paralelas en un response — 2 si el 5b está en vuelo;
+# Arranque de la ventana (<cap> tool calls paralelas en un response — 2 si el pase adversarial está en vuelo;
 # con cap 2, los dos primeros son los CRITICAL-inmediatos del set):
 Agent(subagent_type: "tycon-plugin-{conventions}", prompt: "context_file: <path>. ...")
 Agent(subagent_type: "tycon-plugin-tests-coverage", prompt: "context_file: <path>. ...")
@@ -407,7 +432,7 @@ Skipped: tycon-ac-coverage-checker (story sin tabla `### Tests` ni `## Acceptanc
 Para stories Mary+GOLD estándar el criterio APLICA. La invocación efectiva: **iter 1
 siempre** (juicio ACCOV-C2/C3/C6); **iter≥2** la decide `mech-check` vía el descuento
 MECH-2 — si los ACCOV del delta se resolvieron mecánicamente (sin `ambiguous`), el advisor
-no corre y los findings confirmados van directo a Step 6.
+no corre y los findings confirmados van directo a «Hallazgos».
 
 Para cada advisor, pasar en el prompt:
 - `context_file` (INPUT PRIMARIO — digest de story + file list + diff con hunks; evita que cada subagente re-lea todo)
@@ -421,11 +446,11 @@ Para cada advisor, pasar en el prompt:
 
 El `tycon-story-validator` corre en **tres momentos** del pipeline:
 
-1. **Step 1 (pre-implementación)**: valida el spec — VAL-C1, VAL-C2, VAL-C3, VAL-C8, VAL-W1..W14. NO chequea VAL-C5 (no hay código aún).
-2. **Step 5, vuelta 1 (post-implementación, este step)**: re-corre con `phase: "post-implementation"` para VAL-C5 (deuda de la propia story en el código), VAL-C6 (tanda `blocked` sin causa) y VAL-W15 (la story no dice lo que se implementó). Corre **siempre**.
-3. **Re-loops del Step 5 (vuelta 2 en adelante)**: corre **hasta que devuelve dos veredictos limpios seguidos después de implementar**. Desde ahí `pipeline.js advisors`/`smart-reloop` lo saca del set y del `expected` (lo dice en `validador_reloop` y, en `smart-reloop`, en `skipped`) y deja la línea `validador-reloop` en `gates.log`, también cuando decide invocarlo. **No lo lances a mano** si el script lo sacó: es una decisión mecánica, no del orquestador.
+1. **«Validar la historia» (pre-implementación)**: valida el spec — VAL-C1, VAL-C2, VAL-C3, VAL-C8, VAL-W1..W14. NO chequea VAL-C5 (no hay código aún).
+2. **Revisores, vuelta 1 (post-implementación, este step)**: re-corre con `phase: "post-implementation"` para VAL-C5 (deuda de la propia story en el código), VAL-C6 (tanda `blocked` sin causa) y VAL-W15 (la story no dice lo que se implementó). Corre **siempre**.
+3. **Re-loops de Revisores (vuelta 2 en adelante)**: corre **hasta que devuelve dos veredictos limpios seguidos después de implementar**. Desde ahí `pipeline.js advisors`/`smart-reloop` lo saca del set y del `expected` (lo dice en `validador_reloop` y, en `smart-reloop`, en `skipped`) y deja la línea `validador-reloop` en `gates.log`, también cuando decide invocarlo. **No lo lances a mano** si el script lo sacó: es una decisión mecánica, no del orquestador.
 
-   Por qué, medido: después de dos veredictos limpios seguidos, el validador trajo algo nuevo en 2 de 24 lanzamientos, ninguno bloqueante; antes, en 62 de 125. Se sigue invocando si VAL-C5/VAL-C6 encuentran algo sin modelo (`runValidatorChecks`, que corre en cada re-loop), si la conversación no se puede leer, si falta el arnés o el arranque del paso 5, y con `--force-full-reloop`.
+   Por qué, medido: después de dos veredictos limpios seguidos, el validador trajo algo nuevo en 2 de 24 lanzamientos, ninguno bloqueante; antes, en 62 de 125. Se sigue invocando si VAL-C5/VAL-C6 encuentran algo sin modelo (`runValidatorChecks`, que corre en cada re-loop), si la conversación no se puede leer, si falta el arnés o el arranque de Revisores, y con `--force-full-reloop`.
 
    🔴 El descuento lee el renglón `Veredicto:` con que el validador cierra cada informe (`agents/tycon-story-validator.md` §«El último renglón es SIEMPRE el veredicto»). Un informe sin renglón cuenta como «sin veredicto» y **corta la racha**: el validador se vuelve a lanzar.
 
@@ -459,13 +484,13 @@ Los 3 subagentes devuelven sus reportes. Cada uno tiene su formato definido en s
 
 ## Decisiones
 
-- **Si algún advisor falla técnicamente** (timeout, error): registrarlo, continuar con los que sí corrieron. El reporte consolidado en Step 6 va a mostrar qué advisor falló y el usuario decide si proceder o re-correr.
+- **Si algún advisor falla técnicamente** (timeout, error): registrarlo, continuar con los que sí corrieron. El reporte consolidado en «Hallazgos» va a mostrar qué advisor falló y el usuario decide si proceder o re-correr.
 
 - **A.i — no se saltean advisors a pedido**: si el usuario querría saltear un advisor específico, tiene que modificar el pipeline o pedir al dev que mantiene los advisors que ajuste la regla. No hay flag `--skip-advisor=X` en Camino B.
 
 ## Registrar check advisors — SIEMPRE (era sólo autónomo; desde 2026-08-19 es pre-condición de `complete-step reviewers`)
 
-En TODOS los modos (autónomo y HITL). `marker.js complete-step reviewers` **bloquea** si `checks.advisors` no está en verde con provenance `run-check` **de esta iteración** (tras un loop D.i hay que re-correrlo; `--trust-ran` queda como `trust-ran` y no alcanza). Escape consciente y logueado: `set-check advisors green --force-manual`.
+En TODOS los modos (autónomo y HITL). `marker.js complete-step reviewers` **bloquea** si `checks.advisors` no está en verde con provenance `run-check` **de esta iteración** (tras un loop D.i hay que re-correrlo; `--trust-ran` queda como `trust-ran` y no alcanza). Declararlo a mano lo decide la persona («autorizo force-manual»); queda en gates.log.
 
 El check `advisors` mide **completitud del set** (¿corrieron TODOS los advisors esperados?), NO los findings. El status sale del exit code REAL de `pipeline.js check-count` — que lee el log de invocaciones reales (CF-2), no el `--ran` del LLM:
 
@@ -502,7 +527,7 @@ Pasar a «Hallazgos» (`step-09-findings.md`) para consolidar. Si después de «
 
 ## Otra vuelta (vuelta 2 en adelante)
 
-Antes era el paso 7b; hoy es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado. Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
+Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado. Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
 
 **Objetivo**: cerrar el loop posterior a «Hallazgos» — si la decisión del usuario (o el auto-flow)
 resultó en **fixes de código aplicados**, el diff que los advisors auditaron ya no es el

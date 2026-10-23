@@ -17,6 +17,11 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-ste
 
 El comando frena en código lo siguiente (no hace falta repetir la verificación a mano; sí leer su mensaje y arreglar):
 
+- **Cambios sin declarar** (`undeclared-changes`, va primero y no se abre con `DOD_BYPASS`): lo que cambió en el repo
+  contra el commit de arranque (más lo no rastreado) y no pasó por Edit/Write ni está en `files_to_create`,
+  `files_to_modify` o el File List del Dev Agent Record. Un lock cuenta si su manifiesto está declarado. La salida es
+  nombrarlo en el File List o revertirlo. Lo borrado por la terminal (node_modules) sale como aviso; sin git o sin
+  commit de arranque dice «no medido» y no frena.
 - **Matriz de verificación en ejecución** (`checks.acmatrix`, DODRT-C6): tiene que estar en verde con `provenance:
   run-check` (`marker.js run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <abs spec.md>`, que se
   puebla en `step-10-live-check.md`).
@@ -37,7 +42,7 @@ Lo que decide el agente, porque el comando no lo ve o no lo frena:
   NO seguir: avisar «Detecté cambios al código desde la última corrida de revisores. Antes de armar el commit, vuelvo a
   «Revisores» para re-auditar el diff actualizado.» y volver a `step-07-reviewers.md` (iteración N+1). Excepción:
   cambios sólo fuera del diff (`tasks/lessons.md`, `tasks/todo.md`, el Change Log de la spec), documentada en
-  `step-08-precondition-check.md`.
+  la pre-condición de este paso.
 - **Checks con `provenance: manual`**: no bloquean, pero se anuncian en el commit prep como `⚠ check '<name>' no
   verificado mecánicamente (provenance=manual — ver gates.log)`.
 - **Matriz en rojo**: los ACs `SIN CORRER` los corre el agente (no se eximen); los imposibles declarados se le presentan
@@ -87,6 +92,8 @@ Incluir:
 - ACs implementados (referenciados por número)
 - Si `had_override: true`: línea explícita "OVERRIDE: CRITICAL de {advisor} aprobado por usuario — razón: {razón}"
 - Si «Hallazgos» auto-fluyó con warnings (`auto_flowed_with_warnings: true`): sección **"Warnings auto-waived"** listando cada warning (rule ID + archivo + razón del waive: `auto_waive` list / fuera del diff). Visibilidad sin fricción.
+- Si la ejecución quedó en deuda (`close-as-debt`): la línea `Deuda: <DEF-id> — <motivo>`, tal como la imprime
+  `complete-step prepare-commit` (📌), y los controles en rojo esperado con sus pruebas.
 
 ### Trailers
 
@@ -240,7 +247,7 @@ queda la ruta para copiar—, y debajo la línea
   Es la única excepción al "detalle a pedido".
 - **Los recordatorios van en UNA línea combinada y en llano**, no en 3 bloques con emoji y sangría.
   Sólo los que aplican: el del reloj si el Arranque avisó el trabajo a una herramienta de horas
-  (`workSignalStarted`); el de Azure DevOps si la story tiene `ado_work_item`. Sin «smoke», «DoD» ni «ADO» (caso
+  (`workSignalStarted`); el del pedido de trabajo si la story tiene `work_item` (o su nombre viejo). Sin «smoke», «DoD» ni «ADO» (caso
   2026-10-19: un dev solo, sin herramienta de horas ni Azure DevOps, leía «smoke de DoD» y «cierre en ADO» en su
   primera historia). El contenido normativo no cambia —
   sigue vigente todo lo de arriba (el registro de horas NO se cierra, probarla andando es obligatorio, el pedido se cierra

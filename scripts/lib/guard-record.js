@@ -12,6 +12,9 @@
  *
  *   {"ts":"…","freno":"test-scope-guard","regla":"suite-completa","veredicto":"bloqueo","sha256":"…"}
  *
+ * Un `escape` puede llevar además por qué camino se autorizó (`via`: persona, reenvio o ambiente) y, si vino por
+ * relevo, la sesión que lo reenvió (`relevo`). Los dos son de una forma cerrada, no texto libre.
+ *
  * 🔴 LA LÍNEA NO LLEVA EL CONTENIDO. El registro sube al buzón y lo que el reductor publica lo ve
  *    todo el equipo. Del comando va su HUELLA, nunca su texto — el patrón es el de `registrar()` del
  *    freno de producción que guarda el sha256 de la sentencia y no la sentencia. No van:
@@ -71,8 +74,12 @@ const FRENOS = {
   // story a `review`/`done` (una línea por story) o una escritura a `.advisors/dod-runtime/*.md`.
   // Su número —cuántas evidencias rechazaron— es el que dice si el cierre recortado alcanza.
   'on-frontmatter-write': {
-    reglas: ['evidencia-ausente', 'evidencia-vieja', 'e2e-gate-rojo', 'evidencia-ok', 'sin-superficie-runtime', 'exenta'],
-    veredictos: ['bloqueo', 'paso'],
+    // `exencion-nueva`: la exención de la prueba en vivo agregada a una historia en implementación (frena sin la frase de
+    // la persona; con ella, `escape` con la sesión). `estado-a-mano`: una historia pasada a review o done con la
+    // herramienta de edición (frena sin la frase; con ella, `escape`)
+    reglas: ['evidencia-ausente', 'evidencia-vieja', 'e2e-gate-rojo', 'evidencia-ok', 'sin-superficie-runtime', 'exenta', 'exencion-nueva',
+      'estado-a-mano'],
+    veredictos: ['bloqueo', 'paso', 'escape'],
   },
   // `aviso` es la transición interna `review → done`: hoy avisa en vez de frenar (TYCON_REVIEW_A_DONE).
   'on-pre-commit': {
@@ -182,7 +189,19 @@ function anotarFallo(home, motivo) {
  * Anota una decisión. Devuelve `{ escrito, motivo? }` para los tests; NUNCA tira y nunca cambia el
  * comportamiento de quien la llama.
  */
-function anotar({ freno, regla, veredicto, cmd, home } = {}) {
+// Por qué camino se autorizó un escape (lista cerrada) y, si vino por relevo, qué sesión lo reenvió: el rol que declara
+// el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea se escribe igual).
+// `sin-conversacion`: la regla no pudo mirar porque la herramienta no guarda la conversación (Codex) y dejó pasar.
+const VIAS = ['persona', 'reenvio', 'ambiente', 'sin-conversacion'];
+const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
+// Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
+// y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
+const ESCAPES_CON_NOMBRE = ['set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
+  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
+  'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado'];
+const SESION = /^[\w-]{1,80}$/;
+
+function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape } = {}) {
   try {
     if (!FRENOS[freno]) {
       anotarFallo(home, `freno desconocido: ${String(freno).slice(0, 40)}`);
@@ -200,6 +219,17 @@ function anotar({ freno, regla, veredicto, cmd, home } = {}) {
       // la huella permite correlacionar dos decisiones sobre el MISMO comando sin guardar el comando
       sha256: typeof cmd === 'string' && cmd ? crypto.createHash('sha256').update(cmd).digest('hex') : null,
     };
+    if (veredicto === 'escape' && VIAS.includes(via)) linea.via = via;
+    if (linea.via === 'reenvio') {
+      if (typeof relevo === 'string' && RELEVO.test(relevo)) linea.relevo = relevo;
+      // la línea se escribe igual, sin quién lo reenvió: que quede dicho por qué
+      else anotarFallo(home, `relevo fuera de forma en un escape de ${freno}: no se anotó quién lo reenvió`);
+    }
+    if (typeof sesion === 'string' && SESION.test(sesion)) linea.sesion = sesion;
+    if (escape !== undefined) {
+      if (ESCAPES_CON_NOMBRE.includes(escape)) linea.escape = escape;
+      else anotarFallo(home, `escape fuera de la lista en ${freno}: ${String(escape).slice(0, 40)}`);
+    }
     const dir = casaDelPipeline(home);
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'frenos.jsonl'), JSON.stringify(linea) + '\n', 'utf8');
@@ -224,7 +254,7 @@ function main(argv) {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
   };
   const cmd = argv.includes('--cmd-stdin') ? leerStdin() : undefined;
-  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd });
+  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape') });
   return 0; // SIEMPRE 0: el freno que nos llamó decide su propio código de salida
 }
 

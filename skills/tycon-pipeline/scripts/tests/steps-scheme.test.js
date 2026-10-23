@@ -588,3 +588,104 @@ test('T29 Next_AnotaElArranquePorNombre @story-7.23 @ac-5 @ac-13 — next anota 
   const m = E.leer('s-t29');
   assert.ok(m.stepTimings['validate-story'] && m.stepTimings['validate-story'].startedAt, JSON.stringify(m.stepTimings));
 });
+
+// ── El barrido: ningún paso por su número viejo en lo que lee un agente ─────────────────────────────────────────────
+// Un número de paso que ya no existe confunde al agente que lee la skill: con la numeración nueva, «Step 5» es otro
+// paso, y «5b» o «7c» no son ninguno. Lo que lee el pipeline o un agente (la skill, los revisores, los ganchos) nombra
+// los pasos por su nombre; las guías para personas no nombran un paso que ya no existe. Lo que se conserva a propósito
+// (claves guardadas, la equivalencia con el marcador viejo) está en la lista cerrada, con su motivo.
+// un número seguido de `-nombre` es un nombre de archivo (`step-08-adversarial-pass.md`): los viejos los mira ARCHIVO_VIEJO
+// los números con letra, con o sin el cero de adelante (`5b`, `05b`) y con sub-paso (`7c.3`): ninguno existe ya
+const LETRA = '0?(?:0b|0c|5b|7b|7c)';
+// entre «paso» y el número puede haber markdown (`paso **7c**`, `Step \`5\``); el sub-paso numérico (`4.0`) también es viejo
+const SEP = '[ -]?[*`_]*';
+const MENCION = new RegExp(`\\b(?:step|paso)s?${SEP}(?:${LETRA}\\b|\\d{1,2}(?:\\.\\d+)?\\b(?!\\d|-[a-z]))`, 'i');
+const CON_LETRA = new RegExp(`\\b(?:step|paso)s?${SEP}${LETRA}\\b`, 'i');
+// y el número con letra suelto, pegado a lo que sea que no sea una palabra («el 5b», «**5b**», «0b/0c», «(7c)»).
+// Entre comillas simples o dobles es un valor del código (`'5b'`), no una mención; tras `#` o `-`, parte de otra cosa
+// sin mayúsculas: los sub-pasos viejos siempre fueron en minúscula, y «7B» es el tamaño de un modelo
+const LETRA_SUELTA = new RegExp(`(?<![A-Za-z0-9_'"#-])${LETRA}(?:\\.\\d)?(?![A-Za-z0-9_'"])`);
+const COMPLETE_NUM = /complete-step\s+\d/;
+// los archivos viejos de paso, salvo los que siguen siendo nombres de la carpeta de una ejecución (lista cerrada)
+// (con o sin `.md`: `step-04-execute` también nombra el archivo viejo)
+const ARCHIVO_VIEJO = new RegExp(`(?:${VIEJOS.filter((f) => f !== 'step-06-consolidated-report.md').map((f) => f.replace(/\.md$/, '')).join('|')})\\b`);
+// en las guías, además de los números con letra, el paso 0: la numeración nueva arranca en 1
+const PASO_CERO = new RegExp(`\\b(?:step|paso)s?${SEP}0\\b(?![.\\d]|-[a-z])`, 'i');
+const CERRADA = path.join(__dirname, 'fixtures', 'old-step-mentions-allowed.json');
+
+function alcance(ruta) {
+  if (/^skills\/tycon-pipeline\/scripts\/tests\//.test(ruta)) return null;   // las pruebas citan lo viejo para probarlo
+  if (/^skills\/tycon-pipeline\//.test(ruta) || /^agents\/tycon-[^/]+\.md$/.test(ruta) || /^scripts\/hooks\//.test(ruta)) return 'agente';
+  if (/^(?:guides\/.+|INDEX(?:\.[a-z]+)?|README(?:\.[a-z]+)?|INSTALL)\.md$/.test(ruta)) return 'guia';
+  return null;
+}
+
+/** Las menciones viejas de `archivos` ({ruta: texto}) que la lista cerrada no ampara: [{ruta, linea, texto}]. */
+function mencionesViejas(archivos, cerrada) {
+  const fuera = [];
+  for (const [ruta, texto] of Object.entries(archivos)) {
+    const tipo = alcance(ruta);
+    if (!tipo) continue;
+    // un archivo que numera SUS propios pasos (un freno, un procedimiento) no habla de los del pipeline
+    if (cerrada.some((c) => c.own_steps && c.path === ruta)) continue;
+    texto.split('\n').forEach((original, i) => {
+      // la lista cerrada ampara su fragmento, no la línea entera: otra mención vieja en la misma línea se sigue viendo
+      let l = original;
+      for (const c of cerrada) if (c.contains && c.path === ruta) l = l.split(c.contains).join(' ');
+      const hay = tipo === 'agente'
+        ? (MENCION.test(l) || LETRA_SUELTA.test(l) || COMPLETE_NUM.test(l) || ARCHIVO_VIEJO.test(l))
+        : (CON_LETRA.test(l) || LETRA_SUELTA.test(l) || PASO_CERO.test(l) || ARCHIVO_VIEJO.test(l));
+      if (!hay) return;
+      fuera.push({ ruta, linea: i + 1, texto: original.trim().slice(0, 160) });
+    });
+  }
+  return fuera;
+}
+
+function arbolPublico() {
+  const lista = execFileSync('git', ['ls-files', '-z'], { cwd: RAIZ, encoding: 'utf8' }).split('\0').filter(Boolean);
+  const out = {};
+  for (const r of lista) {
+    if (!alcance(r) || !/\.(?:md|js|mjs|cjs|sh|ps1|json)$/.test(r)) continue;
+    const abs = path.join(RAIZ, r);
+    if (fs.existsSync(abs)) out[r] = fs.readFileSync(abs, 'utf8');
+  }
+  return out;
+}
+
+test('T30 Steps_NoOldNumbersInWhatAgentsRead @story-7.23 @ac-15 — ningún paso por su número viejo en lo que lee un agente', () => {
+  const cerrada = JSON.parse(fs.readFileSync(CERRADA, 'utf8'));
+  // la lista entera, para barrer: T30_LIST=<archivo> node --test --test-name-pattern=T30 …
+  if (process.env.T30_LIST) {
+    fs.writeFileSync(process.env.T30_LIST, mencionesViejas(arbolPublico(), cerrada).map((f) => `${f.ruta}:${f.linea}: ${f.texto}\n`).join(''));
+  }
+  for (const c of cerrada) {
+    // cada amparo nombra su archivo: uno que valiera para todo el alcance taparía menciones que nadie miró
+    assert.ok(c.reason && c.path && (c.contains || c.own_steps === true), `la lista cerrada pide «path», «reason» y «contains» (o «own_steps»): ${JSON.stringify(c)}`);
+    if (c.path) assert.ok(fs.existsSync(path.join(RAIZ, c.path)), `la lista cerrada nombra un archivo que no está: ${c.path}`);
+  }
+  const arbol = arbolPublico();
+  const fuera = mencionesViejas(arbol, cerrada);
+  assert.deepStrictEqual(fuera.map((f) => `${f.ruta}:${f.linea}: ${f.texto}`), [],
+    `${fuera.length} mención(es) de un paso por su número viejo (pasalas al nombre del paso, o a la lista cerrada con su motivo)`);
+  // y una copia con una mención vieja agregada sale roja, nombrando archivo y línea
+  const ruta = 'skills/tycon-pipeline/steps/step-07-reviewers.md';
+  const alterado = { [ruta]: `${arbol[ruta] || ''}\nAl terminar, volver al Step 5b.\n`, 'guides/x.md': 'ver el paso 7c\n', 'agents/tycon-x.md': 'correr complete-step 4\n',
+    'agents/tycon-y.md': 'leer step-05b-verify y el sub-paso 7c.3\n', 'agents/tycon-z.md': 'como en el 5b, guardar step5-start y Step 6\n',
+    'guides/y.md': 'en el paso 0 se arranca\n', 'agents/tycon-w.md': 'ver step-04-execute (sin extensión)\n',
+    // las formas que el pase adversarial encontró escapándose: markdown, barras, sub-paso numérico
+    'agents/tycon-m1.md': 'Anotarlo **cierra el 5b** y sigue\n', 'agents/tycon-m2.md': 'Los sub-pasos (0b/0c/5b/7c) también\n',
+    'agents/tycon-m3.md': 'en el paso **7c** se prueba\n', 'agents/tycon-m4.md': 'el sub-paso 4.0 escribe la prueba\n',
+    'guides/z.md': 'No aplica al Step 5/5b del pipeline\n' };
+  // y lo que NO es una mención: un valor del código entre comillas, un color, un nombre con guion
+  const limpio = mencionesViejas({ 'agents/tycon-n.md': "--type '5b' y el color #7c3aed y sha-5b0c\n" }, cerrada);
+  assert.deepStrictEqual(limpio, [], `marcó como mención algo que no lo es: ${JSON.stringify(limpio)}`);
+  const rojo = mencionesViejas(alterado, cerrada);
+  for (const r of [ruta, 'guides/x.md', 'agents/tycon-x.md', 'agents/tycon-y.md', 'agents/tycon-z.md', 'guides/y.md', 'agents/tycon-w.md',
+    'agents/tycon-m1.md', 'agents/tycon-m2.md', 'agents/tycon-m3.md', 'agents/tycon-m4.md', 'guides/z.md']) {
+    assert.ok(rojo.some((f) => f.ruta === r), `${r} no salió rojo: ${JSON.stringify(rojo.map((f) => f.ruta))}`);
+  }
+  // nombra la línea donde está la mención, no sólo el archivo
+  const agregada = rojo.find((f) => f.ruta === ruta);
+  assert.match(agregada.texto, /Step 5b/, `la línea nombrada no es la agregada: ${JSON.stringify(agregada)}`);
+});

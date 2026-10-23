@@ -734,3 +734,156 @@ test('A10 2.34-Adv_CuentaExistenteQuedaSinLlave @story-2.34 @ac-11 — una cuent
   assert.strictEqual(upd.length, 1, dos.out);
   assert.ok(upd[0].args.join(' ').includes('--allow-shared-key-access false'));
 });
+
+// el permiso de invitar, una fase aparte que corre un administrador del directorio. La aplicación ya existe
+// (se siembra en el estado del doble, como la deja la fase sitio)
+function conSitioCreado(fixEnv = {}) {
+  n += 1;
+  const dir = path.join(tmp, `caso-${n}`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'azure.json'), JSON.stringify({ 'containerapp|sitio-acme': true }));
+  return { dir, correr: (args) => alta(args, { fix: dir, fixEnv }) };
+}
+const asignacion = (ll) => ll.find((l) => l.paso === 'rest' && /appRoleAssignments/.test(l.args.join(' ')) && /post/i.test(l.args.join(' ')));
+
+test('T13 2.74-Instalador_PermisoDeInvitar_DryRunYApply @story-2.74 @ac-11', () => {
+  const ensayo = conSitioCreado().correr(['--dry-run', '--phase', 'permiso-de-invitar']);
+  assert.strictEqual(ensayo.status, 0, ensayo.out);
+  assert.match(ensayo.out, /User\.Invite\.All/);
+  assert.match(ensayo.out, /appRoleAssignments/);
+  assert.match(ensayo.out, /administrador del directorio/);
+  assert.strictEqual(asignacion(ensayo.llamadas), undefined, 'el ensayo no asigna nada');
+  const bien = conSitioCreado().correr(['--apply', '--phase', 'permiso-de-invitar']);
+  assert.strictEqual(bien.status, 0, bien.out);
+  const a = asignacion(bien.llamadas);
+  assert.ok(a, bien.out);
+  const cuerpo = JSON.parse(Object.values(a.archivos)[0]);
+  assert.deepStrictEqual(cuerpo, { principalId: 'principal-del-sitio', resourceId: 'principal-de-graph', appRoleId: 'rol-de-invitar' });
+  // sin el rol de administrador: lo dice y no deja nada a medias
+  const sinRol = conSitioCreado({ TYCON_AZ_NOT_ADMIN: '1' }).correr(['--apply', '--phase', 'permiso-de-invitar']);
+  assert.strictEqual(sinRol.status, 1, sinRol.out);
+  assert.match(sinRol.out, /administrador del directorio/);
+  assert.ok(!sinRol.llamadas.some((l) => l.paso === 'aplicacion' && l.args.includes('update')), 'no cambia la aplicación');
+});
+
+test('2.74-Adv_ActualizarElSitio_ConservaElCodigoPorCorreo @story-2.74 @ac-11 — volver a correr la fase sitio no lo borra', () => {
+  const caso = conSitioCreado({ TYCON_AZ_EMAIL_CODE_POLICY: 'disabled' });
+  assert.strictEqual(caso.correr(['--apply', '--phase', 'ambiente']).status, 0);
+  assert.strictEqual(caso.correr(['--apply', '--phase', 'permiso-de-invitar']).status, 0);
+  const otra = caso.correr(['--apply', '--phase', 'sitio']);
+  assert.strictEqual(otra.status, 0, otra.out);
+  const yaml = otra.llamadas.filter((l) => l.paso === 'aplicacion' && l.args.includes('--yaml')).pop();
+  assert.ok(yaml, otra.out);
+  const env = JSON.parse(Object.values(yaml.archivos)[0]).properties.template.containers[0].env;
+  assert.deepStrictEqual(env.filter((e) => e.name === 'SITE_INVITE_EMAIL_CODE'), [{ name: 'SITE_INVITE_EMAIL_CODE', value: 'off' }]);
+});
+
+test('T21 2.74-Instalador_CodigoPorCorreo @story-2.74 @ac-11 @ac-12', () => {
+  for (const [politica, valor] of [['enabled', 'on'], ['default', 'on'], ['disabled', 'off'], ['denied', 'unknown']]) {
+    const r = conSitioCreado({ TYCON_AZ_EMAIL_CODE_POLICY: politica }).correr(['--apply', '--phase', 'permiso-de-invitar']);
+    assert.strictEqual(r.status, 0, `${politica}: ${r.out}`);
+    const upd = r.llamadas.find((l) => l.paso === 'aplicacion' && l.args.includes('update') && l.args.includes('--set-env-vars'));
+    assert.ok(upd, `${politica}: ${r.out}`);
+    assert.ok(upd.args.includes(`SITE_INVITE_EMAIL_CODE=${valor}`), `${politica} → ${valor}: ${upd.args.join(' ')}`);
+    if (valor === 'unknown') assert.match(r.out, /portal/, 'dice dónde mirarlo');
+  }
+});
+
+// ── la fase `demo` ───────────────────────────────────────────────────────────────────────────────────────────────────
+// El sitio demo es una instancia aparte: abierta, sin candado, sin disco, sin identidad y sin ningún secreto. Usa el
+// ambiente que crea la fase `ambiente`; no acepta buzón, repo ni inquilino.
+const CONFIG_DEMO = () => ({
+  subscription: guid('1'), resourceGroup: 'rg-demo-acme', location: 'eastus2',
+  environment: 'env-demo-acme', app: 'demo-acme', logAnalyticsWorkspace: 'registros-demo-acme', logAnalyticsQuotaGb: 0.023,
+  image: `ghcr.io/acme/arnes@sha256:${'a'.repeat(64)}`,
+});
+
+test('2.76-Instalador_FaseDemo_DryRunYApply', () => {
+  // (1) el ensayo: cada paso a la vista, sin llamar a az y sin pedir ni un secreto
+  const ens = alta(['--dry-run', '--phase', 'demo'], { config: CONFIG_DEMO(), env: {} });
+  assert.strictEqual(ens.status, 0, ens.out);
+  assert.deepStrictEqual(ens.llamadas, [], '--dry-run no llama a az');
+  assert.match(ens.out, /fase demo/);
+  assert.match(ens.out, /containerapp create/);
+  assert.match(ens.out, /https:\/\/demo-acme\.<defaultDomain del ambiente>/, 'imprime el link que tendrá');
+  const plan = ens.out;
+  for (const x of ['"name": "SITE_DEMO"', '"value": "1"', '"external": true', '"minReplicas": 0', '"maxReplicas": 1', '"path": "/livez"', '"name": "SITE_PUBLIC_URL"']) assert.ok(plan.includes(x), `el plan trae ${x}`);
+  for (const x of ['secrets', 'secretRef', 'volumes', 'volumeMounts', '"identity"', 'storage account', 'share-rm', 'role assignment', 'containerapp auth', 'ingress update', 'SITE_SESSION_KEY', 'SITE_OIDC', 'SITE_DATA_DIR', 'SITE_OPERATIONS', 'SITE_MAILBOX']) {
+    assert.ok(!plan.includes(x), `el plan de la instancia demo no trae «${x}»: sin candado, sin disco, sin identidad, sin secretos`);
+  }
+
+  // (2) rechaza lo que es de la instancia de la organización: buzón, repo, inquilino, disco, correos, secretos
+  const rechazados = { mailbox: { resourceGroup: 'rg-buzon-acme', account: 'acmebuzon', container: 'corridas' }, operationsRepo: 'https://git.acme.example/acme/operaciones', operationsIdentity: 'token',
+    tenantId: guid('2'), oidcClientId: guid('3'), storageAccount: 'acmesitiodatos', fileShare: 'sitio-datos', fileShareQuotaGb: 1, firstMaintainer: 'lead@acme.example',
+    profileRepo: 'https://git.acme.example/acme/perfil', microsoftAccounts: 'any', operationsCopy: { resourceGroup: 'rg', account: 'acmecopia', container: 'copia' }, sessionToken: 'x' };
+  for (const [k, v] of Object.entries(rechazados)) {
+    const r = alta(['--dry-run', '--phase', 'demo'], { config: { ...CONFIG_DEMO(), [k]: v }, env: {} });
+    assert.strictEqual(r.status, 1, `${k}: no se acepta`);
+    assert.ok(r.out.includes(k), `${k}: el error lo nombra: ${r.out}`);
+    assert.deepStrictEqual(r.llamadas, []);
+  }
+  // sin lo mínimo (la imagen por su huella), tampoco
+  const { image, ...sinImagen } = CONFIG_DEMO();
+  assert.strictEqual(alta(['--dry-run', '--phase', 'demo'], { config: sinImagen, env: {} }).status, 1);
+  assert.strictEqual(alta(['--dry-run', '--phase', 'demo'], { config: { ...CONFIG_DEMO(), image: 'ghcr.io/acme/arnes:stable' }, env: {} }).status, 1, 'la imagen va por su huella, nunca por etiqueta');
+
+  // (3) --apply sobre el ambiente que ya creó la fase ambiente: la instancia aparte, sin nada de lo de la organización
+  const amb = alta(['--apply', '--phase', 'ambiente'], { config: CONFIG_DEMO(), env: {} });
+  assert.strictEqual(amb.status, 0, amb.out);
+  // las variables secretas del sitio que el entorno de quien instala pudiera tener puestas NO viajan a la instancia demo
+  const uno = alta(['--apply', '--phase', 'demo'], { config: CONFIG_DEMO(), fix: amb.fix });
+  assert.strictEqual(uno.status, 0, uno.out);
+  sinMarcadores(uno.out, 'la salida de la fase demo');
+  const nuevas = uno.llamadas.slice(amb.llamadas.length);
+  for (const l of nuevas) sinMarcadores(`${l.args.join(' ')} ${Object.values(l.archivos).join(' ')}`, 'una orden de az o su archivo');
+  assert.ok(!nuevas.some((l) => ['almacen', 'recurso-compartido', 'rol', 'inicio', 'entrada', 'llaves', 'registro'].includes(l.paso)), `ni disco, ni rol, ni candado, ni llaves: ${nuevas.map((l) => l.paso)}`);
+  const crea = nuevas.find((l) => l.paso === 'aplicacion' && l.args[1] === 'create');
+  assert.ok(crea && crea.args.includes('--yaml'), 'crea la aplicación con su archivo');
+  const y = JSON.parse(Object.values(crea.archivos)[0]);
+  const cont = y.properties.template.containers[0];
+  assert.deepStrictEqual(cont.env.map((e) => [e.name, e.value !== undefined]), [['SITE_DEMO', true], ['SITE_PUBLIC_URL', true]], 'sólo SITE_DEMO y la dirección pública');
+  assert.strictEqual(cont.env.find((e) => e.name === 'SITE_DEMO').value, '1');
+  assert.strictEqual(cont.env.find((e) => e.name === 'SITE_PUBLIC_URL').value, 'https://demo-acme.cielo-verde-1a2b3c4d.eastus2.azurecontainerapps.io');
+  assert.strictEqual(cont.image, CONFIG_DEMO().image);
+  assert.deepStrictEqual(y.properties.template.scale, { minReplicas: 0, maxReplicas: 1 }, 'escala a cero');
+  assert.strictEqual(y.properties.configuration.ingress.external, true, 'abierta con un link');
+  assert.strictEqual(y.properties.configuration.ingress.allowInsecure, false, 'sólo HTTPS');
+  assert.strictEqual(y.properties.configuration.secrets, undefined, 'sin secretos');
+  assert.strictEqual(y.identity, undefined, 'sin identidad administrada');
+  assert.strictEqual(y.properties.template.volumes, undefined, 'sin disco');
+  assert.strictEqual(cont.volumeMounts, undefined);
+  assert.ok(cont.probes.every((p) => p.httpGet.path === '/livez'), 'las sondas contra /livez');
+  assert.match(uno.out, /https:\/\/demo-acme\.cielo-verde-1a2b3c4d\.eastus2\.azurecontainerapps\.io/, 'dice el link');
+
+  // (4) repetida sobre una instancia demo que ya existe: la actualiza (no crea otra) con la imagen de hoy
+  const nueva = `ghcr.io/acme/arnes@sha256:${'b'.repeat(64)}`;
+  const dos = alta(['--apply', '--phase', 'demo'], { config: { ...CONFIG_DEMO(), image: nueva }, fix: amb.fix });
+  assert.strictEqual(dos.status, 0, dos.out);
+  const otras = dos.llamadas.slice(uno.llamadas.length);
+  assert.ok(!otras.some((l) => l.paso === 'aplicacion' && l.args[1] === 'create'), 'no crea otra aplicación');
+  const upd = otras.find((l) => l.paso === 'aplicacion' && l.args[1] === 'update' && l.args.includes('--yaml'));
+  assert.ok(upd, 'la actualiza');
+  assert.strictEqual(JSON.parse(Object.values(upd.archivos)[0]).properties.template.containers[0].image, nueva);
+  assert.match(dos.out, /La aplicación ya existe: se actualiza\./);
+  assert.match(dos.out, /imagen: ghcr\.io\/acme\/arnes@sha256:a{64} → ghcr\.io\/acme\/arnes@sha256:b{64}/);
+
+  // (5) un paso que falla: se detiene, dice cuál y qué quedó, y volver a correrla lo completa
+  const amb2 = alta(['--apply', '--phase', 'ambiente'], { config: CONFIG_DEMO(), env: {} });
+  const falla = alta(['--apply', '--phase', 'demo'], { config: CONFIG_DEMO(), fix: amb2.fix, fixEnv: { TYCON_AZ_FAIL: 'aplicacion:create' } });
+  assert.strictEqual(falla.status, 1, falla.out);
+  assert.match(falla.out, /falló: crear la aplicación del sitio demo/, 'dice qué paso falló');
+  assert.match(falla.out, /Lo que quedó creado: nada/, 'y qué quedó');
+  assert.match(falla.out, /corré la fase de nuevo/i);
+  const completa = alta(['--apply', '--phase', 'demo'], { config: CONFIG_DEMO(), fix: amb2.fix });
+  assert.strictEqual(completa.status, 0, completa.out);
+  assert.ok(completa.llamadas.slice(falla.llamadas.length).some((l) => l.paso === 'aplicacion' && l.args[1] === 'create'), 'la segunda corrida crea lo que faltaba');
+
+  // (6) nunca pisa una aplicación que no es una instancia demo (la de la organización, con el mismo nombre)
+  const amb3 = alta(['--apply', '--phase', 'ambiente']);
+  const sitioReal = alta(['--apply', '--phase', 'sitio'], { fix: amb3.fix });
+  assert.strictEqual(sitioReal.status, 0, sitioReal.out);
+  const pisar = alta(['--apply', '--phase', 'demo'], { config: { ...CONFIG_DEMO(), resourceGroup: CONFIG().resourceGroup, environment: CONFIG().environment, app: CONFIG().app, logAnalyticsWorkspace: CONFIG().logAnalyticsWorkspace }, fix: amb3.fix });
+  assert.strictEqual(pisar.status, 1, pisar.out);
+  assert.match(pisar.out, /no es una instancia demo/);
+  assert.ok(!pisar.llamadas.slice(sitioReal.llamadas.length).some((l) => l.paso === 'aplicacion' && ['create', 'update'].includes(l.args[1])), 'no la toca');
+});

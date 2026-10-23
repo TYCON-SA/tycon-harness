@@ -42,7 +42,7 @@ sprint: 1
 priority: "P0"        # P0 = blocker, P1 = must, P2 = should, P3 = nice
 approach: "[ADAPT]"   # [EXTRACT] = copiar de fuente | [ADAPT] = adaptar | [CREATE] = nuevo
 depends_on: ["2.1", "2.2", "1.3"]
-ado_work_item: 12345  # auto-poblado al crear la story (ver nota abajo); ID del work item en Azure DevOps
+work_item: 12345  # auto-poblado al crear la story (ver nota abajo); id del pedido de trabajo
 ---
 ```
 
@@ -52,6 +52,12 @@ ado_work_item: 12345  # auto-poblado al crear la story (ver nota abajo); ID del 
   entrega**: `cancelled`, `abandoned`, `superseded` y `reverted`. Ese archivo trae además los
   alias de lo que ya se usa en los repos (`pending` → `backlog`, `implementation-complete` →
   `review`, `merged` → `done`, …) y el motivo escrito de cada decisión no obvia.
+  - **`draft` es una historia que el validador todavía no revisó.** Una historia nueva nace en `draft`; el arnés no
+    deja escribir una historia nueva en otro estado, ni pasar un borrador a `ready-for-dev`, sin que el validador de
+    historias (`tycon-story-validator`) haya corrido sobre ese archivo después de su última escritura. Lo hace la skill
+    `tycon-create-story` en su paso 6 (o el agente después de `story-without-bmad.js write`); saltearlo lo autoriza la
+    persona con «autorizo story-skill-bypass». El pipeline no arranca sobre un borrador, y si la sesión deja uno sin
+    validar, el cierre del turno le da al agente la orden de validarlo y, si no avanza, se lo dice a la persona.
   - 🔴 **La lista es CERRADA a propósito, y lo que no está NO se descarta**: sale como
     `desconocido:<valor>`, se cuenta aparte y aparece con su nombre en el tablero. Escribir un
     estado que no está en el diccionario no rompe nada y no da error — sólo hace que la story
@@ -83,7 +89,7 @@ ado_work_item: 12345  # auto-poblado al crear la story (ver nota abajo); ID del 
   la busca, y por eso el lint del frontmatter **avisa** cada número repetido con sus rutas (no
   frena: al escribir esto había 23 en un repo y 8 en otro).
 - `depends_on` lista stories que deben estar implementadas antes
-- `ado_work_item` — ID del work item en Azure DevOps. **Se auto-puebla al crear la story**: el hook `on-story-create.js` detecta la story nueva sin este campo e invoca el skill `tycon-ado-story-wi`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo NO trackea en ADO (sin `.tycon/ado-config.yaml` ni env vars), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/integrations/ado-projects.md`.
+- `work_item` — id del pedido de trabajo de la story en la plataforma del equipo (un work item de Azure DevOps, un issue de GitHub). El nombre viejo, `ado_work_item`, se sigue leyendo (con los dos gana `work_item`) y nadie lo escribe; el lint de frontmatter avisa si una story nueva nace con él. **Se auto-puebla al crear la story**: el hook `on-story-create.js` detecta la story nueva sin este campo e invoca el skill `tycon-story-work-item`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo NO trackea en ADO (sin `.tycon/ado-config.yaml` ni env vars), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/integrations/ado-projects.md`.
 
 #### 1.0 🔴 El frontmatter tiene que ser LEGIBLE — una story mal formada es una story invisible
 
@@ -307,9 +313,10 @@ Además de los campos base del ejemplo de §1, las stories reales usan estos cam
 | `driver` | string multilínea (`\|`) | opcional | Por qué existe la story: **máximo 2-3 líneas** + link a la sección del body o al issue que cuenta el incidente completo. Ver regla anti-redundancia abajo. |
 | `topics` | string[] | opcional | Temas de la wiki (`specs/wiki/topics/`) que la story toca — alimenta el lint bidireccional story↔wiki. |
 | `internal_scope` | bool | opcional | `true` = story interna (harness/infra/tooling), no entregable al cliente — queda fuera de los reportes de scope firmado. |
+| `deprecated_reason` | string | opcional | Por qué la story toca código que el repo declara **deprecado congelado** (lista `deprecated` de `.tycon/advisors.yaml` o la marca `harness-deprecated:` del archivo): el arreglo que hace falta. Sin él, el validador frena (`VAL-C9`) y editar ese archivo avisa o frena; con él, un congelado declarado en `files_to_modify`/`files_to_create` pasa. Un archivo **muerto** no se toca aunque la story traiga el motivo. |
 | `owner` | string | opcional | Dev humano responsable de la story (no el agente que la implementa). |
 | `blocks` | string[] | opcional | Inverso de `depends_on:` — stories que no pueden arrancar hasta que esta esté done. |
-| `estimated_days` | number | opcional | Estimación en días-dev, para sprint planning. |
+| `estimated_days` | number | opcional | Queda por compatibilidad y nadie lo lee: la estimación de la épica, del plan y de la historia vive en `.tycon/estimates.jsonl` del repo de historias, con cada versión (`guides/estimates.md`). |
 | `signed_ac_ref` | string | opcional | Referencia al AC del documento firmado con el cliente que esta story cubre (ver `guides/signed-scope-guardrails.md`). |
 
 **🔴 Regla anti-redundancia narrativa (`driver:` vs body):** el contexto/incidente que motiva la story vive **UNA SOLA VEZ** en el body (sección `## Origen` o equivalente); `driver:` se limita a 2-3 líneas + link a esa sección o al issue. Razón: hubo stories de 15-18K tokens que contaban el mismo incidente 3-4 veces (driver + Origen + Causa raíz + Change Log), y cada relectura por los advisors paga ese costo en cada iteración del pipeline.

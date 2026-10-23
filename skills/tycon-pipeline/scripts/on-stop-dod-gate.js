@@ -53,9 +53,14 @@ function writeMarker(sessionId, m) {
   } catch { /* best-effort */ }
 }
 
-function allowStop() { process.exit(0); }                 // sin output → Claude para
+// Lo que la persona tiene que ver al cerrar (una historia que quedó en borrador sin validar): va con la salida que toque.
+let toPerson = null;
+function allowStop() {                                    // sin output → Claude para
+  if (toPerson) process.stdout.write(JSON.stringify({ systemMessage: toPerson }) + '\n');
+  process.exit(0);
+}
 function blockStop(reason) {                              // Claude NO para, continúa con `reason`
-  process.stdout.write(JSON.stringify({ decision: 'block', reason }) + '\n');
+  process.stdout.write(JSON.stringify({ decision: 'block', reason, ...(toPerson ? { systemMessage: toPerson } : {}) }) + '\n');
   process.exit(0);
 }
 
@@ -66,7 +71,7 @@ function blockStop(reason) {                              // Claude NO para, con
 // 🔴 SEMÁNTICA: BLOQUEAR SOLO ANTE UN CHECK REGISTRADO EN ROJO.
 // Un check AUSENTE (todavía no medido) NO es rojo → NO bloquea. Razón crítica: el hook Stop
 // dispara en CADA fin de turno, incluido cuando Claude PAUSA para preguntarle al humano
-// (aprobar plan en Step 3, aprobar/waivear en Step 7). Si tratáramos "sin checks" como rojo, el portón TRABARÍA esos checkpoints HITL legítimos — el peor
+// (aprobar el plan, aprobar/waivear los hallazgos). Si tratáramos "sin checks" como rojo, el portón TRABARÍA esos checkpoints HITL legítimos — el peor
 // foot-gun (Claude nunca podría pedir aprobación en una corrida autónoma).
 //
 // El loop test→fix vive en "hay un check que MEDÍ y está rojo → no cierres, arreglá". La
@@ -81,11 +86,33 @@ function computeGate(marker) {
   for (const [name, status] of Object.entries(checks)) {
     // «sin-acotar» (tests): no se corrió nada a propósito y la cubre la CI del pedido; no es un rojo que el agente arregle.
     // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; tampoco lo arregla el agente: lo dicen el
-    // paso 4 y el cierre de la historia.
-    if (status !== 'green' && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
+    // cierre de «Correr las pruebas» y el cierre de la historia.
+    // «rojo-esperado» (expect-red): un rojo que la historia en deuda deja a propósito; sin la deuda escrita es un rojo.
+    const esperado = /^rojo-esperado/.test(String(status)) && !!marker.cierre && marker.cierre.estado === 'deuda';
+    if (status !== 'green' && !esperado && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };
+}
+
+// Un mensaje que da algo por terminado. Con límites de letra y no `\b`: `\b` no ve las tildes («terminé»).
+// «lista» no: en castellano casi siempre es el sustantivo («la lista de archivos»).
+const CLOSURE = /(^|[^\p{L}])(listo|listos|termin[eé]|terminad[oa]s?|terminamos|cerr[eé]|cerrad[oa]s?|cerramos|commit|commite[eé]|commitead[oa]|hech[oa]s?|done|finished|completed?)(?=$|[^\p{L}])/iu;
+
+/**
+ * La línea de pasos pendientes del marcador, o null. Sale sólo si el último mensaje afirma un cierre o el evento no trae
+ * mensaje: así aparece cuando el modelo narra que terminó, y no en cada pausa normal del pipeline. Un modelo que narra
+ * con otras palabras no la dispara; para ése la red es el freno de orden de «Preparar el commit».
+ */
+function pendingStepsLine(marker, event) {
+  if (!marker || !marker.storyId) return null;
+  const S = require('./lib/steps.js');
+  const pend = S.pendingSteps(marker).filter((id) => id !== S.CLOSE_STEP.id);
+  if (!pend.length) return null;
+  const msg = event && typeof event.last_assistant_message === 'string' ? event.last_assistant_message.trim() : '';
+  if (msg && !CLOSURE.test(msg)) return null;
+  return `⚠️ [tycon-pipeline] la story ${marker.storyId} tiene pasos sin cerrar: ${S.stepNames(pend)}. ` +
+    'Lo dicho en el mensaje no cierra ningún paso: cada uno se cierra con su constancia (`pipeline.js next` dice cuál sigue).';
 }
 
 function hardEscape() {
@@ -116,14 +143,45 @@ function main() {
 
   const sessionId = resolveSessionId(event.session_id);
 
-  // «Creé la historia» sin la historia escrita: vale para toda sesión que corrió la skill, no sólo el modo autónomo.
+  // Un borrador de la sesión sin validar: la orden concreta al agente, hasta un tope; después, el aviso a la persona.
   try {
-    const { readMark } = require('./lib/story-skill-gate-io.js');
-    const reason = require('./lib/story-claim-check.js').claimWithoutStory(event, { hasMark: !!readMark(STATE_DIR, sessionId) });
-    if (reason) return blockStop(reason);
-  } catch { /* fail-open: un error acá no traba el cierre */ }
+    const r = require('./lib/story-claim-check.js').insistir(event, { stateDir: STATE_DIR, home: os.homedir() });
+    if (r && r.aviso) toPerson = r.aviso;
+    if (r && r.block) return blockStop(r.block);
+  } catch (e) {
+    // fail-open: un error acá no traba el cierre, pero queda anotado (no es «no había borradores»)
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'story-claim-check', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
+  }
 
   const marker = readMarker(sessionId);
+
+  // «Creé la historia» sin la historia escrita: vale para toda sesión que corrió la skill o tiene un marcador, no sólo
+  // el modo autónomo. Con la conversación legible decide como siempre; sin ella, con la evidencia del arnés.
+  try {
+    const { readMark } = require('./lib/story-skill-gate-io.js');
+    const io = require('./lib/story-gate-io.js');
+    const claim = require('./lib/story-claim-check.js');
+    const reason = claim.claimWithoutStory(event, {
+      hasMark: !!readMark(STATE_DIR, sessionId), marker, stateDir: STATE_DIR, sessionId,
+      log: (r) => io.appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: (marker && marker.repoPath) || null, name: 'story-claim-check', ...r }),
+    });
+    // la hora de este cierre: el turno siguiente sin conversación sólo cuenta lo editado después
+    claim.noteStop(STATE_DIR, sessionId);
+    if (reason) return blockStop(reason);
+  } catch (e) {
+    // fail-open: un error acá no traba el cierre, pero queda anotado (no es «no afirmó nada»)
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'story-claim-check', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
+  }
+
+  // Pasos del pipeline sin cerrar, cuando el mensaje afirma un cierre (o el evento no trae mensaje): lo dicho no cierra
+  // ningún paso. Es un aviso; el freno es el de «Preparar el commit».
+  try {
+    const line = pendingStepsLine(marker, event);
+    if (line) toPerson = toPerson ? `${toPerson}\n${line}` : line;
+  } catch (e) {
+    // el aviso no traba el cierre, pero su falta queda anotada (no es «no había pasos pendientes»)
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'pending-steps-line', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
+  }
 
   // Scoping: solo el modo autónomo es atrapado por el portón.
   if (!marker || marker.autonomous !== true) return allowStop();

@@ -2,26 +2,26 @@
 
 **Objetivo**: correr un pase adversarial que **EJECUTA** el código del diff (bundlea/compila/parsea + corre
 probes contra datos/corpus reales) para CONFIRMAR o REFUTAR bugs de correctitud — la capa que los 6 advisors
-single-pass del Step 5 **no** pueden dar porque ellos LEEN el diff, no lo ejecutan.
+single-pass de Revisores **no** pueden dar porque ellos LEEN el diff, no lo ejecutan.
 
-Sus findings CONFIRMADOS se foldean al reporte consolidado del Step 6 con tag `adversarial-verify` y
+Sus findings CONFIRMADOS se foldean al reporte consolidado de «Hallazgos» con tag `adversarial-verify` y
 disparan el re-loop D.i igual que los de un advisor.
 
 ## 🔀 Desde 2026-07-30 este step es un JOIN, no un lanzamiento (Fase B paralelización)
 
-El workflow se lanza **al cierre del Step 4** (ver step-04 §Lanzamiento temprano) para que sus
-~20-40 min corran en paralelo con el Step 5. Este step, que sigue viviendo entre el Step 5 y el
-Step 6 en la máquina de estados, decide qué hacer según `marker.adversarial` (leer con
+El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md` §Lanzamiento TEMPRANO) para que sus
+~20-40 min corran en paralelo con Revisores. Este step, que sigue viviendo entre Revisores y
+«Hallazgos» en la máquina de estados, decide qué hacer según `marker.adversarial` (leer con
 `marker.js get`):
 
 - **`marker.adversarial` existe y `adversarial_is_ours: true`** (lo trae `pipeline.js next`) → el
   workflow es NUESTRO. **Join PASIVO**:
-  - **Si la notificación YA llegó** (el Step 5 dejó el output escrito en
-    `<RUN_DIR>/step-05b-adversarial.md` — ver step-05 §Cap reducido) → procesar ESE archivo
+  - **Si la notificación YA llegó** (Revisores dejó el output escrito en
+    `<RUN_DIR>/step-05b-adversarial.md` — ver `step-07-reviewers.md` §Cap reducido) → procesar ESE archivo
     (§Decisiones post-output).
   - **Si la notificación todavía NO llegó**: anunciar en 1 línea *"esperando el pase adversarial —
     llega solo, ~N min restantes"* y **CERRAR el turno** — no encadenar más tool calls, no avanzar
-    al Step 6, no anotar nada del 5b, no `Monitor`, no polling. La notificación reactiva la
+    a «Hallazgos», no anotar nada del pase, no `Monitor`, no polling. La notificación reactiva la
     sesión sola; ahí se retoma en §Decisiones post-output.
 - **`marker.adversarial` existe pero `adversarial_is_ours: false`** → lo lanzó OTRA sesión (el resume
   de un Workflow no cruza sesiones — no hay forma de joinearlo). **No se pregunta: decide la regla** que
@@ -29,33 +29,34 @@ Step 6 en la máquina de estados, decide qué hacer según `marker.adversarial` 
   lanzamiento tiene menos de 45 min y esa sesión sigue viva (su conversación cambió hace menos de 10
   min), **ESPERAR** su resultado (`esperar-pase-ajeno`: lo anota esa sesión; acá se cierra el turno
   como en el join pasivo); si no, **RELANZAR** (`relanzar-pase-ajeno`). Si ya tiene resultado, está
-  atendido y no se relanza (relanzar un pase cerrado bloquea el paso 8). Para relanzar, ANUNCIAR en 1
+  atendido y no se relanza (relanzar un pase cerrado bloquea «Preparar el commit»). Para relanzar, ANUNCIAR en 1
   línea *"el pase adversarial de la sesión <id> quedó sin resultado — lo relanzo (~20-40 min): <why>"*
   y, como en un retome NO están en contexto ni el gate ni las decisiones: **(a)** re-evaluar el gate
   (§Cuándo corre) para obtener el `model` fresco, **(b)** recuperar `decisions` del
-  Change Log / Completion Notes de la story y de `<RUN_DIR>/step-03-*.md`, **(c)** recién ahí relanzar
+  Change Log / Completion Notes de la story y de `<RUN_DIR>/step-02-bmad-plan.md`, **(c)** recién ahí relanzar
   con §Acción y registrar `mark-adversarial-launched <runId nuevo> 5b` (el overwrite cross-session está
   permitido).
 - **`marker.adversarial` NO existe** (kill-switch `TYCON_5B_EARLY=0`, o pipeline pre-fase-B) →
   comportamiento clásico: evaluar el gate y lanzar ACÁ (§Cuándo corre + §Acción), registrando
   igual `mark-adversarial-launched <runId> 5b`.
-- Nota: si el Step 4 ya anotó el salteo con `mark-adversarial-skipped` (gate `run:false`), este
+- Nota: si «Implementar» ya anotó el salteo con `mark-adversarial-skipped` (gate `run:false`), este
   step no se alcanza (`next` lo da por atendido) — es el no-op esperado, no un caso de esta lista.
 
-### Cómo se cierra el 5b — con constancia, nunca con una bandera suelta
+### Cómo se cierra el pase adversarial — con constancia, nunca con una bandera suelta
 
 - **El pase corrió** → `mark-adversarial-result` (§Decisiones post-output): anota qué encontró y a
-  dónde fue cada hallazgo, y cierra el 5b en la misma escritura.
+  dónde fue cada hallazgo, y cierra el pase en la misma escritura.
 - **El portón dice que no corre** → `mark-adversarial-skipped --files <archivos de código del diff>`:
   el comando le vuelve a preguntar al portón y, si el portón dice que corre, se niega.
-- **Abandonar un pase ya lanzado** es una decisión, no un salteo:
-  `TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files …` (queda en `bypass.log` como
-  `ADVERSARIAL_ABANDONADO`, con el runId).
+- **Abandonar un pase ya lanzado** es una decisión de la persona, no un salteo ni algo que el agente ofrece: lo dice
+  ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW», o reenviada por la sesión designada). El freno de seguridad
+  pide esa frase para la variable y para `--no-deep-review`, y queda en `bypass.log` como `ADVERSARIAL_ABANDONADO`, con
+  el runId. La respuesta a una pregunta de opciones no cuenta: la pregunta la armaría el agente.
 
 La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step prepare-commit` **frena** si el pase
 se lanzó y su resultado no está (freno `adversarial-result-gate`; `DOD_BYPASS` no lo abre). Medido antes
 de cablearlo: 4 de 9 corridas que lanzaron el pase lo cerraron con la bandera y sin
-anotar qué encontró, y 3 de esas 4 pasaron el paso 8 igual. Anotar el resultado sin haber procesado la
+anotar qué encontró, y 3 de esas 4 pasaron «Preparar el commit» igual. Anotar el resultado sin haber procesado la
 notificación sigue siendo mentira: el número de confirmados es el real.
 
 > **Por qué existe**: un review adversarial multi-agente *después* del pipeline caza bugs reales que los
@@ -83,10 +84,10 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js deep-revie
   —`models.adversarial.model`/`heavy`, el pedido de la corrida (`marker.js set-models adversarial=<x>`), el techo— y
   `model_reason` dice de dónde salió. No elijas el modelo por tu cuenta: usá el que da el gate.
 - **`run: false`** → **SKIP mecánico legítimo** (documentado, verificable — no es inferencia). Anunciarlo en 1 línea
-  con el `reason` que devuelve el gate, anotarlo (abajo) y saltar al Step 6.
+  con el `reason` que devuelve el gate, anotarlo (abajo) y saltar a «Hallazgos».
 
 **En AMBOS casos** (corrió el workflow O skip), el step se cierra con su constancia — es lo que `pipeline.js next`
-lee para saber que 5b fue atendido (si no, `next` te devuelve 5b de nuevo en loop). Ver §Cómo se cierra el 5b:
+lee para saber que el pase adversarial fue atendido (si no, `next` te devuelve este paso de nuevo en loop). Ver §Cómo se cierra el pase adversarial:
 
 ```bash
 # corrió el workflow → su resultado (§Decisiones post-output):
@@ -96,12 +97,14 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversa
 ```
 
 El gate (decisión "siempre en NORMAL"): **risk-class NORMAL → corre**; **LOW → skip** (superficie chica ≤6 files,
-ya barata). Overrides, en precedencia: (1) `--no-deep-review` / `TYCON_NO_DEEP_REVIEW=1` kill-switch; (2)
+ya barata). Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una línea qué corre y cuánto tarda (la
+duración es información, no una opción). Overrides, en precedencia: (1) `--no-deep-review` / `TYCON_NO_DEEP_REVIEW`,
+que pide la frase de la persona («autorizo TYCON_NO_DEEP_REVIEW»); (2)
 `.tycon/advisors.yaml deep_review: always|off|auto`; (3) `--deep-review` / `--ultracode` fuerza on; (4) risk-class.
 
-**Corre UNA sola vez por corrida** (lanzado al cierre del Step 4 — o acá como fallback), **NUNCA por cada
+**Corre UNA sola vez por corrida** (lanzado al cierre de «Implementar» — o acá como fallback), **NUNCA por cada
 re-loop D.i** — re-correr el workflow sería ~N× su costo. Los fixes de sus findings los re-verifican los
-advisors del re-loop (que sí re-corren). Audita el diff ORIGINAL del Step 4 a propósito (contrato vigente).
+advisors del re-loop (que sí re-corren). Audita el diff ORIGINAL de «Implementar» a propósito (contrato vigente).
 Doble seguro anti-relanzamiento: `deepReviewDone` (ya procesado) y el guard de `mark-adversarial-launched`
 (ya lanzado en esta sesión → exit 2). La única re-invocación legítima es la adopción de un huérfano
 cross-session (ver §JOIN arriba).
@@ -116,7 +119,7 @@ correrlo igual: `--deep-review`, o `marker.js set-size completa --reason "<por q
 ## Acción — invocar el Workflow
 
 Si `run: true`, armar `args.decisions` con las decisiones de diseño ya APROBADas de esta story (del bloque de
-Completion Notes / HITL del Step 3 / Change Log — R1/R2/D3/etc.) para que los hunters **no las re-flaggeen**, y
+Completion Notes / HITL de «Aprobar el plan» / Change Log — R1/R2/D3/etc.) para que los hunters **no las re-flaggeen**, y
 invocar la tool `Workflow`:
 
 > **Bajo Codex** (la sesión no tiene la tool `Workflow`): correr EL MISMO
@@ -164,7 +167,7 @@ edge · correctitud-algorítmica · integración/contratos); cada hunter lee el 
 **CLASE de hallazgos** la **reproduce un skeptic** independiente (reproduce-or-refute, **default REFUTED** si no
 reproduce → cero ruido). Devuelve `{ confirmed: [...], all_lenses: [...], probes_dir, hallazgos, clases, agentes_ahorrados, dudas, sin_veredicto, hallazgos_sin_veredicto, a_verificar_aparte }`; cada CONFIRMED trae `probe_dir`
 (la carpeta con su prueba; `""` si el verificador no pudo guardarla — su `verify_reasoning` dice por
-qué). Al terminar, anotar el resultado con `mark-adversarial-result` (§Decisiones post-output): eso cierra el 5b.
+qué). Al terminar, anotar el resultado con `mark-adversarial-result` (§Decisiones post-output): eso cierra el pase.
 
 ## Pase no medido
 
@@ -176,10 +179,10 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 - Un hallazgo cuyo verificador no contestó queda **`sin-veredicto`** en `detalle`, con su texto entero. Nunca es
   refutado ni limpio.
 - Con alguno de los dos, el pase sale **`medido: false`** y su `aviso` lo dice. **No medido no es verde**:
-  `mark-adversarial-result` lo anota `no-medido` y no cierra el 5b, `complete-step prepare-commit` frena (`pase-no-medido`, y
+  `mark-adversarial-result` lo anota `no-medido` y no cierra el pase, `complete-step prepare-commit` frena (`pase-no-medido`, y
   `DOD_BYPASS` no lo abre), `deep-review-gate` dice que corre (el salteo se niega) y `next` pide relanzarlo.
 - Para destrabar: relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con
-  `--result`. Abandonarlo sigue siendo una decisión del dev con el interruptor (`TYCON_NO_DEEP_REVIEW=1`, queda en
+  `--result`. Abandonarlo sigue siendo una decisión de la persona («autorizo TYCON_NO_DEEP_REVIEW»; queda en
   `bypass.log`).
 - Bajo Codex, `corredor.muertos` dice la causa de cada agente y la hora. Con el tope de uso no se reintenta y los
   agentes que faltan no se lanzan.
@@ -196,10 +199,10 @@ W=~/.claude/agent-skills/skills/tycon-pipeline/scripts
 node $W/marker.js mark-adversarial-launched claude-<sello> 5b --relaunch   # --relaunch sólo si ya había un lanzamiento
 # vuelta 1: deja seis pedidos (uno por cazador) y sale 3
 node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args '<mismo JSON de args, model: "sonnet">' \
-  --out <RUN_DIR>/step-05b-adversarial.json --agents-dir <RUN_DIR>/step-05b-agentes
+  --out <RUN_DIR>/step-05b-adversarial.json --agents-dir <RUN_DIR>/adversarial-agentes
 ```
 
-1. Leer `<RUN_DIR>/step-05b-agentes/PEDIDOS.json`: por cada pedido pendiente, lanzar UN `Agent(...)` de Claude
+1. Leer `<RUN_DIR>/adversarial-agentes/PEDIDOS.json`: por cada pedido pendiente, lanzar UN `Agent(...)` de Claude
    (`model` del pedido: `sonnet`; en segundo plano, ventana de 3 vivos) con el texto de `prompt_file`, y la orden de
    escribir en `answer_file` SÓLO el JSON que pide `schema_file`.
 2. Con todas las respuestas escritas, volver a correr el mismo comando. La segunda vuelta deja los pedidos de los
@@ -268,7 +271,7 @@ tests del repo bajo revisión**. Dos daños medidos:
    - **entrada en `.gitignore`** del repo.
    - **borrado en `finally`, no al final del camino feliz** — estos probes tumban el proceso a
      propósito, o sea que el camino feliz es exactamente el que no se ejecuta.
-3. **Nunca se corre la suite completa desde un probe** (el candado anti-full-suite del 5b sigue
+3. **Nunca se corre la suite completa desde un probe** (el candado anti-full-suite del pase adversarial sigue
    valiendo).
 4. **El guion corre parado fuera de cualquier repo, y git nunca va sin carpeta.** Si el laboratorio no se
    arma, las variables quedan vacías, y `git -C ""` —que **no cambia de carpeta**— crea ramas y commits en la
@@ -320,7 +323,7 @@ está arreglado con prueba. Igual que la promovida, se escribe ACÁ, al procesar
 rojo: el fix del re-loop la pone en verde. Así el resultado se anota en el join y `next` avanza.
 
 **Después, anotar el resultado** — una línea en `gates.log` con el número de confirmados,
-de la que sale el veredicto (`listo` con 0, `no-listo` con más). Anotarlo **cierra el 5b** y
+de la que sale el veredicto (`listo` con 0, `no-listo` con más). Anotarlo **cierra el pase adversarial** y
 es lo que `complete-step prepare-commit` busca. Con confirmados, el comando **se niega** si no se declara el destino de
 cada uno: `--tests k` tiene que coincidir con lo promovido para el lanzamiento vigente (tras un
 relanzamiento, las del pase anterior no cuentan), `--own p` va con
@@ -331,18 +334,18 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversa
   --tests <k promovidas> [--own <p> --in "<ruta>[,<ruta>…]"] [--deferred <d> --reason "<por qué y a qué story>"]
 ```
 
-🔴 **Vale también para toda revisión adversarial lanzada a mano** fuera del 5b —un «abogado del
+🔴 **Vale también para toda revisión adversarial lanzada a mano** fuera de este paso —un «abogado del
 diablo», un pase antes del push, uno después del cierre formal—: `--type revision`, y `--story <id>`
 si la sesión no tiene corrida del pipeline. Por qué: si sólo las iteraciones de revisores dejan rastro,
 una ronda hecha después del cierre formal que encuentra defectos graves no queda en ningún lado, y el
 merge sale igual.
 
-- **`confirmed` vacío** → anunciar "adversarial deep-verify: 0 CONFIRMED sobre 6 lentes" y seguir al Step 6.
-- **`confirmed` con bugs** → tratarlos como findings del Step 6:
+- **`confirmed` vacío** → anunciar "adversarial deep-verify: 0 CONFIRMED sobre 6 lentes" y seguir a «Hallazgos».
+- **`confirmed` con bugs** → tratarlos como findings de «Hallazgos»:
   - Cada uno cita su `lens` como "advisor" (`[adversarial-verify:<lens>]`), con `file:line` + `summary` + el
     `repro` observado. `severity: bug` → tratarlo como CRITICAL de correctitud; `robustness` → WARNING.
   - Aplicar los fixes (con el juicio del dev). Como es un cambio de código en respuesta a findings → **regla D.i**:
-    volver al Step 5 (advisors, `smart-reloop --iter N+1`) sobre el diff actualizado. **NO** re-correr 5b (ya corrió).
+    volver a Revisores (otra vuelta, `smart-reloop --iter N+1`) sobre el diff actualizado. **NO** re-correr el pase adversarial (ya corrió).
   - La prueba de regresión de cada bug ya está en la suite (promovida arriba con `promote-probe`, o
     escrita a mano y declarada con `--own`); el fix la pone en verde. Un bug sin prueba que lo
     fije es un bug que vuelve.
@@ -387,7 +390,7 @@ que nadie reprodujo — el defecto que el agrupamiento existe para NO cometer. S
 
 🔴 **`sin_veredicto` no es «refutado»**: son las clases cuyo verificador murió o no contestó JSON válido. Sus
 hallazgos quedan `sin-veredicto` en `detalle`, con su texto, y el pase sale no medido (§Pase no medido): no se
-confirman, pero tampoco se dan por limpios. No se cierra el 5b haciendo de cuenta que no había nada.
+confirman, pero tampoco se dan por limpios. No se cierra el pase haciendo de cuenta que no había nada.
 
 **Al cerrar el pase**, pasarle las causas al volcado para que el ratio se siga midiendo solo, y los
 hallazgos que quedaron sin verificar para que no desaparezcan:
@@ -397,15 +400,16 @@ sigue siendo humano, leyendo el aviso del pase.
 
 ## check-count / accounting (no interfiere con los advisors)
 
-El pase 5b es un **Workflow**, no spawns de `Agent` trackeados por `on-advisor-run.js` — por eso **NO** entra en el
-`check-count` de los advisors (que valida el `expected[]` de advisors del Step 5). El step loguea aparte el runId del
+El pase adversarial es un **Workflow**, no spawns de `Agent` trackeados por `on-advisor-run.js` — por eso **NO** entra en el
+`check-count` de los advisors (que valida el `expected[]` de advisors de Revisores). El step loguea aparte el runId del
 workflow + el `confirmed` count en `.advisors/pipeline-runs/<clave>-<sello>/step-05b-adversarial.md`.
 
 ## Costo (honesto)
 
 En NORMAL con `sonnet` (default), son ~6 hunters + M verifiers (M = nº de findings). Menos que una corrida Opus, pero
 es una capa real de tokens. Escala con la cantidad de findings (más hallazgos → más skeptics). `--no-deep-review` es el
-escape por corrida; `.tycon/advisors.yaml deep_review: off` lo apaga para un repo entero.
+escape por corrida y lo decide la persona («autorizo no-deep-review»): el costo no es motivo para que el agente lo
+ofrezca. `.tycon/advisors.yaml deep_review: off` lo apaga para un repo entero.
 
 Escalación de modelo (2026-07-06): story pesada → Opus (~1.7x sonnet) automático — es el run donde el pase adversarial
 más paga. Fable (~2x opus) no se ofrece: corre sólo con `--deep-review-fable` — ese nivel nunca se gasta en silencio.
@@ -413,8 +417,8 @@ más paga. Fable (~2x opus) no se ofrece: corre sólo con `--deep-review-fable` 
 ## Output de este step
 
 - `deep_review_ran: true|false` (+ `reason` del gate si false)
-- `confirmed[]` (findings reproducidos, cada uno con su `probe_dir`) → insumo del Step 6
+- `confirmed[]` (findings reproducidos, cada uno con su `probe_dir`) → insumo de «Hallazgos»
 - `<RUN_DIR>/step-05b-probes/<lente>-<n>/` — la prueba que reprodujo cada CONFIRMED (no viaja por git)
 - Log en `.advisors/pipeline-runs/<clave>-<sello>/step-05b-adversarial.md`
 
-Pasar al Step 6 (los CONFIRMED se foldean al reporte consolidado).
+Pasar a «Hallazgos» (los CONFIRMED se foldean al reporte consolidado).

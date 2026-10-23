@@ -10,7 +10,7 @@ omitClaudeMd: true
 
 **Phase**: pre
 **Severity**: WARNING (default) / CRITICAL (si archivo referenciado no existe)
-**Status**: ACTIVO — gate del pipeline (Step 1 pre-BMAD + Step 5 post-impl). CRITICAL bloquea, WARNING pausa para decisión del dev (ver tycon-pipeline regla C.i).
+**Status**: ACTIVO — gate del pipeline («Validar la historia» pre-BMAD + Revisores post-impl). CRITICAL bloquea, WARNING pausa para decisión del dev (ver tycon-pipeline regla C.i).
 **Tier**: Core (no excluible del pipeline YAML)
 
 ## Qué valida
@@ -90,7 +90,13 @@ sobre una story limpia para decir que el archivo existe).
        - Si el archivo resuelve pero la línea está fuera de rango → **[VAL-C8] CRITICAL** mismo finding.
      - Si la sección (A) no tiene **ninguna** ancla `archivo:línea` ni comando `grep` concreto (solo prosa describiendo "el patrón") → **[VAL-C8] CRITICAL**: "Sección 'Patrón de referencia verificado' sin anclas concretas — una descripción del patrón sin `archivo:línea`/`grep` verificable no es verificación. Ver story-format.md §9.2."
    - **Detección de asunción no verificada**: si la sección contiene `asumo`, `(asumo)`, `probablemente`, `creo que`, `supongo`, `no pude confirmar`, `presumiblemente` → **[VAL-C8] CRITICAL**: "Sección 'Patrón de referencia verificado' basada en una asunción no verificada. Prohibido per story-format.md §9.2. Abrir el archivo del proyecto hermano y reemplazar la asunción por la cita concreta verificada."
-   - **División de trabajo**: VAL-C8 verifica *presencia + resolución estructural* de las anclas (gate barato, Step 1). La confirmación profunda —abrir el archivo hermano y verificar que el patrón está realmente ahí, y que una afirmación (B) no oculta un patrón existente— la hace el advisor dedicado `tycon-sibling-pattern-reviewer` (reglas `XPAT-*`). VAL-C8 NO abre los archivos hermanos para confirmar semántica; solo chequea que resuelvan.
+   - **División de trabajo**: VAL-C8 verifica *presencia + resolución estructural* de las anclas (gate barato, «Validar la historia»). La confirmación profunda —abrir el archivo hermano y verificar que el patrón está realmente ahí, y que una afirmación (B) no oculta un patrón existente— la hace el advisor dedicado `tycon-sibling-pattern-reviewer` (reglas `XPAT-*`). VAL-C8 NO abre los archivos hermanos para confirmar semántica; solo chequea que resuelvan.
+6c. **Archivos deprecados (VAL-C9)** — el dato lo calcula un programa (`pipeline.js validators` → `archivos_deprecados`,
+   con la lista `deprecated` de `.tycon/advisors.yaml` commiteada y la marca `harness-deprecated:` de cada archivo) y te
+   llega en el pedido. No lo deduzcas vos. Por cada entrada con `frena: true` → **[VAL-C9] CRITICAL**: "{archivo}
+   ({lista}) está deprecado ({nivel}: {motivo}). Un archivo muerto no se toca; uno congelado sólo con
+   `deprecated_reason:` en el frontmatter de la historia." Una entrada con `frena: false` (congelado con motivo) no es
+   hallazgo: nombrala en el reporte. Sin el dato en el pedido, decilo en una línea («archivos deprecados: no medido»).
 7. **Validar Tasks**: primera task es "Salvaguarda de BD/estado" → si no, **[VAL-W4] WARNING**.
 7.05. **Validar back-links bidireccionales `followup_of:` / `followed_up_by:` (VAL-W10)** — aplica si el frontmatter declara `followup_of:` y/o `followed_up_by:`. Convención documentada en `story-format.md` §1.2.
    - **Forward check (hija → padre)**: por cada item `{id, type, summary}` en `followup_of:`:
@@ -105,22 +111,22 @@ sobre una story limpia para decir que el archivo existe).
 
 7.06. **Validar contrato AC↔test en la tabla `### Tests` (VAL-W11 — 2026-06-09)** — aplica a stories `ready-for-dev`/`in-progress` con `## Acceptance Criteria`:
    - Cada AC numerado debe tener ≥1 fila de la tabla `### Tests` que lo cubra (columna `AC` per story-format.md §6; en stories pre-formato sin columna, refs texto-libre `(AC #N)` cuentan pero agregar nota de migración a columna). Excepción: el AC figura como diferido en `acs_pending` de un bloque `pipelines:`.
-   - AC sin test asignado → **[VAL-W11] WARNING**: "AC #{n} sin test asignado en la tabla ### Tests. Agregá una fila con AC={n} (o declaralo en pipelines.X.acs_pending si se difiere). Atrapado en Step 1 — descubrirlo post-implementación era ACCOV-C5, demasiado tarde."
+   - AC sin test asignado → **[VAL-W11] WARNING**: "AC #{n} sin test asignado en la tabla ### Tests. Agregá una fila con AC={n} (o declaralo en pipelines.X.acs_pending si se difiere). Atrapado en «Validar la historia» — descubrirlo post-implementación era ACCOV-C5, demasiado tarde."
    - Mecánica: el check es determinístico — `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js mech-check --story <spec>` lo computa (lib/story-checks.js); citá su output en vez de re-derivar a mano.
 
 7.07. **Validar secciones GOLD operativas (VAL-W12 / VAL-W13 — 2026-06-09)** — aplica a stories `ready-for-dev`:
    - Falta heading "Lo que NO hay que hacer" con ≥1 bullet → **[VAL-W12] WARNING**: sin esa sección el ejecutor no tiene guardrails de scope y spec-first-checker pierde su ancla.
-   - Falta sección "Cómo verificar que funciona" con ≥1 fenced block ```bash de comandos copy-paste → **[VAL-W13] WARNING**: sin comandos canónicos, el DoD runtime gate (Step 7c) improvisa curls en vez de ejecutar los declarados por la story.
+   - Falta sección "Cómo verificar que funciona" con ≥1 fenced block ```bash de comandos copy-paste → **[VAL-W13] WARNING**: sin comandos canónicos, el DoD runtime gate («Probar en vivo») improvisa curls en vez de ejecutar los declarados por la story.
 
 7.08. **Citas `archivo:línea` sobre código que la propia story modifica (VAL-W14 — 2026-09-06)** — aplica a stories `ready-for-dev`/`in-progress`:
-   - **Hallazgo**: una cita con número de línea y SIN el nombre del miembro (`src/Boundary/PluginBoundary.cs:15`, «`PluginBoundary.cs` línea 15») sobre un archivo que la story VA A MODIFICAR (figura en su File List / Tasks, o en su diff). Cualquier fix que la propia story aplique sobre ese archivo desplaza las líneas que cita sobre sí misma (medido: una story se desincronizó tres veces en una misma corrida, una CRITICAL en el Step 1).
+   - **Hallazgo**: una cita con número de línea y SIN el nombre del miembro (`src/Boundary/PluginBoundary.cs:15`, «`PluginBoundary.cs` línea 15») sobre un archivo que la story VA A MODIFICAR (figura en su File List / Tasks, o en su diff). Cualquier fix que la propia story aplique sobre ese archivo desplaza las líneas que cita sobre sí misma (medido: una story se desincronizó tres veces en una misma corrida, una CRITICAL en «Validar la historia»).
    - → **[VAL-W14] WARNING**: "La story cita `{ruta}:{n}` sobre un archivo que ella misma modifica. Citá el MIEMBRO (`{Método}` en `{ruta}`) como identidad estable; el número de línea puede quedar como ayuda, no como referencia autoritativa (story-format.md §9 Dev Notes)."
    - **NO es hallazgo** (a) una cita que nombra el miembro —«`ValidatePayload` en `src/Boundary/PluginBoundary.cs`»—, **con o sin un número entre paréntesis como ayuda** («(~línea 15)»): nombrar el miembro ES la convención, y el número de ayuda no la rompe; (b) una cita sobre un archivo que la story no modifica (ahí la línea es estable).
    - Que el miembro esté nombrado en OTRA parte de la story (una Task, un AC) no salva a la cita: la cita frágil es la que va sola con su número.
    - No verifiques si el número citado es correcto: VAL-W14 no juzga la exactitud de la línea, juzga que la story dependa de un número que su propia implementación va a mover. Y un archivo que existe NO es VAL-C1: no lo cites entre corchetes.
    - Severity WARNING (aviso, no bloquea). Es lo que VAL-C1 no cubre: VAL-C1 verifica que el archivo exista; ésta, que la referencia sobreviva a la propia implementación.
 
-7.1. **Validar desambiguación de P-numbers (VAL-W9)** — aplica solo en validación **pre-implementación** (Step 1) o si la story está en status `draft`/`ready-for-dev`/`in-progress`. Skip en post-impl (Step 5) y en stories `done`/`review` (frozen). Por qué: "P2" tiene 2 lecturas firmadas en V7 (pantalla V7 §6 vs etapa FR11) que se solapan en P2..P8; ver `specs/planning-artifacts/prd.md` §Glosario y Convenciones de Numeración.
+7.1. **Validar desambiguación de P-numbers (VAL-W9)** — aplica solo en validación **pre-implementación** («Validar la historia») o si la story está en status `draft`/`ready-for-dev`/`in-progress`. Skip en post-impl (Revisores) y en stories `done`/`review` (frozen). Por qué: "P2" tiene 2 lecturas firmadas en V7 (pantalla V7 §6 vs etapa FR11) que se solapan en P2..P8; ver `specs/planning-artifacts/prd.md` §Glosario y Convenciones de Numeración.
    - Escanear el cuerpo de la story (NO el frontmatter, NO fenced code blocks ```` ``` ````, NO inline code spans `` ` ``) buscando ocurrencias del pattern `\bP[2-8]\b` (P2, P3, P4, P5, P6, P7, P8 como tokens aislados; P9/P12/P20/etc. NO matchean — son referencias históricas a pantallas V5 sin conflicto con etapas).
    - **Excluir** matches que:
      - Estén precedidos por la palabra `Pantalla` o `Etapa` (mismo whitespace token, ej. `Pantalla P2`, `Etapa P3`) → ya están calificados.
@@ -139,7 +145,7 @@ sobre una story limpia para decir que el archivo existe).
    «no» → no se exige. Si el pedido no trae el veredicto, no lo deduzcas: tu reporte lo dice en una línea OK
    («no recibí el veredicto de pantalla del arnés») y no exigís la fila.
 9. **Dev Agent Record**: si story está en status `done`/`review`, el record debe estar completo. Si está en `in-progress`/`ready-for-dev`, el record debe estar como placeholder (ni ausente ni completo) — si está ausente → **[VAL-W5] WARNING**.
-10. **Validar deferrals abiertos del propio story (Gate 1 del DoD)**: solo aplica si la story está en status `review` o el caller pidió validación post-implementación (e.g. Step 5 del `tycon-pipeline`). Escanear archivos modificados/creados por la implementación (cross-ref con `Dev Agent Record > File List` si está poblado, o con git diff vs el merge-base si el caller provee la lista). Buscar patterns:
+10. **Validar deferrals abiertos del propio story (Gate 1 del DoD)**: solo aplica si la story está en status `review` o el caller pidió validación post-implementación (e.g. Revisores del `tycon-pipeline`). Escanear archivos modificados/creados por la implementación (cross-ref con `Dev Agent Record > File List` si está poblado, o con git diff vs el merge-base si el caller provee la lista). Buscar patterns:
     - `TODO\(Story-{N}-deferral\)` (canónico)
     - `FIXME:?\s*Story\s*{N}` / `HACK:?\s*Story\s*{N}` / `XXX:?\s*Story\s*{N}`
     - `\[DEF-{N}-` / `DEFERRED-{N}` / `Story\s*{N}\s*deferred`
@@ -166,7 +172,7 @@ sobre una story limpia para decir que el archivo existe).
     - NO marca: el identificador junto a un dato legible («el número de factura y el nombre del cliente»); un identificador que el usuario sí conoce y usa (número de factura impreso, CUIT, patente); un AC de API o de backend que no llega a una pantalla.
     - Por qué: si el AC ya define la respuesta con identificadores internos, la pantalla los muestra tal cual y pasa todos los controles, porque revisar formato y anclas no mira qué va a leer el usuario. Se ve recién cuando alguien de negocio abre la pantalla.
 
-    Si encuentra uno → **[VAL-W16] WARNING**: "El AC {N} promete mostrar {campos} a un usuario de negocio sin un dato legible al lado: va a leer números que no reconoce. Sumá al AC qué dato legible acompaña a cada uno (nombre, descripción, fecha), o decí por qué el usuario sí conoce ese número." No es formato: pausa el paso 1 (no está en la lista que auto-continúa).
+    Si encuentra uno → **[VAL-W16] WARNING**: "El AC {N} promete mostrar {campos} a un usuario de negocio sin un dato legible al lado: va a leer números que no reconoce. Sumá al AC qué dato legible acompaña a cada uno (nombre, descripción, fecha), o decí por qué el usuario sí conoce ese número." No es formato: pausa «Validar la historia» (no está en la lista que auto-continúa).
 
 10d. **Validar si el código ya hace lo que pide un criterio (VAL-W17 — 2026-10-20)**: sólo antes de implementar (sin `phase: "post-implementation"` en el pedido; después de implementar el código ya lo hace porque se implementó). Para cada criterio de comportamiento, buscar en el repo si ese comportamiento ya existe, entero o en parte.
     - **Búsqueda acotada, por criterio**: con `.codegraph/` en la raíz del repo o con las tools de CodeGraph en la sesión, primero `codegraph_search` / `codegraph_node` / `codegraph_callers` sobre los nombres que el criterio y «Qué existe hoy» nombran. Sin índice, `Grep` dirigido por esos mismos textos, nombres y archivos (los textos literales que el criterio promete mostrar, los símbolos citados). No leer el repo entero: abrir sólo los archivos que devuelven esas búsquedas. Si CodeGraph falla, seguir con `Grep` y decirlo en una línea del reporte.
@@ -174,7 +180,7 @@ sobre una story limpia para decir que el archivo existe).
     - NO marca: lo que la story declara en `files_to_create`; un criterio que modifica a propósito un comportamiento existente (cambiar un texto, ampliar una condición) y lo dice; un criterio de no-regresión («sigue igual que hoy»).
     - Por qué: una historia escrita sobre algo que ya existe pasa todos los controles de formato y anclas, y se gasta una corrida en lo hecho. Ejemplo: se pidió que la guía del tester muestre que el arnés ya probó un criterio, y la guía ya lo mostraba en verde; lo vio una persona, no el arnés.
 
-    Si encuentra uno → **[VAL-W17] WARNING**: "El criterio {N} ya lo hace el código: `{archivo}:{línea}` — {qué hace ahí}. {Entero | En parte: falta {qué}}. Decidí si la historia sigue igual, se ajusta o se descarta." No es formato: pausa el paso 1 con esas tres salidas (no está en la lista que auto-continúa).
+    Si encuentra uno → **[VAL-W17] WARNING**: "El criterio {N} ya lo hace el código: `{archivo}:{línea}` — {qué hace ahí}. {Entero | En parte: falta {qué}}. Decidí si la historia sigue igual, se ajusta o se descarta." No es formato: pausa «Validar la historia» con esas tres salidas (no está en la lista que auto-continúa).
 
 6. **Validar signed scope alignment (VAL-C7)** — si el frontmatter incluye campo `signed_for_sprint`:
    - Si `signed_for_sprint` está presente Y `sprint != signed_for_sprint` → buscar en frontmatter el campo `change_request_ref` (formato: `CR-NNN` o `cr-NNN-...`).
@@ -191,8 +197,9 @@ sobre una story limpia para decir que el archivo existe).
   - **[VAL-C5]** Story marcada `review` con deferrals abiertos del propio story (`TODO(Story-{N}-deferral)` y patterns equivalentes) en código creado/modificado por la implementación. Bloquea commit prep del pipeline.
   - **[VAL-C6]** Pipeline con `status: blocked` sin `blocked_by` concreto (cadena vacía o placeholder genérico). Aplica solo si la story declara bloque `pipelines:`.
   - **[VAL-C7]** Signed scope mismatch: `sprint` actual difiere de `signed_for_sprint` sin `change_request_ref` apuntando a CR aprobado. Bloquea pipeline. Por qué: un shift unauthorized de una story firmada a otro sprint viola la propuesta firmada.
-  - **[VAL-C8]** Story de backend sin sección "Patrón de referencia verificado", o con anclas `archivo:línea` que no resuelven, o con la sección basada en una asunción no verificada ("asumo", "probablemente"), o afirmación "no aplica" sin razón/evidencia. Bloquea la story ANTES de implementación (Step 1). Por qué: una story `[ADAPT]` escrita y validada sin citar ni verificar el patrón hermano puede proponer un fix opuesto al patrón real de los plugins Bizuit hermanos. Verifica presencia + resolución estructural; la confirmación semántica profunda la hace `tycon-sibling-pattern-reviewer` (`XPAT-*`).
-- **WARNING**: **[VAL-W1..W14]** items del checklist GOLD incompletos o mal formados. **[VAL-W7]** específicamente: orphan AC (no asignado a ningún pipeline) o AC con asignación contradictoria (en `acs` y `acs_pending` a la vez). **[VAL-W8]** specifically: story cubre AC firmado (badge NUEVA V6/V7, referencia §18) pero no declara `signed_for_sprint` — backfill recomendado. **[VAL-W9]** specifically: story usa `P{n}` (n=2..8) sin calificar con `Pantalla`/`Etapa` ni reemplazar por el nombre — ambigüedad firmada del PRD §Glosario. **[VAL-W10]** specifically: drift bidireccional entre `followup_of:` (declarado en la hija) y `followed_up_by:` (declarado en la padre) — back-link faltante, orphan, type/summary desync, o type no enumerado. Convención Mary+GOLD §1.2. **[VAL-W11]** specifically: AC numerado sin test asignado en la tabla `### Tests` (columna AC) y sin deferral declarado — check mecánico vía `pipeline.js mech-check`. **[VAL-W12]** specifically: falta "Lo que NO hay que hacer" con ≥1 bullet. **[VAL-W13]** specifically: falta "Cómo verificar que funciona" con ≥1 fenced block bash (insumo del DoD runtime gate). **[VAL-W15]** specifically: post-implementación, la story no dice lo que se implementó (archivos sin declarar, conteos de tests que no coinciden, tareas o Dev Agent Record que contradicen el código). **[VAL-W16]** specifically: un AC promete mostrarle a un usuario de negocio identificadores internos (`id…`, `…Id`, `instanceId`, números de fila) sin un dato legible al lado — pausa el paso 1. **[VAL-W17]** specifically: antes de implementar, un criterio pide algo que el código ya hace, entero o en parte, citado con `archivo:línea` y lo que hace ahí — pausa el paso 1 con tres salidas (seguir, ajustar, descartar).
+  - **[VAL-C8]** Story de backend sin sección "Patrón de referencia verificado", o con anclas `archivo:línea` que no resuelven, o con la sección basada en una asunción no verificada ("asumo", "probablemente"), o afirmación "no aplica" sin razón/evidencia. Bloquea la story ANTES de implementación («Validar la historia»). Por qué: una story `[ADAPT]` escrita y validada sin citar ni verificar el patrón hermano puede proponer un fix opuesto al patrón real de los plugins Bizuit hermanos. Verifica presencia + resolución estructural; la confirmación semántica profunda la hace `tycon-sibling-pattern-reviewer` (`XPAT-*`).
+  - **[VAL-C9]** La historia declara en `files_to_modify` o `files_to_create` un archivo deprecado del repo: uno muerto, siempre; uno congelado, si la historia no trae `deprecated_reason:`. El dato viene calculado (`archivos_deprecados` de `pipeline.js validators`). Por qué: el código viejo que nadie quiere borrar todavía se toca sólo con un motivo escrito.
+- **WARNING**: **[VAL-W1..W14]** items del checklist GOLD incompletos o mal formados. **[VAL-W7]** específicamente: orphan AC (no asignado a ningún pipeline) o AC con asignación contradictoria (en `acs` y `acs_pending` a la vez). **[VAL-W8]** specifically: story cubre AC firmado (badge NUEVA V6/V7, referencia §18) pero no declara `signed_for_sprint` — backfill recomendado. **[VAL-W9]** specifically: story usa `P{n}` (n=2..8) sin calificar con `Pantalla`/`Etapa` ni reemplazar por el nombre — ambigüedad firmada del PRD §Glosario. **[VAL-W10]** specifically: drift bidireccional entre `followup_of:` (declarado en la hija) y `followed_up_by:` (declarado en la padre) — back-link faltante, orphan, type/summary desync, o type no enumerado. Convención Mary+GOLD §1.2. **[VAL-W11]** specifically: AC numerado sin test asignado en la tabla `### Tests` (columna AC) y sin deferral declarado — check mecánico vía `pipeline.js mech-check`. **[VAL-W12]** specifically: falta "Lo que NO hay que hacer" con ≥1 bullet. **[VAL-W13]** specifically: falta "Cómo verificar que funciona" con ≥1 fenced block bash (insumo del DoD runtime gate). **[VAL-W15]** specifically: post-implementación, la story no dice lo que se implementó (archivos sin declarar, conteos de tests que no coinciden, tareas o Dev Agent Record que contradicen el código). **[VAL-W16]** specifically: un AC promete mostrarle a un usuario de negocio identificadores internos (`id…`, `…Id`, `instanceId`, números de fila) sin un dato legible al lado — pausa «Validar la historia». **[VAL-W17]** specifically: antes de implementar, un criterio pide algo que el código ya hace, entero o en parte, citado con `archivo:línea` y lo que hace ahí — pausa «Validar la historia» con tres salidas (seguir, ajustar, descartar).
 
 ## Anti-patterns (lo que NO hace este advisor)
 
@@ -203,24 +210,24 @@ sobre una story limpia para decir que el archivo existe).
 
 ## Integración con el pipeline
 
-Core advisor. Corre en **tres momentos** del `tycon-pipeline`: el Step 1 (antes de implementar), la vuelta 1 del Step 5 (después de implementar) y los re-loops del Step 5 **hasta que devuelve dos veredictos limpios seguidos después de implementar** — desde ahí `pipeline.js` no lo relanza en esa corrida (deja la línea `validador-reloop` en `gates.log`), salvo que los chequeos sin modelo de VAL-C5/VAL-C6 encuentren algo o no se puedan leer los veredictos (medición del 2026-09-17: después de dos veredictos limpios, 2 hallazgos nuevos en 24 lanzamientos, ninguno bloqueante). Por eso **el renglón `Veredicto:` del final del informe no es opcional**: es lo que el pipeline lee.
+Core advisor. Corre en **tres momentos** del `tycon-pipeline`: «Validar la historia» (antes de implementar), la vuelta 1 de Revisores (después de implementar) y los re-loops de Revisores **hasta que devuelve dos veredictos limpios seguidos después de implementar** — desde ahí `pipeline.js` no lo relanza en esa corrida (deja la línea `validador-reloop` en `gates.log`), salvo que los chequeos sin modelo de VAL-C5/VAL-C6 encuentren algo o no se puedan leer los veredictos (medición del 2026-09-17: después de dos veredictos limpios, 2 hallazgos nuevos en 24 lanzamientos, ninguno bloqueante). Por eso **el renglón `Veredicto:` del final del informe no es opcional**: es lo que el pipeline lee.
 
-### Step 1 — pre-implementación (validación de spec)
-Se ejecuta antes de `bmad-dev-story`/`bmad-create-architecture`/cualquier skill que vaya a implementar. Chequea VAL-C1, VAL-C2, VAL-C3, **VAL-C8** + VAL-W1..W6 y **VAL-W17** (lo que el código ya hace). **NO chequea VAL-C5** (no hay código aún). VAL-C8 bloquea las stories de backend que no nacen con el patrón de referencia hermano verificado — gate cross-proyecto en la validación de la story, no opcional.
+### Validar la historia — pre-implementación (validación de spec)
+Se ejecuta antes de `bmad-dev-story`/`bmad-create-architecture`/cualquier skill que vaya a implementar. Chequea VAL-C1, VAL-C2, VAL-C3, **VAL-C8**, **VAL-C9** + VAL-W1..W6 y **VAL-W17** (lo que el código ya hace). **NO chequea VAL-C5** (no hay código aún). VAL-C8 bloquea las stories de backend que no nacen con el patrón de referencia hermano verificado — gate cross-proyecto en la validación de la story, no opcional.
 
-### Step 5 — post-implementación (Gate 1 del DoD)
-Re-ejecuta el validator después del build gate (Step 4) y junto con los advisors paralelos. Chequea **VAL-C5** explícitamente: escanea archivos modificados/creados por la implementación buscando `TODO(Story-{N}-deferral)` y patterns equivalentes.
+### Revisores — post-implementación (Gate 1 del DoD)
+Re-ejecuta el validator después del build gate («Implementar») y junto con los advisors paralelos. Chequea **VAL-C5** explícitamente: escanea archivos modificados/creados por la implementación buscando `TODO(Story-{N}-deferral)` y patterns equivalentes.
 
-Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea commit prep (Step 8) hasta cerrarlos.
+Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea «Preparar el commit» hasta cerrarlos.
 
-**Caller del Step 5** debe pasar al validator:
-- `story_path`: misma que en Step 1
-- `repo_path`: misma que en Step 1
+**Caller de Revisores** debe pasar al validator:
+- `story_path`: misma que en «Validar la historia»
+- `repo_path`: misma que en «Validar la historia»
 - `phase`: `"post-implementation"` (flag para activar VAL-C5)
 - `modified_files`: lista de archivos modificados/creados por la corrida actual (del Dev Agent Record o `git diff`)
 
 ### Output (activo)
-El output se incluye en el reporte consolidado del pipeline (Step 6) y se persiste en
+El output se incluye en el reporte consolidado del pipeline («Hallazgos») y se persiste en
 `.advisors/pipeline-runs/<story-id>-*/step-01-validator.md`. CRITICAL bloquea; WARNING pausa
 para decisión del dev (tycon-pipeline regla C.i).
 

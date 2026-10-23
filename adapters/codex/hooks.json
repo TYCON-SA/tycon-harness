@@ -46,6 +46,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/deprecated-session-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/retro-staleness-notice.js"
           },
           {
@@ -79,6 +83,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/produccion-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/guard-update-notice.js"
           }
         ]
       }
@@ -197,6 +205,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/deprecated-read-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/failed-query-notice.js"
           }
         ]
@@ -309,7 +321,7 @@
     },
     {
       "log": "PostToolUse · Skill (claude) — on-skill-invoke.js — SIN equivalente en Codex",
-      "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): Codex no expone la invocación de un skill como tool call (el skill se carga por mención, sin evento de hook), así que la constancia mecánica de tycon-create-story —la que abre el freno de story-a-mano (lib/story-skill-gate.js)— no existe de su lado. El freno (on-story-skill-gate.js dentro de hook-pre-edit.js + la puerta Bash en on-bash-write-gate.js) lo sabe: detecta Codex por el turn_id del payload (o CODEX_SESSION_ID sin CLAUDE_CODE_SESSION_ID), NO bloquea y deja `unknown-codex` en gates.log — frenar ahí obligaría al bypass en cada story legítima y el log se volvería ruido. Casos 29 del banco: must-block con tools:['claude'] y el caso codex-only que asserta el unknown. Si algún día Codex emite el evento, se registra este hook con su matcher y se saca la excepción.",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): Codex no expone la invocación de un skill como tool call (el skill se carga por mención, sin evento de hook), así que la marca de tycon-create-story no existe de su lado (desde 2026-10-23 el chequeo de historia afirmada del cierre del turno actúa igual con un marcador activo y decide con el mensaje del evento, el registro de ediciones, el marcador y el disco, sin leer la conversación); y la constancia que abre el freno de historia sin validar (lib/story-skill-gate.js), el validador corrido sobre el archivo, se lee de la conversación de Claude Code, que Codex no deja leer. El freno (on-story-skill-gate.js dentro de hook-pre-edit.js + la puerta Bash en on-bash-write-gate.js) lo sabe: detecta Codex por el turn_id del payload (o CODEX_SESSION_ID sin CLAUDE_CODE_SESSION_ID), NO bloquea y deja `unknown-codex` en gates.log — frenar ahí obligaría al bypass en cada story legítima y el log se volvería ruido. Casos 29 del banco: must-block con tools:['claude'] y el caso codex-only que asserta el unknown. Si algún día Codex emite el evento, se registra este hook con su matcher y se saca la excepción.",
       "scripts": [
         "on-skill-invoke.js"
       ]
@@ -354,6 +366,13 @@
       "scripts": [
         "sweep.js",
         "touch-activity.js"
+      ]
+    },
+    {
+      "log": "PostToolUse · Read — SOLO Claude Code (aviso de código deprecado al leer)",
+      "verdict": "ASIMETRÍA DECLARADA (2026-10-22, story 8.95): deprecated-read-notice.js avisa al leer un archivo deprecado. Del lado Claude se registra con matcher Read|Bash|PowerShell; Codex no emite evento para su herramienta propia de lectura, así que de su lado el aviso corre sólo por la terminal (su evento Bash: cat, sed -n, head…). Lo que Codex lea sin la terminal queda cubierto por la instrucción del arranque (deprecated-session-notice.js) y por los revisores, que reciben marcados los archivos deprecados del diff.",
+      "scripts": [
+        "deprecated-read-notice.js"
       ]
     }
   ]

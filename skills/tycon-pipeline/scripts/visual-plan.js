@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * visual-plan.js — Renderiza un "plan visual" HTML offline (single-file, 0-deps, sin red)
- * para el HITL Checkpoint #1 (Step 3) del tycon-pipeline.
+ * para el HITL Checkpoint #1 (paso «Aprobar el plan») del tycon-pipeline.
  *
  * Filosofía TYCON: el determinismo vive en el script (template HTML fijo), el juicio
  * vive en el LLM (extrae el contenido del plan BMAD y lo pasa como JSON estructurado).
@@ -41,7 +41,10 @@
  *   }
  */
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
+const path = require('path');
 
 /* ----------------------------- helpers ----------------------------- */
 function esc(s) {
@@ -79,7 +82,8 @@ function pillsFromFrontmatter(fm) {
   if (fm.sprint) p.push('Sprint ' + fm.sprint);
   if (fm.epic) p.push('Epic ' + fm.epic);
   if (fm.approach) p.push(fm.approach.replace(/[\[\]"']/g, ''));
-  if (fm.ado_work_item) p.push('ADO #' + fm.ado_work_item);
+  const pedido = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fm);
+  if (pedido) p.push('Pedido #' + pedido);
   return p;
 }
 

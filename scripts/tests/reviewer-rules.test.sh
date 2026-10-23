@@ -45,7 +45,9 @@ repo(){ # repo nuevo con un CLAUDE.md commiteado; deja el cwd ahí
   # global del dev (no corren sus ganchos) y las mediciones van a ${TMP}/h, no a su reviewer-rules.jsonl.
   fake_home_create "${TMP}/h" || exit 9
   cd "${TMP}/r" || exit 9
-  git init -q . && printf '%s' "${CLAUDE_BASE}" > CLAUDE.md && git add CLAUDE.md \
+  # el aviso sólo corre en un repo con pipeline: el de juguete lo declara, salvo con SIN_PIPELINE=1
+  if [ "${SIN_PIPELINE:-0}" != "1" ]; then mkdir -p .tycon && printf 'pipeline: {}\n' > .tycon/advisors.yaml; fi
+  git init -q . && printf '%s' "${CLAUDE_BASE}" > CLAUDE.md && git add -A \
     && git -c user.email=t@t -c user.name=t commit -q -m init
 }
 # Agrega 2 líneas fuera de la sección y 1 adentro, y las stagea.
@@ -369,6 +371,46 @@ for f in adapters/codex/agents/tycon-plugin-tests-coverage.toml adapters/codex/a
   grep -qF "al día: ${f}" "${TMP}/gen14.txt" || t14="${t14} ${f}(no sale del generador: $(grep -F "${f}" "${TMP}/gen14.txt" | head -1))"
 done
 [ -z "${t14}" ] && ok "T14 7.31-TestW2_DiceNumeroYOrigen — TEST-W2 nombra threshold_source y el corredor de suites.json, en el agente y en las dos copias de Codex" || no "T14 TEST-W2:${t14}"
+
+# ── T17-T20 · el aviso sale sólo en repos con pipeline ──────────────────────────────────────────────────────────────
+# En un repo sin pipeline (sin .tycon/advisors.yaml ni stories con frontmatter) no hay revisores que lean la sección: el
+# aviso es ruido. «No sé si usa el pipeline» sigue avisando.
+# 🔴 rojo: avisar en un repo sin pipeline (T17), callar con .tycon/advisors.yaml (T18) o con una story (T19), o callar
+# cuando no se pudo mirar (T20).
+SIN_PIPELINE=1 repo; cambio_tipico; rc="$(correr)"
+[ "${rc}" = "0" ] && [ ! -s "${TMP}/o.txt" ] && ok "T17 SinPipeline_NoAvisa @story-8.106 @ac-1 — sin salida, sale 0" \
+  || no "T17 avisó en un repo sin pipeline (rc=${rc}): $(cat "${TMP}/o.txt")"
+fake_home_count reviewer-rules.jsonl '"modo":"sin-pipeline"' >/dev/null 2>&1 && [ "$(fake_home_count reviewer-rules.jsonl '"modo":"sin-pipeline"')" -gt 0 ] \
+  && ok "T17 la medición anota el salteo (sin-pipeline)" || no "T17 la medición no anota el salteo"
+
+SIN_PIPELINE=1 repo; mkdir -p .tycon && printf 'pipeline: {}\n' > .tycon/advisors.yaml; cambio_tipico; rc="$(correr)"
+[ "$(grep -c 'movela a «Reglas para revisores»' "${TMP}/o.txt")" = "2" ] && ok "T18 ConAdvisorsYaml_Avisa @story-8.106 @ac-2 — avisa las dos líneas" \
+  || no "T18 con .tycon/advisors.yaml no avisó: $(cat "${TMP}/o.txt")"
+
+SIN_PIPELINE=1 repo; mkdir -p specs && printf -- '---\nepic: 1\nstory: "1.1"\ntitle: "x"\nstatus: draft\n---\n# Story 1.1\n' > specs/story-1.1.md
+cambio_tipico; rc="$(correr)"
+[ "$(grep -c 'movela a «Reglas para revisores»' "${TMP}/o.txt")" = "2" ] && ok "T19 ConStory_Avisa @story-8.106 @ac-3 — avisa las dos líneas" \
+  || no "T19 con una story no avisó: $(cat "${TMP}/o.txt")"
+
+# el script copiado solo, sin el descubridor de stories al lado: no puede saber si el repo usa el pipeline
+SIN_PIPELINE=1 repo; cambio_tipico
+SOLO="${TMP}/solo/scripts/ci"; mkdir -p "${SOLO}" "${TMP}/solo/scripts/lib" "${TMP}/solo/scripts/publishing"
+cp "${SCRIPT}" "${SOLO}/" && cp "${AQUI}/scripts/lib/legacy-names.js" "${TMP}/solo/scripts/lib/" 2>/dev/null
+[ -f "${AQUI}/scripts/publishing/denylist.json" ] && cp "${AQUI}/scripts/publishing/denylist.json" "${TMP}/solo/scripts/publishing/"
+env -u TYPESAFE_API_KEY node "${SOLO}/reviewer-rules.js" --staged --repo "${TMP}/r" > "${TMP}/o.txt" 2>&1
+[ "$(grep -c 'movela a «Reglas para revisores»' "${TMP}/o.txt")" = "2" ] && ok "T20 SinDescubridor_AvisaComoHoy @story-8.106 @ac-4 — «no sé» avisa" \
+  || no "T20 sin el descubridor no avisó: $(cat "${TMP}/o.txt")"
+# las otras dos formas de «no sé»: un escaneo incompleto sin stories y un descubridor que falla dan null (avisa), nunca false
+mkdir -p "${TMP}/desc"
+printf 'module.exports={discoverStories:()=>({stories:[],partial:true})};\n' > "${TMP}/desc/parcial.js"
+printf 'module.exports={discoverStories:()=>{throw new Error("roto")}};\n' > "${TMP}/desc/roto.js"
+printf 'module.exports={discoverStories:()=>({stories:[],partial:false})};\n' > "${TMP}/desc/vacio.js"
+t20b="$(node -e '
+const R = require(process.argv[1]); const d = process.argv[2], repo = process.argv[3];
+console.log([R.usaPipeline(repo, { descubridor: d + "/parcial.js" }), R.usaPipeline(repo, { descubridor: d + "/roto.js" }), R.usaPipeline(repo, { descubridor: d + "/vacio.js" })].map(String).join(","));
+' "${SCRIPT}" "${TMP}/desc" "${TMP}/r")"
+[ "${t20b}" = "null,null,false" ] && ok "T20 escaneo incompleto y descubridor roto: «no sé» (null); escaneo completo sin stories: false" \
+  || no "T20 las formas de «no sé» dieron ${t20b} (se esperaba null,null,false)"
 
 if [ "${not_measured}" -gt 0 ]; then echo "reglas-revisores: ${pasaron} ok, ${fallos} fallos, ${not_measured} no medido(s) (copia pública)"
 else echo "reglas-revisores: ${pasaron} ok, ${fallos} fallos"; fi

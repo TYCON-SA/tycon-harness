@@ -330,3 +330,60 @@ test('un arreglo hecho entre dos lanzamientos re-corre al revisor que se lanzó 
     `${B} se lanzó DESPUÉS del arreglo: re-correrlo sería gastar de más — rerun: ${out.rerun.join(', ')}`);
   assert.ok((out.no_vistos_por_revisor || {})[A], 'y la salida dice qué archivos no vio cada revisor');
 });
+
+// ── Lo que el pipeline escribe en .advisors/ no es trabajo del repo ─────────────────────
+
+/**
+ * Una vuelta 2 armada a mano: la vuelta 1 arrancó y sacó su foto; después, si `informes`, el pipeline escribió sus
+ * informes en la carpeta de la ejecución (registro de ediciones, disco y git los ven), y si `arreglo`, se editó el .cs.
+ */
+function vuelta2({ informes, arreglo }) {
+  const repo = mkRepoGit();
+  const real = path.join(repo, 'src', 'PluginManager.cs');
+  const base = Date.now() - 120000;
+  const t = (s) => new Date(base + s * 1000).toISOString();
+  const seg = (s) => (base + s * 1000) / 1000;
+  fs.utimesSync(real, seg(-10), seg(-10));
+  const filesTouched = [real];
+  const fileEvents = [];
+  if (arreglo) {
+    fs.writeFileSync(real, '// arreglado\n');
+    fs.utimesSync(real, seg(40), seg(40));
+    fileEvents.push({ path: real, ts: t(40) });
+  }
+  if (informes) {
+    const run = path.join(repo, '.advisors', 'pipeline-runs', '9.3.1-x');
+    fs.mkdirSync(path.join(run, 'step-05-advisor-reports'), { recursive: true });
+    for (const [i, f] of ['findings.json', 'review-roster.json', path.join('step-05-advisor-reports', 'seguridad.md'), 'medicion-resumen.md'].entries()) {
+      const p = path.join(run, f);
+      fs.writeFileSync(p, f.endsWith('.json') ? '[]\n' : '# informe\n');
+      fs.utimesSync(p, seg(45 + i), seg(45 + i));
+      filesTouched.push(p);
+      fileEvents.push({ path: p, ts: t(45 + i) });
+    }
+  }
+  const home = mkHome({
+    storyId: '9.3.1', repoPath: repo, filesTouched, fileEvents,
+    iterations: { 1: { ts: t(30.3), filesSnapshot: [real] } },
+  });
+  escribirRegistro(home, [
+    { ts: t(0), event: 'step5-start', iter: 1, expected: [], mode: 'advisors' },
+    { ts: t(30.2), event: 'auto-snapshot', iter: 1 },
+  ]);
+  return reloop(repo, home);
+}
+
+test('T2 SmartReloop_SoloArchivosDeLaEjecucion_NoRepiteRevisores @story-8.102 @ac-2', () => {
+  const sin = vuelta2({ informes: false, arreglo: false });
+  const con = vuelta2({ informes: true, arreglo: false });
+  assert.deepEqual(con.rerun, sin.rerun, `los informes de .advisors/ no repiten revisores — delta: ${JSON.stringify(con.delta_files)}`);
+  assert.ok(!(con.delta_files || []).some((f) => f.includes(`${path.sep}.advisors${path.sep}`)), JSON.stringify(con.delta_files));
+  assert.notEqual(con.ledger_blind, true, 'git que ve sólo informes no es un registro ciego');
+});
+
+test('T3 SmartReloop_JsRealMasInformes_SoloLoDelJs @story-8.102 @ac-3', () => {
+  const solo = vuelta2({ informes: false, arreglo: true });
+  const con = vuelta2({ informes: true, arreglo: true });
+  assert.ok(solo.rerun.length > 0, 'el arreglo del .cs repite a quien lo audita');
+  assert.deepEqual(con.rerun, solo.rerun, `con informes al lado, los mismos revisores que con el arreglo solo — delta: ${JSON.stringify(con.delta_files)}`);
+});

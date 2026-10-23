@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * instinct-observer.js — observador batch nightly.
  *
@@ -836,7 +838,7 @@ function writeInstinct(inst, idx, ts, proposedBy, candidates, dir = dondeEscribi
     `hash: ${hash}`,
     `trigger: ${JSON.stringify(trigger)}`,
     `action: ${JSON.stringify(action)}`,
-    `confidence: ${inst.confidence ?? 0}`,
+    `confidence: ${inst.confidence === undefined || inst.confidence === null ? 0 : inst.confidence}`,
     `domain: ${JSON.stringify(inst.domain || 'unknown')}`,
     `scope: ${inst.scope || 'project'}`,
     inst.project ? `project: ${JSON.stringify(inst.project)}` : null,

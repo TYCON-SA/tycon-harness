@@ -690,6 +690,30 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
+## scripts/lib/models-env.js — las variables de Claude Code sobre otro proveedor
+
+**Qué es:** Imprime las variables `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` que Claude Code necesita para que cada nivel use el modelo de la tabla del proveedor de la máquina (`team-repos.json → models.providers`). Con `--format json` o `vscode`, las mismas en JSON.
+
+**Por qué existe:** Los revisores piden `haiku`, `sonnet` u `opus`. Con Claude Code sobre Ollama, cada alias recibe un modelo que existe sólo si su variable está puesta, y el arnés no puede ponerla: el entorno de la sesión vive antes de que arranque.
+
+**Quién la usa:** La función `claude-ollama` de la guía de Ollama, y quien quiera ver qué modelo es cada nivel en su máquina.
+
+**Dónde se prueba:** `scripts/tests/models-env.test.js`
+
+**Guía:** [ollama](integrations/ollama.md)
+
+## scripts/lib/nightly-model.js — el modelo del proceso de la noche
+
+**Qué es:** Dice con qué proveedor y qué modelo corre un proceso de la noche (`team-repos.json → models.nightly`, traducido con la tabla de su proveedor, con el tope y la lista de permitidos) y qué llave necesita. Sin configuración, sin modelo, fuera de la lista o sin llave devuelve un estado y no corre.
+
+**Por qué existe:** Un proceso de la noche no es la máquina de un dev: no tiene proveedor ni sesión, así que «el modelo del dev» no vale. El modelo se cambia desde el sitio, no con un pedido de código.
+
+**Quién la usa:** El proceso de la noche que redacta los aprendizajes del equipo.
+
+**Dónde se prueba:** `scripts/tests/nightly-model.test.js`
+
+**Guía:** [organization-site](organization-site.md)
+
 ## skills/tycon-pipeline/scripts/lib/run-size.js — el tamaño de la corrida
 
 **Qué es:** Decide si una corrida del pipeline es liviana (la story sólo declara documentación o textos) o completa (lo demás), y estima cuánto va a tardar con las corridas anteriores de la máquina.
@@ -844,9 +868,9 @@ cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro
 `scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las piezas que lo acompañan: la imagen
 (`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
-(`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
+(`scripts/lib/notify.js`); invitar desde Personas, `scripts/site/invitations.js`. Red: las suites `site-*` y `notify`.
 
-**La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
+**El sitio demo**: con `SITE_DEMO=1` el mismo servidor arranca sin proveedor de inicio de sesión ni credenciales, sobre los datos de ejemplo de «acme» (`scripts/site/demo.js` y `scripts/site/demo/`, los mismos que muestran las capturas de la guía), abierto con un link y de sólo lectura: un freno central no deja abrir conexiones, lanzar procesos ni escribir fuera de su carpeta temporal, y los botones que cambian algo muestran lo que pasaría. Se instala aparte con la fase `demo` del instalador de Azure Container Apps (`--phase ambiente` y después `--phase demo`). Red: `site-demo.test.js`. **La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
 un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`, más el logo de `site.brand.logo`)
 y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo ignora; lo peligroso rechaza la foto). «Al día» es el mismo commit con la misma lista de archivos: si la foto cambia sin commit nuevo, se re-sube con otro nombre (sin pisar la que nombra el índice), y el sitio la reabre por su huella; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`. **Al día con `stable`**: la imagen llega a `stable` sólo escaneada y firmada; `scripts/site/deploy/update-site.js` la instala por huella, prueba y vuelve atrás (`site.update`). Red: `site-latest-release.test.js` y `site-update.test.js`. **Las fichas del tablero**: llegan a Arnés, Proyectos y Corridas por `scripts/site/tabs/cards.js`, que llama al mismo cálculo que arma la página del tablero (`colectar()` de `scripts/nightly/dashboard/dashboard.js`), toma de cada ficha sólo lo de su lista blanca y oculta las que la organización destildó en Configuración (`site.hidden_cards`); la página del tablero ya no se sirve en el sitio, sólo su sello. Red: `site-cards.test.js`.
 
@@ -914,7 +938,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Qué es:** La guía `guides/integrations/ado-projects.md` de la integración con Azure DevOps.
 
-**Por qué existe:** Al crear una story se crea sola su work item. Cubre el hook `on-story-create.js`, la skill `tycon-ado-story-wi`, el esquema de `.tycon/ado-config.yaml`, el tipo de work item por plantilla, el vínculo al Epic y el ciclo de vida.
+**Por qué existe:** Al crear una story se crea sola su work item. Cubre el hook `on-story-create.js`, la skill `tycon-story-work-item`, el esquema de `.tycon/ado-config.yaml`, el tipo de work item por plantilla, el vínculo al Epic y el ciclo de vida.
 
 **Quién la usa:** El hook de creación de stories y el dev que configura un repo.
 
@@ -926,7 +950,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Qué es:** La guía `guides/safety-guard.md` del freno de mano: un hook que bloquea comandos destructivos irreversibles en Bash y PowerShell.
 
-**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando con `TYCON_SAFETY_OFF=1`.
+**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando con `TYCON_SAFETY_OFF=1`, que vale sólo si la persona escribió «autorizo TYCON_SAFETY_OFF» en el chat.
 
 **Quién la usa:** El hook `PreToolUse` en cada sesión.
 
@@ -1461,6 +1485,54 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 **Dónde se prueba:** sin suite propia
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksmissing-path-noticejs)
+
+## scripts/hooks/deprecated-session-notice.js
+
+**Qué es:** Al abrir la sesión, le dice al modelo qué código del repo está deprecado, con su nivel y su motivo, y la regla.
+
+**Por qué existe:** Un agente que busca «cómo se hace X acá» encuentra el código viejo y lo copia. Si el repo lo declara (clave `deprecated` de `.tycon/advisors.yaml`, commiteada), el arranque lo dice antes de que busque. Una vez por día y repo avisa las entradas que ya no apuntan a nada o pasaron su fecha de revisión.
+
+**Quién la usa:** El arranque de sesión, en Claude Code y en Codex.
+
+**Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-session-noticejs)
+
+## scripts/hooks/deprecated-read-notice.js
+
+**Qué es:** Cuando el agente lee un archivo deprecado, le agrega el motivo y que no lo use de ejemplo.
+
+**Por qué existe:** La lista del arranque se pierde entre muchas cosas; el aviso llega justo cuando el archivo entra en la conversación. Una vez por archivo y sesión.
+
+**Quién la usa:** El hook que corre tras cada lectura (Read) y cada comando de terminal; en Codex, sólo la terminal.
+
+**Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-read-noticejs)
+
+## skills/tycon-pipeline/scripts/lib/deprecated.js
+
+**Qué es:** Contesta «¿esta ruta está deprecada?»: la lista commiteada del repo y la marca `harness-deprecated:` en la cabecera de un archivo.
+
+**Por qué existe:** Una sola respuesta para todos los que la necesitan: el arranque, el aviso al leer, los revisores, el validador (VAL-C9), mech-check (DEPR-W1), el freno de edición y la noche. Lo que no puede mirar no clasifica nada.
+
+**Quién la usa:** Los avisos del código deprecado, `pipeline.js` y `on-deprecated-edit.js`.
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibdeprecatedjs)
+
+## skills/tycon-pipeline/scripts/on-deprecated-edit.js
+
+**Qué es:** Editar código deprecado sin una historia que lo pida avisa o frena, según el repo.
+
+**Por qué existe:** Congelado se toca sólo para arreglarlo, con una historia que lo declare y traiga `deprecated_reason:`; muerto no se toca. Borrarlo o moverlo pasa siempre: es el desenlace que se busca.
+
+**Quién la usa:** El despachador de ediciones y la puerta de la terminal (`on-bash-write-gate.js`).
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated-gates.test.js` y el caso 64 del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptson-deprecated-editjs)
 
 ## scripts/hooks/failed-query-notice.js
 

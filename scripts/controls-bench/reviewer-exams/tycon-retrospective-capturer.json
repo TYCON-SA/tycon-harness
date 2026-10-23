@@ -1,0 +1,20 @@
+{
+  "agent": "tycon-retrospective-capturer",
+  "file": "agents/tycon-retrospective-capturer.md",
+  "hash": "5850f0c15b556023585a9f9b85e35d5c9ab49bf3",
+  "passed": 4,
+  "total": 4,
+  "score": 1,
+  "baseline": {
+    "passed": 4,
+    "total": 4,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-retrospective-capturer::retro-captura-decision": true,
+    "tycon-retrospective-capturer::retro-correlacion-canario": true,
+    "tycon-retrospective-capturer::retro-gemelo-limpio": true,
+    "tycon-retrospective-capturer::retro-umbral-alerta": true
+  }
+}

@@ -262,7 +262,7 @@ if [ ! -f "$S07C" ] || [ ! -f "$S09" ] || [ ! -f "$SMERGE" ]; then
   echo "⏭  cierre-recortado: T9 salteado — no están los textos de agent-skills en $SKILLS"
 else
   seccion(){ awk -v ini="$2" 'index($0, ini)==1 {en=1; print; next} en && /^###? / {exit} en {print}' "$1"; }
-  s72="$(seccion "$S07C" '### 7c.2 ')"
+  s72="$(seccion "$S07C" '### Parte 2 ')"
   capa4="$(awk '/Review de legibilidad independiente/,/Usuario de prueba declarado/' "$S07C")"
   pre9="$(awk '/^## /{n++} n<=2' "$S09")"
   s7b="$(awk '/\*\*7b-1 /,/Regla general anti-espera/' "$SMERGE")"

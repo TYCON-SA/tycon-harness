@@ -3084,7 +3084,8 @@ async function compacta(seccion) {
 
 test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   const p = await compacta(secModelos(MODELOS_2));
-  const t = p.tablas();
+  // las tablas de los trabajos (las de cada proveedor y la de la noche van aparte: T35 y T38)
+  const t = p.tablas().filter((x) => !p.clases(x).includes('proveedores') && !p.clases(x).includes('noche'));
   assert.strictEqual(t.length, 5, 'el nivel general, los revisores (un solo grupo), el pase, los ayudantes y los revisores en Codex');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
   const [rev, cada, adv, ayu, cdx] = t.map((x) => p.renglones(x));
@@ -3471,7 +3472,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ approvals: { relay_session: 'coordinadora' } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3564,6 +3565,90 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.APPROVALS_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
   assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /qa/); assert.ok(bajo.includes(`>= ${ORG.QA_SINCE}`), bajo);
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+// ── Cómo se actualiza el freno de producción (guard.update) y la firma delegada (approvals.delegated_signing) ──────
+// Cada organización elige cuánto riesgo toma; lo de fábrica es lo más seguro, y cada valor se explica con su costo donde
+// la persona elige.
+test('8.88 T48 · Site_GuardUpdate_ShowsBothOptionsWithCosts @story-8.88 @ac-28', async () => {
+  const s = ORG.seccionPorId('frenoProduccion');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['guard'], ['guard.update'], ['guard']]);
+  for (const idioma of ['es', 'en']) assert.match(ORG.pantalla(idioma), /frenoProduccion: editorFrenoProduccion/);
+  const p = await pantallaFalsa([seccionPerfil('frenoProduccion', {})]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('frenoProduccion')).find((n) => n.tag === 'select');
+  assert.ok(sel, 'hay un selector');
+  assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'auto']);
+  assert.match(p.textoDe('frenoProduccion'), /con la contraseña de la persona \(de fábrica\)/i);
+  assert.match(p.textoDe('frenoProduccion'), /solo, desde la versión publicada/i);
+  assert.match(p.textoDe('frenoProduccion'), /la persona de esa máquina escribe su contraseña/);
+  assert.match(p.textoDe('frenoProduccion'), /un freno publicado más flojo llega sin que nadie lo apruebe en esa máquina/);
+  assert.match(p.textoDe('frenoProduccion'), /cualquier programa que corra con tu usuario puede pedir esa actualización/);
+});
+
+test('8.88 T49 · Site_GuardUpdate_ProposesProfileKeyValidated @story-8.88 @ac-28', () => {
+  const rev = (borrador) => ORG.revisar({ seccion: 'frenoProduccion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ guard: { update: 'auto' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, guard: { update: 'auto' } }));
+  // la capa tiene que pedir la versión que lee la clave
+  const CON = { ...PERFIL_TYCON, guard: { update: 'auto' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.GUARD_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.GUARD_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+test('8.88 T50 · Site_GuardUpdate_InvalidValueCannotBeProposed @story-8.88 @ac-28', () => {
+  const malo = ORG.revisar({ seccion: 'frenoProduccion', texto: ORG.formatJson(PERFIL_TYCON), borrador: { guard: { update: 'si' } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(malo.problems.some((p) => p.path === 'guard.update' && p.message), JSON.stringify(malo.problems));
+});
+
+test('8.88 T51 · Site_Approvals_DelegatedSigningSelector_DefaultOff @story-8.88 @ac-29', async () => {
+  assert.ok(ORG.seccionPorId('aprobaciones').rutas.includes('approvals.delegated_signing'));
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.delegated_signing');
+  assert.ok(sel, 'hay un selector de firma delegada');
+  assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'refresh-after-main']);
+  assert.strictEqual(sel.attrs.value || '', '', 'de fábrica, apagada');
+  assert.match(p.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona, en su terminal; esto no lo cambia\./);
+  const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+  const prendida = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } })]);
+  assert.match(prendida.textoDe('aprobaciones'), /vuelve a firmar en nombre del dueño un pedido que él ya firmó, cuando lo único nuevo es que se trajo main/);
+  assert.match(prendida.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona/);
+});
+
+test('8.88 T52 · Site_Approvals_WarnsWhenNoRelaySession @story-8.88 @ac-29', async () => {
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { delegated_signing: 'refresh-after-main' } })]);
+  assert.strictEqual(p.error, null);
+  assert.match(p.textoDe('aprobaciones'), /no sirve hasta designar la sesión que reenvía/);
+});
+
+test('8.88 T53 · Site_Texts_EsAndEn @story-8.88 @ac-30', () => {
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = ['pantalla.frenoProduccionTitulo', 'pantalla.frenoProduccion', 'pantalla.frenoProduccionPassword', 'pantalla.frenoProduccionAuto',
+    'pantalla.frenoProduccionPasswordCosto', 'pantalla.frenoProduccionAutoCosto', 'pantalla.firmaDelegada', 'pantalla.firmaDelegadaNo',
+    'pantalla.firmaDelegadaSi', 'pantalla.firmaDelegadaAviso', 'pantalla.firmaDelegadaCosto', 'pantalla.firmaDelegadaSinSesion'];
+  for (const k of claves) {
+    const es = textos.t('es', k); const en = textos.t('en', k);
+    assert.ok(es && en && es !== k && en !== k, `${k} existe en las dos lenguas`);
+    assert.notStrictEqual(es, en, `${k} está traducida`);
+  }
+  assert.match(textos.t('en', 'pantalla.firmaDelegadaAviso'), /signed by a person, at their terminal/);
+});
+
+test('8.88 T54 · Guide_OrganizationSite_DescribesBothOptions @story-8.88 @ac-30', () => {
+  const es = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8');
+  const en = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8');
+  for (const [guia, frases] of [[es, ['Cómo se actualiza el freno de producción', 'guard.update', 'approvals.delegated_signing', 'Aflojar un control siempre lo firma una persona', 'de fábrica']],
+    [en, ['How the production guard updates', 'guard.update', 'approvals.delegated_signing', 'Loosening a control is always signed by a person', 'default']]]) {
+    for (const f of frases) assert.ok(guia.includes(f), `la guía dice «${f}»`);
+  }
+  assert.match(es, /un freno publicado más flojo llega/);
+  assert.match(en, /a looser published guard arrives/);
 });
 
 test('8.63 Perfil_ApprovalsPideSuVersion @story-8.63 @ac-12 — con approvals en el perfil, la capa tiene que pedir la versión que la lee', () => {
@@ -4071,7 +4156,8 @@ const opcionesDe = (p, n) => p.todo(n).filter((x) => x.tag === 'option');
 
 test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
   const p = await compacta(secNiveles(enNiveles(MODELOS_2)));
-  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question|codex_reviewers/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
+  // el proveedor de la noche elige un proveedor, no un nivel
+  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question|codex_reviewers|nightly\.provider/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
   assert.ok(selectores.length >= 10, `${selectores.length} selectores de modelo`);
   for (const sel of selectores) {
     const ops = opcionesDe(p, sel).filter((o) => o.attrs.value !== '');
@@ -4079,8 +4165,9 @@ test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
     assert.deepStrictEqual(ops.map((o) => o.textContent), NIVELES_ES, `${sel.attrs['data-path']}: en pantalla con tilde`);
   }
   assert.ok(selectores.some((s) => s.attrs['data-path'] === 'models.ceiling'), 'el del tope incluido');
-  // «Por defecto» en niveles: ningún renglón muestra un nombre de Claude en esa columna
-  for (const fila of p.tablas().flatMap((t) => p.renglones(t))) {
+  // «Por defecto» en niveles: ningún renglón de los trabajos muestra un nombre de Claude en esa columna (la tabla de
+  // Anthropic muestra sus alias a propósito; la de la noche no tiene esa columna)
+  for (const fila of p.tablas().filter((t) => !p.clases(t).includes('proveedores') && !p.clases(t).includes('noche')).flatMap((t) => p.renglones(t))) {
     const hoy = p.de(fila, 'hoy')[0].textContent;
     assert.doesNotMatch(hoy, /^(haiku|sonnet|opus|fable)$/, p.texto(fila));
   }
@@ -4101,16 +4188,18 @@ test('Modelos_SinPreguntaDeFable — la pregunta retirada no tiene fila ni selec
 test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {
   const lineas = (p) => p.de(p.sec('modelos'), 'equiv').map((n) => n.textContent);
   let p = await compacta(secNiveles({ reviewers: 'balanced' }));
-  assert.ok(lineas(p).includes('Claude: sonnet · Codex: gpt-5.6-luna'), lineas(p).join('\n'));
+  // la línea con los cuatro proveedores: Anthropic y OpenAI como antes Claude y Codex
+  const LINEA = (anthropic, openai) => `Anthropic: ${anthropic} · OpenAI: ${openai} · Ollama: el del dev · Cursor: el del dev`;
+  assert.ok(lineas(p).includes(LINEA('sonnet', 'gpt-5.6-luna')), lineas(p).join('\n'));
   // cambiar el selector cambia la línea
   const sel = p.todo(p.renglones(p.tablas()[0])[0]).find((n) => n.tag === 'select');
   sel.on.change({ target: { value: 'max' } }); await p.esperar();
-  assert.ok(lineas(p).includes(`Claude: fable · Codex: ${EQUIV.fable}`), lineas(p).join('\n'));
+  assert.ok(lineas(p).includes(LINEA('fable', EQUIV.fable)), lineas(p).join('\n'));
   // un árbol sin la equivalencia (o sin el archivo): «sin equivalencia en este árbol»
   p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: { opus: 'gpt-x' } }));
-  assert.ok(lineas(p).includes('Claude: sonnet · Codex: sin equivalencia en este árbol'), lineas(p).join('\n'));
+  assert.ok(lineas(p).includes(LINEA('sonnet', 'sin equivalencia en este árbol')), lineas(p).join('\n'));
   p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: null }));
-  assert.ok(lineas(p).includes('Claude: sonnet · Codex: sin equivalencia en este árbol'));
+  assert.ok(lineas(p).includes(LINEA('sonnet', 'sin equivalencia en este árbol')));
   // un archivo que está pero no se lee no se confunde con uno que falta: la línea dice por qué (fallas silenciosas)
   const roto = tmp('site-config-equiv-roto-');
   fs.mkdirSync(path.join(roto, 'build'), { recursive: true });
@@ -4120,7 +4209,7 @@ test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {
   assert.match(leido.motivo, /^no pude leer las equivalencias de este árbol \(/);
   assert.deepStrictEqual(ORG.equivalenciasDe(tmp('site-config-sin-equiv-')), { equivalencias: null, motivo: null }, 'sin el archivo: sin motivo');
   p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: null, motivoEquivalencias: leido.motivo }));
-  assert.ok(lineas(p).some((l) => l.startsWith('Claude: sonnet · Codex: no pude leer las equivalencias de este árbol (')), lineas(p).join('\n'));
+  assert.ok(lineas(p).some((l) => l.startsWith('Anthropic: sonnet · OpenAI: no pude leer las equivalencias de este árbol (')), lineas(p).join('\n'));
   // el servidor las lee de build/equivalences.json del árbol que sirve el sitio
   await conPerfil({ repos: { ...TR_BASE, models: { reviewers: 'balanced' } }, layer: capa(ORG.MODEL_LEVELS_SINCE) }, async ({ seccion }) => {
     const v = await seccion('modelos');
@@ -4206,6 +4295,178 @@ test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { _nota: 'economy', reviewers: 'haiku' } }).version, ORG.MODELS_SINCE);
   const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
   assert.deepStrictEqual(ORG.modelosEnNiveles({ _nota: 'opus', helpers: 'haiku' }, TEAM), { _nota: 'opus', helpers: 'economy' });
+});
+
+// ── los modelos por proveedor ───────────────────────────────────────────────────────────────────────────
+const PROVS = ['anthropic', 'openai', 'ollama', 'cursor'];
+/** La sección de modelos con los valores por defecto de cada proveedor, como los manda el servidor. */
+const secProveedores = (models, extras = {}) => {
+  const base = secNiveles(models);
+  return { ...base, extras: { ...base.extras, proveedores: ORG.proveedoresDe(ROOT), ...extras } };
+};
+const tablaDe = (p, prov) => p.tablas().find((t) => p.clases(t).includes('proveedores') && t.attrs['data-proveedor'] === prov);
+const celdaDe = (p, prov, nivel) => p.todo(p.sec('modelos')).find((n) => n.attrs['data-path'] === `models.providers.${prov}.${nivel}`);
+const revisarModelos = (models) => ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models }, lectores: { 'team-repos.js': TR } });
+
+test('T35 Proveedores_CuatroTablas_AnthropicFija @story-2.73 @ac-27', async () => {
+  const p = await compacta(secProveedores({ reviewers: 'balanced' }));
+  for (const prov of PROVS) {
+    const t = tablaDe(p, prov);
+    assert.ok(t, `la tabla de ${prov}`);
+    assert.strictEqual(p.renglones(t).length, 4, `${prov}: un renglón por nivel`);
+  }
+  assert.strictEqual(p.todo(tablaDe(p, 'anthropic')).filter((n) => n.tag === 'input' || n.tag === 'select').length, 0, 'Anthropic, de sólo lectura');
+  assert.deepStrictEqual(p.renglones(tablaDe(p, 'anthropic')).map((r) => p.de(r, 'hoy')[0].textContent), ['haiku', 'sonnet', 'opus', 'fable']);
+  assert.deepStrictEqual(p.renglones(tablaDe(p, 'openai')).map((r) => p.de(r, 'hoy')[0].textContent), ['haiku', 'sonnet', 'opus', 'fable'].map((m) => EQUIV[m]), 'OpenAI: los de hoy');
+  for (const prov of ['ollama', 'cursor']) assert.deepStrictEqual(p.renglones(tablaDe(p, prov)).map((r) => p.de(r, 'hoy')[0].textContent), Array(4).fill('el del dev'), prov);
+  assert.match(p.texto(p.sec('modelos')), /Cursor está en prueba: la tabla se guarda pero todavía no se aplica/);
+});
+
+test('T36 Proveedores_EditarEscribeProviders @story-2.73 @ac-28', async () => {
+  const p = await compacta(secProveedores({ reviewers: 'balanced', providers: { ollama: { balanced: 'gpt-oss:120b-cloud' } } }));
+  celdaDe(p, 'ollama', 'economy').on.input({ target: { value: 'gemma4:31b-cloud' } });
+  celdaDe(p, 'ollama', 'balanced').on.input({ target: { value: '' } });
+  const propuesto = (await p.revisado()).models;
+  assert.deepStrictEqual(propuesto.providers, { ollama: { economy: 'gemma4:31b-cloud' } }, 'la escrita entra; la vaciada sale');
+  const ok = revisarModelos({ providers: { ollama: { economy: 'gemma4:31b-cloud' } } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.match(ok.texto, /"economy": "gemma4:31b-cloud"/);
+  const mal = revisarModelos({ providers: { ollama: { economy: 'a b' } } });
+  assert.strictEqual(mal.ok, false);
+  assert.deepStrictEqual(mal.problems.map((x) => x.path), ['models.providers.ollama.economy']);
+  assert.match(mal.problems[0].message, /sin espacios/, 'el mensaje del lector');
+  // vaciar la última celda saca la tabla entera
+  const q = await compacta(secProveedores({ providers: { ollama: { economy: 'x' } } }));
+  celdaDe(q, 'ollama', 'economy').on.input({ target: { value: '' } });
+  assert.strictEqual((await q.revisado()).models.providers, undefined);
+});
+
+test('T37 Permitidos_FueraDeLaListaFrenaProponer @story-2.73 @ac-29', async () => {
+  const fuera = revisarModelos({ providers: { ollama: { economy: 'gemma4:31b-cloud' } }, allowed: { ollama: ['gpt-oss:120b-cloud'] } });
+  assert.strictEqual(fuera.ok, false);
+  assert.strictEqual(fuera.texto, null);
+  assert.deepStrictEqual(fuera.problems.map((x) => x.path), ['models.providers.ollama.economy']);
+  assert.match(fuera.problems[0].message, /no está entre los permitidos de ollama/);
+  const dentro = revisarModelos({ providers: { ollama: { economy: 'gpt-oss:120b-cloud' } }, allowed: { ollama: ['gpt-oss:120b-cloud'] } });
+  assert.strictEqual(dentro.ok, true, JSON.stringify(dentro.problems));
+  // la lista se ofrece como sugerencias de cada celda de ese proveedor, y se edita en su campo
+  const p = await compacta(secProveedores({ allowed: { ollama: ['gpt-oss:120b-cloud', 'gemma4:31b-cloud'] } }));
+  const celda = celdaDe(p, 'ollama', 'economy');
+  const lista = p.todo(p.sec('modelos')).find((n) => n.tag === 'datalist' && n.attrs.id === celda.attrs.list);
+  assert.ok(lista, 'un datalist enlazado');
+  assert.deepStrictEqual(lista.hijos.map((o) => o.attrs.value), ['gpt-oss:120b-cloud', 'gemma4:31b-cloud']);
+  const campoLista = p.todo(p.sec('modelos')).find((n) => n.attrs['data-path'] === 'models.allowed.ollama');
+  campoLista.on.input({ target: { value: 'gpt-oss:120b-cloud, qwen3:480b-cloud' } });
+  assert.deepStrictEqual((await p.revisado()).models.allowed, { ollama: ['gpt-oss:120b-cloud', 'qwen3:480b-cloud'] });
+  campoLista.on.input({ target: { value: ' ' } });
+  assert.strictEqual((await p.revisado()).models.allowed, undefined, 'vacío saca la lista');
+});
+
+test('T38 Noche_FilaProveedorYNivel @story-2.73 @ac-30', async () => {
+  const fila = (p) => p.renglones(p.tablas().find((t) => p.clases(t).includes('noche')))[0];
+  const selProv = (p) => p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'models.nightly.provider');
+  let p = await compacta(secProveedores({ providers: { ollama: { economy: 'gemma4:31b-cloud' } }, nightly: { provider: 'ollama', level: 'economy' } }));
+  assert.deepStrictEqual(p.todo(selProv(p)).filter((n) => n.tag === 'option').map((o) => o.attrs.value), ['', 'anthropic', 'ollama'], 'sólo Anthropic y Ollama');
+  assert.match(p.texto(fila(p)), /hoy: gemma4:31b-cloud/);
+  assert.match(p.texto(fila(p)), /OLLAMA_API_KEY/);
+  selProv(p).on.change({ target: { value: 'anthropic' } }); await p.esperar();
+  assert.match(p.texto(fila(p)), /hoy: haiku/);
+  assert.match(p.texto(fila(p)), /ANTHROPIC_API_KEY/);
+  assert.deepStrictEqual((await p.revisado()).models.nightly, { provider: 'anthropic', level: 'economy' });
+  p = await compacta(secProveedores({ nightly: { provider: 'ollama', level: 'balanced' } }));
+  assert.match(p.texto(fila(p)), /sin modelo cargado para este nivel/);
+  const frenado = revisarModelos({ nightly: { provider: 'ollama', level: 'balanced' } });
+  assert.strictEqual(frenado.ok, false);
+  assert.deepStrictEqual(frenado.problems.map((x) => x.path), ['models.nightly']);
+  assert.match(frenado.problems[0].message, /sin modelo cargado/);
+  assert.strictEqual(revisarModelos({ nightly: { provider: 'anthropic' } }).ok, true);
+});
+
+test('T38b Noche_ConTope_ElSitioMiraElNivelRecortado @story-2.73 @ac-25 @ac-30 — el sitio y la noche deciden igual', async () => {
+  // falso negativo de antes: con tope economy y sin modelo en economy, la noche no corre: el sitio frena
+  const sinModelo = revisarModelos({ mandatory_ceiling: true, ceiling: 'economy', providers: { ollama: { strong: 'acme-good' } }, nightly: { provider: 'ollama', level: 'strong' } });
+  assert.strictEqual(sinModelo.ok, false);
+  assert.deepStrictEqual(sinModelo.problems.map((x) => x.path), ['models.nightly']);
+  assert.match(sinModelo.problems[0].message, /economy/);
+  // falso positivo de antes: con modelo en economy, la noche corre aunque strong esté vacío: el sitio deja proponer
+  const conModelo = revisarModelos({ mandatory_ceiling: true, ceiling: 'economy', providers: { ollama: { economy: 'acme-good' } }, nightly: { provider: 'ollama', level: 'strong' } });
+  assert.strictEqual(conModelo.ok, true, JSON.stringify(conModelo.problems));
+  // la fila dice el modelo que va a usar, con el tope aplicado
+  const p = await compacta(secProveedores({ mandatory_ceiling: true, ceiling: 'economy', providers: { ollama: { economy: 'acme-good' } }, nightly: { provider: 'ollama', level: 'strong' } }));
+  const fila = p.renglones(p.tablas().find((t) => p.clases(t).includes('noche')))[0];
+  assert.match(p.texto(fila), /hoy: acme-good/);
+});
+
+test('T36b Proveedores_NoReordenaLasClavesDelArchivo @story-2.73 @ac-28 — cambiar otra cosa no mueve las tablas', async () => {
+  const p = await compacta(secProveedores({ providers: { ollama: { economy: 'acme-x' } }, nightly: { provider: 'ollama' }, mandatory_ceiling: true, ceiling: 'strong', reviewers: 'balanced' }));
+  p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'models.ceiling').on.change({ target: { value: 'max' } });
+  assert.deepStrictEqual(Object.keys((await p.revisado()).models), ['providers', 'nightly', 'mandatory_ceiling', 'ceiling', 'reviewers']);
+});
+
+test('T39 Equivalencias_LineaConLosCuatroProveedores @story-2.73 @ac-31', async () => {
+  const lineas = (p) => p.de(p.sec('modelos'), 'equiv').map((n) => n.textContent);
+  let p = await compacta(secProveedores({ reviewers: 'balanced', providers: { ollama: { balanced: 'gpt-oss:120b-cloud' } } }));
+  assert.ok(lineas(p).includes(`Anthropic: sonnet · OpenAI: ${EQUIV.sonnet} · Ollama: gpt-oss:120b-cloud · Cursor: el del dev`), lineas(p).join('\n'));
+  p = await compacta(secProveedores({ reviewers: 'strong' }));
+  assert.ok(lineas(p).includes(`Anthropic: opus · OpenAI: ${EQUIV.opus} · Ollama: el del dev · Cursor: el del dev`), lineas(p).join('\n'));
+  const sinEq = await compacta({ ...secProveedores({ reviewers: 'balanced' }), extras: { ...secProveedores({ reviewers: 'balanced' }).extras, equivalencias: null, motivoEquivalencias: 'no pude leer las equivalencias de este árbol (x)' } });
+  assert.ok(lineas(sinEq).includes('Anthropic: sonnet · OpenAI: no pude leer las equivalencias de este árbol (x) · Ollama: el del dev · Cursor: el del dev'), lineas(sinEq).join('\n'));
+});
+
+test('T40 Proveedores_PidenSuVersion @story-2.73 @ac-32', () => {
+  assert.ok(ORG.versionAtLeast(ORG.MODEL_PROVIDERS_SINCE, ORG.MODEL_LEVELS_SINCE));
+  assert.ok(ORG.versionAtLeast(ORG.MODEL_PROVIDERS_SINCE, ORG.CODEX_REVIEWERS_SINCE));
+  assert.notStrictEqual(ORG.MODEL_PROVIDERS_SINCE, ORG.CODEX_REVIEWERS_SINCE);
+  for (const models of [{ providers: { ollama: { economy: 'x' } } }, { allowed: { ollama: ['x'] } }, { nightly: { provider: 'anthropic' } }]) {
+    assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models }).version, ORG.MODEL_PROVIDERS_SINCE, JSON.stringify(models));
+    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/\./g, '\\.')));
+  }
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE);
+});
+
+test('T41 Textos_ProveedoresEnEsYEn @story-2.73 @ac-33', () => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  const claves = ['pantalla.porProveedor', 'pantalla.porProveedorAyuda', 'pantalla.proveedor.anthropic', 'pantalla.proveedor.openai', 'pantalla.proveedor.ollama',
+    'pantalla.proveedor.cursor', 'pantalla.nivel2', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
+    'pantalla.permitidosAyuda', 'pantalla.elProcesoDeLaNoche', 'pantalla.nocheProveedor', 'pantalla.nocheSinConfigurar', 'pantalla.nocheHoy',
+    'pantalla.nocheSinModelo', 'pantalla.nocheLlave', 'pantalla.equivalenciaDelNivel', 'org.nocheSinModelo'];
+  for (const k of claves) {
+    // los nombres de proveedor se arman con su prefijo y el proveedor
+    const usado = k.startsWith('pantalla.proveedor.') ? src.includes("'pantalla.proveedor.'") : src.includes(`'${k}'`);
+    assert.ok(usado, `el código usa ${k}`);
+    assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `falta ${k} en los dos idiomas`);
+  }
+});
+
+test('T42 Guias_MencionanProveedoresYModelsEnv @story-2.73 @ac-34', () => {
+  const leer = (f) => fs.readFileSync(path.join(ROOT, 'guides', f), 'utf8');
+  for (const f of ['organization-site.md', 'organization-site.en.md']) {
+    const g = leer(f);
+    assert.match(g, /models\.providers/, `${f}: las tablas`);
+    assert.match(g, /models\.allowed/, `${f}: los permitidos`);
+    assert.match(g, /models\.nightly/, `${f}: la fila de la noche`);
+  }
+  for (const f of ['integrations/ollama.md', 'integrations/ollama.en.md']) {
+    const g = leer(f);
+    assert.match(g, /eval "\$\(node .*models-env\.js/, `${f}: la función con models-env.js`);
+    assert.match(g, /codex_reviewers: inherit/, `${f}: la relación con codex_reviewers`);
+    assert.match(g, /models\.providers\.ollama|tabla de Ollama|Ollama table/, f);
+  }
+});
+
+test('T43 SinProveedores_PantallaIgualALaFoto @story-2.73 @ac-35', async () => {
+  const p = await compacta(secProveedores({ reviewers: 'balanced' }));
+  const deTrabajos = p.tablas().filter((t) => !p.clases(t).includes('proveedores') && !p.clases(t).includes('noche'));
+  assert.deepStrictEqual(deTrabajos.map((t) => p.renglones(t).length), [2, 3, 3, 4, 1], 'las tablas de trabajos como antes');
+  const sel = p.todo(p.renglones(deTrabajos[0])[0]).find((n) => n.tag === 'select');
+  assert.strictEqual(sel.value, 'balanced');
+  assert.match(p.texto(p.renglones(deTrabajos[0])[0]), /Primera vuelta \| la primera revisión del trabajo terminado \| equilibrado/);
+  // sin tocar nada, lo que viaja no trae ninguna de las claves nuevas
+  const viaja = (await p.revisado()).models;
+  for (const k of ['providers', 'allowed', 'nightly']) assert.strictEqual(viaja[k], undefined, k);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: viaja }).version, ORG.MODEL_LEVELS_SINCE);
 });
 
 // ── la herramienta de horas se elige en Integraciones ────────────────────────────────────────────────────────────────
@@ -4458,4 +4719,157 @@ test('Pantalla_LoNormalSeDice — umbrales vacíos, paquetes sin instalar, ficha
   assert.match(p.textoDe('fichas'), /Qué tan bien detectan las pruebas un error puesto a propósito \|\s+— en el tablero: «Puntaje de mutación/);
   assert.match(ORG.pantalla(), /pantalla\.pedidosDeslizar/, 'el aviso de deslizar, en la tabla de pedidos');
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8'), /@media \(max-width:640px\)\{\.solo-celular\{display:block/, 'y sólo se ve en el celular');
+});
+
+test('T7 2.74-Lector_SiteInvitations @story-2.74 @ac-5 — cada marca de un correo de la lista, con quién y cuándo', async () => {
+  const base = () => ({ version: 1, owners: { default: LEAD }, site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: ['Eva@Otra.Example'] }] } });
+  const con = (inv) => { const d = base(); d.site.invitations = inv; return OPS.parse(JSON.stringify(d)); };
+  const bien = con({ 'eva@otra.example': { por: LEAD, el: '2026-10-22' } });
+  assert.strictEqual(bien.ok, true, `la mayúscula no es un problema: ${JSON.stringify(bien.problems)}`);
+  const mal = con({ 'nadie@otra.example': { por: LEAD, el: '2026-10-22' }, 'eva@otra.example': { el: '2026-13-40' } });
+  assert.strictEqual(mal.ok, false);
+  const rutas = mal.problems.map((p) => p.path).sort();
+  // la ruta de un campo es «site.invitations.<correo>.<campo>»: se arma por partes (escrita entera parece un correo)
+  const EVA = 'site.invitations.eva@otra.example';
+  assert.deepStrictEqual(rutas, [`${EVA}.el`, `${EVA}.por`, 'site.invitations.nadie@otra.example'].sort(), JSON.stringify(mal.problems));
+  assert.strictEqual(con([]).ok, false, 'tiene que ser un objeto');
+  // una baja normal en Personas (la persona sale de la lista) saca su marca en el mismo pedido
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'sitio');
+  const ops = clon({ 'operations.json': (() => { const d = base(); d.site.invitations = { 'eva@otra.example': { por: LEAD, el: '2026-10-22' } }; return d; })() });
+  await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const r = (await escribir('/api/config/revisar', lead, tok, { seccion: seccion.id, borrador: { site: { access: [{ role: 'maintainer', emails: [LEAD] }], invitations: { 'eva@otra.example': { por: LEAD, el: '2026-10-22' } } } } })).json;
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    assert.ok(!JSON.parse(r.texto).site.invitations, `la marca sale con la baja: ${r.texto}`);
+  });
+});
+
+// ── las estimaciones: la sección de la configuración y la vista de Proyectos ──────────────────────────────────────
+/** Los nodos de una sección ya dibujada (la última vez que se dibujó), filtrados por `pred`. */
+const nodosDe = (r, id, pred) => { const caja = r.creados.filter((n) => n.attrs.id === `seccion-${id}`).pop(); const out = []; const walk = (x) => { if (pred(x)) out.push(x); (x.hijos || []).forEach(walk); }; if (caja) walk(caja); return out; };
+const textoDe = (n) => { let s = n.textContent || ''; (n.hijos || []).forEach((h) => { s += ` ${textoDe(h)}`; }); return s; };
+
+test('2.75-T23 Seccion_Estimaciones @story-2.75 @ac-20 — la sección con la unidad, las horas por día y por punto; sin la clave, horas', async () => {
+  // 🔴 rojo: la sección no existe, no trae sus tres campos, o sin la clave no dice que la unidad es horas.
+  const s = ORG.seccionPorId('estimaciones');
+  assert.ok(s, 'hay una sección de las estimaciones');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['team-repos.json', 'perfil', 'team-repos.js', ['estimates'], 'repos']);
+  const hoy = { unit: 'hours', hours_per_day: 8, hours_per_point: null };
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('estimaciones', { repo: 'perfil', borrador: {}, extras: { hoy } })] });
+  assert.strictEqual(r.panelDe('seccion-estimaciones').attrs.id, 'pestana-claude', 'en «Cómo trabaja el agente»');
+  const unidad = nodosDe(r, 'estimaciones', (n) => n.tag === 'select' && n.attrs['data-path'] === 'estimates.unit');
+  assert.strictEqual(unidad.length, 1, 'el selector de la unidad');
+  assert.deepStrictEqual(unidad[0].hijos.map((o) => o.attrs.value), ['', 'hours', 'days', 'points']);
+  assert.match(unidad[0].hijos[0].textContent, /horas/i, 'vacío dice que la unidad es horas');
+  for (const p of ['estimates.hours_per_day', 'estimates.hours_per_point']) assert.strictEqual(nodosDe(r, 'estimaciones', (n) => n.tag === 'input' && n.attrs['data-path'] === p).length, 1, p);
+  // la unidad que leen hoy las máquinas, del árbol que corre
+  assert.match(textoDe(r.creados.filter((n) => n.attrs.id === 'seccion-estimaciones').pop()), /Hoy: horas · 8 h por día/);
+  // y de dónde sale: el team-repos.json del árbol, o los valores de fábrica sin él
+  const arbol = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-275-t23-'));
+  try {
+    assert.deepStrictEqual(ORG.estimacionesDeHoy(arbol).hoy, hoy, 'sin archivo, los de fábrica');
+    fs.writeFileSync(path.join(arbol, 'team-repos.json'), JSON.stringify({ ...TR_BASE, estimates: { unit: 'points', hours_per_point: 6 } }));
+    assert.deepStrictEqual(ORG.estimacionesDeHoy(arbol).hoy, { unit: 'points', hours_per_day: 8, hours_per_point: 6 });
+    fs.writeFileSync(path.join(arbol, 'team-repos.json'), '{ roto');
+    const roto = ORG.estimacionesDeHoy(arbol);
+    assert.strictEqual(roto.hoy, null);
+    assert.ok(roto.motivo, 'ilegible: el motivo, nunca los de fábrica callados');
+  } finally { fs.rmSync(arbol, { recursive: true, force: true }); }
+});
+
+test('2.75-T24 Seccion_ProponeYFrena @story-2.75 @ac-21 — elegir puntos lo propone; 30 horas por día frena con el mensaje del lector', async () => {
+  // 🔴 rojo: el selector no escribe la clave, o un valor fuera de rango se propone igual.
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('estimaciones', { repo: 'perfil', borrador: {} })] });
+  nodosDe(r, 'estimaciones', (n) => n.tag === 'select' && n.attrs['data-path'] === 'estimates.unit')[0].on.change({ target: { value: 'points' } });
+  nodosDe(r, 'estimaciones', (n) => n.tag === 'input' && n.attrs['data-path'] === 'estimates.hours_per_point').pop().on.input({ target: { value: '6' } });
+  nodosDe(r, 'estimaciones', (n) => n.tag === 'button' && n.textContent === 'Revisar cambios').pop().on.click();
+  for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+  const borrador = r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador;
+  assert.deepStrictEqual(borrador.estimates, { unit: 'points', hours_per_point: 6 });
+  const rev = (estimates) => ORG.revisar({ seccion: 'estimaciones', texto: ORG.formatJson(TR_BASE), borrador: { estimates }, lectores: { 'team-repos.js': TR } });
+  const bien = rev(borrador.estimates);
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, estimates: { unit: 'points', hours_per_point: 6 } }, 'el resto del archivo igual');
+  const malo = rev({ hours_per_day: 30 });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['estimates.hours_per_day']);
+  assert.match(malo.problems[0].message, /de 1 a 24/);
+  for (const [estimates, ruta] of [[{ unit: 'weeks' }, 'estimates.unit'], [{ unit: 'points', hours_per_point: 0 }, 'estimates.hours_per_point']]) {
+    const otro = rev(estimates);
+    assert.strictEqual(otro.ok, false, JSON.stringify(estimates));
+    assert.deepStrictEqual(otro.problems.map((p) => p.path), [ruta]);
+  }
+  // vaciar todo saca la clave: no se propone un «{}»
+  const vacio = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('estimaciones', { repo: 'perfil', borrador: { estimates: { unit: 'days' } } })] });
+  nodosDe(vacio, 'estimaciones', (n) => n.tag === 'select' && n.attrs['data-path'] === 'estimates.unit')[0].on.change({ target: { value: '' } });
+  nodosDe(vacio, 'estimaciones', (n) => n.tag === 'button' && n.textContent === 'Revisar cambios').pop().on.click();
+  for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+  assert.strictEqual(vacio.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador.estimates, undefined);
+});
+
+test('2.75-T25 Estimates_PideSuVersion @story-2.75 @ac-22 — con la clave, el perfil pide ESTIMATES_SINCE; sin ella, la de hoy', () => {
+  // 🔴 rojo: una máquina con el lector anterior vería una clave desconocida y descartaría la capa entera.
+  assert.ok(ORG.ESTIMATES_SINCE && ORG.versionAtLeast(ORG.ESTIMATES_SINCE, ORG.MODEL_PROVIDERS_SINCE) && ORG.ESTIMATES_SINCE !== ORG.MODEL_PROVIDERS_SINCE);
+  const con = ORG.versionQuePide({ ...TR_BASE, estimates: { unit: 'days' } });
+  assert.strictEqual(con.version, ORG.ESTIMATES_SINCE);
+  assert.ok(con.claves.includes('estimates'));
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE }).version, ORG.TEAM_REPOS_SINCE, 'sin la clave, la de siempre');
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/\./g, '\\.')));
+});
+
+test('2.75-T26 Textos_EnEsYEn @story-2.75 @ac-26 — los textos de la sección y de la vista existen en castellano y en inglés', () => {
+  // 🔴 rojo: un texto nuevo sólo en castellano, o una clave que el código usa y no existe.
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const usadas = new Set();
+  for (const f of [path.join('scripts', 'lib', 'org-config.js'), path.join('scripts', 'site', 'views.js')]) {
+    for (const m of fs.readFileSync(path.join(ROOT, f), 'utf8').matchAll(/'((?:pantalla|proyectos|org)\.(?:est|para\.estimaciones|unidad|horasPor)[A-Za-z0-9.]*)'/g)) usadas.add(m[1]);
+  }
+  for (const k of ['pantalla.estimaciones', 'pantalla.para.estimaciones', 'pantalla.unidadDeLasEstimaciones', 'pantalla.horasPorDia', 'pantalla.horasPorPunto', 'proyectos.estimaciones', 'proyectos.est.sinEstimaciones']) {
+    // la ayuda «Para qué» se arma con el id de la sección ('para.' + s.id): no aparece literal en el código
+    assert.ok(usadas.has(k) || k === 'pantalla.para.estimaciones', `el código usa ${k}`);
+  }
+  assert.ok(usadas.size >= 12, `pocas claves encontradas: ${[...usadas].join(', ')}`);
+  for (const k of [...usadas, 'pantalla.para.estimaciones']) assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `falta ${k} en los dos idiomas`);
+});
+
+test('2.75-T27 Proyectos_PorEpicaYProducto @story-2.75 @ac-23 @ac-25 — una fila por repo y épica, la suma del producto y la marca con su cifra', () => {
+  // 🔴 rojo: dos repos con el mismo id de épica se mezclan, la suma no suma todas las filas, o la marca no dice por cuánto.
+  const views = require(path.join(ROOT, 'scripts', 'site', 'views.js'));
+  const est = (o) => ({ rango: null, unidad: 'hours', suma_plan: null, suma_vigente: null, dentro: null, fuera: null, por: null, sumas_por_unidad: null, motivo: null, en_horas: null, real: { cerrada: false, suma: null, faltan: 0, motivo: null }, ...o });
+  const foto = (repo, epicas) => ({ proyecto: 'Proy', repo, fecha: '2026-10-23', vieja: false, stories: [], epicas, estimaciones: { estado: 'medido', motivo: null, ilegibles: 0, unidad: 'hours' } });
+  const modelo = {
+    productos: [{ producto: 'Producto P', proyectos: ['Proy'], rutas: [] }],
+    productosFuente: { estado: 'medido' },
+    proyectos: { estado: 'medido', lista: [
+      foto('RepoA', [{ id: '3', titulo: 'La épica de A', estimacion: est({ rango: { min: 40, max: 60, unidad: 'hours' }, suma_plan: 80, suma_vigente: 85, dentro: false, fuera: 'encima', por: 25, en_horas: { min: 40, max: 60, plan: 80, vigente: 85 }, real: { cerrada: false, suma: null, faltan: 1, motivo: 'abierta' } }) }]),
+      foto('RepoB', [{ id: '3', titulo: 'La épica de B', estimacion: est({ rango: { min: 10, max: 20, unidad: 'hours' }, suma_plan: 15, suma_vigente: 15, dentro: true, por: 0, en_horas: { min: 10, max: 20, plan: 15, vigente: 15 }, real: { cerrada: true, suma: 12, faltan: 0, motivo: null } }) }]),
+    ] },
+  };
+  const html = views.paginaProyectos({ modelo, quien: { rol: 'maintainer', email: 'lider@acme.example' }, pestanas: [], ahora: Date.parse('2026-10-23T12:00:00Z') });
+  const seccion = html.slice(html.indexOf('id="estimaciones"'));
+  assert.ok(html.includes('id="estimaciones"'), 'la sección de las estimaciones');
+  const filas = seccion.split('<tr').slice(1);
+  const fA = filas.find((f) => f.includes('RepoA')); const fB = filas.find((f) => f.includes('RepoB'));
+  assert.ok(fA && fB, 'una fila por repo: las dos «épica 3» no se mezclan');
+  for (const c of ['40–60 h', '80 h', '85 h']) assert.ok(fA.includes(c), `RepoA trae ${c}`);
+  assert.match(fA, /encima por 25 h/);
+  assert.ok(fB.includes('10–20 h') && fB.includes('12 h'), 'RepoB: el rango y lo real');
+  assert.doesNotMatch(fB, /encima|debajo/, 'dentro del rango: sin marca');
+  const total = filas.find((f) => /Total del producto/.test(f));
+  assert.ok(total && total.includes('100 h') && total.includes('50–80 h'), `la suma del producto suma todas las filas: ${total}`);
+  assert.match(total, /12 h \(parcial: falta alguna épica\)/, 'lo real del producto, con una épica abierta, dice que es parcial');
+  // en inglés, los mismos números
+  const en = views.paginaProyectos({ modelo, quien: { rol: 'maintainer', email: 'lider@acme.example' }, pestanas: [], ahora: Date.parse('2026-10-23T12:00:00Z'), idioma: 'en' });
+  assert.match(en, /above by 25 h/);
+  // debajo del rango; una épica sólo estimada (rango sin historias); y unidades que no pasan a horas: sumas por unidad
+  const otro = { ...modelo, proyectos: { estado: 'medido', lista: [
+    foto('RepoA', [{ id: '4', titulo: null, estimacion: est({ rango: { min: 10, max: 20, unidad: 'days' }, unidad: 'days', suma_plan: 6, suma_vigente: 7, dentro: false, fuera: 'debajo', por: 3 }) },
+      { id: '5', titulo: null, estimacion: est({ rango: { min: 30, max: 40, unidad: 'points' }, unidad: 'points', suma_vigente: null }) }]),
+  ] } };
+  const h2 = views.paginaProyectos({ modelo: otro, quien: { rol: 'maintainer', email: 'lider@acme.example' }, pestanas: [], ahora: Date.parse('2026-10-23T12:00:00Z') });
+  const s2 = h2.slice(h2.indexOf('id="estimaciones"'));
+  assert.match(s2, /debajo por 3 días/);
+  assert.match(s2, /30–40 pts/, 'la épica sólo estimada tiene su fila, con el rango');
+  assert.match(s2, /sin tasa a horas, por unidad: 7 días/, 'sin tasa no se inventa un total en horas');
 });

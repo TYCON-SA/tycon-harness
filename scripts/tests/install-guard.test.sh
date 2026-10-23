@@ -16,7 +16,9 @@
 #         tras una versión nueva «quedó viejo», y una biblioteca retocada en /opt sigue siendo «alguien lo cambió».
 #   T34 — con el permiso guardado vencido y el repo público, el instalador sigue sin él y lo dice.
 #   T33 — el freno usa SÓLO el intérprete de root (/opt/tycon/bin/node): si falta, tiene otro dueño
-#         o su huella no coincide, un comando que nombra una base sale 2 (y uno que no, pasa).
+#         o su huella no coincide, un comando que nombra una base sale 2 (y uno que no, pasa). Si el freno no
+#         contesta a tiempo o se cae, sale 2 cualquier comando; el reloj cubre todo el lanzador, el intérprete se
+#         verifica por sus datos, y con la máquina cargada el lanzador contesta con margen bajo el tope (T33g–T33s).
 #
 # 🔴 Nada acá toca el sistema de verdad: raíz de sistema falsa, HOME falso, `sudo` doblado.
 #    Lección: sin esto, una prueba nueva puede leer la config REAL de la
@@ -29,12 +31,29 @@ LINT="$AQUI/scripts/production/lint-production-json.js"
 INSTALADOR="$AQUI/scripts/production/install-guard.sh"
 SHIM="$AQUI/scripts/production/node-shim.sh"
 HOOK_GLOBAL="$AQUI/scripts/hooks/git-pre-commit-global.sh"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"
+# La carga de T33s se apaga siempre al salir, también si la suite se corta a mitad.
+CARGA_PIDS=""
+matar_arbol(){ local c; for c in $(pgrep -P "$1" 2>/dev/null); do matar_arbol "$c"; done; kill -9 "$1" 2>/dev/null; }
+apagar_carga(){ local p; for p in $CARGA_PIDS; do matar_arbol "$p"; wait "$p" 2>/dev/null; done; CARGA_PIDS=""; }
+trap 'apagar_carga; rm -rf "$TMP"' EXIT
 source "$AQUI/scripts/tests/lib/fake-home.sh"
 fallos=0; pasaron=0
 # La foto del registro REAL antes de empezar: T33g exige que al final valga lo mismo.
 REAL_LOG_0="${HOME}/.claude/.tycon-pipeline/production.log"
 ANTES_REAL=0; [ -f "$REAL_LOG_0" ] && ANTES_REAL="$(wc -l < "$REAL_LOG_0" | tr -d ' ')"
+# los datos de un archivo como los anota el instalador: dueño, permisos, tamaño, fecha e inode (GNU en el nocturno, BSD en la Mac)
+datos_de(){ stat -c '%u %a %s %Y %i' "$1" 2>/dev/null || stat -f '%u %Lp %z %m %i' "$1" 2>/dev/null; }
+datos_json(){ set -- $(datos_de "$1"); printf '{"uid": %s, "mode": "%s", "size": %s, "mtime": %s, "inode": %s}' "$1" "$2" "$3" "$4" "$5"; }
+# mide N vueltas del lanzador con node (spawnSync espera a que se cierren los caños de salida, como Claude Code):
+# imprime «mediana máximo» en ms, y deja los códigos distintos de todas las vueltas en $TMP/medido-rc y el stderr de la
+# última en $TMP/medido-err.
+# stable-data: lee el reloj para medir cuánto tarda el lanzador; ninguna fecha entra en lo que se compara.
+medir(){ # $1 = vueltas · $2 = evento JSON · el ambiente se hereda
+  node -e 'const {spawnSync}=require("child_process"); const fs=require("fs"); const [n,ev,shim,tmp]=process.argv.slice(1);
+    const ms=[], rcs=new Set(); let r; for (let i=0;i<+n;i++){ const t=Date.now(); r=spawnSync("bash",[shim],{input:ev,encoding:"utf8"}); ms.push(Date.now()-t); rcs.add(String(r.status)); }
+    fs.writeFileSync(tmp+"/medido-rc", [...rcs].join(" ")); fs.writeFileSync(tmp+"/medido-err", r.stderr||"");
+    ms.sort((a,b)=>a-b); console.log(ms[Math.floor((ms.length-1)/2)], ms[ms.length-1]);' "$1" "$2" "$SHIM" "$TMP"; }
 ok(){ echo "✅ instalar-freno: $1"; pasaron=$((pasaron+1)); }
 no(){ echo "❌ instalar-freno: $1"; fallos=$((fallos+1)); }
 
@@ -168,6 +187,22 @@ if [ -f "$SHIM" ]; then
   else no "T33i · frenó sin dejar constancia: el aviso de arranque nunca se entera"; fi
 fi
 
+# T33k · el tope del hook es al menos el doble del reloj del lanzador. Los dos números se leen de sus archivos: si
+# alguien sube el reloj sin subir el tope, Claude Code corta al lanzador antes de que frene, y el comando corre.
+tope_alcanza(){ [ -n "$1" ] && [ -n "$2" ] && [ "$1" -ge $(( 2 * $2 )) ]; }
+TOPE_K="$(node -e 'const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); let x=null;
+  for (const g of (t.hooks||{}).PreToolUse||[]) for (const h of g.hooks||[]) if (/node-shim\.sh$/.test(h.command||"")) x=h.timeout; console.log(x??"")' \
+  "$AQUI/scripts/production/managed-settings.tycon-production.json.template" 2>/dev/null)"
+RELOJ_K="$(grep -o 'TYCON_PROD_SHIM_TIMEOUT:-[0-9]*' "$SHIM" 2>/dev/null | head -1 | cut -d- -f2)"
+if tope_alcanza "$TOPE_K" "$RELOJ_K" && ! tope_alcanza 10 7; then ok "T33k · el tope del hook (${TOPE_K} s) es al menos el doble del reloj del lanzador (${RELOJ_K} s)"
+else no "T33k · el tope del hook («${TOPE_K}» s) no llega al doble del reloj del lanzador («${RELOJ_K}» s)"; fi
+
+# T33q · la guía dice qué pasa cuando el freno no contesta a tiempo, y el límite que el arnés no puede cerrar.
+GUIA_Q="$AQUI/guides/produccion-con-permiso.md"
+if grep -q "no contesta a tiempo" "$GUIA_Q" && grep -qi "frena" "$GUIA_Q" && grep -qi "reinstal" "$GUIA_Q" \
+   && grep -q "30 s" "$GUIA_Q" && grep -q "Claude Code" "$GUIA_Q"; then ok "T33q · la guía dice qué pasa cuando el freno no contesta a tiempo y el límite de los 30 s"
+else no "T33q · la guía no explica qué pasa cuando el freno no contesta a tiempo (o le falta el límite de los 30 s)"; fi
+
 # 🔴 Con el freno INSTALADO el lanzador ignora `TYCON_PROD_ROOT` (a propósito: una sesión hija con esa
 # variable apagaba el freno entero), así que el caso de abajo no se puede fabricar en esta máquina: el
 # lanzador usaría el /opt/tycon REAL y contestaría con el motivo del freno de verdad, no con el suyo.
@@ -194,9 +229,11 @@ if [ -f "$SHIM" ]; then
   if [ "$rc" = 2 ] && grep -q "sin tiempo" "$TMP/colg-err"; then ok "T33g · un freno colgado NO deja pasar un comando que nombra una base"
   else no "T33g · el freno colgado salió $rc (esperaba 2 con el motivo del tiempo) — err: $(head -c 120 "$TMP/colg-err")"; fi
 
+  # T33h · un freno colgado tampoco deja pasar un comando sin bases: el freno juzga lo que el comando ejecuta por
+  # dentro (un guion, `bash -c`, un heredoc), y eso el lanzador no lo ve. El cartel dice que se reintente.
   rc="$(colgado '{"tool_name":"Bash","tool_input":{"command":"git status --short"}}')"
-  if [ "$rc" = 0 ] && [ ! -s "$TMP/colg-err" ]; then ok "T33h · y un comando sin bases pasa limpio, sin el ruido del vigía"
-  else no "T33h · con el freno colgado, un comando sin bases salió $rc — err: $(head -c 120 "$TMP/colg-err")"; fi
+  if [ "$rc" = 2 ] && grep -q "no contestó" "$TMP/colg-err" && grep -q "carga" "$TMP/colg-err"; then ok "T33h · un freno colgado tampoco deja pasar un comando sin bases, y el cartel pide reintentar"
+  else no "T33h · con el freno colgado, un comando sin bases salió $rc (esperaba 2 con «no contestó» y «carga») — err: $(head -c 160 "$TMP/colg-err")"; fi
 
   # T33j · la constancia del reloj queda en la HOME de la PRUEBA. El lanzador que frena deja
   # «no pude ejecutar el freno» en hook-errors.log, que el aviso de arranque lee: corrido sin HOME propia, deja una
@@ -205,6 +242,116 @@ if [ -f "$SHIM" ]; then
   n="$(FAKE_HOME="$COLG_CASA" fake_home_count hook-errors.log 'se quedó sin tiempo' 2>/dev/null)"
   if [ "${n:-0}" -gt 0 ]; then ok "T33j · la constancia del freno colgado quedó en la HOME de la prueba ($n), no en la real"
   else no "T33j · la constancia del freno colgado no está en la HOME de la prueba: fue al hook-errors.log real"; fi
+
+  # T33t · el reloj anda aunque el hook arranque con su señal ignorada: bash no puede atrapar una señal que le llega
+  # ignorada, y con el reloj muerto el freno colgado deja pasar el comando a los 30 s.
+  # T33u · el reloj corta también la lectura de la entrada: una entrada que no se cierra no lo retiene, y el cartel
+  # sale sin el «Killed: 9» con que bash anuncia el trabajo que mató.
+  # cronometrar: corre un comando con `bash -c` y espera a que se cierren sus caños, como Claude Code; imprime los ms.
+  cronometrar(){ node -e 'const {spawnSync}=require("child_process"); const fs=require("fs"); const t=Date.now();
+    const r=spawnSync("bash",["-c",process.argv[1]],{encoding:"utf8"}); const ms=Date.now()-t;
+    fs.writeFileSync(process.argv[2]+"/medido-rc", String(r.status)); fs.writeFileSync(process.argv[2]+"/medido-err", r.stderr||""); console.log(ms);' "$1" "$TMP"; }
+  CASA_T="$TMP/casa-33t"; mkdir -p "$CASA_T"
+  export SHIM_T="$SHIM" EV_T='{"tool_name":"Bash","tool_input":{"command":"ls"}}'
+  for ignoradas in "USR1" "USR1 USR2 ALRM"; do
+    ms="$(HOME="$CASA_T" TYCON_PROD_ROOT="$COLG" TYCON_PROD_SHIM_TIMEOUT=2 cronometrar "trap '' $ignoradas; printf '%s' \"\$EV_T\" | exec bash \"\$SHIM_T\"")"
+    rc="$(cat "$TMP/medido-rc")"
+    if [ "$rc" = 2 ] && [ "${ms:-99999}" -lt 4000 ] && grep -q "se quedó sin tiempo" "$TMP/medido-err"; then ok "T33t · con ${ignoradas} ignorada(s) al arrancar, el reloj frena igual (${ms} ms)"
+    else no "T33t · con ${ignoradas} ignorada(s) al arrancar, salió $rc en ${ms:-?} ms (esperaba 2 por tiempo en < 4000 ms) — err: $(head -c 160 "$TMP/medido-err")"; fi
+  done
+  ms="$(HOME="$CASA_T" TYCON_PROD_ROOT="$COLG" TYCON_PROD_SHIM_TIMEOUT=2 cronometrar 'bash "$SHIM_T" < <(printf "%s" "$EV_T"; exec 2>/dev/null; sleep 8)')"
+  rc="$(cat "$TMP/medido-rc")"
+  if [ "$rc" = 2 ] && [ "${ms:-99999}" -lt 4000 ] && grep -q "se quedó sin tiempo" "$TMP/medido-err" && ! grep -q "Killed" "$TMP/medido-err"; then ok "T33u · una entrada que no se cierra no retiene al reloj (${ms} ms), y el cartel sale limpio"
+  else no "T33u · con la entrada abierta salió $rc en ${ms:-?} ms (esperaba 2 por tiempo en < 4000 ms, sin «Killed») — err: $(head -c 160 "$TMP/medido-err")"; fi
+fi
+
+# T33l–T33s · la verificación del intérprete por sus datos, el reloj que la cubre y la medición con carga. Cada caso
+# arma su raíz de prueba con el intérprete de este node, un freno de juguete y su huellas.json.
+if [ -f "$SHIM" ]; then
+  EV_LS='{"tool_name":"Bash","tool_input":{"command":"ls"}}'
+  EV_BASE='{"tool_name":"Bash","tool_input":{"command":"sqlcmd -S acme-sql.database.windows.net -Q \"select 1\""}}'
+  # el freno de juguete: frena (2) lo que nombra acme-sql y deja pasar el resto, con su propio mensaje
+  JUGUETE='let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{if(s.includes("acme-sql")){console.error("juguete: lo frenó el freno");process.exit(2)}process.exit(0)});'
+  raiz_de_prueba(){ # $1 = raíz · $2 = código del freno · deja el intérprete copiado
+    rm -rf "$1"; mkdir -p "$1/opt/tycon/bin" "$1/opt/tycon/hooks"
+    cp "$(command -v node)" "$1/opt/tycon/bin/node"; printf '%s\n' "$2" > "$1/opt/tycon/hooks/prod-access-guard.js"; }
+  huellas_de(){ # $1 = raíz · $2 = huella del intérprete · $3 = objeto de datos (vacío = huellas.json viejo)
+    if [ -n "${3:-}" ]; then printf '{\n  "/opt/tycon/bin/node": "%s",\n  "__stat": {\n    "/opt/tycon/bin/node": %s\n  }\n}\n' "$2" "$3" > "$1/opt/tycon/huellas.json"
+    else printf '{\n  "/opt/tycon/bin/node": "%s"\n}\n' "$2" > "$1/opt/tycon/huellas.json"; fi; }
+  sha_de(){ shasum -a 256 "$1" | cut -d' ' -f1; }
+  CEROS=0000000000000000000000000000000000000000000000000000000000000000
+  CASA_L="$TMP/casa-33l"; mkdir -p "$CASA_L"
+
+  # T33l · el reloj cubre la verificación del intérprete: un huellas.json viejo obliga a leer el binario entero, y un
+  # intérprete de 4 GB (disperso: no ocupa disco) no se termina de leer en 2 s. Sin el reloj alrededor, el lanzador
+  # espera la huella entera y Claude Code lo corta por tiempo: el comando corre sin freno.
+  RL="$TMP/sys-lento"; raiz_de_prueba "$RL" "$JUGUETE"; rm -f "$RL/opt/tycon/bin/node"
+  mkfile -n 4g "$RL/opt/tycon/bin/node" 2>/dev/null || truncate -s 4G "$RL/opt/tycon/bin/node"; chmod 755 "$RL/opt/tycon/bin/node"
+  huellas_de "$RL" "$CEROS" ""
+  read -r med _ < <(HOME="$CASA_L" TYCON_PROD_ROOT="$RL" TYCON_PROD_SHIM_TIMEOUT=2 medir 1 "$EV_LS")
+  rc="$(cat "$TMP/medido-rc")"
+  if [ "$rc" = 2 ] && [ "${med:-99999}" -lt 3000 ] && grep -q "se quedó sin tiempo" "$TMP/medido-err" && ! grep -q "huella" "$TMP/medido-err"; then
+    ok "T33l · el reloj cubre la verificación del intérprete: frenó por tiempo en ${med} ms"
+  else no "T33l · con la huella lenta salió $rc en ${med:-?} ms (esperaba 2 en < 3000 ms, por tiempo) — err: $(head -c 160 "$TMP/medido-err")"; fi
+
+  # T33m · con los datos del intérprete, el lanzador no recalcula la huella: la huella anotada es falsa a propósito, y
+  # aun así el freno corre y decide (un comando con base lo frena el juguete, no el lanzador).
+  RM="$TMP/sys-datos"; raiz_de_prueba "$RM" "$JUGUETE"
+  huellas_de "$RM" "$CEROS" "$(datos_json "$RM/opt/tycon/bin/node")"
+  HOME="$CASA_L" TYCON_PROD_ROOT="$RM" medir 1 "$EV_LS" >/dev/null; rc1="$(cat "$TMP/medido-rc")"
+  HOME="$CASA_L" TYCON_PROD_ROOT="$RM" medir 1 "$EV_BASE" >/dev/null; rc2="$(cat "$TMP/medido-rc")"
+  if [ "$rc1" = 0 ] && [ "$rc2" = 2 ] && grep -q "juguete" "$TMP/medido-err"; then ok "T33m · con los datos del intérprete no se recalcula la huella: el freno corre y decide"
+  else no "T33m · con datos correctos y huella falsa: ls salió $rc1, la base $rc2 — err: $(head -c 160 "$TMP/medido-err")"; fi
+
+  # T33n · un intérprete cambiado se nota por sus datos: otro tamaño y el comando con base se frena por el intérprete.
+  d=($(datos_de "$RM/opt/tycon/bin/node"))
+  huellas_de "$RM" "$(sha_de "$RM/opt/tycon/bin/node")" "$(printf '{"uid": %s, "mode": "%s", "size": %s, "mtime": %s, "inode": %s}' "${d[0]}" "${d[1]}" "$(( d[2] + 1 ))" "${d[3]}" "${d[4]}")"
+  HOME="$CASA_L" TYCON_PROD_ROOT="$RM" medir 1 "$EV_BASE" >/dev/null; rc="$(cat "$TMP/medido-rc")"
+  if [ "$rc" = 2 ] && grep -q "intérprete" "$TMP/medido-err" && ! grep -q "juguete" "$TMP/medido-err"; then ok "T33n · un intérprete con otros datos frena el comando con base"
+  else no "T33n · con datos distintos, la base salió $rc sin el motivo del intérprete — err: $(head -c 160 "$TMP/medido-err")"; fi
+
+  # T33p · un huellas.json viejo (sin datos) sigue andando: la huella completa, dentro del reloj.
+  RP="$TMP/sys-viejo"; raiz_de_prueba "$RP" "$JUGUETE"
+  huellas_de "$RP" "$(sha_de "$RP/opt/tycon/bin/node")" ""
+  HOME="$CASA_L" TYCON_PROD_ROOT="$RP" medir 1 "$EV_LS" >/dev/null; rc1="$(cat "$TMP/medido-rc")"
+  HOME="$CASA_L" TYCON_PROD_ROOT="$RP" medir 1 "$EV_BASE" >/dev/null; rc2="$(cat "$TMP/medido-rc")"
+  if [ "$rc1" = 0 ] && [ "$rc2" = 2 ] && grep -q "juguete" "$TMP/medido-err"; then ok "T33p · un huellas.json viejo sigue andando: ls pasa y la base la juzga el freno"
+  else no "T33p · con huellas.json viejo: ls salió $rc1, la base $rc2 — err: $(head -c 160 "$TMP/medido-err")"; fi
+
+  # T33r · un freno que se cae al instante tampoco deja pasar: un código propio no es «estaba todo bien».
+  RR="$TMP/sys-caido"; raiz_de_prueba "$RR" 'process.exit(1);'
+  huellas_de "$RR" "$(sha_de "$RR/opt/tycon/bin/node")" "$(datos_json "$RR/opt/tycon/bin/node")"
+  HOME="$CASA_L" TYCON_PROD_ROOT="$RR" medir 1 "$EV_LS" >/dev/null; rc="$(cat "$TMP/medido-rc")"
+  if [ "$rc" = 2 ] && grep -q "error propio (código 1)" "$TMP/medido-err" && grep -q "no pudo decidir" "$TMP/medido-err"; then ok "T33r · un freno caído tampoco deja pasar un comando sin bases"
+  else no "T33r · con el freno caído, ls salió $rc (esperaba 2 con «error propio (código 1)» y «no pudo decidir») — err: $(head -c 160 "$TMP/medido-err")"; fi
+
+  # T33s · con la máquina cargada a propósito (CPU en cada núcleo y lectura de disco sin parar), el lanzador con el
+  # freno de verdad contesta con margen: la mediana de 20 vueltas, debajo de la mitad del tope del hook; ninguna, en
+  # el tope. El tope se lee de la plantilla: el freno tiene que contestar casi siempre, también con la máquina ocupada.
+  TOPE_S="$(node -e 'const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); let x=null;
+    for (const g of (t.hooks||{}).PreToolUse||[]) for (const h of g.hooks||[]) if (/node-shim\.sh$/.test(h.command||"")) x=h.timeout; console.log(x??"")' \
+    "$AQUI/scripts/production/managed-settings.tycon-production.json.template" 2>/dev/null)"
+  if [ -z "$TOPE_S" ] || [ ! -d "$RAIZ2/opt/tycon/hooks" ]; then
+    no "T33s · no pude leer el tope del hook de la plantilla («${TOPE_S}») o falta la raíz con el freno de verdad"
+  else
+    RS="$TMP/sys-carga"; rm -rf "$RS"; cp -R "$RAIZ2" "$RS"
+    huellas_de "$RS" "$(sha_de "$RS/opt/tycon/bin/node")" "$(datos_json "$RS/opt/tycon/bin/node")"
+    nucleos="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+    for _ in $(seq "$nucleos"); do yes > /dev/null & CARGA_PIDS="$CARGA_PIDS $!"; done
+    ( while :; do dd if="$RS/opt/tycon/bin/node" of=/dev/null bs=1048576 2>/dev/null; done ) & CARGA_PIDS="$CARGA_PIDS $!"
+    read -r med max < <(HOME="$CASA2" TYCON_PROD_ROOT="$RS" TYCON_REPOS_ROOT="$REPOS2" TYCON_PROD_SESSION_SINCE=0 medir 20 "$EV_LS")
+    rcs_ls="$(cat "$TMP/medido-rc")"
+    # control con la misma carga: un comando con base trae el mensaje del freno de verdad (no el del lanzador). Sin esto,
+    # un lanzador que nunca llega al freno deja pasar `ls` en milisegundos y la medición sale verde sin medir nada.
+    HOME="$CASA2" TYCON_PROD_ROOT="$RS" TYCON_REPOS_ROOT="$REPOS2" TYCON_PROD_SESSION_SINCE=0 medir 1 "$EV_BASE" >/dev/null
+    rc_base="$(cat "$TMP/medido-rc")"
+    apagar_carga
+    tope_ms=$(( TOPE_S * 1000 ))
+    if [ "$rcs_ls" = 0 ] && [ "$rc_base" = 2 ] && grep -q "acme-sql" "$TMP/medido-err" && ! grep -q "no pude ejecutarlo" "$TMP/medido-err" \
+       && [ -n "${med:-}" ] && [ "$med" -lt $(( tope_ms / 2 )) ] && [ "$max" -lt "$tope_ms" ]; then
+      ok "T33s · con la máquina cargada ($nucleos núcleos + disco), el freno decide: mediana ${med} ms y máximo ${max} ms, con tope ${TOPE_S} s"
+    else no "T33s · con carga, mediana ${med:-?} ms y máximo ${max:-?} ms (tope ${TOPE_S} s; la mediana, debajo de la mitad); códigos de ls «${rcs_ls}» (esperaba 0), control con base ${rc_base} — err: $(head -c 160 "$TMP/medido-err")"; fi
+  fi
 fi
 fi
 
@@ -304,6 +451,15 @@ SH
   if grep -q 'Bash|Monitor|PowerShell' "$TMP/sys2/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json" 2>/dev/null; then
     ok "T19c · el matcher administrado incluye Monitor y PowerShell"
   else no "T19c · el matcher administrado no cubre Monitor/PowerShell"; fi
+
+  # T33o · el instalador anota los datos del intérprete junto a su huella, iguales a los del archivo instalado. Con
+  # ellos el lanzador no lee los 122 MB del intérprete en cada comando. T19d, abajo, mide que no se reescriban.
+  o_node="$TMP/sys2/opt/tycon/bin/node"; o_huellas="$TMP/sys2/opt/tycon/huellas.json"
+  o_esperado="$(datos_de "$o_node")"
+  o_anotado="$(node -e 'const h=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const s=(h.__stat||{})["/opt/tycon/bin/node"]||{};
+    if (typeof h["/opt/tycon/bin/node"] !== "string") process.exit(1); console.log([s.uid,s.mode,s.size,s.mtime,s.inode].join(" "))' "$o_huellas" 2>/dev/null)"
+  if [ -n "$o_esperado" ] && [ "$o_anotado" = "$o_esperado" ]; then ok "T33o · huellas.json trae la huella y los datos del intérprete ($o_anotado)"
+  else no "T33o · los datos del intérprete en huellas.json no coinciden: anotado «${o_anotado}», archivo «${o_esperado}»"; fi
 
   antes="$(find "$TMP/sys2" -type f -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1)"
   PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys2" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-out" 2>&1

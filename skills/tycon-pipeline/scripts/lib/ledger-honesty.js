@@ -36,7 +36,7 @@
 const path = require('path');
 
 /**
- * Nombres reservados para los probes transitorios del pase adversarial (step-05b).
+ * Nombres reservados para los probes transitorios del pase adversarial.
  * Cubre los nombres que se ven en los repos + la convención que el step declara para lo que venga:
  *   .NET      ZZProbe*.cs · ZZVerify*.cs
  *   JS/TS     __probe*.test.ts · _probe_*.test.ts · __adv_probe*.test.ts · __adversarial_probe*
@@ -48,7 +48,7 @@ const path = require('path');
 // (partial de Sass), `__advisor.ts`, `_adapter.js` (módulo privado). Un falso positivo acá no es
 // cosmético: saca un archivo de trabajo real de la foto de la iteración, y el advisor que tiene que
 // re-auditarlo no se entera. Por eso se exige la palabra `probe` COMPLETA (con `adv`/`adversarial`
-// como prefijo opcional), que es lo que la convención del step-05b declara.
+// como prefijo opcional), que es lo que la convención del paso «Pase adversarial» declara.
 const PROBE_RE = /^(?:zz(?:probe|verify)|_{1,2}(?:adv|adversarial)?_?probe(?:[_.\d]|$))/i;
 // El prefijo `zz` va sin terminador a propósito: ningún archivo real empieza con `zzprobe`/
 // `zzverify` (por eso la convención eligió ese prefijo). El que necesita terminador es el de
@@ -63,6 +63,21 @@ function esProbe(p) {
 /** Saca los probes de una lista de paths. Devuelve array nuevo. */
 function sinProbes(files) {
   return (Array.isArray(files) ? files : []).filter((f) => !esProbe(f));
+}
+
+/**
+ * ¿Lo escribió el propio pipeline en la carpeta de la ejecución? (el plan, los informes de los revisores,
+ * findings.json, review-roster.json). Un tramo exacto `.advisors`: `advisors/`, `.advisorsrc` o `x.advisors.json` son
+ * trabajo del repo.
+ */
+function esDeLaCorrida(p) {
+  if (!p) return false;
+  return String(p).split(/[\\/]+/).includes('.advisors');
+}
+
+/** Saca los probes y lo de la carpeta de la ejecución: lo que queda es trabajo del repo. Devuelve array nuevo. */
+function sinRuido(files) {
+  return sinProbes(files).filter((f) => !esDeLaCorrida(f));
 }
 
 /** ¿El path cae DENTRO del repo bajo revisión? Un scratchpad en /tmp no es trabajo del repo. */
@@ -104,8 +119,8 @@ function diagnosticar({ repoPath, registro, gitCambiados }) {
   const fueraDelRepo = reg.filter((f) => !esDelRepo(f, repoPath));
   const dentro = reg.filter((f) => esDelRepo(f, repoPath));
   const probesDescartados = dentro.filter(esProbe);
-  const registroUtil = dentro.filter((f) => !esProbe(f));
-  const gitUtil = sinProbes(git);
+  const registroUtil = dentro.filter((f) => !esProbe(f) && !esDeLaCorrida(f));
+  const gitUtil = sinRuido(git);
 
   // Ciego = git ve trabajo del repo y el registro no aporta NADA de ese repo. Que el registro
   // tenga entradas no lo salva: 7 líneas de scratchpad son 7 líneas de ruido.
@@ -157,4 +172,4 @@ function registroNoAplica(repoPath) {
   } catch { return false; }
 }
 
-module.exports = { esProbe, sinProbes, esDelRepo, diagnosticar, registroNoAplica, PROBE_RE };
+module.exports = { esProbe, sinProbes, esDeLaCorrida, sinRuido, esDelRepo, diagnosticar, registroNoAplica, PROBE_RE };

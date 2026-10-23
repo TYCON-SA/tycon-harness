@@ -1299,6 +1299,140 @@ T48C=$(q "$D/a.json" 'j.texto')
 { grep -qF "Carpetas: sin contar, en 1 repo(s)" <<<"$T48C" && ! grep -q "^Carpetas: 0 de 0" <<<"$T48C"; } \
   && ok "T6 4.8 sin ningún repo contado no dice «0 de 0»: dice «sin contar»" || no "T6 4.8 0 de 0: $T48C"
 
+# ════════════════════════════════════════════════════════════════════════════════════════════════
+# 4.10 — la línea de las ejecuciones (`--runs-review <clon de operaciones>`), agrupada por causa.
+# rr_ops <dir> <json de last-run | __SIN__> [<json de fichas: [{id, reglas, vista}]>]  — el clon de operaciones de mentira
+rr_ops() {
+  node -e '
+const fs = require("fs"); const path = require("path"); const [dir, lr, fj] = process.argv.slice(1);
+const raiz = path.join(dir, "inbox", "runs-review"); fs.mkdirSync(path.join(raiz, "pending"), { recursive: true });
+if (lr !== "__SIN__") fs.writeFileSync(path.join(raiz, "last-run.json"), lr);
+for (const f of JSON.parse(fj || "[]")) fs.writeFileSync(path.join(raiz, "pending", `${f.vista}-acme-0000aaaa-${f.id}-abcdef.yaml`),
+  [`id: ${JSON.stringify(f.id)}`, `fecha: ${JSON.stringify(f.vista)}`, `reglas: ${JSON.stringify(f.reglas)}`,
+   `enlace: ${JSON.stringify("https://sitio.acme.example/corridas?abrir=" + f.id)}`, "veredicto: \"pendiente\"",
+   `vista_por_ultima_vez: ${JSON.stringify(f.vista)}`].join("\n") + "\n");' "$@"
+}
+# causas <conocidas> <nuevas>  — conocidas con 10..1 ejecuciones, nuevas con 7..1; cada una con un nombre distinto de la tabla
+CONOCIDAS_RR='[["RR-ESCAPE","TYCON_PR_BY_HAND"],["RR-ESCAPE","TYCON_NO_DEEP_REVIEW"],["RR-ESCAPE","ADVERSARIAL_RELAUNCH"],["RR-ESCAPE","TYCON_FULL_SUITE"],["RR-ESCAPE","GIT_NO_VERIFY"],["RR-ESCAPE","ATDD_BYPASS"],["RR-ESCAPE","MUTATION_BYPASS"],["RR-ESCAPE","TYCON_SAFETY_OFF"],["RR-ESCAPE","TYCON_SESSION_GUARD_OK"],["RR-ESCAPE","TYCON_ENGRAM_MANIFEST_OK"]]'
+NUEVAS_RR='[["RR-NODE","node-viejo"],["RR-NODE","carga"],["RR-CIERRE","abortada"],["RR-CIERRE","abandonada"],["RR-CIERRE","sin-cerrar"],["RR-APAGO",null],["RR-BANDERA","--story"]]'
+causas() {
+  node -e 'const [k, n] = process.argv.slice(1, 3).map(Number); const K = JSON.parse(process.argv[3]); const N = JSON.parse(process.argv[4]); const out = [];
+for (let i = 0; i < k; i++) out.push({ regla: K[i][0], categoria: K[i][1], ejecuciones: 10 - i, nueva: false });
+for (let i = 0; i < n; i++) out.push({ regla: N[i][0], categoria: N[i][1], ejecuciones: 7 - i, nueva: true });
+console.log(JSON.stringify(out));' "$1" "$2" "$CONOCIDAS_RR" "$NUEVAS_RR"
+}
+lastrun() { # <fecha> <completo> <motivo|null> <causas json>
+  echo "{\"fecha\":\"$1\",\"completo\":$2,\"motivo\":$3,\"miradas\":30,\"con_fallas\":20,\"nuevas\":5,\"sin_hilo\":0,\"hilos_sin_hooks\":0,\"ilegibles\":0,\"causas\":$4}"
+}
+fichas_nuevas() { # las fichas de hoy que traen las nuevas 0..6, salvo la 3 (su renglón va sin enlace)
+  node -e 'const N = JSON.parse(process.argv[2]); const out = []; for (let i = 0; i < 7; i++) if (i !== 3) out.push({ id: "aaaa00000000000" + i, vista: process.argv[1], reglas: [{ regla: N[i][0], categoria: N[i][1], cuenta: 1 }] });
+console.log(JSON.stringify(out));' "$HOY" "$NUEVAS_RR"
+}
+bloque() { ultimo 'j.text.split("\n").filter((l) => /^(ejecuciones:|· |🆕 )/.test(l)).join("\n")'; }
+
+# T31 ResumenAgrupadoPorCausa @story-4.10 @ac-14
+# 🔴 Falla con: un enlace por ejecución (71 enlaces no se leen), mezclar lo nuevo con lo conocido, perder el orden de
+#    `causas`, un «y K más» que no suma, o un bloque sin tope que empuja el mensaje más allá del de Telegram.
+D="$TMP/rr31"; mundo "$D"; snap "$D" "$HOY" '{}'
+rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 10 7)")" "$(fichas_nuevas)"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops")
+E31=$(cat <<EOF
+ejecuciones: 20 con fallas del arnés (de 30 miradas)
+· pedido armado a mano: 10
+· pase adversarial salteado: 9
+· pase adversarial relanzado: 8
+· suite completa forzada: 7
+· commit sin controles: 6
+· pruebas primero salteadas: 5
+· prueba de mutación salteada: 4
+· freno de seguridad apagado: 3
+· y 2 causas conocidas más (3 ejecuciones)
+🆕 Node viejo: 7 — https://sitio.acme.example/corridas?abrir=aaaa000000000000
+🆕 guion del arnés que no cargó: 6 — https://sitio.acme.example/corridas?abrir=aaaa000000000001
+🆕 ejecución abortada: 5 — https://sitio.acme.example/corridas?abrir=aaaa000000000002
+🆕 ejecución abandonada: 4
+🆕 ejecución sin cerrar: 3 — https://sitio.acme.example/corridas?abrir=aaaa000000000004
+🆕 y 2 causas nuevas más
+EOF
+)
+[ "$RC" = 0 ] && [ "$(bloque)" = "$E31" ] \
+  && ok "4.10-T31 un renglón por causa conocida, lo nuevo aparte con su enlace, y los «y K más» que suman" || no "4.10-T31 rc=$RC · $(bloque) · $(tail -2 "$D/entregar.txt")"
+rr_ops "$D/ops0" "$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_fallas":0/')"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops0")
+[ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: 0 con fallas del arnés (30 miradas)" ] \
+  && ok "4.10-T31 con 0, la forma de 0 y sin renglones" || no "4.10-T31 con 0: $(bloque)"
+# las causas con el mismo nombre se suman; una categoría que la tabla no conoce toma el nombre general de su regla; ningún código
+JUNTAS='[{"regla":"RR-ESCAPE","categoria":"TYCON_PR_BY_HAND","ejecuciones":5,"nueva":false},{"regla":"RR-ESCAPE","categoria":"PR_A_MANO","ejecuciones":4,"nueva":false},{"regla":"RR-ESCAPE","categoria":"ZZCONSTANTE_NUEVA","ejecuciones":3,"nueva":true},{"regla":"RR-HOOK","categoria":"Stop/tiempo","ejecuciones":2,"nueva":true},{"regla":"RR-HOOK","categoria":"Stop/carga","ejecuciones":1,"nueva":true}]'
+rr_ops "$D/opsj" "$(lastrun "$HOY" true null "$JUNTAS")"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/opsj")
+EJ=$(printf 'ejecuciones: 20 con fallas del arnés (de 30 miradas)\n· pedido armado a mano: 9\n🆕 otro freno salteado: 3\n🆕 aviso automático que se pasó de tiempo: 2\n🆕 aviso automático con error: 1')
+[ "$RC" = 0 ] && [ "$(bloque)" = "$EJ" ] && ! grep -qE 'RR-|ZZCONSTANTE|TYCON_' <<<"$(ultimo 'j.text')" \
+  && ok "4.10-T31 nombres en llano: las del mismo nombre se suman, lo desconocido toma el nombre de su regla, sin códigos" || no "4.10-T31 nombres: rc=$RC · $(bloque)"
+
+# T31b ResumenCausasFueraDeForma @story-4.10 @ac-14
+# 🔴 Falla con: imprimir una categoría que no pasa la forma (puede traer texto de una conversación) o un número negativo.
+D="$TMP/rr31b"; mundo "$D"; snap "$D" "$HOY" '{}'
+for C in '"no es lista"' '[{"regla":"RR-NODE","categoria":"a b ZZTEXTO","ejecuciones":1,"nueva":true}]' '[{"regla":"RR-NODE","categoria":"carga","ejecuciones":-1,"nueva":false}]'; do
+  rm -rf "$D/ops"; rr_ops "$D/ops" "$(lastrun "$HOY" true null "$C")"
+  reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops")
+  [ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: ? (el estado de la revisión no se pudo leer)" ] && ! grep -q ZZTEXTO "$TMP/pedidos.jsonl" \
+    && ok "4.10-T31b causas fuera de forma ($C) dicen «?» y no imprimen nada" || no "4.10-T31b $C: $(bloque)"
+done
+
+# T32 ResumenEdicionDeLas8ConservaLaLinea @story-4.10 @ac-15
+# 🔴 Falla con: perder la línea en la edición del vigilante (que corre sin la opción), o volver a escribir sin mirar
+#    un renglón de la constancia que alguien cambió.
+D="$TMP/rr32"; mundo "$D"; snap "$D" "$HOY" '{}'
+rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 2 1)")" "$(fichas_nuevas)"
+reset_srv ok:777; entregar "$D" dependencias "$HOY" --runs-review "$D/ops" >/dev/null
+B04=$(bloque)
+GUARDADO=$(q "$D/out/dependencias-$HOY.json" 'j.resumen.ejecuciones.join("\n")')
+vsnap "$D" "$HOY" '{}'
+reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] && [ -n "$B04" ] && [ "$GUARDADO" = "$B04" ] && [ "$(bloque)" = "$B04" ] \
+  && ok "4.10-T32 la edición de las 08:00 vuelve a escribir la línea desde la constancia, sin la opción" || no "4.10-T32 rc=$RC · 04:00 «${B04}» · guardado «${GUARDADO}» · 08:00 «$(bloque)»"
+node -e 'const fs = require("fs"); const f = process.argv[1]; const s = JSON.parse(fs.readFileSync(f, "utf8"));
+s.resumen.ejecuciones[1] = "· ZZTEXTO de una conversación: 3"; fs.writeFileSync(f, JSON.stringify(s));' "$D/out/dependencias-$HOY.json"
+reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: ? (la constancia de las 04:00 no se pudo leer)" ] && ! grep -q ZZTEXTO "$TMP/pedidos.jsonl" \
+  && ok "4.10-T32 un renglón cambiado en la constancia no se vuelve a escribir" || no "4.10-T32 renglón cambiado: $(bloque)"
+node -e 'const fs = require("fs"); const f = process.argv[1]; const s = JSON.parse(fs.readFileSync(f, "utf8"));
+s.resumen.ejecuciones = []; fs.writeFileSync(f, JSON.stringify(s));' "$D/out/dependencias-$HOY.json"
+reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: ? (la constancia de las 04:00 no se pudo leer)" ] \
+  && ok "4.10-T32 una lista vacía en la constancia dice «?», no desaparece" || no "4.10-T32 lista vacía: $(bloque)"
+
+# T33 ResumenNoCorrioYParcial @story-4.10 @ac-16 @ac-17
+# 🔴 Falla con: decir «0 con fallas» sin la pasada de hoy, o callar que la pasada fue parcial.
+D="$TMP/rr33"; mundo "$D"; snap "$D" "$HOY" '{}'
+rr_ops "$D/ops-sin" __SIN__
+rr_ops "$D/ops-ayer" "$(lastrun "$AYER" true null '[]')"
+for O in ops-sin ops-ayer; do
+  reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/$O")
+  [ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: la revisión NO CORRIÓ hoy" ] \
+    && ok "4.10-T33 $O: «NO CORRIÓ hoy», nunca «0 con fallas»" || no "4.10-T33 $O: $(bloque)"
+done
+rr_ops "$D/ops-parcial" "$(lastrun "$HOY" false '"la bajada del buzón no fue entera (sin_permiso)"' "$(causas 1 0)")"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops-parcial")
+[ "$RC" = 0 ] && [ "$(bloque)" = "$(printf 'ejecuciones: parcial — la bajada del buzón no fue entera (sin_permiso) · 20 con fallas del arnés (de 30 miradas)\n· pedido armado a mano: 10')" ] \
+  && ok "4.10-T33 parcial: el motivo junto a lo que sí encontró" || no "4.10-T33 parcial: $(bloque)"
+# un motivo que no es una de las frases fijas de runs-review.js no sale, aunque tenga letras y números nada más
+rr_ops "$D/ops-motivo" "$(lastrun "$HOY" false '"ZZTEXTO de una conversación"' '[]' | sed 's/"con_fallas":20/"con_fallas":0/')"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops-motivo")
+[ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: parcial — motivo sin la forma esperada · 0 con fallas del arnés (30 miradas)" ] && ! grep -q ZZTEXTO "$TMP/pedidos.jsonl" \
+  && ok "4.10-T33 un motivo fuera de las frases fijas no se imprime" || no "4.10-T33 motivo libre: $(bloque)"
+
+# T34 ResumenSinOpcionIdentico @story-4.10 @ac-27
+# 🔴 Falla con: una línea `ejecuciones:` o una línea en blanco de más sin la opción. Que el resto del texto no cambia lo
+#    fijan los demás casos de esta suite, que corren todos sin `--runs-review`; el mensaje largo que llega al tope, T5b.
+D="$TMP/rr34"; mundo "$D"; snap "$D" "$HOY" '{}'
+rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 2 1)")" "$(fichas_nuevas)"
+reset_srv ok:1; entregar "$D" dependencias "$HOY" >/dev/null; SIN=$(ultimo 'j.text')
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --runs-review "$D/ops" >/dev/null
+CON_SIN_BLOQUE=$(ultimo 'j.text.split("\n").filter((l) => !/^(ejecuciones:|· |🆕 )/.test(l)).join("\n")')
+[ "$SIN" = "$CON_SIN_BLOQUE" ] && ! grep -qE '^(ejecuciones:|🆕 )' <<<"$SIN" && [[ "$SIN" != *$'\n\n\n'* ]] \
+  && ok "4.10-T34 sin la opción, el mismo texto sin la línea ni blancos de más" || no "4.10-T34 sin la opción cambió: $(diff <(printf %s "$SIN") <(printf %s "$CON_SIN_BLOQUE"))"
+
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi
 echo "❌ resumen-diario: $FALLOS de $TOTAL en rojo"; exit 1

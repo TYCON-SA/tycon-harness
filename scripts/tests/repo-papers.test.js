@@ -512,7 +512,12 @@ test('Papeles_HooksEInterruptoresQueExisten', async (t) => {
       assert.ok(sec, `${README[lang]}: falta la sección «${title}»`);
       const table = firstTable(sec);
       assert.ok(table, `${README[lang]}: la sección «${title}» no tiene la tabla de integraciones`);
-      const names = table.rows.map((r) => unTick(r.cells[0]));
+      // la llave vieja de la herramienta de horas va en su fila sin nombrar la herramienta (`integrations.<…>`): cuenta
+      // como la integración de horas que el lector todavía lista
+      const INT = require(path.join(RAIZ, 'scripts', 'lib', 'integrations.js'));
+      const timeNames = INT.listManifests({ dir: path.join(RAIZ, 'integrations') }).manifests.filter((m) => m.kind === 'timeTracking').map((m) => m.name);
+      const oldKey = keys.find((k) => timeNames.includes(k));
+      const names = table.rows.map((r) => unTick(r.cells[0])).map((n) => (oldKey && /^integrations\.</.test(n) ? oldKey : n));
       assert.deepStrictEqual([...names].sort(), keys, `${README[lang]}: una fila por integración, ni una más ni una menos`);
       for (const r of table.rows) assert.match(r.cells.join(' '), /TYCON_[A-Z]|\.claude\/tycon\.json|`[a-z]+\.[a-z_]+`/, `${README[lang]}: la integración ${r.cells[0]} no dice cómo se prende`);
     }

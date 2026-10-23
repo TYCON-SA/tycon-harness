@@ -40,6 +40,9 @@
  *      producto (el repo de la story o un repo hermano). Frena a la story que NACE en este commit; a
  *      una que ya existía se le avisa (sus archivos pudieron moverse). Si el repo de código no está
  *      clonado, avisa y no frena. El detalle, en la cabecera de `checkStory`.
+ *   6. El nombre del campo del pedido de trabajo: una story que NACE con `ado_work_item:` (el nombre viejo) y sin
+ *      `work_item:` recibe un aviso; no frena, y a las que ya existían no se les dice nada (el viejo se sigue leyendo,
+ *      scripts/lib/platform/work-item-field.js).
  *
  * IMPORTANTE: el chequeo naive `awk '/^---$/'` NO alcanza — cualquier regla
  * horizontal del cuerpo lo satisface. Por eso acá se replica el parser real.
@@ -155,7 +158,7 @@ const CAUSAS_PATH = readEnv('TYCON_CAUSES_PATH', { where: 'scripts/lib/lint-stor
 const SKILLS_DIR = require('./skills-dir.js').resolveSkillsDirs().skills;
 const DISCOVERY_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js');
 let siblingsOf = null;   // los repos del mismo producto (de la skill del pipeline); sin ella, las rutas no se juzgan
-try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'product-siblings.js')).productSiblings; } catch { siblingsOf = null; }
+try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'product-siblings.js')).productSiblingsInfo; } catch { siblingsOf = null; }
 let discovery = null;
 try {
   discovery = require(DISCOVERY_PATH);
@@ -417,11 +420,34 @@ function rootsOf(storyFile) {
   // los otros repos del MISMO producto (compañeros declarados, o al lado y en el mismo proyecto de su remoto); un repo
   // vecino de otro producto no dice nada del código de esta story
   if (!siblingsOf) { roots.unreadable = true; return roots; }
-  try { roots.push(...siblingsOf(repo)); } catch (_) {
+  try {
+    const info = siblingsOf(repo);
+    roots.push(...info.siblings);
+    // un compañero declarado que no está en disco: su código no se puede mirar, y nada se da por inventado
+    if (info.missing.length) roots.unreadable = true;
+  } catch (_) {
     // sin poder mirar los repos del producto nada se da por inventado
     roots.unreadable = true;
   }
   return roots;
+}
+
+/**
+ * ¿La ruta existe en la rama principal del remoto de ese repo (`origin/HEAD`, o `origin/main`)? 'yes' · 'no' ·
+ * 'unknown'. Un clon sin esa rama (sin remoto, o un `.git` que git no lee) no puede estar atrasado: 'no'. Con la rama y
+ * sin poder listarla (un error, el tiempo agotado), 'unknown': no se da por inventada.
+ */
+function inRemoteMain(root, p) {
+  if (!fs.existsSync(path.join(root, '.git'))) return 'no';
+  let ref = null;
+  for (const r of ['origin/HEAD', 'origin/main']) {
+    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { stdio: 'ignore', timeout: 5000 }); ref = r; break; } catch { /* la siguiente */ }
+  }
+  if (!ref) return 'no';
+  try {
+    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    return out.trim() ? 'yes' : 'no';
+  } catch { return 'unknown'; }
 }
 
 /** `{ missing, unsure }` de una story: las rutas que no existen y las que no se pueden juzgar. */
@@ -444,7 +470,9 @@ function checkStory(storyFile, content) {
     // una ruta que no se pudo mirar en algún lugar no se da por inventada
     if (where.includes('unknown') || roots.unreadable) { unsure.push(p); continue; }
     const top = p.split('/')[0];
-    (p.includes('/') && roots.some((r) => probe(path.join(r, top)) === 'yes') ? missing : unsure).push(p);
+    if (!(p.includes('/') && roots.some((r) => probe(path.join(r, top)) === 'yes'))) { unsure.push(p); continue; }
+    // antes de darla por inventada: un clon atrasado no tiene un archivo que ya está en la rama principal de su remoto
+    (roots.some((r) => inRemoteMain(r, p) !== 'no') ? unsure : missing).push(p);
   }
   return { missing, unsure };
 }
@@ -516,6 +544,8 @@ function main() {
   let sinCausaExistentes = 0;
   const rutasViejas = [];
   const rutasSinJuzgar = [];
+  // las historias que NACEN con el nombre viejo del pedido de trabajo: se avisa, no se frena (el viejo se sigue leyendo)
+  const campoViejo = [];
 
   for (const abs of files) {
     if (!fs.existsSync(abs)) continue; // borrado en el commit
@@ -560,6 +590,10 @@ function main() {
       });
       continue;
     }
+
+    // 6. (antes que el 4, que corta con `continue`) El campo del pedido de trabajo se llama `work_item`; a una que ya
+    //    existía con el nombre viejo no se le dice nada
+    if (/^ado_work_item:/m.test(parsed.fm) && !/^work_item:/m.test(parsed.fm) && naceAhora(abs, scalar(parsed.fm, 'story'))) campoViejo.push(rel);
 
     // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
     if (!vocab.motivo) {
@@ -625,6 +659,9 @@ function main() {
     (skippedNoFm ? ` (${skippedNoFm} sin frontmatter, legado — no se chequean)` : '') +
     (checkYaml ? '' : ' · aviso: sin PyYAML, se saltea el parse YAML'));
 
+  for (const rel of campoViejo) {
+    console.log(`⚠️  ${rel}: nace con \`ado_work_item:\`; el campo se llama \`work_item:\` (el nombre viejo se sigue leyendo, no frena).`);
+  }
   if (sinCausaExistentes > 0) {
     // Aviso, NO freno: son stories que ya existían cuando nació la regla. Al tocarlas, se declara.
     console.log(`⚠️  ${sinCausaExistentes} story(s) con seguimiento (\`followup_of:\`) sin causa declarada ` +
@@ -639,7 +676,7 @@ function main() {
   }
   if (rutasSinJuzgar.length) {
     console.log(`⚠️  ${rutasSinJuzgar.length} story(s) con archivos que no encuentro en ningún repo al lado ` +
-      '(¿el repo de código está clonado?; no frenan):');
+      '(¿el repo de código está clonado y al día? si un archivo ya está en su remoto, traé el clon; no frenan):');
     for (const r of rutasSinJuzgar) console.log(`   ${r}`);
   }
 

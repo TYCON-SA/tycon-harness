@@ -101,6 +101,35 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const num = (x) => (Number.isFinite(x) ? x : null);
 const texto = (x, max = 120) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : null);
 const codigoDe = (x) => (typeof x === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(x) ? x : null);   // un código, nunca una frase
+// un texto de la foto que llega a la pantalla, sin correos ni rutas de máquina: la foto ya los saca, esto es la segunda capa
+const sinDatos = (s) => (s === null ? null : s.replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[correo]').replace(/(?<![\w./])\/[\w.-]+\/[^\s"'`)\],;<>*]*/g, '[ruta]').replace(/\b[A-Za-z]:[\\/][^\s"'`)\],;<>]*/g, '[ruta]'));
+const UNIDADES = ['hours', 'days', 'points'];
+const unidadDe = (x) => (UNIDADES.includes(x) ? x : null);
+/** La estimación de una épica de la foto por proyecto (scripts/nightly/projects/snapshot.js), por lista blanca. */
+function estimacionDe(e) {
+  if (!isObject(e)) return null;
+  const h = isObject(e.en_horas) ? e.en_horas : null;
+  const r = isObject(e.real) ? e.real : {};
+  const sumas = isObject(e.sumas_por_unidad) ? Object.fromEntries(Object.entries(e.sumas_por_unidad).filter(([u, v]) => unidadDe(u) && num(v) !== null)) : null;
+  return {
+    rango: isObject(e.rango) && num(e.rango.min) !== null && num(e.rango.max) !== null ? { min: e.rango.min, max: e.rango.max, unidad: unidadDe(e.rango.unidad) } : null,
+    unidad: unidadDe(e.unidad),
+    suma_plan: num(e.suma_plan),
+    suma_vigente: num(e.suma_vigente),
+    dentro: typeof e.dentro === 'boolean' ? e.dentro : null,
+    fuera: e.fuera === 'encima' || e.fuera === 'debajo' ? e.fuera : null,
+    por: num(e.por),
+    sumas_por_unidad: sumas,
+    motivo: sinDatos(texto(e.motivo, 200)),
+    en_horas: h ? { min: num(h.min), max: num(h.max), plan: num(h.plan), vigente: num(h.vigente) } : null,
+    real: { cerrada: r.cerrada === true, suma: num(r.suma), faltan: Number.isInteger(r.faltan) ? r.faltan : null, motivo: sinDatos(texto(r.motivo, 200)) },
+  };
+}
+/** El estado de las estimaciones de un repo, de la foto: null si la foto es anterior a ellas (no se midió). */
+function estimacionesDe(x) {
+  if (!isObject(x) || !['medido', 'sin_registro', 'no_medido'].includes(x.estado)) return null;
+  return { estado: x.estado, motivo: sinDatos(texto(x.motivo, 200)), ilegibles: Number.isInteger(x.ilegibles) ? x.ilegibles : 0, unidad: unidadDe(x.unidad) };
+}
 const enlace = (x) => (typeof x === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(x) ? x.slice(0, 400) : null);
 const fechaDe = (nombre) => { const m = String(nombre).match(/(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null; };
 const diaUtc = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -329,6 +358,13 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
     m.vigilante = fuente('medido', null, vig.fecha, { pendientes: largo(rub.pendientes), aceptadas_sin_story: largo(rub.aceptadas_sin_story), productos: isObject(vig.doc.productos) ? Object.keys(vig.doc.productos).map((k) => texto(k, 60)).filter(Boolean) : [] });
   } else m.vigilante = vig.fuente;
 
+  // lo que hay que decidir, ficha por ficha, con el pedido que anota cada una (decisions.js): sin ninguna de las dos
+  // fotos, no medido
+  m.decisiones = dep.ok || vig.ok
+    ? fuente('medido', null, [dep.ok && dep.fecha, vig.ok && vig.fecha].filter(Boolean).sort().pop(), {
+      items: require('./decisions.js').itemsDeLasColas({ clon, fotos: { dependencias: dep.ok ? dep.doc : null, vigilante: vig.ok ? vig.doc : null }, dentroDe }) })
+    : noMedida('sin_foto');
+
   // banco, suites y examen (el nocturno del tablero de una organización que corre el banco los guarda acá)
   const rojosDelBanco = (doc) => (isObject(doc) && isObject(doc.results) ? Object.entries(doc.results).filter(([, r]) => isObject(r) && isObject(r.tools) && Object.values(r.tools).some((x) => isObject(x) && x.pass === false)).map(([id]) => texto(id, 160)).filter(Boolean) : null);
   const banco = foto('controls-bench', 'banco-*.json', { sinCarpeta: 'no_corre_banco' });
@@ -393,7 +429,9 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       const fecha = texto(d.generated_at, 10);
       const vieja = !fecha || edad(fecha) > EDAD_MAXIMA_SIN_DECLARAR;
       if (fecha && !vieja && (!fechaProy || fecha > fechaProy)) fechaProy = fecha;
-      proyectos.push({ proyecto: decodificar(texto(d.proyecto)), repo: texto(d.repo), fecha, vieja, stories: (Array.isArray(d.stories) ? d.stories : []).filter(isObject).map((s) => ({ grupo: texto(s.grupo, 30), canonico: texto(s.canonico, 30), dias_en_estado: num(s.dias_en_estado) })) });
+      proyectos.push({ proyecto: decodificar(texto(d.proyecto)), repo: texto(d.repo), fecha, vieja, stories: (Array.isArray(d.stories) ? d.stories : []).filter(isObject).map((s) => ({ grupo: texto(s.grupo, 30), canonico: texto(s.canonico, 30), dias_en_estado: num(s.dias_en_estado) })),
+        epicas: (Array.isArray(d.epicas) ? d.epicas : []).filter(isObject).map((e) => ({ id: texto(String(e.id == null ? '' : e.id), 40), titulo: sinDatos(texto(e.titulo, 120)), estimacion: estimacionDe(e.estimacion) })),
+        estimaciones: isObject(d.cobertura) ? estimacionesDe(d.cobertura.estimaciones) : null });
     }
     if (!proyectos.length) m.proyectos = noMedida(ilegibles ? 'ilegible' : 'sin_foto');
     // hay_al_dia: si el nocturno de métricas dejó alguna foto al día; viaja aparte porque la vista de una persona recorta
@@ -435,6 +473,12 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       sin_medir: (Array.isArray(asig.doc.proyectos_no_medidos) ? asig.doc.proyectos_no_medidos : []).filter(isObject).map((x) => texto(x.proyecto)).filter(Boolean).map(decodificar) });
   } else if (asig.ok && asig.doc.estado === 'medido') { m.pedidos = noMedida('ilegible', asig.fecha); log(`la foto de pedidos asignados del ${asig.fecha} dice medido y no trae la lista`); }
   else m.pedidos = asig.ok ? noMedida('no_medido_noche', asig.fecha) : asig.fuente;
+  // las retrospectivas pendientes: la foto de HOY, sólo la cuenta por repo. Sin ella, el Inicio dice lo de siempre
+  const ret = foto('retros', 'retros-*.json');
+  if (ret.ok && ret.fecha === hoy && ret.doc.estado === 'medido' && Array.isArray(ret.doc.pendientes)) {
+    m.retros = fuente('medido', null, ret.fecha, { pendientes: ret.doc.pendientes.filter(isObject).map((x) => ({ repo: texto(x.repo, 200), dias: num(x.dias) })) });
+  } else if (ret.ok && ret.doc.estado === 'medido' && !Array.isArray(ret.doc.pendientes)) { m.retros = noMedida('ilegible', ret.fecha); log(`la foto de retrospectivas del ${ret.fecha} dice medido y no trae la lista`); }
+  else m.retros = ret.ok ? noMedida('no_medido_noche', ret.fecha) : ret.fuente;
 
   // la paridad de los productos: el archivo de HOY, y de él sólo las cantidades por repo de `por_ruta`.
   // `divergencias[]` —el texto del rasgo y qué productos lo tienen— no entra al modelo.
@@ -883,6 +927,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     }),
     /** Con la copia: el clon aparte donde «Proponer» trae `main` (en el disco del contenedor, como los clones). */
     clonDeEscritura: conCopia ? () => prepararClonDeEscritura({ dir: path.join(raizClones, 'operaciones-escritura'), url: cfg.operationsRepo, git }) : undefined,
+    /** El clon de escritura de un repo de producto, armado a pedido: la sección por repo lee `main` y propone ahí. */
+    clonDeProducto: ({ id, url }) => (/^[a-z0-9-]+$/.test(String(id)) ? prepararClonDeEscritura({ dir: path.join(raizClones, 'productos', id), url, git }) : { motivo: 'identificador de repo inválido' }),
     exclusivo,
     dirBuzon,
     /** ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */

@@ -439,6 +439,12 @@ test('T53 Notify_Night_FallsBackToOldChannel @story-7.40 @ac-20', () => {
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   fs.mkdirSync(path.join(D, 'vig')); fs.mkdirSync(path.join(D, 'vigpend'));
   fs.writeFileSync(path.join(D, 'vig', `vigilante-${hoy}.json`), JSON.stringify({ fecha: hoy, generado: `${hoy}T08:00:00.000Z`, productos: {}, conteos: {}, hallazgos: [], no_medido: [], nuevos: 0, repetidos: 0, marcados_ignorados: 0, ignorados_ids: [], modo: 'normal', aviso: null, recordados: 0 }));
+  // la línea de las ejecuciones de las 04:00: la edición de Telegram la vuelve a escribir; el mensaje
+  // aparte de Slack no la lleva, porque ya le llegó a la mañana
+  const depsSnap = path.join(D, 'out', `dependencias-${hoy}.json`);
+  const s04 = JSON.parse(fs.readFileSync(depsSnap, 'utf8'));
+  s04.resumen.ejecuciones = ['ejecuciones: 0 con fallas del arnés (5 miradas)'];
+  fs.writeFileSync(depsSnap, JSON.stringify(s04));
   reset('ok:61\nstatus:200');
   const v = spawnSync(process.execPath, [RESUMEN, 'deliver', '--source', 'vigilante', '--today', hoy, '--out', path.join(D, 'vig'), '--pending', path.join(D, 'vigpend'),
     '--deps-out', path.join(D, 'out'), '--operations', ops, '--profile', path.join(D, 'team-profile.json')],
@@ -449,6 +455,8 @@ test('T53 Notify_Night_FallsBackToOldChannel @story-7.40 @ac-20', () => {
   const aSlack = JSON.parse(alWebhook(RUTA_SLACK)[0].cuerpo).text;
   assert.match(aSlack, /va aparte \(slack no edita\)/);
   assert.ok(!/pedidos creados/.test(aSlack), 'Slack no recibe otra vez la sección de dependencias');
+  assert.ok(!/ejecuciones:/.test(aSlack), '4.10-T32: Slack no recibe otra vez la línea de las ejecuciones');
+  assert.match(texto(), /ejecuciones: 0 con fallas del arnés \(5 miradas\)/, '4.10-T32: Telegram la conserva al editar');
 
   // el modelo público: la noche baja el perfil del repo que declara team-repos.json (acá, un repo local en lugar de Azure)
   const bare = path.join(tmp, 't53-perfil.git');

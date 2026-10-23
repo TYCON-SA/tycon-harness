@@ -61,12 +61,37 @@ function productKey(url) {
   return `azure:${m[1]}/${project}`.toLowerCase();
 }
 
-/** Los repos del mismo producto que `repo` (rutas absolutas, sin el propio), en orden. */
-function productSiblings(repo) {
+/**
+ * Los compañeros declarados, `{ roots, missing }`. Las rutas se declaran relativas al repo (`../tycon-harness`): desde un
+ * worktree, que vive en otra carpeta, se resuelven también desde el checkout principal del mismo repo.
+ */
+function declaredCompanions(repo) {
+  const roots = new Set();
+  const missing = new Set();
+  const self = new Set([path.resolve(repo)]);
+  const bases = [repo];
+  const common = gitCommonDir(repo);
+  if (common && path.basename(common) === '.git' && path.dirname(common) !== path.resolve(repo)) {
+    bases.push(path.dirname(common));
+    self.add(path.dirname(common));
+  }
+  for (const base of bases) {
+    let cfg = { roots: [], missing: [] };
+    // sin poder leer la configuración no se sabe qué compañeros hay: cuenta como uno que falta
+    try { cfg = parseEvidenceConfig(base); } catch { cfg = { roots: [], missing: ['(no pude leer .tycon/advisors.yaml)'] }; }
+    for (const c of cfg.roots || []) if (!self.has(path.resolve(c))) roots.add(path.resolve(c));
+    for (const m of cfg.missing || []) missing.add(path.basename(String(m)));
+  }
+  // lo que alguna base encontró no falta
+  for (const r of roots) missing.delete(path.basename(r));
+  return { roots: [...roots], missing: [...missing] };
+}
+
+/** Los repos del mismo producto que `repo` y los compañeros declarados que no están en disco: `{ siblings, missing }`. */
+function productSiblingsInfo(repo) {
   const out = new Set();
-  let companions = [];
-  try { companions = parseEvidenceConfig(repo).roots || []; } catch { companions = []; }
-  for (const c of companions) if (path.resolve(c) !== path.resolve(repo) && fs.existsSync(c)) out.add(path.resolve(c));
+  const companions = declaredCompanions(repo);
+  for (const c of companions.roots) if (fs.existsSync(c)) out.add(c);
   const own = originUrl(repo);
   const key = productKey(own);
   if (key) {
@@ -85,7 +110,12 @@ function productSiblings(repo) {
       out.add(d);
     }
   }
-  return [...out].sort((a, b) => a.localeCompare(b));
+  return { siblings: [...out].sort((a, b) => a.localeCompare(b)), missing: companions.missing };
 }
 
-module.exports = { productSiblings, productKey, originUrl };
+/** Los repos del mismo producto que `repo` (rutas absolutas, sin el propio), en orden. */
+function productSiblings(repo) {
+  return productSiblingsInfo(repo).siblings;
+}
+
+module.exports = { productSiblings, productSiblingsInfo, productKey, originUrl };

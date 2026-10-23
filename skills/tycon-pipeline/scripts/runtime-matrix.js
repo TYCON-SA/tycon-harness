@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * runtime-matrix.js — Matriz de verificación RUNTIME por AC (regla DODRT-C6).
  *
@@ -57,7 +59,7 @@
  * Exit: 0 = verde (todo RUNTIME o resto ackeado válido) · 1 = rojo · 2 = error
  * estructural (story ilegible / sin ACs ni tabla) — FAIL CLOSED, nunca "no pude leer,
  * paso". Enforcement: `marker.js run-check acmatrix -- node runtime-matrix.js ...`
- * (complete-step 8 lo exige verde) + `on-pre-commit.js` re-computa en vivo en
+ * (complete-step prepare-commit lo exige verde) + `on-pre-commit.js` re-computa en vivo en
  * transiciones a review/done (no confía en el .md escrito — recalcula).
  */
 
@@ -840,7 +842,7 @@ const MOTIVO_EN_PALABRAS = {
 };
 
 /**
- * Las líneas del bloqueo para las firmas descartadas. Las imprimen `marker.js complete-step 8` y
+ * Las líneas del bloqueo para las firmas descartadas. Las imprimen `marker.js complete-step prepare-commit` y
  * `on-pre-commit.js`: un solo texto, para que los dos digan lo mismo. Vacío si no hay ninguna.
  */
 function avisoFirmasDescartadas(r, storyPath) {
@@ -860,7 +862,7 @@ function compute(opts) {
   // `discoverEvidenceDirs` busca la evidencia en '<repo>/<hijo>/.advisors/dod-runtime' y NUNCA
   // encuentra '<repo>/.advisors/dod-runtime'. Resultado: matriz 0/N con la evidencia intacta en disco.
   //
-  // `marker.js complete-step 8` pasa `marker.storyPath`, que `pipeline.js start` guarda RELATIVO al
+  // `marker.js complete-step prepare-commit` pasa `marker.storyPath`, que `pipeline.js start` guarda RELATIVO al
   // repo: el gate del commit-prep bloquea con la matriz realmente verde, para cualquier dev, en
   // cualquier story. Y como el bloqueo "no tiene bypass para el agente", empuja al waiver TTY o a
   // DOD_BYPASS — o sea, degrada justo el gate que existe para no degradarse. Con el path relativo el
@@ -1189,7 +1191,7 @@ function compute(opts) {
   let waived = new Set();
   let chain = { ok: true, brokenAt: -1, total: 0 };
   // Las firmas de ESTA story que la cadena descartó. Se mira la cadena del registro de la HOME y la del
-  // repo, y lo descartado se dice: si no, el paso 8 diría «esperan waiver» sin aclarar que el dev ya firmó.
+  // repo, y lo descartado se dice: si no, «Preparar el commit» diría «esperan waiver» sin aclarar que el dev ya firmó.
   let descartadas = { acs: [], lines: [] };
   try {
     const waiverLib = require(path.join(__dirname, 'lib', 'runtime-waiver.js'));
@@ -1345,7 +1347,7 @@ function compute(opts) {
   for (const w of avisos) warnings.push(w);
 
   // Un AC de pantalla sin imagen bloquea como uno sin correr y tampoco se puede waivear: va también en `notRun`, que es la
-  // lista que imprimen el freno del commit y el cierre del paso 8. `sinImagen` dice cuáles son de pantalla.
+  // lista que imprimen el freno del commit y el cierre de «Preparar el commit». `sinImagen` dice cuáles son de pantalla.
   const notRun = acs.filter((n) => perAc[n].verdict === 'NOT-RUN' || sinImagen.includes(n));
   const accionNoEjercida = acs.filter((n) => perAc[n].verdict === 'RUNTIME-PARCIAL');
   const notVerifiablePend = acs.filter((n) => perAc[n].verdict === 'NOT-VERIFIABLE');

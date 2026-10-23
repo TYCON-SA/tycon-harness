@@ -72,7 +72,16 @@ Forma del JSON:
 - **Sale 2**: dice en llano qué falta o qué sobra y no escribió nada. Arreglá el JSON (o preguntale a la persona lo que
   falta) y volvé a correrlo. Nunca escribas la historia a mano: la marca de primera vez sólo vale si la escribe el guion.
 
-No escribas el archivo de la historia con tus herramientas de edición, ni lo copies a otro lado.
+No escribas el archivo de la historia con tus herramientas de edición, ni lo copies a otro lado: lo único que cambiás
+a mano es el estado, en el paso que sigue.
+
+## 4b. Validarla
+
+El guion la deja con `status: draft`: un borrador que el pipeline no toma. Corré el validador de historias
+(`tycon-story-validator`) sobre la ruta que devolvió el guion, nombrándola en el pedido. Si su reporte trae un CRITICAL,
+arreglá la historia con la persona y volvé a correrlo. Cuando pase, cambiá con la tool Edit `status: draft` por
+`status: ready-for-dev`, en el frontmatter y en el renglón `Status:` de abajo del título. Sin el validador, el arnés no
+deja hacer ese cambio.
 
 ## 5. El cierre
 

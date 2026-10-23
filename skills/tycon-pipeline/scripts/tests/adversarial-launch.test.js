@@ -584,3 +584,25 @@ if (/REFUTAR/i.test(prompt)) {
   assert.ok(i >= 0 && j > i, 'el guion trae el núcleo de la ventana entre sus marcas');
   assert.strictEqual(wf.slice(i, j).trimEnd(), nucleo(), 'las dos copias se separaron — re-sincronizá: node lib/sliding-window.js --emit-core');
 });
+
+// La pregunta «tarda 20-40 min, ¿lo corro?» salía de la duración que anunciaba la skill, y la respuesta «no» terminaba
+// en el apagado del pase. Con el portón en «corre», el pase se lanza de fondo y se avisa; apagarlo lo decide la persona.
+test('T9 Skill_NoOfreceSaltearElPase @story-8.104 @ac-1', () => {
+  const skill = fs.readFileSync(path.join(SCRIPTS, '..', 'SKILL.md'), 'utf8');
+  const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-08-adversarial-pass.md'), 'utf8');
+  const regla = (id) => { const m = new RegExp(`^- \\*\\*${id.replace(/\./g, '\\.')}[^\\n]*(?:\\n  [^\\n]*)*`, 'm').exec(skill); return m ? m[0] : ''; };
+  const comm = regla('COMM.iii');
+  const hii = regla('H.ii');
+  const tooli = regla('TOOL.i');
+  assert.ok(comm && hii && tooli, 'COMM.iii, H.ii y TOOL.i están en SKILL.md');
+  for (const [nombre, t] of [['COMM.iii', comm], ['H.ii', hii]]) {
+    assert.match(t, /sin preguntar/, `${nombre}: el pase se lanza sin preguntar`);
+    assert.match(t, /de fondo|segundo plano/, `${nombre}: de fondo`);
+  }
+  for (const [nombre, t] of [['SKILL.md', skill], ['step-08', paso]]) {
+    assert.doesNotMatch(t, /¿lo corro\?|¿sigo sin el pase/i, `${nombre}: no ofrece saltearlo`);
+    assert.doesNotMatch(t, /TYCON_NO_DEEP_REVIEW=1 /, `${nombre}: sin la receta del apagado`);
+    assert.match(t, /autorizo TYCON_NO_DEEP_REVIEW/, `${nombre}: apagarlo lo decide la persona con la frase`);
+  }
+  assert.match(tooli, /salida aprobada/, 'TOOL.i: sin Workflow, la salida aprobada');
+});

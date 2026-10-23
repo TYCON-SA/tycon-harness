@@ -138,6 +138,7 @@ else if (tiene('devops', 'security', 'group', 'membership', 'list')) paso = 'mie
 else if (tiene('devops', 'security', 'group', 'list')) paso = 'grupo';
 else if (tiene('devops', 'project', 'show')) paso = 'equipo';
 else if (tiene('boards', 'iteration', 'team', 'list')) paso = 'iteracion';
+else if (tiene('boards', 'work-item', 'relation', 'add')) paso = 'relacion';
 else if (tiene('boards', 'work-item', 'show')) paso = 'wi';
 else if (tiene('boards', 'work-item', 'create')) paso = 'crear';
 else if (tiene('boards', 'work-item', 'update')) paso = args.includes('--discussion') ? 'comentario' : 'actualizar';
@@ -169,6 +170,8 @@ if (coincide(process.env.TYCON_AZ_FAIL)) {
   if (paso === 'rol') falla("(AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Authorization/roleAssignments/write' over scope (403)");
   falla(`falla fabricada en el paso ${paso}`);
 }
+// sin sesión, los comandos de boards fallan como az sin `az login`
+if (process.env.TYCON_AZ_WITHOUT_SESSION === '1' && ['wi', 'crear', 'comentario', 'actualizar', 'relacion'].includes(paso)) falla("Please run 'az login' to setup account.");
 if (coincide(process.env.TYCON_AZ_GARBAGE)) { process.stdout.write('esto no es JSON, es lo que devuelve un proxy caído\n'); process.exit(0); }
 
 if (paso === 'version') { process.stdout.write('azure-cli 2.79.0 (doble de pruebas)\n'); process.exit(0); }
@@ -197,6 +200,25 @@ if (familia) {
     tsv('LLAVE-DE-LA-CUENTA-QUE-NO-DEBE-APARECER');
   }
   if (paso === 'registro' && args[1] === 'app' && args[2] === 'show') tsv((process.env.TYCON_AZ_CLAIMS || 'email,xms_edov').split(',').filter(Boolean).join('\t'));
+  // invitar desde el sitio: el principal de Graph y el id de su rol User.Invite.All; las asignaciones y la política del código por
+  // correo, por Graph. TYCON_AZ_NOT_ADMIN=1: la asignación sale con el 403 de Graph (la sesión no es de un administrador
+  // del directorio); TYCON_AZ_EMAIL_CODE_POLICY=enabled|default|disabled|denied (denied: la lectura de la política sale 403)
+  if (paso === 'registro' && args[1] === 'sp' && args[2] === 'show') tsv(/appRoles/.test(String(arg('--query'))) ? 'rol-de-invitar' : 'principal-de-graph');
+  if (paso === 'rest' && /graph\.microsoft\.com/.test(String(arg('--url')))) {
+    const u = String(arg('--url'));
+    const metodo = String(arg('--method') || 'get').toLowerCase();
+    if (/appRoleAssignments$/.test(u) && metodo === 'post') {
+      if (process.env.TYCON_AZ_NOT_ADMIN === '1') falla('Forbidden({"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}})');
+      out({ id: 'asignacion-1' });
+    }
+    if (/appRoleAssignments$/.test(u)) out({ value: [] });
+    if (/authenticationMethodConfigurations\/email$/i.test(u)) {
+      const p = process.env.TYCON_AZ_EMAIL_CODE_POLICY || 'default';
+      if (p === 'denied') falla('Forbidden({"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}})');
+      out({ id: 'Email', allowExternalIdToUseEmailOtp: p });
+    }
+    out({});
+  }
   if (paso === 'rest') {
     const u = String(arg('--url') || '');
     estado[`rest|${u.replace(/\?.*$/, '')}`] = true; guardar(); out({ properties: { provisioningState: 'Succeeded' } });
@@ -205,6 +227,10 @@ if (familia) {
     // lo que tiene la aplicación: sale del último --yaml que la creó o la actualizó (nombres, nunca valores)
     const apl = estado.apl || {};
     if (q === 'properties.template.containers[0].image') return apl.imagen || '';
+    // el valor que dejó la fase permiso-de-invitar (`--set-env-vars SITE_INVITE_EMAIL_CODE=…`)
+    if (/SITE_INVITE_EMAIL_CODE/.test(q)) return estado.codigoPorCorreo || 'None';
+    // story 2.76: la marca de la instancia demo (el valor de SITE_DEMO de la aplicación; None si no la tiene)
+    if (/SITE_DEMO/.test(q)) return apl.demo || 'None';
     if (q === 'properties.configuration.secrets[].name') return (apl.secretos || []).join('\n');
     if (q === 'properties.template.containers[0].env[].name') return (apl.variables || []).join('\n');
     if (q === 'properties.configuration.ingress.external') return apl.externa ? 'true' : 'false';
@@ -238,9 +264,13 @@ if (familia) {
     const y = JSON.parse(Object.values(archivos)[0] || '{}');
     const cfg = (y.properties || {}).configuration || {};
     const cont = (((y.properties || {}).template || {}).containers || [])[0] || {};
-    estado.apl = { imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external) };
+    estado.apl = { demo: ((cont.env || []).find((e) => e.name === 'SITE_DEMO') || {}).value, imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external) };
   }
   if (paso === 'entrada' && args.includes('external')) estado.apl = { ...(estado.apl || {}), externa: true };
+  if (paso === 'aplicacion' && verbo === 'update' && args.includes('--set-env-vars')) {
+    const v = valores('--set-env-vars').find((x) => x.startsWith('SITE_INVITE_EMAIL_CODE='));
+    if (v) estado.codigoPorCorreo = v.split('=')[1];
+  }
   // az 2.71 (extensión containerapp 1.2.0b4) no acepta el emisor y el inquilino juntos
   if (paso === 'inicio' && args.includes('--issuer') && args.includes('--tenant-id')) falla('--issuer and --tenant-id cannot be configured to non empty strings at the same time.');
   // create / update / set: queda creado (la clave no lleva el verbo: `show` la encuentra)
@@ -251,7 +281,9 @@ if (!args.includes('--org') && !args.includes('--organization')) {
   falla('sin --org: el default de `az devops configure` apunta a un proyecto que ya no existe');
 }
 const salida = arg('-o') || arg('--output');
-if (salida !== 'json') falla('sin -o json: la salida por defecto depende de la configuración de cada máquina');
+// la única consulta en texto plano que usa el arnés: el estado de un pedido de trabajo (`--query … -o tsv`)
+const estadoEnTexto = paso === 'wi' && salida === 'tsv' && /System\.State/.test(String(arg('--query') || ''));
+if (salida !== 'json' && !estadoEnTexto) falla('sin -o json: la salida por defecto depende de la configuración de cada máquina');
 
 const dirCreados = path.join(FIX, 'creados');
 const creados = () => {
@@ -283,6 +315,8 @@ switch (paso) {
   }
   case 'wi': {
     const id = arg('--id');
+    // el estado en texto: el último que le puso un update, si no `estado-<id>` del escenario, si no «New»
+    if (estadoEnTexto) { process.stdout.write(`${String(leerFix(`estado-${id}`) || 'New').trim()}\n`); process.exit(0); }
     const f = fixJson(`wi-${id}.json`, null);
     if (f) out(f);
     const c = creados().find((x) => String(x.id) === String(id));
@@ -391,6 +425,11 @@ switch (paso) {
     out({ id: n, fields: { 'System.Title': arg('--title'), 'System.Tags': tags, 'System.TeamProject': arg('--project') } });
     break;
   }
+  case 'relacion': {
+    for (const k of ['--id', '--relation-type', '--target-id']) if (!arg(k)) falla(`work-item relation add: falta ${k}`);
+    out({ id: Number(arg('--id')), relations: [{ rel: arg('--relation-type'), target: Number(arg('--target-id')) }] });
+    break;
+  }
   case 'comentario': {
     if (!arg('--id')) falla('work-item update: falta --id');
     out({ id: Number(arg('--id')), fields: {} });
@@ -401,6 +440,7 @@ switch (paso) {
     // (medido el 2026-09-15 con validateOnly: «Fixed and verified» desde New en Agile).
     if (!arg('--id')) falla('work-item update: falta --id');
     const st = arg('--state');
+    if (st) fs.writeFileSync(path.join(FIX, `estado-${arg('--id')}`), st);
     out({ id: Number(arg('--id')), fields: st ? { 'System.State': st, 'System.Reason': String(leerFix(`motivo-${arg('--id')}`) || 'Fixed and verified').trim() } : {} });
     break;
   }

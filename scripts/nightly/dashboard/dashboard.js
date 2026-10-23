@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /*
  * dashboard.js — EL LECTOR DEL TABLERO
  *
@@ -75,6 +77,10 @@ const AMB_ARGV = {
   runsDir: valor('--runs-dir', undefined),
   config: CONFIG,
   raiz: RAIZ,   // de dónde salen repos.json, pipeline-debt.json, declared.json y lane-hypothesis.json (el sitio pasa su copia de operaciones)
+  // el examen y los casos del banco para la poda: el sitio pasa los de su copia de operaciones si los trae; sin ellos, los
+  // de siempre
+  examen: undefined,
+  casos: undefined,
   hoy: null,
   // `--now <milisegundos>`: el instante contra el que se mide la frescura de cada fuente. Existe para PROBAR, como
   // `--dir`: con `TYCON_TODAY` fijo y el reloj real, una foto de juguete se vuelve vieja sola al pasar los días
@@ -224,7 +230,7 @@ function encuentra(por) {
     const productos = Object.keys(d.productos || {});
     const ok = productos.filter((p) => d.productos[p] && d.productos[p].ok).length;
     if (ok === 0) return noMedida('ningún producto pudo medirse esta noche');
-    return medida((d.hallazgos || []).length, ok, productos.length, { unidad: 'conteo', den_etiqueta: 'productos vigilados', detalle: `${d.nuevos ?? '?'} nuevos · ${d.repetidos ?? '?'} repetidos` });
+    return medida((d.hallazgos || []).length, ok, productos.length, { unidad: 'conteo', den_etiqueta: 'productos vigilados', detalle: `${d.nuevos === undefined || d.nuevos === null ? '?' : d.nuevos} nuevos · ${d.repetidos === undefined || d.repetidos === null ? '?' : d.repetidos} repetidos` });
   });
   return m;
 }
@@ -853,6 +859,8 @@ function podaPanel(buzon = { estado: 'no_aplica' }) {
       hallazgos: path.join(registros, 'hallazgos.jsonl'),
       buzon: path.resolve(AMB.mailbox || path.join(stateDirOf(require('os').homedir()), 'corridas-buzon')),
       historia: AMB.runsDir,
+      examen: AMB.examen,
+      casos: AMB.casos,
       // las dos puntas del cruce salen sólo del buzón — el disco del agente no es una máquina.
       sinLocal: AMB.nocturno,
     });

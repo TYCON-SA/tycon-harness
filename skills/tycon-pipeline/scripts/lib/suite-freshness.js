@@ -1,10 +1,12 @@
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * suite-freshness.js — ¿el verde de la suite completa sigue midiendo ESTE código?
  *
- * Si la suite completa corre verde al cierre del Step 4 y después hay más
+ * Si la suite completa corre verde al cierre de «Correr las pruebas» y después hay más
  * iteraciones de fixes, ese verde describe un código que ya no existe. Lo caza el
- * DoD checker (Step 7c), no el orquestador: de red, no de prevención. Este módulo
+ * DoD checker (paso «Probar en vivo»), no el orquestador: de red, no de prevención. Este módulo
  * le da al orquestador la pregunta barata: "¿cambió ALGÚN archivo de código desde
  * la corrida verde?" — y sólo si la respuesta es sí se paga la re-corrida.
  *
@@ -31,8 +33,8 @@
  *   encadenarlos sin ambigüedad.
  *
  * Quién lo consume: test-gate.sh (escribe `code_state` en tests-result.json al
- * cerrar cada corrida) y step-07b (chequea al salir del loop de iteraciones,
- * ANTES de continuar a Step 7c). Fail-open con constancia: sin git, o con git
+ * cerrar cada corrida) y la vuelta de revisores (chequea al salir del loop de iteraciones,
+ * ANTES de continuar al paso «Probar en vivo»). Fail-open con constancia: sin git, o con git
  * fallando, `state` dice `git:false` y `check` sale 6 — nunca inventa un fresco.
  */
 
@@ -74,7 +76,7 @@ function codeState(repoDir) {
   // 🔴 Frame único: SIEMPRE se mide desde la RAÍZ del repo git, sin importar desde qué
   // subcarpeta se invoque (test-gate.sh reasigna $REPO al
   // subdir del alcance, así que el artefacto quedaría medido desde `mcp/` y el check del
-  // step-07b mediría desde la raíz — paths y set de archivos distintos → STALE falso SIEMPRE
+  // paso «Revisores, otra vuelta» mediría desde la raíz — paths y set de archivos distintos → STALE falso SIEMPRE
   // en repos con alcance de subcarpeta (una suite completa extra por story, sin un solo
   // cambio). Normalizar acá cubre a TODO caller sin depender del orden en bash.
   let root = null;

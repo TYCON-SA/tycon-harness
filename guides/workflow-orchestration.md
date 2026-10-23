@@ -260,7 +260,7 @@ Esta regla aplica a **todos los skills orquestadores TYCON**: `tycon-pipeline`, 
 
 ### Regla 7.1 — NO skipear steps declarados por inferencia desde contexto conversacional
 
-Cuando un skill orquestador declara una secuencia de steps (`step-00`, `step-00b`, `step-01`, ...), **ningún step se saltea por inferencia del agente**. Solo se saltea si la **skip-condition documentada DENTRO del step** se cumple.
+Cuando un skill orquestador declara una secuencia de steps (`step-01-start`, `step-02-validate-story`, ...), **ningún step se saltea por inferencia del agente**. Solo se saltea si la **skip-condition documentada DENTRO del step** se cumple.
 
 **Ejemplos de skip legítimo** (lo que SÍ se acepta):
 - Step de inicio del registro de horas dice "saltear si el MCP de la herramienta de horas no está disponible" → verificás que el MCP no responde → skip OK.
@@ -294,15 +294,15 @@ El patrón que estas reglas cierran, con `tycon-pipeline`:
 1. El hook UserPromptSubmit del registro de horas dispara 3+ veces en la conversación.
 2. El user no menciona el registro de horas explícitamente.
 3. El agente **infiere** que el user no lo quiere y **anuncia** "skip registro de horas" antes de invocar el skill.
-4. Pero el skill `tycon-pipeline` declara `Step 0b — Arranque: aviso de trabajo` con skip-condition "saltear si MCP no está disponible", y el MCP está disponible.
-5. El agente salta Step 0b por inferencia conversacional, contradiciendo la spec.
-6. Mismo patrón con Step 0c (ADO mark-active): el frontmatter de la story no tiene `ado_work_item:`, el agente skipea silencioso — pero el WI **existe** en ADO con título matcheable. La skip-condition documentada (falta del campo) es correcta literal pero tiene un gap (no consulta ADO directamente).
+4. Pero el skill `tycon-pipeline` declara en el Arranque «aviso de trabajo» con skip-condition "saltear si MCP no está disponible", y el MCP está disponible.
+5. El agente salta el registro de horas del Arranque por inferencia conversacional, contradiciendo la spec.
+6. Mismo patrón con el pedido en ADO del Arranque (mark-active): el frontmatter de la story no tiene `ado_work_item:`, el agente skipea silencioso — pero el WI **existe** en ADO con título matcheable. La skip-condition documentada (falta del campo) es correcta literal pero tiene un gap (no consulta ADO directamente).
 
 Aplicación de las reglas:
 
-- 7.1 → no skipear Step 0b. Ejecutarlo como declarado.
+- 7.1 → no skipear el registro de horas del Arranque. Ejecutarlo como declarado.
 - 7.2 → en caso de duda, ejecutar.
-- 7.3 → reportar el gap del Step 0c (frontmatter incompleto) + proponer fix sistémico al spec (búsqueda fallback por título) + ejecutar el step corregido.
+- 7.3 → reportar el gap del pedido en ADO del Arranque (frontmatter incompleto) + proponer fix sistémico al spec (búsqueda fallback por título) + ejecutar el step corregido.
 
 ---
 
@@ -319,7 +319,7 @@ Los siguientes campos del frontmatter de `specs/stories/N-M-*.md` son **contract
 | `status:` (`ready-for-dev` → `in-progress` → `review` → `done`) | inicio/cierre del registro de horas + ADO WI state transition + engram session summary + advisors re-run | `/tycon-pipeline implement` / `/tycon-pipeline close N.M` |
 | `sprint:` y `signed_for_sprint:` | scope firmado del cliente, CR registry | `change-requests/cr-NNN-*.md` + commit firmado |
 | `pipelines.*.status:` (transiciones de pipelines declaradas en frontmatter) | Cross-check con tests/code presentes | `/tycon-pipeline close N.M` (coordina con advisors) |
-| `ado_work_item:` (vínculo a ADO WI) | Audit trail bidireccional ADO ↔ spec | step-00c de `tycon-pipeline` |
+| `ado_work_item:` (vínculo a ADO WI) | Audit trail bidireccional ADO ↔ spec | Arranque de `tycon-pipeline` |
 
 ### Regla 8.2 — Enforcement mecánico (hook PreToolUse)
 
@@ -381,10 +381,10 @@ El skill `tycon-pipeline` mantiene un marker file en `~/.claude/.tycon-pipeline/
 ```
 
 Lifecycle:
-- **Step 0 (preflight, PIPE-C4)** setea el marker.
-- **Cada `complete-step <N>`** actualiza `stepsCompleted` y `stepsPending`.
+- **El paso «Arranque» (preflight, PIPE-C4)** setea el marker.
+- **Cada `complete-step <paso>`** actualiza `stepsCompleted` y `stepsPending`.
 - **Cada Edit/Write** appende `file_path` a `filesTouched` (via hook `on-edit.js`).
-- **Step 8 (commit-prep)** o **Step 9 (ado-closure)** limpian el marker.
+- **El paso «Preparar el commit»** o el cierre en ADO limpian el marker.
 
 Utility: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js <cmd> [arg]`.
 
@@ -404,10 +404,10 @@ Wireados en `~/.claude/settings.json` bajo `UserPromptSubmit`, `PostToolUse`, y 
 ### Regla 9.3 — Por qué el marker
 
 El user pide "implementemos la `<N.M>`" y el orchestrator (Claude) **va paso a paso manual** en lugar de invocar `Skill(skill="tycon-pipeline")`. Resultado:
-- Step 0 preflight skipped.
-- Step 1 validate-story corre a mano.
-- Steps 2-4 (BMAD plan + approve + execute) reemplazados por edición directa.
-- **Step 5 advisors NO se corren**, y nadie lo nota hasta el cierre.
+- El preflight del «Arranque» se saltea.
+- «Validar la historia» corre a mano.
+- «Armar el plan», «Aprobar el plan» e «Implementar» (BMAD plan + approve + execute) se reemplazan por edición directa.
+- **Los revisores NO se corren**, y nadie lo nota hasta el cierre.
 
 Causa raíz: el skill activa solo con invocación explícita; si el agente no la reconoce, todo el flujo se salta. Sin un mecanismo persistente, nada dice "estás mid-impl de una story". Solución implementada: marker + hooks (Reglas 9.1, 9.2).
 
@@ -416,8 +416,8 @@ Causa raíz: el skill activa solo con invocación explícita; si el agente no la
 La sesión A implementa una task de backend de una story, con build verde y spec drift documentado en la story. El usuario abre la sesión B sin contexto y pide "implementemos la story `<N.M>`". La sesión B invoca `marker.js get` → devuelve `{}` (marker per-session-id introducido 2026-05-17 como fix anti-race-condition multi-sesión).
 
 **Sin discovery cross-sesión, la sesión B va a**:
-- Re-ejecutar Step 0-3 desde cero.
-- Re-correr Step 1 validator + Step 2 BMAD plan (Amelia).
+- Re-ejecutar desde cero desde el «Arranque» hasta «Aprobar el plan».
+- Re-correr «Validar la historia» (el validador) + «Armar el plan» (BMAD plan, Amelia).
 - Re-preguntar al user las decisiones ya tomadas.
 - Re-implementar archivos ya creados en la sesión A → colisión Write sobre archivos no commiteados.
 - Re-escribir código con el spec drift no detectado (columnas asumidas que no existen en el schema real).
@@ -436,7 +436,7 @@ node marker.js update-story-status <path> <s> # Muta frontmatter status: atómic
 ```
 
 Estos comandos son llamados por:
-- **PIPE-C0 del Step 0 preflight** (primer check del pipeline) — antes de setear su propio marker.
+- **PIPE-C0 del preflight del «Arranque»** (primer check del pipeline) — antes de setear su propio marker.
 - **`on-prompt.js`** CROSS-SESSION-CONFLICT mode — al detectar intent.
 - **`on-write-collision.js`** — al chequear Write/Edit collisions.
 
@@ -446,13 +446,13 @@ El marker per-session-id es efímero (no sobrevive a reboot ni a `marker.js clea
 
 Lifecycle del `status:` orquestado por el pipeline:
 
-| Transición | Step | Cómo |
+| Transición | Paso | Cómo |
 |---|---|---|
-| `ready-for-dev` → `in-progress` | Step 0 PIPE-C5 | `marker.js update-story-status <path> "in-progress"` |
-| `in-progress` → `review` | Step 8 commit-prep | `marker.js update-story-status <path> "review"` |
-| `review` → `done` | Step 9 ado-closure | `marker.js update-story-status <path> "done"` |
+| `ready-for-dev` → `in-progress` | «Arranque», PIPE-C5 | `marker.js update-story-status <path> "in-progress"` |
+| `in-progress` → `review` | «Preparar el commit» | `marker.js update-story-status <path> "review"` |
+| `review` → `done` | el cierre en ADO | `marker.js update-story-status <path> "done"` |
 
-Si una sesión muere sin completar Step 8/9 → próxima sesión que abra `tycon-pipeline` lee `status: in-progress` y trata como "pipeline abandonado": ofrece (a) retomar / (b) reset a `ready-for-dev`.
+Si una sesión muere sin completar «Preparar el commit» ni el cierre en ADO → próxima sesión que abra `tycon-pipeline` lee `status: in-progress` y trata como "pipeline abandonado": ofrece (a) retomar / (b) reset a `ready-for-dev`.
 
 ### Regla 9.6 — PreToolUse hook `on-write-collision.js` como defense-in-depth (2026-05-20)
 

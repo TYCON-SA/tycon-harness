@@ -11,7 +11,10 @@
  *     ÚNICO que la lee (`readOrgModels`): el pipeline, el control de lanzamientos, el despliegue de Codex y la paridad;
  *   - con `mandatory_ceiling: true` el `ceiling` es un techo: nada lo pasa, se baja y se avisa (nunca frena);
  *   - la organización escribe niveles neutros (`LEVELS`) o los nombres de Claude; `readOrgModels`
- *     devuelve siempre modelos de Claude, así lo que decide no cambia. Hacia Codex traduce build/equivalences.json.
+ *     devuelve siempre modelos de Claude, así lo que decide no cambia;
+ *   - qué modelo es cada nivel en cada proveedor (`PROVIDERS`) lo dice `resolveProviderModel`, el único traductor: la
+ *     tabla de la organización (`models.providers`), o la de siempre (Anthropic fija, OpenAI de build/equivalences.json,
+ *     Ollama y Cursor `inherit`), con la lista de permitidos (`models.allowed`). El techo se aplica antes.
  *
  * LA PRECEDENCIA, para un revisor r (y un trabajo t):
  *   base(r)  = pedido(r) ?? pedido(reviewers) ?? org.reviewer[r] ?? org.reviewers ?? defaultFor(r)
@@ -44,11 +47,21 @@ const isLevel = (v) => LEVELS.includes(v);
 const modelOf = (v) => (isLevel(v) ? MODELS[LEVELS.indexOf(v)] : MODELS.includes(v) ? v : null);
 /** El nivel de un modelo de Claude; un nivel queda como está; otra cosa, null. */
 const levelOf = (v) => (MODELS.includes(v) ? LEVELS[MODELS.indexOf(v)] : isLevel(v) ? v : null);
+/**
+ * Los proveedores de modelos, en orden: de quién es el modelo de cada nivel (`models.providers.<proveedor>.<nivel>`).
+ * `team-repos.js` tiene su copia (T6 las compara). La tabla de Anthropic es fija (el alias de cada nivel).
+ */
+const PROVIDERS = ['anthropic', 'openai', 'ollama', 'cursor'];
+const isProvider = (v) => PROVIDERS.includes(v);
+/** «el modelo del dev»: sin modelo pedido, cada herramienta usa el suyo (la sesión, el config.toml, el «Auto» de Cursor). */
+const INHERIT = 'inherit';
+// las claves de `models` que no son modelos de Claude: la traducción no las toca
+const PROVIDER_KEYS = ['providers', 'allowed', 'nightly'];
 /** `models` con cada nivel pasado a su modelo de Claude (lo demás, tal cual; un comentario, «_…», no se toca). */
-function toClaudeModels(v) {
+function toClaudeModels(v, top = true) {
   if (typeof v === 'string') return isLevel(v) ? modelOf(v) : v;
   if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
-  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k.startsWith('_') ? x : toClaudeModels(x)]));
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k.startsWith('_') || (top && PROVIDER_KEYS.includes(k)) ? x : toClaudeModels(x, false)]));
 }
 
 /** Los valores de hoy: sin configuración, cada trabajo usa éstos. */
@@ -208,7 +221,7 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
   }
   // un pedido o una entrada de la organización para un revisor que no está en la corrida / no existe
   for (const r of Object.keys(req)) {
-    // el revisor de historias se pide por su nombre y corre en el paso 1, fuera del set de revisores: no es un pedido perdido
+    // el revisor de historias se pide por su nombre y corre en «Validar la historia», fuera del set de revisores: no es un pedido perdido
     if (!JOBS.includes(r) && r !== STORY_REVIEWER && REVIEWER_NAME.test(r) && !corrida.includes(r)) {
       warnings.push({ key: `request-unused:${r}`, message: `pediste un modelo para \`${r}\`, que no está en el set de esta corrida: no se aplica` });
     }
@@ -339,6 +352,41 @@ function normalizeSessionModel(name, equivalences = {}) {
   return m ? m[1] : null;
 }
 
+/** Por qué la tabla de Cursor se guarda y no se aplica: todavía no se midió cómo pedirle un modelo por orden. */
+const CURSOR_NOT_APPLIED = 'Cursor está en prueba: no se midió cómo se pide un modelo por orden, así que el arnés no le pasa ninguno (usa su «Auto»)';
+
+/**
+ * El modelo de un nivel en un proveedor: el ÚNICO traductor (cada consumidor lo llama; ninguno arma su mapa).
+ * opts: org (`models` ya leído por `readOrgModels`) · provider · level, o model (el alias de Claude que el pipeline ya
+ * resolvió, techo incluido: acá no se recorta) · equivalences (`build/equivalences.json → models`, para OpenAI) ·
+ * warnings (se le suma, una sola vez por clave, el aviso de un modelo fuera de la lista de permitidos).
+ * → `{ model, level, origin, applied, reason?, outside? }`. `model` = el nombre del proveedor o `inherit` (el del dev);
+ * `origin` = `organization` (la tabla) | `default` (Anthropic fija, OpenAI de las equivalencias, el resto `inherit`);
+ * `outside` = el modelo de la tabla que la lista no trae (y por eso `inherit`); `applied: false` sólo en Cursor.
+ */
+function resolveProviderModel({ org, provider, level, model, equivalences, warnings = [] } = {}) {
+  const lvl = isLevel(level) ? level : levelOf(level || model);
+  const out = { model: null, level: lvl, origin: 'default', applied: provider !== 'cursor' };
+  if (provider === 'cursor') out.reason = CURSOR_NOT_APPLIED;
+  if (!lvl || !isProvider(provider)) return out;
+  const o = isObject(org) ? org : {};
+  const tabla = provider !== 'anthropic' && isObject(o.providers) && isObject(o.providers[provider]) ? o.providers[provider] : null;
+  if (tabla && typeof tabla[lvl] === 'string') { out.model = tabla[lvl]; out.origin = 'organization'; }
+  else if (provider === 'anthropic') out.model = modelOf(lvl);
+  else if (provider === 'openai') {
+    const alias = modelOf(lvl);
+    out.model = equivalences && typeof equivalences[alias] === 'string' && equivalences[alias] ? equivalences[alias] : INHERIT;
+  } else out.model = INHERIT;
+  const lista = isObject(o.allowed) && Array.isArray(o.allowed[provider]) && o.allowed[provider].length ? o.allowed[provider] : null;
+  if (lista && out.model !== INHERIT && !lista.includes(out.model)) {
+    const key = `allowed:${provider}:${out.model}`;
+    if (!warnings.some((w) => w && w.key === key)) warnings.push({ key, message: `${out.model} no está entre los permitidos de ${provider}: uso el del dev` });
+    out.outside = out.model;
+    out.model = INHERIT;
+  }
+  return out;
+}
+
 /** El pedido del dev para un trabajo: `<trabajo>` válido (un trabajo o un nombre de revisor). */
 function isJobName(job) {
   return JOBS.includes(job) || REVIEWER_NAME.test(String(job || ''));
@@ -390,7 +438,8 @@ function readOrgModels({ dir, teamRepos } = {}) {
 }
 
 module.exports = {
-  MODELS, LEVELS, isLevel, modelOf, levelOf, toClaudeModels, DEFAULTS, TIERS, JOBS, rank, isModel, capAt, ceilingOf, frontmatterModel, defaultFor, reviewerExists,
+  MODELS, LEVELS, isLevel, modelOf, levelOf, toClaudeModels, PROVIDERS, isProvider, INHERIT, DEFAULTS, TIERS, JOBS, rank, isModel, capAt, ceilingOf, frontmatterModel, defaultFor, reviewerExists,
   resolveReviewers, resolveAdversarial, resolveStoryReview, STORY_REVIEWER, resolveHelpers, resolveSession, resolveModels, normalizeSessionModel, isJobName,
+  resolveProviderModel, CURSOR_NOT_APPLIED,
   readOrgModels, agentsDirDefault,
 };

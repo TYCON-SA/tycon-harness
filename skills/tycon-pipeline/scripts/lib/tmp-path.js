@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * lib/tmp-path.js — la ruta de un archivo temporal que un paso del pipeline escribe con bash y lee con Node. UN lugar.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
- * El paso 7c y el aviso de `on-frontmatter-write.js` escriben la configuración de E2E con una redirección de bash y
+ * El paso «Probar en vivo» y el aviso de `on-frontmatter-write.js` escriben la configuración de E2E con una redirección de bash y
  * la leen con Node. Con un archivo fijo bajo `/tmp` y un `require()` de esa misma ruta escrita a mano, en Mac y Linux es el
  * mismo archivo. En Windows no: el bash de Git traduce `/tmp` a la carpeta temporal del usuario, y Node, que no conoce
  * esa traducción, lee `C:\tmp\…`. El portón E2E quedaría sin configuración y el paso se saltaría sin decirlo.

@@ -471,6 +471,8 @@ mkdir -p "${DS}/scripts/nightly/dependencies" "${DS}/out" "${DS}/vig"
 for c in pending promoted archived; do mkdir -p "${DS}/pend/${c}"; done
 cp "${RAIZ}/scripts/nightly/dependencies/daily-summary.js" "${RAIZ}/scripts/nightly/dependencies/nightly-dependencies.js" "${DS}/scripts/nightly/dependencies/"
 cp -R "${RAIZ}/scripts/lib" "${DS}/scripts/"
+# la revisión de dependencias lee su ficha con la pieza común del ciclo
+cp -R "${RAIZ}/scripts/nightly/findings" "${DS}/scripts/nightly/"
 printf '#!/usr/bin/env bash\necho "doble-de-scripts-lib ensayo texto=$*"\n' > "${DS}/scripts/lib/tycon-telegram-notify.sh"
 echo '{ "repos": [ { "producto": "A", "ruta": "A/A", "tipo": "npm", "activo": true, "ado": "ProyA/A" } ] }' > "${DS}/repos.json"
 echo '{ "rubros_sin_fuente": {} }' > "${DS}/resumen.json"

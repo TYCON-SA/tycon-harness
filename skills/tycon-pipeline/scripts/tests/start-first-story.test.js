@@ -68,7 +68,7 @@ function repoConCommit(home, rama) {
 }
 
 /** La historia como la escribe el modo primera vez: por el guion, que deja su constancia en este HOME. */
-function historiaDelGuion(home, dir) {
+function historiaDelGuion(home, dir, { borrador = false } = {}) {
   const answers = path.join(tmp('respuestas'), 'answers.json');
   fs.writeFileSync(answers, JSON.stringify({
     title: 'El total del carrito suma el envío', asA: 'quien compra', iWant: 'ver el total con envío', soThat: 'no tener sorpresas',
@@ -78,7 +78,10 @@ function historiaDelGuion(home, dir) {
   }));
   const r = spawnSync(process.execPath, [GUION, 'write', '--repo', dir, '--answers', answers], { env: entorno(home), encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout).path;
+  const f = JSON.parse(r.stdout).path;
+  // el guion la deja en borrador; el recorrido corre el validador y recién ahí la pasa a ready-for-dev
+  if (!borrador) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^status: draft$/m, 'status: ready-for-dev'));
+  return f;
 }
 
 /** Una historia escrita a mano, con o sin la marca: sin constancia del guion. */
@@ -127,6 +130,29 @@ for (const [t, rama] of [['T11', 'main'], ['T12', 'master']]) {
     assert.ok(r.actions_done.some((a) => a.startsWith('PIPE-C1') && a.includes('story/1.1')), JSON.stringify(r.actions_done));
   });
 }
+
+test('T12 Pipeline_StartEnBorrador_SeNiega @story-8.91: una historia en draft no arranca, y no se tocan el marcador ni la historia', () => {
+  const home = laboratorio();
+  const d = repoConCommit(home, 'main');
+  const story = historiaDelGuion(home, d, { borrador: true });
+  const antes = fs.readFileSync(story, 'utf8');
+  const r = start(home, story, d);
+  assert.strictEqual(r.ready, false);
+  const p = r.pauses.find((x) => x.id === 'PIPE-C5-draft');
+  assert.ok(p && /no está validada/.test(p.detail) && /tycon-story-validator/.test(p.detail), JSON.stringify(r.pauses));
+  assert.strictEqual(fs.readFileSync(story, 'utf8'), antes, 'la historia no se toca');
+  const activos = path.join(home, '.claude', '.tycon-pipeline', 'active');
+  assert.ok(!fs.existsSync(path.join(activos, `${SID}.json`)), 'el marcador no se escribe');
+  assert.strictEqual(ramaActual(home, d), 'main');
+  // la misma lectura del estado que el freno: un segundo renglón `status: ready-for-dev` no la vuelve lista
+  fs.writeFileSync(story, antes.replace(/^status: draft$/m, 'status: draft\nstatus: ready-for-dev'));
+  const r2 = start(home, story, d);
+  assert.strictEqual(r2.ready, false);
+  assert.ok(r2.pauses.some((x) => x.id === 'PIPE-C5-draft'), JSON.stringify(r2.pauses));
+  // ni un comentario ni un espacio antes de `:` esconden el borrador
+  fs.writeFileSync(story, antes.replace(/^status: draft$/m, 'status : draft  # sin validar'));
+  assert.ok(start(home, story, d).pauses.some((x) => x.id === 'PIPE-C5-draft'), 'status : draft # comentario');
+});
 
 test('T13 Start_RamaExiste_Pausa: con story/1.1 ya creada, pausa nombrándola y no cambia nada', () => {
   const home = laboratorio();

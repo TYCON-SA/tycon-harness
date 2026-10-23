@@ -466,7 +466,7 @@ fi
 # se configura. `|| _RC=$?` y nunca `; _RC=$?`: este archivo corre con set -e.
 # ============================================================
 INTEG_ESTADO="sin-lector"   # ok · rota · sin-lector
-TYCON_INTEG_ADO=0; TYCON_INTEG_CLOCKIFY=0; TYCON_INTEG_ENGRAM=0; TYCON_INTEG_CODEGRAPH=0
+TYCON_INTEG_ADO=0; TYCON_INTEG_ENGRAM=0; TYCON_INTEG_CODEGRAPH=0; TYCON_TIME_TOOL=""
 TYCON_INTEG_MAILBOX=0; TYCON_INTEG_CODEX=0; TYCON_INTEG_NIGHTLY=0; TYCON_INTEG_TELEGRAM=0
 if [[ -f "$SCRIPT_DIR/lib/tycon-config.js" ]] && command -v node >/dev/null 2>&1; then
   _INTEG_ERR="$(mktemp)"; _RC_INTEG=0
@@ -474,7 +474,12 @@ if [[ -f "$SCRIPT_DIR/lib/tycon-config.js" ]] && command -v node >/dev/null 2>&1
   if [[ "$_RC_INTEG" == "0" ]]; then
     INTEG_ESTADO=ok
     while IFS='=' read -r _k _v; do
-      case "$_k" in TYCON_INTEG_[A-Z]*) case "$_v" in 0|1|detect) printf -v "$_k" '%s' "$_v" ;; esac ;; esac
+      # el nombre, entero y sin nada más (un subíndice o un `$(…)` en el nombre se evaluaría al asignar)
+      if [[ "$_k" =~ ^TYCON_INTEG_[A-Z]+$ ]]; then
+        case "$_v" in 0|1|detect) printf -v "$_k" '%s' "$_v" ;; esac
+      elif [[ "$_k" == TYCON_TIME_TOOL && "$_v" =~ ^[a-z0-9-]+$ ]]; then
+        TYCON_TIME_TOOL="$_v"
+      fi
     done <<< "$_INTEG_OUT"
   elif [[ "$_RC_INTEG" == "2" ]]; then
     INTEG_ESTADO=rota
@@ -1027,7 +1032,7 @@ fi
 
 # ── Ambiente para apps GRÁFICAS en macOS ────────────────────────────────────
 # Los secretos de los MCP bajo Codex se leen del ambiente; el panel de Codex en VSCode no pasa
-# por ~/.zshrc y no los ve (Clockify sin key aunque el export esté). Un LaunchAgent invoca en
+# por ~/.zshrc y no los ve (un servidor sin su llave aunque el export esté). Un LaunchAgent invoca en
 # cada login scripts/setup/harness-env-publish.sh, que publica TYCON_CODEX y los env de
 # ~/.claude.json (mcpServers.*.env) con launchctl setenv — sin copiar secretos a ningún
 # archivo nuevo. Windows no lo necesita (variables de usuario en el registro, permanentes).
@@ -1725,7 +1730,8 @@ fi
 # ── una línea con el estado de las ocho integraciones (la lee T9) ─────────────────────
 if [[ "$INTEG_ESTADO" == "ok" ]]; then
   _PREND=""; _APAG=""
-  for _i in ado clockify engram codegraph mailbox codex nightly telegram; do
+  # la herramienta de horas no es una de estas: se elige aparte (`integrations.timeTracking`) y va en su propia línea
+  for _i in ado engram codegraph mailbox codex nightly telegram; do
     _var="TYCON_INTEG_$(printf '%s' "$_i" | tr '[:lower:]' '[:upper:]')"
     case "${!_var}" in
       0) _APAG="$_APAG $_i" ;;
@@ -1734,6 +1740,12 @@ if [[ "$INTEG_ESTADO" == "ok" ]]; then
     esac
   done
   echo "tycon: integraciones — prendidas:${_PREND:- (ninguna)} · apagadas:${_APAG:- (ninguna)} — detalle: node $SCRIPT_DIR/lib/tycon-config.js explain"
+  # la herramienta de horas elegida, de la misma respuesta del lector; un lector que no la dice, se dice
+  if [[ -n "$TYCON_TIME_TOOL" ]]; then
+    [[ "$TYCON_TIME_TOOL" == none ]] && echo "tycon: herramienta de horas: ninguna" || echo "tycon: herramienta de horas: $TYCON_TIME_TOOL"
+  else
+    echo "⚠ tycon: herramienta de horas: el lector de configuración no la dijo"
+  fi
 fi
 
 # ── el reporte de piezas: el arreglo JSON, sin duplicados, escrito atómico ──────────────────────

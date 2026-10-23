@@ -76,6 +76,10 @@ editar s874c "$R/test/formato.test.js"
 pasa && ok "con el plan aprobado, la edición pasa" || mal "con el plan aprobado, la prueba no se pudo escribir: rc=$RC $(head -c 300 <<<"$OUT")"
 
 echo "T5 · MinimalLab_FullUnchanged @story-8.74 @ac-1"
+# la lista que lee la instalación: el archivo y los hooks de las integraciones, con sus textos de su manifiesto
+EFFECTS_ALL="$T/effects-all.json"
+node -e 'const r=require(process.argv[1]).readEffects(process.argv[2]);require("fs").writeFileSync(process.argv[3],JSON.stringify({effects:r.effects}))' "$ROOT/scripts/setup/harness/managed.js" "$ROOT" "$EFFECTS_ALL"
+EFFECTS="$EFFECTS_ALL"
 FULL="$(node -e 'const l=require(process.argv[1]).effects.filter((x)=>x.kind==="hook"&&(x.profiles||[]).includes("full")).map((x)=>x.id);console.log(l.length+" "+l.includes("PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js"))' "$EFFECTS")"
 # lo que se mide es que la completa no PIERDA ningún hook de main: un pedido que suma uno nuevo a la completa es legítimo,
 # y uno de main que la lista declara reemplazado (`superseded`: el instalador lo cambia por su ruta nueva) no se perdió;

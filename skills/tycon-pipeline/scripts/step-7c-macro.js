@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * step-7c-macro.js — DoD Runtime Gate ceremony as a deterministic macro.
  *
- * Reemplaza la secuencia manual del Step 7c: health check,
+ * Reemplaza la secuencia manual del paso «Probar en vivo»: health check,
  * ejecutar secuencia de curls (setup + act + verify), capturar response fields,
  * assertear status + body, escribir evidence file en formato hook-compliant
  * (incluye bloque "## Playwright Run" con substrings literales `verdict=PASS`
@@ -321,7 +323,7 @@ async function main() {
   // Pre-flight health check
   log.push('## Pre-flight');
   log.push('');
-  const healthUrl = args.baseUrl + (scenario.preflight?.devhost_health_url || '/api/health/ready');
+  const healthUrl = args.baseUrl + ((scenario.preflight && scenario.preflight.devhost_health_url) || '/api/health/ready');
   log.push(`Health check: \`GET ${healthUrl}\``);
   let healthOk = false;
   let healthErr = '';
@@ -370,7 +372,7 @@ async function main() {
   }
 
   // ACs cubiertos
-  if (scenario.evidence?.ac_summary) {
+  if (scenario.evidence && scenario.evidence.ac_summary) {
     log.push('## ACs cubiertos por esta evidencia');
     log.push('');
     log.push('| AC | Evidencia |');
@@ -388,7 +390,7 @@ async function main() {
   const pasados = stepResults.filter((r) => r.ok).length;
   log.push('## Playwright Run');
   log.push('');
-  const pr = scenario.evidence?.playwright_run || {
+  const pr = (scenario.evidence && scenario.evidence.playwright_run) || {
     verdict: 'PASS',
     failed: 0,
     rationale: 'Backend-only impl — no E2E declarado en este pipeline.',
@@ -397,7 +399,7 @@ async function main() {
     // 🔴 Con `allOk` verdadero, el PASS vacuo para stories backend-only es DISEÑO, no agujero
     // (`pipeline.js` prescribe este mismo bloque). Lo que el escenario declare se respeta tal
     // cual — incluido un `verdict: FAIL`, que no se pisa hacia verde.
-    log.push(`verdict=${pr.verdict} failed=${pr.failed} passed=${pr.passed ?? 0} skipped=${pr.skipped ?? 0}`);
+    log.push(`verdict=${pr.verdict} failed=${pr.failed} passed=${pr.passed === undefined || pr.passed === null ? 0 : pr.passed} skipped=${pr.skipped === undefined || pr.skipped === null ? 0 : pr.skipped}`);
     log.push('');
     if (pr.rationale) {
       log.push(`**Rationale**: ${pr.rationale}`);
@@ -408,7 +410,7 @@ async function main() {
     log.push('');
     log.push(`**Rationale**: el smoke runtime FALLÓ (${fallidos} step(s) en rojo) — esta evidencia NO habilita el cierre.`);
     log.push('');
-    if (scenario.evidence?.playwright_run) {
+    if (scenario.evidence && scenario.evidence.playwright_run) {
       // 🔴 Los valores declarados se citan SIN reconstruir los literales (`verdict=PASS`,
       // `failed=0`): la nota que explica por qué se ignoró el verde no puede volver a abrir
       // el gate. `hasFreshPlaywrightPass` escanea el archivo entero, no este bloque.

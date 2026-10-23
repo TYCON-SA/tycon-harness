@@ -1,7 +1,7 @@
 # Arranque
 
 **Objetivo**: las verificaciones críticas ANTES de arrancar el pipeline, más dos avisos opcionales (el de trabajo y el
-del pedido en Azure DevOps). Son guardas de seguridad del flujo de trabajo, no del código. Corre antes de «Validar la
+del pedido de trabajo). Son guardas de seguridad del flujo de trabajo, no del código. Corre antes de «Validar la
 historia» (`step-02-validate-story.md`).
 
 ## Qué hace el comando y qué hace el agente
@@ -121,6 +121,14 @@ bien y con effort medium alcanza; si estás en high/xhigh, bajalo con `/model`»
 de razonamiento (un renombre de 20 archivos es grande pero mecánico): si el hint pifia seguido, se recalibra
 `computeModelHint` en `pipeline.js`, no se agrega otro puntaje. Registrar `effort_hint_suggested` y `effort_hint_accepted`.
 
+## Lo que falta antes de arrancar: AVISAR
+
+Si la salida de `start` trae `missing_before_start`, se le dice a la persona antes de seguir, una línea por cosa: qué
+falta (`falta`), qué hace el pipeline sin eso (`sin_eso`) y cómo se instala (`como`). Son tres: el programa de la
+plataforma del pedido de trabajo, la configuración de BMAD del repo y el servidor MCP de la herramienta de horas. No
+frena: la parte que no puede correr se declara con `start-warning` cuando le toca, y el plan sin BMAD lo arma el
+orquestador. Sin la clave, no se dice nada.
+
 ## PIPE-C9 — tooling esperado no disponible: AVISAR
 
 El pipeline degrada a alternativas cuando falta una herramienta, y eso NUNCA pasa en silencio. `start` trae
@@ -166,8 +174,8 @@ estado que el validador tolera). Orden:
    join. Si el prompt no se puede reproducir textualmente, NO improvisarlo: caer al orden secuencial.
 3. Completar las dos partes mientras el validador corre.
 4. El join es la notificación del validador: recién ahí se procesa su reporte. 🔴 Nunca presentar una pregunta de una
-   parte opcional y el resultado del validador en el mismo mensaje sin rotular cuál es cuál; si la parte del pedido en
-   ADO necesita confirmación (búsqueda por título, pedido cerrado), resolverla ANTES de procesar el reporte.
+   parte opcional y el resultado del validador en el mismo mensaje sin rotular cuál es cuál; si la parte del pedido de
+   trabajo necesita confirmación (búsqueda por título, pedido cerrado), resolverla ANTES de procesar el reporte.
 
 Si el fan-out se complica (por ejemplo, la acción espera una respuesta que no llega), el orden secuencial (partes,
 después validar) sigue valiendo: el fan-out es una optimización, no un requisito.
@@ -187,13 +195,15 @@ sin aviso.
 1. **Emitir el evento**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signal start`.
    Toma del marcador la historia, su `title:`, el repo y la sesión; devuelve `{ ran, action?, warnings }` y cada aviso
    sale también por la salida de errores, en una línea.
+   Sin acción y sin avisos, el comando deja la parte marcada: no hay nada más que hacer.
 2. **Hacer la acción, si vino una**: una herramienta que maneja el agente (con su servidor de MCP) devuelve en `action`
    lo que hay que hacer, con las referencias a la skill de su integración. Hacerla **SIN pedir confirmación al dev** (el
    pipeline es intención explícita), salvo lo que la propia acción diga que se pregunta. Una herramienta que la
    integración maneja sola (por su API) no devuelve acción: ya quedó hecho.
-3. **Marcarla hecha**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag workSignalStarted true`
-   (el nombre viejo de la bandera se sigue aceptando y escribe la nueva). Sin la bandera, un retome entre sesiones o
-   `pipeline.js next` vuelven a avisar.
+3. **Cerrar la acción**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signal start --action-done "<id que devolvió la herramienta>"`.
+   El arnés busca en la conversación de la sesión la llamada a la herramienta cuyo resultado trae ese id, y recién ahí
+   marca la parte. La bandera no se escribe con `marker.js set-flag`: ese comando la rechaza. Sin la bandera, un retome
+   entre sesiones o `pipeline.js next` vuelven a avisar.
 4. Una línea a stdout: `✓ Aviso de trabajo: <integración> · <lo que hizo>`. No pausar.
 
 **Si falla** (el evento avisa un problema, la acción no se puede hacer):
@@ -205,60 +215,65 @@ en el cartel y en el cierre.
 por inactividad o el dev; la lista está en `step-11-prepare-commit.md` §«NO cerrar el registro de horas») y NO nombra
 ninguna herramienta: lo propio de cada una vive en su integración.
 
-## Parte opcional: el pedido en ADO
+## Parte opcional: el pedido de trabajo
 
-Cuando el dev invoca el pipeline, pasa el work item de Azure DevOps del estado inicial (`New` / `To Do` / `Approved`) a
-`Active` (o su equivalente según el proceso). Es la simetría de `close-work-item.md`, que cierra el ciclo.
+Cuando el dev invoca el pipeline, pasa el pedido de trabajo de la historia del estado inicial al activo. Es la simetría
+de `close-work-item.md`, que cierra el ciclo. El paso no arma comandos de ninguna plataforma: lo hace la capa de
+plataforma (`scripts/lib/platform/platform.js`), y la plataforma la elige el perfil del equipo (`integrations.platform`).
 
-**Cuándo no corre** (no aparece en `start_parts` de `next`, o se saltea con una línea):
+**El id**, con el lector común (lee `work_item:` y su nombre viejo `ado_work_item:`, que se sigue leyendo):
+`node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js get <story_path>` (sale 3 si no tiene).
 
-- **Azure DevOps apagado**: sin organización (`ado.org` ausente en la configuración del arnés; exit 3 de
-  `node ~/.claude/tycon-harness/scripts/lib/tycon-config.js get ado.org`), la parte lo dice en UNA línea («Azure DevOps
-  apagado en esta máquina — el work item no se toca; prender: ado.org en ~/.claude/tycon.json o TYCON_ADO_ORG»), no
-  llama a `az` y se saltea (exit 0). La tabla de `guides/integrations/ado-projects.md` es referencia para personas, no
-  algo que el pipeline lea.
-- **La story no tiene `ado_work_item:` y la búsqueda por título no da un match único**: salteo silencioso. NO preguntar
-  por un `ado_work_item:` que falta: eso lo resuelve `close-work-item.md` al cerrar.
+**Dónde vive**: `.tycon/work-items.yaml` del repo (o `.tycon/ado-config.yaml`, el nombre viejo, que se sigue leyendo;
+con los dos gana el nuevo); si no, `ado.org` de la configuración del arnés (lee `TYCON_ADO_ORG`, `~/.claude/tycon.json`
+y el perfil del equipo, en ese orden; exit 2 = configuración rota, que se dice con archivo, clave y motivo) y el
+proyecto de `TYCON_ADO_PROJECT`. Overrides en ese archivo: `state_active`, `state_closed` (lo usa `close-work-item.md`)
+y `auto_assign: true`.
 
-**Configuración** (en este orden): `.tycon/ado-config.yaml` del repo (`ado_org` y `ado_project`; manda, porque un repo de
-cliente puede vivir en otra organización); si no, `ado.org` de la configuración del arnés (lee `TYCON_ADO_ORG`,
-`~/.claude/tycon.json` y el perfil del equipo, en ese orden; exit 2 = configuración rota, que se dice con archivo, clave
-y motivo) y el proyecto de `TYCON_ADO_PROJECT` o preguntando al dev. Overrides en `.tycon/ado-config.yaml`:
-`ado_state_active` (default `Active`), `ado_state_closed` (lo usa `close-work-item.md`) y `ado_auto_assign: true`.
+**Cuándo no corre** (no aparece en `start_parts` de `next`, o se saltea con una línea): la historia no tiene id y la
+búsqueda por título no da un match único, o no hay plataforma elegida. **Azure DevOps apagado** (sin organización: ni
+`ado.org` en la configuración del arnés ni la del repo) es ese caso: la parte lo dice en UNA línea («Azure DevOps
+apagado en esta máquina — el pedido no se toca; prender: ado.org en ~/.claude/tycon.json o TYCON_ADO_ORG»), no llama a
+`az` y se saltea (exit 0). NO preguntar por un `work_item:` que falta: eso
+lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que diga qué falta.
 
 **Qué hacer**:
 
-1. **Sin `ado_work_item:` en el frontmatter, buscar por título** antes de saltear (los work items suelen preexistir a
-   las stories y el dev olvida enlazarlos):
+1. **Sin id, buscar por título** antes de saltear (los pedidos suelen preexistir a las stories y el dev olvida
+   enlazarlos). Sólo con Azure DevOps; primero, qué plataforma atiende los pedidos:
+   ```bash
+   node ~/.claude/tycon-harness/scripts/lib/platform/platform.js choose work-item update
+   # → {"ok": true, "value": {"connector": "azure-devops", …}}  o  {"ok": false, "reason": "sin_plataforma", "detail": "…"}
+   ```
+   Otro `connector`, u `ok: false` → una línea («la historia no tiene pedido de trabajo (`work_item:`); se crea con la
+   skill de creación o al cerrar», o el `detail`) y seguir. Con `azure-devops`:
    ```bash
    az boards query --organization <ado_org> --project <ado_project> --output json \
      --wiql "SELECT [System.Id], [System.Title], [System.State] FROM workitems WHERE [System.TeamProject] = '<ado_project>' AND [System.Title] CONTAINS '<story_id>'"
    ```
    Un match único → proponer «Encontré el pedido #{id} '{title}' que parece corresponder a esta story. ¿Agrego
-   `ado_work_item: {id}` al frontmatter y lo paso a Active?»; si confirma, editar la story y seguir. Varios → mostrar
-   los cinco primeros y pedir cuál. Cero → una línea («ningún pedido con `<story_id>` en el título; considerá crearlo
-   o agregar `ado_work_item:` a mano») y seguir sin transicionar.
-2. **Leer el estado actual** (idempotencia):
-   `az boards work-item show --organization <ado_org> --id <id> --query "fields.\"System.State\"" --output tsv`.
-   Ya `Active` (o equivalente) → no hacer nada y decirlo. `Closed` / `Resolved` / `Done` → ADVERTIR antes de tocar:
-   «El pedido {id} está en `{state}`. ¿Reabrir a `Active`? Puede romper la trazabilidad si la story estaba cerrada por
-   otro motivo.» y esperar. `New` / `To Do` / `Approved` / `Committed` → transicionar.
-3. **Transicionar** con el equivalente del proceso: Basic `To Do` → `Doing`; Agile `New`/`Approved` → `Active`; Scrum
-   `New` → `Committed`; CMMI `Proposed` → `Active`. Un estado intermedio desconocido va a `Active` y se anota su nombre
-   para que el dev agregue el override:
-   `az boards work-item update --organization <ado_org> --id <id> --state "Active"`.
-4. **Asignar**, sólo con `ado_auto_assign: true`: `--assigned-to "<git config user.email>"`. No por default: algunos
-   equipos asignan por separado.
-5. **Marcarla hecha** (también si el pedido ya estaba en `Active`):
-   `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag adoMarkedActive true`. Sin la bandera,
-   un retome o `pipeline.js next` vuelven a transicionar.
-6. Una línea al dev, parte del encabezado general y no un mensaje aparte: `📋 ADO WI #{id}: {previo} → {nuevo}.` Si se
-   salteó: una línea contextual o nada.
+   `work_item: {id}` al frontmatter y lo paso a activo?»; si confirma, escribirlo con
+   `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js set <story_path> {id}` y seguir. Varios →
+   mostrar los cinco primeros y pedir cuál. Cero → una línea («ningún pedido con `<story_id>` en el título; considerá
+   crearlo o agregar `work_item:` a mano») y seguir sin transicionar.
+2. **Transicionar y marcar**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js ado-mark-active`
+   (con `auto_assign: true`, sumar `--assign-to "<git config user.email>"`; no por default: algunos equipos asignan por
+   separado). Pide a la capa (`platform.js work-item update`), que lee el estado actual y lo pasa al activo sin tocar nada si ya
+   estaba: en Azure DevOps según la plantilla de proceso (Basic `To Do` → `Doing`; Agile `New`/`Approved` → `Active`;
+   CMMI `Proposed` → `Active`; Scrum `New` → `Committed`, declarado con `state_active`); en GitHub, la etiqueta
+   `estado:<state_active>` (por defecto `estado:activo`). Recién con la respuesta de la capa marca la parte: la bandera
+   no se escribe con `marker.js set-flag`, que la rechaza. Sale 0 marcado, 1 si la capa dijo que no (el `summary` dice
+   qué falta) y 3 si el pedido está **cerrado** (`pideReabrir`): ADVERTIR antes de tocar («El pedido {id} está en
+   `{estado}`. ¿Reabrirlo? Puede romper la trazabilidad si la story estaba cerrada por otro motivo.»), esperar, y con el
+   sí correr `ado-mark-active --reopen`.
+3. Una línea al dev, parte del encabezado general y no un mensaje aparte: el `summary` de la capa que imprime el comando
+   (`pedido de trabajo #{id} en <plataforma>: {previo} → {estado}`). Si se salteó: una línea contextual o nada.
 
-**Si falla** (401/403 token vencido: «renová AZURE_DEVOPS_EXT_PAT»; 404 el pedido no existe: ¿`ado_work_item`
-desactualizado?; estado inválido: listar los válidos del pedido):
+**Si falla** (`ok: false`: sin plataforma elegida, sin credencial —con Azure DevOps, la sesión de `az` venció: `az
+login` o renovar `AZURE_DEVOPS_EXT_PAT`—, pedido no encontrado, la plataforma lo rechazó):
+mostrar el `summary` en UNA línea (dice qué falta y cómo ponerlo),
 `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js start-warning ado "<motivo>"` y seguir. No frena el
-pipeline: la implementación no depende de ADO (a diferencia del build gate de `step-05-implement.md`).
+pipeline: la implementación no depende de la plataforma (a diferencia del build gate de `step-05-implement.md`).
 
 **Anti-patterns**: NO reabrir pedidos cerrados sin confirmación explícita; NO duplicar esta transición en
 `step-05-implement.md` (re-transicionar es ruido en el historial del pedido).
@@ -268,4 +283,4 @@ pipeline: la implementación no depende de ADO (a diferencia del build gate de `
 Escribir a `.advisors/pipeline-runs/<clave>-<sello>/step-01-start.md` el resultado de cada check corrido (PIPE-C0 a
 PIPE-C9, los que apliquen; incluye `model_hint_*`/`effort_hint_*` y `tooling_checked`) y, por cada parte opcional,
 `integración | pedido` · acción · avisos · `status: ok | skipped (<razón>) | failed (<razón>)`. El detalle de la parte
-del pedido en ADO va a `step-00c-ado.md` de la misma carpeta (WI ID, estado previo y nuevo, asignado a, resultado).
+del pedido de trabajo va a `step-01-start-ado.md` de la misma carpeta (WI ID, estado previo y nuevo, asignado a, resultado).

@@ -126,7 +126,7 @@ test('T4 Write_EscribeLaHistoria: frontmatter, secciones, una fila por prueba, c
   assert.match(r.stdout, /implementemos la story /);
 
   const txt = fs.readFileSync(ruta, 'utf8');
-  for (const linea of ['epic: 1', 'story: "1.1"', 'title: "El total del carrito suma el envío"', 'status: ready-for-dev',
+  for (const linea of ['epic: 1', 'story: "1.1"', 'title: "El total del carrito suma el envío"', 'status: draft',
     'origin: first-time', 'files_to_create: []', 'files_to_modify:', '  - src/cart.js']) {
     assert.ok(txt.split('\n').includes(linea), `falta la línea «${linea}»`);
   }
@@ -156,7 +156,38 @@ test('T5 Write_PasaLintYDescubrimiento: el lint no da errores y el arnés la enc
   const lint = spawnSync(process.execPath, [LINT, r.json.path], { cwd: d, env: entorno(r.home), encoding: 'utf8' });
   assert.strictEqual(lint.status, 0, lint.stdout + lint.stderr);
   const encontrada = require(DISCOVERY).probeStoryFile(r.json.path);
-  assert.deepStrictEqual({ id: encontrada.id, status: encontrada.status }, { id: '1.1', status: 'ready-for-dev' });
+  assert.deepStrictEqual({ id: encontrada.id, status: encontrada.status }, { id: '1.1', status: 'draft' });
+});
+
+test('T13 SinBmad_WriteEscribeBorrador @story-8.91 @ac-6: la historia nace en draft, en el frontmatter y bajo el título', () => {
+  const txt = escribir(repo());
+  const fm = txt.split('\n---\n')[0];
+  assert.ok(fm.split('\n').includes('status: draft'), 'el frontmatter tiene que decir status: draft');
+  assert.ok(!fm.split('\n').includes('status: ready-for-dev'), 'no nace lista: la pasa a ready-for-dev quien corre el validador');
+  assert.match(txt, /\n# Story 1\.1: [^\n]+\n\nStatus: draft\n/);
+});
+
+test('T14 Instrucciones_BorradorYValidador @story-8.91 @ac-6: el paso 5 escribe draft y el validador va antes de ready-for-dev', () => {
+  const wf = fs.readFileSync(path.join(SKILL, 'workflow.md'), 'utf8');
+  const paso5 = wf.slice(wf.indexOf('<step n="5"'), wf.indexOf('<step n="6"'));
+  const paso6 = wf.slice(wf.indexOf('<step n="6"'));
+  assert.match(paso5, /Status as "draft"/);
+  assert.doesNotMatch(paso5, /Status as "backlog"/);
+  // en el paso 6: el validador, la revisión adversarial, el validador otra vez si la historia cambió, y recién ahí ready-for-dev
+  const iVal = paso6.indexOf('tycon-story-validator');
+  const iRev = paso6.indexOf('tycon-story-adversarial-reviewer');
+  const iOtraVez = paso6.search(/changed after the validator/i);
+  const iReady = paso6.search(/set the story Status[\s\S]{0,160}"ready-for-dev"/);
+  assert.ok(iVal >= 0 && iVal < iRev && iRev < iOtraVez && iOtraVez < iReady, `orden del paso 6: ${[iVal, iRev, iOtraVez, iReady]}`);
+  // sprint-status sigue en backlog mientras el archivo está en draft
+  assert.match(paso6, /Verify current status is "backlog"/);
+
+  const ft = fs.readFileSync(path.join(SKILL, 'first-time.md'), 'utf8');
+  const iWrite = ft.indexOf('story-without-bmad.js write');
+  const iValFt = ft.indexOf('tycon-story-validator', iWrite);
+  const iReadyFt = ft.indexOf('ready-for-dev', iValFt);
+  assert.ok(iWrite >= 0 && iValFt > iWrite && iReadyFt > iValFt, `first-time.md: write, después el validador, después ready-for-dev (${[iWrite, iValFt, iReadyFt]})`);
+  assert.match(ft, /status: draft/);
 });
 
 test('T6 Write_JsonIncompleto_Sale2: dice qué falta o qué sobra y no escribe nada', () => {
@@ -310,7 +341,7 @@ test('T20 Write_HistoriaLimpia_Sprint @story-8.62 @ac-1: sprint 1 en el frontmat
   const txt = escribir(repo());
   const fm = txt.split('\n---\n')[0];
   assert.ok(fm.split('\n').includes('sprint: 1'), 'falta «sprint: 1» en el frontmatter');
-  assert.match(txt, /\n# Story 1\.1: [^\n]+\n\nStatus: ready-for-dev\n/);
+  assert.match(txt, /\n# Story 1\.1: [^\n]+\n\nStatus: draft\n/);
 });
 
 test('T21 Write_SalvaguardaPrimero @story-8.62 @ac-2: la primera tarea es la salvaguarda de estado', () => {

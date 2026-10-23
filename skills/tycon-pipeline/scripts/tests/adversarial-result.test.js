@@ -159,11 +159,17 @@ test('T1 SetFlag_DeepReviewDone_SeNiega @story-1.8 @ac-1', () => {
 test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
-  for (const f of ['workSignalStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman']) {
+  for (const f of ['atddBypass', 'waitingForHuman']) {
     const r = correr(home, SID, ['set-flag', f, 'true']);
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
     assert.equal(r.stdout.trim(), `${f}: true`);
     assert.equal(leerMarker(home, SID)[f], true);
+  }
+  // las de hechos externos las pone el arnés: set-flag sale 2 y no escribe (Casos: external-flags.test.js)
+  for (const f of ['workSignalStarted', 'adoMarkedActive']) {
+    const r = correr(home, SID, ['set-flag', f, 'true']);
+    assert.equal(r.status, 2, `${f}: ${r.stderr}`);
+    assert.notEqual(leerMarker(home, SID)[f], true);
   }
 });
 
@@ -508,7 +514,7 @@ test('T27 Paso8_NiLanzadoNiSalteado_Bloquea @story-1.8 @ac-20', () => {
   enPaso8(home, SID, repo, { deepReviewDone: true });
   const r = correr(home, SID, ['complete-step', '8']);
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /el 5b no está atendido: ni lanzado ni salteado por el portón/);
+  assert.match(r.stderr, /el pase adversarial no está atendido: ni lanzado ni salteado por el portón/);
   assert.match(r.stderr, /mark-adversarial-result/);
   assert.match(r.stderr, /mark-adversarial-skipped/);
   const l = lineaDelFreno(home);
@@ -573,7 +579,7 @@ test('T31 Set_StoryNueva_ReseteaLoAdversarial @story-1.8 @ac-24', () => {
     adversarialRegressions: [{ dest: 'tests/p.test.js' }],
     adversarialSkip: { motivo: 'LOW', forzado: false, abandonado: false },
   });
-  const r = correr(home, SID, ['set', JSON.stringify({ storyId: 'B', stepsPending: [1, 2, 3, 4, 5, 6, 7, 8] })]);
+  const r = correr(home, SID, ['set', JSON.stringify({ storyId: 'B', stepsPending: [1, 2, 3, 4, 5, 6, 7, 8] }), '--replace']);
   assert.equal(r.status, 0, r.stderr);
   const m = leerMarker(home, SID);
   assert.equal(m.storyId, 'B');
@@ -743,7 +749,7 @@ test('T48 Paso8_ResultadoSinLanzamiento_Pasa @story-1.8 @ac-37', () => {
   assert.equal(l.length, 1, r.stderr);
   assert.equal(l[0].status, 'ok');
   assert.equal(l[0].motivo, 'resultado-sin-lanzamiento');
-  assert.doesNotMatch(r.stderr, /el 5b no está atendido/);
+  assert.doesNotMatch(r.stderr, /el pase adversarial no está atendido/);
 });
 
 test('T49 Result_Pruebas_CuentaSoloDelLanzamientoVigente @story-1.8 @ac-38', () => {

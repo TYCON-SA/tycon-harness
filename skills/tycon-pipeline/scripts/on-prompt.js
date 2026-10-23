@@ -7,12 +7,12 @@
  *   1. INTENT-DETECT (sin marker activo) — el prompt del user matchea
  *      patrones típicos de "implementemos la story X.Y.Z" sin haber
  *      invocado el skill `tycon-pipeline`. Emite reminder sugiriendo
- *      el skill canonical para evitar saltearse Step 5 (advisors).
+ *      el skill canonical para evitar saltearse el paso de revisores (advisors).
  *
  *   2. STOP-DETECT (con marker activo + steps pending) — el prompt
  *      del user matchea keywords de cierre ("listo", "done", "completo",
  *      "cerrá", "terminamos") pero el marker indica que aún hay steps
- *      pendientes del pipeline (especialmente Step 5 advisors). Emite
+ *      pendientes del pipeline (especialmente los advisors del paso de revisores). Emite
  *      reminder bloqueante: NO declarar "done" sin correr advisors o
  *      documentar deferral explícito.
  *
@@ -397,7 +397,7 @@ if (!marker && matches(prompt, NEW_FEATURE_PATTERNS)) {
       `🔴 Anti-pattern conocido — discovery-as-Claude:\n` +
       `   • Hacés preguntas sueltas en el chat en vez de aplicar el método de brainstorm de Mary.\n` +
       `   • La "spec" queda en el thread, no en \`.specs/\` con frontmatter + ACs numerados + tests con nombre.\n` +
-      `   • Te saltás el formato Mary+GOLD (epic, story id, sprint, status, ado_work_item, dev notes).\n` +
+      `   • Te saltás el formato Mary+GOLD (epic, story id, sprint, status, work_item, dev notes).\n` +
       `   • No se crea work item ADO ni back-link bidireccional con stories padre.\n` +
       `   • Caso disparador real (2026-06-09): "vamos a hacer la funcionalidad para conciliar pagos a proveedores" — ` +
       `Claude entró en modo preguntas-clarificadoras a mano en vez de invocar Mary/Bob.\n\n` +

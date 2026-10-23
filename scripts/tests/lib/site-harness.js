@@ -181,35 +181,8 @@ function sas(extra = {}) {
   return __crudo ? `${p.toString()}&${__crudo}` : p.toString();
 }
 
-/** Un volcado de corrida (lo que sube upload-runs.js), con su sesión e inicio. */
-const volcado = (sid, inicio, extra = {}) => JSON.stringify({ archivedAt: inicio, marker: { sessionId: sid, startedAt: inicio, lastTouch: inicio, stepsCompleted: [], ...extra } });
-
-/** Los archivos de un repo de operaciones con todas las fuentes del día `hoy` (nombres inventados). */
-function archivosDeOperaciones({ hoy = '2026-10-15', ayer = '2026-10-14', config, extra = {} } = {}) {
-  return {
-    'operations.json': config || { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] } },
-    'scripts/nightly/dependencies/repos.json': { azure: { org: 'https://dev.example/acme' }, repos: [{ producto: 'Producto X', ruta: 'X/repo', ado: 'Proyecto X/Repo X', tipo: 'npm', activo: true }] },
-    'scripts/nightly/dashboard/sources.json': { sources: [
-      { id: 'dependencias', pattern: 'dependencias-*.json', dir: 'dependencias', max_age_days: 2 },
-      { id: 'vigilante', pattern: 'vigilante-*.json', dir: 'vigilante', max_age_days: 2 },
-      { id: 'banco', pattern: 'banco-*.json', dir: 'controls-bench', max_age_days: 2 },
-      { id: 'suites', pattern: 'suites-*.json', dir: 'controls-bench', max_age_days: 2 },
-    ], thresholds: {} },
-    'scripts/nightly/dashboard/declared.json': { declared: [{ id: 'dato-uno', review_before: '2026-10-20' }] },
-    [`.dashboard/dependencias/dependencias-${hoy}.json`]: { fecha: hoy, resumen: { rubros: {
-      nuevos: { valor: [{ id: 'f1', paquete: 'pkg-uno', proyectos: ['Proyecto X'] }], motivo: null },
-      aceptadas_sin_resolver: { valor: [], motivo: null }, rechazadas_sin_deuda: { valor: [], motivo: null },
-      vivas_por_proyecto: { valor: [{ proyecto: 'Proyecto X', ids: ['f1', 'f2'] }], motivo: null },
-      pedidos_cerrados_con_vivas: { valor: [], motivo: null } } } },
-    [`.dashboard/vigilante/vigilante-${hoy}.json`]: { fecha: hoy, productos: { 'producto-x': { ok: true } }, resumen: { rubros: { pendientes: { valor: [], motivo: null }, aceptadas_sin_story: { valor: [], motivo: null } } } },
-    [`.dashboard/controls-bench/banco-${hoy}.json`]: { ts: `${hoy}T05:00:00Z`, ran: 10, failed: 0, estado: 'completo', results: {} },
-    [`.dashboard/controls-bench/suites-${hoy}.json`]: { ts: `${hoy}T05:00:00Z`, corridas: 10, failures: [], unmeasured: [], complete: true },
-    [`.dashboard/controls-bench/suites-${ayer}.json`]: { ts: `${ayer}T05:00:00Z`, corridas: 10, failures: [], unmeasured: [], complete: true },
-    '.dashboard/proyectos/Proyecto X__Repo X.json': { v: 1, generated_at: `${hoy}T06:00:00Z`, proyecto: 'Proyecto X', repo: 'Repo X', stories: [{ id: '1.1', titulo: 'un título', grupo: 'en_curso', canonico: 'in-progress', dias_en_estado: 3 }] },
-    'artifacts/tablero-del-arnes.html': '<!doctype html><html><head><style>b{color:red}</style></head><body><h1>Seis preguntas</h1></body></html>',
-    ...extra,
-  };
-}
+// los datos de «acme» (un volcado con lo mínimo y los archivos de un repo de operaciones) viven con los del sitio demo
+const { volcadoMinimo: volcado, archivosDeOperaciones } = require(path.join(SITE, 'demo', 'data.js'));
 
 /**
  * Lo informado por las máquinas, con la forma de `leerCorreosInformados`: `porCarpeta` es `{ carpeta: correo | null }`

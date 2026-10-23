@@ -25,7 +25,7 @@
  *             · hay pipeline activo (marker de esta sesión) → el carril es "story"; el resto lo
  *               juzgan el portón ATDD, los gates del complete-step y el DoD. La ÚNICA excepción es
  *               el sub-portón de PLAN (abajo). 🔴 El marker se mira ANTES que cualquier criterio de
- *               repo: un marker con step 3 pendiente frena aunque el descubrimiento de stories no
+ *               repo: un marker con el plan sin aprobar frena aunque el descubrimiento de stories no
  *               vea nada.
  *             · el repo NO trabaja con el arnés: sin `.tycon/` y sin stories Mary+GOLD (propias) —
  *               un script suelto, un repo legacy: acá no hay carril que decidir. 🔴 `.tycon/` es la
@@ -35,7 +35,7 @@
  *               no se pasó del cupo de archivos de implementación.
  *
  *   BLOQUEA si: · (no-lane) repo bajo el arnés, sin marker ni ad-hoc → hay que elegir carril.
- *               · (plan)    hay marker pero el Step 3 (plan aprobado) sigue PENDIENTE → no se toca
+ *               · (plan)    hay marker pero el paso «Aprobar el plan» sigue PENDIENTE → no se toca
  *                           código antes de que el user apruebe el plan. Esto es lo que convierte
  *                           "tomó confianza y se salteó el HITL" en algo que no puede pasar.
  *               · (adhoc-cap) el ad-hoc ya tocó su cupo de archivos de implementación distintos →
@@ -120,6 +120,21 @@ function isCodeFile(filePath, { extra } = {}) {
   }
   if (isImplPath(s, { extra }) || isTestPath(s, { extra })) return true;
   return EXTRA_CODE_EXTS.has(path.extname(s).toLowerCase());
+}
+
+// Los manifiestos de dependencias y sus locks: no son código para el carril (un `.json` se edita sin historia), pero con
+// el pipeline abierto el freno de edición invisible los mira como código: reescritos por la terminal, el registro no
+// los ve y el cierre no sabe que cambiaron.
+const MANIFEST_FILES = new Set([
+  'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'packages.lock.json',
+  'Directory.Packages.props',
+]);
+
+/** ¿Es un manifiesto de dependencias o su lock, del repo (no de una dependencia ni de una salida de build)? */
+function isManifestFile(filePath) {
+  const segs = norm(filePath).split('/');
+  if (!MANIFEST_FILES.has(segs[segs.length - 1])) return false;
+  return !segs.slice(0, -1).some((seg) => NEVER_CODE_SEGMENTS.has(seg));
 }
 
 /** RESPALDO por carpeta: ¿algún segmento del path se llama como un repo del harness? */
@@ -378,7 +393,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
 // para un lado o para el otro con cada frase nueva del equipo.
 //
 // El diseño no adivina:
-//   · Carril PIPELINE = hay marker (el pipeline CORRIÓ su Step 0 — estado real, no una frase).
+//   · Carril PIPELINE = hay marker (el pipeline CORRIÓ su Arranque — estado real, no una frase).
 //   · Carril AD-HOC   = `marker.js adhoc set` citando palabras del user (reasonInPrompts, mecánico)
 //                       o, si la cita no alcanza, el clasificador por modelo leyendo los prompts
 //                       REALES del user decide — castellano lo interpreta un modelo, no un regex
@@ -434,8 +449,38 @@ function reasonInPrompts(reason, prompts) {
   return (Array.isArray(prompts) ? prompts : []).some((p) => normalizeWords(p).includes(r));
 }
 
+/** El cartel de borrar o mover un marcador de ejecución por consola: qué se tocó y qué comando usar en su lugar. */
+function markerDeleteMessage(rutas, via) {
+  return [
+    '⛔ tycon-pipeline — BORRADO DEL ESTADO DEL PIPELINE',
+    '',
+    ...rutas.map((p) => `  ${norm(p)}`),
+    ...(via ? [`  (detectado en ${via})`] : []),
+    '  El marcador dice qué pasos de la ejecución faltan. Borrarlo o moverlo a mano deja la historia sin sus controles',
+    '  de cierre. Usá en su lugar:',
+    `  · node ${MARKER_JS} clear                 (cerrar la ejecución de esta sesión)`,
+    `  · node ${MARKER_JS} clear-session <sesión> (el marcador que dejó otra sesión)`,
+    '  Si la ejecución está en rojo y no se puede terminar, la salida es dejarla como deuda (marker.js close-as-debt).',
+  ].join('\n');
+}
+
+/** El cartel de escribir por consola una historia que no está en borrador. */
+function storyByConsoleMessage(rutas, via) {
+  return [
+    '⛔ tycon-pipeline — HISTORIA ESCRITA POR CONSOLA',
+    '',
+    ...rutas.map((p) => `  ${norm(p)}`),
+    ...(via ? [`  (detectado en ${via})`] : []),
+    '  Una historia se edita con la herramienta de edición (Edit/Write), que el arnés lee. Desde un comando no se ve',
+    '  qué queda escrito. Para cambiar su estado usá el comando del orquestador:',
+    `  · node ${MARKER_JS} update-story-status <ruta de la historia> <estado>`,
+    `  · node ${MARKER_JS} update-pipeline-status <ruta de la historia> <tanda|--all> <estado>`,
+  ].join('\n');
+}
+
 module.exports = {
-  computeStoryGate, blockMessage, isCodeFile, isHarnessPath, sameFile,
+  markerDeleteMessage, storyByConsoleMessage,
+  computeStoryGate, blockMessage, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   reasonInPrompts, normalizeWords, ADHOC_REASON_MIN_CHARS,
   STORY_INTENT_PATTERNS, quotedPromptAsksStory,
   DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,

@@ -37,7 +37,9 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma la regla «todo automático» de la rama de operaciones (la política de Azure DevOps con el voto del autor, lo que se resigna y cómo volver a pedir aprobación); antes sumaba que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma «Invitar a alguien» y «El permiso de
+// invitar» (el botón, sus estados, revocar, el permiso User.Invite.All con su riesgo, cómo se da y se saca);
+// antes sumaba la regla «todo automático» de la rama de operaciones (la política de Azure DevOps con el voto del autor, lo que se resigna y cómo volver a pedir aprobación); antes sumaba que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
 // nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
 // organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
@@ -46,10 +48,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // siguiendo sólo la guía: el repo de operaciones mínimo, Node, http en la propia máquina, /readyz frenado y los
 // permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano; y que con la copia de operaciones
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
-// inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida».
+// inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida»; y el secreto
+// SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer».
 const HUELLA_INSTALACION = {
-  es: '5c396e88e27c6c97845da5566d8db66fa18af090800f48e46f3f757ed0b93c99',
-  en: '5b501b465e4122206bd5bef9c9fd2d779a5b862a752e09a90083aaac6ad66489',
+  es: '58405cec0a0cca0e851fb13d1d0824f1ff61aaa4cc61202ddf78e8d823b1117d',
+  en: '758bb8483897a8fbd4445e3d1440b3a77f6e57bc2a3f8a0a0d148a8ba6857ad6',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -365,4 +368,45 @@ test('Guia_SalirCierraLaCopia @story-2.48 @ac-6', () => {
     const t = leer(f);
     for (const re of dicen[lado]) assert.match(t, re, `${lado}: la guía no dice ${re}`);
   }
+});
+
+test('T14 2.74-Guia_InvitarYPermiso @story-2.74 @ac-12', () => {
+  const dicen = {
+    es: [/### Invitar a alguien/, /### El permiso de invitar/, /User\.Invite\.All/, /--phase permiso-de-invitar/, /cualquier correo/, /invitado aceptado/i,
+      /administrador del directorio/, /Para sacarlo/, /«cualquier cuenta»/, /Google/, /GitHub/, /código de un solo uso/, /SITE_INVITATIONS_PER_DAY/],
+    en: [/### Inviting someone/, /### The invite permission/, /User\.Invite\.All/, /--phase permiso-de-invitar/, /any email/, /accepted guest/i,
+      /directory administrator/, /To remove it/, /"any account"/, /Google/, /GitHub/, /one-time (pass)?code/, /SITE_INVITATIONS_PER_DAY/],
+  };
+  for (const [lado, f] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const t = leer(f);
+    for (const re of dicen[lado]) assert.match(t, re, `${lado}: la guía no dice ${re}`);
+  }
+});
+
+test('2.76-Guia_SitioDemo @story-2.76 @ac-11 — qué es, qué no hace, cómo se instala y cómo se borra, en las dos guías', () => {
+  const dicen = {
+    es: { titulo: 'El sitio demo', antes: INSTALACION.es, rx: [/SITE_DEMO=1/, /Datos de ejemplo/, /Acme/, /sin cuenta/, /Ver como/, /no escribe/i, /no abre conexiones/, /60 pedidos por minuto/, /noindex|no indexe/i,
+      /--phase ambiente/, /--phase demo/, /--dry-run/, /az group delete/, /cero réplicas|se apaga sola/, /sin candado/, /sin disco/, /sin identidad/, /SITE_PUBLIC_URL/, /no acepta/i, /Proponer/, /Invitar/, /Revocar/] },
+    en: { titulo: 'The demo site', antes: INSTALACION.en, rx: [/SITE_DEMO=1/, /Example data/, /Acme/, /no account/, /View as/, /writes nothing/, /opens no outside connections/, /60 requests per minute/, /noindex|index it/i,
+      /--phase ambiente/, /--phase demo/, /--dry-run/, /az group delete/, /zero replicas|switches itself off/, /no lock/, /no disk/, /no identity/, /SITE_PUBLIC_URL/, /does not accept/i, /Propose/, /Invite/, /Revoke/] },
+  };
+  for (const [lado, f] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const t = leer(f);
+    const { titulo, antes, rx } = dicen[lado];
+    const s = seccion(t, titulo);
+    assert.ok(s, `${lado}: la guía tiene la parte «${titulo}»`);
+    // entre el uso y la instalación: la huella de la instalación no cambia
+    assert.ok(t.indexOf(`\n## ${titulo}`) < t.indexOf(`\n## ${antes}`), `${lado}: «${titulo}» va antes de la instalación`);
+    // el texto va cortado en renglones: se lee corrido
+    const corrido = s.replace(/\s+/g, ' ');
+    for (const re of rx) assert.match(corrido, new RegExp(re.source, 'i'), `${lado}: «${titulo}» no dice ${re}`);
+    // el índice del comienzo lleva a ella
+    assert.match(t.slice(0, t.indexOf('\n## ')), new RegExp(`\\]\\(#${titulo.toLowerCase().replace(/ /g, '-')}\\)`), `${lado}: el índice del comienzo lleva al sitio demo`);
+  }
+  // en la misma posición en las dos, y la Ayuda del sitio la conoce (sólo la ve quien mantiene)
+  assert.strictEqual(titulos2(leer(GUIA_EN)).indexOf(dicen.en.titulo), titulos2(leer(GUIA)).indexOf(dicen.es.titulo));
+  const ayuda = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'help.js'), 'utf8');
+  assert.ok(ayuda.includes(`'${dicen.es.titulo}': MANTIENE`) && ayuda.includes(`'${dicen.en.titulo}': MANTIENE`), 'help.js la conoce, para quien mantiene');
+  // el instalador trae la fase que la guía nombra
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'deploy', 'azure-container-apps.js'), 'utf8'), /FASES = \['ambiente', 'sitio', 'demo'/);
 });

@@ -1060,6 +1060,94 @@ bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "servicio_fallo" ] && [ "$(campo "${T}" completo)" = "false" ] \
   && ok "T23 un listado que no es un listado: servicio_fallo, exit 1, completo false" || mal "T23d rc=${RC} estado=$(campo "${T}" estado) completo=$(campo "${T}" completo)"
 
+# ── T29 ThreadsSince_FiltraPorFechaDelNombre @story-4.10 @ac-4 ─────────────────────────────────────────────────────
+# --threads-since: los volcados y los registros bajan siempre; la conversación y el cambio, sólo desde esa fecha (la
+# del nombre); uno cuyo nombre no trae fecha baja igual.
+# 🔴 Falla con: comparar la fecha al revés o con «<=» (la del mismo día se pierde), filtrar también los .json (la
+#    revisión nocturna no ve la ejecución), o tirar el nombre sin fecha (se pierde una conversación sin aviso).
+T="${BASE}/t4-10-29"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+for base in 1.1-2026-10-20T1000 2.2-2026-09-22T1000 3.3-2026-10-15T0900; do
+  blob "${T}/b" "equipo-deva/${base}.json" 800
+  blob "${T}/b" "equipo-deva/${base}.hilo.jsonl.gz" 3000
+  blob "${T}/b" "equipo-deva/${base}.cambio.json.gz" 1200
+done
+blob "${T}/b" "equipo-deva/raro.hilo.jsonl.gz" 900
+mkdir -p "${T}/b/blobs/corridas/equipo-deva/registros"
+printf '{"ts":"2026-09-16T10:00:00Z","name":"tests","status":"green"}\n' | gzip -c > "${T}/b/blobs/corridas/equipo-deva/registros/gates.log.gz"
+bajar "${T}" "${T}/bin/az" --threads-since 2026-10-15
+E="${T}/estado/corridas-buzon/equipo-deva"
+if [ "${RC}" -eq 0 ] && [ -f "${E}/1.1-2026-10-20T1000.json" ] && [ -f "${E}/2.2-2026-09-22T1000.json" ] && [ -f "${E}/registros/gates.log.gz" ] \
+   && [ -f "${E}/1.1-2026-10-20T1000.hilo.jsonl.gz" ] && [ -f "${E}/1.1-2026-10-20T1000.cambio.json.gz" ] && [ -f "${E}/raro.hilo.jsonl.gz" ] \
+   && [ -f "${E}/3.3-2026-10-15T0900.hilo.jsonl.gz" ] && [ -f "${E}/3.3-2026-10-15T0900.cambio.json.gz" ] \
+   && [ ! -e "${E}/2.2-2026-09-22T1000.hilo.jsonl.gz" ] && [ ! -e "${E}/2.2-2026-09-22T1000.cambio.json.gz" ] \
+   && [ "$(campo "${T}" omitidos)" = "2" ] && [ "$(campo "${T}" completo)" = "true" ] \
+   && ! grep -q '2.2-2026-09-22T1000.hilo' "${T}/b/pedidos.jsonl"; then
+  ok "4.10-T29 ThreadsSince_FiltraPorFechaDelNombre: volcados y registros siempre, conversaciones desde la fecha (la del mismo día incluida), la sin fecha baja; omitidos 2, completo true"
+else
+  mal "4.10-T29 rc=${RC} omitidos=$(campo "${T}" omitidos) completo=$(campo "${T}" completo) · $(ls "${E}" 2>&1 | tr '\n' ' ')"
+fi
+
+# ── T29d ThreadsSince_SinCerrarConSuFecha @story-4.10 @ac-4 ────────────────────────────────────────────────────────
+# Una ejecución sin cerrar se sube como `<story>-<AAAAMMDDhhmmss>-sin-cerrar`: la fecha va pegada, y también cuenta.
+# 🔴 Falla con: no leer esa forma (las sin cerrar viejas bajan todas las noches: medido en el buzón real, 13 de
+#    septiembre en una bajada «desde hoy») o leerla corrida un día.
+T="${BASE}/t4-10-29d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+for base in 1.11-20260930105410-sin-cerrar 5.3-20261015000001-sin-cerrar; do
+  blob "${T}/b" "equipo-deva/${base}.json" 800
+  blob "${T}/b" "equipo-deva/${base}.hilo.jsonl.gz" 3000
+done
+bajar "${T}" "${T}/bin/az" --threads-since 2026-10-15
+E="${T}/estado/corridas-buzon/equipo-deva"
+[ "${RC}" -eq 0 ] && [ -f "${E}/1.11-20260930105410-sin-cerrar.json" ] && [ ! -e "${E}/1.11-20260930105410-sin-cerrar.hilo.jsonl.gz" ] \
+  && [ -f "${E}/5.3-20261015000001-sin-cerrar.hilo.jsonl.gz" ] && [ "$(campo "${T}" omitidos)" = "1" ] \
+  && ok "4.10-T29d una sin cerrar se filtra por su fecha pegada: la vieja no baja su conversación, la del mismo día sí" \
+  || mal "4.10-T29d rc=${RC} omitidos=$(campo "${T}" omitidos) · $(ls "${E}" 2>&1 | tr '\n' ' ')"
+
+# ── T29b ThreadsSince_FechaMalFormada @story-4.10 @ac-4 ─────────────────────────────────────────────────────────────
+# 🔴 Falla con: tomar «22/10/2026» como fecha, o una fecha con forma pero imposible (2026-13-01, 2026-02-31): la
+#    comparación de texto deja pasar o tira todo sin decirlo.
+T="${BASE}/t4-10-29b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "equipo-deva/1.1-2026-10-20T1000.json" 800
+mal29b=""
+for f in 22/10/2026 2026-13-01 2026-02-31; do
+  bajar "${T}" "${T}/bin/az" --threads-since "${f}"
+  { [ "${RC}" -eq 2 ] && [ "$(campo "${T}" estado)" = "config_rota" ]; } || mal29b="${mal29b} ${f}:rc=${RC}"
+done
+[ -z "${mal29b}" ] && [ "$(gets "${T}/b")" = "0" ] \
+  && ok "4.10-T29b una fecha que no es una AAAA-MM-DD real: config_rota, exit 2, sin bajar nada" \
+  || mal "4.10-T29b${mal29b} gets=$(gets "${T}/b")"
+
+# ── T29c ThreadsSince_SinValor @story-4.10 @ac-4 ────────────────────────────────────────────────────────────────────
+# 🔴 Falla con: tomar la opción sin valor como «sin filtro» (una variable vacía en el YAML del nocturno bajaría todas las
+#    conversaciones del buzón, gigas, con salida 0), o aceptar la opción que viene detrás como si fuera la fecha.
+T="${BASE}/t4-10-29c"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "equipo-deva/1.1-2026-10-20T1000.hilo.jsonl.gz" 800
+bajar "${T}" "${T}/bin/az" --threads-since
+rc29c="${RC}"; est29c="$(campo "${T}" estado)"
+bajar "${T}" "${T}/bin/az" --threads-since --budget-ms 600000
+[ "${rc29c}" -eq 2 ] && [ "${est29c}" = "config_rota" ] && [ "${RC}" -eq 2 ] && [ "$(campo "${T}" estado)" = "config_rota" ] && [ "$(gets "${T}/b")" = "0" ] \
+  && ok "4.10-T29c --threads-since sin valor, al final o con otra opción detrás: config_rota, exit 2, sin bajar nada" \
+  || mal "4.10-T29c al final rc=${rc29c} estado=${est29c} · con otra opción detrás rc=${RC} estado=$(campo "${T}" estado) gets=$(gets "${T}/b")"
+
+# ── T30 SinThreadsSince_IgualQueHoy @story-4.10 @ac-25 ──────────────────────────────────────────────────────────────
+# 🔴 Falla con: un valor por defecto de la fecha (el tablero y el sitio dejarían de ver conversaciones viejas), o que
+#    --threads-since ablande --no-threads. `--no-threads` solo lo fija 2.12-T12 y `--instincts`, sus casos de esta suite.
+T="${BASE}/t4-10-30"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+for base in 1.1-2026-10-20T1000 2.2-2026-09-22T1000; do
+  blob "${T}/b" "equipo-deva/${base}.json" 800
+  blob "${T}/b" "equipo-deva/${base}.hilo.jsonl.gz" 3000
+  blob "${T}/b" "equipo-deva/${base}.cambio.json.gz" 1200
+done
+bajar "${T}" "${T}/bin/az"
+todo30="$(ls "${T}/estado/corridas-buzon/equipo-deva" 2>/dev/null | grep -c 'gz$')"; omit30="$(campo "${T}" omitidos)"
+T2="${BASE}/t4-10-30b"; buzon "${T2}/b"; config "${T2}/cfg.json"; az_doble "${T2}" token
+cp -R "${T}/b/blobs" "${T2}/b/"
+bajar "${T2}" "${T2}/bin/az" --no-threads --threads-since 2026-10-15
+sin30="$(ls "${T2}/estado/corridas-buzon/equipo-deva" 2>/dev/null | grep -c 'gz$')"
+[ "${todo30}" = "4" ] && [ "${omit30}" = "0" ] && [ "${sin30}" = "0" ] && [ "$(campo "${T2}" omitidos)" = "4" ] \
+  && ok "4.10-T30 SinThreadsSince_IgualQueHoy: sin la opción bajan las 4 partes; con --no-threads ninguna, aunque venga --threads-since" \
+  || mal "4.10-T30 sin opción: ${todo30} partes, omitidos ${omit30} · con --no-threads: ${sin30} partes, omitidos $(campo "${T2}" omitidos)"
+
 # ── T24 · esta suite NO toca el tablero del repo (ver la cabecera) ───────────────────────────────────────────────
 [ "$(huella "${ENTREGABLE_SEIS}")" = "${HUELLA_SEIS_ANTES}" ] && ok "T24 la suite no tocó artifacts/tablero-del-arnes.html" \
   || mal "T24 la suite ESCRIBIÓ artifacts/tablero-del-arnes.html — algún caso genera la página del equipo sin --output a un temporal"

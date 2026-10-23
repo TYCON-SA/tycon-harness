@@ -11,7 +11,9 @@
  *
  * Tres cosas, entonces:
  *   1. El RESUMEN de consumo (tokens por modelo y por paso) → adentro del volcado, bajo `consumo`.
- *   2. El HILO de la conversación, comprimido → `<volcado sin .json>.hilo.jsonl.gz`, al lado.
+ *   2. El HILO de la conversación, comprimido → `<volcado sin .json>.hilo.jsonl.gz`, al lado. Sin adjuntos, salvo
+ *      el aviso de un hook que falló o se pasó de tiempo, reducido a nombre, evento, salida, categoría y el texto
+ *      del error saneado y recortado (`reducirErrorDeHook`).
  *   3. El MENSAJE REAL del error de cada freno en rojo → `gates[i].mensaje`.
  *
  * 🔴 DE DÓNDE SALE EL MENSAJE. Medido sobre los volcados locales y del buzón, buscarlo en la
@@ -96,6 +98,23 @@ const TIPOS_DESCARTADOS = new Set([
   'attachment', 'file-history-snapshot', 'file-history-delta',
   'queue-operation', 'bridge-session', 'atis-latch', 'last-prompt', 'ai-title',
 ]);
+// Los únicos adjuntos que viajan: el aviso de un hook que falló sin frenar y el de uno que se pasó de tiempo (Claude
+// Code lo anota como `hook_cancelled` con `timedOut`). Sin ellos, la revisión nocturna de las ejecuciones no ve un
+// freno muerto (Node viejo en el PATH, un guion borrado por la autoactualización). Viajan reducidos: del `stderr` sale
+// una categoría de esta lista, en orden, y su texto saneado y recortado: lo leen sólo quienes administran el buzón,
+// como la conversación. En las sesiones de una máquina medida hay cientos de `carga` y de `No such file or
+// directory`, y ningún «timed out» en un error.
+const CATEGORIAS_HOOK = [
+  ['node-viejo', /SyntaxError: Unexpected token/],
+  ['carga', /Cannot find module|cjs\/loader/],
+  // `(^|[\s/])node: No such…` cubre `env: node:` y el Node propio del arnés por su ruta (`…/bin/node: No such…`)
+  ['node-ausente', /node: command not found|command not found: node|(^|[\s/])node: No such file or directory|is not recognized/],
+  ['ruta-ausente', /No such file or directory/],
+];
+// Un nombre de hook o de evento más largo, o con saltos de línea, no es un nombre: no viaja.
+const LARGO_NOMBRE_HOOK = 80;
+// El texto del error que viaja: alcanza para saber qué falló sin llevar un stack entero.
+const LARGO_TEXTO_HOOK = 300;
 // Estados de un freno que cuentan como «quedó en rojo». `red:exit=N` es el formato real del registro.
 const PREFIJOS_FALLO = ['red', 'fail', 'error', 'rojo'];
 const FRENOS = new Set(['blocked', 'undeclared', 'missing', 'stale', 'rejected', 'denied']);
@@ -361,10 +380,47 @@ function esNotificacionEncolada(o) {
     && typeof o.content === 'string' && o.content.includes('<task-notification>');
 }
 
+/**
+ * El aviso de un hook que falló sin frenar (`hook_non_blocking_error`) o que se pasó de tiempo (`hook_cancelled` con
+ * `timedOut`), reducido: nombre, evento, código de salida, la categoría del error (CATEGORIAS_HOOK, `otro` si ninguna;
+ * `tiempo` el que se pasó) y el texto del error saneado, sin controles y recortado. `stdout`, `command`, `cwd` y lo
+ * demás no viajan. Cualquier otra línea → null.
+ */
+function reducirErrorDeHook(o) {
+  const a = o && o.type === 'attachment' ? o.attachment : null;
+  const tiempo = !!a && a.type === 'hook_cancelled' && a.timedOut === true;
+  if (!a || (a.type !== 'hook_non_blocking_error' && !tiempo)) return null;
+  // un nombre también pasa por sanear(): si alguna vez trae una ruta o una credencial, no viaja así
+  const nombre = (v) => (typeof v === 'string' && v.length <= LARGO_NOMBRE_HOOK && !/[\r\n]/.test(v) ? sanear(v) : null);
+  const stderr = !tiempo && typeof a.stderr === 'string' ? a.stderr : '';
+  const cat = CATEGORIAS_HOOK.find(([, re]) => re.test(stderr));
+  const texto = sanear(stderr).replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, LARGO_TEXTO_HOOK);
+  return {
+    type: 'attachment',
+    timestamp: o.timestamp,
+    attachment: {
+      type: a.type,
+      hookName: nombre(a.hookName),
+      hookEvent: nombre(a.hookEvent),
+      exitCode: !tiempo && Number.isInteger(a.exitCode) ? a.exitCode : null,
+      categoria: tiempo ? 'tiempo' : (cat ? cat[0] : 'otro'),
+      texto: texto || null,
+    },
+  };
+}
+
 /** Los mensajes del hilo: lo que se pidió, lo que se respondió y las herramientas. Sin adjuntos —
- *  salvo la notificación ENCOLADA de un agente, que sin esto se perdería (ver esNotificacionEncolada). */
+ *  salvo la notificación ENCOLADA de un agente, que sin esto se perdería (ver esNotificacionEncolada), y el aviso
+ *  de un hook que falló, reducido (ver reducirErrorDeHook). */
 function hilo(lineas) {
-  return lineas.filter((o) => o && o.type && (!TIPOS_DESCARTADOS.has(o.type) || esNotificacionEncolada(o)));
+  const out = [];
+  for (const o of lineas) {
+    if (!o || !o.type) continue;
+    const hook = reducirErrorDeHook(o);
+    if (hook) out.push(hook);
+    else if (!TIPOS_DESCARTADOS.has(o.type) || esNotificacionEncolada(o)) out.push(o);
+  }
+  return out;
 }
 
 /**
@@ -845,7 +901,7 @@ function resumenBarrido(s) {
 module.exports = {
   esRojo, normalizar, sanear, colaDeSalida, mensajesDeSalida, LARGO_MENSAJE, cortesDePaso, consumo, hilo, mensajesDeError,
   ubicarTranscripcion, leerTranscripcion, indexarComandos, procesarCorrida, rescatarCorrida, encadenarMedidor, estaPendiente,
-  esNotificacionEncolada,
+  esNotificacionEncolada, reducirErrorDeHook, CATEGORIAS_HOOK, TIPOS_DESCARTADOS,
 };
 
 if (require.main === module) {

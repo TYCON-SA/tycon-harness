@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-e2e-realness-checker.md
-# source_sha256: b0b72453c6c00fa272b64b8bb597a94b4c3293f9345bd250cfbdb663a562dd75
+# source_sha256: 84a373e296e3a031db058147b96deba6d55ec723d6875399b39048be47fe8f59
 # Se despliega como $CODEX_HOME/tycon-e2e-realness-checker.config.toml y se invoca: codex exec -p tycon-e2e-realness-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -18,7 +18,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 
 # tycon-e2e-realness-checker
 
-**Phase**: during-impl (Step 5 condicional) + post-impl re-loop si los E2E cambian.
+**Phase**: during-impl (Revisores, condicional) + post-impl re-loop si los E2E cambian.
 **Severity**: CRITICAL inmediato para `REAL-C1..C8` (bloquean commit prep y status→done). WARNING para `REAL-W1..W7`.
 **Tier**: Core condicional. Trigger: el diff toca `**/tests/e2e/*.spec.ts` (Playwright).
 **Stack scope**: stack-agnostic — corre sobre cualquier proyecto TYCON que use Playwright. **Excepción declarada**: `REAL-C3` es **PROJECT-gated** (ver su bloque en \"Detección concreta\") y no corre en repos que no declaran su dev seam.
@@ -40,7 +40,7 @@ Este advisor convierte la pregunta *\"¿todo esto lo probaste con Playwright?\"*
 
 - `repo_path`: path al repo (típicamente el working tree).
 - `changed_specs`: lista de paths `tests/e2e/**/*.spec.ts` modificados/agregados en el diff. **La provee el orquestador** (la tiene del diff). **No hay fallback**: este advisor no tiene `Bash` y por lo tanto no puede correr `git diff`. Si `changed_specs` llega vacío y `flag_all` no está en `true` → `REAL-C4` + veredicto **INCONCLUSO**.
-- `flag_all`: opcional. Si `true`, el advisor **ignora** `changed_specs` y arma la lista con `Glob` sobre `tests/e2e/**/*.spec.ts` desde `repo_path` (paso 0 del Workflow — es un input **consumido**, no decorativo).
+- `flag_all`: opcional. Si `true`, el advisor **ignora** `changed_specs` y arma la lista con `Glob` sobre `tests/e2e/**/*.spec.ts` desde `repo_path` (primer paso del Workflow — es un input **consumido**, no decorativo).
 - `story_path`: opcional. Path al `.md` de la story Mary+GOLD. Sólo lo usa `REAL-W6`; sin él, `W6` se declara no aplicable en el reporte (no se omite en silencio).
 - **Config del repo** (opcional, `.tycon/advisors.yaml → e2e_realness`): `dev_seam_pattern` (gate de `REAL-C3`), `user_visible_keywords` (aditivo a `REAL-W1`), `business_endpoint_excludes` (aditivo a la lista canónica de `REAL-C2`/`C7`). Ausente = defaults de este archivo.
 
@@ -258,9 +258,9 @@ Para esos casos, code review humana sigue siendo necesaria.
 
 ## Integración con el pipeline
 
-**Step 5 condicional**: el orquestador invoca este advisor si el diff matchea `**/tests/e2e/*.spec.ts`, pasándole `changed_specs` (y `story_path` si la story tiene bloque `pipelines:`).
+**Revisores, condicional**: el orquestador invoca este advisor si el diff matchea `**/tests/e2e/*.spec.ts`, pasándole `changed_specs` (y `story_path` si la story tiene bloque `pipelines:`).
 
-**Step 7c DoD Gate**: `tycon-dod-runtime-checker`, al leer `pipelines.X.tests_done`, cross-checkea que cada E2E declarado exista y **pase realness con 0 CRITICAL de todo el set `REAL-C*`**; si alguno falla emite `DODRT-C4`, que bloquea `status→done`.
+**DoD Gate de «Probar en vivo»**: `tycon-dod-runtime-checker`, al leer `pipelines.X.tests_done`, cross-checkea que cada E2E declarado exista y **pase realness con 0 CRITICAL de todo el set `REAL-C*`**; si alguno falla emite `DODRT-C4`, que bloquea `status→done`.
 
 🔴 **Dependencia pendiente, declarada acá para que no se pierda**: la fila `DODRT-C4` del catálogo y el `tycon-dod-runtime-checker.md` enumeran hoy las **tres** reglas originales. Con el set ampliado, esa enumeración quedó vieja y **los CRITICAL nuevos no bloquean `done`** hasta que se amplíe a todo `REAL-C*`. La edición del `.md` de ese advisor **no es de este owner** — queda anotada como trabajo pendiente, no aplicada en silencio.
 
@@ -269,13 +269,13 @@ Para esos casos, code review humana sigue siendo necesaria.
 | Solapamiento | Owner | Frontera |
 |---|---|---|
 | Skip de un test | `REAL-C8` (este advisor) vs `DEFTR-C2` (`tycon-deferral-tracker`) | **Condicional según el entorno** (probe, env var, `!res.ok()`) → `REAL-C8`. **Incondicional** (`test.skip()` pelado, test deshabilitado sin comentario de deferral) → `DEFTR-C2`. Un mismo spec puede tener los dos; se reportan por separado. |
-| E2E declarado en `tests_done` | `REAL-W6` (este advisor) · co-enforcement de `DODRT-C4` (`tycon-dod-runtime-checker`) | **W6 = el spec no está** (no existe, o no vino en el diff que lo declara entregado), en Step 5 sobre el diff. **DODRT-C4 = el spec está y falla realness**, en el gate de `done`. El ID no se duplica ni se renombra. |
+| E2E declarado en `tests_done` | `REAL-W6` (este advisor) · co-enforcement de `DODRT-C4` (`tycon-dod-runtime-checker`) | **W6 = el spec no está** (no existe, o no vino en el diff que lo declara entregado), en Revisores sobre el diff. **DODRT-C4 = el spec está y falla realness**, en el gate de `done`. El ID no se duplica ni se renombra. |
 | Evidencia de ejecución por AC | `DODRT-C6` (`tycon-dod-runtime-checker`) | Fuera de este advisor: `REAL-*` mira el **texto** del spec, nunca si corrió ni con qué resultado. |
 | URL con host/puerto fijo en un smoke | `DODRT-W3` (`tycon-dod-runtime-checker`) | Fuera de este advisor a propósito (por eso `~~REAL-W5~~` no se publicó). |
 
 ## Cuándo invocar
 
-- **Condicional Step 5**: el diff toca `**/tests/e2e/*.spec.ts`. Invocación automática del orquestador.
+- **Condicional en Revisores**: el diff toca `**/tests/e2e/*.spec.ts`. Invocación automática del orquestador.
 - **Standalone**: el dev pide \"auditá realness de los E2E\" / \"¿los E2E ejercen UI real?\".
 - **Pre-merge a main**: opcional vía `/tycon-merge-to-main` si el merge toca specs E2E.
 

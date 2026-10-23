@@ -55,7 +55,9 @@ function indexed(repo, rel) {
 /** ¿El archivo está en una zona donde nombrar la herramienta es su lugar? */
 function allowed(rel) {
   return rel.startsWith('integrations/') || rel.startsWith('guides/integrations/') || rel.startsWith('scripts/controls-bench/')
-    || /(^|\/)tests?\//.test(rel) || /\.test\.[A-Za-z0-9]+$/.test(rel);
+    || /(^|\/)tests?\//.test(rel) || /\.test\.[A-Za-z0-9]+$/.test(rel)
+    // una firma del dueño por archivo anota las rutas de los controles que firma: sólo el .json del primer nivel
+    || /^\.(github|tycon)\/control-changes\/[^/]+\.json$/.test(rel);
 }
 
 /** Los nombres de las herramientas de horas del árbol, de sus manifiestos en el índice (el nombre y el de cada skill). */

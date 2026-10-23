@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * scripts/lib/tycon-config.js — LA configuración del arnés: rutas, servicios e integraciones, en un
  * solo lugar y con un solo orden (story 8.3, 2026-09-26).
@@ -212,11 +214,21 @@ const VOCABULARIO = Object.freeze({
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
-  approvals: Object.freeze({ relay_session: 'texto' }),
+  // `delegated_signing`: si esa misma sesión puede volver a firmar en nombre del dueño un pedido que él ya firmó, cuando
+  // lo único nuevo es que se trajo main. Cerrada; sin valor, apagada. Sólo del perfil.
+  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'opcion:off|refresh-after-main' }),
+  // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
+  // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
+  // perfil: si la máquina pudiera decir `auto`, el agente se abriría solo la actualización sin contraseña.
+  guard: Object.freeze({ update: 'opcion:password|auto' }),
   // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
   // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
   // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.
   qa: Object.freeze({ manual_check: 'opcion:off|required' }),
+  // El proveedor de modelos de esta máquina: de qué tabla de `team-repos.json → models.providers` sale el
+  // modelo de cada nivel. Es de la máquina: en el perfil del equipo es un error. Sin valor se deriva de la herramienta
+  // (`modelProvider`): una sesión de Codex es `openai`; todo lo demás, `anthropic`. Claude Code sobre Ollama se declara.
+  models: Object.freeze({ provider: 'opcion:anthropic|openai|ollama|cursor' }),
 });
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
@@ -229,7 +241,7 @@ const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
-  'response.language': 'es', 'response.style': 'neutral',
+  'response.language': 'es', 'response.style': 'neutral', 'guard.update': 'password',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -249,7 +261,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
@@ -371,6 +383,7 @@ const VARIABLES = Object.freeze({
   'response.language': ['TYCON_RESPONSE_LANGUAGE'],
   'response.style': ['TYCON_RESPONSE_STYLE'],
   'response.max_chars': ['TYCON_RESPONSE_MAX_CHARS'],
+  'models.provider': ['TYCON_MODEL_PROVIDER'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -736,6 +749,10 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         errores.push({ archivo, clave: rutaEnArchivo, motivo: 'valor personal: un PAT de Azure DevOps es de una persona, no del equipo — se guarda con `harness.js config set azure.token`, nunca en un archivo versionado' });
         continue;
       }
+      if (esPerfil && seccion === 'models') {
+        errores.push({ archivo, clave: rutaEnArchivo, motivo: 'el proveedor de modelos es de la máquina, no del equipo — va en ~/.claude/tycon.json (`tycon-config.js set models.provider <proveedor>`) o en TYCON_MODEL_PROVIDER' });
+        continue;
+      }
       if (esPerfil && seccion === 'rutas') {
         errores.push({ archivo, clave: rutaEnArchivo,motivo: 'una ruta es de la máquina, no del equipo — va en ~/.claude/tycon.json o en su variable (TYCON_GUIDES_DIR / TYCON_REPOS_ROOT / TYCON_TREE)' });
         continue;
@@ -980,6 +997,7 @@ function cargar(opts = {}) {
           shadowed[ruta] = { value: planoPerfil[ruta], origin: 'TYCON_PROFILE', by: 'solo-perfil' };
         }
         if (Object.prototype.hasOwnProperty.call(planoArbol, ruta)) { valores[seccion][clave] = planoArbol[ruta]; origenes[ruta] = 'perfil'; }
+        else if (Object.prototype.hasOwnProperty.call(DEFAULTS, ruta)) { valores[seccion][clave] = DEFAULTS[ruta]; origenes[ruta] = 'default'; }
         else { valores[seccion][clave] = null; origenes[ruta] = 'sin-valor'; }
         continue;
       }
@@ -1101,6 +1119,28 @@ function plataforma(config, env = process.env) {
  * Cómo contesta el asistente, según una configuración YA cargada: `{ language, style, max_chars, origen:
  * { language, style, max_chars } }`. `max_chars` sin valor es el tope del estilo (origen `estilo`).
  */
+/**
+ * El proveedor de modelos de esta máquina: `{ provider, origin, problem }`. Gana la variable
+ * (`TYCON_MODEL_PROVIDER`, origen `env`), después el archivo de la máquina (`maquina`); sin ninguna, se deriva de la
+ * herramienta (`derivado`): una sesión de Codex (`CODEX_SESSION_ID` sin `CLAUDE_CODE_SESSION_ID`) es `openai`, lo demás
+ * `anthropic`. Con la clave mal escrita, `provider: null` y `origin: 'rota'`: no cae en el derivado. opts: `config` (ya
+ * cargada) o lo de `cargar` (home, env, arnes); `env` para derivar. Nunca tira.
+ */
+function modelProvider(opts = {}) {
+  const env = opts.env || process.env;
+  let c = opts.config;
+  if (!c) {
+    try { c = cargar(opts); } catch (e) { return { provider: null, origin: 'rota', problem: `falla interna del lector (${e.message})` }; }
+  }
+  // la clave mal escrita en el archivo, o la variable con un valor fuera de la lista (su error lleva el nombre de la variable)
+  const err = (c.errores || []).find((e) => e.clave === 'models' || String(e.clave || '').startsWith('models.') || VARIABLES['models.provider'].includes(e.clave));
+  if (err) return { provider: null, origin: 'rota', problem: `${err.clave} · ${err.motivo}` };
+  const v = c.valores && c.valores.models ? c.valores.models.provider : null;
+  const origen = c.origenes ? c.origenes['models.provider'] : null;
+  if (v && (origen === 'env' || origen === 'maquina')) return { provider: v, origin: origen, problem: null };
+  const codex = Boolean(env.CODEX_SESSION_ID) && !env.CLAUDE_CODE_SESSION_ID;
+  return { provider: codex ? 'openai' : 'anthropic', origin: 'derivado', problem: null };
+}
 function respuesta(config) {
   const r = config.valores.response;
   const o = config.origenes;
@@ -1250,6 +1290,9 @@ function explicar(opts = {}) {
   L.push(`  install.profile = ${v.install.profile ? `${v.install.profile} (${o['install.profile']})` : 'sin elegir'}`);
   // dónde vive el arnés (story 8.23, tanda D): sin valor es `claude` (el clon de hoy); `tycon` muda cada máquina sola
   L.push(`  install.home = ${v.install.home ? `${v.install.home} (${o['install.home']})` : 'claude (sin valor: el clon en la carpeta de Claude Code; con tycon, cada máquina se muda sola a ~/.tycon en el arranque)'}`);
+  // el proveedor de modelos de la máquina: sin valor, el que sale de la herramienta
+  const prov = modelProvider({ config: c, env: opts.env || process.env });
+  L.push(`  models.provider = ${prov.provider ? `${prov.provider} (${prov.origin === 'derivado' ? 'derivado: sin declarar, de la herramienta de esta sesión' : prov.origin})` : `ROTO (${prov.problem})`}`);
   // las claves retiradas que un archivo todavía tiene: no hacen nada, se pueden borrar
   for (const r of c.retiradas || []) L.push(`  ${r.clave} (${r.archivo}): ${r.motivo}`);
   // quién puede reenviar el ok de un dev: sólo del perfil; lo que diga la máquina se nombra y no se usa
@@ -1258,6 +1301,14 @@ function explicar(opts = {}) {
     const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
     const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '';
     L.push(`  approvals.relay_session = ${v.approvals.relay_session ? `${v.approvals.relay_session} (${o['approvals.relay_session']}${ignorado})` : `sin valor (nadie reenvía${ignorado})`}`);
+  }
+  // la firma delegada y cómo se actualiza el freno: sólo del perfil, como relay_session
+  for (const [ruta, sinValor] of [['approvals.delegated_signing', 'off'], ['guard.update', 'password']]) {
+    const s = c.shadowed[ruta];
+    const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
+    const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '; vale sólo desde el perfil del equipo';
+    const [sec, k] = ruta.split('.');
+    L.push(`  ${ruta} = ${v[sec][k] || sinValor} (${o[ruta]}${ignorado})`);
   }
   const extras = [];
   if (c.entorno.TYCON_SKILLS_DIR) extras.push(`TYCON_SKILLS_DIR=${c.entorno.TYCON_SKILLS_DIR} (lib/skills-dir.js, no es de este lector)`);
@@ -1435,7 +1486,7 @@ module.exports = {
   VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, AREAS_PLATAFORMA, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1500,9 +1551,17 @@ function cli(argv) {
     let c;
     try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }   // rota: NADA por stdout (no se lee como «todo apagado»)
     const ocho = integraciones(c);
-    if (argv.includes('--json')) { process.stdout.write(JSON.stringify(ocho) + '\n'); process.exit(0); }
-    // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual)
+    // la herramienta de horas elegida va en la misma respuesta (`timeTracking`, con la llave vieja leída y sin anotarla):
+    // así quien ya pregunta por las integraciones no lanza otro proceso para saberla
+    // sólo un nombre de integración (minúsculas, números y guiones): el valor es texto libre del perfil o de una variable, y
+    // la forma shell la lee el instalador línea por línea; otro valor no se imprime (el instalador dice que no la supo)
+    const raw = sinAnotar(() => timeTracking(c)).value;
+    const tool = typeof raw === 'string' && /^[a-z0-9-]+$/.test(raw) ? raw : null;
+    if (argv.includes('--json')) { process.stdout.write(JSON.stringify(Object.assign({}, ocho, { timeTracking: tool })) + '\n'); process.exit(0); }
+    // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual), y la
+    // herramienta de horas en su propia variable
     for (const k of LAS_OCHO) process.stdout.write(`TYCON_INTEG_${k.toUpperCase()}=${ocho[k] === DETECT ? DETECT : (ocho[k] ? '1' : '0')}\n`);
+    if (tool) process.stdout.write(`TYCON_TIME_TOOL=${tool}\n`);
     process.exit(0);
   }
   // `time-tracking`: la integración de horas elegida (`none` o su nombre, con la llave vieja leída), para el instalador.

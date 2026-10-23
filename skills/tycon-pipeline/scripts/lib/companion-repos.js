@@ -215,7 +215,7 @@ function gitRootOf(p) {
   return r ? real(r) : null;
 }
 
-/** Cómo se nombra un repo hermano para una persona y para el step-05b: el nombre de su carpeta. */
+/** Cómo se nombra un repo hermano para una persona y para el paso «Pase adversarial»: el nombre de su carpeta. */
 function label(root) { const r = real(root); return path.basename(DECLARADO.get(r) || r); }
 
 /**
