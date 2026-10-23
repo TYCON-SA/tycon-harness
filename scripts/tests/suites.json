@@ -1064,6 +1064,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/repo-attrib.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.35 (2026-10-19): ésta y las 22 que siguen no estaban en la lista, así que ni la CI ni el nocturno las corrían (dos estaban rojas sin que nadie lo supiera). Medidas una por una y con una HOME vacía: la más larga tarda 41 s. scripts/tests/suites-listed.test.js frena la próxima que nazca afuera.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-unmeasured.test.js",
