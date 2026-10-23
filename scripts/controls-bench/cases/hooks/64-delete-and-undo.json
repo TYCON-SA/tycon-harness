@@ -1,0 +1,42 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "frena-borrar-codigo-con-la-corrida-abierta",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo 'export const a = 1;' > src/a.ts && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
+          ],
+          "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "rm src/a.ts" } },
+          "expect": { "exit": 2, "stderr_re": ["EDICIÓN INVISIBLE", "Borrar o deshacer"] }
+        },
+        {
+          "id": "frena-deshacer-un-manifiesto-con-la-corrida-abierta",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && echo '{}' > package.json && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
+          ],
+          "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "git checkout -- package.json" } },
+          "expect": { "exit": 2, "stderr_re": ["EDICIÓN INVISIBLE"] }
+        },
+        {
+          "id": "pasa-borrar-node-modules-y-queda-anotado",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p node_modules/x && echo '{}' > package.json && git add package.json && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
+          ],
+          "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "rm -rf node_modules" } },
+          "expect": { "exit": 0, "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/escrituras-consola/banco.jsonl", "re": "\"kind\":\"delete\"" }] }
+        }
+      ]
+    }
+  ]
+}
