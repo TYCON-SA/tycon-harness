@@ -2491,6 +2491,12 @@
       "requiere": []
     },
     {
+      "__nota": "el informe del aplicador no le manda a un juez viejo hooks con prefijos que no entiende (TYCON_REPORT_HOOK_PREFIXES); el lector y la salud de la 2026.10.20.52 (de git) aceptan el informe nuevo; el arranque corre la salud si la última no la corrió esta versión.",
+      "raiz": "arnes",
+      "ruta": "tests/old-judge-report.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.31: cómo contesta el asistente y la tabla de nombres, según la configuración — sin `response`, el bloque neutro; el perfil de TYCON deja el bloque de antes salvo el título; el medidor toma `response.max_chars`; un estilo inventado deja el bloque que había; las filas con su integración apagada no se escriben y, sin saber, quedan como estaban; los títulos sin fecha; las seis variantes en su techo. Corre los tres sincronizadores (bash, PowerShell si hay pwsh —en la CI es obligatorio— y el de Codex) sobre una HOME de juguete; sin red.",
       "raiz": "arnes",
       "ruta": "tests/response-style-variants.test.js",
