@@ -112,15 +112,26 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   // los proyectos cuyos pedidos asignados la noche no pudo medir: a cada dev le falta lo suyo de ahí
   const sinMedir = m.pedidos && Array.isArray(m.pedidos.sin_medir) ? m.pedidos.sin_medir : [];
   if (sinMedir.length) filas.push(filaNoMedida('pedidos_asignados_sin_medir', T('inicio.loAsignado'), T('inicio.asignadoSinMedir', { proyectos: sinMedir.join(', ') })));
-  // dónde se decide cada cosa: lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés;
-  // los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
-  const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', prs_trabados: '#prs-trabados', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
-  for (const f of filas) {
-    const d = DONDE[f.clave];
-    f.enlace = d === 'ops' ? enlaceOperaciones || null : (d || null);
-  }
+  // dónde se decide cada cosa: lo de las colas y lo declarado, en su lista de abajo, una ficha por renglón con el enlace
+  // a SU pedido (listasDeDecision; nunca la portada del repo de operaciones, donde no se ve qué decidir); lo del arnés,
+  // en Arnés; los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
+  const DONDE = { prs_trabados: '#prs-trabados', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
+  for (const clave of Object.keys(LISTAS_DE_DECISION)) DONDE[clave] = `#decidir-${clave}`;
+  void enlaceOperaciones;
+  for (const f of filas) f.enlace = DONDE[f.clave] || null;
   return filas;
 }
+
+// Las tarjetas de «Qué decidir hoy» que llevan a una lista de fichas: su fuente y su rubro en decisions.js
+const LISTAS_DE_DECISION = Object.freeze({
+  dependencias_nuevas: { fuente: 'dependencias', rubro: 'nuevos' },
+  dependencias_aceptadas_sin_resolver: { fuente: 'dependencias', rubro: 'aceptadas_sin_resolver' },
+  dependencias_rechazadas_sin_deuda: { fuente: 'dependencias', rubro: 'rechazadas_sin_deuda' },
+  vigilante_pendientes: { fuente: 'vigilante', rubro: 'pendientes' },
+  vigilante_aceptadas_sin_story: { fuente: 'vigilante', rubro: 'aceptadas_sin_story' },
+  pedidos_cerrados_con_vivas: { fuente: 'dependencias', rubro: 'pedidos_cerrados_con_vivas' },
+  declarados_por_vencer: { declarados: true },
+});
 
 /** Inicio de un dev: lo suyo, con cantidades. */
 function inicioDev(m, { ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
@@ -349,13 +360,49 @@ function prsTrabados(prs, idioma) {
   return seccion(titulo, lista.length ? `<ul class="lista">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`, T('vista.fuenteDel', { fecha: prs.fecha }), 'prs-trabados');
 }
 
+/**
+ * Las listas a las que llevan las tarjetas de «Qué decidir hoy»: una sección por tarjeta (`#decidir-<clave>`), una
+ * ficha por renglón con el enlace a su pedido o el motivo por el que no lo tiene (decisions.js). Lo declarado se decide
+ * en un archivo de cada repo, no en un pedido: la sección lo dice y lista los que vencen.
+ */
+function listasDeDecision(m, { enlaceOperaciones = null, ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
+  const T = (k, v) => t(idioma, k, v);
+  const DEC = require('./decisions.js');
+  const todas = DEC.decisiones(m, { operationsRepo: enlaceOperaciones });
+  const medidas = m.decisiones && m.decisiones.estado === 'medido';
+  const ul = (items) => (items.length ? `<ul class="lista">${items.join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  const out = [];
+  for (const [clave, def] of Object.entries(LISTAS_DE_DECISION)) {
+    const titulo = T(`inicio.${clave}`);
+    if (def.declarados) {
+      const dec = m.declarados;
+      const vencen = medida(dec) ? (dec.lista || []).filter((d) => { const x = Date.parse(`${d.review_before}T00:00:00Z`); return Number.isFinite(x) && x - ahora <= 7 * DIA; }) : [];
+      const cuerpo = medida(dec)
+        ? `<p class="q-note">${esc(T('decidir.declaradosDonde'))}</p>${ul(vencen.map((d) => `<li>${esc(d.id)} · ${esc(T('decidir.vence', { fecha: d.review_before }))}</li>`))}`
+        : `<p class="q-note">${esc(conFecha(dec, idioma))}</p>`;
+      out.push(seccion(titulo, cuerpo, null, `decidir-${clave}`));
+      continue;
+    }
+    if (!medidas) { out.push(seccion(titulo, `<p class="q-note">${esc(conFecha(m.decisiones, idioma))}</p>`, null, `decidir-${clave}`)); continue; }
+    const suyas = todas.filter((d) => d.fuente === def.fuente && d.rubro === def.rubro);
+    const fila = (d) => {
+      const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null].filter(Boolean).join(' · ');
+      return d.enlace && enlace(d.enlace)
+        ? `<li><a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a> · ${nombre}</li>`
+        : `<li>${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</li>`;
+    };
+    out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.fuenteDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
+  }
+  return out.join('');
+}
+
 function paginaInicio(ctx) {
   const idioma = idiomaDe(ctx);
   const T = (k, v) => t(idioma, k, v);
   const m = ctx.modelo || {};
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma });
-    return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma), T('inicio.ledeMantiene'));
+    return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');
@@ -473,7 +520,7 @@ const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, t(idiomaDe(
 
 module.exports = {
   hora, FRASES, frasesEn, fraseDe, conFecha, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
-  paginaInicio, paginaProyectos, paginaArnes, inicioJson,
+  paginaInicio, paginaProyectos, paginaArnes, inicioJson, listasDeDecision,
   paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSaliste, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
   idiomaDe, selectorDeIdioma,
 };
