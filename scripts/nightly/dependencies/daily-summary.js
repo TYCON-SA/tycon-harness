@@ -867,12 +867,46 @@ function lineaRetros(archivo) {
  * La línea de las ejecuciones (casos: scripts/tests/daily-summary.test.sh, 4.10-T31 a T34), de lo que deja la revisión nocturna en el clon de operaciones
  * (`--runs-review`): `inbox/runs-review/last-run.json` y las fichas de hoy en `pending/`. Agrupa por causa (regla y
  * categoría): un renglón por causa conocida y lo nuevo aparte, con el enlace de una ficha. Devuelve la lista de renglones.
- * Sólo números, códigos de regla y categorías con forma, y enlaces con forma: nada de texto de una conversación. Sin la
- * pasada de hoy dice que no corrió, nunca «0 con fallas».
+ * Cada causa sale con su nombre en castellano llano (`NOMBRES_CAUSA`), nunca con su código: el código queda en la ficha.
+ * Las causas con el mismo nombre se suman, y una categoría que la tabla no conoce toma el nombre general de su regla.
+ * Sólo números, nombres de la tabla y enlaces con forma: nada de texto de una conversación. Sin la pasada de hoy dice que
+ * no corrió, nunca «0 con fallas».
  */
 const TOPE_EJECUCIONES = 900;
 const MOTIVO_EJ = '[\\p{L}\\p{N} ().,:_-]{1,160}';
-const CAUSA_EJ = 'RR-[A-Z]{2,12}( [A-Za-z0-9:/._-]{1,80})?: \\d+';
+// el nombre de cada causa para quien lee el resumen: por regla, `_` es el de una categoría que la tabla no conoce
+const NOMBRES_CAUSA = {
+  'RR-ESCAPE': {
+    _: 'otro freno salteado',
+    TYCON_PR_BY_HAND: 'pedido armado a mano', PR_A_MANO: 'pedido armado a mano',
+    TYCON_NO_DEEP_REVIEW: 'pase adversarial salteado', ADVERSARIAL_SKIP_FORZADO: 'pase adversarial salteado',
+    ADVERSARIAL_RELAUNCH: 'pase adversarial relanzado',
+    TYCON_FULL_SUITE: 'suite completa forzada', FULL_SUITE_RUN: 'suite completa forzada',
+    GIT_NO_VERIFY: 'commit sin controles', '--no-verify': 'commit sin controles',
+    ATDD_BYPASS: 'pruebas primero salteadas', atddBypass: 'pruebas primero salteadas', ATDD_PREEDIT_BYPASS: 'pruebas primero salteadas',
+    MUTATION_BYPASS: 'prueba de mutación salteada', TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: 'prueba de mutación salteada',
+    TYCON_SAFETY_OFF: 'freno de seguridad apagado', TYCON_SESSION_GUARD_OK: 'freno de sesiones salteado',
+    TYCON_ENGRAM_MANIFEST_OK: 'freno de memoria salteado', STOP_AUTONOMY: 'cierre sin esperar a la persona',
+    DOD_EVIDENCE_MANUAL_WRITE: 'evidencia escrita a mano', SIZE_FORCED_LIGHT_WITH_CODE: 'pipeline liviano con código',
+  },
+  'RR-NODE': { _: 'guion del arnés que no arrancó', 'node-viejo': 'Node viejo', carga: 'guion del arnés que no cargó' },
+  'RR-HOOK': { _: 'aviso automático con error' },
+  'RR-APAGO': { _: 'pipeline pasado a manual' },
+  'RR-BANDERA': { _: 'paso del arranque que falló' },
+  'RR-CIERRE': {
+    _: 'cierre desconocido', abortada: 'ejecución abortada', abandonada: 'ejecución abandonada',
+    incoherente: 'cerrada con pendientes', derivada: 'cerrada con pendientes', 'sin-cerrar': 'ejecución sin cerrar',
+  },
+};
+const HOOK_TIEMPO = 'aviso automático que se pasó de tiempo';
+const hasOwnCausa = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const nombreCausa = (c) => {
+  const t = NOMBRES_CAUSA[c.regla];
+  if (c.regla === 'RR-HOOK' && typeof c.categoria === 'string' && c.categoria.endsWith('/tiempo')) return HOOK_TIEMPO;
+  return c.categoria !== null && hasOwnCausa(t, c.categoria) ? t[c.categoria] : t._;
+};
+const NOMBRES_VALIDOS = new Set([HOOK_TIEMPO, ...Object.values(NOMBRES_CAUSA).flatMap((t) => Object.values(t))]);
+const CAUSA_EJ = '([\\p{L} ]{3,60}): \\d+';
 const ENLACE_EJ = '(https?://[A-Za-z0-9.-]+(:\\d{1,5})?)?/corridas\\?abrir=[A-Za-z0-9_-]{1,64}';
 const EJ_NO_CORRIO = 'ejecuciones: la revisión NO CORRIÓ hoy';
 const EJ_ILEGIBLE = 'ejecuciones: ? (el estado de la revisión no se pudo leer)';
@@ -880,7 +914,7 @@ const EJ_CONSTANCIA = 'ejecuciones: ? (la constancia de las 04:00 no se pudo lee
 // la forma de cada renglón que puede salir: con ella se vuelve a leer la constancia en la edición de las 08:00
 const RENGLONES_EJ = [
   new RegExp(`^ejecuciones: (parcial — ${MOTIVO_EJ} · )?(\\d+ con fallas del arnés \\(de \\d+ miradas\\)|0 con fallas del arnés \\(\\d+ miradas\\))$`, 'u'),
-  new RegExp(`^· ${CAUSA_EJ}$`),
+  new RegExp(`^· ${CAUSA_EJ}$`, 'u'),
   /^· y \d+ causas conocidas más \(\d+ ejecuciones\)$/,
   new RegExp(`^🆕 ${CAUSA_EJ}( — ${ENLACE_EJ})?$`, 'u'),
   /^🆕 y \d+ causas nuevas más$/u,
@@ -892,6 +926,8 @@ const renglonEjValido = (l) => {
   if (typeof l !== 'string') return false;
   if (l === EJ_NO_CORRIO || l === EJ_ILEGIBLE) return true;
   if (!RENGLONES_EJ.some((re) => re.test(l))) return false;
+  const causa = new RegExp(`^(· |🆕 )${CAUSA_EJ}`, 'u').exec(l);
+  if (causa && !NOMBRES_VALIDOS.has(causa[2])) return false;
   const parcial = /^ejecuciones: parcial — (.*) · \d+ con fallas/u.exec(l);
   return !parcial || motivoFijo(parcial[1]);
 };
@@ -903,7 +939,7 @@ function lineaEjecuciones(dir, hoy) {
   if (!l || typeof l !== 'object' || Array.isArray(l)) return [EJ_ILEGIBLE];
   if (l.fecha !== hoy) return [EJ_NO_CORRIO];
   const entero = (n) => Number.isInteger(n) && n >= 0;
-  const causaValida = (c) => c && typeof c === 'object' && /^RR-[A-Z]{2,12}$/.test(c.regla)
+  const causaValida = (c) => c && typeof c === 'object' && hasOwnCausa(NOMBRES_CAUSA, c.regla)
     && (c.categoria === null || (typeof c.categoria === 'string' && /^[A-Za-z0-9:/._-]{1,80}$/.test(c.categoria)))
     && Number.isInteger(c.ejecuciones) && c.ejecuciones >= 1 && typeof c.nueva === 'boolean';
   if (!entero(l.miradas) || !entero(l.con_fallas) || !Array.isArray(l.causas) || !l.causas.every(causaValida)) return [EJ_ILEGIBLE];
@@ -923,13 +959,22 @@ function lineaEjecuciones(dir, hoy) {
       } catch { /* una ficha que no se lee no da enlace: el renglón va sin él */ }
     }
   } catch { /* sin pending/ no hay enlaces */ }
-  const nombre = (c) => (c.categoria === null ? c.regla : `${c.regla} ${c.categoria}`);
-  const enlaceDe = (c) => {
-    const f = fichasDeHoy.find((x) => x.reglas.some((r) => r && r.regla === c.regla && (r.categoria === undefined ? null : r.categoria) === c.categoria));
+  // las causas con el mismo nombre van juntas: suman sus ejecuciones, y el grupo es nuevo si alguna lo es
+  const grupos = new Map();
+  for (const c of l.causas) {
+    const n = nombreCausa(c);
+    const g = grupos.get(n) || { nombre: n, ejecuciones: 0, nueva: false, miembros: [] };
+    g.ejecuciones += c.ejecuciones; g.nueva = g.nueva || c.nueva; g.miembros.push(c);
+    grupos.set(n, g);
+  }
+  const ordenados = [...grupos.values()].sort((a, b) => b.ejecuciones - a.ejecuciones || (a.nombre < b.nombre ? -1 : a.nombre > b.nombre ? 1 : 0));
+  const nombre = (g) => g.nombre;
+  const enlaceDe = (g) => {
+    const f = fichasDeHoy.find((x) => x.reglas.some((r) => r && g.miembros.some((c) => r.regla === c.regla && (r.categoria === undefined ? null : r.categoria) === c.categoria)));
     return f ? ` — ${f.enlace}` : '';
   };
-  const conocidas = l.causas.filter((c) => !c.nueva);
-  const nuevas = l.causas.filter((c) => c.nueva);
+  const conocidas = ordenados.filter((c) => !c.nueva);
+  const nuevas = ordenados.filter((c) => c.nueva);
   const armarBloque = (k, n) => {
     const out = [cabecera, ...conocidas.slice(0, k).map((c) => `· ${nombre(c)}: ${c.ejecuciones}`)];
     if (conocidas.length > k) out.push(`· y ${conocidas.length - k} causas conocidas más (${conocidas.slice(k).reduce((s, c) => s + c.ejecuciones, 0)} ejecuciones)`);
@@ -1328,4 +1373,4 @@ if (require.main === module) {
   try { codigo = main(process.argv.slice(2)); } catch (e) { console.error(`🔴 resumen-diario: error inesperado del guion: ${recortar((e && e.message) || String(e), 200)}`); codigo = 1; }
   process.exit(codigo);
 }
-module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE };
+module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA };
