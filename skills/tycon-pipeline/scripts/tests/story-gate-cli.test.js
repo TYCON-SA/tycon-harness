@@ -890,3 +890,138 @@ test('7.30-T28 PipelineNextRiskClassYPortonDePlan_NombranLaMaqueta @story-7.30 @
   const n = pipe('s28c', ['next']);
   assert.match(n.stdout, /--mockup-approved/);
 });
+
+// ── el freno de edición invisible con un repo de git de verdad (8.93 C) ─────────────────────────────────────────────
+// Lanzan git: viven acá y no en story-gate.test.js, que corre en cada arranque y en máquinas sin git.
+function tmpStateGit() {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-'));
+  fs.mkdirSync(path.join(d, 'active'), { recursive: true });
+  return d;
+}
+function corridaAbierta({ pendiente = [4, 5, 6, 7, 8] } = {}) {
+  const stateDir = tmpStateGit();
+  const repo = fs.realpathSync(mkRepo(false));
+  fs.writeFileSync(path.join(stateDir, 'active', 's1.json'), JSON.stringify({
+    storyId: '9.9', repoPath: repo, sessionId: 's1', stepsCompleted: [0, 1, 2, 3], stepsPending: pendiente,
+  }));
+  return { stateDir, repo };
+}
+function conEnv(vars, fn) {
+  const antes = {};
+  for (const k of Object.keys(vars)) { antes[k] = process.env[k]; if (vars[k] === undefined) delete process.env[k]; else process.env[k] = vars[k]; }
+  try { return fn(); } finally {
+    for (const k of Object.keys(vars)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+  }
+}
+const SIN_REGISTRO = { TYCON_LEDGER_VISIBLE: undefined, TYCON_STORY_GATE: undefined, TYCON_NO_RUN_CHANGE: '1' };
+const INVISIBLE = /EDICIÓN INVISIBLE/;
+
+test('T32 Freno_BorrarYDeshacer_ArchivoQueGitNoSigue', () => {
+  // borrar un archivo que git no sigue (uno de prueba que la sesión creó) pasa y queda anotado
+  const conGit = corridaAbierta();
+  execFileSync('git', ['-C', conGit.repo, 'init', '-q']);
+  fs.writeFileSync(path.join(conGit.repo, 'src', 'probe.js'), 'x\n');
+  conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
+    assert.equal(bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: conGit.repo, tool_input: { command: 'rm src/probe.js' } }, { stateDir: conGit.stateDir, installedRoots: [] }), null);
+  });
+  const anotadas = fs.readFileSync(path.join(conGit.stateDir, 'console-writes', 's1.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(anotadas.some((l) => l.path === path.join(conGit.repo, 'src', 'probe.js') && l.kind === 'delete'), 'queda anotado');
+});
+
+// las formas que el pase adversarial encontró escapándose (o frenando de más), con un repo de git de verdad
+function corridaConGit() {
+  const c = corridaAbierta();
+  const g = (...a) => execFileSync('git', ['-C', c.repo, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@noreply', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@noreply', GIT_AUTHOR_DATE: '2026-10-22T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-22T10:00:00Z' } });
+  fs.rmSync(path.join(c.repo, '.git'), { recursive: true, force: true });
+  g('init', '-q');
+  fs.mkdirSync(path.join(c.repo, 'src', 'b'), { recursive: true });
+  fs.mkdirSync(path.join(c.repo, 'node_modules', 'x'), { recursive: true });
+  for (const f of ['src/a.ts', 'src/b/c.ts', 'src/a b.ts', 'package.json']) fs.writeFileSync(path.join(c.repo, f), 'x\n');
+  g('add', 'src', 'package.json');
+  g('commit', '-q', '-m', 'base');
+  return c;
+}
+
+test('T32 Freno_BorrarYDeshacer_FormasQueSeEscapaban', () => {
+  const { stateDir, repo } = corridaConGit();
+  const ev = (command, cwd = repo) => ({ tool_name: 'Bash', session_id: 's1', cwd, tool_input: { command } });
+  conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
+    for (const [cmd, cwd] of [
+      [`git -C ${repo} rm src/a.ts`, os.tmpdir()],
+      [`git -C ${repo} checkout -- src/a.ts`, os.tmpdir()],
+      [`git -C ${repo} restore src/a.ts`, repo],
+      ['/bin/rm src/a.ts'], ['\\rm src/a.ts'], ['command rm src/a.ts'], ['env X=1 rm src/a.ts'], ['timeout 5 rm src/a.ts'],
+      ['(rm src/a.ts)'], ['sudo -n rm src/a.ts'],
+      ['git checkout HEAD src/a.ts'], ['git checkout src/a.ts'],
+      ['rm -r src/b'], ['git rm -r src'], ['git restore .'], ['git checkout -- .'],
+      ['rm "src/a b.ts"'],
+    ]) {
+      const b = bash.handle(ev(cmd, cwd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+    // borrar código y node_modules juntos frena, y como el comando no corre, no anota nada
+    const antes = fs.existsSync(path.join(stateDir, 'console-writes', 's1.jsonl'));
+    assert.ok(bash.handle(ev('rm -rf node_modules src/a.ts'), { stateDir, installedRoots: [] }));
+    assert.equal(fs.existsSync(path.join(stateDir, 'console-writes', 's1.jsonl')), antes, 'un comando frenado no anota borrados');
+    // node_modules (git no sigue nada adentro) y cambiar de rama pasan
+    assert.equal(bash.handle(ev('rm -rf node_modules'), { stateDir, installedRoots: [] }), null);
+    assert.equal(bash.handle(ev('git checkout -b feat/x'), { stateDir, installedRoots: [] }), null);
+    assert.equal(bash.handle(ev('git checkout main'), { stateDir, installedRoots: [] }), null);
+    assert.equal(bash.handle(ev('git commit -m "rm src/a.ts; git restore ."'), { stateDir, installedRoots: [] }), null, 'texto entre comillas no es un comando');
+    assert.ok(bash.handle(ev('git restore --staged --worktree src/a.ts'), { stateDir, installedRoots: [] }), 'con --worktree el archivo cambia');
+    assert.equal(bash.handle(ev('git checkout --orphan nueva'), { stateDir, installedRoots: [] }), null);
+  });
+  // sin poder preguntarle a git, una carpeta frena del lado seguro; node_modules igual pasa
+  const sinGit = corridaAbierta();
+  fs.mkdirSync(path.join(sinGit.repo, 'src', 'b'), { recursive: true });
+  conEnv(SIN_REGISTRO, () => {
+    const e = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: sinGit.repo, tool_input: { command } });
+    assert.match((bash.handle(e('rm -r src/b'), { stateDir: sinGit.stateDir, installedRoots: [] }) || {}).block || '', /no pude preguntarle a git/);
+    assert.equal(bash.handle(e('rm -rf node_modules dist'), { stateDir: sinGit.stateDir, installedRoots: [] }), null);
+  });
+  // ninguna forma del comando traba el freno (cada parte del lector tiene una sola lectura posible)
+  for (const cmd of [`node ${'--a '.repeat(40)}x`, `node -e "${'\\'.repeat(20000)}`, `python3 -c '${"'".repeat(5000)}`]) {
+    const t0 = Date.now();
+    bash.destinosArmados(cmd);
+    assert.ok(Date.now() - t0 < 500, `tardó de más: ${cmd.slice(0, 30)}`);
+  }
+});
+
+test('T31 Freno_InterpreteConDestinoArmado_FormasQueSeEscapaban', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [
+      // el script por la entrada estándar, o con opciones antes de -e
+      `python3 - <<'PY'\nimport sys\nd = sys.argv[0]\nopen(d + '/a.py', 'w').write('x')\nPY`,
+      `node <<'JS'\nconst fs = require('fs'); const p = process.cwd(); fs.writeFileSync(p, 'x')\nJS`,
+      `node --no-warnings -e "const fs=require('fs'); fs.writeFileSync(p,'x')"`,
+      // un destino armado por una llamada anidada
+      `python3 -c "import os; open(os.path.join(d,'x.ts'),'w').write('x')"`,
+      `python3 -c "from pathlib import Path; Path(d).write_text('x')"`,
+      // un literal con algo concatenado después no es un literal
+      `node -e "const n='a.ts'; const p='src/'+n; require('fs').writeFileSync(p,'x')"`,
+      // con el -- de node, process.argv[1] es la palabra que sigue
+      `node -e "require('fs').writeFileSync(process.argv[1],'x')" -- src/a.ts`,
+    ]) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+    for (const cmd of [
+      // lo que otro comando sólo menciona no es un script
+      `git commit -m "node -e: writeFileSync(p) ahora frena"`,
+      `cat > notas.md <<'EOF'\nnode -e "fs.writeFileSync(p, x)"\nEOF`,
+      // python sin modo es lectura
+      `python3 -c "import sys; print(open(sys.argv[1]).read())" src/a.ts`,
+      // rutas que salen sólo de literales (medido: los más comunes de la segunda medición)
+      `python3 - <<'E'\nfor p in ['specs/a.yaml', 'specs/b.md']:\n    s = open(p).read()\n    open(p, 'w').write(s)\nE`,
+      `python3 - <<'E'\nimport os\np = os.path.expanduser('~/.tycon/x.json')\nopen(p, 'w').write('{}')\nE`,
+      `node -e "const path=require('path'); const p = path.join('specs', 'a.md'); require('fs').writeFileSync(p, 'x')"`,
+      `node - <<'E'\nconst fs = require('fs');\nfunction edit(p, pares) { let t = fs.readFileSync(p, 'utf8'); fs.writeFileSync(p, t); }\nedit('specs/a.md', []);\nedit("guides/b.md", []);\nE`,
+    ]) assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [] }), null, cmd);
+    for (const cmd of [
+      `python3 - <<'E'\nfor p in ['notas.md', 'src/a.ts']:\n    open(p, 'w').write('x')\nE`,
+      `python3 - <<'E'\ndef rep(p, pares):\n    open(p, 'w').write('x')\nrep('notas.md', [])\nrep(otro, [])\nE`,
+    ]) assert.ok(INVISIBLE.test((bash.handle(ev(cmd), { stateDir, installedRoots: [] }) || {}).block || ''), `una lista con código frena: ${cmd}`);
+  });
+});
