@@ -6,7 +6,7 @@ English · [Castellano](README.es.md)
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
-**See it without installing anything:** the [demo site](https://sitio-demo.purpleflower-d4c4861d.eastus.azurecontainerapps.io) opens without an account and shows the organization site with sample data from a made-up organization; it writes nothing. The first visit may take a few seconds while it wakes up.
+**See it without installing anything:** the demo site, [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo), opens without an account and shows the organization site with sample data from a made-up organization; it writes nothing. The first visit may take a few seconds while it wakes up.
 
 **A development cycle for coding agents: complete, consistent, controlled and adaptable.**
 

@@ -6,7 +6,7 @@
 
 https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
-**Miralo sin instalar nada:** el [sitio demo](https://sitio-demo.purpleflower-d4c4861d.eastus.azurecontainerapps.io) se abre sin cuenta y muestra el sitio de la organización con datos de ejemplo de una organización inventada; no escribe nada. La primera visita puede tardar unos segundos, mientras se despierta.
+**Miralo sin instalar nada:** el sitio demo, [https://is.gd/tyconharnessdemo](https://is.gd/tyconharnessdemo), se abre sin cuenta y muestra el sitio de la organización con datos de ejemplo de una organización inventada; no escribe nada. La primera visita puede tardar unos segundos, mientras se despierta.
 
 **Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.**
 
