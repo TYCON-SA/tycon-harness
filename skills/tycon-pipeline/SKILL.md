@@ -33,7 +33,7 @@ engram, re-corrida de advisors, verificación cross-repo).
    `context_file` que genera. Ventana deslizante de MÁXIMO 4 vivos (≤2 con el pase adversarial en vuelo; el
    paso manda sobre el `batch_rule`). Los triggers evalúan líneas AGREGADAS.
 3. `pipeline.js check-count` al final: valida contra el `expected` persistido leyendo los spawns REALES
-   del hook `on-advisor-run.js`. Falla cerrado sin spawns (override consciente `--trust-ran`).
+   del hook `on-advisor-run.js`. Falla cerrado sin spawns (`--trust-ran`: «autorizo trust-ran» de la persona).
 
 Matriz de triggers: `computeAdvisorSet()` de `pipeline.js` (única fuente). Detalle: `steps/step-07-reviewers.md`.
 - **Regla B**: antes del primer `Agent(...)` de «Revisores», anunciar el set (base + completitud +
@@ -115,7 +115,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   del gate en verde; las guías marcan `✅ verificado-por-mí` vs `🔲 para-que-lo-pruebe-el-user` (ACCOV-C7).
   Para UI, `prepare-commit` exige `checks.dod` verde con provenance `run-check`
   (`run-check dod -- npx playwright test <spec> --workers=1`); `set-check dod --manual` está rechazado;
-  escape consciente `--force-manual` (queda en gates.log). No-UI: `mark-dod-runtime-checked` con evidencia.
+  `--force-manual`: «autorizo force-manual» de la persona. No-UI: `mark-dod-runtime-checked` con evidencia.
 - **F.ii — matriz runtime por AC (DODRT-C6, HARD)**: `marker.js run-check acmatrix -- node
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `prepare-commit` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
@@ -180,7 +180,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `TYCON_STORY_SCAN_BUDGET_MS`; diagnóstico `node lib/story-discovery.js --doctor [--budget <ms>]`); aviso de guía de QA faltante o vieja; `lib/story-evidence-gate.js` avisa ACs
   sin correr. Portón preventivo: `TYCON_ATDD_PREEDIT_GATE=off`. Escape del gate del cierre: `complete-step implement --no-atdd`.
 - **marker.js**: `get` · `set` · `start-step <paso>` · `complete-step <paso>` · `start-warning` · `run-check <n> -- <cmd>` ·
-  `set-check <n> green --manual|--force-manual` · `set-flag <f> true` · `set-autonomous true` ·
+  `set-check <n> green --manual` · `set-flag <f> true` · `set-autonomous true` ·
   `snapshot-iter N` · `mark-adversarial-launched <runId> 4` · `mark-adversarial-result` ·
   `mark-adversarial-skipped --files …` · `promote-probe` · `mark-dod-runtime-checked '{evidencePath,verdict}'` ·
   `runtime-waiver <spec>` (TTY) · `adhoc set|get|clear|clear-orphan` · `adopt-session` · `list-all` · `find-by-story` ·
@@ -191,7 +191,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   obligatorio: `prepare-commit` lo exige) · `write-followups` · `dod-checker-needed` · `qa-readability` ·
   `timing-report`.
 - **Flags**: `--no-autonomous`/`--autonomous` · `--deep-review`/`--no-deep-review`/`--ultracode`/
-  `--deep-review-fable` · `--cost-tier lean|deep` · `--visual-plan` · `--force-full-reloop` · `--trust-ran` ·
+  `--deep-review-fable` · `--cost-tier lean|deep` · `--visual-plan` · `--force-full-reloop` ·
   `--out-of-order` · `--relaunch` · `--no-atdd` · `--no-mutation` · `--max-mutants N` · `--evidence-dir` ·
   `--brief` (sólo `start`: lo que el orquestador consume + la RUTA del JSON entero).
 - **Env**: `TYCON_PIPELINE_NO_AUTONOMOUS` · `STOP_AUTONOMY` · `TYCON_NO_DEEP_REVIEW` · `TYCON_5B_EARLY` ·

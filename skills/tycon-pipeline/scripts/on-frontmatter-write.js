@@ -86,6 +86,53 @@ function storyIsExempt(content) {
   return /^dod_runtime_exempt:\s*true\b/m.test(content);
 }
 
+// La exención como la reconoce el más ancho de los lectores que la conceden (este hook, on-pre-commit, el portón de CI,
+// runtime-matrix, pipeline.js): en cualquier renglón del archivo, con sangría, con o sin comillas y con lo que siga
+// (un comentario). Si este control mirara menos que ellos, una forma que no ve pasaría sin la frase y valdría igual.
+const EXENTA = /^\s*dod_runtime_exempt:\s*["']?true\b/m;
+const EN_IMPLEMENTACION = new Set(['in-progress', 'review', 'done']);
+// El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
+const estadoDe = (c) => { const m = /^status:\s*["']?([\w-]+)/m.exec(fmBlock(c)); return m ? m[1].toLowerCase() : ''; };
+
+/**
+ * La exención de la prueba en vivo que se agrega a una historia que ya está en implementación (pasa de ausente o
+ * `false` a `true`) la decide la persona: sin «autorizo dod_runtime_exempt» en su mensaje, `{ block }`; con la frase,
+ * pasa (null) y queda la constancia con la sesión. Mientras la historia se escribe (nueva, `draft`, `ready-for-dev`) no
+ * se pide: ahí la miran el validador y la revisión adversarial de la historia.
+ */
+function exencionNueva(event, oldContent, newContent) {
+  if (!oldContent || !EXENTA.test(newContent) || EXENTA.test(oldContent)) return null;
+  // el estado de antes o el de después: pasar la historia a implementación en la misma escritura no la saltea
+  const antes = estadoDe(oldContent);
+  const despues = estadoDe(newContent);
+  const estado = EN_IMPLEMENTACION.has(antes) ? antes : despues;
+  if (!EN_IMPLEMENTACION.has(estado)) return null;
+  const sid = event.session_id;
+  let r = { ok: false };
+  try {
+    r = require('./lib/escape-ok.js').escapeAutorizado({ variable: 'dod_runtime_exempt', sesion: sid, pedido: event.tool_use_id });
+  } catch { r = { ok: false }; }
+  const ok = r.ok === true;
+  const storyId = parseFrontmatter(newContent).story || '';
+  try {
+    const { rutaDeLaLib } = require('./lib/closing-record.js');
+    // el camino es el que dio la autorización: la persona o el reenvío de la sesión designada
+    require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', veredicto: ok ? 'escape' : 'bloqueo',
+      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.via || 'persona', relevo: r.relevo, sesion: sid, escape: 'dod_runtime_exempt' } : {}) });
+  } catch { /* ayuda, no evidencia */ }
+  if (ok) return null;
+  return {
+    block: [
+      `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`,
+      '',
+      'Eximir una historia que ya está en implementación lo decide la persona, no el agente: si quiere,',
+      'lo dice en su mensaje («autorizo dod_runtime_exempt»).',
+      'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
+      '(marker.js close-as-debt).',
+    ].join('\n') + '\n',
+  };
+}
+
 // 🔴 Qué es «evidencia de cierre» lo decide UNA función compartida. Un hook que aceptara cualquier
 // `<id>-*.md` (matriz y self-audit incluidos) dejaría pasar una story que el freno del commit y el
 // portón de CI rechazan después. Ver `lib/closing-evidence.js` (criterio y motivo de cada exclusión).
@@ -363,6 +410,10 @@ function handle(event) {
       : oldContent.replace(oldStr, () => newStr);
   }
 
+  // La exención nueva en una historia que ya está en implementación la decide la persona.
+  const exencion = exencionNueva(event, oldContent, newContent);
+  if (exencion) return exencion;
+
   // Exención explícita.
   if (storyIsExempt(newContent)) {
     const t = transicionDeStory(filePath, oldContent, newContent);
@@ -461,7 +512,7 @@ function handle(event) {
       pl.push('Por default corre los specs SCOPED a la story (two-tier 2026-06-09); la suite');
       pl.push('COMPLETA corre 1 vez en /tycon-merge-to-main. Exit !=0 si hay rojos → fix antes de done.');
       pl.push('');
-      pl.push('Escape único: dod_runtime_exempt: true (solo si la story NO tiene UI/E2E reales).');
+      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona («autorizo dod_runtime_exempt»).');
       pl.push('');
       pl.push('Caso disparador: Ceibo Stories 4.2 + 4.3.1 (2026-05-20) — E2E declarados "PASS"');
       pl.push('sin correrse / con mocks. Freshness agregada 2026-06-09 (evidencia vieja');
@@ -493,9 +544,8 @@ function handle(event) {
   lines.push('Acciones (en orden de preferencia):');
   lines.push('  (a) Invocar tycon-dod-runtime-checker advisor (auto-captura evidencia).');
   lines.push('  (b) Ejecutar E2E specs + capturar log → escribir manualmente el archivo.');
-  lines.push('  (c) Si la story NO tiene UI/E2E reales → agregar al frontmatter:');
-  lines.push('        dod_runtime_exempt: true');
-  lines.push('        dod_runtime_exempt_reason: "<razón concreta>"');
+  lines.push('  (c) Si la story NO tiene UI/E2E reales: eximirla de la prueba en vivo lo decide la persona,');
+  lines.push('      no el agente (en una historia ya en implementación, con «autorizo dod_runtime_exempt» en su mensaje).');
   lines.push('');
   lines.push('Caso disparador: Ceibo Story 4.2 2026-05-20 — Claude marcó done sin');
   lines.push('ejecutar E2E. Este hook es la infra que lo enforce. Docs:');

@@ -510,6 +510,12 @@
       "requiere": []
     },
     {
+      "__nota": "el permiso de escribir evidencia a mano y la exención de la prueba en vivo los autoriza la persona; los avisos no le dan al agente la receta de los escapes (story 8.96).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/pipeline-escape.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-headings.test.js",
       "requiere": []

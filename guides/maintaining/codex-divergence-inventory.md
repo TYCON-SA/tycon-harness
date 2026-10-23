@@ -347,6 +347,20 @@ del plazo decide igual que del lado Claude, contando los registros de verdad del
 cuando la persona contesta. Sin `UserPromptSubmit` registrado, la vuelta la detecta el proceso del plazo por el hilo:
 cierra con `answered` o `kept-working` y no avisa. Caso: T19 de `scripts/tests/wait-notice.test.js`.
 
+## La cita de la aprobación del plan (ESC-C6) — ③ asimetría DECLARADA (2026-10-22)
+
+**Claude Code**: el freno de seguridad lee la conversación guardada y frena `marker.js complete-step approve-plan
+--approved "<cita>"` (y `--mockup-approved`, `approve-mockup --approved`) si la cita no está en un mensaje de la
+persona, ni es la opción que eligió en la pregunta con opciones, ni la reenvió la sesión designada.
+
+**Codex**: no guarda una conversación que el freno pueda leer. ESC-C6 **no mira** y deja la constancia
+`sin-conversacion` en `frenos.jsonl`, como antes de la regla. Frenar ahí dejaría a Codex sin poder aprobar ningún plan,
+porque no hay de dónde sacar la cita.
+
+**Lo que Codex NO cubre, dicho y no prometido**: que la cita de la aprobación sea de la persona. Casos: T12 de
+`scripts/tests/safety-escape.test.js` (sin conversación pasa con la constancia), y en el banco de controles
+`esc-c6-cita-inventada-frena` (salteado bajo Codex, con su motivo) y `esc-c6-sin-conversacion-no-mira`.
+
 ## El índice de guías en el AGENTS.md — ① resuelto (2026-10-22)
 
 **Claude Code**: el `CLAUDE.md` global carga el índice de guías (`INDEX.md`) con una línea `@`, que Claude Code expande

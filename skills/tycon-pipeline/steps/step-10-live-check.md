@@ -120,13 +120,11 @@ y antes de «Preparar el commit». No es opcional: el marker.js bloquea
 El step se puede skipear ÚNICAMENTE si una de estas condiciones se cumple
 verificablemente (no por inferencia conversacional):
 
-1. **Story exempta declarada en frontmatter**: el spec tiene
-   ```yaml
-   dod_runtime_exempt: true
-   dod_runtime_exempt_reason: "<razón concreta>"
-   ```
-   Solo aceptable cuando la story NO toca UI ni endpoints (puro docs,
-   migraciones DB SOLAS, refactor interno sin surface, etc).
+1. **Story exempta declarada en frontmatter**: el spec trae `dod_runtime_exempt` en verdadero, con su
+   `dod_runtime_exempt_reason: "<razón concreta>"`. Solo aceptable cuando la story NO toca UI ni endpoints (puro
+   docs, migraciones DB SOLAS, refactor interno sin surface, etc). La exención la decide la persona: agregarla a una
+   story que ya está en implementación pide «autorizo dod_runtime_exempt» en su mensaje (el hook del encabezado y el
+   freno de seguridad frenan sin la frase).
 
 2. **Story con scope puramente backend integration tests** y los tests
    integration ya corren contra DB real con DatabaseFixture. En ese caso
@@ -167,7 +165,7 @@ Pre-condiciones evaluadas (MVP):
 - **PRE-1**: evidence file existe en `<evidence-dir>/<storyId>-*.md` (el repo de la story, o alguno de sus compañeros declarados).
 - **PRE-2**: si story declara E2E reales (`FullUI-`/`E2E-`/`tests_done_playwright_spec`/`tests/e2e/`), el evidence file debe contener bloque `## Playwright Run` con substrings literales `verdict=PASS` + `failed=0` (regex del hook).
 
-Skip-cases: target ya == current / target NO es review-done / `dod_runtime_exempt: true` / story sin runtime tests → `ready_to_edit: true` con razón.
+Skip-cases: target ya == current / target NO es review-done / story exenta (la exención la decidió la persona) / story sin runtime tests → `ready_to_edit: true` con razón.
 
 Por qué: sin preflight, cada precondition que falta cuesta un ciclo de hook-block entre «Probar en vivo» y «Preparar el commit». Con preflight: una llamada upfront identifica TODAS las preconditions + cómo satisfacerlas.
 
@@ -472,8 +470,8 @@ corriendo el gate. Se deshace con `e2e-setup.js undo --repo <repo>`.
 
 ### Parte 3, escape — Cuándo se permite NO correr el gate (estrictísimo)
 
-El ÚNICO escape es `dod_runtime_exempt: true` en frontmatter (story sin UI/E2E
-reales — ver Skip-conditions arriba). **El viejo escape `review-pending-smoke`
+El ÚNICO escape es la exención en el frontmatter (story sin UI/E2E reales — ver Skip-conditions arriba), que la
+decide la persona. **El viejo escape `review-pending-smoke`
 queda ELIMINADO**: era el loophole por el que los E2E "quedaban pendientes" y
 nunca se corrían. Si el stack no levanta, el fix es **levantar el stack**, no
 diferir el gate. Una story que toca UI NO pasa a `done` sin gate Playwright verde
@@ -527,9 +525,10 @@ agente sobre esos `.advisors/dod-runtime/*.md`; la escriben SOLO los scripts (el
 proyecto / `step-7c-macro.js`). **EXCEPCIÓN PERMANENTE: el self-audit (`*-self-audit*.md`, ACCOV-C8) SÍ lo
 escribe el agente** — es su auto-revisión estructurada (no un verdict de test fakeable), su
 honestidad la cierra la convergencia C10 (el meta-audit C9 se retiró el 2026-09-16). NO requiere `touch` (fix
-2026-06-14). El override one-shot (`touch ~/.claude/.tycon-pipeline/ALLOW_DOD_EVIDENCE_WRITE`,
-ejecutado por el **USER**, consumido + logueado en `bypass.log`) queda SOLO para el caso raro de
-escribir a mano evidencia de run (ej: evidencia vacua de E2E diferidos a un pipeline pending).
+2026-06-14). El permiso de una escritura a mano de evidencia de run (el archivo `ALLOW_DOD_EVIDENCE_WRITE`,
+consumido + logueado en `bypass.log`) queda SOLO para el caso raro (ej: evidencia vacua de E2E diferidos a un
+pipeline pending) y lo decide la persona: lo crea ella y lo dice en su mensaje («autorizo
+ALLOW_DOD_EVIDENCE_WRITE»). Sin esa autorización el guardián no lo consume.
 
 **⏱ Freshness**: evidencia Playwright verde con mtime ANTERIOR al último cambio de
 código de la corrida = **STALE** → el hook `on-frontmatter-write.js` la rechaza.
@@ -621,7 +620,7 @@ apps dieron 0 — la garantía anti-self-report no se afloja.
 
 `set-check dod green --manual` queda SOLO para excepciones: veredicto COMPUESTO
 que no es un único comando (ej: DODRT-C1 curl real + gate e2e combinados) o story
-con `dod_runtime_exempt: true` (la exención cuenta como satisfecha, no como rojo).
+exenta por la persona (la exención cuenta como satisfecha, no como rojo).
 Queda marcado `provenance=manual` y logueado — «Preparar el commit» lo anuncia como "check no
 verificado mecánicamente".
 
@@ -884,7 +883,7 @@ actualizado → avanzar a «Preparar el commit».
 **`PARTIAL` / `review-pending-smoke` ELIMINADO** (2026-05-20): ya no existe el
 estado intermedio "E2E pendientes". O el gate Playwright corre verde (scoped en
 este step; full en `/tycon-merge-to-main`), o el gate bloquea. La única salida
-sin correr E2E es `dod_runtime_exempt: true` (story sin UI).
+sin correr E2E es la exención de la story (sin UI), que decide la persona.
 
 ## Hooks que enforzan este step
 

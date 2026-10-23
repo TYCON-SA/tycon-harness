@@ -694,7 +694,7 @@ function revisar({ repo, base, staged }) {
       destino.push({ archivo: rel, story: idBruto, regla: 'sin-evidencia-de-cierre',
         mensaje: !prefDod
           ? `pasa a \`${estadoNuevo}\` y no pude calcular la clave de la story ${idBruto} (${rel}) para buscar su evidencia de cierre: sin clave no se da evidencia por buena (el motivo está en el aviso del portón). No es «no hay evidencia»: es «no la pude buscar» — no lo tapes con \`dod_runtime_exempt\`.`
-          : `pasa a \`${estadoNuevo}\` y no hay \`.advisors/dod-runtime/${prefDod}*.md\` en el repo. Si de verdad no hay nada que verificar corriendo la app, declaralo: \`dod_runtime_exempt: true\` + su razón.` });
+          : `pasa a \`${estadoNuevo}\` y no hay \`.advisors/dod-runtime/${prefDod}*.md\` en el repo. Si de verdad no hay nada que verificar corriendo la app, eximirla lo decide la persona («autorizo dod_runtime_exempt» en su mensaje), con su razón en la story.` });
     }
 
     // (3) constancia de que los revisores auditaron la story, EN ESTE repo

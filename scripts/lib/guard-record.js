@@ -74,8 +74,10 @@ const FRENOS = {
   // story a `review`/`done` (una línea por story) o una escritura a `.advisors/dod-runtime/*.md`.
   // Su número —cuántas evidencias rechazaron— es el que dice si el cierre recortado alcanza.
   'on-frontmatter-write': {
-    reglas: ['evidencia-ausente', 'evidencia-vieja', 'e2e-gate-rojo', 'evidencia-ok', 'sin-superficie-runtime', 'exenta'],
-    veredictos: ['bloqueo', 'paso'],
+    // `exencion-nueva`: la exención de la prueba en vivo agregada a una historia en implementación (frena sin la frase de
+    // la persona; con ella, `escape` con la sesión)
+    reglas: ['evidencia-ausente', 'evidencia-vieja', 'e2e-gate-rojo', 'evidencia-ok', 'sin-superficie-runtime', 'exenta', 'exencion-nueva'],
+    veredictos: ['bloqueo', 'paso', 'escape'],
   },
   // `aviso` es la transición interna `review → done`: hoy avisa en vez de frenar (TYCON_REVIEW_A_DONE).
   'on-pre-commit': {
@@ -187,11 +189,13 @@ function anotarFallo(home, motivo) {
  */
 // Por qué camino se autorizó un escape (lista cerrada) y, si vino por relevo, qué sesión lo reenvió: el rol que declara
 // el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea se escribe igual).
-const VIAS = ['persona', 'reenvio', 'ambiente'];
+// `sin-conversacion`: la regla no pudo mirar porque la herramienta no guarda la conversación (Codex) y dejó pasar.
+const VIAS = ['persona', 'reenvio', 'ambiente', 'sin-conversacion'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
-const ESCAPES_CON_NOMBRE = ['set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda'];
+const ESCAPES_CON_NOMBRE = ['set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
+  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt'];
 const SESION = /^[\w-]{1,80}$/;
 
 function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape } = {}) {

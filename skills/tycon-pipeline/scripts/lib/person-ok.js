@@ -166,15 +166,18 @@ const letras = (s) => (String(s).match(/[\p{L}\p{N}]/gu) || []).length;
 // `desde`: la hora a partir de la cual vale el ok (el arranque de la corrida, o la muestra del crítico). Una frase
 // vieja del dev no aprueba lo que todavía no existía. `juzgar(texto)`: si viene, el mensaje entero que trae la cita
 // tiene que pasarlo (null); si no, su motivo vuelve como `rechazo` (el del mensaje más nuevo).
-function buscar(cita, candidatos, desde, juzgar) {
+// `entero`: una cita más corta que `CITA_MINIMA` (un «ok», un «dale») vale si es el mensaje entero; sin él, no vale.
+function buscar(cita, candidatos, desde, juzgar, entero = false) {
   const c = norm(cita);
-  if (letras(c) < CITA_MINIMA) return { encontrada: false, corta: true };
+  const corta = letras(c) < CITA_MINIMA;
+  if (corta && (!entero || !letras(c))) return { encontrada: false, corta: true };
   const t0 = desde ? Date.parse(desde) : NaN;
   let vieja = false;
   let rechazo = null;
   // la última vez que se dijo: la hora que se anota es la del ok más reciente
   for (let i = candidatos.length - 1; i >= 0; i--) {
-    if (!norm(candidatos[i].texto).includes(c)) continue;
+    const dicho = norm(candidatos[i].texto);
+    if (corta ? dicho !== c : !dicho.includes(c)) continue;
     const t = Date.parse(candidatos[i].cuando || '');
     if (!Number.isNaN(t0) && !(t >= t0)) { vieja = true; continue; }
     const motivo = typeof juzgar === 'function' ? juzgar(candidatos[i].texto) : null;
@@ -198,7 +201,7 @@ function citaDeLaPersona(cita, opts = {}) {
   // `sinPegado`: lo que pegó no cuenta como dicho por ella (la designación de la sesión que reenvía)
   const propios = textosDeUsuario(conv.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
     .map((t) => ({ texto: escritoPorLaPersona(opts.sinPegado ? sinTextoPegado(t.texto) : t.texto), cuando: t.cuando })).filter((t) => t.texto !== null);
-  return { legible: true, archivo: conv.archivo, ...buscar(cita, propios, opts.desde, opts.juzgar) };
+  return { legible: true, archivo: conv.archivo, ...buscar(cita, propios, opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
 }
 
 /**
@@ -259,7 +262,39 @@ function citaReenviada(cita, sesion, opts = {}) {
     const m = typeof o.body === 'string' ? { cuerpo: o.body } : mensajeDeOtraSesion(t.texto);
     if (m && !RE_AJENO.test(m.cuerpo)) reenviados.push({ texto: m.cuerpo, cuando: t.cuando });
   }
-  return { legible: true, archivo: conv.archivo, ...buscar(cita, reenviados, opts.desde, opts.juzgar) };
+  return { legible: true, archivo: conv.archivo, ...buscar(cita, reenviados, opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
+}
+
+/**
+ * Las respuestas que la persona eligió (o escribió en «Otra») en una pregunta con opciones de la sesión principal: el
+ * resultado estructurado (`toolUseResult.answers`) de un registro que contesta un `tool_use` de `AskUserQuestion` del
+ * agente. Lo escribe Claude Code cuando la persona contesta en la pantalla; un texto del agente que lo imite no es eso.
+ */
+function respuestasDeOpciones(registros) {
+  const preguntas = new Set();
+  for (const r of registros) {
+    const c = r && r.type === 'assistant' && !r.isSidechain && r.message && r.message.content;
+    if (Array.isArray(c)) for (const x of c) if (x && x.type === 'tool_use' && x.name === 'AskUserQuestion' && x.id) preguntas.add(x.id);
+  }
+  const out = [];
+  for (const r of registros) {
+    const res = r && r.type === 'user' && !r.isSidechain && r.toolUseResult;
+    if (!res || typeof res.answers !== 'object' || !res.answers) continue;
+    const c = r.message && Array.isArray(r.message.content) ? r.message.content : [];
+    if (!c.some((x) => x && x.type === 'tool_result' && preguntas.has(x.tool_use_id))) continue;
+    // una pregunta de selección múltiple guarda la lista de las opciones elegidas: cada una cuenta
+    for (const v of Object.values(res.answers)) {
+      for (const x of Array.isArray(v) ? v : [v]) if (typeof x === 'string') out.push({ texto: x, cuando: r.timestamp || null });
+    }
+  }
+  return out;
+}
+
+/** ¿La cita es una respuesta que la persona eligió en una pregunta con opciones? `{ legible, encontrada, … }`. */
+function citaDeOpciones(cita, opts = {}) {
+  const conv = leerConversacion(opts);
+  if (!conv.legible) return { legible: false, motivo: conv.motivo, encontrada: false };
+  return { legible: true, archivo: conv.archivo, ...buscar(cita, respuestasDeOpciones(conv.registros), opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
 }
 
 // Lo que la persona ve de una llamada a herramienta: la pregunta con opciones (su texto, cada opción y su vista previa) y
@@ -306,4 +341,4 @@ function planEnLaConversacion(planTxt, opts = {}) {
   return { legible: true, mostrado: vistos * 2 >= renglones.length };
 }
 
-module.exports = { CITA_MINIMA, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, planEnLaConversacion };
+module.exports = { CITA_MINIMA, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, citaDeOpciones, planEnLaConversacion };
