@@ -150,7 +150,7 @@ const TEXTOS = {
   'proyectos.sinFecha': { es: 'sin fecha', en: 'no date' },
   'proyectos.sinFoto': { es: 'sin foto de sus proyectos', en: 'no snapshot of its projects' },
   'proyectos.estimaciones': { es: 'Estimaciones', en: 'Estimates' },
-  'proyectos.est.lede': { es: 'Por épica: el rango que se le dio, la suma del plan, la suma de lo vigente (el ajuste de cada historia, o su plan) y las horas reales de lo cerrado. Lo real siempre va en horas.', en: 'Per epic: the range it was given, the plan total, the current total (each story\'s adjustment, or its plan) and the actual hours of what was closed. Actual time is always in hours.' },
+  'proyectos.est.lede': { es: 'Por épica: el rango dado, el plan, lo vigente (el ajuste o el plan de cada historia) y las horas reales de lo cerrado.', en: 'Per epic: the range given, the plan, the current total (each story\'s adjustment or plan) and actual hours of what closed.' },
   'proyectos.est.col.producto': { es: 'Producto', en: 'Product' },
   'proyectos.est.col.repoYEpica': { es: 'Repo y épica', en: 'Repo and epic' },
   'proyectos.est.col.rango': { es: 'Rango', en: 'Range' },

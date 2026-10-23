@@ -536,11 +536,6 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   tope, un crítico de seguridad o de datos lo decide una persona y lo demás queda como deuda visible. También se suman
   reglas a las que cuentan como seguridad o datos. Un repo puede ajustar el tope en su `.tycon/advisors.yaml`. Queda en
   `team-repos.json` → `review`, en el repo del perfil. Lo revisa quien mantiene.
-- **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
-  1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
-  unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. Queda en `team-repos.json` →
-  `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
-  mantiene.
 - **Tu tecnología**: lo que el arnés ya reconoce, las terminaciones de archivo que tu equipo suma como código, las
   herramientas de prueba (las de fábrica, las que tu organización cambió o agregó) y tres reglas: el estilo de los
   nombres de prueba, qué pantallas piden una prueba en el navegador y el idioma de la aplicación. Sin decir nada, el
@@ -575,6 +570,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   también `requires.harness` del perfil a la primera versión que los lee.
 - **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
   Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
+  mantiene.
+- **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
+  1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
+  unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. Queda en `team-repos.json` →
+  `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
 
 ![Cómo trabaja el agente](sitio-de-la-organizacion/capturas/configuracion-claude.png)

@@ -557,11 +557,6 @@ be, to copy it and open the request by hand.
   2). At the cap, a security or data critical is decided by a person and the rest stays as visible debt. You can also add
   rules that count as security or data. A repo can adjust the cap in its `.tycon/advisors.yaml`. It lives in
   `team-repos.json` → `review`, in the profile repo. A maintainer reviews it.
-- **Estimates** (*Estimaciones*): the unit your organization estimates in (hours, days or points), the hours in a
-  working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
-  calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
-  It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
-  reads the key. A maintainer reviews it.
 - **Your technology** (*Tu tecnología*): what the harness already recognizes, the file endings your team adds as code,
   the test tools (the built-in ones, and the ones your organization changed or added) and three rules: the test name
   style, which screens need a browser test and the application's language. Without saying anything, the harness does
@@ -600,6 +595,11 @@ be, to copy it and open the request by hand.
 - **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
+- **Estimates** (*Estimaciones*): the unit your organization estimates in (hours, days or points), the hours in a
+  working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
+  calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
+  It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
+  reads the key. A maintainer reviews it.
 
 ![How the agent works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 
