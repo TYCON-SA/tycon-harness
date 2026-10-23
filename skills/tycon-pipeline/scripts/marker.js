@@ -414,6 +414,9 @@ function cmdSet(payloadJson) {
       mockupApproval, mockupDecision,
       // el tamaño de la corrida (y su forzado a mano) es de la story.
       size, size_reason, estimate_min, estimate_source, sizeForced,
+      // el modelo y la sesión de Codex son de la corrida: heredados, los revisores de la story nueva correrían con el
+      // proveedor de la anterior
+      sessionModel, codexSession,
       ...carryOver
     } = existing;
     console.error(
@@ -531,6 +534,10 @@ function cmdSet(payloadJson) {
       for (const k of ['size', 'size_reason', 'estimate_min', 'estimate_source']) if (pick(k) !== undefined) out[k] = pick(k);
       return out;
     })(),
+    // el modelo de la sesión y, en Codex, su proveedor: los anota `pipeline.js start` (los usan el registro de revisores y
+    // `reviewers-run`)
+    ...(payload.sessionModel !== undefined ? { sessionModel: payload.sessionModel } : {}),
+    ...(payload.codexSession !== undefined ? { codexSession: payload.codexSession } : {}),
   };
   // Un marcador que no es de ningún esquema (números y nombres mezclados, o un paso que la tabla no conoce) no se
   // escribe: los portones no sabrían si el plan está aprobado.

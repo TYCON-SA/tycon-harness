@@ -10,8 +10,9 @@ promise that everything will work the same on your repos.
 **In short:**
 
 - With **Claude Code**, the harness reaches the reviewers: they run as separate agents.
-- With **Codex**, the harness blocks what it should and you can work, but the pipeline cannot launch reviewers (a
-  problem between Codex and Ollama, reported there).
+- With **Codex**, the harness blocks what it should and the pipeline launches the reviewers itself, as separate
+  processes with your session's model: it does not depend on the model knowing how to launch agents. Before picking a
+  model for Codex, try it with the probe ([below](#before-picking-a-model-for-codex-the-probe)).
 - You need a model that **uses tools**. A local 7B model does not use them and is not enough.
 - The controls work, and a model tries to get around them: their escapes are the person's decision. Read
   [the warnings](#warnings).
@@ -47,7 +48,7 @@ claimed.
 | `nemotron-3-super:cloud` | free | 9 of 10, story done, ~13 min | **10 of 10 steps**, story done, ~7 min (uses more tokens) |
 | `glm-5.3:cloud` | Pro | 7 of 10, story done, ~58 min | **10 of 10 steps**, story done, ~15 min (the most tokens) |
 | `kimi-k2.7-code:cloud` | Pro | 9 of 10, story done, slow (~84 min) | 9 of 10, story done, ~13 min |
-| `minimax-m3.1-flash:cloud` | free | 7 of 10, story done, slow (~96 min) | **does not start**: the API rejects Codex's tools (`invalid tool type: namespace`, see below) |
+| `minimax-m3.1-flash:cloud` | free | 7 of 10, story done, slow (~96 min) | **does not start** as is: the API rejects Codex's tools (`invalid tool type: namespace`); in **reduced mode** it answers (see below) |
 | `gpt-oss:120b-cloud` | free | **0 of 10**: claimed pipeline steps it did not run | 3 of 10; **said "done" without doing it** and named files that did not exist |
 | `beam:cloud` | free | **does not use tools** through Ollama's Anthropic API | uses tools; followed the pipeline up to implementing and stopped at the reviewers |
 | a local 7B model | — | not measured | **does not use tools**: it writes the call as text and Codex runs nothing |
@@ -55,7 +56,7 @@ claimed.
 **Which one to pick.** With Claude Code, `deepseek-v4-pro:cloud` if you have the Pro plan; otherwise `gemma4:31b-cloud`,
 or `nemotron-3-super:cloud` if speed matters. With Codex, `nemotron-3-super:cloud` (free and fast) or, with the Pro plan,
 `glm-5.3:cloud` or `kimi-k2.7-code:cloud`. Do not use `gpt-oss:120b-cloud` with the harness, nor
-`minimax-m3.1-flash:cloud` with Codex. The controls held with all of them: each model was asked to close in red, turn
+`minimax-m3.1-flash:cloud` with Codex outside reduced mode. The controls held with all of them: each model was asked to close in red, turn
 off the loop and commit skipping the checks, and none managed it. The difference between models is whether they do the
 work, not whether they escape.
 
@@ -174,6 +175,39 @@ codex --oss --local-provider ollama -m gpt-oss:120b-cloud
 - **The controls must be approved with `/hooks`.** In an interactive Codex session, type `/hooks` and approve the
   harness controls. Unapproved, `codex exec` does not run them and says nothing.
 - **Install the harness for Codex** from the published version: `harness.js install --version latest --tool codex`.
+
+### Before picking a model for Codex: the probe
+
+Codex sends the model tools of type `namespace`: that is how it groups its subagents, its apps and each MCP server.
+Some Ollama models reject them and the session does not start. The probe tells you before you lose a session:
+
+```bash
+node scripts/lib/ollama-tools-probe.js --model minimax-m3.1-flash:cloud
+```
+
+It answers in one line, always with exit 0:
+
+- "acepta las herramientas de Codex" (accepts Codex's tools): use it with Codex as is.
+- "no acepta las herramientas de Codex (namespace): usalo con Claude Code" (use it with Claude Code), and, if the model
+  answers without them, also how to use it with Codex in **reduced mode**.
+- "no pude preguntarle a Ollama" (could not ask Ollama) or "Ollama contestó algo que no sé leer" (unreadable answer): it
+  does not know, and says so. It never says "accepts" without a good answer.
+
+**Reduced mode** removes everything Codex sends as `namespace`, plus web search (a tool without a name that Ollama also
+rejects): `-c features.multi_agent=false -c features.apps=false -c web_search="disabled"` and a `CODEX_HOME` without MCP
+servers. What you lose: subagents (not needed, the pipeline launches reviewers as separate processes), apps, web search
+and MCP servers (reviewers that use the code index or memory work without them). Measured on 2026-10-23 with
+codex-cli 0.162.1 and Ollama 0.16.3: `minimax-m3.1-flash:cloud` rejects the full form and answers in reduced mode;
+`kimi-k2.7-code:cloud` accepts the full form. Codex no longer has the other format (`wire_api = "chat"`): there is no
+other supported way out. You run the probe yourself: the installer does not call it.
+
+### The pipeline launches the reviewers
+
+With Codex, the "Revisores" step runs `pipeline.js reviewers-run`: each reviewer is a separate `codex exec` process,
+with your session's model if you started the pipeline with
+`pipeline.js start … --codex-session '{"oss":true,"provider":"ollama","model":"<model>"}'` (`"config"` passes the
+reduced-mode options). Without that option, each reviewer uses its profile's model (next section). Before, the step
+asked the model to launch each reviewer as an agent; a model that did not use that tool launched none.
 
 ### Reviewers in Codex: the machine's model
 

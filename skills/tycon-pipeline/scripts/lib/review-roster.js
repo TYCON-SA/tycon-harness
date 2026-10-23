@@ -269,6 +269,17 @@ function modelFromTranscript(transcriptPath) {
   return null;
 }
 
+const NOT_MEASURED = 'no medido';
+
+/**
+ * Modelo del implementador con la evidencia del arnés primero: el que `pipeline.js start --session-model` dejó en el
+ * marcador; si falta, el de la conversación (Codex no la deja leer); sin ninguno, «no medido», nunca uno adivinado.
+ */
+function implementerModel({ marker, transcriptPath } = {}) {
+  if (marker && typeof marker.sessionModel === 'string' && marker.sessionModel.trim()) return marker.sessionModel.trim();
+  return modelFromTranscript(transcriptPath) || NOT_MEASURED;
+}
+
 /**
  * Arma el roster desde las líneas del ledger de la sesión. PURA y testeable.
  *
@@ -386,7 +397,9 @@ function build(o) {
     implementer: {
       kind: 'sesion-principal',
       session_id: o.sessionId || null,
-      model: o.implementerModel || (o.previo && o.previo.implementer && o.previo.implementer.model) || null,
+      // «no medido» no tapa lo que ya sabía el registro anterior: se queda sólo si no hay nada mejor
+      model: (o.implementerModel && o.implementerModel !== NOT_MEASURED ? o.implementerModel : null)
+        || (o.previo && o.previo.implementer && o.previo.implementer.model) || o.implementerModel || null,
     },
     reviewers,
     iterations,
@@ -515,5 +528,5 @@ module.exports = {
   nombreCanonico,
   TRAMO, separarAnotacion, tramoDeFirmante, firmantesValidos, esFuenteSintetica,
   ROSTER_FILE, VERSION,
-  rosterPath, resolveModel, modelFromTranscript, treeShaDe, build, read, write, validate,
+  rosterPath, resolveModel, modelFromTranscript, implementerModel, NOT_MEASURED, treeShaDe, build, read, write, validate,
 };

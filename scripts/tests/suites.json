@@ -861,6 +861,18 @@
       "requiere": []
     },
     {
+      "__nota": "bajo Codex los revisores los lanza el pipeline (pipeline.js reviewers-run): un codex de mentira al frente del PATH, la ventana, la sesión de Ollama, la constancia que cuenta check-count, el tope y el relanzado. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/codex-reviewers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los cierres del turno deciden con la evidencia del arnés (mensaje del evento, marcador, registro de ediciones, disco) y no con la conversación: la historia afirmada, el modelo del implementador y la línea de pasos pendientes.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/closing-evidence-codex.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/validator-record.test.js",
       "requiere": []
@@ -2488,6 +2500,12 @@
       "__nota": "story 8.23 (tanda C, AC 22): scripts/setup/agents-md-blocks.js — las reglas del arnés en ~/.codex/AGENTS.md desde los bloques, entre sus marcas: la variante de Codex, lo de la persona fuera de las marcas byte a byte, sin leer el CLAUDE.md, sin @import, las integraciones y el perfil, «no se pudo saber» no es «apagada», idempotente y --check sin escribir. Todo en el temporal.",
       "raiz": "arnes",
       "ruta": "tests/agents-md-blocks.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la sonda de Ollama (scripts/lib/ollama-tools-probe.js): con un Ollama de mentira local, dice si un modelo acepta las herramientas namespace de Codex, sólo el modo reducido o nada, y nunca «acepta» ante una conexión cerrada o una respuesta ilegible; y las guías nombran la versión de Codex medida.",
+      "raiz": "arnes",
+      "ruta": "tests/ollama-tools-probe.test.js",
       "requiere": []
     },
     {
