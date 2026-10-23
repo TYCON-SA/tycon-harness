@@ -158,5 +158,40 @@ grep -q "ingreso único" "$TMP/err9.txt" \
   && ok "…y lo dice por stderr en vez de degradar en silencio" \
   || no "no avisó que no pudo abrir el ingreso único"
 
+# ---------------------------------------------------------------- 10. un formulario nuevo: 404 con el host contestando por otros
+# Un formulario que se publica por primera vez recibe 404 al pedirle sus versiones. Si el MISMO host contestó bien por
+# otro formulario de la ejecución, ese 404 es «primera publicación»: la nota lo dice y el paso no queda naranja por eso.
+# Si el host no contestó bien por ninguno, el 404 sigue siendo «no se pudo preguntar» (sale 3, como hoy).
+FLAT4="$TMP/primera"; mkdir -p "$FLAT4"; cp "$REC_SRC" "$FLAT4/recompute-zip-notes.sh"
+cat > "$FLAT4/release-notes.sh" <<'STUB4'
+#!/usr/bin/env bash
+# el formulario es el 7.º argumento: --type form --from-server url usuario clave <form> …
+form="$7"
+printf '%s %s\n' "$form" "${BZ_HOST_ANSWERED_FORMS:-0}" >> "$STUB_LOG"
+case "$form" in
+  nuevo-*)
+    if [ "${BZ_HOST_ANSWERED_FORMS:-}" = 1 ]; then
+      echo "[release-notes] $form: primera publicación en este host" >&2
+      printf 'Primera publicación de este formulario en este servidor.\n'
+    else
+      echo "[release-notes] $form: el host contestó HTTP 404 al pedirle las versiones — no es que falte el dato, es que no se pudo preguntar" >&2
+      printf 'Sin cambios desde el build anterior (9f21d3d3) — esta versión sólo trae cambios internos del repositorio.\n'
+    fi ;;
+  *) printf 'Cambios desde la versión que está publicada (abc1234):\n\n- feat: algo real\n' ;;
+esac
+exit 0
+STUB4
+chmod +x "$FLAT4/release-notes.sh"
+Z10="$TMP/z10"; mkdir -p "$Z10"; zip_con_form "$Z10" "nuevo-alta"; zip_con_form "$Z10" "viejo-stock"
+: > "$STUB_LOG"
+ERR=$(PATH="$STUBC:$PATH" bash "$FLAT4/recompute-zip-notes.sh" "$Z10" http://srv u p 2>&1 >/dev/null); rc=$?
+[ "$rc" -eq 0 ] && ok "formulario nuevo con el host contestando por otro → sale 0 (no queda naranja)" || no "🔴 un formulario que se publica por primera vez dejó el paso en $rc: $ERR"
+nota_en "$Z10/nuevo-alta.zip" | grep "Primera publicación" >/dev/null && ok "…y su nota dice que es la primera publicación" || no "🔴 la nota del nuevo no lo dice: $(nota_en "$Z10/nuevo-alta.zip")"
+echo "$ERR" | grep "no se pudo preguntar" >/dev/null && no "🔴 quedó el aviso de «no se pudo preguntar» en la salida final" || ok "…y no queda el aviso de «no se pudo preguntar»"
+Z11="$TMP/z11"; mkdir -p "$Z11"; zip_con_form "$Z11" "nuevo-solo"
+ERR=$(PATH="$STUBC:$PATH" bash "$FLAT4/recompute-zip-notes.sh" "$Z11" http://srv u p 2>&1 >/dev/null); rc=$?
+[ "$rc" -eq 3 ] && ok "404 sin que el host conteste por ningún otro → sale 3, como antes" || no "🔴 un host que no contestó por ninguno salió $rc"
+echo "$ERR" | grep "no se pudo preguntar" >/dev/null && ok "…y lo sigue avisando" || no "🔴 dejó de avisar un 404 de un host que no contesta: $ERR"
+
 echo
 if [ "$fallos" -eq 0 ]; then echo "recompute-zip-notes: todo verde"; exit 0; else echo "recompute-zip-notes: $fallos fallo(s)"; exit 1; fi

@@ -145,6 +145,24 @@ grep -q "HTTP 404" "$TMP/e12.txt" && grep -q "no se pudo preguntar" "$TMP/e12.tx
   && ok "si el host no tiene esa dirección lo dice (HTTP 404, no 'falta el dato')" \
   || no "🔴 no distinguió un 404: $(head -2 "$TMP/e12.txt")"
 
+# ---------------------------------------------------------------- 12b. un 404 de un formulario nuevo, con el host contestando
+# Un formulario que se publica por primera vez no tiene versiones: el host contesta 404 por ESE formulario aunque
+# contestó bien por los demás de la misma ejecución. Quien recorre los formularios lo sabe y lo pasa en
+# BZ_HOST_ANSWERED_FORMS; con eso, el 404 es «primera publicación»: la nota lo dice y no se avisa como falla.
+: > "$STUB_LOG"
+BZ_HOST_ANSWERED_FORMS=1 STUB_VERSIONS_CODE=404 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ >"$TMP/o12b.txt" 2>"$TMP/e12b.txt"
+grep -q "Primera publicación de este formulario en este servidor" "$TMP/o12b.txt" \
+  && ok "404 con el host contestando por otros formularios → la nota dice «primera publicación»" \
+  || no "🔴 la nota de un formulario nuevo no dice que es la primera publicación: $(head -2 "$TMP/o12b.txt")"
+grep -q "no se pudo preguntar" "$TMP/e12b.txt" \
+  && no "🔴 avisó como falla un formulario que se publica por primera vez: $(head -2 "$TMP/e12b.txt")" \
+  || ok "…y no lo avisa como «no se pudo preguntar»"
+: > "$STUB_LOG"
+BZ_HOST_ANSWERED_FORMS=1 STUB_VERSIONS_CODE=401 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ >"$TMP/o12c.txt" 2>"$TMP/e12c.txt"
+grep -q "Primera publicación" "$TMP/o12c.txt" \
+  && no "🔴 un 401 se leyó como primera publicación: sólo el 404 lo es" \
+  || ok "…sólo el 404: un 401 sigue siendo «no se pudo preguntar»"
+
 : > "$STUB_LOG"
 STUB_VERSIONS_SIN_COMMIT=1 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ >/dev/null 2>"$TMP/e13.txt"
 grep -q "ninguna trae el commit" "$TMP/e13.txt" \
