@@ -65,6 +65,21 @@ function sinProbes(files) {
   return (Array.isArray(files) ? files : []).filter((f) => !esProbe(f));
 }
 
+/**
+ * ¿Lo escribió el propio pipeline en la carpeta de la ejecución? (el plan, los informes de los revisores,
+ * findings.json, review-roster.json). Un tramo exacto `.advisors`: `advisors/`, `.advisorsrc` o `x.advisors.json` son
+ * trabajo del repo.
+ */
+function esDeLaCorrida(p) {
+  if (!p) return false;
+  return String(p).split(/[\\/]+/).includes('.advisors');
+}
+
+/** Saca los probes y lo de la carpeta de la ejecución: lo que queda es trabajo del repo. Devuelve array nuevo. */
+function sinRuido(files) {
+  return sinProbes(files).filter((f) => !esDeLaCorrida(f));
+}
+
 /** ¿El path cae DENTRO del repo bajo revisión? Un scratchpad en /tmp no es trabajo del repo. */
 function esDelRepo(p, repoPath) {
   if (!p || !repoPath) return false;
@@ -104,8 +119,8 @@ function diagnosticar({ repoPath, registro, gitCambiados }) {
   const fueraDelRepo = reg.filter((f) => !esDelRepo(f, repoPath));
   const dentro = reg.filter((f) => esDelRepo(f, repoPath));
   const probesDescartados = dentro.filter(esProbe);
-  const registroUtil = dentro.filter((f) => !esProbe(f));
-  const gitUtil = sinProbes(git);
+  const registroUtil = dentro.filter((f) => !esProbe(f) && !esDeLaCorrida(f));
+  const gitUtil = sinRuido(git);
 
   // Ciego = git ve trabajo del repo y el registro no aporta NADA de ese repo. Que el registro
   // tenga entradas no lo salva: 7 líneas de scratchpad son 7 líneas de ruido.
@@ -157,4 +172,4 @@ function registroNoAplica(repoPath) {
   } catch { return false; }
 }
 
-module.exports = { esProbe, sinProbes, esDelRepo, diagnosticar, registroNoAplica, PROBE_RE };
+module.exports = { esProbe, sinProbes, esDeLaCorrida, sinRuido, esDelRepo, diagnosticar, registroNoAplica, PROBE_RE };

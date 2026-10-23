@@ -132,6 +132,30 @@ test('git ve SOLO probes = NO ciego (no hay trabajo real sin registrar)', () => 
   assert.equal(r.ciego, false);
 });
 
+// ── La carpeta de la ejecución no es trabajo del repo ─────
+
+test('T1 SinRuido_SacaLaCarpetaDeLaEjecucion @story-8.102 @ac-1', () => {
+  const fuera = [
+    '.advisors/x.json',
+    `${REPO}/.advisors/pipeline-runs/a/findings.json`,
+    'C:\\repo\\.advisors\\b.md',
+    `${REPO}/tests/__probe_x.test.ts`,
+  ];
+  const quedan = [`${REPO}/advisors/x.js`, `${REPO}/.advisorsrc`, `${REPO}/src/x.advisors.json`];
+  assert.deepStrictEqual(h.sinRuido([...fuera, ...quedan]), quedan);
+  for (const p of fuera.slice(0, 3)) assert.equal(h.esDeLaCorrida(p), true, p);
+  for (const p of quedan) assert.equal(h.esDeLaCorrida(p), false, p);
+});
+
+test('T4 Diagnosticar_GitSoloVeLaEjecucion_NoEsCiego @story-8.102 @ac-4', () => {
+  const r = h.diagnosticar({
+    repoPath: REPO,
+    registro: [],
+    gitCambiados: [`${REPO}/.advisors/pipeline-runs/a/findings.json`, `${REPO}/.advisors/pipeline-runs/a/review-roster.json`],
+  });
+  assert.equal(r.ciego, false, 'los informes del propio pipeline no son trabajo sin registrar');
+});
+
 test('sin git disponible (lista vacía) el diagnóstico NO inventa ceguera', () => {
   const r = h.diagnosticar({ repoPath: REPO, registro: [`${REPO}/a.cs`], gitCambiados: [] });
   assert.equal(r.ciego, false, 'fail-open: si no se puede comparar, no se acusa');
