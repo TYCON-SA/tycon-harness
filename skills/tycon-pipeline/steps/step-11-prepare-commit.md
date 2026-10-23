@@ -87,6 +87,8 @@ Incluir:
 - ACs implementados (referenciados por número)
 - Si `had_override: true`: línea explícita "OVERRIDE: CRITICAL de {advisor} aprobado por usuario — razón: {razón}"
 - Si «Hallazgos» auto-fluyó con warnings (`auto_flowed_with_warnings: true`): sección **"Warnings auto-waived"** listando cada warning (rule ID + archivo + razón del waive: `auto_waive` list / fuera del diff). Visibilidad sin fricción.
+- Si la ejecución quedó en deuda (`close-as-debt`): la línea `Deuda: <DEF-id> — <motivo>`, tal como la imprime
+  `complete-step prepare-commit` (📌), y los controles en rojo esperado con sus pruebas.
 
 ### Trailers
 

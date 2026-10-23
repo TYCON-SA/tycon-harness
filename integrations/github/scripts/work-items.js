@@ -99,7 +99,8 @@ function update(args, ctx) {
   const warnings = [...d.warnings];
   if (g.value.state === 'closed' && args.reopen !== true) {
     warnings.push(`el issue #${id} está cerrado: reabrirlo lo decide una persona (puede romper la trazabilidad)`);
-    return { ok: true, value: { id, estado: previo, previo, changed: false, warnings } };
+    // el aviso lo dice en texto; el campo es para el núcleo, que pide la confirmación
+    return { ok: true, value: { id, estado: previo, previo, changed: false, pideReabrir: true, warnings } };
   }
   if (previa === estado && g.value.state !== 'closed') return { ok: true, value: { id, estado, previo, changed: false, warnings } };
   const cuerpo = { labels: [...sinEstado(ls), `estado:${estado}`] };

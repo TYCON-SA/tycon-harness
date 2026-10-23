@@ -618,6 +618,9 @@ function marker730(home, sid, storyPath, repo, { done = [0, 1, 2], pending } = {
   assert.equal(r.status, 0, r.stderr);
 }
 const markerFile730 = (home, sid) => path.join(home, '.claude', '.tycon-pipeline', 'active', `${sid}.json`);
+// las banderas de las partes del Arranque las pone el arnés (no set-flag): la prueba las escribe en el marcador
+const partesHechas730 = (home, sid) => fs.writeFileSync(markerFile730(home, sid),
+  JSON.stringify({ ...JSON.parse(fs.readFileSync(markerFile730(home, sid), 'utf8')), workSignalStarted: true, adoMarkedActive: true }));
 const leerMarker730 = (home, sid) => JSON.parse(fs.readFileSync(markerFile730(home, sid), 'utf8'));
 const gates730 = (home) => { try { return fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)); } catch { return []; } };
 const aprobacion730 = (repo) => path.join(repo, 'specs', 'qa', '1.1-mockup-approval.json');
@@ -858,8 +861,8 @@ test('7.30-T28 PipelineNextRiskClassYPortonDePlan_NombranLaMaqueta @story-7.30 @
     env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' } });
   for (const [sid, s, r0, conMaqueta] of [['s28a', conPantalla, repo, true], ['s28b', sinPantalla, repo2, false]]) {
     marker730(home, sid, s, r0);
-    // los sub-pasos del arranque (reloj, pedido en ADO) no son lo que se prueba
-    markerCli(home, sid, ['set-flag', 'clockiStarted', 'true']); markerCli(home, sid, ['set-flag', 'adoMarkedActive', 'true']);
+    // los sub-pasos del arranque (reloj, pedido en ADO) no son lo que se prueba: sus banderas, escritas en el marcador
+    partesHechas730(home, sid);
     const n = pipe(sid, ['next']);
     assert.equal(n.status, 0, n.stderr);
     assert.match(n.stdout, /complete-step approve-plan/);
@@ -883,7 +886,7 @@ test('7.30-T28 PipelineNextRiskClassYPortonDePlan_NombranLaMaqueta @story-7.30 @
   assert.doesNotMatch(roto, /--mockup-approved/);
   assert.match(roto, /complete-step 3 --approved/);
   markerCli(home, 's28c', ['set', JSON.stringify({ storyId: '1.1', storyPath: rel, repoPath: repo, stepsCompleted: [0, 1, 2], stepsPending: [3, 4, 5, 6, 7, 8] })]);
-  markerCli(home, 's28c', ['set-flag', 'clockiStarted', 'true']); markerCli(home, 's28c', ['set-flag', 'adoMarkedActive', 'true']);
+  partesHechas730(home, 's28c');
   const n = pipe('s28c', ['next']);
   assert.match(n.stdout, /--mockup-approved/);
 });

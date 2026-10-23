@@ -151,7 +151,8 @@ function update(args, ctx) {
   if (previo === estado) return { ok: true, value: { ...base, changed: false, warnings } };
   if ((CERRADOS.includes(previo) || previo === c.state_closed) && args.reopen !== true) {
     warnings.push(`el pedido #${id} está en ${previo}: reabrir a ${estado} lo decide una persona (puede romper la trazabilidad)`);
-    return { ok: true, value: { ...base, changed: false, warnings } };
+    // el aviso lo dice en texto; el campo es para el núcleo, que pide la confirmación
+    return { ok: true, value: { ...base, changed: false, pideReabrir: true, warnings } };
   }
   if (!INICIALES.includes(previo) && !CERRADOS.includes(previo)) warnings.push(`estado ${previo} sin mapeo conocido: pasa a ${estado}; si el proceso usa otro nombre, declaralo en state_active`);
   const u = azJson(ctx, ['boards', 'work-item', 'update', '--organization', org, '--id', id, '--state', valor(estado), '--output', 'json']);

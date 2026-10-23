@@ -187,13 +187,15 @@ sin aviso.
 1. **Emitir el evento**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signal start`.
    Toma del marcador la historia, su `title:`, el repo y la sesión; devuelve `{ ran, action?, warnings }` y cada aviso
    sale también por la salida de errores, en una línea.
+   Sin acción y sin avisos, el comando deja la parte marcada: no hay nada más que hacer.
 2. **Hacer la acción, si vino una**: una herramienta que maneja el agente (con su servidor de MCP) devuelve en `action`
    lo que hay que hacer, con las referencias a la skill de su integración. Hacerla **SIN pedir confirmación al dev** (el
    pipeline es intención explícita), salvo lo que la propia acción diga que se pregunta. Una herramienta que la
    integración maneja sola (por su API) no devuelve acción: ya quedó hecho.
-3. **Marcarla hecha**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag workSignalStarted true`
-   (el nombre viejo de la bandera se sigue aceptando y escribe la nueva). Sin la bandera, un retome entre sesiones o
-   `pipeline.js next` vuelven a avisar.
+3. **Cerrar la acción**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signal start --action-done "<id que devolvió la herramienta>"`.
+   El arnés busca en la conversación de la sesión la llamada a la herramienta cuyo resultado trae ese id, y recién ahí
+   marca la parte. La bandera no se escribe con `marker.js set-flag`: ese comando la rechaza. Sin la bandera, un retome
+   entre sesiones o `pipeline.js next` vuelven a avisar.
 4. Una línea a stdout: `✓ Aviso de trabajo: <integración> · <lo que hizo>`. No pausar.
 
 **Si falla** (el evento avisa un problema, la acción no se puede hacer):
@@ -246,26 +248,18 @@ lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que di
    `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js set <story_path> {id}` y seguir. Varios →
    mostrar los cinco primeros y pedir cuál. Cero → una línea («ningún pedido con `<story_id>` en el título; considerá
    crearlo o agregar `work_item:` a mano») y seguir sin transicionar.
-2. **Transicionar por la capa** (lee el estado actual y lo pasa al activo, sin tocar nada si ya estaba):
-   ```bash
-   node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item update \
-     --args '{"repoDir": "<repo de la historia>", "id": <id>}'
-   # → {"ok": true, "value": {"id", "estado", "previo", "changed", "warnings"}, "summary": "…"}
-   #   o {"ok": false, "reason": "sin_plataforma|sin_credencial|no_encontrado|…", "detail": "…", "summary": "…"}
-   ```
-   Ya activo → `changed: false`. **Cerrado** (`Closed` / `Resolved` / `Done`, o el issue cerrado en GitHub) →
-   `changed: false` y un aviso en `warnings`: ADVERTIR antes de tocar («El pedido {id} está en `{estado}`. ¿Reabrirlo?
-   Puede romper la trazabilidad si la story estaba cerrada por otro motivo.») y, si confirma, repetir con
-   `"reopen": true`. Inicial → pasa al activo: en Azure DevOps según la plantilla de proceso (Basic `To Do` → `Doing`;
-   Agile `New`/`Approved` → `Active`; CMMI `Proposed` → `Active`; Scrum `New` → `Committed`, declarado con
-   `state_active`); en GitHub, la etiqueta `estado:<state_active>` (por defecto `estado:activo`).
-3. **Asignar**, sólo con `auto_assign: true`: sumar `"assignTo": "<git config user.email>"` a los argumentos. No por
-   default: algunos equipos asignan por separado.
-4. **Marcarla hecha** (también si el pedido ya estaba activo):
-   `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag adoMarkedActive true`. Sin la bandera,
-   un retome o `pipeline.js next` vuelven a transicionar.
-5. Una línea al dev, parte del encabezado general y no un mensaje aparte: el `summary` de la capa (`pedido de trabajo
-   #{id} en <plataforma>: {previo} → {estado}`). Si se salteó: una línea contextual o nada.
+2. **Transicionar y marcar**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js ado-mark-active`
+   (con `auto_assign: true`, sumar `--assign-to "<git config user.email>"`; no por default: algunos equipos asignan por
+   separado). Pide a la capa (`platform.js work-item update`), que lee el estado actual y lo pasa al activo sin tocar nada si ya
+   estaba: en Azure DevOps según la plantilla de proceso (Basic `To Do` → `Doing`; Agile `New`/`Approved` → `Active`;
+   CMMI `Proposed` → `Active`; Scrum `New` → `Committed`, declarado con `state_active`); en GitHub, la etiqueta
+   `estado:<state_active>` (por defecto `estado:activo`). Recién con la respuesta de la capa marca la parte: la bandera
+   no se escribe con `marker.js set-flag`, que la rechaza. Sale 0 marcado, 1 si la capa dijo que no (el `summary` dice
+   qué falta) y 3 si el pedido está **cerrado** (`pideReabrir`): ADVERTIR antes de tocar («El pedido {id} está en
+   `{estado}`. ¿Reabrirlo? Puede romper la trazabilidad si la story estaba cerrada por otro motivo.»), esperar, y con el
+   sí correr `ado-mark-active --reopen`.
+3. Una línea al dev, parte del encabezado general y no un mensaje aparte: el `summary` de la capa que imprime el comando
+   (`pedido de trabajo #{id} en <plataforma>: {previo} → {estado}`). Si se salteó: una línea contextual o nada.
 
 **Si falla** (`ok: false`: sin plataforma elegida, sin credencial —con Azure DevOps, la sesión de `az` venció: `az
 login` o renovar `AZURE_DEVOPS_EXT_PAT`—, pedido no encontrado, la plataforma lo rechazó):

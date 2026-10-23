@@ -207,11 +207,21 @@ function buildDump(run) {
   const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o && (typeof o[k] === 'string' || typeof o[k] === 'number' || typeof o[k] === 'boolean')).map((k) => [k, o[k]]));
   const gates = run.gates.filter((g) => g.sessionId === sessionId)
     .map((g) => pick(g, ['ts', 'sessionId', 'repoPath', 'storyPath', 'check', 'status', 'provenance', 'name', 'action', 'mode', 'verdict']));
+  // Cómo terminó: sin cerrar es `abandonada`, aunque estuviera en deuda (no llegó al commit); la deuda y su motivo, si
+  // los había, se conservan (salen del renglón que deja `close-as-debt` en gates.log).
+  const enDeuda = run.gates.filter((g) => g.sessionId === sessionId && g.name === 'close-as-debt').pop();
+  const cierre = { estado: 'abandonada', via: 'subida', motivo: 'sesión sin cerrar' };
+  if (enDeuda && typeof enDeuda.deuda === 'string') {
+    // texto que escribió el agente: sale saneado, como el mensaje rescatado de la subida
+    const { sanear } = require(path.join(__dirname, 'tokens-digest.js'));
+    cierre.deuda = sanear(enDeuda.deuda).slice(0, 80);
+    if (typeof enDeuda.motivo === 'string') cierre.motivo = sanear(enDeuda.motivo).slice(0, 300);
+  }
   const dump = {
     archivedAt: null,
     sinCerrar: true,
     origen: { runDir: run.name, porque: run.why },
-    marker: { sessionId, storyId: run.key, repoPath: run.repo, startedAt: new Date(run.start).toISOString() },
+    marker: { sessionId, storyId: run.key, repoPath: run.repo, startedAt: new Date(run.start).toISOString(), cierre },
     gates,
   };
   if (!gates.length) no.gates = 'el gates.log de esta máquina no tiene renglones de esta ejecución';

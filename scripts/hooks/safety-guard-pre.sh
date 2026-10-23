@@ -437,10 +437,20 @@ if [[ "$CMD" == *[Mm][Aa][Rr][Kk][Ee][Rr]* ]]; then
   done <<< "$_c3_out"
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
     IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 <<< "$_c3_f" || true
-    _c3_clave="set-autonomous"; [[ "$_c3_esc" == "cerrar la ejecución" ]] && _c3_clave="cerrar-la-ejecucion"
+    _c3_clave="set-autonomous"; _c3_regla="ESC-C3"
+    [[ "$_c3_esc" == "cerrar la ejecución" ]] && _c3_clave="cerrar-la-ejecucion"
+    [[ "$_c3_esc" == "cerrar como deuda" ]] && { _c3_clave="cerrar-como-deuda"; _c3_regla="ESC-C4"; }
     if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c3_esc"; then
-      constancia ESC-C3 escape "$ESC_VIA" "$ESC_RELEVO" "$_c3_sid" "$_c3_clave"
+      constancia "$_c3_regla" escape "$ESC_VIA" "$ESC_RELEVO" "$_c3_sid" "$_c3_clave"
       continue
+    fi
+    if [[ "$_c3_regla" == "ESC-C4" ]]; then
+      # ESC-C4: cerrar la historia como deuda (o registrar un control en rojo como esperado) deja una salida prevista
+      # por la historia como el final de la ejecución. Lo decide la persona, siempre: no depende del estado del marcador.
+      ESC_CARTEL="Esto lo decide la persona, no el agente: si la historia quedó como deuda, lo dice ella en su mensaje («autorizo cerrar como deuda»)."
+      block "ESC-C4" \
+        "Cerrar la historia como deuda (marker.js ${_c3_sub}) deja lo que no se pudo hacer como el final de la ejecución, con su deuda anotada." \
+        "Si se puede terminar, terminá. Si no, explicale a la persona qué quedó pendiente y por qué, y pedile la frase."
     fi
     ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_c3_esc}»).
 Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>."
