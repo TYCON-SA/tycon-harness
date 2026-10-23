@@ -485,8 +485,12 @@ test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
     escribir(buzon, DATOS.blobsDelBuzon(ahora, { completo: true }));
     let registro = '';
     const fichasDe = () => {
+      // armar las fichas no lanza ningún proceso (el freno del sitio demo lo frenaría): se anota cada intento
       const r = spawnSync(process.execPath, ['-e', `
+        const cp = require('child_process'); const lanzados = [];
+        for (const k of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync']) { const o = cp[k]; cp[k] = function (...a) { lanzados.push(String(a[0])); return o.apply(this, a); }; }
         const f = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'site', 'tabs', 'cards.js'))}).fichasDelClon({ clon: ${JSON.stringify(clon)}, dirBuzon: ${JSON.stringify(buzon)}, buzonLeido: true, ahora: ${ahora}, log: (l) => process.stderr.write(l + '\\n') });
+        if (lanzados.length) process.stderr.write('PROCESOS: ' + lanzados.join(',') + '\\n');
         process.stdout.write(JSON.stringify(f.lista.filter((x) => x.id === 'reglas_candidatas' || x.id === 'reglas_probadas')));`],
       { encoding: 'utf8', env: { ...process.env, HOME: HOME_FALSO, TYCON_TODAY: HOY, TYCON_EXAM: '' }, maxBuffer: 1 << 26 });
       assert.strictEqual(r.status, 0, r.stderr);
@@ -495,6 +499,7 @@ test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
     };
     const con = fichasDe();
     for (const id of ['reglas_candidatas', 'reglas_probadas']) assert.strictEqual(con[id].estado, 'medido', `${id} con el examen de la copia: ${JSON.stringify(con[id])}`);
+    assert.doesNotMatch(registro, /PROCESOS:/, `armar las fichas no lanza procesos (con una HOME vacía, buscar el nombre de la máquina los lanzaba): ${registro}`);
     // un enlace de la copia no lleva a leer fuera de ella: ni una carpeta de más arriba, ni un caso
     const bancoCopia = path.join(clon, 'scripts', 'controls-bench');
     const afuera = path.join(raiz, 'afuera-del-banco');

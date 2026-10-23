@@ -450,7 +450,9 @@ function podar(opts = {}) {
   if (cat.estado !== 'medido') throw new NoMedido(`sin catálogo no hay filas: ${cat.motivo}`);
 
   let maquina = opts.maquina || null;
-  if (!maquina) {
+  // el nombre sólo identifica los registros de esta máquina: sin ellos (`sinLocal`, el sitio y la noche) no se busca, y
+  // buscarlo puede lanzar un proceso
+  if (!maquina && opts.sinLocal !== true) {
     try { maquina = require('../../metrics/upload-runs.js').nombreDeMaquina(); } catch (_) { maquina = null; }
   }
   const casa = casaPipeline();
