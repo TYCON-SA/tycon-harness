@@ -72,7 +72,7 @@ compactación, pedido de permiso, arranque/fin de subagente) — oportunidad, no
 | `*` | 12 | Igual | ① |
 | `Bash` | 5 (incluye los 3 frenos duros) | **✅ VERIFICADO 2026-08-21 (live-fire, Etapa B1)**: la tool de shell en Codex se llama literalmente `Bash` y el matcher `"Bash"` matchea (payload capturado en `controls-bench/.bench/live-fire-codex.json`) — los 5 hooks portan sin cambio de matcher | ① (verificado) |
 | `Edit\|Write` | 3 | Probablemente `apply_patch` | ② |
-| `Task\|Agent` | 1 (`on-advisor-run.js`) | **No es matcher: es evento propio** (`SubagentStart`). Mejor mapeo, pero cambia el mecanismo | ③ |
+| `Task\|Agent` | 1 (`on-advisor-run.js`) | `PreToolUse` con matcher `collaborationspawn_agent` (la herramienta de subagentes; el nombre del revisor viaja en `tool_input.agent_type`). `SubagentStart` no sirve: su payload no trae el nombre. Desde 2026-10-23 los revisores del pipeline no dependen de este gancho en Codex: los lanza `reviewers-run` (ver abajo) | ② |
 
 > Si un matcher no matchea, el hook **no se dispara nunca** y no hay error. Caso negativo obligatorio
 > por cada uno de los 9 hooks con matcher.
@@ -373,3 +373,50 @@ están las skills, y nunca copia una línea que empiece con `@`. El tope de 32 K
 proyecto, no para el de su carpeta: un AGENTS.md global de 41.717 bytes se leyó completo (Codex 0.162.1, con una
 palabra clave al final). Casos: `IndiceEntero_VaAdentroDelBloque` y `IndiceConArroba_NoEscribeImport` de
 `scripts/tests/agents-md-blocks.test.js`.
+
+## Los revisores los lanza el pipeline — ① resuelto (2026-10-23)
+
+**El caso**: el laboratorio de Ollama del 2026-10-22. Con Claude Code, tres modelos corren los 10 pasos o casi; con
+Codex, uno solo. Bajo Codex el paso «Revisores» le pedía al modelo que lanzara cada revisor como agente aparte, y un
+modelo que no usa esa herramienta no lanzaba ninguno: `check-count` no tenía qué contar.
+
+**Claude Code**: los revisores van con `Agent(...)` y los anota el gancho `on-advisor-run.js`. Sin cambios.
+
+**Codex**: el paso corre `pipeline.js reviewers-run` (`lib/codex-reviewers.js`): cada revisor del set es un proceso
+`codex exec -p <revisor>` aparte, con la entrada cerrada, la misma ventana (4; 2 con el pase adversarial en vuelo) y el
+modelo de la sesión del marcador (`start --codex-session`). Al terminar cada uno deja la misma constancia que el gancho
+(`recordLaunch`, compartida), más `launcher`, `exit` y `report`; `check-count` sólo cuenta los que salieron 0 con su
+reporte. Casos: `skills/tycon-pipeline/scripts/tests/codex-reviewers.test.js`.
+
+## Los cierres leen la evidencia del arnés — ① resuelto (2026-10-23)
+
+**Claude Code**: el chequeo de «historia afirmada sin story» y el modelo del implementador leían la conversación.
+
+**Codex**: no deja leerla, y los dos se quedaban sin decidir. Ahora la afirmación sale del último mensaje que trae el
+evento de cierre (las dos herramientas lo mandan), los `.md` escritos del registro de ediciones y del marcador, y el
+modelo del implementador del marcador (`start --session-model`); la conversación sólo suma. Sin nada de eso: «no
+medido», nunca un veredicto inventado. Al cerrar el turno, si el mensaje afirma un cierre y el marcador tiene pasos
+abiertos, sale una línea que los nombra (aviso; el freno sigue siendo el de «Preparar el commit»). Casos:
+`skills/tycon-pipeline/scripts/tests/closing-evidence-codex.test.js`.
+
+**Lo que no cubre, dicho**: una historia escrita por la terminal no va al registro de ediciones; pasa sólo si el mensaje
+la nombra o es la del marcador.
+
+## Las herramientas `namespace` con Ollama — ③ asimetría DECLARADA (2026-10-23)
+
+**El caso**: `minimax-m3.1-flash:cloud` con Codex no arranca: `400 invalid tool type: namespace`. Codex agrupa en
+herramientas `namespace` sus subagentes (`multi_agent_v1`), sus apps y cada servidor MCP; algunos modelos de Ollama las
+rechazan. Medido el 2026-10-23 con codex-cli 0.162.1 y Ollama 0.16.3, con un Ollama de mentira que capturó el pedido:
+`-c features.multi_agent=false`, `-c features.apps=false` y una `CODEX_HOME` sin servidores MCP sacan los `namespace`;
+además hace falta `-c web_search="disabled"` (la búsqueda web va sin nombre y también la rechaza). Con las cuatro, el
+mismo modelo contesta. `wire_api = "chat"` ya no existe en esa versión.
+
+**Claude Code**: no manda `namespace`; esos modelos andan.
+
+**Codex**: con esos modelos, sólo en ese **modo reducido**: sin subagentes (no hacen falta: los revisores los lanza
+`reviewers-run`), sin apps, sin búsqueda web y sin servidores MCP. La sonda `scripts/lib/ollama-tools-probe.js` dice
+antes de la sesión si el modelo acepta la forma completa, sólo la reducida o ninguna. No se construye un traductor entre
+Codex y Ollama.
+
+**Lo que Codex NO cubre con esos modelos, dicho y no prometido**: los revisores que usan servidores MCP (el índice de
+código, la memoria) trabajan sin ellos. Caso: `scripts/tests/ollama-tools-probe.test.js`.

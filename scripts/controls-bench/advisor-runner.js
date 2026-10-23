@@ -2176,5 +2176,5 @@ async function main() {
   return failed + parityBreaks + baselineRegressions > 0 ? 1 : 0;
 }
 
-module.exports = { AGENTS_DIR, AGENTS_ORIGEN, ensureCodexProfile };
+module.exports = { AGENTS_DIR, AGENTS_ORIGEN, ensureCodexProfile, codexInvokePreamble, codexSandbox };
 if (require.main === module) main().then((c) => process.exit(c)).catch((e) => { console.error(`advisor-runner: ${e.message}`); process.exit(1); });

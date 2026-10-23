@@ -5,17 +5,19 @@
  * comando de la terminal («Write {…}» por Bash), la escritura falló y aun así cerró con «He creado la historia».
  * Nadie lo ve hasta que busca el archivo.
  *
- * Cuándo actúa: en una sesión con la constancia de la skill que crea historias (la deja on-skill-invoke.js), si el
- * último mensaje del turno dice que creó o escribió una historia. Pasa si en ese turno hay una escritura de un `.md`
- * que no falló y cuyo archivo existe, o si el mensaje nombra un `.md` que existe y declara `story:`. Si no, frena el
- * cierre UNA vez (Claude Code avisa `stop_hook_active` en el cierre siguiente) con lo que falta.
+ * Cuándo actúa: en una sesión con la constancia de la skill que crea historias (la deja on-skill-invoke.js) o, sin ella,
+ * con un marcador activo (Codex no tiene evento de skill), si el último mensaje del turno dice que creó o escribió una
+ * historia. El mensaje sale del evento de cierre; la conversación, si se puede leer, sólo suma. Pasa si una escritura
+ * del turno, un `.md` del registro de ediciones, la historia del marcador o un `.md` que el mensaje nombra existe y
+ * declara `story:`. Si no, frena el cierre UNA vez (Claude Code avisa `stop_hook_active` en el cierre siguiente) con lo
+ * que falta.
  *
  * Además (`insistir`): si la sesión dejó una historia en borrador sin la constancia del validador, el cierre le da al
  * agente la orden concreta, hasta un tope, y después se lo dice a la persona. Un «creada y verificada» con ese borrador
  * suma la aclaración de que no está verificada.
  *
- * Fuera de alcance, declarado: Codex (sin evento de skill ni de cierre equivalente) y una historia escrita por Bash
- * que existe pero no se nombra en el mensaje (pasa sólo si el mensaje la nombra).
+ * Fuera de alcance, declarado: una historia escrita por la terminal no va al registro de ediciones; pasa sólo si el
+ * mensaje la nombra o es la del marcador.
  */
 'use strict';
 
@@ -86,22 +88,85 @@ const declaresStory = (abs) => {
   try { return /^---[\s\S]*?^story\s*:/m.test(fs.readFileSync(abs, 'utf8').slice(0, 4000)); } catch (e) { return e.code !== 'ENOENT' && e.code !== 'ENOTDIR'; }
 };
 
+/** Los `.md` que el registro de ediciones del arnés anotó en la sesión (Write/Edit; lo de la terminal no va ahí). */
+function editedMarkdown(stateDir, sessionId, since) {
+  if (!stateDir || !sessionId) return [];
+  try {
+    const file = path.join(stateDir, 'file-events', `${safeSid(sessionId)}.jsonl`);
+    const out = new Set();
+    for (const l of fs.readFileSync(file, 'utf8').split('\n')) {
+      try {
+        const e = JSON.parse(l);
+        // sólo lo de este turno: una historia escrita en un turno anterior no respalda la afirmación de ahora
+        if (e && typeof e.path === 'string' && /\.md$/i.test(e.path) && (!since || String(e.ts || '') > since)) out.add(e.path);
+      } catch { /* línea partida */ }
+    }
+    return [...out];
+  } catch { return []; }
+}
+
+const safeSid = (sid) => String(sid).replace(/[/\\]/g, '_');
+const lastStopFile = (stateDir, sessionId) => path.join(stateDir, 'last-stop', `${safeSid(sessionId)}.txt`);
+
+/** La hora del cierre de turno anterior de la sesión (el inicio de este turno), o null si no hubo. */
+function lastStop(stateDir, sessionId) {
+  if (!stateDir || !sessionId) return null;
+  try { return fs.readFileSync(lastStopFile(stateDir, sessionId), 'utf8').trim() || null; } catch { return null; }
+}
+
+/** Anota la hora de este cierre de turno: el comienzo del turno siguiente para el registro de ediciones. */
+function noteStop(stateDir, sessionId, ts = new Date().toISOString()) {
+  if (!stateDir || !sessionId) return;
+  try {
+    fs.mkdirSync(path.dirname(lastStopFile(stateDir, sessionId)), { recursive: true });
+    fs.writeFileSync(lastStopFile(stateDir, sessionId), ts);
+  } catch { /* sin la hora, el turno siguiente sin conversación no usa el registro de ediciones */ }
+}
+
 /**
- * El motivo para no cerrar, o null. `event` es la entrada del cierre de Claude Code; `hasMark` dice si la sesión tiene
- * la constancia de la skill que crea historias.
+ * El motivo para no cerrar, o null. `event` es la entrada del cierre (Claude Code o Codex). Actúa con la constancia de
+ * la skill que crea historias (`hasMark`) o, sin ella, con un marcador activo de la sesión (`marker`): Codex no tiene
+ * evento de skill.
+ *
+ * La afirmación sale del último mensaje que trae el evento (`last_assistant_message`, las dos herramientas) o, si no
+ * viene, de la conversación. Lo que decide es el disco: pasa si una escritura del turno (en la conversación), un `.md`
+ * del registro de ediciones, la historia del marcador o un `.md` que el mensaje nombra existe y declara `story:`. Sin
+ * mensaje y sin conversación no se frena: queda «no medido». `log` recibe el resultado y de qué evidencia salió.
  */
-function claimWithoutStory(event, { hasMark }) {
-  if (!hasMark || !event || event.stop_hook_active) return null;
+function claimWithoutStory(event, { hasMark, marker = null, stateDir = null, sessionId = null, log = () => {} }) {
+  if (!event || event.stop_hook_active || (!hasMark && !marker)) return null;
   const cwd = event.cwd || process.cwd();
   const records = readTranscript(event.transcript_path);
-  if (!records) return null;
-  const turn = lastTurn(records);
-  const text = typeof event.last_assistant_message === 'string' && event.last_assistant_message.trim()
-    ? event.last_assistant_message : lastAssistantText(turn);
+  const turn = records ? lastTurn(records) : [];
+  const evidence = [];
+  let text = '';
+  if (typeof event.last_assistant_message === 'string' && event.last_assistant_message.trim()) {
+    text = event.last_assistant_message;
+    evidence.push('mensaje-del-evento');
+  } else if (records) {
+    text = lastAssistantText(turn);
+    evidence.push('conversacion');
+  }
+  if (!text) {
+    log({ status: 'no-medido', evidence, reason: 'ni mensaje en el evento ni conversación legible' });
+    return null;
+  }
   if (!claims(text)) return null;
-  if (wroteMarkdown(turn, cwd)) return null;
+  const pasa = (fuente) => { log({ status: 'verde', evidence: [...evidence, fuente] }); return null; };
+  const abs = (f) => path.resolve(cwd, String(f).replace(/^~(?=\/)/, process.env.HOME || ''));
+  if (records) {
+    // con la conversación legible decide como siempre: las escrituras de ESTE turno, o una historia que el mensaje nombra
+    if (wroteMarkdown(turn, cwd)) return pasa('conversacion');
+  } else {
+    // sin conversación (Codex): lo que el registro de ediciones anotó desde el cierre de turno anterior, o la historia
+    // del marcador
+    const since = lastStop(stateDir, sessionId);
+    if (since && editedMarkdown(stateDir, sessionId, since).some((f) => declaresStory(abs(f)))) return pasa('registro-de-ediciones');
+    if (marker && marker.storyPath && declaresStory(abs(marker.storyPath))) return pasa('marcador');
+  }
   const named = mentionedMarkdown(text);
-  if (named.some((f) => declaresStory(path.resolve(cwd, f.replace(/^~(?=\/)/, process.env.HOME || ''))))) return null;
+  if (named.some((f) => declaresStory(abs(f)))) return pasa('mensaje-nombra');
+  log({ status: 'bloqueo', evidence: [...evidence, ...(marker ? ['marcador'] : []), 'disco'] });
   return [
     '⛔ Dijiste que la historia quedó creada, pero en este turno no se escribió ningún archivo de historia' +
       (named.length ? ` y ${named.join(', ')} no existe o no es una historia.` : '.'),
@@ -250,4 +315,4 @@ function insistir(event, { stateDir, home = require('os').homedir(), env = proce
   };
 }
 
-module.exports = { claimWithoutStory, insistir, pendingDrafts, CLAIM, INSIST_MAX, lastTurn };
+module.exports = { claimWithoutStory, insistir, pendingDrafts, CLAIM, INSIST_MAX, lastTurn, noteStop, lastStop };

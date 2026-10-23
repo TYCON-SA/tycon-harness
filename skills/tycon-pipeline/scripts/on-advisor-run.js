@@ -92,7 +92,7 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
         sessionId,
         headSha,
         treeSha,
-        implementerModel: roster.modelFromTranscript(transcriptPath),
+        implementerModel: roster.implementerModel({ marker: m, transcriptPath }),
       });
       // Story en OTRO repo (las stories en un repo, el código en otro) → el portón de
       // CI del repo de la story exige esta constancia AHÍ. Se proyectan sólo roster y
@@ -140,38 +140,23 @@ function retroTarget(prompt) {
   return (repo || mSha) ? { repo, sha: mSha ? mSha[1] : null } : null;
 }
 
-function main() {
-  let event;
-  try {
-    const stdin = fs.readFileSync(0, 'utf8');
-    event = stdin ? JSON.parse(stdin) : null;
-  } catch {
-    return;
-  }
-  // El spawn de subagents se llama `Agent` (VSCode/Agent-SDK) o `Task` (CLI). Aceptar ambos:
-  // si solo escuchara 'Task', en el entorno de TYCON (VSCode) el hook nunca dispararía y
-  // check-count caería al --ran self-reportado.
-  // Codex (sonda con payload real): el spawn es la tool `collaborationspawn_agent` y el nombre
-  // del agente viaja en tool_input.task_name (Codex lo underscorea: "tycon_plugin_security_basics").
-  // El evento SubagentStart NO sirve acá: su payload trae solo agent_id + agent_type="default", sin
-  // el nombre — por eso este hook se registra en Codex como PreToolUse + matcher
-  // collaborationspawn_agent, no como SubagentStart.
-  const TOOLS = new Set(['Task', 'Agent', 'collaborationspawn_agent']);
-  if (!event || !TOOLS.has(event.tool_name)) return;
-
-  // Codex (payload completo): la IDENTIDAD del agent viaja en
-  // tool_input.agent_type (el nombre EXACTO del TOML, con guiones); task_name es una etiqueta
-  // LIBRE que elige el orquestador (puede no coincidir con el agente real) —
-  // como ground truth de check-count es falsificable. agent_type gana; task_name queda de
-  // fallback (underscoreado → se normaliza) para payloads sin agent_type.
-  const ti = event.tool_input || {};
-  const rawName = ti.subagent_type || (event.tool_name === 'collaborationspawn_agent' && ti.agent_type) || ti.task_name;
-  if (!rawName || typeof rawName !== 'string') return;
-  const advisor = event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
-  const model = (event.tool_input && event.tool_input.model) || null;
-
-  const sessionId = sessionIdFileKey(event.session_id);
-  const cwd = event.cwd || process.cwd();
+/**
+ * La constancia de un lanzamiento de revisor: la línea del registro de la sesión (la que lee `check-count`), el
+ * registro de autoría y la foto de la vuelta cuando la ronda se completa, y la vuelta manual. La llaman este gancho (al
+ * lanzar un agente) y el lanzador de revisores de Codex (`lib/codex-reviewers.js`, al terminar cada proceso), para
+ * que los dos caminos dejen lo mismo. `o.extra` va a la línea del registro (el lanzador suma `launcher`, `exit` y
+ * `report`). Nunca tira: un fallo de registro no rompe un lanzamiento.
+ *
+ * @param {{sessionId?: string, cwd?: string, advisor: string, model?: string|null, transcriptPath?: string|null,
+ *          prompt?: string|null, extra?: object}} o
+ * @returns {{sessionId: string, cwd: string, logPath: string, repo: string|null, story: string|null, ok: boolean,
+ *            error?: string}} `ok: false` si la línea del registro no se pudo escribir
+ */
+function recordLaunch(o) {
+  const advisor = o.advisor;
+  const model = o.model || null;
+  const sessionId = sessionIdFileKey(o.sessionId);
+  const cwd = o.cwd || process.cwd();
   const dir = path.join(stateDirOf(os.homedir()), 'advisor-runs');
   const logPath = path.join(dir, `${sessionId}.jsonl`);
   // REPO y STORY en cada línea. Sin esto el registro no puede contestar "¿corrieron los revisores
@@ -188,20 +173,23 @@ function main() {
   // El dato correcto ya viaja en el prompt del propio spawn (lo arma `launchHint`): a qué repo y a
   // qué merge apunta la retrospectiva. Se estampa aparte, sin tocar `repo`/`story` — de los que
   // dependen el roster de revisores y el snapshot de iteración.
-  const retro = advisor === 'tycon-retrospective-capturer' ? retroTarget(ti.prompt) : null;
+  const retro = advisor === 'tycon-retrospective-capturer' ? retroTarget(o.prompt) : null;
+  let lineError = null;
   try {
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(
       logPath,
       JSON.stringify({
         ts: new Date().toISOString(), advisor, model, repo, story,
+        ...(o.extra || {}),
         ...(retro && retro.repo ? { retro_repo: retro.repo } : {}),
         ...(retro && retro.sha ? { retro_sha: retro.sha } : {}),
       }) + '\n',
       'utf8',
     );
-  } catch {
-    // best-effort — un fallo de log nunca debe romper el spawn del subagent.
+  } catch (e) {
+    // best-effort — un fallo de log nunca debe romper el spawn del subagent; quien llama se entera por `ok: false`
+    lineError = (e && e.message) || String(e);
   }
 
   // ── La FOTO del estado auditado, tomada sola ──────────────────────────────
@@ -224,7 +212,7 @@ function main() {
       // exige), la foto es una optimización. Al revés, un fallo del snapshot (timeout de 10 s en un
       // repo grande, marker.js con exit ≠ 0) tragaría todo y el roster no se escribiría NI dejaría
       // constancia, que es justo la falla que esta pieza predica evitar.
-      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
+      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: o.transcriptPath });
       let rechazada = false;
       if (process.env.TYCON_AUTO_SNAPSHOT !== '0') {
         const { execFileSync } = require('child_process');
@@ -257,7 +245,7 @@ function main() {
       // 🔴 Un revisor llamado DESPUÉS del sello (el de la prueba en vivo, o una vuelta manual) también entra
       // al registro de autoría: sin eso, `write-findings` lo rechaza como firmante y su hallazgo termina firmado como
       // «orquestador». La escritura mezcla con el registro anterior.
-      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
+      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: o.transcriptPath });
     }
   } catch { /* fail-open: nada de esto puede romper un spawn — el freno real vive en el portón */ }
 
@@ -284,6 +272,40 @@ function main() {
     } catch { /* fail-open: un fallo de conteo no puede romper un spawn */ }
   }
 
+  return { sessionId, cwd, logPath, repo, story, ok: !lineError, ...(lineError ? { error: lineError } : {}) };
+}
+
+function main() {
+  let event;
+  try {
+    const stdin = fs.readFileSync(0, 'utf8');
+    event = stdin ? JSON.parse(stdin) : null;
+  } catch {
+    return;
+  }
+  // El spawn de subagents se llama `Agent` (VSCode/Agent-SDK) o `Task` (CLI). Aceptar ambos:
+  // si solo escuchara 'Task', en el entorno de TYCON (VSCode) el hook nunca dispararía y
+  // check-count caería al --ran self-reportado.
+  // Codex (sonda con payload real): el spawn es la tool `collaborationspawn_agent` y el nombre
+  // del agente viaja en tool_input.task_name (Codex lo underscorea: "tycon_plugin_security_basics").
+  // El evento SubagentStart NO sirve acá: su payload trae solo agent_id + agent_type="default", sin
+  // el nombre — por eso este hook se registra en Codex como PreToolUse + matcher
+  // collaborationspawn_agent, no como SubagentStart.
+  const TOOLS = new Set(['Task', 'Agent', 'collaborationspawn_agent']);
+  if (!event || !TOOLS.has(event.tool_name)) return;
+
+  // Codex (payload completo): la IDENTIDAD del agent viaja en
+  // tool_input.agent_type (el nombre EXACTO del TOML, con guiones); task_name es una etiqueta
+  // LIBRE que elige el orquestador (puede no coincidir con el agente real) —
+  // como ground truth de check-count es falsificable. agent_type gana; task_name queda de
+  // fallback (underscoreado → se normaliza) para payloads sin agent_type.
+  const ti = event.tool_input || {};
+  const rawName = ti.subagent_type || (event.tool_name === 'collaborationspawn_agent' && ti.agent_type) || ti.task_name;
+  if (!rawName || typeof rawName !== 'string') return;
+  const advisor = event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
+  const model = (event.tool_input && event.tool_input.model) || null;
+
+  const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt });
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') return;
 
   // ── El techo de la organización ───────────────────────────────────────────
@@ -376,5 +398,9 @@ function main() {
   } catch { /* nunca romper el spawn */ }
 }
 
-try { main(); } catch { /* fail-safe */ }
-process.exit(0);
+module.exports = { recordLaunch };
+
+if (require.main === module) {
+  try { main(); } catch { /* fail-safe */ }
+  process.exit(0);
+}
