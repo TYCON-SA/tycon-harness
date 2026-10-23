@@ -315,7 +315,7 @@ Además de los campos base del ejemplo de §1, las stories reales usan estos cam
 | `internal_scope` | bool | opcional | `true` = story interna (harness/infra/tooling), no entregable al cliente — queda fuera de los reportes de scope firmado. |
 | `owner` | string | opcional | Dev humano responsable de la story (no el agente que la implementa). |
 | `blocks` | string[] | opcional | Inverso de `depends_on:` — stories que no pueden arrancar hasta que esta esté done. |
-| `estimated_days` | number | opcional | Estimación en días-dev, para sprint planning. |
+| `estimated_days` | number | opcional | Queda por compatibilidad y nadie lo lee: la estimación de la épica, del plan y de la historia vive en `.tycon/estimates.jsonl` del repo de historias, con cada versión (`guides/estimates.md`). |
 | `signed_ac_ref` | string | opcional | Referencia al AC del documento firmado con el cliente que esta story cubre (ver `guides/signed-scope-guardrails.md`). |
 
 **🔴 Regla anti-redundancia narrativa (`driver:` vs body):** el contexto/incidente que motiva la story vive **UNA SOLA VEZ** en el body (sección `## Origen` o equivalente); `driver:` se limita a 2-3 líneas + link a esa sección o al issue. Razón: hubo stories de 15-18K tokens que contaban el mismo incidente 3-4 veces (driver + Origen + Causa raíz + Change Log), y cada relectura por los advisors paga ese costo en cada iteración del pipeline.

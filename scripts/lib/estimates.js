@@ -85,6 +85,8 @@ function legible(l) {
   if (!l || typeof l !== 'object' || Array.isArray(l) || l.v !== VERSION || !NIVELES.includes(l.nivel)) return false;
   if (!UNIDADES.includes(l.unidad) || !id(l.epica)) return false;
   if (l.nivel === 'epica') return positivo(l.min) && positivo(l.max) && l.min <= l.max;
+  // lo real son las horas del reloj: en otra unidad no se puede comparar
+  if (l.nivel === 'real' && l.unidad !== 'hours') return false;
   return id(l.historia) && positivo(l.valor);
 }
 
@@ -118,7 +120,10 @@ function append(repo, l) {
       try { fs.readSync(fd, ultimo, 0, 1, size - 1); } finally { fs.closeSync(fd); }
       falta = ultimo[0] !== 0x0a;
     }
-  } catch (_) { falta = false; }
+  } catch (e) {
+    // sin registro todavía, no falta nada; si está y no se lee, no se adivina: pegar la línea a la anterior la rompería
+    if (!e || e.code !== 'ENOENT') throw new Problema(`no pude leer ${registro}: ${(e && e.code) || e}`, SALIDA.org);
+  }
   fs.appendFileSync(registro, `${falta ? '\n' : ''}${JSON.stringify(l)}\n`);
 }
 
@@ -149,6 +154,16 @@ function orgEstimates(orgConfig) {
     throw new Problema(`la configuración de la organización no vale (${p.path || file}: ${p.message})`, SALIDA.org);
   }
   const e = (r.data && r.data.estimates) || {};
+  // un lector anterior a la clave la deja pasar sin mirarla: la unidad se mira acá también
+  if (e.unit !== undefined && !UNIDADES.includes(e.unit)) {
+    throw new Problema(`la configuración de la organización no vale (estimates.unit: tiene que ser ${UNIDADES.join(', ')}, es ${JSON.stringify(e.unit)})`, SALIDA.org);
+  }
+  // y las tasas: una rota da un total NaN, y NaN no cae debajo ni encima de ningún rango
+  for (const k of ['hours_per_day', 'hours_per_point']) {
+    if (e[k] !== undefined && !positivo(e[k])) {
+      throw new Problema(`la configuración de la organización no vale (estimates.${k}: tiene que ser un número de horas mayor que 0, es ${JSON.stringify(e[k])})`, SALIDA.org);
+    }
+  }
   return {
     unit: e.unit || DEFAULTS.unit,
     hours_per_day: e.hours_per_day || DEFAULTS.hours_per_day,
@@ -245,8 +260,16 @@ function numero(nombre, v) {
   if (v === undefined || v === '' || !Number.isFinite(n) || n <= 0) throw new Problema(`${nombre} tiene que ser un número mayor que 0 (es ${JSON.stringify(v === undefined ? null : v)})`);
   return n;
 }
+// lo que llega de una persona o de otro archivo y se guarda tal cual en el registro: con forma, y sin caracteres que
+// cambien el sentido de una línea de comandos
+const PERSONA = /^[\p{L}\p{N} ._@'-]{1,80}$/u;
+const ID_HISTORIA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+function persona(nombre, v) {
+  if (!PERSONA.test(String(v))) throw new Problema(`${nombre} tiene que ser un nombre o un correo de hasta 80 caracteres, sin ; $ \` ni saltos de línea (es ${JSON.stringify(v)})`);
+  return String(v);
+}
 function quien(o, repo) {
-  if (o.who) return o.who;
+  if (o.who) return persona('--who', o.who);
   const r = spawnSync('git', ['-C', repo, 'config', 'user.name'], { encoding: 'utf8' });
   const nombre = r.status === 0 ? String(r.stdout || '').trim() : '';
   return nombre || null;
@@ -289,8 +312,12 @@ function run(argv) {
     l = { ...comun, nivel: cmd === 'plan' ? 'plan' : 'historia', historia: String(o.story), valor };
     if (cmd === 'story') {
       if (o.proposed !== undefined) l.propuesto = numero('--proposed', o.proposed);
-      if (o.base !== undefined) l.base = String(o.base).split(',').map((x) => x.trim()).filter(Boolean);
-      if (o['confirmed-by'] !== undefined) l.confirmo = o['confirmed-by'];
+      if (o.base !== undefined) {
+        l.base = String(o.base).split(',').map((x) => x.trim()).filter(Boolean);
+        const mala = l.base.find((x) => !ID_HISTORIA.test(x));
+        if (mala !== undefined) throw new Problema(`--base tiene que ser una lista de ids de historia separados por comas (${JSON.stringify(mala)} no lo es)`);
+      }
+      if (o['confirmed-by'] !== undefined) l.confirmo = persona('--confirmed-by', o['confirmed-by']);
     }
     l.epica = epicaDe(repo, o.story);
   }

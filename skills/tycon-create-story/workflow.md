@@ -377,6 +377,36 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   {{sprint_status}} stays "backlog" while the file is a draft</action>
   <action>Add completion note: "Ultimate
   context engine analysis completed - comprehensive developer guide created"</action>
+
+  <!-- Estimate: after the draft is written and before step 6 validates it. The estimate goes to the repo's
+       .tycon/estimates.jsonl register, never into the story file, so it does not touch what the validator reads. -->
+  <action>Estimate the story. Let H = `${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}`. Run
+  `node "$H/scripts/lib/similar-stories.js" --repo {project-root} --story {default_output_file} --json`: it returns up to
+  five closed stories of this repo with their real hours (`real_horas`), their last estimate and why each one looks like
+  this one. If it returns candidates, propose ONE value in the organization's unit (the one `estimates.js` writes), naming
+  the stories it is based on and their real hours. The unit and its rates are the organization's `estimates` key in
+  `$H/team-repos.json` (`unit`, `hours_per_day`, `hours_per_point`; without the key, hours). If the unit is `points` and
+  the organization has no `hours_per_point`, show the candidates with their hours and make no proposal ("sin tasa de horas por punto: no hay propuesta"). If the list
+  is empty, say so in one line (its `motivo`) and let the person estimate.</action>
+  <action>Ask the person, in one question with three answers: confirm the proposed value, correct it (with the value), or
+  skip. In autonomous mode under a coordinator, the question goes to whoever approves, never to a blocking dialog.</action>
+  <check if="the person confirmed or corrected">
+    <action>Run `node "$H/scripts/lib/estimates.js" story --repo {project-root} --story {{story_id}} --proposed
+    <the proposed value, omitted if there was none> --value <the value that stays> --base <the candidate ids used,
+    comma-separated> --confirmed-by <who answered>`. Every value the person gave and every id taken from a file goes in
+    single quotes, with any single quote inside written as `'\''`, and the paths too: the command line must not run
+    anything but the command. `estimates.js` checks the shape of `--base` (story ids) and `--confirmed-by` (a name or an
+    email) and exits 2 without writing if they do not fit. It appends one line to `.tycon/estimates.jsonl`.</action>
+    <action>Run `node "$H/scripts/lib/estimates.js" report --repo {project-root} --epic {{epic_num}} --json` and show one
+    line: the epic's current total against its range ("la épica suma 58 h; rango 40–70 h"), saying so if it falls
+    outside. If the report does not compare (`dentro: null`: no range, no estimated stories, or units without a rate),
+    show its `motivo` instead of the total.</action>
+  </check>
+  <check if="the person skipped">
+    <action>Write nothing and go on.</action>
+  </check>
+  <action>If `similar-stories.js` or `estimates.js` exits with 2 or 3, say it in one line with its reason and go on without
+  estimating: a missing estimate never stops the story.</action>
 </step>
 
 <step n="6" goal="Update sprint status and finalize">

@@ -1725,6 +1725,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.75: las historias cerradas más parecidas a una nueva (scripts/lib/similar-stories.js) — sólo las de done con horas reales; cada una con su puntaje y por qué se parece; sin candidatas medidas, la lista vacía con su motivo, nunca inventadas. Laboratorios con acme, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/similar-stories.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.75: el paso de estimación de tycon-create-story (después del borrador y antes del validador; las tres respuestas; la pregunta a quien aprueba; el total de la épica o su motivo) y el campo estimated_days de story-format.md, que apunta al registro.",
+      "raiz": "arnes",
+      "ruta": "tests/create-story-estimate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.22: la foto de despliegues de cada noche (scripts/nightly/deployments/) — qué llegó a staging y a producción en cada producto, leído del stage EXACTO declarado de cada corrida (succeeded sí; skipped, ausente o un pedazo de texto como «Prod», no), la aprobación pendiente, vencida o no aprobada, main roto o no, el segundo proveedor GitHub, «no medido» con motivo de lista cerrada que nunca es «sin despliegue», el detalle saneado, la lista blanca del archivo y la ficha del tablero. Con fake-az.sh y fake-gh.js: sin red.",
       "raiz": "arnes",
       "ruta": "tests/nightly-deployments.test.js",
