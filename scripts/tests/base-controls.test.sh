@@ -25,6 +25,18 @@
 #       abierto: aviso sin constancia, nada con constancia; el veredicto no cambia
 #   T17 BaseControls_RuleAdditionsListedPerFile — las excepciones que suma el pedido, listadas por archivo; la alarma
 #       cuenta la que trajo main
+#   T19 BaseControls_ApprovalFolder_SignatureInItsOwnFile_Passes — la firma en <carpeta>/<hash>.json vale, y `pending`
+#       apunta la firma a la carpeta
+#   T20 BaseControls_ApprovalFolder_OldJsonlStillCounts — con la carpeta en el inventario, la firma del jsonl viejo vale
+#   T21 BaseControls_ApprovalFolder_BadOrMisnamedFile_SignsNothing — no firma nada: un archivo que no es JSON, uno cuyo
+#       nombre no es su hash, uno cuyas reglas no dan su hash (también una línea del jsonl), uno en una subcarpeta, y
+#       una firma sana de otro cambio
+#   T22 BaseControls_Approve_WritesOneFilePerSignature_NoRewrite — approve escribe <hash>.json una vez, no pisa lo que
+#       ya está, sale 1 si el destino no es una carpeta y sigue sumando la línea a un .jsonl (con `script` como
+#       terminal; sin `script`, NO MEDIDO)
+#   T23 BaseControls_TwoSignedPRs_MergeWithoutConflict — dos pedidos firmados, cada uno en su archivo, entran uno detrás
+#       del otro sin conflicto y la revisión del segundo sobre la base nueva sale verde
+#   T24 BaseControls_ApprovalFolder_Classified — la carpeta de constancias queda clasificada en el inventario
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -114,6 +126,10 @@ run() {
   local r="$1" out="$2"; shift 2
   bash "${SCRIPT}" run --root "${r}" --base main --range main...pedido "$@" > "${out}" 2>&1; RC=$?
 }
+# hash_de '<entradas json>': el hash de una constancia, como lo calcula el guion
+hash_de() { node -e 'const e=JSON.parse(process.argv[1]);const t=e.map(x=>`${x.path}\t${x.blob}\n`).sort().join("");console.log(require("crypto").createHash("sha256").update(t).digest("hex"))' "$1"; }
+# firma '<entradas json>': la constancia de esas entradas, en una línea, como la escribe el dueño desde su terminal
+firma() { node -e 'console.log(JSON.stringify({hash:process.argv[2],rules:JSON.parse(process.argv[1]),at:"2026-10-17",by:"dueño"}))' "$1" "$(hash_de "$1")"; }
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T1 · el inventario real cuadra; en un juguete, un archivo de datos sin clasificar es rojo
@@ -353,7 +369,7 @@ has "T16 dice cómo firmarla" "${T}/t16a.out" "run-base-controls.sh approve"
 lab_git -C "${R}" checkout -q main
 BLOB="$(lab_git -C "${R}" rev-parse HEAD:.github/workflows/ci.yml)"
 mkdir -p "${R}/.tycon"
-printf '{"hash":"x","rules":[{"path":".github/workflows/ci.yml","blob":"%s"}],"at":"2026-10-17","by":"dueño"}\n' "${BLOB}" > "${R}/.tycon/control-changes.jsonl"
+firma "[{\"path\":\".github/workflows/ci.yml\",\"blob\":\"${BLOB}\"}]" > "${R}/.tycon/control-changes.jsonl"
 commit "${R}" "la firma del dueño"
 lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t16b.out"
@@ -595,7 +611,7 @@ lab_git -C "${R}" checkout -q main
 printf '%s\n' '# uno' >> "${R}/.github/workflows/ci.yml"; commit "${R}" "uno"
 printf '%s\n' '# dos' >> "${R}/.github/workflows/ci.yml"; commit "${R}" "dos"
 BLOB="$(lab_git -C "${R}" rev-parse HEAD:.github/workflows/ci.yml)"; mkdir -p "${R}/.tycon"
-printf '{"hash":"x","rules":[{"path":".github/workflows/ci.yml","blob":"%s"}],"at":"2026-10-17","by":"dueño"}\n' "${BLOB}" > "${R}/.tycon/control-changes.jsonl"
+firma "[{\"path\":\".github/workflows/ci.yml\",\"blob\":\"${BLOB}\"}]" > "${R}/.tycon/control-changes.jsonl"
 printf 'esto no es JSON\n' >> "${R}/.tycon/control-changes.jsonl"; commit "${R}" "firma del final"
 lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t16d.out"
@@ -680,6 +696,171 @@ has "T18 …y lo dice" "${T}/t18e.out" "no pude leer la punta"
 bash "${SCRIPT}" approve --root "${R}" --file scripts/ci/toy-rules.json --rev main < /dev/null > "${T}/t18f.out" 2>&1
 lacks "T18 approve --file --rev no choca con el chequeo de la punta" "${T}/t18f.out" "no coinciden con la punta"
 has "T18 …y pide la terminal como siempre" "${T}/t18f.out" "pide una terminal"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T19-T24 · una firma por archivo: dos pedidos firmados no chocan en el registro
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# carpeta_base <carpeta>: el juguete con la carpeta de constancias primero y el jsonl viejo después; el pedido afloja la
+# lista y deja en ENTRIES lo que hay que firmar
+CARPETA='.tycon/control-changes/'
+carpeta_base() {
+  local r="$1"; make_base "${r}"; inv "${r}" "j.approvals=[\"${CARPETA}\",\".tycon/control-changes.jsonl\"]"; commit "${r}" "carpeta de constancias"; pr "${r}"
+  printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${r}/scripts/ci/toy-rules.json"
+  printf 'PROHIBIDO\n' > "${r}/docs/malo.txt"; commit "${r}"
+  bash "${SCRIPT}" pending --root "${r}" --base main --range main...pedido > "${r}.pending" 2>&1
+  ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${r}.pending" | head -n 1)"
+}
+# T19 · la firma en su propio archivo vale, y el comando de la firma apunta a la carpeta
+R="${T}/t19"; carpeta_base "${R}"
+has "T19 pending apunta la firma a la carpeta" "${R}.pending" "--out '${CARPETA}'"
+H="$(hash_de "${ENTRIES}")"; mkdir -p "${R}/${CARPETA}"; firma "${ENTRIES}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "constancia en su archivo"
+run "${R}" "${T}/t19.out"
+is "T19 con la firma en su archivo: verde" "0" "${RC}"
+has "T19 …y lo dice nombrando la regla" "${T}/t19.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+# T20 · la firma en el jsonl viejo sigue valiendo con la carpeta en el inventario
+R="${T}/t20"; carpeta_base "${R}"
+mkdir -p "${R}/.tycon"; firma "${ENTRIES}" > "${R}/.tycon/control-changes.jsonl"
+commit "${R}" "constancia en el jsonl"
+run "${R}" "${T}/t20.out"
+is "T20 la firma del jsonl viejo vale igual" "0" "${RC}"
+# T21 · lo que no se sostiene no firma nada: un caso por rama, sin otra firma
+R="${T}/t21"; carpeta_base "${R}"; H="$(hash_de "${ENTRIES}")"
+OTRAS='[{"path":"scripts/ci/toy-rules.json","blob":"0000000000000000000000000000000000000000"}]'; HO="$(hash_de "${OTRAS}")"
+t21() { # t21 <nombre> <qué espera ver en el aviso, o «-»>; el contenido ya está escrito en el árbol
+  local name="$1" want="$2"
+  commit "${R}" "${name}"; bash "${SCRIPT}" run --root "${R}" --base main --range "main...t21-${name}" > "${T}/t21-${name}.out" 2>&1; RC=$?
+  is "T21 ${name}: no firma nada (rojo)" "1" "${RC}"
+  [ "${want}" = "-" ] || has "T21 ${name}: el aviso nombra el archivo" "${T}/t21-${name}.out" "${want}"
+}
+caso() { lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t21-$1"; mkdir -p "${R}/${CARPETA}"; }
+caso no-json; printf 'esto no es JSON\n' > "${R}/${CARPETA}${H}.json"; t21 no-json "${CARPETA}${H}.json"
+caso nombre; firma "${ENTRIES}" > "${R}/${CARPETA}otro-nombre.json"; t21 nombre "${CARPETA}otro-nombre.json"
+caso reglas; node -e 'const l=JSON.parse(process.argv[1]);l.rules[0].blob="1".repeat(40);console.log(JSON.stringify(l))' "$(firma "${ENTRIES}")" > "${R}/${CARPETA}${H}.json"; t21 reglas "${CARPETA}${H}.json"
+caso subcarpeta; mkdir -p "${R}/${CARPETA}sub"; firma "${ENTRIES}" > "${R}/${CARPETA}sub/${H}.json"; t21 subcarpeta "${CARPETA}sub"
+caso otro-cambio; firma "${OTRAS}" > "${R}/${CARPETA}${HO}.json"; t21 otro-cambio "-"
+lacks "T21 otro-cambio: una firma sana de otro cambio no avisa" "${T}/t21-otro-cambio.out" "no firma nada"
+caso enlace; firma "${ENTRIES}" > "${R}/docs/firma-aparte.json"; ln -s ../../docs/firma-aparte.json "${R}/${CARPETA}${H}.json"; t21 enlace "${CARPETA}${H}.json"
+# un nombre con salto de línea no firma y no arma una línea propia en el registro de la CI (la revisión de un pedido
+# con un nombre así puede salir «no pude correr»: también es rojo)
+caso salto; firma "${ENTRIES}" > "${R}/${CARPETA}x
+::error::inventado.json"; commit "${R}" salto
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t21-salto > "${T}/t21-salto.out" 2>&1; RC=$?
+[ "${RC}" -ne 0 ] && ok "T21 salto: no firma nada (rojo, rc ${RC})" || no "T21 salto: salió verde"
+if grep -q '^::error::' "${T}/t21-salto.out"; then no "T21 salto: el nombre del archivo armó una línea propia en el registro"; else ok "T21 salto: el nombre sale escapado, sin línea propia"; fi
+# un submódulo con el nombre de la firma (un gitlink, modo 160000) no firma nada
+caso submodulo; lab_git -C "${R}" update-index --add --cacheinfo "160000,$(lab_git -C "${R}" rev-parse HEAD),${CARPETA}${H}.json"
+lab_git -C "${R}" commit -qm submodulo > /dev/null 2>&1
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t21-submodulo > "${T}/t21-submodulo.out" 2>&1; RC=$?
+is "T21 submodulo: no firma nada (rojo)" "1" "${RC}"
+has "T21 submodulo: el aviso nombra el archivo" "${T}/t21-submodulo.out" "${CARPETA}${H}.json"
+# una firma sana con modo 100755 vale (el AC acepta los dos modos de archivo común)
+lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b t21-ejecutable; mkdir -p "${R}/${CARPETA}"
+firma "${ENTRIES}" > "${R}/${CARPETA}${H}.json"; chmod +x "${R}/${CARPETA}${H}.json"; commit "${R}" "firma ejecutable"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t21-ejecutable > "${T}/t21-ejecutable.out" 2>&1; RC=$?
+is "T21 una firma sana con modo 100755 vale" "0" "${RC}"
+caso jsonl; node -e 'const l=JSON.parse(process.argv[1]);l.rules[0].blob="1".repeat(40);console.log(JSON.stringify(l))' "$(firma "${ENTRIES}")" > "${R}/.tycon/control-changes.jsonl"; t21 jsonl ".tycon/control-changes.jsonl"
+# T22 · approve escribe un archivo por firma, una sola vez; la terminal es de mentira (script), la frase la da la prueba
+R="${T}/t22"; carpeta_base "${R}"; H="$(hash_de "${ENTRIES}")"
+# aprobar <destino>: corre approve bajo una terminal de mentira contestando «apruebo»; deja el exit en RC y la salida en OUT
+aprobar() {
+  printf '#!/usr/bin/env bash\nbash %q approve --root %q --entries %q --out %q; echo $? > %q\n' "${SCRIPT}" "${R}" "${ENTRIES}" "$1" "${T}/t22.rc" > "${T}/t22.sh"
+  rm -f "${T}/t22.rc"
+  # la entrada queda abierta hasta que approve termina: si se cierra antes, script le manda un fin de archivo a la
+  # terminal y la lectura de la frase da vacío
+  respuesta() { sleep 1; printf 'apruebo\n'; local i=0; while [ ! -f "${T}/t22.rc" ] && [ "${i}" -lt 75 ]; do sleep 0.2; i=$((i + 1)); done; }
+  if [ "$(uname)" = Darwin ]; then respuesta | script -q /dev/null bash "${T}/t22.sh" > "${T}/t22.out" 2>&1
+  else respuesta | script -qec "bash ${T}/t22.sh" /dev/null > "${T}/t22.out" 2>&1; fi
+  RC="$(cat "${T}/t22.rc" 2>/dev/null || echo sin-exit)"; OUT="$(cat "${T}/t22.out")"
+}
+if command -v script > /dev/null 2>&1 && [ "$(uname -s | cut -c1-5)" != MINGW ] && [ "$(uname -s | cut -c1-5)" != MSYS_ ]; then
+  aprobar "${CARPETA}"
+  is "T22 approve a la carpeta firma (exit 0)" "0" "${RC}"
+  if [ -f "${R}/${CARPETA}${H}.json" ] && [ "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).hash)' "${R}/${CARPETA}${H}.json")" = "${H}" ]; then ok "T22 …en <hash>.json, con ese hash"; else no "T22 no escribió ${CARPETA}${H}.json: ${OUT}"; fi
+  cp "${R}/${CARPETA}${H}.json" "${T}/t22-antes.json"
+  aprobar "${CARPETA}"
+  is "T22 la misma firma otra vez: exit 0" "0" "${RC}"
+  case "${OUT}" in *"ya estaba firmado"*) ok "T22 …dice que ya estaba firmado";; *) no "T22 la segunda firma no dijo «ya estaba firmado»: ${OUT}";; esac
+  cmp -s "${T}/t22-antes.json" "${R}/${CARPETA}${H}.json" && ok "T22 …y no tocó el archivo" || no "T22 la segunda firma reescribió el archivo"
+  printf '{"otra":"cosa"}\n' > "${R}/${CARPETA}${H}.json"; cp "${R}/${CARPETA}${H}.json" "${T}/t22-otro.json"
+  aprobar "${CARPETA}"
+  is "T22 el archivo ya está con otra cosa: exit 1" "1" "${RC}"
+  cmp -s "${T}/t22-otro.json" "${R}/${CARPETA}${H}.json" && ok "T22 …y no lo pisa" || no "T22 pisó un archivo que tenía otra cosa"
+  printf 'soy un archivo\n' > "${R}/.tycon/no-carpeta"
+  aprobar ".tycon/no-carpeta/"
+  is "T22 el destino es un archivo, no una carpeta: exit 1" "1" "${RC}"
+  aprobar ".tycon/viejo.jsonl"
+  is "T22 a un .jsonl: exit 0" "0" "${RC}"
+  [ "$(grep -c "\"hash\":\"${H}\"" "${R}/.tycon/viejo.jsonl" 2>/dev/null)" = 1 ] && ok "T22 …suma la línea, como antes" || no "T22 el .jsonl no tiene la línea: ${OUT}"
+  # <hash>.json como enlace a una firma sana: el lector no lo cuenta, así que approve no puede decir «ya estaba firmado»
+  rm -f "${R}/${CARPETA}${H}.json"; mkdir -p "${R}/otro"; firma "${ENTRIES}" > "${R}/otro/f.json"; ln -s ../../otro/f.json "${R}/${CARPETA}${H}.json"
+  aprobar "${CARPETA}"
+  is "T22 <hash>.json es un enlace: exit 1" "1" "${RC}"
+  case "${OUT}" in *"ya estaba firmado"*) no "T22 con un enlace dijo «ya estaba firmado»";; *) ok "T22 …sin decir «ya estaba firmado»";; esac
+  [ -L "${R}/${CARPETA}${H}.json" ] && ok "T22 …y el enlace queda como estaba" || no "T22 tocó el enlace"
+  rm -f "${R}/${CARPETA}${H}.json"; mkdir -p "${R}/${CARPETA}${H}.json"
+  aprobar "${CARPETA}"
+  is "T22 <hash>.json es una carpeta: exit 1" "1" "${RC}"
+  rmdir "${R}/${CARPETA}${H}.json"
+  # el destino tiene que quedar dentro del repo, y la carpeta de destino no puede ser un enlace
+  aprobar "../fuera-del-repo/"
+  is "T22 un destino fuera del repo: exit 2" "2" "${RC}"
+  [ ! -e "${T}/fuera-del-repo" ] && ok "T22 …sin escribir nada afuera" || no "T22 escribió fuera del repo"
+  aprobar "/tmp/base-controls-fuera-$$/"
+  is "T22 un destino absoluto: exit 2" "2" "${RC}"
+  [ ! -e "/tmp/base-controls-fuera-$$" ] && ok "T22 …sin escribir nada en el destino absoluto" || { rm -rf "/tmp/base-controls-fuera-$$"; no "T22 escribió en el destino absoluto"; }
+  # la carpeta de git no es parte del pedido: ni su configuración ni sus ganchos
+  cp "${R}/.git/config" "${T}/t22-config"
+  aprobar ".git/config"
+  is "T22 un destino en la carpeta de git: exit 2" "2" "${RC}"
+  cmp -s "${T}/t22-config" "${R}/.git/config" && ok "T22 …sin tocar la configuración de git" || no "T22 tocó .git/config"
+  aprobar ".git/hooks/"
+  is "T22 una carpeta de destino dentro de git: exit 2" "2" "${RC}"
+  # la persona ve adónde va la firma antes de escribir «apruebo»
+  aprobar "${CARPETA}"
+  case "${OUT}" in *"La firma va a: ${CARPETA}${H}.json"*) ok "T22 el pedido de la frase dice adónde va la firma";; *) no "T22 no dice adónde va la firma: ${OUT}";; esac
+  # una carpeta sin permiso de escritura: exit 1, sin firmar
+  rm -f "${R}/${CARPETA}${H}.json"; chmod a-w "${R}/${CARPETA}"
+  aprobar "${CARPETA}"
+  chmod u+w "${R}/${CARPETA}"
+  if [ "$(id -u)" = 0 ]; then echo "⚠️ T22 NO MEDIDO: como root el permiso no frena la escritura"; else is "T22 sin permiso de escritura: exit 1" "1" "${RC}"; fi
+  mkdir -p "${T}/t22-otra"; ln -s "${T}/t22-otra" "${R}/.tycon/enlazada"
+  aprobar ".tycon/enlazada/"
+  is "T22 la carpeta de destino es un enlace: exit 2" "2" "${RC}"
+  [ -z "$(ls -A "${T}/t22-otra")" ] && ok "T22 …sin escribir del otro lado del enlace" || no "T22 escribió del otro lado del enlace"
+else
+  echo "⚠️ T22 NO MEDIDO: este sistema no tiene \`script\` (la terminal de mentira); la escritura de approve no se midió acá"
+fi
+# T23 · dos pedidos firmados, cada uno en su archivo, entran uno detrás del otro sin conflicto
+R="${T}/t23"; make_base "${R}"; inv "${R}" "j.approvals=[\"${CARPETA}\",\".tycon/control-changes.jsonl\"]"; commit "${R}" "carpeta de constancias"
+pedido_firmado() { # pedido_firmado <rama>: deja la rama con su aflojamiento y su firma; el hash en HASH
+  bash "${SCRIPT}" pending --root "${R}" --base main --range "main...$1" > "${T}/t23-$1.pending" 2>&1
+  local e; e="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t23-$1.pending" | head -n 1)"; HASH="$(hash_de "${e}")"
+  mkdir -p "${R}/${CARPETA}"; firma "${e}" > "${R}/${CARPETA}${HASH}.json"; commit "${R}" "firma de $1"
+}
+lab_git -C "${R}" checkout -q -b uno main
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"; printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+pedido_firmado uno; H1="${HASH}"
+lab_git -C "${R}" checkout -q -b dos main
+sed -i.bak 's/^WORD="PROHIBIDO"$/WORD="VEDADO"/' "${R}/scripts/ci/toy-check.sh"; rm -f "${R}/scripts/ci/toy-check.sh.bak"; printf 'PROHIBIDO\n' > "${R}/docs/otro-malo.txt"; commit "${R}"
+pedido_firmado dos; H2="${HASH}"
+[ -n "${H1}" ] && [ "${H1}" != "${H2}" ] && ok "T23 los dos pedidos tienen hashes distintos" || no "T23 los hashes no difieren: ${H1} ${H2}"
+lab_git -C "${R}" checkout -q main
+lab_git -C "${R}" merge -q --no-ff --no-edit uno > /dev/null 2>&1; is "T23 entra el primero" "0" "$?"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...dos > "${T}/t23.out" 2>&1; RC=$?
+is "T23 la revisión del segundo sobre la base nueva: verde con su firma" "0" "${RC}"
+lab_git -C "${R}" merge -q --no-ff --no-edit dos > "${T}/t23-merge.out" 2>&1; is "T23 entra el segundo sin conflicto" "0" "$?"
+[ -f "${R}/${CARPETA}${H1}.json" ] && [ -f "${R}/${CARPETA}${H2}.json" ] && ok "T23 …y main queda con las dos firmas" || no "T23 main no tiene las dos firmas"
+# T24 · la carpeta de constancias queda clasificada en el inventario
+R="${T}/t24"; make_base "${R}"; inv "${R}" "j.approvals=[\"${CARPETA}\",\".tycon/control-changes.jsonl\"]"
+mkdir -p "${R}/${CARPETA}"; printf '{}\n' > "${R}/${CARPETA}algo.json"
+printf '%s\n' "# las constancias: \"${CARPETA}algo.json\"" >> "${R}/scripts/ci/toy-check.sh"; commit "${R}" "carpeta clasificada"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t24.out" 2>&1; RC=$?
+is "T24 check-inventory con la carpeta de constancias: verde" "0" "${RC}"
+lacks "T24 …sin «sin clasificar»" "${T}/t24.out" "sin clasificar"
+# el inventario real pone las carpetas primero, y la carpeta del público se publica
+is "T24 el inventario real: las carpetas primero, los jsonl viejos después" '[".github/control-changes/",".tycon/control-changes/",".github/control-changes.jsonl",".tycon/control-changes.jsonl"]' \
+  "$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).approvals))' "${ROOT}/scripts/ci/controls-from-base.json")"
+grep -qF '".github/control-changes/**"' "${ROOT}/scripts/publishing/allowlist.json" && ok "T24 la carpeta de firmas del público se publica" || no "T24 allowlist.json no publica .github/control-changes/**"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi

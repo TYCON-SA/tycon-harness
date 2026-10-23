@@ -98,5 +98,5 @@
     { "path": ".github/workflows/ci.yml", "optional": true, "must_contain": ["scripts/ci/run-base-controls.sh", "--base"] },
     { "path": "pipelines/azure-pipelines-maintainers-pr.yml", "optional": true, "must_contain": ["scripts/ci/run-base-controls.sh\" run"] }
   ],
-  "approvals": [".github/control-changes.jsonl", ".tycon/control-changes.jsonl"]
+  "approvals": [".github/control-changes/", ".tycon/control-changes/", ".github/control-changes.jsonl", ".tycon/control-changes.jsonl"]
 }
