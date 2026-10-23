@@ -148,7 +148,7 @@ test('WorkItem_FieldName_NeutralWithAlias @story-8.85 @ac-8', () => {
   assert.strictEqual(fs.readFileSync(sinDepends, 'utf8'), '---\nstory: "2"\nstatus: x\nwork_item: 12\npipelines:\n  a: 1\n---\n');
   // los lectores del arnés leen el mismo id con los dos nombres
   const snap = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'projects', 'snapshot.js'), 'utf8');
-  const hook = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), 'utf8');
+  const hook = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-story-work-item', 'scripts', 'on-story-create.js'), 'utf8');
   const como = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'), 'utf8');
   const pipe = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'), 'utf8');
   const visual = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'visual-plan.js'), 'utf8');
@@ -394,7 +394,7 @@ test('WorkItem_Config_UnknownKeysAndBooleans_Said @story-8.85 @ac-10', async () 
 
 test('WorkItem_Readers_RunForReal @story-8.85 @ac-8', () => {
   // el aviso al crear una historia, ejecutado: con el nombre viejo o el nuevo ya está ligada; sin ninguno, avisa
-  const hook = path.join(ROOT, 'skills', 'tycon-ado-story-wi', 'scripts', 'on-story-create.js');
+  const hook = path.join(ROOT, 'skills', 'tycon-story-work-item', 'scripts', 'on-story-create.js');
   const correr = (campo) => {
     const d = tmp('historia-');
     const f = path.join(d, 'story-9-1.md');
@@ -492,12 +492,72 @@ test('Adversarial_Hours_NotANumber_Rejected @story-8.85 @ac-9', async () => {
 
 test('Adversarial_StoryCreateHook_EmptyFieldIsNotLinked @story-8.85 @ac-8', () => {
   // un `work_item:` vacío seguido de otra clave no cuenta como ligado: el aviso sale
-  const hook = path.join(ROOT, 'skills', 'tycon-ado-story-wi', 'scripts', 'on-story-create.js');
+  const hook = path.join(ROOT, 'skills', 'tycon-story-work-item', 'scripts', 'on-story-create.js');
   for (const campo of ['work_item:', 'ado_work_item: ']) {
     const f = path.join(tmp('historia-vacia-'), 's.md');
     const content = `---\nstory: "9.1"\nepic: 9\nstatus: ready-for-dev\napproach: "[NEW]"\n${campo}\ntitle: x\n---\n`;
     fs.writeFileSync(f, content);
     const out = spawnSync(process.execPath, [hook], { input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: f, content } }), encoding: 'utf8' }).stdout;
     assert.match(out, /sin `work_item:`/, campo);
+  }
+});
+
+test('SkillAndHook_Renamed_RegisteredOnce @story-8.85 @ac-12', () => {
+  const VIEJA = 'tycon-ado-story-wi';
+  const NUEVA = 'tycon-story-work-item';
+  const SK = path.join(ROOT, 'skills');
+  // la skill nueva trae el gancho; la vieja queda sólo con su reemplazo, que dice el nombre nuevo y manda a cargarla
+  assert.ok(fs.existsSync(path.join(SK, NUEVA, 'scripts', 'on-story-create.js')), 'el gancho vive en la skill nueva');
+  assert.match(fs.readFileSync(path.join(SK, NUEVA, 'SKILL.md'), 'utf8'), /^---\nname: tycon-story-work-item\n/);
+  assert.deepStrictEqual(fs.readdirSync(path.join(SK, VIEJA)), ['SKILL.md'], 'la carpeta vieja tiene sólo el reemplazo');
+  const reemplazo = fs.readFileSync(path.join(SK, VIEJA, 'SKILL.md'), 'utf8');
+  assert.match(reemplazo, /^---\nname: tycon-ado-story-wi\n/, 'el nombre viejo se sigue pudiendo invocar');
+  assert.match(reemplazo, /`tycon-story-work-item`/, 'y dice el nombre nuevo');
+  // el despachador lanza el gancho por la ruta nueva; «Cómo trabaja», con los ids neutros
+  const disp = fs.readFileSync(path.join(SK, 'tycon-pipeline', 'scripts', 'dispatch.js'), 'utf8');
+  assert.match(disp, /path\.join\(SKILLS_DIR, 'tycon-story-work-item', 'scripts', 'on-story-create\.js'\)/);
+  const { INTEGRATION_PIECES } = require(path.join(SK, 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'));
+  const ids = INTEGRATION_PIECES.map((p) => p.id);
+  assert.ok(ids.includes('workItemActive') && ids.includes('workItemClose'), ids.join(', '));
+  assert.ok(!ids.some((i) => /^ado/.test(i)), ids.join(', '));
+  for (const p of INTEGRATION_PIECES.filter((x) => x.id === 'workItemClose' || x.id === 'timeTrackingClose')) assert.match(p.code, /close-work-item\.md$/);
+  // un settings.json con el gancho por la ruta vieja, y otro con la ruta ya reescrita a la nueva: pasados por el
+  // aplicador de los dos instaladores, el gancho no queda suelto (lo lanza el despachador), sea cual sea el orden
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+  for (const skill of [VIEJA, NUEVA]) assert.ok(lista.superseded.includes(`${skill}/scripts/on-story-create.js`), `superseded nombra ${skill}`);
+  for (const skill of [VIEJA, NUEVA]) {
+    const base = tmp('renombre-');
+    const skills = path.join(base, 'tcg', 'skills');
+    const hooksDir = path.join(base, 'tcg', 'scripts', 'hooks');
+    const home = path.join(base, 'home');
+    const gancho = path.join(skills, skill, 'scripts', 'on-story-create.js');
+    const otro = path.join(skills, 'tycon-pipeline', 'scripts', 'hook-post-edit.js');
+    for (const f of [gancho, otro]) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, '// gancho de juguete\n'); }
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const settingsPath = path.join(home, '.claude', 'settings.json');
+    fs.writeFileSync(settingsPath, JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: `node "${gancho}"` }] }] } }, null, 2));
+    const listPath = path.join(base, 'hooks-list.json');
+    fs.writeFileSync(listPath, JSON.stringify({ hooks: [{ event: 'PostToolUse', matcher: 'Edit|Write', spec: 'tycon-pipeline/scripts/hook-post-edit.js', label: 'el registro de ediciones', when: 'always', platforms: { windows: true }, steps: ['all'], effect: 'records' }], superseded: lista.superseded }));
+    for (const platform of ['posix', 'windows']) {
+      const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'setup', 'apply-hooks.js'), '--settings', settingsPath, '--hooks-dir', hooksDir,
+        '--skills', skills, '--list', listPath, '--effects', path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), '--platform', platform],
+      { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_PROFILE: '0', TYCON_NO_NIGHTLY_EXAM: '1' } });
+      assert.strictEqual(r.status, 0, `${skill} ${platform}: ${r.stderr}`);
+      const cmds = Object.values(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks || {}).flat().flatMap((e) => (e.hooks || []).map((h) => h.command));
+      assert.strictEqual(cmds.filter((c) => /on-story-create\.js/.test(c)).length, 0, `${skill} ${platform}: el gancho no queda suelto (${cmds.join(' · ')})`);
+      assert.ok(cmds.some((c) => /hook-post-edit\.js/.test(c)), `${skill} ${platform}: el resto de la lista se registra`);
+    }
+  }
+  // en el núcleo, el nombre viejo sólo en el reemplazo, en la skill nueva (que lo cuenta) y en la lista de reemplazados;
+  // las pruebas lo nombran a propósito y version.json lo regenera la publicación
+  const conViejo = execFileSync('git', ['-C', ROOT, 'grep', '-l', VIEJA, '--', '.', ':!scripts/tests', ':!version.json'], { encoding: 'utf8' }).trim().split('\n').sort();
+  assert.deepStrictEqual(conViejo, ['scripts/setup/hooks-list.json', `skills/${NUEVA}/SKILL.md`, `skills/${VIEJA}/SKILL.md`].sort());
+  // el mapa de renombres viaja sólo con el privado: con él debajo, trae la entrada del gancho y no declara la carpeta
+  const mapa = path.join(ROOT, 'scripts', 'lib', 'renames.json');
+  if (fs.existsSync(mapa)) {
+    const e = JSON.parse(fs.readFileSync(mapa, 'utf8')).entries;
+    assert.ok(e.some((x) => x.kind === 'file' && x.old === `skills/${VIEJA}/scripts/on-story-create.js` && x.new === `skills/${NUEVA}/scripts/on-story-create.js` && x.repo === 'agent-skills'));
+    assert.ok(!e.some((x) => x.kind === 'folder' && x.old === `skills/${VIEJA}`), 'la carpeta vieja sigue existiendo con su reemplazo');
   }
 });

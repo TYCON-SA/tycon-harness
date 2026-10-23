@@ -938,7 +938,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Qué es:** La guía `guides/integrations/ado-projects.md` de la integración con Azure DevOps.
 
-**Por qué existe:** Al crear una story se crea sola su work item. Cubre el hook `on-story-create.js`, la skill `tycon-ado-story-wi`, el esquema de `.tycon/ado-config.yaml`, el tipo de work item por plantilla, el vínculo al Epic y el ciclo de vida.
+**Por qué existe:** Al crear una story se crea sola su work item. Cubre el hook `on-story-create.js`, la skill `tycon-story-work-item`, el esquema de `.tycon/ado-config.yaml`, el tipo de work item por plantilla, el vínculo al Epic y el ciclo de vida.
 
 **Quién la usa:** El hook de creación de stories y el dev que configura un repo.
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * tycon-ado-story-wi — PostToolUse hook (matcher: Write).
+ * tycon-story-work-item — PostToolUse hook (matcher: Write).
  *
  * Cuando el agente hace Write de un archivo `.md`, detecta si es una story
  * Mary+GOLD recién creada SIN `work_item:` (ni su nombre viejo `ado_work_item:`) en el frontmatter. Si lo es,
- * emite un system-reminder instruyendo crear el work item en Azure DevOps
- * via el skill `tycon-ado-story-wi`.
+ * emite un system-reminder instruyendo crear el pedido de trabajo en la plataforma del equipo
+ * via el skill `tycon-story-work-item`.
  *
  * Detección por CONTENIDO, no por path — así funciona en TODOS los proyectos
  * TYCON sin mantener una lista de directorios de stories.
@@ -113,12 +113,12 @@ const storyId = storyMatch ? storyMatch[1].trim() : path.basename(filePath, '.md
 const title = titleMatch ? titleMatch[1].trim() : '(sin título)';
 
 emit(
-  `tycon-ado-story-wi STORY-CREATE-detect: se creó una story Mary+GOLD sin ` +
+  `tycon-story-work-item STORY-CREATE-detect: se creó una story Mary+GOLD sin ` +
     `\`work_item:\` en el frontmatter.\n\n` +
     `   • Story: ${storyId} — ${title}\n` +
     `   • Archivo: ${filePath}\n\n` +
     `Acción: crear el pedido de trabajo de esta story en la plataforma del equipo. Invocá el skill:\n` +
-    `   Skill(skill="tycon-ado-story-wi", args="${filePath}")\n\n` +
+    `   Skill(skill="tycon-story-work-item", args="${filePath}")\n\n` +
     `El skill lee dónde van los pedidos del repo (\`.tycon/work-items.yaml\`, o \`.tycon/ado-config.yaml\` ` +
     `con el nombre viejo), te muestra título, tipo y destino y PIDE TU CONFIRMACIÓN antes de crear; ` +
     `la creación la hace la capa de plataforma. Tras crear, escribe \`work_item: <id>\` de vuelta ` +

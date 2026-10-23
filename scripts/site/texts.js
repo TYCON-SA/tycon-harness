@@ -1669,8 +1669,8 @@ const TEXTOS = {
   // lo que suma cada integración de la organización a su paso (INTEGRATION_PIECES de lib/how-it-works.js).
   // Dicen qué hacen sin nombrar el servicio: cambiar de servicio es cambiar la integración de una fila
   'piezaOrg.registroDeHorasAbre': { es: 'Abre el registro de horas de la historia', en: 'Starts the time entry for the story' },
-  'piezaOrg.pedidoAdoActivo': { es: 'Marca como activo el pedido de trabajo de la historia en ADO', en: 'Marks the story work item as active in ADO' },
-  'piezaOrg.pedidoAdoCierra': { es: 'Deja en el pedido de ADO los commits, el pedido y la ejecución que lo cerraron, y lo pasa a cerrado', en: 'Records in the ADO work item the commits, pull request and run that closed it, and closes it' },
+  'piezaOrg.pedidoDeTrabajoActivo': { es: 'Marca como activo el pedido de trabajo de la historia en ADO', en: 'Marks the story work item as active in ADO' },
+  'piezaOrg.pedidoDeTrabajoCierra': { es: 'Deja en el pedido de ADO los commits, el pedido y la ejecución que lo cerraron, y lo pasa a cerrado', en: 'Records in the ADO work item the commits, pull request and run that closed it, and closes it' },
   'piezaOrg.registroDeHorasCierra': { es: 'Cierra el registro de horas de la historia', en: 'Stops the time entry for the story' },
   // lo que hace cada control, en llano: es el título del control en «Cómo trabaja» (el archivo va debajo).
   // Uno por control del árbol (los de scripts/setup/hooks-list.json y los hijos de los despachadores); un control nuevo

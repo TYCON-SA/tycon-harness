@@ -966,7 +966,7 @@ test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada
 
 test('T30 ComoTrabaja_CadaControlDeclaraSuIntegracion @story-2.61.3 @ac-4 — un control de ADO o del registro de horas lo declara', () => {
   const { controls } = HIW().readControls(ROOT);
-  const deIntegracion = { 'tycon-ado-story-wi/': 'ado', 'clocki/': 'clockify' };
+  const deIntegracion = { 'tycon-story-work-item/': 'ado', 'clocki/': 'clockify' };
   for (const c of controls) {
     for (const [parte, integ] of Object.entries(deIntegracion)) {
       if (c.script.includes(parte)) assert.strictEqual(c.integration, integ, `${c.spec} (${c.script})`);

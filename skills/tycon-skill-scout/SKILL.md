@@ -56,7 +56,7 @@ grep -rliE "keyword1|keyword2|keyword3" ~/.claude/tycon-harness/guides/*.md 2>/d
 find ~/.claude/tycon-harness/scripts -type f \( -name "*.sh" -o -name "*.js" -o -name "*.py" -o -name "*.ps1" \) | grep -iE "keyword1|keyword2|keyword3"
 ```
 
-Para cada match, leé el frontmatter `description:` (skills/agents) o las primeras 40 líneas (guides/scripts) para confirmar relevancia. **No tomes el filename solo como evidencia** — el nombre puede ser engañoso (ej: `tycon-ado-story-wi` no es un advisor, es una skill para crear work items).
+Para cada match, leé el frontmatter `description:` (skills/agents) o las primeras 40 líneas (guides/scripts) para confirmar relevancia. **No tomes el filename solo como evidencia** — el nombre puede ser engañoso (ej: `tycon-story-work-item` no es un advisor, es una skill para crear work items).
 
 ### Step 3 — Cross-referenciar el catálogo de reglas
 

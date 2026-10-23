@@ -277,7 +277,7 @@ test('T13 Recognizers_BothNamesAsSegments_LegacyOnlyDeclared', () => {
   // los que no se pueden llamar (un guion y dos hooks): los dos nombres como segmento, nunca como subcadena
   const ws = read('scripts/tools/tycon-worktree.sh');
   for (const n of [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME]) assert.ok(ws.includes(`*"/${n}"|*"/${n}/"*`), `tycon-worktree.sh: ${n} como segmento`);
-  for (const f of ['skills/tycon-ado-story-wi/scripts/on-story-create.js', 'skills/tycon-story-followup-link/scripts/on-story-create.js']) {
+  for (const f of ['skills/tycon-story-work-item/scripts/on-story-create.js', 'skills/tycon-story-followup-link/scripts/on-story-create.js']) {
     const code = codeOnly(read(f));
     assert.ok(!/filePath\.includes\('tycon-/.test(code), `${f}: reconoce por subcadena`);
     const rx = /if \((\/.+\/)\.test\(filePath\)\) process\.exit\(0\);/.exec(code);

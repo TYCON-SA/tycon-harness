@@ -21,7 +21,7 @@ files_to_modify: []
   - approach: [EXTRACT] copiar de una fuente · [ADAPT] adaptar un patrón resuelto · [CREATE] nuevo.
   - status: vocabulario cerrado en scripts/metrics/states.json.
   - files_to_create / files_to_modify: rutas relativas al repo; iguales a la tabla de Dev Notes.
-  - work_item (antes ado_work_item): NO se escribe a mano; lo agrega tycon-ado-story-wi al crear la story.
+  - work_item (antes ado_work_item): NO se escribe a mano; lo agrega tycon-story-work-item al crear la story.
   - Si la story corrige, recalibra o extiende otra: agregar followup_of y followup_reason (§1.2).
   - Si se entrega en tandas: bloque pipelines (§1.1).
   - Nunca comillas dobles dentro de un comentario ni en el valor de title: la story se vuelve

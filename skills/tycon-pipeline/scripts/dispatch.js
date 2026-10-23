@@ -189,7 +189,7 @@ const CHAINS = {
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla
     { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra)
-    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
+    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-story-work-item', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
     { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['validate-story'], effect: 'records' },
   ],
 };
