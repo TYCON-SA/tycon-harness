@@ -880,7 +880,8 @@
     },
     {
       "__nota": "las instrucciones dan el comando del pipeline con su ruta entera: el bloque del índice de Codex (macOS, Linux y Windows), la ruta a través del enlace de las skills, y ninguna orden del pipeline sin ruta en el índice, la guía de Ollama ni el bloque. Todo en un HOME temporal.",
-      "ruta": "scripts/tests/pipeline-command-paths.test.js",
+      "raiz": "arnes",
+      "ruta": "tests/pipeline-command-paths.test.js",
       "requiere": []
     },
     {
