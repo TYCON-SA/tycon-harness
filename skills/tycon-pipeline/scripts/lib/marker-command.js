@@ -158,6 +158,8 @@ function tramos(cmd, shell) {
     }
     if (c === '\\' && !ps) {
       if (cmd[i + 1] === '\n') { i++; continue; }
+      // la continuación de renglón con CRLF (un comando escrito en Windows)
+      if (cmd[i + 1] === '\r' && cmd[i + 2] === '\n') { i += 2; continue; }
       empezar(); palabra.texto += cmd[i + 1] || ''; i++; continue;
     }
     if (c === '`' && ps) { empezar(); palabra.texto += cmd[i + 1] || ''; i++; continue; }
@@ -210,6 +212,10 @@ const base = (t) => t.replace(/\{[^}]*\}/g, '').split(/[\\/]/).pop().toLowerCase
 // el guion que nombra la palabra: `marker` o `pipeline` (con o sin `.js`, con cualquier ruta), o null
 const guionDe = (t) => { const m = /^(marker|pipeline)(\.js)?$/.exec(base(t)); return m ? m[1] : null; };
 const NOMBRA_GUION = /marker|pipeline/i;
+const CORRE_NODE = /(^|[\s;&|(]|\/)(node|nodejs|bun)(\.exe)?\s/i;
+const NODES = new Set(['node', 'nodejs', 'bun']);
+// las opciones de `node` que llevan su valor en la palabra siguiente: ese valor no es el guion
+const NODE_CON_VALOR = new Set(['-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions']);
 
 /** El programa del tramo: saltea asignaciones, redirecciones y prefijos (`sudo`, `xargs`) con sus opciones. */
 function programa(palabras) {
@@ -233,7 +239,11 @@ function programa(palabras) {
 /** Las llamadas a `marker.js` que ejecuta el comando. */
 function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
   const fuera = [];
-  if (hondo > 4 || !NOMBRA_GUION.test(cmd)) return fuera;
+  // sin comillas ni barras invertidas, y con la barra invertida + salto de línea unida: `pipe''line.js` y `pipe\⏎line.js`
+  // son `pipeline.js` para el shell. Un comando que corre `node` se lee siempre: el guion puede venir con el nombre
+  // armado por el shell (`pipelin?.js`, `mar$'k'er.js`)
+  const plano = String(cmd).replace(/\\\r?\n/g, '').replace(/["'\\`]/g, '');
+  if (hondo > 4 || !(NOMBRA_GUION.test(plano) || CORRE_NODE.test(plano))) return fuera;
   const { tramos: lista, subs, abierta } = tramos(cmd, shell);
   for (const interno of subs) fuera.push(...llamadas(interno, { shell }, hondo + 1));
   // las variables asignadas con un valor literal en este comando (`F=--trust-ran; …`): escapeDe las lee por su valor.
@@ -262,7 +272,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
   }
   // una comilla sin cerrar: el resto del comando no se puede leer (puede ser un `marker.js clear`; un comando que sólo
   // nombra `pipeline` no cierra nada)
-  if (abierta && /marker/i.test(cmd)) fuera.push({ guion: 'marker', sub: null, args: [], dudosa: true });
+  if (abierta && /marker/i.test(plano)) fuera.push({ guion: 'marker', sub: null, args: [], dudosa: true });
   // un shell que lee de la entrada (`echo '…' | sh`) corre cualquier texto del comando
   const leeEntrada = lista.some((t) => {
     const p = programa(t.palabras);
@@ -272,9 +282,25 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
     const p = programa(t.palabras);
     const deTexto = TEXTO.has(p.nombre);
     const pal = t.palabras;
+    // el guion que corre `node`: la primera palabra después que no es una opción, ni el valor de una opción que lo
+    // lleva aparte (`-r x`), ni el `run` de `bun run`
+    let posGuion = -1;
+    if (NODES.has(p.nombre)) {
+      for (let k = p.i + 1; k < pal.length; k++) {
+        const x = pal[k].texto;
+        if (NODE_CON_VALOR.has(x)) { k++; continue; }
+        if (/^-/.test(x) || (p.nombre === 'bun' && x === 'run' && k === p.i + 1)) continue;
+        posGuion = k;
+        break;
+      }
+    }
     for (let m = 0; m < pal.length; m++) {
       const w = pal[m];
-      const guion = guionDe(w.texto);
+      // el guion con un nombre que el shell arma (una variable sola, `$'…'`, un comodín, llaves) y no se puede leer: puede
+      // ser cualquiera de los dos, y se lee como los dos
+      const escondido = m === posGuion && !guionDe(w.texto) && (!w.literal || /[*?[{]/.test(w.texto));
+      const guiones = guionDe(w.texto) ? [guionDe(w.texto)] : escondido ? ['pipeline', 'marker'] : [];
+      const guion = guiones[0];
       if (guion) {
         if (deTexto && m !== p.i) continue;
         let args = pal.slice(m + 1);
@@ -291,7 +317,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
         const sub = args.length && args[0].literal ? args[0].texto : null;
         // `node --env-file=<archivo> pipeline.js …`: el archivo puede traer variables que el comando no muestra
         const envFile = pal.slice(0, m).some((x) => /^--env-file(-if-exists)?(=|$)/.test(x.texto));
-        fuera.push({ guion, sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0), asig, envFile, porXargs: p.porXargs });
+        for (const g of guiones) fuera.push({ guion: g, sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0), asig, envFile, porXargs: p.porXargs });
         // lo que va después de `--` es otro comando que el guion corre (`marker.js run-check <x> -- marker.js …`)
         const corte = args.findIndex((a) => a.literal && a.texto === '--');
         if (corte >= 0 && corte + 1 < args.length) {
