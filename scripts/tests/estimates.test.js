@@ -247,9 +247,20 @@ test('T8 Linea_ClavesFijas @story-2.75 @ac-8', () => {
 });
 
 test('T9 SinShell_Y_SinHerramientas @story-2.75 @ac-33', () => {
-  const codigo = fs.readFileSync(CLI, 'utf8');
-  assert.doesNotMatch(codigo, /execSync|shell\s*:\s*true/);
-  assert.doesNotMatch(codigo, /azure|github|clockify/i);
+  for (const archivo of [CLI, path.join(ROOT, 'scripts', 'lib', 'similar-stories.js')]) {
+    const codigo = fs.readFileSync(archivo, 'utf8');
+    assert.doesNotMatch(codigo, /execSync|shell\s*:\s*true/, archivo);
+    assert.doesNotMatch(codigo, /azure|github|clockify/i, archivo);
+  }
+});
+
+test('T15 Confirmacion_GuardaPropuestoYValor @story-2.75 @ac-12', () => {
+  const repo = repoDeHistorias();
+  const r = correr(['story', '--repo', repo, '--story', '3.5', '--proposed', '14', '--value', '16', '--base', '3.1,2.4', '--confirmed-by', 'acme-lider', '--who', 'acme-lider']);
+  assert.strictEqual(r.status, 0, r.stdout);
+  const [l] = lineas(repo);
+  assert.deepStrictEqual([l.nivel, l.historia, l.propuesto, l.valor, l.base, l.confirmo], ['historia', '3.5', 14, 16, ['3.1', '2.4'], 'acme-lider']);
+  assert.deepStrictEqual(Object.keys(l), CLAVES);
 });
 
 test('T37 Report_UnidadesMezcladas @story-2.75 @ac-34', () => {
@@ -363,4 +374,63 @@ test('Adversarial_OrgConfig_ComentarioRutaRelativaYLectorRoto @story-2.75 @ac-5'
   assert.match(roto.json.reason, /lector roto de acme/);
   assert.doesNotMatch(roto.stderr, /at Object\.|node:internal/);
   assert.deepStrictEqual(lineas(repo).map((l) => [l.historia, l.unidad]), [['3.1', 'days'], ['3.2', 'days']]);
+});
+
+test('Escribir_RegistroQueNoSeLee_Sale3 @story-2.75 @ac-7', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
+  const repo = repoDeHistorias();
+  escribirRegistro(repo, [fila({ nivel: 'epica', epica: '3', min: 10, max: 20 })]);
+  const registro = path.join(repo, REGISTRO);
+  const E = require(CLI);
+  fs.chmodSync(registro, 0o200);
+  try {
+    // agregar a un registro que no se puede leer no adivina si le falta el salto final: lo dice
+    assert.throws(() => E.append(repo, E.linea({ nivel: 'plan', epica: '3', historia: '3.1', valor: 5, unidad: 'hours', cuando: 'x' })),
+      (e) => e.code === 3 && /no pude leer/.test(e.message));
+  } finally { fs.chmodSync(registro, 0o644); }
+  assert.strictEqual(lineas(repo).length, 1, 'no escribió');
+});
+
+test('Escribir_UnidadQueElLectorViejoNoValida_Sale3 @story-2.75 @ac-5', () => {
+  const repo = repoDeHistorias();
+  const arbol = path.dirname(org());
+  fs.mkdirSync(path.join(arbol, 'scripts', 'lib'), { recursive: true });
+  // un lector anterior a la clave: la deja pasar sin mirarla
+  fs.writeFileSync(path.join(arbol, 'scripts', 'lib', 'team-repos.js'),
+    'module.exports = { parse: () => ({ ok: true, data: { estimates: { unit: "weeks" } }, problems: [] }) };');
+  const r = correr(['plan', '--repo', repo, '--story', '3.1', '--value', '5', '--who', 'acme-lider'], { orgConfig: path.join(arbol, 'team-repos.json') });
+  assert.strictEqual(r.status, 3, r.stdout);
+  assert.match(r.json.reason, /weeks/);
+  assert.ok(!fs.existsSync(path.join(repo, REGISTRO)), 'no escribió');
+  // y lo mismo con las tasas: una rota daría un total NaN que el informe leería como «dentro del rango»
+  for (const estimates of [{ unit: 'days', hours_per_day: 'ocho' }, { unit: 'points', hours_per_point: -2 }]) {
+    fs.writeFileSync(path.join(arbol, 'scripts', 'lib', 'team-repos.js'),
+      `module.exports = { parse: () => ({ ok: true, data: { estimates: ${JSON.stringify(estimates)} }, problems: [] }) };`);
+    const t = correr(['report', '--repo', repo, '--epic', '3'], { orgConfig: path.join(arbol, 'team-repos.json') });
+    assert.strictEqual(t.status, 3, t.stdout);
+    assert.match(t.json.reason, /hours_per_(day|point)/);
+  }
+});
+
+test('Real_SiempreEnHoras @story-2.75 @ac-7', () => {
+  const E = require(CLI);
+  assert.strictEqual(E.legible(fila({ nivel: 'real', epica: '3', historia: '3.1', valor: 4, unidad: 'hours', ejecucion: 'r1' })), true);
+  assert.strictEqual(E.legible(fila({ nivel: 'real', epica: '3', historia: '3.1', valor: 4, unidad: 'days', ejecucion: 'r1' })), false, 'lo real en otra unidad es ilegible');
+});
+
+test('Confirmacion_BaseYPersonaConForma_Sale2 @story-2.75 @ac-12', () => {
+  const repo = repoDeHistorias();
+  const casos = [
+    [['--base', '3.1,$(rm -rf x)'], /--base/],
+    [['--confirmed-by', 'acme;lider'], /--confirmed-by/],
+    [['--confirmed-by', 'x'.repeat(81)], /--confirmed-by/],
+    [['--who', 'acme\nlider'], /--who/],
+  ];
+  for (const [extra, motivo] of casos) {
+    const r = correr(['story', '--repo', repo, '--story', '3.5', '--value', '5', '--who', 'acme-lider', ...extra]);
+    assert.strictEqual(r.status, 2, `${extra.join(' ')}: ${r.stdout}`);
+    assert.match(r.json.reason, motivo);
+  }
+  assert.ok(!fs.existsSync(path.join(repo, REGISTRO)), 'no escribió');
+  const ok = correr(['story', '--repo', repo, '--story', '3.5', '--value', '5', '--who', 'María Pérez', '--confirmed-by', 'acme.lider@acme.example', '--base', '3.1,2-4']);
+  assert.strictEqual(ok.status, 0, ok.stdout);
 });
