@@ -622,6 +622,16 @@ test("2.76-Demo_RutaNueva_EntraEnElRecorrido", async () => {
 });
 
 test('2.76-Demo_RecorridoDeRutas_NiEscribeNiSale', async () => {
+  // la vista de «Cómo trabaja» arma la lista de validadores sin consultar la lista de código deprecado: esa consulta lanza
+  // git y anota en el registro del arnés en cada visita (también en el sitio real), y la vista no muestra archivos
+  {
+    const cp = require('child_process');
+    const original = cp.execFileSync;
+    const lanzados = [];
+    cp.execFileSync = function espia(...a) { lanzados.push(a[0]); return original.apply(this, a); };
+    try { require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js')).buildModel({ treeDir: path.join(__dirname, '..', '..') }); } catch { /* el modelo puede faltar sin datos; lo que se mide son los procesos */ } finally { cp.execFileSync = original; }
+    assert.deepStrictEqual(lanzados, [], 'armar la vista no lanza procesos');
+  }
   // la tabla entera del servidor (en este proceso, para leerla) y el sitio de verdad (otro proceso, con su freno puesto)
   const tabla = SERVER().crearSitioDemo({ env: { SITE_DEMO: '1' }, dir: tmp('demo-tabla-'), log: () => {} });
   const propias = [{ path: '/livez' }, { path: '/healthz' }, { path: '/readyz' }, { path: '/idioma' }, { path: '/demo/ver-como' }, { path: '/auth/login' }, { path: '/auth/callback' }, { path: '/auth/logout' }, { path: '/saliste' },
