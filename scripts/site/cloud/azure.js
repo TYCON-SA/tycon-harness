@@ -14,6 +14,8 @@
  *     La identidad se agrega a la organización de Azure DevOps una vez.
  *   · La lectura de Azure Blob la hace `bajar()` de scripts/metrics/download-runs.js, con la credencial que le pasa el
  *     sitio: la SAS de sólo lectura o este token.
+ *   · `plataformaDeEjemplo`: lo que el sitio demo contesta de adentro del proceso en lugar de preguntarle a Azure DevOps y a
+ *     GitHub (los pipelines, los tipos de pedido, la política de revisión), con datos de «acme» y sin red.
  *   · `almacenDeCopia()`: el contenedor de la copia de operaciones, para `operations-copy.js` (el sitio lee,
  *     el trabajo que copia escribe con la sesión de `az`).
  *
@@ -156,4 +158,87 @@ const HOSTS_QUE_NO_SE_NOMBRAN = /\.windows\.net|dev\.azure\.com/i;
 // la reconoce así y no le pide el no-store del sitio (el sitio ni la vio)
 const esDelCandado = (headers) => Boolean(headers && typeof headers.get === 'function' && headers.get('x-ms-middleware-request-id'));
 
-module.exports = { tokenDeIdentidad, almacenDeCopia, tokenParaRepo, bajarBuzon, bajarUnaCorrida, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };
+// ── la plataforma de ejemplo del sitio demo ──────────────────────────────────────────────────────
+// El núcleo no nombra ninguna nube: el sitio demo (demo.js) pide la plataforma de ejemplo a la nube que la trae
+// (`plataformaDeEjemplo`, ver demo/platform.js). Acá vive lo que el sitio real le pregunta a Azure DevOps y a GitHub, y
+// que el sitio demo contesta de adentro del proceso, sin red: las direcciones y los repos de ejemplo, los pipelines y los
+// stages de cada proyecto, los tipos de pedido de trabajo y los campos de «Riesgo», la política de revisión de main, la
+// forma que esa plataforma da a los datos de «acme» (la organización de los productos, el proveedor del buzón) y las
+// variables con que la plataforma da una identidad a un proceso, que el modo demo no admite. Todo es de «acme».
+function plataformaDeEjemplo() {
+  const ORG = 'acme';
+  // la organización de los productos tal como la guarda la lista de repos (repos.json) y el perfil
+  const URL_ORGANIZACION = `https://dev.azure.com/${ORG}`;
+  const PROVEEDOR_DE_BUZON = 'azure-blob';
+
+  // las direcciones de la plataforma de ejemplo: nadie las resuelve, `fetch` las contesta de adentro del proceso
+  const URL_BASE = Object.freeze({ azure: 'https://dev.azure.example', github: 'https://api.github.example' });
+  const REMOTOS = Object.freeze({
+    operaciones: Object.freeze({ platform: 'azure', org: ORG, project: 'Producto X', repo: 'operaciones', web: 'https://dev.azure.example/acme/Producto%20X/_git/operaciones' }),
+    perfil: Object.freeze({ platform: 'github', org: ORG, repo: 'perfil', web: 'https://github.example/acme/perfil' }),
+  });
+  // los pipelines de cada proyecto de ejemplo y los stages de la última corrida de cada uno
+  const PIPELINES = Object.freeze({
+    'Producto X': [{ id: 11, name: 'Producto X FrontEnd', folder: '\\' }, { id: 12, name: 'Producto X Backend', folder: '\\' }],
+    'Producto Y': [{ id: 21, name: 'Producto Y Backend', folder: '\\' }],
+  });
+  const STAGES = Object.freeze([{ identifier: 'Build', name: 'Compilar' }, { identifier: 'Tests', name: 'Pruebas' }, { identifier: 'Staging', name: 'Staging' }, { identifier: 'Production', name: 'Producción' }]);
+  const TIPOS = Object.freeze(['Bug', 'Riesgo', 'Tarea']);
+
+  /** Los campos del tipo «Riesgo» y sus valores permitidos. */
+  const CAMPOS_DE_RIESGO = Object.freeze([
+    { referenceName: 'Custom.Categoria', name: 'Categoría', allowedValues: ['Calidad', 'Operacional', 'Seguridad', 'Técnico'] },
+    { referenceName: 'Custom.Probabilidad', name: 'Probabilidad', allowedValues: ['1', '2', '3', '4', '5'] },
+    { referenceName: 'Custom.Impacto', name: 'Impacto', allowedValues: ['1', '2', '3', '4', '5'] },
+    { referenceName: 'Custom.Prioridad', name: 'Prioridad del riesgo', allowedValues: ['🔴 Crítico (21-25)', '🟠 Alto (15-20)', '🟡 Medio (8-14)', '🟢 Bajo (1-7)'] },
+    { referenceName: 'Custom.Disparador', name: 'Disparador' },
+    { referenceName: 'Custom.PlanDeMitigacion', name: 'Plan de mitigación' },
+  ]);
+
+  /** Una respuesta como la de `fetch`, lo mínimo que usan las consultas del sitio: `ok`, `status` y `json()`. */
+  const respuesta = (status, doc) => ({ ok: status >= 200 && status < 300, status, json: async () => doc, text: async () => JSON.stringify(doc) });
+
+  /**
+   * El `fetch` del sitio demo: contesta con datos de ejemplo las consultas que el sitio real hace a la plataforma de pedidos
+   * de trabajo y a la del repo del perfil. No abre ninguna conexión. Una dirección que no es de la plataforma de ejemplo da 404.
+   */
+  async function fetchDemo(url) {
+    let u;
+    try { u = new URL(String(url)); } catch { return respuesta(404, {}); }
+    const p = decodeURIComponent(u.pathname);
+    if (u.origin === URL_BASE.github) {
+      // la protección de main del repo del perfil: un revisor, así «Proponer» se ofrece
+      if (new RegExp(`^/repos/${ORG}/perfil/branches/main/protection$`).test(p)) return respuesta(200, { required_pull_request_reviews: { required_approving_review_count: 1 } });
+      if (new RegExp(`^/repos/${ORG}/[^/]+/environments$`).test(p)) return respuesta(200, { environments: STAGES.map((s) => ({ name: s.identifier })) });
+      return respuesta(404, {});
+    }
+    if (u.origin !== URL_BASE.azure) return respuesta(404, {});
+    const m = new RegExp(`^/${ORG}/([^/]+)/_apis/(.*)$`).exec(p);
+    if (!m) return respuesta(404, {});
+    const [, proyecto, resto] = m;
+    if (!PIPELINES[proyecto]) return respuesta(404, {});
+    if (resto === 'pipelines') return respuesta(200, { value: PIPELINES[proyecto] });
+    if (resto === 'build/builds') return respuesta(200, { value: [{ id: 9000 + Number(u.searchParams.get('definitions') || 0) }] });
+    if (/^build\/builds\/\d+\/timeline$/.test(resto)) return respuesta(200, { records: STAGES.map((s) => ({ type: 'Stage', identifier: s.identifier, name: s.name })) });
+    if (resto === 'wit/workitemtypes') return respuesta(200, { value: TIPOS.map((name) => ({ name })) });
+    if (/^wit\/workitemtypecategories\//.test(resto)) return respuesta(200, { workItemTypes: [] });
+    if (/^wit\/workitemtypes\/Riesgo\/fields$/.test(resto)) return respuesta(200, { value: CAMPOS_DE_RIESGO });
+    if (/^wit\/workitemtypes\/[^/]+\/fields$/.test(resto)) return respuesta(200, { value: [] });
+    // la política de revisión de main del repo de operaciones: un revisor que no es quien crea el pedido
+    if (/^git\/repositories\/operaciones$/.test(resto)) return respuesta(200, { id: 'repo-operaciones-ejemplo' });
+    if (resto === 'policy/configurations') {
+      return respuesta(200, { value: [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' },
+        settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', repositoryId: 'repo-operaciones-ejemplo' }] } }] });
+    }
+    return respuesta(404, {});
+  }
+
+  return {
+    urlBase: URL_BASE, remotos: REMOTOS, fetch: fetchDemo, pipelines: PIPELINES, stages: STAGES, camposDeRiesgo: CAMPOS_DE_RIESGO,
+    urlOrganizacion: URL_ORGANIZACION, claveDeOrganizacion: 'azure', proveedorDeBuzon: PROVEEDOR_DE_BUZON,
+    variablesDeIdentidad: Object.freeze(['IDENTITY_ENDPOINT', 'IDENTITY_HEADER', 'MSI_ENDPOINT', 'MSI_SECRET', 'AZURE_CLIENT_SECRET']),
+  };
+}
+let ejemplo = null;
+
+module.exports = { get plataformaDeEjemplo() { if (!ejemplo) ejemplo = plataformaDeEjemplo(); return ejemplo; }, tokenDeIdentidad, almacenDeCopia, tokenParaRepo, bajarBuzon, bajarUnaCorrida, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };

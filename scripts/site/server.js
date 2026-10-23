@@ -40,8 +40,20 @@
  *                 SITE_PROFILE_REPO (https) y SITE_PROFILE_TOKEN (leer el perfil del equipo) · SITE_PROFILE_WRITE_TOKEN
  *                 (proponer al perfil) · SITE_PIPELINES_TOKEN (sólo lectura de definiciones y corridas: la propuesta de stages)
  *
+ * EL MODO DEMO (`SITE_DEMO=1`, scripts/site/demo.js): el mismo servidor, sin proveedor de inicio de sesión ni credenciales,
+ *   sobre los datos de ejemplo de «acme» (scripts/site/demo/), abierto y de sólo lectura de punta a punta. Acepta sólo
+ *   SITE_DEMO, PORT y SITE_PUBLIC_URL; con cualquier otra variable del sitio o de identidad de la plataforma no arranca y dice
+ *   cuál, y con SITE_DEMO en otro valor que 1 tampoco. Un freno central (red, procesos y escrituras fuera de su carpeta
+ *   temporal propia) se pone al cargar este archivo, antes que fuentes y pestañas. Cada visita entra con la sesión de ejemplo
+ *   (quien mantiene, o una persona del equipo con el selector «Ver como»), cada página lleva la franja «Datos de ejemplo»,
+ *   toda respuesta pide `noindex` y cada dirección tiene un tope de pedidos por minuto. El sitio real dice `demo: false` en su
+ *   línea de arranque y en /livez.
+ *
  * Uso: node scripts/site/server.js        (la imagen: scripts/site/Dockerfile)
  */
+// SITE_DEMO=1: el freno de red, de procesos y de escrituras se pone ANTES de cargar nada más (demo-guard.js). Un módulo que guardara
+// una referencia a `fetch` o a `spawn` antes de ese momento lo esquivaría
+const FRENO_DEMO = require.main === module && process.env.SITE_DEMO === '1' ? require('./demo-guard.js').frenoTemprano() : null;
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -208,7 +220,8 @@ function validarConfiguracion(env) {
 
 /** Lo que dice el registro del arranque: qué variable está, nunca su valor. */
 function lineasDeArranque(env) {
-  return VARIABLES.map((v) => `${v}: ${env[v] !== undefined && env[v] !== '' ? 'presente' : 'ausente'}`);
+  // el modo demo se dice siempre: el sitio real dice `demo: false`, así se puede probar que no lo tiene
+  return [...VARIABLES.map((v) => `${v}: ${env[v] !== undefined && env[v] !== '' ? 'presente' : 'ausente'}`), `demo: ${env.SITE_DEMO === '1'}`];
 }
 
 // ── La tabla de rutas ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -275,6 +288,7 @@ function etiquetaDe(cuerpo) {
  * Las rutas que contestan sin sesión y que un candado delante del sitio tiene que dejar pasar: la vida y la salud, la
  * página de salida con lo que carga (hoja de estilo, código y letra) y el selector de idioma. Rutas exactas, sin comodines.
  */
+const SONDAS = new Set(['/livez', '/healthz', '/readyz']);
 const RUTAS_SIN_SESION = ['/healthz', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2'];
 
 function leerEstatico() {
@@ -307,8 +321,9 @@ function textoDeLaRaiz(nombre, anexos = []) {
  * El sitio, sin escuchar todavía. `fuentes` cumple el contrato de sources.js (estado, config, modelo, refrescar,
  * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las pestañas Corridas y Configuración suman las suyas.
  */
-function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null, alEntrar = null } = {}) {
-  const v = validarConfiguracion(env);
+function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null, alEntrar = null, demo = null } = {}) {
+  // el modo demo (demo.js) trae su propia configuración, sin proveedor ni credenciales
+  const v = demo ? { ok: true, cfg: demo.cfg } : validarConfiguracion(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
   const cfg = v.cfg;
   // la última publicada en `stable`: una vez por hora como máximo, sin credenciales, guardada en el disco.
@@ -316,7 +331,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   const ultima = vigia || require('./latest-release.js').crearVigia({ imagen: IMAGEN, dataDir: cfg.dataDir, ahora, log: (l) => log(l) });
   const rutas = validarRutas([...RUTAS, ...rutasExtra]).map((r) => ({ ...r, coincide: patronDe(r.path) }));
   if (!fuentes) throw new Error('crearSitio necesita las fuentes (scripts/site/sources.js)');
-  const proveedor = PROVEEDORES[cfg.provider].crear(cfg, { ahora });
+  const proveedor = demo ? demo.proveedor : PROVEEDORES[cfg.provider].crear(cfg, { ahora });
   const estatico = leerEstatico();
   const consumidos = new Map();   // state → vencimiento: sólo para RECHAZAR repeticiones en este proceso
   const https = cfg.publicUrl.startsWith('https:');
@@ -337,9 +352,17 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // Origin (403, subestado 60)
     res.setHeader('Referrer-Policy', 'same-origin');
     if (https) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // un sitio público sin cuenta: que ningún buscador lo indexe
+    if (demo) res.setHeader('X-Robots-Tag', 'noindex');
   }
   function enviar(res, { status, tipo = 'text/html; charset=utf-8', cuerpo = '', extra = {} }) {
     cabeceras(res, tipo);
+    // el modo demo: «Datos de ejemplo» arriba de cada página (también las de error) y en su título
+    if (demo && typeof cuerpo === 'string' && /^text\/html/.test(tipo) && res.req) {
+      const cookies = session.leerCookies(res.req.headers.cookie);
+      const u = (() => { try { return new URL(res.req.url, 'http://sitio.invalid'); } catch { return null; } })();
+      cuerpo = demo.marcar(cuerpo, { idioma: idiomaSinSesion(res.req, cookies), como: demo.comoDe(cookies), url: u });
+    }
     for (const [k, val] of Object.entries(extra)) res.setHeader(k, val);
     const pedido = res.req || {};
     const pide = (k) => String((pedido.headers && pedido.headers[k]) || '');
@@ -453,7 +476,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const volver = /^\/(?![/\\])[\x21-\x7e]{0,500}$/.test(pedida) ? pedida : '/';
     const idioma = LANG.valido(form.get('idioma'));
     if (!idioma) return enviar(res, { status: 303, cuerpo: '', extra: { Location: volver } });
-    const ses = sesionDe(cookies);
+    // el sitio demo no tiene cuentas: el idioma vale sólo en la cookie, nada se guarda
+    const ses = demo ? null : sesionDe(cookies);
     if (ses) {
       const st = fuentes.estado();
       const config = st.navegable || st.cargado ? fuentes.config() : null;
@@ -529,7 +553,12 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const ruta = u.pathname;
     const st = fuentes.estado();
 
-    if (ruta === '/livez') return json(res, 200, { ok: true });
+    // el tope de pedidos del sitio demo: por dirección, salvo las sondas de la plataforma
+    if (demo && !SONDAS.has(ruta)) {
+      const tope = demo.tope(req);
+      if (!tope.ok) return enviar(res, { status: 429, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { 'Retry-After': String(tope.reintentarEn) } });
+    }
+    if (ruta === '/livez') return json(res, 200, { ok: true, demo: Boolean(demo) });
     if (ruta === '/healthz') return st.frenado ? json(res, 503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(Number.isFinite(st.frenado.fallaDesde) ? st.frenado.fallaDesde : st.frenado.desde)}` }) : json(res, 200, { ok: true });
     if (ruta === '/readyz') return st.cargado ? json(res, 200, { ok: true }) : json(res, 503, { ok: false, motivo: 'cargando' }, { 'Retry-After': '5' });
     if (estatico[ruta] && req.method === 'GET') return enviar(res, { status: 200, ...estatico[ruta] });
@@ -538,6 +567,19 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // el idioma antes de saber quién pide: la cookie y el navegador; con sesión, abajo, la persona primero
     let idioma = idiomaSinSesion(req, cookies);
     if (ruta === '/idioma') return cambiarIdioma(req, res, cookies);
+    if (demo) {
+      // sin cuentas: ni inicio ni cierre de sesión; «Ver como» sólo cambia la vista (una cookie), con el candado de origen
+      if (ruta.startsWith('/auth/') || ruta === '/saliste') return enviar(res, { status: 303, cuerpo: '', extra: { Location: '/' } });
+      if (ruta === '/demo/ver-como') {
+        if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'POST' } });
+        if (!delSitio(req)) return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' });
+        const form = await leerFormulario(req);
+        const pedida = String(form.get('volver') || '');
+        const volver = /^\/(?![/\\])[\x21-\x7e]{0,500}$/.test(pedida) ? pedida : '/';
+        const como = demo.comoValido(form.get('como'));
+        return enviar(res, { status: 303, cuerpo: '', extra: { Location: volver, ...(como ? { 'Set-Cookie': demo.cookieDeVista(como, { https }) } : {}) } });
+      }
+    }
     // tras «Salir» (la marca), entrar pide siempre elegir la cuenta: el proveedor conserva su sesión
     if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1' || session.tieneMarca(cookies), via: u.searchParams.get('via'), idioma, url: u }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/callback') return req.method === 'GET' ? vuelta(req, res, u, cookies) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
@@ -570,7 +612,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       return enviar(res, { status: 303, cuerpo: '', extra: { Location: invalidada ? '/saliste' : '/saliste?sin_invalidar=1', 'Set-Cookie': [session.borrar(session.SESION), session.marcaDeSalida()] } });
     }
 
-    const ses = sesionDe(cookies);
+    // el sitio demo: cada visita entra con la sesión de ejemplo (la vista que eligió, sin cuenta)
+    const ses = demo ? demo.sesion(cookies) : sesionDe(cookies);
     const esApi = ruta.startsWith('/api/');
     // un rechazo de /api/ dice por qué y qué hacer: la pantalla lo muestra tal cual (sin esto mostraría «respuesta 403»).
     // Nunca nombra a otra persona: a lo sumo, el correo de la propia sesión
@@ -615,7 +658,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
-      avisoSesiones: quien.rol === 'maintainer' && !cerradas.verificable(),
+      avisoSesiones: !demo && quien.rol === 'maintainer' && !cerradas.verificable(),
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
       version, ahora: ahora(),
       // sólo quienes mantienen saben de la última publicada (los que pueden actuar); el modo sale de site.update
@@ -662,10 +705,21 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   };
 }
 
+/**
+ * El sitio en modo demo, sin escuchar todavía: las fuentes y las pestañas sobre los datos de ejemplo (demo.js), la sesión de
+ * ejemplo y el tope de pedidos. `dir` es la carpeta temporal propia del modo: todo lo que se escribe queda adentro.
+ */
+function crearSitioDemo({ env = process.env, dir, log = (l) => process.stdout.write(`${l}\n`), ahora = Date.now } = {}) {
+  const modo = require('./demo.js').crearModoDemo({ env, dir, log, ahora, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null });
+  return crearSitio({ env, fuentes: modo.fuentes, log, ahora, rutasExtra: modo.rutasExtra, version: VERSION, vigia: modo.vigia, demo: modo });
+}
+
 async function main() {
   const env = process.env;
   const log = (l) => process.stdout.write(`[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] ${l}\n`);
   for (const l of lineasDeArranque(env)) log(l);
+  // SITE_DEMO puesta con cualquier valor pide el modo demo: sólo con «1» arranca, y nunca cae callado al sitio real
+  if (env.SITE_DEMO !== undefined) return arrancarDemo(env, log);
   const v = validarConfiguracion(env);
   if (!v.ok) {
     for (const p of v.problemas) process.stderr.write(`🔴 ${p.variable}: ${p.motivo}\n`);
@@ -707,6 +761,40 @@ async function main() {
   process.on('SIGINT', salir);
 }
 
-module.exports = { RUTAS_SIN_SESION, crearSitio, validarConfiguracion, validarRutas, lineasDeArranque, RUTAS, CSP, VARIABLES, VERSION };
+/** Arranca el sitio demo: la lista cerrada de variables, la carpeta temporal propia (con el freno ya puesto) y el servidor. */
+async function arrancarDemo(env, log) {
+  const D = require('./demo.js');
+  const v = D.validarDemo(env);
+  if (!v.ok) {
+    for (const p of v.problemas) process.stderr.write(`🔴 ${p.variable}: ${p.motivo}\n`);
+    process.stderr.write('el sitio no arranca\n');
+    process.exit(1);
+  }
+  // el freno se puso al cargar este archivo (FRENO_DEMO); sus intentos van al registro
+  const freno = FRENO_DEMO || require('./demo-guard.js').frenoActual();
+  if (!freno) { process.stderr.write('🔴 el modo demo no arranca sin su freno de red, de procesos y de escrituras\nel sitio no arranca\n'); process.exit(1); }
+  // una salida que el freno no pudo tapar es un hueco en un sitio público: no se arranca con él
+  if (freno.faltantes.length) {
+    for (const f of freno.faltantes) process.stderr.write(`🔴 freno: ${f.detalle}\n`);
+    process.stderr.write('el sitio no arranca\n');
+    process.exit(1);
+  }
+  require('./demo-guard.js').alIntentar((i) => log(`freno: ${i.tipo}: ${i.detalle}`));
+  log('sitio demo: datos de ejemplo de «acme», sólo lectura, sin cuentas ni conexiones afuera');
+  let sitio;
+  try {
+    sitio = crearSitioDemo({ env, dir: freno.dir, log });
+    await sitio.iniciar();
+  } catch (e) {
+    process.stderr.write(`🔴 ${e.message}\nel sitio no arranca\n`);
+    process.exit(1);
+  }
+  sitio.server.listen(v.cfg.port, () => log(`escuchando en el puerto ${v.cfg.port}`));
+  const salir = () => sitio.cerrar().then(() => process.exit(0));
+  process.on('SIGTERM', salir);
+  process.on('SIGINT', salir);
+}
+
+module.exports = { RUTAS_SIN_SESION, crearSitio, crearSitioDemo, validarConfiguracion, validarRutas, lineasDeArranque, RUTAS, CSP, VARIABLES, VERSION };
 
 if (require.main === module) main();

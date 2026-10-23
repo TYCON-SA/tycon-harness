@@ -1326,7 +1326,7 @@ function hermanosDelRepo(activos) {
 }
 
 /** `todos`: la lista de lo que PUEDE correr en «Validar la historia» (la página del arnés), sin mirar la máquina ni la constancia. */
-function computeValidadores({ story, repo, todos = false }) {
+function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   if (!story) throw new Error('validators: falta --story <spec.md>');
   // Una ruta mal tipeada no puede dar un set «válido» a medias:
   // sin story legible o sin repo no hay contexto sobre el que decidir nada.
@@ -1374,8 +1374,9 @@ function computeValidadores({ story, repo, todos = false }) {
     packs_nota: packsLib.notaDePaquetes({ repo, instalados: paquetesInstalados(), activos }),
     contexto: { files, detection: det },
     dependencias_de_pruebas: require('./lib/test-deps.js').dependenciasDePruebas({ repo, storyText: content }),
-    // los archivos declarados que están deprecados en el repo: el validador los reporta como VAL-C9
-    archivos_deprecados: require('./lib/deprecated.js').archivosDeHistoria({ repo, storyText: content }),
+    // los archivos declarados que están deprecados en el repo: el validador los reporta como VAL-C9. `deprecados: false`
+    // lo pide quien sólo muestra qué validadores hay (la vista del sitio): consultar la lista lanza git y anota en gates.log
+    archivos_deprecados: deprecados ? require('./lib/deprecated.js').archivosDeHistoria({ repo, storyText: content }) : [],
   };
 }
 

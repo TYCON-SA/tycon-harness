@@ -553,10 +553,19 @@ function firmaValida(tok, versiones, firma) {
 }
 
 /** Las versiones de hoy, en el clon, de los archivos que tocaría el revisor: `{ versions }` o `{ error }`. */
-async function versionesDe(dir, archivos) {
+/** La versión de un archivo como la daría git, leída del propio archivo (el sitio demo no tiene git): `{ oid }`, null si no está. */
+function oidDeArchivo(dir, archivo) {
+  return new Promise((resolve) => {
+    fs.readFile(path.join(dir, archivo), 'utf8', (err, texto) => {
+      if (!err) return resolve({ oid: ORG.versionDeTexto(texto, 40) });
+      resolve(err.code === 'ENOENT' ? { oid: null } : { error: String(err.code || err.message).slice(0, 200) });
+    });
+  });
+}
+async function versionesDe(dir, archivos, oidDe = oidEnHead) {
   const versions = {};
   for (const a of archivos) {
-    const r = await oidEnHead(dir, a);
+    const r = await oidDe(dir, a);
     if (r.error) return { error: `${a}: ${r.error}` };
     versions[a] = r.oid;
   }
@@ -815,7 +824,9 @@ function editor(boton, draft, firmadas, modelos) {
     proponer.setAttribute('disabled', 'disabled');
     pedir('/api/como-trabaja/proponer', { draft: borrador(), versions: versiones ? versiones.versions : {}, firma: versiones ? versiones.firma : null }).then(function (r) {
       estado.textContent = '';
-      if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T('comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
+      // el sitio demo no abre ningún pedido: dice lo que pasaría, igual que Configuración
+      if (r.ok && r.codigo === 'demo') estado.appendChild(el('p', { class: 'ct-ok', 'data-demo': 'si', text: r.message }));
+      else if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T('comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
       else estado.appendChild(el('p', { class: 'ct-error', text: r.codigo === 'cambio' ? T('comoTrabaja.cambioEnMain') : T('comoTrabaja.noSePudo', { motivo: (r.problems || [r.message]).join(' · ') }) }));
     });
   };
@@ -859,8 +870,10 @@ raiz.addEventListener('click', function (ev) {
 // ── las rutas ──
 
 /** Las rutas de la pestaña, para `rutasExtra` de crearSitio (como Configuración). */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {} }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, demo = false }) {
   const solo = ['maintainer'];
+  // el sitio demo (demo.js) no tiene git: la versión de cada archivo sale del archivo, y Proponer muestra lo que pasaría
+  const oidDe = demo ? oidDeArchivo : oidEnHead;
   const publicRepo = publicRepoOf();
   if (!publicRepo) log('cómo trabaja: scripts/setup/public-remotes.json no se pudo leer: las piezas del arnés quedan sin enlace al repo público');
   const perfil = () => {
@@ -888,7 +901,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
     const p = perfil();
     const r = reviewDraft({ profileDir: p.dir, draft: w.body && w.body.draft, idioma: views.idiomaDe(ctx) });
     if (!r.ok) return json(200, { ok: false, problems: r.problems });
-    const v = await versionesDe(p.dir, r.files.map((f) => f.archivo));
+    const v = await versionesDe(p.dir, r.files.map((f) => f.archivo), oidDe);
     if (v.error) { log(`cómo trabaja: no pude leer las versiones del clon del perfil (${v.error})`); return json(200, { ok: false, problems: [TX.t(views.idiomaDe(ctx), 'comoTrabaja.err.clon', { motivo: v.error })] }); }
     return json(200, { ok: true, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions) });
   }
@@ -910,10 +923,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
     const archivos = [];
     for (const f of r.files) {
       if (Object.prototype.hasOwnProperty.call(firmadas, f.archivo)) { archivos.push({ ...f, oidEsperado: firmadas[f.archivo] }); continue; }
-      const o = await oidEnHead(p.dir, f.archivo);
+      const o = await oidDe(p.dir, f.archivo);
       if (o.error) { log(`cómo trabaja: no pude leer la versión de ${f.archivo} en el clon del perfil (${o.error})`); return json(200, { ok: false, message: TX.t(views.idiomaDe(ctx), 'comoTrabaja.err.clon', { motivo: o.error }) }); }
       archivos.push({ ...f, oidEsperado: o.oid });
     }
+    if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, message: TX.t(views.idiomaDe(ctx), 'comoTrabaja.demoNoSeEscribe', { pack: r.pack }), loQuePasaria: { repo: 'perfil', archivos: archivos.map((f) => f.archivo) } });
     const res = await RP.proponer({
       clon: p.dir, archivos,
       // el nombre del paquete va adelante: el pedido abierto se busca por el comienzo de la rama, y «svelte» no puede
@@ -943,7 +957,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
       const d = draftOf(p.dir, pack, agent);
       if (d.error) { log(`cómo trabaja: el revisor ${pack}/${agent} no se pudo abrir (${d.error})`); return json(404, { ok: false, message: d.error }); }
       // las versiones de hoy de los dos archivos, firmadas: el aviso de «otro lo cambió» se mide desde que se abrió
-      const v = await versionesDe(p.dir, [`packs/${pack}/pack.json`, d.md]);
+      const v = await versionesDe(p.dir, [`packs/${pack}/pack.json`, d.md], oidDe);
       if (v.error) { log(`cómo trabaja: no pude leer las versiones del clon del perfil (${v.error})`); return json(404, { ok: false, message: TX.t(views.idiomaDe(ctx), 'comoTrabaja.err.clon', { motivo: v.error }) }); }
       return json(200, { draft: d.draft, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions), modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma) });
     } },

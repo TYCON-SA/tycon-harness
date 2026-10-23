@@ -229,6 +229,8 @@ if (familia) {
     if (q === 'properties.template.containers[0].image') return apl.imagen || '';
     // el valor que dejó la fase permiso-de-invitar (`--set-env-vars SITE_INVITE_EMAIL_CODE=…`)
     if (/SITE_INVITE_EMAIL_CODE/.test(q)) return estado.codigoPorCorreo || 'None';
+    // story 2.76: la marca de la instancia demo (el valor de SITE_DEMO de la aplicación; None si no la tiene)
+    if (/SITE_DEMO/.test(q)) return apl.demo || 'None';
     if (q === 'properties.configuration.secrets[].name') return (apl.secretos || []).join('\n');
     if (q === 'properties.template.containers[0].env[].name') return (apl.variables || []).join('\n');
     if (q === 'properties.configuration.ingress.external') return apl.externa ? 'true' : 'false';
@@ -262,7 +264,7 @@ if (familia) {
     const y = JSON.parse(Object.values(archivos)[0] || '{}');
     const cfg = (y.properties || {}).configuration || {};
     const cont = (((y.properties || {}).template || {}).containers || [])[0] || {};
-    estado.apl = { imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external) };
+    estado.apl = { demo: ((cont.env || []).find((e) => e.name === 'SITE_DEMO') || {}).value, imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external) };
   }
   if (paso === 'entrada' && args.includes('external')) estado.apl = { ...(estado.apl || {}), externa: true };
   if (paso === 'aplicacion' && verbo === 'update' && args.includes('--set-env-vars')) {

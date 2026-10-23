@@ -381,3 +381,31 @@ test('T14 2.74-Guia_InvitarYPermiso @story-2.74 @ac-12', () => {
     for (const re of dicen[lado]) assert.match(t, re, `${lado}: la guía no dice ${re}`);
   }
 });
+
+test('2.76-Guia_SitioDemo @story-2.76 @ac-11 — qué es, qué no hace, cómo se instala y cómo se borra, en las dos guías', () => {
+  const dicen = {
+    es: { titulo: 'El sitio demo', antes: INSTALACION.es, rx: [/SITE_DEMO=1/, /Datos de ejemplo/, /Acme/, /sin cuenta/, /Ver como/, /no escribe/i, /no abre conexiones/, /60 pedidos por minuto/, /noindex|no indexe/i,
+      /--phase ambiente/, /--phase demo/, /--dry-run/, /az group delete/, /cero réplicas|se apaga sola/, /sin candado/, /sin disco/, /sin identidad/, /SITE_PUBLIC_URL/, /no acepta/i, /Proponer/, /Invitar/, /Revocar/] },
+    en: { titulo: 'The demo site', antes: INSTALACION.en, rx: [/SITE_DEMO=1/, /Example data/, /Acme/, /no account/, /View as/, /writes nothing/, /opens no outside connections/, /60 requests per minute/, /noindex|index it/i,
+      /--phase ambiente/, /--phase demo/, /--dry-run/, /az group delete/, /zero replicas|switches itself off/, /no lock/, /no disk/, /no identity/, /SITE_PUBLIC_URL/, /does not accept/i, /Propose/, /Invite/, /Revoke/] },
+  };
+  for (const [lado, f] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const t = leer(f);
+    const { titulo, antes, rx } = dicen[lado];
+    const s = seccion(t, titulo);
+    assert.ok(s, `${lado}: la guía tiene la parte «${titulo}»`);
+    // entre el uso y la instalación: la huella de la instalación no cambia
+    assert.ok(t.indexOf(`\n## ${titulo}`) < t.indexOf(`\n## ${antes}`), `${lado}: «${titulo}» va antes de la instalación`);
+    // el texto va cortado en renglones: se lee corrido
+    const corrido = s.replace(/\s+/g, ' ');
+    for (const re of rx) assert.match(corrido, new RegExp(re.source, 'i'), `${lado}: «${titulo}» no dice ${re}`);
+    // el índice del comienzo lleva a ella
+    assert.match(t.slice(0, t.indexOf('\n## ')), new RegExp(`\\]\\(#${titulo.toLowerCase().replace(/ /g, '-')}\\)`), `${lado}: el índice del comienzo lleva al sitio demo`);
+  }
+  // en la misma posición en las dos, y la Ayuda del sitio la conoce (sólo la ve quien mantiene)
+  assert.strictEqual(titulos2(leer(GUIA_EN)).indexOf(dicen.en.titulo), titulos2(leer(GUIA)).indexOf(dicen.es.titulo));
+  const ayuda = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'help.js'), 'utf8');
+  assert.ok(ayuda.includes(`'${dicen.es.titulo}': MANTIENE`) && ayuda.includes(`'${dicen.en.titulo}': MANTIENE`), 'help.js la conoce, para quien mantiene');
+  // el instalador trae la fase que la guía nombra
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'deploy', 'azure-container-apps.js'), 'utf8'), /FASES = \['ambiente', 'sitio', 'demo'/);
+});

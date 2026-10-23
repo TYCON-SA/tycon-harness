@@ -527,3 +527,14 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .tabla2.revisores select.corto{width:20em}
 .tabla2.revisores .equiv{white-space:normal;overflow-wrap:anywhere}
 @media (max-width:640px){.tabla2.revisores select.corto{width:100%}}
+
+/* ── el sitio demo (SITE_DEMO=1): la franja fija «Datos de ejemplo» y el selector «Ver como» ── */
+.franja-demo{position:sticky;top:0;z-index:60;box-sizing:border-box;height:36px;display:flex;align-items:center;gap:6px 14px;padding:0 24px;background:var(--warn);color:#1a1100;font-size:13px;white-space:nowrap;overflow:hidden}
+.franja-demo b{font-weight:700}
+.franja-demo .franja-texto{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.franja-demo form{margin:0 0 0 auto;display:inline-flex;align-items:center;gap:8px;flex:none}
+.franja-demo select,.franja-demo button{height:24px;border:1px solid rgba(26,17,0,.45);border-radius:6px;background:rgba(255,255,255,.55);color:#1a1100;font-size:12.5px}
+.franja-demo button{padding:0 10px;cursor:pointer}
+body.demo header.barra{top:36px}
+body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) - 36px)}
+@media (max-width:760px){.franja-demo{padding:0 12px}.franja-demo .franja-texto{display:none}}

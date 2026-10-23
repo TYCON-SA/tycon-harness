@@ -1788,6 +1788,19 @@ const TEXTOS = {
   'segun.pantallaLegible.pieza': { es: 'La legibilidad de la pantalla', en: 'Screen readability review' },
   'segun.sql': { es: 'si el cambio trae una migración SQL', en: 'if the change has a SQL migration' },
   'segun.sql.pieza': { es: 'Compilar las migraciones SQL antes del commit', en: 'Compile the SQL migrations before the commit' },
+
+  // ── el sitio demo (`SITE_DEMO=1`, demo.js): la franja de arriba, el selector «Ver como» y lo que dicen los botones que no escriben ──
+  'demo.franja': { es: 'Datos de ejemplo', en: 'Example data' },
+  'demo.franjaTexto': { es: 'Esto es una demostración: los datos son inventados, no se escribe nada y no hay conexiones hacia afuera.', en: 'This is a demonstration: the data is made up, nothing is written and no outside connections are made.' },
+  'demo.verComo': { es: 'Ver como', en: 'View as' },
+  'demo.comoMantiene': { es: 'quien mantiene el sitio', en: 'the site maintainer' },
+  'demo.comoPersona': { es: 'una persona del equipo', en: 'a team member' },
+  'demo.cambiar': { es: 'Cambiar', en: 'Change' },
+  'config.demoInicioDeSesion': { es: 'sitio demo: sin inicio de sesión, cada visita entra con una sesión de ejemplo', en: 'demo site: no sign-in, every visit gets an example session' },
+  'config.demoPropuesta': { es: 'En el sitio demo no se escribe: no se abrió ningún pedido. En un sitio real, este cambio de «{seccion}» ({archivo}) abriría un pedido al repo {repo} para que alguien lo revise.', en: 'The demo site writes nothing: no request was opened. On a real site, this change to "{seccion}" ({archivo}) would open a request on the {repo} repo for someone to review.' },
+  'config.demoInvitar': { es: 'En el sitio demo no se escribe: no se invitó a nadie. En un sitio real, esto abriría un pedido para dar de alta a {correo} en la lista del sitio, y la invitación saldría cuando se apruebe.', en: 'The demo site writes nothing: nobody was invited. On a real site, this would open a request to add {correo} to the site list, and the invitation would go out once it is approved.' },
+  'config.demoRevocar': { es: 'En el sitio demo no se escribe: no se sacó a nadie. En un sitio real, esto abriría un pedido para dar de baja a {correo} de la lista del sitio.', en: 'The demo site writes nothing: nobody was removed. On a real site, this would open a request to remove {correo} from the site list.' },
+  'comoTrabaja.demoNoSeEscribe': { es: 'En el sitio demo no se escribe: no se abrió ningún pedido. En un sitio real, esta mejora del paquete «{pack}» abriría un pedido al repo del perfil para que alguien la revise.', en: 'The demo site writes nothing: no request was opened. On a real site, this change to the "{pack}" pack would open a request on the profile repo for someone to review.' },
 };
 
 // lo que dice un proveedor de inicio de sesión que nombra su nube o su marca vive en su archivo (auth-providers/, la
