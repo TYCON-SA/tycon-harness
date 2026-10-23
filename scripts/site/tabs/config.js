@@ -21,7 +21,9 @@
  *
  * Rutas: GET /configuracion (la página) · GET /static/config.js (su código, sin nada en línea) · GET /api/config (las
  * secciones) · POST /api/config/revisar · POST /api/config/stages (la propuesta de stages, sólo lee) ·
- * POST /api/config/proponer · GET /api/config/propuesta (si el pedido de una propuesta ya existe, por su marca).
+ * POST /api/config/proponer · GET /api/config/propuesta (si el pedido de una propuesta ya existe, por su marca) ·
+ * GET /api/config/repo · POST /api/config/repo/revisar · POST /api/config/repo/proponer (la sección por repo: el
+ * `advisors.yaml` de cada repo de producto, con las claves de `ORG.CLAVES_DEL_REPO`).
  * Casos: scripts/tests/site-config.test.js y scripts/tests/site-propose.test.js.
  */
 const crypto = require('crypto');
@@ -358,7 +360,7 @@ const ESPERA_REFRESCO_MS = 8 * 1000;
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
  * `demo` (el sitio demo, demo.js): Proponer, Invitar y Revocar revisan como siempre y muestran lo que pasaría, sin abrir nada.
  */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, demo = false }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, clavesDelRepo = ORG.CLAVES_DEL_REPO, urlDeProducto = ORG.urlDeRepo, demo = false }) {
   const dia = () => (hoy ? hoy() : new Date(ahora()).toISOString().slice(0, 10));
   const lector = (nombre) => ORG.loadReader(TREE, nombre, lectores);
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
@@ -638,6 +640,128 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   }
   const enlaceArchivo = (rel) => RP.enlaceArchivo(remoteDe('operaciones'), rel);
 
+  // ── la sección por repo: el advisors.yaml de main de cada repo de producto ──
+  // Los repos son los de «El filtro de cada repo» sin el público, el perfil ni operaciones. Cada uno se lee a pedido, en su
+  // clon de escritura (`fuentes.clonDeProducto`), con SITE_PRODUCTS_WRITE_TOKEN o, sin ella, con la credencial de
+  // lectura de operaciones; proponer pide SITE_PRODUCTS_WRITE_TOKEN y nunca completa el pedido (ni con `site.auto_apply`).
+  const { ARCHIVO: ARCHIVO_DEL_REPO, ARCHIVOS: ARCHIVOS_DEL_REPO } = require('../../lib/repo-config-readers.js');
+  const lecturasDeRepo = new Map();
+  const identidad = (e) => [e.platform, e.org, e.project || '', e.repo].join('\0').toLowerCase();
+  function reposDeProducto() {
+    const cl = clones();
+    const tr = cl.perfil && cl.perfil.dir ? docDe(leerDe(cl.perfil.dir, 'team-repos.json').texto || '') : null;
+    const r = reposDeLaOrganizacion(cl.operaciones && cl.operaciones.dir, tr);
+    const fuera = new Set();
+    for (const k of ['public', 'profile', 'operations']) if (tr && isObject(tr[k])) fuera.add(identidad(tr[k]));
+    for (const repo of ['operaciones', 'perfil']) { const x = remoteDe(repo); if (x && x.platform) fuera.add(identidad(x)); }
+    const lista = r.lista.filter((e) => !fuera.has(identidad(e))).map((e) => ({ ...e, id: ORG.idDeRepo(e), nombre: [e.org, e.project, e.repo].filter(Boolean).join('/') }));
+    return { lista, motivo: r.motivo };
+  }
+  const repoPorId = (id) => (typeof id === 'string' ? reposDeProducto().lista.find((e) => e.id === id) || null : null);
+  const remoteDeProducto = (e) => ORG.remoteOf(ORG.urlDeRepo(e));
+  const credencialDeLectura = () => (cfg.escritura && cfg.escritura.productos) || (cfg.operationsCredencial && cfg.operationsCredencial.token) || null;
+
+  /** El clon de escritura de un repo de producto: `{ dir }` o `{ motivo }`. */
+  async function clonDelRepo(e) {
+    const url = urlDeProducto(e);
+    if (!url) return { motivo: M('config.repoSinDireccion') };
+    if (typeof fuentes.clonDeProducto !== 'function') return { motivo: M('config.repoSinClon') };
+    const c = await fuentes.clonDeProducto({ id: e.id, url });
+    return c && c.dir ? c : { motivo: M('config.clonFallo', { motivo: (c && c.motivo) || M('config.noSeArmoClon') }) };
+  }
+
+  /** ¿Se puede proponer a este repo? Sin el secreto, a mano; con él, la política de revisión de su main. */
+  async function estadoProponerRepo(e, archivo = ARCHIVO_DEL_REPO) {
+    const cred = cfg.escritura && cfg.escritura.productos;
+    if (!cred) return { habilitado: false, motivo: M('config.repoSinSecreto') };
+    const remote = remoteDeProducto(e);
+    if (!remote.platform) return { habilitado: false, motivo: M('config.sinPlataforma') };
+    try {
+      const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch, archivo, aplicarSolo: false });
+      return p.ok ? { habilitado: true, motivo: null } : { habilitado: false, motivo: p.message };
+    } catch (err) {
+      log(`configuración: la política de revisión de ${e.nombre} no se pudo leer (${(err && err.message) || err})`);
+      return { habilitado: false, motivo: M('config.sinPolitica', { codigo: (err && err.name) || 'error' }) };
+    }
+  }
+
+  /** Lo que dice el archivo de main de un repo, clave por clave, con su lector. Guarda la lectura para revisar. */
+  async function leerRepo(e) {
+    const base = { ok: true, id: e.id, nombre: e.nombre, enlace: RP.enlaceArchivo(remoteDeProducto(e), ARCHIVO_DEL_REPO), claves: [] };
+    const cred = credencialDeLectura();
+    if (!cred) return { ...base, estado: 'no_se_pudo', motivo: M('config.repoSinCredencial'), proponer: { habilitado: false, motivo: M('config.repoSinSecreto') } };
+    const c = await clonDelRepo(e);
+    if (!c.dir) return { ...base, estado: 'no_se_pudo', motivo: c.motivo, proponer: { habilitado: false, motivo: c.motivo } };
+    const leer = (archivo) => RP.leerDeMain({ clon: c.dir, archivo, credencial: cred, exclusivo: fuentes.exclusivo || ((fn) => fn()), log });
+    let archivo = ARCHIVOS_DEL_REPO[0];
+    let r = await leer(archivo);
+    if (!r.ok) return { ...base, estado: 'no_se_pudo', motivo: r.message, proponer: { habilitado: false, motivo: r.message } };
+    // sin `.yaml`, el arnés lee `.yml`: el sitio también, y propone sobre ése
+    const otro = ARCHIVOS_DEL_REPO.slice(1).find((a) => !r.oid && r.archivos.includes(a));
+    if (otro) {
+      archivo = otro;
+      r = await leer(archivo);
+      if (!r.ok) return { ...base, estado: 'no_se_pudo', motivo: r.message, proponer: { habilitado: false, motivo: r.message } };
+    }
+    base.archivo = archivo;
+    base.enlace = RP.enlaceArchivo(remoteDeProducto(e), archivo);
+    lecturasDeRepo.set(e.id, { texto: r.texto, oid: r.oid, archivo });
+    const claves = clavesDelRepo.map((d) => {
+      const vistaClave = { clave: d.clave, titulo: d.titulo, forma: d.forma };
+      const lector = ORG.lectorDeClave(TREE, d, lectores);
+      if (!lector) return { ...vistaClave, estado: 'no_reader', motivo: M('config.repoClaveSinLector', { clave: d.clave }) };
+      const forma = ORG.reemplazarBloque(r.texto, d.clave, '');
+      if (forma.ilegible) return { ...vistaClave, estado: 'ilegible', motivo: forma.ilegible };
+      const l = lector.leerClave(r.texto);
+      if (l.ilegible) return { ...vistaClave, estado: 'ilegible', motivo: l.ilegible };
+      // un lector que no sabe marcar lo podrido no dice «nada podrido»: null es «no se miró»
+      const podridas = typeof lector.podridasDelValor === 'function' ? lector.podridasDelValor(l.valor, r.archivos, dia()) : null;
+      return { ...vistaClave, estado: 'ok', presente: l.presente, valor: l.valor, problemas: l.problemas, podridas };
+    });
+    return { ...base, estado: r.oid ? 'leido' : 'nuevo', motivo: null, oid: r.oid, texto: r.texto, claves, proponer: await estadoProponerRepo(e, archivo) };
+  }
+
+  /** Revisa lo que se propondría de una clave sobre la versión que abrió la página. */
+  function revisarRepo(e, body) {
+    const d = clavesDelRepo.find((x) => x.clave === body.clave);
+    if (!d) return { ok: false, problemas: [M('config.repoClaveDesconocida')], filas: [] };
+    const lector = ORG.lectorDeClave(TREE, d, lectores);
+    if (!lector) return { ok: false, problemas: [M('config.repoClaveSinLector', { clave: d.clave })], filas: [] };
+    const leida = lecturasDeRepo.get(e.id);
+    if (!leida || (body.oid || null) !== (leida.oid || null)) return { ok: false, codigo: 'cambio', problemas: [M('rp.cambio')], filas: [] };
+    const r = ORG.revisarClaveDelRepo({ descriptor: d, lector, texto: leida.texto, valor: body.valor });
+    return { ok: r.ok, problemas: r.generales, filas: r.filas, texto: r.texto, diferencia: r.ok ? ORG.diferencia(leida.texto || '', r.texto) : [] };
+  }
+
+  /** Propone el cambio como un pedido al repo del producto: rama y pedido, nunca main ni completar el pedido. */
+  async function proponerRepo(e, body, ctx) {
+    const cred = cfg.escritura && cfg.escritura.productos;
+    if (!cred) return { ok: false, message: M('config.repoSinSecreto') };
+    const rev = revisarRepo(e, body);
+    if (!rev.ok) return { ok: false, codigo: rev.codigo, message: rev.problemas.concat(rev.filas.flat()).join(' · ') || M('config.repoNoValida'), filas: rev.filas };
+    const remote = remoteDeProducto(e);
+    if (!remote.platform) return { ok: false, message: M('config.sinPlataforma') };
+    const c = await clonDelRepo(e);
+    if (!c.dir) return { ok: false, message: c.motivo };
+    const d = clavesDelRepo.find((x) => x.clave === body.clave);
+    const archivo = lecturasDeRepo.get(e.id).archivo;
+    // sobre un `.yml`: si mientras tanto apareció un `.yaml` en main, el arnés leería ése y el pedido no tendría efecto
+    if (archivo !== ARCHIVO_DEL_REPO) {
+      const ahoraYaml = await RP.leerDeMain({ clon: c.dir, archivo: ARCHIVO_DEL_REPO, credencial: cred, exclusivo: fuentes.exclusivo || ((fn) => fn()), log });
+      if (!ahoraYaml.ok) return { ok: false, message: ahoraYaml.message };
+      if (ahoraYaml.oid) { lecturasDeRepo.delete(e.id); return { ok: false, codigo: 'cambio', message: M('rp.cambio') }; }
+    }
+    const r = await RP.proponer({
+      clon: c.dir, archivo, contenido: rev.texto, oidEsperado: body.oid || null,
+      idCorto: `advisors-${String(e.repo).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'repo'}`,
+      secciones: [`${d.titulo} (${e.nombre})`], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase,
+      exclusivo: fuentes.exclusivo || ((fn) => fn()), now: new Date(ahora()), fetch, log, aplicarSolo: false, marca: body.marca || null,
+    });
+    if (r && r.ok) lecturasDeRepo.delete(e.id);
+    if (r && r.codigo === 'cambio') { const { textoActual: _t, oidActual: _o, ...cambio } = r; return cambio; }
+    return r;
+  }
+
   async function leerTodo() {
     const secciones = ORG.SECCIONES.map(vista);
     const cl = clones();
@@ -651,6 +775,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       ok: true, secciones,
       proponer: { operaciones: await estadoProponer('operaciones'), perfil: cfg.profileRepo ? await estadoProponer('perfil') : { habilitado: false, motivo: M('config.perfilNoConfigurado') } },
       productos: prods.lista, productosMotivo: prods.motivo, versionesMotivo,
+      reposDeProducto: reposDeProducto(),
       productosEnlace: enlaceArchivo('scripts/nightly/dependencies/repos.json'),
       contenido: contenidoDelPerfil(cl.perfil && cl.perfil.dir, (rel) => RP.enlaceArchivo(remoteDe('perfil'), rel)),
       versiones: ORG.versionesDeMaquinas({ espejo: fuentes.dirBuzon, versionImagen, ahora: ahora(), personas: quien }),
@@ -1218,6 +1343,33 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
           return r;
         };
         return json(200, marca === undefined ? await trabajo() : await unaVezPorMarca(s.id, marca, trabajo));
+      }),
+    },
+    {
+      // la sección por repo: se lee a pedido, al abrirla
+      method: 'GET', path: '/api/config/repo', needs: solo, handler: enIdioma(async (ctx) => {
+        const e = repoPorId(ctx.url && ctx.url.searchParams.get('id'));
+        if (!e) return rechazo(404, M('config.repoNoEncontrado'));
+        return json(200, await leerRepo(e));
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/repo/revisar', needs: solo, handler: enIdioma(async (ctx) => {
+        const w = await escritura(ctx); if (w.error) return w.error;
+        const e = repoPorId(w.body && w.body.id);
+        if (!e) return rechazo(404, M('config.repoNoEncontrado'));
+        return json(200, revisarRepo(e, w.body));
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/repo/proponer', needs: solo, handler: enIdioma(async (ctx) => {
+        const w = await escritura(ctx); if (w.error) return w.error;
+        const e = repoPorId(w.body && w.body.id);
+        if (!e) return rechazo(404, M('config.repoNoEncontrado'));
+        const marca = w.body.marca;
+        if (marca !== undefined && !(typeof marca === 'string' && FORMA_DE_MARCA.test(marca))) return rechazo(400, M('config.marcaInvalida'));
+        const trabajo = () => proponerRepo(e, w.body, ctx);
+        return json(200, marca === undefined ? await trabajo() : await unaVezPorMarca(`repo-${e.id}`, marca, trabajo));
       }),
     },
     {

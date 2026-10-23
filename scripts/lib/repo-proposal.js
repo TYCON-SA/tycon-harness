@@ -57,6 +57,9 @@ const TEXTOS = {
   'rp.sinPermiso': { es: 'la identidad de escritura del sitio no tiene permiso en {repo}', en: 'the site\'s write identity has no permission on {repo}' },
   'rp.noTraje': { es: 'no pude traer la rama {rama} del repo de operaciones ({error})', en: 'I could not fetch the {rama} branch of the operations repo ({error})' },
   'rp.sinPunta': { es: 'no encontré la punta de {rama} después de traerla ({error})', en: 'I did not find the tip of {rama} after fetching it ({error})' },
+  'rp.noLeiPermiso': { es: 'la credencial del sitio no puede leer este repo', en: "the site's credential cannot read this repo" },
+  'rp.noLeiLista': { es: 'no pude listar los archivos de la rama principal', en: 'I could not list the files of the main branch' },
+  'rp.noLeiArchivo': { es: 'no pude leer {archivo} de la rama principal', en: 'I could not read {archivo} from the main branch' },
   'rp.cambio': { es: 'el archivo cambió desde que lo abriste: recargá', en: 'the file changed since you opened it: reload' },
   'rp.noVerifique': { es: 'no pude verificar si ya hay un pedido abierto sobre este archivo ({error}): no propongo nada; probá de nuevo', en: 'I could not check whether there is already an open request on this file ({error}): nothing was proposed; try again' },
   'rp.yaAbierto': { es: 'ya hay un pedido abierto sobre este archivo: {enlace}; esperá a que se mergee o cerralo', en: 'there is already an open request on this file: {enlace}; wait for it to merge or close it' },
@@ -614,6 +617,45 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
   });
 }
 
+/**
+ * Lee un archivo de la punta de la rama principal en un clon de escritura (el de un repo de producto, que no tiene
+ * árbol de trabajo): la trae con la credencial en la cabecera y lee el archivo y la lista de archivos de esa punta.
+ * No escribe nada en el remoto. `{ ok: true, oid, texto, archivos }` (`oid` y `texto` null si el archivo no existe) o
+ * `{ ok: false, codigo: 'sin_permiso' | 'git', message }`.
+ */
+async function leerDeMain({ clon, archivo, credencial, git = 'git', exclusivo = (fn) => fn(), log = () => {} }) {
+  const cred = credenciales(credencial);
+  if (!clon || !archivo) return { ok: false, codigo: 'git', message: M('rp.faltanDatos') };
+  const cabecera = cred.git ? `Basic ${Buffer.from(`x-access-token:${cred.git}`).toString('base64')}` : null;
+  const secretos = secretosDe(cred);
+  const correr = typeof git === 'function' ? git : (args, opts) => correrGit(args, { ...opts, git });
+  return exclusivo(async () => {
+    const origenR = await correr(['config', '--get', 'remote.origin.url'], { cwd: clon, env: envDeGit(null, null) });
+    if (origenR.status !== 0) return { ok: false, codigo: 'git', message: M('rp.sinOrigin') };
+    let origen = null;
+    try { origen = new URL(String(origenR.stdout).trim()).origin; } catch { /* una ruta local: sin cabecera */ }
+    const env = envDeGit(origen, cabecera);
+    const fetchR = await correr(['fetch', '--depth', '1', '--no-tags', 'origin', RAMA_PRINCIPAL], { cwd: clon, env });
+    if (fetchR.status !== 0) {
+      const err = tapar(`${fetchR.stderr || ''}${fetchR.error ? ` ${fetchR.error.code || fetchR.error.message}` : ''}`, secretos).split('\n').map((l) => l.trim()).filter(Boolean).slice(-2).join(' · ').slice(0, 300);
+      log(tapar(`lectura de ${archivo}: git fetch falló: ${err}`, secretos));
+      return NO_PERMISSION.test(err) ? { ok: false, codigo: 'sin_permiso', message: M('rp.noLeiPermiso') } : { ok: false, codigo: 'git', message: M('rp.noTraje', { rama: RAMA_PRINCIPAL, error: err }) };
+    }
+    const punta = await correr(['rev-parse', '--verify', '--quiet', 'FETCH_HEAD^{commit}'], { cwd: clon, env });
+    if (punta.status !== 0) return { ok: false, codigo: 'git', message: M('rp.sinPunta', { rama: RAMA_PRINCIPAL, error: '' }) };
+    const sha = String(punta.stdout).trim();
+    const lista = await correr(['ls-tree', '-r', '-z', '--name-only', sha], { cwd: clon, env });
+    if (lista.status !== 0) return { ok: false, codigo: 'git', message: M('rp.noLeiLista') };
+    const archivos = String(lista.stdout).split('\0').filter(Boolean);
+    if (!archivos.includes(archivo)) return { ok: true, oid: null, texto: null, archivos };
+    const oidR = await correr(['rev-parse', '--verify', '--quiet', `${sha}:${archivo}`], { cwd: clon, env });
+    const oid = oidR.status === 0 ? String(oidR.stdout).trim() : null;
+    const blob = oid ? await correr(['cat-file', 'blob', oid], { cwd: clon, env }) : null;
+    if (!blob || blob.status !== 0) return { ok: false, codigo: 'git', message: M('rp.noLeiArchivo', { archivo }) };
+    return { ok: true, oid, texto: String(blob.stdout), archivos };
+  });
+}
+
 /** Un ambiente sin las variables `SITE_*` del sitio (ahí viven sus credenciales). */
 const sinVariablesDelSitio = (env) => Object.fromEntries(Object.entries(env || {}).filter(([k]) => !/^SITE_/.test(k)));
 
@@ -799,4 +841,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos,enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos,enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

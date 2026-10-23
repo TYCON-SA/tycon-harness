@@ -460,6 +460,18 @@ Below are **Products** (*Productos*: the ones the night checks) and **What the o
 organización*: the skills, reviewers, onboarding guides and packs of the profile repo, each with its link). They are view
 only: they are changed with a request in their repo.
 
+**The configuration of each repo** (*La configuración de cada repo*) shows, for each product repo, what the
+`.tycon/advisors.yaml` of its main branch says. The repos are those of the dependency review and of `team-repos.json`,
+without the public one, the profile repo or the operations repo. Each repo is read only when you open it. Today it edits
+the **deprecated code** (`deprecated`): the old folders or files the agent must not copy or touch without a reason. It
+goes row by row: path, level (frozen or dead), reason and a date to review it; on top, whether editing deprecated code
+without a story warns or blocks. "Review changes" validates with the same reader the harness uses: a badly written row
+says what it is missing and is not proposed. A row whose path no longer exists on the main branch, or whose date has
+passed, is marked, but it can be proposed anyway. The request changes only that block of the file: the other keys and
+the comments stay as they are. Without the file, the request creates it. Whoever maintains the site proposes it, with
+`SITE_PRODUCTS_WRITE_TOKEN` (below); without that secret, the section shows what is declared and the file as it would
+be, to copy it and open the request by hand.
+
 ![Repos and products](sitio-de-la-organizacion/capturas/configuracion-repos.png)
 
 ### Notices and night runs (Avisos y la noche)
@@ -1036,6 +1048,7 @@ Each installation says where each one is stored and how its value gets in. **No 
 | `SITE_PROFILE_REPO` and `SITE_PROFILE_TOKEN` | reading the team profile (where each repo lives, the packs) | part of the normal installation: without them the Configuration tab says "falta el repo del perfil" (the profile repo is missing). The address of the profile repo and a read-only code token on that repo (it can be the same permission as the operations repo's, if both live in the same organization) |
 | `SITE_PIPELINES_TOKEN` | read the pipelines, to choose them by name in the Configuration tab («Tests at merge» and «Deployments») and to see the name of each stage | part of the normal installation on Azure DevOps: only *Build: Read*, for the organization, 90 days; it can be the same token as the operations repo's with *Build: Read* added. Without it, the tab asks for the pipeline number by hand and says what is missing, and the saved stages show their identifier |
 | `SITE_PROFILE_WRITE_TOKEN` | propose changes to the team profile | off by default: empty or commented out, never with a value; one dedicated identity and one repo per credential |
+| `SITE_PRODUCTS_WRITE_TOKEN` | read and propose the `.tycon/advisors.yaml` of the product repos ("The configuration of each repo") | optional. On Azure DevOps, *Code: Read & write* and nothing else, only on the projects of the product repos; on GitHub, fine-grained on those repos with `contents: write` and `pull_requests: write`. Without it, the section reads with the operations credential (if it reaches those repos) and does not propose |
 
 `SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the site's list
 (`site.access` in `operations.json`) has nobody who maintains. Remove it afterwards.
@@ -1126,6 +1139,20 @@ with "A maintainer's changes" on (below): off, the author would approve it witho
 it. Without the permission, each section says
 "To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
 hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
+
+The product repos have their own secret, `SITE_PRODUCTS_WRITE_TOKEN`. To set it up:
+
+1. Create the credential with the least permission. On Azure DevOps, an organization token with *Code: Read & write*
+   and nothing else, limited to the projects of the product repos. On GitHub, a fine-grained one with *Contents: Read
+   and write* and *Pull requests: Read and write*, only on those repos. The repos are the ones "The configuration of
+   each repo" shows.
+2. Load it as a site secret with that name and restart the site.
+3. Check that the main branch of each repo requires at least one reviewer other than whoever creates the request.
+   Without that policy, the site does not propose to that repo and says so.
+
+With that secret the site only creates `team-config/...` branches and opens requests. It never writes `main` or
+completes the request, even with "A maintainer's changes" on: that option applies to the profile and to operations, not
+to the product repos.
 
 ### Inviting someone
 

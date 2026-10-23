@@ -48,10 +48,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // siguiendo sólo la guía: el repo de operaciones mínimo, Node, http en la propia máquina, /readyz frenado y los
 // permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano; y que con la copia de operaciones
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
-// inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida».
+// inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida»; y el secreto
+// SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer».
 const HUELLA_INSTALACION = {
-  es: 'dd6fb1cf3f00135118b415a0843cd462293534653c8cbf029f9e42950513940b',
-  en: '8a3048f43e26a255f15da79bcde89d12ae0fac58462c373363ba718453a57d88',
+  es: '58405cec0a0cca0e851fb13d1d0824f1ff61aaa4cc61202ddf78e8d823b1117d',
+  en: '758bb8483897a8fbd4445e3d1440b3a77f6e57bc2a3f8a0a0d148a8ba6857ad6',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

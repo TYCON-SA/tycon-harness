@@ -21,6 +21,8 @@
  *   T16d Reaplicar_LoQueNoSeMezcla_YSusRechazos
  *   T17  CambioAjeno_SePisan_ElegirSinPerder              T17b SePisan_EnLaPantalla_ElegirCadaValor
  *   T18  Recarga_OfreceRecuperar                          T19  SinSessionStorage_AndaIgual
+ * La configuración de cada repo de producto, en un navegador de verdad (Casos: scripts/tests/site-repo-config.test.js):
+ *   E1  Sitio_EnPantalla_AgregaYPropone
  * La pantalla corre sobre un documento mínimo y un fetch falso; los tiempos de espera de la consulta los pasa la
  * prueba como un parámetro más del código de la página (en el navegador no existe y valen 2, 5 y 10 segundos), igual
  * que el ritmo del seguimiento del pedido (10 s) y el sessionStorage.
@@ -1268,4 +1270,57 @@ test('Confirmar_EnElNavegador_RecorridoCompleto — Confirmar, la confirmación 
       assert.strictEqual(await page.locator('#seccion-personas > .msg').count(), 0, 'el resultado tampoco va al pie');
     } finally { await navegador.close(); }
   });
+});
+
+// ── la configuración de cada repo de producto ─────────────────────────────────────────────────────────────────────
+
+const YAML_DEL_REPO = '# el arnés de app\nrepo_group:\n  - ../app-web\n\ndeprecated:\n  edit: warn\n  paths:\n    - path: "src/legacy/**"\n      level: frozen\n      reason: "reemplazado por src/billing"\n\n# lo de abajo no se toca\ndeep_review: auto\n';
+
+test('E1 Sitio_EnPantalla_AgregaYPropone — abre el repo, agrega una fila, ve el error de la mal escrita, la diferencia y el pedido @story-8.95 @ac-16', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const SRC = require(path.join(H.SITE, 'sources.js'));
+  let gh; let r;
+  try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'app' });
+    gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
+    r = await crearRepoHttp({ raiz: tmp('site-propose-repo-'), nombre: 'app.git', archivos: { '.tycon/advisors.yaml': YAML_DEL_REPO, 'src/legacy/a.js': '// viejo\n' }, cabecera: CAB });
+    const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { repos: [{ producto: 'App', github: 'acme/app' }] } }) });
+    const raizClones = tmp('site-propose-productos-');
+    fuentes.clonDeProducto = ({ id, url }) => SRC.prepararClonDeEscritura({ dir: path.join(raizClones, id), url });
+    const opciones = { urlBase: { github: gh.base }, urlDeProducto: () => r.url };
+    await conPestana({ fuentes, env: { SITE_PRODUCTS_WRITE_TOKEN: ESCRITURA }, opciones }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD);
+      const navegador = await PLAYWRIGHT.chromium.launch();
+      try {
+        const ctx = await navegador.newContext();
+        await ctx.setExtraHTTPHeaders({ cookie: lead });
+        const page = await ctx.newPage();
+        await page.route('**/api/config/**', async (rt) => rt.fulfill({ response: await rt.fetch({ headers: { ...rt.request().headers(), cookie: lead, origin: 'http://127.0.0.1' } }) }));
+        await page.goto(`${h.base}/configuracion#pestana-repos`);
+        await page.locator('#tab-repos').click();
+        const repo = page.locator('#repos-de-producto .repo-producto', { has: page.locator('.quien', { hasText: 'acme/app' }) });
+        await repo.getByRole('button', { name: 'Abrir' }).click();
+        const clave = repo.locator('.repo-clave').first();
+        await clave.getByRole('button', { name: 'Agregar una fila' }).waitFor({ timeout: 20000 })
+          .catch(async (e) => { throw new Error(`${e.message}\nel repo dice: ${await repo.innerText()}`); });
+        await clave.getByRole('button', { name: 'Agregar una fila' }).click();
+        const nueva = clave.locator('li.repo-fila').last();
+        await nueva.getByLabel('Ruta').fill('src/v1/**');
+        await nueva.getByLabel('Nivel').selectOption('dead');
+        // sin motivo: la fila dice por qué y no se ofrece proponer
+        await clave.getByRole('button', { name: 'Revisar cambios' }).click();
+        await clave.locator('li.repo-fila').last().getByText('falta `reason`').waitFor({ timeout: 10000 })
+          .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await clave.innerText()}`); });
+        assert.strictEqual(await clave.getByRole('button', { name: 'Proponer el cambio' }).count(), 0);
+        await clave.locator('li.repo-fila').last().getByLabel('Motivo').fill('el v1 de cobros');
+        await clave.getByRole('button', { name: 'Revisar cambios' }).click();
+        await clave.locator('.dif-entra', { hasText: 'src/v1/**' }).waitFor({ timeout: 10000 });
+        await clave.getByRole('button', { name: 'Proponer el cambio' }).click();
+        await clave.getByRole('link', { name: 'Ver el pedido de cambio' }).waitFor({ timeout: 20000 })
+          .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await clave.innerText()}`); });
+        assert.strictEqual(gh.st.pedidos.length, 1, 'se abrió un pedido');
+        const rama = r.empujes.at(-1).ref.replace('refs/heads/', '');
+        assert.strictEqual(r.archivoEn(rama, '.tycon/advisors.yaml'), YAML_DEL_REPO.replace('      reason: "reemplazado por src/billing"\n', '      reason: "reemplazado por src/billing"\n    - path: "src/v1/**"\n      level: dead\n      reason: "el v1 de cobros"\n'));
+      } finally { await navegador.close(); }
+    });
+  } finally { await cerrarTodos(r, gh); }
 });
