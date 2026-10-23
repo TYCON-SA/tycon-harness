@@ -138,8 +138,15 @@ invertidas, el id de la sesión en una variable, los prefijos con sus opciones (
 envoltorios (`bash -c`, `eval`, `cmd /c`, `find -exec`, `iex`, `Start-Process`, un texto que va a `| sh`, un heredoc
 que va a un shell); un comentario, un heredoc que va a un archivo o un mensaje de commit que nombran `marker.js clear`
 no frenan. Lo dudoso frena como cerrar: un subcomando o un id que no se ve (`$VAR`, `xargs`), `clear-session` sin id, una
-comilla sin cerrar o un comando que no se pudo leer. Si falta `node` o `run-close.js`, `ESC-C3` no mira y el comando
-pasa, como antes de esta regla. Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e`
+comilla sin cerrar o un comando que no se pudo leer. Los nombres se leen sin comillas ni barras invertidas: `pipe''line.js`
+o `mar''ker.js` son los guiones, como para el shell, y una barra invertida con salto de línea se une. Si el comando
+corre `node` con un guion cuyo nombre no se puede leer (`pipelin?.js`, `pipe[l]ine.js`, `mar$'k'er.js`, una variable),
+se lee como cualquiera de los dos guiones; un guion así ejecutado directo, sin `node`, no se ve. Si el freno no puede leer el comando (no está el intérprete del
+arnés, falta `run-close.js` o el lector se cae), un comando que nombra `marker` o `pipeline` frena: sin el intérprete esos
+guiones tampoco andan, así que frenar no cuesta nada. `ESC-C1` frena además una asignación con el **nombre armado** en
+otra variable (`V=TYCON_…; export $V=1`, `declare -x "$V=1"`, `env "$V=1"`, `printf -v "$V"`) en un comando que corre
+`marker`, `pipeline` o `test-gate.sh`: el nombre no se ve, y el camino es escribirlo entero para que decida su regla.
+Fuera del pipeline, armar nombres no frena. Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e`
 que lo carga, una copia con otro nombre, o un programa de texto que además ejecuta (`awk` con `system`). Para eso sigue el lazo del
 modo autónomo, que no deja cerrar el turno con un control en rojo, y el `cierre` del volcado: `marker.js set` no lo
 escribe, no pisa los controles (`checks`, `checksProvenance`), el pase ni el modo autónomo de la misma historia, no vacía sus pasos pendientes, y al
