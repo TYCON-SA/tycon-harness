@@ -6,10 +6,9 @@ description: Orquesta el pipeline completo TYCON — valida la story con tycon-s
 # tycon-pipeline
 
 Orquesta el workflow TYCON completo: skills BMAD + advisors TYCON con checkpoints HITL. Este archivo tiene
-las REGLAS; el porqué de cada una (con su medición) vive en el archivo de su paso. Scripts: `~/.claude/agent-skills/skills/tycon-pipeline/scripts/`.
-Cada `pipeline.js …` y `marker.js …` de este archivo se corre con el comando entero:
-`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js <subcomando>` (y lo mismo con `marker.js`); con
-Codex, `~/.codex/skills/tycon-pipeline/scripts/`. No se buscan: esas carpetas son enlaces y `find` sin `-L` no entra.
+las REGLAS; el porqué de cada una (con su medición) vive en el archivo de su paso. Los guiones se corren con el comando
+entero, `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js <subcomando>` (igual `marker.js`; en
+Codex, `~/.codex/skills/…`): no se buscan.
 
 ## ⚠️ NO bypass del orchestrator
 
@@ -204,8 +203,6 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `TYCON_STORY_GATE` · `TYCON_LANE_LLM` · `TYCON_LANE_LLM_MODEL` · `TYCON_LANE_LLM_MS` · `TYCON_ADVISORS_GATE` · `TYCON_MUTATION_CHECK` ·
   `TYCON_ATDD_COMMIT_GATE` · `TYCON_ATDD_PREEDIT_GATE` · `TYCON_SPAWN_GOVERNANCE` · `TYCON_ADHOC_SPAWN_WARN` ·
   `DOD_BYPASS` (bypass logueado de gates del commit; NO abre la matriz runtime ni la guía de QA).
-- **Guías**: `story-format.md` · `guides/workflow-orchestration.md` · `guides/git-commit-conventions.md` ·
-  `guides/agent-architecture.md` · `guides/definition-of-done.md`.
 
 ## Cuándo activarse
 
