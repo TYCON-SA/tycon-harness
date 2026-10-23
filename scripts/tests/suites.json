@@ -2513,6 +2513,12 @@
       "requiere": []
     },
     {
+      "__nota": "el informe del aplicador no le manda a un juez viejo hooks con prefijos que no entiende (TYCON_REPORT_HOOK_PREFIXES); el lector y la salud de la 2026.10.20.52 (de git) aceptan el informe nuevo; el arranque corre la salud si la última no la corrió esta versión.",
+      "raiz": "arnes",
+      "ruta": "tests/old-judge-report.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la sonda de Ollama (scripts/lib/ollama-tools-probe.js): con un Ollama de mentira local, dice si un modelo acepta las herramientas namespace de Codex, sólo el modo reducido o nada, y nunca «acepta» ante una conexión cerrada o una respuesta ilegible; y las guías nombran la versión de Codex medida.",
       "raiz": "arnes",
       "ruta": "tests/ollama-tools-probe.test.js",

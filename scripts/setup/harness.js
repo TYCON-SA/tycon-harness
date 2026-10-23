@@ -303,6 +303,16 @@ function separateSkills(ctx, tree) {
   try { return fs.statSync(out).isDirectory() ? out : null; } catch (_) { return null; }
 }
 
+/** Lo que el aplicador tiene que saber del juez que va a leer su informe: los prefijos de hook que entiende. */
+function applierReportEnv(log = null) {
+  let prefixes = [];
+  try { prefixes = mod('health').HOOK_PREFIXES || []; } catch (e) {
+    // sin salud el aplicador informa sólo lo que entiende cualquier juez; se dice, porque entonces nadie revisa los demás
+    if (log) log(`aplicador: no pude leer qué prefijos de hook entiende la salud (${e.code || e.message}): el informe va sin ellos`);
+  }
+  return { TYCON_REPORT_HOOK_PREFIXES: prefixes.join(',') };
+}
+
 /** ¿El aplicador del árbol conoce `--report-json`? Uno viejo, que no la trae, no se rompe por la opción. */
 function applierKnowsReport(script) {
   try { return fs.readFileSync(script, 'utf8').includes('--report-json'); } catch (_) { return false; }
@@ -576,7 +586,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
   // (en la forma con enlaces, en Windows, los Node que lance el aplicador conservan `~/.tycon/harness` en
   // `__dirname`: lo que escriban nombra el enlace, no la carpeta numerada)
   // (`baseEnv` trae `TYCON_NODE_BIN` cuando el Node del arnés quedó sano: un atajo para el aplicador)
-  const env = Object.assign({}, mod('tycon-home').keepLinkPathsEnv(baseEnv), { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' });
+  // `TYCON_REPORT_HOOK_PREFIXES`: los prefijos de hook que entiende la salud de ESTE programa; sin la variable (un
+  // harness.js viejo) el aplicador deja afuera del informe los que un juez viejo no sabe resolver
+  const env = Object.assign({}, mod('tycon-home').keepLinkPathsEnv(baseEnv), { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' }, applierReportEnv(log));
   if (snapshotDir) env.TYCON_HARNESS_SNAPSHOT_DIR = snapshotDir; else delete env.TYCON_HARNESS_SNAPSHOT_DIR;
   delete env[SHARED_DONE_ENV];
   // lo de Codex: `done` = lo enchufa este programa, salteá tu bloque; `off` = esta máquina no lo
@@ -4986,4 +4998,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff };
+module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff };

@@ -97,7 +97,11 @@ ENV_UNSET=(-u TYCON_SETTINGS_PATH -u CLAUDE_MD_PATH -u CODEX_AGENTS_MD_PATH -u T
      -u TYCON_NO_GIT_HOOKS -u TYCON_THIRD_PARTY -u TYCON_ENGRAM_HOOK -u TYCON_SAFETY_GUARD -u TYCON_TEST_SCOPE_GUARD
      -u TYCON_SESSION_GUARD -u TYCON_TG_ZOMBIE_SWEEP -u TYCON_CLOCKIFY -u TYCON_ENGRAM -u TYCON_NIGHTLY -u TYCON_ADO_ORG
      -u ADO_ORG -u TYCON_REPOS_ROOT -u TF_BUILD -u XDG_CONFIG_HOME -u TYCON_GUIDES_DIR -u TYCON_SKILLS_DIR
-     -u CLAUDE_CODE_PLUGIN_DIRS)
+     -u CLAUDE_CODE_PLUGIN_DIRS -u TYCON_REPORT_HOOK_PREFIXES)
+# Los prefijos de hook que el reporte trae: los que pasa harness.js al lanzar el .sh (applierReportEnv). Sin ellos el .sh
+# informa como para un juez viejo y deja afuera los hooks de las integraciones; ese caso lo prueba old-judge-report.test.js.
+PREFIJOS_REPORTE="$(node -e "process.stdout.write(require(process.argv[1]).applierReportEnv().TYCON_REPORT_HOOK_PREFIXES)" "$RAIZ/scripts/setup/harness.js")" \
+  || { echo "❌ harness-uninstall: no pude leer los prefijos del reporte de harness.js"; exit 1; }
 # 🔴 CLAUDE_CODE_PLUGIN_DIRS: el instalador la pone en cada máquina con el arnés (la carpeta de
 #    sus mods), y la instalación SUMA lo que trae la terminal cuando settings.json no la tiene (plugin-dirs.js, addDir con
 #    `inherited`). Heredada, la instalación de prueba anotaría la carpeta de mods DE VERDAD de quien corre la suite; la
@@ -110,7 +114,7 @@ base() { # base <home> → el ambiente aislado común (en el arreglo RUN_ENV)
        TYCON_NO_THREAD_RESCUE=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1
        TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_ENGRAM_VERSION_CHECK=1
        TYCON_NO_SQLITE_CHECK=1 TYCON_NO_ENGRAM_PROJECT_CHECK=1 TYCON_NO_AGENTSMD_POINTER=1 TYCON_NO_CANONICAL_PATH=1
-       TYCON_THIRD_PARTY_NETWORK_BUDGET_S=1 GIT_CONFIG_NOSYSTEM=1)
+       TYCON_THIRD_PARTY_NETWORK_BUDGET_S=1 GIT_CONFIG_NOSYSTEM=1 TYCON_REPORT_HOOK_PREFIXES="$PREFIJOS_REPORTE")
 }
 # todo apagado: ninguna integración (sin perfil) y los opt-in que nacen prendidos, apagados. El buzón se apaga explícito:
 # en el árbol del equipo (el privado con el público debajo) su llave lo prende sola, y con un hook que depende de
