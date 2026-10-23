@@ -886,7 +886,7 @@ function seguidos(repo, abs) {
  * sigue) queda en `console-writes` con `kind: "delete"`, para el control al cerrar; si el comando frena, no corre y no se
  * anota nada.
  */
-function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via }) {
+function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via, codex = false }) {
   const borrados = destinosBorrados(cmd).map((d) => {
     const base = d.base ? resolveTarget(expandirRuta(cmd, d.base).valor, cwd, process.platform, { homeVariable: true }) : cwd;
     return { ...d, abs: resolveTarget(expandirRuta(cmd, d.raw).valor, base, process.platform, { homeVariable: true }) };
@@ -969,7 +969,7 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via 
     return null;
   }
   linea('blocked', { forma: deCodigo.length ? 'borrar-o-deshacer' : 'destino-armado' });
-  return { block: lv.mensaje(frena, marker.storyId, { borrarODeshacer: deCodigo.length > 0, armado: armados.length > 0 }) + '\n' };
+  return { block: lv.mensaje(frena, marker.storyId, { borrarODeshacer: deCodigo.length > 0, armado: armados.length > 0, codex }) + '\n' };
 }
 
 // ── contenido escrito (para el freno de story-a-mano) ───────────────────────────────────────────
@@ -1173,6 +1173,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     const r = frenoBorrarYArmados({
       cmd, cwd, stateDir, sessionId: resolveSessionId(event?.session_id), io, isInside,
       via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`,
+      codex: require('./lib/story-skill-gate-io.js').isCodexEvent(event),
     });
     if (r) return r;
   }
@@ -1255,7 +1256,7 @@ function handleCarrilEHistoria(event, opts = {}) {
         } catch { /* el freno no depende del log */ }
         const sinResolver = vis.files.filter((f) => sinResolverDe.has(f))
           .map((f) => ({ file: f, vars: sinResolverDe.get(f).sinResolver }));
-        return { block: lv.mensaje(vis.files, marker && marker.storyId, { sinResolver }) + '\n' };
+        return { block: lv.mensaje(vis.files, marker && marker.storyId, { sinResolver, codex: require('./lib/story-skill-gate-io.js').isCodexEvent(event) }) + '\n' };
       }
       // Un destino sin resolver que pasa (sin corrida abierta, o con el escape) no queda callado: constancia en
       // gates.log con la ruta. No suma al cupo ad-hoc: no se sabe qué archivo es.

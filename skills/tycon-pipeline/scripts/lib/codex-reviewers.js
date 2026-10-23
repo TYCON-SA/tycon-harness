@@ -30,6 +30,19 @@ const WINDOW = 4;
 const WINDOW_WITH_ADVERSARIAL = 2;
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const PIDS_FILE = 'reviewers-run.pids.json';
+// Lo que escribe `codex exec --oss` cuando no llega al servidor de Ollama.
+const OLLAMA_INALCANZABLE = /No running Ollama server detected/;
+
+/** El aviso de la caja de arena sin red: la causa y las dos salidas, con lo que cuesta cada una. */
+function sinRed(pending) {
+  return `no lancé ninguno de los ${pending.length} revisores (${pending.join(', ')}): este comando corre en la caja de arena ` +
+    'de Codex sin red, y los revisores la heredan: sin red no llegan al modelo (ni a Ollama ni a la nube). Dos salidas:\n' +
+    '  1. Correr este mismo comando fuera de la caja de arena, con la aprobación de la persona (Codex pide permiso para ' +
+    'escalar un comando cuando su política de aprobación lo deja). La red queda abierta sólo para los revisores.\n' +
+    '  2. Bajo `codex exec` sin aprobaciones no hay a quién pedir: habilitar `sandbox_workspace_write.network_access = true` ' +
+    'en el perfil de la sesión. Eso le da red a todo comando que corra el modelo, no sólo a los revisores: lo decide la persona.\n' +
+    'Volver a correr check-count no cambia nada: primero tienen que correr los revisores.';
+}
 const REPORTS_DIR = 'step-05-advisor-reports';
 
 // La composición del pedido es la del examen de revisores: el preámbulo que obliga a usar las herramientas MCP del
@@ -184,6 +197,10 @@ async function run(o) {
   }
   const pending = expected.filter((a) => !done.has(a));
 
+  // Codex marca así la terminal de una sesión con la caja de arena sin red; los `codex exec` hijos la heredan y no
+  // llegan al modelo. Se dice antes de lanzar: la red la decide la persona, no el lanzador.
+  if (pending.length && String(env.CODEX_SANDBOX_NETWORK_DISABLED || '') === '1') return fail(sinRed(pending));
+
   const codex = findCodex(env);
   if (pending.length && !codex) return fail(`no encuentro \`codex\` en el PATH: no lancé ninguno de los ${pending.length} revisores (${pending.join(', ')}).`);
   const codexHome = codexHomeOf(env);
@@ -272,7 +289,10 @@ async function run(o) {
       }
       const r = { advisor, exit, report, model: modelOf(advisor), ok: corrio && rec.ok !== false };
       if (rec.ok === false) say(`reviewers-run: ${advisor} terminó, pero su línea no quedó en el registro (${rec.error}): check-count no lo va a contar.`);
-      else if (!r.ok) say(`reviewers-run: ${advisor} ${exit === 'timeout' ? `timeout (pasó ${Math.round(timeoutMs / 1000)} s)` : exit === 0 ? 'terminó sin reporte' : `salió ${exit}`}; lo que dijo, en ${errLog}.`);
+      else if (!r.ok) {
+        say(`reviewers-run: ${advisor} ${exit === 'timeout' ? `timeout (pasó ${Math.round(timeoutMs / 1000)} s)` : exit === 0 ? 'terminó sin reporte' : `salió ${exit}`}` +
+          `${OLLAMA_INALCANZABLE.test(tail) ? '; no llegó a Ollama (la caja de arena sin red, u Ollama apagado)' : ''}; lo que dijo, en ${errLog}.`);
+      }
       results.push(r);
       resolve(r);
     };
