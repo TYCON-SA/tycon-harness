@@ -140,7 +140,8 @@ RELOJ="${TYCON_PROD_SHIM_TIMEOUT:-7}"
 SENAL=""
 for _s in USR1 USR2 ALRM; do
   trap 'sin_decidir "el freno no contestó en ${RELOJ}s (se quedó sin tiempo)"' "$_s"
-  if [ -n "$(trap -p "$_s")" ]; then SENAL="$_s"; break; fi
+  # desde bash 5.1, `trap -p` muestra también la señal que llegó ignorada (`trap -- '' SIGUSR1`): vale sólo si quedó la nuestra
+  case "$(trap -p "$_s")" in *sin_decidir*) SENAL="$_s"; break ;; esac
 done
 
 # `<&0`: sin redirección explícita, bash le da /dev/null como entrada a un trabajo de fondo.
