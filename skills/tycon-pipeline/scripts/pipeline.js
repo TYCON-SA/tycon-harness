@@ -29,6 +29,7 @@ if (require.main === module) { try { require('./lib/node-floor.js').guard(); } c
 // y undefined cuentan como «no hay» (0, '' y false se quedan).
 const isNil = (v) => v === undefined || v === null;
 const nn = (v, d) => (isNil(v) ? d : v);
+const at = (o, k) => (isNil(o) ? undefined : o[k]);
 
 /**
  * `--codex-session '{"oss":true,"provider":"ollama","model":"<m>","config":["k=v"]}'`: la sesión de Codex con que
@@ -59,7 +60,6 @@ function parseCodexSession(raw) {
   }
   return s;
 }
-const at = (o, k) => (isNil(o) ? undefined : o[k]);
 
 const fs = require('fs');
 const path = require('path');
