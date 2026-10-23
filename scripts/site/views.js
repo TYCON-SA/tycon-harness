@@ -108,7 +108,10 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   // sin lo que informa cada máquina la cuenta no se sabe: «no medido», nunca 0
   else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, T('inicio.maquinasSinInforme')));
   else filas.push(filaMedida('maquinas_sin_confirmar', tMaq, m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
-  filas.push(filaNoMedida('retrospectivas', T('inicio.retrospectivas'), T('inicio.retrospectivasMotivo')));
+  // las retrospectivas viven en la máquina de quien mergeó: sólo con la foto del día (`.dashboard/retros/`) hay cuenta
+  const ret = m.retros;
+  if (medida(ret) && Array.isArray(ret.pendientes)) filas.push(filaMedida('retrospectivas', T('inicio.retrospectivas'), ret.pendientes.length, { fecha: ret.fecha }));
+  else filas.push(filaNoMedida('retrospectivas', T('inicio.retrospectivas'), T('inicio.retrospectivasMotivo')));
   // los proyectos cuyos pedidos asignados la noche no pudo medir: a cada dev le falta lo suyo de ahí
   const sinMedir = m.pedidos && Array.isArray(m.pedidos.sin_medir) ? m.pedidos.sin_medir : [];
   if (sinMedir.length) filas.push(filaNoMedida('pedidos_asignados_sin_medir', T('inicio.loAsignado'), T('inicio.asignadoSinMedir', { proyectos: sinMedir.join(', ') })));
@@ -365,10 +368,10 @@ function prsTrabados(prs, idioma) {
  * ficha por renglón con el enlace a su pedido o el motivo por el que no lo tiene (decisions.js). Lo declarado se decide
  * en un archivo de cada repo, no en un pedido: la sección lo dice y lista los que vencen.
  */
-function listasDeDecision(m, { enlaceOperaciones = null, ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
+function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = null, ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
   const T = (k, v) => t(idioma, k, v);
   const DEC = require('./decisions.js');
-  const todas = DEC.decisiones(m, { operationsRepo: enlaceOperaciones });
+  const todas = DEC.decisiones(m, { operationsRepo: enlaceOperaciones, remoto: remotoOperaciones });
   const medidas = m.decisiones && m.decisiones.estado === 'medido';
   const ul = (items) => (items.length ? `<ul class="lista">${items.join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
   const out = [];
@@ -402,7 +405,7 @@ function paginaInicio(ctx) {
   const m = ctx.modelo || {};
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma });
-    return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
+    return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');

@@ -662,6 +662,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
       avisoSesiones: !demo && quien.rol === 'maintainer' && !cerradas.verificable(),
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
+      // el remoto de operaciones ya resuelto: sólo lo trae el modo demo (sus direcciones de ejemplo no las reconoce remoteOf)
+      remotoOperaciones: quien.rol === 'maintainer' && demo ? demo.remotoOperaciones || null : null,
       version, ahora: ahora(),
       // sólo quienes mantienen saben de la última publicada (los que pueden actuar); el modo sale de site.update
       ultima: quien.rol === 'maintainer' ? ultima.estado() : null,
@@ -711,9 +713,10 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
  * El sitio en modo demo, sin escuchar todavía: las fuentes y las pestañas sobre los datos de ejemplo (demo.js), la sesión de
  * ejemplo y el tope de pedidos. `dir` es la carpeta temporal propia del modo: todo lo que se escribe queda adentro.
  */
-function crearSitioDemo({ env = process.env, dir, log = (l) => process.stdout.write(`${l}\n`), ahora = Date.now } = {}) {
-  const modo = require('./demo.js').crearModoDemo({ env, dir, log, ahora, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null });
-  return crearSitio({ env, fuentes: modo.fuentes, log, ahora, rutasExtra: modo.rutasExtra, version: VERSION, vigia: modo.vigia, demo: modo });
+function crearSitioDemo({ env = process.env, dir, log = (l) => process.stdout.write(`${l}\n`), ahora = Date.now, version = VERSION } = {}) {
+  const modo = require('./demo.js').crearModoDemo({ env, dir, log, ahora, version, skillsDir: env.TYCON_SKILLS_DIR || null });
+  // sin versión propia, el demo corre con la de ejemplo de sus datos: la misma en la página y en las máquinas
+  return crearSitio({ env, fuentes: modo.fuentes, log, ahora, rutasExtra: modo.rutasExtra, version: modo.version, vigia: modo.vigia, demo: modo });
 }
 
 async function main() {
