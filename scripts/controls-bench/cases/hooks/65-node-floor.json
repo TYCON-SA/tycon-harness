@@ -1,0 +1,30 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "freno-por-el-piso-con-node-viejo-sale-dos",
+          "type": "must-block",
+          "script": "${TCG}/scripts/lib/node-floor.js",
+          "args": ["--gate", "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js"],
+          "env": { "TYCON_NODE_FLOOR_FAKE_VERSION": "v12.11.1" },
+          "stdin": { "tool_name": "Bash", "session_id": "banco-piso", "tool_input": { "command": "ls" } },
+          "expect": { "exit": 2, "stderr_re": ["Node 12\\.11\\.1: el arnés necesita Node 20 o más"] }
+        },
+        {
+          "id": "hook-que-no-frena-por-el-piso-con-node-viejo-sale-cero",
+          "type": "must-not-block",
+          "script": "${TCG}/scripts/lib/node-floor.js",
+          "args": ["${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js"],
+          "env": { "TYCON_NODE_FLOOR_FAKE_VERSION": "v12.11.1" },
+          "stdin": { "tool_name": "Bash", "session_id": "banco-piso", "tool_input": { "command": "ls" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

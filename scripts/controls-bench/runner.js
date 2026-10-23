@@ -488,7 +488,9 @@ function runCase(tool, hookDef, caseDef, ctx) {
     const script = subst(caseDef.script || hookDef.script, vars);
     if (!fs.existsSync(script)) throw new Error(`script no existe: ${script}`);
     const stdin = buildStdin(tool, hookDef.event, caseDef.stdin, vars);
-    const [bin, ...pre] = interpreterFor(script, ctx);
+    // un caso puede pasarle argumentos al guion (`args`, con las variables del banco), después de la ruta: así se lanza
+    // un hook como lo registra el aplicador, por ejemplo el piso de Node con `--gate <freno>`
+    const [bin, ...pre] = [...interpreterFor(script, ctx), ...(caseDef.args || hookDef.args || []).map((a) => subst(String(a), vars))];
     const opciones = {
       input: JSON.stringify(stdin),
       cwd: FIXTURE,

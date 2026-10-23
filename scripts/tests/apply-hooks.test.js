@@ -780,6 +780,27 @@ test('T5 Update_ListaMasNuevaQueElNodeBajado_HooksConElDelArnes @story-8.93 @ac-
   for (const c of commandsOf(settingsOf(L), 'PreToolUse')) assert.ok(c.startsWith(`${bin} "`), c);
 });
 
+test('T43 ApplyHooks_MacSoloCambiaNodePelado @story-8.93 @ac-21', { skip: process.platform === 'win32' && 'la copia del Node en la HOME de juguete se mide en la 182' }, (t) => {
+  // En una Mac ya aplicada, la única línea que cambia es la que quedó con `node` pelado; el resto, y un hook ajeno, igual.
+  const L = lab(t, { list: LIST_A(), files: FILES_A });
+  const bin = withHarnessNode(L);
+  fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo de-la-persona' }] }] }, model: 'el de la persona' }, null, 2) + '\n');
+  assert.strictEqual(run(L, ['--platform', 'posix']).status, 0, 'la primera aplicación');
+  // la Mac aplicada, con un comando que quedó con `node` pelado
+  const antes = settingsOf(L);
+  const pelado = `node "${L.abs('tycon-pipeline/scripts/anota.js')}"`;
+  const anota = antes.hooks.PostToolUse.flatMap((g) => g.hooks).find((h) => h.command.endsWith(`"${L.abs('tycon-pipeline/scripts/anota.js')}"`));
+  assert.ok(anota && anota.command.startsWith(`${bin} "`), JSON.stringify(antes.hooks.PostToolUse));
+  anota.command = pelado;
+  fs.writeFileSync(L.settingsPath, JSON.stringify(antes, null, 2) + '\n');
+  const r = run(L, ['--platform', 'posix']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const esperado = JSON.parse(JSON.stringify(antes));
+  esperado.hooks.PostToolUse.flatMap((g) => g.hooks).find((h) => h.command === pelado).command = `${bin} "${L.abs('tycon-pipeline/scripts/anota.js')}"`;
+  assert.deepStrictEqual(settingsOf(L), esperado, 'sólo el comando con `node` pelado cambia');
+  assert.ok(settingsOf(L).hooks.Stop.flatMap((g) => g.hooks).some((h) => h.command === 'echo de-la-persona'), 'el hook de la persona sigue');
+});
+
 test('T1 Codex_SinNodeDelArnes_PisoConGateYBarrasNormales @story-8.93 @ac-1', () => {
   const C = require(path.join(ROOT, 'build', 'deploy-codex-hooks.js'));
   const gate = 'tycon-pipeline/scripts/on-pre-commit.js';

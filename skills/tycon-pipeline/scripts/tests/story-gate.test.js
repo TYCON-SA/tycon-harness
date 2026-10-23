@@ -554,6 +554,176 @@ test('T29 Freno_ManifiestosYLocks_SonCodigo', () => {
   assert.equal(gate.isManifestFile('/r/node_modules/x/package.json'), false, 'el de una dependencia no es del repo');
 });
 
+test('T41 Freno_CarpetaPorEnlace_FrenaIgual @story-8.93 @ac-15 @ac-22', () => {
+  // la sesión parada en el repo por un enlace (en la Mac, /tmp y /var/folders; en Windows, una unión): el marcador
+  // guarda la ruta real y la escritura se compara por ruta real, no por cómo llegó la carpeta
+  const { stateDir, repo } = corridaAbierta();
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  const enlace = path.join(path.dirname(repo), `${path.basename(repo)}-enlace`);
+  fs.symlinkSync(repo, enlace, process.platform === 'win32' ? 'junction' : 'dir');
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [`node -e "require('fs').writeFileSync('package.json','{}')"`, 'echo x > src/a.ts', 'echo {} > package-lock.json']) {
+      const b = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: enlace, tool_input: { command: cmd } }, { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), `por el enlace: ${cmd}`);
+    }
+    // y al revés: el marcador con la ruta del enlace y la sesión en la ruta real
+    const marcador = path.join(stateDir, 'active', 's1.json');
+    fs.writeFileSync(marcador, JSON.stringify(Object.assign(JSON.parse(fs.readFileSync(marcador, 'utf8')), { repoPath: enlace })));
+    const b = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command: 'echo x > src/a.ts' } }, { stateDir, installedRoots: [] });
+    assert.ok(b && INVISIBLE.test(b.block), 'el marcador por el enlace');
+  });
+});
+
+test('T36 Freno_FalsosPositivosDeLaMedicion @story-8.93 @ac-22', () => {
+  // falsos positivos de la medición contra los comandos reales que no frenan: el cd mínimo y los argumentos por índice;
+  // y los que siguen frenando por duda
+  const { stateDir, repo } = corridaAbierta();
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'x');
+  const fuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-')));
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    // 1. la forma mínima del cd: `VAR=literal; … && cd DIR && <escritura>`, la escritura en la misma cadena de &&
+    for (const cmd of [
+      `L=${fuera}; cd $L && git checkout -q . && git clean -qfd`,
+      `S=${fuera}; mkdir -p $S/d && cd $S/d && rm -f *`,
+      `SP=${fuera}; rm -rf ${fuera}/r; mkdir -p ${fuera}/r; cd $SP/r && echo '{}' > package.json`,
+      // lo que viene después de la cadena no cambia la carpeta de la escritura
+      `S=${fuera}; mkdir -p $S/d && cd $S/d && rm -f *; for f in a b; do echo $f; done`,
+      `cd ${fuera} && python3 - <<'EOF'\nopen('a.ts','w').write('x')\nEOF`,
+    ]) assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [] }), null, cmd);
+    // 2. los argumentos del script por índice (`B, OUTF = sys.argv[1], sys.argv[2]` · `const f = process.argv[2]`)
+    const porIndice = `OUTF=${fuera}/evidencia.md; python3 - "$OUTF" "${fuera}/otro.md" <<'EOF'\nimport sys\nOUTF,OTRO=sys.argv[1],sys.argv[2]\nopen(OUTF,'w').write('x')\nopen(OTRO,'w').write('y')\nEOF`;
+    assert.equal(bash.handle(ev(porIndice), { stateDir, installedRoots: [] }), null, 'argumentos por índice, en Python');
+    assert.equal(bash.handle(ev(`node - "${fuera}/a.ts" <<'EOF'\nconst f = process.argv[2]; require('fs').writeFileSync(f, 'x')\nEOF`), { stateDir, installedRoots: [] }), null, 'argumento por índice, en Node');
+    // lo que sigue frenando
+    for (const cmd of [
+      // una llamada de Node escrita como texto en otro script: frena por duda (no se lee un lenguaje dentro de otro)
+      `python3 - <<'EOF'\np='${fuera}/casos.json'\nt="node -e \\"require('fs').writeFileSync('package.json', 'x')\\""\nopen(p,'w').write(t)\nEOF`,
+      `node -e 'const ejemplo = "fs.writeFileSync(path.join(d, f), x)"; console.log(ejemplo)'`,
+      // lo que se escribe ANTES del cd, un cd que no se resuelve, un cd a otra carpeta del repo
+      `echo x > src/a.ts; S=${fuera}; cd $S && ls`,
+      'cd $NADIE_LA_DEFINE && echo x > src/a.ts',
+      `cd ${repo}/src && python3 - <<'EOF'\np='a.ts'\ns=open(p).read()\nopen(p,'w').write(s)\nEOF\ncd ${fuera} && ls`,
+      `S=${fuera}; for x in 1; do S=${repo}; done; cd $S && echo x > src/a.ts`,
+      `D=${repo}/src; cd $D && echo x > a.ts`,
+      `python3 - <<'EOF'\nimport os\nopen(os.path.join('src', 'a.ts'), 'w').write('x')\nEOF`,
+      // un argumento por índice que cae en el repo, o que se reasigna después
+      `python3 - "src/a.ts" <<'EOF'\nimport sys\nP,=sys.argv[1],\nopen(P,'w').write('x')\nEOF`,
+      `node - "src/a.ts" <<'EOF'\nconst f = process.argv[2]; require('fs').writeFileSync(f, 'x')\nEOF`,
+      `python3 - "${fuera}/x.md" <<'EOF'\nimport sys,os\nB = sys.argv[1]\nB = os.path.join('src','a.ts')\nopen(B,'w').write('x')\nEOF`,
+    ]) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+  });
+});
+
+test('T41 Freno_PaseAdversarialE_SigueFrenando @story-8.93 @ac-15 @ac-22', () => {
+  // comandos que escriben código o un manifiesto del repo de la ejecución por formas que esconden el destino (un cd que
+  // no corre o corre en otro proceso, un intérprete que lanza otro, strings que tapan la llamada, una variable
+  // reasignada): todos frenan
+  const { stateDir, repo } = corridaAbierta();
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'x');
+  const F = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-')));
+  const R = repo;
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const casos = [
+    // el cd que no corre, corre en otro proceso o no es del nivel de arriba
+    `false && cd ${F}; echo x > src/a.ts`, `( true; cd ${F} ); echo x > src/a.ts`, `echo "; cd ${F}"; echo x > src/a.ts`,
+    `: '; cd ${F}'\necho x > src/a.ts`, `f() {\n cd ${F}\n}\necho x > src/a.ts`, `if false; then\ncd ${F}\nfi\necho x > src/a.ts`,
+    `bash -c 'echo; cd ${F}'; echo x > src/a.ts`, `test -d ${F}/nope && cd ${F}/nope; echo x > src/a.ts`,
+    `[ -d ${F}/nope ] && cd ${F}/nope; echo {} > package.json`, `cd ${F}/nope 2>/dev/null || true; echo x > src/a.ts`,
+    `cd ${F} | cat; echo x > src/a.ts`, `cd ${F} & echo x > src/a.ts`, `while false; do\ncd ${F}\ndone; echo x > src/a.ts`,
+    `git commit -qm "a; cd ${F}"; echo x > src/a.ts`, `echo hola # luego; cd ${F}\necho x > src/a.ts`,
+    `D=$(true; cd ${F}; pwd); echo x > src/a.ts`, `true; cd ${F} | true; echo x > src/a.ts`, `true; ( true; cd ${F} ); echo x > src/a.ts`,
+    `printf '%s\\n' 'a; cd ${F}'; echo x > src/a.ts`, `cd ${F}/../$(basename ${R}) && echo x > src/a.ts`,
+    `cd ${F}/$(echo ..)/${path.basename(R)} && echo x > src/a.ts`, `cd ${F} || true; cd -P ${R} && echo x > src/a.ts`,
+    `cd ${F} && cd - && echo x > src/a.ts`, `(true && cd ${F}) && echo x > src/a.ts`, `(cd /usr; cd ${F}) && echo x > src/a.ts`,
+    `true | cd ${F}; echo x > src/a.ts`, `f(){ true; cd ${F}; }; echo x > src/a.ts`, `echo 'a; cd ${F}' && echo x > src/a.ts`,
+    `sh -c 'true; cd ${F}'; echo x > src/a.ts`, `true || cd ${F}; echo x > src/a.ts`,
+    `x=1; cd ${F}; for d in 1; do cd ${R}; done; echo x > src/a.ts`, `cd ${R}/src && cd .. && cd ${F} && cd - && echo x > src/a.ts`,
+    `echo 'nota; cd ${F} ' >/dev/null; echo x > src/a.ts`, `node -e "console.log('; cd ${F}')" ; echo x > src/a.ts`,
+    `cd ${F} && echo x > a.ts && cd ${R} && echo y > src/b.ts`,
+    // un intérprete que lanza otro, y un script corto que tapaba la escritura de otro
+    `python3 -c "import subprocess; subprocess.run(['node','-e', \\"require('fs').writeFileSync('src/a.ts','x')\\"])"`,
+    `pwsh -Command "node -e \\"require('fs').writeFileSync('src/a.ts','x')\\""`,
+    `node - <<'EOF'\nrequire('child_process').execSync("python3 -c \\"open('src/a.ts','w').write('1')\\"")\nEOF`,
+    `python3 -c "w"; node -e "require('fs').writeFileSync('src/a.ts','x')"`, `python3 -c "("; node -e "require('fs').writeFileSync('src/a.ts','x')"`,
+    `python3 -c "write" ; node -e "require('fs').writeFileSync('src/a.ts','x')"`, `python3 -c "src/a.ts" ; node -e "require('fs').writeFileSync('src/a.ts','x')"`,
+    `python3 -c "ts"; node -e "require('fs').writeFileSync('src/a.ts','x')"`, `perl -e 'writeFileSync' ; node -e "require('fs').writeFileSync('src/a.ts','x')"`,
+    `python3 -c 'Sync' ; node -e "require('fs').writeFileSync('src/a.ts','x')"`,
+    // strings, regex e interpolaciones que tapaban la llamada de escritura
+    `python3 - <<'EOF'\nimport os\n'''Fix the thing's import.'''\np = os.path.join('src', 'a.ts')\nopen(p, 'w').write('x')\n# don't forget\nEOF`,
+    `node - <<'EOF'\nconst fs=require('fs'),path=require('path'); const re=/'/; fs.writeFileSync(path.join('src','a.ts'),'x'); const q=/'/;\nEOF`,
+    `node - <<'EOF'\nconst fs=require('fs'); let p=process.env.T; let t=fs.readFileSync(p,'utf8'); t=t.replace(/'/g,'x'); fs.writeFileSync(p,t); const z=/'/;\nEOF`,
+    `node - <<'EOF'\nconsole.log(\`\${require('fs').writeFileSync(process.env.T,'x')}\`)\nEOF`,
+    `python3 - <<'EOF'\nimport os\np=os.environ['T']\nprint(f"{open(p,'w').write('x')}")\nEOF`,
+    `node - <<'EOF'\nconst re=/'/; const p=require('path').join('src','a.ts'); require('fs').writeFileSync(p,'x'); const z=/'/;\nEOF`,
+    `node -e "const fs=require('fs'); fs.open(process.env.T,'w',(e,fd)=>fs.writeSync(fd,'x'))"`,
+    // un argumento por índice reasignado después
+    `python3 - "${F}/x.md" "${F}/y.md" <<'EOF'\nimport sys,os\nA, B = sys.argv[1], sys.argv[2]\nB = os.path.join('src','a.ts')\nopen(B,'w').write('x')\nEOF`,
+    `python3 - src/a.ts ${F}/x.json <<'EOF'\nimport sys\nA, B = sys.argv[1], sys.argv[2]\nB = A\nopen(B,'w')\nEOF`,
+    `python3 - ${F}/a.md ${F}/b.ts <<'EOF'\nimport sys\nA,B=sys.argv[1],sys.argv[2]\nB='src/a.ts'\nopen(B,'w').write('x')\nEOF`,
+  ];
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of casos) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), `tiene que frenar: ${cmd}`);
+    }
+    // el falso positivo del pase (el nombre del destino aparece antes del cd, sin escribirse ahí): escribe sólo afuera
+    assert.equal(bash.handle(ev(`SP=${F}; rm -f $SP/index.ts; cd $SP && echo x > index.ts`), { stateDir, installedRoots: [] }), null);
+  });
+});
+
+test('T41 Freno_RevisoresVuelta2E_SigueFrenando @story-8.93 @ac-15 @ac-22', () => {
+  // con la sesión parada fuera del repo de la ejecución (un worktree), un `cd` que no es un comando no aleja la
+  // escritura, y una asignación compuesta, entre paréntesis, con tipo o en un bucle no deja resuelta una variable a medias
+  const { stateDir, repo } = corridaAbierta();
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'x');
+  const sesion = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sesion-')));
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: sesion, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [
+      `cd ${repo} && echo "cd" > src/a.ts`,
+      `cd ${repo} && cd src && sed -i 's/a/b/' a.ts`,
+      `node -e "let p='${repo}/src/a'; p+='.ts'; require('fs').writeFileSync(p,'x')"`,
+      `node -e "let p='/tmp/ok'; (p='${repo}/src/a.ts'); require('fs').writeFileSync(p,'x')"`,
+      `python3 - <<'EOF'\np='/tmp/ok.md'\nfor p in ['${repo}/src/a.ts']:\n    open(p,'w').write('x')\nEOF`,
+      `node - <<'EOF'\nlet p = '/tmp/ok.md'; [p] = ['${repo}/src/a.ts']; require('fs').writeFileSync(p, 'x')\nEOF`,
+      // una escritura que no es código no fija la carpeta de las demás; y una asignación con tipo cuenta
+      `cd ${repo} && echo 1 > a.txt; cd ${sesion}/x/y && echo 2 > ${path.relative(path.join(sesion, 'x', 'y'), path.join(repo, 'src', 'b.ts'))}`,
+      `python3 -c "p='notes.md'; p: str = '${repo}/src/a.ts'; open(p,'w').write('x')"`,
+      `node - <<'EOF'\nlet p = '/tmp/ok.md'; let q: string = ''; p = '${repo}/src/a.ts'; require('fs').writeFileSync(p, 'x')\nEOF`,
+    ]) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), `tiene que frenar: ${cmd}`);
+    }
+  });
+});
+
+test('T41 Freno_CdQueNoEsLaFormaMinima_ResuelveComoHoy @story-8.93 @ac-15', () => {
+  // un cd que no es `[VAR=literal; …] [… &&] cd DIR && <escritura>` resuelve con el cd del
+  // principio (`leadingCd`: `cd X &&` o `cd X;` al inicio), o con la carpeta de la sesión; y un segundo cd antes de una
+  // escritura relativa, con la de la sesión
+  const repo = fs.realpathSync(mkRepo(false));
+  const F = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-')));
+  for (const [cmd, esperado] of [
+    [`cd ${F}; echo x > src/a.ts`, F],                  // el cd del principio, con ;
+    [`cd ${F} && ls; echo x > src/a.ts`, F],            // el cd del principio, la escritura fuera de su cadena
+    [`cd "${F}" && echo x > src/a.ts`, F],              // con comillas
+    [`cd ${F} || echo x > src/a.ts`, repo],             // con ||: no es el cd del principio
+    [`cd -P ${F} && echo x > src/a.ts`, repo],          // con opciones
+    [`cd ${F} && cd ${F} && echo x > src/a.ts`, repo],  // un segundo cd antes de la escritura
+    [`echo "x" ; cd ${F} && echo x > src/a.ts`, repo],  // el cd no está al principio y lo de antes no es simple
+    [`A=$(pwd); cd ${F} && echo x > src/a.ts`, repo],
+    [`true | true; cd ${F} && echo x > src/a.ts`, repo],
+    [`echo x > src/a.ts`, repo],                        // sin cd
+  ]) assert.equal(bash.cwdDelComando(cmd, repo), esperado, cmd);
+});
+
 test('T30 Freno_GestoresDePaquetes_Pasan', () => {
   const { stateDir, repo } = corridaAbierta();
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });

@@ -70,8 +70,9 @@ function esperados(archivo) {
   const out = new Set();
   for (const l of tramo) {
     if (/^#{1,5}\s/.test(l)) break;
-    const m = l.match(/^\s*-\s+`([^`]+)`/);
-    if (m) out.add(m[1]);
+    // `clave`, o ``clave`` (la forma de Markdown para una clave que trae comillas invertidas)
+    const m = l.match(/^\s*-\s+(?:``\s?(.+?)\s?``|`([^`]+)`)/);
+    if (m) out.add(m[1] || m[2]);
   }
   return out;
 }

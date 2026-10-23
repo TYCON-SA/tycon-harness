@@ -141,6 +141,10 @@ test('Portable_ParseTap_BothForms_NoTotalsIsNotAPass', () => {
   const spec = '✔ T18a (1.2ms)\n✖ T18b GitBash_Find_Git (3.4ms)\nℹ tests 7\nℹ pass 6\nℹ fail 1\nℹ skipped 0\n';
   assert.deepStrictEqual(P.parseTap(spec), { tests: 7, pass: 6, fail: 1, skipped: 0, first_failure: 'T18b GitBash_Find_Git' });
   assert.deepStrictEqual(P.parseTap('Error: Cannot find module x'), { tests: null, pass: null, fail: null, skipped: null, first_failure: null });
+  // la suite de bash del arnés se lee por sus ✅ y ❌; sin ninguno no es un «sí»
+  assert.deepStrictEqual(P.parseShellSuite('✅ h: uno\n✅ h: dos\n❌ h: tres se rompió\nh: 1 fallas\n'), { tests: 3, pass: 2, fail: 1, skipped: null, first_failure: 'h: tres se rompió' });
+  assert.strictEqual(P.testPassed(Object.assign({ exit: 0, error: null }, P.parseShellSuite('Error: no está bash'))), false);
+  assert.deepStrictEqual(P.SUITES.slice(3), ['apply-hooks', 'harness-node', 'story-gate', 'ledger-visible', 'safety-escape', 'run-close', 'pipeline-unit'], 'las siete del AC 21 de la 8.93, después de las de W1');
   const t = (o) => Object.assign({ exit: 0, error: null, pass: 6, fail: 0 }, o);
   assert.strictEqual(P.testPassed(t({})), true);
   for (const bad of [t({ exit: 1 }), t({ fail: 1 }), t({ pass: null, fail: null }), t({ pass: 0 }), t({ error: 'ETIMEDOUT', exit: null }), null]) assert.strictEqual(P.testPassed(bad), false, JSON.stringify(bad));

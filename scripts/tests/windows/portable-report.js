@@ -34,6 +34,8 @@ const WINDOWS_SHAPES = SHAPES.filter((s) => s.id !== 'native');
 // Lo que el informe midió en una Mac: sólo referencia.
 const REFERENCE = Object.freeze({
   tests: { 'line-endings': 6, 'git-bash': 7, 'windows-support': 4, 'bench-portable': 7, 'test-scope-table': 2 },
+  // las del registro de hooks, el piso de Node, los frenos y el cierre, medidas en la Mac (la de bash cuenta sus ✅)
+  tests_893: { 'apply-hooks': 28, 'harness-node': 87, 'story-gate': 33, 'ledger-visible': 9, 'safety-escape': 58, 'run-close': 5, 'pipeline-unit': 332 },
   bench: 'el informe de W1 esperaba 919 casos en la lista y 721 con veredicto en Windows',
 });
 // Lo que el informe pide y un agente no puede dar, con su motivo. Va entero al reporte.
@@ -63,6 +65,17 @@ function parseTap(text) {
   const num = (name) => { const m = new RegExp(`^\\s*(?:#|ℹ) ${name} (\\d+)\\s*$`, 'm').exec(s); return m ? Number(m[1]) : null; };
   const failed = /^\s*not ok \d+ - (.+)$/m.exec(s) || /^\s*✖ (.+?)(?: \(\d[\d.]*ms\))?$/m.exec(s);
   return { tests: num('tests'), pass: num('pass'), fail: num('fail'), skipped: num('skipped'), first_failure: failed ? failed[1].trim() : null };
+}
+
+/**
+ * Los totales de una suite de bash del arnés, con la forma de `parseTap`: un renglón que empieza con ✅ es una
+ * verificación que pasó y uno con ❌, una que falló.
+ */
+function parseShellSuite(text) {
+  const lines = String(text || '').split('\n').map((l) => l.trim());
+  const pass = lines.filter((l) => l.startsWith('✅')).length;
+  const failed = lines.filter((l) => l.startsWith('❌'));
+  return { tests: pass + failed.length, pass, fail: failed.length, skipped: null, first_failure: failed.length ? failed[0].replace(/^❌\s*/, '') : null };
 }
 
 /** ¿Esa suite pasó? Salió 0 y no dice ninguna falla. Sin totales legibles no es un «sí». */
@@ -165,7 +178,10 @@ const testText = (t) => {
   return `salió ${t.exit}${totals}${t.first_failure ? ` — la primera que falla: ${t.first_failure}` : ''}`;
 };
 const testMatch = (t) => (!t || t.not_run ? null : testPassed(t));
-const testExpected = (name) => `sale 0, sin fallas${REFERENCE.tests[name] ? ` (el informe de W1: ${REFERENCE.tests[name]} pruebas)` : ''}`;
+const testExpected = (name) => `sale 0, sin fallas${REFERENCE.tests[name] ? ` (el informe de W1: ${REFERENCE.tests[name]} pruebas)` : REFERENCE.tests_893[name] ? ` (en la Mac: ${REFERENCE.tests_893[name]})` : ''}`;
+// las suites del paso 6, en el orden en que corren: las tres de W1 y las del registro de hooks, el piso de Node, los
+// frenos y el cierre
+const SUITES = Object.freeze(['bench-portable', 'windows-support', 'test-scope-table', 'apply-hooks', 'harness-node', 'story-gate', 'ledger-visible', 'safety-escape', 'run-close', 'pipeline-unit']);
 const REPO_TEXT = { harness: 'arnés', skills: 'agent-skills' };
 const OF_REPO = { harness: 'del arnés', skills: 'de agent-skills' };
 
@@ -258,15 +274,15 @@ function shortRows(report) {
     if (h) row('5', 'El aviso de ruta inexistente sin la variable HOME', '1 corrido, 0 rojos', h.readable ? `${h.ran} corridos · ${h.red} rojos · ${h.not_measured} no medidos` : `no se pudo leer: ${h.problem}`, h.readable ? (h.ran >= 1 && h.red === 0 && h.not_measured === 0) : false);
   } else gone('5', 'Los portones que deciden por ruta', 'path-shapes');
 
-  // 6 · las suites (la del freno de pruebas, sólo si el commit la trae)
+  // 6 · las suites (las que el commit no trae, o que un reporte anterior no corrió, no tienen fila)
   const su = factsOf(report, 'suites');
   if (su.tests) {
-    for (const name of ['bench-portable', 'windows-support', 'test-scope-table']) {
+    for (const name of SUITES) {
       const t = su.tests[name];
-      if (!t && name === 'test-scope-table') continue;
-      row('6', `\`${name}.test.js\``, testExpected(name), testText(t), testMatch(t));
+      if (!t && name !== 'bench-portable' && name !== 'windows-support') continue;
+      row('6', `\`${t && t.file && !t.not_run ? String(t.file).split('/').pop() : `${name}.test.js`}\``, testExpected(name), testText(t), testMatch(t));
     }
-  } else gone('6', '`bench-portable.test.js`, `windows-support.test.js` y `test-scope-table.test.js`', 'suites');
+  } else gone('6', 'las suites de Windows (las de W1 y las del AC 21 de la story 8.93)', 'suites');
   return rows;
 }
 
@@ -443,4 +459,4 @@ function renderMarkdown(report) {
   return `${M.join('\n')}\n`;
 }
 
-module.exports = { SHAPES, WINDOWS_SHAPES, REFERENCE, NOT_MEASURED, parseTap, testPassed, parseBenchList, benchSummary, shapeOf, shapesSummary, shortRows, renderMarkdown, isWslLauncher };
+module.exports = { SHAPES, WINDOWS_SHAPES, REFERENCE, NOT_MEASURED, SUITES, parseTap, parseShellSuite, testPassed, parseBenchList, benchSummary, shapeOf, shapesSummary, shortRows, renderMarkdown, isWslLauncher };
