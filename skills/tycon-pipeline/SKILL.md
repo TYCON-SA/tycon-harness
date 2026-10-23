@@ -72,11 +72,12 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   sube solo si hay CRITICAL sin resolver, algo falló y el dev necesita el error crudo, o el dev lo pidió.
 - **COMM.iii — pasos largos**: anunciar todo paso ≥30s y cuánto tarda (test-gate ~90s, advisor 3-7 min, pase
   adversarial 20-40 min); ≥2 min va en segundo plano salvo gates cortos de `run-check`; al volver, contestar
-  PRIMERO lo que el dev escribió. **Todo `Agent(...)` del pipeline corre en segundo plano**.
+  PRIMERO lo que el dev escribió. **Todo `Agent(...)` del pipeline corre en segundo plano**; el pase,
+  sin preguntar.
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
 - **H.ii — pase adversarial** (`steps/step-08-adversarial-pass.md`): reproduce-or-refute que
-  EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW o liviana → skip. Overrides:
-  `--no-deep-review`/`TYCON_NO_DEEP_REVIEW=1`, `.tycon/advisors.yaml deep_review: always|off|auto`,
+  EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre (de fondo, sin preguntar); LOW o
+  liviana → skip. Apagarlo: «autorizo TYCON_NO_DEEP_REVIEW». Overrides: `.tycon/advisors.yaml deep_review: always|off|auto`,
   `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` no se ofrece ni se
   pregunta**: sólo con `--deep-review-fable`, a pedido. UNA vez por corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
   y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
@@ -140,7 +141,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   trabajo sustancial ajeno, recomendarlo ANTES del «Arranque» (el user decide; el estado vive en el marker).
 - **TOOL.i**: tooling esperado y ausente se AVISA en 1 línea: binario presente → su CLI vía Bash para este
   run + cómo levantar el MCP; sin binario → acción de instalación y recién ahí degradar. Sin la tool
-  `Workflow` → preguntar "¿sigo sin el pase adversarial?". Lista: `pipeline.js tooling-expected`.
+  `Workflow` → la salida aprobada. Lista: `pipeline.js tooling-expected`.
 - **H.iii — model/effort hint**: `pipeline.js start --session-model <el de la sesión>` trae `model_hint`
   (LOW → sonnet · si no, opus; fable sólo si la organización lo pide) y el effort (tabla en PIPE-C8;
   `max` nunca automático). Si no matchea, sugerir `/model` en 1 línea;

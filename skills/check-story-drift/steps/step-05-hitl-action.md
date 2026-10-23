@@ -15,8 +15,8 @@ He detectado <N> stories con DRIFT CONFIRMADO. ¿Cómo procedo?
 
 (a) Cerrar todas las DRIFT CONFIRMADO — para cada una, correr en paralelo
     tycon-ac-coverage-checker + tycon-deferral-tracker (los 2 DoD gates) y, si
-    GREEN, proponer edits (frontmatter status:done, Status line, Change Log,
-    sprint-status.yaml). Aprobás los edits antes de aplicar.
+    GREEN, proponer el cierre (el estado a done con marker.js, Change Log,
+    sprint-status.yaml). Aprobás el cierre antes de aplicarlo.
 
 (b) Revisar manualmente — me das una lista de las que querés cerrar (subset)
     y arranco solo con esas con el mismo flow (gates + propuesta).
@@ -34,10 +34,11 @@ Para cada story en `drift_confirmed`:
    - `tycon-deferral-tracker` con el path del spec
 
 2. **Si ambos GREEN** (0 CRITICAL):
-   - Proponer edits:
-     - `<specs_dir>/<file>`: frontmatter `status: done` + Status line + sección Change Log con entry "DoD gates GREEN + drift closure"
+   - Proponer el cierre y pedir aprobación user antes de aplicarlo:
+     - el estado: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <specs_dir>/<file> done`
+       (cambia el frontmatter y la línea Status juntos). El estado de una historia no se escribe con Edit: el arnés lo frena
+     - `<specs_dir>/<file>`: sección Change Log con entry "DoD gates GREEN + drift closure" (con Edit)
      - `<specs_dir>/../planning-artifacts/sprint-status.yaml`: actualizar entry de la story a `done`
-   - Pedir aprobación user antes de aplicar.
 
 3. **Si alguno CRITICAL**:
    - NO cerrar esa story. Reportar al user: "Story X.Y tiene findings CRITICAL en advisors — no se puede cerrar a done sin resolver. ¿Querés que profundice o saltamos?"

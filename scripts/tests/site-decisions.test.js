@@ -130,3 +130,21 @@ test('Fuentes_LeeElPedidoDeCadaFicha', (t) => {
   // el conteo de siempre no cambia
   assert.strictEqual(m.dependencias.rubros.nuevos, 3);
 });
+
+test('8.101-Decisiones_SinRemotoComoHoy_ConRemotoEnlaza', () => {
+  const resumen = (ds) => ds.map((d) => `${d.id}:${d.enlace}:${d.sinLugar}`);
+  // sin `remoto`, y con `remoto: null`, exactamente lo de hoy en cada caso
+  for (const operationsRepo of [`${ADO}.git`, GH, 'https://git.example.com/acme/operaciones', 'ssh://ssh.dev.azure.com/v3/acme/arnes/operaciones', null]) {
+    assert.deepStrictEqual(resumen(decisions.decisiones(modelo(), { operationsRepo, remoto: null })), resumen(decisions.decisiones(modelo(), { operationsRepo })), String(operationsRepo));
+  }
+  assert.strictEqual(decisions.decisiones(modelo(), { operationsRepo: 'https://dev.azure.example/acme/Producto%20X/_git/operaciones' })[0].sinLugar, 'plataforma_desconocida');
+  // con el remoto ya resuelto (el que declara la plataforma de ejemplo), cada renglón con su pedido
+  const remoto = { platform: 'azure', web: 'https://dev.azure.example/acme/Producto%20X/_git/operaciones' };
+  const ds = decisions.decisiones(modelo(), { operationsRepo: remoto.web, remoto });
+  assert.strictEqual(ds.find((d) => d.id === '0da8b2f2').enlace, `${remoto.web}/pullrequest/5255`);
+  assert.strictEqual(ds.find((d) => d.id === '171bed99').sinLugar, 'sin_pedido', 'una ficha sin pedido sigue diciendo por qué');
+  const gh = decisions.decisiones(modelo(), { operationsRepo: GH, remoto: { platform: 'github', web: `${GH}.git` } });
+  assert.strictEqual(gh.find((d) => d.id === '2026-10-16-tienda-58d02289').enlace, `${GH}/pull/4669`);
+  // un remoto sin plataforma no inventa un enlace
+  assert.strictEqual(decisions.decisiones(modelo(), { operationsRepo: remoto.web, remoto: { platform: null, web: remoto.web } })[0].sinLugar, 'plataforma_desconocida');
+});

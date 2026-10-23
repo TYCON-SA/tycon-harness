@@ -92,7 +92,7 @@ function escribirHilos(dirBuzon) {
  * modo demo (todo lo que se escribe queda adentro). Los datos se arman con la fecha de hoy y se rehacen al cambiar el día:
  * una demo que lleva días encendida sigue mostrando datos al día.
  */
-function crearFuentesDemo({ dir, ahora = Date.now, log = () => {} }) {
+function crearFuentesDemo({ dir, ahora = Date.now, log = () => {}, version = DATOS.VERSION_DE_EJEMPLO }) {
   const SRC = require('./sources.js');
   const OPS = require('../lib/operations-config.js');
   const people = require('../lib/people.js');
@@ -104,15 +104,18 @@ function crearFuentesDemo({ dir, ahora = Date.now, log = () => {} }) {
 
   function generar() {
     const t = ahora();
-    escribirArchivos(dirOps, DATOS.operaciones({ ahora: t, access: ACCESO,
+    // los datos completos: cada pestaña, en cada vista, con algo que mostrar
+    escribirArchivos(dirOps, DATOS.operaciones({ ahora: t, access: ACCESO, completo: true,
       invitaciones: { [DATOS.INVITADA]: { por: DATOS.LEAD, el: new Date(t).toISOString().slice(0, 10) } } }));
-    escribirArchivos(dirPerfil, DATOS.archivosDelPerfil({ extra: DATOS.PAQUETE_DE_REVISORES }));
-    // el espejo del buzón: cada blob es un archivo (`<máquina>/<archivo>`), como lo deja la bajada del sitio real
+    escribirArchivos(dirPerfil, DATOS.archivosDelPerfil({ extra: DATOS.PAQUETE_DE_REVISORES, completo: true }));
+    // el espejo del buzón: cada blob es un archivo (`<máquina>/<archivo>`), como lo deja la bajada del sitio real, y el
+    // archivo de uniones de carpetas que deja la bajada (ninguna carpeta se mudó)
     fs.rmSync(dirBuzon, { recursive: true, force: true });
-    for (const [rel, texto] of Object.entries(DATOS.blobsDelBuzon(t))) {
+    for (const [rel, texto] of Object.entries(DATOS.blobsDelBuzon(t, { completo: true, version }))) {
       fs.mkdirSync(path.dirname(path.join(dirBuzon, rel)), { recursive: true });
       fs.writeFileSync(path.join(dirBuzon, rel), texto);
     }
+    fs.writeFileSync(path.join(dirBuzon, '.carpetas-de-maquina.json'), JSON.stringify({ schema: 1, carpetas: {}, regeneradas: {}, no_leidas: [] }));
     escribirHilos(dirBuzon);
     const leida = OPS.load(path.join(dirOps, 'operations.json'));
     if (!leida.ok) throw new Error(`los datos de ejemplo no validan: ${(leida.problems || []).map((p) => `${p.path}: ${p.message}`).join(' · ')}`);
@@ -294,7 +297,10 @@ function crearModoDemo({ env = { SITE_DEMO: '1' }, dir, log = () => {}, ahora = 
   const v = validarDemo(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
   const TX = require('./texts.js');
-  const fuentes = crearFuentesDemo({ dir, ahora, log });
+  // sin versión propia (la imagen no trae version.json), el demo corre con la de ejemplo: la misma en la página y en las
+  // máquinas, así la comparación de versiones siempre tiene contra qué
+  version = version || DATOS.VERSION_DE_EJEMPLO;
+  const fuentes = crearFuentesDemo({ dir, ahora, log, version });
   const cfg = {
     publicUrl: v.cfg.publicUrl, port: v.cfg.port, sessionKey: crypto.randomBytes(32), provider: 'demo', clientId: null, clientSecret: null,
     allowedDomains: [], emailClaim: 'email', redirectUri: null, dataDir: null, demo: true, firstMaintainer: undefined,
@@ -307,7 +313,7 @@ function crearModoDemo({ env = { SITE_DEMO: '1' }, dir, log = () => {}, ahora = 
   const invitaciones = crearInvitacionesDemo();
   const comun = { cfg, fuentes, ahora, log, fetch: fetchDemo, urlBase: PLATAFORMA().urlBase, remotos: PLATAFORMA().remotos };
   const rutasExtra = [
-    ...require('./tabs/config.js').crearRutas({ ...comun, versionImagen: version, invitaciones, demo: true }),
+    ...require('./tabs/config.js').crearRutas({ ...comun, versionImagen: version, invitaciones, demo: true, repoDeEjemplo }),
     ...require('./tabs/how-it-works.js').crearRutas({ ...comun, versionImagen: version, demo: true }),
     // con la carpeta temporal propia como disco del sitio: las ejecuciones leen sus conversaciones de ejemplo
     ...require('./tabs/runs.js').crearRutas({ cfg: { ...cfg, dataDir: dir }, fuentes, version, skillsDir, log }),
@@ -317,7 +323,21 @@ function crearModoDemo({ env = { SITE_DEMO: '1' }, dir, log = () => {}, ahora = 
   const tok = crypto.randomBytes(32).toString('base64url');
   const sesion = (cookies) => ({ email: comoDe(cookies) === 'persona' ? DATOS.ANA : DATOS.LEAD, sub: 'demo', prov: 'demo', iss: 'demo', exp: Number.MAX_SAFE_INTEGER, tok });
   const proveedor = { nombre: 'demo', emisor: 'demo', listo: () => true, preparar: async () => {}, urlDeInicio: () => '/', vias: null };
-  return { cfg, fuentes, rutasExtra, vigia: crearVigiaFijo({ version, ahora }), invitaciones, proveedor, sesion, comoDe, comoValido, cookieDeVista, marcar: marcarPagina, tope: crearTope({ ahora }) };
+  return { cfg, fuentes, rutasExtra, vigia: crearVigiaFijo({ version, ahora }), invitaciones, proveedor, sesion, comoDe, comoValido, cookieDeVista, marcar: marcarPagina, tope: crearTope({ ahora }),
+    version, remotoOperaciones: PLATAFORMA().remotos.operaciones };
+}
+
+/**
+ * Lo que «La configuración de cada repo» lee de la rama principal de un repo de producto, en el sitio demo: el archivo de
+ * ejemplo de ese repo (demo/data.js) con la forma de `leerDeMain` — `{ ok, oid, texto, archivos }`. Otro archivo, o un
+ * repo sin ejemplo, no está (`oid: null`).
+ */
+function repoDeEjemplo(e, archivo) {
+  const ORG = require('../lib/org-config.js');
+  const ej = DATOS.ADVISORS_DE_EJEMPLO[e && e.repo];
+  if (!ej) return { ok: true, oid: null, texto: null, archivos: [] };
+  if (archivo !== '.tycon/advisors.yaml') return { ok: true, oid: null, texto: null, archivos: ej.archivos };
+  return { ok: true, oid: ORG.versionDeTexto(ej.texto, 40), texto: ej.texto, archivos: ej.archivos };
 }
 
 module.exports = {

@@ -13,7 +13,9 @@
  * por su salida prevista o registrar un control en rojo como esperado, «autorizo force-manual» declarar un control en
  * verde a mano, «autorizo trust-ran» la constancia de revisores que el arnés no vio correr, «autorizo
  * ALLOW_DOD_EVIDENCE_WRITE» una escritura a mano de la evidencia de la prueba en vivo y «autorizo dod_runtime_exempt»
- * la exención de esa prueba en una historia que ya está en implementación.
+ * la exención de esa prueba en una historia que ya está en implementación. Apagar el pase adversarial tiene dos nombres
+ * (`TYCON_NO_DEEP_REVIEW` y `no-deep-review`) y la frase de cualquiera de los dos vale para los dos. Pasar una historia
+ * a review o done a mano también tiene dos: «autorizo cambiar el estado» y el interruptor `TYCON_STATUS_GATE`.
  *
  * Quién escribió qué lo decide `person-ok.js`: no cuenta lo que escribió el agente, la salida de una herramienta (un
  * archivo leído incluido), un subagente, lo que la persona pegó ni el mensaje de otra sesión que no es la designada.
@@ -31,11 +33,16 @@ const path = require('path');
 const VENTANA_MIN = 30;
 // los escapes que piden la frase: la variable y el valor que apaga el freno (`TYCON_TEST_GATE` y `DOD_BYPASS` lo activan
 // con cualquier valor que no sea 0 ni vacío; el 1 es el de siempre)
-const ESCAPES = { TYCON_SAFETY_OFF: '1', TYCON_PROD_LINT: '0', TYCON_NEW_NAMES: '0', TYCON_TEST_GATE: '1', DOD_BYPASS: '1' };
+const ESCAPES = { TYCON_SAFETY_OFF: '1', TYCON_PROD_LINT: '0', TYCON_NEW_NAMES: '0', TYCON_TEST_GATE: '1', DOD_BYPASS: '1',
+  TYCON_NO_DEEP_REVIEW: '1', TYCON_STATUS_GATE: 'off' };
 // los que no son una variable: el nombre del escape va en la frase igual («autorizo story-skill-bypass»)
 const NAMED = ['story-skill-bypass', 'set-autonomous', 'cerrar la ejecución', 'cerrar como deuda', 'force-manual',
-  'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt'];
+  'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'no-deep-review', 'cambiar el estado'];
 const esEscape = (v) => Object.prototype.hasOwnProperty.call(ESCAPES, v) || NAMED.includes(v);
+// los nombres de un mismo escape: la frase de uno autoriza el otro (apagar el pase adversarial por la variable o por la
+// bandera es la misma decisión; pasar una historia a review o done a mano, o apagar ese freno, también)
+const SINONIMOS = { TYCON_NO_DEEP_REVIEW: ['no-deep-review'], 'no-deep-review': ['TYCON_NO_DEEP_REVIEW'],
+  TYCON_STATUS_GATE: ['cambiar el estado'], 'cambiar el estado': ['TYCON_STATUS_GATE'] };
 
 const frase = (variable) => `autorizo ${variable}`;
 
@@ -52,9 +59,14 @@ const plano = (texto) => String(texto || '').toLowerCase().replace(/[«»"“”
  * negarla ni ser una pregunta. `retracta` tumba la frase si un mensaje posterior nombra la variable y la niega o la retira.
  */
 function juez(variable) {
-  const v = variable.toLowerCase();
+  const esc = (n) => n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const v = esc(variable);
   const frase = new RegExp(`(?:^|[^\\p{L}\\p{N}_])autorizo\\s+${v}(?![\\p{L}\\p{N}_])`, 'u');
-  const nombra = new RegExp(`(?:^|[^\\p{L}\\p{N}_])${v}(?![\\p{L}\\p{N}_])`, 'u');
+  // el escape por cualquiera de sus nombres: una retractación con el otro nombre también la tumba
+  const nombres = [variable, ...(SINONIMOS[variable] || [])].map(esc).join('|');
+  const nombra = new RegExp(`(?:^|[^\\p{L}\\p{N}_])(?:${nombres})(?![\\p{L}\\p{N}_])`, 'u');
+  // el texto sin los nombres del escape: el «no» de «no-deep-review» no es una negación
+  const sinNombres = (t) => t.replace(new RegExp(nombra.source, 'gu'), ' ');
   const juzgar = (texto) => {
     // las oraciones con su signo de cierre: el «?» también corta (una pregunta antes en el renglón no tumba lo que sigue)
     const oraciones = plano(texto).match(/[^.!?;\n]+[.!?;\n]?/g) || [];
@@ -63,22 +75,32 @@ function juez(variable) {
     if (!conLaFrase.length) return `la frase no nombra ${variable} sola (una variable más larga no la autoriza)`;
     for (const { o, i } of conLaFrase) {
       if (esPregunta(o)) continue;
-      if (NIEGA.test(o.replace(frase, ' '))) continue;
+      if (NIEGA.test(sinNombres(o.replace(frase, ' ')))) continue;
       // una oración posterior del mismo mensaje que la nombra y la niega o la retira la tumba
-      if (oraciones.slice(i + 1).some((d) => nombra.test(d) && !frase.test(d) && NIEGA.test(d))) return 'la frase lo niega o lo retira';
+      if (oraciones.slice(i + 1).some((d) => nombra.test(d) && !frase.test(d) && NIEGA.test(sinNombres(d)))) return 'la frase lo niega o lo retira';
       return null;
     }
     return conLaFrase.every((x) => esPregunta(x.o)) ? 'la frase es una pregunta' : 'la frase lo niega o lo retira';
   };
   juzgar.retracta = (texto) => {
     const t = plano(texto);
-    return nombra.test(t) && NIEGA.test(t);
+    return nombra.test(t) && NIEGA.test(sinNombres(t));
   };
   return juzgar;
 }
 
-/** ¿La persona, o la sesión designada, autorizó `variable` en los últimos `ventanaMin` minutos? */
-function escapeAutorizado({ variable, sesion, pedido, home, env = process.env, arnes, ahora = Date.now(), ventanaMin = VENTANA_MIN } = {}) {
+/** ¿La persona, o la sesión designada, autorizó `variable` (o uno de sus sinónimos) en los últimos `ventanaMin` minutos? */
+function escapeAutorizado(opciones = {}) {
+  const r = autorizadoPorNombre(opciones);
+  if (r.ok || r.sinConversacion) return r;
+  for (const otro of SINONIMOS[opciones.variable] || []) {
+    const s = autorizadoPorNombre({ ...opciones, variable: otro });
+    if (s.ok) return s;
+  }
+  return r;
+}
+
+function autorizadoPorNombre({ variable, sesion, pedido, home, env = process.env, arnes, ahora = Date.now(), ventanaMin = VENTANA_MIN } = {}) {
   if (!esEscape(variable)) return { ok: false, motivo: `${variable} no es un escape que se autorice con una frase` };
   if (!sesion || !/^[\w-]+$/.test(String(sesion))) return { ok: false, sinConversacion: true, motivo: 'la herramienta no dijo de qué sesión es el comando' };
   // la punta de la cadena: el pedido que se está juzgando. Sin él, un renglón agregado después del pedido sería la punta

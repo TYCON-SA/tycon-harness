@@ -188,6 +188,7 @@ const NO_SON_DE_LA_CONFIG = {
   covered_by: 'matriz de runtime (runtime-matrix.js)',
   reason: 'matriz de runtime (runtime-matrix.js)',
   dod_runtime_exempt: 'frontmatter de la story',
+  status: 'frontmatter de la story (on-frontmatter-write.js lee su estado)',
   fkey: 'clave interna de pipeline.js, no viene del YAML',
 };
 

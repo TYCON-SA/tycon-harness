@@ -421,7 +421,7 @@ r22="$(node -e '
   const [n, repo] = process.argv.slice(1);
   const content = "---\nepic: 1\nstory: \"1.1\"\ntitle: \"t\"\nstatus: done\n---\n\n# Story 1.1\n\nSe prueba con smoke runtime.\n";
   process.stdout.write(JSON.stringify({ tool_name: "Write", session_id: "s22", cwd: repo, tool_input: { file_path: n, content } }));
-' "$N22" "$M22" | (cd "$M22" && node "$SK/on-frontmatter-write.js" >/dev/null 2>"$TMP/m22/err"; echo $?))"
+' "$N22" "$M22" | (cd "$M22" && TYCON_STATUS_GATE=off node "$SK/on-frontmatter-write.js" >/dev/null 2>"$TMP/m22/err"; echo $?))"
 if [ "$r22" = "2" ] && grep -q 'no encuentro la story' "$TMP/m22/err"; then ok "T22 FrenoDelFrontmatter_StorySinDisco_FallaCerrado"
 else no "T22 FrenoDelFrontmatter_StorySinDisco_FallaCerrado — rc=$r22 (esperaba 2: bloqueo) · aviso: $(head -c 200 "$TMP/m22/err")"; fi
 

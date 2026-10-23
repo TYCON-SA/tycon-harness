@@ -211,7 +211,8 @@ if (require.main === module) {
   let aprobaciones = null;
   if (process.argv.includes('--command-stdin')) {
     // el comando no se pudo leer o el lector falló: se trata como un cierre dudoso (no poder mirar no es poder pasar)
-    const dudoso = (porque) => [{ l: { sub: null, args: [{ texto: porque, literal: true }] }, esc: 'cerrar la ejecución' }];
+    // frena aunque no haya ejecución o esté en verde: el comando no leído puede traer cualquier escape
+    const dudoso = (porque) => [{ l: { sub: null, args: [{ texto: porque, literal: true }] }, esc: 'cerrar la ejecución', siempre: true }];
     try {
       const { llamadas, escapeDe } = require('./marker-command.js');
       const cmd = fs.readFileSync(0, 'utf8');
@@ -229,11 +230,13 @@ if (require.main === module) {
   process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${r.abierta ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
-  for (const { l, esc } of pedidas || []) {
-    if (hay === 0) break;
+  for (const { l, esc, siempre } of pedidas || []) {
+    // apagar el pase adversarial pide la frase siempre, también sin ejecución: `pipeline.js start` la crea. Un comando
+    // que no se pudo leer, también
+    if (hay === 0 && esc !== 'no-deep-review' && !siempre) continue;
     // cerrar como deuda, declarar un control a mano y dar por corridos los revisores piden la frase siempre que haya una
     // ejecución: no dependen de cómo esté
-    const aplica = esc === 'cerrar como deuda' || esc === 'force-manual' || esc === 'trust-ran' ? true
+    const aplica = siempre || esc === 'cerrar como deuda' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
       : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
     if (aplica) process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
   }

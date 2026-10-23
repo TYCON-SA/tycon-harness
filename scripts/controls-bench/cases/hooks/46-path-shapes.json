@@ -365,6 +365,8 @@
         },
         {
           "id": "frontmatter-frena-forma-nativa",
+          "env": { "TYCON_STATUS_GATE": "off" },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-block",
           "so": [
             "linux",
@@ -474,6 +476,8 @@
         },
         {
           "id": "frontmatter-pasa-forma-nativa",
+          "env": { "TYCON_STATUS_GATE": "off" },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-not-block",
           "so": [
             "linux",

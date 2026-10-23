@@ -366,27 +366,40 @@ block() {
 # corrió) y `DOD_BYPASS` (cierra un paso sin la evidencia de la prueba en vivo) van al revés: activan el escape con
 # cualquier valor que no sea 0 ni vacío, así que se frena cualquier asignación salvo a 0 o a nada. El nombre se compara
 # exacto (`TYCON_TEST_GATE_PART` no es ella). Su cartel no trae la receta y su constancia anota la sesión y el escape.
+# `TYCON_NO_DEEP_REVIEW` (apaga el pase adversarial) sigue la misma regla de valores; «autorizo no-deep-review» también
+# la autoriza (escape-ok.js, sinónimos). `TYCON_STATUS_GATE` (apaga el freno que no deja pasar una historia a review o
+# done a mano) también; «autorizo cambiar el estado» también la autoriza.
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""
 # el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
 # (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
+# Una barra invertida con salto de línea el shell la une (`pipe\⏎line.js` es `pipeline.js`): se une antes, y sólo si
+# está (el reemplazo de bash es caro en un comando largo)
+_esc_bsnl=$'\\\n'; _esc_bscrlf=$'\\\r\n'; _esc_fuente="$CMD"
+[[ "$_esc_fuente" == *"$_esc_bscrlf"* ]] && _esc_fuente="${_esc_fuente//$_esc_bscrlf/}"
+[[ "$_esc_fuente" == *"$_esc_bsnl"* ]] && _esc_fuente="${_esc_fuente//$_esc_bsnl/}"
 if command -v tr >/dev/null 2>&1; then
-  _esc_cmd="$(printf '%s' "$CMD" | tr -d "\"'\\\\\`")" || _esc_cmd="${CMD//[\"\'\\\`]/}"
+  _esc_cmd="$(printf '%s' "$_esc_fuente" | tr -d "\"'\\\\\`")" || _esc_cmd="${_esc_fuente//[\"\'\\\`]/}"
 else
-  _esc_cmd="${CMD//[\"\'\\\`]/}"
+  _esc_cmd="${_esc_fuente//[\"\'\\\`]/}"
 fi
-for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS; do
+for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE; do
   # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
   # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
   shopt -s nocasematch
   if [[ "$_esc_cmd" != *"$_esc"* ]]; then shopt -u nocasematch; continue; fi
   shopt -u nocasematch
   _esc_hit=0
-  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" ]]; then
+  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" || "$_esc" == "TYCON_STATUS_GATE" ]]; then
     # éstas activan el escape con cualquier valor que no sea 0 ni vacío: se sacan las asignaciones a 0 o a nada (con
     # espacios alrededor del `=`, por PowerShell) y cualquier otra que quede frena, también un valor que no se ve (`$X`).
     # Todo en minúsculas: PowerShell no distingue mayúsculas en el nombre
     # los nombres son fijos: en minúsculas sin `tr` (una asignación suelta que falla dispararía el `trap 'exit 0' ERR`)
-    if [[ "$_esc" == "TYCON_TEST_GATE" ]]; then _esc_min="tycon_test_gate"; else _esc_min="dod_bypass"; fi
+    case "$_esc" in
+      TYCON_TEST_GATE) _esc_min="tycon_test_gate" ;;
+      TYCON_NO_DEEP_REVIEW) _esc_min="tycon_no_deep_review" ;;
+      TYCON_STATUS_GATE) _esc_min="tycon_status_gate" ;;
+      *) _esc_min="dod_bypass" ;;
+    esac
     # en bash el valor va pegado al `=` (`X= cmd` es vacío); en PowerShell puede llevar espacios, y vacío es `= ;`
     _esc_cero="${_esc_min}=0?([[:space:];)&|]|\$)"
     tool_is_ps && _esc_cero="${_esc_min}[[:space:]]*=[[:space:]]*0?[[:space:]]*([;)&|]|\$)"
@@ -423,7 +436,7 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS; do
   fi
   fi
   if [[ "$_esc_hit" == "1" ]]; then
-    _esc_nuevo=0; [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" ]] && _esc_nuevo=1
+    _esc_nuevo=0; [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" || "$_esc" == "TYCON_STATUS_GATE" ]] && _esc_nuevo=1
     if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_esc"; then
       if [[ "$_esc_nuevo" == "1" ]]; then
         constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO" "$(read_field session_id 2>/dev/null || true)" "$_esc"
@@ -448,6 +461,14 @@ Si la historia no se pudo terminar, la salida normal es dejarla como deuda: mark
       block "ESC-C1" \
         "DOD_BYPASS cierra un paso sin la evidencia de la prueba en vivo." \
         "Corré la prueba en vivo de verdad (la evidencia la escriben los guiones que corren las pruebas). Si no se puede, decíselo a la persona."
+    elif [[ "$_esc" == "TYCON_NO_DEEP_REVIEW" ]]; then
+      block "ESC-C1" \
+        "TYCON_NO_DEEP_REVIEW apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
+        "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona («autorizo TYCON_NO_DEEP_REVIEW»)."
+    elif [[ "$_esc" == "TYCON_STATUS_GATE" ]]; then
+      block "ESC-C1" \
+        "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
+        "El estado lo cambia el orquestador, que corre los controles del cierre: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona («autorizo cambiar el estado»)."
     elif [[ "$_esc" == "TYCON_PROD_LINT" ]]; then
       block "ESC-C1" \
         "TYCON_PROD_LINT=0 apaga, al commitear, la revisión del catálogo de servidores de producción (.tycon/production.json). Un catálogo roto deja al freno de producción decidiendo con datos malos." \
@@ -461,6 +482,50 @@ Si la historia no se pudo terminar, la salida normal es dejarla como deuda: mark
 done
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 
+# ESC-C1, el nombre armado: una asignación con el nombre de la variable en otra variable (`V=TYCON_…; export $V=1`,
+# `declare -x "$V=1"`, `env "$V=1"`, `printf -v "$V"`, `read $V`, `eval "$V=1"`; en PowerShell `Set-Item env:$V` o
+# `SetEnvironmentVariable($V, …)`) no nombra la variable, y la regla de arriba no la ve. En un comando que corre los
+# guiones del pipeline (`marker`, `pipeline`, `test-gate.sh`) puede ser un escape: frena, sin frase (no hay variable
+# que autorizar; el camino es escribir el nombre, y decide su regla). Fuera del pipeline, armar nombres no frena.
+# La regla no enumera expansiones: en un programa que asigna, cualquier palabra con un `$` (o una comilla invertida)
+# antes del primer `=`, o sin `=`, arma el nombre (`$1`, `${V:-x}`, `${!V}`, `${A[0]}`, `$(…)`, `TYCON_NO_$A` con el
+# `=1` adentro). No cruza un salto de línea: un `export` en un renglón no se junta con un `$X=` del siguiente.
+_arm_nl=$'\n'
+# se mira el comando con sus comillas y comillas invertidas (sólo con la barra invertida + salto de línea unida): `tr`
+# borra las comillas invertidas, y una comilla invertida también arma el nombre
+_arm_txt="$_esc_fuente"
+# lo que arma el nombre: un `$`, una comilla invertida o llaves que se expanden (`{A,B}`, `{1..3}`)
+_arm_din="([\$\`]|\{[^}[:space:]]*(,|\.\.))"
+_arm_pal="[^[:space:]=]*${_arm_din}"
+_arm_seg="[^;&|${_arm_nl}]"
+_arm_re="(^|[\$;&|(${_arm_nl}[:space:]])(export|declare|typeset|local|readonly|eval|let|read|mapfile|readarray|\(\()${_arm_seg}*[[:blank:]]${_arm_pal}"
+# `env`: sólo cuentan las asignaciones que van antes del programa (`env X=1 node $S` no arma nada)
+_arm_env="(^|[;&|(${_arm_nl}[:space:]])env([[:blank:]]+(-[^[:blank:]]+|[^[:space:]=]+=[^[:blank:]]*))*[[:blank:]]+${_arm_pal}[^[:space:]]*="
+_arm_re2="(^|[;&|(${_arm_nl}[:space:]])printf[[:blank:]]+(-[A-Za-z]+[[:blank:]]+)*-v[[:blank:]]*${_arm_pal}|(^|[;&|(${_arm_nl}[:space:]])(declare|typeset|local)[[:blank:]]+-[A-Za-z]*n[A-Za-z]*${_arm_seg}*[\$\`]"
+# PowerShell: el nombre con `$`, `+` o un paréntesis (`"TYCON_$V"`, `('TYCON_'+$V)`, `('env:'+$V)`), también con los alias
+_arm_ps="setenvironmentvariable\([[:space:]]*[^,)]*[\$+(]|(^|[;|(${_arm_nl}[:space:]])(set-item|si|new-item|ni|set-content|sc|new-variable|nv|set-variable|sv)[[:space:]]${_arm_seg}*(env:[^;|[:space:]]*[\$+(]|-name[[:space:]]+[^;|[:space:]]*[\$+(])"
+# el comando corre los guiones del pipeline, o `node`/`bun` (con o sin ruta) con un guion cuyo nombre no se lee: con un
+# guion que se lee y no es del pipeline (`node server.js`), armar nombres no tiene que ver con los escapes
+_arm_guion='(marker|pipeline|test-gate\.sh)'
+_arm_node="(^|[[:space:];&|(]|/)(node|nodejs|bun)(\.exe)?([[:blank:]]+(-r|--require|--import|--loader|--experimental-loader|-C|--conditions)[[:blank:]]+[^[:blank:]]+|[[:blank:]]+-[^[:blank:]]*|[[:blank:]]+run)*[[:blank:]]+[^[:space:]]*([\$\`*?{]|\[)"
+# sin `$`, comilla invertida ni llave no hay nombre armado; y sin lanzar procesos (este hook corre en cada comando):
+# mayúsculas con `nocasematch`
+_arm_hit=0
+if [[ "$_arm_txt" == *[\$\`{]* ]]; then
+  shopt -s nocasematch
+  if [[ "$_esc_cmd" =~ $_arm_guion || "$_arm_txt" =~ $_arm_node ]]; then
+    if [[ "$_arm_txt" =~ $_arm_re || "$_arm_txt" =~ $_arm_env || "$_arm_txt" =~ $_arm_re2 ]]; then _arm_hit=1
+    elif tool_is_ps && [[ "$_arm_txt" =~ $_arm_ps ]]; then _arm_hit=1; fi
+  fi
+  shopt -u nocasematch
+fi
+if [[ "$_arm_hit" == "1" ]]; then
+  ESC_CARTEL=""
+  block "ESC-C1" \
+    "El comando asigna una variable con el nombre armado (en otra variable) y corre los guiones del pipeline: el nombre de la variable no se ve, así que el freno no puede saber si es un escape." \
+    "Escribí el nombre de la variable entero: si es un escape, su regla decide y la persona lo autoriza con su frase."
+fi
+
 # ESC-C3: apagar el lazo de las pruebas o cerrar una ejecución que no terminó lo decide la persona. Con un control en
 # rojo, el modo autónomo no deja cerrar el turno; `marker.js set-autonomous <valor que lo apaga>` lo apaga, y `clear`,
 # `clear-session` de la propia sesión o `update-story-status <h> review|done` la cierran como si hubiera terminado.
@@ -471,7 +536,9 @@ ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 ESC_CARTEL=""
 # Declarar un control en verde a mano (`marker.js set-check … --force-manual`) o dar por corridos revisores que el arnés
 # no vio (`pipeline.js check-count --trust-ran`) también lo decide la persona («autorizo force-manual», «autorizo
-# trust-ran»), y frena con la ejecución en verde: el escape es el verde, no cerrar en rojo.
+# trust-ran»), y frena con la ejecución en verde: el escape es el verde, no cerrar en rojo. Apagar el pase adversarial
+# (`--no-deep-review` en `pipeline.js start|deep-review-gate` o `marker.js mark-adversarial-skipped`) frena siempre, también
+# antes de que exista la ejecución: `start` la crea («autorizo no-deep-review» o «autorizo TYCON_NO_DEEP_REVIEW»).
 # El comando lo lee lib/marker-command.js como lo lee el shell (comillas, renglones, `$(…)`, barras de Windows,
 # mayúsculas); acá sólo se mira si nombra `marker` o `pipeline`, sin distinguir mayúsculas, para no correr node en cada
 # comando.
@@ -481,14 +548,33 @@ ESC_CARTEL=""
 # una pregunta con opciones (leída del resultado de esa herramienta), ni la reenvió la sesión designada (con
 # `--delegated-by`, sólo ésta) frena. No tiene frase para saltearlo: la salida es pedirle a la persona que apruebe.
 # Sin conversación legible (Codex) no mira y queda la constancia `sin-conversacion`. Lo decide lib/run-close.js.
-if [[ "$CMD" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$CMD" == *[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee]* ]]; then
+# El filtro mira el comando sin comillas ni barras invertidas (`_esc_cmd`, de ESC-C1): `pipe''line.js` es `pipeline.js`
+# para el shell, y sin esto no llegaba al lector. Un comando que corre `node` o `bun` también va al lector: el nombre del
+# guion puede venir armado por el shell (`pipelin?.js`, `mar$'k'er.js`), y el lector lo trata como cualquiera de los dos.
+_c3_node=0; _c3_re='(^|[[:space:];&|(]|/)(node|nodejs|bun)(\.exe)?[[:space:]]'
+shopt -s nocasematch
+[[ "$_esc_cmd" =~ $_c3_re ]] && _c3_node=1
+shopt -u nocasematch
+if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee]* || "$_c3_node" == "1" ]]; then
   _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""
   _c3_tuid="$(read_field tool_use_id 2>/dev/null)" || _c3_tuid=""
   _c3_shell="bash"; tool_is_ps && _c3_shell="powershell"
   _c3_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/run-close.js" || _c3_lib=""
-  _c3_out=""
+  _c3_out=""; _c3_leido=0
   if [[ -n "$_c3_lib" && -f "$_c3_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
-    _c3_out="$(printf '%s' "$CMD" | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" --tool-use-id "$_c3_tuid" --command-stdin --shell "$_c3_shell" 2>/dev/null)" || _c3_out=""
+    if _c3_out="$(printf '%s' "$CMD" | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" --tool-use-id "$_c3_tuid" --command-stdin --shell "$_c3_shell" 2>/dev/null)"; then
+      _c3_leido=1
+    else
+      _c3_out=""
+    fi
+  fi
+  # 🔴 Sin el lector (no está el intérprete del arnés, falta run-close.js o se cayó) no se sabe qué escape trae el comando:
+  # frena. No cuesta nada: los guiones del pipeline corren con ese mismo intérprete y sin él no andan.
+  if [[ "$_c3_leido" == "0" ]]; then
+    ESC_CARTEL=""
+    block "ESC-C3" \
+      "No pude leer el comando: el intérprete del arnés no está o el lector de comandos se cayó. Un comando que corre los guiones del pipeline puede traer un escape que lo decide la persona." \
+      "Revisá el intérprete del arnés (el comando del arnés que muestra su versión dice si está bien instalado). Si el comando no corre el pipeline, escribilo sin nombrar marker ni pipeline."
   fi
   _c3_motivo=""; _c3_frenos=(); _c3_aprob=(); _c3_sinconv=0
   while IFS= read -r _c3_l; do
@@ -529,6 +615,10 @@ Si la historia no se pudo terminar, la salida normal es dejarla como deuda: mark
       block "ESC-C3" \
         "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr." \
         "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona."
+    elif [[ "$_c3_esc" == "no-deep-review" ]]; then
+      block "ESC-C3" \
+        "--no-deep-review en ${_c3_sub} apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
+        "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona («autorizo no-deep-review» o «autorizo TYCON_NO_DEEP_REVIEW»)."
     elif [[ "$_c3_esc" == "set-autonomous" ]]; then
       block "ESC-C3" \
         "Apagar el modo autónomo (marker.js set-autonomous ${_c3_a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \

@@ -449,7 +449,37 @@ function reasonInPrompts(reason, prompts) {
   return (Array.isArray(prompts) ? prompts : []).some((p) => normalizeWords(p).includes(r));
 }
 
+/** El cartel de borrar o mover un marcador de ejecución por consola: qué se tocó y qué comando usar en su lugar. */
+function markerDeleteMessage(rutas, via) {
+  return [
+    '⛔ tycon-pipeline — BORRADO DEL ESTADO DEL PIPELINE',
+    '',
+    ...rutas.map((p) => `  ${norm(p)}`),
+    ...(via ? [`  (detectado en ${via})`] : []),
+    '  El marcador dice qué pasos de la ejecución faltan. Borrarlo o moverlo a mano deja la historia sin sus controles',
+    '  de cierre. Usá en su lugar:',
+    `  · node ${MARKER_JS} clear                 (cerrar la ejecución de esta sesión)`,
+    `  · node ${MARKER_JS} clear-session <sesión> (el marcador que dejó otra sesión)`,
+    '  Si la ejecución está en rojo y no se puede terminar, la salida es dejarla como deuda (marker.js close-as-debt).',
+  ].join('\n');
+}
+
+/** El cartel de escribir por consola una historia que no está en borrador. */
+function storyByConsoleMessage(rutas, via) {
+  return [
+    '⛔ tycon-pipeline — HISTORIA ESCRITA POR CONSOLA',
+    '',
+    ...rutas.map((p) => `  ${norm(p)}`),
+    ...(via ? [`  (detectado en ${via})`] : []),
+    '  Una historia se edita con la herramienta de edición (Edit/Write), que el arnés lee. Desde un comando no se ve',
+    '  qué queda escrito. Para cambiar su estado usá el comando del orquestador:',
+    `  · node ${MARKER_JS} update-story-status <ruta de la historia> <estado>`,
+    `  · node ${MARKER_JS} update-pipeline-status <ruta de la historia> <tanda|--all> <estado>`,
+  ].join('\n');
+}
+
 module.exports = {
+  markerDeleteMessage, storyByConsoleMessage,
   computeStoryGate, blockMessage, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   reasonInPrompts, normalizeWords, ADHOC_REASON_MIN_CHARS,
   STORY_INTENT_PATTERNS, quotedPromptAsksStory,

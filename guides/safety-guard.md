@@ -84,8 +84,8 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **SQL-C2** | `DROP TABLE` inline (no en `.sql`) | Modificaciones de schema van por migration numerada |
 | **SEC-C1** | `cat ~/.ssh/...` / `cat .../aws/credentials` | Secretos al contexto del LLM |
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |
-| **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE` o `DOD_BYPASS` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | Las dos primeras apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo. Vale con la frase de la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
-| **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo («autorizo force-manual», «autorizo trust-ran») | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
+| **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE`, `DOD_BYPASS` o `TYCON_NO_DEEP_REVIEW` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | Las dos primeras apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo; `TYCON_NO_DEEP_REVIEW` apaga el pase adversarial, que el agente apagaba después de preguntar si lo corría. Vale con la frase de la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
+| **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo («autorizo force-manual», «autorizo trust-ran»); `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución («autorizo no-deep-review»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
 | **ESC-C4** | `marker.js close-as-debt` o `marker.js expect-red`, con una ejecución en la sesión | Dejan una salida prevista por la historia como el final de la ejecución, o un control en rojo como esperado. Lo autoriza la persona, siempre (abajo); un texto que sólo nombra el comando no frena |
 | **ESC-C5** | Un comando que crea, toca o copia un archivo `ALLOW_DOD_EVIDENCE_WRITE` (`touch`, `cp`, `mv`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …), o que escribe `dod_runtime_exempt: true` en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`) | El permiso de escribir a mano la evidencia de la prueba en vivo y la exención de esa prueba los decide la persona («autorizo ALLOW_DOD_EVIDENCE_WRITE», «autorizo dod_runtime_exempt»). Mirarlo, buscarlo, borrarlo o sacar la exención no frena. Por la herramienta de escribir archivos lo miran el guardián de la evidencia (consume el permiso sólo con la constancia de este freno de la misma sesión, dentro de los 30 minutos, o con la frase) y el hook del encabezado (pide la frase para agregar la exención a una historia en implementación) |
 | **ESC-C6** | `marker.js complete-step approve-plan` (o `3`) con `--approved "<cita>"` o `--mockup-approved "<cita>"`, o `approve-mockup --approved`, cuando la cita no está en un mensaje de la persona de esta conversación (una de menos de 10 letras, sólo si es el mensaje entero), ni es la opción que eligió en una pregunta con opciones (leída del resultado de esa herramienta), ni la reenvió la sesión designada; con `--delegated-by`, sólo la reenviada | La aprobación del plan es de la persona: no tiene frase para saltearla. Sin conversación legible (Codex) no mira y deja la constancia `sin-conversacion` (asimetría declarada). `--auto-approved` no cambia |
@@ -123,10 +123,12 @@ y después se repite el comando con el prefijo (`TYCON_SAFETY_OFF=1 <comando>`; 
   cuenta; y escribir en las conversaciones lo frena `ESC-C2`. Reescribir con un guion un mensaje que ya está en la
   cadena es el límite conocido: Claude Code no firma sus registros.
 
-Lo mismo para `ESC-C1`: «autorizo TYCON_PROD_LINT», «autorizo TYCON_NEW_NAMES», «autorizo TYCON_TEST_GATE» o
-«autorizo DOD_BYPASS». Para `ESC-C4`: «autorizo cerrar como deuda»; la ejecución queda con `cierre: deuda`, la deuda y
+Lo mismo para `ESC-C1`: «autorizo TYCON_PROD_LINT», «autorizo TYCON_NEW_NAMES», «autorizo TYCON_TEST_GATE»,
+«autorizo DOD_BYPASS», «autorizo TYCON_NO_DEEP_REVIEW» o «autorizo TYCON_STATUS_GATE» (que también autoriza «autorizo
+cambiar el estado»). Para `ESC-C4`: «autorizo cerrar como deuda»; la ejecución queda con `cierre: deuda`, la deuda y
 quién la autorizó, y sigue hasta el commit. Para `ESC-C3`, que no es una variable sino el comando: «autorizo
-set-autonomous», «autorizo cerrar la ejecución», «autorizo force-manual» o «autorizo trust-ran»; para `ESC-C5`,
+set-autonomous», «autorizo cerrar la ejecución», «autorizo force-manual», «autorizo trust-ran» o «autorizo no-deep-review» (apagar el pase
+adversarial tiene dos nombres, y la frase de cualquiera vale para los dos); para `ESC-C5`,
 «autorizo ALLOW_DOD_EVIDENCE_WRITE» o «autorizo dod_runtime_exempt». La constancia de estos escapes anota la sesión y el
 nombre del escape. Una ejecución cerrada así queda
 con `cierre: abortada`, su motivo y quién lo autorizó (`marker.js clear` lo lee del registro de escapes); sin esa
@@ -137,8 +139,15 @@ invertidas, el id de la sesión en una variable, los prefijos con sus opciones (
 envoltorios (`bash -c`, `eval`, `cmd /c`, `find -exec`, `iex`, `Start-Process`, un texto que va a `| sh`, un heredoc
 que va a un shell); un comentario, un heredoc que va a un archivo o un mensaje de commit que nombran `marker.js clear`
 no frenan. Lo dudoso frena como cerrar: un subcomando o un id que no se ve (`$VAR`, `xargs`), `clear-session` sin id, una
-comilla sin cerrar o un comando que no se pudo leer. Si falta `node` o `run-close.js`, `ESC-C3` no mira y el comando
-pasa, como antes de esta regla. Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e`
+comilla sin cerrar o un comando que no se pudo leer. Los nombres se leen sin comillas ni barras invertidas: `pipe''line.js`
+o `mar''ker.js` son los guiones, como para el shell, y una barra invertida con salto de línea se une. Si el comando
+corre `node` con un guion cuyo nombre no se puede leer (`pipelin?.js`, `pipe[l]ine.js`, `mar$'k'er.js`, una variable),
+se lee como cualquiera de los dos guiones; un guion así ejecutado directo, sin `node`, no se ve. Si el freno no puede leer el comando (no está el intérprete del
+arnés, falta `run-close.js` o el lector se cae), un comando que nombra `marker` o `pipeline` frena: sin el intérprete esos
+guiones tampoco andan, así que frenar no cuesta nada. `ESC-C1` frena además una asignación con el **nombre armado** en
+otra variable (`V=TYCON_…; export $V=1`, `declare -x "$V=1"`, `env "$V=1"`, `printf -v "$V"`) en un comando que corre
+`marker`, `pipeline` o `test-gate.sh`: el nombre no se ve, y el camino es escribirlo entero para que decida su regla.
+Fuera del pipeline, armar nombres no frena. Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e`
 que lo carga, una copia con otro nombre, o un programa de texto que además ejecuta (`awk` con `system`). Para eso sigue el lazo del
 modo autónomo, que no deja cerrar el turno con un control en rojo, y el `cierre` del volcado: `marker.js set` no lo
 escribe, no pisa los controles (`checks`, `checksProvenance`), el pase ni el modo autónomo de la misma historia, no vacía sus pasos pendientes, y al
@@ -162,6 +171,33 @@ TYCON_SAFETY_OFF=1 claude
 ⚠️ Apaga el freno para toda esa sesión. Preferí la frase por comando.
 
 **Codex** no deja leer su conversación: ahí el escape por comando no vale y queda sólo el de la sesión.
+
+### El estado de la historia y el marcador
+
+Cuando el freno le niega cerrar una ejecución en rojo, un agente puede buscar otro camino: escribir el estado de la
+historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cualquier herramienta:
+
+- **Una historia escrita por consola.** Un comando que escribe una historia que no está en borrador (redirección, `sed
+  -i`, `tee`, `cp`, un `node -e` o un `python3 -c`) frena con «HISTORIA ESCRITA POR CONSOLA». Desde un comando no se ve
+  qué queda escrito. En su lugar: la herramienta de edición, y para el estado
+  `marker.js update-story-status <historia> <estado>`.
+- **El paso a review o done a mano.** Un Edit, un Write o un `apply_patch` de Codex que pasa la historia a `review` o
+  `done` frena aunque esté la evidencia. En su lugar: `marker.js update-story-status`, `update-pipeline-status` o
+  `/tycon-pipeline close`. Hacerlo a mano lo decide la persona («autorizo cambiar el estado»).
+- **Borrar el marcador.** Borrar o mover por consola un marcador de ejecución (`active/`, `active.json`), de esta
+  sesión o de otra, frena con «BORRADO DEL ESTADO DEL PIPELINE». En su lugar: `marker.js clear` o `marker.js
+  clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre.
+
+El freno del paso a mano también frena volver una historia en implementación a otro estado (por ejemplo a `draft`, para
+después escribirla por consola), sacarle el encabezado y cambiarle el id. Por consola, un borrador sólo pasa si el
+comando lo reescribe entero y lo deja en borrador; y borrar una historia, sacarla de `.md` con un `mv` o reponer una
+versión vieja (`git checkout -- <historia>`, `git restore`) también frena. Se apaga con `TYCON_STATUS_GATE=off` en el ambiente del gancho (lo usan pruebas que miden
+la evidencia), y cada escritura que deja pasar así queda anotada; escrita en un comando, la frena `ESC-C1` sin la frase.
+
+Lo que no ve: un guion que el agente escribe en un archivo y después corre; `patch` o `git apply` con un parche que toca
+la historia; `git stash pop`; un enlace (`ln -sf`) sobre el marcador; y el nombre de la carpeta del estado partido entre una variable y
+un comodín (`cd ~/.claude/.tyc* && rm -rf act*`). Eso lo ven el control de cambios sin declarar al cerrar y el diff del
+commit.
 
 ## Log de bloqueos
 

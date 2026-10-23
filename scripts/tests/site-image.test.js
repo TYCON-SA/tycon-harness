@@ -101,7 +101,8 @@ test('T2i Imagen_SinVersionJson_SeArmaIgual @story-2.30', { skip: SIN_DOCKER }, 
   const imagen = `site-prueba-sin-version:${id}`;
   const ctx = fs.mkdtempSync(path.join(os.tmpdir(), 'site-ctx-'));
   try {
-    for (const d of ['scripts', 'skills']) fs.cpSync(path.join(ROOT, d), path.join(ctx, d), { recursive: true, filter: (f) => !f.includes(`${path.sep}node_modules`) });
+    // las carpetas que el Dockerfile copia sin comodín (scripts/, skills/ e integrations/); guides/ va con comodín (abajo)
+    for (const d of ['scripts', 'skills', 'integrations']) fs.cpSync(path.join(ROOT, d), path.join(ctx, d), { recursive: true, filter: (f) => !f.includes(`${path.sep}node_modules`) });
     assert.ok(!fs.existsSync(path.join(ctx, 'version.json')), 'el contexto no trae version.json');
     const b = docker(['buildx', 'build', '--load', '-f', 'scripts/site/Dockerfile', '-t', imagen, '.'], { cwd: ctx });
     assert.strictEqual(b.status, 0, `la imagen se arma sin version.json: ${(b.stderr || '').slice(-800)}`);
