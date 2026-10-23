@@ -103,7 +103,7 @@ estado() { # <js que devuelve el estado extra de gh>   — con P, C, R, I y OPER
 armar_arbol() { # el árbol de una noche: como prepare-tree.sh (datos de main + arnés en un commit local, sólo `main` traído)
   local J="$T/job"; rm -rf "$J"; mkdir -p "$J/scripts/ci" "$J/scripts/nightly"
   cp "$RAIZ/scripts/ci/open-pr-per-finding.sh" "$RAIZ/scripts/ci/legacy-options.sh" "$RAIZ/scripts/ci/push-nightly-data.js" "$J/scripts/ci/"
-  cp -R "$RAIZ/scripts/nightly/dependencies" "$J/scripts/nightly/"
+  cp -R "$RAIZ/scripts/nightly/dependencies" "$RAIZ/scripts/nightly/findings" "$J/scripts/nightly/"
   cp -R "$RAIZ/scripts/lib" "$J/scripts/lib"
   echo 'process.exit(Number(process.env.GUARD_EXIT || 0));' > "$J/scripts/ci/overlay-harness.js"
   # repos.json: por defecto declara SHOP; REPOS_JSON=none no lo escribe; otro valor se escribe tal cual (para probar uno ilegible)

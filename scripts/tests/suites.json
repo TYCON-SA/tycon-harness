@@ -3231,6 +3231,16 @@
       ]
     },
     {
+      "__nota": "story 4.11, tanda A: el ciclo de la ficha común a las fuentes de la noche (scripts/nightly/findings/cycle.js y sources.js) — la forma (sin texto libre de afuera, tope de 50 casos con sus huellas), las carpetas por fuente, el contador de N noches medidas sin aparecer (una vez por noche, en cero si la causa se vuelve a ver), las fichas ilegibles, y dependencias usando la pieza: fichas byte a byte iguales con N=1 contra las del código de antes. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/findings-cycle.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/nightly/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
       "__nota": "story 8.10.3, tanda D (T17, pase adversarial): el buscador de identificadores de código en una copia (scripts/publishing/code-identifiers.js), que usa el bloque «8.10.3 D» de export-real sobre la copia de verdad. Con una lista y una copia de laboratorio: cada grafía se ve (pegada, con guion, con punto, en otra caja, con el separador repetido o escapado, empezando con un dígito), también en el nombre de un archivo o de una carpeta; una palabra más larga que lo contiene y la palabra común que el término declara no son hallazgo; el rojo nombra al término por su número; y nunca da verde sin mirar. Viaja: no usa la lista privada.",
       "raiz": "arnes",
       "ruta": "tests/code-identifiers.test.js",
