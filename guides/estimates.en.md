@@ -22,6 +22,11 @@ read anyway. The file is never rewritten.
 | Epic | when it is written: a range with its assumptions | `node scripts/lib/estimates.js epic --repo <repo> --epic 3 --min 40 --max 70 --assumptions "no data migration"` |
 | Plan | when it is split into stories: one value per story | `node scripts/lib/estimates.js plan --repo <repo> --story <id> --value 12` |
 | Story | when it is written in detail: the adjustment | `tycon-create-story` does it; by hand, `estimates.js story --repo <repo> --story <id> --value 16` |
+| Real | when it is closed: the clock hours | the pipeline's closing step does it: `pipeline.js estimate-real --story <spec> --run <merge sha>` |
+
+The real hours are never typed by hand: `estimate-real` reads the record that `pipeline.js work-signal stop` leaves with
+the seconds the time tool reported, always in hours. Without those seconds (no tool, nothing logged, or a tool that
+reports through an action) it records nothing and says so. Retrying the close does not duplicate the line.
 
 A story's epic comes from the `epic:` in its frontmatter. If that field changes, the story counts in the new epic.
 
@@ -33,7 +38,15 @@ node scripts/lib/estimates.js report --repo <repo> --epic 3
 
 It gives the range, the plan total, the current total (the story estimate if there is one; otherwise the plan's) and
 whether it falls inside, below or above the range, and by how much. With `--json` it also lists each story with its
-versions.
+versions. When every story in the epic has its real hours, it gives the real total against the range; if some are
+missing, how many.
+
+```bash
+node scripts/lib/estimates.js report --repo <repo> --story <id>
+```
+
+It gives how far each level missed against the real hours: the plan and the first and last story versions
+(`(estimate - real) / real`). A level with no estimate, or in points with no rate, has an empty error with its reason.
 
 ## The proposal
 

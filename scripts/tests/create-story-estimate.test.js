@@ -40,6 +40,9 @@ test('T14 Skill_PasoDeEstimacion @story-2.75 @ac-11 @ac-13', () => {
   assert.match(bloque, /hours_per_point/);
   assert.match(bloque, /exits? (with )?2 or 3/i);
   assert.match(bloque, /\.tycon\/estimates\.jsonl/, 'dice dónde queda: el registro, no la historia');
+  // los valores van entre comillas simples, con la comilla interna escrita así: la línea de comandos no los corre
+  assert.match(bloque, /single quotes/i);
+  assert.ok(bloque.includes("`'\\''`"), 'nombra la forma de la comilla interna');
 });
 
 test('T16 StoryFormat_EstimatedDaysApunta @story-2.75 @ac-14', () => {
