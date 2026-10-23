@@ -98,6 +98,8 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'cobertura', titulo: 'Cobertura de las pruebas', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['coverage'], idCorto: 'repos', necesita: ['coverage'] }),
   // el tope de vueltas de revisores de una story y los prefijos de reglas que cuentan como seguridad o datos
   Object.freeze({ id: 'revision', titulo: 'Vueltas de revisores', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['review'], idCorto: 'repos', necesita: ['review'] }),
+  // la unidad en que estima la organización (horas, días o puntos) y sus tasas a horas
+  Object.freeze({ id: 'estimaciones', titulo: 'Estimaciones', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['estimates'], idCorto: 'repos', necesita: ['estimates'] }),
   // la tecnología de la organización: terminaciones que también son código, herramientas de prueba y las reglas
   Object.freeze({ id: 'tecnologia', titulo: 'Tu tecnología', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['stack'], idCorto: 'repos', necesita: ['stack'] }),
 ]);
@@ -185,7 +187,10 @@ const CODEX_REVIEWERS_SINCE = '2026.10.22.22';
 // Provisoria hasta la etiqueta del merge que los trae al lector: está puesta para frenar de más, no de menos
 const MODEL_PROVIDERS_SINCE = '2026.10.22.48';
 const CLAVES_DE_PROVEEDORES = Object.freeze(['providers', 'allowed', 'nightly']);
-const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
+// `estimates`: un lector anterior la ve como clave desconocida y descarta el archivo entero. Provisoria hasta la etiqueta
+// del merge que la trae al lector: está puesta para frenar de más, no de menos
+const ESTIMATES_SINCE = '2026.10.23.40';
+const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE], ['estimates', ESTIMATES_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
   let version = TEAM_REPOS_SINCE; const claves = [];
@@ -717,6 +722,21 @@ function buscarModelsJs(tree) {
     if (fs.existsSync(f)) return f;
   }
   return null;
+}
+/**
+ * La unidad de las estimaciones que leen hoy las máquinas: `estimates` del `team-repos.json` del árbol, con el
+ * `estimates.js` del sitio (sin archivo, los valores de fábrica). `{ hoy, motivo }`: si no se lee, `hoy` es null y el
+ * motivo lo dice; nunca los de fábrica callados.
+ */
+function estimacionesDeHoy(tree) {
+  if (!tree) return { hoy: null, motivo: M('org.sinArbol') };
+  const E = require(path.join(__dirname, 'estimates.js'));
+  const archivo = path.join(String(tree), 'team-repos.json');
+  try {
+    return { hoy: fs.existsSync(archivo) ? E.orgEstimates(archivo) : { ...E.DEFAULTS }, motivo: null };
+  } catch (e) {
+    return { hoy: null, motivo: M('org.estimacionesIlegibles', { error: String((e && e.message) || e).split('\n')[0] }) };
+  }
 }
 function modelosDeHoy(tree) { return buscarModelosDeHoy(tree).hoy; }
 function motivoDeHoy(tree) { return buscarModelosDeHoy(tree).motivo; }
@@ -1286,6 +1306,7 @@ function pantalla(idioma = 'es') {
     espera: { t: T('pantalla.avisoDeEspera'), d: T('pantalla.llegaATodasLasMaquinas4'), corto: T('pantalla.avisoDeEspera') },
     cobertura: { t: T('pantalla.coberturaDeLasPruebas'), d: T('pantalla.llegaATodasLasMaquinas5'), corto: T('pantalla.coberturaDeLasPruebas') },
     revision: { t: T('pantalla.vueltasDeRevisores'), d: T('pantalla.vueltasDeRevisoresAyuda'), corto: T('pantalla.vueltasDeRevisores') },
+    estimaciones: { t: T('pantalla.estimaciones'), d: T('pantalla.estimacionesAyuda'), corto: T('pantalla.estimaciones') },
     tecnologia: { t: T('pantalla.tecTuTecnologia'), d: T('pantalla.tecLlegaATodasLasMaquinas'), corto: T('pantalla.tecTuTecnologia') },
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
     aprobaciones: { t: T('pantalla.quienReenviaElOkTitulo'), d: T('pantalla.quienReenviaElOkDescripcion'), corto: T('pantalla.quienReenviaElOkTitulo') },
@@ -1303,7 +1324,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos', 'estimaciones'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1339,7 +1360,7 @@ function pantalla(idioma = 'es') {
     work_items: T('pantalla.pedidosDeVulnerabilidades'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
-    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
     stack: T('pantalla.tecTuTecnologia2'), code_extensions: T('pantalla.tecTerminaciones'), test_runners: T('pantalla.tecHerramientasDePrueba'), rules: T('pantalla.tecReglas'), test_names: T('pantalla.tecEstiloDeNombres2'), screen_test: T('pantalla.tecPantallasConPrueba'), ui_language: T('pantalla.tecIdiomaDeLaApp2'), name: T('pantalla.tecNombre2'), detect: T('pantalla.tecArchivoQueLaDetecta2'), command: T('pantalla.tecComando2'), results: T('pantalla.tecReporte'), format: T('pantalla.tecFormato'), path: T('pantalla.tecRuta'),
@@ -2893,6 +2914,27 @@ function pantalla(idioma = 'es') {
     }, 'review.blocking_prefixes', pr, T('pantalla.prefijoEjemplo'), T('pantalla.agregarPrefijo'), T('pantalla.ningunaAgregadaLoNormal')));
     return box;
   }
+  // las estimaciones: la unidad (vacío, horas) y sus dos tasas a horas; la línea de abajo dice lo que leen hoy las máquinas.
+  // Una clave que queda vacía se saca: no se propone un «{}»
+  function editorEstimaciones(s, d, pr) {
+    var e = esObjeto(d.estimates) ? d.estimates : {};
+    function poner(k, v) {
+      if (v === '') { if (esObjeto(d.estimates)) { delete d.estimates[k]; if (!Object.keys(d.estimates).length) delete d.estimates; } return; }
+      if (!esObjeto(d.estimates)) d.estimates = {};
+      d.estimates[k] = k === 'unit' ? v : numOTexto(v);
+    }
+    var box = el('div', { class: 'pila' },
+      selector(T('pantalla.unidadDeLasEstimaciones'), e.unit, [['', T('pantalla.unidadDeFabrica')], ['hours', T('pantalla.unidadHoras')], ['days', T('pantalla.unidadDias')], ['points', T('pantalla.unidadPuntos')]], function (v) { poner('unit', v); render(); }, 'estimates.unit', pr),
+      campo(T('pantalla.horasPorDia'), e.hours_per_day, function (v) { poner('hours_per_day', v); }, 'estimates.hours_per_day', pr, { inputmode: 'decimal', placeholder: '8' }),
+      campo(T('pantalla.horasPorPunto'), e.hours_per_point, function (v) { poner('hours_per_point', v); }, 'estimates.hours_per_point', pr, { inputmode: 'decimal' }));
+    var ex = s.extras || {};
+    var hoy = ex.hoy;
+    var u = { hours: T('pantalla.unidadHoras'), days: T('pantalla.unidadDias'), points: T('pantalla.unidadPuntos') };
+    box.appendChild(el('p', { class: 'muted', text: hoy
+      ? T('pantalla.hoy') + (u[hoy.unit] || hoy.unit) + ' · ' + hoy.hours_per_day + T('pantalla.estHorasPorDia') + ' · ' + (hoy.hours_per_point ? hoy.hours_per_point + T('pantalla.estHorasPorPunto') : T('pantalla.estSinTasaPorPunto'))
+      : T('pantalla.hoy') + (ex.motivoHoy || T('pantalla.estSinLeer')) }));
+    return box;
+  }
   // «Tu tecnología»: lo que el arnés ya conoce, las terminaciones de la organización, las herramientas de prueba (de
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
@@ -3062,7 +3104,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -3571,8 +3613,8 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
-  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
 };

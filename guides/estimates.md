@@ -63,8 +63,10 @@ título en común. Sólo entran historias en `done` con horas reales.
 ## La unidad
 
 La elige la organización en `team-repos.json → estimates`: `unit` (`hours`, `days` o `points`),
-`hours_per_day` (sin cargar, 8) y `hours_per_point` (sin cargar, ninguna). Sin la clave, horas. Cada línea guarda la
-unidad con la que se escribió, así que cambiar la unidad no reescribe nada.
+`hours_per_day` (de 1 a 24; sin cargar, 8) y `hours_per_point` (sin cargar, ninguna). Sin la clave, horas. Cada línea
+guarda la unidad con la que se escribió, así que cambiar la unidad no reescribe nada. Se carga desde el sitio de la
+organización (Configuración → «Cómo trabaja el agente» → «Estimaciones»), y la página Proyectos muestra las épicas de
+cada producto con su rango, su plan, lo vigente y lo real (`guides/organization-site.md`).
 
 El informe compara en horas. Con días usa `hours_per_day`. Con puntos y sin `hours_per_point` no inventa una tasa: si
 la épica mezcla unidades, muestra las sumas por unidad y no la marca dentro ni fuera de su rango, y la propuesta de la

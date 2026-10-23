@@ -203,6 +203,12 @@ ve los productos en los que trabaja. La **paridad** compara cada producto con lo
 Quien mantiene ve además, arriba de la tabla, «Cómo va la organización»: las fichas del tablero de la noche que son de
 toda la organización (ver «Las fichas del tablero»).
 
+Más abajo, **Estimaciones**: por producto, una fila por repo de historias y épica, con el rango que se le dio a la
+épica, la suma del plan, la suma vigente (el ajuste de cada historia, o su plan) y las horas reales de lo cerrado; al
+final, el total del producto. Una épica cuya suma vigente cae fuera de su rango lo marca y dice por cuánto («encima por
+25 h»). Un repo sin registro dice «sin estimaciones»; una foto vieja, o de antes de las estimaciones, dice «no medido».
+Cómo se estima: `guides/estimates.md`.
+
 **Qué hacer:** una story parada o bloqueada se destraba en su repo, con su equipo; el sitio sólo la muestra.
 
 ### Arnés
@@ -530,6 +536,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   tope, un crítico de seguridad o de datos lo decide una persona y lo demás queda como deuda visible. También se suman
   reglas a las que cuentan como seguridad o datos. Un repo puede ajustar el tope en su `.tycon/advisors.yaml`. Queda en
   `team-repos.json` → `review`, en el repo del perfil. Lo revisa quien mantiene.
+- **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
+  1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
+  unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. Queda en `team-repos.json` →
+  `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
+  mantiene.
 - **Tu tecnología**: lo que el arnés ya reconoce, las terminaciones de archivo que tu equipo suma como código, las
   herramientas de prueba (las de fábrica, las que tu organización cambió o agregó) y tres reglas: el estilo de los
   nombres de prueba, qué pantallas piden una prueba en el navegador y el idioma de la aplicación. Sin decir nada, el

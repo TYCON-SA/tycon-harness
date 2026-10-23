@@ -498,6 +498,35 @@ test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', (t) => {
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
+test('2.75-T43 Fuentes_EstimacionesPorListaBlanca @story-2.75 @ac-23 @ac-24 — la estimación de cada épica llega a la vista, y nada más', () => {
+  // 🔴 rojo: la foto llega sin sus épicas ni su estado de estimaciones, o una clave de más (o un correo) pasa tal cual.
+  const raiz = tmp('site-275-t43-');
+  const clon = path.join(raiz, 'operaciones');
+  const escribir = (rel, c) => { fs.mkdirSync(path.dirname(path.join(clon, rel)), { recursive: true }); fs.writeFileSync(path.join(clon, rel), typeof c === 'string' ? c : JSON.stringify(c)); };
+  try {
+    for (const [rel, c] of Object.entries(H.archivosDeOperaciones())) escribir(rel, c);
+    const estimacion = { rango: { min: 40, max: 60, unidad: 'hours', supuestos: 'lo que dijo ana@acme.example' }, unidad: 'hours', suma_plan: 50, suma_vigente: 65, dentro: false, fuera: 'encima', por: 5,
+      sumas_por_unidad: null, motivo: null, en_horas: { min: 40, max: 60, plan: 50, vigente: 65 }, real: { cerrada: false, suma: null, faltan: 1, motivo: 'abierta' }, historias: [{ quien: 'ana@acme.example' }] };
+    escribir('.dashboard/proyectos/Proy__Historias.json', { v: 1, generated_at: `${HOY}T05:00:00Z`, proyecto: 'Proy', repo: 'Historias', stories: [],
+      epicas: [{ id: '3', titulo: 'Épica 3', conteo: { backlog: 1 }, estimacion, de_mas: 'x' }],
+      cobertura: { stories_total: 0, estimaciones: { estado: 'no_medido', motivo: `no pude leer ${['', 'Users', 'acme', 'x'].join('/')} de ana@acme.example`, ilegibles: 0, unidad: 'hours', de_mas: 1 } } });
+    const m = sources.construirDesdeClon(clon, { ahora: T0, log: () => {} });
+    const f = m.proyectos.lista.find((x) => x.repo === 'Historias');
+    assert.ok(f, 'la foto está');
+    assert.deepStrictEqual(Object.keys(f.epicas[0]).sort(), ['estimacion', 'id', 'titulo']);
+    assert.deepStrictEqual(Object.keys(f.epicas[0].estimacion).sort(), ['dentro', 'en_horas', 'fuera', 'motivo', 'por', 'rango', 'real', 'suma_plan', 'suma_vigente', 'sumas_por_unidad', 'unidad']);
+    assert.deepStrictEqual(f.epicas[0].estimacion.rango, { min: 40, max: 60, unidad: 'hours' }, 'los supuestos no viajan a la vista');
+    assert.deepStrictEqual(f.epicas[0].estimacion.real, { cerrada: false, suma: null, faltan: 1, motivo: 'abierta' });
+    assert.deepStrictEqual(Object.keys(f.estimaciones).sort(), ['estado', 'ilegibles', 'motivo', 'unidad']);
+    assert.ok(!/@|\/Users\//.test(f.estimaciones.motivo), `saneado: ${f.estimaciones.motivo}`);
+    // una foto anterior a las estimaciones: sin la clave, no «sin registro»
+    escribir('.dashboard/proyectos/Proy__Historias.json', { v: 1, generated_at: `${HOY}T05:00:00Z`, proyecto: 'Proy', repo: 'Historias', stories: [], epicas: [{ id: '3', titulo: null, conteo: {} }], cobertura: { stories_total: 0 } });
+    const vieja = sources.construirDesdeClon(clon, { ahora: T0, log: () => {} }).proyectos.lista.find((x) => x.repo === 'Historias');
+    assert.strictEqual(vieja.estimaciones, null);
+    assert.deepStrictEqual(vieja.epicas, [{ id: '3', titulo: null, estimacion: null }]);
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
 // ── lo que el sitio necesita para la regla de quién es quién ──────────────────────────────────────────
 // repos.json que falta, está roto o fuera del clon no es «no hay repos»; el freno con un reloj
 // que no se puede leer, o con la primera falla en el futuro, frena

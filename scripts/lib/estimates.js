@@ -176,6 +176,10 @@ function orgEstimates(orgConfig) {
       throw new Problema(`la configuración de la organización no vale (estimates.${k}: tiene que ser un número de horas mayor que 0, es ${JSON.stringify(e[k])})`, SALIDA.org);
     }
   }
+  // el día de trabajo, con el mismo rango que el lector de hoy: un lector anterior a la regla deja pasar 30 horas
+  if (e.hours_per_day !== undefined && (e.hours_per_day < 1 || e.hours_per_day > 24)) {
+    throw new Problema(`la configuración de la organización no vale (estimates.hours_per_day: tiene que ser un número de horas de 1 a 24, es ${JSON.stringify(e.hours_per_day)})`, SALIDA.org);
+  }
   return {
     unit: e.unit || DEFAULTS.unit,
     hours_per_day: e.hours_per_day || DEFAULTS.hours_per_day,

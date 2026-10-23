@@ -1775,6 +1775,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.75: las estimaciones en la foto por proyecto y en Proyectos — la foto lee el registro de cada repo de historias (rango, plan, vigente y real por épica; una épica sólo estimada también entra); sin registro dice «sin estimaciones», con líneas ilegibles cuántas, y una foto anterior «no medido». Repos de laboratorio con git, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/projects-estimates.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.75: lo real de una historia al cerrarla (pipeline.js estimate-real) — las horas salen sólo de la constancia que deja work-signal stop con los segundos de la herramienta de horas, nunca de un número a mano; sin horas no escribe y el cierre sigue; la misma ejecución no se anota dos veces. Herramienta de horas de mentira y laboratorios con acme, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/estimate-real.test.js",

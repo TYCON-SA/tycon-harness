@@ -4744,3 +4744,132 @@ test('T7 2.74-Lector_SiteInvitations @story-2.74 @ac-5 — cada marca de un corr
     assert.ok(!JSON.parse(r.texto).site.invitations, `la marca sale con la baja: ${r.texto}`);
   });
 });
+
+// ── las estimaciones: la sección de la configuración y la vista de Proyectos ──────────────────────────────────────
+/** Los nodos de una sección ya dibujada (la última vez que se dibujó), filtrados por `pred`. */
+const nodosDe = (r, id, pred) => { const caja = r.creados.filter((n) => n.attrs.id === `seccion-${id}`).pop(); const out = []; const walk = (x) => { if (pred(x)) out.push(x); (x.hijos || []).forEach(walk); }; if (caja) walk(caja); return out; };
+const textoDe = (n) => { let s = n.textContent || ''; (n.hijos || []).forEach((h) => { s += ` ${textoDe(h)}`; }); return s; };
+
+test('2.75-T23 Seccion_Estimaciones @story-2.75 @ac-20 — la sección con la unidad, las horas por día y por punto; sin la clave, horas', async () => {
+  // 🔴 rojo: la sección no existe, no trae sus tres campos, o sin la clave no dice que la unidad es horas.
+  const s = ORG.seccionPorId('estimaciones');
+  assert.ok(s, 'hay una sección de las estimaciones');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['team-repos.json', 'perfil', 'team-repos.js', ['estimates'], 'repos']);
+  const hoy = { unit: 'hours', hours_per_day: 8, hours_per_point: null };
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('estimaciones', { repo: 'perfil', borrador: {}, extras: { hoy } })] });
+  assert.strictEqual(r.panelDe('seccion-estimaciones').attrs.id, 'pestana-claude', 'en «Cómo trabaja el agente»');
+  const unidad = nodosDe(r, 'estimaciones', (n) => n.tag === 'select' && n.attrs['data-path'] === 'estimates.unit');
+  assert.strictEqual(unidad.length, 1, 'el selector de la unidad');
+  assert.deepStrictEqual(unidad[0].hijos.map((o) => o.attrs.value), ['', 'hours', 'days', 'points']);
+  assert.match(unidad[0].hijos[0].textContent, /horas/i, 'vacío dice que la unidad es horas');
+  for (const p of ['estimates.hours_per_day', 'estimates.hours_per_point']) assert.strictEqual(nodosDe(r, 'estimaciones', (n) => n.tag === 'input' && n.attrs['data-path'] === p).length, 1, p);
+  // la unidad que leen hoy las máquinas, del árbol que corre
+  assert.match(textoDe(r.creados.filter((n) => n.attrs.id === 'seccion-estimaciones').pop()), /Hoy: horas · 8 h por día/);
+  // y de dónde sale: el team-repos.json del árbol, o los valores de fábrica sin él
+  const arbol = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-275-t23-'));
+  try {
+    assert.deepStrictEqual(ORG.estimacionesDeHoy(arbol).hoy, hoy, 'sin archivo, los de fábrica');
+    fs.writeFileSync(path.join(arbol, 'team-repos.json'), JSON.stringify({ ...TR_BASE, estimates: { unit: 'points', hours_per_point: 6 } }));
+    assert.deepStrictEqual(ORG.estimacionesDeHoy(arbol).hoy, { unit: 'points', hours_per_day: 8, hours_per_point: 6 });
+    fs.writeFileSync(path.join(arbol, 'team-repos.json'), '{ roto');
+    const roto = ORG.estimacionesDeHoy(arbol);
+    assert.strictEqual(roto.hoy, null);
+    assert.ok(roto.motivo, 'ilegible: el motivo, nunca los de fábrica callados');
+  } finally { fs.rmSync(arbol, { recursive: true, force: true }); }
+});
+
+test('2.75-T24 Seccion_ProponeYFrena @story-2.75 @ac-21 — elegir puntos lo propone; 30 horas por día frena con el mensaje del lector', async () => {
+  // 🔴 rojo: el selector no escribe la clave, o un valor fuera de rango se propone igual.
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('estimaciones', { repo: 'perfil', borrador: {} })] });
+  nodosDe(r, 'estimaciones', (n) => n.tag === 'select' && n.attrs['data-path'] === 'estimates.unit')[0].on.change({ target: { value: 'points' } });
+  nodosDe(r, 'estimaciones', (n) => n.tag === 'input' && n.attrs['data-path'] === 'estimates.hours_per_point').pop().on.input({ target: { value: '6' } });
+  nodosDe(r, 'estimaciones', (n) => n.tag === 'button' && n.textContent === 'Revisar cambios').pop().on.click();
+  for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+  const borrador = r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador;
+  assert.deepStrictEqual(borrador.estimates, { unit: 'points', hours_per_point: 6 });
+  const rev = (estimates) => ORG.revisar({ seccion: 'estimaciones', texto: ORG.formatJson(TR_BASE), borrador: { estimates }, lectores: { 'team-repos.js': TR } });
+  const bien = rev(borrador.estimates);
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, estimates: { unit: 'points', hours_per_point: 6 } }, 'el resto del archivo igual');
+  const malo = rev({ hours_per_day: 30 });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['estimates.hours_per_day']);
+  assert.match(malo.problems[0].message, /de 1 a 24/);
+  for (const [estimates, ruta] of [[{ unit: 'weeks' }, 'estimates.unit'], [{ unit: 'points', hours_per_point: 0 }, 'estimates.hours_per_point']]) {
+    const otro = rev(estimates);
+    assert.strictEqual(otro.ok, false, JSON.stringify(estimates));
+    assert.deepStrictEqual(otro.problems.map((p) => p.path), [ruta]);
+  }
+  // vaciar todo saca la clave: no se propone un «{}»
+  const vacio = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('estimaciones', { repo: 'perfil', borrador: { estimates: { unit: 'days' } } })] });
+  nodosDe(vacio, 'estimaciones', (n) => n.tag === 'select' && n.attrs['data-path'] === 'estimates.unit')[0].on.change({ target: { value: '' } });
+  nodosDe(vacio, 'estimaciones', (n) => n.tag === 'button' && n.textContent === 'Revisar cambios').pop().on.click();
+  for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+  assert.strictEqual(vacio.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador.estimates, undefined);
+});
+
+test('2.75-T25 Estimates_PideSuVersion @story-2.75 @ac-22 — con la clave, el perfil pide ESTIMATES_SINCE; sin ella, la de hoy', () => {
+  // 🔴 rojo: una máquina con el lector anterior vería una clave desconocida y descartaría la capa entera.
+  assert.ok(ORG.ESTIMATES_SINCE && ORG.versionAtLeast(ORG.ESTIMATES_SINCE, ORG.MODEL_PROVIDERS_SINCE) && ORG.ESTIMATES_SINCE !== ORG.MODEL_PROVIDERS_SINCE);
+  const con = ORG.versionQuePide({ ...TR_BASE, estimates: { unit: 'days' } });
+  assert.strictEqual(con.version, ORG.ESTIMATES_SINCE);
+  assert.ok(con.claves.includes('estimates'));
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE }).version, ORG.TEAM_REPOS_SINCE, 'sin la clave, la de siempre');
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/\./g, '\\.')));
+});
+
+test('2.75-T26 Textos_EnEsYEn @story-2.75 @ac-26 — los textos de la sección y de la vista existen en castellano y en inglés', () => {
+  // 🔴 rojo: un texto nuevo sólo en castellano, o una clave que el código usa y no existe.
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const usadas = new Set();
+  for (const f of [path.join('scripts', 'lib', 'org-config.js'), path.join('scripts', 'site', 'views.js')]) {
+    for (const m of fs.readFileSync(path.join(ROOT, f), 'utf8').matchAll(/'((?:pantalla|proyectos|org)\.(?:est|para\.estimaciones|unidad|horasPor)[A-Za-z0-9.]*)'/g)) usadas.add(m[1]);
+  }
+  for (const k of ['pantalla.estimaciones', 'pantalla.para.estimaciones', 'pantalla.unidadDeLasEstimaciones', 'pantalla.horasPorDia', 'pantalla.horasPorPunto', 'proyectos.estimaciones', 'proyectos.est.sinEstimaciones']) {
+    // la ayuda «Para qué» se arma con el id de la sección ('para.' + s.id): no aparece literal en el código
+    assert.ok(usadas.has(k) || k === 'pantalla.para.estimaciones', `el código usa ${k}`);
+  }
+  assert.ok(usadas.size >= 12, `pocas claves encontradas: ${[...usadas].join(', ')}`);
+  for (const k of [...usadas, 'pantalla.para.estimaciones']) assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `falta ${k} en los dos idiomas`);
+});
+
+test('2.75-T27 Proyectos_PorEpicaYProducto @story-2.75 @ac-23 @ac-25 — una fila por repo y épica, la suma del producto y la marca con su cifra', () => {
+  // 🔴 rojo: dos repos con el mismo id de épica se mezclan, la suma no suma todas las filas, o la marca no dice por cuánto.
+  const views = require(path.join(ROOT, 'scripts', 'site', 'views.js'));
+  const est = (o) => ({ rango: null, unidad: 'hours', suma_plan: null, suma_vigente: null, dentro: null, fuera: null, por: null, sumas_por_unidad: null, motivo: null, en_horas: null, real: { cerrada: false, suma: null, faltan: 0, motivo: null }, ...o });
+  const foto = (repo, epicas) => ({ proyecto: 'Proy', repo, fecha: '2026-10-23', vieja: false, stories: [], epicas, estimaciones: { estado: 'medido', motivo: null, ilegibles: 0, unidad: 'hours' } });
+  const modelo = {
+    productos: [{ producto: 'Producto P', proyectos: ['Proy'], rutas: [] }],
+    productosFuente: { estado: 'medido' },
+    proyectos: { estado: 'medido', lista: [
+      foto('RepoA', [{ id: '3', titulo: 'La épica de A', estimacion: est({ rango: { min: 40, max: 60, unidad: 'hours' }, suma_plan: 80, suma_vigente: 85, dentro: false, fuera: 'encima', por: 25, en_horas: { min: 40, max: 60, plan: 80, vigente: 85 }, real: { cerrada: false, suma: null, faltan: 1, motivo: 'abierta' } }) }]),
+      foto('RepoB', [{ id: '3', titulo: 'La épica de B', estimacion: est({ rango: { min: 10, max: 20, unidad: 'hours' }, suma_plan: 15, suma_vigente: 15, dentro: true, por: 0, en_horas: { min: 10, max: 20, plan: 15, vigente: 15 }, real: { cerrada: true, suma: 12, faltan: 0, motivo: null } }) }]),
+    ] },
+  };
+  const html = views.paginaProyectos({ modelo, quien: { rol: 'maintainer', email: 'lider@acme.example' }, pestanas: [], ahora: Date.parse('2026-10-23T12:00:00Z') });
+  const seccion = html.slice(html.indexOf('id="estimaciones"'));
+  assert.ok(html.includes('id="estimaciones"'), 'la sección de las estimaciones');
+  const filas = seccion.split('<tr').slice(1);
+  const fA = filas.find((f) => f.includes('RepoA')); const fB = filas.find((f) => f.includes('RepoB'));
+  assert.ok(fA && fB, 'una fila por repo: las dos «épica 3» no se mezclan');
+  for (const c of ['40–60 h', '80 h', '85 h']) assert.ok(fA.includes(c), `RepoA trae ${c}`);
+  assert.match(fA, /encima por 25 h/);
+  assert.ok(fB.includes('10–20 h') && fB.includes('12 h'), 'RepoB: el rango y lo real');
+  assert.doesNotMatch(fB, /encima|debajo/, 'dentro del rango: sin marca');
+  const total = filas.find((f) => /Total del producto/.test(f));
+  assert.ok(total && total.includes('100 h') && total.includes('50–80 h'), `la suma del producto suma todas las filas: ${total}`);
+  assert.match(total, /12 h \(parcial: falta alguna épica\)/, 'lo real del producto, con una épica abierta, dice que es parcial');
+  // en inglés, los mismos números
+  const en = views.paginaProyectos({ modelo, quien: { rol: 'maintainer', email: 'lider@acme.example' }, pestanas: [], ahora: Date.parse('2026-10-23T12:00:00Z'), idioma: 'en' });
+  assert.match(en, /above by 25 h/);
+  // debajo del rango; una épica sólo estimada (rango sin historias); y unidades que no pasan a horas: sumas por unidad
+  const otro = { ...modelo, proyectos: { estado: 'medido', lista: [
+    foto('RepoA', [{ id: '4', titulo: null, estimacion: est({ rango: { min: 10, max: 20, unidad: 'days' }, unidad: 'days', suma_plan: 6, suma_vigente: 7, dentro: false, fuera: 'debajo', por: 3 }) },
+      { id: '5', titulo: null, estimacion: est({ rango: { min: 30, max: 40, unidad: 'points' }, unidad: 'points', suma_vigente: null }) }]),
+  ] } };
+  const h2 = views.paginaProyectos({ modelo: otro, quien: { rol: 'maintainer', email: 'lider@acme.example' }, pestanas: [], ahora: Date.parse('2026-10-23T12:00:00Z') });
+  const s2 = h2.slice(h2.indexOf('id="estimaciones"'));
+  assert.match(s2, /debajo por 3 días/);
+  assert.match(s2, /30–40 pts/, 'la épica sólo estimada tiene su fila, con el rango');
+  assert.match(s2, /sin tasa a horas, por unidad: 7 días/, 'sin tasa no se inventa un total en horas');
+});
