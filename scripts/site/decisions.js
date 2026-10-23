@@ -4,8 +4,9 @@
 // Dos partes, separadas a propósito:
 //   · itemsDeLasColas(...) lee, del clon del repo de operaciones, las fichas de cada rubro de la foto diaria de cada
 //     cola y el pedido que anota cada ficha (`pr:` en inbox/<carpeta>/<estado>/<id>.yaml). La llama sources.js.
-//   · decisiones(m, { operationsRepo }) arma el enlace de cada ficha a SU pedido: `<repo>/pullrequest/<n>` en Azure
-//     DevOps, `<repo>/pull/<n>` en GitHub. No dibuja nada: el Inicio lo dibuja, y cualquier otra sección lo reusa.
+//   · decisiones(m, { operationsRepo }) arma el enlace de cada ficha a SU pedido, con la plataforma que reconoce
+//     `remoteOf` de scripts/lib/repo-proposal.js (`/pull/<n>` en GitHub, `/pullrequest/<n>` en la otra). No dibuja
+//     nada: el Inicio lo dibuja, y cualquier otra sección lo reusa.
 //
 // Una ficha sin pedido, o sin una dirección https del repo de operaciones, se lista igual, con `sinLugar` (un código;
 // fraseSinLugar lo dice en llano). Nunca se manda a la portada del repo: ahí no se ve qué decidir.
@@ -70,15 +71,16 @@ function itemsDeLasColas({ clon, fotos, dentroDe }) {
   return items;
 }
 
-/** La dirección https navegable del repo de operaciones y su plataforma; null si no es una. */
+/**
+ * La dirección https navegable del repo de operaciones y su plataforma (la que reconoce remoteOf, la misma lectura de
+ * Configuración); null si no es https. Con una plataforma que no reconoce, `plataforma` es null.
+ */
 function repoNavegable(operationsRepo) {
   let u;
   try { u = new URL(String(operationsRepo || '')); } catch { return null; }
   if (u.protocol !== 'https:') return null;
-  const base = `${u.origin}${u.pathname.replace(/\.git$/, '').replace(/\/+$/, '')}`;
-  const host = u.hostname.toLowerCase();
-  const plataforma = host === 'dev.azure.com' || host.endsWith('.visualstudio.com') ? 'azure-devops' : host === 'github.com' ? 'github' : null;
-  return { base, plataforma };
+  const r = require('../lib/repo-proposal.js').remoteOf(String(operationsRepo));
+  return { base: r.web ? r.web.replace(/\.git$/, '').replace(/\/+$/, '') : null, plataforma: r.platform || null };
 }
 
 /**
