@@ -47,6 +47,9 @@
 //                                                            Sin `notify` no se manda nada. El destino
 //                                                            (el chat, el token, la dirección del webhook) va en los
 //                                                            secretos del pipeline, nunca acá.
+//     "findings": { "resolve_after_nights": 1..30 },          opcional — cuántas noches medidas seguidas sin aparecer
+//                                                            resuelven una ficha de la noche. Sin la
+//                                                            clave, 3. Lo lee scripts/nightly/findings/cycle.js
 //     "people": {                                            opcional — quién es quién
 //       "machines": { "<máquina>": {                         opcional — cada máquina confirmada por un mantenedor
 //           "person": <correo>,                              la persona dueña de las corridas de esa máquina
@@ -82,10 +85,14 @@
 const fs = require('fs');
 
 const VERSION = 1;
-const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments', 'notify', 'work_items'];
+const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments', 'notify', 'work_items', 'findings'];
 // el pedido de trabajo de una vulnerabilidad: el tipo de work item y sus campos (lo lee la revisión nocturna)
 const WORK_ITEM_KEYS = ['type', 'fixed_fields', 'by_severity'];
 const SEVERITIES = ['critical', 'high', 'moderate', 'low'];
+// el ciclo de lo que encuentra la noche cuántas noches medidas seguidas sin aparecer resuelven una ficha
+const FINDINGS_KEYS = ['resolve_after_nights'];
+const RESOLVE_AFTER_MIN = 1;
+const RESOLVE_AFTER_MAX = 30;
 // De qué sistema se leen los despliegues de cada producto. Sin nombres por defecto: todo lo declara la
 // organización (el identificador EXACTO de cada stage, o el environment de GitHub).
 const DEPLOYMENT_PROVIDERS = ['azure', 'github'];
@@ -474,6 +481,7 @@ function validate(doc) {
   if (doc.deployments !== undefined) problems.push(...deploymentsProblems(doc.deployments));
   if (doc.notify !== undefined) problems.push(...notifyProblems(doc.notify));
   if (doc.work_items !== undefined) problems.push(...workItemsProblems(doc.work_items));
+  if (doc.findings !== undefined) problems.push(...findingsProblems(doc.findings));
   return problems;
 }
 
@@ -535,6 +543,16 @@ function workItemsProblems(w) {
   return problems;
 }
 
+function findingsProblems(f) {
+  if (!isObject(f)) return [{ path: 'findings', message: 'tiene que ser un objeto { resolve_after_nights }' }];
+  const problems = [...unknownKeys(f, FINDINGS_KEYS, 'findings')];
+  const n = f.resolve_after_nights;
+  if (n !== undefined && !(Number.isInteger(n) && n >= RESOLVE_AFTER_MIN && n <= RESOLVE_AFTER_MAX)) {
+    problems.push({ path: 'findings.resolve_after_nights', message: `tiene que ser un entero de ${RESOLVE_AFTER_MIN} a ${RESOLVE_AFTER_MAX}` });
+  }
+  return problems;
+}
+
 /** `{ ok, data, problems }` del texto de un operations.json. */
 function parse(text) {
   let doc;
@@ -561,7 +579,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

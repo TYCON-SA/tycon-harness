@@ -1,0 +1,19 @@
+id: cccc3333
+detectado: 2026-10-09
+veredicto: descartado
+paquete: qs
+severidad: high
+noches: 5
+pr: 101
+descartado: 2026-10-20
+motivo: "declarada como deuda en globex/globex (vence 2026-12-01)"
+ids:
+  - cccc3333
+declarada_en:
+  - globex/globex (vence 2026-12-01)
+avisos:
+  - https://x/GHSA-cccc
+# Qué decidir: se arregla (subir el paquete) o se declara como deuda en el
+# vulnerabilidades-pendientes.json del repo, con motivo y fecha de revisión.
+# Lo que NO se decide vuelve a aparecer todas las noches, y a los 7 días
+# se archiva como 'ignorado' — que cuenta PEOR que descartado con motivo.
