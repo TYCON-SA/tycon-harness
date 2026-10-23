@@ -574,7 +574,7 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
     ESC_CARTEL=""
     block "ESC-C3" \
       "No pude leer el comando: el intérprete del arnés no está o el lector de comandos se cayó. Un comando que corre los guiones del pipeline puede traer un escape que lo decide la persona." \
-      "Revisá el intérprete del arnés (el comando /tycon-harness dice si está bien instalado). Si el comando no corre el pipeline, escribilo sin nombrar marker ni pipeline."
+      "Revisá el intérprete del arnés (el comando del arnés que muestra su versión dice si está bien instalado). Si el comando no corre el pipeline, escribilo sin nombrar marker ni pipeline."
   fi
   _c3_motivo=""; _c3_frenos=(); _c3_aprob=(); _c3_sinconv=0
   while IFS= read -r _c3_l; do
