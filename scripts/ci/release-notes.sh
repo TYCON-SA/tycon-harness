@@ -184,11 +184,11 @@ consultar_version() {
     codigo=$(curl -s -o "$cuerpo" -w '%{http_code}' --max-time 25 "${URL}/api/custom-forms/${NOMBRE}/versions" \
       -H "Cookie: admin_token=$token" -H "Authorization: Bearer $token" -H 'X-Tenant-Id: default' 2>/dev/null) || codigo="000"
     # 🔴 Un formulario que se publica por PRIMERA VEZ no tiene versiones, y el host contesta 404 por él aunque
-    # contestó bien por los demás de la misma corrida. Quien recorre los formularios lo sabe y lo pasa en
+    # contestó bien por los demás de la misma ejecución. Quien recorre los formularios lo sabe y lo pasa en
     # BZ_HOST_ANSWERED_FORMS=1: con eso el 404 no es «no se pudo preguntar» sino «primera publicación», y la nota lo
     # dice. Sin esa señal (un host que no contesta por ninguno, o una llamada suelta) el 404 se avisa como siempre.
     if [ "$codigo" = "404" ] && [ "${BZ_HOST_ANSWERED_FORMS:-}" = 1 ]; then
-      echo "[release-notes] $NOMBRE: primera publicación en este host (contestó por otros formularios de esta corrida)" >&2
+      echo "[release-notes] $NOMBRE: primera publicación en este host (contestó por otros formularios de esta ejecución)" >&2
       : > "$PRIMERA"
       rm -f "$cuerpo"; return 0
     fi

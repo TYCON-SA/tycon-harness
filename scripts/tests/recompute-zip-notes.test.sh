@@ -160,7 +160,7 @@ grep -q "ingreso único" "$TMP/err9.txt" \
 
 # ---------------------------------------------------------------- 10. un formulario nuevo: 404 con el host contestando por otros
 # Un formulario que se publica por primera vez recibe 404 al pedirle sus versiones. Si el MISMO host contestó bien por
-# otro formulario de la corrida, ese 404 es «primera publicación»: la nota lo dice y el paso no queda naranja por eso.
+# otro formulario de la ejecución, ese 404 es «primera publicación»: la nota lo dice y el paso no queda naranja por eso.
 # Si el host no contestó bien por ninguno, el 404 sigue siendo «no se pudo preguntar» (sale 3, como hoy).
 FLAT4="$TMP/primera"; mkdir -p "$FLAT4"; cp "$REC_SRC" "$FLAT4/recompute-zip-notes.sh"
 cat > "$FLAT4/release-notes.sh" <<'STUB4'

@@ -147,7 +147,7 @@ grep -q "HTTP 404" "$TMP/e12.txt" && grep -q "no se pudo preguntar" "$TMP/e12.tx
 
 # ---------------------------------------------------------------- 12b. un 404 de un formulario nuevo, con el host contestando
 # Un formulario que se publica por primera vez no tiene versiones: el host contesta 404 por ESE formulario aunque
-# contestó bien por los demás de la misma corrida. Quien recorre los formularios lo sabe y lo pasa en
+# contestó bien por los demás de la misma ejecución. Quien recorre los formularios lo sabe y lo pasa en
 # BZ_HOST_ANSWERED_FORMS; con eso, el 404 es «primera publicación»: la nota lo dice y no se avisa como falla.
 : > "$STUB_LOG"
 BZ_HOST_ANSWERED_FORMS=1 STUB_VERSIONS_CODE=404 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ >"$TMP/o12b.txt" 2>"$TMP/e12b.txt"

@@ -113,7 +113,7 @@ PRIMERO=1
 # 🔴 FORMULARIOS NUEVOS. Uno que se publica por primera vez no tiene versiones: el host contesta 404 al pedírselas
 # aunque contestó bien por los demás. Sin distinguirlo, el primer despliegue de cada formulario nuevo deja el paso
 # naranja con «no se pudo preguntar». Por eso un 404 se deja para el final: si el MISMO host contestó bien por algún
-# otro formulario de la corrida, se recalcula avisándole a release-notes.sh (BZ_HOST_ANSWERED_FORMS=1) y la nota dice
+# otro formulario de la ejecución, se recalcula avisándole a release-notes.sh (BZ_HOST_ANSWERED_FORMS=1) y la nota dice
 # «primera publicación»; si no contestó bien por ninguno, cuenta como degradado, como siempre.
 CONTESTO=0
 PENDIENTES=()
