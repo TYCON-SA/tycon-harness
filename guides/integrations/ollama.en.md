@@ -209,6 +209,17 @@ with your session's model if you started the pipeline with
 reduced-mode options). Without that option, each reviewer uses its profile's model (next section). Before, the step
 asked the model to launch each reviewer as an agent; a model that did not use that tool launched none.
 
+**The reviewers need network access.** They inherit the sandbox of the command that launches them, and the
+`workspace-write` sandbox has no network by default: without it they cannot reach Ollama (`No running Ollama server
+detected`), even with Ollama running. Measured on 2026-10-23: in the sandbox without network, 0 of 3 reviewers left a
+report; with network, 3 of 3. `reviewers-run` detects it, exits without launching and gives the two ways out:
+
+1. **Run `reviewers-run` outside the sandbox, with your approval.** Codex asks permission to escalate that command when
+   its approval policy allows it. The network is open only for the reviewers: this is the safe option.
+2. **With `codex exec` and no approvals** there is no one to ask. The way out is enabling network in the session
+   profile: `-c sandbox_workspace_write.network_access=true`, or `sandbox_workspace_write.network_access = true` in the
+   profile. That gives network to **every** command the model runs, not only the reviewers: decide it consciously.
+
 ### Reviewers in Codex: the machine's model
 
 Each Codex reviewer profile pins an OpenAI model. That model does not exist in Ollama, and the reviewer fails with

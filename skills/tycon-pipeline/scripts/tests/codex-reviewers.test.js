@@ -42,6 +42,7 @@ fs.appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ ...rec, event: 's
 const fin = () => {
   if (!beh.noReport) fs.writeFileSync(out, '## ' + adv + '\\nVeredicto: limpio\\n');
   fs.appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ adv, pid: process.pid, event: 'end', end: Date.now() }) + '\\n');
+  if (beh.stderr) process.stderr.write(beh.stderr);
   process.exit(beh.exit || 0);
 };
 if (beh.wrapperHang) {
@@ -349,4 +350,43 @@ test('ClaudeCode_StepUnchanged_NoDoubleLaunch @story-8.97 @ac-4 @ac-13', () => {
 test('CodexProfiles_StillGenerated_NotHandEdited @story-8.97 @ac-14', () => {
   const r = spawnSync(process.execPath, [path.join(REPO_ROOT, 'build', 'generate.js'), '--check'], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120000 });
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+});
+
+// ── La red de los revisores: la caja de arena de Codex sin red no llega al modelo ──
+// La marca la pone Codex en la terminal de una sesión con la caja de arena sin red (medido con codex-cli 0.162.1).
+
+test('ReviewersRun_SinRed_NoLanza @story-8.108 @ac-5', () => {
+  const e = mkEnv({ advisors: ['tycon-plugin-security-basics', 'tycon-spec-first-checker'], env: { CODEX_SANDBOX: 'seatbelt', CODEX_SANDBOX_NETWORK_DISABLED: '1' } });
+  const antes = ledger(e).length;
+  const r = runReviewers(e);
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  assert.deepStrictEqual(fakeCalls(e), [], 'no tenía que lanzar ningún codex');
+  assert.strictEqual(ledger(e).length, antes, 'no tenía que anotar ningún lanzamiento');
+  assert.match(r.stderr, /caja de arena/);
+  assert.match(r.stderr, /sin red/);
+  assert.match(r.stderr, /fuera de la caja de arena/);
+  assert.match(r.stderr, /aprob/);
+  assert.match(r.stderr, /sandbox_workspace_write\.network_access/);
+  assert.match(r.stderr, /todo comando/);
+});
+
+test('ReviewersRun_ConRed_LanzaComoHoy @story-8.108 @ac-5', () => {
+  const e = mkEnv({ advisors: ['tycon-plugin-security-basics', 'tycon-spec-first-checker'], env: { CODEX_SANDBOX: 'seatbelt', CODEX_SANDBOX_NETWORK_DISABLED: '' } });
+  const r = runReviewers(e);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.deepStrictEqual(fakeCalls(e).filter((c) => c.event === 'start').map((c) => c.adv).sort(), ['tycon-plugin-security-basics', 'tycon-spec-first-checker']);
+});
+
+test('ReviewersRun_OllamaInalcanzable_NombraLaCausa @story-8.108 @ac-6', () => {
+  const ollama = 'Error: OSS setup failed: No running Ollama server detected. Start it with: `ollama serve` (after installing).\n';
+  const e = mkEnv({ advisors: ['tycon-plugin-security-basics', 'tycon-spec-first-checker'],
+    behavior: { 'tycon-plugin-security-basics': { exit: 1, noReport: true, stderr: ollama } } });
+  const r = runReviewers(e);
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  const linea = r.stderr.split('\n').find((l) => l.includes('tycon-plugin-security-basics salió 1'));
+  assert.ok(linea, r.stderr);
+  assert.match(linea, /no llegó a Ollama/);
+  assert.match(linea, /tycon-plugin-security-basics\.stderr\.log/);
+  const otra = r.stderr.split('\n').find((l) => l.includes('tycon-spec-first-checker') && /no llegó a Ollama/.test(l));
+  assert.strictEqual(otra, undefined, 'el revisor que anduvo no lleva la causa');
 });

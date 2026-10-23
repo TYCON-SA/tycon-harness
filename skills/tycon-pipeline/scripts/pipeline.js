@@ -79,6 +79,25 @@ function sessionLogPath() {
   const sid = sessionIdFileKey();
   return path.join(RUNS_DIR, `${sid}.jsonl`);
 }
+
+// Bajo Codex los revisores no los lanza el modelo: los lanza `reviewers-run`. La salida de `advisors` y `smart-reloop`
+// y el error de `check-count` dan el comando listo para pegar; un modelo sin la herramienta de agentes no lo deduce.
+const esCodex = () => require('./lib/external-flags.js').esCodex(process.env);
+function lanzadorCodex(args) {
+  const q = (s) => (/^[\w@%+=:,./-]+$/.test(String(s)) ? String(s) : `'${String(s).replace(/'/g, `'\\''`)}'`);
+  // sin --story en la llamada, el comando tampoco lo lleva: reviewers-run toma la story del marcador
+  return ['node', q(path.resolve(__filename)), 'reviewers-run', '--repo', q(path.resolve(args.repo || '.')),
+    ...(args.story ? ['--story', q(args.story)] : [])].join(' ');
+}
+const BATCH_RULE_CODEX = 'Bajo Codex los revisores NO los lanza el modelo: correr el comando de `launch` (pipeline.js reviewers-run). ' +
+  'Aplica la ventana (4 vivos; 2 con el pase adversarial en vuelo), anota cada lanzamiento para check-count y deja los reportes ' +
+  'en step-05-advisor-reports/. Necesita red: si la caja de arena no la tiene, sale 2 sin lanzar y dice qué hacer.';
+function conLanzadorCodex(out, args) {
+  if (!esCodex()) return;
+  out.launch = lanzadorCodex(args);
+  out.batch_rule = BATCH_RULE_CODEX;
+}
+
 // `expected`: el set ESPERADO de esta iteración queda persistido en la línea step5-start.
 // check-count valida contra ESE expected (que en un smart-reloop legítimo es el
 // subset `rerun`), no contra el set completo recomputado — sin esto, tras un
@@ -6205,6 +6224,7 @@ function main() {
     }
     // Regla de batcheo (máquina dev 8c/16GB): ventana deslizante de ≤4 vivos.
     set.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial fue lanzado al cerrar «Correr las pruebas» y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: manda la guía del paso de revisores §Cap reducido. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.';
+    conLanzadorCodex(set, args);
     // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
     aplicarDecisionValidador(set, 'all', args);
     if (set.reviewer_models) {
@@ -6300,6 +6320,7 @@ function main() {
       result.context_file_overrides = ctx.overrides;
     }
     result.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB); reponer el slot al llegar cada notificación de término. ⚠️ Cap 2 si el pase adversarial sigue en vuelo (manda la guía del paso de revisores §Cap reducido).';
+    conLanzadorCodex(result, args);
     // expected = el SUBSET legítimo de esta iteración (rerun) — check-count valida
     // contra esto, no contra el set completo.
     // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
@@ -6422,10 +6443,15 @@ function main() {
           (Object.keys(state.fallidos || {}).length
             ? 'Lanzados por el pipeline que no cuentan:\n' + Object.entries(state.fallidos).map(([a, m]) => `  - ${a}: ${m}`).join('\n') + '\n'
             : '') +
-          'O los advisors NO se corrieron, o el hook on-advisor-run.js está roto/no instalado.\n' +
-          'Verificá:\n' +
-          '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
-          '  2. ¿on-advisor-run.js está en settings.json (PreToolUse Task|Agent)? → install-tycon-hooks.sh --check\n' +
+          (esCodex()
+            ? 'Bajo Codex los revisores los lanza el pipeline, no el modelo: corré\n' +
+              `  ${lanzadorCodex(args)}\n` +
+              'Si ya lo corriste y salió 2 porque la caja de arena no tiene red (sin red no llega al modelo), seguí la salida\n' +
+              'que dio ese mensaje: volver a correr check-count no cambia nada.\n'
+            : 'O los advisors NO se corrieron, o el hook on-advisor-run.js está roto/no instalado.\n' +
+              'Verificá:\n' +
+              '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
+              '  2. ¿on-advisor-run.js está en settings.json (PreToolUse Task|Agent)? → install-tycon-hooks.sh --check\n') +
           'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
         );
         process.exit(2);

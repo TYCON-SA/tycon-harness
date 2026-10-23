@@ -71,8 +71,10 @@ function evaluarVisibilidad({ marker, codeTargets, dentroDelRepo, off }) {
  * El mensaje que ve el agente. Explica la CONSECUENCIA, no sólo la regla.
  * `opts.sinResolver`: `[{ file, vars }]` — destinos con variables que ni el comando ni el ambiente definen:
  * se frenan del lado seguro, pero el mensaje lo dice en vez de presentarlos como código del repo sin más.
+ * `opts.codex`: el evento es de Codex, que no tiene Edit ni Write: edita con `apply_patch`, y el mensaje da su forma.
  */
 function mensaje(files, storyId, opts = {}) {
+  const codex = !!opts.codex;
   const lista = files.map((f) => `     · ${f}`).join('\n');
   const sinResolver = Array.isArray(opts.sinResolver) ? opts.sinResolver : [];
   const nombres = sinResolver.map((s) => s.vars.map((v) => (v.startsWith('$') ? v : `$${v}`)).join(', ')).join(' · ');
@@ -86,13 +88,35 @@ function mensaje(files, storyId, opts = {}) {
   const avisoBorrar = !opts.borrarODeshacer ? [] : [
     '',
     '   Borrar o deshacer código o un manifiesto por la terminal tampoco lo ve el registro. Deshacer: reescribí el',
-    '   archivo con Write desde su versión de git (`git show <commit>:<ruta>`). Borrar: si es parte de la historia,',
+    `   archivo con ${codex ? 'apply_patch' : 'Write'} desde su versión de git (\`git show <commit>:<ruta>\`). Borrar: si es parte de la historia,`,
     '   declaralo en el File List del Dev Agent Record y pedíle a la persona que lo borre (o el escape de abajo).',
   ];
   const avisoArmado = !opts.armado ? [] : [
     '',
     '   Un script inline que escribe en un destino que no es una ruta literal (una variable, `path.join`, una',
-    '   concatenación): sin ejecutarlo no sé adónde escribe. Escribí la ruta literal, o editá con Edit/Write.',
+    `   concatenación): sin ejecutarlo no sé adónde escribe. Escribí la ruta literal, o editá con ${codex ? 'apply_patch' : 'Edit/Write'}.`,
+  ];
+  const queHacer = codex ? [
+    '   QUÉ HACER: editá esos archivos con **apply_patch**, con el parche en un heredoc. Mismo resultado, y el',
+    '   registro los ve:',
+    "     apply_patch <<'EOF'",
+    '     *** Begin Patch',
+    '     *** Update File: <ruta>     (o *** Add File: <ruta> para uno nuevo, con cada línea empezando con +)',
+    '     @@',
+    '     -línea vieja',
+    '     +línea nueva',
+    '     *** End Patch',
+    '     EOF',
+    "   El heredoc con 'EOF' entre comillas deja el código tal cual. No pases el parche entre comillas simples",
+    "   (`apply_patch '*** Begin Patch…'`): una comilla del código lo parte en varios argumentos y sale",
+    '   «apply_patch accepts exactly one argument». Si apply_patch da un error, leelo y corregí el parche:',
+    '   no repitas el mismo comando, va a fallar igual.',
+    '   (El resto —`.md`, configuración, scripts del scratchpad— sigue pasando por la terminal sin fricción: esto es',
+    '   sólo código, y sólo mientras hay una corrida abierta.)',
+  ] : [
+    '   QUÉ HACER: editá esos archivos con las tools **Edit** o **Write**. Mismo resultado, y el',
+    '   registro los ve. (El resto —`.md`, configuración, scripts del scratchpad— sigue pasando por',
+    '   Bash sin fricción: esto es sólo código, y sólo mientras hay una corrida abierta.)',
   ];
   return [
     '🔴 EDICIÓN INVISIBLE — escritura de código por Bash con el pipeline ABIERTO' +
@@ -102,7 +126,7 @@ function mensaje(files, storyId, opts = {}) {
     ...avisoBorrar,
     ...avisoArmado,
     '',
-    '   El registro de ediciones lo alimenta el hook PostToolUse sobre Edit|Write. Un `sed`, un',
+    `   El registro de ediciones lo alimenta el hook PostToolUse sobre ${codex ? 'apply_patch' : 'Edit|Write'}. Un \`sed\`, un`,
     '   heredoc o un `python3 -c "open(...)"` NO generan ese evento: la edición ocurre y el arnés',
     '   no se entera. No es que falle — no hay nada que leer.',
     '',
@@ -110,12 +134,10 @@ function mensaje(files, storyId, opts = {}) {
     '   y cae al set COMPLETO de revisores. Medido el 2026-09-21 (Story OC-1): 7 revisores en vez',
     '   de 2-3. El aviso llegaba recién ahí, con el trabajo ya hecho.',
     '',
-    '   QUÉ HACER: editá esos archivos con las tools **Edit** o **Write**. Mismo resultado, y el',
-    '   registro los ve. (El resto —`.md`, configuración, scripts del scratchpad— sigue pasando por',
-    '   Bash sin fricción: esto es sólo código, y sólo mientras hay una corrida abierta.)',
+    ...queHacer,
     '',
-    '   Para reemplazar un tramo GRANDE (un Edit tendría que copiar el bloque viejo entero), la receta',
-    '   registrada pasa por los mismos frenos y el mismo registro que un Edit:',
+    `   Para reemplazar un tramo GRANDE (${codex ? 'un parche' : 'un Edit'} tendría que copiar el bloque viejo entero), la receta`,
+    `   registrada pasa por los mismos frenos y el mismo registro que ${codex ? 'un parche' : 'un Edit'}:`,
     '     node <skill>/scripts/replace-section.js --file <ruta> --from <n> --to <m> --with <archivo>',
     '',
     '   Escape del dev (no del agente): TYCON_LEDGER_VISIBLE=off en el ambiente de la sesión. Ponerlo',

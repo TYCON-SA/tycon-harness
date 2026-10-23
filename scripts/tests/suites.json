@@ -867,6 +867,12 @@
       "requiere": []
     },
     {
+      "__nota": "bajo Codex lo que imprime el pipeline nombra el lanzador de revisores: el comando reviewers-run en la salida de advisors y smart-reloop y en el error de check-count, y las guías dicen que los revisores necesitan red. Bajo Claude Code, igual que siempre. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/codex-launch-texts.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los cierres del turno deciden con la evidencia del arnés (mensaje del evento, marcador, registro de ediciones, disco) y no con la conversación: la historia afirmada, el modelo del implementador y la línea de pasos pendientes.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/closing-evidence-codex.test.js",

@@ -335,6 +335,14 @@ lanzar (regla B), deja cada reporte en `step-05-advisor-reports/<revisor>.md` y 
 `check-count`: un revisor que salió distinto de 0, que pasó su tope (`TYCON_REVIEWER_TIMEOUT_MS`, 15 min) o que no dejó
 reporte no cuenta. Si se corta, volver a correrlo corta lo que quedó vivo y saltea los ya hechos. Sin `codex` o sin el
 perfil de un revisor sale 2 sin lanzar nada. Con Claude Code este comando no se usa: los revisores van con `Agent(...)`.
+La salida de `advisors` y `smart-reloop` trae el comando armado en `launch`.
+
+**Necesita red.** Los revisores son procesos de Codex que llaman al modelo, y heredan la caja de arena del comando que los
+lanza. En la caja de arena sin red (la de `workspace-write` por defecto) no llegan ni a Ollama ni a la nube:
+`reviewers-run` lo detecta, sale 2 sin lanzar y lo dice. Correr el comando fuera de la caja de arena, con la aprobación de
+la persona: la red queda abierta sólo para ese comando. Bajo `codex exec` sin aprobaciones no hay a quién pedir; la salida
+es `sandbox_workspace_write.network_access = true` en el perfil de la sesión, que le da red a todo comando del modelo:
+eso lo decide la persona. Volver a correr `check-count` no cambia nada.
 
 ### 🔴 Formato de salida de CADA advisor — obligatorio en el prompt (COMM.iii, 2026-07-27)
 

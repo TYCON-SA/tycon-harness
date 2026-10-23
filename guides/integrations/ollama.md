@@ -211,6 +211,17 @@ las opciones del modo reducido). Sin esa opción, cada revisor usa el modelo de 
 el paso le pedía al modelo que lanzara cada revisor como agente; un modelo que no usaba esa herramienta no lanzaba
 ninguno.
 
+**Los revisores necesitan red.** Heredan la caja de arena del comando que los lanza, y la de `workspace-write` no tiene
+red por defecto: sin ella no llegan a Ollama (`No running Ollama server detected`), aunque Ollama esté andando. Medido
+el 2026-10-23: con la caja de arena sin red, 0 de 3 revisores con reporte; con red, 3 de 3. `reviewers-run` lo detecta,
+sale sin lanzar y dice las dos salidas:
+
+1. **Correr `reviewers-run` fuera de la caja de arena, con tu aprobación.** Codex pide permiso para escalar ese
+   comando cuando su política de aprobación lo deja. La red queda abierta sólo para los revisores: es la opción segura.
+2. **Con `codex exec` sin aprobaciones** no hay a quién pedir. La salida es habilitar la red en el perfil de la sesión:
+   `-c sandbox_workspace_write.network_access=true`, o en el perfil `sandbox_workspace_write.network_access = true`.
+   Eso le da red a **todo** comando que corra el modelo, no sólo a los revisores: decidilo a conciencia.
+
 ### Los revisores en Codex: el modelo de la máquina
 
 Cada perfil de revisor de Codex fija un modelo de OpenAI. En Ollama ese modelo no existe, y el revisor falla con
