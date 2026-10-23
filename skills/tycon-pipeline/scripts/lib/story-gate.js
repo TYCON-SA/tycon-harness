@@ -122,6 +122,21 @@ function isCodeFile(filePath, { extra } = {}) {
   return EXTRA_CODE_EXTS.has(path.extname(s).toLowerCase());
 }
 
+// Los manifiestos de dependencias y sus locks: no son código para el carril (un `.json` se edita sin historia), pero con
+// el pipeline abierto el freno de edición invisible los mira como código: reescritos por la terminal, el registro no
+// los ve y el cierre no sabe que cambiaron.
+const MANIFEST_FILES = new Set([
+  'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'packages.lock.json',
+  'Directory.Packages.props',
+]);
+
+/** ¿Es un manifiesto de dependencias o su lock, del repo (no de una dependencia ni de una salida de build)? */
+function isManifestFile(filePath) {
+  const segs = norm(filePath).split('/');
+  if (!MANIFEST_FILES.has(segs[segs.length - 1])) return false;
+  return !segs.slice(0, -1).some((seg) => NEVER_CODE_SEGMENTS.has(seg));
+}
+
 /** RESPALDO por carpeta: ¿algún segmento del path se llama como un repo del harness? */
 function isHarnessPath(filePath) {
   return norm(filePath).split('/').some((seg) => HARNESS_REPO_SEGMENTS.has(seg));
@@ -435,7 +450,7 @@ function reasonInPrompts(reason, prompts) {
 }
 
 module.exports = {
-  computeStoryGate, blockMessage, isCodeFile, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   reasonInPrompts, normalizeWords, ADHOC_REASON_MIN_CHARS,
   STORY_INTENT_PATTERNS, quotedPromptAsksStory,
   DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,

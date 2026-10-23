@@ -161,7 +161,6 @@
     "skills/tycon-pipeline/scripts/tests/reviewer-rules.test.js",
     "skills/tycon-pipeline/scripts/tests/smart-reloop-blindness.test.js",
     "skills/tycon-pipeline/scripts/tests/story-gate-cli.test.js",
-    "skills/tycon-pipeline/scripts/tests/story-gate.test.js",
     "skills/tycon-pipeline/scripts/tests/story-skill-gate.test.js",
     "skills/tycon-pipeline/scripts/tests/test-coverage-parser.js",
     "skills/tycon-pipeline/scripts/tests/test-gate-report.test.js",

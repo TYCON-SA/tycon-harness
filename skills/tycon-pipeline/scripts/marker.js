@@ -1329,6 +1329,33 @@ function cmdCompleteStep(nRaw, flags) {
   //     evidencia de texto (agente-escribible), un agujero que esta regla cierra.
   //   - Story no-UI: mantiene el gate `dodRuntimeChecked` («Probar en vivo» corrido).
   if (controles.has('commit')) {
+    // Lo que cambió en el repo y nadie declaró: un archivo reescrito por la terminal, por un gestor de paquetes o por un
+    // comando que el freno no reconoce. Va primero y sin DOD_BYPASS: la salida es nombrarlo o revertirlo.
+    {
+      const uc = require('./lib/undeclared-changes.js');
+      const registrados = [].concat(marker.filesTouched || [], (marker.fileEvents || []).map((e) => e && e.path)).filter(Boolean);
+      const consola = uc.consoleWritesOf(STATE_DIR, SID);
+      const r = uc.computeUndeclared({
+        repo: marker.repoPath || null, baseSha: marker.baseSha || null, startedAt: marker.startedAt || null,
+        // una historia que no se encuentra no es «nada declarado»: la ruta llega igual y el control dice que no la leyó
+        storyPath: resolveStoryPath(marker.storyPath, marker) || marker.storyPath || null, registrados,
+        consola: consola.lineas, consolaProblemas: consola.problemas, consolaApagada: process.env.TYCON_NO_RUN_CHANGE === '1',
+      });
+      for (const a of r.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
+      if (!r.medido) {
+        console.error(`⚠️  complete-step ${n}: cambios sin declarar: no medido: ${r.motivo}. No es «no sobra nada»: es «no lo pude mirar».`);
+        appendLog('gates.log', { name: 'undeclared-changes', action: 'no-medido', story: marker.storyId || null, motivo: r.motivo, deletes: r.borrados.length });
+      } else if (r.sobra.length) {
+        appendLog('gates.log', { name: 'undeclared-changes', action: 'bloqueo', story: marker.storyId || null, files: r.sobra, deletes: r.borrados.length });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — cambios sin declarar: ${r.sobra.length} archivo(s) cambiaron en el repo sin pasar por Edit/Write y la historia no los nombra:`);
+        for (const f of r.sobra) console.error(`   · ${f}`);
+        console.error('   Si son parte de la historia, sumalos al File List del Dev Agent Record (o a files_to_modify); si no, revertilos.');
+        console.error('   Un lock cuenta como declarado cuando su manifiesto lo está.');
+        process.exit(1);
+      } else {
+        appendLog('gates.log', { name: 'undeclared-changes', action: 'verde', story: marker.storyId || null, deletes: r.borrados.length });
+      }
+    }
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
     // tope, con el ok de una persona) o lo exime una persona (waive-critical). Venga del revisor o del pase adversarial.
     {

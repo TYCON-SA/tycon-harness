@@ -508,3 +508,253 @@ test('InstalledRoots_EmptyAnswerIsNotKept', () => {
   const src = fs.readFileSync(path.join(SCRIPTS, 'lib', 'story-gate-io.js'), 'utf8');
   assert.match(src, /if \(r\.length\) installedRootsMemo = r;/);
 });
+
+// ── ediciones por la terminal con el pipeline abierto: manifiestos, intérpretes, borrar y deshacer ──────────
+// Una corrida abierta con el plan aprobado: el carril deja editar y el registro exige Edit/Write.
+function corridaAbierta({ pendiente = [4, 5, 6, 7, 8] } = {}) {
+  const stateDir = tmpState();
+  const repo = fs.realpathSync(mkRepo(false));
+  fs.writeFileSync(path.join(stateDir, 'active', 's1.json'), JSON.stringify({
+    storyId: '9.9', repoPath: repo, sessionId: 's1', stepsCompleted: [0, 1, 2, 3], stepsPending: pendiente,
+  }));
+  return { stateDir, repo };
+}
+function conEnv(vars, fn) {
+  const antes = {};
+  for (const k of Object.keys(vars)) { antes[k] = process.env[k]; if (vars[k] === undefined) delete process.env[k]; else process.env[k] = vars[k]; }
+  try { return fn(); } finally {
+    for (const k of Object.keys(vars)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+  }
+}
+const SIN_REGISTRO = { TYCON_LEDGER_VISIBLE: undefined, TYCON_STORY_GATE: undefined, TYCON_NO_RUN_CHANGE: '1' };
+const INVISIBLE = /EDICIÓN INVISIBLE/;
+
+test('T29 Freno_ManifiestosYLocks_SonCodigo', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [
+      `node -e "require('fs').writeFileSync('package.json','{}')"`,
+      'echo {} > package-lock.json',
+      "sed -i 's/a/b/' yarn.lock",
+      'echo x >> pnpm-lock.yaml',
+      "perl -pi -e 's/1/2/' Directory.Packages.props",
+      'cp /tmp/otro.json npm-shrinkwrap.json',
+      'echo {} > src/packages.lock.json',
+    ]) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+  });
+  // el carril no cambia: sin corrida, un manifiesto sigue sin ser código para el portón
+  assert.equal(gate.isCodeFile('/r/package.json'), false);
+  assert.equal(gate.isManifestFile('/r/package.json'), true);
+  assert.equal(gate.isManifestFile('/r/node_modules/x/package.json'), false, 'el de una dependencia no es del repo');
+});
+
+test('T30 Freno_GestoresDePaquetes_Pasan', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of ['npm install', 'npm ci', 'npm update lodash', 'pnpm add x', 'yarn add x', 'dotnet add package X', 'dotnet restore', 'npm install 2>&1 | tail -5']) {
+      assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [] }), null, cmd);
+    }
+  });
+});
+
+test('T31 Freno_InterpreteConDestinoArmado_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [
+      `node -e "const fs=require('fs'); const p='src/a.ts'; fs.writeFileSync(p, 'x')"`,
+      `node -e "const fs=require('fs'),path=require('path'); fs.writeFileSync(path.join('src','a.ts'), 'x')"`,
+      `python3 -c "f='src/a.py'; open(f,'w').write('x')"`,
+    ]) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+    assert.equal(bash.handle(ev(`node -e "require('fs').writeFileSync('/tmp/fuera-893.ts','x')"`), { stateDir, installedRoots: [] }), null, 'literal fuera del repo');
+    // lo que se sabe sin ejecutar (medido con los comandos reales: los más comunes)
+    for (const cmd of [
+      `node -e "const f='/tmp/fuera-893/x.ts'; require('fs').writeFileSync(f,'x')"`,
+      `node -e "const p = 'notas.md'; require('fs').writeFileSync(p, 'x')"`,
+      `node -e "require('fs').writeFileSync(process.argv[1]+'/findings.json','[]')" .advisors/x`,
+      `node -e 'const fs=require("fs"); const f=process.argv[1]; fs.writeFileSync(f, "x")' specs/story-9.9.md`,
+      `S=specs/story-9.9.md; python3 - "$S" <<'PY'\nimport sys\np=sys.argv[1]\nopen(p,'w').write('x')\nPY`,
+      `node -e 'const fs=require("fs");const [s,m]=process.argv.slice(1); fs.writeFileSync(s, "x")' specs/story-9.9.md /tmp/lista.md`,
+      `python3 -c "import sys; a, b = sys.argv[1:]; open(a,'w').write('x')" notas.md otra.md`,
+    ]) assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [] }), null, cmd);
+    assert.ok(INVISIBLE.test((bash.handle(ev(`node -e "require('fs').writeFileSync(d+'/a.ts','x')"`), { stateDir, installedRoots: [] }) || {}).block || ''), 'cola con extensión de código');
+    assert.ok(INVISIBLE.test((bash.handle(ev(`node -e 'const f=process.argv[1]; require("fs").writeFileSync(f, "x")' src/a.ts`), { stateDir, installedRoots: [] }) || {}).block || ''), 'el argumento es código del repo');
+    assert.ok(INVISIBLE.test((bash.handle(ev(`perl -e 'open(my $fh, ">", $ARGV[0]); print $fh "x"' src/a.ts`), { stateDir, installedRoots: [] }) || {}).block || ''), 'perl -e: el argumento es código');
+    assert.ok(INVISIBLE.test((bash.handle(ev(`perl -e 'my $d = shift; open(my $fh, ">", "$d/a.ts")'`), { stateDir, installedRoots: [] }) || {}).block || ''), 'perl -e con destino armado');
+    assert.ok(INVISIBLE.test((bash.handle(ev(`python3 -c "import sys; a, b = sys.argv[1:]; open(a,'w').write('x')" src/a.py otra.md`), { stateDir, installedRoots: [] }) || {}).block || ''), 'el primer argumento es código');
+  });
+  // el escape del dev deja pasar y deja su línea en gates.log
+  conEnv({ ...SIN_REGISTRO, TYCON_LEDGER_VISIBLE: 'off' }, () => {
+    assert.equal(bash.handle(ev(`node -e "const p=x; require('fs').writeFileSync(p,'1')"`), { stateDir, installedRoots: [] }), null);
+  });
+  const escapes = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((g) => g.status === 'escaped');
+  assert.equal(escapes.length, 1);
+  conEnv(SIN_REGISTRO, () => {
+  });
+  // con la corrida cerrada, el destino armado no frena: el carril no cambia
+  const cerrada = corridaAbierta({ pendiente: [] });
+  conEnv(SIN_REGISTRO, () => {
+    const cmd = `node -e "const p='src/a.ts'; require('fs').writeFileSync(p,'x')"`;
+    assert.equal(bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: cerrada.repo, tool_input: { command: cmd } }, { stateDir: cerrada.stateDir, installedRoots: [] }), null);
+  });
+});
+
+test('T32 Freno_BorrarYDeshacer', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
+    for (const cmd of ['rm package-lock.json', 'rm -f src/a.ts', 'git checkout -- package.json', 'git restore src/a.ts',
+      'git rm src/a.ts', 'git restore --source HEAD~1 src/a.ts', 'rm -rf node_modules src/a.ts 2>/dev/null']) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block) && /Edit|Write/.test(b.block), cmd);
+    }
+    assert.equal(bash.handle(ev('rm -rf node_modules'), { stateDir, installedRoots: [] }), null);
+    assert.equal(bash.handle(ev('rm notas.md'), { stateDir, installedRoots: [] }), null, 'un .md no es código');
+    assert.equal(bash.handle(ev('git restore --staged src/a.ts'), { stateDir, installedRoots: [] }), null, 'sólo el índice: el archivo no cambia');
+    assert.equal(bash.handle(ev('git rm --cached src/a.ts'), { stateDir, installedRoots: [] }), null, 'sólo el índice');
+    assert.equal(bash.handle(ev('git checkout feat/otra'), { stateDir, installedRoots: [] }), null, 'cambiar de rama no es deshacer un archivo');
+    assert.equal(bash.handle(ev('rm /tmp/fuera-893.ts'), { stateDir, installedRoots: [] }), null, 'fuera del repo');
+  });
+  const lineas = fs.readFileSync(path.join(stateDir, 'console-writes', 's1.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(lineas.some((l) => l.path === path.join(repo, 'node_modules') && l.kind === 'delete'), JSON.stringify(lineas));
+  // borrar un archivo que git no sigue (uno de prueba que la sesión creó) pasa y queda anotado
+  const conGit = corridaAbierta();
+  execFileSync('git', ['-C', conGit.repo, 'init', '-q']);
+  fs.writeFileSync(path.join(conGit.repo, 'src', 'probe.js'), 'x\n');
+  conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
+    assert.equal(bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: conGit.repo, tool_input: { command: 'rm src/probe.js' } }, { stateDir: conGit.stateDir, installedRoots: [] }), null);
+  });
+  const anotadas = fs.readFileSync(path.join(conGit.stateDir, 'console-writes', 's1.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(anotadas.some((l) => l.path === path.join(conGit.repo, 'src', 'probe.js') && l.kind === 'delete'), 'queda anotado');
+  // con la corrida cerrada, borrar código pasa como hoy
+  const cerrada = corridaAbierta({ pendiente: [] });
+  conEnv(SIN_REGISTRO, () => {
+    assert.equal(bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: cerrada.repo, tool_input: { command: 'rm src/a.ts' } }, { stateDir: cerrada.stateDir, installedRoots: [] }), null);
+  });
+});
+
+test('T33 Freno_PowerShell_FormasNuevas', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'PowerShell', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [
+      'Remove-Item package-lock.json',
+      'Remove-Item -Path src/a.ts -Force',
+      'del package-lock.json',
+      'ri src/a.ts',
+      "pwsh -Command \"Set-Content $p 'x'\"",
+      'git checkout -- package.json',
+    ]) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+    // un parámetro con valor no es una ruta: sólo el archivo se anota
+    assert.deepEqual(bash.destinosBorrados('Remove-Item -ErrorAction SilentlyContinue -Filter *.log out').map((d) => d.raw), ['out']);
+  });
+});
+
+// las formas que el pase adversarial encontró escapándose (o frenando de más), con un repo de git de verdad
+function corridaConGit() {
+  const c = corridaAbierta();
+  const g = (...a) => execFileSync('git', ['-C', c.repo, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@noreply', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@noreply', GIT_AUTHOR_DATE: '2026-10-22T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-22T10:00:00Z' } });
+  fs.rmSync(path.join(c.repo, '.git'), { recursive: true, force: true });
+  g('init', '-q');
+  fs.mkdirSync(path.join(c.repo, 'src', 'b'), { recursive: true });
+  fs.mkdirSync(path.join(c.repo, 'node_modules', 'x'), { recursive: true });
+  for (const f of ['src/a.ts', 'src/b/c.ts', 'src/a b.ts', 'package.json']) fs.writeFileSync(path.join(c.repo, f), 'x\n');
+  g('add', 'src', 'package.json');
+  g('commit', '-q', '-m', 'base');
+  return c;
+}
+
+test('T32 Freno_BorrarYDeshacer_FormasQueSeEscapaban', () => {
+  const { stateDir, repo } = corridaConGit();
+  const ev = (command, cwd = repo) => ({ tool_name: 'Bash', session_id: 's1', cwd, tool_input: { command } });
+  conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
+    for (const [cmd, cwd] of [
+      [`git -C ${repo} rm src/a.ts`, os.tmpdir()],
+      [`git -C ${repo} checkout -- src/a.ts`, os.tmpdir()],
+      [`git -C ${repo} restore src/a.ts`, repo],
+      ['/bin/rm src/a.ts'], ['\\rm src/a.ts'], ['command rm src/a.ts'], ['env X=1 rm src/a.ts'], ['timeout 5 rm src/a.ts'],
+      ['(rm src/a.ts)'], ['sudo -n rm src/a.ts'],
+      ['git checkout HEAD src/a.ts'], ['git checkout src/a.ts'],
+      ['rm -r src/b'], ['git rm -r src'], ['git restore .'], ['git checkout -- .'],
+      ['rm "src/a b.ts"'],
+    ]) {
+      const b = bash.handle(ev(cmd, cwd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+    // borrar código y node_modules juntos frena, y como el comando no corre, no anota nada
+    const antes = fs.existsSync(path.join(stateDir, 'console-writes', 's1.jsonl'));
+    assert.ok(bash.handle(ev('rm -rf node_modules src/a.ts'), { stateDir, installedRoots: [] }));
+    assert.equal(fs.existsSync(path.join(stateDir, 'console-writes', 's1.jsonl')), antes, 'un comando frenado no anota borrados');
+    // node_modules (git no sigue nada adentro) y cambiar de rama pasan
+    assert.equal(bash.handle(ev('rm -rf node_modules'), { stateDir, installedRoots: [] }), null);
+    assert.equal(bash.handle(ev('git checkout -b feat/x'), { stateDir, installedRoots: [] }), null);
+    assert.equal(bash.handle(ev('git checkout main'), { stateDir, installedRoots: [] }), null);
+    assert.equal(bash.handle(ev('git commit -m "rm src/a.ts; git restore ."'), { stateDir, installedRoots: [] }), null, 'texto entre comillas no es un comando');
+    assert.ok(bash.handle(ev('git restore --staged --worktree src/a.ts'), { stateDir, installedRoots: [] }), 'con --worktree el archivo cambia');
+    assert.equal(bash.handle(ev('git checkout --orphan nueva'), { stateDir, installedRoots: [] }), null);
+  });
+  // sin poder preguntarle a git, una carpeta frena del lado seguro; node_modules igual pasa
+  const sinGit = corridaAbierta();
+  fs.mkdirSync(path.join(sinGit.repo, 'src', 'b'), { recursive: true });
+  conEnv(SIN_REGISTRO, () => {
+    const e = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: sinGit.repo, tool_input: { command } });
+    assert.match((bash.handle(e('rm -r src/b'), { stateDir: sinGit.stateDir, installedRoots: [] }) || {}).block || '', /no pude preguntarle a git/);
+    assert.equal(bash.handle(e('rm -rf node_modules dist'), { stateDir: sinGit.stateDir, installedRoots: [] }), null);
+  });
+  // ninguna forma del comando traba el freno (cada parte del lector tiene una sola lectura posible)
+  for (const cmd of [`node ${'--a '.repeat(40)}x`, `node -e "${'\\'.repeat(20000)}`, `python3 -c '${"'".repeat(5000)}`]) {
+    const t0 = Date.now();
+    bash.destinosArmados(cmd);
+    assert.ok(Date.now() - t0 < 500, `tardó de más: ${cmd.slice(0, 30)}`);
+  }
+});
+
+test('T31 Freno_InterpreteConDestinoArmado_FormasQueSeEscapaban', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of [
+      // el script por la entrada estándar, o con opciones antes de -e
+      `python3 - <<'PY'\nimport sys\nd = sys.argv[0]\nopen(d + '/a.py', 'w').write('x')\nPY`,
+      `node <<'JS'\nconst fs = require('fs'); const p = process.cwd(); fs.writeFileSync(p, 'x')\nJS`,
+      `node --no-warnings -e "const fs=require('fs'); fs.writeFileSync(p,'x')"`,
+      // un destino armado por una llamada anidada
+      `python3 -c "import os; open(os.path.join(d,'x.ts'),'w').write('x')"`,
+      `python3 -c "from pathlib import Path; Path(d).write_text('x')"`,
+      // un literal con algo concatenado después no es un literal
+      `node -e "const n='a.ts'; const p='src/'+n; require('fs').writeFileSync(p,'x')"`,
+      // con el -- de node, process.argv[1] es la palabra que sigue
+      `node -e "require('fs').writeFileSync(process.argv[1],'x')" -- src/a.ts`,
+    ]) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+    for (const cmd of [
+      // lo que otro comando sólo menciona no es un script
+      `git commit -m "node -e: writeFileSync(p) ahora frena"`,
+      `cat > notas.md <<'EOF'\nnode -e "fs.writeFileSync(p, x)"\nEOF`,
+      // python sin modo es lectura
+      `python3 -c "import sys; print(open(sys.argv[1]).read())" src/a.ts`,
+      // rutas que salen sólo de literales (medido: los más comunes de la segunda medición)
+      `python3 - <<'E'\nfor p in ['specs/a.yaml', 'specs/b.md']:\n    s = open(p).read()\n    open(p, 'w').write(s)\nE`,
+      `python3 - <<'E'\nimport os\np = os.path.expanduser('~/.tycon/x.json')\nopen(p, 'w').write('{}')\nE`,
+      `node -e "const path=require('path'); const p = path.join('specs', 'a.md'); require('fs').writeFileSync(p, 'x')"`,
+      `node - <<'E'\nconst fs = require('fs');\nfunction edit(p, pares) { let t = fs.readFileSync(p, 'utf8'); fs.writeFileSync(p, t); }\nedit('specs/a.md', []);\nedit("guides/b.md", []);\nE`,
+    ]) assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [] }), null, cmd);
+    for (const cmd of [
+      `python3 - <<'E'\nfor p in ['notas.md', 'src/a.ts']:\n    open(p, 'w').write('x')\nE`,
+      `python3 - <<'E'\ndef rep(p, pares):\n    open(p, 'w').write('x')\nrep('notas.md', [])\nrep(otro, [])\nE`,
+    ]) assert.ok(INVISIBLE.test((bash.handle(ev(cmd), { stateDir, installedRoots: [] }) || {}).block || ''), `una lista con código frena: ${cmd}`);
+  });
+});
