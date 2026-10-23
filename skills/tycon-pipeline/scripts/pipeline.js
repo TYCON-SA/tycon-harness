@@ -270,6 +270,18 @@ function computeGitignoreNeeds(probe) {
   return { append, notices };
 }
 
+/**
+ * PIPE-C2 · el texto que se agrega al final de un `.gitignore`, con el fin de línea del archivo: el de su primer salto
+ * (CRLF o LF); vacío o sin saltos, LF. Un archivo sin salto final recibe uno antes. Un LF metido en un archivo CRLF
+ * hace que git en Windows lo vea reescrito entero.
+ */
+function gitignoreAppendText(actual, lineas) {
+  const primero = /\r?\n/.exec(actual);
+  const eol = primero ? primero[0] : '\n';
+  const antes = actual === '' || /\n$/.test(actual) ? '' : eol;
+  return antes + lineas.join(eol) + eol;
+}
+
 /** El `probe` real: le pregunta a git. 0 = ignorada · 1 = no · cualquier otra cosa = no sé. */
 function gitIgnoraProbe(repo) {
   // 🔴 `execFileSync` NO está en el scope del módulo (cada función lo requiere local). Sin esta
@@ -3312,11 +3324,13 @@ function computeStart(args) {
       const { append, notices } = computeGitignoreNeeds(gitIgnoraProbe(r));
       const donde = r === repo ? '' : ` (repo de la story: ${r})`;
       if (append.length) {
-        fs.appendFileSync(giPath, (gi.endsWith('\n') || gi === '' ? '' : '\n') + append.join('\n') + '\n', 'utf8');
+        fs.appendFileSync(giPath, gitignoreAppendText(gi, append), 'utf8');
         actions.push(`PIPE-C2: agregado a .gitignore${donde}: ${append.filter((l) => !l.startsWith('#')).join(', ')}`);
       }
       for (const n of notices) actions.push(donde ? `${n}${donde}` : n);
-    } catch { /* ignore */ }
+    } catch (e) {
+      actions.push(`PIPE-C2: no pude agregar al .gitignore de ${r} (${e.code || String(e.message || e).split('\n')[0]}): revisalo a mano`);
+    }
   }
   if (evid.crossRepo) {
     actions.push(`EVIDENCIA-EN-REPO-DE-LA-STORY: la story vive en ${evid.storyRepo} y el código en ${repo} → `
@@ -3339,8 +3353,15 @@ function computeStart(args) {
     }
   }
 
+  // Lo que falta antes de arrancar: sale con pausas y sin ellas, y no frena.
+  const faltasNoMedidas = [];
+  const faltas = computeMissingBeforeStart({ repo, fm, noMedido: faltasNoMedidas });
+  const faltasOut = faltas.length ? { missing_before_start: faltas } : {};
+  if (faltas.length) actions.push(missingBeforeStartLine(faltas));
+  if (faltasNoMedidas.length) actions.push(`Falta antes de arrancar: no pude mirar ${faltasNoMedidas.join(' ni ')}; no es «está todo»`);
+
   if (pauses.length) {
-    return { ready: false, story_id: storyId, branch, pauses, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
+    return { ready: false, story_id: storyId, branch, pauses, ...faltasOut, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
   }
 
   // el tamaño de la corrida y su tiempo estimado, ANTES de lanzar nada; quedan en el marcador.
@@ -3437,6 +3458,7 @@ function computeStart(args) {
       ? { models: { helpers: MODELOS.resolveHelpers({ org: args.orgModels && args.orgModels.declared ? args.orgModels.data : null, requests: args.modelRequests }) } }
       : {}),
     tooling: computeToolingExpected(repo),
+    ...faltasOut,
     actions_done: actions,
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
     spec_stale: stale,
@@ -3509,6 +3531,7 @@ function recortarStart(result) {
     const missing = result.tooling.expected.filter((x) => (x.kind === 'skill' || x.kind === 'manifest') && x.present === false);
     if (missing.length) breve.skills_faltantes = missing.map((x) => `${x.name} → ${x.action}`);
   }
+  if (result.missing_before_start) breve.missing_before_start = result.missing_before_start;
   if (result.e2e_gap) breve.e2e_gap = result.e2e_gap;
   if (result.spec_stale) breve.spec_stale = result.spec_stale;
   breve.acciones = result.actions_done || [];
@@ -3766,6 +3789,105 @@ function harnessTimeTool(opts = {}) {
   if (c.value === 'none') return { chosen: false, reason: 'ninguna herramienta de horas elegida (integrations.timeTracking: none)' };
   if (!c.value) return null;
   return { chosen: false, reason: `ninguna herramienta de horas: ${c.warning}` };
+}
+
+/**
+ * Lo que la ejecución va a necesitar y esta máquina no tiene, antes de arrancar: `[{ id, falta, sin_eso, como }]`, vacía
+ * si está todo. Tres cosas: el programa de la plataforma del pedido de trabajo (la primera palabra de los `rawCommands`
+ * del conector que elige la capa: el núcleo no nombra herramientas), con la misma condición con que `next` pide esa
+ * parte; la configuración de BMAD del repo (`_bmad/bmm/config.yaml`, sin la que `bmad-dev-story` se frena); y el
+ * servidor MCP de la herramienta de horas elegida, donde lo lee Claude Code. Un detector que no puede preguntar no
+ * inventa una falta: deja su motivo en `noMedido`. Nunca frena.
+ * @param {object} o repo · fm (frontmatter de la historia) · env · home · noMedido (lista donde quedan los detectores
+ *   que no pudieron mirar, con su motivo)
+ */
+function computeMissingBeforeStart({ repo, fm, env = process.env, home = os.homedir(), noMedido = [] }) {
+  const out = [];
+  const motivo = (e) => (e && e.code) || String((e && e.message) || e).split('\n')[0];
+
+  try {
+    const lib = path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'platform');
+    if (require(path.join(lib, 'work-item-field.js')).idOf(fm)) {
+      const platform = require(path.join(lib, 'platform.js'));
+      const elegida = platform.choose('work-item.update', { env, home });
+      const m = elegida.ok ? platform.connector(elegida.value.connector, env).manifest : null;
+      const prog = m && m.rawCommands && m.rawCommands.length ? String(m.rawCommands[0]).trim().split(/\s+/)[0] : null;
+      if (prog && !require('./lib/portable-tools.js').findBinary(prog, { env })) {
+        out.push({
+          id: 'plataforma',
+          falta: `\`${prog}\` en el PATH (lo usa el conector de ${m.label} para el pedido de trabajo de la historia)`,
+          sin_eso: 'la parte del pedido de trabajo se declara con `marker.js start-warning ado "<motivo>"` y el pipeline sigue',
+          como: `instalá \`${prog}\`, abrí una terminal nueva y volvé a correr start`,
+        });
+      }
+    }
+  } catch (e) { noMedido.push(`el programa de la plataforma (${motivo(e)})`); }
+
+  if (!fs.existsSync(path.join(repo, '_bmad', 'bmm', 'config.yaml'))) {
+    out.push({
+      id: 'bmad',
+      falta: `la configuración de BMAD del repo (\`_bmad/bmm/config.yaml\` en ${repo})`,
+      sin_eso: 'el plan lo arma el orquestador, sin BMAD: el skill de BMAD se frena sin esa configuración',
+      como: 'corré el skill `bmad-init` en el repo',
+    });
+  }
+
+  // En Codex los servidores viven en su propia configuración, que despliega el instalador: acá no se mira.
+  const esCodex = !!env.CODEX_SESSION_ID && !env.CLAUDE_CODE_SESSION_ID;
+  try {
+    const h = esCodex ? null : harnessWorkSignal({ env, home });
+    let c = null;
+    if (!esCodex) {
+      if (!h) noMedido.push('el servidor MCP de la herramienta de horas (no encontré el evento de trabajo del arnés)');
+      else if (h.loadError) noMedido.push(`el servidor MCP de la herramienta de horas (el evento de trabajo no carga: ${h.loadError})`);
+      else {
+        c = h.ws.chosen({ env, home });
+        if (!c.config) { noMedido.push(`el servidor MCP de la herramienta de horas (${c.warning || 'la configuración no se lee'})`); c = null; }
+      }
+    }
+    const server = c && c.manifest && c.manifest.mcp ? c.manifest.mcp.server : null;
+    // Un archivo que no está no declara nada; uno que está y no se lee no dice que falte.
+    const leer = (p) => {
+      let texto;
+      try { texto = fs.readFileSync(p, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return {}; throw new Error(`${path.basename(p)}: ${e.code || e.message}`); }
+      try { return JSON.parse(texto); } catch (e) { throw new Error(`${path.basename(p)} no es JSON válido`); }
+    };
+    if (server) {
+      const cfg = leer(path.join(home, '.claude.json')) || {};
+      const delRepo = leer(path.join(repo, '.mcp.json')) || {};
+      // Claude Code guarda cada proyecto con la ruta real, con `/` en Windows, y la del repo principal en un worktree.
+      const clave = (p) => { const s = String(p).replace(/\\/g, '/').replace(/\/+$/, ''); return process.platform === 'win32' ? s.toLowerCase() : s; };
+      const candidatas = new Set([path.resolve(repo)]);
+      try { candidatas.add(fs.realpathSync.native(repo)); } catch { /* sin ruta real: queda la resuelta */ }
+      try {
+        const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        if (path.basename(comun) === '.git') {
+          candidatas.add(path.dirname(comun));
+          try { candidatas.add(fs.realpathSync.native(path.dirname(comun))); } catch { /* idem */ }
+        }
+      } catch { /* sin git no hay repo principal que buscar */ }
+      const buscadas = new Set([...candidatas].map(clave));
+      const proyectos = cfg.projects && typeof cfg.projects === 'object' ? cfg.projects : {};
+      const deProyecto = Object.keys(proyectos).filter((k) => buscadas.has(clave(k))).map((k) => proyectos[k] && proyectos[k].mcpServers);
+      const declarado = [cfg.mcpServers, ...deProyecto, delRepo.mcpServers]
+        .some((s) => s && typeof s === 'object' && Object.prototype.hasOwnProperty.call(s, server));
+      if (!declarado) {
+        out.push({
+          id: 'horas',
+          falta: `el servidor MCP \`${server}\` de ${c.manifest.label}, la herramienta de horas de la organización`,
+          sin_eso: 'la parte de horas se declara con `marker.js start-warning time-tracking "<motivo>"` y el pipeline sigue sin registrar',
+          como: c.manifest.offer && c.manifest.offer.needs ? `${c.manifest.offer.needs}; registrado, abrí una sesión nueva` : 'registrá el servidor en Claude Code y abrí una sesión nueva',
+        });
+      }
+    }
+  } catch (e) { noMedido.push(`el servidor MCP de la herramienta de horas (${motivo(e)})`); }
+
+  return out;
+}
+
+/** La línea de las acciones del arranque con lo que falta, o null. */
+function missingBeforeStartLine(faltas) {
+  return faltas.length ? `Falta antes de arrancar: ${faltas.map((f) => `${f.falta} → ${f.sin_eso}; ${f.como}`).join(' · ')}` : null;
 }
 
 /** Las horas para `CompletedWork` del pedido después de un `stop`: las que tenía más los segundos informados, o null. */
@@ -7108,7 +7230,7 @@ module.exports = {
   orgModels,
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
-  completedWorkHours, harnessTimeTool,
+  completedWorkHours, harnessTimeTool, gitignoreAppendText, computeMissingBeforeStart,
   // tests/unit.test.js «T43 ThirdPartyManifestPath_*».
   thirdPartyManifestPath,
   // El hook on-advisor-run.js escribe el review-roster en el MISMO run dir que usa el pipeline:
