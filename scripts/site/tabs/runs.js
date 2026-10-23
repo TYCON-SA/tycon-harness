@@ -354,6 +354,8 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     if (!g || g.deps.some((d, i) => d !== deps[i])) {
       const reglas = access.crearReglas({ config, modelo: modeloFondo, personas });
       const vis = access.filtrarCorridas(M, ctx.quien, reglas);
+      // el grupo del filtro, con los productos de repos.json, sobre los nombres ya unificados de lo que ve
+      if (vis) runs.agruparRepos(vis.corridas, personas && personas.repos);
       // la última bajada no terminó entera: se sirve el último armado entero, y la respuesta dice que puede faltar alguna
       if (vis && !completo) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), parcial: true, ...(ctx.quien.rol === 'maintainer' ? { incompleto: true } : {}) };
       g = { deps, vis, salidas: {} };

@@ -403,7 +403,8 @@ function limpio(txt, alternativa) {
  *  - sin ruta, `.` o una carpeta temporal pelada → null (sin registrar);
  *  - un clon del scratchpad de una sesión (`…/claude-NNN/-Users-u-SourceCode-<repo>/…`) → el repo de esa
  *    sesión, que es el que se clonó;
- *  - el sufijo de worktree o de clon (`--wt-x`, `--merge`, `--7.2`) no es parte del nombre;
+ *  - el sufijo de worktree o de clon (`--wt-x`, `--merge`, `--7.2`, `-wt-127`, `-wt-mant`) no es parte del nombre, y la
+ *    carpeta de implementación de un commit (`c825a2c-impl`) se salta como una genérica;
  *  - una carpeta genérica (`Codigo`, `src`…) no es el repo ni lo distingue: se salta;
  *  - lo que cuelga de una carpeta temporal no tiene producto adelante (`/tmp/atk-vector4/CeiboBackend` →
  *    `CeiboBackend`);
@@ -422,10 +423,12 @@ function producto(repoPath) {
     return cod || null;
   }
   const segs = ruta.split(/[\\/]/).filter(Boolean);
-  const temporal = /^(private|tmp|var)$/.test(segs[0] || '') && segs.includes('tmp');
+  const temporal = /^(private|tmp|var)$/.test(segs[0] || '') && (segs.includes('tmp') || (segs.includes('var') && segs.includes('folders')));
   const iHome = segs.findIndex((x, i) => i <= 1 && (x === 'Users' || x === 'home'));
-  const limpio = (x) => String(x || '').replace(/--.*$/, '');
-  const esGen = (x) => GENERICAS.has(limpio(x).toLowerCase());
+  // `--wt-x`, `--merge`, `--7.2` y los worktrees numerados o con nombre (`<repo>-wt-127`, `<repo>-wt-mant`)
+  const limpio = (x) => String(x || '').replace(/--.*$/, '').replace(/(.)-wt-.*$/, '$1');
+  // la carpeta de implementación de un commit (`c825a2c-impl`) no es un repo: cuenta la que la contiene
+  const esGen = (x) => GENERICAS.has(limpio(x).toLowerCase()) || /^[0-9a-f]{7,40}-impl$/i.test(String(x || ''));
   let i = segs.length - 1;
   while (i > 0 && esGen(segs[i])) i -= 1;
   const repo = limpio(segs[i]);
@@ -439,8 +442,12 @@ function producto(repoPath) {
 }
 
 /** Junta el mismo repo escrito distinto: mayúsculas (`MIRepo`/`MiRepo`) y el nombre
- *  suelto con su ÚNICO par con producto (`CeiboBackend` → `Ceibo/CeiboBackend`). Gana la forma más usada. */
+ *  suelto con su ÚNICO par con producto (`CeiboBackend` → `Ceibo/CeiboBackend`). Gana la forma más usada. Las del
+ *  laboratorio, entre ellas. */
 function unificarProductos(corridas) {
+  // el laboratorio se unifica aparte: el nombre de un ensayo no se le pega a un repo de verdad, ni al revés
+  const lab = corridas.filter((c) => c.lab), resto = corridas.filter((c) => !c.lab);
+  if (lab.length && resto.length) { unificarProductos(lab); unificarProductos(resto); return; }
   const cuenta = {};
   for (const c of corridas) if (c.producto) cuenta[c.producto] = (cuenta[c.producto] || 0) + 1;
   const clave = (p) => p.toLowerCase();
@@ -458,6 +465,59 @@ function unificarProductos(corridas) {
     if (pares.length === 1) for (const p of formas[k]) canon[p] = canon[formas[pares[0]][0]];
   }
   for (const c of corridas) if (c.producto) c.producto = canon[c.producto] || c.producto;
+}
+
+/**
+ * Las carpetas de LABORATORIO: pruebas y ensayos, no trabajo de un producto. Van juntas en su grupo del filtro, aparte de
+ * los productos, porque mezcladas inflan los repos reales con ejecuciones de juguete. Manda la RUTA de la ejecución, no
+ * su `.git`: el clon descartable de una sesión trae el remoto de un repo de verdad y sigue siendo un ensayo.
+ *  - una carpeta temporal (`/tmp`, `/var/folders` y `/var/tmp`, con `/private` adelante o sin él, `%TEMP%`): los clones y laboratorios de prueba;
+ *  - el scratchpad de una sesión (`…/claude-NNN/…`): el clon descartable de esa sesión;
+ *  - una carpeta `acme` o `acme-*`: el nombre inventado de los ejemplos y las pruebas;
+ *  - una carpeta `laboratorio`, `lab` o `lab-*`: los laboratorios de máquina.
+ */
+const LABORATORIO = [
+  /^(?:\/private)?\/tmp(?:\/|$)/,
+  /^(?:\/private)?\/var\/(?:folders|tmp)\//,
+  /[\\/]AppData[\\/]Local[\\/]Temp(?:[\\/]|$)/i,
+  /[\\/]claude-\d+[\\/]/,
+  /(?:^|[\\/])acme(?:-[^\\/]*)?(?:[\\/]|$)/i,
+  /(?:^|[\\/])(?:laboratorio|lab|lab-[^\\/]*)(?:[\\/]|$)/i,
+];
+const esLaboratorio = (repoPath) => { const r = String(repoPath || '').trim(); return Boolean(r) && LABORATORIO.some((re) => re.test(r)); };
+
+const decodificar = (s) => { try { return decodeURIComponent(String(s)); } catch (_) { return String(s); } };
+const claveRepo = (s) => decodificar(s).trim().toLowerCase();
+
+/**
+ * El grupo del filtro de cada ejecución (`c.grupo`): «laboratorio» si su carpeta es de prueba; si no, el producto de
+ * `repos.json` (`repos`: `{ producto, ruta, ado }`). El cruce, en orden: el remoto contra `ado`, el nombre contra
+ * `ruta`, y un nombre suelto contra el último tramo de una ÚNICA `ruta` (`FrontEnd` suelto es de varios: no cruza; `Otro/Backend`
+ * no cruza con `ClienteA/Backend`). Un repo
+ * que no está queda con `grupo: null`, sin producto inventado. Se puede volver a correr: lee `lab`, `remoto` y
+ * `producto`, y sólo escribe `grupo`.
+ */
+function agruparRepos(corridas, repos) {
+  const lista = (Array.isArray(repos) ? repos : []).filter((r) => r && typeof r === 'object' && r.activo !== false && typeof r.producto === 'string' && r.producto.trim());
+  const porAdo = {}, porRuta = {}, porTramo = {};
+  for (const r of lista) {
+    if (r.ado) porAdo[claveRepo(r.ado)] = r.producto;
+    if (r.ruta) {
+      const k = claveRepo(r.ruta);
+      // dos entradas con la misma ruta y distinto producto: no se sabe cuál es, no cruza
+      porRuta[k] = porRuta[k] === undefined || porRuta[k] === r.producto ? r.producto : null;
+      const t = claveRepo(String(r.ruta).split('/').pop());
+      porTramo[t] = porTramo[t] === undefined ? r.producto : null;
+    }
+  }
+  for (const c of corridas) {
+    if (c.lab) { c.grupo = 'laboratorio'; continue; }
+    const nombre = c.producto ? claveRepo(c.producto) : '';
+    c.grupo = (c.remoto && porAdo[claveRepo(c.remoto)])
+      || (nombre && porRuta[nombre])
+      || (nombre && !nombre.includes('/') && porTramo[nombre])
+      || null;
+  }
 }
 
 function semanaIso(iso) {
@@ -695,10 +755,14 @@ function modeloDeCorrida(d, nombresPasos) {
   validador.re_loops_decididos = decisiones.length;
 
   const completados = Array.isArray(m.stepsCompleted) ? m.stepsCompleted : [];
+  const rr = d.repo && typeof d.repo === 'object' ? d.repo : null;
   const cierre = cierreDeCorrida(d);
   return {
     story: m.storyId ? String(m.storyId) : null,
-    producto: producto(m.repoPath),
+    // con el repo real del volcado (las ejecuciones desde la story del filtro de repos) manda ése; si no, la carpeta
+    producto: producto(rr && typeof rr.path === 'string' && !esLaboratorio(m.repoPath) ? rr.path : m.repoPath),
+    lab: esLaboratorio(m.repoPath),
+    remoto: rr && typeof rr.remote === 'string' && /^[^\s@:]{1,200}$/.test(rr.remote) ? rr.remote : null,
     inicio: Number.isFinite(ini) ? new Date(ini).toISOString() : null,
     semana: Number.isFinite(ini) ? semanaIso(new Date(ini).toISOString()) : null,
     dur_ms: (Number.isFinite(ini) && Number.isFinite(fin) && fin > ini) ? fin - ini : null,
@@ -1152,6 +1216,7 @@ function modelo(runsDir, opts = {}) {
   const reg = leerRegistro(runsDir, pasos.nombres, opts);
   // El sitio unifica los productos sobre lo que cada persona ve, nunca sobre todo
   if (!opts.sinUnificar) unificarProductos(reg.corridas);
+  agruparRepos(reg.corridas, opts.repos);
   // Qué máquinas cubre lo que se leyó, y cuántas corridas de cada una: el sello sale de ACÁ, no de una
   // bandera. Una sola máquina y es ésta → «esta máquina», como siempre.
   let maquinas = null;
@@ -1217,7 +1282,7 @@ const elegir = (o, claves) => (o && typeof o === 'object' ? Object.fromEntries(c
  */
 function paraLista(c) {
   return {
-    id: c.id, story: c.story, producto: c.producto, maquina: c.maquina === undefined ? null : c.maquina, maquina_motivo: c.maquina_motivo === undefined ? null : c.maquina_motivo,
+    id: c.id, story: c.story, producto: c.producto, grupo: c.grupo || null, maquina: c.maquina === undefined ? null : c.maquina, maquina_motivo: c.maquina_motivo === undefined ? null : c.maquina_motivo,
     inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, esquema: c.esquema === 2 ? 2 : 1, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, paso_en_curso: Number.isInteger(c.paso_en_curso) ? c.paso_en_curso : null, sin_pasos_anotados: c.sin_pasos_anotados === true, sin_cerrar: c.sin_cerrar === true,
     tramos: copiar(c.tramos), sin_marca: copiar(c.sin_marca),
     tiempos: elegir(c.tiempos, ['trabajo_ms', 'trabajo_medido', 'espera_humana_ms', 'espera_del_hilo_ms']),
@@ -2429,8 +2494,23 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var cuentaRepo = {};
   // Los combos van en orden alfabético (sin distinguir mayúsculas): se busca un nombre, no un ranking. Lo «sin…», al final.
   var alfabetico = function (a, b) { var sa = a.charAt(0) === '(' || a.indexOf('sin ') === 0, sb = b.charAt(0) === '(' || b.indexOf('sin ') === 0; return (sa - sb) || a.localeCompare(b, 'es', { sensitivity: 'base' }); };
-  C.forEach(function (c) { var r = c.producto || '(' + T('sinProducto') + ')'; cuentaRepo[r] = (cuentaRepo[r] || 0) + 1; });
-  elRepo.innerHTML = '<option value="">' + T('todos', { n: C.length }) + '</option>' + Object.keys(cuentaRepo).sort(alfabetico).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + ' (' + cuentaRepo[r] + ')</option>'; }).join('');
+  // Un grupo por producto, después los repos sin producto conocido y al final el laboratorio. El valor es el repo, como
+  // siempre (los enlaces guardados siguen andando); el del laboratorio lleva «laboratorio/» adelante, para no juntarse
+  // con el repo de verdad del mismo nombre.
+  var nombreRepo = function (c) { return c.producto || '(' + T('sinProducto') + ')'; };
+  var claveRepo = function (c) { return (c.grupo === 'laboratorio' ? 'laboratorio/' : '') + nombreRepo(c); };
+  var grupoRepo = {}, reposDeGrupo = {};
+  C.forEach(function (c) {
+    var k = claveRepo(c), g = c.grupo || '';
+    cuentaRepo[k] = (cuentaRepo[k] || 0) + 1;
+    if (!(k in grupoRepo)) { grupoRepo[k] = g; (reposDeGrupo[g] = reposDeGrupo[g] || []).push(k); }
+  });
+  var ordenGrupo = function (a, b) { var pa = a === 'laboratorio' ? 2 : a === '' ? 1 : 0, pb = b === 'laboratorio' ? 2 : b === '' ? 1 : 0; return (pa - pb) || alfabetico(a, b); };
+  var opcion = function (k) { var etiqueta = k.indexOf('laboratorio/') === 0 ? k.slice(12) : k; return '<option value="' + esc(k) + '">' + esc(etiqueta) + ' (' + cuentaRepo[k] + ')</option>'; };
+  elRepo.innerHTML = '<option value="">' + T('todos', { n: C.length }) + '</option>' + Object.keys(reposDeGrupo).sort(ordenGrupo).map(function (g) {
+    var etiqueta = g === 'laboratorio' ? T('laboratorio') : g === '' ? T('otrosRepos') : g;
+    return '<optgroup label="' + esc(etiqueta) + '">' + reposDeGrupo[g].sort(alfabetico).map(opcion).join('') + '</optgroup>';
+  }).join('');
   var cuentaMaq = {};
   if (elMaq) {
     C.forEach(function (c) { cuentaMaq[maqDe(c)] = (cuentaMaq[maqDe(c)] || 0) + 1; });
@@ -2466,7 +2546,9 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var FIJADA = { desde: false, hasta: false };
   if (fechaValida(qDesde)) { elDesde.value = qDesde; FIJADA.desde = true; }
   if (fechaValida(qHasta)) { elHasta.value = qHasta; FIJADA.hasta = true; }
+  // un enlace guardado a un repo que ahora es del laboratorio lo sigue mostrando
   if (esta(cuentaRepo, qRepo)) elRepo.value = qRepo;
+  else if (qRepo && esta(cuentaRepo, 'laboratorio/' + qRepo)) elRepo.value = 'laboratorio/' + qRepo;
   if (elMaq && esta(cuentaMaq, qMaq)) elMaq.value = ENLACE.maquina = qMaq;
   if (typeof window !== 'undefined') window.__enlace = function () { return ENLACE; };
   if (SOLO !== null && typeof document !== 'undefined' && document.body && document.body.classList) document.body.classList.add('solo');
@@ -2475,7 +2557,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var f = diaLocal(c.inicio);
     if (elDesde.value && f && f < elDesde.value) return false;
     if (elHasta.value && f && f > elHasta.value) return false;
-    if (elRepo.value && (c.producto || '(' + T('sinProducto') + ')') !== elRepo.value) return false;
+    if (elRepo.value && claveRepo(c) !== elRepo.value) return false;
     if (elMaq && elMaq.value && maqDe(c) !== elMaq.value) return false;
     if (elFc.checked && c.consumo.estado !== 'medido') return false;
     if (elFf.checked && !c.llego_al_final) return false;
@@ -2679,6 +2761,20 @@ function dentroDelRepoDelEquipo(ruta, dep = { path, fs, raiz: RAIZ }) {
   return r === b || r.startsWith(b.endsWith(P.sep) ? b : b + P.sep);
 }
 
+/**
+ * La lista de productos del equipo (`repos.json` del clon de operaciones que declara la máquina), para agrupar el filtro.
+ * Sin clon, o sin lista legible: null, y los repos van sin producto. Nunca tira.
+ */
+function reposDelEquipo() {
+  try {
+    const lib = path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js');
+    const clon = require('../../lib/night-data.js').operationsClone(require(lib));
+    if (!clon.path || clon.problem) return null;
+    const doc = JSON.parse(fs.readFileSync(path.join(clon.path, 'scripts', 'nightly', 'dependencies', 'repos.json'), 'utf8'));
+    return doc && Array.isArray(doc.repos) ? doc.repos : null;
+  } catch (_) { return null; }
+}
+
 /** Devuelve el código de salida; dashboard.js hace el exit. */
 function main(opts = {}) {
   if (opts.clonRetirado) {
@@ -2688,9 +2784,11 @@ function main(opts = {}) {
   const runsDir = path.resolve(opts.runsDir || RUNS_DEFAULT);
   const buzon = buzonDeclarado(opts);
   const maquina = buzon ? (subida ? subida.nombreDeMaquina() : null) : null;
-  const M = modelo(runsDir, buzon ? { buzon, maquina } : {});
+  const repos = reposDelEquipo();
+  const M = modelo(runsDir, { ...(buzon ? { buzon, maquina } : {}), repos });
   const N = M.corridas.length;
   const log = opts.json ? console.error : console.log;
+  if (!repos) log('sin la lista de productos (repos.json del clon de operaciones, paths.operations): el filtro agrupa los repos sin producto');
   log(`Ejecuciones: ${N} ejecución${N === 1 ? '' : 's'} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer`);
   log(`  con consumo medido: ${M.corridas.filter((c) => c.consumo.estado === 'medido').length} · con controles: ${M.corridas.filter((c) => c.controles).length} · llegaron al final: ${M.corridas.filter((c) => c.llego_al_final).length}`);
   if (M.registro.estado !== 'medido') log(`  registro NO MEDIDO: ${M.registro.motivo}`);
@@ -2729,7 +2827,7 @@ function main(opts = {}) {
 }
 
 // `dentroDelRepoDelEquipo` también la usa dashboard.js: la página de seis preguntas tiene un solo escritor en el repo.
-module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
+module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
   // Lo que usa la pestaña Corridas del sitio
   idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda
