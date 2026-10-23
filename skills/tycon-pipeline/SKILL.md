@@ -7,6 +7,9 @@ description: Orquesta el pipeline completo TYCON — valida la story con tycon-s
 
 Orquesta el workflow TYCON completo: skills BMAD + advisors TYCON con checkpoints HITL. Este archivo tiene
 las REGLAS; el porqué de cada una (con su medición) vive en el archivo de su paso. Scripts: `~/.claude/agent-skills/skills/tycon-pipeline/scripts/`.
+Cada `pipeline.js …` y `marker.js …` de este archivo se corre con el comando entero:
+`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js <subcomando>` (y lo mismo con `marker.js`); con
+Codex, `~/.codex/skills/tycon-pipeline/scripts/`. No se buscan: esas carpetas son enlaces y `find` sin `-L` no entra.
 
 ## ⚠️ NO bypass del orchestrator
 

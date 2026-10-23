@@ -117,7 +117,7 @@ primero y los del equilibrado con el segundo. Sin tabla cargada, todo usa el mod
 qué va a poner: `node ~/.claude/tycon-harness/scripts/lib/models-env.js --provider ollama`. La función no fija
 `CLAUDE_CODE_SUBAGENT_MODEL`: pisaría la tabla. `TYCON_MODEL_PROVIDER` le dice al arnés que esta sesión es de Ollama
 (también se puede declarar para la máquina con `node scripts/lib/tycon-config.js set models.provider ollama`), y
-`pipeline.js start` avisa si las variables de la sesión no coinciden con la tabla.
+el arranque del pipeline avisa si las variables de la sesión no coinciden con la tabla.
 
 Después usás `claude-ollama gemma4:31b-cloud` en lugar de `claude`. Para volver a lo normal, salís y abrís `claude`.
 
@@ -204,10 +204,23 @@ formato (`wire_api = "chat"`): no hay otra salida soportada. La sonda la medís 
 
 ### Los revisores los lanza el pipeline
 
-Con Codex, el paso «Revisores» corre `pipeline.js reviewers-run`: cada revisor es un proceso `codex exec` aparte, con el
-modelo de tu sesión si arrancaste el pipeline con
-`pipeline.js start … --codex-session '{"oss":true,"provider":"ollama","model":"<modelo>"}'` (con `"config"` se le pasan
-las opciones del modo reducido). Sin esa opción, cada revisor usa el modelo de su perfil (la sección de abajo). Antes,
+Con Codex, el paso «Revisores» corre el lanzador de revisores
+(`node ~/.codex/skills/tycon-pipeline/scripts/pipeline.js reviewers-run`): cada revisor es un proceso `codex exec`
+aparte, con el modelo de tu sesión si arrancaste el pipeline con `--codex-session` (con `"config"` se le pasan las
+opciones del modo reducido). El arranque, con el comando entero:
+
+```bash
+# macOS y Linux
+node ~/.codex/skills/tycon-pipeline/scripts/pipeline.js start --story <story> --repo . --codex-session '{"oss":true,"provider":"ollama","model":"<modelo>"}'
+```
+
+```powershell
+# Windows (PowerShell)
+node "$env:USERPROFILE\.codex\skills\tycon-pipeline\scripts\pipeline.js" start --story <story> --repo . --codex-session '{"oss":true,"provider":"ollama","model":"<modelo>"}'
+```
+
+Las carpetas de las skills de Codex son enlaces al arnés: `find` sin `-L` no entra en ellas y no encuentra el guion.
+Por eso el comando va entero. Sin `--codex-session`, cada revisor usa el modelo de su perfil (la sección de abajo). Antes,
 el paso le pedía al modelo que lanzara cada revisor como agente; un modelo que no usaba esa herramienta no lanzaba
 ninguno.
 

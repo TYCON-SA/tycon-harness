@@ -66,20 +66,49 @@ const blockSource = (name) => {
  * global de más de 40 KB se lee completo. Una línea del índice que empiece con `@` no se copia (nunca un `@import`). Sin
  * INDEX.md en el árbol el bloque queda apagado: no se escribe, se saca si estaba y se avisa.
  */
-function harnessIndexBlock(tree, home, env = process.env) {
+function harnessIndexBlock(tree, home, env = process.env, platform = process.platform) {
   const index = path.join(tree, 'INDEX.md');
   const block = { name: INDEX_BLOCK, body: '', requires: null, profiles: null, bad: null, variants: null };
   if (!fs.existsSync(index)) return Object.assign(block, { off: `el árbol ${tree} no trae INDEX.md` });
   // con `~` si cuelga de HOME, y con `/` en cualquier sistema: es texto para el modelo, no una ruta que se abra acá
   const corto = (p) => (home && (p === home || p.startsWith(home + path.sep)) ? `~${p.slice(home.length)}` : p).split(path.sep).join('/');
   // las skills van a la carpeta de Codex (CODEX_HOME, o ~/.codex), como las despliega deploy-shared-skills.js
-  const skills = corto(path.join(env.CODEX_HOME || path.join(home, '.codex'), 'skills'));
+  const skillsDir = path.join(env.CODEX_HOME || path.join(home, '.codex'), 'skills');
+  const skills = corto(skillsDir);
+  // El comando entero de cada guion del pipeline: sin él, el modelo lo busca, y las skills son enlaces al arnés que
+  // `find` sin -L no recorre. En Windows Codex corre los comandos en PowerShell, que no expande `~` para `node`: la
+  // carpeta del usuario va como $env:USERPROFILE, y fuera de ella la ruta absoluta.
+  // Una ruta con espacios o caracteres raros va ENTERA entre comillas simples, que no expanden nada: entre comillas
+  // dobles, un `$(…)` o un acento grave del nombre de la carpeta se ejecutaría al pegar el comando.
+  const guion = (nombre) => {
+    if (platform !== 'win32') {
+      const ruta = `${skills}/tycon-pipeline/scripts/${nombre}`;
+      if (!/[^\w@%+=:,./~-]/.test(ruta)) return `node ${ruta}`;
+      const abs = [skillsDir, 'tycon-pipeline', 'scripts', nombre].join('/');
+      return `node '${abs.replace(/'/g, "'\\''")}'`;
+    }
+    const rel = ['tycon-pipeline', 'scripts', nombre];
+    const abs = [skillsDir.split('/').join('\\'), ...rel].join('\\');
+    // comillas dobles sólo con caracteres seguros: PowerShell expande `$`, el acento grave y toma también las comillas
+    // tipográficas como comillas; cualquier otra cosa va entre comillas simples, con toda comilla simple doblada
+    if (!/^[\w .\\:-]+$/.test(abs)) return `node '${abs.replace(/['‘’‚‛]/g, (c) => c + c)}'`;
+    const casa = home ? home.split('/').join('\\') : '';
+    const enCasa = casa && abs.toLowerCase().startsWith(casa.toLowerCase() + '\\');
+    return `node "${enCasa ? `$env:USERPROFILE${abs.slice(casa.length)}` : abs}"`;
+  };
+  // un comando con acento grave adentro no entra entre una sola comilla invertida de Markdown
+  const codigo = (s) => (s.includes('`') ? `\`\` ${s} \`\`` : `\`${s}\``);
   let body = [
     '# El arnés',
     '',
     `El arnés de desarrollo está instalado en \`${corto(tree)}\`. Antes de cada tarea leé su índice, \`${corto(index)}\`: dice`,
     `qué guía leer según la tarea, y sus rutas son relativas a esa carpeta. Sus skills están en \`${skills}/\`; para`,
     `implementar una story, la del pipeline: \`${skills}/tycon-pipeline/SKILL.md\`.`,
+    '',
+    'Los guiones del pipeline se corren con el comando entero, tal cual:',
+    `${codigo(`${guion('pipeline.js')} <subcomando>`)} y ${codigo(`${guion('marker.js')} <subcomando>`)}. No hace falta`,
+    'buscarlos: las carpetas de las skills son enlaces al arnés, y `find` sin `-L` no entra en ellas. Para buscar adentro,',
+    '`find -L` o `ls -R`.',
   ].join('\n');
   let indice;
   try { indice = fs.readFileSync(index, 'utf8'); } catch (e) { return Object.assign(block, { off: `no se pudo leer ${index}: ${e.message}` }); }
@@ -437,7 +466,7 @@ function sync(p = {}) {
 
   const core = loadBlocks(blocksDir);
   if (!core.length) return out({ ok: false, reason: `sin bloques en ${blocksDir}` });
-  const indexBlock = harnessIndexBlock(p.tree || installedTree(tree), home, env);
+  const indexBlock = harnessIndexBlock(p.tree || installedTree(tree), home, env, p.platform || process.platform);
   if (indexBlock.off) say(`⚠ tycon: AGENTS.md queda sin el bloque del índice del arnés: ${indexBlock.off}`);
   core.push(indexBlock);
   const packs = p.packs !== undefined ? p.packs : loadPackBlocks({ tree, env, home });
