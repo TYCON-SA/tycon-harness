@@ -16,6 +16,7 @@
           ".gitattributes",
           ".githooks/**",
           ".github/control-changes.jsonl",
+          ".github/control-changes/**",
           "adapters/**",
           "build/**",
           "claude-md-blocks/**",

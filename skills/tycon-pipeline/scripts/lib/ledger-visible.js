@@ -83,11 +83,24 @@ function mensaje(files, storyId, opts = {}) {
     '   cayera en el repo. Si apunta afuera (el scratchpad), asignale la ruta LITERAL en el mismo comando',
     '   (`SP=/ruta/al/scratchpad; …`) o escribí la ruta literal en el destino.',
   ];
+  const avisoBorrar = !opts.borrarODeshacer ? [] : [
+    '',
+    '   Borrar o deshacer código o un manifiesto por la terminal tampoco lo ve el registro. Deshacer: reescribí el',
+    '   archivo con Write desde su versión de git (`git show <commit>:<ruta>`). Borrar: si es parte de la historia,',
+    '   declaralo en el File List del Dev Agent Record y pedíle a la persona que lo borre (o el escape de abajo).',
+  ];
+  const avisoArmado = !opts.armado ? [] : [
+    '',
+    '   Un script inline que escribe en un destino que no es una ruta literal (una variable, `path.join`, una',
+    '   concatenación): sin ejecutarlo no sé adónde escribe. Escribí la ruta literal, o editá con Edit/Write.',
+  ];
   return [
     '🔴 EDICIÓN INVISIBLE — escritura de código por Bash con el pipeline ABIERTO' +
       (storyId ? ` (story ${storyId})` : '') + ':',
     lista,
     ...avisoVariables,
+    ...avisoBorrar,
+    ...avisoArmado,
     '',
     '   El registro de ediciones lo alimenta el hook PostToolUse sobre Edit|Write. Un `sed`, un',
     '   heredoc o un `python3 -c "open(...)"` NO generan ese evento: la edición ocurre y el arnés',

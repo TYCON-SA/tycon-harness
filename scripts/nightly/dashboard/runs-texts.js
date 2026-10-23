@@ -513,6 +513,8 @@ const TEXTOS = {
   'corridas.c.fusionadosNota': { es: '{n} ejecución(es) tienen pasos con marcas invertidas o empatadas (por ejemplo «5+6»): lo de esos tramos va fusionado y no entra en la mediana de ningún paso — se ve en el detalle de cada una.', en: '{n} run(s) have steps with inverted or tied marks (for example «5+6»): those stretches go merged and do not enter the median of any step — it shows in the detail of each one.' },
   'corridas.c.sinDeclarar': { es: 'sin declarar', en: 'undeclared' },
   'corridas.c.sinProducto': { es: 'sin producto', en: 'no product' },
+  'corridas.c.laboratorio': { es: 'laboratorio', en: 'lab' },
+  'corridas.c.otrosRepos': { es: 'otros repos', en: 'other repos' },
   'corridas.c.todos': { es: 'todos ({n})', en: 'all ({n})' },
   'corridas.c.todas': { es: 'todas ({n})', en: 'all ({n})' },
   'corridas.c.notaTokens1': { es: 'Sólo de las', en: 'Only from the' },

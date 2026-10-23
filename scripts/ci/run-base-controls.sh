@@ -290,7 +290,8 @@ function inventoryProblems(root, rev, inv) {
   const { rules, closure } = resolveInventory(root, rev, inv);
   const classified = new Set([...rules, ...(inv.content || []).map(asPath), ...approvalFiles(inv)].filter(Boolean));
   // una entrada de «content» que termina en «/» clasifica la carpeta entera
-  const contentDirs = (inv.content || []).map(asPath).filter((p) => p && p.endsWith('/'));
+  // y también una carpeta de constancias
+  const contentDirs = [...(inv.content || []).map(asPath), ...approvalFiles(inv)].filter((p) => p && p.endsWith('/'));
   const isClassified = (d) => classified.has(d) || contentDirs.some((dir) => d.startsWith(dir));
   const unclassified = new Set();
   for (const f of closure) {
@@ -358,15 +359,67 @@ function hashOf(entries) {
   const text = entries.map((e) => `${e.path}\t${e.blob}\n`).sort().join('');
   return crypto.createHash('sha256').update(text).digest('hex');
 }
-// las constancias de un árbol, de todos los archivos del inventario; una línea que no se lee no firma nada, y se dice
+// una entrada de `approvals` que termina en «/» es una carpeta: una constancia por archivo, `<hash>.json`, para que dos
+// pedidos firmados no toquen el mismo archivo (GitHub no usa merge=union de .gitattributes: un registro de una línea por
+// firma choca en cada merge). Los .jsonl de antes se siguen leyendo, línea por línea
+const isApprovalDir = (f) => f.endsWith('/');
+// una constancia vale sólo si sus reglas dan su hash: el chequeo del verde lo exige, y la alarma de lo que entró a main
+// también, así que se filtra al leer
+const holdsUp = (a) => a && typeof a.hash === 'string' && Array.isArray(a.rules) && a.rules.every((r) => r && typeof r.path === 'string' && typeof r.blob === 'string') && hashOf(a.rules) === a.hash;
+// por qué un destino de `approve` no sirve (null si sirve): dentro del repo y sin enlaces en lo que ya existe del camino
+function insideRepo(root, out) {
+  if (path.isAbsolute(out)) return 'es una ruta absoluta';
+  const rel = path.relative(root, path.resolve(root, out));
+  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return 'sale del repo';
+  // la carpeta de git no es parte del pedido: su configuración y sus ganchos no se tocan
+  if (rel.split(path.sep).some((s) => s.toLowerCase() === '.git')) return 'cae en la carpeta de git';
+  let cur = root;
+  for (const part of rel.split(path.sep)) {
+    cur = path.join(cur, part);
+    let st; try { st = fs.lstatSync(cur); } catch (_) { break; }
+    if (st.isSymbolicLink()) return `pasa por un enlace (${path.relative(root, cur)})`;
+  }
+  return null;
+}
+// el nombre de un archivo viene del pedido: sale escapado, sin armar líneas propias en el registro
+const notSigning = (what, rev, why) => console.log(`⚠️ base-controls: aviso — ${safe(what)} no firma nada (en ${short(rev)}): ${why}`);
+// las constancias de un árbol, de todos los archivos y carpetas del inventario; lo que no se sostiene no firma nada, y se dice
 function readApprovals(root, rev, files) {
   const out = [];
   for (const file of files) {
+    if (isApprovalDir(file)) { out.push(...readApprovalDir(root, rev, file)); continue; }
     const text = show(root, rev, file);
     if (text === null) continue;
-    let bad = 0;
-    for (const line of text.split('\n')) { if (!line.trim()) continue; try { out.push(JSON.parse(line)); } catch (_) { bad++; } }
+    let bad = 0; let wrongHash = 0;
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      let a; try { a = JSON.parse(line); } catch (_) { bad++; continue; }
+      if (holdsUp(a)) out.push(a); else wrongHash++;
+    }
     if (bad) console.log(`⚠️ base-controls: aviso — ${bad === 1 ? 'una línea' : `${bad} líneas`} de ${file} no se lee${bad === 1 ? '' : 'n'} (en ${short(rev)}): no firma${bad === 1 ? '' : 'n'} nada`);
+    if (wrongHash) notSigning(`${wrongHash === 1 ? 'una línea' : `${wrongHash} líneas`} de ${file}`, rev, 'sus reglas no dan su hash');
+  }
+  return out;
+}
+// una carpeta de constancias: cada archivo común `*.json` del primer nivel, nombrado por su hash
+function readApprovalDir(root, rev, dir) {
+  const out = [];
+  const r = git(root, ['ls-tree', '-z', rev, '--', dir], { allowFail: true });
+  // una carpeta que no está sale 0 y vacía: un error es «no pude listar», y se dice
+  if (r.status !== 0) { notSigning(dir, rev, 'no pude listar la carpeta'); return out; }
+  for (const rec of r.stdout.split('\0').filter(Boolean)) {
+    const tab = rec.indexOf('\t');
+    const [mode, type] = rec.slice(0, tab).split(' ');
+    const p = rec.slice(tab + 1);
+    const name = p.slice(dir.length);
+    if (type !== 'blob' || (mode !== '100644' && mode !== '100755')) { notSigning(p, rev, 'no es un archivo común del primer nivel de la carpeta'); continue; }
+    if (!name.endsWith('.json')) { notSigning(p, rev, 'no es un .json'); continue; }
+    const text = show(root, rev, p);
+    let a; try { a = text === null ? null : JSON.parse(text); } catch (_) { a = null; }
+    if (a === null) { notSigning(p, rev, 'no se lee'); continue; }
+    if (!holdsUp(a)) { notSigning(p, rev, 'sus reglas no dan su hash'); continue; }
+    if (name !== `${a.hash}.json`) { notSigning(p, rev, `el nombre no es su hash (${short(a.hash)}…)`); continue; }
+    out.push(a);
   }
   return out;
 }
@@ -692,15 +745,48 @@ function cmdApprove() {
   }
   const read = readInventory(root, 'HEAD');
   const out = opt('--out') || (read.inv && approvalFiles(read.inv)[0]) || '.tycon/control-changes.jsonl';
+  // el destino puede salir del inventario del pedido: se mira antes de preguntar, y la persona ve adónde va la firma
+  const where = insideRepo(root, out);
+  if (where) { console.error(`run-base-controls approve: el destino ${safe(out)} ${where}: no se firmó nada.`); process.exit(2); }
   console.error('Vas a firmar, como dueño, este cambio de control:');
-  for (const e of entries) console.error(`   ${e.path} (blob ${short(e.blob)})`);
+  for (const e of entries) console.error(`   ${safe(e.path)} (blob ${short(e.blob)})`);
+  console.error(`La firma va a: ${safe(out)}${isApprovalDir(out) ? `${hashOf(entries)}.json` : ''}`);
   const answer = readFromTty('Escribí «apruebo» para firmarlo: ');
   if (answer === null) { console.error('🔒 run-base-controls approve: no pude abrir /dev/tty: pide una terminal interactiva de verdad.'); process.exit(2); }
   if (answer !== 'apruebo') { console.error('run-base-controls approve: no se firmó nada.'); process.exit(1); }
-  const dest = path.join(root, out);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.appendFileSync(dest, `${approvalLine(entries)}\n`);
-  console.log(`✅ constancia escrita en ${out}: commiteala en el pedido.`);
+  const line = approvalLine(entries);
+  if (!isApprovalDir(out)) {
+    const dest = path.join(root, out);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.appendFileSync(dest, `${line}\n`);
+    console.log(`✅ constancia escrita en ${out}: commiteala en el pedido.`);
+    return;
+  }
+  // un archivo por firma, creado de una vez: lo que ya está no se pisa, ni siquiera con dos firmas a la vez
+  const hash = hashOf(entries);
+  const rel = `${out}${hash}.json`;
+  const dest = path.join(root, rel);
+  try {
+    fs.mkdirSync(path.join(root, out), { recursive: true });
+    fs.writeFileSync(dest, `${line}\n`, { flag: 'wx' });
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      // un enlace o una carpeta con ese nombre no es una firma: el lector no lo cuenta, así que no se dice «ya estaba»
+      let st = null; try { st = fs.lstatSync(dest); } catch (_) { /* se dice abajo */ }
+      if (!st || !st.isFile()) {
+        console.error(`run-base-controls approve: ${safe(rel)} ya existe y no es un archivo común (${st ? (st.isSymbolicLink() ? 'un enlace' : 'una carpeta u otra cosa') : 'no lo pude mirar'}): no se tocó y no se firmó nada.`);
+        process.exit(1);
+      }
+      let prev = null; let why = 'no es esta firma';
+      try { prev = JSON.parse(fs.readFileSync(dest, 'utf8')); } catch (e2) { why = e2.code ? `no lo pude leer (${e2.code})` : 'no es JSON'; }
+      if (prev && holdsUp(prev) && prev.hash === hash) { console.log(`✅ ya estaba firmado: ${rel} trae esta misma firma; no se tocó.`); return; }
+      console.error(`run-base-controls approve: ${safe(rel)} ya existe y ${why}: no se tocó y no se firmó nada. Miralo antes de seguir.`);
+      process.exit(1);
+    }
+    console.error(`run-base-controls approve: no pude escribir ${safe(rel)} (${e.code || e.message}): no se firmó nada.`);
+    process.exit(1);
+  }
+  console.log(`✅ constancia escrita en ${rel}: commiteala en el pedido.`);
 }
 
 try {

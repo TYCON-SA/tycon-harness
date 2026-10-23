@@ -203,6 +203,12 @@ ve los productos en los que trabaja. La **paridad** compara cada producto con lo
 Quien mantiene ve además, arriba de la tabla, «Cómo va la organización»: las fichas del tablero de la noche que son de
 toda la organización (ver «Las fichas del tablero»).
 
+Más abajo, **Estimaciones**: por producto, una fila por repo de historias y épica, con el rango que se le dio a la
+épica, la suma del plan, la suma vigente (el ajuste de cada historia, o su plan) y las horas reales de lo cerrado; al
+final, el total del producto. Una épica cuya suma vigente cae fuera de su rango lo marca y dice por cuánto («encima por
+25 h»). Un repo sin registro dice «sin estimaciones»; una foto vieja, o de antes de las estimaciones, dice «no medido».
+Cómo se estima: `guides/estimates.md`.
+
 **Qué hacer:** una story parada o bloqueada se destraba en su repo, con su equipo; el sitio sólo la muestra.
 
 ### Arnés
@@ -564,6 +570,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   también `requires.harness` del perfil a la primera versión que los lee.
 - **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
   Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
+  mantiene.
+- **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
+  1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
+  unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. Queda en `team-repos.json` →
+  `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
 
 ![Cómo trabaja el agente](sitio-de-la-organizacion/capturas/configuracion-claude.png)

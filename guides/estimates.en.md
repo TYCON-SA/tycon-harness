@@ -64,8 +64,10 @@ stories in `done` with real hours count.
 ## The unit
 
 The organization chooses it in `team-repos.json → estimates`: `unit` (`hours`, `days` or `points`),
-`hours_per_day` (default 8) and `hours_per_point` (default none). Without the key, hours. Each line keeps the unit it
-was written in, so changing the unit rewrites nothing.
+`hours_per_day` (1 to 24; default 8) and `hours_per_point` (default none). Without the key, hours. Each line keeps the
+unit it was written in, so changing the unit rewrites nothing. It is set from the organization site (Configuration →
+«How the agent works» → «Estimates»), and the Projects page shows each product's epics with their range, plan, current
+total and actual hours (`guides/organization-site.en.md`).
 
 The report compares in hours. Days use `hours_per_day`. With points and no `hours_per_point` it does not invent a rate:
 if the epic mixes units, it shows the totals per unit and does not mark it inside or outside its range, and the story

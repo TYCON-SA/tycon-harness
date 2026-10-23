@@ -119,7 +119,8 @@ const plain = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '');
 /** Las palabras de un nombre: guiones, guiones bajos, puntos, dígitos y mayúsculas internas las separan. */
 function tokens(name) {
   return String(name)
-    .replace(/(^|[^0-9A-Za-z])([0-9a-f]{7,40})(?=$|[^0-9A-Za-z])/g, (m, pre, hex) => (/\d/.test(hex) && /[a-f]/.test(hex) ? `${pre} ` : m))   // un sha no es una palabra
+    // un sha no es una palabra: de 7 a 40 (git) o 64 (sha256, como las firmas del dueño, `<hash>.json`)
+    .replace(/(^|[^0-9A-Za-z])([0-9a-f]{7,40}|[0-9a-f]{64})(?=$|[^0-9A-Za-z])/g, (m, pre, hex) => (/\d/.test(hex) && /[a-f]/.test(hex) ? `${pre} ` : m))
     .replace(/([A-Z]+)([A-Z][a-zß-ÿ])/g, '$1 $2')   // una sigla pegada a una palabra: `HTMLParser` → HTML Parser
     .replace(/([a-zß-ÿ])([A-Z])/g, '$1 $2').split(/[^A-Za-zÀ-ÿ]+/).filter(Boolean);
 }

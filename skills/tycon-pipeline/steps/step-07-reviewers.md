@@ -319,6 +319,23 @@ MECH-2 en iter≥2): **no lo invoques igual**.
 - `tycon-ac-coverage-checker` (CRITICAL inmediato — Gate 1.5) — **iter 1: SIEMPRE que aplique** (ACCOV-C2/C3/C6 son juicio LLM); **iter≥2: solo si `mech-check` lo escaló** (descuento MECH-2 automático en el expected). Por qué: sin él, una story se marca `done` con ACs/Tests sin implementación que sólo detecta una revisión manual.
 - `tycon-spec-first-checker` (CRITICAL inmediato — re-check post-implementation) sobre cada story Mary+GOLD. Cierra el loop **código → spec** detectando scope creep no documentado. Ejemplos de lo que atrapa: wiring implementado antes del spec, un error mapping sin AC, un filtro por tenant sin AC, un response shape decidido durante la implementación. El advisor también corre pre-coding en «Implementar» — este re-check captura drift residual de coding phases sin pre-flight (spikes, runtime fixes).
 
+### Bajo Codex — los revisores los lanza el pipeline
+
+Con Codex **no** se le pide al modelo que lance agentes: un modelo que no usa esa herramienta no lanzaba ninguno y el
+conteo quedaba vacío. Después de `pipeline.js advisors` (o `smart-reloop`), el paso corre:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js reviewers-run --repo <repo> --story <story>
+```
+
+Lanza cada revisor del set de la vuelta como un proceso `codex exec -p <revisor>` aparte (entrada cerrada), con la misma
+ventana (4 vivos; 2 con el pase adversarial en vuelo), el `context_file` de la vuelta y el modelo de la sesión de Codex
+si `start` la recibió con `--codex-session` (si no, el del perfil). Anuncia el set y el modelo de cada uno antes de
+lanzar (regla B), deja cada reporte en `step-05-advisor-reports/<revisor>.md` y anota cada uno en el registro que lee
+`check-count`: un revisor que salió distinto de 0, que pasó su tope (`TYCON_REVIEWER_TIMEOUT_MS`, 15 min) o que no dejó
+reporte no cuenta. Si se corta, volver a correrlo corta lo que quedó vivo y saltea los ya hechos. Sin `codex` o sin el
+perfil de un revisor sale 2 sin lanzar nada. Con Claude Code este comando no se usa: los revisores van con `Agent(...)`.
+
 ### 🔴 Formato de salida de CADA advisor — obligatorio en el prompt (COMM.iii, 2026-07-27)
 
 El usuario VE el bloque que devuelve cada subagente. Sin esta instrucción, seis advisors devuelven seis

@@ -101,6 +101,35 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const num = (x) => (Number.isFinite(x) ? x : null);
 const texto = (x, max = 120) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : null);
 const codigoDe = (x) => (typeof x === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(x) ? x : null);   // un código, nunca una frase
+// un texto de la foto que llega a la pantalla, sin correos ni rutas de máquina: la foto ya los saca, esto es la segunda capa
+const sinDatos = (s) => (s === null ? null : s.replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[correo]').replace(/(?<![\w./])\/[\w.-]+\/[^\s"'`)\],;<>*]*/g, '[ruta]').replace(/\b[A-Za-z]:[\\/][^\s"'`)\],;<>]*/g, '[ruta]'));
+const UNIDADES = ['hours', 'days', 'points'];
+const unidadDe = (x) => (UNIDADES.includes(x) ? x : null);
+/** La estimación de una épica de la foto por proyecto (scripts/nightly/projects/snapshot.js), por lista blanca. */
+function estimacionDe(e) {
+  if (!isObject(e)) return null;
+  const h = isObject(e.en_horas) ? e.en_horas : null;
+  const r = isObject(e.real) ? e.real : {};
+  const sumas = isObject(e.sumas_por_unidad) ? Object.fromEntries(Object.entries(e.sumas_por_unidad).filter(([u, v]) => unidadDe(u) && num(v) !== null)) : null;
+  return {
+    rango: isObject(e.rango) && num(e.rango.min) !== null && num(e.rango.max) !== null ? { min: e.rango.min, max: e.rango.max, unidad: unidadDe(e.rango.unidad) } : null,
+    unidad: unidadDe(e.unidad),
+    suma_plan: num(e.suma_plan),
+    suma_vigente: num(e.suma_vigente),
+    dentro: typeof e.dentro === 'boolean' ? e.dentro : null,
+    fuera: e.fuera === 'encima' || e.fuera === 'debajo' ? e.fuera : null,
+    por: num(e.por),
+    sumas_por_unidad: sumas,
+    motivo: sinDatos(texto(e.motivo, 200)),
+    en_horas: h ? { min: num(h.min), max: num(h.max), plan: num(h.plan), vigente: num(h.vigente) } : null,
+    real: { cerrada: r.cerrada === true, suma: num(r.suma), faltan: Number.isInteger(r.faltan) ? r.faltan : null, motivo: sinDatos(texto(r.motivo, 200)) },
+  };
+}
+/** El estado de las estimaciones de un repo, de la foto: null si la foto es anterior a ellas (no se midió). */
+function estimacionesDe(x) {
+  if (!isObject(x) || !['medido', 'sin_registro', 'no_medido'].includes(x.estado)) return null;
+  return { estado: x.estado, motivo: sinDatos(texto(x.motivo, 200)), ilegibles: Number.isInteger(x.ilegibles) ? x.ilegibles : 0, unidad: unidadDe(x.unidad) };
+}
 const enlace = (x) => (typeof x === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(x) ? x.slice(0, 400) : null);
 const fechaDe = (nombre) => { const m = String(nombre).match(/(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null; };
 const diaUtc = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -400,7 +429,9 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       const fecha = texto(d.generated_at, 10);
       const vieja = !fecha || edad(fecha) > EDAD_MAXIMA_SIN_DECLARAR;
       if (fecha && !vieja && (!fechaProy || fecha > fechaProy)) fechaProy = fecha;
-      proyectos.push({ proyecto: decodificar(texto(d.proyecto)), repo: texto(d.repo), fecha, vieja, stories: (Array.isArray(d.stories) ? d.stories : []).filter(isObject).map((s) => ({ grupo: texto(s.grupo, 30), canonico: texto(s.canonico, 30), dias_en_estado: num(s.dias_en_estado) })) });
+      proyectos.push({ proyecto: decodificar(texto(d.proyecto)), repo: texto(d.repo), fecha, vieja, stories: (Array.isArray(d.stories) ? d.stories : []).filter(isObject).map((s) => ({ grupo: texto(s.grupo, 30), canonico: texto(s.canonico, 30), dias_en_estado: num(s.dias_en_estado) })),
+        epicas: (Array.isArray(d.epicas) ? d.epicas : []).filter(isObject).map((e) => ({ id: texto(String(e.id == null ? '' : e.id), 40), titulo: sinDatos(texto(e.titulo, 120)), estimacion: estimacionDe(e.estimacion) })),
+        estimaciones: isObject(d.cobertura) ? estimacionesDe(d.cobertura.estimaciones) : null });
     }
     if (!proyectos.length) m.proyectos = noMedida(ilegibles ? 'ilegible' : 'sin_foto');
     // hay_al_dia: si el nocturno de métricas dejó alguna foto al día; viaja aparte porque la vista de una persona recorta

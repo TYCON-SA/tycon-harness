@@ -208,6 +208,12 @@ others: what one does and the rest do not.
 Maintainers also see, above the table, «How the organization is doing»: the night dashboard cards that are about the
 whole organization (see «The dashboard cards»).
 
+Further down, **Estimates** (*Estimaciones*): per product, one row per story repo and epic, with the range the epic was
+given, the plan total, the current total (each story's adjustment, or its plan) and the actual hours of what was
+closed; at the end, the product total. An epic whose current total falls outside its range is marked with how much
+(«above by 25 h»). A repo without a log says «no estimates»; an old snapshot, or one from before estimates, says «not
+measured». How to estimate: `guides/estimates.en.md`.
+
 **What to do:** a stopped or blocked story gets unstuck in its repo, with its team; the site only shows it.
 
 ### Harness (Arnés)
@@ -589,6 +595,11 @@ be, to copy it and open the request by hand.
 - **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
+- **Estimates** (*Estimaciones*): the unit your organization estimates in (hours, days or points), the hours in a
+  working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
+  calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
+  It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
+  reads the key. A maintainer reviews it.
 
 ![How the agent works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 

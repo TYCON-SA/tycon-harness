@@ -861,6 +861,18 @@
       "requiere": []
     },
     {
+      "__nota": "bajo Codex los revisores los lanza el pipeline (pipeline.js reviewers-run): un codex de mentira al frente del PATH, la ventana, la sesión de Ollama, la constancia que cuenta check-count, el tope y el relanzado. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/codex-reviewers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los cierres del turno deciden con la evidencia del arnés (mensaje del evento, marcador, registro de ediciones, disco) y no con la conversación: la historia afirmada, el modelo del implementador y la línea de pasos pendientes.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/closing-evidence-codex.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/validator-record.test.js",
       "requiere": []
@@ -1052,6 +1064,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/repo-attrib.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.35 (2026-10-19): ésta y las 22 que siguen no estaban en la lista, así que ni la CI ni el nocturno las corrían (dos estaban rojas sin que nadie lo supiera). Medidas una por una y con una HOME vacía: la más larga tarda 41 s. scripts/tests/suites-listed.test.js frena la próxima que nazca afuera.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-unmeasured.test.js",
@@ -1178,7 +1195,22 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/undeclared-changes.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-gate-real-commands.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/start-stale.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/preflight-missing.test.js",
       "requiere": []
     },
     {
@@ -1772,6 +1804,12 @@
       "__nota": "story 2.75: las historias cerradas más parecidas a una nueva (scripts/lib/similar-stories.js) — sólo las de done con horas reales; cada una con su puntaje y por qué se parece; sin candidatas medidas, la lista vacía con su motivo, nunca inventadas. Laboratorios con acme, sin red.",
       "raiz": "arnes",
       "ruta": "tests/similar-stories.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.75: las estimaciones en la foto por proyecto y en Proyectos — la foto lee el registro de cada repo de historias (rango, plan, vigente y real por épica; una épica sólo estimada también entra); sin registro dice «sin estimaciones», con líneas ilegibles cuántas, y una foto anterior «no medido». Repos de laboratorio con git, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/projects-estimates.test.js",
       "requiere": []
     },
     {
@@ -2472,6 +2510,12 @@
       "__nota": "story 8.23 (tanda C, AC 22): scripts/setup/agents-md-blocks.js — las reglas del arnés en ~/.codex/AGENTS.md desde los bloques, entre sus marcas: la variante de Codex, lo de la persona fuera de las marcas byte a byte, sin leer el CLAUDE.md, sin @import, las integraciones y el perfil, «no se pudo saber» no es «apagada», idempotente y --check sin escribir. Todo en el temporal.",
       "raiz": "arnes",
       "ruta": "tests/agents-md-blocks.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la sonda de Ollama (scripts/lib/ollama-tools-probe.js): con un Ollama de mentira local, dice si un modelo acepta las herramientas namespace de Codex, sólo el modo reducido o nada, y nunca «acepta» ante una conexión cerrada o una respuesta ilegible; y las guías nombran la versión de Codex medida.",
+      "raiz": "arnes",
+      "ruta": "tests/ollama-tools-probe.test.js",
       "requiere": []
     },
     {

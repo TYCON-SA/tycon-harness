@@ -353,10 +353,19 @@ Y cinco más, propios de leer los nombres como el shell:
 - **Hasta que cada máquina reinstala, el freno instalado sigue con los agujeros.** Lo que corre es la
   copia de `/opt/tycon`, y cambia sólo al reinstalar con `sudo`. El aviso de arranque lo dice, también
   cuando cambia sólo una biblioteca que el freno usa.
-- **Si el freno se cae, o node no corre, decide con su criterio de emergencia**, que sólo mira si el
-  comando nombra bases o el Llavero. Ese criterio no reconoce la mayoría de estas formas, y el comando
-  pasa. No se amplía: ampliarlo frenaba 11 de los últimos 4.000 comandos reales, que
-  no tocaban nada.
+- **Si el freno está mal instalado** (falta el intérprete de root o el freno, o no coinciden sus datos),
+  **decide con su criterio de emergencia**, que sólo mira si el comando nombra bases o el Llavero. Ese
+  criterio no reconoce la mayoría de estas formas, y el comando pasa. No se amplía: ampliarlo frenaba
+  11 de los últimos 4.000 comandos reales, que no tocaban nada. Frenar todo ahí dejaría la máquina sin
+  terminal hasta reinstalar.
+- **Si el freno no contesta a tiempo, o se cae con un error propio, frena TODO comando**, nombre bases
+  o no: el freno juzga también lo que un comando ejecuta por dentro (un guion, `bash -c`, un heredoc), y
+  eso el lanzador no lo ve. El lanzador tiene un reloj de 7 s para todo su trabajo, y el hook tiene un
+  tope de 30 s en la configuración administrada: más del doble, para que el lanzador siempre conteste
+  antes.
+- 🔴 **El límite que el arnés no puede cerrar: si la máquina está tan cargada que el lanzador ni llega a
+  su reloj en 30 s, Claude Code lo corta y el comando corre igual.** El corte lo decide Claude Code, no
+  el freno. Queda contado: la revisión nocturna de las ejecuciones cuenta cada hook que se pasó de tiempo.
 
 ## Antes de instalar en una máquina: medir cuánto frenaría
 
@@ -386,6 +395,11 @@ El mensaje dice el motivo y el camino correcto. Los dos casos normales:
   2026-09-16 instalado. Claude Code 2.1.272 (la extensión de VS Code) ya no escribe ese snapshot, y
   el freno de ahora, sin snapshot, le pregunta al shell de login en vivo. Corré el instalador
   (`scripts/production/install-guard.command`, pide `sudo`) y volvé a intentar.
+- **«el freno no pudo decidir»** → el freno no contesta a tiempo (o se cayó) y por eso frena, también
+  un comando que no toca ninguna base. Suele ser la carga de la máquina: reintentá en un momento. Queda
+  constancia en `hook-errors.log`. Si el cartel pide reinstalar, el freno instalado es de antes de que
+  se anotaran los datos del intérprete y lo lee entero en cada comando: reinstalar
+  (`scripts/production/install-guard.command`, pide `sudo`) trae esos datos y lo hace rápido.
 - **«un nombre que el freno no sabe leer como el shell»** → el comando escribe en la carpeta protegida
   con una forma que el freno no puede decidir: un paréntesis sin cerrar, o un `setopt` antes. Si no
   querías tocar un archivo protegido, escribí los nombres enteros, sin llaves ni variables, y el freno

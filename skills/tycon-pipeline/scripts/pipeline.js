@@ -31,6 +31,36 @@ const isNil = (v) => v === undefined || v === null;
 const nn = (v, d) => (isNil(v) ? d : v);
 const at = (o, k) => (isNil(o) ? undefined : o[k]);
 
+/**
+ * `--codex-session '{"oss":true,"provider":"ollama","model":"<m>","config":["k=v"]}'`: la sesión de Codex con que
+ * corren los revisores de `reviewers-run`. Una forma que no se entiende frena: lanzar con otro modelo en silencio
+ * sería peor que no arrancar.
+ */
+function parseCodexSession(raw) {
+  let s;
+  try { s = JSON.parse(String(raw)); } catch (e) { process.stderr.write(`--codex-session no es JSON (${e.message})\n`); process.exit(2); }
+  const ok = s && typeof s === 'object' && !Array.isArray(s)
+    && (s.oss === undefined || typeof s.oss === 'boolean')
+    && ['provider', 'model'].every((k) => s[k] === undefined || (typeof s[k] === 'string' && s[k].trim() && !s[k].startsWith('-')))
+    && (s.config === undefined || (Array.isArray(s.config) && s.config.every((c) => typeof c === 'string' && /^[\w.-]+=/.test(c))));
+  if (!ok) {
+    process.stderr.write('--codex-session: se espera {"oss":bool,"provider":"…","model":"…","config":["clave=valor"]}\n');
+    process.exit(2);
+  }
+  // un proveedor sólo se pasa con `--oss`: aceptarlo sin él lanzaría con el proveedor por defecto de Codex en silencio
+  if (s.provider && s.oss !== true) {
+    process.stderr.write('--codex-session: "provider" va con "oss": true (sin él Codex usa su proveedor por defecto)\n');
+    process.exit(2);
+  }
+  // los revisores corren con el sandbox y la aprobación de su perfil: una opción de la sesión no los afloja
+  const floja = (s.config || []).filter((c) => /^(sandbox|approval)/i.test(c));
+  if (floja.length) {
+    process.stderr.write(`--codex-session: ${floja.join(', ')} cambiaría el sandbox o la aprobación de los revisores; eso lo fija su perfil\n`);
+    process.exit(2);
+  }
+  return s;
+}
+
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
@@ -95,9 +125,31 @@ function advisorsRunSinceStart() {
   const startIdx = require('./lib/advisor-round.js').inicioDeLaRonda(lines);
   // `nuevaCorrida`: el registro tiene una ronda, pero de la corrida anterior; ésta todavía no corrió `advisors`
   if (startIdx === -1) return { sawStart: false, expected: null, ran: [], nuevaCorrida: lines.some((e) => e.event === 'step5-start') };
-  const ran = lines.slice(startIdx).filter((e) => e.advisor).map((e) => e.advisor);
+  // Una línea del lanzador de Codex (`launcher: 'pipeline'`) cuenta sólo si el proceso salió 0 y dejó su reporte: una
+  // línea escrita a mano, un tope de tiempo o una salida distinta no son un revisor corrido. Las que no cuentan quedan
+  // nombradas con su motivo (las tapa una corrida buena posterior del mismo revisor).
+  const ran = [];
+  const fallidos = {};
+  for (const e of lines.slice(startIdx)) {
+    // un revisor que el lanzador de Codex no pudo correr: se nombra, salvo que una corrida posterior lo tape
+    if (e.event === 'launch-failed' && e.failed_advisor) {
+      if (!ran.includes(e.failed_advisor)) fallidos[e.failed_advisor] = motivoLanzamientoInvalido(e) || 'falló';
+      continue;
+    }
+    if (!e.advisor) continue;
+    const motivo = e.launcher === 'pipeline' ? motivoLanzamientoInvalido(e) : null;
+    if (motivo) { fallidos[e.advisor] = motivo; continue; }
+    ran.push(e.advisor);
+    delete fallidos[e.advisor];
+  }
   const expected = Array.isArray(lines[startIdx].expected) ? lines[startIdx].expected : null;
-  return { sawStart: true, expected, ran: [...new Set(ran)] };
+  return { sawStart: true, expected, ran: [...new Set(ran)], fallidos };
+}
+
+function motivoLanzamientoInvalido(e) {
+  if (e.exit !== 0) return e.exit === 'timeout' ? 'timeout' : `salió ${e.exit}`;
+  try { if (fs.statSync(e.report).size > 0) return null; } catch { /* sin archivo */ }
+  return 'sin reporte';
 }
 
 // ── helpers de lectura (todas fail-safe: nunca tiran) ────────────────────────
@@ -216,6 +268,18 @@ function computeGitignoreNeeds(probe) {
   }
 
   return { append, notices };
+}
+
+/**
+ * PIPE-C2 · el texto que se agrega al final de un `.gitignore`, con el fin de línea del archivo: el de su primer salto
+ * (CRLF o LF); vacío o sin saltos, LF. Un archivo sin salto final recibe uno antes. Un LF metido en un archivo CRLF
+ * hace que git en Windows lo vea reescrito entero.
+ */
+function gitignoreAppendText(actual, lineas) {
+  const primero = /\r?\n/.exec(actual);
+  const eol = primero ? primero[0] : '\n';
+  const antes = actual === '' || /\n$/.test(actual) ? '' : eol;
+  return antes + lineas.join(eol) + eol;
 }
 
 /** El `probe` real: le pregunta a git. 0 = ignorada · 1 = no · cualquier otra cosa = no sé. */
@@ -3260,11 +3324,13 @@ function computeStart(args) {
       const { append, notices } = computeGitignoreNeeds(gitIgnoraProbe(r));
       const donde = r === repo ? '' : ` (repo de la story: ${r})`;
       if (append.length) {
-        fs.appendFileSync(giPath, (gi.endsWith('\n') || gi === '' ? '' : '\n') + append.join('\n') + '\n', 'utf8');
+        fs.appendFileSync(giPath, gitignoreAppendText(gi, append), 'utf8');
         actions.push(`PIPE-C2: agregado a .gitignore${donde}: ${append.filter((l) => !l.startsWith('#')).join(', ')}`);
       }
       for (const n of notices) actions.push(donde ? `${n}${donde}` : n);
-    } catch { /* ignore */ }
+    } catch (e) {
+      actions.push(`PIPE-C2: no pude agregar al .gitignore de ${r} (${e.code || String(e.message || e).split('\n')[0]}): revisalo a mano`);
+    }
   }
   if (evid.crossRepo) {
     actions.push(`EVIDENCIA-EN-REPO-DE-LA-STORY: la story vive en ${evid.storyRepo} y el código en ${repo} → `
@@ -3287,8 +3353,15 @@ function computeStart(args) {
     }
   }
 
+  // Lo que falta antes de arrancar: sale con pausas y sin ellas, y no frena.
+  const faltasNoMedidas = [];
+  const faltas = computeMissingBeforeStart({ repo, fm, noMedido: faltasNoMedidas });
+  const faltasOut = faltas.length ? { missing_before_start: faltas } : {};
+  if (faltas.length) actions.push(missingBeforeStartLine(faltas));
+  if (faltasNoMedidas.length) actions.push(`Falta antes de arrancar: no pude mirar ${faltasNoMedidas.join(' ni ')}; no es «está todo»`);
+
   if (pauses.length) {
-    return { ready: false, story_id: storyId, branch, pauses, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
+    return { ready: false, story_id: storyId, branch, pauses, ...faltasOut, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
   }
 
   // el tamaño de la corrida y su tiempo estimado, ANTES de lanzar nada; quedan en el marcador.
@@ -3333,6 +3406,10 @@ function computeStart(args) {
       // las vueltas de revisores son de esta ejecución: una ejecución anterior de la misma sesión no las hereda
       iterations: {},
       size: runSize.size, size_reason: runSize.reason, estimate_min: runSize.estimate_min, estimate_source: runSize.estimate_source,
+      // el modelo de la sesión tal como vino (el registro de revisores lo usa antes que la conversación) y, en Codex, la
+      // sesión con su proveedor: los revisores que lanza `reviewers-run` corren con el mismo
+      ...(args.sessionModel ? { sessionModel: args.sessionModel } : {}),
+      ...(args.codexSession ? { codexSession: args.codexSession } : {}),
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
@@ -3381,6 +3458,7 @@ function computeStart(args) {
       ? { models: { helpers: MODELOS.resolveHelpers({ org: args.orgModels && args.orgModels.declared ? args.orgModels.data : null, requests: args.modelRequests }) } }
       : {}),
     tooling: computeToolingExpected(repo),
+    ...faltasOut,
     actions_done: actions,
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
     spec_stale: stale,
@@ -3453,6 +3531,7 @@ function recortarStart(result) {
     const missing = result.tooling.expected.filter((x) => (x.kind === 'skill' || x.kind === 'manifest') && x.present === false);
     if (missing.length) breve.skills_faltantes = missing.map((x) => `${x.name} → ${x.action}`);
   }
+  if (result.missing_before_start) breve.missing_before_start = result.missing_before_start;
   if (result.e2e_gap) breve.e2e_gap = result.e2e_gap;
   if (result.spec_stale) breve.spec_stale = result.spec_stale;
   breve.acciones = result.actions_done || [];
@@ -3710,6 +3789,105 @@ function harnessTimeTool(opts = {}) {
   if (c.value === 'none') return { chosen: false, reason: 'ninguna herramienta de horas elegida (integrations.timeTracking: none)' };
   if (!c.value) return null;
   return { chosen: false, reason: `ninguna herramienta de horas: ${c.warning}` };
+}
+
+/**
+ * Lo que la ejecución va a necesitar y esta máquina no tiene, antes de arrancar: `[{ id, falta, sin_eso, como }]`, vacía
+ * si está todo. Tres cosas: el programa de la plataforma del pedido de trabajo (la primera palabra de los `rawCommands`
+ * del conector que elige la capa: el núcleo no nombra herramientas), con la misma condición con que `next` pide esa
+ * parte; la configuración de BMAD del repo (`_bmad/bmm/config.yaml`, sin la que `bmad-dev-story` se frena); y el
+ * servidor MCP de la herramienta de horas elegida, donde lo lee Claude Code. Un detector que no puede preguntar no
+ * inventa una falta: deja su motivo en `noMedido`. Nunca frena.
+ * @param {object} o repo · fm (frontmatter de la historia) · env · home · noMedido (lista donde quedan los detectores
+ *   que no pudieron mirar, con su motivo)
+ */
+function computeMissingBeforeStart({ repo, fm, env = process.env, home = os.homedir(), noMedido = [] }) {
+  const out = [];
+  const motivo = (e) => (e && e.code) || String((e && e.message) || e).split('\n')[0];
+
+  try {
+    const lib = path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'platform');
+    if (require(path.join(lib, 'work-item-field.js')).idOf(fm)) {
+      const platform = require(path.join(lib, 'platform.js'));
+      const elegida = platform.choose('work-item.update', { env, home });
+      const m = elegida.ok ? platform.connector(elegida.value.connector, env).manifest : null;
+      const prog = m && m.rawCommands && m.rawCommands.length ? String(m.rawCommands[0]).trim().split(/\s+/)[0] : null;
+      if (prog && !require('./lib/portable-tools.js').findBinary(prog, { env })) {
+        out.push({
+          id: 'plataforma',
+          falta: `\`${prog}\` en el PATH (lo usa el conector de ${m.label} para el pedido de trabajo de la historia)`,
+          sin_eso: 'la parte del pedido de trabajo se declara con `marker.js start-warning ado "<motivo>"` y el pipeline sigue',
+          como: `instalá \`${prog}\`, abrí una terminal nueva y volvé a correr start`,
+        });
+      }
+    }
+  } catch (e) { noMedido.push(`el programa de la plataforma (${motivo(e)})`); }
+
+  if (!fs.existsSync(path.join(repo, '_bmad', 'bmm', 'config.yaml'))) {
+    out.push({
+      id: 'bmad',
+      falta: `la configuración de BMAD del repo (\`_bmad/bmm/config.yaml\` en ${repo})`,
+      sin_eso: 'el plan lo arma el orquestador, sin BMAD: el skill de BMAD se frena sin esa configuración',
+      como: 'corré el skill `bmad-init` en el repo',
+    });
+  }
+
+  // En Codex los servidores viven en su propia configuración, que despliega el instalador: acá no se mira.
+  const esCodex = !!env.CODEX_SESSION_ID && !env.CLAUDE_CODE_SESSION_ID;
+  try {
+    const h = esCodex ? null : harnessWorkSignal({ env, home });
+    let c = null;
+    if (!esCodex) {
+      if (!h) noMedido.push('el servidor MCP de la herramienta de horas (no encontré el evento de trabajo del arnés)');
+      else if (h.loadError) noMedido.push(`el servidor MCP de la herramienta de horas (el evento de trabajo no carga: ${h.loadError})`);
+      else {
+        c = h.ws.chosen({ env, home });
+        if (!c.config) { noMedido.push(`el servidor MCP de la herramienta de horas (${c.warning || 'la configuración no se lee'})`); c = null; }
+      }
+    }
+    const server = c && c.manifest && c.manifest.mcp ? c.manifest.mcp.server : null;
+    // Un archivo que no está no declara nada; uno que está y no se lee no dice que falte.
+    const leer = (p) => {
+      let texto;
+      try { texto = fs.readFileSync(p, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return {}; throw new Error(`${path.basename(p)}: ${e.code || e.message}`); }
+      try { return JSON.parse(texto); } catch (e) { throw new Error(`${path.basename(p)} no es JSON válido`); }
+    };
+    if (server) {
+      const cfg = leer(path.join(home, '.claude.json')) || {};
+      const delRepo = leer(path.join(repo, '.mcp.json')) || {};
+      // Claude Code guarda cada proyecto con la ruta real, con `/` en Windows, y la del repo principal en un worktree.
+      const clave = (p) => { const s = String(p).replace(/\\/g, '/').replace(/\/+$/, ''); return process.platform === 'win32' ? s.toLowerCase() : s; };
+      const candidatas = new Set([path.resolve(repo)]);
+      try { candidatas.add(fs.realpathSync.native(repo)); } catch { /* sin ruta real: queda la resuelta */ }
+      try {
+        const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        if (path.basename(comun) === '.git') {
+          candidatas.add(path.dirname(comun));
+          try { candidatas.add(fs.realpathSync.native(path.dirname(comun))); } catch { /* idem */ }
+        }
+      } catch { /* sin git no hay repo principal que buscar */ }
+      const buscadas = new Set([...candidatas].map(clave));
+      const proyectos = cfg.projects && typeof cfg.projects === 'object' ? cfg.projects : {};
+      const deProyecto = Object.keys(proyectos).filter((k) => buscadas.has(clave(k))).map((k) => proyectos[k] && proyectos[k].mcpServers);
+      const declarado = [cfg.mcpServers, ...deProyecto, delRepo.mcpServers]
+        .some((s) => s && typeof s === 'object' && Object.prototype.hasOwnProperty.call(s, server));
+      if (!declarado) {
+        out.push({
+          id: 'horas',
+          falta: `el servidor MCP \`${server}\` de ${c.manifest.label}, la herramienta de horas de la organización`,
+          sin_eso: 'la parte de horas se declara con `marker.js start-warning time-tracking "<motivo>"` y el pipeline sigue sin registrar',
+          como: c.manifest.offer && c.manifest.offer.needs ? `${c.manifest.offer.needs}; registrado, abrí una sesión nueva` : 'registrá el servidor en Claude Code y abrí una sesión nueva',
+        });
+      }
+    }
+  } catch (e) { noMedido.push(`el servidor MCP de la herramienta de horas (${motivo(e)})`); }
+
+  return out;
+}
+
+/** La línea de las acciones del arranque con lo que falta, o null. */
+function missingBeforeStartLine(faltas) {
+  return faltas.length ? `Falta antes de arrancar: ${faltas.map((f) => `${f.falta} → ${f.sin_eso}; ${f.como}`).join(' · ')}` : null;
 }
 
 /** Las horas para `CompletedWork` del pedido después de un `stop`: las que tenía más los segundos informados, o null. */
@@ -5901,6 +6079,7 @@ function parseArgs(argv) {
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero
     else if (t === '--session-model') a.sessionModel = nn(argv[++i], '');   // start / model-hint: el modelo de la sesión
+    else if (t === '--codex-session') a.codexSession = parseCodexSession(argv[++i]); // start: la sesión de Codex (proveedor y modelo)
     else if (t === '--run-dir') a.runDir = argv[++i];              // write-findings/findings-status: dir de la corrida (default: auto-resolve)
     else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta más allá del tope que autoriza una persona
     else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: quién la autorizó
@@ -6041,7 +6220,8 @@ function main() {
     // set: el descuento mecánico de arriba no mira el tamaño).
     aplicarTamanoALosRevisores(set, { ...args, runSize: runSizeDelMarcador(args.story) });
     decirModelos(set, conModelos.orgModels, avisosModelos);
-    logStep5Start(set.all, { mode: 'advisors', iter: args.iter }); // expected persistido (post-descuento)
+    // expected persistido (post-descuento); el contexto también, para que `reviewers-run` lance lo mismo
+    logStep5Start(set.all, { mode: 'advisors', iter: args.iter, context_file: set.context_file, context_file_overrides: set.context_file_overrides });
     salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
     return;
   }
@@ -6135,7 +6315,7 @@ function main() {
       for (const r of Object.keys(result.reviewer_models)) if (!(result.rerun || []).includes(r)) delete result.reviewer_models[r];
     }
     decirModelos(result, conModelos.orgModels, avisosModelos);
-    logStep5Start(result.rerun, { mode: result.mode, iter: args.iter });
+    logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, context_file: result.context_file, context_file_overrides: result.context_file_overrides });
     salidaGrande(JSON.stringify(result, null, 2) + '\n', 0);
     return;
   }
@@ -6152,6 +6332,17 @@ function main() {
     const result = computePreflightFrontmatter(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.ready_to_edit === false ? 1 : 0);
+  }
+
+  // ── reviewers-run — bajo Codex, el pipeline lanza los revisores de la vuelta ──
+  // Cada revisor del set de `advisors` como un proceso `codex exec` aparte; la constancia queda en el mismo registro que
+  // lee `check-count`. Bajo Claude Code el paso no lo usa: lanza con Agent(...). Ver lib/codex-reviewers.js.
+  if (cmd === 'reviewers-run') {
+    require('./lib/codex-reviewers.js').run({ repo: args.repo, story: args.story }).then((r) => {
+      process.stdout.write(JSON.stringify({ launched: r.launched, skipped: r.skipped, results: r.results, reports_dir: r.reports_dir || null, ...(r.error ? { error: r.error } : {}) }, null, 2) + '\n');
+      process.exitCode = r.code;
+    }, (e) => { process.stderr.write(`reviewers-run: ${(e && e.message) || e}\n`); process.exitCode = 2; });
+    return;
   }
 
   if (cmd === 'check-count') {
@@ -6228,6 +6419,9 @@ function main() {
       } else {
         process.stderr.write(
           '🛑 check-count FALLÓ CERRADO — hay step5-start en el log pero CERO spawns registrados.\n' +
+          (Object.keys(state.fallidos || {}).length
+            ? 'Lanzados por el pipeline que no cuentan:\n' + Object.entries(state.fallidos).map(([a, m]) => `  - ${a}: ${m}`).join('\n') + '\n'
+            : '') +
           'O los advisors NO se corrieron, o el hook on-advisor-run.js está roto/no instalado.\n' +
           'Verificá:\n' +
           '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
@@ -6257,7 +6451,7 @@ function main() {
     if (missing.length > 0) {
       process.stderr.write(
         `🛑 check-count FALLÓ — faltan ${missing.length} advisor(s) del set esperado:\n` +
-        missing.map((m) => `  - ${m}`).join('\n') + '\n\n' +
+        missing.map((m) => `  - ${m}${state.fallidos && state.fallidos[m] ? ` (lanzado por el pipeline: ${state.fallidos[m]})` : ''}`).join('\n') + '\n\n' +
         `Fuente del "corridos": ${source}\n` +
         `Esperado [${expectedSource}] (${expected.length}): ${expected.join(', ')}\n` +
         `Corridos (${ran.length}): ${ran.join(', ') || '(ninguno)'}\n` +
@@ -7036,7 +7230,7 @@ module.exports = {
   orgModels,
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
-  completedWorkHours, harnessTimeTool,
+  completedWorkHours, harnessTimeTool, gitignoreAppendText, computeMissingBeforeStart,
   // tests/unit.test.js «T43 ThirdPartyManifestPath_*».
   thirdPartyManifestPath,
   // El hook on-advisor-run.js escribe el review-roster en el MISMO run dir que usa el pipeline:

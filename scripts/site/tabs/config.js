@@ -456,6 +456,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // sin pipeline dicen qué pasa, con la misma respuesta que da el lector al merge
     if (s.id === 'modelos' && doc) v.problems.push(...ORG.problemasDelTope(s, lec, doc));
     if (s.id === 'suites') v.extras = { sinPipeline: ORG.sinPipelinePorRegla(lec), queHace: ORG.queHacePorRegla(lec) };
+    if (s.id === 'estimaciones') { const e = ORG.estimacionesDeHoy(TREE); v.extras = { hoy: e.hoy, motivoHoy: e.motivo }; }
     if (s.id === 'integraciones') { const h = herramientasDeHoras(); v.extras = { horas: h.horas, horasProblemas: h.problemas, plataformas: conectoresDePlataforma() }; }
     // las herramientas de prueba de fábrica de esta versión, para que «Cambiar» arranque desde ellas; las que la puerta
     // corre por dentro se listan sin poder cambiarse

@@ -102,6 +102,28 @@ test('T62 ToolNames_CountsOutsideZones_BlocksAboveCeiling @story-7.40 @ac-28', (
   assert.strictEqual(cli(dir).status, 1, 'INDEX.md sin agregar no cuenta, pero a.js en el índice sí');
 });
 
+test('T25 ToolNames_ApprovalFolder_OnlyTopLevelJsonIsFree @story-8.98 @ac-8', () => {
+  // las firmas del dueño, una por archivo, anotan las rutas de los controles que firman: el .json del primer nivel de la
+  // carpeta de firmas es zona libre; lo demás que se cuele ahí adentro sigue contando
+  // una ruta como skills/acmeclock/… no es una ruta de integración: cuenta como mención
+  const firma = '{"hash":"h","rules":[{"path":"skills/acmeclock/scripts/x.js","blob":"b"}]}\n';
+  assert.strictEqual(TN.allowed('.github/control-changes/abc.json'), true);
+  assert.strictEqual(TN.allowed('.tycon/control-changes/abc.json'), true);
+  for (const rel of ['.github/control-changes/x.js', '.github/control-changes/x.md', '.github/control-changes/sub/abc.json', '.tycon/control-changes/x.md', '.github/control-changes.json']) {
+    assert.strictEqual(TN.allowed(rel), false, rel);
+  }
+  const dir = toyRepo({
+    '.github/control-changes/abc.json': firma,
+    '.tycon/control-changes/def.json': firma,
+    '.github/control-changes/x.js': '// acmetime\n',
+    '.github/control-changes/x.md': 'acmetime\n',
+    '.github/control-changes/sub/abc.json': firma,
+  }, { exceptions: [], ceiling: {} });
+  const r = TN.check({ repo: dir });
+  assert.deepStrictEqual(Object.keys(r.perFile).sort(), ['.github/control-changes/sub/abc.json', '.github/control-changes/x.js', '.github/control-changes/x.md'], JSON.stringify(r.perFile));
+  assert.strictEqual(r.ok, false);
+});
+
 test('T63 ToolNames_Exceptions_ReasonAndStale @story-7.40 @ac-29', () => {
   const files = {
     'scripts/lib/legacy.js': 'lee la llave vieja acmetime\n',
