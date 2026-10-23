@@ -35,6 +35,46 @@
           ],
           "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "rm -rf node_modules" } },
           "expect": { "exit": 0, "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/escrituras-consola/banco.jsonl", "re": "\"kind\":\"delete\"" }] }
+        },
+        {
+          "id": "frena-escribir-un-manifiesto-con-node-e",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && echo '{}' > package.json && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
+          ],
+          "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "node -e \"require('fs').writeFileSync('package.json', 'x')\"" } },
+          "expect": { "exit": 2, "stderr_re": ["EDICIÓN INVISIBLE"] }
+        },
+        {
+          "id": "pasa-el-gestor-de-paquetes-con-la-corrida-abierta",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && echo '{}' > package.json && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
+          ],
+          "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "npm install --dry-run" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "frena-un-destino-armado-con-la-corrida-abierta",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo 'export const a = 1;' > src/a.ts && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
+          ],
+          "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "node -e \"const fs=require('fs'),path=require('path'); const d=process.argv[1]; fs.writeFileSync(path.join(d,'a.ts'),'x')\" src" } },
+          "expect": { "exit": 2, "stderr_re": ["EDICIÓN INVISIBLE"] }
+        },
+        {
+          "id": "pasa-un-destino-literal-fuera-del-repo",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo 'export const a = 1;' > src/a.ts && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
+          ],
+          "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "node -e \"require('fs').writeFileSync('${SANDBOX_HOME}/fuera.ts', 'x')\"" } },
+          "expect": { "exit": 0 }
         }
       ]
     }

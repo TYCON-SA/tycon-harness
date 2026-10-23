@@ -1066,8 +1066,12 @@ test('Win_PipelineSkeleton_OnExampleNodeRepo', { skip: (process.platform === 'wi
       const why = JSON.stringify({ reason: step.reason, findings: step.findings }, null, 1);
       assert.deepStrictEqual([step.name, step.status], ['pipeline-skeleton', 'measured'], why);
       assert.deepStrictEqual(step.findings, [], why);
-      assert.deepStrictEqual(Object.keys(step.facts.checks), skeleton.CHECKS, 'los cinco pasos, en orden');
+      assert.deepStrictEqual(Object.keys(step.facts.checks), skeleton.CHECKS, 'los seis pasos, en orden');
       for (const name of skeleton.CHECKS) assert.deepStrictEqual([name, step.facts.checks[name].exit, step.facts.checks[name].ok], [name, 0, true], why);
+      // el .gitignore CRLF, con core.autocrlf en true y en false, sólo recibe líneas
+      const gi = step.facts.checks.gitignore.repos;
+      assert.deepStrictEqual(gi.map((g) => g.autocrlf), ['true', 'false'], why);
+      for (const g of gi) assert.ok(g.added > 0 && g.deleted === 0, `autocrlf ${g.autocrlf}: numstat ${g.added} y ${g.deleted}`);
       const tr = step.facts.tests_result;
       assert.deepStrictEqual([tr.runner, tr.suite_green, tr.totals.total > 0 && tr.totals.passed === tr.totals.total && tr.totals.failed === 0], ['node-test', true, true], 'queda tests-result.json con todo verde');
       assert.ok(L.isInside(step.facts.repo, lab) && fs.existsSync(path.join(step.facts.repo, '.advisors', 'tests-result.json')), 'el repo de ejemplo vive en el laboratorio y ahí queda tests-result.json');
@@ -1078,10 +1082,16 @@ test('Win_PipelineSkeleton_OnExampleNodeRepo', { skip: (process.platform === 'wi
 
   await t.test('cada paso que no sale como en Linux es un hallazgo con su nombre; sin instalación, «no medido»', () => {
     const ok = (extra) => Object.assign({ exit: 0, error: null, ok: true }, extra || {});
-    const checks = { lint: ok(), start: ok(), 'mech-check': ok(), advisors: ok(), 'test-gate': ok({ exit: 1, ok: false, why: 'tests-result.json dice «|false|false»' }) };
+    const checks = { lint: ok(), start: ok(), 'mech-check': ok(), advisors: ok(), 'test-gate': ok({ exit: 1, ok: false, why: 'tests-result.json dice «|false|false»' }), gitignore: ok() };
     assert.deepStrictEqual(skeleton.findingsOf(checks).map((f) => [f.id, f.closes]), [['skeleton:test-gate', 'W6']]);
     assert.match(skeleton.findingsOf(checks)[0].detail, /test-gate.*salió 1/);
-    assert.deepStrictEqual(skeleton.findingsOf({ lint: ok() }).map((f) => f.id), ['skeleton:start:not-run', 'skeleton:mech-check:not-run', 'skeleton:advisors:not-run', 'skeleton:test-gate:not-run'], 'un paso que no corrió también');
+    assert.deepStrictEqual(skeleton.findingsOf({ lint: ok() }).map((f) => f.id), ['skeleton:start:not-run', 'skeleton:mech-check:not-run', 'skeleton:advisors:not-run', 'skeleton:test-gate:not-run', 'skeleton:gitignore:not-run'], 'un paso que no corrió también');
+    // T38: el numstat de un .gitignore reescrito (lo que pasaba en Windows) es un hallazgo
+    assert.deepStrictEqual(skeleton.numstatOf('3\t0\t.gitignore\n'), { added: 3, deleted: 0 });
+    assert.deepStrictEqual(skeleton.numstatOf('5\t2\t.gitignore\n'), { added: 5, deleted: 2 });
+    assert.strictEqual(skeleton.numstatOf(''), null, 'sin cambios no hay numstat: no es «0 y 0» ni verde');
+    const reescrito = skeleton.findingsOf(Object.assign({}, checks, { 'test-gate': ok(), gitignore: ok({ ok: false, why: 'autocrlf true: 5 agregadas y 2 borradas' }) }));
+    assert.deepStrictEqual(reescrito.map((f) => f.id), ['skeleton:gitignore']);
     const base = tmp('skeleton-none');
     try {
       const lab = path.join(base, 'lab');

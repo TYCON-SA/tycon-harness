@@ -77,7 +77,17 @@ const TEST_FILES = Object.freeze({
   'bench-portable': 'scripts/tests/bench-portable.test.js',
   'windows-support': 'scripts/tests/windows-support.test.js',
   'test-scope-table': 'scripts/tests/test-scope-table.test.js',
+  // las del registro de hooks, el piso de Node, los frenos y el cierre: lo que se rompió en Windows tiene su suite
+  // corrida en Windows
+  'apply-hooks': 'scripts/tests/apply-hooks.test.js',
+  'harness-node': 'scripts/tests/harness-node.test.sh',
+  'story-gate': 'skills/tycon-pipeline/scripts/tests/story-gate.test.js',
+  'ledger-visible': 'skills/tycon-pipeline/scripts/tests/ledger-visible.test.js',
+  'safety-escape': 'scripts/tests/safety-escape.test.js',
+  'run-close': 'skills/tycon-pipeline/scripts/tests/run-close.test.js',
+  'pipeline-unit': 'skills/tycon-pipeline/scripts/tests/unit.test.js',
 });
+const GIT_BASH = path.join(__dirname, '..', '..', 'lib', 'git-bash.js');
 const FINDER = 'scripts/lib/git-bash.js';
 const RUNNER = 'scripts/controls-bench/runner.js';
 // los topes, en segundos
@@ -165,14 +175,19 @@ function commandRunner({ out, part, clean = (s) => s, record = () => {} }) {
 }
 
 /**
- * Corre una suite del clon (`node <archivo>`) y devuelve sus totales. Si el clon no la trae, lo dice y no la corre.
+ * Corre una suite del clon (`node <archivo>`; una `.sh`, con el bash de Git `bash`) y devuelve sus totales. Si el clon
+ * no la trae, o es una `.sh` y no hay bash, lo dice y no la corre.
  * `look` son cosas que su salida ENTERA tiene que decir (`{ nombre: expresión }`): quedan en `says`, por sí o por no.
  */
-function runTest(runner, name, { clone, env, id = name, look = null }) {
+function runTest(runner, name, { clone, env, id = name, look = null, bash = null }) {
   const file = TEST_FILES[name];
   if (!fs.existsSync(path.join(clone, file))) return { file, not_run: `el commit que se mide no trae ${file}` };
-  const r = runner.run(id, `la suite ${path.basename(file)}`, process.execPath, [file], { cwd: clone, env, cap: CAP.test, line: `node ${file}` });
-  const t = Object.assign({ file, exit: r.exit, error: r.error, timed_out: r.timed_out, saved: r.saved }, P.parseTap(r.text));
+  const sh = /\.sh$/.test(file);
+  if (sh && !bash) return { file, not_run: `${file} es de bash y no hay bash de Git` };
+  const r = sh
+    ? runner.run(id, `la suite ${path.basename(file)}`, bash, [file], { cwd: clone, env, cap: CAP.test, line: `<bash de findGitBash()> ${file}` })
+    : runner.run(id, `la suite ${path.basename(file)}`, process.execPath, [file], { cwd: clone, env, cap: CAP.test, line: `node ${file}` });
+  const t = Object.assign({ file, exit: r.exit, error: r.error, timed_out: r.timed_out, saved: r.saved }, sh ? P.parseShellSuite(r.text) : P.parseTap(r.text));
   if (look) t.says = Object.fromEntries(Object.entries(look).map(([k, rx]) => [k, rx.test(r.text)]));
   // de una suite que no pasó, el principio y el final de lo que dijo (entero está en `saved`)
   if (!P.testPassed(t)) t.tail = L.clip(lastLines(r.text, 400), 3000);
@@ -385,15 +400,21 @@ function gitBash(ctx) {
   return { status: L.STATUS.measured, reason: null };
 }
 
-/** 6 · las suites de Node: dos que no usan bash para armar nada, y la tabla del freno de pruebas por el bash de Git. */
+/**
+ * 6 · las suites: dos que no usan bash para armar nada, la tabla del freno de pruebas por el bash de Git, y las del
+ * registro de hooks, el piso de Node, los frenos y el cierre (la de bash, con el bash de Git).
+ */
 function suites(ctx) {
-  const { rec, runner, env, clone } = ctx;
+  const { rec, runner, env, clone, platform } = ctx;
+  let bash = null;
+  try { bash = require(GIT_BASH).findGitBash({ platform, env }).path || null; } catch (_) { bash = null; }
+  rec.fact('suites_bash', bash);
   const tests = {};
-  for (const name of ['bench-portable', 'windows-support', 'test-scope-table']) {
-    tests[name] = runTest(runner, name, { clone, env });
+  for (const name of P.SUITES) {
+    tests[name] = runTest(runner, name, { clone, env, bash });
     rec.fact('tests', tests);
     const t = tests[name];
-    if (!t.not_run && !P.testPassed(t)) rec.finding(`suites:${name}-failed`, 'test', `${name}.test.js ${t.timed_out ? 'venció su tope' : `salió ${t.error || t.exit}`}${t.first_failure ? ` — la primera que falla: ${t.first_failure}` : ''}${name === 'bench-portable' ? '. Con esta suite en rojo, lo que diga el banco entero no es de fiar' : ''}`, 'W1');
+    if (!t.not_run && !P.testPassed(t)) rec.finding(`suites:${name}-failed`, 'test', `${path.basename(t.file)} ${t.timed_out ? 'venció su tope' : `salió ${t.error || t.exit}`}${t.first_failure ? ` — la primera que falla: ${t.first_failure}` : ''}${name === 'bench-portable' ? '. Con esta suite en rojo, lo que diga el banco entero no es de fiar' : ''}`, 'W1');
   }
   if (Object.values(tests).every((t) => t.not_run)) return { status: L.STATUS.notMeasured, reason: `el commit que se mide no trae ninguna de las suites (¿es anterior a la tanda W1?): ${Object.values(tests).map((t) => t.not_run).join(' · ')}` };
   return { status: L.STATUS.measured, reason: null };

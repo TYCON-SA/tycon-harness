@@ -16,6 +16,9 @@
  *   test-gate    `test-gate.sh <repo> <story>`, con el bash de Git (`findGitBash()`)               → sale 0 y deja
  *                                                                                                    tests-result.json:
  *                                                                                                    node-test, todo verde
+ *   gitignore    `start` en dos copias del repo con un `.gitignore` CRLF, con `core.autocrlf` en  → `git diff --numstat`
+ *                `true` y en `false`                                                               da N agregadas y 0
+ *                                                                                                    borradas en las dos
  * Los guiones salen de la instalación (el enlace `~/.claude/agent-skills` y el lugar del arnés, `place.js`, de la
  * carpeta de usuario de laboratorio), como los llama el pipeline; el repo de ejemplo es el de la máquina limpia
  * (`scripts/tests/fixtures/example-repo`), armado como ahí: la story en `specs/`, rama de la story y un commit.
@@ -33,7 +36,9 @@ const L = require('./lab.js');
 const PLACE = require('../../setup/harness/place.js');   // el lugar del arnés y su nombre viejo
 
 const NAME = 'pipeline-skeleton';
-const CHECKS = Object.freeze(['lint', 'start', 'mech-check', 'advisors', 'test-gate']);
+const CHECKS = Object.freeze(['lint', 'start', 'mech-check', 'advisors', 'test-gate', 'gitignore']);
+// el `.gitignore` con fin de línea de Windows: `start` le agrega líneas y git no tiene que verlo reescrito
+const GITIGNORE_CRLF = 'node_modules/\r\ndist/\r\n';
 const FIXTURE = path.join(__dirname, '..', 'fixtures', 'example-repo');
 const GIT_BASH = path.join(__dirname, '..', '..', 'lib', 'git-bash.js');
 const STORY_REL = path.join('specs', 'story-1.1-greeting.md');
@@ -47,16 +52,21 @@ const parse = (text) => { try { return JSON.parse(text); } catch (_) { return nu
 // para bash, en Windows, la ruta con barras `/`: el bash de Git las lee igual y no hay escapes que perder
 const forBash = (p, platform) => (L.isWin(platform) ? String(p).replace(/\\/g, '/') : p);
 
-/** El repo de ejemplo, como `make_example_repo` de la máquina limpia. `null` si quedó, o el motivo. */
-function makeExampleRepo(dir, env) {
+/**
+ * El repo de ejemplo, como `make_example_repo` de la máquina limpia. `null` si quedó, o el motivo. Con `gitignore`, lo
+ * escribe tal cual antes del commit; con `autocrlf`, fija `core.autocrlf` del repo antes de agregar nada.
+ */
+function makeExampleRepo(dir, env, { gitignore = null, autocrlf = null } = {}) {
   try {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
     for (const part of ['package.json', 'src', 'test']) fs.cpSync(path.join(FIXTURE, part), path.join(dir, part), { recursive: true });
     fs.copyFileSync(path.join(FIXTURE, 'story-1.1.md.tpl'), path.join(dir, STORY_REL));
+    if (gitignore !== null) fs.writeFileSync(path.join(dir, '.gitignore'), gitignore);
   } catch (e) { return `no pude copiar el repo de ejemplo (${FIXTURE}): ${e.code || e.message}`; }
   const git = ['-c', 'user.name=lab', '-c', 'user.email=lab@example.com', '-c', 'commit.gpgsign=false'];
-  for (const args of [['init', '-q'], ['checkout', '-q', '-b', 'story/1.1'], ['add', '-A'], ['commit', '-q', '-m', 'el repo de ejemplo']]) {
+  const config = autocrlf === null ? [] : [['config', 'core.autocrlf', autocrlf]];
+  for (const args of [['init', '-q'], ['checkout', '-q', '-b', 'story/1.1'], ...config, ['add', '-A'], ['commit', '-q', '-m', 'el repo de ejemplo']]) {
     const r = L.run('git', [...git, ...args], { cwd: dir, env, timeoutMs: MINUTES });
     if (r.error || r.exit !== 0) return `git ${args[0]} salió ${r.error || r.exit}: ${L.firstLine(r.stderr) || L.firstLine(r.stdout)}`;
   }
@@ -79,7 +89,37 @@ function findingsOf(checks) {
   return out;
 }
 
-/** Los cinco pasos sobre el repo de ejemplo. Devuelve `{ checks, testsResult }`. */
+/** `git diff --numstat` de un archivo: `{ added, deleted }`, o null si no hay renglón (sin cambios, o ilegible). */
+function numstatOf(text) {
+  const m = /^(\d+)\t(\d+)\t/m.exec(String(text || ''));
+  return m ? { added: Number(m[1]), deleted: Number(m[2]) } : null;
+}
+
+/**
+ * El `.gitignore` CRLF: dos copias del repo de ejemplo, con `core.autocrlf` en `true` y en `false`, y `start` en cada
+ * una con su propia sesión. Sale bien si las dos dan N agregadas (N > 0) y 0 borradas.
+ */
+function gitignoreCheck({ pipe, repo, env }) {
+  const repos = [];
+  let ms = 0;
+  let fail = null;
+  for (const autocrlf of ['true', 'false']) {
+    const dir = `${repo}-gitignore-${autocrlf}`;
+    const made = makeExampleRepo(dir, env, { gitignore: GITIGNORE_CRLF, autocrlf });
+    if (made) { repos.push({ autocrlf, problem: made }); fail = fail || `autocrlf ${autocrlf}: ${made}`; continue; }
+    const own = Object.assign({}, env, { TYCON_SESSION_ID: `windows-pipeline-skeleton-gitignore-${autocrlf}` });
+    const s = L.run(process.execPath, [path.join(pipe, 'pipeline.js'), 'start', '--story', path.join(dir, STORY_REL), '--repo', dir], { cwd: dir, env: own, timeoutMs: 5 * MINUTES, cap: PARSE_CAP });
+    const d = L.run('git', ['diff', '--numstat', '--', '.gitignore'], { cwd: dir, env, timeoutMs: MINUTES });
+    ms += (s.ms || 0) + (d.ms || 0);
+    const n = d.exit === 0 ? numstatOf(d.stdout) : null;
+    repos.push({ autocrlf, start_exit: s.exit, added: n ? n.added : null, deleted: n ? n.deleted : null });
+    if (!n) fail = fail || `autocrlf ${autocrlf}: ${d.exit === 0 ? 'start no agregó nada al .gitignore' : `git diff salió ${d.error || d.exit}`}`;
+    else if (!(n.added > 0 && n.deleted === 0)) fail = fail || `autocrlf ${autocrlf}: ${n.added} agregadas y ${n.deleted} borradas (git lo ve reescrito)`;
+  }
+  return { exit: fail ? 1 : 0, error: null, ok: !fail, why: fail, ms, repos, stdout: '', stderr: '' };
+}
+
+/** Los seis pasos sobre el repo de ejemplo. Devuelve `{ checks, testsResult }`. */
 function runChecks({ pipe, harness, repo, env, platform, gitBash }) {
   const story = path.join(repo, STORY_REL);
   const node = (args, timeoutMs = 5 * MINUTES) => L.run(process.execPath, args, { cwd: repo, env, timeoutMs, cap: PARSE_CAP });
@@ -116,6 +156,7 @@ function runChecks({ pipe, harness, repo, env, platform, gitBash }) {
     const allGreen = Boolean(testsResult && testsResult.runner === 'node-test' && testsResult.suite_green === true && tt && tt.total > 0 && tt.passed === tt.total && tt.failed === 0);
     checks['test-gate'] = record(r, r.exit === 0 && allGreen, testsResult ? `tests-result.json dice «${[testsResult.runner, testsResult.suite_green, JSON.stringify(tt)].join('|')}» (esperado node-test, verde, todas pasan)` : `no quedó tests-result.json; ${L.firstLine(r.stderr) || L.firstLine(r.stdout)}`);
   }
+  checks.gitignore = gitignoreCheck({ pipe, repo, env });
   return { checks, testsResult };
 }
 
@@ -187,4 +228,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, CHECKS, makeExampleRepo, findingsOf, runChecks, measure };
+module.exports = { NAME, CHECKS, makeExampleRepo, findingsOf, numstatOf, runChecks, measure };

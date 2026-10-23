@@ -128,6 +128,131 @@ function leadingCd(cmd) {
   return m ? (m[1] ?? m[2] ?? m[3]) : null;
 }
 
+// lo que vuelve compleja la parte de un comando antes de su `cd`: comillas, sustituciones, paréntesis o llaves, tuberías,
+// `||`, un `&` suelto, comentarios, redirecciones, heredocs, escapes y las palabras de control del shell
+const ANTES_DEL_CD_COMPLEJO = /['"`(){}|<>#\\]|\$\(|(?:^|[^&])&(?!&)|\b(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select|eval|source|exec|bash|sh|zsh)\b/;
+
+/**
+ * La carpeta contra la que se resuelven los destinos relativos del comando. Sólo una forma se sigue:
+ * `[VAR=literal; …;] [… &&] cd DIR && <escritura>`, con el primer `cd` del comando, todo lo de antes simple (ver
+ * ANTES_DEL_CD_COMPLEJO), `DIR` resuelto sin `$(…)` ni opciones, un `&&` después y cada destino relativo adentro de esa
+ * misma cadena de `&&` y antes de cualquier otro `cd`: si el `cd` falla, la escritura no corre, y un `cd` posterior no
+ * cambia dónde cayó. Cualquier otra forma resuelve como antes de esta función: con el `cd` del principio (`leadingCd`),
+ * salvo que un segundo `cd` venga antes de una escritura relativa, que resuelve contra la carpeta de la sesión.
+ */
+function cwdDelComando(cmd, baseCwd) {
+  return resolverCd(cmd, baseCwd).dir;
+}
+
+/**
+ * Las carpetas donde puede caer una escritura relativa del comando: una sola, salvo que sea ambiguo (un segundo `cd`
+ * antes de una escritura relativa, fuera de la forma mínima). Ahí, la de la sesión, la del `cd` del principio y la de
+ * cada `cd` que se pueda resolver (seguido del anterior, o desde la sesión).
+ */
+function carpetasDelComando(cmd, baseCwd) {
+  const r = resolverCd(cmd, baseCwd);
+  if (r.forma !== 'ambiguo') return [r.dir];
+  const raw = String(cmd || '');
+  const out = [baseCwd];
+  const d = leadingCd(raw);
+  if (d) out.push(resolveTarget(d, baseCwd));
+  let previa = baseCwd;
+  for (const m of r.s.matchAll(/\bcd[ \t]+(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>'"`]+))/g)) {
+    const tok = m[1] ?? m[2] ?? m[3];
+    if (!tok || tok.startsWith('-')) continue;
+    const ex = expandirRuta(raw.slice(0, m.index + m[0].length), tok);
+    if (ex.sinResolver.length) continue;
+    previa = resolveTarget(ex.valor, previa, process.platform, { homeVariable: true });
+    out.push(previa, resolveTarget(ex.valor, baseCwd, process.platform, { homeVariable: true }));
+  }
+  return [...new Set(out)];
+}
+
+/** Los destinos relativos que escribe un tramo de un comando (con las variables de `raw`); null si alguno no se sabe. */
+function relativosDe(raw, texto) {
+  const armados = destinosArmados(texto);
+  if (armados.some((a) => !a.literal && !a.literales)) return null;
+  return [
+    ...extractWriteTargets(texto, { keep: () => true }),
+    ...destinosBorrados(texto).map((d) => d.raw),
+    ...armados.flatMap((a) => (a.literal ? [a.literal] : a.literales)),
+  ].filter((t) => { const v = expandirRuta(raw, t).valor; return !path.isAbsolute(v) && !/^~/.test(v) && !/^[A-Za-z]:[\\/]/.test(v); });
+}
+
+/** La decisión de `cwdDelComando`: `{ dir, forma: 'sin-cd'|'minima'|'hoy'|'ambiguo', s }`. */
+function resolverCd(cmd, baseCwd) {
+  const raw = String(cmd || '');
+  // los cuerpos de heredoc, en blanco con su largo: las posiciones siguen siendo las del comando
+  let s = raw;
+  let cds = [];
+  // como hoy: el cd del principio (`leadingCd`), salvo que un segundo cd venga antes de una escritura relativa (ahí no se
+  // sabe en qué carpeta cae: ambiguo, y la de la sesión)
+  const hoy = () => {
+    const d = leadingCd(raw);
+    if (cds.length > 1) {
+      const despues = relativosDe(raw, raw.slice(cds[1].index));
+      if (!despues || despues.length) return { dir: baseCwd, forma: 'ambiguo', s };
+    }
+    return d ? { dir: resolveTarget(d, baseCwd), forma: 'hoy', s } : { dir: baseCwd, forma: 'hoy', s };
+  };
+  try {
+    s = raw.replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)([\s\S]*?)(\n[ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
+    cds = [...s.matchAll(/\bcd\b/g)];
+    if (!cds.length) return { dir: baseCwd, forma: 'sin-cd', s };
+    const m = /(^|;|\n|&&)[ \t]*cd[ \t]+([^\s;&|()<>'"`\\]+)[ \t]*&&/.exec(s.slice(Math.max(0, cds[0].index - 3)));
+    if (!m) return hoy();
+    const enCd = Math.max(0, cds[0].index - 3) + m.index + m[1].length;
+    const antes = raw.slice(0, enCd);
+    if (ANTES_DEL_CD_COMPLEJO.test(antes)) return hoy();
+    const dirRaw = m[2];
+    if (dirRaw.startsWith('-') || dirRaw.includes('$(')) return hoy();
+    const ex = expandirRuta(antes + 'cd ' + dirRaw, dirRaw);
+    if (ex.sinResolver.length) return hoy();
+    const dir = resolveTarget(ex.valor, baseCwd, process.platform, { homeVariable: true });
+    // el fin de la cadena de `&&` que arranca en el cd: el primer `;`, `||`, `|`, `&` suelto o fin de línea fuera de
+    // comillas y de paréntesis (un heredoc se saltea entero: su cuerpo es parte del comando que lo abre)
+    const desde = Math.max(0, cds[0].index - 3) + m.index + m[0].length;
+    let fin = raw.length;
+    let q = null;
+    let nivel = 0;
+    const pendientes = [];
+    for (let i = desde; i < raw.length; i++) {
+      const c = raw[i];
+      if (q) { if (c === '\\' && q !== "'") i++; else if (c === q) q = null; continue; }
+      if (c === "'" || c === '"' || c === '`') { q = c; continue; }
+      if (c === '(') { nivel++; continue; }
+      if (c === ')') { nivel--; continue; }
+      const h = /^<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(raw.slice(i, i + 80));
+      if (h) { pendientes.push(h[2]); i += h[0].length - 1; continue; }
+      if (c === '\n' && pendientes.length) {
+        let j = i;
+        while (pendientes.length) {
+          const del = pendientes.shift();
+          const cierre = new RegExp(`\\n[ \\t]*${del}[ \\t]*(?=\\n|$)`).exec(raw.slice(j));
+          if (!cierre) return hoy();
+          j += cierre.index + cierre[0].length;
+        }
+        i = j - 1;
+        continue;
+      }
+      if (nivel > 0) continue;
+      if (c === ';' || c === '\n' || c === '|' || (c === '&' && raw[i + 1] !== '&' && raw[i - 1] !== '&')) { fin = i; break; }
+    }
+    if (q || nivel !== 0) return hoy();
+    // un segundo cd corta la cadena: lo que viene después ya no se sabe dónde cae
+    if (cds.length > 1) fin = Math.min(fin, cds[1].index);
+    const cadena = relativosDe(raw, raw.slice(desde, fin));
+    const resto = relativosDe(raw, raw.slice(0, enCd) + '\n' + raw.slice(fin));
+    const todos = relativosDe(raw, raw);
+    if (!cadena || !resto || !todos) return hoy();
+    // cada destino relativo del comando se escribe adentro de la cadena del cd, y nada fuera de ella escribe uno relativo
+    return resto.length === 0 && todos.every((t) => cadena.includes(t)) ? { dir, forma: 'minima', s } : hoy();
+  } catch (e) {
+    logHookError(e);
+    try { return hoy(); } catch (_e) { return { dir: baseCwd, forma: 'ambiguo', s }; }
+  }
+}
+
 /** Devuelve los paths (tal cual aparecen) que el comando escribe. */
 function extractWriteTargets(cmd, { keep = null } = {}) {
   const out = new Set();
@@ -324,6 +449,33 @@ function literalesDe(expr) {
  * una ruta literal (`const p = 'src/a.ts'`) o un argumento del comando, `ext` si termina en un literal con extensión
  * (`dir + '/findings.json'`).
  */
+/**
+ * Cuántas veces se le asigna algo a `nombre` en un script, por cualquier forma que se lea: `nombre = …` (también entre
+ * paréntesis o como argumento con nombre: contar de más sólo deja el destino sin resolver), una asignación compuesta
+ * (`nombre += …`, `nombre ||= …`, `nombre := …`), un desempaquetado (`a, nombre = …`, `[a, nombre] = …`, `{ nombre } = …`)
+ * y la variable de un bucle (`for nombre in …`, `for (const nombre of …)`).
+ */
+function vecesAsignado(script, nombre) {
+  const s = String(script || '');
+  const n = String(nombre).replace(/\$/g, '\\$');
+  let veces = (s.match(new RegExp(`(?<![\\w$.])${n}[ \\t]*=(?!=)`, 'gm')) || []).length;
+  veces += (s.match(new RegExp(`(?<![\\w$.])${n}[ \\t]*(?:\\*\\*|\\/\\/|<<|>>>?|&&|\\|\\||\\?\\?|[-+*/%&|^:])=(?!=)`, 'gm')) || []).length;
+  // con anotación de tipo: `nombre: str = …` · `let nombre: string = …`
+  veces += (s.match(new RegExp(`(?<![\\w$.])${n}[ \\t]*:[^=\\n;:]+=(?!=)`, 'gm')) || []).length;
+  // al principio de una sentencia, con o sin corchetes; después de un paréntesis, sólo con corchetes o llaves (sin ellos
+  // es una llamada: `open(p, encoding=…)`)
+  for (const m of s.matchAll(/(?:(?:^|[;\n])[ \t]*(?:const[ \t]+|let[ \t]+|var[ \t]+)?([[{])?|\([ \t]*([[{]))([\w$ \t]+(?:,[\w$ \t]*)*)[\]}]?[ \t]*=(?!=)/g)) {
+    m[1] = m[1] || m[2];
+    m[2] = m[3];
+    const nombres = m[2].split(',').map((x) => x.trim()).filter(Boolean);
+    // sin corchetes, el último nombre ya contó como `nombre = …`; entre corchetes o llaves, ninguno
+    const cuentan = m[1] ? nombres : nombres.slice(0, -1);
+    if (cuentan.includes(nombre)) veces++;
+  }
+  veces += (s.match(new RegExp(`\\bfor[ \\t]*\\(?[ \\t]*(?:const[ \\t]+|let[ \\t]+|var[ \\t]+)?${n}[ \\t]+(?:in|of)\\b`, 'g')) || []).length;
+  return veces;
+}
+
 function leerArmado(expr, script, argv) {
   // `process.argv[k]` / `sys.argv[k]` / `$ARGV[k]` (perl cuenta desde 0), con o sin una cola literal
   const desdeArgv = (e) => {
@@ -338,17 +490,20 @@ function leerArmado(expr, script, argv) {
   if (directos) return { literales: directos };
   if (/^\$?[A-Za-z_][\w$]*$/.test(expr)) {
     const nombre = expr.replace(/\$/g, '\\$');
-    // el lado derecho entero tiene que salir de literales: `p = 'src/' + n` no se sabe
-    const m = new RegExp(`(?:^|[^\\w$.=!<>])${nombre}\\s*=(?!=)\\s*([^;\\n]+)`).exec(script);
-    if (m) {
-      const der = m[1].trim();
-      if (desdeArgv(der)) return { literal: desdeArgv(der) };
-      const lits = literalesDe(der);
-      if (lits) return { literales: lits };
+    // cuántas veces se le asigna algo al nombre en el script. Con una, su lado derecho; con varias `nombre = …`, todas:
+    // si cada una sale de literales, se juzgan todas las rutas (un script que edita dos archivos con la misma variable);
+    // un desempaquetado o un bucle entre ellas no se sabe
+    const asignaciones = vecesAsignado(script, expr);
+    const simples = [...script.matchAll(new RegExp(`(?<![\\w$.])(?<![,(][ \\t]*)${nombre}[ \\t]*=(?!=)[ \\t]*([^;\\n]+)`, 'gm'))].map((x) => x[1].trim());
+    if (asignaciones === 1 && simples.length === 1 && desdeArgv(simples[0])) return { literal: desdeArgv(simples[0]) };
+    if (simples.length && simples.length === asignaciones) {
+      // el lado derecho entero tiene que salir de literales: `p = 'src/' + n` no se sabe
+      const todas = simples.map((der) => literalesDe(der));
+      if (todas.every(Boolean)) return { literales: [...new Set(todas.flat())] };
     }
     // el primer parámetro de una función auxiliar (`function edit(p, pares)`, `def rep(p, pares):`): si cada llamada
-    // le pasa una ruta literal, ésas son las rutas
-    const fn = new RegExp(`(?:function|def)\\s+([A-Za-z_]\\w*)\\s*\\(\\s*${nombre}\\s*[,)]`).exec(script);
+    // le pasa una ruta literal, ésas son las rutas (y nada le asigna otra cosa)
+    const fn = asignaciones === 0 && new RegExp(`(?:function|def)\\s+([A-Za-z_]\\w*)\\s*\\(\\s*${nombre}\\s*[,)]`).exec(script);
     if (fn) {
       const rutas = [];
       let todas = true;
@@ -360,8 +515,9 @@ function leerArmado(expr, script, argv) {
       }
       if (todas && rutas.length) return { literales: rutas };
     }
-    // un bucle sobre una lista de rutas literales: `for p in ['a.yaml', 'b.md']` · `for (const p of ['a', 'b'])`
-    const bucle = new RegExp(`for\\s*\\(?\\s*(?:const\\s+|let\\s+|var\\s+)?${nombre}\\s+(?:in|of)\\s+(\\[[^\\]]*\\])`).exec(script);
+    // un bucle sobre una lista de rutas literales: `for p in ['a.yaml', 'b.md']` · `for (const p of ['a', 'b'])` (y el
+    // bucle es la única asignación del nombre)
+    const bucle = asignaciones === 1 && new RegExp(`for\\s*\\(?\\s*(?:const\\s+|let\\s+|var\\s+)?${nombre}\\s+(?:in|of)\\s+(\\[[^\\]]*\\])`).exec(script);
     if (bucle) {
       const lits = literalesDe(bucle[1]);
       if (lits) return { literales: lits };
@@ -372,7 +528,16 @@ function leerArmado(expr, script, argv) {
       const nombres = String(d[1] || d[2]).split(',').map((x) => x.trim());
       const k = nombres.indexOf(expr);
       const desde = Number(d[3] || d[4]);
-      if (k >= 0 && argv[desde + k - 1] != null) return { literal: argv[desde + k - 1] };
+      if (k >= 0 && asignaciones === 1 && argv[desde + k - 1] != null) return { literal: argv[desde + k - 1] };
+    }
+    // por índice: `B, OUTF = sys.argv[1], sys.argv[2]` · `const f = process.argv[2]` (un nombre por índice, en orden).
+    // Sólo si es la única asignación de ese nombre en el script: reasignado después, el destino ya no es el argumento
+    const porIndice = /(?:^|[;\n]|\b(?:const|let|var)\s)[ \t]*([\w, \t]+?)[ \t]*=[ \t]*((?:(?:sys\.argv|process\.argv)\[\d+\][ \t]*,?[ \t]*)+)(?=$|[;\n])/gm;
+    for (const d of script.matchAll(porIndice)) {
+      const nombres = d[1].split(',').map((x) => x.trim()).filter(Boolean);
+      const indices = [...d[2].matchAll(/\[(\d+)\]/g)].map((x) => Number(x[1]));
+      const k = nombres.indexOf(expr);
+      if (k >= 0 && asignaciones === 1 && indices[k] != null && argv[indices[k] - 1] != null) return { literal: argv[indices[k] - 1] };
     }
   }
   // la cola es un literal (`dir + '/findings.json'`, `"'$R'/x.md"`): su extensión dice qué clase de archivo es
@@ -1122,9 +1287,8 @@ function handle(event, opts = {}) {
     const cmd = event?.tool_input?.command;
     if (cmd && (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
       const baseCwd = nativePath(event?.cwd || process.cwd());
-      const cdDir = leadingCd(cmd);
       deprecado = require('./on-deprecated-edit.js').porLaTerminal({
-        cmd, cwd: cdDir ? resolveTarget(cdDir, baseCwd) : baseCwd,
+        cmd, cwd: cwdDelComando(cmd, baseCwd),
         // todo destino, sea o no código: lo deprecado puede ser una guía, un esquema o una configuración
         destinos: (c, cwd) => destinosResueltos(c, cwd, process.platform, { keep: () => true }).map((d) => d.abs),
         sessionId: resolveSessionId(event?.session_id),
@@ -1145,13 +1309,29 @@ function handleCarrilEHistoria(event, opts = {}) {
   const cmd = event?.tool_input?.command;
   if (!cmd) return null;
   const baseCwd = nativePath(event?.cwd || process.cwd());
-  const cdDir = leadingCd(cmd);
-  const cwd = cdDir ? resolveTarget(cdDir, baseCwd) : baseCwd;
   const io = require('./lib/story-gate-io.js');
   const stateDir = opts.stateDir || io.DEFAULT_STATE_DIR;
   const installedTree = require('./lib/installed-tree.js');
   const installedRoots = Array.isArray(opts.installedRoots) ? opts.installedRoots : io.defaultInstalledRoots();
   const { isInside } = require('./lib/atdd-preedit.js');
+  // Con un comando ambiguo (varios cd), de las carpetas donde puede caer una escritura relativa vale la que hace caer en
+  // el repo de la corrida una de código o un manifiesto (alcanza con una para frenar); si no hay, la que hace caer
+  // cualquiera (una carpeta, un borrado); si tampoco, la primera. El lado que frena
+  const carpetas = carpetasDelComando(cmd, baseCwd);
+  let cwd = carpetas[0];
+  if (carpetas.length > 1) {
+    try {
+      const marcador = io.readMarker(stateDir, resolveSessionId(event?.session_id));
+      const repoCorrida = marcador && marcador.repoPath;
+      const relativos = relativosDe(String(cmd), String(cmd)) || [];
+      const enRepo = (c, soloCodigo) => repoCorrida && relativos.some((t) => {
+        const abs = resolveTarget(expandirRuta(cmd, t).valor, c, process.platform, { homeVariable: true });
+        const adentro = isInside(repoCorrida, abs) || isInside(installedTree.realPath(repoCorrida), installedTree.realPath(abs));
+        return adentro && (!soloCodigo || isCodeFile(abs) || isManifestFile(abs));
+      });
+      cwd = carpetas.find((c) => enRepo(c, true)) || carpetas.find((c) => enRepo(c, false)) || carpetas[0];
+    } catch (e) { logHookError(e); }
+  }
   // el estado y el árbol instalado del arnés se miran por ruta real, sea cual sea la extensión
   const stateReal = installedTree.realPath(stateDir);
   const protegido = (abs) => {
@@ -1229,8 +1409,9 @@ function handleCarrilEHistoria(event, opts = {}) {
         marker,
         codeTargets: passedCode,
         // un destino con una variable sin resolver PUEDE caer en el repo: cuenta como adentro, aunque la ruta cruda
-        // anclada al cwd quede afuera (con la sesión parada en otra carpeta, pasaría callado)
-        dentroDelRepo: (f, repo) => isInside(repo, f) || sinResolverDe.has(f),
+        // anclada al cwd quede afuera (con la sesión parada en otra carpeta, pasaría callado). Por ruta real también: la
+        // sesión puede llegar al repo por un enlace y el marcador guarda la ruta real (o al revés)
+        dentroDelRepo: (f, repo) => isInside(repo, f) || isInside(installedTree.realPath(repo), installedTree.realPath(f)) || sinResolverDe.has(f),
         off: process.env.TYCON_LEDGER_VISIBLE,
       });
       if (vis.escaped && vis.escaped.length) {
@@ -1329,7 +1510,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, resolveTarget, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
+module.exports = { handle, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
 
 if (require.main === module) {
   let event = null;
