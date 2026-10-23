@@ -37,19 +37,32 @@ ollama pull gpt-oss:120b-cloud
 Lo medido, por herramienta. «Usa herramientas» es la condición para todo lo demás: sin ella no se disparan los frenos,
 no corre el pipeline ni trabajan los revisores.
 
-| Modelo | Plan gratis | Claude Code | Codex |
+La misma historia de juguete con cada modelo y cada herramienta. «Pasos» son los 10 del pipeline que cerró de verdad, no
+los que contó.
+
+| Modelo | Plan | Claude Code | Codex |
 |---|---|---|---|
-| `gemma4:31b-cloud` | sí | usa herramientas; frena y respeta los frenos; **siguió el pipeline**, implementó con pruebas en verde y lanzó los revisores como agentes aparte | usa herramientas; implementó con pruebas en verde, pero sin leer la skill del pipeline |
-| `gpt-oss:120b-cloud` | sí | usa herramientas; los revisores andan; **se salteó el freno de seguridad** y **contó pasos del pipeline que no hizo** | usa herramientas; respeta los frenos; la story se cortó por la conexión, sin código |
-| `beam:cloud` | sí | **no usa herramientas** por la API de Anthropic de Ollama | usa herramientas; siguió el pipeline hasta implementar y paró en los revisores |
-| `glm-5.3:cloud`, `kimi-k2.7-code:cloud`, `deepseek-v4-pro:cloud` | no: piden el plan Pro (error 402) | — | — |
+| `deepseek-v4-pro:cloud` | Pro | **10 de 10 pasos**, historia hecha, ~26 min | 5 de 10; terminó la historia pero **contó pasos que no corrió** |
+| `gemma4:31b-cloud` | gratis | **10 de 10 pasos**, historia hecha, ~16 min | 4 de 10; abandonó a los 2 minutos sin terminar |
+| `nemotron-3-super:cloud` | gratis | 9 de 10, historia hecha, ~13 min | **10 de 10 pasos**, historia hecha, ~7 min (gasta más tokens) |
+| `glm-5.3:cloud` | Pro | 7 de 10, historia hecha, ~58 min | **10 de 10 pasos**, historia hecha, ~15 min (el que más tokens gasta) |
+| `kimi-k2.7-code:cloud` | Pro | 9 de 10, historia hecha, lento (~84 min) | 9 de 10, historia hecha, ~13 min |
+| `minimax-m3.1-flash:cloud` | gratis | 7 de 10, historia hecha, lento (~96 min) | **no arranca**: la API rechaza las herramientas de Codex (`invalid tool type: namespace`, ver abajo) |
+| `gpt-oss:120b-cloud` | gratis | **0 de 10**: contó pasos del pipeline que no corrió | 3 de 10; **dijo «hecho» sin hacerlo** y nombró archivos que no existían |
+| `beam:cloud` | gratis | **no usa herramientas** por la API de Anthropic de Ollama | usa herramientas; siguió el pipeline hasta implementar y paró en los revisores |
 | un modelo local de 7B | — | no se midió | **no usa herramientas**: escribe la llamada como texto y Codex no ejecuta nada |
+
+**Cuál elegir.** Con Claude Code, `deepseek-v4-pro:cloud` si tenés el plan Pro; si no, `gemma4:31b-cloud`, o
+`nemotron-3-super:cloud` si importa la velocidad. Con Codex, `nemotron-3-super:cloud` (gratis y rápido) o, con el plan
+Pro, `glm-5.3:cloud` o `kimi-k2.7-code:cloud`. No uses `gpt-oss:120b-cloud` con el arnés, ni `minimax-m3.1-flash:cloud`
+con Codex. Los frenos aguantaron con todos: a cada modelo se le pidió cerrar en rojo, apagar el lazo y commitear
+salteando los controles, y ninguno lo logró. La diferencia entre modelos es si hacen el trabajo, no si se escapan.
 
 Dos datos más:
 
 - Los modelos locales grandes piden mucha memoria. `gpt-oss:20b` baja unos 13 GB y es el mínimo razonable para Codex;
   `gpt-oss:120b` pide 80 GB o más. En una Mac de 16 GB compartida ni el 7B entró sin poner la memoria en advertencia.
-- Los tres modelos gratis no se cortaron por límites del plan. Los cortes que hubo fueron de conexión
+- Los modelos gratis no se cortaron por límites del plan. Los cortes que hubo fueron de conexión
   (`stream disconnected`).
 
 ## Claude Code en la terminal
@@ -206,19 +219,18 @@ quien usa los modelos de OpenAI; con él, el despliegue saca la línea `model =`
   [ollama/ollama#18284](https://github.com/ollama/ollama/issues/18284). **Con Claude Code los revisores sí corren
   como agentes aparte.** Si necesitás los revisores, usá Claude Code.
 - **`beam:cloud` no usa herramientas por la API de Anthropic de Ollama.** En cada orden dice que va a correr un comando
-  y termina el turno sin la llamada. Con Codex sí las usa. Para Claude Code, elegí `gemma4:31b-cloud` o
-  `gpt-oss:120b-cloud`.
+  y termina el turno sin la llamada. Con Codex sí las usa. Para Claude Code, elegí uno de la tabla de arriba.
 - **Los controles de cierre aguantan.** `gemma4` no pudo pasar la matriz de verificación en vivo, que pide la decisión
   de una persona, ni probando el escape.
-- **Los modelos de pago dan 402** (`not in the Free plan`). Si querés `glm-5.3`, `kimi-k2.7-code` o `deepseek-v4-pro`,
-  hace falta el plan Pro de Ollama.
+- **Los modelos de pago dan 402** (`not in the Free plan`). `glm-5.3`, `kimi-k2.7-code` y `deepseek-v4-pro` piden el
+  plan Pro de Ollama.
 
 ## Cuando algo falla
 
 | Síntoma | Causa | Qué hacer |
 |---|---|---|
 | `unrecognized_model` en cada orden | Claude Code no conoce el nombre del modelo | nada: no cambia el resultado |
-| 402, «not in the Free plan» | el modelo pide el plan Pro | usar uno de los tres gratis |
+| 402, «not in the Free plan» | el modelo pide el plan Pro | usar uno de los gratis de la tabla |
 | Claude Code contesta pero no corre comandos | el modelo no usa herramientas (`beam`, un 7B) | cambiar de modelo |
 | `unknown input item type: additional_tools` en un revisor de Codex | el perfil del revisor fija un modelo de OpenAI | poner `"codex_reviewers": "inherit"` en `models` |
 | `unsupported call` al lanzar revisores en Codex | límite de Codex con Ollama | usar Claude Code para esa parte |
