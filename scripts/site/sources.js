@@ -442,6 +442,12 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       sin_medir: (Array.isArray(asig.doc.proyectos_no_medidos) ? asig.doc.proyectos_no_medidos : []).filter(isObject).map((x) => texto(x.proyecto)).filter(Boolean).map(decodificar) });
   } else if (asig.ok && asig.doc.estado === 'medido') { m.pedidos = noMedida('ilegible', asig.fecha); log(`la foto de pedidos asignados del ${asig.fecha} dice medido y no trae la lista`); }
   else m.pedidos = asig.ok ? noMedida('no_medido_noche', asig.fecha) : asig.fuente;
+  // las retrospectivas pendientes: la foto de HOY, sólo la cuenta por repo. Sin ella, el Inicio dice lo de siempre
+  const ret = foto('retros', 'retros-*.json');
+  if (ret.ok && ret.fecha === hoy && ret.doc.estado === 'medido' && Array.isArray(ret.doc.pendientes)) {
+    m.retros = fuente('medido', null, ret.fecha, { pendientes: ret.doc.pendientes.filter(isObject).map((x) => ({ repo: texto(x.repo, 200), dias: num(x.dias) })) });
+  } else if (ret.ok && ret.doc.estado === 'medido' && !Array.isArray(ret.doc.pendientes)) { m.retros = noMedida('ilegible', ret.fecha); log(`la foto de retrospectivas del ${ret.fecha} dice medido y no trae la lista`); }
+  else m.retros = ret.ok ? noMedida('no_medido_noche', ret.fecha) : ret.fuente;
 
   // la paridad de los productos: el archivo de HOY, y de él sólo las cantidades por repo de `por_ruta`.
   // `divergencias[]` —el texto del rasgo y qué productos lo tienen— no entra al modelo.

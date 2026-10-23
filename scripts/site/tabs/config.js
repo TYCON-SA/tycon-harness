@@ -360,7 +360,7 @@ const ESPERA_REFRESCO_MS = 8 * 1000;
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
  * `demo` (el sitio demo, demo.js): Proponer, Invitar y Revocar revisan como siempre y muestran lo que pasaría, sin abrir nada.
  */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, clavesDelRepo = ORG.CLAVES_DEL_REPO, urlDeProducto = ORG.urlDeRepo, demo = false }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, clavesDelRepo = ORG.CLAVES_DEL_REPO, urlDeProducto = ORG.urlDeRepo, demo = false, repoDeEjemplo = null }) {
   const dia = () => (hoy ? hoy() : new Date(ahora()).toISOString().slice(0, 10));
   const lector = (nombre) => ORG.loadReader(TREE, nombre, lectores);
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
@@ -688,11 +688,16 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   /** Lo que dice el archivo de main de un repo, clave por clave, con su lector. Guarda la lectura para revisar. */
   async function leerRepo(e) {
     const base = { ok: true, id: e.id, nombre: e.nombre, enlace: RP.enlaceArchivo(remoteDeProducto(e), ARCHIVO_DEL_REPO), claves: [] };
-    const cred = credencialDeLectura();
-    if (!cred) return { ...base, estado: 'no_se_pudo', motivo: M('config.repoSinCredencial'), proponer: { habilitado: false, motivo: M('config.repoSinSecreto') } };
-    const c = await clonDelRepo(e);
-    if (!c.dir) return { ...base, estado: 'no_se_pudo', motivo: c.motivo, proponer: { habilitado: false, motivo: c.motivo } };
-    const leer = (archivo) => RP.leerDeMain({ clon: c.dir, archivo, credencial: cred, exclusivo: fuentes.exclusivo || ((fn) => fn()), log });
+    let leer;
+    // el sitio demo lee el archivo de ejemplo de cada repo (demo/data.js): sin credencial, sin clon y sin git
+    if (demo && typeof repoDeEjemplo === 'function') leer = async (archivo) => repoDeEjemplo(e, archivo);
+    else {
+      const cred = credencialDeLectura();
+      if (!cred) return { ...base, estado: 'no_se_pudo', motivo: M('config.repoSinCredencial'), proponer: { habilitado: false, motivo: M('config.repoSinSecreto') } };
+      const c = await clonDelRepo(e);
+      if (!c.dir) return { ...base, estado: 'no_se_pudo', motivo: c.motivo, proponer: { habilitado: false, motivo: c.motivo } };
+      leer = (archivo) => RP.leerDeMain({ clon: c.dir, archivo, credencial: cred, exclusivo: fuentes.exclusivo || ((fn) => fn()), log });
+    }
     let archivo = ARCHIVOS_DEL_REPO[0];
     let r = await leer(archivo);
     if (!r.ok) return { ...base, estado: 'no_se_pudo', motivo: r.message, proponer: { habilitado: false, motivo: r.message } };
@@ -718,7 +723,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const podridas = typeof lector.podridasDelValor === 'function' ? lector.podridasDelValor(l.valor, r.archivos, dia()) : null;
       return { ...vistaClave, estado: 'ok', presente: l.presente, valor: l.valor, problemas: l.problemas, podridas };
     });
-    return { ...base, estado: r.oid ? 'leido' : 'nuevo', motivo: null, oid: r.oid, texto: r.texto, claves, proponer: await estadoProponerRepo(e, archivo) };
+    // en el demo «Proponer» muestra lo que pasaría: no hay credencial ni política que mirar
+    const proponer = demo ? { habilitado: true, motivo: null } : await estadoProponerRepo(e, archivo);
+    return { ...base, estado: r.oid ? 'leido' : 'nuevo', motivo: null, oid: r.oid, texto: r.texto, claves, proponer };
   }
 
   /** Revisa lo que se propondría de una clave sobre la versión que abrió la página. */
@@ -735,10 +742,20 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
 
   /** Propone el cambio como un pedido al repo del producto: rama y pedido, nunca main ni completar el pedido. */
   async function proponerRepo(e, body, ctx) {
+    const rechazoDeRevision = (rev) => ({ ok: false, codigo: rev.codigo, message: rev.problemas.concat(rev.filas.flat()).join(' · ') || M('config.repoNoValida'), filas: rev.filas });
+    // el sitio demo revisa como siempre y muestra lo que pasaría: ni credencial, ni clon, ni pedido
+    if (demo) {
+      const rev = revisarRepo(e, body);
+      if (!rev.ok) return rechazoDeRevision(rev);
+      const d = clavesDelRepo.find((x) => x.clave === body.clave);
+      const archivo = lecturasDeRepo.get(e.id).archivo;
+      return { ok: true, codigo: 'demo', demo: true, message: M('config.demoPropuesta', { seccion: d.titulo, archivo, repo: e.nombre }),
+        loQuePasaria: { repo: e.nombre, archivo, diferencia: rev.diferencia } };
+    }
     const cred = cfg.escritura && cfg.escritura.productos;
     if (!cred) return { ok: false, message: M('config.repoSinSecreto') };
     const rev = revisarRepo(e, body);
-    if (!rev.ok) return { ok: false, codigo: rev.codigo, message: rev.problemas.concat(rev.filas.flat()).join(' · ') || M('config.repoNoValida'), filas: rev.filas };
+    if (!rev.ok) return rechazoDeRevision(rev);
     const remote = remoteDeProducto(e);
     if (!remote.platform) return { ok: false, message: M('config.sinPlataforma') };
     const c = await clonDelRepo(e);

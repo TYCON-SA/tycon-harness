@@ -73,13 +73,15 @@ function itemsDeLasColas({ clon, fotos, dentroDe }) {
 
 /**
  * La dirección https navegable del repo de operaciones y su plataforma (la que reconoce remoteOf, la misma lectura de
- * Configuración); null si no es https. Con una plataforma que no reconoce, `plataforma` es null.
+ * Configuración); null si no es https. Con una plataforma que no reconoce, `plataforma` es null. `remoto`
+ * (`{ platform, web }`), si viene, es el remoto ya resuelto y gana sobre remoteOf, como en Configuración
+ * (`remotos[repo] || remoteOf(url)`).
  */
-function repoNavegable(operationsRepo) {
+function repoNavegable(operationsRepo, remoto = null) {
   let u;
   try { u = new URL(String(operationsRepo || '')); } catch { return null; }
   if (u.protocol !== 'https:') return null;
-  const r = require('../lib/repo-proposal.js').remoteOf(String(operationsRepo));
+  const r = esObjeto(remoto) ? remoto : require('../lib/repo-proposal.js').remoteOf(String(operationsRepo));
   return { base: r.web ? r.web.replace(/\.git$/, '').replace(/\/+$/, '') : null, plataforma: r.platform || null };
 }
 
@@ -88,10 +90,10 @@ function repoNavegable(operationsRepo) {
  * exacto de la ficha o null; con null, `sinLugar` dice por qué ('sin_repo_https', 'plataforma_desconocida',
  * 'sin_pedido'). Sin la lista medida, [] (nunca un renglón inventado).
  */
-function decisiones(m, { operationsRepo = null } = {}) {
+function decisiones(m, { operationsRepo = null, remoto = null } = {}) {
   const d = m && m.decisiones;
   if (!d || d.estado !== 'medido' || !Array.isArray(d.items)) return [];
-  const repo = repoNavegable(operationsRepo);
+  const repo = repoNavegable(operationsRepo, remoto);
   return d.items.filter(esObjeto).map((x) => {
     const pr = Number.isInteger(x.pr) && x.pr > 0 ? x.pr : null;
     let enlace = null;

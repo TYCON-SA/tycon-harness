@@ -764,7 +764,8 @@ test('2.76-Demo_CadaPestanaConDatos', async () => {
     const cfg = await h.pedir('/api/config');
     assert.strictEqual(cfg.status, 200);
     assert.deepStrictEqual(cfg.json.secciones.filter((s) => ['ilegible', 'no_reader', 'bajando'].includes(s.estado)).map((s) => s.id), [], 'ninguna sección sin leer');
-    assert.deepStrictEqual(cfg.json.productos.map((x) => x.producto).sort(), ['Producto X', 'Producto Y']);
+    // un producto sale una vez por cada lugar de donde sale (la lista de dependencias y, en el demo, los despliegues)
+    assert.deepStrictEqual([...new Set(cfg.json.productos.map((x) => x.producto))].sort(), ['Producto X', 'Producto Y']);
     assert.strictEqual(cfg.json.proponer.operaciones.habilitado, true);
     assert.strictEqual(cfg.json.proponer.perfil.habilitado, true);
     const sitio = cfg.json.secciones.find((s) => s.id === 'sitio');
@@ -1002,4 +1003,191 @@ test('2.76-Demo_FrenoSePoneAntesDeCargarFuentesYPestanas', () => {
   // y el archivo del freno no carga nada del sitio: sólo módulos del sistema
   const propios = [...fs.readFileSync(path.join(SITE, 'demo-guard.js'), 'utf8').matchAll(/require\('(\.[^']*)'\)/g)].map((m) => m[1]);
   assert.deepStrictEqual(propios, [], 'demo-guard.js no carga nada del sitio');
+});
+
+// ── 8.101: todo lo que se ve tiene un dato de ejemplo ───────────────────────────────────────────────────────────────
+
+const TX = () => require(path.join(SITE, 'texts.js'));
+// los estados con que las respuestas del sitio dicen que un dato falta
+const ESTADOS_DE_HUECO = new Set(['no_medido', 'no_medidas', 'sin_medir', 'no_configurado', 'ilegible', 'no_reader', 'no_se_pudo', 'sin_foto', 'sin_datos']);
+
+/** Los huecos del HTML de una pestaña: tarjetas y celdas no medidas, listas vacías y los textos exactos de hueco de texts.js. */
+function huecosDelHtml(html, idioma) {
+  const T = (k) => TX().t(idioma, k);
+  const main = (/<main[\s\S]*<\/main>/.exec(html) || [html])[0].replace(/<script[\s\S]*?<\/script>/g, '');
+  const out = [];
+  if (/class="tile blind"/.test(main)) out.push(`tarjeta no medida: ${(/class="tile blind">[\s\S]*?<div class="t-label">([^<]*)/.exec(main) || [])[1]}`);
+  if (/<td class="nm"/.test(main)) out.push('celda no medida');
+  // las líneas no medidas de «Cómo está el arnés»: el rótulo va pegado al título en el texto, se las reconoce por la marca
+  for (const m of main.matchAll(/<li class="nm">[\s\S]*?<\/li>/g)) out.push(`línea no medida: ${m[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100)}`);
+  if (/class="pill nm"/.test(main) && !/<li class="nm">/.test(main)) out.push('marca «no medido»');
+  if (/<ul class="lista">\s*<\/ul>/.test(main)) out.push('lista vacía');
+  const enteras = new Set(['vista.noMedido', 'vista.ninguno', 'pantalla.sinDato', 'vista.falta', 'fichas.noMedido', 'fichas.falta', 'corridas.falta'].map(T));
+  const adentro = [T('frase.sin_foto'), T('ficha.motivo.sin_datos'), `${T('vista.noMedido')}:`];
+  const texto = main.replace(/<(br|\/?(p|div|li|tr|td|th|h\d|section|ul|dt|dd|summary))\b[^>]*>/g, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  for (const l of texto.split('\n').map((x) => x.trim()).filter(Boolean)) {
+    if (enteras.has(l) || adentro.some((a) => l.includes(a))) out.push(`«${l.slice(0, 120)}»`);
+  }
+  return out;
+}
+
+/** Los huecos de una respuesta JSON: cada `estado` de hueco, con su ruta y su motivo. */
+function huecosDelJson(v, ruta = '$', out = []) {
+  if (Array.isArray(v)) v.forEach((x, i) => huecosDelJson(x, `${ruta}[${i}]`, out));
+  else if (v && typeof v === 'object') {
+    if (typeof v.estado === 'string' && ESTADOS_DE_HUECO.has(v.estado)) out.push(`${ruta}: ${v.estado}${v.motivo ? ` (${String(v.motivo).slice(0, 120)})` : ''}`);
+    for (const [k, x] of Object.entries(v)) huecosDelJson(x, `${ruta}.${k}`, out);
+  }
+  return out;
+}
+
+test('8.101-Demo_Recorrido_SinHuecos', async () => {
+  // el detector mismo: la página de Arnés con una fuente vieja y sin versión tiene líneas no medidas, y las ve
+  const conHuecos = require(path.join(SITE, 'views.js')).paginaArnes({ quien: { rol: 'maintainer', nombre: 'x' }, modelo: { sources: { lista: [{ id: 'sdlc-stage', estado: 'viejo', fecha: '2026-10-20', motivo: 'la foto es de hace 3 días' }] } }, version: null, ahora: AHORA_FIJO, idioma: 'es' });
+  assert.ok(huecosDelHtml(conHuecos, 'es').some((x) => /línea no medida: Fuente sdlc-stage/.test(x)), 'el detector ve las líneas no medidas de Arnés');
+  const h = await arrancarDemo();
+  const huecos = [];
+  try {
+    assert.strictEqual((await pedirListo(h, '/api/corridas')).status, 200);
+    for (const vista of ['mantenedor', 'persona']) {
+      for (const idioma of ['es', 'en']) {
+        const cookie = `sitio-demo-vista=${vista}; sitio-idioma=${idioma}`;
+        const donde = (q) => `${q} · ${vista} · ${idioma}`;
+        for (const pagina of ['/', '/corridas', '/proyectos', '/arnes', '/configuracion', '/como-trabaja']) {
+          const r = await h.pedir(pagina, { cookie });
+          // Arnés, Configuración y Cómo trabaja son de quien mantiene: la persona ve la página de permiso, que no es un hueco
+          if (vista === 'persona' && ['/arnes', '/configuracion', '/como-trabaja'].includes(pagina)) { assert.strictEqual(r.status, 403, donde(pagina)); continue; }
+          assert.strictEqual(r.status, 200, donde(pagina));
+          for (const x of huecosDelHtml(r.texto, idioma)) huecos.push(`${donde(pagina)}: ${x}`);
+        }
+        const lista = (await pedirListo(h, '/api/corridas', { cookie })).json;
+        assert.ok(lista && lista.corridas.length > 0, donde('/api/corridas'));
+        for (const x of huecosDelJson(lista)) huecos.push(`${donde('/api/corridas')}: ${x}`);
+        for (const c of lista.corridas) {
+          for (const x of huecosDelJson((await h.pedir(`/api/corridas/${c.id}`, { cookie })).json)) huecos.push(`${donde(`/api/corridas/${c.id}`)}: ${x}`);
+        }
+        if (vista !== 'mantenedor') continue;
+        const cfg = (await h.pedir('/api/config', { cookie })).json;
+        for (const x of huecosDelJson(cfg)) huecos.push(`${donde('/api/config')}: ${x}`);
+        for (const e of cfg.reposDeProducto.lista) {
+          for (const x of huecosDelJson((await h.pedir(`/api/config/repo?id=${encodeURIComponent(e.id)}`, { cookie })).json)) huecos.push(`${donde(`/api/config/repo ${e.nombre}`)}: ${x}`);
+        }
+      }
+    }
+  } finally { await h.cerrar(); }
+  assert.deepStrictEqual(huecos, [], `huecos en el demo:\n${huecos.join('\n')}`);
+});
+
+test('8.101-Demo_DatosCompletos_SoloConLaOpcion', () => {
+  const D = DATOS();
+  const zlib = require('zlib');
+  // sin la opción, lo de siempre (2.76-Capturas_MismosDatos cuida el resumen de las capturas); con ella, lo que agrega el demo
+  const base = D.operaciones({ ahora: AHORA_FIJO });
+  const completo = D.operaciones({ ahora: AHORA_FIJO, completo: true });
+  assert.deepStrictEqual(D.operaciones({ ahora: AHORA_FIJO, completo: false }), base);
+  for (const k of ['.dashboard/open-prs/open-prs-2026-10-22.json', '.dashboard/assigned/assigned-2026-10-22.json', '.dashboard/retros/retros-2026-10-22.json',
+    '.dashboard/controls-bench/banco-2026-10-21.json', '.dashboard/sdlc-stage-2026-10-22.json', 'scripts/controls-bench/ultimo-examen.json', 'scripts/ci/product-parity.json']) {
+    assert.ok(!(k in base), `${k} no está en los datos de siempre`);
+    assert.ok(k in completo, `${k} está en los del demo`);
+  }
+  const buzonBase = D.blobsDelBuzon(AHORA_FIJO);
+  const buzon = D.blobsDelBuzon(AHORA_FIJO, { completo: true });
+  assert.deepStrictEqual(D.blobsDelBuzon(AHORA_FIJO, { completo: false }), buzonBase);
+  assert.ok(!('mac-ana/registros/gates.log.gz' in buzonBase));
+  for (const maq of ['mac-ana', 'mac-lead']) for (const r of ['cobertura.json', 'gates.log.gz', 'frenos.jsonl.gz', 'hallazgos.jsonl.gz']) assert.ok(`${maq}/registros/${r}` in buzon, `${maq}/registros/${r}`);
+  assert.strictEqual(Object.keys(buzon).filter((k) => /^[^/]+\/[0-9a-f-]{36}\.json$/.test(k)).length, 5, 'siguen siendo 5 ejecuciones');
+  const perfil = D.archivosDelPerfil({ completo: true });
+  assert.deepStrictEqual(D.archivosDelPerfil(), D.archivosDelPerfil({ completo: false }));
+  assert.deepStrictEqual(perfil['team-repos.json'].review.blocking_prefixes, ['ACMEAPI']);
+  // sólo nombres inventados, también adentro de lo comprimido (el sources.json es la configuración del propio arnés, no un dato inventado)
+  const texto = (v) => (Buffer.isBuffer(v) ? zlib.gunzipSync(v).toString('utf8') : typeof v === 'string' ? v : JSON.stringify(v));
+  const inventados = Object.fromEntries(Object.entries(completo).filter(([k]) => k !== 'scripts/nightly/dashboard/sources.json'));
+  const todo = [inventados, perfil, D.ADVISORS_DE_EJEMPLO].map((x) => JSON.stringify(x)).concat(Object.values(buzon).map(texto)).join('\n');
+  const correos = todo.match(/[\w.+-]+@[\w.-]+\.[a-z]+/g) || [];
+  assert.ok(correos.length > 0);
+  for (const c of correos) assert.match(c, /@acme\.example$/, `correo fuera de acme.example: ${c}`);
+  // la misma regla de 2.76-Demo_Datos_SonDeAcmeYSiguenElDia: la organización de ejemplo es la de la plataforma (`dev.azure.com/acme`)
+  for (const u of todo.match(/https?:\/\/[^"\\\s'<>]+/g) || []) assert.match(new URL(u).hostname, /(^|\.)(acme\.example|example|invalid)$|^dev\.azure\.com$/, `dirección fuera de las de ejemplo: ${u}`);
+});
+
+test('8.101-Demo_Ejecuciones_TodoMedido', async () => {
+  const h = await arrancarDemo();
+  try {
+    const lista = (await pedirListo(h, '/api/corridas')).json;
+    assert.strictEqual(lista.corridas.length, 5);
+    assert.strictEqual(lista.buzon.uniones.estado, 'medidas', 'la banda de carpetas de máquina sale medida');
+    const filas = lista.pasos.nombres;
+    const conTiempo = new Set();
+    const conTokens = new Set();
+    for (const c of lista.corridas) {
+      assert.strictEqual(c.tiempos.trabajo_medido, true, `${c.story}: trabajo medido`);
+      assert.ok(Number.isFinite(c.tiempos.espera_humana_ms), `${c.story}: espera medida`);
+      assert.ok(Number.isInteger(c.costo.vueltas) && c.costo.vueltas >= 1, `${c.story}: vueltas`);
+      assert.strictEqual(c.validador.estado, 'medido', `${c.story}: validador por fase`);
+      for (const t of c.tramos) if (t.tipo === 'paso' && t.ms > 0) conTiempo.add(t.nombre);
+      const d = (await h.pedir(`/api/corridas/${c.id}`)).json;
+      assert.strictEqual(d.revisores.estado, 'medido', `${c.story}: revisores medidos`);
+      assert.ok(Object.keys(d.costo.por_tipo).length > 0, `${c.story}: desglose por tipo`);
+      assert.strictEqual(Object.values(d.costo.por_tipo).reduce((a, b) => a + b, 0), d.costo.agentes, `${c.story}: el desglose suma los agentes`);
+      for (const t of d.tramos) if (t.tipo === 'paso' && d.consumo.por_paso && Object.keys(d.consumo.por_paso).some((k) => t.pasos.map(String).includes(k))) conTokens.add(t.nombre);
+    }
+    assert.deepStrictEqual(filas.filter((f) => !conTiempo.has(f)), [], 'cada fila de «Tiempo por paso» tiene dato');
+    assert.deepStrictEqual(filas.filter((f) => !conTokens.has(f)), [], 'cada fila de «Tokens por paso» tiene dato');
+  } finally { await h.cerrar(); }
+});
+
+test('8.101-Demo_Configuracion_TodoConDato', async () => {
+  for (const version of ['2026.10.23.10', null]) {
+    const h = await arrancarDemo({}, { version });
+    try {
+      const cfg = (await h.pedir('/api/config')).json;
+      const seccion = (id) => cfg.secciones.find((s) => s.id === id);
+      const ops = JSON.parse(seccion('personas').texto);
+      assert.deepStrictEqual(Object.keys(ops.people.projects).sort(), ['ana@acme.example', 'nuevo@acme.example']);
+      assert.strictEqual(seccion('paridad').estado, 'cargado', 'la lista de paridad, con su diferencia aceptada');
+      assert.ok(Object.keys(JSON.parse(seccion('despliegues').texto).deployments.products).length >= 2, 'los despliegues de cada producto');
+      assert.ok(JSON.parse(seccion('canal').texto).notify, 'el canal del resumen');
+      const maquinas = cfg.versiones;
+      assert.strictEqual(maquinas.length, 3);
+      assert.deepStrictEqual(maquinas.map((m) => m.estado).sort(), ['al_dia', 'al_dia', 'atrasada'], `versión ${version}: ${JSON.stringify(maquinas)}`);
+      const repos = JSON.parse(seccion('revision').texto);
+      assert.deepStrictEqual(repos.review.blocking_prefixes, ['ACMEAPI']);
+      assert.deepStrictEqual(repos.stack.code_extensions, ['.cls'], 'la terminación propia');
+      assert.strictEqual(cfg.proponer.perfil.habilitado, true, '«Proponer» del perfil sigue habilitado');
+      // «Versión del sitio» en Arnés: la de la imagen, o la de ejemplo sin ella (la misma contra la que se comparan las máquinas)
+      const propia = version || DATOS().VERSION_DE_EJEMPLO;
+      assert.match((await h.pedir('/arnes')).texto, new RegExp(`${propia.replace(/\./g, '\\.')}`), `versión ${version}: Arnés dice ${propia}`);
+    } finally { await h.cerrar(); }
+  }
+});
+
+test('8.101-Demo_ConfigDeCadaRepo_SeLeeYProponerMuestra', async () => {
+  await conProcesoDemo(async ({ pedir, escribir, vistas }) => {
+    const cfg = (await pedir('/api/config')).json;
+    assert.strictEqual(cfg.reposDeProducto.lista.length, 2);
+    let leido = null;
+    for (const e of cfg.reposDeProducto.lista) {
+      const r = (await pedir(`/api/config/repo?id=${encodeURIComponent(e.id)}`)).json;
+      assert.ok(['leido', 'nuevo'].includes(r.estado), `${e.nombre}: ${r.estado} ${r.motivo || ''}`);
+      assert.strictEqual(r.proponer.habilitado, true, `${e.nombre}: «Proponer» habilitado`);
+      if (r.estado === 'leido') leido = { e, r };
+    }
+    assert.ok(leido, 'al menos un repo trae su advisors.yaml');
+    const clave = leido.r.claves.find((c) => c.estado === 'ok');
+    // el `deprecated` de ejemplo trae una ruta viva: sus archivos están en la rama, nada podrido
+    assert.ok(clave.valor && clave.valor.paths && clave.valor.paths.length > 0, 'el deprecated trae sus rutas');
+    assert.deepStrictEqual(clave.podridas, [], 'las rutas de ejemplo existen en la rama');
+    const valor = JSON.parse(JSON.stringify(clave.valor || {}));
+    valor.edit = valor.edit === 'warn' ? 'block' : 'warn';
+    const rev = (await escribir('/api/config/repo/revisar', { id: leido.e.id, clave: clave.clave, valor, oid: leido.r.oid })).json;
+    assert.strictEqual(rev.ok, true, JSON.stringify(rev));
+    const prop = (await escribir('/api/config/repo/proponer', { id: leido.e.id, clave: clave.clave, valor, oid: leido.r.oid, marca: 'b'.repeat(32) })).json;
+    assert.strictEqual(prop.ok, true, JSON.stringify(prop));
+    assert.strictEqual(prop.codigo, 'demo');
+    assert.match(prop.message, /En el sitio demo no se escribe/);
+    assert.strictEqual(prop.loQuePasaria.archivo, leido.r.archivo);
+    assert.ok(prop.loQuePasaria.diferencia.length > 0, 'muestra el cambio');
+    assert.deepStrictEqual(vistas(), [], 'ni clonó ni escribió: el freno no anotó intentos');
+  });
 });

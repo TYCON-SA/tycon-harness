@@ -464,3 +464,61 @@ test('2.36-Guia_ListaYComoOcultar: la guía, en los dos idiomas, trae las 26 con
   assert.match(guias.es, /^### Las fichas del tablero$/m);
   assert.match(guias.en, /^### The dashboard cards$/m);
 });
+
+test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
+  // los datos completos del sitio demo (con hallazgos en el buzón y un examen en la copia de operaciones), en otro proceso
+  // con un HOME de juguete y sin TYCON_EXAM: el examen sale sólo de la copia
+  assert.ok(!fs.existsSync(path.join(RAIZ, 'scripts', 'controls-bench', 'ultimo-examen.json')), 'el arnés no trae un examen propio: la prueba no mediría nada');
+  const raiz = tmp('poda-');
+  try {
+    const DATOS = require(path.join(RAIZ, 'scripts', 'site', 'demo', 'data.js'));
+    const ahora = Date.parse(`${HOY}T12:00:00Z`);
+    const escribir = (dir, archivos) => {
+      for (const [rel, v] of Object.entries(archivos)) {
+        fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+        fs.writeFileSync(path.join(dir, rel), Buffer.isBuffer(v) || typeof v === 'string' ? v : JSON.stringify(v));
+      }
+    };
+    const clon = path.join(raiz, 'operaciones');
+    const buzon = path.join(raiz, 'buzon');
+    escribir(clon, DATOS.operaciones({ ahora, completo: true }));
+    escribir(buzon, DATOS.blobsDelBuzon(ahora, { completo: true }));
+    let registro = '';
+    const fichasDe = () => {
+      const r = spawnSync(process.execPath, ['-e', `
+        const f = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'site', 'tabs', 'cards.js'))}).fichasDelClon({ clon: ${JSON.stringify(clon)}, dirBuzon: ${JSON.stringify(buzon)}, buzonLeido: true, ahora: ${ahora}, log: (l) => process.stderr.write(l + '\\n') });
+        process.stdout.write(JSON.stringify(f.lista.filter((x) => x.id === 'reglas_candidatas' || x.id === 'reglas_probadas')));`],
+      { encoding: 'utf8', env: { ...process.env, HOME: HOME_FALSO, TYCON_TODAY: HOY, TYCON_EXAM: '' }, maxBuffer: 1 << 26 });
+      assert.strictEqual(r.status, 0, r.stderr);
+      registro = r.stderr;
+      return Object.fromEntries(JSON.parse(r.stdout).map((x) => [x.id, x]));
+    };
+    const con = fichasDe();
+    for (const id of ['reglas_candidatas', 'reglas_probadas']) assert.strictEqual(con[id].estado, 'medido', `${id} con el examen de la copia: ${JSON.stringify(con[id])}`);
+    // un enlace de la copia no lleva a leer fuera de ella: ni una carpeta de más arriba, ni un caso
+    const bancoCopia = path.join(clon, 'scripts', 'controls-bench');
+    const afuera = path.join(raiz, 'afuera-del-banco');
+    fs.renameSync(bancoCopia, afuera);
+    fs.symlinkSync(afuera, bancoCopia);
+    const porEnlace = fichasDe();
+    for (const id of ['reglas_candidatas', 'reglas_probadas']) assert.strictEqual(porEnlace[id].estado, 'no_medido', `${id}: la carpeta enlazada no se lee`);
+    assert.match(registro, /pasa por un enlace/, 'y lo anota');
+    fs.unlinkSync(bancoCopia);
+    fs.renameSync(afuera, bancoCopia);
+    const casos = path.join(bancoCopia, 'cases', 'advisors');
+    const unCaso = fs.readdirSync(casos)[0];
+    fs.renameSync(path.join(casos, unCaso), path.join(raiz, unCaso));
+    fs.symlinkSync(path.join(raiz, unCaso), path.join(casos, unCaso));
+    fichasDe();
+    assert.match(registro, /no es un archivo común/, 'un caso enlazado deja afuera los casos de la copia, y lo anota');
+    fs.unlinkSync(path.join(casos, unCaso));
+    fs.renameSync(path.join(raiz, unCaso), path.join(casos, unCaso));
+    // sin el examen en la copia, el camino de hoy: el del arnés, que no está, y las dos fichas no medidas
+    fs.rmSync(path.join(clon, 'scripts', 'controls-bench', 'ultimo-examen.json'));
+    const sin = fichasDe();
+    for (const id of ['reglas_candidatas', 'reglas_probadas']) {
+      assert.strictEqual(sin[id].estado, 'no_medido', `${id} sin examen`);
+      assert.strictEqual(sin[id].valor, null);
+    }
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
