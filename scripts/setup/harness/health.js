@@ -240,14 +240,15 @@ function check(ctx = {}, opts = {}) {
     // borrada da `Cannot find module` en cada evento y Claude Code lo toma como un error que no frena
     const needles = hooks.map((h) => M.hookNeedle(h.relpath));
     // cada ruta `.js` entre comillas cuenta, no sólo la última: en la forma del piso (`node "<piso>" [--gate] "<guion>"`)
-    // el que Node carga primero es el piso. Una ruta que expande el shell (`$HOME`, `${…}`, `~`) no se puede mirar acá:
-    // se avisa, no se toma como inexistente (una falla de salud vuelve atrás la actualización)
+    // el que Node carga primero es el piso. Una ruta que expande el shell (`$HOME`, `${…}`, `~` al principio) no se puede
+    // mirar acá: se avisa, no se toma como inexistente (una falla de salud vuelve atrás la actualización). Un `~` en el
+    // medio es literal: el nombre corto de Windows (`NOMBRE~1`) se mira como cualquier ruta
     for (const c of cmds.list || []) {
       const quoted = [...c.command.matchAll(/"([^"]+)"/g)].map((m) => m[1]).filter((q) => /\.(c|m)?js$/i.test(q));
       for (const script of quoted) {
         const ours = /\/\.tycon\//.test(slash(script)) || /node-floor\.js$/.test(script) || needles.some((n) => slash(script).includes(n));
         if (!ours) continue;
-        if (/[$~]/.test(script)) { warn(`hook ${c.event}: no pude mirar ${script} (la expande el shell)`); continue; }
+        if (/\$|^~/.test(script)) { warn(`hook ${c.event}: no pude mirar ${script} (la expande el shell)`); continue; }
         if (!fs.existsSync(script)) fail(`hook ${c.event}: su comando en ${cmds.file} apunta a un guion que no existe (${script})`);
       }
     }
