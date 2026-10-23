@@ -160,7 +160,13 @@ function leerListaCruda(repo) {
   if (!repo) return vacia('unknown-sin-git', 'sin repo');
   let hayHead = false;
   try { git(repo, ['rev-parse', '--verify', 'HEAD']); hayHead = true; } catch (_e) { hayHead = false; }
-  if (!hayHead) return vacia('unknown-sin-git', 'la carpeta no es un repo git con commits: no hay lista commiteada que leer');
+  if (!hayHead) {
+    // un repo recién iniciado, sin commits, no tiene lista commiteada: eso es «sin lista», no «no pude mirar»
+    let esRepo = false;
+    try { git(repo, ['rev-parse', '--git-dir']); esRepo = true; } catch (_e) { esRepo = false; }
+    if (esRepo) return vacia('sin-lista');
+    return vacia('unknown-sin-git', 'la carpeta no es un repo git con commits: no hay lista commiteada que leer');
+  }
   const texto = configSource.leerCommiteado(repo);
   const p = parsear(texto);
   if (p.ilegible) return vacia('unknown-config-ilegible', `.tycon/advisors.yaml, bloque deprecated: ${p.ilegible}`);

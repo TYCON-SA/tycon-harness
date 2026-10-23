@@ -177,6 +177,20 @@ test('Deprecated_NoSePuedeMirar_NoClasifica', () => {
   const e2 = estado();
   assert.equal(dep.clasificar(sinGit, path.join(sinGit, 'src/legacy/x.js'), { stateDir: e2 }), null);
   assert.match(gatesLog(e2), /"status":"unknown-sin-git"/);
+
+  // Repo git recién iniciado, sin ningún commit: no hay lista commiteada, y eso no es «no pude mirar» (no anota nada).
+  // Es el repo de juguete de los casos del banco de los otros frenos de la puerta de edición.
+  const sinCommits = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deprec-sin-commits-')));
+  git(sinCommits, 'init', '-q', '-b', 'main', '.');
+  fs.mkdirSync(path.join(sinCommits, '.tycon'));
+  fs.writeFileSync(path.join(sinCommits, '.tycon', 'advisors.yaml'), LISTA);
+  fs.mkdirSync(path.join(sinCommits, 'src', 'legacy'), { recursive: true });
+  fs.writeFileSync(path.join(sinCommits, 'src', 'legacy', 'x.js'), 'x\n');
+  cs.limpiarCache();
+  const e3 = estado();
+  assert.equal(dep.clasificar(sinCommits, path.join(sinCommits, 'src/legacy/x.js'), { stateDir: e3 }), null);
+  assert.equal(dep.leerLista(sinCommits, { stateDir: e3 }).estado, 'sin-lista');
+  assert.equal(gatesLog(e3), '', 'un repo sin commits no deja constancia de «no pude mirar»');
 });
 
 test('Deprecated_BordesDeLosGlobs', () => {
