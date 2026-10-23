@@ -481,18 +481,28 @@ function estadoAMano(event, filePath, oldContent, newContent) {
   }
   const ok = apagado || r.ok === true;
   const via = apagado ? 'ambiente' : (r.via || 'persona');
-  // el escape pasa igual, pero sin su constancia no queda callado
-  const sinConstancia = (motivo) => {
-    if (ok) process.stderr.write(`⚠️ on-frontmatter-write: no pude anotar el escape del estado a mano (${motivo}).\n`);
-  };
+  // La constancia con las reglas de la biblioteca del cierre: apagada con TYCON_CLOSURE_RECORD=off (las suites que
+  // llaman al gancho con el HOME real) y callada sin la biblioteca (el gancho decide igual). Con la biblioteca, un escape
+  // que no quedó anotado no pasa callado
   try {
+    const legacy = require('./lib/legacy-names.js');
+    const apagada = String(legacy.readEnv('TYCON_CLOSURE_RECORD', { where: 'skills/tycon-pipeline/scripts/on-frontmatter-write.js' }) || '').toLowerCase() === 'off';
     const { rutaDeLaLib } = require('./lib/closing-record.js');
-    const res = require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'estado-a-mano', veredicto: ok ? 'escape' : 'bloqueo',
-      cmd: `${t.storyId}\0${t.estado}`,
-      ...(ok ? { via, relevo: r.relevo, sesion: sid, escape: apagado ? 'TYCON_STATUS_GATE' : 'cambiar-el-estado' } : {}) });
-    if (res && res.escrito === false) sinConstancia(res.motivo || 'el registro no se escribió');
+    const lib = rutaDeLaLib();
+    if (!apagada && fs.existsSync(lib)) {
+      const res = require(lib).anotar({ freno: 'on-frontmatter-write', regla: 'estado-a-mano', veredicto: ok ? 'escape' : 'bloqueo',
+        cmd: `${t.storyId}\0${t.estado}`,
+        ...(ok ? { via, relevo: r.relevo, sesion: sid, escape: apagado ? 'TYCON_STATUS_GATE' : 'cambiar-el-estado' } : {}) });
+      if (ok && res && res.escrito === false) {
+        process.stderr.write(`⚠️ on-frontmatter-write: no pude anotar el escape del estado a mano (${res.motivo || 'el registro no se escribió'}).\n`);
+      }
+    }
   } catch (e) {
-    sinConstancia((e && e.message) || e);
+    try {
+      fs.mkdirSync(stateDirOf(os.homedir()), { recursive: true });
+      fs.appendFileSync(path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
+        `[${new Date().toISOString()}] on-frontmatter-write estado-a-mano: la constancia no se anotó (${(e && e.message) || e})\n`, 'utf8');
+    } catch { /* ayuda, no evidencia */ }
   }
   if (ok) return null;
   const marker = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
