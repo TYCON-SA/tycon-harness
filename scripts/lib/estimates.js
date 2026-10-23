@@ -18,9 +18,15 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *
  * Uso:
  *   node scripts/lib/estimates.js epic   --repo <ruta> --epic <id> --min <n> --max <n> [--assumptions <texto>]
- *   node scripts/lib/estimates.js plan   --repo <ruta> --story <id> --value <n>
+ *   node scripts/lib/estimates.js plan   --repo <ruta> --story <id> [--spec <ruta>] --value <n>
+ *   (`--spec` dice cuál historia es cuando dos tienen el mismo id en el repo; `story` y `real` también lo aceptan)
  *   node scripts/lib/estimates.js story  --repo <ruta> --story <id> --value <n> [--proposed <n>] [--base <id,id>] [--confirmed-by <persona>]
- *   node scripts/lib/estimates.js report --repo <ruta> --epic <id>
+ *   node scripts/lib/estimates.js real   --repo <ruta> --story <id> --hours <n> --run <ejecución>
+ *   node scripts/lib/estimates.js report --repo <ruta> --epic <id> | --story <id>
+ *   `real` lo llama `pipeline.js estimate-real`, en su mismo proceso, con las horas de la constancia de `work-signal stop`
+ *   (por la línea de comandos se niega con salida 2: lo real no se escribe a mano): siempre en horas, y
+ *   la misma ejecución no se anota dos veces; sin horas (o 0) no escribe y devuelve `sin_horas`. `report --story` trae el
+ *   error de cada nivel contra lo real; `report --epic`, además, lo real de la épica cuando todas sus historias cerraron.
  *   Todos aceptan --who <persona> (sin él, user.name de git del repo; sin ninguno, null), --org-config <team-repos.json>
  *   (sin él, el del árbol que corre) y --json.
  * Salidas: 0 listo · 2 entrada inválida (no escribe nada) · 3 no se pudo leer la configuración de la organización.
@@ -155,8 +161,12 @@ function orgEstimates(orgConfig) {
     const p = r.problems[0] || { path: '', message: 'no vale' };
     throw new Problema(`la configuración de la organización no vale (${p.path || file}: ${p.message})`, SALIDA.org);
   }
-  const e = (r.data && r.data.estimates) || {};
-  // un lector anterior a la clave la deja pasar sin mirarla: la unidad se mira acá también
+  const crudo = r.data ? r.data.estimates : undefined;
+  // un lector anterior a la clave la deja pasar sin mirarla: la forma, la unidad y las tasas se miran acá también
+  if (crudo !== undefined && (crudo === null || typeof crudo !== 'object' || Array.isArray(crudo))) {
+    throw new Problema(`la configuración de la organización no vale (estimates: tiene que ser un objeto, es ${JSON.stringify(crudo)})`, SALIDA.org);
+  }
+  const e = crudo || {};
   if (e.unit !== undefined && !UNIDADES.includes(e.unit)) {
     throw new Problema(`la configuración de la organización no vale (estimates.unit: tiene que ser ${UNIDADES.join(', ')}, es ${JSON.stringify(e.unit)})`, SALIDA.org);
   }
@@ -188,6 +198,15 @@ const redondo = (n) => Math.round(n * 100) / 100;
  * compara en esa unidad; con unidades mezcladas, en horas; si alguna no pasa a horas, las sumas por unidad y sin marca.
  */
 function report(registro, epica, org) {
+  const r = reportEpica(registro, epica, org);
+  r.real = realDeEpica(registro.lines, epica, current(registro.lines, { nivel: 'epica', epica }), org);
+  // una línea real que no se lee deja una historia sin cerrar en apariencia: se dice
+  if (!r.real.cerrada && r.real.faltan && registro.unreadable.length) {
+    r.real.motivo = `${r.real.motivo}; el registro tiene ${registro.unreadable.length} línea(s) ilegible(s) y puede faltar lo real de alguna`;
+  }
+  return r;
+}
+function reportEpica(registro, epica, org) {
   const { lines, unreadable } = registro;
   const E = String(epica);
   const rango = current(lines, { nivel: 'epica', epica });
@@ -208,7 +227,8 @@ function report(registro, epica, org) {
   // lo que se compara con el rango es la vigente; un plan ya ajustado no frena la comparación
   const comparadas = [...(rango ? [rango] : []), ...historias.map((h) => h.vigente)];
   const planes = historias.map((h) => h.plan).filter(Boolean);
-  const unidades = [...new Set([...comparadas, ...planes].map((l) => l.unidad))];
+  // la unidad la decide lo que se compara: un plan ya superado en otra unidad no vuelve «mezclada» a la épica
+  const unidades = [...new Set(comparadas.map((l) => l.unidad))];
   const una = unidades.length === 1 ? unidades[0] : null;
   const conv = (l, v) => (una ? v : aHoras(v, l.unidad, org));
   const sinTasa = (ls) => (una ? [] : ls.filter((l) => aHoras(1, l.unidad, org) === null));
@@ -224,13 +244,23 @@ function report(registro, epica, org) {
       motivo: `unidades mezcladas y ${[...new Set(noPasan.map((l) => l.unidad))].join(', ')} sin tasa a horas (estimates.hours_per_point de la organización): no se compara con el rango`,
     };
   }
-  const planSinTasa = sinTasa(planes);
-  const sumaPlan = planSinTasa.length ? null : sumar(planes);
+  const unidadesDe = (ls) => [...new Set(ls.map((l) => l.unidad))].join(', ');
+  let sumaPlan = null;
+  let motivoPlan = null;
+  if (!una || planes.every((l) => l.unidad === una)) {
+    const planSinTasa = sinTasa(planes);
+    if (planSinTasa.length) motivoPlan = `el plan tiene ${unidadesDe(planSinTasa)} sin tasa a horas: no se suma`;
+    else sumaPlan = sumar(planes);
+  } else if (una === 'hours') {
+    // lo comparado está en horas: el plan en otra unidad pasa a horas, si tiene tasa
+    const horas = planes.map((l) => aHoras(l.valor, l.unidad, org));
+    if (horas.some((h) => h === null)) motivoPlan = `el plan tiene ${unidadesDe(planes.filter((l) => aHoras(1, l.unidad, org) === null))} sin tasa a horas: no se suma`;
+    else sumaPlan = redondo(horas.reduce((s, h) => s + h, 0));
+  } else {
+    motivoPlan = `el plan está en ${unidadesDe(planes)} y lo vigente en ${una}: no se suma`;
+  }
   const sumaVigente = sumar(historias.map((h) => h.vigente));
-  const out = {
-    ...base, unidad: una || 'hours', suma_plan: sumaPlan, suma_vigente: sumaVigente,
-    motivo: planSinTasa.length ? `el plan tiene ${[...new Set(planSinTasa.map((l) => l.unidad))].join(', ')} sin tasa a horas: no se suma` : null,
-  };
+  const out = { ...base, unidad: una || 'hours', suma_plan: sumaPlan, suma_vigente: sumaVigente, motivo: motivoPlan };
   if (!rango) return { ...out, motivo: [out.motivo, 'la épica no tiene rango: no se compara'].filter(Boolean).join('; ') };
   const min = redondo(conv(rango, rango.min));
   const max = redondo(conv(rango, rango.max));
@@ -239,6 +269,91 @@ function report(registro, epica, org) {
   if (sumaVigente < min) return { ...out, dentro: false, fuera: 'debajo', por: redondo(min - sumaVigente) };
   if (sumaVigente > max) return { ...out, dentro: false, fuera: 'encima', por: redondo(sumaVigente - max) };
   return { ...out, dentro: true, fuera: null, por: 0 };
+}
+
+/** Lo real de una historia: las horas de todas sus líneas `real` y en cuántos cierres (ejecuciones distintas). */
+function realDe(lines, historia) {
+  const suyas = lines.filter((l) => l.nivel === 'real' && String(l.historia) === String(historia));
+  if (!suyas.length) return { horas: null, cierres: 0, varios_cierres: false };
+  const cierres = new Set(suyas.map((l) => String(l.ejecucion))).size;
+  return { horas: redondo(suyas.reduce((s, l) => s + l.valor, 0)), cierres, varios_cierres: cierres > 1 };
+}
+
+/** El error de un nivel contra lo real, en horas: `(estimado - real) / real`, o null con su motivo. */
+function errorDe(l, faltante, realHoras, org) {
+  // sin lo real ningún nivel tiene error: ése es el motivo, aunque además falte el nivel
+  if (!l) return { estimado: null, unidad: null, horas: null, error: null, motivo: realHoras === null ? 'sin horas reales' : faltante };
+  const horas = aHoras(l.valor, l.unidad, org);
+  const base = { estimado: l.valor, unidad: l.unidad, horas: horas === null ? null : redondo(horas) };
+  if (realHoras === null) return { ...base, error: null, motivo: 'sin horas reales' };
+  if (horas === null) return { ...base, error: null, motivo: 'sin tasa de horas por punto' };
+  return { ...base, error: Math.round(((horas - realHoras) / realHoras) * 10000) / 10000, motivo: null };
+}
+
+/**
+ * El informe de una historia: lo real y el error de cada nivel (el plan vigente, la primera y la última versión de la
+ * historia). Sin lo real, cada nivel trae lo estimado y el error en null.
+ */
+function reportStory(registro, historia, org) {
+  const { lines, unreadable } = registro;
+  const H = String(historia);
+  const suyas = lines.filter((l) => String(l.historia) === H);
+  const versiones = history(suyas, { nivel: 'historia', historia: H });
+  const real = realDe(lines, H);
+  const ultima = suyas.length ? suyas[suyas.length - 1] : null;
+  return {
+    ok: true, historia: H, epica: ultima ? String(ultima.epica) : null, unreadable, real,
+    niveles: {
+      plan: errorDe(current(suyas, { nivel: 'plan', historia: H }), 'sin plan', real.horas, org),
+      historia_primera: errorDe(versiones[0] || null, 'sin estimación de historia', real.horas, org),
+      historia_ultima: errorDe(versiones.length ? versiones[versiones.length - 1] : null, 'sin estimación de historia', real.horas, org),
+    },
+  };
+}
+
+/**
+ * Lo real de una épica: sus historias son las que tienen en ella una línea de plan, historia o real; cerrada cuando
+ * todas tienen real. Cerrada, la suma contra el rango (en horas) y la distancia al borde más cercano; abierta, cuántas
+ * faltan.
+ */
+function realDeEpica(lines, epica, rango, org) {
+  const E = String(epica);
+  // como lo estimado: una historia es de la épica de su última línea de plan o historia; sin ninguna, de la de su real.
+  // Lo real que se suma es el que se anotó bajo esta épica: una historia que cambió de épica no cuenta en las dos
+  const ultima = new Map();
+  for (const l of lines) if (l.nivel === 'plan' || l.nivel === 'historia') ultima.set(String(l.historia), String(l.epica));
+  const enE = lines.filter((l) => l.nivel === 'real' && String(l.epica) === E);
+  const ids = [...new Set([
+    ...[...ultima].filter(([, e]) => e === E).map(([h]) => h),
+    ...enE.map((l) => String(l.historia)).filter((h) => !ultima.has(h)),
+  ])];
+  const reales = ids.map((h) => realDe(enE, h).horas);
+  const faltan = reales.filter((h) => h === null).length;
+  const out = { historias: ids.length, cerrada: ids.length > 0 && faltan === 0, faltan, suma: null, dentro: null, fuera: null, por: null, motivo: null };
+  if (!ids.length) return { ...out, motivo: 'la épica no tiene historias' };
+  if (faltan) return { ...out, motivo: `abierta: falta${faltan > 1 ? 'n' : ''} ${faltan} historia${faltan > 1 ? 's' : ''} con horas reales` };
+  out.suma = redondo(reales.reduce((s, h) => s + h, 0));
+  if (!rango) return { ...out, motivo: 'la épica no tiene rango: no se compara' };
+  const min = aHoras(rango.min, rango.unidad, org);
+  const max = aHoras(rango.max, rango.unidad, org);
+  if (min === null || max === null) return { ...out, motivo: 'el rango está en puntos sin tasa de horas por punto: no se compara' };
+  if (out.suma < min) return { ...out, dentro: false, fuera: 'debajo', por: redondo(min - out.suma) };
+  if (out.suma > max) return { ...out, dentro: false, fuera: 'encima', por: redondo(out.suma - max) };
+  return { ...out, dentro: true, fuera: null, por: redondo(Math.min(out.suma - min, max - out.suma)) };
+}
+
+/** Lo real de una historia al cerrarla: siempre en horas; la misma ejecución ya anotada no se vuelve a escribir. */
+const EJECUCION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+function anotarReal(repo, registro, o) {
+  if (o.run === undefined) throw new Problema('falta --run (la ejecución que cierra la historia: el sha del merge)');
+  if (!EJECUCION.test(String(o.run))) throw new Problema(`--run tiene que ser un id de letras, números, . _ o - de hasta 80 caracteres (es ${JSON.stringify(o.run)})`);
+  if (!o.story) throw new Problema('falta --story');
+  if (o.hours === undefined || o.hours === '' || Number(o.hours) === 0) return { ok: false, reason: 'sin_horas', motivo: 'el cierre no trae horas' };
+  const valor = numero('--hours', o.hours);
+  const epica = epicaDe(repo, o.story, undefined, o.spec);
+  const ya = registro.lines.some((l) => l.nivel === 'real' && String(l.historia) === String(o.story) && String(l.ejecucion) === String(o.run));
+  if (ya) return { ok: true, reason: 'ya_anotado', unreadable: registro.unreadable };
+  return { nivel: 'real', historia: String(o.story), epica, valor, unidad: 'hours', ejecucion: String(o.run) };
 }
 
 // ── el comando ──────────────────────────────────────────────────────────────────────────────────
@@ -276,33 +391,50 @@ function quien(o, repo) {
   const nombre = r.status === 0 ? String(r.stdout || '').trim() : '';
   return nombre || null;
 }
-/** La épica de una historia, del `epic:` de su frontmatter. `D` es el buscador de historias (se cambia en las pruebas). */
-function epicaDe(repo, id, D = require(DISCOVERY)) {
+const canonica = (p) => { try { return fs.realpathSync.native(path.resolve(p)); } catch (_) { return path.resolve(p); } };
+/**
+ * La épica de una historia, del `epic:` de su frontmatter. Con `spec` (la ruta de la historia), la de ése: dos historias
+ * pueden tener el mismo id en un repo. Sin `spec` y con el id repetido, no se adivina cuál. `D` es el buscador de
+ * historias (se cambia en las pruebas).
+ */
+function epicaDe(repo, id, D = require(DISCOVERY), spec) {
   const { stories, partial } = D.discoverStories(repo, { cache: false });
-  const s = stories.find((x) => String(x.id) === String(id));
+  const mismas = stories.filter((x) => String(x.id) === String(id));
+  let s = null;
+  if (spec) s = mismas.find((x) => canonica(x.path) === canonica(spec)) || null;
+  else if (mismas.length > 1) {
+    throw new Problema(`hay ${mismas.length} historias con el id ${id} en ${repo} (${mismas.map((x) => path.relative(repo, x.path)).join(', ')}): pasá --spec <ruta> para decir cuál`);
+  } else s = mismas[0] || null;
   // una búsqueda cortada por su tope de tiempo no prueba que la historia no exista
   if (!s && partial) throw new Problema(`la búsqueda de historias en ${repo} no terminó (quedó incompleta por su tope de tiempo): no sé si la historia ${id} existe; volvé a correrlo o subí TYCON_STORY_SCAN_BUDGET_MS`, SALIDA.org);
-  if (!s) throw new Problema(`la historia ${id} no existe en ${repo}`);
-  if (!s.epic) throw new Problema(`la historia ${id} no tiene epic: en su frontmatter`);
-  return String(s.epic);
+  if (!s) throw new Problema(spec ? `${spec} no es la historia ${id} de ${repo}` : `la historia ${id} no existe en ${repo}`);
+  // sin el comentario del final, como lo leen las demás piezas: `epic: <id>  # nota` es la épica <id>
+  const epica = s.epic ? String(s.epic).replace(/\s+#.*$/, '').trim() : '';
+  if (!epica) throw new Problema(`la historia ${id} no tiene epic: en su frontmatter`);
+  return epica;
 }
 
 function run(argv) {
   const o = opciones(argv);
   const cmd = o._[0];
-  if (!['epic', 'plan', 'story', 'report'].includes(cmd)) throw new Problema(`nivel desconocido: ${cmd === undefined ? '(ninguno)' : cmd} (válidos: epic, plan, story, report)`);
+  if (!['epic', 'plan', 'story', 'real', 'report'].includes(cmd)) throw new Problema(`nivel desconocido: ${cmd === undefined ? '(ninguno)' : cmd} (válidos: epic, plan, story, real, report)`);
   if (!o.repo) throw new Problema('falta --repo');
   const repo = path.resolve(o.repo);
   if (!fs.existsSync(repo)) throw new Problema(`no existe ${repo}`);
   const org = orgEstimates(o['org-config']);
   const registro = read(repo);
   if (cmd === 'report') {
-    if (!o.epic) throw new Problema('falta --epic');
+    if (o.story) return reportStory(registro, o.story, org);
+    if (!o.epic) throw new Problema('falta --epic o --story');
     return report(registro, o.epic, org);
   }
   const comun = { unidad: org.unit, quien: null, cuando: null };
   let l;
-  if (cmd === 'epic') {
+  if (cmd === 'real') {
+    const r = anotarReal(repo, registro, o);
+    if (!r.nivel) return r;
+    l = { ...comun, ...r };
+  } else if (cmd === 'epic') {
     if (!o.epic) throw new Problema('falta --epic');
     const min = numero('--min', o.min);
     const max = numero('--max', o.max);
@@ -321,7 +453,7 @@ function run(argv) {
       }
       if (o['confirmed-by'] !== undefined) l.confirmo = persona('--confirmed-by', o['confirmed-by']);
     }
-    l.epica = epicaDe(repo, o.story);
+    l.epica = epicaDe(repo, o.story, undefined, o.spec);
   }
   l.quien = quien(o, repo);
   l.cuando = new Date().toISOString();
@@ -331,19 +463,33 @@ function run(argv) {
 }
 
 function texto(r) {
-  if (!r.ok) return `estimates: ${r.reason}`;
+  if (!r.ok) return `estimates: ${r.reason}${r.motivo ? ` (${r.motivo})` : ''}`;
+  if (r.reason === 'ya_anotado') return 'estimates: lo real de esa ejecución ya estaba anotado; no se escribe de nuevo';
+  if (r.niveles) {
+    const pct = (n) => (n.error === null ? n.motivo : `${Math.round(n.error * 100)} %`);
+    const real = r.real.horas === null ? 'sin horas reales' : `real ${r.real.horas} h${r.real.varios_cierres ? ` en ${r.real.cierres} cierres` : ''}`;
+    return `estimates: historia ${r.historia} · ${real} · plan ${pct(r.niveles.plan)} · primera ${pct(r.niveles.historia_primera)} · última ${pct(r.niveles.historia_ultima)}`;
+  }
   if (r.linea) return `estimates: anotada ${r.linea.nivel} ${r.linea.historia || r.linea.epica} (${r.linea.valor !== null && r.linea.valor !== undefined ? r.linea.valor : `${r.linea.min}–${r.linea.max}`} ${r.linea.unidad})`;
   if (r.sin_estimaciones) return `estimates: la épica ${r.epica} no tiene estimaciones`;
   const marca = r.dentro === null ? r.motivo : r.dentro ? 'dentro del rango' : `${r.fuera} del rango por ${r.por}`;
   const rango = r.rango ? `${r.rango.min}–${r.rango.max}` : 'sin rango';
-  return `estimates: épica ${r.epica} · rango ${rango} · plan ${r.suma_plan === null ? '—' : r.suma_plan} · vigente ${r.suma_vigente === null ? '—' : r.suma_vigente} ${r.unidad || ''} · ${marca}${r.unreadable.length ? ` · líneas ilegibles: ${r.unreadable.join(', ')}` : ''}`;
+  const real = r.real;
+  const marcaReal = !real || real.suma === null || real.dentro === null ? null : real.dentro ? 'dentro del rango' : `${real.fuera} del rango por ${real.por}`;
+  const lineaReal = !real ? '' : real.suma === null ? ` · real: ${real.motivo}` : ` · real ${real.suma} h · ${marcaReal || real.motivo}`;
+  return `estimates: épica ${r.epica} · rango ${rango} · plan ${r.suma_plan === null ? '—' : r.suma_plan} · vigente ${r.suma_vigente === null ? '—' : r.suma_vigente} ${r.unidad || ''} · ${marca}${lineaReal}${r.unreadable.length ? ` · líneas ilegibles: ${r.unreadable.join(', ')}` : ''}`;
 }
 
 if (require.main === module) {
   const json = process.argv.includes('--json');
   let r;
   let code = SALIDA.ok;
-  try { r = run(process.argv.slice(2)); } catch (e) {
+  try {
+    // lo real no se anota a mano: sus horas salen de la constancia del cierre, que lee pipeline.js estimate-real
+    // el comando ya leído, no el primer argumento: `--json real` y `--repo x real` también son `real`
+    if (opciones(process.argv.slice(2))._[0] === 'real') throw new Problema('lo real no se anota por la línea de comandos: lo anota pipeline.js estimate-real con las horas del registro de horas');
+    r = run(process.argv.slice(2));
+  } catch (e) {
     if (!(e instanceof Problema)) throw e;
     r = { ok: false, reason: e.message };
     code = e.code;

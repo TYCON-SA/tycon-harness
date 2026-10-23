@@ -7,7 +7,8 @@
  * Lo que no se puede perder: el registro sólo se agrega, nunca se reescribe (las versiones son el dato); cada línea trae
  * las quince claves en el mismo orden, que es el contrato que leen el sitio y la plataforma; una línea ilegible se cuenta
  * y no tira el resto; una entrada inválida sale 2 sin escribir nada; con unidades mezcladas todo pasa a horas, y si no se
- * puede (puntos sin tasa) no se marca la épica dentro ni fuera. Todo en laboratorios (organización acme, persona
+ * puede (puntos sin tasa) no se marca la épica dentro ni fuera. Lo real va siempre en horas, un reintento del cierre no
+ * lo duplica, y el informe dice el error de cada nivel contra lo real. Todo en laboratorios (organización acme, persona
  * acme-lider); la configuración de git de la máquina no entra (HOME y GIT_CONFIG_GLOBAL de laboratorio).
  */
 
@@ -63,6 +64,14 @@ function correr(args, { orgConfig = SIN_CLAVE, env = {} } = {}) {
   let json = null;
   try { json = JSON.parse(r.stdout); } catch (_) { /* no es JSON */ }
   return { status: r.status, stdout: r.stdout, stderr: r.stderr, json };
+}
+/** `real` en el mismo proceso, como lo llama `pipeline.js estimate-real`: por la línea de comandos se niega. */
+function realEnProceso(args, { orgConfig = SIN_CLAVE } = {}) {
+  const E = require(CLI);
+  try { return { status: 0, json: E.run(['real', ...args, '--org-config', orgConfig]) }; } catch (e) {
+    if (typeof e.code !== 'number') throw e;
+    return { status: e.code, json: { ok: false, reason: e.message } };
+  }
 }
 function lineas(repo) {
   const f = path.join(repo, REGISTRO);
@@ -415,6 +424,11 @@ test('Real_SiempreEnHoras @story-2.75 @ac-7', () => {
   const E = require(CLI);
   assert.strictEqual(E.legible(fila({ nivel: 'real', epica: '3', historia: '3.1', valor: 4, unidad: 'hours', ejecucion: 'r1' })), true);
   assert.strictEqual(E.legible(fila({ nivel: 'real', epica: '3', historia: '3.1', valor: 4, unidad: 'days', ejecucion: 'r1' })), false, 'lo real en otra unidad es ilegible');
+  // y no se escribe en otra unidad: con la organización en puntos, lo real va en horas
+  const repo = repoDeHistorias();
+  const r = realEnProceso(['--repo', repo, '--story', '3.1', '--hours', '4', '--run', 'r1', '--who', 'acme-lider'], { orgConfig: org({ unit: 'points', hours_per_point: 3 }) });
+  assert.strictEqual(r.status, 0, r.stdout);
+  assert.deepStrictEqual(lineas(repo).map((l) => [l.nivel, l.unidad, l.valor]), [['real', 'hours', 4]]);
 });
 
 test('Confirmacion_BaseYPersonaConForma_Sale2 @story-2.75 @ac-12', () => {
@@ -433,4 +447,191 @@ test('Confirmacion_BaseYPersonaConForma_Sale2 @story-2.75 @ac-12', () => {
   assert.ok(!fs.existsSync(path.join(repo, REGISTRO)), 'no escribió');
   const ok = correr(['story', '--repo', repo, '--story', '3.5', '--value', '5', '--who', 'María Pérez', '--confirmed-by', 'acme.lider@acme.example', '--base', '3.1,2-4']);
   assert.strictEqual(ok.status, 0, ok.stdout);
+});
+
+// ── lo real: anotarlo al cerrar y el error de cada nivel ────────────────────────────────────────────────────────────
+
+test('T17 Real_SeAnota @story-2.75 @ac-15', () => {
+  const repo = repoDeHistorias();
+  const r = realEnProceso(['--repo', repo, '--story', '3.2', '--hours', '18.5', '--run', 'r1', '--who', 'acme-lider'], { orgConfig: org({ unit: 'days', hours_per_day: 6 }) });
+  assert.strictEqual(r.status, 0, JSON.stringify(r.json));
+  const [l] = lineas(repo);
+  assert.deepStrictEqual(Object.keys(l), CLAVES);
+  assert.deepStrictEqual([l.nivel, l.historia, l.epica, l.valor, l.unidad, l.ejecucion], ['real', '3.2', '3', 18.5, 'hours', 'r1']);
+  assert.strictEqual(r.json.ok, true);
+  // por la línea de comandos, no: lo real lo anota estimate-real
+  assert.strictEqual(correr(['real', '--repo', repo, '--story', '3.2', '--hours', '1', '--run', 'r2', '--who', 'acme-lider']).status, 2);
+  assert.strictEqual(lineas(repo).length, 1);
+});
+
+test('T18 Report_ErrorPorNivel @story-2.75 @ac-17', () => {
+  const repo = repoDeHistorias();
+  const filas = [
+    fila({ nivel: 'epica', epica: '3', min: 40, max: 70 }),
+    fila({ nivel: 'plan', epica: '3', historia: '3.2', valor: 12 }),
+    fila({ nivel: 'historia', epica: '3', historia: '3.2', valor: 14 }),
+    fila({ nivel: 'historia', epica: '3', historia: '3.2', valor: 16 }),
+    fila({ nivel: 'real', epica: '3', historia: '3.2', valor: 20, ejecucion: 'r1' }),
+    fila({ nivel: 'plan', epica: '3', historia: '3.3', valor: 30 }),
+    fila({ nivel: 'historia', epica: '3', historia: '3.3', valor: 50 }),
+  ];
+  escribirRegistro(repo, [...filas, fila({ nivel: 'real', epica: '3', historia: '3.3', valor: 55, ejecucion: 'r2' })]);
+  const h = correr(['report', '--repo', repo, '--story', '3.2']);
+  assert.strictEqual(h.status, 0, h.stderr || h.stdout);
+  const n = h.json.niveles;
+  assert.deepStrictEqual([h.json.historia, h.json.epica, h.json.real.horas, h.json.real.cierres], ['3.2', '3', 20, 1]);
+  assert.deepStrictEqual([n.plan.error, n.historia_primera.error, n.historia_ultima.error], [-0.4, -0.3, -0.2]);
+  assert.deepStrictEqual([n.plan.horas, n.historia_primera.horas, n.historia_ultima.horas], [12, 14, 16]);
+  const e = correr(['report', '--repo', repo, '--epic', '3']).json.real;
+  assert.deepStrictEqual([e.cerrada, e.historias, e.faltan, e.suma, e.dentro, e.fuera, e.por], [true, 2, 0, 75, false, 'encima', 5]);
+  // sin el real de la segunda historia, la épica está abierta y no se compara
+  escribirRegistro(repo, filas);
+  const a = correr(['report', '--repo', repo, '--epic', '3']).json.real;
+  assert.deepStrictEqual([a.cerrada, a.faltan, a.suma, a.dentro], [false, 1, null, null]);
+  // y adentro, la distancia al borde más cercano
+  escribirRegistro(repo, [...filas, fila({ nivel: 'real', epica: '3', historia: '3.3', valor: 30, ejecucion: 'r2' })]);
+  const d = correr(['report', '--repo', repo, '--epic', '3']).json.real;
+  assert.deepStrictEqual([d.suma, d.dentro, d.fuera, d.por], [50, true, null, 10]);
+  // un nivel sin línea, y una historia sin real
+  escribirRegistro(repo, [fila({ nivel: 'historia', epica: '3', historia: '3.4', valor: 8 }), fila({ nivel: 'real', epica: '3', historia: '3.4', valor: 10, ejecucion: 'r3' })]);
+  const s = correr(['report', '--repo', repo, '--story', '3.4']).json.niveles;
+  assert.deepStrictEqual([s.plan.error, s.plan.motivo, s.historia_ultima.error], [null, 'sin plan', -0.2]);
+  const sinReal = correr(['report', '--repo', repo, '--story', '3.1']).json;
+  assert.deepStrictEqual([sinReal.real.horas, sinReal.niveles.plan.error, sinReal.niveles.plan.motivo], [null, null, 'sin horas reales']);
+});
+
+test('Report_RealDeLaEpica_BordesYTexto @story-2.75 @ac-17', () => {
+  const repo = repoDeHistorias();
+  const plan = [fila({ nivel: 'plan', epica: '3', historia: '3.2', valor: 12 }), fila({ nivel: 'real', epica: '3', historia: '3.2', valor: 40, ejecucion: 'r1' })];
+  // cerrada y sin rango: la suma, sin marca
+  escribirRegistro(repo, plan);
+  const sin = correr(['report', '--repo', repo, '--epic', '3']).json.real;
+  assert.deepStrictEqual([sin.cerrada, sin.suma, sin.dentro, sin.motivo], [true, 40, null, 'la épica no tiene rango: no se compara']);
+  // justo en el borde: adentro, a 0 del borde
+  escribirRegistro(repo, [fila({ nivel: 'epica', epica: '3', min: 40, max: 70 }), ...plan]);
+  const borde = correr(['report', '--repo', repo, '--epic', '3']);
+  assert.deepStrictEqual([borde.json.real.dentro, borde.json.real.por], [true, 0]);
+  // sin --json, el texto también dice lo real
+  const texto = spawnSync(process.execPath, [CLI, 'report', '--repo', repo, '--epic', '3', '--org-config', SIN_CLAVE], { encoding: 'utf8' }).stdout;
+  assert.match(texto, /real 40 h · dentro del rango/);
+  // una línea real ilegible: la épica abierta lo dice, no parece una historia sin cerrar
+  escribirRegistro(repo, [fila({ nivel: 'epica', epica: '3', min: 40, max: 70 }), plan[0], JSON.stringify({ ...plan[1], unidad: 'days' })]);
+  const rota = correr(['report', '--repo', repo, '--epic', '3']).json.real;
+  assert.strictEqual(rota.cerrada, false);
+  assert.match(rota.motivo, /ilegible/);
+});
+
+test('T21 Unidades_PuntosSinTasaYDias @story-2.75 @ac-18 @ac-19', () => {
+  const repo = repoDeHistorias();
+  escribirRegistro(repo, [
+    fila({ nivel: 'plan', epica: '3', historia: '3.2', valor: 5, unidad: 'points' }),
+    fila({ nivel: 'historia', epica: '3', historia: '3.2', valor: 2, unidad: 'days' }),
+    fila({ nivel: 'real', epica: '3', historia: '3.2', valor: 8, ejecucion: 'r1' }),
+    fila({ nivel: 'real', epica: '3', historia: '3.2', valor: 12, ejecucion: 'r2' }),
+  ]);
+  const r = correr(['report', '--repo', repo, '--story', '3.2'], { orgConfig: org({ unit: 'days', hours_per_day: 6 }) });
+  assert.strictEqual(r.status, 0, r.stderr || r.stdout);
+  const n = r.json.niveles;
+  assert.deepStrictEqual([n.plan.estimado, n.plan.unidad, n.plan.horas, n.plan.error, n.plan.motivo], [5, 'points', null, null, 'sin tasa de horas por punto']);
+  assert.deepStrictEqual([n.historia_ultima.horas, n.historia_ultima.error], [12, -0.4]);
+  assert.deepStrictEqual([r.json.real.horas, r.json.real.cierres, r.json.real.varios_cierres], [20, 2, true]);
+});
+
+test('T41 Org_EstimatesNoObjeto @story-2.75 @ac-37', () => {
+  const repo = repoDeHistorias();
+  const arbol = path.dirname(org());
+  fs.mkdirSync(path.join(arbol, 'scripts', 'lib'), { recursive: true });
+  for (const estimates of ['hours', [], null, 5]) {
+    // un lector anterior a la clave: la deja pasar tal cual
+    fs.writeFileSync(path.join(arbol, 'scripts', 'lib', 'team-repos.js'),
+      `module.exports = { parse: () => ({ ok: true, data: { estimates: ${JSON.stringify(estimates)} }, problems: [] }) };`);
+    const r = correr(['report', '--repo', repo, '--epic', '3'], { orgConfig: path.join(arbol, 'team-repos.json') });
+    assert.strictEqual(r.status, 3, `${JSON.stringify(estimates)}: ${r.stdout}`);
+    assert.match(r.json.reason, /estimates: tiene que ser un objeto/);
+  }
+});
+
+test('Real_EntradasYReintento @story-2.75 @ac-16 @ac-35', () => {
+  const repo = repoDeHistorias();
+  const real = (extra) => realEnProceso(['--repo', repo, '--story', '3.2', '--who', 'acme-lider', ...extra]);
+  // por la línea de comandos no se anota lo real: las horas tienen que venir de la constancia del cierre
+  const consola = correr(['real', '--repo', repo, '--story', '3.2', '--hours', '3', '--run', 'r1', '--who', 'acme-lider']);
+  assert.strictEqual(consola.status, 2, consola.stdout);
+  assert.match(consola.json.reason, /estimate-real/);
+  // sin --run sale 2 aunque falten también las horas
+  assert.strictEqual(real([]).status, 2);
+  assert.match(real(['--hours', '3']).json.reason, /--run/);
+  for (const sin of [['--run', 'r1'], ['--run', 'r1', '--hours', '0']]) {
+    const r = real(sin);
+    assert.deepStrictEqual([r.status, r.json.ok, r.json.reason], [0, false, 'sin_horas'], sin.join(' '));
+  }
+  for (const malo of [['--run', 'r1', '--hours', 'doce'], ['--run', 'r1;x', '--hours', '3']]) assert.strictEqual(real(malo).status, 2, malo.join(' '));
+  assert.strictEqual(realEnProceso(['--repo', repo, '--story', '5.1', '--hours', '3', '--run', 'r1']).status, 2, 'sin epic:');
+  // sin horas gana: una historia sin epic: y sin horas no frena el cierre
+  assert.deepStrictEqual(realEnProceso(['--repo', repo, '--story', '5.1', '--run', 'r1']).json.reason, 'sin_horas');
+  assert.deepStrictEqual(lineas(repo), [], 'nada escrito');
+  assert.strictEqual(real(['--run', 'r1', '--hours', '3']).json.ok, true);
+  const otra = real(['--run', 'r1', '--hours', '5']);
+  assert.deepStrictEqual([otra.status, otra.json.ok, otra.json.reason], [0, true, 'ya_anotado']);
+  assert.strictEqual(lineas(repo).length, 1, 'el reintento no duplica');
+});
+
+// ── lo que confirmó el pase adversarial ────────────────────────────────────────────────────────────────────────────
+
+test('Adversarial_IdRepetido_LaEpicaSaleDelSpec @story-2.75 @ac-15 @ac-6', () => {
+  const repo = repoDeHistorias();
+  const otra = path.join(repo, 'specs', 'features', 'story-3.2-otra.md');
+  fs.mkdirSync(path.dirname(otra), { recursive: true });
+  fs.writeFileSync(otra, '---\nepic: phone\nstory: "3.2"\ntitle: "Otra 3.2"\nstatus: done\n---\n');
+  // con el spec, la épica es la suya; sin él, dos historias con el mismo id no se adivinan
+  const r = realEnProceso(['--repo', repo, '--story', '3.2', '--spec', otra, '--hours', '2', '--run', 'r1', '--who', 'acme-lider']);
+  assert.strictEqual(r.status, 0, JSON.stringify(r.json));
+  assert.strictEqual(lineas(repo)[0].epica, 'phone');
+  const p = correr(['plan', '--repo', repo, '--story', '3.2', '--value', '4', '--who', 'acme-lider']);
+  assert.strictEqual(p.status, 2, p.stdout);
+  assert.match(p.json.reason, /--spec/);
+  assert.strictEqual(correr(['plan', '--repo', repo, '--story', '3.2', '--spec', otra, '--value', '4', '--who', 'acme-lider']).status, 0);
+});
+
+test('Adversarial_EpicaConComentario_SinElComentario @story-2.75 @ac-2', () => {
+  const repo = repoDeHistorias();
+  fs.writeFileSync(path.join(repo, 'specs', 'story-3.1-algo.md'), '---\nepic: 3  # la del motor\nstory: "3.1"\ntitle: "x"\nstatus: done\n---\n');
+  assert.strictEqual(correr(['plan', '--repo', repo, '--story', '3.1', '--value', '4', '--who', 'acme-lider']).status, 0);
+  assert.strictEqual(lineas(repo)[0].epica, '3');
+});
+
+test('Adversarial_RealPorConsola_ConOpcionesAntes @story-2.75 @ac-15', () => {
+  const repo = repoDeHistorias();
+  for (const args of [['--json', 'real', '--repo', repo], ['--repo', repo, 'real']]) {
+    const r = spawnSync(process.execPath, [CLI, ...args, '--story', '3.2', '--hours', '5', '--run', 'r1', '--who', 'acme-lider', '--org-config', SIN_CLAVE], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${args.join(' ')}: ${r.stdout}`);
+  }
+  assert.deepStrictEqual(lineas(repo), []);
+});
+
+test('Adversarial_PlanEnOtraUnidad_NoCancelaLaComparacion @story-2.75 @ac-34', () => {
+  const repo = repoDeHistorias();
+  escribirRegistro(repo, [
+    fila({ nivel: 'epica', epica: '3', min: 10, max: 20, unidad: 'points' }),
+    fila({ nivel: 'plan', epica: '3', historia: '3.1', valor: 2, unidad: 'days' }),
+    fila({ nivel: 'historia', epica: '3', historia: '3.1', valor: 12, unidad: 'points' }),
+  ]);
+  const j = correr(['report', '--repo', repo, '--epic', '3']).json;
+  assert.deepStrictEqual([j.unidad, j.suma_vigente, j.dentro], ['points', 12, true]);
+  assert.strictEqual(j.suma_plan, null, 'el plan en otra unidad, sin tasa, no se suma');
+});
+
+test('Adversarial_HistoriaQueCambiaDeEpica_LoRealCuentaEnLaSuya @story-2.75 @ac-17', () => {
+  const repo = repoDeHistorias();
+  escribirRegistro(repo, [
+    fila({ nivel: 'epica', epica: '1', min: 1, max: 10 }),
+    fila({ nivel: 'epica', epica: '2', min: 1, max: 10 }),
+    fila({ nivel: 'plan', epica: '1', historia: '1.1', valor: 5 }),
+    fila({ nivel: 'historia', epica: '2', historia: '1.1', valor: 5 }),
+    fila({ nivel: 'real', epica: '2', historia: '1.1', valor: 7, ejecucion: 'a' }),
+  ]);
+  const uno = correr(['report', '--repo', repo, '--epic', '1']).json.real;
+  assert.deepStrictEqual([uno.historias, uno.cerrada, uno.suma], [0, false, null]);
+  const dos = correr(['report', '--repo', repo, '--epic', '2']).json.real;
+  assert.deepStrictEqual([dos.historias, dos.cerrada, dos.suma], [1, true, 7]);
 });

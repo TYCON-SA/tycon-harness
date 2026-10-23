@@ -5,8 +5,8 @@
  * (scripts/lib/similar-stories.js). Es la base de la propuesta de estimación al escribir una historia.
  *
  * Lo que no se puede perder: sólo cuentan las historias en `done` con horas reales en el registro; cada candidata dice
- * por qué se parece; sin candidatas medidas la lista sale vacía con su motivo y nunca se inventa una. Todo en
- * laboratorios (organización acme).
+ * por qué se parece; sin candidatas medidas la lista sale vacía con su motivo y nunca se inventa una; el motivo
+ * distingue «ninguna cerrada con horas» de «ninguna se parece». Todo en laboratorios (organización acme).
  */
 
 const test = require('node:test');
@@ -174,6 +174,9 @@ test('Parecidas_RepetidosCuentanUnaVez @story-2.75 @ac-9', () => {
   const nueva = historia(repo, { id: '3.9', epic: 3, status: 'draft', title: 'Otra cosa', topics: ['pedidos'], files: ['src/pedidos.js'] });
   const [c] = correr(repo, nueva).json.candidatas;
   assert.deepStrictEqual([c.motivos.topics, c.motivos.archivos, c.puntaje], [['pedidos'], ['src/pedidos.js'], 3], 'un tema 2 + un archivo 1');
+  // los rasgos mismos, sin repetidos: la cuenta de arriba no depende de que `comunes` los saque
+  const r = require(CLI).rasgos(fs.readFileSync(doble, 'utf8'));
+  assert.deepStrictEqual([r.topics, r.archivos], [['pedidos'], ['src/pedidos.js']]);
 });
 
 test('Parecidas_NoSePudoBuscar_Sale3 @story-2.75 @ac-11', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
@@ -198,4 +201,47 @@ test('Parecidas_TextoDiceLasIlegibles @story-2.75 @ac-10', () => {
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /sin historias cerradas con horas reales/);
   assert.match(r.stdout, /ilegibles: 1/);
+});
+
+test('T40 Parecidas_MotivoSinParecidas @story-2.75 @ac-36', () => {
+  const repo = repoVacio();
+  historia(repo, { id: '4.1', epic: 4, title: 'Cambiar la clave de acceso' });
+  historia(repo, { id: '5.1', epic: 5, title: 'Exportar facturas' });
+  registro(repo, [
+    fila({ nivel: 'real', epica: '4', historia: '4.1', valor: 6, ejecucion: 'r1' }),
+    fila({ nivel: 'real', epica: '5', historia: '5.1', valor: 9, ejecucion: 'r2' }),
+  ]);
+  const nueva = historia(repo, { id: '3.9', epic: 3, status: 'draft', title: 'El tablero de pedidos por zona', topics: ['pedidos'] });
+  const r = correr(repo, nueva);
+  assert.strictEqual(r.status, 0, r.stdout);
+  assert.deepStrictEqual([r.json.candidatas, r.json.motivo], [[], 'hay historias cerradas con horas reales; ninguna se parece']);
+  // una historia nueva sin frontmatter legible no se compara con nada
+  const rota = path.join(repo, 'specs', 'story-3.8-rota.md');
+  fs.writeFileSync(rota, '# Story 3.8\n\nsin frontmatter\n');
+  const s = correr(repo, rota);
+  assert.strictEqual(s.status, 0, s.stdout);
+  assert.deepStrictEqual([s.json.candidatas, s.json.motivo], [[], 'no pude leer el frontmatter de la historia nueva']);
+  // una cerrada que no se puede leer no es «ninguna se parece»: se dice
+  const S = require(CLI);
+  const D = { declaredStoryId: () => '3.9', discoverStories: () => ({ partial: false, stories: [{ id: '4.1', status: 'done', path: path.join(repo, 'specs', 'no-esta.md') }] }) };
+  const r2 = S.similar(repo, nueva, D);
+  assert.deepStrictEqual(r2.candidatas, []);
+  assert.match(r2.motivo, /no pude leer 1 historia cerrada/);
+});
+
+test('Adversarial_FilesAnidado_CuentaComoArchivos @story-2.75 @ac-9', () => {
+  const repo = repoVacio();
+  const fm = (id, epic, status) => ['---', `epic: ${epic}`, `story: "${id}"`, `title: "Algo ${id}"`, `status: ${status}`,
+    'files:', '  create:', '    - API/Nuevo.cs', '  modify:', '    - API/Controllers/PedidosController.cs', '---', ''].join('\n');
+  fs.writeFileSync(path.join(repo, 'specs', 'story-2.1-algo.md'), fm('2.1', 2, 'done'));
+  registro(repo, [fila({ nivel: 'real', epica: '2', historia: '2.1', valor: 5, ejecucion: 'r1' })]);
+  const nueva = path.join(repo, 'specs', 'story-5.1-algo.md');
+  fs.writeFileSync(nueva, fm('5.1', 5, 'draft'));
+  const [c] = correr(repo, nueva).json.candidatas;
+  assert.deepStrictEqual(c && c.motivos.archivos, ['API/Controllers/PedidosController.cs', 'API/Nuevo.cs']);
+});
+
+test('Adversarial_FinalesCRLF_LeenLasListas @story-2.75 @ac-9', () => {
+  const r = require(CLI).rasgos(['---', 'epic: 3', 'title: "Algo"', 'topics:', '  - pedidos', 'files_to_modify:', '  - src/pedidos.js', '---', ''].join('\r\n'));
+  assert.deepStrictEqual([r.legible, r.epica, r.topics, r.archivos], [true, '3', ['pedidos'], ['src/pedidos.js']]);
 });

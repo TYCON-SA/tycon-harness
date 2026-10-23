@@ -3743,18 +3743,38 @@ function workSignalForRun(event, opts = {}) {
   } else {
     const marker = opts.marker || readSessionMarker();
     if (!marker || !marker.storyId) return { error: 'sin marker activo en esta sesión — pasá la story: pipeline.js work-signal <start|stop> --story <spec> --repo <dir>' };
-    run = { storyId: String(marker.storyId), title: field(frontmatter(marker.storyPath), 'title'), repo: marker.repoPath || null,
-      sessionId: marker.sessionId || session };
+    // la ruta del marker puede estar escrita contra su repo: se resuelve como la resuelve marker.js, no contra la carpeta
+    const spec = marker.storyPath ? path.resolve(marker.repoPath || process.cwd(), marker.storyPath) : null;
+    run = { storyId: String(marker.storyId), title: field(frontmatter(spec), 'title'), repo: marker.repoPath || null,
+      sessionId: marker.sessionId || session, spec };
   }
+  const spec = opts.storyPath || run.spec || null;
   const h = harnessWorkSignal(opts);
-  if (!h) return { ran: false, warnings: ['aviso de trabajo: el arnés de esta máquina no trae el evento de trabajo (scripts/lib/work-signal.js); sigo sin registrar'] };
-  if (h.loadError) return { ran: false, warnings: [`aviso de trabajo: el evento de trabajo del arnés no carga (${h.loadError}); sigo sin registrar`] };
-  const r = h.ws.emit(event, { storyId: run.storyId, title: run.title || null, repo: run.repo, sessionId: run.sessionId }, { env: opts.env || process.env });
+  if (!h) return constanciaDeHoras(event, spec, {}, opts, { ran: false, warnings: ['aviso de trabajo: el arnés de esta máquina no trae el evento de trabajo (scripts/lib/work-signal.js); sigo sin registrar'] });
+  if (h.loadError) return constanciaDeHoras(event, spec, {}, opts, { ran: false, warnings: [`aviso de trabajo: el evento de trabajo del arnés no carga (${h.loadError}); sigo sin registrar`] });
+  let r;
+  try { r = h.ws.emit(event, { storyId: run.storyId, title: run.title || null, repo: run.repo, sessionId: run.sessionId }, { env: opts.env || process.env }); } catch (e) {
+    constanciaDeHoras(event, spec, {}, opts, { warnings: [] });
+    throw e;
+  }
   const out = { ran: r.ran, warnings: r.warnings };
   if (r.result.action) out.action = r.result.action;
   if (event === 'stop' && Number.isInteger(r.result.seconds)) {
     out.seconds = r.result.seconds;
     out.hours = completedWorkHours(0, r.result);
+  }
+  return constanciaDeHoras(event, spec, r.result, opts, out);
+}
+
+/**
+ * La constancia de lo real de un `stop`: lo que contestó la herramienta (o nada, si no contestó), para que estimate-real
+ * no dependa del modelo y valga siempre el último `stop`. Devuelve `out` con el aviso si no se pudo dejar.
+ */
+function constanciaDeHoras(event, spec, result, opts, out) {
+  if (event !== 'stop') return out;
+  if (!spec) return { ...out, warnings: [...out.warnings, 'horas reales: sin la ruta de la historia no dejo constancia; lo real no se va a anotar (pasá --story <spec>)'] };
+  try { require('./lib/real-hours.js').record(opts.home || os.homedir(), spec, result); } catch (e) {
+    return { ...out, warnings: [...out.warnings, `horas reales: no pude dejar la constancia (${e.code || e.message}); lo real de esta historia no se va a anotar`] };
   }
   return out;
 }
@@ -5893,6 +5913,8 @@ function parseArgs(argv) {
     else if (t === '--tokens') a.tokens = argv[++i];              // story-review-record: lo que gastó el revisor
     else if (t === '--duration-ms') a.duracionMs = argv[++i];     // story-review-record: lo que tardó
     else if (t === '--risk') a.riesgo = argv[++i];                // story-review-record: el riesgo que dio el portón
+    else if (t === '--run') a.run = argv[++i];                    // estimate-real: la ejecución que cierra la historia
+    else if (t === '--hours') { a.hoursGiven = true; i++; }        // estimate-real: no existe; se reconoce para negarlo
     // e2e-config: archivos que la entrega tocó (repo-relativos) para elegir qué apps del
     // monorepo ejerce el gate. Admite `--changed a b c` y `--changed a,b,c`.
     else if (t === '--changed') {
@@ -6441,6 +6463,17 @@ function main() {
     (r.code === 0 ? process.stdout : process.stderr).write(`${r.line}\n`);
     if (r.code === 3) process.stdout.write(`${r.line}\n`);
     process.exit(r.code);
+  }
+  if (cmd === 'estimate-real') {
+    // lo real de la historia al cerrarla, con las horas de la constancia de work-signal stop (nunca un número a mano)
+    const { code, result } = require('./lib/real-hours.js').estimateReal({
+      storyPath: args.story ? path.resolve(args.story) : null, run: args.run, hoursGiven: !!args.hoursGiven,
+      repo: process.argv.includes('--repo') ? args.repo : null, home: os.homedir(),
+    });
+    if (code !== 0) process.stderr.write(`estimate-real: ${result.reason}\n`);
+    process.stdout.write(JSON.stringify(result) + '\n');
+    process.exitCode = code;
+    return;
   }
   if (cmd === 'start') {
     const conModelos = conModelosDeLaCorrida(args);

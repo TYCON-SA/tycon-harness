@@ -27,6 +27,8 @@ const E = require(path.join(__dirname, 'estimates.js'));
 const MAXIMO = 5;
 const PUNTOS = Object.freeze({ epica: 3, topic: 2, archivo: 1, palabra: 1 });
 const SIN_CANDIDATAS = 'sin historias cerradas con horas reales';
+const SIN_PARECIDAS = 'hay historias cerradas con horas reales; ninguna se parece';
+const SIN_FRONTMATTER = 'no pude leer el frontmatter de la historia nueva';
 // palabras de cuatro letras o más que no dicen de qué trata una historia
 const VACIAS = new Set(['para', 'como', 'desde', 'hasta', 'sobre', 'entre', 'cada', 'todo', 'todos', 'todas', 'esta', 'este', 'estos', 'estas', 'pero', 'cuando', 'donde', 'with', 'from', 'that', 'this', 'into', 'when', 'what']);
 
@@ -39,7 +41,8 @@ class Problema extends Error {
  * verdad: listas con líneas de comentario y comentarios al final, títulos con comillas o apóstrofos adentro.
  */
 function rasgos(texto) {
-  const limpio = String(texto).replace(/^﻿/, '');
+  // los finales de renglón de Windows, fuera: con `\r` las listas con guiones no se leen
+  const limpio = String(texto).replace(/^﻿/, '').replace(/\r/g, '');
   const fin = limpio.startsWith('---') ? limpio.indexOf('\n---', 3) : -1;
   const fm = fin === -1 ? '' : limpio.slice(3, fin);
   const crudo = (k) => {
@@ -48,10 +51,11 @@ function rasgos(texto) {
   };
   const epica = escalar(crudo('epic'));
   return {
+    legible: fin !== -1,
     epica: epica === '' ? null : epica,
     titulo: escalar(crudo('title')) || '',
     topics: [...new Set(temas(fm))],
-    archivos: [...new Set([...lista(fm, 'files_to_create'), ...lista(fm, 'files_to_modify')])],
+    archivos: [...new Set([...lista(fm, 'files_to_create'), ...lista(fm, 'files_to_modify'), ...anidados(fm, 'files')])].sort(),
   };
 }
 /** Un valor escalar de YAML: entre comillas dobles (con `\"`), simples (con `''`) o suelto (sin el comentario final). */
@@ -79,6 +83,24 @@ function lista(fm, clave) {
     const m = l.match(/^\s+-\s*(.*)$/);
     if (!m) break;
     const v = escalar(m[1]);
+    if (v) out.push(v);
+  }
+  return out;
+}
+/**
+ * Los ítems de las listas que cuelgan de `clave:` (la forma `files:` con `create:` y `modify:` adentro, que el arnés
+ * acepta como archivos declarados): todo renglón con guión hasta la próxima clave sin sangría.
+ */
+function anidados(fm, clave) {
+  const lineas = fm.split('\n');
+  const i = lineas.findIndex((l) => new RegExp(`^${clave}:\\s*(#.*)?$`).test(l));
+  if (i === -1) return [];
+  const out = [];
+  for (const l of lineas.slice(i + 1)) {
+    if (!l.trim() || /^\s*#/.test(l)) continue;
+    if (!/^\s/.test(l)) break;
+    const m = l.match(/^\s+-\s*(.*)$/);
+    const v = m ? escalar(m[1]) : '';
     if (v) out.push(v);
   }
   return out;
@@ -116,6 +138,12 @@ function similar(repo, storyPath, D = require(DISCOVERY)) {
   }
   const nueva = rasgos(texto);
   const nuevaId = D.declaredStoryId(texto);
+  // sin frontmatter no hay con qué comparar: decir «no hay parecidas» sería inventar un resultado
+  if (!nueva.legible) {
+    let ilegibles = [];
+    try { ilegibles = E.read(repo).unreadable; } catch (e) { throw new Problema(e.message, 3); }
+    return { ok: true, story: nuevaId, candidatas: [], motivo: SIN_FRONTMATTER, unreadable: ilegibles };
+  }
   let registro;
   try { registro = E.read(repo); } catch (e) { throw new Problema(e.message, 3); }
   const { lines, unreadable } = registro;
@@ -128,12 +156,15 @@ function similar(repo, storyPath, D = require(DISCOVERY)) {
   if (partial) throw new Problema(`la búsqueda de historias en ${repo} no terminó (quedó incompleta por su tope de tiempo): no sé cuáles están cerradas; volvé a correrlo o subí TYCON_STORY_SCAN_BUDGET_MS`, 3);
   const misPalabras = palabras(nueva.titulo);
   const candidatas = [];
+  let cerradas = 0;
+  let sinLeer = 0;
   for (const s of stories) {
     const id = String(s.id);
     if (id === String(nuevaId) || path.resolve(s.path) === path.resolve(storyPath)) continue;
     if (String(s.status).toLowerCase() !== 'done' || !reales.has(id)) continue;
+    cerradas++;
     let suya;
-    try { suya = rasgos(fs.readFileSync(s.path, 'utf8')); } catch (_) { continue; }
+    try { suya = rasgos(fs.readFileSync(s.path, 'utf8')); } catch (_) { sinLeer++; continue; }
     const motivos = {
       misma_epica: nueva.epica !== null && suya.epica !== null && String(nueva.epica) === String(suya.epica),
       topics: comunes(suya.topics, nueva.topics),
@@ -154,7 +185,10 @@ function similar(repo, storyPath, D = require(DISCOVERY)) {
     });
   }
   candidatas.sort((a, b) => b.puntaje - a.puntaje || porId(a.id, b.id));
-  if (!candidatas.length) return vacia;
+  if (!candidatas.length) {
+    if (sinLeer) return { ...vacia, motivo: `no pude leer ${sinLeer} historia${sinLeer > 1 ? 's' : ''} cerrada${sinLeer > 1 ? 's' : ''} con horas reales; ninguna de las otras se parece` };
+    return cerradas ? { ...vacia, motivo: SIN_PARECIDAS } : vacia;
+  }
   return { ok: true, story: nuevaId, candidatas: candidatas.slice(0, MAXIMO), motivo: null, unreadable };
 }
 
@@ -200,4 +234,4 @@ if (require.main === module) {
   process.exitCode = code;
 }
 
-module.exports = { similar, rasgos, palabras, PUNTOS, MAXIMO, SIN_CANDIDATAS };
+module.exports = { similar, rasgos, palabras, PUNTOS, MAXIMO, SIN_CANDIDATAS, SIN_PARECIDAS, SIN_FRONTMATTER };

@@ -125,6 +125,24 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signa
 Si vienen los dos, se suman: lo informado más lo que da la acción. Mostrarle al dev el total y lo que lo compone antes
 de postear.
 
+### Lo real en el registro de estimaciones
+
+Después del `stop`, se anota lo real de la historia en el registro de estimaciones de su repo de historias
+(`.tycon/estimates.jsonl`), con el sha del merge a main que la cerró (el de "Recolección de commits"):
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js estimate-real --story <abs spec.md> --run <sha del merge>
+# → { ok: true, linea } · { ok: true, reason: "ya_anotado" } · { ok: false, reason: "sin_horas", motivo }
+```
+
+- Las horas no se pasan: salen de la constancia que dejó el `stop` con los segundos que informó la herramienta. Una
+  herramienta que informa por una acción no deja segundos, y lo real no se anota (`sin_horas`, con el motivo).
+- Reintentar el cierre repite el sha y no duplica la línea (`ya_anotado`); reabrir la historia y volver a cerrarla trae
+  otro sha y suma.
+- El resultado se dice en una línea y el cierre sigue, salga lo que salga: la estimación nunca frena el cierre.
+- La línea queda en el árbol del repo de historias: se suma al commit que se le propone al dev, que pide autorización
+  como todo commit.
+
 Formato del output: `Xh YYm` (ej. `4h 32m`). Si la story tomó menos de 1h, mostrar `XX min` (ej. `47 min`).
 
 **Casos a manejar**:

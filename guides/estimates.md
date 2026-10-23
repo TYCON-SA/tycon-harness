@@ -22,6 +22,11 @@ resto se lee igual. El archivo nunca se reescribe.
 | Épica | al escribirla: un rango con sus supuestos | `node scripts/lib/estimates.js epic --repo <repo> --epic 3 --min 40 --max 70 --assumptions "sin migración de datos"` |
 | Plan | al partirla en historias: un valor por historia | `node scripts/lib/estimates.js plan --repo <repo> --story <id> --value 12` |
 | Historia | al escribirla con detalle: el ajuste | lo hace `tycon-create-story`; a mano, `estimates.js story --repo <repo> --story <id> --value 16` |
+| Real | al cerrarla: las horas del reloj | lo hace el cierre del pipeline: `pipeline.js estimate-real --story <spec> --run <sha del merge>` |
+
+Lo real no se escribe a mano: `estimate-real` lee la constancia que deja `pipeline.js work-signal stop` con los segundos
+que informó la herramienta de horas, siempre en horas. Sin esos segundos (sin herramienta, nada registrado, o una
+herramienta que informa por una acción) no anota nada y lo dice. Reintentar el cierre no duplica la línea.
 
 La épica de una historia sale del `epic:` de su frontmatter. Si ese campo cambia, la historia cuenta en la épica nueva.
 
@@ -32,7 +37,15 @@ node scripts/lib/estimates.js report --repo <repo> --epic 3
 ```
 
 Da el rango, la suma del plan, la suma vigente (la estimación de la historia si la hay; si no, la del plan) y si cae
-dentro, debajo o encima del rango, y por cuánto. Con `--json` trae además cada historia con sus versiones.
+dentro, debajo o encima del rango, y por cuánto. Con `--json` trae además cada historia con sus versiones. Cuando
+todas sus historias tienen lo real, dice la suma real contra el rango; si falta alguna, cuántas.
+
+```bash
+node scripts/lib/estimates.js report --repo <repo> --story <id>
+```
+
+Da cuánto erró cada nivel contra lo real, en horas: el plan y la primera y la última versión de la historia
+(`(estimado - real) / real`). Un nivel sin estimación, o en puntos sin tasa, trae el error vacío con su motivo.
 
 ## La propuesta
 
