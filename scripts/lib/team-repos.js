@@ -89,6 +89,8 @@ const WEEKLY_REVIEW_CHARS = [10000, 2000000];
 // en `sectionProblems.estimates`, como `models`.
 const ESTIMATES_KEYS = ['unit', 'hours_per_day', 'hours_per_point'];
 const ESTIMATES_UNITS = ['hours', 'days', 'points'];
+// un día de trabajo tiene entre 1 y 24 horas: fuera de eso, pasar días a horas da un total que no es de nadie
+const ESTIMATES_HOURS_PER_DAY = [1, 24];
 // El plazo del aviso de espera: minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 const WAIT_NOTICE_KEYS = ['minutes'];
 const WAIT_NOTICE_MAX = 120;
@@ -489,16 +491,17 @@ function suitesWithRule(rule) {
   return null;
 }
 
-/** Los problemas de `estimates`; `[]` si está bien. Casos: scripts/tests/estimates.test.js T5. */
+/** Los problemas de `estimates`; `[]` si está bien. Casos: scripts/tests/estimates.test.js T5 y team-repos.test.js Estimates_ValidoYProblemas. */
 function estimatesProblems(value) {
   if (!isObject(value)) return [{ path: 'estimates', message: 'tiene que ser un objeto (la unidad de las estimaciones)' }];
   const out = [];
   for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !ESTIMATES_KEYS.includes(k)) out.push({ path: `estimates.${k}`, message: 'clave desconocida' });
   if (value.unit !== undefined && !ESTIMATES_UNITS.includes(value.unit)) out.push({ path: 'estimates.unit', message: `tiene que ser ${ESTIMATES_UNITS.join(', ')} (es ${JSON.stringify(value.unit)})` });
-  for (const k of ['hours_per_day', 'hours_per_point']) {
-    const n = value[k];
-    if (n !== undefined && !(typeof n === 'number' && Number.isFinite(n) && n > 0)) out.push({ path: `estimates.${k}`, message: `tiene que ser un número de horas mayor que 0 (es ${JSON.stringify(n)})` });
-  }
+  const [desde, hasta] = ESTIMATES_HOURS_PER_DAY;
+  const dia = value.hours_per_day;
+  if (dia !== undefined && !(typeof dia === 'number' && Number.isFinite(dia) && dia >= desde && dia <= hasta)) out.push({ path: 'estimates.hours_per_day', message: `tiene que ser un número de horas de ${desde} a ${hasta} (es ${JSON.stringify(dia)})` });
+  const punto = value.hours_per_point;
+  if (punto !== undefined && !(typeof punto === 'number' && Number.isFinite(punto) && punto > 0)) out.push({ path: 'estimates.hours_per_point', message: `tiene que ser un número de horas mayor que 0 (es ${JSON.stringify(punto)})` });
   return out;
 }
 
@@ -739,7 +742,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

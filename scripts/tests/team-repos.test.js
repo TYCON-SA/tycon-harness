@@ -868,3 +868,33 @@ test('T6 Providers_NombresIgualesAModelsJs @story-2.73 @ac-1', () => {
   assert.deepStrictEqual(TEAM.PROVIDERS, M.PROVIDERS);
   assert.deepStrictEqual(TEAM.PROVIDERS, ['anthropic', 'openai', 'ollama', 'cursor']);
 });
+
+test('2.75-T22 Estimates_ValidoYProblemas @story-2.75 @ac-21 — la unidad y sus tasas: lo válido pasa, cada error con su ruta', () => {
+  // 🔴 rojo: hours_per_day fuera de 1 a 24 pasa sin motivo, o el lector descarta el archivo entero por la sección.
+  const con = (estimates) => TEAM.parse(JSON.stringify({ ...goodTeam(), estimates }));
+  for (const bien of [{ unit: 'points', hours_per_point: 6 }, { unit: 'days', hours_per_day: 24 }, { unit: 'days', hours_per_day: 1 }, {}]) {
+    const r = con(bien);
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    assert.deepStrictEqual((r.sectionProblems && r.sectionProblems.estimates) || [], [], JSON.stringify(bien));
+    assert.deepStrictEqual(r.data.estimates, bien);
+  }
+  for (const [mal, ruta] of [[{ unit: 'weeks' }, 'estimates.unit'], [{ hours_per_day: 30 }, 'estimates.hours_per_day'], [{ hours_per_day: 0.5 }, 'estimates.hours_per_day'],
+    [{ hours_per_point: 0 }, 'estimates.hours_per_point'], [{ unit: 'hours', otra: 1 }, 'estimates.otra']]) {
+    const r = con(mal);
+    assert.strictEqual(r.ok, true, 'una sección mal escrita no deja sin el archivo');
+    assert.deepStrictEqual(r.sectionProblems.estimates.map((p) => p.path), [ruta], JSON.stringify(mal));
+    assert.strictEqual(r.data.estimates, undefined, 'la sección mal escrita no llega a quien la lee');
+  }
+  assert.match(con({ hours_per_day: 30 }).sectionProblems.estimates[0].message, /de 1 a 24/);
+  // estimates.js con un lector anterior a la regla: 30 horas por día no pasa callado (sale 3 con el motivo)
+  const arbol = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-275-t22-'));
+  try {
+    fs.mkdirSync(path.join(arbol, 'scripts', 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(arbol, 'team-repos.json'), '{}');
+    fs.writeFileSync(path.join(arbol, 'scripts', 'lib', 'team-repos.js'),
+      'module.exports = { parse: () => ({ ok: true, data: { estimates: { unit: "days", hours_per_day: 30 } }, problems: [] }) };');
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'estimates.js'), 'report', '--repo', arbol, '--epic', '3', '--org-config', path.join(arbol, 'team-repos.json'), '--json'], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 3, r.stdout + r.stderr);
+    assert.match(r.stdout, /hours_per_day/);
+  } finally { fs.rmSync(arbol, { recursive: true, force: true }); }
+});

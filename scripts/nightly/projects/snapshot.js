@@ -37,10 +37,13 @@
  *   el escaneo fue parcial o la clave no se pudo decidir) · dias_en_estado (entero o null: null si las
  *   transiciones no se midieron — nunca 0) · tandas_pendientes (`name` de las tandas del bloque
  *   `pipelines:` con status blocked o pending)
- * epicas[] — {id, titulo, conteo}: título del primer `# ` de `epica-<id>*.md`/`epic-<id>*.md`, o del
+ * epicas[] — {id, titulo, conteo, estimacion}: título del primer `# ` de `epica-<id>*.md`/`epic-<id>*.md`, o del
  *   primer encabezado de un `epics.md` con `Épica <id>`/`Epic <id>`, o null (nunca se inventa).
  *   `conteo` trae SIEMPRE las cinco claves de grupo; una story `desconocido` no suma ahí (se ve en
- *   `cobertura.desconocidos`).
+ *   `cobertura.desconocidos`). `estimacion` sale del registro `.tycon/estimates.jsonl` (`estimacionesDe`), o null si
+ *   la épica no está en él; una épica que está en el registro sin historias escritas también entra, con el conteo en 0.
+ *   El estado del registro va en `cobertura.estimaciones` (medido · sin_registro · no_medido, con su motivo y las
+ *   líneas ilegibles).
  * sprints[] — {n, stories, conteo} por sprint entero en orden, y al final {n: null, …} con las sin
  *   sprint o con sprint no entero. Toda story está en exactamente una.
  * plan[] — {ruta, ultimo_commit}: prd.md, epics.md, plan*.md, PLAN*.md, sprint-plan.md,
@@ -63,6 +66,7 @@
  *   node scripts/nightly/projects/snapshot.js --scan <raíz> [--only-harness] --out <dir> [--sdlc <archivo>]
  *   node scripts/nightly/projects/snapshot.js --repo <dir> --out <dir> [--sdlc <archivo>]
  *   Opcional: --transitions-budget-ms <n> (el mismo presupuesto del medidor). Reloj: TYCON_TODAY=AAAA-MM-DD.
+ *   Opcional: --org-config <team-repos.json> (la unidad de las estimaciones; sin él, el del árbol que corre).
  *
  * Exit: 0 escribió al menos un archivo, o todos los repos estaban sin stories · 2 no escribió ninguno y
  * hubo fallas (o no encontró ningún repo) · 1 argumentos. Un repo que falla
@@ -87,6 +91,7 @@ const WORK_ITEM = require(path.join(RAIZ, 'scripts', 'lib', 'platform', 'work-it
 const evidenceKey = require(path.join(LIB, 'evidence-key.js'));
 const evidenceConfig = require(path.join(LIB, 'evidence-config.js'));
 const deprecated = require(path.join(LIB, 'deprecated.js'));
+const ESTIMATES = require(path.join(RAIZ, 'scripts', 'lib', 'estimates.js'));
 
 const GRUPOS = ['backlog', 'en_curso', 'bloqueado', 'cerrado', 'sin_entrega'];
 const CAMPOS_METRICAS = ['lead_time_days', 'rework_ratio', 'rework_por_causa', 'dod_evidence_ratio',
@@ -99,7 +104,7 @@ const BUDGET_DESCUBRIMIENTO_MS = Number(process.env.TYCON_STORY_SCAN_BUDGET_MS) 
 // ── args ─────────────────────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const a = { repos: [], scan: [], out: null, sdlc: null, onlyHarness: false, budgetMs: undefined, error: null };
+  const a = { repos: [], scan: [], out: null, sdlc: null, orgConfig: null, onlyHarness: false, budgetMs: undefined, error: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const valor = () => {
@@ -113,6 +118,7 @@ function parseArgs(argv) {
     else if (k === '--scan') { const v = valor(); if (v) a.scan.push(path.resolve(v)); }
     else if (k === '--out') { const v = valor(); if (v) a.out = path.resolve(v); }
     else if (k === '--sdlc') { const v = valor(); if (v) a.sdlc = path.resolve(v); }
+    else if (k === '--org-config') { const v = valor(); if (v) a.orgConfig = path.resolve(v); }
     else if (k === '--only-harness') a.onlyHarness = true;
     else if (k === '--transitions-budget-ms') {
       const v = Number.parseInt(valor(), 10);
@@ -463,7 +469,9 @@ function fotoDeRepo(repo, opts) {
       const d = (ka[i] ?? Infinity) - (kb[i] ?? Infinity);
       if (d) return d;
     }
-    return String(a).localeCompare(String(b));
+    // sin el idioma de la máquina: la misma foto sale en el mismo orden en cualquier máquina
+    const sa = String(a); const sb = String(b);
+    return sa < sb ? -1 : (sa > sb ? 1 : 0);
   };
   const epicasMap = new Map();
   for (const st of listaStories) {
@@ -471,9 +479,12 @@ function fotoDeRepo(repo, opts) {
     if (!epicasMap.has(k)) epicasMap.set(k, { id: st.epica, conteo: conteoVacio() });
     sumar(epicasMap.get(k).conteo, st);
   }
+  // las estimaciones: una épica que está en el registro sin historias escritas también tiene fila, con el conteo en cero
+  const est = estimacionesDe(repo, opts.orgConfig);
+  for (const id of est.epicas.keys()) if (!epicasMap.has(id)) epicasMap.set(id, { id: valorEpica(id), conteo: conteoVacio() });
   const epicas = [...epicasMap.entries()]
     .sort(([a], [b]) => (a === null) - (b === null) || (a === null ? 0 : ordenId(a, b)))
-    .map(([, e]) => ({ id: e.id, titulo: tituloDeEpica(e.id, archivos, repo), conteo: e.conteo }));
+    .map(([k, e]) => ({ id: e.id, titulo: tituloDeEpica(e.id, archivos, repo), conteo: e.conteo, estimacion: (k !== null && est.epicas.get(k)) || null }));
 
   const sprintsMap = new Map();
   const sinSprint = { n: null, stories: [], conteo: conteoVacio() };
@@ -546,8 +557,66 @@ function fotoDeRepo(repo, opts) {
       transiciones: { estado: transiciones.estado, motivo: sanear(transiciones.motivo) },
       metricas: { estado: metricas ? 'medido' : 'no_medido', motivo: sanear(motivoMetricas) },
       evidencia: { estado: evidencia.estado, motivo: sanear(evidencia.motivo) },
+      estimaciones: est.estado,
     },
   };
+}
+
+/**
+ * Las estimaciones del repo (`.tycon/estimates.jsonl`, scripts/lib/estimates.js), por épica y por lista blanca: el
+ * rango, las sumas del plan y vigente, dentro o fuera y por cuánto, lo mismo en horas si se puede convertir, y lo real.
+ * Las versiones, quién estimó y los supuestos no viajan. Devuelve `{ estado, epicas: Map<id, estimacion> }`; `estado` es
+ * `{ estado: medido | sin_registro | no_medido, motivo, ilegibles, unidad }`. Un registro o una configuración que no se
+ * leen no rompen la foto: quedan `no_medido` con su motivo.
+ */
+function estimacionesDe(repo, orgConfig) {
+  const epicas = new Map();
+  // sólo «no existe» es «sin registro»: un registro que está y no se puede mirar es «no medido» (lo dice `read`)
+  try { fs.statSync(path.join(repo, ESTIMATES.REGISTRO)); } catch (e) {
+    if (e && e.code === 'ENOENT') return { estado: { estado: 'sin_registro', motivo: null, ilegibles: 0, unidad: null }, epicas };
+  }
+  let registro;
+  let org;
+  try {
+    registro = ESTIMATES.read(repo);
+    // la unidad la edita el sitio en el team-repos.json del perfil: la noche lo pasa con --org-config; sin él, el del árbol
+    org = ESTIMATES.orgEstimates(orgConfig || undefined);
+  } catch (e) {
+    return { estado: { estado: 'no_medido', motivo: sanear(String((e && e.message) || e).split('\n')[0]), ilegibles: 0, unidad: null }, epicas };
+  }
+  const ids = [...new Set(registro.lines.map((l) => String(l.epica)))];
+  for (const id of ids) {
+    const r = ESTIMATES.report(registro, id, org);
+    // una épica que sólo tiene horas reales (el cierre las anota aunque nadie haya estimado), o la épica vieja de una
+    // historia que se mudó, no es una estimación: no tiene fila
+    if (r.sin_estimaciones) continue;
+    // la misma clave que las historias (un id con ceros a la izquierda es el mismo número): si no, la misma épica sale
+    // dos veces
+    const clave = String(valorEpica(id));
+    if (epicas.has(clave)) continue;
+    const u = r.unidad;
+    const horas = (v) => (v === null || !u ? null : ESTIMATES.aHoras(v, u, org));
+    const enHoras = u ? { min: r.rango ? horas(r.rango.min) : null, max: r.rango ? horas(r.rango.max) : null, plan: horas(r.suma_plan), vigente: horas(r.suma_vigente) } : null;
+    // con puntos sin tasa, nada pasa a horas: sin `en_horas` (la vista suma por unidad). Sin rango, también vale: lo
+    // que hay se convierte
+    const pasa = (valor, enH) => valor === null || valor === undefined || enH !== null;
+    const convertible = enHoras && pasa(r.rango && r.rango.min, enHoras.min) && pasa(r.rango && r.rango.max, enHoras.max)
+      && pasa(r.suma_plan, enHoras.plan) && pasa(r.suma_vigente, enHoras.vigente);
+    epicas.set(clave, {
+      rango: r.rango ? { min: r.rango.min, max: r.rango.max, unidad: r.rango.unidad } : null,
+      unidad: u,
+      suma_plan: r.suma_plan,
+      suma_vigente: r.suma_vigente,
+      dentro: r.dentro,
+      fuera: r.fuera,
+      por: r.por,
+      sumas_por_unidad: r.sumas_por_unidad,
+      motivo: sanear(r.motivo),
+      en_horas: convertible ? enHoras : null,
+      real: { cerrada: r.real.cerrada, suma: r.real.suma, faltan: r.real.faltan, motivo: sanear(r.real.motivo) },
+    });
+  }
+  return { estado: { estado: 'medido', motivo: null, ilegibles: registro.unreadable.length, unidad: org.unit }, epicas };
 }
 
 /**
@@ -626,7 +695,7 @@ function main() {
     console.error(`snapshot.js: ${a.error}\nuso: snapshot.js (--repo <dir> | --scan <raíz> [--only-harness]) --out <dir> [--sdlc <sdlc-stage.json>]`);
     return 1;
   }
-  const opts = { budgetMs: a.budgetMs, sdlc: null, sdlcError: null };
+  const opts = { budgetMs: a.budgetMs, sdlc: null, sdlcError: null, orgConfig: a.orgConfig };
   if (a.sdlc) {
     try { opts.sdlc = JSON.parse(fs.readFileSync(a.sdlc, 'utf8')); }
     catch (e) { opts.sdlcError = `no se pudo leer el snapshot SDLC (${path.basename(a.sdlc)}): ${e.code || e.message}`; }
