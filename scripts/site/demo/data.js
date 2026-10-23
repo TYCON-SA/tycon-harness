@@ -294,9 +294,17 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   }
   // la página de las seis preguntas, con el sello de una noche completa
   f['artifacts/tablero-del-arnes.html'] = `<!doctype html><html><head><style>b{color:red}</style></head><body><h1>Seis preguntas</h1><script type="application/json" id="tablero-sello">${JSON.stringify({ esquema: 1, generado: `${hoy}T05:40:00Z`, snapshot: hoy, modo: 'nocturno', corrida: '9001', fuentes: { esperadas: 10, al_dia: 10 }, buzon: { estado: 'leido', maquinas: 3 } })}</script></body></html>`;
-  // una story que lleva mucho en curso
+  // Proyectos: una story estancada (40 días en curso) y, en cada repo de historias, una épica estimada con su rango,
+  // lo planeado, lo vigente y lo real de la épica abierta
+  const estimaciones = { estado: 'medido', motivo: null, ilegibles: 0, unidad: 'hours' };
+  const epica = (id, titulo, [min, max], plan, vigente, real) => ({ id, titulo, estimacion: {
+    rango: { min, max, unidad: 'hours' }, unidad: 'hours', suma_plan: plan, suma_vigente: vigente, dentro: vigente >= min && vigente <= max,
+    en_horas: { min, max, plan, vigente }, real: { cerrada: false, suma: real, faltan: 1 } } });
   const fx = archivos['.dashboard/proyectos/Producto X__FrontEnd.json'];
-  f['.dashboard/proyectos/Producto X__FrontEnd.json'] = { ...fx, stories: fx.stories.map((s) => (s.id === '1.2' ? { ...s, grupo: 'en_curso', dias_en_estado: 40 } : s)) };
+  f['.dashboard/proyectos/Producto X__FrontEnd.json'] = { ...fx, stories: fx.stories.map((s) => (s.id === '1.2' ? { ...s, grupo: 'en_curso', dias_en_estado: 40 } : s)),
+    cobertura: { estimaciones }, epicas: [epica('1', 'La lista de clientes', [30, 45], 36, 40, 22)] };
+  const fy = archivos['.dashboard/proyectos/Producto Y__Backend.json'];
+  f['.dashboard/proyectos/Producto Y__Backend.json'] = { ...fy, cobertura: { estimaciones }, epicas: [epica('2', 'Los pagos en cuotas', [20, 30], 24, 28, 9)] };
   // las colas de la noche, con una ficha en cada rubro y su pedido
   f[`.dashboard/dependencias/dependencias-${hoy}.json`] = { fecha: hoy, corrida_completa: true, repos_activos: 2, no_medidos: [], hallazgos: [{ id: 'f1' }, { id: 'f2' }], resumen: { rubros: {
     nuevos: { valor: [{ id: 'f1', paquete: 'pkg-uno', proyectos: ['Producto X'] }], motivo: null },
