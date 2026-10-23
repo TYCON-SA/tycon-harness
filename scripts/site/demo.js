@@ -29,9 +29,9 @@ const DATOS = require('./demo/data.js');
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 // ── lo que el sitio demo le "pregunta" a la plataforma ──────────────────────────────────────────────────────────────────
-// Las direcciones, los repos y las respuestas de la plataforma de ejemplo las trae la nube (cloud/, demo/platform.js): el
+// Las direcciones, los repos y las respuestas de la plataforma de ejemplo las trae la nube (cloud/, demo/platform-answers.js): el
 // núcleo no nombra ninguna. Nadie resuelve esas direcciones: `fetchDemo` las contesta de adentro del proceso.
-const PLATAFORMA = () => require('./demo/platform.js').plataformaDeEjemplo();
+const PLATAFORMA = () => require('./demo/platform-answers.js').plataformaDeEjemplo();
 /** El `fetch` del sitio demo: datos de ejemplo, sin abrir ninguna conexión. */
 const fetchDemo = (...args) => PLATAFORMA().fetch(...args);
 

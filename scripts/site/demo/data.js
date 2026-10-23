@@ -18,7 +18,7 @@ const RESPONSE_SINCE = () => {
   return [o.RESPONSE_SINCE, o.STACK_SINCE, o.APPROVALS_SINCE].reduce((a, v) => (o.versionAtLeast(a, v) ? a : v));
 };
 // lo que la nube da a estos datos (la organización de los productos, el proveedor del buzón): el núcleo no la nombra
-const PLATAFORMA = require('./platform.js').plataformaDeEjemplo();
+const PLATAFORMA = require('./platform-answers.js').plataformaDeEjemplo();
 
 const LEAD = 'lead@acme.example';
 const ANA = 'ana@acme.example';

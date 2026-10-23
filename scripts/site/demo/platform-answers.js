@@ -1,6 +1,6 @@
 'use strict';
 /*
- * demo/platform.js —LA PLATAFORMA DE EJEMPLO DEL SITIO DEMO.
+ * demo/platform-answers.js —LA PLATAFORMA DE EJEMPLO DEL SITIO DEMO.
  *
  * El núcleo del sitio no nombra ninguna nube (scripts/site/cloud/ es el único lugar): lo que el sitio demo contesta de
  * adentro del proceso en lugar de preguntarle a la plataforma —sus direcciones, sus repos, sus pipelines, sus campos— lo
