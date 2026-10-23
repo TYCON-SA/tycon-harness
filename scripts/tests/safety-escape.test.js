@@ -1413,3 +1413,40 @@ test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no 
     assert.ok(b <= a * 1.2, `${c}: mediana antes ${a.toFixed(1)} ms, ahora ${b.toFixed(1)} ms (más de un 20 % arriba)`);
   }
 });
+
+// ── El interruptor del estado a mano (@story-8.109) ─────────────────────────────────────────────────────────────────────
+// `TYCON_STATUS_GATE=off` apaga el freno que no deja pasar una historia a review o done a mano. Prenderlo pide
+// «autorizo TYCON_STATUS_GATE» o «autorizo cambiar el estado» (los dos nombres del mismo escape).
+const SG = 'TYCON_STATUS_GATE';
+const SG_FRENA = [
+  ['Bash', `${SG}=off node x.js`],
+  ['Bash', `export ${SG}=off; ls`],
+  ['Bash', `declare -x ${SG}=off; node x.js`],
+  ['Bash', `env ${SG}=off node x.js`],
+  ['PowerShell', `$env:${SG}='off'; node x.js`],
+];
+
+test('T13 InterruptorDelEstado_EscC1 @story-8.109 @ac-9 — prenderlo pide la frase; el cartel dice qué comando usar', () => {
+  for (const [herramienta, c] of SG_FRENA) {
+    const r = freno(c, { herramienta, conversacion: [deLaPersona('seguí con la historia')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C1/, c);
+    assert.match(r.stderr, /update-story-status/, `${c}: el cartel dice qué comando usar`);
+  }
+  // el nombre armado (la regla de la 8.107) también frena
+  const armado = freno(`V=${SG}; export $V=off; ${MARKER} get`, { conversacion: [deLaPersona('seguí')] });
+  assert.strictEqual(armado.status, 2, armado.stderr);
+  assert.match(armado.stderr, /ESC-C1/);
+  for (const f of [`autorizo ${SG}`, 'dale, autorizo cambiar el estado']) {
+    for (const [herramienta, c] of SG_FRENA) {
+      const r = freno(c, { herramienta, conversacion: [deLaPersona(f, 5)] });
+      assert.strictEqual(r.status, 0, `${f} · ${c}: ${r.stderr}`);
+      const k = constancias(r.home).find((l) => l.regla === 'ESC-C1');
+      assert.deepStrictEqual(k && [k.veredicto, k.via, k.sesion, k.escape], ['escape', 'persona', SID, SG], `${f} · ${c}`);
+    }
+  }
+  for (const c of [`${SG}=0 ls`, `grep ${SG} guia.md`]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});

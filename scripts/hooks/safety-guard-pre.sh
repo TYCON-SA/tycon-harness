@@ -367,7 +367,8 @@ block() {
 # cualquier valor que no sea 0 ni vacío, así que se frena cualquier asignación salvo a 0 o a nada. El nombre se compara
 # exacto (`TYCON_TEST_GATE_PART` no es ella). Su cartel no trae la receta y su constancia anota la sesión y el escape.
 # `TYCON_NO_DEEP_REVIEW` (apaga el pase adversarial) sigue la misma regla de valores; «autorizo no-deep-review» también
-# la autoriza (escape-ok.js, sinónimos).
+# la autoriza (escape-ok.js, sinónimos). `TYCON_STATUS_GATE` (apaga el freno que no deja pasar una historia a review o
+# done a mano) también; «autorizo cambiar el estado» también la autoriza.
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""
 # el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
 # (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
@@ -381,14 +382,14 @@ if command -v tr >/dev/null 2>&1; then
 else
   _esc_cmd="${_esc_fuente//[\"\'\\\`]/}"
 fi
-for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW; do
+for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE; do
   # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
   # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
   shopt -s nocasematch
   if [[ "$_esc_cmd" != *"$_esc"* ]]; then shopt -u nocasematch; continue; fi
   shopt -u nocasematch
   _esc_hit=0
-  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" ]]; then
+  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" || "$_esc" == "TYCON_STATUS_GATE" ]]; then
     # éstas activan el escape con cualquier valor que no sea 0 ni vacío: se sacan las asignaciones a 0 o a nada (con
     # espacios alrededor del `=`, por PowerShell) y cualquier otra que quede frena, también un valor que no se ve (`$X`).
     # Todo en minúsculas: PowerShell no distingue mayúsculas en el nombre
@@ -396,6 +397,7 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_
     case "$_esc" in
       TYCON_TEST_GATE) _esc_min="tycon_test_gate" ;;
       TYCON_NO_DEEP_REVIEW) _esc_min="tycon_no_deep_review" ;;
+      TYCON_STATUS_GATE) _esc_min="tycon_status_gate" ;;
       *) _esc_min="dod_bypass" ;;
     esac
     # en bash el valor va pegado al `=` (`X= cmd` es vacío); en PowerShell puede llevar espacios, y vacío es `= ;`
@@ -434,7 +436,7 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_
   fi
   fi
   if [[ "$_esc_hit" == "1" ]]; then
-    _esc_nuevo=0; [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" ]] && _esc_nuevo=1
+    _esc_nuevo=0; [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" || "$_esc" == "TYCON_STATUS_GATE" ]] && _esc_nuevo=1
     if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_esc"; then
       if [[ "$_esc_nuevo" == "1" ]]; then
         constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO" "$(read_field session_id 2>/dev/null || true)" "$_esc"
@@ -463,6 +465,10 @@ Si la historia no se pudo terminar, la salida normal es dejarla como deuda: mark
       block "ESC-C1" \
         "TYCON_NO_DEEP_REVIEW apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
         "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona («autorizo TYCON_NO_DEEP_REVIEW»)."
+    elif [[ "$_esc" == "TYCON_STATUS_GATE" ]]; then
+      block "ESC-C1" \
+        "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
+        "El estado lo cambia el orquestador, que corre los controles del cierre: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona («autorizo cambiar el estado»)."
     elif [[ "$_esc" == "TYCON_PROD_LINT" ]]; then
       block "ESC-C1" \
         "TYCON_PROD_LINT=0 apaga, al commitear, la revisión del catálogo de servidores de producción (.tycon/production.json). Un catálogo roto deja al freno de producción decidiendo con datos malos." \

@@ -546,7 +546,11 @@
       "file_absent": [
        "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
       ]
-     }
+     },
+     "env": {
+      "TYCON_STATUS_GATE": "off"
+     },
+     "_env": "8.109: mide el freno de historia a mano, no el del estado a mano; ése se apaga en el ambiente del gancho"
     },
     {
      "id": "rojo-el-mismo-edit-sobre-un-borrador-frena",
@@ -659,9 +663,9 @@
      }
     },
     {
-     "id": "pasa-heredoc-append-a-story-existente",
-     "type": "must-not-block",
-     "__doc": "`>>` a una story que ya existe (agregar un Change Log por Bash) no es crear.",
+     "id": "frena-heredoc-append-a-story-existente",
+     "type": "must-block",
+     "__doc": "`>>` a una story que ya existe no es crearla (no pide la constancia del validador), pero 8.109: una historia que no está en borrador no se escribe por consola.",
      "setup": [
       "git init -q -b main .",
       "mkdir -p .tycon specs",
@@ -675,7 +679,10 @@
       }
      },
      "expect": {
-      "exit": 0
+      "exit": 2,
+      "stderr_re": [
+       "HISTORIA ESCRITA POR CONSOLA"
+      ]
      }
     },
     {
@@ -775,8 +782,8 @@
     },
     {
      "id": "heredoc-de-story-existente-no-contagia-a-otro-md-nuevo",
-     "type": "must-not-block",
-     "__doc": "F2 del pase adversarial 2026-08-30: el cuerpo de un heredoc se atribuye al target de SU línea; reescribir una story existente y crear un .md cualquiera en el mismo comando no frena.",
+     "type": "must-block",
+     "__doc": "F2 del pase adversarial 2026-08-30: el cuerpo de un heredoc se atribuye al target de SU línea; reescribir una story existente y crear un .md cualquiera en el mismo comando no frena. 8.109: la story existente ya no se escribe por consola; frena por ella sola, no por el .md nuevo.",
      "setup": [
       "git init -q -b main .",
       "mkdir -p .tycon specs",
@@ -790,9 +797,9 @@
       }
      },
      "expect": {
-      "exit": 0,
-      "file_absent": [
-       "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+      "exit": 2,
+      "stderr_re": [
+       "HISTORIA ESCRITA POR CONSOLA"
       ]
      }
     },
@@ -824,8 +831,8 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
-       "HISTORIA SIN VALIDAR",
-       "tool Edit"
+       "HISTORIA SIN VALIDAR|HISTORIA ESCRITA POR CONSOLA",
+       "tool Edit|herramienta de edición"
       ]
      }
     },

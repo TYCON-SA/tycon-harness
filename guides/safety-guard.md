@@ -124,7 +124,8 @@ y después se repite el comando con el prefijo (`TYCON_SAFETY_OFF=1 <comando>`; 
   cadena es el límite conocido: Claude Code no firma sus registros.
 
 Lo mismo para `ESC-C1`: «autorizo TYCON_PROD_LINT», «autorizo TYCON_NEW_NAMES», «autorizo TYCON_TEST_GATE»,
-«autorizo DOD_BYPASS» o «autorizo TYCON_NO_DEEP_REVIEW». Para `ESC-C4`: «autorizo cerrar como deuda»; la ejecución queda con `cierre: deuda`, la deuda y
+«autorizo DOD_BYPASS», «autorizo TYCON_NO_DEEP_REVIEW» o «autorizo TYCON_STATUS_GATE» (que también autoriza «autorizo
+cambiar el estado»). Para `ESC-C4`: «autorizo cerrar como deuda»; la ejecución queda con `cierre: deuda`, la deuda y
 quién la autorizó, y sigue hasta el commit. Para `ESC-C3`, que no es una variable sino el comando: «autorizo
 set-autonomous», «autorizo cerrar la ejecución», «autorizo force-manual», «autorizo trust-ran» o «autorizo no-deep-review» (apagar el pase
 adversarial tiene dos nombres, y la frase de cualquiera vale para los dos); para `ESC-C5`,
@@ -170,6 +171,33 @@ TYCON_SAFETY_OFF=1 claude
 ⚠️ Apaga el freno para toda esa sesión. Preferí la frase por comando.
 
 **Codex** no deja leer su conversación: ahí el escape por comando no vale y queda sólo el de la sesión.
+
+### El estado de la historia y el marcador
+
+Cuando el freno le niega cerrar una ejecución en rojo, un agente puede buscar otro camino: escribir el estado de la
+historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cualquier herramienta:
+
+- **Una historia escrita por consola.** Un comando que escribe una historia que no está en borrador (redirección, `sed
+  -i`, `tee`, `cp`, un `node -e` o un `python3 -c`) frena con «HISTORIA ESCRITA POR CONSOLA». Desde un comando no se ve
+  qué queda escrito. En su lugar: la herramienta de edición, y para el estado
+  `marker.js update-story-status <historia> <estado>`.
+- **El paso a review o done a mano.** Un Edit, un Write o un `apply_patch` de Codex que pasa la historia a `review` o
+  `done` frena aunque esté la evidencia. En su lugar: `marker.js update-story-status`, `update-pipeline-status` o
+  `/tycon-pipeline close`. Hacerlo a mano lo decide la persona («autorizo cambiar el estado»).
+- **Borrar el marcador.** Borrar o mover por consola un marcador de ejecución (`active/`, `active.json`), de esta
+  sesión o de otra, frena con «BORRADO DEL ESTADO DEL PIPELINE». En su lugar: `marker.js clear` o `marker.js
+  clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre.
+
+El freno del paso a mano también frena volver una historia en implementación a otro estado (por ejemplo a `draft`, para
+después escribirla por consola), sacarle el encabezado y cambiarle el id. Por consola, un borrador sólo pasa si el
+comando lo reescribe entero y lo deja en borrador; y borrar una historia, sacarla de `.md` con un `mv` o reponer una
+versión vieja (`git checkout -- <historia>`, `git restore`) también frena. Se apaga con `TYCON_STATUS_GATE=off` en el ambiente del gancho (lo usan pruebas que miden
+la evidencia), y cada escritura que deja pasar así queda anotada; escrita en un comando, la frena `ESC-C1` sin la frase.
+
+Lo que no ve: un guion que el agente escribe en un archivo y después corre; `patch` o `git apply` con un parche que toca
+la historia; `git stash pop`; un enlace (`ln -sf`) sobre el marcador; y el nombre de la carpeta del estado partido entre una variable y
+un comodín (`cd ~/.claude/.tyc* && rm -rf act*`). Eso lo ven el control de cambios sin declarar al cerrar y el diff del
+commit.
 
 ## Log de bloqueos
 

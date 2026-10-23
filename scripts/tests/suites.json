@@ -851,6 +851,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.109: el estado de la historia y el marcador no se tocan a mano (consola, Edit, apply_patch).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/status-by-hand.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-close.test.js",
       "requiere": []
