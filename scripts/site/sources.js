@@ -329,6 +329,13 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
     m.vigilante = fuente('medido', null, vig.fecha, { pendientes: largo(rub.pendientes), aceptadas_sin_story: largo(rub.aceptadas_sin_story), productos: isObject(vig.doc.productos) ? Object.keys(vig.doc.productos).map((k) => texto(k, 60)).filter(Boolean) : [] });
   } else m.vigilante = vig.fuente;
 
+  // lo que hay que decidir, ficha por ficha, con el pedido que anota cada una (decisions.js): sin ninguna de las dos
+  // fotos, no medido
+  m.decisiones = dep.ok || vig.ok
+    ? fuente('medido', null, [dep.ok && dep.fecha, vig.ok && vig.fecha].filter(Boolean).sort().pop(), {
+      items: require('./decisions.js').itemsDeLasColas({ clon, fotos: { dependencias: dep.ok ? dep.doc : null, vigilante: vig.ok ? vig.doc : null }, dentroDe }) })
+    : noMedida('sin_foto');
+
   // banco, suites y examen (el nocturno del tablero de una organización que corre el banco los guarda acá)
   const rojosDelBanco = (doc) => (isObject(doc) && isObject(doc.results) ? Object.entries(doc.results).filter(([, r]) => isObject(r) && isObject(r.tools) && Object.values(r.tools).some((x) => isObject(x) && x.pass === false)).map(([id]) => texto(id, 160)).filter(Boolean) : null);
   const banco = foto('controls-bench', 'banco-*.json', { sinCarpeta: 'no_corre_banco' });

@@ -1821,6 +1821,12 @@
       "requiere": []
     },
     {
+      "__nota": "«dónde se decide»: cada tarjeta de «Qué decidir hoy» lleva a la lista de sus fichas, cada una con el enlace a su pedido (Azure DevOps o GitHub) o el motivo; nunca a la portada del repo de operaciones.",
+      "raiz": "arnes",
+      "ruta": "tests/site-decisions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.41: la pestaña Ayuda arma la guía del sitio por rol en el servidor; markdown escapado, capturas sólo de la guía, guía ilegible ≠ «no está». El emisor y el sitio corren en el proceso.",
       "raiz": "arnes",
       "ruta": "tests/site-help.test.js",

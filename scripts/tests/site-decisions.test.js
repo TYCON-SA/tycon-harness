@@ -1,0 +1,132 @@
+'use strict';
+/*
+ * site-decisions.test.js — «dónde se decide»: cada tarjeta de «Qué decidir hoy» lleva a la lista exacta de lo que hay
+ * que decidir, una ficha por renglón con el enlace a SU pedido, y nunca a la portada del repo de operaciones.
+ *
+ * Decisiones_PorFicha_EnlaceAlPedidoExacto     Decisiones_FichaSinPr_ApareceConElPorQue
+ * Decisiones_FuenteAbierta_SeListaIgual        Inicio_NingunaTarjetaALaPortada
+ * Inicio_SinRepoNavegable_LaListaLoDice        Inicio_Declarados_DicenDondeSeDecidenSinEnlace
+ * Fuentes_LeeElPedidoDeCadaFicha
+ */
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const SITE = path.join(__dirname, '..', 'site');
+const decisions = require(path.join(SITE, 'decisions.js'));
+const views = require(path.join(SITE, 'views.js'));
+const sources = require(path.join(SITE, 'sources.js'));
+
+const HOY = '2026-10-22';
+const AHORA = Date.parse(`${HOY}T12:00:00Z`);
+const ADO = 'https://dev.azure.com/acme/arnes/_git/operaciones';
+const GH = 'https://github.com/acme/operaciones';
+const medida = (extra) => ({ estado: 'medido', codigo: null, motivo: null, fecha: HOY, ...extra });
+
+/** Un modelo con las dos colas y sus fichas, como lo arma sources.js. */
+function modelo() {
+  return {
+    dependencias: medida({ rubros: { nuevos: 2, aceptadas_sin_resolver: 0, rechazadas_sin_deuda: 0, pedidos_cerrados_con_vivas: 0 } }),
+    vigilante: medida({ pendientes: 1, aceptadas_sin_story: 0, productos: [] }),
+    declarados: medida({ lista: [{ id: 'GHSA-xxxx', review_before: '2026-10-25' }] }),
+    decisiones: medida({
+      items: [
+        { fuente: 'dependencias', rubro: 'nuevos', id: '0da8b2f2', titulo: 'paquete-a', pr: 5255 },
+        { fuente: 'dependencias', rubro: 'nuevos', id: '171bed99', titulo: 'paquete-b', pr: null },
+        { fuente: 'vigilante', rubro: 'pendientes', id: '2026-10-16-tienda-58d02289', titulo: 'tienda · deriva', pr: 4669 },
+      ],
+    }),
+  };
+}
+
+test('Decisiones_PorFicha_EnlaceAlPedidoExacto', () => {
+  const ado = decisions.decisiones(modelo(), { operationsRepo: `${ADO}.git` });
+  const una = ado.find((d) => d.id === '0da8b2f2');
+  assert.strictEqual(una.enlace, `${ADO}/pullrequest/5255`, 'Azure DevOps: el pedido de esa ficha');
+  assert.strictEqual(una.fuente, 'dependencias');
+  assert.strictEqual(una.sinLugar, null);
+  const gh = decisions.decisiones(modelo(), { operationsRepo: GH });
+  assert.strictEqual(gh.find((d) => d.id === '2026-10-16-tienda-58d02289').enlace, `${GH}/pull/4669`, 'GitHub: /pull/<n>');
+});
+
+test('Decisiones_FichaSinPr_ApareceConElPorQue', () => {
+  const ds = decisions.decisiones(modelo(), { operationsRepo: ADO });
+  const sin = ds.find((d) => d.id === '171bed99');
+  assert.ok(sin, 'la ficha sin pedido se lista igual');
+  assert.strictEqual(sin.enlace, null);
+  assert.strictEqual(sin.sinLugar, 'sin_pedido');
+  // sin una dirección https del repo de operaciones, ninguna lleva enlace y todas dicen por qué
+  for (const d of decisions.decisiones(modelo(), { operationsRepo: 'ssh://ssh.dev.azure.com/v3/acme/arnes/operaciones' })) {
+    assert.strictEqual(d.enlace, null);
+    assert.ok(d.sinLugar, d.id);
+  }
+  assert.strictEqual(decisions.decisiones(modelo(), { operationsRepo: 'https://git.example.com/acme/operaciones' })[0].sinLugar, 'plataforma_desconocida');
+  assert.match(decisions.fraseSinLugar('sin_pedido', 'es'), /pedido/);
+});
+
+test('Decisiones_FuenteAbierta_SeListaIgual', () => {
+  const m = modelo();
+  m.decisiones.items.push({ fuente: 'ejecuciones', rubro: 'pendientes', id: 'e-1', titulo: 'una ejecución', pr: 77 });
+  const e = decisions.decisiones(m, { operationsRepo: ADO }).find((d) => d.id === 'e-1');
+  assert.ok(e, 'una fuente que el sitio todavía no dibuja se devuelve igual');
+  assert.strictEqual(e.enlace, `${ADO}/pullrequest/77`);
+  // sin la lista medida: nada, nunca un renglón inventado
+  assert.deepStrictEqual(decisions.decisiones({ decisiones: { estado: 'no_medido', codigo: 'sin_foto' } }, { operationsRepo: ADO }), []);
+});
+
+test('Inicio_NingunaTarjetaALaPortada', () => {
+  const filas = views.filasInicioMantenedor(modelo(), { ahora: AHORA, enlaceOperaciones: ADO });
+  for (const f of filas) assert.notStrictEqual(f.enlace, ADO, `${f.clave} no lleva a la portada`);
+  const dep = filas.find((f) => f.clave === 'dependencias_nuevas');
+  assert.strictEqual(dep.enlace, '#decidir-dependencias_nuevas');
+  assert.strictEqual(filas.find((f) => f.clave === 'vigilante_pendientes').enlace, '#decidir-vigilante_pendientes');
+  // la lista a la que lleva: un renglón por ficha, con el enlace a su pedido o el motivo
+  const html = views.listasDeDecision(modelo(), { enlaceOperaciones: ADO });
+  assert.match(html, /id="decidir-dependencias_nuevas"/);
+  assert.match(html, new RegExp(`href="${ADO}/pullrequest/5255"`));
+  assert.match(html, /171bed99[^<]*·[^<]*sin pedido/i);
+  assert.match(html, /id="decidir-vigilante_pendientes"[\s\S]*pullrequest\/4669/);
+});
+
+test('Inicio_SinRepoNavegable_LaListaLoDice', () => {
+  const html = views.listasDeDecision(modelo(), { enlaceOperaciones: null });
+  assert.doesNotMatch(html, /href=/, 'sin dirección navegable no se inventa un enlace');
+  assert.match(html, /no tiene una dirección https/i);
+});
+
+test('Inicio_Declarados_DicenDondeSeDecidenSinEnlace', () => {
+  const filas = views.filasInicioMantenedor(modelo(), { ahora: AHORA, enlaceOperaciones: ADO });
+  const dec = filas.find((f) => f.clave === 'declarados_por_vencer');
+  assert.strictEqual(dec.enlace, '#decidir-declarados_por_vencer');
+  const html = views.listasDeDecision(modelo(), { enlaceOperaciones: ADO, ahora: AHORA });
+  const seccion = html.split('id="decidir-declarados_por_vencer"')[1].split('</section>')[0];
+  assert.match(seccion, /vulnerabilidades-pendientes\.json/, 'dice dónde se decide');
+  assert.match(seccion, /GHSA-xxxx · vence el 2026-10-25/, 'y lista lo que vence');
+  assert.doesNotMatch(seccion, /href=/, 'sin enlace: no hay un pedido');
+});
+
+test('Fuentes_LeeElPedidoDeCadaFicha', (t) => {
+  const clon = fs.mkdtempSync(path.join(os.tmpdir(), 'decisiones-'));
+  t.after(() => fs.rmSync(clon, { recursive: true, force: true }));
+  const escribir = (rel, cont) => { const p = path.join(clon, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, typeof cont === 'string' ? cont : JSON.stringify(cont)); };
+  escribir(`.dashboard/dependencias/dependencias-${HOY}.json`, { resumen: { rubros: {
+    nuevos: { valor: [{ id: '0da8b2f2', paquete: 'paquete-a' }, { id: '171bed99', paquete: 'paquete-b' }, { id: '../afuera', paquete: 'x' }] },
+    aceptadas_sin_resolver: { valor: [] }, rechazadas_sin_deuda: { valor: [] }, pedidos_cerrados_con_vivas: { valor: [] } } } });
+  escribir(`.dashboard/vigilante/vigilante-${HOY}.json`, { resumen: { rubros: { pendientes: { valor: [{ id: '2026-10-16-tienda-58d02289', producto: 'tienda', regla: 'deriva' }] }, aceptadas_sin_story: { valor: [] } } } });
+  escribir('inbox/dependencies/pending/0da8b2f2.yaml', 'id: 0da8b2f2\nveredicto: pendiente\npr: 5255\n');
+  escribir('inbox/dependencies/pending/171bed99.yaml', 'id: 171bed99\nveredicto: pendiente\n');
+  escribir('inbox/watcher/pending/2026-10-16-tienda-58d02289.yaml', 'id: x\npr: 4669\n');
+  const m = sources.construirDesdeClon(clon, { ahora: AHORA });
+  assert.strictEqual(m.decisiones.estado, 'medido');
+  const por = Object.fromEntries(m.decisiones.items.map((d) => [d.id, d]));
+  assert.strictEqual(por['0da8b2f2'].pr, 5255);
+  assert.strictEqual(por['0da8b2f2'].titulo, 'paquete-a');
+  assert.strictEqual(por['171bed99'].pr, null, 'sin pr: en la ficha');
+  assert.strictEqual(por['2026-10-16-tienda-58d02289'].pr, 4669);
+  assert.strictEqual(por['2026-10-16-tienda-58d02289'].fuente, 'vigilante');
+  assert.ok(!por['../afuera'], 'un id con forma de ruta no se lee');
+  // el conteo de siempre no cambia
+  assert.strictEqual(m.dependencias.rubros.nuevos, 3);
+});
