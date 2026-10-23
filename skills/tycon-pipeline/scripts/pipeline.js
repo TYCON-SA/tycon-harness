@@ -1980,7 +1980,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const raicesDelDelta = [repo, ...(story ? [path.dirname(path.resolve(String(story)))] : []), ...hermanosDelDelta];
   const workingTreeDeTodos = () => [repo, ...hermanosDelDelta].flatMap((r) => gitArchivosDelWorkingTree(r));
   const delRepo = (files) => files.filter((f) => raicesDelDelta.some((r) => honesty.esDelRepo(f, r)));
-  const currentFiles = delRepo(honesty.sinProbes(marker.filesTouched || []));
+  // sin los probes del pase adversarial ni lo que el pipeline escribe en .advisors/: no es trabajo del repo
+  const currentFiles = delRepo(honesty.sinRuido(marker.filesTouched || []));
   const prevSet = new Set(prevSnapshot);
   // Delta por NOMBRES nuevos (legacy) — atrapa archivos que aparecieron en iter N.
   const deltaByName = currentFiles.filter((f) => !prevSet.has(f));
@@ -2034,7 +2035,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   if (prevTs) {
     const cutoff = fotoTardia ? ultimoRevisorMs : prevTsMs;
     if (Array.isArray(marker.fileEvents) && marker.fileEvents.length) {
-      deltaByEvents = delRepo(honesty.sinProbes([...new Set(
+      deltaByEvents = delRepo(honesty.sinRuido([...new Set(
         marker.fileEvents
           .filter((e) => e && e.path && e.ts && new Date(e.ts).getTime() > cutoff)
           .map((e) => e.path),
@@ -2056,7 +2057,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     // 4ta fuente: el working tree según git, filtrado por mtime posterior a la foto.
     // Las tres de arriba iteran sobre `filesTouched` — si el hook nunca vio el archivo, ninguna lo
     // encuentra. Ésta sí. Los probes del pase adversarial NO cuentan (no son trabajo del repo).
-    for (const f of honesty.sinProbes(workingTreeDeTodos())) {
+    for (const f of honesty.sinRuido(workingTreeDeTodos())) {
       try {
         const mt = fs.statSync(f).mtimeMs;
         if (mt > cutoff) { deltaByGit.push(f); if (!horaDe.has(f)) horaDe.set(f, mt); }
@@ -2134,9 +2135,9 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     };
     // Las mismas fuentes que el delta (registro de ediciones, mtime, git), con los mismos filtros.
     for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
-      if (e && e.path && e.ts && delRepo(honesty.sinProbes([e.path])).length) anotarEdicion(e.path, new Date(e.ts).getTime());
+      if (e && e.path && e.ts && delRepo(honesty.sinRuido([e.path])).length) anotarEdicion(e.path, new Date(e.ts).getTime());
     }
-    for (const f of [...currentFiles, ...honesty.sinProbes(workingTreeDeTodos())]) {
+    for (const f of [...currentFiles, ...honesty.sinRuido(workingTreeDeTodos())]) {
       try { anotarEdicion(f, fs.statSync(f).mtimeMs); } catch { /* borrado → si es nuevo, lo cubre el delta por nombre */ }
     }
   }
