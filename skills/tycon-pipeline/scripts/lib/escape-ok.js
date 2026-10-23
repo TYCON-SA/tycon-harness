@@ -14,7 +14,8 @@
  * verde a mano, «autorizo trust-ran» la constancia de revisores que el arnés no vio correr, «autorizo
  * ALLOW_DOD_EVIDENCE_WRITE» una escritura a mano de la evidencia de la prueba en vivo y «autorizo dod_runtime_exempt»
  * la exención de esa prueba en una historia que ya está en implementación. Apagar el pase adversarial tiene dos nombres
- * (`TYCON_NO_DEEP_REVIEW` y `no-deep-review`) y la frase de cualquiera de los dos vale para los dos.
+ * (`TYCON_NO_DEEP_REVIEW` y `no-deep-review`) y la frase de cualquiera de los dos vale para los dos. Pasar una historia
+ * a review o done a mano también tiene dos: «autorizo cambiar el estado» y el interruptor `TYCON_STATUS_GATE`.
  *
  * Quién escribió qué lo decide `person-ok.js`: no cuenta lo que escribió el agente, la salida de una herramienta (un
  * archivo leído incluido), un subagente, lo que la persona pegó ni el mensaje de otra sesión que no es la designada.
@@ -33,14 +34,15 @@ const VENTANA_MIN = 30;
 // los escapes que piden la frase: la variable y el valor que apaga el freno (`TYCON_TEST_GATE` y `DOD_BYPASS` lo activan
 // con cualquier valor que no sea 0 ni vacío; el 1 es el de siempre)
 const ESCAPES = { TYCON_SAFETY_OFF: '1', TYCON_PROD_LINT: '0', TYCON_NEW_NAMES: '0', TYCON_TEST_GATE: '1', DOD_BYPASS: '1',
-  TYCON_NO_DEEP_REVIEW: '1' };
+  TYCON_NO_DEEP_REVIEW: '1', TYCON_STATUS_GATE: 'off' };
 // los que no son una variable: el nombre del escape va en la frase igual («autorizo story-skill-bypass»)
 const NAMED = ['story-skill-bypass', 'set-autonomous', 'cerrar la ejecución', 'cerrar como deuda', 'force-manual',
-  'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'no-deep-review'];
+  'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'no-deep-review', 'cambiar el estado'];
 const esEscape = (v) => Object.prototype.hasOwnProperty.call(ESCAPES, v) || NAMED.includes(v);
 // los nombres de un mismo escape: la frase de uno autoriza el otro (apagar el pase adversarial por la variable o por la
-// bandera es la misma decisión)
-const SINONIMOS = { TYCON_NO_DEEP_REVIEW: ['no-deep-review'], 'no-deep-review': ['TYCON_NO_DEEP_REVIEW'] };
+// bandera es la misma decisión; pasar una historia a review o done a mano, o apagar ese freno, también)
+const SINONIMOS = { TYCON_NO_DEEP_REVIEW: ['no-deep-review'], 'no-deep-review': ['TYCON_NO_DEEP_REVIEW'],
+  TYCON_STATUS_GATE: ['cambiar el estado'], 'cambiar el estado': ['TYCON_STATUS_GATE'] };
 
 const frase = (variable) => `autorizo ${variable}`;
 

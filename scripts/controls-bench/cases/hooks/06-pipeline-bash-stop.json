@@ -26,6 +26,94 @@
           "setup": ["git init -q -b main .", "mkdir -p .tycon"],
           "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"fix: sed -i src/a.ts\"" } },
           "expect": { "exit": 0 }
+        },
+        {
+          "id": "historia-por-consola-frena",
+          "type": "must-block",
+          "_por_que": "8.109 (laboratorio de Ollama con Codex): con el cierre frenado, el modelo pasó la historia a done con un node -e.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "node -e \"const fs=require('fs');const f='specs/story-1.1-resta.md';let c=fs.readFileSync(f,'utf8');c=c.replace(/^status: in-progress$/m,'status: done');fs.writeFileSync(f,c);\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA",
+              "update-story-status"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-consola-gemelo-no-historia-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.109: el mismo comando sobre un .md que no es historia pasa (gemelo del anterior).",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs",
+            "printf -- '# notas\\nstatus: in-progress\\n' > specs/notas.md"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "node -e \"const fs=require('fs');const f='specs/notas.md';let c=fs.readFileSync(f,'utf8');c=c.replace(/^status: in-progress$/m,'status: done');fs.writeFileSync(f,c);\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "borrar-marcador-frena",
+          "type": "must-block",
+          "_por_que": "8.109 (laboratorio de Ollama con Codex): después de cambiar el estado, el modelo borró el marcador con rm.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"1.1\",\"stepsPending\":[\"prepare-commit\"]}' > \"$HOME/.claude/.tycon-pipeline/active/bench-sb.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "rm ~/.claude/.tycon-pipeline/active/bench-sb.json && echo \"marker borrado\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "BORRADO DEL ESTADO DEL PIPELINE",
+              "marker\\.js clear"
+            ]
+          }
+        },
+        {
+          "id": "borrar-marcador-gemelo-leer-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.109: leer el marcador pasa (gemelo del anterior).",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"1.1\",\"stepsPending\":[\"prepare-commit\"]}' > \"$HOME/.claude/.tycon-pipeline/active/bench-sb.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat ~/.claude/.tycon-pipeline/active/bench-sb.json"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         }
       ]
     },

@@ -256,14 +256,17 @@ test('on-story-skill-gate.handle: kill-switch por env apaga', () => {
 });
 
 // ── la puerta Bash ───────────────────────────────────────────────────────────────────────────────
-test('on-bash-write-gate: el heredoc REAL de AS-1 bloquea; >> a la existente pasa; en borrador pasa', () => {
+test('on-bash-write-gate: el heredoc REAL de AS-1 bloquea; >> a la existente no la crea, pero no se escribe por consola; en borrador pasa', () => {
   const repo = mkRepo({ yaml: TOTORA_PATTERN }); const st = mkState();
   const cmd = `cat > specs/story-as1-pedidos-del-dia.md <<'STORYEOF'\n${AS1}STORYEOF`;
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
   const r = bash.handle(ev(cmd), { stateDir: st });
   assert.ok(r && r.block, 'el caso real tiene que frenar'); assert.match(r.block, /HISTORIA SIN VALIDAR/);
   fs.writeFileSync(path.join(repo, 'specs', 'story-as1-pedidos-del-dia.md'), AS1);
-  assert.equal(bash.handle(ev(cmd.replace('cat >', 'cat >>')), { stateDir: st }), null, 'append a la existente no es crear');
+  // append a la existente no es crear (no pide la constancia del validador); @story-8.109: no se escribe por consola
+  const ap = bash.handle(ev(cmd.replace('cat >', 'cat >>')), { stateDir: st });
+  assert.match(ap && ap.block, /HISTORIA ESCRITA POR CONSOLA/);
+  assert.doesNotMatch(ap.block, /HISTORIA SIN VALIDAR/);
   fs.unlinkSync(path.join(repo, 'specs', 'story-as1-pedidos-del-dia.md'));
   assert.equal(bash.handle(ev(cmd.replace('ready-for-dev', 'draft')), { stateDir: st }), null, 'en borrador pasa');
 });
@@ -296,7 +299,10 @@ test('on-bash-write-gate (F2): el heredoc de una story EXISTENTE no contagia a o
   const repo = mkRepo(); const st = mkState();
   fs.writeFileSync(path.join(repo, 'specs', '9-9.md'), S99);
   const cmd = `cat > specs/9-9.md <<'EOF'\n${S99}EOF\necho notas > docs-notas.md`;
-  assert.equal(bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command: cmd } }, { stateDir: st }), null);
+  // @story-8.109: la existente no se escribe por consola; el freno nombra sólo a ella, no al .md nuevo
+  const r = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command: cmd } }, { stateDir: st });
+  assert.match(r && r.block, /HISTORIA ESCRITA POR CONSOLA/);
+  assert.doesNotMatch(r.block.split('(detectado en')[0], /docs-notas\.md/, 'la lista de historias no trae el .md nuevo');
   // y el cuerpo SÍ se atribuye a su propio target cuando ese target es nuevo
   const cmd2 = `echo notas > docs-notas.md\ncat > specs/9-8.md <<'EOF'\n${S99.replace('9.9', '9.8')}EOF`;
   assert.ok(bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command: cmd2 } }, { stateDir: st }).block);
@@ -475,7 +481,8 @@ test('T8 Gate_PasoAReadySinConstancia_Frena: de draft a ready-for-dev sin consta
   // por la terminal no se ve qué cambia: escribir sobre el borrador frena sin constancia
   const ev = { tool_name: 'Bash', session_id: 's8a', tool_use_id: 'toolu_edit', cwd: repo, tool_input: { command: "sed -i '' 's/status: draft/status: ready-for-dev/' specs/story-as1-pedidos.md" } };
   const t = bash.handle(ev, { stateDir: mkState() });
-  assert.ok(t && t.block, 'sed -i sobre un borrador tiene que frenar'); assert.match(t.block, /tool Edit/);
+  // @story-8.109: lo frena antes la historia escrita por consola, que pide lo mismo (la herramienta de edición)
+  assert.ok(t && t.block, 'sed -i sobre un borrador tiene que frenar'); assert.match(t.block, /tool Edit|herramienta de edición/);
 });
 
 test('T9 Gate_EditarBorradorSinCambiarEstado_Pasa: corregir el cuerpo de un borrador pasa siempre', () => {
@@ -484,15 +491,17 @@ test('T9 Gate_EditarBorradorSinCambiarEstado_Pasa: corregir el cuerpo de un borr
   assert.equal(editar(p, 's9', '# Story AS-1', '# Story AS-1: pedidos del día', mkState()), null);
 });
 
-test('T10 Gate_HistoriaExistenteNoBorrador_Pasa: ready-for-dev e in-progress se editan siempre, por Edit y por la terminal', () => {
+test('T10 Gate_HistoriaExistenteNoBorrador_Pasa: ready-for-dev e in-progress pasan este freno por Edit; por la terminal no se escriben (8.109)', () => {
   const repo = mkRepo({ yaml: TOTORA_PATTERN });
   const p = path.join(repo, 'specs', 'story-as1-pedidos.md');
   for (const estado of ['ready-for-dev', 'in-progress']) {
     fs.writeFileSync(p, AS1.replace('ready-for-dev', estado) + '\n## Change Log\n');
     assert.equal(editar(p, 's10', `status: ${estado}`, 'status: review', mkState()), null, estado);
     assert.equal(editar(p, 's10', '## Change Log\n', '## Change Log\n- hoy: cerrada\n', mkState()), null, estado);
+    // @story-8.109: una historia que no está en borrador no se escribe por consola (el estado va por marker.js)
     const ev = { tool_name: 'Bash', session_id: 's10', cwd: repo, tool_input: { command: `sed -i '' 's/status: ${estado}/status: done/' specs/story-as1-pedidos.md` } };
-    assert.equal(bash.handle(ev, { stateDir: mkState() }), null, `terminal ${estado}`);
+    const r = bash.handle(ev, { stateDir: mkState() });
+    assert.match(r && r.block, /HISTORIA ESCRITA POR CONSOLA/, `terminal ${estado}`);
   }
 });
 
