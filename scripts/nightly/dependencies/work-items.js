@@ -236,9 +236,12 @@ function proyectosDeFicha(f, cfg) {
   return [...new Set(f.fi.listas.repos.map((r) => proyectoAzureDe(r, cfg)).filter(Boolean))];
 }
 
-/** `[{ ficha, proyectos, faltan, conPedido, desconocidos }]` de las fichas vivas. */
+/**
+ * `[{ ficha, proyectos, faltan, conPedido, desconocidos }]` de las fichas vivas. La que está contando sus noches sin
+ * aparecer no pide: la vulnerabilidad ya no está en ningún repo medido.
+ */
 function paresPorPedir(fichas, cfg) {
-  return fichas.filter((f) => f.viva).map((f) => {
+  return fichas.filter((f) => f.viva && !f.contando).map((f) => {
     const proyectos = proyectosDeFicha(f, cfg);
     const pedidos = new Map(leerPedidos(f.txt).map((x) => [x.proyecto, x.id]));
     return { ficha: f, proyectos, faltan: proyectos.filter((p) => !pedidos.has(p)),

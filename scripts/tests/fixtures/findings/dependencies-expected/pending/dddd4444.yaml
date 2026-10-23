@@ -1,0 +1,19 @@
+id: dddd4444
+detectado: 2026-10-01
+veredicto: pendiente
+paquete: ws
+severidad: high
+noches: 1
+reaparecido: 2026-10-20
+descartado_antes: 2026-10-05
+motivo_antes: "declarada como deuda en acme/acme (vence 2026-10-20)"
+ids:
+  - dddd4444
+repos:
+  - acme/acme
+avisos:
+  - https://x/GHSA-dddd
+# Qué decidir: se arregla (subir el paquete) o se declara como deuda en el
+# vulnerabilidades-pendientes.json del repo, con motivo y fecha de revisión.
+# Lo que NO se decide vuelve a aparecer todas las noches, y a los 7 días
+# se archiva como 'ignorado' — que cuenta PEOR que descartado con motivo.

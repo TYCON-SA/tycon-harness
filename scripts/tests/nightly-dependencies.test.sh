@@ -57,9 +57,13 @@ config(){ # <archivo> <tope> <repos...>
   "raiz_por_defecto": "$TMP/mundo", "repos": [ ${items%,} ] }
 CFG
 }
-noche(){ # <config> <fecha>
+# Una ficha se resuelve tras N noches medidas sin aparecer (3 por defecto). Los casos de hoy corren con
+# N=1, que es lo que hacía la noche antes del cambio: así prueban que la pieza común no cambió nada más.
+OPS_N1="$TMP/operations-n1.json"
+echo '{ "version": 1, "owners": { "default": "quien@acme.example" }, "findings": { "resolve_after_nights": 1 } }' > "$OPS_N1"
+noche(){ # <config> <fecha> [<operations.json>]
   FIX="$TMP/fix" TYCON_DEP_CMD="$TMP/doble.sh" node "$NOC" run --config "$1" \
-    --out "$TMP/out" --pending "$TMP/pend" --today "$2" >"$TMP/o.txt" 2>&1; echo $?; }
+    --out "$TMP/out" --pending "$TMP/pend" --today "$2" --operations "${3:-$OPS_N1}" >"$TMP/o.txt" 2>&1; echo $?; }
 anunciados(){ sed -n '/^--- anunciar ---$/,$p' "$TMP/o.txt" | tail -n +2 | grep -c . || true; }
 
 # ── 1. la PRIMERA corrida es la línea base: no anuncia nada ──────────────────────────────────
@@ -205,7 +209,7 @@ repogit(){ # <ruta> — main con una vulnerabilidad, dev limpio y CHECKEADO
     git checkout -q -b dev && echo dev > QUE-SOY && git commit -qam "trabajo en curso" ) >/dev/null 2>&1
 }
 noche2(){ FIX="$TMP/fix" TYCON_DEP_CMD="$TMP/doble2.sh" node "$NOC" run --config "$1" \
-    --out "$TMP/out" --pending "$TMP/pend" --today "${2:-2026-09-10}" >"$TMP/o.txt" 2>&1; echo $?; }
+    --out "$TMP/out" --pending "$TMP/pend" --today "${2:-2026-09-10}" --operations "$OPS_N1" >"$TMP/o.txt" 2>&1; echo $?; }
 
 rm -rf "$TMP/mundo" "$TMP/fix"; mkdir -p "$TMP/fix"
 echo "$UNA" > "$TMP/fix/main.json"; echo "$LIMPIO" > "$TMP/fix/dev.json"
@@ -860,7 +864,7 @@ noche "$TMP/c-t22.json" 2026-09-01 >/dev/null
 echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-t22.json" 2026-09-02 >/dev/null
 antes=$(find "$TMP/pend" "$TMP/out" -type f 2>/dev/null | sort | xargs shasum -a 256 2>/dev/null | shasum -a 256)
 FIX="$TMP/fix" TYCON_DEP_CMD="$TMP/doble.sh" node "$NOC" run --config "$TMP/c-t22.json" \
-  --out "$TMP/out" --pending "$TMP/pend" --today 2026-09-03 --dry-run > "$TMP/dry.txt" 2>&1
+  --out "$TMP/out" --pending "$TMP/pend" --today 2026-09-03 --dry-run --operations "$OPS_N1" > "$TMP/dry.txt" 2>&1
 rcdry=$?
 despues=$(find "$TMP/pend" "$TMP/out" -type f 2>/dev/null | sort | xargs shasum -a 256 2>/dev/null | shasum -a 256)
 { [ "$rcdry" -eq 0 ] && [ "$antes" = "$despues" ] && grep -qi "browserslist" "$TMP/dry.txt" \
@@ -1913,6 +1917,34 @@ TE=$(node "$NOC" pr-text --draft "$SINREPO" 2>&1); rce=$?
 { [ "$rce" -ne 0 ] && printf '%s' "$TE" | grep -i "no nombra ning" >/dev/null ; } \
   && ok "dependencias-por-formulario E: pr-text rechaza una ficha sin repos: y lo dice" \
   || no "dependencias-por-formulario E: rc=$rce · $(printf '%s' "$TE" | head -2 | tr '\n' ' ')"
+
+# ── N noches medidas sin aparecer ─────────────────────────────────────────────────
+# Sin operations.json, N es 3: la vulnerabilidad que deja de aparecer espera tres noches medidas antes de darse por
+# resuelta, y la salida dice que está contando.
+SIN_OPS="$TMP/no-hay-operations.json"
+rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c-n3.json" 2 A
+noche "$TMP/c-n3.json" 2026-09-01 "$SIN_OPS" >/dev/null; echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-n3.json" 2026-09-02 "$SIN_OPS" >/dev/null
+echo "$LIMPIO" > "$TMP/fix/A.json"; noche "$TMP/c-n3.json" 2026-09-03 "$SIN_OPS" >/dev/null
+{ grep -q "^noches_sin_aparecer: 1$" "$TMP/pend/pending"/*.yaml && ! ls "$TMP/pend/promoted"/*.yaml >/dev/null 2>&1 \
+  && grep -q "contando sus 3 noches" "$TMP/o.txt"; } \
+  && ok "4.11: sin operations.json, la primera noche sin aparecer cuenta 1 de 3 y no resuelve" \
+  || no "4.11: la primera noche sin aparecer — $(ls "$TMP/pend"/* 2>/dev/null | tr '\n' ' ') · $(grep -i 'resuel\|contando' "$TMP/o.txt" | head -2)"
+noche "$TMP/c-n3.json" 2026-09-04 "$SIN_OPS" >/dev/null; noche "$TMP/c-n3.json" 2026-09-05 "$SIN_OPS" >/dev/null
+{ grep -q "resuelto: 2026-09-05" "$TMP/pend/promoted"/*.yaml && ! grep -q "noches_sin_aparecer" "$TMP/pend/promoted"/*.yaml \
+  && grep -q "RESUELTO" "$TMP/o.txt"; } \
+  && ok "4.11: a la tercera noche medida sin aparecer se resuelve, sin el contador" \
+  || no "4.11: la tercera noche no resolvió — $(ls "$TMP/pend"/* 2>/dev/null | tr '\n' ' ')"
+
+# Con un operations.json que no valida, esa noche no se resuelve nada ni se cuenta, y se dice.
+MAL_OPS="$TMP/operations-mal.json"
+echo '{ "version": 1, "owners": { "default": "quien@acme.example" }, "findings": { "resolve_after_nights": 0 } }' > "$MAL_OPS"
+rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c-mal.json" 2 A
+noche "$TMP/c-mal.json" 2026-09-01 >/dev/null; echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-mal.json" 2026-09-02 >/dev/null
+echo "$LIMPIO" > "$TMP/fix/A.json"; rc=$(noche "$TMP/c-mal.json" 2026-09-03 "$MAL_OPS")
+{ [ "$rc" = "0" ] && ls "$TMP/pend/pending"/*.yaml >/dev/null 2>&1 && ! grep -q "noches_sin_aparecer\|resuelto:" "$TMP/pend/pending"/*.yaml \
+  && grep -q "no se resolvió ninguna ficha" "$TMP/o.txt"; } \
+  && ok "4.11: con operations.json inválido no se resuelve ni se cuenta, y la salida lo dice" \
+  || no "4.11: operations.json inválido — rc=$rc · $(ls "$TMP/pend"/* 2>/dev/null | tr '\n' ' ') · $(grep -i 'operations' "$TMP/o.txt" | head -2)"
 
 echo
 total=$((pasaron + fallos))
