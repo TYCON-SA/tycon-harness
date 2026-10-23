@@ -861,6 +861,18 @@
       "requiere": []
     },
     {
+      "__nota": "bajo Codex los revisores los lanza el pipeline (pipeline.js reviewers-run): un codex de mentira al frente del PATH, la ventana, la sesión de Ollama, la constancia que cuenta check-count, el tope y el relanzado. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/codex-reviewers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los cierres del turno deciden con la evidencia del arnés (mensaje del evento, marcador, registro de ediciones, disco) y no con la conversación: la historia afirmada, el modelo del implementador y la línea de pasos pendientes.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/closing-evidence-codex.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/validator-record.test.js",
       "requiere": []
@@ -2494,6 +2506,12 @@
       "__nota": "el informe del aplicador no le manda a un juez viejo hooks con prefijos que no entiende (TYCON_REPORT_HOOK_PREFIXES); el lector y la salud de la 2026.10.20.52 (de git) aceptan el informe nuevo; el arranque corre la salud si la última no la corrió esta versión.",
       "raiz": "arnes",
       "ruta": "tests/old-judge-report.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la sonda de Ollama (scripts/lib/ollama-tools-probe.js): con un Ollama de mentira local, dice si un modelo acepta las herramientas namespace de Codex, sólo el modo reducido o nada, y nunca «acepta» ante una conexión cerrada o una respuesta ilegible; y las guías nombran la versión de Codex medida.",
+      "raiz": "arnes",
+      "ruta": "tests/ollama-tools-probe.test.js",
       "requiere": []
     },
     {
