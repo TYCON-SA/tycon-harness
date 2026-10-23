@@ -1042,3 +1042,184 @@ test('T19 EscC6_CitaDeUnRechazoYSeleccionMultiple @story-8.96 — una cita sacad
   const sin = freno(aprobar('--approved "apruebo el plan sin cambios"'), { home: homeConMarcador(PLAN_ABIERTO, [deLaPersona('apruebo el plan sin cambios')]) });
   assert.strictEqual(sin.status, 0, sin.stderr);
 });
+
+// ── El pase adversarial no lo apaga el agente (@story-8.104) ────────────────────────────────────────────────────────────
+// `TYCON_NO_DEEP_REVIEW` (ESC-C1, con cualquier valor que no sea 0 ni vacío) y `--no-deep-review` (ESC-C3, en
+// `pipeline.js start|deep-review-gate` y `marker.js mark-adversarial-skipped`) piden «autorizo TYCON_NO_DEEP_REVIEW» o
+// «autorizo no-deep-review» de la persona: las dos frases valen para los dos nombres.
+const NDR = 'TYCON_NO_DEEP_REVIEW';
+const SALTEAR = `${MARKER} mark-adversarial-skipped --files a.js`;
+const NDR_FRENA = [
+  ['Bash', `${NDR}=1 ${SALTEAR}`],
+  ['Bash', `export ${NDR}=1; ${SALTEAR}`],
+  ['Bash', `env ${NDR}=true ${SALTEAR}`],
+  ['Bash', `${NDR}=$X ${PIPELINE} deep-review-gate --repo r --story s --files a.js`],
+  ['PowerShell', `$env:${NDR}=1; ${SALTEAR}`],
+];
+const NDR_FLAG = '--no' + '-deep-review';
+const START_NDR = `${PIPELINE} start --story s.md ${NDR_FLAG}`;
+
+test('T1 EscC1_NoDeepReviewSinFrase_Frena @story-8.104 @ac-3 — la variable escrita por el agente, con cualquier valor que la activa', () => {
+  for (const [herramienta, c] of NDR_FRENA) {
+    const r = freno(c, { herramienta, conversacion: [deLaPersona('seguí con la historia')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C1/, c);
+    assert.match(r.stderr, /autorizo TYCON_NO_DEEP_REVIEW/, 'el cartel dice la frase');
+    // el cartel repite el comando que frenó; fuera de esa línea no trae la receta
+    assert.doesNotMatch(r.stderr.replace(/^Comando:.*$/m, ''), /TYCON_NO_DEEP_REVIEW=1 /, 'el cartel no trae la receta');
+  }
+});
+
+test('T2 EscC1_NoDeepReviewConFrase_PasaYDejaConstancia @story-8.104 @ac-3 @ac-6 — con la frase de la persona pasa y queda la sesión y el escape', () => {
+  for (const f of [`dale, autorizo ${NDR}`, `autorizo no-deep-review`]) {
+    const r = freno(NDR_FRENA[0][1], { conversacion: [deLaPersona(f, 5)] });
+    assert.strictEqual(r.status, 0, `${f}: ${r.stderr}`);
+    const k = constancias(r.home).find((l) => l.regla === 'ESC-C1');
+    assert.ok(k, JSON.stringify(constancias(r.home)));
+    assert.deepStrictEqual([k.veredicto, k.via, k.sesion, k.escape], ['escape', 'persona', SID, NDR]);
+  }
+});
+
+test('T3 RespuestaDeOpciones_NoAutoriza @story-8.104 @ac-5 — la respuesta a una pregunta del agente no cuenta, ni una corrida sin persona', () => {
+  const preguntaPase = { type: 'assistant', timestamp: hace(4), message: { role: 'assistant',
+    content: [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion', input: { questions: [{ question: '¿Corro el pase adversarial?', options: [{ label: `autorizo ${NDR}` }, { label: 'Correlo' }] }] } }] } };
+  const eligio = { type: 'user', timestamp: hace(3),
+    toolUseResult: { questions: [{ question: '¿Corro el pase adversarial?' }], answers: { '¿Corro el pase adversarial?': `autorizo ${NDR}` } },
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'q1', content: `Your questions have been answered: "¿Corro el pase adversarial?"="autorizo ${NDR}".` }] } };
+  const r = freno(NDR_FRENA[0][1], { conversacion: [preguntaPase, eligio, deLaPersona('seguí sin el pase')] });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /autorizo TYCON_NO_DEEP_REVIEW/);
+  // sin ningún turno de una persona ni sesión designada: el pase no se apaga
+  const sola = freno(NDR_FRENA[0][1], { conversacion: [delAgente('sigo sin el pase')] });
+  assert.strictEqual(sola.status, 2, sola.stderr);
+  assert.match(sola.stderr, /autorizo TYCON_NO_DEEP_REVIEW/, 'el cartel dice cuál es la frase');
+});
+
+test('T4 FraseReenviadaPorLaSesionDesignada_Autoriza @story-8.104 @ac-5 — la frase textual reenviada por la sesión designada vale para los dos nombres', () => {
+  const eo = require(path.join(LIB, 'escape-ok.js'));
+  for (const [variable, dicha] of [[NDR, NDR], ['no-deep-review', NDR], [NDR, 'no-deep-review']]) {
+    const home = nuevaHome([deOtraSesion('coordinadora', `El dueño dijo «autorizo ${dicha}» para la 8.104.`)]);
+    const arnes = conRelevo(home);
+    const r = eo.escapeAutorizado({ variable, sesion: SID, pedido: TUID, home, arnes, env: { HOME: home, TYCON_PROFILE: '0' } });
+    assert.deepStrictEqual([r.ok, r.via, r.relevo], [true, 'reenvio', 'coordinadora'], `${variable} ← ${dicha}: ${r.motivo}`);
+  }
+});
+
+test('T5 EscC3_NoDeepReviewEnStartSinFrase_Frena @story-8.104 @ac-4 — la bandera en start, sin ejecución abierta todavía, pide la frase', () => {
+  const sin = freno(START_NDR, { conversacion: [deLaPersona('implementemos la story s.md')] });
+  assert.strictEqual(sin.status, 2, sin.stderr);
+  assert.match(sin.stderr, /ESC-C3/);
+  assert.match(sin.stderr, /pase adversarial/, 'el cartel es el del pase');
+  assert.doesNotMatch(sin.stderr, /Cerrar la ejecución ahora/, 'no el de cerrar la ejecución');
+  assert.match(sin.stderr, /autorizo no-deep-review/);
+  for (const f of ['autorizo no-deep-review', `autorizo ${NDR}`]) {
+    const ok = freno(START_NDR, { conversacion: [deLaPersona(f)] });
+    assert.strictEqual(ok.status, 0, `${f}: ${ok.stderr}`);
+    assert.strictEqual(constancias(ok.home).find((l) => l.regla === 'ESC-C3').escape, 'no-deep-review');
+  }
+  // también en mark-adversarial-skipped y deep-review-gate, con la ejecución abierta
+  for (const c of [`${SALTEAR} ${NDR_FLAG}`, `${PIPELINE} deep-review-gate --repo r --story s --files a.js ${NDR_FLAG}`]) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/);
+  }
+});
+
+test('T6 EscC3_SoloCuentaLoQueSeEjecuta @story-8.104 @ac-4 — nombrar la bandera en un texto o un grep no la corre', () => {
+  for (const c of [
+    `cat > notas.md <<'EOF'\n${START_NDR}\nEOF`,
+    `grep -n -- '${NDR_FLAG}' skills/tycon-pipeline/scripts/pipeline.js`,
+  ]) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});
+
+test('T7 LoLegitimo_PasaSinFrase @story-8.104 @ac-7 — el salteo que decide el portón, el 0 y el pase forzado pasan', () => {
+  for (const c of [SALTEAR, `${NDR}=0 ${SALTEAR}`, `${NDR}= ${SALTEAR}`, `${NDR}_X=1 ${SALTEAR}`,
+    `${PIPELINE} start --story s.md --deep-review`, `${PIPELINE} start --story s.md --ultracode`]) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+    assert.deepStrictEqual(constancias(r.home).filter((l) => /^ESC-C[13]$/.test(l.regla)), [], c);
+  }
+});
+
+test('T11 ValoresDeFiles_NoSonLaBandera @story-8.104 @ac-4 — los archivos de --files no son la bandera, salvo que valgan una', () => {
+  const pasan = [
+    `${MARKER} mark-adversarial-skipped --files $W/a.js $W/b.js`,
+    `A=x.js; ${PIPELINE} check-count --repo r --story s --files $A`,
+    `${PIPELINE} check-count --repo r --story s --files $W/scripts/a.sh $W/guides/b.md`,
+  ];
+  for (const c of pasan) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  const frenan = [
+    'F=--trust-' + `ran; ${PIPELINE} check-count --repo r --story s --files $F`,
+    `F="${NDR_FLAG}"; ${MARKER} mark-adversarial-skipped --files a.js $F`,
+    `${PIPELINE} check-count --repo r --story s --files $X`,
+    `${PIPELINE} start --story s.md $X`,
+  ];
+  for (const c of frenan) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+  }
+});
+
+test('T12 FormasQueElLectorNoVeia_Frenan @story-8.104 @ac-4 @ac-5 — el shell entrega la bandera y el lector tiene que verla', () => {
+  const frenan = [
+    `${PIPELINE} start --repo . -- ${NDR_FLAG}`,
+    `${PIPELINE} start --repo . --no-deep-{review,x}`,
+    `${PIPELINE} start --repo . $'--no-deep-\\x72eview'`,
+    `${PIPELINE} start --brief $(echo ${NDR_FLAG})`,
+    `S=start; ${PIPELINE} $S ${NDR_FLAG}`,
+    `${PIPELINE} deep-review-gate --files x "$(echo --no-deep-)"review`,
+    `${PIPELINE} deep-review-gate --files "$(cat lista)"`,
+    `echo F=--ok; for F in ${NDR_FLAG}; do ${PIPELINE} start --repo . $F; done`,
+    `node --env-file=/tmp/e ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story s.md`,
+    // del pase adversarial: una variable con varias palabras, xargs, el subcomando de marker.js en una variable,
+    // `$@` y `${X:-…}` después de --files
+    `OPTS="--story s.md ${NDR_FLAG}"; ${PIPELINE} start $OPTS`,
+    'OPTS="--files a.js --trust-' + `ran"; ${PIPELINE} check-count --repo r --story s $OPTS`,
+    `echo ${NDR_FLAG} | xargs ${PIPELINE} start --story s.md`,
+    `S=mark-adversarial-skipped; ${MARKER} $S ${NDR_FLAG}`,
+    `${MARKER} $S ${NDR_FLAG}`,
+    `${PIPELINE} deep-review-gate --files "$@"`,
+    `${PIPELINE} deep-review-gate --files \${X:-${NDR_FLAG}}`,
+    // de la vuelta 2: una opción sin valor que no estaba en la lista, y las variables sin valor conocido
+    `${PIPELINE} start --allow-missing-files $(echo ${NDR_FLAG})`,
+    `${PIPELINE} check-count --repo r --story s --strict $X`,
+    `echo F=--ok; ${PIPELINE} start --repo . $F`,
+    `read F; ${PIPELINE} start --repo . $F`,
+    `printf -v F x; ${PIPELINE} start --repo . $F`,
+    `F=a; F=${NDR_FLAG}; ${PIPELINE} start --repo . $F`,
+    `F=a; F+=b; ${PIPELINE} start --repo . $F`,
+    'F=--force-' + `manual; ${MARKER} set-check tests green --files $F`,
+    // el subcomando en una variable vacía o con varias palabras, y un valor que el shell parte en palabras
+    `S=; ${PIPELINE} $S start ${NDR_FLAG}`,
+    `S="start ${NDR_FLAG}"; ${PIPELINE} $S`,
+    `${PIPELINE} start --story $(echo s.md ${NDR_FLAG})`,
+    `read S2; ${PIPELINE} start --story $S2`,
+  ];
+  for (const c of frenan) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+  }
+  // una frase retirada con el otro nombre del escape no autoriza
+  const retirada = freno(NDR_FRENA[0][1], { conversacion: [deLaPersona(`autorizo ${NDR}`, 10), deLaPersona('no, olvidalo: no autorizo no-deep-review', 3)] });
+  assert.strictEqual(retirada.status, 2, retirada.stderr);
+  // el «no» de «no-deep-review» no niega: nombrarlo después de autorizarlo no lo retira
+  for (const conv of [[deLaPersona('autorizo no-deep-review. Con no-deep-review el run es más rápido')],
+    [deLaPersona('autorizo no-deep-review', 5), deLaPersona('ok, seguí con el no-deep-review entonces', 3)]]) {
+    const r = freno(START_NDR, { conversacion: conv });
+    assert.strictEqual(r.status, 0, `${JSON.stringify(conv.map((x) => x.message.content))}: ${r.stderr}`);
+  }
+  // lo de todos los días sigue pasando
+  for (const c of [`${PIPELINE} start --story $S --repo $PWD --brief`, `${PIPELINE} deep-review-gate --repo $R --story $S --files $W/a.js $W/b.sh`,
+    `${PIPELINE} start --story "$(ls specs/story-8.104*.md)" --repo "$PWD"`]) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});

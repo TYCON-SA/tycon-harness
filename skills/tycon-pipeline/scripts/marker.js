@@ -792,7 +792,7 @@ function mensajeDelPaseAdversarial(v) {
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch');
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …');
     e(`  Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`);
-    e('  Abandonarlo es una decisión: TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files … (queda en bypass.log).');
+    e('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»).');
     return;
   }
   if (v.motivo === 'resultado-de-otro-lanzamiento') {
@@ -802,7 +802,7 @@ function mensajeDelPaseAdversarial(v) {
   }
   e('  Cada confirmado va a la suite (prueba promovida o prueba propia) o se difiere con motivo:');
   e(`    ${cmdResultado}`);
-  e('  Abandonarlo es una decisión: TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files … (queda en bypass.log).');
+  e('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»).');
 }
 
 // Cada aprobación que el pipeline ya pide queda en `approvals.jsonl`, en la carpeta de la corrida, como
@@ -2615,7 +2615,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   if (lanzado && !forzado) {
     console.error(`marker.js mark-adversarial-skipped: el pase adversarial YA se lanzó (runId ${lanzado.runId || '?'}, ${lanzado.launchedAt || 'sin fecha'}) — un pase lanzado se cierra con su resultado:`);
     console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
-    console.error('  Abandonarlo es una decisión, no un salteo: se toma con el interruptor (TYCON_NO_DEEP_REVIEW=1 o --no-deep-review)');
+    console.error('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»),');
     console.error('  y queda en bypass.log como ADVERSARIAL_ABANDONADO.');
     process.exit(2);
   }

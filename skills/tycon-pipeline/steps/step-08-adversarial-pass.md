@@ -48,9 +48,10 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
   dónde fue cada hallazgo, y cierra el pase en la misma escritura.
 - **El portón dice que no corre** → `mark-adversarial-skipped --files <archivos de código del diff>`:
   el comando le vuelve a preguntar al portón y, si el portón dice que corre, se niega.
-- **Abandonar un pase ya lanzado** es una decisión, no un salteo:
-  `TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files …` (queda en `bypass.log` como
-  `ADVERSARIAL_ABANDONADO`, con el runId).
+- **Abandonar un pase ya lanzado** es una decisión de la persona, no un salteo ni algo que el agente ofrece: lo dice
+  ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW», o reenviada por la sesión designada). El freno de seguridad
+  pide esa frase para la variable y para `--no-deep-review`, y queda en `bypass.log` como `ADVERSARIAL_ABANDONADO`, con
+  el runId. La respuesta a una pregunta de opciones no cuenta: la pregunta la armaría el agente.
 
 La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step prepare-commit` **frena** si el pase
 se lanzó y su resultado no está (freno `adversarial-result-gate`; `DOD_BYPASS` no lo abre). Medido antes
@@ -96,7 +97,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversa
 ```
 
 El gate (decisión "siempre en NORMAL"): **risk-class NORMAL → corre**; **LOW → skip** (superficie chica ≤6 files,
-ya barata). Overrides, en precedencia: (1) `--no-deep-review` / `TYCON_NO_DEEP_REVIEW=1` kill-switch; (2)
+ya barata). Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una línea qué corre y cuánto tarda (la
+duración es información, no una opción). Overrides, en precedencia: (1) `--no-deep-review` / `TYCON_NO_DEEP_REVIEW`,
+que pide la frase de la persona («autorizo TYCON_NO_DEEP_REVIEW»); (2)
 `.tycon/advisors.yaml deep_review: always|off|auto`; (3) `--deep-review` / `--ultracode` fuerza on; (4) risk-class.
 
 **Corre UNA sola vez por corrida** (lanzado al cierre de «Implementar» — o acá como fallback), **NUNCA por cada
@@ -179,7 +182,7 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
   `mark-adversarial-result` lo anota `no-medido` y no cierra el pase, `complete-step prepare-commit` frena (`pase-no-medido`, y
   `DOD_BYPASS` no lo abre), `deep-review-gate` dice que corre (el salteo se niega) y `next` pide relanzarlo.
 - Para destrabar: relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con
-  `--result`. Abandonarlo sigue siendo una decisión del dev con el interruptor (`TYCON_NO_DEEP_REVIEW=1`, queda en
+  `--result`. Abandonarlo sigue siendo una decisión de la persona («autorizo TYCON_NO_DEEP_REVIEW»; queda en
   `bypass.log`).
 - Bajo Codex, `corredor.muertos` dice la causa de cada agente y la hora. Con el tope de uso no se reintenta y los
   agentes que faltan no se lanzan.
@@ -405,7 +408,8 @@ workflow + el `confirmed` count en `.advisors/pipeline-runs/<clave>-<sello>/step
 
 En NORMAL con `sonnet` (default), son ~6 hunters + M verifiers (M = nº de findings). Menos que una corrida Opus, pero
 es una capa real de tokens. Escala con la cantidad de findings (más hallazgos → más skeptics). `--no-deep-review` es el
-escape por corrida; `.tycon/advisors.yaml deep_review: off` lo apaga para un repo entero.
+escape por corrida y lo decide la persona («autorizo no-deep-review»): el costo no es motivo para que el agente lo
+ofrezca. `.tycon/advisors.yaml deep_review: off` lo apaga para un repo entero.
 
 Escalación de modelo (2026-07-06): story pesada → Opus (~1.7x sonnet) automático — es el run donde el pase adversarial
 más paga. Fable (~2x opus) no se ofrece: corre sólo con `--deep-review-fable` — ese nivel nunca se gasta en silencio.

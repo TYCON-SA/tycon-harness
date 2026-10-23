@@ -17,9 +17,9 @@
  * `xargs` o una comilla que no se cierra. Lo que no ve: el nombre del archivo armado en una variable, `node -e` con el
  * código adentro, una copia con otro nombre, y un programa de texto que además ejecuta (`awk` con `system`).
  *
- * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ guion, sub, args: [{ texto, literal }], dudosa }]
+ * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ guion, sub, args: [{ texto, literal }], dudosa, asig }]
  *      escapeDe(llamada, sid) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' | 'force-manual' |
- *      'trust-ran' | null
+ *      'trust-ran' | 'no-deep-review' | null
  */
 
 const PREFIJOS = new Set(['sudo', 'env', 'exec', 'command', 'nohup', 'time', 'nice', 'timeout', 'xargs', 'builtin',
@@ -88,14 +88,15 @@ function tramos(cmd, shell) {
     const j = cierreDeSub(cmd, i + 1);
     subs.push(cmd.slice(i + 2, j < 0 ? cmd.length : j));
     if (j < 0) abierta = true;
-    empezar(); palabra.literal = false; palabra.texto += '$(…)';
+    // `partida`: sin comillas, el shell parte la salida en palabras (puede traer una bandera además del valor)
+    empezar(); palabra.literal = false; palabra.partida = true; palabra.texto += '$(…)';
     return j < 0 ? cmd.length : j;
   };
   const comillaInvertida = (i) => {
     const j = cmd.indexOf('`', i + 1);
     subs.push(cmd.slice(i + 1, j < 0 ? cmd.length : j));
     if (j < 0) abierta = true;
-    empezar(); palabra.literal = false; palabra.texto += '`…`';
+    empezar(); palabra.literal = false; palabra.partida = true; palabra.texto += '`…`';
     return j < 0 ? cmd.length : j;
   };
   for (let i = 0; i < cmd.length; i++) {
@@ -162,6 +163,8 @@ function tramos(cmd, shell) {
     if (c === '`' && ps) { empezar(); palabra.texto += cmd[i + 1] || ''; i++; continue; }
     if (c === "'" || c === '"' || (c === '$' && !ps && (cmd[i + 1] === "'" || cmd[i + 1] === '"'))) {
       const comilla = c === '$' ? cmd[++i] : c;
+      // `$'…'` interpreta escapes (`\x72` es una «r»): su texto no se puede leer tal cual
+      if (c === '$' && comilla === "'") { empezar(); palabra.literal = false; }
       empezar();
       let j = i + 1;
       for (; j < cmd.length && cmd[j] !== comilla; j++) {
@@ -193,6 +196,10 @@ function tramos(cmd, shell) {
     }
     empezar();
     if (c === '$' || c === '*' || c === '?') palabra.literal = false;
+    // una variable sin comillas: el shell parte su valor en palabras
+    if (c === '$') palabra.partida = true;
+    // las llaves sin comillas se expanden (`--x-{a,b}`, `{1..3}`): la palabra no es su texto
+    if (c === '{' && /^\{[^{}\s]*(,|\.\.)[^{}\s]*\}/.test(cmd.slice(i))) palabra.literal = false;
     palabra.texto += c;
   }
   cerrarTramo();
@@ -229,6 +236,30 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
   if (hondo > 4 || !NOMBRA_GUION.test(cmd)) return fuera;
   const { tramos: lista, subs, abierta } = tramos(cmd, shell);
   for (const interno of subs) fuera.push(...llamadas(interno, { shell }, hondo + 1));
+  // las variables asignadas con un valor literal en este comando (`F=--trust-ran; …`): escapeDe las lee por su valor.
+  // Cuenta sólo una asignación de verdad: delante del programa o como argumento de `export`, `declare`, `local`,
+  // `readonly` o `typeset` (`echo F=--ok` no asigna nada). Una variable que también toma valor de otra forma (`for F in`,
+  // `read F`, `printf -v F`, `F+=`), asignada dos veces con valores distintos o con un valor que no se ve, no tiene
+  // valor conocido (null)
+  const asig = {};
+  const anotar = (nombre, v) => { asig[nombre] = Object.prototype.hasOwnProperty.call(asig, nombre) && asig[nombre] !== v ? null : v; };
+  const DECLARA = new Set(['export', 'declare', 'local', 'readonly', 'typeset']);
+  for (const t of lista) {
+    const p = programa(t.palabras);
+    const pal = t.palabras;
+    const comoAsignacion = (w) => {
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)(\+?)=([\s\S]*)$/.exec(w.texto);
+      if (m) anotar(m[1], w.literal && !m[2] ? m[3] : null);
+    };
+    pal.slice(0, p.i).forEach(comoAsignacion);
+    if (DECLARA.has(p.nombre)) pal.slice(p.i + 1).forEach(comoAsignacion);
+    // los nombres que toman valor sin `=`: quedan sin valor conocido
+    if (p.nombre === 'for' && pal[p.i + 1]) anotar(pal[p.i + 1].texto, null);
+    if (['read', 'mapfile', 'readarray', 'getopts'].includes(p.nombre)) pal.slice(p.i + 1).forEach((w) => { if (/^[A-Za-z_]\w*$/.test(w.texto)) anotar(w.texto, null); });
+    pal.forEach((w, k) => { if (w.texto === '-v' && pal[k + 1] && /^[A-Za-z_]\w*$/.test(pal[k + 1].texto)) anotar(pal[k + 1].texto, null); });
+    // `F+=b` en cualquier lugar del tramo (el lector de programas no lo toma por asignación)
+    pal.forEach((w) => { const m = /^([A-Za-z_][A-Za-z0-9_]*)\+=/.exec(w.texto); if (m) anotar(m[1], null); });
+  }
   // una comilla sin cerrar: el resto del comando no se puede leer (puede ser un `marker.js clear`; un comando que sólo
   // nombra `pipeline` no cierra nada)
   if (abierta && /marker/i.test(cmd)) fuera.push({ guion: 'marker', sub: null, args: [], dudosa: true });
@@ -249,8 +280,18 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
         let args = pal.slice(m + 1);
         // `marker.js{,} clear` se expande a dos `marker.js`: la segunda no es el subcomando
         while (args.length && guionDe(args[0].texto) === guion) { args = args.slice(1); m++; }
+        // el subcomando en una variable asignada en el mismo comando (`S=start; pipeline.js $S`) se lee por su valor,
+        // partido en palabras como lo parte el shell: vacía, el subcomando es la palabra siguiente (`S=; … $S start`);
+        // con varias, la primera es el subcomando y las demás son argumentos
+        const enVariable = args.length && !args[0].literal && /^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/.exec(args[0].texto);
+        if (enVariable && typeof asig[enVariable[1]] === 'string') {
+          const partes = asig[enVariable[1]].split(/\s+/).filter(Boolean).map((texto) => ({ texto, literal: true }));
+          args = [...partes, ...args.slice(1)];
+        }
         const sub = args.length && args[0].literal ? args[0].texto : null;
-        fuera.push({ guion, sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0) });
+        // `node --env-file=<archivo> pipeline.js …`: el archivo puede traer variables que el comando no muestra
+        const envFile = pal.slice(0, m).some((x) => /^--env-file(-if-exists)?(=|$)/.test(x.texto));
+        fuera.push({ guion, sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0), asig, envFile, porXargs: p.porXargs });
         // lo que va después de `--` es otro comando que el guion corre (`marker.js run-check <x> -- marker.js …`)
         const corte = args.findIndex((a) => a.literal && a.texto === '--');
         if (corte >= 0 && corte + 1 < args.length) {
@@ -272,31 +313,96 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 }
 
 /**
- * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran' o
- * null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
+ * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran',
+ * 'no-deep-review' o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
  */
+// Las opciones que llevan valor: lo que va después de una de ellas es su valor (`--repo $PWD`). Las de `pipeline.js` se
+// leen de su propio lector de opciones (las que consumen `argv[++i]`), así una opción nueva no queda afuera; las de
+// `marker.js`, que lee sus opciones por subcomando, van en una lista. Lo que sigue a cualquier otra opción, o a una que
+// no se conoce, puede ser la bandera. Sin el guion a la vista, sólo la lista.
+const CON_VALOR_MARKER = ['--files', '--reason', '--run', '--result', '--model', '--classes', '--tests', '--own', '--in',
+  '--deferred', '--type', '--approved', '--approved-by', '--delegated-by', '--agent', '--relayed-by', '--quote', '--debt',
+  '--rule', '--file', '--iter', '--story', '--repo', '--mockup-approved', '--evidence-dir', '--max-mutants', '--cost-tier',
+  '--session-model', '-r'];
+let conValorCache = null;
+function opcionesConValor() {
+  if (conValorCache) return conValorCache;
+  const set = new Set(CON_VALOR_MARKER);
+  try {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'pipeline.js'), 'utf8');
+    const i = src.indexOf('function parseArgs');
+    const cuerpo = i >= 0 ? src.slice(i, src.indexOf('\n}\n', i)) : '';
+    for (const linea of cuerpo.split('\n')) {
+      if (!/argv\[\+\+i\]|argv\[i \+ 1\]/.test(linea)) continue;
+      for (const m of linea.matchAll(/t === '(-{1,2}[\w-]+)'/g)) set.add(m[1]);
+    }
+  } catch { /* sin el lector de pipeline.js queda la lista: lo demás se lee del lado que frena */ }
+  conValorCache = set;
+  return set;
+}
+
 function escapeDe(llamada, sid) {
   const { sub, args } = llamada;
+  const asig = llamada.asig || {};
   const lit = (a) => a && a.literal;
-  // `--force-manual` o `--trust-ran` en un argumento que no se ve (`$F`) se lee del lado que frena, salvo que sea el
-  // valor de la opción de antes (`--repo $PWD`, `-x "$V"`) o un argumento de posición (`set-check "$N" green`: el nombre
-  // y el estado). Lo que va después de `--` es otro comando, no una bandera de éste.
+  // las palabras de un argumento: el literal, o las del valor de una variable sola asignada con un valor literal en el
+  // mismo comando (`F=--trust-ran; … $F`). Sin comillas, el shell parte el valor en palabras (`OPTS="--story s
+  // --no-deep-review"`): se miran todas. `undefined` si no se puede saber
+  const valorDe = (a) => {
+    if (lit(a)) return [a.texto];
+    const m = /^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/.exec(a.texto);
+    return m && typeof asig[m[1]] === 'string' ? asig[m[1]].split(/\s+/).filter(Boolean) : undefined;
+  };
+  // un archivo de `--files` escrito con variables: una o más variables y después texto fijo con una barra o un punto
+  // (`$W/a.sh`, `${D}x.md`). Cualquier otra forma (una variable sola sin valor conocido, un `$(…)`, comillas que lo
+  // esconden) puede ser la bandera
+  const archivoConVariables = (a) => /^(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)+[^$`]*[/.][^$`]*$/.test(a.texto);
+  const conValor = opcionesConValor();
+  // ¿el shell puede partir este argumento en varias palabras, una de ellas la bandera? Sin comillas, la salida de un
+  // `$(…)` sí; una variable, sólo si tomó en este mismo comando un valor que no se ve (`read F`, `for F in`). Una
+  // variable que viene del ambiente de la sesión (`$PWD`, `$S` sin asignar acá) no la escribe el comando
+  const puedeTraerOtra = (a) => !!a.partida && (/\$\(…\)|`…`/.test(a.texto)
+    || [...a.texto.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].some((m) => asig[m[1]] === null
+      || (typeof asig[m[1]] === 'string' && /\s/.test(asig[m[1]]))));
+  // `--force-manual`, `--trust-ran` o `--no-deep-review` en un argumento que no se ve (`$F`) se lee del lado que frena,
+  // salvo que sea el valor de la opción de antes que lleva valor (`--repo $PWD`, `-x "$V"`), un argumento de posición
+  // (`set-check "$N" green`: el nombre y el estado) o un archivo de `--files` (lo que la sigue hasta la próxima opción,
+  // si tiene la forma de `archivoConVariables`). Una variable asignada en el mismo comando se lee por su valor; en
+  // `--files`, uno que empieza con «--» también cuenta. En `marker.js`, lo que va después de `--` es otro comando (el de
+  // `run-check`); en `pipeline.js` no hay corte: su lector de opciones no se detiene en `--`.
   const posicionales = sub === 'set-check' ? 2 : 0;
   const pide = (bandera) => {
-    const fin = args.findIndex((a) => a.literal && a.texto === '--');
+    // con los argumentos por `xargs`, vienen de un tubo y no se ven
+    if (llamada.porXargs) return true;
+    const fin = llamada.guion === 'marker' && sub === 'run-check' ? args.findIndex((a) => a.literal && a.texto === '--') : -1;
     const propios = fin >= 0 ? args.slice(0, fin) : args;
-    return propios.some((a, i) => a.texto === bandera
-      || (!lit(a) && i >= posicionales && !(i > 0 && lit(propios[i - 1]) && /^-/.test(propios[i - 1].texto) && propios[i - 1].texto !== bandera)));
+    let enFiles = false;
+    return propios.some((a, i) => {
+      if (lit(a) && /^-/.test(a.texto)) { enFiles = a.texto === '--files'; return a.texto === bandera; }
+      const v = valorDe(a);
+      if (enFiles) return v !== undefined ? v.some((w) => w === bandera || w.startsWith('--')) : !archivoConVariables(a) || puedeTraerOtra(a);
+      if (v !== undefined) return v.includes(bandera);
+      const previa = i > 0 && lit(propios[i - 1]) && /^-/.test(propios[i - 1].texto) ? propios[i - 1].texto : null;
+      return i >= posicionales && !(previa && conValor.has(previa) && !puedeTraerOtra(a));
+    });
   };
   if (llamada.guion === 'pipeline') {
     // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
-    if (sub === 'check-count' || (sub === null && llamada.dudosa)) return pide('--trust-ran') ? 'trust-ran' : null;
+    if (sub === 'check-count') return pide('--trust-ran') ? 'trust-ran' : null;
+    // apagar el pase adversarial al arrancar la historia o al consultar el portón; un `--env-file` delante del guion
+    // puede traer `TYCON_NO_DEEP_REVIEW` sin que el comando la muestre
+    if (sub === 'start' || sub === 'deep-review-gate') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
+    // sin subcomando a la vista: puede ser cualquiera de los dos
+    if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : pide('--no-deep-review') ? 'no-deep-review' : null;
     return null;
   }
   // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
   if (sub === 'set-check') return pide('--force-manual') ? 'force-manual' : null;
+  // `mark-adversarial-skipped --no-deep-review`: abandonar el pase aunque el portón diga que corre
+  if (sub === 'mark-adversarial-skipped') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
   // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`
-  if (sub === null) return llamada.dudosa ? 'cerrar la ejecución' : null;
+  // con la bandera del pase a la vista: apagarlo frena siempre, también con la ejecución en verde o sin ejecución
+  if (sub === null) return !llamada.dudosa ? null : pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : 'cerrar la ejecución';
   if (sub === 'set-autonomous') {
     const v = args[0];
     return lit(v) && ['true', '1', 'on'].includes(v.texto) ? null : 'set-autonomous';
