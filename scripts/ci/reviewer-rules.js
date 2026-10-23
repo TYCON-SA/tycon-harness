@@ -254,6 +254,11 @@ async function correr({ repo, env = process.env, fetchImpl = globalThis.fetch, e
     if (ARCHIVOS.includes(rel)) tocados.push({ rel, previo: campos[0].startsWith('R') ? campos[1] : null });
   }
   if (!tocados.length) return 0;
+  // Los revisores existen sólo en un repo con pipeline: en otro, el aviso es ruido. «No sé» (null) sigue avisando.
+  if (usaPipeline(repo) === false) {
+    for (const { rel } of tocados) registrar({ repo: path.basename(repo), archivo: rel, seccion: null, candidatas: 0, avisos: 0, modo: 'sin-pipeline' });
+    return 0;
+  }
 
   const lista = nombresATachar(deniedList);
   const tachar = tachador(lista.reglas || []);
@@ -307,6 +312,22 @@ async function correr({ repo, env = process.env, fetchImpl = globalThis.fetch, e
   return 0;
 }
 
+/**
+ * ¿El repo usa el pipeline de stories? `true` con `.tycon/advisors.yaml` o con una story con frontmatter (la que encuentra
+ * el descubridor del arnés, con su caché y su tope de tiempo); `false` si no tiene ninguna de las dos; `null` si no se
+ * pudo saber (el descubridor no está al lado —este script corre copiado en el pre-commit de cualquier repo—, falló, o el
+ * escaneo quedó incompleto sin encontrar ninguna).
+ */
+function usaPipeline(repo, { descubridor = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js') } = {}) {
+  if (fs.existsSync(path.join(repo, '.tycon', 'advisors.yaml'))) return true;
+  if (!fs.existsSync(descubridor)) return null;
+  try {
+    const r = require(descubridor).discoverStories(repo);
+    if (r.stories && r.stories.length) return true;
+    return r.partial ? null : false;
+  } catch { return null; }
+}
+
 function arg(nombre) {
   const i = process.argv.indexOf(nombre);
   return i >= 0 ? process.argv[i + 1] : undefined;
@@ -319,4 +340,4 @@ if (require.main === module) {
     .finally(() => process.exit(0));
 }
 
-module.exports = { correr, rangoSeccion, lineasAgregadas, candidatas, nombresATachar, tachador, preguntarTypeSafe, UMBRAL, TOPE_MS };
+module.exports = { correr, usaPipeline, rangoSeccion, lineasAgregadas, candidatas, nombresATachar, tachador, preguntarTypeSafe, UMBRAL, TOPE_MS };
