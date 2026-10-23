@@ -269,12 +269,17 @@ function podridas(repo, { hoy, lista, stateDir } = {}) {
     anotar({ stateDir }, { status: 'unknown-sin-git', repoPath: repo, reason: 'git no pudo listar los archivos del repo' });
     return { estado: 'unknown-sin-git', motivo: 'git no pudo listar los archivos del repo', podridas: [] };
   }
+  return { estado: 'ok', podridas: podridasDe(l.entries, archivos, hoy) };
+}
+
+/** Las podridas de una lista contra los archivos de un árbol (rutas relativas). PURA. */
+function podridasDe(entries, archivos, hoy) {
   const out = [];
-  for (const e of l.entries) {
+  for (const e of entries) {
     if (!archivos.some((f) => alcanza(f, e.path))) out.push({ entry: e, motivo: 'no-existe' });
     else if (e.review_by && hoy && e.review_by < hoy) out.push({ entry: e, motivo: 'vencida' });
   }
-  return { estado: 'ok', podridas: out };
+  return out;
 }
 
 /**
@@ -525,7 +530,133 @@ function seccionParaRevisores({ repo, files, stateDir } = {}) {
   ].join('\n');
 }
 
+// ── la clave para el sitio ───────────────────────────────────────────────────────────────────────────────────────
+// La sección por repo de la pestaña Configuración (scripts/lib/org-config.js, CLAVES_DEL_REPO) edita la lista con estas
+// cuatro funciones: leer el bloque de un texto, revisar lo que se va a proponer, escribirlo y marcar lo podrido. La
+// revisión es `parsear` sobre el bloque que se escribiría: el sitio rechaza lo mismo que el arnés, con el mismo motivo.
+
+const CAMPOS_DE_FILA = ['path', 'level', 'reason', 'review_by'];
+
+/** Las líneas donde arranca cada entrada del bloque, en orden (las buenas y las mal escritas). */
+function lineasDeEntradas(texto) {
+  const lineas = String(texto || '').split(/\r?\n/);
+  const out = [];
+  let dentro = false;
+  for (let i = 0; i < lineas.length; i++) {
+    if (!dentro) { if (/^deprecated\s*:\s*(#.*)?$/.test(lineas[i])) dentro = true; continue; }
+    if (/^\s*(#.*)?$/.test(lineas[i])) continue;
+    if (/^\S/.test(lineas[i])) break;
+    if (/^\s*-/.test(lineas[i])) out.push(i + 1);
+  }
+  return out;
+}
+
+/** Una entrada como fila de la pantalla: sólo sus campos, sin la línea. */
+function filaDe(e) {
+  const f = {};
+  for (const k of CAMPOS_DE_FILA) if (e[k] !== undefined) f[k] = e[k];
+  return f;
+}
+
+/**
+ * Las filas del bloque tal como están escritas, en orden, con sus campos conocidos. `parsear` normaliza y descarta (una
+ * fecha que no es AAAA-MM-DD se borra); el sitio necesita lo escrito, para mostrarlo y corregirlo. PURA.
+ */
+function filasEscritas(texto) {
+  const lineas = String(texto || '').split(/\r?\n/);
+  const out = [];
+  let dentro = false; let actual = null;
+  for (const l of lineas) {
+    if (!dentro) { if (/^deprecated\s*:\s*(#.*)?$/.test(l)) dentro = true; continue; }
+    if (/^\s*(#.*)?$/.test(l)) continue;
+    if (/^\S/.test(l)) break;
+    const t = l.trim();
+    const item = t.match(/^-\s*(.*)$/);
+    if (item) { actual = {}; out.push(actual); }
+    const kv = (item ? item[1] : t).match(/^([a-z_]+)\s*:\s*(.*)$/);
+    if (actual && kv && CAMPOS_DE_FILA.includes(kv[1])) actual[kv[1]] = limpiar(kv[2]);
+  }
+  return out;
+}
+
+/**
+ * El bloque de un texto, para el sitio: `valor` con TODAS las filas tal como están escritas (también las mal escritas,
+ * para corregirlas) y los problemas con su fila (`null` = del bloque). PURA.
+ */
+function leerClave(texto) {
+  const p = parsear(texto);
+  if (p.ilegible) return { presente: p.presente, ilegible: p.ilegible, valor: null, problemas: [] };
+  const lineas = lineasDeEntradas(texto);
+  const problemas = p.problems.map((pr) => ({ fila: pr.entry ? lineas.indexOf(pr.entry.linea) : null, motivo: pr.motivo.replace(/^línea \d+: /, '') }));
+  // el modo es el que lee `parsear` (el mismo que aplica el arnés); si no era warn ni block, `parsear` lo cambió por warn
+  // y dejó dicho cuál era: el sitio muestra lo que dice el archivo, para corregirlo
+  const raro = p.problems.find((x) => x.entry === null && /^`edit: .*` no es warn ni block/.test(x.motivo));
+  const edit = raro ? raro.motivo.match(/^`edit: (.*)` no es warn ni block/)[1] : p.edit;
+  return { presente: p.presente, ilegible: null, valor: { edit, paths: filasEscritas(texto) }, problemas };
+}
+
+// un valor entre comillas que `limpiar` vuelve a leer igual: dobles si no lleva dobles, simples si no lleva simples
+function citado(v) {
+  const t = String(v);
+  return t.includes('"') ? `'${t}'` : `"${t}"`;
+}
+
+/** El bloque `deprecated:` escrito, con su salto final. PURA. */
+function escribirClave(valor) {
+  const v = valor || {};
+  const filas = Array.isArray(v.paths) ? v.paths : [];
+  const out = ['deprecated:', `  edit: ${v.edit || 'warn'}`];
+  if (!filas.length) out.push('  paths: []');
+  else {
+    out.push('  paths:');
+    for (const f of filas) {
+      out.push(`    - path: ${citado(f.path || '')}`);
+      out.push(`      level: ${f.level || ''}`);
+      out.push(`      reason: ${citado(f.reason || '')}`);
+      if (f.review_by) out.push(`      review_by: ${/^\d{4}-\d{2}-\d{2}$/.test(f.review_by) ? f.review_by : citado(f.review_by)}`);
+    }
+  }
+  return `${out.join('\n')}\n`;
+}
+
+/**
+ * Lo que el sitio va a proponer, revisado con `parsear` fila por fila: `{ generales, filas }` (una lista de motivos por
+ * fila, vacía si está bien). Lo que no se puede escribir sin romper el archivo (un salto de línea, las dos comillas a la
+ * vez, un campo que no existe) también es un motivo. PURA.
+ */
+function revisarValor(valor) {
+  const v = valor || {};
+  const generales = [];
+  if (!MODOS.includes(v.edit)) generales.push(`\`edit: ${v.edit}\` no es warn ni block`);
+  if (!Array.isArray(v.paths)) return { generales: [...generales, '`paths` tiene que ser una lista de entradas'], filas: [] };
+  const filas = v.paths.map((f) => {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) return ['cada entrada tiene ruta, nivel y motivo'];
+    const malos = [];
+    for (const k of Object.keys(f)) {
+      if (!CAMPOS_DE_FILA.includes(k)) { malos.push(`\`${k}\` no es un campo de la entrada`); continue; }
+      if (f[k] !== undefined && typeof f[k] !== 'string') malos.push(`\`${k}\` tiene que ser texto`);
+      else if (/[\r\n]/.test(f[k] || '')) malos.push(`\`${k}\` no puede tener saltos de línea`);
+      else if (/"/.test(f[k] || '') && /'/.test(f[k] || '')) malos.push(`\`${k}\` no puede llevar comillas simples y dobles a la vez`);
+      // entre comillas los espacios de los bordes se conservan, y una ruta así no alcanza ningún archivo
+      else if (k === 'path' && f.path !== f.path.trim()) malos.push('`path` no puede empezar ni terminar con espacios');
+    }
+    if (malos.length) return malos;
+    const p = parsear(escribirClave({ edit: 'warn', paths: [f.review_by === '' ? filaDe({ ...f, review_by: undefined }) : f] }));
+    if (p.ilegible) return [p.ilegible.replace(/^línea \d+: /, '')];
+    return p.problems.map((x) => x.motivo.replace(/^línea \d+: /, ''));
+  });
+  return { generales, filas };
+}
+
+/** Las filas podridas de un valor contra los archivos de `main`: `[{ fila, motivo }]`. PURA. */
+function podridasDelValor(valor, archivos, hoy) {
+  const filas = valor && Array.isArray(valor.paths) ? valor.paths : [];
+  const buenas = filas.map((f, i) => ({ ...f, i })).filter((f) => f.path && NIVELES.includes(f.level) && f.reason);
+  return podridasDe(buenas, archivos, hoy).map((p) => ({ fila: p.entry.i, motivo: p.motivo }));
+}
+
 module.exports = {
+  leerClave, escribirClave, revisarValor, podridasDelValor, podridasDe,
   parsear, leerLista, marcaDelArchivo, alcanza, relativa, clasificar, podridas, raizDelRepo,
   listaDelFrontmatter, entradasDelFrontmatter, delRepo, motivoDeLaHistoria, archivosDeHistoria, historiaAutoriza,
   lineasAgregadas, vivoQueNombraDeprecado, seccionParaRevisores, anotar, NIVELES, MODOS,

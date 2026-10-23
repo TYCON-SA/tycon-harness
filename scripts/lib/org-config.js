@@ -1027,6 +1027,122 @@ function diferencia(antes, despues, contexto) {
   return out;
 }
 
+// ── las claves del advisors.yaml de cada repo de producto ────────────────────────────────────────────────────────
+/**
+ * Lo que la sección por repo deja editar del `advisors.yaml` de un repo de producto (scripts/lib/repo-config-readers.js). Cada clave se describe acá
+ * y la pantalla la dibuja desde su descripción: sumar una clave es sumar una entrada, no una pantalla.
+ *   · `clave`: la clave de primer nivel del archivo; `titulo`: cómo se llama en la pantalla.
+ *   · `lector`: el archivo del árbol del arnés que la lee (o el nombre de uno inyectado en `lectores`). Exporta
+ *     `leerClave(texto)` → `{ presente, ilegible, valor, problemas: [{ fila, motivo }] }`, `revisarValor(valor)` →
+ *     `{ generales: [motivo], filas: [[motivo]] }`, `escribirClave(valor)` → el bloque con su salto final y, si sabe,
+ *     `podridasDelValor(valor, archivos, hoy)` → `[{ fila, motivo }]`. Es el MISMO lector que usa el arnés.
+ *   · `forma`: `modo` (un campo con `opciones`) y `lista` (el campo de la lista y sus `columnas`, cada una con `campo`,
+ *     `tipo` texto | opcion | fecha, `opciones` y `opcional`).
+ */
+const CLAVES_DEL_REPO = Object.freeze([
+  Object.freeze({
+    clave: 'deprecated', titulo: 'Código deprecado', lector: 'deprecated',
+    forma: Object.freeze({
+      modo: Object.freeze({ campo: 'edit', opciones: Object.freeze(['warn', 'block']) }),
+      lista: Object.freeze({ campo: 'paths', columnas: Object.freeze([
+        Object.freeze({ campo: 'path', tipo: 'texto' }),
+        Object.freeze({ campo: 'level', tipo: 'opcion', opciones: Object.freeze(['frozen', 'dead']) }),
+        Object.freeze({ campo: 'reason', tipo: 'texto' }),
+        Object.freeze({ campo: 'review_by', tipo: 'fecha', opcional: true }),
+      ]) }),
+    }),
+  }),
+]);
+
+/**
+ * El lector de una clave del repo: el inyectado manda; si no, el que resuelve `scripts/lib/repo-config-readers.js` del
+ * árbol por su nombre. null si esta versión no lo trae.
+ */
+function lectorDeClave(tree, descriptor, lectores) {
+  if (lectores && Object.prototype.hasOwnProperty.call(lectores, descriptor.lector)) return lectores[descriptor.lector];
+  const f = path.join(tree, 'scripts', 'lib', 'repo-config-readers.js');
+  if (!fs.existsSync(f)) return null;
+  const r = require(f).lectorDeClave(descriptor.lector);
+  return r && typeof r.leerClave === 'function' && typeof r.escribirClave === 'function' && typeof r.revisarValor === 'function' ? r : null;
+}
+
+/**
+ * Cambia SÓLO el bloque de primer nivel `clave:` de un texto YAML: lo de antes y lo de después (otras claves,
+ * comentarios, líneas en blanco, el fin de línea) queda byte por byte. El bloque termina en su último renglón con
+ * sangría; los comentarios y blancos que lo siguen son de lo que viene. Sin la clave, el bloque va al final; sin
+ * archivo, es el archivo. `{ texto }`, o `{ ilegible }` si la clave está escrita en otra forma (`clave: {}`). PURA.
+ */
+function reemplazarBloque(texto, clave, bloque) {
+  if (texto === null || texto === undefined || texto === '') return { texto: bloque };
+  // cada renglón con su propio fin de línea: un archivo con finales mezclados queda igual fuera del bloque
+  const renglones = [];
+  const rx = /([^\r\n]*)(\r\n|\n|$)/g;
+  let m;
+  while ((m = rx.exec(texto)) && (m[0] !== '' || rx.lastIndex < texto.length)) { renglones.push({ l: m[1], fin: m[2] }); if (!m[2]) break; }
+  const nuevo = bloque.replace(/\n$/, '').split('\n');
+  const cabeza = new RegExp(`^${clave.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:(.*)$`);
+  const i = renglones.findIndex((r) => cabeza.test(r.l));
+  const unir = (lista) => lista.map((r) => r.l + r.fin).join('');
+  if (i < 0) {
+    const eol = (renglones.find((r) => r.fin) || { fin: '\n' }).fin;
+    const base = texto.endsWith('\n') ? texto : `${texto}${eol}`;
+    return { texto: `${base}${eol}${nuevo.join(eol)}${eol}` };
+  }
+  if (!/^\s*(#.*)?$/.test(cabeza.exec(renglones[i].l)[1])) return { ilegible: `la clave \`${clave}\` está escrita en una forma que la pantalla no reescribe: cambiala a mano` };
+  let fin = i + 1;
+  for (let j = i + 1; j < renglones.length; j++) {
+    if (/^\S/.test(renglones[j].l) && !/^#/.test(renglones[j].l)) break;
+    if (/^\s+\S/.test(renglones[j].l) && !/^\s+#/.test(renglones[j].l)) fin = j + 1;
+  }
+  // el bloque nuevo usa el fin de línea de su cabeza; su último renglón, el del último renglón que reemplaza
+  const eol = renglones[i].fin || '\n';
+  const ultimo = renglones[fin - 1].fin;
+  const bloqueNuevo = nuevo.map((l, k) => l + (k === nuevo.length - 1 ? ultimo : eol)).join('');
+  return { texto: unir(renglones.slice(0, i)) + bloqueNuevo + unir(renglones.slice(fin)) };
+}
+
+/**
+ * Revisa lo que se va a proponer de una clave: el lector fila por fila, y después el archivo entero como quedaría,
+ * leído de nuevo con el mismo lector (que se lea igual que lo que se escribió). `{ ok, generales, filas, texto }`. PURA.
+ */
+function revisarClaveDelRepo({ descriptor, lector, texto, valor }) {
+  const r = lector.revisarValor(valor);
+  const generales = [...r.generales];
+  const filas = r.filas;
+  if (generales.length || filas.some((f) => f.length)) return { ok: false, generales, filas, texto: null };
+  const bloque = lector.escribirClave(valor);
+  const reemplazo = reemplazarBloque(texto, descriptor.clave, bloque);
+  if (reemplazo.ilegible) return { ok: false, generales: [reemplazo.ilegible], filas, texto: null };
+  // el archivo entero, releído, tiene que decir lo mismo que el bloque solo: así nada del resto del archivo se mete en
+  // la clave (lo que el lector normaliza, como `./` al principio de una ruta, se normaliza igual en los dos)
+  const vuelta = lector.leerClave(reemplazo.texto);
+  const solo = lector.leerClave(bloque);
+  if (vuelta.ilegible || vuelta.problemas.length || canonicoDeValor(vuelta.valor) !== canonicoDeValor(solo.valor)) {
+    return { ok: false, generales: [`lo escrito no se vuelve a leer igual${vuelta.ilegible ? ` (${vuelta.ilegible})` : ''}: no se propone`], filas, texto: null };
+  }
+  return { ok: true, generales, filas, texto: reemplazo.texto };
+}
+// un valor como se compara: las claves en orden y sin los campos opcionales vacíos
+function canonicoDeValor(v) {
+  const ordenado = (x) => (Array.isArray(x) ? x.map(ordenado) : (x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().filter((k) => x[k] !== '' && x[k] !== undefined).map((k) => [k, ordenado(x[k])])) : x));
+  return JSON.stringify(ordenado(v));
+}
+
+/** El identificador de un repo de producto en las rutas y en la carpeta de su clon: legible y sin choques. */
+function idDeRepo(e) {
+  const partes = [e.platform, e.org, e.project || '', e.repo].map((x) => String(x || ''));
+  const legible = partes.filter(Boolean).join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  const huella = require('crypto').createHash('sha256').update(partes.join('\0').toLowerCase()).digest('hex').slice(0, 8);
+  return `${legible}-${huella}`;
+}
+
+/** La dirección https de un repo de producto, armada desde su identidad (la de team-repos.json o la de dependencias). */
+function urlDeRepo(e) {
+  if (e.platform === 'github') return `https://github.com/${encodeURIComponent(e.org)}/${encodeURIComponent(e.repo)}`;
+  if (e.platform === 'azure' && e.project) return `https://dev.azure.com/${encodeURIComponent(e.org)}/${encodeURIComponent(e.project)}/_git/${encodeURIComponent(e.repo)}`;
+  return null;
+}
+
 // ── el código de pantalla ────────────────────────────────────────────────────────────────────────────────────────
 /**
  * El JS de la pestaña Configuración, servido por el sitio como `/static/config.js`: un solo archivo, sin nada de
@@ -3224,6 +3340,127 @@ function pantalla(idioma = 'es') {
     var a = el(href ? 'a' : 'div', { class: 'card kpi ' + clase, href: href || undefined }, el('span', { class: 'lab', text: lab }), el('span', { class: 'val', text: String(val) }), el('span', { class: 'den', text: den }));
     return a;
   }
+  // ── la configuración de cada repo de producto: su advisors.yaml, clave por clave ──
+  // Cada clave se dibuja desde su forma (un campo de modo y una lista de filas con sus columnas): una clave nueva no pide
+  // código acá. Se lee al abrir el repo; «Revisar» valida en el servidor con el lector del arnés y trae la diferencia.
+  var R = {};
+  function hayTexto(k) { return Object.prototype.hasOwnProperty.call(TX, k); }
+  function etiquetaDe(campo) { return hayTexto('repoCampo_' + campo) ? TX['repoCampo_' + campo] : campo; }
+  function claveR(id, clave) { return 'repo:' + id + ':' + clave; }
+  function abrirRepo(id) {
+    var r = R[id] = R[id] || {};
+    if (r.abierto) { r.abierto = false; render(); return Promise.resolve(); }
+    r.abierto = true; r.cargando = true; r.datos = null; r.borradores = {}; r.revision = {}; r.notas = {}; render();
+    return api('/repo?id=' + encodeURIComponent(id)).then(function (j) {
+      r.cargando = false; r.datos = j;
+      (j.claves || []).forEach(function (c) { if (c.estado === 'ok') r.borradores[c.clave] = copia(c.valor); });
+      render();
+    });
+  }
+  function revisarRepo(id, c) {
+    var r = R[id];
+    r.notas[c.clave] = null;
+    return api('/repo/revisar', { id: id, clave: c.clave, valor: r.borradores[c.clave], oid: r.datos.oid }).then(function (j) {
+      r.revision[c.clave] = j;
+      S.diferencias[claveR(id, c.clave)] = j.diferencia || []; S.resumenes[claveR(id, c.clave)] = []; S.textos[claveR(id, c.clave)] = j.texto || null;
+      render();
+    });
+  }
+  function proponerRepo(id, c) {
+    var r = R[id];
+    r.proponiendo = true; r.notas[c.clave] = { ok: true, text: T('pantalla.proponiendo') }; render();
+    return api('/repo/proponer', { id: id, clave: c.clave, valor: r.borradores[c.clave], oid: r.datos.oid, marca: nuevaMarca() }).then(function (j) {
+      r.proponiendo = false;
+      r.notas[c.clave] = { ok: !!j.ok, text: j.message || '', enlace: j.enlace || null };
+      if (j.ok) r.revision[c.clave] = null;
+      render();
+    });
+  }
+  function campoDeFila(col, fila, alCambiar) {
+    var v = fila[col.campo] == null ? '' : String(fila[col.campo]);
+    var etiqueta = etiquetaDe(col.campo);
+    if (col.tipo === 'opcion') {
+      var sel = el('select', { 'aria-label': etiqueta, onchange: function (ev) { alCambiar(ev.target.value); } });
+      [''].concat(col.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: o === '' ? '—' : (hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] + ' (' + o + ')' : o), selected: o === v ? 'selected' : undefined })); });
+      return sel;
+    }
+    return el('input', { type: col.tipo === 'fecha' ? 'date' : 'text', value: v, 'aria-label': etiqueta, placeholder: col.opcional ? T('pantalla.repoOpcional') : etiqueta, oninput: function (ev) { alCambiar(ev.target.value); } });
+  }
+  function editorDeClave(id, c) {
+    var r = R[id];
+    var caja = el('div', { class: 'repo-clave', id: 'repo-' + id + '-' + c.clave }, el('h5', { text: c.titulo }));
+    if (c.estado !== 'ok') { caja.appendChild(aviso('bad', T('pantalla.repoClaveNoSeEdita'), c.motivo || '')); return caja; }
+    var v = r.borradores[c.clave];
+    var forma = c.forma || {};
+    var rev = r.revision[c.clave];
+    var tocar = function () { r.revision[c.clave] = null; r.notas[c.clave] = null; };
+    if (forma.modo) {
+      var m = forma.modo;
+      var sel = el('select', { 'aria-label': etiquetaDe(m.campo), onchange: function (ev) { v[m.campo] = ev.target.value; tocar(); render(); } });
+      (m.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] + ' (' + o + ')' : o, selected: o === v[m.campo] ? 'selected' : undefined })); });
+      caja.appendChild(el('label', { class: 'campo' }, el('span', { text: etiquetaDe(m.campo) }), sel));
+    }
+    if (forma.lista) {
+      var l = forma.lista;
+      var filas = v[l.campo] = Array.isArray(v[l.campo]) ? v[l.campo] : [];
+      var podridas = {};
+      (c.podridas || []).forEach(function (p) { var f = (c.valor[l.campo] || [])[p.fila]; if (f) podridas[f.path] = p.motivo; });
+      var lista = el('ul', { class: 'repo-filas' });
+      filas.forEach(function (f, i) {
+        var li = el('li', { class: 'repo-fila' });
+        l.columnas.forEach(function (col) { li.appendChild(campoDeFila(col, f, function (x) { if (x === '' && col.opcional) delete f[col.campo]; else f[col.campo] = x; tocar(); })); });
+        li.appendChild(quitar(function () { filas.splice(i, 1); tocar(); render(); }));
+        if (f.path && podridas[f.path]) li.appendChild(el('span', { class: 'aviso-fila warn', text: hayTexto('repoPodrida_' + podridas[f.path]) ? TX['repoPodrida_' + podridas[f.path]] : podridas[f.path] }));
+        // antes de revisar, lo que el archivo de main ya trae mal escrito; después, lo que dice la revisión
+        var malos = rev && rev.filas ? rev.filas[i] || [] : (c.problemas || []).filter(function (p) { return p.fila === i; }).map(function (p) { return p.motivo; });
+        malos.forEach(function (x) { li.appendChild(el('span', { class: 'aviso-fila bad', text: x })); });
+        lista.appendChild(li);
+      });
+      caja.appendChild(lista);
+      caja.appendChild(el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.repoAgregarFila'), onclick: function () { var nueva = {}; l.columnas.forEach(function (col) { if (!col.opcional) nueva[col.campo] = ''; }); filas.push(nueva); tocar(); render(); } })));
+    }
+    var delArchivo = (c.problemas || []).filter(function (p) { return p.fila === null || p.fila === undefined || p.fila < 0; }).map(function (p) { return p.motivo; });
+    if (!rev && delArchivo.length) caja.appendChild(aviso('warn', T('pantalla.repoNoPasa'), delArchivo.join(' · ')));
+    if (rev && !rev.ok && (rev.problemas || []).length) caja.appendChild(aviso('bad', T('pantalla.repoNoPasa'), rev.problemas.join(' · ')));
+    else if (rev && !rev.ok) caja.appendChild(aviso('bad', T('pantalla.repoNoPasa'), T('pantalla.repoMiraLasFilas')));
+    var prop = r.datos.proponer || {};
+    var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarRepo(id, c); } }));
+    if (rev && rev.ok) {
+      caja.appendChild(vistaDeLaDiferencia({ id: claveR(id, c.clave), texto: r.datos.texto, oid: r.datos.oid }));
+      if (prop.habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: r.proponiendo ? 'disabled' : undefined, onclick: function () { proponerRepo(id, c); } }));
+      else caja.appendChild(el('textarea', { class: 'repo-texto', readonly: 'readonly', rows: '8', 'aria-label': T('pantalla.repoElArchivo'), text: rev.texto || '' }));
+    }
+    bar.appendChild(el('span', { class: 'por-que', text: !prop.habilitado ? (prop.motivo || '') : (rev && rev.ok ? T('pantalla.miraLaDiferenciaAntesDe') : T('pantalla.primeroRevisaAsiSabesSi')) }));
+    caja.appendChild(bar);
+    var n = r.notas[c.clave];
+    if (n && n.text) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
+  function bloqueRepos(info) {
+    var sec = el('section', { class: 'card form-block', id: 'repos-de-producto' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: T('pantalla.repoTitulo') }), el('p', { class: 'reach', text: T('pantalla.repoAyuda') }))));
+    if (info.motivo) sec.appendChild(aviso('warn', T('pantalla.repoListaIncompleta'), info.motivo));
+    if (!(info.lista || []).length) { sec.appendChild(el('p', { class: 'muted', text: T('pantalla.nadaQueMostrar') })); return sec; }
+    (info.lista || []).forEach(function (e) {
+      var r = R[e.id] || {};
+      var caja = el('div', { class: 'repo-producto', id: 'repo-' + e.id }, el('div', { class: 'bar' }, el('b', { class: 'quien', text: e.nombre }), el('button', { class: 'sec', type: 'button', text: r.abierto ? T('pantalla.repoCerrar') : T('pantalla.repoAbrir'), onclick: function () { abrirRepo(e.id); } })));
+      if (r.abierto && r.cargando) caja.appendChild(el('p', { class: 'muted', text: T('pantalla.repoLeyendo') }));
+      if (r.abierto && r.datos) {
+        var d = r.datos;
+        if (!d.ok || d.estado === 'no_se_pudo') caja.appendChild(aviso('bad', T('pantalla.repoNoSePudoLeer'), d.motivo || d.message || ''));
+        else {
+          if (d.estado === 'nuevo') caja.appendChild(el('p', { class: 'muted', text: T('pantalla.repoSinArchivo') }));
+          if (d.enlace) caja.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: d.enlace, text: T('pantalla.repoVerArchivo') })));
+          (d.claves || []).forEach(function (c) { caja.appendChild(editorDeClave(e.id, c)); });
+        }
+      }
+      sec.appendChild(caja);
+    });
+    return sec;
+  }
   function render() {
     var ex = S.extras || {};
     var porId = {}; S.secciones.forEach(function (s) { porId[s.id] = s; });
@@ -3267,6 +3504,7 @@ function pantalla(idioma = 'es') {
       var pila = el('div', { class: 'pila' });
       secs.forEach(function (s) { pila.appendChild(seccion(s)); });
       panel.appendChild(pila);
+      if (p[0] === 'repos' && ex.reposDeProducto) panel.appendChild(bloqueRepos(ex.reposDeProducto));
       var mirar = p[3].filter(function (t) { return tablas[t]; });
       if (mirar.length) {
         panel.appendChild(el('h3', { class: 'block' }, el('span', { text: T('pantalla.paraMirar2') }), el('span', { class: 'aside', text: T('pantalla.noSeCambiaDesdeAca') })));
@@ -3336,5 +3574,5 @@ module.exports = {
   SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
-  SIN_NOTICIAS_DIAS,
+  SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
 };

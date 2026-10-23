@@ -99,7 +99,8 @@ const { RUTAS_SIN_SESION } = require('../server.js');
 const SECRETOS = [['SITE_SESSION_KEY', 'site-session-key'], ['SITE_OIDC_CLIENT_SECRET', 'site-oidc-client-secret']];
 const SECRETO_TOKEN = ['SITE_OPERATIONS_TOKEN', 'site-operations-token'];
 const OPCIONALES = [['SITE_OPERATIONS_WRITE_TOKEN', 'site-operations-write-token'], ['SITE_PROFILE_TOKEN', 'site-profile-token'],
-  ['SITE_PROFILE_WRITE_TOKEN', 'site-profile-write-token'], ['SITE_PIPELINES_TOKEN', 'site-pipelines-token']];
+  ['SITE_PROFILE_WRITE_TOKEN', 'site-profile-write-token'], ['SITE_PIPELINES_TOKEN', 'site-pipelines-token'],
+  ['SITE_PRODUCTS_WRITE_TOKEN', 'site-products-write-token']];
 
 // lo que sólo es de la instancia de la organización: la fase `demo` no lo acepta
 const DE_LA_ORGANIZACION = ['mailbox', 'operationsRepo', 'operationsIdentity', 'operationsCopy', 'tenantId', 'oidcClientId', 'storageAccount', 'fileShare', 'fileShareQuotaGb',

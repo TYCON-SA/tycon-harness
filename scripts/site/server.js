@@ -38,7 +38,9 @@
  *   lectura o «no configurado», y el sitio arranca igual)
  *                 SITE_OPERATIONS_WRITE_TOKEN (proponer cambios al repo de operaciones: rama y pedido, nunca main) ·
  *                 SITE_PROFILE_REPO (https) y SITE_PROFILE_TOKEN (leer el perfil del equipo) · SITE_PROFILE_WRITE_TOKEN
- *                 (proponer al perfil) · SITE_PIPELINES_TOKEN (sólo lectura de definiciones y corridas: la propuesta de stages)
+ *                 (proponer al perfil) · SITE_PIPELINES_TOKEN (sólo lectura de definiciones y corridas: la propuesta de stages) ·
+ *                 SITE_PRODUCTS_WRITE_TOKEN (leer y proponer el .tycon/advisors.yaml de los repos de producto: rama y pedido,
+ *                 nunca main ni completar el pedido; sin ella la sección por repo lee con SITE_OPERATIONS_TOKEN y no propone)
  *
  * EL MODO DEMO (`SITE_DEMO=1`, scripts/site/demo.js): el mismo servidor, sin proveedor de inicio de sesión ni credenciales,
  *   sobre los datos de ejemplo de «acme» (scripts/site/demo/), abierto y de sólo lectura de punta a punta. Acepta sólo
@@ -80,7 +82,7 @@ const PROVEEDORES = (() => {
 const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 'SITE_OIDC_CLIENT_ID', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OIDC_ISSUER',
   'SITE_OIDC_EMAIL_CLAIM', 'SITE_AUTH_ALLOWED_DOMAINS', 'SITE_AUTH_GITHUB_ORG', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY',
   'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
-  'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN',
+  'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN', 'SITE_PRODUCTS_WRITE_TOKEN',
   'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS',
   // invitar desde Personas (invitations.js): el tope por día
   'SITE_INVITATIONS_PER_DAY',
@@ -204,7 +206,7 @@ function validarConfiguracion(env) {
     cfg.profileRepo = env.SITE_PROFILE_REPO;
     cfg.profileCredencial = env.SITE_PROFILE_TOKEN ? { token: env.SITE_PROFILE_TOKEN } : null;
   } else cfg.profileRepo = null;
-  cfg.escritura = { operaciones: env.SITE_OPERATIONS_WRITE_TOKEN || null, perfil: env.SITE_PROFILE_WRITE_TOKEN || null };
+  cfg.escritura = { operaciones: env.SITE_OPERATIONS_WRITE_TOKEN || null, perfil: env.SITE_PROFILE_WRITE_TOKEN || null, productos: env.SITE_PRODUCTS_WRITE_TOKEN || null };
   cfg.pipelinesToken = env.SITE_PIPELINES_TOKEN || null;
 
   if (env.PORT !== undefined && env.PORT !== '') {

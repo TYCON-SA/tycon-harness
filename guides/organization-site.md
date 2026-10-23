@@ -444,6 +444,17 @@ Debajo están **Productos** (los que revisa la noche) y **Lo que trae la organiz
 las guías del alta y los paquetes del repo del perfil, cada uno con su enlace). Son para mirar: se cambian con un pedido
 en su repo.
 
+**La configuración de cada repo** muestra, por cada repo de producto, lo que dice el `.tycon/advisors.yaml` de su rama
+principal. Los repos son los de la revisión de dependencias y los de `team-repos.json`, sin el público, el del perfil ni
+el de operaciones. Cada repo se lee recién cuando lo abrís. Hoy se edita el **código deprecado** (`deprecated`): las
+carpetas o archivos viejos que el agente no tiene que copiar ni tocar sin motivo. Va fila por fila: ruta, nivel
+(congelado o muerto), motivo y una fecha para revisarlo; arriba, si editar algo deprecado sin una historia avisa o frena.
+«Revisar cambios» valida con el mismo lector que usa el arnés: una fila mal escrita dice qué le falta y no se propone. Una
+fila cuya ruta ya no existe en la rama principal, o cuya fecha pasó, se marca, pero se puede proponer igual. El pedido
+cambia sólo ese bloque del archivo: las otras claves y los comentarios quedan como están. Sin el archivo, el pedido lo
+crea. Lo propone quien mantiene el sitio, con `SITE_PRODUCTS_WRITE_TOKEN` (abajo); sin ese secreto, la sección muestra
+lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano.
+
 ![Repos y productos](sitio-de-la-organizacion/capturas/configuracion-repos.png)
 
 ### Avisos y la noche
@@ -1008,6 +1019,7 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN` | leer el perfil del equipo (dónde vive cada repo, los paquetes) | parte de la instalación normal: sin ellos la pestaña Configuración dice «falta el repo del perfil». La dirección del repo del perfil y un token de sólo lectura de código sobre ese repo (puede ser el mismo permiso que el del repo de operaciones, si los dos viven en la misma organización) |
 | `SITE_PIPELINES_TOKEN` | leer los pipelines, para elegirlos por nombre en la pestaña Configuración («Pruebas al mergear» y «Despliegues») y ver el nombre de cada paso | parte de la instalación normal en Azure DevOps: sólo *Build: Read*, de la organización, 90 días; puede ser el mismo permiso que el del repo de operaciones con *Build: Read* sumado. Sin él, la pestaña pide el número del pipeline a mano y dice qué falta, y los pasos guardados se ven por su identificador |
 | `SITE_PROFILE_WRITE_TOKEN` | proponer cambios al perfil del equipo | apagada por defecto: vacía o comentada, nunca con un valor; una identidad dedicada y un repo por credencial |
+| `SITE_PRODUCTS_WRITE_TOKEN` | leer y proponer el `.tycon/advisors.yaml` de los repos de producto («La configuración de cada repo») | opcional. En Azure DevOps, *Code: Read & write* y nada más, sólo en los proyectos de los repos de producto; en GitHub, de grano fino sobre esos repos con `contents: write` y `pull_requests: write`. Sin ella, la sección lee con la credencial de operaciones (si llega a esos repos) y no propone |
 
 `SITE_FIRST_MAINTAINER` no es un secreto: es el correo de quien entra primero como mantenedor, mientras la lista del sitio
 (`site.access` de `operations.json`) no tiene a nadie que mantenga. Sacala después.
@@ -1097,6 +1109,20 @@ cambios de un mantenedor» prendida (abajo): apagada, lo aprobaría el mismo aut
 pedido. Sin el permiso, cada sección dice «Para
 proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
 mano».
+
+Los repos de producto llevan su propio secreto, `SITE_PRODUCTS_WRITE_TOKEN`. Para darlo de alta:
+
+1. Creá la credencial con el menor permiso. En Azure DevOps, un permiso de la organización con *Code: Read & write* y
+   nada más, limitado a los proyectos de los repos de producto. En GitHub, uno de grano fino con *Contents: Read and
+   write* y *Pull requests: Read and write*, sólo sobre esos repos. Los repos son los que muestra «La configuración de
+   cada repo».
+2. Cargala como secreto del sitio con ese nombre y reiniciá el sitio.
+3. Mirá que la rama principal de cada repo pida al menos un revisor que no sea quien crea el pedido. Sin esa política,
+   el sitio no propone a ese repo y lo dice.
+
+Con ese secreto el sitio sólo crea ramas `team-config/...` y abre pedidos. Nunca escribe `main` ni completa el pedido,
+aunque «Los cambios de un mantenedor» esté prendida: esa opción vale para el perfil y para operaciones, no para los
+repos de producto.
 
 ### Invitar a alguien
 

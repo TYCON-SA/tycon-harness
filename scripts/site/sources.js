@@ -890,6 +890,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     }),
     /** Con la copia: el clon aparte donde «Proponer» trae `main` (en el disco del contenedor, como los clones). */
     clonDeEscritura: conCopia ? () => prepararClonDeEscritura({ dir: path.join(raizClones, 'operaciones-escritura'), url: cfg.operationsRepo, git }) : undefined,
+    /** El clon de escritura de un repo de producto, armado a pedido: la sección por repo lee `main` y propone ahí. */
+    clonDeProducto: ({ id, url }) => (/^[a-z0-9-]+$/.test(String(id)) ? prepararClonDeEscritura({ dir: path.join(raizClones, 'productos', id), url, git }) : { motivo: 'identificador de repo inválido' }),
     exclusivo,
     dirBuzon,
     /** ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */
