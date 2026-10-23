@@ -109,7 +109,7 @@ aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 
 - Implementar una story: `"implementemos la story specs/story-2-3.md"` → skill `tycon-pipeline`.
 - Agentes BMAD por nombre: Amelia (dev), Winston (arquitectura), Mary (análisis), Barry (quick-flow), party mode.
-- Stories: `tycon-create-story` (Mary+GOLD; crea el WI de ADO vía `tycon-ado-story-wi`), `tycon-story-validator`.
+- Stories: `tycon-create-story` (Mary+GOLD; crea el WI de ADO vía `tycon-story-work-item`), `tycon-story-validator`.
 - Review: `bmad-code-review`, `security-review`, advisors `tycon-plugin-*`.
 - Merge a main: `/tycon-merge-to-main`. Drift de stories: `/check-story-drift`.
 - Engram (si la integración está prendida): siempre con `project:` (nombres canónicos en `guides/integrations/engram-workflow.md`).

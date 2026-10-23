@@ -429,7 +429,7 @@
    "why": "reconocedor: los repos del arnés donde el worktree está prohibido, con el nombre interno y el público"
   },
   {
-   "path": "skills/tycon-ado-story-wi/scripts/on-story-create.js",
+   "path": "skills/tycon-story-work-item/scripts/on-story-create.js",
    "kind": "functional",
    "why": "reconocedor: salta las stories del propio arnés, por el nombre interno y el público"
   },

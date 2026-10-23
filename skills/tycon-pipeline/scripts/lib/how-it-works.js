@@ -39,8 +39,8 @@ function stepFile(archivo) { return `${STEPS_DIR.split(path.sep).join('/')}/${ar
 const INTEGRATION_PIECES = Object.freeze([
   // las dos de horas son de la herramienta que elija la organización (`timeTool`): el núcleo no las ata a ninguna
   { id: 'timeTrackingStart', step: 'start', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-01-start.md') },
-  { id: 'adoWorkItemActive', step: 'start', integration: 'ado', textKey: 'piezaOrg.pedidoAdoActivo', code: stepFile('step-01-start.md') },
-  { id: 'adoWorkItemClose', step: 'close-work-item', integration: 'ado', textKey: 'piezaOrg.pedidoAdoCierra', code: stepFile('close-work-item.md') },
+  { id: 'workItemActive', step: 'start', integration: 'ado', textKey: 'piezaOrg.pedidoDeTrabajoActivo', code: stepFile('step-01-start.md') },
+  { id: 'workItemClose', step: 'close-work-item', integration: 'ado', textKey: 'piezaOrg.pedidoDeTrabajoCierra', code: stepFile('close-work-item.md') },
   { id: 'timeTrackingClose', step: 'close-work-item', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('close-work-item.md') },
 ].map(Object.freeze));
 

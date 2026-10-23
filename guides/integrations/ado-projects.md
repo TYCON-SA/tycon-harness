@@ -9,18 +9,18 @@ transicionan a lo largo del ciclo de vida del pipeline.
 ## Ciclo de vida ADO de una story
 
 ```
-crear story  ──►  tycon-ado-story-wi   ──►  WI creado en ADO  +  ado_work_item: <id> en frontmatter
+crear story  ──►  tycon-story-work-item   ──►  WI creado en ADO  +  ado_work_item: <id> en frontmatter
 implementar  ──►  tycon-pipeline Arranque            ──►  WI → Active
 cerrar       ──►  tycon-pipeline Cerrar la historia  ──►  WI → Closed  +  comment de trazabilidad
 ```
 
 | Momento | Componente | Acción ADO |
 |---|---|---|
-| Se crea la story `.md` | hook `on-story-create.js` → skill `tycon-ado-story-wi` | **Crea** el WI, lo linkea al Epic, escribe `ado_work_item:` |
+| Se crea la story `.md` | hook `on-story-create.js` → skill `tycon-story-work-item` | **Crea** el WI, lo linkea al Epic, escribe `ado_work_item:` |
 | Empieza la implementación | `tycon-pipeline` `step-01-start` | Transiciona el WI a `Active` |
 | Se cierra la story (post-merge) | `tycon-pipeline` `close-work-item` | Transiciona a `Closed` + postea comment con commits/CI/PR/tiempo |
 
-El skill `tycon-ado-story-wi` cierra el único eslabón que faltaba: la **creación**. Antes
+El skill `tycon-story-work-item` cierra el único eslabón que faltaba: la **creación**. Antes
 era manual (web de ADO + copiar el id al frontmatter).
 
 ---
@@ -32,7 +32,7 @@ era manual (web de ADO + copiar el id al frontmatter).
 2. El hook `PostToolUse` (matcher `Write`) `on-story-create.js` detecta —**por contenido,
    no por path**— una story Mary+GOLD recién creada sin `ado_work_item:` y emite un
    `system-reminder`.
-3. El agente invoca el skill `tycon-ado-story-wi`, que:
+3. El agente invoca el skill `tycon-story-work-item`, que:
    - resuelve la config ADO del repo,
    - auto-detecta el tipo de WI por process template,
    - arma los campos desde la story (título, descripción, ACs, priority),
@@ -48,14 +48,14 @@ Si el repo no trackea en ADO (sin config), el skill hace **silent-skip** — no 
 ## `.tycon/ado-config.yaml` — config por repo
 
 Es la **fuente de verdad** del mapeo repo→ADO. Va en el root del repo (junto a `.git/`).
-Lo leen los tres componentes (`tycon-ado-story-wi`, el Arranque y «Cerrar la historia»).
+Lo leen los tres componentes (`tycon-story-work-item`, el Arranque y «Cerrar la historia»).
 
 ```yaml
 # .tycon/ado-config.yaml
 ado_org: https://dev.azure.com/org-del-equipo
 ado_project: Ceibo
 
-# --- creación del WI (tycon-ado-story-wi) ---
+# --- creación del WI (tycon-story-work-item) ---
 ado_wi_type: ""                    # override del tipo. Vacío = auto-detectar por process.
 ado_area_path: "Ceibo"            # default = nombre del project.
 ado_iteration_path: ""             # ej "Ceibo\\Sprint 3". Vacío = backlog del project.
@@ -93,7 +93,7 @@ corridas no pregunten.
 
 ## Tipo de WI por process template
 
-`tycon-ado-story-wi` detecta el process del project (`az devops project show ... --query
+`tycon-story-work-item` detecta el process del project (`az devops project show ... --query
 capabilities.processTemplate.templateName`) y elige el tipo. El match es por **substring
 case-insensitive** del nombre del template — los projects TYCON usan nombres custom
 (ej: Ceibo reporta `Ceibo Scrum`, no `Scrum`):
@@ -140,7 +140,7 @@ el **registro** en `~/.claude/settings.json` se hace a mano por dev — igual qu
     "hooks": [
       {
         "type": "command",
-        "command": "node \"/Users/<TU_USUARIO>/.claude/agent-skills/skills/tycon-ado-story-wi/scripts/on-story-create.js\""
+        "command": "node \"/Users/<TU_USUARIO>/.claude/agent-skills/skills/tycon-story-work-item/scripts/on-story-create.js\""
       }
     ]
   }

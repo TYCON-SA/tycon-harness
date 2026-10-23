@@ -49,7 +49,7 @@
     { "path": "scripts/tools/tycon-worktree.sh", "member": "case \"$REPO\"", "imports": false, "why": "un guion de shell: no importa JavaScript" },
     { "path": "scripts/nightly/dashboard/changes.js", "member": "relativa", "imports": false, "why": "las rutas de los repos del arnés en el tablero; escritos, como los otros dos reconocedores de repo" },
     { "path": "skills/tycon-pipeline/scripts/lib/story-gate.js", "member": "HARNESS_REPO_SEGMENTS", "imports": false, "why": "skills: pueden vivir en un clon aparte sin scripts/ al lado" },
-    { "path": "skills/tycon-ado-story-wi/scripts/on-story-create.js", "member": "salteo del arnés", "imports": false, "why": "skills: pueden vivir en un clon aparte sin scripts/ al lado" },
+    { "path": "skills/tycon-story-work-item/scripts/on-story-create.js", "member": "salteo del arnés", "imports": false, "why": "skills: pueden vivir en un clon aparte sin scripts/ al lado" },
     { "path": "skills/tycon-story-followup-link/scripts/on-story-create.js", "member": "salteo del arnés", "imports": false, "why": "skills: pueden vivir en un clon aparte sin scripts/ al lado" },
     { "path": "skills/tycon-pipeline/scripts/package-equivalence.js", "member": "SALTAR", "imports": false, "why": "skills: pueden vivir en un clon aparte sin scripts/ al lado" },
     { "path": "scripts/controls-bench/advisor-runner.js", "member": "PERMITIDO_FUERA_DEL_CORRAL", "imports": false, "why": "lo que los revisores pueden leer fuera de su fixture: los dos nombres del lugar mientras dure la transición (segunda vuelta, M4); el banco corre este archivo suelto" }
