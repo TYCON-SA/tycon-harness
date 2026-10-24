@@ -1,0 +1,60 @@
+name: Bug report · Algo no anda
+description: Something in the harness does not work as documented. · Algo del arnés no anda como dice su guía.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English or Spanish are both fine. · En inglés o en castellano, como prefieras.
+        A security problem does not go here: see SECURITY.md. · Un problema de seguridad no va acá: mirá SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened · Qué pasó
+      description: What you did, what you expected and what you saw instead. · Qué hiciste, qué esperabas y qué viste.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce · Cómo repetirlo
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Harness version · Versión del arnés
+      description: The output of /tycon-harness, or version.json. · Lo que dice /tycon-harness, o version.json.
+    validations:
+      required: true
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Agent · Agente
+      options:
+        - Claude Code (terminal)
+        - Claude Code (VS Code)
+        - Codex
+        - Other · Otro
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system · Sistema operativo
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or error · Salida o error
+      description: Paste it without secrets, tokens or customer names. · Pegala sin secretos, tokens ni nombres de clientes.
+      render: text
