@@ -181,6 +181,8 @@ test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — CMD-C1: 
   }
 });
 
+// Limitación: en Windows no se mide. El bash de mentira es un guion sin .exe y Windows no lo lanza, y BASH_ENV se lee
+// antes de que bash sepa qué guion corre (`$0` dice «bash»), así que tampoco sirve para contar.
 test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — el freno no se relanza a sí mismo', { skip: process.platform === 'win32' && 'el bash de mentira que cuenta es un guion sin .exe y Windows no lo lanza; el freno es el mismo guion, se mide en la Mac' }, () => {
   // un bash de mentira delante en el PATH anota cada vez que alguien corre el freno con bash: tiene que ser una sola
   const realBash = (spawnSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' }).stdout || '').trim();

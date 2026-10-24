@@ -35,6 +35,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isInsideRepo } = require('./path-forms.js');
 
 /** Carpeta de eventos por sesión, bajo el state dir del pipeline. */
 function eventsDir(stateDir) {
@@ -82,8 +83,7 @@ function clearFileEvents(stateDir, sessionId) {
 
 /** Eventos de la sesión que caen DENTRO de un repo. */
 function eventsForRepo(stateDir, sessionId, repoRoot) {
-  const prefix = repoRoot.endsWith(path.sep) ? repoRoot : repoRoot + path.sep;
-  return readFileEvents(stateDir, sessionId).filter((e) => String(e.path).startsWith(prefix));
+  return readFileEvents(stateDir, sessionId).filter((e) => isInsideRepo(e.path, repoRoot));
 }
 
 /**
@@ -93,8 +93,8 @@ function eventsForRepo(stateDir, sessionId, repoRoot) {
  * siguiente commit —en otro repo— sin evidencia que juzgar.
  */
 function pruneFileEvents(stateDir, sessionId, repoRoot) {
-  const prefix = repoRoot.endsWith(path.sep) ? repoRoot : repoRoot + path.sep;
-  const keep = readFileEvents(stateDir, sessionId).filter((e) => !String(e.path).startsWith(prefix));
+  // lo que se limpia es lo mismo que eventsForRepo juzgó
+  const keep = readFileEvents(stateDir, sessionId).filter((e) => !isInsideRepo(e.path, repoRoot));
   try {
     const file = eventsFile(stateDir, sessionId);
     if (keep.length === 0) {

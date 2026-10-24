@@ -1229,6 +1229,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.115 (T14, T16): las decisiones de forma de ruta del pipeline (lib/path-forms.js) con path.win32 y path.posix: la carpeta e2e con cualquier separador, un archivo de otra unidad fuera del repo, dest con /, y atdd-commit-gate con barras y cajas mezcladas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/path-forms.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-gate-real-commands.test.js",
       "requiere": []
@@ -3154,6 +3160,12 @@
       "__nota": "story 8.115 (T12): los tres frenos de shell que leen la entrada (safety-guard-pre.sh, test-scope-guard-pre.sh, engram-pre-commit.sh) con un jq que imita al de Windows (escribe \\r\\n salvo con -b), uno que no conoce -b y el respaldo con node: los comandos de varios renglones frenan como en la Mac, todo \\r en el comando (y en PowerShell los separadores raros) frena por CMD-C1 en los tres, también con el freno de seguridad apagado, y el freno no se relanza a sí mismo. Cada llamada con tope de 60 s.",
       "raiz": "arnes",
       "ruta": "tests/jq-carriage-return.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.115 (T7): ningún salteo de Windows sin su motivo escrito en las siete suites que corre el ensayo de Windows (apply-hooks, safety-escape, story-gate, ledger-visible, run-close, pipeline-unit; harness-node mide su propia lista fija). Sólo lee archivos.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-skips.test.js",
       "requiere": []
     },
     {
