@@ -45,6 +45,35 @@
           }
         },
         {
+          "id": "block-retorno-de-carro-en-el-comando",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo a \r# ; ls"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "CMD-C1"
+            ]
+          }
+        },
+        {
+          "id": "pasa-varios-renglones-sin-retorno-de-carro",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ls -la\npwd"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
           "id": "block-curl-pipe-bash",
           "type": "must-block",
           "stdin": {
@@ -5927,6 +5956,22 @@
             "tool_name": "PowerShell",
             "tool_input": {
               "command": "$x = 1\r\nRemove-Item -Recurse -Force ~"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "CMD-C1"
+            ]
+          }
+        },
+        {
+          "id": "ps2-remove-item-tras-una-linea-sin-retorno-de-carro",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "$x = 1\nRemove-Item -Recurse -Force ~"
             }
           },
           "expect": {

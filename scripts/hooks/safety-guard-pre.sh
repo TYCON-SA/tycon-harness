@@ -112,9 +112,12 @@ if command -v "$HNODE" >/dev/null 2>&1; then HAS_NODE=1; fi
 # Por qué se prueba con `node` cuando `jq` falla: hay JSON válido que `jq` rechaza (un `\ud800`
 # suelto), y eso sería otra forma de pasar sin revisión, en silencio.
 # 🔴 Si tocás una rama, tocá la otra: este bloque está copiado igual en test-scope-guard-pre.sh.
+# `jq -b`: el `jq` nativo de Windows escribe cada salto de línea como `\r\n` salvo con `-b`, y ese `\r` cambiaba lo que
+# las reglas leían (un comando de varios renglones pasaba sin frenar). Un `jq` que no conoce `-b` falla y lee `node`,
+# que no agrega nada. Así, todo `\r` que llega al comando estaba de verdad en el comando (CMD-C1, abajo).
 read_field() {
   if [[ "$HAS_JQ" == "1" ]]; then
-    if printf '%s' "$INPUT" | jq -rs --arg p "$1" \
+    if printf '%s' "$INPUT" | jq -b -rs --arg p "$1" \
       'if length == 1 then (.[0] | getpath($p | split(".")) // empty) else error("la entrada no es UN documento JSON") end' 2>/dev/null
     then return 0; fi
   fi
@@ -349,6 +352,36 @@ block() {
 # ============================================================
 # Reglas (orden = prioridad de match)
 # ============================================================
+
+# --- CMD-C1 (copia igual en los tres frenos de shell) --------------------------
+# Con el `jq -b` de la lectura, un `\r` en el comando estuvo de verdad en el comando: bash lo toma como una letra más
+# (`cl\rear` no es `clear`), PowerShell como un salto de línea, y un freno no puede saber cuál de las dos lecturas
+# esconde algo. Un comando legítimo no lo trae: frena siempre, con su motivo. En PowerShell, lo mismo con los otros
+# separadores que no son un espacio (`\f`, `\v`, NEL, los de línea y párrafo de Unicode y todos sus espacios, del duro
+# al ogham): PowerShell separa palabras con ellos y las reglas sólo miran espacio y tabulador. Los bytes van escritos
+# en UTF-8 porque el bash de la Mac (3.2) no entiende `$'\u…'`. Está en los tres (safety-guard-pre.sh,
+# test-scope-guard-pre.sh, engram-pre-commit.sh) porque cada uno se apaga por su lado: con uno apagado, los otros
+# siguen frenando. Si tocás una copia, tocá las tres (lo cuida jq-carriage-return.test.js).
+CMD_C1_POR_QUE="Bash y PowerShell lo leen distinto, y con él una parte del comando se le puede esconder a los frenos. Un comando escrito a mano no lo trae."
+CMD_C1_ARREGLO="Escribí el comando sin ese carácter (un salto de línea común, o espacios) y volvé a correrlo."
+cmd_c1_motivo() { # $1 = comando · $2 = herramienta → por stdout, qué carácter trae; nada si no trae ninguno
+  local c
+  case "$1" in *$'\r'*) printf '%s' '\r (retorno de carro)'; return 0 ;; esac
+  [[ "$2" == "PowerShell" ]] || return 0
+  for c in $'\f' $'\v' $'\xc2\xa0' $'\xc2\x85' $'\xe2\x80\xa8' $'\xe2\x80\xa9' $'\xe3\x80\x80' $'\xe2\x80\xaf' $'\xe2\x81\x9f' \
+           $'\xe2\x80\x80' $'\xe2\x80\x81' $'\xe2\x80\x82' $'\xe2\x80\x83' $'\xe2\x80\x84' $'\xe2\x80\x85' $'\xe2\x80\x86' \
+           $'\xe2\x80\x87' $'\xe2\x80\x88' $'\xe2\x80\x89' $'\xe2\x80\x8a' $'\xe1\x9a\x80'; do
+    case "$1" in *"$c"*) printf '%s' 'un separador que no es un espacio (\f, \v, espacio duro o un espacio de Unicode)'; return 0 ;; esac
+  done
+  return 0
+}
+# --- fin CMD-C1 ----------------------------------------------------------------
+ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""   # las lee block(); acá todavía no hay escape de la línea del comando
+_herramienta=""; tool_is_ps && _herramienta="PowerShell"
+_cmd_c1="$(cmd_c1_motivo "$CMD" "$_herramienta")"
+if [[ -n "$_cmd_c1" ]]; then
+  block "CMD-C1" "El comando trae ${_cmd_c1}. ${CMD_C1_POR_QUE}" "$CMD_C1_ARREGLO"
+fi
 
 # --- Escapes de los hooks de git escritos en la línea del comando ------------
 

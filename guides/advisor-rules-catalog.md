@@ -1040,6 +1040,7 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 |---|---|---|
 | **SEC-C1** *(safety-guard)* | `cat ~/.ssh/...` / `cat .../.aws/credentials` | Para verificar existencia: `ls -la ~/.ssh/`. Para contenido: wrapper que no exponga |
 | **SEC-C2** *(safety-guard)* | `cat .env` / `cat .env.*` / `less .env` / `head .env` / `tail .env` | Para listar keys sin valores: `grep -E '^[A-Z_]+=' .env \| cut -d= -f1` |
+| **CMD-C1** *(safety-guard)* | Un comando con un `\r`; en PowerShell, también `\f`, `\v`, el espacio duro, NEL o un espacio de Unicode. La misma regla la aplican el freno de alcance de pruebas y el aviso de memoria, así que con este freno apagado sigue frenado | Escribir el comando sin ese carácter: un salto de línea común o espacios |
 
 > ⚠️ **Colisión de namespace**: `SEC-C1`/`SEC-C2` también existen en `tycon-plugin-security-basics` (advisor sobre código). Las del safety-guard están marcadas `*(safety-guard)*` y aplican al runtime del shell, no al diff. Mismo prefijo, distinto contexto.
 
