@@ -1470,7 +1470,7 @@ test('T11 FrenoDeSeguridad_JqConRetornoDeCarro_Frena @story-8.115 @ac-11 — con
   fs.writeFileSync(path.join(binWin, 'jq'), `#!/usr/bin/env bash
 : > ${JSON.stringify(marca)}
 for a in "$@"; do [ "$a" = "-b" ] && { b=1; break; }; done
-if [ -n "\${b:-}" ]; then args=(); for a in "$@"; do [ "$a" = "-b" ] || args+=("$a"); done; exec ${JSON.stringify(realJq)} "\${args[@]}"; fi
+if [ -n "\${b:-}" ]; then exec ${JSON.stringify(realJq)} "$@"; fi   # el -b sigue: en Windows el jq real sin -b escribe \\r\\n
 ${JSON.stringify(realJq)} "$@" | node -e 'process.stdin.on("data",(d)=>process.stdout.write(d.toString().replace(/\\n/g,"\\r\\n")))'
 exit "\${PIPESTATUS[0]}"
 `, { mode: 0o755 });

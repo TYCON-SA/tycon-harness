@@ -39,7 +39,7 @@ fs.mkdirSync(BIN_WIN);
 fs.writeFileSync(path.join(BIN_WIN, 'jq'), `#!/usr/bin/env bash
 echo "$*" >> ${JSON.stringify(MARCA)}
 for a in "$@"; do [ "$a" = "-b" ] && { b=1; break; }; done
-if [ -n "\${b:-}" ]; then args=(); for a in "$@"; do [ "$a" = "-b" ] || args+=("$a"); done; exec ${JSON.stringify(REAL_JQ)} "\${args[@]}"; fi
+if [ -n "\${b:-}" ]; then exec ${JSON.stringify(REAL_JQ)} "$@"; fi   # el -b sigue: en Windows el jq real sin -b escribe \\r\\n
 ${JSON.stringify(REAL_JQ)} "$@" | ${A_CRLF}
 exit "\${PIPESTATUS[0]}"
 `, { mode: 0o755 });
