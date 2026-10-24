@@ -116,7 +116,7 @@ test('terminal: el cartel va con la letra chica de los avisos, botones incluidos
 })
 
 // en VS Code, un renglón de markdown con enlaces, como el aviso de uso; Ocultar lo saca en el momento
-test('VS Code: el cartel es markdown con el enlace Detalle y la × de cerrar para ocultarlo', async ($, on) => {
+test('VS Code: el cartel es markdown con los enlaces Detalle y Ocultar, sin botones', async ($, on) => {
   world(on, { [MARKER_PATH]: MARKER })
   await $.session.start({ cwd: HOME, surface: 'vscode', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'harness-mods', surface: 'vscode', component: 'AbovePrompt', props: PROPS })
@@ -124,12 +124,11 @@ test('VS Code: el cartel es markdown con el enlace Detalle y la × de cerrar par
   const text = String((board!.props as any).text)
   expect(text).toMatch(/^\*\*9\.9\*\* · /)
   expect(text).toMatch(/\[Detalle\]\(https:\/\/pipeline\.invalid\/detalle\)/)
-  expect(text).not.toMatch(/Ocultar/)
+  expect(text).toMatch(/\[Ocultar\]\(https:\/\/pipeline\.invalid\/ocultar\)/)
   expect(text).not.toMatch(/USD|\$/)
-  // Ocultar es la × de cerrar del sitio, como en el aviso de uso
-  const close = await ui.find({ type: 'Button', key: 'hide' } as any)
-  expect((close!.props as any).role).toBe('dismiss')
-  await ui.press({ key: 'hide' })
+  // VS Code dibuja un Button como botón azul aunque pida la × de cerrar: el cartel no lleva ninguno
+  expect(await ui.find({ type: 'Button' } as any)).toBeUndefined()
+  await ui.press({ key: 'board', link: { href: 'https://pipeline.invalid/ocultar' } } as any)
   expect(await ui.find({ type: 'Markdown', key: 'board' } as any)).toBeUndefined()
 })
 
