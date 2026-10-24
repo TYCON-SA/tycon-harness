@@ -45,8 +45,12 @@ const hook = (evento, categoria, textoError = 'x') => ({ type: 'attachment', tim
 const MARKER = 'node /opt/acme/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
 const PIPE = 'node /opt/acme/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js';
 
-/** Un volcado: lo que escribe `marker.js clear`, con lo que piden las reglas. */
-function volcado({ sid, archivedAt = `${HOY}T15:19:00.000Z`, completados = [0, 1, 2, 3, 4, 5, 6, 7, 8], pendientes = [], checks = { tests: 'green' }, cierre, autonomous = true, sinCerrar } = {}) {
+/**
+ * Un volcado: lo que escribe `marker.js clear`, con lo que piden las reglas. Sin `completados`, están hechos los pasos de
+ * antes del primero pendiente, como en una ejecución de verdad. `archivedAt` es posterior a la constancia del cierre
+ * (8.92): antes, una ejecución sin cerrar es `derivada/arnes-anterior` (T64).
+ */
+function volcado({ sid, archivedAt = `${HOY}T22:19:00.000Z`, pendientes = [], completados = [0, 1, 2, 3, 4, 5, 6, 7, 8].filter((p) => !pendientes.length || p < Math.min(...pendientes)), checks = { tests: 'green' }, cierre, autonomous = true, sinCerrar } = {}) {
   const marker = { storyId: '1.1', sessionId: sid, startedAt: `${HOY}T14:00:00.000Z`, stepsCompleted: completados, stepsPending: pendientes, checks, autonomous };
   if (cierre !== undefined) marker.cierre = cierre;
   const d = { archivedAt, marker, gates: [] };
@@ -326,7 +330,8 @@ test('T15 RrEscapeComandos @story-4.10 @ac-10', () => {
 //    una máquina sin registro.
 test('T16 RrEscapeRegistroYNoMedido @story-4.10 @ac-10', () => {
   const registros = { bypass: [
-    { ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/x', command: 'git commit --no-verify', reason: 'la persona lo pidió' },
+    // on-pre-commit.js guarda el comando de la herramienta tal cual (cortado a 300)
+    { ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/x', command: 'git commit --no-verify -m "x"', reason: 'la persona lo pidió' },
     { ts: ts(), sessionId: 's', repoPath: '/x', kind: 'ATDD_BYPASS', story: '1.1', reason: '' },
     { ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 'otra', cwd: '/x', command: 'git commit --no-verify' },
   ], cobertura: { fuentes: { bypass: { estado: 'medido' } } } };
@@ -500,13 +505,13 @@ test('T25 FixtureComoLaDelOrigen @story-4.10 @ac-6 @ac-7 @ac-8 @ac-9 @ac-10', as
   const mb = buzon({ 'acme-0000aaaa': { corridas: [{ base: `1.1-${HOY}T1519`, volcado: v, hilo }], registros: {} } });
   const op = ops();
   await correr(mb, op);
-  // una ficha por causa, cada una con la ejecución como caso
+  // una ficha por causa, cada una con la ejecución como caso; se archivó antes de la constancia del cierre (8.92)
   assert.deepStrictEqual(fichas(op).map((f) => `${f.causa}:${f.casos.length}`).sort(),
-    ['RR-APAGO:1', 'RR-BANDERA:adoMarkedActive:1', 'RR-BANDERA:workSignalStarted:1', 'RR-CIERRE:derivada:1', 'RR-NODE:node-viejo:1']);
+    ['RR-APAGO:1', 'RR-BANDERA:adoMarkedActive:1', 'RR-BANDERA:workSignalStarted:1', 'RR-CIERRE:derivada/arnes-anterior:1', 'RR-NODE:node-viejo:1']);
   // la cuenta de cada regla y el registro de escapes no viajan en la ficha por causa: se miran en lo que dan las reglas
   const r = RULES.revisar({ volcado: v, lineasHilo: hilo, registros: { cobertura: null, bypass: null } });
   assert.deepStrictEqual(r.reglas.map((x) => `${x.regla}/${x.categoria}:${x.cuenta}`).sort(),
-    ['RR-APAGO/null:1', 'RR-BANDERA/adoMarkedActive:1', 'RR-BANDERA/workSignalStarted:1', 'RR-CIERRE/derivada:1', 'RR-NODE/node-viejo:1']);
+    ['RR-APAGO/null:1', 'RR-BANDERA/adoMarkedActive:1', 'RR-BANDERA/workSignalStarted:1', 'RR-CIERRE/derivada/arnes-anterior:1', 'RR-NODE/node-viejo:1']);
   assert.strictEqual(r.reglas.find((x) => x.regla === 'RR-APAGO').con_frase, null);
   assert.strictEqual(r.escapes_registro, 'no_medido');
 });
@@ -610,14 +615,14 @@ test('T41 RrNodeSoloSiElErrorEsDelArnes @story-4.10 @ac-6', () => {
 
 // T42 EscapesDelRegistroSinSesion @story-4.10 @ac-10
 // 🔴 Falla con: cruzar sólo por `sessionId` (PR_A_MANO y FULL_SUITE_RUN no lo traen: se pierden), o tomar los de fuera
-//    de la ventana de la ejecución.
+//    de la ventana de la ejecución. Con conversación, la línea es de la ejecución que corrió su comando (T63).
 test('T42 EscapesDelRegistroSinSesion @story-4.10 @ac-10', () => {
   const v = volcado({ sid: 's' });
   const registros = { cobertura: { fuentes: { bypass: { estado: 'medido' } } }, bypass: [
     { ts: `${HOY}T15:00:00.000Z`, type: 'PR_A_MANO', cwd: '/x', command: 'gh pr create' },
     { ts: `${HOY}T09:00:00.000Z`, type: 'FULL_SUITE_RUN', cwd: '/x', command: 'npm test' },
   ] };
-  const r = RULES.revisar({ volcado: v, lineasHilo: [], registros });
+  const r = RULES.revisar({ volcado: v, lineasHilo: [...cmd('gh pr create'), ...cmd('npm test')], registros });
   assert.deepStrictEqual(regla(r, 'RR-ESCAPE').map((x) => x.categoria), ['PR_A_MANO']);
 });
 
@@ -827,4 +832,197 @@ test('T48 CategoriasCerradas @story-4.10 @ac-12', () => {
   ], cobertura: { fuentes: { bypass: { estado: 'medido' } } } };
   const e = RULES.revisar({ volcado: volcado({ sid: 's' }), lineasHilo: [], registros });
   assert.deepStrictEqual(regla(e, 'RR-ESCAPE').map((x) => x.categoria).sort(), ['SIZE_FORCED_LIGHT', 'otro']);
+});
+
+// ── El detector sin ruido: lo esperable cuenta aparte ───────────────────────────────────────────────────────────
+const medido = (bypass) => ({ bypass, cobertura: { fuentes: { bypass: { estado: 'medido' } } } });
+const rv = ({ v = volcado({ sid: 's' }), hilo = [], bypass = null } = {}) => RULES.revisar({ volcado: v, lineasHilo: hilo, registros: bypass ? medido(bypass) : null });
+const cats = (r, codigo) => regla(r, codigo).map((x) => `${x.categoria}:${x.cuenta}`).sort();
+
+// T61 NoVerifyEnLaboratorio @story-4.10 @ac-29
+// 🔴 Falla con: contar en GIT_NO_VERIFY el commit de un clon de laboratorio (46 de 52 líneas de la semana).
+test('T61 NoVerifyEnLaboratorio @story-4.10 @ac-29', () => {
+  const linea = (cwd) => ({ ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd, command: 'git commit --no-verify -m x', reason: 'r' });
+  assert.deepStrictEqual(cats(rv({ bypass: [linea('/private/tmp/acme/tienda')] }), 'RR-ESCAPE'), ['GIT_NO_VERIFY/laboratorio:1']);
+  assert.deepStrictEqual(cats(rv({ hilo: cmd('cd /tmp/ensayo && git commit --no-verify -m x') }), 'RR-ESCAPE'), ['GIT_NO_VERIFY/laboratorio:1']);
+  assert.deepStrictEqual(cats(rv({ hilo: cmd('git -C /Users/dev/SourceCode/acme-lab commit -n -m x') }), 'RR-ESCAPE'), ['GIT_NO_VERIFY/laboratorio:1']);
+  assert.deepStrictEqual(cats(rv({ bypass: [linea('/Users/dev/SourceCode/arnes')] }), 'RR-ESCAPE'), ['GIT_NO_VERIFY:1']);
+  assert.ok(RULES.APARTE['RR-ESCAPE:GIT_NO_VERIFY/laboratorio'], 'aparte: el resumen no la suma a las nuevas');
+  // sin certeza de que corrió en el laboratorio, es del repo real (el pase adversarial, objetivos 1-3)
+  const real = (v) => volcado({ sid: 's' }) && Object.assign(volcado({ sid: 's' }), { marker: { ...volcado({ sid: 's' }).marker, repoPath: '/Users/dev/SourceCode/prod' } });
+  const dudosos = [
+    'cd /tmp/x/../../Users/dev/arnes && git commit --no-verify -m x',
+    'git -C /tmp/../Users/dev/arnes commit --no-verify -m x',
+    'git -C /tmp/lab -C /Users/dev/prod commit --no-verify -m x',
+    'cd /tmp/lab && cd - && git commit -n -m x',
+    'cd /tmp/lab && cd && git commit -n -m x',
+    '(cd /tmp/lab && ls) && git commit --no-verify -m x',
+    'cd /tmp/lab && pushd /Users/dev/prod && git commit --no-verify -m x',
+    'cd /tmp/lab && sudo -u dev git -C /Users/dev/prod commit --no-verify -m x',
+    'cd /tmp/lab && timeout 60 git commit --no-verify -m x',
+    'cd /tmp/lab && git -C x commit --no-verify -m x',
+    // el `cd` puede no valer para lo que sigue: segundo plano, tubería, «o si no»
+    'cd /tmp/lab & git commit -n -m x',
+    'cd /tmp/lab | git commit -n -m x',
+    'cd /tmp/lab || git commit -n -m x',
+    // git nombra otro repo
+    'cd /tmp/lab && git --work-tree /Users/dev/prod commit -n -m x',
+    'cd /tmp/lab && git --git-dir=/Users/dev/prod/.git commit -n -m x',
+    'cd /tmp/lab && GIT_DIR=/Users/dev/prod/.git git commit -n -m x',
+  ];
+  for (const c of dudosos) assert.deepStrictEqual(cats(rv({ v: real(), hilo: cmd(c) }), 'RR-ESCAPE'), ['--no-verify:1'], c);
+  assert.deepStrictEqual(cats(rv({ v: real(), hilo: cmd('cd /tmp/x/../../Users/dev/prod && TYCON_FULL_SUITE=1 npm test') }), 'RR-ESCAPE'), ['TYCON_FULL_SUITE:1']);
+  assert.deepStrictEqual(cats(rv({ v: real(), bypass: [linea('/tmp/../Users/dev/arnes')] }), 'RR-ESCAPE'), ['GIT_NO_VERIFY:1'], 'el cwd con .. tampoco');
+  // `commit -C HEAD` es la opción de commit (reusar el mensaje), no la carpeta; y `git log -n 3` no saltea hooks
+  assert.deepStrictEqual(cats(rv({ v: real(), hilo: cmd('cd /tmp/lab && git commit -C HEAD --no-verify') }), 'RR-ESCAPE'), ['GIT_NO_VERIFY/laboratorio:1']);
+  assert.deepStrictEqual(cats(rv({ v: real(), hilo: cmd('git log -n 3 --format=%s commit') }), 'RR-ESCAPE'), []);
+  // una redirección (`2>&1`) no separa nada: la carpeta sigue siendo cierta
+  assert.deepStrictEqual(cats(rv({ v: real(), hilo: cmd('cd /tmp/lab && git commit --no-verify -m x 2>&1') }), 'RR-ESCAPE'), ['GIT_NO_VERIFY/laboratorio:1']);
+  // el `--no-verify` dentro de un `bash -c` corrió: la línea sin pareja cuenta
+  assert.deepStrictEqual(cats(rv({ v: real(), hilo: null, bypass: [{ ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/prod', command: 'bash -c "git commit --no-verify -m x"' }] }), 'RR-ESCAPE'), ['GIT_NO_VERIFY:1']);
+  // emparejada y sin `cd`: manda el `cwd` exacto de la línea, no el repo de la ejecución
+  const enLab = volcado({ sid: 's' }); enLab.marker.repoPath = '/private/tmp/acme/x';
+  assert.deepStrictEqual(cats(rv({ v: enLab, hilo: cmd('git commit --no-verify -m x'), bypass: [{ ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/prod', command: 'git commit --no-verify -m x' }] }), 'RR-ESCAPE'), ['GIT_NO_VERIFY:1']);
+  // la línea cortada a 300 sin la opción a la vista: el corte se la llevó y cuenta
+  const largo = `git commit -m "${'a'.repeat(370)}" --no-verify`;
+  assert.deepStrictEqual(cats(rv({ v: real(), hilo: null, bypass: [{ ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/prod', command: largo.slice(0, 300) }] }), 'RR-ESCAPE'), ['GIT_NO_VERIFY:1']);
+});
+
+// T62 NoVerifySoloEnTexto @story-4.10 @ac-29
+// 🔴 Falla con: contar el texto de una historia o de un guion que NOMBRA la opción (4 de 52), en la conversación o en
+//    la línea del registro.
+test('T62 NoVerifySoloEnTexto @story-4.10 @ac-29', () => {
+  const texto = "cat > specs/s.md <<'EOF'\ngit commit --no-verify\nEOF\ngrep -n -- '--no-verify' x.sh\npython3 - <<'PY'\nprint('git commit --no-verify')\nPY";
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(texto) }), 'RR-ESCAPE'), []);
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(`${texto}\ngit commit --no-verify -m x`) }), 'RR-ESCAPE'), ['--no-verify:1']);
+  const linea = { ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/arnes', command: texto };
+  assert.deepStrictEqual(cats(rv({ bypass: [linea] }), 'RR-ESCAPE'), [], 'la línea cuyo comando no corre la opción no cuenta');
+});
+
+// T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30
+// 🔴 Falla con: contar como escape un pedido que pasaba sin el prefijo (19 de 40), o el mismo hecho dos veces (67 fichas
+//    de 39 pedidos), o una línea sin sesión en una ejecución que sólo la cubre por la hora.
+test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
+  const P = 'TYCON_PR_BY_HAND=1 az repos pr';
+  const comandos = [
+    `${P} create --source-branch x --target-branch main --draft true --title t`,
+    `${P} create --source-branch x --target-branch main --auto-complete true --squash false --title t`,
+    `${P} update --id 5 --draft false --auto-complete true --squash false`,
+    `${P} create --source-branch x --target-branch main --title t`,
+  ];
+  const lineas = comandos.map((command) => ({ ts: ts(), type: 'PR_A_MANO', command }));
+  const r = rv({ hilo: comandos.flatMap((c) => cmd(c)), bypass: lineas });
+  assert.deepStrictEqual(cats(r, 'RR-ESCAPE'), ['PR_A_MANO/sobra:3', 'PR_A_MANO:1']);
+  const suite = 'TYCON_FULL_SUITE=1 npx vitest run';
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(suite), bypass: [{ ts: ts(), type: 'FULL_SUITE_RUN', command: suite }] }), 'RR-ESCAPE'), ['FULL_SUITE_RUN:1']);
+  const otra = rv({ v: volcado({ sid: 'otra' }), hilo: cmd('ls'), bypass: [lineas[3]] });
+  assert.deepStrictEqual(cats(otra, 'RR-ESCAPE'), [], 'la ejecución sin el comando en su conversación no la cuenta');
+  // sin el registro, el prefijo de la conversación se juzga igual
+  assert.deepStrictEqual(cats(rv({ hilo: comandos.flatMap((c) => cmd(c)) }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:3', 'TYCON_PR_BY_HAND:1']);
+  // una línea tapa el comando que la dejó, no los otros del mismo escape
+  assert.deepStrictEqual(cats(rv({ hilo: comandos.flatMap((c) => cmd(c)), bypass: [lineas[3]] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:3', 'PR_A_MANO:1']);
+  // cada pedido se juzga solo: junto a uno bueno, el malo cuenta; y no sobra ninguno si el comando le pasa código a un
+  // intérprete, ni el de un destino que es una expansión de la terminal
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(`${comandos[1]} && ${comandos[3]}`) }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1', 'TYCON_PR_BY_HAND:1']);
+  const malos = [
+    `${comandos[1]} && ${P.replace(' az repos pr', '')} bash -c "az repos pr create --target-branch main --title t"`,
+    `${P} create --source-branch x --target-branch "$DESTINO" --title t`,
+  ];
+  for (const c of malos) assert.deepStrictEqual(cats(rv({ hilo: cmd(c) }), 'RR-ESCAPE').filter((x) => x.startsWith('PR_A_MANO/sobra')), [], c);
+  // la línea del pedido bueno tapa sólo ese pedido: el malo del mismo comando cuenta igual
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(`${comandos[1]} && ${comandos[3]}`), bypass: [lineas[1]] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1', 'TYCON_PR_BY_HAND:1']);
+  // uno a uno: una línea tapa una vez; una línea sin texto tapa una sola; la cortada (500) se empareja con su pedido
+  const dos = [...cmd(comandos[1]), ...cmd(comandos[1])];
+  // (la del registro y la de la conversación van en renglones distintos: la del registro dice si trae motivo)
+  assert.deepStrictEqual(cats(rv({ hilo: dos, bypass: [lineas[1]] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1', 'PR_A_MANO/sobra:1']);
+  const suiteDos = [...cmd('TYCON_FULL_SUITE=1 npm test'), ...cmd('TYCON_FULL_SUITE=1 npm test')];
+  assert.deepStrictEqual(cats(rv({ hilo: suiteDos, bypass: [{ ts: ts(), type: 'FULL_SUITE_RUN' }] }), 'RR-ESCAPE'), ['FULL_SUITE_RUN:1', 'TYCON_FULL_SUITE:1']);
+  const largo = `${P} create --source-branch x --target-branch main --description "${'d'.repeat(600)}" --auto-complete true --squash false`;
+  const cortada = { ts: ts(), type: 'PR_A_MANO', command: largo.slice(0, 500) };
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(largo), bypass: [cortada] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1']);
+  assert.deepStrictEqual(cats(rv({ hilo: null, bypass: [cortada] }), 'RR-ESCAPE'), ['PR_A_MANO:1'], 'sin la conversación, un texto cortado no da el pedido por bueno');
+  // una línea tapa su comando igual, no uno parecido con más banderas
+  const parecido = `${comandos[1]} --delete-source-branch true`;
+  // una línea que es el comienzo de un pedido más largo se empareja con él (los frenos cortan el texto): cuenta una vez,
+  // por el registro (trae `con_motivo`, la de la conversación no)
+  const p = regla(rv({ hilo: cmd(parecido), bypass: [lineas[1]] }), 'RR-ESCAPE');
+  assert.deepStrictEqual(p.map((x) => `${x.categoria}:${x.cuenta}:${x.con_motivo}`), ['PR_A_MANO/sobra:1:false']);
+  // la decisión es la del freno de pedidos
+  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  assert.deepStrictEqual(comandos.map((c) => AZ.faltasDe(AZ.segmentos(c)[0]).faltas.length), [0, 0, 0, 2]);
+});
+
+// T64 CierreSinConstancia @story-4.10 @ac-31
+// 🔴 Falla con: contar el paso viejo 9 o el 7 con el 8 hecho, o pedir la constancia del cierre antes de que existiera.
+test('T64 CierreSinConstancia @story-4.10 @ac-31', () => {
+  const cierre = (o) => cats(RULES.revisar({ volcado: volcado({ sid: 's', ...o }), lineasHilo: [], registros: null }), 'RR-CIERRE');
+  assert.deepStrictEqual(cierre({ pendientes: [9] }), []);
+  assert.deepStrictEqual(cierre({ pendientes: ['close-work-item'] }), [], 'el 9 por su nombre');
+  assert.deepStrictEqual(cierre({ completados: [0, 1, 2, 3, 4, 5, 6, 8], pendientes: [7] }), []);
+  assert.deepStrictEqual(cierre({ completados: [0, 1, 2, 3], pendientes: [4, 5, 6, 7, 8], archivedAt: '2026-10-20T10:00:00.000Z' }), ['derivada/arnes-anterior:1']);
+  assert.deepStrictEqual(cierre({ completados: [0, 1, 2, 3], pendientes: [4, 5, 6, 7, 8], archivedAt: '2026-10-23T10:00:00.000Z' }), ['derivada:1']);
+  assert.deepStrictEqual(cierre({ pendientes: [9], checks: { tests: 'red:exit=1' }, archivedAt: '2026-10-23T10:00:00.000Z' }), ['derivada:1']);
+});
+
+// T65 RelanzamientoEsDato @story-4.10 @ac-32
+// 🔴 Falla con: contar como escape el relanzamiento del pase (12 en la semana; el pase corre igual).
+test('T65 RelanzamientoEsDato @story-4.10 @ac-32', () => {
+  const linea = { ts: ts(), kind: 'ADVERSARIAL_RELAUNCH', story: '1.1', prevRunId: 'codex-1', newRunId: 'claude-2' };
+  assert.deepStrictEqual(cats(rv({ hilo: null, bypass: [linea] }), 'RR-ESCAPE'), ['ADVERSARIAL_RELAUNCH/dato:1']);
+  assert.deepStrictEqual(cats(rv({ hilo: cmd('ls'), bypass: [linea] }), 'RR-ESCAPE'), ['ADVERSARIAL_RELAUNCH/dato:1'], 'una línea sin comando sigue la ventana de hora');
+});
+
+// T66 LivianaConMotivo @story-4.10 @ac-33
+// 🔴 Falla con: contar como falla la corrida liviana que trae su motivo (las 17 de la semana).
+test('T66 LivianaConMotivo @story-4.10 @ac-33', () => {
+  const bypass = [
+    { ts: ts(), sessionId: 's', kind: 'SIZE_FORCED_LIGHT_WITH_CODE', storyId: '1.1', reason: 'la coordinadora lo decidió' },
+    { ts: ts(), sessionId: 's', kind: 'SIZE_FORCED_LIGHT_WITH_CODE', storyId: '1.1', reason: '' },
+  ];
+  assert.deepStrictEqual(cats(rv({ bypass }), 'RR-ESCAPE'), ['SIZE_FORCED_LIGHT_WITH_CODE/con-motivo:1', 'SIZE_FORCED_LIGHT_WITH_CODE:1']);
+});
+
+// T67 SuiteCompletaEnLaboratorioOTexto @story-4.10 @ac-34
+// 🔴 Falla con: contar la suite completa de un laboratorio (21 de 27) o de un texto (6 de 27); la línea no trae `cwd`.
+test('T67 SuiteCompletaEnLaboratorioOTexto @story-4.10 @ac-34', () => {
+  const linea = (command) => ({ ts: ts(), type: 'FULL_SUITE_RUN', command });
+  const enRepo = (repoPath) => { const v = volcado({ sid: 's' }); v.marker.repoPath = repoPath; return v; };
+  const arnes = '/Users/dev/SourceCode/arnes';
+  assert.deepStrictEqual(cats(rv({ v: enRepo(arnes), hilo: null, bypass: [linea('cd /tmp/probe.x && TYCON_FULL_SUITE=1 npm test')] }), 'RR-ESCAPE'), ['FULL_SUITE_RUN/laboratorio:1']);
+  assert.deepStrictEqual(cats(rv({ v: enRepo('/private/tmp/acme/x'), hilo: null, bypass: [linea('TYCON_FULL_SUITE=1 npm test')] }), 'RR-ESCAPE'), ['FULL_SUITE_RUN/laboratorio:1']);
+  assert.deepStrictEqual(cats(rv({ v: enRepo(arnes), hilo: null, bypass: [linea("cat > p.md <<'EOF'\nTYCON_FULL_SUITE=1 npm test\nEOF")] }), 'RR-ESCAPE'), []);
+  assert.deepStrictEqual(cats(rv({ v: enRepo(arnes), hilo: null, bypass: [linea('TYCON_FULL_SUITE=1 npx vitest run')] }), 'RR-ESCAPE'), ['FULL_SUITE_RUN:1']);
+  // en la conversación, sin el registro: el mismo juicio
+  assert.deepStrictEqual(cats(rv({ v: enRepo(arnes), hilo: cmd('cd /tmp/probe.x && TYCON_FULL_SUITE=1 npm test') }), 'RR-ESCAPE'), ['FULL_SUITE_RUN/laboratorio:1']);
+  assert.deepStrictEqual(cats(rv({ v: enRepo(arnes), hilo: cmd("cat > p.md <<'EOF'\nTYCON_FULL_SUITE=1 npm test\nEOF") }), 'RR-ESCAPE'), []);
+  assert.deepStrictEqual(cats(rv({ v: enRepo(arnes), hilo: cmd('TYCON_FULL_SUITE=1 npx vitest run') }), 'RR-ESCAPE'), ['TYCON_FULL_SUITE:1']);
+});
+
+// T68 RrNodeEnObraYEnTexto @story-4.10 @ac-35
+// 🔴 Falla con: contar como guion instalado que no carga la prueba de una story del arnés en obra (9 de la Mac mini), o
+//    el texto de una historia.
+test('T68 RrNodeEnObraYEnTexto @story-4.10 @ac-35', () => {
+  const carga = (guion) => cmd(`node ${guion}`, { texto: `Error: Cannot find module '${guion}'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1)`, error: true });
+  const lineas = [
+    ...carga('/Users/dev/SourceCode/tycon-harness/scripts/tests/a.test.js'),
+    ...carga('/Users/dev/SourceCode/tycon-harness-wt-x/skills/tycon-pipeline/scripts/tests/b.test.js'),
+    ...cmd("cat > specs/s.md <<'EOF'\nnode /Users/dev/.tycon/harness/scripts/lib/x.js\nEOF", { texto: "Error: Cannot find module '/Users/dev/.tycon/harness/scripts/lib/x.js'\n at cjs/loader" }),
+    ...carga('/Users/dev/.tycon/harness/scripts/lib/x.js'),
+    ...carga('/Users/dev/.claude/agent-skills/skills/tycon-pipeline/scripts/y.js'),
+    // de donde Claude Code y Codex cargan las skills, también con la barra de Windows
+    ...carga('/Users/dev/.claude/skills/tycon-pipeline/scripts/z.js'),
+    ...carga('C:\\Users\\dev\\.codex\\skills\\tycon-pipeline\\scripts\\w.js'),
+  ];
+  assert.deepStrictEqual(cats(revisar(lineas), 'RR-NODE'), ['carga:4', 'en-obra:2']);
+});
+
+// T69 ListaAparte @story-4.10 @ac-36
+// 🔴 Falla con: que el resumen o el ciclo sumen como nueva una categoría aparte, o que una inventada pase por aparte.
+test('T69 ListaAparte @story-4.10 @ac-36', () => {
+  const esperadas = ['RR-ESCAPE:GIT_NO_VERIFY/laboratorio', 'RR-ESCAPE:PR_A_MANO/sobra', 'RR-CIERRE:derivada/arnes-anterior',
+    'RR-ESCAPE:ADVERSARIAL_RELAUNCH/dato', 'RR-ESCAPE:SIZE_FORCED_LIGHT_WITH_CODE/con-motivo', 'RR-ESCAPE:FULL_SUITE_RUN/laboratorio', 'RR-NODE:en-obra'];
+  assert.deepStrictEqual(Object.keys(RULES.APARTE).sort(), esperadas.sort());
+  for (const k of esperadas) assert.ok(typeof RULES.APARTE[k] === 'string' && RULES.APARTE[k].length > 10, `${k} trae su motivo`);
+  assert.strictEqual(RULES.APARTE['RR-ESCAPE:INVENTADA/x'], undefined);
+  assert.ok(Object.isFrozen(RULES.APARTE), 'nadie la cambia al usarla');
 });

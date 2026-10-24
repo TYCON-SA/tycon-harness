@@ -84,6 +84,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **SQL-C2** | `DROP TABLE` inline (no en `.sql`) | Modificaciones de schema van por migration numerada |
 | **SEC-C1** | `cat ~/.ssh/...` / `cat .../aws/credentials` | Secretos al contexto del LLM |
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |
+| **CMD-C1** | Un comando que trae un `\r` (retorno de carro); en PowerShell, también `\f`, `\v`, el espacio duro, NEL o un espacio de Unicode | Bash lee el `\r` como una letra y PowerShell como un salto de línea: con él, una parte del comando se le esconde al freno. Un comando escrito a mano no lo trae. Frena también si el carácter va dentro de un texto entre comillas (un mensaje de commit con un espacio duro pegado de una página, un heredoc con saltos de Windows): el freno no puede saber si las comillas son de verdad. La misma regla la aplican el freno de alcance de pruebas y el aviso de memoria: con este freno apagado, un `\r` sigue frenado |
 | **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE`, `DOD_BYPASS` o `TYCON_NO_DEEP_REVIEW` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | Las dos primeras apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo; `TYCON_NO_DEEP_REVIEW` apaga el pase adversarial, que el agente apagaba después de preguntar si lo corría. Vale con la frase de la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
 | **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo («autorizo force-manual», «autorizo trust-ran»); `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución («autorizo no-deep-review»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
 | **ESC-C4** | `marker.js close-as-debt` o `marker.js expect-red`, con una ejecución en la sesión | Dejan una salida prevista por la historia como el final de la ejecución, o un control en rojo como esperado. Lo autoriza la persona, siempre (abajo); un texto que sólo nombra el comando no frena |
@@ -180,13 +181,35 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
 - **Una historia escrita por consola.** Un comando que escribe una historia que no está en borrador (redirección, `sed
   -i`, `tee`, `cp`, un `node -e` o un `python3 -c`) frena con «HISTORIA ESCRITA POR CONSOLA». Desde un comando no se ve
   qué queda escrito. En su lugar: la herramienta de edición, y para el estado
-  `marker.js update-story-status <historia> <estado>`.
+  `marker.js update-story-status <historia> <estado>`. Con un editor en el lugar, la carpeta de un `cd <carpeta> && `
+  al principio exacto del comando (la carpeta escrita tal cual, sin comillas, opciones, `$` ni comodines), seguido de
+  un solo `sed` que nombra sus archivos (sin tubería, `$(…)`, comillas invertidas, otro comando, redirección, salto de
+  línea, llaves, `@` ni `~`), es desde dónde se leen las demás palabras, no algo que el editor escribe. Con `perl` no:
+  un `perl -e` puede armar y escribir sus archivos desde adentro (`BEGIN{@ARGV=glob …}`), y sigue frenando.
+  `cd <repo> && sed -i -e 's/a/b/' x.sh` pasa aunque haya historias adentro de esa carpeta. Un editor que toma sus
+  archivos de una tubería o de `$(ls)` (`cd specs && ls | xargs sed -i …`) sigue frenando. `cd specs && sed -i -e 's/a/b/' story-x.md` sigue frenando, y también cualquier
+  otra forma de llegar a la carpeta (`;`, `|`, `&&` pegado, un espacio o un `(` delante, `cd -- x`, `cd $D`, `pushd`).
+  Fuera de esa forma, la carpeta de un `cd` cuenta por las historias que tiene, escrita relativa o absoluta, con
+  comillas o con espacios, con su comodín expandido (`cd docs/st*`): `cd docs/stories && ls | xargs sed -i …` frena
+  desde la raíz del repo. Una carpeta que el freno no sabe resolver (`cd $(pwd)/docs`, `$'…'`, llaves, una variable que
+  no conoce) también frena, y una con más `.md` de los que recorre. Un «cd» dentro de un texto entre comillas o de un
+  heredoc no cuenta.
 - **El paso a review o done a mano.** Un Edit, un Write o un `apply_patch` de Codex que pasa la historia a `review` o
   `done` frena aunque esté la evidencia. En su lugar: `marker.js update-story-status`, `update-pipeline-status` o
   `/tycon-pipeline close`. Hacerlo a mano lo decide la persona («autorizo cambiar el estado»).
 - **Borrar el marcador.** Borrar o mover por consola un marcador de ejecución (`active/`, `active.json`), de esta
   sesión o de otra, frena con «BORRADO DEL ESTADO DEL PIPELINE». En su lugar: `marker.js clear` o `marker.js
   clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre.
+- **Un `$(…)` en el nombre de un informe.** Con el pipeline abierto, un destino `.md` o `.log` (`>`, `>>` o `tee`) con
+  un `$(date +F)` (formato sólo de `%Y %m %d %H %M %S %s %j %y - _`), pegado a texto, se lee entero y el `$(…)` cuenta
+  como un comodín: `> out/run-$(date +%s).log` pasa. Frena si la carpeta donde puede caer tiene historias, si la
+  carpeta que se sabe toca el estado del pipeline o el árbol instalado (también por un enlace o desde otra carpeta
+  posible del comando), o con cualquier otro `$(…)`, otra opción de `date`, el `$(…)` como segmento entero, un destino
+  que sigue después de una comilla, llaves o un comodín escrito en el destino, un `date` que el mismo comando redefine
+  (función, alias, `PATH=`) o un destino de código. **Freno aceptado por duda:** `$(basename …)` en un destino
+  (`> $SP/suite-$(basename $f).log`) frena «EDICIÓN INVISIBLE». `basename /` da `/`, y su salida puede abrir una
+  carpeta que el freno no ve. Para un informe con ese nombre, escribilo con la herramienta de edición o armá el
+  nombre antes en una variable con su valor literal.
 
 El freno del paso a mano también frena volver una historia en implementación a otro estado (por ejemplo a `draft`, para
 después escribirla por consola), sacarle el encabezado y cambiarle el id. Por consola, un borrador sólo pasa si el

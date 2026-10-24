@@ -879,6 +879,12 @@
       "requiere": []
     },
     {
+      "__nota": "«Armar el plan» dice qué hacer con Codex (sin la herramienta Skill) y sin el método configurado, y «Probar en vivo» trae la prueba real de una función sin pantalla ni servidor: el ejemplo, sacado del paso, corre con smoke-run.sh y la matriz lo da en verde; una prueba unitaria no cuenta. Todo en un HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/steps-no-skill-no-screen.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las instrucciones dan el comando del pipeline con su ruta entera: el bloque del índice de Codex (macOS, Linux y Windows), la ruta a través del enlace de las skills, y ninguna orden del pipeline sin ruta en el índice, la guía de Ollama ni el bloque. Todo en un HOME temporal.",
       "raiz": "arnes",
       "ruta": "tests/pipeline-command-paths.test.js",
@@ -3124,6 +3130,12 @@
       "__nota": "story 8.115 (T1): una carpeta personal de juguete cambia HOME y USERPROFILE juntas en las suites que corren en Windows (en Windows os.homedir() lee USERPROFILE: con HOME solo, el guion escribe en la carpeta personal real), y el ayudante tests/lib/fake-home.js restaura las dos. Sólo lee archivos; no lanza procesos.",
       "raiz": "arnes",
       "ruta": "tests/fake-home-userprofile.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.115 (T12): los tres frenos de shell que leen la entrada (safety-guard-pre.sh, test-scope-guard-pre.sh, engram-pre-commit.sh) con un jq que imita al de Windows (escribe \\r\\n salvo con -b), uno que no conoce -b y el respaldo con node: los comandos de varios renglones frenan como en la Mac, todo \\r en el comando (y en PowerShell los separadores raros) frena por CMD-C1 en los tres, también con el freno de seguridad apagado, y el freno no se relanza a sí mismo. Cada llamada con tope de 60 s.",
+      "raiz": "arnes",
+      "ruta": "tests/jq-carriage-return.test.js",
       "requiere": []
     },
     {

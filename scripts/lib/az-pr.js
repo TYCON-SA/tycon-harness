@@ -252,4 +252,43 @@ function tieneEscape(seg, nombre = 'TYCON_PR_BY_HAND') {
 const pareceAzPr = (cmd) => /\brepos\s+pr\s+(?:create|update)\b/i
   .test(String(cmd || '').replace(/\\\r?\n/g, ' '));
 
-module.exports = { fichas, pareceAzPr, segmentos, flagDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape };
+const ROMPE_SQUASH = 'los commits desaparecen de main y las notas de versión colapsan a una línea';
+const A_MAIN = /^(?:refs\/heads\/)?(?:main|master)$/i;
+
+/**
+ * La regla del freno de pedidos sobre UN segmento, sin mirar el escape: `{ verbo, juzgado, borrador, faltas }`.
+ * `juzgado: false` es un segmento que la regla no mira (otro verbo, un pedido que no va a main, un borrador recién
+ * creado: `borrador: true`). Un segmento juzgado sin `faltas` cumple la regla. La usan el freno (que agrega el escape,
+ * el pedido de ayuda y el código pasado a un intérprete) y la revisión nocturna de las ejecuciones, que con ella sabe
+ * si un pedido armado con el escape lo necesitaba.
+ */
+function faltasDe(seg) {
+  const verbo = verboDePr(seg);
+  const res = { verbo, juzgado: false, borrador: false, faltas: [] };
+  if (verbo !== 'create' && verbo !== 'update') return res;
+  const autoComplete = flagDe(seg, 'auto-complete');
+  const squash = flagDe(seg, 'squash');
+  const draft = flagDe(seg, 'draft');
+  const destino = flagDe(seg, 'target-branch', 't');
+  if (verbo === 'create') {
+    // Sólo los que van a main: el skill es el camino de esa rama.
+    if (destino !== null && !A_MAIN.test(destino)) return res;
+    if (esCierto(draft)) { res.borrador = true; return res; }
+    res.juzgado = true;
+    if (!esCierto(autoComplete)) res.faltas.push('sin `--auto-complete true`: el PR queda abierto para siempre, nadie lo completa');
+    if (squash === null) res.faltas.push(`sin \`--squash false\` explícito: la estrategia la decide la política de la rama, y si es squash ${ROMPE_SQUASH}`);
+    else if (!esFalso(squash)) res.faltas.push(`con \`--squash ${squash}\`: ${ROMPE_SQUASH}`);
+    return res;
+  }
+  res.juzgado = true;
+  if (esFalso(autoComplete)) res.faltas.push('apaga el auto-complete de un PR ya creado: queda abierto para siempre');
+  if (esCierto(squash)) res.faltas.push(`prende el squash de un PR ya creado: ${ROMPE_SQUASH}`);
+  // Publicar un borrador es CREARLO de verdad: la tercera puerta al mismo resultado.
+  if (esFalso(draft)) {
+    if (!esCierto(autoComplete)) res.faltas.push('publica un borrador (`--draft false`) sin `--auto-complete true`: queda un PR normal que nadie completa');
+    if (squash === null || !esFalso(squash)) res.faltas.push('publica un borrador sin `--squash false` explícito: la estrategia la decide la política de la rama');
+  }
+  return res;
+}
+
+module.exports = { fichas, pareceAzPr, segmentos, flagDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH };

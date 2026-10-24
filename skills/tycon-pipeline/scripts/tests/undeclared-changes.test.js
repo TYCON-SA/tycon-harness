@@ -252,3 +252,64 @@ test('T35 Cierre_RepoEnUnaSubcarpeta_YFileListConSubtitulos', () => {
   assert.deepEqual(uc.fileListOf(fs.readFileSync(historia, 'utf8')), ['src/z.ts']);
   fs.rmSync(c.home, { recursive: true, force: true });
 });
+
+// Una tanda que sale de main después de que otra story entró: el diff contra el arranque de la tanda anterior trae los
+// archivos de esa story. Se descuenta un archivo sólo si las tres cosas son ciertas: su contenido es el de origin/main,
+// entró a main después del arranque, y la ejecución no lo tocó nunca. Si falta cualquiera, sigue contando.
+function conMainAdelante() {
+  const c = corral({ modificar: ['src/a.ts'] });
+  // otra story entra a main después del arranque: un archivo nuevo y uno cambiado
+  fs.mkdirSync(path.join(c.repo, 'otra'), { recursive: true });
+  fs.writeFileSync(path.join(c.repo, 'otra', 'vigilante.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(c.repo, 'package.json'), '{"name":"x","otra":true}\n');
+  git(c.repo, 'add', '-A');
+  git(c.repo, 'commit', '-q', '-m', 'merge de otra story');
+  git(c.repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  // y la tanda trabaja encima
+  fs.writeFileSync(path.join(c.repo, 'src', 'a.ts'), 'export const a = 2;\n');
+  return c;
+}
+
+test('T35 Cierre_LoQueEntroPorMain_NoSobra @story-8.115 @ac-11', () => {
+  const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
+  const c = conMainAdelante();
+  const r = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')] });
+  assert.equal(r.medido, true);
+  assert.deepEqual(r.sobra, [], JSON.stringify(r));
+  assert.match(r.avisos.join('\n'), /entró por main.*otra\/vigilante\.js/s, 'lo descontado se dice');
+  fs.rmSync(c.home, { recursive: true, force: true });
+});
+
+test('T34 Cierre_LoQueEntroPorMain_SiLaEjecucionLoToco_Sobra @story-8.115 @ac-11', () => {
+  const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
+  const c = conMainAdelante();
+  // la ejecución lo tocó por la terminal (lo restauró desde main): igual al de main, pero cuenta
+  const r = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')],
+    consola: [{ path: path.join(c.repo, 'otra', 'vigilante.js'), kind: 'restore' }] });
+  assert.deepEqual(r.sobra, ['otra/vigilante.js'], JSON.stringify(r));
+  // uno que entró por main pero la tanda dejó distinto: también cuenta
+  fs.writeFileSync(path.join(c.repo, 'package.json'), '{"name":"x","otra":false}\n');
+  const r2 = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')] });
+  assert.deepEqual(r2.sobra, ['package.json'], JSON.stringify(r2));
+  // sin origin/main no hay con qué comparar: nada se descuenta
+  git(c.repo, 'update-ref', '-d', 'refs/remotes/origin/main');
+  const r3 = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')] });
+  assert.deepEqual(r3.sobra, ['otra/vigilante.js', 'package.json'], JSON.stringify(r3));
+  fs.rmSync(c.home, { recursive: true, force: true });
+});
+
+test('T34 Cierre_IgualAMainPeroSinEntrarDespuesDelArranque_Sobra @story-8.115 @ac-11', () => {
+  const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
+  const c = corral({ modificar: ['src/a.ts'] });
+  // main quedó atrás: el arranque es un commit posterior que cambió el package.json
+  git(c.repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const deMain = fs.readFileSync(path.join(c.repo, 'package.json'), 'utf8');
+  fs.writeFileSync(path.join(c.repo, 'package.json'), '{"name":"arranque"}\n');
+  git(c.repo, 'commit', '-q', '-am', 'arranque de la tanda');
+  const base = git(c.repo, 'rev-parse', 'HEAD');
+  // la tanda lo devuelve a mano al contenido de main, sin Edit: igual a main, pero no entró a main después del arranque
+  fs.writeFileSync(path.join(c.repo, 'package.json'), deMain);
+  const r = uc.computeUndeclared({ repo: c.repo, baseSha: base, storyPath: c.storyPath });
+  assert.deepEqual(r.sobra, ['package.json'], JSON.stringify(r));
+  fs.rmSync(c.home, { recursive: true, force: true });
+});
