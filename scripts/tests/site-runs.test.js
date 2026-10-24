@@ -132,10 +132,12 @@ function fuentesCon({ espejo, config = opsCon(), informados = INFORMADOS, hilos 
   return f;
 }
 
-/** El sitio con la pestaña; `entrar(correo)` da la cookie de una sesión real. `opciones` va a crearRutas. */
-async function conPestana({ fuentes, opciones = {}, rutasMas = [], sinDisco = false }, fn) {
+/**
+ * El sitio con la pestaña; `entrar(correo)` da la cookie de una sesión real. `opciones` va a crearRutas. `datos`: el
+ * disco del sitio de un arranque anterior (un reinicio sobre el mismo `SITE_DATA_DIR`); sin él, uno nuevo.
+ */
+async function conPestana({ fuentes, opciones = {}, rutasMas = [], sinDisco = false, datos = tmp('site-runs-datos-') }, fn) {
   const emisor = await arrancarEmisor();
-  const datos = tmp('site-runs-datos-');
   const env = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, ...(sinDisco ? {} : { SITE_DATA_DIR: datos }) });
   const cfg = validarConfiguracion(env).cfg;
   const rutasExtra = TAB().crearRutas({ cfg, fuentes, skillsDir: path.join(ROOT, 'skills'), ...opciones });
@@ -1382,5 +1384,411 @@ test('Filtro_ProductosDeReposJson_AgrupanLaLista', async () => {
     assert.ok(alfa.length > 0, 'el mundo de prueba trae ejecuciones de Alfa/FrontEnd');
     assert.deepStrictEqual([...new Set(alfa.map((c) => c.grupo))], ['Cliente A']);
     assert.ok(l.corridas.every((c) => c.producto === 'Alfa/FrontEnd' || c.grupo !== 'Cliente A'), 'sólo su repo cae en el producto');
+  });
+});
+
+// ── La vista guardada: lo último que había, después de un reinicio ───────────────────────────────────────────────
+
+const VISTA_GUARDADA = (datos) => path.join(datos, 'runs-view.json');
+const leerGuardada = (datos) => JSON.parse(fs.readFileSync(VISTA_GUARDADA(datos), 'utf8'));
+/**
+ * Un armado que espera a que la prueba lo suelte: `{ armar, soltar(), arrancado() }`. Soltado antes de arrancar, el
+ * armado que llegue después no espera.
+ */
+function armadoLento({ falla = false } = {}) {
+  const armarReal = TAB().armarEnElHilo;
+  let liberar = null;
+  let suelto = false;
+  const armar = async (o) => {
+    if (!suelto) await new Promise((r) => { liberar = r; });
+    if (falla) throw Object.assign(new Error('memoria'), { code: 'ERR_WORKER_OUT_OF_MEMORY' });
+    return armarReal(o);
+  };
+  return { armar, soltar: () => { suelto = true; if (liberar) liberar(); }, arrancado: () => Boolean(liberar) };
+}
+/** Pide hasta que contesta 200 o pasa el tope: `{ r, ms }`. */
+async function hasta200(h, ruta, cookie, topeMs = 3000) {
+  const t0 = performance.now();
+  let r = null;
+  while (performance.now() - t0 < topeMs) {
+    r = await h.pedir(ruta, { cookie });
+    if (r.status === 200) break;
+    await new Promise((z) => setTimeout(z, 20));
+  }
+  return { r, ms: Math.round(performance.now() - t0) };
+}
+/** Un arranque que deja la vista guardada en `datos` y devuelve lo que sirvió. */
+async function primerArranque(datos, { espejo = mundo({ marcadores: false }), config } = {}) {
+  let servida = null;
+  await conPestana({ fuentes: fuentesCon({ espejo, ...(config ? { config } : {}) }), datos }, async ({ h, entrar, vista }) => {
+    await vista.listo();
+    servida = (await h.pedir('/api/corridas', { cookie: await entrar(LEAD) })).json;
+  });
+  return { espejo, servida };
+}
+// los textos de los cambios de una ejecución van en `texto` y `textoGit` de la ejecución (runs.textosDe); la huella del
+// espejo sería una clave de la vista guardada
+const sinTextosNiHuella = (g) => {
+  assert.ok(!('huella' in g), 'la vista guardada no lleva la huella del espejo');
+  for (const c of g.ejecuciones.corridas) {
+    for (const k of ['texto', 'textoGit']) assert.ok(!(k in c), `la ejecución ${c.id} no lleva «${k}»`);
+    if (isObject(c.cambios)) for (const k of ['texto', 'textoGit', 'parches']) assert.ok(!(k in c.cambios), `los cambios de ${c.id} no llevan «${k}»`);
+  }
+};
+const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+/** Lo que ve una sesión en la lista: `[]` si hoy no puede entrar a la pestaña (sin ninguna máquina confirmada). */
+async function loQueVe(h, cookie) {
+  const r = await h.pedir('/api/corridas', { cookie });
+  if (r.status === 403) return [];
+  assert.strictEqual(r.status, 200, r.texto);
+  return r.json.corridas;
+}
+
+// rojo si: el armado no deja la vista en el disco del sitio, la deja con textos o con la huella, no la reemplaza con el
+// armado siguiente, o un armado fallado la pisa.
+test('T1 2.77-Armado_GuardaLaVistaEntera @story-2.77 @ac-1 @ac-2', async () => {
+  const datos = tmp('site-runs-datos-');
+  let n = 0;
+  const armarReal = TAB().armarEnElHilo;
+  const armar = async (o) => { n += 1; if (n === 3) throw Object.assign(new Error('memoria'), { code: 'ERR_WORKER_OUT_OF_MEMORY' }); return armarReal(o); };
+  const espejo = mundo({ marcadores: false });
+  const fuentes = fuentesCon({ espejo });
+  await conPestana({ fuentes, datos, opciones: { armar } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    await vista.listo();
+    const servida = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    const g = leerGuardada(datos);
+    assert.strictEqual(g.formato, 1);
+    assert.strictEqual(g.generado, servida.generado, 'la fecha del armado');
+    assert.strictEqual(g.ejecuciones.corridas.length, servida.corridas.length);
+    assert.ok(g.informados && g.informados.maquinas && g.informados.maquinas['maq-a'], 'con lo informado de la misma bajada');
+    sinTextosNiHuella(g);
+    // el armado siguiente la reemplaza
+    escribir(path.join(espejo, 'maq-a'), 'a3.json', volcado('aaaaaaaa-0000-4000-8000-000000000003', '2026-08-20T09:00:00.000Z', { marker: { storyId: '3.3' } }));
+    fuentes.avisar(); await vista.listo();
+    const g2 = leerGuardada(datos);
+    assert.strictEqual(g2.ejecuciones.corridas.length, g.ejecuciones.corridas.length + 1, 'el armado nuevo la reemplaza');
+    // uno fallado no la toca
+    const antes = fs.readFileSync(VISTA_GUARDADA(datos));
+    escribir(path.join(espejo, 'maq-a'), 'a4.json', volcado('aaaaaaaa-0000-4000-8000-000000000004', '2026-08-21T09:00:00.000Z', { marker: { storyId: '3.4' } }));
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual(n, 3, 'el tercer armado corrió y falló');
+    assert.ok(fs.readFileSync(VISTA_GUARDADA(datos)).equals(antes), 'un armado fallado no toca la guardada');
+  });
+});
+
+// rojo si: después de un reinicio la pestaña dice «cargando» con una vista guardada, o tarda más de 2 s en servirla.
+test('T2 2.77-Reinicio_SirveLaGuardadaAlInstante @story-2.77 @ac-4', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const lento = armadoLento();
+  await conPestana({ fuentes: fuentesCon({ espejo }), datos, opciones: { noEsperar: true, armar: lento.armar } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    assert.strictEqual((await h.pedir('/healthz')).status, 200);
+    const { r, ms } = await hasta200(h, '/api/corridas', lead);
+    assert.strictEqual(r.status, 200, r.texto);
+    assert.ok(ms < 2000, `la guardada se sirvió en ${ms} ms`);
+    assert.deepStrictEqual(r.json.vista, { guardada: true, generado: servida.generado });
+    assert.strictEqual(r.json.corridas.length, servida.corridas.length);
+    assert.doesNotMatch((await h.pedir('/corridas', { cookie: lead })).texto, /cargando las ejecuciones/);
+    lento.soltar(); await vista.listo();
+  });
+});
+
+// rojo si: con la bajada a medias después de un reinicio no se sirve la guardada, se sirve sin decir que puede faltar
+// algo, a una persona le sale «no medido», o se arma con la bajada a medias.
+test('T3 2.77-Reinicio_BajadaAMedias_SirveLaGuardada @story-2.77 @ac-5 @ac-15', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const dev = await entrar(DEV_A);
+    const { r } = await hasta200(h, '/api/corridas', lead);
+    assert.strictEqual(r.status, 200, r.texto);
+    assert.strictEqual(r.json.generado, servida.generado, 'la guardada, con su fecha');
+    assert.strictEqual(r.json.buzon.parcial, true, 'puede faltar alguna ejecución');
+    const d = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    assert.ok(!d.vacio_motivo || !/no medido/.test(d.vacio_motivo), `la persona no ve «no medido»: ${d.vacio_motivo}`);
+    assert.ok(d.corridas.length > 0 && d.corridas.every((c) => c.maquina === 'maq-a'), 'sólo sus máquinas');
+    assert.strictEqual(vista.armando(), false, 'no se arma con la bajada a medias');
+  });
+});
+
+// rojo si: con la guardada y algo por esperar no hay banda ni recarga; si siguen con el armado nuevo; si con el armado
+// fallado o la fuente del buzón fallando la página promete actualizarse sola o se recarga sin fin.
+test('T4 2.77-Guardada_BandaRecargaYApi @story-2.77 @ac-6 @ac-7', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const BANDA = /Se muestra la vista guardada el/;
+  const RECARGA = /<meta http-equiv="refresh" content="60">/;
+  // esperando la bajada entera
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    const p = await h.pedir('/corridas', { cookie: lead });
+    assert.strictEqual(p.status, 200);
+    assert.match(p.texto, BANDA);
+    assert.match(p.texto, RECARGA);
+    // llega la bajada entera: el armado nuevo se pone, sin banda ni recarga, y reemplaza la guardada
+    fuentes.st.personas = { informados: H.informados(INFORMADOS), repos: null };
+    fuentes.bajada = { completo: true, generacion: 1 };
+    fuentes.avisar(); await vista.listo();
+    const p2 = await h.pedir('/corridas', { cookie: lead });
+    assert.doesNotMatch(p2.texto, BANDA);
+    assert.doesNotMatch(p2.texto, RECARGA);
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.vista, undefined);
+    assert.notStrictEqual(leerGuardada(datos).generado, servida.generado, 'la guardada se reemplazó');
+  });
+  // el armado de este arranque falla: sólo la banda del rearmado, sin recarga
+  const guardada = leerGuardada(datos).generado;
+  await conPestana({ fuentes: fuentesCon({ espejo }), datos, opciones: { armar: async () => { throw Object.assign(new Error('memoria'), { code: 'ERR_WORKER_OUT_OF_MEMORY' }); } } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const p = await h.pedir('/corridas', { cookie: lead });
+    assert.strictEqual(p.status, 200, p.texto);
+    assert.match(p.texto, /No se pudo rearmar la vista de ejecuciones/);
+    assert.ok(p.texto.includes(guardada.slice(0, 16).replace('T', ' ')), 'con la fecha de la guardada');
+    assert.doesNotMatch(p.texto, BANDA);
+    assert.doesNotMatch(p.texto, RECARGA);
+  });
+  // la fuente del buzón falla: no hay nada por esperar
+  const caida = fuentesCon({ espejo, informados: null });
+  caida.bajada = { completo: false, generacion: 0 };
+  caida.st.bandaRefresco = { desde: Date.parse('2026-10-24T14:33:00Z'), estado: 'error' };
+  await conPestana({ fuentes: caida, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    const p = await h.pedir('/corridas', { cookie: lead });
+    assert.strictEqual(p.status, 200);
+    assert.doesNotMatch(p.texto, BANDA);
+    assert.doesNotMatch(p.texto, RECARGA);
+  });
+});
+
+// rojo si: los textos de la guardada dicen que la ejecución no tiene cambios, prometen volver cuando no hay nada por
+// esperar, o no vuelven con el armado nuevo; o el mapa a demanda guardado deja de andar.
+test('T5 2.77-Guardada_TextosVuelvenConElArmado @story-2.77 @ac-8', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const a1 = servida.corridas.find((c) => c.story === '3.1').id;
+  const a2 = servida.corridas.find((c) => c.story === '3.2');
+  // una ejecución a demanda en el mapa guardado, con su volcado dentro del buzón
+  const g = leerGuardada(datos);
+  g.aDemanda = { [a2.id]: path.join(espejo, 'maq-a', 'a2.json') };
+  fs.writeFileSync(VISTA_GUARDADA(datos), JSON.stringify(g));
+  const pedidos = [];
+  const conBajada = (f) => { f.bajarCorrida = async (x) => { pedidos.push(x); return { codigo: 1, res: { estado: 'sin_partes' } }; }; return f; };
+  const fuentes = conBajada(fuentesCon({ espejo, informados: null }));
+  fuentes.bajada = { completo: false, generacion: 0 };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    const t = await h.pedir(`/api/corridas/${a1}/textos`, { cookie: lead });
+    assert.strictEqual(t.status, 503, t.texto);
+    assert.match(t.texto, /los cambios de esta ejecución vuelven cuando termine de armarse la vista/);
+    assert.strictEqual(t.headers['retry-after'], '60');
+    const d = await h.pedir(`/api/corridas/${a2.id}/textos`, { cookie: lead });
+    assert.strictEqual(d.status, 200, 'la a demanda anda como hoy');
+    assert.strictEqual(pedidos.length, 1, 'bajó del buzón');
+    // llega la bajada entera: el armado nuevo trae los textos
+    fuentes.st.personas = { informados: H.informados(INFORMADOS), repos: null };
+    fuentes.bajada = { completo: true, generacion: 1 };
+    fuentes.avisar(); await vista.listo();
+    const t2 = await h.pedir(`/api/corridas/${a1}/textos`, { cookie: lead });
+    assert.strictEqual(t2.status, 200, t2.texto);
+    assert.ok(t2.json.textoGit, 'el parche volvió');
+  });
+  // sin nada por esperar (el armado de este arranque falló): «no están disponibles», sin Retry-After
+  await conPestana({ fuentes: fuentesCon({ espejo }), datos, opciones: { armar: async () => { throw Object.assign(new Error('x'), { code: 'X' }); } } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const ida1 = (await h.pedir('/api/corridas', { cookie: lead })).json.corridas.find((c) => c.story === '3.1').id;
+    const t = await h.pedir(`/api/corridas/${ida1}/textos`, { cookie: lead });
+    assert.strictEqual(t.status, 503, t.texto);
+    assert.match(t.texto, /no están disponibles hasta el próximo armado de la vista/);
+    assert.strictEqual(t.headers['retry-after'], undefined);
+  });
+});
+
+// rojo si: la guardada se filtra con las reglas del momento del armado y no con las de hoy.
+test('T6 2.77-Guardada_FiltraConLasReglasDeHoy @story-2.77 @ac-9', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const a1 = servida.corridas.find((c) => c.story === '3.1').id;
+  // hoy, maq-a ya no está confirmada para dev-a
+  const fuentes = fuentesCon({ espejo, config: opsCon({ 'maq-b': MAQUINAS['maq-b'] }), informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    const dev = await entrar(DEV_A);
+    assert.ok((await loQueVe(h, dev)).every((c) => c.maquina !== 'maq-a'), 'dev-a ya no ve maq-a');
+    assert.ok([403, 404].includes((await h.pedir(`/api/corridas/${a1}`, { cookie: dev })).status), 'su detalle tampoco');
+    // con la confirmación de antes, la misma guardada sí le muestra maq-a: lo que cambió es la regla de hoy
+    assert.ok(servida.corridas.some((c) => c.maquina === 'maq-a'));
+  });
+});
+
+// rojo si: una vista guardada rota se sirve, no se dice en el registro, o una ruta del mapa a demanda fuera del buzón
+// hace copiar otro archivo del disco.
+test('T7 2.77-Guardada_Ilegible_NoSeSirve @story-2.77 @ac-10', async () => {
+  const datosOk = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datosOk);
+  const buena = leerGuardada(datosOk);
+  const casos = [
+    ['json roto', (d) => fs.writeFileSync(VISTA_GUARDADA(d), '{ esto no')],
+    ['otro formato', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, formato: 2 }))],
+    ['sin ejecuciones', (d) => fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify({ ...buena, ejecuciones: null }))],
+  ];
+  if (!(process.getuid && process.getuid() === 0)) casos.push(['sin permiso de lectura', (d) => { fs.writeFileSync(VISTA_GUARDADA(d), JSON.stringify(buena)); fs.chmodSync(VISTA_GUARDADA(d), 0o000); }]);
+  for (const [nombre, armarCaso] of casos) {
+    const datos = tmp('site-runs-datos-');
+    armarCaso(datos);
+    const registro = [];
+    const fuentes = fuentesCon({ espejo, informados: null });
+    fuentes.bajada = { completo: false, generacion: 0 };
+    await conPestana({ fuentes, datos, opciones: { noEsperar: true, log: (l) => registro.push(l) } }, async ({ h, entrar, vista }) => {
+      const lead = await entrar(LEAD);
+      await vista.listo();
+      const r = await h.pedir('/api/corridas', { cookie: lead });
+      assert.notStrictEqual(r.status, 200, `${nombre}: no se sirve`);
+      assert.ok(registro.some((l) => /vista guardada/.test(l)), `${nombre}: el registro lo dice (${registro.join(' | ')})`);
+    });
+    try { fs.chmodSync(VISTA_GUARDADA(datos), 0o600); } catch { /* ya está */ }
+  }
+  // una ruta del mapa a demanda fuera del buzón: se descarta, nunca se copia
+  const datos = tmp('site-runs-datos-');
+  const a2 = servida.corridas.find((c) => c.story === '3.2').id;
+  const ajeno = path.join(tmp('site-runs-ajeno-'), 'secreto.json');
+  fs.writeFileSync(ajeno, '{"zqx":"no se copia"}');
+  fs.writeFileSync(VISTA_GUARDADA(datos), JSON.stringify({ ...buena, aDemanda: { [a2]: ajeno } }));
+  const pedidos = [];
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  fuentes.bajarCorrida = async (x) => { pedidos.push(x); return { codigo: 1, res: { estado: 'sin_partes' } }; };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    const t = await h.pedir(`/api/corridas/${a2}/textos`, { cookie: lead });
+    assert.strictEqual(t.status, 503, t.texto);
+    assert.strictEqual(pedidos.length, 0, 'no se bajó ni se copió nada');
+  });
+});
+
+// rojo si: sin disco del sitio se escribe una vista guardada en algún lado.
+test('T8 2.77-SinDisco_ComoHoy @story-2.77 @ac-11', async () => {
+  const datos = tmp('site-runs-datos-');
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo({ marcadores: false }) }), datos, sinDisco: true }, async ({ h, entrar, vista }) => {
+    await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: await entrar(LEAD) })).status, 200);
+    assert.strictEqual(vista.estado().guardada, null);
+  });
+  assert.ok(!fs.existsSync(VISTA_GUARDADA(datos)), 'sin SITE_DATA_DIR no se guarda');
+});
+
+// rojo si: no poder guardar la vista tumba el armado, o el registro trae una ruta.
+test('T9 2.77-EscrituraFallida_ElArmadoSeSirve @story-2.77 @ac-3', async () => {
+  const datos = tmp('site-runs-datos-');
+  fs.mkdirSync(VISTA_GUARDADA(datos));   // una carpeta en el lugar del archivo: el rename falla
+  const registro = [];
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo({ marcadores: false }) }), datos, opciones: { log: (l) => registro.push(l) } }, async ({ h, entrar, vista }) => {
+    await vista.listo();
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: await entrar(LEAD) })).status, 200, 'el armado se sirve');
+    const linea = registro.find((l) => /no se pudo guardar la vista/.test(l));
+    assert.ok(linea, registro.join(' | '));
+    assert.ok(!linea.includes(datos), 'sin rutas en el registro');
+  });
+});
+
+// rojo si: leer una vista guardada grande traba al sitio.
+test('T10 2.77-Lectura_NoFrenaHealthz @story-2.77 @ac-12', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo } = await primerArranque(datos);
+  // una guardada del tamaño medido (unos 20 MB): la misma ejecución repetida con ids distintos
+  const g = leerGuardada(datos);
+  const base = g.ejecuciones.corridas[0];
+  const muchas = [];
+  for (let i = 0; muchas.length < 4000; i++) muchas.push({ ...base, id: i.toString(16).padStart(16, '0') });
+  g.ejecuciones.corridas = muchas;
+  fs.writeFileSync(VISTA_GUARDADA(datos), JSON.stringify(g));
+  const lento = armadoLento();
+  await conPestana({ fuentes: fuentesCon({ espejo }), datos, opciones: { noEsperar: true, armar: lento.armar } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const t0 = performance.now();
+    assert.strictEqual((await h.pedir('/healthz')).status, 200);
+    assert.strictEqual((await h.pedir('/', { cookie: lead })).status, 200);
+    const ms = Math.round(performance.now() - t0);
+    assert.ok(ms < 1000, `contestaron en ${ms} ms mientras se leía la guardada`);
+    lento.soltar(); await vista.listo();
+  });
+});
+
+// rojo si: un temporal a medio escribir de un arranque anterior se lee en lugar de la guardada entera.
+test('T11 2.77-Guardada_EscrituraAtomica @story-2.77 @ac-1', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  fs.writeFileSync(`${VISTA_GUARDADA(datos)}.tmp-12345`, '{ "formato": 1, "generado": "2099');
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    const { r } = await hasta200(h, '/api/corridas', await entrar(LEAD));
+    assert.strictEqual(r.status, 200, r.texto);
+    assert.strictEqual(r.json.generado, servida.generado, 'la guardada entera');
+  });
+});
+
+// rojo si: el archivo queda con permisos abiertos o alguna ruta del sitio lo sirve.
+test('T14 2.77-Guardada_PermisosYSinRuta @story-2.77 @ac-16', async () => {
+  const datos = tmp('site-runs-datos-');
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo({ marcadores: false }) }), datos }, async ({ h, entrar, vista }) => {
+    await vista.listo();
+    assert.strictEqual(fs.statSync(VISTA_GUARDADA(datos)).mode & 0o777, 0o600);
+    const lead = await entrar(LEAD);
+    for (const ruta of ['/runs-view.json', '/corridas/runs-view.json', '/static/runs-view.json', '/api/corridas/runs-view.json']) {
+      const r = await h.pedir(ruta, { cookie: lead });
+      assert.ok(r.status === 404, `${ruta}: ${r.status}`);
+      assert.doesNotMatch(r.texto || '', /"formato"\s*:\s*1/);
+    }
+  });
+});
+
+// rojo si: con la guardada, una máquina que cambió de dueño se filtra con lo informado nuevo (una foto más nueva que la
+// vista), o sigue con el dueño viejo después del armado nuevo.
+test('T15 2.77-Guardada_CambioDeDueno_HastaLaBajadaEntera @story-2.77 @ac-15', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo } = await primerArranque(datos);
+  const maqAdeB = { ...MAQUINAS, 'maq-a': { person: DEV_B, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-24' } };
+  const nuevos = H.informados({ ...INFORMADOS, 'maq-a': DEV_B });
+  const verMaqA = async (h, cookie) => (await loQueVe(h, cookie)).some((c) => c.maquina === 'maq-a');
+  // la confirmación de hoy todavía dice dev-a: la ve dev-a
+  const f1 = fuentesCon({ espejo, informados: null });
+  f1.bajada = { completo: false, generacion: 0 };
+  await conPestana({ fuentes: f1, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    await hasta200(h, '/api/corridas', await entrar(LEAD));
+    assert.strictEqual(await verMaqA(h, await entrar(DEV_A)), true, 'el dueño viejo, con la confirmación vieja');
+    assert.strictEqual(await verMaqA(h, await entrar(DEV_B)), false);
+  });
+  // reconfirmada para dev-b: ninguna persona la ve (sólo quien mantiene), también con el armado nuevo en curso
+  const lento = armadoLento();
+  const f2 = fuentesCon({ espejo, config: opsCon(maqAdeB), informados: null });
+  f2.bajada = { completo: false, generacion: 0 };
+  await conPestana({ fuentes: f2, datos, opciones: { noEsperar: true, armar: lento.armar } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    assert.strictEqual(await verMaqA(h, await entrar(DEV_A)), false, 'reconfirmada: el viejo no');
+    assert.strictEqual(await verMaqA(h, await entrar(DEV_B)), false, 'y el nuevo tampoco, con la foto vieja');
+    assert.strictEqual(await verMaqA(h, lead), true, 'quien mantiene sí');
+    // llega la bajada entera con lo informado nuevo; el armado nuevo tarda
+    f2.st.personas = { informados: nuevos, repos: null };
+    f2.bajada = { completo: true, generacion: 1 };
+    f2.avisar();
+    for (let i = 0; i < 200 && !lento.arrancado(); i++) await new Promise((r) => setTimeout(r, 25));
+    assert.ok(lento.arrancado(), 'el armado nuevo arrancó');
+    assert.strictEqual(await verMaqA(h, await entrar(DEV_B)), false, 'con el armado en curso, la guardada sigue con su foto');
+    lento.soltar(); await vista.listo();
+    assert.strictEqual(await verMaqA(h, await entrar(DEV_B)), true, 'con el armado nuevo, el dueño nuevo');
+    assert.strictEqual(await verMaqA(h, await entrar(DEV_A)), false);
   });
 });
