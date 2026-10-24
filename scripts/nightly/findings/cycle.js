@@ -29,8 +29,25 @@ const NOCHES_POR_DEFECTO = 3;
 // El orden en que se escribe la ficha común. `noches_sin_aparecer` y `noche_contada` (la fecha de la última noche
 // contada) sólo están mientras cuenta.
 const CLAVES = ['id', 'fuente', 'causa', 'nombre', 'primera_vez', 'ultima_vez', 'apariciones', 'noches_sin_aparecer',
-  'noche_contada', 'veredicto', 'veredicto_anterior', 'propuesta', 'pedido', 'asignado', 'estado', 'casos', 'casos_total',
-  'casos_vistos'];
+  'noche_contada', 'veredicto', 'veredicto_anterior', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
+  'pedido', 'asignado', 'estado', 'casos', 'casos_total', 'casos_vistos'];
+// Por qué una ficha quedó sin propuesta del modelo: una lista cerrada, nunca el texto de un error. `tope` y `sin-escribir`
+// (la ficha no se pudo escribir) no se escriben en la ficha: los cuenta la constancia de la noche.
+const MOTIVOS_SIN_PROPUESTA = ['sin-modelo', 'sin-llave', 'no-permitido', 'modelo-caido', 'respuesta-invalida', 'tope', 'sin-escribir'];
+// Las noches seguidas que una ficha puede fallar antes de dejar de pedirle propuesta.
+const FALLAS_MAX = 3;
+
+/**
+ * ¿La razón del modelo se puede guardar y mostrar? Una frase corta: letras, números, espacio y la puntuación común.
+ * Nada que parezca una ruta, un enlace, un dominio, un correo, código o un número (un pedido, un teléfono): a lo sumo
+ * cinco cifras en toda la frase. Nombrar el protocolo («el cliente HTTP») vale: un enlace necesita la barra, que no
+ * está entre los signos permitidos, y un dominio lo frena su forma.
+ */
+function razonSegura(t) {
+  return typeof t === 'string' && t.trim() === t && t.length >= 1 && t.length <= 200
+    && /^[\p{L}\p{N} .,;:()¿?¡!«»'-]+$/u.test(t) && !/www\./i.test(t)
+    && !/[\p{L}\p{N}-]\.[a-z]{2,}\b/iu.test(t) && (t.match(/\p{N}/gu) || []).length <= 5;
+}
 
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const CLAVE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,119}$/;
@@ -77,6 +94,9 @@ function problemasDeForma(f) {
       p.push('propuesta: sin forma');
     }
   }
+  if ('propuesta_motivo' in f && f.propuesta_motivo !== null && !MOTIVOS_SIN_PROPUESTA.includes(f.propuesta_motivo)) p.push('propuesta_motivo: fuera del vocabulario');
+  if ('propuesta_fallas' in f && !(entero(f.propuesta_fallas, 0) && f.propuesta_fallas <= FALLAS_MAX)) p.push(`propuesta_fallas: un entero de 0 a ${FALLAS_MAX}`);
+  if ('propuesta_fallo_el' in f && !(typeof f.propuesta_fallo_el === 'string' && FECHA.test(f.propuesta_fallo_el))) p.push('propuesta_fallo_el: una fecha');
   if (f.pedido !== null && !(entero(f.pedido, 1) || (typeof f.pedido === 'string' && CLAVE.test(f.pedido)))) p.push('pedido: sin forma');
   if (f.asignado !== null && !(typeof f.asignado === 'string' && IDENTIDAD.test(f.asignado))) p.push('asignado: sin forma');
   if (!ESTADOS.includes(f.estado)) p.push('estado: fuera del vocabulario');
@@ -141,12 +161,16 @@ function nuevaFicha({ fuente, causa, nombre, hoy, casos = [] }) {
   return f;
 }
 
-/** La noche que vuelve a ver la causa: misma ficha, una aparición más (una por noche) y el contador borrado. */
+/**
+ * La noche que vuelve a ver la causa: misma ficha, una aparición más (una por noche) y el contador borrado. Una que
+ * estaba resuelta y vuelve pierde la propuesta del modelo y sus fallas: se le vuelve a pedir.
+ */
 function registrarAparicion(f, hoy, casos) {
   const g = conCasos({ ...f }, casos);
   if (g.ultima_vez !== hoy) { g.apariciones = (g.apariciones || 0) + 1; g.ultima_vez = hoy; }
   delete g.noches_sin_aparecer;
   delete g.noche_contada;
+  if (f.estado === 'resuelta') { g.propuesta = null; delete g.propuesta_motivo; delete g.propuesta_fallas; delete g.propuesta_fallo_el; }
   return ordenar(g);
 }
 
@@ -310,9 +334,11 @@ function formatoPorSecciones({ orden, listas }) {
         if (m) return txt.slice(0, m.index) + texto + txt.slice(m.index);
       }
     }
-    // Ninguna posterior: antes de los comentarios del pie, o al final.
-    const c = txt.match(/^#/m);
-    if (c) return txt.slice(0, c.index) + texto + txt.slice(c.index);
+    // Ninguna posterior: antes de los comentarios del pie, o al final. El pie es el primer comentario DESPUÉS de una
+    // clave: el encabezado de un borrador del vigilante (comentarios antes de la primera clave) no es el pie.
+    const primera = txt.search(/^[A-Za-z_][\w-]*:/m);
+    const c = primera >= 0 ? txt.slice(primera).match(/^#/m) : null;
+    if (c) return txt.slice(0, primera + c.index) + texto + txt.slice(primera + c.index);
     return txt.endsWith('\n') || txt === '' ? txt + texto : `${txt}\n${texto}`;
   }
 
@@ -358,6 +384,6 @@ function formatoPorSecciones({ orden, listas }) {
 
 module.exports = {
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
-  problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
+  ACCIONES, MOTIVOS_SIN_PROPUESTA, FALLAS_MAX, razonSegura, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,
 };

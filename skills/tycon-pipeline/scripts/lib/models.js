@@ -48,6 +48,13 @@ const modelOf = (v) => (isLevel(v) ? MODELS[LEVELS.indexOf(v)] : MODELS.includes
 /** El nivel de un modelo de Claude; un nivel queda como está; otra cosa, null. */
 const levelOf = (v) => (MODELS.includes(v) ? LEVELS[MODELS.indexOf(v)] : isLevel(v) ? v : null);
 /**
+ * El identificador de cada modelo de Claude en la API de Anthropic. Las herramientas aceptan el apodo; la API, no: lo
+ * usa quien llama a la API directo (la propuesta del modelo de la noche).
+ */
+const ANTHROPIC_API_IDS = Object.freeze({ haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5', fable: 'claude-fable-5-1' });
+/** El identificador de la API de un apodo o un nivel; un identificador ya escrito queda como está. */
+const anthropicApiId = (v) => { const m = modelOf(v); return m ? ANTHROPIC_API_IDS[m] : v; };
+/**
  * Los proveedores de modelos, en orden: de quién es el modelo de cada nivel (`models.providers.<proveedor>.<nivel>`).
  * `team-repos.js` tiene su copia (T6 las compara). La tabla de Anthropic es fija (el alias de cada nivel).
  */
@@ -438,7 +445,7 @@ function readOrgModels({ dir, teamRepos } = {}) {
 }
 
 module.exports = {
-  MODELS, LEVELS, isLevel, modelOf, levelOf, toClaudeModels, PROVIDERS, isProvider, INHERIT, DEFAULTS, TIERS, JOBS, rank, isModel, capAt, ceilingOf, frontmatterModel, defaultFor, reviewerExists,
+  MODELS, LEVELS, isLevel, modelOf, levelOf, ANTHROPIC_API_IDS, anthropicApiId, toClaudeModels, PROVIDERS, isProvider, INHERIT, DEFAULTS, TIERS, JOBS, rank, isModel, capAt, ceilingOf, frontmatterModel, defaultFor, reviewerExists,
   resolveReviewers, resolveAdversarial, resolveStoryReview, STORY_REVIEWER, resolveHelpers, resolveSession, resolveModels, normalizeSessionModel, isJobName,
   resolveProviderModel, CURSOR_NOT_APPLIED,
   readOrgModels, agentsDirDefault,

@@ -3339,6 +3339,16 @@
       ]
     },
     {
+      "__nota": "story 4.11, tanda C: el modelo de la noche propone una acción por ficha (scripts/nightly/findings/propose.js) con un modelo de mentira — la propuesta con su razón filtrada, el tope de 30 por noche, sin modelo, sin llave o con el modelo caído la ficha queda con propuesta null y su motivo, tres fallas seguidas y no se reintenta, y el paso nunca pone roja la noche. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/findings-propose.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/nightly/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
       "__nota": "story 8.10.3, tanda D (T17, pase adversarial): el buscador de identificadores de código en una copia (scripts/publishing/code-identifiers.js), que usa el bloque «8.10.3 D» de export-real sobre la copia de verdad. Con una lista y una copia de laboratorio: cada grafía se ve (pegada, con guion, con punto, en otra caja, con el separador repetido o escapado, empezando con un dígito), también en el nombre de un archivo o de una carpeta; una palabra más larga que lo contiene y la palabra común que el término declara no son hallazgo; el rojo nombra al término por su número; y nunca da verde sin mirar. Viaja: no usa la lista privada.",
       "raiz": "arnes",
       "ruta": "tests/code-identifiers.test.js",
