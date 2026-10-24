@@ -879,6 +879,7 @@ const TOPE_EJECUCIONES = 900;
 const MOTIVO_EJ = '[\\p{L}\\p{N} ().,:_-]{1,160}';
 // los nombres en llano de cada causa viven en cause-names.js, con los de las otras fuentes
 const { NOMBRES_CAUSA, nombreCausa, NOMBRES_VALIDOS, hasOwnCausa } = require('../findings/cause-names.js');
+const PROPOSE = require('../findings/propose.js');
 const CAUSA_EJ = '([\\p{L} ]{3,60}): \\d+';
 const ENLACE_EJ = '(https?://[A-Za-z0-9.-]+(:\\d{1,5})?)?/corridas\\?abrir=[A-Za-z0-9_-]{1,64}';
 const EJ_NO_CORRIO = 'ejecuciones: la revisión NO CORRIÓ hoy';
@@ -959,16 +960,27 @@ function lineaFichas(fuente, dirFuente, hoy) {
  * de las 08:00 los vuelve a poner tal cual.
  */
 function lineasFichasDelClon(dir, hoy) {
-  return [['dependencias', 'dependencies'], ['ejecuciones', 'runs-review']]
+  const lineas = [['dependencias', 'dependencies'], ['ejecuciones', 'runs-review']]
     .filter(([, carpeta]) => fs.existsSync(path.join(dir, 'inbox', carpeta)))
     .map(([fuente, carpeta]) => lineaFichas(fuente, path.join(dir, 'inbox', carpeta), hoy));
+  // y cuántas quedaron sin propuesta del modelo esa noche, por motivo (o que el paso no corrió)
+  if (lineas.length) {
+    const propuesta = PROPOSE.lineaDelResumen(dir, hoy);
+    if (propuesta) lineas.push(propuesta);
+  }
+  return lineas;
 }
 
 /** Los renglones de fichas guardados a las 04:00: tal cual si todos tienen la forma; si no, ninguno (no se inventan). */
 function fichasDeLaConstancia(r) {
   if (!r || !hasOwn(r, 'fichas')) return null;
   const f = r.fichas;
-  return Array.isArray(f) && f.length <= 3 && f.every((l) => typeof l === 'string' && RENGLON_FICHAS.test(l)) ? f : null;
+  // hasta tres renglones de fichas y, detrás, a lo sumo uno de la propuesta del modelo
+  if (!Array.isArray(f) || !f.every((l) => typeof l === 'string')) return null;
+  const fichas = f.filter((l) => RENGLON_FICHAS.test(l));
+  const propuesta = f.filter((l) => !RENGLON_FICHAS.test(l) && PROPOSE.RENGLON.test(l));
+  const enOrden = propuesta.length === 0 || f[f.length - 1] === propuesta[0];
+  return fichas.length <= 3 && propuesta.length <= 1 && fichas.length + propuesta.length === f.length && enOrden ? f : null;
 }
 
 function lineaEjecuciones(dir, hoy) {
@@ -1151,6 +1163,12 @@ function entregar(a) {
   let ejecuciones = a.runsReview !== null ? lineaEjecuciones(a.runsReview, a.hoy) : null;
   // y debajo, los renglones de fichas del clon, que también se guardan y se rearman
   let fichasClon = a.runsReview !== null ? lineasFichasDelClon(a.runsReview, a.hoy) : null;
+  // sin la revisión de las ejecuciones, la línea de la propuesta del modelo va sola: el paso también propone para las
+  // fichas de dependencias y del vigilante, y el resumen tiene que decir cuántas quedaron sin la suya
+  if (fichasClon === null && a.fuente === 'dependencias' && a.pending) {
+    const propuesta = PROPOSE.lineaDelResumen(path.resolve(a.pending, '..', '..'), a.hoy);
+    if (propuesta) fichasClon = [propuesta];
+  }
   if (a.fuente === 'vigilante') {
     const d = dependenciasDeHoy(a);
     const r = d.resumen;
@@ -1194,7 +1212,7 @@ function entregar(a) {
   // la línea de las ejecuciones va en su lugar con una marca: el mensaje aparte de los canales que no editan no la lleva
   // cuando sale de la constancia de la mañana (ya les llegó a las 04:00)
   const MARCA_EJ = '\u0000ejecuciones\u0000';
-  if (ejecuciones !== null) cola = `${cola}${MARCA_EJ}`;
+  if (ejecuciones !== null || (fichasClon && fichasClon.length)) cola = `${cola}${MARCA_EJ}`;
   const semanal = a.weekly !== null ? lineaSemanal(a.weekly, a.hoy) : null;
   if (semanal) cola = `${cola}\n${semanal}`;
   // la versión del sitio, en su lugar fijo: antes de la línea del sitio, que sigue siendo la última
@@ -1213,7 +1231,7 @@ function entregar(a) {
   cola = `${cola}\n${sitio.linea}`;
   // el cuerpo se achica en lo que ocupa la línea de las ejecuciones (con los renglones de fichas): el mensaje entero no
   // crece por ella
-  const bloqueEj = ejecuciones === null ? null : [...ejecuciones, ...(fichasClon || [])];
+  const bloqueEj = ejecuciones === null ? (fichasClon && fichasClon.length ? fichasClon : null) : [...ejecuciones, ...(fichasClon || [])];
   const tope = bloqueEj === null ? TOPE_MENSAJE
     : { lineas: TOPE_MENSAJE.lineas - bloqueEj.length, caracteres: TOPE_MENSAJE.caracteres - bloqueEj.join('\n').length - 1 };
   const colaCon = cola.replace(MARCA_EJ, bloqueEj === null ? '' : `\n${bloqueEj.join('\n')}`);
@@ -1446,4 +1464,4 @@ if (require.main === module) {
   process.exit(codigo);
 }
 module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
-  lineaEjecuciones, lineaFichas, fichasDeLaConstancia };
+  lineaEjecuciones, lineaFichas, lineasFichasDelClon, fichasDeLaConstancia };
