@@ -180,7 +180,13 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
 - **Una historia escrita por consola.** Un comando que escribe una historia que no está en borrador (redirección, `sed
   -i`, `tee`, `cp`, un `node -e` o un `python3 -c`) frena con «HISTORIA ESCRITA POR CONSOLA». Desde un comando no se ve
   qué queda escrito. En su lugar: la herramienta de edición, y para el estado
-  `marker.js update-story-status <historia> <estado>`.
+  `marker.js update-story-status <historia> <estado>`. Con un editor en el lugar, la carpeta de un `cd <carpeta> && `
+  al principio exacto del comando (la carpeta escrita tal cual, sin comillas, opciones, `$` ni comodines), seguido de
+  un solo `sed` o `perl` que nombra sus archivos (sin tubería, `$(…)`, comillas invertidas, otro comando, redirección ni
+  salto de línea), es desde dónde se leen las demás palabras, no algo que el editor escribe:
+  `cd <repo> && sed -i -e 's/a/b/' x.sh` pasa aunque haya historias adentro de esa carpeta. Un editor que toma sus
+  archivos de una tubería o de `$(ls)` (`cd specs && ls | xargs sed -i …`) sigue frenando. `cd specs && sed -i -e 's/a/b/' story-x.md` sigue frenando, y también cualquier
+  otra forma de llegar a la carpeta (`;`, `|`, `&&` pegado, un espacio o un `(` delante, `cd -- x`, `cd $D`, `pushd`).
 - **El paso a review o done a mano.** Un Edit, un Write o un `apply_patch` de Codex que pasa la historia a `review` o
   `done` frena aunque esté la evidencia. En su lugar: `marker.js update-story-status`, `update-pipeline-status` o
   `/tycon-pipeline close`. Hacerlo a mano lo decide la persona («autorizo cambiar el estado»).

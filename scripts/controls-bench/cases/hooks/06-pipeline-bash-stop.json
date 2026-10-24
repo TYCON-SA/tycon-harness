@@ -52,6 +52,52 @@
           }
         },
         {
+          "id": "cd-antes-del-editor-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.113: la carpeta de un `cd <carpeta> && ` al principio es la base del editor, no algo que escribe; sin esto, frenaba por una plantilla con `story:` de una carpeta que el comando no toca.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs skills/x",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf -- '---\\nstory: \"{{n}}\"\\nstatus: draft\\n---\\n' > skills/x/template.md",
+            "printf 'a\\n' > notas.txt"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd . && sed -i -e 's/a/b/' notas.txt"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "cd-antes-del-editor-con-historia-frena",
+          "type": "must-block",
+          "_por_que": "8.113, gemelo: con el mismo `cd` al principio, la historia que el editor nombra desde esa carpeta sigue frenando.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs skills/x",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf -- '---\\nstory: \"{{n}}\"\\nstatus: draft\\n---\\n' > skills/x/template.md"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd specs && sed -i -e 's/a/b/' story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
           "id": "historia-por-consola-gemelo-no-historia-pasa",
           "type": "must-not-block",
           "_por_que": "8.109: el mismo comando sobre un .md que no es historia pasa (gemelo del anterior).",

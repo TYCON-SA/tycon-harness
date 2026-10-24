@@ -714,6 +714,26 @@ function palabrasProfundas(cmd) {
   return out;
 }
 
+// `cd <carpeta> && ` al principio exacto del comando, con la carpeta escrita tal cual (sin comillas, sin opción y sin
+// nada que el shell expanda o que corte el comando), seguido de UN `sed` o `perl` que nombra sus archivos: ni tubería,
+// ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea. Cualquier otra forma no es ésta:
+// un editor que toma sus archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y
+// esa carpeta es lo único que la nombra.
+const CD_INICIAL = /^cd ([^\s'"`$*?[\]{}()<>;&|\\-][^\s'"`$*?[\]{}()<>;&|\\]*) && (?:sed|perl) [^\n|;&<>`$]*$/;
+
+/**
+ * Las palabras que un editor en el lugar puede escribir: las de `palabrasProfundas`, sin las que tienen espacios. Con
+ * la forma de `CD_INICIAL`, la carpeta del `cd` sale de la lista por su posición —la segunda palabra, después de `cd`—:
+ * es la base desde la que se resuelven las demás, no algo que el editor escribe. La misma carpeta nombrada otra vez más
+ * adelante sigue en la lista.
+ */
+function palabrasDelEditor(cmd) {
+  const ws = palabrasProfundas(cmd).filter((w) => !/\s/.test(w));
+  const m = CD_INICIAL.exec(String(cmd || ''));
+  if (m && ws[0] === 'cd' && ws[1] === m[1]) ws.splice(1, 1);
+  return ws;
+}
+
 /** Lo que borra cada tramo, también los de adentro de `bash -c '…'`, y lo que recorre un `find` que borra. */
 function borradosProfundos(cmd) {
   const out = [];
@@ -965,6 +985,7 @@ function historiasPorConsola(cmd, cwd, targets) {
   // (desde otra rama o commit, `git checkout <ref> -- x` o `git restore --source`, la cambia aunque no tenga cambios)
   const conRef = /\bgit\b[^\n;&|]*\scheckout\s+(?!--)[^\s-]\S*\s+--|\bgit\b[^\n;&|]*\srestore\b[^\n;&|]*\s(?:--source|-s)\b/.test(String(cmd));
   const soloRepone = new Set(conRef ? [] : destinosB.filter((d) => d.kind === 'restore').map((d) => d.raw));
+  const nombradas = palabrasDelEditor(cmd);
   const crudos = [
     ...targets,
     ...destinosArmados(cmd).flatMap((a) => (a.literal ? [a.literal] : (a.literales || []))),
@@ -973,11 +994,11 @@ function historiasPorConsola(cmd, cwd, targets) {
     ...movidosFueraDeMd(cmd),
     ...destinosDeCopia(cmd),
     ...textosDeGuion,
-    ...(enSitio || FOR_IN.test(cmd) ? palabrasProfundas(cmd).filter((w) => !/\s/.test(w)) : []),
+    ...(enSitio || FOR_IN.test(cmd) ? nombradas : []),
   ];
   // una carpeta cuenta por las historias que tiene adentro cuando el comando la borra, la repone o la edita en el lugar
   // (`git checkout <rama> -- specs/`, `git restore .`, `grep -rl x specs | xargs sed -i`)
-  const porCarpeta = new Set([...borrados, ...(enSitio ? palabrasProfundas(cmd).filter((w) => !/\s/.test(w)) : [])]);
+  const porCarpeta = new Set([...borrados, ...(enSitio ? nombradas : [])]);
   const adentro = (dir) => {
     const out = [];
     const ver = (d, nivel) => {
