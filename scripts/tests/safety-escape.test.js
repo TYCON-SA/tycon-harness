@@ -1477,7 +1477,9 @@ exit "\${PIPESTATUS[0]}"
   const binSin = path.join(lab, 'sin'); fs.mkdirSync(binSin);
   fs.writeFileSync(path.join(binSin, 'jq'), '#!/usr/bin/env bash\nexit 1\n', { mode: 0o755 });
   const casos = [
-    ...ESC_C3_FRENA.map(([herramienta, c]) => [ROJO, herramienta, c]),
+    // en Windows, una muestra: cada llamada al freno cuesta segundos y la lista entera pasa el tope de la suite en el
+    // ensayo de Windows; los mismos casos corren completos en T22 contra el jq real de Windows
+    ...(process.platform === 'win32' ? ESC_C3_FRENA.slice(0, 3) : ESC_C3_FRENA).map(([herramienta, c]) => [ROJO, herramienta, c]),
     [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipe\\\nline.js start --story s.md ${NDR_FLAG}`],
   ];
   // un \r escrito en el comando (en medio de una palabra, o un \r\n): frena por CMD-C1, por cualquier camino
