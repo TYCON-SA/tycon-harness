@@ -3627,6 +3627,79 @@ test('8.88 T52 · Site_Approvals_WarnsWhenNoRelaySession @story-8.88 @ac-29', as
   assert.match(p.textoDe('aprobaciones'), /no sirve hasta designar la sesión que reenvía/);
 });
 
+// ── la firma delegada en lista ─────────────────────────────────────────────────────────────────
+const selectorDeFirma = (p) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.delegated_signing');
+const borradorAlRevisar = async (p) => { await p.click('Revisar cambios', 'aprobaciones'); return p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop().cuerpo.borrador; };
+
+// T36 SiteConfig_SelectorDe888_LeeLaLista @story-8.116 @ac-36
+// 🔴 Falla con: el selector que compara con el valor suelto y muestra «apagada» una lista que lo contiene.
+test('8.116 T36 SiteConfig_SelectorDe888_LeeLaLista', async () => {
+  for (const [firma, prendida] of [['refresh-after-main', true], [['refresh-after-main', 'adversarial-skip'], true], [['adversarial-skip'], false], [undefined, false]]) {
+    const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', ...(firma === undefined ? {} : { delegated_signing: firma }) } })]);
+    assert.strictEqual(p.error, null);
+    assert.strictEqual(selectorDeFirma(p).value || '', prendida ? 'refresh-after-main' : '', JSON.stringify(firma));
+    assert.strictEqual(/vuelve a firmar en nombre del dueño un pedido que él ya firmó/.test(p.textoDe('aprobaciones')), prendida, JSON.stringify(firma));
+  }
+});
+
+// T44 SiteConfig_SelectorDe888_ConservaLaLista @story-8.116 @ac-43
+// 🔴 Falla con: el selector que, al tocarlo, pisa la lista con el valor suelto y borra lo que no muestra.
+test('8.116 T44 SiteConfig_SelectorDe888_ConservaLaLista', async () => {
+  let p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'adversarial-skip'] } })]);
+  selectorDeFirma(p).on.change({ target: { value: '' } });
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['adversarial-skip'], 'apagar saca sólo refresh-after-main');
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['adversarial-skip'] } })]);
+  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip'], 'prender lo agrega, primero');
+  // prender y apagar deja el mismo orden: no cuenta como un cambio
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'adversarial-skip'] } })]);
+  selectorDeFirma(p).on.change({ target: { value: '' } });
+  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip']);
+  // la lista con «off» sola es ninguna: prender da el valor suelto, nunca ['off', 'refresh-after-main']
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['off'] } })]);
+  assert.strictEqual(selectorDeFirma(p).value || '', '');
+  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, 'refresh-after-main');
+  // un valor suelto distinto de refresh-after-main no se pisa: prender lo suma, apagar lo deja
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'adversarial-skip' } })]);
+  assert.strictEqual(selectorDeFirma(p).value || '', '');
+  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip']);
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'adversarial-skip' } })]);
+  selectorDeFirma(p).on.change({ target: { value: '' } });
+  assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, 'adversarial-skip');
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main'] } })]);
+  selectorDeFirma(p).on.change({ target: { value: '' } });
+  assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, undefined, 'la lista que queda vacía se saca');
+  // con el valor suelto, como hoy
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
+  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, 'refresh-after-main');
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } })]);
+  selectorDeFirma(p).on.change({ target: { value: '' } });
+  assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, undefined);
+});
+
+// T45 OrgConfig_CapaPideLaVersionDeLaLista @story-8.116 @ac-44
+// 🔴 Falla con: una lista o la lista de máquinas propuestas a una capa que sólo pide la versión del valor suelto.
+test('8.116 T45 OrgConfig_CapaPideLaVersionDeLaLista', () => {
+  const gate = (approvals, version) => ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(version)), versionImagen: '2026.10.15.48', doc: { ...PERFIL_TYCON, approvals } });
+  assert.ok(ORG.DELEGATED_LIST_SINCE, 'la constante existe');
+  // se decide por el valor, no por la forma: un valor suelto nuevo tampoco lo lee el lector de una sola opción
+  for (const approvals of [{ delegated_signing: ['refresh-after-main'] }, { delegated_signing: 'adversarial-skip' }, { delegated_signing: 'critical-waiver' },
+    { delegated_machines: [{ id: '0123456789abcdef', label: 'Mac de ejemplo' }] }]) {
+    const bajo = gate(approvals, ORG.GUARD_SINCE);
+    assert.match(String(bajo), /todavía no se puede proponer/, JSON.stringify(approvals));
+    assert.ok(String(bajo).includes(`>= ${ORG.DELEGATED_LIST_SINCE}`), bajo);
+  }
+  // lo que lee el lector de una sola opción sigue pidiendo su versión
+  assert.strictEqual(gate({ delegated_signing: 'refresh-after-main' }, ORG.GUARD_SINCE), null);
+  assert.strictEqual(gate({ delegated_signing: 'off' }, ORG.GUARD_SINCE), null);
+  // con la capa en esa versión, pasa
+  assert.strictEqual(gate({ delegated_signing: ['refresh-after-main'] }, ORG.DELEGATED_LIST_SINCE), null);
+});
+
 test('8.88 T53 · Site_Texts_EsAndEn @story-8.88 @ac-30', () => {
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const claves = ['pantalla.frenoProduccionTitulo', 'pantalla.frenoProduccion', 'pantalla.frenoProduccionPassword', 'pantalla.frenoProduccionAuto',

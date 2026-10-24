@@ -1993,6 +1993,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.116 (tanda A): la huella de la máquina (scripts/lib/machine-id.js, el id del sistema por ruta fija y con el ambiente vacío, guardado como resumen) y la casa de la cuenta (scripts/lib/real-home.js, de la base de usuarios y no de HOME).",
+      "raiz": "arnes",
+      "ruta": "tests/machine-id.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El evento neutro de trabajo (scripts/lib/work-signal.js) y la integración de horas que lo escucha, con una integración de mentira en una carpeta temporal; más el techo de archivos del núcleo que nombran una herramienta de horas, que sólo baja.",
       "raiz": "arnes",
       "ruta": "tests/work-signal.test.js",

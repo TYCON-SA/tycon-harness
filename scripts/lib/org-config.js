@@ -316,6 +316,13 @@ const QA_SINCE = '2026.10.20.39';
  */
 const GUARD_SINCE = '2026.10.22.46';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.delegated_signing` en lista y
+ * `approvals.delegated_machines`: la etiqueta del merge que las trae, como GUARD_SINCE. Hasta que se escriba la etiqueta
+ * real, vale una versión que ninguna capa cumple, así que el sitio no deja proponer una lista: una máquina con un lector
+ * anterior la leería como un valor roto y perdería la firma delegada que ya tenía.
+ */
+const DELEGATED_LIST_SINCE = '9999.12.31.1';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -388,7 +395,15 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
   const firmaAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_signing : undefined;
-  if (firma !== undefined && (!isObject(actual) || canonico(firma) !== canonico(firmaAntes))) pedidas.push(['approvals.delegated_signing', GUARD_SINCE, 'org.capaSinGuard']);
+  if (firma !== undefined && (!isObject(actual) || canonico(firma) !== canonico(firmaAntes))) {
+    // lo que lee el lector de una sola opción (`off` o `refresh-after-main`, sueltos) pide su versión; una lista o
+    // cualquier otro valor, la del lector que conoce el vocabulario entero: se decide por el valor, no por la forma
+    const deLa888 = firma === 'off' || firma === 'refresh-after-main';
+    pedidas.push(deLa888 ? ['approvals.delegated_signing', GUARD_SINCE, 'org.capaSinGuard'] : ['approvals.delegated_signing', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
+  }
+  const maquinas = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_machines : undefined;
+  const maquinasAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_machines : undefined;
+  if (maquinas !== undefined && (!isObject(actual) || canonico(maquinas) !== canonico(maquinasAntes))) pedidas.push(['approvals.delegated_machines', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
   if (!pedidas.length) return null;
   let decl;
   try { decl = JSON.parse(String(layerText)); } catch (e) {
@@ -2124,11 +2139,23 @@ function pantalla(idioma = 'es') {
       ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
     }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
     box.appendChild(ayuda);
-    // la firma delegada (story 8.88): apagada de fábrica; el aviso de que aflojar un control no se delega va siempre
+    // la firma delegada (story 8.88): apagada de fábrica; el aviso de que aflojar un control no se delega va siempre.
+    // El perfil puede traer una lista de firmas (story 8.116): este selector muestra y cambia sólo refresh-after-main
+    // dentro de ella, y deja las demás como están
     var firma = (d.approvals || {}).delegated_signing;
-    box.appendChild(selector(T('pantalla.firmaDelegada'), firma === 'refresh-after-main' ? 'refresh-after-main' : '', [['', T('pantalla.firmaDelegadaNo')], ['refresh-after-main', T('pantalla.firmaDelegadaSi')]], function (x) { hoja(d, 'approvals', 'delegated_signing', x); render(); }, 'approvals.delegated_signing', pr));
+    // las firmas que el perfil ya delega, como lista; off, sin valor o la lista con off sola es ninguna
+    var firmas = (Array.isArray(firma) ? firma : (typeof firma === 'string' && firma ? [firma] : [])).filter(function (v) { return v !== 'off'; });
+    var refirma = firmas.indexOf('refresh-after-main') >= 0;
+    var otras = firmas.filter(function (v) { return v !== 'refresh-after-main'; });
+    box.appendChild(selector(T('pantalla.firmaDelegada'), refirma ? 'refresh-after-main' : '', [['', T('pantalla.firmaDelegadaNo')], ['refresh-after-main', T('pantalla.firmaDelegadaSi')]], function (x) {
+      // sin otras firmas, como siempre (un valor suelto o nada); con otras, la lista con refresh-after-main primero,
+      // así prender y apagar deja el mismo orden y no cuenta como un cambio
+      if (!otras.length) hoja(d, 'approvals', 'delegated_signing', x);
+      else hoja(d, 'approvals', 'delegated_signing', x ? ['refresh-after-main'].concat(otras) : (Array.isArray(firma) || otras.length > 1 ? otras : otras[0]));
+      render();
+    }, 'approvals.delegated_signing', pr));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaAviso') }));
-    if (firma === 'refresh-after-main') {
+    if (refirma) {
       box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaCosto') }));
       if (!rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
     }
@@ -3613,7 +3640,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, DELEGATED_LIST_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
