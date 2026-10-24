@@ -224,5 +224,66 @@ rc=$(corre "$BASE --auto-complete true --squash false --target-branch refs/heads
 rc=$(corre "az repos pr update --id 42 --auto-complete false")
 grep -q "va a main" "$TMP/err.txt" && no "🔴 el mensaje del update afirma 'va a main' y el update NO dice a qué rama apunta" || ok "🔴 el mensaje del update NO afirma 'a main': ese comando no lleva el destino"
 
+# ---------------------------------------------------------------- 31-34. el prefijo que sobra no es un salteo (story 1.32)
+# La medición de una semana: de 40 pedidos a mano con el prefijo, 19 pasaban igual sin él y quedaban anotados como salteos.
+ST="$HOME/.claude/.tycon-pipeline"
+limpia(){ rm -f "$ST/bypass.log" "$ST/frenos.jsonl"; }
+saltos(){ grep -c '"PR_A_MANO"' "$ST/bypass.log" 2>/dev/null || echo 0; }
+veredicto(){ [ -f "$ST/frenos.jsonl" ] && tail -1 "$ST/frenos.jsonl" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).veredicto||""))' || printf 'ninguna'; }
+ORG='--org https://dev.azure.com/org-del-equipo'
+
+# 31 — T1 PrefijoDeMas_NoEsSalteo (AC 1)
+while IFS='|' read -r esperado cmd; do
+  limpia; rc=$(corre "TYCON_PR_BY_HAND=1 $cmd")
+  [ "$rc" -eq 0 ] && [ "$(saltos)" = 0 ] && [ "$(veredicto)" = "$esperado" ] && grep -q "el prefijo sobra" "$TMP/err.txt" \
+    && ok "T1 con el prefijo de más pasa sin salteo, constancia «${esperado}» y aviso: ${cmd:0:60}" \
+    || no "T1 prefijo de más: rc=$rc salteos=$(saltos) constancia=$(veredicto) — ${cmd:0:80}"
+done <<EOF
+paso|$BIEN
+ninguna|$BASE --draft true
+paso|az repos pr update $ORG --id 4919 --draft false --auto-complete true --squash false
+paso|az repos pr update $ORG --id 4920 --description "otra descripción"
+ninguna|az repos pr create $ORG -s feat/x -t dev --title t
+EOF
+# un comando con un tramo que sobra y otro que lo necesita: cada uno por su lado
+limpia; rc=$(corre "TYCON_PR_BY_HAND=1 $BIEN && TYCON_PR_BY_HAND=1 $BASE --auto-complete false --squash false")
+[ "$rc" -eq 0 ] && [ "$(saltos)" = 1 ] && grep -q "el prefijo sobra" "$TMP/err.txt" && [ "$(veredicto)" = escape ] \
+  && ok "T1 comando mixto: un aviso de que sobra y un solo PR_A_MANO, constancia escape" \
+  || no "T1 comando mixto: rc=$rc salteos=$(saltos) constancia=$(veredicto)"
+
+# 32 — T2 PrefijoNecesario_SigueSiendoSalteo (AC 2)
+while read -r cmd; do
+  limpia; rc=$(corre "TYCON_PR_BY_HAND=1 $cmd")
+  [ "$rc" -eq 0 ] && [ "$(saltos)" = 1 ] && [ "$(veredicto)" = escape ] && ! grep -q "el prefijo sobra" "$TMP/err.txt" \
+    && ok "T2 el prefijo que hace falta sigue siendo un salteo: ${cmd:0:60}" \
+    || no "T2 prefijo necesario: rc=$rc salteos=$(saltos) constancia=$(veredicto) — ${cmd:0:80}"
+done <<EOF
+$BASE
+az repos pr update $ORG --id 5001 --auto-complete false
+az repos pr update $ORG --id 5002 --squash true
+EOF
+
+# 33 — T3 CartelDelPedidoQueEsperaAprobacion (AC 3)
+limpia; rc=$(corre "$BASE")
+[ "$rc" -eq 2 ] && grep -q -- "--draft true" "$TMP/err.txt" && grep -q -- "--draft false --auto-complete true --squash false" "$TMP/err.txt" \
+  && ok "T3 un create a main sin entrada automática nombra el borrador y la publicación completa" || no "T3 el cartel del create no nombra el borrador ($rc)"
+limpia; rc=$(corre "az repos pr update $ORG --id 5003 --auto-complete false")
+[ "$rc" -eq 2 ] && grep -q "Para retener una entrega ya encolada" "$TMP/err.txt" \
+  && ok "T3 el update que apaga la entrada automática nombra el prefijo para retener" || no "T3 el cartel del update no dice cómo retener ($rc)"
+limpia; rc=$(corre "$BASE && az repos pr update $ORG --id 5004 --auto-complete false")
+[ "$rc" -eq 2 ] && grep -q -- "--draft true" "$TMP/err.txt" && grep -q "Para retener una entrega ya encolada" "$TMP/err.txt" \
+  && ok "T3 con los dos frenados en un comando salen las dos líneas" || no "T3 los dos juntos no muestran las dos líneas ($rc)"
+
+# 34 — T4 MalArmados_SiguenFrenando (AC 4): los 4 del caso real, sin el prefijo
+while read -r cmd; do
+  limpia; rc=$(corre "$cmd")
+  [ "$rc" -eq 2 ] && ok "T4 un mal armado sigue frenando: ${cmd:0:70}" || no "T4 dejó pasar un mal armado ($rc): ${cmd:0:80}"
+done <<EOF
+az repos pr update $ORG --id 4919 --draft false -o json
+az repos pr update $ORG --id 5019 --draft false --auto-complete true --delete-source-branch true -o json
+az repos pr update $ORG --id 5024 --draft false --auto-complete true --delete-source-branch true -o json
+az repos pr update $ORG --id 5187 --draft false --description "algo"
+EOF
+
 echo "─────────────"
 [ "$fallos" -eq 0 ] && { echo "✅ pr-sin-auto-complete: todo verde ($casos casos)"; exit 0; } || { echo "❌ pr-sin-auto-complete: $fallos falla(s) de $casos"; exit 1; }

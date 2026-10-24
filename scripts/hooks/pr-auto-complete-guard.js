@@ -91,14 +91,18 @@ for (const seg of az.segmentos(cmd)) {
   const verbo = az.verboDePr(seg);
   if (verbo !== 'create' && verbo !== 'update') continue;
 
-  if (az.tieneEscape(seg)) {
-    constancia('PR_A_MANO', `TYCON_PR_BY_HAND=1: dejo armar el PR a mano. Queda dicho.`, az.textoDe(seg));
-    huboEscape = true;
-    continue;
-  }
-
   // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
+  // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
+  // llenaba el registro de salteos que no eran.
   const { juzgado, borrador, faltas } = az.faltasDe(seg);
+  if (az.tieneEscape(seg)) {
+    if (faltas.length) {
+      constancia('PR_A_MANO', `TYCON_PR_BY_HAND=1: dejo armar el PR a mano. Queda dicho.`, az.textoDe(seg));
+      huboEscape = true;
+      continue;
+    }
+    console.error(`${TAG} TYCON_PR_BY_HAND=1: el prefijo sobra, este pedido pasa igual sin él; no lo anoto como salteo.`);
+  }
   if (borrador) {
     console.error(`${TAG} borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true y --squash false.`);
     continue;
@@ -132,6 +136,14 @@ const detalle = problemas.map((p) => {
 }).join('\n');
 
 const soloUpdates = problemas.every((p) => p.verbo === 'update');
+// Las dos formas legítimas que el freno veía frenadas una y otra vez: el pedido que espera una aprobación (se crea en
+// borrador) y el que se retiene apagando la entrada automática (el prefijo es su salida).
+const esperaAprobacion = problemas.some((p) => p.verbo === 'create' && !az.esCierto(az.flagDe(p.seg, 'auto-complete')));
+const retiene = problemas.some((p) => p.verbo === 'update' && az.esFalso(az.flagDe(p.seg, 'auto-complete')));
+const formas = [
+  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false`.' : null,
+  retiene ? 'Para retener una entrega ya encolada (apagar la entrada automática), el prefijo es la salida: `TYCON_PR_BY_HAND=1` pegado a ese mismo `update`.' : null,
+].filter(Boolean);
 console.error(`🔴 Este pull request se está armando A MANO y no va a quedar bien${soloUpdates ? '' : ' (va a main)'}:
 ${detalle}
 
@@ -143,7 +155,7 @@ el gate de build y tests y arma el mensaje que queda como descripción:
 Si de verdad tiene que ir a mano, el comando lleva las dos banderas, explícitas:
 
   az repos pr create ... --auto-complete true --squash false
-
+${formas.length ? `\n${formas.join('\n')}\n` : ''}
 Un borrador recién creado no se toca (sí al publicarlo). Para saltear este freno una sola vez, a
 propósito —por ejemplo para retener una entrega apagando el auto-complete—, el prefijo va PEGADO al
 comando; desde el entorno no vale, porque exportado quedaría permanente y en silencio:

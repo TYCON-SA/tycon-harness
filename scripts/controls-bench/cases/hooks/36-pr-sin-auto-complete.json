@@ -235,6 +235,43 @@
           }
         },
         {
+          "id": "prefijo-de-mas-no-anota-salteo",
+          "_por_que": "Story 1.32: de 40 pedidos a mano en una semana, 19 llevaban el prefijo y pasaban igual sin él; quedaban anotados como salteos. Con un pedido bien armado, el prefijo sobra: pasa, lo dice, y no escribe PR_A_MANO en bypass.log.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "TYCON_PR_BY_HAND=1 az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "el prefijo sobra"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/bypass.log"
+            ]
+          }
+        },
+        {
+          "id": "mal-armado-sigue-frenando",
+          "_por_que": "Gemelo del anterior (story 1.32): sin el prefijo, publicar un borrador sin --squash false es uno de los 4 mal armados de la medición y sigue frenando. Que el prefijo de más no anote salteo no afloja lo que el freno existe para frenar.",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --org https://x --id 5019 --draft false --auto-complete true --delete-source-branch true -o json"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "squash false"
+            ]
+          }
+        },
+        {
           "id": "deja-pasar-el-valor-entre-comillas",
           "type": "must-not-block",
           "stdin": {
