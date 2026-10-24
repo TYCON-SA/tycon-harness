@@ -32,6 +32,7 @@ const { matchGlob, advisorAffectedByDelta, buildStoryDigest, parseFrontmatterLis
   computeGitignoreNeeds,
   normalizeFindingRecord } = require(path.join(SCRIPTS, 'pipeline.js'));
 const checks = require(path.join(SCRIPTS, 'lib', 'story-checks.js'));
+const { fakeHomeEnv, ponerCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
 
 // ── isGitCommit — corpus de detección + evasión ──────────────────────────────
 test('isGitCommit detecta commits directos y variantes', () => {
@@ -115,9 +116,8 @@ test('advisorsRunSinceStart: sin log / step5-start solo / completo', () => {
   const logPath = path.join(runsDir, `${sid}.jsonl`);
 
   // Cargar pipeline.js con HOME + SID controlados (el módulo resuelve paths al cargar).
-  const prevHome = process.env.HOME;
+  const volverCasa = ponerCarpetaPersonal(tmpHome);
   const prevSid = process.env.CLAUDE_CODE_SESSION_ID;
-  process.env.HOME = tmpHome;
   process.env.CLAUDE_CODE_SESSION_ID = sid;
   delete require.cache[require.resolve(path.join(SCRIPTS, 'pipeline.js'))];
   const pl = require(path.join(SCRIPTS, 'pipeline.js'));
@@ -139,7 +139,7 @@ test('advisorsRunSinceStart: sin log / step5-start solo / completo', () => {
     s = pl.advisorsRunSinceStart();
     assert.deepEqual(s.ran.sort(), ['a', 'b']);
   } finally {
-    process.env.HOME = prevHome;
+    volverCasa();
     if (prevSid === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = prevSid;
     delete require.cache[require.resolve(path.join(SCRIPTS, 'pipeline.js'))];
     fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -521,11 +521,14 @@ test('ACCOV-C1: sin declarar el compañero, el test de al lado NO cuenta (el con
 
 test('evidence.companion_repos: `~/` se expande al home', () => {
   const ev = require(path.join(SCRIPTS, 'lib', 'evidence-config.js'));
+  // la carpeta personal de juguete: la prueba no crea nada en la real de quien corre la suite
+  const personal = fs.mkdtempSync(path.join(os.tmpdir(), 'comp-home-'));
+  const volverCasa = ponerCarpetaPersonal(personal);
   const casa = fs.mkdtempSync(path.join(os.homedir(), '.tycon-test-comp-'));
   try {
     const r = ev.parseEvidenceText(`evidence:\n  companion_repos:\n    - ~/${path.basename(casa)}\n`, '/repo/cualquiera');
     assert.deepEqual(r.roots, [casa], `no expandió ~: roots=${JSON.stringify(r.roots)} missing=${JSON.stringify(r.missing)}`);
-  } finally { fs.rmSync(casa, { recursive: true, force: true }); }
+  } finally { volverCasa(); fs.rmSync(personal, { recursive: true, force: true }); }
 });
 
 test('parseTestsTable detecta columna AC y refs', () => {
@@ -681,9 +684,8 @@ test('computeDeepReviewGate: NORMAL→run(sonnet), LOW→skip, overrides, repo c
   const realHome = os.homedir();
   // HOME temporal: el caso LOW deja su constancia con `logGate`, que resuelve os.homedir() al
   // escribir. Sin esto cada corrida agrega una línea falsa al gates.log real.
-  const prevHome = process.env.HOME;
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dr-home-'));
-  process.env.HOME = tmpHome;
+  const volverCasa = ponerCarpetaPersonal(tmpHome);
   const normal = path.join(os.tmpdir(), `dr-normal-${process.pid}.md`);
   const low = path.join(os.tmpdir(), `dr-low-${process.pid}.md`);
   fs.writeFileSync(normal, SAMPLE_STORY); // tiene pipelines: → NORMAL
@@ -701,8 +703,8 @@ test('computeDeepReviewGate: NORMAL→run(sonnet), LOW→skip, overrides, repo c
     // La constancia `deep-review-gate` de un repo de prueba va a la HOME temporal, nunca al gates.log real del dev
     // (sin esto se llenaría de líneas falsas). Evidencia POSITIVA: «el real no creció» no vale, las sesiones reales
     // escriben ahí al mismo tiempo.
-    const logTmp = path.join(process.env.HOME, '.claude', '.tycon-pipeline', 'gates.log');
-    assert.ok(process.env.HOME !== realHome && fs.existsSync(logTmp)
+    const logTmp = path.join(tmpHome, '.claude', '.tycon-pipeline', 'gates.log');
+    assert.ok(os.homedir() === tmpHome && tmpHome !== realHome && fs.existsSync(logTmp)
       && fs.readFileSync(logTmp, 'utf8').includes('"deep-review-gate"'),
       'la línea deep-review-gate del caso LOW quedó en la HOME temporal de la prueba');
 
@@ -728,7 +730,7 @@ test('computeDeepReviewGate: NORMAL→run(sonnet), LOW→skip, overrides, repo c
     fs.rmSync(cfgRepo, { recursive: true, force: true });
   } finally {
     fs.unlinkSync(normal); fs.unlinkSync(low);
-    process.env.HOME = prevHome;
+    volverCasa();
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });
@@ -998,9 +1000,8 @@ test('computeSmartReloop: delta vacío en re-loop → suspect_empty_delta + warn
   const fakeHome = path.join(tmp, 'home');
   fs.mkdirSync(path.join(fakeHome, '.claude/.tycon-pipeline/active'), { recursive: true });
   fs.writeFileSync(path.join(fakeHome, '.claude/.tycon-pipeline/active/guard-smoke.json'), JSON.stringify(marker));
-  const prevHome = process.env.HOME;
   const prevSess = process.env.CLAUDE_CODE_SESSION_ID;
-  process.env.HOME = fakeHome;
+  const volverCasa = ponerCarpetaPersonal(fakeHome);
   process.env.CLAUDE_CODE_SESSION_ID = 'guard-smoke';
   try {
     const out = computeSmartReloop({ repo: tmp, story: 'x', files: [f1], iter: 2, forceFullReloop: false, costTier: null });
@@ -1008,7 +1009,7 @@ test('computeSmartReloop: delta vacío en re-loop → suspect_empty_delta + warn
     assert.equal(out.suspect_empty_delta, true, 'el guard marca el delta vacío como sospechoso');
     assert.ok(out.warning && /snapshot/i.test(out.warning), 'warning accionable menciona el snapshot');
   } finally {
-    process.env.HOME = prevHome;
+    volverCasa();
     if (prevSess === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
     else process.env.CLAUDE_CODE_SESSION_ID = prevSess;
   }
@@ -1395,7 +1396,7 @@ test('marker set: preserva los campos no enumerados (checks, dodRuntimeChecked, 
   const out = require('child_process').execFileSync(
     process.execPath,
     [path.join(SCRIPTS, 'marker.js'), 'set', JSON.stringify({ storyId: '4.17', storyPath: '/abs/specs/story.md' })],
-    { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8' }
+    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8' }
   );
   const after = JSON.parse(out);
 
@@ -1420,7 +1421,7 @@ test('marker set: preserva los campos no enumerados (checks, dodRuntimeChecked, 
 // detección de orfandad; un refactor que rompa cualquiera de estos invariantes falla EN SILENCIO
 // (el 5b no corre y nadie se entera, o el join cuelga). Cada test cubre un camino del review.
 function markerEnv(sid, fakeHome) {
-  return { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8' };
+  return { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8' };
 }
 function writeFakeMarker(fakeHome, sid, extra) {
   const activeDir = path.join(fakeHome, '.claude', '.tycon-pipeline', 'active');
@@ -1809,13 +1810,13 @@ test('post-revision: END-TO-END — el hook de commit avisa, no frena, y lo mide
   execFileSync(process.execPath, [path.join(SCRIPTS, 'on-edit.js')], {
     input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write', session_id: SID,
       tool_input: { file_path: path.join(repo, 'database', '054_Cleanup.sql') } }),
-    env: { ...process.env, HOME: fakeHome }, encoding: 'utf8', stdio: 'pipe',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, encoding: 'utf8', stdio: 'pipe',
   });
   git('add', 'database/054_Cleanup.sql');
   const res = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-pre-commit.js')], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: SID, cwd: repo,
       tool_input: { command: 'git commit -m "x"' } }),
-    env: { ...process.env, HOME: fakeHome }, cwd: repo, encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: repo, encoding: 'utf8',
   });
   assert.match(res.stderr || '', /tycon-post-revision/, 'el aviso sale por stderr');
   assert.match(res.stderr || '', /054_Cleanup\.sql/, 'y nombra el archivo que nadie revisó');
@@ -1873,7 +1874,7 @@ test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no c
   try {
     require('child_process').execFileSync(
       process.execPath, [path.join(SCRIPTS, 'marker.js'), 'runtime-waiver'],
-      { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID }, cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe' }
+      { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe' }
     );
   } catch (e) {
     salida = `${e.stdout || ''}${e.stderr || ''}`;
@@ -1890,7 +1891,7 @@ test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no c
   try {
     require('child_process').execFileSync(
       process.execPath, [path.join(SCRIPTS, 'marker.js'), 'runtime-waiver'],
-      { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID }, cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe' }
+      { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe' }
     );
   } catch (e) {
     err = `${e.stdout || ''}${e.stderr || ''}`;
@@ -2039,7 +2040,7 @@ test('atdd: el gate corre de verdad en `complete-step 4` y el bypass queda logue
     const args = [path.join(SCRIPTS, 'marker.js'), 'complete-step', '4', ...extra];
     try {
       const out = require('child_process').execFileSync(process.execPath, args, {
-        env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID },
+        env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID },
         cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe',
       });
       return { code: 0, out };
@@ -2159,7 +2160,7 @@ test('atdd-commit-gate: END-TO-END — editar código y DESPUÉS el test avisa a
       hook_event_name: 'PostToolUse', tool_name: 'Edit', session_id: SID,
       tool_input: { file_path: path.join(repo, file) },
     }),
-    env: { ...process.env, HOME: fakeHome }, encoding: 'utf8', stdio: 'pipe',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, encoding: 'utf8', stdio: 'pipe',
   });
 
   edit('src/a.ts');        // ← código primero
@@ -2173,7 +2174,7 @@ test('atdd-commit-gate: END-TO-END — editar código y DESPUÉS el test avisa a
       hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: SID, cwd: repo,
       tool_input: { command: 'git commit -m "x"' },
     }),
-    env: { ...process.env, HOME: fakeHome }, cwd: repo, encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: repo, encoding: 'utf8',
   });
   assert.match(res.stderr || '', /ATDD/, 'el aviso sale por stderr, que es lo que ve el agente');
   assert.match(res.stderr || '', /a\.test\.ts/, 'y nombra el test que llegó tarde');
@@ -2187,7 +2188,7 @@ test('atdd-commit-gate: END-TO-END — editar código y DESPUÉS el test avisa a
   // log, no sólo marker.js — el capturer agrupa por `repoPath` y una entry sin él se mezcla entre repos.
   const atddEntry = gatesLog.split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.name === 'atdd-commit');
   assert.ok(atddEntry && atddEntry.repoPath, 'la entry atdd-commit lleva repoPath');
-  assert.equal(fs.realpathSync(atddEntry.repoPath), fs.realpathSync(repo));
+  assert.equal(fs.realpathSync.native(atddEntry.repoPath), fs.realpathSync.native(repo));
 
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
@@ -3177,7 +3178,7 @@ test('snapshot-iter: cada iteración deja su constancia automática en gates.log
   }));
   const snap = (n) => require('child_process').execFileSync(
     process.execPath, [path.join(SCRIPTS, 'marker.js'), 'snapshot-iter', String(n)],
-    { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
   );
   snap(1);
   snap(2);
@@ -3253,7 +3254,7 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
     JSON.stringify({ ts: '2026-09-15T16:52:52.500Z', event: 'auto-snapshot', iter: 11 }),
   ].join('\n') + '\n');
 
-  const env = { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID };
+  const env = { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID };
   // el tope de vueltas al máximo (el ajuste de la máquina): acá se mide la foto de la vuelta 12, no el tope
   fs.mkdirSync(path.join(fakeHome, '.claude', '.tycon-pipeline'), { recursive: true });
   fs.writeFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
@@ -3367,7 +3368,7 @@ test('marker set: el cambio de story RESETEA atddBypass (F1 — el permiso no se
   const out = require('child_process').execFileSync(
     process.execPath,
     [path.join(SCRIPTS, 'marker.js'), 'set', JSON.stringify({ storyId: '2.2', storyPath: '/r/specs/s2.md', stepsPending: [0] })],
-    { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
   );
   const after = JSON.parse(out);
   assert.equal(after.atddBypass, undefined, 'la story nueva arranca con el portón PRENDIDO');
@@ -3393,7 +3394,7 @@ test('marker complete-step 4: el flag atddBypass satisface el gate (F3 — un so
   const run = (flag) => require('child_process').execFileSync(
     process.execPath,
     [path.join(SCRIPTS, 'marker.js'), 'complete-step', '4'],
-    { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
   );
   // Sin flag → bloquea (control).
   fs.writeFileSync(path.join(activeDir, `${SID}.json`), JSON.stringify(mk));
@@ -3720,7 +3721,7 @@ function mkMultiStackRepo(files) {
 function runTestGate(repo, storyArg, fakeHome) {
   const { spawnSync } = require('child_process');
   return spawnSync('bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, storyArg], {
-    env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: 'tgate-none' },
+    env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none' },
     encoding: 'utf8',
   });
 }
@@ -3791,7 +3792,7 @@ test('T18 TestGate_SuitesJson_DeferredInTestsResult — story 7.15: la diferida 
     const head = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     const { spawnSync } = require('child_process');
     return spawnSync('bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, story], {
-      env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: 'tgate-none', TYCON_COVERAGE_BASE: head },
+      env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none', TYCON_COVERAGE_BASE: head },
       encoding: 'utf8',
     });
   };
@@ -3846,7 +3847,7 @@ test('test-gate.sh: repo con jest → lo corre de verdad y deja los totales', (t
   fs.writeFileSync(path.join(repo, '__tests__', 'ok.test.js'), "test('ok', () => { expect(1).toBe(1); });");
 
   const r = require('child_process').spawnSync('bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, '10.2'], {
-    env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: 'tgate-none' },
+    env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none' },
     encoding: 'utf8',
   });
 
@@ -3875,7 +3876,7 @@ test('test-gate.sh: alcance que NO tiene proyecto .NET adentro → FRENA, no cor
 
   const r = require('child_process').spawnSync(
     'bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, '10.2', 'custom-forms'],
-    { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: 'tgate-none' }, encoding: 'utf8' }
+    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none' }, encoding: 'utf8' }
   );
 
   assert.equal(r.status, 4, `esperaba el freno, salió ${r.status}\n${r.stderr}`);
@@ -4060,7 +4061,7 @@ function completeStep4With(provenance) {
   const run = () => require('child_process').execFileSync(
     process.execPath,
     [path.join(SCRIPTS, 'marker.js'), 'complete-step', '4'],
-    { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
   );
   return { run, fakeHome };
 }
@@ -4079,7 +4080,7 @@ test('run-check tests: TYCON_TEST_GATE=1 marca provenance `test-gate`; sin él, 
     require('child_process').execFileSync(
       process.execPath,
       [path.join(SCRIPTS, 'marker.js'), 'run-check', name, '--', 'true'],
-      { env: { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID, ...env }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+      { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID, ...env }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     return JSON.parse(fs.readFileSync(mkPath, 'utf8')).checksProvenance;
   };
@@ -4871,7 +4872,7 @@ test('session-id: bajo Codex el marker NO cae en _nosession (regresión pasada 1
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sid-codex-'));
   const CDX = '00000000-0000-4000-8000-000000000001';
   // Ambiente de una sesión Codex de verdad: sin las dos primeras variables de la cadena.
-  const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, CODEX_SESSION_ID: CDX };
+  const env = { ...process.env, ...fakeHomeEnv(fakeHome), USERPROFILE: fakeHome, CODEX_SESSION_ID: CDX };
   delete env.CLAUDE_CODE_SESSION_ID;
   delete env.TYCON_SESSION_ID;
 
@@ -4905,7 +4906,7 @@ test('session-id: el ledger que escribe el hook es el que lee el CLI bajo Codex'
   // conteo informa CERO — con toda honestidad, mirando el archivo equivocado.
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sid-ledger-'));
   const CDX = '00000000-0000-4000-8000-000000000002';
-  const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, CODEX_SESSION_ID: CDX, TYCON_AUTO_SNAPSHOT: '0' };
+  const env = { ...process.env, ...fakeHomeEnv(fakeHome), USERPROFILE: fakeHome, CODEX_SESSION_ID: CDX, TYCON_AUTO_SNAPSHOT: '0' };
   delete env.CLAUDE_CODE_SESSION_ID;
   delete env.TYCON_SESSION_ID;
 
@@ -4994,26 +4995,35 @@ test('gates.log namespace: on-atdd-preedit.js escribe repoPath del marker al blo
   const entry = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8').split('\n').filter(Boolean)
     .map((l) => JSON.parse(l)).find((e) => e.name === 'atdd-preedit');
   assert.ok(entry && entry.repoPath, 'atdd-preedit lleva repoPath');
-  assert.equal(fs.realpathSync(entry.repoPath), fs.realpathSync(repo));
+  // la forma real de las dos: git da el nombre largo y os.tmpdir() puede dar el corto de Windows (`NOMBRE~1`), que
+  // sólo `.native` resuelve
+  assert.equal(fs.realpathSync.native(entry.repoPath), fs.realpathSync.native(repo));
   fs.rmSync(stateDir, { recursive: true, force: true });
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-test('gates.log namespace: smoke-run.sh espeja repoPath (el repo dueño del evidence-dir)', () => {
+test('T2 SmokeRunNamespace_ComparaPorFormaReal @story-8.115 @ac-2 — gates.log namespace: smoke-run.sh espeja repoPath (el repo dueño del evidence-dir)', () => {
   const { execFileSync, spawnSync } = require('node:child_process');
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-ns-'));
   const repo = path.join(fakeHome, 'repo');
   fs.mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: repo });
-  const evidence = path.join(repo, '.advisors', 'dod-runtime');
+  // el repo se nombra por un enlace: la ruta que guarda el guion y la que arma la prueba no son el mismo texto
+  // (en Windows, además, os.tmpdir() puede dar el nombre corto)
+  const alias = path.join(fakeHome, 'alias');
+  fs.symlinkSync(repo, alias, 'junction');
+  const evidence = path.join(alias, '.advisors', 'dod-runtime');
   const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.9', '--acs', '1', '--pass-if', 'el comando termina bien', '--', 'true'], {
-    env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: os.tmpdir(), encoding: 'utf8',
   });
   assert.equal(res.status, 0, res.stderr);
   const entry = fs.readFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').split('\n').filter(Boolean)
     .map((l) => JSON.parse(l)).find((e) => e.type === 'smoke-run' && e.story === '9.9');
   assert.ok(entry && entry.repoPath, 'el espejo lleva repoPath');
-  assert.equal(fs.realpathSync(entry.repoPath), fs.realpathSync(repo));
+  // la forma real de las dos: git da el nombre largo y os.tmpdir() puede dar el corto de Windows (`NOMBRE~1`), que
+  // sólo `.native` resuelve
+  assert.equal(fs.realpathSync.native(entry.repoPath), fs.realpathSync.native(alias));
+  assert.equal(fs.realpathSync.native(entry.repoPath), fs.realpathSync.native(repo));
   assert.deepEqual(entry.acs, [1]); assert.equal(entry.exit, 0);
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
@@ -5036,7 +5046,7 @@ test('smoke-run.sh: tapa la clave de API del cmd y deja el endpoint legible', ()
   const CLAVE = ['lab', 'NoEsUnaClaveReal', 'SoloParaEstaPrueba', '0123456789'].join('_');
   const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.8', '--acs', '1', '--pass-if', 'el comando termina bien', '--',
     'curl', '-sf', '-H', `X-Api-Key: ${CLAVE}`, 'http://localhost:5002/api/messaging/contact-window-status'], {
-    env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: os.tmpdir(), encoding: 'utf8',
   });
   const entry = fs.readFileSync(path.join(evidence, '9.8-smoke-ledger.jsonl'), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l))[0];
@@ -5059,7 +5069,7 @@ test('smoke-run.sh: tapa el JWT del header Authorization', () => {
   const JWT = ['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'abc123def456ghi'].join('.');
   spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.7', '--acs', '2', '--pass-if', 'el comando termina bien', '--',
     'curl', '-s', '-H', `Authorization: Bearer ${JWT}`, 'http://localhost:5000/api/x'], {
-    env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: os.tmpdir(), encoding: 'utf8',
   });
   const entry = fs.readFileSync(path.join(evidence, '9.7-smoke-ledger.jsonl'), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l))[0];
@@ -5080,7 +5090,7 @@ test('smoke-run.sh: un cmd sin credencial queda intacto y no avisa', () => {
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
   const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.6', '--acs', '3', '--pass-if', 'el comando termina bien', '--',
     'curl', '-sf', 'http://localhost:5001/api/acciones/pendientes?page=1&pageSize=3'], {
-    env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: os.tmpdir(), encoding: 'utf8',
   });
   const entry = fs.readFileSync(path.join(evidence, '9.6-smoke-ledger.jsonl'), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l))[0];
@@ -5101,7 +5111,7 @@ test('smoke-run.sh: tapar el cmd no toca los campos con los que se cruza el espe
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
   spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.5', '--acs', '4,5', '--pass-if', 'el comando termina bien', '--',
     'bash', '-c', 'curl -H "X-Api-Key: omni_AbCdEfGh_1234567890123456789012345" http://x; true'], {
-    env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: os.tmpdir(), encoding: 'utf8',
   });
   const led = fs.readFileSync(path.join(evidence, '9.5-smoke-ledger.jsonl'), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l))[0];
@@ -5137,7 +5147,7 @@ for (const [fragmento, queEs] of FORMAS_QUE_DEBEN_TAPARSE) {
     execFileSync('git', ['init', '-q'], { cwd: repo });
     const evidence = path.join(repo, '.advisors', 'dod-runtime');
     spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.4', '--acs', '1', '--pass-if', 'el comando termina bien', '--',
-      'echo', fragmento], { env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8' });
+      'echo', fragmento], { env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: os.tmpdir(), encoding: 'utf8' });
     const entry = fs.readFileSync(path.join(evidence, '9.4-smoke-ledger.jsonl'), 'utf8')
       .split('\n').filter(Boolean).map((l) => JSON.parse(l))[0];
     // `***` es el tapado de la lista cerrada: PGPASSWORD=… cae ahí.
@@ -5155,7 +5165,7 @@ test('smoke-run.sh: tapa el par usuario:clave de curl -u', () => {
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
   spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.3', '--acs', '1', '--pass-if', 'el comando termina bien', '--',
     'curl', '-u', 'admin:claveSecreta123', 'http://localhost:1/x'], {
-    env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8' });
+    env: { ...process.env, ...fakeHomeEnv(fakeHome) }, cwd: os.tmpdir(), encoding: 'utf8' });
   const entry = fs.readFileSync(path.join(evidence, '9.3-smoke-ledger.jsonl'), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l))[0];
   assert.ok(!entry.cmd.includes('claveSecreta123'), 'la clave no puede quedar');
@@ -5289,9 +5299,9 @@ test('computeFreshnessFloor: lee los sellos del marker, toma el MÁXIMO, y los .
     filesTouched: [a, b, md],
     filesTouchedAt: { [a]: { hash: sha1De(a), ts: enero }, [b]: { hash: sha1De(b), ts: febrero }, [md]: { hash: sha1De(md), ts: Date.now() } },
   }));
-  const homeViejo = process.env.HOME; process.env.HOME = home;
+  const volverCasa = ponerCarpetaPersonal(home);
   const piso = computeFreshnessFloor('sello-s1');
-  process.env.HOME = homeViejo;
+  volverCasa();
   assert.equal(piso, febrero, 'el máximo de los sellos de código; el .md (tocado hoy) no cuenta');
   fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true });
 });
@@ -5305,9 +5315,9 @@ test('el piso no cuesta procesos: 30 archivos con sello se resuelven sin git', (
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'piso-perf-home-'));
   const dirM = path.join(home, '.claude', '.tycon-pipeline', 'active'); fs.mkdirSync(dirM, { recursive: true });
   fs.writeFileSync(path.join(dirM, 'perf-s1.json'), JSON.stringify({ filesTouched: nombres, filesTouchedAt: at }));
-  const homeViejo = process.env.HOME; process.env.HOME = home;
+  const volverCasa = ponerCarpetaPersonal(home);
   const t0 = Date.now(); const piso = computeFreshnessFloor('perf-s1'); const ms = Date.now() - t0;
-  process.env.HOME = homeViejo;
+  volverCasa();
   assert.equal(piso, enero);
   assert.ok(ms < 500, `tardó ${ms} ms con 30 archivos: el hook corre en CADA escritura de frontmatter`);
   fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true });
@@ -5355,7 +5365,7 @@ test('on-edit (hook REAL) deja el sello hash+hora del archivo tocado en el marke
   const markerPath = path.join(dirM, `${sessionIdFileKey(sid)}.json`);
   fs.writeFileSync(markerPath, JSON.stringify({ storyId: '1.1', repoPath: repo, filesTouched: [], fileEvents: [], iterations: {}, checks: {} }));
   const payload = JSON.stringify({ tool_name: 'Edit', session_id: sid, cwd: repo, tool_input: { file_path: f, old_string: 'x', new_string: 'y' } });
-  const r = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'on-edit.js')], { input: payload, encoding: 'utf8', env: { ...process.env, HOME: home } });
+  const r = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'on-edit.js')], { input: payload, encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home) } });
   assert.equal(r.status, 0, r.stderr);
   const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
   assert.ok(m.filesTouched.includes(f), 'el archivo entró a filesTouched');
@@ -5800,7 +5810,7 @@ test('RosterProyectado_ElFrenoLocalDelRepoDeLaStoryLoAcepta', () => {
   // El freno REAL, en un proceso con el HOME falso (el ledger vive bajo ~/.claude/.tycon-pipeline).
   const freno = (cwd) => JSON.parse(execFileSync(process.execPath, ['-e',
     `const r = require(${JSON.stringify(path.join(SCRIPTS, 'on-pre-commit.js'))}).revisarRosterLocal(${JSON.stringify(cwd)}, '8.8'); process.stdout.write(JSON.stringify(r));`],
-  { encoding: 'utf8', env: { ...process.env, HOME: fakeHome } }));
+  { encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(fakeHome) } }));
   assert.equal(freno(project), null, `en el repo de la story el roster proyectado PASA: ${JSON.stringify(freno(project))}`);
   assert.equal(freno(code), null, 'y en el repo del código sigue pasando como siempre');
   // El mismo roster SIN la anotación → sin-testigo.
@@ -5956,7 +5966,7 @@ function correrHook(f, env) {
   return spawnSync(process.execPath, [path.join(SCRIPTS, 'on-pre-commit.js')], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: 'rad-s1', cwd: f.repo,
       tool_input: { command: 'git commit -m "cierra"' } }),
-    env: { ...process.env, HOME: f.home, ...(env || {}) }, cwd: f.repo, encoding: 'utf8',
+    env: { ...process.env, ...fakeHomeEnv(f.home), ...(env || {}) }, cwd: f.repo, encoding: 'utf8',
   });
 }
 
@@ -6174,7 +6184,7 @@ test('vuelta manual: el hook REAL sella manual-iter en el ledger y escribe advis
   ].join('\n') + '\n');
   const payload = JSON.stringify({ tool_name: 'Task', session_id: sid, cwd: repo, tool_input: { subagent_type: 'tycon-plugin-security-basics', prompt: 'revisá de nuevo el candado' } });
   const r = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-run.js')], {
-    input: payload, encoding: 'utf8', env: { ...process.env, HOME: home, TYCON_SPAWN_GOVERNANCE: '0' },
+    input: payload, encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home), TYCON_SPAWN_GOVERNANCE: '0' },
   });
   assert.equal(r.status, 0, r.stderr);
   const sellos = fs.readFileSync(ledger, 'utf8').split('\n').filter((l) => l.includes('"manual-iter"'));
@@ -6190,7 +6200,7 @@ test('vuelta manual: el hook REAL sella manual-iter en el ledger y escribe advis
   assert.equal(manual[0].sessionId, sessionIdFileKey(sid));
   // 🔴 Con la foto apagada, tampoco se cuenta (mismo interruptor, declarado)
   const r2 = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-run.js')], {
-    input: payload, encoding: 'utf8', env: { ...process.env, HOME: home, TYCON_SPAWN_GOVERNANCE: '0', TYCON_AUTO_SNAPSHOT: '0' },
+    input: payload, encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home), TYCON_SPAWN_GOVERNANCE: '0', TYCON_AUTO_SNAPSHOT: '0' },
   });
   assert.equal(r2.status, 0);
   assert.equal(fs.readFileSync(ledger, 'utf8').split('\n').filter((l) => l.includes('"manual-iter"')).length, 1, 'apagado: no sella otra vuelta');
@@ -6218,7 +6228,7 @@ function markerDe27(home, sid, extra) {
   return { file, repo };
 }
 const correr27 = (home, sid, script, args) => require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], {
-  encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
+  encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
 });
 
 test('2.7 next anota el arranque del paso que devuelve y no lo mueve', () => {
@@ -6514,7 +6524,7 @@ test('10b: el comando que rescata el sha del ledger CORRE — devuelve la entrad
   ].map((e) => JSON.stringify(e)).join('\n') + '\n');
 
   const { spawnSync } = require('child_process');
-  const correr = (dir) => spawnSync('bash', ['-c', `${cmd} "${dir}"`], { encoding: 'utf8', env: { ...process.env, HOME: home } });
+  const correr = (dir) => spawnSync('bash', ['-c', `${cmd} "${dir}"`], { encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home) } });
 
   const ok = correr(repo);
   assert.equal(ok.status, 0, `esperaba exit 0: ${ok.stderr}`);
@@ -6651,7 +6661,7 @@ const hook713 = (f, env) => require('node:child_process').spawnSync(process.exec
   [path.join(SCRIPTS, 'on-pre-commit.js')], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: 'r713-s1',
       cwd: f.repo, tool_input: { command: 'git commit -m "cierra"' } }),
-    env: { ...process.env, HOME: f.home, ...(env || {}) },
+    env: { ...process.env, ...fakeHomeEnv(f.home), ...(env || {}) },
     cwd: f.repo, encoding: 'utf8',
   });
 
@@ -6802,7 +6812,7 @@ test('Constancia_Cierre_LibNueva_SinRuidoBajoAzure_YLaViejaSoloSiFalta', () => {
     if (vieja) fs.writeFileSync(path.join(arnes, 'scripts', 'lib', NOMBRES_DE_LA_LIB.viejo), reemplazoFalso(anotado));
     const env = {};
     for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_') && k !== 'TF_BUILD' && k !== 'TCG') env[k] = v;
-    Object.assign(env, { HOME: home, TYCON_GUIDES_DIR: arnes, TF_BUILD: 'True' });
+    Object.assign(env, { ...fakeHomeEnv(home), TYCON_GUIDES_DIR: arnes, TF_BUILD: 'True' });
     const js = `const cr = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'closing-record.js'))});`
       + `const r = cr.anotarCierre({ freno: 'on-frontmatter-write', regla: 'evidencia-ok', veredicto: 'paso', huella: 'h' });`
       + `require('fs').writeFileSync(${JSON.stringify(resultado)}, JSON.stringify({ r, lib: cr.rutaDeLaLib() }));`;
@@ -6958,7 +6968,7 @@ test('7.32-Revisores_Baratos: en una liviana todos los revisores van en el model
   // por línea de comandos: el set sale con los modelos baratos y la completitud adentro
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-adv-'));
   const r = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'advisors', '--repo', repo, '--story', story, '--files', 'guides/a.md'],
-    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: 'adv-732' } });
+    { encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: 'adv-732' } });
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.equal(out.run_size, 'liviana');
@@ -6975,7 +6985,7 @@ test('7.32-Arranque_AnunciaYGuarda: start --brief dice tamaño, motivo y tiempo,
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.symlinkSync(path.resolve(SCRIPTS, '..', '..', '..'), path.join(home, '.claude', 'agent-skills'));
   const r = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'start', '--repo', repo, '--story', story, '--brief'],
-    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: 'start-732', TYCON_LANE_LLM: '0' } });
+    { encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: 'start-732', TYCON_LANE_LLM: '0' } });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const b = JSON.parse(r.stdout);
   assert.equal(b.tamano, 'liviana');
@@ -7009,7 +7019,7 @@ test('7.32-Forzado_ConMotivo: set-size sin motivo rechaza, con motivo guarda, a 
   assert.match(log, /SIZE_FORCED_LIGHT_WITH_CODE/);
   // el forzado manda en el portón por línea de comandos
   const g = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'deep-review-gate', '--repo', path.dirname(story), '--story', story, '--files', 'scripts/x.js'],
-    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: 'size-732' } });
+    { encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: 'size-732' } });
   assert.equal(JSON.parse(g.stdout).run, false, g.stderr);
 });
 
@@ -7192,7 +7202,7 @@ function integracionDeMentira740() {
 }
 
 const correr740 = (home, sid, script, args, extra = {}) => {
-  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0',
+  const env = { ...process.env, ...fakeHomeEnv(home), USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0',
     TYCON_GUIDES_DIR: ARNES_740, TYCON_HOME: path.join(home, '.tycon'), TYCON_PROFILE: '0', ...extra };
   delete env.TYCON_CLOCKIFY;
   if (!('TYCON_TIME_TRACKING' in extra)) delete env.TYCON_TIME_TRACKING;
@@ -7332,7 +7342,7 @@ function cerrarSinPasos(extra) {
   const sid = 'sid-cierre-sin-pasos';
   writeFakeMarker(home, sid, { storyId: 'S9', repoPath: path.join(home, 'no-existe'), stepsCompleted: [0], stepsPending: [1, 2, 3], ...extra });
   const r = require('child_process').spawnSync(process.execPath, [MARKER, 'clear'],
-    { env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_NO_RUN_CHANGE: '1' }, encoding: 'utf8' });
+    { env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: sid, TYCON_NO_RUN_CHANGE: '1' }, encoding: 'utf8' });
   const state = path.join(home, '.claude', '.tycon-pipeline');
   let bypass = '';
   try { bypass = fs.readFileSync(path.join(state, 'bypass.log'), 'utf8'); } catch { /* sin constancia */ }

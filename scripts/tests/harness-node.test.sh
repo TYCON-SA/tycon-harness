@@ -56,7 +56,8 @@ done
 [ -f "$MOD" ] || { bad "falta $MOD (la feature no existe)"; echo "harness-node: $FALLAS fallas"; exit 1; }
 
 # ─── el laboratorio: HOME de juguete, árbol de juguete con la lista de laboratorio, servidor local ────────────────
-export HOME="$BASE/home"; mkdir -p "$HOME"
+# USERPROFILE junto a HOME: en Windows Node toma la carpeta personal de USERPROFILE, en su forma de Windows
+export HOME="$BASE/home" USERPROFILE="$(cygpath -w "$BASE/home" 2>/dev/null || printf '%s' "$BASE/home")"; mkdir -p "$HOME"
 unset TYCON_HOME TYCON_NODE_BIN
 export TYCON_HARNESS_NODE=1
 TREE="$BASE/tree"; mkdir -p "$TREE/scripts/production" "$TREE/scripts/setup/harness" "$TREE/scripts/lib"

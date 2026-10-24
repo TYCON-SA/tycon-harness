@@ -22,6 +22,7 @@ const SCRIPTS = path.join(__dirname, '..');
 const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
 const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
 const bash = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
+const { conCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
 
 const REPO = '/w/MiRepo';
 const BASE = { filePath: `${REPO}/src/Foo.cs`, stateDir: '/home/u/.claude/.tycon-pipeline', homeDir: '/home/u', repoRoot: REPO, repoHasTycon: true, repoHasStories: false, marker: null, adhoc: null };
@@ -466,12 +467,10 @@ test('BashWrite_InstalledTree_OtherForms', () => {
   const enElArbol = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: tree, tool_input: { command } });
   assert.ok(/el arnés instalado no se edita/.test((bash.handle(enElArbol('cp a "b.md"'), opts) || {}).block || ''));
   // un destino con $HOME hacia el árbol
-  const prevHome = process.env.HOME;
-  process.env.HOME = path.dirname(path.dirname(tree));
-  try {
+  conCarpetaPersonal(path.dirname(path.dirname(tree)), () => {
     const b = bash.handle(ev(`echo x > $HOME/.tycon/harness/a.md`), opts);
     assert.ok(b && /el arnés instalado no se edita/.test(b.block), '$HOME');
-  } finally { process.env.HOME = prevHome; }
+  });
   // una ruta de Windows entre comillas (con barras invertidas) se lee como destino
   assert.deepEqual(bash.extractWriteTargets('Copy-Item a "C:\\Users\\x\\.tycon\\harness\\b.md"'), ['C:\\Users\\x\\.tycon\\harness\\b.md']);
   // con -t cuenta cada archivo que llega: copiar código a una carpeta del repo sigue siendo escribir código
