@@ -697,6 +697,20 @@ en el chat, `marker.js waive-critical --rule <regla> --file <archivo> --reason "
 hallazgo se anota `waived`. El límite es el mismo: la cita prueba que el mensaje está en la conversación, no prueba
 quién está detrás de la sesión que reenvía.
 
+#### Una función sin pantalla ni servidor
+
+Un criterio de una función (una biblioteca, un guion) se prueba **llamándola de verdad**, con los datos de ejemplo del
+criterio, por `smoke-run.sh`. Uno por criterio, después del último cambio de código (un humo anterior no cuenta):
+
+```bash
+# el criterio 1: llamar a la función real y decir qué tiene que imprimir
+bash ~/.claude/agent-skills/skills/tycon-pipeline/scripts/smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs 1 --pass-if 'resta(5, 3) imprime 2' -- node -e "const { resta } = require('./src/resta'); console.log(resta(5, 3))"
+```
+
+`node --test` (o cualquier prueba unitaria) no cuenta para la matriz: es el código revisándose a sí mismo. Y «no hay
+superficie que probar» no es una salida: el criterio se corre así, o se declara en `runtime_not_verifiable:` y lo firma
+una persona (arriba).
+
 #### Parte 6.1 — Sembrar el «Given», no escribir el «Then» (DODRT-C10, 2026-10-15)
 
 Sembrar las precondiciones de un AC (el «Given»: el paciente, el pedido de origen) es correcto, y se hace por
