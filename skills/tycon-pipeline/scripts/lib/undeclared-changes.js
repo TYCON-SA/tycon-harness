@@ -135,8 +135,32 @@ function computeUndeclared({ repo, baseSha, storyPath, startedAt = null, registr
     && !declarados.has(f) && !lockDeclarado(f, declarados) && !(path.posix.basename(f) === '.gitignore' && gitignoreDelArranque(repo, baseSha)));
   const previos = sinDeclarar.filter(previo).sort();
   if (previos.length) avisos.push(`ya estaba(n) cambiado(s) antes de arrancar (no cuenta(n) como de esta ejecución): ${previos.join(', ')}`);
-  const sobra = sinDeclarar.filter((f) => !previos.includes(f)).sort();
+  const tocadosPorConsola = new Set(consola.filter((l) => l && l.path).map((l) => relDe(l.path)).filter(Boolean));
+  const deMain = entradosPorMain(repo, baseSha, sinDeclarar.filter((f) => !previos.includes(f) && !tocadosPorConsola.has(f)));
+  if (deMain.length) avisos.push(`entró por main después del arranque, igual que en origin/main y sin tocar por la ejecución (no cuenta): ${deMain.join(', ')}`);
+  const sobra = sinDeclarar.filter((f) => !previos.includes(f) && !deMain.includes(f)).sort();
   return { medido: true, motivo: null, sobra, previos, borrados, avisos };
+}
+
+/**
+ * De `candidatos` (rutas relativas a la carpeta de la ejecución, ya sin lo que la ejecución tocó), los que llegaron por
+ * main: una tanda que sale de main después de que otra story entró ve en el diff contra su arranque los archivos de esa
+ * story. Cuenta como de main sólo si su contenido es el mismo blob que en `origin/main` y algún commit de main posterior
+ * al arranque lo cambió. Sin `origin/main`, o si git no contesta, no se descuenta nada: se sigue contando.
+ */
+function entradosPorMain(repo, baseSha, candidatos) {
+  if (!candidatos.length) return [];
+  const MAIN = 'refs/remotes/origin/main';
+  if (git(repo, ['rev-parse', '--verify', '--quiet', MAIN]).error) return [];
+  const log = git(repo, ['log', '--format=', '--name-only', '--no-renames', '--relative', `${baseSha}..${MAIN}`, '--']);
+  if (log.error) return [];
+  const enMain = new Set(lineas(log.out).map(toPosix));
+  return candidatos.filter((f) => {
+    if (!enMain.has(f)) return false;
+    const local = git(repo, ['hash-object', '--', f]);
+    const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${MAIN}:./${f}`]);
+    return !local.error && !remoto.error && local.out.trim() !== '' && local.out.trim() === remoto.out.trim();
+  }).sort();
 }
 
 /**
