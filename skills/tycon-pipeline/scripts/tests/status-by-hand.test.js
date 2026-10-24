@@ -522,3 +522,106 @@ test('T12 DriftCierre_UsaElComando @story-8.109 @ac-3 — el paso 5 de check-sto
   assert.match(paso, /marker\.js update-story-status/);
   assert.doesNotMatch(paso, /frontmatter `status: done`/, 'ya no propone el done con Edit');
 });
+
+// ── Borrar la rama de un pedido (@story-8.113) ────────────────────────────────────────────────────────────────
+// `gh pr close|merge … --delete-branch` borra una rama de git. Con la carpeta del estado llamada `state` (la casa propia,
+// `~/.tycon/state`), un `--json state` en el mismo comando la nombra y el freno lo toma por un borrado del estado. Queda
+// como freno aceptado por duda: la palabra `--delete-branch` es lo único que abre la regla para formas de borrar que la
+// lista de verbos no conoce (`zip -m`, `rsync --remove-source-files`, …), y quitarla las deja pasar.
+
+/** Una HOME cuya carpeta del estado es `~/.tycon/state`, con el marcador de la sesión abierto. */
+function nuevaHomeDeEstado() {
+  const h = nuevaHome();
+  const estado = path.join(h.home, '.tycon', 'state');
+  fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
+  fs.copyFileSync(path.join(h.estado, 'active', `${SID}.json`), path.join(estado, 'active', `${SID}.json`));
+  return { ...h, estado };
+}
+
+const COMENTARIO = '"Cerrado: lo reemplaza el pedido nuevo."';
+
+// T5 BorrarRama_AceptadoPorDuda_Frena @story-8.113 @ac-5 @ac-8
+// El caso real frena a propósito (AC 8), y su salida es separar el cierre del pedido de la lectura de su estado. Las
+// formas de borrar que la lista de verbos no conoce, con un `gh pr close --delete-branch` en el mismo comando, borran
+// o mueven el marcador de verdad: frenan.
+// 🔴 Falla con: `--delete-branch` quitado de lo que lee la regla de borrar, sin otra forma de ver el borrado.
+test('8.113 T5 BorrarRama_AceptadoPorDuda_Frena', () => {
+  const h = nuevaHomeDeEstado();
+  const E = h.estado;
+  for (const c of [
+    `for n in 443 444 445 446; do gh pr close $n --delete-branch --comment ${COMENTARIO}; done; for n in 443 444 445 446; do gh pr view $n --json state --jq '.state'; done`,
+    'gh pr merge 5 --delete-branch --json state',
+    `gh pr merge 5 --delete-branch && rsync -a --remove-source-files ${E}/active /tmp/x`,
+    `gh pr close 1 --delete-branch && zip -qrm /tmp/a.zip ${E}/active.json ${E}/active`,
+    `gh pr close 1 --delete-branch; tar -cf /tmp/a.tar --remove-files ${E}/active`,
+    `gh pr close 1 --delete-branch && 7z a -sdel /tmp/a.7z ${E}/active`,
+    `gh pr close 1 --delete-branch; rename s/active/zz/ ${E}/active`,
+    `gh pr close 1 --delete-branch && ruby -e 'File.delete "${E}/active/${SID}.json"'`,
+    `gh pr close 1 --delete-branch && perl -e 'rename "${E}/active","/tmp/q"'`,
+    `gh pr close 1 --delete-branch; perl -e 'system qq(r).qq(m -rf ${E}/active)'`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, BORRADO, c);
+  }
+  // cada mitad por separado pasa: es la salida que dice la guía
+  for (const c of [`gh pr close 7 --delete-branch --comment ${COMENTARIO}`, 'gh pr view 7 --json state --jq .state']) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});
+
+// T6 BorrarRama_Variantes_SiguenComoHoy @story-8.113 @ac-6
+// Lo que dio el freno de origin/main (dd244205) con cada variante, medido al empezar la tanda: todas frenaban «BORRADO
+// DEL ESTADO DEL PIPELINE». Siguen frenando.
+// 🔴 Falla con: una excepción para `--delete-branch` que se extiende a otra opción `--delete…`, a un `gh` que no es la
+//    palabra de comando o a un comentario.
+test('8.113 T6 BorrarRama_Variantes_SiguenComoHoy', () => {
+  const h = nuevaHomeDeEstado();
+  const E = h.estado;
+  for (const c of [
+    `rsync -a --delete x/ ${E}/`,
+    `rsync --delete-after x/ ${E}/`,
+    `git push origin --delete-branch ${E}`,
+    `gh pr close 1 --delete-branch; rm -rf ${E}`,
+    'gh pr close 1 --delete-branch=true --json state',
+    'gh pr close 1 -delete-branch --json state',
+    'gh pr close 1 --delete-branchX --json state',
+    '/usr/bin/gh pr close 1 --delete-branch --json state',
+    'PATH=/tmp/x:$PATH gh pr close 1 --delete-branch --json state',
+    'echo 1 | xargs gh pr close --delete-branch --json state',
+    'gh pr close 1 --delete-branch --comment "move it" --json state',
+    `bash -c 'gh pr close 1 --delete-branch' && ls ${E}`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, BORRADO, c);
+  }
+});
+
+// T7 BorrarRama_BorradoRealDelMarcador_Frena @story-8.113 @ac-6 @ac-7
+// 🔴 Falla con: un borrado real tapado por el `gh pr close --delete-branch` de otro tramo, o escondido adentro del suyo.
+test('8.113 T7 BorrarRama_BorradoRealDelMarcador_Frena', () => {
+  const h = nuevaHomeDeEstado();
+  const E = h.estado;
+  for (const c of [
+    `gh pr close 1 --delete-branch && rm -rf ${E}/active`,
+    `gh pr close 1 --delete-branch && \\rm ~/.tycon/state/active/${SID}.json`,
+    `gh pr close 1 --delete-branch && find $HOME/.tycon/state -name 'active*' -delete`,
+    `gh pr close 1 --delete-branch && mv ${E}/active* /tmp/`,
+    `gh pr close 1 --delete-branch --comment "$(rm -rf ${E})"`,
+    `gh pr close 1 --delete-branch --comment "\`rm -rf ${E}\`"`,
+    `gh pr close 1 --delete-branch & rm -rf ${E}`,
+    `gh pr close 1 --delete-branch && ( rm -rf ${E} )`,
+    `gh pr close 1 --delete-branch && { rm -rf ${E}; }`,
+    `gh pr close 1 --delete-branch && rm -rf ~/.tycon/st*`,
+    `gh pr close 1 --delete-branch && git clean -fdx ${E}/active`,
+    `gh pr close 1 --delete-branch\nrm -rf ${E}`,
+    `gh pr close 1 --delete-branch --body-file <(rm -rf ${E})`,
+    `gh(){ rm -rf ${E}; }; gh pr close 1 --delete-branch`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${JSON.stringify(c)}: ${r.stderr}`);
+    assert.match(r.stderr, BORRADO, c);
+  }
+});

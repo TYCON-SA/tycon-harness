@@ -748,7 +748,7 @@ test('8.113 T11 CdRelativoConTuberia_Frena', () => {
   }
 });
 
-// T9 Guia_TresFormas @story-8.113 @ac-1 @ac-8
+// T9 Guia_TresFormas @story-8.113 @ac-1 @ac-3 @ac-5 @ac-8
 // 🔴 Falla con: una forma que el freno deja pasar sin que la guía la diga.
 test('T9 Guia_TresFormas', () => {
   const guia = fs.readFileSync(path.join(RAIZ_ARBOL, 'guides', 'safety-guard.md'), 'utf8').replace(/\s+/g, ' ');
@@ -759,6 +759,9 @@ test('T9 Guia_TresFormas', () => {
   assert.match(guia, /`cd docs\/stories && ls \| xargs sed -i …` frena desde la raíz del repo/);
   // la forma del `$(…)` en el nombre de un informe
   assert.match(guia, /`> out\/run-\$\(date \+%s\)\.log` pasa\. Frena si la carpeta donde puede caer tiene historias/);
+  // borrar la rama de un pedido junto a `--json state`: freno aceptado por duda, con su salida
+  assert.match(guia, /\*\*Freno aceptado por duda:\*\* `gh pr close 7 --delete-branch; gh pr view 7 --json state` frena/);
+  assert.match(guia, /La salida: el cierre del pedido y la lectura de su estado en dos comandos/);
   // el freno aceptado por duda, con su forma: lo que el freno deja frenando a propósito está escrito en la guía
   assert.match(guia, /\*\*Freno aceptado por duda:\*\* `\$\(basename …\)` en un destino/);
 });
