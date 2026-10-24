@@ -438,8 +438,10 @@ rm -rf "$NDIR"; rm -f "$RECF" "$RECF".ilegible-*
 
 # ─── T15 (completo) · current roto: el aplicador vuelve los hooks a node en esa misma corrida ─────────────────────
 # @story-8.39 @ac-16  con el Node del arnés roto, el aplicador de Claude Code escribe `node "<guion>"` en su lugar
-mkdir -p "$BASE/t15/hooks" "$BASE/t15/skills" "$BASE/t15/home/.claude"
-printf '// hook\n' > "$BASE/t15/hooks/s.js"
+# el guion en `scripts/hooks/`, como en un árbol real: en Windows el aplicador reconoce un hook del arnés por esa ruta
+T15H="$BASE/t15/scripts/hooks"
+mkdir -p "$T15H" "$BASE/t15/skills" "$BASE/t15/home/.claude"
+printf '// hook\n' > "$T15H/s.js"
 printf '{"hooks":[{"event":"Stop","matcher":"","spec":"@tcg:s.js","label":"x","when":"always","platforms":{"windows":true}}],"superseded":[],"legacy_fragments":[]}\n' > "$BASE/t15/list.json"
 # en Windows las rutas que lee y escribe el aplicador (Node) son `C:/…`, no las de bash (`/tmp/…`), y el Node roto es un
 # `node.exe` que Windows no puede lanzar
@@ -447,13 +449,10 @@ nat() { if [ -n "$WIN" ]; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 mkdir -p "$NDIR/versions/$V1/bin"; printf '#!/bin/sh\nexit 1\n' > "$NDIR/versions/$V1/bin/node"; chmod +x "$NDIR/versions/$V1/bin/node"; ln -s "versions/$V1" "$NDIR/current"
 T15_BIN="$NDIR/current/bin/node"
 [ -n "$WIN" ] && { printf 'no es un programa' > "$NDIR/versions/$V1/node.exe"; T15_BIN="$NDIR/current/node.exe"; }
-# en Windows la carpeta temporal lleva un nombre corto con `~`, y con él el aplicador nunca escribe la forma propia del
-# Node del arnés: lo que dejó escrito es `node "<guion>"`, y eso es lo que se pone acá
-T15_PREVIO="$(nat "$T15_BIN")"; [ -n "$WIN" ] && T15_PREVIO="node"
-printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s \\"%s\\""}]}]}}\n' "$T15_PREVIO" "$(nat "$BASE/t15/hooks/s.js")" > "$BASE/t15/home/.claude/settings.json"
-TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$BASE/t15/hooks" --skills "$BASE/t15/skills" \
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s \\"%s\\""}]}]}}\n' "$(nat "$T15_BIN")" "$(nat "$T15H/s.js")" > "$BASE/t15/home/.claude/settings.json"
+TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$T15H" --skills "$BASE/t15/skills" \
   --list "$BASE/t15/list.json" --effects "$RAIZ/scripts/setup/install-effects.json" >/dev/null 2>&1
-[ "$(node -e 'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command).join("|"))' "$BASE/t15/home/.claude/settings.json")" = "node \"$(nat "$RAIZ/scripts/lib/node-floor.js")\" \"$(nat "$BASE/t15/hooks/s.js")\"" ] \
+[ "$(node -e 'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command).join("|"))' "$BASE/t15/home/.claude/settings.json")" = "node \"$(nat "$RAIZ/scripts/lib/node-floor.js")\" \"$(nat "$T15H/s.js")\"" ] \
   && ok "T15 con current roto el aplicador vuelve el hook a node por el piso, en su lugar y sin duplicar" || bad "T15 el aplicador dejó: $(cat "$BASE/t15/home/.claude/settings.json")"
 rm -rf "$NDIR"
 
@@ -481,7 +480,7 @@ rm -f "$NDIR/current"; before="$(reqs)"; r="$(hn manual)"
 # E · una TYCON_HOME relativa o vacía no tumba al intérprete ni al aplicador: el Node del PATH, con el motivo
 e1="$(TYCON_HOME=relativa node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]).interpreter({ tree: process.argv[2] })))' "$HN" "$TREE" 2>&1)"
 [ "$(field "$e1" own)" = "false" ] && [ "$(field "$e1" prefix)" = "node" ] && ok "adversarial E: TYCON_HOME relativa → node, sin tirar ($(field "$e1" reason))" || bad "adversarial E: interpreter con TYCON_HOME relativa: $e1"
-TYCON_HOME=relativa TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$BASE/t15/hooks" --skills "$BASE/t15/skills" \
+TYCON_HOME=relativa TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$T15H" --skills "$BASE/t15/skills" \
   --list "$BASE/t15/list.json" --effects "$RAIZ/scripts/setup/install-effects.json" >/dev/null 2>"$BASE/e.err"
 [ $? -eq 0 ] && ok "adversarial E: el aplicador con TYCON_HOME relativa sale 0 y registra" || bad "adversarial E: el aplicador cayó: $(head -2 "$BASE/e.err")"
 # E (Windows) · Get-HarnessNode del instalador .ps1: una TYCON_HOME relativa → ninguno (el Node del PATH); una absoluta con
