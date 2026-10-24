@@ -1090,7 +1090,8 @@ test('computeDepGate: paquete nuevo no declarado → pause; declarado → pass; 
 
 test('@story-7.26 computeDepGate: en una story de dos repos mira también el repo hermano declarado', () => {
   // El diff incluye también el repo del frontend hermano: un paquete nuevo ahí tiene que verse.
-  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-depgate-dos-')));
+  // la forma real (`.native`): en Windows expande el nombre corto de la carpeta temporal, como hace computeDepGate
+  const raiz = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-depgate-dos-')));
   const back = path.join(raiz, 'Back');
   const front = path.join(raiz, 'Front');
   for (const d of [back, front]) { fs.mkdirSync(d); execFileSync('git', ['-C', d, 'init', '-q']); execFileSync('git', ['-C', d, 'config', 'user.email', 't@t.co']); execFileSync('git', ['-C', d, 'config', 'user.name', 't']); }
@@ -1850,7 +1851,7 @@ test('marker.adversarial: sobrevive a set (misma story) + complete-step, y se RE
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 
-test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no contra el cwd)', () => {
+test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no contra el cwd) — T15 RuntimeWaiver_Windows_SinVentana @story-8.115 @ac-13', () => {
   // 🔴 `pipeline.js start` guarda `storyPath` RELATIVO al repo. Tres sitios lo resuelven contra el repo en vez de
   // hacer `fs.existsSync(marker.storyPath)` crudo, que falla salvo que el proceso corra parado justo en la raíz
   // del repo: el gate de `complete-step 8`, el check de la guía de QA, y el fallback de `runtime-waiver` — que
@@ -1870,17 +1871,22 @@ test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no c
   // `runtime-waiver` sin argumento, corriendo desde un cwd que NO es el repo (el caso habitual).
   // Tiene que pasar el chequeo de existencia y morir recién en el candado de TTY — o sea que
   // ENCONTRÓ la story. Si no, muere antes, en "no encuentro la story".
+  // En Windows, sin la marca de la ventana, el comando abriría una ventana de consola real y la esperaría 5 minutos: con
+  // la marca y la entrada redirigida toma el camino de Windows sin terminal y muere en su candado.
+  const enWindows = process.platform === 'win32';
   let salida = '';
   try {
     require('child_process').execFileSync(
       process.execPath, [path.join(SCRIPTS, 'marker.js'), 'runtime-waiver'],
-      { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe' }
+      { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID, ...(enWindows ? { TYCON_WAIVER_IN_WINDOW: '1' } : {}) },
+        cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe', timeout: 60000 }
     );
   } catch (e) {
     salida = `${e.stdout || ''}${e.stderr || ''}`;
   }
   assert.ok(!/no encuentro la story/.test(salida), `resolvió el path relativo contra repoPath — salida:\n${salida}`);
-  assert.match(salida, /BLOQUEADO — acá no hay una terminal/, 'llegó hasta el candado TTY (que es donde debe morir sin terminal)');
+  assert.match(salida, enWindows ? /BLOQUEADO — en Windows firma sólo la ventana NUEVA/ : /BLOQUEADO — acá no hay una terminal/,
+    'llegó hasta el candado TTY (que es donde debe morir sin terminal)');
 
   // Y el mensaje de error, cuando de verdad no hay story, NO manda a un flag inexistente.
   fs.writeFileSync(path.join(activeDir, `${SID}.json`), JSON.stringify({
@@ -1891,7 +1897,8 @@ test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no c
   try {
     require('child_process').execFileSync(
       process.execPath, [path.join(SCRIPTS, 'marker.js'), 'runtime-waiver'],
-      { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID }, cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe' }
+      { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID, ...(enWindows ? { TYCON_WAIVER_IN_WINDOW: '1' } : {}) },
+        cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe', timeout: 60000 }
     );
   } catch (e) {
     err = `${e.stdout || ''}${e.stderr || ''}`;
@@ -2289,10 +2296,11 @@ test('qa-guide gate: el mensaje trae el comando exacto para generarla', () => {
   assert.equal(commitGate.qaGuideMessage('ok', {}), '', 'sin hallazgo, sin ruido');
 });
 
-test('qa-guide gate: deriva el path de la guía igual que qa-guide.js (hermano qa/ de stories/)', () => {
+test('qa-guide gate: deriva el path de la guía igual que qa-guide.js (hermano qa/ de stories/) — T6 QaGuide_LetraDeUnidad @story-8.115 @ac-5', () => {
   assert.equal(
     commitGate.qaGuidePathFor('/r/specs/route-filters/stories/S1-lookup.md'),
-    path.join('/r/specs/route-filters/qa', 'S1-lookup-guia-qa.html'),
+    // `resolve`, no `join`: en Windows la guía lleva la letra de la unidad actual, como la deriva qaGuidePathFor
+    path.resolve('/r/specs/route-filters/qa', 'S1-lookup-guia-qa.html'),
   );
 });
 
@@ -3718,10 +3726,14 @@ function mkMultiStackRepo(files) {
   return tmp;
 }
 
+// el arnés bajo prueba, dicho en cada corrida de test-gate.sh: con la carpeta personal de juguete no hay
+// `~/.claude/tycon-harness`, y en Windows `npm` (npm.cmd) se lanza por el bash de Git, que carga la biblioteca del arnés y
+// sin esto no la encuentra
+const ARNES_BAJO_PRUEBA = process.env.TYCON_GUIDES_DIR || path.resolve(SCRIPTS, '..', '..', '..');
 function runTestGate(repo, storyArg, fakeHome) {
   const { spawnSync } = require('child_process');
   return spawnSync('bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, storyArg], {
-    env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none' },
+    env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none', TYCON_GUIDES_DIR: ARNES_BAJO_PRUEBA },
     encoding: 'utf8',
   });
 }
@@ -3792,7 +3804,7 @@ test('T18 TestGate_SuitesJson_DeferredInTestsResult — story 7.15: la diferida 
     const head = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     const { spawnSync } = require('child_process');
     return spawnSync('bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, story], {
-      env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none', TYCON_COVERAGE_BASE: head },
+      env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none', TYCON_COVERAGE_BASE: head, TYCON_GUIDES_DIR: ARNES_BAJO_PRUEBA },
       encoding: 'utf8',
     });
   };
@@ -3847,7 +3859,7 @@ test('test-gate.sh: repo con jest → lo corre de verdad y deja los totales', (t
   fs.writeFileSync(path.join(repo, '__tests__', 'ok.test.js'), "test('ok', () => { expect(1).toBe(1); });");
 
   const r = require('child_process').spawnSync('bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, '10.2'], {
-    env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none' },
+    env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none', TYCON_GUIDES_DIR: ARNES_BAJO_PRUEBA },
     encoding: 'utf8',
   });
 
@@ -3876,7 +3888,7 @@ test('test-gate.sh: alcance que NO tiene proyecto .NET adentro → FRENA, no cor
 
   const r = require('child_process').spawnSync(
     'bash', [path.join(SCRIPTS, 'test-gate.sh'), repo, '10.2', 'custom-forms'],
-    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none' }, encoding: 'utf8' }
+    { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: 'tgate-none', TYCON_GUIDES_DIR: ARNES_BAJO_PRUEBA }, encoding: 'utf8' }
   );
 
   assert.equal(r.status, 4, `esperaba el freno, salió ${r.status}\n${r.stderr}`);
@@ -4634,6 +4646,12 @@ test('GateMerge_NormalizaLaFormaDeLosPaths', () => {
     bn(selectE2eApps(cfg, [path.join(repo, 'totora-catalogo', 'tests', 'e2e', 'x.spec.ts')])),
     ['totora-catalogo'],
     'con path ABSOLUTO tiene que seleccionar la app — devolver [] hace que el gate corra 0 suites y salga verde');
+  // (b2) @story-8.115 @ac-12: la caja no cuenta (la Mac y Windows no la distinguen): una app escrita con otra caja se
+  // selecciona igual, y no se pierde en silencio al lado de otra
+  assert.deepEqual(
+    bn(selectE2eApps(cfg, [path.join(repo, 'Totora-Catalogo', 'tests', 'e2e', 'x.spec.ts'), path.join(repo, 'totora-reserva', 'a.ts')])),
+    ['totora-catalogo', 'totora-reserva'],
+    'una app con otra caja no se pierde');
 
   // (c) relativo a un ANCESTRO del repo (lo que da `git diff` si la raíz git está más arriba).
   assert.deepEqual(
@@ -5207,13 +5225,56 @@ test('on-frontmatter-write: hasFreshPlaywrightPass acepta "failed=0" (macro) y "
 // Por eso acá cada toque deja hash + hora en el marker.
 const sha1De = (f) => require('crypto').createHash('sha1').update(fs.readFileSync(f)).digest('hex');
 const enero = Date.parse('2026-01-15T13:00:00Z');
-// repo git efímero con identidad configurada; `g` corre git adentro sin ruido
-const repoGit = () => {
+// repo git efímero con identidad configurada; `g` corre git adentro sin ruido. `autocrlf` fijo en el repo: con el
+// `true` que Windows trae de fábrica, el checkout reescribiría los archivos con CRLF (el caso real va en su prueba aparte)
+const repoGit = (autocrlf = 'false') => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'piso-git-'));
   const g = (...args) => require('node:child_process').execFileSync('git', ['-C', d, ...args], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 'b@b'); g('config', 'user.name', 'b'); g('config', 'commit.gpgsign', 'false');
+  g('config', 'core.autocrlf', autocrlf);
   return { d, g };
 };
+
+test('T4 Piso_ConAutocrlfTrueYFalse @story-8.115 @ac-4 — un checkout con autocrlf=true reescribe el archivo con CRLF y el piso no sube', () => {
+  const { fechaDeCambio } = require(path.join(SCRIPTS, 'on-frontmatter-write.js'));
+  const { selloDeArchivo } = require(path.join(SCRIPTS, 'lib', 'content-seal.js'));
+  const { d, g } = repoGit('true');
+  const f = path.join(d, 'app.js');
+  fs.writeFileSync(f, 'v1\n'); g('add', '-A'); g('commit', '-q', '-m', 'v1');
+  const registro = { [f]: { ...selloDeArchivo(f), ts: enero } };   // lo que la sesión dejó, con LF
+  g('checkout', '-q', '-b', 'otra'); fs.writeFileSync(f, 'v2\n'); g('commit', '-qam', 'v2');
+  g('checkout', '-q', 'main');                                   // git vuelve a escribir v1, ahora con CRLF
+  assert.equal(fs.readFileSync(f, 'utf8'), 'v1\r\n', 'el repo de la prueba tiene que reescribir con CRLF, si no no mide nada');
+  assert.equal(fechaDeCambio(f, registro), enero, 'el mismo contenido para git: la hora del toque, no la del disco');
+  // y un contenido de verdad distinto, con CRLF, sigue subiendo el piso
+  fs.writeFileSync(f, 'v3\r\n');
+  assert.ok(fechaDeCambio(f, registro) > Date.now() - 60 * 1000, 'otro contenido: la fecha del disco');
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('T4 Piso_ConAutocrlfTrueYFalse @story-8.115 @ac-4 — sólo el fin de línea: un filtro de git que borra código no hace pasar una edición', () => {
+  const { fechaDeCambio } = require(path.join(SCRIPTS, 'on-frontmatter-write.js'));
+  const { selloDeArchivo } = require(path.join(SCRIPTS, 'lib', 'content-seal.js'));
+  const { d, g } = repoGit('true');
+  // un filtro de limpieza que borra las líneas con DEBUG, y el atributo ident: los dos hacen que contenidos distintos
+  // sean el mismo para git
+  g('config', 'filter.strip.clean', "sed -e '/DEBUG/d'"); g('config', 'filter.strip.smudge', 'cat');
+  fs.writeFileSync(path.join(d, '.gitattributes'), '*.js filter=strip\n*.ts ident\n');
+  const j = path.join(d, 'j.js'); const t = path.join(d, 't.ts');
+  fs.writeFileSync(j, 'ok\n'); fs.writeFileSync(t, 'x $Id$\n');
+  const reg = { [j]: { ...selloDeArchivo(j), ts: enero }, [t]: { ...selloDeArchivo(t), ts: enero } };
+  fs.writeFileSync(j, 'ok\nfetch("x") // DEBUG\n');            // una línea de código nueva que el filtro esconde
+  fs.writeFileSync(t, 'x $Id: evil() $\n');
+  assert.ok(fechaDeCambio(j, reg) > Date.now() - 60 * 1000, 'filtro de limpieza: la edición sube el piso');
+  assert.ok(fechaDeCambio(t, reg) > Date.now() - 60 * 1000, 'ident: la edición sube el piso');
+  // al revés: la sesión dejó CRLF y git lo vuelve a escribir con LF; es el mismo contenido y el piso no sube
+  const c = path.join(d, 'c.md.js');
+  fs.writeFileSync(c, 'a\r\nb\r\n');
+  const regC = { [c]: { ...selloDeArchivo(c), ts: enero } };
+  fs.writeFileSync(c, 'a\nb\n');
+  assert.equal(fechaDeCambio(c, regC), enero, 'CRLF a LF: la hora del toque');
+  fs.rmSync(d, { recursive: true, force: true });
+});
 
 test('piso: el contenido que la sesión dejó vale por la hora de ESE toque, aunque git lo haya reescrito hoy', () => {
   const { fechaDeCambio } = require(path.join(SCRIPTS, 'on-frontmatter-write.js'));

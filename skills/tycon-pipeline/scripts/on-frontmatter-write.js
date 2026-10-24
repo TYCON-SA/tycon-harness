@@ -213,9 +213,8 @@ function storyNeedsPlaywrightRun(content) {
  */
 function pisoDeArchivos(files, registro) {
   const mtime = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
-  const sello = (f) => {
-    try { return require('crypto').createHash('sha1').update(fs.readFileSync(f)).digest('hex'); } catch { return null; }
-  };
+  const { selloDeArchivo, soloCambioElFinDeLinea } = require('./lib/content-seal.js');
+  const sello = (f) => { try { return selloDeArchivo(f).hash; } catch { return null; } };
   const reg = registro && typeof registro === 'object' ? registro : {};
   let piso = 0;
   for (const f of files) {
@@ -223,7 +222,8 @@ function pisoDeArchivos(files, registro) {
     if (r && typeof r.hash === 'string' && Number.isFinite(Number(r.ts))) {
       const h = sello(f);
       if (h === null) continue;                                 // borrado: no cuenta
-      piso = Math.max(piso, h === r.hash ? Number(r.ts) : mtime(f));
+      // los bytes cambiaron sólo en el fin de línea (un checkout con autocrlf=true): el mismo contenido del toque
+      piso = Math.max(piso, h === r.hash || soloCambioElFinDeLinea(f, r) ? Number(r.ts) : mtime(f));
     } else {
       piso = Math.max(piso, mtime(f));
     }
