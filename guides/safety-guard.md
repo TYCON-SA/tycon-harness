@@ -218,7 +218,12 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
   `/tycon-pipeline close`. Hacerlo a mano lo decide la persona («autorizo cambiar el estado»).
 - **Borrar el marcador.** Borrar o mover por consola un marcador de ejecución (`active/`, `active.json`), de esta
   sesión o de otra, frena con «BORRADO DEL ESTADO DEL PIPELINE». En su lugar: `marker.js clear` o `marker.js
-  clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre.
+  clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre. **Freno
+  aceptado por duda:** `gh pr close 7 --delete-branch; gh pr view 7 --json state` frena «BORRADO DEL ESTADO DEL
+  PIPELINE» cuando la carpeta del estado se llama `state` (`~/.tycon/state`). `--delete-branch` borra una rama de git,
+  pero esa palabra es lo único que hace mirar el comando a formas de borrar que la lista no conoce (`zip -m`, `rsync
+  --remove-source-files`, `tar --remove-files`), y quitarla las deja borrar el marcador. La salida: el cierre del pedido
+  y la lectura de su estado en dos comandos.
 - **Un `$(…)` en el nombre de un informe.** Con el pipeline abierto, un destino `.md` o `.log` (`>`, `>>` o `tee`) con
   un `$(date +F)` (formato sólo de `%Y %m %d %H %M %S %s %j %y - _`), pegado a texto, se lee entero y el `$(…)` cuenta
   como un comodín: `> out/run-$(date +%s).log` pasa. Frena si la carpeta donde puede caer tiene historias, si la

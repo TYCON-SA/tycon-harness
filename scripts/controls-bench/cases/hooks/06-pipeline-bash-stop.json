@@ -162,6 +162,50 @@
           }
         },
         {
+          "id": "borrar-rama-aceptado-por-duda-frena",
+          "type": "must-block",
+          "_por_que": "8.113, freno aceptado por duda: `gh pr close --delete-branch` junto a un `--json state` frena «BORRADO DEL ESTADO DEL PIPELINE». La palabra `--delete-branch` es lo único que abre la regla para formas de borrar que la lista no conoce (`zip -m`, `rsync --remove-source-files`); la salida es separar los dos comandos.",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon",
+            "mkdir -p \"$HOME/.tycon/state/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-br\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.tycon/state/active/bench-br.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-br",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr close 7 --delete-branch --comment \"Cerrado.\"; gh pr view 7 --json state --jq '.state'"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "BORRADO DEL ESTADO DEL PIPELINE"
+            ]
+          }
+        },
+        {
+          "id": "borrar-rama-con-rm-del-estado-frena",
+          "type": "must-block",
+          "_por_que": "8.113: un `rm` del estado en el mismo comando que un `gh pr close --delete-branch` frena «BORRADO DEL ESTADO DEL PIPELINE».",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon",
+            "mkdir -p \"$HOME/.tycon/state/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-br\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.tycon/state/active/bench-br.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-br",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr close 7 --delete-branch && rm -rf ~/.tycon/state/active"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "BORRADO DEL ESTADO DEL PIPELINE"
+            ]
+          }
+        },
+        {
           "id": "cd-relativo-sin-historias-pasa",
           "type": "must-not-block",
           "_por_que": "8.113, gemelo: la carpeta relativa de un `cd` sin historias adentro no frena, aunque el repo tenga historias en otra carpeta.",
