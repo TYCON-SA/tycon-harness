@@ -181,7 +181,19 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
 - **Una historia escrita por consola.** Un comando que escribe una historia que no está en borrador (redirección, `sed
   -i`, `tee`, `cp`, un `node -e` o un `python3 -c`) frena con «HISTORIA ESCRITA POR CONSOLA». Desde un comando no se ve
   qué queda escrito. En su lugar: la herramienta de edición, y para el estado
-  `marker.js update-story-status <historia> <estado>`.
+  `marker.js update-story-status <historia> <estado>`. Con un editor en el lugar, la carpeta de un `cd <carpeta> && `
+  al principio exacto del comando (la carpeta escrita tal cual, sin comillas, opciones, `$` ni comodines), seguido de
+  un solo `sed` que nombra sus archivos (sin tubería, `$(…)`, comillas invertidas, otro comando, redirección, salto de
+  línea, llaves, `@` ni `~`), es desde dónde se leen las demás palabras, no algo que el editor escribe. Con `perl` no:
+  un `perl -e` puede armar y escribir sus archivos desde adentro (`BEGIN{@ARGV=glob …}`), y sigue frenando.
+  `cd <repo> && sed -i -e 's/a/b/' x.sh` pasa aunque haya historias adentro de esa carpeta. Un editor que toma sus
+  archivos de una tubería o de `$(ls)` (`cd specs && ls | xargs sed -i …`) sigue frenando. `cd specs && sed -i -e 's/a/b/' story-x.md` sigue frenando, y también cualquier
+  otra forma de llegar a la carpeta (`;`, `|`, `&&` pegado, un espacio o un `(` delante, `cd -- x`, `cd $D`, `pushd`).
+  Fuera de esa forma, la carpeta de un `cd` cuenta por las historias que tiene, escrita relativa o absoluta, con
+  comillas o con espacios, con su comodín expandido (`cd docs/st*`): `cd docs/stories && ls | xargs sed -i …` frena
+  desde la raíz del repo. Una carpeta que el freno no sabe resolver (`cd $(pwd)/docs`, `$'…'`, llaves, una variable que
+  no conoce) también frena, y una con más `.md` de los que recorre. Un «cd» dentro de un texto entre comillas o de un
+  heredoc no cuenta.
 - **El paso a review o done a mano.** Un Edit, un Write o un `apply_patch` de Codex que pasa la historia a `review` o
   `done` frena aunque esté la evidencia. En su lugar: `marker.js update-story-status`, `update-pipeline-status` o
   `/tycon-pipeline close`. Hacerlo a mano lo decide la persona («autorizo cambiar el estado»).
