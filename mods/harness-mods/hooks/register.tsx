@@ -47,7 +47,7 @@ function detailMarkdown(snap: Snapshot): string {
 }
 
 // los enlaces del renglón en VS Code y escritorio: no llevan a ningún sitio, el mod los atiende
-const LINK = { detail: 'https://pipeline.invalid/detalle', close: 'https://pipeline.invalid/cerrar', hide: 'https://pipeline.invalid/ocultar' }
+const LINK = { detail: 'https://pipeline.invalid/detalle', close: 'https://pipeline.invalid/cerrar' }
 
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 
@@ -222,20 +222,21 @@ export const register: Register = on => {
     if (e.surface !== 'terminal') {
       // VS Code y escritorio: un renglón de markdown con enlaces, como el aviso de uso, y a su tamaño de letra
       const toggle = open ? `[Cerrar detalle](${LINK.close})` : `[Detalle](${LINK.detail})`
-      const text = `**${run.storyId}** · ${run.waiting ? `**${step} · te espera**` : step} · ${compact.join(' · ')} · ${toggle} · [Ocultar](${LINK.hide})`
+      const text = `**${run.storyId}** · ${run.waiting ? `**${step} · te espera**` : step} · ${compact.join(' · ')} · ${toggle}`
       const board = (
         <Markdown
           key="board"
           text={text}
-          pressableLinks={[LINK.detail, LINK.close, LINK.hide]}
+          pressableLinks={[LINK.detail, LINK.close]}
           onLinkPress={async (link: { href: string }) => {
-            if (link.href === LINK.hide) return hide()
             if (link.href === LINK.close) return update($, expanded, () => false)
             return showDetail()
           }}
         />
       )
-      return open ? <Box flexDirection="column">{board}{detail}</Box> : board
+      // Ocultar es la × de cerrar de VS Code, como en el aviso de uso
+      const row = <Box>{board}<Button key="hide" role="dismiss" label="Ocultar" onPress={hide}>Ocultar</Button></Box>
+      return open ? <Box flexDirection="column">{row}{detail}</Box> : row
     }
 
     const line = (
