@@ -1001,8 +1001,9 @@ function main() {
 
   // Escape hatch estándar de git: --no-verify saltea hooks. Si user/agente
   // lo usa explícitamente, dejamos pasar pero queda rastro DURABLE en bypass.log
-  // (solo stderr efímero: imposible auditar bypasses).
-  if (/--no-verify\b/.test(command)) {
+  // (solo stderr efímero: imposible auditar bypasses). También su prefijo inequívoco (`--no-veri`, `--no-verif`), que
+  // git acepta igual; `--no-ver` choca con `--no-verbose` y git lo rechaza.
+  if (/--no-verify\b|--no-verif?(?=[\s;&|"')]|$)/.test(command)) {
     console.error('⚠ tycon-dod-runtime: --no-verify detected, skipping DoD gate (had_dod_bypass=true, logueado en bypass.log)');
     try {
       const stateDir = path.join(stateDirOf(os.homedir()));

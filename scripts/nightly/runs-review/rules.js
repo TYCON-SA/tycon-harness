@@ -64,6 +64,19 @@ const PRENDE_BANDERA = ['true', '1'];
 const PRENDE_AUTONOMO = ['true', '1', 'on'];
 // Palabras que van antes del programa sin ser el programa: las del shell, `env`, y el operador de llamada de PowerShell.
 const ANTES_DEL_PROGRAMA = ['if', 'then', 'do', 'else', 'elif', 'while', 'until', 'time', 'exec', 'command', '!', '&', 'env', '{', '('];
+// Envoltorios que corren su programa sin pasarle una asignación (`nice X=1 cmd` corre `X=1` como programa), y las
+// opciones de cada uno que llevan valor.
+const NO_PASAN = new Set(['nice', 'nohup', 'timeout', 'xargs', 'caffeinate', 'stdbuf', 'ionice', 'chrt', 'taskset']);
+const CON_VALOR_DE = {
+  nice: new Set(['-n', '--adjustment']), timeout: new Set(['-s', '--signal', '-k', '--kill-after']),
+  xargs: new Set(['-a', '-E', '-I', '-L', '-n', '-P', '-s', '-d', '--arg-file', '--delimiter', '--max-args', '--max-procs', '--max-chars']),
+  stdbuf: new Set(['-i', '-o', '-e']), ionice: new Set(['-c', '-n', '-p']), caffeinate: new Set(['-t', '-w']),
+};
+// Los envoltorios con un valor suelto antes del programa (la duración, la prioridad, la máscara).
+const CON_POSICIONAL = new Set(['timeout', 'chrt', 'taskset']);
+// Las opciones de `env` y de `sudo` que llevan su valor aparte (`-P`: la ruta de búsqueda de macOS).
+const ENV_CON_VALOR = new Set(['-u', '--unset', '-C', '--chdir', '-S', '--split-string', '-P']);
+const SUDO_CON_VALOR = new Set(['-u', '--user', '-g', '--group', '-C', '--close-from', '-D', '--chdir', '-h', '--host', '-p', '--prompt', '-r', '--role', '-t', '--type', '-U', '--other-user', '-T', '--command-timeout']);
 
 // La acción que antecede a la bandera de cada parte del Arranque (steps/step-01-start.md). Poner la bandera es lo
 // normal; ponerla sin que su acción saliera bien es la falla. ADO: el `update` que la pasa a Active, o el `show` del
@@ -157,30 +170,93 @@ function trozos(command) {
 /**
  * Cada segmento: sus asignaciones iniciales (`VAR=v`, `export VAR=v`, `$env:VAR=v`, y en PowerShell también
  * `$VAR = v`), su programa y sus argumentos. Un programa o un argumento que nombran una variable asignada antes en el
- * mismo comando (`N=…/node.exe; "$N" …`, la forma de Windows) se leen por su valor.
+ * mismo comando (`N=…/node.exe; "$N" …`, la forma de Windows) se leen por su valor. Los envoltorios (`env`, `sudo`,
+ * `timeout`, `nice`, …, también por su ruta) se saltean con sus opciones, y el segmento queda `envuelto` (dónde corre
+ * ya no es seguro); sólo `env` y `sudo` le pasan sus asignaciones al programa: detrás de los otros, `X=1` es el nombre
+ * de un programa. En `valor` va lo asignado en el segmento, por nombre, y en `cadena` el comando de `env -S "…"`.
  */
 function segmentos(command) {
   const valores = new Map();
   const expandir = (w) => String(w).replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (m, n) => (valores.has(n) ? valores.get(n) : m));
+  const base = (w) => path.basename(String(w || '').replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
   return trozos(command).map((p) => {
     const asignaciones = [];
+    const valor = {};
+    let envuelto = false;
+    let pasan = true;
+    let cadena = null;
     let i = 0;
     for (;;) {
+      const b = p[i] === undefined ? null : base(p[i]);
+      const env = b === 'env' && p[i] !== 'env' ? true : b === 'env' && (/^-/.test(p[i + 1] || '') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(p[i + 1] || ''));
+      if (env || b === 'sudo' || b === 'doas' || NO_PASAN.has(b)) {
+        const r = saltearOpciones(p, i + 1, env ? ENV_CON_VALOR : b === 'sudo' || b === 'doas' ? SUDO_CON_VALOR : CON_VALOR_DE[b] || new Set());
+        i = r.i;
+        if (r.cadena !== null) cadena = r.cadena;
+        // `env -` es `env -i`; `timeout` lleva la duración antes del programa, `chrt` la prioridad y `taskset` la máscara
+        let opciones = r.opciones;
+        if (env && p[i] === '-') { i += 1; opciones = true; }
+        if (CON_POSICIONAL.has(b) && p[i] !== undefined && !/^-/.test(p[i])) i += 1;
+        if (!env || opciones) envuelto = true;
+        pasan = env || b === 'sudo' || b === 'doas';
+        continue;
+      }
+      // `time -p …` y `exec -a nombre …`: sus opciones no son el programa; `time` le pasa las asignaciones, `exec` no
+      if ((b === 'time' || b === 'exec') && /^-/.test(p[i + 1] || '')) {
+        i = saltearOpciones(p, i + 1, b === 'exec' ? new Set(['-a']) : new Set()).i;
+        if (b === 'exec') pasan = false;
+        continue;
+      }
       if (ANTES_DEL_PROGRAMA.includes(p[i])) { i += 1; continue; }
+      if (!pasan) break;
       if (p[i] === 'export' && /^[A-Za-z_][A-Za-z0-9_]*=/.test(p[i + 1] || '')) { i += 1; continue; }
       const ps = /^\$(?:env:)?([A-Za-z_][A-Za-z0-9_]*)$/.exec(p[i] || '');
-      if (ps && p[i + 1] === '=' && p[i + 2] !== undefined) { asignaciones.push(ps[1]); valores.set(ps[1], p[i + 2]); i += 3; continue; }
+      if (ps && p[i + 1] === '=' && p[i + 2] !== undefined) { asignaciones.push(ps[1]); valores.set(ps[1], p[i + 2]); valor[ps[1]] = p[i + 2]; i += 3; continue; }
       const m = /^(?:\$env:|\$)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(p[i] || '');
       if (!m) break;
       asignaciones.push(m[1]);
       valores.set(m[1], m[2]);
+      valor[m[1]] = m[2];
       i += 1;
     }
     const crudo = p[i] === undefined ? null : expandir(p[i]);
     const programa = crudo === null ? null : path.basename(crudo.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
-    return { asignaciones, programa, args: p.slice(i + 1).map(expandir), crudo };
+    return { asignaciones, valor, envuelto, cadena, programa, args: p.slice(i + 1).map(expandir), crudo };
   });
 }
+/**
+ * Saltea las opciones de un envoltorio desde `i`: largas (`--user x`, `--user=x`) y cortas, también juntas (`-iu bob`:
+ * la última lleva su valor aparte; `-ubob`: el valor va pegado). Devuelve dónde sigue, si hubo opciones y el valor de
+ * `-S`/`--split-string` (el comando que `env` parte).
+ */
+function saltearOpciones(p, i, conValor) {
+  let opciones = false;
+  let cadena = null;
+  while (/^-/.test(p[i] || '') && p[i] !== '-') {
+    opciones = true;
+    const t = p[i];
+    if (t === '--') return { i: i + 1, opciones, cadena };
+    if (t.startsWith('--')) {
+      const [nombre, pegado] = t.split(/=(.*)/s);
+      const lleva = conValor.has(nombre) && pegado === undefined;
+      if (/^--split-string$/.test(nombre)) cadena = lleva ? p[i + 1] : pegado;
+      i += lleva ? 2 : 1;
+      continue;
+    }
+    let salto = 1;
+    for (let j = 1; j < t.length; j += 1) {
+      if (!conValor.has(`-${t[j]}`)) continue;
+      const v = j === t.length - 1 ? p[i + 1] : t.slice(j + 1);
+      if (t[j] === 'S') cadena = v;
+      if (j === t.length - 1) salto = 2;
+      break;
+    }
+    i += salto;
+  }
+  return { i, opciones, cadena };
+}
+/** ¿El segmento activa el escape? Cada freno lo toma sólo con `1`. Casos: T3 de scripts/tests/runs-review.test.js. */
+const activa = (s, nombre) => s.asignaciones.includes(nombre) && s.valor[nombre] === '1';
 
 /** Lo que sigue a `<guion>` en cada segmento que lo corre (por `node` o el guion mismo): una lista por segmento. */
 function argsDe(command, guion) {
@@ -207,10 +283,8 @@ const GIT_CON_VALOR = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namesp
 
 /** El `git` de un segmento, directo o detrás de un envoltorio: `{ args, envuelto }`, o null si no corre git. */
 function gitDe(s) {
-  if (s.programa === 'git') return { args: s.args, envuelto: false };
-  if (!ENVOLTORIOS.has(s.programa)) return null;
-  const k = s.args.findIndex((a) => path.basename(String(a).replace(/\\/g, '/')).replace(/\.exe$/i, '') === 'git');
-  return k >= 0 ? { args: s.args.slice(k + 1), envuelto: true } : null;
+  // los envoltorios ya los saltea `segmentos`: el programa es el de verdad
+  return s.programa === 'git' ? { args: s.args, envuelto: s.envuelto } : null;
 }
 /** Las opciones de git antes del subcomando: sus `-C`, si nombra otro repo (`--git-dir`, `--work-tree`) y el subcomando. */
 function opcionesDeGit(args) {
@@ -233,13 +307,25 @@ function opcionesDeGit(args) {
  * repo (`--git-dir`, `--work-tree`, `GIT_DIR=`), un programa envuelto— deja `cierta: false`, y quien juzga lo cuenta
  * como del repo real: mejor una ficha de más, con su motivo, que un escape que no se ve.
  */
-function conCarpeta(command) {
+function conCarpeta(command, nivel = 0) {
   const texto = String(command || '');
   // (las redirecciones `2>&1` y `&>` no separan nada)
   const subshell = /[()`]|\$\(/.test(texto) || /&|\|/.test(texto.replace(/&&/g, ' ').replace(/\d*>&\d*-?|&>>?/g, ' '));
   let dir = null;
   let perdida = subshell;
-  return segmentos(command).map((s) => {
+  const out = [];
+  for (const s of segmentos(command)) {
+    // el segmento cuenta con sus asignaciones (`X=1 bash -c "…"`), y el código que le pasa a un intérprete
+    // (`bash -c "…"`, `eval …`, `env -S "…"`) es otro comando: sus segmentos también cuentan, en un lugar no cierto
+    out.push(carpetaDe(s));
+    if (nivel < NIVELES) for (const cadena of codigosDeUnInterprete(s)) for (const adentro of conCarpeta(cadena, nivel + 1)) out.push({ ...adentro, cierta: false });
+  }
+  // el cuerpo de un heredoc que se le da a un shell (`bash <<'EOF'`, `sh -s <<EOF`) corre. Se buscan una sola vez, en el
+  // texto entero: adentro de una cadena o de otro cuerpo ya están en ese texto, y leerlos de nuevo los contaría dos veces
+  if (nivel === 0) for (const cuerpo of heredocsAUnShell(texto)) for (const adentro of conCarpeta(cuerpo, 1)) out.push({ ...adentro, cierta: false });
+  return out;
+
+  function carpetaDe(s) {
     if (CAMBIA_CARPETA.has(s.programa)) {
       if (s.programa === 'cd' && s.args.length === 1 && carpetaCierta(s.args[0]) && !perdida) dir = s.args[0];
       else { perdida = true; dir = null; }
@@ -252,9 +338,35 @@ function conCarpeta(command) {
       if (git.envuelto || ces.length > 1 || otroRepo || s.asignaciones.some((a) => /^GIT_(?:DIR|WORK_TREE)$/.test(a))) cierta = false;
       else if (ces.length === 1) carpeta = ces[0];
     } else if (ENVOLTORIOS.has(s.programa)) cierta = false;
+    if (s.envuelto) cierta = false;
     if (carpeta !== null && !carpetaCierta(carpeta)) cierta = false;
     return { s, carpeta, cierta, git };
-  });
+  }
+}
+/** El código que un segmento le pasa a un intérprete (`bash -c "…"`, `sh -lc "…"`, `eval …`), o null. */
+function codigosDeUnInterprete(s) {
+  const out = [];
+  if (s.cadena) out.push(s.cadena);
+  if (s.programa === 'eval' && s.args.length) out.push(s.args.join(' '));
+  if (['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(s.programa)) {
+    const k = s.args.findIndex((a) => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(a));
+    if (k >= 0 && s.args[k + 1] !== undefined) out.push(s.args[k + 1]);
+  }
+  return out;
+}
+// Hasta cuántos intérpretes uno dentro de otro se lee el código (más adentro, un comando así no es trabajo normal).
+const NIVELES = 4;
+/** Los cuerpos de los heredocs que se le dan a un shell: `bash <<'EOF'`, `sh -s <<EOF`, `zsh -s -- <<-EOF`. */
+function heredocsAUnShell(texto) {
+  const out = [];
+  // la búsqueda mira el carácter previo sin tomarlo: así encuentra también el heredoc del renglón siguiente a otro
+  const re = /(?<=^|[\s;&|(])(?:[^\s;&|()]*[\\/])?(?:ba|z|da|k)?sh(?:\.exe)?(?:\s+-[a-zA-Z-]+)*\s*<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n/g;
+  for (const m of String(texto).matchAll(re)) {
+    const desde = m.index + m[0].length;
+    const fin = new RegExp(`^[\\t ]*${m[2]}[\\t ]*$`, 'm').exec(texto.slice(desde));
+    out.push(texto.slice(desde, fin ? desde + fin.index : texto.length));
+  }
+  return out;
 }
 /** ¿El segmento es de laboratorio con certeza? Su carpeta, o la de la ejecución si el comando no la cambió. */
 const enLaboratorio = ({ carpeta, cierta }, repoPath) => {
@@ -262,12 +374,33 @@ const enLaboratorio = ({ carpeta, cierta }, repoPath) => {
   const d = carpeta === null ? repoPath : carpeta;
   return carpetaCierta(d) && esLaboratorio(d);
 };
-/** ¿El segmento corre un `git` que saltea los hooks? (`--no-verify` en cualquier subcomando, o `-n` en un `commit`). */
+// Los prefijos de `--no-verify` que git acepta sin ambigüedad en `commit` y `push` (`--no-ver` choca con `--no-verbose`;
+// en `merge`, con `--no-verify-signatures`): sacado de `git commit -h` y `git push -h`.
+const NO_VERIFY_ABREVIADA = ['--no-veri', '--no-verif'];
+/**
+ * ¿El segmento corre un `git` que saltea los hooks? `--no-verify` en cualquier subcomando; en `commit` y `push`
+ * también su prefijo inequívoco; y `-n` sólo en `commit`, también junto a otras opciones cortas (`-an`, `-nm`): en
+ * `push` es `--dry-run` y en `log`, la cantidad.
+ */
 function salteaHooks(s) {
   const git = gitDe(s);
   if (!git) return false;
   const { sub, resto } = opcionesDeGit(git.args);
-  return resto.includes('--no-verify') || (sub === 'commit' && resto.some((a) => /^-[a-zA-Z]*n[a-zA-Z]*$/.test(a)));
+  if (resto.includes('--no-verify')) return true;
+  if ((sub === 'commit' || sub === 'push') && resto.some((a) => NO_VERIFY_ABREVIADA.includes(a))) return true;
+  return sub === 'commit' && resto.some(nEnOpcionesCortas);
+}
+// Las opciones cortas de `git commit` que llevan valor: lo que sigue a su letra es el valor (`-mdone`, `-uno`), no
+// otras opciones.
+const COMMIT_CON_VALOR = new Set(['m', 'F', 'C', 'c', 't', 'u', 'S']);
+/** ¿Las opciones cortas juntas (`-an`, `-nm`, `-anm`) traen `-n`, antes de una que lleva valor? */
+function nEnOpcionesCortas(a) {
+  if (!/^-[a-zA-Z]/.test(a)) return false;
+  for (const letra of a.slice(1)) {
+    if (letra === 'n') return true;
+    if (COMMIT_CON_VALOR.has(letra) || !/[a-zA-Z]/.test(letra)) return false;
+  }
+  return false;
 }
 /** El texto de un comando para compararlo con el de una línea del registro, que lo guarda con otras comillas. */
 const normalizado = (t) => String(t || '').replace(/\\\r?\n/g, ' ').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
@@ -387,10 +520,11 @@ function escapesDeComandos(cs, repoPath) {
     const add = (clave, categoria = clave, t = texto, extra = {}) => out.push({ clave, categoria, texto: t, ...extra });
     // el escape de pedidos, uno por pedido que lo lleva
     for (const p of pedidosConEscape(c.command)) add('TYCON_PR_BY_HAND', p.sobra ? 'PR_A_MANO/sobra' : 'TYCON_PR_BY_HAND', p.texto);
-    const conPedidos = pedidosConEscape(c.command).length > 0;
     for (const seg of conCarpeta(c.command)) {
+      // el de pedidos cuenta sólo como lo toma su freno (pegado y con un valor cierto): arriba, por pedido; el resto,
+      // con el valor que activa su freno
       for (const a of seg.s.asignaciones) {
-        if (!ESCAPES.includes(a) || (a === 'TYCON_PR_BY_HAND' && conPedidos)) continue;
+        if (!ESCAPES.includes(a) || a === 'TYCON_PR_BY_HAND' || !activa(seg.s, a)) continue;
         if (a === 'TYCON_FULL_SUITE' && enLaboratorio(seg, repoPath)) add(a, 'FULL_SUITE_RUN/laboratorio');
         else add(a);
       }
@@ -409,7 +543,8 @@ function escapesDeComandos(cs, repoPath) {
 
 // Código que corre adentro de una cadena (`bash -c "…"`, `eval`, `python3 -c`): lo que nombra ahí no se puede dar por
 // texto que no se ejecuta.
-const INTERPRETE = /(?:^|[\s;&|(/\\])(?:ba|z|k|da)?sh(?:\.exe)?\s+(?:-\w+\s+)*-\w*c\b|(?:^|[\s;&|(])eval\b|python3?(?:\.exe)?\s+-c\b|node(?:\.exe)?\s+(?:-e|-p|--eval)\b/;
+// (también lo que se le da a un shell por un tubo, por `<<<` o con `env -S`)
+const INTERPRETE = /(?:^|[\s;&|(/\\])(?:ba|z|k|da)?sh(?:\.exe)?\s+(?:-\w+\s+)*-\w*c\b|(?:^|[\s;&|(])eval\b|python3?(?:\.exe)?\s+-c\b|node(?:\.exe)?\s+(?:-e|-p|--eval)\b|\|\s*(?:\S*[\\/])?(?:ba|z|k|da)?sh\b|(?:ba|z|k|da)?sh(?:\.exe)?(?:\s+-\w+)*\s*<<<|\benv\s+(?:-\S+\s+)*(?:-S|--split-string)\b/;
 // Cómo se llama en el registro el escape que se ve en un comando: la categoría de una línea emparejada.
 const DEL_REGISTRO = { '--no-verify': 'GIT_NO_VERIFY', TYCON_FULL_SUITE: 'FULL_SUITE_RUN', TYCON_PR_BY_HAND: 'PR_A_MANO', atddBypass: 'ATDD_BYPASS' };
 
@@ -426,14 +561,15 @@ function categoriaDeLinea(l, repoPath) {
   if (tipo === 'GIT_NO_VERIFY') {
     if (!command) return cwdLab ? 'GIT_NO_VERIFY/laboratorio' : tipo;
     const corrio = conCarpeta(command).filter(({ s }) => salteaHooks(s));
-    if (!corrio.length) return command.includes('--no-verify') && !INTERPRETE.test(command) ? null : tipo;
+    // la nombra (entera o abreviada, como la anota el freno del commit) y no la corrió: texto
+    if (!corrio.length) return /--no-veri(?:fy?)?(?![\w-])|--no-verify/.test(command) && !INTERPRETE.test(command) ? null : tipo;
     const seg = corrio[0];
     const lab = seg.carpeta === null && seg.cierta && l.cwd ? cwdLab : enLaboratorio(seg, repoPath);
     return lab ? 'GIT_NO_VERIFY/laboratorio' : tipo;
   }
   if (tipo === 'FULL_SUITE_RUN') {
     if (!command) return tipo;
-    const corrio = conCarpeta(command).filter(({ s }) => s.asignaciones.includes('TYCON_FULL_SUITE'));
+    const corrio = conCarpeta(command).filter(({ s }) => activa(s, 'TYCON_FULL_SUITE'));
     if (!corrio.length) return command.includes('TYCON_FULL_SUITE') && !INTERPRETE.test(command) ? null : tipo;
     return enLaboratorio(corrio[0], repoPath) ? 'FULL_SUITE_RUN/laboratorio' : tipo;
   }

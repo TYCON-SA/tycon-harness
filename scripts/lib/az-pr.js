@@ -215,8 +215,25 @@ function pasaCodigoAUnInterprete(seg) {
 const pideAyuda = (seg) => seg.some((f) => f.esBandera && (f.texto === '--help' || f.texto === '-h'));
 
 
-/** Texto legible del segmento, para el mensaje del freno. */
-const textoDe = (seg) => seg.map((f) => (f.esBandera ? f.texto : `"${f.texto}"`)).join(' ');
+/**
+ * Texto del segmento, para el mensaje del freno y la línea que deja en bypass.log. Es fiel: partido de nuevo con
+ * `fichas`, da las mismas fichas (el texto y si empezó fuera de comillas). Entre comillas simples nada se lee de otra
+ * forma —ni la barra, ni `$`, ni un salto de línea—, así que lo que no es un carácter común va ahí, con la comilla simple
+ * de adentro como `'\''`. Una ficha libre deja afuera su primer carácter (escapado con la barra si hace falta), para
+ * seguir empezando fuera de comillas.
+ */
+function textoDe(seg) {
+  const simple = (t) => `'${t.replace(/'/g, "'\\''")}'`;
+  const comun = (t) => /^[A-Za-z0-9_./:=,@%+-]*$/.test(t);
+  return seg.map((f) => {
+    const t = String(f.texto);
+    if (!f.esBandera) return simple(t);
+    if (comun(t)) return t;
+    const primero = /[A-Za-z0-9_./:=,@%+-]/.test(t[0]) ? t[0] : `\\${t[0]}`;
+    const resto = t.slice(1);
+    return primero + (comun(resto) ? resto : simple(resto));
+  }).join(' ');
+}
 
 /**
  * ¿El segmento arranca con el escape `TYCON_PR_BY_HAND=1` PEGADO al comando? Sólo así vale: desde
