@@ -512,3 +512,253 @@ test('T11 Gate_Codex_NoFrenaYQuedaMedido: bajo Codex una historia nueva lista si
   assert.equal(r.verdict.kind, 'unknown-codex');
   assert.match(gatesLog(st), /unknown-codex/);
 });
+
+// ── La carpeta de un `cd` delante de un editor en el lugar ──────────────────────────────────────────────────────────
+//
+// El freno corre como lo corre Claude Code: un proceso aparte, el evento por la entrada, una HOME y un repo de juguete
+// con dos archivos con `story:` (la historia y una plantilla en una carpeta de arriba). Los comandos van en las tablas,
+// no en la línea de un comando.
+
+const PUERTA_CONSOLA = path.join(SCRIPTS, 'on-bash-write-gate.js');
+const RAIZ_ARBOL = path.join(SCRIPTS, '..', '..', '..');
+
+function repoDeCd() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ssg-cd-'));
+  const repo = path.join(home, 'repo');
+  for (const d of ['specs', 'skills/x', 'scripts']) fs.mkdirSync(path.join(repo, d), { recursive: true });
+  spawnSync('git', ['init', '-q', repo]);
+  const fm = (n) => `---\nstory: "${n}"\ntitle: "x"\nstatus: in-progress\n---\n\n# x\n`;
+  fs.writeFileSync(path.join(repo, 'specs', 'story-x.md'), fm('9.9'));
+  fs.writeFileSync(path.join(repo, 'skills', 'x', 'template.md'), fm('{{n}}'));
+  fs.writeFileSync(path.join(repo, 'a.sh'), 'echo a\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'a.sh'), 'echo a\n');
+  return { home, repo };
+}
+/** El freno de este árbol con un comando: `{ exit, titulo }` (la primera línea del motivo). `<repo>` se reemplaza. */
+function frenoDeCd(h, comando, extra = {}) {
+  const e = { ...process.env, HOME: h.home, USERPROFILE: h.home };
+  for (const k of Object.keys(e)) if (/^TYCON_|^CLAUDE_CODE_SESSION_ID$/.test(k)) delete e[k];
+  e.TYCON_GUIDES_DIR = RAIZ_ARBOL;
+  e.D = h.repo;
+  Object.assign(e, extra);
+  const r = spawnSync(process.execPath, [PUERTA_CONSOLA], { input: JSON.stringify({ session_id: 's-cd', tool_use_id: 'toolu_cd', cwd: h.repo,
+    tool_name: 'Bash', tool_input: { command: comando.replaceAll('<repo>', h.repo) } }), env: e, encoding: 'utf8' });
+  return { exit: r.status, titulo: ((r.stderr || '').split('\n').find((l) => l.trim()) || '').trim() };
+}
+
+// T1 CdAntesDelEditor_CasoReal_Pasa @story-8.113 @ac-1
+// 🔴 Falla con: contar la carpeta del `cd` del principio como algo que el editor escribe (frena «HISTORIA ESCRITA POR
+//    CONSOLA» por la plantilla de una carpeta que el comando no toca).
+test('T1 CdAntesDelEditor_CasoReal_Pasa', () => {
+  const h = repoDeCd();
+  // el carril de código (editar código sin ejecución abierta) es otro control: apagado, queda sólo el de las historias
+  for (const c of ["cd <repo> && sed -i '' -e 's/a/b/' scripts/a.sh", "cd . && sed -i -e 's/a/b/' a.sh"]) {
+    assert.deepStrictEqual(frenoDeCd(h, c, { TYCON_STORY_GATE: 'off' }), { exit: 0, titulo: '' }, c);
+  }
+  // perl no es la forma exacta: un `perl -e` puede armar y escribir sus archivos desde adentro
+  const c = "cd <repo> && perl -pi -e 's/a/b/' a.sh";
+  assert.deepStrictEqual(frenoDeCd(h, c, { TYCON_STORY_GATE: 'off' }), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
+});
+
+// Lo que dio el freno de origin/main (e0a33e20) con cada variante, medido al empezar la tanda: el código de salida y la
+// primera línea del motivo. Las dos que pasan ya pasaban: `specs` es una carpeta que el freno no recorre.
+const HISTORIA_POR_CONSOLA = '⛔ tycon-pipeline — HISTORIA ESCRITA POR CONSOLA';
+const VARIANTES_DE_CD = [
+  ["cd specs && sed -i -e 's/a/b/' story-x.md", 2],
+  ["cd <repo>; sed -i -e 's/a/b/' a.sh", 2],
+  ["cd $D && sed -i -e 's/a/b/' a.sh", 2],
+  ["pushd <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd specs && sed -i -e 's/a/b/' specs", 0],
+  ["cd specs && sed -i -e 's/a/b/' ../specs", 2],
+  ["cd specs && sed -i -e 's/a/b/' specs/", 0],
+  ["cd <repo>&&sed -i -e 's/a/b/' a.sh", 2],
+  ["cd <repo> | sed -i -e 's/a/b/' a.sh", 2],
+  [" cd <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["(cd <repo> && sed -i -e 's/a/b/' a.sh)", 2],
+  ["cd '<repo>' && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd -- <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd -P <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd <repo> || sed -i -e 's/a/b/' a.sh", 2],
+  ["cd <repo> & sed -i -e 's/a/b/' a.sh", 2],
+  ["echo x && cd <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd  <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["\ncd <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd <repo>/s* && sed -i -e 's/a/b/' story-x.md", 2],
+  ['cd "<repo>" && sed -i -e \'s/a/b/\' a.sh', 2],
+  // sin carpeta no hay historia que mirar: frena el carril de código, como en main
+  ["cd && sed -i -e 's/a/b/' a.sh", 2, '⛔ tycon-pipeline — CÓDIGO SIN CARRIL (repo bajo el arnés TYCON, sin pipeline activo)'],
+];
+
+// T2 CdAntesDelEditor_Variantes_SiguenComoHoy @story-8.113 @ac-1 @ac-2
+// 🔴 Falla con: sacar la palabra del `cd` por su texto (`cd specs && sed -i … ../specs` deja de frenar), o aflojar una
+//    forma parecida que no es la exacta (`&&` pegado, `|`, un espacio o un `(` delante, comillas, opciones, una carpeta
+//    armada, `pushd`).
+test('T2 CdAntesDelEditor_Variantes_SiguenComoHoy', () => {
+  const h = repoDeCd();
+  for (const [c, exit, titulo] of VARIANTES_DE_CD) {
+    assert.deepStrictEqual(frenoDeCd(h, c), { exit, titulo: titulo || (exit ? HISTORIA_POR_CONSOLA : '') }, c);
+  }
+});
+
+// CdAntesDelEditor_Tuberias_SiguenComoHoy @story-8.113 @ac-2
+// 🔴 Falla con: sacar la carpeta del `cd` cuando el editor toma sus archivos de una tubería, de `$(…)`, de comillas
+//    invertidas o de un `for`: ahí la carpeta del `cd` es lo único que nombra las historias que el editor escribe. En
+//    origin/main (e0a33e20) todas frenaban; siguen frenando.
+test('CdAntesDelEditor_Tuberias_SiguenComoHoy', () => {
+  const h = repoDeCd();
+  fs.mkdirSync(path.join(h.repo, 'docs', 'stories'), { recursive: true });
+  fs.writeFileSync(path.join(h.repo, 'docs', 'stories', 'story-y.md'), '---\nstory: "9.8"\ntitle: "y"\nstatus: in-progress\n---\n\n# y\n');
+  fs.symlinkSync(path.join(h.repo, 'docs', 'stories'), path.join(h.repo, 'lnk'));
+  for (const c of [
+    "cd <repo> && grep -rl x | xargs sed -i -e 's/a/b/'",
+    "cd <repo> && git ls-files | xargs sed -i -e 's/a/b/'",
+    "cd <repo>/docs/stories && ls | xargs sed -i -e 's/a/b/'",
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/' $(ls)",
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/' `ls`",
+    "cd <repo>/docs/stories && for f in $(ls); do sed -i -e 's/a/b/' $f; done",
+    "cd <repo>/lnk && ls | xargs sed -i -e 's/a/b/'",
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/' *",
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/' story-y.md",
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/' story-y.md\nls",
+    // el editor escribe otro archivo desde su expresión: el `w` de sed, un `open` de perl
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/w story-y.md' <repo>/a.sh",
+    "cd <repo>/docs/stories && sed -e 's/a/b/w story-y.md' -i <repo>/a.sh",
+    "cd <repo>/docs/stories && perl -pi -e 'open(F,\">story-y.md\")' <repo>/a.sh",
+    // un perl que arma sus archivos en su guion, y nombres que el shell expande: no son la forma exacta
+    "cd <repo>/docs/stories && perl -pi -e 'BEGIN{@ARGV=glob q(*.md)} s/a/b/'",
+    "cd <repo>/docs && perl -pi -e 'BEGIN{@ARGV=glob q(stories/*.md)} s/a/b/'",
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/' {story-y,x}.md",
+    "cd <repo>/docs/stories && sed -i -e 's/a/b/' ~+/story-y.md",
+  ]) assert.deepStrictEqual(frenoDeCd(h, c), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
+});
+
+// 8.113 T11 CdRelativoConTuberia_Frena @story-8.113 @ac-10
+// 🔴 Falla con: resolver la carpeta de un `cd` sólo desde la que el `cd` ya dejó (`docs/stories/docs/stories`), o no
+//    leer una carpeta entre comillas o con un espacio escapado. Con la sesión en la raíz del repo, las trece primeras
+//    pasaban en origin/main (e0a33e20) y escribían una historia; escritas absolutas, frenaban.
+test('8.113 T11 CdRelativoConTuberia_Frena', () => {
+  const h = repoDeCd();
+  const fm = (n) => `---\nstory: "${n}"\ntitle: "y"\nstatus: in-progress\n---\n\n# y\n`;
+  fs.mkdirSync(path.join(h.repo, 'docs', 'stories'), { recursive: true });
+  fs.mkdirSync(path.join(h.repo, 'docs', 'mis historias'), { recursive: true });
+  fs.mkdirSync(path.join(h.repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(h.repo, 'docs', 'stories', 'story-y.md'), fm('9.8'));
+  fs.writeFileSync(path.join(h.repo, 'docs', 'mis historias', 'story-z.md'), fm('9.7'));
+  fs.writeFileSync(path.join(h.repo, 'src', 'a.sh'), 'echo a\n');
+  const XARGS = " && ls | xargs sed -i -e 's/a/b/'";
+  for (const c of [
+    "cd docs/stories && ls | xargs sed -i -e 's/a/b/'",
+    "cd docs/stories && sed -i -e 's/a/b/' $(ls)",
+    "cd docs/stories && sed -i -e 's/a/b/' `ls`",
+    "cd docs/stories && for f in $(ls); do sed -i -e 's/a/b/' $f; done",
+    "cd docs && grep -rl x | xargs sed -i -e 's/a/b/'",
+    `cd $D${XARGS}`,
+    `cd ../repo/docs/stories${XARGS}`,
+    `cd ./docs/stories/${XARGS}`,
+    `cd 'docs/mis historias'${XARGS}`,
+    `cd "docs/mis historias"${XARGS}`,
+    `cd docs/mis\\ historias${XARGS}`,
+    // una carpeta que el freno no sabe resolver puede tener historias
+    `cd $NOSE${XARGS}`,
+    `cd $(pwd)/docs${XARGS}`,
+    `cd docs/{stories,}${XARGS}`,
+    `cd $'docs/stories'${XARGS}`,
+    // el comodín del cd se expande, y las comillas pegadas son una sola palabra
+    `cd docs/st*${XARGS}`,
+    `cd docs/stor?es${XARGS}`,
+    `cd docs/[s]tories${XARGS}`,
+    `cd do*/stories${XARGS}`,
+    `cd "docs/st"ories${XARGS}`,
+    `cd d"ocs/stories"${XARGS}`,
+    // el cd sin carpeta va a HOME; las opciones del cd; un cd que empieza un comando después de `&` o de `(`
+    `cd && cd repo/docs/stories${XARGS}`,
+    `cd -P docs/stories${XARGS}`,
+    `echo x & cd docs/stories${XARGS}`,
+    `(cd docs/stories${XARGS})`,
+    // ya frenaban en main y siguen
+    `cd ~/repo/docs/stories${XARGS}`,
+    `cd docs && cd stories${XARGS}`,
+    `cd docs && cd 'mis historias'${XARGS}`,
+  ]) assert.deepStrictEqual(frenoDeCd(h, c, { D: 'docs/stories' }), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
+  // con más `.md` de los que se recorren, no se sabe si queda una historia sin mirar: frena
+  fs.mkdirSync(path.join(h.repo, 'notas'));
+  for (let i = 0; i < 501; i++) fs.writeFileSync(path.join(h.repo, 'notas', `n-${String(i).padStart(3, '0')}.md`), '# n\n');
+  assert.deepStrictEqual(frenoDeCd(h, `cd notas${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'tope de la recorrida');
+  // una historia a más de cuatro niveles, y una carpeta que no se puede leer: frenan
+  fs.mkdirSync(path.join(h.repo, 'hondo', 'a', 'b', 'c', 'd', 'e'), { recursive: true });
+  fs.writeFileSync(path.join(h.repo, 'hondo', 'a', 'b', 'c', 'd', 'e', 'story-h.md'), fm('9.5'));
+  assert.deepStrictEqual(frenoDeCd(h, `cd hondo${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'historia honda');
+  // con root, o en Windows, el permiso no impide leer la carpeta: ahí no hay nada que probar
+  if (process.platform !== 'win32' && !(process.getuid && process.getuid() === 0)) {
+    fs.mkdirSync(path.join(h.repo, 'cerrada', 'x'), { recursive: true });
+    fs.chmodSync(path.join(h.repo, 'cerrada', 'x'), 0o000);
+    try {
+      assert.deepStrictEqual(frenoDeCd(h, `cd cerrada${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'carpeta sin leer');
+    } finally { fs.chmodSync(path.join(h.repo, 'cerrada', 'x'), 0o755); }
+  }
+  // un enlace simbólico adentro de la carpeta se sigue
+  fs.mkdirSync(path.join(h.repo, 'enlaces'));
+  fs.symlinkSync(path.join(h.repo, 'docs', 'stories'), path.join(h.repo, 'enlaces', 'h'));
+  assert.deepStrictEqual(frenoDeCd(h, `cd enlaces${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'enlace simbólico');
+  // los topes: más de 2000 carpetas, y un comodín con más de 200 carpetas en un tramo del medio
+  for (let i = 0; i < 2001; i++) fs.mkdirSync(path.join(h.repo, 'muchas', `c${i}`), { recursive: true });
+  assert.deepStrictEqual(frenoDeCd(h, `cd muchas${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'tope de carpetas');
+  for (let i = 0; i < 201; i++) fs.mkdirSync(path.join(h.repo, 'anchas', `w${String(i).padStart(3, '0')}`, 'x'), { recursive: true });
+  assert.deepStrictEqual(frenoDeCd(h, `cd anchas/w*/x${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'tope del comodín');
+  // las ramas de la lectura de la carpeta: `cd -`, `~+`, `~-` y un `$(…)` entre comillas no se saben resolver; `--`
+  // cierra las opciones; un cd después de `then` o `do` también empieza un comando
+  for (const c of [`cd -${XARGS}`, `cd ~+/docs/stories${XARGS}`, `cd ~-${XARGS}`, `cd "$(pwd)/docs"${XARGS}`,
+    `cd -- docs/stories${XARGS}`, `if true; then cd docs/stories${XARGS}; fi`, `for x in 1; do cd docs/stories${XARGS}; done`,
+    // pushd y los prefijos del cd, y un cd adentro de `bash -c` o de `$(…)`
+    `pushd 'docs/mis historias'${XARGS}`, `command cd 'docs/mis historias'${XARGS}`, `builtin cd docs/stories${XARGS}`,
+    `\\cd docs/stories${XARGS}`, `bash -c "cd 'docs/mis historias'${XARGS}"`, `echo $(cd 'docs/mis historias'${XARGS})`,
+    // con `$HOME`; y, como con la carpeta absoluta, aunque el editor nombre otro archivo (frena de más, del lado seguro)
+    `cd $HOME/repo/docs/stories${XARGS}`, "cd docs; sed -i -e 's/a/b/' notas.txt",
+    // un cd escondido en comillas invertidas o en un `sh -c` del medio, y `~otro`
+    `echo \`cd docs/stories${XARGS}\``, "ls | xargs sh -c 'cd docs/stories && ls | xargs sed -i -e s/a/b/'",
+    "sudo sh -c 'cd docs/stories && ls | xargs sed -i -e s/a/b/'", `cd ~nadie/docs${XARGS}`,
+    // un comodín con varias carpetas: el cd que sigue se resuelve desde todas
+    `cd d* && cd stories${XARGS}`,
+    // el cd después de if, elif, while o until; adentro de eval, de un shell con opciones antes del -c (fish y csh
+    // incluidos), de un `$(…)` anidado o de un guion con una comilla escapada; con CDPATH; pushd a su pila
+    `if cd 'docs/mis historias'; then ls | xargs sed -i -e 's/a/b/'; fi`,
+    `if false; then :; elif cd 'docs/mis historias'; then ls | xargs sed -i -e 's/a/b/'; fi`,
+    `while cd 'docs/mis historias'; do ls | xargs sed -i -e 's/a/b/'; break; done`,
+    `until cd 'docs/mis historias'; do :; done; ls | xargs sed -i -e 's/a/b/'`,
+    `eval "cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `bash --norc -c "cd 'docs/mis historias'${XARGS}"`, `bash -o pipefail -c "cd 'docs/mis historias'${XARGS}"`,
+    `bash -O extglob -c "cd 'docs/mis historias'${XARGS}"`, `fish -c "cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `csh -c "cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `bash -c "echo \\"x\\"; cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `echo $(echo $(cd 'docs/mis historias'${XARGS}))`,
+    `export CDPATH=${'<repo>'}/docs; cd stories${XARGS}`,
+    `pushd${XARGS}`, `pushd +1${XARGS}`,
+    // más hondo que tres niveles de comandos anidados no se lee: frena
+    `echo $(echo $(echo $(echo $(cd src${XARGS}))))`]) {
+    assert.deepStrictEqual(frenoDeCd(h, c), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
+  }
+  // sin historias en la carpeta, o sin carpeta, pasa como en main; una carpeta que el freno no recorre
+  // (`NEVER_CODE_SEGMENTS`) tampoco cuenta; un «cd» que no corre (en un texto entre comillas o en el cuerpo de un
+  // heredoc) no cuenta
+  fs.mkdirSync(path.join(h.repo, 'node_modules', 'x'), { recursive: true });
+  fs.writeFileSync(path.join(h.repo, 'node_modules', 'x', 'story-n.md'), fm('9.6'));
+  for (const c of [`cd node_modules${XARGS}`, `cd src${XARGS}`, `cd no-existe${XARGS}`, "cd src && grep -rl x . | xargs sed -i -e 's/a/b/'", `cd docs/zz*${XARGS}`,
+    "git commit -m 'cd $(pwd)' ; sed -i -e 's/a/b/' notas.txt", "cat > /dev/null <<'EOF'\ncd $(pwd)\nEOF\nsed -i -e 's/a/b/' notas.txt"]) {
+    assert.deepStrictEqual(frenoDeCd(h, c, { D: 'docs/stories' }), { exit: 0, titulo: '' }, c);
+  }
+});
+
+// T9 Guia_TresFormas @story-8.113 @ac-1 @ac-8
+// 🔴 Falla con: una forma que el freno deja pasar sin que la guía la diga.
+test('T9 Guia_TresFormas', () => {
+  const guia = fs.readFileSync(path.join(RAIZ_ARBOL, 'guides', 'safety-guard.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(guia, /la carpeta de un `cd <carpeta> && ` al principio exacto del comando/);
+  assert.match(guia, /`cd specs && sed -i -e 's\/a\/b\/' story-x\.md` sigue frenando/);
+  // perl queda afuera de la forma exacta, y la carpeta relativa de un cd cuenta por sus historias
+  assert.match(guia, /Con `perl` no: un `perl -e` puede armar y escribir sus archivos desde adentro/);
+  assert.match(guia, /`cd docs\/stories && ls \| xargs sed -i …` frena desde la raíz del repo/);
+  // la forma del `$(…)` en el nombre de un informe
+  assert.match(guia, /`> out\/run-\$\(date \+%s\)\.log` pasa\. Frena si la carpeta donde puede caer tiene historias/);
+  // el freno aceptado por duda, con su forma: lo que el freno deja frenando a propósito está escrito en la guía
+  assert.match(guia, /\*\*Freno aceptado por duda:\*\* `\$\(basename …\)` en un destino/);
+});

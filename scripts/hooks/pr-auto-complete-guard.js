@@ -45,8 +45,6 @@ const az = require('../lib/az-pr.js');
 const constanciaFreno = require('../lib/guard-record.js');
 
 const TAG = '[pr-sin-auto-complete]';
-const ROMPE_SQUASH = 'los commits desaparecen de main y las notas de versión colapsan a una línea';
-const A_MAIN = /^(?:refs\/heads\/)?(?:main|master)$/i;
 
 // 🔴 SE LEE LA ENTRADA ANTES DE DECIDIR NADA, incluso para apagarse (misma lección que
 // pr-one-per-repo-guard.js: salir sin drenar stdin rompe la tubería de quien escribe).
@@ -99,33 +97,14 @@ for (const seg of az.segmentos(cmd)) {
     continue;
   }
 
-  const autoComplete = az.flagDe(seg, 'auto-complete');
-  const squash = az.flagDe(seg, 'squash');
-  const draft = az.flagDe(seg, 'draft');
-  const destino = az.flagDe(seg, 'target-branch', 't');
-
-  const faltas = [];
-  if (verbo === 'create') {
-    // Sólo los que van a main: el skill es el camino de esa rama (ver cabecera).
-    if (destino !== null && !A_MAIN.test(destino)) continue;
-    if (az.esCierto(draft)) {
-      console.error(`${TAG} borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true y --squash false.`);
-      continue;
-    }
-    huboJuicio = true;
-    if (!az.esCierto(autoComplete)) faltas.push('sin `--auto-complete true`: el PR queda abierto para siempre, nadie lo completa');
-    if (squash === null) faltas.push(`sin \`--squash false\` explícito: la estrategia la decide la política de la rama, y si es squash ${ROMPE_SQUASH}`);
-    else if (!az.esFalso(squash)) faltas.push(`con \`--squash ${squash}\`: ${ROMPE_SQUASH}`);
-  } else {
-    huboJuicio = true;
-    if (az.esFalso(autoComplete)) faltas.push('apaga el auto-complete de un PR ya creado: queda abierto para siempre');
-    if (az.esCierto(squash)) faltas.push(`prende el squash de un PR ya creado: ${ROMPE_SQUASH}`);
-    // Publicar un borrador es CREARLO de verdad: la tercera puerta al mismo resultado.
-    if (az.esFalso(draft)) {
-      if (!az.esCierto(autoComplete)) faltas.push('publica un borrador (`--draft false`) sin `--auto-complete true`: queda un PR normal que nadie completa');
-      if (squash === null || !az.esFalso(squash)) faltas.push('publica un borrador sin `--squash false` explícito: la estrategia la decide la política de la rama');
-    }
+  // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
+  const { juzgado, borrador, faltas } = az.faltasDe(seg);
+  if (borrador) {
+    console.error(`${TAG} borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true y --squash false.`);
+    continue;
   }
+  if (!juzgado) continue;
+  huboJuicio = true;
   if (faltas.length) problemas.push({ seg, verbo, faltas });
 }
 

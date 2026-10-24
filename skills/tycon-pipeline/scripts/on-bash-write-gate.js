@@ -253,6 +253,65 @@ function resolverCd(cmd, baseCwd) {
   }
 }
 
+// La forma de `$(…)` que el nombre de un informe puede llevar: `$(date +F)` con un formato sólo de dígitos, `-` y `_`.
+// Su salida no tiene `/` ni `.`. (`basename` no entra: `basename /` da `/`, y su salida puede abrir una carpeta)
+const SUBCOMANDO_EN_DESTINO = String.raw`\$\(date \+(?:%[YmdHMSsjy]|[-_])+\)`;
+// el destino entero detrás de `>`, `>>` o `tee`, que termina en un espacio, un operador o el final: nunca en una
+// comilla ni en una barra invertida, que lo seguirían (`r-$(date +%s).md'.ts'` escribe un `.ts`)
+const DESTINO_CON_SUBCOMANDO = new RegExp(String.raw`((?:^|[^<>&])(?:>{1,2}|\btee(?:[ \t]+-a)?)[ \t]*)((?:[^\s'"|;&<>$\`()\\]|\$\{?[A-Za-z_]\w*\}?|${SUBCOMANDO_EN_DESTINO})+)(?=$|[\s;&|)<>])`, 'g');
+
+/**
+ * Qué posiciones de `cmd` son texto de comando: fuera de las comillas y fuera del cuerpo de un heredoc. Un `>` adentro
+ * de un mensaje de commit o de un heredoc no es una redirección.
+ */
+function posicionesDeComando(cmd) {
+  const s = String(cmd || '');
+  const es = new Array(s.length).fill(true);
+  for (const m of s.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n([\s\S]*?\n)[ \t]*\2[ \t]*(?=\n|$)/g)) {
+    const desde = m.index + m[0].indexOf('\n') + 1;
+    for (let i = desde; i < m.index + m[0].length; i++) es[i] = false;
+  }
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    if (!es[i]) continue;
+    const c = s[i];
+    if (q) { es[i] = false; if (c === q) q = null; else if (c === '\\' && q === '"') { es[i + 1] = false; i++; } continue; }
+    if (c === '\\') { i++; continue; }
+    if (c === "'" || c === '"') { q = c; es[i] = false; }
+  }
+  return es;
+}
+
+/**
+ * El comando con cada `$(date +F)` adentro de un destino de escritura `.md` o `.log` cambiado por un comodín de un
+ * segmento: `{ cmd, destinos }`, con `destinos` los destinos con comodín (`out/run-*.log`). Sólo cuando el destino es
+ * texto de comando, cada `$(…)` está pegado a texto en su segmento (nunca el segmento entero) y la carpeta que se sabe
+ * antes del primer `$(…)` pasa `seguro(carpeta, glob)`; si no, ese destino queda como está y frena como hoy.
+ */
+function subcomandosComoComodin(cmd, seguro) {
+  const destinos = [];
+  // un `date` que el comando redefine (función, alias, otro PATH) ya no es el de siempre: su salida no se sabe
+  if (/\bdate\s*\(\s*\)|\bfunction\s+date\b|\balias\s+date\b|(?:^|[\s;&|(])(?:export\s+)?PATH=/.test(String(cmd || ''))) return { cmd, destinos };
+  const es = posicionesDeComando(cmd);
+  const texto = String(cmd || '').replace(DESTINO_CON_SUBCOMANDO, (todo, antes, palabra, en) => {
+    const desde = en + antes.length;
+    if (!es.slice(desde, desde + palabra.length).every(Boolean)) return todo;
+    if (!new RegExp(SUBCOMANDO_EN_DESTINO).test(palabra) || !/\.(?:md|log)$/.test(palabra)) return todo;
+    // lo que el shell expande en el destino además del `$(…)`: llaves (`{specs,out}`), comodines escritos y un `~` que
+    // no está al principio. Con eso la carpeta no es la que se lee: queda como está
+    const sinSub = palabra.replace(new RegExp(SUBCOMANDO_EN_DESTINO, 'g'), '').replace(/\$\{[A-Za-z_]\w*\}/g, '');
+    if (/[{}*?[]/.test(sinSub) || /.~/.test(sinSub)) return todo;
+    const glob = palabra.replace(new RegExp(SUBCOMANDO_EN_DESTINO, 'g'), '*');
+    const segmentos = glob.split('/');
+    if (segmentos.some((s) => /^\*+$/.test(s))) return todo;
+    const conocida = segmentos.slice(0, segmentos.findIndex((s) => s.includes('*'))).join('/') || '.';
+    if (!seguro(conocida, glob)) return todo;
+    destinos.push(glob);
+    return antes + glob;
+  });
+  return { cmd: texto, destinos };
+}
+
 /** Devuelve los paths (tal cual aparecen) que el comando escribe. */
 function extractWriteTargets(cmd, { keep = null } = {}) {
   const out = new Set();
@@ -714,6 +773,248 @@ function palabrasProfundas(cmd) {
   return out;
 }
 
+// `cd <carpeta> && ` al principio exacto del comando, con la carpeta escrita tal cual (sin comillas, sin opción y sin
+// nada que el shell expanda o que corte el comando), seguido de UN `sed` que nombra sus archivos: ni tubería,
+// ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea, ni llaves, `@` o `~` (nombres
+// que el shell expande, `{a,b}.md`, `~+/a.md`). Sólo `sed`: un `perl -e` es un programa entero, que puede armar y
+// escribir sus archivos desde adentro (`BEGIN{@ARGV=glob …}`). Cualquier otra forma no es ésta: un editor que toma sus
+// archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa carpeta es lo único
+// que la nombra.
+const CD_INICIAL = /^cd ([^\s'"`$*?[\]{}()<>;&|\\-][^\s'"`$*?[\]{}()<>;&|\\]*) && sed [^\n|;&<>`${}@~]*$/;
+
+/**
+ * Las palabras que un editor en el lugar puede escribir: las de `palabrasProfundas`, sin las que tienen espacios. Con
+ * la forma de `CD_INICIAL`, la carpeta del `cd` sale de la lista por su posición —la segunda palabra, después de `cd`—:
+ * es la base desde la que se resuelven las demás, no algo que el editor escribe. La misma carpeta nombrada otra vez más
+ * adelante sigue en la lista.
+ */
+function palabrasDelEditor(cmd) {
+  const ws = palabrasProfundas(cmd).filter((w) => !/\s/.test(w));
+  const m = CD_INICIAL.exec(String(cmd || ''));
+  if (m && ws[0] === 'cd' && ws[1] === m[1]) ws.splice(1, 1);
+  return ws;
+}
+
+/**
+ * Los pedazos de un tramo donde puede empezar un comando: corta en `&`, `(`, `)` y en `{` o `}` sueltos, fuera de las
+ * comillas. Un `$(…)` y unas comillas invertidas quedan enteros en su pedazo: son parte de una palabra.
+ */
+function piezasDeTramo(tramo) {
+  const s = String(tramo);
+  const out = [];
+  let actual = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') { actual += s.slice(i, i + 2); i++; continue; }
+    if (c === "'" || c === '"' || c === '`') {
+      const fin = c === '"' ? cierreDoble(s, i) : s.indexOf(c, i + 1);
+      const hasta = fin < 0 ? s.length : fin + 1;
+      actual += s.slice(i, hasta);
+      i = hasta - 1;
+      continue;
+    }
+    if (c === '$' && s[i + 1] === '(') {
+      let prof = 0;
+      let j = i + 1;
+      for (; j < s.length; j++) { if (s[j] === '(') prof++; else if (s[j] === ')' && --prof === 0) break; }
+      actual += s.slice(i, j + 1);
+      i = j;
+      continue;
+    }
+    const llaveSuelta = (c === '{' || c === '}') && /^$|\s$/.test(actual.slice(-1)) && /^$|\s/.test(s[i + 1] || '');
+    if (c === '&' || c === '(' || c === ')' || llaveSuelta) { out.push(actual); actual = ''; continue; }
+    actual += c;
+  }
+  out.push(actual);
+  return out.map((p) => p.trim()).filter(Boolean);
+}
+
+/** El índice de las comillas dobles que cierran las que abren en `i` (con sus escapes), o -1. */
+function cierreDoble(s, i) {
+  for (let j = i + 1; j < s.length; j++) {
+    if (s[j] === '\\') { j++; continue; }
+    if (s[j] === '"') return j;
+  }
+  return -1;
+}
+
+/**
+ * La carpeta de un `cd`, leída de lo que sigue al `cd` como la lee el shell: `{ texto, valor, comodin }`. `valor` es la
+ * carpeta sin comillas ni escapes y con sus variables, `'~'` si no hay carpeta, o null si el freno no la sabe resolver:
+ * `$(…)`, comillas invertidas, `$'…'`, llaves, `~+`, `cd -` o una variable que no conoce. `comodin` dice si el shell la
+ * expande (`*`, `?`, `[…]` fuera de las comillas).
+ */
+function carpetaDeCd(cmd, resto) {
+  let s = String(resto).replace(/^\s+/, '');
+  // las opciones del cd (`-P`, `-L`, `-e`, `-@`) y el `--` que las cierra
+  for (let m; (m = /^(-[A-Za-z@]+|--)(?=\s|$)\s*/.exec(s));) { s = s.slice(m[0].length); if (m[1] === '--') break; }
+  let texto = '';
+  let valor = '';
+  let dinamico = false;
+  let desconocido = false;
+  let comodin = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (/[\s<>]/.test(c)) break;
+    if (c === '\\') { texto += s.slice(i, i + 2); valor += s[i + 1] || ''; i++; continue; }
+    if (c === "'") {
+      const fin = s.indexOf("'", i + 1);
+      const hasta = fin < 0 ? s.length : fin;
+      if (s[i - 1] === '$') desconocido = true;
+      texto += s.slice(i, hasta + 1);
+      valor += s.slice(i + 1, hasta);
+      i = hasta;
+      continue;
+    }
+    if (c === '"') {
+      const fin = cierreDoble(s, i);
+      const hasta = fin < 0 ? s.length : fin;
+      const dentro = s.slice(i + 1, hasta);
+      if (/\$\(|`/.test(dentro)) desconocido = true;
+      if (/\$/.test(dentro)) dinamico = true;
+      texto += s.slice(i, hasta + 1);
+      valor += dentro.replace(/\\(["\\$`])/g, '$1');
+      i = hasta;
+      continue;
+    }
+    if (c === '`' || (c === '$' && s[i + 1] === '(') || c === '{' || c === '}') desconocido = true;
+    if (c === '$') dinamico = true;
+    if (/[*?[]/.test(c)) comodin = true;
+    texto += c;
+    valor += c;
+  }
+  if (!texto) return { texto, valor: '~', comodin: false };
+  // `~+`, `~-` y `~otro` (la carpeta de otro usuario) no se resuelven acá
+  if (desconocido || texto === '-' || /^~[^/]/.test(texto)) return { texto, valor: null, comodin };
+  // con `CDPATH` (en el ambiente o en el comando) un `cd` relativo puede caer en cualquiera de sus carpetas
+  const relativo = !/^(?:\/|\.{1,2}(?:\/|$)|~|\$)/.test(valor);
+  if (relativo && (process.env.CDPATH || /(?:^|[\s;&|(])(?:export\s+)?CDPATH(?==)/.test(String(cmd)))) return { texto, valor: null, comodin };
+  if (dinamico) {
+    const ex = expandirRuta(cmd, valor);
+    if (ex.sinResolver.length) return { texto, valor: null, comodin };
+    valor = ex.valor;
+  }
+  return { texto, valor, comodin };
+}
+
+/**
+ * Los `.md` de la carpeta de un `cd`, a cualquier profundidad, sin las carpetas de `NEVER_CODE_SEGMENTS` ni `.git`:
+ * `{ mds, incompleta }`. `incompleta` dice por qué la recorrida no llegó a todo (más de 500 `.md`, más de 2000
+ * carpetas, una carpeta que no se pudo leer), o es '' si la recorrió entera.
+ */
+function recorrerCarpetaDeCd(dir) {
+  const mds = [];
+  const pendientes = [dir];
+  const vistas = new Set();
+  try { vistas.add(fs.realpathSync(dir)); } catch { vistas.add(dir); }
+  let carpetas = 0;
+  while (pendientes.length) {
+    const d = pendientes.pop();
+    if (++carpetas > 2000) return { mds, incompleta: 'más de 2000 carpetas: no la recorro entera' };
+    let entradas = [];
+    try { entradas = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { logHookError(e); return { mds, incompleta: `no pude leer ${d}` }; }
+    for (const e of entradas) {
+      // un enlace simbólico se sigue: cuenta lo que nombra (una vez cada carpeta real, por si el enlace da la vuelta)
+      let esDir = e.isDirectory();
+      let esArchivo = e.isFile();
+      if (e.isSymbolicLink()) {
+        try { const st = fs.statSync(path.join(d, e.name)); esDir = st.isDirectory(); esArchivo = st.isFile(); } catch { /* roto */ }
+      }
+      if (esDir && !NEVER_CODE_SEGMENTS.has(e.name) && e.name !== '.git') {
+        let real = path.join(d, e.name);
+        try { real = fs.realpathSync(real); } catch { /* queda la ruta */ }
+        if (!vistas.has(real)) { vistas.add(real); pendientes.push(path.join(d, e.name)); }
+      } else if (esArchivo && /\.md$/i.test(e.name)) {
+        if (mds.length >= 500) return { mds, incompleta: 'más de 500 .md: no la recorro entera' };
+        mds.push(path.join(d, e.name));
+      }
+    }
+  }
+  return { mds, incompleta: '' };
+}
+
+/**
+ * Las carpetas de los `cd` del comando, en orden: los que empiezan un comando en un tramo (`cd x`, `(cd x`, `x & cd y`,
+ * `then cd x`, `command cd x`, `\cd x`, `pushd x`), sin los cuerpos de los heredocs ni el texto entre comillas, y los
+ * de adentro de un `$(…)`, de unas comillas invertidas o de un `bash -c '…'`. Cada una con `carpetaDeCd`, y las
+ * variables leídas con el comando hasta ese tramo.
+ */
+function carpetasDeLosCd(cmd, nivel = 0) {
+  const raw = String(cmd || '');
+  const out = [];
+  let desde = 0;
+  for (const tramo of tramos(raw)) {
+    const en = raw.indexOf(tramo, desde);
+    const hasta = en < 0 ? raw.length : en + tramo.length;
+    if (en >= 0) desde = hasta;
+    for (const pieza of piezasDeTramo(tramo)) {
+      const m = /^(?:(?:if|elif|while|until|then|do|else|time|!|command|builtin)\s+)*\\?(cd|pushd)(?:\s+([\s\S]*))?$/.exec(pieza);
+      if (!m) continue;
+      // `pushd` sin carpeta, o con `+N`/`-N`, va a una carpeta de su pila, que el freno no conoce
+      const resto = m[2] || '';
+      if (m[1] === 'pushd' && (!resto.trim() || /^\s*[+-]\d+(?:\s|$)/.test(resto))) out.push({ texto: `pushd ${resto.trim()}`.trim(), valor: null, comodin: false });
+      else out.push(carpetaDeCd(raw.slice(0, hasta), resto));
+    }
+  }
+  // lo que corre adentro: el cuerpo de un `$(…)` o de unas comillas invertidas, el guion de un shell con `-c` en
+  // cualquier lugar (`xargs sh -c '…'`, `bash --norc -o pipefail -c "…"`, `fish -c`) y lo que corre `eval`. Más hondo
+  // que tres niveles no se lee: frena
+  const adentro = guionesInternos(raw);
+  if (adentro.length && nivel >= 3) return [...out, { texto: '(un comando anidado de más)', valor: null, comodin: false }];
+  for (const g of adentro) out.push(...carpetasDeLosCd(g, nivel + 1));
+  return out;
+}
+
+/**
+ * Lo que corre adentro de un comando, un nivel: el cuerpo de cada `$(…)` (con sus paréntesis balanceados) y de cada
+ * par de comillas invertidas, fuera de las comillas simples; el guion de un shell con `-c` (con cualquier opción
+ * antes); y lo que corre `eval`.
+ */
+function guionesInternos(cmd) {
+  const s = String(cmd || '');
+  const out = [];
+  // las comillas en las que está cada carácter: entre simples no corre nada; entre dobles, `$(…)` y `…` sí
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q === "'") { if (c === "'") q = null; continue; }
+    if (c === '\\') { i++; continue; }
+    if (c === '"') { q = q ? null : '"'; continue; }
+    if (c === "'" && !q) { q = "'"; continue; }
+    if (c === '$' && s[i + 1] === '(') {
+      let prof = 0;
+      let j = i + 1;
+      for (; j < s.length; j++) { if (s[j] === '(') prof++; else if (s[j] === ')' && --prof === 0) break; }
+      out.push(s.slice(i + 2, j));
+      i = j;
+    } else if (c === '`') {
+      const fin = s.indexOf('`', i + 1);
+      out.push(s.slice(i + 1, fin < 0 ? s.length : fin));
+      i = fin < 0 ? s.length : fin;
+    }
+  }
+  const conC = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-]o\s+\S+|[+-]O\s+\S+))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
+  for (const m of s.matchAll(conC)) {
+    const i = m.index + m[0].length;
+    const fin = s[i] === '"' ? cierreDoble(s, i) : s.indexOf("'", i + 1);
+    const cuerpo = s.slice(i + 1, fin < 0 ? s.length : fin);
+    out.push(s[i] === '"' ? cuerpo.replace(/\\(["\\$`])/g, '$1') : cuerpo);
+  }
+  // `eval` corre sus palabras juntas, hasta el primer `;`, `&`, `|` o salto de línea fuera de las comillas
+  for (const m of s.matchAll(/(?:^|[\s;&|(`])eval\s+/g)) {
+    let j = m.index + m[0].length;
+    for (let qq = null; j < s.length; j++) {
+      const c = s[j];
+      if (qq) { if (c === qq) qq = null; else if (c === '\\' && qq === '"') j++; continue; }
+      if (c === '\\') { j++; continue; }
+      if (c === "'" || c === '"') { qq = c; continue; }
+      if (/[;&|\n]/.test(c)) break;
+    }
+    out.push(palabras(s.slice(m.index + m[0].length, j)).join(' '));
+  }
+  return out;
+}
+
 /** Lo que borra cada tramo, también los de adentro de `bash -c '…'`, y lo que recorre un `find` que borra. */
 function borradosProfundos(cmd) {
   const out = [];
@@ -900,8 +1201,11 @@ function destinosDeCopia(cmd) {
   return out;
 }
 
-/** Las rutas que un comodín (`specs/*.md`, `specs/story-2.?`) nombra en el disco, desde `base` (hasta 200). */
-function expandirComodin(patron, base) {
+/**
+ * Las rutas que un comodín (`specs/*.md`, `specs/story-2.?`) nombra en el disco, desde `base` (hasta 200 en cada
+ * tramo). Si se le pasa `aviso`, `aviso.recortado` queda en true cuando algún tramo pasó de 200.
+ */
+function expandirComodin(patron, base, aviso) {
   const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
   const partes = absoluto.split(/[\\/]+/);
   let actuales = [partes[0] === '' ? path.sep : `${partes[0]}${path.sep}`];
@@ -916,6 +1220,7 @@ function expandirComodin(patron, base) {
       const re = aRegex(parte);
       for (const n of nombres) if (re.test(n) && (!n.startsWith('.') || parte.startsWith('.'))) sig.push(path.join(dir, n));
     }
+    if (aviso && sig.length > 200) aviso.recortado = true;
     actuales = sig.slice(0, 200);
     if (!actuales.length) break;
   }
@@ -945,12 +1250,36 @@ function estadoDeHistoria(abs) {
  * estado lo cambia marker.js. Un borrador pasa sólo si el comando lo reescribe entero con un heredoc legible que lo
  * deja en borrador (ahí lo juzga el freno de la historia sin validar); escribirle encima de otra forma podría cerrarla.
  */
-function historiasPorConsola(cmd, cwd, targets) {
+function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = []) {
   const enSitio = editaEnSitio(cmd);
   if (!enSitio && !ESCRIBE.test(String(cmd || ''))) return [];
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of String(cmd).matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
+  // con un editor en el lugar, la carpeta de cada `cd` cuenta por las historias que tiene, salvo en la forma exacta de
+  // un solo `sed` que nombra sus archivos: desde la sesión y desde el `cd` anterior, con su comodín expandido; la que no
+  // se sabe resolver frena
+  const carpetasDeCd = [];
+  const cdSinResolver = [];
+  if (enSitio && !CD_INICIAL.test(String(cmd))) {
+    // un comodín puede dejar varias carpetas: el `cd` que sigue se resuelve desde todas
+    let previas = [sesion];
+    const absoluta = (v, b) => resolveTarget(v, b, process.platform, { homeVariable: true });
+    for (const c of carpetasDeLosCd(cmd)) {
+      if (c.valor == null) { cdSinResolver.push(`cd ${c.texto}`); continue; }
+      // `cd` solo va a HOME: mueve la base del `cd` que sigue, pero la HOME entera no es una carpeta de historias
+      if (!c.texto) { previas = [os.homedir()]; continue; }
+      const desde = [...new Set([...previas, sesion])];
+      const aviso = {};
+      const halladas = c.comodin
+        ? desde.flatMap((b) => expandirComodin(c.valor.replace(/^~(?=\/|$)/, os.homedir()), b, aviso))
+        : desde.map((b) => absoluta(c.valor, b));
+      // `expandirComodin` corta en 200 por tramo: con un tramo recortado no se sabe si quedó una carpeta afuera
+      if (aviso.recortado) cdSinResolver.push(`cd ${c.texto} (más de 200 carpetas)`);
+      carpetasDeCd.push(...halladas);
+      previas = c.comodin ? (halladas.length ? halladas : previas.map((b) => absoluta(c.valor, b))) : halladas.slice(0, previas.length);
+    }
+  }
   for (const tramo of tramos(cmd)) {
     const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
     const i = words.findIndex((w) => path.basename(w) === 'find');
@@ -965,6 +1294,7 @@ function historiasPorConsola(cmd, cwd, targets) {
   // (desde otra rama o commit, `git checkout <ref> -- x` o `git restore --source`, la cambia aunque no tenga cambios)
   const conRef = /\bgit\b[^\n;&|]*\scheckout\s+(?!--)[^\s-]\S*\s+--|\bgit\b[^\n;&|]*\srestore\b[^\n;&|]*\s(?:--source|-s)\b/.test(String(cmd));
   const soloRepone = new Set(conRef ? [] : destinosB.filter((d) => d.kind === 'restore').map((d) => d.raw));
+  const nombradas = palabrasDelEditor(cmd);
   const crudos = [
     ...targets,
     ...destinosArmados(cmd).flatMap((a) => (a.literal ? [a.literal] : (a.literales || []))),
@@ -973,11 +1303,11 @@ function historiasPorConsola(cmd, cwd, targets) {
     ...movidosFueraDeMd(cmd),
     ...destinosDeCopia(cmd),
     ...textosDeGuion,
-    ...(enSitio || FOR_IN.test(cmd) ? palabrasProfundas(cmd).filter((w) => !/\s/.test(w)) : []),
+    ...(enSitio || FOR_IN.test(cmd) ? nombradas : []),
   ];
   // una carpeta cuenta por las historias que tiene adentro cuando el comando la borra, la repone o la edita en el lugar
   // (`git checkout <rama> -- specs/`, `git restore .`, `grep -rl x specs | xargs sed -i`)
-  const porCarpeta = new Set([...borrados, ...(enSitio ? palabrasProfundas(cmd).filter((w) => !/\s/.test(w)) : [])]);
+  const porCarpeta = new Set([...borrados, ...(enSitio ? nombradas : [])]);
   const adentro = (dir) => {
     const out = [];
     const ver = (d, nivel) => {
@@ -1010,6 +1340,43 @@ function historiasPorConsola(cmd, cwd, targets) {
       }
     }
   }
+  for (const dir of new Set(carpetasDeCd)) {
+    let esCarpeta = false;
+    try { esCarpeta = !NEVER_CODE_SEGMENTS.has(path.basename(dir)) && fs.statSync(dir).isDirectory(); } catch { /* no existe */ }
+    if (!esCarpeta) continue;
+    const { mds, incompleta } = recorrerCarpetaDeCd(dir);
+    // sin recorrerla entera (los topes, una carpeta que no se puede leer) puede quedar una historia sin mirar
+    if (incompleta) cdSinResolver.push(`cd ${dir} (${incompleta})`);
+    for (const md of mds) { vistos.add(md); otros.add(md); }
+  }
+  // un destino con un `$(date …)` puede caer en cualquier archivo de su carpeta: si la carpeta tiene
+  // historias, cuentan todas (salga `.md` o `.log`)
+  // (con las variables del comando, y desde cada carpeta donde puede estar parado: `cd a; cd ../b`, `cd a || cd b`)
+  const basesDelDestino = [...new Set([...bases, sesion, ...carpetasDelComando(cmd, sesion)])];
+  for (const glob of destinosConComodin) {
+    const carpeta = path.dirname(expandirRuta(cmd, glob).valor);
+    const aviso = {};
+    const carpetas = basesDelDestino.flatMap((b) => (/[*?[]/.test(carpeta) ? expandirComodin(carpeta, b, aviso)
+      : [resolveTarget(carpeta, b, process.platform, { homeVariable: true })]));
+    // con un tramo del comodín recortado no se sabe si quedó afuera una carpeta con historias
+    if (aviso.recortado) cdSinResolver.push(`${glob} (más de 200 carpetas)`);
+    for (const dir of new Set(carpetas)) {
+      let nombres = [];
+      try { nombres = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) {
+        // una carpeta que no existe no tiene historias; una que no se puede leer, no se sabe
+        if (e && e.code !== 'ENOENT' && e.code !== 'ENOTDIR') { logHookError(e); cdSinResolver.push(`${glob} (no pude leer ${dir})`); }
+        continue;
+      }
+      for (const e of nombres) {
+        if (!/\.md$/i.test(e.name)) continue;
+        const p = path.join(dir, e.name);
+        // un enlace simbólico a una historia cuenta como la historia
+        let esArchivo = e.isFile();
+        if (e.isSymbolicLink()) { try { esArchivo = fs.statSync(p).isFile(); } catch { /* roto */ } }
+        if (esArchivo) { vistos.add(p); otros.add(p); }
+      }
+    }
+  }
   // reponer una historia sin cambios no le cambia nada: pasa (`git restore .` después de tocar código)
   const conCambios = (abs) => {
     const r = require('child_process').spawnSync('git', ['-C', path.dirname(abs), 'status', '--porcelain', '--', abs],
@@ -1023,7 +1390,8 @@ function historiasPorConsola(cmd, cwd, targets) {
     if (!h.target || !new RegExp(`(?:^|[^>])>\\s*['"]?${h.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(cmd)) continue;
     enteros.set(resolveTarget(expandirRuta(cmd, h.target).valor, cwd, process.platform, { homeVariable: true }), h.body);
   }
-  return [...vistos].filter((abs) => {
+  const sinResolver = cdSinResolver.map((t) => `(la carpeta de \`${t}\`, que no sé resolver: puede tener historias)`);
+  return [...sinResolver, ...[...vistos].filter((abs) => {
     const estado = estadoDeHistoria(abs);
     if (estado === null) return false;
     if (estado !== 'draft') return true;
@@ -1031,7 +1399,7 @@ function historiasPorConsola(cmd, cwd, targets) {
     const fm = /^---\s*\n([\s\S]*?)\n---/.exec(enteros.get(abs) || '');
     const estados = fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
     return !(estados.length && estados.every((e) => e === 'draft'));
-  });
+  })];
 }
 
 /** Lo que git sigue en esa ruta (un archivo, una carpeta, un comodín): `[rutas absolutas]`, o null si no se pudo preguntar. */
@@ -1357,10 +1725,37 @@ function handleCarrilEHistoria(event, opts = {}) {
     });
     if (r) return r;
   }
-  const targets = extractWriteTargets(cmd, { keep });
+  // un `$(date …)` en el nombre de un informe se lee como un comodín: el destino entero, ya no «sin
+  // resolver». La carpeta que se sabe no puede tocar el estado del pipeline ni el árbol instalado
+  // desde cada carpeta donde puede estar parado el comando (`cd a || cd b`, dos `cd` seguidos), y siguiendo los enlaces
+  // simbólicos que el comodín puede nombrar
+  const basesPosibles = [...new Set([cwd, baseCwd, ...carpetas])];
+  const sub = subcomandosComoComodin(cmd, (conocida, glob) => {
+    // una variable que no se resuelve deja la carpeta sin saber: frena como hoy
+    const ex = expandirRuta(cmd, conocida);
+    if (ex.sinResolver.length) return false;
+    const exGlob = expandirRuta(cmd, glob);
+    if (exGlob.sinResolver.length) return false;
+    const zonas = [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))];
+    const toca = (p) => { const real = installedTree.realPath(p); return zonas.some((z) => isInside(z, p) || isInside(z, real) || isInside(p, z) || isInside(real, z)); };
+    for (const base of basesPosibles) {
+      if (toca(resolveTarget(ex.valor, base, process.platform, { homeVariable: true }))) return false;
+      // lo que el comodín nombra en el disco, carpeta por carpeta (un enlace que da al estado); con un tramo recortado
+      // no se sabe si quedó uno afuera
+      const partes = exGlob.valor.split('/');
+      for (let i = partes.findIndex((s) => s.includes('*')); i >= 0 && i < partes.length; i++) {
+        const aviso = {};
+        for (const p of expandirComodin(partes.slice(0, i + 1).join('/') || '.', base, aviso)) if (toca(p)) return false;
+        if (aviso.recortado) return false;
+      }
+    }
+    return true;
+  });
+  const cmdDestinos = sub.cmd;
+  const targets = extractWriteTargets(cmdDestinos, { keep });
   if (!skillOff) {
     // una historia que existe y no está en borrador no se escribe por consola (con o sin ejecución abierta)
-    const historias = historiasPorConsola(cmd, cwd, targets);
+    const historias = historiasPorConsola(cmd, cwd, targets, baseCwd, sub.destinos);
     if (historias.length) {
       return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`) + '\n' };
     }
@@ -1369,7 +1764,7 @@ function handleCarrilEHistoria(event, opts = {}) {
 
   const sessionId = resolveSessionId(event?.session_id);
   // Con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
-  const resueltos = destinosResueltos(cmd, cwd, process.platform, { keep });
+  const resueltos = destinosResueltos(cmdDestinos, cwd, process.platform, { keep });
   const absTargets = resueltos.map((d) => d.abs);
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
   // Antes de decidir y aunque los frenos estén apagados: dónde escribió la consola es un dato de la
@@ -1468,7 +1863,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     const mdDraft = absTargets.filter((abs) => /\.md$/i.test(abs) && fs.existsSync(abs));
     if (mdDraft.length) {
       const sio = require('./lib/story-skill-gate-io.js');
-      const hds = heredocs(cmd);
+      const hds = heredocs(cmdDestinos);
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
       const resolveT = (t) => { const d = resueltos.find((x) => x.raw === t); return d ? d.abs : resolveTarget(t, cwd); };
       for (const abs of mdDraft) {
@@ -1482,7 +1877,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       const sio = require('./lib/story-skill-gate-io.js');
       let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);
       try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* fallback regex */ }
-      const hds = heredocs(cmd);
+      const hds = heredocs(cmdDestinos);
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
       // el mismo destino que se juzgó arriba, con las variables del comando expandidas
       const resolveT = (t) => { const d = resueltos.find((x) => x.raw === t); return d ? d.abs : resolveTarget(t, cwd); };
