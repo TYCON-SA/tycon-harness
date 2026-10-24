@@ -15,12 +15,40 @@ const path = require('path');
 const { CATEGORIAS_HOOK } = require('../../metrics/tokens-digest.js');
 const STEPS = require('../../../skills/tycon-pipeline/scripts/lib/steps.js');
 const INTEGRATIONS = require('../../lib/integrations.js');
+const AZ = require('../../lib/az-pr.js');
 
 const CODIGOS = ['RR-HOOK', 'RR-NODE', 'RR-APAGO', 'RR-BANDERA', 'RR-CIERRE', 'RR-ESCAPE'];
 // Dónde vive un guion del arnés, en Mac, Linux y Windows: los dos nombres del lugar salen de su constante.
 const { PLACE_NAME, LEGACY_PLACE_NAME } = require('../../setup/harness/place.js');
 const RUTAS_DEL_ARNES = ['tycon-pipeline/scripts/', 'tycon-pipeline\\scripts\\', `${PLACE_NAME}/`, `${PLACE_NAME}\\`,
   `${LEGACY_PLACE_NAME}/`, `${LEGACY_PLACE_NAME}\\`, '.tycon/harness/', '.tycon\\harness\\'];
+// Dónde corre el arnés INSTALADO: su carpeta y las de donde Claude Code y Codex cargan las skills. Un guion del arnés
+// fuera de ellas (el clon, un worktree) es una prueba en obra, no una pieza instalada que no carga.
+const RUTAS_INSTALADAS = ['.tycon/harness/', '.tycon\\harness\\', '.claude/agent-skills/', '.claude\\agent-skills\\',
+  '.claude/skills/', '.claude\\skills\\', '.codex/skills/', '.codex\\skills\\'];
+// Desde esta fecha (el merge a main del cambio que la agregó) marker.js deja la constancia del cierre: una ejecución
+// archivada antes no la podía tener. La prueba: T64 CierreSinConstancia.
+const CIERRE_DESDE = '2026-10-22T21:14:33Z';
+// Lo que cuenta aparte: se ve en la ficha, pero no es una falla nueva del arnés. El resumen de la mañana y el ciclo de
+// las fichas no lo suman; una categoría fuera de esta lista sigue siendo una falla.
+const APARTE = Object.freeze({
+  'RR-ESCAPE:GIT_NO_VERIFY/laboratorio': 'un commit sin los hooks de git en una carpeta de laboratorio: pruebas y ensayos, no trabajo de un producto',
+  'RR-ESCAPE:PR_A_MANO/sobra': 'el pedido armado con el escape cumplía la regla del freno: el prefijo estaba de más',
+  'RR-CIERRE:derivada/arnes-anterior': 'la ejecución se archivó antes de que el arnés dejara la constancia del cierre (8.92)',
+  'RR-ESCAPE:ADVERSARIAL_RELAUNCH/dato': 'relanzar el pase adversarial no esquiva nada: el pase corre igual',
+  'RR-ESCAPE:SIZE_FORCED_LIGHT_WITH_CODE/con-motivo': 'la ejecución liviana con código trae su motivo: es una decisión anotada',
+  'RR-ESCAPE:FULL_SUITE_RUN/laboratorio': 'la suite completa en una carpeta de laboratorio no es la de un repo',
+  'RR-NODE:en-obra': 'el guion que no cargó es una prueba del arnés en obra (el clon o un worktree), no una pieza instalada',
+});
+/**
+ * La lista de carpetas de laboratorio es una sola, la de la vista de ejecuciones. Se carga al usarla, sin red: si no
+ * carga, el error sale (la pasada termina con error) en vez de contar callada los laboratorios como fallas.
+ */
+let laboratorio = null;
+function esLaboratorio(dir) {
+  if (laboratorio === null) laboratorio = require('../dashboard/runs.js').esLaboratorio;
+  return Boolean(dir) && laboratorio(dir);
+}
 // Las variables de escape de los frenos. Dónde las lee el arnés: la tabla «Interruptor» de INSTALL.md
 // (TYCON_PR_BY_HAND, TYCON_SAFETY_OFF, TYCON_FULL_SUITE), scripts/setup/hooks-list.json (TYCON_SESSION_GUARD_OK),
 // scripts/hooks/engram-pre-commit.sh (TYCON_ENGRAM_MANIFEST_OK), steps/step-08-adversarial-pass.md
@@ -167,6 +195,109 @@ function argsDe(command, guion) {
 /** ¿Algún segmento corre `<guion>` seguido exactamente de `sub`? */
 const corre = (command, guion, sub) => argsDe(command, guion).some((r) => sub.every((w, j) => r[j] === w));
 
+// Programas que corren otro programa: lo que corre de verdad viene después, y dónde corre ya no es seguro.
+const ENVOLTORIOS = new Set(['sudo', 'doas', 'nice', 'ionice', 'nohup', 'timeout', 'stdbuf', 'xargs', 'env', 'time', 'command', 'exec', 'caffeinate']);
+// Lo que cambia la carpeta de una forma que no se lee: después de esto, ninguna carpeta del comando es segura.
+const CAMBIA_CARPETA = new Set(['cd', 'pushd', 'popd', 'chdir', 'Set-Location', 'sl', 'Push-Location', 'Pop-Location']);
+/** Una carpeta que se puede juzgar como texto: absoluta, sin `.` ni `..` y sin nada que la terminal expanda. */
+const carpetaCierta = (d) => typeof d === 'string' && /^(?:\/|[A-Za-z]:[\\/])/.test(d)
+  && !/(^|[\\/])\.\.?([\\/]|$)/.test(d) && !/[$`~*?{]/.test(d);
+// Las opciones de git antes del subcomando que llevan un valor aparte.
+const GIT_CON_VALOR = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path']);
+
+/** El `git` de un segmento, directo o detrás de un envoltorio: `{ args, envuelto }`, o null si no corre git. */
+function gitDe(s) {
+  if (s.programa === 'git') return { args: s.args, envuelto: false };
+  if (!ENVOLTORIOS.has(s.programa)) return null;
+  const k = s.args.findIndex((a) => path.basename(String(a).replace(/\\/g, '/')).replace(/\.exe$/i, '') === 'git');
+  return k >= 0 ? { args: s.args.slice(k + 1), envuelto: true } : null;
+}
+/** Las opciones de git antes del subcomando: sus `-C`, si nombra otro repo (`--git-dir`, `--work-tree`) y el subcomando. */
+function opcionesDeGit(args) {
+  const ces = [];
+  let otroRepo = false;
+  let i = 0;
+  while (i < args.length && String(args[i]).startsWith('-')) {
+    if (args[i] === '-C') ces.push(args[i + 1]);
+    if (/^--(?:git-dir|work-tree)(?:=|$)/.test(args[i])) otroRepo = true;
+    i += GIT_CON_VALOR.has(args[i]) ? 2 : 1;
+  }
+  return { ces, otroRepo, sub: args[i] || null, resto: args.slice(i + 1) };
+}
+
+/**
+ * Cada segmento con la carpeta donde corre y si se sabe con certeza (`cierta`). La carpeta es la del último `cd <dir>`
+ * de antes, o el `-C <dir>` de un `git`; `carpeta: null` con `cierta` es «la de la ejecución». Lo que no se puede
+ * saber —un subshell o un `$(…)` en el comando, un `&`, `|` o `||` (el `cd` puede no valer para lo que sigue), un
+ * `cd -` o un `cd` sin carpeta, `pushd`/`popd`, dos `-C`, una carpeta relativa o con `..`, un `git` que nombra otro
+ * repo (`--git-dir`, `--work-tree`, `GIT_DIR=`), un programa envuelto— deja `cierta: false`, y quien juzga lo cuenta
+ * como del repo real: mejor una ficha de más, con su motivo, que un escape que no se ve.
+ */
+function conCarpeta(command) {
+  const texto = String(command || '');
+  // (las redirecciones `2>&1` y `&>` no separan nada)
+  const subshell = /[()`]|\$\(/.test(texto) || /&|\|/.test(texto.replace(/&&/g, ' ').replace(/\d*>&\d*-?|&>>?/g, ' '));
+  let dir = null;
+  let perdida = subshell;
+  return segmentos(command).map((s) => {
+    if (CAMBIA_CARPETA.has(s.programa)) {
+      if (s.programa === 'cd' && s.args.length === 1 && carpetaCierta(s.args[0]) && !perdida) dir = s.args[0];
+      else { perdida = true; dir = null; }
+    }
+    const git = gitDe(s);
+    let carpeta = dir;
+    let cierta = !perdida;
+    if (git) {
+      const { ces, otroRepo } = opcionesDeGit(git.args);
+      if (git.envuelto || ces.length > 1 || otroRepo || s.asignaciones.some((a) => /^GIT_(?:DIR|WORK_TREE)$/.test(a))) cierta = false;
+      else if (ces.length === 1) carpeta = ces[0];
+    } else if (ENVOLTORIOS.has(s.programa)) cierta = false;
+    if (carpeta !== null && !carpetaCierta(carpeta)) cierta = false;
+    return { s, carpeta, cierta, git };
+  });
+}
+/** ¿El segmento es de laboratorio con certeza? Su carpeta, o la de la ejecución si el comando no la cambió. */
+const enLaboratorio = ({ carpeta, cierta }, repoPath) => {
+  if (!cierta) return false;
+  const d = carpeta === null ? repoPath : carpeta;
+  return carpetaCierta(d) && esLaboratorio(d);
+};
+/** ¿El segmento corre un `git` que saltea los hooks? (`--no-verify` en cualquier subcomando, o `-n` en un `commit`). */
+function salteaHooks(s) {
+  const git = gitDe(s);
+  if (!git) return false;
+  const { sub, resto } = opcionesDeGit(git.args);
+  return resto.includes('--no-verify') || (sub === 'commit' && resto.some((a) => /^-[a-zA-Z]*n[a-zA-Z]*$/.test(a)));
+}
+/** El texto de un comando para compararlo con el de una línea del registro, que lo guarda con otras comillas. */
+const normalizado = (t) => String(t || '').replace(/\\\r?\n/g, ' ').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
+/**
+ * Los pedidos del comando que llevan el escape, cada uno con su texto (el que guarda el freno: `textoDe`) y si el
+ * escape sobraba en ESE pedido: un pedido que se puede juzgar —el comando no le pasa código a un intérprete y su destino
+ * no es una expansión de la terminal— y que el freno no frenaría (`faltasDe`).
+ */
+function pedidosConEscape(command) {
+  const segs = command ? AZ.segmentos(command) : [];
+  const interprete = segs.some((seg) => AZ.pasaCodigoAUnInterprete(seg));
+  return segs.filter((seg) => AZ.tieneEscape(seg)).map((seg) => {
+    const verbo = AZ.verboDePr(seg);
+    const destino = AZ.flagDe(seg, 'target-branch', 't');
+    const sobra = !interprete && (verbo === 'create' || verbo === 'update') && !(destino !== null && /[$`]/.test(destino))
+      && AZ.faltasDe(seg).faltas.length === 0;
+    return { texto: normalizado(AZ.textoDe(seg)), sobra };
+  });
+}
+/**
+ * ¿El texto de una línea del registro es el de este comando (o pedido)? Igual, o su comienzo: los frenos cortan el
+ * texto (300 caracteres, 300 bytes, 500), y el corte no se sabe de antemano. Con varios candidatos gana el igual (ver
+ * `emparejar`).
+ */
+const coincide = (t, texto) => Boolean(t) && (texto === t || texto.startsWith(t));
+/** Los textos de un comando con los que se compara una línea: sus pedidos, para la de pedidos; el comando, para el resto. */
+const textosDe = (l, comando) => (tipoDeEscape(l.type || l.kind) === 'PR_A_MANO'
+  ? AZ.segmentos(comando).map((seg) => normalizado(AZ.textoDe(seg)))
+  : [normalizado(comando)]);
+
 /** Los comandos de la conversación con su resultado, en orden: `{ id, name, command, resultado: { texto, is_error } }`. */
 function comandos(lineas) {
   const lista = [];
@@ -222,10 +353,13 @@ function reglasDelHilo(lineas, volcado, out) {
     if (!esShell(c)) continue;
     // un guion del arnés que no arrancó: el comando corre uno (su primer argumento que no es una opción) y el error de
     // su salida nombra una ruta del arnés (lo que el arnés retransmite de un comando del proyecto no la nombra)
-    const correGuion = segmentos(c.command).some((s) => s.programa === 'node' && !s.args.includes('-e') && tieneRutaDelArnes(s.args.find((a) => !a.startsWith('-'))));
-    if (correGuion && c.resultado && tieneRutaDelArnes(c.resultado.texto)) {
+    const guiones = segmentos(c.command).filter((s) => s.programa === 'node' && !s.args.includes('-e'))
+      .map((s) => s.args.find((a) => !a.startsWith('-'))).filter(tieneRutaDelArnes);
+    if (guiones.length && c.resultado && tieneRutaDelArnes(c.resultado.texto)) {
       const cat = errorCat(c.resultado.texto);
-      if (cat) sumar(out, { regla: 'RR-NODE', categoria: cat, cuenta: 1 });
+      // un guion del arnés que no es del instalado (el clon, un worktree) es una prueba en obra
+      const enObra = guiones.every((g) => !RUTAS_INSTALADAS.some((r) => g.includes(r)));
+      if (cat) sumar(out, { regla: 'RR-NODE', categoria: enObra ? 'en-obra' : cat, cuenta: 1 });
     }
     const marker = argsDe(c.command, 'marker.js');
     const apagos = marker.filter((r) => r[0] === 'set-autonomous' && !PRENDE_AUTONOMO.includes(String(r[1]).toLowerCase())).length;
@@ -238,22 +372,78 @@ function reglasDelHilo(lineas, volcado, out) {
   return { hilo_sin_hooks: hooks.length === 0, comandos: cs };
 }
 
-function escapesDeComandos(cs) {
-  const cats = [];
+/**
+ * Cada escape que corrió en los comandos de la conversación, uno por vez que corrió: `[{ clave, categoria, texto }]`.
+ * `clave` es el escape y `texto` lo que guarda su línea del registro (el comando entero, o el pedido): con los dos se
+ * empareja la línea del mismo hecho. `categoria`, dónde cuenta: en una carpeta de laboratorio (sólo con certeza,
+ * `enLaboratorio`) el commit sin hooks y la suite completa cuentan aparte, y el escape de un pedido que cumplía la regla
+ * sobra.
+ */
+function escapesDeComandos(cs, repoPath) {
+  const out = [];
   for (const c of cs) {
     if (!esShell(c)) continue;
-    for (const s of segmentos(c.command)) {
-      for (const a of s.asignaciones) if (ESCAPES.includes(a)) cats.push(a);
-      if (s.programa === 'git') {
-        const commit = s.args.includes('commit');
-        if (s.args.includes('--no-verify') || (commit && s.args.some((a) => /^-[a-zA-Z]*n[a-zA-Z]*$/.test(a)))) cats.push('--no-verify');
+    const texto = normalizado(c.command);
+    const add = (clave, categoria = clave, t = texto, extra = {}) => out.push({ clave, categoria, texto: t, ...extra });
+    // el escape de pedidos, uno por pedido que lo lleva
+    for (const p of pedidosConEscape(c.command)) add('TYCON_PR_BY_HAND', p.sobra ? 'PR_A_MANO/sobra' : 'TYCON_PR_BY_HAND', p.texto);
+    const conPedidos = pedidosConEscape(c.command).length > 0;
+    for (const seg of conCarpeta(c.command)) {
+      for (const a of seg.s.asignaciones) {
+        if (!ESCAPES.includes(a) || (a === 'TYCON_PR_BY_HAND' && conPedidos)) continue;
+        if (a === 'TYCON_FULL_SUITE' && enLaboratorio(seg, repoPath)) add(a, 'FULL_SUITE_RUN/laboratorio');
+        else add(a);
+      }
+      // `porLaEjecucion`: sin `cd` ni `-C`, la carpeta es la de la sesión; la línea del registro trae la exacta (`cwd`)
+      if (salteaHooks(seg.s)) {
+        add('--no-verify', enLaboratorio(seg, repoPath) ? 'GIT_NO_VERIFY/laboratorio' : '--no-verify', texto,
+          { porLaEjecucion: seg.cierta && seg.carpeta === null });
       }
     }
     const marker = argsDe(c.command, 'marker.js');
-    if (marker.some((r) => r[0] === 'set-flag' && r[1] === 'atddBypass' && PRENDE_BANDERA.includes(r[2]))) cats.push('atddBypass');
-    if (marker.some((r) => r[0] === 'story-skill-bypass')) cats.push('story-skill-bypass');
+    if (marker.some((r) => r[0] === 'set-flag' && r[1] === 'atddBypass' && PRENDE_BANDERA.includes(r[2]))) add('atddBypass');
+    if (marker.some((r) => r[0] === 'story-skill-bypass')) add('story-skill-bypass');
   }
-  return cats;
+  return out;
+}
+
+// Código que corre adentro de una cadena (`bash -c "…"`, `eval`, `python3 -c`): lo que nombra ahí no se puede dar por
+// texto que no se ejecuta.
+const INTERPRETE = /(?:^|[\s;&|(/\\])(?:ba|z|k|da)?sh(?:\.exe)?\s+(?:-\w+\s+)*-\w*c\b|(?:^|[\s;&|(])eval\b|python3?(?:\.exe)?\s+-c\b|node(?:\.exe)?\s+(?:-e|-p|--eval)\b/;
+// Cómo se llama en el registro el escape que se ve en un comando: la categoría de una línea emparejada.
+const DEL_REGISTRO = { '--no-verify': 'GIT_NO_VERIFY', TYCON_FULL_SUITE: 'FULL_SUITE_RUN', TYCON_PR_BY_HAND: 'PR_A_MANO', atddBypass: 'ATDD_BYPASS' };
+
+/**
+ * Dónde cuenta una línea de `bypass.log` que no se emparejó con un comando de la conversación, o `null` si no cuenta:
+ * la opción o la variable que la dejó aparece en su texto, pero sólo en algo que no se ejecuta (el cuerpo de un heredoc,
+ * el patrón de un `grep`). Si su texto ni la nombra, el corte del freno se la llevó: cuenta. Una línea sin `command`
+ * cuenta como hoy. Un texto que pudo quedar cortado no da un pedido por bueno.
+ */
+function categoriaDeLinea(l, repoPath) {
+  const tipo = tipoDeEscape(l.type || l.kind);
+  const command = typeof l.command === 'string' && l.command.trim() ? l.command : null;
+  const cwdLab = carpetaCierta(l.cwd) ? esLaboratorio(l.cwd) : false;
+  if (tipo === 'GIT_NO_VERIFY') {
+    if (!command) return cwdLab ? 'GIT_NO_VERIFY/laboratorio' : tipo;
+    const corrio = conCarpeta(command).filter(({ s }) => salteaHooks(s));
+    if (!corrio.length) return command.includes('--no-verify') && !INTERPRETE.test(command) ? null : tipo;
+    const seg = corrio[0];
+    const lab = seg.carpeta === null && seg.cierta && l.cwd ? cwdLab : enLaboratorio(seg, repoPath);
+    return lab ? 'GIT_NO_VERIFY/laboratorio' : tipo;
+  }
+  if (tipo === 'FULL_SUITE_RUN') {
+    if (!command) return tipo;
+    const corrio = conCarpeta(command).filter(({ s }) => s.asignaciones.includes('TYCON_FULL_SUITE'));
+    if (!corrio.length) return command.includes('TYCON_FULL_SUITE') && !INTERPRETE.test(command) ? null : tipo;
+    return enLaboratorio(corrio[0], repoPath) ? 'FULL_SUITE_RUN/laboratorio' : tipo;
+  }
+  if (tipo === 'PR_A_MANO') {
+    const pedidos = command && command.length < 300 ? pedidosConEscape(command) : [];
+    return pedidos.length > 0 && pedidos.every((p) => p.sobra) ? 'PR_A_MANO/sobra' : tipo;
+  }
+  if (tipo === 'ADVERSARIAL_RELAUNCH') return 'ADVERSARIAL_RELAUNCH/dato';
+  if (tipo === 'SIZE_FORCED_LIGHT_WITH_CODE' && typeof l.reason === 'string' && l.reason.trim() !== '') return 'SIZE_FORCED_LIGHT_WITH_CODE/con-motivo';
+  return tipo;
 }
 
 function reglaDeCierre(volcado, out) {
@@ -268,14 +458,30 @@ function reglaDeCierre(volcado, out) {
     return;
   }
   if (volcado && volcado.sinCerrar === true) { sumar(out, { regla: 'RR-CIERRE', categoria: 'sin-cerrar', cuenta: 1 }); return; }
-  if (volcado && volcado.archivedAt && (pendientes || rojos)) sumar(out, { regla: 'RR-CIERRE', categoria: 'derivada', cuenta: 1, pendientes, rojos });
+  if (!volcado || !volcado.archivedAt) return;
+  // Sin constancia, lo pendiente sale de los pasos. No cuentan el paso viejo 9 (cerrar la historia después del merge,
+  // que corre aparte) ni el 7 viejo con el 8 hecho.
+  const hechos = new Set((Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String));
+  const quedan = (Array.isArray(m.stepsPending) ? m.stepsPending : []).map(String)
+    .filter((p) => p !== '9' && p !== 'close-work-item' && !(p === '7' && hechos.has('8'))).length;
+  if (!quedan && !rojos) return;
+  const antes = Date.parse(volcado.archivedAt) < Date.parse(CIERRE_DESDE);
+  sumar(out, { regla: 'RR-CIERRE', categoria: antes ? 'derivada/arnes-anterior' : 'derivada', cuenta: 1, pendientes: quedan, rojos });
 }
 
 /**
  * Las líneas de bypass.log que son de esta ejecución: por `sessionId`, o, en las que no lo traen (los frenos de PR a
- * mano y de la suite completa), por la hora, entre el arranque y el archivo de la ejecución.
+ * mano y de la suite completa), por la hora, entre el arranque y el archivo de la ejecución. Con la conversación
+ * (`comandos`), una línea sin `sessionId` que trae su `command` es además de la ejecución que lo corrió: otra que sólo
+ * la cubre por la hora no la cuenta.
  */
-function delRegistro(lineas, volcado) {
+function delRegistro(lineas, volcado, comandos = null) {
+  const propios = comandos ? comandos.filter(esShell).map((c) => c.command) : null;
+  const corrioAca = (l) => !propios || !normalizado(l.command)
+    || propios.some((c) => textosDe(l, c).some((x) => coincide(normalizado(l.command), x)));
+  return enLaVentana(lineas, volcado).filter((l) => l.sessionId || corrioAca(l));
+}
+function enLaVentana(lineas, volcado) {
   const m = (volcado && volcado.marker) || {};
   const desde = Date.parse(m.startedAt || '');
   // sin `archivedAt` (sin cerrar) no hay fin de ventana: sólo cuentan las líneas de su sesión, y el resultado no depende
@@ -291,6 +497,27 @@ function delRegistro(lineas, volcado) {
 }
 
 /**
+ * Empareja cada línea del registro con UNA vez que su escape corrió en la conversación (`vistos`, que quedan marcados
+ * `usado`): primero las de texto igual, después las que son su comienzo (una línea cortada), y al final las que no
+ * traen texto, con la primera libre de su escape. Una línea no tapa dos comandos, y dos líneas no tapan uno.
+ */
+function emparejar(lineas, vistos) {
+  const res = lineas.map((l) => ({ l, par: null }));
+  for (const pasada of ['igual', 'comienzo', 'sin-texto']) {
+    for (const r of res) {
+      const clave = EQUIVALENTES[r.l.type || r.l.kind];
+      if (r.par || !clave) continue;
+      const t = normalizado(r.l.command);
+      if ((pasada === 'sin-texto') !== !t) continue;
+      const v = vistos.find((x) => !x.usado && x.clave === clave
+        && (pasada === 'sin-texto' || (pasada === 'igual' ? x.texto === t : coincide(t, x.texto))));
+      if (v) { v.usado = true; r.par = v; }
+    }
+  }
+  return res;
+}
+
+/**
  * Las fallas de una ejecución. `lineasHilo: null` = no hay conversación: sólo corren las reglas del volcado y los
  * registros, y `sin_hilo: true` (nunca «sin fallas»). `registros: { bypass: [líneas] | null, cobertura }`.
  */
@@ -303,12 +530,23 @@ function revisar({ volcado, lineasHilo, registros }) {
   reglaDeCierre(volcado, out);
   const fuente = registros && registros.cobertura && registros.cobertura.fuentes && registros.cobertura.fuentes.bypass;
   const medido = Boolean(fuente && fuente.estado === 'medido' && Array.isArray(registros.bypass));
-  const propias = medido ? delRegistro(registros.bypass, volcado) : [];
-  const cubiertas = new Set(propias.map((l) => EQUIVALENTES[l.type || l.kind]).filter(Boolean));
-  for (const l of propias) sumar(out, { regla: 'RR-ESCAPE', categoria: tipoDeEscape(l.type || l.kind), cuenta: 1, con_motivo: typeof l.reason === 'string' && l.reason.trim() !== '' });
-  for (const cat of escapesDeComandos(cs)) if (!cubiertas.has(cat)) sumar(out, { regla: 'RR-ESCAPE', categoria: cat, cuenta: 1 });
+  const repoPath = volcado && volcado.marker ? volcado.marker.repoPath : null;
+  const propias = medido ? delRegistro(registros.bypass, volcado, sinHilo ? null : cs) : [];
+  // El mismo hecho en el registro y en la conversación cuenta una vez, por el registro, y uno a uno: cada línea se
+  // empareja con UNA vez que su escape corrió (`emparejar`) y entonces cuenta con lo que se ve del comando entero. Lo que
+  // queda sin pareja cuenta solo: la línea por su texto, el comando por lo suyo.
+  const vistos = escapesDeComandos(cs, repoPath);
+  for (const { l, par } of emparejar(propias, vistos)) {
+    let categoria = par ? (DEL_REGISTRO[par.categoria] || par.categoria) : categoriaDeLinea(l, repoPath);
+    // sin `cd` ni `-C`, el commit corrió en la carpeta de la sesión: la de la línea es la exacta
+    if (par && par.porLaEjecucion && carpetaCierta(l.cwd)) categoria = esLaboratorio(l.cwd) ? 'GIT_NO_VERIFY/laboratorio' : 'GIT_NO_VERIFY';
+    if (categoria === null) continue;
+    sumar(out, { regla: 'RR-ESCAPE', categoria, cuenta: 1, con_motivo: typeof l.reason === 'string' && l.reason.trim() !== '' });
+  }
+  for (const v of vistos) if (!v.usado) sumar(out, { regla: 'RR-ESCAPE', categoria: v.categoria, cuenta: 1 });
   const reglas = [...out.values()].map((r) => { const x = { ...r }; for (const k of Object.keys(x)) if (x[k] === undefined) delete x[k]; return x; });
   return { reglas, sin_hilo: sinHilo, escapes_registro: medido ? 'medido' : 'no_medido', hilo_sin_hooks: hiloSinHooks };
 }
 
-module.exports = { CODIGOS, ESCAPES, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, banderasDePartes, segmentos, argsDe, corre, comandos, revisar };
+module.exports = { CODIGOS, ESCAPES, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,
+  banderasDePartes, segmentos, argsDe, corre, comandos, revisar };

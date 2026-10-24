@@ -445,7 +445,8 @@ const SID_B = (k) => `bbbbbbbb-0000-4000-8000-00000000000${k}`;
 const URL_B = 'https://sitio.ejemplo.test';
 
 /** Un volcado de `marker.js clear`: con pasos pendientes, la regla del cierre da `derivada`. */
-const volcadoB = (sid, pendientes = [7], marca = {}) => ({ archivedAt: `${HOY_B}T15:19:00.000Z`, gates: [],
+// archivada después de la constancia del cierre (8.92): antes, la regla la cuenta aparte (runs-review T64)
+const volcadoB = (sid, pendientes = [7], marca = {}) => ({ archivedAt: `${HOY_B}T22:19:00.000Z`, gates: [],
   marker: { storyId: '1.1', sessionId: sid, startedAt: `${HOY_B}T14:00:00.000Z`, stepsCompleted: [0, 1, 2, 3, 4, 5, 6],
     stepsPending: pendientes, checks: { tests: 'green' }, autonomous: true, ...marca } });
 /** El buzón de mentira: `[{ maquina, base, volcado }]`, sin conversaciones (la regla del cierre lee sólo el volcado). */
