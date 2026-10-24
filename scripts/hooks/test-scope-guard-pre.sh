@@ -78,9 +78,11 @@ if command -v "$HNODE" >/dev/null 2>&1; then HAS_NODE=1; fi
 # Por qué se prueba con `node` cuando `jq` falla: hay JSON válido que `jq` rechaza (un `\ud800`
 # suelto), y eso sería otra forma de pasar sin revisión, en silencio.
 # 🔴 Si tocás una rama, tocá la otra: este bloque está copiado igual en safety-guard-pre.sh.
+# `jq -b`: el `jq` nativo de Windows escribe cada salto de línea como `\r\n` salvo con `-b`. Un `jq` que no conoce `-b`
+# falla y lee `node`, que no agrega nada. Igual que en safety-guard-pre.sh, que además frena el comando que trae un `\r`.
 read_field() {
   if [[ "$HAS_JQ" == "1" ]]; then
-    if printf '%s' "$INPUT" | jq -rs --arg p "$1" \
+    if printf '%s' "$INPUT" | jq -b -rs --arg p "$1" \
       'if length == 1 then (.[0] | getpath($p | split(".")) // empty) else error("la entrada no es UN documento JSON") end' 2>/dev/null
     then return 0; fi
   fi
@@ -102,11 +104,13 @@ read_field() {
 }
 
 # to_json_text — stdin → ese texto escrito como un string JSON (para la línea de bypass.log). Con
-# `node` se iguala lo único que `jq` escribe distinto: el carácter DEL sale como \u007f.
+# `node` se iguala lo único que `jq` escribe distinto: el carácter DEL sale como \u007f. `jq -b` por lo mismo que en
+# read_field; un `jq` que no lo conoce falla y escribe `node`.
 to_json_text() {
-  if [[ "$HAS_JQ" == "1" ]]; then jq -Rs .
-  else "$HNODE" -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8")).replace(/\x7f/g, "\\u007f") + "\n");'
-  fi
+  local t
+  t="$(cat; printf x)"; t="${t%x}"
+  if [[ "$HAS_JQ" == "1" ]] && printf '%s' "$t" | jq -b -Rs . 2>/dev/null; then return 0; fi
+  printf '%s' "$t" | "$HNODE" -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0, "utf8")).replace(/\x7f/g, "\\u007f") + "\n");'
 }
 
 # No se pudo leer la entrada: el comando pasa SIN revisar, y se DICE (decisión a confirmar: ver el
@@ -132,6 +136,37 @@ constancia() { # $1 = regla  $2 = veredicto
   printf '%s' "$CMD" | "$HNODE" "$lib" --guard test-scope-guard --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
   return 0
 }
+
+# --- CMD-C1 (copia igual en los tres frenos de shell) --------------------------
+# Con el `jq -b` de la lectura, un `\r` en el comando estuvo de verdad en el comando: bash lo toma como una letra más
+# (`cl\rear` no es `clear`), PowerShell como un salto de línea, y un freno no puede saber cuál de las dos lecturas
+# esconde algo. Un comando legítimo no lo trae: frena siempre, con su motivo. En PowerShell, lo mismo con los otros
+# separadores que no son un espacio (`\f`, `\v`, NEL, los de línea y párrafo de Unicode y todos sus espacios, del duro
+# al ogham): PowerShell separa palabras con ellos y las reglas sólo miran espacio y tabulador. Los bytes van escritos
+# en UTF-8 porque el bash de la Mac (3.2) no entiende `$'\u…'`. Está en los tres (safety-guard-pre.sh,
+# test-scope-guard-pre.sh, engram-pre-commit.sh) porque cada uno se apaga por su lado: con uno apagado, los otros
+# siguen frenando. Si tocás una copia, tocá las tres (lo cuida jq-carriage-return.test.js).
+CMD_C1_POR_QUE="Bash y PowerShell lo leen distinto, y con él una parte del comando se le puede esconder a los frenos. Un comando escrito a mano no lo trae."
+CMD_C1_ARREGLO="Escribí el comando sin ese carácter (un salto de línea común, o espacios) y volvé a correrlo."
+cmd_c1_motivo() { # $1 = comando · $2 = herramienta → por stdout, qué carácter trae; nada si no trae ninguno
+  local c
+  case "$1" in *$'\r'*) printf '%s' '\r (retorno de carro)'; return 0 ;; esac
+  [[ "$2" == "PowerShell" ]] || return 0
+  for c in $'\f' $'\v' $'\xc2\xa0' $'\xc2\x85' $'\xe2\x80\xa8' $'\xe2\x80\xa9' $'\xe3\x80\x80' $'\xe2\x80\xaf' $'\xe2\x81\x9f' \
+           $'\xe2\x80\x80' $'\xe2\x80\x81' $'\xe2\x80\x82' $'\xe2\x80\x83' $'\xe2\x80\x84' $'\xe2\x80\x85' $'\xe2\x80\x86' \
+           $'\xe2\x80\x87' $'\xe2\x80\x88' $'\xe2\x80\x89' $'\xe2\x80\x8a' $'\xe1\x9a\x80'; do
+    case "$1" in *"$c"*) printf '%s' 'un separador que no es un espacio (\f, \v, espacio duro o un espacio de Unicode)'; return 0 ;; esac
+  done
+  return 0
+}
+# --- fin CMD-C1 ----------------------------------------------------------------
+_HERR_C1="$(read_field tool_name 2>/dev/null)" || _HERR_C1=""
+_cmd_c1="$(cmd_c1_motivo "$CMD" "$_HERR_C1")"
+if [[ -n "$_cmd_c1" ]]; then
+  constancia CMD-C1 bloqueo
+  echo "⛔ TYCON test-scope-guard (CMD-C1): el comando trae ${_cmd_c1}. ${CMD_C1_POR_QUE} ${CMD_C1_ARREGLO}" >&2
+  exit 2
+fi
 
 # Override explícito por comando: la full-suite legítima (portón del merge o pedido del dev).
 # (también `$env:TYCON_FULL_SUITE="1"`, con el 1 entre comillas, como se escribe en PowerShell)

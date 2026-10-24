@@ -1350,7 +1350,9 @@ test('T11 GuionEscondido_Frena @story-8.107 @ac-1 — el nombre del guion armado
   for (const [marcador, c] of casos) {
     const r = freno(c, { home: homeConMarcador(marcador, [deLaPersona('seguí')]) });
     assert.strictEqual(r.status, 2, `${JSON.stringify(c)}: ${r.stderr}`);
-    assert.match(r.stderr, /ESC-C3/, c);
+    // un comando con un \r lo frena antes CMD-C1 (@story-8.115), que es más estricta: frena igual. Su gemelo sin \r
+    // (`pipe\\\nline.js`, más arriba en la lista) sigue probando ESC-C3 por sí sola
+    assert.match(r.stderr, c.includes('\r') ? /CMD-C1/ : /ESC-C3/, c);
   }
 });
 
@@ -1449,5 +1451,54 @@ test('T13 InterruptorDelEstado_EscC1 @story-8.109 @ac-9 — prenderlo pide la fr
   for (const c of [`${SG}=0 ls`, `grep ${SG} guia.md`]) {
     const r = freno(c, { conversacion: [deLaPersona('seguí')] });
     assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});
+
+// ── El jq de Windows (@story-8.115 @ac-11) ───────────────────────────────────────────────────────────────────────────
+// El jq nativo de Windows escribe cada salto de línea como \r\n: los comandos de varios renglones pasaban sin frenar
+// (T22 y T11 de este archivo, en la 182). Se corren por los dos caminos de lectura: con un jq que escribe \r\n y deja una
+// marca de que corrió, y con un jq que falla (el respaldo con node).
+test('T11 FrenoDeSeguridad_JqConRetornoDeCarro_Frena @story-8.115 @ac-11 — con el jq de Windows, los comandos de varios renglones frenan', (t) => {
+  const realJq = (spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).stdout || '').trim();
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-jq-win-'));
+  t.after(() => fs.rmSync(lab, { recursive: true, force: true }));
+  const marca = path.join(lab, 'jq-de-windows-corrio');
+  const binWin = path.join(lab, 'win'); fs.mkdirSync(binWin);
+  // como el de Windows: con -b escribe \n; sin -b, cada salto de línea como \r\n
+  fs.writeFileSync(path.join(binWin, 'jq'), `#!/usr/bin/env bash
+: > ${JSON.stringify(marca)}
+for a in "$@"; do [ "$a" = "-b" ] && { b=1; break; }; done
+if [ -n "\${b:-}" ]; then args=(); for a in "$@"; do [ "$a" = "-b" ] || args+=("$a"); done; exec ${JSON.stringify(realJq)} "\${args[@]}"; fi
+${JSON.stringify(realJq)} "$@" | node -e 'process.stdin.on("data",(d)=>process.stdout.write(d.toString().replace(/\\n/g,"\\r\\n")))'
+exit "\${PIPESTATUS[0]}"
+`, { mode: 0o755 });
+  const binSin = path.join(lab, 'sin'); fs.mkdirSync(binSin);
+  fs.writeFileSync(path.join(binSin, 'jq'), '#!/usr/bin/env bash\nexit 1\n', { mode: 0o755 });
+  const casos = [
+    ...ESC_C3_FRENA.map(([herramienta, c]) => [ROJO, herramienta, c]),
+    [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipe\\\nline.js start --story s.md ${NDR_FLAG}`],
+  ];
+  // un \r escrito en el comando (en medio de una palabra, o un \r\n): frena por CMD-C1, por cualquier camino
+  const conRetorno = [
+    [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipe\\\r\nline.js start --story s.md ${NDR_FLAG}`],
+    [ROJO, 'Bash', `${MARKER} cl\rear`],
+    [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipeline.js start --story s.md ${NDR_FLAG.replace('deep', 'deep\r')}`],
+  ];
+  if (!realJq) t.diagnostic('no medido: no hay jq en esta máquina, sólo se probó el respaldo con node');
+  const caminos = realJq ? [['jq de Windows', binWin], ['respaldo con node', binSin]] : [['respaldo con node', binSin]];
+  for (const [camino, bin] of caminos) {
+    // los de varios renglones frenan por su propia regla: el jq de Windows, con -b, no les agrega ningún \r
+    for (const [marcador, herramienta, c] of casos) {
+      if (fs.existsSync(marca)) fs.rmSync(marca);
+      const r = freno(c, { herramienta, home: homeConMarcador(marcador), path: bin });
+      assert.strictEqual(r.status, 2, `${camino} · ${herramienta} ${JSON.stringify(c)}: ${r.stderr}`);
+      assert.doesNotMatch(r.stderr, /CMD-C1/, `${camino} · ${JSON.stringify(c)}: frenó por un \\r que no estaba en el comando`);
+      if (bin === binWin) assert.ok(fs.existsSync(marca), `${camino}: el jq de Windows de la prueba no corrió`);
+    }
+    for (const [marcador, herramienta, c] of conRetorno) {
+      const r = freno(c, { herramienta, home: homeConMarcador(marcador), path: bin });
+      assert.strictEqual(r.status, 2, `${camino} · ${JSON.stringify(c)}: ${r.stderr}`);
+      assert.match(r.stderr, /CMD-C1/, `${camino} · ${JSON.stringify(c)}`);
+    }
   }
 });

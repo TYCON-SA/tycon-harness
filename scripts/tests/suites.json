@@ -3127,6 +3127,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.115 (T12): los tres frenos de shell que leen la entrada (safety-guard-pre.sh, test-scope-guard-pre.sh, engram-pre-commit.sh) con un jq que imita al de Windows (escribe \\r\\n salvo con -b), uno que no conoce -b y el respaldo con node: los comandos de varios renglones frenan como en la Mac, todo \\r en el comando (y en PowerShell los separadores raros) frena por CMD-C1 en los tres, también con el freno de seguridad apagado, y el freno no se relanza a sí mismo. Cada llamada con tope de 60 s.",
+      "raiz": "arnes",
+      "ruta": "tests/jq-carriage-return.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.66: las reglas de lectura de las carpetas del arnés en permissions.allow de ~/.claude/settings.json — cuáles (el árbol, sus dos enlaces y cada skill enlazada), su forma, sumar sin pisar al dev, sin repetir, después del aplicador, sacar al actualizar lo que ya no es del arnés (leyendo el registro de disco) y desinstalar sólo lo anotado. Con HOME y settings.json de prueba.",
       "raiz": "arnes",
       "ruta": "tests/read-permissions.test.js",

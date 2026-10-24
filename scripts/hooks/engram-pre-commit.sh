@@ -86,9 +86,11 @@ read_json() {
 }
 read_json_jq() {
   case "$1" in
-    text)  jq -rs --arg p "$2" --arg d "${3:-}" 'if length == 1 then (.[0] | getpath($p | split(".")) // $d) else error("no es UN documento JSON") end' 2>/dev/null ;;
-    list)  jq -rs --arg p "$2" 'if length == 1 then (.[0] | (getpath($p | split(".")) // []) | join(", ")) else error("no es UN documento JSON") end' 2>/dev/null ;;
-    count) jq -rs --arg p "$2" 'if length == 1 then (.[0] | getpath($p | split(".")) | if . == null then "null" else tostring end) else error("no es UN documento JSON") end' 2>/dev/null ;;
+    # `-b`: el `jq` nativo de Windows escribe cada salto de línea como `\r\n` salvo con `-b` (un «sano\r» no es «sano»);
+    # un `jq` que no lo conoce falla y lee `node`
+    text)  jq -b -rs --arg p "$2" --arg d "${3:-}" 'if length == 1 then (.[0] | getpath($p | split(".")) // $d) else error("no es UN documento JSON") end' 2>/dev/null ;;
+    list)  jq -b -rs --arg p "$2" 'if length == 1 then (.[0] | (getpath($p | split(".")) // []) | join(", ")) else error("no es UN documento JSON") end' 2>/dev/null ;;
+    count) jq -b -rs --arg p "$2" 'if length == 1 then (.[0] | getpath($p | split(".")) | if . == null then "null" else tostring end) else error("no es UN documento JSON") end' 2>/dev/null ;;
     cross) jq -es 'length == 1 and (.[0] | type == "object" and has("estado"))' >/dev/null 2>&1 ;;
     *) return 1 ;;
   esac
@@ -152,6 +154,37 @@ if [ -z "$INPUT" ]; then cannot_read; fi
 CMD=$(printf '%s' "$INPUT" | read_json text tool_input.command "") || cannot_read
 log "parsed CMD=[$CMD]"
 
+# --- CMD-C1 (copia igual en los tres frenos de shell) --------------------------
+# Con el `jq -b` de la lectura, un `\r` en el comando estuvo de verdad en el comando: bash lo toma como una letra más
+# (`cl\rear` no es `clear`), PowerShell como un salto de línea, y un freno no puede saber cuál de las dos lecturas
+# esconde algo. Un comando legítimo no lo trae: frena siempre, con su motivo. En PowerShell, lo mismo con los otros
+# separadores que no son un espacio (`\f`, `\v`, NEL, los de línea y párrafo de Unicode y todos sus espacios, del duro
+# al ogham): PowerShell separa palabras con ellos y las reglas sólo miran espacio y tabulador. Los bytes van escritos
+# en UTF-8 porque el bash de la Mac (3.2) no entiende `$'\u…'`. Está en los tres (safety-guard-pre.sh,
+# test-scope-guard-pre.sh, engram-pre-commit.sh) porque cada uno se apaga por su lado: con uno apagado, los otros
+# siguen frenando. Si tocás una copia, tocá las tres (lo cuida jq-carriage-return.test.js).
+CMD_C1_POR_QUE="Bash y PowerShell lo leen distinto, y con él una parte del comando se le puede esconder a los frenos. Un comando escrito a mano no lo trae."
+CMD_C1_ARREGLO="Escribí el comando sin ese carácter (un salto de línea común, o espacios) y volvé a correrlo."
+cmd_c1_motivo() { # $1 = comando · $2 = herramienta → por stdout, qué carácter trae; nada si no trae ninguno
+  local c
+  case "$1" in *$'\r'*) printf '%s' '\r (retorno de carro)'; return 0 ;; esac
+  [[ "$2" == "PowerShell" ]] || return 0
+  for c in $'\f' $'\v' $'\xc2\xa0' $'\xc2\x85' $'\xe2\x80\xa8' $'\xe2\x80\xa9' $'\xe3\x80\x80' $'\xe2\x80\xaf' $'\xe2\x81\x9f' \
+           $'\xe2\x80\x80' $'\xe2\x80\x81' $'\xe2\x80\x82' $'\xe2\x80\x83' $'\xe2\x80\x84' $'\xe2\x80\x85' $'\xe2\x80\x86' \
+           $'\xe2\x80\x87' $'\xe2\x80\x88' $'\xe2\x80\x89' $'\xe2\x80\x8a' $'\xe1\x9a\x80'; do
+    case "$1" in *"$c"*) printf '%s' 'un separador que no es un espacio (\f, \v, espacio duro o un espacio de Unicode)'; return 0 ;; esac
+  done
+  return 0
+}
+# --- fin CMD-C1 ----------------------------------------------------------------
+_HERR_C1=$(printf '%s' "$INPUT" | read_json text tool_name "") || _HERR_C1=""
+_cmd_c1="$(cmd_c1_motivo "$CMD" "$_HERR_C1")"
+if [ -n "$_cmd_c1" ]; then
+  log "CMD-C1: ${_cmd_c1}, exit 2"
+  echo "⛔ tycon: engram-pre-commit (CMD-C1): el comando trae ${_cmd_c1}. ${CMD_C1_POR_QUE} ${CMD_C1_ARREGLO}" >&2
+  exit 2
+fi
+
 # 🔴 El match es por POSICIÓN, no por substring. Un glob
 # (`*"git push"*`) daría positivo con CUALQUIER comando que contuviera ese texto en cualquier lado:
 # un heredoc que escribe un caso de test, un `sed` sobre documentación, un `grep "git push"`. Un falso positivo así es un sync de más, sin costo visible.
@@ -185,7 +218,9 @@ _GIT='(^|[;&|({`!]|&&|\|\||-c[[:space:]]+["'"'"']|(then|do|else)[[:space:]])[[:s
 # TYCON_ENGRAM_MANIFEST_OK=1 …"` abriría el escape. Sigue sin ser un parser de shell: se borra el
 # contenido de "…" y '…' (con `\"` adentro) y se matchea sobre lo que queda, que es donde viven los
 # comandos de verdad. `$CMD` no se toca: el log, la constancia y el sync lo siguen viendo entero.
-CMD_SIN_STRINGS=$(printf '%s' "$CMD" | sed -e "s/\\\\\"//g" -e "s/\"[^\"]*\"/\"\"/g" -e "s/'[^']*'/''/g")
+# Una barra invertida escapada (`\\`) se saca antes que `\"`: en `"a\\"` la comilla cierra el texto, y sacando primero
+# `\"` se emparejaba con la siguiente y el `; git commit` de después quedaba adentro de un texto vaciado.
+CMD_SIN_STRINGS=$(printf '%s' "$CMD" | sed -e 's/\\\\//g' -e "s/\\\\\"//g" -e "s/\"[^\"]*\"/\"\"/g" -e "s/'[^']*'/''/g")
 printf '%s' "$CMD_SIN_STRINGS" | grep -qE "${_GIT}commit([[:space:]]|\$)" && ES_COMMIT=1
 printf '%s' "$CMD_SIN_STRINGS" | grep -qE "${_GIT}push([[:space:]]|\$)"   && ES_PUSH=1
 log "match commit=$ES_COMMIT push=$ES_PUSH"
