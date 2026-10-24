@@ -513,6 +513,12 @@ test('InstalledRoots_EmptyAnswerIsNotKept', () => {
 
 // ── ediciones por la terminal con el pipeline abierto: manifiestos, intérpretes, borrar y deshacer ──────────
 // Una corrida abierta con el plan aprobado: el carril deja editar y el registro exige Edit/Write.
+/** Una carpeta temporal escrita como la escribe un comando del bash de Git: el nombre largo (sin el `~` del nombre corto
+ *  de Windows) y con barras normales (la barra invertida es un escape para bash). En Mac y Linux, la ruta real. */
+function carpetaParaBash(prefijo) {
+  return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefijo))).replace(/\\/g, '/');
+}
+
 function corridaAbierta({ pendiente = [4, 5, 6, 7, 8] } = {}) {
   const stateDir = tmpState();
   const repo = fs.realpathSync(mkRepo(false));
@@ -580,7 +586,7 @@ test('T36 Freno_FalsosPositivosDeLaMedicion @story-8.93 @ac-22', () => {
   const { stateDir, repo } = corridaAbierta();
   fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'x');
-  const fuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-')));
+  const fuera = carpetaParaBash('fuera-');
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
   conEnv(SIN_REGISTRO, () => {
     // 1. la forma mínima del cd: `VAR=literal; … && cd DIR && <escritura>`, la escritura en la misma cadena de &&
@@ -626,7 +632,7 @@ test('T41 Freno_PaseAdversarialE_SigueFrenando @story-8.93 @ac-15 @ac-22', () =>
   const { stateDir, repo } = corridaAbierta();
   fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'x');
-  const F = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-')));
+  const F = carpetaParaBash('fuera-');
   const R = repo;
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
   const casos = [
