@@ -326,6 +326,24 @@ jobs:
           CLONE_TOKEN: $(System.AccessToken)
 
       - script: |
+          # La propuesta del modelo de la noche (models.nightly de team-repos.json) para las fichas pendientes de las tres
+          # fuentes, hasta 30. Propone y nada más: no mueve fichas ni crea pedidos. Va antes del resumen (su línea «sin
+          # propuesta del modelo») y del guardado (la propuesta viaja con las fichas). Falla abierto: nunca pone roja la
+          # noche. Las llaves llegan como variables secretas del paso; ni este paso ni el guion imprimen su valor.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
+          node scripts/nightly/findings/propose.js --operations "$(Build.SourcesDirectory)" \
+            --team-repos "$(Build.SourcesDirectory)/team-repos.json" --today "$HOY" || true
+          exit 0
+        displayName: 'Pedirle al modelo de la noche una propuesta por ficha'
+        condition: and(succeeded(), eq('${{ parameters.efectos }}', 'true'))
+        continueOnError: true
+        env:
+          ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+          OLLAMA_API_KEY: $(OLLAMA_API_KEY)
+
+      - script: |
           # La prueba sin sesión del sitio de la organización: el aviso lleva el enlace sólo si pasó ESTA
           # mañana. Sin `site.url` en operations.json no se prueba. Nunca frena la noche: el resultado viaja al resumen
           # (--site-check del paso siguiente).
@@ -427,7 +445,7 @@ jobs:
           node scripts/ci/push-nightly-data.js save \
             --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
             --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
-            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad .dashboard/retros
+            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad .dashboard/retros inbox/runs-review/pending inbox/watcher/pending inbox/model-proposals.json
         displayName: 'Guardar el snapshot y las fichas en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 

@@ -148,8 +148,27 @@ arnés, falta `run-close.js` o el lector se cae), un comando que nombra `marker`
 guiones tampoco andan, así que frenar no cuesta nada. `ESC-C1` frena además una asignación con el **nombre armado** en
 otra variable (`V=TYCON_…; export $V=1`, `declare -x "$V=1"`, `env "$V=1"`, `printf -v "$V"`) en un comando que corre
 `marker`, `pipeline` o `test-gate.sh`: el nombre no se ve, y el camino es escribirlo entero para que decida su regla.
-Fuera del pipeline, armar nombres no frena. Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e`
-que lo carga, una copia con otro nombre, o un programa de texto que además ejecuta (`awk` con `system`). Para eso sigue el lazo del
+Fuera del pipeline, armar nombres no frena.
+
+**Freno aceptado por duda: el código de `node -e`.** `node -e '<código con llaves>' "$a" "$b"` frena `ESC-C3`, igual con
+`-p`, `--eval` y `--print`. El código se lee como el guion: puede correr lo que recibe en sus argumentos (`node -e
+'spawnSync(process.argv[1],…)' "$S" start --no-deep-review` corre el pipeline con el nombre escondido), y distinguirlo
+del de una sonda pide leer JavaScript. La salida, para una sonda que no corre nada: pasar los valores por el ambiente
+(`C="$c" L="$L" node -e '…process.env.C…'`) o un solo argumento. Las dos pasan. Además, un comando que nombra `node`,
+`nodejs` o `bun`, nombra `pipeline` o `marker` (con o sin `.js`) y dice `--no-deep-review` en cualquier lugar (un
+argumento, una variable, un `export`, el cuerpo de cualquier heredoc, un texto) frena `ESC-C3`, aunque el lector no vea
+cómo los une el código. Del lado seguro: también frena un mensaje de commit o unas notas por heredoc con esas tres
+palabras; las notas se escriben con la herramienta de edición. Sin `node` (un `grep` de la bandera) no frena.
+
+Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e` que lo carga o que corre otro
+programa con lo que recibe sin que el comando nombre el pipeline y la bandera juntos (residuos conocidos: la bandera
+partida en dos variables, `S=… A=--no-deep B=-review node -e '…spawnSync("node",[process.env.S,"start",process.env.A+process.env.B])…'`,
+`node` en una variable o en una sustitución, `N=node; $N -e '…'` o `$(which node) -e '…'`, y otro intérprete,
+`S=pipeline.js python3 -c '…os.system(…--no-deep-review)…'`, pasan; sacarle a la regla la condición de que corra
+`node` los cerraba, pero frenaba un `grep`, un mensaje de commit o un `echo` que sólo nombran el pipeline con la
+bandera), una copia con otro nombre, o un programa de texto que además ejecuta (`awk` con `system`). Estos residuos
+los borra de raíz que apagar el pase pida la firma del dueño (la story que sigue a la 8.111): sin la firma, el pipeline
+no apaga el pase, se escriba como se escriba. Mientras tanto sigue el lazo del
 modo autónomo, que no deja cerrar el turno con un control en rojo, y el `cierre` del volcado: `marker.js set` no lo
 escribe, no pisa los controles (`checks`, `checksProvenance`), el pase ni el modo autónomo de la misma historia, no vacía sus pasos pendientes, y al
 pasar a otra historia deja la anterior anotada como abortada si no había terminado.
@@ -200,6 +219,16 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
 - **Borrar el marcador.** Borrar o mover por consola un marcador de ejecución (`active/`, `active.json`), de esta
   sesión o de otra, frena con «BORRADO DEL ESTADO DEL PIPELINE». En su lugar: `marker.js clear` o `marker.js
   clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre.
+- **Un `$(…)` en el nombre de un informe.** Con el pipeline abierto, un destino `.md` o `.log` (`>`, `>>` o `tee`) con
+  un `$(date +F)` (formato sólo de `%Y %m %d %H %M %S %s %j %y - _`), pegado a texto, se lee entero y el `$(…)` cuenta
+  como un comodín: `> out/run-$(date +%s).log` pasa. Frena si la carpeta donde puede caer tiene historias, si la
+  carpeta que se sabe toca el estado del pipeline o el árbol instalado (también por un enlace o desde otra carpeta
+  posible del comando), o con cualquier otro `$(…)`, otra opción de `date`, el `$(…)` como segmento entero, un destino
+  que sigue después de una comilla, llaves o un comodín escrito en el destino, un `date` que el mismo comando redefine
+  (función, alias, `PATH=`) o un destino de código. **Freno aceptado por duda:** `$(basename …)` en un destino
+  (`> $SP/suite-$(basename $f).log`) frena «EDICIÓN INVISIBLE». `basename /` da `/`, y su salida puede abrir una
+  carpeta que el freno no ve. Para un informe con ese nombre, escribilo con la herramienta de edición o armá el
+  nombre antes en una variable con su valor literal.
 
 El freno del paso a mano también frena volver una historia en implementación a otro estado (por ejemplo a `draft`, para
 después escribirla por consola), sacarle el encabezado y cambiarle el id. Por consola, un borrador sólo pasa si el
