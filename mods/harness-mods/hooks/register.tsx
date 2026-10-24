@@ -14,6 +14,8 @@ import { readRun, readRunError, boardParts, storyPathOf, specTitle, pipelineTabl
 import { runModsCommand, isActive, isShown } from './mods.mjs'
 
 const BOARD = 'pipeline-board'
+// la ventana del detalle: la abre el botón del renglón y se cierra con Escape
+const DETAIL = 'pipeline-detail'
 const EVERY_MS = 30000
 // la letra del cartel, la de los avisos de Claude Code de abajo del prompt. La terminal tiene un solo tamaño; la
 // extensión de VS Code dibuja «footnote» con la letra del cuerpo, así que ahí va el escalón más chico
@@ -25,6 +27,14 @@ const hidden = atom({ plugin: 'harness-mods', key: 'hidden' } as const, [] as st
 const off = atom({ plugin: 'harness-mods', key: 'off' } as const, [] as string[])
 const warned = atom({ plugin: 'harness-mods', key: 'warned' } as const, [] as string[])
 const waitingFor = atom({ plugin: 'harness-mods', key: 'waitingFor' } as const, null as string | null)
+const expanded = atom({ plugin: 'harness-mods', key: 'expanded' } as const, false)
+
+/** Los renglones del detalle: título completo, paso, los datos del renglón largo y la tabla de pasos de /pipeline. */
+function detailLines(snap: Snapshot): string[] {
+  const run = snap.run!
+  const { story, step, rest } = boardParts(run, snap.context ?? undefined)
+  return [`${story}${run.title ? ` · ${run.title}` : ''}`, step, ...rest, '', ...pipelineTable(run).split('\n')]
+}
 
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 
@@ -180,30 +190,64 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const SIZE = sizeFor(e.surface)
     const run = snap.run
-    const { story, title, step, rest } = boardParts(run, snap.context ?? undefined)
-    // el título completo va abajo sólo si arriba quedó recortado
-    const full = title && run.title && title !== run.title ? run.title : null
+    const { step } = boardParts(run, snap.context ?? undefined)
+    // un renglón corto: story, paso, avance y total; el resto va en la ventana del detalle
+    const warnings = ((run as any).warnings || []).length
+    const compact = [`${run.done}/${run.total}`, `${run.minutesTotal ?? '—'} min`, ...(warnings ? [`⚠ ${warnings}`] : [])]
+    const open = await read($, expanded)
+    const line = (
+      <Box>
+        <Text size={SIZE} bold>{run.storyId}</Text>
+        <Text size={SIZE} dimColor> · </Text>
+        <Text size={SIZE} color={run.waiting ? 'yellow' : undefined}>{step}{run.waiting ? ' · te espera' : ''}</Text>
+        <Text size={SIZE} dimColor> · {compact.join(' · ')} </Text>
+        <Button
+          key="detail"
+          label="Detalle"
+          onPress={async () => {
+            // donde no hay ventanas (la extensión de VS Code), el detalle se despliega bajo el renglón
+            const opened = await $.ui.open({ id: DETAIL, title: `Story ${run.storyId}`, focus: true, closeOnEscape: true })
+            if (!opened.isPlaced) await update($, expanded, (x) => !x)
+          }}
+        >
+          <Text size={SIZE}>Detalle</Text>
+        </Button>
+        <Text size={SIZE}> </Text>
+        <Button
+          key="hide"
+          label="Ocultar"
+          onPress={async () => {
+            await update($, hidden, (h) => (asList(h).includes(BOARD) ? asList(h) : [...asList(h), BOARD]))
+            $.ui.toast(`El cartel quedó oculto en esta sesión. Para verlo de nuevo: /mods show ${BOARD}`)
+          }}
+        >
+          {/* la etiqueta como Text propio, para que lleve el tamaño del cartel y no el del cuerpo */}
+          <Text size={SIZE}>Ocultar</Text>
+        </Button>
+      </Box>
+    )
+    if (!open) return line
     return (
       <Box flexDirection="column">
-        <Box>
-          <Text size={SIZE} bold>{story}</Text>
-          {title ? <Text size={SIZE}> · {title}</Text> : null}
-          <Text size={SIZE} dimColor> · </Text>
-          <Text size={SIZE} color={run.waiting ? 'yellow' : undefined}>{step}</Text>
-          <Text size={SIZE} dimColor> · {rest.join(' · ')} </Text>
-          <Button
-            key="hide"
-            label="Ocultar"
-            onPress={async () => {
-              await update($, hidden, (h) => (asList(h).includes(BOARD) ? asList(h) : [...asList(h), BOARD]))
-              $.ui.toast(`El cartel quedó oculto en esta sesión. Para verlo de nuevo: /mods show ${BOARD}`)
-            }}
-          >
-            {/* la etiqueta como Text propio, para que lleve el tamaño del cartel y no el del cuerpo */}
-            <Text size={SIZE}>Ocultar</Text>
-          </Button>
-        </Box>
-        {full ? <Text size={SIZE} dimColor wrap="truncate-end">{full}</Text> : null}
+        {line}
+        {detailLines(snap).map((l) => <Text size={SIZE} dimColor>{l || ' '}</Text>)}
+        <Button key="close" label="Cerrar detalle" onPress={() => update($, expanded, () => false)}>
+          <Text size={SIZE}>Cerrar detalle</Text>
+        </Button>
+      </Box>
+    )
+  })
+  // el detalle: título completo, los datos del renglón largo y la tabla de pasos de /pipeline
+  on('ui.render', { component: 'Pane', requestId: DETAIL }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const snap = await read($, snapshot)
+    if (!snap || !snap.run) return <Text dimColor>{NO_RUN_TEXT}</Text>
+    const [head, ...lines] = detailLines(snap)
+    return (
+      <Box flexDirection="column">
+        <Text bold>{head}</Text>
+        {lines.map((l) => <Text>{l || ' '}</Text>)}
+        <Text dimColor>Escape para cerrar</Text>
       </Box>
     )
   })
