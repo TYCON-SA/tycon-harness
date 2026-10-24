@@ -965,6 +965,11 @@ function refrescarFicha(f) {
  * Los campos de cierre se conservan con sufijo `_antes`: la historia de la ficha es el dato que
  * hace visible que esto ya había pasado.
  */
+/** La ficha sin la propuesta del modelo ni sus fallas. */
+function sinPropuesta(txt) {
+  return sources.CLAVES_DE_PROPUESTA.reduce((t, k) => quitarClave(t, k), txt);
+}
+
 function reactivarFicha(f, h, hoy, pendingDir) {
   // 🔴 Misma relectura que el anexo, y por el mismo motivo: si dos avisos nuevos reactivan la MISMA
   // ficha cerrada esta noche, la segunda llamada trabajaría sobre el texto viejo e intentaría borrar
@@ -992,6 +997,8 @@ function reactivarFicha(f, h, hoy, pendingDir) {
   // repetiría «ya no aparece» en el proyecto donde nada cambió. Lo
   // borra el guion de pedidos en el proyecto donde la vulnerabilidad vuelve a aparecer.
   for (const k of ['visto_cerrado', 'avisado_cerrado_vivo']) txt = ponerLista(txt, k, []);
+  // la propuesta del modelo era de la vida anterior: se le vuelve a pedir
+  txt = sinPropuesta(txt);
   txt = ponerEscalar(txt, 'veredicto', 'pendiente');
   txt = ponerEscalar(txt, 'reaparecido', hoy);
   if (h && !f.ids.includes(h.id)) {
@@ -2056,7 +2063,7 @@ if (require.main === module) {
 // escribe con UN solo código, y el texto del Bug sale del mismo generador que el del pull request.
 module.exports = { huella, agruparHallazgos, agruparPresencias, proyectoDe, leerFicha, snapshotAnterior, parseArgs, ubicarRepo,
   listaDe, ponerLista, etiqueta, soloRepo, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml, archivarIgnorados, vigilarFichas,
-  proyectoAzureDe,
+  proyectoAzureDe, sinPropuesta,
   // el cruce
   presenciaDeFicha, leerVolcado, cruzarPedidos, motivoParaNoIgnorar, CATEGORIAS_ABIERTAS, CATEGORIAS_CERRADAS,
   // GitHub

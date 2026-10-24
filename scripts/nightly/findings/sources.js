@@ -53,6 +53,11 @@ const ORDEN_VIGILANTE = ['id', 'fuente', 'causa', 'fecha', 'producto', 'regla', 
  *  resuelve ni reaparece: el estado es siempre `viva`. */
 const vistaVigilante = (fi) => ({ estado: 'viva', veredicto: VEREDICTO_COMUN[fi.escalares.veredicto] || 'pendiente' });
 
+// Las claves de la propuesta del modelo en el formato por secciones (dependencias y el vigilante). La ficha común las
+// lleva en `propuesta`, `propuesta_motivo`, `propuesta_fallas` y `propuesta_fallo_el`.
+const CLAVES_DE_PROPUESTA = ['propuesta_accion', 'propuesta_razon', 'propuesta_modelo', 'propuesta_motivo', 'propuesta_fallas',
+  'propuesta_fallo_el'];
+
 const FUENTES = {
   dependencias: {
     carpeta: 'dependencies',
@@ -105,4 +110,4 @@ function comoFicha(fuente, txt) {
     ultima_vez: fecha(e.vista_por_ultima_vez), apariciones: entero(e.noches_seguidas) || 1, veredicto, estado, resuelto: null, reaparecido: null };
 }
 
-module.exports = { FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, VEREDICTO_COMUN, esVieja, comoFicha };
+module.exports = { FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, esVieja, comoFicha };

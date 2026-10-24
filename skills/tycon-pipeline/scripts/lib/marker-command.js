@@ -216,6 +216,17 @@ const CORRE_NODE = /(^|[\s;&|(]|\/)(node|nodejs|bun)(\.exe)?\s/i;
 const NODES = new Set(['node', 'nodejs', 'bun']);
 // las opciones de `node` que llevan su valor en la palabra siguiente: ese valor no es el guion
 const NODE_CON_VALOR = new Set(['-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions']);
+// las opciones de `node` cuyo valor es el código que corre: ese código se lee como el guion. Puede correr lo que
+// recibe en sus argumentos (`node -e 'spawnSync(process.argv[1],…)' "$S" start --no-deep-review`), y distinguirlo del
+// de una sonda pide leer JavaScript: con llaves o comodines, se lee como un guion escondido (freno aceptado por duda)
+const NODE_CODIGO = new Set(['-e', '-p', '--eval', '--print']);
+// apagar el pase adversarial, escrito en el comando: con el pipeline o el marcador nombrados en el mismo comando que
+// corre node, cuenta aunque el lector no vea cómo los une el código (un `node -e` que los recibe por el ambiente)
+// con o sin `.js`: `node pipeline` corre `pipeline.js`
+const NOMBRA_GUION_JS = /(^|[^\w.-])(marker|pipeline)(\.js)?(?![\w.-])/i;
+// node en cualquier lugar del comando, también al final o pegado a `<<<` (no sólo con un espacio después)
+const CORRE_NODE_SUELTO = /(^|[\s;&|(]|\/)(node|nodejs|bun)(\.exe)?(?![\w.-])/i;
+const APAGA_EL_PASE = /(^|[^\w-])--no-deep-review(?![\w-])/;
 
 /** El programa del tramo: saltea asignaciones, redirecciones y prefijos (`sudo`, `xargs`) con sus opciones. */
 function programa(palabras) {
@@ -244,6 +255,11 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
   // armado por el shell (`pipelin?.js`, `mar$'k'er.js`)
   const plano = String(cmd).replace(/\\\r?\n/g, '').replace(/["'\\`]/g, '');
   if (hondo > 4 || !(NOMBRA_GUION.test(plano) || CORRE_NODE.test(plano))) return fuera;
+  // en todo el comando, también en el cuerpo de cualquier heredoc: uno que se escribe en un archivo puede correrse
+  // después (`./a.sh`, `make`), y distinguirlo pide leer shell. Las notas con ese texto se escriben con Edit/Write
+  if (CORRE_NODE_SUELTO.test(plano) && NOMBRA_GUION_JS.test(plano) && APAGA_EL_PASE.test(plano)) {
+    fuera.push({ guion: 'pipeline', sub: 'start', args: [{ texto: '--no-deep-review', literal: true }], dudosa: false, asig: {}, envFile: false, porXargs: false });
+  }
   const { tramos: lista, subs, abierta } = tramos(cmd, shell);
   for (const interno of subs) fuera.push(...llamadas(interno, { shell }, hondo + 1));
   // las variables asignadas con un valor literal en este comando (`F=--trust-ran; …`): escapeDe las lee por su valor.
@@ -288,6 +304,8 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
     if (NODES.has(p.nombre)) {
       for (let k = p.i + 1; k < pal.length; k++) {
         const x = pal[k].texto;
+        // un código que empieza con `-` se saltea como una opción, igual que antes: el guion es lo que sigue
+        if (NODE_CODIGO.has(x)) { if (k + 1 < pal.length && !/^-/.test(pal[k + 1].texto)) { posGuion = k + 1; break; } continue; }
         if (NODE_CON_VALOR.has(x)) { k++; continue; }
         if (/^-/.test(x) || (p.nombre === 'bun' && x === 'run' && k === p.i + 1)) continue;
         posGuion = k;
@@ -304,6 +322,8 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
       if (guion) {
         if (deTexto && m !== p.i) continue;
         let args = pal.slice(m + 1);
+        // después del código de `node -e`, node descarta un `--`: no es el subcomando
+        if (m === posGuion && m > 0 && NODE_CODIGO.has(pal[m - 1].texto) && args.length && args[0].literal && args[0].texto === '--') args = args.slice(1);
         // `marker.js{,} clear` se expande a dos `marker.js`: la segunda no es el subcomando
         while (args.length && guionDe(args[0].texto) === guion) { args = args.slice(1); m++; }
         // el subcomando en una variable asignada en el mismo comando (`S=start; pipeline.js $S`) se lee por su valor,
