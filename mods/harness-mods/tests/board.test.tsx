@@ -67,10 +67,14 @@ test('el detalle trae lo que no entra en el renglón: contexto, minutos del paso
   on('ui.open', () => ({ value: { isPlaced: true } }))
   await start($)
   const pane = await mountDetail($)
-  expect(await pane.find({ type: 'Text', text: /Story 9\.9/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /contexto usado 21 %/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /min en este paso/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /USD|\$/ })).toBeUndefined()
+  const md = await pane.find({ type: 'Markdown', key: 'detail-md' } as any)
+  const text = String((md!.props as any).text)
+  expect(text).toMatch(/Story 9\.9/)
+  expect(text).toMatch(/contexto usado 21 %/)
+  expect(text).toMatch(/min en este paso/)
+  // la tabla de pasos va como tabla de markdown, no como renglones sueltos
+  expect(text).toMatch(/\n\| Paso \| Estado \| Tiempo \|\n\|---\|---\|---\|\n/)
+  expect(text).not.toMatch(/USD|\$/)
 })
 
 test('Detalle abre la ventana del detalle', async ($, on) => {
@@ -90,30 +94,44 @@ test('VS Code: sin ventanas, Detalle despliega el detalle bajo el renglón y Cer
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'no surface places panes' } }))
   await $.session.start({ cwd: HOME, surface: 'vscode', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'harness-mods', surface: 'vscode', component: 'AbovePrompt', props: PROPS })
-  await ui.press({ key: 'detail' })
-  const ctx = await ui.find({ type: 'Text', text: /contexto usado 21 %/ })
-  expect(ctx).toBeDefined()
-  expect((ctx!.props as any).size).toBe('caption')
-  await ui.press({ key: 'close' })
-  expect(await ui.find({ type: 'Text', text: /contexto usado/ })).toBeUndefined()
+  await ui.press({ key: 'board', link: { href: 'https://pipeline.invalid/detalle' } } as any)
+  const md = await ui.find({ type: 'Markdown', key: 'detail-md' } as any)
+  expect(String((md!.props as any).text)).toMatch(/contexto usado 21 %/)
+  const board = await ui.find({ type: 'Markdown', key: 'board' } as any)
+  expect(String((board!.props as any).text)).toMatch(/\[Cerrar detalle\]/)
+  await ui.press({ key: 'board', link: { href: 'https://pipeline.invalid/cerrar' } } as any)
+  expect(await ui.find({ type: 'Markdown', key: 'detail-md' } as any)).toBeUndefined()
 })
 
-// la terminal tiene un solo tamaño y no lo mira; la extensión de VS Code dibuja «footnote» grande: ahí va el más chico,
-// también en el botón, que sin texto propio sale con el tamaño del cuerpo
-for (const [surface, size] of [['terminal', 'footnote'], ['vscode', 'caption']] as const) {
-  test(`el cartel va con la letra chica de los avisos (${surface})`, async ($, on) => {
-    world(on, { [MARKER_PATH]: MARKER })
-    await $.session.start({ cwd: HOME, surface, isInteractive: true })
-    const ui = await $.ui.mount({ plugin: 'harness-mods', surface, component: 'AbovePrompt', props: PROPS })
-    const texts = await ui.findAll({ type: 'Text' })
-    expect(texts.length).toBeGreaterThan(0)
-    for (const t of texts) expect((t.props as any).size).toBe(size)
-    expect(await ui.find({ type: 'Button', text: 'Ocultar' })).toBeDefined()
-    // la etiqueta del botón es un Text propio, con el mismo tamaño (el recorrido de arriba ya lo mide)
-    expect(await ui.find({ type: 'Text', text: 'Ocultar' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Detalle' })).toBeDefined()
-  })
-}
+// en la terminal, la etiqueta de cada botón es un Text propio con la letra chica del cartel
+test('terminal: el cartel va con la letra chica de los avisos, botones incluidos', async ($, on) => {
+  world(on, { [MARKER_PATH]: MARKER })
+  await start($)
+  const ui = await mount($)
+  const texts = await ui.findAll({ type: 'Text' })
+  expect(texts.length).toBeGreaterThan(0)
+  for (const t of texts) expect((t.props as any).size).toBe('footnote')
+  expect(await ui.find({ type: 'Button', text: 'Ocultar' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Detalle' })).toBeDefined()
+})
+
+// en VS Code, un renglón de markdown con enlaces, como el aviso de uso; Ocultar lo saca en el momento
+test('VS Code: el cartel es markdown con el enlace Detalle y la × de cerrar para ocultarlo', async ($, on) => {
+  world(on, { [MARKER_PATH]: MARKER })
+  await $.session.start({ cwd: HOME, surface: 'vscode', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'harness-mods', surface: 'vscode', component: 'AbovePrompt', props: PROPS })
+  const board = await ui.find({ type: 'Markdown', key: 'board' } as any)
+  const text = String((board!.props as any).text)
+  expect(text).toMatch(/^\*\*9\.9\*\* · /)
+  expect(text).toMatch(/\[Detalle\]\(https:\/\/pipeline\.invalid\/detalle\)/)
+  expect(text).not.toMatch(/Ocultar/)
+  expect(text).not.toMatch(/USD|\$/)
+  // Ocultar es la × de cerrar del sitio, como en el aviso de uso
+  const close = await ui.find({ type: 'Button', key: 'hide' } as any)
+  expect((close!.props as any).role).toBe('dismiss')
+  await ui.press({ key: 'hide' })
+  expect(await ui.find({ type: 'Markdown', key: 'board' } as any)).toBeUndefined()
+})
 
 test('/mods hide lo saca en el momento; /mods show lo vuelve a mostrar', async ($, on) => {
   world(on, { [MARKER_PATH]: MARKER })
@@ -166,8 +184,9 @@ test('el título completo de la story, desde su spec, va en el detalle', async (
   on('ui.open', () => ({ value: { isPlaced: true } }))
   await start($)
   const pane = await mountDetail($)
-  expect(await pane.find({ type: 'Text', text: /El video de 0 a 100: del arnés instalado al primer código/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /Implementar/ })).toBeDefined()
+  const md = await pane.find({ type: 'Markdown', key: 'detail-md' } as any)
+  expect(String((md!.props as any).text)).toMatch(/El video de 0 a 100: del arnés instalado al primer código/)
+  expect(String((md!.props as any).text)).toMatch(/Implementar/)
 })
 
 test('sin la spec, el cartel sigue con el número solo', async ($, on) => {

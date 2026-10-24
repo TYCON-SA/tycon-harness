@@ -36,6 +36,19 @@ function detailLines(snap: Snapshot): string[] {
   return [`${story}${run.title ? ` · ${run.title}` : ''}`, step, ...rest, '', ...pipelineTable(run).split('\n')]
 }
 
+/** El detalle en markdown: la tabla de pasos se dibuja como tabla y cada dato va en su renglón. */
+function detailMarkdown(snap: Snapshot): string {
+  const blocks: string[][] = [[]]
+  for (const l of detailLines(snap)) l === '' ? blocks.push([]) : blocks[blocks.length - 1].push(l)
+  return blocks
+    .filter((b) => b.length)
+    .map((b, i) => (b.every((l) => l.startsWith('|')) ? b.join('\n') : b.map((l, j) => (i === 0 && j === 0 ? `**${l}**` : l)).join('  \n')))
+    .join('\n\n')
+}
+
+// los enlaces del renglón en VS Code y escritorio: no llevan a ningún sitio, el mod los atiende
+const LINK = { detail: 'https://pipeline.invalid/detalle', close: 'https://pipeline.invalid/cerrar' }
+
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 
 /**
@@ -187,7 +200,7 @@ export const register: Register = on => {
       return <T size={sizeFor(e.surface)} color="yellow">Hay una ejecución en esta sesión, pero no pude leer su archivo: {snap.readError}</T>
     }
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Text, Markdown } = $.ui.resolve(e)
     const SIZE = sizeFor(e.surface)
     const run = snap.run
     const { step } = boardParts(run, snap.context ?? undefined)
@@ -195,32 +208,48 @@ export const register: Register = on => {
     const warnings = ((run as any).warnings || []).length
     const compact = [`${run.done}/${run.total}`, `${run.minutesTotal ?? '—'} min`, ...(warnings ? [`⚠ ${warnings}`] : [])]
     const open = await read($, expanded)
+    const showDetail = async () => {
+      // donde no hay ventanas (la extensión de VS Code), el detalle se despliega bajo el renglón
+      const opened = await $.ui.open({ id: DETAIL, title: `Story ${run.storyId}`, focus: true, closeOnEscape: true })
+      if (!opened.isPlaced) await update($, expanded, (x) => !x)
+    }
+    const hide = async () => {
+      await update($, hidden, (h) => (asList(h).includes(BOARD) ? asList(h) : [...asList(h), BOARD]))
+      $.ui.toast(`El cartel quedó oculto en esta sesión. Para verlo de nuevo: /mods show ${BOARD}`)
+    }
+    const detail = open ? <Markdown key="detail-md" text={detailMarkdown(snap)} /> : null
+
+    if (e.surface !== 'terminal') {
+      // VS Code y escritorio: un renglón de markdown con enlaces, como el aviso de uso, y a su tamaño de letra
+      const toggle = open ? `[Cerrar detalle](${LINK.close})` : `[Detalle](${LINK.detail})`
+      const text = `**${run.storyId}** · ${run.waiting ? `**${step} · te espera**` : step} · ${compact.join(' · ')} · ${toggle}`
+      const board = (
+        <Markdown
+          key="board"
+          text={text}
+          pressableLinks={[LINK.detail, LINK.close]}
+          onLinkPress={async (link: { href: string }) => {
+            if (link.href === LINK.close) return update($, expanded, () => false)
+            return showDetail()
+          }}
+        />
+      )
+      // Ocultar es la × de cerrar de VS Code, como en el aviso de uso
+      const row = <Box>{board}<Button key="hide" role="dismiss" label="Ocultar" onPress={hide}>Ocultar</Button></Box>
+      return open ? <Box flexDirection="column">{row}{detail}</Box> : row
+    }
+
     const line = (
       <Box>
         <Text size={SIZE} bold>{run.storyId}</Text>
         <Text size={SIZE} dimColor> · </Text>
         <Text size={SIZE} color={run.waiting ? 'yellow' : undefined}>{step}{run.waiting ? ' · te espera' : ''}</Text>
         <Text size={SIZE} dimColor> · {compact.join(' · ')} </Text>
-        <Button
-          key="detail"
-          label="Detalle"
-          onPress={async () => {
-            // donde no hay ventanas (la extensión de VS Code), el detalle se despliega bajo el renglón
-            const opened = await $.ui.open({ id: DETAIL, title: `Story ${run.storyId}`, focus: true, closeOnEscape: true })
-            if (!opened.isPlaced) await update($, expanded, (x) => !x)
-          }}
-        >
+        <Button key="detail" label="Detalle" onPress={showDetail}>
           <Text size={SIZE}>Detalle</Text>
         </Button>
         <Text size={SIZE}> </Text>
-        <Button
-          key="hide"
-          label="Ocultar"
-          onPress={async () => {
-            await update($, hidden, (h) => (asList(h).includes(BOARD) ? asList(h) : [...asList(h), BOARD]))
-            $.ui.toast(`El cartel quedó oculto en esta sesión. Para verlo de nuevo: /mods show ${BOARD}`)
-          }}
-        >
+        <Button key="hide" label="Ocultar" onPress={hide}>
           {/* la etiqueta como Text propio, para que lleve el tamaño del cartel y no el del cuerpo */}
           <Text size={SIZE}>Ocultar</Text>
         </Button>
@@ -230,7 +259,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {line}
-        {detailLines(snap).map((l) => <Text size={SIZE} dimColor>{l || ' '}</Text>)}
+        {detail}
         <Button key="close" label="Cerrar detalle" onPress={() => update($, expanded, () => false)}>
           <Text size={SIZE}>Cerrar detalle</Text>
         </Button>
@@ -239,14 +268,12 @@ export const register: Register = on => {
   })
   // el detalle: título completo, los datos del renglón largo y la tabla de pasos de /pipeline
   on('ui.render', { component: 'Pane', requestId: DETAIL }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Markdown } = $.ui.resolve(e)
     const snap = await read($, snapshot)
     if (!snap || !snap.run) return <Text dimColor>{NO_RUN_TEXT}</Text>
-    const [head, ...lines] = detailLines(snap)
     return (
       <Box flexDirection="column">
-        <Text bold>{head}</Text>
-        {lines.map((l) => <Text>{l || ' '}</Text>)}
+        <Markdown key="detail-md" text={detailMarkdown(snap)} />
         <Text dimColor>Escape para cerrar</Text>
       </Box>
     )
