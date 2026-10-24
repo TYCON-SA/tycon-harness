@@ -757,4 +757,8 @@ test('T9 Guia_TresFormas', () => {
   // perl queda afuera de la forma exacta, y la carpeta relativa de un cd cuenta por sus historias
   assert.match(guia, /Con `perl` no: un `perl -e` puede armar y escribir sus archivos desde adentro/);
   assert.match(guia, /`cd docs\/stories && ls \| xargs sed -i …` frena desde la raíz del repo/);
+  // la forma del `$(…)` en el nombre de un informe
+  assert.match(guia, /`> out\/run-\$\(date \+%s\)\.log` pasa\. Frena si la carpeta donde puede caer tiene historias/);
+  // el freno aceptado por duda, con su forma: lo que el freno deja frenando a propósito está escrito en la guía
+  assert.match(guia, /\*\*Freno aceptado por duda:\*\* `\$\(basename …\)` en un destino/);
 });

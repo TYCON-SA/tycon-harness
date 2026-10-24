@@ -230,7 +230,6 @@
     "skills/tycon-pipeline/scripts/tests/adversarial-probes.test.js",
     "skills/tycon-pipeline/scripts/tests/advisor-ledger-cli.test.js",
     "skills/tycon-pipeline/scripts/tests/advisor-ledger.test.js",
-    "skills/tycon-pipeline/scripts/tests/bash-write-variables.test.js",
     "skills/tycon-pipeline/scripts/tests/closing-evidence-union.test.js",
     "skills/tycon-pipeline/scripts/tests/companion-repos.test.js",
     "skills/tycon-pipeline/scripts/tests/large-output.test.js",

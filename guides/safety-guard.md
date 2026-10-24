@@ -199,6 +199,16 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
 - **Borrar el marcador.** Borrar o mover por consola un marcador de ejecución (`active/`, `active.json`), de esta
   sesión o de otra, frena con «BORRADO DEL ESTADO DEL PIPELINE». En su lugar: `marker.js clear` o `marker.js
   clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre.
+- **Un `$(…)` en el nombre de un informe.** Con el pipeline abierto, un destino `.md` o `.log` (`>`, `>>` o `tee`) con
+  un `$(date +F)` (formato sólo de `%Y %m %d %H %M %S %s %j %y - _`), pegado a texto, se lee entero y el `$(…)` cuenta
+  como un comodín: `> out/run-$(date +%s).log` pasa. Frena si la carpeta donde puede caer tiene historias, si la
+  carpeta que se sabe toca el estado del pipeline o el árbol instalado (también por un enlace o desde otra carpeta
+  posible del comando), o con cualquier otro `$(…)`, otra opción de `date`, el `$(…)` como segmento entero, un destino
+  que sigue después de una comilla, llaves o un comodín escrito en el destino, un `date` que el mismo comando redefine
+  (función, alias, `PATH=`) o un destino de código. **Freno aceptado por duda:** `$(basename …)` en un destino
+  (`> $SP/suite-$(basename $f).log`) frena «EDICIÓN INVISIBLE». `basename /` da `/`, y su salida puede abrir una
+  carpeta que el freno no ve. Para un informe con ese nombre, escribilo con la herramienta de edición o armá el
+  nombre antes en una variable con su valor literal.
 
 El freno del paso a mano también frena volver una historia en implementación a otro estado (por ejemplo a `draft`, para
 después escribirla por consola), sacarle el encabezado y cambiarle el id. Por consola, un borrador sólo pasa si el

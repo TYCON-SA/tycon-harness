@@ -121,6 +121,47 @@
           }
         },
         {
+          "id": "destino-con-subcomando-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.113: un informe con un `$(date +%s)` en su nombre, con el pipeline abierto, se lee entero y no queda «sin resolver»; sin esto, frenaba «EDICIÓN INVISIBLE».",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon out src",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-sb\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/bench-sb.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo x > out/run-$(date +%s).log"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "destino-con-subcomando-codigo-frena",
+          "type": "must-block",
+          "_por_que": "8.113, gemelo: el mismo `$(date +%s)` en un destino de código sigue frenando «EDICIÓN INVISIBLE».",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon out src",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-sb\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/bench-sb.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo x > src/x-$(date +%s).ts"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "EDICIÓN INVISIBLE"
+            ]
+          }
+        },
+        {
           "id": "cd-relativo-sin-historias-pasa",
           "type": "must-not-block",
           "_por_que": "8.113, gemelo: la carpeta relativa de un `cd` sin historias adentro no frena, aunque el repo tenga historias en otra carpeta.",

@@ -300,6 +300,118 @@ test('T32 BashWrite_SinResolverQueNoEsCodigoYConstancia', () => {
   }
 });
 
+// ── Un `$(date …)` en el nombre de un informe ──────────────────────────────────────────────────────────────────────
+
+/** El repo de juguete de la tanda: historias en `specs/` y `docs/stories/`, informes en `out/`. */
+function corralConHistorias() {
+  const c = corral();
+  const fm = (n) => `---\nstory: "${n}"\ntitle: "x"\nstatus: in-progress\n---\n\n# x\n`;
+  for (const d of ['specs', 'docs/stories', 'out', '.advisors/pipeline-runs']) fs.mkdirSync(path.join(c.repo, d), { recursive: true });
+  fs.writeFileSync(path.join(c.repo, 'specs', 'story-x.md'), fm('9.9'));
+  fs.writeFileSync(path.join(c.repo, 'docs', 'stories', 'story-y.md'), fm('9.8'));
+  return c;
+}
+/** El título del motivo con que frena el freno (la primera línea), o '' si pasa. */
+function tituloDe(r) { return r && r.block ? r.block.split('\n').find((l) => l.trim()).trim() : ''; }
+const INVISIBLE = '🔴 EDICIÓN INVISIBLE — escritura de código por Bash con el pipeline ABIERTO (story 9.9):';
+const HISTORIA = '⛔ tycon-pipeline — HISTORIA ESCRITA POR CONSOLA';
+
+// T3 DestinoConSubcomando_CasoReal_Pasa @story-8.113 @ac-3
+// 🔴 Falla con: cortar el destino en el espacio de adentro del `$(…)`, o dejarlo «sin resolver» (frena «EDICIÓN
+//    INVISIBLE» un informe `.md` o `.log`).
+test('T3 DestinoConSubcomando_CasoReal_Pasa', () => {
+  const { estado, repo } = corralConHistorias();
+  conEnv({ ...ENV, SP: path.join(repo, 'out'), f: 'a.test.js' }, () => {
+    for (const c of [
+      "cat > .advisors/pipeline-runs/validate-story-$(date +%s)/step-01-validator.md << 'EOF'\nhola\nEOF",
+      'echo x > out/run-$(date +%Y%m%d-%H%M%S).log',
+      'echo x | tee out/r-$(date +%s).md',
+      'echo x >> out/r-$(date +%s).log',
+      'echo x > $SP/v-$(date +%Y)-$(date +%m).md',
+      // un `>` adentro de un texto o de un heredoc no es una redirección
+      // stable-data: el `git commit` es el texto de un comando que se le pasa al freno; la prueba nunca lo corre
+      'git commit -m "nota > specs/r-$(date +%s).md"; echo ok', 'echo "a > specs/r-$(date +%s).md b"',
+      "cat > out/n.txt <<'EOF'\necho x > specs/r-$(date +%s).md\nEOF",
+    ]) assert.equal(tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots: [] })), '', c);
+  });
+});
+
+// Lo que da el freno de origin/main (e0a33e20) con cada variante: frena «EDICIÓN INVISIBLE».
+const VARIANTES_DE_SUBCOMANDO = [
+  'echo x > src/x-$(date +%s).ts',
+  'echo x > src/x-$(date +%s)',
+  'echo x > out-$(echo "$(date)").md',
+  'echo x > out-$(echo `date`).md',
+  'echo x > out-$(rm -rf src).md',
+  'echo x > out-$(cp a src/x.ts).md',
+  'echo x > specs/$(date +%s)/story-x.md',
+];
+
+// T4 DestinoConSubcomando_Variantes_SiguenComoHoy @story-8.113 @ac-4
+// 🔴 Falla con: leer como inofensivo otro `$(…)` (otro comando, otras opciones de `date`, `basename -a`), un `$(…)`
+//    que es el segmento entero, un destino que puede pisar una historia o caer en el estado del pipeline.
+test('T4 DestinoConSubcomando_Variantes_SiguenComoHoy', () => {
+  const { estado, repo } = corralConHistorias();
+  conEnv({ ...ENV, f: 'specs/story-x.md' }, () => {
+    const freno = (c) => tituloDe(bash.handle(ev(c.replaceAll('<estado>', estado), repo), { stateDir: estado, installedRoots: [] }));
+    for (const c of VARIANTES_DE_SUBCOMANDO) assert.equal(freno(c), INVISIBLE, c);
+    for (const c of [
+      'echo x > out/x-$(date +%D).md', 'echo x > out/x-$(date +%Y/%m).md', 'echo x > out/x-$(date +../specs/story-x).md',
+      'echo x > out/x-$(date -s 1).md', 'echo x > out/x-$(date -r a +%s).md', 'echo x > out/x-$(basename -a $f).md',
+      'echo x > out/$(basename $f)/x.md', 'echo x > out/$(date +%s)/x.md', 'echo x > $NADIE/x-$(date +%s).md',
+      'echo x > specs/r-$(basename $(ls)).md',
+      // basename queda afuera: su salida puede ser `/` (`basename /`) y abrir una carpeta
+      'node --test $f > $SP/suite-$(basename $f).log', 'echo x > out/r-$(basename $f .js).md',
+      'V=/; echo x > specs$(basename $V)story-x.md',
+      // el destino sigue después de una comilla o de una barra invertida: no termina en `.md`
+      "echo x > src/r-$(date +%s).md'.ts'", 'echo x > src/a$(date +%s).md".cs"', 'echo x > src/r-$(date +%s).md\\.ts',
+      // lo que el shell expande además del `$(…)` (llaves, un comodín escrito, un `~` en el medio), una variable que no
+      // se resuelve pegada al comodín, y un `date` que el comando redefine
+      'echo x > {specs,out}/r-$(date +%s).md', 'echo x > out/{a,b}-$(date +%s).log', 'echo x > spe*/r-$(date +%s).md',
+      'echo x > out/a~b-$(date +%s).md', 'echo x > out/$NADIE-$(date +%s).md',
+      'date(){ echo /; }; echo x > specs$(date +%s)story-x.md', 'PATH=/tmp:$PATH; echo x > out/r-$(date +%s).log',
+    ]) assert.equal(freno(c), INVISIBLE, c);
+    // una historia nueva escrita por heredoc a un destino con `$(date …)`: el freno de historias nuevas la juzga igual
+    // que con el nombre escrito (el cuerpo del heredoc se atribuye al destino con comodín)
+    const nueva = (destino) => `cat > ${destino} <<'EOF'\n---\nstory: "9.7"\ntitle: "n"\nstatus: ready-for-dev\n---\n# n\nEOF`;
+    assert.equal(freno(nueva('out/r-$(date +%s).md')), freno(nueva('out/r-1.md')), 'una historia nueva por heredoc');
+    const sio = require(path.join(SCRIPTS, 'lib', 'story-skill-gate-io.js'));
+    const original = sio.evaluate;
+    let contenido;
+    sio.evaluate = (a) => { contenido = a.content; return original(a); };
+    try { freno(nueva('out/r-$(date +%s).md')); } finally { sio.evaluate = original; }
+    assert.match(String(contenido), /story: "9\.7"/, 'el freno de historias nuevas recibe el cuerpo del heredoc');
+    // el árbol instalado del arnés, como el estado
+    const inst = path.join(repo, 'inst');
+    fs.mkdirSync(inst);
+    assert.notEqual(tituloDe(bash.handle(ev('echo x > inst/r-$(date +%s).md', repo), { stateDir: estado, installedRoots: [inst] })), '', 'el árbol instalado');
+    // el estado del pipeline: nombrado entero, desde otra carpeta posible del comando o por un enlace simbólico
+    assert.match(freno('echo x > <estado>/r-$(date +%s).md'), /ESTADO DEL PIPELINE|EDICIÓN INVISIBLE/, 'el estado');
+    assert.equal(freno('cd out || cd <estado>; echo x > r-$(date +%s).log'), INVISIBLE, 'cd a || cd b');
+    fs.symlinkSync(estado, path.join(repo, 'out', 'lnk1'));
+    assert.equal(freno('echo x > out/lnk$(date +%s)/x.md'), INVISIBLE, 'un enlace al estado que el comodín nombra');
+    // una carpeta con historias: el `$(…)` puede caer en una de ellas, salga `.md` o `.log`, también si la carpeta sale
+    // de una variable del comando o de dos `cd` seguidos
+    for (const c of [
+      'echo x > specs/story-$(date +%s).md', 'echo x > specs/$(date +%s)-run.log', 'echo x > docs/stories/r-$(date +%s).log',
+      'D=specs; echo x > $D/r-$(date +%s).md', 'D=specs/; echo x > ${D}r-$(date +%s).md', 'D=specs; echo x > $D/r-$(date +%s).log',
+      'cd out; cd ../specs; echo x > story$(date +%s).md', 'D=specs/; echo x > ${D}r-$(date +%s).log',
+      // el comodín en una carpeta que da con una que tiene historias
+      'echo x > spec$(date +%s)/x.md',
+    ]) assert.equal(freno(c), HISTORIA, c);
+    // un enlace simbólico a una historia en la carpeta del informe cuenta como la historia
+    fs.mkdirSync(path.join(repo, 'out2'));
+    fs.symlinkSync(path.join(repo, 'specs', 'story-x.md'), path.join(repo, 'out2', 'enlace.md'));
+    assert.equal(freno('echo x > out2/r-$(date +%s).md'), HISTORIA, 'enlace a una historia');
+    // una carpeta que no se puede leer no se sabe si tiene historias (con root, o en Windows, el permiso no impide leer)
+    if (process.platform !== 'win32' && !(process.getuid && process.getuid() === 0)) {
+      fs.mkdirSync(path.join(repo, 'cerrada'));
+      fs.chmodSync(path.join(repo, 'cerrada'), 0o000);
+      try { assert.equal(freno('echo x > cerrada/r-$(date +%s).log'), HISTORIA, 'carpeta sin leer'); } finally { fs.chmodSync(path.join(repo, 'cerrada'), 0o755); }
+    }
+  });
+});
+
 test('el mensaje del freno dice de quién es el escape y nombra la receta', () => {
   const lv = require(path.join(SCRIPTS, 'lib', 'ledger-visible.js'));
   const m = lv.mensaje(['/repo/src/Foo.cs'], '9.9');
