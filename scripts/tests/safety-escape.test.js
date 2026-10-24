@@ -77,7 +77,9 @@ function nuevaHome(conversacion, opciones) {
 function freno(comando, { conversacion = [], forjados = [], herramienta = 'Bash', env = {}, home = nuevaHome(conversacion, { forjados }), path: extraPath } = {}) {
   const e = { ...process.env, HOME: home, USERPROFILE: home, ...env };
   for (const k of Object.keys(e)) if (/^TYCON_/.test(k) && !(k in env)) delete e[k];
-  if (extraPath) e.PATH = `${extraPath}${path.delimiter}${e.PATH}`;
+  // en Windows la variable se llama `Path`: una `PATH` aparte al lado deja a spawn sin encontrar bash
+  const clavePath = Object.keys(e).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
+  if (extraPath) e[clavePath] = `${extraPath}${path.delimiter}${e[clavePath] || ''}`;
   const r = spawnSync('bash', [HOOK], {
     input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: herramienta, tool_input: { command: comando }, cwd: home }),
     env: e, encoding: 'utf8',

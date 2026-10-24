@@ -65,7 +65,10 @@ const avisarSinJq = (t) => { if (!REAL_JQ) t.diagnostic('no medido: no hay jq en
 /** Corre un freno con un comando por un camino de lectura, con tope de tiempo: { status, stderr, home, jqArgs }. */
 function correr(hook, { tool = 'Bash', command, bin, env = {}, cwd }) {
   const home = fs.mkdtempSync(path.join(LAB, 'home-'));
-  const e = { ...process.env, HOME: home, USERPROFILE: home, ...env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const e = { ...process.env, HOME: home, USERPROFILE: home, ...env };
+  // en Windows la variable se llama `Path`: una `PATH` aparte al lado deja a spawn sin encontrar bash
+  const clavePath = Object.keys(e).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
+  e[clavePath] = `${bin}${path.delimiter}${e[clavePath] || ''}`;
   for (const k of Object.keys(e)) if (/^TYCON_/.test(k) && !(k in env)) delete e[k];
   if (fs.existsSync(MARCA)) fs.rmSync(MARCA);
   const r = spawnSync('bash', [path.join(HOOKS, hook)], {
@@ -178,7 +181,7 @@ test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — CMD-C1: 
   }
 });
 
-test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — el freno no se relanza a sí mismo', () => {
+test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — el freno no se relanza a sí mismo', { skip: process.platform === 'win32' && 'el bash de mentira que cuenta es un guion sin .exe y Windows no lo lanza; el freno es el mismo guion, se mide en la Mac' }, () => {
   // un bash de mentira delante en el PATH anota cada vez que alguien corre el freno con bash: tiene que ser una sola
   const realBash = (spawnSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' }).stdout || '').trim();
   const binCuenta = fs.mkdtempSync(path.join(LAB, 'bin-cuenta-'));
