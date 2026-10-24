@@ -5,42 +5,49 @@
  * ARNÉS.
  *
  * Cada noche, sin modelo: baja el buzón (las conversaciones, sólo las de la ventana: download-runs.js --threads-since),
- * lee cada ejecución, le pasa las reglas de rules.js y deja una ficha por ejecución con fallas en
- * `inbox/runs-review/pending/` del repo de operaciones, más el estado de la pasada en `inbox/runs-review/last-run.json`,
- * que lee el resumen diario. El id de cada ficha es el de la pestaña Corridas (`leerRegistro` de runs.js: misma máquina
- * después de unir carpetas viejas); una sesión que corrió dos stories tiene dos fichas con el mismo id y distinto `base`.
+ * lee cada ejecución, le pasa las reglas de rules.js y deja una ficha POR CAUSA (regla y categoría) en
+ * `inbox/runs-review/`, con la ficha común del ciclo de la noche (scripts/nightly/findings/cycle.js): adentro, la lista
+ * de las ejecuciones que la traen. El estado de la pasada va en `inbox/runs-review/last-run.json`, que lee el resumen
+ * diario. El id de cada ejecución es el de la pestaña Corridas (`leerRegistro` de runs.js: misma máquina después de
+ * unir carpetas viejas); una sesión que corrió dos stories da dos ejecuciones con el mismo id y distinto `base`.
  *
- * 🔴 NINGÚN TEXTO LIBRE SALE. La ficha lleva sólo ids, fechas, números, el enlace y valores de las listas cerradas de
- *    rules.js: ni comandos, ni salidas, ni rutas del disco del dev, ni el motivo escrito en bypass.log, ni el texto de
- *    un error de la bajada.
- * 🔴 «NO PUDE» NO ES «LIMPIO». Sin conversación, la ficha dice `sin_hilo`; sin el registro de escapes,
- *    `escapes_registro: no_medido`; con la bajada fallada no se toca ninguna ficha; y un volcado, una ficha o una línea
- *    que no se pudo leer se cuentan en `ilegibles` y dejan la pasada en `completo: false`.
+ * 🔴 NINGÚN TEXTO LIBRE SALE. La ficha lleva sólo ids, fechas, números y valores de las listas cerradas de rules.js: ni
+ *    comandos, ni salidas, ni rutas del disco del dev, ni el motivo escrito en bypass.log, ni el texto de un error de la
+ *    bajada. El enlace de cada ejecución no se guarda: se arma al leer (`enlaceDeCaso`), con el sitio o relativo.
+ * 🔴 «NO PUDE» NO ES «LIMPIO». Sin conversación, la pasada lo cuenta en `sin_hilo`; con la bajada fallada no se toca
+ *    ninguna ficha; y un volcado, una ficha o una línea que no se pudo leer se cuentan en `ilegibles` y dejan la pasada
+ *    en `completo: false`.
  *
- * Ciclo de una ficha: nace en `pending/`; la persona la mueve a `promoted/` (terminó en trabajo) o `archived/`. Una que
- * vuelve con una regla nueva se mueve de nuevo a `pending/` con `reaparecido`; una cuya ejecución hoy se revisó entera y
- * ya no da reglas pasa sola a `archived/` con `resuelta_sola`. Cada archivo se escribe a un temporal y se renombra.
+ * Ciclo de una ficha: nace en `pending/`; la noche que vuelve a ver la causa la actualiza donde esté (una aparición más
+ * y las ejecuciones nuevas). Una en `archived/` no se toca: resolver o reabrir una causa todavía no lo hace esta pasada.
+ * Cada archivo se escribe a un temporal y se renombra.
+ *
+ * Las fichas por ejecución de antes (sin `fuente:`, con `reglas`) que siguen en `pending/` se migran una vez, al
+ * empezar la pasada: se agrupan por causa, se escribe la ficha por causa y recién después cada vieja pasa a `archived/`
+ * con `veredicto: "migrada"`. Las ya decididas (`promoted/`, `archived/`) no se tocan.
  *
  * Uso: node scripts/nightly/runs-review/runs-review.js run --mailbox <dir> --operations <clon de operaciones> --today <AAAA-MM-DD>
  *        [--days 7] [--no-download]
+ *      node scripts/nightly/runs-review/runs-review.js migrate --operations <clon de operaciones> --today <AAAA-MM-DD> [--dry-run]
  * Salida: 0 pasada entera · 1 parcial o sin poder bajar · 2 uso.
  */
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-const crypto = require('crypto');
 const RULES = require('./rules.js');
 const RUNS = require('../dashboard/runs.js');
 const OPS = require('../../lib/operations-config.js');
+const CYCLE = require('../findings/cycle.js');
+const SOURCES = require('../findings/sources.js');
+const NOMBRES = require('../findings/cause-names.js');
 
 const CARPETAS = ['pending', 'promoted', 'archived'];
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
-const ESTADOS = ['completa', 'deuda', 'abortada', 'abandonada'];
-const VIAS = ['persona', 'reenvio', 'subida'];
 // Un campo que viene del volcado entra a la ficha sólo con forma de id o de fecha; si no, null.
 const FORMA_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
-const FORMA_HORA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 const comoId = (v) => (typeof v === 'string' && FORMA_ID.test(v) ? v : null);
+// La clave de una causa: la que acepta la ficha común (sin `|`, que es el separador de causas-vistas.json)
+const FORMA_CAUSA = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,119}$/;
 
 /** El día de la ejecución por su nombre (las dos formas que sube upload-runs.js); null si no trae una fecha legible. */
 function diaDelNombre(base) {
@@ -51,14 +58,14 @@ function diaDelNombre(base) {
 }
 const menosDias = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) - n * 86400000).toISOString().slice(0, 10);
 
-/** Escribe entero o no escribe: a un temporal al lado y después el renombre. */
+/** Escribe entero o no escribe: a un temporal al lado y después el renombre (si el renombre falla, el temporal se borra). */
 function escribirEntero(p, contenido) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, contenido, 'utf8');
-  fs.renameSync(tmp, p);
+  try { fs.renameSync(tmp, p); } catch (e) { try { fs.unlinkSync(tmp); } catch { /* ya no está */ } throw e; }
 }
-/** La ficha: un campo por renglón, cada valor en JSON (YAML válido, y se lee sin librería). */
+/** La ficha por ejecución de antes: un campo por renglón, cada valor en JSON. Se sigue escribiendo al migrarla. */
 function escribirFicha(p, f) {
   const orden = ['id', 'fecha', 'maquina', 'story', 'base', 'archivada', 'cierre', 'reglas', 'sin_hilo', 'escapes_registro', 'enlace', 'enlace_sin_sitio', 'veredicto', 'vista_por_ultima_vez', 'reaparecido', 'resuelta_sola'];
   const y = ['# Ficha de la revisión nocturna de las ejecuciones. La decide quien mantiene el arnés:',
@@ -66,7 +73,11 @@ function escribirFicha(p, f) {
     ...orden.filter((k) => f[k] !== undefined).map((k) => `${k}: ${JSON.stringify(f[k])}`), ''];
   escribirEntero(p, y.join('\n'));
 }
-/** La ficha leída; `null` si no tiene forma de ficha (sin `id` legible). */
+/**
+ * Una ficha leída campo por campo (la vieja o la común); `reglas` siempre es una lista. Si la ficha trae `reglas:` y no
+ * es una lista de objetos (un JSON cortado, una edición a mano), `reglasRotas` (no enumerable) lo dice: esa ficha no se
+ * puede migrar sin perder sus causas.
+ */
 function leerFicha(p) {
   const out = {};
   for (const l of fs.readFileSync(p, 'utf8').split('\n')) {
@@ -74,29 +85,131 @@ function leerFicha(p) {
     if (!m) continue;
     try { out[m[1]] = JSON.parse(m[2]); } catch { out[m[1]] = null; }
   }
+  const rotas = Object.prototype.hasOwnProperty.call(out, 'reglas') && !(Array.isArray(out.reglas) && out.reglas.every((r) => r && typeof r === 'object'));
   if (!Array.isArray(out.reglas)) out.reglas = [];
   out.reglas = out.reglas.filter((r) => r && typeof r === 'object');
+  Object.defineProperty(out, 'reglasRotas', { value: rotas, enumerable: false });
   return out;
 }
-/** La clave de una ejecución: el id de la pestaña y el nombre de su volcado. */
-const clave = (id, base) => `${id}|${base}`;
-/** Las fichas que ya hay, por clave, y cuántas no se pudieron leer. */
+
+/** La causa de una regla (`{ regla, categoria }`): su código, o `<regla>:<categoría>`. */
+const causaDe = (x) => (x.categoria === null || x.categoria === undefined ? String(x.regla) : `${x.regla}:${x.categoria}`);
+/** El enlace de una ejecución de una ficha: con la dirección del sitio, o relativo sin ella. */
+const enlaceDeCaso = (c, urlSitio) => `${urlSitio ? String(urlSitio).replace(/\/+$/, '') : ''}/corridas?abrir=${c.ejecucion}`;
+/** Una ejecución como caso de la ficha: sólo campos con forma, así su huella es la misma cada noche. */
+const casoDe = ({ id, base, dia, maquina, story }) => ({ ejecucion: comoId(id), base: comoId(base), dia: DIA.test(String(dia || '')) ? dia : null,
+  maquina: comoId(maquina), story: comoId(story) });
+/** ¿Ninguna carpeta tiene ya un archivo con ese nombre? Uno que está y no se pudo leer no se pisa con una ficha nueva. */
+const libre = (raiz, nombre) => CARPETAS.every((c) => !fs.existsSync(path.join(raiz, c, nombre)));
+
+/**
+ * Las fichas que ya hay: las por causa, por causa; las viejas (por ejecución), aparte; y cuántas no se pudieron leer.
+ * Una vieja que se lee no es ilegible: la lee el lector viejo y alimenta lo «conocido». Una vieja con las reglas rotas sí.
+ */
 function fichasPrevias(raiz) {
-  const porClave = new Map();
+  const porCausa = new Map();
+  const viejas = [];
   let ilegibles = 0;
   for (const c of CARPETAS) {
     const dir = path.join(raiz, c);
     let nombres = [];
-    try { nombres = fs.readdirSync(dir).filter((f) => f.endsWith('.yaml')); } catch (e) { if (e.code !== 'ENOENT') ilegibles += 1; continue; }
+    try { nombres = fs.readdirSync(dir).filter((f) => f.endsWith('.yaml')).sort(); } catch (e) { if (e.code !== 'ENOENT') ilegibles += 1; continue; }
     for (const f of nombres) {
       const ruta = path.join(dir, f);
-      let datos = null;
-      try { datos = leerFicha(ruta); } catch { datos = null; }
-      if (!datos || typeof datos.id !== 'string' || !datos.id) { ilegibles += 1; continue; }
-      porClave.set(clave(datos.id, datos.base), { carpeta: c, ruta, datos });
+      let txt;
+      try { txt = fs.readFileSync(ruta, 'utf8'); } catch { ilegibles += 1; continue; }
+      if (SOURCES.esVieja(txt)) {
+        let datos = null;
+        try { datos = leerFicha(ruta); } catch { datos = null; }
+        if (!datos || typeof datos.id !== 'string' || !datos.id || datos.reglasRotas) { ilegibles += 1; continue; }
+        viejas.push({ carpeta: c, ruta, datos });
+        continue;
+      }
+      let ficha;
+      try { ficha = CYCLE.parsear(txt); } catch { ilegibles += 1; continue; }
+      if (ficha.fuente !== 'ejecuciones') { ilegibles += 1; continue; }
+      porCausa.set(ficha.causa, { carpeta: c, ruta, ficha });
     }
   }
-  return { porClave, ilegibles };
+  return { porCausa, viejas, ilegibles };
+}
+
+/**
+ * La migración de las fichas por ejecución que siguen en `pending/`: `{ viejas, causas, casos, ilegibles, movidas }`.
+ * Con `simular`, sólo cuenta. Sin simular, escribe primero cada ficha por causa (si ya está, le suma los casos que no
+ * tenía) y recién después mueve cada vieja a `archived/` con `veredicto: "migrada"`; una migración cortada sigue la
+ * noche siguiente sin duplicar (los casos se juntan por su huella). Una vieja que no se lee (o con las reglas rotas)
+ * queda quieta. Una ficha por causa que está en `archived/` no se toca: sus casos de la vieja quedan en la migrada.
+ */
+function migrar({ ops: opsDir, today, simular = false }) {
+  const raiz = path.join(opsDir, 'inbox', 'runs-review');
+  const out = { viejas: 0, causas: 0, casos: 0, ilegibles: 0, movidas: 0 };
+  const dir = path.join(raiz, 'pending');
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir).filter((f) => f.endsWith('.yaml')).sort(); } catch (e) { if (e.code !== 'ENOENT') out.ilegibles += 1; return out; }
+  const viejas = [];
+  const grupos = new Map();
+  for (const n of nombres) {
+    const ruta = path.join(dir, n);
+    let txt;
+    try { txt = fs.readFileSync(ruta, 'utf8'); } catch { out.ilegibles += 1; continue; }
+    if (!SOURCES.esVieja(txt)) continue;
+    let d = null;
+    try { d = leerFicha(ruta); } catch { d = null; }
+    if (!d || !comoId(d.id) || d.reglasRotas) { out.ilegibles += 1; continue; }
+    viejas.push({ ruta, datos: d });
+    // el día del caso, armado como lo arma la pasada: del nombre del volcado, o de la hora de archivado
+    const archivada = typeof d.archivada === 'string' && DIA.test(d.archivada.slice(0, 10)) ? d.archivada.slice(0, 10) : null;
+    const caso = casoDe({ id: d.id, base: d.base, dia: diaDelNombre(String(d.base || '')) || archivada || d.fecha, maquina: d.maquina, story: d.story });
+    const dias = [d.fecha, d.vista_por_ultima_vez].filter((x) => DIA.test(String(x || '')));
+    for (const x of d.reglas) {
+      if (typeof x.regla !== 'string') continue;
+      const k = causaDe(x);
+      if (!FORMA_CAUSA.test(k)) continue;
+      const g = grupos.get(k) || { regla: x.regla, categoria: x.categoria === undefined ? null : x.categoria, casos: [], dias: new Set(), primera: null, ultima: null };
+      g.casos.push(caso);
+      for (const f of dias) g.dias.add(f);
+      if (DIA.test(String(d.fecha || '')) && (!g.primera || d.fecha < g.primera)) g.primera = d.fecha;
+      const ultima = DIA.test(String(d.vista_por_ultima_vez || '')) ? d.vista_por_ultima_vez : d.fecha;
+      if (DIA.test(String(ultima || '')) && (!g.ultima || ultima > g.ultima)) g.ultima = ultima;
+      grupos.set(k, g);
+    }
+  }
+  out.viejas = viejas.length;
+  out.causas = grupos.size;
+  out.casos = [...grupos.values()].reduce((s, g) => s + g.casos.length, 0);
+  if (simular) return out;
+  const previas = fichasPrevias(raiz).porCausa;
+  for (const [k, g] of grupos) {
+    const primera = g.primera || today;
+    const ultima = g.ultima && g.ultima >= primera ? g.ultima : primera;
+    const prev = previas.get(k);
+    if (prev && prev.carpeta === 'archived') continue;
+    let f;
+    let ruta;
+    if (prev) {
+      f = CYCLE.conCasos({ ...prev.ficha }, g.casos);
+      if (primera < f.primera_vez) f.primera_vez = primera;
+      if (ultima > f.ultima_vez) f.ultima_vez = ultima;
+      f.apariciones = Math.max(f.apariciones, g.dias.size);
+      ruta = prev.ruta;
+    } else {
+      f = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: k, nombre: NOMBRES.nombreDe('ejecuciones', g), hoy: primera, casos: g.casos });
+      f.ultima_vez = ultima;
+      f.apariciones = Math.max(1, g.dias.size);
+      // una ficha de esa causa que está y no se leyó no se pisa: la vieja espera en pending/ a la noche que se lea
+      if (!libre(raiz, `${f.id}.yaml`)) { out.ilegibles += 1; for (const v of viejas) v.esperar = v.esperar || v.datos.reglas.some((x) => causaDe(x) === k); continue; }
+      ruta = path.join(raiz, 'pending', `${f.id}.yaml`);
+    }
+    escribirEntero(ruta, CYCLE.serializar(f));
+  }
+  for (const v of viejas) {
+    if (v.esperar) continue;
+    escribirFicha(path.join(raiz, 'archived', path.basename(v.ruta)), { ...v.datos, veredicto: 'migrada' });
+    fs.unlinkSync(v.ruta);
+    out.movidas += 1;
+  }
+  return out;
 }
 
 /**
@@ -214,6 +327,26 @@ async function run(opts) {
     for (const k of causas.keys()) if (!(k in pares)) pares[k] = today;
     escribirEntero(path.join(raiz, 'causas-vistas.json'), `${JSON.stringify({ esquema: 1, pares }, null, 2)}\n`);
   };
+  // la ficha de cada causa vista: una aparición más donde esté, o una nueva en pending/. Una en archived/ no se toca
+  // (resolver o reabrir una causa todavía no lo hace esta pasada).
+  let previas = { porCausa: new Map(), viejas: [], ilegibles: 0 };
+  // cada causa se escribe una sola vez por pasada: si la pasada se corta después, el camino del error no la repite
+  const escritas = new Set();
+  const escribirCausas = () => {
+    for (const c of causas.values()) {
+      const clave = causaDe(c);
+      if (!FORMA_CAUSA.test(clave) || escritas.has(clave)) continue;
+      const prev = previas.porCausa.get(clave);
+      if (prev && prev.carpeta === 'archived') { escritas.add(clave); continue; }
+      if (prev) { escribirEntero(prev.ruta, CYCLE.serializar(CYCLE.registrarAparicion(prev.ficha, today, c.casos))); escritas.add(clave); continue; }
+      const f = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: clave, nombre: NOMBRES.nombreDe('ejecuciones', c), hoy: today, casos: c.casos });
+      // una ficha de esa causa que está y no se pudo leer (ya contada en ilegibles) no se pisa con una nueva
+      if (!libre(raiz, `${f.id}.yaml`)) { escritas.add(clave); continue; }
+      escribirEntero(path.join(raiz, 'pending', `${f.id}.yaml`), CYCLE.serializar(f));
+      escritas.add(clave);
+      estado.nuevas += 1;
+    }
+  };
 
   if (!opts.noDownload) {
     const bajar = opts.bajar || ((o) => require('../../metrics/download-runs.js').bajar(o));
@@ -233,16 +366,16 @@ async function run(opts) {
   }
 
   try {
-    let urlSitio = null;
     const opsJson = path.join(opsDir, 'operations.json');
     try {
       const o = OPS.load(opsJson);
-      if (o.ok && o.data.site && typeof o.data.site.url === 'string') urlSitio = o.data.site.url.replace(/\/+$/, '');
-      else if (!o.ok && fs.existsSync(opsJson)) estado.motivo = 'operations.json no se pudo leer: los enlaces van sin el sitio';
+      if (!o.ok && fs.existsSync(opsJson)) estado.motivo = 'operations.json no se pudo leer: los enlaces van sin el sitio';
     } catch { estado.motivo = 'operations.json no se pudo leer: los enlaces van sin el sitio'; }
 
     const espejo = volcadosDelEspejo(mailbox);
     if (espejo === null) { estado.completo = false; estado.motivo = 'la carpeta del buzón no se pudo leer'; return cortadaAntes(); }
+    // las fichas por ejecución de antes que quedan en pending/ pasan a su causa antes de revisar
+    migrar({ ops: opsDir, today });
     const lista = espejo.lista;
     estado.ilegibles += espejo.ilegibles;
     // id y máquina de cada sesión, como los arma la pestaña Corridas
@@ -252,16 +385,19 @@ async function run(opts) {
       const sid = c._volcado ? (() => { try { return JSON.parse(fs.readFileSync(c._volcado, 'utf8')).marker.sessionId; } catch { return null; } })() : null;
       if (sid) porSesion.set(sid, { id: c.id, maquina: c.maquina });
     }
-    const previas = fichasPrevias(raiz);
+    previas = fichasPrevias(raiz);
     estado.ilegibles += previas.ilegibles;
-    // las causas de las fichas de antes de hoy, en cualquier carpeta (lo decidido también cuenta), con su fecha más vieja
-    for (const p of previas.porClave.values()) {
-      if (!DIA.test(String(p.datos.fecha || '')) || p.datos.fecha >= today || !Array.isArray(p.datos.reglas)) continue;
-      for (const x of p.datos.reglas) {
-        if (!x || typeof x.regla !== 'string') continue;
-        const k = parDe(x);
-        if (!enFichasViejas.has(k) || p.datos.fecha < enFichasViejas.get(k)) enFichasViejas.set(k, p.datos.fecha);
-      }
+    // las causas de antes de hoy, con su fecha más vieja: las de las fichas viejas (en cualquier carpeta: lo decidido
+    // también cuenta) y la primera vez de cada ficha por causa
+    const conocer = (k, fecha) => { if (!enFichasViejas.has(k) || fecha < enFichasViejas.get(k)) enFichasViejas.set(k, fecha); };
+    for (const p of previas.viejas) {
+      if (!DIA.test(String(p.datos.fecha || '')) || p.datos.fecha >= today) continue;
+      for (const x of p.datos.reglas) if (x && typeof x.regla === 'string') conocer(parDe(x), p.datos.fecha);
+    }
+    for (const p of previas.porCausa.values()) {
+      if (p.ficha.primera_vez >= today) continue;
+      const i = p.ficha.causa.indexOf(':');
+      conocer(parDe(i < 0 ? { regla: p.ficha.causa, categoria: null } : { regla: p.ficha.causa.slice(0, i), categoria: p.ficha.causa.slice(i + 1) }), p.ficha.primera_vez);
     }
     const cacheRegistros = new Map();
     // una ejecución se mira una vez aunque esté en dos carpetas de la máquina (la vieja y la de código)
@@ -274,55 +410,26 @@ async function run(opts) {
       const dia = diaDelNombre(base) || String(volcado.archivedAt || volcado.marker.startedAt || '').slice(0, 10);
       if (!DIA.test(dia) || dia < desde) continue;
       const sesion = porSesion.get(volcado.marker.sessionId) || { id: RUNS.idEstable(carpeta, volcado.marker.sessionId), maquina: carpeta };
-      if (miradas.has(clave(sesion.id, comoId(base)))) continue;
-      miradas.add(clave(sesion.id, comoId(base)));
+      const unaVez = `${sesion.id}|${comoId(base)}`;
+      if (miradas.has(unaVez)) continue;
+      miradas.add(unaVez);
       estado.miradas += 1;
       const h = leerJsonl(ruta.replace(/\.json$/, '.hilo.jsonl.gz'));
       if (h) estado.ilegibles += h.roto ? 1 : h.rotas;
       const r = RULES.revisar({ volcado, lineasHilo: h && !h.roto ? h.lineas : null, registros: leerRegistros(path.dirname(ruta), cacheRegistros, estado) });
       if (r.sin_hilo) estado.sin_hilo += 1; else if (r.hilo_sin_hooks) estado.hilos_sin_hooks += 1;
-      const prev = previas.porClave.get(clave(sesion.id, comoId(base)));
-      if (!r.reglas.length) {
-        // se archiva sola sólo si hoy se pudo revisar entera: con conversación y con el registro de escapes medido
-        if (prev && prev.carpeta === 'pending' && !r.sin_hilo && r.escapes_registro === 'medido') {
-          escribirFicha(path.join(raiz, 'archived', path.basename(prev.ruta)), { ...prev.datos, resuelta_sola: today });
-          fs.unlinkSync(prev.ruta);
-        }
-        continue;
-      }
+      if (!r.reglas.length) continue;
       estado.con_fallas += 1;
+      const caso = casoDe({ id: sesion.id, base, dia, maquina: sesion.maquina, story: volcado.marker.storyId });
       for (const x of reglasParaFicha(r.reglas)) {
         const k = parDe(x);
-        if (!causas.has(k)) causas.set(k, { regla: x.regla, categoria: x.categoria, ejecuciones: 0, vista: null });
+        if (!causas.has(k)) causas.set(k, { regla: x.regla, categoria: x.categoria, ejecuciones: 0, vista: null, casos: [] });
         const c = causas.get(k);
-        if (c.vista !== sesion.id + base) { c.vista = sesion.id + base; c.ejecuciones += 1; }
-      }
-      const m = volcado.marker;
-      const cierre = m.cierre && typeof m.cierre === 'object' ? { estado: ESTADOS.includes(m.cierre.estado) ? m.cierre.estado : 'desconocido', via: VIAS.includes(m.cierre.via) ? m.cierre.via : null } : null;
-      const enlace = urlSitio ? `${urlSitio}/corridas?abrir=${sesion.id}` : `/corridas?abrir=${sesion.id}`;
-      const nueva = {
-        id: sesion.id, fecha: prev ? prev.datos.fecha : today, maquina: comoId(sesion.maquina), story: comoId(m.storyId), base: comoId(base),
-        archivada: typeof volcado.archivedAt === 'string' && FORMA_HORA.test(volcado.archivedAt) ? volcado.archivedAt : null, cierre, reglas: reglasParaFicha(r.reglas),
-        sin_hilo: r.sin_hilo, escapes_registro: r.escapes_registro, enlace, ...(urlSitio ? {} : { enlace_sin_sitio: true }),
-        veredicto: prev && typeof prev.datos.veredicto === 'string' ? prev.datos.veredicto : 'pendiente', vista_por_ultima_vez: today,
-      };
-      if (!prev) {
-        estado.nuevas += 1;
-        const marca = crypto.createHash('sha1').update(base).digest('hex').slice(0, 6);
-        escribirFicha(path.join(raiz, 'pending', `${today}-${nueva.maquina || 'sin-maquina'}-${sesion.id}-${marca}.yaml`), nueva);
-      } else if (prev.carpeta === 'pending') {
-        escribirFicha(prev.ruta, { ...nueva, ...(prev.datos.reaparecido ? { reaparecido: prev.datos.reaparecido } : {}) });
-      } else {
-        // reaparece con una causa que no tenía: una regla nueva, o una categoría nueva de una regla que ya tenía
-        const antes = new Set(prev.datos.reglas.map(parDe));
-        if (nueva.reglas.some((x) => !antes.has(parDe(x)))) {
-          // se mueve: primero la nueva en pending/, después se borra la de su carpeta (nunca dos con la misma clave)
-          escribirFicha(path.join(raiz, 'pending', path.basename(prev.ruta)), { ...nueva, veredicto: 'pendiente', reaparecido: today });
-          fs.unlinkSync(prev.ruta);
-        }
+        if (c.vista !== unaVez) { c.vista = unaVez; c.ejecuciones += 1; c.casos.push(caso); }
       }
     }
     estado.causas = armarCausas();
+    escribirCausas();
     guardarVistas();
     if (estado.ilegibles) { estado.completo = false; if (!estado.motivo) estado.motivo = `${estado.ilegibles} archivo(s) o línea(s) ilegible(s)`; }
     return cerrar(estado.completo ? 0 : 1);
@@ -334,20 +441,26 @@ async function run(opts) {
     if (!estado.miradas) return cortadaAntes();
     // las causas de lo que alcanzó a revisar: la mañana dice «parcial» con ellas, y lo nuevo no se pierde
     estado.causas = armarCausas();
-    try { guardarVistas(); } catch { estado.ilegibles += 1; }
+    try { escribirCausas(); guardarVistas(); } catch { estado.ilegibles += 1; }
     return cerrar(1);
   }
 }
 
 function main(argv) {
   const val = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
-  if (argv[0] !== 'run') { process.stderr.write('uso: runs-review.js run --mailbox <dir> --operations <dir> --today <AAAA-MM-DD> [--days 7] [--no-download]\n'); return Promise.resolve(2); }
+  if (argv[0] === 'migrate') {
+    if (!val('--operations') || !DIA.test(String(val('--today') || ''))) { process.stderr.write('uso: runs-review.js migrate --operations <dir> --today <AAAA-MM-DD> [--dry-run]\n'); return Promise.resolve(2); }
+    const r = migrar({ ops: val('--operations'), today: val('--today'), simular: argv.includes('--dry-run') });
+    process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
+    return Promise.resolve(r.ilegibles ? 1 : 0);
+  }
+  if (argv[0] !== 'run') { process.stderr.write('uso: runs-review.js run --mailbox <dir> --operations <dir> --today <AAAA-MM-DD> [--days 7] [--no-download]\n       runs-review.js migrate --operations <dir> --today <AAAA-MM-DD> [--dry-run]\n'); return Promise.resolve(2); }
   const days = val('--days') === undefined ? undefined : Number(val('--days'));
   return run({ mailbox: val('--mailbox'), ops: val('--operations'), today: val('--today'), days, noDownload: argv.includes('--no-download') })
     .then((r) => { process.stdout.write(`${JSON.stringify(r.estado || { motivo: r.motivo }, null, 2)}\n`); return r.codigo; });
 }
 
-module.exports = { run, leerFicha, diaDelNombre, MOTIVOS };
+module.exports = { run, migrar, leerFicha, diaDelNombre, causaDe, enlaceDeCaso, MOTIVOS };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => { process.exitCode = c; }, (e) => { process.stderr.write(`runs-review: ${e && e.stack ? e.stack : e}\n`); process.exitCode = 1; });

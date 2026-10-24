@@ -309,9 +309,10 @@ automático o sólo aviso: la guía del sitio («Cómo se mantiene al día»).
 Si tu organización junta en un buzón las ejecuciones de las máquinas del equipo, `runs-review.yml` las revisa cada
 noche a las 03:00 UTC y dice cuáles tuvieron fallas del arnés: un hook que falló, un Node viejo, un paso apagado, una
 bandera puesta sin su acción, un cierre con pasos pendientes, un control salteado. No usa modelo y no copia texto de las
-conversaciones: deja una ficha por ejecución en `inbox/runs-review/pending/` y el estado de la pasada en
-`inbox/runs-review/last-run.json`. La ficha la decide quien mantiene el arnés, moviéndola a `promoted/` (terminó en
-trabajo) o a `archived/` (no).
+conversaciones: deja una ficha por causa en `inbox/runs-review/pending/`, con las ejecuciones que la traen adentro, y el
+estado de la pasada en `inbox/runs-review/last-run.json`. La ficha es la del ciclo común de lo que encuentra la noche
+(`scripts/nightly/findings/`): la misma forma que usan dependencias y el vigilante. Las fichas por ejecución que dejaba
+antes se pasan solas a su causa la primera noche (`runs-review.js migrate --dry-run` cuenta antes qué va a pasar).
 
 Para prenderla:
 

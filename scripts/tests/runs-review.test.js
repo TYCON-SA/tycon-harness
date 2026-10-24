@@ -84,6 +84,20 @@ function ops({ url = 'https://sitio.ejemplo.test' } = {}) {
 const correr = (mb, op, extra = {}) => RR.run({ mailbox: mb, ops: op, today: HOY, noDownload: true, ...extra });
 const fichas = (op, carpeta = 'pending') => { const d = path.join(op, 'inbox', 'runs-review', carpeta); try { return fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => ({ f, ...RR.leerFicha(path.join(d, f)) })); } catch { return []; } };
 const lastRun = (op) => JSON.parse(fs.readFileSync(path.join(op, 'inbox', 'runs-review', 'last-run.json'), 'utf8'));
+const CYCLE = require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'cycle.js'));
+/** Las ejecuciones de las fichas por causa: una por (id, base), con las causas que la traen. */
+const ejecucionesDe = (op, carpeta = 'pending') => {
+  const m = new Map();
+  for (const f of fichas(op, carpeta)) {
+    for (const c of f.casos || []) {
+      const k = `${c.ejecucion}|${c.base}`;
+      const e = m.get(k) || { id: c.ejecucion, base: c.base, causas: [] };
+      e.causas.push(f.causa);
+      m.set(k, e);
+    }
+  }
+  return [...m.values()];
+};
 const regla = (r, codigo, categoria) => r.reglas.filter((x) => x.regla === codigo && (categoria === undefined || x.categoria === categoria));
 const revisar = (lineas, extra = {}) => RULES.revisar({ volcado: volcado({ sid: 's' }), lineasHilo: lineas, registros: null, maquina: 'acme-0000aaaa', ...extra });
 const SID = (k) => `aaaaaaaa-0000-4000-8000-00000000000${k}`;
@@ -114,14 +128,14 @@ test('T1 VentanaYIdComoElSitio @story-4.10 @ac-1', async () => {
   assert.strictEqual(r.codigo, 0);
   const l = lastRun(op);
   assert.strictEqual(l.miradas, 6, 'la de hoy, la de hace 2 días, las dos ejecuciones de la sesión 4, la 1.4 por su nombre y la sin fecha por archivedAt');
-  const ids = fichas(op).map((f) => f.id).sort();
+  const ids = [...new Set(ejecucionesDe(op).map((e) => e.id))].sort();
   const reg = RUNS.leerRegistro(null, RUNS.nombresDePasos().nombres, { buzon: mb, soloBuzon: true });
   const delSitio = (sid) => reg.corridas.find((c) => c.id === RUNS.idEstable(c.maquina, sid));
   assert.deepStrictEqual(ids, [SID(1), SID(2), SID(4), SID(5), SID(7)].map((s) => delSitio(s).id).sort(), 'mismo id que la pestaña; la 1.5 queda fuera por su nombre');
 });
 
-// T2 FichaEnPendingSeActualiza @story-4.10 @ac-2
-// 🔴 Falla con: escribir una segunda ficha para el mismo id, o no tocar `vista_por_ultima_vez`.
+// T2 FichaEnPendingSeActualiza @story-4.10 @ac-2 @story-4.11 @ac-8 (la ficha es de la causa)
+// 🔴 Falla con: escribir una segunda ficha para la misma causa, repetir la ejecución en sus casos, o no sumar la noche.
 test('T2 FichaEnPendingSeActualiza @story-4.10 @ac-2', async () => {
   const sid = SID(1);
   const base = `1.1-${HOY}T1519`;
@@ -131,9 +145,9 @@ test('T2 FichaEnPendingSeActualiza @story-4.10 @ac-2', async () => {
   fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `${base}.hilo.jsonl.gz`), zlib.gzipSync(cmd(`${MARKER} set-autonomous false`).map((l) => JSON.stringify(l)).join('\n')));
   await correr(mb, op);
   const f = fichas(op);
-  assert.strictEqual(f.length, 1);
-  assert.deepStrictEqual(f[0].reglas.map((x) => x.regla).sort(), ['RR-APAGO', 'RR-CIERRE']);
-  assert.strictEqual(f[0].vista_por_ultima_vez, HOY);
+  assert.deepStrictEqual(f.map((x) => x.causa).sort(), ['RR-APAGO', 'RR-CIERRE:derivada']);
+  const cierre = f.find((x) => x.causa === 'RR-CIERRE:derivada');
+  assert.deepStrictEqual([cierre.casos.length, cierre.apariciones, cierre.ultima_vez], [1, 2, HOY]);
 });
 
 // T3 FichaArchivadaCalla @story-4.10 @ac-2
@@ -152,8 +166,8 @@ test('T3 FichaArchivadaCalla @story-4.10 @ac-2', async () => {
   assert.strictEqual(fs.readFileSync(path.join(arch, f.f), 'utf8'), antes);
 });
 
-// T4 FichaArchivadaReapareceConReglaNueva @story-4.10 @ac-2
-// 🔴 Falla con: copiar la ficha (quedan dos con el mismo id) o buscar la previa por el nombre del archivo (otra fecha).
+// T4 FichaArchivadaReapareceConReglaNueva @story-4.10 @ac-2 @story-4.11 @ac-8 (la regla nueva es otra causa)
+// 🔴 Falla con: no abrir la ficha de la causa nueva, o tocar la decidida (reabrir una causa todavía no lo hace la pasada).
 test('T4 FichaArchivadaReapareceConReglaNueva @story-4.10 @ac-2', async () => {
   const base = `1.1-${HOY}T1519`;
   const mb = buzon({ 'acme-0000aaaa': { corridas: [{ base, volcado: volcado({ sid: SID(1), pendientes: [7] }), hilo: [] }] } });
@@ -164,11 +178,10 @@ test('T4 FichaArchivadaReapareceConReglaNueva @story-4.10 @ac-2', async () => {
   fs.mkdirSync(arch, { recursive: true });
   fs.renameSync(path.join(op, 'inbox', 'runs-review', 'pending', f.f), path.join(arch, f.f));
   fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `${base}.hilo.jsonl.gz`), zlib.gzipSync(cmd(`${MARKER} set-autonomous false`).map((l) => JSON.stringify(l)).join('\n')));
+  const antes = fs.readFileSync(path.join(arch, f.f), 'utf8');
   await correr(mb, op);
-  const p = fichas(op);
-  assert.strictEqual(p.length, 1);
-  assert.strictEqual(p[0].reaparecido, HOY);
-  assert.strictEqual(fichas(op, 'archived').length, 0, 'se movió, no se copió');
+  assert.deepStrictEqual(fichas(op).map((x) => x.causa), ['RR-APAGO'], 'la causa nueva nace en pending/');
+  assert.strictEqual(fs.readFileSync(path.join(arch, f.f), 'utf8'), antes, 'la decidida queda como está');
 });
 
 // T5 EjecucionLimpiaNoDejaFicha @story-4.10 @ac-2
@@ -326,19 +339,22 @@ test('T16 RrEscapeRegistroYNoMedido @story-4.10 @ac-10', () => {
 
 // ── La ficha y el estado de la pasada ───────────────────────────────────────────────────────────────────────────
 
-// T17 FichaSoloCamposDeLaLista @story-4.10 @ac-11
-// 🔴 Falla con: un campo de más (texto de la conversación por el costado) o el enlace sin el id.
+// T17 FichaSoloCamposDeLaLista @story-4.10 @ac-11 @story-4.11 @ac-8 (la ficha común, con las ejecuciones como casos)
+// 🔴 Falla con: un campo de más (texto de la conversación por el costado), un caso con algo fuera de su lista, o el
+//    enlace sin el id.
 test('T17 FichaSoloCamposDeLaLista @story-4.10 @ac-11', async () => {
   const mb = buzon({ 'acme-0000aaaa': { corridas: [{ base: `1.1-${HOY}T1519`, volcado: volcado({ sid: SID(1), pendientes: [7] }), hilo: cmd(`${MARKER} set-autonomous false`) }] } });
   const op = ops();
   await correr(mb, op);
-  const [f] = fichas(op);
-  const permitidas = ['id', 'fecha', 'maquina', 'story', 'base', 'archivada', 'cierre', 'reglas', 'sin_hilo', 'escapes_registro', 'enlace', 'veredicto', 'vista_por_ultima_vez', 'reaparecido', 'enlace_sin_sitio', 'resuelta_sola'];
-  for (const k of Object.keys(f)) if (k !== 'f') assert.ok(permitidas.includes(k), `campo fuera de la lista: ${k}`);
-  for (const k of ['id', 'fecha', 'maquina', 'story', 'base', 'archivada', 'cierre', 'reglas', 'sin_hilo', 'escapes_registro', 'enlace', 'veredicto', 'vista_por_ultima_vez']) assert.ok(k in f, `falta ${k}`);
-  for (const r of f.reglas) for (const k of Object.keys(r)) assert.ok(['regla', 'categoria', 'cuenta', 'con_frase', 'con_motivo', 'pendientes', 'rojos'].includes(k), `clave de regla fuera de la lista: ${k}`);
-  assert.strictEqual(f.enlace, `https://sitio.ejemplo.test/corridas?abrir=${f.id}`);
-  assert.strictEqual(f.veredicto, 'pendiente');
+  const f = fichas(op).find((x) => x.causa === 'RR-APAGO');
+  // `reglas` lo agrega el lector, vacío: la ficha común no lo trae
+  for (const k of Object.keys(f)) if (k !== 'f' && k !== 'reglas') assert.ok(CYCLE.CLAVES.includes(k), `campo fuera de la lista: ${k}`);
+  assert.deepStrictEqual(f.reglas, []);
+  const { f: _archivo, reglas: _reglas, ...ficha } = f;
+  assert.deepStrictEqual(CYCLE.problemasDeForma(ficha), []);
+  for (const c of f.casos) for (const k of Object.keys(c)) assert.ok(['ejecucion', 'base', 'dia', 'maquina', 'story'].includes(k), `clave de caso fuera de la lista: ${k}`);
+  assert.strictEqual(RR.enlaceDeCaso(f.casos[0], 'https://sitio.ejemplo.test'), `https://sitio.ejemplo.test/corridas?abrir=${f.casos[0].ejecucion}`);
+  assert.deepStrictEqual([f.fuente, f.veredicto], ['ejecuciones', 'pendiente']);
 });
 
 // T18 SinTextoLibre @story-4.10 @ac-12
@@ -423,11 +439,9 @@ test('T21 SinConversacionNoEsLimpio @story-4.10 @ac-19', async () => {
   const op = ops();
   await correr(mb, op);
   const f = fichas(op);
-  assert.strictEqual(f.length, 2);
-  for (const x of f) {
-    assert.strictEqual(x.sin_hilo, true);
-    assert.deepStrictEqual(x.reglas.map((r) => r.regla), ['RR-CIERRE'], 'sin conversación sólo corre la regla del volcado');
-  }
+  assert.strictEqual(f.length, 1, 'sin conversación sólo corre la regla del volcado: una causa');
+  assert.match(f[0].causa, /^RR-CIERRE/);
+  assert.strictEqual(f[0].casos.length, 2, 'las dos ejecuciones, aunque no tengan conversación');
   assert.strictEqual(lastRun(op).sin_hilo, 2);
 });
 
@@ -470,8 +484,9 @@ test('T24 SinSiteUrlEnlaceRelativo @story-4.10 @ac-23', async () => {
   const r = await correr(mb, op);
   assert.strictEqual(r.codigo, 0);
   const [f] = fichas(op);
-  assert.strictEqual(f.enlace, `/corridas?abrir=${f.id}`);
-  assert.strictEqual(f.enlace_sin_sitio, true);
+  // el enlace no se guarda en la ficha: se arma al leer, relativo sin el sitio
+  assert.strictEqual(RR.enlaceDeCaso(f.casos[0], null), `/corridas?abrir=${f.casos[0].ejecucion}`);
+  assert.doesNotMatch(fs.readFileSync(path.join(op, 'inbox', 'runs-review', 'pending', f.f), 'utf8'), /undefined/);
 });
 
 // T25 FixtureComoLaDelOrigen @story-4.10 @ac-6 @ac-7 @ac-8 @ac-9 @ac-10
@@ -485,15 +500,20 @@ test('T25 FixtureComoLaDelOrigen @story-4.10 @ac-6 @ac-7 @ac-8 @ac-9 @ac-10', as
   const mb = buzon({ 'acme-0000aaaa': { corridas: [{ base: `1.1-${HOY}T1519`, volcado: v, hilo }], registros: {} } });
   const op = ops();
   await correr(mb, op);
-  const [f] = fichas(op);
-  const vistas = f.reglas.map((x) => `${x.regla}/${x.categoria}:${x.cuenta}`).sort();
-  assert.deepStrictEqual(vistas, ['RR-APAGO/null:1', 'RR-BANDERA/adoMarkedActive:1', 'RR-BANDERA/workSignalStarted:1', 'RR-CIERRE/derivada:1', 'RR-NODE/node-viejo:1']);
-  assert.strictEqual(f.reglas.find((x) => x.regla === 'RR-APAGO').con_frase, null);
-  assert.strictEqual(f.escapes_registro, 'no_medido');
+  // una ficha por causa, cada una con la ejecución como caso
+  assert.deepStrictEqual(fichas(op).map((f) => `${f.causa}:${f.casos.length}`).sort(),
+    ['RR-APAGO:1', 'RR-BANDERA:adoMarkedActive:1', 'RR-BANDERA:workSignalStarted:1', 'RR-CIERRE:derivada:1', 'RR-NODE:node-viejo:1']);
+  // la cuenta de cada regla y el registro de escapes no viajan en la ficha por causa: se miran en lo que dan las reglas
+  const r = RULES.revisar({ volcado: v, lineasHilo: hilo, registros: { cobertura: null, bypass: null } });
+  assert.deepStrictEqual(r.reglas.map((x) => `${x.regla}/${x.categoria}:${x.cuenta}`).sort(),
+    ['RR-APAGO/null:1', 'RR-BANDERA/adoMarkedActive:1', 'RR-BANDERA/workSignalStarted:1', 'RR-CIERRE/derivada:1', 'RR-NODE/node-viejo:1']);
+  assert.strictEqual(r.reglas.find((x) => x.regla === 'RR-APAGO').con_frase, null);
+  assert.strictEqual(r.escapes_registro, 'no_medido');
 });
 
-// T35 FichaSinReglasHoySeArchivaSola @story-4.10 @ac-2
-// 🔴 Falla con: dejar en pendiente una ficha cuya ejecución ya no da ninguna regla.
+// T35 FichaSinReglasHoySeArchivaSola @story-4.10 @ac-2 @story-4.11 @ac-8 (la causa no se archiva por una ejecución)
+// 🔴 Falla con: archivar la ficha de una causa porque UNA de sus ejecuciones hoy ya no da la regla: resolver una causa
+//    son N noches medidas sin aparecer, y eso todavía no lo hace la pasada.
 test('T35 FichaSinReglasHoySeArchivaSola @story-4.10 @ac-2', async () => {
   const base = `1.1-${HOY}T1519`;
   // revisable entera: con conversación y con el registro de escapes medido (vacío)
@@ -503,9 +523,8 @@ test('T35 FichaSinReglasHoySeArchivaSola @story-4.10 @ac-2', async () => {
   assert.strictEqual(fichas(op).length, 1);
   fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `${base}.json`), JSON.stringify(volcado({ sid: SID(1) })));
   await correr(mb, op);
-  assert.strictEqual(fichas(op).length, 0);
-  const [a] = fichas(op, 'archived');
-  assert.strictEqual(a.resuelta_sola, HOY);
+  assert.strictEqual(fichas(op).length, 1, 'sigue en pending/');
+  assert.strictEqual(fichas(op, 'archived').length, 0);
 });
 
 // ── Lo que confirmó el pase adversarial y lo que pidieron los revisores ─────────────────────────────────────────
@@ -522,7 +541,7 @@ test('T36 DosEjecucionesDeUnaSesion @story-4.10 @ac-1 @ac-2', async () => {
   assert.strictEqual(lastRun(op).miradas, 2);
   const f = fichas(op);
   assert.strictEqual(f.length, 1);
-  assert.strictEqual(f[0].base, '1.1-2026-10-21T1000');
+  assert.deepStrictEqual(f[0].casos.map((c) => c.base), ['1.1-2026-10-21T1000']);
 });
 
 // T37 AdoYaActivoNoEsFalla @story-4.10 @ac-8
@@ -633,9 +652,10 @@ test('T44 EntradasRarasNoRompen @story-4.10 @ac-11 @ac-13 @ac-22', async () => {
   assert.strictEqual(r.codigo, 1);
   const l = lastRun(op);
   assert.ok(l.ilegibles >= 2, 'el volcado null y la ficha rota');
-  const buenas = fichas(op).filter((f) => f.id);
+  const buenas = fichas(op).filter((f) => f.fuente);
   assert.strictEqual(buenas.length, 1);
-  assert.strictEqual(buenas[0].archivada, null);
+  assert.doesNotMatch(JSON.stringify(buenas[0]), /ZZTEXTO/, 'la hora de archivado con texto libre no entra');
+  assert.ok(fs.existsSync(path.join(pend, 'rota.yaml')), 'la ilegible queda quieta');
   const r2 = await RR.run({ mailbox: mb, ops: op, today: HOY, bajar: async () => ({ codigo: 1, res: { completo: false, estado: 'sin_red', motivo: '/opt/ZZTEXTO-ruta/x: ECONNRESET' } }) });
   assert.strictEqual(r2.codigo, 1);
   assert.doesNotMatch(fs.readFileSync(path.join(op, 'inbox', 'runs-review', 'last-run.json'), 'utf8'), /ZZTEXTO/);
@@ -751,8 +771,10 @@ test('T49 UnaEjecucionEnDosCarpetas @story-4.10 @ac-1 @ac-13', async () => {
   const op = ops();
   await correr(mb, op);
   const a = lastRun(op);
-  assert.deepStrictEqual([a.miradas, a.con_fallas, a.nuevas], [2, 2, 2]);
-  assert.strictEqual(fichas(op).length, 2);
+  // `nuevas` son las fichas por causa que nacieron: una causa, dos ejecuciones
+  assert.deepStrictEqual([a.miradas, a.con_fallas, a.nuevas], [2, 2, 1]);
+  assert.strictEqual(fichas(op).length, 1);
+  assert.strictEqual(fichas(op)[0].casos.length, 2);
   assert.deepStrictEqual(a.causas.map((c) => `${c.regla} ${c.categoria} ${c.ejecuciones}`), ['RR-CIERRE derivada 2']);
 });
 
@@ -775,8 +797,8 @@ test('T50 SinCerrarSoloSuSesion @story-4.10 @ac-10', () => {
   assert.deepStrictEqual(una('2026-12-01T03:00:00Z'), ['ATDD_BYPASS'], 'igual a otra hora');
 });
 
-// T51 ReapareceConCategoriaNueva @story-4.10 @ac-2
-// 🔴 Falla con: comparar sólo el código de regla (una categoría nueva de la misma regla no reabre la ficha decidida).
+// T51 ReapareceConCategoriaNueva @story-4.10 @ac-2 @story-4.11 @ac-8 (la categoría nueva es otra causa)
+// 🔴 Falla con: comparar sólo el código de regla (una categoría nueva de la misma regla no abre su ficha).
 test('T51 ReapareceConCategoriaNueva @story-4.10 @ac-2', async () => {
   const base = `1.1-${HOY}T1519`;
   const mb = buzon({ 'acme-0000aaaa': { corridas: [{ base, volcado: volcado({ sid: SID(1) }), hilo: cmd(`${MARKER} set-flag adoMarkedActive true`) }] } });
@@ -789,10 +811,8 @@ test('T51 ReapareceConCategoriaNueva @story-4.10 @ac-2', async () => {
   fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `${base}.hilo.jsonl.gz`),
     zlib.gzipSync(cmd(`${MARKER} set-flag workSignalStarted true`).map((l) => JSON.stringify(l)).join('\n') + '\n'));
   await correr(mb, op);
-  const p = fichas(op);
-  assert.strictEqual(p.length, 1, 'volvió a pending/');
-  assert.strictEqual(p[0].reaparecido, HOY);
-  assert.strictEqual(fichas(op, 'archived').length, 0);
+  assert.deepStrictEqual(fichas(op).map((x) => x.causa), ['RR-BANDERA:workSignalStarted'], 'la categoría nueva abre su ficha');
+  assert.strictEqual(fichas(op, 'archived').length, 1, 'la decidida queda donde está');
 });
 
 // T48 CategoriasCerradas @story-4.10 @ac-12

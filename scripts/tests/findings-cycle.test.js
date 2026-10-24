@@ -432,3 +432,425 @@ test('NochesParaResolver_StatQueFallaNoEsSinArchivo', { skip: process.platform =
     assert.match(r.motivo, /no se pudo leer \(EACCES\)/);
   } finally { fs.chmodSync(cerrada, 0o700); }
 });
+
+// ── Las ejecuciones por causa, el vigilante como fuente, el resumen y los nombres ─────────────────────────────────
+
+const RR = require(path.join(RAIZ, 'scripts', 'nightly', 'runs-review', 'runs-review.js'));
+const VIG = require(path.join(RAIZ, 'scripts', 'nightly', 'watcher', 'vigilante.js'));
+const DS = require(path.join(RAIZ, 'scripts', 'nightly', 'dependencies', 'daily-summary.js'));
+const NOMBRES = require(path.join(RAIZ, 'scripts', 'nightly', 'findings', 'cause-names.js'));
+
+const HOY_B = '2026-10-22';
+const SID_B = (k) => `bbbbbbbb-0000-4000-8000-00000000000${k}`;
+const URL_B = 'https://sitio.ejemplo.test';
+
+/** Un volcado de `marker.js clear`: con pasos pendientes, la regla del cierre da `derivada`. */
+const volcadoB = (sid, pendientes = [7], marca = {}) => ({ archivedAt: `${HOY_B}T15:19:00.000Z`, gates: [],
+  marker: { storyId: '1.1', sessionId: sid, startedAt: `${HOY_B}T14:00:00.000Z`, stepsCompleted: [0, 1, 2, 3, 4, 5, 6],
+    stepsPending: pendientes, checks: { tests: 'green' }, autonomous: true, ...marca } });
+/** El buzón de mentira: `[{ maquina, base, volcado }]`, sin conversaciones (la regla del cierre lee sólo el volcado). */
+function buzonB(corridas) {
+  const dir = tmp();
+  for (const c of corridas) {
+    fs.mkdirSync(path.join(dir, c.maquina), { recursive: true });
+    fs.writeFileSync(path.join(dir, c.maquina, `${c.base}.json`), JSON.stringify(c.volcado));
+  }
+  return dir;
+}
+function opsB({ url = URL_B } = {}) {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'operations.json'), JSON.stringify({ version: 1, owners: { default: 'lead@ejemplo.test' }, ...(url ? { site: { url } } : {}) }));
+  return dir;
+}
+const rrDir = (op, carpeta) => path.join(op, 'inbox', 'runs-review', carpeta);
+const yamls = (dir) => { try { return fs.readdirSync(dir).filter((f) => f.endsWith('.yaml')).sort(); } catch { return []; } };
+/** Las fichas por causa de una carpeta (las viejas, sin `fuente`, quedan afuera). */
+const comunes = (op, carpeta = 'pending') => yamls(rrDir(op, carpeta))
+  .map((f) => ({ f, txt: fs.readFileSync(path.join(rrDir(op, carpeta), f), 'utf8') }))
+  .filter((x) => !sources.esVieja(x.txt)).map((x) => ({ archivo: x.f, ...cycle.parsear(x.txt) }));
+const viejas = (op, carpeta) => yamls(rrDir(op, carpeta)).map((f) => ({ f, ...RR.leerFicha(path.join(rrDir(op, carpeta), f)) }))
+  .filter((x) => !x.fuente);
+const correrB = (mb, op, today = HOY_B, extra = {}) => RR.run({ mailbox: mb, ops: op, today, noDownload: true, ...extra });
+const lastRunB = (op) => JSON.parse(fs.readFileSync(path.join(op, 'inbox', 'runs-review', 'last-run.json'), 'utf8'));
+/** Una ficha por ejecución, como la escribía antes runs-review.js. */
+function viejaB(op, carpeta, { id, fecha, vista, base, reglas, maquina = 'acme-0000aaaa', veredicto = 'pendiente' }) {
+  fs.mkdirSync(rrDir(op, carpeta), { recursive: true });
+  const nombre = `${fecha}-${maquina}-${id}-abcdef.yaml`;
+  fs.writeFileSync(path.join(rrDir(op, carpeta), nombre), ['# Ficha de la revisión nocturna de las ejecuciones.',
+    `id: ${JSON.stringify(id)}`, `fecha: ${JSON.stringify(fecha)}`, `maquina: ${JSON.stringify(maquina)}`, 'story: "1.1"',
+    `base: ${JSON.stringify(base)}`, 'archivada: null', 'cierre: null', `reglas: ${JSON.stringify(reglas)}`, 'sin_hilo: false',
+    'escapes_registro: "medido"', `enlace: ${JSON.stringify(`${URL_B}/corridas?abrir=${id}`)}`,
+    `veredicto: ${JSON.stringify(veredicto)}`, `vista_por_ultima_vez: ${JSON.stringify(vista)}`, ''].join('\n'));
+  return nombre;
+}
+const DERIVADA = { regla: 'RR-CIERRE', categoria: 'derivada', cuenta: 1 };
+const APAGO = { regla: 'RR-APAGO', categoria: null, cuenta: 1 };
+/** Tres fichas viejas en pending/ (cuatro casos entre dos causas) y una decidida en promoted/. */
+function sembrarViejas(op) {
+  viejaB(op, 'pending', { id: 'e0000000000000a1', fecha: '2026-10-18', vista: '2026-10-20', base: '1.1-2026-10-18T1000', reglas: [DERIVADA] });
+  viejaB(op, 'pending', { id: 'e0000000000000a2', fecha: '2026-10-19', vista: '2026-10-21', base: '1.2-2026-10-19T1000', reglas: [DERIVADA] });
+  viejaB(op, 'pending', { id: 'e0000000000000a3', fecha: '2026-10-20', vista: '2026-10-20', base: '1.3-2026-10-20T1000', reglas: [DERIVADA, APAGO] });
+  return viejaB(op, 'promoted', { id: 'e0000000000000a4', fecha: '2026-10-17', vista: '2026-10-17', base: '1.4-2026-10-17T1000', reglas: [APAGO], veredicto: 'util' });
+}
+
+// T9 Ejecuciones_UnaFichaPorCausa @story-4.11 @ac-8
+// 🔴 Falla con: una ficha por ejecución, una causa con `|` (no entra en la clave), el enlace guardado en el caso (un
+//    cambio de site.url volvería a contar los casos) o una segunda ficha la noche que la causa vuelve.
+test('T9 Ejecuciones_UnaFichaPorCausa', async () => {
+  const mb = buzonB([
+    { maquina: 'acme-0000aaaa', base: `1.1-${HOY_B}T1519`, volcado: volcadoB(SID_B(1)) },
+    { maquina: 'acme-0000aaaa', base: `1.2-${HOY_B}T1600`, volcado: volcadoB(SID_B(2)) },
+    { maquina: 'acme-0000bbbb', base: `2.1-${HOY_B}T1700`, volcado: volcadoB(SID_B(3), [], { cierre: { estado: 'abortada', via: 'persona' } }) },
+  ]);
+  const op = opsB();
+  await correrB(mb, op);
+  const f = comunes(op);
+  const porCausa = Object.fromEntries(f.map((x) => [x.causa, x]));
+  assert.deepStrictEqual(Object.keys(porCausa).sort(), ['RR-CIERRE:abortada', 'RR-CIERRE:derivada']);
+  const d = porCausa['RR-CIERRE:derivada'];
+  assert.strictEqual(d.fuente, 'ejecuciones');
+  assert.strictEqual(d.archivo, `${d.id}.yaml`);
+  assert.strictEqual(d.nombre, 'cerrada con pendientes', 'el nombre en llano de cause-names.js');
+  assert.deepStrictEqual([d.casos.length, d.casos_total, d.apariciones, d.veredicto, d.estado], [2, 2, 1, 'pendiente', 'viva']);
+  for (const c of d.casos) {
+    assert.deepStrictEqual(Object.keys(c).filter((k) => !['ejecucion', 'base', 'dia', 'maquina', 'story', 'sin_hilo', 'escapes_registro'].includes(k)), []);
+    assert.strictEqual(c.dia, HOY_B);
+  }
+  assert.strictEqual(lastRunB(op).nuevas, 2, 'las fichas por causa que nacieron esta noche');
+  // el enlace se arma al leer: con el sitio, o relativo sin él
+  const c0 = d.casos[0];
+  assert.strictEqual(RR.enlaceDeCaso(c0, URL_B), `${URL_B}/corridas?abrir=${c0.ejecucion}`);
+  assert.strictEqual(RR.enlaceDeCaso(c0, null), `/corridas?abrir=${c0.ejecucion}`);
+  // la noche siguiente ve las mismas ejecuciones (siguen en la ventana): misma ficha, una aparición más, sin repetir casos
+  await correrB(mb, op, '2026-10-23');
+  const g = comunes(op);
+  assert.strictEqual(g.length, 2, 'no nace otra ficha');
+  const d2 = g.find((x) => x.causa === 'RR-CIERRE:derivada');
+  assert.deepStrictEqual([d2.apariciones, d2.ultima_vez, d2.primera_vez, d2.casos.length], [2, '2026-10-23', HOY_B, 2]);
+  assert.strictEqual(lastRunB(op).nuevas, 0);
+});
+
+// T10 Ejecuciones_MigracionDeFichasViejas @story-4.11 @ac-9
+// 🔴 Falla con: perder un caso al agrupar, migrar lo que una persona ya decidió (promoted/), mover la vieja antes de
+//    escribir su ficha por causa, contar las viejas legibles como ilegibles, o que el simulacro mueva algo.
+test('T10 Ejecuciones_MigracionDeFichasViejas', async () => {
+  const op = opsB();
+  const decidida = sembrarViejas(op);
+  const antesDecidida = fs.readFileSync(path.join(rrDir(op, 'promoted'), decidida), 'utf8');
+  // el simulacro cuenta y no toca nada
+  const sim = RR.migrar({ ops: op, today: HOY_B, simular: true });
+  assert.deepStrictEqual(sim, { viejas: 3, causas: 2, casos: 4, ilegibles: 0, movidas: 0 });
+  assert.strictEqual(viejas(op, 'pending').length, 3);
+  assert.strictEqual(comunes(op).length, 0);
+  // la pasada de la noche migra antes de revisar
+  await correrB(buzonB([]), op);
+  const f = Object.fromEntries(comunes(op).map((x) => [x.causa, x]));
+  assert.deepStrictEqual(Object.keys(f).sort(), ['RR-APAGO', 'RR-CIERRE:derivada']);
+  const d = f['RR-CIERRE:derivada'];
+  assert.deepStrictEqual(d.casos.map((c) => c.ejecucion).sort(), ['e0000000000000a1', 'e0000000000000a2', 'e0000000000000a3']);
+  assert.deepStrictEqual([d.primera_vez, d.ultima_vez, d.apariciones], ['2026-10-18', '2026-10-21', 4]);
+  assert.deepStrictEqual(f['RR-APAGO'].casos.map((c) => c.ejecucion), ['e0000000000000a3']);
+  assert.strictEqual(Object.values(f).reduce((s, x) => s + x.casos_total, 0), 4, 'ningún caso perdido');
+  assert.strictEqual(viejas(op, 'pending').length, 0);
+  const archivadas = viejas(op, 'archived');
+  assert.strictEqual(archivadas.length, 3);
+  for (const a of archivadas) assert.strictEqual(a.veredicto, 'migrada');
+  assert.strictEqual(fs.readFileSync(path.join(rrDir(op, 'promoted'), decidida), 'utf8'), antesDecidida, 'lo decidido no se toca');
+  const l = lastRunB(op);
+  assert.deepStrictEqual([l.completo, l.ilegibles], [true, 0], 'las viejas legibles no son ilegibles');
+});
+
+// T11 Ejecuciones_MigracionCorreUnaSolaVez @story-4.11 @ac-9
+// 🔴 Falla con: volver a migrar las archivadas como `migrada`, o sumar casos o apariciones en cada noche.
+test('T11 Ejecuciones_MigracionCorreUnaSolaVez', async () => {
+  const op = opsB();
+  sembrarViejas(op);
+  const mb = buzonB([]);
+  await correrB(mb, op);
+  const foto = () => comunes(op).map((x) => JSON.stringify(x)).sort();
+  const una = foto();
+  await correrB(mb, op);
+  assert.deepStrictEqual(foto(), una);
+  assert.strictEqual(viejas(op, 'archived').length, 3);
+  assert.deepStrictEqual(RR.migrar({ ops: op, today: HOY_B, simular: true }), { viejas: 0, causas: 0, casos: 0, ilegibles: 0, movidas: 0 });
+});
+
+// T55 Migracion_IlegibleQuietaYCortadaSigue @story-4.11 @ac-9
+// 🔴 Falla con: mover o borrar una vieja que no se lee, no contarla, o que una migración cortada duplique casos o fichas.
+test('T55 Migracion_IlegibleQuietaYCortadaSigue', async () => {
+  const op = opsB();
+  sembrarViejas(op);
+  fs.writeFileSync(path.join(rrDir(op, 'pending'), '2026-10-20-acme-0000aaaa-rota-abcdef.yaml'), 'id: {esto no es json\nreglas: "no es una lista"\n');
+  // la primera noche se corta al mover la segunda vieja a archived/
+  const orig = fs.renameSync;
+  let movidas = 0;
+  fs.renameSync = (a, b) => {
+    if (String(b).includes(`${path.sep}archived${path.sep}`) && ++movidas === 2) { const e = new Error('corte'); e.code = 'EIO'; throw e; }
+    return orig(a, b);
+  };
+  try { await correrB(buzonB([]), op); } finally { fs.renameSync = orig; }
+  assert.strictEqual(lastRunB(op).completo, false);
+  // la noche siguiente sigue donde quedó
+  await correrB(buzonB([]), op);
+  const d = comunes(op).find((x) => x.causa === 'RR-CIERRE:derivada');
+  assert.strictEqual(d.casos.length, 3, 'sin casos repetidos');
+  assert.strictEqual(d.apariciones, 4);
+  assert.strictEqual(comunes(op).length, 2, 'sin fichas repetidas');
+  assert.strictEqual(viejas(op, 'archived').length, 3);
+  assert.deepStrictEqual(yamls(rrDir(op, 'pending')).filter((f) => f.includes('rota')), ['2026-10-20-acme-0000aaaa-rota-abcdef.yaml'], 'la ilegible queda quieta');
+  assert.strictEqual(lastRunB(op).ilegibles, 1);
+});
+
+// T12 Vigilante_BorradorEsFicha @story-4.11 @ac-10
+// 🔴 Falla con: un borrador sin fuente ni causa, un mapa de veredictos distinto del de la historia, que la vista común
+//    traiga el diagnóstico, o que un borrador de antes (sin los campos nuevos) no se lea.
+test('T12 Vigilante_BorradorEsFicha', () => {
+  const dir = tmp();
+  const p = VIG.escribirBorrador(path.join(dir, 'pending'), { producto: 'acme', regla: 'goteo', severidad: 'media', huella: '1caab4a0',
+    plugin: 'p', endpoint: '/e', senal: { errores: 3 }, diagnostico: 'ZZTEXTO del diagnóstico', evidencia: [] }, '2026-10-20');
+  const txt = fs.readFileSync(p, 'utf8');
+  assert.match(txt, /^fuente: "vigilante"$/m);
+  assert.match(txt, /^causa: "1caab4a0"$/m);
+  const f = sources.comoFicha('vigilante', txt);
+  assert.deepStrictEqual({ fuente: f.fuente, causa: f.causa, nombre: f.nombre, primera_vez: f.primera_vez, ultima_vez: f.ultima_vez,
+    apariciones: f.apariciones, veredicto: f.veredicto, estado: f.estado },
+  { fuente: 'vigilante', causa: '1caab4a0', nombre: 'goteo', primera_vez: '2026-10-20', ultima_vez: '2026-10-20', apariciones: 1,
+    veredicto: 'pendiente', estado: 'viva' });
+  assert.doesNotMatch(JSON.stringify(f), /ZZTEXTO/, 'la vista común no trae el diagnóstico');
+  for (const [suyo, comun] of [['util', 'arreglo'], ['descartado', 'aceptada'], ['ignorado', 'ignorada']]) {
+    assert.strictEqual(sources.comoFicha('vigilante', txt.replace(/^veredicto:.*$/m, `veredicto: ${suyo}`)).veredicto, comun);
+  }
+  const deAntes = txt.replace(/^fuente:.*\n/m, '').replace(/^causa:.*\n/m, '');
+  assert.strictEqual(sources.comoFicha('vigilante', deAntes).causa, '1caab4a0', 'un borrador de antes se lee igual');
+  assert.strictEqual(sources.FUENTES.vigilante.carpetaDe({ estado: 'viva', veredicto: 'arreglo' }), 'promoted');
+  assert.strictEqual(sources.FUENTES.vigilante.carpetaDe({ estado: 'viva', veredicto: 'aceptada' }), 'archived');
+});
+
+/** Las carpetas de una fuente con fichas sembradas, para el renglón del resumen. */
+function fuenteConFichas(carpeta, archivos) {
+  const base = tmp();
+  for (const [rel, txt] of Object.entries(archivos)) {
+    const p = path.join(base, 'inbox', carpeta, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, txt);
+  }
+  return path.join(base, 'inbox', carpeta);
+}
+const depFicha = (id, campos) => `id: ${id}\n${Object.entries(campos).map(([k, v]) => `${k}: ${v}`).join('\n')}\nrepos:\n  - acme/repo\n`;
+const comun = (causa, extra = {}) => cycle.serializar({ ...cycle.nuevaFicha({ fuente: 'ejecuciones', causa, nombre: NOMBRES.nombreDe('ejecuciones', { regla: causa.split(':')[0], categoria: causa.split(':')[1] || null }), hoy: '2026-10-10' }), ...extra });
+
+// T13 Resumen_RubrosIgualesPorFuente @story-4.11 @ac-11
+// 🔴 Falla con: un rubro distinto por fuente, un 0 donde la noche todavía no mide (reaparecidas y resueltas del
+//    vigilante y de ejecuciones), o contar una resuelta como viva.
+test('T13 Resumen_RubrosIgualesPorFuente', () => {
+  const dep = fuenteConFichas('dependencies', {
+    'pending/a.yaml': depFicha('a', { detectado: HOY_B, veredicto: 'pendiente', paquete: 'js-yaml', severidad: 'high' }),
+    'pending/b.yaml': depFicha('b', { detectado: '2026-10-01', veredicto: 'pendiente', reaparecido: HOY_B, paquete: 'x', severidad: 'low' }),
+    'promoted/c.yaml': depFicha('c', { detectado: '2026-10-01', veredicto: 'util', resuelto: HOY_B, paquete: 'y', severidad: 'low' }),
+    'archived/d.yaml': depFicha('d', { detectado: '2026-10-01', veredicto: 'descartado', paquete: 'z', severidad: 'low' }),
+  });
+  assert.strictEqual(DS.lineaFichas('dependencias', dep, HOY_B), 'fichas de dependencias: vivas 2 · nuevas 1 · reaparecidas 1 · resueltas 1');
+  const ej = fuenteConFichas('runs-review', {
+    'pending/x.yaml': cycle.serializar({ ...cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-APAGO', nombre: 'pipeline pasado a manual', hoy: HOY_B }) }),
+    'pending/y.yaml': comun('RR-CIERRE:derivada'),
+    'promoted/z.yaml': comun('RR-CIERRE:abortada', { veredicto: 'aceptada' }),
+    'archived/2026-10-01-acme-e0-abcdef.yaml': 'id: "e0"\nreglas: []\nveredicto: "migrada"\n',
+  });
+  const NM = 'reaparecidas ? (no medido) · resueltas ? (no medido)';
+  assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), `fichas de ejecuciones: vivas 2 · nuevas 1 · ${NM}`);
+  const vig = tmp();
+  VIG.escribirBorrador(path.join(vig, 'pending'), { producto: 'acme', regla: 'deriva', severidad: 'alta', huella: 'aaaa0001', plugin: 'p',
+    endpoint: null, senal: {}, diagnostico: 'd', evidencia: [] }, HOY_B);
+  assert.strictEqual(DS.lineaFichas('vigilante', vig, HOY_B), `fichas de vigilante: vivas 1 · nuevas 1 · ${NM}`);
+  assert.match(DS.lineaFichas('ejecuciones', path.join(tmp(), 'no-esta'), HOY_B), /^fichas de ejecuciones: \? \(no se pudieron leer\)$/);
+});
+
+// T14 Resumen_AceptadasNoSeRepiten @story-4.11 @ac-11
+// 🔴 Falla con: contar las aceptadas entre las vivas, o repetir en la lista de ejecuciones una causa ya aceptada.
+test('T14 Resumen_AceptadasNoSeRepiten', () => {
+  const base = tmp();
+  const raiz = path.join(base, 'inbox', 'runs-review');
+  fs.mkdirSync(path.join(raiz, 'promoted'), { recursive: true });
+  fs.writeFileSync(path.join(raiz, 'promoted', 'z.yaml'), comun('RR-APAGO', { veredicto: 'aceptada' }));
+  fs.writeFileSync(path.join(raiz, 'last-run.json'), JSON.stringify({ fecha: HOY_B, completo: true, motivo: null, miradas: 9, con_fallas: 5,
+    nuevas: 0, sin_hilo: 0, hilos_sin_hooks: 0, ilegibles: 0, causas: [
+      { regla: 'RR-APAGO', categoria: null, ejecuciones: 3, nueva: false },
+      { regla: 'RR-CIERRE', categoria: 'derivada', ejecuciones: 2, nueva: false }] }));
+  const lineas = DS.lineaEjecuciones(base, HOY_B);
+  assert.ok(lineas.includes('· cerrada con pendientes: 2'));
+  assert.ok(!lineas.some((l) => l.includes('pipeline pasado a manual')), 'la causa aceptada no se repite');
+  assert.match(DS.lineaFichas('ejecuciones', raiz, HOY_B), /vivas 0/);
+});
+
+// T15 Nombres_MudanzaSinCambiarTexto @story-4.11 @ac-12
+// 🔴 Falla con: cambiar una letra de la tabla al mudarla (la huella es la de la tabla de antes), que el resumen use otra
+//    copia, o un nombre de más de 120 caracteres o con un salto de renglón.
+test('T15 Nombres_MudanzaSinCambiarTexto', () => {
+  const crypto = require('crypto');
+  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fd038a3b2dc6425db833b67c3794569e062be4c3');
+  assert.strictEqual(DS.NOMBRES_CAUSA, NOMBRES.NOMBRES_CAUSA, 'el resumen usa la misma tabla');
+  assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-HOOK', categoria: 'Stop/tiempo' }), 'aviso automático que se pasó de tiempo');
+  assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria: 'ZZDESCONOCIDA' }), 'otro freno salteado');
+  assert.strictEqual(NOMBRES.nombreDe('dependencias', { paquete: 'js-yaml', severidad: 'high' }), 'js-yaml (high)');
+  assert.strictEqual(NOMBRES.nombreDe('vigilante', { regla: 'goteo' }), 'goteo');
+  const largo = NOMBRES.nombreDe('dependencias', { paquete: `${'a'.repeat(200)}\nZZ`, severidad: 'high' });
+  assert.ok(largo.length <= 120 && !/[\n\r]/.test(largo));
+});
+
+// ── Las fichas que no se leen, la migración cortada y el comando del simulacro ─────────────────────────────────────
+
+// Migracion_ReglasRotas_QuedaYSeCuenta @story-4.11 @ac-9
+// 🔴 Falla con: tomar como legible una vieja cuyo `reglas:` no es JSON (se archiva vacía y sus causas se pierden).
+test('Migracion_ReglasRotas_QuedaYSeCuenta', () => {
+  const op = opsB();
+  fs.mkdirSync(rrDir(op, 'pending'), { recursive: true });
+  const p = path.join(rrDir(op, 'pending'), '2026-10-22-acme-0000aaaa-e0000000000000b1-abcdef.yaml');
+  const txt = 'id: "e0000000000000b1"\nfecha: "2026-10-22"\nbase: "1.1-2026-10-22T1000"\nreglas: [{"regla":"RR-APAGO","categoria":null,"cuenta":1},{"regla":"RR-ESCAPE"\nveredicto: "pendiente"\n';
+  fs.writeFileSync(p, txt);
+  assert.deepStrictEqual(RR.migrar({ ops: op, today: HOY_B }), { viejas: 0, causas: 0, casos: 0, ilegibles: 1, movidas: 0 });
+  assert.strictEqual(fs.readFileSync(p, 'utf8'), txt, 'queda quieta, sin tocar');
+  assert.strictEqual(viejas(op, 'archived').length, 0);
+});
+
+// Migracion_FichaArchivadaNoSeToca @story-4.11 @ac-9
+// 🔴 Falla con: sumarle casos o apariciones a una ficha por causa que está en archived/ (la decisión 3 la deja quieta).
+test('Migracion_FichaArchivadaNoSeToca', () => {
+  const op = opsB();
+  const archivada = cycle.serializar({ ...cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-APAGO', nombre: 'pipeline pasado a manual', hoy: '2026-10-01' }), veredicto: 'ignorada' });
+  const f = cycle.parsear(archivada);
+  fs.mkdirSync(rrDir(op, 'archived'), { recursive: true });
+  fs.writeFileSync(path.join(rrDir(op, 'archived'), `${f.id}.yaml`), archivada);
+  viejaB(op, 'pending', { id: 'e0000000000000c1', fecha: '2026-10-20', vista: '2026-10-21', base: '1.1-2026-10-20T1000', reglas: [APAGO] });
+  RR.migrar({ ops: op, today: HOY_B });
+  assert.strictEqual(fs.readFileSync(path.join(rrDir(op, 'archived'), `${f.id}.yaml`), 'utf8'), archivada);
+  assert.strictEqual(comunes(op).length, 0, 'no nace otra ficha de la misma causa');
+  assert.strictEqual(viejas(op, 'archived')[0].veredicto, 'migrada', 'sus casos quedan en la migrada');
+});
+
+// Migracion_DiaComoLaPasada @story-4.11 @ac-9
+// 🔴 Falla con: armar el día del caso con la fecha de la ficha vieja cuando el nombre del volcado no la trae: la pasada
+//    usa la hora de archivado, y la misma ejecución quedaría dos veces en la ficha.
+test('Migracion_DiaComoLaPasada', () => {
+  const op = opsB();
+  const nombre = viejaB(op, 'pending', { id: 'e0000000000000d1', fecha: '2026-10-21', vista: '2026-10-21', base: 'sin-fecha-en-el-nombre', reglas: [APAGO] });
+  const p = path.join(rrDir(op, 'pending'), nombre);
+  fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('archivada: null', 'archivada: "2026-10-19T10:00:00.000Z"'));
+  RR.migrar({ ops: op, today: HOY_B });
+  assert.strictEqual(comunes(op)[0].casos[0].dia, '2026-10-19');
+});
+
+// Pasada_CorteDespuesDeEscribir_NoRepiteNuevas @story-4.11 @ac-8
+// 🔴 Falla con: que el camino del error vuelva a escribir las causas ya escritas y las cuente otra vez como nuevas.
+test('Pasada_CorteDespuesDeEscribir_NoRepiteNuevas', async () => {
+  const mb = buzonB([
+    { maquina: 'acme-0000aaaa', base: `1.1-${HOY_B}T1519`, volcado: volcadoB(SID_B(1)) },
+    { maquina: 'acme-0000bbbb', base: `2.1-${HOY_B}T1700`, volcado: volcadoB(SID_B(3), [], { cierre: { estado: 'abortada', via: 'persona' } }) },
+  ]);
+  const op = opsB();
+  const orig = fs.renameSync;
+  fs.renameSync = (a, b) => { if (String(b).endsWith('causas-vistas.json')) { const e = new Error('corte'); e.code = 'EIO'; throw e; } return orig(a, b); };
+  try { await correrB(mb, op); } finally { fs.renameSync = orig; }
+  assert.strictEqual(lastRunB(op).completo, false);
+  assert.strictEqual(lastRunB(op).nuevas, 2, 'dos causas nuevas, contadas una vez');
+  assert.strictEqual(comunes(op).length, 2);
+});
+
+// FichaPorCausaIlegible_NoSePisa @story-4.11 @ac-7 @ac-8
+// 🔴 Falla con: escribir una ficha nueva encima de la de la misma causa que no se pudo leer (se pierden su veredicto y
+//    sus casos), o no contarla.
+test('FichaPorCausaIlegible_NoSePisa', async () => {
+  const op = opsB();
+  const id = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-CIERRE:derivada', nombre: 'x', hoy: HOY_B }).id;
+  fs.mkdirSync(rrDir(op, 'promoted'), { recursive: true });
+  const rota = path.join(rrDir(op, 'promoted'), `${id}.yaml`);
+  fs.writeFileSync(rota, 'fuente: "ejecuciones"\nveredicto: {esto no es json\n');
+  await correrB(buzonB([{ maquina: 'acme-0000aaaa', base: `1.1-${HOY_B}T1519`, volcado: volcadoB(SID_B(1)) }]), op);
+  assert.strictEqual(fs.readFileSync(rota, 'utf8'), 'fuente: "ejecuciones"\nveredicto: {esto no es json\n');
+  assert.strictEqual(fs.existsSync(path.join(rrDir(op, 'pending'), `${id}.yaml`)), false, 'no nace otra con el mismo nombre');
+  assert.ok(lastRunB(op).ilegibles >= 1);
+  assert.strictEqual(lastRunB(op).nuevas, 0);
+});
+
+// Resumen_FichasQueNoSeLeen_NoSonCero @story-4.11 @ac-11
+// 🔴 Falla con: tomar una carpeta que no se puede leer como vacía («vivas 0»), o una ficha ilegible como que no está.
+test('Resumen_FichasQueNoSeLeen_NoSonCero', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
+  const ej = fuenteConFichas('runs-review', { 'pending/y.yaml': comun('RR-CIERRE:derivada'), 'pending/rota.yaml': 'fuente: "ejecuciones"\nid: {mal\n' });
+  assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), 'fichas de ejecuciones: vivas 1 · nuevas 0 · reaparecidas ? (no medido) · resueltas ? (no medido) · ilegibles 1');
+  fs.chmodSync(path.join(ej, 'pending'), 0o000);
+  try {
+    assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), 'fichas de ejecuciones: ? (no se pudieron leer)');
+  } finally { fs.chmodSync(path.join(ej, 'pending'), 0o700); }
+});
+
+// Migracion_FichaPorCausaIlegible_LaViejaEspera @story-4.11 @ac-9
+// 🔴 Falla con: archivar como migrada una vieja cuya ficha por causa no se pudo leer (sus casos no quedan en ningún
+//    lado), o pisar esa ficha.
+test('Migracion_FichaPorCausaIlegible_LaViejaEspera', () => {
+  const op = opsB();
+  const id = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-APAGO', nombre: 'x', hoy: HOY_B }).id;
+  fs.mkdirSync(rrDir(op, 'pending'), { recursive: true });
+  const rota = path.join(rrDir(op, 'pending'), `${id}.yaml`);
+  fs.writeFileSync(rota, 'fuente: "ejecuciones"\nid: {mal\n');
+  const vieja = viejaB(op, 'pending', { id: 'e0000000000000f1', fecha: '2026-10-20', vista: '2026-10-21', base: '1.1-2026-10-20T1000', reglas: [APAGO] });
+  const r = RR.migrar({ ops: op, today: HOY_B });
+  assert.deepStrictEqual([r.movidas, r.ilegibles >= 1], [0, true]);
+  assert.ok(fs.existsSync(path.join(rrDir(op, 'pending'), vieja)), 'la vieja espera en pending/');
+  assert.strictEqual(fs.readFileSync(rota, 'utf8'), 'fuente: "ejecuciones"\nid: {mal\n', 'la ilegible no se pisa');
+});
+
+// Migrate_PorLaLineaDeComandos @story-4.11 @ac-9
+// 🔴 Falla con: un simulacro que mueve archivos, un código de salida 0 con alguna ilegible, o un uso mal hecho que no
+//    sale 2.
+test('Migrate_PorLaLineaDeComandos', () => {
+  const { spawnSync } = require('child_process');
+  const guion = path.join(RAIZ, 'scripts', 'nightly', 'runs-review', 'runs-review.js');
+  const correrGuion = (args) => spawnSync(process.execPath, [guion, ...args], { encoding: 'utf8', input: '' });
+  const op = opsB();
+  sembrarViejas(op);
+  const sim = correrGuion(['migrate', '--operations', op, '--today', HOY_B, '--dry-run']);
+  assert.strictEqual(sim.status, 0);
+  assert.deepStrictEqual(JSON.parse(sim.stdout), { viejas: 3, causas: 2, casos: 4, ilegibles: 0, movidas: 0 });
+  assert.strictEqual(viejas(op, 'pending').length, 3, 'el simulacro no mueve nada');
+  fs.writeFileSync(path.join(rrDir(op, 'pending'), '2026-10-20-acme-rota-abcdef.yaml'), 'id: {mal\nreglas: "x"\n');
+  const real = correrGuion(['migrate', '--operations', op, '--today', HOY_B]);
+  assert.strictEqual(real.status, 1, 'con alguna ilegible sale 1');
+  assert.strictEqual(JSON.parse(real.stdout).movidas, 3);
+  assert.strictEqual(correrGuion(['migrate', '--operations', op]).status, 2, 'sin --today es un uso mal hecho');
+});
+
+// Resumen_RenglonDelVigilante_EnSuSeccion @story-4.11 @ac-11
+// 🔴 Falla con: que la sección del vigilante no traiga su renglón de fichas.
+test('Resumen_RenglonDelVigilante_EnSuSeccion', () => {
+  const base = tmp();
+  const out = path.join(base, 'out');
+  const vig = path.join(base, 'inbox', 'watcher');
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, `vigilante-${HOY_B}.json`), JSON.stringify({ fecha: HOY_B, hallazgos: [], no_medido: [], ignorados_ids: [] }));
+  VIG.escribirBorrador(path.join(vig, 'pending'), { producto: 'acme', regla: 'goteo', severidad: 'media', huella: 'aaaa0002', plugin: 'p',
+    endpoint: null, senal: {}, diagnostico: 'd', evidencia: [] }, HOY_B);
+  const r = DS.armar({ fuente: 'vigilante', hoy: HOY_B, out, pending: vig, resumenConfig: path.join(base, 'no-esta.json'), runs: null, weekly: null });
+  assert.ok(r.texto.split('\n').includes(`fichas de vigilante: vivas 1 · nuevas 1 · reaparecidas ? (no medido) · resueltas ? (no medido)`), r.texto);
+});
+
+// Resumen_ConstanciaDeFichasAlterada_NoSeVuelveAEscribir @story-4.11 @ac-11
+// 🔴 Falla con: volver a escribir a las 08:00 un renglón de fichas que alguien cambió en la constancia.
+test('Resumen_ConstanciaDeFichasAlterada_NoSeVuelveAEscribir', () => {
+  const bueno = 'fichas de ejecuciones: vivas 2 · nuevas 1 · reaparecidas ? (no medido) · resueltas ? (no medido)';
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: [bueno] }), [bueno]);
+  assert.strictEqual(DS.fichasDeLaConstancia({ fichas: [bueno, 'fichas de ejecuciones: ZZTEXTO de una conversación'] }), null);
+  assert.strictEqual(DS.fichasDeLaConstancia({ fichas: [bueno, bueno, bueno, bueno] }), null, 'más de tres no es la forma');
+  assert.strictEqual(DS.fichasDeLaConstancia({ fichas: 'no es lista' }), null);
+  assert.strictEqual(DS.fichasDeLaConstancia({}), null);
+});
+
+// Ejecuciones_NuevaSinCausasVistas_SaleDeLasFichas @story-4.11 @ac-8
+// 🔴 Falla con: tomar como nueva una causa que ya tiene su ficha de antes de hoy cuando falta causas-vistas.json.
+test('Ejecuciones_NuevaSinCausasVistas_SaleDeLasFichas', async () => {
+  const mb = buzonB([{ maquina: 'acme-0000aaaa', base: `1.1-${HOY_B}T1519`, volcado: volcadoB(SID_B(1)) }]);
+  const op = opsB();
+  await correrB(mb, op);
+  assert.strictEqual(lastRunB(op).causas[0].nueva, true);
+  fs.unlinkSync(path.join(op, 'inbox', 'runs-review', 'causas-vistas.json'));
+  await correrB(mb, op, '2026-10-23');
+  assert.deepStrictEqual(lastRunB(op).causas.map((c) => c.nueva), [false], 'la primera_vez de su ficha dice que ya se conocía');
+});

@@ -701,7 +701,10 @@ function armar(a) {
   const base = texto({ fuente: a.fuente, rubros, cambios: comp.cambios, base: comp.base, fallos, comparadoCon: comp.comparado_con, hoy: a.hoy,
     empezaron: comp.empezaron, modo: comp.modo, carpetas: a.fuente === 'dependencias' ? lineasCarpetas(snap) : [] });
   // Sin dudas, o sin fuente, el texto no cambia: la fuente que falta se dice en `dudas_revisores.motivo`, no con un 0.
-  const t = dudas.valor && dudas.valor.length ? `${base}\ndudas de revisores: ${dudas.valor.length}` : base;
+  let t = dudas.valor && dudas.valor.length ? `${base}\ndudas de revisores: ${dudas.valor.length}` : base;
+  // el renglón de fichas del vigilante va en su sección; el de dependencias, con las ejecuciones (lineaEjecuciones), que
+  // la edición de las 08:00 vuelve a poner tal cual
+  if (a.fuente === 'vigilante' && fichas) t = `${t}\n${lineaFichas('vigilante', a.pending, a.hoy)}`;
   return { fuente: a.fuente, fecha: a.hoy, rubros, cambios: comp.cambios, cambios_motivo: comp.cambios_motivo,
     comparado_con: comp.comparado_con, empezaron: comp.empezaron, modo_pedidos: comp.modo, fallos, dudas_revisores: dudas,
     ...(a.weekly ? { revision_semanal: semanalDetalle(a.weekly) } : {}), texto: t };
@@ -874,43 +877,18 @@ function lineaRetros(archivo) {
  */
 const TOPE_EJECUCIONES = 900;
 const MOTIVO_EJ = '[\\p{L}\\p{N} ().,:_-]{1,160}';
-// el nombre de cada causa para quien lee el resumen: por regla, `_` es el de una categoría que la tabla no conoce
-const NOMBRES_CAUSA = {
-  'RR-ESCAPE': {
-    _: 'otro freno salteado',
-    TYCON_PR_BY_HAND: 'pedido armado a mano', PR_A_MANO: 'pedido armado a mano',
-    TYCON_NO_DEEP_REVIEW: 'pase adversarial salteado', ADVERSARIAL_SKIP_FORZADO: 'pase adversarial salteado',
-    ADVERSARIAL_RELAUNCH: 'pase adversarial relanzado',
-    TYCON_FULL_SUITE: 'suite completa forzada', FULL_SUITE_RUN: 'suite completa forzada',
-    GIT_NO_VERIFY: 'commit sin controles', '--no-verify': 'commit sin controles',
-    ATDD_BYPASS: 'pruebas primero salteadas', atddBypass: 'pruebas primero salteadas', ATDD_PREEDIT_BYPASS: 'pruebas primero salteadas',
-    MUTATION_BYPASS: 'prueba de mutación salteada', TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK: 'prueba de mutación salteada',
-    TYCON_SAFETY_OFF: 'freno de seguridad apagado', TYCON_SESSION_GUARD_OK: 'freno de sesiones salteado',
-    TYCON_ENGRAM_MANIFEST_OK: 'freno de memoria salteado', STOP_AUTONOMY: 'cierre sin esperar a la persona',
-    DOD_EVIDENCE_MANUAL_WRITE: 'evidencia escrita a mano', SIZE_FORCED_LIGHT_WITH_CODE: 'pipeline liviano con código',
-  },
-  'RR-NODE': { _: 'guion del arnés que no arrancó', 'node-viejo': 'Node viejo', carga: 'guion del arnés que no cargó' },
-  'RR-HOOK': { _: 'aviso automático con error' },
-  'RR-APAGO': { _: 'pipeline pasado a manual' },
-  'RR-BANDERA': { _: 'paso del arranque que falló' },
-  'RR-CIERRE': {
-    _: 'cierre desconocido', abortada: 'ejecución abortada', abandonada: 'ejecución abandonada',
-    incoherente: 'cerrada con pendientes', derivada: 'cerrada con pendientes', 'sin-cerrar': 'ejecución sin cerrar',
-  },
-};
-const HOOK_TIEMPO = 'aviso automático que se pasó de tiempo';
-const hasOwnCausa = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-const nombreCausa = (c) => {
-  const t = NOMBRES_CAUSA[c.regla];
-  if (c.regla === 'RR-HOOK' && typeof c.categoria === 'string' && c.categoria.endsWith('/tiempo')) return HOOK_TIEMPO;
-  return c.categoria !== null && hasOwnCausa(t, c.categoria) ? t[c.categoria] : t._;
-};
-const NOMBRES_VALIDOS = new Set([HOOK_TIEMPO, ...Object.values(NOMBRES_CAUSA).flatMap((t) => Object.values(t))]);
+// los nombres en llano de cada causa viven en cause-names.js, con los de las otras fuentes
+const { NOMBRES_CAUSA, nombreCausa, NOMBRES_VALIDOS, hasOwnCausa } = require('../findings/cause-names.js');
 const CAUSA_EJ = '([\\p{L} ]{3,60}): \\d+';
 const ENLACE_EJ = '(https?://[A-Za-z0-9.-]+(:\\d{1,5})?)?/corridas\\?abrir=[A-Za-z0-9_-]{1,64}';
 const EJ_NO_CORRIO = 'ejecuciones: la revisión NO CORRIÓ hoy';
 const EJ_ILEGIBLE = 'ejecuciones: ? (el estado de la revisión no se pudo leer)';
 const EJ_CONSTANCIA = 'ejecuciones: ? (la constancia de las 04:00 no se pudo leer)';
+// el renglón de las fichas de cada fuente: los mismos rubros para todas. Reaparecidas y resueltas se miden en
+// dependencias; en las demás, mientras la noche no las controle, se dice que no se midieron, nunca 0.
+const FUENTES_FICHAS = ['dependencias', 'vigilante', 'ejecuciones'];
+const SIN_MEDIR = '? (no medido)';
+const RENGLON_FICHAS = /^fichas de (dependencias|vigilante|ejecuciones): (\? \(no se pudieron leer\)|vivas \d+ · nuevas \d+ · reaparecidas (\d+|\? \(no medido\)) · resueltas (\d+|\? \(no medido\))( · ilegibles \d+)?)$/;
 // la forma de cada renglón que puede salir: con ella se vuelve a leer la constancia en la edición de las 08:00
 const RENGLONES_EJ = [
   new RegExp(`^ejecuciones: (parcial — ${MOTIVO_EJ} · )?(\\d+ con fallas del arnés \\(de \\d+ miradas\\)|0 con fallas del arnés \\(\\d+ miradas\\))$`, 'u'),
@@ -932,6 +910,67 @@ const renglonEjValido = (l) => {
   return !parcial || motivoFijo(parcial[1]);
 };
 
+/**
+ * Las fichas de una fuente, de las tres carpetas de `dirFuente` (`inbox/<carpeta>`), leídas con el mapa de la fuente
+ * (`sources.js`): `{ vistas, ilegibles }`. Las viejas de ejecuciones no son fichas. Una carpeta que falta está vacía; una
+ * que está y no se puede leer lanza: «no pude» no es «vivas 0».
+ */
+function vistasDeFichas(fuente, dirFuente) {
+  const SOURCES = require('../findings/sources.js');
+  fs.readdirSync(dirFuente);
+  const vistas = [];
+  let ilegibles = 0;
+  for (const c of ['pending', 'promoted', 'archived']) {
+    let nombres = [];
+    try { nombres = fs.readdirSync(path.join(dirFuente, c)).filter((n) => n.endsWith('.yaml')).sort(cmp); } catch (e) {
+      if (!(e && e.code === 'ENOENT')) throw e;
+      nombres = [];
+    }
+    for (const n of nombres) {
+      try {
+        const v = SOURCES.comoFicha(fuente, fs.readFileSync(path.join(dirFuente, c, n), 'utf8'));
+        if (v) vistas.push(v);
+      } catch { ilegibles += 1; }
+    }
+  }
+  return { vistas, ilegibles };
+}
+
+/**
+ * `fichas de <fuente>: vivas V · nuevas N · reaparecidas R · resueltas S`; vivas sin las aceptadas, nuevas de hoy. Con
+ * fichas que no se pudieron leer, suma `· ilegibles K`: los números de antes no las cuentan.
+ */
+function lineaFichas(fuente, dirFuente, hoy) {
+  if (!FUENTES_FICHAS.includes(fuente)) throw new Error(`fuente desconocida: ${fuente}`);
+  let leidas;
+  try { leidas = vistasDeFichas(fuente, dirFuente); } catch { return `fichas de ${fuente}: ? (no se pudieron leer)`; }
+  const { vistas, ilegibles } = leidas;
+  const vivas = vistas.filter((v) => (v.estado === 'viva' || v.estado === 'reaparecio') && !['aceptada', 'ignorada', 'migrada'].includes(v.veredicto));
+  const nuevas = vivas.filter((v) => v.primera_vez === hoy).length;
+  const medido = fuente === 'dependencias';
+  const reaparecidas = medido ? vistas.filter((v) => v.reaparecido === hoy).length : SIN_MEDIR;
+  const resueltas = medido ? vistas.filter((v) => v.resuelto === hoy).length : SIN_MEDIR;
+  return `fichas de ${fuente}: vivas ${vivas.length} · nuevas ${nuevas} · reaparecidas ${reaparecidas} · resueltas ${resueltas}${ilegibles ? ` · ilegibles ${ilegibles}` : ''}`;
+}
+
+/**
+ * El renglón de fichas de dependencias y el de ejecuciones del clon de operaciones (los de las carpetas que están). Van
+ * debajo de la línea de las ejecuciones; se guardan a las 04:00 aparte de ella (`fichas` de la constancia) y la edición
+ * de las 08:00 los vuelve a poner tal cual.
+ */
+function lineasFichasDelClon(dir, hoy) {
+  return [['dependencias', 'dependencies'], ['ejecuciones', 'runs-review']]
+    .filter(([, carpeta]) => fs.existsSync(path.join(dir, 'inbox', carpeta)))
+    .map(([fuente, carpeta]) => lineaFichas(fuente, path.join(dir, 'inbox', carpeta), hoy));
+}
+
+/** Los renglones de fichas guardados a las 04:00: tal cual si todos tienen la forma; si no, ninguno (no se inventan). */
+function fichasDeLaConstancia(r) {
+  if (!r || !hasOwn(r, 'fichas')) return null;
+  const f = r.fichas;
+  return Array.isArray(f) && f.length <= 3 && f.every((l) => typeof l === 'string' && RENGLON_FICHAS.test(l)) ? f : null;
+}
+
 function lineaEjecuciones(dir, hoy) {
   const raiz = path.join(dir, 'inbox', 'runs-review');
   let l;
@@ -948,20 +987,41 @@ function lineaEjecuciones(dir, hoy) {
   const cabecera = `ejecuciones: ${parcial}${l.con_fallas ? `${l.con_fallas} con fallas del arnés (de ${l.miradas} miradas)` : `0 con fallas del arnés (${l.miradas} miradas)`}`;
   if (!l.con_fallas) return [cabecera];
 
-  // el enlace de cada causa nueva: la primera ficha de hoy en pending/ (por nombre) que la trae
+  const RR = require('../runs-review/runs-review.js');
+  // las fichas por causa: una aceptada no se repite en la lista; el enlace de una causa nueva sale de su
+  // ficha de hoy, armado con la dirección del sitio de operations.json (relativo sin ella)
+  const SOURCES = require('../findings/sources.js');
+  const CYCLE = require('../findings/cycle.js');
+  const aceptadas = new Set();
+  const porCausaHoy = new Map();
+  for (const c of ['pending', 'promoted', 'archived']) {
+    let nombres = [];
+    try { nombres = fs.readdirSync(path.join(raiz, c)).filter((x) => x.endsWith('.yaml')).sort(); } catch { nombres = []; }
+    for (const n of nombres) {
+      try {
+        const txt = fs.readFileSync(path.join(raiz, c, n), 'utf8');
+        if (SOURCES.esVieja(txt)) continue;
+        const f = CYCLE.parsear(txt);
+        if (f.veredicto === 'aceptada') aceptadas.add(f.causa);
+        else if (c !== 'archived' && f.ultima_vez === hoy && f.casos.length) porCausaHoy.set(f.causa, f);
+      } catch { /* una ficha que no se lee no cambia la lista ni da enlace */ }
+    }
+  }
+  let urlSitio = null;
+  try { const o = OPS.load(path.join(dir, 'operations.json')); if (o.ok && o.data.site && typeof o.data.site.url === 'string') urlSitio = o.data.site.url; } catch { urlSitio = null; }
+  // el enlace de cada causa nueva sin ficha por causa: la primera ficha vieja de hoy en pending/ (por nombre) que la trae
   const fichasDeHoy = [];
   try {
-    const { leerFicha: leerFichaRR } = require('../runs-review/runs-review.js');
     for (const n of fs.readdirSync(path.join(raiz, 'pending')).filter((x) => x.endsWith('.yaml')).sort()) {
       try {
-        const f = leerFichaRR(path.join(raiz, 'pending', n));
+        const f = RR.leerFicha(path.join(raiz, 'pending', n));
         if (f.vista_por_ultima_vez === hoy && Array.isArray(f.reglas) && typeof f.enlace === 'string' && new RegExp(`^${ENLACE_EJ}$`).test(f.enlace)) fichasDeHoy.push(f);
       } catch { /* una ficha que no se lee no da enlace: el renglón va sin él */ }
     }
   } catch { /* sin pending/ no hay enlaces */ }
   // las causas con el mismo nombre van juntas: suman sus ejecuciones, y el grupo es nuevo si alguna lo es
   const grupos = new Map();
-  for (const c of l.causas) {
+  for (const c of l.causas.filter((x) => !aceptadas.has(RR.causaDe(x)))) {
     const n = nombreCausa(c);
     const g = grupos.get(n) || { nombre: n, ejecuciones: 0, nueva: false, miembros: [] };
     g.ejecuciones += c.ejecuciones; g.nueva = g.nueva || c.nueva; g.miembros.push(c);
@@ -970,6 +1030,12 @@ function lineaEjecuciones(dir, hoy) {
   const ordenados = [...grupos.values()].sort((a, b) => b.ejecuciones - a.ejecuciones || (a.nombre < b.nombre ? -1 : a.nombre > b.nombre ? 1 : 0));
   const nombre = (g) => g.nombre;
   const enlaceDe = (g) => {
+    for (const c of g.miembros) {
+      const f = porCausaHoy.get(RR.causaDe(c));
+      if (!f) continue;
+      const e = RR.enlaceDeCaso(f.casos[f.casos.length - 1], urlSitio);
+      if (new RegExp(`^${ENLACE_EJ}$`).test(e)) return ` — ${e}`;
+    }
     const f = fichasDeHoy.find((x) => x.reglas.some((r) => r && g.miembros.some((c) => r.regla === c.regla && (r.categoria === undefined ? null : r.categoria) === c.categoria)));
     return f ? ` — ${f.enlace}` : '';
   };
@@ -1083,6 +1149,8 @@ function entregar(a) {
   let sitio = a.fuente === 'dependencias' ? lineaSitio(a) : null;
   // la línea de las ejecuciones: la arma la mañana con --runs-review; la edición de las 08:00 la rearma de la constancia
   let ejecuciones = a.runsReview !== null ? lineaEjecuciones(a.runsReview, a.hoy) : null;
+  // y debajo, los renglones de fichas del clon, que también se guardan y se rearman
+  let fichasClon = a.runsReview !== null ? lineasFichasDelClon(a.runsReview, a.hoy) : null;
   if (a.fuente === 'vigilante') {
     const d = dependenciasDeHoy(a);
     const r = d.resumen;
@@ -1096,6 +1164,7 @@ function entregar(a) {
       editarId = mid;
       final = `${d.seccion}\n\n${res.texto}`;
       if (ejecuciones === null) ejecuciones = ejecucionesDeLaConstancia(r);
+      if (fichasClon === null) fichasClon = fichasDeLaConstancia(r);
       // los otros canales no editan: ya recibieron la sección de dependencias a la mañana, así que les va sólo la del
       // vigilante, diciéndolo, como cuando Telegram no está
       const otros = canales.filter((c) => c !== 'telegram');
@@ -1142,10 +1211,12 @@ function entregar(a) {
   // la noche no pudo leer el perfil: salió por el canal viejo, y quien lo lee tiene que saberlo
   if (noche.aviso) cola = `${cola}\n⚠️ ${noche.aviso}`;
   cola = `${cola}\n${sitio.linea}`;
-  // el cuerpo se achica en lo que ocupa la línea de las ejecuciones: el mensaje entero no crece por ella
-  const tope = ejecuciones === null ? TOPE_MENSAJE
-    : { lineas: TOPE_MENSAJE.lineas - ejecuciones.length, caracteres: TOPE_MENSAJE.caracteres - ejecuciones.join('\n').length - 1 };
-  const colaCon = cola.replace(MARCA_EJ, ejecuciones === null ? '' : `\n${ejecuciones.join('\n')}`);
+  // el cuerpo se achica en lo que ocupa la línea de las ejecuciones (con los renglones de fichas): el mensaje entero no
+  // crece por ella
+  const bloqueEj = ejecuciones === null ? null : [...ejecuciones, ...(fichasClon || [])];
+  const tope = bloqueEj === null ? TOPE_MENSAJE
+    : { lineas: TOPE_MENSAJE.lineas - bloqueEj.length, caracteres: TOPE_MENSAJE.caracteres - bloqueEj.join('\n').length - 1 };
+  const colaCon = cola.replace(MARCA_EJ, bloqueEj === null ? '' : `\n${bloqueEj.join('\n')}`);
   final = `${acotar(final, tope)}${colaCon}`;
   if (finalOtros !== null) finalOtros = editarId !== null ? `${acotar(finalOtros, TOPE_MENSAJE)}${cola.replace(MARCA_EJ, '')}` : `${acotar(finalOtros, tope)}${colaCon}`;
   const textoDe = (c) => (c !== 'telegram' && finalOtros !== null ? finalOtros : final);
@@ -1186,6 +1257,7 @@ function entregar(a) {
     ...(res.revision_semanal !== undefined ? { revision_semanal: res.revision_semanal } : {}),
     sitio: { linea: sitio.linea, resultado: sitio.resultado, motivo: sitio.motivo, hora: sitio.hora },
     ...(ejecuciones !== null ? { ejecuciones } : {}),
+    ...(fichasClon !== null ? { fichas: fichasClon } : {}),
   };
   const nota = [notaArmado, intento.nota].filter(Boolean).join(' · ');
   if (nota) resumen.nota = nota;
@@ -1373,4 +1445,5 @@ if (require.main === module) {
   try { codigo = main(process.argv.slice(2)); } catch (e) { console.error(`🔴 resumen-diario: error inesperado del guion: ${recortar((e && e.message) || String(e), 200)}`); codigo = 1; }
   process.exit(codigo);
 }
-module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA };
+module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
+  lineaEjecuciones, lineaFichas, fichasDeLaConstancia };

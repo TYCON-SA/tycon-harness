@@ -564,6 +564,9 @@ function escribirBorrador(dir, h, fecha, extra) {
     '# story-skill-gate y un `approach:` dispara el recordatorio de work item en ADO.',
     '# Se convierte en story SÓLO por decisión humana: /tycon-vigilante approve <id>',
     `id: "${id}"`,
+    // una ficha del ciclo de la noche (scripts/nightly/findings/): la causa es la huella del hallazgo
+    'fuente: "vigilante"',
+    `causa: "${h.huella}"`,
     `fecha: "${fecha}"`,
     `producto: "${h.producto}"`,
     `regla: "${h.regla}"`,
