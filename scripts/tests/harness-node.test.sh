@@ -30,6 +30,37 @@ LIST="$RAIZ/scripts/production/node-official.json"
 REAL_NODE="$(command -v node)"
 V1="v24.21.0"; V2="v24.22.0"; V3="v24.23.0"; V4="v24.24.0"; V5="v24.25.0"
 
+# ─── Windows: el Node de juguete es una copia del node.exe real ────────────────────────────────────────────────────
+# @story-8.115 @ac-3  T3 HarnessNode_Windows_BajaYArranca: Windows no lanza un guion de shell como .exe: el juguete es la copia del node.exe real, que dice
+# su versión verdadera, así que V1 es ésa. Los casos de cambio entre versiones necesitan dos binarios que digan
+# versiones distintas: en Windows se saltean con su motivo, y al final la lista fija frena cualquier salteo de más
+# (en la Mac, ninguno). En la Mac todo lo de abajo mide lo mismo que siempre.
+WIN=""; [ "$(node -p process.platform)" = win32 ] && WIN=1
+# V2 a V5 son etiquetas de versiones cuya bajada falla antes de correr el binario: en Windows tienen que ser distintas
+# de la real, que puede ser cualquier 24.x (con una igual, el arnés vería current al día y no bajaría nada)
+if [ -n "$WIN" ]; then V1="$(node --version)"; V2="v900.0.2"; V3="v900.0.3"; V4="v900.0.4"; V5="v900.0.5"; fi
+choque=""; for v in "$V2" "$V3" "$V4" "$V5"; do [ "$v" = "$V1" ] && choque="$choque $v"; done
+[ -z "$choque" ] && ok "las etiquetas de versión son distintas de la de current ($V1)" || bad "una etiqueta de versión es la misma que current ($V1):$choque"
+SALTEOS_WINDOWS="T7 versión nueva|T7 tercera versión|T7 limpieza de la más vieja"
+SALTEADOS=""
+saltear_en_windows() {
+  [ -n "${2:-}" ] || bad "salteo sin motivo: $1"
+  echo "⏭ harness-node: salteado en Windows — $1: ${2:-}"
+  SALTEADOS="${SALTEADOS:+$SALTEADOS|}$1"
+}
+# comparar_salteos <anotados> <esperados>  — vacío si son los mismos, en el mismo orden
+comparar_salteos() { [ "$1" = "$2" ] || printf 'anotados «%s», esperados «%s»' "${1:-ninguno}" "${2:-ninguno}"; }
+# bp <carpeta>  — el binario de una versión del Node del arnés: node.exe en Windows, bin/node en los demás
+BINREL="bin/node"; [ -n "$WIN" ] && BINREL="node.exe"
+bp() { printf '%s/%s' "$1" "$BINREL"; }
+# @story-8.115 @ac-3  T10 HarnessNode_Windows_SoloSalteaCambioDeVersion: el control ve un salteo de más, uno de menos y
+# uno fuera de la lista
+[ -n "$(comparar_salteos "T7 versión nueva|T9 otro" "T7 versión nueva")" ] && [ -n "$(comparar_salteos "" "T7 versión nueva")" ] \
+  && [ -z "$(comparar_salteos "T7 versión nueva" "T7 versión nueva")" ] && ok "T10 (8.115) el control de salteos ve uno de más y uno de menos" \
+  || bad "T10 (8.115) el control de salteos no distingue los salteos de la lista fija"
+( FALLAS=0; saltear_en_windows "caso de prueba" "" >/dev/null; [ "$FALLAS" -eq 1 ] ) \
+  && ok "T10 (8.115) un salteo sin motivo suma una falla" || bad "T10 (8.115) un salteo sin motivo pasó callado"
+
 # ─── T1 · la lista real: seis plataformas, una versión ─────────────────────────────────────────────────────────────
 # @story-8.39 @ac-1  NodeOfficial_SeisPlataformas_UnaVersion
 t1="$(node -e '
@@ -56,7 +87,8 @@ done
 [ -f "$MOD" ] || { bad "falta $MOD (la feature no existe)"; echo "harness-node: $FALLAS fallas"; exit 1; }
 
 # ─── el laboratorio: HOME de juguete, árbol de juguete con la lista de laboratorio, servidor local ────────────────
-export HOME="$BASE/home"; mkdir -p "$HOME"
+# USERPROFILE junto a HOME: en Windows Node toma la carpeta personal de USERPROFILE, en su forma de Windows
+export HOME="$BASE/home" USERPROFILE="$(cygpath -w "$BASE/home" 2>/dev/null || printf '%s' "$BASE/home")"; mkdir -p "$HOME"
 unset TYCON_HOME TYCON_NODE_BIN
 export TYCON_HARNESS_NODE=1
 TREE="$BASE/tree"; mkdir -p "$TREE/scripts/production" "$TREE/scripts/setup/harness" "$TREE/scripts/lib"
@@ -67,11 +99,24 @@ HN="$TREE/scripts/setup/harness/harness-node.js"
 KEY="$(node -e 'process.stdout.write(require(process.argv[1]).platformKey({}).key || "")' "$HN")"
 [ -n "$KEY" ] || { bad "esta máquina no tiene clave de plataforma: no se puede probar la bajada"; echo "harness-node: $FALLAS fallas"; exit 1; }
 sha() { node -e 'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
+# en Windows, la copia del node.exe real: una sola vez (pesa ~94 MB), dentro del laboratorio, que se borra al salir
+REAL_EXE=""
+if [ -n "$WIN" ]; then
+  REAL_EXE="$BASE/node-real.exe"
+  cp "$(cygpath -u "$(node -p process.execPath)")" "$REAL_EXE" || { bad "no pude copiar el node.exe real al laboratorio"; echo "harness-node: $FALLAS fallas"; exit 1; }
+fi
 
 # make_dist <versión> <exit de --version>  — el comprimido de juguete de esa versión para esta plataforma, en DIST
 make_dist() {
   local v="$1" rc="${2:-0}" root="$BASE/build/node-$1-$KEY"
   rm -rf "$BASE/build"; mkdir -p "$root/bin" "$root/lib/node_modules/npm/bin" "$DIST/$v"
+  if [ -n "$WIN" ]; then
+    # el .exe suelto: la copia real si tiene que arrancar; si no, un archivo que Windows no puede lanzar
+    mkdir -p "$DIST/$v/win-x64"
+    if [ "$rc" = "0" ]; then cp "$REAL_EXE" "$DIST/$v/win-x64/node.exe"; else printf 'no es un ejecutable de Windows\n' > "$DIST/$v/win-x64/node.exe"; fi
+    sha "$DIST/$v/win-x64/node.exe" > "$BASE/build/node.sha"
+    return 0
+  fi
   if [ "$rc" = "0" ]; then
     printf '#!/bin/sh\n# node de juguete (harness-node.test.sh)\nif [ "${1:-}" = "--version" ]; then echo "%s"; exit 0; fi\nexec "%s" "$@"\n' "$v" "$REAL_NODE" > "$root/bin/node"
   else
@@ -87,8 +132,14 @@ make_dist() {
 }
 # write_list <versión> [tar-sha] [node-sha]  — la lista de laboratorio del árbol de juguete, con las huellas de DIST
 write_list() {
-  local v="$1" tsha="${2:-$(sha "$DIST/$1/node-$1-$KEY.tar.gz")}" nsha="${3:-$(cat "$BASE/build/node.sha")}" esha
-  esha="$(sha "$DIST/$v/win-x64/node.exe")"
+  local v="$1" tsha nsha esha
+  if [ -n "$WIN" ]; then
+    # en Windows la entrada de la plataforma es la del .exe: las huellas que pasa el caso van a esa
+    tsha=-; nsha=-; esha="${2:-${3:-$(sha "$DIST/$v/win-x64/node.exe")}}"
+  else
+    tsha="${2:-$(sha "$DIST/$1/node-$1-$KEY.tar.gz")}"; nsha="${3:-$(cat "$BASE/build/node.sha")}"
+    esha="$(sha "$DIST/$v/win-x64/node.exe")"
+  fi
   node -e '
 const [file, v, key, tsha, nsha, esha, port] = process.argv.slice(1);
 const files = {}; files[key] = { tar: `node-${v}-${key}.tar.gz`, sha256: tsha, node_sha256: nsha };
@@ -119,12 +170,12 @@ target() { node -e 'const p=require("fs");try{process.stdout.write(require("path
 # @story-8.39 @ac-2  Install_BajaVerificaYEnlaza
 make_dist "$V1"; write_list "$V1"
 r="$(hn manual)"
-if [ "$(field "$r" status)" = "installed" ] && [ -x "$NDIR/versions/$V1/bin/node" ] && [ "$(target)" = "$V1" ]; then ok "T4 bajó, verificó y enlazó: current → versions/$V1"; else bad "T4 no instaló: $r"; fi
+if [ "$(field "$r" status)" = "installed" ] && [ -x "$(bp "$NDIR/versions/$V1")" ] && [ "$(target)" = "$V1" ]; then ok "T4 [$(node -p process.platform)] bajó, verificó y enlazó: current → versions/$V1"; else bad "T4 no instaló: $r"; fi
 m="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(["version","platform","file","sha256","binary_sha256","installed_at"].filter(k=>!m[k]).join(","))' "$NDIR/versions/$V1/.tycon-node.json" 2>&1)"
 [ -z "$m" ] && ok "T4 el manifiesto .tycon-node.json está completo" || bad "T4 al manifiesto le falta: $m"
 if ls -d "$NDIR"/.incoming-* >/dev/null 2>&1; then bad "T4 quedó una carpeta .incoming-* al final"; else ok "T4 ninguna .incoming-* al final"; fi
 for extra in npm npx corepack; do [ -e "$NDIR/versions/$V1/bin/$extra" ] && bad "T4 se escribió bin/$extra (sólo va bin/node)"; done
-[ "$("$NDIR/current/bin/node" --version)" = "$V1" ] && ok "T4 current/bin/node arranca y dice $V1" || bad "T4 current/bin/node no arranca"
+[ "$("$(bp "$NDIR/current")" --version)" = "$V1" ] && ok "T4 $(bp current) arranca y dice $V1" || bad "T4 $(bp current) no arranca"
 
 # ─── T6 · ya al día: cero pedidos ───────────────────────────────────────────────────────────────────────────────────
 # @story-8.39 @ac-3  Ensure_YaAlDia_SinRed
@@ -134,26 +185,39 @@ r="$(hn startup)"; [ "$(reqs)" = "$before" ] && ok "T6 el arranque tampoco pide"
 
 # ─── T7 · versión nueva: cambia el enlace, guarda la anterior, borra la más vieja en el arranque siguiente ──────────
 # @story-8.39 @ac-3  Ensure_VersionNueva_CambiaElEnlaceYGuardaLaAnterior
-make_dist "$V2"; write_list "$V2"; r="$(hn startup)"
-[ "$(target)" = "$V2" ] && [ -d "$NDIR/versions/$V1" ] && ok "T7 current → $V2 y $V1 queda" || bad "T7 no cambió a $V2 o borró $V1: $r"
-make_dist "$V3"; write_list "$V3"; r="$(hn startup)"
-[ "$(target)" = "$V3" ] && [ -d "$NDIR/versions/$V2" ] && ok "T7 current → $V3 y $V2 queda" || bad "T7 tercera versión: $r"
-r="$(hn startup)"
-if [ ! -d "$NDIR/versions/$V1" ] && [ -d "$NDIR/versions/$V2" ] && [ -d "$NDIR/versions/$V3" ]; then ok "T7 en el arranque siguiente se borró la más vieja ($V1); quedan la de current y la anterior"; else bad "T7 limpieza: $(ls "$NDIR/versions" | tr '\n' ' ')"; fi
+if [ -n "$WIN" ]; then
+  MOTIVO_T7="necesita binarios que digan versiones distintas y el de Windows es la copia del node.exe real; la lógica es la misma en todos los sistemas y se mide en la Mac"
+  saltear_en_windows "T7 versión nueva" "$MOTIVO_T7"
+  saltear_en_windows "T7 tercera versión" "$MOTIVO_T7"
+  saltear_en_windows "T7 limpieza de la más vieja" "$MOTIVO_T7"
+else
+  make_dist "$V2"; write_list "$V2"; r="$(hn startup)"
+  [ "$(target)" = "$V2" ] && [ -d "$NDIR/versions/$V1" ] && ok "T7 current → $V2 y $V1 queda" || bad "T7 no cambió a $V2 o borró $V1: $r"
+  make_dist "$V3"; write_list "$V3"; r="$(hn startup)"
+  [ "$(target)" = "$V3" ] && [ -d "$NDIR/versions/$V2" ] && ok "T7 current → $V3 y $V2 queda" || bad "T7 tercera versión: $r"
+  r="$(hn startup)"
+  if [ ! -d "$NDIR/versions/$V1" ] && [ -d "$NDIR/versions/$V2" ] && [ -d "$NDIR/versions/$V3" ]; then ok "T7 en el arranque siguiente se borró la más vieja ($V1); quedan la de current y la anterior"; else bad "T7 limpieza: $(ls "$NDIR/versions" | tr '\n' ' ')"; fi
+fi
 
 # ─── T8 · una versión rota se aparta, nunca se escribe encima ──────────────────────────────────────────────────────
 # @story-8.39 @ac-2  Ensure_ArmaAparteYApartaLaRota
-rm -rf "$NDIR"; mkdir -p "$NDIR/versions/$V3/bin"; printf '#!/bin/sh\nexit 1\n' > "$NDIR/versions/$V3/bin/node"; chmod +x "$NDIR/versions/$V3/bin/node"
+# TV: la versión de la lista en este punto (V3 tras T7; en Windows, V1, la única que el juguete puede decir)
+TV="$V3"
+if [ -n "$WIN" ]; then TV="$V1"; make_dist "$V1"; write_list "$V1"; fi
+rm -rf "$NDIR"; mkdir -p "$(dirname "$(bp "$NDIR/versions/$TV")")"; printf '#!/bin/sh\nexit 1\n' > "$(bp "$NDIR/versions/$TV")"; chmod +x "$(bp "$NDIR/versions/$TV")"
 r="$(hn manual)"
-if [ "$(field "$r" status)" = "installed" ] && [ "$("$NDIR/current/bin/node" --version)" = "$V3" ] && ls "$NDIR"/trash/*/bin/node >/dev/null 2>&1; then ok "T8 la rota fue a node/trash/ y la nueva entró por cambio de nombre"; else bad "T8: $r · trash: $(ls "$NDIR/trash" 2>/dev/null)"; fi
+if [ "$(field "$r" status)" = "installed" ] && [ "$("$(bp "$NDIR/current")" --version)" = "$TV" ] && ls "$NDIR"/trash/*/$BINREL >/dev/null 2>&1; then ok "T8 la rota fue a node/trash/ y la nueva entró por cambio de nombre"; else bad "T8: $r · trash: $(ls "$NDIR/trash" 2>/dev/null)"; fi
 
 # ─── T9 · sin red, 500, servidor que no contesta: nada a medias, current igual, motivo anotado ─────────────────────
 # @story-8.39 @ac-11  Ensure_SinRed_SigueConElDelPathYAvisa
-make_dist "$V1"; write_list "$V1"   # la lista pide otra versión que la de current
+# NV: una versión distinta de la de current (V1 en la Mac; en Windows, donde current es V1, V2: la bajada falla antes de
+# correr el binario, así que la etiqueta no tiene que coincidir con lo que diga)
+NV="$V1"; [ -n "$WIN" ] && NV="$V2"
+make_dist "$NV"; write_list "$NV"   # la lista pide otra versión que la de current
 for case in 500 hang; do
   printf '%s\n' "$case" > "$MODE"
   r="$(TYCON_HARNESS_NODE_BUDGET_S=2 hn manual)"
-  if [ "$(field "$r" status)" = "failed" ] && [ ! -d "$NDIR/versions/$V1" ] && [ "$(target)" = "$V3" ] && ! ls -d "$NDIR"/.incoming-* >/dev/null 2>&1; then ok "T9 ($case): falló sin dejar nada, current sigue en $V3"; else bad "T9 ($case): $r"; fi
+  if [ "$(field "$r" status)" = "failed" ] && [ ! -d "$NDIR/versions/$NV" ] && [ "$(target)" = "$TV" ] && ! ls -d "$NDIR"/.incoming-* >/dev/null 2>&1; then ok "T9 ($case): falló sin dejar nada, current sigue en $TV"; else bad "T9 ($case): $r"; fi
   rec="$(record)"; [ -n "$(field "$rec" last_failure.reason)" ] && [ -n "$(field "$rec" last_failure.at)" ] && ok "T9 ($case): last_failure con motivo ($(field "$rec" last_failure.reason))" || bad "T9 ($case): sin last_failure: $rec"
   [ -n "$(field "$r" notice)" ] && ok "T9 ($case): el resultado trae el aviso" || bad "T9 ($case): sin aviso"
 done
@@ -162,7 +226,7 @@ echo ok > "$MODE"
 cp "$TREE/scripts/production/node-official.json" "$BASE/list.bak"
 node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.base_url="http://127.0.0.1:9/";require("fs").writeFileSync(f,JSON.stringify(j))' "$TREE/scripts/production/node-official.json"
 r="$(TYCON_HARNESS_NODE_BUDGET_S=2 hn manual)"
-[ "$(field "$r" status)" = "failed" ] && [ "$(target)" = "$V3" ] && ok "T9 (servidor caído): falló, current igual" || bad "T9 (servidor caído): $r"
+[ "$(field "$r" status)" = "failed" ] && [ "$(target)" = "$TV" ] && ok "T9 (servidor caído): falló, current igual" || bad "T9 (servidor caído): $r"
 cp "$BASE/list.bak" "$TREE/scripts/production/node-official.json"
 
 # ─── T10 · la ventana de seis horas y el arranque en el lugar ──────────────────────────────────────────────────────
@@ -170,6 +234,8 @@ cp "$BASE/list.bak" "$TREE/scripts/production/node-official.json"
 set_failure_age() { node -e 'const H=require(process.argv[1]);const r=H.readRecord({});r.last_failure={at:new Date(Date.now()-Number(process.argv[2])*3600e3).toISOString(),reason:"prueba"};H.writeRecord({},r)' "$HN" "$1"; }
 set_failure_age 1; before="$(reqs)"; r="$(hn startup)"
 [ "$(reqs)" = "$before" ] && [ "$(field "$r" status)" = "skipped" ] && ok "T10 falla hace 1 h: el arranque no pide" || bad "T10 1 h: pidió o no salteó: $r"
+# en Windows la lista vuelve a V1 (la única que el juguete puede decir) y se saca current, para que la bajada haga falta
+if [ -n "$WIN" ]; then make_dist "$V1"; write_list "$V1"; rm -rf "$NDIR/current" "$NDIR/versions/$V1"; fi
 set_failure_age 7; r="$(hn startup)"
 [ "$(reqs)" != "$before" ] && [ "$(field "$r" status)" = "installed" ] && ok "T10 falla hace 7 h: el arranque pide y baja" || bad "T10 7 h: $r"
 rec="$(record)"; [ -z "$(field "$rec" last_failure)" ] && ok "T10 con la bajada lograda, last_failure se borra" || bad "T10 last_failure quedó: $rec"
@@ -226,7 +292,7 @@ rm -rf "$NDIR"
 
 # ─── T15 · current que dejó de arrancar ────────────────────────────────────────────────────────────────────────────
 # @story-8.39 @ac-16  Startup_CurrentRoto_VuelveANodeEnLosDosLados
-r="$(hn manual)"; printf '#!/bin/sh\nexit 1\n' > "$NDIR/versions/$V1/bin/node"
+r="$(hn manual)"; printf '#!/bin/sh\nexit 1\n' > "$(bp "$NDIR/versions/$V1")"
 printf '500\n' > "$MODE"
 r="$(TYCON_HARNESS_NODE_BUDGET_S=2 hn manual)"
 i="$(node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]).interpreter({ tree: process.argv[2] })))' "$HN" "$TREE")"
@@ -238,11 +304,21 @@ rm -rf "$NDIR"
 
 # ─── T22 · los hijos usan el Node del arnés ────────────────────────────────────────────────────────────────────────
 # @story-8.39 @ac-8  Hijos_UsanElNodeDelArnes
-mkdir -p "$NDIR/versions/$V1/bin"; ln -s "versions/$V1" "$NDIR/current"
-printf '#!/bin/sh\necho usado >> "%s"\nexec "%s" "$@"\n' "$BASE/wrapper.log" "$REAL_NODE" > "$NDIR/versions/$V1/bin/node"; chmod +x "$NDIR/versions/$V1/bin/node"
-got="$(bash -c '. "$1"; harness_node_bin' _ "$HELPER")"
-[ "$got" = "$NDIR/current/bin/node" ] && ok "T22 el ayudante de shell elige current si es ejecutable" || bad "T22 el ayudante eligió «${got}»"
-bash -c '. "$1"; "$(harness_node_bin)" -e 1' _ "$HELPER"; [ -s "$BASE/wrapper.log" ] && ok "T22 lo que lanza el ayudante corre con el envoltorio" || bad "T22 el envoltorio no se usó"
+if [ -n "$WIN" ]; then
+  # en Windows el binario de current es la copia real: lo que lanza el ayudante tiene que correr con ESE binario
+  mkdir -p "$NDIR/versions/$V1"; cp "$REAL_EXE" "$NDIR/versions/$V1/node.exe"; ln -s "versions/$V1" "$NDIR/current"
+  got="$(bash -c '. "$1"; harness_node_bin' _ "$HELPER")"
+  [ "$got" = "$NDIR/current/node.exe" ] && ok "T22 el ayudante de shell elige current si es ejecutable" || bad "T22 el ayudante eligió «${got}»"
+  usado="$(bash -c '. "$1"; "$(harness_node_bin)" -p process.execPath' _ "$HELPER")"
+  node -e 'const fs=require("fs");process.exit(fs.realpathSync.native(process.argv[1])===fs.realpathSync.native(process.argv[2])?0:1)' "$usado" "$(cygpath -w "$NDIR/current/node.exe")" \
+    && ok "T22 lo que lanza el ayudante corre con el binario de current" || bad "T22 lo que lanza el ayudante corrió con «${usado}»"
+else
+  mkdir -p "$NDIR/versions/$V1/bin"; ln -s "versions/$V1" "$NDIR/current"
+  printf '#!/bin/sh\necho usado >> "%s"\nexec "%s" "$@"\n' "$BASE/wrapper.log" "$REAL_NODE" > "$NDIR/versions/$V1/bin/node"; chmod +x "$NDIR/versions/$V1/bin/node"
+  got="$(bash -c '. "$1"; harness_node_bin' _ "$HELPER")"
+  [ "$got" = "$NDIR/current/bin/node" ] && ok "T22 el ayudante de shell elige current si es ejecutable" || bad "T22 el ayudante eligió «${got}»"
+  bash -c '. "$1"; "$(harness_node_bin)" -e 1' _ "$HELPER"; [ -s "$BASE/wrapper.log" ] && ok "T22 lo que lanza el ayudante corre con el envoltorio" || bad "T22 el envoltorio no se usó"
+fi
 PATH_BEFORE="$PATH"; bash -c '. "$1"' _ "$HELPER"; [ "$PATH" = "$PATH_BEFORE" ] && ok "T22 cargar el ayudante no cambia el PATH" || bad "T22 cambió el PATH"
 if grep -nE "execFileSync\(\s*['\"]node['\"]" "$RAIZ/skills/tycon-pipeline/scripts/dispatch.js" "$RAIZ/skills/tycon-pipeline/scripts/pipeline.js" >/dev/null; then bad "T22 dispatch.js o pipeline.js todavía lanzan execFileSync('node', …)"; else ok "T22 dispatch.js y pipeline.js lanzan con process.execPath"; fi
 for h in safety-guard-pre.sh test-scope-guard-pre.sh harness-bootstrap-heal.sh instinct-trigger.sh engram-pre-commit.sh git-pre-commit-global.sh git-pre-push-global.sh; do
@@ -332,10 +408,13 @@ fs.writeFileSync(path.join(base, "u2", "scripts", "setup", "hooks-list.json"), J
 t(JSON.stringify(H.listedHookPaths(path.join(base, "u2"))) === JSON.stringify(["scripts/hooks/a.js", "skills/tycon-pipeline/scripts/b.js"]), "listedHookPaths");
 t(H.listedHookPaths(path.join(base, "no-hay")) === null, "listedHookPaths sin lista");
 // probe: un binario que no está, uno que dice su versión y uno que sale 1
-const pb = path.join(base, "pb"); fs.writeFileSync(pb, "#!/bin/sh\necho v24.21.0\n"); fs.chmodSync(pb, 0o755);
+// en Windows un guion no se lanza como binario: el sano es una copia del node.exe real, que dice su versión
+const win = process.platform === "win32";
+const pb = path.join(base, win ? "pb.exe" : "pb");
+if (win) fs.copyFileSync(process.execPath, pb); else { fs.writeFileSync(pb, "#!/bin/sh\necho v24.21.0\n"); fs.chmodSync(pb, 0o755); }
 const pm = path.join(base, "pm"); fs.writeFileSync(pm, "#!/bin/sh\necho roto >&2\nexit 1\n"); fs.chmodSync(pm, 0o755);
 t(H.probe(path.join(base, "nada-bin"), { cache: false }).ok === false, "probe sin binario");
-t(H.probe(pb, { cache: false }).version === "v24.21.0", "probe sano");
+t(H.probe(pb, { cache: false }).version === (win ? process.version : "v24.21.0"), "probe sano");
 t(/no arranca/.test(H.probe(pm, { cache: false }).reason || ""), "probe roto");
 process.stdout.write(bad.join(" · "));' "$HN" "$BASE/unit" 2>&1)"
 [ -z "$UNIT" ] && ok "unidades: readList, entryFor, formFor, noticeFor, countHooks y doctorFacts dicen lo que el AC pide" || bad "unidades: $UNIT"
@@ -394,12 +473,20 @@ TYCON_HOME=relativa TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scri
 # E (Windows) · Get-HarnessNode del instalador .ps1: una TYCON_HOME relativa → ninguno (el Node del PATH); una absoluta con
 # current → su binario. Corre la función tal como está en el .ps1; sin pwsh en la máquina, NO MEDIDO (no un verde)
 if command -v pwsh >/dev/null 2>&1; then
-  mkdir -p "$NDIR/versions/$V1/bin"; printf '#!/bin/sh\necho %s\n' "$V1" > "$NDIR/versions/$V1/bin/node"; chmod +x "$NDIR/versions/$V1/bin/node"; ln -s "versions/$V1" "$NDIR/current"
+  if [ -n "$WIN" ]; then mkdir -p "$NDIR/versions/$V1"; cp "$REAL_EXE" "$NDIR/versions/$V1/node.exe"
+  else mkdir -p "$NDIR/versions/$V1/bin"; printf '#!/bin/sh\necho %s\n' "$V1" > "$NDIR/versions/$V1/bin/node"; chmod +x "$NDIR/versions/$V1/bin/node"; fi
+  ln -s "versions/$V1" "$NDIR/current"
   PSF='$s = Get-Content -Raw $env:PS1; $i = $s.IndexOf("function Get-HarnessNode"); $j = $s.IndexOf("`$script:HarnessNode = Get-HarnessNode"); function Get-TyconHome { $env:HOME }; Invoke-Expression ($s.Substring($i, $j - $i)); $r = Get-HarnessNode; if ($r) { $r } else { "NINGUNO" }'
   rel="$(PS1="$RAIZ/scripts/install-tycon-hooks.ps1" TYCON_HOME=relativa pwsh -NoProfile -NonInteractive -Command "$PSF" 2>&1 | tail -1)"
   abs="$(PS1="$RAIZ/scripts/install-tycon-hooks.ps1" pwsh -NoProfile -NonInteractive -Command "$PSF" 2>&1 | tail -1)"
   [ "$rel" = NINGUNO ] && ok "adversarial E (.ps1): TYCON_HOME relativa → el Node del PATH" || bad "adversarial E (.ps1): con TYCON_HOME relativa devolvió «${rel}»"
-  [ "$abs" = "$NDIR/current/bin/node" ] && ok "adversarial E (.ps1): con la casa absoluta, el binario de current" || bad "adversarial E (.ps1): con la casa absoluta devolvió «${abs}»"
+  if [ -n "$WIN" ]; then
+    # pwsh devuelve la ruta en forma de Windows: se comparan las dos rutas reales
+    node -e 'const fs=require("fs");try{process.exit(fs.realpathSync.native(process.argv[1])===fs.realpathSync.native(process.argv[2])?0:1)}catch(_){process.exit(1)}' "$abs" "$(cygpath -w "$NDIR/current/node.exe")" \
+      && ok "adversarial E (.ps1): con la casa absoluta, el binario de current" || bad "adversarial E (.ps1): con la casa absoluta devolvió «${abs}»"
+  else
+    [ "$abs" = "$NDIR/current/bin/node" ] && ok "adversarial E (.ps1): con la casa absoluta, el binario de current" || bad "adversarial E (.ps1): con la casa absoluta devolvió «${abs}»"
+  fi
   rm -rf "$NDIR"
 else
   echo "⚪ harness-node: adversarial E (.ps1) NO MEDIDO: no hay pwsh en esta máquina"
@@ -463,6 +550,11 @@ for f in clean-machine.test.sh installer-ps1.test.sh windows-guided-lab.test.js 
   grep -q 'TYCON_HARNESS_NODE' "$RAIZ/scripts/tests/$f" && ok "T34 $f apaga la bajada (decisión 20)" || bad "T34 $f no apaga la bajada (decisión 20)"
 done
 grep -q 'TYCON_HARNESS_NODE=0' "$RAIZ/scripts/tests/lib/harness-lab.sh" && grep -q 'TYCON_HARNESS_NODE=0' "$RAIZ/scripts/tests/lib/fake-home.sh" && ok "T34 harness-lab.sh y fake-home.sh exportan el apagado" || bad "T34 el laboratorio no exporta TYCON_HARNESS_NODE=0"
+
+# @story-8.115 @ac-3  T10: los salteos son exactamente los de la lista fija en Windows, y ninguno en los demás
+esperados=""; [ -n "$WIN" ] && esperados="$SALTEOS_WINDOWS"
+dif="$(comparar_salteos "$SALTEADOS" "$esperados")"
+[ -z "$dif" ] && ok "T10 (8.115) salteos: ${SALTEADOS:-ninguno} (los de la lista fija)" || bad "T10 (8.115) los salteos no son los de la lista fija: $dif"
 
 echo "harness-node: $FALLAS fallas"
 [ "$FALLAS" -eq 0 ]

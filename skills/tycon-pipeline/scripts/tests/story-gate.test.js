@@ -22,6 +22,7 @@ const SCRIPTS = path.join(__dirname, '..');
 const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
 const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
 const bash = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
+const { conCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
 
 const REPO = '/w/MiRepo';
 const BASE = { filePath: `${REPO}/src/Foo.cs`, stateDir: '/home/u/.claude/.tycon-pipeline', homeDir: '/home/u', repoRoot: REPO, repoHasTycon: true, repoHasStories: false, marker: null, adhoc: null };
@@ -466,12 +467,10 @@ test('BashWrite_InstalledTree_OtherForms', () => {
   const enElArbol = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: tree, tool_input: { command } });
   assert.ok(/el arnés instalado no se edita/.test((bash.handle(enElArbol('cp a "b.md"'), opts) || {}).block || ''));
   // un destino con $HOME hacia el árbol
-  const prevHome = process.env.HOME;
-  process.env.HOME = path.dirname(path.dirname(tree));
-  try {
+  conCarpetaPersonal(path.dirname(path.dirname(tree)), () => {
     const b = bash.handle(ev(`echo x > $HOME/.tycon/harness/a.md`), opts);
     assert.ok(b && /el arnés instalado no se edita/.test(b.block), '$HOME');
-  } finally { process.env.HOME = prevHome; }
+  });
   // una ruta de Windows entre comillas (con barras invertidas) se lee como destino
   assert.deepEqual(bash.extractWriteTargets('Copy-Item a "C:\\Users\\x\\.tycon\\harness\\b.md"'), ['C:\\Users\\x\\.tycon\\harness\\b.md']);
   // con -t cuenta cada archivo que llega: copiar código a una carpeta del repo sigue siendo escribir código
@@ -513,6 +512,12 @@ test('InstalledRoots_EmptyAnswerIsNotKept', () => {
 
 // ── ediciones por la terminal con el pipeline abierto: manifiestos, intérpretes, borrar y deshacer ──────────
 // Una corrida abierta con el plan aprobado: el carril deja editar y el registro exige Edit/Write.
+/** Una carpeta temporal escrita como la escribe un comando del bash de Git: el nombre largo (sin el `~` del nombre corto
+ *  de Windows) y con barras normales (la barra invertida es un escape para bash). En Mac y Linux, la ruta real. */
+function carpetaParaBash(prefijo) {
+  return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefijo))).replace(/\\/g, '/');
+}
+
 function corridaAbierta({ pendiente = [4, 5, 6, 7, 8] } = {}) {
   const stateDir = tmpState();
   const repo = fs.realpathSync(mkRepo(false));
@@ -580,7 +585,7 @@ test('T36 Freno_FalsosPositivosDeLaMedicion @story-8.93 @ac-22', () => {
   const { stateDir, repo } = corridaAbierta();
   fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'x');
-  const fuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-')));
+  const fuera = carpetaParaBash('fuera-');
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
   conEnv(SIN_REGISTRO, () => {
     // 1. la forma mínima del cd: `VAR=literal; … && cd DIR && <escritura>`, la escritura en la misma cadena de &&
@@ -626,7 +631,7 @@ test('T41 Freno_PaseAdversarialE_SigueFrenando @story-8.93 @ac-15 @ac-22', () =>
   const { stateDir, repo } = corridaAbierta();
   fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'x');
-  const F = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fuera-')));
+  const F = carpetaParaBash('fuera-');
   const R = repo;
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
   const casos = [

@@ -3127,6 +3127,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.115 (T1): una carpeta personal de juguete cambia HOME y USERPROFILE juntas en las suites que corren en Windows (en Windows os.homedir() lee USERPROFILE: con HOME solo, el guion escribe en la carpeta personal real), y el ayudante tests/lib/fake-home.js restaura las dos. Sólo lee archivos; no lanza procesos.",
+      "raiz": "arnes",
+      "ruta": "tests/fake-home-userprofile.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.66: las reglas de lectura de las carpetas del arnés en permissions.allow de ~/.claude/settings.json — cuáles (el árbol, sus dos enlaces y cada skill enlazada), su forma, sumar sin pisar al dev, sin repetir, después del aplicador, sacar al actualizar lo que ya no es del arnés (leyendo el registro de disco) y desinstalar sólo lo anotado. Con HOME y settings.json de prueba.",
       "raiz": "arnes",
       "ruta": "tests/read-permissions.test.js",

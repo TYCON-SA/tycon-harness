@@ -28,6 +28,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
+const { fakeHomeEnv } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'tests', 'lib', 'fake-home.js'));
 const APPLY = path.join(ROOT, 'scripts', 'setup', 'apply-hooks.js');
 const LIST = path.join(ROOT, 'scripts', 'setup', 'hooks-list.json');
 const EFFECTS = path.join(ROOT, 'scripts', 'setup', 'install-effects.json');
@@ -771,7 +772,7 @@ test('T5 Update_ListaMasNuevaQueElNodeBajado_HooksConElDelArnes @story-8.93 @ac-
   fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v99.0.0; exit 0; fi\nexec "${process.execPath}" "$@"\n`);
   const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'production', 'node-official.json'), 'utf8'));
   assert.notStrictEqual(list.version, 'v99.0.0', 'la prueba necesita una lista con otra versión que el Node de juguete');
-  const interp = HN.interpreter({ env: { HOME: L.home, TYCON_HOME: path.join(L.home, '.tycon') }, platform: 'darwin' });
+  const interp = HN.interpreter({ env: { ...fakeHomeEnv(L.home), TYCON_HOME: path.join(L.home, '.tycon') }, platform: 'darwin' });
   assert.strictEqual(interp.present, true, interp.reason);
   assert.strictEqual(interp.own, true, interp.reason);
   assert.match(interp.reason, /se usa igual hasta la próxima bajada/);
@@ -870,12 +871,17 @@ test('T4 Health_ScriptDelHookInexistente_Rojo @story-8.93 @ac-3', (t) => {
   assert.match(ours[0], /UserPromptSubmit.*2026\.10\.20\.36/);
   // la forma del piso con el piso muerto: también rojo; una ruta que expande el shell: aviso, no falla
   const deadFloor = path.join(base, '.tycon', 'versions', 'vieja', 'scripts', 'lib', 'node-floor.js');
+  // el nombre corto de Windows trae un `~` en el medio: es literal, se mira; sólo el del principio lo expande el shell
+  const deadShort = path.join(base, 'USUARI~1', '.tycon', 'versions', 'corta', 'skills', 'tycon-pipeline', 'scripts', 'on-stop.js');
   fs.writeFileSync(settings, JSON.stringify({ hooks: {
     Stop: [{ hooks: [{ type: 'command', command: `node "${deadFloor}" "${alive}"` }] }],
     PreToolUse: [{ hooks: [{ type: 'command', command: 'node "$HOME/.tycon/harness/skills/tycon-pipeline/scripts/on-edit.js"' }] }],
+    SessionStart: [{ hooks: [{ type: 'command', command: `node "${deadShort}"` }, { type: 'command', command: 'node "~/.tycon/harness/skills/tycon-pipeline/scripts/on-edit.js"' }] }],
   } }));
   const r2 = HL.check({ home: base, env: Object.assign({}, process.env, { TYCON_SETTINGS_PATH: settings }), platform: process.platform }, { tree: ROOT, report: [], applierOut: '' });
   assert.ok(r2.failures.some((f) => f.includes('node-floor.js') && f.includes('no existe')), JSON.stringify(r2.failures));
   assert.ok(!r2.failures.some((f) => f.includes('$HOME')), 'una ruta con $HOME no es una falla');
   assert.ok(r2.warnings.some((w) => w.includes('$HOME') && w.includes('la expande el shell')));
+  assert.ok(r2.failures.some((f) => f.includes('USUARI~1') && f.includes('no existe')), `un ~ en el medio se mira: ${JSON.stringify(r2.failures)}`);
+  assert.ok(r2.warnings.some((w) => w.includes('~/.tycon') && w.includes('la expande el shell')), 'un ~ al principio lo expande el shell');
 });
