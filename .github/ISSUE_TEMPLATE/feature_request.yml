@@ -1,0 +1,25 @@
+name: Proposal · Propuesta
+description: Something the harness should do, with the case that shows it. · Algo que el arnés debería hacer, con el caso que lo muestra.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The harness grows from real cases: a proposal with the case behind it is easier to decide. · El arnés crece por casos reales: una propuesta con su caso se decide más fácil.
+  - type: textarea
+    id: case
+    attributes:
+      label: The case · El caso
+      description: What happened that the harness did not catch or did not help with. · Qué pasó que el arnés no frenó o no ayudó a resolver.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose · Qué proponés
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead · Qué probaste en su lugar
