@@ -145,6 +145,7 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', '
 const { resolveSessionId } = require('./lib/session-id.js');
 // la tabla de los pasos: nombres, orden, equivalencia con el marcador viejo
 const STEPS_LIB = require('./lib/steps.js');
+const { posixRelative } = require('./lib/path-forms.js');   // rutas relativas al repo con `/`, también en Windows
 // la carpeta de Claude Code (la de sus archivos de sesión) la sabe state-dir.js, con el mismo respaldo
 const { claudeDir: claudeDirOf } = require('./lib/state-dir.js');
 
@@ -3108,7 +3109,7 @@ function cmdPromoteProbe(probeDir) {
   }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(src, dest);
-  const reg = { probeDir: path.resolve(probeDir), archivo, dest: path.relative(repo, dest), ts: nowIso() };
+  const reg = { probeDir: path.resolve(probeDir), archivo, dest: posixRelative(repo, dest), ts: nowIso() };
   marker.adversarialRegressions = [...(marker.adversarialRegressions || []), reg];
   marker.lastTouch = nowIso();
   writeMarker(marker);

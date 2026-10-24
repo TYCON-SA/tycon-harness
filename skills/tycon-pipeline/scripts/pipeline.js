@@ -69,6 +69,7 @@ const honesty = require('./lib/ledger-honesty.js');
 const companionLib = require('./lib/companion-repos.js');   // el repo hermano de una story de dos repos
 const codeFiles = require('./lib/code-files.js');         // qué es código, qué es prueba (una sola lista)
 const stackConfig = require('./lib/stack-config.js');     // lo que sume la organización (team-repos.json → stack)
+const { isE2eSpecPath, relativeInsideRepo } = require('./lib/path-forms.js');   // rutas de Windows sin verde falso
 
 // ── log de invocaciones reales de advisors ─────────────────
 // El hook on-advisor-run.js (PreToolUse Task) registra cada subagent spawneado acá.
@@ -456,7 +457,8 @@ function hasPlaywrightSpecs(repo) {
         // Playwright y NO declaraste el gate". El aviso es el único mecanismo de
         // descubrimiento que tiene un repo para enterarse de que le falta declarar el gate, así
         // que un layout no contemplado no da error: da silencio.
-        else if (/\.spec\.ts$/.test(e.name) && /(^|\/)(tests\/)?e2e\//.test(path.join(dir, e.name))) hasSpec = true;
+        // con cualquier separador: en Windows `path.join` arma la ruta con `\` (lib/path-forms.js)
+        else if (isE2eSpecPath(path.join(dir, e.name))) hasSpec = true;
       } else if (e.isDirectory()) {
         walk(path.join(dir, e.name), depth + 1);
       }
@@ -697,11 +699,10 @@ function selectE2eApps(cfg, changedFiles) {
     if (!s) return null;
     if (!raiz) return s;
     if (path.isAbsolute(s)) {
-      let rel = norm(path.relative(raiz, s));
+      // Fuera del repo (scratchpad, otro repo, otra unidad de Windows) → no puede seleccionar ninguna app de ESTE.
       // Si con los paths tal cual quedó "fuera", reintentar con ambos lados resueltos.
-      if (rel.startsWith('../') && raizReal) rel = norm(path.relative(raizReal, realSafe(s)));
-      // Fuera del repo (scratchpad, otro repo) → no puede seleccionar ninguna app de ESTE.
-      return (rel && !rel.startsWith('../')) ? rel : null;
+      const rel = relativeInsideRepo(raiz, s) || (raizReal ? relativeInsideRepo(raizReal, realSafe(s)) : null);
+      return rel ? norm(rel) : null;
     }
     // Relativo que se ESCAPA del repo (`../otro/x.ts`): tampoco puede seleccionar una app acá.
     if (s === '..' || s.startsWith('../')) return null;
@@ -750,15 +751,19 @@ function selectE2eApps(cfg, changedFiles) {
   const propios = ['.tycon'];
   const relAlRepo = (p) => {
     const m = norm(p);
-    const rel = path.isAbsolute(m) && raiz ? norm(path.relative(raiz, m)) : m;
-    return (rel && !rel.startsWith('../')) ? rel : null;
+    if (!(path.isAbsolute(m) && raiz)) return (m && !m.startsWith('../')) ? m : null;
+    const rel = relativeInsideRepo(raiz, m);
+    return rel ? norm(rel) : null;
   };
   for (const p of [cfg && cfg.critical_manifest, cfg && cfg.gate]) {
     if (!p) continue;
     const rel = relAlRepo(p);
     if (rel && !propios.includes(rel)) propios.push(rel);
   }
-  if ([...compartidos, ...propios].some((sp) => tocados.some((f) => f === sp || f.startsWith(sp + '/')))) {
+  // Sin distinguir mayúsculas: la Mac y Windows no las distinguen, y una ruta escrita con otra caja que la declarada es
+  // la misma carpeta; seleccionar de más corre de más, nunca de menos.
+  const tocadosSinCaja = tocados.map((f) => f.toLowerCase());
+  if ([...compartidos, ...propios].map((sp) => sp.toLowerCase()).some((sp) => tocadosSinCaja.some((f) => f === sp || f.startsWith(sp + '/')))) {
     return todas.slice();
   }
 
@@ -766,7 +771,8 @@ function selectE2eApps(cfg, changedFiles) {
     const rel = raiz ? norm(path.relative(raiz, abs)) : norm(path.basename(abs));
     // App en la raíz del repo (`frontend_dir: .`): cualquier cambio la involucra.
     if (rel === '' || rel === '.') return true;
-    return tocados.some((f) => f === rel || f.startsWith(rel + '/'));
+    const r = rel.toLowerCase();
+    return tocadosSinCaja.some((f) => f === r || f.startsWith(r + '/'));
   });
 }
 

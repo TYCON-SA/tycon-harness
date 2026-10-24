@@ -128,11 +128,11 @@ function handle(event) {
     // hash + hora. Con eso el piso de la evidencia E2E se decide comparando contenido —un
     // checkout, un rebase o un stash pop que dejan el mismo contenido NO lo mueven; un pull que
     // trae otro contenido sí—, sin adivinar por fechas del disco ni de commits.
+    // `eol` (la huella con CRLF como LF) deja reconocer el mismo contenido reescrito con otro fin de línea.
     try {
-      const crypto = require('crypto');
-      const hash = crypto.createHash('sha1').update(fs.readFileSync(filePath)).digest('hex');
+      const { hash, eol } = require('./lib/content-seal.js').selloDeArchivo(filePath);
       if (!marker.filesTouchedAt || typeof marker.filesTouchedAt !== 'object') marker.filesTouchedAt = {};
-      marker.filesTouchedAt[filePath] = { hash, ts: Date.now() };
+      marker.filesTouchedAt[filePath] = { hash, eol, ts: Date.now() };
     } catch { /* ilegible o borrado: sin sello, el piso cae a la fecha del disco */ }
     // fileEvents: registrar CADA edición con ts — incluidas las RE-ediciones de archivos ya en
     // filesTouched. Es el data-path que computeSmartReloop (pipeline.js) usa para el delta por iteración.
