@@ -160,6 +160,10 @@ const VOCABULARIO = Object.freeze({
     // "detect"). No es una de las ocho integraciones (no es un servicio): dice si el arnés enchufa a Claude Code. La leen
     // `toolKeys()` y `install`; `detect` —y nadie diciendo nada— es «si está instalada».
     claude: 'llave-o-detectar',
+    // la herramienta de horas y la plataforma de pedidos: el freno no las usa, pero las acepta para no leer como ROTO un
+    // perfil o un archivo de la máquina que las trae
+    timeTracking: 'aceptada',
+    platform: 'aceptada',
   }),
   // La política de actualización del arnés (story 8.13, AC 12): valores CERRADOS (`opcion:a|b`). Un valor fuera de la
   // lista es un error (8.3 AC 2), nunca «apagado» ni el default. `TYCON_UPDATE=0` (apagar del todo) no es una clave:
@@ -202,11 +206,17 @@ const VOCABULARIO = Object.freeze({
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
-  approvals: Object.freeze({ relay_session: 'texto' }),
+  // `delegated_signing` y `delegated_machines` (firmas por delegación): el freno no las usa, pero las acepta para no leer
+  // como ROTO un perfil que las trae.
+  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'aceptada', delegated_machines: 'aceptada' }),
   // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
   // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
   // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.
   qa: Object.freeze({ manual_check: 'opcion:off|required' }),
+  // cómo se actualiza el freno y el proveedor de modelos: el freno no los usa, pero los acepta para no leer como ROTA una
+  // configuración que los trae
+  guard: Object.freeze({ update: 'aceptada' }),
+  models: Object.freeze({ provider: 'aceptada' }),
 });
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
@@ -701,6 +711,9 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
 /** null si el valor es del tipo; si no, el motivo. */
 function validarTipo(tipo, valor) {
   switch (tipo) {
+    // una clave del lector principal que el freno no usa: cualquier valor vale; la valida el lector principal
+    case 'aceptada':
+      return null;
     case 'llave':
       return typeof valor === 'boolean' ? null : `tiene que ser un booleano (true/false), no ${JSON.stringify(valor)}`;
     case 'llave-o-detectar':
