@@ -214,9 +214,15 @@ const VOCABULARIO = Object.freeze({
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
-  // `delegated_signing`: si esa misma sesión puede volver a firmar en nombre del dueño un pedido que él ya firmó, cuando
-  // lo único nuevo es que se trajo main. Cerrada; sin valor, apagada. Sólo del perfil.
-  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'opcion:off|refresh-after-main' }),
+  // `delegated_signing`: qué firmas puede hacer esa misma sesión en nombre del dueño. Un valor solo (como siempre) o una
+  // lista, de un vocabulario cerrado con todas las firmas del arnés; `off` va solo. Sin valor, ninguna. Sólo del perfil.
+  // `delegated_machines`: en qué máquinas vale esa delegación, por la huella de `machine-id.js` (16 hex) y un nombre para
+  // la persona. Sin valor, en ninguna. Sólo del perfil: si la máquina pudiera decirlo, el agente se elegiría solo.
+  approvals: Object.freeze({
+    relay_session: 'texto',
+    delegated_signing: 'opciones:off|refresh-after-main|adversarial-skip|critical-waiver|escape-phrases|plan-approval|browser-test|runtime-waiver|manual-test|extra-round|control-change|lost-run',
+    delegated_machines: 'maquinas',
+  }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
   // perfil: si la máquina pudiera decir `auto`, el agente se abriría solo la actualización sin contraseña.
@@ -261,7 +267,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
@@ -288,6 +294,12 @@ function paquetesDeTexto(texto) {
 function rangoDe(tipo) { const m = typeof tipo === 'string' ? /^entero:(\d+)-(\d+)$/.exec(tipo) : null; return m ? [Number(m[1]), Number(m[2])] : null; }
 /** Las opciones de un tipo `opcion:a|b`, o null si no es de ese tipo. */
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
+/** Las opciones de un tipo `opciones:` (un valor solo, o una lista sin repetidos, de una lista cerrada). */
+function subsetOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opciones:') ? tipo.slice('opciones:'.length).split('|') : null; }
+const HUELLA_DE_MAQUINA = /^[0-9a-f]{16}$/;
+const NOMBRE_DE_MAQUINA = /^[\p{L}\p{N} ._()-]{1,40}$/u;
+/** Iguales por valor: dos listas con lo mismo no son «distintas» por ser dos objetos. */
+function mismoValorPlano(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 // Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
 // nombre de antes del renombre (`rutas`, `integraciones`) se sigue leyendo hasta el retiro —también en la copia de este
 // archivo que vive en /opt con el freno de producción—; los dos juntos con valores distintos son un error del archivo. Por
@@ -458,6 +470,9 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
   if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
   if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
+  if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
+  // una lista de opciones sigue siendo lista y un valor solo sigue solo: quien lo lee pregunta con `delegaFirma`
+  if (subsetOf(tipo)) return Array.isArray(valor) ? valor.map((v) => v.trim()) : String(valor).trim();
   if (Array.isArray(valor)) return valor.slice();
   return typeof valor === 'string' ? valor.trim() : valor;   // un booleano sigue siendo booleano
 }
@@ -778,7 +793,8 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       const err = validarTipo(tipo, valor);
       if (err) { errores.push({ archivo, clave: rutaEnArchivo,motivo: err }); continue; }
       if (esPerfil) {
-        const forma = formaPersonal(valor);
+        // en una lista de máquinas, el texto libre es el nombre de cada una: pasa por la misma regla
+        const forma = tipo === 'maquinas' ? valor.map((m) => formaPersonal(m.label)).find(Boolean) : formaPersonal(valor);
         if (forma) { errores.push({ archivo, clave: rutaEnArchivo,motivo: `valor personal (${forma}): va en ~/.claude/tycon.json o en su variable, nunca en un archivo versionado` }); continue; }
       }
       if (tipo === 'llave-o-detectar' && valor !== DETECT && esDetect(valor)) anotarViejo('value', valor, DETECT, home);
@@ -829,6 +845,20 @@ function validarTipo(tipo, valor) {
     }
     case 'puerto':
       return (Number.isInteger(valor) && valor >= 1 && valor <= 65535) ? null : `tiene que ser un puerto (un entero de 1 a 65535), no ${JSON.stringify(valor)}`;
+    case 'maquinas': {
+      // las máquinas donde vale la firma por delegación: la huella de machine-id.js y un nombre para la persona
+      const forma = 'una lista no vacía de {"id": "<16 hex de machine-id.js>", "label": "<nombre>"}';
+      if (!Array.isArray(valor) || !valor.length) return `tiene que ser ${forma}, no ${JSON.stringify(valor)}`;
+      for (const m of valor) {
+        if (!esObjeto(m) || Object.keys(m).some((k) => k !== 'id' && k !== 'label')) return `cada máquina es {"id", "label"} y nada más, no ${JSON.stringify(m)}`;
+        if (typeof m.id !== 'string' || !HUELLA_DE_MAQUINA.test(m.id.trim())) return `«${m.id}» no es una huella de machine-id.js (16 caracteres hexadecimales en minúsculas)`;
+        if (typeof m.label !== 'string' || !m.label.trim()) return `la máquina ${m.id} no tiene nombre (label)`;
+        // un nombre corto para la persona, sin forma de dato: ni @, ni dos puntos, ni signos de un token o una dirección
+        if (!NOMBRE_DE_MAQUINA.test(m.label.trim())) return `el nombre de la máquina ${m.id} tiene que ser corto (hasta 40) y de letras, números, espacios, puntos, guiones o paréntesis`;
+      }
+      const ids = valor.map((m) => m.id.trim());
+      return new Set(ids).size === ids.length ? null : `la lista repite una máquina: ${JSON.stringify(ids)}`;
+    }
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
@@ -837,9 +867,31 @@ function validarTipo(tipo, valor) {
       if (rango) return (Number.isInteger(valor) && valor >= rango[0] && valor <= rango[1]) ? null : `tiene que ser un entero entre ${rango[0]} y ${rango[1]}, no ${JSON.stringify(valor)}`;
       const opciones = optionsOf(tipo);
       if (opciones) return (typeof valor === 'string' && opciones.includes(valor.trim())) ? null : `tiene que ser uno de: ${opciones.join(', ')} — no ${JSON.stringify(valor)}`;
+      const varias = subsetOf(tipo);
+      if (varias) return motivoDeOpciones(varias, valor);
       return `tipo desconocido en el vocabulario: ${tipo}`;
     }
   }
+}
+
+/** null si `valor` es una opción de `varias`, o una lista no vacía de ellas sin repetir, con `off` sólo si va solo. */
+function motivoDeOpciones(varias, valor) {
+  const lista = Array.isArray(valor) ? valor : [valor];
+  const como = `uno de: ${varias.join(', ')}, o una lista de ellos`;
+  if (!lista.length) return `tiene que ser ${como}; una lista vacía no dice nada (para ninguna, «off» o sin valor)`;
+  const malo = lista.find((v) => typeof v !== 'string' || !varias.includes(v.trim()));
+  if (malo !== undefined) return `tiene que ser ${como} — no ${JSON.stringify(malo)}`;
+  const limpios = lista.map((v) => v.trim());
+  if (new Set(limpios).size !== limpios.length) return `la lista repite un valor: ${JSON.stringify(valor)}`;
+  if (limpios.includes('off') && limpios.length > 1) return `«off» va solo: con otro valor no se sabe qué se quiso decir (${JSON.stringify(valor)})`;
+  return null;
+}
+
+/** ¿El perfil delega la firma `firma`? Lee el valor solo y la lista igual; `off`, sin valor o una clave rota: no. */
+function delegaFirma(valores, firma) {
+  const v = valores && valores.approvals ? valores.approvals.delegated_signing : null;
+  const lista = Array.isArray(v) ? v : (typeof v === 'string' ? [v] : []);
+  return firma !== 'off' && lista.includes(firma);
 }
 
 /** El valor de una clave según el entorno: `{ valor, variable }`, `{ error }` o null si ninguna variable está. */
@@ -993,7 +1045,7 @@ function cargar(opts = {}) {
       if (ganaElPerfil && enMaquina) shadowed[ruta] = { value: planoMaquina[ruta], origin: 'maquina', by: 'perfil' };
       if (PROFILE_ONLY.includes(ruta)) {
         if (enMaquina) shadowed[ruta] = { value: planoMaquina[ruta], origin: 'maquina', by: 'solo-perfil' };
-        else if (rp.explicito && Object.prototype.hasOwnProperty.call(planoPerfil, ruta) && planoPerfil[ruta] !== planoArbol[ruta]) {
+        else if (rp.explicito && Object.prototype.hasOwnProperty.call(planoPerfil, ruta) && !mismoValorPlano(planoPerfil[ruta], planoArbol[ruta])) {
           shadowed[ruta] = { value: planoPerfil[ruta], origin: 'TYCON_PROFILE', by: 'solo-perfil' };
         }
         if (Object.prototype.hasOwnProperty.call(planoArbol, ruta)) { valores[seccion][clave] = planoArbol[ruta]; origenes[ruta] = 'perfil'; }
@@ -1308,7 +1360,14 @@ function explicar(opts = {}) {
     const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
     const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '; vale sólo desde el perfil del equipo';
     const [sec, k] = ruta.split('.');
-    L.push(`  ${ruta} = ${v[sec][k] || sinValor} (${o[ruta]}${ignorado})`);
+    const val = Array.isArray(v[sec][k]) ? v[sec][k].join(', ') : v[sec][k];
+    L.push(`  ${ruta} = ${val || sinValor} (${o[ruta]}${ignorado})`);
+  }
+  {
+    const m = v.approvals.delegated_machines;
+    const s = c.shadowed['approvals.delegated_machines'];
+    const ignorado = s ? `; ${s.origin === 'TYCON_PROFILE' ? 'el perfil de TYCON_PROFILE' : c.archivos.maquina.ruta} trae otra lista y no se usa` : '';
+    L.push(`  approvals.delegated_machines = ${Array.isArray(m) ? `${m.length} máquina(s): ${m.map((x) => x.label).join(', ')}` : 'ninguna'} (${o['approvals.delegated_machines']}${ignorado}; vale sólo desde el perfil del equipo)`);
   }
   const extras = [];
   if (c.entorno.TYCON_SKILLS_DIR) extras.push(`TYCON_SKILLS_DIR=${c.entorno.TYCON_SKILLS_DIR} (lib/skills-dir.js, no es de este lector)`);
@@ -1486,7 +1545,7 @@ module.exports = {
   VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1597,7 +1656,9 @@ function cli(argv) {
     const val = valor(c, clave);
     if (val === undefined) { process.stderr.write(`clave desconocida: ${clave}\n`); process.exit(2); }
     if (val === null || val === false) process.exit(3);       // sin valor / apagada: exit 3, para que un $(…) vacío no se lea como «pregunté y no hay»
-    process.stdout.write((val === true ? '1' : String(val)) + '\n');
+    // un valor con objetos adentro (la lista de máquinas) sale como JSON; String() daría «[object Object]»
+    const conObjetos = typeof val === 'object' && (!Array.isArray(val) || val.some((x) => x && typeof x === 'object'));
+    process.stdout.write((val === true ? '1' : conObjetos ? JSON.stringify(val) : String(val)) + '\n');
     process.exit(0);
   }
   if (cmd === 'validate') {

@@ -1999,6 +1999,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.116 (tanda A): la huella de la máquina (scripts/lib/machine-id.js, el id del sistema por ruta fija y con el ambiente vacío, guardado como resumen) y la casa de la cuenta (scripts/lib/real-home.js, de la base de usuarios y no de HOME).",
+      "raiz": "arnes",
+      "ruta": "tests/machine-id.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.116: la copia del lector que usa el freno de producción (scripts/production/guard-libs/lib/tycon-config.js) conoce todas las claves del lector principal; si no, un perfil con una clave nueva se lee en el freno como configuración rota.",
       "raiz": "arnes",
       "ruta": "tests/guard-libs-vocabulary.test.js",

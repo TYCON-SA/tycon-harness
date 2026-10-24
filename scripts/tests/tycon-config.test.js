@@ -1852,7 +1852,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -1944,7 +1944,101 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
   assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines']);
+});
+
+// ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
+const FIRMAS = ['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases', 'plan-approval', 'browser-test',
+  'runtime-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run'];
+const MAQUINAS = [{ id: '0123456789abcdef', label: 'Mac de ejemplo' }, { id: 'fedcba9876543210', label: 'Portátil de ejemplo' }];
+
+// T27 TyconConfig_DelegatedMachines_SoloDelPerfil @story-8.116 @ac-25
+// 🔴 Falla con: la lista de máquinas leída del archivo de la máquina o de una variable (el agente se elegiría solo).
+test('8.116 T27 TyconConfig_DelegatedMachines_SoloDelPerfil', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_machines: MAQUINAS } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.approvals.delegated_machines, c.origenes['approvals.delegated_machines']], [MAQUINAS, 'perfil']);
+  const home = casa();
+  maquina(home, { approvals: { delegated_machines: MAQUINAS } });
+  c = cargar({ home, arnes: arnesCon(null) });
+  assert.equal(c.valores.approvals.delegated_machines, null, 'desde la máquina no vale');
+  assert.deepEqual(c.shadowed['approvals.delegated_machines'], { value: MAQUINAS, origin: 'maquina', by: 'solo-perfil' });
+  assert.equal(lib().VARIABLES['approvals.delegated_machines'], undefined, 'ninguna variable la pone');
+  for (const malo of [[{ id: 'xyz', label: 'a' }], [{ id: '0123456789ABCDEF', label: 'a' }], [{ id: '0123456789abcdef', label: '' }],
+    [MAQUINAS[0], { ...MAQUINAS[0], label: 'otra' }], [{ id: '0123456789abcdef', label: 'a', extra: 1 }], 'una', []]) {
+    c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_machines: malo } }) });
+    assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_machines'), `${JSON.stringify(malo)} no vale`);
+  }
+  const r = cli(['set', 'approvals.delegated_machines', '[]'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  // el nombre de cada máquina pasa por la regla de lo personal del perfil versionado
+  for (const label of ['alguien@acme.example', `ghp_${'a'.repeat(36)}`, 'nombre token=abc123', 'x'.repeat(41)]) {
+    c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_machines: [{ id: '0123456789abcdef', label }] } }) });
+    assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_machines'), `${label}: ${JSON.stringify(c.errores)}`);
+  }
+  // un nombre corto con acentos y paréntesis vale
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_machines: [{ id: '0123456789abcdef', label: 'Portátil (oficina) 2' }] } }) });
+  assert.deepEqual(c.errores, []);
+});
+
+// T28 TyconConfig_DelegatedSigning_ListaYCompatible @story-8.116 @ac-36
+// 🔴 Falla con: el valor suelto de siempre leído como otra cosa, o un valor roto que se lleva puesta a relay_session.
+test('8.116 T28 TyconConfig_DelegatedSigning_ListaYCompatible', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.approvals.delegated_signing, 'refresh-after-main', 'el suelto sigue suelto');
+  assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), true);
+  assert.equal(lib().delegaFirma(c.valores, 'adversarial-skip'), false);
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'adversarial-skip'] } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip']);
+  assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), true);
+  assert.equal(lib().delegaFirma(c.valores, 'adversarial-skip'), true);
+  assert.equal(lib().delegaFirma(c.valores, 'lost-run'), false);
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'inventado'] } }) });
+  assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_signing'), 'un valor fuera del vocabulario rompe la clave');
+  assert.ok(!c.errores.some((e) => e.clave === 'approvals.relay_session'), 'y sólo esa clave');
+  assert.equal(c.valores.approvals.relay_session, 'coordinadora');
+  assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), false, 'rota: no delega nada');
+  for (const v of ['off', null, undefined]) {
+    c = cargar({ home: casa(), arnes: arnesCon({ approvals: v === undefined ? {} : { delegated_signing: v } }) });
+    assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), false, `${v}: no delega`);
+  }
+  assert.match(lib().explicar({ env: {}, home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'adversarial-skip'] } }) }),
+    /approvals\.delegated_signing = refresh-after-main, adversarial-skip/);
+});
+
+// T43 TyconConfig_DelegatedSigning_VocabularioEntero @story-8.116 @ac-42
+// 🔴 Falla con: un valor del vocabulario que este lector no conoce (rompería la clave en esa máquina).
+test('8.116 T43 TyconConfig_DelegatedSigning_VocabularioEntero', () => {
+  for (const v of FIRMAS) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: [v] } }) });
+    assert.deepEqual(c.errores, [], v);
+  }
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: FIRMAS } }) });
+  assert.deepEqual(c.errores, [], 'la lista entera');
+  for (const malo of [['off', 'refresh-after-main'], ['adversarial-skip', 'adversarial-skip'], [], ['Adversarial-Skip'], [1]]) {
+    c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: malo } }) });
+    assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_signing'), `${JSON.stringify(malo)} no vale`);
+  }
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['off'] } }) });
+  assert.deepEqual(c.errores, [], '«off» solo, en lista, vale');
+  assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), false);
+});
+
+// T46 TyconConfig_ListaTapadaSeComparaPorValor @story-8.116 @ac-46
+// 🔴 Falla con: dos listas iguales comparadas por referencia, que marcan tapado lo que no lo está.
+test('8.116 T46 TyconConfig_ListaTapadaSeComparaPorValor', () => {
+  const arnes = arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'adversarial-skip'], delegated_machines: MAQUINAS } });
+  const otro = path.join(tmp('tcfg-otro-'), 'team-profile.json');
+  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['refresh-after-main', 'adversarial-skip'], delegated_machines: MAQUINAS } }));
+  let c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes });
+  assert.equal(c.shadowed['approvals.delegated_signing'], undefined);
+  assert.equal(c.shadowed['approvals.delegated_machines'], undefined);
+  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['lost-run'] } }));
+  c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes });
+  assert.deepEqual(c.shadowed['approvals.delegated_signing'], { value: ['lost-run'], origin: 'TYCON_PROFILE', by: 'solo-perfil' });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip'], 'gana el del árbol');
 });
 
 test('T31 TyconConfig_InstinctsIntegration_EnvProfileOrder @story-4.7 @ac-1 @ac-2 — el perfil la prende, la variable la apaga, sin nada queda apagada', () => {
