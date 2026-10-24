@@ -1128,14 +1128,19 @@ test('T5 EscC3_NoDeepReviewEnStartSinFrase_Frena @story-8.104 @ac-4 — la bande
   }
 });
 
-test('T6 EscC3_SoloCuentaLoQueSeEjecuta @story-8.104 @ac-4 — nombrar la bandera en un texto o un grep no la corre', () => {
-  for (const c of [
-    `cat > notas.md <<'EOF'\n${START_NDR}\nEOF`,
-    `grep -n -- '${NDR_FLAG}' skills/tycon-pipeline/scripts/pipeline.js`,
-  ]) {
-    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
-    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
-  }
+test('T6 EscC3_SoloCuentaLoQueSeEjecuta @story-8.104 @ac-4 — nombrar la bandera en un grep no la corre', () => {
+  const c = `grep -n -- '${NDR_FLAG}' skills/tycon-pipeline/scripts/pipeline.js`;
+  const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+  assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+});
+
+test('8.111 T10 EscC3_NotasPorHeredocConLaBandera_FrenanPorDuda @story-8.111 @ac-4 — un heredoc a un archivo puede correrse después', () => {
+  // el archivo escrito por heredoc se puede ejecutar después (`./a.sh`, `make`), y distinguirlo pide leer shell: las
+  // notas con `node … pipeline.js … --no-deep-review` se escriben con la herramienta de edición
+  const c = `cat > notas.md <<'EOF'\n${START_NDR}\nEOF`;
+  const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+  assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+  assert.match(r.stderr, /ESC-C3/);
 });
 
 test('T7 LoLegitimo_PasaSinFrase @story-8.104 @ac-7 — el salteo que decide el portón, el 0 y el pase forzado pasan', () => {
@@ -1454,6 +1459,146 @@ test('T13 InterruptorDelEstado_EscC1 @story-8.109 @ac-9 — prenderlo pide la fr
     const r = freno(c, { conversacion: [deLaPersona('seguí')] });
     assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
   }
+});
+
+// ── El código de `node -e`: freno aceptado por duda, con una regla escrita ─────────────────────────────────────────
+
+const EJECUTA = '{stdio:"inherit"}';
+
+// 8.111 T1 NodeE_CasoReal_FrenaPorDuda @story-8.111 @ac-4
+// 🔴 Falla con: dejar de tomar el código de `-e`/`-p`/`--eval`/`--print` como el guion (el código puede correr lo que
+//    recibe en sus argumentos), o frenar las dos salidas de la guía.
+test('8.111 T1 NodeE_CasoReal_FrenaPorDuda', () => {
+  for (const c of [
+    `node -e 'console.log(JSON.stringify({tool_name:"Bash",cwd:process.argv[2],tool_input:{command:process.argv[1]}}))' "$c" "$L"`,
+    `node -e 'f({a:1})' "$c" "$L"`, `node -p 'g({})' "$a" "$b"`, `node --eval 'h({})' $x $y`, `node --print 'i({})' "$a" "$b"`,
+    `nodejs -e 'f({})' "$a" "$b"`,
+    `node -e 'require("child_process").spawnSync(process.argv[1],${EJECUTA})' "$S" start --no-deep-review`,
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+  }
+  // las dos salidas de la guía: los valores por el ambiente, o un solo argumento
+  for (const c of [`C="$c" L="$L" node -e 'f({c:process.env.C})'`, `node -e 'f({a:1})' "$c"`]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});
+
+// Lo que da el freno de origin/main (2f49c5cc) con cada variante: frena ESC-C3 (2), salvo dos que pasan (0).
+const VARIANTES_NODE_E = [
+  [`node -pe 'f({})' "$a" "$b"`, 2], [`node --eval='f({})' "$a" "$b"`, 0], [`node --no-warnings -e 'f({})' "$a" "$b"`, 2],
+  [`node -e "$X" "$a" "$b"`, 2], [`bun -e 'f({})' "$a" "$b"`, 2], ['node $S $a $b', 2], ['node -e f({}) "$a" "$b"', 0],
+];
+
+// 8.111 T2 NodeE_Variantes_SiguenComoHoy @story-8.111 @ac-2
+// 🔴 Falla con: aflojar una forma parecida a la que frena por duda (opciones pegadas, `-e` después de otra opción, el
+//    código en una variable, `bun -e`, el guion en una variable).
+test('8.111 T2 NodeE_Variantes_SiguenComoHoy', () => {
+  for (const [c, status] of VARIANTES_NODE_E) {
+    assert.strictEqual(freno(c, { conversacion: [deLaPersona('seguí')] }).status, status, c);
+  }
+});
+
+// 8.111 T3 NodeE_LimiteDeclarado_SinCambio @story-8.111 @ac-3
+// 🔴 Falla con: cambiar, sin decirlo, el límite declarado de la 8.107 (un `node -e` cuyo código carga el pipeline).
+test('8.111 T3 NodeE_LimiteDeclarado_SinCambio', () => {
+  const c = `node -e "require('$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')"`;
+  assert.strictEqual(freno(c, { conversacion: [deLaPersona('seguí')] }).status, 0, c);
+});
+
+// 8.111 T4 NodeE_NombraElPipeline_SigueFrenando @story-8.111 @ac-4
+// 🔴 Falla con: que un comando con `node -e` y el nombre del pipeline deje de frenar; o que el pipeline y
+//    `--no-deep-review` escritos en el mismo comando que corre node pasen (como argumento, en una variable o en un
+//    export), aunque el lector no vea cómo los une el código.
+test('8.111 T4 NodeE_NombraElPipeline_SigueFrenando', () => {
+  const P = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js';
+  for (const c of [
+    `node -e 'f({})' && node ${P} start --story s.md --no-deep-review`,
+    'node -e pipeline.js start --no-deep-review',
+    `S=${P} A=--no-deep-review node -e 'require("child_process").spawnSync("node",[process.env.S,"start",process.env.A],${EJECUTA})'`,
+    `export S=${P}; node -e 'require("child_process").spawnSync("node",[process.env.S,"start","--no-deep-review"],${EJECUTA})'`,
+    `node -e 'require("child_process").spawnSync("node",[process.argv[1],"start",process.argv[2]],${EJECUTA})' ${P} --no-deep-review`,
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+  }
+  // con la frase de la persona, pasa como cualquier otra forma de apagar el pase
+  const r = freno(`S=${P} A=--no-deep-review node -e 'f({s:process.env.S})'`, { conversacion: [deLaPersona(`autorizo ${NDR}`, 5)] });
+  assert.strictEqual(r.status, 0, r.stderr);
+  // sin node, o sin el nombre del pipeline, no es una llamada: pasa
+  for (const c of [`grep -n -- --no-deep-review ${P}`, `A=--no-deep-review node -e 'f({a:process.env.A})'`]) {
+    assert.strictEqual(freno(c, { conversacion: [deLaPersona('seguí')] }).status, 0, c);
+  }
+  // el cuerpo de cualquier heredoc cuenta: el que corre (bash, sh, node, `| bash`) y el que se escribe en un archivo, que
+  // se puede correr después (`./a.sh`, `make`, `bash a.sh`)
+  const cuerpo = `S=${P} A=--no-deep-review node -e 'require("child_process").spawnSync("node",[process.env.S,"start",process.env.A],${EJECUTA})'`;
+  for (const c of [`bash <<'EOF'\n${cuerpo}\nEOF`, `sh <<EOF\n${cuerpo}\nEOF`, `cat <<'EOF' | bash\n${cuerpo}\nEOF`,
+    `tee a.sh <<'EOF' | bash\n${cuerpo}\nEOF`, `cat > a.sh <<'EOF'\n${cuerpo}\nEOF\nbash a.sh`, `cat > a.sh <<'EOF'\n${cuerpo}\nEOF\n. ./a.sh`,
+    `cat <<'EOF' > a.sh\n${cuerpo}\nEOF\nsource a.sh`, `cat > a.sh <<'EOF'\n#!/bin/sh\n${cuerpo}\nEOF\nchmod +x a.sh && ./a.sh`,
+    `cat > notas.md <<'EOF'\n${cuerpo}\nEOF`, `cat <<'EOF' > notas.md\n${cuerpo}\nEOF`, `tee notas.md <<'EOF' > /dev/null\n${cuerpo}\nEOF`,
+    `echo "\ncat > a <<EOF\n"\n${cuerpo}\necho "\nEOF\n"`,
+    `node <<'EOF'\nrequire("child_process").spawnSync("node",["${P}","start","--no-deep-review"],${EJECUTA})\nEOF`]) {
+    const h = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(h.status, 2, `${c}: ${h.stderr}`);
+    assert.match(h.stderr, /ESC-C3/, c);
+  }
+});
+
+// 8.111 T9 NodeE_ClasesDelPase_Frenan @story-8.111 @ac-5
+// 🔴 Falla con: recortar el cuerpo de un heredoc mal (una barra invertida antes del cierre, un heredoc vacío, un renglón
+//    dentro de un texto entre comillas), pedir un espacio después de `node`, pedir `.js`, dejar pasar un archivo escrito
+//    que el resto del comando corre con otro nombre, o un `--` después del código de `-e`.
+test('8.111 T9 NodeE_ClasesDelPase_Frenan', () => {
+  const corre = `S=pipeline.js node -e 'require("child_process").execSync(process.execPath+" "+process.env.S+" start --no-deep-review")'`;
+  for (const c of [
+    `cat > a.txt <<'EOF'\nx\\\nEOF\n${corre}\ncat > b.txt <<'EOF'\ny\nEOF`,
+    `cat > a.txt <<'EOF'\nEOF\n${corre}\ncat > b.txt <<'EOF'\ny\nEOF`,
+    `echo "uno\ncat > a <<EOF"\n${corre}\necho "EOF\ndos"`,
+    `echo 'require("child_process").execSync(process.execPath+" "+process.env.S+" start --no-deep-review")' | S=pipeline.js node`,
+    `S=pipeline.js node<<<'require("child_process").execSync(process.execPath+" "+process.env.S+" start --no-deep-review")'`,
+    `S=pipeline A=--no-deep-review node -e 'f({s:process.env.S,a:process.env.A})'`,
+    `cat > a.js <<'EOF'\nrequire("child_process").execSync(process.execPath+" pipeline.js start --no-deep-review")\nEOF\nnode a`,
+    `cat > runme <<'EOF'\n${corre}\nEOF\nsource ./runm?`,
+    `node -e 'require("child_process").spawnSync(process.argv[1],process.argv.slice(2))' -- "$S" start --no-deep-review`,
+    // un código que empieza con `-` se saltea como una opción, como antes: el guion escondido es el `"$S"` que sigue
+    `node -e '-require("child_process").spawnSync(process.argv.slice(1).shift(),process.argv.slice(2))' "$S" start --no-deep-review`,
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+  }
+});
+
+// 8.111 T6 Guia_NodeE @story-8.111 @ac-3 @ac-4
+// 🔴 Falla con: un freno aceptado por duda que la guía no dice, sin su salida, o un residuo que no queda escrito.
+test('8.111 T6 Guia_NodeE', () => {
+  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'safety-guard.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(guia, /\*\*Freno aceptado por duda: el código de `node -e`\.\*\* `node -e '<código con llaves>' "\$a" "\$b"` frena `ESC-C3`/);
+  assert.match(guia, /pasar los valores por el ambiente .* o un solo argumento\. Las dos pasan\./);
+  assert.match(guia, /residuos conocidos: la bandera partida en dos variables/);
+  assert.match(guia, /`node` en una variable o en una sustitución/);
+  assert.match(guia, /los borra de raíz que apagar el pase pida la firma del dueño/);
+});
+
+// 8.111 T8 NodeE_LaReglaEscrita_LaCuidaLaPrueba @story-8.111 @ac-4
+// 🔴 Falla con: sacar la regla del código de `-e`, o dejar sin guion lo que sigue a `-e`.
+//    Con esa línea cambiada, el caso real deja de frenar: lo que lo frena es la regla escrita, no una casualidad.
+test('8.111 T8 NodeE_LaReglaEscrita_LaCuidaLaPrueba', () => {
+  const casoReal = `node -e 'f({a:1})' "$c" "$L"`;
+  const src = fs.readFileSync(path.join(LIB, 'marker-command.js'), 'utf8');
+  const REGLA = 'if (NODE_CODIGO.has(x)) { if (k + 1 < pal.length && !/^-/.test(pal[k + 1].texto)) { posGuion = k + 1; break; } continue; }';
+  assert.ok(src.includes(REGLA), 'la regla está escrita con su nombre propio');
+  // una copia de la librería con un cambio: ¿el caso real sigue siendo una llamada dudosa?
+  const copia = (cambio) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-e-'));
+    fs.writeFileSync(path.join(dir, 'marker-command.js'), cambio(src));
+    return require(path.join(dir, 'marker-command.js')).llamadas(casoReal).some((l) => l.dudosa);
+  };
+  assert.ok(copia((s) => s), 'tal cual, el caso real es una llamada dudosa');
+  assert.ok(!copia((s) => s.replace(REGLA, 'if (NODE_CODIGO.has(x)) break;')), 'sin guion después de `-e`, pasaría: esta prueba lo ve');
 });
 
 // ── El jq de Windows (@story-8.115 @ac-11) ───────────────────────────────────────────────────────────────────────────
