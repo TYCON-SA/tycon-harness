@@ -1591,6 +1591,18 @@
       "reason": "opción de Codex: `--oss` (modelos abiertos con --local-provider), que el lanzador de revisores pasa tal cual. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-23 (story 8.97)."
     },
     {
+      "words": ["verif"],
+      "reason": "prefijo de la opción --no-verify de git, que git acepta abreviada (`--no-verif`): la revisión de las ejecuciones lo reconoce. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-24 (story 4.12)."
+    },
+    {
+      "words": ["chdir"],
+      "reason": "opción larga de env (`--chdir`): cambia la carpeta del programa, y la revisión de las ejecuciones la saltea. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-24 (story 4.12)."
+    },
+    {
+      "words": ["procs"],
+      "reason": "opción larga de xargs (`--max-procs`), con valor aparte: la revisión de las ejecuciones la saltea. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-24 (story 4.12)."
+    },
+    {
       "words": ["cdpath"],
       "reason": "variable del shell (CDPATH de bash/zsh): el freno de historias por consola la lee del ambiente para saber si un `cd` relativo puede caer en otra carpeta. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-24 (story 8.113)."
     }

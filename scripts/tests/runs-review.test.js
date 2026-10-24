@@ -1026,3 +1026,125 @@ test('T69 ListaAparte @story-4.10 @ac-36', () => {
   assert.strictEqual(RULES.APARTE['RR-ESCAPE:INVENTADA/x'], undefined);
   assert.ok(Object.isFrozen(RULES.APARTE), 'nadie la cambia al usarla');
 });
+
+// ── Qué es un escape: la misma definición que los frenos ────────────────────────────────────────────────────────
+const NV = ['--no', 'verify'].join('-');
+const enRepoReal = () => { const v = volcado({ sid: 's' }); v.marker.repoPath = '/Users/dev/SourceCode/prod'; return v; };
+
+// T1 EscapeDetrasDeUnEnvoltorio @story-4.12 @ac-1
+// 🔴 Falla con: tomar el envoltorio por el programa (el escape no se ve), o contar como escape una asignación que el
+//    envoltorio no pasa (`nice X=1 cmd` corre `X=1` como programa).
+test('T1 EscapeDetrasDeUnEnvoltorio @story-4.12 @ac-1', () => {
+  const r = (hilo, bypass = null) => cats(rv({ v: enRepoReal(), hilo, bypass }), 'RR-ESCAPE');
+  assert.deepStrictEqual(r(cmd('env -i PATH=/usr/bin TYCON_FULL_SUITE=1 npm test')), ['TYCON_FULL_SUITE:1']);
+  assert.deepStrictEqual(r(cmd('sudo -E TYCON_SAFETY_OFF=1 rm -rf x')), ['TYCON_SAFETY_OFF:1']);
+  assert.deepStrictEqual(r(cmd(`bash -c "git commit ${NV} -m a"`)), ['--no-verify:1']);
+  assert.deepStrictEqual(r(cmd(`cd /tmp/lab && sh -c "git commit ${NV} -m a"`)), ['--no-verify:1'], 'envuelto: del repo real');
+  assert.deepStrictEqual(r(cmd(`eval "git commit ${NV} -m a"`)), ['--no-verify:1']);
+  // con su línea del registro: una vez, por el registro
+  const bash = `bash -c "git commit ${NV} -m a"`;
+  assert.deepStrictEqual(r(cmd(bash), [{ ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/prod', command: bash }]), ['GIT_NO_VERIFY:1']);
+  const env = 'env -i PATH=/usr/bin TYCON_FULL_SUITE=1 npm test';
+  assert.deepStrictEqual(r(null, [{ ts: ts(), type: 'FULL_SUITE_RUN', command: env }]), ['FULL_SUITE_RUN:1']);
+  // los que no pasan la asignación: no hay escape
+  for (const c of ['nice TYCON_FULL_SUITE=1 npm test', 'timeout 60 TYCON_FULL_SUITE=1 npm test', 'nohup TYCON_SAFETY_OFF=1 rm x']) assert.deepStrictEqual(r(cmd(c)), [], c);
+  // el pase adversarial: la asignación del segmento que llama al intérprete cuenta; el envoltorio por su ruta, con
+  // opciones juntas o delante de otro envoltorio; el intérprete detrás de un envoltorio, anidado, por heredoc o `env -S`
+  const cuentan = [
+    ['TYCON_SAFETY_OFF=1 bash -c "rm x"', 'TYCON_SAFETY_OFF:1'],
+    ['TYCON_FULL_SUITE=1 sh -c "npm test"', 'TYCON_FULL_SUITE:1'],
+    ['sudo -iu bob TYCON_SAFETY_OFF=1 rm x', 'TYCON_SAFETY_OFF:1'],
+    ['sudo -ubob TYCON_SAFETY_OFF=1 rm x', 'TYCON_SAFETY_OFF:1'],
+    ['/usr/bin/env TYCON_FULL_SUITE=1 npm test', 'TYCON_FULL_SUITE:1'],
+    ['/usr/bin/sudo -E TYCON_SAFETY_OFF=1 rm x', 'TYCON_SAFETY_OFF:1'],
+    ['timeout 600 env TYCON_FULL_SUITE=1 npm test', 'TYCON_FULL_SUITE:1'],
+    ['env -S "TYCON_FULL_SUITE=1 npm test"', 'TYCON_FULL_SUITE:1'],
+    [`timeout 60 bash -c "git commit ${NV} -m a"`, '--no-verify:1'],
+    [`nohup sh -c 'git commit ${NV} -m a'`, '--no-verify:1'],
+    [`nice -n 5 bash -c 'git commit ${NV} -m a'`, '--no-verify:1'],
+    [`bash -c "bash -c \\"bash -c 'git commit ${NV} -m a'\\""`, '--no-verify:1'],
+    [`bash <<'EOS'\ngit commit ${NV} -m a\nEOS`, '--no-verify:1'],
+    ['sh -s <<EOS\nTYCON_FULL_SUITE=1 npm test\nEOS', 'TYCON_FULL_SUITE:1'],
+    // vuelta 2 de revisores: más formas de los envoltorios
+    ['env - TYCON_FULL_SUITE=1 npm test', 'TYCON_FULL_SUITE:1'],
+    ['env -P /usr/bin TYCON_FULL_SUITE=1 npm test', 'TYCON_FULL_SUITE:1'],
+    ['doas TYCON_SAFETY_OFF=1 rm x', 'TYCON_SAFETY_OFF:1'],
+    [`chrt -f 1 git commit ${NV} -m a`, '--no-verify:1'],
+    [`taskset -c 0 git commit ${NV} -m a`, '--no-verify:1'],
+    [`time -p git commit ${NV} -m a`, '--no-verify:1'],
+    [`exec -a x git commit ${NV} -m a`, '--no-verify:1'],
+    [`xargs -0 git commit ${NV} -m a`, '--no-verify:1'],
+  ];
+  for (const [c, esperada] of cuentan) assert.deepStrictEqual(r(cmd(c)), [esperada], c);
+  // `env -S` seguido de un `bash -c`: cuentan los dos
+  assert.deepStrictEqual(r(cmd(`env -S "TYCON_SAFETY_OFF=1" bash -c "git commit ${NV} -m a"`)), ['--no-verify:1', 'TYCON_SAFETY_OFF:1'].sort());
+  // un heredoc a un shell metido en otro, o en una cadena, cuenta una vez
+  assert.deepStrictEqual(r(cmd(`bash -c "echo; bash <<'E'\ngit commit ${NV} -m a\nE\n"`)), ['--no-verify:1']);
+  assert.deepStrictEqual(r(cmd(`bash <<'A'\nbash <<'B'\ngit commit ${NV} -m a\nB\nA`)), ['--no-verify:1']);
+  // la línea con la opción dada a un shell por un tubo o por `<<<` corrió: cuenta
+  for (const c of [`echo "git commit ${NV} -m a" | bash`, `bash <<< "git commit ${NV} -m a"`]) {
+    assert.deepStrictEqual(r(null, [{ ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/prod', command: c }]), ['GIT_NO_VERIFY:1'], c);
+  }
+  const heredoc = `bash <<'EOS'\ngit commit ${NV} -m a\nEOS`;
+  assert.deepStrictEqual(r(cmd(heredoc), [{ ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/prod', command: heredoc }]), ['GIT_NO_VERIFY:1']);
+  assert.deepStrictEqual(r(cmd(`cat <<'EOS'\ngit commit ${NV} -m a\nEOS`)), [], 'cat no corre su heredoc');
+});
+
+// T2 OpcionAbreviada @story-4.12 @ac-2
+// 🔴 Falla con: reconocer sólo la opción entera (la abreviada saltea los hooks sin contarse), contar la ambigua, o
+//    tomar el `-n` de push (--dry-run) o de log (la cantidad) por el de commit.
+test('T2 OpcionAbreviada @story-4.12 @ac-2', () => {
+  const r = (c) => cats(rv({ v: enRepoReal(), hilo: cmd(c) }), 'RR-ESCAPE');
+  for (const c of [`git commit ${NV.slice(0, -1)} -m a`, `git commit ${NV.slice(0, -2)} -m a`, `git push ${NV.slice(0, -2)}`,
+    'git commit -an', 'git commit -nm "x"', 'git commit -anm "x"']) assert.deepStrictEqual(r(c), ['--no-verify:1'], c);
+  for (const c of [`git commit ${NV.slice(0, -3)} -m a`, `git merge ${NV.slice(0, -2)} x`, 'git commit --no-edit',
+    'git push -n', 'git log -n 3']) assert.deepStrictEqual(r(c), [], c);
+  // la `n` del valor pegado de una opción que lleva valor no es `-n` (el pase adversarial)
+  for (const c of ['git commit -m"done"', 'git commit -mfinal', 'git commit -uno -m x', 'git commit -Fnotes', 'git commit -am"nada"']) assert.deepStrictEqual(r(c), [], c);
+  // la línea del freno del commit con la abreviada en un `merge` (git la rechaza) no cuenta, como el detector
+  const linea = { ts: ts(), type: 'GIT_NO_VERIFY', sessionId: 's', cwd: '/Users/dev/SourceCode/prod', command: `git merge ${NV.slice(0, -2)} x` };
+  assert.deepStrictEqual(cats(rv({ v: enRepoReal(), hilo: null, bypass: [linea] }), 'RR-ESCAPE'), []);
+});
+
+// T3 ValorYFormaDeLaVariable @story-4.12 @ac-3
+// 🔴 Falla con: contar la asignación sin mirar su valor ni su forma: un `=0`, o un `export` que el freno de pedidos no
+//    toma, quedaban como escape.
+test('T3 ValorYFormaDeLaVariable @story-4.12 @ac-3', () => {
+  const r = (c) => cats(rv({ v: enRepoReal(), hilo: cmd(c) }), 'RR-ESCAPE');
+  for (const c of ['TYCON_PR_BY_HAND=0 az repos pr create --target-branch dev --title t', 'TYCON_FULL_SUITE=0 npm test',
+    'export TYCON_PR_BY_HAND=1; az repos pr create --target-branch main --auto-complete true --squash false --title t',
+    'TYCON_SAFETY_OFF=0 rm x', 'STOP_AUTONOMY=no ls']) assert.deepStrictEqual(r(c), [], c);
+  assert.deepStrictEqual(r('TYCON_FULL_SUITE=1 npm test'), ['TYCON_FULL_SUITE:1']);
+  assert.deepStrictEqual(r('TYCON_FULL_SUITE="1" npm test'), ['TYCON_FULL_SUITE:1']);
+  assert.deepStrictEqual(r('TYCON_PR_BY_HAND=1 az repos pr create --target-branch main --title t'), ['TYCON_PR_BY_HAND:1']);
+  // la línea del registro con un valor que no activa el escape no cuenta
+  assert.deepStrictEqual(cats(rv({ v: enRepoReal(), hilo: null, bypass: [{ ts: ts(), type: 'FULL_SUITE_RUN', command: 'TYCON_FULL_SUITE=0 npm test' }] }), 'RR-ESCAPE'), []);
+});
+
+// T4 TextoFielDelPedido @story-4.12 @ac-4
+// 🔴 Falla con: un texto del pedido que, partido de nuevo, muestra como banderas lo que era el texto de una opción
+//    (sin la conversación, el pedido malo salía «sobra» y el bueno, falla).
+test('T4 TextoFielDelPedido @story-4.12 @ac-4', () => {
+  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const P = 'TYCON_PR_BY_HAND=1 az repos pr create --target-branch main';
+  const casos = [
+    [`${P} --title t --description 'x " --auto-complete true --squash false "'`, 'PR_A_MANO:1'],
+    [`${P} --title fix\\ --auto-complete\\ true\\ --squash\\ false`, 'PR_A_MANO:1'],
+    [`${P} --auto-complete true --squash false --description 'x " --squash true "'`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title 'a\\b' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+    // el pase adversarial: una ficha que expande con comillas adentro, y una libre que sigue entre comillas con un
+    // salto de línea
+    [`${P} --title "$T"'x"y' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title a"b\nc" --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+    [`${P} --title "it's" --description '$HOME y \`x\`' --auto-complete true --squash false`, 'PR_A_MANO/sobra:1'],
+  ];
+  for (const [c, esperada] of casos) {
+    const seg = AZ.segmentos(c)[0];
+    const texto = AZ.textoDe(seg);
+    const de = (s) => s.map((f) => [f.texto, f.esBandera]);
+    assert.deepStrictEqual(de(AZ.segmentos(texto)[0]), de(seg), `el texto partido de nuevo da las mismas fichas: ${c}`);
+    const linea = { ts: ts(), type: 'PR_A_MANO', command: texto };
+    assert.deepStrictEqual(cats(rv({ hilo: null, bypass: [linea] }), 'RR-ESCAPE'), [esperada], `sin la conversación: ${c}`);
+    assert.deepStrictEqual(cats(rv({ hilo: cmd(c), bypass: [linea] }), 'RR-ESCAPE'), [esperada], `con la conversación: ${c}`);
+  }
+});

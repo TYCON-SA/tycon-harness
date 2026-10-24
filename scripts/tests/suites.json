@@ -423,6 +423,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 4.12: el freno del commit anota en bypass.log el commit que saltea los hooks, también con la opción abreviada que git acepta; corre el hook de verdad con una HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/pre-commit-no-verify.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
