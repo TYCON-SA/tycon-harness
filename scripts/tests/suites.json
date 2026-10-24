@@ -1999,6 +1999,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.116: la copia del lector que usa el freno de producción (scripts/production/guard-libs/lib/tycon-config.js) conoce todas las claves del lector principal; si no, un perfil con una clave nueva se lee en el freno como configuración rota.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-libs-vocabulary.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El evento neutro de trabajo (scripts/lib/work-signal.js) y la integración de horas que lo escucha, con una integración de mentira en una carpeta temporal; más el techo de archivos del núcleo que nombran una herramienta de horas, que sólo baja.",
       "raiz": "arnes",
       "ruta": "tests/work-signal.test.js",
