@@ -688,11 +688,23 @@ test('8.113 T11 CdRelativoConTuberia_Frena', () => {
   fs.mkdirSync(path.join(h.repo, 'hondo', 'a', 'b', 'c', 'd', 'e'), { recursive: true });
   fs.writeFileSync(path.join(h.repo, 'hondo', 'a', 'b', 'c', 'd', 'e', 'story-h.md'), fm('9.5'));
   assert.deepStrictEqual(frenoDeCd(h, `cd hondo${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'historia honda');
-  fs.mkdirSync(path.join(h.repo, 'cerrada', 'x'), { recursive: true });
-  fs.chmodSync(path.join(h.repo, 'cerrada', 'x'), 0o000);
-  try {
-    assert.deepStrictEqual(frenoDeCd(h, `cd cerrada${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'carpeta sin leer');
-  } finally { fs.chmodSync(path.join(h.repo, 'cerrada', 'x'), 0o755); }
+  // con root, o en Windows, el permiso no impide leer la carpeta: ahí no hay nada que probar
+  if (process.platform !== 'win32' && !(process.getuid && process.getuid() === 0)) {
+    fs.mkdirSync(path.join(h.repo, 'cerrada', 'x'), { recursive: true });
+    fs.chmodSync(path.join(h.repo, 'cerrada', 'x'), 0o000);
+    try {
+      assert.deepStrictEqual(frenoDeCd(h, `cd cerrada${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'carpeta sin leer');
+    } finally { fs.chmodSync(path.join(h.repo, 'cerrada', 'x'), 0o755); }
+  }
+  // un enlace simbólico adentro de la carpeta se sigue
+  fs.mkdirSync(path.join(h.repo, 'enlaces'));
+  fs.symlinkSync(path.join(h.repo, 'docs', 'stories'), path.join(h.repo, 'enlaces', 'h'));
+  assert.deepStrictEqual(frenoDeCd(h, `cd enlaces${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'enlace simbólico');
+  // los topes: más de 2000 carpetas, y un comodín con más de 200 carpetas en un tramo del medio
+  for (let i = 0; i < 2001; i++) fs.mkdirSync(path.join(h.repo, 'muchas', `c${i}`), { recursive: true });
+  assert.deepStrictEqual(frenoDeCd(h, `cd muchas${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'tope de carpetas');
+  for (let i = 0; i < 201; i++) fs.mkdirSync(path.join(h.repo, 'anchas', `w${String(i).padStart(3, '0')}`, 'x'), { recursive: true });
+  assert.deepStrictEqual(frenoDeCd(h, `cd anchas/w*/x${XARGS}`), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, 'tope del comodín');
   // las ramas de la lectura de la carpeta: `cd -`, `~+`, `~-` y un `$(…)` entre comillas no se saben resolver; `--`
   // cierra las opciones; un cd después de `then` o `do` también empieza un comando
   for (const c of [`cd -${XARGS}`, `cd ~+/docs/stories${XARGS}`, `cd ~-${XARGS}`, `cd "$(pwd)/docs"${XARGS}`,
@@ -706,7 +718,23 @@ test('8.113 T11 CdRelativoConTuberia_Frena', () => {
     `echo \`cd docs/stories${XARGS}\``, "ls | xargs sh -c 'cd docs/stories && ls | xargs sed -i -e s/a/b/'",
     "sudo sh -c 'cd docs/stories && ls | xargs sed -i -e s/a/b/'", `cd ~nadie/docs${XARGS}`,
     // un comodín con varias carpetas: el cd que sigue se resuelve desde todas
-    `cd d* && cd stories${XARGS}`]) {
+    `cd d* && cd stories${XARGS}`,
+    // el cd después de if, elif, while o until; adentro de eval, de un shell con opciones antes del -c (fish y csh
+    // incluidos), de un `$(…)` anidado o de un guion con una comilla escapada; con CDPATH; pushd a su pila
+    `if cd 'docs/mis historias'; then ls | xargs sed -i -e 's/a/b/'; fi`,
+    `if false; then :; elif cd 'docs/mis historias'; then ls | xargs sed -i -e 's/a/b/'; fi`,
+    `while cd 'docs/mis historias'; do ls | xargs sed -i -e 's/a/b/'; break; done`,
+    `until cd 'docs/mis historias'; do :; done; ls | xargs sed -i -e 's/a/b/'`,
+    `eval "cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `bash --norc -c "cd 'docs/mis historias'${XARGS}"`, `bash -o pipefail -c "cd 'docs/mis historias'${XARGS}"`,
+    `bash -O extglob -c "cd 'docs/mis historias'${XARGS}"`, `fish -c "cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `csh -c "cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `bash -c "echo \\"x\\"; cd 'docs/mis historias'; ls | xargs sed -i -e s/a/b/"`,
+    `echo $(echo $(cd 'docs/mis historias'${XARGS}))`,
+    `export CDPATH=${'<repo>'}/docs; cd stories${XARGS}`,
+    `pushd${XARGS}`, `pushd +1${XARGS}`,
+    // más hondo que tres niveles de comandos anidados no se lee: frena
+    `echo $(echo $(echo $(echo $(cd src${XARGS}))))`]) {
     assert.deepStrictEqual(frenoDeCd(h, c), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
   }
   // sin historias en la carpeta, o sin carpeta, pasa como en main; una carpeta que el freno no recorre
