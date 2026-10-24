@@ -1601,6 +1601,10 @@
     {
       "words": ["procs"],
       "reason": "opción larga de xargs (`--max-procs`), con valor aparte: la revisión de las ejecuciones la saltea. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-24 (story 4.12)."
+    },
+    {
+      "words": ["cdpath"],
+      "reason": "variable del shell (CDPATH de bash/zsh): el freno de historias por consola la lee del ambiente para saber si un `cd` relativo puede caer en otra carpeta. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-24 (story 8.113)."
     }
   ],
   "schemaFiles": [

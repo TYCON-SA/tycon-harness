@@ -43,7 +43,15 @@ Del output de `pipeline.js start` (campo `tooling.expected`, o `pipeline.js tool
 
 ## Invocación
 
-Usar la tool `Skill` (no `Agent` — los skills BMAD son skills, no subagentes):
+**Sin el método configurado** (el repo no tiene `_bmad/bmm/config.yaml`; el arranque lo avisa en `missing_before_start`):
+no se invoca ninguna skill. El plan lo escribe el orquestador, directo en `step-02-bmad-plan.md` de la carpeta de la
+corrida, que crea `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js run-dir --story <ruta> --repo <repo> --create`.
+
+**Con Codex** no existe la herramienta `Skill`: la skill se usa leyendo su `~/.codex/skills/<skill>/SKILL.md` y
+siguiéndolo en la misma sesión. Una skill no es un programa: no se corre con `node`, y los argumentos de abajo son el
+pedido que le hacés, no una línea de comando.
+
+Con Claude Code, usar la tool `Skill` (no `Agent` — los skills BMAD son skills, no subagentes):
 
 ```
 Skill(

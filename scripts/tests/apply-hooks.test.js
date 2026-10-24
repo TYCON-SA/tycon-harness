@@ -28,6 +28,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
+const { fakeHomeEnv } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'tests', 'lib', 'fake-home.js'));
 const APPLY = path.join(ROOT, 'scripts', 'setup', 'apply-hooks.js');
 const LIST = path.join(ROOT, 'scripts', 'setup', 'hooks-list.json');
 const EFFECTS = path.join(ROOT, 'scripts', 'setup', 'install-effects.json');
@@ -771,7 +772,7 @@ test('T5 Update_ListaMasNuevaQueElNodeBajado_HooksConElDelArnes @story-8.93 @ac-
   fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v99.0.0; exit 0; fi\nexec "${process.execPath}" "$@"\n`);
   const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'production', 'node-official.json'), 'utf8'));
   assert.notStrictEqual(list.version, 'v99.0.0', 'la prueba necesita una lista con otra versión que el Node de juguete');
-  const interp = HN.interpreter({ env: { HOME: L.home, TYCON_HOME: path.join(L.home, '.tycon') }, platform: 'darwin' });
+  const interp = HN.interpreter({ env: { ...fakeHomeEnv(L.home), TYCON_HOME: path.join(L.home, '.tycon') }, platform: 'darwin' });
   assert.strictEqual(interp.present, true, interp.reason);
   assert.strictEqual(interp.own, true, interp.reason);
   assert.match(interp.reason, /se usa igual hasta la próxima bajada/);
