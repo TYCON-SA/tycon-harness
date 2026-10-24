@@ -8,6 +8,11 @@ El vigilante nocturno (`scripts/nightly/watcher/vigilante.js`) lee producción, 
 deja un borrador por hallazgo en `inbox/watcher/pending/`. **No toca nada y no crea nada**: convertir un
 borrador en trabajo real es decisión de una persona, y eso pasa acá.
 
+Cada borrador es también una ficha del ciclo común de lo que encuentra la noche (`fuente: vigilante`, y su `causa` es la
+huella del hallazgo). Sus palabras se leen así en el ciclo: `util` es «arreglo», `descartado` es «aceptada» e `ignorado`
+es «ignorada». El diagnóstico y la evidencia se quedan en el borrador, para decidir acá, y nunca van al modelo de la
+noche.
+
 El vigilante viene **apagado de fábrica**: qué servidores mira, con qué credenciales y dónde deja la cola es de
 cada organización, y vive en su repo de operaciones (lo prende su pipeline nocturno con `--config`). Sin ese repo
 no hay cola que revisar.

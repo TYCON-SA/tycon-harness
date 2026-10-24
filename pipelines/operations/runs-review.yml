@@ -5,9 +5,9 @@
 # `name:` del recurso `harness` (marcado abajo).
 #
 # Baja del BUZÓN DE CORRIDAS los volcados, los registros y las conversaciones de la última semana, y
-# `scripts/nightly/runs-review/runs-review.js` dice cuáles ejecuciones tuvieron fallas del arnés: una ficha por ejecución en
-# `inbox/runs-review/pending/` y el estado de la pasada en `inbox/runs-review/last-run.json`, sin texto de las
-# conversaciones. No usa modelo. El resumen de la mañana (`daily-summary.js --runs-review`, en el modelo de dependencias)
+# `scripts/nightly/runs-review/runs-review.js` dice cuáles ejecuciones tuvieron fallas del arnés: una ficha por causa en
+# `inbox/runs-review/`, con las ejecuciones que la traen adentro, y el estado de la pasada en
+# `inbox/runs-review/last-run.json`, sin texto de las conversaciones. No usa modelo. El resumen de la mañana (`daily-summary.js --runs-review`, en el modelo de dependencias)
 # lee lo que deja, así que corre ANTES: a las 03:00 UTC, con el resumen a las 04:00.
 #
 # Requiere el buzón: el nombre de la conexión de servicio en el parámetro `mailboxConnection` (de sólo lectura sobre ese

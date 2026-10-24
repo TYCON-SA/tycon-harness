@@ -1390,6 +1390,7 @@ GUARDADO=$(q "$D/out/dependencias-$HOY.json" 'j.resumen.ejecuciones.join("\n")')
 vsnap "$D" "$HOY" '{}'
 reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
 [ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] && [ -n "$B04" ] && [ "$GUARDADO" = "$B04" ] && [ "$(bloque)" = "$B04" ] \
+  && grep -q '^fichas de ejecuciones: vivas ' <<<"$(ultimo 'j.text')" \
   && ok "4.10-T32 la edición de las 08:00 vuelve a escribir la línea desde la constancia, sin la opción" || no "4.10-T32 rc=$RC · 04:00 «${B04}» · guardado «${GUARDADO}» · 08:00 «$(bloque)»"
 node -e 'const fs = require("fs"); const f = process.argv[1]; const s = JSON.parse(fs.readFileSync(f, "utf8"));
 s.resumen.ejecuciones[1] = "· ZZTEXTO de una conversación: 3"; fs.writeFileSync(f, JSON.stringify(s));' "$D/out/dependencias-$HOY.json"
@@ -1429,7 +1430,8 @@ D="$TMP/rr34"; mundo "$D"; snap "$D" "$HOY" '{}'
 rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 2 1)")" "$(fichas_nuevas)"
 reset_srv ok:1; entregar "$D" dependencias "$HOY" >/dev/null; SIN=$(ultimo 'j.text')
 reset_srv ok:1; entregar "$D" dependencias "$HOY" --runs-review "$D/ops" >/dev/null
-CON_SIN_BLOQUE=$(ultimo 'j.text.split("\n").filter((l) => !/^(ejecuciones:|· |🆕 )/.test(l)).join("\n")')
+# los renglones de fichas del clon van con la opción, debajo de la línea de las ejecuciones (Casos: scripts/tests/findings-cycle.test.js)
+CON_SIN_BLOQUE=$(ultimo 'j.text.split("\n").filter((l) => !/^(ejecuciones:|· |🆕 |fichas de )/.test(l)).join("\n")')
 [ "$SIN" = "$CON_SIN_BLOQUE" ] && ! grep -qE '^(ejecuciones:|🆕 )' <<<"$SIN" && [[ "$SIN" != *$'\n\n\n'* ]] \
   && ok "4.10-T34 sin la opción, el mismo texto sin la línea ni blancos de más" || no "4.10-T34 sin la opción cambió: $(diff <(printf %s "$SIN") <(printf %s "$CON_SIN_BLOQUE"))"
 
