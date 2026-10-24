@@ -98,6 +98,50 @@
           }
         },
         {
+          "id": "cd-relativo-con-tuberia-frena",
+          "type": "must-block",
+          "_por_que": "8.113: con un editor que toma sus archivos de una tubería, la carpeta relativa de un `cd` cuenta por sus historias, como la absoluta; sin esto, la carpeta se resolvía desde la que el `cd` ya dejaba y la historia se escribía sin frenar.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon docs/stories",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > docs/stories/story-1.1-resta.md"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd docs/stories && ls | xargs sed -i -e 's/a/b/'"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "cd-relativo-sin-historias-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.113, gemelo: la carpeta relativa de un `cd` sin historias adentro no frena, aunque el repo tenga historias en otra carpeta.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon docs/stories notas",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > docs/stories/story-1.1-resta.md",
+            "printf 'a\\n' > notas/a.txt"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd notas && ls | xargs sed -i -e 's/a/b/'"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
           "id": "historia-por-consola-gemelo-no-historia-pasa",
           "type": "must-not-block",
           "_por_que": "8.109: el mismo comando sobre un .md que no es historia pasa (gemelo del anterior).",
