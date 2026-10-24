@@ -447,7 +447,10 @@ nat() { if [ -n "$WIN" ]; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 mkdir -p "$NDIR/versions/$V1/bin"; printf '#!/bin/sh\nexit 1\n' > "$NDIR/versions/$V1/bin/node"; chmod +x "$NDIR/versions/$V1/bin/node"; ln -s "versions/$V1" "$NDIR/current"
 T15_BIN="$NDIR/current/bin/node"
 [ -n "$WIN" ] && { printf 'no es un programa' > "$NDIR/versions/$V1/node.exe"; T15_BIN="$NDIR/current/node.exe"; }
-printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s \\"%s\\""}]}]}}\n' "$(nat "$T15_BIN")" "$(nat "$BASE/t15/hooks/s.js")" > "$BASE/t15/home/.claude/settings.json"
+# en Windows la carpeta temporal lleva un nombre corto con `~`, y con él el aplicador nunca escribe la forma propia del
+# Node del arnés: lo que dejó escrito es `node "<guion>"`, y eso es lo que se pone acá
+T15_PREVIO="$(nat "$T15_BIN")"; [ -n "$WIN" ] && T15_PREVIO="node"
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s \\"%s\\""}]}]}}\n' "$T15_PREVIO" "$(nat "$BASE/t15/hooks/s.js")" > "$BASE/t15/home/.claude/settings.json"
 TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$BASE/t15/hooks" --skills "$BASE/t15/skills" \
   --list "$BASE/t15/list.json" --effects "$RAIZ/scripts/setup/install-effects.json" >/dev/null 2>&1
 [ "$(node -e 'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command).join("|"))' "$BASE/t15/home/.claude/settings.json")" = "node \"$(nat "$RAIZ/scripts/lib/node-floor.js")\" \"$(nat "$BASE/t15/hooks/s.js")\"" ] \

@@ -5294,7 +5294,8 @@ test('piso: un pull que trae OTRO contenido sube el piso a la fecha del disco (e
   const origen = repoGit(); const fo = path.join(origen.d, 'app.js');
   fs.writeFileSync(fo, 'v1\n'); origen.g('add', '-A'); origen.g('commit', '-q', '-m', 'v1');
   const dl = fs.mkdtempSync(path.join(os.tmpdir(), 'piso-clon-'));
-  require('node:child_process').execFileSync('git', ['clone', '-q', origen.d, path.join(dl, 'repo')]);
+  // el clon con `autocrlf=false` como el origen: con el `true` de Windows el checkout escribiría CRLF
+  require('node:child_process').execFileSync('git', ['clone', '-q', '-c', 'core.autocrlf=false', origen.d, path.join(dl, 'repo')]);
   const f = path.join(dl, 'repo', 'app.js');
   const registro = { [f]: { hash: sha1De(f), ts: enero } };   // la sesión tocó v1 en enero
   // en el origen, un colega commitea v2 con fecha VIEJA (febrero); el clon lo trae hoy
