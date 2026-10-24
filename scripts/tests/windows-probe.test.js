@@ -60,7 +60,19 @@ const tmp = (name) => fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `wi
 const listing = (dir) => { const out = []; const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); out.push(path.relative(dir, p)); if (e.isDirectory()) walk(p); } }; if (fs.existsSync(dir)) walk(dir); return out.sort(); };
 const has = (bin) => L.scanPath(bin).length > 0;
 
+// los trabajos del pipeline de Windows, en orden, y cómo se leen del yml (sin comentarios)
+const WINDOWS_JOBS = ['Bundle', 'Windows', 'Sources', 'Rehearsal', 'NetfxVstest'];
+const jobsOf = (code) => [...code.matchAll(/^ {2}- job: (\w+)/gm)].map((m) => m[1]);
+
 // ═══ T1 ════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+test('WindowsPipeline_Yaml_TrabajoDeMasODeMenos_Frena', () => {
+  // la lista es exacta: un trabajo nuevo o uno que falta se ve, no pasa de largo
+  const toy = (names) => names.map((n) => `  - job: ${n}\n    steps: []`).join('\n');
+  assert.deepStrictEqual(jobsOf(toy(WINDOWS_JOBS)), WINDOWS_JOBS);
+  assert.throws(() => assert.deepStrictEqual(jobsOf(toy([...WINDOWS_JOBS, 'Otro'])), WINDOWS_JOBS), 'un trabajo de más frena');
+  assert.throws(() => assert.deepStrictEqual(jobsOf(toy(WINDOWS_JOBS.slice(0, -1))), WINDOWS_JOBS), 'uno de menos frena');
+});
 
 test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.existsSync(PIPELINE) && 'NO MEDIDO — este árbol no trae pipelines/azure-pipelines-windows.yml (vive en el repo del equipo)' }, () => {
   const yml = fs.readFileSync(PIPELINE, 'utf8');
@@ -76,9 +88,10 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
     assert.doesNotMatch(resources[1], /^\s*(trigger|pipelines|builds|containers|packages|webhooks):/m, 'y no dispara el pipeline');
   }
   // los dos trabajos, y dónde mide
-  const jobs = [...code.matchAll(/^ {2}- job: (\w+)/gm)].map((m) => m[1]);
-  // los dos de la medición, y detrás los dos de los ensayos del equipo (su contrato: windows-rehearsal.test.js)
-  assert.deepStrictEqual(jobs, ['Bundle', 'Windows', 'Sources', 'Rehearsal'], `los trabajos, en orden: ${jobs.join(', ')}`);
+  const jobs = jobsOf(code);
+  // los dos de la medición, detrás los dos de los ensayos del equipo (su contrato: windows-rehearsal.test.js) y el de
+  // la receta de .NET Framework del perfil, que corre sólo con su escenario
+  assert.deepStrictEqual(jobs, WINDOWS_JOBS, `los trabajos, en orden: ${jobs.join(', ')}`);
   const windows = code.slice(code.indexOf('- job: Windows'), code.indexOf('- job: Sources'));
   const bundle = code.slice(code.indexOf('- job: Bundle'), code.indexOf('- job: Windows'));
   assert.match(windows, /vmImage: 'windows-latest'/, 'el trabajo que mide corre en windows-latest');
