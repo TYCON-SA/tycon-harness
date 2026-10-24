@@ -47,12 +47,22 @@ test('8.116 T24 MachineId_TresSistemas_HuellaYFuente', () => {
   assert.deepStrictEqual(r, { huella: esperada('5f1e2d3c-aaaa-bbbb-cccc-0123456789ab'), fuente: 'C:\\Windows\\System32\\reg.exe MachineGuid' });
   r = mid().huella({ platform: 'linux', leer: (f) => (f === '/etc/machine-id' ? '0F1E2D3C4B5A69788796A5B4C3D2E1F0\n' : null) });
   assert.deepStrictEqual(r, { huella: esperada('0f1e2d3c4b5a69788796a5b4c3d2e1f0'), fuente: '/etc/machine-id' });
-  r = mid().huella({ platform: 'linux', leer: (f) => (f === '/var/lib/dbus/machine-id' ? 'abc123\n' : null) });
-  assert.deepStrictEqual(r, { huella: esperada('abc123'), fuente: '/var/lib/dbus/machine-id' });
+  const DBUS = 'aabbccddeeff00112233445566778899';
+  r = mid().huella({ platform: 'linux', leer: (f) => (f === '/var/lib/dbus/machine-id' ? `${DBUS}\n` : null) });
+  assert.deepStrictEqual(r, { huella: esperada(DBUS), fuente: '/var/lib/dbus/machine-id' });
+  // un /etc/machine-id sin forma de id no da huella: se prueba el siguiente, y si ninguno sirve, el motivo de cada uno
+  r = mid().huella({ platform: 'linux', leer: (f) => (f === '/etc/machine-id' ? 'uninitialized\n' : `${DBUS}\n`) });
+  assert.deepStrictEqual(r, { huella: esperada(DBUS), fuente: '/var/lib/dbus/machine-id' });
+  r = mid().huella({ platform: 'linux', leer: (f) => (f === '/etc/machine-id' ? { error: 'EACCES' } : '0'.repeat(32)) });
+  assert.equal(r.huella, undefined);
+  assert.match(r.error, /\/etc\/machine-id: EACCES/);
+  assert.match(r.error, /\/var\/lib\/dbus\/machine-id: el id no tiene la forma/);
   // ilegible: sin huella y con el motivo
   for (const caso of [
     { platform: 'darwin', ejecutar: ejecutorFalso(new Error('no anda')).ejecutar },
     { platform: 'darwin', ejecutar: ejecutorFalso('sin el campo').ejecutar },
+    { platform: 'darwin', ejecutar: ejecutorFalso('"IOPlatformUUID" = "00000000-0000-0000-0000-000000000000"').ejecutar },
+    { platform: 'darwin', ejecutar: ejecutorFalso('"IOPlatformUUID" = "no-es-un-uuid"').ejecutar },
     { platform: 'win32', ejecutar: ejecutorFalso(REG).ejecutar, existe: () => false },
     { platform: 'linux', leer: () => null },
     { platform: 'linux', leer: () => '   \n' },

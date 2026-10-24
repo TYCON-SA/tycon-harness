@@ -1972,10 +1972,13 @@ test('8.116 T27 TyconConfig_DelegatedMachines_SoloDelPerfil', () => {
   const r = cli(['set', 'approvals.delegated_machines', '[]'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   // el nombre de cada máquina pasa por la regla de lo personal del perfil versionado
-  for (const label of ['alguien@acme.example', `ghp_${'a'.repeat(36)}`]) {
+  for (const label of ['alguien@acme.example', `ghp_${'a'.repeat(36)}`, 'nombre token=abc123', 'x'.repeat(41)]) {
     c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_machines: [{ id: '0123456789abcdef', label }] } }) });
-    assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_machines' && /valor personal/.test(e.motivo)), `${label}: ${JSON.stringify(c.errores)}`);
+    assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_machines'), `${label}: ${JSON.stringify(c.errores)}`);
   }
+  // un nombre corto con acentos y paréntesis vale
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_machines: [{ id: '0123456789abcdef', label: 'Portátil (oficina) 2' }] } }) });
+  assert.deepEqual(c.errores, []);
 });
 
 // T28 TyconConfig_DelegatedSigning_ListaYCompatible @story-8.116 @ac-36

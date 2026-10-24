@@ -297,6 +297,7 @@ function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('o
 /** Las opciones de un tipo `opciones:` (un valor solo, o una lista sin repetidos, de una lista cerrada). */
 function subsetOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opciones:') ? tipo.slice('opciones:'.length).split('|') : null; }
 const HUELLA_DE_MAQUINA = /^[0-9a-f]{16}$/;
+const NOMBRE_DE_MAQUINA = /^[\p{L}\p{N} ._()-]{1,40}$/u;
 /** Iguales por valor: dos listas con lo mismo no son «distintas» por ser dos objetos. */
 function mismoValorPlano(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 // Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
@@ -852,6 +853,8 @@ function validarTipo(tipo, valor) {
         if (!esObjeto(m) || Object.keys(m).some((k) => k !== 'id' && k !== 'label')) return `cada máquina es {"id", "label"} y nada más, no ${JSON.stringify(m)}`;
         if (typeof m.id !== 'string' || !HUELLA_DE_MAQUINA.test(m.id.trim())) return `«${m.id}» no es una huella de machine-id.js (16 caracteres hexadecimales en minúsculas)`;
         if (typeof m.label !== 'string' || !m.label.trim()) return `la máquina ${m.id} no tiene nombre (label)`;
+        // un nombre corto para la persona, sin forma de dato: ni @, ni dos puntos, ni signos de un token o una dirección
+        if (!NOMBRE_DE_MAQUINA.test(m.label.trim())) return `el nombre de la máquina ${m.id} tiene que ser corto (hasta 40) y de letras, números, espacios, puntos, guiones o paréntesis`;
       }
       const ids = valor.map((m) => m.id.trim());
       return new Set(ids).size === ids.length ? null : `la lista repite una máquina: ${JSON.stringify(ids)}`;

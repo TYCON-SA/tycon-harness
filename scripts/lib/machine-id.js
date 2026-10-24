@@ -34,7 +34,14 @@ function opcionesDelHijo() {
 }
 
 function ejecutarSinAmbiente(cmd, args) { return execFileSync(cmd, args, opcionesDelHijo()); }
-function leerArchivo(ruta) { try { return fs.readFileSync(ruta, 'utf8'); } catch (_) { return null; } }
+/** El texto del archivo, o `{ error }` con el código (ausente, sin permiso…): el motivo no se pierde. */
+function leerArchivo(ruta) { try { return fs.readFileSync(ruta, 'utf8'); } catch (e) { return { error: (e && e.code) || String(e) }; } }
+
+// la forma de cada id, ya normalizado: un UUID o un id de 32 hex. Un valor sin forma (vacío, `uninitialized` del primer
+// arranque de systemd, un archivo truncado, todo ceros) no es un id: daría una huella que parece válida
+const FORMA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const FORMA_LINUX = /^[0-9a-f]{32}$/;
+function conForma(valor, forma) { return forma.test(valor) && /[1-9a-f]/.test(valor.replace(/-/g, '')); }
 
 function resumen(valor) {
   return crypto.createHash('sha256').update(PREFIJO + valor).digest('hex').slice(0, 16);
@@ -52,7 +59,8 @@ function leerFuente({ platform = process.platform, ejecutar = ejecutarSinAmbient
     try { salida = String(ejecutar(cmd, args, opcionesDelHijo())); } catch (e) { return { error: `${fuente}: no se pudo correr (${(e && e.message) || e})` }; }
     const m = re.exec(salida);
     const valor = m ? normalizar(m[1]) : '';
-    return valor ? { valor, fuente } : { error: `${fuente}: la salida no trae el id` };
+    if (!valor) return { error: `${fuente}: la salida no trae el id` };
+    return conForma(valor, FORMA_UUID) ? { valor, fuente } : { error: `${fuente}: el id no tiene la forma de un UUID` };
   };
   if (platform === 'darwin') return desdeSalida(IOREG, ['-rd1', '-c', 'IOPlatformExpertDevice'], /"IOPlatformUUID"\s*=\s*"([^"]+)"/, `${IOREG} IOPlatformUUID`);
   if (platform === 'win32') {
@@ -60,11 +68,15 @@ function leerFuente({ platform = process.platform, ejecutar = ejecutarSinAmbient
     return desdeSalida(REG, ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'], /MachineGuid\s+REG_SZ\s+(\S+)/i, `${REG} MachineGuid`);
   }
   if (platform === 'linux') {
+    const motivos = [];
     for (const ruta of LINUX) {
-      const valor = normalizar(leer(ruta));
-      if (valor) return { valor, fuente: ruta };
+      const texto = leer(ruta);
+      if (texto && typeof texto === 'object') { motivos.push(`${ruta}: ${texto.error}`); continue; }
+      const valor = normalizar(texto);
+      if (conForma(valor, FORMA_LINUX)) return { valor, fuente: ruta };
+      motivos.push(`${ruta}: ${valor ? 'el id no tiene la forma de 32 hexadecimales' : 'vacío'}`);
     }
-    return { error: `${LINUX.join(' ni ')}: no se pudo leer el id` };
+    return { error: `no se pudo leer el id (${motivos.join('; ')})` };
   }
   return { error: `la plataforma ${platform} no tiene una fuente de id conocida` };
 }
