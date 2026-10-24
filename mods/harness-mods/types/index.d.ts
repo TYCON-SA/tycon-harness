@@ -31,6 +31,8 @@ declare module 'claude-code' {
       warned: string[]
       /** El `story:paso` que esperaba al dev la última vez (el pipeline borra la bandera al cerrar el turno). */
       waitingFor: string | null
+      /** El detalle desplegado bajo el renglón, donde la ventana del detalle no se puede abrir (VS Code). */
+      expanded: boolean
     }
   }
 }
