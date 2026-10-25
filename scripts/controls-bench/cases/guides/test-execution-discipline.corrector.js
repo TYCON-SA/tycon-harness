@@ -29,7 +29,7 @@ const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
 /** Una corrida que el corrector no supo leer: el corredor la cuenta como «no pude medir», nunca como un 0. */
 function noPudeLeer(cmd, por) {
-  throw new Error(`no pude leer la corrida de pruebas (${por}): ${String(cmd).slice(0, 120)}`);
+  throw new Error(`no pude leer la ejecución de pruebas (${por}): ${String(cmd).slice(0, 120)}`);
 }
 
 /**
@@ -129,7 +129,7 @@ function corregir({ dir, toolLog }) {
   if (!corridas.length) return { score: 0, motivo: 'no corrió ninguna prueba' };
   const enteras = corridas.filter((c) => !c.acotada);
   if (enteras.length) return { score: 0, motivo: `corrió la suite entera: ${enteras[0].comando}` };
-  return { score: 1, motivo: `${corridas.length} corrida(s) de pruebas, todas con filtro` };
+  return { score: 1, motivo: `${corridas.length} ejecución(es) de pruebas, todas con filtro` };
 }
 
 module.exports = { corregir, corridasDePruebas };

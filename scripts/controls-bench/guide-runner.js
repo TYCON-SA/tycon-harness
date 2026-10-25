@@ -182,7 +182,7 @@ function resumir({ guia, con, sin }) {
     puntaje_con: puntajeCon,
     puntaje_sin: puntajeSin,
     revisar: puntajeCon !== null && puntajeSin !== null && puntajeCon <= puntajeSin,
-    senal: corridas === 1 ? 'señal gruesa: 1 corrida' : null,
+    senal: corridas === 1 ? 'señal gruesa: 1 ejecución' : null,
   }, sinMedir ? { sin_medir: sinMedir } : {},
   // 0 de los dos lados: el caso es lo que hay que mirar antes que la guía
   puntajeCon === 0 && puntajeSin === 0 ? { ninguno_lo_logro: true } : {});
@@ -236,7 +236,7 @@ async function correrUna(entrada, conGuia) {
     ({ bin, args } = comandoDelAgente(caso));
   } catch (e) {
     if (arbol) fs.rmSync(arbol, { recursive: true, force: true });
-    return { medida: false, motivo: `no pude preparar la corrida: ${e && e.message}` };
+    return { medida: false, motivo: `no pude preparar la ejecución:${e && e.message}` };
   }
   try {
     const r = await lanzar(bin, args, { cwd: arbol, timeoutS: caso.timeout_s || TIMEOUT_POR_DEFECTO_S });
@@ -320,7 +320,7 @@ async function main(argv) {
     }
     const ladoSinMedir = [['con la guía', con], ['sin la guía', sin]].find(([, rs]) => !rs.some((r) => r.medida));
     if (ladoSinMedir) {
-      const motivo = ladoSinMedir[1].map((r) => r.motivo).filter(Boolean)[0] || 'ninguna corrida se corrigió';
+      const motivo = ladoSinMedir[1].map((r) => r.motivo).filter(Boolean)[0] || 'ninguna ejecución se corrigió';
       problemas.push(sanear(`${e.nombre}: no pude medir ${ladoSinMedir[0]} — ${motivo}`));
       continue;
     }
@@ -329,7 +329,7 @@ async function main(argv) {
     console.log(`guías: ${e.caso.guide} — la leyó ${res.leyo_pct}% · con ${res.puntaje_con} · sin ${res.puntaje_sin}`
       + `${res.revisar ? ' · revisar esta guía: con ella no sale mejor' : ''}`
       + `${res.ninguno_lo_logro ? ' (ninguno de los dos lados lo logró: mirar el caso)' : ''}`
-      + `${res.sin_medir ? ` · ${res.sin_medir} corrida(s) sin medir` : ''}${res.senal ? ` (${res.senal})` : ''}`);
+      + `${res.sin_medir ? ` · ${res.sin_medir} ejecución(es) sin medir` : ''}${res.senal ? ` (${res.senal})` : ''}`);
   }
 
   const noMedido = problemas.length > 0;

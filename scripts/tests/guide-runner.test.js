@@ -132,7 +132,7 @@ test('T4 Resultado_GuiaQueNoMejora_Marcada @story-1.25 @ac-4', () => {
   const igual = G.resumir({ guia: GUIA, con: [corrida(1, true)], sin: [corrida(1, false)] });
   assert.strictEqual(igual.revisar, true, 'con la guía no sale mejor: se marca para revisar');
   assert.strictEqual(igual.leyo_pct, 100);
-  assert.match(igual.senal, /señal gruesa: 1 corrida/);
+  assert.match(igual.senal, /señal gruesa: 1 ejecución/);
   const mejor = G.resumir({ guia: GUIA, con: [corrida(1, true), corrida(1, false)], sin: [corrida(0, false), corrida(0, false)] });
   assert.strictEqual(mejor.revisar, false);
   assert.strictEqual(mejor.leyo_pct, 50);
@@ -143,7 +143,7 @@ test('T4 Resultado_GuiaQueNoMejora_Marcada @story-1.25 @ac-4', () => {
   const conHueco = G.resumir({ guia: GUIA, con: [corrida(1, true), noMedida], sin: [corrida(0, false), corrida(0, false)] });
   assert.strictEqual(conHueco.corridas, 1, 'la señal la da el lado con menos corridas medidas');
   assert.strictEqual(conHueco.sin_medir, 1, 'la corrida sin medir se cuenta, no se esconde');
-  assert.match(conHueco.senal, /1 corrida/);
+  assert.match(conHueco.senal, /1 ejecución/);
   const ceros = G.resumir({ guia: GUIA, con: [corrida(0, true)], sin: [corrida(0, false)] });
   assert.strictEqual(ceros.ninguno_lo_logro, true, '0 y 0: se mira el caso antes que la guía');
   assert.strictEqual(mejor.ninguno_lo_logro, undefined);
