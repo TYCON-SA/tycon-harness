@@ -20,6 +20,7 @@
  *
  * Uso: node --test scripts/tests/team-log-citations.test.js
  */
+// stable-data: los commits de juguete van por `lab.git` del laboratorio, que fija sus fechas y apaga el mantenimiento.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -45,8 +46,11 @@ function citations(root = RAIZ) {
     if (e.status === 1) return []; // git grep sale 1 cuando no encuentra nada
     throw e;
   }
-  const brought = require(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.js')).broughtByOverlay(root);
+  const { broughtByOverlay, OVERLAY_COMPUTED } = require(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.js'));
+  const brought = broughtByOverlay(root);
   if (brought && brought.size === 0) throw new Error('la superposición no trajo nada: no hay qué medir');
+  // en el árbol armado, los registros que calcula la superposición nombran suites privadas: no son una cita del público
+  if (brought) for (const f of OVERLAY_COMPUTED) brought.delete(f);
   // la lista de excepciones nombra el registro en cada entrada: es la lista, no una cita
   return out.split('\n').filter(Boolean).map((l) => {
     const m = /^([^:]+):(\d+):(.*)$/.exec(l);
@@ -65,8 +69,24 @@ test('T15 PublicTree_NoIncidentLogCitation @story-8.43 @ac-13 — el árbol no n
     else loose.push(`${c.file}:${c.line}: ${c.text.trim().slice(0, 120)}`);
   }
   assert.deepStrictEqual(loose, [], 'citas al registro fuera de la lista: se reescriben sin la cita, o se declaran con su motivo');
-  const stale = pending.filter((a) => !a.used).map((a) => `${a.file}: «${a.text}»`);
-  assert.deepStrictEqual(stale, [], 'excepciones que ya no coinciden con ningún renglón: se sacan de la lista');
+  assert.deepStrictEqual(staleAllowed(RAIZ, pending), [], 'excepciones que ya no coinciden con ningún renglón: se sacan de la lista');
+});
+
+/** Las excepciones sin uso; en el árbol armado, la de un archivo donde el privado conserva el suyo no se midió: no está vieja. */
+function staleAllowed(root, pending) {
+  const brought = require(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.js')).broughtByOverlay(root);
+  return pending.filter((a) => !a.used && (!brought || brought.has(a.file))).map((a) => `${a.file}: «${a.text}»`);
+}
+
+test('T15e PublicTree_PrivateOwnFileException_NotStale @story-8.128 @ac-6 — en el árbol armado, la excepción de un archivo que el privado conserva no está vieja', (t) => {
+  // 🔴 rojo: el privado conserva su guía, la cita del público no se mide, y la excepción salía vieja
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'guides/propia.md': 'sin cita\n' }, publico: { 'scripts/x.js': '// nada\n' } });
+  t.after(lab.cleanup);
+  const pending = [{ file: 'guides/propia.md', text: NAME, used: false }];
+  assert.deepStrictEqual(staleAllowed(lab.root, pending), [], 'el archivo del privado no se midió');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(staleAllowed(lab.root, pending), [`guides/propia.md: «${NAME}»`], 'sin superposición, la excepción sin uso está vieja');
 });
 
 test('T15c PublicTree_CitationOnlyInPrivate_DoesNotCount @story-8.112 @ac-3 — en el árbol armado, una cita sólo del privado no cuenta', (t) => {
@@ -77,6 +97,18 @@ test('T15c PublicTree_CitationOnlyInPrivate_DoesNotCount @story-8.112 @ac-3 — 
   assert.deepStrictEqual(citations(lab.root).map((c) => c.file).sort(), ['guides/configuración.md', 'scripts/x.js'], 'sólo cuenta lo que trajo el público, también con tilde en la ruta');
   lab.git(['checkout', '--quiet', lab.tip]);
   assert.deepStrictEqual(citations(lab.root).map((c) => c.file), ['tasks/plan.md'], 'sin superposición, el árbol entero');
+});
+
+test('T15d PublicTree_OverlayComputedRegistries_DoNotCount @story-8.128 @ac-2 — en el árbol armado, los registros que calcula la superposición no cuentan', (t) => {
+  // 🔴 rojo: el registro de suites calculado nombra una suite privada y pone en rojo la noche
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'scripts/tests/suites.json': '{}\n' }, publico: { 'scripts/tests/suites.json': `{ "ruta": "tests/${NAME}.test.js" }\n`, 'scripts/x.js': `// ver el ${NAME}\n` } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(citations(lab.root).map((c) => c.file), ['scripts/x.js'], 'el registro calculado no cuenta');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  fs.writeFileSync(path.join(lab.root, 'scripts', 'tests', 'suites.json'), `{ "ruta": "tests/${NAME}.test.js" }\n`);
+  lab.git(['commit', '--quiet', '-am', 'registro a mano']);
+  assert.deepStrictEqual(citations(lab.root).map((c) => c.file), ['scripts/tests/suites.json'], 'sin superposición, el registro cuenta como siempre');
 });
 
 test('T15b IncidentLogAllowed_OneCitationEach @story-8.43 @ac-13 — cada excepción es una cita con su texto y su motivo', () => {

@@ -369,6 +369,17 @@ const IS_TEST = (f) => /(^|\/)(tests?|__tests__|fixtures)\//.test(f) || /\.test\
 // los enchufes de Claude Code, que se quedan en ~/.claude aunque el arnés se mude
 const PLUG_AFTER = /^(?:\.json\b|(?:['"`]\s*,\s*['"`]|[\\/]+)(?:settings\.json|settings\.local\.json|CLAUDE\.md|skills|agents|commands|projects|plugins|channels)\b)/;
 
+// la línea del respaldo de los que viajan sueltos, que T5 evalúa con vm: entera y exacta, salvo el tramo hasta el lector
+const FALLBACK_LINE = /^const stateDirOf = \(\(\) => \{ const lib = path\.join\(__dirname, ((?:'[^'\\]+', )*)'tycon-home\.js'\); return require\('fs'\)\.existsSync\(lib\) \? require\(lib\)\.stateDir : \(h\) => path\.join\(h \|\| require\('os'\)\.homedir\(\), '\.claude', '\.tycon-pipeline'\); \}\)\(\);$/;
+/** ¿Es la línea del respaldo, y su tramo lleva de verdad al lector de rutas de `root`? */
+function isFallbackLine(root, f, line) {
+  const m = FALLBACK_LINE.exec(line);
+  if (!m) return false;
+  const parts = [...m[1].matchAll(/'([^'\\]+)'/g)].map((x) => x[1]);
+  // se arma como la arma la línea: path.join pega una parte absoluta en vez de volver a la raíz
+  return path.join(root, path.dirname(f), ...parts, 'tycon-home.js') === path.join(root, 'scripts', 'setup', 'harness', 'tycon-home.js');
+}
+
 /** Las apariciones de «.claude» que no son un enchufe, por archivo, en los archivos rastreados de `root`. */
 function measure(root, exempt) {
   // «sin git» es también una copia sin .git propio DENTRO de otro repo (un HOME versionado): ahí ls-files sale bien con la
@@ -393,6 +404,7 @@ function measure(root, exempt) {
     const lines = [];
     let n = 0;
     text.split('\n').forEach((line, i) => {
+      if (isFallbackLine(root, f, line)) return;
       // una RUTA: «.claude» que no viene pegado a un identificador ni a un dominio (`r.tools.claude` y `code.claude.com`
       // no son rutas)
       const rx = /(?<![A-Za-z0-9_.-])\.claude(?![A-Za-z0-9_])/g;
@@ -420,6 +432,15 @@ function judge(measured, ceiling) {
   const total = Object.values(measured).reduce((a, x) => a + x.n, 0);
   return { up, down, total };
 }
+/** El veredicto del techo en `root`, o null sin git. Se mide donde se escribe el código, también en el público. */
+function ceilingVerdict(root, ceiling, exempt) {
+  const measured = measure(root, exempt);
+  if (!measured) return null;
+  // en el árbol armado, un archivo donde el privado conserva el suyo no se midió: su techo no se compara
+  const brought = require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js')).broughtByOverlay(root);
+  const files = brought ? Object.fromEntries(Object.entries(ceiling.files).filter(([f]) => brought.has(f))) : ceiling.files;
+  return judge(measured, { ...ceiling, files });
+}
 function ceilingJson(measured, previous) {
   const files = Object.fromEntries(Object.entries(measured).sort(([a], [b]) => a.localeCompare(b)).map(([f, x]) => [f, x.n]));
   return Object.assign({}, previous, { total: Object.values(files).reduce((a, b) => a + b, 0), files });
@@ -432,18 +453,12 @@ it('T3 DotClaudeCeiling_NeverRises_ClassBAndLegacyExempt', () => {
     assert.ok(e.why && e.why.length > 10, `legacy-home-names.json: ${e.path} sin motivo`);
     assert.ok(e.retire_with, `legacy-home-names.json: ${e.path} sin cuándo se retira`);
   }
-  // el techo es del repo interno: la copia pública trae menos archivos y textos reemplazados (allí no se mide, y se dice)
-  if (!fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'public-repos.json'))) {
-    console.log('⏭ T3: NO MEDIDO — la copia pública (no hay scripts/publishing/public-repos.json): el techo se mide en el repo interno');
-    return;
-  }
-  const measured = measure(ROOT, exemptSet(L));
-  if (!measured) { console.log('⏭ T3: NO MEDIDO — sin git (la copia instalada): el techo se mide en el repo'); return; }
   const ceiling = JSON.parse(fs.readFileSync(CEILING_FILE, 'utf8'));
-  const v = judge(measured, ceiling);
+  const v = ceilingVerdict(ROOT, ceiling, exemptSet(L));
+  if (!v) { console.log('⏭ T3: NO MEDIDO — sin git (la copia instalada): el techo se mide en el repo'); return; }
   assert.deepStrictEqual(v.up, [], `«.claude» subió fuera de los enchufes de Claude Code (pedile la ruta a scripts/setup/harness/tycon-home.js):\n${v.up.join('\n')}`);
   assert.deepStrictEqual(v.down, [], `«.claude» bajó: bajá el techo (node scripts/tests/tycon-home.test.js --measure > ${path.relative(ROOT, CEILING_FILE)}):\n${v.down.join('\n')}`);
-  assert.strictEqual(ceiling.total, v.total, 'el total del techo no es la suma de sus archivos');
+  assert.strictEqual(ceiling.total, Object.values(ceiling.files).reduce((a, b) => a + b, 0), 'el total del techo no es la suma de sus archivos');
 
   // sembradas en un repo de juguete: una aparición nueva frena nombrándola; una sacada pide bajar el techo;
   // un enchufe y un archivo exento no cuentan; las pruebas no cuentan
@@ -488,6 +503,51 @@ it('T3b DotClaudeCeiling_OnlyWhatTravels @story-8.112 @ac-4 — en el árbol arm
   assert.deepStrictEqual(Object.keys(measure(lab.root, new Set())), ['scripts/x.js'], 'sólo cuenta lo que trajo el público');
   lab.git(['checkout', '--quiet', lab.tip]);
   assert.deepStrictEqual(Object.keys(measure(lab.root, new Set())), ['scripts/controls-bench/ultimo-banco.json'], 'sin superposición, el árbol entero');
+});
+
+it('T3c DotClaudeCeiling_MeasuredWithoutPublicRepos @story-8.128 @ac-3 — sin public-repos.json el techo se mide igual', () => {
+  // 🔴 rojo: en el público el techo no se medía y una ruta nueva entraba sin que la frenara ningún pedido
+  const t = tmp('tycon-home-t3c-');
+  spawnSync('git', ['init', '-q', t]);
+  fs.mkdirSync(path.join(t, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(t, 'scripts', 'a.js'), "const d = '~/.claude/nuevo';\n");
+  spawnSync('git', ['-C', t, 'add', '-A']);
+  assert.ok(!fs.existsSync(path.join(t, 'scripts', 'publishing', 'public-repos.json')));
+  assert.deepStrictEqual(ceilingVerdict(t, { files: {} }, new Set()).up, ['scripts/a.js: 0 → 1 (líneas 1)'], 'la suba no se nombró');
+  const sinGit = tmp('tycon-home-t3c-sin-git-');
+  assert.strictEqual(ceilingVerdict(sinGit, { files: {} }, new Set()), null, 'sin git es «no medido», no un veredicto');
+  fs.rmSync(t, { recursive: true, force: true });
+  fs.rmSync(sinGit, { recursive: true, force: true });
+});
+
+it('T3d DotClaudeCeiling_ExactFallbackLineOnly @story-8.128 @ac-4 — sólo la línea de respaldo exacta, con su tramo al lector, no cuenta', () => {
+  // 🔴 rojo: la línea que T5 ya evalúa subía el techo en cada archivo que la copiaba
+  const t = tmp('tycon-home-t3d-');
+  spawnSync('git', ['init', '-q', t]);
+  const line = (parts) => `const stateDirOf = (() => { const lib = path.join(__dirname, ${parts}); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();\n`;
+  const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(t, rel)), { recursive: true }); fs.writeFileSync(path.join(t, rel), text); };
+  put('scripts/hooks/exacta.js', line("'..', 'setup', 'harness', 'tycon-home.js'"));
+  put('scripts/hooks/parecida.js', line("'..', 'setup', 'harness', 'tycon-home.js'").replace("'.tycon-pipeline'", "'.tycon-pipelinE'"));
+  put('scripts/hooks/a-otro-lado.js', line("'..', '..', 'setup', 'harness', 'tycon-home.js'"));
+  // path.join pega una parte absoluta detrás de __dirname: nunca llega al lector
+  put('scripts/hooks/absoluta.js', line(`'${path.join(t, 'scripts', 'setup', 'harness')}', 'tycon-home.js'`));
+  // una coma dentro de una parte es parte del nombre, no un separador
+  put('scripts/setup/harness/coma.js', line("'a, b', 'hooks', '..', 'tycon-home.js'"));
+  spawnSync('git', ['-C', t, 'add', '-A']);
+  const m = measure(t, new Set());
+  assert.deepStrictEqual(Object.fromEntries(Object.entries(m).map(([f, x]) => [f, x.n])), { 'scripts/hooks/a-otro-lado.js': 1, 'scripts/hooks/absoluta.js': 1, 'scripts/hooks/parecida.js': 1, 'scripts/setup/harness/coma.js': 1 });
+  fs.rmSync(t, { recursive: true, force: true });
+});
+
+it('T3e DotClaudeCeiling_PrivateOwnFile_NotCompared @story-8.128 @ac-6 — en el árbol armado, el techo de un archivo que el privado conserva no pide bajar', (t) => {
+  // 🔴 rojo: el privado conserva su propio archivo, no se mide, y el techo del público pedía bajarlo
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'scripts/propio.json': '{}\n' }, publico: { 'scripts/x.js': "const d = '~/.claude/x';\n" } });
+  t.after(lab.cleanup);
+  const v = ceilingVerdict(lab.root, { files: { 'scripts/x.js': 1, 'scripts/propio.json': 2 } }, new Set());
+  assert.deepStrictEqual([v.up, v.down], [[], []], 'el archivo del privado no se compara');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(ceilingVerdict(lab.root, { files: { 'scripts/propio.json': 2 } }, new Set()).down, ['scripts/propio.json: 2 → 0'], 'sin superposición se compara como siempre');
 });
 
 // ── T37: el retiro tiene fecha y story ─────────────────────────────────────────────────────────────────────────────

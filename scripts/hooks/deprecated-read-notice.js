@@ -24,10 +24,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIB = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'deprecated.js');
 const NIVEL = { frozen: 'congelado', dead: 'muerto' };
 
-function stateDir() {
-  const lib = path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir(os.homedir()) : path.join(os.homedir(), '.claude', '.tycon-pipeline');
-}
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+function stateDir() { return stateDirOf(os.homedir()); }
 
 /** Las rutas que el evento leyó, absolutas. */
 function rutasLeidas(evento) {
