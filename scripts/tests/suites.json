@@ -1808,6 +1808,12 @@
       "requiere": []
     },
     {
+      "__nota": "El aviso de arranque de los pedidos trabados: en choque o sin entrar más de una hora con auto-completar, el reloj que vuelve a cero, «no medido» y nunca vacío, el tope de 5 s, la foto de 10 minutos y a lo sumo 5 líneas saneadas.",
+      "raiz": "arnes",
+      "ruta": "tests/stuck-pr-notice.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: los avisos que trae una extensión en su notices.json; el lector rechaza rutas fuera de la carpeta y formas mal escritas, y el gancho de arranque los dice sólo donde aplican, una vez por sesión.",
       "raiz": "arnes",
       "ruta": "tests/extension-notices.test.js",

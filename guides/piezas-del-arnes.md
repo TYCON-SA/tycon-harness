@@ -1462,6 +1462,16 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdev-behind-main-noticejs)
 
+## scripts/hooks/stuck-pr-notice.js
+
+**Qué es:** Avisa al abrir la sesión, una línea por pedido, qué pedidos con auto-completar llevan más de una hora en choque con su destino, o sin choque y sin entrar.
+
+**Por qué existe:** Un pedido con auto-completar que choca, o que está limpio y no entra, no le avisa a nadie: se queda abierto días mientras todos creen que ya entró. Lee los repos del arnés que declara `team-repos.json` por la capa de plataforma, con tope de 5 s y una foto de 10 minutos; si no pudo leer dice «no medido», nunca calla como si no hubiera nada.
+
+**Quién la usa:** El arranque de sesión, en los repos del arnés. Umbral: `TYCON_STUCK_PR_HOURS` (1). Se apaga con `TYCON_STUCK_PR_NOTICE=0`.
+
+**Dónde se prueba:** `scripts/tests/stuck-pr-notice.test.js`
+
 ## scripts/hooks/extension-notices.js
 
 **Qué es:** Al abrir la sesión, dice los avisos que traen los paquetes activos en su `notices.json`, sólo en los repos donde aplican y una vez por sesión. El lector es `scripts/lib/extension-notices.js`.

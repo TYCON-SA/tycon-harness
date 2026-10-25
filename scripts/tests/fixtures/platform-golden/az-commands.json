@@ -60,6 +60,9 @@
   "guides/workflow-orchestration.md": [
     "`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN"
   ],
+  "integrations/azure-devops/scripts/change-requests.js": [
+    "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>"
+  ],
   "pipelines/operations/README.md": [
     "az pipelines create --name stage-metrics --repository operations --repository-type tfsgit --branch main \\"
   ],
