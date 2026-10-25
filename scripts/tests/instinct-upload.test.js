@@ -383,10 +383,10 @@ test('T17 Upload_OverCap_TruncatesAndDeclares @story-4.7 @ac-14 — pasa el tope
 
 test('T18 NoMailbox_RecordsLocally_NoticeOnceUntilStateChanges @story-4.7 @ac-15 — sin buzón: un aviso; con buzón, silencio', () => {
   const l = lab({ sello: { said_on: '2026-10-15', said_at: '2026-10-15T12:00:00.000Z' }, llave: false });
-  const correr = () => spawnSync(process.execPath, [NOTICE], {
-    encoding: 'utf8',
-    env: { ...process.env, HOME: l.home, USERPROFILE: l.home, TYCON_PROFILE: '0', TYCON_INSTINCTS: '1', TYCON_MAILBOX_JSON: l.cfg, TYCON_EVAL_SANDBOX: '' },
-  });
+  // el buzón lo decide la llave: un TYCON_MAILBOX heredado (el banco exporta TYCON_MAILBOX=0) lo apagaría igual
+  const envAviso = { ...process.env, HOME: l.home, USERPROFILE: l.home, TYCON_PROFILE: '0', TYCON_INSTINCTS: '1', TYCON_MAILBOX_JSON: l.cfg, TYCON_EVAL_SANDBOX: '' };
+  delete envAviso.TYCON_MAILBOX;
+  const correr = () => spawnSync(process.execPath, [NOTICE], { encoding: 'utf8', env: envAviso });
   const a = correr();
   assert.strictEqual(a.status, 0, a.stderr);
   assert.match(a.stdout, /no tiene buzón/);
