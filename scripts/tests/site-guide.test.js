@@ -383,6 +383,18 @@ test('T14 2.74-Guia_InvitarYPermiso @story-2.74 @ac-12', () => {
   }
 });
 
+// rojo si: la guía no dice qué muestra Ejecuciones después de un reinicio, o qué pasa sin disco del sitio.
+test('T12 2.77-Guia_EjecucionesTrasUnReinicio @story-2.77 @ac-13', () => {
+  const dicen = {
+    es: [/\*\*Después de un reinicio\*\*/, /última vista\s+guardada/, /fecha de cuándo es/, /se pone al\s+día sola/, /SITE_DATA_DIR/, /\*\*sin disco\*\*/, /primera bajada entera/],
+    en: [/\*\*After a restart\*\*/, /last saved\s+view/, /date it is from/, /catches up on\s+its own/, /SITE_DATA_DIR/, /\*\*with no disk\*\*/, /first full download/],
+  };
+  for (const [lado, f] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const t = leer(f);
+    for (const re of dicen[lado]) assert.match(t, re, `${lado}: la guía no dice ${re}`);
+  }
+});
+
 test('2.76-Guia_SitioDemo @story-2.76 @ac-11 — qué es, qué no hace, cómo se instala y cómo se borra, en las dos guías', () => {
   const dicen = {
     es: { titulo: 'El sitio demo', antes: INSTALACION.es, rx: [/SITE_DEMO=1/, /Datos de ejemplo/, /Acme/, /sin cuenta/, /Ver como/, /no escribe/i, /no abre conexiones/, /60 pedidos por minuto/, /noindex|no indexe/i,
