@@ -204,9 +204,10 @@ test('D1 PackReader_OldKeysSameAsNew_DifferentIsBroken', (t) => {
     if (!v || typeof v !== 'object') return v;
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [vieja.get(k) || k, aViejas(x)]));
   };
-  const conHermanos = { ...PRUEBA, siblings: [{ path: 'AcmeCorp/Backend/src/AcmeCorpBackend', name: 'AcmeCorp' }] };
+  const conHermanos = { ...PRUEBA, agents: 'agents', siblings: [{ path: 'AcmeCorp/Backend/src/AcmeCorpBackend', name: 'AcmeCorp' }] };
   const { leerPaquetes } = require(LIB);
-  const sinRutas = (r) => ({ errores: r.errores, paquetes: r.paquetes.map(({ dir, archivo, ...p }) => p) });
+  // cada lectura arma su carpeta: la de agentes se compara relativa a la del paquete, no entera
+  const sinRutas = (r) => ({ errores: r.errores, paquetes: r.paquetes.map(({ dir, archivo, ...p }) => ({ ...p, agentes: path.relative(dir, p.agentes) })) });
   const home = tmp('paq-home-');
   const prev = process.env.HOME;
   process.env.HOME = home;   // el uso del nombre viejo se anota en la HOME: la de laboratorio

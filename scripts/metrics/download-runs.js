@@ -675,7 +675,9 @@ async function bajar(opts = {}) {
   // credencial y la carpeta vienen de quien llama; NO se lee corridas-buzon.json, ni las integraciones de la máquina,
   // ni se usa az (la imagen del sitio no lo trae).
   const delSitio = typeof opts.cuenta === 'string' && opts.cuenta !== '';
-  const dirBuzon = path.resolve(delSitio ? opts.dir : (readEnv('TYCON_MAILBOX_DIR', { where }) || path.join(CASA_PIPELINE, 'corridas-buzon')));
+  // `dirBuzon` en las opciones gana sobre la variable: quien llama dice dónde escribir sin tocar el ambiente; sin
+  // él, la variable o la carpeta de siempre
+  const dirBuzon = path.resolve(delSitio ? opts.dir : (opts.dirBuzon || readEnv('TYCON_MAILBOX_DIR', { where }) || path.join(CASA_PIPELINE, 'corridas-buzon')));
   const casa = path.dirname(dirBuzon);
   const rutaIndice = path.resolve(delSitio ? path.join(casa, 'mailbox-downloads.json') : (readEnv('TYCON_DOWNLOADS_LOG', { where }) || path.join(casa, 'mailbox-downloads.json')));
 

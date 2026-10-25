@@ -1148,6 +1148,38 @@ sin30="$(ls "${T2}/estado/corridas-buzon/equipo-deva" 2>/dev/null | grep -c 'gz$
   && ok "4.10-T30 SinThreadsSince_IgualQueHoy: sin la opción bajan las 4 partes; con --no-threads ninguna, aunque venga --threads-since" \
   || mal "4.10-T30 sin opción: ${todo30} partes, omitidos ${omit30} · con --no-threads: ${sin30} partes, omitidos $(campo "${T2}" omitidos)"
 
+# ── Bajar_SinDirBuzon_ComoAntes · la carpeta por parámetro, y sin él como siempre ─────────────────────────────────
+# La revisión de ejecuciones le pasa su carpeta a bajar() en `dirBuzon`; los demás (los nocturnos, el tablero, esta
+# línea de comandos) no la pasan y siguen leyendo TYCON_MAILBOX_DIR, o la carpeta de siempre bajo la HOME.
+# 🔴 Falla con: que el parámetro no gane sobre la variable (la revisión leería otra carpeta que la que bajó), o que sin
+#    él la bajada deje de seguir a la variable o a la carpeta de siempre.
+T="${BASE}/t-dirbuzon"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "maq-d-44444444/2.1-2026-10-15T1000.json" 600
+# bajar_js <home> <dirBuzon o vacío> [VAR=valor…] → corre bajar() desde node; RC y <caso>/js-err.txt
+bajar_js() {
+  local h="$1" d="$2"; shift 2
+  env -u TYCON_MAILBOX_DIR HOME="${h}" TYCON_MAILBOX_JSON="${T}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_AZ_BIN="${T}/bin/az" "$@" node -e '
+const { bajar } = require(process.argv[1]);
+const antes = JSON.stringify(process.env);
+bajar(process.argv[2] ? { dirBuzon: process.argv[2], sinHilos: true } : { sinHilos: true })
+  .then(({ codigo }) => { if (JSON.stringify(process.env) !== antes) { console.error("bajar() cambió el ambiente"); process.exit(3); } process.exit(codigo); });
+' "${BAJAR}" "${d}" > /dev/null 2> "${T}/js-err.txt" < /dev/null
+  RC=$?
+}
+VOLCADO="maq-d-44444444/2.1-2026-10-15T1000.json"
+mkdir -p "${T}/h1" "${T}/h2" "${T}/h3"
+bajar_js "${T}/h1" "" TYCON_MAILBOX_DIR="${T}/por-variable"
+[ "${RC}" -eq 0 ] && [ -f "${T}/por-variable/${VOLCADO}" ] && ok "Bajar_SinDirBuzon_ComoAntes: sin el parámetro, baja a TYCON_MAILBOX_DIR" \
+  || mal "Bajar_SinDirBuzon_ComoAntes (variable): rc=${RC} · $(head -2 "${T}/js-err.txt")"
+bajar_js "${T}/h2" ""
+SIEMPRE="$(cd "${T}/h2" && find . -path "*corridas-buzon/${VOLCADO}" 2>/dev/null | head -1)"
+[ "${RC}" -eq 0 ] && [ -n "${SIEMPRE}" ] && ok "Bajar_SinDirBuzon_ComoAntes: sin el parámetro ni la variable, baja a la carpeta de siempre bajo la HOME (${SIEMPRE#./})" \
+  || mal "Bajar_SinDirBuzon_ComoAntes (de siempre): rc=${RC} · $(head -2 "${T}/js-err.txt")"
+bajar_js "${T}/h3" "${T}/por-parametro" TYCON_MAILBOX_DIR="${T}/no-aca"
+[ "${RC}" -eq 0 ] && [ -f "${T}/por-parametro/${VOLCADO}" ] && [ ! -e "${T}/no-aca/${VOLCADO}" ] \
+  && ok "Bajar_SinDirBuzon_ComoAntes: con dirBuzon gana el parámetro sobre la variable, y el ambiente queda igual" \
+  || mal "Bajar_SinDirBuzon_ComoAntes (parámetro): rc=${RC} · $(head -2 "${T}/js-err.txt")"
+
 # ── T24 · esta suite NO toca el tablero del repo (ver la cabecera) ───────────────────────────────────────────────
 [ "$(huella "${ENTREGABLE_SEIS}")" = "${HUELLA_SEIS_ANTES}" ] && ok "T24 la suite no tocó artifacts/tablero-del-arnes.html" \
   || mal "T24 la suite ESCRIBIÓ artifacts/tablero-del-arnes.html — algún caso genera la página del equipo sin --output a un temporal"

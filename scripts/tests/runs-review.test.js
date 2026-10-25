@@ -400,9 +400,13 @@ test('T19 LastRunCompletoYParcial @story-4.10 @ac-13', async () => {
   const op = ops();
   let destino = null;
   let desde = null;
-  await RR.run({ mailbox: mb, ops: op, today: HOY, bajar: async (o) => { destino = process.env.TYCON_MAILBOX_DIR; desde = o.hilosDesde; return { codigo: 0, res: { completo: true, estado: 'bajado' } }; } });
+  const ambienteAntes = JSON.stringify(process.env);
+  let ambienteDurante = null;
+  await RR.run({ mailbox: mb, ops: op, today: HOY, bajar: async (o) => { destino = o.dirBuzon; desde = o.hilosDesde; ambienteDurante = JSON.stringify(process.env); return { codigo: 0, res: { completo: true, estado: 'bajado' } }; } });
   // 🔴 Falla también con: bajar a otra carpeta que la que se lee (la pasada revisaría el espejo de ayer).
   assert.strictEqual(destino, mb, 'la bajada escribe donde la pasada lee');
+  // la carpeta va por parámetro: el ambiente no se toca ni durante la bajada ni después
+  assert.strictEqual(ambienteDurante, ambienteAntes, 'la pasada no cambia el ambiente para la bajada');
   assert.strictEqual(desde, '2026-10-15', 'conversaciones desde hoy menos la ventana');
   const a = lastRun(op);
   assert.deepStrictEqual(Object.keys(a).sort(), ['causas', 'completo', 'con_fallas', 'fecha', 'hilos_sin_hooks', 'ilegibles', 'miradas', 'motivo', 'nuevas', 'sin_hilo']);
@@ -414,6 +418,19 @@ test('T19 LastRunCompletoYParcial @story-4.10 @ac-13', async () => {
   assert.strictEqual(r.codigo, 1);
   assert.strictEqual(lastRun(op).completo, false);
   assert.match(lastRun(op).motivo, /no fue entera \(parcial\)/, 'el estado de la bajada, sin copiar su texto');
+  // una bajada que se cae: el motivo es una frase de la lista y el registro dice la clase, sin el texto del error
+  fs.unlinkSync(path.join(op, 'inbox', 'runs-review', 'last-run.json'));
+  const escribir = process.stderr.write;
+  let registro = '';
+  process.stderr.write = (s) => { registro += String(s); return true; };
+  let caida;
+  try { caida = await RR.run({ mailbox: mb, ops: op, today: HOY, bajar: async () => { throw new TypeError('la carpeta de alguien: dirBuzon inválido'); } }); }
+  finally { process.stderr.write = escribir; }
+  assert.strictEqual(caida.codigo, 1);
+  assert.strictEqual(lastRun(op).motivo, 'la bajada del buzón no fue entera (error)');
+  assert.ok(RR.MOTIVOS.some((m) => m.test(lastRun(op).motivo)), 'el resumen de la mañana imprime el motivo');
+  assert.match(registro, /la bajada del buzón se cayó \(TypeError\)/, 'el registro dice la clase del error');
+  assert.doesNotMatch(registro + fs.readFileSync(path.join(op, 'inbox', 'runs-review', 'last-run.json'), 'utf8'), /alguien|dirBuzon inválido/, 'el texto del error no sale');
 });
 
 // ── Modos de falla ──────────────────────────────────────────────────────────────────────────────────────────────
