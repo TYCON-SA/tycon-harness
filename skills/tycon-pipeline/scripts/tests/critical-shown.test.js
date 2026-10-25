@@ -739,3 +739,23 @@ test('CriticalShown_8_94_CasoReal273 @story-8.94 @ac-1 @ac-2 @ac-3 @ac-4 @ac-5',
     assert.equal(r.ok, true, `${rule}: ${r.motivo}`);
   }
 });
+
+test('CriticalShown_AvisoCorto: tres renglones por crítico, sin perder lo que la persona lee para decidir', () => {
+  // Claude Code antepone su propio rótulo a cada renglón del aviso: cada renglón de más es un aviso repetido en pantalla
+  const lab = laboratorio();
+  const aviso = mostrar(lab);
+  assert.ok(aviso.split('\n').length <= 3, aviso);
+  for (const t of ['TEST-C1', 'la suite completa', ARCHIVO, MOTIVO, 'la suite completa no corrió', '«eximo TEST-C1»', 'va al commit sin arreglar']) {
+    assert.ok(aviso.includes(t), `falta «${t}»:\n${aviso}`);
+  }
+  // varios juntos: tres por crítico y uno para contestar todos, sin renglones vacíos
+  const juntos = mostrar(laboratorio({ sid: 's-cs-corto', criticos: CRITICOS_273 }));
+  assert.ok(juntos.split('\n').length <= 3 * 2 + 1, juntos);
+  assert.doesNotMatch(juntos, /\n\n/);
+  // el aviso de findings.json ilegible va en el mismo renglón
+  const b = laboratorio({ sid: 's-cs-corto-ile' });
+  fs.writeFileSync(path.join(b.runDir, 'findings.json'), '{ no es json');
+  const ile = mostrar(b);
+  assert.match(ile, /Aviso del arnés: no pude leer findings\.json/);
+  assert.ok(ile.split('\n').length <= 4, ile);
+});

@@ -71,14 +71,10 @@ function juez(acs) {
 
 function bloque({ storyId, criterios }) {
   const formas = criterios.map((c) => `«firmo el AC ${c.ac}»`).join(' y ');
+  // un renglón por criterio, más el encabezado y cómo contestar: Claude Code antepone su rótulo a cada renglón del aviso
   return [
-    `Te piden firmar ${criterios.length === 1 ? 'un criterio' : `${criterios.length} criterios`} de la historia ${storyId} que no se ${criterios.length === 1 ? 'puede' : 'pueden'} probar en vivo (te lo muestra el arnés):`,
-    ...criterios.flatMap((c) => [
-      `  AC ${c.ac}: ${c.text || '(sin texto en la historia)'}`,
-      `    Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'}`,
-      `    Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}`,
-    ]),
-    'Un criterio firmado cuenta como probado sin haberlo corrido contra la aplicación.',
+    `Te piden firmar ${criterios.length === 1 ? 'un criterio' : `${criterios.length} criterios`} de la historia ${storyId} que no se ${criterios.length === 1 ? 'puede' : 'pueden'} probar en vivo (te lo muestra el arnés). Un criterio firmado cuenta como probado sin haberlo corrido contra la aplicación.`,
+    ...criterios.map((c) => `AC ${c.ac}: ${c.text || '(sin texto en la historia)'} · Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'} · Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}`),
     `Si estás de acuerdo, contestá ${formas}. Un «dale» o un «apruebo» suelto no lo firma.`,
   ].join('\n');
 }
@@ -165,7 +161,7 @@ function pedidosDelComando(command) {
 function paraMostrar({ command, sessionId, stateDir, home = os.homedir() }) {
   const listos = pedidosDelComando(command).map((p) => preparar({ sessionId, stateDir, home, ...p })).filter((r) => r && r.systemMessage);
   if (!listos.length) return null;
-  return { systemMessage: listos.map((r) => r.systemMessage).join('\n\n'), anotar: () => { for (const r of listos) r.anotar(); } };
+  return { systemMessage: listos.map((r) => r.systemMessage).join('\n'), anotar: () => { for (const r of listos) r.anotar(); } };
 }
 
 const mismaRuta = (a, b) => path.resolve(String(a)).replace(/\\/g, '/').toLowerCase() === path.resolve(String(b)).replace(/\\/g, '/').toLowerCase();

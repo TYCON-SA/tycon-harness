@@ -286,8 +286,8 @@ test('PlanVisible_ElArnesLoMuestra @story-8.65 @ac-6', () => {
   const p = puertaBash(home, 's-arnes', repo, cierre);
   assert.equal(p.status, 0, p.stderr);
   const aviso = JSON.parse(p.stdout).systemMessage;
-  assert.match(aviso, /El plan de la historia 9\.92 \(te lo muestra el arnés, tal cual está escrito\):/);
-  assert.ok(aviso.includes('El cambio en README.md: el título nuevo del proyecto.'), aviso);
+  assert.match(aviso, /El plan de la historia 9\.92 \(te lo muestra el arnés\): «Plan»/);
+  assert.match(aviso, /Tiene 2 pasos\./);
   const gates = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8');
   assert.match(gates, /"name":"plan-shown"[^\n]*"sessionId":"s-arnes"|"sessionId":"s-arnes"[^\n]*"name":"plan-shown"/);
   // con esa constancia, el paso cierra aunque el agente no lo haya escrito
@@ -358,8 +358,8 @@ test('PlanVisible_AlEscribirloLoMuestra @story-8.65 @ac-6', () => {
   const d = despachar(path.join(runDir, PLAN));
   assert.equal(d.status, 0, d.stderr);
   const salida = JSON.parse(d.stdout);
-  assert.match(salida.systemMessage, /El plan de la historia 9\.92 \(te lo muestra el arnés, tal cual está escrito\):/);
-  assert.ok(salida.systemMessage.includes('La prueba primero, en rojo, en tests/readme.test.js.'), salida.systemMessage);
+  assert.match(salida.systemMessage, /El plan de la historia 9\.92 \(te lo muestra el arnés\): «Plan»/);
+  assert.ok(salida.systemMessage.includes(path.join(runDir, PLAN)), salida.systemMessage);
   const r = markerCli(home, 's-escrito', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
   assert.equal(r.status, 0, r.stderr);
   // con el paso cerrado, otra edición del plan ya no lo muestra
@@ -426,4 +426,39 @@ test('PlanVisible_ConMaqueta_TambienSeMuestra @story-8.65 @ac-3 @ac-6', () => {
   const ok = markerCli(home, 's-maqueta', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica', ...cita]);
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(paso3Cerrado(home, 's-maqueta', repo), true);
+});
+
+test('PlanVisible_AvisoEnTresRenglones: título, cuántos pasos y la ruta absoluta; la constancia, del plan entero', () => {
+  // Claude Code antepone su propio rótulo a cada renglón del aviso: un plan de 40 renglones eran 40 avisos repetidos
+  const { repo, home } = conPlanEscrito('s-corto');
+  const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.92', true, path.join(repo, 'specs', 'story-9.92-juguete.md'));
+  const largo = ['# Plan — 9.92, el título nuevo', '', '## Decisiones', '', '1. Una decisión que no es un paso.', '',
+    '## Pasos (en orden; pruebas primero)', '', ...Array.from({ length: 30 }, (_, i) => `${i + 1}. Paso ${i + 1}, con su detalle.`),
+    '', '## Riesgos', '', '- Ninguno.', ''].join('\n');
+  fs.writeFileSync(path.join(runDir, PLAN), largo);
+  conversacion(home, 's-corto', ['Sigo.']);
+  const p = puertaBash(home, 's-corto', repo, `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --auto-approved "LOW: superficie chica"`);
+  assert.equal(p.status, 0, p.stderr);
+  const aviso = JSON.parse(p.stdout).systemMessage;
+  const renglones = aviso.split('\n');
+  assert.ok(renglones.length <= 3, `${renglones.length} renglones:\n${aviso}`);
+  assert.match(renglones[0], /«Plan — 9\.92, el título nuevo»/);
+  assert.match(aviso, /Tiene 30 pasos\./, 'cuenta los pasos de su sección, no las decisiones');
+  assert.ok(path.isAbsolute(path.join(runDir, PLAN)) && aviso.includes(path.join(runDir, PLAN)), aviso);
+  assert.doesNotMatch(aviso, /Paso 7, con su detalle/, 'el plan no va entero');
+  // la constancia sigue siendo la del plan entero: con ella el paso cierra, y cambiar el plan la invalida
+  const pd = require(path.join(SCRIPTS, 'lib', 'plan-display.js'));
+  const gates = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8');
+  assert.ok(gates.includes(`"sha":"${pd.huella(largo)}"`), gates);
+  assert.equal(markerCli(home, 's-corto', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']).status, 0);
+
+  // sin sección de pasos, cuenta los numerados del plan; sin título, el primer renglón con texto
+  const otro = conPlanEscrito('s-corto2');
+  const run2 = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(otro.repo, '9.92', true, path.join(otro.repo, 'specs', 'story-9.92-juguete.md'));
+  fs.writeFileSync(path.join(run2, PLAN), 'Lo que hago:\n\n1. Uno.\n2. Dos.\n   1. Un subpaso que no cuenta.\n3. Tres.\n');
+  conversacion(otro.home, 's-corto2', ['Sigo.']);
+  const a2 = JSON.parse(puertaBash(otro.home, 's-corto2', otro.repo, `node ${path.join(SCRIPTS, 'marker.js')} complete-step 3 --auto-approved "LOW"`).stdout).systemMessage;
+  assert.ok(a2.split('\n').length <= 3, a2);
+  assert.match(a2, /«Lo que hago:»/);
+  assert.match(a2, /Tiene 3 pasos\./);
 });
