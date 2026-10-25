@@ -126,7 +126,9 @@ Cosas que vas a ver:
 - **No uses `/model` dentro de la sesión.** Lo que elegís ahí se guarda para todas las sesiones, también las normales.
   Cambiá de modelo saliendo y abriendo `claude-ollama` con otro nombre.
 - **El costo que muestra Claude Code es un cálculo local** con los precios de Anthropic. Ollama no cobra por estos
-  modelos gratis; ese número no es plata.
+  modelos gratis; ese número no es plata. El costo de verdad de cada corrida lo anota el arnés en su constancia, en
+  `consumo.costo`, con los precios declarados en `scripts/metrics/model-prices.json`: cada modelo con su fuente y la
+  fecha hasta la que vale. Un modelo que no está en la tabla, o con la fecha vencida, sale «no medido», nunca cero.
 - **Un aviso `unrecognized_model` en cada orden.** Claude Code no conoce el nombre del modelo. No cambia nada.
 - **El freno de pruebas solo está en el perfil completo** del arnés para Claude Code. Con el perfil mínimo no se
   instala.

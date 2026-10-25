@@ -46,6 +46,8 @@ an id of its own per session.
   in progress closes it by asking a person for permission.
 - **The free plan runs out fast.** A single pipeline run up to the code used about 40,000 input tokens and 350,000
   cache tokens, and a few more prompts used up the quota. Once it runs out, every prompt returns the same limit notice.
+- **No tokens or cost in the record.** Cursor does not keep its usage on the machine: its local databases have no
+  token field. The record of a run with Cursor comes out with its usage not measured.
 - **«Auto» does not say which model it uses.** The output does not name it.
 - **Headless needs `--force`.** In single-prompt mode (`-p`), Cursor refuses every terminal command unless you pass
   `--force`, and with `--force` it runs everything the model asks for.

@@ -16,6 +16,16 @@
  *      del error saneado y recortado (`reducirErrorDeHook`).
  *   3. El MENSAJE REAL del error de cada freno en rojo → `gates[i].mensaje`.
  *
+ * DE QUÉ HERRAMIENTA, Y CUÁNTO COSTÓ
+ * ----------------------------------
+ * Las conversaciones de Claude Code se buscan en `$CLAUDE_CONFIG_DIR/projects` (si la variable está) y en
+ * `~/.claude/projects`. Una corrida de Codex se lee de su propia sesión (`codex-usage.js`, en `$CODEX_HOME/sessions`
+ * o `~/.codex/sessions`), con los mismos tipos de token que Claude. El proveedor (`modelProvider()`) se anota una vez
+ * en `consumo.proveedor`. El costo en plata (`consumo.costo`) sale sólo de los precios declarados en
+ * `model-prices.json`, por el nombre exacto del modelo y la franja horaria de cada respuesta. Sin precio, con la fecha
+ * de revisión vencida, o con un tipo de token sin precio publicado, sale `no_medido` con su motivo, nunca un cero. Una
+ * corrida de Claude, que no tiene precios en la tabla, no lleva la clave.
+ *
  * 🔴 DE DÓNDE SALE EL MENSAJE. Medido sobre los volcados locales y del buzón, buscarlo en la
  * conversación no alcanza: en 43 frenos en rojo
  * el comando registrado NO aparece en la conversación —lo lanza un script (`test-gate.sh` →
@@ -329,6 +339,7 @@ function consumo(lineas, cortes) {
     hilo_hasta: null,
   };
   const vistos = new Set(); // dedup por message.id — ver (a) en la cabecera
+  const paraCosto = [];
 
   for (const o of lineas) {
     const msg = o && o.message;
@@ -361,12 +372,175 @@ function consumo(lineas, cortes) {
     // cuenta en el total pero no acá: es un orden de magnitud mayor y taparía todo lo demás.
     const nuevos = ent + sal + nueva;
     const t = ms(o.timestamp);
+    paraCosto.push({ modelo, t, in: ent, out: sal, cache_new: nueva, cache_read: leida });
     if (t === null) { out.fuera_de_ventana += nuevos; continue; }
     const corte = cortes.find((c) => t <= c.hasta);
     if (!corte) { out.fuera_de_ventana += nuevos; continue; }
     out.por_paso[corte.paso] = (out.por_paso[corte.paso] || 0) + nuevos;
   }
+  // Lo que usa el costo, respuesta por respuesta y con su hora. No es enumerable: no viaja en la constancia.
+  Object.defineProperty(out, 'paraCosto', { value: paraCosto, enumerable: false });
   return out;
+}
+
+// ── El costo, con la tabla de precios declarada ──────────────────────────────────────────────────────────────────
+
+const TIPOS_DE_PRECIO = ['in', 'out', 'cache_read', 'cache_new'];
+const DIAS_ISO = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+
+/** La tabla de precios (`model-prices.json`): `{models}` | `{error}`. */
+function leerPrecios(ruta) {
+  try {
+    const t = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+    if (!t || typeof t.models !== 'object' || t.models === null) return { error: `${path.basename(ruta)} no tiene la clave models` };
+    return { models: t.models };
+  } catch (e) {
+    return { error: `no pude leer la tabla de precios ${path.basename(ruta)}: ${e.code || e.message}` };
+  }
+}
+
+const aMinutos = (hhmm) => {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ''));
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+};
+
+/**
+ * El precio por millón que vale para un instante: el de la franja de esa hora, o el único. `null` si la entrada no
+ * trae precio o sus franjas están mal escritas (hora ilegible, zona horaria que no existe): elegir una franja igual
+ * cobraría la otra sin avisar.
+ */
+function precioEn(entrada, t) {
+  const b = entrada.bands;
+  if (!b) return entrada.per_million || null;
+  const p = b.peak || {};
+  const desde = aMinutos(p.from);
+  const hasta = aMinutos(p.to);
+  // sin zona horaria, Intl usaría la de la máquina que mide: la franja dependería de quién corre el medidor
+  if (desde === null || hasta === null || desde === hasta || !Array.isArray(p.days) || typeof b.timezone !== 'string' || !b.timezone) return null;
+  let partes;
+  try {
+    partes = new Intl.DateTimeFormat('en-US', { timeZone: b.timezone, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date(t));
+  } catch {
+    return null;
+  }
+  const de = (tipo) => (partes.find((x) => x.type === tipo) || {}).value;
+  const dia = DIAS_ISO[de('weekday')];
+  const minuto = Number(de('hour')) * 60 + Number(de('minute'));
+  if (!dia || !Number.isFinite(minuto)) return null;
+  // una franja con `from` mayor que `to` cruza la medianoche (22:00 a 06:00); el día es el del instante
+  const enHora = desde < hasta ? minuto >= desde && minuto < hasta : minuto >= desde || minuto < hasta;
+  const enPico = p.days.includes(dia) && enHora;
+  return (enPico ? p.per_million : (b.off_peak || {}).per_million) || null;
+}
+
+/**
+ * El costo de una corrida. `respuestas` es la lista `{modelo, t, in, out, cache_new, cache_read}` (t en ms o null).
+ * Devuelve el bloque `costo`, o `null` cuando la corrida no lleva costo: ningún modelo suyo está en la tabla y el
+ * proveedor es `anthropic` (las corridas de Claude no ganan costo). Lo que decide si hay costo es el MODELO, por su
+ * nombre exacto; el proveedor sólo separa «Claude» de «otro modelo sin precio».
+ * Nunca un costo inventado ni uno viejo: sin precio, con el precio vencido, con una respuesta sin hora en un modelo con
+ * franjas, o con un tipo de token sin precio declarado, sale `no_medido` con su motivo.
+ */
+function costo(respuestas, precios, { ahora, proveedor, motivoSinLista, sinHora } = {}) {
+  const noMedido = (motivo) => ({ estado: 'no_medido', motivo, medido_en: new Date(ahora).toISOString() });
+  const modelos = respuestas ? [...new Set(respuestas.map((r) => r.modelo))] : [];
+  // Sin proveedor conocido (el lector de configuración falló), es de Claude sólo si todos sus modelos lo son: una
+  // sesión de Codex o de Ollama no se queda sin costo y sin motivo porque no se supo el proveedor.
+  const deClaude = proveedor && proveedor.provider
+    ? proveedor.provider === 'anthropic'
+    : modelos.length > 0 && modelos.every((m) => /^claude/i.test(String(m)));
+  const sinProveedor = proveedor && !proveedor.provider && proveedor.problem ? ` (proveedor desconocido: ${proveedor.problem})` : '';
+  const tabla = precios && precios.models ? precios.models : null;
+  if (!respuestas) {
+    return deClaude ? null : noMedido(`${motivoSinLista || 'no hay respuestas para calcular el costo'}${sinProveedor}`);
+  }
+  // Una tabla ilegible no deja saber si algún modelo tiene precio: se dice, también en una ejecución de Claude.
+  if (!tabla) return noMedido(precios && precios.error ? precios.error : 'no hay tabla de precios');
+  const conPrecio = modelos.filter((m) => Object.prototype.hasOwnProperty.call(tabla, m));
+  if (!conPrecio.length) {
+    if (deClaude) return null;
+    return noMedido(`sin precio declarado en model-prices.json para ${modelos.join(', ') || 'el modelo de la ejecución'}${sinProveedor}`);
+  }
+  const sinPrecio = modelos.filter((m) => !conPrecio.includes(m));
+  if (sinPrecio.length) return noMedido(`sin precio declarado en model-prices.json para ${sinPrecio.join(', ')}: un total sin esos modelos no es el de la ejecución`);
+  const hoy = new Date(ahora).toISOString().slice(0, 10);
+  const vencidos = conPrecio.filter((m) => !(tabla[m].review_before >= hoy));
+  if (vencidos.length) return noMedido(`precio vencido en model-prices.json (review_before de ${vencidos.map((m) => `${m}: ${tabla[m].review_before}`).join(', ')}; hoy es ${hoy})`);
+  const monedas = [...new Set(conPrecio.map((m) => tabla[m].currency))];
+  if (monedas.length !== 1) return noMedido(`los modelos de la ejecución tienen precios en monedas distintas (${monedas.join(', ')})`);
+
+  let total = 0;
+  const porModelo = {};
+  let sinHoraN = 0;
+  const faltan = new Map();
+  for (const r of respuestas) {
+    const entrada = tabla[r.modelo];
+    if (entrada.bands && r.t === null) { sinHoraN += 1; continue; }
+    const pm = precioEn(entrada, r.t);
+    if (!pm) return noMedido(`la entrada de ${r.modelo} en model-prices.json no trae precio por millón, o sus franjas están mal escritas (hora, días o zona horaria)`);
+    let importe = 0;
+    for (const k of TIPOS_DE_PRECIO) {
+      const n = r[k] || 0;
+      if (!n) continue;
+      if (typeof pm[k] !== 'number') { faltan.set(`${r.modelo} (${k})`, (faltan.get(`${r.modelo} (${k})`) || 0) + n); continue; }
+      importe += (n * pm[k]) / 1e6;
+    }
+    total += importe;
+    porModelo[r.modelo] = (porModelo[r.modelo] || 0) + importe;
+  }
+  if (sinHoraN) {
+    return noMedido(sinHora
+      || `${sinHoraN} respuesta(s) de un modelo con franjas no tienen hora: sin hora no hay franja, y asignarle una sería inventar`);
+  }
+  if (faltan.size) {
+    return noMedido(`model-prices.json no declara el precio de ${[...faltan.entries()].map(([k, n]) => `${k}, que la ejecución usó en ${n} tokens`).join('; ')}`);
+  }
+  const redondo = (v) => Math.round(v * 1e6) / 1e6;
+  return {
+    estado: 'medido',
+    moneda: monedas[0],
+    total: redondo(total),
+    por_modelo: Object.fromEntries(Object.entries(porModelo).map(([m, v]) => [m, redondo(v)])),
+    fuentes: Object.fromEntries(conPrecio.map((m) => [m, { fuente: tabla[m].source, revisado: tabla[m].checked, review_before: tabla[m].review_before }])),
+    tabla: 'model-prices.json',
+    medido_en: new Date(ahora).toISOString(),
+  };
+}
+
+/**
+ * El proveedor de modelos de la sesión, del lector de configuración del arnés (`modelProvider`). Se carga perezoso y
+ * con fallo abierto: este archivo viaja suelto a algunas pruebas, sin `scripts/lib/`.
+ */
+function proveedorDe(opciones) {
+  try {
+    const { modelProvider } = require('../lib/tycon-config.js');
+    const p = modelProvider({ env: opciones.env || process.env, home: opciones.home });
+    return p.problem ? { provider: p.provider, origin: p.origin, problem: p.problem } : { provider: p.provider, origin: p.origin };
+  } catch (e) {
+    return { provider: null, origin: 'no_medido', problem: `no pude cargar el lector de configuración (${e.code || e.message})` };
+  }
+}
+
+/**
+ * ¿El ambiente que mide es de OTRA sesión que la de la ejecución? Pasa con el barrido de arranque: mide todas las
+ * ejecuciones archivadas desde la sesión que abre. Sin id en el ambiente (a mano, por la línea de comando), no se sabe:
+ * se usa el ambiente como siempre.
+ */
+function ambienteAjeno(env, sessionId) {
+  const propia = env && (env.CLAUDE_CODE_SESSION_ID || env.TYCON_SESSION_ID || env.CODEX_SESSION_ID);
+  return Boolean(propia && sessionId && propia !== sessionId);
+}
+
+/**
+ * ¿Es una sesión de Codex? Lo dice lo que ya quedó anotado en la constancia, o el ambiente de la sesión que cierra. El
+ * ambiente de otra sesión no dice nada de ésta: sin anotación, se busca primero la conversación de Claude Code.
+ */
+function esCodex(dump, env, sessionId) {
+  if (dump.consumo && dump.consumo.herramienta === 'codex') return true;
+  if (ambienteAjeno(env, sessionId)) return false;
+  return Boolean(env && env.CODEX_SESSION_ID) && !(env && env.CLAUDE_CODE_SESSION_ID);
 }
 
 /**
@@ -503,24 +677,48 @@ function ubicarTranscripcion(sessionId, projectsDir) {
   if (!/^[A-Za-z0-9._-]+$/.test(String(sessionId))) {
     return { estado: 'no_medido', motivo: `el identificador de sesión anotado no tiene forma de identificador (${String(sessionId).slice(0, 40)})` };
   }
-  let carpetas;
-  try {
-    carpetas = fs.readdirSync(projectsDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory()).map((d) => d.name);
-  } catch (e) {
+  // Una o varias raíces: `~/.claude/projects` y, con CLAUDE_CONFIG_DIR, `$CLAUDE_CONFIG_DIR/projects`.
+  const raices = Array.isArray(projectsDir) ? projectsDir : [projectsDir];
+  let total = 0;
+  let leidas = 0;
+  const ilegibles = [];
+  const ausentes = [];
+  for (const raiz of raices) {
+    let carpetas;
+    try {
+      carpetas = fs.readdirSync(raiz, { withFileTypes: true })
+        .filter((d) => d.isDirectory()).map((d) => d.name);
+    } catch (e) {
+      // una raíz que no existe no puede guardar la conversación; una que existe y no se lee, sí
+      (e.code === 'ENOENT' ? ausentes : ilegibles).push(`${raiz}: ${e.code || e.message}`);
+      continue;
+    }
+    leidas += 1;
+    total += carpetas.length;
+    for (const c of carpetas) {
+      const p = path.join(raiz, c, `${sessionId}.jsonl`);
+      if (fs.existsSync(p)) return { ruta: p };
+    }
+  }
+  // Con una raíz sin leer, «no está» no se puede afirmar: puede estar ahí. Sin ninguna raíz existente, tampoco.
+  if (ilegibles.length || !leidas) {
     return {
       estado: 'no_medido',
-      motivo: `no pude leer la carpeta de conversaciones (${projectsDir}): ${e.code || e.message}`,
+      motivo: `no pude leer la carpeta de conversaciones (${[...ilegibles, ...ausentes].join('; ')})`,
     };
-  }
-  for (const c of carpetas) {
-    const p = path.join(projectsDir, c, `${sessionId}.jsonl`);
-    if (fs.existsSync(p)) return { ruta: p };
   }
   return {
     estado: 'borrada',
-    motivo: `la conversación de esta ejecución ya no está (Claude Code las borra según cleanupPeriodDays); se buscó ${sessionId}.jsonl en las ${carpetas.length} carpetas de conversaciones`,
+    motivo: `la conversación de esta ejecución ya no está (Claude Code las borra según cleanupPeriodDays); se buscó ${sessionId}.jsonl en las ${total} carpetas de conversaciones`,
   };
+}
+
+/** Dónde busca las conversaciones de Claude Code: `$CLAUDE_CONFIG_DIR/projects` si la variable está, y `~/.claude/projects`. */
+function carpetasDeConversaciones(env, home) {
+  const propia = path.join(home, '.claude', 'projects');
+  if (!env || !env.CLAUDE_CONFIG_DIR) return [propia];
+  const otra = path.join(env.CLAUDE_CONFIG_DIR, 'projects');
+  return path.resolve(otra) === path.resolve(propia) ? [propia] : [otra, propia];
 }
 
 /** Lee la transcripción entera. Cuenta las líneas ilegibles en vez de descartarlas callada. */
@@ -635,6 +833,40 @@ function procesarCorrida(volcado, opciones) {
   return res;
 }
 
+/**
+ * El consumo de una sesión de Codex (`codex-usage.js`), con su proveedor y su costo. Devuelve `{bloque}`, o `null`
+ * cuando la sesión no se sabía de Codex y tampoco está en sus sesiones: entonces sigue el camino de Claude Code.
+ */
+function medirCodex(sessionId, codexDir, stepTimings, { proveedor, ahora, precios, sabida, env, home }) {
+  let cu;
+  try {
+    cu = require('./codex-usage.js');
+  } catch (e) {
+    if (!sabida) return null;
+    return { bloque: { estado: 'no_medido', herramienta: 'codex', motivo: `codex-usage.js no se pudo cargar (${e.code || e.message})`, proveedor, medido_en: new Date().toISOString() } };
+  }
+  const ubi = cu.ubicarSesion(sessionId, codexDir || cu.carpetaDeSesiones(env, home));
+  if (!ubi.ruta) {
+    if (!sabida) return null;
+    return { bloque: { estado: 'no_medido', herramienta: 'codex', motivo: ubi.motivo, proveedor, medido_en: new Date().toISOString() } };
+  }
+  const leido = cu.leerSesion(ubi.ruta);
+  if (leido.error) return { bloque: { estado: 'no_medido', herramienta: 'codex', motivo: leido.error, proveedor, medido_en: new Date().toISOString() } };
+  const r = cu.consumoCodex(leido.lineas, cortesDePaso(stepTimings), sessionId);
+  const bloque = { ...r.bloque, proveedor, medido_en: new Date().toISOString() };
+  if (bloque.estado === 'medido') {
+    bloque.lineas_ilegibles = leido.ilegibles;
+    const k = costo(r.paraCosto || null, precios(), {
+      ahora,
+      proveedor,
+      motivoSinLista: r.motivoCosto,
+      sinHora: 'Codex da un total y no la hora de cada respuesta: un modelo con franjas de precio no se puede cobrar',
+    });
+    if (k) bloque.costo = k;
+  }
+  return { bloque };
+}
+
 function rescatarCorrida(volcado, opciones) {
   const projectsDir = opciones.projectsDir;
   const home = opciones.home || os.homedir();
@@ -659,7 +891,36 @@ function rescatarCorrida(volcado, opciones) {
   }
   res.rescatados = deSalida.size;
 
-  const ubi = ubicarTranscripcion(sessionId, projectsDir);
+  // El proveedor se anota la PRIMERA vez que se mide, con el ambiente de la sesión que cierra; un re-proceso del
+  // barrido de arranque corre en otra sesión y no lo pisa.
+  // Si lo mide una sesión ajena, su proveedor no es el de esta ejecución: se anota que no se sabe, no el de la otra.
+  const ajeno = ambienteAjeno(opciones.env || process.env, sessionId);
+  const proveedor = opciones.proveedor || (dump.consumo && dump.consumo.proveedor)
+    || (ajeno
+      ? { provider: null, origin: 'no_medido', problem: 'la midió el barrido de otra sesión: el proveedor de esa sesión no es el de esta ejecución' }
+      : proveedorDe(opciones));
+  const ahora = opciones.ahora || new Date().toISOString();
+  const precios = () => leerPrecios(opciones.preciosPath || path.join(__dirname, 'model-prices.json'));
+  // la carpeta de Codex se resuelve adentro de medirCodex: codex-usage.js se carga con fallo abierto
+  const codexDir = opciones.codexDir || null;
+
+  const ubiClaude = esCodex(dump, opciones.env || process.env, sessionId) ? null : ubicarTranscripcion(sessionId, projectsDir);
+  if (!ubiClaude || !ubiClaude.ruta) {
+    // Sin conversación de Claude Code: una sesión de Codex se busca en sus sesiones. Una que se sabe de Codex y no está
+    // sale `no_medido` (el barrido la reintenta), nunca `borrada`.
+    const codex = medirCodex(sessionId, codexDir, marker.stepTimings, { proveedor, ahora, precios, sabida: !ubiClaude, env: opciones.env || process.env, home });
+    if (codex) {
+      if (codex.bloque.estado !== 'medido' && dump.consumo && dump.consumo.estado === 'medido') {
+        dump.consumo.conversacion = { estado: codex.bloque.estado, motivo: codex.bloque.motivo, desde: new Date().toISOString() };
+      } else {
+        dump.consumo = codex.bloque;
+      }
+      res.consumo = dump.consumo;
+      res.no_persistido = escribirVolcado(volcado, dump);
+      return res;
+    }
+  }
+  const ubi = ubiClaude;
   if (!ubi.ruta) {
     // 🔴 Lo que YA se midió no se pisa: `--all` reprocesa sin
     // condición, y si en ESA pasada la carpeta de conversaciones está mal apuntada o inaccesible,
@@ -673,7 +934,7 @@ function rescatarCorrida(volcado, opciones) {
       return res;
     }
     // Sin la clave `tokens`, a propósito: un cero se lee como «esta corrida no consumió nada».
-    dump.consumo = { estado: ubi.estado, motivo: ubi.motivo, medido_en: new Date().toISOString() };
+    dump.consumo = { estado: ubi.estado, motivo: ubi.motivo, proveedor, medido_en: new Date().toISOString() };
     res.consumo = dump.consumo;
     res.no_persistido = escribirVolcado(volcado, dump);
     return res;
@@ -681,7 +942,7 @@ function rescatarCorrida(volcado, opciones) {
 
   const leido = leerTranscripcion(ubi.ruta);
   if (leido.error) {
-    dump.consumo = { estado: 'no_medido', motivo: leido.error, medido_en: new Date().toISOString() };
+    dump.consumo = { estado: 'no_medido', motivo: leido.error, proveedor, medido_en: new Date().toISOString() };
     res.consumo = dump.consumo;
     res.no_persistido = escribirVolcado(volcado, dump);
     return res;
@@ -691,6 +952,9 @@ function rescatarCorrida(volcado, opciones) {
   const c = consumo(leido.lineas, cortes);
   c.lineas_ilegibles = leido.ilegibles;
   c.medido_en = new Date().toISOString();
+  c.proveedor = proveedor;
+  const k = costo(c.paraCosto, precios(), { ahora, proveedor });
+  if (k) c.costo = k;
   dump.consumo = c;
   res.consumo = c;
 
@@ -756,7 +1020,7 @@ function escribirVolcado(ruta, dump) {
  * cierre truncado: el archivador corre en el `clear` y después el pipeline sigue hablando.
  * No si su conversación ya no está y eso quedó anotado: volver a mirarla no la trae de vuelta.
  */
-function estaPendiente(volcado, projectsDir) {
+function estaPendiente(volcado, projectsDir, opciones = {}) {
   let dump;
   try { dump = JSON.parse(fs.readFileSync(volcado, 'utf8')); } catch { return false; }
   const c = dump.consumo;
@@ -767,6 +1031,7 @@ function estaPendiente(volcado, projectsDir) {
   if (c.estado === 'borrada') return false;
   if (c.estado === 'no_medido') return true;
   const sid = (dump.marker || {}).sessionId;
+  if (c.herramienta === 'codex') return codexCrecio(sid, c, opciones);
   const ubi = ubicarTranscripcion(sid, projectsDir);
   if (!ubi.ruta) return false;
   const leido = leerTranscripcion(ubi.ruta);
@@ -780,6 +1045,22 @@ function estaPendiente(volcado, projectsDir) {
   return ultima !== null && ms(ultima) > ms(c.hilo_hasta);
 }
 
+/** ¿La sesión de Codex ya medida tiene un `token_count` posterior al último que se leyó? */
+function codexCrecio(sid, c, opciones) {
+  try {
+    const cu = require('./codex-usage.js');
+    const dir = opciones.codexDir || cu.carpetaDeSesiones(opciones.env || process.env, opciones.home || os.homedir());
+    const ubi = cu.ubicarSesion(sid, dir);
+    if (!ubi.ruta) return false;
+    const leido = cu.leerSesion(ubi.ruta);
+    if (leido.error) return false;
+    const hasta = cu.consumoCodex(leido.lineas, [], sid).bloque.leido_hasta;
+    return Boolean(hasta) && (!c.leido_hasta || ms(hasta) > ms(c.leido_hasta));
+  } catch {
+    return false;
+  }
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
 
 function main(argv) {
@@ -788,12 +1069,12 @@ function main(argv) {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : def;
   };
   const home = os.homedir();
-  const projectsDir = arg('--projects-dir', path.join(home, '.claude', 'projects'));
+  const projectsDir = arg('--projects-dir', null) || carpetasDeConversaciones(process.env, home);
   const historyDir = arg('--history-dir', path.join(stateDirOf(home), 'timing-history'));
   const budgetMs = parseInt(arg('--budget-ms', '60000'), 10);
   const comoJson = argv.includes('--json');
   const runsDir = arg('--runs-dir', path.join(stateDirOf(home), 'advisor-runs'));
-  const opciones = { projectsDir, home, runsDir };
+  const opciones = { projectsDir, home, runsDir, env: process.env, codexDir: arg('--codex-dir', null), preciosPath: arg('--prices', null) };
 
   if (argv.includes('--run')) {
     const volcado = arg('--run', null);
@@ -841,7 +1122,7 @@ function main(argv) {
     // arranque de sesión. Se cuenta como «no medida» y se sigue con la siguiente.
     let r;
     try {
-      if (!todas && !estaPendiente(v, projectsDir)) continue;
+      if (!todas && !estaPendiente(v, projectsDir, opciones)) continue;
       r = procesarCorrida(v, opciones);
     } catch (e) {
       salida.procesadas.push(path.basename(v, '.json'));
@@ -900,7 +1181,7 @@ function resumenBarrido(s) {
 
 module.exports = {
   esRojo, normalizar, sanear, colaDeSalida, mensajesDeSalida, LARGO_MENSAJE, cortesDePaso, consumo, hilo, mensajesDeError,
-  ubicarTranscripcion, leerTranscripcion, indexarComandos, procesarCorrida, rescatarCorrida, encadenarMedidor, estaPendiente,
+  ubicarTranscripcion, carpetasDeConversaciones, leerTranscripcion, costo, leerPrecios, precioEn, indexarComandos, procesarCorrida, rescatarCorrida, encadenarMedidor, estaPendiente,
   esNotificacionEncolada, reducirErrorDeHook, CATEGORIAS_HOOK, TIPOS_DESCARTADOS,
 };
 

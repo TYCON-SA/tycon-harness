@@ -1060,6 +1060,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/tokens-digest-other-tools.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/runs-review.test.js",
       "requiere": []
     },

@@ -127,7 +127,9 @@ Things you will see:
 - **Do not use `/model` inside the session.** What you pick there is saved for all sessions, the normal ones too.
   Change models by exiting and opening `claude-ollama` with another name.
 - **The cost Claude Code shows is a local calculation** with Anthropic's prices. Ollama does not charge for these free
-  models; that number is not money.
+  models; that number is not money. The harness writes each run's real cost in its record, under `consumo.costo`,
+  with the prices declared in `scripts/metrics/model-prices.json`: each model with its source and the date it is valid
+  until. A model missing from the table, or past that date, comes out «not measured», never zero.
 - **An `unrecognized_model` notice on every request.** Claude Code does not know the model name. It changes nothing.
 - **The tests control is only in the full harness profile** for Claude Code. The minimal profile does not install it.
 
