@@ -430,7 +430,11 @@ for root in (d, os.path.join(d, "names")):
         if f.endswith(".md"):
             p = os.path.join(root, f)
             t = open(p, encoding="utf-8").read()
-            open(p, "w", encoding="utf-8").write(re.sub(r"[ \t]*<!--\s*integration:\s*[a-z]+\s*-->", "", t))
+            t = re.sub(r"[ \t]*<!--\s*integration:\s*[a-z]+\s*-->", "", t)
+            # el lugar de las filas de la herramienta de horas: el sync de hoy pone ahí las filas de integrations/,
+            # que esta copia no trae, y la marca no queda; el de entonces no la conoce y la dejaría
+            t = "\n".join(l for l in t.split("\n") if not re.match(r"^<!--\s*time-tool-rows\s*-->\s*$", l))
+            open(p, "w", encoding="utf-8").write(t)
 PYX
   NEW="$P/nuevo"; mkdir -p "$NEW/scripts/setup" "$NEW/scripts/lib"; cp "$RAIZ/scripts/setup/sync-claude-md-blocks.sh" "$NEW/scripts/setup/"
   cp "$RAIZ"/scripts/lib/*.js "$RAIZ"/scripts/lib/*.json "$NEW/scripts/lib/" 2>/dev/null; cp -R "$RAIZ/claude-md-blocks" "$NEW/"
@@ -444,6 +448,14 @@ PYX
     cmp -s "$HO/CLAUDE.norm.md" "$HN/CLAUDE.norm.md" && ok "T34 bloques reales, ${modo}: CLAUDE.md byte a byte igual al del sync de ${BASE_REF} (la descripción de la marca aparte)" \
       || mal "T34 bloques reales, ${modo}: distinto: $(diff "$HO/CLAUDE.norm.md" "$HN/CLAUDE.norm.md" | head -4 | tr '\n' ' ')"
   done
+  # T34b ClaudeMdBlocks_DiferenciaReal_SigueRoja: un renglón de más en un bloque del lado nuevo se ve como distinto
+  NEW2="$P/nuevo-distinto"; cp -R "$NEW" "$NEW2"; printf '\nun renglón que el sync viejo no tiene\n' >> "$NEW2/claude-md-blocks/tool-names.md"
+  HO="$P/real-viejo-sin-valor"; HD="$P/real-distinto"; mkdir -p "$HD"; printf 'texto propio\n' > "$HD/CLAUDE.md"
+  sync_lab "$NEW2" "$HD" "${ADO[@]}" "${ROWS_ON[@]}"
+  sed -E 's#(<!-- TYCON_BLOCK:[^ ]+ START) — generado por [^·]*·#\1 — generado por @SYNC@ ·#' "$HD/CLAUDE.md" > "$HD/CLAUDE.norm.md"
+  if grep -q 'un renglón que el sync viejo no tiene' "$HD/CLAUDE.norm.md" && ! cmp -s "$HO/CLAUDE.norm.md" "$HD/CLAUDE.norm.md"; then
+    ok "T34b una diferencia real entre los dos sync sigue saliendo distinta"
+  else mal "T34b un renglón de más en un bloque no se vio como diferencia"; fi
 elif [ ! -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
   # La copia pública (sin scripts/publishing/public-repos.json, que no se publica) no trae la historia ni el perfil del
   # equipo: lo que los necesita ahí NO SE PUEDE MEDIR y se dice como «NO MEDIDO en la copia», sin contar como rojo; en el

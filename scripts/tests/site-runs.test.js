@@ -1122,12 +1122,15 @@ function foto260(nombre, texto) {
   const n = normalizar260(texto);
   if (process.env.TYCON_RUNS_SNAPSHOT_WRITE === '1') { fs.mkdirSync(FOTOS_260, { recursive: true }); fs.writeFileSync(f, n); return; }
   assert.ok(fs.existsSync(f), `falta la foto ${nombre}`);
+  compararConFoto(nombre, n, fs.readFileSync(f, 'utf8'));
+}
+function compararConFoto(nombre, n, guardada) {
   // los textos comprimidos de la página llevan en su cabecera el sistema que los comprimió (macOS o Linux): el contenido
   // es el mismo y ese dato no se compara
   // la versión del pie sale del archivo de versión de la copia, que no toda copia trae: tampoco se compara
   const sinSistema = (s) => s.replace(/H4sIAAAAAAAA[A-Za-z0-9+/]/g, 'H4sIAAAAAAAA_')
     .replace(/(<footer class="pie"><span>[^<]*?) v[\w.+-]+<\/span>/g, '$1</span>');
-  const foto = sinSistema(fs.readFileSync(f, 'utf8'));
+  const foto = sinSistema(guardada);
   if (sinSistema(n) === foto) return;
   // el primer renglón distinto, con los dos lados: la página entera no entra en el mensaje
   const a = foto.split('\n'); const b = sinSistema(n).split('\n');
@@ -1161,6 +1164,20 @@ test('2.60-T6 Corridas_EnCastellanoIgual @story-2.60 @ac-6 — la pestaña en ca
     foto260('pestana-es.html', (await h.pedir('/corridas', { cookie: lead })).texto);
     foto260('cliente-es.txt', await dibujado(h, lead, dev));
   });
+});
+
+test('2.60-T6b Corridas_FotoSinVersion_IgualYTextoCambiadoRojo @story-2.60 @ac-6 — la versión del pie no cuenta; un texto en castellano sí', () => {
+  const foto = fs.readFileSync(path.join(FOTOS_260, 'pestana-es.html'), 'utf8');
+  assert.match(foto, /<footer class="pie"><span>Arnés v[\w.+-]+<\/span>/, 'la foto trae la versión en el pie');
+  assert.doesNotThrow(() => compararConFoto('pestana-es.html', foto, foto), 'la misma página');
+  const sinVersion = foto.replace(/(<footer class="pie"><span>Arnés) v[\w.+-]+<\/span>/, '$1</span>');
+  assert.notStrictEqual(sinVersion, foto);
+  assert.doesNotThrow(() => compararConFoto('pestana-es.html', sinVersion, foto), 'la copia sin version.json');
+  const otraVersion = foto.replace(/(<footer class="pie"><span>Arnés) v[\w.+-]+<\/span>/, '$1 v2099.1.1.1</span>');
+  assert.doesNotThrow(() => compararConFoto('pestana-es.html', otraVersion, foto), 'otra versión');
+  const otroTexto = foto.replace('Cada ejecución del pipeline', 'Cada corrida del pipeline');
+  assert.notStrictEqual(otroTexto, foto);
+  assert.throws(() => compararConFoto('pestana-es.html', otroTexto, foto), /cambió lo que se ve en castellano/);
 });
 
 test('2.60-T1 Corridas_ElCuerpoEnIngles @story-2.60 @ac-1 @ac-2 — la página y lo que dibuja el cliente, sin castellano', async () => {
