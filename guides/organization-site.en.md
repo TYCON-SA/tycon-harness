@@ -193,6 +193,11 @@ organization chose to download the conversations ("Run conversations" section, *
 **What to do:** a run that "stayed at 4" (*quedó en el 4*) may be in progress or abandoned; its detail says how far it
 got. A person sees only the runs of their confirmed machines; a maintainer sees them all.
 
+**After a restart** (a deployment, or the site that switched itself off for lack of use), the tab shows the last saved
+view, with the date it is from, while the mailbox is downloaded in full again; a banner says so and the page catches up on
+its own. Each run's changes come back when the new view finishes building. The saved view lives on the site's disk
+(`SITE_DATA_DIR`): **with no disk**, after a restart the tab waits for the first full download.
+
 ### Projects (Proyectos)
 
 **What it answers:** how is each product doing?

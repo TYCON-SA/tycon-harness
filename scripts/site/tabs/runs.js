@@ -18,6 +18,13 @@
  * nunca un mensaje con rutas. Los textos (cambios y parches) quedan en el disco del sitio, uno por corrida: en memoria
  * vive el modelo sin ellos.
  *
+ * LA VISTA GUARDADA: con disco del sitio (`SITE_DATA_DIR`), cada armado bueno deja `runs-view.json` (el modelo como se
+ * sirve, el mapa de textos a demanda y lo informado por las máquinas en la misma bajada entera; sin textos ni huella).
+ * Lo escribe el hilo del armado a un temporal y el principal lo renombra cuando pone el modelo nuevo. Al arrancar se lee
+ * en un hilo aparte y, si todavía no hay un armado de este arranque, se sirve con su fecha: un reinicio no deja la
+ * pestaña en «cargando». La guardada se filtra con lo informado guardado con ella y con todo lo demás de hoy; sus textos
+ * vuelven con el armado nuevo. Un archivo que no cierra no se sirve, y el registro lo dice.
+ *
  * LO QUE VIAJA: la lista (`paraLista`, lista blanca) con la página; el detalle al abrir una corrida; los
  * textos al abrir un cambio. Una corrida que no es tuya, una sin máquina o un id que no existe contestan IGUAL: 404 sin
  * cuerpo.
@@ -37,6 +44,9 @@ const FRASE_FALLA = 'no se pudo armar la vista de ejecuciones';
 // el caché de los textos bajados a demanda (los cambios de una corrida resumida): al pasarlo, se borran los más viejos
 const TOPE_CACHE_BYTES = 200 * 1024 * 1024;
 const FRASE_SIN_BUZON = 'sin buzón configurado: no medido';
+// la vista guardada en el disco del sitio, y el número de su forma: cambia cuando cambia lo que se guarda
+const ARCHIVO_VISTA = 'runs-view.json';
+const FORMATO_VISTA = 1;
 const NO_EXISTE = { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' };
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // el código de un error, con forma de código: nunca su mensaje (trae rutas del disco)
@@ -73,7 +83,7 @@ function huellaDelEspejo(dir, extra = []) {
  * (eso va por persona). Los textos de cada corrida van a `textosDir/<id>.json`; vuelve el modelo sin ellos
  * y el pico de memoria del proceso.
  */
-async function armarEnElHilo({ buzon, skillsDir = null, sinHilos = false, umbralesArchivo = null, textosDir }) {
+async function armarEnElHilo({ buzon, skillsDir = null, sinHilos = false, umbralesArchivo = null, textosDir, guardarEn = null, informados = null }) {
   const runs = require(RUNS);
   const vacia = fs.mkdtempSync(path.join(os.tmpdir(), 'site-corridas-sin-registro-'));
   let M;
@@ -89,10 +99,20 @@ async function armarEnElHilo({ buzon, skillsDir = null, sinHilos = false, umbral
     else if (c.cambios && c.cambios.estado === 'leido' && c._volcado) aDemanda[c.id] = c._volcado;
   }
   M.corridas = M.corridas.map(runs.paraDetalle);
+  // la vista para el próximo arranque, a un temporal: el hilo principal la pone en su lugar cuando sirve este modelo. No
+  // poder escribirla no tumba el armado: vuelve su código, y lo escrito a medias se borra
+  let guardadaError = null;
+  if (guardarEn) {
+    try { fs.writeFileSync(guardarEn, JSON.stringify({ formato: FORMATO_VISTA, generado: M.generado, ejecuciones: M, aDemanda, informados }), { mode: 0o600 }); }
+    catch (e) {
+      guardadaError = codigoDe(e);
+      try { fs.rmSync(guardarEn, { force: true }); } catch { /* el hilo principal lo vuelve a intentar */ }
+    }
+  }
   const uso = typeof process.resourceUsage === 'function' ? process.resourceUsage() : null;
   // maxRSS viene en kilobytes: es el pico del PROCESO (el armado es lo que más pesa)
   const pico = uso && Number.isFinite(uso.maxRSS) ? Math.round(uso.maxRSS / 1024) : Math.round(process.memoryUsage().rss / 1048576);
-  return { M, pico_mb: pico, aDemanda };
+  return { M, pico_mb: pico, aDemanda, guardadaError };
 }
 
 /**
@@ -116,9 +136,57 @@ function armarEnWorker(opts) {
 /** El freno del modo demo de este proceso (`{ dir }`), o null: se lo pasa a cada hilo aparte. */
 const frenoDemo = () => { const f = require('../demo-guard.js').frenoActual(); return f ? { dir: f.dir } : null; };
 
+/**
+ * La vista guardada, leída en un hilo aparte (pesa decenas de MB y su JSON.parse trabaría las sondas): el objeto tal
+ * cual, o un error con su código (`ENOENT` si no hay). La forma la valida `vistaUsable`.
+ */
+function leerVistaEnWorker(archivo, { tiempoMs = 60000 } = {}) {
+  return new Promise((resolve, reject) => {
+    let listo = false;
+    const w = new Worker(__filename, { workerData: { __leerVista: true, __frenoDemo: frenoDemo(), archivo } });
+    const fin = (fn, x) => { if (listo) return; listo = true; clearTimeout(corte); fn(x); };
+    const corte = setTimeout(() => { fin(reject, Object.assign(new Error('lectura'), { code: 'TIEMPO_AGOTADO' })); w.terminate(); }, tiempoMs);
+    if (corte.unref) corte.unref();
+    w.once('message', (m) => (m && m.error ? fin(reject, Object.assign(new Error('lectura'), { code: m.error })) : fin(resolve, m && m.vista)));
+    w.once('error', (e) => fin(reject, e));
+    w.once('exit', (codigo) => fin(reject, Object.assign(new Error('lectura'), { code: `SALIDA_${codigo}` })));
+  });
+}
+
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/;
+/**
+ * ¿La vista guardada se puede servir? `{ ok, vista }` con el mapa a demanda sólo con rutas dentro del buzón, o
+ * `{ ok: false, motivo }` (una frase fija, sin rutas).
+ */
+function vistaUsable(g, dirBuzon) {
+  if (!isObject(g)) return { ok: false, motivo: 'no es un objeto' };
+  if (g.formato !== FORMATO_VISTA) return { ok: false, motivo: 'es de otro formato' };
+  if (typeof g.generado !== 'string' || !FECHA_ISO.test(g.generado)) return { ok: false, motivo: 'no trae la fecha del armado' };
+  const M = g.ejecuciones;
+  if (!isObject(M) || !Array.isArray(M.corridas)) return { ok: false, motivo: 'no trae las ejecuciones' };
+  if (!M.corridas.every((c) => isObject(c) && typeof c.id === 'string' && /^[0-9a-f]{16}$/.test(c.id) && (c.maquina === null || c.maquina === undefined || typeof c.maquina === 'string'))) {
+    return { ok: false, motivo: 'trae ejecuciones sin la forma esperada' };
+  }
+  if (g.informados !== null && g.informados !== undefined && !isObject(g.informados)) return { ok: false, motivo: 'trae lo informado sin la forma esperada' };
+  // las rutas del mapa a demanda se copian del lado del servidor: sólo valen dentro del buzón del sitio
+  const raiz = dirBuzon ? `${path.resolve(dirBuzon)}${path.sep}` : null;
+  const aDemanda = {};
+  let descartadas = 0;
+  for (const [id, ruta] of Object.entries(isObject(g.aDemanda) ? g.aDemanda : {})) {
+    if (raiz && /^[0-9a-f]{16}$/.test(id) && typeof ruta === 'string' && path.resolve(ruta).startsWith(raiz)) aDemanda[id] = ruta;
+    else descartadas++;
+  }
+  return { ok: true, descartadas, vista: { generado: g.generado, M, aDemanda, informados: isObject(g.informados) ? g.informados : null } };
+}
+
 if (!isMainThread && workerData && workerData.__armarCorridas) {
   if (workerData.__frenoDemo) require('../demo-guard.js').ponerFreno(workerData.__frenoDemo);
   armarEnElHilo(workerData).then((r) => parentPort.postMessage(r)).catch((e) => parentPort.postMessage({ error: codigoDe(e) }));
+}
+if (!isMainThread && workerData && workerData.__leerVista) {
+  if (workerData.__frenoDemo) require('../demo-guard.js').ponerFreno(workerData.__frenoDemo);
+  try { parentPort.postMessage({ vista: JSON.parse(fs.readFileSync(workerData.archivo, 'utf8')) }); }
+  catch (e) { parentPort.postMessage({ error: e instanceof SyntaxError ? 'JSON_ROTO' : codigoDe(e) }); }
 }
 
 /**
@@ -127,7 +195,7 @@ if (!isMainThread && workerData && workerData.__armarCorridas) {
  */
 function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, demora = 0, log = () => {}, ahora = Date.now,
   topeCacheBytes = TOPE_CACHE_BYTES, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }),
-  huellaDe = (dir, extra) => require('../summaries.js').huellaEnWorker({ dir, extra }) }) {
+  huellaDe = (dir, extra) => require('../summaries.js').huellaEnWorker({ dir, extra }), leerVista = leerVistaEnWorker }) {
   // los textos (los parches de cada corrida) van al disco del contenedor, nunca a SITE_DATA_DIR: son una copia que se
   // rearma, y el disco montado es chico. Los de antes (en el disco montado) se borran al arrancar
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'site-corridas-textos-'));
@@ -137,7 +205,10 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   }
   // los textos bajados a demanda, con su tope: al pasarlo se borran los que se abrieron hace más tiempo
   const dirCache = path.join(base, 'a-demanda');
-  const st = { M: null, textosDir: null, huella: null, armando: null, error: null, pico_mb: null, sinBuzon: false, aDemanda: {}, enCurso: new Map() };
+  const st = { M: null, textosDir: null, huella: null, armando: null, error: null, pico_mb: null, sinBuzon: false, aDemanda: {}, enCurso: new Map(),
+    guardada: null, leyendo: null, escribiendo: null };
+  // la vista guardada vive en el disco del sitio: sin él, no se guarda ni se lee
+  const archivoVista = cfg.dataDir ? path.join(cfg.dataDir, ARCHIVO_VISTA) : null;
 
   const conBuzon = () => { const c = fuentes.config(); return Boolean(c && isObject(c.site) && isObject(c.site.mailbox)); };
   const umbralesDeLaOrganizacion = () => {
@@ -151,6 +222,34 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   // borrarían los textos entre sí (disponibilidad, no fuga)
   //    (antes del primer armado, y sin esperar a nadie: si no, la limpieza podría borrar la carpeta del armado nuevo)
   try { for (const n of fs.readdirSync(base)) fs.rmSync(path.join(base, n), { recursive: true, force: true }); } catch (e) { if (!e || e.code !== 'ENOENT') log(`ejecuciones: no se pudieron borrar los textos de un arranque anterior (${codigoDe(e)})`); }
+
+  // la vista guardada: los temporales de un arranque anterior (una escritura cortada) se borran, nunca se leen; la
+  // guardada entera se lee en un hilo aparte y se sirve sólo si todavía no hay un armado de este arranque
+  if (archivoVista) {
+    let temporales = [];
+    try { temporales = fs.readdirSync(cfg.dataDir).filter((n) => n.startsWith(`${ARCHIVO_VISTA}.tmp-`)); }
+    catch (e) { if (!e || e.code !== 'ENOENT') log(`ejecuciones: no se pudieron mirar los temporales de la vista guardada (${codigoDe(e)})`); }
+    // uno por uno: el que no se puede borrar no deja a los demás
+    for (const n of temporales) {
+      try { fs.rmSync(path.join(cfg.dataDir, n), { force: true }); } catch (e) { log(`ejecuciones: no se pudo borrar un temporal de la vista guardada (${codigoDe(e)})`); }
+    }
+    st.leyendo = Promise.resolve()
+      .then(() => leerVista(archivoVista))
+      .then((g) => {
+        const u = vistaUsable(g, fuentes.dirBuzon);
+        if (!u.ok) { log(`ejecuciones: la vista guardada no se puede usar (${u.motivo}): se espera el armado`); return; }
+        if (u.descartadas) log(`ejecuciones: la vista guardada trae ${u.descartadas} ruta(s) a demanda fuera del buzón: se descartan`);
+        if (st.M) return;
+        st.M = u.vista.M; st.aDemanda = u.vista.aDemanda; st.textosDir = null;
+        st.guardada = { generado: u.vista.generado, informados: u.vista.informados };
+        log(`ejecuciones: se sirve la vista guardada (${st.M.corridas.length} ejecuciones, armada el ${hora(u.vista.generado)} UTC) hasta el próximo armado`);
+      }, (e) => {
+        if (e && e.code === 'ENOENT') return;
+        log(`ejecuciones: la vista guardada no se puede usar (${e && e.code === 'JSON_ROTO' ? 'JSON roto' : codigoDe(e)}): se espera el armado`);
+      })
+      .catch((e) => { log(`ejecuciones: la vista guardada no se pudo poner (${codigoDe(e)}): se espera el armado`); })
+      .finally(() => { st.leyendo = null; });
+  }
 
   /** El caché de textos a demanda dentro de su tope: se borran los abiertos hace más tiempo, nunca `salvo`. */
   function podarCache(salvo) {
@@ -240,14 +339,31 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     // el mismo espejo ya fallado: no se repite (un armado que falla por memoria no se reintenta en cada pedido)
     if (huella === st.huellaFallida) return;
     const textosDir = path.join(base, `${ahora()}-${crypto.randomBytes(4).toString('hex')}`);
+    // la vista para el próximo arranque, con lo informado de esta misma bajada entera (el armado corre sólo con una)
+    const guardarEn = archivoVista ? `${archivoVista}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}` : null;
+    const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
+    const informados = personas && isObject(personas.informados) ? personas.informados : null;
     const t0 = ahora();
     const borrar = (dir, para) => fs.rm(dir, { recursive: true, force: true }, (e) => { if (e) log(`ejecuciones: no se pudieron borrar los textos ${para} (${codigoDe(e)}): quedan en el disco del sitio`); });
     st.armando = (async () => {
       if (demora) await new Promise((r) => setTimeout(r, demora));
-      return armar({ buzon: fuentes.dirBuzon, skillsDir, sinHilos, umbralesArchivo, textosDir });
+      return armar({ buzon: fuentes.dirBuzon, skillsDir, sinHilos, umbralesArchivo, textosDir, guardarEn, informados });
     })().then((r) => {
       const viejo = st.textosDir;
-      st.M = r.M; st.textosDir = textosDir; st.huella = huella; st.error = null; st.huellaFallida = null;
+      st.M = r.M; st.textosDir = textosDir; st.huella = huella; st.error = null; st.huellaFallida = null; st.guardada = null;
+      // la guardada pasa a ser esta: el temporal se pone en su lugar (un rename, atómico). Si falla (o el hilo no la pudo
+      // escribir), el armado igual se sirve
+      const sinGuardar = (codigo) => {
+        log(`ejecuciones: no se pudo guardar la vista para el próximo arranque (${codigo})`);
+        return fs.promises.rm(guardarEn, { force: true })
+          .catch((e) => { log(`ejecuciones: no se pudo borrar el temporal de la vista guardada (${codigoDe(e)})`); });
+      };
+      if (guardarEn && r.guardadaError) st.escribiendo = sinGuardar(r.guardadaError).finally(() => { st.escribiendo = null; });
+      else if (guardarEn) {
+        st.escribiendo = fs.promises.rename(guardarEn, archivoVista)
+          .catch((e) => sinGuardar(codigoDe(e)))
+          .finally(() => { st.escribiendo = null; });
+      }
       st.aDemanda = r.aDemanda && typeof r.aDemanda === 'object' ? r.aDemanda : {};
       st.pico_mb = Number.isFinite(r.pico_mb) ? r.pico_mb : null;
       // lo de abajo ya no puede marcar el armado como fallado: el modelo nuevo está puesto
@@ -260,6 +376,8 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
       st.error = { codigo: codigoDe(e), desde: new Date(ahora()).toISOString() };
       st.huellaFallida = huella;
       borrar(textosDir, 'del armado fallado');
+      // la guardada no se toca: el temporal de este armado, si llegó a escribirse, se borra
+      if (guardarEn) fs.rm(guardarEn, { force: true }, (e2) => { if (e2) log(`ejecuciones: no se pudo borrar el temporal de la vista guardada (${codigoDe(e2)})`); });
       log(`ejecuciones: ${FRASE_FALLA} (${st.error.codigo}${st.error.codigo === 'EDEMO_FRENO' ? ': lo frenó el freno del sitio demo, un hilo quiso salir o escribir afuera' : ''})`);
     }).finally(() => { st.armando = null; });
   }
@@ -270,18 +388,39 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   return {
     asegurar,
     /** Espera el armado en curso (nunca rechaza). */
-    listo: async () => { await (st.huellaEnCurso || Promise.resolve()).catch(() => {}); await (st.armando || Promise.resolve()).catch(() => {}); },
+    listo: async () => {
+      await (st.leyendo || Promise.resolve()).catch(() => {});
+      await (st.huellaEnCurso || Promise.resolve()).catch(() => {});
+      await (st.armando || Promise.resolve()).catch(() => {});
+      await (st.escribiendo || Promise.resolve()).catch(() => {});
+    },
+    /** Espera la lectura de la vista guardada en curso (nunca rechaza): el primer pedido no dice «cargando» en vano. */
+    leida: () => st.leyendo || Promise.resolve(),
     armando: () => Boolean(st.armando || st.huellaEnCurso),
-    estado: () => ({ generado: st.M ? st.M.generado : null, pico_mb: st.pico_mb, error: st.error, sinBuzon: st.sinBuzon }),
+    /**
+     * ¿Viene un armado? El armado en curso, o la huella del espejo que lo puede disparar. Con el armado de este espejo
+     * fallado, la huella que se vuelve a calcular en cada pedido no trae nada nuevo: no cuenta.
+     */
+    viene: () => Boolean(st.armando || (st.huellaEnCurso && !st.error)),
+    estado: () => ({ generado: st.M ? st.M.generado : null, pico_mb: st.pico_mb, error: st.error, sinBuzon: st.sinBuzon, guardada: st.guardada ? { generado: st.guardada.generado } : null }),
     modelo: () => st.M,
+    /** La vista guardada que se sirve (`{ generado, informados }`), o null si lo que se sirve es un armado de este arranque. */
+    guardada: () => st.guardada,
     bajada,
     /** La carpeta de los textos del modelo que se sirve (las pruebas la miran). */
     textosDir: () => st.textosDir,
     /** La carpeta de los textos bajados a demanda (las pruebas la miran). */
     dirCache: () => dirCache,
-    /** Los textos de una corrida: `{ texto, textoGit }` (null = la corrida no los tiene), o null si no se pudieron leer. */
+    /**
+     * Los textos de una corrida: `{ texto, textoGit }` (null = la corrida no los tiene), `{ pendiente: true }` si se sirve
+     * la vista guardada (sus textos vuelven con el armado nuevo), o null si no se pudieron leer.
+     */
     async textos(id) {
-      if (!st.textosDir || !/^[0-9a-f]{16}$/.test(id)) return { texto: null, textoGit: null };
+      if (!/^[0-9a-f]{16}$/.test(id)) return { texto: null, textoGit: null };
+      if (!st.textosDir) {
+        if (st.aDemanda[id]) return aDemanda(id, st.aDemanda[id]);
+        return st.guardada ? { pendiente: true } : { texto: null, textoGit: null };
+      }
       let crudo;
       try { crudo = fs.readFileSync(path.join(st.textosDir, `${id}.json`), 'utf8'); } catch (e) {
         if (e && e.code === 'ENOENT') return st.aDemanda[id] ? aDemanda(id, st.aDemanda[id]) : { texto: null, textoGit: null };   // sin texto: el armado no escribió archivo
@@ -311,6 +450,33 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   const pagina = (ctx, cuerpo, status = 200, extra) => ({ status, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, tx(idiomaDe(ctx), 'pestana.corridas'), cuerpo, tx(idiomaDe(ctx), 'corridas.lede')), ...(extra ? { extra } : {}) });
   const gris = (ctx, t) => `<div class="tile blind"><div class="t-label">${runsEsc(tx(idiomaDe(ctx), 'pestana.corridas'))}</div><div class="t-val">${runsEsc(tx(idiomaDe(ctx), 'corridas.falta'))}</div><div class="t-den">${runsEsc(t)}</div></div>`;
   const runsEsc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+  /**
+   * ¿Hay algo por esperar? Un armado en curso, una pasada que cortó y ya sigue, o la bajada todavía no entera con la
+   * fuente sin fallar. Con la fuente del buzón fallando (la banda de las fuentes ya lo dice) o sin buzón, no.
+   */
+  const esperando = () => {
+    if (vista.estado().sinBuzon) return false;
+    if (vista.viene() || vista.bajada().siguiendo) return true;
+    const ef = typeof fuentes.estado === 'function' ? fuentes.estado() : null;
+    return !vista.bajada().completo && !(ef && ef.bandaRefresco);
+  };
+  // la guardada se filtra con lo informado guardado con ella (la misma foto) y con todo lo demás de hoy: un objeto por
+  // par, para que lo filtrado por persona no se rehaga en cada pedido
+  // (las fuentes pueden cambiar un campo en el mismo objeto de personas, como repos.json: se compara campo por campo)
+  let personasDeLaGuardada = { de: null, guardada: null, foto: null, valor: null };
+  const mismosCampos = (a, b) => {
+    const ka = Object.keys(a || {}); const kb = Object.keys(b || {});
+    return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
+  };
+  const personasPara = (personas, guardada) => {
+    if (!guardada) return personas;
+    const p = personasDeLaGuardada;
+    if (p.de !== personas || p.guardada !== guardada || !mismosCampos(p.foto, personas)) {
+      personasDeLaGuardada = { de: personas, guardada, foto: { ...(personas || {}) }, valor: { ...(personas || { repos: null }), informados: guardada.informados } };
+    }
+    return personasDeLaGuardada.valor;
+  };
 
   /** Lo que puede ver quien pide, o la respuesta que va en su lugar (`{ falla }`). */
   // lo armado para cada persona, por modelo de la vista: se va solo cuando el armado deja un modelo nuevo
@@ -344,7 +510,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     // lo de cada persona se filtra una vez por armado y por datos de fondo, no en cada clic: la configuración y el modelo
     // se reemplazan enteros al refrescar, y de las personas cambian sus dos partes
     const config = fuentes.config(); const modeloFondo = fuentes.modelo();
-    const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
+    const personas = personasPara(typeof fuentes.personas === 'function' ? fuentes.personas() : null, vista.guardada());
     const completo = Boolean(vista.bajada().completo);
     const deps = [config, modeloFondo, personas, personas && personas.informados, personas && personas.repos, completo];
     let porPersona = guardados.get(M);
@@ -361,7 +527,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       g = { deps, vis, salidas: {} };
       porPersona.set(clave, g);
     }
-    return { vis: g.vis, error: e.error, salidas: g.salidas };
+    return { vis: g.vis, error: e.error, salidas: g.salidas, guardada: vista.guardada() };
   }
 
   // sin buzón no hay corridas de nadie: se dice «no medido» (no es el 404 de «no es tuya», que no puede contar nada)
@@ -370,17 +536,23 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
 
   const rutas = [
     {
-      method: 'GET', path: '/corridas', needs: ['maintainer', 'person'], pestana: { id: 'corridas', titulo: 'Ejecuciones', orden: 20 }, handler: (ctx) => {
+      method: 'GET', path: '/corridas', needs: ['maintainer', 'person'], pestana: { id: 'corridas', titulo: 'Ejecuciones', orden: 20 }, handler: async (ctx) => {
+        await vista.leida();
         const r = loSuyo(ctx, false);
         if (r.sinBuzon) return pagina(ctx, gris(ctx, tx(idiomaDe(ctx), 'corridas.sinBuzon')));
         if (r.falla) return r.falla;
         const V = r.vis;
+        // la guardada, mientras hay algo por esperar: lo dice una banda y la página se recarga sola cada 60 s. Con el
+        // armado de este arranque fallado sale la banda del rearmado (con la fecha de la guardada) y no se recarga
+        const conBandaGuardada = Boolean(r.guardada) && !r.error && esperando();
+        const marco = conBandaGuardada ? { ...ctx, recargar: 60 } : ctx;
         // el cuerpo de la página se arma una vez por persona y por modelo; el marco (pestañas, bandas) va en cada pedido
         const idioma = idiomaDe(ctx);
-        const llave = `pagina\0${idioma}\0${r.error ? `${r.error.codigo}\0${r.error.desde}` : ''}`;
-        if (r.salidas[llave]) return pagina(ctx, r.salidas[llave]);
+        const llave = `pagina\0${idioma}\0${r.error ? `${r.error.codigo}\0${r.error.desde}` : ''}\0${conBandaGuardada ? 'guardada' : ''}`;
+        if (r.salidas[llave]) return pagina(marco, r.salidas[llave]);
         const opts = { sitio: { rol: ctx.quien.rol, version }, idioma };
-        const rearmado = r.error ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.rearmado', { desde: hora(r.error.desde), codigo: r.error.codigo }))}</b>${runsEsc(tx(idioma, 'corridas.rearmadoSeMuestra', { generado: hora(V.generado) }))}</div>` : '';
+        const rearmado = r.error ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.rearmado', { desde: hora(r.error.desde), codigo: r.error.codigo }))}</b>${runsEsc(tx(idioma, 'corridas.rearmadoSeMuestra', { generado: hora(V.generado) }))}</div>`
+          : conBandaGuardada ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.guardada', { generado: hora(r.guardada.generado) }))}</b></div>` : '';
         // las fichas de Corridas del tablero nocturno (de la organización: sólo quien mantiene), entre el resumen y la
         // tabla; salen del mismo modelo de fichas que Arnés y Proyectos. Sin fichas todavía (el primer refresco), lo dice como
         // Arnés; vacía sólo si se ocultaron todas desde Configuración
@@ -393,23 +565,27 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, opts)}\n${fichasTablero}${runs.tabla(V, opts)}\n${runs.pie(V, opts)}</div>`
           + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div>${runs.bloqueDeTextos(idioma)}<script src="/corridas/cliente.js"></script>`;
         r.salidas[llave] = cuerpo;
-        return pagina(ctx, cuerpo);
+        return pagina(marco, cuerpo);
       },
     },
     {
-      method: 'GET', path: '/api/corridas', needs: ['maintainer', 'person'], handler: (ctx) => {
+      method: 'GET', path: '/api/corridas', needs: ['maintainer', 'person'], handler: async (ctx) => {
+        await vista.leida();
         const r = loSuyo(ctx, true);
         if (r.sinBuzon) return json(200, { estado: 'no_medido', motivo: tx(idiomaDe(ctx), 'corridas.sinBuzon'), corridas: [] });
         if (r.falla) return r.falla;
         // las frases de la casa que trae el modelo, en el idioma del pedido (una lista por idioma)
         const idioma = idiomaDe(ctx);
         const llave = `lista\0${idioma}`;
-        if (!r.salidas[llave]) r.salidas[llave] = JSON.stringify(runs.todoEnIdioma(idioma, { ...r.vis, corridas: r.vis.corridas.map(runs.paraLista) }));
+        // la guardada lo dice, con la fecha de su armado
+        const deLaGuardada = r.guardada ? { vista: { guardada: true, generado: r.guardada.generado } } : {};
+        if (!r.salidas[llave]) r.salidas[llave] = JSON.stringify(runs.todoEnIdioma(idioma, { ...r.vis, ...deLaGuardada, corridas: r.vis.corridas.map(runs.paraLista) }));
         return { status: 200, tipo: 'application/json; charset=utf-8', cuerpo: r.salidas[llave] };
       },
     },
     {
-      method: 'GET', path: '/api/corridas/:id', needs: ['maintainer', 'person'], handler: (ctx) => {
+      method: 'GET', path: '/api/corridas/:id', needs: ['maintainer', 'person'], handler: async (ctx) => {
+        await vista.leida();
         const r = loSuyo(ctx, true);
         if (r.sinBuzon) return SIN_BUZON;
         if (r.falla) return r.falla;
@@ -419,12 +595,18 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     },
     {
       method: 'GET', path: '/api/corridas/:id/textos', needs: ['maintainer', 'person'], handler: async (ctx) => {
+        await vista.leida();
         const r = loSuyo(ctx, true);
         if (r.sinBuzon) return SIN_BUZON;
         if (r.falla) return r.falla;
         const c = corrida(r.vis, ctx.params.id);
         if (!c) return NO_EXISTE;
         const t = await vista.textos(c.id);
+        // la guardada no trae los textos: vuelven con el armado nuevo (nunca «la ejecución no tiene cambios»)
+        // con el armado de este arranque fallado no hay nada por esperar, aunque la bajada siga a medias
+        if (t && t.pendiente) {
+          return !r.error && esperando() ? texto(503, tx(idiomaDe(ctx), 'corridas.textosVuelven'), { 'Retry-After': '60' }) : texto(503, tx(idiomaDe(ctx), 'corridas.textosNoDisponibles'));
+        }
         // ilegibles no es «no hay»: el navegador dice «no se pudo abrir el cambio», nunca «no está»
         return t ? json(200, t) : texto(500, tx(idiomaDe(ctx), 'corridas.textosIlegibles'));
       },
@@ -438,4 +620,4 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   return rutas;
 }
 
-module.exports = { crearRutas, crearVista, armarEnWorker, armarEnElHilo, huellaDelEspejo, FRASE_FALLA, FRASE_SIN_BUZON };
+module.exports = { crearRutas, crearVista, armarEnWorker, armarEnElHilo, huellaDelEspejo, vistaUsable, FRASE_FALLA, FRASE_SIN_BUZON, ARCHIVO_VISTA };
