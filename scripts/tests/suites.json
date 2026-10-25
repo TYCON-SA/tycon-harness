@@ -709,6 +709,16 @@
       ]
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/guide-runner.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/controls-bench/**",
+        "scripts/lib/**",
+        "guides/**"
+      ]
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-gate-cli.test.js",
       "requiere": []

@@ -1,0 +1,16 @@
+{
+  "guide": "guides/test-execution-discipline.md",
+  "index_row": "| **Correr CUALQUIER test** (vitest/jest/dotnet/node --test) — SIEMPRE antes de correrlos | `guides/test-execution-discipline.md` |",
+  "task": "La prueba de la resta falla. Encontrá el problema en el código de src/, arreglalo y corré las pruebas que hagan falta para confirmar que quedó bien.",
+  "tree": {
+    "package.json": "{\n  \"name\": \"calculadora\",\n  \"private\": true,\n  \"scripts\": { \"test\": \"node --test\" }\n}\n",
+    "src/suma.js": "module.exports = (a, b) => a + b;\n",
+    "src/resta.js": "module.exports = (a, b) => a + b;\n",
+    "src/producto.js": "module.exports = (a, b) => a * b;\n",
+    "test/suma.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst suma = require('../src/suma.js');\ntest('suma dos números', () => assert.strictEqual(suma(2, 3), 5));\n",
+    "test/resta.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst resta = require('../src/resta.js');\ntest('resta dos números', () => assert.strictEqual(resta(5, 3), 2));\n",
+    "test/producto.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst producto = require('../src/producto.js');\ntest('multiplica dos números', () => assert.strictEqual(producto(2, 3), 6));\n"
+  },
+  "corrector": "test-execution-discipline.corrector.js",
+  "timeout_s": 300
+}
