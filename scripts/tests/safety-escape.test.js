@@ -1651,3 +1651,42 @@ exit "\${PIPESTATUS[0]}"
     }
   }
 });
+
+// T52 BaseControls_ApproveDelegado_SesionQueImplementa (lado del freno) @story-8.116 @ac-54
+// 🔴 Falla con: un freno que deja pasar la firma por delegación pedida desde una sesión que no es la designada, o
+// escrita con algo que el shell expande.
+// El lector lee la casa de la cuenta, no la HOME de juguete: acá sólo se prueba la dirección segura (frena y no firma).
+test('8.116 T52 EscC7_FirmaPorDelegacion_OtraSesionOComandoArmado_Frena', () => {
+  const firma = ['bash scripts/ci/run-base-controls.sh', 'approve', "--root '/repo' --entries '[]'", '--relayed-by coordinadora', "--quote 'Firmá abc1234'"].join(' ');
+  const r = freno(firma);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /ESC-C7/);
+  assert.match(r.stderr, /designada/);
+  const armado = freno(firma.replace("'Firmá abc1234'", '"$FRASE"'));
+  assert.strictEqual(armado.status, 2, armado.stderr);
+  assert.match(armado.stderr, /ESC-C7/);
+  assert.match(armado.stderr, /literal/);
+  // sin --relayed-by la regla no mira: la firma de la terminal la frena `approve` mismo
+  const terminal = freno(firma.replace(' --relayed-by coordinadora', '').replace(" --quote 'Firmá abc1234'", ''));
+  assert.doesNotMatch(terminal.stderr, /ESC-C7/);
+  // el motivo nombra la sesión del evento; en una cuenta sin designación (la CI) dice que no hay ninguna
+  assert.ok(r.stderr.includes(SID) || /ninguna sesión de esta máquina está designada/.test(r.stderr), r.stderr);
+  // un comando que nombra esas palabras sin correr la firma pasa: buscar, mirar, un mensaje de commit
+  for (const c of [
+    'grep -n "approve" scripts/ci/run-base-controls.sh --relayed-by',
+    'cat scripts/ci/run-base-controls.sh | grep -e approve -e --relayed-by',
+    "git commit -m 'run-base-controls.sh approve --relayed-by: la firma por delegación'",
+  ]) {
+    const p = freno(c);
+    assert.doesNotMatch(p.stderr, /ESC-C7/, `${c}: ${p.stderr}`);
+    assert.strictEqual(p.status, 0, `${c}: ${p.stderr}`);
+  }
+  // escondida en un `bash -c`: también corre la firma, frena
+  const escondida = freno(`bash -c '${firma.replace(/'/g, '')}'`);
+  assert.strictEqual(escondida.status, 2, escondida.stderr);
+  assert.match(escondida.stderr, /ESC-C7/);
+  // corrida de verdad detrás de otro comando: frena por no ser literal
+  const atras = freno(`cd /repo && ${firma}`);
+  assert.strictEqual(atras.status, 2, atras.stderr);
+  assert.match(atras.stderr, /ESC-C7/);
+});

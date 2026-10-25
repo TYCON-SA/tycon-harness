@@ -7365,6 +7365,66 @@
           "nota": "Segunda vuelta (revisión adversarial, 2026-10-04) MENOR 5: el escape con el 1 entre comillas (lo normal en PowerShell) no se reconocía."
         }
       ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-story-gate (constancias de cambios de control)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "_por_que": "La firma por delegación vale sólo si la escribe `run-base-controls.sh approve` con todas las llaves. Una constancia escrita a mano con Write o Edit la saltearía entera: el freno la frena en cualquier repo, con o sin pipeline, también en los repos del arnés.",
+      "cases": [
+        {
+          "id": "control-approvals-write-carpeta-del-publico",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.github/control-changes/abc.json", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano", "run-base-controls.sh approve"] }
+        },
+        {
+          "id": "control-approvals-write-jsonl-del-equipo",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.tycon/control-changes.jsonl", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
+        },
+        {
+          "id": "control-approvals-edit-con-mayusculas",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/sub/.Tycon/Control-Changes/abc.json", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
+        },
+        {
+          "id": "control-approvals-pasa-otro-archivo-de-github",
+          "type": "must-not-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.github/control-changes.md", "content": "x" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js (constancias de cambios de control)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "_por_que": "El mismo hueco por la consola: una redirección o un `cp` a la carpeta de constancias.",
+      "cases": [
+        {
+          "id": "control-approvals-consola-redireccion",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' > .github/control-changes/abc.json" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
+        },
+        {
+          "id": "control-approvals-consola-cp-al-jsonl",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cp /tmp/firma.jsonl .tycon/control-changes.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
+        },
+        {
+          "id": "control-approvals-consola-leer-pasa",
+          "type": "must-not-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cat .github/control-changes/abc.json" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 0 }
+        }
+      ]
     }
   ]
 }

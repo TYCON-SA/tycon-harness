@@ -163,6 +163,17 @@ function sameFile(a, b) {
  *                                    { reason, maxFiles, files: [] }
  * @returns {{action:'pass'|'block', kind?:string, reason:string}}
  */
+// los cuatro lugares de las constancias (`approvals` de scripts/ci/controls-from-base.json), por su final, en cualquier carpeta
+// (sin distinguir mayúsculas: en la Mac y en Windows `.GitHub/Control-Changes/` es la misma carpeta). La carpeta misma
+// también: `cp x .github/control-changes/` deja su destino sin la barra final
+const CONTROL_APPROVAL_DIR = /(^|\/)\.(github|tycon)\/control-changes(\/|$)/i;
+const CONTROL_APPROVAL_FILE = /(^|\/)\.(github|tycon)\/control-changes\.jsonl$/i;
+/** ¿La ruta es una constancia de cambio de control? Casos: scripts/controls-bench/cases/hooks/01-frenos-duros.json */
+function isControlApproval(p) {
+  const f = norm(String(p || ''));
+  return CONTROL_APPROVAL_DIR.test(f) || CONTROL_APPROVAL_FILE.test(f);
+}
+
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
   isHarness, realFilePath = null, installedRoots = [], realStateDir = null,
@@ -182,6 +193,11 @@ function computeStoryGate({
     // `adentro`: la parte de la ruta dentro del árbol (el mensaje mira ahí, no en las carpetas de arriba)
     const adentro = norm(real).slice(norm(raiz).replace(/\/+$/, '').length);
     return { action: 'block', kind: 'installed-tree', reason: 'escritura en el árbol instalado del arnés', adentro };
+  }
+  // Las constancias de los cambios de control las escribe `run-base-controls.sh approve`, desde su propio proceso. Sin
+  // kill-switch del repo y en cualquier repo, también en los del arnés.
+  if (isControlApproval(filePath) || isControlApproval(real)) {
+    return { action: 'block', kind: 'control-approvals', reason: 'escritura a mano de una constancia de cambio de control' };
   }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
@@ -283,6 +299,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
         '  del repo del perfil de tu equipo, que sobrevive a las actualizaciones. Si no tenés uno, armalo con',
         '  harness.js team-init --local, aunque seas una sola persona (guides/reviewer-packs.md, «Si trabajás solo»).',
       ] : []),
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'control-approvals') {
+    return [
+      '⛔ una constancia de cambio de control no se escribe a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La escribe `bash scripts/ci/run-base-controls.sh approve`: el dueño en su terminal, o la sesión designada con',
+      '  la frase del dueño (`--relayed-by`). `pending` da los dos comandos.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'plan') {
@@ -480,7 +505,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, isControlApproval, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   reasonInPrompts, normalizeWords, ADHOC_REASON_MIN_CHARS,
   STORY_INTENT_PATTERNS, quotedPromptAsksStory,
   DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,

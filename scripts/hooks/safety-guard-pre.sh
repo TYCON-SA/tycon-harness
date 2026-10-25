@@ -675,6 +675,38 @@ Si la historia no se pudo terminar, la salida normal es dejarla como deuda: mark
 fi
 ESC_CARTEL=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 
+# ESC-C7: firmar un cambio de control por delegación (`run-base-controls.sh approve … --relayed-by <rol>`). Sólo la sesión
+# designada, sin trabajo propio abierto y con el comando escrito literal: entonces el lector (lib/delegated-signing.js
+# guard-token) deja la ficha que `approve` consume, y el comando pasa. Si no, frena con su motivo y no hay ficha. Un
+# comando que esconde la firma (`node -e`, otro guion) no llega acá: no hay ficha y `approve` no firma.
+# Casos: scripts/tests/safety-escape.test.js
+shopt -s nocasematch
+if [[ "$_esc_cmd" == *run-base-controls* && "$_esc_cmd" == *approve* && "$_esc_cmd" == *--relayed-by* ]]; then
+  shopt -u nocasematch
+  _c7_sid="$(read_field session_id 2>/dev/null)" || _c7_sid=""
+  _c7_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/delegated-signing.js" || _c7_lib=""
+  # el lector sale 0 si dejó la ficha, 3 si el comando no corre la firma (un grep, un cat) y otro código si frena; un
+  # código que frena sin motivo escrito igual frena
+  _c7_motivo="este arnés no trae con qué dejar la ficha de la firma"
+  if [[ -n "$_c7_lib" && -f "$_c7_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+    _c7_rc=0
+    _c7_motivo="$(printf '%s' "$CMD" | "$HNODE" "$_c7_lib" guard-token --session "$_c7_sid" --command-stdin 2>&1)" || _c7_rc=$?
+    if [[ "$_c7_rc" == 0 || "$_c7_rc" == 3 ]]; then
+      _c7_motivo=""
+    elif [[ -z "$_c7_motivo" ]]; then
+      _c7_motivo="el lector de la firma salió con código ${_c7_rc} sin decir por qué"
+    fi
+  fi
+  if [[ -n "$_c7_motivo" ]]; then
+    ESC_CARTEL="La firma de un cambio de control por delegación es de la sesión designada, con la frase del dueño en su chat. Si no se puede, la firma el dueño en su terminal."
+    block "ESC-C7" \
+      "No se puede firmar este cambio de control por delegación: ${_c7_motivo}" \
+      "Que el dueño lo firme en su terminal con el comando que da \`pending\`."
+  fi
+fi
+shopt -u nocasematch
+ESC_CARTEL=""
+
 # ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y la exención de
 # esa prueba (`dod_runtime_exempt: true`) escritos por la terminal los decide la persona («autorizo
 # ALLOW_DOD_EVIDENCE_WRITE», «autorizo dod_runtime_exempt»). Frena un comando que crea, toca o copia un archivo con ese

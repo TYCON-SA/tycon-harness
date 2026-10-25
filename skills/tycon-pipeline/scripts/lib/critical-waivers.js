@@ -255,9 +255,10 @@ function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
 }
 
 /** La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, ts }`, null o `{ error }`. */
-function designacionVigente({ home } = {}) {
+function designacionVigente({ home, dir } = {}) {
   let raw;
-  try { raw = fs.readFileSync(path.join(require('./state-dir.js').stateDir(home), 'gates.log'), 'utf8'); } catch (e) {
+  // `dir`: la carpeta del estado ya resuelta, para quien no la lee del ambiente (scripts/lib/delegated-signing.js)
+  try { raw = fs.readFileSync(path.join(dir || require('./state-dir.js').stateDir(home), 'gates.log'), 'utf8'); } catch (e) {
     return e.code === 'ENOENT' ? null : { error: `no pude leer el registro del arnés (${e.code || e.message})` };
   }
   const lineas = raw.split('\n');
@@ -390,4 +391,4 @@ function sesionActual(env) {
   return /^[\w-]+$/.test(s) ? s : null;
 }
 
-module.exports = { DESIGNACION, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, okDeUnaPersona, sesionQueReenvia, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+module.exports = { DESIGNACION, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, okDeUnaPersona, sesionQueReenvia, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
