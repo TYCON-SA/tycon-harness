@@ -590,6 +590,11 @@ be, to copy it and open the request by hand.
   naming it; the harness first shows them what they are about to mark, and neither the agent nor a relayed message can
   mark it. It only counts from here, never from a machine. It lives in `team-profile.json` → `qa.manual_check`, in the
   profile repo.
+- **How many sessions work at once** (*Cuántas sesiones trabajan a la vez*): when one session coordinates the others,
+  how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn.
+  Each machine can change it for itself, because how much it can take depends on the machine. The folder where the
+  owner's signatures are left belongs to each machine and is not set here. It lives in `team-profile.json` →
+  `coordination.max_working`; the whole recipe is in `guides/coordination.en.md`.
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
   for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A

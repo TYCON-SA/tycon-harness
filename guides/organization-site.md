@@ -565,6 +565,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
   antes qué va a marcar, y el agente no puede marcarlo ni lo marca un reenvío. Vale sólo desde acá, nunca desde una
   máquina. Queda en `team-profile.json` → `qa.manual_check`, en el repo del perfil.
+- **Cuántas sesiones trabajan a la vez**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
+  mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno. Cada máquina puede
+  cambiarlo para sí, porque cuánto aguanta depende de ella. La carpeta donde quedan las firmas del dueño es de cada
+  máquina y no se pone acá. Queda en `team-profile.json` → `coordination.max_working`; la receta entera está en
+  `guides/coordination.md`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo

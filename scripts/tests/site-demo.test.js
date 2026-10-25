@@ -875,14 +875,17 @@ test('2.76-Demo_Proponer_MuestraYNoEscribe', async () => {
   });
   // pase adversarial, clase 1: «Proponer» contesta en cada sección que se puede revisar (el piso de versión de la capa del
   // equipo de los datos de ejemplo cubre lo que sus claves piden: `stack`, aprobaciones…). En el mismo proceso: el tope de
-  // pedidos por minuto del sitio no deja recorrer las veinte secciones desde afuera
+  // pedidos por minuto del sitio cuenta por dirección: cada sección pide desde la suya, así el recorrido no depende de
+  // cuántas secciones haya
   const h = await arrancarDemo();
   try {
     const token = /<meta name="site-token" content="([^"]+)"/.exec((await h.pedir('/configuracion')).texto)[1];
-    const escribir = (ruta, cuerpo) => h.pedir(ruta, { method: 'POST', headers: { ...JSON_H, ...MISMO_ORIGEN, 'x-site-token': token }, body: JSON.stringify(cuerpo) });
+    let direccion = '';
+    const escribir = (ruta, cuerpo) => h.pedir(ruta, { method: 'POST', headers: { ...JSON_H, ...MISMO_ORIGEN, 'x-site-token': token, 'x-forwarded-for': direccion }, body: JSON.stringify(cuerpo) });
     const cfg = (await h.pedir('/api/config')).json;
     const revisables = [];
-    for (const sec of cfg.secciones) {
+    for (const [i, sec] of cfg.secciones.entries()) {
+      direccion = `192.0.2.${i + 1}`;
       let borrador; try { borrador = JSON.parse(sec.texto); } catch { borrador = null; }
       const r = (await escribir('/api/config/revisar', { seccion: sec.id, borrador, oid: sec.oid, base: sec.texto })).json;
       if (!r.ok) continue;

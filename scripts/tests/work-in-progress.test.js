@@ -1216,7 +1216,8 @@ function allText(dir) {
 }
 const MARCADA = ['FRASE', 'MARCADA', 'QUE', 'NO', 'SALE'].join('-');
 
-test('T1 Sesion_NombreDeRename_ElUltimo @story-2.49.4 @ac-1: la sesión sale con el último nombre de /rename; sin él, el de su archivo o el id; nada más de la conversación sale', () => {
+// The name of the session file comes first (T23); these sessions have none in their file, so the title is read.
+test('T1 Sesion_NombreDeRename_ElUltimo @story-2.49.4 @ac-1: sin nombre en su archivo, la sesión sale con el último nombre de /rename; sin él, el id; nada más de la conversación sale', () => {
   const m = toyMachine();
   const cwd = gitRepo(m.root, 'principal', 'main', GH);
   conversation(m, cwd, 'tit00000-1', [
@@ -1231,43 +1232,43 @@ test('T1 Sesion_NombreDeRename_ElUltimo @story-2.49.4 @ac-1: la sesión sale con
   conversation(m, cwd, 'tit00000-2', [{ type: 'user', message: { content: MARCADA } }]);
   // the only title, on the very first line of the log
   conversation(m, cwd, 'tit00000-4', [{ type: 'custom-title', customTitle: 'Centurion' }, { type: 'user', message: { content: MARCADA } }]);
-  session(m, process.pid, 'tit00000-1', 'principal-ea', busyAt(cwd));
+  session(m, process.pid, 'tit00000-1', null, busyAt(cwd));
   session(m, process.pid, 'tit00000-2', 'principal-03', busyAt(cwd));
   session(m, process.pid, 'tit00000-3', null, busyAt(cwd));
-  session(m, process.pid, 'tit00000-4', 'principal-11', busyAt(cwd));
+  session(m, process.pid, 'tit00000-4', null, busyAt(cwd));
   const r = runP(m, { home: m.root });
   assert.deepStrictEqual(r.rows.map((x) => x.session).sort(), ['Centurion', 'Enzo', 'principal-03', 'tit00000'], r.text);
   assert.ok(!r.text.includes(MARCADA) && !JSON.stringify(r).includes(MARCADA), 'nada de la conversación sale en la tabla ni en el --json');
   assert.ok(!allText(m.state).includes(MARCADA), 'ni en la carpeta de estado');
-  // without the conversations folder, the session file's name
-  assert.deepStrictEqual(run(m, { home: m.root, projectsDir: null }).rows.map((x) => x.session).sort(), ['principal-03', 'principal-11', 'principal-ea', 'tit00000']);
+  // without the conversations folder, the session file's name or the id
+  assert.deepStrictEqual(run(m, { home: m.root, projectsDir: null }).rows.map((x) => x.session).sort(), ['principal-03', 'tit00000', 'tit00000', 'tit00000']);
   // only the last 256 KB are read: a title past that window does not count; one inside it does
   const n = toyMachine();
   const big = gitRepo(n.root, 'grande', 'main', GH);
   const filler = Array.from({ length: 3000 }, (_, i) => ({ type: 'user', message: { content: `${MARCADA} ${i} ${'x'.repeat(80)}` } }));
   conversation(n, big, 'big00000-1', [{ type: 'custom-title', customTitle: 'Viejo' }, ...filler]);
   conversation(n, big, 'big00000-2', [{ type: 'custom-title', customTitle: 'Viejo' }, ...filler, { type: 'custom-title', customTitle: 'Nuevo' }]);
-  session(n, process.pid, 'big00000-1', 'grande-1', busyAt(big));
-  session(n, process.pid, 'big00000-2', 'grande-2', busyAt(big));
+  session(n, process.pid, 'big00000-1', null, busyAt(big));
+  session(n, process.pid, 'big00000-2', null, busyAt(big));
   assert.ok(fs.statSync(path.join(n.root, 'projects', big.replace(/[^A-Za-z0-9-]/g, '-'), 'big00000-1.jsonl')).size > 256 * 1024);
-  assert.deepStrictEqual(runP(n, { home: n.root }).rows.map((x) => x.session).sort(), ['Nuevo', 'grande-1']);
+  assert.deepStrictEqual(runP(n, { home: n.root }).rows.map((x) => x.session).sort(), ['Nuevo', 'big00000']);
   // an id that is not plain letters, digits and dashes does not go into a path: its conversation is not read
   conversation(n, big, 'bad.0000-1', [{ type: 'custom-title', customTitle: 'NoSeLee' }]);
-  session(n, process.pid, 'bad.0000-1', 'grande-3', busyAt(big));
+  session(n, process.pid, 'bad.0000-1', null, busyAt(big));
   const unsafe = runP(n, { home: n.root });
-  assert.ok(unsafe.rows.some((x) => x.session === 'grande-3') && !unsafe.text.includes('NoSeLee'), unsafe.text);
+  assert.ok(unsafe.rows.some((x) => x.session === 'bad.0000') && !unsafe.text.includes('NoSeLee'), unsafe.text);
 });
 
 test('T1b Sesion_ConversacionIlegible_SeDiceAlPie @story-2.49.4 @ac-1: una conversación que está y no se lee va al pie y el nombre cae al de siempre', { skip: process.platform === 'win32' || process.getuid() === 0 ? 'chmod no quita la lectura' : false }, () => {
   const m = toyMachine();
   const cwd = gitRepo(m.root, 'principal', 'main', GH);
   conversation(m, cwd, 'ile00000-1', [{ type: 'custom-title', customTitle: 'Oculto' }]);
-  session(m, process.pid, 'ile00000-1', 'principal-ea', busyAt(cwd));
+  session(m, process.pid, 'ile00000-1', null, busyAt(cwd));
   const file = path.join(m.root, 'projects', cwd.replace(/[^A-Za-z0-9-]/g, '-'), 'ile00000-1.jsonl');
   fs.chmodSync(file, 0o000);
   let r;
   try { r = runP(m, { home: m.root }); } finally { fs.chmodSync(file, 0o644); }
-  assert.deepStrictEqual(r.rows.map((x) => x.session), ['principal-ea'], r.text);
+  assert.deepStrictEqual(r.rows.map((x) => x.session), ['ile00000'], r.text);
   assert.ok(r.unreadable.some((u) => u.includes('su conversación no se puede leer (EACCES)')), r.text);
 });
 
@@ -1401,7 +1402,8 @@ test('T5 SinDeducir_LoDiceEnLlano @story-2.49.4 @ac-5: trabajando sin marcador, 
 
 test('T6 Ayuda_NombreYCarpeta @story-2.49.4 @ac-6: la ayuda dice de dónde sale el nombre y qué es la columna Carpeta', () => {
   const help = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8').replace(/\s+/g, ' ');
-  assert.match(help, /\*\*Sesión\*\* es el nombre que le puso la persona a la pestaña con `\/rename`/);
+  assert.match(help, /\*\*Sesión\*\* es el nombre de su archivo de sesión, el mismo que usan los mensajes entre sesiones/);
+  assert.match(help, /el último `\/rename` de su conversación guardada/);
   assert.match(help, /lee sólo ese renglón del título/);
   assert.match(help, /\*\*Carpeta\*\* es dónde edita cada sesión/);
   assert.match(help, /sin lanzar git/);
@@ -1426,4 +1428,41 @@ test('T23c Entrando_UnaStory_ParaElCartel: --marker da los pedidos abiertos de e
   // en su rama principal no hay nada que esperar ni que preguntar
   const enMain = await storyEntering({ storyId: '5.2', repoPath: gitRepo(m.root, 'z', 'main', GH) }, { query: async () => { throw new Error('no debía preguntar'); } });
   assert.deepStrictEqual(enMain, { prs: [], failed: false, unreadable: [] });
+});
+
+// ── The name of the session file ─────────────────────────────────────────────────────────────────────
+
+test('T23 Wip_NameFromSessionFile @story-8.122 @ac-23: cada fila lleva el name del archivo de sesión; --json suma sid, status y nameSource; Codex como hoy', () => {
+  const { jsonOf } = require(WIP);
+  const m = toyMachine();
+  const cwd = gitRepo(m.root, 'principal', 'main', GH);
+  conversation(m, cwd, 'nom00000-1', [{ type: 'custom-title', customTitle: 'OtroTitulo' }]);
+  conversation(m, cwd, 'nom00000-2', [{ type: 'custom-title', customTitle: 'TituloViejo' }]);
+  session(m, process.pid, 'nom00000-1', 'Puesto', { ...busyAt(cwd), nameSource: 'user' });
+  session(m, process.pid, 'nom00000-2', 'principal-7f', { ...busyAt(cwd), nameSource: 'derived' });
+  // a derived name in the temporary folder is an internal agent unless it has work: this one has a marker
+  marker(m, 'nom00000-2', { storyId: '9.1', storyPath: story(m.root, '9.1', 'Una'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  // a long name with a line break, put by hand in the session file, comes out in one line and cut
+  session(m, process.pid, 'nom00000-3', `Largo\n${'x'.repeat(120)}`, { nameSource: 'user', cwd });
+  const long = [...require(WIP).sessionsBySid(m.sessions, [], path.join(m.root, '.claude', 'projects')).values()].find((s) => /^Largo/.test(s.name || ''));
+  assert.ok(long && !/\n/.test(long.name) && Array.from(long.name).length <= 40, JSON.stringify(long));
+  fs.rmSync(path.join(m.sessions, 'nom00000-3.json'));
+  const r = runP(m, { home: m.root });
+  assert.deepStrictEqual(r.rows.map((x) => x.session).sort(), ['Puesto', 'principal-7f'], r.text);
+  assert.ok(!r.text.includes('OtroTitulo') && !r.text.includes('TituloViejo'), r.text);
+  const j = jsonOf(r);
+  const bySession = Object.fromEntries(j.rows.map((x) => [x.session, x]));
+  assert.deepStrictEqual([bySession.Puesto.sid, bySession.Puesto.status, bySession.Puesto.nameSource], ['nom00000-1', 'busy', 'user']);
+  assert.deepStrictEqual([bySession['principal-7f'].sid, bySession['principal-7f'].status, bySession['principal-7f'].nameSource], ['nom00000-2', 'busy', 'derived']);
+  for (const k of ['free', 'idle', 'halfway', 'unreadable']) assert.ok(k in j, k);
+  // a session without a session file (Codex) keeps the name it gets today
+  const { DatabaseSync } = require('node:sqlite');
+  const codex = path.join(m.root, 'codex');
+  fs.mkdirSync(codex);
+  const db = new DatabaseSync(path.join(codex, 'state_5.sqlite'));
+  db.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, name TEXT)');
+  db.prepare('INSERT INTO threads (id, title, name) VALUES (?, ?, ?)').run('cdx00000-3333', 'resumen', 'DeCodex');
+  db.close();
+  marker(m, 'cdx00000-3333', { storyId: '6.1', storyPath: story(m.root, '6.1', 'De Codex'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  assert.ok(runP(m, { home: m.root, codexHome: codex }).halfway.some((h) => h.includes('· DeCodex ·')));
 });

@@ -51,9 +51,11 @@ carpeta está en su rama principal. Una nota con `doing` corrige lo deducido.
 «Libres» son las que no hacen nada hace más de 5 minutos; «Sin uso hace más de 3 h», las que siguen abiertas pero
 nadie usa. La última actividad sale de las fechas del archivo de sesión y de la fecha de su conversación guardada.
 
-**Sesión** es el nombre que le puso la persona a la pestaña con `/rename` (en Codex, el nombre de su sesión); sin
-nombre, el id corto. De la conversación guardada el programa lee sólo ese renglón del título, al final del archivo:
-nada más de lo que dice una conversación se lee ni se guarda.
+**Sesión** es el nombre de su archivo de sesión, el mismo que usan los mensajes entre sesiones (`-n` al abrirla o
+`/rename`). Sin nombre en el archivo, el último `/rename` de su conversación guardada; en Codex, el nombre de su
+sesión; sin ninguno, el id corto. De la conversación el programa lee sólo ese renglón del título, al final del
+archivo: nada más de lo que dice una conversación se lee ni se guarda. Con `--json`, cada fila suma `sid`, `status` y
+`nameSource` (`user` si el nombre lo puso una persona, `derived` si lo puso la herramienta).
 
 **Carpeta** es dónde edita cada sesión: la raíz del repo o del worktree de su último archivo tocado o, sin uno, la
 carpeta donde arrancó, con `~` en lugar de la carpeta personal. El repo, la rama y el servidor de cada carpeta salen de

@@ -3567,6 +3567,38 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
 });
 
+// ── Cuántas sesiones trabajan a la vez (coordination.max_working) ──────────────────────────────────────────────────────
+// El tope es del equipo y va en la pestaña; la carpeta de las firmas del dueño es de cada máquina y no aparece.
+test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', async () => {
+  const s = ORG.seccionPorId('coordinacion');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['coordination'], ['coordination.max_working'], ['coordination']]);
+  const rev = (borrador) => ORG.revisar({ seccion: 'coordinacion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ coordination: { max_working: 5 } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, coordination: { max_working: 5 } }));
+  assert.strictEqual(rev({ coordination: { max_working: 0 } }).ok, false, 'fuera de 1-20');
+  // la carpeta es de la máquina: el sitio no la escribe en el perfil, y si alguien la pone a mano el lector la rechaza
+  assert.doesNotMatch(rev({ coordination: { max_working: 3, owner_folder: '~/firmas' } }).texto, /owner_folder/);
+  assert.ok(TC.parse(JSON.stringify({ coordination: { owner_folder: '~/firmas' } })).problems.some((x) => x.path === 'coordination.owner_folder'));
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.coordinacionTitulo', 'pantalla.coordinacionDescripcion', 'pantalla.coordinacionTope', 'pantalla.coordinacionAyuda', 'pantalla.para.coordinacion', 'org.capaSinCoordination']) {
+      assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    }
+    assert.match(ORG.pantalla(idioma), /coordinacion: editorCoordinacion/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('coordinacion', {})]);
+  assert.strictEqual(p.error, null);
+  const campos = p.todo(p.sec('coordinacion')).filter((n) => n.tag === 'input');
+  assert.strictEqual(campos.length, 1, 'un solo campo: el tope');
+  assert.doesNotMatch(p.textoDe('coordinacion'), /owner_folder/);
+  const CON = { ...PERFIL_TYCON, coordination: { max_working: 5 } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.COORDINATION_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
 // ── Cómo se actualiza el freno de producción (guard.update) y la firma delegada (approvals.delegated_signing) ──────
 // Cada organización elige cuánto riesgo toma; lo de fábrica es lo más seguro, y cada valor se explica con su costo donde
 // la persona elige.

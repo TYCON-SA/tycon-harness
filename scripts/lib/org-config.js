@@ -65,6 +65,7 @@ const SECCIONES = Object.freeze([
   // cuál sesión es, se designa en cada máquina)
   Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
+  Object.freeze({ id: 'coordinacion', titulo: 'Cuántas sesiones trabajan a la vez', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working']), idCorto: 'profile', necesita: ['coordination'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
   // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
   Object.freeze({ id: 'frenoProduccion', titulo: 'Cómo se actualiza el freno de producción', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['guard'], rutas: Object.freeze(['guard.update']), idCorto: 'profile', necesita: ['guard'] }),
@@ -316,6 +317,12 @@ const QA_SINCE = '2026.10.20.39';
  */
 const GUARD_SINCE = '2026.10.22.46';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `coordination` (el tope de sesiones trabajando a la vez): la
+ * etiqueta del merge que la trae, como QA_SINCE. Mientras esa etiqueta no existe vale un piso que ninguna versión
+ * alcanza, así ninguna máquina recibe la clave antes de poder leerla; al mergear se reemplaza por la etiqueta real.
+ */
+const COORDINATION_SINCE = '9999.12.31.1';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.delegated_signing` en lista y
  * `approvals.delegated_machines`: la etiqueta del merge que las trae, como GUARD_SINCE. El sitio no deja proponer una
  * lista a una capa que pide menos: una máquina con un lector anterior la leería como un valor roto y perdería la firma
@@ -390,7 +397,7 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
   if (paquetes) return paquetes;
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
@@ -1326,6 +1333,7 @@ function pantalla(idioma = 'es') {
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
     aprobaciones: { t: T('pantalla.quienReenviaElOkTitulo'), d: T('pantalla.quienReenviaElOkDescripcion'), corto: T('pantalla.quienReenviaElOkTitulo') },
     pruebaAMano: { t: T('pantalla.pruebaAManoTitulo'), d: T('pantalla.pruebaAManoDescripcion'), corto: T('pantalla.pruebaAManoTitulo') },
+    coordinacion: { t: T('pantalla.coordinacionTitulo'), d: T('pantalla.coordinacionDescripcion'), corto: T('pantalla.coordinacionTitulo') },
     frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
@@ -1339,7 +1347,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos', 'estimaciones'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'coordinacion', 'integraciones', 'hilos', 'estimaciones'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -2173,6 +2181,11 @@ function pantalla(idioma = 'es') {
     var v = (d.qa || {}).manual_check;
     var box = el('div', { class: 'pila' }, selector(T('pantalla.pruebaAMano'), v === 'required' ? 'required' : '', [['', T('pantalla.pruebaAManoNo')], ['required', T('pantalla.pruebaAManoSi')]], function (x) { hoja(d, 'qa', 'manual_check', x); }, 'qa.manual_check', pr));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.pruebaAManoAyuda') }));
+    return box;
+  }
+  function editorCoordinacion(s, d, pr) {
+    var box = el('div', { class: 'pila' }, campo(T('pantalla.coordinacionTope'), (d.coordination || {}).max_working, function (v) { hoja(d, 'coordination', 'max_working', v === '' ? '' : numOTexto(v)); }, 'coordination.max_working', pr, { inputmode: 'numeric' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.coordinacionAyuda') }));
     return box;
   }
   function editorAdo(s, d, pr) {
@@ -3156,7 +3169,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, coordinacion: editorCoordinacion, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -3665,7 +3678,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, DELEGATED_LIST_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, DELEGATED_LIST_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
