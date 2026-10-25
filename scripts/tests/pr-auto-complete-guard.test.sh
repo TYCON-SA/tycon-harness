@@ -228,16 +228,17 @@ grep -q "va a main" "$TMP/err.txt" && no "🔴 el mensaje del update afirma 'va 
 # La medición de una semana: de 40 pedidos a mano con el prefijo, 19 pasaban igual sin él y quedaban anotados como salteos.
 ST="$HOME/.claude/.tycon-pipeline"
 limpia(){ rm -f "$ST/bypass.log" "$ST/frenos.jsonl"; }
-saltos(){ grep -c '"PR_A_MANO"' "$ST/bypass.log" 2>/dev/null || echo 0; }
+saltos(){ local n; n=$(grep -c '"PR_A_MANO"' "$ST/bypass.log" 2>/dev/null); echo "${n:-0}"; }
 veredicto(){ [ -f "$ST/frenos.jsonl" ] && tail -1 "$ST/frenos.jsonl" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).veredicto||""))' || printf 'ninguna'; }
 ORG='--org https://dev.azure.com/org-del-equipo'
 
 # 31 — T1 PrefijoDeMas_NoEsSalteo (AC 1)
 while IFS='|' read -r esperado cmd; do
   limpia; rc=$(corre "TYCON_PR_BY_HAND=1 $cmd")
-  [ "$rc" -eq 0 ] && [ "$(saltos)" = 0 ] && [ "$(veredicto)" = "$esperado" ] && grep -q "el prefijo sobra" "$TMP/err.txt" \
-    && ok "T1 con el prefijo de más pasa sin salteo, constancia «${esperado}» y aviso: ${cmd:0:60}" \
-    || no "T1 prefijo de más: rc=$rc salteos=$(saltos) constancia=$(veredicto) — ${cmd:0:80}"
+  lineas=$(grep -c . "$TMP/err.txt")
+  [ "$rc" -eq 0 ] && [ "$(saltos)" = 0 ] && [ "$(veredicto)" = "$esperado" ] && grep -q "el prefijo sobra" "$TMP/err.txt" && [ "$lineas" -eq 1 ] \
+    && ok "T1 con el prefijo de más pasa sin salteo, constancia «${esperado}» y un aviso en una línea: ${cmd:0:60}" \
+    || no "T1 prefijo de más: rc=$rc salteos=$(saltos) constancia=$(veredicto) líneas=$lineas — ${cmd:0:80}"
 done <<EOF
 paso|$BIEN
 ninguna|$BASE --draft true
@@ -277,7 +278,8 @@ limpia; rc=$(corre "$BASE && az repos pr update $ORG --id 5004 --auto-complete f
 # 34 — T4 MalArmados_SiguenFrenando (AC 4): los 4 del caso real, sin el prefijo
 while read -r cmd; do
   limpia; rc=$(corre "$cmd")
-  [ "$rc" -eq 2 ] && ok "T4 un mal armado sigue frenando: ${cmd:0:70}" || no "T4 dejó pasar un mal armado ($rc): ${cmd:0:80}"
+  [ "$rc" -eq 2 ] && grep -q "publica un borrador" "$TMP/err.txt" \
+    && ok "T4 un mal armado sigue frenando, con su falta: ${cmd:0:70}" || no "T4 dejó pasar un mal armado o frenó por otra causa ($rc): ${cmd:0:80}"
 done <<EOF
 az repos pr update $ORG --id 4919 --draft false -o json
 az repos pr update $ORG --id 5019 --draft false --auto-complete true --delete-source-branch true -o json

@@ -95,18 +95,22 @@ for (const seg of az.segmentos(cmd)) {
   // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
   // llenaba el registro de salteos que no eran.
   const { juzgado, borrador, faltas } = az.faltasDe(seg);
+  let sobra = false;
   if (az.tieneEscape(seg)) {
     if (faltas.length) {
       constancia('PR_A_MANO', `TYCON_PR_BY_HAND=1: dejo armar el PR a mano. Queda dicho.`, az.textoDe(seg));
       huboEscape = true;
       continue;
     }
-    console.error(`${TAG} TYCON_PR_BY_HAND=1: el prefijo sobra, este pedido pasa igual sin él; no lo anoto como salteo.`);
+    sobra = true;
   }
+  // Una línea por tramo: un borrador con el prefijo dice las dos cosas en la misma línea.
+  const SOBRA = 'TYCON_PR_BY_HAND=1: el prefijo sobra, este pedido pasa igual sin él; no lo anoto como salteo.';
   if (borrador) {
-    console.error(`${TAG} borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true y --squash false.`);
+    console.error(`${TAG} ${sobra ? SOBRA + ' ' : ''}borrador (--draft): no lo freno ahora, un borrador no se completa solo. Al publicarlo (--draft false) van a hacer falta --auto-complete true y --squash false.`);
     continue;
   }
+  if (sobra) console.error(`${TAG} ${SOBRA}`);
   if (!juzgado) continue;
   huboJuicio = true;
   if (faltas.length) problemas.push({ seg, verbo, faltas });
