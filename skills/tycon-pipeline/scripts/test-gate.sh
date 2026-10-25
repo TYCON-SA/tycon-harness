@@ -108,7 +108,9 @@ es_sin_acotar() {
 
 marcar_tests_en_rojo() {
   local codigo="$1" motivo="$2"
-  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" run-check tests -- \
+  # TYCON_TEST_GATE_MARK: la marca no corre pruebas y no toma el candado de `run-check`; con el de otra sesión saldría
+  # 75 sin escribir, y el verde viejo quedaría en pie.
+  ( cd "$REPO" && TYCON_TEST_GATE=1 TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- \
       node -e 'console.error("test-gate: " + process.argv[1]); process.exit(Number(process.argv[2]))' "$motivo" "$codigo" ) >&2 || true
 }
 
@@ -229,6 +231,14 @@ correr_hermanos_al_salir() {
       # Sin alcance propio: el de este repo (TYCON_TEST_SCOPE) no vale para el hermano.
       TYCON_TEST_GATE_COMPANION=1 TYCON_TEST_GATE_STORY_REPO="$REPO_STORY" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$root" "$story_abs" < /dev/null || hrc=$?
     fi
+    # 75: en el hermano hay otra corrida de las pruebas en marcha. El total no se midió: no queda tests-result.json, el
+    # check queda en rojo (este repo pudo dejarlo verde) y la puerta sale 75, igual que si el ocupado fuera este repo.
+    if [[ "$hrc" == "75" ]]; then
+      rm -f "$OUT_FILE"
+      marcar_tests_en_rojo 1 "corrida a medias: el repo hermano $(basename "$root") no corrió porque otra corrida de sus pruebas está en marcha; no es verde"
+      echo "🟡 [test-gate] el repo hermano $(basename "$root") no corrió: otra corrida de sus pruebas está en marcha. Esperá su resultado; no quedó tests-result.json." >&2
+      exit 75
+    fi
     # Un 7 del hermano sin la constancia de «sin acotar» es un rojo de verdad: se combina como 1.
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$root/.advisors/tests-result.json"; then
       echo "[test-gate] ⚠️  el repo hermano $(basename "$root") salió 7 sin la constancia de «sin acotar»: es un rojo" >&2
@@ -333,6 +343,14 @@ correr_partes() {
     out="$OUT_DIR/tests-result.part-${scope//\//_}.json"
     hrc=0
     TYCON_TEST_GATE_PART=1 TYCON_TEST_GATE_OUT_FILE="$out" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "${story_abs:-$STORY_ARG}" "$scope" < /dev/null || hrc=$?
+    # 75: otra corrida de las pruebas está en marcha en este repo; no se juntan partes ni se corren hermanos
+    if [[ "$hrc" == "75" ]]; then
+      TG_NO_COMPANIONS="otra corrida de las pruebas está en marcha en este repo"
+      # una parte anterior ya pudo dejar el check en verde: a medias no es verde
+      [[ -n "$filas" ]] && marcar_tests_en_rojo 1 "corrida a medias: la parte $scope no corrió porque otra corrida de las pruebas está en marcha en este repo; no es verde"
+      echo "🟡 [test-gate] la parte $scope no corrió: otra corrida de las pruebas está en marcha en este repo. Esperá su resultado; no quedó tests-result.json." >&2
+      exit 75
+    fi
     # un 7 de una parte sin la constancia de «sin acotar» es un rojo de verdad
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
     filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${out}"$'\n'
@@ -675,7 +693,7 @@ if [[ -n "$GENERICO" ]]; then
       bash -c "set -o pipefail; $_CMD 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
   # pytest sin pytest-cov rechaza --cov: se corre de nuevo sin cobertura, y el informe lo dice
   _SIN_COV="$(_campo_generico commandWithoutCoverage)"
-  if [[ "$SUITE_EXIT" != "0" && -n "$_SIN_COV" ]] && grep -q "unrecognized arguments: --cov" "$RESULTS_DIR/run.log" 2>/dev/null; then
+  if [[ "$SUITE_EXIT" != "0" && "$SUITE_EXIT" != "75" && -n "$_SIN_COV" ]] && grep -q "unrecognized arguments: --cov" "$RESULTS_DIR/run.log" 2>/dev/null; then
     echo "[test-gate] ⚠️  $RUNNER sin pytest-cov: corre de nuevo sin cobertura" >&2
     echo "falta pytest-cov: las pruebas corrieron sin medir la cobertura" > "$RESULTS_DIR/sin-cobertura.txt"
     SUITE_EXIT=0
@@ -858,6 +876,16 @@ else
       npx vitest run --coverage --reporter=json --outputFile "$RESULTS_DIR/vitest.json" ) || SUITE_EXIT=$?
 fi
 
+# 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde
+# cuándo y de quién). No es un rojo: no se escribe tests-result.json, no se toca el check y no se corren los hermanos.
+if [[ "$SUITE_EXIT" == "75" ]]; then
+  TG_NO_COMPANIONS="otra corrida de las pruebas está en marcha en este repo"
+  # el de una corrida anterior tampoco queda a la vista: se leería como el resultado de ésta
+  rm -f "$OUT_FILE"
+  echo "🟡 [test-gate] no corrí nada: otra corrida de las pruebas está en marcha en este repo (arriba, desde cuándo y de quién). Esperá su resultado; no quedó tests-result.json." >&2
+  exit 75
+fi
+
 # --- Parsear resultados + coverage (best-effort, nunca rompe) ----------------
 # Respaldo del cruce de cobertura: los archivos que la story declara CREAR. git deja de
 # reportar "added" apenas se commitea, así que en una iteración de fix POSTERIOR al commit
@@ -924,11 +952,11 @@ if [[ "$SUITE_EXIT" == "0" ]]; then
   if [[ "$_VERDE" == "falla" ]]; then
     # la herramienta salió 0 pero el reporte trae fallas (Maven con testFailureIgnore, por ejemplo): es un rojo
     echo "🔴 [test-gate] la herramienta salió 0 pero el reporte trae pruebas fallidas: NO es verde." >&2
-    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la herramienta salió 0 con pruebas fallidas en el reporte: no es verde"); process.exit(1)' ) || true
+    ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la herramienta salió 0 con pruebas fallidas en el reporte: no es verde"); process.exit(1)' ) || true
     SUITE_EXIT=1
   elif [[ "$_VERDE" != "si" ]]; then
     echo "🔴 [test-gate] la suite salió 0 pero no corrió ninguna prueba, o no se pudo contar: NO es verde." >&2
-    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite salió 0 sin ninguna prueba corrida (o sin informe que lo cuente): no es verde"); process.exit(6)' ) || true
+    ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite salió 0 sin ninguna prueba corrida (o sin informe que lo cuente): no es verde"); process.exit(6)' ) || true
     SUITE_EXIT=6
   fi
 fi
