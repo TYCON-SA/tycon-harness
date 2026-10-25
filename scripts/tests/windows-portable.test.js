@@ -62,6 +62,23 @@ const listing = (dir) => { const out = []; const walk = (d) => { for (const e of
 
 // ═══ P1 · el pipeline ══════════════════════════════════════════════════════════════════════════════════════════
 
+// los trabajos del pipeline, y la comprobación que los lee del yml: la misma para el real y para los de juguete
+const JOBS_TODAY = ['Bundle', 'Windows', 'Sources', 'Rehearsal', 'NetfxVstest'];
+const checkJobs = (code) => {
+  const jobs = [...code.matchAll(/^ {2}- job: (\w+)/gm)].map((m) => m[1]);
+  // no suma trabajos: usa los dos de los ensayos (NetfxVstest es el de la receta de .NET Framework)
+  assert.deepStrictEqual(jobs, JOBS_TODAY, 'no suma trabajos: usa los dos de los ensayos');
+  return jobs;
+};
+
+test('PortablePipeline_Yaml_TrabajoDeMasODeMenos_Frena', () => {
+  // la lista de trabajos es exacta: portable no puede sumar uno sin que se vea
+  const toy = (names) => names.map((n) => `  - job: ${n}\n    steps: []`).join('\n');
+  checkJobs(toy(JOBS_TODAY));
+  assert.throws(() => checkJobs(toy([...JOBS_TODAY, 'Portable'])), 'un trabajo de más frena');
+  assert.throws(() => checkJobs(toy(JOBS_TODAY.slice(1))), 'uno de menos frena');
+});
+
 test('PortablePipeline_Yaml_OwnScenario_StepsThroughRehearse_NoSecrets', { skip: !fs.existsSync(PIPELINE) && 'NO MEDIDO — este árbol no trae pipelines/azure-pipelines-windows.yml (vive en el repo del equipo)' }, () => {
   const yml = fs.readFileSync(PIPELINE, 'utf8');
   const code = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -70,8 +87,7 @@ test('PortablePipeline_Yaml_OwnScenario_StepsThroughRehearse_NoSecrets', { skip:
   assert.ok(scenario, 'el parámetro scenario, con su lista cerrada de valores');
   assert.strictEqual(scenario[1], 'measure', 'sin decir nada sigue corriendo measure');
   assert.ok(scenario[2].split(/\s*-\s*/).map((s) => s.trim()).includes('portable'), 'portable es un valor del parámetro');
-  const jobs = [...code.matchAll(/^ {2}- job: (\w+)/gm)].map((m) => m[1]);
-  assert.deepStrictEqual(jobs, ['Bundle', 'Windows', 'Sources', 'Rehearsal'], 'no suma trabajos: usa los dos de los ensayos');
+  const jobs = checkJobs(code);
   const job = (name) => code.slice(code.indexOf(`- job: ${name}`), jobs[jobs.indexOf(name) + 1] ? code.indexOf(`- job: ${jobs[jobs.indexOf(name) + 1]}`) : undefined);
   // corre en los dos trabajos de los ensayos, y NO en los de measure
   for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', [^)]*'portable'[^)]*\)/, `${name} corre con portable`);
