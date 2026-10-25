@@ -2116,3 +2116,35 @@ test('T10 ModelProvider_SetEscribe @story-2.73 @ac-8', () => {
   assert.match(ex.stdout, /^ {2}models\.provider = ollama \(maquina\)$/m);
   assert.equal(cli(['set', 'models.provider', 'gemma'], { home, env }).status, 2, 'un valor fuera de la lista no se escribe');
 });
+
+test('T9 Config_CapMachineWins_FolderMachineOnly @story-8.122 @ac-9: el tope de la máquina gana al del perfil; sin ninguno, 3 sin-valor; la carpeta de firmas en el perfil es inválida', () => {
+  // the cap in the profile and another in the machine file: the machine wins
+  const home = casa();
+  maquina(home, { coordination: { max_working: 5 } });
+  const c = cargar({ home, arnes: arnesCon({ coordination: { max_working: 4 } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual(lib().coordinacion(c).max_working, { value: 5, origin: 'maquina' });
+  // only in the profile
+  const p = cargar({ home: casa(), arnes: arnesCon({ coordination: { max_working: 4 } }) });
+  assert.deepEqual(lib().coordinacion(p).max_working, { value: 4, origin: 'perfil' });
+  // the variable wins over both
+  const v = cargar({ home, arnes: arnesCon({ coordination: { max_working: 4 } }), env: { TYCON_COORDINATION_MAX_WORKING: '2' } });
+  assert.deepEqual(lib().coordinacion(v).max_working, { value: 2, origin: 'env' });
+  // nowhere: 3, with no origin
+  const nada = cargar({ home: casa(), arnes: arnesCon({}) });
+  assert.deepEqual(lib().coordinacion(nada).max_working, { value: 3, origin: 'sin-valor' });
+  assert.deepEqual(lib().coordinacion(nada).owner_folder, { value: null, origin: 'sin-valor' });
+  // a cap that is not a whole number in range is a broken configuration
+  const roto = cargar({ home: casa(), arnes: arnesCon({ coordination: { max_working: 0 } }) });
+  assert.ok(roto.errores.some((e) => e.clave === 'coordination.max_working'), JSON.stringify(roto.errores.map((e) => e.clave)));
+  // the owner's signatures folder: valid from the machine file, invalid in the profile, with the reason
+  const hm = casa();
+  maquina(hm, { coordination: { owner_folder: '~/firmas' } });
+  const m = cargar({ home: hm, arnes: arnesCon({}) });
+  assert.deepEqual(m.errores, []);
+  assert.deepEqual(lib().coordinacion(m).owner_folder, { value: path.join(hm, 'firmas'), origin: 'maquina' });
+  const enPerfil = cargar({ home: casa(), arnes: arnesCon({ coordination: { owner_folder: '/r/firmas' } }) });
+  const err = enPerfil.errores.find((e) => e.clave === 'coordination.owner_folder');
+  assert.ok(err, JSON.stringify(enPerfil.errores.map((e) => e.clave)));
+  assert.match(err.motivo, /es de la máquina/);
+});
