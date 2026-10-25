@@ -6,7 +6,7 @@
  * lib/steps.js y del archivo de cada paso (su línea **Objetivo** y las guías que cita); los revisores del núcleo, de la
  * tabla declarada de pipeline.js (CORE_REVIEWERS, que una prueba ata a computeAdvisorSet); los de los paquetes, de sus
  * manifiestos, leídos con el validador del pipeline; los controles, de scripts/setup/hooks-list.json y de la tabla de
- * los despachadores (dispatch.js); lo que se suma según la historia, de STORY_CONDITIONALS, cuyas filas nombran la
+ * los despachadores (dispatch.js), y los frenos del cierre de cada paso, de STEP_CLOSE_CHECKS de lib/steps.js; lo que se suma según la historia, de STORY_CONDITIONALS, cuyas filas nombran la
  * función del arnés que decide cada pieza; lo de la organización, de los lectores de configuración del arnés aplicados
  * al clon de su perfil, nunca a la máquina donde corre el sitio.
  *
@@ -38,8 +38,9 @@ const PER_REPO_INTEGRATIONS = Object.freeze(['ado']);
 function stepFile(archivo) { return `${STEPS_DIR.split(path.sep).join('/')}/${archivo}`; }
 const INTEGRATION_PIECES = Object.freeze([
   // las dos de horas son de la herramienta que elija la organización (`timeTool`): el núcleo no las ata a ninguna
-  { id: 'timeTrackingStart', step: 'start', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-01-start.md') },
-  { id: 'workItemActive', step: 'start', integration: 'ado', textKey: 'piezaOrg.pedidoDeTrabajoActivo', code: stepFile('step-01-start.md') },
+  // `anchor`: el título del archivo al que salta el enlace, como lo arma GitHub
+  { id: 'timeTrackingStart', step: 'start', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-01-start.md'), anchor: 'parte-opcional-el-aviso-de-trabajo' },
+  { id: 'workItemActive', step: 'start', integration: 'ado', textKey: 'piezaOrg.pedidoDeTrabajoActivo', code: stepFile('step-01-start.md'), anchor: 'parte-opcional-el-pedido-de-trabajo' },
   { id: 'workItemClose', step: 'close-work-item', integration: 'ado', textKey: 'piezaOrg.pedidoDeTrabajoCierra', code: stepFile('close-work-item.md') },
   { id: 'timeTrackingClose', step: 'close-work-item', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('close-work-item.md') },
 ].map(Object.freeze));
@@ -231,7 +232,7 @@ const conStory = (fn) => (mod, probe, ctx) => fn(mod, ctx.story, ctx.content, ct
  * (`yes`) y una que no (`no`). checkConditionals las corre por la función real.
  */
 const STORY_CONDITIONALS = Object.freeze([
-  { id: 'adoWorkItem', steps: ['start'], code: 'skills/tycon-pipeline/steps/step-01-start.md', guide: 'guides/integrations/ado-projects.md', textKey: 'segun.pedidoAdo',
+  { id: 'adoWorkItem', steps: ['start'], code: 'skills/tycon-pipeline/steps/step-01-start.md', anchor: 'parte-opcional-el-pedido-de-trabajo', guide: 'guides/integrations/ado-projects.md', textKey: 'segun.pedidoAdo',
     decider: { module: 'skills/tycon-pipeline/scripts/pipeline.js', fn: 'parseFrontmatterPipeline' },
     decide: conStory((fn, story, content) => Boolean(require(path.join(CODE, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fn(content)))),
     probes: { yes: { story: '---\nstory: "9.9"\nwork_item: 1234\n---\n' }, no: { story: '---\nstory: "9.9"\n---\n' } } },
@@ -446,6 +447,26 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     }
   })();
   const pasos = readSteps(treeDir);
+  // la tabla de frenos del cierre del árbol; uno anterior a ella no trae ni la tabla ni closeControlsByStep. Con el
+  // esquema nuevo y la tabla ausente o mal formada, los pasos saldrían sin frenos: se dice
+  const libPasos = require(path.join(treeDir, STEPS_FILE));
+  const esquemaNuevo = libPasos.STEP_CLOSE_CHECKS !== undefined || typeof libPasos.closeControlsByStep === 'function';
+  const problemasDelCierre = esquemaNuevo && !Array.isArray(libPasos.STEP_CLOSE_CHECKS)
+    ? [`${rel(STEPS_FILE)}: STEP_CLOSE_CHECKS no es una lista: los frenos del cierre de cada paso no se muestran`] : [];
+  // una fila que no es una fila, o que nombra un paso que no existe, no se mostraría en ningún lado: se dice y se sigue
+  const idsDePasos = new Set(pasos.map((s) => s.id));
+  const frenosDelCierre = (Array.isArray(libPasos.STEP_CLOSE_CHECKS) ? libPasos.STEP_CLOSE_CHECKS : []).filter((r, i) => {
+    if (!r || typeof r !== 'object') {
+      problemasDelCierre.push(`${rel(STEPS_FILE)}: STEP_CLOSE_CHECKS[${i}] no es una fila: ese freno del cierre no se muestra`);
+      return false;
+    }
+    const ajenos = [r.shownIn, r.checkedIn].filter((id) => !idsDePasos.has(id));
+    if (ajenos.length) {
+      problemasDelCierre.push(`${rel(STEPS_FILE)}: STEP_CLOSE_CHECKS[${i}] (${r.key}) nombra un paso que no existe: ${ajenos.join(', ')}`);
+      return false;
+    }
+    return true;
+  });
   const steps = pasos.map((s) => {
     const core = (grupo) => (s.id === 'reviewers' ? PIPE.CORE_REVIEWERS.filter((r) => r.group === grupo).map((r) => ({ agent: r.agent, whenKey: r.whenKey, file: `agents/${r.agent}.md` })) : []);
     const grupos = s.id === 'validate-story' ? ['validacion'] : s.id === 'reviewers' ? ['base', 'condicional'] : [];
@@ -472,8 +493,10 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     return {
       ...s, reviewers: bloque, controls: [...propios.values()],
       orgPiecesDeclared: declaradas.length,
-      orgPieces: declaradas.filter((f) => !piezaApagada(f)).map((f) => ({ id: f.id, integration: f.timeTool ? (toolLabel ? org.timeTracking : null) : f.integration, timeTool: Boolean(f.timeTool), textKey: f.textKey, code: f.code })),
-      storyPieces: STORY_CONDITIONALS.filter((c) => c.steps.includes(s.id)).map((c) => ({ id: c.id, code: c.code, guide: c.guide, textKey: c.textKey })),
+      orgPieces: declaradas.filter((f) => !piezaApagada(f)).map((f) => ({ id: f.id, integration: f.timeTool ? (toolLabel ? org.timeTracking : null) : f.integration, timeTool: Boolean(f.timeTool), textKey: f.textKey, code: f.code, anchor: f.anchor || null })),
+      storyPieces: STORY_CONDITIONALS.filter((c) => c.steps.includes(s.id)).map((c) => ({ id: c.id, code: c.code, anchor: c.anchor || null, guide: c.guide, textKey: c.textKey })),
+      // los frenos del cierre que este paso muestra (`checkedIn`: el paso cuyo cierre los revisa)
+      closeChecks: frenosDelCierre.filter((r) => r.shownIn === s.id).map((r) => ({ key: r.key, checkedIn: r.checkedIn, textKey: r.textKey, gate: r.gate || null, code: rel(path.join(PIPELINE_SCRIPTS, 'marker.js')) })),
     };
   });
   const enTodo = new Map();
@@ -488,7 +511,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     profile: { state: profileDir ? 'leido' : (profileState || 'no_configurado'), reason: profileReason || null },
     packs: packs.map((p) => ({ name: p.name, origin: p.origin, problems: p.problems, missing: p.missing || [], reviewers: p.reviewers.map((r) => r.agent) })),
     // lo que no se pudo leer de las fuentes del arnés: la pantalla lo dice, no lo esconde detrás de un «no hay»
-    problems: [...pasos.flatMap((s) => s.problems), ...problemasDeControles.map((p) => `${p.spec}: ${p.message}`)],
+    problems: [...pasos.flatMap((s) => s.problems), ...problemasDelCierre, ...problemasDeControles.map((p) => `${p.spec}: ${p.message}`)],
   };
 }
 

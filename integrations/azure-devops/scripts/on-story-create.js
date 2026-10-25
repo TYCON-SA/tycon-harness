@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * tycon-story-work-item — PostToolUse hook (matcher: Write).
+ * Integración Azure DevOps — PostToolUse hook (matcher: Write). Lo lanza dispatch.js con la integración prendida.
  *
  * Cuando el agente hace Write de un archivo `.md`, detecta si es una story
  * Mary+GOLD recién creada SIN `work_item:` (ni su nombre viejo `ado_work_item:`) en el frontmatter. Si lo es,
@@ -81,8 +81,8 @@ if (!filePath.endsWith('.md')) process.exit(0);
 // Skip tooling/config — no son stories de implementación.
 const home = os.homedir();
 if (filePath.startsWith(path.join(home, '.claude'))) process.exit(0);
-// el arnés por cualquiera de sus dos nombres, como segmento de ruta (escritos acá: las skills pueden
-// vivir en un clon aparte sin scripts/ al lado — copia declarada en scripts/tests/fixtures/harness-place-names.json)
+// el arnés por cualquiera de sus dos nombres, como segmento de ruta (escritos acá, para correr aunque falte
+// scripts/lib al lado — copia declarada en scripts/tests/fixtures/harness-place-names.json)
 if (/(^|[\\/])(tycon-claude-guides|tycon-harness)([\\/]|$)/.test(filePath)) process.exit(0);
 
 const fm = extractFrontmatter(content);
@@ -97,8 +97,8 @@ const hasApproach = /^approach:[ \t]*\S/m.test(fm);
 if (!(hasStory && hasEpic && hasStatus && hasApproach)) process.exit(0);
 
 // Ya linkeada → nada que hacer (también evita re-trigger en re-writes). El campo, con su nombre o el viejo, y con
-// cualquier valor (también `TBD`: alguien ya lo anotó). Los dos nombres los da el lector del arnés; una skill que vive
-// en un clon aparte, sin scripts/ al lado, usa los mismos dos escritos acá.
+// cualquier valor (también `TBD`: alguien ya lo anotó). Los dos nombres los da el lector del arnés; sin scripts/lib al
+// lado, usa los mismos dos escritos acá.
 let nombres = ['work_item', 'ado_work_item'];
 try {
   const CAMPO = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'platform', 'work-item-field.js'));

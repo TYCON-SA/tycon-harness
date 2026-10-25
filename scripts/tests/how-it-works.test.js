@@ -966,7 +966,7 @@ test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada
 
 test('T30 ComoTrabaja_CadaControlDeclaraSuIntegracion @story-2.61.3 @ac-4 — un control de ADO o del registro de horas lo declara', () => {
   const { controls } = HIW().readControls(ROOT);
-  const deIntegracion = { 'tycon-story-work-item/': 'ado', 'clocki/': 'clockify' };
+  const deIntegracion = { 'integrations/azure-devops/': 'ado', 'clocki/': 'clockify' };
   for (const c of controls) {
     for (const [parte, integ] of Object.entries(deIntegracion)) {
       if (c.script.includes(parte)) assert.strictEqual(c.integration, integ, `${c.spec} (${c.script})`);
@@ -995,7 +995,10 @@ test('T31 ComoTrabaja_CadaControlDiceQueHace @story-2.61.3 @ac-5 — el título 
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
   for (const c of [...m.allSteps.controls, ...m.steps.flatMap((x) => x.controls)]) {
     const li = html.split(`data-piece="${c.script}"`)[1].split('</li>')[0];
-    assert.ok(li.includes(`<span class="ct-nom sans">${c.control ? c.control.es : TX().t('es', `control.${c.spec}`)}</span>`), `${c.spec}: su título`);
+    // el texto de su momento si lo tiene; si no, el del control
+    const delMomento = (() => { try { return TX().t('es', `control.${c.spec}@${c.event}`); } catch { return null; } })();
+    const titulos = c.control ? [c.control.es] : [delMomento, TX().t('es', `control.${c.spec}`)].filter(Boolean);
+    assert.ok(titulos.some((t) => html.includes(`<span class="ct-nom sans">${t}</span>`)), `${c.spec}: su título`);
     assert.ok(li.includes(`<span class="ct-archivo">${c.script}</span>`), `${c.spec}: el archivo debajo`);
   }
 });
@@ -1410,4 +1413,196 @@ test('T11 NoEditable_SoloRoto @story-2.63 @ac-11 — un paquete sano se edita en
     assert.ok(enLaRaiz.includes(prefijo), `${idioma}: con el .md en la raíz, roto`);
     assert.match(enLaRaiz, /tienen que estar en packs\/acme-clientes\/agents\/acme-hermanos-reviewer\.md/);
   }
+});
+
+// ════════════════════════════════════════ lo que pasa en cada paso (8.127) ════════════════════════════════════════
+
+const STEPS_LIB = () => require(path.join(SCRIPTS, 'lib', 'steps.js'));
+const paginaEs = () => TAB().renderPage(HIW().buildModel({ treeDir: ROOT, profileDir: null }), { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+const ITEMS = (sec) => sec.split('<li ').slice(1).map((li) => li.split('</li>')[0]);
+const itemDe = (sec, texto) => ITEMS(sec).find((li) => li.includes(texto)) || '';
+const tieneChip = (li, efecto) => li.includes(`ct-chip ${efecto}">${TX().t('es', `comoTrabaja.${efecto}`)}<`);
+// el ancla que arma GitHub para un título: minúsculas, sin signos, espacios a guiones
+const anclaDe = (titulo) => titulo.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+
+test('HowItWorks_AdoStoryCreate_LivesInItsIntegration @story-8.127 @ac-1 — el gancho del pedido de ADO vive en su integración', () => {
+  const { CHAINS } = require(path.join(SCRIPTS, 'dispatch.js'));
+  const e = Object.values(CHAINS).flat().find((c) => c.name === 'ado-story-create');
+  assert.ok(e, 'la cadena trae ado-story-create');
+  assert.strictEqual(path.relative(ROOT, e.path).split(path.sep).join('/'), 'integrations/azure-devops/scripts/on-story-create.js');
+  assert.ok(fs.existsSync(e.path), 'el archivo existe');
+  assert.ok(!fs.existsSync(path.join(ROOT, 'skills', 'tycon-story-work-item', 'scripts', 'on-story-create.js')), 'la skill ya no lo trae');
+  const c = HIW().readControls(ROOT).controls.find((x) => x.spec === 'ado-story-create');
+  assert.strictEqual(c.script, 'integrations/azure-devops/scripts/on-story-create.js', '«Cómo trabaja» lo muestra en su casa nueva');
+});
+
+test('HowItWorks_AdoStoryCreate_RenameAndSuperseded @story-8.127 @ac-2 — la ruta vieja, reemplazada y en el mapa de renombres', () => {
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+  assert.ok(lista.superseded.includes('tycon-story-work-item/scripts/on-story-create.js'), 'superseded nombra la ruta vieja');
+  // el mapa de renombres viaja sólo con el privado: con él debajo, trae la mudanza
+  const mapa = path.join(ROOT, 'scripts', 'lib', 'renames.json');
+  if (fs.existsSync(mapa)) {
+    const e = JSON.parse(fs.readFileSync(mapa, 'utf8')).entries;
+    assert.ok(e.some((x) => x.kind === 'file' && x.old === 'skills/tycon-story-work-item/scripts/on-story-create.js' && x.new === 'integrations/azure-devops/scripts/on-story-create.js'), 'renames.json trae la mudanza');
+  }
+});
+
+test('HowItWorks_ControlTextPerMoment_MatchesItsTag @story-8.127 @ac-4 — el texto de cada control dice lo que dice su etiqueta', () => {
+  const html = paginaEs();
+  const casos = [
+    ['@tcg:retro-pending.js', 'scripts/hooks/retro-pending.js', 'close-work-item', 'Stop'],
+    ['@tcg:unpushed-work-notice.js', 'scripts/hooks/unpushed-work-notice.js', 'prepare-commit', 'Stop'],
+    ['@tcg:session-collision-guard.js', 'scripts/hooks/session-collision-guard.js', 'todo', 'PreToolUse'],
+  ];
+  for (const [spec, script, dondeFrena, momentoQueFrena] of casos) {
+    for (const idioma of ['es', 'en']) for (const ev of ['SessionStart', momentoQueFrena]) assert.ok(TX().t(idioma, `control.${spec}@${ev}`), `${spec}@${ev}: ${idioma}`);
+    const textoAvisa = TX().t('es', `control.${spec}@SessionStart`);
+    const textoFrena = TX().t('es', `control.${spec}@${momentoQueFrena}`);
+    assert.match(textoAvisa, /^Avisa/, `${spec}: en «Arrancar» el texto dice que avisa`);
+    assert.doesNotMatch(textoAvisa, /fren/i, `${spec}: en «Arrancar» el texto no dice que frena`);
+    assert.match(textoFrena, /^Frena/, `${spec}: donde frena, el texto dice que frena`);
+    const avisa = ITEMS(seccionDe(html, 'start')).find((li) => li.includes(`data-piece="${script}"`)) || '';
+    assert.ok(tieneChip(avisa, 'avisa') && !tieneChip(avisa, 'frena'), `${spec}: en «Arrancar», «avisa»`);
+    assert.ok(avisa.includes(textoAvisa), `${spec}: en «Arrancar», el texto de su momento`);
+    const frena = ITEMS(seccionDe(html, dondeFrena)).find((li) => li.includes(`data-piece="${script}"`)) || '';
+    assert.ok(tieneChip(frena, 'frena') && !tieneChip(frena, 'avisa'), `${spec}: en ${dondeFrena}, «frena»`);
+    assert.ok(frena.includes(textoFrena), `${spec}: en ${dondeFrena}, el texto de su momento`);
+  }
+});
+
+test('HowItWorks_MixedEffects_RequireTextPerMoment @story-8.127 @ac-5 — un control con efectos distintos pide su texto por momento', () => {
+  const T2 = TAB();
+  // el árbol de hoy: ninguno falta
+  assert.deepStrictEqual(T2.momentTextProblems(HIW().buildModel({ treeDir: ROOT, profileDir: null })), []);
+  // uno de juguete: avisa al abrir la sesión y frena al cerrar la respuesta, sin textos por momento
+  const juguete = { spec: '@tcg:juguete.js', script: 'scripts/hooks/juguete.js', control: null };
+  const model = {
+    steps: [{ id: 'start', controls: [{ ...juguete, event: 'SessionStart', effect: 'warns' }] }, { id: 'prepare-commit', controls: [{ ...juguete, event: 'Stop', effect: 'blocks' }] }],
+    allSteps: { controls: [] },
+  };
+  const p = T2.momentTextProblems(model);
+  assert.deepStrictEqual(p.map((x) => `${x.spec}@${x.event}`).sort(), ['@tcg:juguete.js@SessionStart', '@tcg:juguete.js@Stop']);
+  for (const x of p) assert.match(x.message, /control\.@tcg:juguete\.js@(SessionStart|Stop)/, 'nombra la clave que falta');
+  // con un mismo efecto en todos lados no pide nada
+  model.steps[1].controls[0].effect = 'warns';
+  assert.deepStrictEqual(T2.momentTextProblems(model), []);
+});
+
+test('HowItWorks_Controls_GroupedByEffect @story-8.127 @ac-6 — «Frenan», «Avisan», «Anotan», los opcionales al final, sin grupos vacíos', () => {
+  const html = paginaEs();
+  const titulo = (k) => `<p class="ct-grupo">${TX().t('es', `comoTrabaja.${k}`)}</p>`;
+  const orden = ['grupoFrenan', 'grupoAvisan', 'grupoAnotan', 'grupoOpcionales'];
+  const efectoDe = { grupoFrenan: 'frena', grupoAvisan: 'avisa', grupoAnotan: 'anota' };
+  for (const id of ['start', 'implement', 'todo']) {
+    const sec = seccionDe(html, id);
+    const bloque = sec.slice(sec.indexOf(`<h3>${TX().t('es', 'comoTrabaja.controles')}</h3>`));
+    const presentes = orden.filter((k) => bloque.includes(titulo(k)));
+    assert.ok(presentes.length >= 2, `${id}: al menos dos grupos (${presentes})`);
+    const posiciones = presentes.map((k) => bloque.indexOf(titulo(k)));
+    assert.deepStrictEqual(posiciones, [...posiciones].sort((a, b) => a - b), `${id}: en orden`);
+    for (const [i, k] of presentes.entries()) {
+      const items = ITEMS(bloque.slice(posiciones[i], i + 1 < presentes.length ? posiciones[i + 1] : undefined));
+      assert.ok(items.length, `${id}: ${k} no está vacío`);
+      for (const li of items) {
+        if (efectoDe[k]) assert.ok(tieneChip(li, efectoDe[k]) && !li.startsWith('class="ct-pieza apagada"'), `${id}/${k}: ${li.slice(0, 160)}`);
+        else assert.ok(li.startsWith('class="ct-pieza apagada"'), `${id}/${k}: un opcional apagado`);
+      }
+      // dentro de cada grupo, por orden alfabético del texto
+      const nombres = items.map((li) => (/<span class="ct-nom[^"]*">([^<]*)</.exec(li) || [])[1]);
+      assert.deepStrictEqual(nombres, [...nombres].sort((a, b) => a.localeCompare(b, 'es')), `${id}/${k}: alfabético`);
+    }
+  }
+  // un paso sin controles de un efecto no dibuja ese título
+  const m = HIW().buildModel({ treeDir: ROOT, profileDir: null });
+  const sinAnotan = { ...m, steps: m.steps.map((x) => ({ ...x, controls: x.controls.filter((c) => c.effect !== 'records') })), allSteps: { controls: m.allSteps.controls.filter((c) => c.effect !== 'records') } };
+  assert.ok(!TAB().renderPage(sinAnotan, { idioma: 'es', publicRepo: PUBLICO, version: 'v' }).includes(titulo('grupoAnotan')), 'sin «Anotan»');
+});
+
+test('HowItWorks_StartLinks_JumpToTheirSection @story-8.127 @ac-7 — los enlaces de ADO y de horas de «Arrancar» saltan a su sección', () => {
+  const sec = seccionDe(paginaEs(), 'start');
+  const enlaces = (texto) => [...itemDe(sec, texto).matchAll(/href="([^"]+)"/g)].map((x) => x[1]);
+  const archivo = `${PUBLICO}/blob/main/skills/tycon-pipeline/steps/step-01-start.md`;
+  for (const clave of ['piezaOrg.pedidoDeTrabajoActivo', 'segun.pedidoAdo.pieza']) {
+    assert.ok(enlaces(TX().t('es', clave)).includes(`${archivo}#parte-opcional-el-pedido-de-trabajo`), `${clave}: ${enlaces(TX().t('es', clave))}`);
+  }
+  assert.ok(enlaces(TX().t('es', 'piezaOrg.registroDeHorasAbre')).includes(`${archivo}#parte-opcional-el-aviso-de-trabajo`), 'las horas');
+});
+
+test('HowItWorks_Anchors_ExistInTheirFile @story-8.127 @ac-8 — cada ancla es la de un título de su archivo', () => {
+  const H2 = HIW();
+  const titulosDe = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n').filter((l) => /^#{1,6}\s/.test(l)).map((l) => anclaDe(l.replace(/^#+\s+/, '')));
+  const conAncla = [...H2.INTEGRATION_PIECES, ...H2.STORY_CONDITIONALS].filter((p) => p.anchor);
+  assert.ok(conAncla.length >= 3, `${conAncla.length} piezas con ancla`);
+  for (const p of conAncla) assert.ok(titulosDe(p.code).includes(p.anchor), `${p.id}: ${p.code} no tiene un título con el ancla ${p.anchor}`);
+  assert.strictEqual(anclaDe('Parte opcional: el pedido de trabajo'), 'parte-opcional-el-pedido-de-trabajo');
+  // un archivo sin ese título no da el ancla: si el título cambia, la prueba falla
+  assert.ok(!titulosDe('skills/tycon-pipeline/steps/step-03-plan.md').includes('parte-opcional-el-pedido-de-trabajo'));
+});
+
+test('HowItWorks_CloseChecks_ShownAsBlocks @story-8.127 @ac-9 — cada paso muestra su freno del cierre con «frena»', () => {
+  const html = paginaEs();
+  const S = STEPS_LIB();
+  for (const id of ['approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'prepare-commit']) {
+    const filas = S.STEP_CLOSE_CHECKS.filter((r) => r.shownIn === id);
+    assert.ok(filas.length, `${id}: tiene su freno del cierre`);
+    for (const r of filas) {
+      const li = itemDe(seccionDe(html, id), TX().t('es', r.textKey));
+      assert.ok(li && tieneChip(li, 'frena'), `${id}: ${r.textKey} con «frena»`);
+      assert.ok(li.includes('data-piece="skills/tycon-pipeline/scripts/marker.js"'), `${id}: el código del freno`);
+    }
+  }
+  assert.match(TX().t('es', S.STEP_CLOSE_CHECKS.find((r) => r.shownIn === 'reviewers').textKey), /conteo real de revisores/);
+  const pase = S.STEP_CLOSE_CHECKS.find((r) => r.shownIn === 'adversarial-pass');
+  assert.match(TX().t('es', pase.textKey), /commit/);
+  assert.match(TX().t('es', pase.textKey), /resultado/);
+  // el del pase dice en qué paso se revisa
+  assert.ok(itemDe(seccionDe(html, 'adversarial-pass'), TX().t('es', pase.textKey)).includes(TX().t('es', 'paso.prepare-commit')), 'dice que frena al preparar el commit');
+  for (const idioma of ['es', 'en']) for (const r of S.STEP_CLOSE_CHECKS) assert.ok(TX().t(idioma, r.textKey), `${r.textKey} en ${idioma}`);
+});
+
+test('HowItWorks_CloseChecks_MatchCompleteStep @story-8.127 @ac-10 — la tabla de frenos del cierre es lo que revisa marker.js', () => {
+  const S = STEPS_LIB();
+  const porPaso = S.closeControlsByStep();
+  const ids = new Set([...S.STEPS.map((s) => s.id), S.CLOSE_STEP.id]);
+  const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  assert.match(marker, /const CONTROLES_DEL_PASO = STEPS_LIB\.closeControlsByStep\(\);/, 'marker.js arma su tabla con la de steps.js');
+  for (const r of S.STEP_CLOSE_CHECKS) {
+    assert.ok(ids.has(r.shownIn) && ids.has(r.checkedIn), `${r.textKey}: pasos que existen`);
+    assert.ok((porPaso[r.checkedIn] || []).includes(r.key), `${r.textKey}: ${r.key} se revisa al cerrar ${r.checkedIn}`);
+    assert.ok(marker.includes(`controles.has('${r.key}')`), `${r.textKey}: marker.js revisa ${r.key}`);
+  }
+  // ninguna clave de la tabla del marcador queda sin fila
+  for (const s of S.STEPS.map((x) => x.id)) {
+    for (const k of porPaso[s] || []) assert.ok(S.STEP_CLOSE_CHECKS.some((r) => r.checkedIn === s && r.key === k), `${s}/${k}: sin fila`);
+  }
+  // la fila del pase nombra su freno propio, que vive dentro del control de su clave
+  const pase = S.STEP_CLOSE_CHECKS.find((r) => r.shownIn === 'adversarial-pass');
+  assert.strictEqual(pase.gate, 'adversarial-result');
+  assert.strictEqual(pase.checkedIn, 'prepare-commit');
+  const i = marker.indexOf(`name: '${pase.gate}-gate'`);
+  assert.ok(i > 0, 'marker.js tiene el freno del pase');
+  const antes = [...marker.slice(0, i).matchAll(/if \(controles\.has\('([\w-]+)'\)\) \{/g)].pop();
+  assert.strictEqual(antes && antes[1], pase.key, `el freno del pase vive dentro del control «${pase.key}»`);
+});
+
+test('HowItWorks_CloseChecks_BrokenTable_Said @story-8.127 @ac-9 — un árbol con el esquema nuevo y la tabla rota lo dice; uno viejo, no', () => {
+  const paso = { 'skills/tycon-pipeline/steps/a.md': '# A\n\n**Objetivo**: a.\n' };
+  const viejo = carpeta({ ...paso, 'skills/tycon-pipeline/scripts/lib/steps.js': "module.exports = { STEPS: [{ id: 'a', name: 'A', file: 'a.md' }] };\n" });
+  const roto = carpeta({ ...paso, 'skills/tycon-pipeline/scripts/lib/steps.js': "module.exports = { STEPS: [{ id: 'a', name: 'A', file: 'a.md' }], closeControlsByStep() { return {}; } };\n" });
+  const delCierre = (arbol) => HIW().buildModel({ treeDir: arbol, profileDir: null }).problems.filter((p) => /STEP_CLOSE_CHECKS/.test(p));
+  assert.deepStrictEqual(delCierre(viejo), [], 'un árbol anterior a la tabla no avisa');
+  assert.strictEqual(delCierre(roto).length, 1, 'con closeControlsByStep y sin la tabla, avisa');
+});
+
+test('HowItWorks_CloseChecks_BrokenRow_Said @story-8.127 @ac-9 — una fila que nombra un paso que no existe, o que no es una fila, se dice y no tumba la página', () => {
+  const paso = { 'skills/tycon-pipeline/steps/a.md': '# A\n\n**Objetivo**: a.\n' };
+  const conTabla = (filas) => carpeta({ ...paso, 'skills/tycon-pipeline/scripts/lib/steps.js': `module.exports = { STEPS: [{ id: 'a', name: 'A', file: 'a.md' }], STEP_CLOSE_CHECKS: ${filas} };\n` });
+  const modelo = (arbol) => HIW().buildModel({ treeDir: arbol, profileDir: null });
+  const delCierre = (m) => m.problems.filter((p) => /STEP_CLOSE_CHECKS/.test(p));
+  const errado = modelo(conTabla("[{ shownIn: 'typo', checkedIn: 'a', key: 'plan', oldKeys: [], textKey: 'x' }]"));
+  assert.strictEqual(delCierre(errado).length, 1, 'el paso que no existe se dice');
+  assert.match(delCierre(errado)[0], /typo/);
+  const nula = modelo(conTabla("[null, { shownIn: 'a', checkedIn: 'a', key: 'plan', oldKeys: [], textKey: 'x' }]"));
+  assert.strictEqual(delCierre(nula).length, 1, 'la fila que no es una fila se dice');
+  assert.deepStrictEqual(nula.steps.find((s) => s.id === 'a').closeChecks.map((c) => c.key), ['plan'], 'las filas sanas se siguen mostrando');
 });

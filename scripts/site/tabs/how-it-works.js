@@ -80,7 +80,8 @@ function renderPage(model, { idioma, publicRepo, version }) {
   const T = (k, v) => TX.t(idioma, k, v);
   const nombrePaso = (s) => { try { return T(`paso.${s.id}`); } catch { return s.name; } };
   const chip = (clase, texto) => `<span class="ct-chip ${clase}">${esc(texto)}</span>`;
-  const ver = (ruta, clave = 'comoTrabaja.verCodigo') => (publicRepo ? `<a class="btn" href="${esc(`${publicRepo}/blob/main/${ruta}`)}" target="_blank" rel="noopener">${esc(T(clave))}</a>` : '');
+  // `ancla`: la sección del archivo a la que salta el enlace
+  const ver = (ruta, clave = 'comoTrabaja.verCodigo', ancla = null) => (publicRepo ? `<a class="btn" href="${esc(`${publicRepo}/blob/main/${ruta}${ancla ? `#${ancla}` : ''}`)}" target="_blank" rel="noopener">${esc(T(clave))}</a>` : '');
   // sin repo público, la mejora no tiene adónde ir: no se dibuja un botón que no hace nada
   const mejorar = (ruta, paso) => (!publicRepo ? '' : `<button type="button" class="btn" data-action="improve" data-piece="${esc(ruta)}" data-step-name="${esc(paso)}" aria-expanded="false">${esc(T('comoTrabaja.proponerMejora'))}</button>`);
   const pieza = ({ origin, nombre, mono = true, cuando, chips = [], acciones, ruta, archivo = '', extra = '' }) => `<li class="ct-pieza${extra}" data-origin="${origin}"${ruta ? ` data-piece="${esc(ruta)}"` : ''}><div class="ct-que"><span class="ct-nom${mono ? '' : ' sans'}">${esc(nombre)}</span>${chips.join('')}${cuando ? `<span class="ct-cuando">${esc(cuando)}</span>` : ''}${archivo ? `<span class="ct-archivo">${esc(archivo)}</span>` : ''}</div><div class="ct-acc">${acciones}</div></li>`;
@@ -92,14 +93,29 @@ function renderPage(model, { idioma, publicRepo, version }) {
   // sabe cuál, y queda «según tu organización»
   const horas = model.org && model.org.timeToolLabel ? chip('horas', model.org.timeToolLabel) : null;
   const marcaDe = (x) => (x.timeTool && horas ? horas : x.integration || x.timeTool ? segunOrg : delArnes);
-  // un control: su título es qué hace y el archivo va debajo; de una integración o del arnés; opcional y apagado de
-  // fábrica, o con su efecto (frena, avisa, anota)
+  // un control: su título es qué hace y el archivo va debajo; de una integración o del arnés; con su efecto (frena,
+  // avisa, anota) y, si es opcional, además apagado de fábrica
   const control = (c, paso) => {
-    const marca = c.optional ? chip('off', T('comoTrabaja.opcional', { variable: c.optional })) : chip(TAG_EFECTO[c.effect][0], T(TAG_EFECTO[c.effect][1]));
-    // el de una integración dice qué hace desde su manifiesto; el del arnés, desde los textos del sitio
-    const nombre = c.control ? (c.control[idioma] || c.control.es) : T(`control.${c.spec}`);
-    return pieza({ origin: 'harness', nombre, mono: false, cuando: T(`comoTrabaja.evento.${c.event}`), chips: [marcaDe(c), marca], ruta: c.script, archivo: c.script, acciones: ver(c.script) + mejorar(c.script, paso), extra: c.optional ? ' apagada' : '' });
+    const efecto = chip(TAG_EFECTO[c.effect][0], T(TAG_EFECTO[c.effect][1]));
+    const apagado = c.optional ? chip('off', T('comoTrabaja.opcional', { variable: c.optional })) : '';
+    // el de una integración dice qué hace desde su manifiesto; el del arnés, desde los textos del sitio, con el texto de
+    // su momento si lo tiene (un mismo guion que avisa al abrir la sesión y frena al cerrar la respuesta)
+    const nombre = c.control ? (c.control[idioma] || c.control.es) : T(TX.TEXTOS[`control.${c.spec}@${c.event}`] ? `control.${c.spec}@${c.event}` : `control.${c.spec}`);
+    return { nombre, grupo: c.optional ? 'optional' : c.effect, html: pieza({ origin: 'harness', nombre, mono: false, cuando: T(`comoTrabaja.evento.${c.event}`), chips: [marcaDe(c), efecto, apagado], ruta: c.script, archivo: c.script, acciones: ver(c.script) + mejorar(c.script, paso), extra: c.optional ? ' apagada' : '' }) };
   };
+  // un freno del cierre del paso: lo revisa marker.js al cerrar ese paso o, si es otro, lo dice
+  const frenoDelCierre = (r, s, paso) => {
+    const nombre = T(r.textKey);
+    const cuando = r.checkedIn === s.id ? T('comoTrabaja.alCerrarElPaso') : T('comoTrabaja.alCerrarOtroPaso', { paso: nombrePaso({ id: r.checkedIn, name: r.checkedIn }) });
+    return { nombre, grupo: 'blocks', html: pieza({ origin: 'harness', nombre, mono: false, cuando, chips: [delArnes, chip(TAG_EFECTO.blocks[0], T(TAG_EFECTO.blocks[1]))], ruta: r.code, archivo: r.code, acciones: ver(r.code) + mejorar(r.code, paso) }) };
+  };
+  // los controles agrupados por efecto («Frenan», «Avisan», «Anotan») y los opcionales al final; cada grupo por orden
+  // alfabético y sin títulos de grupos vacíos
+  const GRUPOS = [['blocks', 'comoTrabaja.grupoFrenan'], ['warns', 'comoTrabaja.grupoAvisan'], ['records', 'comoTrabaja.grupoAnotan'], ['optional', 'comoTrabaja.grupoOpcionales']];
+  const agrupados = (items) => GRUPOS.map(([g, clave]) => {
+    const deGrupo = items.filter((x) => x.grupo === g).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    return deGrupo.length ? `<p class="ct-grupo">${esc(T(clave))}</p><ul class="ct-lista">${deGrupo.map((x) => x.html).join('')}</ul>` : '';
+  }).join('');
 
   // la franja de la organización
   let franja;
@@ -152,9 +168,9 @@ function renderPage(model, { idioma, publicRepo, version }) {
     const guias = `<ul class="ct-lista">${s.guides.map((g) => pieza({ origin: 'harness', nombre: g, ruta: g, acciones: ver(g) + mejorar(g, paso) })).join('')}</ul>${s.guides.length > 1 ? '' : `<p class="ct-vacio">${esc(T('comoTrabaja.sinGuias'))}</p>`}`;
     // las piezas de las integraciones de la organización que lleva el paso (sólo en los pasos que declaran alguna)
     const deLaOrgPiezas = !s.orgPiecesDeclared ? '' : bloque(T('comoTrabaja.segunTuOrganizacion'), s.orgPieces.length
-      ? `<ul class="ct-lista">${s.orgPieces.map((x) => pieza({ origin: 'harness', nombre: T(x.textKey), mono: false, chips: [marcaDe(x)], ruta: x.code, archivo: x.code, acciones: ver(x.code) + mejorar(x.code, paso) })).join('')}</ul>`
+      ? `<ul class="ct-lista">${s.orgPieces.map((x) => pieza({ origin: 'harness', nombre: T(x.textKey), mono: false, chips: [marcaDe(x)], ruta: x.code, archivo: x.code, acciones: ver(x.code, undefined, x.anchor) + mejorar(x.code, paso) })).join('')}</ul>`
       : `<p class="ct-vacio">${esc(T('comoTrabaja.sinPiezasOrg'))}</p>`);
-    const segun = s.storyPieces.length ? `<ul class="ct-lista">${s.storyPieces.map((p) => pieza({ origin: 'harness', nombre: T(`${p.textKey}.pieza`), mono: false, cuando: T(p.textKey), chips: [delArnes], ruta: p.code, acciones: ver(p.code) + ver(p.guide, 'comoTrabaja.verGuia') + mejorar(p.code, paso) })).join('')}</ul>` : `<p class="ct-vacio">${esc(T('comoTrabaja.sinSegun'))}</p>`;
+    const segun = s.storyPieces.length ? `<ul class="ct-lista">${s.storyPieces.map((p) => pieza({ origin: 'harness', nombre: T(`${p.textKey}.pieza`), mono: false, cuando: T(p.textKey), chips: [delArnes], ruta: p.code, acciones: ver(p.code, undefined, p.anchor) + ver(p.guide, 'comoTrabaja.verGuia') + mejorar(p.code, paso) })).join('')}</ul>` : `<p class="ct-vacio">${esc(T('comoTrabaja.sinSegun'))}</p>`;
     // los revisores: los del núcleo por grupo, y los de cada paquete
     const grupos = [['always', 'comoTrabaja.grupoSiempre'], ['story', 'comoTrabaja.grupoHistoria'], ['change', 'comoTrabaja.grupoCambio']];
     let rev = grupos.filter(([g]) => s.reviewers[g].length).map(([g, clave]) => `<p class="ct-grupo">${esc(T(clave))}</p><ul class="ct-lista">${s.reviewers[g].map((r) => pieza({ origin: 'harness', nombre: r.agent, cuando: T(r.whenKey), chips: [delArnes], ruta: r.file, acciones: ver(r.file) + mejorar(r.file, paso) })).join('')}</ul>`).join('');
@@ -178,15 +194,39 @@ function renderPage(model, { idioma, publicRepo, version }) {
       if (model.org && !orgPacks.length) rev += `<p class="ct-vacio">${esc(T('comoTrabaja.sinRevisoresOrg'))}</p>`;
     }
     if (!rev) rev = `<p class="ct-vacio">${esc(T('comoTrabaja.sinRevisores'))}</p>`;
-    const controles = s.controls.length ? `<ul class="ct-lista">${s.controls.map((c) => control(c, paso)).join('')}</ul>` : `<p class="ct-vacio">${esc(T('comoTrabaja.sinControles'))}</p>`;
-    return `<section class="ct-paso card" id="paso-${esc(s.id)}" data-step="${esc(s.id)}" data-step-name="${esc(paso)}"><header><h2>${esc(paso)}</h2><p class="ct-goal">${esc(goal || '')}</p></header>${bloque(T('comoTrabaja.guias'), guias)}${deLaOrgPiezas}${bloque(T('comoTrabaja.segun'), segun)}${bloque(T('comoTrabaja.revisores'), rev)}${bloque(T('comoTrabaja.controles'), (s.controls.length ? `<p class="ct-nota">${esc(T('comoTrabaja.leyendaControles'))}</p>` : '') + controles)}</section>`;
+    const itemsDeControl = [...s.controls.map((c) => control(c, paso)), ...(s.closeChecks || []).map((r) => frenoDelCierre(r, s, paso))];
+    const controles = itemsDeControl.length ? `<p class="ct-nota">${esc(T('comoTrabaja.leyendaControles'))}</p>${agrupados(itemsDeControl)}` : `<p class="ct-vacio">${esc(T('comoTrabaja.sinControles'))}</p>`;
+    return `<section class="ct-paso card" id="paso-${esc(s.id)}" data-step="${esc(s.id)}" data-step-name="${esc(paso)}"><header><h2>${esc(paso)}</h2><p class="ct-goal">${esc(goal || '')}</p></header>${bloque(T('comoTrabaja.guias'), guias)}${deLaOrgPiezas}${bloque(T('comoTrabaja.segun'), segun)}${bloque(T('comoTrabaja.revisores'), rev)}${bloque(T('comoTrabaja.controles'), controles)}</section>`;
   }).join('');
   // «En todo el recorrido» es un paso más de la pantalla: el guion que esconde los pasos no elegidos la esconde a ella
-  const todo = model.allSteps.controls.map((c) => control(c, todoNombre)).join('');
-  const enTodo = `<section class="ct-paso card" id="paso-todo" data-step="todo" data-step-name="${esc(todoNombre)}"><header><h2>${esc(todoNombre)}</h2><p class="ct-goal">${esc(T('comoTrabaja.enTodoElRecorridoAyuda'))}</p></header><div class="ct-bloque"><h3>${esc(T('comoTrabaja.controles'))}</h3><p class="ct-nota">${esc(T('comoTrabaja.leyendaControles'))}</p><ul class="ct-lista">${todo}</ul></div></section>`;
+  const todo = agrupados(model.allSteps.controls.map((c) => control(c, todoNombre)));
+  const enTodo = `<section class="ct-paso card" id="paso-todo" data-step="todo" data-step-name="${esc(todoNombre)}"><header><h2>${esc(todoNombre)}</h2><p class="ct-goal">${esc(T('comoTrabaja.enTodoElRecorridoAyuda'))}</p></header><div class="ct-bloque"><h3>${esc(T('comoTrabaja.controles'))}</h3><p class="ct-nota">${esc(T('comoTrabaja.leyendaControles'))}</p>${todo}</div></section>`;
   // lo que no se pudo leer de las fuentes del arnés, arriba de todo: un paso o un control que falta no es «no hay»
   const ilegible = (model.problems || []).length ? `<section class="ct-org card ct-problemas"><h2>${esc(T('comoTrabaja.problemasArnes'))}</h2>${model.problems.map((p) => `<p class="ct-error">${esc(p)}</p>`).join('')}</section>` : '';
   return `<div class="ct" data-version="${esc(version || '')}" data-public-repo="${esc(publicRepo || '')}">${ilegible}${franja}${elegir}<div class="ct-cuerpo">${lista}<div class="ct-detalle">${pasos}${enTodo}<p class="ct-fuente">${esc(T('comoTrabaja.fuente'))}</p></div></div></div>`;
+}
+
+/**
+ * Los controles del arnés que la página muestra con efectos distintos en distintos lugares (avisa en «Arrancar», frena
+ * en otro paso) y a los que les falta el texto de algún momento: sin él, el texto general contradice a una etiqueta.
+ * Devuelve `[{ spec, event, message }]`, uno por control y momento.
+ */
+function momentTextProblems(model) {
+  const porControl = new Map();
+  for (const c of [...model.steps.flatMap((s) => s.controls), ...model.allSteps.controls].filter((x) => !x.control)) {
+    if (!porControl.has(c.spec)) porControl.set(c.spec, []);
+    porControl.get(c.spec).push(c);
+  }
+  const out = [];
+  for (const [spec, cs] of porControl) {
+    if (new Set(cs.map((c) => c.effect)).size < 2) continue;
+    for (const event of [...new Set(cs.map((c) => c.event))]) {
+      const clave = `control.${spec}@${event}`;
+      const faltan = TX.IDIOMAS.filter((i) => !(TX.TEXTOS[clave] && TX.TEXTOS[clave][i]));
+      if (faltan.length) out.push({ spec, event, message: `${spec} frena en un lugar y avisa o anota en otro: falta el texto ${clave} (${faltan.join(', ')}) en scripts/site/texts.js` });
+    }
+  }
+  return out;
 }
 
 // ── el revisor propio: revisar con el lector del pipeline ──
@@ -966,4 +1006,4 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
   ];
 }
 
-module.exports = { crearRutas, renderPage, issueUrl, buildIssueUrl, reviewDraft, draftOf, publicRepoOf, ISSUE_URL_MAX, HERRAMIENTAS, modelosDe, avisoDeModelos, armarAgente, cabeceraDe, camposDe, guion, textosDelGuion };
+module.exports = { crearRutas, renderPage, momentTextProblems, issueUrl, buildIssueUrl, reviewDraft, draftOf, publicRepoOf, ISSUE_URL_MAX, HERRAMIENTAS, modelosDe, avisoDeModelos, armarAgente, cabeceraDe, camposDe, guion, textosDelGuion };

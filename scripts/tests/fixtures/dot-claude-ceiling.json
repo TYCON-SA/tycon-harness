@@ -26,6 +26,7 @@
     "build/deploy-codex-hooks.js": 1,
     "build/deploy-shared-skills.js": 1,
     "build/generate.js": 1,
+    "integrations/azure-devops/scripts/on-story-create.js": 1,
     "integrations/clockify/integration.json": 2,
     "integrations/clockify/scripts/clocki-enforce.js": 2,
     "integrations/clockify/scripts/install-mcp.ps1": 2,
@@ -207,7 +208,6 @@
     "skills/tycon-pipeline/scripts/pipeline.js": 11,
     "skills/tycon-pipeline/scripts/runtime-matrix.js": 2,
     "skills/tycon-pipeline/scripts/smoke-run.sh": 2,
-    "skills/tycon-story-followup-link/scripts/on-story-create.js": 2,
-    "skills/tycon-story-work-item/scripts/on-story-create.js": 1
+    "skills/tycon-story-followup-link/scripts/on-story-create.js": 2
   }
 }

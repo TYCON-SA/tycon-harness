@@ -53,6 +53,31 @@ const ORDER_REQUIRES = {
   'prepare-commit': ['reviewers'],
 };
 
+// Los frenos que corren al cerrar cada paso (`complete-step`). `shownIn`: el paso donde «Cómo trabaja» lo muestra;
+// `checkedIn`: el paso cuyo cierre lo revisa; `key`: el control de marker.js; `oldKeys`: los números del marcador viejo
+// que también lo revisan, escritos a mano (el 4 viejo cerraba implementar y correr las pruebas juntos). `gate`: el freno
+// propio que vive dentro del control de su clave.
+const STEP_CLOSE_CHECKS = [
+  { shownIn: 'approve-plan', checkedIn: 'approve-plan', key: 'plan', oldKeys: ['3'], textKey: 'cierre.approve-plan.plan' },
+  { shownIn: 'implement', checkedIn: 'implement', key: 'atdd', oldKeys: ['4'], textKey: 'cierre.implement.atdd' },
+  { shownIn: 'run-tests', checkedIn: 'run-tests', key: 'tests', oldKeys: ['4'], textKey: 'cierre.run-tests.tests' },
+  { shownIn: 'reviewers', checkedIn: 'reviewers', key: 'advisors', oldKeys: ['5'], textKey: 'cierre.reviewers.advisors' },
+  { shownIn: 'findings', checkedIn: 'findings', key: 'waivers', oldKeys: ['7'], textKey: 'cierre.findings.waivers' },
+  { shownIn: 'findings', checkedIn: 'findings', key: 'findings-close', oldKeys: ['7'], textKey: 'cierre.findings.findings-close' },
+  { shownIn: 'prepare-commit', checkedIn: 'prepare-commit', key: 'waivers', oldKeys: ['8'], textKey: 'cierre.prepare-commit.waivers' },
+  { shownIn: 'prepare-commit', checkedIn: 'prepare-commit', key: 'commit', oldKeys: ['8'], textKey: 'cierre.prepare-commit.commit' },
+  // al final: el orden de la tabla es el de los controles de cada paso, y el del pase no agrega ninguno
+  { shownIn: 'adversarial-pass', checkedIn: 'prepare-commit', key: 'commit', oldKeys: [], gate: 'adversarial-result', textKey: 'cierre.adversarial-pass.commit' },
+];
+
+/** Los controles que revisa el cierre de cada paso, por su nombre y por su número viejo, sin repetir, en orden. */
+function closeControlsByStep() {
+  const out = {};
+  const sumar = (paso, clave) => { const l = (out[paso] = out[paso] || []); if (!l.includes(clave)) l.push(clave); };
+  for (const r of STEP_CLOSE_CHECKS) for (const paso of [r.checkedIn, ...r.oldKeys]) sumar(paso, r.key);
+  return out;
+}
+
 // Las partes opcionales del Arranque. Una parte que no corre (la organización no usa esa herramienta, la story no trae
 // pedido) no aparece en ningún lado; una que corre y falla deja su aviso con `marker.js start-warning`.
 const START_PARTS = {
@@ -327,7 +352,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 
 module.exports = {
   SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
-  byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
+  STEP_CLOSE_CHECKS, closeControlsByStep, byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
   resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, findingsOpen, noteFindingsWait, retireCheck,
 };
 
