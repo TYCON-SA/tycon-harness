@@ -69,6 +69,7 @@
     "scripts/controls-bench/exam-config.json",
     "scripts/metrics/corridas-buzon.json",
     "scripts/metrics/reviewers-cost-assumption.json",
+    "scripts/metrics/model-prices.json",
     "scripts/metrics/states.json",
     "scripts/metrics/retro-sweep.json",
     "scripts/metrics/lane-hypothesis.json",
