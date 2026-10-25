@@ -385,12 +385,13 @@ async function run(opts) {
 
   if (!opts.noDownload) {
     const bajar = opts.bajar || ((o) => require('../../metrics/download-runs.js').bajar(o));
-    // la bajada escribe en TYCON_MAILBOX_DIR: la carpeta de --mailbox, para que esta pasada lea lo que bajó
-    const antes = process.env.TYCON_MAILBOX_DIR;
-    process.env.TYCON_MAILBOX_DIR = mailbox;
+    // la bajada escribe en la carpeta de --mailbox, para que esta pasada lea lo que bajó; el ambiente queda como estaba
     let r;
-    try { r = await bajar({ hilosDesde: desde }); } catch { r = { codigo: 1, res: { completo: false, estado: 'error' } }; }
-    finally { if (antes === undefined) delete process.env.TYCON_MAILBOX_DIR; else process.env.TYCON_MAILBOX_DIR = antes; }
+    // una bajada que se cae lo dice en el registro con la clase del error, nunca con su texto (puede traer rutas)
+    try { r = await bajar({ hilosDesde: desde, dirBuzon: mailbox }); } catch (e) {
+      process.stderr.write(`runs-review: la bajada del buzón se cayó (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')})\n`);
+      r = { codigo: 1, res: { completo: false, estado: 'error' } };
+    }
     const res = (r && r.res) || {};
     if (!(r && r.codigo === 0 && res.completo === true)) {
       // la bajada no fue entera: no se mueve ni se escribe ninguna ficha

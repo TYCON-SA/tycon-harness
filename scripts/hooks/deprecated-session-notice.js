@@ -28,7 +28,9 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'har
 function stateDir() { return stateDirOf(os.homedir()); }
 
 function hoy() {
-  const h = process.env.TYCON_TODAY;
+  // el nombre nuevo o el viejo, por la biblioteca de renombres
+  const { readEnv } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
+  const h = readEnv('TYCON_TODAY', { where: 'scripts/hooks/deprecated-session-notice.js' });
   return h && /^\d{4}-\d{2}-\d{2}$/.test(h) ? h : new Date().toISOString().slice(0, 10);
 }
 
