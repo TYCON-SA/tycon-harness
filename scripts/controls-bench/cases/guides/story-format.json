@@ -1,0 +1,11 @@
+{
+  "guide": "story-format.md",
+  "index_row": "| Crear, validar o implementar stories | `story-format.md` |",
+  "task": "Escribí en specs/ la story 1.1 del épico 1: «Exportar el listado de clientes a CSV» (el botón de la pantalla de clientes baja un CSV con nombre, correo y fecha de alta). Seguí el formato de historias del equipo.",
+  "tree": {
+    "specs/.gitkeep": "",
+    "README.md": "# Clientes\n\nAplicación de ejemplo con una pantalla de clientes.\n"
+  },
+  "corrector": "story-format.corrector.js",
+  "timeout_s": 420
+}

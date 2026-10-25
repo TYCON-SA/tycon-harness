@@ -1,0 +1,10 @@
+{
+  "guide": "guides/git-commit-conventions.md",
+  "index_row": "| Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |",
+  "task": "En este repo hay un cambio sin commitear: corrige el redondeo del precio con IVA, que antes cortaba los centavos en vez de redondearlos. Commitealo (sin push: el repo no tiene remoto).",
+  "tree": {
+    "README.md": "# precios\n\nCálculo del precio final con IVA.\n"
+  },
+  "corrector": "git-commit-conventions.corrector.js",
+  "timeout_s": 300
+}

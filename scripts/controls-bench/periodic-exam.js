@@ -116,6 +116,9 @@ const VEJEZ_MS = 8 * 24 * 60 * 60 * 1000;
 
 /** Relativa a la raíz del repo. FUERA de `.bench/`, que git ignora. */
 const RUTA_REPORTE_QUE_VIAJA = 'scripts/controls-bench/ultimo-examen.json';
+const RUTA_GUIAS_QUE_VIAJA = 'scripts/controls-bench/ultimo-guias.json';
+// lo prende `main` sólo cuando la corrida terminó entera: los casos de guía van con la misma cadencia, nunca más seguido
+let examenCompleto = false;
 
 // 🔴 48 h, no 12: el examen completo son ~5h30 y con la máquina cargada puede ser bastante más.
 // Un candado que caduca ANTES de que termine la corrida que protege deja arrancar una segunda
@@ -864,6 +867,7 @@ async function main(argv) {
     for (const d of dias.desconocidos) console.log(`  ⚠ «${d}» no es un día: --install-task no instala el disparador hasta que se corrija`);
     console.log(`  última completa:   ${ctx.sello || '(nunca)'}`);
     console.log(`  reporte que viaja: ${path.join(repo, RUTA_REPORTE_QUE_VIAJA)}`);
+    console.log(`  después del examen: los casos de guía (${contarCasosDeGuia()}), sólo si el examen terminó entero; mismo apagado TYCON_NO_NIGHTLY_EXAM · resultado: ${path.join(repo, RUTA_GUIAS_QUE_VIAJA)}`);
     return 0;
   }
 
@@ -1005,6 +1009,7 @@ async function main(argv) {
       ...(actualizacion.ok ? {} : { codigo_desactualizado: actualizacion.motivo }),
     });
     escribirJsonAtomico(path.join(repo, RUTA_REPORTE_QUE_VIAJA), reporte);
+    examenCompleto = true;
     registrarIntento(benchDir, { estado: 'completo', motivo: 'terminó entero', inicio, fin: reporte.fin });
     fs.mkdirSync(path.dirname(rutaSello()), { recursive: true });
     // El sello viejo pasa al nombre nuevo antes de pisarlo. Si esa copia falla se sella igual: lo que
@@ -1060,8 +1065,41 @@ function revisionSemanal(argv, deps = {}) {
   return { corrio: true, codigo: r && r.status };
 }
 
+function contarCasosDeGuia() {
+  try { return fs.readdirSync(path.join(__dirname, 'cases', 'guides')).filter((f) => f.endsWith('.json')).length; } catch (_) { return 0; }
+}
+
+/**
+ * Los casos de guía (scripts/controls-bench/guide-runner.js; casos: scripts/tests/guide-runner.test.js T6) miden si
+ * cada guía cambia lo que hace el agente: el mismo trabajo con y sin la guía. Corren después de un examen COMPLETO y
+ * nunca solos, así gastan con la misma cadencia; con el mismo apagado (TYCON_NO_NIGHTLY_EXAM=1) y nunca con --help,
+ * --dry-run ni --install-task. El resultado viaja al lado del examen; su código de salida no cambia el del examen.
+ */
+function casosDeGuia(argv, deps = {}) {
+  if (['--help', '-h', '--dry-run', '--install-task'].some((f) => argv.includes(f))) return { corrio: false, motivo: 'no en este modo' };
+  if (leerVariable('TYCON_NO_NIGHTLY_EXAM') === '1') return { corrio: false, motivo: 'apagado' };
+  const corrio = deps.corrioElExamen !== undefined ? deps.corrioElExamen : examenCompleto;
+  if (!corrio) return { corrio: false, motivo: 'el examen no terminó entero' };
+  // un examen con el corredor inyectado (sus pruebas) no lanza agentes de verdad: sólo el corredor de guías inyectado
+  const inyectado = leerVariable('TYCON_EXAM_GUIDE_RUNNER');
+  if (!deps.spawn && !inyectado && leerVariable('TYCON_EXAM_RUNNER')) return { corrio: false, motivo: 'examen con corredor inyectado' };
+  const repo = deps.repo || lugarDelExamen().repo;
+  const log = deps.log || ((m) => console.error(`examen-periodico: ${m}`));
+  const salida = path.join(repo, RUTA_GUIAS_QUE_VIAJA);
+  const args = [inyectado || path.join(__dirname, 'guide-runner.js'), '--json', salida];
+  const r = (deps.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit', timeout: 60 * 60000 });
+  if (r && r.status === null) log(`los casos de guía no terminaron (${r.signal || (r.error && r.error.code) || 'sin código'})`);
+  else if (r && r.status !== 0) log(`los casos de guía salieron ${r.status}: el informe dice cuáles no pudo medir`);
+  // un informe que no se escribió no viaja; el anterior queda como estaba (nunca se borra)
+  if (fs.existsSync(salida)) {
+    const v = (deps.viajar || viajar)(repo, log, [RUTA_GUIAS_QUE_VIAJA], `chore(examen): casos de guía ${new Date().toISOString().slice(0, 10)}`);
+    if (!v.ok) log(`los casos de guía NO VIAJARON: ${v.motivo}`);
+  }
+  return { corrio: true, codigo: r && r.status };
+}
+
 module.exports = {
-  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, viajar, revisionSemanal,
+  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, RUTA_GUIAS_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, viajar, revisionSemanal, casosDeGuia,
   leerConfig, lugarDelExamen, designaMaquina, identidadesDeMaquina, esMaquinaDesignada, periodoCumplido, estadoDelCandado,
   motivoDeGit, colaDeError,
   plistDeseado, diasProgramados, decidir, instalarTarea, liberarCandado, tomarCandado, main,
@@ -1074,6 +1112,7 @@ if (require.main === module) {
   if (legacy) legacy.aliasArgv('scripts/controls-bench/periodic-exam.js', { exitCode: 2, prefix: 'examen-periodico: ' });
   main(process.argv.slice(2))
     .then((c) => {
+      try { casosDeGuia(process.argv.slice(2)); } catch (e) { console.error(`examen-periodico: los casos de guía no se pudieron lanzar: ${e && e.message}`); }
       try { revisionSemanal(process.argv.slice(2)); } catch (e) { console.error(`examen-periodico: la revisión de la semana no se pudo lanzar: ${e && e.message}`); }
       process.exit(c);
     })
