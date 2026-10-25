@@ -72,7 +72,10 @@ async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', 
         const destino = u.searchParams.get('searchCriteria.targetRefName');
         const v = st.pedidos.filter((p) => (estado === 'all' || p.status === estado) && (!destino || p.targetRefName === destino));
         // como Azure DevOps: el listado corta la descripción a 400 caracteres (el pedido por su número la trae entera)
-        const corto = v.map((p) => (typeof p.description === 'string' && p.description.length > 400 ? { ...p, description: p.description.slice(0, 400) } : p));
+        // y devuelve de a 101 si no se pide otra cosa ($top, $skip)
+        const top = Number(u.searchParams.get('$top')) || 101;
+        const skip = Number(u.searchParams.get('$skip')) || 0;
+        const corto = v.slice(skip, skip + top).map((p) => (typeof p.description === 'string' && p.description.length > 400 ? { ...p, description: p.description.slice(0, 400) } : p));
         return json(200, { value: corto, count: corto.length });
       }
       if (req.method === 'POST') {

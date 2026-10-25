@@ -44,6 +44,8 @@ function repoDeJuguete(extra = {}) {
     '.dashboard/sdlc-stage-2026-10-17.json': '{}\n',
     'pipelines/acme.yml': 'trigger: none\n',
     'inbox/acme.md': 'no lo lee el sitio\n',
+    'inbox/watcher/pending/v1.yaml': 'id: v1\nveredicto: pendiente\n',
+    'inbox/watcher/archived/v0.yaml': 'id: v0\nveredicto: descartado\n',
     ...extra,
   };
   for (const [rel, txt] of Object.entries(archivos)) { fs.mkdirSync(path.dirname(path.join(d, rel)), { recursive: true }); fs.writeFileSync(path.join(d, rel), txt); }
@@ -79,7 +81,10 @@ test('T5 2.34-Subir_SoloLasRutasDelSitio @story-2.34 @ac-2 — la foto trae sól
   assert.strictEqual(entradas.ok, true, entradas.motivo);
   const nombres = entradas.archivos.map((a) => a.rel).sort();
   assert.ok(nombres.includes('operations.json') && nombres.includes('.dashboard/controls-bench/banco-2026-10-17.json'));
-  assert.ok(!nombres.some((n) => /^(pipelines|inbox)\//.test(n)), nombres.join(', '));
+  assert.ok(!nombres.some((n) => /^pipelines\//.test(n)), nombres.join(', '));
+  // de inbox/ sólo las fichas vivas: lo demás, y las archivadas, no
+  assert.ok(nombres.includes('inbox/watcher/pending/v1.yaml'), nombres.join(', '));
+  assert.ok(!nombres.includes('inbox/acme.md') && !nombres.includes('inbox/watcher/archived/v0.yaml'), nombres.join(', '));
   for (const n of nombres) assert.ok(COPIA.RUTAS.some((p) => (p.endsWith('/') ? n.startsWith(p) : n === p)), `${n} no está en RUTAS`);
 });
 
@@ -165,6 +170,11 @@ test('T11 2.34-Lista_IgualALasLecturas @story-2.34 @ac-5 — RUTAS cubre lo que 
   if (/'\.dashboard'/.test(fuente)) leidas.add('.dashboard/');
   const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
   for (const s of ORG.SECCIONES.filter((x) => x.repo === 'operaciones')) leidas.add(s.archivo);
+  // «Lo que encontró la noche»: las carpetas vivas de cada fuente y las decisiones
+  const FINDINGS = require(path.join(ROOT, 'scripts', 'site', 'tabs', 'findings.js'));
+  for (const reg of Object.values(require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'sources.js')).FUENTES)) {
+    for (const c of [...FINDINGS.CARPETAS_VIVAS, 'decisions']) leidas.add(`inbox/${reg.carpeta}/${c}/x.yaml`);
+  }
   assert.ok(leidas.size >= 7, `pocas lecturas encontradas: ${[...leidas].join(', ')}`);
   const cubre = (r) => COPIA.RUTAS.some((p) => (p.endsWith('/') ? r.startsWith(p) || r === p : r === p));
   assert.deepStrictEqual([...leidas].filter((r) => !cubre(r)), [], 'lecturas que la copia no trae');

@@ -66,7 +66,10 @@ async function arrancarGithubFalso({ owner = 'acme', repo = 'ops', token } = {})
       if (req.method === 'GET') {
         const estado = u.searchParams.get('state') || 'open';
         const base = u.searchParams.get('base');
-        return json(200, st.pedidos.filter((p) => (estado === 'all' || p.state === estado) && (!base || p.base.ref === base)));
+        // como GitHub: de a 30 por página si no se pide otra cosa, con tope de 100
+        const porPagina = Math.min(Number(u.searchParams.get('per_page')) || 30, 100);
+        const pagina = Math.max(Number(u.searchParams.get('page')) || 1, 1);
+        return json(200, st.pedidos.filter((p) => (estado === 'all' || p.state === estado) && (!base || p.base.ref === base)).slice((pagina - 1) * porPagina, pagina * porPagina));
       }
       if (req.method === 'POST') {
         if (st.fallarPedido) return json(st.fallarPedido, { message: st.fallarPedido === 403 ? 'Resource not accessible by personal access token' : 'Server Error' });

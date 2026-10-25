@@ -52,6 +52,9 @@ const RUTAS = Object.freeze([
   'scripts/ci/product-parity.json',
   'artifacts/tablero-del-arnes.html',
   '.dashboard/',
+  // las fichas vivas de la noche y las decisiones que esperan aplicarse: «Lo que encontró la noche» (tabs/findings.js).
+  // Las archivadas no: la sección no las muestra.
+  ...['dependencies', 'watcher', 'runs-review'].flatMap((c) => ['pending', 'promoted', 'decisions'].map((d) => `inbox/${c}/${d}/`)),
 ]);
 const INDICE = 'actual.json';
 const CARPETA_FOTOS = 'fotos/';

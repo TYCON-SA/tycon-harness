@@ -315,9 +315,25 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   f[`.dashboard/vigilante/vigilante-${hoy}.json`] = { fecha: hoy, generado: `${hoy}T05:30:00Z`, productos: { 'producto-x': { ok: true }, 'producto-y': { ok: true } }, hallazgos: [{ id: 'v1' }], nuevos: 1, repetidos: 0, resumen: { rubros: {
     pendientes: { valor: [{ id: 'v1', producto: 'producto-x', regla: 'errores-500' }], motivo: null },
     aceptadas_sin_story: { valor: [{ id: 'v2', producto: 'producto-y', regla: 'lentitud' }], motivo: null } } } };
-  for (const [cola, estado, id, pr] of [['dependencies', 'pending', 'f1', 201], ['dependencies', 'promoted', 'f2', 202], ['dependencies', 'archived', 'f3', 203], ['dependencies', 'promoted', 'f4', 204], ['watcher', 'pending', 'v1', 205], ['watcher', 'promoted', 'v2', 206]]) {
-    f[`inbox/${cola}/${estado}/${id}.yaml`] = `id: ${id}\npr: ${pr}\n`;
-  }
+  // las fichas, en el formato de cada fuente: la sección «Lo que encontró la noche» de Ejecuciones las muestra.
+  // Las pendientes van sin `pr:`: con el pedido de la noche abierto se deciden ahí, no en el sitio
+  const conPr = (pr) => (pr ? `pr: ${pr}\n` : '');
+  const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${ayer}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
+  const fichaVig = (id, pr, veredicto, regla, extra = '') => `id: ${id}\nfuente: vigilante\ncausa: producto-x:${regla}\nfecha: ${ayer}\nproducto: producto-x\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
+  Object.assign(f, {
+    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, 'propuesta_accion: arreglar\npropuesta_razon: Hay una versión corregida del paquete\npedidos:\n  - Producto X: 5002\n'),
+    'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5),
+    'inbox/dependencies/archived/f3.yaml': fichaDep('f3', 203, 'descartado', 'pkg-tres', 'low', 8),
+    'inbox/dependencies/promoted/f4.yaml': fichaDep('f4', 204, 'util', 'pkg-cuatro', 'high', 6),
+    'inbox/watcher/pending/v1.yaml': fichaVig('v1', null, 'pendiente', 'errores-500', 'propuesta_accion: arreglar\npropuesta_razon: Se repite en el mismo endpoint desde el último despliegue\n'),
+    'inbox/watcher/promoted/v2.yaml': fichaVig('v2', 206, 'util', 'lentitud'),
+  });
+  const CYCLE = require('../../nightly/findings/cycle.js');
+  const ej1 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: ayer }),
+    ultima_vez: hoy, apariciones: 3, propuesta: { accion: 'arreglar', razon: 'Pasa en la mitad de las ejecuciones de la semana' } };
+  const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo al cerrar', hoy: ayer }), veredicto: 'arreglo', pedido: 5001 };
+  f[`inbox/runs-review/pending/${ej1.id}.yaml`] = CYCLE.serializar(ej1);
+  f[`inbox/runs-review/promoted/${ej2.id}.yaml`] = CYCLE.serializar(ej2);
   // lo que deja la noche para el sitio
   f[`.dashboard/open-prs/open-prs-${hoy}.json`] = { v: 1, fecha: hoy, generado: `${hoy}T05:10:00Z`, estado: 'medido', motivo: null, prs: [
     { numero: 101, proyecto: 'Producto X', repo: 'FrontEnd', dias: 5, autor: ANA, enlace: web('Producto X', '_git/FrontEnd/pullrequest/101') },

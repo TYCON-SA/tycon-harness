@@ -15,6 +15,9 @@
 !scripts/instincts/instinct-upload.js
 !scripts/nightly/dashboard/
 !scripts/nightly/projects/state-age.js
+!scripts/nightly/findings/cycle.js
+!scripts/nightly/findings/sources.js
+!scripts/nightly/findings/cause-names.js
 !scripts/setup/harness/
 !scripts/setup/install-effects.json
 !build/equivalences.json

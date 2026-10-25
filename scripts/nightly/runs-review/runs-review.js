@@ -300,6 +300,9 @@ async function run(opts) {
   const days = Number.isFinite(opts.days) ? opts.days : 7;
   if (!mailbox || !opsDir || !DIA.test(String(today || ''))) return { codigo: 2, motivo: 'faltan --mailbox, --operations o --today (AAAA-MM-DD)' };
   const raiz = path.join(opsDir, 'inbox', 'runs-review');
+  // las decisiones confirmadas en el sitio que otra persona aprobó, antes de revisar; sólo renglones a la
+  // salida de error: last-run.json conserva su forma
+  for (const l of CYCLE.aplicarDecisiones({ base: opsDir, fuente: 'ejecuciones' }).lineas) process.stderr.write(`${l}\n`);
   const desde = menosDias(today, days);
   const estado = { fecha: today, completo: true, motivo: null, miradas: 0, con_fallas: 0, nuevas: 0, sin_hilo: 0, hilos_sin_hooks: 0, ilegibles: 0, causas: [] };
   const previa = pasadaDeHoy(path.join(raiz, 'last-run.json'), today);

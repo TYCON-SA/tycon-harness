@@ -308,6 +308,28 @@ test('T26b Proponer_SinPoderMirarLosPedidosAbiertos_NoCreaNada @story-2.29 @ac-1
   }
 });
 
+// PedidosAbiertos_MasDeUnaPagina_LosTraeTodos @story-4.11 @ac-22
+// 🔴 Falla con: leer sólo la primera página de pedidos abiertos; con más de cien, el de la ficha quedaría afuera y la
+// fila diría «pendiente» con su pedido abierto.
+test('T37b PedidosAbiertos_MasDeUnaPagina_LosTraeTodos @story-4.11 @ac-22 — con más de cien pedidos abiertos, el de la ficha también aparece', async () => {
+  const tokenApi = `api-${crypto.randomBytes(4).toString('hex')}`;
+  for (const plataforma of ['azure', 'github']) {
+    const api = plataforma === 'azure' ? await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops', token: tokenApi }) : await arrancarGithubFalso({ owner: 'acme', repo: 'ops', token: tokenApi });
+    try {
+      for (let n = 1; n <= 151; n++) {
+        const rama = n === 151 ? 'team-config/decision-vigilante-vig-uno-20261025-120000' : `otra/rama-${n}`;
+        api.st.pedidos.push(plataforma === 'azure'
+          ? { pullRequestId: n, status: 'active', sourceRefName: `refs/heads/${rama}`, targetRefName: 'refs/heads/main', title: `p${n}`, description: '' }
+          : { number: n, state: 'open', html_url: `https://github.com/acme/ops/pull/${n}`, title: `p${n}`, body: '', head: { ref: rama }, base: { ref: 'main' } });
+      }
+      const r = await propuesta.pedidosAbiertos({ remote: plataforma === 'azure' ? REMOTO_AZURE : REMOTO_GITHUB, credencial: { git: TOKEN, api: tokenApi }, urlBase: plataforma === 'azure' ? { azure: api.base } : { github: api.base } });
+      assert.ok(!r.error, `${plataforma}: ${textoDe(r)}`);
+      assert.deepStrictEqual(r.pedidos.map((x) => x.numero), [151], `${plataforma}: el pedido de la ficha está en la segunda página`);
+      assert.ok(api.llamadas.filter((l) => l.method === 'GET' && /pull/.test(l.ruta)).length >= 2, `${plataforma}: pidió más de una página`);
+    } finally { await api.cerrar(); }
+  }
+});
+
 test('T15c Registro_SinElCorreoDeQuienPropone @story-2.29 @ac-14 — el registro del sitio dice archivo y rama, no la persona', { skip: SIN_BACKEND }, async () => {
   const m = await montar({ plataforma: 'github' });
   try {
