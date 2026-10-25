@@ -2,6 +2,11 @@
   "__doc": "DEUDA DECLARADA de cobertura de hooks (FIX-7 + decisión D3 del dev, 2026-08-25). `build/check-hook-coverage.js` enumera los scripts de hooks EN DISCO y exige que cada uno tenga casos en el banco; lo que no los tiene entra ACÁ con motivo y fecha, y al escribirle casos se BORRA su línea. 🔴 La lista arrancó con 9 entradas el 2026-08-25 a la mañana y quedó VACÍA el mismo día a la tarde (casos en 20-handlers-pre-edit.json y 21-hooks-sueltos.json, cada uno verificado en rojo desconectando su hook). Se deja el archivo con la lista vacía a propósito: es el lugar donde una pieza nueva declara su deuda, y su historia en git es el registro de cuánto duró cada una.",
   "debt": [
     {
+      "script": "pre-push-repo-rules.js",
+      "date": "2026-10-25",
+      "reason": "Las cuatro reglas de todo el repo que corre el gancho global de git antes de empujar el arnés. Sus casos necesitan un repo de git con la marca del arnés, un remoto de carpeta y una copia temporal del commit que viaja, que el banco no arma; corren en scripts/tests/pre-push-repo-rules.test.js (verde, rojo con su comando, el commit y no el árbol, empuje ajeno, sin node, tope, entrada ilegible). Sale de acá cuando el banco sepa montar ese repo."
+    },
+    {
       "script": "prod-firewall-close.js",
       "date": "2026-10-21",
       "reason": "Hook de la configuración administrada que cierra las reglas de firewall de la puerta de producción. Sus casos necesitan la puerta y dobles de az, sqlcmd e ioreg en una raíz de prueba, que el banco no arma; corren en scripts/tests/prod-firewall.test.sh (fin de sesión, barrido de arranque, sesiones vivas y muertas, cierres que fallan). Sale de acá cuando el banco sepa montar esa raíz."

@@ -37,6 +37,8 @@ nuevo() {
   # las dos piezas de mentira: anotan en LAB_LOG y salen 0
   printf '%s\n' "require('fs').appendFileSync(process.env.LAB_LOG, 'sql\\n')" > "$T/arnes/scripts/ci/sql-compile.js"
   printf '%s\n' "require('fs').appendFileSync(process.env.LAB_LOG, 'freno\\n')" > "$T/arnes/scripts/hooks/public-push-guard.js"
+  # las reglas del repo van junto al freno; sin ellas un empuje del arnés frena. Acá salen 0 sin anotar.
+  : > "$T/arnes/scripts/hooks/pre-push-repo-rules.js"
   : > "$T/log"
   g init -q --bare -b main "$T/remoto.git"
   g init -q -b main "$T/repo"

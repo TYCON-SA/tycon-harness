@@ -3253,6 +3253,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.123: las cuatro reglas que vigilan todo el repo del arnés corren antes de empujar, sobre el commit que viaja (en una copia temporal si el árbol no es ese commit): verdes dejan salir, una roja frena con sus líneas y el comando, sin node o sin copia frena, tope de 60 s. Repos de juguete con suites falsas, sin red; unos 6 segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/pre-push-repo-rules.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los ganchos propios del repo en .git/hooks/ (pre-commit, post-commit y pre-push), disparados por commits y empujes DE VERDAD con la carpeta global de ganchos puesta como la pone el instalador: su rechazo frena (salvo post-commit), corren en orden después del .local y antes de .githooks/ y del freno de publicación, no corren dos veces (enlace, copia del gancho del arnés, la carpeta global misma), no hacen lazo, avisan una sola vez por repo y gancho, y andan desde un worktree enlazado. Repos de laboratorio, sin red; unos 20 segundos.",
       "raiz": "arnes",
       "ruta": "tests/githook-git-dir-chain.test.sh",

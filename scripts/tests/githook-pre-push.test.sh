@@ -27,7 +27,7 @@ mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 
 TERMINO="Zorblax"   # inventado
 QUIEN=(-c user.name="Mantenedor De Prueba" -c user.email="4242+mantenedor@users.noreply.github.com" -c commit.gpgsign=false -c tag.gpgsign=false)
-PIEZAS="scripts/hooks/public-push-guard.js scripts/lib/az-pr.js scripts/lib/gh-pr.js scripts/lib/harness-repo.js scripts/lib/legacy-names.js scripts/lib/guard-record.js scripts/publishing/detector.js scripts/setup/harness/tycon-home.js"
+PIEZAS="scripts/hooks/public-push-guard.js scripts/hooks/pre-push-repo-rules.js scripts/lib/az-pr.js scripts/lib/gh-pr.js scripts/lib/harness-repo.js scripts/lib/legacy-names.js scripts/lib/guard-record.js scripts/publishing/detector.js scripts/setup/harness/tycon-home.js"
 
 # El git del laboratorio no hereda el de la máquina (ni su carpeta global de hooks, ni su identidad).
 g() { GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git "$@"; }
@@ -151,7 +151,8 @@ if [ "$RC" = "0" ] && en_remoto "$T/local.git" refs/heads/sucia && ! grep -qi 'f
 else mal "P-07 hacia un remoto local el freno se metió (exit $RC)"; sed -n '1,6p' "$T/out.txt"; fi
 rm -rf "$T"
 
-# ── P-08 · si el freno no se puede correr, hacia lo público NO sale; hacia lo que no es público, sí ───────────────
+# ── P-08 · si el freno no se puede correr, un empuje del arnés NO sale: a lo público por el freno, a cualquier remoto
+#    porque las reglas del repo tampoco se pueden correr ───────────────────────────────────────────────────────────
 T=$(mktemp -d); montar "$T"
 rama "$T" limpia guides/b.md "limpio"
 ( cd "$T/repo" && g remote add local "$T/local.git" )
@@ -160,8 +161,8 @@ RC=$(EMPUJE_ARNES="$T/arnes-vacio" empujar "$T" origin limpia)
 if [ "$RC" != "0" ] && ! en_remoto "$T/publico/remoto.git" refs/heads/limpia && grep -q 'no pude correr el freno' "$T/out.txt"; then ok "P-08 sin el guion del freno en el arnés instalado, un empuje a lo público no sale y lo dice"
 else mal "P-08 sin el guion del freno, salió (exit $RC)"; sed -n '1,6p' "$T/out.txt"; fi
 RC=$(EMPUJE_ARNES="$T/arnes-vacio" empujar "$T" local limpia)
-if [ "$RC" = "0" ] && en_remoto "$T/local.git" refs/heads/limpia; then ok "P-08 sin el guion, un empuje a un remoto local sale (no hay nada que publicar)"
-else mal "P-08 sin el guion, un empuje local no salió (exit $RC)"; sed -n '1,6p' "$T/out.txt"; fi
+if [ "$RC" != "0" ] && ! en_remoto "$T/local.git" refs/heads/limpia && grep -q 'no pude correr las reglas del repo' "$T/out.txt"; then ok "P-08 sin el guion, un empuje del arnés a un remoto local tampoco sale: las reglas del repo no se pudieron correr"
+else mal "P-08 sin el guion, un empuje del arnés a un remoto local salió sin las reglas del repo (exit $RC)"; sed -n '1,6p' "$T/out.txt"; fi
 # sin `node` en el PATH: una carpeta con sólo lo que el despachador y git necesitan
 mkdir -p "$T/bin"
 for herramienta in git bash sh cat dirname basename mktemp rm grep sed tr env uname printf; do
