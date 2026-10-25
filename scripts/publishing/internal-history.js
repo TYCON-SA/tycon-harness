@@ -924,6 +924,11 @@ function publishedThin(repo, tree, config) {
   return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta)), config);
 }
 /**
+ * Los registros que la superposición calcula con lo público y lo privado juntos (sus `REGISTRIES`): en el árbol armado
+ * nombran suites privadas que no viajan, así que las pruebas que recorren ese árbol no los cuentan.
+ */
+const OVERLAY_COMPUTED = new Set(['scripts/tests/suites.json', 'scripts/tests/suite-parts.json']);
+/**
  * Las rutas que trajo la superposición (en HEAD distintas de la punta del privado, o que la punta no tiene), o null si
  * HEAD no es el commit de la superposición (tampoco lo es un repo sin commits). Lo usan también las pruebas del público
  * que recorren el árbol entero: en el árbol armado miden sólo lo que viaja al público.
@@ -1382,7 +1387,7 @@ function main() {
   return blocks ? 1 : 0;
 }
 
-module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot, broughtByOverlay, OVERLAY_MARK };
+module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot, broughtByOverlay, OVERLAY_MARK, OVERLAY_COMPUTED };
 
 // el código de salida se deja anotado y el proceso termina solo: `process.exit` corta la salida a medio escribir cuando
 // va por un tubo (la cuenta en JSON de `--all` son miles de renglones)

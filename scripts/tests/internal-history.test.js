@@ -327,3 +327,9 @@ test('ThinOverlay_PublicAndTeamClassificationUnchanged', (t) => {
   try { mode = allOf(thinLab(t, { thinList: false, profile: true }).root).mode; } catch (e) { mode = `no pudo: ${e.message}`; }
   assert.ok(mode === 'team' || /repo unido/.test(String(mode)), `el clon del equipo sigue clasificado como del equipo (salió ${mode})`);
 });
+
+test('OverlayComputed_SameNamesAsTheOverlay @story-8.128 @ac-1', () => {
+  // los dos registros que la superposición calcula: los mismos nombres que su lista REGISTRIES
+  const { OVERLAY_COMPUTED } = require('../publishing/internal-history.js');
+  assert.deepStrictEqual([...OVERLAY_COMPUTED].sort(), ['scripts/tests/suite-parts.json', 'scripts/tests/suites.json']);
+});
