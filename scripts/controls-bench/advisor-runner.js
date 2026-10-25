@@ -964,9 +964,16 @@ function asegurarMemoriaViva() {
     catch { return false; }
   };
   if (vivo()) return true;
+  // 🔴 Sin engram no se lanza: `spawn` de un binario ausente no tira acá, avisa después con un evento `error`, y sin
+  // quien lo escuche ese evento tira el proceso entero sin reporte. Los casos que piden memoria se saltean con su motivo.
+  if (!binAvailable('engram')) {
+    console.log('⚠️  engram no está en el PATH — los casos que piden memoria salen no medidos');
+    return false;
+  }
   try {
     // en el puerto del examen y con su base (ENGRAM_PORT y ENGRAM_DATA_DIR, ver engramPropio): nunca el de la máquina
     const servidor = spawn('engram', ['serve', puerto], { detached: true, stdio: 'ignore', env: process.env });
+    servidor.on('error', (e) => console.log(`⚠️  no pude levantar el servidor de memoria (${e.message}) — los casos que lo usan van a fallar y lo van a decir`));
     servidor.unref();
     if (memoriaDelExamen) memoriaDelExamen.anotarServidor(servidor.pid);
   } catch (e) {
@@ -1966,16 +1973,17 @@ async function main() {
         : { pass: false, failures: ['excluido de esta herramienta SIN asimetría declarada'] };
       return;
     }
-    if (caseDef.expect_mcp && !mcpServerAvailable(caseDef.expect_mcp.server)) {
-      // salteo CON CONSTANCIA: sin el server instalado, ni verde que miente ni rojo sin señal
-      results[key].tools[tool] = { skipped: true, skipped_mcp: caseDef.expect_mcp.server };
-      console.log(`⏭️  [${tool}] ${key} SALTEADO con constancia: server MCP "${caseDef.expect_mcp.server}" no instalado en esta máquina (command no está en PATH)`);
+    // sin binario engram no hay aserción honesta sobre la memoria: va primero, porque es el motivo de fondo también
+    // cuando el caso pide además el server MCP de memoria
+    if (caseDef.expect_engram && !binAvailable('engram')) {
+      results[key].tools[tool] = { skipped: true, skipped_mcp: 'engram-cli', motivo: 'engram no está en el PATH' };
+      console.log(`⏭️  [${tool}] ${key} SALTEADO con constancia: el CLI "engram" no está en PATH (la aserción expect_engram no se puede verificar)`);
       return;
     }
-    if (caseDef.expect_engram && !binAvailable('engram')) {
-      // mismo criterio para la verificación por CLI: sin binario engram no hay aserción honesta
-      results[key].tools[tool] = { skipped: true, skipped_mcp: 'engram-cli' };
-      console.log(`⏭️  [${tool}] ${key} SALTEADO con constancia: el CLI "engram" no está en PATH (la aserción expect_engram no se puede verificar)`);
+    if (caseDef.expect_mcp && !mcpServerAvailable(caseDef.expect_mcp.server)) {
+      // salteo CON CONSTANCIA: sin el server instalado, ni verde que miente ni rojo sin señal
+      results[key].tools[tool] = { skipped: true, skipped_mcp: caseDef.expect_mcp.server, motivo: `server MCP "${caseDef.expect_mcp.server}" no instalado en esta máquina` };
+      console.log(`⏭️  [${tool}] ${key} SALTEADO con constancia: server MCP "${caseDef.expect_mcp.server}" no instalado en esta máquina (command no está en PATH)`);
       return;
     }
     let verdictExtra = null;
