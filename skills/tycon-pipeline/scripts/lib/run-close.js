@@ -17,7 +17,9 @@
  * Uso desde el freno de seguridad: node run-close.js --gate --session <id> [--command-stdin --shell bash|powershell]
  *   imprime `hay=0|1|?`, `autonomo=0|1`, `abierta=0|1` y `motivo=…`, un renglón por campo. Con el comando por la
  *   entrada, además un `frena=<escape>\t<subcomando>\t<valor>` por cada llamada a marker.js o pipeline.js que, con este
- *   marcador, pide la frase de la persona (lib/marker-command.js las encuentra). Con `--tool-use-id`, también un
+ *   marcador, pide la frase de la persona (lib/marker-command.js las encuentra). La salida de una ejecución perdida
+ *   (`clear-session <sesión> --lost`, `restore <sesión>`) frena siempre y su renglón suma `\t<apertura>\t<sin reenvío 0|1>`:
+ *   la frase vale desde la apertura de esa ejecución (`-` si no se ve) y lo del reenvío lo decide lib/open-runs.js. Con `--tool-use-id`, también un
  *   `aprobacion=<subcomando>\t<motivo>` por cada aprobación del plan cuya cita no es de la persona (ESC-C6), o
  *   `sinconversacion=1` si la conversación no se puede leer.
  */
@@ -214,10 +216,26 @@ if (require.main === module) {
     // frena aunque no haya ejecución o esté en verde: el comando no leído puede traer cualquier escape
     const dudoso = (porque) => [{ l: { sub: null, args: [{ texto: porque, literal: true }] }, esc: 'cerrar la ejecución', siempre: true }];
     try {
-      const { llamadas, escapeDe } = require('./marker-command.js');
+      const { llamadas, escapeDe, salidaPerdida } = require('./marker-command.js');
+      const or = require('./open-runs.js');
       const cmd = fs.readFileSync(0, 'utf8');
       const todas = llamadas(cmd, { shell: arg('--shell') === 'powershell' ? 'powershell' : 'bash' });
-      pedidas = todas.map((l) => ({ l, esc: escapeDe(l, sid) })).filter((x) => x.esc);
+      // la salida de una ejecución perdida: la frase vale desde la apertura de esa ejecución y, según la decisión única de
+      // open-runs.js, sin reenvío
+      const salida = or.delegacionDeLaSalida();
+      const aperturaDe = (s) => {
+        const ult = or.vigente(s);
+        if (ult && ult.name === 'run-open') return ult;
+        const raiz = or.raizDeGit(process.cwd());
+        const copias = raiz ? or.copiasDe(raiz, s) : [];
+        return copias.length ? copias[copias.length - 1].copia : null;
+      };
+      pedidas = todas.map((l) => {
+        const s = salidaPerdida(l);
+        if (!s) return { l, esc: escapeDe(l, sid) };
+        const ap = s.sesion ? aperturaDe(s.sesion) : null;
+        return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde: (ap && ap.ts) || '-', sinReenvio: !salida.reenvio };
+      }).filter((x) => x.esc);
       aprobaciones = todas.filter(esAprobacion);
     } catch (e) {
       pedidas = dudoso(`no pude leer el comando: ${e.message}`);
@@ -230,7 +248,13 @@ if (require.main === module) {
   process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${r.abierta ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
-  for (const { l, esc, siempre } of pedidas || []) {
+  for (const { l, esc, siempre, perdida, desde, sinReenvio } of pedidas || []) {
+    // la salida de una ejecución perdida: además, desde cuándo vale la frase y si acepta el reenvío (nunca vacíos: el
+    // freno parte el renglón por tabuladores y dos seguidos se juntan)
+    if (perdida) {
+      process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${una(desde)}\t${sinReenvio ? 1 : 0}\n`);
+      continue;
+    }
     // apagar el pase adversarial pide la frase siempre, también sin ejecución: `pipeline.js start` la crea. Un comando
     // que no se pudo leer, también
     if (hay === 0 && esc !== 'no-deep-review' && !siempre) continue;

@@ -86,7 +86,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |
 | **CMD-C1** | Un comando que trae un `\r` (retorno de carro); en PowerShell, también `\f`, `\v`, el espacio duro, NEL o un espacio de Unicode | Bash lee el `\r` como una letra y PowerShell como un salto de línea: con él, una parte del comando se le esconde al freno. Un comando escrito a mano no lo trae. Frena también si el carácter va dentro de un texto entre comillas (un mensaje de commit con un espacio duro pegado de una página, un heredoc con saltos de Windows): el freno no puede saber si las comillas son de verdad. La misma regla la aplican el freno de alcance de pruebas y el aviso de memoria: con este freno apagado, un `\r` sigue frenado |
 | **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE`, `DOD_BYPASS` o `TYCON_NO_DEEP_REVIEW` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | Las dos primeras apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo; `TYCON_NO_DEEP_REVIEW` apaga el pase adversarial, que el agente apagaba después de preguntar si lo corría. Vale con la frase de la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
-| **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo («autorizo force-manual», «autorizo trust-ran»); `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución («autorizo no-deep-review»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
+| **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo («autorizo force-manual», «autorizo trust-ran»); `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución («autorizo no-deep-review»); `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, siempre, sólo con la frase del dueño posterior a la apertura de la ejecución y sin reenvío («autorizo cerrar la ejecución»; abajo, «La ejecución perdida»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
 | **ESC-C4** | `marker.js close-as-debt` o `marker.js expect-red`, con una ejecución en la sesión | Dejan una salida prevista por la historia como el final de la ejecución, o un control en rojo como esperado. Lo autoriza la persona, siempre (abajo); un texto que sólo nombra el comando no frena |
 | **ESC-C5** | Un comando que crea, toca o copia un archivo `ALLOW_DOD_EVIDENCE_WRITE` (`touch`, `cp`, `mv`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …), o que escribe `dod_runtime_exempt: true` en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`) | El permiso de escribir a mano la evidencia de la prueba en vivo y la exención de esa prueba los decide la persona («autorizo ALLOW_DOD_EVIDENCE_WRITE», «autorizo dod_runtime_exempt»). Mirarlo, buscarlo, borrarlo o sacar la exención no frena. Por la herramienta de escribir archivos lo miran el guardián de la evidencia (consume el permiso sólo con la constancia de este freno de la misma sesión, dentro de los 30 minutos, o con la frase) y el hook del encabezado (pide la frase para agregar la exención a una historia en implementación) |
 | **ESC-C6** | `marker.js complete-step approve-plan` (o `3`) con `--approved "<cita>"` o `--mockup-approved "<cita>"`, o `approve-mockup --approved`, cuando la cita no está en un mensaje de la persona de esta conversación (una de menos de 10 letras, sólo si es el mensaje entero), ni es la opción que eligió en una pregunta con opciones (leída del resultado de esa herramienta), ni la reenvió la sesión designada; con `--delegated-by`, sólo la reenviada | La aprobación del plan es de la persona: no tiene frase para saltearla. Sin conversación legible (Codex) no mira y deja la constancia `sin-conversacion` (asimetría declarada). `--auto-approved` no cambia |
@@ -245,7 +245,44 @@ la evidencia), y cada escritura que deja pasar así queda anotada; escrita en un
 Lo que no ve: un guion que el agente escribe en un archivo y después corre; `patch` o `git apply` con un parche que toca
 la historia; `git stash pop`; un enlace (`ln -sf`) sobre el marcador; y el nombre de la carpeta del estado partido entre una variable y
 un comodín (`cd ~/.claude/.tyc* && rm -rf act*`). Eso lo ven el control de cambios sin declarar al cerrar y el diff del
-commit.
+commit; y si lo que se fue es el marcador, lo ve la segunda capa de abajo, al faltar.
+
+### La ejecución perdida
+
+La lista de formas de borrar el marcador nunca está completa. Por eso hay una segunda capa que mira el efecto, no el
+comando: cada ejecución deja tres piezas que se vigilan entre sí.
+
+- **El marcador** de la sesión, en la carpeta del estado.
+- **La apertura** en `gates.log`: un renglón `run-open` con la sesión, la historia, la carpeta de la ejecución y la hora.
+- **La copia de la apertura** en la carpeta de la ejecución del repo (`.advisors/pipeline-runs/<ejecución>/run-open.json`).
+
+Todo cierre legítimo anota su `run-close` en `gates.log` y borra la copia: `marker.js clear`, `clear-session`,
+`adopt-session` (cierra la vieja y abre la nueva), las dos podas de marcadores viejos y el reemplazo por otra historia.
+Si una ejecución sigue abierta y le falta una pieza, la ejecución está **perdida**: falta el marcador; hay una copia sin
+su apertura o sin `gates.log`; la copia no coincide con su apertura, no se puede leer o trae campos de un cierre; o
+`gates.log` no se puede leer. Lo que no se puede decidir frena.
+
+Con la ejecución perdida frena, con el cartel «🔴 EJECUCIÓN PERDIDA» (qué pieza falta, la historia y cuándo se abrió):
+toda edición de código (Edit, Write, `apply_patch`), también con un carril ad-hoc o con `story_gate: false`; el cierre
+del turno; el commit en el repo de la ejecución; y en la consola, todo lo que no está en una lista cerrada. La lista:
+`marker.js` y `pipeline.js` para leer y para la salida, `git status`, `git diff`, `git log`, y `cat`, `ls`, `grep`,
+`head` y `tail` sin redirección. `gates.log` y `run-open.json` son además rutas protegidas de la primera capa, al lado
+del marcador.
+
+**La salida es del dueño.** Con «autorizo cerrar la ejecución», escrita por el dueño en la pestaña de esa sesión
+después de la apertura, pasan:
+
+- `marker.js clear-session <sesión> --lost`: anota `run-close` con `estado: perdida`, la cita y la hora, y borra la copia.
+- `marker.js restore <sesión>`: vuelve a abrir la ejecución desde la copia del repo (marcador nuevo y `run-open` con
+  `motivo: restaurada`).
+
+Los dos la piden también para una sesión ajena, y los frena `ESC-C3` sin ella. Una frase anterior a la apertura no vale,
+y tampoco la reenviada por la sesión designada (`approvals.relay_session`): reenviarla sería lavar un permiso. Si esa
+salida admite delegación lo decide una sola función (`delegacionDeLaSalida`, en `lib/open-runs.js`); hoy dice que no.
+`clear-session <sesión>` sin `--lost` y sin marcador no cierra nada y dice que hace falta `--lost`.
+
+Límite: si se borran las tres piezas, en la sesión no se ve. Lo ve el portón de la CI, que pide el registro de autoría
+de la historia para mergear.
 
 ## Log de bloqueos
 

@@ -53,6 +53,10 @@
  *                                                  ese storyId (cualquier sesión)
  *   marker.js clear-session <sessionId>         → borra el marker de OTRA sesión
  *                                                  (recovery / admin); sin marker, lo dice y sale 1
+ *   marker.js clear-session <sessionId> --lost  → cierra como perdida una ejecución a la que le falta una pieza
+ *                                                  (lib/open-runs.js); pide la frase del dueño
+ *   marker.js restore <sessionId>               → rearma en esta sesión el marcador de una ejecución perdida, desde
+ *                                                  la copia de su apertura; pide la frase del dueño
  *   marker.js adhoc clear-orphan <sessionId>    → borra el ad-hoc de OTRA sesión, sólo si no está viva
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
@@ -198,7 +202,14 @@ function pruneStale() {
     try {
       const m = JSON.parse(fs.readFileSync(full, 'utf8'));
       if (m && m.lastTouch && new Date(m.lastTouch).getTime() < cutoff) {
+        // una ejecución perdida no se poda: sale sólo por la salida del dueño
+        if (perdidaSinFrenar(m.sessionId || f.replace(/\.json$/, ''), m.repoPath)) {
+          process.stderr.write(`[marker] no podé el marcador de ${m.sessionId || f}: su ejecución está perdida y sale sólo por la salida del dueño (clear-session --lost o restore).\n`);
+          continue;
+        }
         fs.unlinkSync(full);
+        // el cierre es de la sesión podada, no de la que poda
+        cerrarEjecucion(m.sessionId || f.replace(/\.json$/, ''), m, { estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, soloAbierta: true });
       }
     } catch (_e) { /* ignore */ }
   }
@@ -319,6 +330,39 @@ function clearMarker() {
   }
 }
 
+// El cierre de la ejecución de `sesion` en el registro, con su carpeta, y la copia de la apertura borrada
+// (lib/open-runs.js). Todo camino que borra un marcador pasa por acá: sin el cierre, la sesión quedaría con su apertura
+// sin marcador y frenaría como perdida. Que falle no frena el comando: se dice.
+function cerrarEjecucion(sesion, m, { extra, ...campos } = {}) {
+  try {
+    require('./lib/open-runs.js').cerrar({
+      sid: SID, sesion, runDir: (m && m.runDir) || null, story: m && m.storyId != null ? String(m.storyId) : null,
+      extra: { repoPath: (m && m.repoPath) || null, ...(m && m.storyPath ? { storyPath: m.storyPath } : {}), ...(extra || {}) }, ...campos,
+    });
+    return true;
+  } catch (e) {
+    process.stderr.write(`[marker] no pude anotar el cierre de la ejecución de la sesión ${sesion} (${e.message})\n`);
+    return false;
+  }
+}
+
+// Una ejecución perdida sale sólo por `clear-session <sesión> --lost` o `restore <sesión>`, con la frase del dueño:
+// clear, clear-session, adopt-session, set y las podas no la sacan. No poder preguntar tampoco es estar sana.
+function frenarSiPerdida(sesion, comando, cwd) {
+  let p;
+  try { p = require('./lib/open-runs.js').perdida({ sid: String(sesion), cwd: cwd || process.cwd() }); } catch (e) {
+    p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})` };
+  }
+  if (!p) return;
+  console.error(`marker.js ${comando}: la ejecución de la sesión ${sesion} está perdida (${p.caso}: ${p.falta}).`);
+  console.error(`  Sale sólo con marker.js clear-session ${sesion} --lost o marker.js restore ${sesion}, con «autorizo cerrar la ejecución» escrita por el dueño.`);
+  process.exit(3);
+}
+
+function perdidaSinFrenar(sesion, cwd) {
+  try { return !!require('./lib/open-runs.js').perdida({ sid: String(sesion), cwd: cwd || process.cwd() }); } catch { return true; }
+}
+
 function cmdSet(payloadJson) {
   let payload;
   try {
@@ -348,6 +392,8 @@ function cmdSet(payloadJson) {
     if (payload[k] !== undefined) console.error(`marker.js set: «${k}» no se acepta en el payload (lo escriben sólo complete-step approve-plan y approve-mockup): descartado.`);
   }
   let existing = readMarker();
+  // un marcador escrito a mano sobre una ejecución perdida la daría por sana
+  frenarSiPerdida(SID, 'set', (existing && existing.repoPath) || payload.repoPath);
   const existingBefore = existing;
   // Las banderas de hechos externos tampoco se escriben con set: las pone el arnés cuando hizo el trabajo. Un
   // `get | … | set` que las trae como estaban no cambia nada y pasa.
@@ -385,16 +431,17 @@ function cmdSet(payloadJson) {
     console.error(`marker.js set: la copia del marcador de la ${existing.storyId} quedó en ${copia}`);
     // Otra historia sobre una ejecución que no terminó: la anterior queda dicha como abortada. Sin esto, el reset de
     // abajo la lavaría y un `clear` después la archivaría como completa.
+    // El cierre se anota siempre, terminada o no: la apertura de la anterior queda cerrada y su copia, borrada.
     try {
       const rc = require('./lib/run-close.js');
       // una con `cierre` escrito (la deuda) ya dijo cómo terminó
-      if (!existing.cierre && rc.abierta(rc.estado(existing))) {
-        const c = rc.cierreDe(existing, { sid: SID });
-        appendLog('gates.log', { name: 'run-close', estado: c.estado, story: existing.storyId, motivo: `reemplazada por la historia ${payload.storyId} sin cerrarla: ${c.motivo || ''}`, via: c.via });
-        console.error(`marker.js set: la ejecución de ${existing.storyId} no había terminado (${c.motivo}): queda anotada como ${c.estado}.`);
-      }
+      const abierta = !existing.cierre && rc.abierta(rc.estado(existing));
+      const c = rc.cierreDe(existing, { sid: SID });
+      cerrarEjecucion(SID, existing, { estado: c.estado, via: c.via || null,
+        motivo: abierta ? `reemplazada por la historia ${payload.storyId} sin cerrarla: ${c.motivo || ''}` : `reemplazada por la historia ${payload.storyId}` });
+      if (abierta) console.error(`marker.js set: la ejecución de ${existing.storyId} no había terminado (${c.motivo}): queda anotada como ${c.estado}.`);
     } catch (e) {
-      appendLog('gates.log', { name: 'run-close', estado: 'abortada', story: existing.storyId, motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
+      cerrarEjecucion(SID, existing, { estado: 'abortada', motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
     }
     const {
       adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass,
@@ -3489,6 +3536,10 @@ function cmdClear() {
   // checks, gates con duración). Mecánico: no depende de que el orquestador se
   // acuerde de correr `pipeline.js timing-report` antes del clear. Best-effort:
   // un fallo acá JAMÁS bloquea el clear.
+  let cerradaEnClear = false;
+  let marcadorAntes = null;
+  try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
+  frenarSiPerdida(SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
   try {
     const marker = readMarker();
     if (marker && marker.storyId) {
@@ -3555,7 +3606,7 @@ function cmdClear() {
       try {
         marker.cierre = require('./lib/run-close.js').cierreDe(marker, { sid: SID });
         const c = marker.cierre;
-        appendLog('gates.log', { name: 'run-close', estado: c.estado, story: String(marker.storyId), motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { deuda: c.deuda } : {}) });
+        cerradaEnClear = cerrarEjecucion(SID, marker, { estado: c.estado, motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { extra: { deuda: c.deuda } } : {}) });
       } catch (e) {
         // sin poder calcularlo, la ejecución no cuenta como terminada: queda abortada y el motivo lo dice
         marker.cierre = { estado: 'abortada', motivo: `no pude determinar cómo terminó (${e.message})`, via: 'sin-registro', at: nowIso() };
@@ -3631,6 +3682,10 @@ function cmdClear() {
       } catch (e) { process.stderr.write(`[marker] la oferta de la instalación completa no se pudo evaluar: ${e.message}\n`); }
     }
   } catch { /* best-effort */ }
+  // el archivo falló antes de anotar el cierre: se anota igual, para que la sesión no quede con su apertura sin marcador
+  if (!cerradaEnClear && marcadorAntes && marcadorAntes.storyId) {
+    cerrarEjecucion(SID, marcadorAntes, { estado: 'abortada', motivo: 'clear: no pude archivar la ejecución ni calcular cómo terminó' });
+  }
   clearMarker();
 }
 
@@ -3679,22 +3734,90 @@ function cmdFindByStory(storyId) {
   process.stdout.write(JSON.stringify(matches, null, 2));
 }
 
-function cmdClearSession(sid) {
+function cmdClearSession(sid, rest = []) {
   if (!sid) {
     console.error('marker.js clear-session: sessionId requerido');
     process.exit(2);
   }
   const safe = String(sid).replace(/[/\\]/g, '_');
+  if (rest.includes('--lost')) return cmdSalidaPerdida('lost', safe);
   const p = path.join(ACTIVE_DIR, `${safe}.json`);
   if (!fs.existsSync(p)) {
     console.error(`marker.js clear-session: no había marcador de esa sesión (${safe}): no se borró nada.`);
+    console.error('  Si su ejecución quedó perdida (frena con «EJECUCIÓN PERDIDA»), la salida es clear-session <sesión> --lost, con la frase del dueño.');
     process.exit(1);
   }
+  let m = null;
+  try { m = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_e) { m = null; }
+  frenarSiPerdida(safe, 'clear-session', m && m.repoPath);
   try { fs.unlinkSync(p); } catch (e) {
     console.error(`marker.js clear-session: no pude borrar ${p}: ${e.message}`);
     process.exit(1);
   }
+  cerrarEjecucion(safe, m, { estado: 'abortada', motivo: SID === safe ? 'clear-session de la propia sesión' : `clear-session desde la sesión ${SID}` });
   process.stdout.write(`cleared: ${safe}.json\n`);
+}
+
+// La salida de una ejecución perdida (lib/open-runs.js), que decide el dueño: `clear-session <sesión> --lost` la cierra
+// como perdida y `restore <sesión>` rearma el marcador desde la copia de la apertura. El freno de seguridad pide la frase
+// «autorizo cerrar la ejecución», sin reenvío y posterior a la apertura, y deja la constancia; acá se vuelve a mirar esa
+// constancia: sin ella, el guion no cierra ni rearma nada.
+const CONSTANCIA_RECIENTE_MIN = 5;
+function cmdSalidaPerdida(modo, sesion) {
+  const or = require('./lib/open-runs.js');
+  const rc = require('./lib/run-close.js');
+  const nombre = modo === 'lost' ? `clear-session ${sesion} --lost` : `restore ${sesion}`;
+  const ult = or.vigente(sesion);
+  const raiz = or.raizDeGit(process.cwd());
+  const copias = raiz ? or.copiasDe(raiz, sesion) : [];
+  // la apertura: la vigente del registro o, sin registro, la copia del repo
+  const apertura = ult && ult.name === 'run-open' ? ult : copias.length ? copias[copias.length - 1].copia : null;
+  if (!apertura) {
+    console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
+    process.exit(1);
+  }
+  // sin la hora de la apertura no se puede saber si la frase es posterior: no se adivina
+  if (!Number.isFinite(Date.parse(apertura.ts))) {
+    console.error(`marker.js ${nombre}: la apertura de la sesión ${sesion} no trae una hora legible (${apertura.ts}): no se puede saber si la frase es posterior.`);
+    process.exit(3);
+  }
+  const frenos = rc.leerFrenos();
+  // la constancia es la que el freno dejó al dejar pasar ESTE comando: posterior a la apertura y de los últimos minutos
+  const reciente = new Date(Date.now() - CONSTANCIA_RECIENTE_MIN * 60000).toISOString();
+  const desde = Date.parse(apertura.ts) > Date.parse(reciente) ? apertura.ts : reciente;
+  const l = frenos ? rc.escapeDeCierre(frenos, SID, desde) : null;
+  if (!l || l.via !== 'persona') {
+    console.error(`marker.js ${nombre}: falta la constancia de que el dueño escribió «autorizo cerrar la ejecución» después de la apertura (${apertura.ts}). La deja el freno de seguridad al dejar pasar este comando.`);
+    process.exit(3);
+  }
+  const cita = 'autorizo cerrar la ejecución';
+  if (modo === 'lost') {
+    try { fs.unlinkSync(markerFilePath(sesion)); } catch (_e) { /* ya no estaba: es lo perdido */ }
+    or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via: 'persona', cita,
+      motivo: `cerrada como perdida desde la sesión ${SID}` });
+    process.stdout.write(`cerrada como perdida: la ejecución de la story ${apertura.story} (sesión ${sesion})\n`);
+    return;
+  }
+  // restore: el marcador vuelve con lo que dice la copia de la apertura, en la sesión que la pide
+  let copia = null;
+  try { copia = JSON.parse(fs.readFileSync(path.join(apertura.runDir, 'run-open.json'), 'utf8')); } catch (_e) { copia = null; }
+  const base = copia && copia.sesion === sesion ? copia : apertura;
+  or.cerrar({ sid: SID, sesion, runDir: base.runDir, story: base.story, estado: 'perdida', via: 'persona', cita, motivo: `restaurada en la sesión ${SID}` });
+  // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`
+  let previo = readMarker();
+  if (previo && previo.storyId && !(previo.runDir && or.mismaRuta(previo.runDir, base.runDir))) {
+    cerrarEjecucion(SID, previo, { estado: 'abortada', motivo: `reemplazada por restore ${sesion} (story ${base.story})` });
+    previo = null;
+  }
+  const sigue = previo && String(previo.storyId) === String(base.story);
+  writeMarker({
+    ...(sigue ? previo : {}),
+    storyId: String(base.story), storyPath: base.storyPath || null, repoPath: base.repo || null, runDir: base.runDir,
+    sessionId: SID, lastTouch: nowIso(), restoredFrom: sesion, restoredAt: nowIso(),
+    ...(sigue ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
+  });
+  or.abrir({ sid: SID, story: base.story, storyPath: base.storyPath, repo: base.repo, runDir: base.runDir, motivo: 'restaurada' });
+  process.stdout.write(`restaurada: la ejecución de la story ${base.story} vuelve a la sesión ${SID}\n`);
 }
 
 // ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (la carpeta de sesiones, <pid>.json, con su
@@ -3832,6 +3955,8 @@ function cmdAdoptSession(sid) {
     console.error('marker.js adopt-session: esa YA es tu sesión');
     process.exit(2);
   }
+  // adoptar no tapa la ejecución perdida de la sesión que adopta
+  frenarSiPerdida(SID, 'adopt-session');
   const own = readMarker();
   if (own && own.storyId) {
     console.error(`marker.js adopt-session: esta sesión ya tiene marker activo (story ${own.storyId}) — clear primero si querés adoptar otro`);
@@ -3850,9 +3975,27 @@ function cmdAdoptSession(sid) {
     console.error(`marker.js adopt-session: marker de ${safe} ilegible:`, e.message);
     process.exit(1);
   }
+  frenarSiPerdida(safe, 'adopt-session', other && other.repoPath);
   const adopted = { ...other, sessionId: SID, lastTouch: nowIso(), adoptedFrom: safe, adoptedAt: nowIso() };
   writeMarker(adopted);
   try { fs.unlinkSync(otherPath); } catch (_e) { /* pruneStale lo limpia */ }
+  // la ejecución cambia de sesión: se cierra la de la otra y se abre en ésta, con la misma carpeta
+  try {
+    const or = require('./lib/open-runs.js');
+    const ult = or.vigente(safe);
+    const runDir = other.runDir || (ult && ult.name === 'run-open' ? ult.runDir : null);
+    if (!cerrarEjecucion(safe, { ...other, runDir }, { estado: 'abortada', motivo: `adoptada por la sesión ${SID}` })) {
+      throw new Error(`no pude anotar el cierre de la sesión ${safe}`);
+    }
+    if (runDir) or.abrir({ sid: SID, story: other.storyId, storyPath: other.storyPath, repo: other.repoPath, runDir, motivo: `adoptada de la sesión ${safe}` });
+    // un marcador de antes del registro de aperturas no trae carpeta: se adopta, pero sin apertura no se verá al faltar
+    else process.stderr.write(`[marker] adopt-session: el marcador de ${safe} no trae la carpeta de la ejecución: queda adoptado sin apertura (no se verá si falta).\n`);
+  } catch (e) {
+    // sin la apertura en esta sesión, la ejecución adoptada no se vería al faltar: se dice y sale con error
+    process.stderr.write(`[marker] adopt-session: no pude pasar la apertura de la ejecución a esta sesión (${e.message})\n`);
+    process.stdout.write(JSON.stringify(adopted, null, 2));
+    process.exit(1);
+  }
   process.stdout.write(JSON.stringify(adopted, null, 2));
 }
 
@@ -4737,7 +4880,11 @@ switch (cmd) {
     cmdFindByStory(arg1);
     break;
   case 'clear-session':
-    cmdClearSession(arg1);
+    cmdClearSession(arg1, process.argv.slice(4));
+    break;
+  case 'restore':
+    if (!arg1) { console.error('marker.js restore: sessionId requerido'); process.exit(2); }
+    cmdSalidaPerdida('restore', String(arg1).replace(/[/\\]/g, '_'));
     break;
   case 'adopt-session':
     cmdAdoptSession(arg1);

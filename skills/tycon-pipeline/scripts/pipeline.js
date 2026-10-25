@@ -3402,6 +3402,12 @@ function computeStart(args) {
   // deja viejo: no se reescribe a mitad de ejecución.
   const previo = readSessionMarker();
   const sigueVieja = !!previo && String(previo.storyId) === String(storyId) && STEPS_TABLE.schemeOf(previo) === 1;
+  // La carpeta de la ejecución nace acá: guarda la copia de la apertura (lib/open-runs.js). Sin carpeta no hay apertura,
+  // y una ejecución sin apertura no se vería al perder el marcador: el arranque frena.
+  let runDir = null;
+  try { runDir = resolveRunDir(repo, storyId, true, storyPath); } catch (e) {
+    return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude crear la carpeta de la ejecución (${e.message}); sin ella la ejecución no queda anotada como abierta` }], actions_done: actions };
+  }
   const esquema = sigueVieja
     ? { stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8], arranque: '0' }
     // los que se cierran con su bandera no van en la lista: ninguna bandera la vacía, y una ejecución terminada tiene que
@@ -3415,7 +3421,7 @@ function computeStart(args) {
       // crudo, on-advisor-run.js y marker.js lo resolverían contra repoPath — coinciden sólo si
       // cwd == --repo. Con `--repo backend --story project/specs/x.md` desde el padre, la proyección
       // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
-      storyId, storyPath: path.resolve(storyPath), repoPath: repo, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
+      storyId, storyPath: path.resolve(storyPath), repoPath: repo, ...(runDir ? { runDir } : {}), sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
       // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
       // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el commit» para no tener que adivinarlo.
       evidenceDir: evid.dir || null,
@@ -3439,6 +3445,13 @@ function computeStart(args) {
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
+    // La apertura en el registro y su copia en la carpeta, después del marcador: con las tres piezas, si falta una, la
+    // ejecución frena como perdida (lib/open-runs.js). Retomar la misma historia sobrescribe la copia.
+    try {
+      require('./lib/open-runs.js').abrir({ sid: resolveSessionId(), story: storyId, storyPath: path.resolve(storyPath), repo, runDir });
+    } catch (e) {
+      return { ready: false, story_id: storyId, pauses: [{ id: 'apertura-failed', detail: `no pude anotar la apertura de la ejecución (${e.message}); el marcador quedó puesto, pero sin apertura no se vería al faltar` }], actions_done: actions };
+    }
     actions.push(`PIPE-C4: marker seteado (Arranque cerrado${sigueVieja ? '; sigue el marcador viejo de esta ejecución' : ''})`);
   } catch (e) {
     return { ready: false, story_id: storyId, pauses: [{ id: 'marker-set-failed', detail: String(e.message || e) }], actions_done: actions };

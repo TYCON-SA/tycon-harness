@@ -26,6 +26,7 @@
  * La punta de la cadena es el pedido que se está juzgando (`tool_use_id` de la entrada del freno): sin él no vale.
  *
  * Uso desde el freno: node escape-ok.js --variable TYCON_SAFETY_OFF --session <id> --tool-use-id <id> [--shell]
+ *   [--since <hora>] [--no-relay]   (la salida de una ejecución perdida: la frase posterior a su apertura, sin reenvío)
  *   imprime `{ ok, via, relevo?, motivo?, sinConversacion? }` y sale 0 si está autorizado, 3 si no.
  */
 const path = require('path');
@@ -100,14 +101,19 @@ function escapeAutorizado(opciones = {}) {
   return r;
 }
 
-function autorizadoPorNombre({ variable, sesion, pedido, home, env = process.env, arnes, ahora = Date.now(), ventanaMin = VENTANA_MIN } = {}) {
+// `desdeTs`: la frase vale desde esa hora en vez de la ventana (la salida de una ejecución perdida: posterior a su
+// apertura). `sinReenvio`: sólo la frase de la persona, no la reenviada por la sesión designada.
+function autorizadoPorNombre({ variable, sesion, pedido, home, env = process.env, arnes, ahora = Date.now(), ventanaMin = VENTANA_MIN, desdeTs, sinReenvio = false } = {}) {
   if (!esEscape(variable)) return { ok: false, motivo: `${variable} no es un escape que se autorice con una frase` };
   if (!sesion || !/^[\w-]+$/.test(String(sesion))) return { ok: false, sinConversacion: true, motivo: 'la herramienta no dijo de qué sesión es el comando' };
   // la punta de la cadena: el pedido que se está juzgando. Sin él, un renglón agregado después del pedido sería la punta
   if (!pedido || !/^[\w-]+$/.test(String(pedido))) return { ok: false, sinConversacion: true, motivo: 'la herramienta no dijo qué pedido se está juzgando (tool_use_id)' };
   const pok = require('./person-ok.js');
   const cw = require('./critical-waivers.js');
-  const desde = new Date(ahora - ventanaMin * 60000).toISOString();
+  // una hora pedida que no se puede leer no cae a la ventana: no se sabría si la frase es posterior
+  if (desdeTs && !Number.isFinite(Date.parse(desdeTs))) return { ok: false, motivo: `la hora de la apertura no se puede leer (${desdeTs})` };
+  const apertura = desdeTs ? new Date(desdeTs).toISOString() : null;
+  const desde = apertura || new Date(ahora - ventanaMin * 60000).toISOString();
   const cita = frase(variable);
   const juzgar = juez(variable);
   // la sesión de la conversación es la del comando: un reenvío a sí misma no cuenta (citaReenviada)
@@ -116,12 +122,13 @@ function autorizadoPorNombre({ variable, sesion, pedido, home, env = process.env
   const propia = pok.citaDeLaPersona(cita, { sesion, home, env: e, desde, sinPegado: true, juzgar, soloCadena: true, pedido });
   if (!propia.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${propia.motivo})` };
   if (propia.encontrada) return { ok: true, via: 'persona', cuando: propia.cuando || null };
-  const relevo = cw.sesionQueReenvia({ env: e, home, ...(arnes ? { arnes } : {}) });
+  const relevo = sinReenvio ? {} : cw.sesionQueReenvia({ env: e, home, ...(arnes ? { arnes } : {}) });
   if (relevo.valor) {
     const r = pok.citaReenviada(cita, relevo.valor, { sesion, home, env: e, desde, juzgar, soloCadena: true, pedido });
     if (r.encontrada) return { ok: true, via: 'reenvio', relevo: relevo.valor, cuando: r.cuando || null };
   }
-  const motivo = propia.rechazo || (propia.anterior ? `la frase es de hace más de ${ventanaMin} minutos` : `la persona no escribió «${cita}» en esta conversación`);
+  const vieja = apertura ? `la frase es anterior a la apertura de la ejecución (${apertura})` : `la frase es de hace más de ${ventanaMin} minutos`;
+  const motivo = propia.rechazo || (propia.anterior ? vieja : `la persona no escribió «${cita}» en esta conversación`);
   return { ok: false, motivo };
 }
 
@@ -132,7 +139,8 @@ if (require.main === module) {
   let r;
   try {
     // el perfil del equipo que declara la sesión que reenvía se lee del árbol de este archivo, nunca de una variable
-    r = escapeAutorizado({ variable: arg('--variable'), sesion: arg('--session'), pedido: arg('--tool-use-id'), arnes: path.join(__dirname, '..', '..', '..', '..') });
+    r = escapeAutorizado({ variable: arg('--variable'), sesion: arg('--session'), pedido: arg('--tool-use-id'), arnes: path.join(__dirname, '..', '..', '..', '..'),
+      desdeTs: arg('--since'), sinReenvio: process.argv.includes('--no-relay') });
   } catch (e) {
     r = { ok: false, motivo: `no pude buscar la autorización (${e.message})` };
   }

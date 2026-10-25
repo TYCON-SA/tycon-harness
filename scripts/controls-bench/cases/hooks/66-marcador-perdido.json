@@ -1,0 +1,35 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "marcador-perdido-sacado-con-zip-la-edicion-siguiente-frena",
+          "type": "must-block",
+          "_por_que": "8.121: el marcador sacado por un camino que la primera capa no ve (zip -m) deja la ejecución abierta sin marcador; la edición siguiente frena con el cartel, en vez de seguir como si no hubiera pipeline.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src .advisors/pipeline-runs/9.9-banco",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; R=\"$(pwd -P)/.advisors/pipeline-runs/9.9-banco\"; T=2026-10-25T10:00:00.000Z; printf '{\"ts\":\"%s\",\"sessionId\":\"bench-perdida\",\"name\":\"run-open\",\"sesion\":\"bench-perdida\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\"}\\n' \"$T\" \"$(pwd -P)\" \"$R\" >> \"$S/gates.log\"; printf '{\"sesion\":\"bench-perdida\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\",\"ts\":\"%s\"}' \"$(pwd -P)\" \"$R\" \"$T\" > \"$R/run-open.json\"; printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"bench-perdida\",\"runDir\":\"%s\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" \"$R\" > \"$S/active/bench-perdida.json\"",
+            "M=\"$HOME/.claude/.tycon-pipeline/active/bench-perdida.json\"; zip -qm \"$HOME/marcador.zip\" \"$M\" 2>/dev/null || mv \"$M\" \"$HOME/marcador.json\"; test ! -e \"$M\""
+          ],
+          "stdin": { "session_id": "bench-perdida", "tool_name": "Bash", "tool_input": { "command": "echo x > src/a.js" } },
+          "expect": { "exit": 2, "stderr_re": ["EJECUCIÓN PERDIDA", "falta su marcador", "autorizo cerrar la ejecución"] }
+        },
+        {
+          "id": "marcador-perdido-gemelo-cerrado-por-el-camino-legitimo-pasa",
+          "type": "must-not-block",
+          "_por_que": "8.121: el gemelo — la misma ejecución cerrada con marker.js clear (deja su run-close y borra la copia) — no frena: sin esto, el control frenaría cualquier sesión que alguna vez abrió una ejecución.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src .advisors/pipeline-runs/9.9-banco",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; R=\"$(pwd -P)/.advisors/pipeline-runs/9.9-banco\"; T=2026-10-25T10:00:00.000Z; printf '{\"ts\":\"%s\",\"sessionId\":\"bench-cerrada\",\"name\":\"run-open\",\"sesion\":\"bench-cerrada\",\"story\":\"9.9\",\"repo\":\"%s\",\"runDir\":\"%s\"}\\n{\"ts\":\"2026-10-25T11:00:00.000Z\",\"sessionId\":\"bench-cerrada\",\"name\":\"run-close\",\"sesion\":\"bench-cerrada\",\"story\":\"9.9\",\"runDir\":\"%s\",\"estado\":\"abortada\"}\\n' \"$T\" \"$(pwd -P)\" \"$R\" \"$R\" >> \"$S/gates.log\""
+          ],
+          "stdin": { "session_id": "bench-cerrada", "tool_name": "Bash", "tool_input": { "command": "echo x > src/a.js" } },
+          "expect": { "exit": 0, "stderr_not_re": ["EJECUCIÓN PERDIDA"] }
+        }
+      ]
+    }
+  ]
+}

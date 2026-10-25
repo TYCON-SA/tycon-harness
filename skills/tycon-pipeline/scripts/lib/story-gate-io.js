@@ -276,6 +276,21 @@ function appendLog(stateDir, fileName, sessionId, obj) {
  */
 function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots }) {
   const abs = path.isAbsolute(String(filePath)) ? String(filePath) : path.resolve(cwd || process.cwd(), String(filePath));
+  // Una ejecución abierta a la que le falta una pieza frena antes que nada: ni el carril, ni un ad-hoc, ni
+  // `story_gate: false` la apagan (lib/open-runs.js). No poder preguntar no es estar sana: frena con el motivo.
+  {
+    const or = require('./open-runs.js');
+    let p;
+    // desde el directorio de trabajo y desde el archivo: con el cwd en la carpeta de arriba, la copia está en el repo del archivo
+    try { p = or.perdida({ sid: sessionId, cwd: [cwd || process.cwd(), path.dirname(abs)] }); } catch (e) {
+      p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
+    }
+    if (p) {
+      const verdict = { action: 'block', kind: 'ejecucion-perdida', reason: `ejecución perdida (${p.caso}): ${p.falta}` };
+      appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: verdict.kind, file: abs, via: via || null, story: p.story, reason: verdict.reason });
+      return { verdict, message: or.cartel(p, { markerJs: path.join(__dirname, '..', 'marker.js') }), ctx: { filePath: abs, perdida: p, via } };
+    }
+  }
   const roots = Array.isArray(installedRoots) ? installedRoots : defaultInstalledRoots();
   const realFilePath = installedTree.realPath(abs);
   const realStateDir = installedTree.realPath(stateDir);
