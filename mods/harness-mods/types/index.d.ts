@@ -11,6 +11,10 @@ export type Run = {
   total: number
   minutesStep: number | null
   minutesTotal: number | null
+  /** El total para leer: «35 min», «3 h 12 min», «desde ayer 15:20». */
+  totalText?: string
+  /** Sin paso abierto: los pedidos abiertos de la story (`work-in-progress.js --marker`); sin dato, no se preguntó. */
+  entering?: unknown
   waiting: boolean
   rows: BoardRow[]
 }

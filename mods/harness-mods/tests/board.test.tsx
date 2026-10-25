@@ -196,3 +196,32 @@ test('sin la spec, el cartel sigue con el número solo', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^9\.9$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /…/ })).toBeUndefined()
 })
+
+// la corrida con todos los pasos cerrados: el cartel pregunta por los pedidos de la story y dice qué espera
+const CLOSED = JSON.stringify({
+  storyId: '8.117', stepScheme: 2, startedAt: at(0), autonomous: true,
+  stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'],
+  stepsPending: [],
+})
+
+test('sin paso abierto, dice qué espera: los pedidos abiertos de la story', async ($, on) => {
+  world(on, { [MARKER_PATH]: CLOSED })
+  const asked: string[][] = []
+  const prs: unknown[] = [{ repo: 'tycon-harness', ref: '#536', draft: false, conflict: false }]
+  on('process.run', (_$: any, e: any) => {
+    asked.push(e.argv)
+    return { value: { exitCode: 0, stdout: JSON.stringify({ prs, failed: false, unreadable: [] }), stderr: '' } }
+  })
+  await start($)
+  const pipe = await $.command.run({ command: 'pipeline', args: '', ...RUN })
+  expect(pipe.text).toMatch(/esperando que entren los pedidos \(#536\)/)
+  expect(asked[0]).toContain('--marker')
+  expect(asked[0]).toContain(MARKER_PATH)
+  expect(asked[0].some((a) => a.endsWith('/scripts/tools/work-in-progress.js'))).toBe(true)
+  const ui = await mount($)
+  expect(await ui.find({ type: 'Text', text: /esperando que entren los pedidos \(#536\)/ })).toBeDefined()
+  // dentro de los dos minutos no vuelve a preguntar
+  const n = asked.length
+  await $.command.run({ command: 'pipeline', args: '', ...RUN })
+  expect(asked.length).toBe(n)
+})

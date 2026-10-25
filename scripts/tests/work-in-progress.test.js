@@ -1406,3 +1406,24 @@ test('T6 Ayuda_NombreYCarpeta @story-2.49.4 @ac-6: la ayuda dice de dónde sale 
   assert.match(help, /\*\*Carpeta\*\* es dónde edita cada sesión/);
   assert.match(help, /sin lanzar git/);
 });
+
+test('T23c Entrando_UnaStory_ParaElCartel: --marker da los pedidos abiertos de esa story, uno por uno, y si alguna consulta no contestó', async () => {
+  const { storyEntering } = require(WIP);
+  const m = toyMachine();
+  const x = gitRepo(m.root, 'x', 'story/x', GH);
+  const y = gitRepo(m.root, 'y', 'story/x', AZ);
+  const story = { storyId: '5.1', repoPath: x, filesTouched: [path.join(y, 'a.js')] };
+  const asked = [];
+  const both = await storyEntering(story, { query: async (qs) => { asked.push(...qs); return qs.map((q) => ({ prs: [{ number: q.kind === 'github' ? 536 : 5434, draft: false, conflict: false }] })); } });
+  assert.deepStrictEqual(both.prs.map((p) => p.ref).sort(), ['!5434', '#536']);
+  assert.strictEqual(both.failed, false);
+  assert.strictEqual(asked.length, 2);
+  const none = await storyEntering(story, { query: async (qs) => qs.map(() => ({ prs: [] })) });
+  assert.deepStrictEqual(none, { prs: [], failed: false, unreadable: [] });
+  const down = await storyEntering(story, { query: async (qs) => qs.map(() => ({ error: 'gh: no está instalado' })) });
+  assert.strictEqual(down.failed, true);
+  assert.deepStrictEqual(down.prs, []);
+  // en su rama principal no hay nada que esperar ni que preguntar
+  const enMain = await storyEntering({ storyId: '5.2', repoPath: gitRepo(m.root, 'z', 'main', GH) }, { query: async () => { throw new Error('no debía preguntar'); } });
+  assert.deepStrictEqual(enMain, { prs: [], failed: false, unreadable: [] });
+});

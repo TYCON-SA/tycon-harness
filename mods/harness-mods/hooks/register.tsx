@@ -55,14 +55,14 @@ const asList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is 
  * El marker de la sesión, en la primera carpeta del estado que lo tenga (como tycon-home.js). `text: null` sin
  * marker; `error` si el archivo está pero no se pudo leer (eso no es «sin corrida»: /pipeline lo dice).
  */
-async function markerText($: any): Promise<{ text: string | null; error: string | null }> {
+async function markerText($: any): Promise<{ text: string | null; error: string | null; file?: string }> {
   const id = await $.session.id()
   const dirs = stateDirs({ HOME: await $.env.get('HOME'), USERPROFILE: await $.env.get('USERPROFILE'), TYCON_HOME: await $.env.get('TYCON_HOME') })
   for (const dir of dirs) {
     const file = `${dir}/active/${id}.json`
     if (!(await $.fs.exists(file))) continue
     try {
-      return { text: await $.fs.read(file), error: null }
+      return { text: await $.fs.read(file), error: null, file }
     } catch (e: any) {
       return { text: null, error: `${file} (${e?.message || e})` }
     }
@@ -89,6 +89,34 @@ async function titleFromSpec($: any, markerTextValue: string | null): Promise<st
   }
 }
 
+// los pedidos abiertos de la story, cuando la corrida no tiene paso abierto: se preguntan con work-in-progress.js
+// (gh y az, unos segundos), a lo sumo cada ENTERING_MS y nunca dos veces a la vez; mientras, vale la última respuesta
+const ENTERING_MS = 120000
+let entering: { key: string; at: number; value: unknown } | null = null
+let asking: Promise<void> | null = null
+
+function askEntering($: any, key: string, file: string): void {
+  if (asking) return
+  asking = (async () => {
+    let value: unknown = { prs: [], failed: true }
+    try {
+      const wip = `${$.plugin.root}/../../scripts/tools/work-in-progress.js`
+      const r = await $.process.run(['node', wip, '--marker', file], { timeoutMs: 20000 })
+      if (r.exitCode === 0) value = JSON.parse(r.stdout)
+    } catch (_) { /* queda «no pude consultar los pedidos» */ }
+    entering = { key, at: await $.clock.now(), value }
+  })().finally(() => { asking = null; void safeRefresh($) })
+}
+
+/** La última respuesta de los pedidos de esta story (o nada); si está vieja o es de otra, pide otra en segundo plano. */
+async function enteringFor($: any, run: any, file: string | undefined): Promise<unknown> {
+  if (!run || run.current || !file) return undefined
+  const key = `${run.storyId}:${file}`
+  const fresh = entering && entering.key === key && (await $.clock.now()) - entering.at < ENTERING_MS
+  if (!fresh) askEntering($, key, file)
+  return entering && entering.key === key ? entering.value : undefined
+}
+
 async function refresh($: any): Promise<void> {
   // apagado: no lee nada, y no deja una foto vieja que /pipeline o el cartel muestren como actual
   if (!isActive(BOARD, { off: await read($, off) })) {
@@ -98,7 +126,8 @@ async function refresh($: any): Promise<void> {
   const marker = await markerText($)
   const sticky = stickyWaiting(readRun(marker.text, await $.clock.now()), await read($, waitingFor))
   await update($, waitingFor, () => sticky.remember)
-  const run = sticky.run && !sticky.run.title ? { ...sticky.run, title: await titleFromSpec($, marker.text) } : sticky.run
+  const titled = sticky.run && !sticky.run.title ? { ...sticky.run, title: await titleFromSpec($, marker.text) } : sticky.run
+  const run = titled && !titled.current ? { ...titled, entering: await enteringFor($, titled, marker.file) } : titled
   // el contexto es un dato más del renglón: si la sesión no lo da, se muestra «—»
   let context: number | null = null
   try {
@@ -206,7 +235,7 @@ export const register: Register = on => {
     const { step } = boardParts(run, snap.context ?? undefined)
     // un renglón corto: story, paso, avance y total; el resto va en la ventana del detalle
     const warnings = ((run as any).warnings || []).length
-    const compact = [`${run.done}/${run.total}`, `${run.minutesTotal ?? '—'} min`, ...(warnings ? [`⚠ ${warnings}`] : [])]
+    const compact = [`${run.done}/${run.total}`, (run as any).totalText ?? `${run.minutesTotal ?? '—'} min`, ...(warnings ? [`⚠ ${warnings}`] : [])]
     const open = await read($, expanded)
     const showDetail = async () => {
       // donde no hay ventanas (la extensión de VS Code), el detalle se despliega bajo el renglón

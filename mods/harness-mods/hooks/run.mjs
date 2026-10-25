@@ -15,6 +15,38 @@ const ms = (iso) => {
 };
 const minutes = (from, to) => (from === null || to === null ? null : Math.max(0, Math.round((to - from) / 60000)));
 const show = (v) => (v === null || v === undefined ? '—' : String(v));
+const two = (n) => String(n).padStart(2, '0');
+
+/**
+ * El tiempo total de la corrida, para leerlo de un vistazo: «35 min», «3 h 12 min» o, desde un día entero, desde
+ * cuándo corre («desde ayer 15:20», o «desde el 23/10 15:20» si es de antes). La hora es la de la máquina.
+ */
+export function totalText(minutesTotal, startedMs, now) {
+  if (minutesTotal === null || minutesTotal === undefined) return '— min';
+  if (minutesTotal < 60) return `${minutesTotal} min`;
+  if (minutesTotal < 24 * 60 || startedMs === null || startedMs === undefined) {
+    const h = Math.floor(minutesTotal / 60);
+    const m = minutesTotal % 60;
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
+  const start = new Date(startedMs);
+  const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const hour = `${two(start.getHours())}:${two(start.getMinutes())}`;
+  return day(start) === day(yesterday) ? `desde ayer ${hour}` : `desde el ${two(start.getDate())}/${two(start.getMonth() + 1)} ${hour}`;
+}
+
+/**
+ * Qué dice el cartel cuando la corrida no tiene paso abierto: lo que espera. `entering` es la respuesta de
+ * `work-in-progress.js --marker` (`{ prs, failed }`); sin ella todavía no se preguntó.
+ */
+export function idleStep(entering) {
+  if (!isObj(entering) || !Array.isArray(entering.prs)) return 'sin paso abierto';
+  if (entering.prs.length) return `esperando que entren los pedidos (${entering.prs.map((p) => p.ref).join(', ')})`;
+  return entering.failed ? 'sin paso abierto (no pude consultar los pedidos)' : 'lista para cerrar';
+}
+const stepText = (run) => (run.current ? run.current.name : idleStep(run.entering));
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 
 /** 2 (pasos por nombre), 1 (el marker viejo, por número) o `null` (ninguno de los dos). */
@@ -174,6 +206,7 @@ export function readRun(text, now) {
     total: TOTAL,
     minutesStep: current ? minutes(startOf(current.id) !== null ? startOf(current.id) : previousClose(current.id), now) : null,
     minutesTotal: minutes(ms(m.startedAt), now),
+    totalText: totalText(minutes(ms(m.startedAt), now), ms(m.startedAt), now),
     waiting: m.waitingForHuman === true || Boolean(asks),
     oldScheme: scheme === 1,
     warnings,
@@ -229,7 +262,7 @@ export function boardParts(run, contextPercent) {
   const rest = [
     `${run.done} de ${run.total} hechos`,
     `${show(run.minutesStep)} min en este paso`,
-    `${show(run.minutesTotal)} min en total`,
+    `${run.totalText || `${show(run.minutesTotal)} min`} en total`,
     `contexto usado ${show(pct)} %`,
   ];
   if (run.waiting) rest.push('te espera');
@@ -237,7 +270,7 @@ export function boardParts(run, contextPercent) {
   return {
     story: `Story ${run.storyId}`,
     title: shortTitle(run.title),
-    step: run.current ? run.current.name : 'sin paso abierto',
+    step: stepText(run),
     rest,
   };
 }
@@ -304,8 +337,8 @@ export function warnKey(run, warned) {
 /** La respuesta de /pipeline: un resumen y la tabla de pasos (en Markdown). */
 export function pipelineTable(run) {
   const title = typeof run.title === 'string' && run.title !== '' ? ` «${run.title}»` : '';
-  const head = `Story ${run.storyId}${title} — ${run.current ? run.current.name : 'sin paso abierto'}` +
-    ` · ${run.done} de ${run.total} pasos hechos · ${show(run.minutesTotal)} min en total${run.waiting ? ' · te espera' : ''}`;
+  const head = `Story ${run.storyId}${title} — ${stepText(run)}` +
+    ` · ${run.done} de ${run.total} pasos hechos · ${run.totalText || `${show(run.minutesTotal)} min`} en total${run.waiting ? ' · te espera' : ''}`;
   const lines = [head, ...(run.warnings || []), ...(run.oldScheme ? [OLD_RUN_TEXT] : []), '', '| Paso | Estado | Tiempo |', '|---|---|---|'];
   for (const r of run.rows) lines.push(`| ${r.number ? `${r.number}. ` : ''}${r.name} | ${r.state} | ${r.minutes === null ? '—' : `${r.minutes} min`} |`);
   return lines.join('\n');
