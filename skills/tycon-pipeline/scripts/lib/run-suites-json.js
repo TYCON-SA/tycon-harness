@@ -42,7 +42,11 @@
  * test-gate-report.js. Una suite sin datos (una de bash que no lanza `node`, una que no arrancó) se nombra en
  * `coverage.without_data` y no rompe nada. Sin `--coverage`: ni envoltorio ni carpeta.
  *
- * Uso:  node run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>]
+ * UNA SOLA SUITE (`--suite <ruta>`, la `ruta` de su entrada en suites.json): el plan queda con esa entrada sola y corre
+ * aunque la difiera lo tocado o la corrida liviana, con el mismo envoltorio de cobertura. Una ruta que no está sale 2.
+ * Cada falla del resumen trae `entrada: {raiz, ruta}`, la de suites.json, que es la que recibe `--suite`.
+ *
+ * Uso:  node run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--suite <ruta>]
  *   · `raiz: "arnes"`        → <repo>/scripts/<ruta>
  *   · `raiz: "agent-skills"` → <skills>/<ruta>   (`--skills`; si no, la función del repo; en un repo sin
  *                              esa función, TYCON_SKILLS_DIR, o ~/.claude/agent-skills/skills)
@@ -236,8 +240,9 @@ function main(argv, env = process.env) {
   const [repo, out] = argv;
   const iSk = argv.indexOf('--skills');
   const iCov = argv.indexOf('--coverage');
-  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1])) {
-    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light] [--only-touched]');
+  const iSu = argv.indexOf('--suite');
+  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1]) || (iSu >= 0 && !argv[iSu + 1])) {
+    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light] [--only-touched] [--suite <ruta>]');
     return Promise.resolve(2);
   }
   const covDir = iCov >= 0 ? path.resolve(argv[iCov + 1]) : null;
@@ -268,10 +273,19 @@ function main(argv, env = process.env) {
     escribir(out, { no_medido: 'suites.json sin suites declaradas', corridas: 0, fallas: [], ausentes: [] });
     return Promise.resolve(3);
   }
+  const suiteOnly = iSu >= 0 ? argv[iSu + 1] : null;
+  if (suiteOnly) {
+    suites = suites.filter((s) => s.ruta === suiteOnly);
+    if (!suites.length) {
+      console.error(`[suites.json] ${suiteOnly} no está en ${lista}: no corrí nada`);
+      return Promise.resolve(2);
+    }
+  }
 
   const { workers, warning } = resolveWorkers(env);
   if (warning) console.error(`[suites.json] ⚠️  ${warning}`);
-  const allSuites = env.TYCON_GATE_ALL_SUITES === '1';
+  // la suite pedida sola corre aunque la difiera lo tocado o la corrida liviana
+  const allSuites = env.TYCON_GATE_ALL_SUITES === '1' || Boolean(suiteOnly);
   const touched = readTouched(touchedFile);
   let light = argv.includes('--light');
   const onlyTouched = argv.includes('--only-touched') && !allSuites;
@@ -300,7 +314,7 @@ function main(argv, env = process.env) {
       if (Array.isArray(g) && g.length && g.every(isValidPattern)) gate = g;
       else console.error(`[suites.json] ⚠️  ${name}: «gate_only_when_touching» no es una lista de «<carpeta>/**» (${JSON.stringify(g)}) — no la difiero`);
     }
-    return { idx, ruta, name, exclusive, gate, fromSkills: s.raiz === 'agent-skills' };
+    return { idx, ruta, name, exclusive, gate, fromSkills: s.raiz === 'agent-skills', entrada: { raiz: s.raiz, ruta: s.ruta } };
   });
 
   const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
@@ -413,7 +427,7 @@ function main(argv, env = process.env) {
       const ms = Date.now() - t0;
       const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
       const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');
-      results[p.idx] = { ruta: p.ruta, exit, ms, salida };
+      results[p.idx] = { ruta: p.ruta, entrada: p.entrada, exit, ms, salida };
       console.log(exit === 0 ? `ok       ${p.name} (${ms} ms)` : `ROJO(${exit}) ${p.ruta}`);
       resolve();
     };
@@ -443,7 +457,7 @@ function main(argv, env = process.env) {
       resumen.suites.push({ ruta: r.ruta, exit: r.exit, ms: r.ms });
       if (r.exit === 0) resumen.verdes += 1;
       // La cola de la salida viaja en el resumen para que el rojo se pueda leer sin re-correr.
-      else resumen.fallas.push({ ruta: r.ruta, exit: r.exit, cola: r.salida.split('\n').slice(-25).join('\n') });
+      else resumen.fallas.push({ ruta: r.ruta, exit: r.exit, cola: r.salida.split('\n').slice(-25).join('\n'), entrada: r.entrada });
     }
     if (covDir) {
       const lcov = path.join(covDir, 'lcov.info');

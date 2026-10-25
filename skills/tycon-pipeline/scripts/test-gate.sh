@@ -50,6 +50,21 @@ set -uo pipefail
 # ninguna prueba y quedaría verde. Por eso la suite corre como en una terminal.
 unset NODE_TEST_CONTEXT
 
+# `--suite <ruta>` (en cualquier lugar de los argumentos): corre sólo esa suite de suites.json, con el mismo ambiente que
+# la corrida completa. Es la que se repite primero después de un rojo (ver «Primero la suite que falló», en la rama de
+# suites.json). Se saca antes de leer los posicionales.
+SUITE_ONLY=""
+_TG_ARGS=()
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--suite" ]]; then
+    [[ -n "${2:-}" ]] || { echo "[test-gate] 🔴 --suite sin ruta: test-gate.sh <repo> [story] --suite <ruta de suites.json>" >&2; exit 2; }
+    SUITE_ONLY="$2"; shift 2
+  else
+    _TG_ARGS+=("$1"); shift
+  fi
+done
+set -- ${_TG_ARGS[@]+"${_TG_ARGS[@]}"}
+
 # REPO canonicalizado a ABSOLUTO: la rama
 # multi-proyecto embebe los paths de los .csproj en un bash -c que corre tras
 # `cd $REPO_RUN` — con un repo-dir relativo dejaban de resolver (MSB1009 falso).
@@ -108,7 +123,9 @@ es_sin_acotar() {
 
 marcar_tests_en_rojo() {
   local codigo="$1" motivo="$2"
-  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" run-check tests -- \
+  # TYCON_TEST_GATE_MARK: la marca no corre pruebas y no toma el candado de `run-check`; con el de otra sesión saldría
+  # 75 sin escribir, y el verde viejo quedaría en pie.
+  ( cd "$REPO" && TYCON_TEST_GATE=1 TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- \
       node -e 'console.error("test-gate: " + process.argv[1]); process.exit(Number(process.argv[2]))' "$motivo" "$codigo" ) >&2 || true
 }
 
@@ -156,6 +173,7 @@ TG_SUITES_PID=""
 TG_TREE_PUB_ROOT=""
 TG_NO_COMPANIONS=""
 TG_TREE_TOUCHED_FILE=""
+TG_TOP_FULL=""
 borrar_arbol_privado() {
   # La corrida de las suites va en su propio grupo de procesos (ver la rama suites.json): se corta el grupo entero, así
   # run-check y el corredor reciben la señal y el corredor corta sus suites. Cortar sólo el subshell las dejaría vivas
@@ -174,7 +192,8 @@ borrar_arbol_privado() {
 # corrida anterior no queda en pie, como en el 4, el 5 y el 6) y no se corren los repos hermanos.
 cortar_arbol_privado() {
   borrar_arbol_privado
-  marcar_tests_en_rojo "$1" "la corrida se cortó (señal) mientras medía el repo privado adelgazado: no es verde"
+  # una suite sola (`--suite`) no es la corrida completa: su corte no toca el check `tests`
+  [[ -n "$SUITE_ONLY" ]] || marcar_tests_en_rojo "$1" "la corrida se cortó (señal) mientras medía el repo privado adelgazado: no es verde"
   trap - EXIT
   exit "$1"
 }
@@ -228,6 +247,14 @@ correr_hermanos_al_salir() {
     else
       # Sin alcance propio: el de este repo (TYCON_TEST_SCOPE) no vale para el hermano.
       TYCON_TEST_GATE_COMPANION=1 TYCON_TEST_GATE_STORY_REPO="$REPO_STORY" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$root" "$story_abs" < /dev/null || hrc=$?
+    fi
+    # 75: en el hermano hay otra corrida de las pruebas en marcha. El total no se midió: no queda tests-result.json, el
+    # check queda en rojo (este repo pudo dejarlo verde) y la puerta sale 75, igual que si el ocupado fuera este repo.
+    if [[ "$hrc" == "75" ]]; then
+      rm -f "$OUT_FILE"
+      marcar_tests_en_rojo 1 "corrida a medias: el repo hermano $(basename "$root") no corrió porque otra corrida de sus pruebas está en marcha; no es verde"
+      echo "🟡 [test-gate] el repo hermano $(basename "$root") no corrió: otra corrida de sus pruebas está en marcha. Esperá su resultado; no quedó tests-result.json." >&2
+      exit 75
     fi
     # Un 7 del hermano sin la constancia de «sin acotar» es un rojo de verdad: se combina como 1.
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$root/.advisors/tests-result.json"; then
@@ -333,6 +360,14 @@ correr_partes() {
     out="$OUT_DIR/tests-result.part-${scope//\//_}.json"
     hrc=0
     TYCON_TEST_GATE_PART=1 TYCON_TEST_GATE_OUT_FILE="$out" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "${story_abs:-$STORY_ARG}" "$scope" < /dev/null || hrc=$?
+    # 75: otra corrida de las pruebas está en marcha en este repo; no se juntan partes ni se corren hermanos
+    if [[ "$hrc" == "75" ]]; then
+      TG_NO_COMPANIONS="otra corrida de las pruebas está en marcha en este repo"
+      # una parte anterior ya pudo dejar el check en verde: a medias no es verde
+      [[ -n "$filas" ]] && marcar_tests_en_rojo 1 "corrida a medias: la parte $scope no corrió porque otra corrida de las pruebas está en marcha en este repo; no es verde"
+      echo "🟡 [test-gate] la parte $scope no corrió: otra corrida de las pruebas está en marcha en este repo. Esperá su resultado; no quedó tests-result.json." >&2
+      exit 75
+    fi
     # un 7 de una parte sin la constancia de «sin acotar» es un rojo de verdad
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
     filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${out}"$'\n'
@@ -391,7 +426,7 @@ correr_partes() {
   echo "[test-gate] partes: resultado total → salida $final" >&2
   exit "$final"
 }
-if [[ -z "$SCOPE" && "$TG_MULTI" == "1" && "$TG_SCOPES" == *,* ]]; then correr_partes "$TG_SCOPES"; fi
+if [[ -z "$SCOPE" && -z "$SUITE_ONLY" && "$TG_MULTI" == "1" && "$TG_SCOPES" == *,* ]]; then correr_partes "$TG_SCOPES"; fi
 
 if [[ -z "$SCOPE" && "$TG_MULTI" == "1" ]]; then
   if [[ "$TG_AMBIG" == "0" && -n "$TG_SCOPE" ]]; then
@@ -523,8 +558,15 @@ if [[ -z "$RUNNER" && -z "$SCOPE" && -n "$TG_CANDS" && "$TG_CANDS" != *,* ]]; th
   if [[ -n "$_UNICO" && "$_UNICO" != "." && -d "$REPO/$_UNICO" ]]; then
     echo "[test-gate] alcance: el único proyecto con pruebas, $_UNICO/" >&2
     trap - EXIT
-    TYCON_TEST_SCOPE= exec bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "$STORY_ARG" "$_UNICO"
+    TYCON_TEST_SCOPE= exec bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "$STORY_ARG" "$_UNICO" ${SUITE_ONLY:+--suite "$SUITE_ONLY"}
   fi
+fi
+
+# `--suite` es una suite de suites.json: con otro corredor no hay a qué entrada apuntar.
+if [[ -n "$SUITE_ONLY" && "$RUNNER" != "suites-json" ]]; then
+  echo "[test-gate] 🔴 --suite sólo sirve en un repo con scripts/tests/suites.json; acá el corredor es ${RUNNER:-ninguno}: no corrí nada" >&2
+  trap - EXIT
+  exit 2
 fi
 
 if [[ -z "$RUNNER" ]]; then
@@ -675,7 +717,7 @@ if [[ -n "$GENERICO" ]]; then
       bash -c "set -o pipefail; $_CMD 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
   # pytest sin pytest-cov rechaza --cov: se corre de nuevo sin cobertura, y el informe lo dice
   _SIN_COV="$(_campo_generico commandWithoutCoverage)"
-  if [[ "$SUITE_EXIT" != "0" && -n "$_SIN_COV" ]] && grep -q "unrecognized arguments: --cov" "$RESULTS_DIR/run.log" 2>/dev/null; then
+  if [[ "$SUITE_EXIT" != "0" && "$SUITE_EXIT" != "75" && -n "$_SIN_COV" ]] && grep -q "unrecognized arguments: --cov" "$RESULTS_DIR/run.log" 2>/dev/null; then
     echo "[test-gate] ⚠️  $RUNNER sin pytest-cov: corre de nuevo sin cobertura" >&2
     echo "falta pytest-cov: las pruebas corrieron sin medir la cobertura" > "$RESULTS_DIR/sin-cobertura.txt"
     SUITE_EXIT=0
@@ -786,6 +828,45 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"
   fi
+  # --- Primero la suite que falló ---
+  # Una corrida completa roja anota en el marcador las suites que fallaron (`tests-failed record`). Mientras quede alguna,
+  # la completa no lanza nada: sale 76 y da el comando para repetir cada una sola. Relanzar todas para ver si se arregló
+  # una cuesta la suite entera cada vez. «Completa» es la de arriba sin `--suite`, con los recortes que la puerta pone
+  # sola (lo tocado, la liviana, la cruzada); una parte o un repo hermano no anotan ni se niegan.
+  # `--suite <ruta>` corre esa sola en el check `tests-suite`: en verde la saca de la lista, y nunca escribe el check
+  # `tests` ni tests-result.json (una suite sola no es la corrida completa).
+  _TG_SUITES_FILE="$REPO_RUN/scripts/tests/suites.json"
+  if [[ -n "$SUITE_ONLY" ]]; then
+    _tg_has=0
+    node "$SCRIPT_DIR/lib/failed-first.js" has "$_TG_SUITES_FILE" "$SUITE_ONLY" || _tg_has=$?
+    if [[ "$_tg_has" != "0" ]]; then
+      [[ "$_tg_has" == "1" ]] && echo "[test-gate] 🔴 $SUITE_ONLY no está en $_TG_SUITES_FILE: no corrí nada (la ruta es la de su entrada, sin la raíz)" >&2
+      borrar_arbol_privado; trap - EXIT; exit 2
+    fi
+    _TG_ONE_ARGS=()
+    [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_ONE_ARGS=(--skills "$(_tg_tree_field skills)")
+    echo "[test-gate] una sola suite: $SUITE_ONLY (mismo ambiente que la corrida completa; no escribe el check tests ni tests-result.json)"
+    _tg_rc=0
+    ( cd "$REPO" && node "$MARKER_JS" run-check tests-suite -- \
+        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || _tg_rc=$?
+    if [[ "$_tg_rc" == "0" ]]; then
+      ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ) \
+        || echo "[test-gate] ⚠️  $SUITE_ONLY salió verde pero no pude sacarla de la lista de las que fallaron: la corrida completa la va a seguir pidiendo" >&2
+    fi
+    borrar_arbol_privado; trap - EXIT; exit "$_tg_rc"
+  fi
+  if [[ "${TYCON_TEST_GATE_PART:-}" != "1" && "${TYCON_TEST_GATE_COMPANION:-}" != "1" ]]; then
+    TG_TOP_FULL=1
+    _tg_pend=0
+    ( cd "$REPO" && node "$MARKER_JS" tests-failed pending --suites "$_TG_SUITES_FILE" --gate "$SCRIPT_DIR/test-gate.sh" --repo "$REPO_STORY" ${STORY_ARG:+--story "$STORY_ARG"} ) || _tg_pend=$?
+    if [[ "$_tg_pend" == "76" ]]; then
+      # el artefacto de una corrida anterior no puede quedar a la vista: se leería como el resultado de ésta
+      rm -f "$OUT_FILE"
+      TG_NO_COMPANIONS="primero se repiten solas las suites que fallaron"
+      exit 76
+    fi
+    [[ "$_tg_pend" == "0" ]] || echo "[test-gate] ⚠️  no pude leer la lista de las suites que fallaron (salida $_tg_pend): corro la completa igual" >&2
+  fi
   BASE_JSON="$(TYCON_TEST_GATE_CROSS_REPO="$TG_CROSS" node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
   [[ -n "$BASE_JSON" ]] || BASE_JSON='{"ref":null,"source":null,"descartadas":[{"source":"coverage-base","motivo":"no se pudo correr lib/coverage-base.js"}]}'
   # Sin base, touched-files dice «no sé» y el runner corre todo (el lado seguro); igual se dice por qué.
@@ -858,6 +939,21 @@ else
       npx vitest run --coverage --reporter=json --outputFile "$RESULTS_DIR/vitest.json" ) || SUITE_EXIT=$?
 fi
 
+# 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde
+# cuándo y de quién). No es un rojo: no se escribe tests-result.json, no se toca el check y no se corren los hermanos.
+if [[ "$SUITE_EXIT" == "75" ]]; then
+  TG_NO_COMPANIONS="otra corrida de las pruebas está en marcha en este repo"
+  # el de una corrida anterior tampoco queda a la vista: se leería como el resultado de ésta
+  rm -f "$OUT_FILE"
+  echo "🟡 [test-gate] no corrí nada: otra corrida de las pruebas está en marcha en este repo (arriba, desde cuándo y de quién). Esperá su resultado; no quedó tests-result.json." >&2
+  exit 75
+fi
+# La corrida completa reemplaza la lista de las que fallaron: roja, con sus fallas; verde (o sin fallas con su entrada), vacía.
+if [[ "$TG_TOP_FULL" == "1" ]]; then
+  ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed record --summary "$RESULTS_DIR/suites.json" --repo "$REPO_STORY" ) \
+    || echo "[test-gate] ⚠️  no pude anotar las suites que fallaron: la próxima corrida completa no va a pedir repetirlas primero" >&2
+fi
+
 # --- Parsear resultados + coverage (best-effort, nunca rompe) ----------------
 # Respaldo del cruce de cobertura: los archivos que la story declara CREAR. git deja de
 # reportar "added" apenas se commitea, así que en una iteración de fix POSTERIOR al commit
@@ -924,11 +1020,11 @@ if [[ "$SUITE_EXIT" == "0" ]]; then
   if [[ "$_VERDE" == "falla" ]]; then
     # la herramienta salió 0 pero el reporte trae fallas (Maven con testFailureIgnore, por ejemplo): es un rojo
     echo "🔴 [test-gate] la herramienta salió 0 pero el reporte trae pruebas fallidas: NO es verde." >&2
-    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la herramienta salió 0 con pruebas fallidas en el reporte: no es verde"); process.exit(1)' ) || true
+    ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la herramienta salió 0 con pruebas fallidas en el reporte: no es verde"); process.exit(1)' ) || true
     SUITE_EXIT=1
   elif [[ "$_VERDE" != "si" ]]; then
     echo "🔴 [test-gate] la suite salió 0 pero no corrió ninguna prueba, o no se pudo contar: NO es verde." >&2
-    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite salió 0 sin ninguna prueba corrida (o sin informe que lo cuente): no es verde"); process.exit(6)' ) || true
+    ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite salió 0 sin ninguna prueba corrida (o sin informe que lo cuente): no es verde"); process.exit(6)' ) || true
     SUITE_EXIT=6
   fi
 fi

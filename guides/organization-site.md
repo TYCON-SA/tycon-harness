@@ -189,6 +189,11 @@ sólo si la organización decidió bajar las conversaciones (sección «Conversa
 **Qué hacer:** una ejecución que «quedó en el 4» puede estar en curso o abandonada; su detalle dice hasta dónde llegó.
 Una persona ve sólo las ejecuciones de sus máquinas confirmadas; quien mantiene ve todas.
 
+**Después de un reinicio** (un despliegue, o el sitio que se apagó por falta de uso), la pestaña muestra la última vista
+guardada, con la fecha de cuándo es, mientras el buzón se vuelve a bajar entero; una banda lo dice y la página se pone al
+día sola. Los cambios de cada ejecución vuelven cuando termina de armarse la vista nueva. La vista guardada vive en el
+disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pestaña espera la primera bajada entera.
+
 ### Proyectos
 
 **Qué contesta:** ¿cómo va cada producto?

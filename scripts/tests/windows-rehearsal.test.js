@@ -68,23 +68,41 @@ const listing = (dir) => { const out = []; const walk = (d) => { for (const e of
 
 // ═══ R1 · el pipeline ══════════════════════════════════════════════════════════════════════════════════════════
 
+// los escenarios del pipeline, y la comprobación que los lee del bloque de parámetros: la misma para el yml real y
+// para los de juguete
+const SCENARIOS_TODAY = ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'netfx', 'all'];
+const checkScenarios = (params) => {
+  const scenario = /- name: scenario\n\s+displayName: .*\n\s+type: string\n\s+default: (\w+)\n\s+values:\n((?:\s+- [\w-]+\n)+)/.exec(params);
+  assert.ok(scenario, 'el parámetro scenario, con su lista cerrada de valores');
+  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), SCENARIOS_TODAY);
+  return scenario;
+};
+
+test('RehearsalPipeline_Yaml_EscenarioDeMasODeMenos_Frena', () => {
+  // la lista de escenarios es exacta: uno nuevo o uno que falta se ve, no pasa de largo
+  const toy = (names) => `  - name: scenario\n    displayName: El escenario\n    type: string\n    default: measure\n    values:\n${names.map((n) => `      - ${n}\n`).join('')}`;
+  checkScenarios(toy(SCENARIOS_TODAY));
+  assert.throws(() => checkScenarios(toy([...SCENARIOS_TODAY, 'otro'])), 'un escenario de más frena');
+  assert.throws(() => checkScenarios(toy(SCENARIOS_TODAY.filter((v) => v !== 'netfx'))), 'uno de menos frena');
+});
+
 test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', { skip: !fs.existsSync(PIPELINE) && 'NO MEDIDO — este árbol no trae pipelines/azure-pipelines-windows.yml (vive en el repo del equipo)' }, () => {
   const yml = fs.readFileSync(PIPELINE, 'utf8');
   const code = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   const params = code.slice(code.indexOf('parameters:'), code.indexOf('jobs:'));
   // el escenario: un parámetro cerrado, `measure` por defecto (lo de antes no cambia si nadie dice nada)
-  const scenario = /- name: scenario\n\s+displayName: .*\n\s+type: string\n\s+default: (\w+)\n\s+values:\n((?:\s+- [\w-]+\n)+)/.exec(params);
-  assert.ok(scenario, 'el parámetro scenario, con su lista cerrada de valores');
+  const scenario = checkScenarios(params);
   assert.strictEqual(scenario[1], 'measure', 'por defecto, measure');
-  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'all']);
   for (const p of ['harnessRef', 'skillsRef', 'fridayTag']) assert.match(params, new RegExp(`- name: ${p}\\n\\s+displayName: .*\\n\\s+type: string\\n`), `el parámetro ${p}`);
   // la marca del viernes: el parámetro va vacío y cada fuente lo resuelve: con azure, la de
   // siempre —en el paso que arma los bundles de los dos repos—; con github no hay una por defecto
   assert.match(params, /- name: fridayTag\n\s+displayName: .*\n\s+type: string\n\s+default: ''\n/, 'fridayTag: vacío por defecto');
   assert.match(code, /FRIDAY_TAG: \$\{\{ coalesce\(parameters\.fridayTag, 'retorno\/2026-10-02-fin-del-viernes'\) \}\}/, 'con azure, sin decir nada, la marca del viernes de siempre');
-  // los cuatro trabajos, y cuál corre con cada escenario
+  // los cinco trabajos (el de la receta de .NET Framework corre sólo con el escenario netfx), y cuál
+  // corre con cada escenario
   const jobs = [...code.matchAll(/^ {2}- job: (\w+)/gm)].map((m) => m[1]);
-  assert.deepStrictEqual(jobs, ['Bundle', 'Windows', 'Sources', 'Rehearsal']);
+  assert.deepStrictEqual(jobs, ['Bundle', 'Windows', 'Sources', 'Rehearsal', 'NetfxVstest']);
+  assert.match(code.slice(code.indexOf('- job: NetfxVstest')), /condition: eq\('\$\{\{ parameters\.scenario \}\}', 'netfx'\)/, 'NetfxVstest corre sólo con netfx');
   const job = (name) => code.slice(code.indexOf(`- job: ${name}`), jobs[jobs.indexOf(name) + 1] ? code.indexOf(`- job: ${jobs[jobs.indexOf(name) + 1]}`) : undefined);
   for (const name of ['Bundle', 'Windows']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'measure', 'all'\)/, `${name} corre con measure y all`);
   // (y con portable, el escenario de la base portable: su contrato es windows-portable.test.js, P1)

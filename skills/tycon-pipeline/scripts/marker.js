@@ -71,12 +71,14 @@
  *                                                  Valores: done | in-progress | blocked | pending.
  *
  * Ground-truth de checks (cierra el gate fakeable del modo autónomo):
- *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (execFileSync, sin
+ *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (proceso hijo, sin
  *                                                  shell/pipes), captura el exit code REAL y
  *                                                  setea marker.checks[name] = green|red:<exit>.
  *                                                  Loguea a ~/.claude/.tycon-pipeline/gates.log
  *                                                  (append-only: ts, cmd, exit, duración).
  *                                                  Exit code = el del comando (gateable).
+ *                                                  Con el mismo check ya corriendo en el repo:
+ *                                                  no lanza nada y sale 75.
  *   marker.js set-check <name> <status> --manual → override manual (EXIGE --manual;
  *                                                  sin el flag → RECHAZADO exit 2).
  *                                                  Queda provenance='manual' + entry en gates.log.
@@ -418,6 +420,9 @@ function cmdSet(payloadJson) {
       // el modelo y la sesión de Codex son de la corrida: heredados, los revisores de la story nueva correrían con el
       // proveedor de la anterior
       sessionModel, codexSession,
+      // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
+      // (76) por suites que sólo rompió la anterior
+      testsFailed,
       ...carryOver
     } = existing;
     console.error(
@@ -1816,7 +1821,9 @@ function cmdSetAutonomous(valRaw) {
   process.stdout.write(`autonomous: ${on}\n`);
 }
 
-const VALID_CHECKS = ['build', 'tests', 'advisors', 'dod', 'acmatrix'];
+// `tests-suite`: una suite sola de suites.json, repetida con `test-gate.sh --suite` después de un rojo. Nunca vale como
+// `tests` (la corrida completa), pero comparte su candado: las dos corren las mismas suites del repo.
+const VALID_CHECKS = ['build', 'tests', 'tests-suite', 'advisors', 'dod', 'acmatrix'];
 
 // DODRT-C5.1 — verifica que el evidencePath de una story de UI sea evidencia
 // Playwright REAL: el archivo EXISTE (resuelto relativo a marker.repoPath si el path es relativo) y su
@@ -1997,6 +2004,93 @@ function cmdMarkTestsNotScoped(motivo) {
 }
 
 /**
+ * `tests-failed`: la lista de suites que fallaron en la última corrida completa de la puerta (`marker.testsFailed`, al
+ * lado de `checks`: el freno de cierre de turno recorre `checks` y una lista no es un check). La usa test-gate.sh:
+ * Cada entrada lleva el repo de su corrida (`--repo`): la lista es de la sesión, y una corrida en otro repo no reemplaza,
+ * no saca ni pide las de éste.
+ *   · `record --summary <resumen> --repo <repo>`: reemplaza las de ese repo con las fallas del resumen de
+ *     run-suites-json.js (sin resumen legible, ninguna) y borra `checks['tests-suite']`, para que no quede en pie el rojo
+ *     de una suite sola anterior;
+ *   · `clear --path <ruta> --repo <repo>`: saca esa ruta (la suite sola salió verde);
+ *   · `pending --suites <suites.json> --gate <test-gate.sh> --repo <repo> [--story <story>]`: saca las rutas que ya no
+ *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76.
+ * `record` y `clear` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
+ * Sin corrida abierta: sale 0, no escribe nada y lo dice.
+ */
+const TESTS_FAILED_PENDING = 76;
+
+function cmdTestsFailed(argv) {
+  const accion = argv[0];
+  const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> | clear --path <ruta> --repo <r> | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>]';
+  if (!['record', 'clear', 'pending'].includes(accion) || !opt('--repo')
+    || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
+    || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))) {
+    console.error(uso);
+    process.exit(2);
+  }
+  if (accion !== 'pending' && process.env.TYCON_TEST_GATE !== '1') {
+    console.error(`marker.js tests-failed ${accion}: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)`);
+    process.exit(2);
+  }
+  const ff = require('./lib/failed-first.js');
+  const marker = readMarker();
+  if (!marker) {
+    process.stdout.write(`marker.js tests-failed ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`);
+    return;
+  }
+  const real = (x) => { try { return fs.realpathSync(x); } catch { return path.resolve(x); } };
+  const repo = real(opt('--repo'));
+  const todas = Array.isArray(marker.testsFailed) ? marker.testsFailed : [];
+  const ajenas = todas.filter((x) => x.repo !== repo);
+  const lista = todas.filter((x) => x.repo === repo);
+  if (accion === 'record') {
+    let resumen = null;
+    try { resumen = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8')); } catch (e) {
+      process.stderr.write(`[test-gate] ⚠️  no pude leer el resumen ${opt('--summary')} (${e.message}): la lista de las que fallaron en este repo queda vacía\n`);
+    }
+    marker.testsFailed = [...ajenas, ...ff.fromSummary(resumen, repo)];
+    for (const campo of ['checks', 'checksAt', 'checksProvenance']) if (marker[campo]) delete marker[campo]['tests-suite'];
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    const nuevas = marker.testsFailed.filter((x) => x.repo === repo);
+    if (nuevas.length) process.stderr.write(`[test-gate] suites que fallaron, anotadas para repetir primero: ${nuevas.map((x) => x.ruta).join(', ')}\n`);
+    return;
+  }
+  if (accion === 'clear') {
+    const ruta = opt('--path');
+    if (!lista.some((x) => x.ruta === ruta)) return;
+    const quedan = lista.filter((x) => x.ruta !== ruta);
+    marker.testsFailed = [...ajenas, ...quedan];
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    process.stderr.write(`[test-gate] ${ruta} salió verde: fuera de la lista${quedan.length ? ` (quedan ${quedan.length})` : ' (no queda ninguna: la corrida completa ya puede arrancar)'}\n`);
+    return;
+  }
+  if (!lista.length) return;
+  let keep = lista;
+  try {
+    const p = ff.prune(lista, opt('--suites'));
+    keep = p.keep;
+    if (p.gone.length) {
+      for (const x of p.gone) process.stderr.write(`[test-gate] ${x.ruta}: ya no está en suites.json, la saco de la lista\n`);
+      marker.testsFailed = [...ajenas, ...keep];
+      marker.lastTouch = nowIso();
+      writeMarker(marker);
+    }
+  } catch (e) {
+    process.stderr.write(`[test-gate] ⚠️  no pude leer ${opt('--suites')} (${e.message}): la lista queda como está\n`);
+  }
+  if (!keep.length) return;
+  const q = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
+  const base = ['bash', q(opt('--gate')), q(opt('--repo')), ...(opt('--story') ? [q(opt('--story'))] : [])].join(' ');
+  process.stderr.write(`🟡 [test-gate] no corrí la suite completa: en la última fallaron ${keep.length} suite(s) y todavía no salieron verdes solas. Repetí primero cada una:\n`);
+  for (const x of keep) process.stderr.write(`   ${base} --suite ${q(x.ruta)}\n`);
+  process.stderr.write('   Cuando salgan todas verdes, la corrida completa arranca.\n');
+  process.exit(TESTS_FAILED_PENDING);
+}
+
+/**
  * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
  * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
  * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el commit» lo anuncian (nunca un verde callado). Sólo lo
@@ -2098,11 +2192,20 @@ function cmdSetCheck(name, status, flag) {
  *
  *   marker.js run-check <name> -- <cmd> [args...]
  *
- * Ejecuta el comando vía execFileSync SIN shell (no pipes, no `| tail` que enmascare
+ * Lanza el comando como proceso hijo SIN shell (no pipes, no `| tail` que enmascare
  * el exit code), captura el exit code REAL y setea
  * marker.checks[name] = 'green' | 'red:exit=N'. provenance='run-check'.
  * Loguea {check, cmd, exit, durationMs} a gates.log (append-only).
  * El exit code del proceso = el del comando → gateable con && / set -e.
+ *
+ * Una sola corrida de cada check por repo: antes de lanzar toma el candado
+ * `run-check-locks/<check>-<huella de la raíz de git>`. Si otro lo tiene, no lanza nada, no escribe el marcador
+ * ni gates.log, dice desde cuándo corre el otro y de quién, y sale 75. El candado guarda el pid propio y el del hijo, y
+ * vale mientras viva cualquiera de los dos: no se libera por edad (una suite completa tarda más de diez minutos), sí
+ * cuando los dos murieron en esta máquina; el de otra máquina no se toca. SIGINT, SIGTERM y SIGHUP se le pasan al
+ * hijo; run-check espera a que el hijo cierre, suelta el candado y sale con 128 + la señal, sin registrar la corrida.
+ * Un comando que sale 75 por su cuenta se anota y sale como 1. Las marcas en rojo de
+ * test-gate.sh (TYCON_TEST_GATE_MARK=1) no toman el candado.
  *
  * 🔴 EN ROJO guarda además la COLA de la salida en `cola`. Si el comando lo lanzó un script o corre
  * en segundo plano, la conversación sólo muestra «Command running in background» y la salida va a un
@@ -2131,6 +2234,33 @@ function colaParaElRegistro(crudo) {
 // saneados) es mucho menor; se retiene de más porque sanear achica y los colores ocupan.
 const COLA_BYTES_RETENIDOS = 64 * 1024;
 
+// «Ocupado, probá después» (EX_TEMPFAIL): no se confunde con un rojo ni con las salidas 3-7 de test-gate.sh.
+const RUN_CHECK_BUSY = 75;
+const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
+
+/** El candado de `name` en el repo de la carpeta actual: la ruta real de la raíz de git (sin git, la carpeta). */
+function runCheckLock(name) {
+  let raiz = process.cwd();
+  try { raiz = require('child_process').execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta */ }
+  try { raiz = fs.realpathSync(raiz); } catch (_) { /* la ruta tal cual */ }
+  const huella = require('crypto').createHash('sha1').update(raiz).digest('hex').slice(0, 16);
+  const clave = name === 'tests-suite' ? 'tests' : name;
+  return { raiz, dir: path.join(STATE_DIR, 'run-check-locks', `${clave}-${huella}`) };
+}
+
+function runCheckBusyText(name, raiz, r) {
+  const quien = r.owner;
+  const sacar = `Si quedó colgado (ese proceso ya no es la corrida), sacá el candado a mano: ${r.lockDir}`;
+  if (!quien) {
+    return `marker.js run-check: otra corrida de «${name}» está arrancando en este repo (${raiz}): su candado todavía no tiene dueño escrito. No lancé nada: esperá su resultado. Si nadie lo escribe, se libera solo al minuto. ${sacar}\n`;
+  }
+  const e = quien.extra || {};
+  const t = e.startedAt ? new Date(e.startedAt) : null;
+  const desde = t && !Number.isNaN(t.getTime()) ? `desde las ${t.toTimeString().slice(0, 5)} (${e.startedAt})` : 'desde una hora que no quedó escrita';
+  const maquina = quien.host && quien.host !== os.hostname() ? `, en la máquina ${quien.host}` : '';
+  return `marker.js run-check: ya hay una corrida de «${name}» en marcha en este repo (${raiz}) ${desde} (pid ${quien.pid}${maquina}, sesión ${e.session || 'sin sesión'}). No lancé nada: esperá su resultado, otra corrida igual duplica la carga de la máquina. ${sacar}\n`;
+}
+
 function cmdRunCheck(argv) {
   const name = argv[0];
   const sep = argv.indexOf('--');
@@ -2142,6 +2272,41 @@ function cmdRunCheck(argv) {
   const cmdArgv = argv.slice(sep + 1);
   const marker = readMarker();
   const { spawn } = require('child_process');
+  // El candado: sin el módulo (un árbol de skills sin el mecanismo) se corre como antes, sin candado. Las marcas en
+  // rojo de test-gate.sh (TYCON_TEST_GATE_MARK=1) no lo toman: no corren pruebas, y con el candado de otra sesión
+  // la marca no se escribiría y quedaría en pie un verde viejo.
+  const lockLib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'lock.js');
+  const marcaDeLaPuerta = process.env.TYCON_TEST_GATE_MARK === '1';
+  const lock = !marcaDeLaPuerta && fs.existsSync(lockLib) ? require(lockLib) : null;
+  const { raiz, dir: lockDir } = runCheckLock(name);
+  const duenio = { check: name, repo: raiz, startedAt: new Date().toISOString(), session: marker ? SID : 'sin sesión' };
+  let tomado = false;
+  if (lock) {
+    const r = lock.acquire(os.homedir(), { lockDir, extra: duenio, staleMs: null });
+    if (!r.ok) {
+      process.stderr.write(runCheckBusyText(name, raiz, r));
+      process.exit(RUN_CHECK_BUSY);
+    }
+    tomado = true;
+  }
+  const soltar = () => { if (tomado) { tomado = false; lock.release(os.homedir(), { lockDir }); } };
+  process.on('exit', soltar);
+  let hijo = null;
+  let cortado = 0;
+  for (const [senal, n] of Object.entries(SENALES_RUN_CHECK)) {
+    process.on(senal, () => {
+      // El hijo puede tardar en cerrar: si sigue vivo, se espera a que cierre y recién ahí se suelta el candado.
+      // Soltarlo ya dejaría arrancar otra corrida con ésta todavía en marcha. La corrida cortada no se registra.
+      if (hijo && hijo.exitCode === null && hijo.signalCode === null) {
+        if (cortado) return;
+        cortado = n;
+        try { hijo.kill(senal); } catch (_) { /* ya terminó */ }
+        return;
+      }
+      soltar();
+      process.exit(128 + n);
+    });
+  }
   const t0 = Date.now();
   // Sin shell, como antes. La salida se copia a la consola a medida que llega (el dev/LLM la ve igual)
   // y se retienen los últimos COLA_BYTES_RETENIDOS para la cola del registro.
@@ -2156,7 +2321,11 @@ function cmdRunCheck(argv) {
   const terminar = (exitCode) => {
     if (terminado) return;
     terminado = true;
-    registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+    try {
+      registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+    } finally {
+      soltar();
+    }
   };
   // En Windows, un `bash` a secas se lanza con el bash de Git que devuelve `findGitBash()` del arnés, nunca con el
   // primero del PATH (puede ser el lanzador de WSL). Sin bash de Git no se lanza: el check sale rojo con el motivo
@@ -2169,7 +2338,6 @@ function cmdRunCheck(argv) {
     terminar(1);
     return;
   }
-  let hijo;
   try {
     hijo = spawn(lanzar.file, lanzar.args, { stdio: ['inherit', 'pipe', 'pipe'] });
   } catch (err) {
@@ -2177,11 +2345,22 @@ function cmdRunCheck(argv) {
     terminar(1);
     return;
   }
+  // el pid del hijo, para que el candado siga puesto si run-check muere (SIGKILL) y la suite sigue
+  if (tomado && hijo.pid !== undefined) lock.writeExtra(lockDir, { ...duenio, childPid: hijo.pid });
   hijo.stdout.on('data', (b) => { process.stdout.write(b); retener(b); });
   hijo.stderr.on('data', (b) => { process.stderr.write(b); retener(b); });
   // No se pudo lanzar (ENOENT, permiso): antes execFileSync lo daba como exit 1.
   hijo.on('error', (err) => { retener(Buffer.from(`${err.message}\n`)); if (hijo.pid === undefined) terminar(1); });
-  hijo.on('close', (code) => terminar(typeof code === 'number' && code >= 0 ? code : 1));
+  hijo.on('close', (code) => {
+    if (cortado) { soltar(); process.exit(128 + cortado); }
+    let c = typeof code === 'number' && code >= 0 ? code : 1;
+    // 75 es «ocupado, no lancé nada»: un comando que sale 75 por su cuenta sí corrió, y se anota como 1
+    if (c === RUN_CHECK_BUSY) {
+      process.stderr.write(`marker.js run-check: el comando salió ${RUN_CHECK_BUSY} por su cuenta; lo anoto como 1 para no confundirlo con «otra corrida en marcha»\n`);
+      c = 1;
+    }
+    terminar(c);
+  });
 }
 
 function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) {
@@ -4584,6 +4763,9 @@ switch (cmd) {
     break;
   case 'mark-tests-not-scoped':
     cmdMarkTestsNotScoped(arg1);
+    break;
+  case 'tests-failed':
+    cmdTestsFailed(process.argv.slice(3));
     break;
   case 'mark-tests-not-measured':
     cmdMarkTestsNotMeasured(arg1);

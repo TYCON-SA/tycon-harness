@@ -467,9 +467,10 @@ test('2.36-Guia_ListaYComoOcultar: la guía, en los dos idiomas, trae las 26 con
 
 test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
   // los datos completos del sitio demo (con hallazgos en el buzón y un examen en la copia de operaciones), en otro proceso
-  // con un HOME de juguete y sin TYCON_EXAM: el examen sale sólo de la copia
-  assert.ok(!fs.existsSync(path.join(RAIZ, 'scripts', 'controls-bench', 'ultimo-examen.json')), 'el arnés no trae un examen propio: la prueba no mediría nada');
+  // con un HOME de juguete y el examen de respaldo (TYCON_EXAM) en un archivo que no existe: el examen sale sólo de la
+  // copia, también en un árbol que trae su propio examen (el privado con el público debajo)
   const raiz = tmp('poda-');
+  const sinExamen = path.join(raiz, 'no-existe', 'ultimo-examen.json');
   try {
     const DATOS = require(path.join(RAIZ, 'scripts', 'site', 'demo', 'data.js'));
     const ahora = Date.parse(`${HOY}T12:00:00Z`);
@@ -492,7 +493,7 @@ test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
         const f = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'site', 'tabs', 'cards.js'))}).fichasDelClon({ clon: ${JSON.stringify(clon)}, dirBuzon: ${JSON.stringify(buzon)}, buzonLeido: true, ahora: ${ahora}, log: (l) => process.stderr.write(l + '\\n') });
         if (lanzados.length) process.stderr.write('PROCESOS: ' + lanzados.join(',') + '\\n');
         process.stdout.write(JSON.stringify(f.lista.filter((x) => x.id === 'reglas_candidatas' || x.id === 'reglas_probadas')));`],
-      { encoding: 'utf8', env: { ...process.env, HOME: HOME_FALSO, TYCON_TODAY: HOY, TYCON_EXAM: '' }, maxBuffer: 1 << 26 });
+      { encoding: 'utf8', env: { ...process.env, HOME: HOME_FALSO, TYCON_TODAY: HOY, TYCON_EXAM: sinExamen }, maxBuffer: 1 << 26 });
       assert.strictEqual(r.status, 0, r.stderr);
       registro = r.stderr;
       return Object.fromEntries(JSON.parse(r.stdout).map((x) => [x.id, x]));
@@ -518,7 +519,7 @@ test('8.101-Poda_SinExamenComoHoy_ConExamenSeVe', () => {
     assert.match(registro, /no es un archivo común/, 'un caso enlazado deja afuera los casos de la copia, y lo anota');
     fs.unlinkSync(path.join(casos, unCaso));
     fs.renameSync(path.join(raiz, unCaso), path.join(casos, unCaso));
-    // sin el examen en la copia, el camino de hoy: el del arnés, que no está, y las dos fichas no medidas
+    // sin el examen en la copia, el camino de hoy: el de respaldo, que no está, y las dos fichas no medidas
     fs.rmSync(path.join(clon, 'scripts', 'controls-bench', 'ultimo-examen.json'));
     const sin = fichasDe();
     for (const id of ['reglas_candidatas', 'reglas_probadas']) {
