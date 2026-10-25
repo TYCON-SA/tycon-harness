@@ -112,6 +112,23 @@ test('A7 RunnerProfile_GeneratorFails_StopsOrSaysWhy — si el desplegador falla
   assert.match(dicho2, /no pude leer la configuración de la organización/);
 }));
 
+// Sin `engram` alcanzable, el examen no se cae al querer levantar la memoria: los casos que la piden salen «no
+// medidos» con su motivo y el reporte se escribe. El caso de memoria se saltea antes de llamar a un modelo.
+test('T6 NoEngram_ReportWithUnmeasuredCases — sin engram en el PATH, reporte con los casos de memoria no medidos', () => enHome((home) => {
+  const out = path.join(home, 'reporte.json');
+  const env = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, USERPROFILE: home };
+  const r = spawnSync(process.execPath, [RUNNER, '--tool', 'claude', '--runs', '1', '--only', 'tycon-retrospective-capturer::retro-captura-decision', '--json', out],
+    { env, encoding: 'utf8', timeout: 120000 });
+  const dicho = `${r.stdout}\n${r.stderr}`;
+  assert.doesNotMatch(dicho, /spawn engram ENOENT|Unhandled 'error' event/, `el examen se cayó al lanzar engram:\n${dicho.slice(-800)}`);
+  assert.ok(fs.existsSync(out), `sin reporte (exit ${r.status}):\n${dicho.slice(-800)}`);
+  const rep = JSON.parse(fs.readFileSync(out, 'utf8'));
+  const caso = rep.results['tycon-retrospective-capturer::retro-captura-decision'];
+  assert.ok(caso && caso.tools && caso.tools.claude, `el caso de memoria no está en el reporte: ${JSON.stringify(rep.results).slice(0, 300)}`);
+  assert.strictEqual(caso.tools.claude.skipped, true, 'no medido, nunca verde ni rojo');
+  assert.strictEqual(caso.tools.claude.motivo, 'engram no está en el PATH');
+}));
+
 test('A3 Runner_RequiredAsModule_DoesNotRun — cargarlo como módulo no corre el examen', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'runner-agents-'));
   try {

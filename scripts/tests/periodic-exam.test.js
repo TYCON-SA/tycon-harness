@@ -109,6 +109,9 @@ function banco(opts = {}) {
     `const modo=${JSON.stringify(opts.modoRunner || 'green')};`,
     'if(modo==="dies"){process.exit(1);}',
     'if(modo==="lies"){process.exit(0);}',   // sale 0 pero NO escribe el reporte
+    'if(modo==="stderr"){process.stderr.write(process.env.RUNNER_ERR||"");process.exit(1);}',   // se cae con su error
+    // el mismo error en dos escrituras, cortado en el byte RUNNER_CUT (en medio de un carácter de varios bytes)
+    'if(modo==="stderr-split"){const b=Buffer.from(process.env.RUNNER_ERR||"");const k=Number(process.env.RUNNER_CUT);fs.writeSync(2,b.subarray(0,k));const t=Date.now();while(Date.now()-t<200);fs.writeSync(2,b.subarray(k));process.exit(1);}',
     // El criterio de "qué no se pudo medir" NO se copia acá: se usa el módulo real.
     `const {rubrosNoMedidos}=require(${JSON.stringify(path.join(TCG, 'scripts', 'controls-bench', 'unmeasured-categories.js'))});`,
     'const noMedido=(tool,runs)=>{const nm=rubrosNoMedidos({tool,runs});const o={};if(nm.inestables)o.inestables=nm.inestables;if(nm.paridad)o.paridad=nm.paridad;return Object.keys(o).length?{no_medido:o}:{};};',
@@ -1503,7 +1506,8 @@ test('T46b sin las herramientas al lado de node, el PATH mínimo SÍ falla — y
   assert.notStrictEqual(r.status, 0, 'no poder medir NUNCA sale 0');
   const i = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
   assert.strictEqual(i.estado, 'incompleto');
-  assert.match(i.motivo, /no está o no se pudo lanzar/);
+  // sin SHELL no hay a quién preguntarle el PATH del usuario: el motivo dice que no está en ninguno de los dos lados
+  assert.match(i.motivo, /no está o no se pudo lanzar|no está en la carpeta anotada, y no hay SHELL/);
   assert.ok(!fs.existsSync(b.sello), 'una ejecución que no midió no se come el turno');
 });
 
@@ -1949,4 +1953,279 @@ test('T24 Examen_NodeDelArnes_PlistConCurrentYHerramientas @story-8.39 @ac-9', (
   assert.strictEqual(r2.status, 0, `${r2.stdout}\n${r2.stderr}`);
   const p2 = fs.readFileSync(plistFile, 'utf8');
   assert.ok([viejo, fs.realpathSync(viejo)].some((x) => p2.includes(`<string>${x}</string>`)), `sin el Node del arnés, el node que corre — ${p2}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// La anotación de las herramientas: se renueva al instalar, se revalida al lanzar, y un PATH pobre no la pisa
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Una carpeta con `claude`, `codex` (`#!/usr/bin/env node`, con su node al lado) y, si se pide, `engram`. */
+function herramientasEn(dir, { engram = false } = {}) {
+  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(path.join(dir, 'node'))) { fs.copyFileSync(process.execPath, path.join(dir, 'node'), fs.constants.COPYFILE_FICLONE); fs.chmodSync(path.join(dir, 'node'), 0o755); }
+  fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\necho ok\nexit 0\n'); fs.chmodSync(path.join(dir, 'claude'), 0o755);
+  fs.writeFileSync(path.join(dir, 'codex'), '#!/usr/bin/env node\nconsole.log("ok");\n'); fs.chmodSync(path.join(dir, 'codex'), 0o755);
+  if (engram) { fs.writeFileSync(path.join(dir, 'engram'), '#!/bin/sh\necho engram\nexit 0\n'); fs.chmodSync(path.join(dir, 'engram'), 0o755); }
+  return dir;
+}
+
+/**
+ * Un shell de inicio falso: cuenta cuántas veces lo consultan, imprime ruido como un rc de verdad y corre el comando
+ * que le pasan con el PATH dado. Se lo llama como `$SHELL -lic <comando>`.
+ */
+function shellDeInicio(b, pathDelUsuario) {
+  const cuenta = path.join(b.raiz, 'shell-consultas.txt');
+  const shell = path.join(b.raiz, 'shell-falso.sh');
+  fs.writeFileSync(shell, `#!/bin/sh\necho x >> ${JSON.stringify(cuenta)}\necho "bienvenido: ruido del rc"\nPATH=${JSON.stringify(pathDelUsuario)}; export PATH\nshift\nexec /bin/sh -c "$1"\n`);
+  fs.chmodSync(shell, 0o755);
+  return { shell, consultas: () => (fs.existsSync(cuenta) ? fs.readFileSync(cuenta, 'utf8').split('\n').filter(Boolean).length : 0) };
+}
+
+const rutaDeLaAnotacion = (b) => path.join(b.casa, '.claude', '.tycon-pipeline', 'exam-tools.json');
+const leerAnotacion = (b) => JSON.parse(fs.readFileSync(rutaDeLaAnotacion(b), 'utf8'));
+
+function instalarConPath(b, nodeBin, pathDeQuienInstala, extra = {}) {
+  const agentes = path.join(b.raiz, 'LaunchAgents');
+  return spawnSync(nodeBin, [EXAMEN, '--install-task'], { encoding: 'utf8', env: Object.assign({
+    PATH: pathDeQuienInstala, HOME: b.casa, TYCON_EXAM_CONFIG: b.rutaCfg, TYCON_EXAM_RUNNER: b.rutaRunner, TYCON_EXAM_REPO: b.repo,
+    TYCON_EXAM_MACHINE: 'Devas-Mac-mini', TYCON_EXAM_LAUNCHAGENTS: agentes, TYCON_EXAM_REAL_HOME: b.casa, LAUNCHCTL_BIN: '/usr/bin/true',
+  }, extra) });
+}
+
+test('T1 StaleAnnotation_AsksLoginShellBeforeLaunch @ac-1: la carpeta anotada ya no tiene claude; el shell de inicio sí', () => {
+  const b = banco();
+  const nodeFalso = binDeNode(b, { conHerramientas: false });
+  const viejas = path.join(b.raiz, 'nvm-viejo', 'bin');
+  fs.mkdirSync(viejas, { recursive: true });
+  const buenas = herramientasEn(path.join(b.raiz, 'nvm-nuevo', 'bin'));
+  escribir(rutaDeLaAnotacion(b), { claude: viejas, codex: viejas, at: haceDias(9) });
+  const sh = shellDeInicio(b, `${buenas}:${PATH_DE_LAUNCHD}`);
+  const r = correrComoLaunchd(b, nodeFalso, ['--force'], { SHELL: sh.shell });
+  assert.ok(fs.existsSync(b.bitacora), `no llegó al runner:\n${r.stdout}\n${r.stderr}`);
+  const a = leerAnotacion(b);
+  assert.strictEqual(a.claude, buenas, 'anota la carpeta que resuelve el PATH del usuario');
+  assert.strictEqual(a.codex, buenas);
+  assert.strictEqual(sh.consultas(), 1, 'el shell de inicio se consulta una sola vez');
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /ruido del rc/, 'nada de la salida del shell va a la salida del examen');
+});
+
+test('T2 AnnotationRefreshedWithUnchangedTask @ac-1: con el disparador idéntico, la anotación se renueva igual', () => {
+  const b = banco();
+  const delDev = herramientasEn(path.join(b.raiz, 'npm-global', 'bin'));
+  const nodeFalso = binDeNode(b, { conHerramientas: false });
+  const r1 = instalarConPath(b, nodeFalso, `${delDev}:${PATH_DE_LAUNCHD}`);
+  assert.strictEqual(r1.status, 0, `${r1.stdout}\n${r1.stderr}`);
+  const plist = path.join(b.raiz, 'LaunchAgents', 'ar.com.tycon.examen-periodico.plist');
+  const antes = fs.readFileSync(plist, 'utf8');
+  escribir(rutaDeLaAnotacion(b), { claude: '/no/existe', codex: '/no/existe', at: haceDias(9) });
+  const r2 = instalarConPath(b, nodeFalso, `${delDev}:${PATH_DE_LAUNCHD}`);
+  assert.strictEqual(r2.status, 0, `${r2.stdout}\n${r2.stderr}`);
+  assert.strictEqual(fs.readFileSync(plist, 'utf8'), antes, 'el disparador no cambió');
+  assert.strictEqual(leerAnotacion(b).claude, delDev, 'y la anotación vieja se renovó');
+  assert.strictEqual(leerAnotacion(b).codex, delDev);
+});
+
+test('T3 PoorPathKeepsGoodAnnotation @ac-1: un PATH sin las herramientas no pisa la anotación buena', () => {
+  const b = banco();
+  const delDev = herramientasEn(path.join(b.raiz, 'npm-global', 'bin'));
+  const nodeFalso = binDeNode(b, { conHerramientas: false });
+  assert.strictEqual(instalarConPath(b, nodeFalso, `${delDev}:${PATH_DE_LAUNCHD}`).status, 0);
+  const r = instalarConPath(b, nodeFalso, PATH_DE_LAUNCHD);
+  assert.strictEqual(r.status, 0, `con la anotación buena alcanza las herramientas:\n${r.stdout}\n${r.stderr}`);
+  assert.strictEqual(leerAnotacion(b).claude, delDev, 'la anotación buena sigue');
+  assert.strictEqual(leerAnotacion(b).codex, delDev);
+});
+
+test('T3b ToolMissingEverywhere_IncompleteWithMotivo @ac-1: ni la carpeta anotada ni el PATH del usuario traen claude', () => {
+  const b = banco();
+  const nodeFalso = binDeNode(b, { conHerramientas: false });
+  const viejas = path.join(b.raiz, 'nvm-viejo', 'bin');
+  fs.mkdirSync(viejas, { recursive: true });
+  escribir(rutaDeLaAnotacion(b), { claude: viejas, codex: viejas, at: haceDias(9) });
+  const antes = fs.readFileSync(rutaDeLaAnotacion(b), 'utf8');
+  const sh = shellDeInicio(b, PATH_DE_LAUNCHD);
+  const r = correrComoLaunchd(b, nodeFalso, ['--force'], { SHELL: sh.shell });
+  assert.ok(!fs.existsSync(b.bitacora), 'no lanza nada');
+  assert.notStrictEqual(r.status, 0, 'no poder medir nunca sale 0');
+  const i = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
+  assert.strictEqual(i.estado, 'incompleto');
+  assert.match(i.motivo, /claude no está en la carpeta anotada ni en el PATH del usuario/);
+  assert.doesNotMatch(i.motivo, /ruido del rc/, 'la salida del shell no va al motivo');
+  assert.strictEqual(fs.readFileSync(rutaDeLaAnotacion(b), 'utf8'), antes, 'la anotación queda como estaba');
+});
+
+test('T4 EngramAnnotatedAndOnPath @ac-2: engram del PATH de quien instala, alcanzable con el PATH de launchd', () => {
+  const b = banco();
+  const delDev = herramientasEn(path.join(b.raiz, 'npm-global', 'bin'));
+  const suyo = path.join(b.raiz, 'otra-carpeta', 'bin');
+  fs.mkdirSync(suyo, { recursive: true });
+  fs.writeFileSync(path.join(suyo, 'engram'), '#!/bin/sh\necho engram\nexit 0\n'); fs.chmodSync(path.join(suyo, 'engram'), 0o755);
+  const nodeFalso = binDeNode(b, { conHerramientas: false });
+  const r = instalarConPath(b, nodeFalso, `${delDev}:${suyo}:${PATH_DE_LAUNCHD}`);
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.strictEqual(leerAnotacion(b).engram, suyo, 'anota la carpeta de engram');
+  const probe = spawnSync(nodeFalso, ['-e', `
+    const R = require(${JSON.stringify(path.join(TCG, 'scripts', 'controls-bench', 'tools-path.js'))});
+    R.asegurarPathDeHerramientas();
+    const run = require('child_process').spawnSync('engram', [], { encoding: 'utf8' });
+    process.stdout.write(JSON.stringify({ ruta: R.rutaDeHerramienta('engram'), out: (run.stdout || '').trim() }));`],
+  { encoding: 'utf8', env: { PATH: PATH_DE_LAUNCHD, HOME: b.casa } });
+  const pj = JSON.parse(probe.stdout || '{}');
+  assert.strictEqual(pj.ruta, path.join(suyo, 'engram'), `${probe.stdout}${probe.stderr}`);
+  assert.strictEqual(pj.out, 'engram', 'por nombre pelado también lo encuentra: el PATH del proceso lo trae');
+});
+
+test('T4b EngramFolderFromPath_NotFixed @ac-2: la carpeta sale del PATH, también en Windows; ninguna ruta fija', () => {
+  const R = require(path.join(TCG, 'scripts', 'controls-bench', 'tools-path.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'anotacion-'));
+  TMPS.push(dir);
+  const file = path.join(dir, 'exam-tools.json');
+  const mac = R.anotarCarpetas({ env: { PATH: '/srv/propio/bin:/usr/bin' }, file, ejecutable: (p) => p === '/srv/propio/bin/engram' });
+  assert.strictEqual(mac.engram, '/srv/propio/bin');
+  const win = R.anotarCarpetas({ env: { PATH: 'C:\\Windows;D:\\herramientas\\engram' }, file, platform: 'win32',
+    ejecutable: (p) => p === 'D:\\herramientas\\engram\\engram.exe' || p === 'D:\\herramientas\\engram\\claude.cmd' });
+  assert.strictEqual(win.engram, 'D:\\herramientas\\engram', 'separador «;» y engram.exe');
+  assert.strictEqual(win.claude, 'D:\\herramientas\\engram', 'claude.cmd también cuenta');
+  const ruta = R.rutaDeHerramienta('engram', { platform: 'win32', nodeBin: 'C:\\node\\node.exe', anotadas: { engram: 'D:\\herramientas\\engram' },
+    ejecutable: (p) => p === 'D:\\herramientas\\engram\\engram.exe' });
+  assert.strictEqual(ruta, 'D:\\herramientas\\engram\\engram.exe');
+  const env = { PATH: 'C:\\Windows' };
+  R.asegurarPathDeHerramientas(env, 'C:\\node\\node.exe', { engram: 'D:\\herramientas\\engram' }, 'win32');
+  assert.ok(env.PATH.split(';').includes('D:\\herramientas\\engram'), env.PATH);
+  for (const f of ['tools-path.js', 'periodic-exam.js'])
+    assert.doesNotMatch(fs.readFileSync(path.join(TCG, 'scripts', 'controls-bench', f), 'utf8'), /\/opt\/homebrew/, `${f} no trae una ruta fija de Homebrew`);
+});
+
+test('T5 ChildCrash_MotivoCarriesStderr @ac-4: el motivo trae la última línea de error del hijo y su código', () => {
+  const b = banco({ modoRunner: 'stderr' });
+  correr(b, [], { RUNNER_ERR: 'arranca el banco\nError: se cayó el banco al leer la memoria\n' });
+  const i = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
+  assert.strictEqual(i.estado, 'incompleto');
+  assert.match(i.motivo, /exit 1/);
+  assert.match(i.motivo, /se cayó el banco al leer la memoria/);
+  assert.doesNotMatch(i.motivo, /\n/, 'en una línea');
+  assert.ok(i.motivo.length <= 400 + 120, `a lo sumo 400 de error más la frase: ${i.motivo.length}`);
+});
+
+// las llaves de mentira se arman por partes: escritas enteras, el freno de publicación las toma por secretos de verdad
+const PEM_INICIO = ['-----BEGIN', 'PRIVATE KEY-----'].join(' ');
+const PEM_FIN = ['-----END', 'PRIVATE KEY-----'].join(' ');
+const LLAVE_AWS = ['AKIA', 'ABCDEFGHIJKLMNOP'].join('');
+
+test('T5b ChildCrash_MotivoRedactsSecrets @ac-4: un token o una URL con clave en el error no llegan al motivo', () => {
+  const b = banco({ modoRunner: 'stderr' });
+  const token = ['sk', 'ant', 'fake0123456789abcdefABCDEF0123456789'].join('-');
+  const portador = 'abcdEFGH1234ijklMNOP5678qrstUVWX9012';
+  correr(b, [], { RUNNER_ERR: `fatal: https://usuario:clave-secreta-123@dev.example.com/repo\nAuthorization: Bearer ${portador}\nError: token=${token}\n` });
+  const i = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
+  for (const s of [token, portador, 'clave-secreta-123']) assert.ok(!i.motivo.includes(s), `el motivo trae «${s}»: ${i.motivo}`);
+  assert.match(i.motivo, /exit 1/);
+});
+
+test('T5c ChildCrash_MotivoRedactsOtherSecretForms @ac-4: clave: valor, JSON, llaves conocidas, PEM y caracteres de control', () => {
+  const { colaDeError } = require(EXAMEN);
+  const pem = [PEM_INICIO, 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7/abc+defGHIJ',
+    'kLmNoPqRsTuVwXyZ0123456789+/abcdefGHIJKLmnopQRSTuvwxYZ01234567', PEM_FIN];
+  const github = ['ghp', 'abcdefghijklmnop1234'].join('_');
+  const err = ['api_key: valor-secreto-1', '{"password":"valor-secreto-2"}', 'Authorization: token valor-secreto-3',
+    `llave ${LLAVE_AWS} y ${github} y sk-corta12345`, ...pem,
+    `Error: se cayó${String.fromCharCode(0x202e)}al leer${String.fromCharCode(0x1b)}[31m`].join('\n');
+  const cola = colaDeError(err);
+  for (const s of ['valor-secreto-1', 'valor-secreto-2', 'valor-secreto-3', LLAVE_AWS, github,
+    'sk-corta12345', 'MIIEvQIBADANBgkqhkiG9w0', 'kLmNoPqRsTuVwXyZ', String.fromCharCode(0x202e), String.fromCharCode(0x1b)])
+    assert.ok(!cola.includes(s), `la cola trae «${s}»: ${cola}`);
+  assert.match(cola, /se cayó/, 'el error en sí queda');
+  // cortada por el tope de caracteres, la primera línea viene partida: no se guarda
+  assert.doesNotMatch(colaDeError('ieDEFGH-resto-de-un-secreto-partido\nError: otra cosa', true), /resto-de-un-secreto/);
+  assert.match(colaDeError('arranca el banco\nError: otra cosa'), /arranca el banco/, 'sin corte, la primera línea queda');
+});
+
+test('T5d ChildCrash_MotivoKeepsCauseAndHidesRestOfSecret @ac-4: la causa le gana a la pila; la palabra sensible tapa el resto de la línea', () => {
+  const { colaDeError } = require(EXAMEN);
+  for (const [error, secreto] of [[`${['AWS', 'SECRET', 'ACCESS', 'KEY'].join('_')}: ${['wJalrXUtnFEMI', 'K7MDENG', 'bPxRfiCYEXAMPLEKEY'].join('/')}`, 'wJalrXUtnFEMI'],
+    ['secretKey: hunter2pass', 'hunter2pass'], ['client_secret_value=hunter2pass', 'hunter2pass'],
+    ['private_key: AbCdEf0123xyz', 'AbCdEf0123xyz'], ['PAT=abcd1234efgh', 'abcd1234efgh'], ['Error: --password hunter2', 'hunter2'],
+    ['curl -u admin:hunter2 https://x', 'admin:hunter2'], ['password: una clave con espacios', 'con espacios'],
+    [`{"k":"${PEM_INICIO}\\nMIIEvQIBADAN\\nAbCdEf0123==\\n${PEM_FIN}"}`, 'MIIEvQIBADAN'],
+    ['AbCdEf0123==', 'AbCdEf0123']])
+    assert.ok(!colaDeError(error).includes(secreto), `«${secreto}» llega a la cola: ${colaDeError(error)}`);
+  const caida = `/x/runner.js:3\n  throw new Error("se cayó leyendo la memoria")\n  ^\n\nError: se cayó leyendo la memoria\n${'    at Object.<anonymous> (/x/runner.js:3:9)\n'.repeat(12)}\nNode.js v24.0.0\n`;
+  const cola = colaDeError(caida);
+  assert.match(cola, /Error: se cayó leyendo la memoria/, `la causa queda: ${cola}`);
+  assert.doesNotMatch(cola, /\bat Object|Node\.js v/, 'la pila y el pie de Node no ocupan la cola');
+});
+
+test('T5f ChildCrash_MotivoRedactsAcrossOtherLineBreaksAndPrefixes @ac-4: \\r o U+2028 a mitad de línea, más prefijos y formas de -u', () => {
+  const { colaDeError } = require(EXAMEN);
+  for (const [error, secreto] of [['password: una clave\rzzz', 'una clave'],
+    [`token: valor-secreto${String.fromCharCode(0x2028)}resto`, 'valor-secreto'], ['passphrase frase secreta', 'frase secreta'],
+    ['Error sk_live_abcdefgh1234', 'sk_live_abcdefgh1234'], ['glpat-abcdefghijkl12', 'glpat-abcdefghijkl12'],
+    ['ASIAABCDEFGHIJKLMNOP', 'ASIAABCDEFGHIJKLMNOP'], ['AIzaSyAbcdefghijklmnopqrstu', 'AIzaSyAbcdefghijklmnopqrstu'],
+    ['npm_abcdefghijklmnop1234', 'npm_abcdefghijklmnop1234'], ['-u admin:hunter2 https://x', 'admin:hunter2'],
+    ['curl --user=admin:hunter2 https://x', 'admin:hunter2'], ['curl -u "admin:con espacio" https://x', 'con espacio']])
+    assert.ok(!colaDeError(error).includes(secreto), `«${secreto}» llega a la cola: ${colaDeError(error)}`);
+});
+
+test('T5g ChildCrash_MotivoRedactsAcrossEveryLineBreak @ac-4: cada corte de renglón, antes o después de la clave, la deja tapada y no parte la cola', () => {
+  const { colaDeError } = require(EXAMEN);
+  const cortes = { '\\r': '\r', '\\r\\n': '\r\n', '\\n': '\n', '\\v': '\v', '\\f': '\f', 'U+0085': String.fromCharCode(0x85),
+    'U+2028': String.fromCharCode(0x2028), 'U+2029': String.fromCharCode(0x2029) };
+  for (const [nombre, corte] of Object.entries(cortes)) {
+    for (const linea of [`password: clave secreta${corte}zzz`, `zzz${corte}password: clave secreta`, `token=clave secreta${corte}${corte}fin`]) {
+      const cola = colaDeError(linea);
+      assert.ok(!cola.includes('clave secreta') && !cola.includes('secreta'), `con ${nombre}, la clave llega a la cola: ${JSON.stringify(cola)}`);
+      assert.ok(!Object.values(cortes).some((c) => cola.includes(c)), `con ${nombre}, la cola queda partida: ${JSON.stringify(cola)}`);
+    }
+    // una llave en base64 sola en su renglón se descarta sólo si el corte la separa de lo anterior
+    const cola = colaDeError(`fallo al leer${corte}QUJDREVGR0hJSktMTU5PUA==`);
+    assert.ok(!cola.includes('QUJDREVGR0hJSktMTU5PUA'), `con ${nombre}, la línea en base64 llega a la cola: ${JSON.stringify(cola)}`);
+  }
+});
+
+test('T5e ChildCrash_MultibyteSplitAcrossChunks @ac-4: un carácter partido entre dos trozos llega entero al motivo', () => {
+  const b = banco({ modoRunner: 'stderr-split' });
+  const error = 'Error: falló la conexión\n';
+  const corte = Buffer.from('Error: fall').length + 1;   // entre los dos bytes de la «ó»
+  correr(b, [], { RUNNER_ERR: error, RUNNER_CUT: String(corte) });
+  const i = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
+  assert.match(i.motivo, /falló la conexión/, i.motivo);
+  assert.ok(!i.motivo.includes('�'), `sin caracteres rotos: ${i.motivo}`);
+});
+
+test('T2b InstallRenewsEvenIfOldFolderStillExists @ac-1: con la carpeta vieja todavía en el disco, --install-task anota la nueva', () => {
+  const b = banco();
+  const viejas = herramientasEn(path.join(b.raiz, 'nvm-viejo', 'bin'), { engram: true });
+  const nuevas = herramientasEn(path.join(b.raiz, 'nvm-nuevo', 'bin'), { engram: true });
+  const nodeFalso = binDeNode(b, { conHerramientas: false });
+  escribir(rutaDeLaAnotacion(b), { claude: viejas, codex: viejas, engram: viejas, at: haceDias(9) });
+  const r = instalarConPath(b, nodeFalso, `${nuevas}:${PATH_DE_LAUNCHD}`);
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const a = leerAnotacion(b);
+  for (const h of ['claude', 'codex', 'engram']) assert.strictEqual(a[h], nuevas, `${h}: anota la del PATH de quien instala, no la vieja que sigue existiendo`);
+});
+
+test('T3c LoginShellFails_MotivoSaysWhy @ac-1: si el shell de inicio no devuelve su PATH, el motivo lo dice', () => {
+  const b = banco();
+  const nodeFalso = binDeNode(b, { conHerramientas: false });
+  const viejas = path.join(b.raiz, 'nvm-viejo', 'bin');
+  fs.mkdirSync(viejas, { recursive: true });
+  escribir(rutaDeLaAnotacion(b), { claude: viejas, codex: viejas, at: haceDias(9) });
+  correrComoLaunchd(b, nodeFalso, ['--force'], { SHELL: '/usr/bin/false' });
+  const i = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
+  assert.strictEqual(i.estado, 'incompleto');
+  assert.match(i.motivo, /claude no está en la carpeta anotada, y el shell de inicio no devolvió su PATH/);
+  assert.doesNotMatch(i.motivo, /ni en el PATH del usuario/, 'no culpa al PATH del usuario sin haberlo mirado');
+});
+
+test('T7 NoticeShowsLastAttemptMotivo @ac-5: el aviso nombra el último intento si es posterior al último completo', () => {
+  const b = banco();
+  escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
+    ts: haceDias(10), criterio: 0, inestables: 0, paridadReal: 0, baselineRegressions: 0, maquina: 'mini' });
+  escribir(b.intento, { kind: 'examen-periodico-intento', ts: haceDias(2), estado: 'incompleto', fase: 'corrida',
+    motivo: 'claude no está en la carpeta anotada ni en el PATH del usuario' });
+  const a = avisar(b);
+  assert.match(a.stdout, /NO ESTÁ CORRIENDO/);
+  assert.match(a.stdout, /último intento \d{4}-\d\d-\d\d: claude no está en la carpeta anotada ni en el PATH del usuario/);
+  escribir(b.intento, { kind: 'examen-periodico-intento', ts: haceDias(12), estado: 'incompleto', fase: 'corrida', motivo: 'algo viejo' });
+  assert.doesNotMatch(avisar(b).stdout, /último intento/, 'un intento anterior al reporte no se nombra');
 });
