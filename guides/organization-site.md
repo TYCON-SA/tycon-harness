@@ -481,12 +481,13 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
   Proyectos y Ejecuciones. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
-- **Pedidos de vulnerabilidades**: con qué tipo y qué campos crea la revisión de la noche el pedido de trabajo de una
-  vulnerabilidad en cada proyecto de Azure DevOps. Arriba, en un recuadro, el **tipo** (vacío, cada proyecto usa su
-  elemento de backlog) y los **campos fijos**, que van en todos los pedidos. Abajo, **según la gravedad**, una tabla con
-  una fila por campo y una columna por gravedad (crítica, alta, media y baja); sus valores ganan sobre los fijos si el
-  campo coincide. El sitio lee de los proyectos de los productos los tipos, los campos de cada tipo y sus valores
-  permitidos: cada campo se ve con su nombre (y su referencia, como `Microsoft.VSTS.Common.Priority`, debajo) y cada
+- **Pedidos de trabajo**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
+  los pedidos de la revisión de las ejecuciones y del vigilante; si falta alguno, la sección dice cuál y que la noche no
+  va a pedir trabajo. Después, en un recuadro, el **tipo** (vacío, cada proyecto usa su elemento de backlog) y los
+  **campos fijos**. Abajo, **según la gravedad**, una tabla con una fila por campo y una columna por gravedad (crítica,
+  alta, media y baja); sus valores ganan sobre los fijos si el campo coincide. Los campos fijos y la tabla valen sólo
+  para las vulnerabilidades, y la sección lo dice. Con organización y proyecto, el sitio lee de ese proyecto los tipos,
+  los campos de cada tipo y sus valores permitidos; sin ellos, de los proyectos de los productos: cada campo se ve con su nombre (y su referencia, como `Microsoft.VSTS.Common.Priority`, debajo) y cada
   valor se elige de un desplegable. Los valores que traen un símbolo adelante, como un círculo de color, se ven sin él y
   se guardan tal cual los acepta Azure DevOps. Un campo sin valores fijos se escribe. Sin permiso de lectura de work
   items, o si Azure DevOps no contesta, un aviso dice por qué y todo se escribe con su referencia. La ✕ de un campo lo
@@ -496,7 +497,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   las cuatro, se marcan en su campo y no se proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen
   de la mañana lo dice. Queda en `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene.
 
-![Pedidos de vulnerabilidades](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
+![Pedidos de trabajo](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
 ![Avisos y la noche](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 

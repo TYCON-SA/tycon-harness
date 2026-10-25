@@ -562,7 +562,7 @@ test('W4: 🔴 un motivo con $& o $\' no corrompe la ficha archivada', () => {
   }
 });
 
-test('W3b: 🔴 lo aceptado (promoted/) tampoco vuelve a abrir borrador, y a los 60 días vuelve como reincidente', () => {
+test('W3b: 🔴 lo aceptado (promoted/) tampoco vuelve a abrir borrador, ni a los 60 días: sólo suma apariciones', () => {
   // El dedup mira `pending/` y `archived/` y también tiene que mirar `promoted/`: sin eso, un hallazgo aceptado que se repite
   // dentro de su ventana vuelve a escribir la ficha y abre otro borrador y otro pull request por el
   // mismo hecho, que ya tiene el suyo.
@@ -603,10 +603,13 @@ test('W3b: 🔴 lo aceptado (promoted/) tampoco vuelve a abrir borrador, y a los
   assert.deepEqual(_fs.readdirSync(_path.join(dir, 'pending')).filter((f) => f.endsWith('.yaml')), [],
     'pending/ queda vacía: no hay ficha nueva que abra otro pedido');
 
-  const n3 = noche('2026-11-30');   // pasados los 60 días de silencio
-  assert.equal(n3.nuevos, 1, 'vencida la ventana vuelve a sonar');
-  const nuevo = _fs.readFileSync(_path.join(dir, 'pending', `${n3.hallazgos[0].id}.yaml`), 'utf8');
-  assert.match(nuevo, /veredicto_previo: util/, 'y marcado reincidente sobre lo aceptado');
+  // una aceptada que sigue viva sólo suma apariciones, también pasados los 60 días: el pedido cerrado con la falla viva
+  // lo avisa el cruce de la plataforma, no un borrador nuevo de la misma huella
+  const n3 = noche('2026-11-30');
+  assert.equal(n3.nuevos, 0, 'pasados los 60 días no nace otro borrador');
+  assert.deepEqual(_fs.readdirSync(_path.join(dir, 'pending')).filter((f) => f.endsWith('.yaml')), []);
+  assert.match(_fs.readFileSync(_path.join(dir, 'promoted', nombre), 'utf8'), /^vista_por_ultima_vez: "2026-11-30"$/m,
+    'y la aceptada registra que se vio');
   _fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -903,4 +906,250 @@ test('apagado de fábrica — sin configuración no mira nada, lo dice y no escr
   } finally {
     _fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ── el control de las noches: resolver, reabrir y no contar lo que no se midió ──────────────────────────────────
+
+/**
+ * Un repo de operaciones de mentira con la cola del vigilante en inbox/watcher y un producto `acme`. `noche(hoy, fix)`
+ * corre una noche entera (sin --dry-run) con el fixture `fix` del producto; `fix: null` es un producto sin medir.
+ */
+function operacionesDelVigilante({ n } = {}) {
+  const dir = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-noches-'));
+  const cola = _path.join(dir, 'inbox', 'watcher');
+  const fixture = _path.join(dir, 'fix');
+  const home = _path.join(dir, 'home');
+  _fs.mkdirSync(fixture, { recursive: true }); _fs.mkdirSync(home);
+  const cfg = JSON.parse(_fs.readFileSync(_path.join(R4_RAIZ, 'pipelines', 'operations', 'examples', 'hosts.json'), 'utf8'));
+  cfg.productos = [{ id: 'acme', url: 'x', env_user: 'U', env_pass: 'P', plugins: [], activo: true }];
+  _fs.writeFileSync(_path.join(dir, 'cfg.json'), JSON.stringify(cfg));
+  _fs.writeFileSync(_path.join(dir, 'operations.json'), JSON.stringify({ version: 1, owners: { default: 'lead@ejemplo.test' }, ...(n ? { findings: { resolve_after_nights: n } } : {}) }));
+  const env = { ...process.env, HOME: home, TYCON_WATCHER_QUIET: '1', TYCON_NO_NIGHTLY_EXAM: '1' };
+  delete env.TF_BUILD;
+  const noche = (hoy, fix, extra = []) => {
+    const f = _path.join(fixture, 'acme.json');
+    if (fix === null) _fs.rmSync(f, { force: true }); else _fs.writeFileSync(f, JSON.stringify(fix));
+    const r = _cp.spawnSync(process.execPath, [GUION, 'run', '--config', _path.join(dir, 'cfg.json'), '--fixture', fixture,
+      '--out', _path.join(dir, 'out'), '--pending', cola, '--json', '--today', hoy, ...extra], { encoding: 'utf8', env });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  const en = (carpeta) => { try { return _fs.readdirSync(_path.join(cola, carpeta)).filter((x) => x.endsWith('.yaml')); } catch { return []; } };
+  const texto = (carpeta, nombre) => _fs.readFileSync(_path.join(cola, carpeta, nombre), 'utf8');
+  return { dir, cola, noche, en, texto, borrar: () => _fs.rmSync(dir, { recursive: true, force: true }) };
+}
+const CAIDO = { ejecuciones: [], salud: { Roto: 'Failed' } };
+const SANO = { ejecuciones: [], salud: { Roto: 'Running' } };
+const SOURCES_V = require('../nightly/findings/sources.js');
+const escalar = (txt, k) => { const m = txt.match(new RegExp(`^${k}:\\s*"?([^"\\n]*?)"?\\s*$`, 'm')); return m ? m[1] : undefined; };
+
+// T16 Resuelta_TrasNNoches (el vigilante) @story-4.11 @ac-27
+// 🔴 Falla con: no contar las noches medidas sin el hallazgo, resolver antes de N, dejar el resuelto en pending/, sin
+//    `resuelta_el`, o archivar como ignorado uno que está contando sus noches (las N noches ganan a los 7 días).
+test('T16 Resuelta_TrasNNoches (el vigilante) @story-4.11 @ac-27', () => {
+  const o = operacionesDelVigilante();
+  try {
+    o.noche('2026-10-19', CAIDO);
+    const [nombre] = o.en('pending');
+    assert.ok(nombre, 'el plugin caído deja su borrador');
+    o.noche('2026-10-20', SANO);
+    o.noche('2026-10-21', SANO);
+    o.noche('2026-10-21', SANO);
+    assert.deepStrictEqual([escalar(o.texto('pending', nombre), 'noches_sin_aparecer'), escalar(o.texto('pending', nombre), 'noche_contada')],
+      ['2', '2026-10-21'], 'dos noches; el reintento no cuenta');
+    o.noche('2026-10-22', SANO);
+    assert.deepStrictEqual([o.en('pending'), o.en('archived')], [[], [nombre]]);
+    const t = o.texto('archived', nombre);
+    assert.deepStrictEqual([escalar(t, 'resuelta_el'), escalar(t, 'noches_sin_aparecer'), escalar(t, 'veredicto')], ['2026-10-22', undefined, 'pendiente']);
+    const v = SOURCES_V.comoFicha('vigilante', t);
+    assert.deepStrictEqual([v.estado, v.resuelto, v.reaparecido], ['resuelta', '2026-10-22', null]);
+  } finally { o.borrar(); }
+  // uno que cuenta sus noches no se archiva como ignorado a los 7 días
+  const dir = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-cola-'));
+  V.escribirBorrador(_path.join(dir, 'pending'), { producto: 'acme', huella: 'deadbeef', regla: 'salud', severidad: 'alta', senal: {}, diagnostico: 'd', evidencia: [] }, '2026-10-01', {});
+  const archivo = _path.join(dir, 'pending', '2026-10-01-acme-deadbeef.yaml');
+  _fs.writeFileSync(archivo, `${_fs.readFileSync(archivo, 'utf8')}noches_sin_aparecer: 2\nnoche_contada: "2026-10-12"\n`);
+  assert.deepStrictEqual(V.marcarIgnorados(dir, '2026-10-12'), [], 'contando: no es ignorado');
+  _fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// T17 Reaparecio_Reabre (el vigilante) @story-4.11 @ac-28
+// 🔴 Falla con: callar un resuelto o un ignorado que vuelve (o abrirle un borrador nuevo en vez de reabrir el mismo),
+//    perder el veredicto de antes o la cuenta de noches, conservar la propuesta vieja, o reabrir un descartado dentro
+//    de su silencio.
+test('T17 Reaparecio_Reabre (el vigilante) @story-4.11 @ac-28', () => {
+  const o = operacionesDelVigilante({ n: 1 });
+  try {
+    o.noche('2026-10-19', CAIDO);
+    const [nombre] = o.en('pending');
+    o.noche('2026-10-20', SANO);
+    assert.deepStrictEqual(o.en('archived'), [nombre], 'resuelto con N=1');
+    const conPropuesta = `${o.texto('archived', nombre)}propuesta_accion: arreglar\npropuesta_razon: "la de antes"\n`;
+    _fs.writeFileSync(_path.join(o.cola, 'archived', nombre), conPropuesta);
+    o.noche('2026-10-21', CAIDO);
+    assert.deepStrictEqual([o.en('pending'), o.en('archived')], [[nombre], []], 'el mismo borrador vuelve a pending/');
+    const t = o.texto('pending', nombre);
+    assert.deepStrictEqual([escalar(t, 'reaparecio_el'), escalar(t, 'veredicto'), escalar(t, 'veredicto_anterior'), escalar(t, 'resuelta_el'),
+      escalar(t, 'propuesta_accion'), escalar(t, 'noches_seguidas'), escalar(t, 'vista_por_ultima_vez')],
+    ['2026-10-21', 'pendiente', 'pendiente', undefined, undefined, '2', '2026-10-21']);
+    const v = SOURCES_V.comoFicha('vigilante', t);
+    assert.deepStrictEqual([v.estado, v.reaparecido], ['reaparecio', '2026-10-21']);
+    // un ignorado que vuelve se reabre, aun dentro de sus 7 días
+    _fs.mkdirSync(_path.join(o.cola, 'archived'), { recursive: true });
+    _fs.writeFileSync(_path.join(o.cola, 'archived', nombre), t.replace(/^veredicto: .*$/m, 'veredicto: ignorado'));
+    _fs.rmSync(_path.join(o.cola, 'pending', nombre));
+    o.noche('2026-10-22', CAIDO);
+    assert.deepStrictEqual([o.en('pending'), escalar(o.texto('pending', nombre), 'veredicto_anterior')], [[nombre], 'ignorado']);
+    // un descartado dentro de sus 60 días sigue callado
+    _fs.writeFileSync(_path.join(o.cola, 'archived', nombre), o.texto('pending', nombre).replace(/^veredicto: .*$/m, 'veredicto: descartado'));
+    _fs.rmSync(_path.join(o.cola, 'pending', nombre));
+    const antes = o.texto('archived', nombre);
+    o.noche('2026-10-23', CAIDO);
+    assert.deepStrictEqual([o.en('pending'), o.texto('archived', nombre)], [[], antes]);
+  } finally { o.borrar(); }
+});
+
+// T89 Vigilante_AceptadaSigueViva_SumaLaAparicion @story-4.11 @ac-28
+// 🔴 Falla con: tratar una aceptada que sigue apareciendo como silencio (no actualiza `vista_por_ultima_vez`), con lo
+//    que pasada la ventana de los descartados escribe un borrador nuevo de la misma huella y quedan dos fichas vivas.
+test('T89 Vigilante_AceptadaSigueViva_SumaLaAparicion @story-4.11 @ac-28', () => {
+  const o = operacionesDelVigilante();
+  try {
+    o.noche('2026-10-19', CAIDO);
+    const [nombre] = o.en('pending');
+    _fs.mkdirSync(_path.join(o.cola, 'promoted'), { recursive: true });
+    _fs.writeFileSync(_path.join(o.cola, 'promoted', nombre), o.texto('pending', nombre).replace(/^veredicto: .*$/m, 'veredicto: util'));
+    _fs.rmSync(_path.join(o.cola, 'pending', nombre));
+    o.noche('2026-10-20', CAIDO);
+    let t = o.texto('promoted', nombre);
+    assert.deepStrictEqual([o.en('pending'), escalar(t, 'vista_por_ultima_vez'), escalar(t, 'noches_seguidas'), escalar(t, 'veredicto')],
+      [[], '2026-10-20', '2', 'util'], 'la aceptada suma la aparición y no abre otro borrador');
+    o.noche('2026-12-30', CAIDO);
+    t = o.texto('promoted', nombre);
+    assert.deepStrictEqual([o.en('pending'), o.en('promoted'), escalar(t, 'vista_por_ultima_vez')], [[], [nombre], '2026-12-30'],
+      'pasados los 60 días sigue siendo una sola ficha viva');
+  } finally { o.borrar(); }
+});
+
+// T90 Vigilante_SaludSinEstado_NoEsMedida @story-4.11 @ac-36
+// 🔴 Falla con: dar por medido un plugin cuya salud no trae un estado de texto (`String(undefined)` no empieza con
+//    «no medido»), con lo que un dato malformado avanza el contador hacia «resuelta».
+test('T90 Vigilante_SaludSinEstado_NoEsMedida @story-4.11 @ac-36', () => {
+  const m = V.medidaDelProducto({ ok: true, fuente: 'ejecuciones', ejecuciones: [],
+    salud: { Sano: { estado: 'Running' }, SinClave: {}, Nulo: null, Vacio: { estado: '' }, Numero: 3, Texto: 'Stopped', NoMedido: 'no medido: 401' } }, false);
+  assert.deepStrictEqual(m.salud, { Sano: true, SinClave: false, Nulo: false, Vacio: false, Numero: false, Texto: true, NoMedido: false });
+});
+
+// T20 NocheQueNoCorrio_NoAvanza (el vigilante) @story-4.11 @ac-36
+// 🔴 Falla con: contar días de calendario (la noche que no corrió sumaría), o contar una corrida de prueba (--dry-run).
+test('T20 NocheQueNoCorrio_NoAvanza (el vigilante) @story-4.11 @ac-36', () => {
+  const o = operacionesDelVigilante();
+  try {
+    o.noche('2026-10-19', CAIDO);
+    const [nombre] = o.en('pending');
+    o.noche('2026-10-20', SANO);
+    o.noche('2026-10-22', SANO);
+    o.noche('2026-10-23', SANO, ['--dry-run']);
+    const t = o.texto('pending', nombre);
+    assert.deepStrictEqual([escalar(t, 'noches_sin_aparecer'), escalar(t, 'noche_contada')], ['2', '2026-10-22']);
+  } finally { o.borrar(); }
+});
+
+// T78 Vigilante_ReglaSinMedir_NoAvanzaSusCausas @story-4.11 @ac-36
+// 🔴 Falla con: contar como «no apareció» la noche en que no se midió lo que produce la causa: el producto sin login o
+//    sin la lista de plugins, la salud de ese plugin sin medir, o la tabla de pedidos del host sin leer (o en arranque
+//    en frío, cuando las reglas que la usan no corren).
+test('T78 Vigilante_ReglaSinMedir_NoAvanzaSusCausas @story-4.11 @ac-36', () => {
+  const salud = { producto: 'acme', regla: 'salud', plugin: 'Roto' };
+  const goteo = { producto: 'acme', regla: 'goteo', plugin: 'Roto' };
+  const medida = (o) => ({ ok: true, lista: true, salud: { Roto: true }, tabla: true, ...o });
+  assert.strictEqual(V.medidaPara(salud, { acme: medida() }), true);
+  assert.strictEqual(V.medidaPara(goteo, { acme: medida() }), true);
+  assert.strictEqual(V.medidaPara(salud, {}), false, 'producto que no se miró');
+  assert.strictEqual(V.medidaPara(salud, { acme: medida({ ok: false }) }), false, 'sin login');
+  assert.strictEqual(V.medidaPara(goteo, { acme: medida({ lista: false }) }), false, 'sin la lista de plugins');
+  assert.strictEqual(V.medidaPara(salud, { acme: medida({ salud: { Roto: false } }) }), false, 'la salud del plugin sin medir');
+  assert.strictEqual(V.medidaPara({ ...salud, regla: 'latido' }, { acme: medida({ salud: {} }) }), false, 'el plugin no está en la lista');
+  assert.strictEqual(V.medidaPara(salud, { acme: medida({ tabla: false }) }), true, 'la salud no necesita la tabla');
+  assert.strictEqual(V.medidaPara(goteo, { acme: medida({ tabla: false }) }), false, 'el goteo sí');
+  assert.strictEqual(V.medidaPara({ ...goteo, producto: null }, { acme: medida() }), false, 'sin producto no se sabe qué se midió');
+  // de punta a punta: producto sin medir, salud del plugin sin medir y salud medida
+  const o = operacionesDelVigilante();
+  try {
+    o.noche('2026-10-19', CAIDO);
+    const [nombre] = o.en('pending');
+    o.noche('2026-10-20', null);
+    o.noche('2026-10-21', { ejecuciones: [], salud: { Roto: 'no medido — el host no contestó' } });
+    o.noche('2026-10-22', { ejecuciones: [], salud: {}, });
+    assert.strictEqual(escalar(o.texto('pending', nombre), 'noches_sin_aparecer'), undefined, 'ninguna de las tres midió la salud de Roto');
+    o.noche('2026-10-23', SANO);
+    assert.strictEqual(escalar(o.texto('pending', nombre), 'noches_sin_aparecer'), '1');
+  } finally { o.borrar(); }
+});
+
+// ── los arreglos del pase adversarial: la fuente del hallazgo, el error parejo y la lectura cortada ─────────────
+const filasDeError = (n) => Array.from({ length: n }, (_, i) => ({ executedAt: `2026-10-04T0${i % 10}:00:00Z`, pluginName: 'Roto',
+  endpoint: '/x', statusCode: 500, errorMessage: 'Boom NullRef' }));
+const statsDe = (errores) => ({ Roto: { total: 100, porCodigo: errores ? { 500: errores } : {} } });
+const LIMPIA = { ejecuciones: [], salud: { Roto: 'Running' }, stats: statsDe(0) };
+const CON_FILAS = { ejecuciones: filasDeError(5), salud: { Roto: 'Running' }, stats: statsDe(5) };
+const SOLO_STATS = { ejecuciones: [], degradada: 'el host dice 5 pedidos con error y devuelve la lista vacía', salud: { Roto: 'Running' }, stats: statsDe(5) };
+const delOrigen = (o, origen) => o.en('pending').find((n) => escalar(o.texto('pending', n), 'origen') === origen);
+
+// T82 Vigilante_FuenteDistinta_NoCuentaLaNoche @story-4.11 @ac-36
+// 🔴 Falla con: contar como «no apareció» la noche en que el hallazgo de las filas no tuvo filas (el host las negó) o
+//    el de las estadísticas sólo tuvo filas, o no escribir de qué fuente salió el borrador. Una noche limpia, con las
+//    dos fuentes leídas, sí cuenta para los dos.
+test('T82 Vigilante_FuenteDistinta_NoCuentaLaNoche @story-4.11 @ac-36', () => {
+  const o = operacionesDelVigilante();
+  try {
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-03']) o.noche(d, LIMPIA);
+    o.noche('2026-10-04', CON_FILAS);
+    const deFilas = delOrigen(o, 'ejecuciones');
+    assert.ok(deFilas, `el hallazgo de las filas dice su origen: ${o.en('pending')}`);
+    for (const d of ['2026-10-05', '2026-10-06', '2026-10-07']) o.noche(d, SOLO_STATS);
+    const deStats = delOrigen(o, 'stats');
+    assert.ok(deStats, 'el de las estadísticas dice el suyo');
+    assert.deepStrictEqual([o.en('archived'), escalar(o.texto('pending', deFilas), 'noches_sin_aparecer')], [[], undefined],
+      'tres noches sin filas no son tres noches sin el error');
+    for (const d of ['2026-10-08', '2026-10-09', '2026-10-10']) o.noche(d, CON_FILAS);
+    assert.deepStrictEqual([o.en('archived'), escalar(o.texto('pending', deStats), 'noches_sin_aparecer')], [[], undefined],
+      'las estadísticas se leyeron y siguen con el error: se vio');
+    for (const d of ['2026-10-11', '2026-10-12', '2026-10-13']) o.noche(d, LIMPIA);
+    assert.deepStrictEqual([o.en('pending'), o.en('archived').sort()], [[], [deFilas, deStats].sort()], 'tres noches limpias resuelven los dos');
+  } finally { o.borrar(); }
+});
+
+// T83 Vigilante_ErrorParejo_NoSeResuelve @story-4.11 @ac-27
+// 🔴 Falla con: dar por visto sólo lo que pasa el umbral. Con un error que llega parejo la mediana sube, el umbral lo
+//    deja de marcar y el borrador se resolvería mientras el error sigue.
+test('T83 Vigilante_ErrorParejo_NoSeResuelve @story-4.11 @ac-27', () => {
+  const o = operacionesDelVigilante();
+  try {
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-03']) o.noche(d, LIMPIA);
+    const parejo = { ejecuciones: [], salud: { Roto: 'Running' }, stats: statsDe(20) };
+    o.noche('2026-10-04', parejo);
+    const [nombre] = o.en('pending');
+    assert.ok(nombre, 'el error nuevo deja su borrador');
+    const sinMarcar = ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'].map((d) => o.noche(d, parejo).hallazgos.length);
+    assert.ok(sinMarcar.includes(0), `con la mediana arriba alguna noche ya no lo marca: ${sinMarcar}`);
+    assert.deepStrictEqual([o.en('pending'), o.en('archived'), escalar(o.texto('pending', nombre), 'noches_sin_aparecer')], [[nombre], [], undefined]);
+  } finally { o.borrar(); }
+});
+
+// T84 Vigilante_LecturaCortada_NoEsMedida @story-4.11 @ac-36
+// 🔴 Falla con: dar por leída la tabla cuando se cortó en las primeras filas, cuando el host devolvió la lista vacía
+//    con un total distinto de cero, o en el arranque en frío; o medir un hallazgo de las estadísticas sin las de su plugin.
+test('T84 Vigilante_LecturaCortada_NoEsMedida @story-4.11 @ac-36', () => {
+  const base = { ok: true, salud: { Roto: 'Running' }, stats: statsDe(0), tablaLeida: true };
+  assert.strictEqual(V.medidaDelProducto({ ...base, fuente: 'ejecuciones' }, false).tabla, true);
+  assert.strictEqual(V.medidaDelProducto({ ...base, fuente: 'ejecuciones', truncado: 'sólo se leyeron los primeros 500' }, false).tabla, false, 'cortada');
+  assert.strictEqual(V.medidaDelProducto({ ...base, fuente: 'stats' }, false).tabla, true, 'vacía de verdad: se leyó');
+  assert.strictEqual(V.medidaDelProducto({ ...base, fuente: 'stats', degradada: 'lista vacía con total' }, false).tabla, false, 'negada por el host');
+  assert.deepStrictEqual([V.medidaDelProducto({ ...base, fuente: 'ejecuciones' }, true).tabla, V.medidaDelProducto(base, true).stats], [false, {}], 'en frío');
+  const m = (o) => ({ acme: { ok: true, lista: true, salud: {}, tabla: false, stats: { Roto: true }, ...o } });
+  const deStats = { producto: 'acme', regla: 'deriva', plugin: 'Roto', origen: 'stats' };
+  assert.strictEqual(V.medidaPara(deStats, m()), true, 'las estadísticas de su plugin alcanzan');
+  assert.strictEqual(V.medidaPara(deStats, m({ stats: {} })), false, 'sin las de su plugin no');
+  assert.strictEqual(V.medidaPara({ ...deStats, origen: 'ejecuciones' }, m()), false, 'el de las filas pide las filas');
 });

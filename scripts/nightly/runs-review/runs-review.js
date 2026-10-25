@@ -19,7 +19,10 @@
  *    en `completo: false`.
  *
  * Ciclo de una ficha: nace en `pending/`; la noche que vuelve a ver la causa la actualiza donde esté (una aparición más
- * y las ejecuciones nuevas). Una en `archived/` no se toca: resolver o reabrir una causa todavía no lo hace esta pasada.
+ * y las ejecuciones nuevas). Una pasada entera cuenta una noche sin aparecer a cada ficha de `pending/` y `promoted/`
+ * que no vio; a las N noches (`findings.resolve_after_nights`) queda resuelta y pasa a `archived/`. Una pasada a medias
+ * no cuenta: la causa pudo estar en lo que no se leyó. Una resuelta o una ignorada de `archived/` que vuelve se reabre
+ * en `pending/` y, si tenía pedido, se le avisa al pedido que volvió (sólo un comentario). Una migrada no se toca.
  * Cada archivo se escribe a un temporal y se renombra.
  *
  * Las fichas por ejecución de antes (sin `fuente:`, con `reglas`) que siguen en `pending/` se migran una vez, al
@@ -306,7 +309,7 @@ async function run(opts) {
   // el pedido de trabajo de cada arreglo decidido que todavía no lo tiene
   // un error del paso no corta la revisión de la noche: se dice y la noche siguiente vuelve a pedir
   try {
-    const pedidos = await CYCLE.pedirTrabajo({ base: opsDir, fuente: 'ejecuciones', operations: path.join(opsDir, 'operations.json'), repoDir: opsDir });
+    const pedidos = await CYCLE.pedirTrabajo({ base: opsDir, fuente: 'ejecuciones', operations: path.join(opsDir, 'operations.json'), run: opts.plataforma || null, repoDir: opsDir });
     for (const l of pedidos.lineas) process.stderr.write(`${l}\n`);
   } catch (e) { process.stderr.write(`pedidos de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); esta noche no se pidió ninguno\n`); }
   const desde = menosDias(today, days);
@@ -336,8 +339,8 @@ async function run(opts) {
     for (const k of causas.keys()) if (!(k in pares)) pares[k] = today;
     escribirEntero(path.join(raiz, 'causas-vistas.json'), `${JSON.stringify({ esquema: 1, pares }, null, 2)}\n`);
   };
-  // la ficha de cada causa vista: una aparición más donde esté, o una nueva en pending/. Una en archived/ no se toca
-  // (resolver o reabrir una causa todavía no lo hace esta pasada).
+  // la ficha de cada causa vista: una aparición más donde esté, o una nueva en pending/. Una de archived/ resuelta o
+  // ignorada se reabre en pending/ (primero se escribe la nueva, después se borra la archivada); una migrada no se toca.
   let previas = { porCausa: new Map(), viejas: [], ilegibles: 0 };
   // cada causa se escribe una sola vez por pasada: si la pasada se corta después, el camino del error no la repite
   const escritas = new Set();
@@ -346,7 +349,16 @@ async function run(opts) {
       const clave = causaDe(c);
       if (!FORMA_CAUSA.test(clave) || escritas.has(clave)) continue;
       const prev = previas.porCausa.get(clave);
-      if (prev && prev.carpeta === 'archived') { escritas.add(clave); continue; }
+      if (prev && prev.carpeta === 'archived') {
+        const g = CYCLE.registrarAparicion(prev.ficha, today, c.casos);
+        // se reabrió esta noche: una ignorada que ya había vuelto antes guarda `reaparecio` y igual se reabre
+        if (g.estado === 'reaparecio' && g.reaparecio_el === today) {
+          escribirEntero(path.join(raiz, 'pending', path.basename(prev.ruta)), CYCLE.serializar(g));
+          fs.unlinkSync(prev.ruta);
+        }
+        escritas.add(clave);
+        continue;
+      }
       if (prev) { escribirEntero(prev.ruta, CYCLE.serializar(CYCLE.registrarAparicion(prev.ficha, today, c.casos))); escritas.add(clave); continue; }
       const f = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: clave, nombre: NOMBRES.nombreDe('ejecuciones', c), hoy: today, casos: c.casos });
       // una ficha de esa causa que está y no se pudo leer (ya contada en ilegibles) no se pisa con una nueva
@@ -354,6 +366,20 @@ async function run(opts) {
       escribirEntero(path.join(raiz, 'pending', `${f.id}.yaml`), CYCLE.serializar(f));
       escritas.add(clave);
       estado.nuevas += 1;
+    }
+  };
+  // una noche sin aparecer para cada ficha de pending/ y promoted/ que la pasada entera no vio; la resuelta va a archived/
+  const contarNoches = () => {
+    const n = CYCLE.nochesParaResolver(path.join(opsDir, 'operations.json'));
+    if (!n.ok) { process.stderr.write(`noches de ejecuciones: ${n.motivo}; esta noche no se cuenta\n`); return; }
+    const vistasHoy = new Set([...causas.values()].map(causaDe));
+    for (const p of previas.porCausa.values()) {
+      if (p.carpeta === 'archived' || vistasHoy.has(p.ficha.causa)) continue;
+      const g = CYCLE.noche({ ficha: p.ficha, presente: false, medida: true, n: n.n, hoy: today });
+      if (g.estado === 'resuelta') {
+        escribirEntero(path.join(raiz, 'archived', path.basename(p.ruta)), CYCLE.serializar(g));
+        fs.unlinkSync(p.ruta);
+      } else if (g.noche_contada !== p.ficha.noche_contada) escribirEntero(p.ruta, CYCLE.serializar(g));
     }
   };
 
@@ -441,6 +467,12 @@ async function run(opts) {
     escribirCausas();
     guardarVistas();
     if (estado.ilegibles) { estado.completo = false; if (!estado.motivo) estado.motivo = `${estado.ilegibles} archivo(s) o línea(s) ilegible(s)`; }
+    if (estado.completo) contarNoches();
+    // el aviso a su pedido de cada ficha que volvió; como el pedido, un error no corta la noche
+    try {
+      const avisos = await CYCLE.avisarQueVolvio({ base: opsDir, fuente: 'ejecuciones', operations: opsJson, hoy: today, run: opts.plataforma || null, repoDir: opsDir });
+      for (const l of avisos.lineas) process.stderr.write(`${l}\n`);
+    } catch (e) { process.stderr.write(`avisos de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se avisa mañana\n`); }
     return cerrar(estado.completo ? 0 : 1);
   } catch (e) {
     // una pasada cortada no deja el estado de ayer como si fuera de hoy

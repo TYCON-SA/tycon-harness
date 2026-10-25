@@ -147,6 +147,12 @@ function update(args, ctx) {
   if (d.problem) return d.problem;
   const { c, org } = d;
   const id = String(args.id).trim();
+  // con un comentario y sin estado, sólo se comenta: el estado no se lee ni se cambia, y uno cerrado no se reabre
+  if (typeof args.comment === 'string' && args.comment.trim() && !args.state) {
+    const k = azJson(ctx, ['boards', 'work-item', 'update', '--organization', org, '--id', id, '--discussion', valor(args.comment), '--output', 'json']);
+    if (k.problem) return k.problem;
+    return { ok: true, value: { id: Number(id), changed: false, commented: true, warnings: [...d.warnings] } };
+  }
   const s = az(ctx, ['boards', 'work-item', 'show', '--organization', org, '--id', id, '--query', 'fields."System.State"', '--output', 'tsv']);
   if (s.problem) return s.problem;
   const previo = String(s.out).trim();

@@ -697,12 +697,13 @@ test('T13 Resumen_RubrosIgualesPorFuente', () => {
     'promoted/z.yaml': comun('RR-CIERRE:abortada', { veredicto: 'aceptada' }),
     'archived/2026-10-01-acme-e0-abcdef.yaml': 'id: "e0"\nreglas: []\nveredicto: "migrada"\n',
   });
-  const NM = 'reaparecidas ? (no medido) · resueltas ? (no medido)';
-  assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), `fichas de ejecuciones: vivas 2 · nuevas 1 · ${NM}`);
+  // la noche controla también ejecuciones y el vigilante: sin reaparecidas ni resueltas de hoy, 0
+  const CERO = 'reaparecidas 0 · resueltas 0';
+  assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), `fichas de ejecuciones: vivas 2 · nuevas 1 · ${CERO}`);
   const vig = tmp();
   VIG.escribirBorrador(path.join(vig, 'pending'), { producto: 'acme', regla: 'deriva', severidad: 'alta', huella: 'aaaa0001', plugin: 'p',
     endpoint: null, senal: {}, diagnostico: 'd', evidencia: [] }, HOY_B);
-  assert.strictEqual(DS.lineaFichas('vigilante', vig, HOY_B), `fichas de vigilante: vivas 1 · nuevas 1 · ${NM}`);
+  assert.strictEqual(DS.lineaFichas('vigilante', vig, HOY_B), `fichas de vigilante: vivas 1 · nuevas 1 · ${CERO}`);
   assert.match(DS.lineaFichas('ejecuciones', path.join(tmp(), 'no-esta'), HOY_B), /^fichas de ejecuciones: \? \(no se pudieron leer\)$/);
 });
 
@@ -816,7 +817,7 @@ test('FichaPorCausaIlegible_NoSePisa', async () => {
 // 🔴 Falla con: tomar una carpeta que no se puede leer como vacía («vivas 0»), o una ficha ilegible como que no está.
 test('Resumen_FichasQueNoSeLeen_NoSonCero', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
   const ej = fuenteConFichas('runs-review', { 'pending/y.yaml': comun('RR-CIERRE:derivada'), 'pending/rota.yaml': 'fuente: "ejecuciones"\nid: {mal\n' });
-  assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), 'fichas de ejecuciones: vivas 1 · nuevas 0 · reaparecidas ? (no medido) · resueltas ? (no medido) · ilegibles 1');
+  assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), 'fichas de ejecuciones: vivas 1 · nuevas 0 · reaparecidas 0 · resueltas 0 · ilegibles 1');
   fs.chmodSync(path.join(ej, 'pending'), 0o000);
   try {
     assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), 'fichas de ejecuciones: ? (no se pudieron leer)');
@@ -870,7 +871,7 @@ test('Resumen_RenglonDelVigilante_EnSuSeccion', () => {
   VIG.escribirBorrador(path.join(vig, 'pending'), { producto: 'acme', regla: 'goteo', severidad: 'media', huella: 'aaaa0002', plugin: 'p',
     endpoint: null, senal: {}, diagnostico: 'd', evidencia: [] }, HOY_B);
   const r = DS.armar({ fuente: 'vigilante', hoy: HOY_B, out, pending: vig, resumenConfig: path.join(base, 'no-esta.json'), runs: null, weekly: null });
-  assert.ok(r.texto.split('\n').includes(`fichas de vigilante: vivas 1 · nuevas 1 · reaparecidas ? (no medido) · resueltas ? (no medido)`), r.texto);
+  assert.ok(r.texto.split('\n').includes(`fichas de vigilante: vivas 1 · nuevas 1 · reaparecidas 0 · resueltas 0`), r.texto);
 });
 
 // Resumen_ConstanciaDeFichasAlterada_NoSeVuelveAEscribir @story-4.11 @ac-11
@@ -1329,4 +1330,129 @@ test('T54c Resumen_AceptadaConPedido_NoEsSinStory', () => {
   const x = (id, escalares) => ({ id, f: { escalares: { veredicto: 'util', fecha: '2026-10-21', ...escalares } } });
   const R = DS.rubrosVigilante({ snap: {}, fichas: { pending: [], promoted: [x('a', { pedido: '901' }), x('b', {}), x('c', { pedido: 'pidiendo' })], archived: [] }, hoy: '2026-10-25' });
   assert.deepStrictEqual(R.aceptadas_sin_story.valor.map((v) => v.id), ['b', 'c']);
+});
+
+/** Un borrador del vigilante con campos de más (los que escribe la noche al controlar), en `<dir>/<carpeta>/`. */
+function borradorCon(dir, carpeta, huella, regla, extra) {
+  const p = VIG.escribirBorrador(path.join(dir, carpeta), { producto: 'acme', regla, severidad: 'alta', huella, plugin: 'p',
+    endpoint: null, senal: {}, diagnostico: 'd', evidencia: [] }, '2026-10-01');
+  const mas = Object.entries(extra).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
+  fs.writeFileSync(p, `${fs.readFileSync(p, 'utf8').replace(/\n*$/, '\n')}${mas}\n`);
+  return p;
+}
+const volvioEj = (causa, extra = {}) => comun(causa, { estado: 'reaparecio', veredicto: 'pendiente', veredicto_anterior: 'arreglo',
+  reaparecio_el: HOY_B, pedido: 901, ...extra });
+
+// T80 Resumen_ReaparecidasYResueltas_Medidas @story-4.11 @ac-11 @ac-37 @ac-28
+// 🔴 Falla con: que ejecuciones o el vigilante sigan diciendo «? (no medido)», contar una reaparecida de otro día, no
+//    decir el renglón de la que volvió con pedido (avisado, o el aviso para mañana), o un renglón que la constancia de las
+//    04:00 no vuelve a aceptar a las 08:00.
+test('T80 Resumen_ReaparecidasYResueltas_Medidas', () => {
+  const ej = fuenteConFichas('runs-review', {
+    'pending/a.yaml': volvioEj('RR-CIERRE:abortada', { aviso_volvio_el: HOY_B }),
+    'pending/b.yaml': volvioEj('RR-CIERRE:abandonada'),
+    'pending/c.yaml': volvioEj('RR-CIERRE:sin-cerrar', { reaparecio_el: '2026-10-20', pedido: null }),
+    'archived/d.yaml': comun('RR-NODE:carga', { estado: 'resuelta', veredicto: 'arreglo', resuelta_el: HOY_B }),
+    'archived/e.yaml': comun('RR-NODE:node-viejo', { estado: 'resuelta', veredicto: 'arreglo', resuelta_el: '2026-10-19' }),
+  });
+  const nombre = (causa) => NOMBRES.nombreDe('ejecuciones', { regla: causa.split(':')[0], categoria: causa.split(':')[1] });
+  assert.strictEqual(DS.lineaFichas('ejecuciones', ej, HOY_B), 'fichas de ejecuciones: vivas 3 · nuevas 0 · reaparecidas 2 · resueltas 1');
+  const clon = DS.lineasFichasDelClon(path.dirname(path.dirname(ej)), HOY_B);
+  assert.deepStrictEqual(clon.filter((l) => l.startsWith('↩️')), [
+    `↩️ volvió en ejecuciones: ${nombre('RR-CIERRE:abortada')} — avisado en el pedido 901`,
+    `↩️ volvió en ejecuciones: ${nombre('RR-CIERRE:abandonada')} — el aviso al pedido 901 queda para mañana`,
+  ], 'la de otro día sin pedido no tiene renglón');
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: clon }), clon, 'la edición de las 08:00 los vuelve a poner tal cual');
+  assert.strictEqual(DS.fichasDeLaConstancia({ fichas: [clon[0], '↩️ volvió en ejecuciones: ZZTEXTO; de una conversación'] }), null);
+
+  const vig = tmp();
+  borradorCon(vig, 'pending', 'aaaa0011', 'goteo', { reaparecio_el: HOY_B, veredicto_anterior: 'util', pedido: '902', aviso_volvio_el: HOY_B });
+  borradorCon(vig, 'archived', 'aaaa0012', 'deriva', { resuelta_el: HOY_B });
+  borradorCon(vig, 'archived', 'aaaa0013', 'latido', { resuelta_el: '2026-10-18' });
+  assert.strictEqual(DS.lineaFichas('vigilante', vig, HOY_B), 'fichas de vigilante: vivas 1 · nuevas 0 · reaparecidas 1 · resueltas 1');
+  const out = path.join(vig, 'out');
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, `vigilante-${HOY_B}.json`), JSON.stringify({ fecha: HOY_B, hallazgos: [], no_medido: [], ignorados_ids: [] }));
+  const r = DS.armar({ fuente: 'vigilante', hoy: HOY_B, out, pending: vig, resumenConfig: path.join(vig, 'no-esta.json'), runs: null, weekly: null });
+  assert.ok(r.texto.split('\n').includes('↩️ volvió en vigilante: goteo — avisado en el pedido 902'), r.texto);
+  const v = sources.comoFicha('vigilante', fs.readFileSync(path.join(vig, 'archived', fs.readdirSync(path.join(vig, 'archived')).sort()[0]), 'utf8'));
+  assert.strictEqual(v.estado, 'resuelta', 'el vigilante deja de ser siempre «viva»');
+});
+
+// T44 Resumen_TresFuentes_EntraEnTelegram @story-4.11 @ac-37
+// 🔴 Falla con: un renglón por cada ficha que volvió sin tope (diez fichas, diez renglones), un renglón más largo que los
+//    del resto del mensaje, o la sección del vigilante que pasa su tope por los renglones de fichas.
+test('T44 Resumen_TresFuentes_EntraEnTelegram', () => {
+  const archivos = {};
+  for (let i = 0; i < 12; i++) archivos[`pending/v${i}.yaml`] = volvioEj(`RR-HOOK:Stop/caso${i}`, { pedido: 900 + i });
+  const ej = fuenteConFichas('runs-review', archivos);
+  const clon = DS.lineasFichasDelClon(path.dirname(path.dirname(ej)), HOY_B);
+  const volvio = clon.filter((l) => l.startsWith('↩️'));
+  assert.strictEqual(volvio.length, 4, 'tres renglones y uno que dice cuántas más');
+  assert.strictEqual(volvio[3], '↩️ y 9 más volvieron en ejecuciones');
+  assert.ok(clon.every((l) => l.length <= 110), clon.join('\n'));
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: clon }), clon);
+
+  const vig = tmp();
+  for (let i = 0; i < 12; i++) borradorCon(vig, 'pending', `bbbb00${String(i).padStart(2, '0')}`, 'goteo', { reaparecio_el: HOY_B, pedido: String(950 + i) });
+  const out = path.join(vig, 'out');
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, `vigilante-${HOY_B}.json`), JSON.stringify({ fecha: HOY_B, hallazgos: [], no_medido: [], ignorados_ids: [] }));
+  const r = DS.armar({ fuente: 'vigilante', hoy: HOY_B, out, pending: vig, resumenConfig: path.join(vig, 'no-esta.json'), runs: null, weekly: null });
+  const L = r.texto.split('\n');
+  assert.strictEqual(L.filter((l) => l.startsWith('↩️')).length, 4, r.texto);
+  assert.ok(L.length <= DS.TOPE.vigilante.lineas && r.texto.length <= DS.TOPE.vigilante.caracteres, `la sección del vigilante en su tope:\n${r.texto}`);
+});
+
+// T91 Resumen_VolvioFueraDeForma_SeCuenta @story-4.11 @ac-28
+// 🔴 Falla con: descartar sin rastro la ficha que volvió con un nombre que el renglón no acepta (el «y N más» cuenta de
+//    menos y la ficha no aparece en ningún lado).
+test('T91 Resumen_VolvioFueraDeForma_SeCuenta @story-4.11 @ac-28', () => {
+  const vig = tmp();
+  borradorCon(vig, 'pending', 'aaaa0031', 'goteo', { reaparecio_el: HOY_B, pedido: '904' });
+  borradorCon(vig, 'pending', 'aaaa0032', 'goteo:raro', { reaparecio_el: HOY_B, pedido: '905' });
+  const out = path.join(vig, 'out');
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, `vigilante-${HOY_B}.json`), JSON.stringify({ fecha: HOY_B, hallazgos: [], no_medido: [], ignorados_ids: [] }));
+  const r = DS.armar({ fuente: 'vigilante', hoy: HOY_B, out, pending: vig, resumenConfig: path.join(vig, 'no-esta.json'), runs: null, weekly: null });
+  assert.deepStrictEqual(r.texto.split('\n').filter((l) => l.startsWith('↩️')),
+    ['↩️ volvió en vigilante: goteo — el aviso al pedido 904 queda para mañana', '↩️ y 1 más volvieron en vigilante'], r.texto);
+});
+
+// T87 AvisoVolvio_SoloAlPedidoDeLaNoche @story-4.11 @ac-28
+// 🔴 Falla con: tomar por número de pedido la story que anotó una persona (`story_creada`): con «4.11» la plataforma lo
+//    rechaza todas las noches para siempre, y con «12» comenta en un pedido ajeno. El resumen tampoco promete el aviso.
+test('T87 AvisoVolvio_SoloAlPedidoDeLaNoche @story-4.11 @ac-28', async () => {
+  const vig = tmp();
+  const volvio = { reaparecio_el: HOY_B, veredicto_anterior: 'util' };
+  borradorCon(vig, 'pending', 'aaaa0021', 'goteo', { ...volvio, story_creada: '4.11' });
+  borradorCon(vig, 'promoted', 'aaaa0022', 'deriva', { ...volvio, story_creada: '12' });
+  borradorCon(vig, 'pending', 'aaaa0023', 'latido', { ...volvio, pedido: '903' });
+  const operations = path.join(vig, 'operations.json');
+  fs.writeFileSync(operations, JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items: { org: 'acme', project: 'Operaciones', type: 'Task' } }));
+  const llamados = [];
+  const r = await cycle.avisarQueVolvio({ fuente: 'vigilante', dir: vig, operations, hoy: HOY_B, repoDir: vig,
+    run: async (op, args) => { llamados.push([op, args.id]); return { ok: true, value: { id: args.id, changed: false, commented: true } }; } });
+  assert.deepStrictEqual(llamados, [['work-item.update', 903]], 'sólo el pedido que creó la noche');
+  assert.deepStrictEqual(r.avisados.map((x) => x.pedido), [903]);
+  const v = sources.comoFicha('vigilante', fs.readFileSync(path.join(vig, 'pending', fs.readdirSync(path.join(vig, 'pending')).find((n) => n.includes('aaaa0021'))), 'utf8'));
+  assert.deepStrictEqual([v.pedido && v.pedido.id, v.pedido_de_la_noche], ['4.11', null], 'la story se sigue mostrando, pero no recibe avisos');
+  const out = path.join(vig, 'out');
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, `vigilante-${HOY_B}.json`), JSON.stringify({ fecha: HOY_B, hallazgos: [], no_medido: [], ignorados_ids: [] }));
+  const texto = DS.armar({ fuente: 'vigilante', hoy: HOY_B, out, pending: vig, resumenConfig: path.join(vig, 'no-esta.json'), runs: null, weekly: null }).texto;
+  assert.deepStrictEqual(texto.split('\n').filter((l) => l.startsWith('↩️')), ['↩️ volvió en vigilante: latido — avisado en el pedido 903'], texto);
+});
+
+// T88 Resumen_VolvioArchivada_NoPrometeElAviso @story-4.11 @ac-37
+// 🔴 Falla con: decir cada mañana «el aviso al pedido N queda para mañana» de una ficha que una persona archivó: el
+//    aviso sólo mira pendientes y promovidas, así que la promesa no se cumpliría nunca.
+test('T88 Resumen_VolvioArchivada_NoPrometeElAviso @story-4.11 @ac-37', () => {
+  const ej = fuenteConFichas('runs-review', {
+    'archived/a.yaml': volvioEj('RR-CIERRE:abortada', { veredicto: 'ignorada' }),
+    'promoted/b.yaml': volvioEj('RR-CIERRE:abandonada'),
+  });
+  const clon = DS.lineasFichasDelClon(path.dirname(path.dirname(ej)), HOY_B);
+  const nombre = NOMBRES.nombreDe('ejecuciones', { regla: 'RR-CIERRE', categoria: 'abandonada' });
+  assert.deepStrictEqual(clon.filter((l) => l.startsWith('↩️')), [`↩️ volvió en ejecuciones: ${nombre} — el aviso al pedido 901 queda para mañana`]);
 });

@@ -266,6 +266,7 @@ async function traerProducto(prod, cfg, fixtureDir, desdeIso) {
       fuente: d.fuente || ((d.ejecuciones || []).length ? 'ejecuciones' : 'stats'),
       degradada: d.degradada || null,
       hostLogs: d.hostLogs === undefined ? null : d.hostLogs,
+      tablaLeida: d.tablaLeida !== false,
     };
   }
   const user = process.env[prod.env_user];
@@ -332,7 +333,7 @@ async function traerProducto(prod, cfg, fixtureDir, desdeIso) {
 
   const hl = await pedir(`${prod.url}/api/admin/host-logs/stats?lastDays=1`, T);
   return {
-    ok: true, ejecuciones: filas, salud, stats, fuente, degradada, truncado,
+    ok: true, ejecuciones: filas, salud, stats, fuente, degradada, truncado, tablaLeida: ej.ok,
     hostLogs: hl.ok ? hl.data : null, hostLogsMotivo: hl.ok ? null : hl.motivo,
   };
 }
@@ -422,7 +423,7 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
         if (cant < umbral) continue;
         hallazgos.push({
           regla: m === null || m === 0 ? 'deriva' : 'goteo', producto, plugin, endpoint: null, ya_alertado: false,
-          huella: fp, severidad: cant >= umbral * 2 ? 'alta' : 'media',
+          huella: fp, origen: 'stats', severidad: cant >= umbral * 2 ? 'alta' : 'media',
           senal: { errores: cant, estado_http: Number(codigo), total_pedidos: st.total, linea_base_mediana: m, umbral_aplicado: umbral },
           diagnostico: `${cant} × ${codigo} en el plugin "${plugin}" en 24 h sobre ${nn(st.total, '?')} pedidos (mediana previa ${m === null ? 'sin historia' : m}, umbral ${umbral}). Sin el detalle por pedido no se puede decir en qué endpoint ni con qué mensaje: el host no lo está entregando.`,
           evidencia: [],
@@ -490,7 +491,7 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
 
 function armar(g, regla, severidad, n, m, umbral, total, producto, diagnostico, yaAlertado) {
   return {
-    regla, producto, plugin: g.plugin, endpoint: g.endpoint, huella: g.fp, severidad,
+    regla, producto, plugin: g.plugin, endpoint: g.endpoint, huella: g.fp, severidad, origen: 'ejecuciones',
     ya_alertado: !!yaAlertado,
     senal: {
       errores: n,
@@ -538,7 +539,7 @@ function camposDe(texto) {
     // escrito parecería ya recordado y el recordatorio no sonaría NUNCA.
     // El renglón que escribe escribirBorrador lleva un comentario (`null  # la noche en que…`): se corta antes.
     recordado_el: ((s) => (!s || s === 'null' ? null : s))((g('recordado_el') || '').replace(/\s+#.*$/, '').trim()),
-    plugin: g('plugin'), endpoint: g('endpoint'),
+    plugin: g('plugin'), endpoint: g('endpoint'), origen: g('origen'),
     // El diagnóstico se escribe con JSON.stringify y suele traer comillas ADENTRO (el nombre del
     // plugin va entrecomillado), así que el lector escalar de arriba lo devolvería vacío — y el PR
     // saldría con el título mocho y "(sin diagnóstico)" en el cuerpo.
@@ -575,6 +576,8 @@ function escribirBorrador(dir, h, fecha, extra) {
     `huella: "${h.huella}"`,
     `plugin: ${JSON.stringify(h.plugin || null)}`,
     `endpoint: ${JSON.stringify(h.endpoint || null)}`,
+    // de qué datos salió: las filas de detalle o las estadísticas por código (el control de las noches lo necesita)
+    ...(h.origen ? [`origen: "${h.origen}"`] : []),
     'senal:',
     ...Object.entries(h.senal).map(([k, v]) => `  ${k}: ${v === null ? 'null' : JSON.stringify(v)}`),
     `diagnostico: ${JSON.stringify(h.diagnostico)}`,
@@ -675,6 +678,8 @@ function marcarIgnorados(pendingDir, hoy) {
   // sistema ya dio por perdido, y esa clase de PR es la que enseña a no mirar la lista.
   const ids = [];
   for (const b of listarBorradores(pendingDir).filter((x) => x.carpeta === 'pending')) {
+    // uno que está contando sus noches sin aparecer no se archiva: las N noches ganan a los 7 días
+    if (/^noches_sin_aparecer:[ \t]*[1-9]/m.test(b.texto)) continue;
     const f = Date.parse(b.campos.vista_por_ultima_vez || b.campos.fecha || '');
     if (!Number.isFinite(f)) continue;
     if ((Date.parse(hoy) - f) / 86400000 < 7) continue;
@@ -687,6 +692,108 @@ function marcarIgnorados(pendingDir, hoy) {
   }
   void dirP;
   return ids;
+}
+
+// ── el control de las noches ──────────────────────────────────────────────────────────────────
+
+/**
+ * Lo que se midió de un producto esa noche: `{ ok, lista, salud: { <plugin>: sí/no }, tabla, stats: { <plugin>: sí } }`.
+ * `lista` es la lista de plugins del host; `salud`, la de cada plugin que se leyó. `tabla` son las filas de detalle de
+ * los errores: cuentan si se leyeron enteras (sin el corte de las primeras filas), si el host no las negó con la lista
+ * vacía y un total distinto de cero, y fuera del arranque en frío. `stats`, los plugins cuyas estadísticas por código
+ * se leyeron, también fuera del arranque en frío.
+ */
+function medidaDelProducto(datos, frio) {
+  if (!datos.ok) return { ok: false };
+  const salud = {};
+  for (const [plugin, info] of Object.entries(datos.salud || {})) {
+    if (plugin === '__lista') continue;
+    const estado = info && typeof info === 'object' ? info.estado : info;
+    // sólo un estado de texto es una medición: uno que falta o malformado no es «se midió y no apareció»
+    salud[plugin] = typeof estado === 'string' && estado.trim() !== '' && !estado.toLowerCase().startsWith('no medido');
+  }
+  const stats = {};
+  if (!frio) for (const plugin of Object.keys(datos.stats || {})) stats[plugin] = true;
+  return { ok: true, lista: !(datos.salud && datos.salud.__lista), salud, stats,
+    tabla: datos.tablaLeida !== false && !frio && !datos.truncado && (datos.fuente === 'ejecuciones' || !datos.degradada) };
+}
+
+/**
+ * ¿Se midió esa noche lo que produce el hallazgo? La salud y el latido necesitan la salud de su plugin. El resto, la
+ * misma fuente que lo dio (`origen`): uno de las estadísticas por código, las estadísticas de su plugin; uno de las
+ * filas de detalle (o sin `origen`, anterior a la marca), las filas. Todo necesita el login y la lista de plugins. Una
+ * noche no medida no es «no apareció».
+ */
+function medidaPara({ producto, regla, plugin, origen }, medidas) {
+  const m = producto && Object.hasOwn(medidas, producto) ? medidas[producto] : null;
+  if (!m || !m.ok || !m.lista) return false;
+  if (regla === 'salud' || regla === 'latido') return Boolean(plugin && m.salud && m.salud[plugin] === true);
+  if (origen === 'stats') return Boolean(plugin && m.stats && m.stats[plugin] === true);
+  return m.tabla === true;
+}
+
+const FMT_BORRADOR = () => require('../findings/sources.js').FUENTES.vigilante.formato;
+// las marcas de la propuesta y del contador, que una reapertura borra
+const CLAVES_QUE_SE_REINICIAN = ['noches_sin_aparecer', 'noche_contada', 'resuelta_el', 'aviso_volvio_el',
+  'propuesta_accion', 'propuesta_razon', 'propuesta_modelo', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el'];
+
+/**
+ * Un resuelto o un ignorado de `archived/` que vuelve se reabre en `pending/` con el mismo archivo: otra vez pendiente,
+ * el veredicto de antes en `veredicto_anterior`, el día en `reaparecio_el`, una noche más vista, y sin la propuesta ni
+ * el contador. Primero se escribe el de `pending/` y después se borra el archivado.
+ */
+function reabrirBorrador(b, pendingDir, hoy) {
+  const fmt = FMT_BORRADOR();
+  let t = b.texto;
+  for (const k of CLAVES_QUE_SE_REINICIAN) t = fmt.quitarClave(t, k);
+  t = t.replace(/^veredicto:.*$/m, 'veredicto: pendiente');
+  t = fmt.ponerEscalar(t, 'veredicto_anterior', b.campos.veredicto || 'pendiente');
+  t = fmt.ponerEscalar(t, 'reaparecio_el', JSON.stringify(hoy));
+  t = t.replace(/^vista_por_ultima_vez:.*$/m, `vista_por_ultima_vez: "${hoy}"`);
+  t = t.replace(/^noches_seguidas:.*$/m, `noches_seguidas: ${(Number(b.campos.noches_seguidas) || 1) + 1}`);
+  const destino = path.join(pendingDir, 'pending', path.basename(b.archivo));
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  fs.writeFileSync(destino, t, 'utf8');
+  fs.unlinkSync(b.archivo);
+}
+
+/**
+ * Una noche más para cada borrador de `pending/` y `promoted/`: el visto hoy pierde su contador; el que no se vio cuenta
+ * la noche sólo si lo que lo produce se midió (`medidaPara`). A las N noches (`findings.resolve_after_nights`) queda
+ * resuelto con `resuelta_el` y pasa a `archived/`. Devuelve los ids resueltos.
+ */
+function controlarNoches({ pendingDir, hoy, medidas, vistasHoy, operations }) {
+  const CYCLE = require('../findings/cycle.js');
+  const n = CYCLE.nochesParaResolver(operations);
+  if (!n.ok) { console.error(`noches del vigilante: ${n.motivo}; esta noche no se cuenta`); return []; }
+  const fmt = FMT_BORRADOR();
+  const resueltos = [];
+  for (const b of listarBorradores(pendingDir)) {
+    if (b.carpeta === 'archived' || ['descartado', 'ignorado'].includes(b.campos.veredicto)) continue;
+    const e = fmt.leerFicha(b.texto).escalares;
+    const contador = /^\d+$/.test(String(e.noches_sin_aparecer || '')) ? Number(e.noches_sin_aparecer) : 0;
+    const contada = /^\d{4}-\d{2}-\d{2}$/.test(String(e.noche_contada || '')) ? e.noche_contada : null;
+    if (vistasHoy.has(b.campos.huella)) {
+      if (contador || contada) fs.writeFileSync(b.archivo, fmt.quitarClave(fmt.quitarClave(b.texto, 'noches_sin_aparecer'), 'noche_contada'), 'utf8');
+      continue;
+    }
+    const medida = medidaPara(b.campos, medidas);
+    const r = CYCLE.contarNoche({ contador, presente: false, medida, n: n.n, hoy, nocheContada: contada });
+    let t = b.texto;
+    if (medida && contada !== hoy) {
+      t = fmt.ponerEscalar(t, 'noches_sin_aparecer', String(r.contador));
+      t = fmt.ponerEscalar(t, 'noche_contada', JSON.stringify(hoy));
+    }
+    if (r.resuelta) {
+      t = fmt.ponerEscalar(fmt.quitarClave(fmt.quitarClave(t, 'noches_sin_aparecer'), 'noche_contada'), 'resuelta_el', JSON.stringify(hoy));
+      const destino = path.join(pendingDir, 'archived', path.basename(b.archivo));
+      fs.mkdirSync(path.dirname(destino), { recursive: true });
+      fs.writeFileSync(destino, t, 'utf8');
+      fs.unlinkSync(b.archivo);
+      resueltos.push(b.campos.id);
+    } else if (t !== b.texto) fs.writeFileSync(b.archivo, t, 'utf8');
+  }
+  return resueltos;
 }
 
 // ── comandos ───────────────────────────────────────────────────────────────────────────────────
@@ -733,10 +840,14 @@ async function cmdRun(a) {
   const nuevos = []; const repetidos = [];
   const abiertos = listarBorradores(a.pending);
   const modoFrio = historicos.length < cfg.noches_arranque_frio;
+  // lo que se midió de cada producto y las huellas vistas esta noche: con eso se cuentan las noches sin aparecer
+  const medidas = {};
+  const vistasHoy = new Set();
 
   for (const prod of activos) {
     const datos = await traerProducto(prod, cfg, a.fixture, desde);
     if (!datos.ok) {
+      medidas[prod.id] = medidaDelProducto(datos, true);
       // 🔴 Una noche sin datos NO puede parecerse a una noche tranquila. Es la muerte silenciosa
       // más probable de esta pieza (misma lección que el debut del portón de CI que no corrió, en el registro de incidentes del equipo).
       resultado.productos[prod.id] = { ok: false, motivo: datos.motivo };
@@ -753,6 +864,7 @@ async function cmdRun(a) {
     // severidad alta".
     const nochesDelProducto = historicos.filter((h) => h.conteos && h.conteos[prod.id] !== undefined);
     const frioProducto = nochesDelProducto.length < cfg.noches_arranque_frio;
+    medidas[prod.id] = medidaDelProducto(datos, frioProducto);
     // 🔴 Y se rellena con CERO la noche medida en que la huella no apareció. Sin eso la mediana se
     // calcularía sólo sobre las noches en que el error existió — un error esporádico (3 ocurrencias
     // una noche de cada 14) tendría mediana 3 y umbral 9, así que su goteo quedaría
@@ -788,6 +900,15 @@ async function cmdRun(a) {
       }
     }
     resultado.conteos[prod.id] = conteos;
+    // una huella con errores esta noche se vio, aunque no pase el umbral: la mediana sube con un error que sigue
+    // llegando parejo, y contarlo como «no apareció» lo resolvería mientras pasa
+    for (const fp of Object.keys(conteos)) vistasHoy.add(fp);
+    // las estadísticas se leen también la noche en que mandan las filas: un hallazgo que salió de ellas se ve ahí
+    for (const [plugin, st] of Object.entries(datos.stats || {})) {
+      for (const [codigo, cant] of Object.entries(st.porCodigo || {})) {
+        if (Number(codigo) >= 500 && cant) vistasHoy.add(huella(prod.id, plugin, `codigo-${codigo}`, codigo, 'stats'));
+      }
+    }
     // 🔴 El conteo de errores sale de la fuente que SE USÓ. Mostrar las filas de detalle
     // (0 por un bug del host) mientras el aviso dice 158 daría dos números distintos para lo mismo en
     // la misma pantalla, que es exactamente la confusión que esta pieza existe para evitar.
@@ -805,6 +926,7 @@ async function cmdRun(a) {
     };
 
     for (const h of hallazgos) {
+      vistasHoy.add(h.huella);
       const yaAbierto = abiertos.find((b) => b.campos.huella === h.huella && b.carpeta === 'pending');
       if (yaAbierto) {
         if (!a.dryRun) actualizarRepetido(yaAbierto, hoy);
@@ -828,8 +950,23 @@ async function cmdRun(a) {
         .filter((b) => b.campos.huella === h.huella && (b.carpeta === 'archived' || b.carpeta === 'promoted'))
         .sort((a, b) => String(b.campos.vista_por_ultima_vez || b.campos.fecha || '')
           .localeCompare(String(a.campos.vista_por_ultima_vez || a.campos.fecha || '')))[0];
+      // un resuelto o un ignorado que vuelve se reabre, el mismo borrador, aun dentro de su silencio; el descartado
+      // conserva su ventana
+      if (archivado && archivado.carpeta === 'archived'
+        && (archivado.campos.veredicto === 'ignorado' || /^resuelta_el:[ \t]*"?\d{4}-\d{2}-\d{2}/m.test(archivado.texto))) {
+        if (!a.dryRun) reabrirBorrador(archivado, a.pending, hoy);
+        repetidos.push(h.huella);
+        continue;
+      }
+      // una aceptada que sigue viva suma la aparición en su ficha: tratarla como silencio dejaría quieta
+      // `vista_por_ultima_vez`, y pasada la ventana se escribiría otro borrador de la misma huella
+      if (archivado && archivado.carpeta === 'promoted') {
+        if (!a.dryRun) actualizarRepetido(archivado, hoy);
+        repetidos.push(h.huella);
+        continue;
+      }
       if (archivado) {
-        const dias = (Date.parse(hoy) - Date.parse(archivado.campos.vista_por_ultima_vez || archivado.campos.fecha || '')) / 86400000;
+        const dias =(Date.parse(hoy) - Date.parse(archivado.campos.vista_por_ultima_vez || archivado.campos.fecha || '')) / 86400000;
         const tope = archivado.campos.veredicto === 'ignorado' ? cfg.dias_silencio_ignorado : cfg.dias_silencio_descartado;
         if (Number.isFinite(dias) && dias < tope) { repetidos.push(h.huella); continue; }
         h.reincidente = { desde: archivado.campos.fecha, veredicto_previo: archivado.campos.veredicto };
@@ -843,6 +980,16 @@ async function cmdRun(a) {
     }
   }
 
+  // las noches sin aparecer, antes de marcar ignorados (uno que cuenta no se archiva), y el aviso al pedido de lo
+  // que volvió; como el pedido, un error del aviso no corta la noche
+  const operaciones = path.resolve(a.pending, '..', '..');
+  resultado.resueltos_ids = a.dryRun ? [] : controlarNoches({ pendingDir: a.pending, hoy, medidas, vistasHoy, operations: path.join(operaciones, 'operations.json') });
+  if (!a.dryRun) {
+    try {
+      const avisos = await require('../findings/cycle.js').avisarQueVolvio({ fuente: 'vigilante', dir: a.pending, operations: path.join(operaciones, 'operations.json'), hoy, repoDir: operaciones });
+      for (const l of avisos.lineas) console.error(l);
+    } catch (e) { console.error(`avisos del vigilante: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se avisa mañana`); }
+  }
   const ignorados = a.dryRun ? [] : marcarIgnorados(a.pending, hoy);
   resultado.nuevos = nuevos.length;
   resultado.repetidos = repetidos.length;
@@ -1083,7 +1230,7 @@ if (require.main === module) {
   });
 }
 module.exports = {
-  normalizarMensaje, huella, mediana, evaluar, yaAlertadoPorAzure, camposDe, construirAviso, listarBorradores, escribirBorrador, marcarIgnorados, pendientesQueEnvejecen, marcarRecordados, textoPr, cmdAnotar, cmdReport, leerTexto,
+  normalizarMensaje, huella, mediana, evaluar, yaAlertadoPorAzure, camposDe, construirAviso, listarBorradores, escribirBorrador, marcarIgnorados, medidaDelProducto, medidaPara, controlarNoches, pendientesQueEnvejecen, marcarRecordados, textoPr, cmdAnotar, cmdReport, leerTexto,
   // las rutas por omisión, para que una prueba vea adónde escribe la noche sin correrla (T30)
   defaults: { root: RAIZ, config: CONFIG_DEF, out: OUT_DEF, pending: PENDING_DEF },
 };

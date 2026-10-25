@@ -90,6 +90,12 @@ function update(args, ctx) {
   if (d.problem) return d.problem;
   const { c, repo } = d;
   const id = Number(String(args.id).trim());
+  // con un comentario y sin estado, sólo se comenta: ni etiquetas ni estado, y uno cerrado no se reabre
+  if (typeof args.comment === 'string' && args.comment.trim() && !args.state) {
+    const k = gh(ctx, 'POST', `repos/${repo}/issues/${id}/comments`, { body: args.comment });
+    if (k.problem) return k.problem;
+    return { ok: true, value: { id, changed: false, commented: true, warnings: [...d.warnings] } };
+  }
   const g = gh(ctx, 'GET', `repos/${repo}/issues/${id}`);
   if (g.problem) return g.problem;
   const ls = etiquetas(g.value);
