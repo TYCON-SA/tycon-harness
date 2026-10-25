@@ -49,6 +49,8 @@ function nn(v, d) { return v === undefined || v === null ? d : v; }
  * organización.
  *
  * Uso:  node scripts/tools/work-in-progress.js [--json] [--state-dir <dir>] [--sessions-dir <dir>] [--projects-dir <dir>] [--now <iso>]
+ *       node scripts/tools/work-in-progress.js --marker <archivo>   (los pedidos abiertos de esa story, en JSON:
+ *       `{ prs: [{ repo, ref, draft, conflict }], failed, unreadable }`; lo usa el cartel de la corrida)
  * Sale: 0 con la tabla (aunque haya ilegibles: se dicen) · 2 si no existe la carpeta de estado.
  */
 
@@ -639,8 +641,9 @@ function touchedPlace(file, ctx, unreadable) {
   return { work, root, story: (fromBranch && fromBranch[1]) || (fromSpec && fromSpec[1]) || null };
 }
 
-// El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado).
-function enteringState(m, prsOf, unreadable, wanted, ctx) {
+// El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado). En `found`, si
+// viene, quedan los pedidos abiertos uno por uno.
+function enteringState(m, prsOf, unreadable, wanted, ctx, found = []) {
   const shown = [];
   const failures = [];
   for (const root of storyRepos(m, failures, ctx)) {
@@ -650,7 +653,11 @@ function enteringState(m, prsOf, unreadable, wanted, ctx) {
     wanted.push(q);
     const res = prsOf ? prsOf(q) : { error: 'no se consultó' };
     if (!res || res.error) { failures.push(`pedidos de ${q.name} (${q.branch}): ${res ? res.error : 'sin respuesta'}`); continue; }
-    for (const p of res.prs) shown.push(`${q.name} ${q.kind === 'github' ? '#' : '!'}${p.number}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}`);
+    for (const p of res.prs) {
+      const ref = `${q.kind === 'github' ? '#' : '!'}${p.number}`;
+      found.push({ repo: q.name, ref, draft: p.draft, conflict: p.conflict });
+      shown.push(`${q.name} ${ref}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}`);
+    }
   }
   unreadable.push(...failures.map((f) => `story ${m.storyId || '?'}: ${f}`));
   if (shown.length) return `${ENTERING} · ${shown.join(' · ')}`;
@@ -927,16 +934,45 @@ function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {
   return lines.join('\n');
 }
 
+// Los pedidos abiertos de UNA story, para el cartel de la corrida: se ve qué preguntar, se pregunta todo junto y se
+// vuelve a armar con las respuestas, como la tabla. `failed` dice que alguna consulta no contestó.
+async function storyEntering(m, { query = queryAll, budgetMs = GIT_BUDGET_MS } = {}) {
+  const ctx = { until: Date.now() + budgetMs, cache: new Map() };
+  const wanted = [];
+  enteringState(m, null, [], wanted, ctx);
+  const unique = [...new Map(wanted.map((q) => [q.root, q])).values()];
+  const answers = unique.length ? await query(unique) : [];
+  const byRoot = new Map(unique.map((q, i) => [q.root, answers[i]]));
+  const unreadable = [];
+  const prs = [];
+  enteringState(m, (q) => byRoot.get(q.root), unreadable, [], ctx, prs);
+  return { prs, failed: unreadable.length > 0, unreadable };
+}
+
 async function main(argv) {
   const opts = {};
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') opts.json = true;
+    else if (a === '--marker') {
+      const v = argv[++i];
+      if (!v || v.startsWith('--')) { process.stderr.write(`work-in-progress.js: ${a} pide un valor\n`); return 2; }
+      opts.marker = v;
+    }
     else if (['--state-dir', '--sessions-dir', '--projects-dir', '--now'].includes(a)) {
       const v = argv[++i];
       if (!v || v.startsWith('--')) { process.stderr.write(`work-in-progress.js: ${a} pide un valor\n`); return 2; }
       opts[{ '--state-dir': 'stateDir', '--sessions-dir': 'sessionsDir', '--projects-dir': 'projectsDir', '--now': 'now' }[a]] = v;
     } else { process.stderr.write(`work-in-progress.js: opción desconocida ${a}\n`); return 2; }
+  }
+  if (opts.marker) {
+    let m;
+    try { m = JSON.parse(fs.readFileSync(opts.marker, 'utf8')); } catch (e) {
+      process.stderr.write(`work-in-progress.js: no pude leer el marcador ${opts.marker}: ${e.message}\n`);
+      return 2;
+    }
+    process.stdout.write(`${JSON.stringify(await storyEntering(m && typeof m === 'object' ? m : {}))}\n`);
+    return 0;
   }
   opts.gitCtx = { until: Date.now() + GIT_BUDGET_MS, cache: new Map() };
   let r;
@@ -962,4 +998,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, median, queryAll, parseRemote, shellSafe, PER_QUERY_MS, ALL_QUERIES_MS };
+module.exports = { buildWip, storyEntering, median, queryAll, parseRemote, shellSafe, PER_QUERY_MS, ALL_QUERIES_MS };

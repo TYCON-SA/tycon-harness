@@ -488,3 +488,39 @@ test('T40 Board_OpenStepWithoutStart_CountsFromPreviousClose — un paso abierto
   // sin arranque propio y sin cierre de ningún anterior, sigue la raya (lo que prueba T6)
   assert.strictEqual(readRun(JSON.stringify({ storyId: '9.9', stepScheme: 2, startedAt: at(0), stepsCompleted: ['start'], stepTimings: {} }), NOW).minutesStep, null);
 });
+
+test('T41 Board_NoOpenStep_SaysWhatItWaitsFor — sin paso abierto dice si espera pedidos o está lista para cerrar', async () => {
+  const { readRun, boardLine, pipelineTable, idleStep } = await mod('run.mjs');
+  const cerrada = JSON.stringify({
+    storyId: '8.117', stepScheme: 2, startedAt: at(0), autonomous: true,
+    stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'],
+    stepsPending: [],
+  });
+  const run = readRun(cerrada, NOW);
+  assert.strictEqual(run.current, null);
+  // todavía sin preguntar: lo de antes
+  assert.match(boardLine(run, 10), / · sin paso abierto · /);
+  const con = { ...run, entering: { prs: [{ repo: 'tycon-harness', ref: '#536' }, { repo: 'harness-maintainers', ref: '!5434' }], failed: false } };
+  assert.match(boardLine(con, 10), / · esperando que entren los pedidos \(#536, !5434\) · /);
+  assert.match(pipelineTable(con), /— esperando que entren los pedidos \(#536, !5434\) ·/);
+  assert.match(boardLine({ ...run, entering: { prs: [], failed: false } }, 10), / · lista para cerrar · /);
+  // una consulta que no contestó no es «lista para cerrar»
+  assert.strictEqual(idleStep({ prs: [], failed: true }), 'sin paso abierto (no pude consultar los pedidos)');
+  assert.strictEqual(idleStep(null), 'sin paso abierto');
+});
+
+test('T42 Board_TotalInHours — el total en horas desde la hora, y desde un día entero, desde cuándo corre', async () => {
+  const { readRun, boardLine, totalText } = await mod('run.mjs');
+  const now = new Date(2026, 9, 25, 10, 0).getTime();
+  assert.strictEqual(totalText(35, now - 35 * 60000, now), '35 min');
+  assert.strictEqual(totalText(120, now - 120 * 60000, now), '2 h');
+  assert.strictEqual(totalText(23 * 60 + 59, now - (23 * 60 + 59) * 60000, now), '23 h 59 min');
+  assert.strictEqual(totalText(null, null, now), '— min');
+  const ayer = new Date(2026, 9, 24, 9, 27).getTime();
+  assert.strictEqual(totalText(Math.round((now - ayer) / 60000), ayer, now), 'desde ayer 09:27');
+  const antes = new Date(2026, 9, 23, 15, 20).getTime();
+  assert.strictEqual(totalText(Math.round((now - antes) / 60000), antes, now), 'desde el 23/10 15:20');
+  // el renglón usa ese texto
+  const marker = JSON.stringify({ storyId: '9.9', stepScheme: 2, startedAt: new Date(now - (3 * 60 + 12) * 60000).toISOString(), stepsCompleted: ['start'], stepTimings: {} });
+  assert.match(boardLine(readRun(marker, now), 5), / · 3 h 12 min en total · /);
+});
