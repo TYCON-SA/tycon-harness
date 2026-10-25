@@ -187,11 +187,14 @@ function integracion(E, comportamiento) {
   fs.writeFileSync(path.join(dir, 'integration.json'), JSON.stringify({
     name: 'juguete', label: 'Juguete', kind: 'timeTracking',
     offer: { does: 'registra horas de juguete', needs: 'nada' }, onWork: 'scripts/on-work.js', hooks: [], settings: [],
+    ...(comportamiento === 'abierta' ? { mcp: { server: 'juguete', machine: true } } : {}),
   }));
   const salida = {
     bien: 'console.log(JSON.stringify({ ok: true }));',
     falla: 'console.error("juguete: la API devolvió 500"); process.exit(1);',
     accion: 'console.log(JSON.stringify({ action: "abrí la entrada con la herramienta mcp__juguete__abrir" }));',
+    // la sesión tiene una entrada abierta en su archivo: la integración la nombra cuando el núcleo pregunta
+    abierta: 'const ev = JSON.parse(d); console.log(JSON.stringify(ev.event === "entry" ? { entryId: "entry-777" } : { action: "abrí la entrada con la herramienta mcp__juguete__abrir" }));',
   }[comportamiento];
   fs.writeFileSync(path.join(dir, 'scripts', 'on-work.js'), `let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{${salida}});\n`);
   return { TYCON_TIME_TRACKING: 'juguete', TYCON_INTEGRATIONS_DIR: path.join(E.base, 'integraciones') };
@@ -316,4 +319,131 @@ test('T16 WorkSignal_EmiteYMarca @story-8.93 @ac-8 — el aviso de trabajo marca
   // y se dice hasta el cierre, como los avisos del Arranque
   const S = require(path.join(SCRIPTS, 'lib', 'steps.js'));
   assert.ok(S.startWarningLines(E.leer('s-t16e')).some((l) => /sin verificar/.test(l)), 'el aviso sale en next y en el cierre');
+});
+
+// una conversación con los pasos que se le pasen: [herramienta, comando o entrada, resultado, ¿con error?]
+function conversacionDe(E, sid, pasos) {
+  const dir = path.join(E.base, 'home', '.claude', 'projects', 'repo');
+  fs.mkdirSync(dir, { recursive: true });
+  let padre = null;
+  let n = 0;
+  const regs = [];
+  const poner = (r) => { const uuid = `u${++n}`; regs.push({ ...r, uuid, parentUuid: padre, sessionId: sid }); padre = uuid; };
+  pasos.forEach(([name, entrada, resultado, err], i) => {
+    const input = typeof entrada === 'string' ? { command: entrada } : entrada;
+    poner({ type: 'assistant', message: { content: [{ type: 'tool_use', id: `p${i}`, name, input }] } });
+    if (resultado !== undefined) poner({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `p${i}`, content: resultado, ...(err ? { is_error: true } : {}) }] } });
+  });
+  fs.writeFileSync(path.join(dir, `${sid}.jsonl`), regs.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+const WS = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signal start';
+const SALIDA_ABRIR = '{"ran":true,"warnings":[],"action":"abrí la entrada de Clockify con mcp__clockify__create-clockify-time-entry"}';
+const SALIDA_YA = '{"ran":true,"warnings":[],"action":"ya hay una entrada abierta de esta sesión en Clockify (6ade475cdaec2964beb1b36f, «Story 9.9»): si es de otra historia, cerrala con mcp__clockify__update-clockify-time-entry"}';
+const ID = '6ade475cdaec2964beb1b36f';
+const uso = (id, name, input) => ({ message: { content: [{ type: 'tool_use', id, name, input }] } });
+const resultado = (id, content, err) => ({ message: { content: [{ type: 'tool_result', tool_use_id: id, content, ...(err ? { is_error: true } : {}) }] } });
+
+test('T19 WorkSignal_ComandoCompuesto @story-8.93 @ac-8 — el aviso de trabajo con un cd adelante y un echo atrás cuenta, y el start repetido trae su id', () => {
+  const EF = require(path.join(SCRIPTS, 'lib', 'external-flags.js'));
+  const ok = (r) => assert.strictEqual(r.ok, true, JSON.stringify(r));
+  const no = (r) => assert.strictEqual(r.ok, false, JSON.stringify(r));
+  const CREAR = 'mcp__clockify__create-clockify-time-entry';
+  // `cd <repo> && node … work-signal start; echo rc=$?` y un create que devuelve el id: marca
+  for (const cola of ['; echo rc=$?', ' && echo listo', ' 2>&1; echo "rc=$?"']) {
+    ok(EF.enRegistros([uso('a', 'Bash', { command: `cd /r/acme &&${WS}${cola}` }), resultado('a', `${SALIDA_ABRIR}\nrc=0`),
+      uso('b', CREAR, {}), resultado('b', `{"id":"${ID}"}`)], ID));
+  }
+  // el start repetido después de la acción, también compuesto: su salida nombra la entrada ya abierta
+  ok(EF.enRegistros([uso('a', 'Bash', { command: `cd /r && ${WS}; echo rc=$?` }), resultado('a', `${SALIDA_ABRIR}\nrc=0`),
+    uso('b', CREAR, {}), resultado('b', 'Created entry'),
+    uso('c', 'Bash', { command: `cd /r && ${WS}; echo rc=$?` }), resultado('c', `${SALIDA_YA}\nrc=0`)], ID));
+  // los gemelos que no: el start que salió mal (rc distinto de 0, o sin "ran":true) aunque el echo deje la herramienta en verde,
+  // y el start con un tubo que puede cambiar lo que dijo
+  no(EF.enRegistros([uso('a', 'Bash', { command: `cd /r && ${WS}; echo rc=$?` }), resultado('a', `${SALIDA_ABRIR}\nrc=1`),
+    uso('b', CREAR, {}), resultado('b', `{"id":"${ID}"}`)], ID));
+  no(EF.enRegistros([uso('a', 'Bash', { command: `cd /r && ${WS}; echo rc=$?` }), resultado('a', 'work-signal: sin marker activo\nrc=0'),
+    uso('b', CREAR, {}), resultado('b', `{"id":"${ID}"}`)], ID));
+  no(EF.enRegistros([uso('a', 'Bash', { command: `${WS} | sed s/x/y/` }), resultado('a', SALIDA_ABRIR),
+    uso('b', CREAR, {}), resultado('b', `{"id":"${ID}"}`)], ID));
+  no(EF.enRegistros([uso('a', 'Bash', { command: `echo listo; ${WS}` }), resultado('a', SALIDA_ABRIR),
+    uso('b', CREAR, {}), resultado('b', `{"id":"${ID}"}`)], ID));
+
+  // de punta a punta, con el comando real
+  const E = entorno({ ado: false });
+  const acc = integracion(E, 'accion');
+  E.arrancar('s-t19');
+  conversacionDe(E, 's-t19', [['Bash', `cd /r && ${WS}; echo rc=$?`, '{"ran":true,"warnings":[],"action":"abrí la entrada con la herramienta mcp__juguete__abrir"}\nrc=0'],
+    ['mcp__juguete__abrir', {}, '{"id":"entry-777"}'], ['Bash', `${WS} --action-done entry-777`]]);
+  const r = E.correr('pipeline.js', ['work-signal', 'start', '--action-done', 'entry-777'], 's-t19', acc);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.strictEqual(E.leer('s-t19').workSignalStarted, true);
+});
+
+test('T20 WorkSignal_EntradaDelArchivo @story-8.93 @ac-8 — la entrada abierta de la sesión marca con un resultado que la confirme; sola, no marca y lo dice', () => {
+  const S = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const SIN_CONFIRMAR = /registro de horas abierto, sin confirmar por el arnés/;
+  // el aviso de trabajo corrió de una forma que el arnés no reconoce, pero la herramienta devolvió el id que la sesión tiene abierto
+  let E = entorno({ ado: false });
+  let ab = integracion(E, 'abierta');
+  E.arrancar('s-t20a');
+  conversacionDe(E, 's-t20a', [['Bash', `bash -lc "${WS}"`, '{"ran":true}'], ['mcp__juguete__abrir', {}, '{"id":"entry-777"}']]);
+  let r = E.correr('pipeline.js', ['work-signal', 'start', '--action-done', 'entry-777'], 's-t20a', ab);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.strictEqual(E.leer('s-t20a').workSignalStarted, true);
+
+  // el id está sólo en el archivo: no marca, y el cartel dice que el registro está abierto sin confirmar
+  E = entorno({ ado: false });
+  ab = integracion(E, 'abierta');
+  E.arrancar('s-t20b');
+  conversacionDe(E, 's-t20b', [['Bash', 'git status', 'limpio']]);
+  r = E.correr('pipeline.js', ['work-signal', 'start', '--action-done', 'entry-777'], 's-t20b', ab);
+  assert.strictEqual(r.status, 1, r.stderr + r.stdout);
+  assert.match(r.stderr, SIN_CONFIRMAR);
+  const m = E.leer('s-t20b');
+  assert.notStrictEqual(m.workSignalStarted, true);
+  const lineas = S.startWarningLines(m);
+  assert.ok(lineas.some((l) => SIN_CONFIRMAR.test(l)), lineas.join(' | '));
+  assert.ok(!lineas.some((l) => /no se pudo abrir el registro de horas/.test(l)), lineas.join(' | '));
+
+  // otro id que el del archivo: ni marca ni dice que hay uno abierto con ese id
+  r = E.correr('pipeline.js', ['work-signal', 'start', '--action-done', 'entry-888'], 's-t20b', ab);
+  assert.strictEqual(r.status, 1, r.stderr + r.stdout);
+  assert.doesNotMatch(r.stderr, SIN_CONFIRMAR);
+});
+
+test('T21 StartWarning_SeBorraAlMarcar @story-8.93 @ac-8 — un aviso de horas declarado antes se va cuando la marca sale bien después', () => {
+  const S = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const E = entorno({ ado: false });
+  const acc = integracion(E, 'accion');
+  E.arrancar('s-t21');
+  let r = E.correr('marker.js', ['start-warning', 'time-tracking', 'el MCP no contestó'], 's-t21', acc);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.ok(S.startWarningLines(E.leer('s-t21')).length, 'el aviso quedó');
+  conversacionDe(E, 's-t21', [['Bash', `cd /r && ${WS}; echo rc=$?`, '{"ran":true,"warnings":[],"action":"abrí la entrada con la herramienta mcp__juguete__abrir"}\nrc=0'],
+    ['mcp__juguete__abrir', {}, '{"id":"entry-777"}']]);
+  r = E.correr('pipeline.js', ['work-signal', 'start', '--action-done', 'entry-777'], 's-t21', acc);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  const m = E.leer('s-t21');
+  assert.strictEqual(m.workSignalStarted, true);
+  assert.deepStrictEqual(S.startWarningLines(m), []);
+});
+
+test('T22 StartWarning_EntradaAbiertaSinConfirmar @story-8.93 @ac-8 — el aviso de horas con una entrada abierta en la sesión dice que está abierta, sin confirmar', () => {
+  const S = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  let E = entorno({ ado: false });
+  let r;
+  const ab = integracion(E, 'abierta');
+  E.arrancar('s-t22a');
+  r = E.correr('marker.js', ['start-warning', 'time-tracking', 'no encontré el id en la conversación'], 's-t22a', ab);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /registro de horas abierto, sin confirmar por el arnés/);
+  assert.ok(S.startWarningLines(E.leer('s-t22a')).some((l) => /registro de horas abierto, sin confirmar por el arnés/.test(l)));
+  // sin entrada abierta, el aviso de siempre
+  E = entorno({ ado: false });
+  const acc = integracion(E, 'accion');
+  E.arrancar('s-t22b');
+  r = E.correr('marker.js', ['start-warning', 'time-tracking', 'el MCP no contestó'], 's-t22b', acc);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /no se pudo abrir el registro de horas/);
 });

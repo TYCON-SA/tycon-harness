@@ -56,7 +56,9 @@ const ORDER_REQUIRES = {
 // Las partes opcionales del Arranque. Una parte que no corre (la organización no usa esa herramienta, la story no trae
 // pedido) no aparece en ningún lado; una que corre y falla deja su aviso con `marker.js start-warning`.
 const START_PARTS = {
-  'time-tracking': { name: 'el aviso de trabajo', flags: ['workSignalStarted', 'clockiStarted'], failed: 'no se pudo abrir el registro de horas' },
+  'time-tracking': { name: 'el aviso de trabajo', flags: ['workSignalStarted', 'clockiStarted'], failed: 'no se pudo abrir el registro de horas',
+    // la integración tiene una entrada abierta en la sesión, pero nada de la conversación la confirma
+    unconfirmed: 'registro de horas abierto, sin confirmar por el arnés' },
   ado: { name: 'el pedido en ADO', flags: ['adoMarkedActive'], failed: 'no se pudo marcar el pedido en ADO' },
 };
 
@@ -219,7 +221,8 @@ function setExternalFlag(marker, flag) {
 /** «Arranque: hecho, con aviso: …» por cada parte que falló. */
 function startWarningLines(marker) {
   const ws = Array.isArray(marker && marker.startWarnings) ? marker.startWarnings : [];
-  const out = ws.filter((w) => w && START_PARTS[w.part]).map((w) => `Arranque: hecho, con aviso: ${START_PARTS[w.part].failed}`);
+  const out = ws.filter((w) => w && START_PARTS[w.part])
+    .map((w) => `Arranque: hecho, con aviso: ${(w.unconfirmed && START_PARTS[w.part].unconfirmed) || START_PARTS[w.part].failed}`);
   // la acción de horas marcada sin conversación que leer (Codex): se dice hasta el cierre, como un aviso más
   if (marker && marker.workSignalVerified === false) out.push('Arranque: hecho, con aviso: el aviso de trabajo quedó sin verificar (sin conversación que leer)');
   return out;

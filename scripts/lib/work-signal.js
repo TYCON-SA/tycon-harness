@@ -8,18 +8,20 @@
 //
 //   { event, storyId, title, repo, sessionId, at, stateDir, settings, missing }
 //
-//   · `event`: start · activity · stop · sweep (cerrar lo que quedó abierto sin actividad).
+//   · `event`: start · activity · stop · sweep (cerrar lo que quedó abierto sin actividad) · entry (qué entrada tiene
+//     abierta esta sesión: no abre ni cierra nada).
 //   · `at`: la hora en UTC con Z, sin milésimas.
 //   · `stateDir`: la carpeta donde la integración guarda su estado en esta máquina.
 //   · `settings`: los ajustes que declara su manifiesto, por su última parte (`url`, `token`); `missing`, los que faltan,
 //     con dónde se ponen. Los secretos viajan por la entrada estándar: el núcleo nunca los pone en un argumento.
 //
-// `stop` devuelve por la salida lo que informe la integración (`{"seconds":1080}`) o `{}`; cualquier evento puede traer
+// `stop` devuelve por la salida lo que informe la integración (`{"seconds":1080}`) o `{}`; `entry`, el id de la entrada
+// abierta (`{"entryId":"…"}`) o `{}`, y el núcleo lo usa como evidencia de la acción del agente; cualquier evento puede traer
 // además `{"action":"…"}`: lo que el agente tiene que hacer con una herramienta que maneja él. Sin integración elegida, con
 // `none`, o con una que no existe, no corre nada y devuelve `{}`. Nunca sale distinto de 0 por la herramienta: una
 // historia no se frena porque la herramienta de horas falla o falta configurarla (2 sólo para un uso mal escrito).
 //
-// Uso: node scripts/lib/work-signal.js <start|activity|stop|sweep> --story <id> --title <t> --repo <ruta> --session <id>
+// Uso: node scripts/lib/work-signal.js <start|activity|stop|sweep|entry> --story <id> --title <t> --repo <ruta> --session <id>
 // Casos: scripts/tests/work-signal.test.js.
 
 const fs = require('fs');
@@ -28,7 +30,7 @@ const { spawnSync } = require('child_process');
 const INT = require('./integrations.js');
 
 const KIND = 'timeTracking';
-const EVENTS = Object.freeze(['start', 'activity', 'stop', 'sweep']);
+const EVENTS = Object.freeze(['start', 'activity', 'stop', 'sweep', 'entry']);
 const ON_WORK_MS = 15000;
 
 const nowUtc = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -122,6 +124,7 @@ function emit(event, fields = {}, { env = process.env, home } = {}) {
   // agente (su MCP), la acción que tiene que hacer
   const out = {};
   if (event === 'stop' && Number.isInteger(result.seconds) && result.seconds >= 0) out.seconds = result.seconds;
+  if (event === 'entry' && typeof result.entryId === 'string' && result.entryId.trim()) out.entryId = result.entryId.trim().slice(0, 120);
   if (typeof result.action === 'string' && result.action.trim()) out.action = result.action.trim().slice(0, 600);
   return { ran: true, result: out, warnings };
 }

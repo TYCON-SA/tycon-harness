@@ -301,6 +301,9 @@ test('Clockify_OldStateStillFound @story-7.40 @ac-5', () => {
   const r = JSON.parse(run('stop', vacio).stdout.trim());
   assert.doesNotMatch(r.action || '', /update-clockify-time-entry/);
   assert.match(r.action || '', /list-clockify-time-entries.*7\.40|7\.40.*list-clockify-time-entries/);
+  // entry: el id de la entrada abierta de la sesión, sin acción; sin estado, nada
+  assert.deepStrictEqual(JSON.parse(run('entry').stdout.trim()), { entryId: 'ent-123' });
+  assert.deepStrictEqual(JSON.parse(run('entry', vacio).stdout.trim()), {});
 });
 
 // ── Los manifiestos y sus rutas: un manifiesto mal escrito queda roto con aviso, nunca frena la instalación ─────────
