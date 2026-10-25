@@ -920,14 +920,23 @@ function teamOrPublic(repo, ref = 'HEAD') {
  * superposición, el árbol es sólo lo privado y no se publica nada.
  */
 function publishedThin(repo, tree, config) {
+  const brought = broughtByOverlay(repo) || new Set();
+  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta)), config);
+}
+/**
+ * Las rutas que trajo la superposición (en HEAD distintas de la punta del privado, o que la punta no tiene), o null si
+ * HEAD no es el commit de la superposición (tampoco lo es un repo sin commits). Lo usan también las pruebas del público
+ * que recorren el árbol entero: en el árbol armado miden sólo lo que viaja al público.
+ */
+function broughtByOverlay(repo) {
+  if (git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { tolerate: true }).status !== 0) return null;
   const head = commitOf(repo, 'HEAD');
   const subject = git(repo, ['log', '-1', '--format=%s', head]).stdout;
+  if (!subject.includes(OVERLAY_MARK)) return null;
   const brought = new Set();
-  if (subject.includes(OVERLAY_MARK)) {
-    const privateBlobs = new Map(treeOf(repo, commitOf(repo, `${head}^`)).filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
-    for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
-  }
-  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta)), config);
+  const privateBlobs = new Map(treeOf(repo, commitOf(repo, `${head}^`)).filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
+  for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
+  return brought;
 }
 const published = (kind, repo, tree, name, config, strict) => {
   if (kind === 'team') return publishedTeam(repo, tree, name, { strict });
@@ -1373,7 +1382,7 @@ function main() {
   return blocks ? 1 : 0;
 }
 
-module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot };
+module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot, broughtByOverlay, OVERLAY_MARK };
 
 // el código de salida se deja anotado y el proceso termina solo: `process.exit` corta la salida a medio escribir cuando
 // va por un tubo (la cuenta en JSON de `--all` son miles de renglones)

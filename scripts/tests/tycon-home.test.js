@@ -377,9 +377,12 @@ function measure(root, exempt) {
   if (top.status !== 0 || fs.realpathSync(top.stdout.trim()) !== fs.realpathSync(root)) return null;
   const r = spawnSync('git', ['-C', root, 'ls-files', '-z', '--', ...SWEEP_DIRS], { encoding: 'utf8' });
   if (r.status !== 0) return null;
+  // en el árbol armado de los nocturnos (lo privado con el público encima) se mide sólo lo que trajo la superposición
+  const brought = require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js')).broughtByOverlay(root);
+  if (brought && brought.size === 0) throw new Error('la superposición no trajo nada: no hay qué medir');
   const files = {};
   for (const f of r.stdout.split('\0').filter(Boolean)) {
-    if (NOT_CODE.test(f) || IS_TEST(f) || exempt.has(f)) continue;
+    if (NOT_CODE.test(f) || IS_TEST(f) || exempt.has(f) || (brought && !brought.has(f))) continue;
     let text;
     try { text = fs.readFileSync(path.join(root, f), 'utf8'); } catch (_) { continue; }
     if (text.includes('\0')) continue;
@@ -475,6 +478,16 @@ it('T3 DotClaudeCeiling_NeverRises_ClassBAndLegacyExempt', () => {
   const fell = judge(measure(t, ex), ceil);
   assert.deepStrictEqual(fell.down, ['scripts/b.sh: 1 → 0'], 'una aparición sacada no pide bajar el techo');
   fs.rmSync(t, { recursive: true, force: true });
+});
+
+it('T3b DotClaudeCeiling_OnlyWhatTravels @story-8.112 @ac-4 — en el árbol armado, mide sólo lo que trajo la superposición', (t) => {
+  // 🔴 rojo: el informe del banco que guarda el privado sube el techo de una prueba del público
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'scripts/controls-bench/ultimo-banco.json': '{"ruta":"~/.claude/x"}\n' }, publico: { 'scripts/x.js': "const d = '~/.claude/x';\n" } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(Object.keys(measure(lab.root, new Set())), ['scripts/x.js'], 'sólo cuenta lo que trajo el público');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(Object.keys(measure(lab.root, new Set())), ['scripts/controls-bench/ultimo-banco.json'], 'sin superposición, el árbol entero');
 });
 
 // ── T37: el retiro tiene fecha y story ─────────────────────────────────────────────────────────────────────────────
