@@ -78,7 +78,7 @@ ado_state_closed: "Closed"         # estado "cerrado".
 | `ado_wi_type` | no | Si está, saltea la auto-detección. |
 | `ado_area_path` | no | Default = `ado_project`. |
 | `ado_iteration_path` | no | Vacío → el WI cae en el backlog. |
-| `ado_auto_assign` | no | Default `false`. |
+| `ado_auto_assign` | no | Default `false`. Decide si el pedido de una story se le asigna a quien la crea o la arranca (`git config user.email`). No frena el pedido que crea la noche: ése se asigna siempre al responsable de `owners` en `operations.json`, porque no tiene autor y sin asignado nadie lo vería. |
 | `ado_default_tags` | no | — |
 | `epic_links` | no | Sin entrada para un epic → el WI se crea suelto + warning. |
 | `ado_state_active` | no | Default `Active`. Ver tabla de process templates abajo. |

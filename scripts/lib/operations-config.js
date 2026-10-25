@@ -43,6 +43,9 @@
 //         "by_severity": { "critical"|"high"|"moderate"|"low": { <campo>: texto | número } } },
 //                                                            los de cada gravedad; pisan a los fijos. Sin la clave, el
 //                                                            pedido es el elemento de backlog de cada proyecto
+//         "org": <organización>, "project": <proyecto> },     dónde va el pedido de un arreglo de ejecuciones o del
+//                                                            vigilante (con `type`, su tipo). Sin las dos, ese pedido
+//                                                            no se crea y la noche dice que falta configurarlo
 //     "notify": { "channel": "telegram" | "slack" | "teams" }, opcional — por dónde sale el aviso de los nocturnos
 //                                                            Sin `notify` no se manda nada. El destino
 //                                                            (el chat, el token, la dirección del webhook) va en los
@@ -87,7 +90,7 @@ const fs = require('fs');
 const VERSION = 1;
 const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments', 'notify', 'work_items', 'findings'];
 // el pedido de trabajo de una vulnerabilidad: el tipo de work item y sus campos (lo lee la revisión nocturna)
-const WORK_ITEM_KEYS = ['type', 'fixed_fields', 'by_severity'];
+const WORK_ITEM_KEYS = ['type', 'fixed_fields', 'by_severity', 'org', 'project'];
 const SEVERITIES = ['critical', 'high', 'moderate', 'low'];
 // el ciclo de lo que encuentra la noche cuántas noches medidas seguidas sin aparecer resuelven una ficha
 const FINDINGS_KEYS = ['resolve_after_nights'];
@@ -490,6 +493,8 @@ function validate(doc) {
 const WORK_ITEM_FIELD = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)+$/;
 // el nombre de un tipo de work item, que también va a la línea de comandos y a la ruta de la API
 const WORK_ITEM_TYPE = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,127}$/u;
+// la organización: un nombre, o la dirección de la plataforma
+const WORK_ITEM_ORG = /^([A-Za-z0-9][A-Za-z0-9._-]{0,99}|https:\/\/[A-Za-z0-9][A-Za-z0-9.-]{0,252}(\/[A-Za-z0-9][A-Za-z0-9._-]{0,99})?)$/;
 // los que el pedido ya fija (su identidad, a quién va, su texto): la configuración no los pisa
 const WORK_ITEM_RESERVED = new Set(['system.tags', 'system.assignedto', 'system.title', 'system.description', 'system.state',
   'system.teamproject', 'system.workitemtype', 'system.areapath', 'system.iterationpath', 'system.areaid', 'system.iterationid',
@@ -527,10 +532,13 @@ function workItemFieldsProblems(v, at) {
 }
 
 function workItemsProblems(w) {
-  if (!isObject(w)) return [{ path: 'work_items', message: 'tiene que ser un objeto { type, fixed_fields, by_severity }' }];
+  if (!isObject(w)) return [{ path: 'work_items', message: 'tiene que ser un objeto { type, fixed_fields, by_severity, org, project }' }];
   const problems = [...unknownKeys(w, WORK_ITEM_KEYS, 'work_items')];
   // el nombre va a la línea de comandos y a la ruta de la API: sólo letras, números, espacios, «.», «-» y «_»
   if (w.type !== undefined && !(typeof w.type === 'string' && WORK_ITEM_TYPE.test(w.type))) problems.push({ path: 'work_items.type', message: 'tiene que ser el nombre de un tipo de work item (letras, números, espacios, «.», «-», «_»)' });
+  // la organización y el proyecto también van a la línea de comandos: nada que empiece con «-» ni salte de renglón
+  if (w.org !== undefined && !(typeof w.org === 'string' && WORK_ITEM_ORG.test(w.org))) problems.push({ path: 'work_items.org', message: 'tiene que ser el nombre de la organización o su dirección https://' });
+  if (w.project !== undefined && !(typeof w.project === 'string' && WORK_ITEM_TYPE.test(w.project))) problems.push({ path: 'work_items.project', message: 'tiene que ser el nombre de un proyecto (letras, números, espacios, «.», «-», «_»)' });
   if (w.fixed_fields !== undefined) problems.push(...workItemFieldsProblems(w.fixed_fields, 'work_items.fixed_fields'));
   if (w.by_severity !== undefined) {
     if (!isObject(w.by_severity)) problems.push({ path: 'work_items.by_severity', message: `tiene que ser un objeto con ${SEVERITIES.join(', ')}` });

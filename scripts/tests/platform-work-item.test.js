@@ -106,6 +106,40 @@ test('WorkItem_Create_Azure_SameAzCalls @story-8.85 @ac-7', async () => {
   assert.strictEqual(llamadasAz(m).filter(([p]) => p === 'relacion').length, 1, 'sin mapeo no hay relación');
 });
 
+// Pedido_AsignadoAlResponsable @story-4.11 @ac-25 (el conector de Azure)
+// 🔴 Falla con: no asignar el pedido de la noche porque auto_assign está apagado, asignar uno común sin auto_assign, o no
+//    decir a quién quedó asignado.
+test('T41 Pedido_AsignadoAlResponsable (el conector de Azure)', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const repo = repoCon('ado-config.yaml', ADO_CONFIG);
+  const noche = await P().run('work-item.create', { repoDir: repo, title: 'Las pruebas quedaron en rojo (ejecuciones)', assignTo: 'lead@acme.example', forNight: true }, { env: m.env });
+  assert.strictEqual(noche.ok, true, JSON.stringify(noche));
+  assert.strictEqual(noche.value.assigned, 'lead@acme.example');
+  const [, args] = llamadasAz(m).find(([p]) => p === 'crear');
+  assert.deepStrictEqual(args.slice(args.indexOf('--assigned-to'), args.indexOf('--assigned-to') + 2), ['--assigned-to', 'lead@acme.example']);
+  // sin el pedido de la noche, auto_assign apagado sigue sin asignar
+  const comun = await P().run('work-item.create', { repoDir: repo, title: 'Story 9.3: Otra', assignTo: 'lead@acme.example' }, { env: m.env });
+  assert.strictEqual(comun.ok, true);
+  assert.ok(!('assigned' in comun.value));
+  assert.ok(!llamadasAz(m).filter(([p]) => p === 'crear')[1][1].includes('--assigned-to'));
+});
+
+// Pedido_SinConfigurar_NoLlamaYLoDice @story-4.11 @ac-35 (el conector de Azure)
+// 🔴 Falla con: no tomar la organización, el proyecto y el tipo que trae el pedido de la noche (el repo de operaciones no
+//    tiene configuración de pedidos: vienen de operations.json), o que el del pedido no gane sobre el del repo.
+test('T43c Pedido_OrganizacionYProyectoDelPedido (el conector de Azure)', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const ops = repoCon(null, null);
+  const r = await P().run('work-item.create', { repoDir: ops, org: 'acme', project: 'Operaciones', type: 'Task', title: 'Las pruebas quedaron en rojo (ejecuciones)', forNight: true }, { env: m.env });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  const [, args] = llamadasAz(m).find(([p]) => p === 'crear');
+  for (const [op, valor] of [['--organization', ORG], ['--project', 'Operaciones'], ['--type', 'Task']]) assert.strictEqual(args[args.indexOf(op) + 1], valor, op);
+  const otro = repoCon('work-items.yaml', 'org: otra\nproject: Producto\ntype: Bug\n');
+  await P().run('work-item.create', { repoDir: otro, org: 'acme', project: 'Operaciones', title: 'X' }, { env: m.env });
+  const [, a2] = llamadasAz(m).filter(([p]) => p === 'crear')[1];
+  assert.deepStrictEqual([a2[a2.indexOf('--organization') + 1], a2[a2.indexOf('--project') + 1]], [ORG, 'Operaciones']);
+});
+
 test('WorkItem_Create_Github_OpensIssue @story-8.85 @ac-7', async () => {
   const m = mundo({ platform: { default: 'github' } });
   const repo = repoCon('work-items.yaml', GH_CONFIG);

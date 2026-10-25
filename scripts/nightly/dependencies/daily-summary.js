@@ -326,7 +326,9 @@ function rubrosVigilante({ snap, fichas, hoy }) {
       edad_mas_vieja: conFecha.length ? diasEntre(conFecha[0].f.escalares.fecha, hoy) : null,
       id_mas_viejo: conFecha.length ? conFecha[0].id : null };
     const utiles = fichas.promoted.filter((x) => x.f.escalares.veredicto === 'util');
-    R.aceptadas_sin_story = { valor: utiles.filter((x) => !tieneValor(x.f.escalares.story_creada)).map(item), de: utiles.length, motivo: null };
+    // con su pedido de trabajo ya no está «sin story»; la marca de la noche mientras pide todavía no es un pedido
+    const conPedido = (e) => tieneValor(e.pedido) && String(e.pedido).replace(/^"|"$/g, '') !== 'pidiendo';
+    R.aceptadas_sin_story = { valor: utiles.filter((x) => !tieneValor(x.f.escalares.story_creada) && !conPedido(x.f.escalares)).map(item), de: utiles.length, motivo: null };
   }
 
   R.no_medido = Array.isArray(snap.no_medido)
@@ -889,7 +891,7 @@ const EJ_CONSTANCIA = 'ejecuciones: ? (la constancia de las 04:00 no se pudo lee
 // dependencias; en las demás, mientras la noche no las controle, se dice que no se midieron, nunca 0.
 const FUENTES_FICHAS = ['dependencias', 'vigilante', 'ejecuciones'];
 const SIN_MEDIR = '? (no medido)';
-const RENGLON_FICHAS = /^fichas de (dependencias|vigilante|ejecuciones): (\? \(no se pudieron leer\)|vivas \d+ · nuevas \d+ · reaparecidas (\d+|\? \(no medido\)) · resueltas (\d+|\? \(no medido\))( · ilegibles \d+)?)$/;
+const RENGLON_FICHAS = /^fichas de (dependencias|vigilante|ejecuciones): (\? \(no se pudieron leer\)|vivas \d+ · nuevas \d+ · reaparecidas (\d+|\? \(no medido\)) · resueltas (\d+|\? \(no medido\))( · ilegibles \d+)?( · sin asignado \d+)?( · pedido sin crear \d+)?)$/;
 // la forma de cada renglón que puede salir: con ella se vuelve a leer la constancia en la edición de las 08:00
 const RENGLONES_EJ = [
   new RegExp(`^ejecuciones: (parcial — ${MOTIVO_EJ} · )?(\\d+ con fallas del arnés \\(de \\d+ miradas\\)|0 con fallas del arnés \\(\\d+ miradas\\))$`, 'u'),
@@ -951,7 +953,13 @@ function lineaFichas(fuente, dirFuente, hoy) {
   const medido = fuente === 'dependencias';
   const reaparecidas = medido ? vistas.filter((v) => v.reaparecido === hoy).length : SIN_MEDIR;
   const resueltas = medido ? vistas.filter((v) => v.resuelto === hoy).length : SIN_MEDIR;
-  return `fichas de ${fuente}: vivas ${vivas.length} · nuevas ${nuevas} · reaparecidas ${reaparecidas} · resueltas ${resueltas}${ilegibles ? ` · ilegibles ${ilegibles}` : ''}`;
+  // los arreglos vivos cuyo pedido salió sin asignado, o no salió: el motivo vive en la ficha. Una resuelta, o decidida
+  // de otra forma después, guarda su motivo viejo y ya no cuenta
+  const arreglos = vistas.filter((v) => v.veredicto === 'arreglo' && v.estado !== 'resuelta');
+  const sinAsignado = arreglos.filter((v) => ['sin-responsable', 'plataforma-sin-asignado'].includes(v.pedido_motivo)).length;
+  const sinCrear = arreglos.filter((v) => ['plataforma-caida', 'sin-confirmar', 'sin-configurar'].includes(v.pedido_motivo)).length;
+  return `fichas de ${fuente}: vivas ${vivas.length} · nuevas ${nuevas} · reaparecidas ${reaparecidas} · resueltas ${resueltas}`
+    + `${ilegibles ? ` · ilegibles ${ilegibles}` : ''}${sinAsignado ? ` · sin asignado ${sinAsignado}` : ''}${sinCrear ? ` · pedido sin crear ${sinCrear}` : ''}`;
 }
 
 /**

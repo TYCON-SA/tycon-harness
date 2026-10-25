@@ -703,6 +703,15 @@ async function cmdRun(a) {
   // las decisiones confirmadas en el sitio que otra persona aprobó, antes de mirar los borradores; a la
   // salida de error, para no romper la de --json
   if (!a.dryRun) for (const l of require('../findings/cycle.js').aplicarDecisiones({ fuente: 'vigilante', dir: a.pending }).lineas) console.error(l);
+  // el pedido de trabajo de cada arreglo decidido que todavía no lo tiene; la carpeta del vigilante vive en
+  // <operaciones>/inbox/watcher
+  if (!a.dryRun) {
+    const ops = path.resolve(a.pending, '..', '..');
+    try {
+      const pedidos = await require('../findings/cycle.js').pedirTrabajo({ fuente: 'vigilante', dir: a.pending, operations: path.join(ops, 'operations.json'), repoDir: ops });
+      for (const l of pedidos.lineas) console.error(l);
+    } catch (e) { console.error(`pedidos del vigilante: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); esta noche no se pidió ninguno`); }
+  }
   // 🔴 Desde AHORA hacia atrás, no desde la medianoche del día: con la medianoche la ventana real
   // sería de 33 h (el pipeline corre 08:00 UTC) y la franja 23:00–08:00 se contaría DOS veces, en dos
   // líneas base distintas. Con `--today` (tests) se usa el mediodía de ese día como ancla estable.
