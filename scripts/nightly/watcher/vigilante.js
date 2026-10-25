@@ -734,7 +734,7 @@ function medidaPara({ producto, regla, plugin, origen }, medidas) {
 
 const FMT_BORRADOR = () => require('../findings/sources.js').FUENTES.vigilante.formato;
 // las marcas de la propuesta y del contador, que una reapertura borra
-const CLAVES_QUE_SE_REINICIAN = ['noches_sin_aparecer', 'noche_contada', 'resuelta_el', 'aviso_volvio_el',
+const CLAVES_QUE_SE_REINICIAN = ['noches_sin_aparecer', 'noche_contada', 'resuelta_el', 'aviso_volvio_el', 'aviso_cerrado_el',
   'propuesta_accion', 'propuesta_razon', 'propuesta_modelo', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el'];
 
 /**
@@ -989,6 +989,11 @@ async function cmdRun(a) {
       const avisos = await require('../findings/cycle.js').avisarQueVolvio({ fuente: 'vigilante', dir: a.pending, operations: path.join(operaciones, 'operations.json'), hoy, repoDir: operaciones });
       for (const l of avisos.lineas) console.error(l);
     } catch (e) { console.error(`avisos del vigilante: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se avisa mañana`); }
+    // y a su pedido cerrado, que la falla sigue
+    try {
+      const cerrados = await require('../findings/cycle.js').avisarCerradoConFallaViva({ fuente: 'vigilante', dir: a.pending, operations: path.join(operaciones, 'operations.json'), hoy, repoDir: operaciones, vistas: vistasHoy });
+      for (const l of cerrados.lineas) console.error(l);
+    } catch (e) { console.error(`pedidos cerrados del vigilante: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se mira mañana`); }
   }
   const ignorados = a.dryRun ? [] : marcarIgnorados(a.pending, hoy);
   resultado.nuevos = nuevos.length;

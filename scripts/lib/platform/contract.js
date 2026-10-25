@@ -3,10 +3,11 @@
 // no, y qué decide la plataforma de cada operación. Lo comparten el lector de integraciones (que valida los manifiestos
 // de los conectores) y la capa (scripts/lib/platform/platform.js), sin requerirse entre ellos.
 
-// Las diez operaciones: tres del pedido de trabajo, tres del pedido de cambio, lo asignado, la CI, la cola y los
-// despliegues. Un conector declara cuáles implementa; las demás contestan no_soportado.
+// Las doce operaciones: cinco del pedido de trabajo (crear, cambiar, cerrar, buscar por etiqueta y leer su estado), tres
+// del pedido de cambio, lo asignado, la CI, la cola y los despliegues. Un conector declara cuáles implementa; las demás
+// contestan no_soportado.
 const OPERATIONS = Object.freeze([
-  'work-item.create', 'work-item.update', 'work-item.close',
+  'work-item.create', 'work-item.update', 'work-item.close', 'work-item.find', 'work-item.read',
   'change-request.open', 'change-request.vote', 'change-request.list',
   'assigned.list', 'ci.read', 'queue.read', 'deployments.read',
 ]);
@@ -21,6 +22,7 @@ const REPO_OPERATIONS = Object.freeze(['change-request.open', 'change-request.vo
 const AREAS = Object.freeze(['default', 'workItems', 'queue']);
 const AREA_OF = Object.freeze({
   'work-item.create': 'workItems', 'work-item.update': 'workItems', 'work-item.close': 'workItems',
+  'work-item.find': 'workItems', 'work-item.read': 'workItems',
   'assigned.list': 'workItems', 'queue.read': 'queue', 'deployments.read': 'default',
 });
 

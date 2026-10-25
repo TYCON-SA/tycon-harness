@@ -150,4 +150,38 @@ function close(args, ctx) {
   return { ok: true, value: { id, hours: horas, hoursAs: 'comment', unsupported: camposPropios(args.fields), warnings: d.warnings } };
 }
 
-module.exports = { 'work-item.create': create, 'work-item.update': update, 'work-item.close': close };
+/**
+ * Los issues con la etiqueta EXACTA, abiertos y cerrados, de todas las páginas; un pull request no es un pedido. Una
+ * búsqueda que no se pudo hacer entera es `no_medido`, nunca una lista vacía.
+ */
+function find(args, ctx) {
+  if (typeof args.tag !== 'string' || !/^[A-Za-z0-9:_.-]{1,100}$/.test(args.tag)) return no('rechazado', `la etiqueta no es válida: ${JSON.stringify(args.tag)}`);
+  const d = destino(args, ctx);
+  if (d.problem) return d.problem;
+  const ids = [];
+  for (let pagina = 1; ; pagina++) {
+    const g = gh(ctx, 'GET', `repos/${d.repo}/issues?labels=${encodeURIComponent(args.tag)}&state=all&per_page=100&page=${pagina}`);
+    if (g.problem) return no('no_medido', `no se pudo buscar la etiqueta ${args.tag}: ${g.problem.detail}`);
+    if (!Array.isArray(g.value)) return no('no_medido', 'la búsqueda no devolvió la lista de issues');
+    // GitHub no distingue mayúsculas en las etiquetas: la comparación tampoco
+    for (const i of g.value) if (i && !i.pull_request && Number.isInteger(i.number) && etiquetas(i).some((x) => x.toLowerCase() === args.tag.toLowerCase())) ids.push(i.number);
+    if (g.value.length < 100) break;
+  }
+  return { ok: true, value: { tag: args.tag, ids: [...new Set(ids)].sort((a, b) => a - b), warnings: [...d.warnings] } };
+}
+
+/** El estado del issue: cerrado es `state: closed`; si no, la etiqueta `estado:` o «abierto». */
+function read(args, ctx) {
+  if (!idValido(args.id)) return no('rechazado', `el número del issue no es un número: ${JSON.stringify(args.id)}`);
+  const d = destino(args, ctx);
+  if (d.problem) return d.problem;
+  const id = Number(String(args.id).trim());
+  const g = gh(ctx, 'GET', `repos/${d.repo}/issues/${id}`);
+  if (g.problem) return g.problem;
+  if (!g.value || typeof g.value.state !== 'string') return no('no_medido', `gh no devolvió el estado del issue #${id}`);
+  const cerrado = g.value.state === 'closed';
+  const etiqueta = (etiquetas(g.value).find((l) => /^estado:/.test(l)) || '').replace(/^estado:/, '');
+  return { ok: true, value: { id, estado: cerrado ? 'cerrado' : (etiqueta || 'abierto'), cerrado, warnings: [...d.warnings] } };
+}
+
+module.exports = { 'work-item.create': create, 'work-item.update': update, 'work-item.close': close, 'work-item.find': find, 'work-item.read': read };

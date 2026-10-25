@@ -70,7 +70,7 @@ test('Platform_OperationsList_MatchesContract @story-8.85 @ac-1', () => {
   const ops = C().OPERATIONS;
   // el lector de configuración guarda su copia de las áreas: tienen que ser las mismas del contrato
   assert.deepStrictEqual([...require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).AREAS_PLATAFORMA], [...C().AREAS]);
-  assert.strictEqual(ops.length, 10, 'las diez operaciones del dominio');
+  assert.strictEqual(ops.length, 12, 'las doce operaciones del dominio');
   for (const n of ['azure-devops', 'github']) {
     const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', n, 'integration.json'), 'utf8'));
     assert.strictEqual(man.kind, 'platform', n);
@@ -219,6 +219,28 @@ test('Conformance_AzureAndGithub_DeclaredOps @story-8.85 @ac-6', async () => {
       assert.strictEqual(x.reason, 'no_soportado', `${plat} ${op}`);
     }
   }
+});
+
+// Contrato_DoceOperaciones_Conformidad @story-4.11 @ac-42
+// 🔴 Falla con: que buscar o leer un pedido no sean operaciones del contrato, que no vayan por el área del pedido de
+//    trabajo del perfil, que un conector de verdad no las declare, o que la conformidad de los dos no pase con ellas.
+test('T94 Contrato_DoceOperaciones_Conformidad', async () => {
+  const c = C();
+  for (const op of ['work-item.find', 'work-item.read']) {
+    assert.ok(c.OPERATIONS.includes(op), `${op} está en el contrato`);
+    assert.strictEqual(c.areaOf(op), 'workItems', `${op} la elige el área del pedido de trabajo`);
+    assert.ok(!c.REPO_OPERATIONS.includes(op), `${op} no es de un repo`);
+  }
+  for (const plat of ['azure-devops', 'github']) {
+    const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', plat, 'integration.json'), 'utf8'));
+    for (const op of ['work-item.find', 'work-item.read']) assert.ok(man.operations.includes(op), `${plat} declara ${op}`);
+  }
+  // el perfil que elige otra plataforma para el pedido de trabajo también decide buscar y leer
+  const m = mundo({ platform: { default: 'azure-devops', workItems: 'github' } });
+  for (const op of ['work-item.find', 'work-item.read']) assert.strictEqual(P().choose(op, { env: m.env }).value.connector, 'github', op);
+  // el de mentira declara todo menos votar: también las dos nuevas
+  const fake = JSON.parse(fs.readFileSync(path.join(FAKE, 'integration.json'), 'utf8'));
+  assert.deepStrictEqual([...fake.operations].sort(), c.OPERATIONS.filter((o) => o !== 'change-request.vote').sort());
 });
 
 test('Credentials_Missing_SaysCommandNeverPrints @story-8.85 @ac-28', async () => {

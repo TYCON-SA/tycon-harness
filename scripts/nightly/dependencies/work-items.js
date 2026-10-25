@@ -32,12 +32,12 @@
  *    (`pedidos:`) y la etiqueta `arnes:<id>` en Azure. Si Azure lo tiene y la ficha no (el push de
  *    anoche se perdió), se ADOPTA. 🔴 Si la consulta falla o no se puede leer, NO se crea nada:
  *    «no pude preguntar» no es «no hay».
- * 3. **LA WIQL ACOTA POR PROYECTO** con `[System.TeamProject] = @project`: la ruta /{proyecto}/ sola
- *    NO acota (devuelve work items de otros proyectos). Y `az boards query` no sirve para
- *    decidir «no existe»: con 0 resultados imprime 0 bytes y sale 0, igual que nada.
- * 4. **EL TEXTO VA A REPRO STEPS, EN HTML, POR ARCHIVO.** El formulario del Bug
- *    no muestra Descripción. Y `az` 2.79 lee como archivo todo lo que siga a un `=@` o empiece con
- *    `@`, así que un texto libre en línea no es seguro.
+ * 3. **BUSCAR Y CREAR VAN POR LA CAPA DE PLATAFORMA** (`work-item.find` y `work-item.create` del conector de Azure
+ *    DevOps): la búsqueda acota por proyecto y relee la etiqueta exacta de cada resultado. La organización, el proyecto,
+ *    el tipo, la iteración y los campos salen de repos.json y operations.json, nunca de la configuración del pedido
+ *    de trabajo de un repo; el asignado va en `System.AssignedTo`, así lo valida Azure.
+ * 4. **EL TEXTO VA A REPRO STEPS, EN HTML.** El formulario del Bug no muestra Descripción. El conector manda el
+ *    texto por archivo: `az` lee como archivo todo lo que siga a un `=@` o empiece con `@`.
  * 5. **NACE APAGADA.** Con `azure.pedidos_activos` distinto de `true` (o `--simulate`) hace las
  *    lecturas y publica lo que HABRÍA creado, sin una sola escritura. Se enciende después de probar
  *    los dos mails y los dos permisos con la identidad del pipeline.
@@ -84,6 +84,17 @@ const noc = require('./nightly-dependencies');
 
 const { listaDe, ponerLista, proyectoDe, proyectoAzureDe, etiqueta, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml } = noc;
 const operaciones = require('../../lib/operations-config.js');
+
+/** La capa de plataforma con el conector de Azure DevOps: `(operación, args) → Promise<resultado del contrato>`. */
+function plataformaAzure() {
+  const P = require('../../lib/platform/platform.js');
+  const INT = require('../../lib/integrations.js');
+  return (op, args) => {
+    const manifiesto = INT.find('azure-devops', { kind: 'platform', env: process.env });
+    if (!manifiesto) return Promise.resolve({ ok: false, reason: 'sin_plataforma', detail: 'no está el conector de Azure DevOps' });
+    return P.call(manifiesto, op, args, { env: process.env });
+  };
+}
 
 const RAIZ_REPO = path.resolve(__dirname, '..', '..', '..');
 // repos.json vive al lado de este guion; las fichas, en inbox/dependencies/
@@ -156,10 +167,10 @@ function cacheDeTipos(az, workItems) {
 
 /**
  * Los campos del pedido: los fijos de la configuración, pisados por los de su gravedad (sólo si el tipo es el
- * configurado), y Severity y ReproSteps sólo si el tipo los tiene. `{ ok, campos: [k=v] }` o `{ ok: false, motivo }` si
- * queda un obligatorio del tipo sin cubrir: nunca un pedido a medias.
+ * configurado), y Severity y ReproSteps sólo si el tipo los tiene. `{ ok, campos: { campo: valor } }` o
+ * `{ ok: false, motivo }` si queda un obligatorio del tipo sin cubrir: nunca un pedido a medias.
  */
-function camposDelPedido(t, workItems, severidad, fCuerpo) {
+function camposDelPedido(t, workItems, severidad, cuerpo) {
   const valores = {};
   if (!t.deFabrica && workItems) {
     // sólo lo que el lector deja viajar: un comentario («__nota») o un campo que el pedido ya fija no van a Azure
@@ -170,11 +181,11 @@ function camposDelPedido(t, workItems, severidad, fCuerpo) {
     const ajenos = Object.keys(valores).filter((k) => !t.campos.has(k));
     if (ajenos.length) return { ok: false, motivo: `el tipo ${t.tipo} no tiene ${ajenos.join(', ')}: revisá work_items en operations.json` };
   }
-  if (t.campos.has(CAMPO_REPRO)) valores[CAMPO_REPRO] = `@${fCuerpo}`;
+  if (t.campos.has(CAMPO_REPRO)) valores[CAMPO_REPRO] = cuerpo;
   if (t.campos.has(CAMPO_SEVERIDAD) && Object.prototype.hasOwnProperty.call(SEVERIDAD_AZURE, severidad)) valores[CAMPO_SEVERIDAD] = SEVERIDAD_AZURE[severidad];
   const faltan = t.obligatorios.filter((k) => !CAMPOS_PROPIOS.has(k) && !Object.prototype.hasOwnProperty.call(valores, k));
   if (faltan.length) return { ok: false, motivo: `el tipo ${t.tipo} exige ${faltan.join(', ')} y la configuración no ${faltan.length > 1 ? 'los cubre' : 'lo cubre'}: no se crea un pedido a medias` };
-  return { ok: true, campos: Object.entries(valores).map(([k, v]) => `${k}=${v}`) };
+  return { ok: true, campos: valores };
 }
 
 // ── utilidades ─────────────────────────────────────────────────────────────────────────────────
@@ -199,6 +210,13 @@ function parseArgs(argv) {
 
 const recortar = (t, n = 300) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n) || '(sin salida)';
 const diasEntre = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+// lo que dijo la plataforma, para el resumen: el motivo del vocabulario cerrado y, si lo trae, el código de error de
+// Azure; el texto libre del detalle no sale
+const motivoDe = (r) => {
+  const reason = r && typeof r.reason === 'string' && /^[a-z_]{1,30}$/.test(r.reason) ? r.reason : 'sin respuesta';
+  const codigo = r && typeof r.detail === 'string' ? /\b(?:TF|VS)\d{4,6}\b/.exec(r.detail) : null;
+  return codigo ? `${reason}, ${codigo[0]}` : reason;
+};
 const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** Un fallo que impide intentar CUALQUIER cosa: la corrida sale 2 sin escribir la sección. */
@@ -460,8 +478,11 @@ const porFicha = (a, b) => String(a.ficha).localeCompare(String(b.ficha)) || Str
 
 // ── la conversación con Azure ──────────────────────────────────────────────────────────────────
 
-function hablar(ctx) {
+async function hablar(ctx) {
   const { az, cfg, azure, hoy, simulado, tope, snap, tmp, fichas } = ctx;
+  const plataforma = ctx.plataforma || plataformaAzure();
+  // la carpeta temporal no tiene configuración del pedido de trabajo: la de un repo no se mezcla con la de dependencias
+  const destino = (p) => ({ repoDir: tmp, org: azure.org, project: p });
   let nArchivo = 0;
   const archivo = (nombre, contenido) => {
     const p = path.join(tmp, `${++nArchivo}-${nombre}`);
@@ -563,23 +584,14 @@ function hablar(ctx) {
         continue;
       }
 
-      // Duplicados: WIQL acotada por proyecto + lectura de las etiquetas de cada resultado.
-      const consulta = archivo('wiql.json', JSON.stringify({
-        query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.Tags] CONTAINS 'arnes:${idFicha}'`,
-      }));
-      const w = az(['devops', 'invoke', '--area', 'wit', '--resource', 'wiql', '--route-parameters', `project=${p}`,
-        '--http-method', 'POST', '--in-file', consulta, '--api-version', '7.1'],
-      { valida: (v) => (v && Array.isArray(v.workItems) ? null : 'la respuesta no trae «workItems»') });
-      if (!w.ok) { fallo('duplicados', `no pude consultar duplicados (${w.motivo})`); continue; }
-      const nuestros = [];
-      let ilegible = null;
-      for (const wid of [...new Set(w.valor.workItems.map((i) => i && i.id).filter(Number.isInteger))]) {
-        const s = az(['boards', 'work-item', 'show', '--id', String(wid)],
-          { valida: (v) => (v && v.fields ? null : 'la respuesta no trae «fields»') });
-        if (!s.ok) { ilegible = `no pude leer las etiquetas del work item ${wid}: ${s.motivo}`; break; }
-        if (tokensDeEtiquetas(s.valor.fields['System.Tags']).includes(`arnes:${idFicha}`.toLowerCase())) nuestros.push(wid);
+      // Duplicados: los pedidos del proyecto con la etiqueta exacta de la ficha. Una búsqueda que no se pudo hacer no crea.
+      let w;
+      try { w = await plataforma('work-item.find', { ...destino(p), tag: `arnes:${idFicha}` }); } catch { w = null; }
+      if (!(w && w.ok === true && w.value && Array.isArray(w.value.ids))) {
+        fallo('duplicados', `no pude consultar duplicados (${motivoDe(w)})`);
+        continue;
       }
-      if (ilegible) { fallo('duplicados', `no pude consultar duplicados (${ilegible})`); continue; }
+      const nuestros = w.value.ids.filter(Number.isInteger);
       if (nuestros.length > 1) { fallo('duplicados', `pedidos duplicados en Azure: ${[...nuestros].sort((a, b) => a - b).join(', ')} — una persona decide cuál queda`); continue; }
       if (nuestros.length === 1) {
         // 🔴 El Bug existe en Azure aunque la ficha no se pueda anotar: se registra ANTES, como en la
@@ -634,20 +646,19 @@ function hablar(ctx) {
         pedidoDelPaquete.set(clavePaquete(f, p), { ficha: idFicha, id: null });
         continue;
       }
-      const fCuerpo = archivo('cuerpo.html', cuerpo);
-      const { campos } = camposDelPedido(t, workItems, severidadFicha, fCuerpo);
+      const { campos } = camposDelPedido(t, workItems, severidadFicha, cuerpo);
       // la gravedad va siempre en una etiqueta (y en el cuerpo): no todos los tipos tienen Severity
-      const gravedad = /^[a-z]+$/.test(String(severidadFicha || '')) ? `; arnes-gravedad:${severidadFicha}` : '';
-      const c = az(['boards', 'work-item', 'create', '--type', t.tipo, '--project', p, '--title', titulo,
-        '--iteration', it.ruta, '--description', `@${fCuerpo}`,
-        // 🔴 UN solo --fields con todo: repetido, argparse se queda con el último y las etiquetas —la
-        // identidad del pedido— se perderían en silencio. Y la asignación va ACÁ, cruda, y no por
-        // `--assigned-to` (ver `deducirDueno`): así la valida Azure en vez de perderse sin aviso.
-        '--fields', `System.Tags=arnes-hallazgo; arnes:${idFicha}${gravedad}`,
-        `System.AssignedTo=${dueno.asignado}`, ...campos],
-      { valida: (v) => (v && Number.isInteger(v.id) ? null : 'la respuesta no trae «id»') });
-      if (!c.ok) { fallo('crear', c.motivo); continue; }
-      const id = c.valor.id;
+      const gravedad = /^[a-z]+$/.test(String(severidadFicha || '')) ? [`arnes-gravedad:${severidadFicha}`] : [];
+      let c;
+      try {
+        c = await plataforma('work-item.create', { ...destino(p), type: t.tipo, title: titulo, iteration: it.ruta, description: cuerpo,
+          tags: ['arnes-hallazgo', `arnes:${idFicha}`, ...gravedad],
+          // la asignación va como campo, cruda, y no como asignado del conector (ver `deducirDueno`): así la valida
+          // Azure en vez de perderse sin aviso
+          fields: { 'System.AssignedTo': dueno.asignado, ...campos }, forNight: true });
+      } catch { c = null; }
+      if (!(c && c.ok === true && c.value && Number.isInteger(c.value.id))) { fallo('crear', `la plataforma no creó el Bug (${motivoDe(c)})`); continue; }
+      const id = c.value.id;
       pedidoDelPaquete.set(clavePaquete(f, p), { ficha: idFicha, id });
       // El id va a la ficha ANTES del comentario: si el comentario falla, sin el id mañana se crearía otro.
       try { anotarPedido(f.archivo, p, id); }
@@ -1256,7 +1267,7 @@ function noPudo(motivo) {
   return 2;
 }
 
-function correr(a) {
+async function correr(a) {
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(a.config, 'utf8')); } catch (e) { return noPudo(`no se pudo leer la configuración ${a.config}: ${e.message}`); }
   const azure = cfg.azure || {};
@@ -1288,7 +1299,7 @@ function correr(a) {
     volcado: leerVolcadoDeHoy(a.out, hoy),
   };
   let resultado;
-  try { resultado = hablar(ctx); }
+  try { resultado = await hablar(ctx); }
   catch (e) { if (e instanceof NoSePuedeIntentar) return noPudo(e.message); throw e; }
   finally { fs.rmSync(ctx.tmp, { recursive: true, force: true }); }
 
@@ -1407,7 +1418,7 @@ function mezclaEnAzure(configFile) {
   return gh.length ? `repos.json trae entradas de GitHub (${gh.join(', ')}) y la plataforma de la organización es Azure: una organización, una plataforma` : null;
 }
 
-function main() {
+async function main() {
   const p = elegirPlataforma(process.argv);
   if (p.error) { console.error(`error: ${p.error}`); return 2; }
   if (p.aviso) console.error(`aviso: ${p.aviso}`);
@@ -1443,11 +1454,11 @@ module.exports = { parseArgs, crearAz, proyectosDeFicha, paresPorPedir, ordenarY
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso
 // con parte de lo escrito todavía en el aire: un
 // informe de 9782 bytes llega cortado en 8192 y el consumidor lo lee como «no pude», nunca como
-// un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
-// proceso termina solo, cuando terminó de escribir.
+// un error. `main` no deja manejadores abiertos, así que con `exitCode` el proceso termina solo, cuando
+// terminó de escribir.
 // Va DESPUÉS de module.exports — github-issues.js (que este main puede cargar) usa lo que exporta este guion.
 if (require.main === module) {
   // Los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dependencies/work-items.js', { exitCode: 2, prefix: 'error: ' });
-  process.exitCode = main();
+  main().then((c) => { process.exitCode = c; }, (e) => { console.error(e && e.stack ? e.stack : String(e)); process.exitCode = 1; });
 }

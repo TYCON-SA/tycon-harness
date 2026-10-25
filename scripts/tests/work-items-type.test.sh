@@ -321,7 +321,7 @@ rc=$(correr --operations "$TMP/operations.json")
 { [ "$rc" -eq 0 ] && llamada crear 0 'a.some((x) => x.startsWith("System.Tags=") && /arnes-gravedad:high/.test(x) && /arnes-hallazgo/.test(x)) && /high/.test(b)'; } \
   && ok "T4 Gravedad_EnEtiquetaYCuerpo: la gravedad va en la etiqueta y en el cuerpo, con un tipo sin Severity" \
   || no "T4: rc=$rc · $(pie)"
-{ [ "$rc" -eq 0 ] && llamada crear 0 '!a.some((x) => /^Microsoft\.VSTS\.(Common\.Severity|TCM\.ReproSteps)=/.test(x)) && String(arg("--description")).startsWith("@")'; } \
+{ [ "$rc" -eq 0 ] && llamada crear 0 '!a.some((x) => /^Microsoft\.VSTS\.(Common\.Severity|TCM\.ReproSteps)=/.test(x)) && a.some((x) => x.startsWith("System.Description=@"))'; } \
   && cp "$TMP/fixaz/llamadas.log" "$TMP/sin.log" \
   && { mundo; opsw ""; cats "Proy A" Bug; campos "Proy A" Bug "$BASICOS,Microsoft.VSTS.TCM.ReproSteps,Microsoft.VSTS.Common.Severity"
        ficha pending abc12345 browserslist high 1 "A/A"; snapshot $HOY "[$(p1 abc12345 browserslist A/A)]"

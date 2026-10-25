@@ -29,9 +29,10 @@ const NOCHES_POR_DEFECTO = 3;
 
 // El orden en que se escribe la ficha común. `noches_sin_aparecer` y `noche_contada` (la fecha de la última noche
 // contada) sólo están mientras cuenta; `resuelta_el` mientras está resuelta; `reaparecio_el` desde la noche que volvió,
-// y `aviso_volvio_el`, el día que se le avisó a su pedido que volvió.
+// `aviso_volvio_el`, el día que se le avisó a su pedido que volvió, y `aviso_cerrado_el`, el día que se le avisó a su
+// pedido cerrado que la falla sigue (o que se vio que el pedido ya no existe).
 const CLAVES = ['id', 'fuente', 'causa', 'nombre', 'primera_vez', 'ultima_vez', 'apariciones', 'noches_sin_aparecer',
-  'noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'veredicto', 'veredicto_anterior', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
+  'noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'veredicto', 'veredicto_anterior', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
   'pedido', 'asignado', 'pedido_motivo', 'estado', 'casos', 'casos_total', 'casos_vistos'];
 // Por qué un arreglo quedó sin pedido o sin asignado: una lista cerrada, nunca el texto de un error.
 const MOTIVOS_SIN_PEDIDO = ['sin-responsable', 'plataforma-sin-asignado', 'plataforma-caida', 'sin-confirmar', 'sin-configurar'];
@@ -90,7 +91,7 @@ function problemasDeForma(f) {
   for (const k of ['primera_vez', 'ultima_vez']) if (!(typeof f[k] === 'string' && FECHA.test(f[k]))) p.push(`${k}: no es una fecha`);
   if (!entero(f.apariciones, 1)) p.push('apariciones: tiene que ser un entero mayor que 0');
   if ('noches_sin_aparecer' in f && !entero(f.noches_sin_aparecer, 0)) p.push('noches_sin_aparecer: tiene que ser un entero');
-  for (const k of ['noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el']) {
+  for (const k of ['noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'aviso_cerrado_el']) {
     if (k in f && !(typeof f[k] === 'string' && FECHA.test(f[k]))) p.push(`${k}: no es una fecha`);
   }
   if (!VEREDICTOS.includes(f.veredicto)) p.push('veredicto: fuera del vocabulario');
@@ -191,7 +192,7 @@ function registrarAparicion(f, hoy, casos) {
   delete g.noche_contada;
   if (seReabre(f)) {
     Object.assign(g, { estado: 'reaparecio', veredicto: 'pendiente', veredicto_anterior: f.veredicto, reaparecio_el: hoy, propuesta: null });
-    for (const k of ['resuelta_el', 'aviso_volvio_el', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el']) delete g[k];
+    for (const k of ['resuelta_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el']) delete g[k];
   }
   return ordenar(g);
 }
@@ -598,9 +599,12 @@ const FALTA_CONFIGURAR = 'falta configurar dónde va (work_items.org y work_item
 // ¿El campo del vigilante tiene algo? El vacío de YAML escrito a mano no cuenta
 const conValor = (v) => v !== undefined && v !== null && !/^(|null|~|"")$/i.test(String(v).trim());
 
+// la causa entra al pedido sólo con la forma de una clave o de una huella: la del vigilante sale de su borrador
+const causaConForma = (c) => (typeof c === 'string' && (CLAVE.test(c) || HUELLA.test(c)) ? c : 'sin forma');
+
 /** La descripción del pedido: sólo campos con forma de la ficha; nunca el diagnóstico, la evidencia ni la propuesta. */
 function descripcionDelPedido(fuente, v, crudo) {
-  const partes = [`Lo encontró la noche (${fuente}) y se decidió arreglarlo.`, `Causa: ${v.causa}.`,
+  const partes = [`Lo encontró la noche (${fuente}) y se decidió arreglarlo.`, `Causa: ${causaConForma(v.causa)}.`,
     `Apariciones: ${v.apariciones}.`, `Primera vez: ${v.primera_vez}.`];
   if (v.ultima_vez) partes.push(`Última vez: ${v.ultima_vez}.`);
   if (fuente === 'vigilante') {
@@ -713,7 +717,7 @@ async function pedirTrabajo({ base, fuente, operations, run = null, dir = null, 
 
 /** El comentario de que volvió: sólo campos con forma de la ficha, como la descripción del pedido. */
 function comentarioDeQueVolvio(fuente, v) {
-  const partes = [`La falla volvió: la noche (${fuente}) la vio otra vez el ${v.reaparecido}.`, `Causa: ${v.causa}.`];
+  const partes = [`La falla volvió: la noche (${fuente}) la vio otra vez el ${v.reaparecido}.`, `Causa: ${causaConForma(v.causa)}.`];
   if (Number.isInteger(v.apariciones)) partes.push(`Apariciones: ${v.apariciones}.`);
   partes.push('El estado del pedido no se cambió: lo decide una persona.');
   return partes.join(' ');
@@ -778,8 +782,165 @@ async function avisarQueVolvio({ base, fuente, operations, hoy, run = null, dir 
   return r;
 }
 
+// Lo que el cruce de la noche no pudo terminar, para el resumen de esa misma mañana: cuántos pedidos no se pudieron
+// leer, cuáles ya no existen, cuántos comentarios fallaron, cuántas fichas o carpetas no se pudieron leer, si falta
+// configurar el destino y si el cruce se cortó. Vive junto a las carpetas de la fuente; uno de otro día no cuenta.
+const AVISO_CERRADO = 'aviso-cerrado.json';
+const CONTADORES_CERRADO = ['sin_leer', 'sin_comentar', 'sin_mirar'];
+const BANDERAS_CERRADO = ['falta_configurar', 'cortado'];
+
+/** El comentario al pedido cerrado: sólo campos con forma de la ficha, como el de que volvió. */
+function comentarioDeCerrado(fuente, v) {
+  const partes = [`El pedido está cerrado y la falla sigue: la noche (${fuente}) la vio otra vez el ${v.ultima_vez}.`, `Causa: ${causaConForma(v.causa)}.`];
+  if (Number.isInteger(v.apariciones)) partes.push(`Apariciones: ${v.apariciones}.`);
+  partes.push('El estado del pedido no se cambió: lo decide una persona.');
+  return partes.join(' ');
+}
+
+/**
+ * Lo que el cruce dejó dicho para el resumen de `hoy` en la carpeta de la fuente: `{ avisados, sin_leer, no_existen,
+ * sin_comentar, sin_mirar, falta_configurar, cortado }` (`avisados`: los pedidos que recibieron el comentario); null si no hay archivo o es de otro día; `{ roto: true }` si está pero no se
+ * puede leer o no tiene la forma (no es lo mismo que no tener nada que decir).
+ */
+function leerAvisoCerrado(dirFuente, hoy) {
+  let txt;
+  try { txt = fs.readFileSync(path.join(dirFuente, AVISO_CERRADO), 'utf8'); } catch (e) {
+    return e && e.code === 'ENOENT' ? null : { roto: true };
+  }
+  let d;
+  try { d = JSON.parse(txt); } catch { return { roto: true }; }
+  if (esObjeto(d) && FECHA.test(String(d.fecha)) && d.fecha !== hoy) return null;
+  const contadores = CONTADORES_CERRADO.every((k) => d && (d[k] === undefined || entero(d[k], 0)));
+  const banderas = BANDERAS_CERRADO.every((k) => d && (d[k] === undefined || typeof d[k] === 'boolean'));
+  const listas = ['no_existen', 'avisados'].every((k) => d && (k === 'avisados' && d[k] === undefined
+    || (Array.isArray(d[k]) && d[k].every((x) => entero(x, 1)))));
+  if (!esObjeto(d) || d.fecha !== hoy || !contadores || !banderas || !listas) return { roto: true };
+  return { avisados: d.avisados || [], sin_leer: d.sin_leer || 0, no_existen: d.no_existen, sin_comentar: d.sin_comentar || 0, sin_mirar: d.sin_mirar || 0,
+    falta_configurar: d.falta_configurar === true, cortado: d.cortado === true };
+}
+
+/** Guarda lo que el cruce de `hoy` tiene para decir en la mañana; devuelve el código del error si no pudo. */
+function guardarAvisoCerrado(dirFuente, hoy, datos) {
+  try {
+    fs.writeFileSync(path.join(dirFuente, AVISO_CERRADO), `${JSON.stringify({ fecha: hoy, ...datos }, null, 2)}\n`);
+    return null;
+  } catch (e) { return (e && e.code) || 'error'; }
+}
+
+/**
+ * Le avisa a su pedido cerrado que la falla sigue: a cada ficha viva cuya causa está en `vistas` (lo que esa noche vio
+ * de verdad, que arma cada fuente: en ejecuciones, las causas con una ejecución nueva; en el vigilante, las huellas con
+ * errores aunque no pasen el umbral), con el pedido que creó la noche y sin `aviso_cerrado_el`, lee el estado del pedido (`work-item.read`); si está cerrado, un `work-item.update` con sólo el
+ * comentario (sin estado: no se reabre) y el día en `aviso_cerrado_el`. Un pedido que la plataforma ya no tiene se dice
+ * una vez y queda anotado igual: no se reintenta. Uno que no se pudo leer, o cuyo comentario falló, se intenta la
+ * noche siguiente. Una ficha que volvió recibe sólo el aviso de que volvió. Lo que no se pudo hacer (lecturas,
+ * comentarios, fichas o carpetas, el destino sin configurar, un cruce cortado) y lo que ya no existe queda en
+ * `aviso-cerrado.json` para el resumen de esa misma mañana. Devuelve `{ avisados, sinLeer, noExisten, sinComentar,
+ * sinMirar, faltaConfigurar, lineas }`; los renglones no copian el texto de un error.
+ */
+async function avisarCerradoConFallaViva(opciones) {
+  if (opciones.fuente !== 'ejecuciones' && opciones.fuente !== 'vigilante') {
+    throw new Error(`${opciones.fuente}: el cruce de dependencias lo hace su pedido del líder`);
+  }
+  const carpetas = opciones.dir ? Object.fromEntries(CARPETAS.map((c) => [c, path.join(opciones.dir, c)])) : carpetasDe(opciones.base, opciones.fuente);
+  const dirFuente = path.dirname(carpetas.pending);
+  try { return await cruzarCerrados({ ...opciones, carpetas, dirFuente }); } catch (e) {
+    // un cruce cortado lo dice la mañana: sin esto, el resumen callaría igual que en una noche sin nada
+    const antes = leerAvisoCerrado(dirFuente, opciones.hoy);
+    guardarAvisoCerrado(dirFuente, opciones.hoy, { ...(antes && !antes.roto ? antes : { avisados: [], sin_leer: 0, no_existen: [] }), cortado: true });
+    throw e;
+  }
+}
+
+async function cruzarCerrados({ base, fuente, operations, hoy, run, repoDir, carpetas, dirFuente, vistas }) {
+  // la fecha de la ficha no dice si la falla apareció esa noche: en ejecuciones la mueve una ejecución vieja que sigue en
+  // la ventana, y en el vigilante no la mueve un error que no pasa el umbral
+  if (!(vistas instanceof Set)) throw new Error(`${fuente}: el cruce necesita lo que la noche vio (vistas)`);
+  const { comoFicha } = require('./sources.js');
+  const plataforma = run || ((op, args) => require('../../lib/platform/platform.js').run(op, args));
+  const acceso = accesoAlPedido(fuente);
+  const r = { avisados: [], sinLeer: 0, noExisten: [], sinComentar: 0, sinMirar: 0, faltaConfigurar: false, lineas: [] };
+  const porque = (res) => (res && typeof res.reason === 'string' && /^[a-z_]{1,30}$/.test(res.reason) ? res.reason : 'sin respuesta');
+  let destino;
+  for (const carpeta of ['pending', 'promoted']) {
+    let nombres;
+    try { nombres = fs.readdirSync(carpetas[carpeta]).filter((x) => x.endsWith('.yaml')).sort(); } catch (e) {
+      if (e && e.code === 'ENOENT') continue;
+      r.sinMirar += 1;
+      r.lineas.push(`pedidos cerrados de ${fuente}: la carpeta ${carpeta} no se pudo leer (${(e && e.code) || 'error'}); se mira mañana`);
+      continue;
+    }
+    for (const nombre of nombres) {
+      const ruta = path.join(carpetas[carpeta], nombre);
+      let txt;
+      let v;
+      try { txt = fs.readFileSync(ruta, 'utf8'); v = comoFicha(fuente, txt); } catch (e) {
+        r.sinMirar += 1;
+        r.lineas.push(`pedido cerrado de ${nombre.slice(0, -5)}: la ficha no se pudo leer (${(e && e.code) || 'sin forma'})`);
+        continue;
+      }
+      if (!v || v.estado !== 'viva' || !vistas.has(v.causa) || !v.pedido_de_la_noche || v.aviso_cerrado) continue;
+      if (destino === undefined) {
+        destino = pedidoDeLaNoche(operations).destino;
+        if (!destino) {
+          r.faltaConfigurar = true;
+          r.lineas.push(`pedidos cerrados de ${fuente}: ${FALTA_CONFIGURAR}; no se leen`);
+        }
+      }
+      if (!destino) continue;
+      const id = Number(v.pedido_de_la_noche);
+      const lugar = { repoDir: repoDir || base || path.dirname(dirFuente), id, forNight: true, ...destino };
+      let leido = null;
+      try { leido = await plataforma('work-item.read', lugar); } catch { leido = null; }
+      const anotar = () => {
+        try { fs.writeFileSync(ruta, acceso.poner(txt, { aviso_cerrado_el: hoy })); return true; } catch (e) {
+          r.sinMirar += 1;
+          r.lineas.push(`pedido cerrado de ${v.id}: la ficha no se pudo escribir (${(e && e.code) || 'error'}); mañana se vuelve a mirar`);
+          return false;
+        }
+      };
+      if (leido && leido.ok === false && leido.reason === 'no_encontrado') {
+        r.noExisten.push(id);
+        r.lineas.push(`pedido cerrado de ${v.id}: el pedido ${id} ya no existe en la plataforma`);
+        anotar();
+        continue;
+      }
+      if (!(leido && leido.ok === true && leido.value && typeof leido.value.cerrado === 'boolean')) {
+        r.sinLeer += 1;
+        r.lineas.push(`pedido cerrado de ${v.id}: no se pudo leer el estado del pedido ${id} (${porque(leido)}); se intenta mañana`);
+        continue;
+      }
+      if (!leido.value.cerrado) continue;
+      let res = null;
+      try { res = await plataforma('work-item.update', { ...lugar, comment: comentarioDeCerrado(fuente, v) }); } catch { res = null; }
+      if (!(res && res.ok === true)) {
+        r.sinComentar += 1;
+        r.lineas.push(`pedido cerrado de ${v.id}: la plataforma no comentó el pedido ${id} (${porque(res)}); se avisa mañana`);
+        continue;
+      }
+      if (!anotar()) continue;
+      r.avisados.push({ id: v.id, pedido: id });
+      r.lineas.push(`pedido cerrado de ${v.id}: se le avisó al pedido ${id} que la falla sigue`);
+    }
+  }
+  // la misma mañana dice lo que quedó sin hacer; una segunda pasada del mismo día suma los que ya no existen
+  const antes = leerAvisoCerrado(dirFuente, hoy);
+  const previo = antes && !antes.roto ? antes : null;
+  const noExisten = [...new Set([...(previo ? previo.no_existen : []), ...r.noExisten])].sort((a, b) => a - b);
+  // el resumen dice «avisado» sólo de los que están acá: la marca de la ficha también la lleva el pedido que ya no existe
+  const avisados = [...new Set([...(previo ? previo.avisados : []), ...r.avisados.map((x) => x.pedido)])].sort((a, b) => a - b);
+  const datos = { avisados, sin_leer: r.sinLeer, no_existen: noExisten, sin_comentar: r.sinComentar, sin_mirar: r.sinMirar,
+    falta_configurar: r.faltaConfigurar, cortado: false };
+  const algo = avisados.length || r.sinLeer || noExisten.length || r.sinComentar || r.sinMirar || r.faltaConfigurar;
+  // sin nada que decir no se escribe: el de otro día ya no cuenta; uno de hoy (o uno roto) se pisa con lo de ahora
+  if (!antes && !algo) return r;
+  const error = guardarAvisoCerrado(dirFuente, hoy, datos);
+  if (error) r.lineas.push(`pedidos cerrados de ${fuente}: lo que quedó sin hacer no se pudo guardar para el resumen (${error})`);
+  return r;
+}
+
 module.exports = {
-  MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, pedirTrabajo, avisarQueVolvio, noche,
+  MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, pedirTrabajo, avisarQueVolvio, avisarCerradoConFallaViva, leerAvisoCerrado, AVISO_CERRADO, noche,
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
   ACCIONES, MOTIVOS_SIN_PROPUESTA, FALLAS_MAX, razonSegura, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,
