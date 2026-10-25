@@ -170,12 +170,11 @@ test('T8 PrePushRules_TempCopyFails_Stops — si la copia temporal no se arma, f
   assert.match(r.err, /copia temporal/);
 });
 
-test('T10 PrePushRules_NoSuiteTravels_SaysIt — ninguna de las cuatro viaja: sale y dice que no corrió ninguna', (t) => {
+test('T10 PrePushRules_NoSuiteTravels_StaysQuiet — ninguna de las cuatro viaja: sale 0 sin una línea', (t) => {
   const lab = laboratorio(t, { suites: {} });
   const r = correr(lab);
   assert.strictEqual(r.code, 0, r.err);
-  assert.match(r.err, /no corrí ninguna/);
-  assert.doesNotMatch(r.err, /en verde/, 'dijo verde sin haber corrido nada');
+  assert.strictEqual(r.err, '', 'sin reglas que correr habló igual');
 });
 
 test('T11 PrePushRules_HookGitEnv_NotInherited — las suites de la copia no heredan el GIT_DIR que git le pone al gancho', (t) => {

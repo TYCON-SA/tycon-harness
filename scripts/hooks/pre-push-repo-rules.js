@@ -93,8 +93,7 @@ function correrReglas(dir, deadline) {
     }
     corridas += 1;
   }
-  if (corridas === 0) decir('ninguna de las cuatro viaja en este commit: no corrí ninguna.');
-  else decir(`${corridas} de ${corridas} en verde.`);
+  decir(`${corridas} de ${corridas} en verde.`);
   return null;
 }
 
@@ -137,6 +136,8 @@ function main(argv) {
   const shas = commitsPorArbol(repo, lines);
   const deadline = Date.now() + CAP_MS;
   for (const sha of shas) {
+    // un commit que no trae ninguna de las cuatro no tiene reglas que correr: sale callado, sin armar la copia
+    if (!SUITES.some((s) => git(repo, ['cat-file', '-e', `${sha}:${s}`]).status === 0)) continue;
     let lugar;
     try { lugar = lugarPara(repo, sha); } catch (e) { return frenar(e.message); }
     try {

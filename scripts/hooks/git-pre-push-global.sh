@@ -142,7 +142,7 @@ if [ -z "$WHY" ]; then
   [ "$_rc" -eq 0 ] || exit "$_rc"
   # ── 2b. Las reglas que vigilan todo el repo del arnés, sobre el commit que viaja ─────────────────────────────────
   # Del mismo arnés que el freno. El guion decide si el empuje es del arnés, a cualquier remoto. Si falta (un arnés a
-  # medio actualizar), lo decide el paso 3: un empuje ajeno al arnés sale igual.
+  # medio actualizar), lo decide el bloque de abajo («el freno no se pudo correr»): un empuje ajeno al arnés sale igual.
   RULES="$(dirname "$GUARD")/pre-push-repo-rules.js"
   if [ -f "$RULES" ]; then
     if [ "$INPUT_OK" -eq 1 ]; then
