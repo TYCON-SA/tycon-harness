@@ -318,10 +318,9 @@ const QA_SINCE = '2026.10.20.39';
 const GUARD_SINCE = '2026.10.22.46';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `coordination` (el tope de sesiones trabajando a la vez): la
- * etiqueta del merge que la trae, como QA_SINCE. Mientras esa etiqueta no existe vale un piso que ninguna versión
- * alcanza, así ninguna máquina recibe la clave antes de poder leerla; al mergear se reemplaza por la etiqueta real.
+ * etiqueta del merge que la trae, como QA_SINCE.
  */
-const COORDINATION_SINCE = '9999.12.31.1';
+const COORDINATION_SINCE = '2026.10.25.25';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.delegated_signing` en lista y
  * `approvals.delegated_machines`: la etiqueta del merge que las trae, como GUARD_SINCE. El sitio no deja proponer una
