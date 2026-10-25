@@ -289,6 +289,19 @@ test('un borrador de 3 días sin decisión entra al recordatorio', () => {
   _fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// Recordatorio_BorradorEscritoPorElVigilante_Suena @story-4.11 @ac-10 — lo confirmó el pase adversarial
+// 🔴 Falla con: leer el comentario de `recordado_el: null  # …` como parte del valor: el borrador recién escrito
+// parecería ya recordado y el recordatorio no sonaría nunca.
+test('T12b Recordatorio_BorradorEscritoPorElVigilante_Suena @story-4.11 @ac-10', () => {
+  const dir = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-cola-'));
+  const pending = _path.join(dir, 'pending');
+  _fs.mkdirSync(pending, { recursive: true });
+  V.escribirBorrador(pending, { producto: 'acme', huella: 'deadbeef', regla: 'latido', severidad: 'alta', senal: {}, diagnostico: 'd', evidencia: [] }, '2026-10-10', {});
+  const r = V.pendientesQueEnvejecen(dir, '2026-10-20', 3);
+  assert.equal(r.length, 1, 'el borrador del vigilante, con su comentario, entra al recordatorio');
+  _fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('el de anoche NO molesta: 3 días es el piso, no una sugerencia', () => {
   const dir = colaCon({ nuevo: { fecha: '2026-08-30' } });
   assert.equal(V.pendientesQueEnvejecen(dir, '2026-08-31', 3).length, 0);

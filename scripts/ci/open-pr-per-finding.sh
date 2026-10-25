@@ -588,9 +588,28 @@ ficha_valida(){ # <ficha>
 
 # ── Fase A — decidir por ficha ─────────────────────────────────────────────────────────────────
 ABRIR=""
+# Con el sitio andando (`site.url` en operations.json) las fichas se deciden ahí: no se abre un pedido nuevo por ficha,
+# y los ya abiertos siguen como siempre (adoptar, anotar el rechazo, cerrar el de una archivada) hasta cerrarse.
+# Si no se puede preguntar, se dice y se sigue como sin sitio: un pedido de más se cierra; una ficha sin dónde
+# decidirse espera noches en silencio.
+SITIO_DECIDE=""
+if [ -z "$SOLO_REGISTRAR$SIN_GUARDAR" ]; then
+  CICLO="$_AQUI_LO/../nightly/findings/cycle.js"
+  if [ ! -f "$CICLO" ]; then
+    aviso "no está cycle.js junto al guion: no se pudo preguntar si el sitio decide — se abren pedidos como sin sitio"
+  else
+    SITIO_MOTIVO=$(node "$CICLO" site-decides --operations operations.json 2>&1); SITIO_RC=$?
+    case "$SITIO_RC" in
+      0) SITIO_DECIDE=1; echo "$SITIO_MOTIVO" ;;
+      1) ;;
+      *) aviso "${SITIO_MOTIVO:-no se pudo preguntar si el sitio decide} — se abren pedidos como sin sitio" ;;
+    esac
+  fi
+fi
 # Con --record-only esta pasada no abre nada (ver «DOS PASADAS POR NOCHE»): dice quién lo abre.
 por_abrir(){ # <id> <qué encontró> [<qué se abre>]
   if [ -n "$SOLO_REGISTRAR$SIN_GUARDAR" ]; then echo "$1: $2 — no se abre en esta pasada: lo abre el último paso de la noche"
+  elif [ -n "$SITIO_DECIDE" ]; then echo "$1: $2 — no se abre: la ficha se decide en el sitio"
   else echo "$1: $2 — se abre${3:-}"; ABRIR="$ABRIR $1"; fi
 }
 for F in "$COLA"/pending/*.yaml; do

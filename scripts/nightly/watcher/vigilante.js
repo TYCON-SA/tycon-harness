@@ -536,7 +536,8 @@ function camposDe(texto) {
     vista_por_ultima_vez: g('vista_por_ultima_vez'), noches_seguidas: Number(g('noches_seguidas')) || 1,
     // `null` es el valor vacío del sello, no una fecha: sin este colapso un borrador recién
     // escrito parecería ya recordado y el recordatorio no sonaría NUNCA.
-    recordado_el: g('recordado_el') === 'null' ? null : g('recordado_el'),
+    // El renglón que escribe escribirBorrador lleva un comentario (`null  # la noche en que…`): se corta antes.
+    recordado_el: ((s) => (!s || s === 'null' ? null : s))((g('recordado_el') || '').replace(/\s+#.*$/, '').trim()),
     plugin: g('plugin'), endpoint: g('endpoint'),
     // El diagnóstico se escribe con JSON.stringify y suele traer comillas ADENTRO (el nombre del
     // plugin va entrecomillado), así que el lector escalar de arriba lo devolvería vacío — y el PR
@@ -699,6 +700,9 @@ async function cmdRun(a) {
   const cfg = leerJson(a.config, null);
   if (!cfg) { console.error(`⚠ no pude leer la config: ${a.config}`); return 1; }
   const hoy = a.hoy || new Date().toISOString().slice(0, 10);
+  // las decisiones confirmadas en el sitio que otra persona aprobó, antes de mirar los borradores; a la
+  // salida de error, para no romper la de --json
+  if (!a.dryRun) for (const l of require('../findings/cycle.js').aplicarDecisiones({ fuente: 'vigilante', dir: a.pending }).lineas) console.error(l);
   // 🔴 Desde AHORA hacia atrás, no desde la medianoche del día: con la medianoche la ventana real
   // sería de 33 h (el pipeline corre 08:00 UTC) y la franja 23:00–08:00 se contaría DOS veces, en dos
   // líneas base distintas. Con `--today` (tests) se usa el mediodía de ese día como ancla estable.

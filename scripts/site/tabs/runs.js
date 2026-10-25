@@ -297,7 +297,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
 }
 
 /** Las rutas de la pestaña, para `rutasExtra` de crearSitio. */
-function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, demora = 0, log = () => {}, ahora = Date.now, topeCacheBytes = null } = {}) {
+function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, demora = 0, log = () => {}, ahora = Date.now, topeCacheBytes = null, hallazgos = null } = {}) {
   const runs = require(RUNS);
   const access = require('../access.js');
   const views = require('../views.js');
@@ -370,15 +370,18 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
 
   const rutas = [
     {
-      method: 'GET', path: '/corridas', needs: ['maintainer', 'person'], pestana: { id: 'corridas', titulo: 'Ejecuciones', orden: 20 }, handler: (ctx) => {
+      method: 'GET', path: '/corridas', needs: ['maintainer', 'person'], pestana: { id: 'corridas', titulo: 'Ejecuciones', orden: 20 }, handler: async (ctx) => {
+        // «Lo que encontró la noche» (tabs/findings.js): sólo para quien mantiene, fuera del caché de la vista (las
+        // fichas cambian sin que cambie el modelo de las ejecuciones)
+        const seccion = hallazgos && ctx.quien.rol === 'maintainer' ? await hallazgos(ctx) : '';
         const r = loSuyo(ctx, false);
-        if (r.sinBuzon) return pagina(ctx, gris(ctx, tx(idiomaDe(ctx), 'corridas.sinBuzon')));
+        if (r.sinBuzon) return pagina(ctx, gris(ctx, tx(idiomaDe(ctx), 'corridas.sinBuzon')) + seccion);
         if (r.falla) return r.falla;
         const V = r.vis;
         // el cuerpo de la página se arma una vez por persona y por modelo; el marco (pestañas, bandas) va en cada pedido
         const idioma = idiomaDe(ctx);
         const llave = `pagina\0${idioma}\0${r.error ? `${r.error.codigo}\0${r.error.desde}` : ''}`;
-        if (r.salidas[llave]) return pagina(ctx, r.salidas[llave]);
+        if (r.salidas[llave]) return pagina(ctx, r.salidas[llave] + seccion);
         const opts = { sitio: { rol: ctx.quien.rol, version }, idioma };
         const rearmado = r.error ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.rearmado', { desde: hora(r.error.desde), codigo: r.error.codigo }))}</b>${runsEsc(tx(idioma, 'corridas.rearmadoSeMuestra', { generado: hora(V.generado) }))}</div>` : '';
         // las fichas de Corridas del tablero nocturno (de la organización: sólo quien mantiene), entre el resumen y la
@@ -393,7 +396,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, opts)}\n${fichasTablero}${runs.tabla(V, opts)}\n${runs.pie(V, opts)}</div>`
           + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div>${runs.bloqueDeTextos(idioma)}<script src="/corridas/cliente.js"></script>`;
         r.salidas[llave] = cuerpo;
-        return pagina(ctx, cuerpo);
+        return pagina(ctx, cuerpo + seccion);
       },
     },
     {

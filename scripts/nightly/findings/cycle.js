@@ -143,6 +143,10 @@ function conCasos(f, nuevos) {
     casos.push(c);
     total += 1;
   }
+  // los casos llegan en el orden en que se leyeron (carpeta de máquina, nombre de archivo): se ordenan por día antes de
+  // cortar, así la ventana guarda los más nuevos. El orden es estable: los del mismo día quedan como llegaron.
+  const diaDe = (c) => String((c && (c.dia || c.fecha)) || '');
+  casos.sort((a, b) => (diaDe(a) < diaDe(b) ? -1 : diaDe(a) > diaDe(b) ? 1 : 0));
   return { ...f, casos: casos.slice(-TOPE_CASOS), casos_total: total, casos_vistos: huellas.slice(-TOPE_HUELLAS) };
 }
 
@@ -382,8 +386,153 @@ function formatoPorSecciones({ orden, listas }) {
   return { reLista, reEscalar, listaDe, leerFicha, insertarClave, ponerEscalar, quitarClave, ponerLista, renombrarClave };
 }
 
+// ── la decisión del sitio ──────────────────────────────────────────────────────────────────────
+//
+// Quien mantiene confirma una ficha en el sitio; el sitio abre un pedido con `inbox/<carpeta>/decisions/<id>.json` y,
+// cuando otra persona lo aprueba, la noche siguiente lo aplica acá: pone el veredicto con las palabras de la fuente,
+// mueve la ficha a su carpeta y borra la decisión. Ninguna noche escribe la decisión: sólo la lee.
+
+const CLAVES_DE_DECISION = ['fuente', 'id', 'accion', 'quien', 'el'];
+
+// La palabra que escribe cada fuente por cada acción. Dependencias no tiene «aceptar»: aceptar el riesgo es declarar
+// la deuda en cada repo, con plazo, y una decisión que lo pida no tiene forma.
+const VEREDICTO_DE_DECISION = {
+  dependencias: { arreglar: 'util' },
+  vigilante: { aceptar: 'descartado', arreglar: 'util' },
+  ejecuciones: { aceptar: 'aceptada', arreglar: 'arreglo' },
+};
+
+/** ¿La decisión tiene la forma cerrada de la fuente? `id` tiene que ser el del nombre del archivo. */
+function decisionConForma(d, fuente, id) {
+  return esObjeto(d) && Object.keys(d).length === CLAVES_DE_DECISION.length && CLAVES_DE_DECISION.every((k) => Object.hasOwn(d, k))
+    && d.fuente === fuente && d.id === id && typeof d.id === 'string' && CLAVE.test(d.id)
+    && Object.hasOwn(VEREDICTO_DE_DECISION[fuente], d.accion)
+    && typeof d.quien === 'string' && d.quien.length <= 200 && IDENTIDAD.test(d.quien) && !CONTROL.test(d.quien)
+    && typeof d.el === 'string' && FECHA.test(d.el);
+}
+
+/**
+ * Aplica las decisiones del sitio de una fuente. Una sin forma queda donde está y se cuenta (su contenido nunca va a la
+ * salida); una cuya ficha ya no está pendiente se borra con un renglón. Sin carpeta de decisiones, nada. `dir`: la
+ * carpeta de la fuente cuando no está en `<base>/inbox/<carpeta>` (el `--pending` de cada noche).
+ */
+function aplicarDecisiones({ base, fuente, dir = null }) {
+  const { FUENTES: registro } = require('./sources.js');
+  const reg = registro[fuente];
+  if (!reg) throw new Error(`fuente desconocida: ${fuente}`);
+  const carpetas = dir ? Object.fromEntries(CARPETAS.map((c) => [c, path.join(dir, c)])) : carpetasDe(base, fuente);
+  const r = { aplicadas: [], borradas: [], sinForma: 0, ilegibles: 0, lineas: [] };
+  let nombres;
+  try { nombres = fs.readdirSync(carpetas.decisions).filter((x) => x.endsWith('.json')).sort(); } catch (e) {
+    if (e && e.code === 'ENOENT') return r;
+    r.ilegibles += 1;
+    r.lineas.push(`la carpeta de decisiones no se pudo leer (${(e && e.code) || 'error'}): esta noche no se aplica ninguna`);
+    return r;
+  }
+  for (const nombre of nombres) {
+    try { aplicarUna(nombre); } catch (e) {
+      // una ficha rara no tumba la noche: la decisión queda y se mira a mano
+      r.ilegibles += 1;
+      r.lineas.push(`decisión del sitio sobre ${CLAVE.test(nombre.slice(0, -5)) ? nombre.slice(0, -5) : '(un archivo con un nombre sin forma)'}: no se pudo aplicar (${(e && e.code) || 'error'}); la decisión queda`);
+    }
+  }
+  return r;
+
+  function aplicarUna(nombre) {
+    const ruta = path.join(carpetas.decisions, nombre);
+    const id = nombre.slice(0, -'.json'.length);
+    const visible = CLAVE.test(id) ? id : '(un archivo con un nombre sin forma)';
+    let d = null;
+    try { d = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch { d = null; }
+    if (!decisionConForma(d, fuente, id)) {
+      r.sinForma += 1;
+      r.lineas.push(`decisión del sitio sin la forma esperada: ${visible} (queda en decisions/; se mira a mano)`);
+      return;
+    }
+    const palabra = VEREDICTO_DE_DECISION[fuente][d.accion];
+    const origen = path.join(carpetas.pending, `${id}${reg.extension}`);
+    // 🔴 Sólo «el archivo no está» cuenta como «ya no está pendiente». Una ficha que no se puede leer o no se entiende
+    // deja la decisión donde está: borrarla haría decidir de nuevo a la persona por un problema del disco.
+    const ilegible = (motivo) => {
+      r.ilegibles += 1;
+      r.lineas.push(`decisión del sitio sobre ${id}: la ficha no se pudo leer (${motivo}); la decisión queda`);
+    };
+    let txt = null;
+    try { txt = fs.readFileSync(origen, 'utf8'); } catch (e) {
+      if (!e || e.code !== 'ENOENT') { ilegible((e && e.code) || 'error'); return; }
+    }
+    let destino = null;
+    let nuevo = null;
+    if (txt !== null) {
+      if (reg.formato) {
+        const vista = reg.vista(reg.formato.leerFicha(txt));
+        if (vista.veredicto === 'pendiente' && vista.estado !== 'resuelta') {
+          nuevo = reg.formato.ponerEscalar(txt, 'veredicto', palabra);
+          destino = reg.carpetaDe(reg.vista(reg.formato.leerFicha(nuevo)));
+        }
+      } else {
+        let f = null;
+        try { f = parsear(txt); } catch { f = null; }
+        if (!f) { ilegible('no tiene la forma de una ficha'); return; }
+        if (f.veredicto === 'pendiente' && f.estado !== 'resuelta') {
+          f.veredicto = palabra;
+          nuevo = serializar(f);
+          destino = reg.carpetaDe(f);
+        }
+      }
+    }
+    if (nuevo === null) {
+      fs.rmSync(ruta, { force: true });
+      r.borradas.push({ id, motivo: 'no está pendiente' });
+      r.lineas.push(`decisión del sitio sobre ${id}: la ficha ya no está pendiente; se borra la decisión`);
+      return;
+    }
+    fs.mkdirSync(carpetas[destino], { recursive: true });
+    const final = path.join(carpetas[destino], `${id}${reg.extension}`);
+    fs.writeFileSync(final, nuevo);
+    if (final !== origen) fs.rmSync(origen, { force: true });
+    fs.rmSync(ruta, { force: true });
+    r.aplicadas.push({ id, accion: d.accion, veredicto: palabra, carpeta: destino });
+    r.lineas.push(`decisión del sitio aplicada: ${id} → ${palabra}`);
+  }
+}
+
+/**
+ * ¿Las fichas se deciden en el sitio? Sí cuando operations.json tiene `site.url` (decisión 15): entonces la noche no
+ * abre un pedido por ficha. `codigo` 0 sí, 1 no, 2 no se pudo leer (quien pregunta lo trata como «no» y lo dice).
+ */
+function sitioDecide(rutaOperations) {
+  let txt;
+  try { txt = fs.readFileSync(rutaOperations, 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return { codigo: 1, motivo: 'no hay operations.json: la noche abre un pedido por ficha' };
+    return { codigo: 2, motivo: `operations.json no se pudo leer (${(e && e.code) || 'error'})` };
+  }
+  let doc;
+  // 🔴 El motivo no copia el archivo ni el error del lector: puede traer correos e identidades.
+  try { doc = JSON.parse(txt); } catch { return { codigo: 2, motivo: 'operations.json no se pudo leer (no es JSON)' }; }
+  const url = esObjeto(doc) && esObjeto(doc.site) ? doc.site.url : undefined;
+  if (typeof url === 'string' && url.trim()) return { codigo: 0, motivo: 'operations.json tiene site.url: las fichas se deciden en el sitio' };
+  return { codigo: 1, motivo: 'operations.json no tiene site.url: la noche abre un pedido por ficha' };
+}
+
 module.exports = {
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
   ACCIONES, MOTIVOS_SIN_PROPUESTA, FALLAS_MAX, razonSegura, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,
+  CLAVES_DE_DECISION, VEREDICTO_DE_DECISION, decisionConForma, aplicarDecisiones, sitioDecide,
 };
+
+// A mano: node scripts/nightly/findings/cycle.js site-decides --operations <operations.json>
+if (require.main === module) {
+  const a = process.argv.slice(2);
+  const i = a.indexOf('--operations');
+  if (a[0] !== 'site-decides' || i < 0 || !a[i + 1]) {
+    process.stderr.write('uso: cycle.js site-decides --operations <operations.json>\n');
+    process.exit(2);
+  }
+  // una excepción saldría con 1, que el guion lee como «no hay site.url»: cualquier falla es 2, «no se pudo preguntar»
+  let r;
+  try { r = sitioDecide(a[i + 1]); } catch { r = { codigo: 2, motivo: 'no se pudo preguntar si el sitio decide' }; }
+  process.stdout.write(`${r.motivo}\n`);
+  process.exit(r.codigo);
+}

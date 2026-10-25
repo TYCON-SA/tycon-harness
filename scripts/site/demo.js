@@ -312,11 +312,14 @@ function crearModoDemo({ env = { SITE_DEMO: '1' }, dir, log = () => {}, ahora = 
   };
   const invitaciones = crearInvitacionesDemo();
   const comun = { cfg, fuentes, ahora, log, fetch: fetchDemo, urlBase: PLATAFORMA().urlBase, remotos: PLATAFORMA().remotos };
+  // las fichas de la noche de ejemplo: confirmar dice lo que pasaría, sin abrir ningún pedido
+  const hallazgos = require('./tabs/findings.js').crearRutas({ ...comun, demo: true });
   const rutasExtra = [
     ...require('./tabs/config.js').crearRutas({ ...comun, versionImagen: version, invitaciones, demo: true, repoDeEjemplo }),
     ...require('./tabs/how-it-works.js').crearRutas({ ...comun, versionImagen: version, demo: true }),
     // con la carpeta temporal propia como disco del sitio: las ejecuciones leen sus conversaciones de ejemplo
-    ...require('./tabs/runs.js').crearRutas({ cfg: { ...cfg, dataDir: dir }, fuentes, version, skillsDir, log }),
+    ...require('./tabs/runs.js').crearRutas({ cfg: { ...cfg, dataDir: dir }, fuentes, version, skillsDir, log, hallazgos: hallazgos.seccion }),
+    ...hallazgos,
     ...require('./help.js').crearRutas({ log }),
   ];
   // el token de la sesión de ejemplo: el mismo para todas las visitas (no hay nada que proteger de otra persona: nada se escribe)
