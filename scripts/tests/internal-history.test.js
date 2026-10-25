@@ -303,6 +303,20 @@ test('ThinOverlay_PublishedIsWhatThePublicBrings_PrivateOnlyAndOwnNotCounted', (
   assert.deepStrictEqual(allOf(lab.root).files, {}, 'la punta del privado sola no publica nada');
 });
 
+test('ThinOverlay_BroughtByOverlay_SameAsPublished @story-8.112 @ac-1', (t) => {
+  // lo que trajo la superposición, para las pruebas que recorren el árbol entero: lo mismo que se publica
+  const { broughtByOverlay } = require('../publishing/internal-history.js');
+  const lab = thinLab(t);
+  assert.deepStrictEqual([...broughtByOverlay(lab.root)], ['guides/publica.md'], 'sólo lo que la superposición agregó o cambió');
+  gitIn(lab.root, ['checkout', '--quiet', lab.tip]);
+  assert.strictEqual(broughtByOverlay(lab.root), null, 'sin la superposición no hay árbol armado: null');
+  // un repo sin commits (los de juguete de las pruebas que recorren el árbol) tampoco es el árbol armado
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'brought-vacio-'));
+  t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
+  gitIn(empty, ['init', '--quiet']);
+  assert.strictEqual(broughtByOverlay(empty), null, 'sin commits: null, no un error');
+});
+
 test('ThinOverlay_PublicAndTeamClassificationUnchanged', (t) => {
   // sin la lista del adelgazado, el mismo árbol se mide como el público: todo lo versionado
   const pub = allOf(thinLab(t, { thinList: false }).root);

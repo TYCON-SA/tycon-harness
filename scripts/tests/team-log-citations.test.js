@@ -32,20 +32,26 @@ const NAME = ['incident', 'log'].join('-');
 const ALLOWED_REL = 'scripts/tests/fixtures/team-log-citations-allowed.json';
 const ALLOWED = path.join(RAIZ, ALLOWED_REL);
 
-/** Cada renglón versionado que nombra el registro: `{ file, line, text }`. */
-function citations() {
+/**
+ * Cada renglón versionado que nombra el registro: `{ file, line, text }`. En el árbol armado de los nocturnos (lo privado
+ * con el público encima) sólo cuenta lo que viaja al público: lo que trajo la superposición.
+ */
+function citations(root = RAIZ) {
   let out = '';
   try {
-    out = execFileSync('git', ['-C', RAIZ, 'grep', '-n', '-I', '--fixed-strings', NAME], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    // sin comillas ni escapes en las rutas con tilde: se comparan con las de la superposición, que vienen crudas
+    out = execFileSync('git', ['-C', root, '-c', 'core.quotePath=false', 'grep', '-n','-I', '--fixed-strings', NAME], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   } catch (e) {
     if (e.status === 1) return []; // git grep sale 1 cuando no encuentra nada
     throw e;
   }
+  const brought = require(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.js')).broughtByOverlay(root);
+  if (brought && brought.size === 0) throw new Error('la superposición no trajo nada: no hay qué medir');
   // la lista de excepciones nombra el registro en cada entrada: es la lista, no una cita
   return out.split('\n').filter(Boolean).map((l) => {
     const m = /^([^:]+):(\d+):(.*)$/.exec(l);
     return { file: m[1], line: Number(m[2]), text: m[3] };
-  }).filter((c) => c.file !== ALLOWED_REL);
+  }).filter((c) => c.file !== ALLOWED_REL && (!brought || brought.has(c.file)));
 }
 
 const allowed = JSON.parse(fs.readFileSync(ALLOWED, 'utf8')).allowed;
@@ -61,6 +67,16 @@ test('T15 PublicTree_NoIncidentLogCitation @story-8.43 @ac-13 — el árbol no n
   assert.deepStrictEqual(loose, [], 'citas al registro fuera de la lista: se reescriben sin la cita, o se declaran con su motivo');
   const stale = pending.filter((a) => !a.used).map((a) => `${a.file}: «${a.text}»`);
   assert.deepStrictEqual(stale, [], 'excepciones que ya no coinciden con ningún renglón: se sacan de la lista');
+});
+
+test('T15c PublicTree_CitationOnlyInPrivate_DoesNotCount @story-8.112 @ac-3 — en el árbol armado, una cita sólo del privado no cuenta', (t) => {
+  // 🔴 rojo: una tarea del privado que cita el registro pone en rojo una prueba del público
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'tasks/plan.md': `ver el ${NAME} del equipo\n` }, publico: { 'scripts/x.js': `// ver el ${NAME}\n`, 'guides/configuración.md': `ver el ${NAME}\n` } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(citations(lab.root).map((c) => c.file).sort(), ['guides/configuración.md', 'scripts/x.js'], 'sólo cuenta lo que trajo el público, también con tilde en la ruta');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(citations(lab.root).map((c) => c.file), ['tasks/plan.md'], 'sin superposición, el árbol entero');
 });
 
 test('T15b IncidentLogAllowed_OneCitationEach @story-8.43 @ac-13 — cada excepción es una cita con su texto y su motivo', () => {
