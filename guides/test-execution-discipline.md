@@ -43,6 +43,10 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    portón de `/tycon-merge-to-main` corre build + tests sobre el código ya mergeado (en .NET, sin
    `Integration`/`EdgeCase`), o los corre la validación del PR en el servidor.
 
+   *Después de un rojo, repetir primero la suite que falló*: `bash …/test-gate.sh <repo> <story> --suite <ruta>` (la
+   `ruta` de su entrada en `suites.json`). Mientras quede alguna sin salir verde sola, la corrida completa sale 76 sin
+   lanzar nada y da el comando de cada una.
+
 3. **Nunca full-suite + fan-out de subagentes simultáneo.** Si hay advisors/subagentes corriendo,
    **esperar** a que terminen antes de lanzar la suite completa (y viceversa). Secuenciar, no superponer.
 
