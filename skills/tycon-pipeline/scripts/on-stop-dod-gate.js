@@ -143,6 +143,16 @@ function main() {
 
   const sessionId = resolveSessionId(event.session_id);
 
+  // Una ejecución abierta a la que le falta una pieza no deja cerrar el turno (lib/open-runs.js): la salida es del dueño.
+  {
+    const or = require('./lib/open-runs.js');
+    let p;
+    try { p = or.perdida({ sid: sessionId, cwd: event.cwd || process.cwd() }); } catch (e) {
+      p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
+    }
+    if (p) return blockStop(or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }));
+  }
+
   // Un borrador de la sesión sin validar: la orden concreta al agente, hasta un tope; después, el aviso a la persona.
   try {
     const r = require('./lib/story-claim-check.js').insistir(event, { stateDir: STATE_DIR, home: os.homedir() });

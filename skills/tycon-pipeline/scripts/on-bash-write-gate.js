@@ -1070,8 +1070,13 @@ function marcadoresTocados(cmd, cwd, stateDir) {
   const alcanza = (seg) => expandirLlaves(seg).some((s) => s === 'active' || s === 'active.json'
     || (/[*?[]/.test(s) && (comodin(s).test('active') || comodin(s).test('active.json'))));
   // la ruta cae en un marcador (o en su carpeta); `arriba`: también una carpeta que los contiene
+  // el registro de aperturas (`gates.log`) y la copia de una apertura (`.advisors/pipeline-runs/<carpeta>/run-open.json`):
+  // las otras dos piezas de una ejecución abierta (lib/open-runs.js)
+  const esPiezaDeEjecucion = (r) => bases.some((b) => r === path.join(b, 'gates.log'))
+    || (path.basename(r) === 'run-open.json' && path.basename(path.dirname(path.dirname(r))) === 'pipeline-runs');
   const toca = (abs, arriba) => {
     const reales = [...new Set([abs, installedTree.realPath(abs)].filter(Boolean))];
+    if (reales.some(esPiezaDeEjecucion)) return true;
     return bases.some((b) => {
       const activos = path.join(b, 'active');
       return reales.some((r) => {
@@ -1869,7 +1874,78 @@ function anotarEscriturasConsola(stateDir, sessionId, rutas, kind = null) {
  * de los demás frenos de esta puerta; después el carril y la historia a mano. Un aviso de lo deprecado viaja como
  * `aviso` si nada frena.
  */
+// Con la ejecución perdida, lo único que pasa por la terminal es leer y la salida: cada tramo del comando, un programa de
+// esta lista con palabras literales, sin redirecciones, sin `$(…)`, sin heredocs y sin asignaciones delante.
+const LEE = new Set(['cat', 'ls', 'grep', 'head', 'tail']);
+const MARKER_LEE = new Set(['get', 'list-all', 'find-by-story', 'clear-session', 'restore']);
+const PIPELINE_LEE = new Set(['risk-class', 'followups-status']);
+// El programa vale por su nombre sólo si es el del sistema: sin ruta (lo busca el PATH), en una carpeta del sistema, o
+// el mismo node que corre este gancho. Un `./cat` plantado en el repo no es leer.
+const CARPETAS_DEL_SISTEMA = ['/bin/', '/usr/bin/', '/usr/local/bin/', '/opt/homebrew/bin/'];
+function programaDelSistema(texto) {
+  const t = String(texto);
+  if (!/[\\/]/.test(t)) return true;
+  if (CARPETAS_DEL_SISTEMA.some((c) => t.startsWith(c))) return true;
+  try { return fs.realpathSync(t) === fs.realpathSync(process.execPath); } catch { return false; }
+}
+function esteGuion(arg, guion, cwd) {
+  if (guion !== 'marker.js' && guion !== 'pipeline.js') return false;
+  // `~` entre comillas no lo expande el shell: si en la carpeta hay un `~`, no se sabe cuál corre
+  if (/^~[\\/]/.test(arg) && fs.existsSync(path.join(cwd || process.cwd(), '~'))) return false;
+  try {
+    const dado = path.resolve(cwd || process.cwd(), arg.replace(/^~(?=[\\/])/, os.homedir()));
+    return fs.realpathSync(dado) === fs.realpathSync(path.join(__dirname, guion));
+  } catch { return false; }
+}
+function soloLee(cmd, shell, cwd) {
+  const { tramos, subs, abierta } = require('./lib/marker-command.js').tramos(String(cmd), shell);
+  if (subs.length || abierta || !tramos.length) return false;
+  return tramos.every((t) => {
+    const w = t.palabras;
+    if ((t.heredocs && t.heredocs.length) || !w.length) return false;
+    if (w.some((x) => !x.literal || /[<>]/.test(x.texto))) return false;
+    if (/^[A-Za-z_][A-Za-z0-9_]*\+?=/.test(w[0].texto)) return false;
+    if (!programaDelSistema(w[0].texto)) return false;
+    const prog = path.basename(w[0].texto.replace(/\\/g, '/')).toLowerCase().replace(/\.exe$/, '');
+    if (LEE.has(prog)) return true;
+    if (prog === 'git') return ['status', 'diff', 'log'].includes(w[1] && w[1].texto) && !w.some((x) => /^--output\b/.test(x.texto));
+    if (prog !== 'node' && prog !== 'nodejs') return false;
+    const guion = w[1] ? path.basename(w[1].texto.replace(/\\/g, '/')).toLowerCase() : '';
+    // el nombre no alcanza: un marker.js cualquiera podría escribir; vale sólo el guion de esta misma carpeta
+    if (!esteGuion(w[1] && w[1].texto, guion, cwd)) return false;
+    const sub = w[2] && w[2].texto;
+    // clear-session sólo es la salida con --lost; sin él, sacaría la ejecución sin la frase del dueño
+    if (guion === 'marker.js') return MARKER_LEE.has(sub) && (sub !== 'clear-session' || w.some((x) => x.texto === '--lost'));
+    if (guion === 'pipeline.js') return PIPELINE_LEE.has(sub) || (sub === 'run-dir' && !w.some((x) => x.texto === '--create'));
+    return false;
+  });
+}
+
+// La ejecución de la sesión perdió una pieza (lib/open-runs.js): frena todo lo que no es leer o la salida, antes de mirar
+// destinos. No poder preguntar no es estar sana.
+function ejecucionPerdida(event) {
+  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  const cmd = event?.tool_input?.command;
+  if (!cmd) return null;
+  const or = require('./lib/open-runs.js');
+  const sessionId = resolveSessionId(event?.session_id);
+  let p;
+  try { p = or.perdida({ sid: sessionId, cwd: nativePath(event?.cwd || process.cwd()) }); } catch (e) {
+    p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
+  }
+  if (!p) return null;
+  if (soloLee(cmd, event?.tool_name === 'PowerShell' ? 'powershell' : 'bash', nativePath(event?.cwd || process.cwd()))) return null;
+  const io = require('./lib/story-gate-io.js');
+  io.appendLog(io.DEFAULT_STATE_DIR, 'gates.log', sessionId, { name: 'story-gate', status: 'blocked', kind: 'ejecucion-perdida', via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`, story: p.story, reason: `ejecución perdida (${p.caso}): ${p.falta}` });
+  return { block: or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n' };
+}
+
 function handle(event, opts = {}) {
+  {
+    let perdida = null;
+    try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
+    if (perdida) return perdida;
+  }
   let deprecado = null;
   try {
     const cmd = event?.tool_input?.command;

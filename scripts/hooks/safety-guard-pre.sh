@@ -209,7 +209,11 @@ escape_ok() {
   # el pedido que se juzga: la punta de la cadena de la conversación
   tuid="$(read_field tool_use_id 2>/dev/null)" || tuid=""
   # en una lista con `||`: un `out=$(…)` suelto que sale ≠ 0 dispararía el `trap 'exit 0' ERR` y dejaría pasar el comando
-  out="$("$HNODE" "$lib" --shell --variable "$1" --session "$sid" --tool-use-id "$tuid" 2>/dev/null)" && rc=0 || rc=$?
+  # $2 y $3 sólo en la salida de una ejecución perdida: la frase vale desde su apertura y, con 1, sin reenvío
+  local extra=()
+  [[ -n "${2:-}" && "${2:-}" != "-" ]] && extra+=(--since "$2")
+  [[ "${3:-}" == "1" ]] && extra+=(--no-relay)
+  out="$("$HNODE" "$lib" --shell --variable "$1" --session "$sid" --tool-use-id "$tuid" ${extra[@]+"${extra[@]}"} 2>/dev/null)" && rc=0 || rc=$?
   local k v
   while IFS='=' read -r k v; do
     case "$k" in
@@ -619,16 +623,32 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
     esac
   done <<< "$_c3_out"
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
-    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 <<< "$_c3_f" || true
+    _c3_desde=""; _c3_sinr=""
+    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde _c3_sinr <<< "$_c3_f" || true
     _c3_regla="ESC-C3"
     case "$_c3_esc" in
       "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
       "cerrar como deuda") _c3_clave="cerrar-como-deuda"; _c3_regla="ESC-C4" ;;
       *) _c3_clave="$_c3_esc" ;;
     esac
-    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c3_esc"; then
+    # la salida de una ejecución perdida sin apertura visible (la sesión no está escrita literal, o no tiene apertura):
+    # no hay desde cuándo medir la frase, y la ventana de minutos aceptaría una anterior a la apertura. Frena sin frase.
+    if [[ "$_c3_desde" == "-" ]]; then
+      ESC_CARTEL="Escribí la sesión tal cual (marker.js ${_c3_sub} <sesión>), sin variables ni comandos: sin ella no se sabe cuándo se abrió la ejecución, y la frase del dueño tiene que ser posterior a esa apertura."
+      block "ESC-C3" \
+        "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) sin que se vea de qué sesión es ni cuándo se abrió." \
+        "Repetí el comando con la sesión escrita literal."
+    fi
+    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c3_esc" "$_c3_desde" "$_c3_sinr"; then
       constancia "$_c3_regla" escape "$ESC_VIA" "$ESC_RELEVO" "$_c3_sid" "$_c3_clave"
       continue
+    fi
+    # la salida de una ejecución perdida (lib/open-runs.js): la decide el dueño, con su frase posterior a la apertura
+    if [[ -n "$_c3_desde" ]]; then
+      ESC_CARTEL="Esto lo decide el dueño, no el agente: si quiere sacar la ejecución perdida, lo dice él en su mensaje («autorizo cerrar la ejecución»), después de la apertura de la ejecución${_c3_desde:+ (${_c3_desde})}. Un reenvío de otra sesión no vale."
+      block "ESC-C3" \
+        "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) la cierra o la rearma sin la pieza que le falta.${ESC_MOTIVO:+ ${ESC_MOTIVO}.}" \
+        "Explicale al dueño qué pieza falta y pedile la frase."
     fi
     if [[ "$_c3_regla" == "ESC-C4" ]]; then
       # ESC-C4: cerrar la historia como deuda (o registrar un control en rojo como esperado) deja una salida prevista

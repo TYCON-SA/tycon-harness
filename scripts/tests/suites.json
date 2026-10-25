@@ -873,6 +873,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.121: la ejecución perdida (marcador, apertura o copia que faltan) frena, y su salida es del dueño.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/lost-marker.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-close.test.js",
       "requiere": []

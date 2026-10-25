@@ -69,7 +69,17 @@ function listAllMarkers(currentSessionId) {
       if (stale) {
         // Auto-cleanup: skip nuestra propia sesión (safety) y borrar el resto.
         if (currentSessionId && m.sessionId === currentSessionId) continue;
+        // una ejecución perdida no se poda: sale sólo por la salida del dueño (no poder preguntar tampoco la poda)
+        let perdida = true;
+        try { perdida = !!require('./lib/open-runs.js').perdida({ sid: m.sessionId || f.replace(/\.json$/, ''), cwd: m.repoPath || process.cwd() }); } catch { /* queda perdida */ }
+        // no se poda, y sigue a la vista en la lista (las demás sesiones la ven como ocupada)
+        if (perdida) { markers.push(m); continue; }
         try { fs.unlinkSync(full); } catch { /* best-effort */ }
+        // el cierre de la sesión podada: sin él, su apertura sin marcador frenaría como perdida (lib/open-runs.js)
+        try {
+          require('./lib/open-runs.js').cerrar({ sid: currentSessionId, sesion: m.sessionId || f.replace(/\.json$/, ''), runDir: m.runDir || null,
+            story: String(m.storyId), estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, extra: { repoPath: m.repoPath || null }, soloAbierta: true });
+        } catch { /* best-effort: la pregunta lo verá */ }
         continue;
       }
       markers.push(m);

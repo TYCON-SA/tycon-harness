@@ -989,6 +989,21 @@ function main() {
     process.exit(0);
   }
 
+  // Una ejecución abierta a la que le falta una pieza no commitea (lib/open-runs.js): ni `--no-verify` la saltea, la
+  // salida es del dueño. No poder preguntar no es estar sana.
+  {
+    const or = require('./lib/open-runs.js');
+    const sessionId = resolveSessionId(event.session_id);
+    let p;
+    try { p = or.perdida({ sid: sessionId, cwd: event.cwd || process.cwd() }); } catch (e) {
+      p = { caso: 'ilegible', falta: `no pude revisar las piezas de la ejecución (${e.message})`, sesion: String(sessionId) };
+    }
+    if (p) {
+      process.stderr.write(or.cartel(p, { markerJs: path.join(__dirname, 'marker.js') }) + '\n');
+      process.exit(2);
+    }
+  }
+
   // `git add X && git commit` en una sola línea: el freno corre antes que el comando entero, así que lo
   // stageado todavía no tiene lo que traen esos `add`. Si se pueden reproducir igual que el shell, el resto del freno
   // evalúa una COPIA del índice con los `add` ya aplicados (GIT_INDEX_FILE: lo heredan todos los `git` de este hook);
