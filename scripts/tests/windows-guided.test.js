@@ -1582,7 +1582,9 @@ test('Rehearsal_Caps_TheFortyMinuteCut_AndNoCredentials', { skip: !fs.existsSync
   const code = src.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   const start = code.indexOf('  - job: Rehearsal');
   assert.ok(start > 0);
-  const job = code.slice(start);
+  // el trabajo termina donde empieza el siguiente: un trabajo nuevo detrás no le cambia la cuenta
+  const next = code.indexOf('\n  - job: ', start + 1);
+  const job = code.slice(start, next < 0 ? undefined : next);
   // el trabajo corta a los 40 minutos cuando el escenario es onboarding o update; los demás conservan su tope
   assert.match(job, /\$\{\{ if in\(parameters\.scenario, 'onboarding', 'update'\) \}\}:\n\s+timeoutInMinutes: 40\n/);
   assert.match(job, /\$\{\{ if not\(in\(parameters\.scenario, 'onboarding', 'update'\)\) \}\}:\n\s+timeoutInMinutes: 150\n/);
