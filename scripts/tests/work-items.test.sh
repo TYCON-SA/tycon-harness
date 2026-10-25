@@ -128,6 +128,8 @@ const ls = require("fs").readFileSync(log, "utf8").split("\n").filter(Boolean)
 const x = ls[Number(n)]; if (!x) process.exit(1);
 const a = x.args, b = Object.values(x.archivos || {}).join("\n");
 const arg = (k) => { const i = a.lastIndexOf(k); return i < 0 ? undefined : a[i + 1]; };
+// el valor de un campo de `--fields` (Campo=valor); uno mandado por archivo devuelve «@<archivo>»
+const campo = (k) => { const x = a.find((v) => typeof v === "string" && v.startsWith(`${k}=`)); return x === undefined ? undefined : x.slice(k.length + 1); };
 process.exit(eval(expr) ? 0 : 1);' "$TMP/fixaz/llamadas.log" "$1" "$2" "$3"
 }
 
@@ -334,10 +336,13 @@ const ficha = (id, ped) => fs.writeFileSync(path.join(dir, "pending", id + ".yam
 ficha("bbb22222", 222); ficha("aaa11111", 111); ficha("ccc33333", null);
 const cfg = { azure: { fallback_owner: "respaldo@prueba" }, repos: [{ producto: "A", ruta: "A", ado: "Proy%20A/A" }] };
 const az = (a) => (a[0] === "devops" && a[1] === "invoke" ? { ok: true, valor: { value: [{ id: "x", providerDisplayName: "Respaldo" }] } } : { ok: false, motivo: "no" });
-const correr = (fichas) => ped.hablar({ az, cfg, azure: cfg.azure, hoy: "2026-09-10", simulado: true, tope: 5,
-  snap: { repos: [], presencias: [] }, out: "/nada", tmp: dir, fichas }).res.fallidos.map((f) => f.motivo).join("|");
-const f = noc.leerTodasLasFichas(dir); const a = correr(f), b = correr([...f].reverse());
-console.log(a === b && a.includes("aaa11111") ? "igual" : `distinto: ${a} ≠ ${b}`);' "$PED" "$NOC" "$TMP" 2>&1)
+const plataforma = async () => ({ ok: false, reason: "no_medido", detail: "no" });
+const correr = async (fichas) => (await ped.hablar({ az, plataforma, cfg, azure: cfg.azure, hoy: "2026-09-10", simulado: true, tope: 5,
+  snap: { repos: [], presencias: [] }, out: "/nada", tmp: dir, fichas })).res.fallidos.map((f) => f.motivo).join("|");
+(async () => {
+  const f = noc.leerTodasLasFichas(dir); const a = await correr(f), b = await correr([...f].reverse());
+  console.log(a === b && a.includes("aaa11111") ? "igual" : `distinto: ${a} ≠ ${b}`);
+})();' "$PED" "$NOC" "$TMP" 2>&1)
 [ "$orden6g" = "igual" ] && ok "T6g: el fallo de duplicado nombra la misma ficha (la de menor id) sin importar el orden del disco" \
   || no "T6g: $orden6g"
 
@@ -568,15 +573,15 @@ iter(){ # <etiqueta> <json de iteraciones> <expresión sobre la llamada crear> <
     && ok "T11 ($1)" || no "T11 ($1): rc=$rc · $(pie)"
 }
 iter "fin futuro → esa iteración" '[{"path":"Proy A\\Sprint 3","attributes":{"startDate":"2026-09-01T00:00:00Z","finishDate":"2099-01-01T00:00:00Z"}}]' \
-  'arg("--iteration") === "Proy A\\Sprint 3"' 'p.sin_iteracion.length === 0 && p.creados[0].iteracion === "Proy A\\Sprint 3"'
+  'campo("System.IterationPath") === "Proy A\\Sprint 3"' 'p.sin_iteracion.length === 0 && p.creados[0].iteracion === "Proy A\\Sprint 3"'
 iter "sin fechas → esa iteración" '[{"path":"Proy A\\Iteration 1","attributes":{}}]' \
-  'arg("--iteration") === "Proy A\\Iteration 1"' 'p.sin_iteracion.length === 0'
+  'campo("System.IterationPath") === "Proy A\\Iteration 1"' 'p.sin_iteracion.length === 0'
 iter "termina HOY → todavía vigente" '[{"path":"Proy A\\Sprint 4","attributes":{"finishDate":"2026-09-10T00:00:00Z"}}]' \
-  'arg("--iteration") === "Proy A\\Sprint 4"' 'p.sin_iteracion.length === 0'
+  'campo("System.IterationPath") === "Proy A\\Sprint 4"' 'p.sin_iteracion.length === 0'
 iter "🔴 terminada → la raíz, y se dice cuándo terminó" '[{"path":"Proy A\\Sprint 9","attributes":{"finishDate":"2026-07-31T00:00:00Z"}}]' \
-  'arg("--iteration") === "Proy A"' 'p.sin_iteracion.length === 1 && /terminó el 2026-07-31/.test(p.sin_iteracion[0].motivo) && p.sin_iteracion[0].motivo.includes("Sprint 9")'
+  'campo("System.IterationPath") === "Proy A"' 'p.sin_iteracion.length === 1 && /terminó el 2026-07-31/.test(p.sin_iteracion[0].motivo) && p.sin_iteracion[0].motivo.includes("Sprint 9")'
 iter "ninguna actual → la raíz" '' \
-  'arg("--iteration") === "Proy A"' 'p.sin_iteracion.length === 1 && /sin iteración actual/.test(p.sin_iteracion[0].motivo)'
+  'campo("System.IterationPath") === "Proy A"' 'p.sin_iteracion.length === 1 && /sin iteración actual/.test(p.sin_iteracion[0].motivo)'
 
 # ── T12. la iteración NUNCA frena el pedido ───────────────────────────────────────────────────────
 for paso in iteracion equipo; do
@@ -584,7 +589,7 @@ for paso in iteracion equipo; do
   ficha pending abc12345 browserslist high 1 "A/A"
   snapshot $HOY "[$(p1 abc12345 browserslist A/A)]"
   rc=$(TYCON_AZ_FAIL=$paso correr)
-  { [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 1 ] && llamada crear 0 'arg("--iteration") === "Proy A"' \
+  { [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 1 ] && llamada crear 0 'campo("System.IterationPath") === "Proy A"' \
     && ped '/no pude leer la iteración/.test(p.sin_iteracion[0].motivo) && p.creados.length === 1' \
     && ped 'p.fallidos.length === 1 && p.fallidos[0].paso === "iteracion"'; } \
     && ok "T12 ($paso): si no se puede leer la iteración, el Bug se crea igual en la raíz, y la lectura fallida queda como fallo" \
@@ -609,7 +614,7 @@ rc=$(correr)
 # El formulario del Bug no muestra Descripción. Y `--fields` repetido pierde
 # el primero (argparse se queda con el último): las etiquetas y el texto van en el MISMO --fields.
 { llamada crear 0 'a.indexOf("--fields") === a.lastIndexOf("--fields")' \
-  && llamada crear 0 'a.some((x) => x.startsWith("Microsoft.VSTS.TCM.ReproSteps=@")) && String(arg("--description")).startsWith("@")' \
+  && llamada crear 0 'a.some((x) => x.startsWith("Microsoft.VSTS.TCM.ReproSteps=@")) && String(campo("System.Description")).startsWith("@")' \
   && llamada crear 0 '/<li>/.test(b) && /<a href=/.test(b) && !b.includes("**")'; } \
   && ok "T13b: 🔴 el texto viaja por archivo a Repro Steps (visible en el formulario) y a Descripción, como HTML" \
   || no "T13b: el create no manda el texto a Repro Steps como HTML por archivo"
@@ -1319,13 +1324,16 @@ orden=$(node -e '
 const ped = require(process.argv[1]), noc = require(process.argv[2]), fs = require("fs");
 const cfg = JSON.parse(fs.readFileSync(process.argv[3], "utf8")), snap = JSON.parse(fs.readFileSync(process.argv[4], "utf8"));
 const az = () => { throw new Error("no debería llamar a az"); };
-const correr = (fichas) => {
-  const { res } = ped.hablar({ az, cfg, azure: cfg.azure, hoy: "2026-09-10", simulado: true, tope: 0, snap, out: "/nada", tmp: process.argv[5], fichas });
+const plataforma = async () => { throw new Error("no debería llamar a la plataforma"); };
+const correr = async (fichas) => {
+  const { res } = await ped.hablar({ az, plataforma, cfg, azure: cfg.azure, hoy: "2026-09-10", simulado: true, tope: 0, snap, out: "/nada", tmp: process.argv[5], fichas });
   return JSON.stringify([res.sin_pedido, res.pagados_avisados, res.deuda_avisada]);
 };
-const fichas = noc.leerTodasLasFichas(process.argv[6]);
-const a = correr(fichas), b = correr([...fichas].reverse());
-console.log(a === b && JSON.parse(a).every((l) => l.length >= 2) ? "igual" : `distinto: ${a} ≠ ${b}`);
+(async () => {
+  const fichas = noc.leerTodasLasFichas(process.argv[6]);
+  const a = await correr(fichas), b = await correr([...fichas].reverse());
+  console.log(a === b && JSON.parse(a).every((l) => l.length >= 2) ? "igual" : `distinto: ${a} ≠ ${b}`);
+})();
 ' "$PED" "$NOC" "$TMP/c.json" "$TMP/out/dependencias-$HOY.json" "$TMP" "$TMP/pend" 2>&1)
 [ "$orden" = "igual" ] && ok "T28: sin_pedido, pagados_avisados y deuda_avisada salen iguales con las fichas en cualquier orden" \
   || no "T28: el orden de las listas depende del orden de las fichas — $orden"
@@ -1344,6 +1352,48 @@ rc=$(correr)
   && ped 'p.adoptados.length === 1 && p.adoptados[0].id === 101'; } \
   && ok "T27: 🔴 si el push con el id se perdió, la noche siguiente adopta el Bug por la etiqueta y no crea un segundo" \
   || no "T27: rc=$rc creates=$(cuenta crear) · $(pie)"
+
+# ── T70. Pedido_DependenciasPorLaPlataforma_AdoptaPorEtiqueta ─────────────────────────────────────
+# El Bug de dependencias se crea por la capa de plataforma, en el proyecto de Azure del REPO: `work_items` de
+# operations.json nombra otra organización y otro proyecto (los de ejecuciones y el vigilante) y no tiene que
+# mezclarse. Lleva el asignado en System.AssignedTo, la iteración y el texto en Repro Steps. El que ya existe se
+# adopta por la etiqueta; con la búsqueda caída no se crea nada (un duplicado en el tablero de un cliente).
+ops '{ "version": 1, "owners": { "default": "respaldo@prueba" }, "work_items": { "org": "otra-org", "project": "Operaciones" } }'
+mundo
+ficha pending abc12345 browserslist high 1 "A/A"
+snapshot $HOY "[$(p1 abc12345 browserslist A/A)]"
+printf '%s' '[{"path":"Proy A\\Sprint 3","attributes":{"finishDate":"2099-01-01T00:00:00Z"}}]' > "$TMP/fixaz/iteracion-Proy A.json"
+rc=$(correr --operations "$TMP/operations.json")
+c1=$(cuenta crear)
+{ [ "$rc" -eq 0 ] && [ "$c1" -eq 1 ] \
+  && llamada crear 0 'arg("--project") === "Proy A" && /dev\.azure\.com\/prueba/.test(arg("--organization")) && arg("--type") === "Bug"' \
+  && llamada crear 0 'campo("System.AssignedTo") === "dana@prueba" && campo("System.IterationPath") === "Proy A\\Sprint 3"' \
+  && llamada crear 0 'String(campo("Microsoft.VSTS.TCM.ReproSteps")).startsWith("@") && b.includes("browserslist")' \
+  && llamada wiql 0 'arg("--organization") !== "otra-org" && !/Operaciones/.test(a.join(" "))' \
+  && ped 'p.creados.length === 1 && p.creados[0].proyecto === "Proy A"'; } \
+  && ok "T70 Pedido_DependenciasPorLaPlataforma_AdoptaPorEtiqueta (crea): en el proyecto del repo, no en el de work_items, con asignado, iteración y Repro Steps" \
+  || no "T70 (crea): rc=$rc creates=$c1 · $(pie)"
+
+mundo
+ficha pending abc12345 browserslist high 1 "A/A"
+snapshot $HOY "[$(p1 abc12345 browserslist A/A)]"
+echo '{ "workItems": [ { "id": 777 } ] }' > "$TMP/fixaz/wiql-Proy A.json"
+echo '{ "id": 777, "fields": { "System.Tags": "arnes-hallazgo; arnes:abc12345" } }' > "$TMP/fixaz/wi-777.json"
+rc=$(correr --operations "$TMP/operations.json")
+{ [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 0 ] && grep -qx '  - Proy A: 777' "$TMP/pend/pending/abc12345.yaml" \
+  && ped 'p.adoptados.length === 1 && p.adoptados[0].id === 777'; } \
+  && ok "T70 (adopta): el que la plataforma encuentra por la etiqueta se adopta y no se crea otro" \
+  || no "T70 (adopta): rc=$rc creates=$(cuenta crear) · $(pie)"
+
+mundo
+ficha pending abc12345 browserslist high 1 "A/A"
+snapshot $HOY "[$(p1 abc12345 browserslist A/A)]"
+rc=$(TYCON_AZ_FAIL=wiql correr --operations "$TMP/operations.json")
+{ [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 0 ] \
+  && ped 'p.creados.length === 0 && p.fallidos.some((x) => x.paso === "duplicados" && /no pude consultar duplicados/.test(x.motivo))'; } \
+  && ok "T70 (búsqueda caída): 🔴 sin poder buscar duplicados no se crea nada, y se dice" \
+  || no "T70 (búsqueda caída): rc=$rc creates=$(cuenta crear) · $(pie)"
+rm -f "$TMP/operations.json"
 
 echo
 total=$((pasaron + fallos))

@@ -9,14 +9,21 @@
 //
 // Los comandos, en el orden en que corren:
 //   crear:   az boards work-item create --organization <org> --project <proyecto> --type <tipo> --title <título> --fields <campos> [--assigned-to <correo>] --output json
-//            (--assigned-to va con auto_assign o en el pedido de la noche)
+//            (--assigned-to va con auto_assign o en el pedido de la noche; la descripción, los criterios y un campo
+//            propio que empieza con «@» van por archivo: az lee como archivo un valor que empieza con «@»)
 //            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json
 //   activo:  az boards work-item show --organization <org> --id <id> --query fields."System.State" --output tsv
 //            az boards work-item update --organization <org> --id <id> --state <activo> --output json
 //            az boards work-item update --organization <org> --id <id> --assigned-to <correo> --output json   (con auto_assign)
 //   cerrar:  az boards work-item update --organization <org> --id <id> --discussion <comentario> --output json
 //            az boards work-item update --organization <org> --id <id> --state <cerrado> --fields Microsoft.VSTS.Scheduling.CompletedWork=<horas> --output json
+//   buscar:  az devops invoke --organization <org> --area wit --resource wiql --route-parameters project=<proyecto> --http-method POST --in-file <consulta> --api-version 7.1 --output json
+//            az boards work-item show --organization <org> --id <id> --output json   (por cada resultado: la etiqueta exacta)
+//   leer:    az boards work-item show --organization <org> --id <id> --output json
+//            az devops invoke --organization <org> --area wit --resource workItemTypeStates --route-parameters project=<proyecto> type=<tipo> --api-version 7.1 --output json
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -89,10 +96,27 @@ const horasDe = (args) => {
   if (args.seconds !== undefined && args.seconds !== null) return NaN;
   return null;
 };
-const extras = (fields) => Object.entries(fields && typeof fields === 'object' ? fields : {}).map(([k, v]) => `${k}=${v}`);
-// el nombre de un campo propio: el nombre de referencia de Azure DevOps (`Custom.Probabilidad`), nunca algo que az lea
-// como opción
-const camposMalos = (fields) => Object.keys(fields && typeof fields === 'object' ? fields : {}).filter((k) => !/^[A-Za-z][A-Za-z0-9_.]*$/.test(k));
+const extras = (fields) => Object.entries(fields && typeof fields === 'object' ? fields : {}).map(([k, v]) => [k, v]);
+
+/**
+ * Los campos como argumentos de `--fields`: `porArchivo` (y todo valor que empieza con «@») va como `Campo=@<archivo>`
+ * con el texto tal cual, para que az no lea un archivo de la máquina. `limpiar()` borra los archivos.
+ */
+function camposConArchivos(pares, porArchivo) {
+  let dir = null;
+  const salida = pares.map(([k, v], i) => {
+    const s = String(v);
+    if (!porArchivo.includes(k) && !s.startsWith('@')) return `${k}=${s}`;
+    if (!dir) dir = fs.mkdtempSync(path.join(os.tmpdir(), 'az-campo-'));
+    const f = path.join(dir, `campo-${i}.txt`);
+    fs.writeFileSync(f, s);
+    return `${k}=@${f}`;
+  });
+  return { salida, limpiar: () => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); } };
+}
+// el nombre de un campo propio: el nombre de referencia de Azure DevOps (`Custom.Probabilidad`, o el que Azure arma con
+// un GUID, con guiones después del punto), nunca algo que az lea como opción
+const camposMalos = (fields) => Object.keys(fields && typeof fields === 'object' ? fields : {}).filter((k) => !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)*$/.test(k));
 
 function create(args, ctx) {
   if (typeof args.title !== 'string' || !args.title.trim()) return no('rechazado', 'falta el título del pedido de trabajo');
@@ -113,16 +137,17 @@ function create(args, ctx) {
     ['System.Description', args.description], ['Microsoft.VSTS.Common.AcceptanceCriteria', args.acceptance],
     ['Microsoft.VSTS.Common.Priority', args.priority], ['System.AreaPath', c.area_path], ['System.IterationPath', iteracion],
     ['System.Tags', tags.join('; ')],
-  ].filter(([, v]) => v !== undefined && v !== null && String(v) !== '').map(([k, v]) => `${k}=${v}`);
-  const todos = [...campos, ...extras(args.fields)];
+  ].filter(([, v]) => v !== undefined && v !== null && String(v) !== '');
+  const todos = camposConArchivos([...campos, ...extras(args.fields)], ['System.Description', 'Microsoft.VSTS.Common.AcceptanceCriteria', 'Microsoft.VSTS.TCM.ReproSteps']);
   const pedido = ['boards', 'work-item', 'create', '--organization', org, '--project', valor(project), '--type', valor(type), '--title', valor(args.title)];
-  if (todos.length) pedido.push('--fields', ...todos);
+  if (todos.salida.length) pedido.push('--fields', ...todos.salida);
   // auto_assign decide si el pedido de una story va a quien la crea; el de la noche no tiene autor y va siempre al
   // responsable que eligió la organización (forNight)
   const asignar = Boolean(args.assignTo) && (c.auto_assign === true || args.forNight === true);
   if (asignar) pedido.push('--assigned-to', valor(args.assignTo));
   pedido.push('--output', 'json');
-  const r = azJson(ctx, pedido);
+  let r;
+  try { r = azJson(ctx, pedido); } finally { todos.limpiar(); }
   if (r.problem) return r.problem;
   const id = r.value && r.value.id;
   if (!Number.isInteger(id)) return no('no_medido', 'az creó algo, pero la respuesta no trae el id');
@@ -193,14 +218,78 @@ function close(args, ctx) {
     if (k.problem) return k.problem;
     comentado = true;
   }
-  const campos = [...(horas !== null ? [`${HORAS}=${horas}`] : []), ...extras(args.fields)];
+  const campos = camposConArchivos([...(horas !== null ? [[HORAS, horas]] : []), ...extras(args.fields)], []);
   const pedido = ['boards', 'work-item', 'update', '--organization', org, '--id', id, '--state', valor(args.state || c.state_closed || 'Closed')];
-  if (campos.length) pedido.push('--fields', ...campos);
+  if (campos.salida.length) pedido.push('--fields', ...campos.salida);
   pedido.push('--output', 'json');
-  const u = azJson(ctx, pedido);
+  let u;
+  try { u = azJson(ctx, pedido); } finally { campos.limpiar(); }
   // con el comentario ya publicado, el «no» dice que quedó a medias: reintentar lo publicaría de nuevo
   if (u.problem) return comentado ? no(u.problem.reason, `a medias: el comentario ya quedó en el pedido #${id}; falló el estado y las horas: ${u.problem.detail}`) : u.problem;
   return { ok: true, value: { id: Number(id), hours: horas, hoursAs: 'field', hoursField: 'CompletedWork', unsupported: [], warnings: d.warnings } };
 }
 
-module.exports = { 'work-item.create': create, 'work-item.update': update, 'work-item.close': close };
+// una etiqueta que entra en la consulta sin escaparla: letras, números y «:_.-»
+const etiquetaValida = (t) => typeof t === 'string' && /^[A-Za-z0-9:_.-]{1,100}$/.test(t);
+
+/**
+ * Los pedidos con la etiqueta EXACTA (`arnes:abc` no es `arnes:abc-1`), acotados al proyecto. La consulta busca por
+ * contenido y la etiqueta de cada resultado se relee. Una búsqueda que no se pudo hacer entera es `no_medido`, nunca
+ * una lista vacía: quien la usa decide si crear, y crear de más es un duplicado en el tablero.
+ */
+function find(args, ctx) {
+  if (!etiquetaValida(args.tag)) return no('rechazado', `la etiqueta no es segura para la consulta: ${JSON.stringify(args.tag)}`);
+  const d = destino(args, ctx);
+  if (d.problem) return d.problem;
+  const { c, org } = d;
+  const project = args.project || c.project || ctx.env.TYCON_ADO_PROJECT;
+  if (!project) return no('sin_plataforma', 'el repo no dice en qué proyecto de Azure DevOps van sus pedidos: project en .tycon/work-items.yaml');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'az-wiql-'));
+  const consulta = path.join(dir, 'consulta.json');
+  let q;
+  try {
+    // sin [System.TeamProject] = @project la ruta del proyecto no acota: volverían pedidos de toda la organización
+    fs.writeFileSync(consulta, JSON.stringify({ query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.Tags] CONTAINS '${args.tag}'` }));
+    q = azJson(ctx, ['devops', 'invoke', '--organization', org, '--area', 'wit', '--resource', 'wiql', '--route-parameters', `project=${project}`,
+      '--http-method', 'POST', '--in-file', consulta, '--api-version', '7.1', '--output', 'json']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  if (q.problem) return no('no_medido', `no se pudo buscar la etiqueta ${args.tag}: ${q.problem.detail}`);
+  const lista = q.value && q.value.workItems;
+  if (!Array.isArray(lista)) return no('no_medido', 'la búsqueda no devolvió la lista de pedidos');
+  const buscada = args.tag.toLowerCase();
+  const ids = [];
+  for (const id of [...new Set(lista.map((w) => w && w.id).filter(Number.isInteger))]) {
+    const s = azJson(ctx, ['boards', 'work-item', 'show', '--organization', org, '--id', String(id), '--output', 'json']);
+    if (s.problem) return no('no_medido', `no se pudo releer la etiqueta del pedido #${id}: ${s.problem.detail}`);
+    const tags = String((s.value && s.value.fields && s.value.fields['System.Tags']) || '').split(';').map((t) => t.trim().toLowerCase());
+    if (tags.includes(buscada)) ids.push(id);
+  }
+  return { ok: true, value: { tag: args.tag, ids: ids.sort((a, b) => a - b), warnings: [...d.warnings] } };
+}
+
+/**
+ * El estado del pedido y si está cerrado. Cerrado sale de la categoría del estado en el proyecto y el tipo del pedido
+ * (Completed o Removed), no de su nombre: Resolved no es cerrado, y Done lo es en Basic y Scrum.
+ */
+function read(args, ctx) {
+  if (!idValido(args.id)) return no('rechazado', `el id del pedido de trabajo no es un número: ${JSON.stringify(args.id)}`);
+  const d = destino(args, ctx);
+  if (d.problem) return d.problem;
+  const { org } = d;
+  const id = String(args.id).trim();
+  const s = azJson(ctx, ['boards', 'work-item', 'show', '--organization', org, '--id', id, '--output', 'json']);
+  if (s.problem) return s.problem;
+  const f = (s.value && s.value.fields) || {};
+  const estado = f['System.State'];
+  const tipo = f['System.WorkItemType'];
+  const proyecto = f['System.TeamProject'];
+  if (![estado, tipo, proyecto].every((x) => typeof x === 'string' && x)) return no('no_medido', `az no devolvió el estado, el tipo o el proyecto del pedido #${id}`);
+  const e = azJson(ctx, ['devops', 'invoke', '--organization', org, '--area', 'wit', '--resource', 'workItemTypeStates',
+    '--route-parameters', `project=${proyecto}`, `type=${tipo}`, '--api-version', '7.1', '--output', 'json']);
+  if (e.problem) return no('no_medido', `no se pudieron leer los estados de ${tipo} en ${proyecto}: ${e.problem.detail}`);
+  const fila = ((e.value && e.value.value) || []).find((x) => x && x.name === estado);
+  if (!fila) return no('no_medido', `el estado ${estado} no está entre los de ${tipo} en ${proyecto}`);
+  return { ok: true, value: { id: Number(id), estado, cerrado: fila.category === 'Completed' || fila.category === 'Removed', warnings: [...d.warnings] } };
+}
+
+module.exports = { 'work-item.create': create, 'work-item.update': update, 'work-item.close': close, 'work-item.find': find, 'work-item.read': read };

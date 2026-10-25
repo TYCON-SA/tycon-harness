@@ -48,7 +48,7 @@ function carpetaDependencias({ estado, veredicto }) {
 const ORDEN_VIGILANTE = ['id', 'fuente', 'causa', 'fecha', 'producto', 'regla', 'severidad', 'huella', 'plugin', 'endpoint',
   'senal', 'diagnostico', 'ultimo_deploy', 'ya_alertado_por_azure', 'evidencia', 'reincidente', 'veredicto', 'motivo',
   'vista_por_ultima_vez', 'noches_seguidas', 'recordado_el', 'noches_sin_aparecer', 'noche_contada', 'veredicto_anterior',
-  'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'story_creada', 'pedido', 'asignado', 'pedido_motivo'];
+  'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'story_creada', 'pedido', 'asignado', 'pedido_motivo'];
 
 /** El estado y el veredicto comunes de un borrador del vigilante: mismas palabras que dependencias. El estado sale de
  *  sus fechas: `resuelta_el` lo resuelve; si no, `reaparecio_el` dice que volvió. */
@@ -130,7 +130,8 @@ function pedidoDeLaNocheDe(v) {
  * La vista común de una ficha de cualquier fuente: `{ fuente, id, causa, nombre, primera_vez, ultima_vez, apariciones,
  * veredicto, estado }`, más `resuelto` y `reaparecido` (las fechas de dependencias), la propuesta del modelo
  * (`propuesta`, `propuesta_motivo`), el pedido de trabajo (`pedido: { id, enlace }`), el número del que creó la noche
- * (`pedido_de_la_noche`, el único que recibe el aviso de que volvió), `asignado`, las `noches` de
+ * (`pedido_de_la_noche`, el único que recibe el aviso de que volvió y el de que sigue con el pedido cerrado, con su
+ * fecha en `aviso_cerrado`), `asignado`, las `noches` de
  * dependencias y `pr_noche`, el número del pedido que la noche abrió por la ficha si sigue abierto. Sin texto libre. Una ficha que no se lee lanza; una vieja de ejecuciones da `null`.
  */
 function comoFicha(fuente, txt) {
@@ -140,7 +141,7 @@ function comoFicha(fuente, txt) {
     const pr = f.propuesta;
     return { fuente, id: f.id, causa: f.causa, nombre: f.nombre, primera_vez: f.primera_vez, ultima_vez: f.ultima_vez,
       apariciones: f.apariciones, veredicto: f.veredicto, estado: f.estado, resuelto: f.resuelta_el || null,
-      reaparecido: f.reaparecio_el || null, aviso_volvio: f.aviso_volvio_el || null,
+      reaparecido: f.reaparecio_el || null, aviso_volvio: f.aviso_volvio_el || null, aviso_cerrado: f.aviso_cerrado_el || null,
       propuesta: pr ? propuestaDe(pr.accion, pr.razon, pr.modelo) : null, propuesta_motivo: motivoDe(f.propuesta_motivo),
       pedido: pedidoDe(f.pedido), pedido_de_la_noche: pedidoDeLaNocheDe(f.pedido), asignado: f.asignado || null, pedido_motivo: motivoPedidoDe(f.pedido_motivo), noches: null, pr_noche: null };
   }
@@ -158,12 +159,12 @@ function comoFicha(fuente, txt) {
     const ultimo = reg.formato.listaDe(String(txt), 'pedidos').slice(-1)[0];
     const m = ultimo ? /:\s*(\d+)$/.exec(ultimo) : null;
     return { fuente, id: e.id || null, causa: e.id || null, nombre: nombreDe('dependencias', e), primera_vez: fecha(e.detectado),
-      ultima_vez: null, apariciones: entero(e.noches), resuelto: fecha(e.resuelto), reaparecido: fecha(e.reaparecido), aviso_volvio: null, ...comun,
+      ultima_vez: null, apariciones: entero(e.noches), resuelto: fecha(e.resuelto), reaparecido: fecha(e.reaparecido), aviso_volvio: null, aviso_cerrado: null, ...comun,
       pedido: m ? { id: m[1], enlace: null } : null, pedido_de_la_noche: null, noches: entero(e.noches) };
   }
   return { fuente, id: e.id || null, causa: e.causa || e.huella || null, nombre: nombreDe('vigilante', e), primera_vez: fecha(e.fecha),
     ultima_vez: fecha(e.vista_por_ultima_vez), apariciones: entero(e.noches_seguidas) || 1, resuelto: fecha(e.resuelta_el),
-    reaparecido: fecha(e.reaparecio_el), aviso_volvio: fecha(e.aviso_volvio_el), ...comun,
+    reaparecido: fecha(e.reaparecio_el), aviso_volvio: fecha(e.aviso_volvio_el), aviso_cerrado: fecha(e.aviso_cerrado_el), ...comun,
     // el pedido que creó la noche y, sin él, la story que creó una persona con /tycon-vigilante
     pedido: pedidoDe(e.pedido) || pedidoDe(e.story_creada), pedido_de_la_noche: pedidoDeLaNocheDe(e.pedido), asignado: asignadoDe(e.asignado), pedido_motivo: motivoPedidoDe(e.pedido_motivo),
     noches: null };

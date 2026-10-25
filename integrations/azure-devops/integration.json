@@ -4,7 +4,7 @@
   "label": "Azure DevOps",
   "kind": "platform",
   "connector": "scripts/connector.js",
-  "operations": ["work-item.create", "work-item.update", "work-item.close", "deployments.read"],
+  "operations": ["work-item.create", "work-item.update", "work-item.close", "work-item.find", "work-item.read", "deployments.read"],
   "capabilities": { "completedHours": "field", "workItemType": "native", "autoComplete": "native" },
   "rawCommands": ["az repos pr create", "az repos pr update", "az boards work-item create", "az boards work-item update", "az pipelines run", "az boards work-item relation add", "az boards work-item show"]
 }

@@ -78,6 +78,13 @@ const llamadasAz = (m) => {
   const f = path.join(m.fixaz, 'llamadas.log');
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => { const [paso, j] = l.split('\t'); return [paso, JSON.parse(j).args]; }) : [];
 };
+/** Como `llamadasAz`, con los archivos que leyó cada llamada (`@archivo`, `Campo=@archivo`): `[paso, args, archivos]`. */
+const llamadasAzConArchivos = (m) => {
+  const f = path.join(m.fixaz, 'llamadas.log');
+  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => { const [paso, j] = l.split('\t'); const o = JSON.parse(j); return [paso, o.args, o.archivos]; }) : [];
+};
+/** Un argumento `Campo=@archivo` con la ruta tapada: la ruta es temporal y cambia en cada corrida. */
+const sinRuta = (a) => a.replace(/=@.*$/s, '=@<archivo>');
 const estadoGh = (m) => JSON.parse(fs.readFileSync(m.ghFile, 'utf8'));
 /** La capa por su línea de comandos, como la llaman los pasos. */
 function cli(m, argv) {
@@ -92,13 +99,15 @@ test('WorkItem_Create_Azure_SameAzCalls @story-8.85 @ac-7', async () => {
   assert.strictEqual(r.ok, true, JSON.stringify(r));
   assert.strictEqual(r.value.id, 101);
   assert.strictEqual(r.value.url, `${ORG}/Producto/_workitems/edit/101`);
-  // los pasos de la skill de creación (5 y 6), comando por comando: el campo vacío (la iteración) no se manda
-  assert.deepStrictEqual(llamadasAz(m), [
+  // los pasos de la skill de creación (5 y 6), comando por comando: el campo vacío (la iteración) no se manda, y la
+  // descripción y los criterios van por archivo (az lee como archivo un valor que empieza con «@»)
+  assert.deepStrictEqual(llamadasAz(m).map(([p, a]) => [p, a.map(sinRuta)]), [
     ['crear', ['boards', 'work-item', 'create', '--organization', ORG, '--project', 'Producto', '--type', 'User Story', '--title', 'Story 9.1: Algo',
-      '--fields', 'System.Description=<p>d</p>', 'Microsoft.VSTS.Common.AcceptanceCriteria=<p>a</p>', 'Microsoft.VSTS.Common.Priority=2', 'System.AreaPath=Producto', 'System.Tags=tycon',
+      '--fields', 'System.Description=@<archivo>', 'Microsoft.VSTS.Common.AcceptanceCriteria=@<archivo>', 'Microsoft.VSTS.Common.Priority=2', 'System.AreaPath=Producto', 'System.Tags=tycon',
       '--output', 'json']],
     ['relacion', ['boards', 'work-item', 'relation', 'add', '--organization', ORG, '--id', '101', '--relation-type', 'parent', '--target-id', '4492', '--output', 'json']],
   ]);
+  assert.deepStrictEqual(Object.values(llamadasAzConArchivos(m)[0][2]).sort(), ['<p>a</p>', '<p>d</p>']);
   // una épica sin mapeo: se crea suelta y se dice
   const s = await P().run('work-item.create', { repoDir: repo, title: 'Story 9.2: Otra', epic: 'sin-mapeo' }, { env: m.env });
   assert.strictEqual(s.ok, true);
@@ -665,4 +674,138 @@ test('T85 Plataforma_SoloComentario_NoInventaElEstado @story-4.11 @ac-28', () =>
   assert.doesNotMatch(s, /undefined/);
   assert.match(P().summary('work-item.update', { ok: true, value: { id: 7, changed: true, previo: 'New', estado: 'Active' } }), /#7: New → Active/);
   assert.match(P().summary('work-item.update', { ok: true, value: { id: 7, changed: false, estado: 'Active' } }), /#7: sin cambios \(Active\)/);
+});
+
+// Plataforma_BuscarPorEtiqueta_DosConectores @story-4.11 @ac-42
+// 🔴 Falla con: buscar sin acotar por proyecto, tomar por propio un pedido cuya etiqueta sólo empieza igual
+//    (`arnes:abc-1` no es `arnes:abc`), contar un pull request de GitHub como pedido, leer sólo la primera página, o
+//    contestar una lista vacía cuando la búsqueda no se pudo hacer.
+test('T92 Plataforma_BuscarPorEtiqueta_DosConectores @story-4.11 @ac-42', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const repo = repoCon('ado-config.yaml', ADO_CONFIG);
+  fs.writeFileSync(path.join(m.fixaz, 'wiql-Producto.json'), JSON.stringify({ workItems: [{ id: 7 }, { id: 8 }, { id: 9 }, { id: 7 }] }));
+  fs.writeFileSync(path.join(m.fixaz, 'wi-7.json'), JSON.stringify({ id: 7, fields: { 'System.Tags': 'arnes-hallazgo; arnes:abc' } }));
+  fs.writeFileSync(path.join(m.fixaz, 'wi-8.json'), JSON.stringify({ id: 8, fields: { 'System.Tags': 'arnes:abc-1' } }));
+  fs.writeFileSync(path.join(m.fixaz, 'wi-9.json'), JSON.stringify({ id: 9, fields: { 'System.Tags': 'ARNES:ABC; otra' } }));
+  const r = await P().run('work-item.find', { repoDir: repo, tag: 'arnes:abc' }, { env: m.env });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual(r.value.ids, [7, 9]);
+  assert.match(r.summary, /2 pedidos? con la etiqueta arnes:abc/);
+  const [, wiql, archivos] = llamadasAzConArchivos(m).find(([p]) => p === 'wiql');
+  assert.strictEqual(wiql[wiql.indexOf('--route-parameters') + 1], 'project=Producto');
+  assert.ok(wiql.includes('--organization') && wiql.includes('--output'), 'con la organización y la salida explícitas');
+  assert.match(Object.values(archivos)[0], /\[System\.TeamProject\] = @project AND \[System\.Tags\] CONTAINS 'arnes:abc'/);
+  // el proyecto de la noche gana sobre el del repo
+  await P().run('work-item.find', { repoDir: repo, tag: 'arnes:abc', org: 'acme', project: 'Otro' }, { env: m.env });
+  const otra = llamadasAz(m).filter(([p]) => p === 'wiql')[1][1];
+  assert.strictEqual(otra[otra.indexOf('--route-parameters') + 1], 'project=Otro');
+  // caída la consulta o la relectura de una etiqueta: no_medido, nunca una lista vacía
+  for (const falla of ['wiql', 'wi']) {
+    const caida = await P().run('work-item.find', { repoDir: repo, tag: 'arnes:abc' }, { env: { ...m.env, TYCON_AZ_FAIL: falla } });
+    assert.strictEqual(caida.ok, false, falla);
+    assert.strictEqual(caida.reason, 'no_medido', falla);
+    assert.ok(!('value' in caida), falla);
+  }
+  // una etiqueta que no es segura para la consulta no llega a az
+  const antes = llamadasAz(m).length;
+  for (const tag of ["arnes:x' OR 1=1", '', undefined]) {
+    const mal = await P().run('work-item.find', { repoDir: repo, tag }, { env: m.env });
+    assert.strictEqual(mal.reason, 'rechazado', String(tag));
+  }
+  assert.strictEqual(llamadasAz(m).length, antes);
+
+  // GitHub: todas las páginas, la etiqueta exacta y sin pull requests
+  const issues = [];
+  for (let n = 1; n <= 101; n++) issues.push({ number: n, state: n % 2 ? 'open' : 'closed', title: `x${n}`, labels: ['arnes:abc'] });
+  issues.push({ number: 102, state: 'open', title: 'pr', labels: ['arnes:abc'], pull_request: { url: 'https://api.github.com/repos/acme/portal/pulls/102' } });
+  issues.push({ number: 103, state: 'open', title: 'otra', labels: ['arnes:abc-1'] });
+  // GitHub no distingue mayúsculas en las etiquetas: el issue que quedó con «ARNES:ABC» es el mismo pedido
+  issues.push({ number: 104, state: 'open', title: 'mayúsculas', labels: ['ARNES:ABC'] });
+  const g = mundo({ platform: { default: 'github' }, ghState: { user: 'arnes-bot', now: '2026-10-25T05:00:00Z', issues: { 'acme/portal': issues } } });
+  const gr = repoCon('work-items.yaml', GH_CONFIG);
+  const x = await P().run('work-item.find', { repoDir: gr, tag: 'arnes:abc' }, { env: g.env });
+  assert.strictEqual(x.ok, true, JSON.stringify(x));
+  assert.deepStrictEqual(x.value.ids, [...Array.from({ length: 101 }, (_, i) => i + 1), 104]);
+  const st = estadoGh(g);
+  st.fail = { 'GET repos/acme/portal/issues': { status: 500, message: 'caída' } };
+  fs.writeFileSync(g.ghFile, JSON.stringify(st));
+  const gc = await P().run('work-item.find', { repoDir: gr, tag: 'arnes:abc' }, { env: g.env });
+  assert.strictEqual(gc.reason, 'no_medido');
+});
+
+// Plataforma_LeerEstado_DosConectores @story-4.11 @ac-29
+// 🔴 Falla con: decidir «cerrado» por el nombre del estado (Resolved no es cerrado; Done y Closed sí, por su categoría),
+//    leer las categorías de otro proyecto o de otro tipo, o contestar «abierto» cuando la lectura no se pudo hacer.
+test('T93 Plataforma_LeerEstado_DosConectores @story-4.11 @ac-29', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const repo = repoCon('ado-config.yaml', ADO_CONFIG);
+  const wi = (id, estado, tipo = 'Bug', proyecto = 'Producto') => fs.writeFileSync(path.join(m.fixaz, `wi-${id}.json`),
+    JSON.stringify({ id, fields: { 'System.State': estado, 'System.WorkItemType': tipo, 'System.TeamProject': proyecto } }));
+  fs.writeFileSync(path.join(m.fixaz, 'estados-Producto-Bug.json'), JSON.stringify({ value: [
+    { name: 'New', category: 'Proposed' }, { name: 'Active', category: 'InProgress' }, { name: 'Resolved', category: 'Resolved' },
+    { name: 'Closed', category: 'Completed' }, { name: 'Removed', category: 'Removed' }] }));
+  fs.writeFileSync(path.join(m.fixaz, 'estados-Ops-Task.json'), JSON.stringify({ value: [{ name: 'To Do', category: 'Proposed' }, { name: 'Done', category: 'Completed' }] }));
+  wi(7, 'Closed'); wi(8, 'Resolved'); wi(9, 'Removed'); wi(10, 'Active'); wi(11, 'Done', 'Task', 'Ops');
+  const leer = (id, env = m.env) => P().run('work-item.read', { repoDir: repo, id }, { env });
+  for (const [id, estado, cerrado] of [[7, 'Closed', true], [8, 'Resolved', false], [9, 'Removed', true], [10, 'Active', false], [11, 'Done', true]]) {
+    const r = await leer(id);
+    assert.strictEqual(r.ok, true, `${id}: ${JSON.stringify(r)}`);
+    assert.deepStrictEqual({ id: r.value.id, estado: r.value.estado, cerrado: r.value.cerrado }, { id, estado, cerrado }, String(id));
+    assert.match(r.summary, new RegExp(`#${id}.*${cerrado ? 'cerrado' : 'abierto'}`));
+  }
+  // las categorías son las del proyecto y el tipo del pedido
+  const estados = llamadasAz(m).filter(([p]) => p === 'estados').map(([, a]) => `${a[a.indexOf('--route-parameters') + 1]} ${a[a.indexOf('--route-parameters') + 2]}`);
+  assert.ok(estados.includes('project=Ops type=Task'), estados.join(' · '));
+  // el que no existe es no_encontrado; las categorías caídas, no_medido; un id que no es un número no llega a az
+  assert.strictEqual((await leer(12)).reason, 'no_encontrado');
+  const caida = await leer(7, { ...m.env, TYCON_AZ_FAIL: 'estados' });
+  assert.strictEqual(caida.reason, 'no_medido');
+  assert.strictEqual((await leer(7, { ...m.env, TYCON_AZ_FAIL: 'wi' })).ok, false);
+  assert.strictEqual((await leer('7; rm')).reason, 'rechazado');
+
+  // GitHub: cerrado es state: closed; el borrado y el que no está, no_encontrado
+  const g = mundo({ platform: { default: 'github' }, ghState: { user: 'arnes-bot', now: '2026-10-25T05:00:00Z', gone: ['acme/portal#7'],
+    issues: { 'acme/portal': [{ number: 5, state: 'closed', state_reason: 'completed', title: 'a', labels: ['estado:hecho'] }, { number: 6, state: 'open', title: 'b', labels: [] }] } } });
+  const gr = repoCon('work-items.yaml', GH_CONFIG);
+  const g5 = await P().run('work-item.read', { repoDir: gr, id: 5 }, { env: g.env });
+  assert.deepStrictEqual({ id: g5.value.id, cerrado: g5.value.cerrado }, { id: 5, cerrado: true });
+  const g6 = await P().run('work-item.read', { repoDir: gr, id: 6 }, { env: g.env });
+  assert.strictEqual(g6.value.cerrado, false);
+  for (const id of [7, 99]) assert.strictEqual((await P().run('work-item.read', { repoDir: gr, id }, { env: g.env })).reason, 'no_encontrado', String(id));
+});
+
+// Azure_DescripcionPorArchivo_NoLeeArchivosLocales @story-4.11 @ac-42
+// 🔴 Falla con: mandar la descripción o los criterios en la línea de comandos: az lee como archivo un valor que empieza
+//    con «@», y el pedido saldría con el contenido de un archivo de la máquina en vez del texto.
+test('T95 Azure_DescripcionPorArchivo_NoLeeArchivosLocales @story-4.11 @ac-42', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const repo = repoCon('ado-config.yaml', ADO_CONFIG);
+  const secreto = path.join(tmp('secreto-'), 'llave.txt');
+  fs.writeFileSync(secreto, 'CONTENIDO-QUE-NO-DEBE-VIAJAR');
+  const r = await P().run('work-item.create', { repoDir: repo, title: 'Algo', description: `@${secreto}`, acceptance: `@${secreto}` }, { env: m.env });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  const [, args, archivos] = llamadasAzConArchivos(m).find(([p]) => p === 'crear');
+  assert.deepStrictEqual(Object.values(archivos), [`@${secreto}`, `@${secreto}`], 'el texto llega tal cual, por archivo');
+  assert.ok(!JSON.stringify(archivos).includes('CONTENIDO-QUE-NO-DEBE-VIAJAR'));
+  assert.ok(!args.some((a) => a.includes(`=@${secreto}`)), 'la ruta del archivo de la máquina no va en la línea');
+  // los archivos del texto no quedan en el disco
+  for (const f of Object.keys(archivos)) assert.ok(!fs.existsSync(f), `${f} se borró`);
+});
+
+// T95b Azure_CampoConGuid_SeAcepta @story-4.11 @ac-42
+// 🔴 Falla con: rechazar un campo que la configuración acepta, como el nombre de referencia que Azure DevOps arma con un
+//    GUID (guiones después del punto): el Bug de dependencias no se crearía nunca con esa configuración.
+test('T95b Azure_CampoConGuid_SeAcepta @story-4.11 @ac-42', async () => {
+  const OPS = require(path.join(ROOT, 'scripts', 'lib', 'operations-config.js'));
+  const campo = 'Custom.00000000-0ca3-4efd-8feb-000000000042';
+  assert.ok(OPS.workItemFieldOk(campo, 'Seguridad'), 'la configuración lo acepta');
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const repo = repoCon('ado-config.yaml', ADO_CONFIG);
+  const r = await P().run('work-item.create', { repoDir: repo, title: 'Riesgo', fields: { [campo]: 'Seguridad', 'Custom.Probabilidad': 3 } }, { env: m.env });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  const [, args] = llamadasAz(m).find(([q]) => q === 'crear');
+  assert.ok(args.includes(`${campo}=Seguridad`), JSON.stringify(args));
+  // con forma de opción sigue sin pasar
+  const b = await P().run('work-item.create', { repoDir: repo, title: 'X', fields: { '-Custom.x': 'y' } }, { env: m.env });
+  assert.strictEqual(b.reason, 'rechazado');
 });

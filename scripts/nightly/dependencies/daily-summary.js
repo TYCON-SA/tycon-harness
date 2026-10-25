@@ -708,7 +708,7 @@ function armar(a) {
   // sección se acota dejándoles lugar: todo junto entra en su tope.
   const debajo = [
     ...(dudas.valor && dudas.valor.length ? [`dudas de revisores: ${dudas.valor.length}`] : []),
-    ...(a.fuente === 'vigilante' && fichas ? [lineaFichas('vigilante', a.pending, a.hoy), ...lineasVolvieron('vigilante', a.pending, a.hoy)] : []),
+    ...(a.fuente === 'vigilante' && fichas ? [lineaFichas('vigilante', a.pending, a.hoy), ...lineasVolvieron('vigilante', a.pending, a.hoy), ...lineasCerrados('vigilante', a.pending, a.hoy)] : []),
   ];
   const base = texto({ fuente: a.fuente, rubros, cambios: comp.cambios, base: comp.base, fallos, comparadoCon: comp.comparado_con, hoy: a.hoy,
     empezaron: comp.empezaron, modo: comp.modo, carpetas: a.fuente === 'dependencias' ? lineasCarpetas(snap) : [] },
@@ -908,6 +908,28 @@ const renglonVolvioValido = (l) => {
   // el nombre de una causa de ejecuciones es uno de la lista: un texto de otro lado no entra aunque tenga la forma
   return Boolean(m) && (m[1] !== 'ejecuciones' || NOMBRES_VALIDOS.has(m[2]));
 };
+// los renglones del pedido cerrado con la falla viva: los avisados (hasta tres y cuántos más), los pedidos que ya no
+// existen (hasta tres y cuántos más) y lo que el cruce no pudo hacer, cada cosa en su renglón
+const RENGLON_CERRADO = /^🔒 pedido cerrado con la falla viva en (vigilante|ejecuciones): ([\p{L}\p{N} ()._-]{1,60}) — avisado en el pedido \d{1,12}$/u;
+const RENGLONES_CERRADO_FIJOS = [
+  /^🔒 y \d+ pedidos cerrados más con la falla viva en (vigilante|ejecuciones)$/u,
+  /^🔒 (vigilante|ejecuciones): el pedido \d{1,12} ya no existe en la plataforma$/u,
+  /^🔒 (vigilante|ejecuciones): y \d+ pedidos más ya no existen en la plataforma$/u,
+  /^🔒 (vigilante|ejecuciones): no se pudo leer el estado de \d+ pedidos?; se intenta otra vez mañana$/u,
+  /^🔒 (vigilante|ejecuciones): la plataforma no comentó \d+ pedidos? cerrados?; se avisa otra vez mañana$/u,
+  /^🔒 (vigilante|ejecuciones): no se pudieron leer o escribir \d+ fichas o carpetas para los pedidos cerrados; se miran otra vez mañana$/u,
+  /^🔒 (vigilante|ejecuciones): falta configurar el destino de los pedidos de la noche; no se miró si están cerrados$/u,
+  /^🔒 (vigilante|ejecuciones): el cruce de los pedidos cerrados se cortó esta noche; se mira mañana$/u,
+  /^🔒 (vigilante|ejecuciones): lo que dejó el cruce de los pedidos cerrados no se pudo leer$/u,
+  /^🔒 (vigilante|ejecuciones): las fichas no se pudieron leer para los pedidos cerrados$/u,
+  /^🔒 (vigilante|ejecuciones): \d+ pedidos? cerrados? (quedó anotado|quedaron anotados) sin la constancia del cruce; no se sabe si se les avisó$/u,
+];
+const CERRADO_FIJOS = RENGLONES_CERRADO_FIJOS.length;
+const renglonCerradoValido = (l) => {
+  if (RENGLONES_CERRADO_FIJOS.some((re) => re.test(l))) return true;
+  const m = RENGLON_CERRADO.exec(l);
+  return Boolean(m) && (m[1] !== 'ejecuciones' || NOMBRES_VALIDOS.has(m[2]));
+};
 // la forma de cada renglón que puede salir: con ella se vuelve a leer la constancia en la edición de las 08:00
 const RENGLONES_EJ = [
   new RegExp(`^ejecuciones: (parcial — ${MOTIVO_EJ} · )?(\\d+ con fallas del arnés \\(de \\d+ miradas\\)|0 con fallas del arnés \\(\\d+ miradas\\))$`, 'u'),
@@ -986,7 +1008,10 @@ function lineasFichasDelClon(dir, hoy) {
   const lineas = [['dependencias', 'dependencies'], ['ejecuciones', 'runs-review']]
     .filter(([, carpeta]) => fs.existsSync(path.join(dir, 'inbox', carpeta)))
     .map(([fuente, carpeta]) => lineaFichas(fuente, path.join(dir, 'inbox', carpeta), hoy));
-  if (fs.existsSync(path.join(dir, 'inbox', 'runs-review'))) lineas.push(...lineasVolvieron('ejecuciones', path.join(dir, 'inbox', 'runs-review'), hoy));
+  if (fs.existsSync(path.join(dir, 'inbox', 'runs-review'))) {
+    lineas.push(...lineasVolvieron('ejecuciones', path.join(dir, 'inbox', 'runs-review'), hoy),
+      ...lineasCerrados('ejecuciones', path.join(dir, 'inbox', 'runs-review'), hoy));
+  }
   // y cuántas quedaron sin propuesta del modelo esa noche, por motivo (o que el paso no corrió)
   if (lineas.length) {
     const propuesta = PROPOSE.lineaDelResumen(dir, hoy);
@@ -1014,18 +1039,68 @@ function lineasVolvieron(fuente, dirFuente, hoy) {
   return [...muestra, `↩️ y ${candidatas.length - muestra.length} más volvieron en ${fuente}`];
 }
 
+/**
+ * Lo que el cruce de esa noche hizo con los pedidos cerrados de una falla viva: un renglón por cada pedido avisado hoy,
+ * uno por cada pedido que ya no existe y, de `aviso-cerrado.json`, lo que el cruce no pudo hacer (lecturas, comentarios,
+ * fichas o carpetas, el destino sin configurar, un cruce cortado, el archivo roto). Hasta tres avisados y tres que ya no
+ * existen, y uno que dice cuántos más. Mira las mismas carpetas que el cruce.
+ */
+function lineasCerrados(fuente, dirFuente, hoy) {
+  const leido = require('../findings/cycle.js').leerAvisoCerrado(dirFuente, hoy);
+  const aviso = leido && !leido.roto ? leido : null;
+  const noExisten = aviso ? aviso.no_existen : [];
+  const extra = [];
+  let vistas = [];
+  try { ({ vistas } = vistasDeFichas(fuente, dirFuente, ['pending', 'promoted'])); } catch (e) {
+    vistas = [];
+    // sin la carpeta de la fuente no hay nada que decir; otra falla lo dice, porque calla a los avisados
+    if (!(e && e.code === 'ENOENT')) extra.push(`🔒 ${fuente}: las fichas no se pudieron leer para los pedidos cerrados`);
+  }
+  // avisado es lo que el cruce dejó dicho, no la marca de la ficha: ésa la lleva también el pedido que ya no existe
+  const marcadas = vistas.filter((v) => v.aviso_cerrado === hoy && v.pedido_de_la_noche);
+  const avisados = marcadas
+    .filter((v) => aviso && aviso.avisados.includes(Number(v.pedido_de_la_noche)))
+    .map((v) => `🔒 pedido cerrado con la falla viva en ${fuente}: ${v.nombre} — avisado en el pedido ${v.pedido_de_la_noche}`);
+  const validos = avisados.filter(renglonCerradoValido);
+  const lineas = validos.slice(0, TOPE_VOLVIO);
+  if (avisados.length > lineas.length) lineas.push(`🔒 y ${avisados.length - lineas.length} pedidos cerrados más con la falla viva en ${fuente}`);
+  lineas.push(...noExisten.slice(0, TOPE_VOLVIO).map((id) => `🔒 ${fuente}: el pedido ${id} ya no existe en la plataforma`));
+  if (noExisten.length > TOPE_VOLVIO) lineas.push(`🔒 ${fuente}: y ${noExisten.length - TOPE_VOLVIO} pedidos más ya no existen en la plataforma`);
+  if (aviso && aviso.sin_leer) {
+    lineas.push(`🔒 ${fuente}: no se pudo leer el estado de ${aviso.sin_leer} pedido${aviso.sin_leer === 1 ? '' : 's'}; se intenta otra vez mañana`);
+  }
+  if (aviso && aviso.sin_comentar) {
+    const s = aviso.sin_comentar === 1 ? '' : 's';
+    lineas.push(`🔒 ${fuente}: la plataforma no comentó ${aviso.sin_comentar} pedido${s} cerrado${s}; se avisa otra vez mañana`);
+  }
+  if (aviso && aviso.sin_mirar) {
+    lineas.push(`🔒 ${fuente}: no se pudieron leer o escribir ${aviso.sin_mirar} fichas o carpetas para los pedidos cerrados; se miran otra vez mañana`);
+  }
+  if (aviso && aviso.falta_configurar) lineas.push(`🔒 ${fuente}: falta configurar el destino de los pedidos de la noche; no se miró si están cerrados`);
+  if (aviso && aviso.cortado) lineas.push(`🔒 ${fuente}: el cruce de los pedidos cerrados se cortó esta noche; se mira mañana`);
+  if (leido && leido.roto) lineas.push(`🔒 ${fuente}: lo que dejó el cruce de los pedidos cerrados no se pudo leer`);
+  if (!leido && marcadas.length) {
+    const uno = marcadas.length === 1;
+    const s = uno ? '' : 's';
+    lineas.push(`🔒 ${fuente}: ${marcadas.length} pedido${s} cerrado${s} ${uno ? 'quedó anotado' : 'quedaron anotados'} sin la constancia del cruce; no se sabe si se les avisó`);
+  }
+  return [...lineas, ...extra];
+}
+
 /** Los renglones de fichas guardados a las 04:00: tal cual si todos tienen la forma; si no, ninguno (no se inventan). */
 function fichasDeLaConstancia(r) {
   if (!r || !hasOwn(r, 'fichas')) return null;
   const f = r.fichas;
-  // hasta tres renglones de fichas, los de lo que volvió y, detrás, a lo sumo uno de la propuesta del modelo
+  // hasta tres renglones de fichas, los de lo que volvió, los de los pedidos cerrados y, detrás, a lo sumo uno de la
+  // propuesta del modelo
   if (!Array.isArray(f) || !f.every((l) => typeof l === 'string')) return null;
   const fichas = f.filter((l) => RENGLON_FICHAS.test(l));
   const volvio = f.filter((l) => l.startsWith('↩️') && renglonVolvioValido(l));
-  const propuesta = f.filter((l) => !RENGLON_FICHAS.test(l) && !l.startsWith('↩️') && PROPOSE.RENGLON.test(l));
+  const cerrado = f.filter((l) => l.startsWith('🔒') && renglonCerradoValido(l));
+  const propuesta = f.filter((l) => !RENGLON_FICHAS.test(l) && !l.startsWith('↩️') && !l.startsWith('🔒') && PROPOSE.RENGLON.test(l));
   const enOrden = propuesta.length === 0 || f[f.length - 1] === propuesta[0];
-  return fichas.length <= 3 && volvio.length <= TOPE_VOLVIO + 1 && propuesta.length <= 1
-    && fichas.length + volvio.length + propuesta.length === f.length && enOrden ? f : null;
+  return fichas.length <= 3 && volvio.length <= TOPE_VOLVIO + 1 && cerrado.length <= 2 * (TOPE_VOLVIO + 1) + CERRADO_FIJOS && propuesta.length <= 1
+    && fichas.length + volvio.length + cerrado.length + propuesta.length === f.length && enOrden ? f : null;
 }
 
 function lineaEjecuciones(dir, hoy) {
@@ -1509,4 +1584,4 @@ if (require.main === module) {
   process.exit(codigo);
 }
 module.exports = { armar, texto, identidad, entregado, comparar, rubrosDependencias, rubrosVigilante, parseArgs, TOPE, TOPE_MENSAJE, NOMBRES_CAUSA,
-  lineaEjecuciones, lineaFichas, lineasFichasDelClon, fichasDeLaConstancia };
+  lineaEjecuciones, lineaFichas, lineasFichasDelClon, lineasCerrados, fichasDeLaConstancia };

@@ -4,7 +4,7 @@
   "label": "Plataforma de mentira",
   "kind": "platform",
   "connector": "scripts/connector.js",
-  "operations": ["work-item.create", "work-item.update", "work-item.close", "change-request.open", "change-request.list",
+  "operations": ["work-item.create", "work-item.update", "work-item.close", "work-item.find", "work-item.read", "change-request.open", "change-request.list",
                  "assigned.list", "ci.read", "queue.read", "deployments.read"],
   "capabilities": { "completedHours": "field", "workItemType": "native", "autoComplete": "auto" },
   "rawCommands": ["fake pr create"],

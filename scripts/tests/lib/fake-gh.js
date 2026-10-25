@@ -182,7 +182,8 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues$/))) {
   st.issues = st.issues || {}; st.issues[repo] = st.issues[repo] || [];
   if (method === 'GET') {
     let l = st.issues[repo];
-    if (q.labels) l = l.filter((i) => (i.labels || []).includes(q.labels));
+    // como GitHub: el filtro por etiqueta no distingue mayúsculas
+    if (q.labels) l = l.filter((i) => (i.labels || []).some((x) => x.toLowerCase() === q.labels.toLowerCase()));
     if (q.state && q.state !== 'all') l = l.filter((i) => i.state === q.state);
     out(pag(l.map((i) => issueApi(repo, i))));
   }

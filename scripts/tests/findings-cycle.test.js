@@ -1456,3 +1456,227 @@ test('T88 Resumen_VolvioArchivada_NoPrometeElAviso @story-4.11 @ac-37', () => {
   const nombre = NOMBRES.nombreDe('ejecuciones', { regla: 'RR-CIERRE', categoria: 'abandonada' });
   assert.deepStrictEqual(clon.filter((l) => l.startsWith('↩️')), [`↩️ volvió en ejecuciones: ${nombre} — el aviso al pedido 901 queda para mañana`]);
 });
+
+// PedidoCerradoFallaViva_AvisaUnaVez @story-4.11 @ac-29
+// 🔴 Falla con: reabrir el pedido o mandarle un estado, avisar todas las noches, callar que la lectura falló hasta el día
+//    siguiente, reintentar para siempre un pedido borrado, tocar un pedido abierto, o darle los dos avisos a una ficha
+//    que además volvió.
+test('T18 PedidoCerradoFallaViva_AvisaUnaVez @story-4.11 @ac-29', async () => {
+  const viva = (causa, pedido, extra = {}) => comun(causa, { veredicto: 'arreglo', ultima_vez: HOY_B, pedido, ...extra });
+  const ej = fuenteConFichas('runs-review', {
+    'pending/a.yaml': viva('RR-CIERRE:abortada', 901),
+    'promoted/b.yaml': viva('RR-CIERRE:abandonada', 902),
+    'pending/c.yaml': viva('RR-CIERRE:sin-cerrar', 903),
+    'pending/d.yaml': viva('RR-NODE:carga', 904),
+    'pending/e.yaml': viva('RR-NODE:node-viejo', 905),
+    'pending/f.yaml': viva('RR-HOOK:Stop/x', 906, { ultima_vez: '2026-10-20' }),
+    'pending/g.yaml': volvioEj('RR-HOOK:Stop/y', { ultima_vez: HOY_B, pedido: 907 }),
+    'pending/h.yaml': viva('RR-HOOK:Stop/z', cycle.PIDIENDO, { pedido_motivo: 'sin-confirmar' }),
+    'archived/i.yaml': viva('RR-HOOK:Stop/w', 909, { estado: 'resuelta', resuelta_el: '2026-10-01' }),
+  });
+  // lo que la noche vio: todas menos la de RR-HOOK:Stop/x, que no apareció
+  const vistas = new Set(['RR-CIERRE:abortada', 'RR-CIERRE:abandonada', 'RR-CIERRE:sin-cerrar', 'RR-NODE:carga', 'RR-NODE:node-viejo',
+    'RR-HOOK:Stop/y', 'RR-HOOK:Stop/z', 'RR-HOOK:Stop/w']);
+  const operations = path.join(ej, 'operations.json');
+  fs.writeFileSync(operations, JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items: { org: 'acme', project: 'Operaciones', type: 'Task' } }));
+  // 901 y 902 cerrados, 903 abierto, 904 no se puede leer, 905 borrado
+  const estado = { 901: true, 902: true, 903: false };
+  const llamados = [];
+  const run = async (op, args) => {
+    llamados.push([op, args.id, args.state, args.comment]);
+    if (op === 'work-item.read') {
+      if (args.id === 904) return { ok: false, reason: 'no_medido' };
+      if (args.id === 905) return { ok: false, reason: 'no_encontrado' };
+      return { ok: true, value: { id: args.id, estado: estado[args.id] ? 'Closed' : 'Active', cerrado: estado[args.id] } };
+    }
+    return { ok: true, value: { id: args.id, changed: false, commented: true } };
+  };
+  const noche1 = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: ej, operations, hoy: HOY_B, repoDir: ej, vistas, run });
+  assert.deepStrictEqual(llamados.filter(([op]) => op === 'work-item.read').map(([, id]) => id), [901, 903, 904, 905, 902],
+    'sólo las vivas de hoy con pedido de la noche; ni la que esta noche no se vio, ni la que volvió, ni la que sigue «pidiendo», ni la archivada');
+  const comentarios = llamados.filter(([op]) => op === 'work-item.update');
+  assert.deepStrictEqual(comentarios.map(([, id]) => id), [901, 902]);
+  for (const [, , state, comment] of comentarios) {
+    assert.strictEqual(state, undefined, 'el pedido cerrado no se reabre');
+    assert.match(comment, /cerrado/);
+  }
+  assert.deepStrictEqual(noche1.avisados.map((x) => x.pedido), [901, 902]);
+  assert.strictEqual(noche1.sinLeer, 1);
+  assert.deepStrictEqual(noche1.noExisten, [905]);
+  const ficha = (rel) => cycle.parsear(fs.readFileSync(path.join(ej, rel), 'utf8'));
+  assert.strictEqual(ficha('pending/a.yaml').aviso_cerrado_el, HOY_B);
+  assert.strictEqual(ficha('pending/e.yaml').aviso_cerrado_el, HOY_B, 'el borrado se dice una vez y no se reintenta');
+  for (const rel of ['pending/c.yaml', 'pending/d.yaml']) assert.ok(!ficha(rel).aviso_cerrado_el, rel);
+  assert.deepStrictEqual(cycle.problemasDeForma(ficha('pending/a.yaml')), []);
+
+  // el resumen de esa misma noche: los avisados, el borrado y cuántos no se pudieron leer
+  const resumen = DS.lineasFichasDelClon(path.dirname(path.dirname(ej)), HOY_B).filter((l) => l.startsWith('🔒'));
+  const nombre = (causa) => NOMBRES.nombreDe('ejecuciones', { regla: causa.split(':')[0], categoria: causa.split(':')[1] });
+  assert.deepStrictEqual(resumen, [
+    `🔒 pedido cerrado con la falla viva en ejecuciones: ${nombre('RR-CIERRE:abortada')} — avisado en el pedido 901`,
+    `🔒 pedido cerrado con la falla viva en ejecuciones: ${nombre('RR-CIERRE:abandonada')} — avisado en el pedido 902`,
+    '🔒 ejecuciones: el pedido 905 ya no existe en la plataforma',
+    '🔒 ejecuciones: no se pudo leer el estado de 1 pedido; se intenta otra vez mañana',
+  ]);
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: resumen }), resumen, 'la edición de las 08:00 los vuelve a poner tal cual');
+
+  // la segunda noche: sólo se vuelve a leer el que no se pudo leer
+  llamados.length = 0;
+  const noche2 = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: ej, operations, hoy: HOY_B, repoDir: ej, vistas, run });
+  assert.deepStrictEqual(llamados.filter(([op]) => op === 'work-item.read').map(([, id]) => id), [903, 904]);
+  assert.deepStrictEqual(noche2.avisados, []);
+
+  // un comentario que falla no anota el aviso: se intenta otra vez
+  fs.writeFileSync(path.join(ej, 'pending', 'c.yaml'), viva('RR-CIERRE:sin-cerrar', 903));
+  estado[903] = true;
+  const falla = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: ej, operations, hoy: HOY_B, repoDir: ej, vistas,
+    run: async (op, args) => (op === 'work-item.read' ? run(op, args) : { ok: false, reason: 'no_medido' }) });
+  assert.ok(!ficha('pending/c.yaml').aviso_cerrado_el);
+  assert.match(falla.lineas.join('\n'), /no comentó el pedido 903 \(no_medido\)/);
+
+  // la ficha que se resuelve y vuelve puede recibir el aviso otra vez
+  const vuelta = cycle.registrarAparicion({ ...ficha('pending/a.yaml'), estado: 'resuelta', resuelta_el: '2026-10-21' }, '2026-10-23', []);
+  assert.strictEqual(vuelta.estado, 'reaparecio');
+  assert.ok(!('aviso_cerrado_el' in vuelta));
+  // sin lo que la noche vio no hay cruce: no se adivina con la fecha de la ficha
+  await assert.rejects(() => cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: ej, operations, hoy: HOY_B, repoDir: ej, run }), /vistas/);
+  // dependencias tiene su propio cruce
+  await assert.rejects(() => cycle.avisarCerradoConFallaViva({ fuente: 'dependencias', dir: ej, operations, hoy: HOY_B, run }));
+});
+
+// T18b PedidoCerradoFallaViva_LoQueNoSePudoSeDice @story-4.11 @ac-29
+// 🔴 Falla con: un resumen que calla lo que el cruce no pudo hacer (el comentario que falló, la ficha que no se pudo
+//    leer o escribir, el destino sin configurar, un cruce cortado, el archivo del cruce roto o las fichas ilegibles para
+//    el resumen), o una causa del vigilante sin forma copiada tal cual al comentario del pedido.
+test('T18b PedidoCerradoFallaViva_LoQueNoSePudoSeDice @story-4.11 @ac-29', async () => {
+  const viva = (causa, pedido, extra = {}) => comun(causa, { veredicto: 'arreglo', ultima_vez: HOY_B, pedido, ...extra });
+  const conDestino = (dir) => {
+    const p = path.join(dir, 'operations.json');
+    fs.writeFileSync(p, JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items: { org: 'acme', project: 'Operaciones', type: 'Task' } }));
+    return p;
+  };
+  const cerrado = async (op, args) => (op === 'work-item.read'
+    ? { ok: true, value: { id: args.id, estado: 'Closed', cerrado: true } } : { ok: true, value: { id: args.id, changed: false, commented: true } });
+  const TODAS = new Set(['RR-CIERRE:abortada', 'goteo <b>raro</b>']);
+  const candados = (l) => l.filter((x) => x.startsWith('🔒'));
+  const resumen = (ej) => candados(DS.lineasFichasDelClon(path.dirname(path.dirname(ej)), HOY_B));
+
+  // el comentario que falla y la ficha que no se puede leer
+  const ej = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901), 'pending/b.yaml': 'no: [es una ficha' });
+  const operations = conDestino(ej);
+  const r = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: ej, operations, hoy: HOY_B, repoDir: ej, vistas: TODAS,
+    run: async (op, args) => (op === 'work-item.read' ? cerrado(op, args) : { ok: false, reason: 'no_medido' }) });
+  assert.deepStrictEqual([r.sinComentar, r.sinMirar], [1, 1]);
+  const L1 = resumen(ej);
+  assert.deepStrictEqual(L1, [
+    '🔒 ejecuciones: la plataforma no comentó 1 pedido cerrado; se avisa otra vez mañana',
+    '🔒 ejecuciones: no se pudieron leer o escribir 1 fichas o carpetas para los pedidos cerrados; se miran otra vez mañana',
+  ]);
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: L1 }), L1, 'la edición de las 08:00 los acepta');
+
+  // la plataforma que lanza: en la lectura cuenta como no leído, en el comentario como no comentado
+  const lanza = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901) });
+  const opsLanza = conDestino(lanza);
+  const l1 = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: lanza, operations: opsLanza, hoy: HOY_B, repoDir: lanza, vistas: TODAS,
+    run: async () => { throw new Error('caída'); } });
+  assert.deepStrictEqual([l1.sinLeer, l1.sinComentar, l1.avisados], [1, 0, []]);
+  const l2 = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: lanza, operations: opsLanza, hoy: HOY_B, repoDir: lanza, vistas: TODAS,
+    run: async (op, args) => { if (op === 'work-item.update') throw new Error('caída'); return cerrado(op, args); } });
+  assert.deepStrictEqual([l2.sinLeer, l2.sinComentar, l2.avisados], [0, 1, []]);
+  assert.ok(!l2.lineas.join('\n').includes('caída'), 'los renglones no copian el texto del error');
+
+  // sin destino configurado: no se lee nada y la mañana dice qué falta, no «no se pudo leer»
+  const sinDestino = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901) });
+  const opsSin = path.join(sinDestino, 'operations.json');
+  fs.writeFileSync(opsSin, JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' } }));
+  const llamados = [];
+  const s = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: sinDestino, operations: opsSin, hoy: HOY_B, repoDir: sinDestino, vistas: TODAS,
+    run: async (op, args) => { llamados.push(op); return cerrado(op, args); } });
+  assert.deepStrictEqual([llamados, s.sinLeer, s.faltaConfigurar], [[], 0, true]);
+  assert.deepStrictEqual(resumen(sinDestino), ['🔒 ejecuciones: falta configurar el destino de los pedidos de la noche; no se miró si están cerrados']);
+
+  // un cruce que se corta deja la marca para la mañana, y lanza igual
+  const cortado = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901) });
+  const original = sources.comoFicha;
+  sources.comoFicha = () => ({ get estado() { throw new Error('se cortó'); } });
+  try {
+    await assert.rejects(() => cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: cortado, operations: conDestino(cortado), hoy: HOY_B, repoDir: cortado, vistas: TODAS, run: cerrado }));
+  } finally { sources.comoFicha = original; }
+  assert.deepStrictEqual(resumen(cortado), ['🔒 ejecuciones: el cruce de los pedidos cerrados se cortó esta noche; se mira mañana']);
+
+  // el archivo del cruce roto no es lo mismo que no tener nada que decir
+  fs.writeFileSync(path.join(cortado, cycle.AVISO_CERRADO), '{ roto');
+  assert.deepStrictEqual(cycle.leerAvisoCerrado(cortado, HOY_B), { roto: true });
+  assert.deepStrictEqual(resumen(cortado), ['🔒 ejecuciones: lo que dejó el cruce de los pedidos cerrados no se pudo leer']);
+  // uno de otro día no cuenta
+  fs.writeFileSync(path.join(cortado, cycle.AVISO_CERRADO), JSON.stringify({ fecha: '2026-10-01', sin_leer: 4, no_existen: [] }));
+  assert.strictEqual(cycle.leerAvisoCerrado(cortado, HOY_B), null);
+
+  if (process.platform !== 'win32' && process.getuid && process.getuid() !== 0) {
+    // la ficha que no se puede escribir después del comentario: se dice y mañana se vuelve a mirar
+    const soloLectura = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901) });
+    fs.chmodSync(path.join(soloLectura, 'pending', 'a.yaml'), 0o444);
+    try {
+      const w = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: soloLectura, operations: conDestino(soloLectura), hoy: HOY_B, repoDir: soloLectura, vistas: TODAS, run: cerrado });
+      assert.deepStrictEqual([w.avisados, w.sinMirar], [[], 1]);
+      assert.match(w.lineas.join('\n'), /la ficha no se pudo escribir \(EACCES\)/);
+    } finally { fs.chmodSync(path.join(soloLectura, 'pending', 'a.yaml'), 0o644); }
+    // las fichas que el resumen no puede leer no callan a los avisados sin decirlo
+    const ilegible = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901, { aviso_cerrado_el: HOY_B }) });
+    fs.chmodSync(path.join(ilegible, 'pending'), 0o000);
+    try {
+      assert.deepStrictEqual(DS.lineasCerrados('ejecuciones', ilegible, HOY_B),
+        ['🔒 ejecuciones: las fichas no se pudieron leer para los pedidos cerrados']);
+    } finally { fs.chmodSync(path.join(ilegible, 'pending'), 0o755); }
+    // la carpeta que el propio cruce no puede leer cuenta como no mirada
+    const carpeta = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901) });
+    fs.chmodSync(path.join(carpeta, 'pending'), 0o000);
+    try {
+      const c = await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: carpeta, operations: conDestino(carpeta), hoy: HOY_B, repoDir: carpeta, vistas: TODAS, run: cerrado });
+      assert.strictEqual(c.sinMirar, 1);
+    } finally { fs.chmodSync(path.join(carpeta, 'pending'), 0o755); }
+  }
+
+  // la causa del vigilante entra al comentario sólo con forma
+  const vig = tmp();
+  borradorCon(vig, 'pending', 'aaaa0041', 'goteo', { causa: 'goteo <b>raro</b>', vista_por_ultima_vez: HOY_B, pedido: '941' });
+  const comentarios = [];
+  const v = await cycle.avisarCerradoConFallaViva({ fuente: 'vigilante', dir: vig, operations: conDestino(vig), hoy: HOY_B, repoDir: vig, vistas: TODAS,
+    run: async (op, args) => { if (args.comment) comentarios.push(args.comment); return cerrado(op, args); } });
+  assert.deepStrictEqual(v.avisados.map((x) => x.pedido), [941]);
+  assert.match(comentarios[0], /Causa: sin forma\./);
+  assert.ok(!comentarios[0].includes('<b>'), comentarios[0]);
+});
+
+// T18c PedidoCerrado_AvisadoSoloConConstancia @story-4.11 @ac-29
+// 🔴 Falla con: decir «avisado» de un pedido que ya no existe (su ficha lleva la misma marca) cuando lo que dejó el cruce
+//    se perdió o quedó roto, o callar que hay fichas anotadas de las que no se sabe si se avisó.
+test('T18c PedidoCerrado_AvisadoSoloConConstancia @story-4.11 @ac-29', async () => {
+  const viva = (causa, pedido) => comun(causa, { veredicto: 'arreglo', ultima_vez: HOY_B, pedido });
+  const ej = fuenteConFichas('runs-review', { 'pending/a.yaml': viva('RR-CIERRE:abortada', 901), 'pending/b.yaml': viva('RR-CIERRE:abandonada', 905) });
+  const operations = path.join(ej, 'operations.json');
+  fs.writeFileSync(operations, JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items: { org: 'acme', project: 'Operaciones', type: 'Task' } }));
+  const run = async (op, args) => {
+    if (op === 'work-item.read') return args.id === 905 ? { ok: false, reason: 'no_encontrado' } : { ok: true, value: { id: args.id, estado: 'Closed', cerrado: true } };
+    return { ok: true, value: { id: args.id, changed: false, commented: true } };
+  };
+  await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: ej, operations, hoy: HOY_B, repoDir: ej, run,
+    vistas: new Set(['RR-CIERRE:abortada', 'RR-CIERRE:abandonada']) });
+  assert.deepStrictEqual(cycle.leerAvisoCerrado(ej, HOY_B).avisados, [901]);
+  const nombre = NOMBRES.nombreDe('ejecuciones', { regla: 'RR-CIERRE', categoria: 'abortada' });
+  assert.deepStrictEqual(DS.lineasCerrados('ejecuciones', ej, HOY_B), [
+    `🔒 pedido cerrado con la falla viva en ejecuciones: ${nombre} — avisado en el pedido 901`,
+    '🔒 ejecuciones: el pedido 905 ya no existe en la plataforma',
+  ]);
+  // sin lo que dejó el cruce, las dos fichas marcadas no se dan por avisadas: se dice que no se sabe
+  fs.unlinkSync(path.join(ej, cycle.AVISO_CERRADO));
+  const sin = DS.lineasCerrados('ejecuciones', ej, HOY_B);
+  assert.deepStrictEqual(sin, ['🔒 ejecuciones: 2 pedidos cerrados quedaron anotados sin la constancia del cruce; no se sabe si se les avisó']);
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: sin }), sin, 'la edición de las 08:00 lo acepta');
+  // roto: su renglón, y ningún avisado
+  fs.writeFileSync(path.join(ej, cycle.AVISO_CERRADO), '{ roto');
+  assert.deepStrictEqual(DS.lineasCerrados('ejecuciones', ej, HOY_B), ['🔒 ejecuciones: lo que dejó el cruce de los pedidos cerrados no se pudo leer']);
+  // una lista de avisados sin forma es un archivo roto
+  fs.writeFileSync(path.join(ej, cycle.AVISO_CERRADO), JSON.stringify({ fecha: HOY_B, avisados: ['901'], sin_leer: 0, no_existen: [] }));
+  assert.deepStrictEqual(cycle.leerAvisoCerrado(ej, HOY_B), { roto: true });
+});

@@ -1159,6 +1159,10 @@ function buzonDeUnaCausa() {
   const limpiar = () => fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `${base}.json`), JSON.stringify(volcado({ sid: SID(1), archivedAt })));
   return { mb, limpiar };
 }
+/** Una ejecución más de la misma causa, del día `dia` (el día sale del nombre; el archivado queda igual: es la causa). */
+function otraEjecucion(mb, dia, n) {
+  fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `1.1-${dia}T1519.json`), JSON.stringify(volcado({ sid: SID(n), archivedAt: '2026-10-19T22:19:00.000Z', pendientes: [7] })));
+}
 const RRDIR = (op, c) => path.join(op, 'inbox', 'runs-review', c);
 /** La única ficha de la causa, cambiada con `cambio` (un `undefined` borra la clave) y movida a `carpeta`. */
 function moverFicha(op, cambio, carpeta) {
@@ -1341,4 +1345,50 @@ test('T86 Reaparecio_IgnoradaQueYaHabiaVuelto_SeReabre @story-4.11 @ac-28', asyn
   const f = fichaEn(op, 'pending', nombre);
   assert.deepStrictEqual([f.estado, f.veredicto, f.veredicto_anterior, f.reaparecio_el, f.ultima_vez], ['reaparecio', 'pendiente', 'ignorada', '2026-10-25', '2026-10-25']);
   assert.deepStrictEqual(p.llamados.filter((x) => x.op === 'work-item.update').map((x) => x.args.id), [901], 'y su pedido se entera otra vez');
+});
+
+// T96 Ejecuciones_PedidoCerradoFallaViva_Cableado @story-4.11 @ac-29
+// 🔴 Falla con: que la noche de ejecuciones no lea el estado del pedido que creó, no le comente al cerrado, le mande un
+//    estado, avise dos veces, o que el resumen de esa noche no lo diga.
+test('T96 Ejecuciones_PedidoCerradoFallaViva_Cableado @story-4.11 @ac-29', async () => {
+  const { mb } = buzonDeUnaCausa();
+  const op = opsConPedidos();
+  await correr(mb, op, { today: '2026-10-19' });
+  const nombre = moverFicha(op, { veredicto: 'arreglo', pedido: 901 }, 'pending');
+  const p = plataformaFalsa((o, args) => (o === 'work-item.read'
+    ? { ok: true, value: { id: args.id, estado: 'Closed', cerrado: true } }
+    : { ok: true, value: { id: args.id, changed: false, commented: true } }));
+  otraEjecucion(mb, '2026-10-20', 2);
+  await correr(mb, op, { today: '2026-10-20', plataforma: p.run });
+  otraEjecucion(mb, '2026-10-21', 3);
+  await correr(mb, op, { today: '2026-10-21', plataforma: p.run });
+  assert.deepStrictEqual(p.llamados.map((x) => [x.op, x.args.id]), [['work-item.read', 901], ['work-item.update', 901]], 'un solo aviso');
+  const { args } = p.llamados[1];
+  assert.deepStrictEqual([args.org, args.project, 'state' in args, 'reopen' in args], ['acme', 'Operaciones', false, false], 'sólo comenta');
+  assert.match(args.comment, /cerrado/);
+  assert.strictEqual(fichaEn(op, 'pending', nombre).aviso_cerrado_el, '2026-10-20');
+  const DS = require(path.join(ROOT, 'scripts', 'nightly', 'dependencies', 'daily-summary.js'));
+  const lineas = DS.lineasFichasDelClon(op, '2026-10-20').filter((l) => l.startsWith('🔒'));
+  assert.strictEqual(lineas.length, 1, lineas.join('\n'));
+  assert.match(lineas[0], /^🔒 pedido cerrado con la falla viva en ejecuciones: .+ — avisado en el pedido 901$/);
+});
+
+// T96b Ejecuciones_PedidoCerrado_SoloConEjecucionNueva @story-4.11 @ac-29
+// 🔴 Falla con: avisarle al pedido cerrado porque la ejecución vieja sigue en la ventana de días (la falla no volvió
+//    desde el arreglo) y gastar así el único aviso, que después falta cuando la falla vuelve de verdad.
+test('T96b Ejecuciones_PedidoCerrado_SoloConEjecucionNueva @story-4.11 @ac-29', async () => {
+  const { mb } = buzonDeUnaCausa();
+  const op = opsConPedidos();
+  await correr(mb, op, { today: '2026-10-19' });
+  const nombre = moverFicha(op, { veredicto: 'arreglo', pedido: 901 }, 'pending');
+  const p = plataformaFalsa((o, args) => (o === 'work-item.read'
+    ? { ok: true, value: { id: args.id, estado: 'Closed', cerrado: true } }
+    : { ok: true, value: { id: args.id, changed: false, commented: true } }));
+  for (const d of ['2026-10-20', '2026-10-21', '2026-10-22']) await correr(mb, op, { today: d, plataforma: p.run });
+  assert.deepStrictEqual(p.llamados.filter((x) => x.op.startsWith('work-item.')).map((x) => x.op), [], 'sin ejecución nueva no se mira el pedido');
+  assert.ok(!fichaEn(op, 'pending', nombre).aviso_cerrado_el);
+  otraEjecucion(mb, '2026-10-23', 2);
+  await correr(mb, op, { today: '2026-10-23', plataforma: p.run });
+  assert.deepStrictEqual(p.llamados.map((x) => [x.op, x.args.id]), [['work-item.read', 901], ['work-item.update', 901]], 'la que volvió de verdad avisa');
+  assert.strictEqual(fichaEn(op, 'pending', nombre).aviso_cerrado_el, '2026-10-23');
 });
