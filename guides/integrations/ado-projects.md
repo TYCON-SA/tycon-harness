@@ -127,31 +127,16 @@ necesita config (silent-skip).
 
 ---
 
-## Registro del hook (una vez por máquina)
+## Dónde vive el hook
 
-El **script** del hook viaja por git en `~/.claude/agent-skills` (repo `AgentSkills`), pero
-el **registro** en `~/.claude/settings.json` se hace a mano por dev — igual que el bloque
-`SessionStart` del README. Agregar dentro del objeto `"hooks"`:
-
-```json
-"PostToolUse": [
-  {
-    "matcher": "Write",
-    "hooks": [
-      {
-        "type": "command",
-        "command": "node \"/Users/<TU_USUARIO>/.claude/agent-skills/skills/tycon-story-work-item/scripts/on-story-create.js\""
-      }
-    ]
-  }
-]
-```
-
-Reemplazá `<TU_USUARIO>` por tu usuario. Si ya tenés un array `PostToolUse`, agregá solo el
-objeto `{ "matcher": "Write", "hooks": [...] }` adentro.
+El hook vive con su integración, en `integrations/azure-devops/scripts/on-story-create.js`, y
+no se registra a mano: lo lanza el despachador del pipeline (`dispatch.js`) en cada `Write` de
+una story, si la integración de ADO está prendida en la organización o en el repo. Antes vivía en
+`skills/tycon-story-work-item/scripts/`; una máquina que todavía lo tenga registrado con esa
+ruta lo pierde de su configuración en la próxima actualización del arnés.
 
 El hook es no-bloqueante (`exit 0` siempre) y barato: filtra por contenido del archivo y
-solo emite cuando detecta una story Mary+GOLD nueva sin `ado_work_item:`.
+solo emite cuando detecta una story Mary+GOLD nueva sin `work_item:` (ni `ado_work_item:`).
 
 ---
 

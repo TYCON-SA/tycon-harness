@@ -23,7 +23,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
 const { computeNextStory } = require(path.join(SCRIPTS, 'pipeline.js'));
@@ -899,7 +899,9 @@ function adoEnv(extra = {}) {
   return Object.assign(env, extra);
 }
 
-test('dispatch post-edit: el Write de una story FUERA de specs/stories/ spawnea las hojas de story-create', () => {
+test('dispatch post-edit: el Write de una story FUERA de specs/stories/ spawnea las hojas de story-create', (t) => {
+  // la hoja de ADO vive en integrations/ del arnés: una copia que sólo trae skills/ no la tiene
+  if (!fs.existsSync(path.join(HARNESS_HERE, 'scripts', 'lib', 'tycon-config.js'))) { t.skip('sin el arnés en este árbol: no hay hoja de ADO que disparar'); return; }
   // El disparo REAL, end-to-end: dispatch.js decide por contenido y spawnea la hoja de ADO,
   // cuyo reminder es la evidencia. El layout es el de Pacara (docs/<área>/<épica>/) — el
   // caso que un guard por ruta dejaría mudo. OJO: la hoja excluye paths que contengan
@@ -927,6 +929,28 @@ test('dispatch post-edit: el Write de una story FUERA de specs/stories/ spawnea 
   assert.doesNotMatch(sinStory, /STORY-CREATE/, 'un doc de planning no puede disparar los hooks de story');
 
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// Una máquina con las skills en un clon que sólo trae skills/ (sin integrations/ al lado): la hoja de ADO sale de la
+// carpeta del arnés.
+test('dispatch post-edit: con las skills en un clon aparte, la hoja de ADO sale de integrations/ del arnés', (t) => {
+  if (!fs.existsSync(path.join(HARNESS_HERE, 'integrations', 'azure-devops', 'scripts', 'on-story-create.js'))) { t.skip('sin la integración de ADO en este árbol'); return; }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-split-'));
+  fs.cpSync(path.join(HARNESS_HERE, 'skills'), path.join(tmp, 'clon', 'skills'), { recursive: true });
+  const rel = 'docs/story-9-7-demo.md';
+  const contenido = '---\nstory: "9.7"\nepic: "pedidos"\nstatus: backlog\ntitle: "Demo"\napproach: "t"\n---\n# S\n';
+  fs.mkdirSync(path.join(tmp, 'repo', 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'repo', rel), contenido);
+  const ev = { hook_event_name: 'PostToolUse', tool_name: 'Write', session_id: 'sd-t3', cwd: path.join(tmp, 'repo'), tool_input: { file_path: path.join(tmp, 'repo', rel), content: contenido } };
+  const out = execFileSync('node', [path.join(tmp, 'clon', 'skills', 'tycon-pipeline', 'scripts', 'dispatch.js'), 'post-edit'],
+    { input: JSON.stringify(ev), encoding: 'utf8', env: adoEnv({ TYCON_ADO_ORG: 'https://dev.azure.com/example-org', TYCON_GUIDES_DIR: HARNESS_HERE }) });
+  assert.match(out, /STORY-CREATE-detect/, 'sin integrations/ al lado de las skills, la hoja tiene que salir del arnés');
+  // sin arnés tampoco: la hoja no está en ningún lado, y se dice
+  const sinArnes = spawnSync('node', [path.join(tmp, 'clon', 'skills', 'tycon-pipeline', 'scripts', 'dispatch.js'), 'post-edit'],
+    { input: JSON.stringify(ev), encoding: 'utf8', env: adoEnv({ TYCON_ADO_ORG: 'https://dev.azure.com/example-org', TYCON_GUIDES_DIR: '' }) });
+  assert.doesNotMatch(sinArnes.stdout, /STORY-CREATE-detect/);
+  assert.match(sinArnes.stderr, /el control «ado-story-create» de la integración ado no está/, 'el control que falta no queda mudo');
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 // La hoja de ADO corre sólo con la integración ado prendida (ado.org o TYCON_ADO_ORG) o si el repo de la story trae

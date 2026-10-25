@@ -20,6 +20,8 @@ const FAKE_AZ = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-az.sh');
 const FAKE_GH = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-gh.js');
 const LINT = path.join(ROOT, 'scripts', 'lib', 'lint-story-frontmatter.js');
 const STEPS = path.join(ROOT, 'skills', 'tycon-pipeline', 'steps');
+// el aviso al crear una historia sin pedido de trabajo: vive en la integración de Azure DevOps
+const STORY_HOOK = path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'on-story-create.js');
 
 const dirs = [];
 test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
@@ -182,7 +184,7 @@ test('WorkItem_FieldName_NeutralWithAlias @story-8.85 @ac-8', () => {
   assert.strictEqual(fs.readFileSync(sinDepends, 'utf8'), '---\nstory: "2"\nstatus: x\nwork_item: 12\npipelines:\n  a: 1\n---\n');
   // los lectores del arnés leen el mismo id con los dos nombres
   const snap = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'projects', 'snapshot.js'), 'utf8');
-  const hook = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-story-work-item', 'scripts', 'on-story-create.js'), 'utf8');
+  const hook = fs.readFileSync(STORY_HOOK, 'utf8');
   const como = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'), 'utf8');
   const pipe = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'), 'utf8');
   const visual = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'visual-plan.js'), 'utf8');
@@ -428,7 +430,7 @@ test('WorkItem_Config_UnknownKeysAndBooleans_Said @story-8.85 @ac-10', async () 
 
 test('WorkItem_Readers_RunForReal @story-8.85 @ac-8', () => {
   // el aviso al crear una historia, ejecutado: con el nombre viejo o el nuevo ya está ligada; sin ninguno, avisa
-  const hook = path.join(ROOT, 'skills', 'tycon-story-work-item', 'scripts', 'on-story-create.js');
+  const hook = STORY_HOOK;
   const correr = (campo) => {
     const d = tmp('historia-');
     const f = path.join(d, 'story-9-1.md');
@@ -586,7 +588,7 @@ test('Adversarial_Hours_NotANumber_Rejected @story-8.85 @ac-9', async () => {
 
 test('Adversarial_StoryCreateHook_EmptyFieldIsNotLinked @story-8.85 @ac-8', () => {
   // un `work_item:` vacío seguido de otra clave no cuenta como ligado: el aviso sale
-  const hook = path.join(ROOT, 'skills', 'tycon-story-work-item', 'scripts', 'on-story-create.js');
+  const hook = STORY_HOOK;
   for (const campo of ['work_item:', 'ado_work_item: ']) {
     const f = path.join(tmp('historia-vacia-'), 's.md');
     const content = `---\nstory: "9.1"\nepic: 9\nstatus: ready-for-dev\napproach: "[NEW]"\n${campo}\ntitle: x\n---\n`;
@@ -600,8 +602,9 @@ test('SkillAndHook_Renamed_RegisteredOnce @story-8.85 @ac-12', () => {
   const VIEJA = 'tycon-ado-story-wi';
   const NUEVA = 'tycon-story-work-item';
   const SK = path.join(ROOT, 'skills');
-  // la skill nueva trae el gancho; la vieja queda sólo con su reemplazo, que dice el nombre nuevo y manda a cargarla
-  assert.ok(fs.existsSync(path.join(SK, NUEVA, 'scripts', 'on-story-create.js')), 'el gancho vive en la skill nueva');
+  // el gancho vive en la integración de Azure DevOps; la skill vieja queda sólo con su reemplazo, que dice
+  // el nombre nuevo y manda a cargarla
+  assert.ok(fs.existsSync(STORY_HOOK) && !fs.existsSync(path.join(SK, NUEVA, 'scripts', 'on-story-create.js')), 'el gancho vive en la integración');
   assert.match(fs.readFileSync(path.join(SK, NUEVA, 'SKILL.md'), 'utf8'), /^---\nname: tycon-story-work-item\n/);
   assert.deepStrictEqual(fs.readdirSync(path.join(SK, VIEJA)), ['SKILL.md'], 'la carpeta vieja tiene sólo el reemplazo');
   const reemplazo = fs.readFileSync(path.join(SK, VIEJA, 'SKILL.md'), 'utf8');
@@ -609,7 +612,8 @@ test('SkillAndHook_Renamed_RegisteredOnce @story-8.85 @ac-12', () => {
   assert.match(reemplazo, /`tycon-story-work-item`/, 'y dice el nombre nuevo');
   // el despachador lanza el gancho por la ruta nueva; «Cómo trabaja», con los ids neutros
   const disp = fs.readFileSync(path.join(SK, 'tycon-pipeline', 'scripts', 'dispatch.js'), 'utf8');
-  assert.match(disp, /path\.join\(SKILLS_DIR, 'tycon-story-work-item', 'scripts', 'on-story-create\.js'\)/);
+  assert.match(disp, /path\.join\(INTEGRATIONS_DIR, 'azure-devops', 'scripts', 'on-story-create\.js'\)/);
+  assert.match(disp, /const INTEGRATIONS_DIR = \[path\.join\(SKILLS_DIR, '\.\.', 'integrations'\), ARNES_DIR && path\.join\(ARNES_DIR, 'integrations'\)\]/);
   const { INTEGRATION_PIECES } = require(path.join(SK, 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'));
   const ids = INTEGRATION_PIECES.map((p) => p.id);
   assert.ok(ids.includes('workItemActive') && ids.includes('workItemClose'), ids.join(', '));
@@ -647,13 +651,35 @@ test('SkillAndHook_Renamed_RegisteredOnce @story-8.85 @ac-12', () => {
   // las pruebas lo nombran a propósito y version.json lo regenera la publicación
   const conViejo = execFileSync('git', ['-C', ROOT, 'grep', '-l', VIEJA, '--', '.', ':!scripts/tests', ':!version.json'], { encoding: 'utf8' }).trim().split('\n').sort();
   assert.deepStrictEqual(conViejo, ['scripts/setup/hooks-list.json', `skills/${NUEVA}/SKILL.md`, `skills/${VIEJA}/SKILL.md`].sort());
-  // el mapa de renombres viaja sólo con el privado: con él debajo, trae la entrada del gancho y no declara la carpeta
+  // el mapa de renombres viaja sólo con el privado: con él debajo, no declara la carpeta vieja (la mudanza del gancho a
+  // su integración la mira how-it-works.test.js)
   const mapa = path.join(ROOT, 'scripts', 'lib', 'renames.json');
   if (fs.existsSync(mapa)) {
     const e = JSON.parse(fs.readFileSync(mapa, 'utf8')).entries;
-    assert.ok(e.some((x) => x.kind === 'file' && x.old === `skills/${VIEJA}/scripts/on-story-create.js` && x.new === `skills/${NUEVA}/scripts/on-story-create.js` && x.repo === 'agent-skills'));
     assert.ok(!e.some((x) => x.kind === 'folder' && x.old === `skills/${VIEJA}`), 'la carpeta vieja sigue existiendo con su reemplazo');
   }
+});
+
+test('PlatformWorkItem_MovedHook_StillFindsTheField @story-8.127 @ac-3 — el gancho mudado encuentra el lector del campo y contesta igual', () => {
+  // el lector común está donde el gancho lo pide: tres carpetas arriba, scripts/lib/platform/
+  const lector = path.join(path.dirname(STORY_HOOK), '..', '..', '..', 'scripts', 'lib', 'platform', 'work-item-field.js');
+  assert.ok(fs.existsSync(lector), 'work-item-field.js al alcance del gancho');
+  assert.match(fs.readFileSync(STORY_HOOK, 'utf8'), /require\(path\.join\(__dirname, '\.\.', '\.\.', '\.\.', 'scripts', 'lib', 'platform', 'work-item-field\.js'\)\)/);
+  // en una carpeta de juguete: ligada con cualquiera de los dos nombres, calla; sin ninguno, avisa con el título
+  const correr = (campo) => {
+    const f = path.join(tmp('historia-mudada-'), 'story-9-2.md');
+    const content = `---\nstory: "9.2"\nepic: 9\nstatus: ready-for-dev\napproach: "[NEW]"\ntitle: "Mudanza"\n${campo}---\n\n# S\n`;
+    fs.writeFileSync(f, content);
+    const r = spawnSync(process.execPath, [STORY_HOOK], { input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: f, content } }), encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return r.stdout;
+  };
+  assert.strictEqual(correr('work_item: 77\n'), '');
+  assert.strictEqual(correr('ado_work_item: 78\n'), '');
+  const aviso = correr('');
+  assert.match(aviso, /sin `work_item:`/);
+  assert.match(aviso, /9\.2 — Mudanza/);
+  assert.match(aviso, /Skill\(skill="tycon-story-work-item"/, 'sigue mandando a la skill');
 });
 
 // T85 Plataforma_SoloComentario_NoInventaElEstado @story-4.11 @ac-28

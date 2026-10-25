@@ -34,8 +34,9 @@ tycon-create-story  ──►  story.md (sin work_item)
 
 ## Cuándo se ejecuta
 
-1. **Disparado por hook** — el hook `scripts/on-story-create.js` (`PostToolUse` matcher
-   `Write`) detecta una story Mary+GOLD recién creada sin `work_item:` (ni el nombre viejo) y emite el
+1. **Disparado por hook** — el hook de la integración de ADO,
+   `integrations/azure-devops/scripts/on-story-create.js` (`PostToolUse` matcher `Write`, lo lanza el despachador
+   del pipeline), detecta una story Mary+GOLD recién creada sin `work_item:` (ni el nombre viejo) y emite el
    reminder `tycon-story-work-item STORY-CREATE-detect`. El agente invoca este skill.
 2. **Invocación manual** — el usuario pide "crear el WI en ADO para esta story" /
    "linkeá esta story a ADO".

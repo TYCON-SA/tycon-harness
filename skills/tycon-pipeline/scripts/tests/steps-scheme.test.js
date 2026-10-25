@@ -689,3 +689,17 @@ test('T30 Steps_NoOldNumbersInWhatAgentsRead @story-7.23 @ac-15 — ningún paso
   const agregada = rojo.find((f) => f.ruta === ruta);
   assert.match(agregada.texto, /Step 5b/, `la línea nombrada no es la agregada: ${JSON.stringify(agregada)}`);
 });
+
+test('Steps_CloseChecks_SameOldKeys @story-8.127 @ac-11 — la tabla del marcador armada desde los frenos del cierre es la de siempre', () => {
+  // la de marker.js antes de la 8.127, escrita acá a propósito
+  const deSiempre = {
+    'approve-plan': ['plan'], implement: ['atdd'], 'run-tests': ['tests'], reviewers: ['advisors'],
+    findings: ['waivers', 'findings-close'], 'prepare-commit': ['waivers', 'commit'],
+    3: ['plan'], 4: ['atdd', 'tests'], 5: ['advisors'], 7: ['waivers', 'findings-close'], 8: ['waivers', 'commit'],
+  };
+  const armada = S().closeControlsByStep();
+  assert.deepStrictEqual(armada, deSiempre);
+  for (const k of ['6', '5b', '7b']) assert.ok(!(k in armada), `sin la clave vieja ${k}`);
+  // las claves viejas van a mano en cada fila, no se derivan de `old` de cada paso
+  for (const r of S().STEP_CLOSE_CHECKS) assert.ok(Array.isArray(r.oldKeys), `${r.textKey}: oldKeys declaradas`);
+});

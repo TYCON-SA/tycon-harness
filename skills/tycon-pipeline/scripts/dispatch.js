@@ -106,6 +106,10 @@ try { ({ nativeEvent } = require('./lib/path-shape.js')); } catch { /* sin norma
 
 const PIPELINE_SCRIPTS = __dirname;
 const SKILLS_DIR = path.join(__dirname, '..', '..');
+// integrations/ del mismo árbol que las skills; si las skills vienen de un clon que sólo trae skills/, agents/ y packs/,
+// la del arnés
+const INTEGRATIONS_DIR = [path.join(SKILLS_DIR, '..', 'integrations'), ARNES_DIR && path.join(ARNES_DIR, 'integrations')]
+  .find((d) => d && fs.existsSync(d)) || path.join(SKILLS_DIR, '..', 'integrations');
 
 // mode → lista ORDENADA de handlers. El blocking (on-dod-evidence-guard +
 // on-frontmatter-write) va primero en pre-edit: si bloquea, no tiene sentido
@@ -194,7 +198,7 @@ const CHAINS = {
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla
     { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra)
-    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-story-work-item', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
+    { name: 'ado-story-create', path: path.join(INTEGRATIONS_DIR, 'azure-devops', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
     { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['validate-story'], effect: 'records' },
   ],
 };
@@ -279,6 +283,9 @@ function dispatch(mode) {
               stdio: ['pipe', 'pipe', 'pipe'],
             });
             if (out && out.trim()) { process.stdout.write(out); escribioAparte = true; }
+          } else if (h.integration) {
+            // el control de una integración que no está donde se lo busca se dice, como el que no carga
+            process.stderr.write(`despachador: el control «${h.name}» de la integración ${h.integration} no está: ${h.path}\n`);
           }
         }
       } catch (e) {

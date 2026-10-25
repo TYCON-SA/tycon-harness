@@ -895,12 +895,8 @@ function quienDeLasOpciones(optVal, extra) {
 }
 
 // Los controles que corren al cerrar cada paso. En un marcador nuevo, por nombre; en uno viejo, por su número de
-// entonces (el 4 viejo cerraba implementar y correr las pruebas juntos; el 7, la decisión de los hallazgos).
-const CONTROLES_DEL_PASO = {
-  'approve-plan': ['plan'], implement: ['atdd'], 'run-tests': ['tests'], reviewers: ['advisors'],
-  findings: ['waivers', 'findings-close'], 'prepare-commit': ['waivers', 'commit'],
-  3: ['plan'], 4: ['atdd', 'tests'], 5: ['advisors'], 7: ['waivers', 'findings-close'], 8: ['waivers', 'commit'],
-};
+// entonces. La tabla vive en lib/steps.js, que «Cómo trabaja» también lee para mostrar cada freno en su paso.
+const CONTROLES_DEL_PASO = STEPS_LIB.closeControlsByStep();
 // El orden del marcador viejo (cadena: 3 ← {1,2} · 4 ← {3} · 5 ← {4} · 8 ← {5}); el nuevo es STEPS_LIB.ORDER_REQUIRES.
 const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 

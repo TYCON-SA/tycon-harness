@@ -84,7 +84,7 @@
     "skills/tycon-pipeline/steps/close-work-item.md": 3,
     "skills/tycon-pipeline/steps/step-01-start.md": 3,
     "skills/tycon-story-work-item/SKILL.md": 19,
-    "skills/tycon-story-work-item/scripts/on-story-create.js": 1,
+    "integrations/azure-devops/scripts/on-story-create.js": 1,
     "story-format.md": 1
   }
 }
