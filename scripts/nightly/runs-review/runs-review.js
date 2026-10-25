@@ -303,6 +303,12 @@ async function run(opts) {
   // las decisiones confirmadas en el sitio que otra persona aprobó, antes de revisar; sólo renglones a la
   // salida de error: last-run.json conserva su forma
   for (const l of CYCLE.aplicarDecisiones({ base: opsDir, fuente: 'ejecuciones' }).lineas) process.stderr.write(`${l}\n`);
+  // el pedido de trabajo de cada arreglo decidido que todavía no lo tiene
+  // un error del paso no corta la revisión de la noche: se dice y la noche siguiente vuelve a pedir
+  try {
+    const pedidos = await CYCLE.pedirTrabajo({ base: opsDir, fuente: 'ejecuciones', operations: path.join(opsDir, 'operations.json'), repoDir: opsDir });
+    for (const l of pedidos.lineas) process.stderr.write(`${l}\n`);
+  } catch (e) { process.stderr.write(`pedidos de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); esta noche no se pidió ninguno\n`); }
   const desde = menosDias(today, days);
   const estado = { fecha: today, completo: true, motivo: null, miradas: 0, con_fallas: 0, nuevas: 0, sin_hilo: 0, hilos_sin_hooks: 0, ilegibles: 0, causas: [] };
   const previa = pasadaDeHoy(path.join(raiz, 'last-run.json'), today);

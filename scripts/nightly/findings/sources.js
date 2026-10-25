@@ -3,7 +3,7 @@
 // palabras, y la pieza se los lee con un mapa; ejecuciones escribe la ficha común de cycle.js. Los instintos entran
 // después: el ciclo los admite, esta lista todavía no.
 
-const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA } = require('./cycle.js');
+const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD } = require('./cycle.js');
 const { nombreDe } = require('./cause-names.js');
 
 // ── dependencias: su formato y sus palabras de hoy ─────────────────────────────────────────────
@@ -47,7 +47,7 @@ function carpetaDependencias({ estado, veredicto }) {
 
 const ORDEN_VIGILANTE = ['id', 'fuente', 'causa', 'fecha', 'producto', 'regla', 'severidad', 'huella', 'plugin', 'endpoint',
   'senal', 'diagnostico', 'ultimo_deploy', 'ya_alertado_por_azure', 'evidencia', 'reincidente', 'veredicto', 'motivo',
-  'vista_por_ultima_vez', 'noches_seguidas', 'recordado_el', 'story_creada'];
+  'vista_por_ultima_vez', 'noches_seguidas', 'recordado_el', 'story_creada', 'pedido', 'asignado', 'pedido_motivo'];
 
 /** El estado y el veredicto comunes de un borrador del vigilante: mismas palabras que dependencias. Todavía no se
  *  resuelve ni reaparece: el estado es siempre `viva`. */
@@ -96,6 +96,8 @@ function propuestaDe(accion, razon, modelo) {
   return p;
 }
 const motivoDe = (m) => (MOTIVOS_SIN_PROPUESTA.includes(m) ? m : null);
+const motivoPedidoDe = (m) => (MOTIVOS_SIN_PEDIDO.includes(m) ? m : null);
+const asignadoDe = (v) => (typeof v === 'string' && IDENTIDAD.test(v) && v !== 'null' ? v : null);
 
 /** El pedido de trabajo: un enlace si tiene forma de enlace, si no su número o clave; nada que no tenga forma. */
 function pedidoDe(v) {
@@ -103,6 +105,8 @@ function pedidoDe(v) {
   const t = String(v).trim();
   // el vacío de YAML escrito a mano (`null`, `~`) no es un pedido: así lo lee también daily-summary.js
   if (/^(null|~)$/i.test(t)) return null;
+  // la marca de la noche mientras pide no es un pedido
+  if (t === PIDIENDO) return null;
   if (ENLACE.test(t)) return { id: null, enlace: t };
   if (/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(t)) return { id: t, enlace: null };
   return null;
@@ -122,7 +126,7 @@ function comoFicha(fuente, txt) {
     return { fuente, id: f.id, causa: f.causa, nombre: f.nombre, primera_vez: f.primera_vez, ultima_vez: f.ultima_vez,
       apariciones: f.apariciones, veredicto: f.veredicto, estado: f.estado, resuelto: null, reaparecido: null,
       propuesta: pr ? propuestaDe(pr.accion, pr.razon, pr.modelo) : null, propuesta_motivo: motivoDe(f.propuesta_motivo),
-      pedido: pedidoDe(f.pedido), asignado: f.asignado || null, noches: null, pr_noche: null };
+      pedido: pedidoDe(f.pedido), asignado: f.asignado || null, pedido_motivo: motivoPedidoDe(f.pedido_motivo), noches: null, pr_noche: null };
   }
   const reg = FUENTES[fuente];
   if (!reg || !reg.formato) throw new Error(`fuente desconocida: ${fuente}`);
@@ -132,7 +136,7 @@ function comoFicha(fuente, txt) {
   // el pedido que abrió la noche por la ficha (`pr:`), si sigue abierto: ni rechazado ni cerrado
   const prNoche = e.rechazado || e.pr_cerrado ? null : entero(e.pr);
   const comun = { veredicto, estado, propuesta: propuestaDe(e.propuesta_accion, e.propuesta_razon, e.propuesta_modelo),
-    propuesta_motivo: motivoDe(e.propuesta_motivo), asignado: null, pr_noche: prNoche };
+    propuesta_motivo: motivoDe(e.propuesta_motivo), asignado: null, pedido_motivo: null, pr_noche: prNoche };
   if (fuente === 'dependencias') {
     // `pedidos:` es la lista «Proyecto: id» de los pedidos del líder; el último es el vigente
     const ultimo = reg.formato.listaDe(String(txt), 'pedidos').slice(-1)[0];
@@ -143,7 +147,9 @@ function comoFicha(fuente, txt) {
   }
   return { fuente, id: e.id || null, causa: e.causa || e.huella || null, nombre: nombreDe('vigilante', e), primera_vez: fecha(e.fecha),
     ultima_vez: fecha(e.vista_por_ultima_vez), apariciones: entero(e.noches_seguidas) || 1, resuelto: null, reaparecido: null, ...comun,
-    pedido: pedidoDe(e.story_creada), noches: null };
+    // el pedido que creó la noche y, sin él, la story que creó una persona con /tycon-vigilante
+    pedido: pedidoDe(e.pedido) || pedidoDe(e.story_creada), asignado: asignadoDe(e.asignado), pedido_motivo: motivoPedidoDe(e.pedido_motivo),
+    noches: null };
 }
 
 module.exports = { FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, esVieja, comoFicha };

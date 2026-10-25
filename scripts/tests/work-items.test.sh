@@ -543,6 +543,20 @@ for variante in invalido ausente; do
 done
 rm -f "$TMP/operations.json"
 
+# ── T54b. Pedido_MotivoDeResponsables_Fijo: el motivo no copia lo que dice el lector de operations.json ─────────
+# El motivo va a la foto de la noche y a su salida: el problema del lector trae valores del archivo (correos,
+# identidades), así que el motivo es fijo, como el de nochesParaResolver.
+mundo
+ficha pending abc12345 browserslist high 1 "A/A"
+snapshot $HOY "[$(p1 abc12345 browserslist A/A)]"
+ops '{ "version": 1, "owners": { "default": "zzsecreto sin forma" } }'
+rc=$(correr --operations "$TMP/operations.json")
+{ [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 0 ] && ! grep -q zzsecreto "$TMP/o.txt" "$TMP/out/"*.json \
+  && ped 'p.fallidos.length === 1 && /operations\.json no sirve/.test(p.fallidos[0].motivo) && !/zzsecreto|owners/.test(p.fallidos[0].motivo)'; } \
+  && ok "T54b Pedido_MotivoDeResponsables_Fijo: el motivo de un operations.json que no sirve no copia el archivo" \
+  || no "T54b Pedido_MotivoDeResponsables_Fijo: rc=$rc creates=$(cuenta crear) · $(pie)"
+rm -f "$TMP/operations.json"
+
 # ── T11. la iteración: la actual si está vigente; si terminó, la raíz, y se dice ──────────────────
 iter(){ # <etiqueta> <json de iteraciones> <expresión sobre la llamada crear> <expresión sobre p>
   mundo

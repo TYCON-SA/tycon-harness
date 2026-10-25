@@ -2,7 +2,8 @@
 // de las ejecuciones. Una ficha es una CAUSA, no un caso: la noche que la vuelve a ver le suma una aparición, la que no
 // la ve (y la midió) le suma una noche sin aparecer, y a las N noches medidas seguidas sin aparecer se resuelve.
 //
-// Acá no hay red ni plataforma: sólo la forma de la ficha, sus carpetas, leerla y escribirla, y contar noches. Cada
+// Acá no hay red: la forma de la ficha, sus carpetas, leerla y escribirla, y contar noches. La plataforma la llama sólo
+// `pedirTrabajo`, por la capa de plataforma (scripts/lib/platform/platform.js), y las pruebas se la inyectan. Cada
 // fuente dice en sources.js cómo se llama su carpeta y cómo se leen sus fichas; dependencias conserva su formato de hoy
 // (secciones de YAML por expresión regular) y la pieza se lo lee con un mapa.
 //
@@ -30,7 +31,12 @@ const NOCHES_POR_DEFECTO = 3;
 // contada) sólo están mientras cuenta.
 const CLAVES = ['id', 'fuente', 'causa', 'nombre', 'primera_vez', 'ultima_vez', 'apariciones', 'noches_sin_aparecer',
   'noche_contada', 'veredicto', 'veredicto_anterior', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
-  'pedido', 'asignado', 'estado', 'casos', 'casos_total', 'casos_vistos'];
+  'pedido', 'asignado', 'pedido_motivo', 'estado', 'casos', 'casos_total', 'casos_vistos'];
+// Por qué un arreglo quedó sin pedido o sin asignado: una lista cerrada, nunca el texto de un error.
+const MOTIVOS_SIN_PEDIDO = ['sin-responsable', 'plataforma-sin-asignado', 'plataforma-caida', 'sin-confirmar', 'sin-configurar'];
+// La marca que la noche deja en la ficha antes de pedirle el pedido a la plataforma: una ficha que la tiene sin id no
+// vuelve a pedir (la noche anterior pudo crearlo y cortarse antes de anotarlo).
+const PIDIENDO = 'pidiendo';
 // Por qué una ficha quedó sin propuesta del modelo: una lista cerrada, nunca el texto de un error. `tope` y `sin-escribir`
 // (la ficha no se pudo escribir) no se escriben en la ficha: los cuenta la constancia de la noche.
 const MOTIVOS_SIN_PROPUESTA = ['sin-modelo', 'sin-llave', 'no-permitido', 'modelo-caido', 'respuesta-invalida', 'tope', 'sin-escribir'];
@@ -53,7 +59,8 @@ const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const CLAVE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,119}$/;
 const HUELLA = /^[0-9a-f]{8}$/;
 const ENLACE = /^https:\/\/[^\s"'<>\\]{1,500}$/;
-const IDENTIDAD = /^[^\s@]+(@[^\s@]+)?$/;
+// una identidad (usuario o correo): sin espacios ni comillas dobles ni «<>», que la vista del vigilante no muestra
+const IDENTIDAD = /^[^\s@"<>]+(@[^\s@"<>]+)?$/;
 const CONTROL = /[\u0000-\u001f\u007f\u2028\u2029]/;
 const CLAVE_DE_CASO = /^[a-z][a-z0-9_]{0,39}$/;
 
@@ -99,6 +106,7 @@ function problemasDeForma(f) {
   if ('propuesta_fallo_el' in f && !(typeof f.propuesta_fallo_el === 'string' && FECHA.test(f.propuesta_fallo_el))) p.push('propuesta_fallo_el: una fecha');
   if (f.pedido !== null && !(entero(f.pedido, 1) || (typeof f.pedido === 'string' && CLAVE.test(f.pedido)))) p.push('pedido: sin forma');
   if (f.asignado !== null && !(typeof f.asignado === 'string' && IDENTIDAD.test(f.asignado))) p.push('asignado: sin forma');
+  if ('pedido_motivo' in f && f.pedido_motivo !== null && !MOTIVOS_SIN_PEDIDO.includes(f.pedido_motivo)) p.push('pedido_motivo: fuera del vocabulario');
   if (!ESTADOS.includes(f.estado)) p.push('estado: fuera del vocabulario');
   if (!Array.isArray(f.casos)) p.push('casos: tiene que ser una lista');
   else {
@@ -515,7 +523,167 @@ function sitioDecide(rutaOperations) {
   return { codigo: 1, motivo: 'operations.json no tiene site.url: la noche abre un pedido por ficha' };
 }
 
+// ── el pedido de trabajo de cada arreglo ──────────────────────────────────────────────────────
+//
+// Una ficha de ejecuciones o del vigilante decidida «arreglar» pide, la noche siguiente, su pedido de trabajo por la
+// capa de plataforma, asignado al responsable de `owners` (decisión 18). Dependencias crea su Bug por su camino
+// (scripts/nightly/dependencies/work-items.js; decisión 17).
+
+/** Leer y escribir el pedido en la ficha de cada fuente: la común (ejecuciones) o el borrador del vigilante. */
+function accesoAlPedido(fuente) {
+  const { FUENTES: registro } = require('./sources.js');
+  if (fuente === 'ejecuciones') {
+    return { crudo: (txt) => parsear(txt), poner: (txt, campos) => serializar({ ...parsear(txt), ...campos }) };
+  }
+  const fmt = registro.vigilante.formato;
+  const escalar = (v) => (v === null ? 'null' : typeof v === 'number' ? String(v) : JSON.stringify(v));
+  return {
+    crudo: (txt) => {
+      const e = fmt.leerFicha(String(txt)).escalares;
+      return { pedido: e.pedido === undefined ? null : e.pedido, pedido_motivo: e.pedido_motivo === undefined || e.pedido_motivo === 'null' ? null : e.pedido_motivo,
+        producto: e.producto, regla: e.regla, severidad: e.severidad, story_creada: e.story_creada };
+    },
+    poner: (txt, campos) => Object.entries(campos).reduce((t, [k, v]) => fmt.ponerEscalar(t, k, escalar(v)), String(txt)),
+  };
+}
+
+/**
+ * Lo que la noche necesita de operations.json para pedir: el responsable (`owners.default`: las fichas de ejecuciones y
+ * del vigilante no tienen proyecto) y dónde va el pedido (`work_items.org`, `.project` y `.type`). Un archivo que no
+ * valida no da ninguno de los dos.
+ */
+function pedidoDeLaNoche(rutaOperations) {
+  const OPS = require('../../lib/operations-config.js');
+  let r;
+  try { r = OPS.load(rutaOperations); } catch { r = null; }
+  if (!r || !r.ok || !r.data) return { responsable: null, destino: null };
+  const quien = OPS.ownerFor(r.data, null);
+  const w = r.data.work_items || {};
+  const destino = w.org && w.project ? { org: w.org, project: w.project, ...(w.type ? { type: w.type } : {}) } : null;
+  return { responsable: typeof quien === 'string' && IDENTIDAD.test(quien) ? quien : null, destino };
+}
+
+// Lo que dice la plataforma cuando le falta configuración: no se reintenta solo, lo arregla una persona
+const SIN_CONFIGURAR = ['sin_credencial', 'sin_plataforma'];
+const FALTA_CONFIGURAR = 'falta configurar dónde va (work_items.org y work_items.project de operations.json, en la Configuración del sitio)';
+// ¿El campo del vigilante tiene algo? El vacío de YAML escrito a mano no cuenta
+const conValor = (v) => v !== undefined && v !== null && !/^(|null|~|"")$/i.test(String(v).trim());
+
+/** La descripción del pedido: sólo campos con forma de la ficha; nunca el diagnóstico, la evidencia ni la propuesta. */
+function descripcionDelPedido(fuente, v, crudo) {
+  const partes = [`Lo encontró la noche (${fuente}) y se decidió arreglarlo.`, `Causa: ${v.causa}.`,
+    `Apariciones: ${v.apariciones}.`, `Primera vez: ${v.primera_vez}.`];
+  if (v.ultima_vez) partes.push(`Última vez: ${v.ultima_vez}.`);
+  if (fuente === 'vigilante') {
+    for (const [k, nombre] of [['producto', 'Producto'], ['regla', 'Regla'], ['severidad', 'Severidad']]) {
+      if (typeof crudo[k] === 'string' && CLAVE.test(crudo[k])) partes.push(`${nombre}: ${crudo[k]}.`);
+    }
+  }
+  return partes.join(' ');
+}
+
+/**
+ * Crea el pedido de cada arreglo de la fuente sin pedido. Antes de llamar deja `pedido: pidiendo`; sin poder escribirla,
+ * no llama. Con el id lo anota, con el asignado que la plataforma confirmó y `pedido_motivo`. Con la plataforma que dice
+ * que no, la ficha queda sin pedido con `plataforma-caida` y se reintenta la noche siguiente; si lo que falta es
+ * configuración (o operations.json no dice dónde va), con `sin-configurar` y sin llamar. Una respuesta que no dice que no
+ * pero tampoco trae el número (o que lanza) deja la marca: pudo crearlo. Una ficha que ya estaba `pidiendo` no pide otro
+ * y queda `sin-confirmar`. Un hallazgo del vigilante con `story_creada` ya tiene su pedido. Devuelve `{ creados, sinAsignado, sinCrear, lineas }`; los
+ * renglones no copian el texto de un error.
+ */
+async function pedirTrabajo({ base, fuente, operations, run = null, dir = null, repoDir = null }) {
+  if (fuente !== 'ejecuciones' && fuente !== 'vigilante') {
+    throw new Error(`${fuente}: el pedido de dependencias lo crea scripts/nightly/dependencies/work-items.js`);
+  }
+  const { comoFicha } = require('./sources.js');
+  const plataforma = run || ((op, args) => require('../../lib/platform/platform.js').run(op, args));
+  const carpetas = dir ? Object.fromEntries(CARPETAS.map((c) => [c, path.join(dir, c)])) : carpetasDe(base, fuente);
+  const acceso = accesoAlPedido(fuente);
+  const r = { creados: [], sinAsignado: [], sinCrear: [], lineas: [] };
+  let nombres;
+  try { nombres = fs.readdirSync(carpetas.promoted).filter((x) => x.endsWith('.yaml')).sort(); } catch (e) {
+    if (e && e.code === 'ENOENT') return r;
+    r.lineas.push(`pedidos de ${fuente}: la carpeta de los decididos no se pudo leer (${(e && e.code) || 'error'}); esta noche no se pide ninguno`);
+    return r;
+  }
+  const { responsable, destino } = pedidoDeLaNoche(operations);
+  for (const nombre of nombres) {
+    const ruta = path.join(carpetas.promoted, nombre);
+    let txt;
+    let v;
+    let crudo;
+    try {
+      txt = fs.readFileSync(ruta, 'utf8');
+      v = comoFicha(fuente, txt);
+      crudo = v ? acceso.crudo(txt) : null;
+    } catch (e) {
+      r.lineas.push(`pedido de ${nombre.slice(0, -5)}: la ficha no se pudo leer (${(e && e.code) || 'sin forma'})`);
+      continue;
+    }
+    if (!v || v.veredicto !== 'arreglo' || v.estado === 'resuelta' || v.pedido || conValor(crudo.story_creada)) continue;
+    const escribir = (campos) => { txt = acceso.poner(txt, campos); fs.writeFileSync(ruta, txt); };
+    if (String(crudo.pedido) === PIDIENDO) {
+      try { if (crudo.pedido_motivo !== 'sin-confirmar') escribir({ pedido_motivo: 'sin-confirmar' }); } catch { /* se vuelve a decir mañana */ }
+      r.sinCrear.push({ id: v.id, motivo: 'sin-confirmar' });
+      r.lineas.push(`pedido de ${v.id}: quedó «pidiendo» de una noche anterior sin el número; no se pide otro (lo mira una persona)`);
+      continue;
+    }
+    if (!destino) {
+      try { if (crudo.pedido_motivo !== 'sin-configurar') escribir({ pedido_motivo: 'sin-configurar' }); } catch { /* se vuelve a decir mañana */ }
+      r.sinCrear.push({ id: v.id, motivo: 'sin-configurar' });
+      r.lineas.push(`pedido de ${v.id}: ${FALTA_CONFIGURAR}; no se pide`);
+      continue;
+    }
+    try { escribir({ pedido: PIDIENDO, pedido_motivo: null }); } catch (e) {
+      r.lineas.push(`pedido de ${v.id}: la ficha no se pudo escribir (${(e && e.code) || 'error'}); no se pide`);
+      continue;
+    }
+    const args = { repoDir: repoDir || base || path.dirname(path.dirname(carpetas.promoted)), title: `${v.nombre} (${fuente})`,
+      description: descripcionDelPedido(fuente, v, crudo), tags: [`arnes-${fuente}`, `arnes:${v.id}`], forNight: true, ...destino };
+    if (responsable) args.assignTo = responsable;
+    let res = null;
+    let lanzo = null;
+    try { res = await plataforma('work-item.create', args); } catch (e) {
+      const clase = e && e.constructor && e.constructor.name;
+      lanzo = typeof clase === 'string' && /^[A-Za-z_]{1,30}$/.test(clase) ? clase : 'error';
+    }
+    const id = res && res.ok === true && res.value ? res.value.id : null;
+    const idValido = (Number.isInteger(id) && id > 0) || (typeof id === 'string' && CLAVE.test(id));
+    // «no_medido» no es un no: el conector lo dice también cuando la plataforma creó algo sin devolver el número
+    if (!idValido && res && res.ok === false && res.reason !== 'no_medido') {
+      const porque = typeof res.reason === 'string' && /^[a-z_]{1,30}$/.test(res.reason) ? res.reason : 'sin motivo';
+      const motivo = SIN_CONFIGURAR.includes(porque) ? 'sin-configurar' : 'plataforma-caida';
+      try { escribir({ pedido: null, asignado: null, pedido_motivo: motivo }); } catch (e) {
+        r.lineas.push(`pedido de ${v.id}: la plataforma no lo creó y la ficha no se pudo escribir (${(e && e.code) || 'error'}); queda «pidiendo»`);
+        continue;
+      }
+      r.sinCrear.push({ id: v.id, motivo });
+      r.lineas.push(`pedido de ${v.id}: la plataforma no lo creó (${porque}); ${motivo === 'sin-configurar' ? FALTA_CONFIGURAR : 'se reintenta la noche siguiente'}`);
+      continue;
+    }
+    if (!idValido) {
+      // no dijo que no: pudo crearlo. La marca queda y la noche siguiente no pide otro
+      try { escribir({ pedido_motivo: 'sin-confirmar' }); } catch { /* la marca ya está */ }
+      r.sinCrear.push({ id: v.id, motivo: 'sin-confirmar' });
+      const como = lanzo ? `lanzó ${lanzo}` : res && res.ok === false ? 'no pudo confirmar (no_medido)' : 'contestó sin un número válido';
+      r.lineas.push(`pedido de ${v.id}: la plataforma ${como}; no se sabe si lo creó, queda «pidiendo» (lo mira una persona)`);
+      continue;
+    }
+    const asignado = responsable && res.value.assigned === responsable ? responsable : null;
+    const motivo = !responsable ? 'sin-responsable' : asignado ? null : 'plataforma-sin-asignado';
+    try { escribir({ pedido: id, asignado, pedido_motivo: motivo }); } catch (e) {
+      r.lineas.push(`pedido de ${v.id}: se creó el ${id} pero la ficha no se pudo escribir (${(e && e.code) || 'error'}); queda «pidiendo»`);
+      continue;
+    }
+    r.creados.push({ id: v.id, pedido: id, asignado });
+    if (motivo) r.sinAsignado.push({ id: v.id, motivo });
+    r.lineas.push(`pedido de ${v.id}: creado el ${id}${asignado ? '' : ` sin asignado (${motivo})`}`);
+  }
+  return r;
+}
+
 module.exports = {
+  MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, pedirTrabajo,
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
   ACCIONES, MOTIVOS_SIN_PROPUESTA, FALLAS_MAX, razonSegura, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,

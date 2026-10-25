@@ -1020,3 +1020,313 @@ test('T67 SitioDecide_PorSiteUrl (el lector que pregunta el guion)', () => {
   assert.strictEqual(cli('site-decides', '--operations', ops('{ roto')).status, 2);
   assert.strictEqual(cli('site-decides').status, 2);
 });
+
+// ── el pedido de trabajo de cada arreglo ─────────────────────────────────────────────────────
+
+/** Un repo de operaciones con una ficha de ejecuciones y una del vigilante ya decididas «arreglar», y una pendiente. */
+function opsConArreglos({ owners, workItems = { org: 'acme', project: 'Operaciones', type: 'Task' } } = {}) {
+  const base = tmp();
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(base, rel)), { recursive: true }); fs.writeFileSync(path.join(base, rel), txt); };
+  const ej = { ...cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo', hoy: '2026-10-21',
+    casos: [caso(1)] }), veredicto: 'arreglo', apariciones: 3 };
+  const pend = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: '2026-10-21' });
+  escribir(`inbox/runs-review/promoted/${ej.id}.yaml`, cycle.serializar(ej));
+  escribir(`inbox/runs-review/pending/${pend.id}.yaml`, cycle.serializar(pend));
+  escribir('inbox/watcher/promoted/vig-uno.yaml', '# borrador del vigilante\nid: "vig-uno"\nfuente: "vigilante"\ncausa: "acme:errores-500"\nfecha: "2026-10-21"\nproducto: "acme"\nregla: "errores-500"\nseveridad: "alta"\ndiagnostico: "ZZTEXTO del diagnóstico"\nveredicto: util\n');
+  const operations = path.join(base, 'operations.json');
+  fs.writeFileSync(operations, JSON.stringify({ version: 1, ...(owners === undefined ? { owners: { default: 'lead@acme.example' } } : owners),
+    ...(workItems ? { work_items: workItems } : {}) }));
+  return { base, ej, pend, operations };
+}
+/** Una plataforma de mentira: guarda cada pedido y contesta lo que le digan. */
+function plataforma(respuesta = (n) => ({ ok: true, value: { id: 900 + n, assigned: 'lead@acme.example', warnings: [], unsupported: [] } })) {
+  const pedidos = [];
+  const run = async (op, args, opts) => { pedidos.push({ op, args, opts }); return respuesta(pedidos.length, args); };
+  return { pedidos, run };
+}
+const fichaEj = (base, id) => cycle.parsear(fs.readFileSync(path.join(base, 'inbox', 'runs-review', 'promoted', `${id}.yaml`), 'utf8'));
+const vigTxt = (base) => fs.readFileSync(path.join(base, 'inbox', 'watcher', 'promoted', 'vig-uno.yaml'), 'utf8');
+
+// Pedido_ArreglarCreaPorPlataforma @story-4.11 @ac-24
+// 🔴 Falla con: no pedir por la plataforma, pedirle a una ficha sin decidir, un título sin la causa y la fuente, o que el
+//    diagnóstico del vigilante llegue a la descripción.
+test('T40 Pedido_ArreglarCreaPorPlataforma', async () => {
+  const { base, ej, pend, operations } = opsConArreglos();
+  const p = plataforma();
+  const r1 = await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+  const r2 = await cycle.pedirTrabajo({ base, fuente: 'vigilante', operations, run: p.run });
+  assert.strictEqual(p.pedidos.length, 2, 'uno por ficha decidida; la pendiente no pide');
+  for (const x of p.pedidos) {
+    assert.strictEqual(x.op, 'work-item.create');
+    assert.strictEqual(x.args.repoDir, base, 'la configuración del pedido sale del repo de operaciones');
+  }
+  const [a, b] = p.pedidos.map((x) => x.args);
+  assert.strictEqual(a.title, 'Las pruebas quedaron en rojo (ejecuciones)');
+  assert.strictEqual(b.title, 'errores-500 (vigilante)');
+  assert.ok(a.tags.includes('arnes-ejecuciones') && a.tags.includes(`arnes:${ej.id}`), JSON.stringify(a.tags));
+  assert.ok(b.tags.includes('arnes-vigilante') && b.tags.includes('arnes:vig-uno'));
+  assert.match(a.description, /RR-ROJO:pruebas/);
+  assert.doesNotMatch(b.description, /ZZTEXTO/, 'el diagnóstico no sale de la ficha');
+  assert.strictEqual(fichaEj(base, ej.id).pedido, 901);
+  assert.match(vigTxt(base), /^pedido: 902$/m);
+  assert.strictEqual(sources.comoFicha('vigilante', vigTxt(base)).pedido.id, '902');
+  assert.ok(!r1.creados.some((c) => c.id === pend.id));
+  assert.deepStrictEqual([r1.creados.length, r2.creados.length], [1, 1]);
+  await assert.rejects(cycle.pedirTrabajo({ base, fuente: 'dependencias', operations, run: p.run }), /dependencias/, 'dependencias sigue con su camino (decisión 17)');
+});
+
+// Pedido_AsignadoAlResponsable @story-4.11 @ac-25
+// 🔴 Falla con: no pasarle el responsable a la plataforma, no pedir el asignado de la noche, o anotar un asignado que la
+//    plataforma no confirmó.
+test('T41 Pedido_AsignadoAlResponsable', async () => {
+  const { base, ej, operations } = opsConArreglos({ owners: { owners: { default: 'lead@acme.example', by_project: { Otro: 'otra@acme.example' } } } });
+  const p = plataforma();
+  await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+  assert.strictEqual(p.pedidos[0].args.assignTo, 'lead@acme.example', 'sin proyecto, owners.default');
+  assert.strictEqual(p.pedidos[0].args.forNight, true);
+  const f = fichaEj(base, ej.id);
+  assert.strictEqual(f.asignado, 'lead@acme.example');
+  assert.strictEqual(f.pedido_motivo, null);
+});
+
+// Pedido_UnoPorFicha @story-4.11 @ac-26
+// 🔴 Falla con: pedir de nuevo una ficha con pedido, pedir sin haber dejado la marca, o crear otro pedido sobre una ficha
+//    que quedó «pidiendo» (la noche anterior se cortó entre crear y anotar).
+test('T42 Pedido_UnoPorFicha', async () => {
+  const { base, ej, operations } = opsConArreglos();
+  let marcaAlLlamar = null;
+  const p = plataforma((n) => { marcaAlLlamar = fichaEj(base, ej.id).pedido; return { ok: true, value: { id: 900 + n, assigned: 'lead@acme.example' } }; });
+  await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+  assert.strictEqual(marcaAlLlamar, 'pidiendo', 'la marca se escribe antes de llamar');
+  await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+  assert.strictEqual(p.pedidos.length, 1, 'con pedido no pide otro');
+  // una noche que se cortó: la ficha quedó «pidiendo», sin id
+  const ruta = path.join(base, 'inbox', 'runs-review', 'promoted', `${ej.id}.yaml`);
+  fs.writeFileSync(ruta, cycle.serializar({ ...fichaEj(base, ej.id), pedido: 'pidiendo', asignado: null }));
+  const r = await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+  assert.strictEqual(p.pedidos.length, 1, '«pidiendo» no pide otro');
+  assert.strictEqual(fichaEj(base, ej.id).pedido_motivo, 'sin-confirmar');
+  assert.strictEqual(r.sinCrear.length, 1);
+  assert.strictEqual(sources.comoFicha('ejecuciones', fs.readFileSync(ruta, 'utf8')).pedido, null, 'la marca no es un pedido');
+  // una ficha que no se puede escribir no llama
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    const otro = opsConArreglos();
+    const q = plataforma();
+    fs.chmodSync(path.join(otro.base, 'inbox', 'runs-review', 'promoted', `${otro.ej.id}.yaml`), 0o444);
+    await cycle.pedirTrabajo({ base: otro.base, fuente: 'ejecuciones', operations: otro.operations, run: q.run });
+    assert.strictEqual(q.pedidos.length, 0, 'sin la marca escrita no se llama');
+  }
+});
+
+// Pedido_PlataformaCaida_ReintentaSinDuplicar @story-4.11 @ac-35
+// 🔴 Falla con: dejar la marca puesta con la plataforma caída (la noche siguiente no reintentaría), copiar el error en la
+//    ficha, o romper la noche por una excepción del conector.
+test('T43 Pedido_PlataformaCaida_ReintentaSinDuplicar', async () => {
+  const { base, ej, operations } = opsConArreglos();
+  const caida = plataforma(() => ({ ok: false, reason: 'red', detail: 'ZZERROR lead@acme.example' }));
+  const r = await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: caida.run });
+  let f = fichaEj(base, ej.id);
+  assert.deepStrictEqual([f.pedido, f.pedido_motivo], [null, 'plataforma-caida']);
+  assert.doesNotMatch(fs.readFileSync(path.join(base, 'inbox', 'runs-review', 'promoted', `${ej.id}.yaml`), 'utf8') + r.lineas.join('\n'), /ZZERROR/);
+  const anda = plataforma();
+  await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: anda.run });
+  await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: anda.run });
+  f = fichaEj(base, ej.id);
+  assert.strictEqual(anda.pedidos.length, 1, 'la noche siguiente reintenta una vez');
+  assert.deepStrictEqual([f.pedido, f.pedido_motivo], [901, null]);
+});
+
+// Pedido_SinResponsable_SinAsignadoConMotivo @story-4.11 @ac-25
+// 🔴 Falla con: no crear el pedido sin responsable, un motivo fuera de la lista, o un resumen que no lo diga.
+test('T54 Pedido_SinResponsable_SinAsignadoConMotivo', async () => {
+  // un responsable que el archivo acepta pero no es una identidad que la ficha pueda guardar
+  const sin = opsConArreglos({ owners: { owners: { default: '<x>@acme.example' } } });
+  const p = plataforma(() => ({ ok: true, value: { id: 77 } }));
+  await cycle.pedirTrabajo({ base: sin.base, fuente: 'ejecuciones', operations: sin.operations, run: p.run });
+  assert.ok(!('assignTo' in p.pedidos[0].args));
+  let f = fichaEj(sin.base, sin.ej.id);
+  assert.deepStrictEqual([f.pedido, f.asignado, f.pedido_motivo], [77, null, 'sin-responsable']);
+  // con responsable y una plataforma que no asigna (GitHub)
+  const gh = opsConArreglos();
+  await cycle.pedirTrabajo({ base: gh.base, fuente: 'ejecuciones', operations: gh.operations, run: plataforma(() => ({ ok: true, value: { id: 78 } })).run });
+  f = fichaEj(gh.base, gh.ej.id);
+  assert.deepStrictEqual([f.asignado, f.pedido_motivo], [null, 'plataforma-sin-asignado']);
+  assert.deepStrictEqual(cycle.MOTIVOS_SIN_PEDIDO, ['sin-responsable', 'plataforma-sin-asignado', 'plataforma-caida', 'sin-confirmar', 'sin-configurar']);
+  assert.ok(cycle.problemasDeForma({ ...f, pedido_motivo: 'otro' }).length > 0);
+  // un operations.json que no valida no dice dónde va el pedido: falta configurar, sin llamar, y el renglón no copia el archivo
+  const roto = opsConArreglos();
+  fs.writeFileSync(roto.operations, JSON.stringify({ version: 1, owners: { default: 'no es identidad' }, work_items: { org: 'acme', project: 'Operaciones' } }));
+  const rota = plataforma();
+  const r = await cycle.pedirTrabajo({ base: roto.base, fuente: 'ejecuciones', operations: roto.operations, run: rota.run });
+  assert.strictEqual(rota.pedidos.length, 0);
+  assert.strictEqual(fichaEj(roto.base, roto.ej.id).pedido_motivo, 'sin-configurar');
+  assert.doesNotMatch(r.lineas.join('\n'), /no es identidad/);
+  // el resumen lo dice
+  const linea = DS.lineaFichas('ejecuciones', path.join(sin.base, 'inbox', 'runs-review'), '2026-10-25');
+  assert.match(linea, / · sin asignado 1$/, linea);
+  // cuenta sólo los arreglos vivos: una resuelta o aceptada con su motivo viejo ya no es «sin asignado»
+  const ruta = (id) => path.join(sin.base, 'inbox', 'runs-review', 'promoted', `${id}.yaml`);
+  const otra = (causa, campos) => {
+    const f = { ...cycle.nuevaFicha({ fuente: 'ejecuciones', causa, nombre: causa, hoy: '2026-10-21' }), ...campos };
+    fs.writeFileSync(ruta(f.id), cycle.serializar(f));
+  };
+  otra('RR-A', { veredicto: 'arreglo', estado: 'resuelta', pedido: 5, pedido_motivo: 'sin-responsable' });
+  otra('RR-B', { veredicto: 'aceptada', pedido_motivo: 'plataforma-caida' });
+  otra('RR-C', { veredicto: 'arreglo', pedido_motivo: 'plataforma-caida' });
+  otra('RR-D', { veredicto: 'arreglo', pedido_motivo: 'sin-confirmar' });
+  otra('RR-E', { veredicto: 'arreglo', pedido_motivo: 'sin-configurar' });
+  assert.match(DS.lineaFichas('ejecuciones', path.join(sin.base, 'inbox', 'runs-review'), '2026-10-25'), / · sin asignado 1 · pedido sin crear 3$/);
+  // y el del vigilante, con su formato
+  const vig = opsConArreglos({ owners: { owners: { default: '<x>@acme.example' } } });
+  await cycle.pedirTrabajo({ base: vig.base, fuente: 'vigilante', operations: vig.operations, run: plataforma(() => ({ ok: true, value: { id: 79 } })).run });
+  assert.match(DS.lineaFichas('vigilante', path.join(vig.base, 'inbox', 'watcher'), '2026-10-25'), / · sin asignado 1$/);
+});
+
+// Pedido_StoryCreadaComoRuta_NoPideOtro @story-4.11 @ac-26
+// 🔴 Falla con: pedir otro pedido sobre un hallazgo del vigilante que ya tiene su story escrita de otra forma (una ruta,
+//    «AB#1234», un enlace largo), o una descripción que diga dónde se decidió.
+test('T40b Pedido_StoryCreadaComoRuta_NoPideOtro', async () => {
+  for (const story of ['"specs/story-1.2-algo.md"', '"AB#1234"', `"${'x'.repeat(60)}"`]) {
+    const { base, operations } = opsConArreglos();
+    const ruta = path.join(base, 'inbox', 'watcher', 'promoted', 'vig-uno.yaml');
+    fs.writeFileSync(ruta, `${vigTxt(base)}story_creada: ${story}\n`);
+    const p = plataforma();
+    await cycle.pedirTrabajo({ base, fuente: 'vigilante', operations, run: p.run });
+    assert.strictEqual(p.pedidos.length, 0, story);
+    assert.doesNotMatch(vigTxt(base), /pidiendo/);
+  }
+  const { base, operations } = opsConArreglos();
+  const p = plataforma();
+  await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+  assert.doesNotMatch(p.pedidos[0].args.description, /sitio/);
+  // una ficha ilegible y una decidida de otra forma no piden; la ilegible se dice
+  fs.writeFileSync(path.join(base, 'inbox', 'runs-review', 'promoted', 'rota.yaml'), 'id: [\n');
+  const acep = { ...cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-OTRA', nombre: 'Otra', hoy: '2026-10-21' }), veredicto: 'aceptada' };
+  fs.writeFileSync(path.join(base, 'inbox', 'runs-review', 'promoted', `${acep.id}.yaml`), cycle.serializar(acep));
+  const q = plataforma();
+  const r = await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: q.run });
+  assert.strictEqual(q.pedidos.length, 0);
+  assert.ok(r.lineas.some((l) => /rota: la ficha no se pudo leer/.test(l)), r.lineas.join('\n'));
+  // la carpeta de los decididos que no se lee: un renglón, ningún pedido
+  const otro = opsConArreglos();
+  const prom = path.join(otro.base, 'inbox', 'runs-review', 'promoted');
+  fs.rmSync(prom, { recursive: true });
+  fs.writeFileSync(prom, 'no soy una carpeta');
+  const r2 = await cycle.pedirTrabajo({ base: otro.base, fuente: 'ejecuciones', operations: otro.operations, run: q.run });
+  assert.strictEqual(q.pedidos.length, 0);
+  assert.match(r2.lineas.join('\n'), /no se pudo leer/);
+});
+
+// Pedido_AsignadoAlResponsable @story-4.11 @ac-25 (el vigilante)
+// 🔴 Falla con: que la vista del vigilante esconda un asignado que la ficha común acepta (un apóstrofo en el correo).
+test('T41b Pedido_AsignadoConApostrofo_SeMuestra', () => {
+  const { base } = opsConArreglos();
+  const txt = `${vigTxt(base)}pedido: 903\nasignado: "o'neil@acme.example"\n`;
+  assert.strictEqual(sources.comoFicha('vigilante', txt).asignado, "o'neil@acme.example");
+  assert.deepStrictEqual(cycle.problemasDeForma({ ...cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-X', nombre: 'X', hoy: '2026-10-21' }), asignado: "o'neil@acme.example" }), []);
+  assert.strictEqual(sources.comoFicha('vigilante', `${vigTxt(base)}asignado: "<b>@acme.example"\n`).asignado, null);
+});
+
+// Pedido_UnoPorFicha @story-4.11 @ac-26 (el vigilante)
+// 🔴 Falla con: leer la marca del vigilante con comillas y volver a pedir.
+test('T42b Pedido_VigilantePidiendo_NoPideOtro', async () => {
+  const { base, operations } = opsConArreglos();
+  const ruta = path.join(base, 'inbox', 'watcher', 'promoted', 'vig-uno.yaml');
+  fs.writeFileSync(ruta, `${vigTxt(base)}pedido: "pidiendo"\n`);
+  const p = plataforma();
+  const r = await cycle.pedirTrabajo({ base, fuente: 'vigilante', operations, run: p.run });
+  assert.strictEqual(p.pedidos.length, 0);
+  assert.strictEqual(r.sinCrear[0].motivo, 'sin-confirmar');
+  assert.strictEqual(sources.comoFicha('vigilante', vigTxt(base)).pedido_motivo, 'sin-confirmar');
+  // con la plataforma caída, el vigilante queda sin pedido y la vista lo lee
+  const otro = opsConArreglos();
+  await cycle.pedirTrabajo({ base: otro.base, fuente: 'vigilante', operations: otro.operations, run: plataforma(() => ({ ok: false, reason: 'red' })).run });
+  const v = sources.comoFicha('vigilante', vigTxt(otro.base));
+  assert.deepStrictEqual([v.pedido, v.pedido_motivo], [null, 'plataforma-caida']);
+});
+
+// Pedido_RespuestaAmbigua_QuedaPidiendo @story-4.11 @ac-35
+// 🔴 Falla con: borrar la marca cuando la plataforma no dijo que no (pudo crearlo): la noche siguiente pediría otro. O
+//    callar que la ficha no se pudo escribir.
+test('T43b Pedido_RespuestaAmbigua_QuedaPidiendo', async () => {
+  // «no_medido» es lo que contesta el conector cuando la plataforma creó algo y no devolvió el número: no es un no
+  const respuestas = [() => ({ ok: true, value: { id: 'con espacio' } }), () => ({ ok: true }), () => { throw new TypeError('ZZERROR'); },
+    () => ({ ok: false, reason: 'no_medido', detail: 'ZZERROR az creó algo' })];
+  for (const responder of respuestas) {
+    const { base, ej, operations } = opsConArreglos();
+    const r = await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: plataforma(responder).run });
+    assert.strictEqual(fichaEj(base, ej.id).pedido, 'pidiendo');
+    assert.doesNotMatch(r.lineas.join('\n'), /ZZERROR|se reintenta/);
+    assert.match(r.lineas.join('\n'), /no se sabe si lo creó/);
+    const otra = plataforma();
+    await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: otra.run });
+    assert.strictEqual(otra.pedidos.length, 0, 'la noche siguiente no pide otro');
+    assert.strictEqual(fichaEj(base, ej.id).pedido_motivo, 'sin-confirmar');
+  }
+  // la excepción dice su clase
+  const { base, operations } = opsConArreglos();
+  const r = await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: plataforma(() => { throw new TypeError('x'); }).run });
+  assert.match(r.lineas.join('\n'), /TypeError/);
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    // la plataforma dice que no y la ficha no se puede escribir: se dice
+    for (const respuesta of [{ ok: false, reason: 'red' }, { ok: true, value: { id: 950, assigned: 'lead@acme.example' } }]) {
+      const o = opsConArreglos();
+      const rutaF = path.join(o.base, 'inbox', 'runs-review', 'promoted', `${o.ej.id}.yaml`);
+      const rr = await cycle.pedirTrabajo({ base: o.base, fuente: 'ejecuciones', operations: o.operations, run: plataforma(() => { fs.chmodSync(rutaF, 0o444); return respuesta; }).run });
+      fs.chmodSync(rutaF, 0o644);
+      assert.match(rr.lineas.join('\n'), /no se pudo escribir/);
+      assert.strictEqual(fichaEj(o.base, o.ej.id).pedido, 'pidiendo');
+    }
+  }
+});
+
+// Pedido_SinConfigurar_NoLlamaYLoDice @story-4.11 @ac-35
+// 🔴 Falla con: no pasarle a la plataforma la organización, el proyecto y el tipo de operations.json, llamar sin ellos,
+//    decir «se reintenta» cuando falta configurar, o no anotarlo en la ficha.
+test('T43c Pedido_SinConfigurar_NoLlamaYLoDice', async () => {
+  const { base, ej, operations } = opsConArreglos();
+  const p = plataforma();
+  await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+  assert.deepStrictEqual([p.pedidos[0].args.org, p.pedidos[0].args.project, p.pedidos[0].args.type], ['acme', 'Operaciones', 'Task']);
+  for (const workItems of [false, { type: 'Task' }, { org: 'acme', type: 'Task' }]) {
+    const o = opsConArreglos({ workItems });
+    const q = plataforma();
+    const r = await cycle.pedirTrabajo({ base: o.base, fuente: 'ejecuciones', operations: o.operations, run: q.run });
+    assert.strictEqual(q.pedidos.length, 0, JSON.stringify(workItems));
+    const f = fichaEj(o.base, o.ej.id);
+    assert.deepStrictEqual([f.pedido, f.pedido_motivo], [null, 'sin-configurar']);
+    assert.match(r.lineas.join('\n'), /falta configurar/);
+    assert.doesNotMatch(r.lineas.join('\n'), /se reintenta/);
+  }
+  // la plataforma que dice que le falta configuración es lo mismo
+  for (const reason of ['sin_credencial', 'sin_plataforma']) {
+    const o = opsConArreglos();
+    const r = await cycle.pedirTrabajo({ base: o.base, fuente: 'ejecuciones', operations: o.operations, run: plataforma(() => ({ ok: false, reason })).run });
+    assert.strictEqual(fichaEj(o.base, o.ej.id).pedido_motivo, 'sin-configurar');
+    assert.match(r.lineas.join('\n'), /falta configurar/);
+  }
+  // configurado después, la noche siguiente lo pide
+  const o = opsConArreglos({ workItems: false });
+  await cycle.pedirTrabajo({ base: o.base, fuente: 'ejecuciones', operations: o.operations, run: plataforma().run });
+  fs.writeFileSync(o.operations, JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items: { org: 'acme', project: 'Operaciones', type: 'Task' } }));
+  const q = plataforma();
+  await cycle.pedirTrabajo({ base: o.base, fuente: 'ejecuciones', operations: o.operations, run: q.run });
+  assert.strictEqual(q.pedidos.length, 1);
+  assert.strictEqual(fichaEj(o.base, o.ej.id).pedido, 901);
+  assert.ok(ej);
+  // el lector valida la organización y el proyecto
+  const ok = (w) => OPS.parse(JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items: w }));
+  assert.strictEqual(ok({ org: 'acme', project: 'Operaciones Acme', type: 'Task' }).ok, true);
+  assert.strictEqual(ok({ org: 'https://dev.azure.com/acme' }).ok, true);
+  for (const malo of [{ org: '--acme' }, { org: 'acme corp' }, { org: '' }, { project: '--other' }, { project: 'a\nb' }, { project: 3 }]) {
+    assert.deepStrictEqual(ok(malo).problems.map((p) => p.path), [`work_items.${Object.keys(malo)[0]}`], JSON.stringify(malo));
+  }
+});
+
+// Pedido_UnoPorFicha @story-4.11 @ac-26 (el resumen del vigilante)
+// 🔴 Falla con: contar como «aceptada sin story» un hallazgo útil que ya tiene su pedido de trabajo.
+test('T54c Resumen_AceptadaConPedido_NoEsSinStory', () => {
+  const x = (id, escalares) => ({ id, f: { escalares: { veredicto: 'util', fecha: '2026-10-21', ...escalares } } });
+  const R = DS.rubrosVigilante({ snap: {}, fichas: { pending: [], promoted: [x('a', { pedido: '901' }), x('b', {}), x('c', { pedido: 'pidiendo' })], archived: [] }, hoy: '2026-10-25' });
+  assert.deepStrictEqual(R.aceptadas_sin_story.valor.map((v) => v.id), ['b', 'c']);
+});

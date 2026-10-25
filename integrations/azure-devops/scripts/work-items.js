@@ -9,6 +9,7 @@
 //
 // Los comandos, en el orden en que corren:
 //   crear:   az boards work-item create --organization <org> --project <proyecto> --type <tipo> --title <título> --fields <campos> [--assigned-to <correo>] --output json
+//            (--assigned-to va con auto_assign o en el pedido de la noche)
 //            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json
 //   activo:  az boards work-item show --organization <org> --id <id> --query fields."System.State" --output tsv
 //            az boards work-item update --organization <org> --id <id> --state <activo> --output json
@@ -57,7 +58,8 @@ function destino(args, ctx) {
   const leido = W.read(args.repoDir || process.cwd());
   if (leido.problem) return { problem: no('no_medido', `no pude leer la configuración del pedido de trabajo: ${leido.problem}`) };
   const c = leido.config || {};
-  let org = c.org;
+  // el pedido de la noche trae los suyos (operations.json): ganan sobre los del repo
+  let org = args.org || c.org;
   if (!org) {
     const rota = ctx.configProblem('ado');
     if (rota) return { problem: no('no_medido', `no pude leer la configuración de esta máquina: ${rota}`) };
@@ -99,7 +101,7 @@ function create(args, ctx) {
   const d = destino(args, ctx);
   if (d.problem) return d.problem;
   const { c, org } = d;
-  const project = c.project || ctx.env.TYCON_ADO_PROJECT;
+  const project = args.project || c.project || ctx.env.TYCON_ADO_PROJECT;
   if (!project) return no('sin_plataforma', 'el repo no dice en qué proyecto de Azure DevOps van sus pedidos: project en .tycon/work-items.yaml');
   const type = args.type || c.type;
   if (!type) return no('sin_plataforma', 'el repo no dice el tipo de sus pedidos de trabajo: type en .tycon/work-items.yaml (Agile: "User Story"; Scrum: "Product Backlog Item")');
@@ -115,7 +117,10 @@ function create(args, ctx) {
   const todos = [...campos, ...extras(args.fields)];
   const pedido = ['boards', 'work-item', 'create', '--organization', org, '--project', valor(project), '--type', valor(type), '--title', valor(args.title)];
   if (todos.length) pedido.push('--fields', ...todos);
-  if (c.auto_assign === true && args.assignTo) pedido.push('--assigned-to', valor(args.assignTo));
+  // auto_assign decide si el pedido de una story va a quien la crea; el de la noche no tiene autor y va siempre al
+  // responsable que eligió la organización (forNight)
+  const asignar = Boolean(args.assignTo) && (c.auto_assign === true || args.forNight === true);
+  if (asignar) pedido.push('--assigned-to', valor(args.assignTo));
   pedido.push('--output', 'json');
   const r = azJson(ctx, pedido);
   if (r.problem) return r.problem;
@@ -131,7 +136,9 @@ function create(args, ctx) {
       if (rel.problem) warnings.push(`el pedido #${id} se creó, pero no se pudo colgar del Epic ${epica}: ${rel.problem.detail}`);
     }
   }
-  return { ok: true, value: { id, url: `${org}/${encodeURIComponent(String(project))}/_workitems/edit/${id}`, warnings, unsupported: [] } };
+  const value = { id, url: `${org}/${encodeURIComponent(String(project))}/_workitems/edit/${id}`, warnings, unsupported: [] };
+  if (asignar) value.assigned = String(args.assignTo);
+  return { ok: true, value };
 }
 
 function update(args, ctx) {

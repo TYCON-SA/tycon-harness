@@ -325,9 +325,10 @@ function responsablesDeRepos(azure) {
 function responsables(a, azure) {
   if (!a.operationsExplicito && !fs.existsSync(a.operations)) return responsablesDeRepos(azure);
   const r = operaciones.load(a.operations);
+  // 🔴 El motivo es fijo: el problema del lector copia valores del archivo (correos, identidades), y el motivo va a la
+  // salida de la noche y a su foto. El detalle lo da el lector a mano.
   if (!r.ok) {
-    const porque = r.problems.map((p) => (p.path ? `${p.path}: ${p.message}` : p.message)).join('; ');
-    return { ok: false, motivo: `sin responsable de respaldo: ${a.operations} no sirve (${porque}) — no se adivina` };
+    return { ok: false, motivo: 'sin responsable de respaldo: operations.json no sirve (el detalle: node scripts/lib/operations-config.js operations.json) — no se adivina' };
   }
   const bp = r.data.owners.by_project || {};
   return { ok: true, fuente: 'operations.json', respaldo: r.data.owners.default, workItems: r.data.work_items || null,
