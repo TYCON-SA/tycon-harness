@@ -106,8 +106,11 @@ armar_arbol() { # el árbol de una noche: como prepare-tree.sh (datos de main + 
   cp -R "$RAIZ/scripts/nightly/dependencies" "$RAIZ/scripts/nightly/findings" "$J/scripts/nightly/"
   cp -R "$RAIZ/scripts/lib" "$J/scripts/lib"
   echo 'process.exit(Number(process.env.GUARD_EXIT || 0));' > "$J/scripts/ci/overlay-harness.js"
-  # repos.json: por defecto declara SHOP; REPOS_JSON=none no lo escribe; otro valor se escribe tal cual (para probar uno ilegible)
-  if [ "${REPOS_JSON:-}" != none ]; then
+  # repos.json: por defecto declara SHOP; REPOS_JSON=none lo deja sin repos.json; otro valor se escribe tal cual (para probar uno ilegible).
+  # La copia de `dependencies` trae el repos.json real donde exista (el árbol del nocturno lo tiene): «none» lo borra.
+  if [ "${REPOS_JSON:-}" = none ]; then
+    rm -f "$J/scripts/nightly/dependencies/repos.json"
+  else
     local RJ="${REPOS_JSON:-}"
     [ -n "$RJ" ] || RJ="{\"repos\":[{\"producto\":\"Shop\",\"ruta\":\"shop\",\"github\":\"$SHOP\",\"tipo\":\"npm\",\"activo\":true},{\"producto\":\"Off\",\"ruta\":\"off\",\"github\":\"acme-org/apagado\",\"tipo\":\"npm\",\"activo\":false}]}"
     printf '%s\n' "$RJ" > "$J/scripts/nightly/dependencies/repos.json"
