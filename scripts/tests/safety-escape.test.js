@@ -1669,8 +1669,8 @@ test('8.116 T52 EscC7_FirmaPorDelegacion_OtraSesionOComandoArmado_Frena', () => 
   // sin --relayed-by la regla no mira: la firma de la terminal la frena `approve` mismo
   const terminal = freno(firma.replace(' --relayed-by coordinadora', '').replace(" --quote 'Firmá abc1234'", ''));
   assert.doesNotMatch(terminal.stderr, /ESC-C7/);
-  // el motivo nombra la sesión del evento
-  assert.ok(r.stderr.includes(SID), r.stderr);
+  // el motivo nombra la sesión del evento; en una cuenta sin designación (la CI) dice que no hay ninguna
+  assert.ok(r.stderr.includes(SID) || /ninguna sesión de esta máquina está designada/.test(r.stderr), r.stderr);
   // un comando que nombra esas palabras sin correr la firma pasa: buscar, mirar, un mensaje de commit
   for (const c of [
     'grep -n "approve" scripts/ci/run-base-controls.sh --relayed-by',

@@ -53,7 +53,8 @@ function accountPaths(home) {
   try { isOwn = fs.statSync(own).isDirectory(); } catch (e) {
     if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw new Error(`no pude leer la carpeta de estado de la cuenta (${e.code || e.message})`);
   }
-  const state = isOwn ? own : path.join(home, '.claude', '.tycon-pipeline');
+  // la de siempre la da tycon-home.js; su `stateDir` no sirve acá porque mira TYCON_HOME
+  const state = isOwn ? own : require('../setup/harness/tycon-home.js').legacyStateDir(home);
   return { home, state, gates: path.join(state, 'gates.log'), tokens: path.join(state, 'signing-tokens') };
 }
 
