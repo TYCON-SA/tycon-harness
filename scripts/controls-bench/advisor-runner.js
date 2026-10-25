@@ -68,6 +68,7 @@
  * Uso:
  *   node advisor-runner.js [--tool claude|codex|both] [--only <substr>] [--runs N] [--jobs N]
  *                          [--baseline write|check] [--json <path>] [--list] [--selftest-mcp]
+ *                          [--model opus|sonnet|fable]   (sólo claude, sin --baseline)
  *                          [--selftest-retro] [--check-apps-off] [--pack <carpeta de un paquete>]
  */
 'use strict';
@@ -517,6 +518,10 @@ const RUNS = parseInt(argVal('--runs', VIDA ? '1' : '3'), 10);
 const JOBS = parseInt(argVal('--jobs', '3'), 10);
 const BASELINE_MODE = argVal('--baseline', null);
 const JSON_OUT = argVal('--json', null);
+// `--model`: el examen de un revisor con otro modelo que el de su frontmatter, para comparar antes de cambiarlo en la
+// configuración de la organización. Sólo con claude, y sin tocar la línea de base, que es la del modelo de siempre.
+const MODELO = argVal('--model', null);
+const MODELOS_DE_EXAMEN = ['opus', 'sonnet', 'fable'];
 const LIST = argv.includes('--list');
 const SAVE_OUTPUT = argv.includes('--save-output');
 
@@ -617,7 +622,23 @@ function advisorParts(name) {
     if (kv) fm[kv[1]] = kv[2].trim();
   }
   const tools = (fm.tools || 'Read, Grep, Glob').replace(/^\[|\]$/g, '').split(',').map((t) => t.trim()).filter(Boolean);
-  return { body: m[2].trim(), model: fm.model || 'sonnet', tools };
+  return { body: m[2].trim(), model: MODELO || fm.model || 'sonnet', tools };
+}
+
+/** Los argumentos con que se lanza claude para un caso: el modelo que le llega es el del revisor que armó advisorParts. */
+function claudeArgs({ adv, prompt, corral, engramDeny, expectMcp }) {
+  const extra = process.env.TYCON_BENCH_EXTRA_PROMPT || '';
+  const args = [
+    '-p', prompt,
+    '--append-system-prompt', extra ? adv.body + '\n\n' + extra : adv.body,
+    '--model', adv.model,
+    '--settings', benchSettingsPath(),
+    ...claudeIsolation({ corral }).args,
+    '--allowedTools', adv.tools.join(','),
+    '--disallowedTools', engramDeny.join(','),
+  ];
+  if (expectMcp) args.push('--output-format', 'stream-json', '--verbose');
+  return args;
 }
 
 /**
@@ -1126,17 +1147,7 @@ async function runOnce(tool, advisorName, adv, caseDef, suite) {
       // banco bajo una condición distinta y comparar (por ejemplo, si LEER POR RANGO en vez del
       // archivo entero cuesta hallazgos). Inerte si la variable no está: sin ella el
       // system prompt es byte a byte el de siempre y el baseline no se mueve.
-      const extra = process.env.TYCON_BENCH_EXTRA_PROMPT || '';
-      const args = [
-        '-p', prompt,
-        '--append-system-prompt', extra ? adv.body + '\n\n' + extra : adv.body,
-        '--model', adv.model,
-        '--settings', benchSettingsPath(),
-        ...claudeIsolation({ corral }).args,
-        '--allowedTools', adv.tools.join(','),
-        '--disallowedTools', engramDeny.join(','),
-      ];
-      if (expectMcp) args.push('--output-format', 'stream-json', '--verbose');
+      const args = claudeArgs({ adv, prompt, corral, engramDeny, expectMcp });
       res = await spawnP(rutaDeHerramienta('claude'), args, { cwd: fixture, env: envDeCorrida(corral), timeout_s: caseDef.timeout_s });
     } else {
       // una CODEX_HOME propia por corrida: el perfil del revisor y la llave, sin el AGENTS.md, los servidores ni las
@@ -1495,6 +1506,7 @@ function reclasificar(archivo, opts = {}) {
 
   const failed = c.criterio.length + c.inestable.length + c.error.length + c.fuga.length + c.artefactos.length;
   console.log(`${archivo}\n  ejecución ${d.ts} · ${Object.keys(r).length} casos\n`);
+  if (d.model) console.log(`ℹ  ejecución con --model ${d.model}: las regresiones se cuentan contra la línea de base, que es la del modelo de cada revisor\n`);
   console.log(`🔴 CRITERIO — el revisor razona mal (se arregla en su prosa): ${c.criterio.length}`);
   for (const x of c.criterio) console.log(`     ${x.tool.padEnd(7)} ${x.key}  [${x.regla || 'artefactos'}] ${x.tipo}`);
   console.log(`\n⚠  INESTABLES — contesta distinto entre ejecuciones (se rediseña el CASO): ${c.inestable.length}`);
@@ -1846,6 +1858,19 @@ if (process.argv.includes('--selftest-classes')) process.exit(selftestClases());
 }
 
 async function main() {
+  // las opciones se leen separadas («--model sonnet»): «--model=sonnet» no se lee, y la corrida seguiría con el valor
+  // de siempre sin decirlo
+  const conIgual = argv.find((a) => /^--[a-z][a-z-]*=/.test(a));
+  if (conIgual) {
+    const opcion = conIgual.slice(0, conIgual.indexOf('='));
+    console.error(`advisor-runner: «${conIgual}» no se lee; la opción va separada de su valor: «${opcion} ${conIgual.slice(opcion.length + 1)}»`);
+    return 2;
+  }
+  if (argv.includes('--model')) {
+    if (!MODELOS_DE_EXAMEN.includes(MODELO)) { console.error(`advisor-runner: --model tiene que ser ${MODELOS_DE_EXAMEN.join(', ')} (vino «${MODELO || ''}»)`); return 2; }
+    if (TOOL !== 'claude') { console.error(`advisor-runner: --model sólo corre con --tool claude (vino «${TOOL}»): a codex el modelo se lo da su perfil`); return 2; }
+    if (BASELINE_MODE) { console.error('advisor-runner: --model no se combina con --baseline: la línea de base es la del modelo de cada revisor'); return 2; }
+  }
   if (argv.includes('--selftest-mcp')) return selftestMcp();
   if (argv.includes('--selftest-retro')) return selftestRetro();
   if (argv.includes('--check-apps-off')) return checkAppsOff();
@@ -1878,7 +1903,7 @@ async function main() {
     if (repetidas.length) { console.error(`--pack: casos con el mismo revisor y el mismo id: ${repetidas.join(', ')}; cada caso necesita su propio id (el veredicto de uno pisaría al del otro)`); return 2; }
     const sinAgente = [...new Set(suites.map((s) => s.advisor))].filter((a) => !fs.existsSync(advisorFile(a)));
     if (sinAgente.length) { console.error(`--pack: casos de un revisor sin su .md en ${PACK.agentsDir}: ${sinAgente.join(', ')}`); return 2; }
-    const informe = JSON_OUT || path.join(OUT_DIR, nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK.reportPrefix }).nombre);
+    const informe = JSON_OUT || path.join(OUT_DIR, nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK.reportPrefix, modelo: MODELO }).nombre);
     console.log(`paquete: ${PACK.name} · agentes: ${PACK.agentsDir} · casos: ${PACK.casesDir} · informe: ${informe}`);
   }
   retroGuard(suites); // corre SIEMPRE, también con --only: un caso fuera del corral no corre nunca
@@ -2127,7 +2152,8 @@ async function main() {
   // general, con los otros 25 desaparecidos y sin que nada lo dijera.
   // `--json` explícito sigue mandando: pisar la foto completa se puede, hay que pedirlo.
   // el informe de un paquete lleva su propio prefijo: el aviso del arranque lee sólo los `advisors-*` (el del núcleo)
-  const { nombre, alcance } = nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK ? PACK.reportPrefix : undefined });
+  // con otro modelo que el de cada revisor, el informe es una comparación: va a su propio archivo parcial
+  const { nombre, alcance } = nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK ? PACK.reportPrefix : undefined, modelo: MODELO });
   const outPath = JSON_OUT || path.join(OUT_DIR, nombre);
   const paridadReal = parityBreaks - paridadPorInestabilidad;
 
@@ -2142,7 +2168,7 @@ async function main() {
   const midioParidad = noMedido.paridad === null;
 
   fs.writeFileSync(outPath, JSON.stringify({
-    ts: new Date().toISOString(), tool: TOOL, runs: RUNS, alcance, only: ONLY,
+    ts: new Date().toISOString(), tool: TOOL, model: MODELO, runs: RUNS, alcance, only: ONLY,
     failed, criterio, erroresDeCorrida, fugas, artefactos, varianzaDeclarada,
     inestables: midioInestabilidad ? inestables : null,
     parityBreaks: midioParidad ? parityBreaks : null,
@@ -2184,5 +2210,5 @@ async function main() {
   return failed + parityBreaks + baselineRegressions > 0 ? 1 : 0;
 }
 
-module.exports = { AGENTS_DIR, AGENTS_ORIGEN, ensureCodexProfile, codexInvokePreamble, codexSandbox };
+module.exports = { AGENTS_DIR, AGENTS_ORIGEN, ensureCodexProfile, codexInvokePreamble, codexSandbox, advisorParts, claudeArgs };
 if (require.main === module) main().then((c) => process.exit(c)).catch((e) => { console.error(`advisor-runner: ${e.message}`); process.exit(1); });

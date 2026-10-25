@@ -129,6 +129,58 @@ test('T6 NoEngram_ReportWithUnmeasuredCases — sin engram en el PATH, reporte c
   assert.strictEqual(caso.tools.claude.motivo, 'engram no está en el PATH');
 }));
 
+// `--model` reemplaza el modelo del revisor en la corrida. No se lanza un claude falso: el examinador busca primero
+// junto a node, donde puede estar el de verdad. El modelo que le llega a claude se lee de los argumentos con que se lo
+// lanzaría, lo que anota el informe sale de un caso que se saltea antes de llamar a un modelo, y lo que se rechaza sale 2
+// sin lanzar nada.
+test('T8 ModelFlag_OverridesAndRejects — --model cambia el modelo del revisor, lo anota en el informe y rechaza lo que no vale', () => enHome((home) => {
+  const agentes = path.join(home, 'agentes');
+  fs.mkdirSync(agentes, { recursive: true });
+  fs.writeFileSync(path.join(agentes, 'rev-falso.md'), '---\nname: rev-falso\nmodel: opus\ntools: Read, Grep\n---\nUn revisor de juguete.\n');
+  const modeloCon = (...flags) => {
+    const env = Object.assign({}, process.env, { HOME: home, USERPROFILE: home, TMPDIR: home, TYCON_AGENTS_DIR: agentes });
+    const r = spawnSync(process.execPath, ['-e', 'process.argv=[process.argv[0],process.argv[1],...JSON.parse(process.argv[2])];const m=require(process.argv[1]);'
+      + 'const a=m.claudeArgs({adv:m.advisorParts("rev-falso"),prompt:"p",corral:null,engramDeny:[],expectMcp:null});process.stdout.write(a[a.indexOf("--model")+1])', RUNNER, JSON.stringify(flags)], { env, encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return r.stdout;
+  };
+  assert.strictEqual(modeloCon(), 'opus', 'sin la opción, a claude le llega el del revisor');
+  assert.strictEqual(modeloCon('--model', 'sonnet'), 'sonnet', 'con la opción, a claude le llega el pedido');
+
+  // el informe de otro modelo no pisa el de siempre: ni la foto completa, ni la de vida, ni la del mismo --only
+  const { nombreDeReporte } = require(path.join(RAIZ, 'scripts', 'controls-bench', 'report-name.js'));
+  for (const alcance of [{ only: [] }, { only: [], vida: true }, { only: ['rev-falso'] }]) {
+    const propio = nombreDeReporte({ tool: 'claude', ...alcance }).nombre;
+    const conSonnet = nombreDeReporte({ tool: 'claude', ...alcance, modelo: 'sonnet' });
+    assert.notStrictEqual(conSonnet.nombre, propio, `con --model pisa ${propio}`);
+    assert.match(conSonnet.nombre, /^advisors-claude-parcial-modelo-sonnet/, 'parcial, para que el aviso del arranque no lo tome por el estado');
+    assert.notStrictEqual(nombreDeReporte({ tool: 'claude', ...alcance, modelo: 'fable' }).nombre, conSonnet.nombre, 'cada modelo, su archivo');
+  }
+  // y el examinador le pasa el modelo en cada lugar donde arma el nombre (correrlo sin --json escribiría en el árbol)
+  const llamadas = fs.readFileSync(RUNNER, 'utf8').match(/nombreDeReporte\(\{[^}]*\}\)/g) || [];
+  assert.ok(llamadas.length >= 2, `no encontré dónde arma el nombre: ${llamadas.length}`);
+  for (const l of llamadas) assert.match(l, /modelo: MODELO/, `arma el nombre sin el modelo: ${l}`);
+
+  const env = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, USERPROFILE: home };
+  const caso = 'tycon-retrospective-capturer::retro-captura-decision';
+  for (const [flags, esperado] of [[['--model', 'sonnet'], 'sonnet'], [[], null]]) {
+    const out = path.join(home, `reporte-${esperado}.json`);
+    const r = spawnSync(process.execPath, [RUNNER, '--tool', 'claude', '--runs', '1', '--only', caso, '--json', out, ...flags], { env, encoding: 'utf8', timeout: 120000 });
+    assert.ok(fs.existsSync(out), `sin reporte (exit ${r.status}):\n${`${r.stdout}\n${r.stderr}`.slice(-600)}`);
+    assert.strictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).model, esperado, `el informe no anota el modelo ${esperado}`);
+  }
+
+  for (const [flags, motivo] of [[['--model', 'haiku-x'], /--model.*opus.*sonnet.*fable/], [['--tool', 'codex', '--model', 'sonnet'], /--model.*claude/],
+    [['--tool', 'both', '--model', 'sonnet'], /--model.*claude/], [['--model', 'sonnet', '--baseline', 'write'], /--model.*línea de base/],
+    [['--model'], /--model.*opus.*sonnet.*fable/], [['--model', '--json', 'x.json'], /--model.*opus.*sonnet.*fable/],
+    [['--model=sonnet'], /«--model=sonnet» no se lee.*«--model sonnet»/], [['--tool=codex'], /«--tool=codex» no se lee/]]) {
+    const r = spawnSync(process.execPath, [RUNNER, '--runs', '1', '--only', caso, ...flags], { env, encoding: 'utf8', timeout: 60000 });
+    assert.strictEqual(r.status, 2, `${flags.join(' ')} no salió 2:\n${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, motivo, flags.join(' '));
+    assert.ok(!/advisor-bench:/.test(r.stdout), `${flags.join(' ')}: llegó a armar las corridas`);
+  }
+}));
+
 test('A3 Runner_RequiredAsModule_DoesNotRun — cargarlo como módulo no corre el examen', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'runner-agents-'));
   try {

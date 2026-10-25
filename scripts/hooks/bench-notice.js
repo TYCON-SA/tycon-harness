@@ -448,7 +448,7 @@ function estadoDelExamen(benchDir) {
       for (const f of fs.readdirSync(benchDir).filter((x) => /^advisors-.*-parcial-.*\.json$/.test(x))) {
         const p = readJson(path.join(benchDir, f));
         if (!p) continue;
-        lineas.push(`   ℹ️ hay además una ejecución PARCIAL (${(p.only || []).join(', ') || 'alcance acotado'}, ${String(p.ts || '').slice(0, 10)})`
+        lineas.push(`   ℹ️ hay además una ejecución PARCIAL (${p.model ? `con ${p.model}, ` : ''}${(p.only || []).join(', ') || 'alcance acotado'}, ${String(p.ts || '').slice(0, 10)})`
           + ' — es complementaria; no dice nada de los revisores que no cubrió');
       }
     } catch { /* sin .bench/, nada que agregar */ }
