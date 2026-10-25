@@ -150,7 +150,8 @@ const TOOL_NAMES_OUTSIDE_CORE = [':!integrations', ':!skills/clocki', ':!guides/
   ':!.github/control-changes.jsonl', ':(exclude,glob).github/control-changes/*.json', ':!**/tests/**', ':!**/*.test.*'];
 /** Los archivos del núcleo que nombran una herramienta de horas en el clon `root`. `--untracked`: un archivo nuevo cuenta desde que existe. */
 function coreFilesNamingTimeTool(root) {
-  const r = spawnSync('git', ['-C', root, 'grep', '--untracked', '-il', '-E', 'clocki|clockify|solidtime', '--', '.', ...TOOL_NAMES_OUTSIDE_CORE], { encoding: 'utf8' });
+  // sin comillas ni escapes en las rutas con tilde: en el árbol armado se comparan con las de la superposición, crudas
+  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', 'grep', '--untracked', '-il', '-E', 'clocki|clockify|solidtime', '--', '.', ...TOOL_NAMES_OUTSIDE_CORE], { encoding: 'utf8' });
   assert.ok(r.status === 0 || r.status === 1, `git grep falló: ${r.stderr}`);
   return r.stdout.split('\n').filter(Boolean);
 }
@@ -169,6 +170,24 @@ test('Core_NamesNoTimeTool_CapturesAreNotCore_NewCoreFileCounts @story-7.40 @ac-
   assert.deepStrictEqual(coreFilesNamingTimeTool(repo).sort(), ['guides/sitio-de-la-organizacion/nota.md', 'scripts/lib/nuevo.js'], 'un archivo nuevo del núcleo sí cuenta, también junto a la carpeta de capturas');
 });
 
+// En el árbol armado de los nocturnos (lo privado con el público encima) se mide sólo lo que viaja al público: lo que
+// trajo la superposición. Sin superposición, el árbol entero.
+function onlyWhatTravels(root, files) {
+  const brought = require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js')).broughtByOverlay(root);
+  if (brought && brought.size === 0) throw new Error('la superposición no trajo nada: no hay qué medir');
+  return brought ? files.filter((f) => brought.has(f)) : files;
+}
+
+test('Core_NamesNoTimeTool_OnlyWhatTravels @story-8.112 @ac-2 — en el árbol armado, lo sólo-privado no cuenta', (t) => {
+  // 🔴 rojo: una guía del privado que nombra la herramienta pone en rojo una prueba del público
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'guides/privada.md': 'Clockify, en una guía del equipo\n' }, publico: { 'scripts/lib/nuevo.js': '// abre el reloj de clockify\n', 'scripts/lib/configuración.js': '// clockify\n' } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(onlyWhatTravels(lab.root, coreFilesNamingTimeTool(lab.root)).sort(), ['scripts/lib/configuración.js', 'scripts/lib/nuevo.js'], 'sólo cuenta lo que trajo el público, también con tilde en la ruta');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(onlyWhatTravels(lab.root, coreFilesNamingTimeTool(lab.root)), ['guides/privada.md'], 'sin superposición, el árbol entero');
+});
+
 test('Core_NamesNoTimeTool @story-7.40 @ac-1', (t) => {
   if (!fs.existsSync(path.join(ROOT, '.git'))) { t.skip('sin git: el árbol no es un clon'); return; }
   // la medida del AC es el control de nombres (las rutas y los lugares propios de cada herramienta no cuentan): fuera de
@@ -177,8 +196,9 @@ test('Core_NamesNoTimeTool @story-7.40 @ac-1', (t) => {
   assert.deepStrictEqual(Object.keys(rules.ceiling || {}), [], 'el techo del control de nombres está vacío');
   assert.ok((rules.exceptions || []).every((e) => e && typeof e.reason === 'string' && e.reason.trim()), 'cada excepción con su motivo');
   const { perFile } = require(path.join(ROOT, 'scripts', 'ci', 'tool-names.js')).check({ repo: ROOT });
-  assert.deepStrictEqual(Object.keys(perFile), [], `el control cuenta menciones fuera de sus excepciones: ${JSON.stringify(perFile)}`);
-  const files = coreFilesNamingTimeTool(ROOT);
+  const counted = onlyWhatTravels(ROOT, Object.keys(perFile));
+  assert.deepStrictEqual(counted, [], `el control cuenta menciones fuera de sus excepciones: ${JSON.stringify(counted.map((f) => [f, perFile[f]]))}`);
+  const files = onlyWhatTravels(ROOT, coreFilesNamingTimeTool(ROOT));
   for (const own of ['scripts/lib/work-signal.js', 'scripts/lib/integrations.js']) assert.ok(!files.includes(own), `${own} no nombra ninguna herramienta`);
 });
 
