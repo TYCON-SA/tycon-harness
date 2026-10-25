@@ -191,3 +191,12 @@ test('WaiverJudge_OnlyAPlainYesSigns @story-8.78 @ac-4', () => {
     assert.equal(juez(t), null, `«${t}» es un sí`);
   }
 });
+
+test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y cómo contestar', () => {
+  // Claude Code antepone su propio rótulo a cada renglón del aviso: cada renglón de más es un aviso repetido en pantalla
+  const msg = mostrar(laboratorio());
+  assert.ok(msg.split('\n').length <= 3, msg);
+  for (const t of ['historia 9.94', 'servicio externo del cliente', 'no tiene ambiente de prueba', 'T1', '«firmo el AC 1»', 'cuenta como probado']) {
+    assert.ok(msg.includes(t), `falta «${t}»:\n${msg}`);
+  }
+});

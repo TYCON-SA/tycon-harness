@@ -230,15 +230,11 @@ function bloque({ storyId, rule, file, reason, summary, archivos = [], arnes }) 
   const llano = nombreEnLlano(r, { arnes });
   const base = path.basename(String(file || ''));
   const formas = [`«eximo ${r}»`, ...(llano ? [`«eximo ${llano}»`] : [])].join(' o ');
+  // tres renglones: Claude Code antepone su rótulo a cada renglón del aviso
   return [
-    `Te piden eximir un crítico de la historia ${storyId} (te lo muestra el arnés):`,
-    `  Regla: ${r}${llano ? ` (${llano})` : ''}`,
-    ...(file ? [`  Archivo: ${file}`] : []),
-    ...(summary ? [`  Qué dijo el revisor: ${summary}`] : []),
-    `  Por qué lo quieren eximir: ${reason}`,
-    'Un crítico eximido va al commit sin arreglar.',
-    `Si estás de acuerdo, contestá ${formas}${archivos.length > 1 && base ? `, nombrando el archivo (${base})` : ''}. Un «dale» o un «apruebo» suelto no lo exime.`,
-    'Contestá sólo eso, con su motivo si querés; cualquier otra cosa, en otro mensaje.',
+    `Te piden eximir un crítico de la historia ${storyId} (te lo muestra el arnés): regla ${r}${llano ? ` (${llano})` : ''}${file ? `, archivo ${file}` : ''}.`,
+    `${summary ? `Qué dijo el revisor: ${summary}. ` : ''}Por qué lo quieren eximir: ${reason}. Un crítico eximido va al commit sin arreglar.`,
+    `Si estás de acuerdo, contestá ${formas}${archivos.length > 1 && base ? `, nombrando el archivo (${base})` : ''}. Un «dale» o un «apruebo» suelto no lo exime. Contestá sólo eso, con su motivo si querés; cualquier otra cosa, en otro mensaje.`,
   ].join('\n');
 }
 
@@ -277,7 +273,7 @@ function preparar({ sessionId, stateDir, home = os.homedir(), rule, file, reason
   if (file && !archivos.includes(String(file).trim())) archivos.push(String(file).trim());
   const constancia = { ts: new Date().toISOString(), sessionId, repoPath: marker.repoPath || null, name: 'critical-shown', status: 'ok', story: storyId, rule: String(rule).trim(), file: String(file || '').trim(), sha: huella(rule, file, reason) };
   // si no se pudo leer lo de la corrida, la persona lo sabe ya (al eximir, el ok se rechaza por eso)
-  const aviso = cs.error || ar.error ? `\n(Aviso del arnés: ${ar.error || `no pude leer findings.json de la corrida (${cs.error})`}; así no se puede eximir hasta arreglarlo.)` : '';
+  const aviso = cs.error || ar.error ? ` (Aviso del arnés: ${ar.error || `no pude leer findings.json de la corrida (${cs.error})`}; así no se puede eximir hasta arreglarlo.)` : '';
   return {
     systemMessage: bloque({ storyId, rule, file, reason, summary, archivos, arnes }) + aviso,
     runDir,
@@ -381,12 +377,12 @@ function mostrarJuntos({ pedidos, sessionId, stateDir, home = os.homedir(), arne
     .map((p) => ({ p, r: preparar({ sessionId, stateDir, home, arnes, ...p }) })).filter((x) => x.r);
   if (!listos.length) return null;
   const partes = listos.map((x) => x.r.systemMessage);
-  if (otros.aviso) partes.push(`(Aviso del arnés: ${otros.aviso}.)`);
+  if (otros.aviso) partes[partes.length - 1] += ` (Aviso del arnés: ${otros.aviso}.)`;
   if (listos.length > 1) {
     const todas = listos.map((x) => `eximo ${String(x.p.rule).trim()}`).join('. ');
     partes.push(`Son ${listos.length} críticos: podés contestar uno por mensaje, o todos en uno («${todas}»).`);
   }
-  return { systemMessage: partes.join('\n\n'), anotar: () => { for (const x of listos) x.r.anotar(); } };
+  return { systemMessage: partes.join('\n'), anotar: () => { for (const x of listos) x.r.anotar(); } };
 }
 
 function paraMostrar({ command, sessionId, stateDir, home = os.homedir(), arnes }) {

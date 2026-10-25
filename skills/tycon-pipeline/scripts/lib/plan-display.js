@@ -9,7 +9,7 @@
  *   · `planParaMostrar({ command, sessionId, stateDir, home })`: antes de un `marker.js complete-step approve-plan`, con ese paso
  *     abierto, el plan escrito en la carpeta de la corrida y la conversación legible sin el plan, devuelve
  *     `{ systemMessage, constancia }` y deja la constancia en `gates.log` (`plan-shown`: sesión, historia y huella del
- *     plan). Si no, null. Sin conversación legible (otra herramienta) no muestra ni anota: no se sabe si el aviso se ve.
+ *     plan entero). El aviso trae el título, cuántos pasos tiene y la ruta absoluta del archivo. Si no, null. Sin conversación legible (otra herramienta) no muestra ni anota: no se sabe si el aviso se ve.
  *   · `handle(event)`: lo mismo, después de que el agente escribe el plan con Edit o Write (`step-02-bmad-plan.md` de la
  *     corrida abierta de esta sesión). Corre en el despachador de ediciones, que la instalación mínima también trae:
  *     el plan aparece en pantalla en el momento en que se escribe. Devuelve `{ systemMessage }` o null.
@@ -79,10 +79,35 @@ function mostrar({ sessionId, stateDir, home = os.homedir(), archivo = null }) {
   const constancia = { ts: new Date().toISOString(), sessionId, repoPath: repo, name: 'plan-shown', status: 'ok', story: String(marker.storyId), sha: huella(planTxt) };
   // la constancia la escribe quien muestra, DESPUÉS de mostrar (`anotar`): un aviso que no salió no cuenta como visto
   return {
-    systemMessage: `El plan de la historia ${marker.storyId} (te lo muestra el arnés, tal cual está escrito):\n\n${planTxt.trim()}`,
+    systemMessage: aviso(marker.storyId, planTxt, path.join(path.resolve(runDir), PLAN_FILE)),
     constancia,
     anotar: () => anotar(stateDir, constancia),
   };
+}
+
+// Tres renglones: Claude Code antepone su rótulo a cada renglón del aviso, y un plan entero eran decenas de avisos
+// repetidos. El plan completo queda en su archivo; la constancia guarda la huella del plan entero.
+function aviso(storyId, planTxt, ruta) {
+  const renglones = String(planTxt).split(/\r?\n/);
+  const conTexto = renglones.map((l) => l.trim()).filter(Boolean);
+  const encabezado = conTexto.find((l) => /^#\s/.test(l));
+  const titulo = (encabezado || conTexto[0] || '').replace(/^#+\s*/, '');
+  const n = pasos(renglones);
+  const cuantos = n === 0 ? 'No tiene pasos numerados.' : `Tiene ${n} ${n === 1 ? 'paso' : 'pasos'}.`;
+  return [`El plan de la historia ${storyId} (te lo muestra el arnés): «${titulo}».`, cuantos, `Está entero en ${ruta}`].join('\n');
+}
+
+// Los numerados sin sangría de la sección cuyo título dice «pasos»; si no hay esa sección, los de todo el plan.
+function pasos(renglones) {
+  const numerado = (l) => /^\d+[.)]\s/.test(l);
+  let enPasos = false;
+  let dePasos = 0;
+  let hayPasos = false;
+  for (const l of renglones) {
+    if (/^#{1,6}\s/.test(l)) { enPasos = /\bpasos?\b/i.test(l); hayPasos = hayPasos || enPasos; continue; }
+    if (enPasos && numerado(l)) dePasos++;
+  }
+  return hayPasos ? dePasos : renglones.filter(numerado).length;
 }
 
 function anotar(stateDir, constancia) {

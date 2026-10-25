@@ -34,8 +34,8 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
   agente dijo que el plan ya estaba en sus mensajes sin haberlo mostrado, preguntó a secas y la persona aprobó sin
   verlo.
 - 🖥️ **Si no lo mostraste, lo muestra el arnés.** En Claude Code, antes de que corra `complete-step approve-plan`, el arnés le
-  pone el plan en pantalla a la persona («El plan de la historia … (te lo muestra el arnés, tal cual está escrito)») y
-  lo anota; el paso lo cuenta como mostrado. No reemplaza tu mensaje: si la persona pregunta por el plan, es ése. Por
+  pone en pantalla a la persona el título del plan, cuántos pasos tiene y la ruta de su archivo («El plan de la historia
+  … (te lo muestra el arnés)») y lo anota; el paso lo cuenta como mostrado. No reemplaza tu mensaje: si la persona pregunta por el plan, es ése. Por
   qué: en el mismo laboratorio el agente recibió el plan tres veces y no lo escribió nunca.
 - 🧪 **La oferta de la prueba con navegador la muestra el arnés.** Si la historia cambia una pantalla y el repo no tiene
   cómo probar en un navegador, en Claude Code el arnés le muestra a la persona, junto con el plan, la oferta de
