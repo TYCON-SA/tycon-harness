@@ -1,0 +1,1 @@
+{"hash":"9665b84f70f72349ef7535fdbc41d971b9075f26ccac74302a37c19abf11d0f7","rules":[{"path":"scripts/controls-bench/hook-debt.json","blob":"ab1febbaffa8d1b8eed2fe323f02ee3f1dcec696"},{"path":"scripts/hooks/git-pre-push-global.sh","blob":"421826e9865f9c5c62cc8763065425fb940ab429"}],"at":"2026-10-25","by":"dueño"}
