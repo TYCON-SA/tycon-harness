@@ -1,0 +1,61 @@
+{
+  "__nota": "Precios DECLARADOS por modelo, en su moneda, por millón de tokens de cada tipo: in (entrada sin caché), out (salida, con el razonamiento adentro), cache_read (caché leída) y cache_new (caché escrita; null = el proveedor no lo publica, y una corrida que la usó sale sin costo). El modelo se busca por su nombre EXACTO, tal como viene en cada respuesta. Lo lee tokens-digest.js para el bloque consumo.costo. Si checked queda viejo, review_before vence y el costo sale no_medido: se vuelve a leer la fuente y se actualizan las dos fechas. Un modelo con franjas trae bands: el pico (días ISO, 1 = lunes, y horas en su zona horaria) y el horario bajo. Sin modelos de Claude, a propósito.",
+  "models": {
+    "deepseek-v4.1-flash:cloud": {
+      "provider": "ollama",
+      "currency": "USD",
+      "source": "https://ollama.com/pricing",
+      "checked": "2026-10-25",
+      "review_before": "2026-11-25",
+      "bands": {
+        "timezone": "UTC",
+        "peak": { "days": [1, 2, 3, 4, 5], "from": "12:00", "to": "18:00", "per_million": { "in": 0.30, "out": 1.20, "cache_read": 0.006, "cache_new": null } },
+        "off_peak": { "per_million": { "in": 0.15, "out": 0.60, "cache_read": 0.003, "cache_new": null } }
+      }
+    },
+    "deepseek-v4-pro:cloud": {
+      "provider": "ollama",
+      "currency": "USD",
+      "source": "https://ollama.com/pricing",
+      "checked": "2026-10-25",
+      "review_before": "2026-11-25",
+      "bands": {
+        "timezone": "UTC",
+        "peak": { "days": [1, 2, 3, 4, 5], "from": "12:00", "to": "18:00", "per_million": { "in": 1.32, "out": 3.96, "cache_read": 0.044, "cache_new": null } },
+        "off_peak": { "per_million": { "in": 0.66, "out": 1.98, "cache_read": 0.022, "cache_new": null } }
+      }
+    },
+    "gemma4:31b-cloud": {
+      "provider": "ollama",
+      "currency": "USD",
+      "source": "https://ollama.com/pricing",
+      "checked": "2026-10-25",
+      "review_before": "2026-11-25",
+      "per_million": { "in": 0.14, "out": 0.40, "cache_read": 0.05, "cache_new": null }
+    },
+    "kimi-k2.7-code:cloud": {
+      "provider": "ollama",
+      "currency": "USD",
+      "source": "https://ollama.com/pricing",
+      "checked": "2026-10-25",
+      "review_before": "2026-11-25",
+      "per_million": { "in": 0.95, "out": 4.00, "cache_read": 0.19, "cache_new": null }
+    },
+    "minimax-m3.1-flash:cloud": {
+      "provider": "ollama",
+      "currency": "USD",
+      "source": "https://ollama.com/pricing",
+      "checked": "2026-10-25",
+      "review_before": "2026-11-25",
+      "per_million": { "in": 0.15, "out": 0.60, "cache_read": 0.015, "cache_new": null }
+    },
+    "nemotron-3-super:cloud": {
+      "provider": "ollama",
+      "currency": "USD",
+      "source": "https://ollama.com/pricing",
+      "checked": "2026-10-25",
+      "review_before": "2026-11-25",
+      "per_million": { "in": 0.015, "out": 0.60, "cache_read": 0.015, "cache_new": null }
+    }
+  }
+}

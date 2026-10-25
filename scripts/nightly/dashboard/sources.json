@@ -376,7 +376,7 @@
   "not_measurable_today": [
     {
       "what": "Costo en plata por story",
-      "reason": "decisión (2.13/2.14): el registro trae tokens y la vista los publica; una tabla de precios adentro del arnés envejece sin que nadie lo note. Si se quiere USD, va como dato declarado con review_before."
+      "reason": "el registro trae tokens y la vista los publica. El costo en plata se anota sólo para los modelos con precio declarado en scripts/metrics/model-prices.json (con fuente y review_before; vencido, sale no medido); el resto, Claude incluido, sigue sin medirse y el tablero no lo muestra."
     },
     {
       "what": "Duración de cada revisor",

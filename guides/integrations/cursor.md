@@ -49,6 +49,8 @@ Cursor y un identificador propio por sesión.
 - **El plan gratis se agota rápido.** Una sola corrida del pipeline hasta el código usó unos 40.000 tokens de entrada
   y 350.000 de caché, y unas pocas órdenes más agotaron el cupo. Cuando se agota, cualquier orden devuelve el mismo
   aviso de límite.
+- **Sin tokens ni costo en la constancia.** Cursor no guarda su consumo en la máquina: sus bases locales no traen
+  ningún campo de tokens. La constancia de una corrida con Cursor sale sin consumo medido.
 - **«Auto» no dice qué modelo usa.** La salida no lo nombra.
 - **Sin pantalla, `--force`.** En modo de una sola orden (`-p`), Cursor rechaza todo comando de terminal salvo que se
   le pase `--force`, y con `--force` corre todo lo que el modelo pide.
