@@ -420,6 +420,9 @@ function cmdSet(payloadJson) {
       // el modelo y la sesión de Codex son de la corrida: heredados, los revisores de la story nueva correrían con el
       // proveedor de la anterior
       sessionModel, codexSession,
+      // las suites que fallaron son de la corrida: heredadas, la primera corrida completa de la story nueva se negaría
+      // (76) por suites que sólo rompió la anterior
+      testsFailed,
       ...carryOver
     } = existing;
     console.error(
@@ -1818,7 +1821,9 @@ function cmdSetAutonomous(valRaw) {
   process.stdout.write(`autonomous: ${on}\n`);
 }
 
-const VALID_CHECKS = ['build', 'tests', 'advisors', 'dod', 'acmatrix'];
+// `tests-suite`: una suite sola de suites.json, repetida con `test-gate.sh --suite` después de un rojo. Nunca vale como
+// `tests` (la corrida completa), pero comparte su candado: las dos corren las mismas suites del repo.
+const VALID_CHECKS = ['build', 'tests', 'tests-suite', 'advisors', 'dod', 'acmatrix'];
 
 // DODRT-C5.1 — verifica que el evidencePath de una story de UI sea evidencia
 // Playwright REAL: el archivo EXISTE (resuelto relativo a marker.repoPath si el path es relativo) y su
@@ -1999,6 +2004,93 @@ function cmdMarkTestsNotScoped(motivo) {
 }
 
 /**
+ * `tests-failed`: la lista de suites que fallaron en la última corrida completa de la puerta (`marker.testsFailed`, al
+ * lado de `checks`: el freno de cierre de turno recorre `checks` y una lista no es un check). La usa test-gate.sh:
+ * Cada entrada lleva el repo de su corrida (`--repo`): la lista es de la sesión, y una corrida en otro repo no reemplaza,
+ * no saca ni pide las de éste.
+ *   · `record --summary <resumen> --repo <repo>`: reemplaza las de ese repo con las fallas del resumen de
+ *     run-suites-json.js (sin resumen legible, ninguna) y borra `checks['tests-suite']`, para que no quede en pie el rojo
+ *     de una suite sola anterior;
+ *   · `clear --path <ruta> --repo <repo>`: saca esa ruta (la suite sola salió verde);
+ *   · `pending --suites <suites.json> --gate <test-gate.sh> --repo <repo> [--story <story>]`: saca las rutas que ya no
+ *     están en suites.json (y lo dice); si queda alguna, nombra cada una con su comando y sale 76.
+ * `record` y `clear` escriben lo que mide la puerta: sólo los llama test-gate.sh (TYCON_TEST_GATE=1).
+ * Sin corrida abierta: sale 0, no escribe nada y lo dice.
+ */
+const TESTS_FAILED_PENDING = 76;
+
+function cmdTestsFailed(argv) {
+  const accion = argv[0];
+  const opt = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : null; };
+  const uso = 'marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> | clear --path <ruta> --repo <r> | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>]';
+  if (!['record', 'clear', 'pending'].includes(accion) || !opt('--repo')
+    || (accion === 'record' && !opt('--summary')) || (accion === 'clear' && !opt('--path'))
+    || (accion === 'pending' && (!opt('--suites') || !opt('--gate')))) {
+    console.error(uso);
+    process.exit(2);
+  }
+  if (accion !== 'pending' && process.env.TYCON_TEST_GATE !== '1') {
+    console.error(`marker.js tests-failed ${accion}: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)`);
+    process.exit(2);
+  }
+  const ff = require('./lib/failed-first.js');
+  const marker = readMarker();
+  if (!marker) {
+    process.stdout.write(`marker.js tests-failed ${accion}: sin corrida abierta en esta sesión, no anoto nada\n`);
+    return;
+  }
+  const real = (x) => { try { return fs.realpathSync(x); } catch { return path.resolve(x); } };
+  const repo = real(opt('--repo'));
+  const todas = Array.isArray(marker.testsFailed) ? marker.testsFailed : [];
+  const ajenas = todas.filter((x) => x.repo !== repo);
+  const lista = todas.filter((x) => x.repo === repo);
+  if (accion === 'record') {
+    let resumen = null;
+    try { resumen = JSON.parse(fs.readFileSync(opt('--summary'), 'utf8')); } catch (e) {
+      process.stderr.write(`[test-gate] ⚠️  no pude leer el resumen ${opt('--summary')} (${e.message}): la lista de las que fallaron en este repo queda vacía\n`);
+    }
+    marker.testsFailed = [...ajenas, ...ff.fromSummary(resumen, repo)];
+    for (const campo of ['checks', 'checksAt', 'checksProvenance']) if (marker[campo]) delete marker[campo]['tests-suite'];
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    const nuevas = marker.testsFailed.filter((x) => x.repo === repo);
+    if (nuevas.length) process.stderr.write(`[test-gate] suites que fallaron, anotadas para repetir primero: ${nuevas.map((x) => x.ruta).join(', ')}\n`);
+    return;
+  }
+  if (accion === 'clear') {
+    const ruta = opt('--path');
+    if (!lista.some((x) => x.ruta === ruta)) return;
+    const quedan = lista.filter((x) => x.ruta !== ruta);
+    marker.testsFailed = [...ajenas, ...quedan];
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+    process.stderr.write(`[test-gate] ${ruta} salió verde: fuera de la lista${quedan.length ? ` (quedan ${quedan.length})` : ' (no queda ninguna: la corrida completa ya puede arrancar)'}\n`);
+    return;
+  }
+  if (!lista.length) return;
+  let keep = lista;
+  try {
+    const p = ff.prune(lista, opt('--suites'));
+    keep = p.keep;
+    if (p.gone.length) {
+      for (const x of p.gone) process.stderr.write(`[test-gate] ${x.ruta}: ya no está en suites.json, la saco de la lista\n`);
+      marker.testsFailed = [...ajenas, ...keep];
+      marker.lastTouch = nowIso();
+      writeMarker(marker);
+    }
+  } catch (e) {
+    process.stderr.write(`[test-gate] ⚠️  no pude leer ${opt('--suites')} (${e.message}): la lista queda como está\n`);
+  }
+  if (!keep.length) return;
+  const q = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
+  const base = ['bash', q(opt('--gate')), q(opt('--repo')), ...(opt('--story') ? [q(opt('--story'))] : [])].join(' ');
+  process.stderr.write(`🟡 [test-gate] no corrí la suite completa: en la última fallaron ${keep.length} suite(s) y todavía no salieron verdes solas. Repetí primero cada una:\n`);
+  for (const x of keep) process.stderr.write(`   ${base} --suite ${q(x.ruta)}\n`);
+  process.stderr.write('   Cuando salgan todas verdes, la corrida completa arranca.\n');
+  process.exit(TESTS_FAILED_PENDING);
+}
+
+/**
  * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
  * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
  * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el commit» lo anuncian (nunca un verde callado). Sólo lo
@@ -2152,7 +2244,8 @@ function runCheckLock(name) {
   try { raiz = require('child_process').execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta */ }
   try { raiz = fs.realpathSync(raiz); } catch (_) { /* la ruta tal cual */ }
   const huella = require('crypto').createHash('sha1').update(raiz).digest('hex').slice(0, 16);
-  return { raiz, dir: path.join(STATE_DIR, 'run-check-locks', `${name}-${huella}`) };
+  const clave = name === 'tests-suite' ? 'tests' : name;
+  return { raiz, dir: path.join(STATE_DIR, 'run-check-locks', `${clave}-${huella}`) };
 }
 
 function runCheckBusyText(name, raiz, r) {
@@ -4670,6 +4763,9 @@ switch (cmd) {
     break;
   case 'mark-tests-not-scoped':
     cmdMarkTestsNotScoped(arg1);
+    break;
+  case 'tests-failed':
+    cmdTestsFailed(process.argv.slice(3));
     break;
   case 'mark-tests-not-measured':
     cmdMarkTestsNotMeasured(arg1);
