@@ -71,12 +71,14 @@
  *                                                  Valores: done | in-progress | blocked | pending.
  *
  * Ground-truth de checks (cierra el gate fakeable del modo autónomo):
- *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (execFileSync, sin
+ *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (proceso hijo, sin
  *                                                  shell/pipes), captura el exit code REAL y
  *                                                  setea marker.checks[name] = green|red:<exit>.
  *                                                  Loguea a ~/.claude/.tycon-pipeline/gates.log
  *                                                  (append-only: ts, cmd, exit, duración).
  *                                                  Exit code = el del comando (gateable).
+ *                                                  Con el mismo check ya corriendo en el repo:
+ *                                                  no lanza nada y sale 75.
  *   marker.js set-check <name> <status> --manual → override manual (EXIGE --manual;
  *                                                  sin el flag → RECHAZADO exit 2).
  *                                                  Queda provenance='manual' + entry en gates.log.
@@ -2098,11 +2100,20 @@ function cmdSetCheck(name, status, flag) {
  *
  *   marker.js run-check <name> -- <cmd> [args...]
  *
- * Ejecuta el comando vía execFileSync SIN shell (no pipes, no `| tail` que enmascare
+ * Lanza el comando como proceso hijo SIN shell (no pipes, no `| tail` que enmascare
  * el exit code), captura el exit code REAL y setea
  * marker.checks[name] = 'green' | 'red:exit=N'. provenance='run-check'.
  * Loguea {check, cmd, exit, durationMs} a gates.log (append-only).
  * El exit code del proceso = el del comando → gateable con && / set -e.
+ *
+ * Una sola corrida de cada check por repo: antes de lanzar toma el candado
+ * `run-check-locks/<check>-<huella de la raíz de git>`. Si otro lo tiene, no lanza nada, no escribe el marcador
+ * ni gates.log, dice desde cuándo corre el otro y de quién, y sale 75. El candado guarda el pid propio y el del hijo, y
+ * vale mientras viva cualquiera de los dos: no se libera por edad (una suite completa tarda más de diez minutos), sí
+ * cuando los dos murieron en esta máquina; el de otra máquina no se toca. SIGINT, SIGTERM y SIGHUP se le pasan al
+ * hijo; run-check espera a que el hijo cierre, suelta el candado y sale con 128 + la señal, sin registrar la corrida.
+ * Un comando que sale 75 por su cuenta se anota y sale como 1. Las marcas en rojo de
+ * test-gate.sh (TYCON_TEST_GATE_MARK=1) no toman el candado.
  *
  * 🔴 EN ROJO guarda además la COLA de la salida en `cola`. Si el comando lo lanzó un script o corre
  * en segundo plano, la conversación sólo muestra «Command running in background» y la salida va a un
@@ -2131,6 +2142,32 @@ function colaParaElRegistro(crudo) {
 // saneados) es mucho menor; se retiene de más porque sanear achica y los colores ocupan.
 const COLA_BYTES_RETENIDOS = 64 * 1024;
 
+// «Ocupado, probá después» (EX_TEMPFAIL): no se confunde con un rojo ni con las salidas 3-7 de test-gate.sh.
+const RUN_CHECK_BUSY = 75;
+const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
+
+/** El candado de `name` en el repo de la carpeta actual: la ruta real de la raíz de git (sin git, la carpeta). */
+function runCheckLock(name) {
+  let raiz = process.cwd();
+  try { raiz = require('child_process').execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta */ }
+  try { raiz = fs.realpathSync(raiz); } catch (_) { /* la ruta tal cual */ }
+  const huella = require('crypto').createHash('sha1').update(raiz).digest('hex').slice(0, 16);
+  return { raiz, dir: path.join(STATE_DIR, 'run-check-locks', `${name}-${huella}`) };
+}
+
+function runCheckBusyText(name, raiz, r) {
+  const quien = r.owner;
+  const sacar = `Si quedó colgado (ese proceso ya no es la corrida), sacá el candado a mano: ${r.lockDir}`;
+  if (!quien) {
+    return `marker.js run-check: otra corrida de «${name}» está arrancando en este repo (${raiz}): su candado todavía no tiene dueño escrito. No lancé nada: esperá su resultado. Si nadie lo escribe, se libera solo al minuto. ${sacar}\n`;
+  }
+  const e = quien.extra || {};
+  const t = e.startedAt ? new Date(e.startedAt) : null;
+  const desde = t && !Number.isNaN(t.getTime()) ? `desde las ${t.toTimeString().slice(0, 5)} (${e.startedAt})` : 'desde una hora que no quedó escrita';
+  const maquina = quien.host && quien.host !== os.hostname() ? `, en la máquina ${quien.host}` : '';
+  return `marker.js run-check: ya hay una corrida de «${name}» en marcha en este repo (${raiz}) ${desde} (pid ${quien.pid}${maquina}, sesión ${e.session || 'sin sesión'}). No lancé nada: esperá su resultado, otra corrida igual duplica la carga de la máquina. ${sacar}\n`;
+}
+
 function cmdRunCheck(argv) {
   const name = argv[0];
   const sep = argv.indexOf('--');
@@ -2142,6 +2179,41 @@ function cmdRunCheck(argv) {
   const cmdArgv = argv.slice(sep + 1);
   const marker = readMarker();
   const { spawn } = require('child_process');
+  // El candado: sin el módulo (un árbol de skills sin el mecanismo) se corre como antes, sin candado. Las marcas en
+  // rojo de test-gate.sh (TYCON_TEST_GATE_MARK=1) no lo toman: no corren pruebas, y con el candado de otra sesión
+  // la marca no se escribiría y quedaría en pie un verde viejo.
+  const lockLib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'lock.js');
+  const marcaDeLaPuerta = process.env.TYCON_TEST_GATE_MARK === '1';
+  const lock = !marcaDeLaPuerta && fs.existsSync(lockLib) ? require(lockLib) : null;
+  const { raiz, dir: lockDir } = runCheckLock(name);
+  const duenio = { check: name, repo: raiz, startedAt: new Date().toISOString(), session: marker ? SID : 'sin sesión' };
+  let tomado = false;
+  if (lock) {
+    const r = lock.acquire(os.homedir(), { lockDir, extra: duenio, staleMs: null });
+    if (!r.ok) {
+      process.stderr.write(runCheckBusyText(name, raiz, r));
+      process.exit(RUN_CHECK_BUSY);
+    }
+    tomado = true;
+  }
+  const soltar = () => { if (tomado) { tomado = false; lock.release(os.homedir(), { lockDir }); } };
+  process.on('exit', soltar);
+  let hijo = null;
+  let cortado = 0;
+  for (const [senal, n] of Object.entries(SENALES_RUN_CHECK)) {
+    process.on(senal, () => {
+      // El hijo puede tardar en cerrar: si sigue vivo, se espera a que cierre y recién ahí se suelta el candado.
+      // Soltarlo ya dejaría arrancar otra corrida con ésta todavía en marcha. La corrida cortada no se registra.
+      if (hijo && hijo.exitCode === null && hijo.signalCode === null) {
+        if (cortado) return;
+        cortado = n;
+        try { hijo.kill(senal); } catch (_) { /* ya terminó */ }
+        return;
+      }
+      soltar();
+      process.exit(128 + n);
+    });
+  }
   const t0 = Date.now();
   // Sin shell, como antes. La salida se copia a la consola a medida que llega (el dev/LLM la ve igual)
   // y se retienen los últimos COLA_BYTES_RETENIDOS para la cola del registro.
@@ -2156,7 +2228,11 @@ function cmdRunCheck(argv) {
   const terminar = (exitCode) => {
     if (terminado) return;
     terminado = true;
-    registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+    try {
+      registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+    } finally {
+      soltar();
+    }
   };
   // En Windows, un `bash` a secas se lanza con el bash de Git que devuelve `findGitBash()` del arnés, nunca con el
   // primero del PATH (puede ser el lanzador de WSL). Sin bash de Git no se lanza: el check sale rojo con el motivo
@@ -2169,7 +2245,6 @@ function cmdRunCheck(argv) {
     terminar(1);
     return;
   }
-  let hijo;
   try {
     hijo = spawn(lanzar.file, lanzar.args, { stdio: ['inherit', 'pipe', 'pipe'] });
   } catch (err) {
@@ -2177,11 +2252,22 @@ function cmdRunCheck(argv) {
     terminar(1);
     return;
   }
+  // el pid del hijo, para que el candado siga puesto si run-check muere (SIGKILL) y la suite sigue
+  if (tomado && hijo.pid !== undefined) lock.writeExtra(lockDir, { ...duenio, childPid: hijo.pid });
   hijo.stdout.on('data', (b) => { process.stdout.write(b); retener(b); });
   hijo.stderr.on('data', (b) => { process.stderr.write(b); retener(b); });
   // No se pudo lanzar (ENOENT, permiso): antes execFileSync lo daba como exit 1.
   hijo.on('error', (err) => { retener(Buffer.from(`${err.message}\n`)); if (hijo.pid === undefined) terminar(1); });
-  hijo.on('close', (code) => terminar(typeof code === 'number' && code >= 0 ? code : 1));
+  hijo.on('close', (code) => {
+    if (cortado) { soltar(); process.exit(128 + cortado); }
+    let c = typeof code === 'number' && code >= 0 ? code : 1;
+    // 75 es «ocupado, no lancé nada»: un comando que sale 75 por su cuenta sí corrió, y se anota como 1
+    if (c === RUN_CHECK_BUSY) {
+      process.stderr.write(`marker.js run-check: el comando salió ${RUN_CHECK_BUSY} por su cuenta; lo anoto como 1 para no confundirlo con «otra corrida en marcha»\n`);
+      c = 1;
+    }
+    terminar(c);
+  });
 }
 
 function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) {

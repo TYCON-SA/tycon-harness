@@ -62,6 +62,12 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    corrida. Misma regla que «suite completa y subagentes no se superponen», extendida
    a los artefactos generados: primero se regenera, después se corre la suite, nunca a la vez.
 
+8. **Una sola corrida de cada check por repo: `marker.js run-check` toma un candado, y la segunda sale 75.** Si ya
+   hay una corrida del mismo check en marcha en el mismo repo, la segunda no lanza nada; el 75 no es un rojo: dice
+   desde qué hora corre la otra, su pid y su sesión. `test-gate.sh` pasa ese 75 tal cual, sin `tests-result.json`. Se espera su
+   resultado, no se relanza. El candado de un proceso muerto se suelta solo; por edad no se suelta. Si quedó colgado,
+   la negativa nombra la carpeta del candado para sacarlo a mano.
+
 ## El freno de pruebas sin alcance: qué reconoce
 
 El freno (`scripts/hooks/test-scope-guard-pre.sh`) lee el comando como lo lee el shell (con `scripts/lib/test-scope.js`)

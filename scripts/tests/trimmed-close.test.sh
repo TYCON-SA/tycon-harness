@@ -368,15 +368,19 @@ fi
 # Lo que frena de verdad no se toca: `run-check` (marker.js) y el portón de CI, comparados contra
 # origin/main de cada repo. Y ningún caso del examen de revisores apunta a la regla retirada.
 t12=""
-# 🔴 De marker.js se compara SÓLO lo que ejecuta y registra los chequeos (`cmdRunCheck`, `registrarRunCheck`),
-#    no el archivo entero: el archivo entero pondría en rojo a toda story que tocara otra parte de
-#    marker.js hasta que se mergeara. Mutación que lo pone rojo: cambiar una línea de cualquiera de las dos.
+# 🔴 De marker.js se compara SÓLO lo que registra el veredicto de los chequeos (`registrarRunCheck`: qué es verde,
+#    con qué procedencia), no el archivo entero: el archivo entero pondría en rojo a toda story que tocara otra parte
+#    de marker.js hasta que se mergeara. Mutación que lo pone rojo: cambiar una línea de esa función.
+# 🔴 La función que LANZA la corrida (`cmdRunCheck`) no se compara por bytes, por el mismo motivo que el portón (abajo):
+#    comparar bytes no distingue una mejora de un deterioro, y cada cambio a cómo se lanza —el candado de una sola
+#    corrida por repo, las señales— la desfrizaría con su justificación. Lo que importa de ella se mide ejecutándola:
+#    que sale con el código real del comando (`tooling-portable.test.js`) y el candado (`marker-run-check.test.js`).
 # 🔴 El tramo termina en la LLAVE DE CIERRE de la función, no en la función siguiente: lo que hay entre las
 #    dos (la lista `VALID_FLAGS` de set-flag) no es run-check, y un cambio ahí pondría rojo acá sin haber
 #    tocado una línea de run-check.
 funciones_run_check(){ node -e '
   const s = require("fs").readFileSync(0, "utf8"); let out = "";
-  for (const n of ["cmdRunCheck", "registrarRunCheck"]) {
+  for (const n of ["registrarRunCheck"]) {
     const i = s.indexOf("\nfunction " + n + "(");
     if (i < 0) { out += "SIN:" + n + "\n"; continue; }
     const j = s.indexOf("\n}\n", i + 1);

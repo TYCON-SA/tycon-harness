@@ -569,6 +569,38 @@ test('T2 · un candado huérfano (> 10 min) se pisa y queda con el pid nuevo; un
   fs.rmSync(p.lockDir, { recursive: true, force: true });
 });
 
+test('T13 HarnessLock_DefaultPath_Unchanged @story-8.124 @ac-12 — sin opciones, lock.js usa harness.lock, el formato y la edad de siempre', () => {
+  const lock = mod('lock');
+  const state = mod('state');
+  const home = casa('t13-lock');
+  const env = labEnv(home);
+  const p = state.paths(home);
+  const a = lock.acquire(home, { env });
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  assert.deepStrictEqual(fs.readdirSync(p.lockDir), ['pid'], 'el candado de siempre no lleva más que su pid');
+  assert.strictEqual(fs.readFileSync(path.join(p.lockDir, 'pid'), 'utf8'), `${process.pid}\n${os.hostname()}\n`);
+  lock.release(home);
+  // dueño VIVO con más de 10 minutos: el candado de siempre se libera por edad (el de run-check no: Casos: skills/tycon-pipeline/scripts/tests/marker-run-check.test.js)
+  fs.mkdirSync(p.lockDir, { recursive: true });
+  fs.writeFileSync(path.join(p.lockDir, 'pid'), `${process.ppid}\n${os.hostname()}\n`);
+  const old = new Date(Date.now() - 11 * 60 * 1000);
+  fs.utimesSync(path.join(p.lockDir, 'pid'), old, old);
+  fs.utimesSync(p.lockDir, old, old);
+  const b = lock.acquire(home, { env });
+  assert.strictEqual(b.ok, true, `no lo liberó por edad: ${JSON.stringify(b)}`);
+  // un dueño ilegible y fresco: ocupado; la edad de siempre (10 min) manda, no el minuto del de run-check
+  lock.release(home);
+  fs.mkdirSync(p.lockDir, { recursive: true });
+  fs.writeFileSync(path.join(p.lockDir, 'pid'), '');
+  const twoMin = new Date(Date.now() - 2 * 60 * 1000);
+  fs.utimesSync(path.join(p.lockDir, 'pid'), twoMin, twoMin);
+  fs.utimesSync(p.lockDir, twoMin, twoMin);
+  assert.strictEqual(lock.acquire(home, { env }).ok, false, 'el ilegible de 2 min se liberó: la edad de siempre cambió');
+  // TYCON_HARNESS_LOCK_HELD sigue valiendo para el candado de siempre
+  fs.rmSync(p.lockDir, { recursive: true, force: true });
+  assert.strictEqual(lock.acquire(home, { env: labEnv(home, { TYCON_HARNESS_LOCK_HELD: '1' }) }).held, true);
+});
+
 test('T2 · withLock corre fn y suelta; tomado → onBusy; si fn tira igual suelta; con LOCK_HELD no suelta el del padre', () => {
   const lock = mod('lock');
   const state = mod('state');
