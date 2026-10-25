@@ -70,11 +70,12 @@ function adoMarkActive({ workItem, repoDir, reopen = false, assignTo = null, pla
 const contenido = (r) => (r && r.message && Array.isArray(r.message.content) ? r.message.content : []);
 const texto = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => (b && typeof b.text === 'string' ? b.text : '')).join('\n') : '');
 // El aviso de trabajo es el comando entero, no un texto que lo nombra (`echo`): a lo sumo un `cd …&&` adelante, el
-// operador de llamada de PowerShell (`&`), rutas entre comillas (una carpeta con espacio o acento) y redirecciones al final.
+// operador de llamada de PowerShell (`&`), rutas entre comillas (una carpeta con espacio o acento), redirecciones al final y
+// otro comando atrás (`; echo rc=$?`, `&& …`). Un tubo (`| …`) no: lo que sale ya no es lo que dijo el aviso.
 const PALABRA = String.raw`(?:"[^"]*"|'[^']*'|\S+)`;
 const EMISION = new RegExp(String.raw`^\s*(?:cd\s+[^;&|]+&&\s*)?(?:&\s*)?(?:"[^"]*node[^"]*"|'[^']*node[^']*'|\S*node(?:\.exe)?)\s+` +
   String.raw`(?:"[^"]*pipeline\.js"|'[^']*pipeline\.js'|\S*pipeline\.js)\s+work-signal\s+start` +
-  String.raw`(?:\s+(?:\d?>&\d|\d?>>?\s*${PALABRA}|\*>\s*${PALABRA}))*\s*$`);
+  String.raw`(?:\s+(?:\d?>&\d|\d?>>?\s*${PALABRA}|\*>\s*${PALABRA}))*(?:\s*(?:;|&&|\|\|).*)?\s*$`);
 // Las herramientas que corren comandos de la terminal: Claude Code usa PowerShell en Windows.
 const TERMINAL = ['Bash', 'PowerShell'];
 // Un id más corto que esto coincide con casi cualquier resultado.
@@ -82,6 +83,11 @@ const ID_MIN = 6;
 
 const esCodex = (env) => !!env.CODEX_SESSION_ID && !env.CLAUDE_CODE_SESSION_ID;
 const escapar = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Salió bien: la herramienta no dio error, la salida trae la del aviso (`"ran":true`) y, si un comando de atrás muestra
+// el código de salida (`rc=…`), es 0. Con otro comando atrás la herramienta queda en verde aunque el aviso haya fallado.
+const salioBien = (res) => !!res && !res.error && /"ran"\s*:\s*true/.test(res.texto) && !/(^|\n)\s*rc=["']?[1-9]\d*["']?\s*($|\n)/.test(res.texto);
+const esAviso = (b, res) => TERMINAL.includes(b.name) && EMISION.test(String((b.input || {}).command || '')) && salioBien(res);
+const palabraEntera = (id) => new RegExp(`(^|[^\\w-])${escapar(id)}($|[^\\w-])`);
 
 /**
  * En estos registros: ¿hay, después del último `work-signal start` que salió bien con una acción, una llamada a una
@@ -97,9 +103,8 @@ function enRegistros(registros, id) {
   let desde = -1;
   let accion = '';
   usos.forEach((b, i) => {
-    const cmd = String((b.input || {}).command || '');
     const res = resultados.get(b.id);
-    if (!TERMINAL.includes(b.name) || !EMISION.test(cmd) || !res || res.error) return;
+    if (!esAviso(b, res)) return;
     desde = i;
     accion = res.texto;
   });
@@ -107,7 +112,7 @@ function enRegistros(registros, id) {
   // los servidores MCP que nombra la acción: cerrar una entrada vieja y abrir otra usan dos herramientas del mismo
   const servidores = [...new Set((accion.match(/mcp__[\w-]+?__[\w-]+/g) || []).map((t) => t.replace(/^(mcp__[\w-]+?__).*$/, '$1')))];
   if (!servidores.length) return { ok: false, motivo: 'la acción del aviso de trabajo no nombra la herramienta MCP que había que usar: no hay contra qué comparar' };
-  const palabra = new RegExp(`(^|[^\\w-])${escapar(id)}($|[^\\w-])`);
+  const palabra = palabraEntera(id);
   // una entrada ya abierta: la acción misma trae su id
   if (palabra.test(accion)) return { ok: true, herramienta: 'la entrada ya abierta que avisó la integración' };
   for (const b of usos.slice(desde + 1)) {
@@ -118,8 +123,48 @@ function enRegistros(registros, id) {
   return { ok: false, motivo: `ninguna llamada a ${servidores.map((s) => `${s}*`).join(' o ')} después del aviso de trabajo devolvió «${id}»: hacé la acción y pasá el id que devolvió` };
 }
 
-/** La evidencia de la acción para la sesión. → `{ ok, verificado, herramienta?, motivo? }`. */
-function actionDone({ id, env = process.env, home = os.homedir() }) {
+/**
+ * La entrada abierta de la sesión que confirma algo de la conversación: un resultado sin error de una herramienta del
+ * servidor MCP de la integración, o la salida de un aviso de trabajo que salió bien, con `id` como palabra entera. La
+ * entrada sola, en el archivo de la integración, no alcanza: la escribe el agente. → nombre de lo que la confirma, o null.
+ */
+function confirmaEntrada(registros, id, servidor) {
+  const resultados = new Map();
+  for (const r of registros) for (const b of contenido(r)) if (b && b.type === 'tool_result') resultados.set(b.tool_use_id, { error: !!b.is_error, texto: texto(b.content) });
+  const palabra = palabraEntera(id);
+  for (const r of registros) for (const b of contenido(r)) {
+    if (!b || b.type !== 'tool_use') continue;
+    const res = resultados.get(b.id);
+    if (!res || res.error || !palabra.test(res.texto)) continue;
+    if (servidor && String(b.name || '').startsWith(`mcp__${servidor}__`)) return b.name;
+    if (esAviso(b, res)) return 'la salida del aviso de trabajo';
+  }
+  return null;
+}
+
+/**
+ * La entrada que la integración de horas tiene abierta para esta sesión (el evento `entry` de `scripts/lib/work-signal.js`),
+ * con el servidor MCP de su manifiesto: `{ entryId, servidor }`, o null si no hay, no se sabe o el arnés no trae el evento.
+ */
+function entradaAbierta({ repo, sessionId, env = process.env, home } = {}) {
+  try {
+    const dir = require('./harness-path.js').rutaArnesHook({ env, home }).dir;
+    if (!dir || !sessionId) return null;
+    const ws = require(path.join(dir, 'scripts', 'lib', 'work-signal.js'));
+    if (!Array.isArray(ws.EVENTS) || !ws.EVENTS.includes('entry')) return null;
+    const c = ws.chosen({ env, home });
+    const r = ws.emit('entry', { repo: repo || null, sessionId }, { env, home });
+    const entryId = r && r.result && typeof r.result.entryId === 'string' ? r.result.entryId.trim() : '';
+    return entryId ? { entryId, servidor: c && c.manifest && c.manifest.mcp ? c.manifest.mcp.server : null } : null;
+  } catch (_) { return null; }
+}
+
+/**
+ * La evidencia de la acción para la sesión. `abierta` es la entrada que la integración tiene abierta (`entradaAbierta`):
+ * sin un aviso de trabajo reconocible, un id que es esa entrada marca si algo de la conversación lo confirma; si nada lo
+ * confirma, no marca y vuelve `sinConfirmar`. → `{ ok, verificado, herramienta?, motivo?, sinConfirmar? }`.
+ */
+function actionDone({ id, env = process.env, home = os.homedir(), abierta = null }) {
   const limpio = String(isNil(id) ? '' : id).trim();
   if (!limpio) return { ok: false, verificado: false, motivo: 'falta el id que devolvió la herramienta: --action-done "<id>"' };
   if (limpio.length < ID_MIN) return { ok: false, verificado: false, motivo: `el id «${limpio}» es demasiado corto para buscarlo (mínimo ${ID_MIN} caracteres): pasá el id entero que devolvió la herramienta` };
@@ -129,10 +174,16 @@ function actionDone({ id, env = process.env, home = os.homedir() }) {
   if (!conv.legible) return { ok: false, verificado: false, motivo: `no puedo leer la conversación de esta sesión (${conv.motivo})` };
   const cadena = require('./validator-record.js').conRespuestas(conv.registros);
   const r = enRegistros(cadena, limpio);
+  if (!r.ok && abierta && abierta.entryId === limpio) {
+    const conf = confirmaEntrada(cadena, limpio, abierta.servidor);
+    if (conf) return { ok: true, verificado: true, herramienta: `la entrada abierta de la sesión, confirmada por ${conf}` };
+    return { ok: false, verificado: false, sinConfirmar: true,
+      motivo: `registro de horas abierto, sin confirmar por el arnés: «${limpio}» es la entrada abierta de la sesión, pero ningún resultado de la herramienta ni salida del aviso de trabajo lo trae` };
+  }
   return Object.assign({ verificado: r.ok }, r);
 }
 
 module.exports = {
   EXTERNAL_FLAGS, RUN_FLAGS, VALID_FLAGS, HARNESS_COMMAND, PART_OF,
-  adoMarkActive, actionDone, enRegistros, esCodex,
+  adoMarkActive, actionDone, enRegistros, entradaAbierta, esCodex,
 };

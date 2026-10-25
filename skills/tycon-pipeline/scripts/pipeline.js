@@ -6638,8 +6638,21 @@ function main() {
     // la acción que hizo el agente con la herramienta de horas: marca sólo con el id en un resultado de la conversación
     if (event === 'start' && !isNil(args.actionDone)) {
       const EF = require('./lib/external-flags.js');
-      const v = EF.actionDone({ id: args.actionDone });
-      if (!v.ok) { process.stderr.write(`work-signal start --action-done: no marco — ${v.motivo}\n`); process.exit(1); }
+      const marker = readSessionMarker();
+      const sid = resolveSessionId();
+      const abierta = EF.entradaAbierta({ repo: marker ? nn(marker.repoPath, null) : null, sessionId: (marker && marker.sessionId) || (sid === '_nosession' ? null : sid) });
+      const v = EF.actionDone({ id: args.actionDone, abierta });
+      if (!v.ok) {
+        // la entrada está abierta y nada la confirma: no marca, y el cartel lo dice en vez de «no se pudo abrir»
+        if (v.sinConfirmar) {
+          anotarEnMarker({}, (x) => {
+            const otras = (Array.isArray(x.startWarnings) ? x.startWarnings : []).filter((w) => w && w.part !== 'time-tracking');
+            x.startWarnings = [...otras, { part: 'time-tracking', message: v.motivo.slice(0, 300), unconfirmed: true }];
+          });
+        }
+        process.stderr.write(`work-signal start --action-done: no marco — ${v.motivo}\n`);
+        process.exit(1);
+      }
       if (!v.verificado) process.stderr.write(`work-signal start --action-done: marco sin verificar — ${v.motivo}\n`);
       // sin verificar (Codex) queda dicho también en el marcador, no sólo en gates.log
       const m = marcarHechoExterno('workSignalStarted', { via: 'action-done', id: String(args.actionDone).trim().slice(0, 120), herramienta: nn(v.herramienta, null), verificado: v.verificado },

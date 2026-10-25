@@ -2500,15 +2500,18 @@ function cmdStartWarning(part, mensaje) {
     process.exit(2);
   }
   const lista = Array.isArray(marker.startWarnings) ? marker.startWarnings : [];
-  if (lista.some((w) => w && w.part === part && w.message === motivo)) {
-    process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [{ part }] })[0]}\n`);
+  // las horas con una entrada abierta en la sesión (lo dice la integración): el registro está abierto, sin confirmar
+  const aviso = { part, message: motivo };
+  if (part === 'time-tracking' && require('./lib/external-flags.js').entradaAbierta({ repo: nn(marker.repoPath, null), sessionId: nn(marker.sessionId, null) })) aviso.unconfirmed = true;
+  if (lista.some((w) => w && w.part === part && w.message === motivo && !!w.unconfirmed === !!aviso.unconfirmed)) {
+    process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [aviso] })[0]}\n`);
     return;
   }
-  marker.startWarnings = [...lista.filter((w) => w && w.part !== part), { part, message: motivo }];
+  marker.startWarnings = [...lista.filter((w) => w && w.part !== part), aviso];
   marker.lastTouch = nowIso();
   writeMarker(marker);
-  appendLog('gates.log', { name: 'start-warning', part, motivo, at: nowIso(), story: nn(marker.storyId, null) });
-  process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [{ part }] })[0]}\n`);
+  appendLog('gates.log', { name: 'start-warning', part, motivo, ...(aviso.unconfirmed ? { unconfirmed: true } : {}), at: nowIso(), story: nn(marker.storyId, null) });
+  process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [aviso] })[0]}\n`);
 }
 
 // El valor de una opción `--<nombre> <valor>` de la línea, recortado; '' si falta.
