@@ -30,7 +30,10 @@ const crypto = require('crypto');
 
 const GENERATOR = 'tycon-mockup/1';
 const CSP = "default-src 'none'; style-src 'unsafe-inline'";
-const KINDS = ['heading', 'text', 'button', 'link', 'field', 'checkbox', 'table', 'list', 'message', 'box'];
+const KINDS = ['heading', 'text', 'button', 'link', 'field', 'checkbox', 'table', 'list', 'message', 'box', 'group'];
+// lo primero que lee quien aprueba: la maqueta fija qué dice la pantalla, no cómo se ve
+const SCHEMA_NOTE = 'Esquema de textos y estados, no del aspecto.';
+const EXISTING_NOTE = 'En gris, lo que la pantalla ya tiene.';
 const TONES = ['info', 'ok', 'warn', 'error'];
 const TEXT_KINDS = ['heading', 'text', 'button', 'link', 'message', 'box'];
 // cómo se presenta una pantalla: en la página, o como una capa encima de otra (una ventana, un diálogo, un panel)
@@ -56,13 +59,18 @@ function mockupHash(content) {
 
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 
+// Una casilla está marcada con `checked`; un modelo viejo que trae `value: true` también vale, y `checked` gana.
+const isChecked = (c) => (typeof c.checked === 'boolean' ? c.checked : c.value === true);
+
 // Los textos que se comparan con la pantalla, de un elemento del modelo. El rótulo de un `box` describe una imagen o un
-// gráfico para quien aprueba y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows` y `notes` son
-// datos de ejemplo y no se comparan.
+// gráfico para quien aprueba y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows`, `notes`,
+// `checked` y `disabled` son datos de ejemplo y no se comparan.
 function comparedOf(el) {
   if (['heading', 'text', 'button', 'link', 'message'].includes(el.kind)) return [el.text];
   if (el.kind === 'box') return el.compare === true ? [el.text] : [];
-  if (el.kind === 'field' || el.kind === 'checkbox') return [el.label, ...(isStr(el.placeholder) ? [el.placeholder] : [])];
+  if (el.kind === 'checkbox') return [el.label, ...(isStr(el.title) ? [el.title] : [])];
+  if (el.kind === 'group') return [el.legend, ...el.items.flatMap((c) => [c.label, ...(isStr(c.title) ? [c.title] : [])])];
+  if (el.kind === 'field') return [el.label, ...(isStr(el.placeholder) ? [el.placeholder] : [])];
   if (el.kind === 'table') return el.columns;
   if (el.kind === 'list') return el.items;
   return [];
@@ -76,6 +84,28 @@ function isFiller(t) {
   if (/\b(lorem|ipsum)\b/i.test(s)) return true;
   if (s === '...' || s === '…' || /^x{3}$/i.test(s) || /^texto de ejemplo$/i.test(s)) return true;
   return /^(TBD|TODO|XXX)\b(?![ ][A-ZÁÉÍÓÚÑ]+\b)/.test(s);
+}
+
+// Los estados de una casilla. `value` no es un problema: un modelo viejo lo trae y se toma como `checked` (lo avisa
+// `modelWarnings`). `title` es el motivo que la pantalla muestra al pasar el mouse sobre una casilla deshabilitada.
+function checkboxProblems(c, k) {
+  const out = [];
+  if (c.checked !== undefined && typeof c.checked !== 'boolean') out.push(`${k}: \`checked\` tiene que ser true o false`);
+  if (c.disabled !== undefined && typeof c.disabled !== 'boolean') out.push(`${k}: \`disabled\` tiene que ser true o false`);
+  if (c.title !== undefined && (!isStr(c.title) || c.disabled !== true)) out.push(`${k}: \`title\` es una cadena y va sólo con \`disabled: true\` (el motivo que muestra la casilla deshabilitada)`);
+  return out;
+}
+
+/** Lo que el modelo trae y se toma igual, con su aviso: hoy, el `value` de una casilla. */
+function modelWarnings(model) {
+  const out = [];
+  const conValue = (c, donde) => { if (c && c.value !== undefined) out.push(`${donde}: \`value\` en una casilla se tomó como \`checked: ${isChecked(c)}\` — usá checked`); };
+  (model.screens || []).forEach((sc, i) => (sc.elements || []).forEach((el, j) => {
+    const donde = `pantalla ${i + 1}, elemento ${j + 1} (${el.kind})`;
+    if (el.kind === 'checkbox') conValue(el, donde);
+    if (el.kind === 'group' && Array.isArray(el.items)) el.items.forEach((c, n) => conValue(c, `${donde}, casilla ${n + 1}`));
+  }));
+  return out;
 }
 
 /** Los problemas del modelo, cada uno con su pantalla y su número de elemento. Vacío = se puede armar. */
@@ -116,6 +146,20 @@ function validateModel(model) {
       if (el.kind === 'table' && (!Array.isArray(el.columns) || !el.columns.length || !el.columns.every(isStr))) out.push(`${k}: falta \`columns\` (una lista de cadenas, no vacía)`);
       if (el.kind === 'list' && (!Array.isArray(el.items) || !el.items.length || !el.items.every(isStr))) out.push(`${k}: falta \`items\` (una lista de cadenas, no vacía)`);
       if (el.kind === 'message' && el.tone !== undefined && !TONES.includes(el.tone)) out.push(`${k}: \`tone\` «${el.tone}» no está en la lista (${TONES.join(' | ')})`);
+      if (el.existing !== undefined && typeof el.existing !== 'boolean') out.push(`${k}: \`existing\` tiene que ser true o false`);
+      if (el.kind === 'checkbox') out.push(...checkboxProblems(el, k));
+      if (el.kind === 'group') {
+        if (!isStr(el.legend)) out.push(`${k}: falta \`legend\` (el título del grupo, una cadena)`);
+        if (!Array.isArray(el.items) || !el.items.length) out.push(`${k}: falta \`items\` (una lista de casillas, no vacía)`);
+        else {
+          el.items.forEach((c, n) => {
+            const ki = `${k}, casilla ${n + 1}`;
+            if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`${ki}: no es un objeto`); return; }
+            if (!isStr(c.label)) out.push(`${ki}: falta \`label\` (una cadena)`);
+            out.push(...checkboxProblems(c, ki));
+          });
+        }
+      }
     });
   });
   if (out.length) return out;
@@ -131,6 +175,7 @@ const STYLE = `
   body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #f4f5f7; color: #1d2433; margin: 0; padding: 24px; }
   header h1 { font-size: 20px; margin: 0 0 4px; }
   header p { margin: 0 0 20px; color: #5a6475; font-size: 13px; }
+  header p.schema-note { margin: 0 0 6px; color: #1d2433; font-weight: 600; }
   .screen { background: #fff; border: 1px solid #d5d9e0; border-radius: 10px; margin: 0 0 24px; max-width: 760px; }
   .screen-head { display: flex; gap: 10px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e6e9ee; background: #fafbfc; border-radius: 10px 10px 0 0; }
   .screen-name { font-weight: 600; }
@@ -148,7 +193,15 @@ const STYLE = `
   .field .ph { color: #8a93a3; }
   .field .ph-note { font-size: 12px; color: #8a93a3; }
   .checkbox { display: flex; gap: 8px; align-items: center; }
-  .checkbox .box { width: 14px; height: 14px; border: 1px solid #9aa3b2; border-radius: 3px; display: inline-block; }
+  .cb-mark { width: 14px; height: 14px; border: 1px solid #9aa3b2; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: 12px; line-height: 1; font-weight: 700; }
+  .checkbox.disabled { color: #9aa3b2; }
+  .checkbox.disabled .cb-mark { border-color: #c3c9d3; background: #f0f2f5; }
+  .cb-title { font-size: 12px; }
+  fieldset.group { border: 1px solid #d5d9e0; border-radius: 6px; padding: 6px 12px 10px; margin: 0; }
+  fieldset.group legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+  .group-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 16px; }
+  .existing { color: #9aa3b2; }
+  .existing * { color: #9aa3b2; border-color: #d5d9e0; background: transparent; }
   table.table { border-collapse: collapse; min-width: 420px; }
   table.table th, table.table td { border: 1px solid #d5d9e0; padding: 6px 10px; text-align: left; font-size: 14px; }
   table.table th { background: #f0f2f5; }
@@ -173,7 +226,15 @@ const LAYER_STYLE = `
 function renderMockup(model) {
   const E = mockupEsc;
   const T = (text, kind, i) => `<span class="t" data-mockup-text="${E(text)}" data-kind="${kind}" data-screen="${i}">${E(text)}</span>`;
-  const el = (x, i) => {
+  // la casilla, sola o dentro de un grupo: marcada con una «x», deshabilitada en gris con su motivo a la vista (en la
+  // imagen del chat no hay mouse para ver el `title`)
+  const casilla = (c, i) => {
+    const on = isChecked(c);
+    const motivo = c.disabled === true && isStr(c.title) ? ` <span class="cb-title">(${T(c.title, 'title', i)})</span>` : '';
+    return `<div class="checkbox${c.disabled === true ? ' disabled' : ''}"><span class="cb-mark${on ? ' on' : ''}">${on ? 'x' : ''}</span>${T(c.label, 'checkbox', i)}${motivo}</div>`;
+  };
+  const el = (x, i) => (x.existing === true ? `<div class="existing">${dibujo(x, i)}</div>` : dibujo(x, i));
+  const dibujo = (x, i) => {
     switch (x.kind) {
       case 'heading': return `<h2 class="heading">${T(x.text, x.kind, i)}</h2>`;
       case 'text': return `<p class="text">${T(x.text, x.kind, i)}</p>`;
@@ -185,7 +246,8 @@ function renderMockup(model) {
         const note = isStr(x.value) && ph ? `<span class="ph-note">vacío dice ${ph}</span>` : '';
         return `<div class="field"><span class="label">${T(x.label, x.kind, i)}</span><span class="input">${input}</span>${note}</div>`;
       }
-      case 'checkbox': return `<div class="checkbox"><span class="box"></span>${T(x.label, x.kind, i)}</div>`;
+      case 'checkbox': return casilla(x, i);
+      case 'group': return `<fieldset class="group"><legend>${T(x.legend, x.kind, i)}</legend><div class="group-row">${x.items.map((c) => casilla(c, i)).join('')}</div></fieldset>`;
       case 'table': {
         const rows = (Array.isArray(x.rows) ? x.rows : []).map((r) => `<tr>${(Array.isArray(r) ? r : []).map((c) => `<td>${E(c)}</td>`).join('')}</tr>`).join('');
         return `<table class="table"><thead><tr>${x.columns.map((c) => `<th>${T(c, x.kind, i)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
@@ -211,6 +273,7 @@ function renderMockup(model) {
     return [`<section class="screen" data-screen-index="${i}" data-screen-name="${E(name)}">`, head, ...body, '</section>'].join('\n');
   }).join('\n');
   const conCapas = model.screens.some((sc) => sc.presentation === 'layer');
+  const conExistentes = model.screens.some((sc) => sc.elements.some((x) => x.existing === true));
   const sub = `Maqueta de la pantalla${isStr(model.storyId) ? ` — story ${E(model.storyId)}` : ''}. Se mira y se aprueba con el plan; lo construido se compara contra estos textos.`;
   return [
     '<!doctype html>',
@@ -221,7 +284,7 @@ function renderMockup(model) {
     `<title>Maqueta — ${E(model.title)}</title>`,
     `<style>${STYLE}${conCapas ? LAYER_STYLE : ''}</style>`,
     '</head><body>',
-    `<header><h1>${E(model.title)}</h1><p>${sub}</p></header>`,
+    `<header><h1>${E(model.title)}</h1><p class="schema-note">${SCHEMA_NOTE}${conExistentes ? ` ${EXISTING_NOTE}` : ''}</p><p>${sub}</p></header>`,
     screens,
     isStr(model.notes) ? `<div class="notes">${E(model.notes)}</div>` : '',
     '</body></html>',
@@ -346,7 +409,8 @@ function declaredDiffs(md) {
 
 /**
  * Lo construido contra la maqueta. `texts`: los de `mockupTexts`; `screens`: [{ rel, abs }]; `md`: la revisión de la
- * pantalla (para `differs:`). Devuelve `{ missing, extras, declared, unreadable }`. Un texto de 3 palabras o más se
+ * pantalla (para `differs:`). Devuelve `{ missing, extras, declared, unreadable, warnings }` (`warnings`: los `title`
+ * que no aparecen ni como atributo ni como texto). Un texto de 3 palabras o más se
  * busca como en la capa 8 (`whereInScreens`: literal o mensaje armado); uno más corto sólo entre los textos visibles,
  * como palabra entera: `whereInScreens` busca primero en el archivo entero, y «Pagar» aparece en `onPagar`.
  */
@@ -358,14 +422,26 @@ function compareWithScreens({ texts, screens, md }) {
     try { readable.push({ ...s, src: fs.readFileSync(s.abs, 'utf8') }); } catch (e) { unreadable.push({ rel: s.rel, error: e.code || e.message }); }
   }
   const visibles = readable.map((s) => ({ rel: s.rel, texts: ui.visibleTexts(s.src) }));
-  const seen = new Set(); const missing = []; const declared = [];
+  const seen = new Set(); const missing = []; const declared = []; const warnings = [];
   for (const t0 of texts || []) {
     // espacios colapsados, como los textos de la pantalla («Ver  todo» tiene que coincidir con «Ver todo»)
     const t = { ...t0, text: collapse(t0.text) };
-    if (!t.text || seen.has(t.text)) continue;
-    seen.add(t.text);
+    // el motivo de una casilla se cuenta aparte: si tiene las mismas palabras que un texto obligatorio, ese texto se
+    // sigue comparando como faltante
+    const clave = (t.kind === 'title' ? 'title:' : 'texto:') + t.text;
+    if (!t.text || seen.has(clave)) continue;
+    seen.add(clave);
     const motivo = declaredMap.get(t.text);
     if (motivo) { declared.push({ ...t, motivo }); continue; }
+    // el motivo de una casilla deshabilitada suele ser un atributo `title` o un tooltip, que no es texto visible: se
+    // busca también como atributo, y si no está es un aviso, no un faltante
+    if (t.kind === 'title') {
+      const attr = new RegExp(`\\btitle\\s*=\\s*\\{?\\s*(['"\`])\\s*${reEsc(t.text).replace(/ /g, '\\s+')}\\s*\\1`, 'u');
+      const hay = readable.some((s) => attr.test(s.src) || literalIn(t.text, s.src))
+        || visibles.some((v) => v.texts.some((x) => wordIn(t.text, x.text)));
+      if (!hay) warnings.push(t);
+      continue;
+    }
     const present = wordCount(t.text) >= 3
       ? ui.whereInScreens(t.text, readable).some((h) => !h.unreadable)
       : visibles.some((v) => v.texts.some((x) => wordIn(t.text, x.text))) || readable.some((s) => literalIn(t.text, s.src));
@@ -379,7 +455,7 @@ function compareWithScreens({ texts, screens, md }) {
       if (!matched) extras.push({ text: x.text, rel: v.rel, line: x.line });
     }
   }
-  return { missing, extras, declared, unreadable };
+  return { missing, extras, declared, unreadable, warnings };
 }
 
 /** Los argumentos de `qa-guide.js --check` en «Preparar el commit»: con la maqueta aprobada en el marcador, su huella. */
@@ -422,7 +498,14 @@ const DEMO = {
       elements: [
         { kind: 'heading', text: 'Facturas de Acme SA' },
         { kind: 'text', text: 'Tiene 3 facturas sin pagar.' },
-        { kind: 'field', label: 'Buscar factura', placeholder: 'Número o fecha', value: '0001-00012345' },
+        { kind: 'field', label: 'Buscar factura', placeholder: 'Número o fecha', value: '0001-00012345', existing: true },
+        {
+          kind: 'group', legend: 'Estado', items: [
+            { label: 'Sin pagar', checked: true },
+            { label: 'Pagadas' },
+            { label: 'Anuladas', disabled: true, title: 'Sólo las ve el administrador' },
+          ],
+        },
         { kind: 'table', columns: ['Número', 'Vence', 'Importe'], rows: [['0001-00012345', '12/11', '$ 120.000']] },
         { kind: 'message', tone: 'warn', text: 'Las facturas vencidas no se pueden pagar desde acá.' },
         { kind: 'button', text: 'Pagar seleccionadas', primary: true },
@@ -454,10 +537,20 @@ ${JSON.stringify(DEMO, null, 2)}
 - kind: ${KINDS.join(' | ')}
 - tone (de message): ${TONES.join(' | ')}
 - El texto que exige cada kind: text para heading, text, button, link, message y box; label para field y checkbox
-  (placeholder opcional); columns no vacío para table; items no vacío para list.
+  (placeholder opcional); columns no vacío para table; items no vacío para list; legend e items no vacío para group.
+- checkbox: "checked" (true o false: marcada con una x o vacía) y "disabled" (true: en gris). "title", sólo con
+  "disabled": true, es el motivo que la pantalla muestra al pasar el mouse; la maqueta lo pone a la vista. Un "value"
+  de un modelo viejo se toma como "checked" y render avisa: usá checked.
+- group: "legend" (el título del grupo) e "items", una lista de casillas (label, checked, disabled, title) que se
+  dibujan en una fila.
+- "existing": true, en cualquier elemento, lo dibuja en gris: la pantalla ya lo tiene y la story no lo agrega. Se sigue
+  comparando.
+- Toda maqueta abre con la cabecera "${SCHEMA_NOTE}": fija qué dice cada pantalla y en qué estado, no cómo se ve.
 - Se comparan con la pantalla: el texto de heading, text, button, link y message; label y placeholder; columns; items;
-  y el text de un box sólo con "compare": true (el rótulo de un box describe una imagen o un gráfico para el dueño).
-  No se comparan value, rows, notes, ni el nombre, el estado o la presentation de la pantalla.
+  la legend y los label de un group; y el text de un box sólo con "compare": true (el rótulo de un box describe una
+  imagen o un gráfico para el dueño). El title de una casilla se busca como atributo o como texto, y si no está es un
+  aviso, no un faltante. No se comparan value, checked, disabled, rows, notes, ni el nombre, el estado o la
+  presentation de la pantalla.
 - Los estados de falla (vacío, error) van como otra pantalla con su "state": así el dueño los aprueba y se comparan.
 - presentation (opcional): "page" (la de siempre) o "layer", una ventana, un diálogo o un panel que se abre encima de
   otra pantalla. Una capa lleva "over" (el nombre de la pantalla de abajo) y "trigger" (el texto exacto de un botón o
@@ -484,6 +577,7 @@ function main() {
       try { model = JSON.parse(raw); } catch (e) { fail(`JSON inválido en --data: ${e.message}`); }
       const problems = validateModel(model);
       if (problems.length) fail(`la maqueta no se armó (no se escribió nada):\n${problems.map((p) => `  - ${p}`).join('\n')}`);
+      for (const w of modelWarnings(model)) console.error(`mockup.js: aviso: ${w}`);
     }
     const story = cmd === 'render' ? opt('--story') : null;
     let out = opt('--out') || (cmd === 'demo' ? 'mockup-demo.html' : null);
@@ -569,7 +663,7 @@ function main() {
 
 module.exports = {
   renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupHash, mockupPaths, screenStory, readApproval,
-  writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, declaredDiffs, GENERATOR, CSP,
+  writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, modelWarnings, declaredDiffs, GENERATOR, CSP,
 };
 
 if (require.main === module) main();

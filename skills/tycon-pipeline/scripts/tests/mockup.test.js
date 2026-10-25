@@ -18,6 +18,12 @@
  *   T10 visual-plan.js se puede requerir sin correr y sale igual
  *   T24 los argumentos de qa-guide.js del paso 8 traen la huella aprobada
  *   T29 schema, demo y render por story
+ *   T30-T34 la casilla chica con sus estados y el grupo en una fila con su leyenda, y sus datos inválidos
+ *   T35-T36 la cabecera «esquema, no aspecto» y lo existente en gris
+ *   T37 check acepta la maqueta nueva y la del formato anterior
+ *   T38, T43 la leyenda y los rótulos se comparan con la pantalla; el title, como atributo o texto, y si falta es aviso
+ *   T39 schema explica los campos nuevos
+ *   T41-T42 el `value` de una casilla vieja se toma como `checked`, y check no se cae
  *
  * El ejemplo es inventado a propósito (facturas): lo que se publica no lleva el rubro de un cliente.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/mockup.test.js < /dev/null
@@ -455,9 +461,10 @@ test('Mockup_Capa_DatosInvalidos_NoEscribe @story-7.48 @ac-2', () => {
   assert.strictEqual(renderModelo(m, path.join(TMP, 'capa-mal', 'enlace.html')).rc, 0);
 });
 
-test('Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3', () => {
-  // la huella del HTML del modelo de muestra sin capas: una maqueta aprobada no cambia
-  const HOY = '4d993ecc8f381836a5a3c37b761da8614e546d93d42d2cc65950da496c3a7c0a';
+test('T40 Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3 @story-8.129 @ac-11', () => {
+  // la huella del HTML del modelo de muestra sin capas. Cambió a propósito con la cabecera «esquema, no aspecto» y la
+  // marca de la casilla: una maqueta aprobada no se invalida, porque su huella sale del archivo guardado
+  const HOY = '064d2cd6cad83edb58764e285d3b62ad2e9b9728d1fc1889b395bed3df57423d';
   const { renderMockup } = require(MOCKUP);
   const huella = (m) => require('crypto').createHash('sha256').update(renderMockup(m)).digest('hex');
   assert.strictEqual(huella(MODELO()), HOY);
@@ -505,4 +512,238 @@ test('7.23-DeclaredDiffs_ComillasAnidadas @story-7.23 @ac-16 — un texto que ll
   assert.strictEqual(d.get('Paso'), 'encabezado');
   assert.ok(d.has('a') && d.has('b'));
   assert.ok(!d.has('sin motivo'), 'sin motivo no cuenta');
+});
+
+// ── Casillas, grupos, la cabecera y lo existente ─────────────────
+// Un filtro de estados de factura: el ejemplo es inventado.
+const CON_FILTRO = () => ({
+  storyId: '1.3',
+  title: 'El filtro de facturas',
+  screens: [{
+    name: 'Lista de facturas',
+    elements: [
+      { kind: 'heading', text: 'Facturas', existing: true },
+      { kind: 'checkbox', label: 'Mostrar anuladas', checked: true },
+      {
+        kind: 'group', legend: 'Estado de la factura', items: [
+          { label: 'Pendiente', checked: true },
+          { label: 'Pagada' },
+          { label: 'Vencida', disabled: true, title: 'Sólo para el administrador' },
+        ],
+      },
+    ],
+  }],
+});
+const armar = (m) => require(MOCKUP).renderMockup(m);
+// la regla CSS de un selector, tal cual sale en el <style>
+const regla = (html, sel) => { const m = html.match(new RegExp(`\\n\\s*${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`)); return m ? m[1] : null; };
+
+test('T30 Mockup_Casilla_NoHeredaElEstiloDelRecuadro @story-8.129 @ac-1', () => {
+  const html = armar(CON_FILTRO());
+  assert.doesNotMatch(html, /<div class="checkbox[^"]*"><span class="box"/, 'la marca no lleva la clase del recuadro');
+  assert.match(html, /<span class="cb-mark[^"]*">/);
+  const r = regla(html, '.cb-mark');
+  assert.ok(r, 'hay una regla para la marca');
+  assert.match(r, /width:\s*14px/);
+  assert.match(r, /height:\s*14px/);
+});
+
+test('T31 Mockup_Casilla_MarcadaYDeshabilitadaSeVen @story-8.129 @ac-2', () => {
+  const html = armar(CON_FILTRO());
+  assert.match(html, /<span class="cb-mark on">x<\/span>[^\n]*Pendiente/, 'la marcada lleva la x');
+  assert.match(html, /<span class="cb-mark"><\/span>[^\n]*Pagada/, 'la otra va vacía');
+  assert.match(html, /<div class="checkbox disabled">[^\n]*Vencida[^\n]*S&#243;lo para el administrador|<div class="checkbox disabled">[^\n]*Vencida[^\n]*Sólo para el administrador/, 'la deshabilitada lleva su clase y el title a la vista');
+  assert.match(regla(html, '.checkbox.disabled') || '', /color:\s*#9aa3b2/);
+});
+
+test('T32 Mockup_Casilla_CamposMalos_NoEscribe @story-8.129 @ac-3', () => {
+  const casos = [
+    [{ kind: 'checkbox', label: 'A', checked: 'si' }, /checked/],
+    [{ kind: 'checkbox', label: 'A', disabled: 1 }, /disabled/],
+    [{ kind: 'checkbox', label: 'A', title: 'por qué' }, /title/],
+    [{ kind: 'group', legend: 'G', items: [{ label: 'A', checked: 'no' }] }, /checked/],
+  ];
+  casos.forEach(([el, re], i) => {
+    const out = path.join(TMP, 't32', `${i}.html`);
+    const r = renderModelo({ title: 'X', screens: [{ elements: [el] }] }, out);
+    assert.strictEqual(r.rc, 2, r.all);
+    assert.match(r.err, re);
+    assert.ok(!fs.existsSync(out), 'no escribe nada');
+  });
+});
+
+test('T33 Mockup_Grupo_UnaFilaConSuLeyenda @story-8.129 @ac-4', () => {
+  const html = armar(CON_FILTRO());
+  const m = html.match(/<fieldset class="group"><legend>([\s\S]*?)<\/legend><div class="group-row">([\s\S]*?)<\/div><\/fieldset>/);
+  assert.ok(m, 'un fieldset con su leyenda y la fila');
+  assert.match(m[1], /Estado de la factura/);
+  const orden = ['Pendiente', 'Pagada', 'Vencida'].map((t) => m[2].indexOf(t));
+  assert.ok(orden.every((n) => n >= 0) && orden[0] < orden[1] && orden[1] < orden[2], 'las tres en orden dentro de la fila');
+  const r = regla(html, '.group-row');
+  assert.match(r || '', /display:\s*flex/);
+  assert.match(r || '', /flex-direction:\s*row/);
+});
+
+test('T34 Mockup_Grupo_DatosInvalidos_NoEscribe @story-8.129 @ac-5', () => {
+  const casos = [
+    [{ kind: 'group', items: [{ label: 'A' }] }, /legend/],
+    [{ kind: 'group', legend: 'G' }, /items/],
+    [{ kind: 'group', legend: 'G', items: [] }, /items/],
+    [{ kind: 'group', legend: 'G', items: [{ checked: true }] }, /label/],
+  ];
+  casos.forEach(([el, re], i) => {
+    const out = path.join(TMP, 't34', `${i}.html`);
+    const r = renderModelo({ title: 'X', screens: [{ elements: [el] }] }, out);
+    assert.strictEqual(r.rc, 2, r.all);
+    assert.match(r.err, re);
+    assert.ok(!fs.existsSync(out), 'no escribe nada');
+  });
+});
+
+test('T35 Mockup_Cabecera_DiceQueEsUnEsquema @story-8.129 @ac-6', () => {
+  const { mockupTexts } = require(MOCKUP);
+  const html = armar(MODELO());
+  const header = (html.match(/<header>([\s\S]*?)<\/header>/) || [])[1] || '';
+  assert.match(header, /Esquema de textos y estados, no del aspecto/);
+  assert.ok(!mockupTexts(html).some((t) => /Esquema de textos/.test(t.text)), 'la cabecera no se compara');
+  assert.doesNotMatch(header, /En gris/, 'sin elementos existentes no explica el gris');
+});
+
+test('T36 Mockup_Existente_SeDibujaEnGris @story-8.129 @ac-7', () => {
+  const { mockupTexts } = require(MOCKUP);
+  const html = armar(CON_FILTRO());
+  assert.match(html, /<div class="existing"><h2 class="heading">/);
+  assert.match(regla(html, '.existing') || '', /color:\s*#9aa3b2/);
+  assert.match((html.match(/<header>([\s\S]*?)<\/header>/) || [])[1], /En gris, lo que la pantalla ya tiene/);
+  assert.ok(mockupTexts(html).some((t) => t.text === 'Facturas'), 'lo existente se sigue comparando');
+  const out = path.join(TMP, 't36', 'mal.html');
+  const r = renderModelo({ title: 'X', screens: [{ elements: [{ kind: 'text', text: 'Hola', existing: 'si' }] }] }, out);
+  assert.strictEqual(r.rc, 2, r.all);
+  assert.match(r.err, /existing/);
+  assert.ok(!fs.existsSync(out));
+});
+
+test('T37 Mockup_Check_AceptaLaNuevaYLaVieja @story-8.129 @ac-8', () => {
+  const nueva = path.join(TMP, 't37', 'nueva.html');
+  assert.strictEqual(renderModelo(CON_FILTRO(), nueva).rc, 0);
+  assert.strictEqual(run(['check', nueva]).rc, 0, run(['check', nueva]).all);
+  // el formato anterior: sin la cabecera nueva, con la casilla de antes
+  const { CSP, GENERATOR } = require(MOCKUP);
+  const vieja = path.join(TMP, 't37', 'vieja.html');
+  escribir(vieja, [
+    '<!doctype html>', '<html lang="es"><head><meta charset="utf-8">',
+    `<meta http-equiv="Content-Security-Policy" content="${CSP}">`, `<meta name="generator" content="${GENERATOR}">`,
+    '<title>Maqueta — Vieja</title></head><body>',
+    '<header><h1>Vieja</h1><p>Maqueta de la pantalla. Se mira y se aprueba con el plan.</p></header>',
+    '<section class="screen" data-screen-index="0" data-screen-name="P">',
+    '<div class="checkbox"><span class="box"></span><span class="t" data-mockup-text="Pagada" data-kind="checkbox" data-screen="0">Pagada</span></div>',
+    '</section></body></html>', '',
+  ].join('\n'));
+  const r = run(['check', vieja]);
+  assert.strictEqual(r.rc, 0, r.all);
+});
+
+test('T38 Mockup_Comparacion_LeyendaYRotulosContraLaPantalla @story-8.129 @ac-9', () => {
+  const { mockupTexts, compareWithScreens } = require(MOCKUP);
+  const textos = mockupTexts(armar(CON_FILTRO()));
+  const dir = fs.mkdtempSync(path.join(TMP, 't38-'));
+  const bien = path.join(dir, 'Filtro.tsx');
+  fs.writeFileSync(bien, [
+    'export function Filtro() {', '  return (<div><h1>Facturas</h1>',
+    '    <label><input type="checkbox" /> Mostrar anuladas</label>',
+    '    <fieldset><legend>Estado de la factura</legend>',
+    '      <label><input type="checkbox" /> Pendiente</label>', '      <label><input type="checkbox" /> Pagada</label>',
+    '      <label title="Sólo para el administrador"><input type="checkbox" disabled /> Vencida</label>',
+    '    </fieldset></div>);', '}', '',
+  ].join('\n'));
+  const ok = compareWithScreens({ texts: textos, screens: [{ rel: 'Filtro.tsx', abs: bien }], md: '' });
+  assert.deepStrictEqual(ok.missing.map((t) => t.text), []);
+  const mal = path.join(dir, 'FiltroMal.tsx');
+  fs.writeFileSync(mal, fs.readFileSync(bien, 'utf8').replace('<legend>Estado de la factura</legend>', '').replace(' Pagada</label>', ' Cobrada</label>'));
+  const faltan = compareWithScreens({ texts: textos, screens: [{ rel: 'FiltroMal.tsx', abs: mal }], md: '' }).missing.map((t) => t.text);
+  assert.ok(faltan.includes('Estado de la factura'), faltan.join(' | '));
+  assert.ok(faltan.includes('Pagada'), faltan.join(' | '));
+});
+
+test('T39 Mockup_Schema_ExplicaLosCamposNuevos @story-8.129 @ac-10', () => {
+  const r = run(['schema']);
+  assert.strictEqual(r.rc, 0, r.all);
+  for (const w of ['checked', 'disabled', 'title', 'group', 'legend', 'existing', 'Esquema de textos y estados, no del aspecto']) assert.ok(r.out.includes(w), w);
+  const demo = path.join(TMP, 't39', 'demo.html');
+  assert.strictEqual(run(['demo', '--out', demo]).rc, 0);
+  assert.strictEqual(run(['check', demo]).rc, 0);
+});
+
+test('T41 Mockup_Casilla_ValueViejo_SeTomaComoChecked @story-8.129 @ac-12', () => {
+  const out = path.join(TMP, 't41', 'vieja.html');
+  const m = { title: 'X', screens: [{ elements: [{ kind: 'checkbox', label: 'Pendiente', value: true }, { kind: 'checkbox', label: 'Pagada', value: false }] }] };
+  const r = renderModelo(m, out);
+  assert.strictEqual(r.rc, 0, r.all);
+  const html = fs.readFileSync(out, 'utf8');
+  assert.match(html, /<span class="cb-mark on">x<\/span>[^\n]*Pendiente/);
+  assert.match(html, /<span class="cb-mark"><\/span>[^\n]*Pagada/);
+  assert.match(r.err, /usá checked/);
+  const enGrupo = path.join(TMP, 't41', 'grupo.html');
+  const g = { title: 'X', screens: [{ elements: [{ kind: 'group', legend: 'Estado', items: [{ label: 'Anulada', value: true }] }] }] };
+  const rg = renderModelo(g, enGrupo);
+  assert.strictEqual(rg.rc, 0, rg.all);
+  assert.match(fs.readFileSync(enGrupo, 'utf8'), /<span class="cb-mark on">x<\/span>[^\n]*Anulada/);
+  assert.match(rg.err, /usá checked/);
+  // con `checked` y `value` juntos gana `checked`, y el aviso dice lo que se dibujó
+  const mk = require(MOCKUP);
+  const avisos = mk.modelWarnings({ screens: [{ elements: [{ kind: 'checkbox', label: 'Pagada', checked: false, value: true }] }] });
+  assert.strictEqual(avisos.length, 1);
+  assert.match(avisos[0], /`checked: false`/);
+});
+
+test('T42 Mockup_Check_MaquetaConValueNoSeCae @story-8.129 @ac-12', () => {
+  const out = path.join(TMP, 't42', 'vieja.html');
+  assert.strictEqual(renderModelo({ title: 'X', screens: [{ elements: [{ kind: 'checkbox', label: 'Pendiente', value: true }] }] }, out).rc, 0);
+  const r = run(['check', out]);
+  assert.strictEqual(r.rc, 0, r.all);
+});
+
+test('T43 Mockup_Comparacion_TitleComoAtributoYAviso @story-8.129 @ac-13', () => {
+  const mk = require(MOCKUP);
+  const html = armar(CON_FILTRO());
+  const textos = mk.mockupTexts(html);
+  const dir = fs.mkdtempSync(path.join(TMP, 't43-'));
+  const base = [
+    'export function Filtro() {', '  return (<div><h1>Facturas</h1><label><input type="checkbox" /> Mostrar anuladas</label>',
+    '    <fieldset><legend>Estado de la factura</legend><label><input type="checkbox" /> Pendiente</label>',
+    '      <label><input type="checkbox" /> Pagada</label>', '      <label TITULO><input type="checkbox" disabled /> Vencida</label>',
+    '    </fieldset></div>);', '}', '',
+  ].join('\n');
+  const con = path.join(dir, 'Con.tsx');
+  fs.writeFileSync(con, base.replace('TITULO', 'title={\'Sólo para el administrador\'}'));
+  const a = mk.compareWithScreens({ texts: textos, screens: [{ rel: 'Con.tsx', abs: con }], md: '' });
+  assert.deepStrictEqual(a.warnings, []);
+  assert.deepStrictEqual(a.missing, []);
+  const sin = path.join(dir, 'Sin.tsx');
+  fs.writeFileSync(sin, base.replace(' TITULO', ''));
+  const b = mk.compareWithScreens({ texts: textos, screens: [{ rel: 'Sin.tsx', abs: sin }], md: '' });
+  assert.deepStrictEqual(b.missing, [], 'el title no es un faltante');
+  assert.deepStrictEqual(b.warnings.map((t) => t.text), ['Sólo para el administrador']);
+  // la capa 10 de qa-guide.js --check lo anota como nota, sin problema
+  const qaDir = path.join(dir, 'qa');
+  fs.mkdirSync(qaDir);
+  const mockupPath = path.join(qaDir, '1.3-mockup.html');
+  fs.writeFileSync(mockupPath, html);
+  const sha = mk.mockupHash(html);
+  mk.writeApproval({ approvalPath: path.join(qaDir, '1.3-mockup-approval.json'), mockupPath, story: '1.3', sha256: sha, approvedAt: '2026-10-25T00:00:00Z' });
+  fs.writeFileSync(path.join(qaDir, '1.3-legibilidad-ui.md'), 'veredicto: OK\nmockup: 1.3-mockup.html\n');
+  const { mockupLayers } = require(path.join(SK, 'qa-guide.js'));
+  const capa = mockupLayers({ qaDir, qk: '1.3', mockupSha: sha, screens: [{ rel: 'Sin.tsx', abs: sin }] });
+  assert.deepStrictEqual(capa.problems, []);
+  assert.ok(capa.notes.some((n) => /Sólo para el administrador/.test(n)), capa.notes.join(' | '));
+  // un mensaje con las mismas palabras que el motivo, después de la casilla, se sigue comparando: si falta, es faltante
+  const mismoTexto = armar({ title: 'X', screens: [{ name: 'Facturas', elements: [
+    { kind: 'checkbox', label: 'Pendiente', disabled: true, title: 'Sólo para el administrador' },
+    { kind: 'message', text: 'Sólo para el administrador' },
+  ] }] });
+  const solo = path.join(dir, 'Solo.tsx');
+  fs.writeFileSync(solo, 'export function F() { return (<label><input type="checkbox" disabled /> Pendiente</label>); }\n');
+  const c = mk.compareWithScreens({ texts: mk.mockupTexts(mismoTexto), screens: [{ rel: 'Solo.tsx', abs: solo }], md: '' });
+  assert.deepStrictEqual(c.missing.map((t) => t.text), ['Sólo para el administrador'], 'el mensaje que falta es faltante');
+  assert.deepStrictEqual(c.warnings.map((t) => t.text), ['Sólo para el administrador']);
 });
