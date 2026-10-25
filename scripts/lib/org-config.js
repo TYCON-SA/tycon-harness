@@ -84,7 +84,7 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'fichas', titulo: 'Fichas que muestra el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.hidden_cards']), idCorto: 'operations', necesita: ['site'] }),
   // el pedido de trabajo de una vulnerabilidad: su tipo, los campos fijos y los de cada gravedad. Un lector
   // que no conoce `work_items` deja la sección en «todavía no sabe leer»
-  Object.freeze({ id: 'pedidos', titulo: 'Pedidos de vulnerabilidades', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['work_items'], idCorto: 'operations', necesita: ['work_items'] }),
+  Object.freeze({ id: 'pedidos', titulo: 'Pedidos de trabajo', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['work_items'], idCorto: 'operations', necesita: ['work_items'] }),
   // cómo se mantiene al día el sitio: «automático» o «sólo aviso», en la misma pestaña que el sitio
   Object.freeze({ id: 'aldia', titulo: 'Cómo se actualiza el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.update']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección: dónde corren las suites al mergear y el
@@ -1334,7 +1334,7 @@ function pantalla(idioma = 'es') {
     instalacion: { t: T('pantalla.perfilDeInstalacion'), d: T('pantalla.cuantoInstalaElArnesEn'), corto: T('pantalla.instalacion') },
     hilos: { t: T('pantalla.conversacionesDeLasCorridas'), d: T('pantalla.siElSitioBajaTambien'), corto: T('pantalla.conversaciones') },
     fichas: { t: T('pantalla.fichasQueMuestraElSitio'), d: T('pantalla.lasFichasDelTablero'), corto: T('pantalla.fichas') },
-    pedidos: { t: T('pantalla.pedidosDeVulnerabilidades'), d: T('pantalla.pedidosDeVulnerabilidadesAyuda'), corto: T('pantalla.pedidosDeVulnerabilidades') },
+    pedidos: { t: T('pantalla.pedidosDeTrabajo'), d: T('pantalla.pedidosDeTrabajoAyuda'), corto: T('pantalla.pedidosDeTrabajo') },
     aplicar: { t: T('pantalla.losCambiosDeUnMantenedor'), d: T('pantalla.siUnCambioQuePropone'), corto: T('pantalla.losCambiosDeUnMantenedor') },
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
@@ -1372,7 +1372,7 @@ function pantalla(idioma = 'es') {
     people: T('pantalla.palabraPersonas'), machines: T('pantalla.maquinas'), projects: T('pantalla.proyectos'), person: T('pantalla.persona'), reported_sha256: T('pantalla.correoInformado'), confirmed_by: T('pantalla.confirmadaPor'), confirmed_on: T('pantalla.confirmadaEl'), add: T('pantalla.suma'), remove: T('pantalla.saca'),
     owners: T('pantalla.palabraResponsables'), reviewers: T('pantalla.revisores'), default: T('pantalla.porDefecto'), by_project: T('pantalla.porProyecto'), dependencies: T('pantalla.dependencias'), watcher: T('pantalla.vigilante'),
     deployments: T('pantalla.palabraDespliegues'), products: T('pantalla.palabraProductos'), staging: T('pantalla.prueba'), production: T('pantalla.produccion'), pipeline: T('pantalla.pipeline'), stages: T('pantalla.pasos'), environment: T('pantalla.entorno'), workflow: T('pantalla.workflow'),
-    work_items: T('pantalla.pedidosDeVulnerabilidades'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
+    work_items: T('pantalla.pedidosDeTrabajo'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
     wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
@@ -2321,15 +2321,20 @@ function pantalla(idioma = 'es') {
   }
   // ── los nombres en lugar de los números: los pipelines de un proyecto y los nombres de los pasos, pedidos una vez ──
   var PIPES = {}; var PASOS = {};
-  // los tipos de pedido y los campos de cada tipo, pedidos una vez por página: { estado: 'cargando' | 'listo', r }
-  var TIPOS_PEDIDO = null; var CAMPOS_PEDIDO = {};
-  function tiposDePedidoLeidos() {
-    if (!TIPOS_PEDIDO) { TIPOS_PEDIDO = { estado: 'cargando' }; api('/tipos-de-pedido', {}).then(function (r) { TIPOS_PEDIDO = { estado: 'listo', r: r }; render(); }); }
-    return TIPOS_PEDIDO;
+  // los tipos de pedido y los campos de cada tipo, pedidos una vez por página y por destino: { estado: 'cargando' | 'listo', r }.
+  // Con organización y proyecto se leen de ese proyecto; sin ellos, de los proyectos de los productos
+  var TIPOS_PEDIDO = {}; var CAMPOS_PEDIDO = {};
+  function claveDeDestino(destino) { return destino ? destino.org + '\u0000' + destino.project : ''; }
+  function tiposDePedidoLeidos(destino) {
+    var k = claveDeDestino(destino);
+    if (!TIPOS_PEDIDO[k]) { TIPOS_PEDIDO[k] = { estado: 'cargando' }; api('/tipos-de-pedido', destino ? { org: destino.org, project: destino.project } : {}).then(function (r) { TIPOS_PEDIDO[k] = { estado: 'listo', r: r }; render(); }); }
+    return TIPOS_PEDIDO[k];
   }
-  function camposDeTipoLeidos(tipo) {
-    if (!CAMPOS_PEDIDO[tipo]) { CAMPOS_PEDIDO[tipo] = { estado: 'cargando' }; api('/campos-de-pedido', { tipo: tipo }).then(function (r) { CAMPOS_PEDIDO[tipo] = { estado: 'listo', r: r }; render(); }); }
-    return CAMPOS_PEDIDO[tipo];
+  function camposDeTipoLeidos(tipo, destino) {
+    var k = tipo + '\u0000' + claveDeDestino(destino);
+    var cuerpo = destino ? { tipo: tipo, org: destino.org, project: destino.project } : { tipo: tipo };
+    if (!CAMPOS_PEDIDO[k]) { CAMPOS_PEDIDO[k] = { estado: 'cargando' }; api('/campos-de-pedido', cuerpo).then(function (r) { CAMPOS_PEDIDO[k] = { estado: 'listo', r: r }; render(); }); }
+    return CAMPOS_PEDIDO[k];
   }
   /** Los pipelines de un proyecto de Azure DevOps: null sin organización o proyecto; { estado: 'cargando' | 'listo', r }. */
   function pipelinesDe(org, proyecto) {
@@ -2867,9 +2872,16 @@ function pantalla(idioma = 'es') {
     var limpiar = function () { apagarDeshacer(d); var x = d.work_items; if (!esObjeto(x)) return; ['fixed_fields', 'by_severity'].forEach(function (k) { if (esObjeto(x[k]) && !Object.keys(x[k]).length) delete x[k]; }); if (!Object.keys(x).length) delete d.work_items; };
     var actual = esObjeto(d.work_items) ? d.work_items : {};
     var box = el('div', { class: 'pila' });
-    var L = tiposDePedidoLeidos();
+    // a dónde van los pedidos de la noche: sin organización o proyecto, la sección dice cuál falta
+    var texto = function (k) { var x = esObjeto(d.work_items) ? d.work_items[k] : undefined; return typeof x === 'string' ? x.trim() : ''; };
+    var destinoDe = function () { return texto('org') && texto('project') ? { org: texto('org'), project: texto('project') } : null; };
+    var faltaDe = function () { return texto('org') && texto('project') ? null : !texto('org') && !texto('project') ? 'pantalla.pedidosFaltanLosDos' : !texto('org') ? 'pantalla.pedidosFaltaOrganizacion' : 'pantalla.pedidosFaltaProyecto'; };
+    var destino = destinoDe();
+    var aviso = faltaDe() ? el('p', { class: 'aviso-destino', role: 'status', 'data-path': 'work_items.destino', text: T(faltaDe()) }) : null;
+    if (aviso) box.appendChild(aviso);
+    var L = tiposDePedidoLeidos(destino);
     var tipos = L.estado === 'listo' && L.r && L.r.ok && Array.isArray(L.r.tipos) ? L.r.tipos : null;
-    var C = tipos && typeof actual.type === 'string' && tipos.indexOf(actual.type) >= 0 ? camposDeTipoLeidos(actual.type) : null;
+    var C = tipos && typeof actual.type === 'string' && tipos.indexOf(actual.type) >= 0 ? camposDeTipoLeidos(actual.type, destino) : null;
     var catalogo = C && C.estado === 'listo' && C.r && C.r.ok && Array.isArray(C.r.campos) ? C.r.campos : null;
     var porRef = {}; (catalogo || []).forEach(function (c) { porRef[c.referencia] = c; });
     // sin la lista se escribe a mano, como siempre; la pantalla dice por qué no hay lista
@@ -2901,12 +2913,25 @@ function pantalla(idioma = 'es') {
       controlTipo = el('div', { class: 'campo' }, el('label', { text: T('pantalla.pedidosTipo') }), sel);
       mios.forEach(function (x) { controlTipo.appendChild(el('div', { class: 'err', text: x.message })); });
     } else controlTipo = campo(T('pantalla.pedidosTipo'), actual.type, setTipo, 'work_items.type', pr, { placeholder: T('pantalla.pedidosTipoEjemplo'), onchange: function () { render(); } });
-    var arriba = el('div', { class: 'pedidos-arriba' }, controlTipo, el('span', { class: 'sep', 'aria-hidden': 'true' }));
+    // la organización y el proyecto, arriba del tipo; uno vacío se saca del borrador. El aviso de lo que falta cambia al
+    // escribir, sin volver a pintar (pintar al salir del campo se comería el foco o el clic siguiente); cambiar de destino
+    // vuelve a leer los tipos, y la pantalla se pinta cuando llega la respuesta
+    var setDestino = function (k) { return function (v) {
+      if (v.trim() === '') { if (esObjeto(d.work_items)) delete d.work_items[k]; } else w()[k] = v.trim();
+      limpiar();
+      if (aviso) { var f = faltaDe(); aviso.textContent = f ? T(f) : ''; aviso.hidden = !f; }
+    }; };
+    var releer = function () { var nuevo = destinoDe(); if (claveDeDestino(nuevo) === claveDeDestino(destino)) return; delete TIPOS_PEDIDO[claveDeDestino(nuevo)]; tiposDePedidoLeidos(nuevo); };
+    var org = campo(T('pantalla.pedidosOrganizacion'), actual.org, setDestino('org'), 'work_items.org', pr, { onchange: releer });
+    var proyecto = campo(T('pantalla.pedidosProyecto'), actual.project, setDestino('project'), 'work_items.project', pr, { onchange: releer });
+    var arriba = el('div', { class: 'pedidos-arriba' }, org, proyecto, controlTipo, el('span', { class: 'sep', 'aria-hidden': 'true' }),
+      el('span', { class: 'nota', 'data-path': 'work_items.solo-vulnerabilidades', text: T('pantalla.pedidosSoloVulnerabilidades') }));
     camposFijos(d, w, limpiar, porRef, catalogo, pr).forEach(function (n) { arriba.appendChild(n); });
     box.appendChild(arriba);
     // abajo: una fila por campo y una columna por gravedad
     var leidos = catalogo && C.r.proyecto ? el('span', { class: 'muted', text: T('pantalla.pedidosLeidosDe', { proyecto: C.r.proyecto }) }) : null;
-    box.appendChild(el('div', { class: 'pedidos-gravedad' }, el('div', { class: 'pedidos-t' }, el('p', { class: 'sub-t', text: T('pantalla.pedidosPorGravedad') }), leidos),
+    box.appendChild(el('div', { class: 'pedidos-gravedad' }, el('div', { class: 'pedidos-t' }, el('p', { class: 'sub-t', text: T('pantalla.pedidosPorGravedad') }),
+      el('span', { class: 'nota', 'data-path': 'work_items.solo-vulnerabilidades', text: T('pantalla.pedidosSoloVulnerabilidades') }), leidos),
       el('p', { class: 'solo-celular muted', text: T('pantalla.pedidosDeslizar') }),
       el('div', { class: 'tbl-wrap' }, tablaPorGravedad(d, w, limpiar, porRef, catalogo, actual.type, pr)),
       el('p', { class: 'pedidos-pie', text: T('pantalla.pedidosCeldasAyuda') })));

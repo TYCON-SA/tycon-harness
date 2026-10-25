@@ -477,6 +477,6 @@ test('4.9-T16c PaginaLocal_MuestraLosPedidosDeVulnerabilidades @story-4.9 @ac-10
   const target = TC.TARGETS.find((t) => t.id === 'operations');
   const s = TC.sectionsOf(target, ops, TC.loadCore(tree).core, []).find((x) => x.id === 'pedidos');
   assert.ok(s, 'la página local tiene la sección de los pedidos');
-  assert.strictEqual(s.titulo, 'Pedidos de vulnerabilidades');
+  assert.strictEqual(s.titulo, 'Pedidos de trabajo');
   assert.deepStrictEqual(s.data, { work_items });
 });

@@ -640,8 +640,10 @@ function acotar(textoCompleto, tope) {
   return t;
 }
 
-function texto(entrada) {
-  return acotar(componer(entrada).join('\n'), TOPE[entrada.fuente]);
+/** La sección acotada a su tope; `reserva` (renglones y caracteres) deja lugar a lo que se le agrega después. */
+function texto(entrada, reserva = { lineas: 0, caracteres: 0 }) {
+  const tope = TOPE[entrada.fuente];
+  return acotar(componer(entrada).join('\n'), { lineas: tope.lineas - reserva.lineas, caracteres: tope.caracteres - reserva.caracteres });
 }
 
 // ── armar ──────────────────────────────────────────────────────────────────────────────────────
@@ -700,13 +702,18 @@ function armar(a) {
   else fallos.push(...fichas.ilegibles);
   const comp = comparar(a.fuente, a.out, a.hoy, rubros);
   const dudas = dudasDeRevisores(a.runs, a.hoy);
+  // lo que va debajo de la sección: las dudas de revisores (sin dudas, o sin fuente, nada: la fuente que falta se dice
+  // en `dudas_revisores.motivo`, no con un 0) y, en el vigilante, su renglón de fichas y lo que volvió. El de
+  // dependencias va con las ejecuciones (lineaEjecuciones), que la edición de las 08:00 vuelve a poner tal cual. La
+  // sección se acota dejándoles lugar: todo junto entra en su tope.
+  const debajo = [
+    ...(dudas.valor && dudas.valor.length ? [`dudas de revisores: ${dudas.valor.length}`] : []),
+    ...(a.fuente === 'vigilante' && fichas ? [lineaFichas('vigilante', a.pending, a.hoy), ...lineasVolvieron('vigilante', a.pending, a.hoy)] : []),
+  ];
   const base = texto({ fuente: a.fuente, rubros, cambios: comp.cambios, base: comp.base, fallos, comparadoCon: comp.comparado_con, hoy: a.hoy,
-    empezaron: comp.empezaron, modo: comp.modo, carpetas: a.fuente === 'dependencias' ? lineasCarpetas(snap) : [] });
-  // Sin dudas, o sin fuente, el texto no cambia: la fuente que falta se dice en `dudas_revisores.motivo`, no con un 0.
-  let t = dudas.valor && dudas.valor.length ? `${base}\ndudas de revisores: ${dudas.valor.length}` : base;
-  // el renglón de fichas del vigilante va en su sección; el de dependencias, con las ejecuciones (lineaEjecuciones), que
-  // la edición de las 08:00 vuelve a poner tal cual
-  if (a.fuente === 'vigilante' && fichas) t = `${t}\n${lineaFichas('vigilante', a.pending, a.hoy)}`;
+    empezaron: comp.empezaron, modo: comp.modo, carpetas: a.fuente === 'dependencias' ? lineasCarpetas(snap) : [] },
+  { lineas: debajo.length, caracteres: debajo.reduce((n, l) => n + l.length + 1, 0) });
+  const t = [base, ...debajo].join('\n');
   return { fuente: a.fuente, fecha: a.hoy, rubros, cambios: comp.cambios, cambios_motivo: comp.cambios_motivo,
     comparado_con: comp.comparado_con, empezaron: comp.empezaron, modo_pedidos: comp.modo, fallos, dudas_revisores: dudas,
     ...(a.weekly ? { revision_semanal: semanalDetalle(a.weekly) } : {}), texto: t };
@@ -887,11 +894,20 @@ const ENLACE_EJ = '(https?://[A-Za-z0-9.-]+(:\\d{1,5})?)?/corridas\\?abrir=[A-Za
 const EJ_NO_CORRIO = 'ejecuciones: la revisión NO CORRIÓ hoy';
 const EJ_ILEGIBLE = 'ejecuciones: ? (el estado de la revisión no se pudo leer)';
 const EJ_CONSTANCIA = 'ejecuciones: ? (la constancia de las 04:00 no se pudo leer)';
-// el renglón de las fichas de cada fuente: los mismos rubros para todas. Reaparecidas y resueltas se miden en
-// dependencias; en las demás, mientras la noche no las controle, se dice que no se midieron, nunca 0.
+// el renglón de las fichas de cada fuente: los mismos rubros para todas, con reaparecidas y resueltas medidas en las
+// tres (la noche las controla). La constancia sigue aceptando «? (no medido)»: la de una noche de antes lo traía.
 const FUENTES_FICHAS = ['dependencias', 'vigilante', 'ejecuciones'];
-const SIN_MEDIR = '? (no medido)';
 const RENGLON_FICHAS = /^fichas de (dependencias|vigilante|ejecuciones): (\? \(no se pudieron leer\)|vivas \d+ · nuevas \d+ · reaparecidas (\d+|\? \(no medido\)) · resueltas (\d+|\? \(no medido\))( · ilegibles \d+)?( · sin asignado \d+)?( · pedido sin crear \d+)?)$/;
+// el renglón de cada ficha que volvió con pedido (hasta tres por fuente) y el que dice cuántas más
+const TOPE_VOLVIO = 3;
+const RENGLON_VOLVIO = /^↩️ volvió en (vigilante|ejecuciones): ([\p{L}\p{N} ()._-]{1,60}) — (avisado en el pedido [A-Za-z0-9._-]{1,20}|el aviso al pedido [A-Za-z0-9._-]{1,20} queda para mañana)$/u;
+const RENGLON_VOLVIO_MAS = /^↩️ y \d+ más volvieron en (vigilante|ejecuciones)$/u;
+const renglonVolvioValido = (l) => {
+  if (RENGLON_VOLVIO_MAS.test(l)) return true;
+  const m = RENGLON_VOLVIO.exec(l);
+  // el nombre de una causa de ejecuciones es uno de la lista: un texto de otro lado no entra aunque tenga la forma
+  return Boolean(m) && (m[1] !== 'ejecuciones' || NOMBRES_VALIDOS.has(m[2]));
+};
 // la forma de cada renglón que puede salir: con ella se vuelve a leer la constancia en la edición de las 08:00
 const RENGLONES_EJ = [
   new RegExp(`^ejecuciones: (parcial — ${MOTIVO_EJ} · )?(\\d+ con fallas del arnés \\(de \\d+ miradas\\)|0 con fallas del arnés \\(\\d+ miradas\\))$`, 'u'),
@@ -918,12 +934,12 @@ const renglonEjValido = (l) => {
  * (`sources.js`): `{ vistas, ilegibles }`. Las viejas de ejecuciones no son fichas. Una carpeta que falta está vacía; una
  * que está y no se puede leer lanza: «no pude» no es «vivas 0».
  */
-function vistasDeFichas(fuente, dirFuente) {
+function vistasDeFichas(fuente, dirFuente, carpetas = ['pending', 'promoted', 'archived']) {
   const SOURCES = require('../findings/sources.js');
   fs.readdirSync(dirFuente);
   const vistas = [];
   let ilegibles = 0;
-  for (const c of ['pending', 'promoted', 'archived']) {
+  for (const c of carpetas) {
     let nombres = [];
     try { nombres = fs.readdirSync(path.join(dirFuente, c)).filter((n) => n.endsWith('.yaml')).sort(cmp); } catch (e) {
       if (!(e && e.code === 'ENOENT')) throw e;
@@ -950,9 +966,8 @@ function lineaFichas(fuente, dirFuente, hoy) {
   const { vistas, ilegibles } = leidas;
   const vivas = vistas.filter((v) => (v.estado === 'viva' || v.estado === 'reaparecio') && !['aceptada', 'ignorada', 'migrada'].includes(v.veredicto));
   const nuevas = vivas.filter((v) => v.primera_vez === hoy).length;
-  const medido = fuente === 'dependencias';
-  const reaparecidas = medido ? vistas.filter((v) => v.reaparecido === hoy).length : SIN_MEDIR;
-  const resueltas = medido ? vistas.filter((v) => v.resuelto === hoy).length : SIN_MEDIR;
+  const reaparecidas = vistas.filter((v) => v.reaparecido === hoy).length;
+  const resueltas = vistas.filter((v) => v.resuelto === hoy).length;
   // los arreglos vivos cuyo pedido salió sin asignado, o no salió: el motivo vive en la ficha. Una resuelta, o decidida
   // de otra forma después, guarda su motivo viejo y ya no cuenta
   const arreglos = vistas.filter((v) => v.veredicto === 'arreglo' && v.estado !== 'resuelta');
@@ -971,6 +986,7 @@ function lineasFichasDelClon(dir, hoy) {
   const lineas = [['dependencias', 'dependencies'], ['ejecuciones', 'runs-review']]
     .filter(([, carpeta]) => fs.existsSync(path.join(dir, 'inbox', carpeta)))
     .map(([fuente, carpeta]) => lineaFichas(fuente, path.join(dir, 'inbox', carpeta), hoy));
+  if (fs.existsSync(path.join(dir, 'inbox', 'runs-review'))) lineas.push(...lineasVolvieron('ejecuciones', path.join(dir, 'inbox', 'runs-review'), hoy));
   // y cuántas quedaron sin propuesta del modelo esa noche, por motivo (o que el paso no corrió)
   if (lineas.length) {
     const propuesta = PROPOSE.lineaDelResumen(dir, hoy);
@@ -979,16 +995,37 @@ function lineasFichasDelClon(dir, hoy) {
   return lineas;
 }
 
+/**
+ * Un renglón por cada ficha que volvió con pedido: `avisado en el pedido N` si se le avisó hoy, o que el aviso queda
+ * para mañana si todavía no se pudo. Una que volvió y ya se avisó otro día no tiene renglón. Hasta tres, y uno que dice
+ * cuántas más. Las fichas que no se pueden leer ya las cuenta el renglón de fichas. Mira las mismas carpetas que el
+ * aviso (pendientes y promovidas): una archivada nunca se avisa, y prometer «queda para mañana» sería mentir.
+ */
+function lineasVolvieron(fuente, dirFuente, hoy) {
+  let vistas;
+  try { ({ vistas } = vistasDeFichas(fuente, dirFuente, ['pending', 'promoted'])); } catch { return []; }
+  const candidatas = vistas
+    .filter((v) => v.estado === 'reaparecio' && v.reaparecido && v.pedido_de_la_noche && (!v.aviso_volvio || v.aviso_volvio === hoy))
+    .map((v) => `↩️ volvió en ${fuente}: ${v.nombre} — ${v.aviso_volvio === hoy ? `avisado en el pedido ${v.pedido_de_la_noche}` : `el aviso al pedido ${v.pedido_de_la_noche} queda para mañana`}`);
+  // un renglón que no tiene la forma no sale, pero la ficha se cuenta en el «y N más»: no desaparece sin rastro
+  const lineas = candidatas.filter(renglonVolvioValido);
+  if (lineas.length <= TOPE_VOLVIO && lineas.length === candidatas.length) return lineas;
+  const muestra = lineas.slice(0, TOPE_VOLVIO);
+  return [...muestra, `↩️ y ${candidatas.length - muestra.length} más volvieron en ${fuente}`];
+}
+
 /** Los renglones de fichas guardados a las 04:00: tal cual si todos tienen la forma; si no, ninguno (no se inventan). */
 function fichasDeLaConstancia(r) {
   if (!r || !hasOwn(r, 'fichas')) return null;
   const f = r.fichas;
-  // hasta tres renglones de fichas y, detrás, a lo sumo uno de la propuesta del modelo
+  // hasta tres renglones de fichas, los de lo que volvió y, detrás, a lo sumo uno de la propuesta del modelo
   if (!Array.isArray(f) || !f.every((l) => typeof l === 'string')) return null;
   const fichas = f.filter((l) => RENGLON_FICHAS.test(l));
-  const propuesta = f.filter((l) => !RENGLON_FICHAS.test(l) && PROPOSE.RENGLON.test(l));
+  const volvio = f.filter((l) => l.startsWith('↩️') && renglonVolvioValido(l));
+  const propuesta = f.filter((l) => !RENGLON_FICHAS.test(l) && !l.startsWith('↩️') && PROPOSE.RENGLON.test(l));
   const enOrden = propuesta.length === 0 || f[f.length - 1] === propuesta[0];
-  return fichas.length <= 3 && propuesta.length <= 1 && fichas.length + propuesta.length === f.length && enOrden ? f : null;
+  return fichas.length <= 3 && volvio.length <= TOPE_VOLVIO + 1 && propuesta.length <= 1
+    && fichas.length + volvio.length + propuesta.length === f.length && enOrden ? f : null;
 }
 
 function lineaEjecuciones(dir, hoy) {

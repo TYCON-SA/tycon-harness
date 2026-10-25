@@ -500,12 +500,14 @@ be, to copy it and open the request by hand.
   shows in Arnés, Proyectos and Corridas. Untick the ones you do not use: they stop being built and shown, and Arnés
   says how many are hidden. It lives in `operations.json`, in the operations repo (`site.hidden_cards`). A maintainer
   reviews it.
-- **Vulnerability work items** (*Pedidos de vulnerabilidades*): the type and fields the night review uses to create
-  the work item for a vulnerability in each Azure DevOps project. At the top, in a box, the **type** (empty, each
-  project uses its backlog item) and the **fixed fields**, which go on every work item. Below, **by severity**, a table
-  with one row per field and one column per severity (critical, high, moderate and low); its values win over the fixed
-  ones when the field matches. The site reads the types, each type's fields and their allowed values from the products'
-  projects: each field shows its name (with its reference name, like `Microsoft.VSTS.Common.Priority`, underneath) and
+- **Work items** (*Pedidos de trabajo*): where and how the night requests work. At the top, the **organization** and
+  the **project** that receive the work items of the run review and the watcher; if one is missing, the section says
+  which one and that the night will not request work. Then, in a box, the **type** (empty, each project uses its
+  backlog item) and the **fixed fields**. Below, **by severity**, a table with one row per field and one column per
+  severity (critical, high, moderate and low); its values win over the fixed ones when the field matches. The fixed
+  fields and the table apply to vulnerabilities only, and the section says so. With an organization and a project, the
+  site reads the types, each type's fields and their allowed values from that project; without them, from the
+  products' projects: each field shows its name (with its reference name, like `Microsoft.VSTS.Common.Priority`, underneath) and
   each value is picked from a dropdown. Values that start with a symbol, such as a colored circle, are shown without it
   and saved exactly as Azure DevOps accepts them. A field without fixed values is typed in. Without the work item read
   permission, or if Azure DevOps does not answer, a notice says why and everything is typed in by its reference name. A
@@ -516,7 +518,7 @@ be, to copy it and open the request by hand.
   and the morning summary says so. It lives in `operations.json`, in the operations repo (`work_items`). A maintainer
   reviews it.
 
-![Vulnerability work items](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
+![Work items](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
 ![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 

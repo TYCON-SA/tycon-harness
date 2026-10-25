@@ -532,6 +532,47 @@ test('WorkItem_Update_Closed_PideReabrir @story-8.93 @ac-8', async () => {
   assert.strictEqual(estadoGh(g).issues['acme/portal'][0].state, 'closed', 'no lo reabrió');
 });
 
+// T81 Pedido_Update_SoloComentario_NoCambiaElEstado @story-4.11 @ac-28
+// 🔴 Falla con: que `update` con `comment` y sin `state` pase el pedido a activo, pida reabrir uno cerrado, cambie sus
+//    etiquetas, no publique el comentario, o lo publique dos veces.
+test('T81 Pedido_Update_SoloComentario_NoCambiaElEstado', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const ops = repoCon(null, null);
+  const AVISO = 'Volvió a aparecer: ejecución abortada (RR-CIERRE:abortada), vista el 2026-10-25.';
+  for (const [id, est] of [[31, 'New'], [32, 'Closed']]) {
+    fs.writeFileSync(path.join(m.fixaz, `estado-${id}`), est);
+    const antes = fs.readdirSync(m.fixaz).filter((f) => f.startsWith('estado-')).map((f) => [f, fs.readFileSync(path.join(m.fixaz, f), 'utf8')]);
+    const r = await P().run('work-item.update', { repoDir: ops, org: 'acme', project: 'Operaciones', id, comment: AVISO }, { env: m.env });
+    const despues = fs.readdirSync(m.fixaz).filter((f) => f.startsWith('estado-')).map((f) => [f, fs.readFileSync(path.join(m.fixaz, f), 'utf8')]);
+    assert.deepStrictEqual(despues, antes, `${est}: el estado del pedido, igual antes y después`);
+    assert.strictEqual(r.ok, true, `${est}: ${JSON.stringify(r)}`);
+    assert.strictEqual(r.value.changed, false, est);
+    assert.strictEqual(r.value.commented, true, est);
+    assert.strictEqual(r.value.pideReabrir, undefined, `${est}: comentar no pide reabrir`);
+  }
+  const llamadas = llamadasAz(m);
+  assert.ok(!llamadas.some(([p]) => p === 'actualizar'), `ningún cambio de estado: ${JSON.stringify(llamadas)}`);
+  assert.deepStrictEqual(llamadas.filter(([p]) => p === 'comentario'), [31, 32].map((id) =>
+    ['comentario', ['boards', 'work-item', 'update', '--organization', ORG, '--id', String(id), '--discussion', AVISO, '--output', 'json']]));
+  // GitHub: abierto y cerrado, el comentario y nada más
+  const g = mundo({ platform: { default: 'github' }, ghState: { user: 'arnes-bot', now: '2026-10-25T05:00:00Z', issues: { 'acme/portal': [
+    { number: 9, state: 'open', title: 'Pedido A', labels: ['tipo:Historia', 'estado:nuevo'] },
+    { number: 10, state: 'closed', title: 'Pedido B', labels: ['tipo:Historia', 'estado:hecho'] }] } } });
+  const repo = repoCon('work-items.yaml', GH_CONFIG);
+  const foto = () => estadoGh(g).issues['acme/portal'].map((i) => [i.number, i.state, [...i.labels].sort().join(',')]);
+  const antes = foto();
+  for (const id of [9, 10]) {
+    const r = cli(g, ['work-item', 'update', '--args', JSON.stringify({ repoDir: repo, id, comment: AVISO })]);
+    assert.strictEqual(r.json && r.json.ok, true, r.out + r.err);
+    assert.strictEqual(r.json.value.commented, true);
+  }
+  const st = estadoGh(g);
+  assert.deepStrictEqual(foto(), antes, 'estado y etiquetas, iguales antes y después');
+  assert.deepStrictEqual(antes, [[9, 'open', 'estado:nuevo,tipo:Historia'], [10, 'closed', 'estado:hecho,tipo:Historia']]);
+  assert.deepStrictEqual(st.comments['acme/portal#9'].map((x) => x.body), [AVISO]);
+  assert.deepStrictEqual(st.comments['acme/portal#10'].map((x) => x.body), [AVISO]);
+});
+
 test('Adversarial_Hours_NotANumber_Rejected @story-8.85 @ac-9', async () => {
   // «horas» que no son un número no se escriben como 0 o 1 en CompletedWork
   const m = mundo({ platform: { default: 'azure-devops' } });
@@ -613,4 +654,15 @@ test('SkillAndHook_Renamed_RegisteredOnce @story-8.85 @ac-12', () => {
     assert.ok(e.some((x) => x.kind === 'file' && x.old === `skills/${VIEJA}/scripts/on-story-create.js` && x.new === `skills/${NUEVA}/scripts/on-story-create.js` && x.repo === 'agent-skills'));
     assert.ok(!e.some((x) => x.kind === 'folder' && x.old === `skills/${VIEJA}`), 'la carpeta vieja sigue existiendo con su reemplazo');
   }
+});
+
+// T85 Plataforma_SoloComentario_NoInventaElEstado @story-4.11 @ac-28
+// 🔴 Falla con: decir «sin cambios (undefined)» del comentario que avisa que la falla volvió: sin estado leído, la línea
+//    dice que se comentó y que el estado no se tocó. Un cambio de estado sigue diciendo de cuál a cuál.
+test('T85 Plataforma_SoloComentario_NoInventaElEstado @story-4.11 @ac-28', () => {
+  const s = P().summary('work-item.update', { ok: true, value: { id: 901, changed: false, commented: true, warnings: [] } }, 'Azure DevOps');
+  assert.strictEqual(s, 'pedido de trabajo #901 en Azure DevOps: comentado, sin cambiar el estado');
+  assert.doesNotMatch(s, /undefined/);
+  assert.match(P().summary('work-item.update', { ok: true, value: { id: 7, changed: true, previo: 'New', estado: 'Active' } }), /#7: New → Active/);
+  assert.match(P().summary('work-item.update', { ok: true, value: { id: 7, changed: false, estado: 'Active' } }), /#7: sin cambios \(Active\)/);
 });

@@ -868,4 +868,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos,enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

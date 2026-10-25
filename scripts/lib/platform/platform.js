@@ -235,6 +235,8 @@ function summary(operation, r, label) {
   const en = label ? ` en ${label}` : '';
   let t;
   if (operation === 'work-item.create') t = `pedido de trabajo #${v.id} creado${en}`;
+  // sólo el comentario no lee el estado: decir uno sería inventarlo
+  else if (operation === 'work-item.update' && v.commented && !v.changed) t = `pedido de trabajo #${v.id}${en}: comentado, sin cambiar el estado`;
   else if (operation === 'work-item.update') t = v.changed ? `pedido de trabajo #${v.id}${en}: ${v.previo} → ${v.estado}` : `pedido de trabajo #${v.id}${en}: sin cambios (${v.estado})`;
   else {
     t = `pedido de trabajo #${v.id} cerrado${en}`;

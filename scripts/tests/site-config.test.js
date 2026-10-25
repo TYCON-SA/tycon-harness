@@ -3771,7 +3771,8 @@ test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 �
   // 🔴 rojo: la sección no existe, va en otra pestaña, le falta el tipo, un campo fijo o una gravedad, o no tiene su texto en inglés.
   const s = ORG.seccionPorId('pedidos');
   assert.ok(s, 'hay una sección de los pedidos de vulnerabilidades');
-  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto, s.necesita], ['Pedidos de vulnerabilidades', 'operations.json', 'operaciones', 'operations-config.js', ['work_items'], 'operations', ['work_items']]);
+  // la sección es la de todos los pedidos de la noche: «Pedidos de trabajo» (T71)
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto, s.necesita], ['Pedidos de trabajo', 'operations.json', 'operaciones', 'operations-config.js', ['work_items'], 'operations', ['work_items']]);
   assert.strictEqual(ORG.lectorSabe(OPS, s), true, 'el lector de hoy conoce la clave');
   assert.strictEqual(ORG.lectorSabe({ ...OPS, KEYS: OPS.KEYS.filter((k) => k !== 'work_items') }, s), false, 'uno anterior deja la sección en «todavía no sabe leer»');
   assert.match(pantallaEnCastellano(), /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos'\]/);
@@ -3785,7 +3786,7 @@ test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 �
     for (const p of ['work_items.type', 'work_items.fixed_fields.Custom.Categoria', 'work_items.fixed_fields.Custom.Probabilidad']) assert.ok(rutas.includes(p), `${idioma}: el campo ${p}`);
     for (const g of OPS.SEVERITIES) assert.ok(rutas.includes(`work_items.by_severity.${g}.Custom.Impacto`), `${idioma}: la fila de ${g}`);
     const texto = nodos.map((n) => n.textContent || '').join(' | ');
-    assert.match(texto, idioma === 'es' ? /Pedidos de vulnerabilidades/ : /Vulnerability work items/);
+    assert.match(texto, idioma === 'es' ? /Pedidos de trabajo/ : /Work items/);
     assert.match(texto, idioma === 'es' ? /Crítica/ : /Critical/, `${idioma}: la gravedad dicha en el idioma`);
   }
   // el editor cambia el borrador con la forma del lector: renombrar una fila la mueve en las cuatro gravedades, un número va como número
@@ -4956,4 +4957,182 @@ test('2.75-T27 Proyectos_PorEpicaYProducto @story-2.75 @ac-23 @ac-25 — una fil
   assert.match(s2, /debajo por 3 días/);
   assert.match(s2, /30–40 pts/, 'la épica sólo estimada tiene su fila, con el rango');
   assert.match(s2, /sin tasa a horas, por unidad: 7 días/, 'sin tasa no se inventa un total en horas');
+});
+
+// ── los pedidos de trabajo: a dónde van los pedidos de la noche ──────────────────────────────────────────────────────
+// T71-T75 sobre la pantalla de mentira y el lector; T76 en un navegador de verdad, contra el sitio entero
+
+const DESTINO = { org: 'acme', project: 'Operaciones' };
+/** La sección de los pedidos con `work_items` como borrador, sobre la pantalla de mentira. */
+async function seccionPedidos(work_items, { respuestas = {}, problems = [], idioma } = {}) {
+  const sec = SEC('pedidos', { titulo: 'Pedidos de trabajo', borrador: work_items === undefined ? {} : { work_items: JSON.parse(JSON.stringify(work_items)) }, problems });
+  if (idioma) {
+    const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], idioma, hash: '#seccion-pedidos' });
+    const caja = r.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop();
+    const nodos = []; const walk = (x) => { nodos.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+    return { texto: nodos.map((n) => n.textContent || '').join(' | '), nodos };
+  }
+  const p = await pantallaFalsa([sec], respuestas);
+  const nodos = () => p.todo(p.sec('pedidos'));
+  const en = (ruta) => nodos().filter((n) => n.attrs['data-path'] === ruta).pop();
+  const revisado = async () => { await p.click('Revisar cambios', 'pedidos'); return p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop().cuerpo.borrador.work_items; };
+  return { ...p, nodos, en, revisado };
+}
+
+// T71 Config_Pedidos_OrganizacionYProyecto_SeEditanYSeProponen @story-4.11 @ac-43
+// 🔴 Falla con: la sección sin organización ni proyecto, debajo del tipo, que lo escrito no viaje al revisar, que revisar
+//    toque otra parte de operations.json, o que el sitio no los lleve por el camino de siempre hasta «Proponer».
+test('T71 Config_Pedidos_OrganizacionYProyecto_SeEditanYSeProponen @story-4.11 @ac-43', async () => {
+  assert.strictEqual(ORG.seccionPorId('pedidos').titulo, 'Pedidos de trabajo');
+  const t = await seccionPedidos({ type: 'Bug' });
+  assert.strictEqual(t.error, null);
+  const orden = t.nodos().filter((n) => ['work_items.org', 'work_items.project', 'work_items.type'].includes(n.attrs['data-path']) && (n.tag === 'input' || n.tag === 'select')).map((n) => n.attrs['data-path']);
+  assert.deepStrictEqual(orden, ['work_items.org', 'work_items.project', 'work_items.type'], 'organización y proyecto, arriba del tipo');
+  t.en('work_items.org').on.input({ target: { value: 'acme' } });
+  t.en('work_items.project').on.input({ target: { value: 'Operaciones' } });
+  assert.deepStrictEqual(await t.revisado(), { type: 'Bug', ...DESTINO });
+  // vaciar los dos los saca del borrador: no se propone un texto vacío
+  t.en('work_items.org').on.input({ target: { value: '' } });
+  t.en('work_items.project').on.input({ target: { value: ' ' } });
+  assert.deepStrictEqual(await t.revisado(), { type: 'Bug' });
+  // el lector: sólo work_items cambia
+  const base = opsBase({ owners: { default: LEAD, by_project: { 'acme/Pagos': 'pagos@acme.example' } } });
+  const bien = ORG.revisar({ seccion: 'pedidos', texto: ORG.formatJson(base), borrador: { work_items: { ...DESTINO } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.strictEqual(bien.texto, ORG.formatJson({ ...base, work_items: DESTINO }));
+  // en el sitio: la sección llega con los dos y el camino de siempre los lleva hasta «Proponer»
+  const ops = clon({ 'operations.json': { ...base, work_items: { type: 'Bug', ...DESTINO } } });
+  await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const s = (await h.pedir('/api/config', { cookie: lead })).json.secciones.find((x) => x.id === 'pedidos');
+    assert.deepStrictEqual(s.borrador.work_items, { type: 'Bug', ...DESTINO });
+    const ok = (await escribir('/api/config/revisar', lead, tok, { seccion: 'pedidos', borrador: { work_items: { type: 'Bug', org: 'acme', project: 'Soporte' } } })).json;
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    assert.deepStrictEqual(JSON.parse(ok.texto), { ...base, work_items: { type: 'Bug', org: 'acme', project: 'Soporte' } });
+    const pr = (await escribir('/api/config/proponer', lead, tok, { seccion: 'pedidos', texto: ok.texto, oid: s.oid })).json;
+    assert.match(pr.message, /sin identidad de escritura/);
+  });
+});
+
+// T72 Config_Pedidos_TiposDelProyectoElegido @story-4.11 @ac-43
+// 🔴 Falla con: ofrecer los tipos de los proyectos de dependencias cuando hay un proyecto elegido, no volver a leer al
+//    cambiar de proyecto, o perder la lectura de siempre sin proyecto.
+test('T72 Config_Pedidos_TiposDelProyectoElegido @story-4.11 @ac-43', async () => {
+  const listas = { '/api/config/tipos-de-pedido': () => ({ ok: true, tipos: ['Bug', 'Task'] }), '/api/config/campos-de-pedido': () => ({ ok: true, proyecto: 'Operaciones', campos: [] }) };
+  const con = await seccionPedidos({ type: 'Task', ...DESTINO }, { respuestas: listas });
+  assert.deepStrictEqual(con.pedidos.filter((x) => x.ruta === '/api/config/tipos-de-pedido').map((x) => x.cuerpo), [DESTINO], 'los tipos del proyecto elegido');
+  assert.deepStrictEqual(con.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido').map((x) => x.cuerpo), [{ tipo: 'Task', ...DESTINO }]);
+  con.en('work_items.project').on.input({ target: { value: 'Soporte' } });
+  con.en('work_items.project').on.change({ target: { value: 'Soporte' } });
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(con.pedidos.filter((x) => x.ruta === '/api/config/tipos-de-pedido').map((x) => x.cuerpo).pop(), { org: 'acme', project: 'Soporte' }, 'otro proyecto, otra lectura');
+  const sin = await seccionPedidos({ type: 'Bug' }, { respuestas: listas });
+  assert.deepStrictEqual(sin.pedidos.filter((x) => x.ruta === '/api/config/tipos-de-pedido').map((x) => x.cuerpo), [{}], 'sin proyecto, los de dependencias, como antes');
+  // el sitio: con organización y proyecto pregunta a ese proyecto y a ningún otro
+  const urls = [];
+  const fetch = async (url) => { urls.push(String(url)); return new Response(JSON.stringify(/HiddenCategory/.test(String(url)) ? { workItemTypes: [] } : { value: [{ name: 'Task' }, { name: 'Bug' }] }), { status: 200 }); };
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { azure: { org: 'https://dev.azure.com/acme' }, repos: [{ producto: 'Ventas', ado: 'Ventas/Front', activo: true }] } });
+  await conPestana({ fuentes: fuentesCon({ ops }), env: { SITE_PIPELINES_TOKEN: 'pip' }, opciones: { fetch, urlBase: { azure: 'http://az.example' } } }, async ({ entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const r = (await escribir('/api/config/tipos-de-pedido', lead, tok, DESTINO)).json;
+    assert.deepStrictEqual([r.ok, r.tipos], [true, ['Bug', 'Task']], JSON.stringify(r));
+    assert.ok(urls.length && urls.every((u) => u.startsWith('http://az.example/acme/Operaciones/')), urls.join('\n'));
+    urls.length = 0;
+    const d = (await escribir('/api/config/tipos-de-pedido', lead, tok, {})).json;
+    assert.strictEqual(d.ok, true, JSON.stringify(d));
+    assert.ok(urls.every((u) => u.startsWith('http://az.example/acme/Ventas/')), 'sin proyecto, los de los productos');
+    const malo = (await escribir('/api/config/tipos-de-pedido', lead, tok, { org: 'acme', project: '../x' })).json;
+    assert.strictEqual(malo.ok, false, 'un proyecto sin forma no se pregunta');
+  });
+});
+
+// T73 Config_Pedidos_SinDestino_DiceQueLaNocheNoPide @story-4.11 @ac-43
+// 🔴 Falla con: callar que falta el destino, decir sólo «falta» sin cuál, o avisar cuando están los dos.
+test('T73 Config_Pedidos_SinDestino_DiceQueLaNocheNoPide @story-4.11 @ac-43', async () => {
+  for (const [wi, frase] of [[undefined, /Falta la organización y el proyecto/], [{ type: 'Bug' }, /Falta la organización y el proyecto/],
+    [{ project: 'Operaciones' }, /Falta la organización:/], [{ org: 'acme' }, /Falta el proyecto:/]]) {
+    const t = await seccionPedidos(wi);
+    const aviso = t.en('work_items.destino');
+    assert.ok(aviso, `${JSON.stringify(wi)}: el aviso del destino`);
+    assert.match(aviso.textContent, frase, JSON.stringify(wi));
+    assert.match(aviso.textContent, /la noche no va a pedir trabajo/, JSON.stringify(wi));
+  }
+  assert.strictEqual((await seccionPedidos(DESTINO)).en('work_items.destino'), undefined, 'con los dos, ningún aviso');
+  const en = await seccionPedidos({ org: 'acme' }, { idioma: 'en' });
+  assert.match(en.texto, /The project is missing: the night will not request work/);
+});
+
+// T74 Config_Pedidos_FijosYGravedad_SoloVulnerabilidades @story-4.11 @ac-43
+// 🔴 Falla con: que los campos fijos o la tabla por gravedad no digan que sólo valen para las vulnerabilidades (decisión
+//    21), en castellano o en inglés.
+test('T74 Config_Pedidos_FijosYGravedad_SoloVulnerabilidades @story-4.11 @ac-43', async () => {
+  for (const [idioma, frase] of [['es', /sólo para las vulnerabilidades/], ['en', /vulnerabilities only/]]) {
+    const { nodos } = await seccionPedidos(WI_RIESGO, { idioma });
+    const marcas = nodos.filter((n) => n.attrs && n.attrs['data-path'] === 'work_items.solo-vulnerabilidades');
+    assert.strictEqual(marcas.length, 2, `${idioma}: una marca en los campos fijos y otra en la tabla`);
+    for (const m of marcas) assert.match(m.textContent, frase, idioma);
+  }
+});
+
+// T75 Config_Pedidos_ValorInvalido_ProblemaDelLector @story-4.11 @ac-43
+// 🔴 Falla con: que una organización o un proyecto sin forma pase, o que su problema no se vea junto a su campo.
+test('T75 Config_Pedidos_ValorInvalido_ProblemaDelLector @story-4.11 @ac-43', async () => {
+  const base = opsBase();
+  const rev = (work_items) => ORG.revisar({ seccion: 'pedidos', texto: ORG.formatJson(base), borrador: { work_items }, lectores: { 'operations-config.js': OPS } });
+  for (const [wi, ruta] of [[{ org: 'ac me/../x', project: 'Operaciones' }, 'work_items.org'], [{ org: 'acme', project: 'Ops; rm -rf' }, 'work_items.project'], [{ org: 7, project: 'Ops' }, 'work_items.org']]) {
+    const malo = rev(wi);
+    assert.strictEqual(malo.ok, false, JSON.stringify(wi));
+    assert.ok(malo.problems.some((p) => p.path === ruta), `${JSON.stringify(wi)} → ${ruta}: ${JSON.stringify(malo.problems)}`);
+  }
+  const problems = [{ path: 'work_items.project', message: 'tiene que ser el nombre de un proyecto (letras, números, espacios, «.», «-», «_»)' }];
+  const t = await seccionPedidos({ org: 'acme', project: 'Ops; rm' }, { problems });
+  assert.ok(t.textoDe('pedidos').includes(problems[0].message), 'el problema del lector se ve');
+  assert.strictEqual(t.en('work_items.project').attrs.class, 'bad', 'marcado en su campo');
+  assert.notStrictEqual(t.en('work_items.org').attrs.class, 'bad', 'la organización, no');
+});
+
+// T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43
+// En un navegador de verdad, contra el sitio entero, el GitHub de juguete y el repo de operaciones por HTTP. Playwright no
+// es una dependencia del arnés: se busca en TYCON_PLAYWRIGHT o entre los módulos de node; sin él se saltea con constancia,
+// salvo con la llave exigente (E2E_REQUIRED=1), que lo hace fallar.
+// 🔴 Falla con: que la organización y el proyecto no se puedan cargar en la pantalla, que la propuesta no los lleve, o que
+//    la prueba se saltee sin navegador con la llave exigente prendida.
+const PLAYWRIGHT = (() => { try { return require(process.env.TYCON_PLAYWRIGHT || 'playwright'); } catch { return null; } })();
+const SIN_NAVEGADOR = process.env.E2E_REQUIRED === '1' ? false
+  : (!PLAYWRIGHT && 'Playwright no está en esta máquina (TYCON_PLAYWRIGHT=<carpeta del módulo playwright>)') || SIN_BACKEND;
+test('T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, 'con la llave exigente prendida, Playwright tiene que estar (TYCON_PLAYWRIGHT)');
+  assert.ok(!SIN_BACKEND, `con la llave exigente prendida: ${SIN_BACKEND}`);
+  const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
+  let gh, r, dir;
+  const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } };
+  try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+    gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase({ work_items: { type: 'Bug' } }) }));
+    await conPestana({ fuentes: fuentesCon({ ops: dir }), env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { github: gh.base } } }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD);
+      const navegador = await PLAYWRIGHT.chromium.launch();
+      try {
+        const ctx = await navegador.newContext();
+        await ctx.setExtraHTTPHeaders({ cookie: lead });
+        const page = await ctx.newPage();
+        await page.route('**/api/config/**', async (rt) => rt.fulfill({ response: await rt.fetch({ headers: { ...rt.request().headers(), cookie: lead, origin: 'http://127.0.0.1' } }) }));
+        await page.goto(`${h.base}/configuracion#seccion-pedidos`);
+        const sec = page.locator('#seccion-pedidos');
+        await sec.getByText(/Falta la organización y el proyecto/).waitFor({ timeout: 20000 })
+          .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await sec.innerText().catch(() => '(no está)')}`); });
+        await sec.getByLabel('Organización', { exact: true }).fill('acme');
+        await sec.getByLabel('Proyecto', { exact: true }).fill('Operaciones');
+        await sec.getByRole('button', { name: 'Revisar cambios' }).click();
+        await sec.getByRole('button', { name: 'Proponer el cambio' }).click();
+        await sec.getByRole('button', { name: 'Confirmar y proponer' }).click();
+        await sec.getByRole('link', { name: 'Ver el pedido de cambio' }).waitFor({ timeout: 20000 })
+          .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await sec.innerText()}`); });
+        assert.strictEqual(gh.st.pedidos.length, 1, 'se abrió un pedido');
+        const rama = r.empujes.at(-1).ref.replace('refs/heads/', '');
+        assert.deepStrictEqual(JSON.parse(r.archivoEn(rama, 'operations.json')).work_items, { type: 'Bug', ...DESTINO }, 'la propuesta lleva los dos');
+      } finally { await navegador.close(); }
+    });
+  } finally { await cerrarTodos(r, gh); }
 });

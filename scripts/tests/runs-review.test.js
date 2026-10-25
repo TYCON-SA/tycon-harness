@@ -518,7 +518,7 @@ test('T25 FixtureComoLaDelOrigen @story-4.10 @ac-6 @ac-7 @ac-8 @ac-9 @ac-10', as
 
 // T35 FichaSinReglasHoySeArchivaSola @story-4.10 @ac-2 @story-4.11 @ac-8 (la causa no se archiva por una ejecución)
 // 🔴 Falla con: archivar la ficha de una causa porque UNA de sus ejecuciones hoy ya no da la regla: resolver una causa
-//    son N noches medidas sin aparecer, y eso todavía no lo hace la pasada.
+//    son N noches medidas sin aparecer (lo prueba T16 Resuelta_TrasNNoches), no una ejecución que ya no da la regla.
 test('T35 FichaSinReglasHoySeArchivaSola @story-4.10 @ac-2', async () => {
   const base = `1.1-${HOY}T1519`;
   // revisable entera: con conversación y con el registro de escapes medido (vacío)
@@ -1147,4 +1147,198 @@ test('T4 TextoFielDelPedido @story-4.12 @ac-4', () => {
     assert.deepStrictEqual(cats(rv({ hilo: null, bypass: [linea] }), 'RR-ESCAPE'), [esperada], `sin la conversación: ${c}`);
     assert.deepStrictEqual(cats(rv({ hilo: cmd(c), bypass: [linea] }), 'RR-ESCAPE'), [esperada], `con la conversación: ${c}`);
   }
+});
+
+// ── el control de las noches: resolver, reabrir y avisar que volvió ─────────────────────────────────────────────
+
+/** Un buzón con una ejecución de la causa `RR-CIERRE:derivada`; `limpiar()` la deja sin fallas (la causa no aparece). */
+function buzonDeUnaCausa() {
+  const base = '1.1-2026-10-19T1519';
+  const archivedAt = '2026-10-19T22:19:00.000Z';
+  const mb = buzon({ 'acme-0000aaaa': { corridas: [{ base, volcado: volcado({ sid: SID(1), archivedAt, pendientes: [7] }), hilo: [] }] } });
+  const limpiar = () => fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `${base}.json`), JSON.stringify(volcado({ sid: SID(1), archivedAt })));
+  return { mb, limpiar };
+}
+const RRDIR = (op, c) => path.join(op, 'inbox', 'runs-review', c);
+/** La única ficha de la causa, cambiada con `cambio` (un `undefined` borra la clave) y movida a `carpeta`. */
+function moverFicha(op, cambio, carpeta) {
+  const desde = ['pending', 'promoted', 'archived'].find((c) => fichas(op, c).length);
+  const [x] = fichas(op, desde);
+  const f = CYCLE.parsear(fs.readFileSync(path.join(RRDIR(op, desde), x.f), 'utf8'));
+  fs.unlinkSync(path.join(RRDIR(op, desde), x.f));
+  fs.mkdirSync(RRDIR(op, carpeta), { recursive: true });
+  const g = { ...f, ...cambio };
+  for (const [k, v] of Object.entries(cambio)) if (v === undefined) delete g[k];
+  fs.writeFileSync(path.join(RRDIR(op, carpeta), x.f), CYCLE.serializar(g));
+  return x.f;
+}
+const fichaEn = (op, carpeta, nombre) => CYCLE.parsear(fs.readFileSync(path.join(RRDIR(op, carpeta), nombre), 'utf8'));
+/** operations.json con dónde van los pedidos. */
+function opsConPedidos() {
+  const op = ops();
+  fs.writeFileSync(path.join(op, 'operations.json'), JSON.stringify({ version: 1, owners: { default: 'lead@ejemplo.test' },
+    site: { url: 'https://sitio.ejemplo.test' }, work_items: { org: 'acme', project: 'Operaciones' } }));
+  return op;
+}
+/** Una plataforma de mentira que guarda cada llamado. */
+function plataformaFalsa(respuesta = () => ({ ok: true, value: { id: 901, changed: false, warnings: [] } })) {
+  const llamados = [];
+  return { llamados, run: async (op, args) => { llamados.push({ op, args }); return respuesta(op, args, llamados.length); } };
+}
+
+// T16 Resuelta_TrasNNoches @story-4.11 @ac-27
+// 🔴 Falla con: no contar las noches sin la causa, contar dos veces la misma noche (un reintento), resolver antes de N,
+//    dejar la resuelta en pending/, o sin `resuelta_el` (la vista común no la ve como resuelta ese día).
+test('T16 Resuelta_TrasNNoches @story-4.11 @ac-27', async () => {
+  const { mb, limpiar } = buzonDeUnaCausa();
+  const op = ops();
+  await correr(mb, op, { today: '2026-10-19' });
+  const [nueva] = fichas(op);
+  limpiar();
+  await correr(mb, op, { today: '2026-10-20' });
+  await correr(mb, op, { today: '2026-10-21' });
+  await correr(mb, op, { today: '2026-10-21' });
+  let [f] = fichas(op);
+  assert.deepStrictEqual([f.noches_sin_aparecer, f.noche_contada, f.estado], [2, '2026-10-21', 'viva'], 'dos noches, el reintento no cuenta');
+  await correr(mb, op, { today: '2026-10-22' });
+  assert.strictEqual(fichas(op).length, 0, 'sale de pending/');
+  [f] = fichas(op, 'archived');
+  assert.strictEqual(f.f, nueva.f, 'la misma ficha');
+  assert.deepStrictEqual([f.estado, f.resuelta_el, f.noches_sin_aparecer, f.noche_contada], ['resuelta', '2026-10-22', undefined, undefined]);
+  const SOURCES = require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'sources.js'));
+  const v = SOURCES.comoFicha('ejecuciones', fs.readFileSync(path.join(RRDIR(op, 'archived'), f.f), 'utf8'));
+  assert.deepStrictEqual([v.estado, v.resuelto, v.reaparecido], ['resuelta', '2026-10-22', null]);
+  // con N de operations.json: 1 resuelve la primera noche medida
+  const op1 = ops();
+  const o = JSON.parse(fs.readFileSync(path.join(op1, 'operations.json'), 'utf8'));
+  fs.writeFileSync(path.join(op1, 'operations.json'), JSON.stringify({ ...o, findings: { resolve_after_nights: 1 } }));
+  const b = buzonDeUnaCausa();
+  await correr(b.mb, op1, { today: '2026-10-19' });
+  b.limpiar();
+  await correr(b.mb, op1, { today: '2026-10-20' });
+  assert.deepStrictEqual(fichas(op1, 'archived').map((x) => x.resuelta_el), ['2026-10-20']);
+});
+
+// T17 Reaparecio_Reabre @story-4.11 @ac-28
+// 🔴 Falla con: dejar callada en archived/ una resuelta o una ignorada que vuelve, perder el veredicto de antes o las
+//    apariciones, conservar la propuesta vieja, o reabrir una migrada.
+test('T17 Reaparecio_Reabre @story-4.11 @ac-28', async () => {
+  for (const [antes, cambio] of [['arreglo', { estado: 'resuelta', resuelta_el: '2026-10-20', veredicto: 'arreglo' }], ['ignorada', { veredicto: 'ignorada' }]]) {
+    const { mb } = buzonDeUnaCausa();
+    const op = ops();
+    await correr(mb, op, { today: '2026-10-19' });
+    const nombre = moverFicha(op, { ...cambio, apariciones: 4, propuesta: { accion: 'arreglar', razon: 'la de antes' } }, 'archived');
+    await correr(mb, op);
+    assert.strictEqual(fichas(op, 'archived').length, 0, `${antes}: sale de archived/`);
+    const f = fichaEn(op, 'pending', nombre);
+    assert.deepStrictEqual([f.estado, f.veredicto, f.veredicto_anterior, f.reaparecio_el, f.apariciones, f.propuesta, f.resuelta_el],
+      ['reaparecio', 'pendiente', antes, HOY, 5, null, undefined], antes);
+  }
+  // una migrada no se reabre
+  const { mb } = buzonDeUnaCausa();
+  const op = ops();
+  await correr(mb, op, { today: '2026-10-19' });
+  const nombre = moverFicha(op, { veredicto: 'migrada' }, 'archived');
+  const antes = fs.readFileSync(path.join(RRDIR(op, 'archived'), nombre), 'utf8');
+  await correr(mb, op);
+  assert.strictEqual(fs.readFileSync(path.join(RRDIR(op, 'archived'), nombre), 'utf8'), antes, 'la migrada queda como está');
+});
+
+// T20 NocheQueNoCorrio_NoAvanza @story-4.11 @ac-36
+// 🔴 Falla con: contar días de calendario en vez de noches medidas (la que no corrió sumaría), o contar una pasada
+//    con archivos ilegibles (una noche a medias).
+test('T20 NocheQueNoCorrio_NoAvanza @story-4.11 @ac-36', async () => {
+  const { mb, limpiar } = buzonDeUnaCausa();
+  const op = ops();
+  await correr(mb, op, { today: '2026-10-19' });
+  limpiar();
+  await correr(mb, op, { today: '2026-10-20' });
+  // la del 21 no corrió
+  await correr(mb, op, { today: '2026-10-22' });
+  let [f] = fichas(op);
+  assert.deepStrictEqual([f.noches_sin_aparecer, f.estado], [2, 'viva'], 'dos noches medidas, no tres días');
+  // una noche con un volcado ilegible no es entera: no cuenta
+  fs.writeFileSync(path.join(mb, 'acme-0000aaaa', '1.9-2026-10-23T1000.json'), '{ roto');
+  await correr(mb, op, { today: '2026-10-23' });
+  [f] = fichas(op);
+  assert.deepStrictEqual([f.noches_sin_aparecer, f.noche_contada], [2, '2026-10-22'], 'la noche a medias no avanza');
+});
+
+// T52 Aceptada_SigueViva_NoSeReproponeNiSeRepite @story-4.11 @ac-28
+// 🔴 Falla con: sacar de promoted/ una aceptada que sigue apareciendo, borrarle la propuesta, o no sumar la aparición.
+test('T52 Aceptada_SigueViva_NoSeReproponeNiSeRepite @story-4.11 @ac-28', async () => {
+  const { mb } = buzonDeUnaCausa();
+  const op = ops();
+  await correr(mb, op, { today: '2026-10-19' });
+  const propuesta = { accion: 'aceptar', razon: 'es esperable' };
+  const nombre = moverFicha(op, { veredicto: 'aceptada', propuesta }, 'promoted');
+  await correr(mb, op, { today: '2026-10-20' });
+  const f = fichaEn(op, 'promoted', nombre);
+  assert.deepStrictEqual([f.veredicto, f.estado, f.apariciones, f.propuesta, f.reaparecio_el], ['aceptada', 'viva', 2, propuesta, undefined]);
+  assert.strictEqual(fichas(op).length, 0, 'no vuelve a pending/');
+});
+
+// T77 Ejecuciones_BuzonIncompleto_NoAvanza @story-4.11 @ac-36
+// 🔴 Falla con: contar la noche con la bajada del buzón a medias (la causa pudo estar en lo que no bajó).
+test('T77 Ejecuciones_BuzonIncompleto_NoAvanza @story-4.11 @ac-36', async () => {
+  const { mb, limpiar } = buzonDeUnaCausa();
+  const op = ops();
+  await correr(mb, op, { today: '2026-10-19' });
+  limpiar();
+  await correr(mb, op, { today: '2026-10-20' });
+  const r = await RR.run({ mailbox: mb, ops: op, today: '2026-10-21', bajar: async () => ({ codigo: 1, res: { completo: false, estado: 'parcial' } }) });
+  assert.strictEqual(r.codigo, 1);
+  const [f] = fichas(op);
+  assert.deepStrictEqual([f.noches_sin_aparecer, f.noche_contada], [1, '2026-10-20']);
+});
+
+// T79 Reaparecio_ConPedido_AvisaQueVolvio @story-4.11 @ac-28
+// 🔴 Falla con: no avisarle al pedido que la falla volvió, avisarle dos veces, cambiarle el estado, no reintentar con la
+//    plataforma caída, o llamar por una que volvió sin pedido.
+test('T79 Reaparecio_ConPedido_AvisaQueVolvio @story-4.11 @ac-28', async () => {
+  const { mb } = buzonDeUnaCausa();
+  const op = opsConPedidos();
+  await correr(mb, op, { today: '2026-10-19' });
+  const nombre = moverFicha(op, { estado: 'resuelta', resuelta_el: '2026-10-20', veredicto: 'arreglo', pedido: 901 }, 'archived');
+  const caida = plataformaFalsa(() => ({ ok: false, reason: 'error', detail: 'se cayó' }));
+  await correr(mb, op, { today: '2026-10-21', plataforma: caida.run });
+  assert.deepStrictEqual(caida.llamados.map((x) => [x.op, x.args.id]), [['work-item.update', 901]]);
+  let f = fichaEn(op, 'pending', nombre);
+  assert.deepStrictEqual([f.estado, f.pedido, f.aviso_volvio_el], ['reaparecio', 901, undefined], 'caída: se intenta mañana');
+  const p = plataformaFalsa();
+  await correr(mb, op, { today: '2026-10-22', plataforma: p.run });
+  await correr(mb, op, { today: '2026-10-22', plataforma: p.run });
+  await correr(mb, op, { today: '2026-10-23', plataforma: p.run });
+  assert.strictEqual(p.llamados.length, 1, 'un solo comentario');
+  const { args } = p.llamados[0];
+  assert.deepStrictEqual([args.id, args.org, args.project, 'state' in args, 'reopen' in args], [901, 'acme', 'Operaciones', false, false], 'sólo comenta');
+  assert.match(args.comment, /volvió/);
+  assert.match(args.comment, /RR-CIERRE:derivada/);
+  f = fichaEn(op, 'pending', nombre);
+  assert.strictEqual(f.aviso_volvio_el, '2026-10-22');
+  // una que vuelve sin pedido no llama
+  const b = buzonDeUnaCausa();
+  const op2 = opsConPedidos();
+  await correr(b.mb, op2, { today: '2026-10-19' });
+  moverFicha(op2, { estado: 'resuelta', resuelta_el: '2026-10-20', veredicto: 'arreglo' }, 'archived');
+  const q = plataformaFalsa();
+  await correr(b.mb, op2, { today: '2026-10-21', plataforma: q.run });
+  assert.strictEqual(q.llamados.filter((x) => x.op === 'work-item.update').length, 0);
+});
+
+// T86 Reaparecio_IgnoradaQueYaHabiaVuelto_SeReabre @story-4.11 @ac-28
+// 🔴 Falla con: dejar callada en archived/ una ignorada que ya había vuelto una vez (guarda `reaparecio` porque ignorar
+//    cambia el veredicto y no el estado): sin reabrirla, no suma la aparición y su pedido no se entera.
+test('T86 Reaparecio_IgnoradaQueYaHabiaVuelto_SeReabre @story-4.11 @ac-28', async () => {
+  const { mb } = buzonDeUnaCausa();
+  const op = opsConPedidos();
+  await correr(mb, op, { today: '2026-10-19' });
+  const nombre = moverFicha(op, { estado: 'reaparecio', reaparecio_el: '2026-10-20', veredicto: 'ignorada', veredicto_anterior: 'arreglo',
+    pedido: 901, aviso_volvio_el: '2026-10-20' }, 'archived');
+  const p = plataformaFalsa();
+  await correr(mb, op, { today: '2026-10-25', plataforma: p.run });
+  assert.deepStrictEqual([fichas(op, 'archived').length, fichas(op, 'pending').length], [0, 1], 'vuelve a pending/');
+  const f = fichaEn(op, 'pending', nombre);
+  assert.deepStrictEqual([f.estado, f.veredicto, f.veredicto_anterior, f.reaparecio_el, f.ultima_vez], ['reaparecio', 'pendiente', 'ignorada', '2026-10-25', '2026-10-25']);
+  assert.deepStrictEqual(p.llamados.filter((x) => x.op === 'work-item.update').map((x) => x.args.id), [901], 'y su pedido se entera otra vez');
 });

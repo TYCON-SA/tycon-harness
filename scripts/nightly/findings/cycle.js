@@ -28,9 +28,10 @@ const TOPE_HUELLAS = 1000;
 const NOCHES_POR_DEFECTO = 3;
 
 // El orden en que se escribe la ficha común. `noches_sin_aparecer` y `noche_contada` (la fecha de la última noche
-// contada) sólo están mientras cuenta.
+// contada) sólo están mientras cuenta; `resuelta_el` mientras está resuelta; `reaparecio_el` desde la noche que volvió,
+// y `aviso_volvio_el`, el día que se le avisó a su pedido que volvió.
 const CLAVES = ['id', 'fuente', 'causa', 'nombre', 'primera_vez', 'ultima_vez', 'apariciones', 'noches_sin_aparecer',
-  'noche_contada', 'veredicto', 'veredicto_anterior', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
+  'noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'veredicto', 'veredicto_anterior', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
   'pedido', 'asignado', 'pedido_motivo', 'estado', 'casos', 'casos_total', 'casos_vistos'];
 // Por qué un arreglo quedó sin pedido o sin asignado: una lista cerrada, nunca el texto de un error.
 const MOTIVOS_SIN_PEDIDO = ['sin-responsable', 'plataforma-sin-asignado', 'plataforma-caida', 'sin-confirmar', 'sin-configurar'];
@@ -89,7 +90,9 @@ function problemasDeForma(f) {
   for (const k of ['primera_vez', 'ultima_vez']) if (!(typeof f[k] === 'string' && FECHA.test(f[k]))) p.push(`${k}: no es una fecha`);
   if (!entero(f.apariciones, 1)) p.push('apariciones: tiene que ser un entero mayor que 0');
   if ('noches_sin_aparecer' in f && !entero(f.noches_sin_aparecer, 0)) p.push('noches_sin_aparecer: tiene que ser un entero');
-  if ('noche_contada' in f && !(typeof f.noche_contada === 'string' && FECHA.test(f.noche_contada))) p.push('noche_contada: no es una fecha');
+  for (const k of ['noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el']) {
+    if (k in f && !(typeof f[k] === 'string' && FECHA.test(f[k]))) p.push(`${k}: no es una fecha`);
+  }
   if (!VEREDICTOS.includes(f.veredicto)) p.push('veredicto: fuera del vocabulario');
   if (f.veredicto_anterior !== null && !VEREDICTOS.includes(f.veredicto_anterior)) p.push('veredicto_anterior: fuera del vocabulario');
   if (f.propuesta !== null) {
@@ -173,16 +176,23 @@ function nuevaFicha({ fuente, causa, nombre, hoy, casos = [] }) {
   return f;
 }
 
+/** ¿La causa que vuelve reabre la ficha? Una resuelta o una ignorada sí; una migrada (la forma de antes) no. */
+const seReabre = (f) => f.veredicto !== 'migrada' && (f.estado === 'resuelta' || f.veredicto === 'ignorada');
+
 /**
- * La noche que vuelve a ver la causa: misma ficha, una aparición más (una por noche) y el contador borrado. Una que
- * estaba resuelta y vuelve pierde la propuesta del modelo y sus fallas: se le vuelve a pedir.
+ * La noche que vuelve a ver la causa: misma ficha, una aparición más (una por noche) y el contador borrado. Una
+ * resuelta o una ignorada que vuelve se reabre: `reaparecio`, otra vez pendiente con el veredicto de antes en
+ * `veredicto_anterior`, el día en `reaparecio_el`, y sin la propuesta del modelo ni sus fallas (se le vuelve a pedir).
  */
 function registrarAparicion(f, hoy, casos) {
   const g = conCasos({ ...f }, casos);
   if (g.ultima_vez !== hoy) { g.apariciones = (g.apariciones || 0) + 1; g.ultima_vez = hoy; }
   delete g.noches_sin_aparecer;
   delete g.noche_contada;
-  if (f.estado === 'resuelta') { g.propuesta = null; delete g.propuesta_motivo; delete g.propuesta_fallas; delete g.propuesta_fallo_el; }
+  if (seReabre(f)) {
+    Object.assign(g, { estado: 'reaparecio', veredicto: 'pendiente', veredicto_anterior: f.veredicto, reaparecio_el: hoy, propuesta: null });
+    for (const k of ['resuelta_el', 'aviso_volvio_el', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el']) delete g[k];
+  }
   return ordenar(g);
 }
 
@@ -203,6 +213,25 @@ function contarNoche({ contador, presente, medida, n, hoy, nocheContada }) {
   if (!medida) return { contador: c, resuelta: false };
   if (hoy && nocheContada === hoy) return { contador: c, resuelta: c >= n };
   return { contador: c + 1, resuelta: c + 1 >= n };
+}
+
+/**
+ * La noche de una ficha común: `contarNoche` sobre sus campos. Devuelve la ficha con su contador y la fecha de la
+ * noche contada; si llegó a N, `estado: resuelta` con `resuelta_el` y sin el contador. Una vista hoy (`presente`) sólo
+ * pierde el contador.
+ */
+function noche({ ficha, presente, medida, n, hoy }) {
+  const r = contarNoche({ contador: ficha.noches_sin_aparecer, presente, medida, n, hoy, nocheContada: ficha.noche_contada });
+  const g = { ...ficha };
+  if (presente) { delete g.noches_sin_aparecer; delete g.noche_contada; return ordenar(g); }
+  if (medida && g.noche_contada !== hoy) { g.noches_sin_aparecer = r.contador; g.noche_contada = hoy; }
+  if (r.resuelta) {
+    delete g.noches_sin_aparecer;
+    delete g.noche_contada;
+    g.estado = 'resuelta';
+    g.resuelta_el = hoy;
+  }
+  return ordenar(g);
 }
 
 /** La carpeta de una ficha común según su estado y su veredicto (la mueve sólo la noche). */
@@ -682,8 +711,75 @@ async function pedirTrabajo({ base, fuente, operations, run = null, dir = null, 
   return r;
 }
 
+/** El comentario de que volvió: sólo campos con forma de la ficha, como la descripción del pedido. */
+function comentarioDeQueVolvio(fuente, v) {
+  const partes = [`La falla volvió: la noche (${fuente}) la vio otra vez el ${v.reaparecido}.`, `Causa: ${v.causa}.`];
+  if (Number.isInteger(v.apariciones)) partes.push(`Apariciones: ${v.apariciones}.`);
+  partes.push('El estado del pedido no se cambió: lo decide una persona.');
+  return partes.join(' ');
+}
+
+/**
+ * Le avisa a su pedido que la falla volvió: a cada ficha reaparecida con el pedido que creó la noche (no la story que
+ * anotó una persona) y sin `aviso_volvio_el`, un
+ * `work-item.update` con sólo el comentario (sin estado: el pedido cerrado no se reabre). Con la plataforma que dice
+ * que sí, anota el día en `aviso_volvio_el`; si no (caída, sin configurar, o lanza), un renglón y la noche siguiente
+ * se intenta de nuevo. Devuelve `{ avisados, sinAvisar, lineas }`; los renglones no copian el texto de un error.
+ */
+async function avisarQueVolvio({ base, fuente, operations, hoy, run = null, dir = null, repoDir = null }) {
+  if (fuente !== 'ejecuciones' && fuente !== 'vigilante') throw new Error(`${fuente}: el aviso de dependencias lo da su pedido del líder`);
+  const { comoFicha } = require('./sources.js');
+  const plataforma = run || ((op, args) => require('../../lib/platform/platform.js').run(op, args));
+  const carpetas = dir ? Object.fromEntries(CARPETAS.map((c) => [c, path.join(dir, c)])) : carpetasDe(base, fuente);
+  const acceso = accesoAlPedido(fuente);
+  const r = { avisados: [], sinAvisar: [], lineas: [] };
+  let destino;
+  for (const carpeta of ['pending', 'promoted']) {
+    let nombres;
+    try { nombres = fs.readdirSync(carpetas[carpeta]).filter((x) => x.endsWith('.yaml')).sort(); } catch (e) {
+      if (e && e.code === 'ENOENT') continue;
+      r.lineas.push(`avisos de ${fuente}: la carpeta ${carpeta} no se pudo leer (${(e && e.code) || 'error'}); se avisa mañana`);
+      continue;
+    }
+    for (const nombre of nombres) {
+      const ruta = path.join(carpetas[carpeta], nombre);
+      let txt;
+      let v;
+      try { txt = fs.readFileSync(ruta, 'utf8'); v = comoFicha(fuente, txt); } catch (e) {
+        r.lineas.push(`aviso de ${nombre.slice(0, -5)}: la ficha no se pudo leer (${(e && e.code) || 'sin forma'})`);
+        continue;
+      }
+      if (!v || v.estado !== 'reaparecio' || !v.reaparecido || v.aviso_volvio || !v.pedido_de_la_noche) continue;
+      if (destino === undefined) destino = pedidoDeLaNoche(operations).destino;
+      if (!destino) {
+        r.sinAvisar.push({ id: v.id, motivo: 'sin-configurar' });
+        r.lineas.push(`aviso de ${v.id}: ${FALTA_CONFIGURAR}; se avisa mañana`);
+        continue;
+      }
+      const id = Number(v.pedido_de_la_noche);
+      const args = { repoDir: repoDir || base || path.dirname(path.dirname(carpetas.pending)), id,
+        comment: comentarioDeQueVolvio(fuente, v), forNight: true, ...destino };
+      let res = null;
+      try { res = await plataforma('work-item.update', args); } catch { res = null; }
+      if (!(res && res.ok === true)) {
+        const porque = res && typeof res.reason === 'string' && /^[a-z_]{1,30}$/.test(res.reason) ? res.reason : 'sin respuesta';
+        r.sinAvisar.push({ id: v.id, motivo: porque });
+        r.lineas.push(`aviso de ${v.id}: la plataforma no comentó el pedido ${id} (${porque}); se avisa mañana`);
+        continue;
+      }
+      try { fs.writeFileSync(ruta, acceso.poner(txt, { aviso_volvio_el: hoy })); } catch (e) {
+        r.lineas.push(`aviso de ${v.id}: se comentó el pedido ${id} pero la ficha no se pudo escribir (${(e && e.code) || 'error'}); mañana se vuelve a avisar`);
+        continue;
+      }
+      r.avisados.push({ id: v.id, pedido: id });
+      r.lineas.push(`aviso de ${v.id}: se le avisó al pedido ${id} que volvió`);
+    }
+  }
+  return r;
+}
+
 module.exports = {
-  MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, pedirTrabajo,
+  MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, pedirTrabajo, avisarQueVolvio, noche,
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
   ACCIONES, MOTIVOS_SIN_PROPUESTA, FALLAS_MAX, razonSegura, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,
