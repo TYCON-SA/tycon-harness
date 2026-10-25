@@ -266,6 +266,46 @@ test('T53 Casos_MasDe50_GuardaLosMasNuevosYElTotal', () => {
   assert.deepStrictEqual(g.casos[49], caso(109));
 });
 
+// Casos_LlegadosSinOrden_GuardaLosMasNuevosPorDia @story-4.11 @ac-8 — lo confirmó el pase adversarial
+// 🔴 Falla con: guardar los últimos 50 en el orden de llegada (carpeta de máquina, nombre de archivo): con más de 50
+// casos en una pasada, los de hoy de la máquina que se lee primero se pierden y quedan los de hace días.
+test('T53b Casos_LlegadosSinOrden_GuardaLosMasNuevosPorDia @story-4.11 @ac-8', () => {
+  const de = (dia, i) => ({ ejecucion: `e${dia}-${i}`, dia });
+  const hoy = Array.from({ length: 30 }, (_, i) => de('2026-10-22', i));
+  const viejos = Array.from({ length: 40 }, (_, i) => de('2026-10-16', i));
+  const f = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'c', nombre: 'n', hoy: '2026-10-22', casos: [...hoy, ...viejos] });
+  assert.strictEqual(f.casos_total, 70);
+  assert.strictEqual(f.casos.filter((c) => c.dia === '2026-10-22').length, 30, 'los 30 de hoy quedan');
+  assert.strictEqual(f.casos.filter((c) => c.dia === '2026-10-16').length, 20);
+  assert.deepStrictEqual(f.casos[49], de('2026-10-22', 29), 'el más nuevo al final');
+});
+
+// Vista_PedidoVacioEscritoAMano_QuedaVacio @story-4.11 @ac-18 — lo confirmó el pase adversarial
+// 🔴 Falla con: tomar el `null` o el `~` de YAML como el id de un pedido de trabajo (la fila diría «null»).
+test('T31b Vista_PedidoVacioEscritoAMano_QuedaVacio @story-4.11 @ac-18', () => {
+  const base = 'id: "2026-09-01-acme-dddd0001"\nfuente: "vigilante"\nregla: "errores-500"\nfecha: "2026-09-01"\nveredicto: util\n';
+  for (const v of ['null', '~', 'null  # todavía no creada', 'Null']) {
+    assert.strictEqual(sources.comoFicha('vigilante', `${base}story_creada: ${v}\n`).pedido, null, v);
+  }
+  assert.deepStrictEqual(sources.comoFicha('vigilante', `${base}story_creada: 4567\n`).pedido, { id: '4567', enlace: null });
+});
+
+// Vista_PedidoDeLaNocheAbierto_SeLee @story-4.11 @ac-20 — lo confirmó el pase adversarial
+// 🔴 Falla con: que la vista común no sepa que la ficha ya tiene abierto el pedido de la noche (`pr:`); el sitio la
+// ofrecería para decidir y el pedido de la noche quedaría huérfano.
+test('T31c Vista_PedidoDeLaNocheAbierto_SeLee @story-4.11 @ac-20', () => {
+  const vig = 'id: "vig-1"\nfuente: "vigilante"\nregla: "errores-500"\nfecha: "2026-09-01"\nveredicto: pendiente\n';
+  const dep = 'id: dep-1\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg\nseveridad: high\nnoches: 3\n';
+  for (const [fuente, txt] of [['vigilante', vig], ['dependencias', dep]]) {
+    assert.strictEqual(sources.comoFicha(fuente, txt).pr_noche, null, `${fuente}: sin pr`);
+    assert.strictEqual(sources.comoFicha(fuente, `${txt}pr: 123\n`).pr_noche, 123, `${fuente}: con pr`);
+    assert.strictEqual(sources.comoFicha(fuente, `${txt}pr: 123\nrechazado: 2026-10-20\n`).pr_noche, null, `${fuente}: rechazado`);
+    assert.strictEqual(sources.comoFicha(fuente, `${txt}pr: 123\npr_cerrado: 2026-10-20\n`).pr_noche, null, `${fuente}: cerrado`);
+  }
+  const ej = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'c', nombre: 'n', hoy: '2026-10-20' });
+  assert.strictEqual(sources.comoFicha('ejecuciones', cycle.serializar(ej)).pr_noche, null);
+});
+
 test('T56 OperationsConfig_ResolveAfterNights_ValidaYPorDefecto3', () => {
   const base = { version: 1, owners: { default: 'quien@acme.example' } };
   const ok = (v) => OPS.parse(JSON.stringify({ ...base, findings: { resolve_after_nights: v } })).ok;
@@ -854,4 +894,129 @@ test('Ejecuciones_NuevaSinCausasVistas_SaleDeLasFichas', async () => {
   fs.unlinkSync(path.join(op, 'inbox', 'runs-review', 'causas-vistas.json'));
   await correrB(mb, op, '2026-10-23');
   assert.deepStrictEqual(lastRunB(op).causas.map((c) => c.nueva), [false], 'la primera_vez de su ficha dice que ya se conocía');
+});
+
+// ── la decisión del sitio la aplica la noche ────────────────────────────────────────────
+
+/** Un repo de operaciones de juguete con dos fichas pendientes de cada fuente, en su formato. */
+function opsConFichas() {
+  const base = tmp();
+  const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(base, rel)), { recursive: true }); fs.writeFileSync(path.join(base, rel), txt); };
+  escribir('inbox/dependencies/pending/dep-uno.yaml', 'id: dep-uno\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-uno\nseveridad: high\nnoches: 2\nrepos:\n  - Producto X/FrontEnd\n');
+  escribir('inbox/dependencies/pending/dep-dos.yaml', 'id: dep-dos\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-dos\nseveridad: low\nnoches: 1\n');
+  escribir('inbox/watcher/pending/vig-uno.yaml', '# borrador del vigilante\nid: vig-uno\nfuente: vigilante\ncausa: acme:errores-500\nfecha: 2026-10-21\nproducto: acme\nregla: errores-500\nveredicto: pendiente\n');
+  escribir('inbox/watcher/pending/vig-dos.yaml', 'id: vig-dos\nfuente: vigilante\ncausa: acme:lentitud\nfecha: 2026-10-21\nproducto: acme\nregla: lentitud\nveredicto: pendiente\n');
+  const ej = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: '2026-10-21' });
+  const ej2 = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo', hoy: '2026-10-21' });
+  escribir(`inbox/runs-review/pending/${ej.id}.yaml`, cycle.serializar(ej));
+  escribir(`inbox/runs-review/pending/${ej2.id}.yaml`, cycle.serializar(ej2));
+  const decidir = (carpeta, id, d) => escribir(`inbox/${carpeta}/decisions/${id}.json`, typeof d === 'string' ? d : JSON.stringify(d));
+  return { base, ej, ej2, decidir };
+}
+const decision = (fuente, id, accion) => ({ fuente, id, accion, quien: 'lead@acme.example', el: '2026-10-24' });
+
+// Noche_DecisionSinForma_QuedaYSeCuenta @story-4.11 @ac-20
+// 🔴 Falla con: aplicar una decisión sin forma (o un «aceptar» de dependencias), o dejar viva la decisión de una ficha que
+// ya no está pendiente.
+test('T68 Noche_DecisionSinForma_QuedaYSeCuenta', () => {
+  const { base, ej, ej2, decidir } = opsConFichas();
+  // las tres fuentes con su mapa (decisión 16)
+  decidir('dependencies', 'dep-uno', decision('dependencias', 'dep-uno', 'arreglar'));
+  decidir('watcher', 'vig-uno', decision('vigilante', 'vig-uno', 'aceptar'));
+  decidir('watcher', 'vig-dos', decision('vigilante', 'vig-dos', 'arreglar'));
+  decidir('runs-review', ej.id, decision('ejecuciones', ej.id, 'aceptar'));
+  decidir('runs-review', ej2.id, decision('ejecuciones', ej2.id, 'arreglar'));
+  // sin forma: un «aceptar» de dependencias (decisión 14), JSON roto, una clave de más, una fuente que no es la suya
+  decidir('dependencies', 'dep-dos', decision('dependencias', 'dep-dos', 'aceptar'));
+  decidir('dependencies', 'rota', '{ no es json');
+  decidir('watcher', 'vig-extra', { ...decision('vigilante', 'vig-extra', 'aceptar'), nota: 'texto libre' });
+  decidir('runs-review', 'otra-fuente', decision('vigilante', 'otra-fuente', 'aceptar'));
+  // la de una ficha que no está
+  decidir('watcher', 'no-esta', decision('vigilante', 'no-esta', 'aceptar'));
+
+  const dep = cycle.aplicarDecisiones({ base, fuente: 'dependencias' });
+  const vig = cycle.aplicarDecisiones({ base, fuente: 'vigilante' });
+  const eje = cycle.aplicarDecisiones({ base, fuente: 'ejecuciones' });
+
+  const en = (rel) => fs.existsSync(path.join(base, rel));
+  const leer = (rel) => fs.readFileSync(path.join(base, rel), 'utf8');
+  // dependencias: arreglar → util, a promoted/, decisión borrada
+  assert.ok(en('inbox/dependencies/promoted/dep-uno.yaml') && !en('inbox/dependencies/pending/dep-uno.yaml'));
+  assert.match(leer('inbox/dependencies/promoted/dep-uno.yaml'), /^veredicto: util$/m);
+  assert.match(leer('inbox/dependencies/promoted/dep-uno.yaml'), /^repos:\n {2}- Producto X\/FrontEnd$/m, 'el resto de la ficha queda igual');
+  assert.ok(!en('inbox/dependencies/decisions/dep-uno.json'));
+  // el vigilante: aceptar → descartado (archived/), arreglar → util (promoted/); el comentario del borrador sigue
+  assert.match(leer('inbox/watcher/archived/vig-uno.yaml'), /^veredicto: descartado$/m);
+  assert.match(leer('inbox/watcher/archived/vig-uno.yaml'), /^# borrador del vigilante$/m);
+  assert.match(leer('inbox/watcher/promoted/vig-dos.yaml'), /^veredicto: util$/m);
+  // ejecuciones: aceptar → aceptada, arreglar → arreglo; las dos a promoted/ y se siguen leyendo
+  assert.strictEqual(cycle.parsear(leer(`inbox/runs-review/promoted/${ej.id}.yaml`)).veredicto, 'aceptada');
+  assert.strictEqual(cycle.parsear(leer(`inbox/runs-review/promoted/${ej2.id}.yaml`)).veredicto, 'arreglo');
+  assert.deepStrictEqual([dep.aplicadas.length, vig.aplicadas.length, eje.aplicadas.length], [1, 2, 2]);
+
+  // las sin forma quedan en decisions/ y se cuentan; la ficha de dependencias sigue pendiente
+  assert.ok(en('inbox/dependencies/decisions/dep-dos.json') && en('inbox/dependencies/decisions/rota.json'));
+  assert.ok(en('inbox/dependencies/pending/dep-dos.yaml'));
+  assert.ok(en('inbox/watcher/decisions/vig-extra.json') && en('inbox/runs-review/decisions/otra-fuente.json'));
+  assert.deepStrictEqual([dep.sinForma, vig.sinForma, eje.sinForma], [2, 1, 1]);
+  assert.ok(dep.lineas.some((l) => /sin la forma esperada/.test(l)), dep.lineas.join('\n'));
+  assert.ok(!dep.lineas.join('\n').includes('no es json'), 'el contenido de la decisión no va a la salida');
+
+  // la de una ficha que no está se borra con su renglón
+  assert.ok(!en('inbox/watcher/decisions/no-esta.json'));
+  assert.deepStrictEqual(vig.borradas.map((b) => b.id), ['no-esta']);
+  assert.ok(vig.lineas.some((l) => /no-esta.*no está pendiente/.test(l)), vig.lineas.join('\n'));
+
+  // una segunda noche con la decisión de una ficha que ya se decidió: se borra, la ficha no se toca
+  decidir('watcher', 'vig-dos', decision('vigilante', 'vig-dos', 'aceptar'));
+  const otra = cycle.aplicarDecisiones({ base, fuente: 'vigilante' });
+  assert.deepStrictEqual([otra.aplicadas.length, otra.borradas.length], [0, 1]);
+  assert.match(leer('inbox/watcher/promoted/vig-dos.yaml'), /^veredicto: util$/m);
+  // sin carpeta de decisiones: nada que aplicar, sin error
+  assert.deepStrictEqual(cycle.aplicarDecisiones({ base: tmp(), fuente: 'ejecuciones' }), { aplicadas: [], borradas: [], sinForma: 0, ilegibles: 0, lineas: [] });
+
+  // 🔴 «no pude leer la ficha» no es «ya no está pendiente»: la decisión de la persona queda y se cuenta
+  const b2 = opsConFichas();
+  fs.mkdirSync(path.join(b2.base, 'inbox/watcher/pending/vig-tapada.yaml'));   // una carpeta con el nombre de la ficha
+  b2.decidir('watcher', 'vig-tapada', decision('vigilante', 'vig-tapada', 'aceptar'));
+  fs.writeFileSync(path.join(b2.base, `inbox/runs-review/pending/${b2.ej.id}.yaml`), 'esto: [ no es una ficha\n');
+  b2.decidir('runs-review', b2.ej.id, decision('ejecuciones', b2.ej.id, 'aceptar'));
+  const v2 = cycle.aplicarDecisiones({ base: b2.base, fuente: 'vigilante' });
+  const e2 = cycle.aplicarDecisiones({ base: b2.base, fuente: 'ejecuciones' });
+  assert.ok(fs.existsSync(path.join(b2.base, 'inbox/watcher/decisions/vig-tapada.json')), 'la decisión sobre una ficha que no se lee queda');
+  assert.ok(fs.existsSync(path.join(b2.base, `inbox/runs-review/decisions/${b2.ej.id}.json`)), 'también la de una ficha que no se entiende');
+  assert.deepStrictEqual([v2.ilegibles, v2.borradas.length, e2.ilegibles, e2.borradas.length], [1, 0, 1, 0]);
+  assert.ok(v2.lineas.some((l) => /vig-tapada.*no se pudo leer/.test(l)), v2.lineas.join('\n'));
+  // una carpeta de decisiones que no se puede leer se dice, sin tumbar la noche
+  const b3 = tmp();
+  fs.mkdirSync(path.join(b3, 'inbox/dependencies'), { recursive: true });
+  fs.writeFileSync(path.join(b3, 'inbox/dependencies/decisions'), 'no es una carpeta');
+  const d3 = cycle.aplicarDecisiones({ base: b3, fuente: 'dependencias' });
+  assert.strictEqual(d3.ilegibles, 1);
+  assert.ok(d3.lineas.some((l) => /carpeta de decisiones no se pudo leer/.test(l)), d3.lineas.join('\n'));
+});
+
+// SitioDecide_PorSiteUrl @story-4.11 @ac-20
+// 🔴 Falla con: decir que el sitio decide sin `site.url`, o tratar un operations.json ilegible como «sí».
+test('T67 SitioDecide_PorSiteUrl (el lector que pregunta el guion)', () => {
+  const { spawnSync } = require('child_process');
+  const base = tmp();
+  let n = 0;
+  const ops = (doc) => { const p = path.join(base, `ops-${n += 1}.json`); fs.writeFileSync(p, typeof doc === 'string' ? doc : JSON.stringify(doc)); return p; };
+  assert.strictEqual(cycle.sitioDecide(ops({ version: 1, site: { url: 'https://sitio.acme.example' } })).codigo, 0);
+  assert.strictEqual(cycle.sitioDecide(ops({ version: 1, site: { refresh_minutes: 15 } })).codigo, 1);
+  assert.strictEqual(cycle.sitioDecide(ops({ version: 1 })).codigo, 1);
+  assert.strictEqual(cycle.sitioDecide(path.join(base, 'no-esta.json')).codigo, 1);
+  const ilegible = cycle.sitioDecide(ops('{ roto'));
+  assert.strictEqual(ilegible.codigo, 2);
+  assert.ok(ilegible.motivo && !/roto/.test(ilegible.motivo), ilegible.motivo);
+  // por la línea de comandos: el código de salida y el motivo en un renglón
+  const CLI = path.join(RAIZ, 'scripts', 'nightly', 'findings', 'cycle.js');
+  const cli = (...a) => spawnSync(process.execPath, [CLI, ...a], { encoding: 'utf8' });
+  const si = cli('site-decides', '--operations', ops({ version: 1, site: { url: 'https://sitio.acme.example' } }));
+  assert.strictEqual(si.status, 0, si.stderr);
+  assert.strictEqual(si.stdout.trim().split('\n').length, 1);
+  assert.strictEqual(cli('site-decides', '--operations', ops({ version: 1 })).status, 1);
+  assert.strictEqual(cli('site-decides', '--operations', ops('{ roto')).status, 2);
+  assert.strictEqual(cli('site-decides').status, 2);
 });

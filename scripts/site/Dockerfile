@@ -44,6 +44,8 @@ COPY scripts/metrics/ scripts/metrics/
 COPY scripts/instincts/instinct-upload.js scripts/instincts/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/
 COPY scripts/nightly/projects/state-age.js scripts/nightly/projects/
+# las fichas de la noche: la sección «Lo que encontró la noche» las lee con la vista común
+COPY scripts/nightly/findings/cycle.js scripts/nightly/findings/sources.js scripts/nightly/findings/cause-names.js scripts/nightly/findings/
 COPY scripts/setup/harness/ scripts/setup/harness/
 # qué trae cada perfil de instalación: lo muestra la pestaña Configuración
 COPY scripts/setup/install-effects.json scripts/setup/

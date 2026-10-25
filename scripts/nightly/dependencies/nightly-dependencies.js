@@ -611,6 +611,9 @@ function correr(a) {
     return 2;
   }
   const hoy = a.hoy || new Date().toISOString().slice(0, 10);
+  // las decisiones confirmadas en el sitio que otra persona aprobó, antes de mirar las fichas; a la
+  // salida de error, para no romper la de --json
+  if (!a.dryRun) for (const l of cycle.aplicarDecisiones({ fuente: 'dependencias', dir: a.pending }).lineas) console.error(l);
   const raiz = expandir(a.raiz || cfg.raiz_por_defecto || '~/SourceCode');
   const pres = cfg.presupuesto_de_ruido || {};
   const tope = Number.isInteger(pres.tope_pr_por_noche) ? pres.tope_pr_por_noche : 2;

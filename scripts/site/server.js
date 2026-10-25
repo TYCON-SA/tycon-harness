@@ -744,12 +744,15 @@ async function main() {
     // al terminar cada ciclo de fuentes
     const invitaciones = require('./invitations.js').crearInvitaciones({ cfg: v.cfg, env, dataDir: v.cfg.dataDir, llave: v.cfg.sessionKey, log });
     fuentes.alRefrescar(() => { invitaciones.enviarPendientes(fuentes.config()); });
+    // «Lo que encontró la noche»: la sección de Ejecuciones donde quien mantiene confirma cada ficha
+    const hallazgos = require('./tabs/findings.js').crearRutas({ cfg: v.cfg, fuentes, log });
     const rutasExtra = [
       ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log, invitaciones }),
       // la pestaña Cómo trabaja: el recorrido de una historia, con los revisores propios editables
       ...require('./tabs/how-it-works.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
       // la pestaña Corridas: arma su vista en un hilo aparte con el espejo del buzón
-      ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
+      ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log, hallazgos: hallazgos.seccion }),
+      ...hallazgos,
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol
       ...require('./help.js').crearRutas({ log }),
     ];

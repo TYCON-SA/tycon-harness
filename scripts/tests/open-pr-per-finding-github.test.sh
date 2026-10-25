@@ -106,8 +106,11 @@ armar_arbol() { # el árbol de una noche: como prepare-tree.sh (datos de main + 
   cp -R "$RAIZ/scripts/nightly/dependencies" "$RAIZ/scripts/nightly/findings" "$J/scripts/nightly/"
   cp -R "$RAIZ/scripts/lib" "$J/scripts/lib"
   echo 'process.exit(Number(process.env.GUARD_EXIT || 0));' > "$J/scripts/ci/overlay-harness.js"
-  # repos.json: por defecto declara SHOP; REPOS_JSON=none no lo escribe; otro valor se escribe tal cual (para probar uno ilegible)
-  if [ "${REPOS_JSON:-}" != none ]; then
+  # repos.json: por defecto declara SHOP; REPOS_JSON=none lo deja sin repos.json; otro valor se escribe tal cual (para probar uno ilegible).
+  # La copia de `dependencies` trae el repos.json real donde exista (el árbol del nocturno lo tiene): «none» lo borra.
+  if [ "${REPOS_JSON:-}" = none ]; then
+    rm -f "$J/scripts/nightly/dependencies/repos.json"
+  else
     local RJ="${REPOS_JSON:-}"
     [ -n "$RJ" ] || RJ="{\"repos\":[{\"producto\":\"Shop\",\"ruta\":\"shop\",\"github\":\"$SHOP\",\"tipo\":\"npm\",\"activo\":true},{\"producto\":\"Off\",\"ruta\":\"off\",\"github\":\"acme-org/apagado\",\"tipo\":\"npm\",\"activo\":false}]}"
     printf '%s\n' "$RJ" > "$J/scripts/nightly/dependencies/repos.json"
@@ -730,6 +733,45 @@ if quiero T17; then
     issues: { [SHOP]: [I(4, "open")] } }'
   correr
   si "cerrado por una persona el mismo día: anota el rechazo con su motivo" literal "$(enmain pending nc02)" 'no aplica'
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# T67 — con el sitio andando (`site.url` en operations.json) la noche no abre pedidos nuevos; los abiertos siguen
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+if quiero T67; then
+  caso "T67 OpenPr_ConSitio_NoAbreNuevos" "@story-4.11 @ac-20"
+  montar
+  ficha pending st01 2026-10-12
+  ficha pending st02 2026-10-12
+  ficha pending st03 2026-10-12 "pr: 53" "pr_repo: $OPERATIONS_REPO"
+  armar_todo '{ pulls: { [OPERATIONS_REPO]: [P(52, "dependencias/st02", "open"),
+      P(53, "dependencias/st03", "closed", { created_at: "2026-10-12T05:00:00Z", closed_at: "2026-10-13T06:00:00Z" })] },
+    comments: { [OPERATIONS_REPO + "#53"]: [C("lider", "no aplica en el sitio", "2026-10-13T06:00:00Z")] } }'
+  printf '{"site":{"url":"https://sitio.acme.example"}}\n' > "$T/job/operations.json"
+  correr
+  si "con site.url la noche sale 0" [ "$RC" = 0 ]
+  si "…no crea ningún pull request" [ "$(nllam 'e.method==="POST"&&/\/pulls$/.test(e.ruta)')" = 0 ]
+  si "…ni empuja la rama de la ficha sin pedido" sin_rama dependencias/st01
+  si "…y dice que lo decide el sitio" contiene_i "$(SALIDA)" 'st01: .*sitio'
+  si "el pedido ya abierto se sigue adoptando: pr: 52" contiene "$(enmain pending st02)" '^pr: 52$'
+  si "el rechazo del pedido cerrado se sigue anotando, con su motivo" literal "$(enmain pending st03)" 'no aplica en el sitio'
+
+  # sin site.url, como hoy: se abre el pedido de la ficha que no tiene uno
+  montar
+  ficha pending st04 2026-10-12
+  armar_todo '{}'
+  printf '{"site":{}}\n' > "$T/job/operations.json"
+  correr
+  si "sin site.url se abre el pedido, como hoy" [ "$(nllam 'e.method==="POST"&&/\/pulls$/.test(e.ruta)')" = 1 ]
+
+  # un operations.json que no se lee se trata como «no», y se dice
+  montar
+  ficha pending st05 2026-10-12
+  armar_todo '{}'
+  printf '{ no es json\n' > "$T/job/operations.json"
+  correr
+  si "con operations.json ilegible se abre el pedido, como hoy" [ "$(nllam 'e.method==="POST"&&/\/pulls$/.test(e.ruta)')" = 1 ]
+  si "…y lo dice" contiene "$(SALIDA)" 'operations.json no se pudo leer'
 fi
 
 echo

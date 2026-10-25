@@ -3389,6 +3389,12 @@
       ]
     },
     {
+      "__nota": "story 4.11, tanda D: la sección de lo que encontró la noche en la página de Ejecuciones del sitio (scripts/site/tabs/findings.js) — una fila por ficha pendiente de las tres fuentes, sólo para quien mantiene (otro rol: 403 y sin la sección), confirmar abre un pedido al repo de operaciones con el archivo de decisión y no escribe main, el segundo clic no abre otro, en dependencias sólo «Arreglar», sin clon o con fichas ilegibles una frase, y el demo dice lo que pasaría sin red. Levanta el servidor del sitio con sesiones reales y un clon de operaciones fabricado; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-findings.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.10.3, tanda D (T17, pase adversarial): el buscador de identificadores de código en una copia (scripts/publishing/code-identifiers.js), que usa el bloque «8.10.3 D» de export-real sobre la copia de verdad. Con una lista y una copia de laboratorio: cada grafía se ve (pegada, con guion, con punto, en otra caja, con el separador repetido o escapado, empezando con un dígito), también en el nombre de un archivo o de una carpeta; una palabra más larga que lo contiene y la palabra común que el término declara no son hallazgo; el rojo nombra al término por su número; y nunca da verde sin mirar. Viaja: no usa la lista privada.",
       "raiz": "arnes",
       "ruta": "tests/code-identifiers.test.js",

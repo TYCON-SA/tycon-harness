@@ -312,25 +312,52 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
 const SIN_APLICAR_GITHUB = 'Con la opción prendida, el sitio lo mergea directo si el repo se lo deja; si pide la aprobación de otra persona, el pedido queda con auto-merge y entra cuando alguien lo apruebe.';
 
 /**
- * El pedido activo hacia main desde una rama `team-config/<idCorto>-*`: `{ enlace, rama }`, o null si no hay. Si la API
- * no contesta bien devuelve `{ error }`: «no pude mirar» no es «no hay».
+ * Los pedidos activos hacia main que salen de una rama `team-config/…`, en UNA consulta: `{ pedidos: [{ rama, numero,
+ * enlace }] }`. Si la API no contesta bien devuelve `{ error }`: «no pude mirar» no es «no hay».
  */
-async function pedidoAbierto({ remote, credencial, idCorto, urlBase, fetch: f }) {
-  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return null;
+async function pedidosAbiertos({ remote, credencial, urlBase, fetch: f }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { pedidos: [] };
   const cred = credenciales(credencial);
   const secretos = secretosDe(cred);
   const base = baseDe(remote, urlBase);
-  const prefijo = `team-config/${idCorto}-`;
-  if (remote.platform === 'azure') {
-    const r = await llamar({ url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests?searchCriteria.status=active&searchCriteria.targetRefName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`, remote, cred, fetch: f, secretos });
-    if (r.status !== 200 || !r.doc || !Array.isArray(r.doc.value)) return { error: motivoCorto(r) };
-    const p = r.doc.value.find((x) => x && String(x.sourceRefName || '').startsWith(`refs/heads/${prefijo}`));
-    return p ? { enlace: `${remote.web}/pullrequest/${p.pullRequestId}`, rama: String(p.sourceRefName).replace(/^refs\/heads\//, '') } : null;
+  // de a cien por página hasta que una venga incompleta: con más de cien abiertos, leer sólo la primera perdería pedidos
+  const todos = [];
+  for (let pagina = 0; pagina < PAGINAS_MAX; pagina++) {
+    const url = remote.platform === 'azure'
+      ? `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests?searchCriteria.status=active&searchCriteria.targetRefName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&$top=${POR_PAGINA}&$skip=${pagina * POR_PAGINA}&${API_AZURE}`
+      : `${base}/pulls?state=open&base=${RAMA_PRINCIPAL}&per_page=${POR_PAGINA}&page=${pagina + 1}`;
+    const r = await llamar({ url, remote, cred, fetch: f, secretos });
+    const lote = remote.platform === 'azure' ? (r.doc && r.doc.value) : r.doc;
+    if (r.status !== 200 || !Array.isArray(lote)) return { error: motivoCorto(r) };
+    todos.push(...lote);
+    if (lote.length < POR_PAGINA) break;
+    if (pagina === PAGINAS_MAX - 1) return { error: `más de ${POR_PAGINA * PAGINAS_MAX} pedidos abiertos` };
   }
-  const r = await llamar({ url: `${base}/pulls?state=open&base=${RAMA_PRINCIPAL}&per_page=100`, remote, cred, fetch: f, secretos });
-  if (r.status !== 200 || !Array.isArray(r.doc)) return { error: motivoCorto(r) };
-  const p = r.doc.find((x) => x && x.head && String(x.head.ref || '').startsWith(prefijo));
-  return p ? { enlace: p.html_url, rama: p.head.ref } : null;
+  if (remote.platform === 'azure') {
+    return { pedidos: todos.filter((x) => x && String(x.sourceRefName || '').startsWith('refs/heads/team-config/'))
+      .map((x) => ({ rama: String(x.sourceRefName).replace(/^refs\/heads\//, ''), numero: x.pullRequestId, enlace: `${remote.web}/pullrequest/${x.pullRequestId}` })) };
+  }
+  return { pedidos: todos.filter((x) => x && x.head && String(x.head.ref || '').startsWith('team-config/'))
+    .map((x) => ({ rama: x.head.ref, numero: x.number, enlace: x.html_url })) };
+}
+const POR_PAGINA = 100;
+const PAGINAS_MAX = 20;
+
+// Lo que sigue al `<idCorto>-` en la rama de un pedido: la marca de `stamp`. Comparar sólo el prefijo confundiría
+// `repos` con `repos-otro`.
+const COLA_DE_RAMA = /^\d{8}-\d{6}$/;
+const esRamaDe = (rama, idCorto) => rama.startsWith(`team-config/${idCorto}-`) && COLA_DE_RAMA.test(rama.slice(`team-config/${idCorto}-`.length));
+
+/**
+ * El pedido activo hacia main desde la rama `team-config/<idCorto>-<marca>`: `{ enlace, rama }`, o null si no hay. Si
+ * la API no contesta bien devuelve `{ error }`: «no pude mirar» no es «no hay».
+ */
+async function pedidoAbierto({ remote, credencial, idCorto, urlBase, fetch: f }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return null;
+  const r = await pedidosAbiertos({ remote, credencial, urlBase, fetch: f });
+  if (r.error) return { error: r.error };
+  const p = r.pedidos.find((x) => esRamaDe(x.rama, idCorto));
+  return p ? { enlace: p.enlace, rama: p.rama } : null;
 }
 
 // La línea con que el cuerpo de un pedido lleva la marca de su propuesta: `propuesta: <32 hex en minúscula>`.
@@ -500,7 +527,7 @@ function enlaceManual(remote, rama) {
  * { ok: true, codigo: 'aplicado' | 'no_aplica_solo' } o { ok: false, codigo: 'quedo_abierto' } (ver `aplicarPedido`).
  * `esperar(ms)` se inyecta para las pruebas.
  */
-async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, archivos: varios = null, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {}, aplicarSolo = false, marca = null, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, archivos: varios = null, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {}, aplicarSolo = false, marca = null, titulo: tituloPropio = null, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: M('rp.sinPlataforma') };
   const cred = credenciales(credencial);
   if (!cred.git || !cred.api) return { ok: false, codigo: 'sin_credencial', message: M('rp.sinCredencial') };
@@ -564,7 +591,7 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
 
     // 5. el commit, sin tocar el árbol ni el índice del clon
     const rama = `team-config/${idCorto}-${stamp(fechaDe(now))}`;
-    const titulo = `Configuración de la organización: ${archivo}`;
+    const titulo = tituloPropio || `Configuración de la organización: ${archivo}`;
     const indice = path.join(os.tmpdir(), `repo-proposal-${process.pid}-${crypto.randomBytes(6).toString('hex')}.index`);
     const envIndice = { ...env, GIT_INDEX_FILE: indice };
     const fecha = fechaDe(now).toISOString();
@@ -841,4 +868,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos,enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos,enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

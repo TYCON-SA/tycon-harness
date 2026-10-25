@@ -3,7 +3,7 @@
 // palabras, y la pieza se los lee con un mapa; ejecuciones escribe la ficha común de cycle.js. Los instintos entran
 // después: el ciclo los admite, esta lista todavía no.
 
-const { formatoPorSecciones, parsear, carpetaDe: carpetaComun } = require('./cycle.js');
+const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA } = require('./cycle.js');
 const { nombreDe } = require('./cause-names.js');
 
 // ── dependencias: su formato y sus palabras de hoy ─────────────────────────────────────────────
@@ -84,30 +84,66 @@ const esVieja = (txt) => !/^fuente:/m.test(String(txt)) && /^reglas:/m.test(Stri
 
 const fecha = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
 const entero = (v) => (/^\d+$/.test(String(v)) ? Number(v) : null);
+const ENLACE = /^https:\/\/[^\s"'<>\\]{1,500}$/;
+const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;
+const SIN_FORMA = 'razón sin la forma esperada';
+
+/** La propuesta del modelo, con su razón pasada otra vez por el filtro: la que no lo pasa no se muestra. */
+function propuestaDe(accion, razon, modelo) {
+  if (!ACCIONES.includes(accion)) return null;
+  const p = { accion, razon: razonSegura(razon) ? razon : SIN_FORMA };
+  if (typeof modelo === 'string' && MODELO.test(modelo)) p.modelo = modelo;
+  return p;
+}
+const motivoDe = (m) => (MOTIVOS_SIN_PROPUESTA.includes(m) ? m : null);
+
+/** El pedido de trabajo: un enlace si tiene forma de enlace, si no su número o clave; nada que no tenga forma. */
+function pedidoDe(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const t = String(v).trim();
+  // el vacío de YAML escrito a mano (`null`, `~`) no es un pedido: así lo lee también daily-summary.js
+  if (/^(null|~)$/i.test(t)) return null;
+  if (ENLACE.test(t)) return { id: null, enlace: t };
+  if (/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(t)) return { id: t, enlace: null };
+  return null;
+}
 
 /**
  * La vista común de una ficha de cualquier fuente: `{ fuente, id, causa, nombre, primera_vez, ultima_vez, apariciones,
- * veredicto, estado }`, más `resuelto` y `reaparecido` (las fechas de dependencias). Sin texto libre. Una ficha que no se
- * lee lanza; una vieja de ejecuciones da `null`.
+ * veredicto, estado }`, más `resuelto` y `reaparecido` (las fechas de dependencias), la propuesta del modelo
+ * (`propuesta`, `propuesta_motivo`), el pedido de trabajo (`pedido: { id, enlace }`), `asignado`, las `noches` de
+ * dependencias y `pr_noche`, el número del pedido que la noche abrió por la ficha si sigue abierto. Sin texto libre. Una ficha que no se lee lanza; una vieja de ejecuciones da `null`.
  */
 function comoFicha(fuente, txt) {
   if (fuente === 'ejecuciones') {
     if (esVieja(txt)) return null;
     const f = parsear(txt);
+    const pr = f.propuesta;
     return { fuente, id: f.id, causa: f.causa, nombre: f.nombre, primera_vez: f.primera_vez, ultima_vez: f.ultima_vez,
-      apariciones: f.apariciones, veredicto: f.veredicto, estado: f.estado, resuelto: null, reaparecido: null };
+      apariciones: f.apariciones, veredicto: f.veredicto, estado: f.estado, resuelto: null, reaparecido: null,
+      propuesta: pr ? propuestaDe(pr.accion, pr.razon, pr.modelo) : null, propuesta_motivo: motivoDe(f.propuesta_motivo),
+      pedido: pedidoDe(f.pedido), asignado: f.asignado || null, noches: null, pr_noche: null };
   }
   const reg = FUENTES[fuente];
   if (!reg || !reg.formato) throw new Error(`fuente desconocida: ${fuente}`);
   const fi = reg.formato.leerFicha(String(txt));
   const e = fi.escalares;
   const { estado, veredicto } = reg.vista(fi);
+  // el pedido que abrió la noche por la ficha (`pr:`), si sigue abierto: ni rechazado ni cerrado
+  const prNoche = e.rechazado || e.pr_cerrado ? null : entero(e.pr);
+  const comun = { veredicto, estado, propuesta: propuestaDe(e.propuesta_accion, e.propuesta_razon, e.propuesta_modelo),
+    propuesta_motivo: motivoDe(e.propuesta_motivo), asignado: null, pr_noche: prNoche };
   if (fuente === 'dependencias') {
+    // `pedidos:` es la lista «Proyecto: id» de los pedidos del líder; el último es el vigente
+    const ultimo = reg.formato.listaDe(String(txt), 'pedidos').slice(-1)[0];
+    const m = ultimo ? /:\s*(\d+)$/.exec(ultimo) : null;
     return { fuente, id: e.id || null, causa: e.id || null, nombre: nombreDe('dependencias', e), primera_vez: fecha(e.detectado),
-      ultima_vez: null, apariciones: entero(e.noches), veredicto, estado, resuelto: fecha(e.resuelto), reaparecido: fecha(e.reaparecido) };
+      ultima_vez: null, apariciones: entero(e.noches), resuelto: fecha(e.resuelto), reaparecido: fecha(e.reaparecido), ...comun,
+      pedido: m ? { id: m[1], enlace: null } : null, noches: entero(e.noches) };
   }
   return { fuente, id: e.id || null, causa: e.causa || e.huella || null, nombre: nombreDe('vigilante', e), primera_vez: fecha(e.fecha),
-    ultima_vez: fecha(e.vista_por_ultima_vez), apariciones: entero(e.noches_seguidas) || 1, veredicto, estado, resuelto: null, reaparecido: null };
+    ultima_vez: fecha(e.vista_por_ultima_vez), apariciones: entero(e.noches_seguidas) || 1, resuelto: null, reaparecido: null, ...comun,
+    pedido: pedidoDe(e.story_creada), noches: null };
 }
 
 module.exports = { FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, esVieja, comoFicha };
