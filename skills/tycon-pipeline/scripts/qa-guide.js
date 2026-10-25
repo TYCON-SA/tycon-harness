@@ -757,6 +757,7 @@ function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   for (const t of cmp.missing) {
     problems.push(`(10) la maqueta muestra el ${t.kind} «${t.text}» (pantalla «${t.screenName || t.screen + 1}») y no está en ninguna pantalla de la story: corregí la pantalla, o actualizá la maqueta y aprobala de nuevo; si el texto está y el chequeo no lo ve (textos de traducción), escribí \`- «${t.text}» — differs: <por qué>\` en ${uiPath}`);
   }
+  for (const w of cmp.warnings || []) notes.push(`aviso: la maqueta muestra el motivo «${w.text}» de una casilla deshabilitada (pantalla «${w.screenName || w.screen + 1}») y no lo encontré ni como atributo title ni como texto: si es un tooltip armado de otra forma, no hace falta nada`);
   for (const d of cmp.declared) notes.push(`diferencia declarada con la maqueta: «${d.text}» — differs: ${d.motivo}`);
   for (const x of cmp.extras) notes.push(`en la pantalla y no en la maqueta: «${x.text}» (${x.rel}:${x.line})`);
   return { problems, notes };
@@ -868,6 +869,10 @@ function main() {
       lista(cmp.missing, (t) => `- «${t.text}» (${t.kind}, pantalla «${t.screenName || t.screen + 1}»)`);
       console.log('### En la pantalla y no en la maqueta');
       lista(cmp.extras, (x) => `- «${x.text}» (${x.rel}:${x.line})`);
+      if ((cmp.warnings || []).length) {
+        console.log('### Avisos: motivos de casillas deshabilitadas que no encontré');
+        lista(cmp.warnings, (t) => `- «${t.text}» (pantalla «${t.screenName || t.screen + 1}»)`);
+      }
       console.log('### Diferencias declaradas');
       lista(cmp.declared, (d) => `- «${d.text}» — differs: ${d.motivo}`);
       for (const u of cmp.unreadable) console.log(`· no pude leer ${u.rel} (${u.error}) para compararla con la maqueta`);
@@ -1074,7 +1079,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines };
+module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');
