@@ -3700,6 +3700,17 @@ test('8.116 T45 OrgConfig_CapaPideLaVersionDeLaLista', () => {
   assert.strictEqual(gate({ delegated_signing: ['refresh-after-main'] }, ORG.DELEGATED_LIST_SINCE), null);
 });
 
+// T48 OrgConfig_DelegatedListSince_EsLaEtiquetaReal @story-8.116 @ac-50
+// 🔴 Falla con: la versión imposible de antes, o una etiqueta anterior a la que trae el lector de la lista.
+test('8.116 T48 OrgConfig_DelegatedListSince_EsLaEtiquetaReal', () => {
+  const gate = (version) => ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(version)), versionImagen: '2026.10.15.48', doc: { ...PERFIL_TYCON, approvals: { delegated_signing: ['control-change'] } } });
+  assert.strictEqual(ORG.DELEGATED_LIST_SINCE, '2026.10.24.14');
+  assert.strictEqual(gate('2026.10.24.14'), null);
+  const anterior = gate('2026.10.24.13');
+  assert.match(String(anterior), /todavía no se puede proponer/);
+  assert.ok(String(anterior).includes('>= 2026.10.24.14'), anterior);
+});
+
 test('8.88 T53 · Site_Texts_EsAndEn @story-8.88 @ac-30', () => {
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const claves = ['pantalla.frenoProduccionTitulo', 'pantalla.frenoProduccion', 'pantalla.frenoProduccionPassword', 'pantalla.frenoProduccionAuto',

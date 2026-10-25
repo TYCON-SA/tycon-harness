@@ -317,11 +317,11 @@ const QA_SINCE = '2026.10.20.39';
 const GUARD_SINCE = '2026.10.22.46';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.delegated_signing` en lista y
- * `approvals.delegated_machines`: la etiqueta del merge que las trae, como GUARD_SINCE. Hasta que se escriba la etiqueta
- * real, vale una versión que ninguna capa cumple, así que el sitio no deja proponer una lista: una máquina con un lector
- * anterior la leería como un valor roto y perdería la firma delegada que ya tenía.
+ * `approvals.delegated_machines`: la etiqueta del merge que las trae, como GUARD_SINCE. El sitio no deja proponer una
+ * lista a una capa que pide menos: una máquina con un lector anterior la leería como un valor roto y perdería la firma
+ * delegada que ya tenía.
  */
-const DELEGATED_LIST_SINCE = '9999.12.31.1';
+const DELEGATED_LIST_SINCE = '2026.10.24.14';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
