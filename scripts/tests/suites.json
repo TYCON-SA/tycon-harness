@@ -2026,6 +2026,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.116 (tanda B0): la firma de un cambio de control por delegación (scripts/lib/delegated-signing.js): todas las llaves, la ficha del freno de un solo uso y la casa de la cuenta, nunca la de HOME.",
+      "raiz": "arnes",
+      "ruta": "tests/delegated-approve.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.116: la copia del lector que usa el freno de producción (scripts/production/guard-libs/lib/tycon-config.js) conoce todas las claves del lector principal; si no, un perfil con una clave nueva se lee en el freno como configuración rota.",
       "raiz": "arnes",
       "ruta": "tests/guard-libs-vocabulary.test.js",

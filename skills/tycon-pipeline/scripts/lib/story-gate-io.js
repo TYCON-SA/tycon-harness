@@ -291,7 +291,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir,
   });
   let pre = hipotetico(false);
-  if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && isHarnessRepo(abs)) pre = hipotetico(true);
+  if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && pre.kind !== 'control-approvals' && isHarnessRepo(abs)) pre = hipotetico(true);
   // Si con un repo "hipotéticamente bajo el arnés" ya pasa, pasa (no-código, harness, marker OK, ad-hoc OK).
   // Si bloquea por state-dir, installed-tree o plan, bloquea sin mirar el repo. Sólo no-lane / adhoc-cap dependen del repo.
   let repo = { repoRoot: null, repoHasTycon: false, repoHasStories: false, discoveryPartial: false };

@@ -54,7 +54,9 @@ STDIN_INTERACTIVE=0
 [ -t 0 ] && STDIN_INTERACTIVE=1
 command -v node >/dev/null 2>&1 || { echo "no pude correr: no encuentro node en el PATH"; exit 9; }
 command -v git >/dev/null 2>&1 || { echo "no pude correr: no encuentro git en el PATH"; exit 9; }
-BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" exec node - "$@" <<'JS'
+# la carpeta de este guion, para cargar la firma por delegación de su mismo árbol (la pone siempre este guion)
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || { echo "no pude correr: no encuentro la carpeta del guion"; exit 9; }
+BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" exec node - "$@" <<'JS'
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -365,7 +367,16 @@ function hashOf(entries) {
 const isApprovalDir = (f) => f.endsWith('/');
 // una constancia vale sólo si sus reglas dan su hash: el chequeo del verde lo exige, y la alarma de lo que entró a main
 // también, así que se filtra al leer
-const holdsUp = (a) => a && typeof a.hash === 'string' && Array.isArray(a.rules) && a.rules.every((r) => r && typeof r.path === 'string' && typeof r.blob === 'string') && hashOf(a.rules) === a.hash;
+// una firma por delegación (`via: "delegacion"`) vale sólo con la frase del dueño, la máquina y la sesión que firmó
+const DELEGATED_FIELDS = ['quote', 'maquina', 'signed_by_session'];
+function approvalProblem(a) {
+  if (!(a && typeof a.hash === 'string' && Array.isArray(a.rules) && a.rules.every((r) => r && typeof r.path === 'string' && typeof r.blob === 'string') && hashOf(a.rules) === a.hash)) return 'sus reglas no dan su hash';
+  if (a.via === undefined) return null;
+  if (a.via !== 'delegacion') return `su vía «${safe(a.via)}» no es una que el arnés conozca`;
+  const missing = DELEGATED_FIELDS.filter((k) => typeof a[k] !== 'string' || !a[k].trim());
+  return missing.length ? `es una firma por delegación sin ${missing.join(', ')}` : null;
+}
+const holdsUp = (a) => approvalProblem(a) === null;
 // por qué un destino de `approve` no sirve (null si sirve): dentro del repo y sin enlaces en lo que ya existe del camino
 function insideRepo(root, out) {
   if (path.isAbsolute(out)) return 'es una ruta absoluta';
@@ -390,14 +401,15 @@ function readApprovals(root, rev, files) {
     if (isApprovalDir(file)) { out.push(...readApprovalDir(root, rev, file)); continue; }
     const text = show(root, rev, file);
     if (text === null) continue;
-    let bad = 0; let wrongHash = 0;
+    let bad = 0; const wrong = new Map();
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
       let a; try { a = JSON.parse(line); } catch (_) { bad++; continue; }
-      if (holdsUp(a)) out.push(a); else wrongHash++;
+      const why = approvalProblem(a);
+      if (why === null) out.push(a); else wrong.set(why, (wrong.get(why) || 0) + 1);
     }
     if (bad) console.log(`⚠️ base-controls: aviso — ${bad === 1 ? 'una línea' : `${bad} líneas`} de ${file} no se lee${bad === 1 ? '' : 'n'} (en ${short(rev)}): no firma${bad === 1 ? '' : 'n'} nada`);
-    if (wrongHash) notSigning(`${wrongHash === 1 ? 'una línea' : `${wrongHash} líneas`} de ${file}`, rev, 'sus reglas no dan su hash');
+    for (const [why, n] of wrong) notSigning(`${n === 1 ? 'una línea' : `${n} líneas`} de ${file}`, rev, why);
   }
   return out;
 }
@@ -417,7 +429,8 @@ function readApprovalDir(root, rev, dir) {
     const text = show(root, rev, p);
     let a; try { a = text === null ? null : JSON.parse(text); } catch (_) { a = null; }
     if (a === null) { notSigning(p, rev, 'no se lee'); continue; }
-    if (!holdsUp(a)) { notSigning(p, rev, 'sus reglas no dan su hash'); continue; }
+    const why = approvalProblem(a);
+    if (why !== null) { notSigning(p, rev, why); continue; }
     if (name !== `${a.hash}.json`) { notSigning(p, rev, `el nombre no es su hash (${short(a.hash)}…)`); continue; }
     out.push(a);
   }
@@ -697,7 +710,23 @@ function cmdPending() {
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
   console.log(`hash: ${a.hash}`);
-  console.log(`la firma, desde tu terminal: ${signCommand(a.root, a.entries, a.approvalsOut)}`);
+  const terminal = signCommand(a.root, a.entries, a.approvalsOut);
+  console.log(`la firma, desde tu terminal: ${terminal}`);
+  // donde el perfil delega la firma, la muestra queda anotada en la cuenta: sin ella no se firma por delegación
+  const ds = delegatedSigning();
+  if (!ds) { console.log('⚠️ base-controls: aviso — no encontré la firma por delegación junto a este guion: sólo la terminal'); return; }
+  console.log(`o por delegación, si el perfil del equipo la prende en esta máquina: ${ds.delegatedCommand(terminal, ds.relayRole())}`);
+  const m = ds.machineDelegates();
+  if (!m.ok) { console.log(`base-controls: acá no se firma por delegación — ${m.reason}`); return; }
+  const shown = ds.recordShown({ hash: a.hash });
+  if (!shown.ok) console.log(`⚠️ base-controls: aviso — ${shown.reason}: la firma por delegación no va a andar, la de la terminal sí`);
+}
+
+// la firma por delegación, del mismo árbol que este guion; sin ella, sólo la terminal
+function delegatedSigning() {
+  const dir = process.env.BASE_CONTROLS_SELF_DIR;
+  if (!dir) return null;
+  try { return require(path.join(dir, '..', 'lib', 'delegated-signing.js')); } catch (_) { return null; }
 }
 
 function readFromTty(prompt) {
@@ -732,7 +761,8 @@ function cmdApprove() {
       process.exit(1);
     }
   }
-  if (process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
+  const delegated = rest.includes('--relayed-by');
+  if (!delegated && process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
     console.error('🔒 run-base-controls approve: pide una terminal interactiva de verdad (la constancia es del dueño, no de un agente). Correlo vos, en tu terminal.');
     process.exit(2);
   }
@@ -748,13 +778,31 @@ function cmdApprove() {
   // el destino puede salir del inventario del pedido: se mira antes de preguntar, y la persona ve adónde va la firma
   const where = insideRepo(root, out);
   if (where) { console.error(`run-base-controls approve: el destino ${safe(out)} ${where}: no se firmó nada.`); process.exit(2); }
+  if (delegated) { approveDelegated(root, out, entries); return; }
   console.error('Vas a firmar, como dueño, este cambio de control:');
   for (const e of entries) console.error(`   ${safe(e.path)} (blob ${short(e.blob)})`);
   console.error(`La firma va a: ${safe(out)}${isApprovalDir(out) ? `${hashOf(entries)}.json` : ''}`);
   const answer = readFromTty('Escribí «apruebo» para firmarlo: ');
   if (answer === null) { console.error('🔒 run-base-controls approve: no pude abrir /dev/tty: pide una terminal interactiva de verdad.'); process.exit(2); }
   if (answer !== 'apruebo') { console.error('run-base-controls approve: no se firmó nada.'); process.exit(1); }
-  const line = approvalLine(entries);
+  writeApproval(root, out, entries, approvalLine(entries));
+}
+
+// la firma en nombre del dueño: sólo con todas las llaves (scripts/lib/delegated-signing.js); si falta una, no se firma
+// y se repite el comando de la terminal
+function approveDelegated(root, out, entries) {
+  const ds = delegatedSigning();
+  const terminal = signCommand(root, entries, out);
+  if (!ds) { console.error(`run-base-controls approve: no encuentro la firma por delegación al lado de este guion: no se firmó nada. Desde tu terminal: ${terminal}`); process.exit(1); }
+  const hash = hashOf(entries);
+  const check = ds.checkDelegatedApprove({ args: rest, hash, entries });
+  if (!check.ok) { console.error(`run-base-controls approve: no se firmó por delegación: ${check.reason}. Desde tu terminal: ${terminal}`); process.exit(1); }
+  const w = ds.writeDelegatedApproval({ hash, entries, fields: check.fields, writeApproval: (line) => writeApproval(root, out, entries, line) });
+  if (!w.ok) { console.error(`run-base-controls approve: ${w.reason}`); process.exit(1); }
+}
+
+// la constancia en un .jsonl, o un archivo por firma en una carpeta
+function writeApproval(root, out, entries, line) {
   if (!isApprovalDir(out)) {
     const dest = path.join(root, out);
     fs.mkdirSync(path.dirname(dest), { recursive: true });

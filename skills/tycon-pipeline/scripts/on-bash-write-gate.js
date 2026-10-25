@@ -1180,6 +1180,226 @@ function movidosFueraDeMd(cmd) {
   return out;
 }
 
+/**
+ * Las constancias de cambio de control que el comando pone por otro camino que el guion: lo que deja una copia, un
+ * movimiento o un enlace (`cp`, `git mv`, `install`, `rsync`, `ditto`, `scp`, `ln`) en su destino (el último argumento o
+ * el de `-t`), también adentro de lo que copia una carpeta entera; lo que se repone desde otra rama (`git checkout <ref>
+ * -- x`, `git restore --source`); lo que entra directo al índice (`git update-index`); y un parche (`git apply`, `git am`,
+ * `patch`) que las nombra. Un parche que no se puede leer antes de aplicarlo (por la entrada estándar, que no existe
+ * todavía, ilegible) y una copia recursiva a un repo de algo que no se puede mirar (remota, que no existe) también
+ * cuentan: lo que no se ve no pasa. Las escrituras comunes (`>`, `tee`, `node -e`) las ve `extractWriteTargets`.
+ * Casos: scripts/controls-bench/cases/hooks/01-frenos-duros.json
+ */
+function constanciasTocadas(cmd, cwd) {
+  const { isControlApproval } = require('./lib/story-gate.js');
+  let base = cwd;
+  const abs = (raw) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
+  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw));
+  const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
+  const out = [];
+  const todos = comandosAnidados(cmd).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/));
+  for (const tramo of todos) {
+    base = cwd;
+    // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia
+    const words = palabras(sinPalabrasDelShell(tramo).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ')).filter((w) => w !== '' && w !== '\\');
+    let c = nombreDeComando(words[0]);
+    let args = words.slice(1);
+    if (c === 'git') {
+      // las opciones de git antes del subcomando, con su valor; `-C` cambia la carpeta de las rutas
+      let i = 0;
+      while (i < args.length && args[i].startsWith('-')) {
+        if (/^(?:-C|-c|--git-dir|--work-tree|--namespace|--exec-path)$/.test(args[i])) {
+          if (args[i] === '-C' && args[i + 1]) base = path.resolve(base, args[i + 1]);
+          i += 2;
+        } else i += 1;
+      }
+      c = `git ${args[i]}`;
+      args = args.slice(i + 1);
+    }
+    const sueltos = args.filter((w) => !w.startsWith('-') && !w.startsWith('<'));
+    if (['cp', 'mv', 'git mv', 'install', 'rsync', 'ditto', 'scp', 'ln'].includes(c)) {
+      const copia = destinoDeLaCopia(args, ['cp', 'mv', 'install', 'ln'].includes(c));
+      if (!copia) continue;
+      if (es(copia.destino)) { out.push(copia.destino); continue; }
+      // cp, install, scp y rsync sólo bajan a una carpeta con su opción
+      const recursiva = !['cp', 'install', 'scp', 'rsync'].includes(c) || args.some((w) => /^-[A-Za-z]*[rRa][A-Za-z]*$/.test(w) || w === '--recursive' || w === '--archive');
+      const destino = abs(copia.destino);
+      let esCarpeta = copia.carpeta || /[\\/]$/.test(copia.destino);
+      try { esCarpeta = esCarpeta || fs.statSync(destino).isDirectory(); } catch (_) { /* un destino nuevo es el nombre de la copia */ }
+      for (const o of copia.origenes) {
+        const adentro = /[\\/]\.?$/.test(o);
+        const lugar = esCarpeta && !adentro ? path.join(destino, path.basename(o.replace(/[\\/]\.?$/, ''))) : destino;
+        if (esRuta(lugar)) { out.push(o); break; }
+        if (!recursiva) continue;
+        // un enlace a una carpeta se sigue: la copia trae lo de adentro
+        let st = null;
+        try { st = fs.statSync(abs(o)); } catch (_) { /* remoto, o todavía no existe */ }
+        if (!st) {
+          if (dentroDeUnRepo(destino)) { out.push(`${o} (no se puede ver qué trae)`); break; }
+          continue;
+        }
+        if (!st.isDirectory()) continue;
+        const hallados = nombresDeConstancia(abs(o));
+        if (hallados === null) {
+          if (dentroDeUnRepo(destino)) { out.push(`${o} (no pude revisar todo lo que trae)`); break; }
+          continue;
+        }
+        if (hallados.some((rel) => esRuta(path.join(lugar, rel)))) { out.push(o); break; }
+      }
+    } else if (c === 'git update-index' || (c === 'git checkout' && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2)) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
+      out.push(...sueltos.flatMap((w) => w.split(',')).filter(es));
+    } else if (c === 'git apply' || c === 'git am' || c === 'patch') {
+      const textos = [];
+      const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);
+      if (heredoc) {
+        const cuerpo = new RegExp(`<<-?[ \\t]*(['"]?)${heredoc[2]}\\1[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*${heredoc[2]}[ \\t]*(?=\\n|$)`).exec(cmd);
+        textos.push(cuerpo ? cuerpo[2] : null);
+      }
+      const entrada = /(?<!<)<(?!<)\s*([^\s<>;&|]+)/.exec(tramo);
+      // la marca del texto en línea (`<<'EOF'`) no es un archivo
+      const sinMarca = heredoc ? args.filter((w) => w !== heredoc[2] && !/^<</.test(w)) : args;
+      const parches = c === 'patch' ? parchesDePatch(sinMarca) : sinMarca.filter((w) => !w.startsWith('-') && !w.startsWith('<'));
+      if (entrada) parches.push(entrada[1]);
+      for (const p of parches) {
+        try { textos.push(fs.readFileSync(abs(p), 'utf8')); } catch (e) { out.push(`${p} (no se pudo leer el parche: ${e.code || e.message})`); }
+      }
+      const porEntrada = !heredoc && !entrada && (parches.length === 0 || args.includes('-'));
+      if (porEntrada) out.push(`${tramo.trim()} (un parche por la entrada estándar no se puede mirar antes)`);
+      for (const t of textos) {
+        if (t === null) out.push(`${tramo.trim()} (no encontré el final del texto del parche)`);
+        else if (parcheNombraConstancia(t, isControlApproval)) out.push(tramo.trim());
+      }
+    }
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * El destino y los orígenes de una copia: el de `-t`/`--target-directory` (siempre una carpeta, en los comandos donde
+ * `-t` es eso: en `rsync` es otra cosa), o el último argumento.
+ */
+function destinoDeLaCopia(args, conT) {
+  let t = null;
+  const sueltos = [];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--target-directory' || (conT && w === '-t')) { t = args[++i]; continue; }
+    const pegado = conT ? /^(?:--target-directory=|-t)(.+)$/.exec(w) : /^--target-directory=(.+)$/.exec(w);
+    if (pegado) { t = pegado[1]; continue; }
+    if (w.startsWith('-') || w.startsWith('<')) continue;
+    sueltos.push(w);
+  }
+  if (t) return { destino: t, origenes: sueltos, carpeta: true };
+  if (sueltos.length < 2) return null;
+  return { destino: sueltos[sueltos.length - 1], origenes: sueltos.slice(0, -1), carpeta: false };
+}
+
+/** Los archivos de parche de un `patch`: el de `-i`/`--input`, o el segundo argumento suelto (el primero es el que se parcha). */
+function parchesDePatch(args) {
+  const out = [];
+  const sueltos = [];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '-i' || w === '--input') { if (args[i + 1]) out.push(args[++i]); continue; }
+    const pegado = /^(?:--input=|-i)(.+)$/.exec(w);
+    if (pegado) { out.push(pegado[1]); continue; }
+    // las opciones de `patch` que llevan su valor aparte no son el archivo a parchar
+    if (/^-[pdoDrBVYzFgx]$/.test(w)) { i++; continue; }
+    if (!w.startsWith('-') && !w.startsWith('<')) sueltos.push(w);
+  }
+  if (sueltos.length >= 2) out.push(sueltos[1]);
+  return out;
+}
+
+/** ¿El texto de un parche nombra una constancia? Con las rutas que git escribe entre comillas y con escapes octales. */
+function parcheNombraConstancia(texto, isControlApproval) {
+  const t = String(texto).replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)));
+  if (/control-changes/i.test(t)) return true;
+  const rutas = [];
+  for (const linea of t.split(/\r?\n/)) {
+    let m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(linea);
+    if (m) { rutas.push(m[1], m[2]); continue; }
+    m = /^(?:\+\+\+|---)\s+"?(?:[ab]\/)?([^"\t]+)"?/.exec(linea) || /^(?:rename|copy) (?:from|to) (.+)$/.exec(linea);
+    if (m) rutas.push(m[1].trim());
+  }
+  return rutas.some((r) => isControlApproval(r));
+}
+
+/** Lo que se llama como una constancia adentro de una carpeta, en rutas relativas; null si no se pudo revisar entera. */
+function nombresDeConstancia(dir, tope = 20000) {
+  const out = [];
+  const pendientes = [''];
+  let vistos = 0;
+  while (pendientes.length) {
+    const rel = pendientes.shift();
+    let entradas;
+    try { entradas = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }); } catch (_) { return null; }
+    for (const e of entradas) {
+      if (++vistos > tope) return null;
+      const r = path.join(rel, e.name);
+      if (/^control-changes/i.test(e.name)) out.push(r);
+      let carpeta = e.isDirectory();
+      // un enlace a una carpeta se sigue (`cp -L`, `rsync -L`); el tope corta un enlace que vuelve sobre sí
+      if (e.isSymbolicLink()) { try { carpeta = fs.statSync(path.join(dir, r)).isDirectory(); } catch (_) { carpeta = false; } }
+      if (carpeta && e.name !== '.git') pendientes.push(r);
+    }
+  }
+  return out;
+}
+
+// lo que el shell pone delante de un comando sin cambiar cuál corre: `{`, `then`, `do`, `!`, `xargs` con sus opciones
+const PALABRA_DEL_SHELL = /^(?:(?:\{|then|do|else|elif|if|while|until|!|time)\s+|xargs\s+(?:(?:-[InLPdEs]\s+\S+|-\S+)\s+)*)/;
+
+/** El tramo sin sus prefijos ni las palabras del shell que van delante del comando. */
+function sinPalabrasDelShell(tramo) {
+  let t = String(tramo).trim();
+  for (;;) {
+    const n = t.replace(PREFIJO, '').replace(PALABRA_DEL_SHELL, '').trim();
+    if (n === t) return t;
+    t = n;
+  }
+}
+
+/**
+ * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
+ * Cada uno se mira como otro comando.
+ */
+function comandosAnidados(cmd, hondo = 0) {
+  const out = [cmd];
+  if (hondo > 3) return out;
+  const sumar = (c) => { if (c && String(c).trim()) out.push(...comandosAnidados(String(c), hondo + 1)); };
+  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumar(m[1]);
+  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumar(m[1]);
+  for (const tramo of tramos(cmd)) {
+    const w = palabras(sinPalabrasDelShell(tramo)).filter((x) => x !== '');
+    const c = nombreDeComando(w[0]);
+    if (['bash', 'sh', 'zsh', 'dash'].includes(c)) {
+      const i = w.findIndex((x, k) => k > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
+      if (i > 0) sumar(w[i + 1]);
+    }
+    if (c === 'eval') sumar(w.slice(1).join(' '));
+    if (c === 'find') {
+      const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
+      if (i >= 0) {
+        const fin = w.findIndex((x, k) => k > i && (x === ';' || x === '+' || x === '\\;' || x === '\\'));
+        sumar(w.slice(i + 1, fin < 0 ? undefined : fin).join(' '));
+      }
+    }
+  }
+  return out;
+}
+
+/** ¿La ruta queda adentro de un repo de git? Sube desde la carpeta que exista más cerca. */
+function dentroDeUnRepo(p) {
+  let d = path.resolve(p);
+  for (;;) {
+    try { if (fs.existsSync(path.join(d, '.git'))) return true; } catch (_) { return true; }
+    const arriba = path.dirname(d);
+    if (arriba === d) return false;
+    d = arriba;
+  }
+}
+
 /** Los destinos de los que copian sin que `extractWriteTargets` los vea: `install`, `rsync`, `ditto`, `scp`, `curl -o`, `wget -O`. */
 function destinosDeCopia(cmd) {
   const out = [];
@@ -1700,11 +1920,14 @@ function handleCarrilEHistoria(event, opts = {}) {
       cwd = carpetas.find((c) => enRepo(c, true)) || carpetas.find((c) => enRepo(c, false)) || carpetas[0];
     } catch (e) { logHookError(e); }
   }
-  // el estado y el árbol instalado del arnés se miran por ruta real, sea cual sea la extensión
+  // el estado y el árbol instalado del arnés se miran por ruta real, sea cual sea la extensión; las constancias de los
+  // cambios de control, por su final
   const stateReal = installedTree.realPath(stateDir);
+  const { isControlApproval } = require('./lib/story-gate.js');
   const protegido = (abs) => {
     const real = installedTree.realPath(abs);
-    return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true });
+    return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true })
+      || isControlApproval(abs) || isControlApproval(real);
   };
   // un `.md` también se mira en un `sed -i`: puede ser una historia en borrador (el freno de historia sin validar)
   // (con las variables del comando expandidas: `sed -i … "$F"` con `F=story.md`)
@@ -1712,6 +1935,11 @@ function handleCarrilEHistoria(event, opts = {}) {
     const valor = expandirRuta(cmd, t).valor;
     return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(resolveTarget(valor, cwd, process.platform, { homeVariable: true }));
   };
+  // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
+  const constancias = constanciasTocadas(cmd, cwd);
+  if (constancias.length) {
+    return { block: require('./lib/story-gate.js').blockMessage({ kind: 'control-approvals' }, { filePath: constancias[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
   if (!laneOff) {
     // los marcadores de la ejecución, de esta sesión o de otra, con la ejecución abierta o no
     const tocados = marcadoresTocados(cmd, cwd, stateDir);

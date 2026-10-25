@@ -37,6 +37,8 @@
 #   T23 BaseControls_TwoSignedPRs_MergeWithoutConflict — dos pedidos firmados, cada uno en su archivo, entran uno detrás
 #       del otro sin conflicto y la revisión del segundo sobre la base nueva sale verde
 #   T24 BaseControls_ApprovalFolder_Classified — la carpeta de constancias queda clasificada en el inventario
+#   T53 BaseControls_Run_AceptaLaLineaDelegada — la línea firmada por delegación vale completa; sin la frase, la máquina
+#       o la sesión que firmó no firma nada (en la carpeta y en el jsonl)
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -861,6 +863,28 @@ lacks "T24 …sin «sin clasificar»" "${T}/t24.out" "sin clasificar"
 is "T24 el inventario real: las carpetas primero, los jsonl viejos después" '[".github/control-changes/",".tycon/control-changes/",".github/control-changes.jsonl",".tycon/control-changes.jsonl"]' \
   "$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).approvals))' "${ROOT}/scripts/ci/controls-from-base.json")"
 grep -qF '".github/control-changes/**"' "${ROOT}/scripts/publishing/allowlist.json" && ok "T24 la carpeta de firmas del público se publica" || no "T24 allowlist.json no publica .github/control-changes/**"
+
+# T53 BaseControls_Run_AceptaLaLineaDelegada @story-8.116 @ac-55
+# 🔴 Falla con: una revisión que no acepta la línea firmada por delegación, o que acepta una sin sus campos.
+# firma_delegada '<entradas json>' '<campos que se sacan, separados por coma>'
+firma_delegada() { node -e 'const l=JSON.parse(process.argv[1]);Object.assign(l,{via:"delegacion",delegated_by:"dueño",signed_by_session:"sesion-designada",quote:"Firmá el cambio, lo leí",quote_at:"2026-10-25T12:00:10.000Z",maquina:"a1b2c3d4e5f60718"});for(const k of process.argv[2].split(",").filter(Boolean))delete l[k];console.log(JSON.stringify(l))' "$(firma "$1")" "$2"; }
+R="${T}/t53"; carpeta_base "${R}"; H="$(hash_de "${ENTRIES}")"
+lab_git -C "${R}" checkout -q -b t53-completa; mkdir -p "${R}/${CARPETA}"; firma_delegada "${ENTRIES}" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "firma delegada"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-completa > "${T}/t53-completa.out" 2>&1; RC=$?
+is "T53 la línea delegada completa vale" "0" "${RC}"
+has "T53 …y lo dice nombrando la regla" "${T}/t53-completa.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+for falta in quote maquina signed_by_session; do
+  lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t53-sin-${falta}"; mkdir -p "${R}/${CARPETA}"
+  firma_delegada "${ENTRIES}" "${falta}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "sin ${falta}"
+  bash "${SCRIPT}" run --root "${R}" --base main --range "main...t53-sin-${falta}" > "${T}/t53-${falta}.out" 2>&1; RC=$?
+  is "T53 la línea delegada sin ${falta} no firma (rojo)" "1" "${RC}"
+  has "T53 …y dice qué le falta" "${T}/t53-${falta}.out" "es una firma por delegación sin ${falta}"
+done
+lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b t53-jsonl; mkdir -p "${R}/.tycon"
+firma_delegada "${ENTRIES}" "quote" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "jsonl sin quote"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-jsonl > "${T}/t53-jsonl.out" 2>&1; RC=$?
+is "T53 en el jsonl, la línea delegada sin quote tampoco firma" "1" "${RC}"
+has "T53 …y lo dice" "${T}/t53-jsonl.out" "es una firma por delegación sin quote"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
