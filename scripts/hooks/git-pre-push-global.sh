@@ -19,9 +19,12 @@
 #      arnés (por el árbol, por lo que se empuja o por el repo al que va) y qué mira. Este guion no decide nada de eso
 #      mientras el freno se pueda correr: decidirlo acá, mirando sólo si el árbol de trabajo trae un archivo, dejaría
 #      salir sin mirar una rama del arnés empujada desde otra rama o desde un repo sin árbol.
-#   3. Si el freno no se puede correr (no está el guion, no hay `node`): el empuje sale si el remoto claramente no es
-#      público (Azure DevOps, o una carpeta local cuya cadena de `origin` termina en una carpeta), o si nada dice que
-#      sea del arnés (ni el árbol ni lo que se empuja traen scripts/install-tycon-hooks.sh). Si no, NO sale.
+#   2b. Si el freno deja salir, corre las reglas que vigilan todo el repo del arnés (scripts/hooks/pre-push-repo-rules.js,
+#      del mismo arnés) sobre el commit que viaja; el guion decide si el empuje es del arnés. Si frena, no sale.
+#   3. Si el freno no se puede correr (no está el guion, no hay `node`): el empuje sale si nada dice que sea del arnés
+#      (ni el árbol ni lo que se empuja traen scripts/install-tycon-hooks.sh). Si lo es, NO sale, tampoco a un remoto
+#      que no es público (Azure DevOps, o una carpeta local cuya cadena de `origin` termina en una carpeta): las reglas
+#      del repo corren a cualquier remoto y sin `node` no se pueden medir.
 #      Límite declarado de este último paso: sin el freno, este guion no sabe qué repos el arnés declara suyos (la
 #      tercera señal del freno); un repo del arnés que no trae ese archivo, empujado desde una máquina sin `node` o
 #      sin arnés instalado, sale. Es el caso de una máquina donde tampoco corre nada más del arnés.
@@ -135,7 +138,21 @@ if [ -z "$WHY" ]; then
     # se le DICE (con cerrarle la entrada no alcanza: Node la reabre sobre nada y lee vacío, que es «nada que empujar»)
     "$HNODE" "$GUARD" pre-push "$REMOTE_NAME" "$REMOTE_URL" --input-unreadable </dev/null
   fi
-  exit $?
+  _rc=$?
+  [ "$_rc" -eq 0 ] || exit "$_rc"
+  # ── 2b. Las reglas que vigilan todo el repo del arnés, sobre el commit que viaja ─────────────────────────────────
+  # Del mismo arnés que el freno. El guion decide si el empuje es del arnés, a cualquier remoto. Si falta (un arnés a
+  # medio actualizar), lo decide el bloque de abajo («el freno no se pudo correr»): un empuje ajeno al arnés sale igual.
+  RULES="$(dirname "$GUARD")/pre-push-repo-rules.js"
+  if [ -f "$RULES" ]; then
+    if [ "$INPUT_OK" -eq 1 ]; then
+      feed | "$HNODE" "$RULES" "$REMOTE_NAME" "$REMOTE_URL"
+    else
+      "$HNODE" "$RULES" "$REMOTE_NAME" "$REMOTE_URL" --input-unreadable </dev/null
+    fi
+    exit $?
+  fi
+  RULES_MISSING=1
 fi
 
 # ── 3. El freno no se pudo correr: sólo pasa lo que claramente NO es público, o lo que nada dice que sea del arnés ──
@@ -177,8 +194,17 @@ $INPUT
 EOF
   return 1
 }
-if not_public "$REMOTE_URL"; then exit 0; fi
 if ! is_harness_push; then exit 0; fi
+if [ -n "${RULES_MISSING:-}" ]; then
+  echo "⛔ EMPUJE FRENADO — no encontré las reglas del repo (pre-push-repo-rules.js) junto al freno: actualizá el arnés." >&2
+  exit 1
+fi
+# un empuje del arnés corre las reglas del repo a cualquier remoto: sin el freno tampoco corren, y lo que no se midió
+# no es verde
+if not_public "$REMOTE_URL"; then
+  echo "⛔ EMPUJE FRENADO — no pude correr las reglas del repo del arnés: $WHY." >&2
+  exit 1
+fi
 echo "⛔ EMPUJE FRENADO — no pude correr el freno de publicación: $WHY." >&2
 echo "   El remoto no es de Azure DevOps ni una carpeta local, así que se trata como público: «no pude mirar» no es «limpio», y nada salió." >&2
 exit 1
