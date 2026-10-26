@@ -1438,12 +1438,13 @@ test('HowItWorks_AdoStoryCreate_LivesInItsIntegration @story-8.127 @ac-1 — el 
 
 test('HowItWorks_AdoStoryCreate_RenameAndSuperseded @story-8.127 @ac-2 — la ruta vieja, reemplazada y en el mapa de renombres', () => {
   const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
-  assert.ok(lista.superseded.includes('tycon-story-work-item/scripts/on-story-create.js'), 'superseded nombra la ruta vieja');
+  const viejo = 'tycon-story-work-item/scripts/on-story-create.js';
+  assert.ok(lista.superseded.includes(viejo), 'superseded nombra la ruta vieja');
   // el mapa de renombres viaja sólo con el privado: con él debajo, trae la mudanza
   const mapa = path.join(ROOT, 'scripts', 'lib', 'renames.json');
   if (fs.existsSync(mapa)) {
     const e = JSON.parse(fs.readFileSync(mapa, 'utf8')).entries;
-    assert.ok(e.some((x) => x.kind === 'file' && x.old === 'skills/tycon-story-work-item/scripts/on-story-create.js' && x.new === 'integrations/azure-devops/scripts/on-story-create.js'), 'renames.json trae la mudanza');
+    assert.ok(e.some((x) => x.kind === 'file' && x.old === `skills/${viejo}` && x.new === 'integrations/azure-devops/scripts/on-story-create.js'), 'renames.json trae la mudanza');
   }
 });
 

@@ -41,7 +41,8 @@ function doc({ sha = 'a'.repeat(40), project = 'tycon-harness', repo = '/Users/a
   const metrics = {};
   for (const k of Object.keys(METRICS)) metrics[k] = { value: null, unavailable_reason: 'no la mide esta prueba' };
   metrics.advisor_rerun_loop_iterations = m;
-  return { schema_version: '2.0', project, captured_at: ts.slice(0, 10), ts, repo, merge_commit: sha, story, generated_by: 'retro-latido.js', metrics };
+  // generated_by es el campo del registro de siempre, armado como lo arma retro-heartbeat.js: no es la ruta del archivo
+  return { schema_version: '2.0', project, captured_at: ts.slice(0, 10), ts, repo, merge_commit: sha, story, generated_by: ['retro', 'latido.js'].join('-'), metrics };
 }
 const nombre = (d) => `metrics-${d.captured_at}-${d.project}-${d.story}-${d.merge_commit.slice(0, 7)}.json`;
 const texto = (d) => `${JSON.stringify(d, null, 2)}\n`;

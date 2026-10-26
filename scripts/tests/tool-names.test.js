@@ -209,5 +209,12 @@ test('T64 ToolNames_RealTree_UnderCeiling @story-7.40 @ac-28 @ac-30', (t) => {
     'guides/harness-cost-tiering.md', 'guides/piezas-del-arnes.md', 'guides/maintaining/piezas-en-detalle.md',
     'skills/tycon-pipeline/scripts/on-prompt.js', 'skills/tycon-pipeline/steps/step-00-preflight.md'];
   for (const f of light) assert.ok(!r.perFile[f], `${f} todavía nombra la herramienta (${r.perFile[f]})`);
-  assert.ok(!fs.existsSync(path.join(ROOT, 'scripts', 'setup', 'install-clockify-mcp.sh')) && fs.existsSync(path.join(ROOT, 'integrations', 'clockify', 'scripts', 'install-mcp.sh')), 'el instalador del MCP vive en su integración');
+  assert.ok(fs.existsSync(path.join(ROOT, 'integrations', 'clockify', 'scripts', 'install-mcp.sh')), 'el instalador del MCP vive en su integración');
+  // la ruta de antes la dice el mapa de renombres, que viaja sólo con el privado: con él debajo, ya no está
+  const mapa = path.join(ROOT, 'scripts', 'lib', 'renames.json');
+  if (fs.existsSync(mapa)) {
+    const antes = JSON.parse(fs.readFileSync(mapa, 'utf8')).entries.filter((e) => e.kind === 'file' && e.new === 'integrations/clockify/scripts/install-mcp.sh');
+    assert.ok(antes.length > 0, 'el mapa trae la mudanza del instalador');
+    for (const e of antes) assert.ok(!fs.existsSync(path.join(ROOT, e.old)), `${e.old} ya no está`);
+  }
 });

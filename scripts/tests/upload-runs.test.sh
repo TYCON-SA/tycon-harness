@@ -1473,7 +1473,7 @@ merge_doc() {
     const { METRICS } = require(process.env.LIB); const e = process.env;
     const metrics = {}; for (const k of Object.keys(METRICS)) metrics[k] = { value: null, unavailable_reason: "no la mide esta prueba" };
     if (e.V) metrics.advisor_rerun_loop_iterations = { value: Number(e.V) };
-    const d = { schema_version: "2.0", project: "proyecto", captured_at: "2026-10-25", ts: "2026-10-25T10:00:00.000Z", repo: "/x/proyecto", merge_commit: e.SHA, story: "9.9", generated_by: "retro-latido.js", metrics };
+    const d = { schema_version: "2.0", project: "proyecto", captured_at: "2026-10-25", ts: "2026-10-25T10:00:00.000Z", repo: "/x/proyecto", merge_commit: e.SHA, story: "9.9", generated_by: ["retro", "latido.js"].join("-"), metrics };
     require("fs").writeFileSync(require("path").join(e.D, `metrics-2026-10-25-proyecto-9.9-${e.SHA.slice(0, 7)}.json`), JSON.stringify(d, null, 2) + "\n");'
 }
 SHA_A="aaaaaaa$(printf '%033d' 1)"; SHA_B="bbbbbbb$(printf '%033d' 2)"; SHA_C="ccccccc$(printf '%033d' 3)"

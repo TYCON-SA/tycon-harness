@@ -34,7 +34,7 @@
             "mkdir -p \"$HOME/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"9.9\",\"repoPath\":\"%s\",\"sessionId\":\"banco\",\"stepsCompleted\":[\"start\",\"approve-plan\"],\"stepsPending\":[\"implement\"]}' \"$(pwd -P)\" > \"$HOME/.claude/.tycon-pipeline/active/banco.json\""
           ],
           "stdin": { "tool_name": "Bash", "session_id": "banco", "tool_input": { "command": "rm -rf node_modules" } },
-          "expect": { "exit": 0, "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/escrituras-consola/banco.jsonl", "re": "\"kind\":\"delete\"" }] }
+          "expect": { "exit": 0, "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/console-writes/banco.jsonl", "re": "\"kind\":\"delete\"" }] }
         },
         {
           "id": "frena-escribir-un-manifiesto-con-node-e",

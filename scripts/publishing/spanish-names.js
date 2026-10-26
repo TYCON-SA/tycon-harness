@@ -1352,7 +1352,10 @@ const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^scripts\/publish
   /^inbox\/(?:dependencies|watcher)\/(?:pending|promoted|archived)\//,
   // La página del tablero es zona hasta que el nocturno la regenere: puede traer escrito el comando de la vista de
   // corridas con el nombre que tenía su opción, y no se edita a mano (la escribe dashboard.js, que imprime el nombre nuevo).
-  /^artifacts\/tablero-del-arnes\.html$/];
+  /^artifacts\/tablero-del-arnes\.html$/,
+  // La constancia de cada cambio de un control (`.github/control-changes/<hash>.json`): nombra los archivos tal como
+  // estaban cuando se firmó, también uno borrado, y su hash cubre esa lista. Reescribirla rompería la firma.
+  /^\.github\/control-changes\//];
 // Un `.gitignore` que ignora la carpeta vieja ENTERA (`/<vieja>/`) la nombra a propósito: es lo que esconde los restos que
 // cada máquina guarda ahí después de la mudanza —el log del grabador, sus descartados—. Sólo la línea que es la carpeta sola; un patrón de adentro (`<vieja>/drafts/`) sigue siendo una mención vieja.
 const ignoresOldFolder = (rel, line, e) => e.kind === 'folder' && path.posix.basename(rel) === '.gitignore'
