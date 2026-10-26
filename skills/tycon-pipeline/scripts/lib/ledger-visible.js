@@ -89,7 +89,8 @@ function mensaje(files, storyId, opts = {}) {
     '',
     '   Borrar o deshacer código o un manifiesto por la terminal tampoco lo ve el registro. Deshacer: reescribí el',
     `   archivo con ${codex ? 'apply_patch' : 'Write'} desde su versión de git (\`git show <commit>:<ruta>\`). Borrar: si es parte de la historia,`,
-    '   declaralo en el File List del Dev Agent Record y pedíle a la persona que lo borre (o el escape de abajo).',
+    '   nombralo en la story (files_to_delete o files_to_modify) y borralo con `git rm <ruta>`, un archivo por ruta:',
+    '   pasa y queda anotado entre los archivos tocados de la corrida.',
   ];
   const avisoArmado = !opts.armado ? [] : [
     '',

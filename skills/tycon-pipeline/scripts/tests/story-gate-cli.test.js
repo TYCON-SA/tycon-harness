@@ -987,6 +987,36 @@ test('T32 Freno_BorrarYDeshacer_FormasQueSeEscapaban', () => {
   }
 });
 
+test('T32b Freno_GitRm_LoQueLaStoryNombra_PasaYQuedaAnotado', () => {
+  // la story declara sus archivos con la ruta desde otra raíz (`app/src/a.ts`), como una story de un repo de specs
+  const { stateDir, repo } = corridaConGit();
+  const story = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'specs-')), 'story-9.9.md');
+  fs.writeFileSync(story, '---\nstory: "9.9"\nfiles_to_modify:\n  - "app/src/x.ts"\n  # se borran\n  - "app/src/a.ts"  # sin uso\n---\n# 9.9\n');
+  const mPath = path.join(stateDir, 'active', 's1.json');
+  fs.writeFileSync(mPath, JSON.stringify({ ...JSON.parse(fs.readFileSync(mPath, 'utf8')), storyPath: story, filesTouched: [] }));
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const anotadas = () => {
+    const f = path.join(stateDir, 'console-writes', 's1.jsonl');
+    return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+  };
+  conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
+    // lo que la story no nombra, una carpeta, un `rm` a secas o una mezcla siguen frenando, sin anotar nada
+    for (const cmd of ['git rm src/b/c.ts', 'git rm -r src', 'rm src/a.ts', 'git rm src/a.ts src/b/c.ts', 'git rm src/*.ts']) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+    assert.equal(anotadas().length, 0, 'un comando frenado no anota');
+    assert.equal(bash.handle(ev('git rm -q src/a.ts'), { stateDir, installedRoots: [] }), null, 'la story lo nombra');
+  });
+  const abs = path.join(repo, 'src', 'a.ts');
+  assert.ok(anotadas().some((l) => l.path === abs && l.kind === 'delete'), 'queda en el registro de la terminal');
+  const m = JSON.parse(fs.readFileSync(mPath, 'utf8'));
+  assert.deepEqual(m.filesTouched, [abs], 'queda en los archivos tocados de la corrida');
+  assert.ok((m.fileEvents || []).some((e) => e.path === abs), 'con su evento, para la vuelta siguiente de revisores');
+  const log = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(log.some((l) => l.name === 'ledger-visible' && l.status === 'story-delete' && l.paths.includes(abs)), 'y la constancia en gates.log');
+});
+
 test('T31 Freno_InterpreteConDestinoArmado_FormasQueSeEscapaban', () => {
   const { stateDir, repo } = corridaAbierta();
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
