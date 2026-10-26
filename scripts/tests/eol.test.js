@@ -35,9 +35,10 @@ const { sinGitDelPadre } = require('../lib/clean-git-env.js');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const RULE = '* text=auto eol=lf';
-// Lo único que puede venir después de la regla: un binario, o un tipo de archivo que necesita \r\n (un .bat, un .cmd),
-// que se declara `text eol=crlf` (se versiona con \n y llega al árbol de trabajo con \r\n).
-const EXCEPTION_RULE = /^\S+\s+(binary|text eol=crlf)$/;
+// Lo único que puede venir después de la regla: un binario, un tipo de archivo que necesita \r\n (un .bat, un .cmd),
+// que se declara `text eol=crlf` (se versiona con \n y llega al árbol de trabajo con \r\n), o un archivo que se junta
+// por unión al mezclar ramas (`merge=union` solo: no toca los finales de línea, que siguen con la regla).
+const EXCEPTION_RULE = /^\S+\s+(binary|text eol=crlf|merge=union)$/;
 const ATTRIBUTES = '.gitattributes';
 // El paso que normaliza el árbol de trabajo de un clon que ya existía (medido: `git checkout -- .`, `git restore .`,
 // `git reset --hard` y `git checkout-index -f -a` NO reescriben un archivo que el índice cree al día).
@@ -196,7 +197,7 @@ test('T15a Eol_Gitattributes — la regla está en la raíz y los binarios está
   const rules = rulesOf(fs.readFileSync(file, 'utf8'));
   assert.strictEqual(rules[0], RULE, `la primera regla es «${RULE}»: las que siguen son sus excepciones`);
   assert.ok(rules.includes('*.gz binary'), 'los .gz (los chunks de la memoria, los volcados) van declarados como binarios');
-  for (const r of rules.slice(1)) assert.match(r, EXCEPTION_RULE, `toda otra regla declara un binario («<patrón> binary») o un archivo que necesita \\r\\n («<patrón> text eol=crlf»): ${r}`);
+  for (const r of rules.slice(1)) assert.match(r, EXCEPTION_RULE, `toda otra regla declara un binario («<patrón> binary») un archivo que necesita \\r\\n («<patrón> text eol=crlf») o uno que se junta por unión («<patrón> merge=union»): ${r}`);
   assert.ok(!fs.readFileSync(file).includes('\r'), `${ATTRIBUTES} mismo va con \\n`);
 });
 
@@ -282,6 +283,10 @@ test('T15d Eol_NamesOffender — en un repo de juguete, cada archivo fuera de re
   assert.match('*.gz binary', EXCEPTION_RULE);
   assert.doesNotMatch('*.sh eol=crlf', EXCEPTION_RULE, 'un eol=crlf sin `text` no normaliza lo que se versiona');
   assert.doesNotMatch('*.sh -text', EXCEPTION_RULE);
+  assert.match('.tycon/estimates.jsonl merge=union', EXCEPTION_RULE);
+  for (const r of ['a.jsonl merge=union text', 'a.jsonl merge=union eol=crlf', 'a.jsonl merge=union -text', 'a.jsonl text merge=union', 'a.jsonl merge=union binary']) {
+    assert.doesNotMatch(r, EXCEPTION_RULE, `merge=union va solo: junto a un atributo de finales de línea es otra regla (${r})`);
+  }
   // 4 · con la regla real, un repo sano no tiene nada que decir — tampoco con trabajo sin commitear en el árbol
   const clean = toyRepo({ [ATTRIBUTES]: realAttributes(), 'dump.gz': GZIP_BYTES, 'a.sh': SCRIPT, 'datos.json': '{"a":1}\n' }, env);
   assert.deepStrictEqual(eolProblems(clean, env), []);
