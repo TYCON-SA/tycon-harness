@@ -20,6 +20,9 @@
  *     esas carpetas ni el archivo de la propia suite (`--touched <json de lib/touched-files.js>`). Sin `--touched`, con `known: false` o con
  *     `TYCON_GATE_ALL_SUITES=1`, corre todo: «no pude mirar» nunca se lee como «no toca».
  *   Esos dos campos los lee SÓLO este runner; el nocturno y el control del PR los ignoran.
+ *   · las suites del grupo `installer` de `<repo>/scripts/ci/heavy-suites.json` se DIFIEREN si lo tocado no toca el
+ *     instalador ni la suite misma: el mismo criterio que la validación de Azure y la CI de GitHub, leído con
+ *     `groupCriterion` del selector del repo que se mide (scripts/ci/suites-for-change.js). Sin poder leerlo, corren.
  *
  * LA CORRIDA CRUZADA (`--only-touched`: la del repo hermano, o un repo con la story de otro): corre sólo las suites que
  * prueban algo tocado (`namesTouched`: la suite misma, o su texto nombra un archivo tocado), aunque lo tocado sea código; las demás quedan diferidas: la completa la corre la CI del pedido. Si no
@@ -322,6 +325,25 @@ function main(argv, env = process.env) {
   const parallel = [];
   const exclusives = [];
   let unknownSaid = false;
+  // El grupo `installer` de <repo>/scripts/ci/heavy-suites.json: sus suites corren sólo si la story toca el instalador o
+  // la suite misma, con el criterio del selector del repo que se mide. Sin el archivo no hay grupo; si está y no se deja
+  // leer (o falta el selector), no se difiere ninguna y se dice una vez.
+  let installerCrit = null;
+  const installer = () => {
+    if (installerCrit) return installerCrit;
+    installerCrit = { skips: () => false };
+    const heavyFile = path.join(repo, 'scripts', 'ci', 'heavy-suites.json');
+    if (!fs.existsSync(heavyFile)) return installerCrit;
+    let crit;
+    try {
+      crit = require(path.join(repo, 'scripts', 'ci', 'suites-for-change.js')).groupCriterion(heavyFile, 'installer');
+    } catch (e) {
+      crit = { problem: `scripts/ci/suites-for-change.js no se deja usar (${e.code || e.message})` };
+    }
+    if (crit.problem) console.log(`[suites.json] ⚠️  no pude leer el criterio del instalador (${crit.problem}): sus suites corren`);
+    else installerCrit = crit;
+    return installerCrit;
+  };
   const rootMissing = !isDir(skills);
   if (plan.some((p) => p.fromSkills)) console.log(`[suites.json] raíz agent-skills: ${skills} (salió de: ${skillsRoot.source})`);
   for (const p of plan) {
@@ -348,6 +370,12 @@ function main(argv, env = process.env) {
         console.log(`[suites.json] no pude saber qué archivos toca la story (${touched.reason || 'sin motivo'}): corre todo`);
         unknownSaid = true;
       }
+    }
+    if (!p.fromSkills && !allSuites && touched.known && installer().skips(p.name, touched.files)) {
+      const reason = 'corre de noche y en el control del PR; esta story no toca el instalador (el grupo installer de scripts/ci/heavy-suites.json)';
+      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      console.log(`DIFERIDA ${p.name} — ${reason}`);
+      continue;
     }
     if (onlyTouched && touched.known && !namesTouched(repo, p.ruta, touched.files)) {
       const reason = 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';

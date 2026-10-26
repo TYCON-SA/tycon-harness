@@ -928,3 +928,55 @@ test('T22 7.51-Coverage_DeclaresExclude_SoTestNamedFilesAreMeasured @story-7.51 
   assert.doesNotMatch(lcov, /coverage-wrapper/, 'el envoltorio sigue afuera');
   assert.doesNotMatch(lcov, /usa-test-acme\.test\.js/, 'la suite sigue afuera');
 });
+
+// Las suites del grupo `installer` de scripts/ci/heavy-suites.json corren en el portón sólo si la story toca el
+// instalador o la suite misma: el criterio de la validación de Azure, leído con el selector del repo que se mide
+// (scripts/ci/suites-for-change.js). Sin poder leerlo, o sin saber qué se tocó, corren.
+const SELECTOR = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'ci', 'suites-for-change.js');
+const NO_SELECTOR = !fs.existsSync(SELECTOR) && 'NO MEDIDO — sin scripts/ci/suites-for-change.js (dos repos físicos)';
+function installerLab({ selector = true, heavy = null } = {}) {
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/verde.test.sh' },
+    { raiz: 'arnes', ruta: 'tests/inst.test.sh' },
+  ] });
+  f.escribir('arnes', 'tests/verde.test.sh', 'exit 0');
+  f.escribir('arnes', 'tests/inst.test.sh', 'echo "corrió la del instalador"; exit 1');
+  if (selector) f.escribir('arnes', 'ci/suites-for-change.js', fs.readFileSync(SELECTOR, 'utf8'));
+  f.escribir('arnes', 'ci/heavy-suites.json', heavy !== null ? heavy : JSON.stringify({
+    groups: { installer: { patterns: ['scripts/setup/**'] } },
+    suites: { 'inst.test.sh': { group: 'installer', patterns: ['scripts/tests/inst.test.sh'] } },
+  }));
+  return f;
+}
+
+test('RunSuites_InstallerGroup_DeferredWhenTheStoryDoesNotTouchIt — la del instalador queda diferida y se dice por qué', { skip: NO_SELECTOR }, () => {
+  // 🔴 mutación: no mirar heavy-suites.json → la del instalador corre (exit 1).
+  const r = runWith(installerLab(), { touched: { known: true, files: ['guides/x.md', 'scripts/lib/a.js'] } });
+  assert.equal(r.status, 0, `esperaba 0: ${r.stdout}${r.stderr}`);
+  assert.equal(r.resumen.corridas, 1);
+  assert.equal(r.resumen.deferred_suites.length, 1);
+  assert.match(r.resumen.deferred_suites[0].suite, /inst\.test\.sh$/);
+  assert.match(r.resumen.deferred_suites[0].reason, /no toca el instalador/);
+  assert.match(r.stdout, /DIFERIDA inst\.test\.sh/);
+});
+
+test('RunSuites_InstallerGroup_RunsWhenInDoubt — tocar el instalador, la suite, el criterio; sin lista, sin selector o con todo pedido: corre', { skip: NO_SELECTOR }, () => {
+  // 🔴 mutación: diferir siempre → una story del instalador cierra sin sus suites.
+  const touching = ['scripts/setup/harness/a.js', 'scripts/tests/inst.test.sh', 'scripts/ci/heavy-suites.json', 'scripts/ci/suites-for-change.js'];
+  for (const file of touching) {
+    const r = runWith(installerLab(), { touched: { known: true, files: [file] } });
+    assert.equal(r.status, 1, `${file}: la del instalador corre\n${r.stdout}`);
+  }
+  const cases = [
+    [installerLab(), { touched: { known: false, reason: 'x' } }, 'sin saber qué se tocó'],
+    [installerLab({ selector: false }), { touched: { known: true, files: ['guides/x.md'] } }, 'sin el selector'],
+    [installerLab({ heavy: '{ roto' }), { touched: { known: true, files: ['guides/x.md'] } }, 'con el criterio roto'],
+    [installerLab(), { touched: { known: true, files: ['guides/x.md'] }, env: { TYCON_GATE_ALL_SUITES: '1' } }, 'con TYCON_GATE_ALL_SUITES=1'],
+  ];
+  for (const [f, opts, why] of cases) {
+    const r = runWith(f, opts);
+    assert.equal(r.status, 1, `${why}: la del instalador corre\n${r.stdout}${r.stderr}`);
+  }
+  const broken = runWith(installerLab({ selector: false }), { touched: { known: true, files: ['guides/x.md'] } });
+  assert.match(broken.stdout + broken.stderr, /no pude leer el criterio del instalador/, 'y lo dice');
+});

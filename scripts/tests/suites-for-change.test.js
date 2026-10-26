@@ -1017,3 +1017,54 @@ test('5b SuiteParts_SkillsRoot_WholeFileTouched_RunsItsParts — una suite parti
   const whole = plan(w, { changed: ['skills/tycon-pipeline/scripts/tests/sk.test.js'] });
   assert.ok(whole.run.includes(path.join(w.clone, 'skills', PARTE)), `editar el entero corre la parte\n${whole.skip.join('\n')}`);
 });
+
+// --groups-alone: la CI de GitHub no tiene foto nocturna, así que --deps no se puede usar. Con esta opción las suites de
+// un grupo (`"group"` en heavy-suites.json) se eligen sólo por los patrones del grupo y los suyos, que es todo su criterio;
+// el resto de las pesadas corre como sin --deps. Tocar cómo se elige corre todo.
+function groupRepo() {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'suites-for-change-group-')));
+  clones.push(dir);
+  const put = (rel, body) => { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); };
+  put('scripts/ci/suites-for-change.js', fs.readFileSync(SCRIPT, 'utf8'));
+  for (const f of ['skills-dir.js', 'canonical-path.js', 'legacy-names.js']) put(`scripts/lib/${f}`, fs.readFileSync(path.join(LIB, f), 'utf8'));
+  for (const n of ['fast.test.js', 'inst.test.sh', 'pub.test.sh']) put(`scripts/tests/${n}`, 'echo x\n');
+  put('scripts/tests/suites.json', JSON.stringify({ diarias: ['fast.test.js', 'inst.test.sh', 'pub.test.sh'].map((n) => ({ raiz: 'arnes', ruta: `tests/${n}`, requiere: [] })), semanales: [] }));
+  put('scripts/ci/heavy-suites.json', JSON.stringify({
+    groups: { installer: { patterns: ['scripts/setup/**'] } },
+    suites: {
+      'inst.test.sh': { group: 'installer', patterns: ['scripts/tests/inst.test.sh'] },
+      'pub.test.sh': { patterns: ['scripts/publishing/**'], deps: false, shared: false },
+    },
+  }));
+  return dir;
+}
+function groupPlan(dir, changed, { alone = true } = {}) {
+  const args = [path.join(dir, 'scripts', 'ci', 'suites-for-change.js'), '--suites', path.join(dir, 'scripts', 'tests', 'suites.json'),
+    '--scripts', path.join(dir, 'scripts'), '--skills', SKILLS, '--heavy', path.join(dir, 'scripts', 'ci', 'heavy-suites.json')];
+  if (changed) { fs.writeFileSync(path.join(dir, 'changed.txt'), `${changed.join('\n')}\n`); args.push('--changed', path.join(dir, 'changed.txt')); }
+  if (alone) args.push('--groups-alone');
+  const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lines = r.stdout.split('\n');
+  return { run: lines.filter((l) => l.startsWith('RUN\t')).map((l) => path.basename(l.slice(4))), skip: lines.filter((l) => l.startsWith('SKIP\t')), err: r.stderr };
+}
+
+test('SuitesForChange_GroupsAlone_SkipsTheGroupWhenTheChangeDoesNotTouchIt — sin --deps, las del grupo se eligen por sus patrones', { skip: NO_RULE }, () => {
+  const dir = groupRepo();
+  const other = groupPlan(dir, ['guides/x.md']);
+  assert.match(other.skip.join('\n'), /^SKIP\tinst\.test\.sh\tel cambio no toca lo que mide \([^)]*heavy-suites\.json\): la corre el banco nocturno$/m, other.err);
+  assert.ok(other.run.includes('pub.test.sh'), `una pesada sin grupo sigue corriendo sin --deps\n${other.skip.join('\n')}`);
+  assert.ok(other.run.includes('fast.test.js'));
+  assert.ok(groupPlan(dir, ['scripts/setup/a.sh']).run.includes('inst.test.sh'), 'tocar el instalador la corre');
+  assert.ok(groupPlan(dir, ['scripts/tests/inst.test.sh']).run.includes('inst.test.sh'), 'tocar la suite misma la corre');
+});
+
+test('SuitesForChange_GroupsAlone_WhenInDoubtRuns — sin la opción, sin lista o tocando cómo se elige: corre', { skip: NO_RULE }, () => {
+  const dir = groupRepo();
+  assert.ok(groupPlan(dir, ['guides/x.md'], { alone: false }).run.includes('inst.test.sh'), 'sin --groups-alone, como hoy');
+  assert.ok(groupPlan(dir, null).run.includes('inst.test.sh'), 'sin lista de cambios');
+  for (const f of ['scripts/ci/heavy-suites.json', 'scripts/ci/suites-for-change.js']) {
+    const p = groupPlan(dir, ['guides/x.md', f]);
+    assert.ok(p.run.includes('inst.test.sh'), `tocar ${f} corre el grupo\n${p.skip.join('\n')}`);
+  }
+});
