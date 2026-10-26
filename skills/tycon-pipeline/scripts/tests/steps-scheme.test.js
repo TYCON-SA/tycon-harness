@@ -642,16 +642,33 @@ function mencionesViejas(archivos, cerrada) {
   return fuera;
 }
 
-function arbolPublico() {
-  const lista = execFileSync('git', ['ls-files', '-z'], { cwd: RAIZ, encoding: 'utf8' }).split('\0').filter(Boolean);
+// En el árbol armado de los nocturnos se mide sólo lo que viaja al público; sin superposición, el árbol entero.
+function arbolPublico(raiz = RAIZ) {
+  const lista = execFileSync('git', ['ls-files', '-z'], { cwd: raiz, encoding: 'utf8' }).split('\0').filter(Boolean)
+    .filter((r) => alcance(r) && /\.(?:md|js|mjs|cjs|sh|ps1|json)$/.test(r));
+  const { travelling } = require(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.js'));
   const out = {};
-  for (const r of lista) {
-    if (!alcance(r) || !/\.(?:md|js|mjs|cjs|sh|ps1|json)$/.test(r)) continue;
-    const abs = path.join(RAIZ, r);
+  for (const r of travelling(raiz, lista, 'lo que lee un agente')) {
+    const abs = path.join(raiz, r);
     if (fs.existsSync(abs)) out[r] = fs.readFileSync(abs, 'utf8');
   }
   return out;
 }
+
+test('T30b Steps_OldNumbers_OnlyWhatTravels — en el árbol armado, una guía sólo del privado no cuenta', (t) => {
+  // 🔴 rojo: una guía del privado con un número viejo pone en rojo la prueba del público, o lo traído deja de contar
+  const { overlayLab } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'overlay-lab.js'));
+  const lab = overlayLab({ privado: { 'guides/privada.md': 'volver al Step 5b\n' }, publico: { 'guides/publica.md': 'volver al Step 5b\n' } });
+  t.after(lab.cleanup);
+  const rutas = (raiz) => mencionesViejas(arbolPublico(raiz), []).map((f) => f.ruta);
+  assert.deepStrictEqual(rutas(lab.root), ['guides/publica.md'], 'sólo cuenta la guía que trajo el público');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(rutas(lab.root), ['guides/privada.md'], 'sin superposición, el árbol entero');
+  // lo traído no cae en lo que lee un agente: no hay nada que revisar, y eso no es verde
+  const fuera = overlayLab({ privado: { 'guides/privada.md': 'volver al Step 5b\n' }, publico: { 'specs/x.txt': 'x\n' } });
+  t.after(fuera.cleanup);
+  assert.throws(() => arbolPublico(fuera.root), /no se midió/, 'sin nada que revisar, rojo');
+});
 
 test('T30 Steps_NoOldNumbersInWhatAgentsRead @story-7.23 @ac-15 — ningún paso por su número viejo en lo que lee un agente', () => {
   const cerrada = JSON.parse(fs.readFileSync(CERRADA, 'utf8'));

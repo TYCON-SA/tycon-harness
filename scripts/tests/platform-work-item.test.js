@@ -607,6 +607,34 @@ test('Adversarial_StoryCreateHook_EmptyFieldIsNotLinked @story-8.85 @ac-8', () =
   }
 });
 
+/**
+ * Los archivos del núcleo de `root` que nombran `nombre` (las pruebas lo nombran a propósito; version.json lo regenera la
+ * publicación). En el árbol armado de los nocturnos cuenta sólo lo que viaja al público; si del núcleo no viaja nada,
+ * no hubo qué medir y lanza.
+ */
+function filesNaming(root, nombre) {
+  const donde = ['--', '.', ':!scripts/tests', ':!version.json'];
+  const ih = require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js'));
+  ih.travelling(root, execFileSync('git', ['-C', root, 'ls-files', '-z', ...donde], { encoding: 'utf8' }).split('\0').filter(Boolean), 'el núcleo');
+  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', 'grep', '-l', nombre, ...donde], { encoding: 'utf8' });
+  assert.ok(r.status === 0 || r.status === 1, `git grep corrió (${r.status}: ${r.stderr})`);
+  return r.stdout.split('\n').filter(Boolean).filter(ih.travels(root)).sort();
+}
+
+test('OldSkillName_OnlyWhatTravels — en el árbol armado, el nombre viejo en un archivo sólo del privado no cuenta', (t) => {
+  // 🔴 rojo: una página del privado que nombra la skill vieja pone en rojo la prueba del público, o lo traído deja de contar
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'artifacts/mapa.html': 'tycon-ado-story-wi\n' }, publico: { 'scripts/z.js': '// tycon-ado-story-wi\n' } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(filesNaming(lab.root, 'tycon-ado-story-wi'), ['scripts/z.js'], 'sólo cuenta lo que trajo el público');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(filesNaming(lab.root, 'tycon-ado-story-wi'), ['artifacts/mapa.html'], 'sin superposición, el árbol entero');
+  // lo traído son sólo pruebas: del núcleo no viaja nada, y eso no es verde
+  const fuera = overlayLab({ privado: { 'artifacts/mapa.html': 'tycon-ado-story-wi\n' }, publico: { 'scripts/tests/t.js': 't\n' } });
+  t.after(fuera.cleanup);
+  assert.throws(() => filesNaming(fuera.root, 'tycon-ado-story-wi'), /no se midió/, 'sin nada que revisar, rojo');
+});
+
 test('SkillAndHook_Renamed_RegisteredOnce @story-8.85 @ac-12', () => {
   const VIEJA = 'tycon-ado-story-wi';
   const NUEVA = 'tycon-story-work-item';
@@ -658,8 +686,7 @@ test('SkillAndHook_Renamed_RegisteredOnce @story-8.85 @ac-12', () => {
   }
   // en el núcleo, el nombre viejo sólo en el reemplazo, en la skill nueva (que lo cuenta) y en la lista de reemplazados;
   // las pruebas lo nombran a propósito y version.json lo regenera la publicación
-  const conViejo = execFileSync('git', ['-C', ROOT, 'grep', '-l', VIEJA, '--', '.', ':!scripts/tests', ':!version.json'], { encoding: 'utf8' }).trim().split('\n').sort();
-  assert.deepStrictEqual(conViejo, ['scripts/setup/hooks-list.json', `skills/${NUEVA}/SKILL.md`, `skills/${VIEJA}/SKILL.md`].sort());
+  assert.deepStrictEqual(filesNaming(ROOT, VIEJA), ['scripts/setup/hooks-list.json', `skills/${NUEVA}/SKILL.md`, `skills/${VIEJA}/SKILL.md`].sort());
   // el mapa de renombres viaja sólo con el privado: con él debajo, no declara la carpeta vieja (la mudanza del gancho a
   // su integración la mira how-it-works.test.js)
   const mapa = path.join(ROOT, 'scripts', 'lib', 'renames.json');

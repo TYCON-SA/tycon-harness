@@ -171,12 +171,27 @@ test('Core_NamesNoTimeTool_CapturesAreNotCore_NewCoreFileCounts @story-7.40 @ac-
 });
 
 // En el árbol armado de los nocturnos (lo privado con el público encima) se mide sólo lo que viaja al público: lo que
-// trajo la superposición. Sin superposición, el árbol entero.
+// trajo la superposición, sin los registros calculados ni la capa del equipo. Sin superposición, el árbol entero. Si
+// del núcleo no viaja nada, no hubo qué medir: rojo, no verde.
 function onlyWhatTravels(root, files) {
-  const brought = require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js')).broughtByOverlay(root);
-  if (brought && brought.size === 0) throw new Error('la superposición no trajo nada: no hay qué medir');
-  return brought ? files.filter((f) => brought.has(f)) : files;
+  const ih = require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js'));
+  const r = spawnSync('git', ['-C', root, 'ls-files', '-z', '--', '.', ...TOOL_NAMES_OUTSIDE_CORE], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, `git ls-files falló: ${r.stderr}`);
+  ih.travelling(root, r.stdout.split('\0').filter(Boolean), 'el núcleo');
+  return files.filter(ih.travels(root));
 }
+
+test('Core_NamesNoTimeTool_TeamLayerDoesNotCount — el perfil y el alta del equipo no son el núcleo', (t) => {
+  // 🔴 rojo: la herramienta de horas que nombra el perfil o el alta del equipo cuenta como núcleo del público
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ publico: { 'perfil-equipo.json': '{"integrations":{"clockify":{}}}\n', 'onboarding/alta.md': 'instalá Clockify\n', 'scripts/x.js': '// clockify\n' } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(onlyWhatTravels(lab.root, coreFilesNamingTimeTool(lab.root)), ['scripts/x.js'], 'sólo cuenta lo que viaja');
+  // lo traído es sólo la capa del equipo: del núcleo no viaja nada, y eso no es verde
+  const soloEquipo = overlayLab({ privado: { 'scripts/y.js': 'y\n' }, publico: { 'perfil-equipo.json': '{}\n' } });
+  t.after(soloEquipo.cleanup);
+  assert.throws(() => onlyWhatTravels(soloEquipo.root, []), /no se midió/, 'sin nada que revisar, rojo');
+});
 
 test('Core_NamesNoTimeTool_OnlyWhatTravels @story-8.112 @ac-2 — en el árbol armado, lo sólo-privado no cuenta', (t) => {
   // 🔴 rojo: una guía del privado que nombra la herramienta pone en rojo una prueba del público

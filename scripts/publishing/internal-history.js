@@ -869,7 +869,7 @@ function stagedConfig(args) {
   if (top.status !== 0) return null;   // no es un repo: lo dice después quien mira
   let repo; let own;
   // no saber si es el mismo repo no es «leo la del disco»: es no poder mirar
-  try { repo = fs.realpathSync(top.stdout.trim()); own = fs.realpathSync(path.join(__dirname, '..', '..')); } catch (e) {
+  try { repo = fs.realpathSync.native(top.stdout.trim()); own = fs.realpathSync.native(path.join(__dirname, '..', '..')); } catch (e) {
     throw new CouldNot(`no pude ubicar la configuración que entra en el commit (${e.code || 'error'})`);
   }
   if (own !== repo) return null;
@@ -942,6 +942,39 @@ function broughtByOverlay(repo) {
   const privateBlobs = new Map(treeOf(repo, commitOf(repo, `${head}^`)).filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
   for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
   return brought;
+}
+/**
+ * La capa del repo del equipo que la superposición pone encima (`--team-from`): el perfil, con el nombre que reconocen
+ * las pruebas, y los `.md` de la raíz de `onboarding/`. No viaja al público: es de la organización.
+ */
+const TEAM_LAYER = (f) => f === 'perfil-equipo.json' || /^onboarding\/[^/]+\.md$/.test(f);
+/**
+ * Si una ruta viaja al público, para las pruebas que recorren el árbol: en el árbol armado, lo que trajo la superposición
+ * sin sus registros calculados ni la capa del equipo; en cualquier otro árbol (o en una carpeta que no es la raíz de su
+ * repo, como las de juguete de una prueba), todo. Una superposición que no trajo nada es un árbol mal armado: rojo.
+ */
+function travels(repo) {
+  // con LC_ALL=C el mensaje de git sale en inglés, que es el que se reconoce abajo
+  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repo, env: { ...process.env, LC_ALL: 'C' }, encoding: 'utf8' });
+  if (top.error) throw new CouldNot(`no pude correr git rev-parse (${top.error.code || top.error.message})`);
+  // una carpeta fuera de todo repo no tiene superposición; cualquier otra falla de git no se toma por «no la hay»
+  if (top.status !== 0 && !/not a git repository/i.test(String(top.stderr))) throw new CouldNot(`no pude saber si ${shown(repo)} es un árbol armado: git rev-parse falló (${shown(String(top.stderr).trim().split('\n')[0]) || `salió ${top.status}`})`);
+  // la forma del disco (.native) en los dos lados: donde el disco no distingue mayúsculas, la misma carpeta escrita de
+  // otra forma no deja de ser el árbol armado
+  if (top.status !== 0 || fs.realpathSync.native(top.stdout.trim()) !== fs.realpathSync.native(repo)) return () => true;
+  const brought = broughtByOverlay(repo);
+  if (!brought) return () => true;
+  if (!brought.size) throw new CouldNot(`la superposición no trajo nada en ${shown(repo)}: el árbol armado está mal armado`);
+  return (f) => brought.has(f) && !OVERLAY_COMPUTED.has(f) && !TEAM_LAYER(f);
+}
+/**
+ * Lo que viaja de una lista de rutas. Si no queda nada, la prueba no revisó nada y eso no es verde: lanza, con `what`
+ * diciendo qué se quería revisar.
+ */
+function travelling(repo, files, what) {
+  const out = files.filter(travels(repo));
+  if (!out.length) throw new CouldNot(`no se midió: lo que viaja no trae nada en ${what}`);
+  return out;
 }
 const published = (kind, repo, tree, name, config, strict) => {
   if (kind === 'team') return publishedTeam(repo, tree, name, { strict });
@@ -1387,7 +1420,7 @@ function main() {
   return blocks ? 1 : 0;
 }
 
-module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot, broughtByOverlay, OVERLAY_MARK, OVERLAY_COMPUTED };
+module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot, broughtByOverlay, travels, travelling, TEAM_LAYER, OVERLAY_MARK, OVERLAY_COMPUTED };
 
 // el código de salida se deja anotado y el proceso termina solo: `process.exit` corta la salida a medio escribir cuando
 // va por un tubo (la cuenta en JSON de `--all` son miles de renglones)

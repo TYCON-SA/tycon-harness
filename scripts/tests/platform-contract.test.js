@@ -446,6 +446,9 @@ test('Adversarial_Golden_CommandMovedToConnector_StillCounted @story-8.85 @ac-27
   fs.writeFileSync(path.join(repo, 'integrations', 'azure-devops', 'integration.json'), '{"rawCommands": ["az repos pr create"]}\n');
   fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'scripts', 'otro.js'), "const x = 'nada de az acá';\n");
+  // el núcleo es lo que git sigue: sin ningún archivo seguido no hay nada que revisar, y eso es rojo
+  assert.throws(() => G.literales({ root: repo }), /no se midió/, 'sin núcleo, rojo');
+  git('add', '-A');
   const l = G.literales({ root: repo });
   assert.deepStrictEqual(Object.keys(l), ['integrations/azure-devops/scripts/connector.js']);
   assert.deepStrictEqual(l['integrations/azure-devops/scripts/connector.js'], ["spawn('az repos pr list --org x');"]);

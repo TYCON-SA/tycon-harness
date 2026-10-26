@@ -939,12 +939,30 @@ test('T65 Config_IntegrationKeysInEnglish — mailbox, nightly y "detect" se lee
   assert.match(off.apagada, /integrations\.mailbox=true/);
 });
 
+// Lo que el perfil del equipo tiene que escribir: mailbox, nightly y codex, con codex en «detect». No exige la lista
+// exacta de integraciones: un perfil que suma una integración legítima (codegraph, por ejemplo) no rompe estas claves,
+// y fijar la lista volvía roja la prueba con cada integración nueva del equipo.
+function assertTeamProfileKeys(perfil) {
+  const integraciones = (perfil && perfil.integrations) || {};
+  for (const k of ['mailbox', 'nightly', 'codex']) assert.ok(k in integraciones, `el perfil escribe integrations.${k}`);
+  assert.equal(integraciones.codex, 'detect');
+}
+
+test('T65b Config_TeamProfile_ExtraKeyStillGreen — una integración de más pasa; una de las tres que falta, o codex distinto, no', () => {
+  // 🔴 rojo: la exigencia se afloja (falta una clave, o codex no es «detect», y pasa) o vuelve a fijar la lista entera
+  const base = { mailbox: true, nightly: true, codex: 'detect' };
+  assert.doesNotThrow(() => assertTeamProfileKeys({ integrations: { ...base, codegraph: true } }), 'una integración de más pasa');
+  for (const k of ['mailbox', 'nightly', 'codex']) {
+    const { [k]: _, ...sinUna } = base;
+    assert.throws(() => assertTeamProfileKeys({ integrations: sinUna }), new RegExp(k), `sin ${k} falla`);
+  }
+  assert.throws(() => assertTeamProfileKeys({ integrations: { ...base, codex: 'on' } }), 'codex distinto de «detect» falla');
+});
+
 test('T65 Config_TeamProfile_NewKeys — el perfil del equipo que viaja en el arnés escribe mailbox, nightly y "detect" (NO MEDIDO sin él)', (t) => {
   const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre actual, o el anterior
   if (!fs.existsSync(rutaReal)) return t.skip('NO MEDIDO — el perfil del equipo no está: la copia pública no lo trae');
-  const perfil = JSON.parse(fs.readFileSync(rutaReal, 'utf8'));
-  assert.deepEqual(Object.keys(perfil.integrations).sort(), ['clockify', 'codex', 'engram', 'mailbox', 'nightly']);
-  assert.equal(perfil.integrations.codex, 'detect');
+  assertTeamProfileKeys(JSON.parse(fs.readFileSync(rutaReal, 'utf8')));
   const real = lib().leer({ env: { TYCON_MAILBOX_JSON: '/no/hay/llave.json' }, home: casa() });
   assert.deepEqual([real.valores.integraciones.mailbox, real.valores.integraciones.nightly, real.valores.integraciones.codex], [true, true, 'detect']);
   assert.equal(real.origenes['integraciones.mailbox'], 'perfil');

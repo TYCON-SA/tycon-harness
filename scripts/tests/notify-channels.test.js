@@ -149,18 +149,47 @@ const sinSecretos = (salida) => {
   for (const s of [TOKEN, RUTA_SLACK, RUTA_SLACK_MAQUINA, CLAVE_MAIL, 'T0SLACK', 'T0MAQUINA']) assert.ok(!salida.includes(s), `la salida no muestra «${s.slice(0, 6)}…»`);
 };
 
-test('T26 Notify_OnlyPath_NoDirectTelegram @story-7.40 @ac-17', () => {
-  // en el código del público, fuera de notify.js y de los clientes de cada canal, nadie llama a Telegram ni a un webhook
+/**
+ * Las líneas del código de `raiz` que llaman a un canal por su cuenta, fuera de notify.js y de los clientes de cada canal.
+ * En el árbol armado de los nocturnos cuenta sólo lo que viaja al público; si de ese código no viaja nada, no hubo qué
+ * medir y lanza.
+ */
+function directSends(raiz) {
   const permitidos = new Set(['scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-telegram-notify.sh']);
-  const r = spawnSync('git', ['-C', RAIZ, 'grep', '-nE', 'tycon-telegram-notify|api\\.telegram\\.org|/sendMessage|hooks\\.slack\\.com|webhook\\.office',
-    '--', '*.js', '*.mjs', '*.sh', '*.ps1', '*.py', ':!scripts/tests/**', ':!**/node_modules/**'], { encoding: 'utf8' });
+  const donde = ['--', '*.js', '*.mjs', '*.sh', '*.ps1', '*.py', ':!scripts/tests/**', ':!**/node_modules/**'];
+  const ih = require(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.js'));
+  const todos = spawnSync('git', ['-C', raiz, 'ls-files', '-z', ...donde], { encoding: 'utf8' });
+  assert.strictEqual(todos.status, 0, `git ls-files corrió (${todos.stderr})`);
+  ih.travelling(raiz, todos.stdout.split('\0').filter(Boolean), 'el código que avisa');
+  const viaja = ih.travels(raiz);
+  const r = spawnSync('git', ['-C', raiz, '-c', 'core.quotePath=false', 'grep', '-nE', 'tycon-telegram-notify|api\\.telegram\\.org|/sendMessage|hooks\\.slack\\.com|webhook\\.office',
+    ...donde], { encoding: 'utf8' });
   assert.ok(r.status === 0 || r.status === 1, `git grep corrió (${r.status}: ${r.stderr})`);
   const comentario = /^\s*(\/\/|#|\*|\/\*)/;
-  const llamadas = r.stdout.split('\n').filter(Boolean).filter((l) => {
+  return r.stdout.split('\n').filter(Boolean).filter((l) => {
     const [archivo, , ...resto] = l.split(':');
-    return !permitidos.has(archivo) && !comentario.test(resto.join(':'));
+    return viaja(archivo) && !permitidos.has(archivo) && !comentario.test(resto.join(':'));
   });
-  assert.deepStrictEqual(llamadas, [], 'sólo notify.js y el cliente de cada canal llaman a un canal');
+}
+
+test('T26b Notify_DirectSend_OnlyWhatTravels — en el árbol armado, un envío directo sólo del privado no cuenta', (t) => {
+  // 🔴 rojo: un guion del privado que llama a Telegram pone en rojo la prueba del público, o lo traído deja de contar
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const envio = 'curl https://api.telegram.org/bot/sendMessage\n';
+  const lab = overlayLab({ privado: { '.advisors/x.sh': envio }, publico: { 'scripts/y.sh': envio } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(directSends(lab.root).map((l) => l.split(':')[0]), ['scripts/y.sh'], 'sólo cuenta lo que trajo el público');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(directSends(lab.root).map((l) => l.split(':')[0]), ['.advisors/x.sh'], 'sin superposición, el árbol entero');
+  // lo traído no es código: no hay nada que revisar, y eso no es verde
+  const fuera = overlayLab({ privado: { '.advisors/x.sh': envio }, publico: { 'guides/g.md': 'g\n' } });
+  t.after(fuera.cleanup);
+  assert.throws(() => directSends(fuera.root), /no se midió/, 'sin nada que revisar, rojo');
+});
+
+test('T26 Notify_OnlyPath_NoDirectTelegram @story-7.40 @ac-17', () => {
+  // en el código del público, fuera de notify.js y de los clientes de cada canal, nadie llama a Telegram ni a un webhook
+  assert.deepStrictEqual(directSends(RAIZ), [], 'sólo notify.js y el cliente de cada canal llaman a un canal');
   // y los que avisaban por su cuenta mandan por notify.js
   for (const f of ['scripts/hooks/wait-notice.js', 'scripts/ci/nightly-dod-notice.sh', 'scripts/instincts/instinct-observer.js']) {
     assert.match(fs.readFileSync(path.join(RAIZ, f), 'utf8'), /notify\.js/, `${f} manda por notify.js`);

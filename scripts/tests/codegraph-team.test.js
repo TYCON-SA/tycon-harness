@@ -26,7 +26,9 @@ function pathWith(names) {
   for (const n of names) fs.writeFileSync(path.join(bin, n), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   return bin;
 }
-const envFor = (prof, bin) => ({ HOME: tmp('cg-home-'), PATH: [bin, '/usr/bin', '/bin'].join(path.delimiter), ...(prof ? { TYCON_PROFILE: path.join(prof, 'team-profile.json') } : {}) });
+// sin perfil es «sin perfil» (TYCON_PROFILE=0), no «el que traiga el árbol»: en el árbol armado de los nocturnos, el
+// árbol trae el perfil real del equipo
+const envFor = (prof, bin) => ({ HOME: tmp('cg-home-'), PATH: [bin, '/usr/bin', '/bin'].join(path.delimiter), TYCON_PROFILE: prof ? path.join(prof, 'team-profile.json') : '0' });
 const onWindows = process.platform === 'win32' ? 'los binarios falsos son guiones de sh' : false;
 
 test('T3 HowItWorks_OrgStrip_NoTelegram @story-8.75 @ac-3: «Tu organización» no lista Telegram', () => {
@@ -55,6 +57,22 @@ test('T5 InstallPlan_CodegraphOffOrPresent_NoLine @story-8.75 @ac-4: sin el perf
     assert.ok(!(out.head || []).some((l) => /CodeGraph: tu organización/.test(l)), JSON.stringify(out.head));
     assert.ok(!out.codegraphInstall);
   }
+});
+
+test('T5b InstallPlan_NoProfile_IgnoresTreeProfile — «sin el perfil» no lee el perfil del árbol', { skip: onWindows }, (t) => {
+  // 🔴 rojo: el caso sin perfil lee el perfil que trae el árbol (en el armado de los nocturnos, el real del equipo)
+  const tree = tmp('cg-arbol-');
+  t.after(() => fs.rmSync(tree, { recursive: true, force: true }));
+  for (const d of ['scripts', 'integrations']) fs.symlinkSync(path.join(ROOT, d), path.join(tree, d));
+  fs.writeFileSync(path.join(tree, 'perfil-equipo.json'), JSON.stringify({ integrations: { codegraph: true } }));
+  const plan = (env) => H.installQuestions({ home: env.HOME, env, opts: { profile: 'minimal' }, tree }, tree, null);
+  const conLinea = (out) => (out.head || []).some((l) => /CodeGraph: tu organización/.test(l));
+  const env = envFor(null, pathWith([]));
+  assert.ok(!conLinea(plan(env)), 'sin el perfil, no hay renglón aunque el árbol traiga uno con CodeGraph');
+  // el contraste: sin la variable, el árbol de juguete sí pone el renglón (si no, la prueba de arriba no probaría nada)
+  const { TYCON_PROFILE, ...sinVariable } = env;
+  assert.strictEqual(TYCON_PROFILE, '0', 'envFor sin perfil fija «sin perfil»');
+  assert.ok(conLinea(plan(sinVariable)), 'sin la variable, el perfil del árbol pone el renglón');
 });
 
 test('T6 Install_CodegraphOn_RunsInstallerAndFailureContinues @story-8.75 @ac-5: lo corre; si falla, lo dice y sigue', { skip: onWindows }, () => {
