@@ -20,3 +20,4 @@
 *.pdf binary
 *.woff binary
 *.woff2 binary
+.tycon/estimates.jsonl merge=union
