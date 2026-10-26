@@ -5,7 +5,7 @@
     "direction": "sube en tres archivos del freno de producción, por decisión del dueño (vía la coordinadora)",
     "reason": "La story 6.2 sumó rutas «.claude» en el freno de producción: prod-firewall-close.js 0 → 1, install-guard.sh 8 → 9 y la plantilla de los managed settings 4 → 6. El freno corre fuera del arnés y necesita la ruta literal; tocarlo obliga a firmar y reinstalar. Por eso quedan declarados en legacy-home-names.json (until_d), cada uno con su motivo, y el freno no se toca. Además on-pre-commit.js bajó 4 → 3. La suma de los archivos da 903 (el total anterior, 908, no era la suma)."
   },
-  "total": 841,
+  "total": 842,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -157,7 +157,7 @@
     "scripts/setup/hooks-list.json": 4,
     "scripts/setup/install-codegraph.ps1": 1,
     "scripts/setup/install-codegraph.sh": 1,
-    "scripts/setup/install-effects.json": 36,
+    "scripts/setup/install-effects.json": 37,
     "scripts/setup/install-instinct-mining.sh": 2,
     "scripts/setup/validate-engram-upgrade.sh": 1,
     "scripts/tools/context-budget.js": 9,

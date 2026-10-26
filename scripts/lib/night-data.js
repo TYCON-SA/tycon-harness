@@ -5,9 +5,8 @@
 // Quien mantiene el arnés usa la versión bajada y tiene dos clones: el del repo público (el código) y el del repo de
 // mantenimiento (donde los nocturnos dejan sus datos: `.dashboard/`, `artifacts/`, los reportes del banco). El clon que
 // la máquina «mantiene» (`paths.maintained`) es el del público, y no trae esos datos: buscarlos ahí deja a los avisos de
-// arranque con una sola línea («el tablero no está publicado») y una pieza muerta se ve igual que una sana. Y lo que la
-// máquina escribe —el registro de cada merge— caería en `.dashboard/` del clon del público, una carpeta ignorada que
-// no viaja a ningún repo.
+// arranque con una sola línea («el tablero no está publicado») y una pieza muerta se ve igual que una sana. Lo que la
+// máquina escribe —el registro de cada merge— no va a ningún clon: queda en su carpeta de estado y viaja por el buzón.
 //
 // ── DOS REPOS DE DATOS ───────────────────────────────────────────────────────────────────────────────────────────────
 // Los nocturnos de la organización (dependencias, vigilante, el resumen diario, las métricas y el tablero) guardan en
@@ -23,7 +22,9 @@
 // ── QUÉ HAY ACÁ ───────────────────────────────────────────────────────────────────────────────────────────────────────
 //   · resolve(ownTree)             de qué árbol se LEE la noche del mantenimiento: `{ dir, source, problem }`
 //   · resolveOperations(ownTree)   de qué árbol se LEE la noche de operaciones: `{ dir, source, problem }`
-//   · machineDashboard(ownTree)    dónde ESCRIBE la máquina lo suyo (el registro de cada merge) y si desde ahí viaja
+//   · machineDashboard(ownTree)    dónde ESCRIBE la máquina lo suyo (el registro de cada merge, en su carpeta de estado)
+//                                  y si desde ahí viaja por el buzón; `history`, dónde quedó lo de antes
+//   · machineDashboardDirs(ownTree) dónde se LEEN esos registros: la carpeta de estado y la de la historia
 //   · readPublished(dir, rel)      un archivo de lo publicado en ese clon (`origin/main`, sin red), o del disco diciéndolo
 //   · copyAfter(dir, since)        ¿la rama principal de ese clon se trajo después de `since`? Si no, el texto que lo dice
 //
@@ -213,25 +214,80 @@ function problemLine(problem, ops = null) {
 }
 
 /**
+ * ¿Viaja por el buzón lo que la máquina escribe? Hay llave del buzón legible y no vencida (la de `upload-runs.js`,
+ * leída sin salir a la red). → `{ travels, why }`.
+ */
+function mailboxTravels() {
+  const UP = path.join(__dirname, '..', 'metrics', 'upload-runs.js');
+  if (!fs.existsSync(UP)) return { travels: false, why: 'no está la subida al buzón (scripts/metrics/upload-runs.js) al lado de este archivo' };
+  const U = require(UP);
+  const integ = U.integracionBuzon();
+  if (integ.error) return { travels: false, why: `la configuración del buzón no se puede leer (${clean(integ.error, 160)})` };
+  // sin llave, la integración sale apagada por omisión: se dice lo que falta, la llave
+  const c = U.leerConfig();
+  if (!c.cfg) return { travels: false, why: clean(c.motivo, 200) };
+  if (!integ.prendida) return { travels: false, why: 'la integración del buzón está apagada' };
+  // la misma vara que la subida: una llave que ella rechaza siempre tampoco hace viajar nada
+  const negativa = typeof U.negativaDeLaLlave === 'function' ? U.negativaDeLaLlave(c.cfg.sas) : null;
+  if (negativa) return { travels: false, why: `la subida rechaza la llave del buzón: ${clean(negativa.motivo, 160)}` };
+  const vence = String(c.cfg.vence || '').trim();
+  const fin = Date.parse(`${vence}T23:59:59Z`);
+  if (!Number.isFinite(fin)) return { travels: false, why: `la llave del buzón trae un vencimiento que no se entiende (${clean(vence, 40)})` };
+  if (fin < Date.now()) return { travels: false, why: `la llave del buzón venció el ${vence}` };
+  return { travels: true, why: null };
+}
+
+/**
+ * Dónde quedó la historia de los registros de la máquina: la carpeta en la que se escribían antes de la carpeta de
+ * estado. En un clon, su `.dashboard`; en una versión bajada, el del clon de mantenimiento que declara (ahí siguen los
+ * ya versionados, que no se mudan). → `{ dir, why }`. Sin un clon que sirva, `dir` es `null`; si había uno declarado y
+ * no sirve, `why` dice por qué (la historia existe y no se pudo leer, que no es lo mismo que no tenerla).
+ */
+function historyDir(TH, ownTree, home) {
+  if (!TH.isReleaseMachine(home)) return { dir: ownTree ? path.join(ownTree, '.dashboard') : null, why: null };
+  const c = declaredClone(TH);
+  if (c.dir) return { dir: path.join(c.dir, '.dashboard'), why: null };
+  return { dir: null, why: c.declared && c.problem ? `no leo la historia de registros del clon de mantenimiento: ${c.problem}` : null };
+}
+
+/**
  * Dónde escribe la máquina lo que es suyo y de nadie más (el registro de cada merge), y dónde lo buscan los que lo leen.
- * → `{ dir, travels, why }`. `travels: false` = queda en la carpeta del estado de la máquina; `why` dice por qué.
- * 🔴 Nunca el clon del público. Y nunca para el respaldo de algo que escribe un nocturno: ése no va a ningún clon.
- * 🔴 Si no se puede saber (algo de acá tiró), `dir` es `null` y `why` lo dice: quien escribe NO vuelve en silencio a la
- * ruta de antes —que en una versión bajada es el clon del público—; se niega o lo avisa.
+ * → `{ dir, travels, why }`. Siempre la carpeta del estado de la máquina (`<stateDir>/dashboard`), en un clon y en una
+ * versión bajada (sólo una copia suelta, sin tycon-home.js al lado, escribe en su árbol de juguete): un archivo escrito en el `.dashboard/` de un clon ensucia ese checkout y nadie lo sube. Viaja por el
+ * buzón (upload-runs.js lo sube en cada arranque); `travels: false` = no hay llave que sirva, y `why` dice por qué.
+ * 🔴 Si no se puede saber (algo de acá tiró), `dir` es `null` y `why` lo dice: quien escribe NO vuelve en silencio a un
+ * `.dashboard/` de un clon; se niega o lo avisa.
  */
 function machineDashboard(ownTree, opts = {}) {
-  const inTree = { dir: ownTree ? path.join(ownTree, '.dashboard') : null, travels: true, why: null };
   const failed = (e) => ({ dir: null, travels: false, why: `no pude saber dónde escribe esta máquina sus registros (${reasonOf(e)})` });
   let TH;
   try { TH = homeLib(); } catch (e) { return failed(e); }
-  if (!TH) return inTree;   // este archivo viaja sin tycon-home.js: el árbol propio, como siempre
   const home = opts.home || os.homedir();
+  let dir, history = null, historyWhy = null;
   try {
-    if (!TH.isReleaseMachine(home)) return inTree;
-    const c = declaredClone(TH);
-    if (c.dir) return { dir: path.join(c.dir, '.dashboard'), travels: true, why: null };
-    return { dir: path.join(TH.stateDir(home), 'dashboard'), travels: false, why: c.problem || 'esta máquina no declara un clon de mantenimiento (paths.maintainers)' };
+    // este archivo viaja sin tycon-home.js (al banco, a un laboratorio): no hay máquina de la que sea el estado, y
+    // escribe en el árbol propio como siempre (un árbol de juguete, no un clon de nadie)
+    dir = TH ? path.join(TH.stateDir(home), 'dashboard') : (ownTree ? path.join(ownTree, '.dashboard') : null);
+    if (TH) ({ dir: history, why: historyWhy } = historyDir(TH, ownTree, home));
   } catch (e) { return failed(e); }
+  if (!dir) return { dir: null, history: null, travels: false, why: 'este archivo viaja sin tycon-home.js y sin árbol propio: no sé dónde escribir' };
+  if (history === dir) history = null;
+  let t;
+  try { t = mailboxTravels(); } catch (e) { t = { travels: false, why: `no pude leer la llave del buzón (${reasonOf(e)})` }; }
+  const out = { dir, history, travels: t.travels, why: t.why };
+  if (historyWhy) out.historyWhy = historyWhy;
+  return out;
+}
+/**
+ * Dónde se LEEN los registros de la máquina: su carpeta de estado y, después, la de la historia (`history`). Quien
+ * cuenta merges mira las dos; un registro con el mismo nombre en las dos es uno solo. `[]` = no se pudo saber.
+ * Una historia declarada que no se puede leer se avisa por stderr: la cuenta sale sin ella y no se calla.
+ */
+function machineDashboardDirs(ownTree, opts) {
+  const m = machineDashboard(ownTree, opts);
+  if (!m.dir && m.why) process.stderr.write(`⚠️ night-data: ${m.why}\n`);
+  if (m.historyWhy) process.stderr.write(`⚠️ night-data: ${m.historyWhy}\n`);
+  return [m.dir, m.history].filter(Boolean);
 }
 /** Sólo la carpeta. 🔴 `null` = no se pudo saber: el motivo va por stderr acá, para que ningún lector lo calle. */
 function machineDashboardDir(ownTree, opts) {
@@ -373,7 +429,7 @@ function fetchHint(dir) {
   return /["\\$`]/.test(d) ? `   Para traerla: git fetch origin, parado en ${d}` : `   Para traerla: git -C "${d}" fetch origin`;
 }
 
-module.exports = { PUBLISHED, SET_COMMAND, SET_OPERATIONS_COMMAND, SHORTEST_PHOTO_LIFE_MS, resolve, resolveOperations, operationsClone, cloneName, problemLine, machineDashboard, machineDashboardDir, readPublished, copyAge, copyAfter, copyOlderThan, fetchHint, unfit, clean };
+module.exports = { PUBLISHED, SET_COMMAND, SET_OPERATIONS_COMMAND, SHORTEST_PHOTO_LIFE_MS, resolve, resolveOperations, operationsClone, cloneName, problemLine, machineDashboard, machineDashboardDir, machineDashboardDirs, readPublished, copyAge, copyAfter, copyOlderThan, fetchHint, unfit, clean };
 
 if (require.main === module) {
   // a mano, o desde un guion de shell: `node scripts/lib/night-data.js [--plain] [--operations]` dice de qué árbol se lee

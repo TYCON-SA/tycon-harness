@@ -1,0 +1,80 @@
+{
+  "hooks": [
+    {
+      "hook": "stuck-pr-notice.js (al arrancar en un repo del arnés: los pedidos con auto-completar trabados más de 1 h, por la capa de plataforma; lo que no se pudo leer se dice)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/stuck-pr-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "env": {
+        "TYCON_TREE": "${FIXTURE}",
+        "TYCON_ADO_CMD": "${FIXTURE}/az/az",
+        "FIXAZ": "${FIXTURE}/fixaz",
+        "TYCON_PROFILE": "0",
+        "TYCON_HARNESS_IDENTITIES": "https://dev.azure.com/acme/Harness/_git/harness"
+      },
+      "cases": [
+        {
+          "id": "grita-pedido-en-choque-hace-mas-de-una-hora",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup az fixaz && cp $TCG/scripts/hooks/stuck-pr-notice.js tcg/scripts/hooks/ && cp -R $TCG/scripts/lib tcg/scripts/ && cp -R $TCG/scripts/setup/harness tcg/scripts/setup/ && cp -R $TCG/integrations tcg/ && cp $TCG/scripts/tests/lib/fake-az.sh az/az && chmod 755 az/az",
+            "printf '%s' '{\"version\":1,\"public\":{\"platform\":\"github\",\"org\":\"acme\",\"repo\":\"harness\"},\"profile\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-profile\"},\"operations\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-operations\"},\"maintainers\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-maintainers\"}}' > team-repos.json",
+            "git init -q repo && git -C repo remote add origin https://dev.azure.com/acme/Harness/_git/harness",
+            "node -e 'const p=Object.assign({pullRequestId:5,isDraft:false,mergeStatus:\"conflicts\",status:\"active\",title:\"pedido 5\",autoCompleteSetBy:{id:\"q\"},sourceRefName:\"refs/heads/story/5\",creationDate:\"2026-10-25T10:00:00Z\",lastMergeSourceCommit:{commitId:\"c5\"},repository:{name:\"harness-maintainers\"}},{});require(\"fs\").writeFileSync(\"fixaz/prs-0.json\",JSON.stringify({count:1,value:[p]}))'",
+            "node -e 'const d=require(process.env.FIXTURE+\"/tcg/scripts/setup/harness/tycon-home.js\").stateDir(process.env.HOME);require(\"fs\").mkdirSync(d,{recursive:true});require(\"fs\").writeFileSync(d+\"/stuck-prs.json\",JSON.stringify({\"acme/Harness/harness-maintainers#5\":{estado:\"conflict\",punta:\"c5\",vistoDesde:new Date(Date.now()-61*60000).toISOString()}}))'"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/repo"
+          },
+          "expect": {
+            "stdout_re": [
+              "pedido 5 \\(harness-maintainers\\) en choque hace 1 h · story/5"
+            ]
+          }
+        },
+        {
+          "id": "quiet-borrador-sin-choque",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup az fixaz && cp $TCG/scripts/hooks/stuck-pr-notice.js tcg/scripts/hooks/ && cp -R $TCG/scripts/lib tcg/scripts/ && cp -R $TCG/scripts/setup/harness tcg/scripts/setup/ && cp -R $TCG/integrations tcg/ && cp $TCG/scripts/tests/lib/fake-az.sh az/az && chmod 755 az/az",
+            "printf '%s' '{\"version\":1,\"public\":{\"platform\":\"github\",\"org\":\"acme\",\"repo\":\"harness\"},\"profile\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-profile\"},\"operations\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-operations\"},\"maintainers\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-maintainers\"}}' > team-repos.json",
+            "git init -q repo && git -C repo remote add origin https://dev.azure.com/acme/Harness/_git/harness",
+            "node -e 'const p=Object.assign({pullRequestId:5,isDraft:false,mergeStatus:\"conflicts\",status:\"active\",title:\"pedido 5\",autoCompleteSetBy:{id:\"q\"},sourceRefName:\"refs/heads/story/5\",creationDate:\"2026-10-25T10:00:00Z\",lastMergeSourceCommit:{commitId:\"c5\"},repository:{name:\"harness-maintainers\"}},{\"isDraft\":true,\"mergeStatus\":\"succeeded\"});require(\"fs\").writeFileSync(\"fixaz/prs-0.json\",JSON.stringify({count:1,value:[p]}))'",
+            "node -e 'const d=require(process.env.FIXTURE+\"/tcg/scripts/setup/harness/tycon-home.js\").stateDir(process.env.HOME);require(\"fs\").mkdirSync(d,{recursive:true});require(\"fs\").writeFileSync(d+\"/stuck-prs.json\",JSON.stringify({\"acme/Harness/harness-maintainers#5\":{estado:\"clean+borrador\",punta:\"c5\",vistoDesde:new Date(Date.now()-120*60000).toISOString()}}))'"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/repo"
+          },
+          "expect": {}
+        },
+        {
+          "id": "grita-no-medido-si-az-falla",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup az fixaz && cp $TCG/scripts/hooks/stuck-pr-notice.js tcg/scripts/hooks/ && cp -R $TCG/scripts/lib tcg/scripts/ && cp -R $TCG/scripts/setup/harness tcg/scripts/setup/ && cp -R $TCG/integrations tcg/ && cp $TCG/scripts/tests/lib/fake-az.sh az/az && chmod 755 az/az",
+            "printf '%s' '{\"version\":1,\"public\":{\"platform\":\"github\",\"org\":\"acme\",\"repo\":\"harness\"},\"profile\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-profile\"},\"operations\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-operations\"},\"maintainers\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-maintainers\"}}' > team-repos.json",
+            "git init -q repo && git -C repo remote add origin https://dev.azure.com/acme/Harness/_git/harness",
+            "node -e 'const p=Object.assign({pullRequestId:5,isDraft:false,mergeStatus:\"conflicts\",status:\"active\",title:\"pedido 5\",autoCompleteSetBy:{id:\"q\"},sourceRefName:\"refs/heads/story/5\",creationDate:\"2026-10-25T10:00:00Z\",lastMergeSourceCommit:{commitId:\"c5\"},repository:{name:\"harness-maintainers\"}},{});require(\"fs\").writeFileSync(\"fixaz/prs-0.json\",JSON.stringify({count:1,value:[p]}))'"
+          ],
+          "env": {
+            "TYCON_AZ_FAIL": "prs"
+          },
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/repo"
+          },
+          "expect": {
+            "stdout_re": [
+              "pedidos trabados: no medido \\(.*harness-maintainers: "
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

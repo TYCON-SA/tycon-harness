@@ -55,11 +55,11 @@ const { readEnv } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js')
 const { esEvidenciaDeCierre } = require(path.join(__dirname, '..', 'ci', 'tycon-ci-gate.js'));
 
 const TCG = path.resolve(__dirname, '..', '..');
-// dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js: en una instalación bajada es
-// ~/.tycon/state/dashboard; en un clon, el de siempre. Si este archivo viaja suelto, el de siempre.
+// dónde escribe esta máquina sus `metrics-*.json` lo sabe night-data.js: la carpeta de estado (`<stateDir>/dashboard`),
+// también desde un clon. Si este archivo viaja suelto, el `.dashboard` de siempre.
 function dashboardDefault() {
-  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js: en una versión bajada, el
-  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, el de siempre.
+  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js: su carpeta de estado, nunca un clon.
+  // Sin esa biblioteca al lado, el de siempre.
   // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a otra ruta; si no pudo saber, lo avisa ella)
   { const lib = path.join(__dirname, '..', 'lib', 'night-data.js'); if (fs.existsSync(lib)) { const d = require(lib).machineDashboardDir(TCG); if (d) return d; } }
   try {
@@ -68,6 +68,15 @@ function dashboardDefault() {
     if (d) return d;
   } catch (_) { /* el de siempre */ }
   return path.join(TCG, '.dashboard');
+}
+// Lo que se LEE por defecto: la carpeta de estado y la de la historia, donde quedaron los registros de antes (night-data.js).
+// El punto del día va a la de la historia, donde lo buscan el instalador y el tablero: la de estado no la mira nadie.
+function nightDefaults() {
+  const lib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  if (!fs.existsSync(lib)) return null;
+  const m = require(lib).machineDashboard(TCG);
+  if (m.historyWhy) process.stderr.write(`⚠️ sdlc-stage-metrics: ${m.historyWhy}\n`);
+  return m.dir ? { dirs: [m.dir, m.history].filter(Boolean), snapshot: m.history || m.dir } : null;
 }
 // Dónde están las skills lo dice LA función que usan todos, no una ruta armada acá: la variable
 // TYCON_SKILLS_DIR › el propio clon si es unido › ~/.claude/agent-skills. Así, corriendo desde un clon que trae su propio
@@ -1157,11 +1166,12 @@ function measureRepo(repo, since, opts = {}) {
 
 // ── first-pass desde el dashboard 2.0 ────────────────────────────────────────────────────────
 
+// `dir`: una carpeta, o varias (la de estado y la de la historia; el mismo archivo en dos cuenta una vez)
 function firstPassFromDashboard(dir, since) {
-  let loadAll;
-  try { ({ loadAll } = require(path.join(TCG, 'scripts', 'lib', 'dashboard-metrics.js'))); }
+  let loadAll, loadMany;
+  try { ({ loadAll, loadMany } = require(path.join(TCG, 'scripts', 'lib', 'dashboard-metrics.js'))); }
   catch { return { value: null, reason: 'lib/dashboard-metrics.js no disponible' }; }
-  const { records } = loadAll(dir);
+  const { records } = Array.isArray(dir) ? loadMany(dir) : loadAll(dir);
   let rows = records.filter((r) => (r.status === 'ok' || r.status === 'legacy'));
   if (since) rows = rows.filter((r) => r.date && r.date >= since);
   const iters = rows.map((r) => r.values.advisor_rerun_loop_iterations).filter((v) => v !== null);
@@ -1250,7 +1260,8 @@ function main() {
       console.error(`    sin stories: ${skippedNames.sort().join(' · ')}`);
     }
   }
-  const firstPass = firstPassFromDashboard(a.dashboard, a.since);
+  const defaults = a.dashboardGiven ? null : nightDefaults();
+  const firstPass = firstPassFromDashboard(defaults ? defaults.dirs : a.dashboard, a.since);
 
   const allLeads = repos.flatMap((r) => r.leads || []);
   const byMonth = {};
@@ -1406,19 +1417,20 @@ function main() {
   // Snapshot: un archivo por día en el .dashboard. Es lo que convierte una foto en SERIE —
   // sin esto, cada corrida reemplaza a la anterior y la tendencia (que es el único uso real
   // de estas métricas) no existe. Idempotente dentro del mismo día a propósito.
-  // 🔴 El punto del día lo escribe el NOCTURNO, en su propio árbol. Desde una versión bajada, la carpeta por defecto es
-  // el clon de mantenimiento de la máquina, donde vive el punto del nocturno con ESE nombre: escribir acá lo pisa (o
+  // 🔴 El punto del día lo escribe el NOCTURNO, en su propio árbol. Si la carpeta por defecto cae en otro clon (el de
+  // mantenimiento, donde vive el punto del nocturno con ESE nombre), escribir acá lo pisa (o
   // deja un archivo suelto que traba el `pull` siguiente — pasó el 11 y el 12 de octubre de 2026 con una foto vacía de
   // 939 bytes sobre una de 49.945). Ahí no se escribe; quien de verdad lo quiera, dice dónde con `--dashboard`.
-  const enOtroClon = !a.dashboardGiven && path.resolve(a.dashboard) !== path.join(TCG, '.dashboard')
-    && fs.existsSync(path.join(path.dirname(path.resolve(a.dashboard)), '.git'));
+  const snapshotDir = defaults ? defaults.snapshot : a.dashboard;
+  const enOtroClon = !a.dashboardGiven && path.resolve(snapshotDir) !== path.join(TCG, '.dashboard')
+    && fs.existsSync(path.join(path.dirname(path.resolve(snapshotDir)), '.git'));
   if (a.snapshot && enOtroClon) {
-    console.error(`⚠️  no escribo el punto del día: iría a ${a.dashboard}, que es el clon de mantenimiento y trae el del nocturno con ese nombre. Para escribirlo igual, decí dónde: --dashboard <carpeta>`);
+    console.error(`⚠️  no escribo el punto del día: iría a ${snapshotDir}, que es el clon de mantenimiento y trae el del nocturno con ese nombre. Para escribirlo igual, decí dónde: --dashboard <carpeta>`);
   } else if (a.snapshot) {
     const day = new Date().toISOString().slice(0, 10);
-    const out = path.join(a.dashboard, `sdlc-stage-${day}.json`);
+    const out = path.join(snapshotDir, `sdlc-stage-${day}.json`);
     try {
-      fs.mkdirSync(a.dashboard, { recursive: true });
+      fs.mkdirSync(snapshotDir, { recursive: true });
       fs.writeFileSync(out, JSON.stringify(payload(), null, 2));
       console.error(`📈 snapshot: ${out}`);
     } catch (e) {

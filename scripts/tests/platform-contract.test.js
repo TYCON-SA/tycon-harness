@@ -472,3 +472,106 @@ test('Adversarial_TreeWithoutPlatformFolder_SecretsStillRead @story-8.85 @ac-32'
   assert.strictEqual(o.secreto, true, 'los secretos se siguen conociendo');
   assert.match(o.azure.join(' '), /no pude cargar scripts\/lib\/platform\/contract\.js/, 'el conector dice qué le falta');
 });
+
+// ── change-request.list en Azure DevOps ─────────────────────────────────────────────────────────────────────────────
+/** Un pedido como lo devuelve Azure en la lista del proyecto. */
+function prAzure(n, o = {}) {
+  return {
+    pullRequestId: n, isDraft: false, mergeStatus: 'succeeded', status: 'active', title: `pedido ${n}`,
+    sourceRefName: `refs/heads/story/${n}`, creationDate: '2026-10-25T10:00:00Z',
+    lastMergeSourceCommit: { commitId: `${n}`.padStart(40, 'a') }, repository: { name: 'Backend', project: { name: 'Producto' } }, ...o,
+  };
+}
+/** Un mundo de Azure con las páginas de pedidos en el az de mentira: `paginas[i]` va en prs-<i*99>.json (las páginas se
+ *  pisan en un pedido: el primero de cada una es el último de la anterior). */
+function mundoAzure(paginas) {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const fix = tmp('fixaz-');
+  paginas.forEach((v, i) => fs.writeFileSync(path.join(fix, `prs-${i * 99}.json`), JSON.stringify({ count: v.length, value: v })));
+  // el doble va copiado y ejecutable: en git no lleva el bit de ejecución
+  const az = path.join(tmp('az-'), 'az');
+  fs.copyFileSync(FAKE_AZ, az);
+  fs.chmodSync(az, 0o755);
+  Object.assign(m.env, { TYCON_ADO_CMD: az, FIXAZ: fix });
+  return { ...m, fix };
+}
+
+test('AdoList_MapsFields @story-8.131 @ac-12', async () => {
+  const w = mundoAzure([[
+    prAzure(7, { isDraft: true, mergeStatus: 'conflicts', autoCompleteSetBy: { id: 'x' } }),
+    prAzure(8, { mergeStatus: 'queued' }),
+    prAzure(9, { mergeStatus: 'rejectedByPolicy', autoCompleteSetBy: { id: 'y' } }),
+    prAzure(10, { repository: { name: 'Otro', project: { name: 'Producto' } } }),
+    prAzure(11, { repository: { name: 'backend', project: { name: 'Producto' } } }),
+  ]]);
+  const r = await P().run('change-request.list', {}, { env: w.env, repo: AZ });
+  assert.strictEqual(C().shapeProblem(r), null, JSON.stringify(r));
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual(r.value.map((p) => p.number), [7, 8, 9, 11], 'el pedido de otro repo del proyecto queda afuera; el nombre no distingue mayúsculas');
+  const [a, b, c] = r.value;
+  assert.deepStrictEqual(a, { number: 7, draft: true, autoComplete: true, mergeState: 'conflict', sourceBranch: 'story/7', sourceCommit: '7'.padStart(40, 'a'), createdAt: '2026-10-25T10:00:00Z', title: 'pedido 7' });
+  assert.strictEqual(b.mergeState, 'pending');
+  assert.strictEqual(b.autoComplete, false);
+  assert.strictEqual(c.mergeState, 'unknown');
+  const llamadas = fs.readFileSync(path.join(w.fix, 'llamadas.log'), 'utf8');
+  assert.match(llamadas, /searchCriteria\.status=active/);
+  assert.match(llamadas, /project=Producto/);
+});
+
+test('AdoList_AzFails_NoMedido @story-8.131 @ac-12', async () => {
+  const w = mundoAzure([[prAzure(7)]]);
+  w.env.TYCON_AZ_FAIL = 'prs';
+  const r = await P().run('change-request.list', {}, { env: w.env, repo: AZ });
+  assert.strictEqual(r.ok, false);
+  assert.notStrictEqual(r.reason, undefined);
+  assert.ok(['no_medido', 'rechazado', 'sin_credencial', 'red'].includes(r.reason), r.reason);
+  assert.ok(!Array.isArray(r.value), 'nunca una lista vacía');
+  const basura = mundoAzure([[prAzure(7)]]);
+  basura.env.TYCON_AZ_GARBAGE = 'prs';
+  const g = await P().run('change-request.list', {}, { env: basura.env, repo: AZ });
+  assert.deepStrictEqual([g.ok, g.reason], [false, 'no_medido']);
+});
+
+test('AdoList_Paginates @story-8.131 @ac-12', async () => {
+  const uno = Array.from({ length: 100 }, (_, i) => prAzure(i + 1));
+  const dos = Array.from({ length: 51 }, (_, i) => prAzure(i + 100));
+  const w = mundoAzure([uno, dos]);
+  const r = await P().run('change-request.list', {}, { env: w.env, repo: AZ });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.strictEqual(r.value.length, 150);
+});
+
+test('AdoList_ShiftBetweenPages_NoMedido @story-8.131 @ac-12', async () => {
+  // entre una página y la otra se cerró un pedido más nuevo: la lista corrió un lugar y el del borde (el 100) no
+  // aparece en ninguna. Leerla como entera borraría su reloj
+  const uno = Array.from({ length: 100 }, (_, i) => prAzure(i + 1));
+  const dos = Array.from({ length: 50 }, (_, i) => prAzure(i + 101));
+  const w = mundoAzure([uno, dos]);
+  const r = await P().run('change-request.list', {}, { env: w.env, repo: AZ });
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'no_medido'], JSON.stringify(r));
+  assert.match(r.detail, /cambió mientras se leía/);
+  assert.strictEqual(r.value, undefined, 'nunca la lista con un hueco');
+});
+
+test('AdoList_Windows_AzThroughConsole @story-8.131 @ac-12', () => {
+  // en Windows `az` es az.cmd, que node sólo corre por la consola: los argumentos van entre comillas
+  const { llamadaAz } = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'change-requests.js'));
+  const args = ['devops', 'invoke', '--route-parameters', 'project=Mi Proyecto', '$top=100', '--org', 'https://dev.azure.com/acme'];
+  const win = llamadaAz('az', args, 'win32');
+  assert.strictEqual(win.shell, true);
+  assert.deepStrictEqual(win.args, args.map((a) => `"${a}"`));
+  assert.deepStrictEqual(llamadaAz('az', args, 'darwin'), { args, shell: false });
+  assert.deepStrictEqual(llamadaAz('/x/fake-az', args, 'win32'), { args, shell: false }, 'un doble con ruta no pasa por la consola');
+  assert.match(llamadaAz('az', ['project=a&b'], 'win32').problem, /no seguros/);
+  assert.strictEqual(Object.keys(require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'change-requests.js'))).includes('llamadaAz'), false,
+    'no es una operación del conector');
+});
+
+test('AdoList_PageCap_NoMedido @story-8.131 @ac-12', async () => {
+  const lleno = (base) => Array.from({ length: 100 }, (_, i) => prAzure(base + i + 1));
+  const w = mundoAzure([lleno(0), lleno(99), lleno(198)]);
+  const r = await P().run('change-request.list', { maxPages: 2 }, { env: w.env, repo: AZ });
+  assert.deepStrictEqual([r.ok, r.reason], [false, 'no_medido'], JSON.stringify(r));
+  assert.match(r.detail, /tope/);
+  assert.strictEqual(r.value, undefined, 'nunca la lista cortada');
+});

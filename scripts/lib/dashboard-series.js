@@ -24,14 +24,14 @@
 'use strict';
 
 const path = require('path');
-const { METRICS, loadAll } = require('./dashboard-metrics.js');
+const { METRICS, loadAll, loadMany } = require('./dashboard-metrics.js');
 
 const REPO = path.resolve(__dirname, '..', '..');   // el clon: este archivo vive en scripts/lib/
-// dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js: en una instalación bajada es
-// ~/.tycon/state/dashboard; en un clon, el de siempre. Si el archivo viaja suelto, el de siempre.
+// dónde escribe esta máquina sus `metrics-*.json` lo sabe night-data.js: la carpeta de estado (`<stateDir>/dashboard`),
+// también desde un clon. Si el archivo viaja suelto, el `.dashboard` de siempre.
 function dashboardDefault() {
-  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js : en una versión bajada, el
-  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, el de siempre.
+  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js: su carpeta de estado, nunca un clon.
+  // Sin esa biblioteca al lado, el de siempre.
   // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la ruta de antes; si no pudo saber, lo avisa ella)
   { const lib = path.join(__dirname, 'night-data.js'); if (require('fs').existsSync(lib)) { const d = require(lib).machineDashboardDir(REPO); if (d) return d; } }
   try {
@@ -42,6 +42,13 @@ function dashboardDefault() {
   return path.join(REPO, '.dashboard');
 }
 
+/** Las carpetas de lectura de night-data.js que no son `dir` (la de la historia). Sin la biblioteca, ninguna. */
+function historyDirs(dir) {
+  const lib = path.join(__dirname, 'night-data.js');
+  if (!require('fs').existsSync(lib)) return [];
+  return require(lib).machineDashboardDirs(REPO).filter((d) => path.resolve(d) !== path.resolve(dir));
+}
+
 function parseArgs(argv) {
   const a = { dir: dashboardDefault(), since: null, until: null, project: null,
               json: false, validate: false, verbose: false };
@@ -50,7 +57,7 @@ function parseArgs(argv) {
     if (k === '--json') a.json = true;
     else if (k === '--validate') a.validate = true;
     else if (k === '--verbose' || k === '-v') a.verbose = true;
-    else if (k === '--dir') a.dir = argv[++i];
+    else if (k === '--dir') { a.dir = argv[++i]; a.dirGiven = true; }
     else if (k === '--since') a.since = argv[++i];
     else if (k === '--until') a.until = argv[++i];
     else if (k === '--project') a.project = argv[++i];
@@ -111,7 +118,9 @@ function main() {
     process.exit(0);
   }
 
-  const { records, counts, dir } = loadAll(a.dir);
+  // sin --dir, también la carpeta de la historia: ahí quedaron los registros de antes de la carpeta de estado
+  const history = a.dirGiven ? [] : historyDirs(a.dir);
+  const { records, counts, dir } = history.length ? loadMany([a.dir, ...history]) : loadAll(a.dir);
 
   // ── modo validador: sólo mira los v2 rotos ────────────────────────────────────────────────
   if (a.validate) {

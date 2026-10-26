@@ -155,8 +155,9 @@ test('Validador_ArchivosDeprecados', () => {
   // y llega a la salida de `pipeline.js validators`
   escribir(d, 'specs/story-1.1.md', historia({ modificar: ['src/muerto/m.js'] }));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'deprec-g-casa-'));
+  // la casa vacía no tiene arnés: con paquetes instalados al lado, `validators` frenaría preguntando `packs.default`
   const v = spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'validators', '--repo', d, '--story', path.join(d, 'specs/story-1.1.md')],
-    { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_STORY_REVIEW: '0' } });
+    { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_STORY_REVIEW: '0', TYCON_PACKS_DEFAULT: 'none' } });
   const out = JSON.parse(v.stdout);
   assert.deepEqual(out.archivos_deprecados.map((a) => [a.archivo, a.frena]), [['src/muerto/m.js', true]], v.stderr);
 });
