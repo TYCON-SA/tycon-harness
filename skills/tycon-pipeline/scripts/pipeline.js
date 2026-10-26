@@ -1455,10 +1455,21 @@ function computeValidadores({ story, repo, todos = false, deprecados = true }) {
         `modelo: ${previa.model_reason}. Al terminar, story-review-record con --tokens y --duration-ms del resultado del lanzamiento.`,
     });
   }
+  // una historia que no cambió desde su última validación verde no se vuelve a validar (lib/validation-record.js)
+  let validadores = ['tycon-story-validator', ...lanzamientos.map((l) => l.agente)];
+  let validacionPrevia = null;
+  if (!todos) {
+    const leida = validationRecord.readRecord(os.homedir(), story);
+    const v = validationRecord.omitirVigentes({ validadores, lanzamientos }, leida);
+    validadores = v.validadores;
+    lanzamientos.splice(0, lanzamientos.length, ...v.lanzamientos);
+    validacionPrevia = { estado: leida.estado, omitidos: v.omitidos, linea: validationRecord.linea(leida, v.omitidos) };
+  }
   return {
     story, repo,
-    validadores: ['tycon-story-validator', ...lanzamientos.map((l) => l.agente)],
+    validadores,
     lanzamientos,
+    validacion_previa: validacionPrevia,
     packs: resumenPaquetes(activos), packs_dir: packsLib.dirPaquetes(),
     packs_nota: packsLib.notaDePaquetes({ repo, instalados: paquetesInstalados(), activos }),
     contexto: { files, detection: det },
@@ -3668,6 +3679,7 @@ function computeRiskClass(args) {
 // se saltea) y `models.js` (`adversarial.story`). Una constancia vigente (lib/story-review-record.js) no se relanza;
 // `no-medido` y una historia cambiada sí. `TYCON_STORY_REVIEW=0` la apaga, y el salteo igual se registra con su motivo.
 const storyReviewRecord = require('./lib/story-review-record.js');
+const validationRecord = require('./lib/validation-record.js');
 function computeStoryReviewGate({ story, env = process.env, home = os.homedir() }) {
   const { estado, record } = storyReviewRecord.readRecord(home, story);
   // un salteo no es una revisión: se vuelve a decidir cada vez (la revisión prendida otra vez, o la historia ya no LOW)
@@ -6199,6 +6211,7 @@ function parseArgs(argv) {
     else if (t === '--finding') a.finding = argv[++i];             // verify-finding / record-refutation: el hallazgo propuesto como falso (JSON)
     else if (t === '--result') a.resultado = argv[++i];            // record-refutation: lo que devolvió el verificador (JSON: refuted, command, output)
     else if (t === '--verifier') a.verificador = argv[++i];        // record-refutation: el id del lanzamiento del verificador (<agente>@<ts> del registro de spawns)
+    else if (t === '--validators') a.validadores = argv[++i];      // validation-record: los validadores que corrieron, separados por coma
     else if (t === '--verifier-model') a.modeloVerificador = argv[++i];
     else if (t === '--model') a.modelo = argv[++i];                // verify-finding: modelo del verificador (default sonnet)
     else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el pase adversarial (aun en LOW)
@@ -6883,6 +6896,19 @@ function main() {
       process.exit(0);
     } catch (e) {
       process.stderr.write(`story-review-record: no escribí la constancia:\n${e.message}\n`);
+      process.exit(2);
+    }
+  }
+  if (cmd === 'validation-record') {
+    // La constancia de la validación de la historia: el único que la escribe. Vocabulario cerrado; exit 2 sin escribir.
+    if (!args.story || !fs.existsSync(args.story)) { process.stderr.write(`validation-record: --story inválido: ${args.story}\n`); process.exit(2); }
+    const validadores = String(args.validadores || '').split(',').map((v) => v.trim()).filter(Boolean);
+    try {
+      const f = validationRecord.writeRecord(os.homedir(), args.story, { resultado: args.resultado, validadores });
+      process.stdout.write(JSON.stringify({ escrita: f, ...validationRecord.readRecord(os.homedir(), args.story).record }, null, 2) + '\n');
+      process.exit(0);
+    } catch (e) {
+      process.stderr.write(`validation-record: no escribí la constancia:\n${e.message}\n`);
       process.exit(2);
     }
   }

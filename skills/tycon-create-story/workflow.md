@@ -456,6 +456,10 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     before setting "ready-for-dev": every edit makes the validator's record stale, and the harness does not let a draft
     move to "ready-for-dev" without a current one. If it reports a CRITICAL, fix it and run it again.</action>
   </check>
+  <action>Once the validator's last run on the final story has no CRITICAL, record it: `node <this skill's
+  directory>/../tycon-pipeline/scripts/pipeline.js validation-record --story {default_output_file} --result verde
+  --validators tycon-story-validator`. The pipeline then does not validate the same, unchanged story again (status
+  changes do not count as changes).</action>
   <action>Only after the record is written (and nothing is `pendiente`), set the story Status (frontmatter and the
   `Status:` line, from "draft") and the sprint status to "ready-for-dev"</action>
 
