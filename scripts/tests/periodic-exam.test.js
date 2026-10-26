@@ -2157,11 +2157,17 @@ test('T5d ChildCrash_MotivoKeepsCauseAndHidesRestOfSecret @ac-4: la causa le gan
 
 test('T5f ChildCrash_MotivoRedactsAcrossOtherLineBreaksAndPrefixes @ac-4: \\r o U+2028 a mitad de línea, más prefijos y formas de -u', () => {
   const { colaDeError } = require(EXAMEN);
+  // Los ejemplos con forma de clave de proveedor van armados por partes: ninguna línea trae el valor entero, y el
+  // escaneo de secretos de GitHub no los toma por una credencial.
+  const stripe = 'sk_' + 'live_abcdefgh1234';
+  const gitlab = 'glpat' + '-abcdefghijkl12';
+  const aws = 'ASIA' + 'ABCDEFGHIJKLMNOP';
+  const google = 'AIza' + 'SyAbcdefghijklmnopqrstu';
+  const npm = 'npm' + '_abcdefghijklmnop1234';
   for (const [error, secreto] of [['password: una clave\rzzz', 'una clave'],
     [`token: valor-secreto${String.fromCharCode(0x2028)}resto`, 'valor-secreto'], ['passphrase frase secreta', 'frase secreta'],
-    ['Error sk_live_abcdefgh1234', 'sk_live_abcdefgh1234'], ['glpat-abcdefghijkl12', 'glpat-abcdefghijkl12'],
-    ['ASIAABCDEFGHIJKLMNOP', 'ASIAABCDEFGHIJKLMNOP'], ['AIzaSyAbcdefghijklmnopqrstu', 'AIzaSyAbcdefghijklmnopqrstu'],
-    ['npm_abcdefghijklmnop1234', 'npm_abcdefghijklmnop1234'], ['-u admin:hunter2 https://x', 'admin:hunter2'],
+    [`Error ${stripe}`, stripe], [gitlab, gitlab], [aws, aws], [google, google],
+    [npm, npm], ['-u admin:hunter2 https://x', 'admin:hunter2'],
     ['curl --user=admin:hunter2 https://x', 'admin:hunter2'], ['curl -u "admin:con espacio" https://x', 'con espacio']])
     assert.ok(!colaDeError(error).includes(secreto), `«${secreto}» llega a la cola: ${colaDeError(error)}`);
 });

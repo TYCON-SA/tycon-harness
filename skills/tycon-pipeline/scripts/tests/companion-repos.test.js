@@ -839,6 +839,22 @@ test('T5 HermanoEnOtraRama_SeDice @story-7.34 @ac-5 — sin worktree, el checkou
   assert.equal(r.avisos, '', r.avisos);
 });
 
+test('companionRoots: con la cabeza suelta, el número de la story elige el worktree del hermano', () => {
+  // 🔴 mutación: sin rama se devuelve el declarado: el armado de un clon de prueba en un commit suelto mide el checkout
+  // compartido, no el código de la story.
+  const lab = laboratorioPorNumero();
+  git(lab.backWt, 'checkout', '-q', '--detach');
+  const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
+  assert.deepEqual(roots, [lab.frontWts[0]]);
+  assert.match(avisos, /nombra la story 1\.4/, avisos);
+  // Sin worktree que nombre la story, el declarado, y sin el aviso del checkout principal (no hay rama con qué compararlo).
+  const sinNumero = laboratorioPorNumero({ frontRamas: ['feat/sin-numero'] });
+  git(sinNumero.backWt, 'checkout', '-q', '--detach');
+  const r = hermanosConAvisos(sinNumero.backWt, sinNumero.story);
+  assert.deepEqual(r.roots, [sinNumero.front]);
+  assert.equal(r.avisos, '', r.avisos);
+});
+
 test('T6 TestGate_CorreElHermanoElegidoPorNumero @story-7.34 @ac-8 — el portón corre la suite del worktree elegido', () => {
   const lab = laboratorioPorNumero();
   fs.writeFileSync(path.join(lab.frontWts[0], 'scripts', 'lib', 'acme.js'), 'module.exports = 2;\n');
