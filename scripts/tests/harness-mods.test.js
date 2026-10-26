@@ -524,3 +524,21 @@ test('T42 Board_TotalInHours — el total en horas desde la hora, y desde un dí
   const marker = JSON.stringify({ storyId: '9.9', stepScheme: 2, startedAt: new Date(now - (3 * 60 + 12) * 60000).toISOString(), stepsCompleted: ['start'], stepTimings: {} });
   assert.match(boardLine(readRun(marker, now), 5), / · 3 h 12 min en total · /);
 });
+
+test('T43 Board_FindingsAnswered_StopsWaiting — «te espera» de Hallazgos se apaga cuando la persona contestó', async () => {
+  const { readRun, stickyWaiting, boardLine } = await mod('run.mjs');
+  const NOMBRES = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'];
+  const hall = (findings) => readRun(JSON.stringify({
+    storyId: 'CO-7', stepScheme: 2, startedAt: at(0), autonomous: true,
+    stepsCompleted: NOMBRES.slice(0, 8), stepsPending: NOMBRES.slice(8), stepTimings: { findings },
+  }), NOW);
+  // preguntó: espera, y el cartel lo recuerda
+  const pregunta = stickyWaiting(hall({ startedAt: at(30), waitStartedAt: at(31) }), null);
+  assert.strictEqual(pregunta.run.waiting, true);
+  assert.strictEqual(pregunta.remember, 'CO-7:findings');
+  // contestó: la marca del fin de la espera apaga «te espera», aunque el cartel lo recordara del refresco anterior
+  const contesto = stickyWaiting(hall({ startedAt: at(30), waitStartedAt: at(31), waitEndedAt: at(33) }), pregunta.remember);
+  assert.strictEqual(contesto.run.waiting, false, 'la persona ya contestó');
+  assert.strictEqual(contesto.remember, null);
+  assert.doesNotMatch(boardLine(contesto.run, 10), /te espera/);
+});

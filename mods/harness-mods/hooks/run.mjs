@@ -194,10 +194,12 @@ export function readRun(text, now) {
     return { id: s.id, number: s.number, name: s.id === 'reviewers' && round ? `${s.name} (vuelta ${round})` : s.name, state, minutes: minutes(startOf(s.id), stopOf(s.id)) };
   });
 
-  // espera a la persona: la bandera, «Aprobar el plan» sin modo autónomo, o «Hallazgos» cuando de verdad preguntó
-  // (en el marker viejo, la decisión de los hallazgos —el 7— sin modo autónomo, como antes)
+  // espera a la persona: la bandera, «Aprobar el plan» sin modo autónomo, o «Hallazgos» cuando de verdad preguntó y
+  // todavía no le contestaron (en el marker viejo, la decisión de los hallazgos —el 7— sin modo autónomo, como antes)
+  const tFind = timings.findings || {};
+  const answered = Boolean(current && current.id === 'findings' && ms(tFind.waitStartedAt) !== null && ms(tFind.waitEndedAt) !== null);
   const asks = current && ((current.id === 'approve-plan' && m.autonomous !== true)
-    || (current.id === 'findings' && (ms((timings.findings || {}).waitStartedAt) !== null || (scheme === 1 && m.autonomous !== true))));
+    || (current.id === 'findings' && !answered && (ms(tFind.waitStartedAt) !== null || (scheme === 1 && m.autonomous !== true))));
   return {
     storyId: m.storyId,
     title: typeof m.storyTitle === 'string' && m.storyTitle.trim() !== '' ? m.storyTitle.trim() : null,
@@ -208,6 +210,7 @@ export function readRun(text, now) {
     minutesTotal: minutes(ms(m.startedAt), now),
     totalText: totalText(minutes(ms(m.startedAt), now), ms(m.startedAt), now),
     waiting: m.waitingForHuman === true || Boolean(asks),
+    answered,
     oldScheme: scheme === 1,
     warnings,
     rows,
@@ -286,13 +289,15 @@ export function boardLine(run, contextPercent) {
 
 /**
  * «te espera» que no se pierde: el Stop-hook del pipeline borra `waitingForHuman` al cerrar el turno, justo cuando
- * empieza la espera. Se recuerda la clave `story:paso` mientras la corrida siga en ese paso.
+ * empieza la espera. Se recuerda la clave `story:paso` mientras la corrida siga en ese paso y nadie haya contestado
+ * (`answered`: el marcador anotó el fin de la espera).
  * Devuelve `{ run, remember }`: la corrida (con `waiting` ajustado) y la clave a guardar para el próximo refresco.
  */
 export function stickyWaiting(run, remembered) {
   if (!run || !run.current) return { run, remember: null };
   const key = `${run.storyId}:${run.current.id}`;
   if (run.waiting) return { run, remember: key };
+  if (run.answered) return { run, remember: null };
   if (remembered === key) return { run: { ...run, waiting: true }, remember: key };
   return { run, remember: null };
 }
