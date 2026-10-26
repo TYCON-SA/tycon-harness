@@ -276,13 +276,26 @@ function findingsOpen(marker) {
   return schemeOf(marker) === 2 && isDone(marker, 'reviewers') && isDone(marker, 'adversarial-pass') && !isDone(marker, 'findings');
 }
 
-/** Anota en el marcador el arranque de la espera de Hallazgos, si está abierto y no lo tenía. Devuelve si cambió. */
+/**
+ * Anota en el marcador el arranque de la espera de Hallazgos, si está abierto y no lo tenía. Una pregunta después de una
+ * respuesta vuelve a esperar: borra el fin y deja el arranque, que es el que miden los tiempos. Devuelve si cambió.
+ */
 function noteFindingsWait(marker, ts) {
   if (!findingsOpen(marker)) return false;
   marker.stepTimings = marker.stepTimings && typeof marker.stepTimings === 'object' ? marker.stepTimings : {};
   const f = marker.stepTimings.findings && typeof marker.stepTimings.findings === 'object' ? marker.stepTimings.findings : {};
-  if (f.waitStartedAt) return false;
-  marker.stepTimings.findings = { ...f, waitStartedAt: ts || new Date().toISOString() };
+  if (f.waitStartedAt && !f.waitEndedAt) return false;
+  const { waitEndedAt, ...rest } = f;
+  marker.stepTimings.findings = { ...rest, waitStartedAt: f.waitStartedAt || ts || new Date().toISOString() };
+  return true;
+}
+
+/** Anota el fin de la espera de Hallazgos cuando la persona contesta, si había una abierta. Devuelve si cambió. */
+function noteFindingsAnswer(marker, ts) {
+  if (!findingsOpen(marker)) return false;
+  const f = (marker.stepTimings || {}).findings;
+  if (!f || typeof f !== 'object' || !f.waitStartedAt || f.waitEndedAt) return false;
+  marker.stepTimings.findings = { ...f, waitEndedAt: ts || new Date().toISOString() };
   return true;
 }
 
@@ -353,7 +366,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 module.exports = {
   SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
   STEP_CLOSE_CHECKS, closeControlsByStep, byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
-  resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, findingsOpen, noteFindingsWait, retireCheck,
+  resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
 };
 
 if (require.main === module) {

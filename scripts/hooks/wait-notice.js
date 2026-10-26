@@ -465,10 +465,11 @@ function handle(d) {
 }
 
 /**
- * La pregunta a la persona con «Hallazgos» abierto es el arranque de su espera: se anota en el marcador de la ejecución
- * (una sola vez), con o sin Telegram. Es una medición del tiempo de la ejecución, no un aviso.
+ * La pregunta a la persona con «Hallazgos» abierto es el arranque de su espera, y su respuesta el fin: se anotan en el
+ * marcador de la ejecución, con o sin Telegram. Es una medición del tiempo de la ejecución, no un aviso; el cartel lee
+ * el fin para dejar de decir «te espera».
  */
-function noteFindingsWait(sid) {
+function noteFindingsWait(sid, which = 'noteFindingsWait') {
   const m = readMarker(sid);
   if (!m) return false;
   let steps;
@@ -477,7 +478,7 @@ function noteFindingsWait(sid) {
     try { logLine({ session: sid, event: 'findings-wait-not-noted', reason: `lib/steps.js no carga (${e.code || e.name || 'error'})` }); } catch { /* sin registro tampoco */ }
     return false;
   }
-  if (!steps.noteFindingsWait(m, new Date().toISOString())) return false;
+  if (!steps[which](m, new Date().toISOString())) return false;
   const file = path.join(dirs().active, `${safeSid(sid)}.json`);
   const tmp = `${file}.${process.pid}.tmp`;
   try {
@@ -502,6 +503,10 @@ if (require.main === module) {
       d = JSON.parse(payload || '{}');
       if (d.hook_event_name === 'PreToolUse' && WAIT_TOOLS.has(d.tool_name) && d.session_id) {
         try { noteFindingsWait(d.session_id); } catch { /* la medición no frena la pregunta */ }
+      }
+      const answer = d.hook_event_name === 'UserPromptSubmit' || (d.hook_event_name === 'PostToolUse' && WAIT_TOOLS.has(d.tool_name));
+      if (answer && d.session_id) {
+        try { noteFindingsWait(d.session_id, 'noteFindingsAnswer'); } catch { /* la medición no frena la respuesta */ }
       }
     }
     if (process.env.TYCON_WAIT_NOTICE === '0') process.exit(0);

@@ -323,6 +323,36 @@ test('T13 Findings_WaitOnlyWhenItStops @story-7.23 @ac-11 — la espera de Halla
   assert.strictEqual((E.leer(sid2).stepTimings || {}).findings, undefined);
 });
 
+test('T13b Findings_AnswerEndsTheWait — la respuesta de la persona anota el fin de la espera de Hallazgos', () => {
+  const E = entorno();
+  const base = arrancar(E, 's-t13b');
+  const sid = 's-t13b';
+  const espera = { startedAt: new Date(Date.now() - 120000).toISOString(), waitStartedAt: new Date(Date.now() - 60000).toISOString() };
+  const hook = (input) => spawnSync('node', [path.join(RAIZ, 'scripts', 'hooks', 'wait-notice.js')], {
+    encoding: 'utf8', input: JSON.stringify({ session_id: sid, ...input }),
+    env: { ...process.env, HOME: E.home, USERPROFILE: E.home, CLAUDE_CODE_SESSION_ID: sid, TYCON_HOME: '' },
+  });
+  const abierto = nuevo(base, 'reviewers', { autonomous: true, deepReviewDone: true, sessionId: sid });
+  // contesta con un prompt: queda anotado el fin, y el arranque no se mueve
+  E.escribir(sid, { ...abierto, stepTimings: { ...abierto.stepTimings, findings: espera } });
+  assert.strictEqual(hook({ hook_event_name: 'UserPromptSubmit', prompt: 'dale' }).status, 0);
+  const f = E.leer(sid).stepTimings.findings;
+  assert.ok(f.waitEndedAt, 'el prompt cierra la espera');
+  assert.strictEqual(f.waitStartedAt, espera.waitStartedAt);
+  // otra pregunta en el mismo paso la vuelve a abrir, sin mover el arranque que miden los tiempos
+  assert.strictEqual(hook({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion' }).status, 0);
+  const g = E.leer(sid).stepTimings.findings;
+  assert.strictEqual(g.waitEndedAt, undefined, 'la pregunta nueva vuelve a esperar');
+  assert.strictEqual(g.waitStartedAt, espera.waitStartedAt);
+  // contesta en el cuadro de opciones: también cierra
+  assert.strictEqual(hook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' }).status, 0);
+  assert.ok(E.leer(sid).stepTimings.findings.waitEndedAt, 'la respuesta del cuadro cierra la espera');
+  // sin espera anotada, un prompt no escribe nada
+  E.escribir(sid, { ...abierto, stepTimings: { ...abierto.stepTimings, findings: { startedAt: espera.startedAt } } });
+  hook({ hook_event_name: 'UserPromptSubmit', prompt: 'hola' });
+  assert.strictEqual(E.leer(sid).stepTimings.findings.waitEndedAt, undefined);
+});
+
 test('T14 ImplementAndRunTests_Split @story-7.23 @ac-12 — cada control del viejo paso 4 en su paso nuevo', () => {
   const E = entorno();
   const base = arrancar(E, 's-t14');

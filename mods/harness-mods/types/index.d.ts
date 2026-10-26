@@ -16,6 +16,8 @@ export type Run = {
   /** Sin paso abierto: los pedidos abiertos de la story (`work-in-progress.js --marker`); sin dato, no se preguntó. */
   entering?: unknown
   waiting: boolean
+  /** «Hallazgos» preguntó y la persona ya contestó: el cartel no recuerda la espera. */
+  answered?: boolean
   rows: BoardRow[]
 }
 
