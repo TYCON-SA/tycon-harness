@@ -1653,9 +1653,10 @@ function cmdCompleteStep(nRaw, flags) {
     // software (determinístico), y con la review de legibilidad independiente "veredicto: OK".
     // qa-guide.js --check chequea los 4 y sale !=0 si falta algo.
     const qaStoryPath = resolveStoryPath(marker.storyPath, marker);
-    // Con la maqueta aprobada también corre aunque markerStoryIsUi diga que no (la revisión sí ve
+    // Con la maqueta aprobada también corre aunque la story no tenga pantalla (la revisión sí ve
     // pantalla), y le pasa la huella aprobada: borrar el archivo de aprobación no saltea la comparación.
-    if (!blocked && (markerStoryIsUi(marker) || (marker.mockupApproval && maqueta.compare)) && qaStoryPath) {
+    // Mira la story entera: con la pantalla en una tanda bloqueada, la guía de backend se sigue pidiendo.
+    if (!blocked && (markerStoryHasScreens(marker) || (marker.mockupApproval && maqueta.compare)) && qaStoryPath) {
       try {
         require('child_process').execFileSync(
           'node',
@@ -1675,7 +1676,7 @@ function cmdCompleteStep(nRaw, flags) {
     // como probado a mano: con la misma condición de pantalla que la guía, después de ella. No se abre con DOD_BYPASS.
     if (!blocked && qaStoryPath) {
       try {
-        const esPantalla = markerStoryIsUi(marker) || !!(marker.mockupApproval && maqueta.compare);
+        const esPantalla = markerStoryHasScreens(marker) || !!(marker.mockupApproval && maqueta.compare);
         const rdMc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, qaStoryPath);
         const f = require('./lib/manual-checks.js').freno({ storyPath: qaStoryPath, storyId: String(marker.storyId), runDir: rdMc, stateDir: STATE_DIR, esPantalla });
         appendLog('gates.log', { name: 'manual-checks', status: f.status, story: marker.storyId, ...(f.faltan.length ? { faltan: f.faltan } : {}) });
@@ -2037,14 +2038,25 @@ function cmdApproveMockup(flags) {
   console.log(JSON.stringify({ ok: true, file: p.mockup, approval: p.approval, sha256: sha, reapproval: !!prev }, null, 2));
 }
 
+// ¿La corrida pide la prueba de navegador? La pantalla de las tandas que no están bloqueadas (`scope: 'active'`).
 function markerStoryIsUi(marker) {
+  return markerScreenRule(marker, { scope: 'active' });
+}
+
+// ¿La story tiene pantalla, aunque sea de una tanda bloqueada? Decide el disparo de la guía del tester y la marca a
+// mano: la guía de los criterios de backend se sigue pidiendo.
+function markerStoryHasScreens(marker) {
+  return markerScreenRule(marker, {});
+}
+
+function markerScreenRule(marker, opts) {
   try {
     const p = marker && marker.storyPath;
     if (!p || !fs.existsSync(p)) return false;
     const content = fs.readFileSync(p, 'utf8');
     // qué cuenta como pantalla lo dice la regla screen_test de la organización (ui de fábrica, react u off)
     return require(path.join(__dirname, 'lib', 'ui-signal.js'))
-      .applyScreenRule(content, (marker && marker.repoPath) || process.cwd(), screenRule()).ui;
+      .applyScreenRule(content, (marker && marker.repoPath) || process.cwd(), screenRule(), opts).ui;
   } catch (e) {
     // no deja la exigencia de pantalla apagada en silencio
     console.error(`⚠️  no pude decidir si la story toca pantalla (${e && e.message ? e.message : e}): se trata como sin pantalla`);
@@ -2068,6 +2080,9 @@ function avisarBajaDePantalla(marker) {
     const content = fs.readFileSync(p, 'utf8');
     const linea = ui.proseDropNotice(ui.uiSignalDetail(content, marker.repoPath || process.cwd()));
     if (linea) console.error(linea);
+    // la pantalla de una tanda bloqueada no se pide en esta corrida, y se dice
+    const tanda = ui.screenScope(content, marker.repoPath || process.cwd()).note;
+    if (tanda) console.error(tanda);
     // con screen_test: off, el cierre dice que la prueba de pantalla no se exigió
     const regla = ui.applyScreenRule(content, marker.repoPath || process.cwd(), screenRule()).note;
     if (regla) console.error(regla);

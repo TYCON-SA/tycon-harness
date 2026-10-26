@@ -6,6 +6,8 @@
  * `mark-dod-runtime-checked`, `set-check dod`, `complete-step prepare-commit` y la guía del tester), `qa-guide.js`
  * (`isUiStory`), `on-pre-commit.js` (`storyIsUiStory`) y `lib/atdd-commit-gate.js` (`storyIsHandOperable`).
  * Copiado en cada control, con carpetas de un producto escritas en duro, se desincroniza; por eso vive acá.
+ * `screenScope` responde la otra pregunta de los mismos controles: si la pantalla es sólo de una tanda bloqueada,
+ * la prueba de navegador y la revisión de la pantalla no se piden en esta corrida (la guía de backend, sí).
  *
  * Las cinco reglas. La primera que da sí, decide:
  *
@@ -219,12 +221,10 @@ function entriesUnder(lines, keyRe) {
  *     del frente o un nombre declarado aparecen en el frontmatter, fuera de lo que manda). Es la «baja».
  *   - `dropReason`: 'documentos' (la mención está en documentos de las listas) o 'prosa'.
  */
-function uiSignalParts(fm, body, repoRoot) {
-  const f = fm || '';
-  const verdict = (signal) => ({ ui: true, signal, proseDropped: false, dropReason: null });
-  if (UI_FM_FILES_RE.test(f)) return verdict('extension');
+/** ¿El texto nombra el frente? La palabra genérica o un nombre declarado por el repo (se leen una sola vez). */
+function frontHit(f, repoRoot) {
   let fe = null;
-  const hit = (t) => {
+  return (t) => {
     if (UI_FM_PATHS_RE.test(t)) return true;
     if (fe === null) {
       // El caller puede pasar un SUBDIR del repo (el cwd de un `cd sub && git commit`, o el process.cwd() del
@@ -236,6 +236,13 @@ function uiSignalParts(fm, body, repoRoot) {
     }
     return fe.some((x) => x && t.includes(x));
   };
+}
+
+function uiSignalParts(fm, body, repoRoot) {
+  const f = fm || '';
+  const verdict = (signal) => ({ ui: true, signal, proseDropped: false, dropReason: null });
+  if (UI_FM_FILES_RE.test(f)) return verdict('extension');
+  const hit = frontHit(f, repoRoot);
   const lines = fmLines(f);
   const fileEntries = entriesUnder(lines, FILE_LIST_KEY_RE);
   if (fileEntries.some((e) => UI_EXT_RE.test(noComment(e)))) return verdict('extension');
@@ -296,16 +303,91 @@ function proseDropNotice(detail) {
     + 'Si toca pantalla, declará sus archivos en files_to_modify.';
 }
 
+/**
+ * Las líneas de cada tanda del bloque `pipelines:`, con los mismos cortes que `parsePipelinesBlock` de
+ * `story-checks.js` (`- name: X` en lista, `  X:` en mapa), en el mismo orden: la tanda i de uno es la i del otro.
+ */
+function batchLines(fm) {
+  const lines = String(fm).split(/\r?\n/);
+  const start = lines.findIndex((l) => /^pipelines\s*:\s*$/.test(l));
+  if (start === -1) return [];
+  const out = [];
+  let current = null;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') continue;
+    if (line.length - line.trimStart().length === 0) break;
+    if (/^\s*-\s*name\s*:\s*["']?[\w-]+/.test(line) || /^\s{2}[\w-]+\s*:\s*$/.test(line)) { current = []; out.push(current); }
+    if (current) current.push(line);
+  }
+  return out;
+}
+
+/**
+ * ¿La pantalla toca alguna tanda que no está bloqueada? Devuelve `{ story, active, blocked, note }`: `story` es el
+ * veredicto sobre la story entera; `active`, el de la corrida; `blocked`, las tandas bloqueadas a las que se atribuyó
+ * la pantalla; `note`, la línea que dice la baja (null sin baja).
+ *
+ * La pantalla se atribuye a las tandas bloqueadas sólo con evidencia, porque este detector endurece controles:
+ * (a) una tanda `blocked` cuyas líneas nombran el frente o una extensión de pantalla, (b) ninguna otra tanda las
+ * nombra, y (c) ningún criterio fuera de los `acs_pending` de las bloqueadas es de pantalla con la regla de la matriz
+ * (`esDePantalla`). Sólo `blocked`, como la matriz: una `pending` puede ser la que se entrega en esta corrida.
+ * Ante cualquier duda, `active` es `story`.
+ */
+function screenScope(content, repoRoot) {
+  const story = storyTouchesUi(content, repoRoot);
+  const same = { story, active: story, blocked: [], note: null };
+  if (!story) return same;
+  const sc = require('./story-checks.js');
+  const tandas = sc.parsePipelinesBlock(content);
+  if (!tandas.some((t) => t.status === 'blocked')) return same;
+  const f = fmOf(content);
+  const segs = batchLines(f);
+  if (segs.length !== tandas.length) return same;
+  const hit = frontHit(f, repoRoot);
+  // `blocked_by` es prosa («espera el frontend»): no dice qué entrega la tanda. Su valor sigue en las líneas con más
+  // sangría que la clave (`>`, `|` o texto que continúa).
+  const nombraPantalla = (seg) => {
+    let prosa = -1;
+    return seg.some((l) => {
+      const sangria = l.length - l.trimStart().length;
+      if (prosa >= 0 && sangria > prosa) return false;
+      const m = l.match(/^(\s*)blocked_by\s*:/);
+      prosa = m ? m[1].length : -1;
+      if (m) return false;
+      const t = noComment(l);
+      return UI_EXT_RE.test(t) || hit(t);
+    });
+  };
+  const conPantalla = tandas.map((t, i) => ({ ...t, ui: nombraPantalla(segs[i]) }));
+  const bloqueadas = conPantalla.filter((t) => t.status === 'blocked' && t.ui);
+  if (!bloqueadas.length || conPantalla.some((t) => t.status !== 'blocked' && t.ui)) return same;
+  const pendientes = new Set(tandas.filter((t) => t.status === 'blocked').flatMap((t) => t.acsPending));
+  const universo = new Set(sc.parseAcsFromSpec(content));
+  for (const row of sc.parseTestsTable(content).rows) for (const n of row.acRefs) universo.add(n);
+  const textos = sc.acTextsFromSpec(content, { maxChars: Infinity });
+  // La regla de la matriz se carga al llamar: runtime-matrix.js carga este módulo.
+  const { esDePantalla } = require('../runtime-matrix.js');
+  if ([...universo].some((n) => !pendientes.has(n) && esDePantalla(textos[n], true))) return same;
+  const blocked = bloqueadas.map((t) => t.name);
+  return {
+    story, active: false, blocked,
+    note: `ℹ️  La pantalla de la story es de la tanda bloqueada ${blocked.join(', ')}: esta corrida no pide su prueba `
+      + 'de navegador ni su revisión. Se piden cuando la tanda deje de estar bloqueada.',
+  };
+}
+
 const REACT_EXT_RE = /\.(tsx|jsx)\b/i;
 
 /**
  * El veredicto de pantalla según la regla `screen_test` de la organización: `ui` = el de siempre; `react` = una story
  * que sólo nombra pantallas `.svelte`/`.vue` no pide E2E; `off` = ninguna lo pide. Cuando la regla saca una story que
- * toca pantalla, `note` lo dice en una línea.
+ * toca pantalla, `note` lo dice en una línea. Con `scope: 'active'` (la prueba de navegador) la regla se aplica sobre
+ * la pantalla de las tandas que no están bloqueadas (`screenScope`); sin `scope`, sobre la story entera.
  * Devuelve `{ ui, note }`.
  */
-function applyScreenRule(content, repoRoot, rule = 'ui') {
-  const ui = storyTouchesUi(content, repoRoot);
+function applyScreenRule(content, repoRoot, rule = 'ui', { scope } = {}) {
+  const ui = scope === 'active' ? screenScope(content, repoRoot).active : storyTouchesUi(content, repoRoot);
   if (!ui || rule === 'ui') return { ui, note: null };
   if (rule === 'off') {
     return { ui: false, note: 'ℹ️  La story toca pantalla, pero la organización no exige la prueba E2E de pantalla (screen_test: off).' };
@@ -318,6 +400,6 @@ function applyScreenRule(content, repoRoot, rule = 'ui') {
 }
 
 module.exports = {
-  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule,
+  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope,
   UI_FM_FILES_RE, UI_FM_PATHS_RE, UI_BODY_RE,
 };

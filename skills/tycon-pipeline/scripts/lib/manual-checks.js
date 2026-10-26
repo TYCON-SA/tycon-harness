@@ -65,7 +65,11 @@ function criterios(storyPath) {
     const f = [clave, id].filter(Boolean).map((k) => path.join(dir, `${k}-pasos.md`)).find((x) => fs.existsSync(x));
     if (f) pasos = qa.parsePasos(fs.readFileSync(f, 'utf8'));
   } catch (_e) { /* sin pasos: el texto del criterio */ }
-  return acs.map((a) => ({ n: a.n, text: limpio((pasos[a.n] && pasos[a.n].desc) || a.text) }));
+  // Los criterios de una tanda bloqueada no se prueban en esta corrida, igual que en la matriz.
+  const bloqueados = new Set(require('./story-checks.js').parsePipelinesBlock(contenido)
+    .filter((p) => p.status === 'blocked').flatMap((p) => p.acsPending));
+  return acs.filter((a) => !bloqueados.has(a.n))
+    .map((a) => ({ n: a.n, text: limpio((pasos[a.n] && pasos[a.n].desc) || a.text) }));
 }
 
 const ordenados = (acs) => [...new Set(acs.map(Number))].sort((a, b) => a - b);

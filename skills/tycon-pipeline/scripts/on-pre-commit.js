@@ -306,8 +306,9 @@ function storyRequiresRuntimeEvidence(specContent) {
 // E2E Playwright REAL (no curl/unit): sin eso, una story se declara "probada en runtime" sin correr Playwright. La señal la decide lib/ui-signal.js (fuente única:
 // listas de archivos, campos estructurados y tandas; la prosa sólo de respaldo; escenarios de navegador
 // en el spec; nombres declarados en .tycon/advisors.yaml → evidence.fe_paths). Nada de productos acá.
+// La pantalla de una tanda bloqueada no se pide en este commit (`screenScope`, la misma regla que marker.js).
 function storyIsUiStory(specContent, repoRoot) {
-  return require('./lib/ui-signal.js').storyTouchesUi(specContent, repoRoot);
+  return require('./lib/ui-signal.js').screenScope(specContent, repoRoot).active;
 }
 
 // La baja de pantalla se dice al cerrar: una línea por stderr y por story, sin
@@ -315,7 +316,7 @@ function storyIsUiStory(specContent, repoRoot) {
 function avisoBajaDePantalla(specContent, repoRoot) {
   try {
     const ui = require('./lib/ui-signal.js');
-    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot));
+    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot)) || ui.screenScope(specContent, repoRoot).note;
   } catch (_e) { return null; }   // el aviso nunca rompe el cierre: es informativo y el veredicto ya se decidió
 }
 
@@ -1829,7 +1830,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO,
+  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory,
 };
 
 if (require.main === module) {
