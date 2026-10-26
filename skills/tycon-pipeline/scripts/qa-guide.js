@@ -941,19 +941,31 @@ function main() {
       if (!openApp) problems.push(`(7) Modo primera vez: falta la línea «Abrir la app: <dónde se levanta> · <qué dirección se abre>» al tope de ${pasosPath || pasosEsperado}. La persona trabaja sola: la guía le dice cómo abrir la app.`);
     }
     if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
-    const pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot, storyPath: abs });
-    problems.push(...pantalla.problems);
-    for (const nota of pantalla.notes) console.log(`   · ${nota}`);
-    const maqueta = mockupLayers({ qaDir, qk, mockupSha: opt('--mockup-sha'), screens: pantalla.screens });
-    problems.push(...maqueta.problems);
-    for (const nota of maqueta.notes) console.log(`   · ${nota}`);
+    // La pantalla de una tanda bloqueada no se revisa en esta corrida: puede estar a medias en el disco, y su
+    // maqueta es de esa tanda. La guía de los criterios de backend, sí.
+    const alcance = require(path.join(__dirname, 'lib', 'ui-signal.js')).screenScope(content, matrix.repoRoot);
+    let pantalla = { problems: [], notes: [], screens: [] };
+    const deTandaBloqueada = alcance.blocked.length > 0;
+    if (!deTandaBloqueada) {
+      pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot, storyPath: abs });
+      problems.push(...pantalla.problems);
+      for (const nota of pantalla.notes) console.log(`   · ${nota}`);
+      const maqueta = mockupLayers({ qaDir, qk, mockupSha: opt('--mockup-sha'), screens: pantalla.screens });
+      problems.push(...maqueta.problems);
+      for (const nota of maqueta.notes) console.log(`   · ${nota}`);
+    } else {
+      if (alcance.note) console.log(`   · ${alcance.note}`);
+      if (opt('--mockup-sha') || isFile(path.join(qaDir, `${qk}-mockup-approval.json`))) {
+        console.log(`   · la maqueta aprobada es de la tanda bloqueada ${alcance.blocked.join(', ')}: se compara cuando la tanda deje de estar bloqueada.`);
+      }
+    }
     if (problems.length) {
       console.error(`🔴 qa-guide --check FALLÓ (story ${sid}) — la guía de tester o la revisión de la pantalla no están listas:`);
       for (const p of problems) console.error(`   - ${p}`);
       for (const v of qaViejos) console.error(`   · ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo y ese archivo no dice de cuál es (no se tocó). La guía de esta story va en ${qk}-….`);
       process.exit(2);
     }
-    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, los ${acs.length} ACs con titular legible, y la pantalla revisada (${pantalla.screens.length} archivo/s).`);
+    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, los ${acs.length} ACs con titular legible, y ${!deTandaBloqueada ? `la pantalla revisada (${pantalla.screens.length} archivo/s)` : `la pantalla sin revisar: es de la tanda bloqueada ${alcance.blocked.join(', ')}`}.`);
     process.exit(0);
   }
 

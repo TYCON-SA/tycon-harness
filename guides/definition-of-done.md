@@ -214,6 +214,8 @@ grabación** del navegador real, atada a ese AC. Sin ella la matriz de verificac
 
 - **Qué es un AC de pantalla**: en una story que cablea interfaz, todo AC salvo el que lleva `@sin-pantalla` en su texto;
   en una story sin interfaz, sólo el que lleva `@pantalla`. En duda, es de pantalla. Backend sigue con humo y medición.
+  Si la pantalla es sólo de una tanda `blocked` (y ningún criterio activo es de pantalla), el cierre no pide su prueba
+  de navegador ni su revisión hasta que la tanda deje de estar bloqueada; la guía de los criterios de backend, sí.
 - **Con el E2E**: poné `@ac-N` en el título del test que abre la pantalla (`'la lista muestra el total @ac-2'`). El gate
   E2E con el filtro de los specs de la story guarda la captura, y el `captures.json` de su carpeta la ata al AC. Una
   grabación `.webm` de Playwright cuenta igual que una captura.

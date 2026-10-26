@@ -996,6 +996,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.138: la pantalla de una tanda bloqueada no pide la prueba de navegador ni la revisión de la pantalla; la guía de backend se sigue pidiendo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/blocked-batch-screen.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/step-7c-macro.test.js",
       "requiere": []
