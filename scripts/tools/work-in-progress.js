@@ -229,7 +229,9 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
     const dates = [Number(s.statusUpdatedAt), Number(s.updatedAt), transcriptMs(projectsDir, s.cwd, s.sessionId)].filter((v) => Number.isFinite(v) && v > 0);
     const cwd = typeof s.cwd === 'string' ? s.cwd : null;
-    const cur = { name: sessionTitle(projectsDir, cwd, s.sessionId, unreadable) || s.name || null, alive, busy: s.status === 'busy', cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
+    // el nombre es el del archivo de sesión, el que usan los mensajes; sin él, el último /rename de la conversación
+    const name = (typeof s.name === 'string' && s.name.trim()) ? cut(oneLine(s.name), NAME_MAX) : sessionTitle(projectsDir, cwd, s.sessionId, unreadable);
+    const cur = { name: name || null, alive, busy: s.status === 'busy', status: typeof s.status === 'string' ? s.status : null, nameSource: typeof s.nameSource === 'string' ? s.nameSource : null, cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > nn(cur.last, -1) ? { ...cur, last: prev.last } : cur);
@@ -722,6 +724,9 @@ function buildWip(opts = {}) {
   const sessions = sessionsBySid(sessionsDir, unreadable, projectsDir);
   const medians = stepMedians(path.join(sdir, 'timing-history'), unreadable);
   const rows = [];
+  // la sesión de cada fila, en el mismo orden: el --json la suma a la fila
+  const rowSids = [];
+  const addRow = (row, sid) => { rows.push(row); rowSids.push(sid); };
   const busy = new Set();
   const wanted = [];
   const gitCtx = opts.gitCtx || { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: new Map() };
@@ -805,7 +810,7 @@ function buildWip(opts = {}) {
     const label = liveName(sid);
     if (label) {
       const entry = storyEntry(m, gitCtx);
-      rows.push({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label, folder: folderOf(sid, m.repoPath) });
+      addRow({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label, folder: folderOf(sid, m.repoPath) }, sid);
     }
     else halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
   }
@@ -826,7 +831,7 @@ function buildWip(opts = {}) {
       title = '(título ilegible)';
       unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
     }
-    rows.push({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: enteringEnd(m, storyEntry(m, gitCtx), nowMs), session: liveName(sid), folder: folderOf(sid, m.repoPath) });
+    addRow({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: enteringEnd(m, storyEntry(m, gitCtx), nowMs), session: liveName(sid), folder: folderOf(sid, m.repoPath) }, sid);
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);
@@ -845,7 +850,7 @@ function buildWip(opts = {}) {
       const parts = ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
       if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
-      rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) });
+      addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid);
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -886,7 +891,7 @@ function buildWip(opts = {}) {
     const parts = ['Anotado por la sesión'];
     if (Number.isFinite(at)) parts.push(`sin tocar desde ${hhmm(at)}`);
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
-    rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) });
+    addRow({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) }, sid);
   }
 
   const free = [];
@@ -912,12 +917,16 @@ function buildWip(opts = {}) {
       const unknown = !place && !story && MAIN_BRANCHES.includes(startBranch);
       const why = unknown && (files.length ? 'los archivos que tocó no están en un repo' : `no tocó archivos en las últimas ${IDLE_MS / 3600000} h`);
       const parts = ['Trabajando sin pipeline', why, story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
-      rows.push({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) });
+      addRow({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) }, sid);
     } else if (s.last == null) { free.push(label); noData.push(label); }
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
     else free.push(label);
   }
-  return { rows, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
+  const details = rowSids.map((sid) => {
+    const s = sessions.get(sid);
+    return { sid, status: s ? s.status : null, nameSource: s ? s.nameSource : null };
+  });
+  return { rows, details, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
 }
 
 function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {
@@ -987,8 +996,14 @@ async function main(argv) {
     const byRoot = new Map(unique.map((q, i) => [q.root, answers[i]]));
     r = buildWip({ ...opts, prs: (q) => byRoot.get(q.root) });
   }
-  process.stdout.write(opts.json ? `${JSON.stringify({ rows: r.rows, free: r.free, idle: r.idle, halfway: r.halfway, unreadable: r.unreadable }, null, 2)}\n` : `${r.text}\n`);
+  process.stdout.write(opts.json ? `${JSON.stringify(jsonOf(r), null, 2)}\n` : `${r.text}\n`);
   return 0;
+}
+
+// La salida de --json: cada fila con la sesión que la trae (su id, su estado y de dónde salió su nombre).
+function jsonOf(r) {
+  const rows = r.rows.map((row, i) => ({ ...row, ...((r.details && r.details[i]) || {}) }));
+  return { rows, free: r.free, idle: r.idle, halfway: r.halfway, unreadable: r.unreadable };
 }
 
 if (require.main === module) {
@@ -998,4 +1013,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildWip, storyEntering, median, queryAll, parseRemote, shellSafe, PER_QUERY_MS, ALL_QUERIES_MS };
+module.exports = { buildWip, jsonOf, sessionsBySid, storyEntering, median, queryAll, parseRemote, shellSafe, PER_QUERY_MS, ALL_QUERIES_MS };

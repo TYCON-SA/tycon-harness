@@ -35,7 +35,7 @@ const TOPE_MS = 5000;
 const FOTO_MS = 10 * 60000;
 const MAX_LINEAS = 5;
 const HORA_MS = 3600000;
-const stateDirOf = (() => { const lib = path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'); return fs.existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || os.homedir(), '.claude', '.tycon-pipeline'); })();
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const readVar = (() => {
   try {
     const { readEnv } = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));

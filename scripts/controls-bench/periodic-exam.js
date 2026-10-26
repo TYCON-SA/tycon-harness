@@ -54,7 +54,10 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { spawn, spawnSync, execFileSync } = require('child_process');
-const { rutaDeHerramienta, seAlcanza, asegurarPathDeHerramientas, anotarCarpetas } = require('./tools-path.js');
+const { rutaDeHerramienta, seAlcanza, asegurarPathDeHerramientas, anotarCarpetas, revalidarHerramientas } = require('./tools-path.js');
+// El PATH con el que se lanzó el proceso, antes de que `main` le anteponga las carpetas anotadas: anotar desde el PATH
+// ya tocado encontraría primero la carpeta vieja, y una que sigue existiendo no se renovaría nunca.
+const PATH_DE_QUIEN_LANZA = process.env.PATH;
 
 /**
  * El node que nombra el disparador: el propio del arnés por su enlace `current`
@@ -113,6 +116,9 @@ const VEJEZ_MS = 8 * 24 * 60 * 60 * 1000;
 
 /** Relativa a la raíz del repo. FUERA de `.bench/`, que git ignora. */
 const RUTA_REPORTE_QUE_VIAJA = 'scripts/controls-bench/ultimo-examen.json';
+const RUTA_GUIAS_QUE_VIAJA = 'scripts/controls-bench/ultimo-guias.json';
+// lo prende `main` sólo cuando la corrida terminó entera: los casos de guía van con la misma cadencia, nunca más seguido
+let examenCompleto = false;
 
 // 🔴 48 h, no 12: el examen completo son ~5h30 y con la máquina cargada puede ser bastante más.
 // Un candado que caduca ANTES de que termine la corrida que protege deja arrancar una segunda
@@ -470,6 +476,47 @@ function escribirJsonAtomico(destino, obj) {
   fs.renameSync(tmp, destino);   // bench-notice puede estar leyéndolo justo ahora
 }
 
+/**
+ * Las últimas líneas de error de un hijo, para el motivo del intento: en una línea, a lo sumo 400 caracteres, y cada
+ * una por el limpiador del arnés (usuario y clave de una URL, `token=…`, `Bearer …`, tiras largas) y sin caracteres de
+ * control. Encima, lo que el limpiador no ve en un error: desde una palabra sensible (token, secret, key, password,
+ * private, credential, authorization, cookie, pat) se tapa el resto de la línea, con o sin `:`/`=` y aunque el valor
+ * traiga espacios; `-u usuario:clave`; prefijos de llaves conocidas cortas; y una llave PEM entera, en varias líneas o
+ * en una sola con `\n` escritos, más las líneas sueltas de su cuerpo si la cola la corta por el medio. Los renglones
+ * de la pila (`at …`) y el pie de Node no entran: con ellos los 400 caracteres se gastan y la causa queda afuera.
+ * El motivo lo muestra el arranque y puede viajar: sin el limpiador a mano no sale ninguna línea, y se dice.
+ */
+const PALABRA_SENSIBLE = /((?:token|secret|key|passw(?:or)?d|passphrase|pwd|private|credential|authoriz|cookie|\bpat\b)[\w-]*)["']?\s*[:=]?\s*\S[\s\S]*$/i;
+const USUARIO_CLAVE = /((?:^|\s)(?:-u|--user|--proxy-user)(?:\s+|=))("[^"]*"|'[^']*'|\S+)/g;
+const LLAVE_CONOCIDA = /\b(?:[sr]k[-_](?:live_|test_)?[\w-]{8,}|(?:AKIA|ASIA)[0-9A-Z]{12,}|AIza[\w-]{20,}|gh[pousr]_\w{16,}|glpat-[\w-]{12,}|npm_\w{16,}|xox[abprs]-[\w-]{10,})/g;
+// todo corte de renglón, no sólo \n: \r suelto (una barra de progreso), \v, \f, U+0085, U+2028 y U+2029. Cualquiera
+// que quedara adentro de una línea dejaría el resto fuera del alcance de la palabra sensible, o la partiría en el
+// aviso. Armado por código, como el CONTROL de maintainers-sync.js
+const FIN_DE_LINEA = new RegExp(`\\r\\n|[\\r\\n\\v\\f${String.fromCharCode(0x85, 0x2028, 0x2029)}]`);
+const BLOQUE_PEM = /-----BEGIN[^-]*-----[\s\S]*?(?:-----END[^-]*-----|$)|-----END[^-]*-----/g;
+// una línea sin espacios hecha sólo de base64, con algún dígito o `+`/`/`: el cuerpo de una llave cortada
+const LINEA_BASE64 = /^(?=\S*[\d+/])[A-Za-z0-9+/]{8,}={0,2}$/;
+const LINEA_DE_PILA = /^(?:at\s|Node\.js v\d|\^+$)/;
+function colaDeError(texto, cortada = false) {
+  let limpiar;
+  let sinControl;
+  try { ({ redact: limpiar, clean: sinControl } = require(path.join(__dirname, '..', 'lib', 'maintainers-sync.js'))); } catch (_) { /* abajo */ }
+  if (typeof limpiar !== 'function' || typeof sinControl !== 'function') return '(error omitido: no cargó el limpiador de secretos)';
+  const crudas = String(texto || '').replace(BLOQUE_PEM, '[llave omitida]').split(FIN_DE_LINEA);
+  if (cortada) crudas.shift();   // la cola se corta por caracteres: su primera línea viene partida y el limpiador no la reconoce
+  const tapar = (l) => l.replace(USUARIO_CLAVE, '$1***').replace(LLAVE_CONOCIDA, '***')
+    .replace(PALABRA_SENSIBLE, (m, palabra) => `${palabra} ***`);
+  const lineas = crudas.filter((l) => !LINEA_BASE64.test(l.trim()) && !LINEA_DE_PILA.test(l.trim()))
+    .map((l) => sinControl(tapar(limpiar(l)), 200)).filter(Boolean);   // la URL con clave, antes: la palabra sensible tapa desde ahí
+  let out = '';
+  for (let i = lineas.length - 1; i >= 0; i--) {
+    const con = out ? `${lineas[i]} · ${out}` : lineas[i];
+    if (con.length > 400) break;
+    out = con;
+  }
+  return out;
+}
+
 /** El registro del intento: LOCAL, y se escribe pase lo que pase. Nunca pisa el que viaja. */
 function registrarIntento(benchDir, datos) {
   try { escribirJsonAtomico(path.join(benchDir, 'examen-intento.json'),
@@ -501,6 +548,15 @@ function sondaDeSesion() {
   // `TYCON_EVAL_SANDBOX=1` NO es opcional: sin él los hooks de arranque le inyectan a la sesión de sonda el aviso
   // "controls-bench EN ROJO — Correr: node runner.js", el agente va y lo corre, y la sonda muere por permisos o por
   // tiempo (lo caza `bench-silence.test.sh`).
+  // Antes de la consulta: ¿las herramientas siguen donde quedaron anotadas? Bajo launchd el PATH es el mínimo y no
+  // sirve para anotar; si una se mudó, el que sabe adónde es el shell de inicio del usuario (tools-path.js). Sin
+  // encontrarla en ningún lado no se lanza nada.
+  const revision = revalidarHerramientas(['claude', 'codex'].filter((bin) => !leerVariable(`TYCON_EXAM_PROBE_${bin.toUpperCase()}`)));
+  if (!revision.ok) {
+    const donde = revision.causa ? `no está en la carpeta anotada, y ${revision.causa}` : 'no está en la carpeta anotada ni en el PATH del usuario';
+    return { ok: false, motivo: revision.faltan.map((bin) => `${bin} ${donde}`).join(' · ') };
+  }
+  asegurarPathDeHerramientas();   // con la anotación nueva, si la hubo: codex busca su node en el PATH
   const ENTORNO = Object.assign({}, process.env, { TYCON_EVAL_SANDBOX: '1' });
   const HERRAMIENTAS = [
     { nombre: 'Claude Code', env: 'TYCON_EXAM_PROBE_CLAUDE', bin: 'claude', args: ['-p', 'ok'] },
@@ -697,6 +753,13 @@ function instalarTarea({ soloChequear } = {}) {
   const contenido = `${plistDeseado({ label, nodeBin, script: __filename, ...cfg })}\n`;
   let actual = null;
   try { actual = fs.readFileSync(destino, 'utf8'); } catch (_) { /* no está */ }
+  // 🔴 La anotación se renueva ANTES del corto: en régimen el disparador no cambia, y si sólo se anotara al
+  // reescribirlo, el día que una herramienta se muda (otra versión de node) la anotación quedaría vieja para siempre.
+  // Es el PATH de quien instala, el único que sabe dónde están; uno pobre no pisa lo bueno (tools-path.js).
+  let anotadas = null;
+  if (!soloChequear) {
+    try { anotadas = anotarCarpetas({ env: { PATH: PATH_DE_QUIEN_LANZA } }); } catch (e) { console.log(`examen: no pude anotar dónde están claude, codex y engram (${e.message}): se buscan al lado de node y en el PATH`); }
+  }
   if (actual === contenido) return { cambio: false, designada: true };
   if (soloChequear) { console.log('⚠ falta (o cambió) el disparador del examen periódico de revisores'); return { cambio: true, designada: true }; }
 
@@ -715,10 +778,7 @@ function instalarTarea({ soloChequear } = {}) {
   //
   // Va DESPUÉS del corto de idempotencia a propósito: en régimen el plist no cambia, así que este
   // freno no cuesta nada; sólo corre cuando efectivamente se va a escribir.
-  // Se anota dónde tiene a `claude` y `codex` el PATH de quien instala: bajo launchd, con el Node del arnés en el
-  // disparador, se buscan ahí (tools-path.js). Se anota ANTES de verificar, y se verifica como las va a buscar el disparador
-  let anotadas = null;
-  try { anotadas = anotarCarpetas(); } catch (e) { console.log(`examen: no pude anotar dónde están claude y codex (${e.message}): se buscan al lado de node y en el PATH`); }
+  // Se verifica como las va a buscar el disparador: con la anotación de recién (tools-path.js)
   const inalcanzables = ['claude', 'codex']
     .map((bin) => Object.assign({ bin }, seAlcanza(bin, Object.assign({ nodeBin }, anotadas ? { anotadas } : {}))))
     .filter((h) => !h.ok);
@@ -807,6 +867,7 @@ async function main(argv) {
     for (const d of dias.desconocidos) console.log(`  ⚠ «${d}» no es un día: --install-task no instala el disparador hasta que se corrija`);
     console.log(`  última completa:   ${ctx.sello || '(nunca)'}`);
     console.log(`  reporte que viaja: ${path.join(repo, RUTA_REPORTE_QUE_VIAJA)}`);
+    console.log(`  después del examen: los casos de guía (${contarCasosDeGuia()}), sólo si el examen terminó entero; mismo apagado TYCON_NO_NIGHTLY_EXAM · resultado: ${path.join(repo, RUTA_GUIAS_QUE_VIAJA)}`);
     return 0;
   }
 
@@ -872,9 +933,21 @@ async function main(argv) {
     // 🔴 `spawn` y no `spawnSync`: con la variante bloqueante el hilo queda detenido durante las
     // ~5h30 del examen y NINGÚN reloj puede correr — así que el latido que mantiene vivo el candado
     // sería imposible por construcción. Esperar la promesa deja al proceso atender sus temporizadores.
+    // La salida de error del hijo va por tubo: se copia entera a la del padre (el registro de launchd queda igual) y se
+    // guarda la cola, para que un examen que se cae sin reporte deje dicho POR QUÉ en el intento, no sólo «exit 1».
+    let colaDelHijo = '';
+    let colaCortada = false;
     const r = await new Promise((res) => {
       const hijo = spawn(process.execPath, [runner, '--liveness', '--baseline', 'check', '--json', scratch],
-        { stdio: 'inherit' });
+        { stdio: ['inherit', 'inherit', 'pipe'] });
+      // decodificado con estado: un carácter de varios bytes partido entre dos trozos no se convierte en «�»
+      if (hijo.stderr) hijo.stderr.setEncoding('utf8');
+      if (hijo.stderr) hijo.stderr.on('data', (d) => {
+        process.stderr.write(d);
+        const junta = colaDelHijo + d;
+        if (junta.length > 4096) colaCortada = true;
+        colaDelHijo = junta.slice(-4096);
+      });
       // 🔴 `error` NO siempre significa "el hijo murió": lo típico es que ni arrancó, pero no está
       // garantizado. Soltar el candado asumiendo que murió deja al examen corriendo de fondo con la
       // puerta abierta a una segunda corrida encima. Se lo mata explícitamente antes de seguir.
@@ -891,8 +964,9 @@ async function main(argv) {
     if (!medicion) {
       const motivo = r.signal
         ? `el examen fue interrumpido (${r.signal}) y no dejó reporte`
-        : r.error ? `no se pudo lanzar el examen: ${r.error.message}`
-        : `el examen terminó (exit ${r.status}) sin dejar reporte: no midió nada`;
+        : r.error ? `no se pudo lanzar el examen: ${colaDeError(r.error.message)}`
+        : `el examen terminó (exit ${r.status}) sin dejar reporte: no midió nada`
+          + ((cola) => (cola ? ` — ${cola}` : ''))(colaDeError(colaDelHijo, colaCortada));
       log(`NO PUDE MEDIR: ${motivo}`);
       registrarIntento(benchDir, { estado: 'incompleto', motivo, fase: 'corrida', inicio });
       return 3;
@@ -935,6 +1009,7 @@ async function main(argv) {
       ...(actualizacion.ok ? {} : { codigo_desactualizado: actualizacion.motivo }),
     });
     escribirJsonAtomico(path.join(repo, RUTA_REPORTE_QUE_VIAJA), reporte);
+    examenCompleto = true;
     registrarIntento(benchDir, { estado: 'completo', motivo: 'terminó entero', inicio, fin: reporte.fin });
     fs.mkdirSync(path.dirname(rutaSello()), { recursive: true });
     // El sello viejo pasa al nombre nuevo antes de pisarlo. Si esa copia falla se sella igual: lo que
@@ -990,10 +1065,43 @@ function revisionSemanal(argv, deps = {}) {
   return { corrio: true, codigo: r && r.status };
 }
 
+function contarCasosDeGuia() {
+  try { return fs.readdirSync(path.join(__dirname, 'cases', 'guides')).filter((f) => f.endsWith('.json')).length; } catch (_) { return 0; }
+}
+
+/**
+ * Los casos de guía (scripts/controls-bench/guide-runner.js; casos: scripts/tests/guide-runner.test.js T6) miden si
+ * cada guía cambia lo que hace el agente: el mismo trabajo con y sin la guía. Corren después de un examen COMPLETO y
+ * nunca solos, así gastan con la misma cadencia; con el mismo apagado (TYCON_NO_NIGHTLY_EXAM=1) y nunca con --help,
+ * --dry-run ni --install-task. El resultado viaja al lado del examen; su código de salida no cambia el del examen.
+ */
+function casosDeGuia(argv, deps = {}) {
+  if (['--help', '-h', '--dry-run', '--install-task'].some((f) => argv.includes(f))) return { corrio: false, motivo: 'no en este modo' };
+  if (leerVariable('TYCON_NO_NIGHTLY_EXAM') === '1') return { corrio: false, motivo: 'apagado' };
+  const corrio = deps.corrioElExamen !== undefined ? deps.corrioElExamen : examenCompleto;
+  if (!corrio) return { corrio: false, motivo: 'el examen no terminó entero' };
+  // un examen con el corredor inyectado (sus pruebas) no lanza agentes de verdad: sólo el corredor de guías inyectado
+  const inyectado = leerVariable('TYCON_EXAM_GUIDE_RUNNER');
+  if (!deps.spawn && !inyectado && leerVariable('TYCON_EXAM_RUNNER')) return { corrio: false, motivo: 'examen con corredor inyectado' };
+  const repo = deps.repo || lugarDelExamen().repo;
+  const log = deps.log || ((m) => console.error(`examen-periodico: ${m}`));
+  const salida = path.join(repo, RUTA_GUIAS_QUE_VIAJA);
+  const args = [inyectado || path.join(__dirname, 'guide-runner.js'), '--json', salida];
+  const r = (deps.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit', timeout: 60 * 60000 });
+  if (r && r.status === null) log(`los casos de guía no terminaron (${r.signal || (r.error && r.error.code) || 'sin código'})`);
+  else if (r && r.status !== 0) log(`los casos de guía salieron ${r.status}: el informe dice cuáles no pudo medir`);
+  // un informe que no se escribió no viaja; el anterior queda como estaba (nunca se borra)
+  if (fs.existsSync(salida)) {
+    const v = (deps.viajar || viajar)(repo, log, [RUTA_GUIAS_QUE_VIAJA], `chore(examen): casos de guía ${new Date().toISOString().slice(0, 10)}`);
+    if (!v.ok) log(`los casos de guía NO VIAJARON: ${v.motivo}`);
+  }
+  return { corrio: true, codigo: r && r.status };
+}
+
 module.exports = {
-  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, viajar, revisionSemanal,
+  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, RUTA_GUIAS_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, viajar, revisionSemanal, casosDeGuia,
   leerConfig, lugarDelExamen, designaMaquina, identidadesDeMaquina, esMaquinaDesignada, periodoCumplido, estadoDelCandado,
-  motivoDeGit,
+  motivoDeGit, colaDeError,
   plistDeseado, diasProgramados, decidir, instalarTarea, liberarCandado, tomarCandado, main,
 };
 
@@ -1004,6 +1112,7 @@ if (require.main === module) {
   if (legacy) legacy.aliasArgv('scripts/controls-bench/periodic-exam.js', { exitCode: 2, prefix: 'examen-periodico: ' });
   main(process.argv.slice(2))
     .then((c) => {
+      try { casosDeGuia(process.argv.slice(2)); } catch (e) { console.error(`examen-periodico: los casos de guía no se pudieron lanzar: ${e && e.message}`); }
       try { revisionSemanal(process.argv.slice(2)); } catch (e) { console.error(`examen-periodico: la revisión de la semana no se pudo lanzar: ${e && e.message}`); }
       process.exit(c);
     })

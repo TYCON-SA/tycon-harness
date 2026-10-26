@@ -27,13 +27,25 @@ const limpiar = (s) => String(s || '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^
  * general—. Copiar esta lógica allá crearía una segunda copia del mismo criterio; se parametriza el prefijo y hay un
  * solo lugar donde el ALCANCE de una corrida decide el nombre de su reporte.
  *
- * @param {{tool: string, only: string[], vida?: boolean, prefijo?: string}} corrida
- * @returns {{nombre: string, alcance: 'completo'|'acotado'|'vida'}}
+ * 🔴 `modelo`: una corrida con otro modelo que el de cada revisor (`--model`) es una comparación, no el estado de los
+ * revisores. Con el nombre de siempre pisaría la foto completa, la de vida o la acotada del mismo `--only`, y el aviso
+ * del arranque mostraría los rojos de otro modelo como los del equipo. Va siempre a un archivo `-parcial-`, que el aviso
+ * ya trata como complementario, con el modelo y el alcance en el nombre.
+ *
+ * @param {{tool: string, only: string[], vida?: boolean, prefijo?: string, modelo?: string|null}} corrida
+ * @returns {{nombre: string, alcance: 'completo'|'acotado'|'vida'|'modelo'}}
  */
-function nombreDeReporte({ tool, only, vida, prefijo }) {
+function nombreDeReporte({ tool, only, vida, prefijo, modelo }) {
   const herramienta = limpiar(tool) || 'desconocida';
   const pre = limpiar(prefijo) || 'advisors';
   const lista = (only || []).map((x) => String(x || '').trim()).filter(Boolean);
+  if (modelo) {
+    const m = limpiar(modelo) || 'desconocido';
+    const alcance = [vida ? 'vida' : '', ...lista.slice().sort()].filter(Boolean);
+    const legible = limpiar(alcance.join('-')).slice(0, 32).replace(/-+$/, '');
+    const huella = crypto.createHash('sha1').update(`${m}|${alcance.join(',')}`).digest('hex').slice(0, 8);
+    return { nombre: `${pre}-${herramienta}-parcial-modelo-${m}${legible ? `-${legible}` : ''}-${huella}.json`, alcance: 'modelo' };
+  }
   // 🔴 El chequeo de vida tiene su PROPIO archivo. Corre sólo el par canario de cada revisor: si escribiera en
   // `advisors-<tool>.json`, el aviso de arranque leería esa foto parcial como si fuera el estado completo — el mismo
   // fallo que `--only`, pero peor, porque el chequeo de vida corre seguido y la foto completa cada vez menos.

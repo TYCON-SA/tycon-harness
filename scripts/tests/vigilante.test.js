@@ -914,7 +914,7 @@ test('apagado de fábrica — sin configuración no mira nada, lo dice y no escr
  * Un repo de operaciones de mentira con la cola del vigilante en inbox/watcher y un producto `acme`. `noche(hoy, fix)`
  * corre una noche entera (sin --dry-run) con el fixture `fix` del producto; `fix: null` es un producto sin medir.
  */
-function operacionesDelVigilante({ n } = {}) {
+function operacionesDelVigilante({ n, workItems, envExtra } = {}) {
   const dir = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-noches-'));
   const cola = _path.join(dir, 'inbox', 'watcher');
   const fixture = _path.join(dir, 'fix');
@@ -923,8 +923,11 @@ function operacionesDelVigilante({ n } = {}) {
   const cfg = JSON.parse(_fs.readFileSync(_path.join(R4_RAIZ, 'pipelines', 'operations', 'examples', 'hosts.json'), 'utf8'));
   cfg.productos = [{ id: 'acme', url: 'x', env_user: 'U', env_pass: 'P', plugins: [], activo: true }];
   _fs.writeFileSync(_path.join(dir, 'cfg.json'), JSON.stringify(cfg));
-  _fs.writeFileSync(_path.join(dir, 'operations.json'), JSON.stringify({ version: 1, owners: { default: 'lead@ejemplo.test' }, ...(n ? { findings: { resolve_after_nights: n } } : {}) }));
-  const env = { ...process.env, HOME: home, TYCON_WATCHER_QUIET: '1', TYCON_NO_NIGHTLY_EXAM: '1' };
+  _fs.writeFileSync(_path.join(dir, 'operations.json'), JSON.stringify({ version: 1, owners: { default: 'lead@ejemplo.test' },
+    ...(n ? { findings: { resolve_after_nights: n } } : {}), ...(workItems ? { work_items: workItems } : {}) }));
+  const env = { ...process.env, HOME: home, TYCON_WATCHER_QUIET: '1', TYCON_NO_NIGHTLY_EXAM: '1', ...(envExtra || {}) };
+  // un null en envExtra saca la variable que trae quien corre la prueba
+  for (const k of Object.keys(env)) if (env[k] === null) delete env[k];
   delete env.TF_BUILD;
   const noche = (hoy, fix, extra = []) => {
     const f = _path.join(fixture, 'acme.json');
@@ -1152,4 +1155,78 @@ test('T84 Vigilante_LecturaCortada_NoEsMedida @story-4.11 @ac-36', () => {
   assert.strictEqual(V.medidaPara(deStats, m()), true, 'las estadísticas de su plugin alcanzan');
   assert.strictEqual(V.medidaPara(deStats, m({ stats: {} })), false, 'sin las de su plugin no');
   assert.strictEqual(V.medidaPara({ ...deStats, origen: 'ejecuciones' }, m()), false, 'el de las filas pide las filas');
+});
+
+// T97 Vigilante_PedidoCerradoFallaViva_Cableado @story-4.11 @ac-29
+// 🔴 Falla con: que la noche del vigilante no lea el estado del pedido que creó, no le comente al cerrado, le mande un
+//    estado, o que el resumen de esa noche no lo diga.
+test('T97 Vigilante_PedidoCerradoFallaViva_Cableado @story-4.11 @ac-29', { skip: process.platform === 'win32' }, () => {
+  const tree = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-arbol-'));
+  _fs.writeFileSync(_path.join(tree, 'team-profile.json'), JSON.stringify({ integrations: { platform: { default: 'azure-devops' } } }));
+  const fixaz = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-fixaz-'));
+  const az = _path.join(_fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-bin-')), 'az');
+  _fs.copyFileSync(_path.join(__dirname, 'lib', 'fake-az.sh'), az);
+  _fs.chmodSync(az, 0o755);
+  _fs.writeFileSync(_path.join(fixaz, 'wi-903.json'), JSON.stringify({ id: 903, fields: { 'System.State': 'Done', 'System.WorkItemType': 'Task', 'System.TeamProject': 'Operaciones' } }));
+  _fs.writeFileSync(_path.join(fixaz, 'estados-Operaciones-Task.json'), JSON.stringify({ value: [{ name: 'To Do', category: 'Proposed' }, { name: 'Done', category: 'Completed' }] }));
+  const envExtra = { TYCON_TREE: tree, TYCON_ADO_CMD: az, FIXAZ: fixaz, TYCON_PROFILE: null, TYCON_PLATFORM: null, TYCON_AZ_FAIL: null, TYCON_ADO_ORG: null, TYCON_ADO_PROJECT: null };
+  const o = operacionesDelVigilante({ workItems: { org: 'acme', project: 'Operaciones', type: 'Task' }, envExtra });
+  try {
+    o.noche('2026-10-19', CAIDO);
+    const [nombre] = o.en('pending');
+    _fs.writeFileSync(_path.join(o.cola, 'pending', nombre), `${o.texto('pending', nombre).replace(/\n*$/, '\n')}pedido: "903"\n`);
+    o.noche('2026-10-20', CAIDO);
+    const llamadas = _fs.readFileSync(_path.join(fixaz, 'llamadas.log'), 'utf8').trim().split('\n').map((l) => [l.split('\t')[0], JSON.parse(l.split('\t')[1]).args]);
+    assert.ok(llamadas.some(([p, a]) => p === 'wi' && a.includes('903')), 'lee el pedido');
+    const comentarios = llamadas.filter(([p]) => p === 'comentario');
+    assert.strictEqual(comentarios.length, 1, llamadas.map(([p]) => p).join(' '));
+    assert.ok(!comentarios[0][1].includes('--state'), 'sin estado: no lo reabre');
+    assert.strictEqual(escalar(o.texto('pending', nombre), 'aviso_cerrado_el'), '2026-10-20');
+    // la noche siguiente no repite
+    o.noche('2026-10-21', CAIDO);
+    assert.strictEqual(_fs.readFileSync(_path.join(fixaz, 'llamadas.log'), 'utf8').split('\n').filter((l) => l.startsWith('comentario\t')).length, 1);
+    // el resumen del 20 lo dice
+    const DS = require('../nightly/dependencies/daily-summary.js');
+    const v = SOURCES_V.comoFicha('vigilante', o.texto('pending', nombre));
+    const texto = DS.armar({ fuente: 'vigilante', hoy: '2026-10-20', out: _path.join(o.dir, 'out'), pending: o.cola,
+      resumenConfig: _path.join(o.dir, 'no-esta.json'), runs: null, weekly: null }).texto;
+    assert.ok(texto.split('\n').includes(`🔒 pedido cerrado con la falla viva en vigilante: ${v.nombre} — avisado en el pedido 903`), texto);
+  } finally {
+    o.borrar();
+    for (const d of [tree, fixaz, _path.dirname(az)]) _fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+// T97b Vigilante_PedidoCerrado_FallaBajoElUmbral @story-4.11 @ac-29
+// 🔴 Falla con: no avisarle al pedido cerrado mientras la falla sigue llegando por debajo del umbral (la noche la da por
+//    vista y no la resuelve, pero la fecha de la ficha sólo se mueve cuando pasa el umbral).
+test('T97b Vigilante_PedidoCerrado_FallaBajoElUmbral @story-4.11 @ac-29', { skip: process.platform === 'win32' }, () => {
+  const tree = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-arbol-'));
+  _fs.writeFileSync(_path.join(tree, 'team-profile.json'), JSON.stringify({ integrations: { platform: { default: 'azure-devops' } } }));
+  const fixaz = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-fixaz-'));
+  const az = _path.join(_fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-bin-')), 'az');
+  _fs.copyFileSync(_path.join(__dirname, 'lib', 'fake-az.sh'), az);
+  _fs.chmodSync(az, 0o755);
+  _fs.writeFileSync(_path.join(fixaz, 'wi-903.json'), JSON.stringify({ id: 903, fields: { 'System.State': 'Done', 'System.WorkItemType': 'Task', 'System.TeamProject': 'Operaciones' } }));
+  _fs.writeFileSync(_path.join(fixaz, 'estados-Operaciones-Task.json'), JSON.stringify({ value: [{ name: 'To Do', category: 'Proposed' }, { name: 'Done', category: 'Completed' }] }));
+  const envExtra = { TYCON_TREE: tree, TYCON_ADO_CMD: az, FIXAZ: fixaz, TYCON_PROFILE: null, TYCON_PLATFORM: null, TYCON_AZ_FAIL: null, TYCON_ADO_ORG: null, TYCON_ADO_PROJECT: null };
+  const o = operacionesDelVigilante({ workItems: { org: 'acme', project: 'Operaciones', type: 'Task' }, envExtra });
+  const parejo = { ejecuciones: [], salud: { Roto: 'Running' }, stats: statsDe(20) };
+  const comentarios = () => { try { return _fs.readFileSync(_path.join(fixaz, 'llamadas.log'), 'utf8').split('\n').filter((l) => l.startsWith('comentario\t')).length; } catch { return 0; } };
+  try {
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-03']) o.noche(d, LIMPIA);
+    for (const d of ['2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07']) o.noche(d, parejo);
+    const [nombre] = o.en('pending');
+    _fs.writeFileSync(_path.join(o.cola, 'pending', nombre), `${o.texto('pending', nombre).replace(/\n*$/, '\n')}pedido: "903"\n`);
+    const vista = escalar(o.texto('pending', nombre), 'vista_por_ultima_vez');
+    o.noche('2026-10-08', parejo);
+    assert.strictEqual(escalar(o.texto('pending', nombre), 'vista_por_ultima_vez'), vista, 'bajo el umbral la fecha de la ficha no se mueve');
+    assert.strictEqual(comentarios(), 1, 'igual se le avisa al pedido cerrado');
+    assert.strictEqual(escalar(o.texto('pending', nombre), 'aviso_cerrado_el'), '2026-10-08');
+    o.noche('2026-10-09', parejo);
+    assert.strictEqual(comentarios(), 1, 'una sola vez');
+  } finally {
+    o.borrar();
+    for (const d of [tree, fixaz, _path.dirname(az)]) _fs.rmSync(d, { recursive: true, force: true });
+  }
 });

@@ -1391,11 +1391,12 @@ function cmdCompleteStep(nRaw, flags) {
       const uc = require('./lib/undeclared-changes.js');
       const registrados = [].concat(marker.filesTouched || [], (marker.fileEvents || []).map((e) => e && e.path)).filter(Boolean);
       const consola = uc.consoleWritesOf(STATE_DIR, SID);
+      const { readEnv } = require('./lib/legacy-names.js');
       const r = uc.computeUndeclared({
         repo: marker.repoPath || null, baseSha: marker.baseSha || null, startedAt: marker.startedAt || null,
         // una historia que no se encuentra no es «nada declarado»: la ruta llega igual y el control dice que no la leyó
         storyPath: resolveStoryPath(marker.storyPath, marker) || marker.storyPath || null, registrados,
-        consola: consola.lineas, consolaProblemas: consola.problemas, consolaApagada: process.env.TYCON_NO_RUN_CHANGE === '1',
+        consola: consola.lineas, consolaProblemas: consola.problemas, consolaApagada: readEnv('TYCON_NO_RUN_CHANGE', { where: 'skills/tycon-pipeline/scripts/marker.js' }) === '1',
       });
       for (const a of r.avisos) console.error(`⚠️  complete-step ${n}: ${a}`);
       if (!r.medido) {

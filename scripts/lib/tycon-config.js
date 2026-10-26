@@ -235,6 +235,12 @@ const VOCABULARIO = Object.freeze({
   // modelo de cada nivel. Es de la máquina: en el perfil del equipo es un error. Sin valor se deriva de la herramienta
   // (`modelProvider`): una sesión de Codex es `openai`; todo lo demás, `anthropic`. Claude Code sobre Ollama se declara.
   models: Object.freeze({ provider: 'opcion:anthropic|openai|ollama|cursor' }),
+  // La receta de la coordinadora (guides/coordination.md). `max_working`: cuántas sesiones pueden trabajar a la vez en
+  // la máquina, con el orden de siempre (variable › máquina › perfil): el perfil da el número de la organización y cada
+  // máquina puede cambiarlo para sí, porque cuánto aguanta depende de ella. Sin valor, 3. `owner_folder`: la carpeta
+  // donde la coordinadora deja un ejecutable por firma que el dueño hace en su terminal. Es de la máquina: en el perfil
+  // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta' }),
 });
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
@@ -396,6 +402,8 @@ const VARIABLES = Object.freeze({
   'response.style': ['TYCON_RESPONSE_STYLE'],
   'response.max_chars': ['TYCON_RESPONSE_MAX_CHARS'],
   'models.provider': ['TYCON_MODEL_PROVIDER'],
+  'coordination.max_working': ['TYCON_COORDINATION_MAX_WORKING'],
+  'coordination.owner_folder': ['TYCON_COORDINATION_OWNER_FOLDER'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -766,6 +774,10 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       }
       if (esPerfil && seccion === 'models') {
         errores.push({ archivo, clave: rutaEnArchivo, motivo: 'el proveedor de modelos es de la máquina, no del equipo — va en ~/.claude/tycon.json (`tycon-config.js set models.provider <proveedor>`) o en TYCON_MODEL_PROVIDER' });
+        continue;
+      }
+      if (esPerfil && ruta === 'coordination.owner_folder') {
+        errores.push({ archivo, clave: rutaEnArchivo, motivo: 'la carpeta de firmas del dueño es de la máquina, no del equipo — va en la configuración de la máquina (`tycon-config.js set coordination.owner_folder <carpeta>`) o en TYCON_COORDINATION_OWNER_FOLDER' });
         continue;
       }
       if (esPerfil && seccion === 'rutas') {
@@ -1193,6 +1205,18 @@ function modelProvider(opts = {}) {
   const codex = Boolean(env.CODEX_SESSION_ID) && !env.CLAUDE_CODE_SESSION_ID;
   return { provider: codex ? 'openai' : 'anthropic', origin: 'derivado', problem: null };
 }
+/**
+ * La receta de la coordinadora, según una configuración YA cargada: `{ max_working: { value, origin }, owner_folder:
+ * { value, origin } }`. Sin valor, el tope es 3 y la carpeta null, los dos con origen `sin-valor`.
+ */
+function coordinacion(config) {
+  const v = (config.valores && config.valores.coordination) || {};
+  const o = config.origenes || {};
+  const con = (clave, defecto) => (v[clave] === null || v[clave] === undefined
+    ? { value: defecto, origin: 'sin-valor' }
+    : { value: v[clave], origin: o[`coordination.${clave}`] });
+  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null) };
+}
 function respuesta(config) {
   const r = config.valores.response;
   const o = config.origenes;
@@ -1542,7 +1566,7 @@ const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
 module.exports = {
   parse, KEYS, motivoPaquetes, paquetesDeTexto, CANALES_DE_AVISO,
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
   esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,

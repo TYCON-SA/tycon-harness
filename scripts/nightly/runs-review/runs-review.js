@@ -344,6 +344,9 @@ async function run(opts) {
   let previas = { porCausa: new Map(), viejas: [], ilegibles: 0 };
   // cada causa se escribe una sola vez por pasada: si la pasada se corta después, el camino del error no la repite
   const escritas = new Set();
+  // las causas que esta noche trajeron un caso que la ficha no tenía: el cruce con su pedido cerrado mira sólo ésas
+  const conCasoNuevo = new Set();
+  const totalDe = (f) => f.casos_total || (f.casos || []).length;
   const escribirCausas = () => {
     for (const c of causas.values()) {
       const clave = causaDe(c);
@@ -351,6 +354,7 @@ async function run(opts) {
       const prev = previas.porCausa.get(clave);
       if (prev && prev.carpeta === 'archived') {
         const g = CYCLE.registrarAparicion(prev.ficha, today, c.casos);
+        if (totalDe(g) > totalDe(prev.ficha)) conCasoNuevo.add(clave);
         // se reabrió esta noche: una ignorada que ya había vuelto antes guarda `reaparecio` y igual se reabre
         if (g.estado === 'reaparecio' && g.reaparecio_el === today) {
           escribirEntero(path.join(raiz, 'pending', path.basename(prev.ruta)), CYCLE.serializar(g));
@@ -359,7 +363,13 @@ async function run(opts) {
         escritas.add(clave);
         continue;
       }
-      if (prev) { escribirEntero(prev.ruta, CYCLE.serializar(CYCLE.registrarAparicion(prev.ficha, today, c.casos))); escritas.add(clave); continue; }
+      if (prev) {
+        const g = CYCLE.registrarAparicion(prev.ficha, today, c.casos);
+        if (totalDe(g) > totalDe(prev.ficha)) conCasoNuevo.add(clave);
+        escribirEntero(prev.ruta, CYCLE.serializar(g));
+        escritas.add(clave);
+        continue;
+      }
       const f = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: clave, nombre: NOMBRES.nombreDe('ejecuciones', c), hoy: today, casos: c.casos });
       // una ficha de esa causa que está y no se pudo leer (ya contada en ilegibles) no se pisa con una nueva
       if (!libre(raiz, `${f.id}.yaml`)) { escritas.add(clave); continue; }
@@ -385,12 +395,13 @@ async function run(opts) {
 
   if (!opts.noDownload) {
     const bajar = opts.bajar || ((o) => require('../../metrics/download-runs.js').bajar(o));
-    // la bajada escribe en TYCON_MAILBOX_DIR: la carpeta de --mailbox, para que esta pasada lea lo que bajó
-    const antes = process.env.TYCON_MAILBOX_DIR;
-    process.env.TYCON_MAILBOX_DIR = mailbox;
+    // la bajada escribe en la carpeta de --mailbox, para que esta pasada lea lo que bajó; el ambiente queda como estaba
     let r;
-    try { r = await bajar({ hilosDesde: desde }); } catch { r = { codigo: 1, res: { completo: false, estado: 'error' } }; }
-    finally { if (antes === undefined) delete process.env.TYCON_MAILBOX_DIR; else process.env.TYCON_MAILBOX_DIR = antes; }
+    // una bajada que se cae lo dice en el registro con la clase del error, nunca con su texto (puede traer rutas)
+    try { r = await bajar({ hilosDesde: desde, dirBuzon: mailbox }); } catch (e) {
+      process.stderr.write(`runs-review: la bajada del buzón se cayó (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')})\n`);
+      r = { codigo: 1, res: { completo: false, estado: 'error' } };
+    }
     const res = (r && r.res) || {};
     if (!(r && r.codigo === 0 && res.completo === true)) {
       // la bajada no fue entera: no se mueve ni se escribe ninguna ficha
@@ -473,6 +484,11 @@ async function run(opts) {
       const avisos = await CYCLE.avisarQueVolvio({ base: opsDir, fuente: 'ejecuciones', operations: opsJson, hoy: today, run: opts.plataforma || null, repoDir: opsDir });
       for (const l of avisos.lineas) process.stderr.write(`${l}\n`);
     } catch (e) { process.stderr.write(`avisos de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se avisa mañana\n`); }
+    // y a su pedido cerrado, que la falla sigue
+    try {
+      const cerrados = await CYCLE.avisarCerradoConFallaViva({ base: opsDir, fuente: 'ejecuciones', operations: opsJson, hoy: today, run: opts.plataforma || null, repoDir: opsDir, vistas: conCasoNuevo });
+      for (const l of cerrados.lineas) process.stderr.write(`${l}\n`);
+    } catch (e) { process.stderr.write(`pedidos cerrados de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); se mira mañana\n`); }
     return cerrar(estado.completo ? 0 : 1);
   } catch (e) {
     // una pasada cortada no deja el estado de ayer como si fuera de hoy

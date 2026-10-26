@@ -1605,6 +1605,10 @@
     {
       "words": ["cdpath"],
       "reason": "variable del shell (CDPATH de bash/zsh): el freno de historias por consola la lee del ambiente para saber si un `cd` relativo puede caer en otra carpeta. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-24 (story 8.113)."
+    },
+    {
+      "words": ["coordination", "coordinate"],
+      "reason": "palabras inglesas del nombre del comando (`/coordinate`, `scripts/tools/coordination.js`) y de la clave de configuración (`coordination.*`, TYCON_COORDINATION_*). Sólo estas dos formas. Aprobadas por la coordinadora, por delegación del dueño, el 2026-10-25 (story 8.122)."
     }
   ],
   "schemaFiles": [

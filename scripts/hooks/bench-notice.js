@@ -116,6 +116,10 @@ function readJson(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
+// El limpiador de línea del arnés; un clon viejo sin él saca al menos los caracteres de control comunes.
+let limpiarLinea = (s, max) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+try { const { clean } = require(path.join(__dirname, '..', 'lib', 'maintainers-sync.js')); if (typeof clean === 'function') limpiarLinea = clean; } catch { /* clon viejo */ }
+
 // ── ¿Alguien corre el examen? ──────────────────────────────────────────────────
 // El examen corre sólo en la máquina que designa `exam-config.json`. Con el archivo presente y SIN máquina designada
 // —la copia pública la deja vacía: afuera nadie corre ese examen— el aviso calla sobre él: si no, diría «NO ESTÁ
@@ -380,15 +384,24 @@ function estadoDelExamen(benchDir) {
   const fecha = rep && rep.ts ? String(rep.ts).slice(0, 10) : null;
   const dias = isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
 
+  // El por qué del último intento, si es posterior a la última medición completa: sin él la denuncia dice que no corre
+  // pero no por qué, y el motivo ya está escrito en la máquina (lo limpia de secretos quien lo escribe)
+  const ultimoIntento = () => {
+    const i = readJson(path.join(benchDir, 'examen-intento.json'));
+    const ti = i && i.ts ? Date.parse(i.ts) : NaN;
+    if (!i || i.estado === 'completo' || !i.motivo || isNaN(ti) || (!isNaN(t) && rep && rep.estado === 'completo' && ti <= t)) return '';
+    // el motivo lo escribió otro proceso: sin caracteres de control ni de dirección, que partirían o disfrazarían la línea
+    return ` · último intento ${limpiarLinea(String(i.ts).slice(0, 10), 10)}: ${limpiarLinea(i.motivo, 520)}`;
+  };
   if (!rep || rep.estado !== 'completo' || isNaN(t)) {
     lineas.push('🔕 el examen de los revisores NO ESTÁ CORRIENDO: no hay ninguna medición completa registrada'
-      + ' · diagnóstico: node scripts/controls-bench/periodic-exam.js --dry-run');
+      + ' · diagnóstico: node scripts/controls-bench/periodic-exam.js --dry-run' + ultimoIntento());
   } else if ((Date.now() - t) > EXAMEN.VEJEZ_MS) {
     // 🔴 Se denuncia y NO se muestran los números: una foto de hace 9 días no es el estado de
     // esta semana, y mostrarla hace perseguir rojos que quizá ya arregló lo que vino después.
     lineas.push(`🔕 el examen de los revisores NO ESTÁ CORRIENDO desde el ${fecha} (hace ${dias} días)`
       + ` — sus números no se muestran a propósito: no son el estado de esta semana`
-      + ` · diagnóstico: node scripts/controls-bench/periodic-exam.js --dry-run`);
+      + ` · diagnóstico: node scripts/controls-bench/periodic-exam.js --dry-run` + ultimoIntento());
   } else {
     // 🔴 `erroresDeCorrida` y `skippedMcp` CUENTAN. Sin contarlos, un
     // reporte fresco y "completo" con 30 casos caídos en error de corrida, y los otros contadores
@@ -435,7 +448,7 @@ function estadoDelExamen(benchDir) {
       for (const f of fs.readdirSync(benchDir).filter((x) => /^advisors-.*-parcial-.*\.json$/.test(x))) {
         const p = readJson(path.join(benchDir, f));
         if (!p) continue;
-        lineas.push(`   ℹ️ hay además una ejecución PARCIAL (${(p.only || []).join(', ') || 'alcance acotado'}, ${String(p.ts || '').slice(0, 10)})`
+        lineas.push(`   ℹ️ hay además una ejecución PARCIAL (${p.model ? `con ${p.model}, ` : ''}${(p.only || []).join(', ') || 'alcance acotado'}, ${String(p.ts || '').slice(0, 10)})`
           + ' — es complementaria; no dice nada de los revisores que no cubrió');
       }
     } catch { /* sin .bench/, nada que agregar */ }

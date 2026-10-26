@@ -238,6 +238,10 @@ function summary(operation, r, label) {
   // sólo el comentario no lee el estado: decir uno sería inventarlo
   else if (operation === 'work-item.update' && v.commented && !v.changed) t = `pedido de trabajo #${v.id}${en}: comentado, sin cambiar el estado`;
   else if (operation === 'work-item.update') t = v.changed ? `pedido de trabajo #${v.id}${en}: ${v.previo} → ${v.estado}` : `pedido de trabajo #${v.id}${en}: sin cambios (${v.estado})`;
+  else if (operation === 'work-item.find') {
+    const n = Array.isArray(v.ids) ? v.ids.length : 0;
+    t = `pedido de trabajo${en}: ${n} ${n === 1 ? 'pedido' : 'pedidos'} con la etiqueta ${v.tag || 'buscada'}`;
+  } else if (operation === 'work-item.read') t = `pedido de trabajo #${v.id}${en}: ${v.estado} (${v.cerrado ? 'cerrado' : 'abierto'})`;
   else {
     t = `pedido de trabajo #${v.id} cerrado${en}`;
     if (v.hours === null || v.hours === undefined) t += ' · sin horas';
