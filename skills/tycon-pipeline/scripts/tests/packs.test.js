@@ -82,7 +82,7 @@ function paquetes(mapa) {
     fs.mkdirSync(path.join(d, nombre));
     fs.writeFileSync(path.join(d, nombre, 'pack.json'),
       typeof contenido === 'string' ? contenido : JSON.stringify(contenido, null, 2) + '\n');
-    // con las claves de hoy o con las viejas (`revisores`, `agente`)
+    // con las claves de hoy o con las de antes del renombre
     const revisores = typeof contenido === 'object' ? (contenido.reviewers || contenido.revisores) : null;
     if (!Array.isArray(revisores)) continue;
     const carpeta = path.join(d, nombre, typeof contenido.agents === 'string' && contenido.agents ? contenido.agents : 'agents');

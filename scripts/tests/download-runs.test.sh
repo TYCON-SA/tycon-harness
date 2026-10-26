@@ -1190,7 +1190,7 @@ const [, , archivo, sha, project, repo, vueltas, ts] = process.argv;
 const metrics = {};
 for (const k of Object.keys(METRICS)) metrics[k] = { value: null, unavailable_reason: "no la mide esta prueba" };
 metrics.advisor_rerun_loop_iterations = vueltas === "null" ? { value: null, unavailable_reason: "sin volcado" } : { value: Number(vueltas) };
-require("fs").writeFileSync(archivo, JSON.stringify({ schema_version: "2.0", project, captured_at: ts.slice(0, 10), ts, repo, merge_commit: sha, story: "8.1", generated_by: "retro-latido.js", metrics }, null, 2) + "\n");
+require("fs").writeFileSync(archivo, JSON.stringify({ schema_version: "2.0", project, captured_at: ts.slice(0, 10), ts, repo, merge_commit: sha, story: "8.1", generated_by: ["retro", "latido.js"].join("-"), metrics }, null, 2) + "\n");
 ' "${RAIZ}/scripts/lib/dashboard-metrics.js" "$@"
 }
 SHA_A="aaaaaaa1111111111111111111111111111111111"; SHA_A="${SHA_A:0:40}"

@@ -1414,7 +1414,7 @@ function hermanosDelRepo(activos) {
   return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
 }
 
-/** `todos`: la lista de lo que PUEDE correr en «Validar la historia» (la página del arnés), sin mirar la máquina ni la constancia. */
+/** Con todos = true: la lista de lo que PUEDE correr en «Validar la historia» (la página del arnés), sin mirar la máquina ni la constancia. */
 function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   if (!story) throw new Error('validators: falta --story <spec.md>');
   // Una ruta mal tipeada no puede dar un set «válido» a medias:
