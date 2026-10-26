@@ -430,3 +430,377 @@ test('T10 KnownAgents_FileInPacks_NoWarning @story-7.35 @ac-9', () => {
   assert.equal(r.stdout, 'true', 'el agente del paquete sigue contando');
   assert.equal(r.stderr, '', `sin aviso por packs/README.md: ${r.stderr}`);
 });
+
+// ── La aprobación llega al repo de la story, y el cierre frena en la máquina si falta ───────────────────────────────
+
+// La story en un repo y el código en otro, cada uno con su git y en su carpeta padre propia.
+function dosRepos({ pantalla = false } = {}) {
+  const storyRepo = repoPropio('apr-story-');
+  const codeRepo = repoPropio('apr-code-');
+  for (const r of [storyRepo, codeRepo]) {
+    const git = gitEn(r);
+    git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  }
+  fs.mkdirSync(path.join(storyRepo, 'specs'));
+  const story = path.join(storyRepo, 'specs', 'story-9.95-juguete.md');
+  const archivo = pantalla ? 'src/components/Facturas.tsx' : 'README.md';
+  const cuerpo = pantalla
+    ? ['## Acceptance Criteria', '', '1. **Given** un cliente **When** abre la lista **Then** ve sus facturas.', '',
+      '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+      '| T1 | `Lista_MuestraFacturas` | 1 | e2e | x | y |', '']
+    : [];
+  fs.writeFileSync(story, ['---', 'story: "9.95"', 'title: "juguete"', 'status: in-progress',
+    'files_to_modify:', `  - ${archivo}`, '---', '', '# Story 9.95', '', ...cuerpo].join('\n'));
+  fs.mkdirSync(path.dirname(path.join(codeRepo, archivo)), { recursive: true });
+  fs.writeFileSync(path.join(codeRepo, archivo), pantalla ? 'export {}\n' : 'x\n');
+  for (const r of [storyRepo, codeRepo]) { const git = gitEn(r); git('add', '.'); git('commit', '-qm', 'base'); }
+  return { storyRepo, codeRepo, story };
+}
+const enLaStory = (storyRepo, runDir) => path.join(storyRepo, '.advisors', 'pipeline-runs', path.basename(runDir));
+const queDe = (runDir) => (fs.existsSync(path.join(runDir, approvals.FILE)) ? lineas(runDir).map((l) => l.que) : []);
+const gatesDe = (home) => {
+  const p = path.join(home, '.claude', '.tycon-pipeline', 'gates.log');
+  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+};
+
+test('Aprobar_Plan_AnotaEnLosDosRepos @story-8.133 @ac-5', () => {
+  const { storyRepo, codeRepo, story } = dosRepos();
+  const home = tmp('apr-home-');
+  markerHasta3(home, 's-dos', codeRepo, story, '9.95');
+  const r = markerCli(home, 's-dos', codeRepo, ['complete-step', '3', '--approved', 'dale', '--approved-by', 'ana@example.com']);
+  assert.equal(r.status, 0, r.stderr);
+  const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(codeRepo, '9.95', false, story);
+  assert.deepEqual(queDe(runDir), ['plan']);
+  assert.deepEqual(queDe(enLaStory(storyRepo, runDir)), ['plan'], 'la línea llega al repo de la story al aprobar');
+});
+
+test('Aprobar_Maqueta_AnotaEnLosDosRepos @story-8.133 @ac-6', () => {
+  const { storyRepo, codeRepo, story } = dosRepos({ pantalla: true });
+  const modelo = path.join(codeRepo, 'modelo.json');
+  const pantalla = (texto) => fs.writeFileSync(modelo, JSON.stringify({ title: 'Facturas', screens: [{ name: 'Lista', state: 'con facturas', elements: [{ kind: 'heading', text: texto }] }] }));
+  const render = () => spawnSync('node', [path.join(SCRIPTS, 'mockup.js'), 'render', '--data', modelo, '--story', story], { encoding: 'utf8' });
+  pantalla('Facturas de Acme SA');
+  let r = render();
+  assert.equal(r.status, 0, r.stderr);
+  const home = tmp('apr-home-');
+  markerHasta3(home, 's-mk2', codeRepo, story, '9.95');
+  r = markerCli(home, 's-mk2', codeRepo, ['complete-step', '3', '--approved', 'dale', '--approved-by', 'ana@example.com', '--mockup-approved', 'la maqueta también']);
+  assert.equal(r.status, 0, r.stderr);
+  pantalla('Facturas pendientes de Acme SA');
+  r = render();
+  assert.equal(r.status, 0, r.stderr);
+  r = markerCli(home, 's-mk2', codeRepo, ['approve-mockup', '--approved', 'la nueva', '--approved-by', 'ana@example.com']);
+  assert.equal(r.status, 0, r.stderr);
+  const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(codeRepo, '9.95', false, story);
+  assert.deepEqual(queDe(runDir), ['plan', 'maqueta', 'maqueta']);
+  assert.deepEqual(queDe(enLaStory(storyRepo, runDir)), ['plan', 'maqueta', 'maqueta']);
+});
+
+test('Aprobar_ProyeccionFalla_AvisaYSigue @story-8.133 @ac-7', () => {
+  const { storyRepo, codeRepo, story } = dosRepos();
+  // el repo de la story no tiene dónde escribir la carpeta de la corrida
+  fs.writeFileSync(path.join(storyRepo, '.advisors'), 'no soy una carpeta\n');
+  const home = tmp('apr-home-');
+  markerHasta3(home, 's-falla', codeRepo, story, '9.95');
+  const r = markerCli(home, 's-falla', codeRepo, ['complete-step', '3', '--approved', 'dale', '--approved-by', 'ana@example.com']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no llegó al repo de la story/);
+  const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(codeRepo, '9.95', false, story);
+  assert.deepEqual(queDe(runDir), ['plan'], 'en el repo del código queda anotada');
+  const l = gatesDe(home).find((x) => x.name === 'approval-projection');
+  assert.ok(l, 'gates.log lo anota');
+  assert.equal(l.status, 'failed');
+});
+
+// El cierre: un marcador en «Preparar el commit» con la corrida abierta en el repo del código. Los demás frenos del
+// cierre pueden frenar también; cada prueba mira la línea y el mensaje de éste.
+const CORRIDA = '9.95-20991231120000';
+const CORRIDA_RE = CORRIDA.replace('.', '\\.');
+const SIN_DEL_ENTORNO = ['TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS', 'TYCON_5B_EARLY', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'STOP_AUTONOMY'];
+function marcadorDelCierre(home, { story, codeRepo, extra = {} }) {
+  const activo = path.join(home, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(activo, { recursive: true });
+  // stable-data: el marcador tiene que estar fresco para marker.js, que lo mide contra el mismo reloj; ninguna
+  // verificación compara la hora.
+  const ahora = new Date().toISOString();
+  fs.writeFileSync(path.join(activo, 's-cierre.json'), JSON.stringify({
+    storyId: '9.95', storyPath: story, repoPath: codeRepo, sessionId: 's-cierre', startedAt: ahora, lastTouch: ahora,
+    stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8], filesTouched: [], iterations: {}, fileEvents: [],
+    clockiStarted: true, dodRuntimeChecked: true,
+    adversarialSkip: { motivo: 'LOW', archivos: 1, forzado: false, abandonado: false, runId: null, at: ahora },
+    ...extra,
+  }));
+}
+function preparar({ storyRepo, codeRepo, story, registroCodigo = null, registroStory = null, rosterStory = { registro_aprobaciones: 1 }, extra = {} }) {
+  const abierta = path.join(codeRepo, '.advisors', 'pipeline-runs', CORRIDA);
+  fs.mkdirSync(abierta, { recursive: true });
+  fs.writeFileSync(path.join(abierta, 'findings.json'), '[]');
+  fs.writeFileSync(path.join(abierta, 'review-roster.json'), JSON.stringify(rosterStory || {}));
+  if (registroCodigo !== null) fs.writeFileSync(path.join(abierta, approvals.FILE), registroCodigo);
+  const proyectada = path.join(storyRepo, '.advisors', 'pipeline-runs', CORRIDA);
+  if (storyRepo !== codeRepo) {
+    fs.mkdirSync(proyectada, { recursive: true });
+    if (rosterStory) fs.writeFileSync(path.join(proyectada, 'review-roster.json'), JSON.stringify(rosterStory));
+    if (registroStory !== null) fs.writeFileSync(path.join(proyectada, approvals.FILE), registroStory);
+  }
+  const home = tmp('apr-cierre-');
+  marcadorDelCierre(home, { story, codeRepo, extra });
+  return { home, abierta, proyectada };
+}
+function cerrar(home, cwd) {
+  const env = { ...process.env };
+  for (const k of SIN_DEL_ENTORNO) delete env[k];
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'marker.js'), 'complete-step', '8'], {
+    cwd, encoding: 'utf8', env: { ...env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-cierre', TYCON_LANE_LLM: '0' },
+  });
+  return { status: r.status, stderr: r.stderr || '', freno: gatesDe(home).filter((x) => x.name === 'approvals-story-repo') };
+}
+const plan = `${JSON.stringify(ap('plan', 'manual', 'ana@example.com'))}\n`;
+const maqueta = `${JSON.stringify(ap('maqueta', 'manual', 'ana@example.com'))}\n`;
+const MAQUETA = { mockupApproval: { file: 'maqueta.html', sha256: 'x', mode: 'user', text: 'dale', at: '2099-12-31T12:00:00Z' } };
+
+test('Cierre_CorridaEnVuelo_SePoneAlDia @story-8.133 @ac-8', () => {
+  const repos = dosRepos();
+  // la corrida anotó el plan sólo en el repo del código (un arnés anterior a esta story)
+  const { home, proyectada } = preparar({ ...repos, registroCodigo: plan });
+  const r = cerrar(home, repos.codeRepo);
+  assert.deepEqual(queDe(proyectada), ['plan'], 'el cierre lo lleva al repo de la story');
+  assert.equal(r.freno.length, 1, JSON.stringify(r.freno));
+  assert.equal(r.freno[0].status, 'ok');
+  assert.doesNotMatch(r.stderr, /aprobaciones en el repo de la story/);
+});
+
+test('Cierre_SinPlan_Frena @story-8.133 @ac-9', () => {
+  const repos = dosRepos();
+  const { home } = preparar({ ...repos, registroCodigo: maqueta });
+  const r = cerrar(home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /complete-step 8 BLOQUEADO — aprobaciones en el repo de la story/);
+  assert.match(r.stderr, new RegExp(`${CORRIDA_RE}.*sin-aprobacion-del-plan`));
+  assert.match(r.stderr, /complete-step approve-plan --approved "<cita>" --out-of-order/);
+  assert.match(r.stderr, /advisors_exempt/);
+  assert.equal(r.freno[0].status, 'blocked');
+});
+
+test('Cierre_MaquetaAprobadaSinLinea_Frena @story-8.133 @ac-10', () => {
+  const repos = dosRepos();
+  const { home } = preparar({ ...repos, registroCodigo: plan, extra: MAQUETA });
+  const r = cerrar(home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /aprobaciones en el repo de la story/);
+  assert.match(r.stderr, /sin-aprobacion-de-la-maqueta/);
+  assert.equal(r.freno[0].status, 'blocked');
+});
+
+test('Cierre_CorridaVieja_SeProyectaONombra @story-8.133 @ac-11', () => {
+  const VIEJA = '9.95-20991230120000';
+  // con su par en el repo del código: se proyecta y no frena por ella
+  let repos = dosRepos();
+  let c = preparar({ ...repos, registroCodigo: plan });
+  const par = path.join(repos.codeRepo, '.advisors', 'pipeline-runs', VIEJA);
+  const vieja = path.join(repos.storyRepo, '.advisors', 'pipeline-runs', VIEJA);
+  for (const d of [par, vieja]) { fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'review-roster.json'), '{"registro_aprobaciones":1}'); }
+  fs.writeFileSync(path.join(par, approvals.FILE), plan);
+  let r = cerrar(c.home, repos.codeRepo);
+  assert.deepEqual(queDe(vieja), ['plan']);
+  assert.equal(r.freno[0].status, 'ok', r.stderr);
+  // sin par: frena nombrándola
+  repos = dosRepos();
+  c = preparar({ ...repos, registroCodigo: plan });
+  const sola = path.join(repos.storyRepo, '.advisors', 'pipeline-runs', VIEJA);
+  fs.mkdirSync(sola, { recursive: true });
+  fs.writeFileSync(path.join(sola, 'review-roster.json'), '{"registro_aprobaciones":1}');
+  r = cerrar(c.home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, new RegExp(VIEJA.replace('.', '\\.')));
+  assert.doesNotMatch(r.stderr, new RegExp(`${CORRIDA_RE}.*sin-`), 'la abierta está al día');
+  assert.equal(r.freno[0].status, 'blocked');
+});
+
+test('Cierre_CorridaSinDeclarar_NoFrena @story-8.133 @ac-12', () => {
+  const repos = dosRepos();
+  const { home } = preparar({ ...repos, rosterStory: {} });
+  const r = cerrar(home, repos.codeRepo);
+  assert.doesNotMatch(r.stderr, /aprobaciones en el repo de la story/);
+  assert.equal(r.freno[0].status, 'ok');
+});
+
+test('Cierre_RegistroIlegible_Frena @story-8.133 @ac-13', () => {
+  const repos = dosRepos();
+  const { home } = preparar({ ...repos, registroCodigo: plan, registroStory: `${plan}esto no es json\n` });
+  const r = cerrar(home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /registro-de-aprobaciones-invalido/);
+  assert.match(r.stderr, new RegExp(CORRIDA_RE));
+  assert.match(r.stderr, /línea\(s\) que no son JSON/);
+  assert.equal(r.freno[0].status, 'blocked');
+});
+
+test('Cierre_RosterIlegible_Frena @story-8.133 @ac-16', () => {
+  const VIEJA = '9.95-20991230120000';
+  const repos = dosRepos();
+  const { home } = preparar({ ...repos, registroCodigo: plan });
+  // una corrida vieja, sólo en el repo de la story, con el roster roto: no se toma por «sin declarar»
+  const vieja = path.join(repos.storyRepo, '.advisors', 'pipeline-runs', VIEJA);
+  fs.mkdirSync(vieja, { recursive: true });
+  fs.writeFileSync(path.join(vieja, 'review-roster.json'), '{ esto no es json');
+  const r = cerrar(home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, new RegExp(`${VIEJA.replace('.', '\\.')}: review-roster-ilegible`));
+  assert.equal(r.freno[0].status, 'blocked');
+});
+
+test('Cierre_CopiaFallida_Frena @story-8.133 @ac-16', () => {
+  const repos = dosRepos();
+  const { home, proyectada } = preparar({ ...repos, registroCodigo: plan });
+  // el registro del repo de la story es una carpeta: la copia no puede escribirlo
+  fs.mkdirSync(path.join(proyectada, approvals.FILE));
+  const r = cerrar(home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, new RegExp(`${CORRIDA_RE}: proyeccion-fallida — no se pudo`));
+  assert.equal(r.freno[0].status, 'blocked');
+});
+
+test('Cierre_CarpetaSinListar_Frena @story-8.133 @ac-16', (t) => {
+  if (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) { t.skip('los permisos de carpeta no aplican acá'); return; }
+  const repos = dosRepos();
+  const { home } = preparar({ ...repos, registroCodigo: plan, rosterStory: null });
+  // la carpeta de corridas existe y no se puede listar
+  const base = path.join(repos.storyRepo, '.advisors', 'pipeline-runs');
+  fs.rmSync(base, { recursive: true, force: true });
+  fs.mkdirSync(base, { recursive: true });
+  fs.chmodSync(base, 0o000);
+  t.after(() => fs.chmodSync(base, 0o755));
+  const r = cerrar(home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no pude mirar las aprobaciones en el repo de la story/);
+  assert.equal(r.freno[0].status, 'blocked');
+});
+
+test('Cierre_StoryFueraDeGit_NoMedido @story-8.133 @ac-16', () => {
+  const repos = dosRepos();
+  // la story, copiada fuera de todo repo git
+  const suelta = path.join(tmp('apr-suelta-'), 'story-9.95-juguete.md');
+  fs.copyFileSync(repos.story, suelta);
+  const { home } = preparar({ ...repos, story: suelta, registroCodigo: plan });
+  const r = cerrar(home, repos.codeRepo);
+  assert.match(r.stderr, /aprobaciones en el repo de la story: no medido/);
+  assert.doesNotMatch(r.stderr, /BLOQUEADO — aprobaciones en el repo de la story/);
+  assert.equal(r.freno[0].status, 'no-medido');
+});
+
+test('Cierre_MismoRepo_MaquetaSinLinea_Frena @story-8.133 @ac-10', () => {
+  // la story y el código en el mismo repo: el freno por la maqueta vale igual (el portón no la pide)
+  const repo = repoPropio('apr-uno-');
+  const git = gitEn(repo);
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(repo, 'specs'));
+  const story = path.join(repo, 'specs', 'story-9.95-juguete.md');
+  fs.writeFileSync(story, ['---', 'story: "9.95"', 'title: "juguete"', 'status: in-progress', 'files_to_modify:', '  - README.md', '---', ''].join('\n'));
+  fs.writeFileSync(path.join(repo, 'README.md'), 'x\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const c = preparar({ storyRepo: repo, codeRepo: repo, story, registroCodigo: plan, extra: MAQUETA });
+  let r = cerrar(c.home, repo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /sin-aprobacion-de-la-maqueta/);
+  assert.equal(r.freno[0].status, 'blocked');
+  // con la línea, no frena por esto
+  fs.writeFileSync(path.join(c.abierta, approvals.FILE), plan + maqueta);
+  const home2 = tmp('apr-cierre-');
+  marcadorDelCierre(home2, { story, codeRepo: repo, extra: MAQUETA });
+  r = cerrar(home2, repo);
+  assert.doesNotMatch(r.stderr, /aprobaciones en el repo de la story/);
+  assert.equal(r.freno[0].status, 'ok');
+});
+
+// Las mismas carpetas que el portón: la raíz del repo y cada subcarpeta de primer nivel, con el mismo filtro.
+const pl = () => require(path.join(SCRIPTS, 'pipeline.js'));
+const { revisarAprobaciones } = require(GATE);
+function corridaEn(base, nombre, { roster = { registro_aprobaciones: 1 }, registro = null } = {}) {
+  const d = path.join(base, '.advisors', 'pipeline-runs', nombre);
+  fs.mkdirSync(d, { recursive: true });
+  if (roster) fs.writeFileSync(path.join(d, 'review-roster.json'), JSON.stringify(roster));
+  if (registro !== null) fs.writeFileSync(path.join(d, approvals.FILE), registro);
+  return d;
+}
+function unSoloRepo() {
+  const repo = repoPropio('apr-mono-');
+  const git = gitEn(repo);
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(repo, 'specs'));
+  const story = path.join(repo, 'specs', 'story-9.95-juguete.md');
+  fs.writeFileSync(story, ['---', 'story: "9.95"', 'title: "juguete"', 'status: in-progress', '---', ''].join('\n'));
+  fs.mkdirSync(path.join(repo, 'Backend'));
+  fs.writeFileSync(path.join(repo, 'Backend', 'README.md'), 'x\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  return { repo, story, codeRepo: path.join(repo, 'Backend') };
+}
+
+test('Cierre_CorridaEnSubproyecto_MismoVeredictoQueElPorton @story-8.133 @ac-17', () => {
+  const { repo, story, codeRepo } = unSoloRepo();
+  const runDir = corridaEn(codeRepo, CORRIDA, { registro: maqueta });
+  const porElPorton = revisarAprobaciones(repo, '9.95', story).hallazgos.map((h) => h.regla);
+  assert.deepEqual(porElPorton, ['sin-aprobacion-del-plan']);
+  let r = pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo, maquetaAprobada: false });
+  assert.deepEqual(r.faltas.map((f) => f.regla), porElPorton, 'el cierre ve la corrida del subproyecto, como el portón');
+  // con el plan y la maqueta anotados, la maqueta aprobada no frena
+  fs.writeFileSync(path.join(runDir, approvals.FILE), plan + maqueta);
+  r = pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo, maquetaAprobada: true });
+  assert.deepEqual(r.faltas, []);
+});
+
+test('Cierre_ParEnSubcarpetaDelCodigo_SeProyecta @story-8.133 @ac-17', () => {
+  const VIEJA = '9.95-20991230120000';
+  const { storyRepo, codeRepo, story } = dosRepos();
+  const sub = path.join(codeRepo, 'Backend');
+  const runDir = corridaEn(sub, CORRIDA, { registro: plan });
+  corridaEn(sub, VIEJA, { registro: plan });
+  const vieja = corridaEn(storyRepo, VIEJA);
+  const r = pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo: sub, maquetaAprobada: false });
+  assert.deepEqual(r.faltas, [], JSON.stringify(r.faltas));
+  assert.deepEqual(queDe(vieja), ['plan'], 'el par se encuentra en la subcarpeta del repo del código');
+});
+
+test('Cierre_CarpetaStoryConId_NoCuenta @story-8.133 @ac-17', () => {
+  const { storyRepo, codeRepo, story } = dosRepos();
+  const runDir = corridaEn(codeRepo, CORRIDA, { registro: plan });
+  corridaEn(storyRepo, 'story-9.95-20991230120000');
+  const r = pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo, maquetaAprobada: false });
+  assert.deepEqual(r.faltas, [], 'el portón no la mira, el cierre tampoco');
+  assert.deepEqual(revisarAprobaciones(storyRepo, '9.95', story).hallazgos, []);
+});
+
+test('Cierre_AdvisorsExempt_NoFrenaPorFalta @story-8.133 @ac-18', () => {
+  const { storyRepo, codeRepo, story } = dosRepos();
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace('status: in-progress', 'status: in-progress\nadvisors_exempt: true\nadvisors_exempt_reason: "juguete"'));
+  const runDir = corridaEn(codeRepo, CORRIDA, { registro: maqueta });
+  let r = pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo, maquetaAprobada: false });
+  assert.deepEqual(r.faltas, [], 'la exención perdona la falta del plan, como en el portón');
+  // un registro ilegible frena igual
+  fs.writeFileSync(path.join(enLaStory(storyRepo, runDir), approvals.FILE), `${plan}esto no es json\n`);
+  r = pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo, maquetaAprobada: false });
+  assert.deepEqual(r.faltas.map((f) => f.regla), ['registro-de-aprobaciones-invalido']);
+});
+
+test('Proyeccion_DestinoCRLF_NoDuplica @story-8.133 @ac-19', () => {
+  const origen = tmp('apr-crlf-o-');
+  const destino = tmp('apr-crlf-d-');
+  fs.writeFileSync(path.join(origen, approvals.FILE), plan + maqueta);
+  const crlf = (plan + maqueta).replace(/\n/g, '\r\n');
+  fs.writeFileSync(path.join(destino, approvals.FILE), crlf);
+  assert.deepEqual(approvals.unir(origen, destino), { agregadas: 0 });
+  assert.equal(fs.readFileSync(path.join(destino, approvals.FILE), 'utf8'), crlf, 'el destino sin cambios');
+});
+
+test('Cierre_CorridaVieja_ArregloDeCorridaVieja @story-8.133 @ac-20', () => {
+  const VIEJA = '9.95-20991230120000';
+  const repos = dosRepos();
+  const c = preparar({ ...repos, registroCodigo: plan });
+  corridaEn(repos.storyRepo, VIEJA);
+  const r = cerrar(c.home, repos.codeRepo);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, new RegExp(`${VIEJA.replace('.', '\\.')}: sin-registro-de-aprobaciones`));
+  assert.match(r.stderr, /corrida vieja/);
+  assert.match(r.stderr, /advisors_exempt/);
+  assert.doesNotMatch(r.stderr, /complete-step approve-plan/, 'approve-plan anota en la abierta, no en la vieja');
+});

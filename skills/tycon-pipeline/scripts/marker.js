@@ -926,6 +926,13 @@ function anotarAprobacion(marker, entrada) {
     } catch (_e) { /* repo sin commits: la línea va sin commit */ }
     const linea = approvals.anotar(runDir, { commit, ...entrada });
     appendLog('gates.log', { name: 'approval', status: 'ok', story: marker.storyId, que: linea.que, tipo: linea.tipo, quien: linea.quien });
+    // El portón la busca en el repo de la story: viaja en el momento. Si no llega, el paso sigue y el cierre reintenta.
+    let p = null;
+    try { p = require('./pipeline.js').projectRunToStoryRepo(runDir, storyAbs); } catch (e) { p = { projected: false, reason: `no se pudo copiar: ${e.message || e}` }; }
+    if (p && !p.projected && p.reason && p.reason !== 'mismo repo') {
+      appendLog('gates.log', { name: 'approval-projection', status: 'failed', story: marker.storyId, que: linea.que, error: String(p.reason).slice(0, 200) });
+      console.error(`⚠️  la aprobación «${linea.que}» quedó anotada en el repo del código y no llegó al repo de la story (${p.reason}). El paso sigue; el cierre del pipeline la vuelve a copiar y frena si sigue faltando.`);
+    }
     return linea;
   } catch (e) {
     appendLog('gates.log', { name: 'approval', status: 'not-recorded', story: marker.storyId, que: entrada && entrada.que, error: String(e.message || e).slice(0, 200) });
@@ -1518,6 +1525,48 @@ function cmdCompleteStep(nRaw, flags) {
         mensajeDelPaseAdversarial(v);
       }
     }
+    // 🔴 Las aprobaciones en el repo de la STORY, con la regla del portón de CI: se copian otra vez (pone al día una
+    // corrida que anotó sólo en el repo del código) y lo que siga faltando frena acá, no en el merge. Con la maqueta
+    // aprobada se exige además su línea, también con un solo repo. Como el del pase, se evalúa siempre y no se abre con
+    // DOD_BYPASS: el arreglo siempre está a mano.
+    let bloqueoAprobaciones = null;
+    {
+      const storyAbs = resolveStoryPath(marker.storyPath, marker);
+      const codeRepo = marker.repoPath || process.cwd();
+      let r = null;
+      let error = null;
+      try {
+        const pl = require('./pipeline.js');
+        const runDir = storyAbs ? pl.resolveRunDir(codeRepo, String(marker.storyId), false, storyAbs) : null;
+        r = pl.aprobacionesEnElRepoDeLaStory({ runDir, storyPath: storyAbs, storyId: String(marker.storyId), codeRepo, maquetaAprobada: !!marker.mockupApproval });
+      } catch (e) { error = String(e.message || e).slice(0, 200); }
+      if (error) {
+        bloqueoAprobaciones = `no pude mirar las aprobaciones en el repo de la story (${error})`;
+        appendLog('gates.log', { name: 'approvals-story-repo', status: 'blocked', story: marker.storyId || null, step: 8, error });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloqueoAprobaciones}. No es «están todas»: es «no lo pude mirar».`);
+      } else if (!r.medido) {
+        appendLog('gates.log', { name: 'approvals-story-repo', status: 'no-medido', story: marker.storyId || null, step: 8, motivo: r.motivo });
+        console.error(`⚠️  complete-step ${n}: aprobaciones en el repo de la story: no medido (${r.motivo}). No es «están todas»: es «no lo pude mirar»; el portón de CI las mira en el merge.`);
+      } else if (r.faltas.length) {
+        bloqueoAprobaciones = r.faltas.map((f) => `${f.corrida}: ${f.regla}`).join(', ');
+        appendLog('gates.log', { name: 'approvals-story-repo', status: 'blocked', story: marker.storyId || null, step: 8, faltas: r.faltas.map((f) => ({ corrida: f.corrida, regla: f.regla })) });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — aprobaciones en el repo de la story (${r.storyRepo}): el portón de CI frenaría el merge por esto.`);
+        for (const f of r.faltas) console.error(`   · ${f.corrida}: ${f.regla} — ${f.detalle}`);
+        // `approve-plan` anota en la corrida abierta: para una vieja, el arreglo es otro.
+        if (r.faltas.some((f) => f.abierta)) {
+          console.error('   En la corrida abierta, si se aprobó y no quedó anotado, se anota con la frase de quien aprobó:');
+          console.error('     marker.js complete-step approve-plan --approved "<cita>" --out-of-order');
+        }
+        const viejas = [...new Set(r.faltas.filter((f) => !f.abierta).map((f) => f.corrida))];
+        if (viejas.length) {
+          console.error(`   En una corrida vieja (${viejas.join(', ')}), \`approve-plan\` no sirve: anota en la abierta. Si su plan se`);
+          console.error('   aprobó, se trae su línea desde la carpeta del mismo nombre del repo del código.');
+        }
+        console.error('   Si la story se cerró sin pipeline, lo declara con `advisors_exempt: true` y su razón.');
+      } else {
+        appendLog('gates.log', { name: 'approvals-story-repo', status: 'ok', story: marker.storyId || null, step: 8, proyecciones: r.proyecciones.length });
+      }
+    }
     if (isUi) {
       const dodCheck = marker.checks && marker.checks.dod;
       const dodProv = marker.checksProvenance && marker.checksProvenance.dod;
@@ -1650,6 +1699,11 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('');
       console.error('  🔒 El bloqueo del pase adversarial no se abre con DOD_BYPASS: el arreglo siempre está al alcance');
       console.error('     (anotar el resultado, o el salteo que decide el portón).');
+      process.exit(2);
+    }
+    if (bloqueoAprobaciones) {
+      console.error('');
+      console.error('  🔒 El bloqueo de las aprobaciones no se abre con DOD_BYPASS: sin ellas el portón de CI frena el merge igual.');
       process.exit(2);
     }
     if (blocked) {

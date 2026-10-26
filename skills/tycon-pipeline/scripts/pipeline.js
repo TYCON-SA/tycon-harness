@@ -5722,8 +5722,9 @@ function normalizeFindingRecord(raw, warnings, ctx) {
 // El run dir (`.advisors/pipeline-runs/<story>-<sello>/`) nace en el repo donde CORRE el pipeline
 // —el del código—, y es pesado (reportes de cada advisor). Pero el portón de CI exige, para pasar
 // una story a `done`, que en el repo de la STORY exista ese run dir con `review-roster.json`
-// coherente con `findings.json`. Cuando son dos repos distintos, se proyectan SÓLO esos dos
-// archivos al repo de la story, con el mismo nombre de corrida. Mismo repo → no hace nada.
+// coherente con `findings.json`, y que el registro de aprobaciones traiga el plan. Cuando son dos repos distintos, se
+// proyectan SÓLO esos tres archivos al repo de la story, con el mismo nombre de corrida. El registro no se copia
+// encima: se le suman las líneas que le faltan (lib/approvals.js → unir). Mismo repo → no hace nada.
 // Nunca rompe a quien lo llama: es evidencia, y una copia que falla se DICE (`warning`).
 function projectRunToStoryRepo(runDir, storyPath) {
   if (!runDir || !storyPath) return { projected: false, reason: 'sin run dir o sin story' };
@@ -5753,10 +5754,99 @@ function projectRunToStoryRepo(runDir, storyPath) {
       }
       copied.push(f);
     }
+    const approvals = require('./lib/approvals.js');
+    if (fs.existsSync(path.join(runDir, approvals.FILE))) {
+      approvals.unir(runDir, dest);
+      copied.push(approvals.FILE);
+    }
   } catch (e) {
-    return { projected: false, dest, reason: `no se pudo copiar: ${e.message}` };
+    return { projected: false, dest, copied, reason: `no se pudo copiar: ${e.message}` };
   }
   return { projected: copied.length > 0, dest, copied };
+}
+
+// ── El cierre mira las aprobaciones donde las mira el portón ────────────────
+// Antes de «Preparar el commit»: proyecta la corrida abierta y revisa, en el repo de la STORY, cada carpeta de corrida
+// de la story con la regla del portón (lib/approvals.js → problemasDelRegistro, su primer problema, y la exención de
+// `advisors_exempt`). Una carpeta a la que le falta algo y tiene su par con el mismo nombre en el repo del código se
+// vuelve a proyectar y se vuelve a mirar: así se ponen al día las corridas que anotaron sólo en el repo del código. Con
+// la maqueta aprobada, la corrida abierta trae además su línea, también con un solo repo. Las carpetas son las que mira
+// el portón (`carpetasDeCorrida`: la raíz y las subcarpetas de primer nivel).
+// Devuelve { medido, motivo?, storyRepo, mismo, proyecciones, faltas: [{ corrida, dir, regla, detalle, abierta }] }.
+function aprobacionesEnElRepoDeLaStory({ runDir, storyPath, storyId, codeRepo, maquetaAprobada }) {
+  const ec = require('./lib/evidence-config.js');
+  const approvals = require('./lib/approvals.js');
+  const storyRepo = storyPath ? ec.discoverRepoRoot(storyPath) : null;
+  if (!storyRepo) return { medido: false, motivo: storyPath ? 'la story no está en un repo git' : 'sin ruta de la story', faltas: [] };
+  const runRepo = (runDir && ec.discoverRepoRoot(runDir)) || codeRepo || null;
+  const same = (a, b) => { try { return fs.realpathSync(a) === fs.realpathSync(b); } catch { return a === b; } };
+  const mismo = !!runRepo && same(storyRepo, runRepo);
+  const proyecciones = [];
+  const proyectar = (dir) => {
+    const r = projectRunToStoryRepo(dir, storyPath);
+    proyecciones.push({ corrida: path.basename(dir), ...r });
+    return r;
+  };
+  if (runDir && !mismo) proyectar(runDir);
+  const { key } = runDirKey(storyId, storyPath);
+  if (!key) return { medido: false, motivo: 'no pude calcular la clave de la corrida', storyRepo, mismo, proyecciones, faltas: [] };
+  // Las mismas carpetas que mira el portón (raíz y subcarpetas de primer nivel, mismo filtro). Una que existe y no se
+  // lista es «no lo pude mirar»: lanza.
+  const carpetas = approvals.carpetasDeCorrida(storyRepo, key, { estricto: true });
+  const abierta = runDir ? path.basename(runDir) : null;
+  // La corrida abierta en el repo de la story: con dos repos, la que lleva su nombre; con uno, la misma carpeta.
+  const esLaAbierta = (c) => !!abierta && (mismo ? same(c.dir, runDir) : c.nombre === abierta);
+  const hayAbierta = carpetas.some(esLaAbierta);
+  // El par de una corrida vieja: la carpeta del mismo nombre en el repo del código, con la misma lista.
+  const delCodigo = [];
+  if (!mismo) {
+    for (const r of [...new Set([runRepo, codeRepo].filter(Boolean))]) {
+      try { delCodigo.push(...approvals.carpetasDeCorrida(r, key)); } catch (_e) { /* sin par: lo dice la falta */ }
+    }
+  }
+  const exenta = (() => {
+    try { return /^advisors_exempt:\s*true\b/m.test((fs.readFileSync(storyPath, 'utf8').match(/^---\n([\s\S]*?)\n---/) || [])[1] || ''); } catch { return false; }
+  })();
+  const juzgar = (dir, abiertaAca) => {
+    let roster = null;
+    const rosterPath = path.join(dir, 'review-roster.json');
+    if (fs.existsSync(rosterPath)) {
+      // Un roster que no se lee no dice si la corrida anota aprobaciones: no se toma por «sin declarar».
+      try { roster = JSON.parse(fs.readFileSync(rosterPath, 'utf8')); } catch (e) {
+        return [{ regla: 'review-roster-ilegible', detalle: `review-roster.json no se puede leer (${String(e.message || e).slice(0, 120)})` }];
+      }
+    }
+    const registro = approvals.leer(dir);
+    // `advisors_exempt` perdona que falte el registro o el plan, como en el portón; un registro malo frena igual.
+    const p = approvals.problemasDelRegistro({ registro, roster }).filter((x) => !(exenta && approvals.POR_FALTA.has(x.regla))).slice(0, 1);
+    if (maquetaAprobada && abiertaAca && !p.length) {
+      const m = approvals.faltaLaMaqueta(registro);
+      if (m) p.push(m);
+    }
+    return p;
+  };
+  const faltas = [];
+  for (const c of carpetas) {
+    const aca = esLaAbierta(c);
+    let p = juzgar(c.dir, aca);
+    const par = p.length && !mismo ? delCodigo.find((d) => d.nombre === c.nombre) : null;
+    if (par) {
+      proyectar(par.dir);
+      p = juzgar(c.dir, aca);
+    }
+    for (const x of p) faltas.push({ corrida: c.nombre, dir: c.dir, regla: x.regla, detalle: x.detalle, abierta: aca });
+  }
+  // Una copia que falló deja el repo de la story atrasado aunque lo que hay ahí parezca completo.
+  for (const pr of proyecciones) {
+    if (!pr.projected && pr.reason && pr.reason !== 'mismo repo' && !faltas.some((f) => f.corrida === pr.corrida && f.regla === 'proyeccion-fallida')) {
+      faltas.push({ corrida: pr.corrida, dir: pr.dest || null, regla: 'proyeccion-fallida', detalle: pr.reason, abierta: pr.corrida === abierta });
+    }
+  }
+  if (maquetaAprobada && !hayAbierta && !faltas.some((f) => f.corrida === abierta)) {
+    faltas.push({ corrida: abierta || '(sin carpeta de la corrida)', dir: null, regla: 'sin-aprobacion-de-la-maqueta',
+      detalle: 'la maqueta se aprobó y la corrida no está en el repo de la story', abierta: true });
+  }
+  return { medido: true, storyRepo, mismo, proyecciones, faltas };
 }
 
 // Lo que la corrida no pudo medir, para que el informe de «Hallazgos» lo diga: el chequeo de dependencias
@@ -7301,6 +7391,7 @@ module.exports = {
   gitIgnoraProbe,
   GITIGNORE_ADVISORS,
   projectRunToStoryRepo,
+  aprobacionesEnElRepoDeLaStory,
   // Specs que envejecen — test: tests/unit.test.js "SpecStale_*".
   computeSpecStaleness,
   advisorAffectedByDelta,
