@@ -49,6 +49,15 @@
  *    `<maquina>/instincts/v<versión>/<día>.jsonl.gz`: un día ya subido igual no se manda; con una línea tardía, sube
  *    entero con otra versión.
  *
+ * 🔴 Y LOS ARCHIVOS DE CADA MERGE: el latido (retro-heartbeat.js) deja un `metrics-*.json` por merge en la carpeta de
+ *    estado (`<stateDir>/dashboard`, scripts/lib/merge-metrics.js). Suben después de los instintos y antes de las
+ *    corridas, a `<maquina>/merges/<archivo>`; uno ya subido que cambió va a `<maquina>/merges/v<versión>/<archivo>`, y
+ *    ante «ya existe» se reintenta una vez con versión, como las corridas. Antes de subirlos, la pasada muda a esa
+ *    carpeta los que quedaron sin versionar en el `.dashboard/` del clon de mantenimiento declarado y del árbol propio:
+ *    un archivo versionado no se toca, uno inválido o que pisaría otro distinto se deja y se dice. La salida trae
+ *    `merges: { nuevos, subidos, fallidos, migrados, dejados }`; con --dry-run se cuenta sin mover nada.
+ *    (Las suites fabrican las carpetas: TYCON_MERGES_DIR y TYCON_MERGES_FROM.)
+ *
  * 🔴 Y DÓNDE VIVE EL ARNÉS: el mismo día, con los registros, prepara `place.json` —en qué
  *    nombre vive el arnés, si el nombre viejo existe, cuánto queda registrado por él (por archivo, con la misma expresión
  *    que `harness.js doctor`), el sha256 de la copia fija de arranque contra el del árbol, y si las skills salen de un
@@ -962,6 +971,59 @@ function prepararSinCerrar({ origen, home, stateDir, projectsDir, tmp, now, log 
   }
 }
 
+// merge-metrics.js se carga SI ESTÁ, como tycon-home.js: este archivo viaja suelto. Sin él, la fase de merges no corre
+// y la salida lo dice.
+const mergeLib = () => { const lib = path.join(__dirname, '..', 'lib', 'merge-metrics.js'); return fs.existsSync(lib) ? require(lib) : null; };
+/** La carpeta de la historia de los merges (night-data.js). Con la carpeta fabricada de una suite, o sin la biblioteca, ninguna. */
+function historiaDeMerges() {
+  if (process.env.TYCON_MERGES_DIR) return null;
+  const lib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  return fs.existsSync(lib) ? require(lib).machineDashboard(path.resolve(__dirname, '..', '..')).history || null : null;
+}
+
+/**
+ * Los clones de los que se mudan los `metrics-*.json` colgados: el árbol propio y el clon de mantenimiento declarado,
+ * si son clones de git con `.dashboard/` dentro de la carpeta personal. Con las carpetas fabricadas de una suite
+ * (TYCON_MERGES_DIR o TYCON_TIMING_HISTORY) y sin TYCON_MERGES_FROM, ninguno. 🔴 Un clon fuera de la carpeta personal
+ * no se toca: una suite con HOME falso que corre esto desde un clon de verdad mudaría sus archivos a un temporal que
+ * después se borra. Lo que no se mira (ese clon, el de mantenimiento con un problema, un tycon-home.js que no carga)
+ * va a `dejados` con su motivo: no es «nada que mudar».
+ */
+function clonesConColgados(dejados) {
+  const lista = process.env.TYCON_MERGES_FROM;
+  if (lista !== undefined) return lista.split(path.delimiter).filter(Boolean);
+  if (process.env.TYCON_MERGES_DIR || process.env.TYCON_TIMING_HISTORY) return [];
+  const deja = (motivo) => dejados.push({ archivo: '.dashboard', motivo });
+  let casa;
+  try { casa = fs.realpathSync(os.homedir()); } catch (e) { deja(`no se pudo resolver la carpeta personal (${e.code || e.message}): no se mudó nada`); return []; }
+  const candidatos = [path.resolve(__dirname, '..', '..')];
+  let declarado = null;
+  const libHome = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  if (fs.existsSync(libHome)) {
+    try {
+      const TH = require(libHome);
+      const m = typeof TH.maintainersClone === 'function' ? TH.maintainersClone() : null;
+      if (m && m.problem) deja(`el clon de mantenimiento no se miró: ${m.problem}`);
+      else if (m && m.path) { declarado = m.path; candidatos.push(m.path); }
+    } catch (e) { deja(`no se pudo cargar tycon-home.js (${e.code || e.message}): el clon de mantenimiento no se miró`); }
+  }
+  const vistos = new Set();
+  return candidatos.filter((c) => {
+    let real;
+    // el árbol propio puede no ser un clon (una versión bajada); el declarado, sí: si no sirve, se dice
+    try { real = fs.realpathSync(c); } catch (e) { if (c === declarado) deja(`el clon de mantenimiento ${c} no se pudo resolver (${e.code || e.message}): no se tocó`); return false; }
+    if (vistos.has(real)) return false;
+    vistos.add(real);
+    if (c === declarado && !fs.existsSync(path.join(c, '.git')) && fs.existsSync(path.join(c, '.dashboard'))) {
+      deja(`${c} no es un repo de git: no se movió nada`);
+      return false;
+    }
+    const conColgados = fs.existsSync(path.join(c, '.git')) && fs.existsSync(path.join(c, '.dashboard'));
+    if (conColgados && !real.startsWith(casa + path.sep)) { deja(`${c} está fuera de la carpeta personal: no se tocó`); return false; }
+    return conColgados && real.startsWith(casa + path.sep);
+  });
+}
+
 async function subir(opts = {}) {
   const res = {
     subido: false, estado: null, motivo: null, maquina: null,
@@ -972,7 +1034,13 @@ async function subir(opts = {}) {
   const log = (m) => { if (opts.log) opts.log(m); };
   // 🔴 Una pasada que no terminó bien NUNCA dice «subido», aunque haya subido algo antes de fallar: lo
   //    confirmado queda anotado y contado en `subidos`; `subido` es el veredicto de la pasada.
-  const fin = (codigo, estado, motivo) => { res.estado = estado; if (motivo) res.motivo = motivo; if (codigo !== 0) res.subido = false; return { codigo, res }; };
+  // los merges que se intentaron subir en esta pasada: los que no llegaron al 201 son los `fallidos`
+  const mergesIntentados = new Set();
+  const fin = (codigo, estado, motivo) => {
+    res.estado = estado; if (motivo) res.motivo = motivo; if (codigo !== 0) res.subido = false;
+    if (res.merges) res.merges.fallidos = mergesIntentados.size - res.merges.subidos;
+    return { codigo, res };
+  };
 
   // 🔴 Un agente de CI no es una máquina del equipo. Si una prueba del banco nocturno lanza el
   //    instalador real con el HOME del agente, el agente sube sus registros al buzón como si fuera una máquina;
@@ -1062,6 +1130,29 @@ async function subir(opts = {}) {
       }
     } catch (e) { if (e.code !== 'ENOENT') noLeidos.push(`días de instintos (${e.code || 'error'})`); }
   }
+  // los archivos de cada merge: primero se mudan los colgados de los clones a la carpeta de estado, después van a la
+  // cola, entre los instintos y las corridas. Un archivo ya subido que cambió va a `merges/v<versión>/`.
+  const MM = mergeLib();
+  if (MM) {
+    res.merges = { nuevos: 0, subidos: 0, fallidos: 0, migrados: 0, dejados: [] };
+    const dirMerges = path.resolve(process.env.TYCON_MERGES_DIR || MM.carpetaLocal(stateDirOf(os.homedir())));
+    for (const clon of clonesConColgados(res.merges.dejados)) {
+      try {
+        const m = MM.mudar(clon, dirMerges, { simular: Boolean(opts.dryRun) });
+        res.merges.migrados += m.migrados;
+        for (const d of m.dejados) res.merges.dejados.push({ archivo: d.archivo, motivo: d.motivo });
+      } catch (e) { res.merges.dejados.push({ archivo: '.dashboard', motivo: `no se pudo mirar ${path.basename(clon)} (${e.code || e.message})` }); }
+    }
+    try {
+      // sólo los 2.0 válidos que no están ya en la historia: en una casa mudada, la carpeta de estado trae la copia
+      // entera del `.dashboard` del clon (legacy, rotos y merges de todo el equipo, ya versionados)
+      const sub = MM.paraSubir(dirMerges, { historia: historiaDeMerges() });
+      res.merges.salteados = { invalidos: sub.invalidos, en_la_historia: sub.enLaHistoria };
+      for (const { f } of sub.archivos) {
+        entradas.push({ dir: dirMerges, f, juego: null, clave: `${maquina}/merges/${f}`, blob: `${maquina}/merges/${f}`, aVersion: (v) => `${maquina}/merges/${v}/${f}`, merge: true });
+      }
+    } catch (e) { noLeidos.push(`archivos de los merges (${e.code || 'error'})`); }
+  } else res.merges = null;
   try { for (const f of archivosDelRegistro(origen)) entradas.push({ dir: origen, f, juego: null, clave: `${maquina}/${f}`, blob: `${maquina}/${f}` }); }
   catch (e) {
     // Una máquina que nunca corrió el pipeline no tiene la carpeta: es «nada que subir» de corridas, no un fallo en cada arranque.
@@ -1088,7 +1179,7 @@ async function subir(opts = {}) {
   // un archivo del juego ya confirmado que cambió NO se vuelve a mandar a su nombre: el juego se
   // da por roto en esta pasada y se re-prepara (la pasada siguiente lo sube entero bajo otra versión).
   const juegosRotos = new Set();
-  for (const { dir, f, clave, blob, juego: suJuego, conVersion } of entradas) {
+  for (const { dir, f, clave, blob, juego: suJuego, conVersion, aVersion, merge } of entradas) {
     const local = path.join(dir, f);
     let st;
     try { st = fs.statSync(local); } catch (e) { if (e.code !== 'ENOENT') noLeidos.push(`${f} (${e.code || e.message})`); continue; }
@@ -1115,12 +1206,13 @@ async function subir(opts = {}) {
     // al nombre anterior. Una entrada sin `blob` (de una versión anterior del registro) apunta al nombre de siempre.
     if (prev && !suJuego) {
       const version = versionMonotona(pasada, prev.version);
-      pendientes.push({ f, dir, clave, blob: `${maquina}/${version}/${f}`, version, previa: prev.version || null, juego: null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
+      pendientes.push({ f, dir, clave, blob: aVersion ? aVersion(version) : `${maquina}/${version}/${f}`, aVersion, merge, version, previa: prev.version || null, juego: null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
       continue;
     }
-    pendientes.push({ f, dir, clave, blob, version: null, previa: null, juego: suJuego || null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
+    pendientes.push({ f, dir, clave, blob, aVersion, merge, version: null, previa: null, juego: suJuego || null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
   }
   res.a_subir = pendientes.length;
+  if (res.merges) res.merges.nuevos = pendientes.filter((p) => p.merge).length;
 
   if (opts.dryRun) {
     log(`--dry-run: subiría ${res.a_subir} archivo(s) a ${maquina}/ en ${destino} — no se mandó nada`);
@@ -1171,6 +1263,7 @@ async function subir(opts = {}) {
     //    y la pasada siguiente lo re-hashea y lo re-sube. Con el de después, un cambio del mismo tamaño quedaría
     //    como «subido» para siempre.
     let cuerpo, stAntes;
+    if (p.merge) mergesIntentados.add(p.clave);
     try { stAntes = fs.statSync(path.join(p.dir, p.f)); cuerpo = fs.readFileSync(path.join(p.dir, p.f)); } catch (e) { noLeidos.push(`${p.f} (${e.code || e.message})`); if (esRegistro(p)) registroFallido = true; continue; }
     // El archivo cambió entre el recorrido y la subida (el barrido de rescate lo reescribe): va lo de ahora.
     const sha256 = crypto.createHash('sha256').update(cuerpo).digest('hex');
@@ -1186,7 +1279,7 @@ async function subir(opts = {}) {
       reintentado = true;
       const vistas = [msDeVersion(version), msDeVersion(p.previa)].filter((x) => x !== null);
       version = versionMonotona(Math.max(ahoraMs(), pasada), vistas.length ? Math.max(...vistas) : null);
-      blob = p.conVersion ? p.conVersion(version) : `${maquina}/${version}/${p.f}`;
+      blob = p.conVersion ? p.conVersion(version) : p.aVersion ? p.aVersion(version) : `${maquina}/${version}/${p.f}`;
       r = await ponerBlob(urlDe(blob), cuerpo, md5, tiempo);
     }
     if (r.error) {
@@ -1213,6 +1306,7 @@ async function subir(opts = {}) {
     try { guardar(); }
     catch (e) { return fin(1, 'registro_ilegible', `${p.f} subió pero el registro de subidas ${rutaRegistro} no se pudo escribir (${e.code || e.message}): la pasada siguiente lo volvería a subir`); }
     res.subidos += 1;
+    if (p.merge) res.merges.subidos += 1;
     res.bytes += cuerpo.length;
     res.subido = true;
   }

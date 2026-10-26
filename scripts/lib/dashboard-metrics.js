@@ -316,4 +316,25 @@ function loadAll(dir) {
   return { records, counts, dir };
 }
 
-module.exports = { SCHEMA_VERSION, METRICS, IDENTITY, validate, loadAll, toNumber, shapeOk, resolveDate };
+/**
+ * `loadAll` de varias carpetas, en orden (la carpeta de estado de la máquina y la de su historia): un archivo con el
+ * mismo nombre en dos carpetas es el mismo registro, y cuenta el de la primera. `dir` es la primera.
+ */
+function loadMany(dirs) {
+  const records = [];
+  const counts = { total: 0, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 };
+  const seen = new Set();
+  const key = { ok: 'v2ok', invalid: 'v2bad', legacy: 'legacy', unreadable: 'unreadable' };
+  for (const d of dirs) {
+    for (const r of loadAll(d).records) {
+      if (seen.has(r.file)) continue;
+      seen.add(r.file);
+      records.push(r);
+      counts.total++;
+      counts[key[r.status]]++;
+    }
+  }
+  return { records, counts, dir: dirs[0], dirs };
+}
+
+module.exports = { SCHEMA_VERSION, METRICS, IDENTITY, validate, loadAll, loadMany, toNumber, shapeOk, resolveDate };

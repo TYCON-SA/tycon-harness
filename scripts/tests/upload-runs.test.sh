@@ -1463,5 +1463,155 @@ else
   mal "Windows · --log: la caída no quedó en el registro (rc=${RC}; registro: $(tail -c 160 "${LOG}" 2>/dev/null); terminal: $(head -c 160 "${T}/salida-caida.txt"))"
 fi
 
+# ── los archivos de cada merge ─────────────────────────────────────────────────────────────────
+# La carpeta de los merges se fabrica (TYCON_MERGES_DIR) y los clones de los que se mudan los colgados también
+# (TYCON_MERGES_FROM): ningún caso mira la carpeta de estado ni un clon de esta máquina.
+# merge_doc <carpeta> <sha de 40> [vueltas] → un archivo 2.0 válido, con el nombre que le pone el latido
+merge_doc() {
+  mkdir -p "$1"
+  D="$1" SHA="$2" V="${3:-}" LIB="${RAIZ}/scripts/lib/dashboard-metrics.js" node -e '
+    const { METRICS } = require(process.env.LIB); const e = process.env;
+    const metrics = {}; for (const k of Object.keys(METRICS)) metrics[k] = { value: null, unavailable_reason: "no la mide esta prueba" };
+    if (e.V) metrics.advisor_rerun_loop_iterations = { value: Number(e.V) };
+    const d = { schema_version: "2.0", project: "proyecto", captured_at: "2026-10-25", ts: "2026-10-25T10:00:00.000Z", repo: "/x/proyecto", merge_commit: e.SHA, story: "9.9", generated_by: "retro-latido.js", metrics };
+    require("fs").writeFileSync(require("path").join(e.D, `metrics-2026-10-25-proyecto-9.9-${e.SHA.slice(0, 7)}.json`), JSON.stringify(d, null, 2) + "\n");'
+}
+SHA_A="aaaaaaa$(printf '%033d' 1)"; SHA_B="bbbbbbb$(printf '%033d' 2)"; SHA_C="ccccccc$(printf '%033d' 3)"
+M_A="metrics-2026-10-25-proyecto-9.9-aaaaaaa.json"; M_B="metrics-2026-10-25-proyecto-9.9-bbbbbbb.json"; M_C="metrics-2026-10-25-proyecto-9.9-ccccccc.json"
+subir_m() { # subir_m <caso> <origen timing> [args...] → como subir, con la carpeta de merges del caso
+  local c="$1" ori="$2"; shift 2
+  TYCON_MERGES_DIR="${c}/merges" subir "${c}" "${ori}" "maq-a" "$@"
+}
+mcampo() { python3 -c "import json,sys; m=json.load(open(sys.argv[1])).get('merges') or {}; v=m.get(sys.argv[2]); print(json.dumps(v) if isinstance(v,(dict,list)) else v)" "$1/out.json" "$2" 2>/dev/null; }
+
+# T7 Upload_Merges_CreateOnly — 🔴 atrapa: subirlos sin If-None-Match (pisaría el de otra máquina), a otra carpeta que
+#    la de la máquina, o anotarlos antes del 201.
+T="${BASE}/m-t7"; buzon "${T}/b"; config "${T}/cfg.json"
+merge_doc "${T}/merges" "${SHA_A}" 2; merge_doc "${T}/merges" "${SHA_B}"
+subir_m "${T}" "${T}/no-existe"
+python3 - "${T}/b/pedidos.jsonl" "${M_A}" "${M_B}" <<'PY' && ok "T7 Upload_Merges_CreateOnly: dos PUT a maq-a/merges/<archivo>, con If-None-Match: *" || mal "T7 pedidos: $(cut -c1-160 "${T}/b/pedidos.jsonl" 2>&1 | head -4)"
+import json, sys
+ps = [json.loads(l) for l in open(sys.argv[1]) if '"PUT"' in l]
+m = [p for p in ps if '/merges/' in p['ruta']]
+assert sorted(p['ruta'] for p in m) == sorted(f'/corridas/maq-a/merges/{f}' for f in sys.argv[2:]), m
+assert all(p['inm'] == '*' for p in m), m
+PY
+[ "${RC}" -eq 0 ] && cmp -s "${T}/merges/${M_A}" "${T}/b/blobs/corridas/maq-a/merges/${M_A}" && [ "$(en_registro "${T}" | grep -c '^maq-a/merges/')" = "2" ] \
+  && [ "$(mcampo "${T}" nuevos)" = "2" ] && [ "$(mcampo "${T}" subidos)" = "2" ] && [ "$(mcampo "${T}" fallidos)" = "0" ] \
+  && ok "T7 llegaron idénticos, quedaron anotados y la salida cuenta merges nuevos 2, subidos 2" || mal "T7 rc=${RC} registro: $(en_registro "${T}" | tr '\n' ' ') merges=$(campo "${T}" merges)"
+subir_m "${T}" "${T}/no-existe"
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "2" ] && [ "$(mcampo "${T}" nuevos)" = "0" ] && ok "T7 la pasada siguiente no los vuelve a subir" || mal "T7 segunda pasada rc=${RC}, PUTs $(puts "${T}/b")"
+
+# T9 Upload_Merges_ChangedGoesVersioned — 🔴 atrapa: volver a mandar el cambiado a su nombre (lo pisaría o rebotaría
+#    para siempre) o volver a subir el que no cambió.
+merge_doc "${T}/merges" "${SHA_A}" 5
+subir_m "${T}" "${T}/no-existe"
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "3" ] && tail -1 "${T}/b/pedidos.jsonl" | grep -E "/maq-a/merges/${FORMA_V}/${M_A}\"" >/dev/null \
+  && cmp -s "${T}/merges/${M_A}" "$(ls "${T}/b/blobs/corridas/maq-a/merges"/v*/"${M_A}" | tail -1)" \
+  && ok "T9 Upload_Merges_ChangedGoesVersioned: el que cambió va a merges/v<versión>/ y el igual no se sube" || mal "T9 rc=${RC} PUTs $(puts "${T}/b"): $(tail -1 "${T}/b/pedidos.jsonl")"
+
+# T10 Upload_Merges_FailureNotMarked — 🔴 atrapa: anotar un merge que el buzón rechazó por permiso.
+T="${BASE}/m-t10"; buzon "${T}/b"; config "${T}/cfg.json"
+merge_doc "${T}/merges" "${SHA_A}"
+echo "AuthorizationPermissionMismatch /merges/" > "${T}/b/codigo403"
+subir_m "${T}" "${T}/no-existe"
+[ "${RC}" -ne 0 ] && [ -z "$(en_registro "${T}" | grep merges)" ] && [ -f "${T}/merges/${M_A}" ] && [ "$(mcampo "${T}" fallidos)" = "1" ] \
+  && ok "T10 Upload_Merges_FailureNotMarked: sin permiso → sale ${RC}, nada anotado, el archivo sigue en la carpeta y cuenta 1 fallido" || mal "T10 rc=${RC} registro: $(en_registro "${T}") merges=$(campo "${T}" merges)"
+
+# T10b Upload_Merges_ExistsRetriesVersioned — 🔴 atrapa: con el registro local perdido, quedar rebotando contra el
+#    nombre que ya existe en cada pasada.
+T="${BASE}/m-t10b"; buzon "${T}/b"; config "${T}/cfg.json"
+merge_doc "${T}/merges" "${SHA_A}"
+subir_m "${T}" "${T}/no-existe"
+rm -f "${T}/estado/mailbox-uploads.json"
+subir_m "${T}" "${T}/no-existe"
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "3" ] && tail -1 "${T}/b/pedidos.jsonl" | grep -E "/maq-a/merges/${FORMA_V}/${M_A}\"" >/dev/null \
+  && python3 -c "import json,sys,re; a=json.load(open(sys.argv[1]))['archivos']['maq-a/merges/${M_A}']; assert re.search(r'/merges/v\d{8}T\d{9}Z/', a['blob']), a" "${T}/estado/mailbox-uploads.json" 2>/dev/null \
+  && ok "T10b Upload_Merges_ExistsRetriesVersioned: «ya existe» → un segundo PUT a merges/v<versión>/, anotado con su blob" || mal "T10b rc=${RC} PUTs $(puts "${T}/b"): $(tail -2 "${T}/b/pedidos.jsonl" | cut -c1-160)"
+subir_m "${T}" "${T}/no-existe"
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "3" ] && ok "T10b y la pasada siguiente ya no lo intenta" || mal "T10b tercera pasada rc=${RC}, PUTs $(puts "${T}/b")"
+
+# T8 Upload_Merges_OrderAfterLogsBeforeRuns — 🔴 atrapa: ponerlos al final de la cola (con atraso de ejecuciones y el
+#    presupuesto chico no entrarían nunca) o antes de los registros.
+T="${BASE}/m-t8"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
+corrida "${T}/h" "4.1-2026-10-01T1000" 2000
+merge_doc "${T}/merges" "${SHA_A}"
+TYCON_MERGES_DIR="${T}/merges" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-25 "maq-a"
+python3 - "${T}/b/pedidos.jsonl" <<'PY' && ok "T8 Upload_Merges_OrderAfterLogsBeforeRuns: registros, merges, ejecuciones" || mal "T8 orden (rc=${RC}): $(grep -o '"ruta":"[^"]*"' "${T}/b/pedidos.jsonl" | tr '\n' ' ')"
+import json, sys
+ps = [json.loads(l)['ruta'] for l in open(sys.argv[1]) if '"PUT"' in l]
+clase = ['r' if '/registros/' in p else 'm' if '/merges/' in p else 'e' for p in ps]
+assert clase == sorted(clase, key='rme'.index) and set(clase) == {'r', 'm', 'e'}, ps
+PY
+
+# T11 Upload_Json_MergesCount — 🔴 atrapa: mudar en un --dry-run, o no decir por qué un colgado se dejó.
+T="${BASE}/m-t11"; buzon "${T}/b"; config "${T}/cfg.json"
+merge_doc "${T}/merges" "${SHA_A}"
+CL="${T}/clon"; mkdir -p "${CL}"; ( cd "${CL}" && git init -q -b main && echo x > README.md && git add -A && git -c user.email=t@t -c user.name=t commit -q -m base )
+merge_doc "${CL}/.dashboard" "${SHA_B}"; echo '{"schema_version":"1.0"}' > "${CL}/.dashboard/${M_C}"
+TYCON_MERGES_FROM="${CL}" subir_m "${T}" "${T}/no-existe" --dry-run
+[ "${RC}" -eq 0 ] && [ "$(mcampo "${T}" nuevos)" = "1" ] && [ "$(mcampo "${T}" subidos)" = "0" ] && [ "$(mcampo "${T}" fallidos)" = "0" ] && [ "$(mcampo "${T}" migrados)" = "1" ] \
+  && python3 -c "import json,sys; d=json.load(open(sys.argv[1]))['merges']['dejados']; assert len(d)==1 and d[0]['archivo']==sys.argv[2] and '2.0' in d[0]['motivo'], d" "${T}/out.json" "${M_C}" 2>/dev/null \
+  && [ -f "${CL}/.dashboard/${M_B}" ] && [ ! -f "${T}/merges/${M_B}" ] && [ "$(pedidos "${T}/b")" = "0" ] \
+  && ok "T11 Upload_Json_MergesCount: --dry-run cuenta nuevos 1, migrados 1 y el dejado con su motivo, sin mover ni mandar nada" || mal "T11 rc=${RC} merges=$(campo "${T}" merges)"
+TYCON_MERGES_FROM="${CL}" subir_m "${T}" "${T}/no-existe"
+[ "${RC}" -eq 0 ] && [ ! -f "${CL}/.dashboard/${M_B}" ] && [ -f "${T}/merges/${M_B}" ] && [ -f "${T}/b/blobs/corridas/maq-a/merges/${M_B}" ] && [ -f "${CL}/.dashboard/${M_C}" ] \
+  && [ "$(mcampo "${T}" migrados)" = "1" ] && [ "$(mcampo "${T}" subidos)" = "2" ] \
+  && ok "T11 sin --dry-run el colgado se muda a la carpeta de estado y sube en la misma pasada; el que no pasa la validación queda" || mal "T11 pasada real rc=${RC} merges=$(campo "${T}" merges) clon: $(ls "${CL}/.dashboard")"
+
+# Sin carpetas fabricadas, la mudanza mira el árbol propio — sólo si está dentro de la carpeta personal. Se corre una
+# copia del arnés (nunca este árbol): una afuera de HOME y otra adentro.
+# 🔴 Atrapa: mudar un clon de afuera de HOME (una suite con HOME falso, corrida desde un clon de verdad, le vaciaría el
+#    .dashboard/ a un temporal), o no mirar el árbol propio cuando sí es de la máquina.
+copia_arnes() { # copia_arnes <carpeta> → un clon de juguete con los guiones y un colgado válido en .dashboard/
+  mkdir -p "$1/scripts"
+  cp -R "${RAIZ}/scripts/metrics" "${RAIZ}/scripts/lib" "${RAIZ}/scripts/setup" "$1/scripts/"
+  ( cd "$1" && git init -q -b main && echo x > README.md && git add README.md && git -c user.email=t@t -c user.name=t commit -q -m base )
+  merge_doc "$1/.dashboard" "${SHA_B}"
+}
+subir_desde() { # subir_desde <caso> <home> <arnés>
+  local c="$1" h="$2" a="$3"
+  env -u TYCON_TIMING_HISTORY -u TYCON_MERGES_DIR -u TYCON_MERGES_FROM -u TYCON_HOME HOME="${h}" TYCON_MAILBOX_JSON="${c}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" \
+    TYCON_UPLOADS_LOG="${c}/estado/mailbox-uploads.json" TYCON_MACHINE="maq-a" node "${a}/scripts/metrics/upload-runs.js" --json > "${c}/out.json" 2> "${c}/err.txt"
+  RC=$?
+}
+T="${BASE}/m-casa"; buzon "${T}/b"; config "${T}/cfg.json"
+copia_arnes "${T}/afuera"; mkdir -p "${T}/home"
+subir_desde "${T}" "${T}/home" "${T}/afuera"
+[ -f "${T}/afuera/.dashboard/${M_B}" ] && [ "$(mcampo "${T}" migrados)" = "0" ] \
+  && python3 -c "import json,sys; d=json.load(open(sys.argv[1]))['merges']['dejados']; assert any('fuera de la carpeta personal' in x['motivo'] for x in d), d" "${T}/out.json" 2>/dev/null \
+  && ok "T11 un árbol propio fuera de HOME no se muda (el colgado queda donde estaba) y la salida lo dice" || mal "T11 afuera: rc=${RC} merges=$(campo "${T}" merges) $(head -c 200 "${T}/err.txt")"
+copia_arnes "${T}/home2/arnes"
+subir_desde "${T}" "${T}/home2" "${T}/home2/arnes"
+[ ! -f "${T}/home2/arnes/.dashboard/${M_B}" ] && [ "$(mcampo "${T}" migrados)" = "1" ] && [ -f "${T}/b/blobs/corridas/maq-a/merges/${M_B}" ] \
+  && ok "T11 el árbol propio dentro de HOME sí: el colgado se muda a la carpeta de estado y sube" || mal "T11 adentro: rc=${RC} merges=$(campo "${T}" merges) $(head -c 200 "${T}/err.txt")"
+
+# 🔴 Atrapa: callar un clon de mantenimiento declarado que no es un repo de git (su colgado queda sin que nadie lo sepa).
+T="${BASE}/m-sin-git"; buzon "${T}/b"; config "${T}/cfg.json"
+copia_arnes "${T}/casa/arnes"; merge_doc "${T}/casa/copia-sin-git/.dashboard" "${SHA_C}"
+mkdir -p "${T}/casa/.tycon"; printf '{"paths":{"maintainers":"%s"}}\n' "${T}/casa/copia-sin-git" > "${T}/casa/.tycon/config.json"
+subir_desde "${T}" "${T}/casa" "${T}/casa/arnes"
+[ -f "${T}/casa/copia-sin-git/.dashboard/${M_C}" ] \
+  && python3 -c "import json,sys; d=json.load(open(sys.argv[1]))['merges']['dejados']; assert any('no es un repo de git' in x['motivo'] for x in d), d" "${T}/out.json" 2>/dev/null \
+  && ok "T11 un clon de mantenimiento declarado que no es un repo de git no se toca y la salida lo dice" || mal "T11 sin git: rc=${RC} merges=$(campo "${T}" merges) $(head -c 200 "${T}/err.txt")"
+
+# 🔴 Atrapa: subir como merges de la máquina lo que no es un registro 2.0 válido, o la copia de la historia que dejó la
+#    mudanza de la casa (los ya versionados en el clon).
+T="${BASE}/m-filtro"; buzon "${T}/b"; config "${T}/cfg.json"
+merge_doc "${T}/merges" "${SHA_A}"; echo '{"schema_version":"1.0"}' > "${T}/merges/metrics-2026-01-01-viejo.json"; echo '{' > "${T}/merges/metrics-2026-01-02-roto.json"
+subir_m "${T}" "${T}/no-existe"
+[ "${RC}" -eq 0 ] && [ "$(mcampo "${T}" nuevos)" = "1" ] && [ "$(puts "${T}/b")" = "1" ] \
+  && python3 -c "import json,sys; s=json.load(open(sys.argv[1]))['merges']['salteados']; assert s['invalidos']==2, s" "${T}/out.json" 2>/dev/null \
+  && ok "T11 sólo sube los 2.0 válidos y cuenta los salteados" || mal "T11 filtro: rc=${RC} PUTs $(puts "${T}/b") merges=$(campo "${T}" merges)"
+T="${BASE}/m-historia"; buzon "${T}/b"; config "${T}/cfg.json"
+copia_arnes "${T}/casa/arnes"; rm -f "${T}/casa/arnes/.dashboard/${M_B}"
+merge_doc "${T}/casa/arnes/.dashboard" "${SHA_C}"; ( cd "${T}/casa/arnes" && git add -f .dashboard && git -c user.email=t@t -c user.name=t commit -q -m historia )
+ESTADO=$(HOME="${T}/casa" node -e 'process.stdout.write(require(process.argv[1]).stateDir(process.env.HOME))' "${T}/casa/arnes/scripts/setup/harness/tycon-home.js")
+mkdir -p "${ESTADO}/dashboard"; cp "${T}/casa/arnes/.dashboard/${M_C}" "${ESTADO}/dashboard/"; merge_doc "${ESTADO}/dashboard" "${SHA_A}"
+subir_desde "${T}" "${T}/casa" "${T}/casa/arnes"
+[ "${RC}" -eq 0 ] && [ -f "${T}/b/blobs/corridas/maq-a/merges/${M_A}" ] && [ ! -f "${T}/b/blobs/corridas/maq-a/merges/${M_C}" ] \
+  && python3 -c "import json,sys; s=json.load(open(sys.argv[1]))['merges']['salteados']; assert s['en_la_historia']==1, s" "${T}/out.json" 2>/dev/null \
+  && ok "T11 lo que ya está en la historia no sube como merge nuevo de la máquina" || mal "T11 historia: rc=${RC} merges=$(campo "${T}" merges) $(head -c 200 "${T}/err.txt")"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "subir-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }

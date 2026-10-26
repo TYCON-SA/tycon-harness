@@ -145,6 +145,30 @@ t('loadAll clasifica sin adivinar: 1 ok + 1 legacy + 1 roto + 1 ilegible', () =>
   assert.deepStrictEqual(counts, { total: 4, v2ok: 1, v2bad: 1, legacy: 1, unreadable: 1 });
 });
 
+t('loadMany (story 8.132): estado + historia; el mismo nombre en las dos cuenta una vez y gana la primera', () => {
+  const { loadMany } = require(LIB);
+  const hist = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-hist-'));
+  const enEstado = base(); enEstado.metrics.advisor_warnings_per_story.value = 7;
+  const enHist = base(); enHist.metrics.advisor_warnings_per_story.value = 1;
+  const estado = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-estado-'));
+  fs.writeFileSync(path.join(estado, 'metrics-2026-08-01-ok.json'), JSON.stringify(enEstado));
+  fs.writeFileSync(path.join(hist, 'metrics-2026-08-01-ok.json'), JSON.stringify(enHist));
+  fs.writeFileSync(path.join(hist, 'metrics-2026-06-01-legacy.json'), JSON.stringify(legacyDoc));
+  const r = loadMany([estado, hist]);
+  assert.deepStrictEqual(r.counts, { total: 2, v2ok: 1, v2bad: 0, legacy: 1, unreadable: 0 });
+  assert.strictEqual(r.records.find((x) => x.file === 'metrics-2026-08-01-ok.json').values.advisor_warnings_per_story, 7);
+  assert.strictEqual(r.dir, estado);
+  // el medidor, con las dos carpetas, cuenta lo que sólo está en la historia
+  const { firstPassFromDashboard } = require(path.join(RAIZ, 'scripts', 'metrics', 'sdlc-stage-metrics.js'));
+  const conVueltas = (v) => { const d = base(); d.metrics.advisor_rerun_loop_iterations = { value: v }; return d; };
+  fs.writeFileSync(path.join(estado, 'metrics-2026-08-05-uno.json'), JSON.stringify(conVueltas(1)));
+  fs.writeFileSync(path.join(hist, 'metrics-2026-08-04-dos.json'), JSON.stringify(conVueltas(2)));
+  const fp = firstPassFromDashboard([estado, hist], null);
+  // el ok repetido (2 vueltas) cuenta una vez: 3 medidos, 1 de primera
+  assert.deepStrictEqual([fp.num, fp.den], [1, 3], JSON.stringify(fp));
+  fs.rmSync(hist, { recursive: true, force: true }); fs.rmSync(estado, { recursive: true, force: true });
+});
+
 t('loadAll extrae el número de un legacy cuando es inequívoco, y null cuando no', () => {
   const { records } = loadAll(tmp);
   const leg = records.find((r) => r.file.includes('legacy'));
@@ -330,19 +354,19 @@ t('T23 R3_Lib_MovedRequires — la serie compila desde scripts/lib/ y su vecino 
   assert.ok(!/require\(\s*['"]\.\/lib\//.test(src), 'su vecino de lib/ se pide sin `lib/` adelante');
 });
 
-t('T23 R3_Lib_MovedRequires — desde scripts/lib/, --validate sobre un directorio de juguete y el .dashboard del clon por omisión', () => {
+t('T23 R3_Lib_MovedRequires — desde scripts/lib/, --validate sobre un directorio de juguete y la carpeta de estado por omisión', () => {
   const juguete = fs.mkdtempSync(path.join(os.tmpdir(), 'r3-series-'));
   try {
     fs.writeFileSync(path.join(juguete, 'metrics-2026-10-02-ok.json'), JSON.stringify(base()));
     const out = execFileSync(process.execPath, [SERIES, '--validate', '--dir', juguete], { encoding: 'utf8' });
     assert.ok(/1 archivo\(s\) en formato 2\.0 válidos/.test(out), out);
   } finally { fs.rmSync(juguete, { recursive: true, force: true }); }
-  // con una casa vacía: en una máquina con el arnés instalado como versión bajada, el de omisión es el clon de
-  // mantenimiento que esa máquina declara (night-data.js), no el de esta copia; la prueba no depende de quién la corre
+  // con una casa vacía: el de omisión es la carpeta de estado de esa casa (night-data.js), nunca un clon; la prueba
+  // no depende de quién la corre
   const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'r3-casa-'));
   try {
     const j = JSON.parse(execFileSync(process.execPath, [SERIES, '--json'], { encoding: 'utf8', cwd: os.tmpdir(), env: { ...process.env, HOME: casa, USERPROFILE: casa } }));
-    assert.strictEqual(path.resolve(j.dir), path.join(RAIZ, '.dashboard'), 'sin --dir lee el .dashboard/ del clon');
+    assert.strictEqual(path.resolve(j.dir), path.join(casa, '.claude', '.tycon-pipeline', 'dashboard'), 'sin --dir lee la carpeta de estado, no el .dashboard/ del clon');
   } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 });
 

@@ -430,40 +430,41 @@ test('T85 NoGreenLine_WithAnIncompleteNight', () => {
   }
 });
 
-// ── 11 · lo que escribe la máquina cae en el clon de mantenimiento ────────────────────────────────────────────────────
-test('T85 MachineWrites_LandInTheMaintainersClone_NeverInThePublicOne', () => {
+// ── 11 · lo que escribe la máquina cae en su carpeta de estado, nunca en un clon ──────────────────────────────────
+test('T85 MachineWrites_LandInTheStateDir_NeverInAClone', () => {
   const lab = machine({});
+  const state = path.join(lab.tycon, 'state', 'dashboard');
   const product = path.join(lab.base, 'un-producto');
   write(path.join(product, 'README.md'), 'x\n');
   git(lab, product, ['init', '-q', '.']); git(lab, product, ['add', '-A']); git(lab, product, ['commit', '-qm', 'v1']);
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'metrics', 'retro-heartbeat.js'), '--repo', product, '--merge', 'HEAD'], { encoding: 'utf8', env: labEnv(lab) });
   assert.strictEqual(r.status, 0, r.stderr);
   const written = r.stdout.trim();
-  assert.strictEqual(path.dirname(written), path.join(lab.priv, '.dashboard'), `el registro del merge no cayó en el clon de mantenimiento: ${written}`);
+  assert.strictEqual(path.dirname(written), state, `el registro del merge no cayó en la carpeta de estado: ${written}`);
   assert.ok(fs.existsSync(written));
   assert.ok(!fs.existsSync(path.join(lab.pub, '.dashboard')), 'se escribió en el clon del público');
+  assert.strictEqual(git(lab, lab.priv, ['status', '--porcelain']), '', 'se ensució el clon de mantenimiento');
   // y los que leen eso lo buscan en el mismo lugar
   const dirOf = (file, expr) => spawnSync(process.execPath, ['-e', `process.stdout.write(String(${expr}))`], { encoding: 'utf8', env: labEnv(lab), cwd: path.dirname(file) }).stdout;
-  assert.strictEqual(dirOf(path.join(ROOT, 'scripts', 'lib', 'night-data.js'), `require(${JSON.stringify(path.join(ROOT, 'scripts', 'lib', 'night-data.js'))}).machineDashboardDir(${JSON.stringify(ROOT)})`), path.join(lab.priv, '.dashboard'));
+  assert.strictEqual(dirOf(path.join(ROOT, 'scripts', 'lib', 'night-data.js'), `require(${JSON.stringify(path.join(ROOT, 'scripts', 'lib', 'night-data.js'))}).machineDashboardDir(${JSON.stringify(ROOT)})`), state);
   // los que LEEN esos registros los buscan ahí, corridos de verdad sin decirles dónde:
   // · la serie
   const series = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'dashboard-series.js'), '--json'], { encoding: 'utf8', env: labEnv(lab) });
   assert.strictEqual(series.status, 0, series.stderr);
-  assert.strictEqual(JSON.parse(series.stdout).dir, path.join(lab.priv, '.dashboard'), 'la serie no leyó el .dashboard del clon de mantenimiento');
+  assert.strictEqual(JSON.parse(series.stdout).dir, state, 'la serie no leyó la carpeta de estado');
   // · el medidor (de dónde saca los registros; lo dice su salida)
   const read = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'metrics', 'sdlc-stage-metrics.js'), '--repo', product, '--json'], { encoding: 'utf8', env: labEnv(lab), timeout: 120000 });
   assert.strictEqual(read.status, 0, read.stderr);
-  assert.strictEqual(JSON.parse(read.stdout).dashboard, path.join(lab.priv, '.dashboard'), 'el medidor no leyó los registros del clon de mantenimiento');
+  assert.strictEqual(JSON.parse(read.stdout).dashboard, state, 'el medidor no leyó los registros de la carpeta de estado');
   // · el aviso de vejez: caso aparte, más abajo. · El de retrospectivas pendientes no se deja correr sin su libro de
   //   empujes: se exige que la carpeta la pida con una LLAMADA (un comentario no alcanza)
   const code = fs.readFileSync(path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js'), 'utf8').split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
-  assert.match(code, /require\(lib\)\.machineDashboardDir\(/, 'retro-pending.js no le pide a night-data.js dónde escribe la máquina');
-  // 🔴 la foto diaria del medidor NO es un dato de la máquina: es del nocturno, y vive en ese clon con ese nombre. El
-  // medidor corrido desde la versión bajada no la escribe ahí (la pisaría, o trabaría el `pull` siguiente)…
+  assert.match(code, /require\(lib\)\.machineDashboardDirs\(/,'retro-pending.js no le pide a night-data.js dónde escribe la máquina');
+  // 🔴 la foto diaria del medidor NO es un dato de la máquina: es del nocturno, y vive en el clon de mantenimiento con
+  // ese nombre. El medidor corrido desde la versión bajada no la escribe ahí (la pisaría, o trabaría el `pull` siguiente)…
   const meter = path.join(ROOT, 'scripts', 'metrics', 'sdlc-stage-metrics.js');
   const snap = spawnSync(process.execPath, [meter, '--repo', product, '--snapshot', '--json'], { encoding: 'utf8', env: labEnv(lab), timeout: 120000 });
   assert.strictEqual(snap.status, 0, snap.stderr);
-  assert.match(snap.stderr, /no escribo el punto del día/, 'el medidor no dice que no escribe la foto diaria en el clon de mantenimiento');
   const stages = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^sdlc-stage-/.test(f)) : []);
   assert.deepStrictEqual(stages(path.join(lab.priv, '.dashboard')), [], 'el medidor escribió su foto diaria en el clon de mantenimiento');
   // …salvo que quien lo corre diga dónde
@@ -471,7 +472,7 @@ test('T85 MachineWrites_LandInTheMaintainersClone_NeverInThePublicOne', () => {
   const given = spawnSync(process.execPath, [meter, '--repo', product, '--snapshot', '--json', '--dashboard', elsewhere], { encoding: 'utf8', env: labEnv(lab), timeout: 120000 });
   assert.strictEqual(given.status, 0, given.stderr);
   assert.strictEqual(stages(elsewhere).length, 1, 'con --dashboard el medidor no escribió donde se le dijo');
-  // sin clon de mantenimiento: a la carpeta del estado, diciendo que no viaja
+  // sin llave del buzón: a la carpeta del estado, diciendo que no viaja
   const alone = machine({ config: 'maintained' });
   const r2 = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'metrics', 'retro-heartbeat.js'), '--repo', product, '--merge', 'HEAD'], { encoding: 'utf8', env: labEnv(alone) });
   assert.strictEqual(r2.status, 0, r2.stderr);
@@ -588,6 +589,57 @@ test('T85 BrokenMachineConfig_IsSaidByItsReader_NoNightlyLine_NothingWrittenInTh
   assert.ok(!fs.existsSync(path.join(lab.pub, '.dashboard')), 'con la configuración rota se escribió en el clon del público');
 });
 
+// ── 16b · lo que escribe la máquina viaja si hay llave del buzón legible y no vencida ──────────────────────────────
+const N_JS_ = path.join(ROOT, 'scripts', 'lib', 'night-data.js');
+const askWrites = (lab, tree, env = {}) => {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(N_JS_)}).machineDashboard(${JSON.stringify(tree)})))`], { encoding: 'utf8', env: labEnv(lab, env) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+};
+
+test('T6 NightData_Travels_ByKey @story-8.132 @ac-3: viaja con la llave vigente; vencida, ilegible o ausente, no, y dice por qué', () => {
+  const lab = machine({});
+  const state = path.join(lab.tycon, 'state', 'dashboard');
+  const vigente = { cuenta: 'cuentaprueba', contenedor: 'corridas', sas: 'si=p&sig=x', vence: '2099-01-01' };
+  for (const [caso, body, viaja, motivo] of [
+    ['vigente', vigente, true, null],
+    ['vencida', { ...vigente, vence: '2020-01-01' }, false, /venció el 2020-01-01/],
+    ['ilegible', '{ no es JSON', false, /no es JSON válido/],
+    ['ausente', null, false, /falta la llave del buzón/],
+  ]) {
+    const f = path.join(lab.base, 'llaves', `${caso}.json`);
+    if (body !== null) write(f, typeof body === 'string' ? body : JSON.stringify(body));
+    const w = askWrites(lab, ROOT, { TYCON_MAILBOX_JSON: f });
+    assert.strictEqual(w.dir, state, `llave ${caso}: siempre la carpeta de estado`);
+    assert.strictEqual(w.travels, viaja, `llave ${caso}`);
+    if (motivo) assert.match(w.why, motivo, `llave ${caso}`); else assert.strictEqual(w.why, null);
+  }
+});
+
+test('T5 NightData_BrokenLib_Refuses @story-8.132 @ac-3: con tycon-home.js que tira, no hay carpeta y el latido no escribe', () => {
+  const lab = machine({});
+  const broken = path.join(lab.base, 'arbol-roto');
+  for (const d of ['scripts/lib', 'scripts/metrics', 'scripts/setup/harness']) fs.mkdirSync(path.join(broken, ...d.split('/')), { recursive: true });
+  for (const f of fs.readdirSync(path.join(ROOT, 'scripts', 'lib'))) { const from = path.join(ROOT, 'scripts', 'lib', f); if (fs.statSync(from).isFile()) fs.copyFileSync(from, path.join(broken, 'scripts', 'lib', f)); }
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'metrics', 'retro-heartbeat.js'), path.join(broken, 'scripts', 'metrics', 'retro-heartbeat.js'));
+  fs.writeFileSync(path.join(broken, 'scripts', 'setup', 'harness', 'tycon-home.js'), "throw new Error('roto a propósito');\n");
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(path.join(broken, 'scripts', 'lib', 'night-data.js'))}).machineDashboard(${JSON.stringify(broken)})))`], { encoding: 'utf8', env: labEnv(lab) });
+  const w = JSON.parse(r.stdout);
+  assert.deepStrictEqual([w.dir, w.travels], [null, false]);
+  assert.match(w.why, /no pude saber dónde escribe.*roto a propósito/);
+  const repo = path.join(lab.base, 'un-repo');
+  write(path.join(repo, 'README.md'), 'x\n');
+  git(lab, repo, ['init', '-q', '.']); git(lab, repo, ['add', '-A']); git(lab, repo, ['commit', '-qm', 'v1']);
+  const beat = spawnSync(process.execPath, [path.join(broken, 'scripts', 'metrics', 'retro-heartbeat.js'), '--repo', repo, '--merge', 'HEAD'], { encoding: 'utf8', env: labEnv(lab) });
+  assert.notStrictEqual(beat.status, 0, 'con la biblioteca rota el latido salió 0');
+  assert.strictEqual(beat.stdout, '', 'dijo haber escrito un archivo');
+  assert.match(beat.stderr, /roto a propósito|no se escribió nada/, 'no dice por qué no escribió');
+  const merges = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^metrics-.*\.json$/.test(f)) : []);
+  for (const d of [path.join(lab.tycon, 'state', 'dashboard'), path.join(broken, '.dashboard'), path.join(lab.priv, '.dashboard'), path.join(lab.pub, '.dashboard')]) {
+    assert.deepStrictEqual(merges(d), [], `sin poder saber dónde, escribió igual en ${d}`);
+  }
+});
+
 // ── 16 · las funciones de night-data.js, de a una ─────────────────────────────────────────────────────────────────────
 test('T85 NightData_EachFunction_AnsweredDirectly', () => {
   const N_JS = path.join(ROOT, 'scripts', 'lib', 'night-data.js');
@@ -601,25 +653,33 @@ test('T85 NightData_EachFunction_AnsweredDirectly', () => {
   const resolveIt = `N.resolve(${J(tree)})`;
   const writes = `N.machineDashboard(${J(tree)})`;
   // la tabla de resolve y la de machineDashboard, fila por fila
+  // dónde escribe la máquina: siempre su carpeta de estado, en un clon y en una versión
+  // bajada, con o sin clon de mantenimiento; `travels` lo decide la llave del buzón (T6 NightData_Travels_ByKey)
   const both = machine({});
+  // la carpeta de estado de tycon-home.js: en una versión bajada, ~/.tycon/state; corriendo desde un clon, la de siempre
+  const stateOf = (lab) => (fs.existsSync(path.join(lab.tycon, 'state', 'harness-state.json')) ? path.join(lab.tycon, 'state', 'dashboard') : path.join(lab.home, '.claude', '.tycon-pipeline', 'dashboard'));
+  const key = (lab, body, name = 'corridas-buzon.json') => { const f = path.join(lab.base, 'llaves', name); if (body !== null) write(f, typeof body === 'string' ? body : JSON.stringify(body)); return { TYCON_MAILBOX_JSON: f }; };
+  const vigente = { cuenta: 'cuentaprueba', contenedor: 'corridas', sas: 'si=p&sig=x', vence: '2099-01-01' };
   assert.deepStrictEqual(ask(both, resolveIt), { dir: both.priv, source: 'maintainers', problem: null });
-  assert.deepStrictEqual(ask(both, writes), { dir: path.join(both.priv, '.dashboard'), travels: true, why: null });
+  // `history`: dónde quedó lo de antes (el .dashboard del clon de mantenimiento declarado; desde un clon, el suyo)
+  const histBoth = path.join(both.priv, '.dashboard');
+  assert.deepStrictEqual(ask(both, writes, key(both, vigente)), { dir: stateOf(both), history: histBoth, travels: true, why: null }, 'con llave vigente: la carpeta de estado, y viaja');
   assert.deepStrictEqual(ask(both, resolveIt, { TYCON_NIGHTLY: '0' }), { dir: null, source: null, problem: null }, 'con los nocturnos apagados no se lee de ningún lado');
-  assert.deepStrictEqual(ask(both, writes, { TYCON_NIGHTLY: '0' }), { dir: path.join(both.priv, '.dashboard'), travels: true, why: null }, 'dónde escribe la máquina no depende de la llave de los nocturnos');
+  assert.deepStrictEqual(ask(both, writes, { TYCON_NIGHTLY: '0', ...key(both, vigente) }), { dir: stateOf(both), history: histBoth, travels: true, why: null }, 'dónde escribe la máquina no depende de la llave de los nocturnos');
   const clone = machine({ release: false, config: 'none' });
   assert.deepStrictEqual(ask(clone, resolveIt), { dir: tree, source: 'own', problem: null });
-  assert.deepStrictEqual(ask(clone, writes), { dir: path.join(tree, '.dashboard'), travels: true, why: null }, 'desde un clon, la máquina escribe en su propio árbol');
-  assert.strictEqual(ask(clone, `N.machineDashboardDir(${J(tree)})`), path.join(tree, '.dashboard'));
+  assert.deepStrictEqual(ask(clone, writes, key(clone, vigente)), { dir: stateOf(clone), history: path.join(tree, '.dashboard'), travels: true, why: null }, 'desde un clon, la máquina también escribe en su carpeta de estado');
+  assert.strictEqual(ask(clone, `N.machineDashboardDir(${J(tree)})`), stateOf(clone));
   const only = machine({ config: 'maintained' });
   const r1 = ask(only, resolveIt);
   assert.deepStrictEqual([r1.dir, r1.source], [null, null]);
   assert.match(r1.problem, /paths\.maintained.*no declara el de mantenimiento \(paths\.maintainers\)/);
   const w1 = ask(only, writes);
-  assert.deepStrictEqual([w1.dir, w1.travels], [path.join(only.tycon, 'state', 'dashboard'), false]);
-  assert.match(w1.why, /no declara el de mantenimiento/);
+  assert.deepStrictEqual([w1.dir, w1.travels], [stateOf(only), false]);
+  assert.match(w1.why, /falta la llave del buzón/);
   const nobody = machine({ config: 'none' });
   assert.deepStrictEqual(ask(nobody, resolveIt), { dir: null, source: null, problem: null });
-  assert.deepStrictEqual(ask(nobody, writes).travels, false);
+  assert.deepStrictEqual(ask(nobody, writes).dir, stateOf(nobody));
   const gone = machine({ config: (lab) => ({ maintained: lab.pub, maintainers: path.join(lab.base, 'no-esta') }) });
   const r2 = ask(gone, resolveIt);
   assert.deepStrictEqual([r2.dir, r2.source], [null, 'maintainers']);
@@ -769,20 +829,28 @@ test('T87 ManyRedSuites_NamesThreeCountsTheRest_PointsToTheDetail @story-7.53', 
   assert.ok(Buffer.byteLength(l) < 900, `la línea pesa ${Buffer.byteLength(l)} bytes:\n${l}`);
 });
 
-// ── 20 · el aviso de vejez de los registros de la máquina los busca donde se escriben, y calla donde no viajan ────────
-test('T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten_SilentWhereTheyDoNotTravel', () => {
+// ── 20 · el aviso de vejez de los registros de la máquina los busca donde se escriben, viajen o no ───────────────────
+// T25 Staleness_ReadsStateDir: la carpeta de estado y la de la historia; con llave y sin llave
+test('T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten (T25 Staleness_ReadsStateDir @story-8.132 @ac-17)', () => {
   const old = 'metrics-2026-01-05-un-producto-adhoc-abc1234.json';
   const withClone = machine({});
-  write(path.join(withClone.priv, '.dashboard', old), '{}');
-  write(path.join(withClone.pub, '.dashboard', `metrics-${day(Date.now())}-un-producto-adhoc-def5678.json`), '{}');   // lo de hoy, en el lugar equivocado
-  const a = hook(withClone, 'retro-staleness-notice.js');
-  assert.match(a.out, /retro capturer: última ejecución hace \d+ días/, `no leyó los registros del clon de mantenimiento:\n${a.out}${a.err}`);
-  // sin clon de mantenimiento los registros quedan en la carpeta del estado, que no viaja: ahí calla
+  const llave = path.join(withClone.base, 'corridas-buzon.json');
+  write(llave, JSON.stringify({ cuenta: 'cuentaprueba', contenedor: 'corridas', sas: 'si=p&sig=x', vence: '2099-01-01' }));
+  write(path.join(withClone.tycon, 'state', 'dashboard', old), '{}');
+  const a =hook(withClone, 'retro-staleness-notice.js', { TYCON_MAILBOX_JSON: llave });
+  assert.match(a.out, /retro capturer: última ejecución hace \d+ días/, `no leyó los registros de la carpeta de estado:\n${a.out}${a.err}`);
+  // sin llave del buzón el latido igual alimenta la carpeta de estado: el aviso habla (callar apagaba el control en
+  // toda copia sin la integración del equipo)
   const alone = machine({ config: 'maintained' });
   write(path.join(alone.tycon, 'state', 'dashboard', old), '{}');
-  write(path.join(alone.pub, '.dashboard', old), '{}');
-  const quiet = hook(alone, 'retro-staleness-notice.js');
-  assert.deepStrictEqual([quiet.status, quiet.out], [0, ''], 'habló de una serie que nadie alimenta, o no salió 0');
+  const sinLlave = hook(alone, 'retro-staleness-notice.js', { TYCON_MAILBOX_JSON: path.join(alone.base, 'no-hay-llave.json') });
+  assert.match(sinLlave.out, /retro capturer: última ejecución hace \d+ días/, `sin llave calló:\n${sinLlave.out}${sinLlave.err}`);
+  // y lo de hoy en la carpeta de la historia (el clon de mantenimiento declarado) cuenta: no avisa
+  const fresh = machine({});
+  write(path.join(fresh.tycon, 'state', 'dashboard', old), '{}');
+  write(path.join(fresh.priv, '.dashboard', `metrics-${day(Date.now())}-un-producto-adhoc-def5678.json`), '{}');
+  const alDia = hook(fresh, 'retro-staleness-notice.js', { TYCON_MAILBOX_JSON: llave });
+  assert.deepStrictEqual([alDia.status, alDia.out], [0, ''], `con lo de hoy en la historia avisó:\n${alDia.out}${alDia.err}`);
   // 🔴 y «no pude saber dónde están» no es «no viajan»: con la biblioteca de rutas rota, lo dice
   const broken = path.join(withClone.base, 'arbol-roto');
   for (const d of ['scripts/hooks', 'scripts/lib', 'scripts/setup/harness']) fs.mkdirSync(path.join(broken, ...d.split('/')), { recursive: true });
@@ -791,6 +859,45 @@ test('T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten_SilentWhereTheyDoNo
   fs.writeFileSync(path.join(broken, 'scripts', 'setup', 'harness', 'tycon-home.js'), "throw new Error('roto a propósito');\n");
   const said = hook(withClone, 'retro-staleness-notice.js', {}, broken);
   assert.match(said.out + said.err, /no pude saber dónde escribe esta máquina/, `con la biblioteca rota el aviso de vejez calló:\n${said.out}${said.err}`);
+});
+
+// ── 20b · los registros de la máquina se leen también en la historia, y «viaja» usa la vara de la subida ─────────────
+test('MachineRecords_ReadAlsoTheHistory_TravelsLikeTheUpload @story-8.132 @ac-17 @ac-3', () => {
+  const lab = machine({});
+  const nd = path.join(ROOT, 'scripts', 'lib', 'night-data.js');
+  const ask = (expr, more = {}) => {
+    const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(${expr}))`], { encoding: 'utf8', env: labEnv(lab, more), cwd: lab.base });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  // versión bajada con clon de mantenimiento declarado: la carpeta de estado y, después, el .dashboard de ese clon
+  assert.deepStrictEqual(ask(`require(${JSON.stringify(nd)}).machineDashboardDirs(${JSON.stringify(ROOT)})`),
+    [path.join(lab.tycon, 'state', 'dashboard'), path.join(lab.priv, '.dashboard')]);
+  // la serie cuenta lo de la historia sin que se le diga dónde
+  write(path.join(lab.priv, '.dashboard', 'metrics-2026-10-20-un-producto-adhoc-c21a5f8.json'), '{"schema_version":"1.0"}');
+  const series = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'dashboard-series.js'), '--json'], { encoding: 'utf8', env: labEnv(lab) });
+  assert.strictEqual(series.status, 0, series.stderr);
+  assert.strictEqual(JSON.parse(series.stdout).counts.total, 1, 'la serie no leyó la historia');
+  // «viaja» con la misma vara que la subida: sin firma, o con un vencimiento con espacios ya pasado, no viaja
+  const travels = (cfg) => {
+    const k = path.join(lab.base, `llave-${Math.random().toString(36).slice(2)}.json`);
+    write(k, JSON.stringify({ cuenta: 'cuentaprueba', contenedor: 'corridas', ...cfg }));
+    return ask(`require(${JSON.stringify(nd)}).machineDashboard(${JSON.stringify(ROOT)})`, { TYCON_MAILBOX_JSON: k });
+  };
+  assert.strictEqual(travels({ sas: 'si=p&sig=x', vence: '2099-01-01' }).travels, true);
+  const sinFirma = travels({ sas: 'sp=rcl&sv=2022', vence: '2099-01-01' });
+  assert.deepStrictEqual([sinFirma.travels, /rechaza la llave/.test(sinFirma.why)], [false, true], JSON.stringify(sinFirma));
+  for (const vence of [' 2020-01-01', '2020-01-01 ']) {
+    const v = travels({ sas: 'si=p&sig=x', vence });
+    assert.deepStrictEqual([v.travels, /venció/.test(v.why)], [false, true], `${JSON.stringify(vence)}: ${JSON.stringify(v)}`);
+  }
+  // el clon declarado ya no está: la historia no se lee, y eso se dice (no es lo mismo que no tenerla)
+  fs.renameSync(lab.priv, `${lab.priv}-movido`);
+  const roto = ask(`require(${JSON.stringify(nd)}).machineDashboard(${JSON.stringify(ROOT)})`);
+  assert.deepStrictEqual([roto.history, /no leo la historia/.test(roto.historyWhy || '')], [null, true], JSON.stringify(roto));
+  const dirs = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(nd)}).machineDashboardDirs(${JSON.stringify(ROOT)})`], { encoding: 'utf8', env: labEnv(lab), cwd: lab.base });
+  assert.match(dirs.stderr, /no leo la historia/);
+  fs.renameSync(`${lab.priv}-movido`, lab.priv);
 });
 
 // ── 21 · la nota «leído del disco» va en TODAS las líneas de suites y del banco, también en las rojas ────────────────

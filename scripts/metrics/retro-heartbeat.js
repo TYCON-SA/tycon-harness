@@ -52,7 +52,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   node scripts/metrics/retro-heartbeat.js --repo <dir> --merge <sha> [--story <id>] [--out <dir>]
  *   stdout: la ruta escrita · exit 0
  *   exit 2 + motivo por stderr: --repo no es git · --merge no resuelve · validate() rechaza · no escribió
- * Default de --out: el .dashboard/ del arnés donde vive este script (donde lo busca retro-pending.js).
+ * Default de --out: la carpeta de estado de la máquina (`<stateDir>/dashboard`, la dice scripts/lib/night-data.js; ahí
+ * lo busca retro-pending.js). Nunca el `.dashboard/` de un clon. De ahí lo sube upload-runs.js al buzón, y el nocturno
+ * del tablero lo junta en `.dashboard/merges/` de operaciones. Sin llave del buzón, lo dice por stderr («no viaja»).
  * Ambiente: TYCON_TODAY (fecha, para pruebas) · TYCON_RETRO_HEARTBEAT_FORCE_ROUNDS (valor crudo de la
  * métrica de vueltas antes de validar — sólo para probar que el validador frena).
  */
@@ -452,13 +454,12 @@ function main() {
   const v = validate(doc);
   if (!v.ok) salir(`el validador de dashboard-metrics.js rechazó el archivo, no se escribió nada: ${v.errors.join(' · ')}`);
 
-  // Dónde escribe la máquina lo suyo lo sabe scripts/lib/night-data.js: en un clon, su `.dashboard`;
-  // en una versión bajada, el del clon de mantenimiento que la máquina declara —de ahí viaja— o, sin uno que sirva, la
-  // carpeta del estado, y se dice que no viaja. 🔴 Nunca el clon del público: el registro de cada
-  // merge caería en una carpeta ignorada de ese clon y no llegaría a ningún repo. Sin esa biblioteca al lado, la carpeta de datos de la máquina o el `.dashboard` del arnés.
-  // 🔴 Si la biblioteca ESTÁ y no carga, esto tira: volver callado a esa otra ruta sería escribir otra vez en el clon del
-  // público. Y si no pudo saber dónde escribe la máquina, no se escribe nada y se dice (el merge queda sin su archivo, que
-  // es lo que cobra retro-pending.js).
+  // Dónde escribe la máquina lo suyo lo sabe scripts/lib/night-data.js: su carpeta de estado, siempre. Desde ahí viaja
+  // por el buzón; sin llave, se dice que no viaja. 🔴 Nunca el `.dashboard/` de un clon: ensucia ese checkout y nadie
+  // lo sube. Sin esa biblioteca al lado, la carpeta de datos de la máquina o el `.dashboard` del arnés.
+  // 🔴 Si la biblioteca ESTÁ y no carga, esto tira: volver callado a esa otra ruta sería escribir en un clon. Y si no
+  // pudo saber dónde escribe la máquina, no se escribe nada y se dice (el merge queda sin su archivo, que es lo que
+  // cobra retro-pending.js).
   const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
   const machine = fs.existsSync(nightLib) ? require(nightLib).machineDashboard(ARNES) : null;
   if (!a.out && machine && !machine.dir) salir(`no se escribió nada: ${machine.why}`);
@@ -478,8 +479,9 @@ function main() {
   } catch (err) {
     salir(`no se pudo escribir ${destino}: ${err && err.message ? err.message : err}`);
   }
-  // lo que queda en la carpeta del estado no viaja: se dice (por stderr; por stdout sale sólo la ruta, que otros leen)
-  if (!a.out && machine && machine.travels === false) process.stderr.write(`retro-latido: el registro quedó en esta máquina y no viaja a ningún repo — ${machine.why}\n`);
+  // sin llave del buzón el archivo no viaja: se dice en cada corrida (por stderr; por stdout sale sólo la ruta, que
+  // otros leen)
+  if (!a.out && machine && machine.travels === false) process.stderr.write(`retro-latido: el registro quedó en esta máquina y no viaja por el buzón — ${machine.why}\n`);
   process.stdout.write(`${destino}\n`);
 }
 

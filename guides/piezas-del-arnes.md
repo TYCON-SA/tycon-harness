@@ -1160,7 +1160,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 ## scripts/metrics/retro-heartbeat.js
 
-**Qué es:** Escribe, sin modelo y en una fracción de segundo, el archivo de retrospectiva de cada merge a main.
+**Qué es:** Escribe, sin modelo y en una fracción de segundo, el archivo de retrospectiva de cada merge a main, en la carpeta de estado de la máquina (nunca en un clon). De ahí viaja por el buzón; sin llave, lo dice.
 
 **Por qué existe:** Lanzar el capturador con modelo en cada merge costaba mucho tiempo y consumo para archivos casi vacíos. Acá sale la identidad del merge y la última vuelta de revisión; el resto queda en null con quién lo cubre.
 
@@ -1228,7 +1228,7 @@ _(scripts/tools/work-in-progress.js + el comando commands/wip.md)_
 
 _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
-**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage donde todos escriben y sólo leen quienes tienen el rol de lectura; `download-runs.js` las baja.
+**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage donde todos escriben y sólo leen quienes tienen el rol de lectura; `download-runs.js` las baja. En la misma pasada sube el archivo de métricas de cada merge (ver `merge-metrics.js`).
 
 **Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea blobs nuevos: no lee, no lista, no pisa ni borra.
 
@@ -1237,6 +1237,16 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 **Dónde se prueba:** `scripts/tests/upload-runs.test.sh`, `scripts/tests/download-runs.test.sh`
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsupload-runsjs)
+
+## scripts/lib/merge-metrics.js
+
+**Qué es:** Lleva el archivo de métricas de cada merge desde la máquina que lo escribió hasta el tablero, sin que nadie lo commitee.
+
+**Por qué existe:** El latido dejaba el archivo en el `.dashboard/` del clon: ensuciaba el checkout compartido, frenaba su actualización y, sin subir, el tablero y la retro no veían ese merge. Ahora cada máquina lo escribe en su carpeta de estado y `upload-runs.js` lo sube al buzón. La misma pasada muda los que quedaron colgados en un clon: nunca toca uno versionado ni pisa otro distinto.
+
+**Quién la usa:** `upload-runs.js` (la mudanza y la fase de merges).
+
+**Dónde se prueba:** `scripts/tests/merge-metrics.test.js`, `scripts/tests/upload-runs.test.sh`
 
 ## scripts/lib/people.js
 
