@@ -217,11 +217,13 @@ function migrar({ ops: opsDir, today, simular = false }) {
 
 /**
  * Las líneas JSON de un `.gz`: `{ lineas, rotas }`; `null` si el archivo no está; `{ lineas: null, roto: true }` si está
- * y no se puede leer (no es gzip, permisos).
+ * y no se puede leer (no es gzip, permisos, o descomprimido pasa de `max`).
  */
-function leerJsonl(p) {
+// El tope de los registros de la máquina; la conversación de una ejecución no lo lleva.
+const MAX_REGISTRO = 64 * 1024 * 1024;
+function leerJsonl(p, max) {
   let t;
-  try { t = zlib.gunzipSync(fs.readFileSync(p)).toString('utf8'); } catch (e) { return e && e.code === 'ENOENT' ? null : { lineas: null, rotas: 0, roto: true }; }
+  try { t = zlib.gunzipSync(fs.readFileSync(p), max ? { maxOutputLength: max } : {}).toString('utf8'); } catch (e) { return e && e.code === 'ENOENT' ? null : { lineas: null, rotas: 0, roto: true }; }
   const lineas = [];
   let rotas = 0;
   for (const l of t.split('\n')) { if (!l.trim()) continue; try { lineas.push(JSON.parse(l)); } catch { rotas += 1; } }
@@ -232,11 +234,34 @@ function leerRegistros(dirMaquina, cache, estado) {
   const r = path.join(dirMaquina, 'registros');
   let cobertura = null;
   try { cobertura = JSON.parse(fs.readFileSync(path.join(r, 'cobertura.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') estado.ilegibles += 1; }
-  const b = leerJsonl(path.join(r, 'bypass.log.gz'));
+  const b = leerJsonl(path.join(r, 'bypass.log.gz'), MAX_REGISTRO);
   if (b) estado.ilegibles += b.roto ? 1 : b.rotas;
-  const out = { cobertura, bypass: b && !b.roto ? b.lineas : null };
+  const f = leerJsonl(path.join(r, 'frenos.jsonl.gz'), MAX_REGISTRO);
+  if (f) estado.ilegibles += f.roto ? 1 : f.rotas;
+  // Un registro de frenos con líneas rotas puede haber perdido una autorización: se lee como no medido.
+  const out = { cobertura, bypass: b && !b.roto ? b.lineas : null, frenos: f && !f.roto && !f.rotas ? f.lineas : null };
   cache.set(dirMaquina, out);
   return out;
+}
+/**
+ * Los registros de una ejecución que está en varias carpetas de su máquina (la vieja y la de código): los de la primera,
+ * con los frenos de todas. Una carpeta sin los frenos medidos pudo perder una autorización: entonces la ejecución queda
+ * sin medir. Una línea que subió a las dos carpetas cuenta una vez; dos iguales en una carpeta son dos.
+ */
+function registrosDeLaEjecucion(dirs, cache, estado) {
+  const todos = dirs.map((d) => leerRegistros(d, cache, estado));
+  if (todos.length === 1) return todos[0];
+  const medidoEn = (x) => x.cobertura && x.cobertura.fuentes && x.cobertura.fuentes.frenos && x.cobertura.fuentes.frenos.estado === 'medido' && Array.isArray(x.frenos);
+  if (!todos.every(medidoEn)) return { ...todos[0], frenos: null };
+  const veces = new Map();
+  for (const x of todos) {
+    const aca = new Map();
+    for (const l of x.frenos) { const k = JSON.stringify(l); aca.set(k, (aca.get(k) || 0) + 1); }
+    for (const [k, n] of aca) veces.set(k, Math.max(veces.get(k) || 0, n));
+  }
+  const frenos = [];
+  for (const [k, n] of veces) for (let i = 0; i < n; i += 1) frenos.push(JSON.parse(k));
+  return { ...todos[0], frenos };
 }
 
 /** Lo que entra a la ficha de lo que devolvieron las reglas: categorías de forma cerrada, sin texto. */
@@ -313,7 +338,8 @@ async function run(opts) {
     for (const l of pedidos.lineas) process.stderr.write(`${l}\n`);
   } catch (e) { process.stderr.write(`pedidos de ejecuciones: el paso falló (${(e && e.constructor && /^[A-Za-z_]{1,30}$/.test(e.constructor.name) ? e.constructor.name : 'error')}); esta noche no se pidió ninguno\n`); }
   const desde = menosDias(today, days);
-  const estado = { fecha: today, completo: true, motivo: null, miradas: 0, con_fallas: 0, nuevas: 0, sin_hilo: 0, hilos_sin_hooks: 0, ilegibles: 0, causas: [] };
+  const estado = { fecha: today, completo: true, motivo: null, miradas: 0, con_fallas: 0, nuevas: 0, sin_hilo: 0, hilos_sin_hooks: 0, ilegibles: 0, causas: [],
+    escapes_autorizados: 0, maquinas_sin_frenos: 0 };
   const previa = pasadaDeHoy(path.join(raiz, 'last-run.json'), today);
   if (previa.ilegible) estado.ilegibles += 1;
   const vistas = leerVistas(path.join(raiz, 'causas-vistas.json'));
@@ -448,6 +474,21 @@ async function run(opts) {
     const cacheRegistros = new Map();
     // una ejecución se mira una vez aunque esté en dos carpetas de la máquina (la vieja y la de código)
     const miradas = new Set();
+    // las máquinas con ejecuciones miradas y sin el registro de los frenos: con una, la cuenta de autorizados no se sabe
+    const sinFrenos = new Set();
+    let autorizados = 0;
+    // primero se junta en qué carpetas está cada ejecución: sus registros se leen de todas las de su máquina. Que una
+    // carpeta vieja es de una máquina lo dice el archivo de uniones del bajador; sin él, cada carpeta es su máquina
+    const uniones = require('../dashboard/reducer.js').leerUnionesDeCarpetas(mailbox);
+    const maquinaDe = (carpeta) => {
+      const u = uniones.estado === 'medidas' ? uniones.carpetas.get(carpeta) : null;
+      return u && u.estado === 'unida' ? u.nueva : carpeta;
+    };
+    const ejecuciones = [];
+    const carpetasDe = new Map();
+    // en cuántas máquinas aparece cada ejecución: sin las uniones medidas, una repartida no se sabe si es de una o de dos
+    const gruposDe = new Map();
+    let avisoUniones = false;
     for (const { ruta, carpeta } of lista) {
       let volcado;
       try { volcado = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch { volcado = null; }
@@ -457,13 +498,31 @@ async function run(opts) {
       if (!DIA.test(dia) || dia < desde) continue;
       const sesion = porSesion.get(volcado.marker.sessionId) || { id: RUNS.idEstable(carpeta, volcado.marker.sessionId), maquina: carpeta };
       const unaVez = `${sesion.id}|${comoId(base)}`;
+      const grupo = `${unaVez}|${maquinaDe(carpeta)}`;
+      if (!gruposDe.has(unaVez)) gruposDe.set(unaVez, new Set());
+      gruposDe.get(unaVez).add(grupo);
+      if (!carpetasDe.has(grupo)) carpetasDe.set(grupo, []);
+      const dirs = carpetasDe.get(grupo);
+      if (!dirs.includes(path.dirname(ruta))) dirs.push(path.dirname(ruta));
+      ejecuciones.push({ ruta, volcado, base, dia, sesion, unaVez, grupo });
+    }
+    for (const { ruta, volcado, base, dia, sesion, unaVez, grupo } of ejecuciones) {
       if (miradas.has(unaVez)) continue;
       miradas.add(unaVez);
       estado.miradas += 1;
       const h = leerJsonl(ruta.replace(/\.json$/, '.hilo.jsonl.gz'));
       if (h) estado.ilegibles += h.roto ? 1 : h.rotas;
-      const r = RULES.revisar({ volcado, lineasHilo: h && !h.roto ? h.lineas : null, registros: leerRegistros(path.dirname(ruta), cacheRegistros, estado) });
+      let registros = registrosDeLaEjecucion(carpetasDe.get(grupo), cacheRegistros, estado);
+      if (uniones.estado !== 'medidas' && gruposDe.get(unaVez).size > 1) {
+        // la autorización puede estar en la otra carpeta, que quizás es de esta máquina: la cuenta no se sabe
+        if (!avisoUniones) { avisoUniones = true; process.stderr.write(`runs-review: ${uniones.motivo}; las ejecuciones que están en varias carpetas quedan sin medir\n`); }
+        registros = { ...registros, frenos: null };
+      }
+      const r = RULES.revisar({ volcado, lineasHilo: h && !h.roto ? h.lineas : null, registros });
       if (r.sin_hilo) estado.sin_hilo += 1; else if (r.hilo_sin_hooks) estado.hilos_sin_hooks += 1;
+      if (r.escapes_autorizados === null) sinFrenos.add(maquinaDe(sesion.maquina)); else autorizados += r.escapes_autorizados;
+      estado.maquinas_sin_frenos = sinFrenos.size;
+      estado.escapes_autorizados = sinFrenos.size ? null : autorizados;
       if (!r.reglas.length) continue;
       estado.con_fallas += 1;
       const caso = casoDe({ id: sesion.id, base, dia, maquina: sesion.maquina, story: volcado.marker.storyId });

@@ -937,6 +937,7 @@ const RENGLONES_EJ = [
   /^· y \d+ causas conocidas más \(\d+ ejecuciones\)$/,
   new RegExp(`^🆕 ${CAUSA_EJ}( — ${ENLACE_EJ})?$`, 'u'),
   /^🆕 y \d+ causas nuevas más$/u,
+  /^escapes autorizados: (\d+|\? \((sin el registro de los frenos de \d+ máquinas?|la revisión no lo midió|la revisión no fue entera)\))$/u,
 ];
 const EJ_SIN_MOTIVO = 'motivo sin la forma esperada';
 // el motivo de una pasada parcial sale sólo si es una de las frases fijas de runs-review.js
@@ -1117,7 +1118,14 @@ function lineaEjecuciones(dir, hoy) {
   const motivo = motivoFijo(l.motivo) ? l.motivo : EJ_SIN_MOTIVO;
   const parcial = l.completo === true ? '' : `parcial — ${motivo} · `;
   const cabecera = `ejecuciones: ${parcial}${l.con_fallas ? `${l.con_fallas} con fallas del arnés (de ${l.miradas} miradas)` : `0 con fallas del arnés (${l.miradas} miradas)`}`;
-  if (!l.con_fallas) return [cabecera];
+  // los escapes que una persona autorizó: sólo la cuenta; sin el registro de alguna máquina, o con una pasada que no fue
+  // entera, no se sabe, y nunca se dice 0
+  const sinFrenos = l.maquinas_sin_frenos;
+  const escapes = `escapes autorizados: ${l.completo !== true ? '? (la revisión no fue entera)'
+    : entero(l.escapes_autorizados) ? l.escapes_autorizados
+      : l.escapes_autorizados === null && entero(sinFrenos) && sinFrenos > 0 ? `? (sin el registro de los frenos de ${sinFrenos} ${sinFrenos === 1 ? 'máquina' : 'máquinas'})`
+        : '? (la revisión no lo midió)'}`;
+  if (!l.con_fallas) return [cabecera, escapes];
 
   const RR = require('../runs-review/runs-review.js');
   // las fichas por causa: una aceptada no se repite en la lista; el enlace de una causa nueva sale de su
@@ -1178,6 +1186,7 @@ function lineaEjecuciones(dir, hoy) {
     if (conocidas.length > k) out.push(`· y ${conocidas.length - k} causas conocidas más (${conocidas.slice(k).reduce((s, c) => s + c.ejecuciones, 0)} ejecuciones)`);
     out.push(...nuevas.slice(0, n).map((c) => `🆕 ${nombre(c)}: ${c.ejecuciones}${enlaceDe(c)}`));
     if (nuevas.length > n) out.push(`🆕 y ${nuevas.length - n} causas nuevas más`);
+    out.push(escapes);
     return out;
   };
   // tope del bloque: se sacan renglones desde abajo, primero de lo nuevo, y se suman a su «y K más»
