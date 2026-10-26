@@ -448,7 +448,7 @@
         "T85 MachineThatDoesNotMaintain_OrNightliesOff_SeesNothing": 1.9,
         "T85 RunningFromAClone_SameOutputAsBefore_ByteForByte": 5.7,
         "T85 NoGreenLine_WithAnIncompleteNight": 16.4,
-        "T85 MachineWrites_LandInTheMaintainersClone_NeverInThePublicOne": 3.1,
+        "T85 MachineWrites_LandInTheStateDir_NeverInAClone": 3.1,
         "T85 EachNotice_CopiedAlone_WorksAsToday": 1.0,
         "T85 TheGuide_SaysWhoBringsTheMaintainersClone_AndWhen": 0.1,
         "T85 PublishedCannotBeRead_ReadsTheDiskOfTheClone_AndSaysSo": 3.8,
@@ -457,7 +457,7 @@
         "T85 NoPhoto_WithAnOldCopy_IsUnknown_NotMissing": 4.6,
         "T85 TheProblem_IsSaid_EvenWithTheDependenciesNoticeSwitchedOff": 1.6,
         "T85 TextFromAPublishedPhoto_IsSanitizedBeforeTheScreen": 2.1,
-        "T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten_SilentWhereTheyDoNotTravel": 1.8,
+        "T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten_SilentWhereTheyDoNotTravel (T25 Staleness_ReadsStateDir @story-8.132 @ac-17)": 1.8,
         "T85 DiskNote_IsOnEveryLine_AlsoOnTheRedOnes": 4.9,
         "T85 PhotoDatedInTheFuture_IsNotGreen": 2.4
       }

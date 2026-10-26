@@ -260,6 +260,70 @@ RC=$?
 [ "${RC}" = "0" ] && echo "${SER}" | node -e 'const s = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(s.counts.v2ok === 1 && s.series.advisor_rerun_loop_iterations.n === 1 ? 0 : 1)' \
   && ok "T10 dashboard-series.js suma el archivo del latido (v2ok 1, vueltas n=1)" || bad "T10 serie" "rc=${RC} · $(echo "${SER}" | head -c 400)"
 
+# ── dónde escribe la máquina sin --out: su carpeta de estado, nunca un clon ───────────────────────
+# Cada caso con su HOME, para que la carpeta de estado y la llave del buzón sean las del caso. La llave se pasa siempre
+# por TYCON_MAILBOX_JSON: ninguna prueba lee la de verdad.
+# MUTACIÓN que pone en rojo T1/T2/T26: volver a escribir en el `.dashboard/` del clon de mantenimiento o del propio árbol.
+# MUTACIÓN que pone en rojo T4: callar el «no viaja» cuando no hay llave.
+ARCH_ADHOC="metrics-${HOY}-proyecto-adhoc-${SHA2:0:7}.json"
+latido_en() { # latido_en <home> <archivo de llave> <args...> → deja ${BASE}/rc, stdout y stderr
+  local h="$1" k="$2"; shift 2
+  # el portón de pruebas apaga el buzón (TYCON_MAILBOX=0): la suite decide sólo con la llave que le pasa
+  env -u TYCON_MAILBOX HOME="${h}" TYCON_MAILBOX_JSON="${k}" node "${LATIDO}" --repo "${REPO}" --merge "${SHA2}" "$@" > "${BASE}/stdout" 2> "${BASE}/stderr"
+  echo $? > "${BASE}/rc"
+}
+LLAVE="${BASE}/llaves/corridas-buzon.json"
+mkdir -p "${BASE}/llaves"
+printf '{"cuenta":"cuentaprueba","contenedor":"corridas","sas":"si=p&sig=x","vence":"2099-01-01"}\n' > "${LLAVE}"
+
+# T1 Heartbeat_NoOut_WritesStateDir — versión bajada que declara su clon de mantenimiento
+H1="${BASE}/home-t1"; CLON1="${BASE}/clon-mantenimiento"
+mkdir -p "${H1}/.tycon/state" "${CLON1}/.dashboard"
+printf '{"sources":[{"kind":"release"}]}\n' > "${H1}/.tycon/state/harness-state.json"
+printf '{"paths":{"maintainers":"%s"}}\n' "${CLON1}" > "${H1}/.tycon/config.json"
+( cd "${CLON1}" && git init -q -b main && touch .dashboard/.gitkeep && git add -A && git -c user.email=t@t -c user.name=t commit -q -m inicial )
+latido_en "${H1}" "${LLAVE}"
+RC="$(cat "${BASE}/rc")"
+[ "${RC}" = "0" ] && [ -f "${H1}/.tycon/state/dashboard/${ARCH_ADHOC}" ] && [ -z "$(git -C "${CLON1}" status --porcelain)" ] \
+  && ! grep -q "no viaja" "${BASE}/stderr" \
+  && ok "T1 sin --out, en una versión bajada: escribe en la carpeta de estado, el clon de mantenimiento queda limpio y, con llave, no avisa" \
+  || bad "T1 Heartbeat_NoOut_WritesStateDir" "rc=${RC} · $(ls -R "${H1}/.tycon/state" 2>&1 | head -c 300) · $(git -C "${CLON1}" status --porcelain) · $(head -c 300 "${BASE}/stderr")"
+
+# T2 Heartbeat_FromClone_WritesStateDir — el arnés corriendo desde un clon (este árbol)
+H2="${BASE}/home-t2"; mkdir -p "${H2}"
+ANTES2="$(ls "${RAIZ}/.dashboard" 2>/dev/null)"
+latido_en "${H2}" "${LLAVE}"
+RC="$(cat "${BASE}/rc")"
+[ "${RC}" = "0" ] && [ -f "${H2}/.claude/.tycon-pipeline/dashboard/${ARCH_ADHOC}" ] && [ "$(ls "${RAIZ}/.dashboard" 2>/dev/null)" = "${ANTES2}" ] \
+  && ok "T2 desde un clon: escribe en la carpeta de estado y nada en el .dashboard/ del clon" \
+  || bad "T2 Heartbeat_FromClone_WritesStateDir" "rc=${RC} · $(ls -R "${H2}" 2>&1 | head -c 300) · $(head -c 300 "${BASE}/stderr")"
+
+# T3 Heartbeat_ExplicitOut_Unchanged — con --out, la carpeta pedida y ninguna otra
+H3="${BASE}/home-t3"; mkdir -p "${H3}"
+latido_en "${H3}" "${BASE}/llaves/no-esta.json" --out "${BASE}/out-t3"
+RC="$(cat "${BASE}/rc")"
+[ "${RC}" = "0" ] && [ -f "${BASE}/out-t3/${ARCH_ADHOC}" ] && [ ! -d "${H3}/.claude/.tycon-pipeline/dashboard" ] && ! grep -q "no viaja" "${BASE}/stderr" \
+  && ok "T3 con --out: escribe ahí, como siempre, y no toca la carpeta de estado" \
+  || bad "T3 Heartbeat_ExplicitOut_Unchanged" "rc=${RC} · $(ls "${BASE}/out-t3" 2>&1) · $(head -c 300 "${BASE}/stderr")"
+
+# T4 Heartbeat_NoKey_SaysNotTravel — sin llave del buzón: escribe igual y dice que no viaja
+H4="${BASE}/home-t4"; mkdir -p "${H4}"
+latido_en "${H4}" "${BASE}/llaves/no-esta.json"
+RC="$(cat "${BASE}/rc")"
+[ "${RC}" = "0" ] && [ -f "${H4}/.claude/.tycon-pipeline/dashboard/${ARCH_ADHOC}" ] && grep -q "no viaja" "${BASE}/stderr" \
+  && [ "$(cat "${BASE}/stdout")" = "${H4}/.claude/.tycon-pipeline/dashboard/${ARCH_ADHOC}" ] \
+  && ok "T4 sin llave: escribe en la carpeta de estado, sale 0 y dice por stderr que no viaja (stdout sólo la ruta)" \
+  || bad "T4 Heartbeat_NoKey_SaysNotTravel" "rc=${RC} · $(cat "${BASE}/stdout") · $(head -c 300 "${BASE}/stderr")"
+
+# T26 RetroPending_StateDirCovers — el merge anotado queda cubierto por el archivo de la carpeta de estado
+H26="${BASE}/home-t26"; mkdir -p "${H26}/.claude/.tycon-pipeline"
+latido_en "${H26}" "${BASE}/llaves/no-esta.json"
+printf '{"ts":"2026-09-16T10:00:00.000Z","sessionId":"s-test","repoPath":"%s","sha":"%s","branch":"main"}\n' "${REPO_REAL}" "${SHA2:0:12}" > "${H26}/.claude/.tycon-pipeline/retro-pending.jsonl"
+REP="$(HOME="${H26}" TYCON_MAILBOX_JSON="${BASE}/llaves/no-esta.json" node "${RAIZ}/scripts/hooks/retro-pending.js" --report --days 36500 2>&1)"
+RC=$?
+echo "${REP}" | grep '"conRetro": 1' >/dev/null && echo "${REP}" | grep '"pendientes": 0' >/dev/null \
+  && ok "T26 retro-pending da el merge por cubierto con el archivo de la carpeta de estado" || bad "T26 RetroPending_StateDirCovers" "rc=${RC} · $(echo "${REP}" | head -c 400)"
+
 # ── Casos de borde de la identidad del repo ──────────────────────────────────────────────────────
 # T1b — worktree del arnés (<Repo>--wt-<slug>, <Repo>--merge; guides/git-worktrees.md). Falla si: el
 #       volcado de un worktree no coincide con el repo y sale «sin volcado» (null con motivo falso).

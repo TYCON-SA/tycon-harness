@@ -177,12 +177,13 @@ const MAINTAINED_TREE = (() => {
 const DASHBOARD_DIR = MAINTAINED_TREE ? path.join(MAINTAINED_TREE, '.dashboard') : null;
 // y donde escribe el latido en esta máquina según tycon-home.js: en una instalación bajada sin clon
 // declarado es ~/.tycon/state/dashboard — si no se mira ahí, el latido que este aviso pide correr nunca lo apaga
-const MACHINE_DASHBOARD_DIR = (() => {
-  // el latido escribe donde dice scripts/lib/night-data.js: en una versión bajada, el clon de
-  // mantenimiento que la máquina declara (nunca el del público). Sin esa biblioteca al lado, la ruta de tycon-home.js.
+const MACHINE_DASHBOARD_DIRS = (() => {
+  // el latido escribe donde dice scripts/lib/night-data.js: la carpeta de estado de la máquina (nunca un clon); lo
+  // de antes quedó en la carpeta de la historia (los ya versionados del clon de mantenimiento no se mudan), y se
+  // miran las dos. Sin esa biblioteca al lado, la ruta de tycon-home.js.
   // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la otra ruta; si no pudo saber, lo avisa ella)
-  { const lib = path.join(__dirname, '..', 'lib', 'night-data.js'); if (fs.existsSync(lib)) { const d = require(lib).machineDashboardDir(path.resolve(__dirname, '..', '..')); if (d) return d; } }
-  try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); const TH = require(lib); return typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), MAINTAINED_TREE || path.resolve(__dirname, '..', '..')) : null; } catch { return null; }
+  { const lib = path.join(__dirname, '..', 'lib', 'night-data.js'); if (fs.existsSync(lib)) { const d = require(lib).machineDashboardDirs(path.resolve(__dirname, '..', '..')); if (d.length) return d; } }
+  try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); const TH = require(lib); return typeof TH.dashboardDir === 'function' ? [TH.dashboardDir(os.homedir(), MAINTAINED_TREE || path.resolve(__dirname, '..', '..'))].filter(Boolean) : []; } catch { return []; }
 })();
 const MAX_BLOCKS = 3;
 const LATIDO = path.resolve(__dirname, '..', 'metrics', 'retro-heartbeat.js');
@@ -226,7 +227,7 @@ function gitOrNull(cwd, args) {
 // sobre un merge que ya la tiene — y bloquearía el cierre del turno por eso.
 function dashboardsDe(entry) {
   const out = [];
-  for (const d of [DASHBOARD_DIR, MACHINE_DASHBOARD_DIR, path.join(String(entry.repoPath || ''), '.dashboard')].filter(Boolean)) {
+  for (const d of [DASHBOARD_DIR, ...MACHINE_DASHBOARD_DIRS, path.join(String(entry.repoPath || ''), '.dashboard')].filter(Boolean)) {
     const r = real(d);
     if (!out.includes(r)) out.push(r);
   }

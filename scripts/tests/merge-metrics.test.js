@@ -1,0 +1,347 @@
+'use strict';
+// merge-metrics.test.js — el archivo de métricas de cada merge: la mudanza de los archivos colgados en
+// el clon a la carpeta de estado, un archivo por merge cuando dos máquinas mandan el mismo, `juntar` con su constancia
+// y la constancia leída por el nocturno. Más la lectura de los YAML de la noche (las copias de operaciones y del
+// privado sólo si están: sin ellas, el caso dice «no medido», no verde). Git de verdad, sin red, un par de segundos.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..', '..');
+const LIB = path.join(ROOT, 'scripts', 'lib', 'merge-metrics.js');
+const MM = require(LIB);
+const { METRICS } = require(path.join(ROOT, 'scripts', 'lib', 'dashboard-metrics.js'));
+
+const dirs = [];
+test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
+const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-metrics-')); dirs.push(d); return d; };
+
+function env(extra = {}) {
+  const e = {};
+  for (const [k, v] of Object.entries(process.env)) if (!/^(GIT_|TYCON_|BUILD_|SYSTEM_|TF_BUILD)/.test(k)) e[k] = v;
+  return { ...e, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(os.tmpdir(), 'merge-metrics-no-global'),
+    GIT_AUTHOR_NAME: 'Lab', GIT_AUTHOR_EMAIL: 'lab@example.com', GIT_COMMITTER_NAME: 'Lab', GIT_COMMITTER_EMAIL: 'lab@example.com',
+    GIT_AUTHOR_DATE: '2026-10-25T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-25T10:00:00Z', ...extra };
+}
+function git(dir, args) {
+  const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...args], { env: env(), encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+  return r.stdout.trim();
+}
+const write = (file, body) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, body); };
+
+/** Un archivo 2.0 como el que escribe retro-heartbeat.js. `vueltas` null = sin volcado de la ejecución. */
+function doc({ sha = 'a'.repeat(40), project = 'tycon-harness', repo = '/Users/a/tycon-harness', ts = '2026-10-25T10:00:00.000Z', vueltas = null, story = '8.1' } = {}) {
+  const m = vueltas === null
+    ? { value: null, unavailable_reason: 'sin volcado de ejecución para este repo+story' }
+    : { value: vueltas };
+  const metrics = {};
+  for (const k of Object.keys(METRICS)) metrics[k] = { value: null, unavailable_reason: 'no la mide esta prueba' };
+  metrics.advisor_rerun_loop_iterations = m;
+  return { schema_version: '2.0', project, captured_at: ts.slice(0, 10), ts, repo, merge_commit: sha, story, generated_by: 'retro-latido.js', metrics };
+}
+const nombre = (d) => `metrics-${d.captured_at}-${d.project}-${d.story}-${d.merge_commit.slice(0, 7)}.json`;
+const texto = (d) => `${JSON.stringify(d, null, 2)}\n`;
+
+/** Un clon de juguete con `.dashboard/`; `versionados` entran en un commit, `sueltos` quedan sin versionar. */
+function clon({ versionados = [], sueltos = [], ignorada = false } = {}) {
+  const c = path.join(tmp(), 'clon');
+  fs.mkdirSync(c, { recursive: true });
+  git(c, ['init', '--quiet', '-b', 'main']);
+  write(path.join(c, 'README.md'), 'x\n');
+  if (ignorada) write(path.join(c, '.gitignore'), '.dashboard/\n');
+  for (const d of versionados) write(path.join(c, '.dashboard', nombre(d)), texto(d));
+  git(c, ['add', '-A', '-f']);
+  git(c, ['commit', '--quiet', '-m', 'base']);
+  for (const d of sueltos) write(path.join(c, '.dashboard', typeof d === 'string' ? d : nombre(d)), typeof d === 'string' ? '{"schema_version":"1.0"}\n' : texto(d));
+  return c;
+}
+
+// ── la mudanza ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T12 Migrate_Untracked_MovedByteEqual @story-8.132 @ac-8: los sin versionar pasan a la carpeta de estado, iguales byte a byte, y el clon queda limpio', () => {
+  const a = doc({ sha: '1'.repeat(40) }); const b = doc({ sha: '2'.repeat(40) });
+  const c = clon({ sueltos: [a, b] });
+  const antes = [a, b].map((d) => fs.readFileSync(path.join(c, '.dashboard', nombre(d))));
+  const destino = path.join(tmp(), 'estado', 'dashboard');
+  const r = MM.mudar(c, destino);
+  assert.strictEqual(r.migrados, 2, JSON.stringify(r));
+  assert.deepStrictEqual(r.dejados, []);
+  [a, b].forEach((d, i) => assert.ok(fs.readFileSync(path.join(destino, nombre(d))).equals(antes[i]), `${nombre(d)} igual byte a byte`));
+  assert.strictEqual(git(c, ['status', '--porcelain']), '', 'el clon queda limpio');
+  assert.deepStrictEqual(fs.readdirSync(destino).filter((f) => f.startsWith('.')), [], 'ningún temporal suelto');
+});
+
+test('T13 Migrate_Tracked_Untouched @story-8.132 @ac-9: un archivo versionado no se toca', () => {
+  const v = doc({ sha: '3'.repeat(40) }); const s = doc({ sha: '4'.repeat(40) });
+  const c = clon({ versionados: [v], sueltos: [s] });
+  const destino = path.join(tmp(), 'dashboard');
+  const r = MM.mudar(c, destino);
+  assert.strictEqual(r.migrados, 1);
+  assert.ok(fs.existsSync(path.join(c, '.dashboard', nombre(v))), 'el versionado sigue en su lugar');
+  assert.ok(git(c, ['ls-files']).split('\n').includes(`.dashboard/${nombre(v)}`), 'y en git ls-files');
+  assert.ok(!fs.existsSync(path.join(destino, nombre(v))), 'el versionado no se copia');
+});
+
+test('T14 Migrate_Invalid_Left @story-8.132 @ac-10: uno que no es un archivo 2.0 válido queda en el clon y se nombra', () => {
+  const malo = doc({ sha: '5'.repeat(40) }); delete malo.repo;
+  const c = clon({ sueltos: ['metrics-2026-05-03.json', malo] });
+  const destino = path.join(tmp(), 'dashboard');
+  const r = MM.mudar(c, destino);
+  assert.strictEqual(r.migrados, 0);
+  assert.strictEqual(r.dejados.length, 2, JSON.stringify(r.dejados));
+  const viejo = r.dejados.find((x) => x.archivo === 'metrics-2026-05-03.json');
+  assert.match(viejo.motivo, /no es un archivo 2\.0/);
+  assert.match(r.dejados.find((x) => x.archivo === nombre(malo)).motivo, /no pasa la validación/);
+  assert.ok(fs.existsSync(path.join(c, '.dashboard', 'metrics-2026-05-03.json')), 'queda en el clon');
+});
+
+test('T15 Migrate_NameClash_NeverOverwrites @story-8.132 @ac-10: nunca pisa otro contenido; el mismo contenido sí cuenta como mudado', () => {
+  const d = doc({ sha: '6'.repeat(40) });
+  const c = clon({ sueltos: [d] });
+  const destino = path.join(tmp(), 'dashboard');
+  const otro = texto({ ...d, ts: '2026-10-25T11:00:00.000Z' });
+  write(path.join(destino, nombre(d)), otro);
+  const r = MM.mudar(c, destino);
+  assert.strictEqual(r.migrados, 0);
+  assert.match(r.dejados[0].motivo, /ya hay otro con ese nombre/);
+  assert.strictEqual(fs.readFileSync(path.join(destino, nombre(d)), 'utf8'), otro, 'el de la carpeta de estado no se pisa');
+  assert.ok(fs.existsSync(path.join(c, '.dashboard', nombre(d))), 'el original sigue');
+  // el mismo contenido: el original se borra y cuenta
+  write(path.join(destino, nombre(d)), texto(d));
+  const r2 = MM.mudar(c, destino);
+  assert.strictEqual(r2.migrados, 1, JSON.stringify(r2));
+  assert.ok(!fs.existsSync(path.join(c, '.dashboard', nombre(d))), 'el original se borró');
+});
+
+test('T15b Migrate_OriginalVanished_NotError @story-8.132 @ac-10: si el original desaparece entre la copia y el borrado, no es un error', () => {
+  const d = doc({ sha: '7'.repeat(40) });
+  const c = clon({ sueltos: [d] });
+  const destino = path.join(tmp(), 'dashboard');
+  const original = path.join(c, '.dashboard', nombre(d));
+  // un fs envuelto: justo antes de borrar el original, otro proceso ya lo borró
+  const envuelto = { ...fs, unlinkSync: (p) => { if (p === original) { fs.unlinkSync(p); } return fs.unlinkSync(p); } };
+  const r = MM.mudar(c, destino, { fs: envuelto });
+  assert.strictEqual(r.migrados, 1, JSON.stringify(r));
+  assert.deepStrictEqual(r.dejados, []);
+  assert.strictEqual(fs.readFileSync(path.join(destino, nombre(d)), 'utf8'), texto(d), 'la copia verificada');
+});
+
+test('T16 Migrate_GitFails_MovesNothing @story-8.132 @ac-11: sin saber qué está sin versionar, no se mueve nada', () => {
+  const noRepo = path.join(tmp(), 'no-repo');
+  write(path.join(noRepo, '.dashboard', nombre(doc())), texto(doc()));
+  const destino = path.join(tmp(), 'dashboard');
+  const r = MM.mudar(noRepo, destino);
+  assert.strictEqual(r.migrados, 0);
+  assert.match(r.dejados[0].motivo, /no pude saber cuáles están sin versionar/);
+  assert.ok(fs.existsSync(path.join(noRepo, '.dashboard', nombre(doc()))));
+  // un git que sale 128 en un repo de verdad
+  const c = clon({ sueltos: [doc({ sha: '8'.repeat(40) })] });
+  const r2 = MM.mudar(c, destino, { git: () => ({ status: 128, stdout: '', stderr: 'fatal: roto' }) });
+  assert.strictEqual(r2.migrados, 0);
+  assert.match(r2.dejados[0].motivo, /no pude saber cuáles están sin versionar/);
+  assert.ok(!fs.existsSync(destino) || fs.readdirSync(destino).length === 0, 'nada se movió');
+});
+
+test('T17 Migrate_IgnoredFolder_MovesAll @story-8.132 @ac-8: con .dashboard/ ignorada (el clon del público) se mudan todos', () => {
+  const a = doc({ sha: '9'.repeat(40) }); const b = doc({ sha: 'b'.repeat(40) });
+  const c = clon({ sueltos: [a, b], ignorada: true });
+  const destino = path.join(tmp(), 'dashboard');
+  const r = MM.mudar(c, destino);
+  assert.strictEqual(r.migrados, 2, JSON.stringify(r));
+  assert.deepStrictEqual(fs.readdirSync(path.join(c, '.dashboard')), []);
+});
+
+test('Colgados_y_Pendientes @story-8.132 @ac-8: colgados nombra sólo los sin versionar; pendientes lista los de la carpeta', () => {
+  const v = doc({ sha: 'c'.repeat(40) }); const s = doc({ sha: 'd'.repeat(40) });
+  const c = clon({ versionados: [v], sueltos: [s] });
+  const r = MM.colgados(c);
+  assert.strictEqual(r.error, null);
+  assert.deepStrictEqual(r.archivos.map((p) => path.basename(p)), [nombre(s)]);
+  assert.deepStrictEqual(MM.pendientes(path.join(c, '.dashboard')).map((x) => x.f), [nombre(v), nombre(s)].sort());
+  assert.deepStrictEqual(MM.pendientes(path.join(tmp(), 'no-existe')), []);
+  assert.strictEqual(MM.carpetaLocal('/x/estado'), path.join('/x/estado', 'dashboard'));
+});
+
+test('Pendientes_Unreadable_SaysSo @story-8.132 @ac-11: una carpeta que no se puede leer no es «nada que subir» ni «nada que mudar»', () => {
+  const archivo = path.join(tmp(), 'no-es-carpeta');
+  fs.writeFileSync(archivo, 'x');
+  assert.throws(() => MM.pendientes(archivo), (e) => e.code === 'ENOTDIR');
+  const c = clon({ versionados: [], sueltos: [] });
+  fs.rmSync(path.join(c, '.dashboard'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(c, '.dashboard'), 'x');
+  const r = MM.colgados(c);
+  assert.deepStrictEqual(r.archivos, []);
+  assert.match(String(r.error), /ENOTDIR/);
+});
+
+// ── un archivo por merge ───────────────────────────────────────────────────────────────────────────────────────────
+
+test('T18 OnePerMerge_PrefersRoundsThenNewest @story-8.132 @ac-12: gana el que trae vueltas; entre iguales el más nuevo; nunca une repos distintos', () => {
+  const sha = 'e'.repeat(40);
+  const conNull = { doc: doc({ sha, repo: '/Users/a/x', ts: '2026-10-25T12:00:00.000Z' }), id: 'null-nuevo' };
+  const conVueltas = { doc: doc({ sha, repo: '/srv/b/x', ts: '2026-10-25T10:00:00.000Z', vueltas: 2 }), id: 'vueltas' };
+  let r = MM.unoPorMerge([conNull, conVueltas]);
+  assert.deepStrictEqual(r.elegidos.map((x) => x.id), ['vueltas']);
+  assert.strictEqual(r.repetidos, 1);
+  const viejo = { doc: doc({ sha, ts: '2026-10-25T09:00:00.000Z', vueltas: 1 }), id: 'viejo' };
+  const nuevo = { doc: doc({ sha, ts: '2026-10-25T11:00:00.000Z', vueltas: 3 }), id: 'nuevo' };
+  assert.deepStrictEqual(MM.unoPorMerge([viejo, nuevo]).elegidos.map((x) => x.id), ['nuevo']);
+  // un sha de 7 con el mismo project se une
+  const corto = { doc: doc({ sha: sha.slice(0, 7), ts: '2026-10-25T13:00:00.000Z' }), id: 'corto' };
+  r = MM.unoPorMerge([corto, conVueltas]);
+  assert.deepStrictEqual(r.elegidos.map((x) => x.id), ['vueltas']);
+  // dos repos distintos con el mismo prefijo de 7 y otro project: quedan los dos
+  const p1 = { doc: doc({ sha: 'f'.repeat(7), project: 'uno' }), id: 'uno' };
+  const p2 = { doc: doc({ sha: 'f'.repeat(7), project: 'dos' }), id: 'dos' };
+  assert.deepStrictEqual(MM.unoPorMerge([p1, p2]).elegidos.map((x) => x.id).sort(), ['dos', 'uno']);
+  // mismoMerge directo: dos shas de 40 iguales con otro project son el mismo merge; prefijos que no coinciden, no
+  assert.ok(MM.mismoMerge(doc({ sha, project: 'a' }), doc({ sha, project: 'b' })));
+  assert.ok(!MM.mismoMerge(doc({ sha }), doc({ sha: '0'.repeat(40) })));
+  assert.ok(!MM.mismoMerge(doc({ sha: 'abc' }), doc({ sha: 'abc' })), 'menos de 7 no alcanza');
+});
+
+test('OnePerMerge_OrderIndependent @story-8.132 @ac-12: un sha corto junto a dos completos de otro project es un solo merge, en cualquier orden', () => {
+  const sha = 'abcdef1' + '0'.repeat(33);
+  const casos = [
+    [{ doc: doc({ sha: 'abcdef1', project: 'P' }), id: 'a' }, { doc: doc({ sha, project: 'Q' }), id: 'b' }, { doc: doc({ sha, project: 'P' }), id: 'c' }],
+    [{ doc: doc({ sha: 'abcdef12', project: 'P' }), id: 'd' }, { doc: doc({ sha: 'abcdef1', project: 'P' }), id: 'e' }, { doc: doc({ sha: 'abcdef13', project: 'P' }), id: 'f' }],
+  ];
+  const ordenes = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+  for (const items of casos) {
+    for (const o of ordenes) {
+      const r = MM.unoPorMerge(o.map((i) => items[i]));
+      assert.strictEqual(r.elegidos.length, 1, `orden ${o.map((i) => items[i].id).join('')}: ${r.elegidos.map((x) => x.id)}`);
+      assert.strictEqual(r.repetidos, 2);
+    }
+  }
+});
+
+test('Migrate_ConcurrentSession_NotLeftBehind @story-8.132 @ac-10: otra sesión que muda el mismo archivo a la vez no deja un «dejado» falso', () => {
+  // (1) la otra sesión enlaza primero el final, con el mismo contenido
+  const d1 = doc({ sha: '8'.repeat(40) });
+  const c1 = clon({ sueltos: [d1] });
+  const destino1 = path.join(tmp(), 'dashboard');
+  const final1 = path.join(destino1, nombre(d1));
+  const antes = { ...fs, linkSync: (a, b) => { if (b === final1) fs.writeFileSync(final1, texto(d1)); return fs.linkSync(a, b); } };
+  const r1 = MM.mudar(c1, destino1, { fs: antes });
+  assert.deepStrictEqual([r1.migrados, r1.dejados], [1, []], JSON.stringify(r1));
+  assert.ok(!fs.existsSync(path.join(c1, '.dashboard', nombre(d1))), 'el original se borró');
+  // (2) la otra sesión ya se llevó el original entre la lista y la lectura
+  const d2 = doc({ sha: '9'.repeat(40) });
+  const c2 = clon({ sueltos: [d2] });
+  const destino2 = path.join(tmp(), 'dashboard');
+  const original2 = path.join(c2, '.dashboard', nombre(d2));
+  const llevado = { ...fs, readFileSync: (p, ...r) => { if (p === original2 && fs.existsSync(p)) { write(path.join(destino2, nombre(d2)), texto(d2)); fs.unlinkSync(p); } return fs.readFileSync(p, ...r); } };
+  const r2 = MM.mudar(c2, destino2, { fs: llevado });
+  assert.deepStrictEqual(r2.dejados, [], JSON.stringify(r2));
+});
+
+test('ParaSubir_OnlyValidAndNew @story-8.132 @ac-3: al buzón van sólo los 2.0 válidos que no están ya en la historia', () => {
+  const dir = path.join(tmp(), 'dashboard');
+  const historia = path.join(tmp(), 'historia');
+  const nuevo = doc({ sha: '1'.repeat(40) });
+  const viejo = doc({ sha: '2'.repeat(40) });
+  write(path.join(dir, nombre(nuevo)), texto(nuevo));
+  write(path.join(dir, nombre(viejo)), texto(viejo));
+  write(path.join(historia, nombre(viejo)), texto(viejo));
+  write(path.join(dir, 'metrics-2026-01-01-legacy.json'), '{"schema_version":"1.0"}\n');
+  write(path.join(dir, 'metrics-2026-01-02-roto.json'), '{');
+  const r = MM.paraSubir(dir, { historia });
+  assert.deepStrictEqual(r.archivos.map((x) => x.f), [nombre(nuevo)]);
+  assert.deepStrictEqual([r.invalidos, r.enLaHistoria], [2, 1]);
+  // sin historia, el viejo también va
+  assert.strictEqual(MM.paraSubir(dir).archivos.length, 2);
+});
+
+// ── juntar y la constancia ─────────────────────────────────────────────────────────────────────────────────────────
+
+const juntar = (args) => spawnSync(process.execPath, [LIB, 'juntar', ...args], { env: env(), encoding: 'utf8' });
+
+test('T29 Juntar_OnePerMerge_WritesReceipt @story-8.132 @ac-13: junta un archivo por merge y deja la constancia completa', () => {
+  const base = tmp();
+  const desde = path.join(base, 'desde'); const hacia = path.join(base, 'hacia');
+  const h1 = doc({ sha: '1'.repeat(40), ts: '2026-10-25T09:00:00.000Z' });
+  const h2 = doc({ sha: '2'.repeat(40) });
+  write(path.join(hacia, nombre(h1)), texto(h1)); write(path.join(hacia, nombre(h2)), texto(h2));
+  // el mismo merge que h1, desde otra máquina (otro project, otro nombre), con vueltas
+  const rep = doc({ sha: '1'.repeat(40), project: 'tycon-harness-wt-x', repo: '/srv/b/tycon-harness-wt-x', vueltas: 2 });
+  const nuevo = doc({ sha: '3'.repeat(40) });
+  const malo = doc({ sha: '4'.repeat(40) }); delete malo.merge_commit;
+  write(path.join(desde, nombre(rep)), texto(rep)); write(path.join(desde, nombre(nuevo)), texto(nuevo));
+  write(path.join(desde, 'metrics-2026-10-25-malo.json'), texto(malo));
+  const res = path.join(base, 'bajada.json');
+  write(res, JSON.stringify({ codigo: 0, estado: 'bajado', completo: true }));
+  const r = juntar(['--from', desde, '--to', hacia, '--result', res]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const quedan = fs.readdirSync(hacia).filter((f) => /^metrics-.*\.json$/.test(f)).sort();
+  assert.strictEqual(quedan.length, 3, quedan.join(' '));
+  assert.ok(quedan.includes(nombre(rep)) && !quedan.includes(nombre(h1)), 'el repetido es el de las vueltas');
+  assert.ok(quedan.includes(nombre(nuevo)) && quedan.includes(nombre(h2)));
+  const c = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+  assert.strictEqual(c.completo, true);
+  assert.strictEqual(c.estado, 'bajado');
+  assert.match(c.fecha, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+  assert.strictEqual(c.invalidos, 1, 'el inválido se cuenta');
+  assert.strictEqual(c.repetidos, 1);
+});
+
+test('T30 Juntar_NoResult_ReceiptIncomplete @story-8.132 @ac-22: sin resultado legible, la constancia dice incompleta y no toca lo juntado', () => {
+  for (const caso of ['ausente', 'ilegible']) {
+    const base = tmp();
+    const desde = path.join(base, 'desde'); const hacia = path.join(base, 'hacia');
+    const h = doc({ sha: '5'.repeat(40) });
+    write(path.join(hacia, nombre(h)), texto(h));
+    write(path.join(desde, nombre(doc({ sha: '6'.repeat(40) }))), texto(doc({ sha: '6'.repeat(40) })));
+    const res = path.join(base, 'bajada.json');
+    if (caso === 'ilegible') write(res, '{roto');
+    const r = juntar(['--from', desde, '--to', hacia, '--result', res]);
+    assert.strictEqual(r.status, 0, `${caso}: ${r.stderr}`);
+    const c = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+    assert.strictEqual(c.completo, false, caso);
+    assert.strictEqual(c.estado, 'sin_resultado', caso);
+    assert.deepStrictEqual(fs.readdirSync(hacia).sort(), ['bajada.json', nombre(h)].sort(), `${caso}: <hacia> sin tocar`);
+  }
+});
+
+test('Juntar_ResultIncomplete_JoinsButSaysIncomplete @story-8.132 @ac-22: una bajada parcial junta lo que vino y la constancia lo dice', () => {
+  const base = tmp();
+  const desde = path.join(base, 'desde'); const hacia = path.join(base, 'hacia');
+  write(path.join(desde, nombre(doc())), texto(doc()));
+  const res = path.join(base, 'r.json');
+  write(res, JSON.stringify({ codigo: 1, estado: 'parcial', completo: false }));
+  assert.strictEqual(juntar(['--from', desde, '--to', hacia, '--result', res]).status, 0);
+  const c = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+  assert.deepStrictEqual([c.completo, c.estado], [false, 'parcial']);
+  assert.ok(fs.existsSync(path.join(hacia, nombre(doc()))));
+  // un estado que no es una palabra no se copia tal cual
+  write(res, JSON.stringify({ estado: 'x; rm -rf /', completo: true }));
+  juntar(['--from', desde, '--to', hacia, '--result', res]);
+  assert.match(JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8')).estado, /^[a-z_]+$/);
+  // sin argumentos: sale 2 y lo dice
+  const sin = juntar([]);
+  assert.strictEqual(sin.status, 2);
+  assert.match(sin.stderr, /--from/);
+});
+
+test('T31 Receipt_StaleOrIncomplete_NotUpToDate @story-8.132 @ac-22: la constancia sirve sólo completa y de las últimas 36 horas', () => {
+  const ahora = Date.parse('2026-10-25T12:00:00Z');
+  const casos = [
+    ['completa de hace 2 h', { fecha: '2026-10-25T10:00:00Z', estado: 'bajado', completo: true }, true, null],
+    ['completa de hace 40 h', { fecha: '2026-10-23T20:00:00Z', estado: 'bajado', completo: true }, false, /hace 40 h/],
+    ['incompleta', { fecha: '2026-10-25T10:00:00Z', estado: 'sin_permiso', completo: false }, false, /no se completó.*sin_permiso/],
+    ['ausente', null, false, /no hay constancia/],
+    ['JSON roto', '{roto', false, /no se puede leer/],
+  ];
+  for (const [nombreCaso, cuerpo, alDia, motivo] of casos) {
+    const d = path.join(tmp(), 'merges');
+    fs.mkdirSync(d, { recursive: true });
+    if (cuerpo !== null) write(path.join(d, 'bajada.json'), typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo));
+    const c = MM.constancia(d, ahora);
+    assert.strictEqual(c.al_dia, alDia, `${nombreCaso}: ${JSON.stringify(c)}`);
+    if (motivo) assert.match(c.motivo, motivo, nombreCaso); else assert.strictEqual(c.motivo, null, nombreCaso);
+  }
+});

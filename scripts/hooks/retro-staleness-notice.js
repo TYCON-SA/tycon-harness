@@ -39,28 +39,30 @@ try {
   // archivo viaja suelto, éste
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  // Los registros de cada merge viven donde dice scripts/lib/night-data.js: en una versión
-  // bajada, el clon de mantenimiento que la máquina declara. Sin uno que sirva quedan en la carpeta del estado, que no
-  // viaja y trae la copia congelada que dejó la mudanza: ahí este aviso calla (mediría una serie que nadie alimenta).
+  // Los registros de cada merge viven donde dice scripts/lib/night-data.js: la carpeta de estado de la máquina, que el
+  // latido alimenta en cada merge (viajen o no por el buzón), y la de la historia, con los de antes. Se miran las dos.
   const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
   const machine = fs.existsSync(nightLib) ? require(nightLib).machineDashboard(own) : null;
-  // «no pude saber dónde están» no es «no viajan»: se dice (callar acá se vería igual que una serie al día)
+  // «no pude saber dónde están» no es «no hay»: se dice (callar acá se vería igual que una serie al día)
   if (machine && !machine.dir) { console.log(`⚠️ retro capturer: ${machine.why} — no pude mirar si la serie de retrospectivas está al día`); process.exit(0); }
-  if (machine && !machine.travels) process.exit(0);
+  if (machine && machine.historyWhy) console.log(`⚠️ retro capturer: ${machine.historyWhy} — la cuenta de abajo sale sin ella`);
   const TH = !machine && fs.existsSync(homeLib) ? require(homeLib) : null;   // sin la biblioteca al lado: el árbol propio
   const tree = machine ? own : (TH ? TH.maintainedDir(os.homedir(), own) : own);
   if (!tree) process.exit(0);
   // en una instalación bajada el .dashboard vive en ~/.tycon/state/dashboard
-  const dashboardDir = machine && machine.dir ? machine.dir
-    : TH && typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), tree) : path.join(tree, '.dashboard');
-  if (!fs.existsSync(dashboardDir)) process.exit(0);
+  const dashboardDirs = machine ? [machine.dir, machine.history].filter(Boolean)
+    : [TH && typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), tree) : path.join(tree, '.dashboard')];
 
   // Sólo lo que escribe el capturer: la carpeta la comparten otros nocturnos (ver cabecera).
-  const files = fs.readdirSync(dashboardDir).filter((f) => /^metrics-.*\.json$/.test(f));
+  const files = [];
+  for (const d of dashboardDirs) {
+    if (!fs.existsSync(d)) continue;
+    for (const f of fs.readdirSync(d)) if (/^metrics-.*\.json$/.test(f)) files.push({ f, dir: d });
+  }
   if (files.length === 0) process.exit(0);
 
   let lastRunMs = 0;
-  for (const f of files) {
+  for (const { f, dir: dashboardDir } of files) {
     const m = f.match(/(\d{4})-(\d{2})-(\d{2})/);
     let ts = 0;
     if (m) {
