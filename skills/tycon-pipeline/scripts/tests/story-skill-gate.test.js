@@ -522,8 +522,8 @@ test('T11 Gate_Codex_NoFrenaYQuedaMedido: bajo Codex una historia nueva lista si
 const PUERTA_CONSOLA = path.join(SCRIPTS, 'on-bash-write-gate.js');
 const RAIZ_ARBOL = path.join(SCRIPTS, '..', '..', '..');
 
-function repoDeCd() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ssg-cd-'));
+function repoDeCd(prefijo = 'ssg-cd-') {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), prefijo));
   const repo = path.join(home, 'repo');
   for (const d of ['specs', 'skills/x', 'scripts']) fs.mkdirSync(path.join(repo, d), { recursive: true });
   spawnSync('git', ['init', '-q', repo]);
@@ -561,32 +561,35 @@ test('T1 CdAntesDelEditor_CasoReal_Pasa', () => {
 });
 
 // Lo que dio el freno de origin/main (e0a33e20) con cada variante, medido al empezar la tanda: el código de salida y la
-// primera línea del motivo. Las dos que pasan ya pasaban: `specs` es una carpeta que el freno no recorre.
+// primera línea del motivo. Las dos que pasan ya pasaban: `specs` es una carpeta que el freno no recorre. Desde que un
+// `sed` que nombra su archivo escribe sólo ese archivo, las que lo nombran fuera de un subshell y sin `&` ya no frenan por
+// las historias de la carpeta: las frena el carril de código, porque `a.sh` es código y no hay ejecución abierta.
 const HISTORIA_POR_CONSOLA = '⛔ tycon-pipeline — HISTORIA ESCRITA POR CONSOLA';
+const CODIGO_SIN_CARRIL = '⛔ tycon-pipeline — CÓDIGO SIN CARRIL (repo bajo el arnés TYCON, sin pipeline activo)';
 const VARIANTES_DE_CD = [
   ["cd specs && sed -i -e 's/a/b/' story-x.md", 2],
-  ["cd <repo>; sed -i -e 's/a/b/' a.sh", 2],
-  ["cd $D && sed -i -e 's/a/b/' a.sh", 2],
-  ["pushd <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd <repo>; sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["cd $D && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["pushd <repo> && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
   ["cd specs && sed -i -e 's/a/b/' specs", 0],
   ["cd specs && sed -i -e 's/a/b/' ../specs", 2],
   ["cd specs && sed -i -e 's/a/b/' specs/", 0],
-  ["cd <repo>&&sed -i -e 's/a/b/' a.sh", 2],
-  ["cd <repo> | sed -i -e 's/a/b/' a.sh", 2],
-  [" cd <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["cd <repo>&&sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["cd <repo> | sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  [" cd <repo> && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
   ["(cd <repo> && sed -i -e 's/a/b/' a.sh)", 2],
-  ["cd '<repo>' && sed -i -e 's/a/b/' a.sh", 2],
-  ["cd -- <repo> && sed -i -e 's/a/b/' a.sh", 2],
-  ["cd -P <repo> && sed -i -e 's/a/b/' a.sh", 2],
-  ["cd <repo> || sed -i -e 's/a/b/' a.sh", 2],
+  ["cd '<repo>' && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["cd -- <repo> && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["cd -P <repo> && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["cd <repo> || sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
   ["cd <repo> & sed -i -e 's/a/b/' a.sh", 2],
-  ["echo x && cd <repo> && sed -i -e 's/a/b/' a.sh", 2],
-  ["cd  <repo> && sed -i -e 's/a/b/' a.sh", 2],
-  ["\ncd <repo> && sed -i -e 's/a/b/' a.sh", 2],
+  ["echo x && cd <repo> && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["cd  <repo> && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
+  ["\ncd <repo> && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
   ["cd <repo>/s* && sed -i -e 's/a/b/' story-x.md", 2],
-  ['cd "<repo>" && sed -i -e \'s/a/b/\' a.sh', 2],
+  ['cd "<repo>" && sed -i -e \'s/a/b/\' a.sh', 2, CODIGO_SIN_CARRIL],
   // sin carpeta no hay historia que mirar: frena el carril de código, como en main
-  ["cd && sed -i -e 's/a/b/' a.sh", 2, '⛔ tycon-pipeline — CÓDIGO SIN CARRIL (repo bajo el arnés TYCON, sin pipeline activo)'],
+  ["cd && sed -i -e 's/a/b/' a.sh", 2, CODIGO_SIN_CARRIL],
 ];
 
 // T2 CdAntesDelEditor_Variantes_SiguenComoHoy @story-8.113 @ac-1 @ac-2
@@ -630,6 +633,31 @@ test('CdAntesDelEditor_Tuberias_SiguenComoHoy', () => {
     "cd <repo>/docs/stories && sed -i -e 's/a/b/' {story-y,x}.md",
     "cd <repo>/docs/stories && sed -i -e 's/a/b/' ~+/story-y.md",
   ]) assert.deepStrictEqual(frenoDeCd(h, c), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
+});
+
+// SedQueNombraSusArchivos_PasaSiNoCambiaElEstado
+// 🔴 Falla con: contar la carpeta de un `cd` o las otras palabras del comando cuando todos los editores en el lugar son
+//    un `sed` que nombra sus archivos (frena por la plantilla de otra carpeta), o dejar pasar un `sed` que le cambia
+//    el estado a la historia. Es la forma de la mayoría de los frenos de historia escrita por consola medidos.
+test('SedQueNombraSusArchivos_PasaSiNoCambiaElEstado', () => {
+  // sin «cd» suelto en el nombre de la carpeta: dos `cd` hacen ambigua la carpeta de las escrituras relativas
+  const h = repoDeCd('ssg-sed-');
+  const pasan = [
+    "cd <repo> && sed -i -e 's/a/b/' scripts/a.sh 2>&1; grep -n b scripts/a.sh",
+    "cd <repo>/scripts && F=a.sh && sed -i -e 's/a/b/' $F",
+    "node x.js --story specs/story-x.md; sed -i -e 's/a/b/' a.sh",
+    // el cuerpo de una historia en curso, con el estado como estaba
+    "cd <repo>/specs && sed -i -e 's/^# x$/# x y/' story-x.md && grep -n y story-x.md",
+  ];
+  for (const c of pasan) assert.deepStrictEqual(frenoDeCd(h, c, { TYCON_STORY_GATE: 'off' }), { exit: 0, titulo: '' }, c);
+  const frenan = [
+    "cd <repo>/specs && sed -i -e 's/^status: in-progress$/status: done/' story-x.md",
+    "cd <repo>/specs && sed -i -e 's/in-progress/done/' story-x.md 2>&1",
+    // un guion que lee otro archivo no es la forma: la carpeta del `cd` vuelve a contar
+    "cd <repo>/skills/x && sed -i -e '1r template.md' <repo>/a.sh",
+    "cd <repo> && sed -i -e 's/a/b/' $(ls)",
+  ];
+  for (const c of frenan) assert.deepStrictEqual(frenoDeCd(h, c, { TYCON_STORY_GATE: 'off' }), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
 });
 
 // 8.113 T11 CdRelativoConTuberia_Frena @story-8.113 @ac-10
@@ -712,8 +740,8 @@ test('8.113 T11 CdRelativoConTuberia_Frena', () => {
     // pushd y los prefijos del cd, y un cd adentro de `bash -c` o de `$(…)`
     `pushd 'docs/mis historias'${XARGS}`, `command cd 'docs/mis historias'${XARGS}`, `builtin cd docs/stories${XARGS}`,
     `\\cd docs/stories${XARGS}`, `bash -c "cd 'docs/mis historias'${XARGS}"`, `echo $(cd 'docs/mis historias'${XARGS})`,
-    // con `$HOME`; y, como con la carpeta absoluta, aunque el editor nombre otro archivo (frena de más, del lado seguro)
-    `cd $HOME/repo/docs/stories${XARGS}`, "cd docs; sed -i -e 's/a/b/' notas.txt",
+    // con `$HOME`
+    `cd $HOME/repo/docs/stories${XARGS}`,
     // un cd escondido en comillas invertidas o en un `sh -c` del medio, y `~otro`
     `echo \`cd docs/stories${XARGS}\``, "ls | xargs sh -c 'cd docs/stories && ls | xargs sed -i -e s/a/b/'",
     "sudo sh -c 'cd docs/stories && ls | xargs sed -i -e s/a/b/'", `cd ~nadie/docs${XARGS}`,
@@ -743,7 +771,9 @@ test('8.113 T11 CdRelativoConTuberia_Frena', () => {
   fs.mkdirSync(path.join(h.repo, 'node_modules', 'x'), { recursive: true });
   fs.writeFileSync(path.join(h.repo, 'node_modules', 'x', 'story-n.md'), fm('9.6'));
   for (const c of [`cd node_modules${XARGS}`, `cd src${XARGS}`, `cd no-existe${XARGS}`, "cd src && grep -rl x . | xargs sed -i -e 's/a/b/'", `cd docs/zz*${XARGS}`,
-    "git commit -m 'cd $(pwd)' ; sed -i -e 's/a/b/' notas.txt", "cat > /dev/null <<'EOF'\ncd $(pwd)\nEOF\nsed -i -e 's/a/b/' notas.txt"]) {
+    "git commit -m 'cd $(pwd)' ; sed -i -e 's/a/b/' notas.txt", "cat > /dev/null <<'EOF'\ncd $(pwd)\nEOF\nsed -i -e 's/a/b/' notas.txt",
+    // un `sed` que nombra su archivo escribe sólo ese archivo, aunque la carpeta del `cd` tenga historias
+    "cd docs; sed -i -e 's/a/b/' notas.txt"]) {
     assert.deepStrictEqual(frenoDeCd(h, c, { D: 'docs/stories' }), { exit: 0, titulo: '' }, c);
   }
 });

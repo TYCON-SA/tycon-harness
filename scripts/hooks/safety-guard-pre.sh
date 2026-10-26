@@ -527,15 +527,21 @@ ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 # La regla no enumera expansiones: en un programa que asigna, cualquier palabra con un `$` (o una comilla invertida)
 # antes del primer `=`, o sin `=`, arma el nombre (`$1`, `${V:-x}`, `${!V}`, `${A[0]}`, `$(…)`, `TYCON_NO_$A` con el
 # `=1` adentro). No cruza un salto de línea: un `export` en un renglón no se junta con un `$X=` del siguiente.
+# Lo que no asigna no cuenta: la palabra del programa va sola (`readability` no es `read`), un nombre no cruza un `;`,
+# un `&`, un `|` ni un paréntesis (las llaves de un código de JS entre comillas no son `{A,B}`), y una cuenta
+# `$((…))` frena sólo si asigna (`$(( $V = 1 ))`, `((${V}+=1))`), no si calcula (`$((L-60))`, `$a <= 1`).
 _arm_nl=$'\n'
 # se mira el comando con sus comillas y comillas invertidas (sólo con la barra invertida + salto de línea unida): `tr`
 # borra las comillas invertidas, y una comilla invertida también arma el nombre
 _arm_txt="$_esc_fuente"
 # lo que arma el nombre: un `$`, una comilla invertida o llaves que se expanden (`{A,B}`, `{1..3}`)
-_arm_din="([\$\`]|\{[^}[:space:]]*(,|\.\.))"
-_arm_pal="[^[:space:]=]*${_arm_din}"
+_arm_din="([\$\`]|\{[^}[:space:];&|()<>]*(,|\.\.))"
+_arm_pal="[^[:space:]=;&|()<>]*${_arm_din}"
 _arm_seg="[^;&|${_arm_nl}]"
-_arm_re="(^|[\$;&|(${_arm_nl}[:space:]])(export|declare|typeset|local|readonly|eval|let|read|mapfile|readarray|\(\()${_arm_seg}*[[:blank:]]${_arm_pal}"
+_arm_re="(^|[\$;&|(${_arm_nl}[:space:]])(export|declare|typeset|local|readonly|eval|let|read|mapfile|readarray)([[:blank:]]${_arm_seg}*)?[[:blank:]]${_arm_pal}"
+# la cuenta que asigna: un `=` (o `+=`, `-=`…) después de una palabra con `$`, sin salir del paréntesis; `==`, `<=`, `>=`
+# y `!=` comparan
+_arm_arit="\(\([^)]*[\$\`][^)=]*[^)=<>!]=([^=]|\$)"
 # `env`: sólo cuentan las asignaciones que van antes del programa (`env X=1 node $S` no arma nada)
 _arm_env="(^|[;&|(${_arm_nl}[:space:]])env([[:blank:]]+(-[^[:blank:]]+|[^[:space:]=]+=[^[:blank:]]*))*[[:blank:]]+${_arm_pal}[^[:space:]]*="
 _arm_re2="(^|[;&|(${_arm_nl}[:space:]])printf[[:blank:]]+(-[A-Za-z]+[[:blank:]]+)*-v[[:blank:]]*${_arm_pal}|(^|[;&|(${_arm_nl}[:space:]])(declare|typeset|local)[[:blank:]]+-[A-Za-z]*n[A-Za-z]*${_arm_seg}*[\$\`]"
@@ -551,7 +557,7 @@ _arm_hit=0
 if [[ "$_arm_txt" == *[\$\`{]* ]]; then
   shopt -s nocasematch
   if [[ "$_esc_cmd" =~ $_arm_guion || "$_arm_txt" =~ $_arm_node ]]; then
-    if [[ "$_arm_txt" =~ $_arm_re || "$_arm_txt" =~ $_arm_env || "$_arm_txt" =~ $_arm_re2 ]]; then _arm_hit=1
+    if [[ "$_arm_txt" =~ $_arm_re || "$_arm_txt" =~ $_arm_arit || "$_arm_txt" =~ $_arm_env || "$_arm_txt" =~ $_arm_re2 ]]; then _arm_hit=1
     elif tool_is_ps && [[ "$_arm_txt" =~ $_arm_ps ]]; then _arm_hit=1; fi
   fi
   shopt -u nocasematch
@@ -659,8 +665,9 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
         "Cerrar la historia como deuda (marker.js ${_c3_sub}) deja lo que no se pudo hacer como el final de la ejecución, con su deuda anotada." \
         "Si se puede terminar, terminá. Si no, explicale a la persona qué quedó pendiente y por qué, y pedile la frase."
     fi
-    ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_c3_esc}»).
-Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>."
+    # primero la salida que no necesita a la persona: con el escape adelante, el agente se lo pedía en vez de hacerla
+    ESC_CARTEL="Primero lo que no necesita a la persona: lo de «Alternativa» (correr el paso o el control, arreglar lo que está en rojo). No le pidas la frase antes de intentarlo.
+Si no se puede, explicale a la persona qué falta y por qué: lo que sigue lo decide la persona, entre dejar la historia como deuda (marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>, con su frase «autorizo cerrar como deuda») o hacerlo igual («autorizo ${_c3_esc}»)."
     if [[ "$_c3_esc" == "force-manual" ]]; then
       block "ESC-C3" \
         "Declarar un control en verde a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo." \

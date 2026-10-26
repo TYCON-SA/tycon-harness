@@ -98,7 +98,8 @@ test('T1 CasoKimi_EstadoPorConsola_Frena @story-8.109 @ac-1 — el node -e del l
 });
 
 const FORMAS = [
-  ['Bash', `sed -i '' 's/^status: in-progress/status: done/' ${HISTORIA}`],
+  // el sed cambia el estado que tenga: uno que no encuentra qué cambiar no toca la historia, y pasa
+  ['Bash', `sed -i '' 's/^status: .*/status: done/' ${HISTORIA}`],
   ['Bash', `perl -pi -e 's/in-progress/done/' ${HISTORIA}`],
   ['Bash', `cat > ${HISTORIA} <<'EOF'\n---\nstory: "9.9"\nstatus: done\n---\nEOF`],
   ['Bash', `echo x | tee ${HISTORIA}`],
@@ -619,6 +620,41 @@ test('8.113 T7 BorrarRama_BorradoRealDelMarcador_Frena', () => {
     `gh pr close 1 --delete-branch\nrm -rf ${E}`,
     `gh pr close 1 --delete-branch --body-file <(rm -rf ${E})`,
     `gh(){ rm -rf ${E}; }; gh pr close 1 --delete-branch`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${JSON.stringify(c)}: ${r.stderr}`);
+    assert.match(r.stderr, BORRADO, c);
+  }
+});
+
+// BorrarEstado_PalabraSuelta_NoAbreLaRegla
+// Medido en un día de conversaciones: los tres frenos «BORRADO DEL ESTADO DEL PIPELINE» eran comandos que no borraban
+// nada. Lo que abría la regla era la palabra castellana «del» (el alias de Windows) en un texto, un `find -exec` con un
+// programa que sólo lee, o un `git checkout --` que dice sus rutas, junto a la palabra `state` suelta en otro lado.
+// 🔴 Falla con: los alias cortos de Windows leídos en cualquier lugar del texto, un `-exec wc` tomado por borrado, o el
+//    nombre suelto de la carpeta del estado contado contra un `git checkout` cuyas rutas no la nombran.
+test('BorrarEstado_PalabraSuelta_NoAbreLaRegla', () => {
+  const h = nuevaHomeDeEstado();
+  const E = h.estado;
+  for (const c of [
+    `node mockup.js render --data - <<'JSON'\n{"state": "abierto", "summary": "la deuda del cliente"}\nJSON`,
+    `find ${E} -maxdepth 1 -name '*.log' -exec wc -l {} \\;`,
+    `git checkout -- adapters/codex/ && git status --short; gh pr view 578 --json headRefName,state -q .state`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${JSON.stringify(c)}: ${r.stderr}`);
+  }
+  // lo que borra de verdad sigue frenando, con las mismas tres formas cerca
+  for (const c of [
+    `del ${E}/active/${SID}.json`,
+    `cmd /c del ${E}/active/${SID}.json`,
+    `echo "la deuda del cliente"; rm -rf ${E}`,
+    `find ${E} -name '*.json' -exec sh -c 'cat "$1"' _ {} \\;`,
+    `find ${E} -exec wc -l {} \\; -exec rm {} \\;`,
+    `find ${E} -exec wc -l {} \\; -delete`,
+    `git checkout -- ${E}/active`,
+    `git checkout -- src/a.js; rm -rf ${E}`,
+    `git checkout -- src/a.js && bash -c 'rm -rf ~/.tycon/state'`,
   ]) {
     const r = consola(h, c);
     assert.strictEqual(r.status, 2, `${JSON.stringify(c)}: ${r.stderr}`);

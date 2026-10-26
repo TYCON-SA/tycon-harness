@@ -149,7 +149,9 @@ arnés, falta `run-close.js` o el lector se cae), un comando que nombra `marker`
 guiones tampoco andan, así que frenar no cuesta nada. `ESC-C1` frena además una asignación con el **nombre armado** en
 otra variable (`V=TYCON_…; export $V=1`, `declare -x "$V=1"`, `env "$V=1"`, `printf -v "$V"`) en un comando que corre
 `marker`, `pipeline` o `test-gate.sh`: el nombre no se ve, y el camino es escribirlo entero para que decida su regla.
-Fuera del pipeline, armar nombres no frena.
+Fuera del pipeline, armar nombres no frena. Lo que no asigna no cuenta: el nombre de un programa que empieza como uno
+de esos comandos (`readability` no es `read`), unas llaves de código entre comillas, o una cuenta `$((…))` que calcula
+(`$((L-60))`); una cuenta que asigna (`$(( $V = 1 ))`) sí frena.
 
 **Freno aceptado por duda: el código de `node -e`.** `node -e '<código con llaves>' "$a" "$b"` frena `ESC-C3`, igual con
 `-p`, `--eval` y `--print`. El código se lee como el guion: puede correr lo que recibe en sus argumentos (`node -e
@@ -201,7 +203,13 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
 - **Una historia escrita por consola.** Un comando que escribe una historia que no está en borrador (redirección, `sed
   -i`, `tee`, `cp`, un `node -e` o un `python3 -c`) frena con «HISTORIA ESCRITA POR CONSOLA». Desde un comando no se ve
   qué queda escrito. En su lugar: la herramienta de edición, y para el estado
-  `marker.js update-story-status <historia> <estado>`. Con un editor en el lugar, la carpeta de un `cd <carpeta> && `
+  `marker.js update-story-status <historia> <estado>`. Cuando todos los editores en el lugar del comando son un `sed`
+  que nombra sus archivos tal cual (sin comodines, llaves, `$(…)` ni una variable que el comando no define, y con un
+  guion que no lee, escribe ni corre otra cosa: sin `r`, `w`, `e` ni los indicadores `w` y `e`), el editor escribe sólo
+  esos archivos: la carpeta de cada `cd` es desde dónde se leen, y no cuentan las demás palabras del comando.
+  `cd specs; sed -i -e 's/a/b/' notas.txt` pasa aunque `specs` tenga historias. Si uno de esos archivos es una historia,
+  el freno ensaya el `sed` sobre su texto sin escribirlo: si el `status:` del encabezado queda igual, pasa, como el
+  cuerpo editado con la herramienta de edición; si cambia, frena. Con un editor en el lugar de otra forma, la carpeta de un `cd <carpeta> && `
   al principio exacto del comando (la carpeta escrita tal cual, sin comillas, opciones, `$` ni comodines), seguido de
   un solo `sed` que nombra sus archivos (sin tubería, `$(…)`, comillas invertidas, otro comando, redirección, salto de
   línea, llaves, `@` ni `~`), es desde dónde se leen las demás palabras, no algo que el editor escribe. Con `perl` no:
@@ -224,7 +232,10 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
   PIPELINE» cuando la carpeta del estado se llama `state` (`~/.tycon/state`). `--delete-branch` borra una rama de git,
   pero esa palabra es lo único que hace mirar el comando a formas de borrar que la lista no conoce (`zip -m`, `rsync
   --remove-source-files`, `tar --remove-files`), y quitarla las deja borrar el marcador. La salida: el cierre del pedido
-  y la lectura de su estado en dos comandos.
+  y la lectura de su estado en dos comandos. No abren esa lectura: los alias cortos de Windows (`del`, `erase`, `rd`,
+  `ren`, `mi`, `ri`) fuera de donde empieza un comando («la deuda del cliente» en un texto), un `find -exec` con un
+  programa que sólo lee (`wc`, `cat`, `grep`, `ls`…), y un `git checkout`, `restore` o `rm`, que dicen sus rutas: si es
+  lo único que borra, frena sólo cuando una de esas rutas cae en el marcador.
 - **Un `$(…)` en el nombre de un informe.** Con el pipeline abierto, un destino `.md` o `.log` (`>`, `>>` o `tee`) con
   un `$(date +F)` (formato sólo de `%Y %m %d %H %M %S %s %j %y - _`), pegado a texto, se lee entero y el `$(…)` cuenta
   como un comodín: `> out/run-$(date +%s).log` pasa. Frena si la carpeta donde puede caer tiene historias, si la

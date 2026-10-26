@@ -727,11 +727,15 @@ function destinosBorrados(cmd) {
 
 // las formas de borrar o mover: un comando (también dentro de `bash -c`), una opción (`find -delete`, `rsync --delete`),
 // un subcomando de git o la llamada de un guion. Sin ninguna, el comando no se lee de nuevo (es lo de cada comando)
+// Los alias cortos de Windows (`del`, `erase`, `rd`, `ren`, `mi`, `ri`) son también palabras de un texto («la deuda del
+// cliente»): cuentan sólo donde empieza un comando. Un `find -exec` con un programa que sólo lee no borra
+const LECTORES_DE_FIND = String.raw`(?:wc|cat|head|tail|grep|egrep|fgrep|rg|ls|stat|file|echo|printf|du|basename|dirname|readlink|realpath|shasum|sha1sum|sha256sum|md5|md5sum|cksum|jq|diff|cmp|test)(?=[\s;'"]|$)`;
 const BORRA_O_MUEVE = new RegExp([
   // el comando con su ruta (`/bin/rm`) o con la barra que saltea un alias (`\rm`) es el mismo comando
-  String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|del|erase|rd|mv|move|mi|ri|remove-item|move-item|rename-item|ren|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
+  String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|mv|move|remove-item|move-item|rename-item|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
+  String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])\s*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|\s)--?delete\b`,
-  String.raw`(?:^|\s)-exec(?:dir)?\s`,
+  String.raw`(?:^|\s)-exec(?:dir)?\s+(?!` + LECTORES_DE_FIND + ')',
   String.raw`\bgit\b[^\n;&|]*\s(?:rm|clean|checkout|restore|mv)\b`,
   String.raw`\b(?:unlinkSync|unlink|rmSync|rm|rmdirSync|rmdir|renameSync|rename|rmtree|removedirs|remove|replace|move|delete|rm_rf|rm_r|remove_dir|remove_entry(?:_secure)?)\s*\(`,
   String.raw`\bunlink\b`,
@@ -1024,7 +1028,9 @@ function borradosProfundos(cmd) {
     for (const raw of origenesMovidos(texto)) out.push({ raw });
     for (const tramo of tramos(texto)) {
       const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
-      if (path.basename(words[0] || '').toLowerCase() === 'find' && words.some((w) => /^-(?:delete|exec|execdir)$/.test(w))) {
+      const lee = new RegExp(`^${LECTORES_DE_FIND}`);
+      const borraEnFind = words.some((w, k) => w === '-delete' || (/^-exec(?:dir)?$/.test(w) && !lee.test(words[k + 1] || '')));
+      if (path.basename(words[0] || '').toLowerCase() === 'find' && borraEnFind) {
         for (const w of words.slice(1)) { if (w.startsWith('-') || w === '!' || w === '(') break; out.push({ raw: w }); }
       }
       if (nivel < 2) for (const w of palabras(tramo)) if (/\s/.test(w)) ver(w, nivel + 1);
@@ -1064,6 +1070,10 @@ function origenesMovidos(cmd) {
  */
 function marcadoresTocados(cmd, cwd, stateDir) {
   if (!BORRA_O_MUEVE.test(String(cmd || ''))) return [];
+  // un `git checkout|restore|rm` dice sus rutas (destinosBorrados las lee una por una): si es lo único que borra, el
+  // nombre de la carpeta del estado suelto en otro lado del comando (`gh … --json state`) no es lo que borra
+  const sinGitLeido = String(cmd).replace(/\bgit\b[^\n;&|$`<>]*\s(?:checkout|restore|rm)\b[^\n;&|$`<>]*/gi, ' ');
+  const porTexto = BORRA_O_MUEVE.test(sinGitLeido);
   const { isInside } = require('./lib/atdd-preedit.js');
   const installedTree = require('./lib/installed-tree.js');
   const bases = [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean))];
@@ -1111,7 +1121,7 @@ function marcadoresTocados(cmd, cwd, stateDir) {
   };
   const out = [];
   for (const w of palabrasProfundas(cmd)) {
-    if (nombraPorTexto(w)) { out.push(w); continue; }
+    if (porTexto && nombraPorTexto(w)) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
     for (const x of expandirLlaves(w)) {
       const abs = resolver(x);
@@ -1150,6 +1160,141 @@ function editaEnSitio(cmd) {
     return false;
   };
   return ver(String(cmd || ''), 0);
+}
+
+/**
+ * ¿El guion de `sed` sólo cambia el texto que lee? Sin `r`, `R`, `w`, `W`, `e` ni `F` (leen, escriben o corren algo
+ * aparte) y sin los indicadores `w` o `e` de un `s`. Lo que no se sabe leer cuenta como que no.
+ */
+function guionDeSedSinEfectos(guion) {
+  const s = String(guion);
+  let i = 0;
+  // hasta el delimitador sin escapar (`\/` no corta); -1 si no cierra
+  const hasta = (d, j) => { for (; j < s.length; j++) { if (s[j] === '\\') { j++; continue; } if (s[j] === d) return j; } return -1; };
+  const direccion = () => {
+    if (/\d/.test(s[i] || '')) { while (/[\d~]/.test(s[i] || '')) i++; return true; }
+    if (s[i] === '$') { i++; return true; }
+    if (s[i] === '/' || s[i] === '\\') {
+      const d = s[i] === '\\' ? s[++i] : '/';
+      const fin = hasta(d, i + 1);
+      if (fin < 0) return false;
+      i = fin + 1;
+      while (/[IM]/.test(s[i] || '')) i++;
+    }
+    return true;
+  };
+  while (i < s.length) {
+    while (/[\s;{}]/.test(s[i] || '')) i++;
+    if (i >= s.length) break;
+    if (!direccion()) return false;
+    if (s[i] === ',') { i++; if (!direccion()) return false; }
+    while (/[\s!]/.test(s[i] || '')) i++;
+    const c = s[i++];
+    if (c === undefined) return false;
+    if (c === '}' || c === '{') continue;
+    if (c === 's' || c === 'y') {
+      const d = s[i];
+      if (!d || /[\s\\\n]/.test(d)) return false;
+      const medio = hasta(d, i + 1);
+      const fin = medio < 0 ? -1 : hasta(d, medio + 1);
+      if (fin < 0) return false;
+      i = fin + 1;
+      const flags = /^[gGiIpmM\d]*/.exec(s.slice(i))[0];
+      i += flags.length;
+      if (!/^(?:$|[\s;}])/.test(s.slice(i))) return false;
+      continue;
+    }
+    if ('dDpPnNgGhHxlz='.includes(c)) continue;
+    if (c === 'q' || c === 'Q') { while (/\d/.test(s[i] || '')) i++; continue; }
+    // el texto de `a`, `i` y `c`, y la etiqueta de `b`, `t`, `T` y `:`, llegan hasta el fin de la línea o del guion
+    if ('aic'.includes(c)) { const nl = s.indexOf('\n', i); i = nl < 0 ? s.length : nl + 1; continue; }
+    if ('btT:'.includes(c)) { while (i < s.length && !/[;\n]/.test(s[i])) i++; continue; }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Los `sed` en el lugar de un comando cuando todos nombran sus archivos tal cual: `[{ sed, opciones, guiones, archivo }]`,
+ * con el archivo como palabra (una variable del comando ya resuelta). null si algún editor en el lugar no es así: un
+ * `perl`/`ruby`/`awk`/`ed`, un `sed` detrás de `xargs`, `find -exec`, un `for` o adentro de `bash -c`, un archivo con
+ * comodín, llaves, `~+`, `$(…)` o una variable que no se resuelve, un guion que lee, escribe o corre algo aparte, o
+ * una opción que no se conoce. Con esa forma, lo que el editor escribe es sólo lo que nombra.
+ */
+function sedsLiterales(cmd) {
+  if (FOR_IN.test(String(cmd || ''))) return null;
+  const opcionI = (w) => /^-[A-Za-z0-9]*i/.test(w) || /^--in-place\b/.test(w);
+  const bsd = process.platform === 'darwin';
+  const out = [];
+  for (const tramo of tramos(cmd)) {
+    // un `$(…)`, comillas invertidas o un subshell (`(cd x && sed -i … a.sh)`): el paréntesis queda pegado a la ruta y
+    // el carril de código no la reconoce, así que no es la forma
+    const sinComillas = tramo.replace(/'[^']*'|"(?:\\.|[^"\\])*"/g, '');
+    if (/\$\(|`|[()]/.test(sinComillas)) { if (editaEnSitio(tramo)) return null; continue; }
+    const sinRedir = tramo.trim().replace(PREFIJO, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const words = palabras(sinRedir);
+    const k = words.findIndex((w, j) => {
+      const c = path.basename(w).toLowerCase().replace(/\.exe$/, '');
+      const resto = words.slice(j + 1);
+      return (['sed', 'gsed', 'perl', 'ruby'].includes(c) && resto.some(opcionI))
+        || (['awk', 'gawk'].includes(c) && resto.some((x, n) => x === '-iinplace' || (x === '-i' && resto[n + 1] === 'inplace')))
+        || (j === 0 && (c === 'ed' || c === 'ex'));
+    });
+    if (k < 0) { if (words.some((w) => /\s/.test(w) && editaEnSitio(w))) return null; continue; }
+    if (k !== 0 || !['sed', 'gsed'].includes(path.basename(words[0]))) return null;
+    const opciones = [];
+    const guiones = [];
+    const archivos = [];
+    let enLugar = false;
+    let finOpciones = false;
+    for (let n = 1; n < words.length; n++) {
+      const w = words[n];
+      if (finOpciones || !w.startsWith('-') || w === '-') { archivos.push(w); continue; }
+      if (w === '--') { finOpciones = true; continue; }
+      if (w === '-e') { if (n + 1 >= words.length) return null; guiones.push(words[++n]); continue; }
+      const m = /^-([Enrsuz]*)(i(.*))?$/.exec(w);
+      if (m && (m[1] || m[2] !== undefined)) {
+        if (m[1]) opciones.push(`-${m[1]}`);
+        // `-i` suelto: en BSD la palabra que sigue es el sufijo de la copia (`-i ''`); en GNU no
+        if (m[2] !== undefined) { enLugar = true; if (m[3] === '' && bsd) n++; }
+        continue;
+      }
+      if (/^--in-place(?:=.*)?$/.test(w)) { enLugar = true; continue; }
+      return null;
+    }
+    if (!enLugar) return null;
+    if (!guiones.length) { if (!archivos.length) return null; guiones.push(archivos.shift()); }
+    if (!archivos.length || !guiones.every(guionDeSedSinEfectos)) return null;
+    for (const a of archivos) {
+      if (!a || /[*?[\]{}]/.test(a) || /^~[+-]/.test(a) || a.includes('@')) return null;
+      const ex = expandirRuta(cmd, a);
+      if (ex.sinResolver.length || /[*?[\]{}]/.test(ex.valor)) return null;
+      out.push({ sed: words[0], opciones, guiones, archivo: ex.valor });
+    }
+  }
+  return out;
+}
+
+/**
+ * Lo que un `sed` en el lugar dejaría en ese archivo, sin escribirlo: el mismo `sed` con sus guiones, leyendo el texto
+ * por la entrada. null si no se pudo correr.
+ */
+function ensayarSeds(abs, seds) {
+  let texto;
+  try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) { logHookError(e); return null; }
+  for (const s of seds) {
+    const r = require('child_process').spawnSync(s.sed, [...s.opciones, ...s.guiones.flatMap((g) => ['-e', g])],
+      { input: texto, encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] });
+    if (r.error || r.status !== 0) return null;
+    texto = r.stdout;
+  }
+  return texto;
+}
+
+/** Los `status:` del encabezado de una historia, en orden (vacío sin encabezado). */
+function estadosDelEncabezado(texto) {
+  const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(String(texto));
+  return fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
 }
 // las llamadas de un guion que escriben, copian, mueven o borran un archivo
 const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|rename|replace|unlinkSync|rmSync|truncateSync|write_text|write_bytes|copy|copyfile|copy2|copytree|move|remove|unlink|truncate)\s*\(|\bopen\s*\([^)]*,\s*["'][^"']*[wax+]|\bFile\.(?:write|delete|rename)\b|\bFileUtils\.\w+/;
@@ -1479,6 +1624,9 @@ function estadoDeHistoria(abs) {
 function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = []) {
   const enSitio = editaEnSitio(cmd);
   if (!enSitio && !ESCRIBE.test(String(cmd || ''))) return [];
+  // con todos los editores en el lugar escritos como `sed` que nombra sus archivos, lo que escriben es lo que nombran:
+  // la carpeta de un `cd` es desde dónde se leen, y una historia que tocan se ensaya para ver si le cambia el estado
+  const seds = enSitio ? sedsLiterales(cmd) : null;
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of String(cmd).matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
@@ -1502,7 +1650,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
         : desde.map((b) => absoluta(c.valor, b));
       // `expandirComodin` corta en 200 por tramo: con un tramo recortado no se sabe si quedó una carpeta afuera
       if (aviso.recortado) cdSinResolver.push(`cd ${c.texto} (más de 200 carpetas)`);
-      carpetasDeCd.push(...halladas);
+      (seds ? bases : carpetasDeCd).push(...halladas);
       previas = c.comodin ? (halladas.length ? halladas : previas.map((b) => absoluta(c.valor, b))) : halladas.slice(0, previas.length);
     }
   }
@@ -1520,7 +1668,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // (desde otra rama o commit, `git checkout <ref> -- x` o `git restore --source`, la cambia aunque no tenga cambios)
   const conRef = /\bgit\b[^\n;&|]*\scheckout\s+(?!--)[^\s-]\S*\s+--|\bgit\b[^\n;&|]*\srestore\b[^\n;&|]*\s(?:--source|-s)\b/.test(String(cmd));
   const soloRepone = new Set(conRef ? [] : destinosB.filter((d) => d.kind === 'restore').map((d) => d.raw));
-  const nombradas = palabrasDelEditor(cmd);
+  const nombradas = seds ? seds.map((x) => x.archivo) : palabrasDelEditor(cmd);
   const crudos = [
     ...targets,
     ...destinosArmados(cmd).flatMap((a) => (a.literal ? [a.literal] : (a.literales || []))),
@@ -1551,10 +1699,19 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   const vistos = new Set();
   const repuestos = new Set();   // las que sólo se nombran como algo que se repone
   const otros = new Set();
+  // lo que nombra otra cosa que un `sed` ensayable: ésas no se ensayan
+  const noSoloSed = new Set();
+  const deSed = new Set(seds ? nombradas : []);
+  const sedsDe = new Map();
   for (const raw of crudos) {
     // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`
     const valor = expandirRuta(cmd, String(raw).replace(/\)+$/, '')).valor;
-    const anotar = (abs) => { vistos.add(abs); (soloRepone.has(raw) ? repuestos : otros).add(abs); };
+    const anotar = (abs) => {
+      vistos.add(abs);
+      (soloRepone.has(raw) ? repuestos : otros).add(abs);
+      if (!deSed.has(raw)) noSoloSed.add(abs);
+      else sedsDe.set(abs, [...(sedsDe.get(abs) || []), ...seds.filter((x) => x.archivo === raw)]);
+    };
     for (const base of bases) {
       const rutas = /[*?[]/.test(valor) ? expandirComodin(valor.replace(/^~(?=\/|$)/, os.homedir()), base)
         : [resolveTarget(valor, base, process.platform, { homeVariable: true })];
@@ -1620,6 +1777,14 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   return [...sinResolver, ...[...vistos].filter((abs) => {
     const estado = estadoDeHistoria(abs);
     if (estado === null) return false;
+    // un `sed` que deja el estado del encabezado como estaba no la cierra: pasa como el cuerpo editado con Edit
+    if (sedsDe.has(abs) && !noSoloSed.has(abs)) {
+      let antes = null;
+      try { antes = fs.readFileSync(abs, 'utf8'); } catch (e) { logHookError(e); }
+      const despues = antes == null ? null : ensayarSeds(abs, [...new Set(sedsDe.get(abs))]);
+      const ea = estadosDelEncabezado(antes || '');
+      if (despues != null && ea.length && JSON.stringify(ea) === JSON.stringify(estadosDelEncabezado(despues))) return false;
+    }
     if (estado !== 'draft') return true;
     // el estado del encabezado del cuerpo (todos sus `status:` en borrador), no un `status: draft` cualquiera más abajo
     const fm = /^---\s*\n([\s\S]*?)\n---/.exec(enteros.get(abs) || '');
