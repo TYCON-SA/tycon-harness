@@ -30,14 +30,25 @@ const crypto = require('crypto');
 
 const GENERATOR = 'tycon-mockup/1';
 const CSP = "default-src 'none'; style-src 'unsafe-inline'";
-const KINDS = ['heading', 'text', 'button', 'link', 'field', 'checkbox', 'table', 'list', 'message', 'box', 'group'];
-// lo primero que lee quien aprueba: la maqueta fija qué dice la pantalla, no cómo se ve
-const SCHEMA_NOTE = 'Esquema de textos y estados, no del aspecto.';
-const EXISTING_NOTE = 'En gris, lo que la pantalla ya tiene.';
+const KINDS = ['heading', 'text', 'button', 'link', 'field', 'checkbox', 'table', 'list', 'message', 'box', 'group', 'chat'];
+// lo primero que lee quien aprueba: la maqueta fija qué dice la pantalla y dónde va, no cómo se ve
+const SCHEMA_NOTE = 'Es un boceto: muestra qué dice cada parte y más o menos dónde va, no los colores ni las medidas.';
 const TONES = ['info', 'ok', 'warn', 'error'];
+// un chat de ejemplo: globos de quien usa la pantalla (us) y de la otra persona (them), sólo para ilustrar
+const CHAT_FROM = ['us', 'them'];
+const CHAT_NOTE = 'Mensajes de ejemplo, para ilustrar: no son los de la pantalla real';
 const TEXT_KINDS = ['heading', 'text', 'button', 'link', 'message', 'box'];
 // cómo se presenta una pantalla: en la página, o como una capa encima de otra (una ventana, un diálogo, un panel)
 const PRESENTATIONS = ['page', 'layer'];
+// dónde va un elemento, a grandes rasgos: la maqueta lo dibuja en una grilla aproximada (sin zona, va al centro)
+const ZONES = ['top', 'top-end', 'left', 'center', 'right', 'bottom'];
+const ZONE_NAMES = { top: 'de arriba', 'top-end': 'de arriba a la derecha', left: 'de la izquierda', center: 'del centro', right: 'de la derecha', bottom: 'de abajo' };
+
+// Los elementos de una pantalla junto con los de sus variantes: todos se validan y se comparan igual.
+const allElements = (sc) => [
+  ...(Array.isArray(sc.elements) ? sc.elements : []),
+  ...(Array.isArray(sc.variants) ? sc.variants.flatMap((v) => (v && Array.isArray(v.elements) ? v.elements : [])) : []),
+];
 
 // El escape propio de la maqueta: además de `& < > " '` codifica `= ( ) @ :` como entidades numéricas. Así un texto
 // que trae `<img src=https://…>` o `url(…)` no deja ningún `src=` ni `url(` literal en el archivo, y `check` no da
@@ -100,11 +111,56 @@ function checkboxProblems(c, k) {
 function modelWarnings(model) {
   const out = [];
   const conValue = (c, donde) => { if (c && c.value !== undefined) out.push(`${donde}: \`value\` en una casilla se tomó como \`checked: ${isChecked(c)}\` — usá checked`); };
-  (model.screens || []).forEach((sc, i) => (sc.elements || []).forEach((el, j) => {
+  (model.screens || []).forEach((sc, i) => allElements(sc || {}).forEach((el, j) => {
+    if (!el) return;
     const donde = `pantalla ${i + 1}, elemento ${j + 1} (${el.kind})`;
     if (el.kind === 'checkbox') conValue(el, donde);
     if (el.kind === 'group' && Array.isArray(el.items)) el.items.forEach((c, n) => conValue(c, `${donde}, casilla ${n + 1}`));
   }));
+  return out;
+}
+
+/** Los problemas de un elemento del modelo; `e` dice dónde está. */
+function elementProblems(el, e) {
+  const out = [];
+  if (!el || typeof el !== 'object') return [`${e}: no es un objeto`];
+  if (!KINDS.includes(el.kind)) return [`${e}: \`kind\` «${el.kind}» no está en la lista (${KINDS.join(' | ')})`];
+  const k = `${e} (${el.kind})`;
+  if (TEXT_KINDS.includes(el.kind) && !isStr(el.text)) out.push(`${k}: falta \`text\` (una cadena)`);
+  if ((el.kind === 'field' || el.kind === 'checkbox') && !isStr(el.label)) out.push(`${k}: falta \`label\` (una cadena)`);
+  if (el.kind === 'field' && el.placeholder !== undefined && typeof el.placeholder !== 'string') out.push(`${k}: \`placeholder\` tiene que ser una cadena`);
+  if (el.kind === 'table' && (!Array.isArray(el.columns) || !el.columns.length || !el.columns.every(isStr))) out.push(`${k}: falta \`columns\` (una lista de cadenas, no vacía)`);
+  if (el.kind === 'list' && (!Array.isArray(el.items) || !el.items.length || !el.items.every(isStr))) out.push(`${k}: falta \`items\` (una lista de cadenas, no vacía)`);
+  if (el.kind === 'list' && el.selected !== undefined && !(Array.isArray(el.items) && el.items.includes(el.selected))) out.push(`${k}: \`selected\` tiene que ser uno de los \`items\` (el renglón que se ve elegido)`);
+  if (el.kind === 'message' && el.tone !== undefined && !TONES.includes(el.tone)) out.push(`${k}: \`tone\` «${el.tone}» no está en la lista (${TONES.join(' | ')})`);
+  if (el.zone !== undefined && !ZONES.includes(el.zone)) out.push(`${k}: \`zone\` «${el.zone}» no está en la lista (${ZONES.join(' | ')})`);
+  if (el.existing !== undefined && typeof el.existing !== 'boolean') out.push(`${k}: \`existing\` tiene que ser true o false`);
+  if (el.kind === 'checkbox') out.push(...checkboxProblems(el, k));
+  if (el.kind === 'chat') {
+    if (!Array.isArray(el.messages) || !el.messages.length) out.push(`${k}: falta \`messages\` (una lista de mensajes de ejemplo, no vacía)`);
+    else {
+      el.messages.forEach((m, n) => {
+        const km = `${k}, mensaje ${n + 1}`;
+        if (!m || typeof m !== 'object' || Array.isArray(m)) { out.push(`${km}: no es un objeto`); return; }
+        if (m.divider !== undefined) { if (!isStr(m.divider)) out.push(`${km}: \`divider\` tiene que ser una cadena`); return; }
+        if (!CHAT_FROM.includes(m.from)) out.push(`${km}: \`from\` «${m.from}» no está en la lista (${CHAT_FROM.join(' | ')})`);
+        if (!isStr(m.text)) out.push(`${km}: falta \`text\` (una cadena)`);
+        if (m.who !== undefined && !isStr(m.who)) out.push(`${km}: \`who\` tiene que ser una cadena`);
+      });
+    }
+  }
+  if (el.kind === 'group') {
+    if (!isStr(el.legend)) out.push(`${k}: falta \`legend\` (el título del grupo, una cadena)`);
+    if (!Array.isArray(el.items) || !el.items.length) out.push(`${k}: falta \`items\` (una lista de casillas, no vacía)`);
+    else {
+      el.items.forEach((c, n) => {
+        const ki = `${k}, casilla ${n + 1}`;
+        if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`${ki}: no es un objeto`); return; }
+        if (!isStr(c.label)) out.push(`${ki}: falta \`label\` (una cadena)`);
+        out.push(...checkboxProblems(c, ki));
+      });
+    }
+  }
   return out;
 }
 
@@ -113,6 +169,7 @@ function validateModel(model) {
   const out = [];
   if (!model || typeof model !== 'object' || Array.isArray(model)) return ['el modelo tiene que ser un objeto JSON'];
   if (!isStr(model.title)) out.push('falta `title` (el nombre de la maqueta)');
+  if (model.summary !== undefined && !isStr(model.summary)) out.push('`summary` tiene que ser una cadena (qué cambia en la pantalla, en una frase)');
   if (!Array.isArray(model.screens) || !model.screens.length) {
     out.push('falta `screens` (una lista con al menos una pantalla)');
     return out;
@@ -134,36 +191,27 @@ function validateModel(model) {
         }
       }
     }
-    if (!Array.isArray(sc.elements) || !sc.elements.length) { out.push(`${p}: falta \`elements\` (lo que muestra la pantalla)`); return; }
-    sc.elements.forEach((el, j) => {
-      const e = `${p}, elemento ${j + 1}`;
-      if (!el || typeof el !== 'object') { out.push(`${e}: no es un objeto`); return; }
-      if (!KINDS.includes(el.kind)) { out.push(`${e}: \`kind\` «${el.kind}» no está en la lista (${KINDS.join(' | ')})`); return; }
-      const k = `${e} (${el.kind})`;
-      if (TEXT_KINDS.includes(el.kind) && !isStr(el.text)) out.push(`${k}: falta \`text\` (una cadena)`);
-      if ((el.kind === 'field' || el.kind === 'checkbox') && !isStr(el.label)) out.push(`${k}: falta \`label\` (una cadena)`);
-      if (el.kind === 'field' && el.placeholder !== undefined && typeof el.placeholder !== 'string') out.push(`${k}: \`placeholder\` tiene que ser una cadena`);
-      if (el.kind === 'table' && (!Array.isArray(el.columns) || !el.columns.length || !el.columns.every(isStr))) out.push(`${k}: falta \`columns\` (una lista de cadenas, no vacía)`);
-      if (el.kind === 'list' && (!Array.isArray(el.items) || !el.items.length || !el.items.every(isStr))) out.push(`${k}: falta \`items\` (una lista de cadenas, no vacía)`);
-      if (el.kind === 'message' && el.tone !== undefined && !TONES.includes(el.tone)) out.push(`${k}: \`tone\` «${el.tone}» no está en la lista (${TONES.join(' | ')})`);
-      if (el.existing !== undefined && typeof el.existing !== 'boolean') out.push(`${k}: \`existing\` tiene que ser true o false`);
-      if (el.kind === 'checkbox') out.push(...checkboxProblems(el, k));
-      if (el.kind === 'group') {
-        if (!isStr(el.legend)) out.push(`${k}: falta \`legend\` (el título del grupo, una cadena)`);
-        if (!Array.isArray(el.items) || !el.items.length) out.push(`${k}: falta \`items\` (una lista de casillas, no vacía)`);
-        else {
-          el.items.forEach((c, n) => {
-            const ki = `${k}, casilla ${n + 1}`;
-            if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`${ki}: no es un objeto`); return; }
-            if (!isStr(c.label)) out.push(`${ki}: falta \`label\` (una cadena)`);
-            out.push(...checkboxProblems(c, ki));
-          });
-        }
+    if (sc.variants !== undefined) {
+      if (!Array.isArray(sc.variants)) out.push(`${p}: \`variants\` tiene que ser una lista (los otros casos de la pantalla)`);
+      else {
+        sc.variants.forEach((v, n) => {
+          const pv = `${p}, variante ${n + 1}`;
+          if (!v || typeof v !== 'object' || Array.isArray(v)) { out.push(`${pv}: no es un objeto`); return; }
+          if (!isStr(v.when)) out.push(`${pv}: falta \`when\` (cuándo pasa, en una frase)`);
+          if (v.zone !== undefined && !ZONES.includes(v.zone)) out.push(`${pv}: \`zone\` «${v.zone}» no está en la lista (${ZONES.join(' | ')})`);
+          if (v.note !== undefined && !isStr(v.note)) out.push(`${pv}: \`note\` tiene que ser una cadena`);
+          if (v.elements !== undefined && !Array.isArray(v.elements)) out.push(`${pv}: \`elements\` tiene que ser una lista`);
+          const els = Array.isArray(v.elements) ? v.elements : [];
+          if (!els.length && !isStr(v.note)) out.push(`${pv}: necesita \`elements\` (lo que cambia) o \`note\` (qué pasa, en una frase)`);
+          els.forEach((el, j) => out.push(...elementProblems(el, `${pv}, elemento ${j + 1}`)));
+        });
       }
-    });
+    }
+    if (!Array.isArray(sc.elements) || !sc.elements.length) { out.push(`${p}: falta \`elements\` (lo que muestra la pantalla)`); return; }
+    sc.elements.forEach((el, j) => out.push(...elementProblems(el, `${p}, elemento ${j + 1}`)));
   });
   if (out.length) return out;
-  model.screens.forEach((sc, i) => sc.elements.forEach((el, j) => {
+  model.screens.forEach((sc, i) => allElements(sc).forEach((el, j) => {
     for (const t of comparedOf(el)) {
       if (isFiller(t)) out.push(`pantalla ${i + 1}, elemento ${j + 1} (${el.kind}): «${t}» es texto de relleno — la maqueta lleva los textos reales de la pantalla`);
     }
@@ -172,24 +220,35 @@ function validateModel(model) {
 }
 
 const STYLE = `
-  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #f4f5f7; color: #1d2433; margin: 0; padding: 24px; }
-  header h1 { font-size: 20px; margin: 0 0 4px; }
-  header p { margin: 0 0 20px; color: #5a6475; font-size: 13px; }
-  header p.schema-note { margin: 0 0 6px; color: #1d2433; font-weight: 600; }
-  .screen { background: #fff; border: 1px solid #d5d9e0; border-radius: 10px; margin: 0 0 24px; max-width: 760px; }
-  .screen-head { display: flex; gap: 10px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e6e9ee; background: #fafbfc; border-radius: 10px 10px 0 0; }
-  .screen-name { font-weight: 600; }
-  .screen-state { font-size: 12px; color: #fff; background: #5a6475; border-radius: 10px; padding: 1px 8px; }
-  .screen-file { font-size: 12px; color: #8a93a3; margin-left: auto; font-family: ui-monospace, Menlo, monospace; }
-  .screen-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
-  .heading { font-size: 18px; margin: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 15px; line-height: 1.45; background: #eceef2; color: #1d2433; margin: 0; padding: 32px 24px 48px; }
+  header, .screen, .notes, .dev-notes { max-width: 980px; margin-left: auto; margin-right: auto; }
+  header { margin-bottom: 28px; }
+  header h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #5a6475; margin: 0 0 6px; }
+  header p { margin: 0; color: #5a6475; font-size: 13px; }
+  header p.summary { margin: 0 0 14px; color: #1d2433; font-size: 21px; line-height: 1.4; font-weight: 500; }
+  header p.schema-note { margin: 0 0 4px; color: #3b4456; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 12px 0 0; font-size: 13px; color: #3b4456; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 16px; height: 16px; border-radius: 4px; display: inline-block; box-sizing: border-box; }
+  .sw-new { border: 2px solid #6d28d9; background: #f3eefe; }
+  .sw-old { background: #fff; border: 1px solid #c3c9d3; }
+  .sw-open { border: 3px solid #e0a100; }
+  .screen { margin-bottom: 44px; }
+  .screen-caption { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; margin: 0 0 10px; }
+  .screen-name { font-weight: 600; font-size: 16px; }
+  .screen-state { font-size: 14px; color: #5a6475; }
+  .screen-new { font-size: 12px; font-weight: 600; color: #fff; background: #6d28d9; border-radius: 10px; padding: 1px 9px; }
+  .frame { background: #fff; border: 1px solid #cfd4dc; border-radius: 12px; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 6px 18px rgba(16, 24, 40, 0.06); overflow: hidden; display: flex; flex-direction: column; }
+  .screen-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; flex: 1; }
+  .heading { font-size: 20px; font-weight: 600; margin: 0; }
   .text { margin: 0; }
-  .button { display: inline-block; border: 1px solid #9aa3b2; border-radius: 6px; padding: 6px 14px; background: #fff; }
+  .button { display: inline-block; border: 1px solid #c3c9d3; border-radius: 8px; padding: 8px 16px; background: #fff; font-weight: 500; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06); }
   .button.primary { background: #2f5bd3; border-color: #2f5bd3; color: #fff; }
+  .button.icon { border: 0; box-shadow: none; background: transparent; color: #5a6475; font-size: 18px; padding: 4px 8px; }
   .link { color: #2f5bd3; text-decoration: underline; }
-  .field { display: flex; flex-direction: column; gap: 4px; min-width: 280px; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 260px; max-width: 100%; }
   .field .label { font-size: 13px; font-weight: 600; }
-  .field .input { border: 1px solid #c3c9d3; border-radius: 6px; padding: 6px 10px; min-height: 18px; }
+  .field .input { border: 1px solid #c3c9d3; border-radius: 8px; padding: 8px 12px; min-height: 20px; }
   .field .ph { color: #8a93a3; }
   .field .ph-note { font-size: 12px; color: #8a93a3; }
   .checkbox { display: flex; gap: 8px; align-items: center; }
@@ -197,84 +256,216 @@ const STYLE = `
   .checkbox.disabled { color: #9aa3b2; }
   .checkbox.disabled .cb-mark { border-color: #c3c9d3; background: #f0f2f5; }
   .cb-title { font-size: 12px; }
-  fieldset.group { border: 1px solid #d5d9e0; border-radius: 6px; padding: 6px 12px 10px; margin: 0; }
+  fieldset.group { border: 1px solid #d5d9e0; border-radius: 8px; padding: 6px 12px 10px; margin: 0; }
   fieldset.group legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
   .group-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 16px; }
-  .existing { color: #9aa3b2; }
-  .existing * { color: #9aa3b2; border-color: #d5d9e0; background: transparent; }
+  .existing { filter: saturate(0.35); opacity: 0.78; }
+  .new { position: relative; outline: 2px solid #6d28d9; outline-offset: 5px; border-radius: 6px; }
+  .new-tag { position: absolute; top: -22px; left: 4px; z-index: 1; font-size: 12px; font-weight: 700; line-height: 1; color: #fff; background: #6d28d9; border-radius: 4px; padding: 3px 7px; }
+  .opens { position: relative; display: inline-block; }
+  .open-tag { position: absolute; bottom: -26px; right: 0; z-index: 1; white-space: nowrap; font-size: 12px; font-weight: 700; line-height: 1; color: #1d2433; background: #ffe7a3; border: 1px solid #e0a100; border-radius: 4px; padding: 2px 6px; }
+  .trigger { outline: 3px solid #e0a100; outline-offset: 3px; }
+  .new .trigger { outline: 0; }
+  .ph-bar { display: block; width: 180px; max-width: 40vw; height: 12px; border-radius: 6px; background: #e3e6eb; }
   table.table { border-collapse: collapse; min-width: 420px; }
-  table.table th, table.table td { border: 1px solid #d5d9e0; padding: 6px 10px; text-align: left; font-size: 14px; }
-  table.table th { background: #f0f2f5; }
+  table.table th, table.table td { border-bottom: 1px solid #e3e6eb; padding: 8px 12px; text-align: left; font-size: 14px; }
+  table.table th { color: #5a6475; font-weight: 600; }
   ul.list { margin: 0; padding-left: 20px; }
-  .message { border-radius: 6px; padding: 8px 12px; border: 1px solid; }
+  .zone-left ul.list { list-style: none; padding: 0; width: 100%; }
+  .zone-left ul.list li { padding: 12px 14px; border-bottom: 1px solid #eef0f3; font-size: 14px; color: #3b4456; }
+  ul.list li.selected { font-weight: 600; color: #1d2433; background: #eef1f6; }
+  .zone-left ul.list li.selected { background: #fff; box-shadow: inset 4px 0 0 #2f5bd3; }
+  .message { border-radius: 8px; padding: 10px 14px; border: 1px solid; }
   .tone-info { background: #eef3ff; border-color: #b9cbf5; }
   .tone-ok { background: #ecf8ef; border-color: #a9dcb5; }
   .tone-warn { background: #fff7e6; border-color: #f0cf8a; }
   .tone-error { background: #fdeeee; border-color: #eeb0b0; }
-  .box { border: 2px dashed #b4bccb; border-radius: 8px; padding: 24px; color: #5a6475; min-width: 280px; text-align: center; }
-  .notes { max-width: 760px; font-size: 13px; color: #5a6475; }
+  .box { border: 1px dashed #c3c9d3; border-radius: 8px; padding: 20px; color: #5a6475; background: #f8f9fb; font-style: italic; text-align: center; align-self: stretch; }
+  .chat { align-self: stretch; background: #efeae2; border-radius: 10px; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .chat-caption { margin: 0 0 4px; align-self: center; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; color: #4a5263; background: repeating-linear-gradient(135deg, #fff 0 6px, #f1f2f4 6px 12px); border: 1px dashed #9aa3b2; border-radius: 10px; padding: 2px 10px; }
+  .chat-divider { align-self: center; font-size: 12px; color: #54656f; background: #fff; border-radius: 8px; padding: 3px 10px; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06); }
+  .bubble { max-width: 72%; padding: 7px 10px 8px; border-radius: 8px; font-size: 14px; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08); }
+  .bubble-us { align-self: flex-end; background: #d9fdd3; }
+  .bubble-them { align-self: flex-start; background: #fff; }
+  .bubble-who { display: block; font-size: 12px; font-weight: 600; color: #1f7a4d; margin-bottom: 2px; }
+  .screen-body > div:has(> .chat), .zone > div:has(> .chat) { align-self: stretch; }
+  .screen-body.zoned { align-items: stretch; padding: 0; gap: 0; }
+  .zone-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 16px 24px; }
+  .zone-head { border-bottom: 1px solid #eef0f3; }
+  .zone-row:has(.new), .screen-body:not(.zoned):has(> .new:first-child) { padding-top: 32px; }
+  .zone-foot { border-top: 1px solid #eef0f3; }
+  .zone-middle { display: flex; flex-wrap: nowrap; gap: 0; align-items: stretch; flex: 1; padding: 0; }
+  .zone { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .zone-middle .zone { padding: 20px 24px; }
+  .zone-left { flex: 0 0 34%; min-width: 200px; box-sizing: border-box; border-right: 1px solid #e3e6eb; background: #fbfbfc; padding: 0 !important; }
+  .zone-center, .zone-right { flex: 1; min-width: 0; }
+  .zone-middle .zone:has(> .chat), .zone-middle .zone:has(> div > .chat) { padding: 0; }
+  .zone-middle .zone > .chat, .zone-middle .zone > div > .chat { border-radius: 0; flex: 1; }
+  .zone-middle .zone:has(> div > .chat) > div:has(> .chat) { flex: 1; display: flex; flex-direction: column; }
+  .zone-top-end { margin-left: auto; align-items: flex-end; }
+  .variants { margin-top: 18px; }
+  .variants-title { margin: 0 0 10px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #5a6475; }
+  .variant-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: stretch; }
+  .variant { max-width: 560px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .variant-when { margin: 0; font-size: 14px; font-weight: 600; }
+  .variant-zone { display: block; font-weight: 400; font-size: 12px; color: #5a6475; }
+  .variant-note { margin: 0; font-size: 14px; color: #3b4456; }
+  .variant-zone-preview { align-self: stretch; flex: 1; min-height: 96px; border-radius: 8px; border: 1px solid #e3e6eb; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 12px; color: #54656f; font-size: 14px; }
+  .variant-zone-preview.preview-chat { background: #efeae2; border-color: #e2dccf; }
+  .variant-zone-preview.preview-left { background: #fbfbfc; }
+  .screen.repeat { max-width: 640px; }
+  .notes { font-size: 13px; color: #5a6475; }
+  .dev-notes { font-size: 12px; color: #6b7485; margin-top: 12px; border-top: 1px solid #d5d9e0; padding-top: 10px; }
+  .dev-notes p { margin: 0; }
+  .dev-notes ul { margin: 4px 0 0; padding-left: 20px; }
+  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .bubble { max-width: 88%; } }
 `;
-// Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte y su huella aprobada sigue valiendo.
+// Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte.
 const LAYER_STYLE = `
-  .layer { background: transparent; border: 0; }
-  .layer-backdrop { background: rgba(29, 36, 51, 0.45); border-radius: 10px; padding: 32px 24px; }
-  .layer-dialog { background: #fff; border: 1px solid #9aa3b2; border-radius: 10px; max-width: 520px; margin: 0 auto; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
-  .screen-layer { font-size: 12px; color: #1d2433; background: #ffe9a8; border-radius: 10px; padding: 1px 8px; }
+  .layer-how { margin: 0 0 10px; font-size: 14px; color: #3b4456; }
+  .layer-stack { display: grid; border-radius: 12px; overflow: hidden; }
+  .layer-stack > div { grid-area: 1 / 1; }
+  .layer-under { filter: blur(2px) saturate(0.4); }
+  .layer-under .frame { height: 100%; box-shadow: none; }
+  .layer-backdrop { position: relative; z-index: 1; background: rgba(29, 36, 51, 0.55); display: flex; align-items: flex-start; justify-content: center; padding: 56px 40px 40px; }
+  .layer-dialog { width: 86%; max-width: 860px; box-shadow: 0 18px 48px rgba(16, 24, 40, 0.35); border-color: #b9c0cc; }
+  .layer-dialog .zone-middle { min-height: 340px; }
+  @media (max-width: 600px) { .layer-backdrop { padding: 24px 8px; } .layer-dialog { width: 100%; } }
 `;
 
-/** El HTML de la maqueta: un archivo, sin código ni direcciones. */
+/**
+ * El HTML de la maqueta: un archivo, sin código ni direcciones. Lo lee alguien que no programa: arriba la frase de qué
+ * cambia, cada pantalla con sus zonas aproximadas, lo nuevo en violeta y lo de hoy atenuado, los otros casos como
+ * miniaturas de la parte que cambia, y la ventana dibujada encima de su pantalla. Los archivos van al pie.
+ */
 function renderMockup(model) {
   const E = mockupEsc;
-  const T = (text, kind, i) => `<span class="t" data-mockup-text="${E(text)}" data-kind="${kind}" data-screen="${i}">${E(text)}</span>`;
+  // el texto que se compara con la pantalla lleva su marca; la copia de la pantalla de abajo de una ventana, no
+  const marcado = (text, kind, i) => `<span class="t" data-mockup-text="${E(text)}" data-kind="${kind}" data-screen="${i}">${E(text)}</span>`;
+  const plano = (text) => E(text);
   // la casilla, sola o dentro de un grupo: marcada con una «x», deshabilitada en gris con su motivo a la vista (en la
   // imagen del chat no hay mouse para ver el `title`)
-  const casilla = (c, i) => {
+  const casilla = (c, i, T) => {
     const on = isChecked(c);
     const motivo = c.disabled === true && isStr(c.title) ? ` <span class="cb-title">(${T(c.title, 'title', i)})</span>` : '';
     return `<div class="checkbox${c.disabled === true ? ' disabled' : ''}"><span class="cb-mark${on ? ' on' : ''}">${on ? 'x' : ''}</span>${T(c.label, 'checkbox', i)}${motivo}</div>`;
   };
-  const el = (x, i) => (x.existing === true ? `<div class="existing">${dibujo(x, i)}</div>` : dibujo(x, i));
-  const dibujo = (x, i) => {
+  const dibujo = (x, i, ctx) => {
+    const T = ctx.T;
+    const abre = ctx.abre && ctx.abre.has(x.text) && (x.kind === 'button' || x.kind === 'link');
+    const marca = (html) => (abre ? `<span class="opens">${html}<span class="open-tag">abre ventana ↓</span></span>` : html);
     switch (x.kind) {
       case 'heading': return `<h2 class="heading">${T(x.text, x.kind, i)}</h2>`;
       case 'text': return `<p class="text">${T(x.text, x.kind, i)}</p>`;
-      case 'button': return `<span class="button${x.primary ? ' primary' : ''}">${T(x.text, x.kind, i)}</span>`;
-      case 'link': return `<span class="link">${T(x.text, x.kind, i)}</span>`;
+      // un botón de uno o dos caracteres (una X, una flecha) se dibuja como ícono, sin borde
+      case 'button': return marca(`<span class="button${x.primary ? ' primary' : ''}${[...x.text.trim()].length <= 2 ? ' icon' : ''}${abre ? ' trigger' : ''}">${T(x.text, x.kind, i)}</span>`);
+      case 'link': return marca(`<span class="link${abre ? ' trigger' : ''}">${T(x.text, x.kind, i)}</span>`);
       case 'field': {
         const ph = isStr(x.placeholder) ? T(x.placeholder, x.kind, i) : '';
         const input = isStr(x.value) ? E(x.value) : (ph ? `<span class="ph">${ph}</span>` : '');
         const note = isStr(x.value) && ph ? `<span class="ph-note">vacío dice ${ph}</span>` : '';
         return `<div class="field"><span class="label">${T(x.label, x.kind, i)}</span><span class="input">${input}</span>${note}</div>`;
       }
-      case 'checkbox': return casilla(x, i);
-      case 'group': return `<fieldset class="group"><legend>${T(x.legend, x.kind, i)}</legend><div class="group-row">${x.items.map((c) => casilla(c, i)).join('')}</div></fieldset>`;
+      case 'checkbox': return casilla(x, i, T);
+      case 'group': return `<fieldset class="group"><legend>${T(x.legend, x.kind, i)}</legend><div class="group-row">${x.items.map((c) => casilla(c, i, T)).join('')}</div></fieldset>`;
       case 'table': {
         const rows = (Array.isArray(x.rows) ? x.rows : []).map((r) => `<tr>${(Array.isArray(r) ? r : []).map((c) => `<td>${E(c)}</td>`).join('')}</tr>`).join('');
         return `<table class="table"><thead><tr>${x.columns.map((c) => `<th>${T(c, x.kind, i)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
       }
-      case 'list': return `<ul class="list">${x.items.map((it) => `<li>${T(it, x.kind, i)}</li>`).join('')}</ul>`;
+      case 'list': return `<ul class="list">${x.items.map((it) => `<li${it === x.selected ? ' class="selected"' : ''}>${T(it, x.kind, i)}</li>`).join('')}</ul>`;
       case 'message': return `<div class="message tone-${TONES.includes(x.tone) ? x.tone : 'info'}">${T(x.text, x.kind, i)}</div>`;
-      case 'box': return `<div class="box">${x.compare === true ? T(x.text, x.kind, i) : E(x.text)}</div>`;
+      case 'chat': {
+        const globos = x.messages.map((m) => (isStr(m.divider)
+          ? `<div class="chat-divider">${E(m.divider)}</div>`
+          : `<div class="bubble bubble-${m.from}">${isStr(m.who) ? `<span class="bubble-who">${E(m.who)}</span>` : ''}${E(m.text)}</div>`)).join('');
+        return `<div class="chat" data-illustrative="true"><p class="chat-caption">${CHAT_NOTE}</p>${globos}</div>`;
+      }
+      case 'box': return `<div class="box">${x.compare === true && T === marcado ? T(x.text, x.kind, i) : E(x.text)}</div>`;
       default: return '';
     }
   };
+  // lo de hoy atenuado; lo nuevo en violeta, sólo cuando la pantalla mezcla las dos cosas (si es toda nueva, la marca va
+  // una vez, en su cabecera)
+  const el = (x, i, ctx) => {
+    if (ctx.marcas && x.existing === true) return `<div class="existing">${dibujo(x, i, ctx)}</div>`;
+    if (ctx.marcas && ctx.mezcla) return `<div class="new"><span class="new-tag">Nuevo</span>${dibujo(x, i, ctx)}</div>`;
+    return dibujo(x, i, ctx);
+  };
+  // sin zonas, la columna de siempre; con zonas, una grilla aproximada: arriba, al medio (izquierda, centro,
+  // derecha) y abajo
+  const cuerpo = (elements, i, ctx) => {
+    if (!elements.some((x) => x.zone !== undefined)) return [`<div class="screen-body">`, ...elements.map((x) => el(x, i, ctx)), '</div>'].join('\n');
+    const en = (z) => elements.filter((x) => (x.zone || 'center') === z);
+    const zona = (z) => (en(z).length ? `<div class="zone zone-${z}">${en(z).map((x) => el(x, i, ctx)).join('')}</div>` : '');
+    // un encabezado con algo sólo a la derecha lleva a la izquierda un renglón gris sin texto: el lugar del título
+    const hueco = !en('top').length && en('top-end').length ? '<div class="zone zone-top"><span class="ph-bar" aria-hidden="true"></span></div>' : '';
+    const fila = (cls, zs) => (zs.some((z) => en(z).length) ? `<div class="zone-row ${cls}">${cls === 'zone-head' ? hueco : ''}${zs.map(zona).join('')}</div>` : '');
+    return [
+      '<div class="screen-body zoned">',
+      fila('zone-head', ['top', 'top-end']), fila('zone-middle', ['left', 'center', 'right']), fila('zone-foot', ['bottom']),
+      '</div>',
+    ].filter(Boolean).join('\n');
+  };
+  const conExistentes = model.screens.some((sc) => allElements(sc).some((x) => x.existing === true));
+  // cada caso dibuja lo que cambia; si dice en qué zona, lo dibuja dentro de una miniatura de esa zona, con su fondo
+  const variantes = (sc, i) => {
+    if (!Array.isArray(sc.variants) || !sc.variants.length) return '';
+    const cards = sc.variants.map((v) => {
+      const zona = ZONES.includes(v.zone) ? v.zone : '';
+      const donde = zona ? ` <span class="variant-zone">· cambia sólo la parte ${ZONE_NAMES[zona]}</span>` : '';
+      let els = Array.isArray(v.elements) ? v.elements.map((x) => dibujo(x, i, { T: marcado })).join('') : '';
+      if (zona && els) {
+        const conChat = sc.elements.some((x) => (x.zone || 'center') === zona && x.kind === 'chat');
+        els = `<div class="variant-zone-preview preview-${zona}${conChat ? ' preview-chat' : ''}">${els}</div>`;
+      }
+      return `<div class="variant"><p class="variant-when">${E(v.when)}${donde}</p>${els}${isStr(v.note) ? `<p class="variant-note">${E(v.note)}</p>` : ''}</div>`;
+    }).join('');
+    return `<div class="variants"><p class="variants-title">Otros casos</p><div class="variant-row">${cards}</div></div>`;
+  };
+  const nombreDe = (sc, i) => (isStr(sc.name) ? sc.name : `Pantalla ${i + 1}`);
+  const vistos = new Set();
   const screens = model.screens.map((sc, i) => {
-    const name = isStr(sc.name) ? sc.name : `Pantalla ${i + 1}`;
+    const name = nombreDe(sc, i);
     const capa = sc.presentation === 'layer';
-    const head = `<div class="screen-head"><span class="screen-name">${E(name)}</span>${isStr(sc.state) ? `<span class="screen-state">${E(sc.state)}</span>` : ''}${capa ? `<span class="screen-layer">Se abre encima de «${E(sc.over)}» con «${E(sc.trigger)}»</span>` : ''}${isStr(sc.file) ? `<span class="screen-file">${E(sc.file)}</span>` : ''}</div>`;
-    const body = [`<div class="screen-body">`, ...sc.elements.map((x) => el(x, i)), '</div>'];
-    if (capa) {
+    const attrs = `data-screen-index="${i}" data-screen-name="${E(name)}"${capa ? ' data-presentation="layer"' : ''}`;
+    const tieneExistente = sc.elements.some((x) => x.existing === true);
+    // el botón que abre una ventana se marca en su propia pantalla, donde quien aprueba lo ve
+    const abre = new Set(capa ? [] : model.screens.filter((o) => o.presentation === 'layer' && o.over === name && isStr(o.trigger)).map((o) => o.trigger));
+    const ctx = { T: marcado, marcas: conExistentes, mezcla: tieneExistente, abre };
+    const estado = isStr(sc.state) ? `<span class="screen-state">${E(sc.state)}</span>` : '';
+    // la pantalla va en un marco de aplicación; lo que la explica va afuera, arriba
+    const marco = (body, extra = '') => `<div class="frame${extra}">\n${body}\n</div>`;
+    // otro caso de una pantalla ya dibujada (un modelo que trae cada estado como pantalla entera): va chico, debajo
+    if (vistos.has(name)) {
       return [
-        `<section class="screen layer" data-screen-index="${i}" data-screen-name="${E(name)}" data-presentation="layer">`,
-        '<div class="layer-backdrop"><div class="layer-dialog">', head, ...body, '</div></div>',
-        '</section>',
+        `<section class="screen repeat" ${attrs}>`,
+        `<div class="screen-caption"><span class="screen-name">Otro caso de «${E(name)}»</span>${estado}</div>`,
+        marco(cuerpo(sc.elements, i, ctx)), variantes(sc, i), '</section>',
       ].join('\n');
     }
-    return [`<section class="screen" data-screen-index="${i}" data-screen-name="${E(name)}">`, head, ...body, '</section>'].join('\n');
+    vistos.add(name);
+    const nueva = conExistentes && !tieneExistente ? '<span class="screen-new">Todo nuevo</span>' : '';
+    const caption = `<div class="screen-caption"><span class="screen-name">${E(name)}</span>${estado}${nueva}</div>`;
+    if (capa) {
+      // la ventana se dibuja encima de su pantalla, que se ve desenfocada detrás: es sólo contexto
+      const abajo = model.screens.find((o, j) => j !== i && nombreDe(o, j) === sc.over && o.presentation !== 'layer');
+      const detras = abajo ? `<div class="layer-under" aria-hidden="true">${marco(cuerpo(abajo.elements, i, { T: plano }))}</div>` : '';
+      return [
+        `<section class="screen layer" ${attrs}>`,
+        caption,
+        `<p class="layer-how">Se abre al tocar «${E(sc.trigger)}» en «${E(sc.over)}».</p>`,
+        '<div class="layer-stack">', detras,
+        `<div class="layer-backdrop">${marco(cuerpo(sc.elements, i, ctx), ' layer-dialog')}</div>`,
+        '</div>', variantes(sc, i), '</section>',
+      ].filter(Boolean).join('\n');
+    }
+    return [`<section class="screen" ${attrs}>`, caption, marco(cuerpo(sc.elements, i, ctx)), variantes(sc, i), '</section>'].filter(Boolean).join('\n');
   }).join('\n');
   const conCapas = model.screens.some((sc) => sc.presentation === 'layer');
-  const conExistentes = model.screens.some((sc) => sc.elements.some((x) => x.existing === true));
-  const sub = `Maqueta de la pantalla${isStr(model.storyId) ? ` — story ${E(model.storyId)}` : ''}. Se mira y se aprueba con el plan; lo construido se compara contra estos textos.`;
+  const leyenda = conExistentes || conCapas ? `<div class="legend">${conExistentes ? '<span><i class="sw sw-new"></i>Lo nuevo, que agrega la story</span><span><i class="sw sw-old"></i>Lo que la pantalla ya tiene (sin marca, apenas atenuado)</span>' : ''}${conCapas ? '<span><i class="sw sw-open"></i>Lo que abre una ventana</span>' : ''}</div>` : '';
+  const archivos = model.screens.map((sc, i) => (isStr(sc.file) ? `<li>${E(nombreDe(sc, i))}: ${E(sc.file)}</li>` : '')).filter(Boolean);
+  const sub = `Maqueta de la pantalla${isStr(model.storyId) ? ` — story ${E(model.storyId)}` : ''}. Se aprueba junto con el plan, y la pantalla construida tiene que decir estos mismos textos.`;
+  const pie = archivos.length ? `<p>Para el programador, los archivos de cada pantalla:</p><ul>${archivos.join('')}</ul>` : '';
   return [
     '<!doctype html>',
     '<html lang="es"><head><meta charset="utf-8">',
@@ -284,9 +475,10 @@ function renderMockup(model) {
     `<title>Maqueta — ${E(model.title)}</title>`,
     `<style>${STYLE}${conCapas ? LAYER_STYLE : ''}</style>`,
     '</head><body>',
-    `<header><h1>${E(model.title)}</h1><p class="schema-note">${SCHEMA_NOTE}${conExistentes ? ` ${EXISTING_NOTE}` : ''}</p><p>${sub}</p></header>`,
+    `<header><h1>${E(model.title)}</h1>${isStr(model.summary) ? `<p class="summary">${E(model.summary)}</p>` : ''}<p class="schema-note">${SCHEMA_NOTE}</p>${leyenda}</header>`,
     screens,
     isStr(model.notes) ? `<div class="notes">${E(model.notes)}</div>` : '',
+    `<footer class="dev-notes">${pie}<p class="dev-sub">${sub}</p></footer>`,
     '</body></html>',
     '',
   ].join('\n');
@@ -490,17 +682,19 @@ function mockupStep8(marker, storyPath) {
 const DEMO = {
   storyId: '1.1',
   title: 'La lista de facturas',
+  summary: 'La lista de facturas suma un filtro por estado y un botón para pagar varias juntas, que pide confirmar el pago.',
   screens: [
     {
       name: 'Lista de facturas',
       state: 'con facturas sin pagar',
       file: 'src/components/Facturas.tsx',
       elements: [
-        { kind: 'heading', text: 'Facturas de Acme SA' },
-        { kind: 'text', text: 'Tiene 3 facturas sin pagar.' },
-        { kind: 'field', label: 'Buscar factura', placeholder: 'Número o fecha', value: '0001-00012345', existing: true },
+        { kind: 'heading', text: 'Facturas de Acme SA', zone: 'top', existing: true },
+        { kind: 'button', text: 'Pagar seleccionadas', primary: true, zone: 'top-end' },
+        { kind: 'text', text: 'Tiene 3 facturas sin pagar.', existing: true },
+        { kind: 'field', label: 'Buscar factura', placeholder: 'Número o fecha', value: '0001-00012345', zone: 'left', existing: true },
         {
-          kind: 'group', legend: 'Estado', items: [
+          kind: 'group', legend: 'Estado', zone: 'left', items: [
             { label: 'Sin pagar', checked: true },
             { label: 'Pagadas' },
             { label: 'Anuladas', disabled: true, title: 'Sólo las ve el administrador' },
@@ -508,12 +702,11 @@ const DEMO = {
         },
         { kind: 'table', columns: ['Número', 'Vence', 'Importe'], rows: [['0001-00012345', '12/11', '$ 120.000']] },
         { kind: 'message', tone: 'warn', text: 'Las facturas vencidas no se pueden pagar desde acá.' },
-        { kind: 'button', text: 'Pagar seleccionadas', primary: true },
-        { kind: 'link', text: 'Ver facturas pagadas' },
-        { kind: 'box', text: 'Gráfico de vencimientos por mes' },
+        { kind: 'link', text: 'Ver facturas pagadas', zone: 'bottom', existing: true },
+        { kind: 'box', text: 'Gráfico de vencimientos por mes', zone: 'right', existing: true },
       ],
+      variants: [{ when: 'Si no tiene facturas sin pagar', zone: 'center', elements: [{ kind: 'text', text: 'No tiene facturas sin pagar.' }] }],
     },
-    { name: 'Lista de facturas', state: 'sin facturas', elements: [{ kind: 'text', text: 'No tiene facturas sin pagar.' }] },
     {
       name: 'Confirmar el pago',
       state: 'abierta',
@@ -543,18 +736,36 @@ ${JSON.stringify(DEMO, null, 2)}
   de un modelo viejo se toma como "checked" y render avisa: usá checked.
 - group: "legend" (el título del grupo) e "items", una lista de casillas (label, checked, disabled, title) que se
   dibujan en una fila.
-- "existing": true, en cualquier elemento, lo dibuja en gris: la pantalla ya lo tiene y la story no lo agrega. Se sigue
-  comparando.
-- Toda maqueta abre con la cabecera "${SCHEMA_NOTE}": fija qué dice cada pantalla y en qué estado, no cómo se ve.
+- list: "selected" (opcional) es uno de los "items": el renglón que se ve elegido.
+- "summary" (opcional): una frase en castellano llano que dice qué cambia en la pantalla. Va arriba de todo: es lo
+  primero que lee quien aprueba, que no programa.
+- "existing": true, en cualquier elemento, lo dibuja atenuado: la pantalla ya lo tiene y la story no lo agrega. Se sigue
+  comparando. Con algún "existing" en la maqueta, lo demás sale en violeta con la marca "Nuevo" (una pantalla toda nueva
+  lleva la marca una sola vez). Sin ninguno no se marca nada: marcá lo que ya existe.
+- "zone" (opcional), en cualquier elemento: dónde va, a grandes rasgos: ${ZONES.join(' | ')}. Se dibuja en una grilla
+  aproximada (arriba, al medio izquierda-centro-derecha, abajo); sin zona va al centro.
+- "variants" (opcional), en una pantalla: los otros casos (cargando, vacío, error, sin permiso). Cada una lleva "when"
+  (cuándo pasa, en una frase), "zone" (la parte que cambia, opcional) y "elements" (lo que muestra esa parte) o "note"
+  (qué pasa, si no muestra nada nuevo: «el botón no aparece»). Se dibujan como miniaturas debajo de la pantalla; con
+  "zone", lo que cambia va dentro de esa parte dibujada en chico, con su fondo.
+- "file" (opcional): el archivo de la pantalla; va al pie, para el programador.
+- "chat": una conversación de ejemplo, dibujada como globos: "messages" es una lista de { "from": "us" (quien usa la
+  pantalla, a la derecha) o "them" (la otra persona, a la izquierda), "text", "who" (opcional, quién lo mandó) } o de
+  { "divider": "<texto del separador>" }. Lleva el rótulo "${CHAT_NOTE}" y no se compara: muestra cómo se ve, con
+  mensajes inventados.
+- Toda maqueta abre con la cabecera "${SCHEMA_NOTE}": fija qué dice cada pantalla, en qué estado y más o menos dónde.
 - Se comparan con la pantalla: el texto de heading, text, button, link y message; label y placeholder; columns; items;
   la legend y los label de un group; y el text de un box sólo con "compare": true (el rótulo de un box describe una
   imagen o un gráfico para el dueño). El title de una casilla se busca como atributo o como texto, y si no está es un
-  aviso, no un faltante. No se comparan value, checked, disabled, rows, notes, ni el nombre, el estado o la
-  presentation de la pantalla.
-- Los estados de falla (vacío, error) van como otra pantalla con su "state": así el dueño los aprueba y se comparan.
+  aviso, no un faltante. Los textos de los elements de una variante se comparan igual. No se comparan value, checked,
+  disabled, rows, notes, summary, ni el nombre, el estado, la presentation o la zone de la pantalla, ni el when o la
+  note de una variante.
+- Los estados de falla (vacío, error) van como "variants" de su pantalla: así el dueño los aprueba, ve qué parte
+  cambia, y se comparan. Una pantalla que repite el nombre de otra también se acepta y se dibuja como otro caso chico.
 - presentation (opcional): "page" (la de siempre) o "layer", una ventana, un diálogo o un panel que se abre encima de
   otra pantalla. Una capa lleva "over" (el nombre de la pantalla de abajo) y "trigger" (el texto exacto de un botón o
-  enlace de esa pantalla, el que la abre); se dibuja como un marco sobre un fondo atenuado. La maqueta fija el
+  enlace de esa pantalla, el que la abre); se dibuja encima de esa pantalla, que se ve desenfocada detrás, y el botón
+  que la abre va marcado en su pantalla. La maqueta fija el
   contenido y los estados, no la forma: la forma sale de la story y de la guía del stack.
 - Los textos son los reales de la pantalla: lorem ipsum, TBD, TODO, XXX o "..." no se aceptan.`;
 

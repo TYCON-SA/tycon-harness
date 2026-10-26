@@ -24,6 +24,9 @@
  *   T38, T43 la leyenda y los rótulos se comparan con la pantalla; el title, como atributo o texto, y si falta es aviso
  *   T39 schema explica los campos nuevos
  *   T41-T42 el `value` de una casilla vieja se toma como `checked`, y check no se cae
+ *   T44-T50 la maqueta legible: frase arriba, zonas, lo nuevo marcado, variantes, la ventana sobre su pantalla, los
+ *           archivos al pie, y un modelo viejo que da los mismos textos que antes
+ *   T51 el chat de ejemplo: globos dibujados, marcados como ilustrativos, que no se comparan
  *
  * El ejemplo es inventado a propósito (facturas): lo que se publica no lleva el rubro de un cliente.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/mockup.test.js < /dev/null
@@ -430,7 +433,7 @@ test('Mockup_Capa_SeDibujaEncimaConSuDisparador @story-7.48 @ac-1', () => {
   assert.strictEqual(r.rc, 0, r.all);
   const html = fs.readFileSync(out, 'utf8');
   assert.match(html, /<section class="screen layer" data-screen-index="1" data-screen-name="Confirmar eliminación" data-presentation="layer">/);
-  assert.match(html, /Se abre encima de «Lista de clientes» con «Eliminar»/);
+  assert.match(html, /Se abre al tocar «Eliminar» en «Lista de clientes»/);
   assert.doesNotMatch(html.split('data-screen-index="1"')[0], /data-presentation="layer"/, 'la pantalla de abajo no es capa');
   assert.strictEqual(run(['check', out]).rc, 0, run(['check', out]).all);
   const t = run(['texts', out]);
@@ -462,9 +465,12 @@ test('Mockup_Capa_DatosInvalidos_NoEscribe @story-7.48 @ac-2', () => {
 });
 
 test('T40 Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3 @story-8.129 @ac-11', () => {
-  // la huella del HTML del modelo de muestra sin capas. Cambió a propósito con la cabecera «esquema, no aspecto» y la
-  // marca de la casilla: una maqueta aprobada no se invalida, porque su huella sale del archivo guardado
-  const HOY = '064d2cd6cad83edb58764e285d3b62ad2e9b9728d1fc1889b395bed3df57423d';
+  // la huella del HTML del modelo de muestra sin capas. Cambia a propósito cuando cambia el dibujo: con la cabecera
+  // «esquema, no aspecto» y la marca de la casilla, y otra vez con la maqueta legible (frase arriba, zonas, lo nuevo
+  // marcado, los archivos al pie y los casos repetidos como variantes), y otra con el aspecto de pantalla real (sin barra
+  // de ventana, lo de hoy atenuado pero legible, lo nuevo en violeta, la línea para el programador al pie). Una maqueta aprobada no se invalida, porque su
+  // huella sale del archivo guardado y nadie la vuelve a dibujar
+  const HOY = 'd31d699575c30fc0043dcb07ebc57c54f96b04a7a4e282422ddb412400456cee';
   const { renderMockup } = require(MOCKUP);
   const huella = (m) => require('crypto').createHash('sha256').update(renderMockup(m)).digest('hex');
   assert.strictEqual(huella(MODELO()), HOY);
@@ -600,21 +606,25 @@ test('T34 Mockup_Grupo_DatosInvalidos_NoEscribe @story-8.129 @ac-5', () => {
   });
 });
 
-test('T35 Mockup_Cabecera_DiceQueEsUnEsquema @story-8.129 @ac-6', () => {
+test('T35 Mockup_Cabecera_DiceQueEsUnBoceto @story-8.129 @ac-6', () => {
   const { mockupTexts } = require(MOCKUP);
   const html = armar(MODELO());
   const header = (html.match(/<header>([\s\S]*?)<\/header>/) || [])[1] || '';
-  assert.match(header, /Esquema de textos y estados, no del aspecto/);
-  assert.ok(!mockupTexts(html).some((t) => /Esquema de textos/.test(t.text)), 'la cabecera no se compara');
-  assert.doesNotMatch(header, /En gris/, 'sin elementos existentes no explica el gris');
+  assert.match(header, /Es un boceto: muestra qué dice cada parte y más o menos dónde va, no los colores ni las medidas/);
+  assert.ok(!mockupTexts(html).some((t) => /Es un boceto/.test(t.text)), 'la cabecera no se compara');
+  assert.doesNotMatch(header, /class="legend"/, 'sin elementos existentes no hay leyenda de lo nuevo y lo de hoy');
 });
 
-test('T36 Mockup_Existente_SeDibujaEnGris @story-8.129 @ac-7', () => {
+// Lo existente va atenuado pero legible (antes iba gris claro y no se leía): se ve la pantalla de hoy, y lo nuevo es lo
+// único con color pleno. La leyenda de la cabecera dice qué es cada cosa.
+test('T36 Mockup_Existente_SeDibujaAtenuado @story-8.129 @ac-7', () => {
   const { mockupTexts } = require(MOCKUP);
   const html = armar(CON_FILTRO());
   assert.match(html, /<div class="existing"><h2 class="heading">/);
-  assert.match(regla(html, '.existing') || '', /color:\s*#9aa3b2/);
-  assert.match((html.match(/<header>([\s\S]*?)<\/header>/) || [])[1], /En gris, lo que la pantalla ya tiene/);
+  const atenuado = regla(html, '.existing') || '';
+  assert.match(atenuado, /opacity:\s*0\.78/);
+  assert.doesNotMatch(atenuado, /color:/, 'el texto conserva su color: se lee');
+  assert.match((html.match(/<header>([\s\S]*?)<\/header>/) || [])[1], /<i class="sw sw-old"><\/i>Lo que la pantalla ya tiene/);
   assert.ok(mockupTexts(html).some((t) => t.text === 'Facturas'), 'lo existente se sigue comparando');
   const out = path.join(TMP, 't36', 'mal.html');
   const r = renderModelo({ title: 'X', screens: [{ elements: [{ kind: 'text', text: 'Hola', existing: 'si' }] }] }, out);
@@ -668,7 +678,7 @@ test('T38 Mockup_Comparacion_LeyendaYRotulosContraLaPantalla @story-8.129 @ac-9'
 test('T39 Mockup_Schema_ExplicaLosCamposNuevos @story-8.129 @ac-10', () => {
   const r = run(['schema']);
   assert.strictEqual(r.rc, 0, r.all);
-  for (const w of ['checked', 'disabled', 'title', 'group', 'legend', 'existing', 'Esquema de textos y estados, no del aspecto']) assert.ok(r.out.includes(w), w);
+  for (const w of ['checked', 'disabled', 'title', 'group', 'legend', 'existing', 'zone', 'variants', 'summary', '"chat"', 'Es un boceto']) assert.ok(r.out.includes(w), w);
   const demo = path.join(TMP, 't39', 'demo.html');
   assert.strictEqual(run(['demo', '--out', demo]).rc, 0);
   assert.strictEqual(run(['check', demo]).rc, 0);
@@ -746,4 +756,211 @@ test('T43 Mockup_Comparacion_TitleComoAtributoYAviso @story-8.129 @ac-13', () =>
   const c = mk.compareWithScreens({ texts: mk.mockupTexts(mismoTexto), screens: [{ rel: 'Solo.tsx', abs: solo }], md: '' });
   assert.deepStrictEqual(c.missing.map((t) => t.text), ['Sólo para el administrador'], 'el mensaje que falta es faltante');
   assert.deepStrictEqual(c.warnings.map((t) => t.text), ['Sólo para el administrador']);
+});
+
+// Una ventana con lista a la izquierda y conversación a la derecha sobre un chat que ya existe, con sus casos de falla.
+// El modelo viejo y el nuevo describen la misma pantalla: el viejo, con un caso por pantalla entera; el nuevo, con zonas
+// y variantes. Inventado a propósito (cuentas de un cliente).
+const CUENTAS_VIEJO = () => ({
+  storyId: '9.9', title: 'Otras cuentas en una ventana aparte', screens: [
+    { name: 'Chat del asistente', state: 'con 2 otras cuentas', file: 'src/components/Chat.tsx', elements: [
+      { kind: 'box', text: 'Chat de la cuenta actual (como hoy)' }, { kind: 'button', text: 'Ver otras cuentas (2)' }] },
+    { name: 'Chat del asistente', state: 'sin otras cuentas, o la lista falló', elements: [{ kind: 'box', text: 'Chat como hoy, sin el botón' }] },
+    { name: 'Otras cuentas', state: 'abierta, primera cuenta elegida', presentation: 'layer', over: 'Chat del asistente', trigger: 'Ver otras cuentas (2)', file: 'src/components/OtrasCuentas.tsx', elements: [
+      { kind: 'heading', text: 'Otras cuentas de Cliente A' }, { kind: 'button', text: 'X' },
+      { kind: 'list', items: ['Tarjeta — Activa (elegida)', 'Cuenta B — Finalizada'] },
+      { kind: 'box', text: 'Conversación de sólo lectura: salientes a la derecha, del cliente a la izquierda' }] },
+    { name: 'Otras cuentas', state: 'cargando la cuenta elegida', presentation: 'layer', over: 'Chat del asistente', trigger: 'Ver otras cuentas (2)', elements: [{ kind: 'text', text: 'Cargando…' }] },
+    { name: 'Otras cuentas', state: 'falló el pedido de la cuenta', presentation: 'layer', over: 'Chat del asistente', trigger: 'Ver otras cuentas (2)', elements: [
+      { kind: 'message', tone: 'error', text: 'No se pudieron traer los mensajes de Cuenta B.' }, { kind: 'button', text: 'Reintentar' }] },
+    { name: 'Otras cuentas', state: 'cuenta sin mensajes', presentation: 'layer', over: 'Chat del asistente', trigger: 'Ver otras cuentas (2)', elements: [{ kind: 'text', text: 'No hay mensajes en esta cuenta.' }] },
+  ],
+});
+// los textos que daba el modelo viejo con el dibujo anterior: [texto, kind, pantalla]
+const CUENTAS_TEXTOS_DE_ANTES = [
+  ['Ver otras cuentas (2)', 'button', 0], ['Otras cuentas de Cliente A', 'heading', 2], ['X', 'button', 2],
+  ['Tarjeta — Activa (elegida)', 'list', 2], ['Cuenta B — Finalizada', 'list', 2], ['Cargando…', 'text', 3],
+  ['No se pudieron traer los mensajes de Cuenta B.', 'message', 4], ['Reintentar', 'button', 4],
+  ['No hay mensajes en esta cuenta.', 'text', 5],
+];
+const CUENTAS_NUEVO = () => ({
+  storyId: '9.9', title: 'Otras cuentas en una ventana aparte',
+  summary: 'Al chat se le agrega un botón que abre una ventana con las otras cuentas del cliente: la lista a la izquierda y sus mensajes a la derecha.',
+  screens: [
+    { name: 'Chat del asistente', state: 'con 2 otras cuentas', file: 'src/components/Chat.tsx', elements: [
+      { kind: 'button', text: 'Ver otras cuentas (2)', zone: 'top-end' },
+      { kind: 'box', text: 'Chat de la cuenta actual (como hoy)', existing: true }],
+    variants: [{ when: 'Si no hay otras cuentas, o la lista falló', note: 'El botón no aparece: el chat queda como hoy.' }] },
+    { name: 'Otras cuentas', state: 'abierta, primera cuenta elegida', presentation: 'layer', over: 'Chat del asistente', trigger: 'Ver otras cuentas (2)', file: 'src/components/OtrasCuentas.tsx', elements: [
+      { kind: 'heading', text: 'Otras cuentas de Cliente A', zone: 'top' }, { kind: 'button', text: 'X', zone: 'top-end' },
+      { kind: 'list', items: ['Tarjeta — Activa (elegida)', 'Cuenta B — Finalizada'], zone: 'left' },
+      { kind: 'box', text: 'Conversación de sólo lectura: salientes a la derecha, del cliente a la izquierda', zone: 'right' }],
+    variants: [
+      { when: 'Mientras carga la cuenta elegida', zone: 'right', elements: [{ kind: 'text', text: 'Cargando…' }] },
+      { when: 'Si falla el pedido de la cuenta', zone: 'right', elements: [
+        { kind: 'message', tone: 'error', text: 'No se pudieron traer los mensajes de Cuenta B.' }, { kind: 'button', text: 'Reintentar' }] },
+      { when: 'Si la cuenta no tiene mensajes', zone: 'right', elements: [{ kind: 'text', text: 'No hay mensajes en esta cuenta.' }] }] },
+  ],
+});
+const textosDe = (html) => require(MOCKUP).mockupTexts(html).map((t) => [t.text, t.kind, t.screen]);
+const seccion = (html, i) => (html.match(new RegExp(`<section[^>]*data-screen-index="${i}"[\\s\\S]*?</section>`)) || [''])[0];
+
+test('T44 Mockup_Zonas_CadaElementoEnSuLugar', () => {
+  const html = armar(CUENTAS_NUEVO());
+  const capa = seccion(html, 1);
+  const izq = capa.indexOf('class="zone zone-left"'); const der = capa.indexOf('class="zone zone-right"');
+  assert.ok(izq > 0 && der > izq, 'la izquierda y la derecha, en una fila');
+  assert.match(capa.slice(izq, der), /Tarjeta — Activa/, 'la lista va a la izquierda');
+  assert.match(capa.slice(der), /Conversación de sólo lectura/, 'la conversación va a la derecha');
+  assert.match(capa, /class="zone zone-top-end">[\s\S]*?data-mockup-text="X"/, 'la X arriba a la derecha');
+  assert.match(regla(html, '.zone-middle') || '', /display:\s*flex/);
+  // sin zonas, la columna de siempre
+  assert.doesNotMatch(armar(MODELO()), /class="zone /);
+  const out = path.join(TMP, 't44', 'mal.html');
+  const r = renderModelo({ title: 'X', screens: [{ elements: [{ kind: 'text', text: 'Hola', zone: 'arriba' }] }] }, out);
+  assert.strictEqual(r.rc, 2, r.all);
+  assert.match(r.err, /zone/);
+  assert.ok(!fs.existsSync(out));
+});
+
+test('T45 Mockup_LoNuevo_SeMarcaSoloSiHayExistente', () => {
+  const html = armar(CUENTAS_NUEVO());
+  const chat = seccion(html, 0);
+  assert.match(chat, /<div class="new"><span class="new-tag">Nuevo<\/span><span class="opens"><span class="button trigger">/, 'el botón nuevo, marcado');
+  assert.match(chat, /<div class="existing">/, 'el chat de hoy, en gris');
+  assert.match(seccion(html, 1), /<span class="screen-new">Todo nuevo<\/span>/, 'la ventana entera es nueva: una sola marca');
+  assert.doesNotMatch(seccion(html, 1), /class="new-tag"/, 'sin una marca por elemento');
+  // violeta: un color que ninguna pantalla de chat usa, para que la marca no se confunda con el contenido
+  assert.match(regla(html, '.new') || '', /#6d28d9/);
+  assert.ok(!textosDe(html).some(([t]) => t === 'Nuevo'), 'la marca no se compara');
+  // sin ningún existente no se sabe qué es nuevo: no se marca nada
+  assert.doesNotMatch(armar(MODELO()), /Nuevo</);
+});
+
+test('T46 Mockup_Variantes_MiniaturasQueSeComparan', () => {
+  const html = armar(CUENTAS_NUEVO());
+  const capa = seccion(html, 1);
+  assert.strictEqual((capa.match(/class="variant"/g) || []).length, 3);
+  assert.match(capa, /<p class="variant-when">Si falla el pedido de la cuenta <span class="variant-zone">· cambia sólo la parte de la derecha<\/span><\/p>/);
+  assert.match(seccion(html, 0), /<p class="variant-note">El botón no aparece&#58; el chat queda como hoy.<\/p>/);
+  assert.ok(textosDe(html).some(([t, k, i]) => t === 'Reintentar' && k === 'button' && i === 1), 'el texto de una variante se compara, con su pantalla');
+  const malos = [
+    [{ variants: [{ zone: 'right', elements: [{ kind: 'text', text: 'Hola' }] }] }, /when/],
+    [{ variants: [{ when: 'Si falla' }] }, /elements.*note|note.*elements/],
+    [{ variants: [{ when: 'Si falla', zone: 'costado', note: 'x y z' }] }, /zone/],
+    [{ variants: [{ when: 'Si falla', elements: [{ kind: 'text', text: 'lorem ipsum' }] }] }, /relleno/],
+    [{ variants: 'no' }, /variants/],
+  ];
+  malos.forEach(([extra, re], n) => {
+    const out = path.join(TMP, 't46', `mal-${n}.html`);
+    const r = renderModelo({ title: 'X', screens: [{ name: 'P', elements: [{ kind: 'text', text: 'Hola' }], ...extra }] }, out);
+    assert.strictEqual(r.rc, 2, `${n}: ${r.all}`);
+    assert.match(r.err, re, String(n));
+    assert.ok(!fs.existsSync(out));
+  });
+});
+
+test('T47 Mockup_Ventana_SobreSuPantallaEnUnaFigura', () => {
+  const html = armar(CUENTAS_NUEVO());
+  const capa = seccion(html, 1);
+  assert.match(capa, /<p class="layer-how">Se abre al tocar «Ver otras cuentas &#40;2&#41;» en «Chat del asistente».<\/p>/);
+  assert.match(capa, /<div class="layer-under" aria-hidden="true">[\s\S]*Chat de la cuenta actual/, 'la pantalla de abajo, detrás');
+  // el botón que la abre se marca en su pantalla, donde se ve; la copia de abajo es sólo contexto, sin marca
+  assert.match(seccion(html, 0), /<span class="opens"><span class="button trigger"><span class="t"[^>]*>Ver otras cuentas &#40;2&#41;<\/span><\/span><span class="open-tag">abre ventana ↓<\/span><\/span>/);
+  assert.doesNotMatch(capa, /class="button trigger"/);
+  assert.match(regla(html, '.layer-under') || '', /blur/);
+  assert.strictEqual((html.match(/Se abre al tocar/g) || []).length, 1, 'la frase va una sola vez');
+  // la copia de abajo no se compara dos veces: el botón sigue siendo de su pantalla
+  assert.deepStrictEqual(textosDe(html).filter(([t]) => t === 'Ver otras cuentas (2)'), [['Ver otras cuentas (2)', 'button', 0]]);
+});
+
+test('T48 Mockup_FraseArribaYArchivosAlPie', () => {
+  const html = armar(CUENTAS_NUEVO());
+  const header = (html.match(/<header>([\s\S]*?)<\/header>/) || [])[1] || '';
+  assert.match(header, /<p class="summary">Al chat se le agrega un botón/);
+  assert.doesNotMatch(header, /\.tsx/);
+  assert.doesNotMatch(header, /Se aprueba junto con el plan/, 'la línea para el programador va al pie');
+  assert.match(html.split('<footer')[1] || '', /Maqueta de la pantalla — story 9\.9\. Se aprueba junto con el plan/);
+  assert.doesNotMatch(html.split('<footer')[0], /src\/components/, 'ningún archivo antes del pie');
+  assert.match(html, /<footer class="dev-notes"><p>Para el programador, los archivos de cada pantalla:<\/p><ul><li>Chat del asistente: src\/components\/Chat.tsx<\/li>/);
+  assert.ok(!textosDe(html).some(([t]) => /Al chat se le agrega/.test(t)), 'la frase no se compara');
+  const out = path.join(TMP, 't48', 'mal.html');
+  const r = renderModelo({ title: 'X', summary: 3, screens: [{ elements: [{ kind: 'text', text: 'Hola' }] }] }, out);
+  assert.strictEqual(r.rc, 2, r.all);
+  assert.match(r.err, /summary/);
+});
+
+test('T49 Mockup_ModeloViejo_MismosTextosYCasosRepetidosComoVariantes', () => {
+  const out = path.join(TMP, 't49', 'vieja.html');
+  assert.strictEqual(renderModelo(CUENTAS_VIEJO(), out).rc, 0);
+  assert.strictEqual(run(['check', out]).rc, 0, run(['check', out]).all);
+  const html = fs.readFileSync(out, 'utf8');
+  assert.deepStrictEqual(textosDe(html), CUENTAS_TEXTOS_DE_ANTES, 'el modelo viejo compara lo mismo que antes');
+  // un caso que repite el nombre de una pantalla anterior va como variante chica, sin otro fondo oscuro
+  assert.match(seccion(html, 3), /<section class="screen repeat" data-screen-index="3" data-screen-name="Otras cuentas" data-presentation="layer">/);
+  assert.doesNotMatch(seccion(html, 3), /layer-backdrop/);
+  assert.match(seccion(html, 3), /Otro caso de «Otras cuentas»/);
+  assert.strictEqual((html.match(/class="layer-backdrop"/g) || []).length, 1, 'un solo fondo oscuro');
+});
+
+test('T50 Mockup_ElNuevoYElViejo_ComparanLosMismosTextos', () => {
+  const nuevo = path.join(TMP, 't50', 'nueva.html');
+  assert.strictEqual(renderModelo(CUENTAS_NUEVO(), nuevo).rc, 0);
+  assert.strictEqual(run(['check', nuevo]).rc, 0, run(['check', nuevo]).all);
+  const solo = (l) => l.map(([t, k]) => `${k}:${t}`).sort();
+  assert.deepStrictEqual(solo(textosDe(fs.readFileSync(nuevo, 'utf8'))), solo(CUENTAS_TEXTOS_DE_ANTES));
+});
+
+test('T51 Mockup_ChatDeEjemplo_IlustrativoYSinComparar', () => {
+  const m = { title: 'X', screens: [{ name: 'P', elements: [
+    { kind: 'heading', text: 'Mensajes de la cuenta' },
+    { kind: 'chat', messages: [
+      { divider: 'Gestión del 12/10' },
+      { from: 'us', who: 'Operador 1', text: 'Hola, le escribimos por su cuenta.' },
+      { from: 'them', text: 'Mañana pago.' },
+    ] },
+  ] }] };
+  const out = path.join(TMP, 't51', 'chat.html');
+  const r = renderModelo(m, out);
+  assert.strictEqual(r.rc, 0, r.all);
+  const html = fs.readFileSync(out, 'utf8');
+  assert.match(html, /<div class="chat" data-illustrative="true"><p class="chat-caption">Mensajes de ejemplo, para ilustrar: no son los de la pantalla real<\/p>/);
+  assert.match(html, /<div class="bubble bubble-us"><span class="bubble-who">Operador 1<\/span>Hola, le escribimos por su cuenta.<\/div>/);
+  assert.match(html, /<div class="bubble bubble-them">Mañana pago.<\/div>/);
+  assert.match(html, /<div class="chat-divider">Gestión del 12\/10<\/div>/);
+  assert.deepStrictEqual(textosDe(html), [['Mensajes de la cuenta', 'heading', 0]], 'los mensajes de ejemplo no se comparan');
+  assert.strictEqual(run(['check', out]).rc, 0, run(['check', out]).all);
+  const malos = [
+    [{ kind: 'chat' }, /messages/],
+    [{ kind: 'chat', messages: [] }, /messages/],
+    [{ kind: 'chat', messages: [{ from: 'ellos', text: 'Hola' }] }, /from/],
+    [{ kind: 'chat', messages: [{ from: 'us' }] }, /text/],
+  ];
+  malos.forEach(([el, re], n) => {
+    const o = path.join(TMP, 't51', `mal-${n}.html`);
+    const rr = renderModelo({ title: 'X', screens: [{ elements: [el] }] }, o);
+    assert.strictEqual(rr.rc, 2, `${n}: ${rr.all}`);
+    assert.match(rr.err, re, String(n));
+    assert.ok(!fs.existsSync(o));
+  });
+});
+
+test('T52 Mockup_PareceLaPantalla_ElegidoIconoYMiniaturaDeLaZona', () => {
+  const m = CUENTAS_NUEVO();
+  m.screens[1].elements[2] = { kind: 'list', items: ['Tarjeta — Activa', 'Cuenta B — Finalizada'], selected: 'Tarjeta — Activa', zone: 'left' };
+  const html = armar(m);
+  const capa = seccion(html, 1);
+  assert.match(capa, /<li class="selected"><span class="t" data-mockup-text="Tarjeta — Activa"/, 'el renglón elegido se dibuja elegido');
+  assert.match(capa, /<li><span class="t" data-mockup-text="Cuenta B — Finalizada"/);
+  assert.match(capa, /<span class="button icon"><span class="t" data-mockup-text="X"/, 'la X de cerrar, como ícono');
+  // el caso que cambia la derecha se dibuja dentro de una miniatura de la derecha
+  assert.match(capa, /<div class="variant-zone-preview preview-right"><div class="message tone-error">/);
+  assert.match(regla(html, '.variant-zone-preview') || '', /min-height/);
+  // sin barra de ventana: el nombre de la pantalla va una sola vez, en su rótulo
+  assert.doesNotMatch(html, /frame-bar/);
+  const out = path.join(TMP, 't52', 'mal.html');
+  const r = renderModelo({ title: 'X', screens: [{ elements: [{ kind: 'list', items: ['A', 'B'], selected: 'C' }] }] }, out);
+  assert.strictEqual(r.rc, 2, r.all);
+  assert.match(r.err, /selected/);
+  assert.ok(!fs.existsSync(out));
 });
