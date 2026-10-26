@@ -78,8 +78,14 @@ compara lo construido contra ella.
 1. **¿Corre?** `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/mockup.js status --story <spec> --json`. Con
    `screen: false` este apartado no corre. Usa la misma detección que la revisión de la pantalla; si no puede leer la
    story, sale 2 (no es «sin pantalla»).
-2. **Armarla**: el modelo (JSON) sale de la story y del plan: cada pantalla con su nombre y su estado (los de falla
-   —vacío, error— van como otra pantalla), y cada elemento con su texto literal. La forma: `mockup.js schema`.
+2. **Armarla**: el modelo (JSON) sale de la story y del plan: cada pantalla con su nombre y su estado, y cada
+   elemento con su texto literal. La forma: `mockup.js schema`. La lee alguien que no programa, y tiene que entender
+   en diez segundos qué cambia: arriba va `summary`, una frase llana con lo que cambia; lo que la pantalla ya tiene va
+   con `existing: true` (atenuado, y lo demás sale marcado como nuevo); cada elemento lleva su `zone` aproximada
+   (arriba, izquierda, derecha…); y los casos de falla —cargando, vacío, error— van como `variants` de su pantalla,
+   con la parte que cambia, no como pantallas enteras repetidas. El rótulo de un recuadro (`box`) describe lo que se
+   ve con las palabras del usuario, sin los nombres internos del sistema, y una variante dice también qué pasa al
+   tocar cada cosa nueva («Al tocar otra deuda: …»).
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/mockup.js render --data - --story <spec> --open <<'JSON'
    { ...el modelo... }
