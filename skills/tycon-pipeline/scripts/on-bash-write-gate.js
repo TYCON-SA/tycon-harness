@@ -1255,8 +1255,13 @@ function sedsLiterales(cmd) {
       const m = /^-([Enrsuz]*)(i(.*))?$/.exec(w);
       if (m && (m[1] || m[2] !== undefined)) {
         if (m[1]) opciones.push(`-${m[1]}`);
-        // `-i` suelto: en BSD la palabra que sigue es el sufijo de la copia (`-i ''`); en GNU no
-        if (m[2] !== undefined) { enLugar = true; if (m[3] === '' && bsd) n++; }
+        // `-i` suelto: en BSD la palabra que sigue es el sufijo de la copia (`-i ''`); en GNU no, y un `-i ''` es el
+        // guion vacío seguido del de verdad tomado por archivo: no es la forma (cada sistema lo correría distinto)
+        if (m[2] !== undefined) {
+          enLugar = true;
+          if (m[3] === '' && bsd) n++;
+          else if (m[3] === '' && words[n + 1] === '') return null;
+        }
         continue;
       }
       if (/^--in-place(?:=.*)?$/.test(w)) { enLugar = true; continue; }
