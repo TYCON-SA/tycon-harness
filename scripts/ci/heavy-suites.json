@@ -87,7 +87,8 @@
         "scripts/tests/fixtures/layer-lab-allowlist.json",
         "scripts/tests/fixtures/layer-lab-table.json",
         "scripts/tests/fixtures/release-api-baseline-token.txt",
-        "scripts/tests/fixtures/team-init-example/**"
+        "scripts/tests/fixtures/team-init-example/**",
+        "scripts/tests/fixtures/platform-golden/**"
       ]
     }
   },

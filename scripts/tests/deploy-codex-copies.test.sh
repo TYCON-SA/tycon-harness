@@ -125,7 +125,9 @@ done
 # instintos (instinct-observe.js), de la suya.
 DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js integrations/clockify/scripts/on-prompt.js integrations/clockify/scripts/touch-activity.js integrations/clockify/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js owner-email-notice.js instinct-observe.js"
 CASA9="$T/casa9"; mkdir -p "$CASA9"
-APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0 TYCON_MAILBOX=0 TYCON_INSTINCTS=0"
+# la herramienta de horas va con su llave de hoy: sin ella, una llave vieja del perfil del equipo agrega su aviso a la
+# salida que se compara
+APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_TIME_TRACKING=none TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0 TYCON_MAILBOX=0 TYCON_INSTINCTS=0"
 PRENDIDAS="TYCON_ENGRAM=1 TYCON_CLOCKIFY=1 TYCON_NIGHTLY=1 TYCON_CODEGRAPH=1 TYCON_MAILBOX=1 TYCON_INSTINCTS=1"
 desplegar_arbol() { # <codex home> <VAR=valor…>: el despliegue del árbol de verdad
   local destino="$1"; shift
@@ -205,7 +207,7 @@ nodo_de_juguete() { # <casa> [versión]
   chmod +x "$1/.tycon/node/versions/$v/bin/node"
   rm -f "$1/.tycon/node/current"; ln -s "versions/$v" "$1/.tycon/node/current"
 }
-desplegar39() { env -u TYCON_ENGRAM_HOOK -u TYCON_HOME -u TYCON_NODE_BIN HOME="$CASA39" USERPROFILE="$CASA39" CODEX_HOME="$1" node "$RAIZ/build/deploy-codex-hooks.js" > "$T/out39" 2>&1; }
+desplegar39() { env -u TYCON_ENGRAM_HOOK -u TYCON_HOME -u TYCON_NODE_BIN TYCON_TIME_TRACKING=none HOME="$CASA39" USERPROFILE="$CASA39" CODEX_HOME="$1" node "$RAIZ/build/deploy-codex-hooks.js" > "$T/out39" 2>&1; }
 mkdir -p "$CASA39"; nodo_de_juguete "$CASA39"
 BIN39="$CASA39/.tycon/node/current/bin/node"
 
@@ -249,7 +251,7 @@ node "$RAIZ/build/deploy-codex-all.js" --selftest > "$T/self39" 2>&1 && grep -q 
 # T21 @story-8.39 @ac-7 · Paridad_NodeDelArnes_SinFaltantes: con Codex desplegado con el Node del arnés, la paridad
 # (corrida sin TYCON_NODE_BIN, como corre a mano o de fondo) no marca faltantes
 nodo_de_juguete "$CASA39"; mkdir -p "$T/h39b"; desplegar39 "$T/h39b"
-PAR39="$(env -u TYCON_ENGRAM_HOOK -u TYCON_HOME -u TYCON_NODE_BIN HOME="$CASA39" USERPROFILE="$CASA39" CODEX_HOME="$T/h39b" node -e '
+PAR39="$(env -u TYCON_ENGRAM_HOOK -u TYCON_HOME -u TYCON_NODE_BIN TYCON_TIME_TRACKING=none HOME="$CASA39" USERPROFILE="$CASA39" CODEX_HOME="$T/h39b" node -e '
   const p = require(process.argv[1]);
   const s = p.collect(p.buildCtx({ tools: ["claude", "codex"], recorded: true })).find((x) => x.name === "hooks");
   console.log(`${s.ok}|${s.detail}`);' "$RAIZ/scripts/lib/harness-parity.js" 2>&1)"

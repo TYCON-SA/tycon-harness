@@ -148,7 +148,32 @@ const entriesOf = (map) => (map && Array.isArray(map.entries) ? map.entries.filt
 /** Las que se usan en tiempo de ejecución: una ruta inválida nunca se usa (la barra final de una carpeta se tolera acá; el
  *  validador la rechaza al commitear). */
 const stripSlash = (s) => (typeof s === 'string' ? s.replace(/\/+$/, '') : s);
-const usableEntries = (map) => entriesOf(map).map((e) => (e.kind === 'folder' ? { ...e, old: stripSlash(e.old), new: stripSlash(e.new) } : e)).filter(entryUsable);
+/**
+ * El final de la cadena de un `file`: una entrada guarda el destino que se midió y una mudanza posterior va en otra
+ * entrada cuyo `old` es ese destino. Se sigue de `new` en `new` dentro del mismo repo. Una cadena que vuelve sobre sí
+ * misma, o un paso del que salen dos entradas, no tiene final: devuelve `{ end: null, problem }`.
+ */
+function chainWalk(entry, entries) {
+  if (!entry || entry.kind !== 'file' || typeof entry.new !== 'string') return { end: entry && entry.new, problem: null };
+  const repo = entry.repo || 'arnes';
+  const seen = new Set([entry.old]);
+  let end = entry.new;
+  for (;;) {
+    if (seen.has(end)) return { end: null, problem: `la cadena de ${entry.old} vuelve sobre sí misma en ${end}: no tiene final` };
+    seen.add(end);
+    const next = entries.filter((x) => x && x !== entry && x.kind === 'file' && (x.repo || 'arnes') === repo && x.old === end && typeof x.new === 'string');
+    if (next.length > 1) return { end: null, problem: `la cadena de ${entry.old} sigue por dos entradas desde ${end} (${next.map((x) => x.new).join(', ')}): no tiene final` };
+    if (!next.length) return { end, problem: null };
+    end = next[0].new;
+  }
+}
+const chainEnd = (entry, entries) => chainWalk(entry, entries).end;
+const chainProblem = (entry, entries) => chainWalk(entry, entries).problem;
+const usableEntries = (map) => {
+  const all = entriesOf(map);
+  return all.map((e) => (e.kind === 'folder' ? { ...e, old: stripSlash(e.old), new: stripSlash(e.new) }
+    : e.kind === 'file' ? { ...e, new: chainEnd(e, all) } : e)).filter(entryUsable);
+};
 
 // ── rutas ───────────────────────────────────────────────────────────────────────────────────────────────────────
 /**
@@ -628,7 +653,11 @@ function writeShims(opts = {}) {
   if (!map) throw new LegacyNamesError(`no hay mapa (${mapFile(opts)}): no hay reemplazos que escribir`);
   const written = [];
   const pending = [];
-  for (const e of entriesOf(map).filter(needsShim)) {
+  const all = entriesOf(map);
+  for (const raw of all.filter(needsShim)) {
+    const chainWhy = chainProblem(raw, all);
+    if (chainWhy) throw new LegacyNamesError(`${chainWhy} — no genero reemplazos con ella`);
+    const e = { ...raw, new: chainEnd(raw, all) };
     for (const side of ['old', 'new']) {
       const why = pathProblem(e[side], e.kind);
       if (why) throw new LegacyNamesError(`${e[side]}: la ruta ${why} — no genero reemplazos con ella`);
@@ -1471,7 +1500,10 @@ function migrateBench(opts = {}) {
   const map = loadMap(opts);
   const files = usableEntries(map).filter((e) => e.kind === 'file');
   const moved = new Set(files.filter((e) => isMoved(e, rootOf(e, { ...opts, root }))));
-  const renames = basenameRenames(map, { moved: (e) => moved.has(e) });
+  // cada llamada a usableEntries devuelve sus propias copias de las entradas `file`: se reconocen por repo y nombre viejo
+  const movedKey = (e) => `${e.repo || 'arnes'}\0${e.old}`;
+  const movedKeys = new Set([...moved].map(movedKey));
+  const renames = basenameRenames(map, { moved: (e) => movedKeys.has(movedKey(e)) });
   const paths = [...moved].filter((e) => (e.repo || 'arnes') === 'arnes').map((e) => [e.old, e.new]);
   const bench = path.join(root, 'scripts', 'controls-bench');
   const targets = [];
@@ -1595,7 +1627,7 @@ function main(argv) {
 
 module.exports = {
   basenameRenames, renameKey, migrateBench, isGeneratedShim,
-  LegacyNamesError, KINDS, CALLERS, NO_SHIM_CALLERS, SHIM_MARK, DEFAULT_MAP, loadMap, entriesOf, usableEntries, expand, needsShim,
+  LegacyNamesError, KINDS, CALLERS, NO_SHIM_CALLERS, SHIM_MARK, DEFAULT_MAP, loadMap, entriesOf, usableEntries, chainEnd, chainProblem, expand, needsShim,
   supportsShim, pathProblem, within, readEnv, envNames, aliasOptions, aliasArgv, resolveFile, prepareStateWrite, oldPathOf, readKeys, readKeysDeep, recordUse,
   isShim, shimTarget, resolveShimsInCommand, writeShims, migrateMachine, machineRewrites, relativePermissionRewrites, shellLines, oldStillReal, isMoved, gitAt,
   repoForms, placeForms, rerootText, rerootMachine, countRegistered, rerootFiles, cli,

@@ -308,7 +308,10 @@ test('T59b · BatchF_ClassifiedBeforeRename — cada valor, prosa y homónimo cl
   assert.ok(rows.every((r) => Number.isInteger(r.count) && r.count > 0), 'una cuenta que no es un entero positivo');
   const expected = expectations(rows);
   const fileCount = new Set(expected.map((e) => `${e.repo}\t${e.file}`)).size;
-  assert.ok(fileCount >= 150, `la clasificación trae ${fileCount} archivos (se midieron 174)`);
+  // El piso es la cuenta de hoy, 139. Se midieron 174, y salieron filas de archivos que ya no están o que ya no nombran
+  // la carpeta. Cada una dejó su motivo en la cabecera del fixture. Perder una fila sale rojo; sumar filas no rompe la
+  // prueba.
+  assert.ok(fileCount >= 139, `la clasificación trae ${fileCount} archivos (hoy son 139)`);
   assert.ok(expected.filter((e) => e.gone > 0).length >= 60, 'la clasificación perdió sus filas de ruta');
 
   const folders = fFolders();
