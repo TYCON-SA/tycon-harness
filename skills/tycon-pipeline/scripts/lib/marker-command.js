@@ -315,8 +315,15 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
     for (let m = 0; m < pal.length; m++) {
       const w = pal[m];
       // el guion con un nombre que el shell arma (una variable sola, `$'…'`, un comodín, llaves) y no se puede leer: puede
-      // ser cualquiera de los dos, y se lee como los dos
-      const escondido = m === posGuion && !guionDe(w.texto) && (!w.literal || /[*?[{]/.test(w.texto));
+      // ser cualquiera de los dos, y se lee como los dos. Con la carpeta en variables simples y la última parte escrita
+      // (`$S/a.js`, `"${D}/x.js"`) el nombre es fijo, salvo que el shell parta una de esas variables en palabras
+      const ultimo = w.texto.split(/[\\/]/).pop();
+      const sinVariables = w.texto.replace(/\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})/g, '');
+      const partible = [...w.texto.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)]
+        .some((v) => asig[v[1]] === null || (typeof asig[v[1]] === 'string' && /\s/.test(asig[v[1]])));
+      const nombreFijo = ultimo !== w.texto && /^[^$*?[{`'"]+$/.test(ultimo) && !/[$`*?[{]/.test(sinVariables)
+        && !(w.partida && partible);
+      const escondido = m === posGuion && !guionDe(w.texto) && !nombreFijo && (!w.literal || /[*?[{]/.test(w.texto));
       const guiones = guionDe(w.texto) ? [guionDe(w.texto)] : escondido ? ['pipeline', 'marker'] : [];
       const guion = guiones[0];
       if (guion) {
