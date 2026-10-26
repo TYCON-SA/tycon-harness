@@ -35,9 +35,10 @@ const lib = () => require(RECORD);
 
 function escribir(file, txt) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, txt); }
 
-/** El entorno de un laboratorio: HOME propio y un árbol del arnés vacío (sin configuración de la organización). */
+/** El entorno de un laboratorio: HOME propio y un árbol del arnés vacío (sin configuración de la organización). Sin
+ * arnés, la lista de paquetes de la organización se declara acá: con paquetes instalados al lado, `validators` frena. */
 function env(home, extra = {}) {
-  const e = { ...process.env, HOME: home, USERPROFILE: home, TYCON_GUIDES_DIR: tmp('arbol'), TYCON_LANE_LLM: '0', ...extra };
+  const e = { ...process.env, HOME: home, USERPROFILE: home, TYCON_GUIDES_DIR: tmp('arbol'), TYCON_LANE_LLM: '0', TYCON_PACKS_DEFAULT: 'none', ...extra };
   for (const k of ['NODE_TEST_CONTEXT', 'TYCON_STORY_REVIEW', 'CLAUDE_CODE_SESSION_ID']) if (!(k in extra)) delete e[k];
   return e;
 }
@@ -218,15 +219,17 @@ test('Models_PedidoDelRevisorDeHistorias_NoSeAvisaPerdidoEnElPaso5 @story-8.84 @
 
 test('ComoFunciona_PasoUno_NombraAlRevisor @story-8.84 @ac-3 — la página del arnés lo lista aunque la máquina lo tenga apagado', () => {
   const PIPE = require(PIPELINE);
-  const prev = process.env.TYCON_STORY_REVIEW;
-  process.env.TYCON_STORY_REVIEW = '0';
+  // corre en este proceso: la lista de paquetes se declara como en env(), por si la máquina no tiene arnés
+  const puestas = { TYCON_STORY_REVIEW: '0', TYCON_PACKS_DEFAULT: 'none' };
+  const prev = Object.fromEntries(Object.keys(puestas).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, puestas);
   try {
     const d = tmp('hiw');
     const s = path.join(d, 'story.md');
     fs.writeFileSync(s, '---\nstory: "9.9"\n---\n\n# Story 9.9\n');
     assert.ok(PIPE.computeValidadores({ story: s, repo: d, todos: true }).validadores.includes(AGENTE));
   } finally {
-    if (prev === undefined) delete process.env.TYCON_STORY_REVIEW; else process.env.TYCON_STORY_REVIEW = prev;
+    for (const [k, v] of Object.entries(prev)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
 });
 
