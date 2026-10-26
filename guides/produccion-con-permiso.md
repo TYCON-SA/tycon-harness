@@ -510,6 +510,8 @@ frene. Por eso el freno arma cada nombre como lo va a armar el shell, y juzga el
   si no puede leerla, frena como «un nombre que el freno no sabe leer como el shell».
 - **Sustituciones**: un `$(…)` en los argumentos de un programa que escribe frena si su texto nombra la
   carpeta protegida.
+- **Bucles `for`**: las palabras de `for f in <palabras>` no se escriben; pasan a la variable y se juzgan donde
+  se usan. `for f in $(ls ~/.claude/.tycon-pipeline/*.json); do cat "$f"; done` pasa; con `rm "$f"` adentro, frena.
 - **Comodines y carpetas ocultas**: como en el shell, un comodín que no empieza con punto (`*-*`, `$ID-*`) no
   casa con una carpeta que empieza con punto; no se lo toma por la carpeta protegida. Si el comando cambia esa
   regla (`setopt globdots`, `shopt -s dotglob`), lo que queda en alcance es indecidible.

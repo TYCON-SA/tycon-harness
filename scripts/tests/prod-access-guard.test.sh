@@ -474,6 +474,17 @@ CWD="$PIPE_CWD" frena "8.14 InterpreterArgFromNamingSubstitution_StillBlocks (co
 # el motivo de un nombre sin resolver es el de lo indecidible: el shell no arma «production-index.json» desde «"$X"»
 CWD="$PIPE_CWD" frena_indecidible "8.14 UnknownName_InScope_SaysUndecidable (rm \"\$X\" en la raíz)" "rm -f \"\$X\""
 
+# (4c) `for x in <palabras>` no escribe sus palabras: se las da a la variable, y se juzgan donde se usan. Medido en un día
+# de conversaciones: dos frenos «ESCRIBE sobre un nombre que arma una sustitución» eran bucles que sólo leían.
+# 🔴 Falla con: juzgar las palabras del `for` como destinos de escritura (frenan los que leen), o perder sus valores en
+#    la variable (un `rm "$f"` adentro deja de frenar).
+pasa  "ForLoopWords_AreNotWrites (find de la carpeta, echo y wc)" "for f in \$(find ~/.claude/.tycon-pipeline -maxdepth 1 -name '*.json'); do echo \"\$f \$(wc -l <\$f)\"; done"
+pasa  "ForLoopWords_AreNotWrites (ls de la carpeta, cat)" "for f in \$(ls $P/*.json); do cat \"\$f\"; done"
+frena "ForLoopWords_GoToTheVariable (rm de lo que lista una sustitución)" "for f in \$(ls $P/*.json); do rm \"\$f\"; done"
+frena "ForLoopWords_GoToTheVariable (rm de un comodín)" "for f in $P/*.json; do rm -f \"\$f\"; done"
+frena "ForLoopWords_GoToTheVariable (cp encima de lo que encuentra find)" "for f in \$(find $P -name '*.json'); do cp /tmp/x \"\$f\"; done"
+frena "ForLoopWords_GoToTheVariable (la variable copiada a otra)" "for f in $P/$NI; do g=\$f; rm \"\$g\"; done"
+
 # (5b) `make -C<carpeta>` pegado y `make --directory=<carpeta>` fijan la carpeta de su segmento. Guarda: esta prueba fija
 # ese comportamiento.
 frena "8.14 MakeDirectory_Glued_SetsFolder (make -C<dir>)" "make -C$R/.tycon $CAT"

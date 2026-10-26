@@ -1795,6 +1795,22 @@ function escrituraProtegida(cmd, payload) {
 
   /** Lo que hace el programa de un comando simple (ya juzgadas las redirecciones y la palabra de comando). */
   function judgeProgram(pp, i0, prog, args, cwdSeg, tuberia, prof) {
+    // `for x in <palabras>` no escribe sus palabras: se las da a la variable del bucle, y se juzgan donde se usan
+    // (`rm "$x"`). Por eso la variable se lleva sus valores y las sustituciones que los arman; lo que no se resuelve ya
+    // queda desconocido (shell-parse, al aplicar las asignaciones)
+    if ((prog === 'for' || prog === 'select') && /^[A-Za-z_]\w*$/.test(pal(args[0] || '')) && pal(args[1] || '') === 'in') {
+      const nombre = pal(args[0]);
+      const valores = [];
+      const subs = [];
+      for (const raw of args.slice(2)) {
+        const r = expandir(raw);
+        valores.push(...r.patterns.filter((p) => !(r.unknown && p === '*')));
+        subs.push(...sp.substitutions(raw), ...variablesUsedIn(raw).flatMap((n) => ctx.substitutionsOf[n] || []));
+      }
+      ctx.vars[nombre] = [...new Set([...[].concat(ctx.vars[nombre] || []), ...valores])];
+      if (subs.length) ctx.substitutionsOf[nombre] = [...new Set([...(ctx.substitutionsOf[nombre] || []), ...subs])].slice(0, 16);
+      return null;
+    }
     // lo que corre como shell: `eval`, `sh -c`, `sh <(…)`, `echo … | sh` (#1, #8, #9, #14)
     const vEj = judgeShellText(prog, args, cwdSeg, prof, { pp, tuberia }); if (vEj) return vEj;
     if (prog === 'git') for (const raw of gitOutputTargets(args)) { const v = juzgarPalabra(raw, cwdSeg, prog); if (v) return v; }

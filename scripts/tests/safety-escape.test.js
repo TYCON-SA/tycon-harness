@@ -552,6 +552,18 @@ test('T3 EscC3_SetAutonomousFalse_SinFrase_Frena @story-8.92 — apagar el lazo 
   }
 });
 
+// EscC3_Cartel_PrimeroLaSalidaSinFrase
+// 🔴 Falla con: el cartel que abre con «si quiere hacerlo igual, lo dice ella» y deja la salida sin la persona para
+//    después: con el cartel así, el agente pide la frase sin intentar antes la salida.
+test('EscC3_Cartel_PrimeroLaSalidaSinFrase — el cartel ofrece primero lo que el agente puede hacer solo, y dice que la deuda también pide frase', () => {
+  const r = freno(CMD.apagar, { home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
+  assert.strictEqual(r.status, 2, r.stderr);
+  const sinFrase = r.stderr.indexOf('Primero lo que no necesita a la persona');
+  assert.ok(sinFrase >= 0, r.stderr);
+  assert.ok(sinFrase < r.stderr.indexOf('«autorizo set-autonomous»'), r.stderr);
+  assert.match(r.stderr, /close-as-debt[^\n]*«autorizo cerrar como deuda»/);
+});
+
 test('T4 EscC3_SetAutonomousFalse_ConFrase_Pasa @story-8.92 — con la frase pasa; prenderlo nunca frena', () => {
   const r = freno(CMD.apagar, { home: homeConMarcador(ROJO, [deLaPersona(`dale, ${FRASE_LAZO}`)]) });
   assert.strictEqual(r.status, 0, r.stderr);
@@ -1389,6 +1401,29 @@ test('T12 NombreArmadoOtrasFormas_Frena @story-8.107 @ac-2 — las otras formas 
   ];
   for (const c of ps) {
     const r = freno(c, { herramienta: 'PowerShell', home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C1/, c);
+  }
+});
+
+// 🔴 Falla con: leer como nombre armado lo que no asigna nada — una cuenta `$((…))` que no asigna, una palabra que empieza
+//    con `read` o `let` (`readability-brief`), unas llaves con `;` o paréntesis adentro (código de JS entre comillas).
+//    Medido en las conversaciones de un día: los nueve frenos «nombre armado» eran de estas formas.
+test('T12b NombreArmado_FormasQueNoAsignan_NoFrenan — cuentas, palabras que empiezan como el comando y llaves de código', () => {
+  const pasan = [
+    `L=5; sed -n "$((L-60)),$((L+5))p" $F; ${PIPELINE} next`,
+    `t0=$(date +%s); ${PIPELINE} next; echo "$(( $(date +%s)-t0 ))s" $X`,
+    `node x.js readability-brief --story $PWD/s.md; ${PIPELINE} next`,
+    `node -e 'let lines;try{lines=fs.readFileSync(f, "utf8")}catch(e){}' $F; ${PIPELINE} next`,
+  ];
+  for (const c of pasan) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  // la cuenta que sí asigna a un nombre armado sigue frenando, con o sin `$` adelante
+  const sigue = `node ${PIPELINE.split(' ')[1]} start --story s.md`;
+  for (const c of [`echo $(( $V = 1 )); ${sigue}`, `((\${V}=1)); ${sigue}`, `: $(( N$X += 1 )); ${sigue}`]) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, /ESC-C1/, c);
   }
