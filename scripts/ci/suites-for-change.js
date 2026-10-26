@@ -199,6 +199,7 @@ function readHeavy(file) {
   const readsMd = new Set();
   const depsMode = new Map();
   const graphLines = new Map();
+  const grouped = new Map();
   for (const [name, entry] of Object.entries(data.suites)) {
     const own = group(entry, name);
     if (typeof own === 'string') return { problem: `${file}: ${own}` };
@@ -210,6 +211,7 @@ function readHeavy(file) {
       const extra = ['shared', 'deps', 'graph_whole_lines', 'graph_whole_sha', 'reads_md'].filter((k) => entry[k] !== undefined);
       if (extra.length) return { problem: `${file}: «${name}» nombra un grupo y además trae ${extra.map((k) => `«${k}»`).join(', ')}: con grupo, el criterio es el del grupo` };
       depsMode.set(name, false);
+      grouped.set(name, entry.group);
       suites.set(name, [...groups.get(entry.group), ...own]);
       continue;
     }
@@ -233,7 +235,30 @@ function readHeavy(file) {
     if (entry.graph_whole_lines !== undefined) graphLines.set(name, { lines: entry.graph_whole_lines, sha: entry.graph_whole_sha });
     suites.set(name, entry.shared === false ? own : [...shared, ...own]);
   }
-  return { suites, readsMd, depsMode, graphLines, ignore };
+  return { suites, readsMd, depsMode, graphLines, ignore, grouped };
+}
+
+// Lo que, si el cambio lo toca, hace correr todo: cómo se eligen las suites.
+const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json',
+  'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/templates/run-suites.yml'];
+
+/**
+ * El criterio de un grupo de heavy-suites.json para quien corre suites fuera de este guion (el portón de las stories,
+ * lib/run-suites-json.js): `skips(name, files)` dice si la suite `name` del grupo se puede dejar para el banco nocturno
+ * porque el cambio (`files`, rutas del repo) no toca los patrones del grupo, los suyos ni cómo se eligen las suites.
+ * Una suite que no es del grupo nunca se saltea. `problem` si el archivo no se deja leer: entonces no se saltea ninguna.
+ */
+function groupCriterion(file, groupName) {
+  const heavy = readHeavy(file);
+  if (heavy.problem) return { problem: heavy.problem };
+  return {
+    skips(name, files) {
+      if (heavy.grouped.get(name) !== groupName) return false;
+      const norm = files.map((f) => String(f).replace(/\\/g, '/'));
+      if (norm.some((f) => SELECTION_ITSELF.includes(f))) return false;
+      return !norm.some((f) => heavy.suites.get(name).some((re) => re.test(f)));
+    },
+  };
 }
 
 // ── Las que pasan del límite en la validación de una rama ───────────────────────────────
@@ -317,7 +342,7 @@ function main(argv) {
   const suitesFile = arg(argv, '--suites');
   const scriptsRoot = arg(argv, '--scripts');
   if (!suitesFile || !scriptsRoot) {
-    process.stderr.write('uso: suites-for-change.js --suites <suites.json> --scripts <dir> [--skills <dir>] [--changed <archivo>] [--changed-with-docs <archivo>] [--heavy <heavy-suites.json>] [--deps [--nightly <ultimo-suites.json>]] [--over-limit <suites-over-limit.json>]\n');
+    process.stderr.write('uso: suites-for-change.js --suites <suites.json> --scripts <dir> [--skills <dir>] [--changed <archivo>] [--changed-with-docs <archivo>] [--heavy <heavy-suites.json>] [--deps [--nightly <ultimo-suites.json>]] [--groups-alone] [--over-limit <suites-over-limit.json>]\n');
     return 2;
   }
   let root;
@@ -339,11 +364,11 @@ function main(argv) {
   // La lista tal cual, antes de mirar la regla del portón: el criterio de las dos más largas no depende de ella.
   const listed = changed;
   const heavyFile = arg(argv, '--heavy');
-  let heavy = heavyFile ? readHeavy(heavyFile) : { suites: new Map(), readsMd: new Set(), depsMode: new Map(), graphLines: new Map(), ignore: [] };
+  let heavy = heavyFile ? readHeavy(heavyFile) : { suites: new Map(), readsMd: new Set(), depsMode: new Map(), graphLines: new Map(), ignore: [], grouped: new Map() };
   if (heavy.problem) {
     process.stderr.write(`⚠️  ${heavy.problem}: no difiero ninguna suite, corre todo\n`);
     changed = { known: false, reason: `el criterio de las suites largas (${heavyFile}) no se pudo leer` };
-    heavy = { suites: new Map(), readsMd: new Set(), depsMode: new Map(), graphLines: new Map(), ignore: [] };
+    heavy = { suites: new Map(), readsMd: new Set(), depsMode: new Map(), graphLines: new Map(), ignore: [], grouped: new Map() };
   }
   const rule = gateRule(skillsRoot);
   if (changed.known && rule.missing) changed = { known: false, reason: rule.missing };
@@ -437,13 +462,16 @@ function main(argv) {
   //  (g) sin foto nocturna completa y de las últimas 36 h no hay red para lo salteado: no se saltea nada.
   // Las de `gate_only_when_touching` siguen con su criterio: `--deps` no las mira. Las pesadas (`--heavy`),
   // sí: corren si el cambio toca sus patrones, la red de `shared` o lo que usa su código (según su `deps`), y sin
-  // `--deps` utilizable corren todas, porque sus patrones no alcanzan solos.
-  const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json',
-    'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/templates/run-suites.yml'];
+  // `--deps` utilizable corren todas, porque sus patrones no alcanzan solos (salvo las de un grupo con `--groups-alone`).
+  const itself = listed.known ? listed.files.map((f) => f.replace(/\\/g, '/')).filter((f) => SELECTION_ITSELF.includes(f)) : [];
+  // --groups-alone: las suites de un grupo se eligen por los patrones del grupo y los suyos aunque no haya --deps
+  // utilizable, porque ése es todo su criterio. Es para la CI de GitHub, que no tiene foto nocturna; la red es el banco
+  // nocturno, que las corre siempre. Si el cambio toca cómo se elige, corren.
+  const groupsAlone = argv.includes('--groups-alone') && !itself.length;
+  if (argv.includes('--groups-alone') && itself.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites (${itself.join(', ')}): las de los grupos corren\n`);
   let depsSel = null;
   if (argv.includes('--deps') && listed.known && changed.known) {
     const files = listed.files.map((f) => f.replace(/\\/g, '/'));
-    const itself = files.filter((f) => SELECTION_ITSELF.includes(f));
     const noNet = nightlyNet(arg(argv, '--nightly'));
     if (itself.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites (${itself.join(', ')}): corre todo\n`);
     else if (noNet) process.stderr.write(`ℹ️  --deps no saltea nada: el nocturno no midió todo: no hay red para lo salteado (${noNet})\n`);
@@ -546,7 +574,7 @@ function main(argv) {
         // los patrones solos no alcanzan: la red de `shared` trae sólo lo que el lector no puede calcular. Sin `--deps` utilizable corre, como
         // cualquier suite cuando --deps no saltea nada; con `deps: false`, sus patrones son todo su criterio; si no, se
         // saltea sólo si tampoco usa nada del cambio.
-        if (!depsSel) heavyWithoutDeps.push(name);
+        if (!depsSel && !(groupsAlone && heavy.grouped.has(name))) heavyWithoutDeps.push(name);
         else if (mode === false) {
           lines.push(`SKIP\t${name}\tel cambio no toca lo que mide (${heavyFile}): la corre el banco nocturno`);
           continue;
@@ -600,4 +628,4 @@ function main(argv) {
 // a los 8 KB (con la lista real quedan 140 de 219 líneas, sin la copia pública ni la máquina limpia). En
 // el pipeline va a un archivo y no muerde; a quien la lea por una tubería, sí.
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { main, nightlyNet, readOverLimit, overLimitProblems };
+module.exports = { main, nightlyNet, readOverLimit, overLimitProblems, groupCriterion };

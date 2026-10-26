@@ -41,6 +41,10 @@
 # SÓLO ALGUNAS (TYCON_PORTABLE_ONLY=<ruta>,<ruta>…): corre sólo esas portables, con la misma HOME vacía. Lo
 # usa la parte installer-floor de la CI pública (el Node más viejo que acepta el instalador). Una ruta que no es una
 # portable declarada es rojo.
+#
+# MENOS ALGUNAS (TYCON_PORTABLE_SKIP=<ruta>,<ruta>…): no corre esas portables, y las nombra. Lo usa la CI pública en un
+# pedido para las del instalador que el cambio no toca (scripts/ci/public-ci.sh); las corre el banco nocturno. Se
+# sacan antes del reparto en partes. Una ruta que no es una portable no saltea nada: escrita mal, corre de más.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -121,6 +125,13 @@ const sinRequiere = todas.filter((e) => !Array.isArray(e.requiere)).length;
 console.log(`suites-portables: ${todas.length} suites declaradas · ${portables.length} ${TODAS ? 'a correr (TYCON_PORTABLE_ALL=1: diagnóstico, no el veredicto de la clasificación)' : 'portables (requiere: [])'}` +
   (sinRequiere ? ` · ⚠️ ${sinRequiere} sin \`requiere\` (las juzga suites-coverage.test.js)` : ''));
 if (!portables.length) { console.log('❌ suites-portables: CERO portables — o nadie declaró `requiere: []` o la lista está rota. Cero no es verde.'); process.exit(1); }
+// menos algunas (TYCON_PORTABLE_SKIP, ver la cabecera): antes del reparto, para que las partes se repartan lo que queda
+const SKIP = (process.env.TYCON_PORTABLE_SKIP || '').split(',').map((s) => s.trim()).filter(Boolean);
+const salteadas = portables.filter((e) => SKIP.includes(e.ruta)).map((e) => e.ruta);
+if (salteadas.length) {
+  portables = portables.filter((e) => !SKIP.includes(e.ruta));
+  console.log(`suites-portables: salteo ${salteadas.length} que el cambio no toca (las corre el banco nocturno): ${salteadas.join(', ')}`);
+}
 // una parte de las portables (TYCON_PORTABLE_SHARD=<i>/<n>, ver la cabecera): el reparto de scripts/ci/suites-shard.js
 const SHARD = process.env.TYCON_PORTABLE_SHARD || '';
 if (SHARD) {

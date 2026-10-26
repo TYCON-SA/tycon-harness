@@ -21,7 +21,9 @@
 #   2 build-check          node build/check.js
 #   3 build-generate       node build/generate.js --check
 #   4 suites-coverage      node scripts/tests/suites-coverage.test.js
-#   5 portable-suites      bash scripts/tests/portable-suites.test.sh
+#   5 portable-suites      bash scripts/tests/portable-suites.test.sh. Con --range (fuera de installer-floor), sin las
+#                          del instalador que el cambio no toca: el criterio de la validación de Azure
+#                          (installer_skips, abajo); las corre el banco nocturno
 #   6 agent-skills-suites  cada suite de scripts/tests/suites.json (diarias y semanales) que pide EXACTAMENTE
 #                          ["agent-skills"]: de a varias a la vez, cada una en su proceso, con su propia HOME vacía y su
 #                          TMPDIR, y sin las herramientas del vocabulario en el PATH, como las portables
@@ -470,6 +472,37 @@ range_ends() {
   done
 }
 
+# ── las portables del instalador que el cambio no toca (paso 5, con --range) ───────────────────────────────────────
+# El mismo criterio que la validación de Azure: las suites del grupo `installer` de scripts/ci/heavy-suites.json corren
+# sólo si el cambio toca sus patrones o la suite misma (scripts/ci/suites-for-change.js --groups-alone). Las corre el
+# banco nocturno. Deja en PORTABLE_SKIP las rutas a saltear; si algo no se puede calcular, ninguna, y lo dice.
+installer_skips() {
+  local why="" changed="${WORK}/installer-changed.txt" plan="${WORK}/installer-plan.txt"
+  PORTABLE_SKIP=""
+  if ! range_ends > "${WORK}/installer-range.txt" 2>&1; then why="$(cat "${WORK}/installer-range.txt")"
+  elif ! git -C "${ROOT}" diff --name-only "${RANGE_BASE}...${RANGE_TIP}" > "${changed}" 2> "${WORK}/installer-diff.err"; then why="git diff no pudo listar el cambio: $(head -n 1 "${WORK}/installer-diff.err")"
+  elif [ ! -f "${ROOT}/scripts/ci/suites-for-change.js" ] || [ ! -f "${ROOT}/scripts/ci/heavy-suites.json" ]; then why="falta scripts/ci/suites-for-change.js o scripts/ci/heavy-suites.json"
+  elif [ -z "${SKILLS_REPO}" ]; then why="no encuentro las skills"
+  elif ! node "${ROOT}/scripts/ci/suites-for-change.js" --suites "${ROOT}/scripts/tests/suites.json" --scripts "${ROOT}/scripts" \
+      --skills "${SKILLS_REPO}/skills" --heavy "${ROOT}/scripts/ci/heavy-suites.json" --changed "${changed}" --groups-alone \
+      > "${plan}" 2> "${WORK}/installer-plan.err"; then why="el selector falló: $(tail -n 1 "${WORK}/installer-plan.err")"
+  elif ! PORTABLE_SKIP="$(node -e '
+      const fs = require("fs");
+      const [plan, heavy, suites] = process.argv.slice(1);
+      const groups = JSON.parse(fs.readFileSync(heavy, "utf8")).suites || {};
+      const s = JSON.parse(fs.readFileSync(suites, "utf8"));
+      const all = [...(s.diarias || []), ...(s.semanales || [])].filter((e) => e && e.raiz === "arnes" && typeof e.ruta === "string");
+      const names = fs.readFileSync(plan, "utf8").split("\n").filter((l) => l.startsWith("SKIP\t")).map((l) => l.split("\t")[1]);
+      const out = names.filter((n) => groups[n] && groups[n].group === "installer")
+        .map((n) => (all.find((e) => e.ruta.split("/").pop() === n) || {}).ruta).filter(Boolean);
+      console.log(out.join(","));' "${plan}" "${ROOT}/scripts/ci/heavy-suites.json" "${ROOT}/scripts/tests/suites.json" 2> "${WORK}/installer-skip.err")"; then
+    why="no pude leer el plan: $(head -n 1 "${WORK}/installer-skip.err")"; PORTABLE_SKIP=""
+  fi
+  if [ -n "${why}" ]; then echo "public-ci: no sé qué portables del instalador saltear (${why}): corren todas"
+  elif [ -n "${PORTABLE_SKIP}" ]; then echo "public-ci: el cambio no toca el instalador: $(printf '%s' "${PORTABLE_SKIP}" | tr ',' '\n' | grep -c .) portable(s) del instalador quedan para el banco nocturno: ${PORTABLE_SKIP//,/, }"
+  else echo "public-ci: el cambio toca el instalador: corren todas las portables"; fi
+}
+
 # ── paso 9 · el pre-commit del repo sobre lo que trae el rango ─────────────────────────────────────
 # En una copia de trabajo APARTE: el checkout de la CI no se mueve (los pasos de antes y de después miden la punta tal
 # cual). La base es el ancestro común, como el `...` del rango: lo que trae el pedido, no lo que la base avanzó.
@@ -542,9 +575,11 @@ wants build-check && run_step build-check file build/check.js "node" node build/
 wants build-generate && run_step build-generate file build/generate.js "node" node build/generate.js --check
 wants suites-coverage && run_step suites-coverage file scripts/tests/suites-coverage.test.js "node" node scripts/tests/suites-coverage.test.js
 # TYCON_PORTABLE_SHARD siempre se pasa: vacía (la corrida entera, o la parte checks) corre todas las portables, aunque
-# quien llama la tenga puesta
+# quien llama la tenga puesta. TYCON_PORTABLE_SKIP también: sólo con --range y fuera de installer-floor lleva algo.
+PORTABLE_SKIP=""
+if wants portable-suites && [ "${WITH_RANGE}" -eq 1 ] && [ "${PART}" != installer-floor ]; then installer_skips; fi
 wants portable-suites && run_step portable-suites file scripts/tests/portable-suites.test.sh "bash node" \
-  env TYCON_PORTABLE_SHARD="${PORTABLE_SHARD}" TYCON_PORTABLE_ONLY="${PORTABLE_ONLY}" bash scripts/tests/portable-suites.test.sh
+  env TYCON_PORTABLE_SHARD="${PORTABLE_SHARD}" TYCON_PORTABLE_ONLY="${PORTABLE_ONLY}" TYCON_PORTABLE_SKIP="${PORTABLE_SKIP}" bash scripts/tests/portable-suites.test.sh
 wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
 wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
 [ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names

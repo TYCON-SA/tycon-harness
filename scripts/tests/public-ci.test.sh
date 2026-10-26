@@ -22,6 +22,11 @@
 #         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
 #         portable-suites.test.sh, sobre un repo de mentira: las <n> partes juntas son todas las portables, ninguna en dos,
 #         cada parte con alguna, las más pesadas primero; una parte mal escrita o un reparto imposible es rojo.
+#   T25 · PublicCi_InstallerSuites_OnlyWhenTheChangeTouchesThem — con --range, las portables del grupo `installer` de
+#         heavy-suites.json que el cambio no toca se pasan a portable-suites.test.sh para saltear (TYCON_PORTABLE_SKIP),
+#         con el mismo criterio que la validación de Azure (suites-for-change.js --groups-alone). Si el cambio toca el
+#         instalador, sin --range, en la parte installer-floor o sin poder calcularlo, no se saltea ninguna y se dice.
+#         Y portable-suites.test.sh no corre las que le pasan, lo dice, y un nombre que no es una portable no saltea nada.
 #
 # 🔴 El entorno de git de quien llama NO decide nada. Un hook de git (o un `git rebase --exec`) le exporta a lo que
 #    lanza GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE y GIT_COMMON_DIR, y esas variables le ganan a la carpeta: sin limpiarlas,
@@ -48,7 +53,8 @@ trap 'rm -rf "${T}"' EXIT
 mkdir -p "${T}/home"
 export HOME="${T}/home" TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 TYCON_CODEX=0
 unset XDG_CONFIG_HOME TYCON_PORTABLE_HOME TYCON_PUBLIC_CI_OUT TYCON_PUBLIC_CI_PARALLEL TYCON_PUBLIC_CI_CAP_MS \
-  TYCON_CLEAN_MACHINE TYCON_CLEAN_MACHINE_SOURCE TYCON_PUBLIC_CI_PART TYCON_PORTABLE_SHARD TYCON_PORTABLE_PARALLEL
+  TYCON_CLEAN_MACHINE TYCON_CLEAN_MACHINE_SOURCE TYCON_PUBLIC_CI_PART TYCON_PORTABLE_SHARD TYCON_PORTABLE_PARALLEL \
+  TYCON_PORTABLE_SKIP
 # git de la suite: sin las variables que git le pasa a lo que lanza un hook (la carpeta decide el repo, nada más)
 lab_git() {
   env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
@@ -102,7 +108,8 @@ make_repo() { # <carpeta>
   fake_js "${r}/build/generate.js" build-generate
   fake_js "${r}/scripts/tests/suites-coverage.test.js" suites-coverage
   # las portables: anota además con qué layout la llamaron y qué repo ve git desde un paso (el de --root, no el de quien llama)
-  printf '%s\n' 'echo "portable-suites skills=${TYCON_SKILLS_DIR:-} guides=${TYCON_GUIDES_DIR:-} git=$(git rev-parse --show-toplevel 2>/dev/null) shard=${TYCON_PORTABLE_SHARD:-}" >> .calls' > "${r}/scripts/tests/portable-suites.test.sh"
+  printf '%s\n' 'echo "portable-suites skills=${TYCON_SKILLS_DIR:-} guides=${TYCON_GUIDES_DIR:-} git=$(git rev-parse --show-toplevel 2>/dev/null) shard=${TYCON_PORTABLE_SHARD:-}" >> .calls' \
+    'printf "%s\n" "${TYCON_PORTABLE_SKIP:-}" > .portable-skip' > "${r}/scripts/tests/portable-suites.test.sh"
   # el banco: tiene que dejar su reporte donde le dicen
   cat > "${r}/scripts/controls-bench/runner.js" <<'JS'
 const fs = require('fs');
@@ -147,7 +154,7 @@ JS
   ]
 }
 JSON
-  printf '.calls\n.advisors/\n' > "${r}/.gitignore"
+  printf '.calls\n.portable-skip\n.advisors/\n' > "${r}/.gitignore"
   mkdir -p "${r}/.githooks"
   printf '%s\n' 'echo "repo-lint head=$(git log -1 --format=%s HEAD) staged=$(git diff --cached --name-only | tr "\n" " ")" >> "$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/.calls"' \
     '[ ! -f lint-rojo ] || { echo "el pre-commit frena"; exit 1; }' > "${r}/.githooks/pre-commit-checks"
@@ -510,6 +517,45 @@ for bad in suites-0-of-3 suites-4-of-3 suites-1-of-2-of-3 suites-1-of-3x all Che
 done
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# T25 (a) · con --range, las portables del instalador que el cambio no toca se pasan para saltear
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# el selector de verdad, el criterio de las pesadas con el grupo y una suite del laboratorio; la regla del portón de las
+# stories, de mentira (acá no hay suites con «gate_only_when_touching»)
+installer_variant() { # <nombre> <archivo que cambia>
+  variant "$1"
+  cp "${ROOT}/scripts/ci/suites-for-change.js" "${R}/scripts/ci/suites-for-change.js"
+  mkdir -p "${R}/scripts/lib" "${R}/skills/tycon-pipeline/scripts/lib"
+  cp "${ROOT}/scripts/lib/skills-dir.js" "${ROOT}/scripts/lib/canonical-path.js" "${ROOT}/scripts/lib/legacy-names.js" "${R}/scripts/lib/"
+  printf '%s\n' 'module.exports = { isValidPattern: () => true, touches: () => false };' > "${R}/skills/tycon-pipeline/scripts/lib/touched-files.js"
+  fake_sh "${R}/scripts/tests/inst.test.sh" suite-inst
+  printf '%s\n' '{ "groups": { "installer": { "patterns": ["scripts/setup/**"] } }, "suites": { "inst.test.sh": { "group": "installer", "patterns": ["scripts/tests/inst.test.sh"] } } }' > "${R}/scripts/ci/heavy-suites.json"
+  node -e 'const fs = require("fs"); const f = process.argv[1]; const s = JSON.parse(fs.readFileSync(f, "utf8")); s.diarias.push({ raiz: "arnes", ruta: "tests/inst.test.sh", requiere: [] }); fs.writeFileSync(f, JSON.stringify(s, null, 2));' "${R}/scripts/tests/suites.json"
+  commit_all "el selector"
+  mkdir -p "$(dirname "${R}/$2")"; echo "cambio" >> "${R}/$2"; commit_all "el cambio"
+}
+skip_of() { cat "${R}/.portable-skip" 2>/dev/null; }
+installer_variant inst-docs guides/x.md; export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci --range 'HEAD~1...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T25 (a) un cambio que no toca el instalador saltea sus portables" "tests/inst.test.sh" "$(skip_of)"
+is "T25 (a) …y la parte sale 0" 0 "${RC}"
+has "T25 (a) …y lo dice" "${R}.out" "public-ci: el cambio no toca el instalador: 1 portable(s) del instalador quedan para el banco nocturno: tests/inst.test.sh"
+installer_variant inst-setup scripts/setup/a.sh; export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci --range 'HEAD~1...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T25 (a) un cambio en el instalador no saltea ninguna" "" "$(skip_of)"
+has "T25 (a) …y lo dice" "${R}.out" "public-ci: el cambio toca el instalador: corren todas las portables"
+installer_variant inst-self scripts/tests/inst.test.sh; export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci --range 'HEAD~1...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T25 (a) un cambio en la suite misma no la saltea" "" "$(skip_of)"
+installer_variant inst-norange guides/x.md; export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci; unset TYCON_PUBLIC_CI_PART
+is "T25 (a) sin --range no se saltea ninguna" "" "$(skip_of)"
+installer_variant inst-floor guides/x.md; export TYCON_PUBLIC_CI_PART=installer-floor; run_ci --range 'HEAD~1...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T25 (a) la parte installer-floor no saltea ninguna" "" "$(skip_of)"
+installer_variant inst-noselector guides/x.md; rm "${R}/scripts/ci/suites-for-change.js"; commit_all "sin el selector"
+export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci --range 'HEAD~2...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T25 (a) sin el selector no se saltea ninguna" "" "$(skip_of)"
+has "T25 (a) …y lo dice" "${R}.out" "public-ci: no sé qué portables del instalador saltear"
+installer_variant inst-badrange guides/x.md; export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci --range 'no-existe...HEAD'; unset TYCON_PUBLIC_CI_PART
+is "T25 (a) con un rango que no resuelve no se saltea ninguna" "" "$(skip_of)"
+has "T25 (a) …y lo dice" "${R}.out" "public-ci: no sé qué portables del instalador saltear"
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T24 (b) · portable-suites.test.sh con una parte (TYCON_PORTABLE_SHARD), sobre un repo de mentira: siete portables
 #           (una pesada y una mediana según el juego `pr`) y una que pide engram
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -526,7 +572,7 @@ node -e 'const names = ["a", "b", "c", "heavy", "d", "mid", "e"];
 # ${PS}.out, lo que corrió en ${PS}.ran (en el orden en que arrancó) y el exit en RC
 run_ps() {
   rm -f "${PS}/.ran"
-  ( cd "${PS}" && env TYCON_PORTABLE_SHARD="$1" TYCON_PORTABLE_PARALLEL=1 bash scripts/tests/portable-suites.test.sh < /dev/null ) > "${PS}.out" 2>&1; RC=$?
+  ( cd "${PS}" && env TYCON_PORTABLE_SHARD="$1" TYCON_PORTABLE_SKIP="${PS_SKIP:-}" TYCON_PORTABLE_PARALLEL=1 bash scripts/tests/portable-suites.test.sh < /dev/null ) > "${PS}.out" 2>&1; RC=$?
   cp "${PS}/.ran" "${PS}.ran" 2>/dev/null || : > "${PS}.ran"
 }
 ALL_RAN=""; EMPTY_PART=""; PART_RC=""
@@ -555,6 +601,16 @@ else no "T24 (b) la parte 8 de 8 con siete portables esperaba exit 1 «no le toc
 rm -f "${PS}/scripts/ci/suites-shard.js"; run_ps "1/3"
 if [ "${RC}" -eq 1 ] && grep -qF "no pude repartir las portables para la parte 1 de 3" "${PS}.out" && [ ! -s "${PS}.ran" ]; then ok "T24 (b) sin el repartidor es rojo, no «todas» ni «ninguna» en silencio"
 else no "T24 (b) sin suites-shard.js esperaba exit 1 «no pude repartir», y dio exit ${RC}: $(tail -n 2 "${PS}.out" | tr '\n' ' ')"; fi
+cp "${ROOT}/scripts/ci/suites-shard.js" "${PS}/scripts/ci/suites-shard.js"
+# T25 (b) · TYCON_PORTABLE_SKIP: las que el cambio no toca no corren y se nombran; un nombre que no es portable no saltea nada
+PS_SKIP="tests/heavy.test.sh,tests/mid.test.sh" run_ps ""
+is "T25 (b) con TYCON_PORTABLE_SKIP no corren las salteadas" "a b c d e" "$(LC_ALL=C sort "${PS}.ran" | tr '\n' ' ' | sed 's/ $//')"
+is "T25 (b) …y sale 0" 0 "${RC}"
+has "T25 (b) …y las nombra" "${PS}.out" "suites-portables: salteo 2 que el cambio no toca (las corre el banco nocturno): tests/heavy.test.sh, tests/mid.test.sh"
+PS_SKIP="tests/heavy.test.sh" run_ps "1/2"; FIRST="$(cat "${PS}.ran")"; PS_SKIP="tests/heavy.test.sh" run_ps "2/2"
+is "T25 (b) con partes, las dos juntas son las seis que quedan" "a b c d e mid" "$(printf '%s\n%s\n' "${FIRST}" "$(cat "${PS}.ran")" | grep -v '^$' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+PS_SKIP="tests/no-existe.test.sh,tests/other.test.sh" run_ps ""
+is "T25 (b) un nombre que no es una portable no saltea nada" "a b c d e heavy mid" "$(LC_ALL=C sort "${PS}.ran" | tr '\n' ' ' | sed 's/ $//')"
 
 # el entorno de git de quien llama: toda la suite corre con GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE y GIT_COMMON_DIR
 # apuntando al repo de afuera (ver la cabecera). El guion mira siempre el repo de --root, y el de afuera queda como estaba.
