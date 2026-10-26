@@ -1690,3 +1690,23 @@ test('8.116 T52 EscC7_FirmaPorDelegacion_OtraSesionOComandoArmado_Frena', () => 
   assert.strictEqual(atras.status, 2, atras.stderr);
   assert.match(atras.stderr, /ESC-C7/);
 });
+
+test('8.140 T7 SafetyEscape_PasoCubierto_PasaConConstancia @story-8.140 @ac-1 @ac-2 @ac-3 — una decisión, una frase: el segundo paso pasa con la vía de la primera', () => {
+  const FORZAR = `${MARKER} set-check advisors green --force-manual`;
+  for (const [marcador, frase, primero, segundo, clave] of [
+    [ROJO, FRASE_DEUDA, DEUDA.cerrar, CMD.cerrar, 'cerrar-la-ejecucion'],
+    [VERDE, 'autorizo trust-ran', `${PIPELINE} check-count --trust-ran --ran a,b`, FORZAR, 'force-manual'],
+  ]) {
+    // sin la primera frase, el segundo paso frena
+    const sin = freno(segundo, { home: homeConMarcador(marcador, [deLaPersona('seguí')]) });
+    assert.strictEqual(sin.status, 2, `${segundo}: ${sin.stderr}`);
+    // con la primera: el primer paso pasa con su frase y el segundo, sin otra, pasa y deja su constancia
+    const home = homeConMarcador(marcador, [deLaPersona(`dale, ${frase}`)]);
+    assert.strictEqual(freno(primero, { home }).status, 0, primero);
+    const r = freno(segundo, { home });
+    assert.strictEqual(r.status, 0, `${segundo}: ${r.stderr}`);
+    const k = constancias(home).find((l) => l.escape === clave);
+    assert.ok(k, JSON.stringify(constancias(home)));
+    assert.deepStrictEqual([k.regla, k.veredicto, k.via, k.sesion], ['ESC-C3', 'escape', 'persona', SID]);
+  }
+});

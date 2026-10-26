@@ -19,7 +19,10 @@
  *   entrada, además un `frena=<escape>\t<subcomando>\t<valor>` por cada llamada a marker.js o pipeline.js que, con este
  *   marcador, pide la frase de la persona (lib/marker-command.js las encuentra). La salida de una ejecución perdida
  *   (`clear-session <sesión> --lost`, `restore <sesión>`) frena siempre y su renglón suma `\t<apertura>\t<sin reenvío 0|1>`:
- *   la frase vale desde la apertura de esa ejecución (`-` si no se ve) y lo del reenvío lo decide lib/open-runs.js. Con `--tool-use-id`, también un
+ *   la frase vale desde la apertura de esa ejecución (`-` si no se ve) y lo del reenvío lo decide lib/open-runs.js. Si la
+ *   frase de la misma decisión ya se dio en esta sesión y esta ejecución (la deuda cubre el cierre; trust-ran, force-manual
+ *   del control de revisores), sale `cubre=<escape>\t<subcomando>\t<valor>\t<clave que cubre>\t<vía>\t<relevo>` en lugar
+ *   de `frena=` (`-` en el campo vacío). Con `--tool-use-id`, también un
  *   `aprobacion=<subcomando>\t<motivo>` por cada aprobación del plan cuya cita no es de la persona (ESC-C6), o
  *   `sinconversacion=1` si la conversación no se puede leer.
  */
@@ -88,6 +91,22 @@ function escapeDeCierre(frenos, sid, desde, escape = 'cerrar-la-ejecucion') {
   return null;
 }
 
+// una decisión, una frase: el escape ya autorizado de esta sesión y esta ejecución cubre el que viene atrás
+const CUBRE = { 'cerrar la ejecución': 'cerrar-como-deuda', 'force-manual': 'trust-ran' };
+
+/**
+ * La constancia que cubre ese pedido, o null. No cubre la salida de una ejecución perdida ni un comando dudoso, ni sin
+ * un arranque legible, ni force-manual sobre un control que no sea `advisors` escrito literal.
+ */
+function cubiertaPor({ l, esc, siempre, perdida }, frenos, sid, desde) {
+  const clave = CUBRE[esc];
+  if (!clave || siempre || perdida || !frenos || !sid || !Number.isFinite(Date.parse(desde || ''))) return null;
+  const a0 = l && l.args && l.args[0];
+  if (esc === 'force-manual' && !(l.sub === 'set-check' && a0 && a0.literal && a0.texto === 'advisors')) return null;
+  const c = escapeDeCierre(frenos, sid, desde, clave);
+  return c && ['persona', 'reenvio'].includes(c.via) ? c : null;
+}
+
 /** El `cierre` que deja `clear`. Uno ya escrito (`deuda`) se devuelve tal cual. */
 function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) {
   const m = marker || {};
@@ -118,7 +137,7 @@ function consulta(sid, home) {
   }
   try {
     const e = estado(m);
-    return { hay: true, autonomo: m.autonomous === true, abierta: abierta(e), motivo: motivoDe(e) };
+    return { hay: true, autonomo: m.autonomous === true, abierta: abierta(e), motivo: motivoDe(e), desde: m.startedAt };
   } catch (err) {
     return { hay: '?', motivo: `no pude leer el estado del marcador (${err.message})` };
   }
@@ -198,7 +217,7 @@ function citaSinPersona(l, { sesion, pedido, home, env } = {}) {
   return {};
 }
 
-module.exports = { ESTADOS, requeridos, estado, abierta, motivoDe, leerFrenos, escapeDeCierre, cierreDe, consulta, esAprobacion, citaSinPersona };
+module.exports = { ESTADOS, requeridos, estado, abierta, motivoDe, leerFrenos, escapeDeCierre, cubiertaPor, cierreDe, consulta, esAprobacion, citaSinPersona };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -248,7 +267,9 @@ if (require.main === module) {
   process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${r.abierta ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
-  for (const { l, esc, siempre, perdida, desde, sinReenvio } of pedidas || []) {
+  let frenos;
+  for (const pedida of pedidas || []) {
+    const { l, esc, siempre, perdida, desde, sinReenvio } = pedida;
     // la salida de una ejecución perdida: además, desde cuándo vale la frase y si acepta el reenvío (nunca vacíos: el
     // freno parte el renglón por tabuladores y dos seguidos se juntan)
     if (perdida) {
@@ -262,7 +283,15 @@ if (require.main === module) {
     // ejecución: no dependen de cómo esté
     const aplica = siempre || esc === 'cerrar como deuda' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
       : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
-    if (aplica) process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
+    if (!aplica) continue;
+    // la frase ya dada para la misma decisión: pasa, y el freno anota el paso con la vía y el relevo de esa frase
+    if (frenos === undefined) frenos = r.hay === true && CUBRE[esc] ? leerFrenos() : undefined;
+    const c = r.hay === true ? cubiertaPor(pedida, frenos || null, sid, r.desde) : null;
+    if (c) {
+      process.stdout.write(`cubre=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${CUBRE[esc]}\t${c.via}\t${una(c.relevo) || '-'}\n`);
+      continue;
+    }
+    process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
   }
   // ESC-C6: la cita de la aprobación del plan tiene que ser de la persona
   if (hay !== 0 && aprobaciones && aprobaciones.length) {
