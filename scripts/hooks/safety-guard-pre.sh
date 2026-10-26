@@ -613,11 +613,12 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
       "No pude leer el comando: el intérprete del arnés no está o el lector de comandos se cayó. Un comando que corre los guiones del pipeline puede traer un escape que lo decide la persona." \
       "Revisá el intérprete del arnés (el comando del arnés que muestra su versión dice si está bien instalado). Si el comando no corre el pipeline, escribilo sin nombrar marker ni pipeline."
   fi
-  _c3_motivo=""; _c3_frenos=(); _c3_aprob=(); _c3_sinconv=0
+  _c3_motivo=""; _c3_frenos=(); _c3_cubre=(); _c3_aprob=(); _c3_sinconv=0
   while IFS= read -r _c3_l; do
     case "$_c3_l" in
       motivo=*) _c3_motivo="${_c3_l#motivo=}" ;;
       frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
+      cubre=*) _c3_cubre+=("${_c3_l#cubre=}") ;;
       aprobacion=*) _c3_aprob+=("${_c3_l#aprobacion=}") ;;
       sinconversacion=1) _c3_sinconv=1 ;;
     esac
@@ -681,6 +682,16 @@ Si la historia no se pudo terminar, la salida normal es dejarla como deuda: mark
         "Cerrar la ejecución ahora (marker.js ${_c3_sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
         "Terminá lo pendiente. Si no se puede, decíselo a la persona."
     fi
+  done
+  # una decisión, una frase: el paso que cubre la frase ya dada pasa, con su constancia y la vía de esa frase
+  for _c3_f in ${_c3_cubre[@]+"${_c3_cubre[@]}"}; do
+    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_por _c3_via _c3_rel <<< "$_c3_f" || true
+    [[ "$_c3_rel" == "-" ]] && _c3_rel=""
+    case "$_c3_esc" in
+      "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
+      *) _c3_clave="$_c3_esc" ;;
+    esac
+    constancia ESC-C3 escape "$_c3_via" "$_c3_rel" "$_c3_sid" "$_c3_clave"
   done
   if [[ "$_c3_sinconv" == "1" ]]; then
     constancia ESC-C6 escape sin-conversacion "" "$_c3_sid"
