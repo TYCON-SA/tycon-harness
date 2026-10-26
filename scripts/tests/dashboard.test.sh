@@ -2016,6 +2016,49 @@ node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
   && ok "C-1.31 sin el archivo del día: la ficha sale gris con el motivo, nunca 0" || mal "C-1.31 sin archivo: $(ficha_html "$T/o.html" "$SINHIST_131" | head -c 300)"
 rm -rf "$T"
 
+# ── T34 (8.132) · la fuente de las métricas por merge lee merges/ y su constancia: incompleta es «no medido» ──
+# 🔴 mutación que lo pone en rojo: no leer el `receipt` de la fuente en colectarAhora (la fuente sale vigente con la
+#    bajada a medias), o dejar `capturer` con `"dir": "."` en sources.json (no ve los merges bajados).
+capturer() { node "$TABLERO" --dir "$1" --dry-run --json 2>/dev/null | python3 -c "
+import json,sys
+s=sys.stdin.read()
+f=[x for x in json.JSONDecoder().raw_decode(s[s.index('\n{')+1:])[0]['corriendo'] if x['id']=='capturer'][0]
+print(('VIGENTE' if f.get('vigente') else 'NO') + ' ' + str(f.get('motivo')))"; }
+T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/merges"
+echo "{\"schema_version\":\"2.0\",\"repo\":\"/x/a\",\"merge_commit\":\"$(printf 'a%.0s' {1..40})\",\"captured_at\":\"$(hace 0)\",\"ts\":\"$(hace 0)\",\"metrics\":{}}" > "$T/merges/metrics-$(hoy)-a-8.1-aaaaaaa.json"
+echo "{\"fecha\":\"$(hace 0)\",\"estado\":\"sin_permiso\",\"completo\":false}" > "$T/merges/bajada.json"
+R="$(capturer "$T")"
+[[ "$R" == NO\ no\ medido:\ la\ bajada\ de\ los\ merges* ]] && ok "T34 constancia incompleta: la fuente «no medido» con el motivo" || mal "T34 incompleta: $R"
+echo "{\"fecha\":\"$(hace 0)\",\"estado\":\"bajado\",\"completo\":true}" > "$T/merges/bajada.json"
+R="$(capturer "$T")"
+[[ "$R" == VIGENTE* ]] && ok "T34 constancia completa y al día: la fuente vigente con los merges de merges/" || mal "T34 completa: $R"
+rm -rf "$T"
+
+# ── T34b (8.132) · sin archivos de merges y con la bajada rota, el motivo es el de la bajada ──
+# 🔴 rojo previo: la constancia se miraba sólo con la fuente leída; sin archivos recientes la ficha salía «no leída» a
+#    secas y no decía que la bajada de los merges falló (AC 22).
+T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/merges"
+echo "{\"fecha\":\"$(hace 0)\",\"estado\":\"sin_permiso\",\"completo\":false}" > "$T/merges/bajada.json"
+R="$(capturer "$T")"
+[[ "$R" == NO\ no\ medido:\ la\ bajada\ de\ los\ merges* ]] && ok "T34b sin archivos y bajada incompleta: «no medido» con el motivo de la bajada" || mal "T34b: $R"
+rm -rf "$T"
+
+# ── T42b (8.132) · una carpeta de merges que no se puede leer no es una carpeta vacía, en las dos fichas del capturador ──
+# 🔴 rojo previo: las dos lecturas de la familia del capturador ignoraban `unreadableDirs`: un merges/ ilegible salía
+#    como «sin registros» o como un número con menos registros.
+if [ "$(id -u)" != "0" ]; then
+  T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/merges"; chmod 000 "$T/merges"
+  R="$(node "$TABLERO" --dir "$T" --dry-run --json 2>/dev/null | python3 -c "
+import json,sys
+s=sys.stdin.read()
+d=json.JSONDecoder().raw_decode(s[s.index('\n{')+1:])[0]
+print(d['mejora']['revisores'].get('_error',{}).get('motivo'), '|', d['extra']['contrato_v2'].get('motivo'))")"
+  chmod 755 "$T/merges"; rm -rf "$T"
+  [[ "$R" == *"merges"*"no se puede leer"*"|"*"merges"*"no se puede leer"* ]] && ok "T42b merges/ ilegible: las dos fichas del capturador «no medido» con la carpeta" || mal "T42b: $R"
+else
+  echo "  ⚠️   — T42b NO MEDIDO: como root, chmod 000 no impide leer. No es un verde."
+fi
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"

@@ -240,7 +240,7 @@ test('Migrate_ConcurrentSession_NotLeftBehind @story-8.132 @ac-10: otra sesión 
   assert.deepStrictEqual(r2.dejados, [], JSON.stringify(r2));
 });
 
-test('ParaSubir_OnlyValidAndNew @story-8.132 @ac-3: al buzón van sólo los 2.0 válidos que no están ya en la historia', () => {
+test('ParaSubir_OnlyValidAndNew @story-8.132 @ac-4: al buzón van sólo los 2.0 válidos que no están ya en la historia', () => {
   const dir = path.join(tmp(), 'dashboard');
   const historia = path.join(tmp(), 'historia');
   const nuevo = doc({ sha: '1'.repeat(40) });
@@ -307,6 +307,54 @@ test('T30 Juntar_NoResult_ReceiptIncomplete @story-8.132 @ac-22: sin resultado l
   }
 });
 
+// Sin esto,con el resultado completo y sin la carpeta de lo bajado (la bajada no la dejó), la constancia sale
+//    completa sin haber leído nada, y el tablero mediría con lo viejo como si fuera de hoy.
+test('T30b Juntar_FromMissing_ReceiptIncomplete @story-8.132 @ac-22: sin lo bajado, la constancia no sale completa', () => {
+  const base = tmp();
+  const hacia = path.join(base, 'hacia');
+  const res = path.join(base, 'r.json');
+  write(res, JSON.stringify({ codigo: 0, estado: 'ok', completo: true }));
+  const r = juntar(['--from', path.join(base, 'no-existe'), '--to', hacia, '--result', res]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const c = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+  assert.deepStrictEqual([c.completo, c.estado], [false, 'sin_lo_bajado']);
+});
+
+// Sin esto,los inválidos y repetidos que descartó la bajada (`merges` del resultado de download-runs) no llegan a
+//    la constancia: queda `invalidos: 0` y el aviso del paso del YAML no salta nunca.
+test('T29c Juntar_CarriesDownloadCounts @story-8.132 @ac-13: la constancia suma lo que descartó la bajada', () => {
+  const base = tmp();
+  const desde = path.join(base, 'desde'); const hacia = path.join(base, 'hacia');
+  write(path.join(desde, nombre(doc())), texto(doc()));
+  const res = path.join(base, 'r.json');
+  write(res, JSON.stringify({ codigo: 0, estado: 'bajado', completo: true, merges: { bajados: 1, repetidos: 2, invalidos: 3 } }));
+  assert.strictEqual(juntar(['--from', desde, '--to', hacia, '--result', res]).status, 0);
+  const c = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+  assert.deepStrictEqual([c.juntados, c.repetidos, c.invalidos], [1, 2, 3], JSON.stringify(c));
+  // una cuenta que no es un número entero positivo no suma
+  write(res, JSON.stringify({ codigo: 0, estado: 'bajado', completo: true, merges: { repetidos: 'x', invalidos: -4 } }));
+  juntar(['--from', desde, '--to', hacia, '--result', res]);
+  const c2 = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+  assert.deepStrictEqual([c2.repetidos, c2.invalidos], [0, 0], JSON.stringify(c2));
+});
+
+// Sin esto,la segunda noche baja el buzón entero otra vez y la constancia dice «0 juntados, N repetidos»: cuenta
+//    como repetida la copia idéntica de lo que ya estaba guardado.
+test('T29d Juntar_SecondNight_NoFalseRepeats @story-8.132 @ac-13: lo idéntico a lo ya guardado no cuenta como repetido', () => {
+  const base = tmp();
+  const desde = path.join(base, 'desde'); const hacia = path.join(base, 'hacia');
+  for (const s of ['1', '2', '3']) { const d = doc({ sha: s.repeat(40) }); write(path.join(desde, nombre(d)), texto(d)); }
+  const res = path.join(base, 'r.json');
+  write(res, JSON.stringify({ codigo: 0, estado: 'bajado', completo: true }));
+  juntar(['--from', desde, '--to', hacia, '--result', res]);
+  const n1 = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+  assert.deepStrictEqual([n1.juntados, n1.repetidos], [3, 0], JSON.stringify(n1));
+  juntar(['--from', desde, '--to', hacia, '--result', res]);
+  const n2 = JSON.parse(fs.readFileSync(path.join(hacia, 'bajada.json'), 'utf8'));
+  assert.deepStrictEqual([n2.juntados, n2.repetidos], [0, 0], JSON.stringify(n2));
+  assert.strictEqual(fs.readdirSync(hacia).filter((f) => /^metrics-/.test(f)).length, 3);
+});
+
 test('Juntar_ResultIncomplete_JoinsButSaysIncomplete @story-8.132 @ac-22: una bajada parcial junta lo que vino y la constancia lo dice', () => {
   const base = tmp();
   const desde = path.join(base, 'desde'); const hacia = path.join(base, 'hacia');
@@ -344,4 +392,135 @@ test('T31 Receipt_StaleOrIncomplete_NotUpToDate @story-8.132 @ac-22: la constanc
     assert.strictEqual(c.al_dia, alDia, `${nombreCaso}: ${JSON.stringify(c)}`);
     if (motivo) assert.match(c.motivo, motivo, nombreCaso); else assert.strictEqual(c.motivo, null, nombreCaso);
   }
+});
+
+// ── Los YAML de la noche y las fuentes del tablero ──────────────────────────────────────────────────────────────────
+// La copia pública está siempre. La de operaciones y la del privado, sólo con su árbol encima (el nocturno las pone sobre
+// el público) o nombrando sus raíces en TYCON_TEST_TREES (separadas como el PATH). Sin ellas, «no medido», no verde.
+const ARBOLES = [ROOT, ...(process.env.TYCON_TEST_TREES || '').split(path.delimiter).filter(Boolean)];
+function copia(rel) {
+  for (const r of ARBOLES) if (fs.existsSync(path.join(r, rel))) return path.join(r, rel);
+  return null;
+}
+function noMedido(caso, rel) { console.log(`  (${caso}: ${rel} no está ni en el árbol ni en TYCON_TEST_TREES: NO MEDIDO acá)`); }
+
+function tableroBajaYJunta(y, donde) {
+  const bajada = y.indexOf('node scripts/metrics/download-runs.js');
+  assert.ok(bajada > 0, `${donde}: no encontré la bajada del buzón`);
+  const linea = y.slice(bajada, y.indexOf('\n', bajada));
+  assert.match(linea, /--merges-to "\$\(Agent\.TempDirectory\)\/merges-nuevos"/, `${donde}: la bajada trae --merges-to`);
+  const ops = y.indexOf('ops-data.yml');
+  const sync = y.indexOf('push-nightly-data.js sync');
+  const juntar = y.indexOf('node scripts/lib/merge-metrics.js juntar');
+  const pagina = y.indexOf('node scripts/nightly/dashboard/dashboard.js --nightly');
+  assert.ok(juntar > 0, `${donde}: falta el paso que junta los merges`);
+  assert.ok(ops > 0 && ops < juntar, `${donde}: juntar va después de ops-data.yml`);
+  assert.ok(sync < juntar, `${donde}: juntar va después de traer los datos de main (si no, el sync los borra)`);
+  assert.ok(juntar < pagina, `${donde}: juntar va antes de generar la página`);
+  const paso = y.slice(juntar, y.indexOf('displayName', juntar) + 200);
+  assert.match(paso, /--from "\$\(Agent\.TempDirectory\)\/merges-nuevos"/, `${donde}: junta lo bajado`);
+  assert.match(paso, /--to "?(\$\(Build\.SourcesDirectory\)\/)?\.dashboard\/merges"?/, `${donde}: en .dashboard/merges`);
+  assert.match(paso, /--result "\$\(Agent\.TempDirectory\)\/bajada\.json"/, `${donde}: con el resultado de la bajada`);
+  assert.match(paso, /condition: succeededOrFailed\(\)/, `${donde}: corre aunque la bajada falle (la constancia lo dice)`);
+  const guardado = y.slice(y.indexOf('-- artifacts/tablero-del-arnes.html'));
+  assert.match(guardado.slice(0, guardado.indexOf('\n')), /\.dashboard\/merges/, `${donde}: el guardado lleva .dashboard/merges`);
+}
+function etapaConConstancia(y, donde) {
+  const i = y.indexOf('node scripts/metrics/sdlc-stage-metrics.js');
+  assert.ok(i > 0, `${donde}: no encontré la medición`);
+  const paso = y.slice(i, y.indexOf('displayName', i));
+  assert.match(paso, /--merges-receipt "\$\(Build\.SourcesDirectory\)\/\.dashboard\/merges\/bajada\.json"/, `${donde}: pasa la constancia`);
+  assert.doesNotMatch(y, /tablero-nocturno-buzon/, `${donde}: no pide una conexión al buzón`);
+}
+
+// Sin esto,el nocturno no baja los merges (falta --merges-to), los junta antes del sync (que los borra) o no los
+//    guarda; la medición no pasa la constancia; el privado no los trae de operaciones.
+test('T21 Pipeline_TeamDashboard_DownloadsAndJoins @story-8.132 @ac-13 @ac-22: bajar, juntar, guardar y medir con la constancia', () => {
+  tableroBajaYJunta(fs.readFileSync(path.join(ROOT, 'pipelines', 'operations', 'team-dashboard.yml'), 'utf8'), 'pipelines/operations/team-dashboard.yml');
+  etapaConConstancia(fs.readFileSync(path.join(ROOT, 'pipelines', 'operations', 'stage-metrics.yml'), 'utf8'), 'pipelines/operations/stage-metrics.yml');
+  const td = copia('pipelines/team-dashboard.yml');
+  if (td) tableroBajaYJunta(fs.readFileSync(td, 'utf8'), td); else noMedido('T21', 'pipelines/team-dashboard.yml de operaciones');
+  const sm = copia('pipelines/stage-metrics.yml');
+  if (sm) etapaConConstancia(fs.readFileSync(sm, 'utf8'), sm); else noMedido('T21', 'pipelines/stage-metrics.yml de operaciones');
+  const od = copia('pipelines/templates/ops-data.yml');
+  if (!od) { noMedido('T21', 'pipelines/templates/ops-data.yml del privado'); return; }
+  const y = fs.readFileSync(od, 'utf8');
+  const lazo = y.match(/for d in ([^;]*\.dashboard\/deployments[^;]*); do/);
+  assert.ok(lazo, `${od}: no encontré las carpetas opcionales`);
+  assert.match(lazo[1], /(^|\s)\.dashboard\/merges(\s|$)/, `${od}: .dashboard/merges entre las opcionales (y con ellas, en ADD)`);
+});
+
+// El paso de juntar del YAML, corrido de verdad con bash: la corrida avisa (naranja) los inválidos y una constancia
+// incompleta, y calla con una bajada completa y limpia.
+// Sin esto, el paso avisa sólo si `juntar` sale distinto de 0, y `juntar` sale 0 en esos dos casos.
+function correrPasoJuntar(y, donde, { resultado, invalido }) {
+  const i = y.indexOf('node scripts/lib/merge-metrics.js juntar');
+  const ini = y.lastIndexOf('- script: |', i) + '- script: |'.length;
+  const fin = y.indexOf('displayName', i);
+  const cuerpo = y.slice(ini, fin).split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n');
+  const base = tmp();
+  const temp = path.join(base, 'temp'); const fuentes = path.join(base, 'fuentes');
+  fs.mkdirSync(path.join(temp, 'merges-nuevos'), { recursive: true });
+  write(path.join(temp, 'bajada.json'), JSON.stringify(resultado));
+  write(path.join(temp, 'merges-nuevos', nombre(doc())), texto(doc()));
+  if (invalido) write(path.join(temp, 'merges-nuevos', 'metrics-2026-10-25-roto-8.1-ccccccc.json'), '{roto');
+  const guion = cuerpo.split('$(Agent.TempDirectory)').join(temp).split('$(Build.SourcesDirectory)').join(fuentes);
+  const r = spawnSync('bash', ['-c', guion], { cwd: ROOT, encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, `${donde}: el paso es tolerante (${r.stderr})`);
+  return r.stdout;
+}
+test('T21b Pipeline_Juntar_WarnsInvalidAndIncomplete @story-8.132 @ac-13: el paso de juntar avisa inválidos y constancia incompleta', () => {
+  const mira = (y, donde) => {
+    const avisa = /##vso\[task\.logissue type=warning\][^\n]*\n[^\n]*##vso\[task\.complete result=SucceededWithIssues;\]/;
+    assert.doesNotMatch(correrPasoJuntar(y, donde, { resultado: { estado: 'ok', completo: true } }), /##vso\[task\.logissue/, `${donde}: completa y limpia, calla`);
+    assert.match(correrPasoJuntar(y, donde, { resultado: { estado: 'parcial', completo: false } }), avisa, `${donde}: incompleta, avisa`);
+    assert.match(correrPasoJuntar(y, donde, { resultado: { estado: 'ok', completo: true }, invalido: true }), avisa, `${donde}: con un inválido, avisa`);
+    // Sin esto, los que descartó la bajada no llegan a la constancia y el paso calla
+    assert.match(correrPasoJuntar(y, donde, { resultado: { estado: 'ok', completo: true, merges: { invalidos: 3 } } }), avisa, `${donde}: con inválidos de la bajada, avisa`);
+  };
+  mira(fs.readFileSync(path.join(ROOT, 'pipelines', 'operations', 'team-dashboard.yml'), 'utf8'), 'pipelines/operations/team-dashboard.yml');
+  const td = copia('pipelines/team-dashboard.yml');
+  if (td) mira(fs.readFileSync(td, 'utf8'), td); else noMedido('T21b', 'pipelines/team-dashboard.yml de operaciones');
+});
+
+// Sin esto,en la copia pública el paso de juntar corre también sin buzón declarado, y cada noche de una
+//    organización sin buzón queda naranja con «sin_resultado».
+test('T21d Pipeline_Juntar_OnlyWithMailbox @story-8.132 @ac-13: sin buzón declarado, el paso de juntar no existe', () => {
+  const y = fs.readFileSync(path.join(ROOT, 'pipelines', 'operations', 'team-dashboard.yml'), 'utf8');
+  const lineas = y.split('\n');
+  const i = lineas.findIndex((l) => l.includes('node scripts/lib/merge-metrics.js juntar'));
+  let s = i; while (s >= 0 && !/^\s*- script: \|/.test(lineas[s])) s--;
+  assert.ok(s > 0, 'no encontré el paso de juntar');
+  const sangria = (l) => l.match(/^ */)[0].length;
+  let p = s - 1;
+  while (p >= 0 && (!lineas[p].trim() || lineas[p].trim().startsWith('#') || sangria(lineas[p]) >= sangria(lineas[s]))) p--;
+  assert.match(lineas[p], /^\s*- \$\{\{ if ne\(parameters\.mailboxConnection, ''\) \}\}:\s*$/, `el paso cuelga de: ${lineas[p]}`);
+});
+
+// Sin esto,el barrido no mira los merges bajados y les escribe un latido de más a los que ya tienen el suyo.
+test('T22 Pipeline_Sweep_CoveredInMerges @story-8.132 @ac-16: el barrido da por cubierto lo que ya bajó', () => {
+  const mira = (y, donde) => {
+    const i = y.indexOf('node scripts/metrics/retro-sweep.js');
+    assert.ok(i > 0, `${donde}: no encontré el barrido`);
+    assert.match(y.slice(i, y.indexOf('displayName', i)), /--covered-in "\$\(Build\.SourcesDirectory\)\/\.dashboard\/merges"/, `${donde}: --covered-in .dashboard/merges`);
+  };
+  mira(fs.readFileSync(path.join(ROOT, 'pipelines', 'operations', 'dependency-audit.yml'), 'utf8'), 'pipelines/operations/dependency-audit.yml');
+  const da = copia('pipelines/dependency-audit.yml');
+  if (da) mira(fs.readFileSync(da, 'utf8'), da); else noMedido('T22', 'pipelines/dependency-audit.yml de operaciones');
+});
+
+// Sin esto,la fuente «capturer» sigue leyendo la raíz de .dashboard, donde ya no llega nada.
+test('T24 Sources_CapturerReadsMerges @story-8.132 @ac-15: la fuente lee merges/ con su constancia', () => {
+  const mira = (f) => {
+    const s = JSON.parse(fs.readFileSync(f, 'utf8')).sources.find((x) => x.id === 'capturer');
+    assert.ok(s, `${f}: falta la fuente capturer`);
+    assert.strictEqual(s.dir, 'merges', `${f}: dir`);
+    assert.strictEqual(s.receipt, 'bajada.json', `${f}: receipt`);
+  };
+  mira(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'sources.json'));
+  mira(path.join(ROOT, 'pipelines', 'operations', 'examples', 'sources.json'));
+  // la del privado y la de operaciones viven en la misma ruta: con su árbol encima es la de ROOT; si no, las de las raíces
+  const otras = ARBOLES.slice(1).map((r) => path.join(r, 'scripts', 'nightly', 'dashboard', 'sources.json')).filter((f) => fs.existsSync(f));
+  for (const f of otras) mira(f);
+  if (!otras.length) noMedido('T24', 'scripts/nightly/dashboard/sources.json del privado y de operaciones');
 });

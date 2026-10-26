@@ -269,8 +269,11 @@ function loadAll(dir) {
   let files = [];
   try {
     files = fs.readdirSync(dir).filter((f) => /^metrics-.*\.json$/.test(f)).sort();
-  } catch {
-    return { records: [], counts: { total: 0, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 }, dir };
+  } catch (e) {
+    // una carpeta que no existe no tiene nada; una que no se puede leer no es vacía: se dice en `unreadableDir`
+    const out = { records: [], counts: { total: 0, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 }, dir };
+    if (e.code !== 'ENOENT') out.unreadableDir = e.code || 'error';
+    return out;
   }
 
   const records = [];
@@ -325,8 +328,11 @@ function loadMany(dirs) {
   const counts = { total: 0, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 };
   const seen = new Set();
   const key = { ok: 'v2ok', invalid: 'v2bad', legacy: 'legacy', unreadable: 'unreadable' };
+  const unreadableDirs = [];
   for (const d of dirs) {
-    for (const r of loadAll(d).records) {
+    const all = loadAll(d);
+    if (all.unreadableDir) unreadableDirs.push({ dir: d, code: all.unreadableDir });
+    for (const r of all.records) {
       if (seen.has(r.file)) continue;
       seen.add(r.file);
       records.push(r);
@@ -334,7 +340,37 @@ function loadMany(dirs) {
       counts[key[r.status]]++;
     }
   }
-  return { records, counts, dir: dirs[0], dirs };
+  return { records, counts, dir: dirs[0], dirs, ...(unreadableDirs.length ? { unreadableDirs } : {}) };
 }
 
-module.exports = { SCHEMA_VERSION, METRICS, IDENTITY, validate, loadAll, loadMany, toNumber, shapeOk, resolveDate };
+/**
+ * La familia del capturador con lo que el nocturno del tablero baja del buzón: las carpetas de `dirs` (como `loadMany`) y
+ * la `merges/` de cada una, con un registro por merge. Los de `merges/` se juntan con la regla de `merge-metrics.js`
+ * (gana el que trae vueltas y, entre iguales, el más nuevo), también con los de las carpetas que son el mismo merge,
+ * tengan otro nombre o el mismo. Lo que está sólo en las carpetas cuenta como en `loadMany`. Devuelve lo mismo que ella.
+ */
+function loadPorMerge(dirs) {
+  // acá y no arriba: merge-metrics.js requiere este módulo
+  const { unoPorMerge, mismoMerge } = require('./merge-metrics.js');
+  const raiz = loadMany(dirs);
+  const merges = loadMany(dirs.map((d) => path.join(d, 'merges')));
+  const util = (r) => r.status === 'ok' || r.status === 'legacy';
+  const comoDoc = (r) => ({ merge_commit: r.merge_commit, project: r.project, ts: r.date,
+    metrics: { advisor_rerun_loop_iterations: { value: r.values.advisor_rerun_loop_iterations } } });
+  const deMerges = merges.records.filter(util).map((r) => ({ r, doc: comoDoc(r) }));
+  const deRaiz = raiz.records.map((r) => ({ r, doc: comoDoc(r) }));
+  // primero los de merges/: con un empate gana lo bajado. `unoPorMerge` junta todos los grupos que toca cada uno, así un
+  // registro de la carpeta que calza con dos de merges/ los vuelve uno y nunca cuenta dos veces
+  const tocan = new Set(deRaiz.filter((x) => util(x.r) && deMerges.some((m) => mismoMerge(x.doc, m.doc))));
+  const { elegidos } = unoPorMerge([...deMerges, ...tocan]);
+  const nombres = new Set(raiz.records.map((r) => r.file));
+  const records = [...deRaiz.filter((x) => !tocan.has(x)).map((x) => x.r), ...elegidos.map((x) => x.r),
+    ...merges.records.filter((r) => !util(r) && !nombres.has(r.file))];
+  const counts = { total: records.length, v2ok: 0, v2bad: 0, legacy: 0, unreadable: 0 };
+  const key = { ok: 'v2ok', invalid: 'v2bad', legacy: 'legacy', unreadable: 'unreadable' };
+  for (const r of records) counts[key[r.status]]++;
+  const unreadableDirs = [...(raiz.unreadableDirs || []), ...(merges.unreadableDirs || [])];
+  return { records, counts, dir: dirs[0], dirs, ...(unreadableDirs.length ? { unreadableDirs } : {}) };
+}
+
+module.exports = { SCHEMA_VERSION, METRICS, IDENTITY, validate, loadAll, loadMany, loadPorMerge, toNumber, shapeOk, resolveDate };

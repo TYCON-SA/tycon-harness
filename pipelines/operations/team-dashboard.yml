@@ -13,7 +13,8 @@
 # Opcional: el BUZÓN DE CORRIDAS (los registros de las máquinas del equipo, en un almacenamiento de Azure). Si la
 # organización tiene uno, se pasa el nombre de la conexión de servicio en el parámetro `mailboxConnection` (de sólo
 # lectura sobre ese almacenamiento, autorizada sólo para este pipeline). Sin buzón, las fichas del equipo salen «no leído»
-# y la página se genera igual.
+# y la página se genera igual. Del buzón también bajan las métricas de cada merge que suben las máquinas: se juntan en
+# `.dashboard/merges/` con su constancia (`bajada.json`), que leen la página y el nocturno de las métricas.
 #
 # Permisos (una vez): la identidad de compilación del proyecto con «Contribute» sobre el repo de operaciones.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -70,7 +71,7 @@ jobs:
                 BUZON="$(Agent.TempDirectory)/buzon/corridas-buzon"
                 RES="$(Agent.TempDirectory)/bajada.json"
                 mkdir -p "$(Agent.TempDirectory)/buzon"
-                TYCON_MAILBOX_DIR="$BUZON" node scripts/metrics/download-runs.js --json --no-threads --budget-ms 600000 > "$RES"
+                TYCON_MAILBOX_DIR="$BUZON" node scripts/metrics/download-runs.js --json --no-threads --budget-ms 600000 --merges-to "$(Agent.TempDirectory)/merges-nuevos" > "$RES"
                 RC=$?
                 if [ "$RC" -eq 0 ] && node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).completo === true ? 0 : 1)' "$RES"; then
                   echo "Buzón leído entero."
@@ -128,6 +129,30 @@ jobs:
         env:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
+      # Las métricas de cada merge que las máquinas subieron al buzón: la bajada las dejó una por merge en la carpeta
+      # temporal y acá se juntan con las ya guardadas en `.dashboard/merges/`, con su constancia (`bajada.json`: completa
+      # o no, y de cuándo). Va DESPUÉS de traer los datos de main (si no, ese paso las borra) y antes de la página. Corre
+      # aunque la bajada haya fallado: la constancia dice que no se completó y la primera vuelta sale «no medido». Sin
+      # buzón declarado, el paso no existe: no hay nada que juntar y la fuente sale «no medido» sin poner la noche naranja.
+      - ${{ if ne(parameters.mailboxConnection, '') }}:
+          - script: |
+              set -u
+              if ! node scripts/lib/merge-metrics.js juntar --from "$(Agent.TempDirectory)/merges-nuevos" --to "$(Build.SourcesDirectory)/.dashboard/merges" --result "$(Agent.TempDirectory)/bajada.json"; then
+                echo "##vso[task.logissue type=warning]No se pudieron juntar las métricas de cada merge: la página se genera igual y la ficha lo dice"
+                echo "##vso[task.complete result=SucceededWithIssues;]"
+                exit 0
+              fi
+              # juntar sale 0 también con la bajada incompleta o con archivos inválidos: lo dice la constancia, y la corrida
+              # queda naranja (sólo cuentas y el estado, que es una palabra: nunca nombres de máquinas ni de blobs)
+              AVISO="$(node -e 'try { const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const p = []; if (c.completo !== true) p.push(`la bajada no se completó (${String(c.estado || "desconocido").replace(/[^a-z_]/g, "")})`); if (Number(c.invalidos) > 0) p.push(`${Number(c.invalidos)} archivo(s) inválido(s) descartado(s)`); process.stdout.write(p.join(" y ")); } catch (e) { process.stdout.write("la constancia no se puede leer"); }' "$(Build.SourcesDirectory)/.dashboard/merges/bajada.json")"
+              if [ -n "$AVISO" ]; then
+                echo "##vso[task.logissue type=warning]Métricas de cada merge: ${AVISO} — la primera vuelta y la ficha del capturador dicen «no medido» si la bajada no está completa"
+                echo "##vso[task.complete result=SucceededWithIssues;]"
+              fi
+              exit 0
+            displayName: 'Juntar las métricas de cada merge bajadas del buzón'
+            condition: succeededOrFailed()
+
       - script: |
           set -u
           BUZON="$(Agent.TempDirectory)/buzon/corridas-buzon"
@@ -168,7 +193,7 @@ jobs:
             --require artifacts/tablero-del-arnes.html \
             --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"$DAY\" --run \"$(Build.BuildId)\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
             --verify-export .dashboard \
-            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments .dashboard/applied-config.json
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments .dashboard/applied-config.json .dashboard/merges
         displayName: 'Guardar la página del día y lo del sitio en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 

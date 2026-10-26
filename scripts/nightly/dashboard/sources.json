@@ -74,10 +74,11 @@
       "id": "capturer",
       "title": "Métricas por merge",
       "pattern": "metrics-*.json",
-      "dir": ".",
+      "dir": "merges",
+      "receipt": "bajada.json",
       "required": false,
       "max_age_days": 7,
-      "written_by": "el agente capturador, al mergear a main"
+      "written_by": "retro-heartbeat.js en cada máquina, al mergear a main; los sube al buzón y el nocturno del tablero los baja y los junta"
     },
     {
       "id": "corridas",

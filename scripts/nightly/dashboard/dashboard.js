@@ -53,6 +53,7 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup'
 const { execSync } = require('child_process');
 const { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, GLIFO, juzgar, chip, ficha, CSS_BASE, CSS_CHIPS } = require('./common');
 const { readEnv } = require('../../lib/legacy-names.js');
+const { constancia } = require('../../lib/merge-metrics.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
 const CONFIG = path.join(__dirname, 'sources.json');
@@ -141,6 +142,13 @@ function colectar(opts = {}) {
   try { return colectarAhora(); } finally { AMB = previo; }
 }
 
+// Una carpeta de la familia del capturador que no se puede leer no es una carpeta vacía: la ficha sale «no medido» con
+// la carpeta (relativa a .dashboard, nunca la ruta del disco) y el código del error.
+function noSeLeyo(ilegibles) {
+  const d = (ilegibles || [])[0];
+  if (d) throw new Error(`la carpeta ${path.relative(AMB.dashboard, d.dir) || '.'} no se puede leer (${d.code})`);
+}
+
 function colectarAhora() {
   const hoy = Number.isFinite(AMB.ahora) ? AMB.ahora : Date.now();
   const cfg = JSON.parse(fs.readFileSync(AMB.config, 'utf8'));
@@ -150,6 +158,10 @@ function colectarAhora() {
     const d = f.leida ? edadDias(f.ts, hoy) : null;
     // INV-8: pasado el umbral, la fuente deja de ser vigente y sus valores NO se emiten.
     const vigente = f.leida && d !== null && d <= f.max_age_days;
+    // una fuente con constancia (`receipt`: la bajada que la trae) vale sólo con la bajada completa y al día; se mira
+    // también sin archivos leídos, para que el motivo sea el de la bajada y no un «no leída» a secas
+    const c = f.receipt ? constancia(path.join(AMB.dashboard, f.dir || '.'), hoy) : null;
+    if (c && !c.al_dia) return { ...f, edad_dias: d, vigente: false, motivo: `no medido: la bajada de los merges de las máquinas no está al día — ${c.motivo}` };
     return { ...f, edad_dias: d, vigente, motivo: f.motivo || (f.leida && !vigente ? `sin medición desde ${(f.ts || '').slice(0, 10)} (${edadTexto(d)})` : null) };
   });
   const por = Object.fromEntries(fuentes.map((f) => [f.id, f]));
@@ -262,10 +274,12 @@ function mejora(por) {
     return medida(rs.length - sin, rs.length - sin, rs.length, { unidad: 'conteo', den_etiqueta: 'repos', detalle: sin ? `${sin} con algo sin medir` : 'todos medidos' });
   });
 
-  // La familia del capturador: se reusa loadAll, no se reimplementa el parser.
+  // La familia del capturador: se reusa loadAll, no se reimplementa el parser. Lo versionado en la raíz y lo que el
+  // nocturno baja del buzón a merges/, con un registro por merge (el mismo merge en las dos cuenta una vez).
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts } = dm.loadAll(AMB.dashboard);
+    const { records, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
+    noSeLeyo(unreadableDirs);
     m._capturer_cobertura = counts;
     m._capturer_fechas = records.filter((x) => x.date).length;
     m.revisores = {};
@@ -1264,10 +1278,12 @@ function extra(por, ctx, cfg) {
       detalle: `${nombres.join(' · ')}${rev ? ` · deuda con revisión ${rev}` : ''}` });
   })();
 
-  // La familia del capturador: contrato y fechas, con loadAll (no se reimplementa el parser).
+  // La familia del capturador: contrato y fechas, con loadAll (no se reimplementa el parser), sobre la raíz y merges/,
+  // un registro por merge.
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts } = dm.loadAll(AMB.dashboard);
+    const { records, counts, unreadableDirs } = dm.loadPorMerge([AMB.dashboard]);
+    noSeLeyo(unreadableDirs);
     m.contrato_v2 = counts.total ? { ...ratio(counts.v2ok, counts.total), den_etiqueta: 'registros' } : noMedida('no hay registros del capturador');
     const fuentes = {};
     for (const r of records) inc(fuentes, r.date_source || 'ninguna');

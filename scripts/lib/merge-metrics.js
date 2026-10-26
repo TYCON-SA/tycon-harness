@@ -26,7 +26,8 @@
  * Línea de comandos (la corre el nocturno del tablero después de traer los datos de operaciones):
  *   node scripts/lib/merge-metrics.js juntar --from <dir> --to <dir> --result <bajada.json de download-runs>
  *   Junta lo bajado en `--to` (un archivo por merge) y escribe siempre `<hacia>/bajada.json`:
- *   `{ fecha, estado, completo, juntados, repetidos, invalidos }`. Sin un resultado legible no toca lo juntado y la
+ *   `{ fecha, estado, completo, juntados, repetidos, invalidos }`: lo de esta noche, más los repetidos e inválidos
+ *   que la bajada ya descartó en el buzón; lo idéntico a lo ya guardado no cuenta. Sin un resultado legible no toca lo juntado y la
  *   constancia dice `estado: sin_resultado`, `completo: false`. Sale 0 salvo que no pueda escribir (1) o le falten
  *   argumentos (2).
  */
@@ -169,7 +170,7 @@ function constancia(dir, ahora = Date.now()) {
   let c;
   try { c = JSON.parse(fs.readFileSync(ruta, 'utf8')); }
   catch (e) {
-    if (e.code === 'ENOENT') return { al_dia: false, motivo: `no hay constancia de la bajada de los merges (${ruta}): el nocturno del tablero todavía no la dejó`, fecha: null, estado: null };
+    if (e.code === 'ENOENT') return { al_dia: false, motivo: `no hay constancia de la bajada de los merges (${CONSTANCIA}): el nocturno del tablero todavía no la dejó`, fecha: null, estado: null };
     return { al_dia: false, motivo: `la constancia de la bajada de los merges no se puede leer (${e.code || 'JSON roto'})`, fecha: null, estado: null };
   }
   const fecha = c && typeof c.fecha === 'string' ? c.fecha : null;
@@ -209,10 +210,19 @@ function juntar({ desde, hacia, resultado }) {
     escribirAtomico(path.join(hacia, CONSTANCIA), `${JSON.stringify(c, null, 2)}\n`);
     return c;
   }
-  const estado = typeof r.estado === 'string' && /^[a-z_]+$/.test(r.estado) ? r.estado : 'desconocido';
+  let estado = typeof r.estado === 'string' && /^[a-z_]+$/.test(r.estado) ? r.estado : 'desconocido';
+  let completo = r.completo === true;
+  // la bajada con `--merges-to` siempre deja la carpeta: sin ella no se leyó nada y la constancia no sale completa
+  if (completo && !fs.existsSync(desde)) { completo = false; estado = 'sin_lo_bajado'; }
   const ya = leerValidos(hacia, false);
   const nuevos = leerValidos(desde, true);
-  const { elegidos, repetidos } = unoPorMerge([...ya.validos, ...nuevos.validos]);
+  // el buzón se baja entero cada noche: lo idéntico a lo ya guardado con su mismo nombre no es nuevo ni repetido
+  const guardado = new Map(ya.validos.map((v) => [v.f, v.ruta]));
+  const igual = (a, b) => { try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch (_) { return false; } };
+  const frescos = nuevos.validos.filter((n) => !(guardado.has(n.f) && igual(guardado.get(n.f), n.ruta)));
+  const { elegidos, repetidos } = unoPorMerge([...ya.validos, ...frescos]);
+  // lo que la bajada ya descartó en el buzón (`merges` del resultado de download-runs) también va a la constancia
+  const deLaBajada = (k) => { const n = Number(r.merges && r.merges[k]); return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0; };
   const queda = new Set();
   let juntados = 0;
   for (const e of elegidos) {
@@ -222,7 +232,8 @@ function juntar({ desde, hacia, resultado }) {
     juntados += 1;
   }
   for (const v of ya.validos) if (!queda.has(v.f)) fs.unlinkSync(v.ruta);
-  const c = { fecha: new Date().toISOString(), estado, completo: r.completo === true, juntados, repetidos, invalidos: nuevos.invalidos };
+  const c = { fecha: new Date().toISOString(), estado, completo, juntados,
+    repetidos: repetidos + deLaBajada('repetidos'), invalidos: nuevos.invalidos + deLaBajada('invalidos') };
   escribirAtomico(path.join(hacia, CONSTANCIA), `${JSON.stringify(c, null, 2)}\n`);
   return c;
 }

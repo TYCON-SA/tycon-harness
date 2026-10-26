@@ -370,6 +370,108 @@ t('T23 R3_Lib_MovedRequires — desde scripts/lib/, --validate sobre un director
   } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 });
 
+// La familia del capturador con lo bajado del buzón: la raíz de .dashboard y su merges/ con un registro por merge.
+const conMerge = (sha, vueltas, captured_at) => {
+  const d = { ...base(), merge_commit: sha, captured_at };
+  d.metrics = { ...d.metrics, advisor_rerun_loop_iterations: { value: vueltas } };
+  return d;
+};
+const carpetaConMerges = (raiz, merges) => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'por-merge-'));
+  fs.mkdirSync(path.join(d, 'merges'));
+  for (const [f, doc] of Object.entries(raiz)) fs.writeFileSync(path.join(d, f), JSON.stringify(doc));
+  for (const [f, doc] of Object.entries(merges)) fs.writeFileSync(path.join(d, 'merges', f), JSON.stringify(doc));
+  return d;
+};
+// lo que el tablero muestra de la familia del capturador, venga en el panel que venga
+const delTablero = (dir) => {
+  const out = require(path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'dashboard.js')).colectar({ dir });
+  const hallado = {};
+  const buscar = (o, prof = 0) => {
+    if (!o || typeof o !== 'object' || prof > 6) return;
+    for (const [k, v] of Object.entries(o)) {
+      // la medida, no la definición de la ficha que lleva el mismo nombre
+      const medida = k === 'revisores' || k === '_capturer_cobertura' || (v && typeof v === 'object' && 'estado' in v);
+      if (['_capturer_cobertura', 'revisores', 'contrato_v2'].includes(k) && medida && !(k in hallado)) hallado[k] = v;
+      else buscar(v, prof + 1);
+    }
+  };
+  buscar(out);
+  return hallado;
+};
+const A40 = 'a'.repeat(40); const B40 = 'b'.repeat(40);
+
+// Sin esto,el tablero deduplica sólo por nombre de archivo: el mismo merge en la raíz y en merges/ con otro
+//    nombre (otra fecha) entra dos veces en las medianas de los revisores, y el medidor de primera vuelta lo cuenta una.
+t('T44 LoadPorMerge_OtherName_CountsOnce (story 8.132) @ac-14 @ac-15: el mismo merge con otro nombre en la raíz y en merges/ cuenta una vez', () => {
+  const d = carpetaConMerges(
+    { 'metrics-2026-10-20-demo-1.1-aaaaaaa.json': conMerge(A40, 4, '2026-10-20T10:00:00Z') },
+    { 'metrics-2026-10-21-demo-1.1-aaaaaaa.json': conMerge(A40, 4, '2026-10-21T10:00:00Z'),
+      'metrics-2026-10-24-demo-1.2-bbbbbbb.json': conMerge(B40, 1, '2026-10-24T10:00:00Z') });
+  try {
+    const tab = delTablero(d);
+    assert.strictEqual(tab._capturer_cobertura.total, 2, JSON.stringify(tab._capturer_cobertura));
+    assert.strictEqual(tab.revisores.advisor_rerun_loop_iterations.valor, 2.5, JSON.stringify(tab.revisores.advisor_rerun_loop_iterations));
+    const { loadPorMerge } = require(LIB);
+    const r = loadPorMerge([d]);
+    assert.deepStrictEqual([r.counts.total, r.counts.v2ok, r.records.length], [2, 2, 2], JSON.stringify(r.counts));
+  } finally { fs.rmSync(d, { recursive: true, force: true }); }
+});
+
+// Sin esto,con el mismo nombre en la raíz y en merges/, gana la copia de la raíz aunque sea la vieja.
+t('T45 LoadPorMerge_SameName_NewestWins (story 8.132) @ac-14 @ac-15: con el mismo nombre gana la copia más nueva, no la de la raíz', () => {
+  const f = 'metrics-2026-10-20-demo-1.1-aaaaaaa.json';
+  const d = carpetaConMerges({ [f]: conMerge(A40, 3, '2026-10-20T10:00:00Z') }, { [f]: conMerge(A40, 5, '2026-10-22T10:00:00Z') });
+  try {
+    const tab = delTablero(d);
+    assert.strictEqual(tab.revisores.advisor_rerun_loop_iterations.valor, 5, JSON.stringify(tab.revisores.advisor_rerun_loop_iterations));
+    assert.strictEqual(tab.contrato_v2.total, 1, JSON.stringify(tab.contrato_v2));
+    const { loadPorMerge } = require(LIB);
+    const r = loadPorMerge([d]);
+    assert.deepStrictEqual(r.records.map((x) => x.values.advisor_rerun_loop_iterations), [5]);
+  } finally { fs.rmSync(d, { recursive: true, force: true }); }
+});
+
+// Sin esto,un sha corto de la raíz que calza con dos sha completos de merges/ (el mismo proyecto) se cuenta dos
+//    veces en la primera vuelta, aunque `unoPorMerge` los junta en un solo merge.
+t('T46 FirstPass_ShortShaJoinsGroups (story 8.132) @ac-14: un registro de la raíz nunca se cuenta dos veces', () => {
+  const corto = { ...conMerge('abc1234', 1, '2026-08-28T10:00:00-03:00') };
+  const d = carpetaConMerges({ 'metrics-2026-08-28-abc1234.json': corto },
+    { 'metrics-2026-08-28-A.json': conMerge(`abc1234${'a'.repeat(33)}`, 2, '2026-08-27T10:00:00-03:00'),
+      'metrics-2026-08-28-B.json': conMerge(`abc1234${'b'.repeat(33)}`, 2, '2026-08-27T10:00:00-03:00') });
+  try {
+    const { firstPassFromDashboard } = require(path.join(RAIZ, 'scripts', 'metrics', 'sdlc-stage-metrics.js'));
+    const fp = firstPassFromDashboard(d, null);
+    assert.deepStrictEqual([fp.num, fp.den], [1, 1], JSON.stringify(fp));
+  } finally { fs.rmSync(d, { recursive: true, force: true }); }
+});
+
+// Sin esto,`loadAll` toma una carpeta que no se puede leer como vacía, y el medidor de primera vuelta cuenta
+//    lo que sí leyó: con `merges/` sin permiso daría un número parcial que parece bueno.
+const esRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+if (process.platform === 'win32' || esRoot) {
+  console.log(`  NO MEDIDO — T42 LoadAll_UnreadableDir_NotEmpty: ${esRoot ? 'como root chmod 000 no quita la lectura' : 'en Windows chmod no quita la lectura'}`);
+} else {
+  t('T42 LoadAll_UnreadableDir_NotEmpty (story 8.132): una carpeta ilegible no es vacía, y la primera vuelta no se mide', () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ilegible-'));
+    const merges = path.join(d, 'merges');
+    fs.mkdirSync(merges);
+    fs.writeFileSync(path.join(d, 'metrics-a.json'), JSON.stringify({ ...base(), merge_commit: 'a'.repeat(40) }));
+    fs.writeFileSync(path.join(merges, 'metrics-b.json'), JSON.stringify({ ...base(), merge_commit: 'b'.repeat(40) }));
+    fs.chmodSync(merges, 0o000);
+    try {
+      const r = loadAll(merges);
+      assert.strictEqual(r.records.length, 0);
+      assert.strictEqual(r.unreadableDir, 'EACCES', `una carpeta ilegible se marca, no se lee como vacía: ${JSON.stringify(r)}`);
+      assert.strictEqual(loadAll(path.join(d, 'no-existe')).unreadableDir, undefined, 'una que no existe sí es «nada»');
+      const { firstPassFromDashboard } = require(path.join(RAIZ, 'scripts', 'metrics', 'sdlc-stage-metrics.js'));
+      const fp = firstPassFromDashboard(d, null);
+      assert.strictEqual(fp.value, null, `con merges/ ilegible no hay número: ${JSON.stringify(fp)}`);
+      assert.match(fp.reason, /^no medido: .*merges.*no se puede leer \(EACCES\)/);
+    } finally { fs.chmodSync(merges, 0o755); fs.rmSync(d, { recursive: true, force: true }); }
+  });
+}
+
 if (fs.existsSync(MAP_PATH)) {
   t('T23 R3_Lib_MovedRequires — en la ruta de siempre queda el reemplazo generado que lanza el de lib/', () => {
     const L = require(path.join(RAIZ, 'scripts', 'lib', 'legacy-names.js'));

@@ -1228,7 +1228,7 @@ _(scripts/tools/work-in-progress.js + el comando commands/wip.md)_
 
 _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
-**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage donde todos escriben y sólo leen quienes tienen el rol de lectura; `download-runs.js` las baja. En la misma pasada sube el archivo de métricas de cada merge (ver `merge-metrics.js`).
+**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage (todos escriben, sólo lee el rol de lectura); `download-runs.js` las baja. También sube las métricas de cada merge (`merge-metrics.js`), que el tablero de la noche baja con `--merges-to` a `.dashboard/merges/`.
 
 **Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea blobs nuevos: no lee, no lista, no pisa ni borra.
 

@@ -159,11 +159,15 @@ function retrosDe(dir, ref, into, ilegibles) {
   const buf = cat.stdout;
   let rotas = 0;
   let i = 0;
+  let k = -1;
   while (i < buf.length) {
     const nl = buf.indexOf(10, i);
     if (nl < 0) break;
     const head = buf.slice(i, nl).toString('utf8').split(' ');
+    k += 1;
     if (head[1] !== 'blob') { i = nl + 1; continue; }
+    // lo que el nocturno del tablero bajó del buzón (`.dashboard/merges/`) trae la última vuelta de la ejecución
+    const deMerges = names[k].startsWith('.dashboard/merges/');
     const size = Number(head[2]);
     const body = buf.slice(nl + 1, nl + 1 + size).toString('utf8');
     i = nl + 1 + size + 1;
@@ -173,12 +177,13 @@ function retrosDe(dir, ref, into, ilegibles) {
     if (!/^[0-9a-f]{40}$/.test(sha)) continue;
     const tipo = RC.kindOf({ generatedBy: typeof d.generated_by === 'string' ? d.generated_by : null });
     const prev = into.get(sha);
-    // una retro con aprendizajes gana sobre un latido del mismo merge
+    // una retro con aprendizajes gana sobre un latido del mismo merge; entre latidos, el de merges/
     if (prev && prev.tipo === 'aprendizajes' && tipo !== 'aprendizajes') continue;
+    if (prev && prev.deMerges && !deMerges && tipo !== 'aprendizajes') continue;
     const resto = { ...d };
     for (const k of ['schema_version', 'repo', 'repo_path', 'repoPath', 'merge_commit', 'ts', 'captured_at', 'run_dir']) delete resto[k];
     // del latido sólo importa que exista: sus métricas son casi todas «no disponible»
-    into.set(sha, { tipo, story: d.story || null, contenido: tipo === 'aprendizajes' ? recortar(JSON.stringify(resto), 2000) : null });
+    into.set(sha, { tipo, deMerges, story: d.story || null, contenido: tipo === 'aprendizajes' ? recortar(JSON.stringify(resto), 2000) : null });
   }
   if (rotas) ilegibles.push(`${path.basename(dir)}: ${rotas} archivo(s) de retro no son JSON`);
 }
@@ -530,4 +535,4 @@ function main() {
 }
 
 if (require.main === module) process.exitCode = main();
-module.exports = { args, orgConfig, storyDe, ordenDeLectura, armarMaterial, lineaLlana, comandoDelAgente, validar, leerRespuesta, leToca, PERIODO_DIAS, INFORME, GUIA };
+module.exports = { args, orgConfig, storyDe, retrosDe, ordenDeLectura, armarMaterial, lineaLlana, comandoDelAgente, validar, leerRespuesta, leToca, PERIODO_DIAS, INFORME, GUIA };

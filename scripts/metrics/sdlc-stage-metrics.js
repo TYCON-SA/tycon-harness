@@ -33,7 +33,12 @@
  *
  * Uso:
  *   node scripts/metrics/sdlc-stage-metrics.js --repo ~/Proyectos/Acme/Backend [--repo ...]
- *   ... [--dashboard <dir>] [--since YYYY-MM-DD] [--json]
+ *   ... [--dashboard <dir>] [--since YYYY-MM-DD] [--json] [--merges-receipt <dir>/merges/bajada.json]
+ *
+ *   La primera vuelta lee también `<dashboard>/merges/` (los merges que el nocturno del tablero baja del buzón; un
+ *   merge que está también en la raíz cuenta una vez). --merges-receipt: la constancia de esa bajada; si no es completa
+ *   y de las últimas 36 horas, la primera vuelta sale «no medido» con el motivo en `global.not_measured`. Sin la opción
+ *   (una corrida a mano) se mide con lo que haya.
  *
  * Exit 0 siempre (es informativo). Cobertura declarada en toda salida: un número sin
  * denominador es el problema que este script existe para arreglar.
@@ -95,6 +100,7 @@ function parseArgs(argv) {
     else if (k === '--scan') a.scan.push(path.resolve(argv[++i]));
     else if (k === '--dashboard') { a.dashboard = path.resolve(argv[++i]); a.dashboardGiven = true; }
     else if (k === '--since') a.since = argv[++i];
+    else if (k === '--merges-receipt') a.mergesReceipt = path.resolve(argv[++i]);
     else if (k === '--json') a.json = true;
     else if (k === '--snapshot') a.snapshot = true;
     else if (k === '--only-harness') a.onlyHarness = true;
@@ -1167,12 +1173,28 @@ function measureRepo(repo, since, opts = {}) {
 // ── first-pass desde el dashboard 2.0 ────────────────────────────────────────────────────────
 
 // `dir`: una carpeta, o varias (la de estado y la de la historia; el mismo archivo en dos cuenta una vez)
-function firstPassFromDashboard(dir, since) {
-  let loadAll, loadMany;
-  try { ({ loadAll, loadMany } = require(path.join(TCG, 'scripts', 'lib', 'dashboard-metrics.js'))); }
+// Además de cada carpeta se lee su `merges/` (lo que el nocturno del tablero baja del buzón): un merge que está en las dos
+// cuenta una vez, el que trae vueltas y, entre iguales, el más nuevo. Lo que está sólo en la carpeta se cuenta como
+// siempre. Con `receipt` (la constancia que deja `merge-metrics.js juntar`), sin una bajada completa y al día no hay
+// número: con lo versionado solo se publicaría la primera vuelta de los merges que nadie bajó.
+function firstPassFromDashboard(dir, since, receipt) {
+  let loadPorMerge, MM;
+  try { ({ loadPorMerge } = require(path.join(TCG, 'scripts', 'lib', 'dashboard-metrics.js'))); }
   catch { return { value: null, reason: 'lib/dashboard-metrics.js no disponible' }; }
-  const { records } = Array.isArray(dir) ? loadMany(dir) : loadAll(dir);
-  let rows = records.filter((r) => (r.status === 'ok' || r.status === 'legacy'));
+  try { MM = require(path.join(TCG, 'scripts', 'lib', 'merge-metrics.js')); }
+  catch { return { value: null, reason: 'lib/merge-metrics.js no disponible' }; }
+  if (receipt) {
+    const c = MM.constancia(path.dirname(receipt));
+    if (!c.al_dia) return { value: null, reason: `no medido: la bajada de los merges de las máquinas no está al día — ${c.motivo}` };
+  }
+  const raices = Array.isArray(dir) ? dir : [dir];
+  const todo = loadPorMerge(raices);
+  const ilegible = (todo.unreadableDirs || [])[0];
+  if (ilegible) {
+    const nombre = path.basename(ilegible.dir) === 'merges' ? `${path.basename(path.dirname(ilegible.dir))}/merges` : path.basename(ilegible.dir);
+    return { value: null, reason: `no medido: la carpeta ${nombre} no se puede leer (${ilegible.code})` };
+  }
+  let rows = todo.records.filter((r) => r.status === 'ok' || r.status === 'legacy');
   if (since) rows = rows.filter((r) => r.date && r.date >= since);
   const iters = rows.map((r) => r.values.advisor_rerun_loop_iterations).filter((v) => v !== null);
   if (!iters.length) return { value: null, reason: `ningún registro de ${dir} trae iteraciones utilizables` };
@@ -1261,7 +1283,7 @@ function main() {
     }
   }
   const defaults = a.dashboardGiven ? null : nightDefaults();
-  const firstPass = firstPassFromDashboard(defaults ? defaults.dirs : a.dashboard, a.since);
+  const firstPass = firstPassFromDashboard(defaults ? defaults.dirs : a.dashboard, a.since, a.mergesReceipt);
 
   const allLeads = repos.flatMap((r) => r.leads || []);
   const byMonth = {};
@@ -1332,6 +1354,8 @@ function main() {
     lead_time_days: stats(allLeads.map((l) => l.days)),
     lead_time_monthly: monthly,
     first_pass_ratio: firstPass,
+    // lo que no se midió de lo global, con su motivo (hoy, la primera vuelta sin la bajada de los merges al día)
+    ...(firstPass.value === null && /^no medido: /.test(firstPass.reason || '') ? { not_measured: [firstPass.reason] } : {}),
     rework_ratio: sum('rework'),
     dod_evidence_ratio: (() => {
       const x = sum('dod');
