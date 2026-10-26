@@ -69,11 +69,14 @@ function harnessLib() {
     const r = require('./harness-path.js').rutaArnesHook();
     if (r && r.dir) {
       const lib = require(path.join(r.dir, 'scripts', 'lib', 'legacy-names.js'));
-      if (lib && typeof lib.readEnv === 'function' && typeof lib.envNames === 'function') harness = lib;
+      if (lib && typeof lib.readEnv === 'function' && typeof lib.envNames === 'function') { harness = lib; harnessDir = r.dir; }
     }
   } catch (_) { /* sin arnés o de una versión sin la biblioteca: la tabla propia */ }
   return harness;
 }
+let harnessDir = null;
+/** ¿El arnés trae su mapa de renombres? La copia pública no lo trae. */
+const harnessHasMap = () => !!harnessDir && require('fs').existsSync(path.join(harnessDir, 'scripts', 'lib', 'renames.json'));
 
 /** La variable `name` (su nombre nuevo), o la vieja si sólo está la vieja; distintas, gana la nueva. */
 function readEnv(name, opts = {}) {
@@ -281,14 +284,15 @@ function legacyStatePath(p) {
  *   1. el arnés conoce el nombre nuevo: su `prepareStateWrite`, que además anota el uso;
  *   2. el arnés es de una versión sin ese nombre: quien LEE ese estado es ese arnés, que mira sólo el nombre viejo — se devuelve el
  *      viejo y no se migra nada (migrar dejaría lo escrito donde nadie lo lee);
- *   3. sin arnés: la tabla propia, copiada acá con el mismo cuidado (a una hermana temporal y recién ahí el nombre
- *      nuevo: nunca a medias) y sin anotar.
+ *   3. sin arnés, o con uno sin mapa de renombres (la copia pública: su lector mira sólo el nombre nuevo): la tabla
+ *      propia, copiada acá con el mismo cuidado (a una hermana temporal y recién ahí el nombre nuevo: nunca a medias) y
+ *      sin anotar.
  * Una ruta que no es de la tabla pasa derecho. Tira si la copia falla: quien escribe decide.
  */
 function prepareStateWrite(p, opts = {}) {
   const abs = path.resolve(String(p));
   const lib = harnessLib();
-  if (lib) {
+  if (lib && !(typeof lib.oldPathOf === 'function' && !harnessHasMap())) {
     if (typeof lib.prepareStateWrite === 'function' && typeof lib.oldPathOf === 'function' && lib.oldPathOf(abs)) {
       return lib.prepareStateWrite(abs, opts);
     }

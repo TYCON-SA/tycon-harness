@@ -178,6 +178,28 @@ test('T10g · con el arnés anterior a la D2: se sigue anotando en la carpeta vi
   fs.rmSync(arnes, { recursive: true, force: true });
 });
 
+// La copia pública trae la biblioteca al día pero no el mapa de renombres: su oldPathOf no sabe de ningún nombre viejo, y
+// su lector (run-change.js) mira sólo la carpeta nueva. Ahí el puente usa su tabla propia, migra y escribe en la nueva.
+// Mutación: tomarla por un arnés anterior a la D2 → la anotación va a la vieja, donde ese lector no mira.
+function arnesSinMapa() {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'arnes-sin-mapa-'));
+  fs.mkdirSync(path.join(d, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/sh\n');
+  fs.writeFileSync(path.join(d, 'scripts', 'lib', 'legacy-names.js'),
+    "'use strict';\nmodule.exports = { readEnv: (n, o = {}) => (o.env || process.env)[n], envNames: (n) => [n], oldPathOf: () => null, prepareStateWrite: (p) => p };\n");
+  return d;
+}
+test('T10i · con el arnés al día y sin el mapa (la copia pública): migra y anota en la carpeta nueva', () => {
+  const arnes = arnesSinMapa();
+  const { home, est, vieja, otra, trabajo, r } = migrarEnHome({ TYCON_GUIDES_DIR: arnes });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(est, 'console-writes', 'otra-sesion.jsonl'), 'utf8'), otra, 'lo de la otra sesión pasó a la nueva');
+  assert.deepStrictEqual(anotadas(est, 's-d2').map((x) => x.path), [path.join(trabajo, 'a.ts')], 'la anotación va a la nueva, donde la lee run-change.js');
+  assert.deepStrictEqual(fs.readdirSync(vieja), ['otra-sesion.jsonl'], 'la vieja queda como estaba');
+  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(arnes, { recursive: true, force: true });
+});
+
 // (SILENT-C1) Si la migración falla, queda en hook-errors.log y la anotación no se pierde:
 // va a la carpeta vieja (el lector del arnés al día lee las dos). Mutación: un solo catch mudo, sin rastro ni anotación.
 test('T10h · si la carpeta vieja no se puede llevar: rastro en hook-errors.log y la anotación va a la vieja', { skip: (typeof process.getuid === 'function' && process.getuid() === 0) && 'como root los permisos no frenan' }, () => {
