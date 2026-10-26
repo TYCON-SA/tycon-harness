@@ -189,7 +189,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `runtime-waiver <spec>` (TTY) · `adhoc set|get|clear|clear-orphan` · `adopt-session` · `list-all` · `find-by-story` ·
   `clear-session` · `update-story-status` · `update-pipeline-status` · `clear`.
 - **pipeline.js**: `start` · `next` · `next-story` · `risk-class` · `model-hint` · `tooling-expected` ·
-  `mech-check` · `advisors` · `validators` (validar la story) · `smart-reloop` · `check-count` (lee spawns reales, CF-2) · `deep-review-gate` ·
+  `mech-check` · `advisors` · `validators` (validar la story; omite lo ya validado en verde) · `validation-record` · `smart-reloop` · `check-count` (lee spawns reales, CF-2) · `deep-review-gate` ·
   `dep-gate` · `e2e-config` · `evidence-dir` · `run-dir` · `followups-status` · `write-findings` (findings.json de «Hallazgos»,
   obligatorio: `prepare-commit` lo exige) · `write-followups` · `dod-checker-needed` · `qa-readability` ·
   `timing-report`.

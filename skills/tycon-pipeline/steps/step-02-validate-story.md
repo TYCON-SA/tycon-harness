@@ -37,7 +37,9 @@ integración devuelve una acción, con descripción `[cancelado]`) y devolver el
 ya corrieron — mismo tratamiento que una cancelación en «Armar el plan»). Si por cualquier razón el
 fan-out no ocurrió (partes del Arranque salteadas, orden secuencial), lanzar los subagentes acá como siempre.
 
-1. Leer las reglas de la organización (el validador no corre comandos: se las pasa el pedido):
+1. Correr antes `pipeline.js validators` (punto 2): si su `validadores` no trae `tycon-story-validator`, la historia
+   no cambió desde su última validación verde y este punto no se hace (ver `validacion_previa` en el punto 2).
+   Si lo trae, leer las reglas de la organización (el validador no corre comandos: se las pasa el pedido):
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js org-rules --story {story_path}
    ```
@@ -97,6 +99,13 @@ fan-out no ocurrió (partes del Arranque salteadas, orden secuencial), lanzar lo
      (`archivo`, `lista`, `nivel`, `motivo`, `frena`). Lo calcula un programa: se le pasa al validador en el pedido, tal
      cual («Archivos deprecados de la historia: {lista JSON}»), y él reporta **`VAL-C9`** (CRITICAL) por cada uno con
      `frena: true`. Lista vacía = la historia no toca nada deprecado; se dice igual en el pedido.
+
+   - **`validacion_previa`**: si la historia no cambió desde su última validación verde (la constancia de
+     `validation-record`, con la misma huella que la revisión previa: el estado y el Change Log no cuentan), los
+     validadores que ya corrieron salen de `validadores` y de `lanzamientos`, y `omitidos` los nombra. No se lanzan:
+     anotar en el log del paso la `linea` y decirla en el anuncio. Si `validadores` queda vacío, el paso no espera
+     ningún reporte y sigue a «Armar el plan». Con la historia cambiada (`stale`), en rojo o sin constancia
+     (`none`), se valida como siempre.
 
    - **La revisión adversarial previa** (el revisor de historias): la decide
      `pipeline.js story-review-gate --story {story_path}`, y `validators` ya la suma como un lanzamiento más cuando el
@@ -182,6 +191,12 @@ fan-out no ocurrió (partes del Arranque salteadas, orden secuencial), lanzar lo
   - **(c) Cancelar** → terminar pipeline.
 
 - **Si todo OK**: proceder sin interrupciones.
+
+- **La constancia de la validación**: con los reportes procesados y la historia ya en su versión final (después de
+  cualquier arreglo y su nueva validación), anotarla: `pipeline.js validation-record --story {story_path} --result
+  <verde | rojo> --validators <los validadores que corrieron, separados por coma>`. Verde = ningún CRITICAL sin
+  resolver; un override de un CRITICAL es rojo. La próxima corrida sobre la misma historia sin cambios no los vuelve a
+  lanzar.
 
 ## Edge cases
 

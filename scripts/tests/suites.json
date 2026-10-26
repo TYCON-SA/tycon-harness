@@ -590,6 +590,12 @@
       "requiere": []
     },
     {
+      "__nota": "una historia que no cambió desde su última validación verde no se vuelve a validar: la constancia, su huella y validators.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/validation-record.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.51: la historia de primera vez arranca sola — sin git, git init; en main/master, la rama story/<n>; sólo con la marca y la constancia del guion (la marca a mano pausa como siempre).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/start-first-story.test.js",
