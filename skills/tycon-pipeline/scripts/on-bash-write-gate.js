@@ -666,8 +666,9 @@ const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stre
 
 /**
  * Lo que el comando borra (`rm`, `del`, `Remove-Item` y sus alias, `git rm`) o deshace (`git checkout [<ref>] [--]
- * <ruta>`, `git restore <ruta>`): `[{ raw, kind: 'delete'|'restore', base?, quizas? }]`. `base` es la carpeta de un
- * `git -C`. `quizas`: un `git checkout <nombre>` sin `--`, que es una ruta si existe y si no una rama. Lo que sólo toca el
+ * <ruta>`, `git restore <ruta>`): `[{ raw, kind: 'delete'|'restore', base?, quizas?, git? }]`. `base` es la carpeta de un
+ * `git -C`. `quizas`: un `git checkout <nombre>` sin `--`, que es una ruta si existe y si no una rama. `git`: lo borra un
+ * `git rm`, que deja el borrado en el índice. Lo que sólo toca el
  * índice (`git restore --staged`, `git rm --cached`) no cambia el archivo.
  */
 function destinosBorrados(cmd) {
@@ -701,7 +702,7 @@ function destinosBorrados(cmd) {
     const con = (raw, kind, extra) => out.push({ raw, kind, ...(base ? { base } : {}), ...extra });
     if (sub === 'rm') {
       if (resto.includes('--cached')) continue;
-      for (const w of resto) if (!w.startsWith('-')) con(w, 'delete');
+      for (const w of resto) if (!w.startsWith('-')) con(w, 'delete', { git: true });
     } else if (sub === 'checkout') {
       if (resto.some((w) => /^-(?:b|B|-orphan|-detach)$/.test(w))) continue;
       const corte = resto.indexOf('--');
@@ -1688,6 +1689,28 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
   const adentro = borrados.filter((d) => enElRepo(d.abs));
   const deCodigo = [];
   const pasan = [];
+  const deLaStory = [];
+  let declarados = null;
+  // los archivos del repo que la story declara (files_to_create, files_to_modify, files_to_delete), por ruta real. La
+  // story puede nombrarlos desde otra raíz (`app/src/a.ts` en un repo de specs): cuenta el final de la ruta, desde una
+  // carpeta, y sólo si nombra una carpeta (`a.ts` a secas no dice cuál)
+  const nombrados = () => {
+    if (declarados) return declarados;
+    declarados = new Set();
+    let texto = '';
+    try { texto = marker.storyPath ? fs.readFileSync(marker.storyPath, 'utf8') : ''; } catch (_) { return declarados; }
+    const ts = require('./lib/test-scope.js');
+    const finales = [...ts.parseDeclaredFiles(texto), ...ts.parseFilesToDelete(texto)]
+      .map((f) => String(f).replace(/\\/g, '/').replace(/^\.\//, '')).filter((f) => f.includes('/') && !f.split('/').includes('..'));
+    for (const d of adentro) {
+      const abs = real(d.abs);
+      const posix = abs.split(path.sep).join('/');
+      const rel = path.relative(repoReal, abs).split(path.sep).join('/');
+      // desde una raíz más arriba (`acme-web/src/a.ts`) o desde una carpeta del repo (`app/src/a.ts` con el repo en `app`)
+      if (finales.some((f) => posix.endsWith(`/${f}`) || f === rel || (rel.includes('/') && f.endsWith(`/${rel}`)))) declarados.add(abs);
+    }
+    return declarados;
+  };
   for (const d of adentro) {
     // un archivo de código: deshacerlo frena siempre; borrarlo, si git lo sigue (uno de prueba de la sesión pasa).
     // Una carpeta, `.` o un comodín: frena si git sigue código adentro. Sin poder preguntarle a git, del lado seguro.
@@ -1699,6 +1722,11 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
     try { esCarpeta = fs.statSync(d.abs).isDirectory(); } catch (_) { /* no existe: lo decide su forma */ }
     if (!esCodigo(d.abs) && !esCarpeta && !/[*?[]/.test(d.raw) && path.extname(d.abs)) { pasan.push(d); continue; }
     const lista = seguidos(repoReal, real(d.abs));
+    // un `git rm` de un archivo que la story declara: es parte de la historia, pasa y se anota como tocado
+    if (d.git && esCodigo(d.abs) && !esCarpeta && !/[*?[]/.test(d.raw) && lista && lista.length && nombrados().has(real(d.abs))) {
+      deLaStory.push(d);
+      continue;
+    }
     if (esCodigo(d.abs)) {
       if (d.kind === 'restore' || lista === null || lista.length) deCodigo.push(d.abs); else pasan.push(d);
       continue;
@@ -1710,7 +1738,8 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
   }
   const frena = [...new Set(deCodigo), ...armados.map((e) => `(destino armado) ${e}`)];
   if (!frena.length) {
-    anotarEscriturasConsola(stateDir, sessionId, pasan.filter((d) => d.kind === 'delete').map((d) => d.abs), 'delete');
+    anotarEscriturasConsola(stateDir, sessionId, [...pasan.filter((d) => d.kind === 'delete'), ...deLaStory].map((d) => d.abs), 'delete');
+    if (deLaStory.length) anotarBorradosDeLaStory({ stateDir, sessionId, marker, rutas: deLaStory.map((d) => d.abs), via });
     return null;
   }
   const linea = (status, extra) => {
@@ -1851,6 +1880,36 @@ function logHookError(e) {
  * renombre el puente devuelve la vieja (es la que lee ese arnés). Si la migración falla, queda en hook-errors.log y la
  * anotación va a la vieja: perderla sería callar.
  */
+/**
+ * Lo que un `git rm` borra con permiso de la story: va a los archivos tocados de la corrida y a sus eventos (como una
+ * edición por el editor, para que la vuelta siguiente de revisores lo mire), con su línea en gates.log. Se anota antes de
+ * que el comando corra: si `git rm` falla, el archivo sigue y la corrida lo tiene de más, no de menos.
+ */
+function anotarBorradosDeLaStory({ stateDir, sessionId, marker, rutas, via }) {
+  const archivo = path.join(stateDir, 'active', `${String(sessionId || '_nosession').replace(/[/\\]/g, '_')}.json`);
+  try {
+    const m = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+    const ts = new Date().toISOString();
+    m.filesTouched = Array.isArray(m.filesTouched) ? m.filesTouched : [];
+    m.fileEvents = Array.isArray(m.fileEvents) ? m.fileEvents : [];
+    for (const p of rutas) {
+      if (!m.filesTouched.includes(p)) m.filesTouched.push(p);
+      m.fileEvents.push({ path: p, ts });
+    }
+    if (m.fileEvents.length > 500) m.fileEvents = m.fileEvents.slice(-500);
+    m.lastTouch = ts;
+    const tmp = `${archivo}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(m, null, 2) + '\n', 'utf8');
+    fs.renameSync(tmp, archivo);
+  } catch (e) { logHookError(e); }
+  try {
+    fs.appendFileSync(path.join(stateDir, 'gates.log'), JSON.stringify({
+      ts: new Date().toISOString(), sessionId, repoPath: marker.repoPath, name: 'ledger-visible', status: 'story-delete',
+      storyId: marker.storyId || null, files: rutas.length, paths: rutas, via,
+    }) + '\n', 'utf8');
+  } catch (e) { logHookError(e); }
+}
+
 function anotarEscriturasConsola(stateDir, sessionId, rutas, kind = null) {
   const legacy = require('./lib/legacy-names.js');
   const where = 'skills/tycon-pipeline/scripts/on-bash-write-gate.js';

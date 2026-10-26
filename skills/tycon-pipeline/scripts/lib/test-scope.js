@@ -86,6 +86,13 @@ function parseFilesToCreate(content) {
   return listUnderKey(fm, 'files_to_create');
 }
 
+// Los que la story declara BORRAR. Los lee el freno de la terminal: un `git rm` de un archivo declarado pasa y se anota.
+function parseFilesToDelete(content) {
+  const fm = frontmatterOf(content);
+  if (!fm) return [];
+  return listUnderKey(fm, 'files_to_delete');
+}
+
 function storyIdOf(content) {
   const fm = frontmatterOf(content);
   const m = fm.match(/^story:\s*["']?([^"'#\r\n]+)["']?/m);
@@ -392,7 +399,7 @@ function resolveScope(repoDir, storyArg) {
 }
 
 module.exports = {
-  parseDeclaredFiles, parseFilesToCreate, storyIdOf, discoverCandidates, deduceScope, resolveScope,
+  parseDeclaredFiles, parseFilesToCreate, parseFilesToDelete, storyIdOf, discoverCandidates, deduceScope, resolveScope,
   changedFiles, nodeRunnerOfPkg,
 };
 
