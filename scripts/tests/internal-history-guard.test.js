@@ -1490,15 +1490,35 @@ const MEASUREMENT = path.join(RAIZ, 'tasks', 'measurement-8.26-tanda-g');
 // El registro de incidentes de verdad vive sólo en el repo del equipo; la copia trae una página en su lugar.
 const TEAM_LOG = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-repos.json')) ? path.join(RAIZ, 'guides', 'maintaining', 'incident-log.md') : null;
 
+// Las guías y las portadas que miró la cuenta y lo que quedó en ellas, de lo que viaja: en el árbol armado de los
+// nocturnos, una guía propia del privado la mide su repo, no la copia pública.
+function guidesThatTravel(root, d) {
+  const looked = ih.travelling(root, d.paths.filter(isGuideOrCover), 'las guías y las portadas');
+  const left = Object.entries(d.files).filter(([file]) => looked.includes(file))
+    .map(([file, forms]) => `${file}: ${Object.entries(forms).map(([form, n]) => `${form} ${n}`).join(', ')}`);
+  return { looked, left };
+}
+
+test('T26c NoInternalHistory_OnlyWhatTravels — en el árbol armado, una guía del privado no cuenta', (t) => {
+  // 🔴 rojo: una guía que sólo tiene el privado deja la cuenta del público en rojo
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'guides/a.md': 'a\n' }, publico: { 'guides/b.md': 'b\n' } });
+  t.after(lab.cleanup);
+  const d = { paths: ['guides/a.md', 'guides/b.md'], files: { 'guides/a.md': { 'pr-number': 1 }, 'guides/b.md': { 'pr-number': 1 } } };
+  assert.deepStrictEqual(guidesThatTravel(lab.root, d), { looked: ['guides/b.md'], left: ['guides/b.md: pr-number 1'] }, 'lo del público sigue en rojo');
+  // lo traído no tiene ni una guía: no hay nada que revisar, y eso no es verde
+  const sinGuias = overlayLab({ privado: { 'guides/a.md': 'a\n' }, publico: { 'scripts/x.js': 'x\n' } });
+  t.after(sinGuias.cleanup);
+  assert.throws(() => guidesThatTravel(sinGuias.root, d), /no se midió/);
+});
+
 test('PublishedGuidesAndCovers_NoInternalHistory (T26) — ninguna guía ni portada que se publica trae una forma de historia interna', () => {
   // la misma cuenta que `--all` (la línea de comandos la cuida la prueba de arriba), sobre el commit de HEAD
   const d = ih.run({ mode: 'all', repo: RAIZ, ref: 'HEAD', config: null });
   assert.strictEqual(d.outcome, 'counted');
-  const left = Object.entries(d.files).filter(([file]) => isGuideOrCover(file))
-    .map(([file, forms]) => `${file}: ${Object.entries(forms).map(([form, n]) => `${form} ${n}`).join(', ')}`);
+  const { looked, left } = guidesThatTravel(RAIZ, d);
   assert.deepStrictEqual(left, [], 'cada guía y cada portada dice la regla y su porqué, sin el caso: lo que es un dato o un ejemplo se declara, con su motivo');
   // y el cero no es un cero vacío: el control miró las portadas y las guías
-  const looked = d.paths.filter(isGuideOrCover);
   // en el repo de mantenimiento con el público encima, INSTALL.md es la versión propia del privado: la del público la
   // mide su CI, y acá no se mira
   const thin = d.mode === 'thin';
@@ -1610,10 +1630,29 @@ test('PublishedGuidesAndCovers_MeasurementScripts (T26) — los dos guiones de l
   }
 });
 
+// Las páginas del registro que viajan: en el árbol armado, el privado tiene la suya a propósito y no se publica.
+const LOG_PAGE = j('incident', '-log.md');
+function logPagesThatTravel(root) {
+  const viaja = ih.travels(root);
+  return [`guides/maintaining/${LOG_PAGE}`, `scripts/publishing/public-files/guides/maintaining/${LOG_PAGE}`]
+    .filter((rel) => fs.existsSync(path.join(root, rel)) && viaja(rel));
+}
+
+test('T26b NoPublicLogPage_OnlyWhatTravels — en el árbol armado, la página del privado no cuenta; la del público sí', (t) => {
+  // 🔴 rojo: la página del registro del privado se toma como una página publicada
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { [`guides/maintaining/${LOG_PAGE}`]: 'caso\n' }, publico: { 'guides/g.md': 'g\n' } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(logPagesThatTravel(lab.root), [], 'la del privado no viaja');
+  const sucio = overlayLab({ privado: { 'specs/s.md': 's\n' }, publico: { [`guides/maintaining/${LOG_PAGE}`]: 'caso\n' } });
+  t.after(sucio.cleanup);
+  assert.deepStrictEqual(logPagesThatTravel(sucio.root), [`guides/maintaining/${LOG_PAGE}`], 'la que trae el público, sí');
+  sucio.git(['checkout', '--quiet', sucio.tip]);
+  assert.deepStrictEqual(logPagesThatTravel(sucio.root), [], 'sin superposición, el árbol entero: el privado solo no la tiene');
+});
+
 test('PublishedGuidesAndCovers_NoPublicLogPage (T26) — lo que se publica no trae una página del registro: los casos viven en el repo del equipo', () => {
-  const page = j('incident', '-log.md');
-  assert.ok(!fs.existsSync(path.join(RAIZ, 'guides', 'maintaining', page)), 'la página pública del registro no existe');
-  assert.ok(!fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-files', 'guides', 'maintaining', page)), 'ni su fuente sintética');
+  assert.deepStrictEqual(logPagesThatTravel(RAIZ), [], 'la página pública del registro no existe, ni su fuente sintética');
 });
 
 // ══ las skills, los revisores y los bloques, en cero (T58) ═════════════════════

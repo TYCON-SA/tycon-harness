@@ -328,6 +328,41 @@ test('ThinOverlay_PublicAndTeamClassificationUnchanged', (t) => {
   assert.ok(mode === 'team' || /repo unido/.test(String(mode)), `el clon del equipo sigue clasificado como del equipo (salió ${mode})`);
 });
 
+test('ThinOverlay_Travels_WithoutComputedNorTeamLayer', async (t) => {
+  // 🔴 rojo: un registro calculado o la capa del equipo cuentan como lo que viaja, o un temporal dentro del repo hereda
+  // la superposición del repo que lo contiene
+  const { travels, TEAM_LAYER } = require('../publishing/internal-history.js');
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const traido = { 'scripts/a.js': 'a\n', 'scripts/tests/suites.json': '{}\n', 'perfil-equipo.json': '{}\n', 'onboarding/alta.md': 'alta\n' };
+  const lab = overlayLab({ privado: { 'specs/s.md': 's\n' }, publico: traido });
+  t.after(lab.cleanup);
+  const viaja = travels(lab.root);
+  assert.deepStrictEqual([...Object.keys(traido), 'specs/s.md'].filter(viaja), ['scripts/a.js'], 'viaja sólo lo traído que no es calculado ni del equipo');
+  assert.ok(TEAM_LAYER('perfil-equipo.json') && TEAM_LAYER('onboarding/alta.md'), 'el perfil y el alta son la capa del equipo');
+  assert.ok(!TEAM_LAYER('onboarding/interno/README.md') && !TEAM_LAYER('scripts/onboarding/x.md'), 'sólo los .md de la raíz de onboarding/');
+  // un temporal sin git propio dentro del repo armado: no es el árbol armado, todo viaja
+  const dentro = fs.mkdtempSync(path.join(lab.root, 'temporal-'));
+  assert.ok(travels(dentro)('specs/s.md'), 'un temporal dentro del repo no hereda la superposición');
+  // la misma carpeta escrita con otras mayúsculas, donde el disco no las distingue (la Mac, Windows): sigue siendo el
+  // árbol armado
+  await t.test('la ruta con otras mayúsculas', (st) => {
+    const otraForma = lab.root.replace(/[a-z]/g, (c) => c.toUpperCase());
+    if (otraForma === lab.root || !fs.existsSync(otraForma)) { st.skip('NO MEDIDO — este disco distingue mayúsculas'); return; }
+    assert.ok(!travels(otraForma)('specs/s.md'), 'con otras mayúsculas, lo del privado sigue sin viajar');
+  });
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.ok(travels(lab.root)('specs/s.md'), 'la punta sola: todo viaja');
+  // la superposición que no trae nada: no hay qué medir
+  const vacio = overlayLab({ privado: { 'specs/s.md': 's\n' } });
+  t.after(vacio.cleanup);
+  assert.throws(() => travels(vacio.root), /no trajo nada/, 'sin nada traído, lanza');
+  // fuera de todo repo, todo viaja; si git no se puede correr ahí, no se toma por «no hay superposición»
+  const suelto = fs.mkdtempSync(path.join(os.tmpdir(), 'viaja-suelto-'));
+  t.after(() => fs.rmSync(suelto, { recursive: true, force: true }));
+  assert.ok(travels(suelto)('specs/s.md'), 'una carpeta sin repo: todo viaja');
+  assert.throws(() => travels(path.join(suelto, 'no-existe')), /no pude correr git/, 'git que no corre, lanza');
+});
+
 test('OverlayComputed_SameNamesAsTheOverlay @story-8.128 @ac-1', () => {
   // los dos registros que la superposición calcula: los mismos nombres que su lista REGISTRIES
   const { OVERLAY_COMPUTED } = require('../publishing/internal-history.js');

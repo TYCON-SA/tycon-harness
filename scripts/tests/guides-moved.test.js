@@ -111,9 +111,50 @@ function staleMentions() {
   let out;
   try { out = JSON.parse(r.stdout); } catch (e) { assert.fail(`--stale-mentions --json no devolvió JSON: ${e.message}`); }
   assert.ok(Array.isArray(out.findings), '--stale-mentions --json trae findings');
+  out.findings = onlyTravelling(ROOT, out.findings);
   staleRun = { out };
   return staleRun;
 }
+
+/**
+ * Los hallazgos que cuentan: en el árbol armado de los nocturnos, sólo los de lo que viaja al público. El árbol armado
+ * es un repo unido, así que el guion también pone `agent-skills` a archivos de esta raíz (skills/, packs/…): esos se
+ * filtran igual; los de agent-skills con una ruta que esta raíz no versiona son de otro checkout y cuentan todos. Se
+ * filtran los hallazgos y no la lista de archivos del guion: sin sus archivos, el glob de los homónimos dice que no
+ * matchea ninguno. Si del arnés no viaja nada, no hubo qué medir.
+ */
+function onlyTravelling(root, findings) {
+  const ih = require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js'));
+  const r = spawnSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  assert.strictEqual(r.status, 0, `git ls-files contestó: ${r.stderr}`);
+  const tracked = r.stdout.split('\0').filter(Boolean);
+  ih.travelling(root, tracked, 'el arnés');
+  const viaja = ih.travels(root);
+  const deEstaRaiz = new Set(tracked);
+  return findings.filter((f) => (f.source !== 'arnes' && !deEstaRaiz.has(f.rel)) || viaja(f.rel));
+}
+
+test('T49b StaleMentions_OnlyWhatTravels — en el árbol armado, una mención vieja sólo del privado no cuenta', (t) => {
+  // 🔴 rojo: una ficha del privado con un nombre viejo pone en rojo la prueba del público, o lo traído deja de contar
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({
+    privado: { '.github/control-changes/x.md': 'skills/viejo\n', 'packs/p/g.md': 'skills/viejo\n' },
+    publico: { 'guides/g.md': 'skills/viejo\n', 'skills/pub.md': 'skills/viejo\n' },
+  });
+  t.after(lab.cleanup);
+  // en el árbol unido, los de agent-skills con ruta de esta raíz son archivos del árbol: se filtran igual; los de otro
+  // checkout (ruta que esta raíz no tiene) cuentan todos
+  const hallazgos = [{ source: 'arnes', rel: '.github/control-changes/x.md' }, { source: 'arnes', rel: 'guides/g.md' },
+    { source: 'agent-skills', rel: 'packs/p/g.md' }, { source: 'agent-skills', rel: 'skills/pub.md' }, { source: 'agent-skills', rel: 'skills/s.md' }];
+  assert.deepStrictEqual(onlyTravelling(lab.root, hallazgos).map((f) => f.rel), ['guides/g.md', 'skills/pub.md', 'skills/s.md'],
+    'sólo lo traído; de agent-skills, lo de otro checkout entero');
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.strictEqual(onlyTravelling(lab.root, hallazgos).length, 5, 'sin superposición, todo');
+  // lo traído es sólo un registro calculado: del arnés no viaja nada, y eso no es verde
+  const fuera = overlayLab({ privado: { '.github/control-changes/x.md': 'skills/viejo\n' }, publico: { 'scripts/tests/suites.json': '{}\n' } });
+  t.after(fuera.cleanup);
+  assert.throws(() => onlyTravelling(fuera.root, hallazgos), /no se midió/, 'sin nada que revisar, rojo');
+});
 const mentionLine = (f) => `${f.source}:${f.rel}:${f.line} — ${f.old}`;
 
 test('T34 R5_Guides_ShimsAndInternalLinks — --stale-mentions no marca ninguna de las 11 rutas viejas', { skip: NOT_MEASURED }, (t) => {

@@ -39,9 +39,12 @@ const SUITES = ['open-prs.test.sh', 'assigned-items.test.js', 'work-items.test.s
 const ilegibles = [];
 function leer(f, root = ROOT) { try { return fs.readFileSync(path.join(root, f), 'utf8'); } catch (e) { ilegibles.push(`${f} (${(e && e.code) || 'error'})`); return null; } }
 
+const IH = () => require(path.join(ROOT, 'scripts', 'publishing', 'internal-history.js'));
+
+// En el árbol armado de los nocturnos el núcleo es sólo lo que viaja al público; sin superposición, el árbol entero.
 function nucleo(root = ROOT) {
-  const out = execFileSync('git', ['-C', root, 'ls-files'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  return out.split('\n').filter((f) => f && TEXTO.test(f) && !AFUERA.some((rx) => rx.test(f)));
+  const out = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  return IH().travelling(root, out.split('\0').filter((f) => f && TEXTO.test(f) && !AFUERA.some((rx) => rx.test(f))), 'el núcleo');
 }
 
 /** Por archivo, cuántas líneas distintas tienen una señal dura. */
@@ -58,9 +61,11 @@ function senales() {
 
 /** Los archivos de las integraciones (donde se mudan los comandos de una plataforma a su conector). */
 function deIntegraciones(root = ROOT) {
-  const out = execFileSync('git', ['-C', root, 'ls-files', '--others', '--cached', '--exclude-standard', 'integrations'], { encoding: 'utf8' });
+  const out = execFileSync('git', ['-C', root, 'ls-files', '-z', '--others', '--cached', '--exclude-standard', 'integrations'], { encoding: 'utf8' });
   // el manifiesto declara los comandos crudos de su plataforma (para los frenos): es una lista, no una llamada
-  return out.split('\n').filter((f) => f && TEXTO.test(f) && !/(^|\/)integration\.json$/.test(f));
+  const lista = out.split('\0').filter((f) => f && TEXTO.test(f) && !/(^|\/)integration\.json$/.test(f));
+  // sin integraciones no hay nada que contar; con integraciones y ninguna que viaje, la foto no las miró: rojo
+  return lista.length ? IH().travelling(root, lista, 'las integraciones') : [];
 }
 
 /**
@@ -75,6 +80,15 @@ function literales({ root = ROOT } = {}) {
     if (ls.length) porArchivo[f] = ls;
   }
   return porArchivo;
+}
+
+/**
+ * De la foto grabada, los archivos que viajan: en el árbol armado, un archivo donde el privado tiene su propia versión
+ * no trae la del público, y sus comandos no se pueden comparar ahí (los compara la CI del público).
+ */
+function grabadosQueViajan(porArchivo, root = ROOT) {
+  const viaja = IH().travels(root);
+  return Object.fromEntries(Object.entries(porArchivo).filter(([f]) => viaja(f)));
 }
 
 // las rutas temporales y las fechas cambian en cada corrida: se reemplazan para que la foto sea la misma
@@ -104,6 +118,8 @@ function main(argv) {
   const [modo, ...resto] = argv;
   const sinSuites = resto.includes('--without-suites');
   if (!['record', 'compare'].includes(modo)) { process.stderr.write('uso: record-platform-golden.js record|compare [--without-suites]\n'); return 2; }
+  // en el árbol armado la foto saldría de lo que viaja más lo que el privado tiene igual: se graba en el público solo
+  if (modo === 'record' && IH().broughtByOverlay(ROOT)) { process.stderr.write('✗ esto es el árbol armado de los nocturnos: la foto se graba en el público solo\n'); return 1; }
   fs.mkdirSync(DIR, { recursive: true });
   const problemas = [];
   const s = senales(); const l = literales();
@@ -114,7 +130,7 @@ function main(argv) {
     escribir('az-commands.json', `${JSON.stringify(l, null, 2)}\n`);
   } else {
     // los comandos se comparan como conjunto, sin el archivo: mudar un guion a su conector no cambia lo que pide
-    const antes = new Set(Object.values(leerJson('az-commands.json')).flat());
+    const antes = new Set(Object.values(grabadosQueViajan(leerJson('az-commands.json'))).flat());
     const ahora = new Set(Object.values(l).flat());
     for (const x of antes) if (!ahora.has(x)) problemas.push(`un comando az que ya no está: ${x}`);
     for (const x of ahora) if (!antes.has(x)) problemas.push(`un comando az nuevo: ${x}`);
@@ -140,4 +156,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { senales, literales, normalizar, DURA, AFUERA, SUITES };
+module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, normalizar, DURA, AFUERA, SUITES };

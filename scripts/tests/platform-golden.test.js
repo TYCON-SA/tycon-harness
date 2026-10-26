@@ -31,6 +31,33 @@ test('Golden_Core_ExcludesIntegrationsTestsAndSiteCloud @story-8.85 @ac-27', () 
   for (const f of ['scripts/hooks/pr-auto-complete-guard.js', 'skills/tycon-pipeline/steps/step-09-ado-story-closure.md']) assert.ok(!fuera(f), f);
 });
 
+test('Golden_Core_OnlyWhatTravels — en el árbol armado, un comando az en una spec del privado no es del núcleo', (t) => {
+  // 🔴 rojo: una spec del privado que cita un comando az aparece como un comando nuevo del público
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const lab = overlayLab({ privado: { 'specs/s.md': 'az boards query\n' }, publico: { 'guides/g.md': 'az boards query\n' } });
+  t.after(lab.cleanup);
+  assert.deepStrictEqual(G.nucleo(lab.root), ['guides/g.md'], 'el núcleo es sólo lo que trajo el público');
+  assert.deepStrictEqual(Object.keys(G.literales({ root: lab.root })), ['guides/g.md'], 'los comandos az, sólo de lo que viaja');
+  // la foto grabada se compara sólo en lo que viaja: el archivo del privado no trae la versión del público
+  const grabada = { 'specs/s.md': ['az boards query'], 'guides/g.md': ['az boards query'] };
+  assert.deepStrictEqual(Object.keys(G.grabadosQueViajan(grabada, lab.root)), ['guides/g.md']);
+  lab.git(['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(Object.keys(G.grabadosQueViajan(grabada, lab.root)), ['specs/s.md', 'guides/g.md'], 'sin superposición, la foto entera');
+  assert.deepStrictEqual(G.nucleo(lab.root), ['specs/s.md'], 'sin superposición, el árbol entero');
+  // lo traído es sólo una integración: del núcleo no viaja nada, y eso no es verde
+  const fuera = overlayLab({ privado: { 'specs/s.md': 'az boards query\n' }, publico: { 'integrations/x/a.js': 'a\n' } });
+  t.after(fuera.cleanup);
+  assert.throws(() => G.nucleo(fuera.root), /no se midió/, 'sin nada que revisar, rojo');
+  // las integraciones: la del privado no cuenta, la del público sí; y si ninguna viaja, la foto no las miró
+  const integ = overlayLab({ privado: { 'integrations/p/a.js': 'az boards query\n' }, publico: { 'integrations/q/b.js': 'az repos pr list\n', 'guides/g.md': 'g\n' } });
+  t.after(integ.cleanup);
+  assert.deepStrictEqual(G.deIntegraciones(integ.root), ['integrations/q/b.js']);
+  const sinInteg = overlayLab({ privado: { 'integrations/p/a.js': 'az boards query\n' }, publico: { 'guides/g.md': 'g\n' } });
+  t.after(sinInteg.cleanup);
+  assert.throws(() => G.deIntegraciones(sinInteg.root), /no se midió/, 'integraciones que no viajan: rojo');
+  assert.deepStrictEqual(G.deIntegraciones(lab.root), [], 'sin integraciones, nada que contar');
+});
+
 test('Golden_Recorded_StillMatchesTree @story-8.85 @ac-27', () => {
   const dir = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'platform-golden');
   for (const f of ['hard-signals-baseline.json', 'az-commands.json', ...G.SUITES.map((s) => `${s.replace(/\.test\.(js|sh)$/, '')}.calls`)]) assert.ok(fs.existsSync(path.join(dir, f)), `falta ${f}`);
