@@ -5782,6 +5782,133 @@ test('ProyeccionDelRunDirAlRepoDeLaStory_SoloRosterYFindings', () => {
   for (const d of [project, codeRepo]) fs.rmSync(d, { recursive: true, force: true });
 });
 
+// El registro de aprobaciones viaja con la misma proyección: une líneas, nunca pisa.
+function dosReposConCorrida(prefijo) {
+  const project = repoTmp(`${prefijo}-story-`);
+  const codeRepo = repoTmp(`${prefijo}-code-`);
+  fs.mkdirSync(path.join(project, 'specs'), { recursive: true });
+  const story = path.join(project, 'specs', '8-8.md');
+  fs.writeFileSync(story, '---\nstory: "8.8"\n---\n');
+  const nombre = '8.8-20260905120000';
+  const runDir = path.join(codeRepo, '.advisors', 'pipeline-runs', nombre);
+  fs.mkdirSync(runDir, { recursive: true });
+  const dest = path.join(project, '.advisors', 'pipeline-runs', nombre);
+  const limpiar = () => { for (const d of [project, codeRepo]) fs.rmSync(d, { recursive: true, force: true }); };
+  return { project, codeRepo, story, runDir, dest, limpiar };
+}
+const lineaAp = (que, quien = 'ana@example.com') => JSON.stringify({ que, cuando: '2026-10-25T12:00:00Z', commit: 'abc1234', tipo: 'manual', quien, via: 'chat' });
+
+test('Proyeccion_Registro_LlegaAlRepoDeLaStory @story-8.133 @ac-1', () => {
+  const { projectRunToStoryRepo } = require(path.join(SCRIPTS, 'pipeline.js'));
+  const c = dosReposConCorrida('proj-ap1');
+  fs.writeFileSync(path.join(c.runDir, 'approvals.jsonl'), `${lineaAp('plan')}\n${lineaAp('maqueta')}\n`);
+  const r = projectRunToStoryRepo(c.runDir, c.story);
+  assert.equal(r.projected, true, JSON.stringify(r));
+  assert.ok(r.copied.includes('approvals.jsonl'), JSON.stringify(r));
+  assert.equal(fs.readFileSync(path.join(c.dest, 'approvals.jsonl'), 'utf8'), `${lineaAp('plan')}\n${lineaAp('maqueta')}\n`);
+  c.limpiar();
+});
+
+test('Proyeccion_Registro_UneSinPisar @story-8.133 @ac-2', () => {
+  const { projectRunToStoryRepo } = require(path.join(SCRIPTS, 'pipeline.js'));
+  const c = dosReposConCorrida('proj-ap2');
+  fs.writeFileSync(path.join(c.runDir, 'approvals.jsonl'), `${lineaAp('plan')}\n${lineaAp('maqueta')}\n`);
+  fs.mkdirSync(c.dest, { recursive: true });
+  // una línea propia del destino (copiada a mano o de otra máquina), sin salto al final, y una igual al origen
+  const propia = lineaAp('exencion SEC-C1', 'bob@example.com');
+  fs.writeFileSync(path.join(c.dest, 'approvals.jsonl'), `${propia}\n${lineaAp('plan')}`);
+  projectRunToStoryRepo(c.runDir, c.story);
+  assert.deepEqual(fs.readFileSync(path.join(c.dest, 'approvals.jsonl'), 'utf8').split('\n'), [propia, lineaAp('plan'), lineaAp('maqueta'), '']);
+  // otra vez: no duplica nada
+  projectRunToStoryRepo(c.runDir, c.story);
+  assert.equal(fs.readFileSync(path.join(c.dest, 'approvals.jsonl'), 'utf8').split('\n').filter(Boolean).length, 3);
+  c.limpiar();
+});
+
+test('Proyeccion_Registro_DestinoIlegible_NoEscribe @story-8.133 @ac-3', () => {
+  const { projectRunToStoryRepo } = require(path.join(SCRIPTS, 'pipeline.js'));
+  const c = dosReposConCorrida('proj-ap3');
+  fs.writeFileSync(path.join(c.runDir, 'approvals.jsonl'), `${lineaAp('plan')}\n`);
+  fs.writeFileSync(path.join(c.runDir, 'review-roster.json'), '{"version":1}');
+  // el destino del registro es una carpeta: no se puede leer como archivo
+  fs.mkdirSync(path.join(c.dest, 'approvals.jsonl'), { recursive: true });
+  fs.writeFileSync(path.join(c.dest, 'approvals.jsonl', 'adentro.txt'), 'x');
+  const r = projectRunToStoryRepo(c.runDir, c.story);
+  assert.equal(r.projected, false, JSON.stringify(r));
+  assert.match(r.reason, /^no se pudo/);
+  assert.ok(fs.statSync(path.join(c.dest, 'approvals.jsonl')).isDirectory(), 'el destino queda como estaba');
+  assert.deepEqual(fs.readdirSync(path.join(c.dest, 'approvals.jsonl')), ['adentro.txt']);
+  assert.ok(fs.existsSync(path.join(c.dest, 'review-roster.json')), 'lo demás se copia igual');
+  c.limpiar();
+});
+
+test('Proyeccion_MismoRepo_NoHaceNada @story-8.133 @ac-4', () => {
+  const { projectRunToStoryRepo } = require(path.join(SCRIPTS, 'pipeline.js'));
+  const c = dosReposConCorrida('proj-ap4');
+  fs.writeFileSync(path.join(c.runDir, 'approvals.jsonl'), `${lineaAp('plan')}\n`);
+  const storyAca = path.join(c.codeRepo, 'story-8-8.md');
+  fs.writeFileSync(storyAca, '---\nstory: "8.8"\n---\n');
+  const antes = fs.readdirSync(path.join(c.codeRepo, '.advisors', 'pipeline-runs'));
+  const r = projectRunToStoryRepo(c.runDir, storyAca);
+  assert.equal(r.projected, false);
+  assert.equal(r.reason, 'mismo repo');
+  assert.deepEqual(fs.readdirSync(path.join(c.codeRepo, '.advisors', 'pipeline-runs')), antes);
+  assert.deepEqual(fs.readdirSync(c.runDir), ['approvals.jsonl']);
+  c.limpiar();
+});
+
+test('Proyeccion_ReportesPesados_SiguenAfuera @story-8.133 @ac-15', () => {
+  const { projectRunToStoryRepo } = require(path.join(SCRIPTS, 'pipeline.js'));
+  const c = dosReposConCorrida('proj-ap16');
+  fs.mkdirSync(path.join(c.runDir, 'step-05-advisor-reports'), { recursive: true });
+  fs.writeFileSync(path.join(c.runDir, 'step-05-advisor-reports', 'sec.md'), 'pesado');
+  fs.writeFileSync(path.join(c.runDir, 'step-02-bmad-plan.md'), 'el plan');
+  fs.writeFileSync(path.join(c.runDir, 'review-roster.json'), '{"version":1}');
+  fs.writeFileSync(path.join(c.runDir, 'findings.json'), '[]');
+  fs.writeFileSync(path.join(c.runDir, 'approvals.jsonl'), `${lineaAp('plan')}\n`);
+  const r = projectRunToStoryRepo(c.runDir, c.story);
+  assert.deepEqual([...r.copied].sort(), ['approvals.jsonl', 'findings.json', 'review-roster.json']);
+  assert.deepEqual(fs.readdirSync(c.dest).sort(), ['approvals.jsonl', 'findings.json', 'review-roster.json']);
+  c.limpiar();
+});
+
+test('Regla_PortonYCierre_MismoVeredicto @story-8.133 @ac-14', () => {
+  const approvals = require(path.join(SCRIPTS, 'lib', 'approvals.js'));
+  const { revisarAprobaciones } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'ci', 'tycon-ci-gate.js'));
+  const repo = repoTmp('regla-unica-');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  const casos = {
+    'con-plan': { roster: { registro_aprobaciones: 1 }, registro: `${lineaAp('plan')}\n`, regla: null },
+    'sin-plan': { roster: { registro_aprobaciones: 1 }, registro: `${lineaAp('maqueta')}\n`, regla: 'sin-aprobacion-del-plan' },
+    'sin-registro': { roster: { registro_aprobaciones: 1 }, registro: null, regla: 'sin-registro-de-aprobaciones' },
+    ilegible: { roster: { registro_aprobaciones: 1 }, registro: `${lineaAp('plan')}\nesto no es json\n`, regla: 'registro-de-aprobaciones-invalido' },
+    'sin-declarar': { roster: {}, registro: null, regla: null },
+  };
+  let n = 0;
+  for (const [caso, c] of Object.entries(casos)) {
+    n += 1;
+    const id = `9.${80 + n}`;
+    const story = path.join(repo, 'specs', `story-${id}-${caso}.md`);
+    fs.writeFileSync(story, `---\nstory: "${id}"\n---\n`);
+    const dir = path.join(repo, '.advisors', 'pipeline-runs', `${id}-20991231120000`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'review-roster.json'), JSON.stringify(c.roster));
+    if (c.registro !== null) fs.writeFileSync(path.join(dir, approvals.FILE), c.registro);
+    const delCierre = approvals.faltaElPlan({ registro: approvals.leer(dir), roster: c.roster });
+    const delPorton = revisarAprobaciones(repo, id, story).hallazgos.map((h) => h.regla);
+    assert.equal(delCierre ? delCierre.regla : null, c.regla, `el cierre, ${caso}`);
+    assert.deepEqual(delPorton, c.regla ? [c.regla] : [], `el portón, ${caso}`);
+  }
+  // los mensajes del portón no cambian
+  const sin = revisarAprobaciones(repo, '9.82', path.join(repo, 'specs', 'story-9.82-sin-plan.md')).hallazgos[0];
+  assert.match(sin.mensaje, /existe pero no trae la aprobación del plan, y la ejecución llegó a los revisores/);
+  const sinReg = revisarAprobaciones(repo, '9.83', path.join(repo, 'specs', 'story-9.83-sin-registro.md')).hallazgos[0];
+  assert.match(sinReg.mensaje, /llegó a los revisores y no trae `approvals\.jsonl`/);
+  const avisos = revisarAprobaciones(repo, '9.85', path.join(repo, 'specs', 'story-9.85-sin-declarar.md')).avisos;
+  assert.equal(avisos[0].regla, 'sin-registro-de-aprobaciones', 'la corrida sin declarar sigue avisando');
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
 test('PipeC2_LaSondaRealLePreguntaAGit_NoDevuelveNullSiempre', () => {
   // 🔴 Los casos de arriba prueban `computeGitignoreNeeds` con una sonda escrita en el test; la sonda de
   //    PRODUCCIÓN (`gitIgnoraProbe`) se prueba aparte: si usara `execFileSync` sin requerirlo, tiraría

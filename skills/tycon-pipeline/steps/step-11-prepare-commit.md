@@ -33,6 +33,10 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   (`marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas>"] [--deferred <d> --reason "<por qué>"]`);
   pase no lanzado → el salteo que decidió el portón (`marker.js mark-adversarial-skipped --files <archivos de código del diff>`);
   ninguno de los dos → bloquea con `no-atendido`.
+- **Las aprobaciones en el repo de la story** (`approvals-story-repo`, se evalúa SIEMPRE y no se abre con `DOD_BYPASS`):
+  vuelve a copiar el registro de aprobaciones al repo de la story y lo revisa con la regla del portón de CI (el plan, y
+  la maqueta si se aprobó); lo que falte frena nombrando la corrida, y se anota con
+  `marker.js complete-step approve-plan --approved "<cita>" --out-of-order` (o `advisors_exempt` si se cerró sin pipeline).
 - **Eximiciones de críticos, vueltas de revisores y los demás controles de cierre** que el comando nombra al frenar
   (waivers, tope de vueltas, maqueta, comprobaciones manuales): se resuelven como dice su mensaje.
 

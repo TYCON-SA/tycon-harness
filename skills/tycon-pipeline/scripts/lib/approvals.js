@@ -164,4 +164,112 @@ function resumir(lineas) {
   return r;
 }
 
-module.exports = { FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir };
+/**
+ * Lo que le falta al registro de una corrida, con la regla que aplican el portón de CI y el cierre del pipeline.
+ * `registro` es lo que devuelve `leer`; `roster`, el `review-roster.json` de la misma carpeta (o null). La ausencia
+ * cuenta sólo si la corrida declara que la hizo un arnés que anota aprobaciones (`roster.registro_aprobaciones`).
+ * Devuelve la lista en orden: registro ilegible, registro ausente, plan sin anotar. Vacía = no falta nada.
+ */
+function problemasDelRegistro({ registro, roster }) {
+  const p = [];
+  const exigible = !!(roster && roster.registro_aprobaciones);
+  if (registro.error || registro.ilegibles) {
+    p.push({ regla: 'registro-de-aprobaciones-invalido',
+      detalle: registro.error ? `no se puede leer (${registro.error})` : `tiene ${registro.ilegibles} línea(s) que no son JSON` });
+  }
+  if (!registro.existe) {
+    if (exigible) p.push({ regla: 'sin-registro-de-aprobaciones', detalle: `no trae \`${FILE}\`` });
+    return p;
+  }
+  if (exigible && !registro.lineas.some((l) => l && l.que === 'plan')) {
+    p.push({ regla: 'sin-aprobacion-del-plan', detalle: 'no trae la aprobación del plan' });
+  }
+  return p;
+}
+
+/** Las reglas que perdona `advisors_exempt`: la falta del registro, no un registro presente y malo. */
+const POR_FALTA = new Set(['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan']);
+
+/**
+ * Las carpetas de corrida de una story en `repo`: las de `<repo>/.advisors/pipeline-runs` y las de cada subcarpeta de
+ * primer nivel (`<repo>/<sub>/.advisors/pipeline-runs`), con nombre `<clave>` o `<clave>-…`. La usan el portón de CI y
+ * el cierre del pipeline. Con `estricto`, una carpeta de corridas que existe y no se lista lanza; sin él, se saltea.
+ * Devuelve [{ dir, nombre }].
+ */
+function carpetasDeCorrida(repo, clave, { estricto = false } = {}) {
+  if (!clave) return [];
+  const bases = [path.join(repo, '.advisors', 'pipeline-runs')];
+  try {
+    for (const e of fs.readdirSync(repo, { withFileTypes: true })) {
+      if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue;
+      bases.push(path.join(repo, e.name, '.advisors', 'pipeline-runs'));
+    }
+  } catch (e) {
+    if (estricto) throw new Error(`no pude listar ${repo} (${(e && (e.code || e.message)) || e})`);
+  }
+  const out = [];
+  for (const b of bases) {
+    let entradas = [];
+    try { entradas = fs.readdirSync(b); } catch (e) {
+      if (estricto && e && e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw new Error(`no pude listar ${b} (${e.code || e.message})`);
+      continue;
+    }
+    for (const n of entradas) {
+      if (n !== clave && !n.startsWith(`${clave}-`)) continue;
+      out.push({ dir: path.join(b, n), nombre: n });
+    }
+  }
+  return out;
+}
+
+/** El primer problema de `problemasDelRegistro`, o null. */
+function faltaElPlan(args) {
+  return problemasDelRegistro(args)[0] || null;
+}
+
+/** Con la maqueta aprobada en el marcador: el registro tiene que traer su línea. Devuelve el problema o null. */
+function faltaLaMaqueta(registro) {
+  if (registro.existe && registro.lineas.some((l) => l && l.que === 'maqueta')) return null;
+  return { regla: 'sin-aprobacion-de-la-maqueta', detalle: 'la maqueta se aprobó y el registro no lo anota' };
+}
+
+/**
+ * Suma al registro de `destinoDir` las líneas de `origenDir` que no tiene (por línea exacta), al final y en el orden
+ * del origen. Nunca borra ni reordena las del destino. Escribe por un archivo temporal y lo renombra: un corte no
+ * deja el registro a medias. Un destino que existe y no se puede leer lanza sin escribir.
+ * Devuelve { agregadas }.
+ */
+function unir(origenDir, destinoDir) {
+  let origen;
+  try { origen = fs.readFileSync(path.join(origenDir, FILE), 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return { agregadas: 0 };
+    throw e;
+  }
+  const destino = path.join(destinoDir, FILE);
+  let actual = '';
+  try { actual = fs.readFileSync(destino, 'utf8'); } catch (e) {
+    if (!e || e.code !== 'ENOENT') throw e;
+  }
+  // El `\r` final no cuenta: un registro sacado de git con CRLF trae las mismas líneas.
+  const sinCr = (l) => l.replace(/\r$/, '');
+  const tiene = new Set(actual.split('\n').map(sinCr).filter((l) => l.trim()));
+  const nuevas = [];
+  for (const crudo of origen.split('\n')) {
+    const l = sinCr(crudo);
+    if (!l.trim() || tiene.has(l)) continue;
+    tiene.add(l);
+    nuevas.push(l);
+  }
+  if (!nuevas.length) return { agregadas: 0 };
+  const base = actual && !actual.endsWith('\n') ? `${actual}\n` : actual;
+  fs.mkdirSync(destinoDir, { recursive: true });
+  const tmp = `${destino}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${base}${nuevas.join('\n')}\n`);
+  fs.renameSync(tmp, destino);
+  return { agregadas: nuevas.length };
+}
+
+module.exports = {
+  FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
+  problemasDelRegistro, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA,
+};

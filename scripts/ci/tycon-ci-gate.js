@@ -232,27 +232,33 @@ function runDirsDeStory(repo, storyId, storyPath) {
   const pref = prefijoDeEvidencia(storyId, storyPath);
   if (!pref) return [];
   const clave = pref.slice(0, -1);
-  const bases = [path.join(repo, '.advisors', 'pipeline-runs')];
-  try {
-    for (const e of fs.readdirSync(repo, { withFileTypes: true })) {
-      if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue;
-      bases.push(path.join(repo, e.name, '.advisors', 'pipeline-runs'));
-    }
-  } catch (_e) { /* raíz ilegible */ }
-  const out = [];
-  for (const b of bases) {
-    let entradas = [];
-    try { entradas = fs.readdirSync(b); } catch (_e) { continue; }
-    for (const n of entradas) {
-      if (n !== clave && !n.startsWith(`${clave}-`)) continue;
-      // El sello de fecha del run dir tiene DOS formas en los repos reales: `1.1-AAAAMMDDhhmmss`
-      // y `4.2-AAAAMMDD-hhmm` (fecha y hora separadas). Leer sólo la primera dejaría a la segunda
-      // "sin fecha" — y sin fecha esto frenaría corridas viejas que no pueden tener el registro.
-      const m = n.match(/-(\d{8})(?:-?\d*)?$/);
-      out.push({ dir: path.join(b, n), nombre: n, stamp: m ? m[1] : null });
+  // La lista es la de lib/approvals.js, la misma con que el cierre del pipeline busca las corridas. Sin la biblioteca,
+  // la misma búsqueda acá, para que la regla 4 siga mirando el roster.
+  let carpetas;
+  if (approvalsLib && typeof approvalsLib.carpetasDeCorrida === 'function') {
+    carpetas = approvalsLib.carpetasDeCorrida(repo, clave);
+  } else {
+    const bases = [path.join(repo, '.advisors', 'pipeline-runs')];
+    try {
+      for (const e of fs.readdirSync(repo, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue;
+        bases.push(path.join(repo, e.name, '.advisors', 'pipeline-runs'));
+      }
+    } catch (_e) { /* raíz ilegible */ }
+    carpetas = [];
+    for (const b of bases) {
+      let entradas = [];
+      try { entradas = fs.readdirSync(b); } catch (_e) { continue; }
+      for (const n of entradas) if (n === clave || n.startsWith(`${clave}-`)) carpetas.push({ dir: path.join(b, n), nombre: n });
     }
   }
-  return out;
+  // El sello de fecha del run dir tiene DOS formas en los repos reales: `1.1-AAAAMMDDhhmmss`
+  // y `4.2-AAAAMMDD-hhmm` (fecha y hora separadas). Leer sólo la primera dejaría a la segunda
+  // "sin fecha" — y sin fecha esto frenaría corridas viejas que no pueden tener el registro.
+  return carpetas.map(({ dir, nombre }) => {
+    const m = nombre.match(/-(\d{8})(?:-?\d*)?$/);
+    return { dir, nombre, stamp: m ? m[1] : null };
+  });
 }
 
 /** Advisors nombrados en los hallazgos del run — el cruce que SÍ se puede hacer server-side. */
@@ -376,13 +382,16 @@ function revisarAprobaciones(repo, storyId, storyPath) {
     let roster = null;
     try { roster = JSON.parse(fs.readFileSync(path.join(dir, 'review-roster.json'), 'utf8')); } catch (_e) { /* la regla 4 juzga el roster */ }
     const llegoARevisores = fs.existsSync(path.join(dir, 'review-roster.json'));
-    const exigible = !!(roster && roster.registro_aprobaciones);
-    if (reg.error || reg.ilegibles) {
-      hallazgos.push({ regla: 'registro-de-aprobaciones-invalido',
-        mensaje: `\`${nombre}/${approvalsLib.FILE}\` ${reg.error ? `no se puede leer (${reg.error})` : `tiene ${reg.ilegibles} línea(s) que no son JSON`}. Un registro ilegible no es un registro.` });
+    // La regla es la de lib/approvals.js, la misma con que frena el cierre del pipeline; acá se arma el mensaje.
+    const problemas = approvalsLib.problemasDelRegistro({ registro: reg, roster });
+    const hay = (regla) => problemas.find((p) => p.regla === regla);
+    const invalido = hay('registro-de-aprobaciones-invalido');
+    if (invalido) {
+      hallazgos.push({ regla: invalido.regla,
+        mensaje: `\`${nombre}/${approvalsLib.FILE}\` ${invalido.detalle}. Un registro ilegible no es un registro.` });
     }
     if (!reg.existe) {
-      if (exigible) {
+      if (hay('sin-registro-de-aprobaciones')) {
         hallazgos.push({ regla: 'sin-registro-de-aprobaciones',
           mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
       } else if (llegoARevisores) {
@@ -398,7 +407,7 @@ function revisarAprobaciones(repo, storyId, storyPath) {
     }
     const r = approvalsLib.resumir(reg.lineas);
     resumen.manual += r.manual; resumen.automatica += r.automatica; resumen.sinNombrar += r.sinNombrar;
-    if (exigible && !reg.lineas.some((l) => l && l.que === 'plan')) {
+    if (hay('sin-aprobacion-del-plan')) {
       hallazgos.push({ regla: 'sin-aprobacion-del-plan',
         mensaje: `\`${nombre}/${approvalsLib.FILE}\` existe pero no trae la aprobación del plan, y la ejecución llegó a los revisores: el plan se aprobó (marker.js no deja pasar sin eso) y no quedó anotado quién lo aprobó.` });
     }
@@ -705,7 +714,7 @@ function revisar({ repo, base, staged }) {
     // presente y malo — un agente anotado como persona frena siempre.
     {
       const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel));
-      const POR_FALTA = new Set(['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan']);
+      const POR_FALTA = (approvalsLib && approvalsLib.POR_FALTA) || new Set(['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan']);
       for (const h of apr.hallazgos) if (!(exentaAdv && POR_FALTA.has(h.regla))) destino.push({ archivo: rel, story: idBruto, ...h });
       if (!exentaAdv) for (const a of apr.avisos) avisos.push({ archivo: rel, story: idBruto, ...a });
       aprobaciones.push({ story: idBruto, archivo: rel, ...apr.resumen });
