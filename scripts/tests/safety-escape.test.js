@@ -1501,6 +1501,41 @@ test('8.111 T2 NodeE_Variantes_SiguenComoHoy', () => {
   }
 });
 
+// GuionConNombreFijo_NoSeEsconde
+// `node $S/a.js` corre `a.js` sea cual sea la carpeta: la última parte del nombre está escrita y el shell no la cambia.
+// Con la carpeta en una variable, el lector lo tomaba por un guion escondido y frenaba «--no-deep-review en ?» a una
+// sonda que lee sus datos de la misma carpeta. Sigue escondido si la última parte no está escrita, si la ruta lleva un
+// `$(…)`, o si el shell puede partir la variable en palabras (sin comillas, con un valor que no se ve o con espacios).
+// 🔴 Falla con: un guion con la carpeta en una variable leído como escondido, o un nombre que el shell sí puede cambiar
+//    leído como fijo.
+test('GuionConNombreFijo_NoSeEsconde', () => {
+  for (const c of [
+    'S=/tmp/lab; node $S/a.js $S/b.json ~/x.sh',
+    'node "$SP/probe.js" "$SP/datos.json" --output "$SP/out.txt"',
+    'node $SP/probe.js $SP/datos.json',
+    'node ${SP}/lib/probe.js "$A" "$B"',
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  for (const c of [
+    "S='a b'; node $S/a.js $X $Y",
+    'node $(dirname x)/a.js $X $Y',
+    'node $S/p* $X $Y',
+    'node $S/$N.js $X $Y',
+    'read S; node $S/a.js $X $Y',
+    'node ${S:-x}/a.js $X $Y',
+    // conocer el guion no deja pasar la bandera escondida en otra variable
+    'S=x; F=--no-deep-review; node $S/pipeline.js close $F',
+    'S=x; F="--no-deep-review"; node $S/pipeline.js close $F',
+    'S=x; F="--no-deep-review"; node "$S/pipeline.js" start "$F"',
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+  }
+});
+
 // 8.111 T3 NodeE_LimiteDeclarado_SinCambio @story-8.111 @ac-3
 // 🔴 Falla con: cambiar, sin decirlo, el límite declarado de la 8.107 (un `node -e` cuyo código carga el pipeline).
 test('8.111 T3 NodeE_LimiteDeclarado_SinCambio', () => {

@@ -144,7 +144,10 @@ no frenan. Lo dudoso frena como cerrar: un subcomando o un id que no se ve (`$VA
 comilla sin cerrar o un comando que no se pudo leer. Los nombres se leen sin comillas ni barras invertidas: `pipe''line.js`
 o `mar''ker.js` son los guiones, como para el shell, y una barra invertida con salto de línea se une. Si el comando
 corre `node` con un guion cuyo nombre no se puede leer (`pipelin?.js`, `pipe[l]ine.js`, `mar$'k'er.js`, una variable),
-se lee como cualquiera de los dos guiones; un guion así ejecutado directo, sin `node`, no se ve. Si el freno no puede leer el comando (no está el intérprete del
+se lee como cualquiera de los dos guiones; un guion así ejecutado directo, sin `node`, no se ve. Con la carpeta en
+una variable y el nombre escrito (`node $S/a.js`, `node "${D}/x.js"`), el guion es ése: el shell no cambia la última
+parte. Se lee como escondido si el shell puede partir la variable en palabras (sin comillas, con un valor que el comando
+no muestra o con espacios), o si la ruta lleva un `$(…)`. Si el freno no puede leer el comando (no está el intérprete del
 arnés, falta `run-close.js` o el lector se cae), un comando que nombra `marker` o `pipeline` frena: sin el intérprete esos
 guiones tampoco andan, así que frenar no cuesta nada. `ESC-C1` frena además una asignación con el **nombre armado** en
 otra variable (`V=TYCON_…; export $V=1`, `declare -x "$V=1"`, `env "$V=1"`, `printf -v "$V"`) en un comando que corre
