@@ -156,10 +156,13 @@ const DECLARADO = new Map();
  * (`numero`): las ramas de las specs y del código suelen llamarse distinto (`docs/…-1-4-impl` y `feat/…-1-4-…`). Con dos
  * o más candidatos no se adivina: el mismo número se repite entre carpetas de specs de un producto. Toda elección que
  * no sea la de mismo nombre se dice en una línea, y también la caída al declarado cuando está en otra rama.
- * Con la cabeza suelta, el declarado tal cual.
+ * Con la cabeza suelta no hay rama de mismo nombre, pero el número de la story sigue eligiendo: un clon de prueba del
+ * repo de la story, en un commit suelto, tomaba el checkout compartido aunque la story tuviera su worktree. Sin rama
+ * ni número, el declarado tal cual.
  */
 function enLaMismaRama(declarado, rama, numero) {
-  if (!rama) return declarado;
+  if (!rama && !numero) return declarado;
+  const deLaStory = rama ? `la rama ${rama}` : `la story ${numero}`;
   // Un declarado que no es un repo git no tiene ramas ni worktrees: se usa tal cual y se dice una vez, con el motivo
   // exacto (suele ser una ruta mal declarada). Cualquier otra falla de git (un .git roto) sigue al aviso de abajo.
   const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: { ...process.env, LC_ALL: 'C' } });
@@ -169,13 +172,13 @@ function enLaMismaRama(declarado, rama, numero) {
   }
   const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
   if (r.error || r.status !== 0) {
-    avisar(`no pude listar los worktrees de ${declarado} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): uso el declarado, que puede no ser el código de la rama ${rama}`);
+    avisar(`no pude listar los worktrees de ${declarado} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
   }
   // Un hermano declarado como subcarpeta de su repo es esa subcarpeta también en el worktree.
   const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
   if (top.error || top.status !== 0) {
-    avisar(`no pude leer la raíz git de ${declarado} (${(top.error && (top.error.code || top.error.message)) || String(top.stderr || '').trim().split('\n')[0] || `git salió ${top.status}`}): uso el declarado, que puede no ser el código de la rama ${rama}`);
+    avisar(`no pude leer la raíz git de ${declarado} (${(top.error && (top.error.code || top.error.message)) || String(top.stderr || '').trim().split('\n')[0] || `git salió ${top.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
   }
   const raiz = real(String(top.stdout || '').trim());
@@ -189,7 +192,7 @@ function enLaMismaRama(declarado, rama, numero) {
     ruta: (bloque.match(/^worktree (.+)$/m) || [])[1],
     rama: (bloque.match(/^branch refs\/heads\/(.+)$/m) || [])[1],
   })).filter((w) => w.ruta && esDir(path.join(w.ruta, sub)));
-  const mismoNombre = worktrees.find((w) => w.rama === rama);
+  const mismoNombre = rama && worktrees.find((w) => w.rama === rama);
   if (mismoNombre) return elegir(mismoNombre.ruta);
   const nombre = path.basename(declarado);
   const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
@@ -203,7 +206,7 @@ function enLaMismaRama(declarado, rama, numero) {
     return declarado;
   }
   const propio = worktrees.find((w) => real(w.ruta) === raiz);
-  if (propio && propio.rama && propio.rama !== rama) {
+  if (rama && propio && propio.rama && propio.rama !== rama) {
     avisar(`${nombre} se lee del checkout principal ${declarado}, que está en la rama ${propio.rama} (la story está en ${rama}): si el código de la story está en otro worktree, que su rama nombre la story`);
   }
   return declarado;
