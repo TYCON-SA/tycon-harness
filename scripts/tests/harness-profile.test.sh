@@ -13,9 +13,13 @@
 #         variable puesta a mano manda en los dos sentidos (`minimal` + `TYCON_TEST_SCOPE_GUARD=1` registra el freno de
 #         pruebas; `TYCON_SAFETY_GUARD=0` saca el de comandos, que está en los dos perfiles).
 #   T40 · con el perfil del equipo, el aplicador deja los MISMOS hooks (profile-equivalence.js --settings)
-#         y el MISMO CLAUDE.md (cmp) que el aplicador de antes de los perfiles (BASE_REF), sin tocar tycon.json.
+#         y el MISMO CLAUDE.md (cmp) que el aplicador de antes de los perfiles (BASE_REF), sin tocar tycon.json; cada
+#         hook `.js` con el piso de Node, y `--gate` sólo en los frenos. Cada arreglo de la comparación tiene su caso
+#         que sigue saliendo rojo: una línea de más en el CLAUDE.md, un hook sin declarar, un declarado que no está una vez.
 #   T35 a T37 · `harness.js install --profile`, el cambio de perfil y los valores
-#         inválidos, con el programa de verdad.
+#         inválidos, con el programa de verdad. Python no escribe su caché durante la prueba (PYTHONDONTWRITEBYTECODE):
+#         el de Apple la deja en la carpeta de inicio y la foto de esa carpeta la vería como algo que escribió install.
+#   HASH · la foto de la carpeta de inicio ve un archivo de más.
 #
 # Laboratorio: una copia descartable del árbol (con git propio) y una HOME de juguete con un agent-skills de juguete (un
 # archivo por hook que vive ahí), el patrón de harness-plan.test.sh. Un `node` intermediario va primero en el PATH:
@@ -25,7 +29,7 @@
 #
 #   REG · un cambio de perfil sin el reporte del aplicador no se da por hecho.
 #
-# Uso: bash scripts/tests/harness-profile.test.sh [--only T32|T33|T40|T35|T36|T37|REG]
+# Uso: bash scripts/tests/harness-profile.test.sh [--only T32|T33|T40|T35|T36|T37|REG|HASH]
 set -uo pipefail
 # el banco nocturno apaga el buzón para todas las suites; acá el aplicador tiene que instalar lo que cuelga del buzón
 # (T40 cuenta el hook del aviso por correo), así que la prueba no hereda ese apagado
@@ -103,7 +107,8 @@ base() {
        TYCON_NO_GUI_ENV=1 LAUNCHCTL_BIN=/usr/bin/true TYCON_BENCH_DAILY=0 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9
        TYCON_MAILBOX_JSON="$T/no-hay-llave.json" TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_ENGRAM_VERSION_CHECK=1
        TYCON_NO_SQLITE_CHECK=1 TYCON_NO_ENGRAM_PROJECT_CHECK=1 TYCON_NO_AGENTSMD_POINTER=1 TYCON_NO_CANONICAL_PATH=1
-       TYCON_THIRD_PARTY=0 TYCON_UPDATE=0 TYCON_METRICS_SCAN_ROOT="$T/scan" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null TMPDIR="$T/tmp")
+       TYCON_THIRD_PARTY=0 TYCON_UPDATE=0 TYCON_METRICS_SCAN_ROOT="$T/scan" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null TMPDIR="$T/tmp"
+       PYTHONDONTWRITEBYTECODE=1)
   mkdir -p "$T/tmp" "$T/scan"
 }
 machine() { mkdir -p "$1/.claude"; printf '%s\n' "$2" > "$1/.claude/tycon.json"; }
@@ -262,9 +267,11 @@ if corre T40; then
     # los bloques, los actuales en los dos lados: el texto de dos y la marca de arranque («generado
     # por … del arnés») cambiaron desde el commit de antes, y T40 mide el perfil, no esos textos. La marca se compara sin
     # su descripción (ver el cmp de abajo).
-    # (sin el marcador `requires-profile`, que el aplicador de antes no conoce)
+    # (sin el marcador `requires-profile`, que el aplicador de antes no conoce, ni la marca del lugar de las filas de la
+    # herramienta de horas: el aplicador de hoy pone ahí las filas de la integración y la marca no queda; el de entonces
+    # no la conoce y la dejaría escrita. Lo mismo hace claude-md-blocks.test.sh con su aplicador viejo)
     rm -rf "$OLD/claude-md-blocks" && cp -R "$RAIZ/claude-md-blocks" "$OLD/claude-md-blocks" \
-      && for f in "$OLD"/claude-md-blocks/*.md; do grep -v '^<!-- requires-profile:' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
+      && for f in "$OLD"/claude-md-blocks/*.md; do grep -Ev '^<!-- requires-profile:|^<!--[[:space:]]*time-tool-rows[[:space:]]*-->[[:space:]]*$' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
     # cada aplicador con el perfil del equipo de su commit (el de antes no conoce la sección `install`)
     git -C "$RAIZ" show "$BASE_REF:perfil-equipo.json" > "$T/perfil-old.json"
     for side in old new; do
@@ -279,7 +286,25 @@ import sys
 t = open(sys.argv[1], encoding="utf-8").read().replace(sys.argv[2], sys.argv[3]).replace(sys.argv[1].rsplit("/.claude/", 1)[0], "@HOME@")
 open(sys.argv[4], "w", encoding="utf-8").write(t)
 PY
-    sed "s#$T/t40/new#@HOME@#g" "$T/t40/new/.claude/settings.json" > "$T/t40/new-norm.json"
+    sed "s#$T/t40/new#@HOME@#g" "$T/t40/new/.claude/settings.json" > "$T/t40/new-floor.json"
+    # El aplicador de hoy registra cada hook `.js` por el piso de Node: `node "<árbol>/scripts/lib/node-floor.js"
+    # [--gate] "<hook>"`; el de ${BASE_REF}, con `node "<hook>"`. Para comparar se saca el envoltorio y queda el hook; que
+    # el piso esté en todos lo mide aparte «el piso en cada hook». La ruta del piso puede salir con /private/tmp y la del
+    # hook con /tmp (sólo una de las dos pasa por la ruta real): se reconoce el piso por cómo termina, no por su carpeta.
+    t40_floor_norm() { # t40_floor_norm <settings> <salida>
+      python3 - "$1" "$2" <<'PY'
+import json, re, sys
+src, out = sys.argv[1], sys.argv[2]
+data = json.load(open(src, encoding="utf-8"))
+floor = re.compile(r'^node "[^"]*/scripts/lib/node-floor\.js"(?: --gate)? (?=")')
+for groups in (data.get("hooks") or {}).values():
+    for group in groups:
+        for hook in group.get("hooks") or []:
+            if isinstance(hook.get("command"), str):
+                hook["command"] = floor.sub('node ', hook["command"])
+json.dump(data, open(out, "w", encoding="utf-8"), indent=2)
+PY
+    }
     # Los hooks que el arnés SUMÓ después de ${BASE_REF}, declarados acá: T40 mide que el perfil no cambie
     # lo que había, no que el arnés no crezca. Se apartan del lado actual antes de comparar, y cada uno tiene que estar
     # UNA vez (una declaración que ya no hace falta, sale; registrado dos veces, o en otro evento más, también es rojo).
@@ -289,9 +314,20 @@ PY
     #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos
     #   scripts/hooks/worktree-sweep.js — el barrido diario de las carpetas de trabajo ya mergeadas
     #   scripts/hooks/unclosed-runs-notice.js — las corridas que quedaron sin cerrar, dicho una vez por día
+    #   scripts/hooks/deprecated-read-notice.js — avisa cuando se lee un archivo que el repo declara deprecado
+    #   scripts/hooks/deprecated-session-notice.js — los archivos deprecados del repo, dichos al arrancar
+    #   scripts/hooks/extension-notices.js — los avisos de las extensiones instaladas, al arrancar
+    #   scripts/hooks/guard-update-notice.js — el freno de producción quedó viejo y hay que reinstalarlo
+    #   scripts/hooks/dev-behind-main-notice.js — la rama dev atrasada frente a main
+    #   scripts/hooks/stuck-pr-notice.js — los pedidos trabados en choque o sin entrar
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
-    rm -f "$T/t40/added.out"
-    python3 - "$T/t40/new-norm.json" "$T/t40/added.out" scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6 scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js <<'PY'
+    T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
+      scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
+      scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
+      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js)
+    t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
+      rm -f "$2"
+      python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
 import json, sys
 path, out = sys.argv[1], sys.argv[2]
 want = {a.split("=")[0]: int(a.split("=")[1]) if "=" in a else 1 for a in sys.argv[3:]}
@@ -312,13 +348,113 @@ for event, groups in data["hooks"].items():
 json.dump(data, open(path, "w", encoding="utf-8"), indent=2)
 open(out, "w", encoding="utf-8").write("\n".join("%s (%d veces, se esperaban %d)" % (a, n, want[a]) for a, n in times.items() if n != want[a]))
 PY
-    PYRC=$?
+    }
+    # El piso en cada hook `.js` del arnés, y `--gate` exactamente en los frenos: `PreToolUse` con `effect: blocks` en
+    # la lista de hooks del árbol (la regla de apply-hooks.js `isGate`). Sale 0 si está bien, 1 con lo que falla, y 3
+    # si ningún hook lleva el piso (una máquina con el Node propio del arnés: el aplicador no lo usa).
+    t40_floor_check() { # t40_floor_check <settings>
+      python3 - "$1" "$TREE/scripts/setup/hooks-list.json" <<'PY'
+import json, re, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+specs = json.load(open(sys.argv[2], encoding="utf-8"))
+specs = specs.get("hooks", specs) if isinstance(specs, dict) else specs
+gates = [s["spec"] for s in specs if s.get("event") == "PreToolUse" and s.get("effect") == "blocks"]
+def suffix(spec):
+    return "/scripts/hooks/" + spec[len("@tcg:"):] if spec.startswith("@tcg:") else "/skills/" + spec
+floor = re.compile(r'^node "[^"]*/scripts/lib/node-floor\.js"( --gate)? "([^"]+\.js)"')
+bad, floored = [], 0
+for event, groups in (data.get("hooks") or {}).items():
+    for group in groups:
+        for hook in group.get("hooks") or []:
+            cmd = str(hook.get("command", ""))
+            js = [q for q in re.findall(r'"([^"]+\.js)"', cmd) if not q.endswith("/scripts/lib/node-floor.js")]
+            if not js:
+                continue
+            m = floor.match(cmd)
+            if not m:
+                bad.append("%s sin el piso: %s" % (event, cmd)); continue
+            floored += 1
+            gate = event == "PreToolUse" and any(m.group(2).endswith(suffix(g)) for g in gates)
+            if bool(m.group(1)) != gate:
+                bad.append("%s %s: %s" % (event, "le falta --gate" if gate else "--gate en un hook que no frena", m.group(2)))
+if not floored and not bad:
+    print("ningún hook lleva el piso de Node"); sys.exit(3)
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PY
+    }
+    t40_floor_norm "$T/t40/new-floor.json" "$T/t40/new-norm.json"
+    t40_apart "$T/t40/new-norm.json" "$T/t40/added.out"; PYRC=$?
     # «no pude apartar» no es «aparté»: si el guion falla no deja su archivo, y un archivo que falta no es uno vacío
     if [ "$PYRC" != 0 ] || [ ! -f "$T/t40/added.out" ]; then mal "T40 no pude apartar los hooks sumados después de ${BASE_REF} (el guion salió ${PYRC}): la comparación que sigue no vale"
     elif [ -s "$T/t40/added.out" ]; then mal "T40 un hook declarado como «sumado después» no está UNA vez en lo que deja el aplicador: $(tr '\n' ' ' < "$T/t40/added.out")"
     else ok "T40 los hooks sumados después de ${BASE_REF} están, una vez cada uno, y se apartan de la comparación"; fi
     node "$RAIZ/scripts/publishing/profile-equivalence.js" --settings "$T/t40/old-as-new.json" "$T/t40/new-norm.json" > "$T/t40/eq.out" 2>&1; EQ=$?
     [ "$EQ" = 0 ] && ok "T40 con el perfil del equipo: los mismos hooks que el aplicador de ${BASE_REF}" || mal "T40 hooks distintos (rc $EQ): $(head -c 500 "$T/t40/eq.out")"
+    # Team_FloorOnEveryHook_GateOnlyOnBlockers: el lado nuevo tal cual, y dos copias que tienen que salir rojas
+    t40_floor_check "$T/t40/new-floor.json" > "$T/t40/floor.out"; FRC=$?
+    if [ "$FRC" = 3 ]; then echo "  ⏭   — T40 el piso NO MEDIDO — $(cat "$T/t40/floor.out") (el aplicador corrió con el Node propio del arnés)"
+    else
+      [ "$FRC" = 0 ] && ok "T40 el piso de Node en cada hook, y --gate sólo en los frenos" || mal "T40 el piso de Node (rc $FRC): $(head -c 500 "$T/t40/floor.out")"
+      python3 - "$T/t40/new-floor.json" "$T/t40/floor-sin.json" "$T/t40/floor-gate.json" <<'PY'
+import json, re, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+floor = re.compile(r'^node "[^"]*/scripts/lib/node-floor\.js"(?: --gate)? (?=")')
+def first(pred):
+    for event, groups in data["hooks"].items():
+        for group in groups:
+            for hook in group.get("hooks") or []:
+                if pred(event, str(hook.get("command", ""))):
+                    return hook
+h = first(lambda e, c: floor.match(c) is not None)
+saved = h["command"]; h["command"] = floor.sub("node ", saved)
+json.dump(data, open(sys.argv[2], "w", encoding="utf-8"), indent=2); h["command"] = saved
+h = first(lambda e, c: e != "PreToolUse" and floor.match(c) is not None and " --gate " not in c)
+h["command"] = h["command"].replace('node-floor.js" "', 'node-floor.js" --gate "', 1)
+json.dump(data, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
+PY
+      t40_floor_check "$T/t40/floor-sin.json" > /dev/null; R1=$?
+      t40_floor_check "$T/t40/floor-gate.json" > /dev/null; R2=$?
+      { [ "$R1" = 1 ] && [ "$R2" = 1 ]; } && ok "T40 el chequeo del piso ve un hook sin el piso y un --gate en un hook que no frena" \
+        || mal "T40 el chequeo del piso no ve lo que tiene que ver: sin el piso rc ${R1}, --gate de más rc ${R2} (se esperaba 1 y 1)"
+    fi
+    # Team_UndeclaredHookStillRed: normalizar el piso y declarar los sumados no esconden un hook de más. Un hook del
+    # arnés que nadie declaró, con el piso y sin él, pasa por la misma normalización y el mismo apartado que el caso real
+    for v in con sin; do
+      python3 - "$T/t40/new-floor.json" "$T/t40/extra-$v.json" "$TREE/scripts/hooks/hook-sin-declarar-lab.js" "$v" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+floor = next(q for groups in data["hooks"].values() for g in groups for h in g.get("hooks") or []
+             for q in [str(h.get("command", "")).split('"')[1] if 'node-floor.js"' in str(h.get("command", "")) else None] if q)
+head = 'node "%s" ' % floor if sys.argv[4] == "con" else "node "
+data["hooks"].setdefault("SessionStart", []).append({"matcher": "", "hooks": [{"type": "command", "command": head + '"%s"' % sys.argv[3]}]})
+json.dump(data, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+PY
+      t40_floor_norm "$T/t40/extra-$v.json" "$T/t40/extra-$v.json"; t40_apart "$T/t40/extra-$v.json" "$T/t40/extra-$v.added"
+      node "$RAIZ/scripts/publishing/profile-equivalence.js" --settings "$T/t40/old-as-new.json" "$T/t40/extra-$v.json" > /dev/null 2>&1; eval "XRC_$v=\$?"
+    done
+    { [ "$XRC_con" != 0 ] && [ "$XRC_sin" != 0 ]; } && ok "T40 un hook sin declarar sigue saliendo distinto, con el piso y sin él" \
+      || mal "T40 un hook sin declarar pasó la comparación: con el piso rc ${XRC_con}, sin él rc ${XRC_sin} (se esperaba distinto de 0)"
+    # Team_DeclaredHookCountedExactlyOnce: un declarado dos veces, y uno que falta, salen en la lista de «no está una vez»
+    python3 - "$T/t40/new-floor.json" "$T/t40/dup.json" "$T/t40/falta.json" "scripts/hooks/stuck-pr-notice.js" <<'PY'
+import copy, json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+name = "/" + sys.argv[4] + '"'
+dup, gone = copy.deepcopy(data), copy.deepcopy(data)
+for groups in dup["hooks"].values():
+    extra = [copy.deepcopy(g) for g in groups if any(name in str(h.get("command", "")) for h in g.get("hooks") or [])]
+    groups.extend(extra)
+for event, groups in gone["hooks"].items():
+    for g in groups:
+        g["hooks"] = [h for h in g.get("hooks") or [] if name not in str(h.get("command", ""))]
+    gone["hooks"][event] = [g for g in groups if g["hooks"]]
+json.dump(dup, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+json.dump(gone, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
+PY
+    t40_floor_norm "$T/t40/dup.json" "$T/t40/dup.json"; t40_apart "$T/t40/dup.json" "$T/t40/dup.added"
+    t40_floor_norm "$T/t40/falta.json" "$T/t40/falta.json"; t40_apart "$T/t40/falta.json" "$T/t40/falta.added"
+    { grep -q 'stuck-pr-notice.js (2 veces' "$T/t40/dup.added" && grep -q 'stuck-pr-notice.js (0 veces' "$T/t40/falta.added"; } \
+      && ok "T40 un declarado registrado dos veces, o ninguna, no pasa por «una vez cada uno»" \
+      || mal "T40 «una vez cada uno» no ve el declarado de más o el que falta: dos veces «$(tr '\n' ' ' < "$T/t40/dup.added")» · ninguna «$(tr '\n' ' ' < "$T/t40/falta.added")»"
     # aparte, lo que el aplicador de entonces no conoce: el bloque del estilo de respuesta, que hoy se elige por
     # variante, y las filas de la tabla de nombres marcadas con su integración, que hoy se escriben sólo si está prendida
     for side in old new; do sed -E 's#(<!-- TYCON_BLOCK:[^ ]+ START) — generado por [^·]*·#\1 — generado por @SYNC@ ·#' "$T/t40/$side/.claude/CLAUDE.md" \
@@ -334,6 +470,10 @@ new = open(new_p, encoding="utf-8").read().split("\n")
 open(new_p, "w", encoding="utf-8").write("\n".join(l for l in new if mark.sub("", l).rstrip() not in rows))
 PY
     cmp -s "$T/t40/old-claude.md" "$T/t40/new-claude.md" && ok "T40 CLAUDE.md byte a byte igual (la descripción de la marca de arranque aparte)" || mal "T40 CLAUDE.md distinto: $(diff "$T/t40/old-claude.md" "$T/t40/new-claude.md" | head -5 | tr '\n' ' ')"
+    # Team_ClaudeMd_OtherExtraLineStillRed: sacar la marca de horas del lado viejo no abre la puerta a otra línea de más
+    { cat "$T/t40/new-claude.md"; printf '\n<!-- una línea de más -->\n'; } > "$T/t40/new-claude-extra.md"
+    ! cmp -s "$T/t40/old-claude.md" "$T/t40/new-claude-extra.md" && ok "T40 una línea de más en el CLAUDE.md sigue saliendo distinta" \
+      || mal "T40 el CLAUDE.md con una línea de más pasó por igual"
     [ ! -e "$T/t40/new/.claude/tycon.json" ] && ok "T40 tycon.json sin tocar" || mal "T40 el aplicador escribió tycon.json"
     [ "$(setting "$T/t40/new" cleanupPeriodDays)" = "$(setting "$T/t40/old" cleanupPeriodDays)" ] && ok "T40 los ajustes iguales" || mal "T40 los ajustes cambiaron"
   fi
@@ -345,6 +485,14 @@ source "$RAIZ/scripts/tests/lib/harness-lab.sh"   # sólo por harness_lab_pty (l
 home_hash() { ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
     if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"; else printf '%s/\n' "$f"; fi
   done ) | shasum -a 256 | cut -d' ' -f1; }
+# ══ HASH · HomeHash_SeesAStrayFile: la foto ve lo que aparece en la carpeta de inicio ═════════════════════════════════
+# (python ya no escribe su caché durante la prueba; la foto no se achica para eso y tiene que seguir viendo lo demás)
+if corre HASH; then
+  echo "HASH · HomeHash_SeesAStrayFile"
+  H="$T/hash"; mkdir -p "$H/.claude"; ANTES="$(home_hash "$H")"
+  mkdir -p "$H/Library/Caches/com.apple.python" && : > "$H/Library/Caches/com.apple.python/algo.pyc"
+  [ "$(home_hash "$H")" != "$ANTES" ] && ok "HASH la foto cambia con un archivo nuevo en la carpeta de inicio" || mal "HASH la foto no vio el archivo nuevo"
+fi
 harness() { # harness <salida> <args…> → el programa del árbol de laboratorio con el ambiente aislado; el exit code en RC
   local out="$1"; shift
   RC=0; "${RUN_ENV[@]}" TYCON_GUARD_LIB_FOR_TEST="$T/sin-freno.js" node "$TREE/scripts/setup/harness.js" "$@" > "$out" 2>&1 || RC=$?
