@@ -217,3 +217,38 @@ test('T9 Inventario_CadaNodeDeLasInstrucciones_TienePiso @story-8.93 @ac-4', () 
   }
   assert.deepStrictEqual(sinPiso, [], 'cada script nombrado arranca por el piso');
 });
+
+// el inventario mide el guion que la instrucción manda correr: por la ruta que nombra, no un atajo viejo ni un archivo
+// que se llama igual en otra carpeta; si ningún archivo calza con esa ruta, los que se llaman igual
+test('T9 Inventario_BuscaPorLaRutaQueNombraLaInstruccion @story-8.135', () => {
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'node-floor-inv-'));
+  const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(lab, rel)), { recursive: true }); fs.writeFileSync(path.join(lab, rel), text); };
+  put('commands/lab.md', 'Correr `node <arnés>/scripts/new/tool.js` y después `node $SKILL_DIR/loose.js`.\n');
+  put('scripts/new/tool.js', "const fs = require('fs');\n");
+  put('scripts/tool.js', '// atajo viejo\n');
+  put('tasks/x/tool.js', '// otro archivo que se llama igual\n');
+  put('scripts/a/loose.js', '// sin ruta que calce\n');
+  put('scripts/b/loose.js', '// sin ruta que calce\n');
+  spawnSync('git', ['init', '-q'], { cwd: lab });
+  const rels = INV.inventory(lab).map((s) => s.rel).sort();
+  assert.deepStrictEqual(rels, ['scripts/a/loose.js', 'scripts/b/loose.js', 'scripts/new/tool.js'], 'por la ruta nombrada; por el nombre si ninguna calza');
+  fs.rmSync(lab, { recursive: true, force: true });
+});
+
+// el respaldo por nombre se decide por cada ruta nombrada, y una ruta relativa a la carpeta de la skill calza con el
+// archivo que termina en ella: un guion nombrado así no se cae del inventario porque otro que se llama igual calce
+test('T9 Inventario_CadaRutaNombradaCuentaPorSuCuenta @story-8.135', () => {
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'node-floor-inv-'));
+  const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(lab, rel)), { recursive: true }); fs.writeFileSync(path.join(lab, rel), text); };
+  put('skills/a/SKILL.md', 'Correr `node skills/a/scripts/run.js`.\n');
+  put('skills/b/SKILL.md', 'Correr `node <skill>/scripts/run.js`.\n');
+  put('skills/a/scripts/run.js', '// a\n');
+  put('skills/b/scripts/run.js', '// b\n');
+  put('skills/s/SKILL.md', 'Correr `node lib/discovery.js`.\n');
+  put('lib/discovery.js', '// el que se llama igual en la raíz\n');
+  put('skills/s/scripts/lib/discovery.js', '// el que corre la skill\n');
+  spawnSync('git', ['init', '-q'], { cwd: lab });
+  const rels = INV.inventory(lab).map((s) => s.rel).sort();
+  assert.deepStrictEqual(rels, ['lib/discovery.js', 'skills/a/scripts/run.js', 'skills/b/scripts/run.js', 'skills/s/scripts/lib/discovery.js'], 'cada ruta nombrada trae lo suyo');
+  fs.rmSync(lab, { recursive: true, force: true });
+});

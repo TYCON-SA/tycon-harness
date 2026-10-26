@@ -1342,7 +1342,7 @@ if [[ "$CHECK_ONLY" != "1" && "${TYCON_STAGE_METRICS:-1}" == "1" && "$PROFILE_FU
 fi
 
 # ============================================================
-# Rescate del hilo y el consumo de las corridas del pipeline.
+# Rescate del hilo y el consumo de las ejecuciones del pipeline.
 #
 # El archivador del pipeline guarda por corrida los tiempos, los frenos y los agentes, pero el
 # CONSUMO y el HILO viven sólo en la conversación de Claude Code, que se borra a los 30 días.

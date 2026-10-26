@@ -1018,8 +1018,11 @@ function checkMap(args) {
       const oldAbs = path.join(root, e.old);
       const newAbs = path.join(root, e.new);
       const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+      const chainWhy = legacy.chainProblem(e, map.entries);
+      if (chainWhy) { problems.push(`${at}: ${chainWhy}`); return; }
       const oldExists = fs.existsSync(oldAbs);
-      const newExists = e.kind === 'folder' ? isDir(newAbs) : fs.existsSync(newAbs);
+      // de un file vale el final de su cadena: el destino medido pudo mudarse después
+      const newExists = e.kind === 'folder' ? isDir(newAbs) : fs.existsSync(path.join(root, legacy.chainEnd(e, map.entries)));
       // acá alcanza la marca, como en isMoved: un reemplazo generado con una versión anterior del texto sigue siendo un
       // reemplazo (el freno de nombres, que es el que deja pasar, exige el generado tal cual). Una carpeta
       // vieja se juzga con el mismo criterio que isMoved: sólo lo que git versiona
@@ -1038,16 +1041,28 @@ function checkMap(args) {
         if (!legacy.supportsShim(e.old)) problems.push(`${at}: lo llaman de afuera (${outside}) y no hay forma de reemplazo para «${path.extname(e.old) || 'sin extensión'}» — si lo nombra un pipeline de Azure DevOps, va con callers: ["ado"] (tarea humana)`);
         else if (!oldIsShim) problems.push(`${at}: lo llaman de afuera (${outside}) y ${e.old} no es su reemplazo — generalo con node scripts/lib/legacy-names.js --write-shims`);
         else {
+          // el reemplazo lanza el final de la cadena (una mudanza posterior se encadena desde el destino medido)
+          const end = legacy.chainEnd(e, map.entries);
           const target = legacy.shimTarget(oldAbs);
-          if (!target || path.resolve(target) !== path.resolve(newAbs)) problems.push(`${at}: el reemplazo de ${e.old} apunta a ${target ? path.relative(root, target) : '(nada)'}, no a ${e.new} — regeneralo con node scripts/lib/legacy-names.js --write-shims`);
+          if (!target || path.resolve(target) !== path.resolve(path.join(root, end))) problems.push(`${at}: el reemplazo de ${e.old} apunta a ${target ? path.relative(root, target) : '(nada)'}, no a ${end} — regeneralo con node scripts/lib/legacy-names.js --write-shims`);
         }
       }
     }
   });
-  // un new que es el old de otra entrada del mismo kind y where: una cadena, que choca con el nombre que se está retirando
+  // un new que es el old de otra entrada del mismo kind y where: una cadena, que choca con el nombre que se está retirando.
+  // De un file vale si el paso intermedio ya no está en el disco, o quedó como reemplazo generado porque lo llaman de
+  // afuera: es el destino medido de una mudanza posterior.
+  const middleGone = (e) => {
+    if (e.kind !== 'file' || legacy.pathProblem(e.new, e.kind)) return false;
+    const root = rootOf(e);
+    if (!root) return false;
+    const abs = path.join(root, e.new);
+    if (!fs.existsSync(abs)) return true;
+    return fs.statSync(abs).isFile() && legacy.isShim(fs.readFileSync(abs, 'utf8'));
+  };
   for (const e of map.entries.filter((x) => x && typeof x.new === 'string')) {
     const other = map.entries.find((x) => x && x !== e && x.kind === e.kind && (x.where || '') === (e.where || '') && x.old === e.new);
-    if (other) problems.push(`el nombre nuevo «${e.new}» choca con el viejo de otra entrada (${other.old} → ${other.new})`);
+    if (other && !middleGone(e)) problems.push(`el nombre nuevo «${e.new}» choca con el viejo de otra entrada (${other.old} → ${other.new})`);
   }
   problems.push(...ciPairsProblems(repo, map.entries));
   return { file, problems, entries: map.entries.length };
@@ -1378,8 +1393,19 @@ function staleMentions(args) {
   // arnés lee los dos nombres. Un archivo o una carpeta cuenta recién cuando se mudó —el nuevo existe y el viejo
   // ya no es el de verdad—: una entrada nace antes de su mudanza con sus llamadores medidos, y hasta
   // entonces la ruta vieja es la real, como ya la tratan el validador del mapa, el instalador, --write-shims y el exportador.
+  // de un file vale el final de su cadena: el destino medido pudo mudarse después. La copia recuerda su entrada, que
+  // es la que lleva sus homónimos. Una cadena sin final no se busca, y se dice
+  const rawOf = new Map();
+  const chained = (e) => {
+    if (!e || e.kind !== 'file') return e;
+    const roto = legacy.chainProblem(e, entries);
+    if (roto) process.stderr.write(`⚠️  ${roto}: no busco sus menciones (--check-map la nombra)\n`);
+    const c = { ...e, new: legacy.chainEnd(e, entries) };
+    rawOf.set(c, e);
+    return c;
+  };
   const moved = (e) => (e.kind !== 'file' && e.kind !== 'folder') || legacy.isMoved(e, repos[e.repo || 'arnes']);
-  const paths = pathMatchers(entries.filter((e) => e && moved(e)));
+  const paths = pathMatchers(entries.map(chained).filter((e) => e && moved(e)));
   // los ids de transformación del exportador, que se escriben como una clave vieja de la lista blanca y no cambian
   const keys = keyMatchers(entries, { ids: (exporter.TRANSFORMACIONES || []).map((t) => t.nombre) });
   // un subcomando: el nombre de su script seguido del viejo en la misma línea (`tool.js <viejo>`);
@@ -1443,7 +1469,7 @@ function staleMentions(args) {
   });
   // ¿en este archivo el nombre viejo de la entrada es su homónimo (otro archivo que se llama igual)?
   const homonymAt = (e, source, rel) => {
-    const h = homonymRes.get(e);
+    const h = homonymRes.get(rawOf.get(e) || e);
     return Boolean(h) && h.source === source && h.res.some((re) => re.test(rel));
   };
   if (!olds.length && !opts.length && !scoped.length && !assigned.length && !paths.length && !keys.length) return { findings, entries: 0 };

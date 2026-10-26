@@ -1629,11 +1629,23 @@ function nombresViejos(ctx) {
       }
       throw new NoPudo(`${MAPA_RENOMBRES} no se deja leer (${err.message}): sin el mapa no sé qué nombres viejos no viajan`);
     }
-    for (const x of Array.isArray(mapa && mapa.entries) ? mapa.entries : []) {
+    const legacy = require('../lib/legacy-names.js');
+    const entradas = Array.isArray(mapa && mapa.entries) ? mapa.entries : [];
+    for (const x of entradas) {
       if (!x || (x.kind !== 'file' && x.kind !== 'folder') || typeof x.old !== 'string' || !x.old || typeof x.new !== 'string' || !x.new) continue;
       const fuente = x.repo === 'agent-skills' ? 'agent-skills' : 'arnes';
       const viejo = x.old.replace(/\/+$/, '');
-      const nuevo = x.new.replace(/\/+$/, '');
+      // de un file vale el final de su cadena: el destino medido pudo mudarse después. Una cadena sin final frena como un
+      // mapa ilegible: saltearla dejaría viajar su reemplazo sin traducir la ruta vieja
+      const roto = x.kind === 'file' ? legacy.chainProblem(x, entradas) : null;
+      if (roto) {
+        if (ctx.estricto !== false) throw new NoPudo(`${MAPA_RENOMBRES}: ${roto}`);
+        process.stderr.write(`⚠️  ${MAPA_RENOMBRES} de la foto anterior: ${roto}; la miro sin ese nombre viejo\n`);
+        continue;
+      }
+      const destino = x.kind === 'file' ? legacy.chainEnd(x, entradas) : x.new;
+      if (typeof destino !== 'string' || !destino) continue;
+      const nuevo = destino.replace(/\/+$/, '');
       r.todas.push({ fuente, ruta: viejo, carpeta: x.kind === 'folder' });
       // sólo lo ya movido: el nuevo está en el árbol y el viejo ya no es el de verdad (no está, o es sólo reemplazos). Una
       // entrada todavía no movida nombra el archivo REAL, que sale; y la carpeta nueva puede existir antes de que la vieja
@@ -1643,7 +1655,6 @@ function nombresViejos(ctx) {
       if (!hayNuevo) continue;
       const delViejo = arbol.filter((a) => a.tipo === 'blob' && (x.kind === 'file' ? a.ruta === viejo : a.ruta.startsWith(`${viejo}/`)));
       if (delViejo.length) {
-        const legacy = require('../lib/legacy-names.js');
         const datos = leerObjetos(ctx.repos[fuente], delViejo.filter((a) => legacy.supportsShim(a.ruta)).map((a) => a.obj));
         if (delViejo.some((a) => !datos.has(a.obj) || !legacy.isShim(datos.get(a.obj).toString('utf8')))) continue;
       }

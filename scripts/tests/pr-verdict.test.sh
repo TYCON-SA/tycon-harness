@@ -759,7 +759,7 @@ if [ -f "$YAML" ]; then
     if ! step_of_yaml 'Qué suites corren' "$L17/tmp" > "$L17/suites-step.sh" 2> "$L17/extract-s.err"; then
       no "V17d: no pude sacar el paso «Qué suites corren» del yml: $(cat "$L17/extract-s.err")"
     else
-      suites17 si 'corrida de main a mano: no hay rama destino contra la cual comparar'; RCS17=$?
+      suites17 si 'ejecución de main a mano: no hay rama destino contra la cual comparar'; RCS17=$?
       RUN17="$(grep -c . "$L17/tmp/staging/suites-plan/run.txt" 2>/dev/null || echo 0)"
       { [ "$HEAD17" = 0 ] && [ "$RCS17" = 0 ] && [ "$RUN17" = "$TOTAL17" ] && ! grep -q '^⏭' "$L17/suites.txt" \
         && grep -q 'corren todas — ejecución de main a mano' "$L17/suites.txt"; } \

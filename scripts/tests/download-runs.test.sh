@@ -318,7 +318,7 @@ T="${BASE}/t9"; mkdir -p "${T}/scripts/metrics" "${T}/home"
 python3 - "${RAIZ}/scripts/install-tycon-hooks.sh" "${T}/bloque.sh" <<'PY2'
 import sys
 s = open(sys.argv[1], encoding='utf8').read()
-i = s.index('# Rescate del hilo y el consumo de las corridas del pipeline')
+i = s.index('# Rescate del hilo y el consumo de las ejecuciones del pipeline')
 i = s.rfind('# ====', 0, i)
 j = s.index('# Hook de git PRE-COMMIT global', i)
 j = s.rfind('# ====', 0, j)

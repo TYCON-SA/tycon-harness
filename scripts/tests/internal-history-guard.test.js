@@ -1702,12 +1702,22 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   // por archivo, al menos tantos marcadores como renglones de la lista: borrar uno de sus ejemplos se ve
   const rows = {};
   for (const rel of withMarker) rows[rel] = (rows[rel] || 0) + 1;
-  // un revisor o una skill que vive en su paquete se busca ahí (packs/<p>/agents/, packs/<p>/skills/)
+  // un revisor o una skill que vive en su paquete se busca ahí (packs/<p>/agents/, packs/<p>/skills/), y la skill de
+  // una integración, en la suya (integrations/<i>/skills/). Uno que cambió de nombre o se juntó con otro archivo está
+  // declarado, con su motivo, en moved-since.json de la medición
   const packsDir = path.join(RAIZ, 'packs');
+  const integrationsDir = path.join(RAIZ, 'integrations');
+  const movedFile = path.join(MEASUREMENT, 'moved-since.json');
+  const moved = new Map(fs.existsSync(movedFile) ? JSON.parse(fs.readFileSync(movedFile, 'utf8')).moved.map((m) => {
+    assert.ok(m.from && m.to && m.reason, 'cada mudanza: de dónde, a dónde y su motivo');
+    return [m.from, m.to];
+  }) : []);
   const where = (rel) => {
+    if (moved.has(rel)) return path.join(RAIZ, moved.get(rel));
     if (fs.existsSync(path.join(RAIZ, rel))) return path.join(RAIZ, rel);
     const packs = fs.existsSync(packsDir) ? fs.readdirSync(packsDir).filter((p) => fs.existsSync(path.join(packsDir, p, 'pack.json'))) : [];
-    const found = packs.map((p) => path.join(packsDir, p, rel)).find((f) => fs.existsSync(f));
+    const integrations = fs.existsSync(integrationsDir) ? fs.readdirSync(integrationsDir).filter((i) => fs.existsSync(path.join(integrationsDir, i, 'integration.json'))) : [];
+    const found = [...packs.map((p) => path.join(packsDir, p, rel)), ...integrations.map((i) => path.join(integrationsDir, i, rel))].find((f) => fs.existsSync(f));
     return found || path.join(RAIZ, rel);
   };
   for (const [rel, n] of Object.entries(rows)) {

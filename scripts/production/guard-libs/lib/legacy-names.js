@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
-// legacy-names.js — que un nombre viejo siga andando mientras dura el renombre a inglés (story 8.9, tanda A2 · 2026-09-30)
+// legacy-names.js — que un nombre viejo siga andando mientras dura el renombre a inglés
 //
-// POR QUÉ EXISTE: la story 8.9 renombra a inglés lo que ejecuta la máquina (archivos, opciones, subcomandos, valores,
+// POR QUÉ EXISTE: el renombre a inglés cambia lo que ejecuta la máquina (archivos, opciones, subcomandos, valores,
 // variables, claves, archivos de configuración y de estado). Esos nombres viven también FUERA del commit que los cambia:
 // en el settings.json de cada máquina, en los pipelines de los productos, en el .zshrc de alguien, en otro repo que se
 // actualiza con otro pull. Esta biblioteca hace que el nombre viejo haga lo mismo que el nuevo, sin decir nada, hasta la
 // fecha de retiro (`retire_after` del mapa), y anota cada uso para saber cuándo se puede retirar.
 //
-// EL MAPA: scripts/lib/renames.json (`entries`: kind, old, new, where, batch, callers; ver AC 13 de la story). En la copia
+// EL MAPA: scripts/lib/renames.json (`entries`: kind, old, new, where, batch, callers). En la copia
 // pública no viaja: sin el mapa, todo esto es paso directo y no cuesta nada. Las rutas del mapa son relativas a la raíz
 // del repo (o `~/…` en config-file/state-file) y se validan: una entrada con una ruta que podría salir de la raíz o de la
 // HOME no se usa nunca (el validador `spanish-names.js --check-map` la rechaza en el pre-commit).
@@ -27,17 +27,17 @@
 //   node scripts/lib/legacy-names.js --write-shims [--map <archivo>] [--root <arnés>] [--skills-root <agent-skills>]
 //   node scripts/lib/legacy-names.js --migrate-machine [--check] [--guides <arnés>] [--skills <agent-skills>] [--home <dir>]
 //   node scripts/lib/legacy-names.js --migrate-machine --reroot <de> <a> [--check] [--json] [--only-existing] [--home <dir>]
-//                                    (cambia la raíz de lo escrito en la máquina; anda sin el mapa: story 8.19, tanda B)
+//                                    (cambia la raíz de lo escrito en la máquina; anda sin el mapa)
 //   node scripts/lib/legacy-names.js --migrate-bench [--check] [--root <arnés>]   (claves del banco y de las suites)
 //   node scripts/lib/legacy-names.js --shell <where>                (lo que carga legacy-names.sh)
-//   node scripts/lib/legacy-names.js --prepare-state <ruta>… [--where <script>]   (prepareStateWrite para bash: tanda D2)
+//   node scripts/lib/legacy-names.js --prepare-state <ruta>… [--where <script>]   (prepareStateWrite para bash)
 //   node scripts/lib/legacy-names.js --log-use <kind> <old> <new> <script> [--conflict]
 // Guía: guides/maintaining/nombres-en-ingles.md
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// la carpeta del estado la sabe scripts/setup/harness/tycon-home.js (story 8.23, tanda D): se carga si está al lado (en el
+// la carpeta del estado la sabe scripts/setup/harness/tycon-home.js: se carga si está al lado (en el
 // repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
 function stateDirOf(home) {
   try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(home); } catch (_) { /* la de siempre */ }
@@ -59,7 +59,7 @@ const CALLERS = ['machine', 'other-repo', 'products', 'docs', 'same-repo', 'ado'
 const NO_SHIM_CALLERS = ['same-repo', 'ado'];
 const SHIM_EXTS = ['.js', '.cjs', '.mjs', '.sh', '.command', '.bash', '', '.ps1', '.md'];
 const SHIM_MARK = 'tycon-legacy-shim:';
-// Los dos nombres del lugar del arnés (story 8.19): ~/.claude/tycon-harness y el viejo, que sigue resolviendo. ESCRITOS
+// Los dos nombres del lugar del arnés: ~/.claude/tycon-harness y el viejo, que sigue resolviendo. ESCRITOS
 // acá, no importados de scripts/setup/harness/place.js: este archivo viaja solo a la copia del freno de producción en
 // /opt. Copia declarada en scripts/tests/fixtures/harness-place-names.json; una prueba frena si se desfasa.
 const PLACE_NAME = 'tycon-harness';
@@ -120,7 +120,7 @@ function loadMap(opts = {}) {
   try { st = fs.statSync(f); } catch (e) {
     // «no existe» es la copia pública: nada que decir. Cualquier otro error (un permiso, un disco que falla) es «no pude
     // mirar» y se avisa una vez, como el mapa roto: si no, quien busca una ruta vieja por el mapa la daría por ausente
-    // en silencio (revisor de fallos silenciosos, tanda C4). Sigue siendo paso directo: un script no se cae por el mapa.
+    // en silencio. Sigue siendo paso directo: un script no se cae por el mapa.
     if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return null;
     if (!warnedBroken) {
       warnedBroken = true;
@@ -148,19 +148,44 @@ const entriesOf = (map) => (map && Array.isArray(map.entries) ? map.entries.filt
 /** Las que se usan en tiempo de ejecución: una ruta inválida nunca se usa (la barra final de una carpeta se tolera acá; el
  *  validador la rechaza al commitear). */
 const stripSlash = (s) => (typeof s === 'string' ? s.replace(/\/+$/, '') : s);
-const usableEntries = (map) => entriesOf(map).map((e) => (e.kind === 'folder' ? { ...e, old: stripSlash(e.old), new: stripSlash(e.new) } : e)).filter(entryUsable);
+/**
+ * El final de la cadena de un `file`: una entrada guarda el destino que se midió y una mudanza posterior va en otra
+ * entrada cuyo `old` es ese destino. Se sigue de `new` en `new` dentro del mismo repo. Una cadena que vuelve sobre sí
+ * misma, o un paso del que salen dos entradas, no tiene final: devuelve `{ end: null, problem }`.
+ */
+function chainWalk(entry, entries) {
+  if (!entry || entry.kind !== 'file' || typeof entry.new !== 'string') return { end: entry && entry.new, problem: null };
+  const repo = entry.repo || 'arnes';
+  const seen = new Set([entry.old]);
+  let end = entry.new;
+  for (;;) {
+    if (seen.has(end)) return { end: null, problem: `la cadena de ${entry.old} vuelve sobre sí misma en ${end}: no tiene final` };
+    seen.add(end);
+    const next = entries.filter((x) => x && x !== entry && x.kind === 'file' && (x.repo || 'arnes') === repo && x.old === end && typeof x.new === 'string');
+    if (next.length > 1) return { end: null, problem: `la cadena de ${entry.old} sigue por dos entradas desde ${end} (${next.map((x) => x.new).join(', ')}): no tiene final` };
+    if (!next.length) return { end, problem: null };
+    end = next[0].new;
+  }
+}
+const chainEnd = (entry, entries) => chainWalk(entry, entries).end;
+const chainProblem = (entry, entries) => chainWalk(entry, entries).problem;
+const usableEntries = (map) => {
+  const all = entriesOf(map);
+  return all.map((e) => (e.kind === 'folder' ? { ...e, old: stripSlash(e.old), new: stripSlash(e.new) }
+    : e.kind === 'file' ? { ...e, new: chainEnd(e, all) } : e)).filter(entryUsable);
+};
 
 // ── rutas ───────────────────────────────────────────────────────────────────────────────────────────────────────
 /**
  * La raíz de agent-skills: la que diga scripts/lib/skills-dir.js (la variable › el propio clon si es unido › lo instalado).
  *
  * 🔴 El valor de siempre (`~/.claude/agent-skills`) es SÓLO para la copia que viaja sin skills-dir.js al lado (un
- *    laboratorio con esta biblioteca sola). Antes era un `catch` que tragaba cualquier error (pase adversarial del tramo 1
- *    de la story 8.18, 2026-10-04): skills-dir.js TIRA cuando su vecina canonical-path.js está y no carga, justamente para
- *    que nadie pase a leer las skills instaladas sin decirlo, y acá se lo tapaba —medido: en un clon unido con un
- *    `require` roto, `--migrate-machine --check` salía 0 sin una línea, mirando lo instalado—. Se mira si el archivo ESTÁ,
- *    no el mensaje del error: el «Require stack» de un MODULE_NOT_FOUND nombra a skills-dir.js aunque falte otro.
- *    El `require` sigue literal: el control de cierre del freno de producción (T25) lo lee para exigir que viaje a /opt.
+ *    laboratorio con esta biblioteca sola). Un `catch` que tragara cualquier error taparía que skills-dir.js TIRA cuando
+ *    su vecina canonical-path.js está y no carga —justamente para que nadie pase a leer las skills instaladas sin
+ *    decirlo—: en un clon unido con un `require` roto, `--migrate-machine --check` saldría 0 sin una línea, mirando lo
+ *    instalado. Se mira si el archivo ESTÁ, no el mensaje del error: el «Require stack» de un MODULE_NOT_FOUND nombra a
+ *    skills-dir.js aunque falte otro. El `require` sigue literal: el control de cierre del freno de producción lo lee
+ *    para exigir que viaje a /opt.
  */
 function skillsRepoRoot(opts = {}) {
   if (opts.skillsRoot) return opts.skillsRoot;
@@ -270,8 +295,8 @@ function aliasOptions(argv, where, opts = {}) {
   const seen = new Map();   // entrada de opción → { old, new }
   const note = (e, which) => { const s = seen.get(e) || {}; s[which] = true; seen.set(e, s); };
   const used = (e) => recordUse({ kind: e.kind, old: e.old, new: e.new, script: where }, opts);
-  // un valor con `option` (tanda B3a) se traduce sólo como valor de ESA opción (ya con su nombre nuevo); uno sin
-  // `option` —mapas anteriores a la B3a— en cualquier argumento, como antes
+  // un valor con `option` se traduce sólo como valor de ESA opción (ya con su nombre nuevo); uno sin
+  // `option`, en cualquier argumento
   const value = (v, opt) => {
     const e = mine.find((x) => x.kind === 'value' && x.old === v && (typeof x.option !== 'string' || x.option === opt));
     if (!e) return v;
@@ -313,7 +338,7 @@ function aliasOptions(argv, where, opts = {}) {
 }
 
 /**
- * La línea que suma un script al entrar (tanda B3a): reescribe `process.argv` en el lugar con `aliasOptions`, así el
+ * La línea que suma un script al entrar: reescribe `process.argv` en el lugar con `aliasOptions`, así el
  * script lee sus opciones como siempre —con `indexOf`, con un parser propio o con un `switch`— y ya le llegan con los
  * nombres nuevos. Con el viejo y el nuevo de una opción juntos escribe el error (con `prefix`, el que el script usa en
  * su stderr) y sale con `exitCode`: el código de opción desconocida del script, 2 si no tiene uno.
@@ -336,14 +361,13 @@ function fileEntry(p, opts) {
 }
 const sameContent = (a, b) => { try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch { return false; } };
 /** La ruta vieja de un archivo de configuración o de estado (por su ruta nueva), o null si no está en el mapa. Para el
- *  lector que tiene que mirar los dos mientras dura el renombre (tanda D2: una carpeta en la que todavía escribe una
+ *  lector que tiene que mirar los dos mientras dura el renombre (una carpeta en la que todavía escribe una
  *  sesión con el código de antes). No anota uso: mirar no es usar el nombre viejo. */
 function oldPathOf(p, opts = {}) {
   return fileEntry(p, opts).old;
 }
 /** ¿Existe? «No está» (ENOENT, ENOTDIR) es false; cualquier otro error (un permiso, un disco que falla) es «no pude
- *  mirar» y tira: tomarlo por «no está» dejaría un estado viejo sin migrar, o el nuevo vacío, en silencio (revisor de
- *  fallos silenciosos, tanda D2). `fs.existsSync` se traga ese error. */
+ *  mirar» y tira: tomarlo por «no está» dejaría un estado viejo sin migrar, o el nuevo vacío, en silencio. `fs.existsSync` se traga ese error. */
 function exists(p) {
   try { fs.statSync(p); return true; } catch (e) {
     if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return false;
@@ -367,7 +391,7 @@ function resolveFile(p, opts = {}) {
 /** Antes de la primera escritura de un estado con nombre nuevo: si sólo está el viejo, su contenido pasa al nuevo (el
  *  viejo queda intacto hasta el retiro). Devuelve la ruta nueva, que es donde se escribe. Si la copia falla por otra cosa
  *  que «otro proceso ya lo migró», lanza: escribir el nuevo vacío perdería la historia del viejo para siempre.
- *  Una carpeta (tanda D2) se lleva entera: se copia a una hermana temporal y recién ahí toma el nombre nuevo, así que
+ *  Una carpeta se lleva entera: se copia a una hermana temporal y recién ahí toma el nombre nuevo, así que
  *  quien escribe en ella nunca la ve a medias; si dos procesos la migran a la vez, gana uno y el otro borra su copia. */
 function prepareStateWrite(p, opts = {}) {
   const { abs, entry, old } = fileEntry(p, opts);
@@ -427,12 +451,11 @@ function readKeys(obj, where, opts = {}) {
   return out;
 }
 /** Lo mismo que readKeys en TODOS los niveles (los objetos dentro de listas también), para un archivo cuyas claves
- *  anidadas cambiaron de nombre (tanda D1: la lista blanca de la base de un rango, un pack.json de afuera). Nunca toca
+ *  anidadas cambiaron de nombre (la lista blanca de la base de un rango, un pack.json de afuera). Nunca toca
  *  valores ni claves que no están en el mapa (ids, vocabularios); devuelve una copia. Las dos con valores distintos en
  *  el mismo objeto → error que nombra las dos. `opts.record: false`: no anota el uso — para lo que se lee de una FOTO de
  *  git (la base de un rango, el árbol de un sha): ahí nadie usa el nombre viejo, es la historia, y anotarlo ensuciaría el
- *  registro que decide el retiro y llenaría de warnings las corridas de Azure (el mismo defecto que la tanda C4 cerró
- *  para los reemplazos). */
+ *  registro que decide el retiro y llenaría de warnings las corridas de Azure. */
 function readKeysDeep(obj, where, opts = {}) {
   const mine = usableEntries(loadMap(opts)).filter((e) => e.kind === 'key' && e.where === where);
   if (!mine.length) return obj;
@@ -472,7 +495,7 @@ function isShim(text) {
 /**
  * ¿Es un reemplazo GENERADO tal cual, en la ruta `rel` de su repo? La marca sola se puede escribir a mano: un archivo
  * que la trae pero no es idéntico a lo que escribe `--write-shims` para esa ruta y su destino no es un reemplazo (el
- * freno de nombres no lo saltea; revisor de seguridad, tanda C1). Se compara con las dos formas (arnés y agent-skills).
+ * freno de nombres no lo saltea). Se compara con las dos formas (arnés y agent-skills).
  */
 function isGeneratedShim(rel, text) {
   if (!isShim(text)) return false;
@@ -508,8 +531,7 @@ function resolveShimsInCommand(cmd) {
 const supportsShim = (rel) => SHIM_EXTS.includes(path.extname(rel));
 // Sin forma de reemplazo (un .yml), tampoco lo pide `docs`: la guía que lo cita se actualiza en el mismo commit y nadie lo
 // ejecuta por esa ruta. `machine`, `other-repo` y `products` sí lo siguen pidiendo —y como no hay forma, --check-map
-// sale 2— (decisión del dueño, story 8.12 AC 1, 2026-10-01). Un `old` que no es texto se juzga como antes: lo frena la
-// validación de rutas.
+// sale 2—. Un `old` que no es texto lo frena la validación de rutas.
 const NO_SHIM_WITHOUT_FORM_CALLERS = [...NO_SHIM_CALLERS, 'docs'];
 const needsShim = (e) => {
   if (e.kind !== 'file' || !Array.isArray(e.callers)) return false;
@@ -530,7 +552,7 @@ function shimText(entry, oldAbs, newAbs, root) {
   // el del arnés instalado: así un nombre viejo que llama un producto sigue andando contra ese clon
   const installed = [entry.repo === 'agent-skills' ? 'agent-skills' : PLACE_NAME, ...entry.new.split('/')];
   // la carpeta de Claude Code en la casa del usuario, donde vive el lugar del arnés: el texto de los reemplazos la nombra
-  // en siete lugares y acá se escribe una vez (scripts/tests/tycon-home.test.js T3 cuenta cada mención de la carpeta)
+  // en siete lugares y acá se escribe una vez (scripts/tests/tycon-home.test.js cuenta cada mención de la carpeta)
   const claude = path.basename(claudeDirOf('/'));
   const warn = `##vso[task.logissue type=warning]nombre viejo «${entry.old}» (file): sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${entry.new}»`;
   if (['.js', '.cjs', '.mjs'].includes(ext)) {
@@ -579,7 +601,7 @@ function shimText(entry, oldAbs, newAbs, root) {
       `_legacy_target="$_legacy_dir/"${shq(rel)}`,
       '# si el destino no está en este repo (un clon del repo privado no trae lo público), el del arnés instalado',
       // la ruta del instalado, de corrido entre comillas dobles (pathProblem sólo deja letras, dígitos, «.», «_», «-» y
-      // «/»): partida en dos comillas, el control del nombre público (mirror-pipeline T36) no la reconoce como ruta del lugar
+      // «/»): partida en dos comillas, el control del nombre público no la reconoce como ruta del lugar
       `if [ ! -e "$_legacy_target" ] && [ -e "\${HOME:-/nonexistent}/${claude}/${installed.join('/')}" ]; then _legacy_target="\${HOME}/${claude}/${installed.join('/')}"; fi`,
       `case "\${TF_BUILD:-}" in [Tt][Rr][Uu][Ee]) printf '%s\\n' ${shq(warn)} >&2 ;; esac`,
       '# anotar el uso, de fondo (nunca demora): la biblioteca del mismo repo, la de TYCON_GUIDES_DIR o la del lugar',
@@ -631,7 +653,11 @@ function writeShims(opts = {}) {
   if (!map) throw new LegacyNamesError(`no hay mapa (${mapFile(opts)}): no hay reemplazos que escribir`);
   const written = [];
   const pending = [];
-  for (const e of entriesOf(map).filter(needsShim)) {
+  const all = entriesOf(map);
+  for (const raw of all.filter(needsShim)) {
+    const chainWhy = chainProblem(raw, all);
+    if (chainWhy) throw new LegacyNamesError(`${chainWhy} — no genero reemplazos con ella`);
+    const e = { ...raw, new: chainEnd(raw, all) };
     for (const side of ['old', 'new']) {
       const why = pathProblem(e[side], e.kind);
       if (why) throw new LegacyNamesError(`${e[side]}: la ruta ${why} — no genero reemplazos con ella`);
@@ -676,7 +702,7 @@ function rootForms(dir, home, extra = []) {
   return [...forms].filter(Boolean).sort((a, b) => b.length - a.length);
 }
 /** Todas las formas de escribir la raíz de un repo en la máquina, incluidos los enlaces que deja el instalador (los dos
- *  nombres del lugar del arnés —story 8.19—, ~/.claude/agent-skills) si apuntan a esa raíz, y `$TCG` en los guiones del
+ *  nombres del lugar del arnés, ~/.claude/agent-skills) si apuntan a esa raíz, y `$TCG` en los guiones del
  *  arnés. */
 function repoForms(root, repo, home) {
   const extra = repo === 'agent-skills' ? [] : ['$TCG', '${TCG}'];
@@ -732,7 +758,7 @@ function machineRewrites(map, { guides, skills, home, exists = fs.existsSync }) 
   return out;
 }
 /**
- * Los reemplazos de los permisos RELATIVOS (story 8.12, AC 9): un permiso de Claude Code escrito como
+ * Los reemplazos de los permisos RELATIVOS: un permiso de Claude Code escrito como
  * `Bash(bash scripts/x.sh --check)` no lleva ninguna forma de la raíz y `machineRewrites` no lo ve. Sólo entradas del
  * arnés (las rutas relativas de un permiso se resuelven contra el proyecto abierto, y el que nombra `scripts/…` es el
  * arnés) cuyo `old` empieza con `scripts/`, ya mudadas con el mismo criterio que `machineRewrites`. Borde estricto
@@ -787,12 +813,12 @@ function rewriteStrings(v, rewrites, count, rewritten) {
 }
 /**
  * ¿El nombre viejo sigue siendo el de verdad? Un archivo que existe y no es un reemplazo; una carpeta con algún archivo
- * que no es un reemplazo. Una entrada nace antes de su mudanza (tanda C0, AC 59), y la carpeta nueva puede existir antes
- * que la mudanza de la vieja (un archivo que se renombra en C1-C3 va directo a su destino final): «el nuevo existe» solo
+ * que no es un reemplazo. Una entrada nace antes de su mudanza, y la carpeta nueva puede existir antes
+ * que la mudanza de la vieja (un archivo que se renombra va directo a su destino final): «el nuevo existe» solo
  * no alcanza para darla por mudada.
  */
 // Sólo «no existe» es un «no»: un permiso, un enlace roto o un disco que falla es «no pude mirar» y frena — si no, el viejo
-// ilegible se leería como «ya no está» y la entrada quedaría mudada en silencio (revisor de fallos silenciosos, tanda C0).
+// ilegible se leería como «ya no está» y la entrada quedaría mudada en silencio.
 const NO_EXISTE = new Set(['ENOENT', 'ENOTDIR']);
 function mirar(fn, p) {
   try { return fn(); } catch (e) {
@@ -802,8 +828,8 @@ function mirar(fn, p) {
 }
 /**
  * Lo que git VERSIONA bajo una carpeta (sus rutas relativas a `root`), o null si `root` no es la raíz de un repo de git (o
- * no hay git): entonces se mira el disco, como antes. Sólo lo versionado, ni lo ignorado ni lo que nunca se agregó
- * (pase adversarial de la story 8.12, R2): tras el pull de una mudanza git borra lo suyo de la carpeta vieja y deja lo que
+ * no hay git): entonces se mira el disco. Sólo lo versionado, ni lo ignorado ni lo que nunca se agregó
+ * tras el pull de una mudanza git borra lo suyo de la carpeta vieja y deja lo que
  * nunca siguió —el log del grabador, sus descartados—, y eso no es la carpeta de verdad. Lo ignorado y lo sin seguir son lo
  * mismo para esta pregunta: los restos de cada máquina quedan ignorados o no según el `.gitignore` de turno. La raíz tiene
  * que ser la del repo: una carpeta de laboratorio adentro de otro repo (una HOME versionada) no es ese repo. Si git está y
@@ -813,8 +839,8 @@ function mirar(fn, p) {
  * git en `root`, sin el GIT_DIR de un hook (no manda acá) y con los mensajes en inglés (LC_ALL=C), para poder leer el
  * «not a git repository». `notARepo`: git no está en la máquina, o dice que `root` no es un repo — ahí quien llama mira el
  * disco. Cualquier otro fallo («dubious ownership», un permiso, un repo roto, una señal) es `failed`, y quien llama frena
- * (pase adversarial de la story 8.12, R2, revisor de fallos silenciosos): «no pude preguntar» no es «no hay nada», y caer
- * callado al disco volvía a contar los restos de la máquina como lo versionado.
+ * «no pude preguntar» no es «no hay nada», y caer
+ * callado al disco contaría los restos de la máquina como lo versionado.
  */
 function gitAt(root, args) {
   const { spawnSync } = require('child_process');
@@ -852,7 +878,7 @@ function oldStillReal(abs, kind, root) {
   if (kind !== 'folder') return st.isFile() && real(abs);
   if (!st.isDirectory()) return false;
   // la basura que deja el sistema (el Finder, el Explorador) no es un archivo de la carpeta: git la ignora y sola no la
-  // vuelve «real» (pase adversarial de la C4: un `.DS_Store` callaba al control de nombres viejos y al instalador)
+  // vuelve «real» (un `.DS_Store` callaría al control de nombres viejos y al instalador)
   const junk = (n) => n === '.DS_Store' || n.startsWith('._') || n === 'Thumbs.db' || n === 'desktop.ini';
   const tracked = trackedUnder(root, abs);
   if (tracked) {
@@ -955,7 +981,7 @@ function migrateMachine(opts = {}) {
   const touch = (file, n, text) => {
     if (!n) return false;
     if (!opts.check) {
-      // respaldo al lado, una vez por corrida que cambia algo (el retiro, AC 54, los barre). Sin respaldo no se toca: la
+      // respaldo al lado, una vez por corrida que cambia algo (el retiro los barre). Sin respaldo no se toca: la
       // ruta vieja sigue andando por su reemplazo, y reescribir la configuración del dev sin red no vale ese riesgo.
       const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '');
       try { fs.copyFileSync(file, `${file}.bak-legacy-names-${stamp}`); } catch (e) {
@@ -982,7 +1008,7 @@ function migrateMachine(opts = {}) {
     const count = { n: 0 };
     const rewritten = new Set();
     rewriteStrings(data, rewrites, count, rewritten);
-    // los permisos relativos, sólo en los settings de Claude Code (story 8.12, AC 9)
+    // los permisos relativos, sólo en los settings de Claude Code
     if (claudeSettings.includes(f)) rewriteRelativePermissions(data, relRewrites, count, rewritten);
     if (count.n) dedupeSettings(data, norm, rewritten);
     touch(f, count.n, `${JSON.stringify(data, null, 2)}\n`);
@@ -1031,19 +1057,19 @@ function migrateMachine(opts = {}) {
   return res;
 }
 
-// ── --reroot: cambiar la raíz de lo escrito en la máquina (story 8.19, tanda B · AC 15 y 16) ───────────────────────
-// El lugar del arnés pasó a llamarse como el repo público (place.js) y el nombre viejo sigue resolviendo. Lo que una máquina
+// ── --reroot: cambiar la raíz de lo escrito en la máquina ───────────────────────────────────────────────────────────
+// El lugar del arnés se llama como el repo público (place.js) y el nombre viejo sigue resolviendo. Lo que una máquina
 // registró por el nombre viejo sigue andando, pero el día que el viejo se retire se rompe: `--reroot <de> <a>` lo pasa a
 // la raíz nueva. `migrateMachine` (arriba) renombra lo de ADENTRO de una raíz y sale sin hacer nada sin el mapa; esto
 // cambia la raíz misma y anda sin el mapa, que no viaja a la copia pública. Lo usa `harness.js relocate` (a mano,
-// <viejo> → <lugar>) y lo va a reusar la story 8.13.1 con `--only-existing`. `doctor` cuenta con la MISMA expresión
+// <viejo> → <lugar>) y se reusa con `--only-existing`. `doctor` cuenta con la MISMA expresión
 // (`countRegistered`). Las reglas que no se negocian:
 //   · NO resuelve enlaces: trabaja con las formas ESCRITAS de `<de>` (placeForms). Si siguiera el enlace, reescribiría
 //     también los hooks registrados por la ruta real del clon (`rootForms` suma la ruta real: por eso no se usa acá).
 //   · compara la ruta completa: `<de>` seguido de fin de ruta o de un separador; `<de>-viejo/…` no se toca.
 //   · en los hooks (y en todo lo demás) reescribe; en `permissions.*` AGREGA la forma nueva al lado de la vieja: un
 //     permiso es un patrón contra el comando que escribe otro, y mientras algún texto mande el nombre viejo, sacar la
-//     forma vieja vuelve a preguntar. El retiro del nombre viejo (8.15) saca la vieja.
+//     forma vieja vuelve a preguntar. El retiro del nombre viejo saca la vieja.
 //   · un hook reescrito que ya estaba por la ruta real del clon (o por el lugar) se va: queda el de antes, y se dice uno
 //     por uno; dos reescritos que quedan iguales quedan una vez. Nunca agrega un `$`: cada forma se reescribe en la suya.
 /** Las formas escritas de una carpeta, con su tipo (el tipo empareja la forma de `<de>` con la de `<a>`). */
@@ -1098,7 +1124,7 @@ const REROOT_AFTER = '(?![\\w.@+~-])';
 // en Windows una ruta no distingue mayúsculas (como `samePath`): la expresión tampoco, y el reemplazo se busca en minúscula
 const winKey = (platform) => (platform === 'win32' ? (x) => String(x).toLowerCase() : (x) => x);
 // Las formas que empiezan con `$`, `%` o `~` llevan un borde delante más corto: en `${VAR:-$HOME/…}` el `-` va pegado
-// (pase adversarial de la tanda B: el pre-commit global de git se escribe así), y lo único que no puede ir delante es una
+// (el pre-commit global de git se escribe así), y lo único que no puede ir delante es una
 // letra o un dígito (`x~/…` no es la HOME).
 function formsRegex(forms, platform = process.platform) {
   const sorted = [...forms].sort((a, b) => b.length - a.length);
@@ -1151,7 +1177,7 @@ function rerootFiles({ home, env = process.env, tree = null }) {
   const codex = env.CODEX_HOME || path.join(home, '.codex');
   out.push({ file: path.join(codex, 'hooks.json'), label: 'codex/hooks.json', type: 'json' });
   out.push({ file: path.join(codex, 'config.toml'), label: 'codex/config.toml', type: 'text' });
-  // Una COPIA que el arnés gestiona no es un registro (pase adversarial de la tanda B, B1): el pre-commit y el
+  // Una COPIA que el arnés gestiona no es un registro: el pre-commit y el
   // post-commit globales son copias de scripts/hooks/git-{pre,post}-commit-global.sh y los comandos de barra que trae el
   // árbol, copias de <árbol>/commands/. Nombran la ruta vieja si su fuente la nombra, las pone al día el instalador, y
   // reescribirlas no sirve (la próxima copia las pisa). Con su fuente en el árbol no se cuentan ni se reescriben.
@@ -1268,7 +1294,7 @@ function findPlutil(env) {
 
 /**
  * `--reroot <de> <a>`: la raíz de lo escrito en la máquina, de `<de>` a `<a>`. `check`: cuenta y no escribe.
- * `onlyExisting`: reescribe una ruta sólo si existe bajo `<a>` (8.13.1). Devuelve
+ * `onlyExisting`: reescribe una ruta sólo si existe bajo `<a>`. Devuelve
  * { rerooted, files: [{ path, label, rerooted, permissions_added, dropped, note }], notes, dropped }. Tira un
  * LegacyNamesError con `exitCode = 1` si `<a>` no resuelve a una carpeta (y entonces no escribió nada).
  */
@@ -1424,14 +1450,14 @@ function shellLines(where, opts = {}) {
     const e = bare(e0);
     if (typeof e.old !== 'string' || typeof e.new !== 'string' || /[\t\n]/.test(e.old + e.new)) continue;
     if (e.kind === 'env') lines.push(['env', e.old, e.new, ''].join('\t'));
-    // cuarto campo: en una opción, si se repite; en un valor (tanda B3a), la opción de la que es —vacío: cualquiera—
+    // cuarto campo: en una opción, si se repite; en un valor, la opción de la que es —vacío: cualquiera—
     else if (e.kind === 'value' && e.where === where) lines.push([e.kind, e.old, e.new, typeof e.option === 'string' && !/[\t\n]/.test(e.option) ? e.option : ''].join('\t'));
     else if (['option', 'subcommand'].includes(e.kind) && e.where === where) lines.push([e.kind, e.old, e.new, e.repeatable === true ? '1' : '0'].join('\t'));
   }
   return lines;
 }
 
-// ── las claves del banco y de las suites (tanda C1, AC 33) ──────────────────────────────────────────────────────
+// ── las claves del banco y de las suites ────────────────────────────────────────────────────────────────────────
 // La identidad de un caso del banco es `<nombre del script>::<id>` (runner.js → claveDeCaso) y la de una suite, el nombre
 // de su archivo: renombrar un hook o una prueba cambia la clave. Para que el banco corrido después no reporte casos
 // nuevos ni perdidos, el commit del renombre migra las líneas de base y las fotos nocturnas (--migrate-bench), y
@@ -1442,7 +1468,7 @@ function shellLines(where, opts = {}) {
  */
 function basenameRenames(map, { moved } = {}) {
   // cada nombre viejo con TODOS sus destinos, también el suyo propio (una mudanza de carpeta sin cambio de nombre): si un
-  // archivo sólo se mudó y otro con el mismo nombre se renombró, la clave no dice cuál de los dos es (pase adversarial, C1)
+  // archivo sólo se mudó y otro con el mismo nombre se renombró, la clave no dice cuál de los dos es
   const targets = new Map();
   for (const e of usableEntries(map)) {
     if (e.kind !== 'file' || (moved && !moved(e))) continue;
@@ -1474,7 +1500,10 @@ function migrateBench(opts = {}) {
   const map = loadMap(opts);
   const files = usableEntries(map).filter((e) => e.kind === 'file');
   const moved = new Set(files.filter((e) => isMoved(e, rootOf(e, { ...opts, root }))));
-  const renames = basenameRenames(map, { moved: (e) => moved.has(e) });
+  // cada llamada a usableEntries devuelve sus propias copias de las entradas `file`: se reconocen por repo y nombre viejo
+  const movedKey = (e) => `${e.repo || 'arnes'}\0${e.old}`;
+  const movedKeys = new Set([...moved].map(movedKey));
+  const renames = basenameRenames(map, { moved: (e) => movedKeys.has(movedKey(e)) });
   const paths = [...moved].filter((e) => (e.repo || 'arnes') === 'arnes').map((e) => [e.old, e.new]);
   const bench = path.join(root, 'scripts', 'controls-bench');
   const targets = [];
@@ -1518,7 +1547,7 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === '--reroot') {
-      // story 8.19 (AC 15): las dos rutas van pegadas a la opción
+      // las dos rutas van pegadas a la opción
       const pair = argv.slice(i + 1, i + 3);
       if (pair.length < 2 || pair.some((p) => String(p).startsWith('--'))) throw new LegacyNamesError(`--reroot necesita dos rutas\n${REROOT_USAGE}`);
       a.reroot = pair; i += 2;
@@ -1534,7 +1563,7 @@ function main(argv) {
   const opts = { mapFile: a.val.map, root: a.val.root, skillsRoot: a.val['skills-root'], home: a.val.home };
   if ((a.reroot || a.flags.has('json') || a.flags.has('only-existing')) && mode !== 'migrate-machine') throw new LegacyNamesError(`--reroot, --json y --only-existing van con --migrate-machine\n${REROOT_USAGE}`);
   if (mode === 'migrate-machine' && a.reroot) {
-    // story 8.19 (AC 15 y 16): antes de la salida «sin mapa no hay nada que hacer» de migrateMachine: anda sin el mapa
+    // antes de la salida «sin mapa no hay nada que hacer» de migrateMachine: anda sin el mapa
     const check = a.flags.has('check');
     let r;
     try {
@@ -1575,7 +1604,7 @@ function main(argv) {
     return 0;
   }
   if (mode === 'prepare-state') {
-    // Lo que abre bash con `>>` (o launchd) antes de que corra node: la copia tiene que estar ANTES de abrirlo (tanda D2).
+    // Lo que abre bash con `>>` (o launchd) antes de que corra node: la copia tiene que estar ANTES de abrirlo.
     // Prueba todas las rutas aunque una falle; una que no está en el mapa es paso directo.
     if (!rest.length) throw new LegacyNamesError('--prepare-state necesita al menos una ruta');
     const errors = [];
@@ -1598,14 +1627,14 @@ function main(argv) {
 
 module.exports = {
   basenameRenames, renameKey, migrateBench, isGeneratedShim,
-  LegacyNamesError, KINDS, CALLERS, NO_SHIM_CALLERS, SHIM_MARK, DEFAULT_MAP, loadMap, entriesOf, usableEntries, expand, needsShim,
+  LegacyNamesError, KINDS, CALLERS, NO_SHIM_CALLERS, SHIM_MARK, DEFAULT_MAP, loadMap, entriesOf, usableEntries, chainEnd, chainProblem, expand, needsShim,
   supportsShim, pathProblem, within, readEnv, envNames, aliasOptions, aliasArgv, resolveFile, prepareStateWrite, oldPathOf, readKeys, readKeysDeep, recordUse,
   isShim, shimTarget, resolveShimsInCommand, writeShims, migrateMachine, machineRewrites, relativePermissionRewrites, shellLines, oldStillReal, isMoved, gitAt,
   repoForms, placeForms, rerootText, rerootMachine, countRegistered, rerootFiles, cli,
 };
 
 /**
- * La línea de comandos entera, como función (story 8.36): lo mismo que corre el arranque de este archivo como programa,
+ * La línea de comandos entera, como función: lo mismo que corre el arranque de este archivo como programa,
  * con su `try/catch`. Devuelve el código de salida. La llama la tanda del aplicador (scripts/setup/applier-batch.js).
  */
 function cli(argv) {
@@ -1617,7 +1646,7 @@ function cli(argv) {
   }
 }
 
-// DESPUÉS del `module.exports`, no antes (pase adversarial del tramo 1 de la story 8.18, hallazgos 10 y 11): como módulo
+// DESPUÉS del `module.exports`, no antes: como módulo
 // principal, `main()` llega a skills-dir.js → canonical-path.js, que importa ESTE archivo; con las exportaciones todavía
-// sin asignar, Node escribía dos avisos de dependencia circular por stderr en cada corrida en un clon unido.
+// sin asignar, Node escribiría dos avisos de dependencia circular por stderr en cada corrida en un clon unido.
 if (require.main === module) process.exitCode = cli(process.argv.slice(2));

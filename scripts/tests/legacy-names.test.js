@@ -1149,16 +1149,119 @@ test('T2 Restructure_Shims_ComputedRelativePathAndMdForm', () => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
+// Una entrada R guarda el destino medido y una mudanza posterior se encadena desde ahí. El reemplazo del nombre de la R
+// lanza el final de la cadena y --check-map lo acepta; si el paso intermedio existe en el disco, es un choque.
+test('LegacyNames_ChainedMove_ShimsAndCheckMapFollowTheChain (story 8.135)', () => {
+  const repo = tmp('chain');
+  write(repo, { 'tools/final/run-tool.sh': '#!/usr/bin/env bash\necho final\n' });
+  const oldSh = `scripts/${W.viejo}-tool.sh`;
+  const mid = 'scripts/setup/run-tool.sh';
+  const entries = [
+    { kind: 'file', old: oldSh, new: mid, batch: 'R1', callers: ['machine', 'same-repo'] },
+    { kind: 'file', old: mid, new: 'tools/final/run-tool.sh', batch: 'lab', callers: ['same-repo'] },
+  ];
+  const mapFile = path.join(repo, 'renames.json');
+  write(repo, { 'renames.json': mapOf(entries) });
+  assert.strictEqual(lib().chainEnd(entries[0], entries), 'tools/final/run-tool.sh', 'la cadena llega al final');
+  assert.strictEqual(lib().chainEnd(entries[1], entries), 'tools/final/run-tool.sh', 'una entrada sin cadena es su propio new');
+  const gen = spawnSync(process.execPath, [LIB, '--write-shims', '--map', mapFile, '--root', repo], { encoding: 'utf8', env: envWith({ HOME: repo }) });
+  assert.strictEqual(gen.status, 0, gen.stderr);
+  assert.strictEqual(path.resolve(lib().shimTarget(path.join(repo, oldSh))), path.join(repo, 'tools/final/run-tool.sh'), 'el reemplazo lanza el final de la cadena');
+  assert.ok(!fs.existsSync(path.join(repo, mid)), 'el paso intermedio no deja reemplazo (sólo lo nombra su repo)');
+  const check = () => spawnSync(process.execPath, [SPANISH, '--check-map', '--map', mapFile, '--repo', repo], { encoding: 'utf8', env: envWith({}) });
+  const ok = check();
+  assert.strictEqual(ok.status, 0, `la cadena pasa --check-map: ${ok.stderr}`);
+  write(repo, { [mid]: '#!/usr/bin/env bash\necho intermedio\n' });
+  const clash = check();
+  assert.notStrictEqual(clash.status, 0, 'con el paso intermedio en el disco, la cadena es un choque');
+  assert.match(clash.stderr + clash.stdout, /choca con el viejo de otra entrada/);
+  fs.rmSync(path.join(repo, mid));
+  // una cadena sin final (vuelve sobre sí misma, o un paso con dos salidas) no da destino: no se usa al correr,
+  // --write-shims frena y --check-map la nombra
+  const L = lib();
+  const badMaps = {
+    ciclo: [entries[0], entries[1], { kind: 'file', old: 'tools/final/run-tool.sh', new: oldSh, batch: 'lab', callers: ['same-repo'] }],
+    bifurcacion: [entries[0], entries[1], { kind: 'file', old: mid, new: 'tools/otro/run-tool.sh', batch: 'lab', callers: ['same-repo'] }],
+  };
+  for (const [name, bad] of Object.entries(badMaps)) {
+    assert.strictEqual(L.chainEnd(bad[0], bad), null, `${name}: sin destino`);
+    assert.match(L.chainProblem(bad[0], bad) || '', name === 'ciclo' ? /vuelve sobre sí misma/ : /dos entradas/, `${name}: el motivo`);
+    assert.ok(!L.usableEntries({ entries: bad }).some((e) => e.old === oldSh), `${name}: la entrada no se usa al correr`);
+    write(repo, { 'renames.json': mapOf(bad) });
+    const shims = spawnSync(process.execPath, [LIB, '--write-shims', '--map', mapFile, '--root', repo], { encoding: 'utf8', env: envWith({ HOME: repo }) });
+    assert.notStrictEqual(shims.status, 0, `${name}: --write-shims frena`);
+    const cm = check();
+    assert.notStrictEqual(cm.status, 0, `${name}: --check-map frena`);
+    assert.ok((cm.stderr + cm.stdout).includes(oldSh), `${name}: --check-map nombra la entrada`);
+  }
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+// Quien lee el mapa sigue la cadena: --stale-mentions sigue buscando el nombre más viejo de una cadena mudada, el
+// exportador lo cuenta como ruta vieja con el final de la cadena, y un paso intermedio que quedó como reemplazo
+// generado (lo llaman de afuera) no es un choque para --check-map.
+test('LegacyNames_ChainedMove_StaleMentionsExportAndMiddleShim (story 8.135)', () => {
+  const repo = tmp('chain-uses');
+  const oldSh = `scripts/${W.viejo}-tool.sh`;
+  const mid = 'scripts/setup/run-tool.sh';
+  const end = 'tools/final/run-tool.sh';
+  const entries = [
+    { kind: 'file', old: oldSh, new: mid, batch: 'R1', callers: ['same-repo'] },
+    { kind: 'file', old: mid, new: end, batch: 'lab', callers: ['same-repo'] },
+  ];
+  write(repo, { [end]: '#!/usr/bin/env bash\necho final\n', 'scripts/lib/renames.json': mapOf(entries), 'guides/a.md': `Usar \`${oldSh}\` para instalar.\n` });
+  const git = (dir, ...a) => spawnSync('git', ['-c', 'user.email=lab@example.com', '-c', 'user.name=lab', ...a], { cwd: dir, encoding: 'utf8' });
+  git(repo, 'init', '-q'); git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'lab');
+  const skills = tmp('chain-skills');
+  git(skills, 'init', '-q'); git(skills, 'commit', '-q', '--allow-empty', '-m', 'lab');
+  const sm = spawnSync(process.execPath, [SPANISH, '--stale-mentions', '--repo', repo], { encoding: 'utf8', env: envWith({ TYCON_SKILLS_DIR: skills }) });
+  const out = sm.stdout + sm.stderr;
+  assert.ok(out.split('\n').some((l) => l.includes('guides/a.md:1') && l.includes(oldSh) && l.includes(end)), `--stale-mentions nombra el nombre más viejo con el final de la cadena:\n${out}`);
+  // el exportador: la ruta vieja de la R, con el final de la cadena
+  const ex = require(path.join(RAIZ, 'scripts', 'publishing', 'export.js'));
+  const blob = (rel) => git(repo, 'hash-object', '-w', rel).stdout.trim();
+  const ctx = { repos: { arnes: { dir: repo }, 'agent-skills': { dir: repo } },
+    arboles: { arnes: ['scripts/lib/renames.json', end, 'guides/a.md'].map((ruta) => ({ ruta, obj: blob(ruta), tipo: 'blob' })), 'agent-skills': [] } };
+  const nv = ex.nombresViejos(ctx);
+  assert.ok(nv.archivos.has(`arnes/${oldSh}`), `el exportador cuenta ${oldSh} como nombre viejo`);
+  assert.deepStrictEqual(nv.rutas.filter((x) => x.ruta === oldSh).map((x) => x.nueva), [end], 'y lo traduce al final de la cadena');
+  // una cadena con ciclo no tiene final: el exportador frena; la foto de antes de un freno sigue sin ese nombre viejo
+  write(repo, { 'ciclo.json': mapOf([entries[0], { ...entries[1], new: oldSh }]) });
+  const conCiclo = (extra) => ({ ...ctx, nombresViejos: undefined, ...extra,
+    arboles: { ...ctx.arboles, arnes: ctx.arboles.arnes.map((x) => (x.ruta === 'scripts/lib/renames.json' ? { ...x, obj: blob('ciclo.json') } : x)) } });
+  assert.throws(() => ex.nombresViejos(conCiclo({})), /vuelve sobre sí misma/, 'una cadena sin final frena el exportador');
+  const nvCiclo = ex.nombresViejos(conCiclo({ estricto: false }));
+  assert.ok(!nvCiclo.archivos.has(`arnes/${oldSh}`) && !nvCiclo.rutas.some((x) => x.ruta === oldSh), 'la foto de antes no da ruta vieja');
+  // --stale-mentions con el ciclo: dice qué cadena no busca y no la informa
+  write(repo, { 'scripts/lib/renames.json': mapOf([entries[0], { ...entries[1], new: oldSh }]) });
+  const smCiclo = spawnSync(process.execPath, [SPANISH, '--stale-mentions', '--repo', repo], { encoding: 'utf8', env: envWith({ TYCON_SKILLS_DIR: skills }) });
+  assert.ok(/vuelve sobre sí misma.*no busco sus menciones/.test(smCiclo.stderr), `--stale-mentions avisa la cadena sin final:\n${smCiclo.stderr}`);
+  assert.ok(!smCiclo.stdout.split('\n').some((l) => l.includes('guides/a.md:1')), `y no informa sus menciones:\n${smCiclo.stdout}`);
+  // el paso intermedio lo llaman de afuera: su reemplazo generado no es un choque, ni antes ni después de --write-shims
+  const called = [entries[0], { ...entries[1], callers: ['machine'] }];
+  const mapFile = path.join(repo, 'renames.json');
+  write(repo, { 'renames.json': mapOf(called) });
+  const gen = spawnSync(process.execPath, [LIB, '--write-shims', '--map', mapFile, '--root', repo], { encoding: 'utf8', env: envWith({ HOME: repo }) });
+  assert.strictEqual(gen.status, 0, gen.stderr);
+  assert.ok(lib().isShim(fs.readFileSync(path.join(repo, mid), 'utf8')), 'el paso intermedio quedó como reemplazo');
+  const cm = spawnSync(process.execPath, [SPANISH, '--check-map', '--map', mapFile, '--repo', repo], { encoding: 'utf8', env: envWith({}) });
+  assert.strictEqual(cm.status, 0, `un paso intermedio que es reemplazo no choca: ${cm.stderr}${cm.stdout}`);
+  fs.rmSync(repo, { recursive: true, force: true });
+  fs.rmSync(skills, { recursive: true, force: true });
+});
+
 // ── la mudanza a scripts/setup/ y scripts/hooks/ ──────────────────────────────────────────────
 // T10: las 17 entradas de esta mudanza en el mapa están mudadas de verdad (el nuevo existe y compila; en el viejo, el reemplazo
 // generado que apunta al nuevo, o nada si sólo lo nombra su repo), el mapa real valida, y quienes los llaman por ruta
 // (el instalador .sh y .ps1, install-codegraph) apuntan a la carpeta nueva y a un archivo que existe.
 test('T10 R1_SetupAndHooks_MovedRequiresAndShims', { skip: !TEAM_812 && 'copia pública: sin el mapa' }, () => {
   const L = lib();
-  const r1 = JSON.parse(fs.readFileSync(MAP_REAL, 'utf8')).entries.filter((e) => e.batch === 'R1');
+  const all = JSON.parse(fs.readFileSync(MAP_REAL, 'utf8')).entries;
+  const r1 = all.filter((e) => e.batch === 'R1');
   assert.strictEqual(r1.length, 17, 'las 17 entradas de la R1');
   for (const e of r1) {
-    const nuevo = path.join(RAIZ, e.new);
+    // una mudanza posterior se encadena desde el destino medido: lo que existe, compila y lanza el reemplazo es el final
+    const nuevo = path.join(RAIZ, L.chainEnd(e, all));
     const viejo = path.join(RAIZ, e.old);
     assert.ok(fs.existsSync(nuevo), `${e.new} existe`);
     assert.ok(/^scripts\/(setup|hooks)\//.test(e.new), `${e.new} cae en scripts/setup/ o scripts/hooks/`);
