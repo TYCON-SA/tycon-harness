@@ -58,7 +58,7 @@ function volcado({ sid, archivedAt = `${HOY}T22:19:00.000Z`, pendientes = [], co
   return d;
 }
 
-/** Un buzón: `{ <maquina>: { corridas: [{ base, volcado, hilo, hiloRoto }], registros: { cobertura, bypass } } }`. */
+/** Un buzón: `{ <maquina>: { corridas: [{ base, volcado, hilo, hiloRoto }], registros: { bypass, frenos } } }`. */
 function buzon(def) {
   const dir = tmp('rr-buzon-');
   for (const [maq, m] of Object.entries(def)) {
@@ -72,9 +72,11 @@ function buzon(def) {
     if (m.registros) {
       const r = path.join(d, 'registros');
       fs.mkdirSync(r, { recursive: true });
-      const fuentes = { bypass: m.registros.bypass ? { estado: 'medido' } : { estado: 'no_medido', motivo: 'el registro no existe en esta máquina' } };
+      const fuente = (lineas) => (lineas ? { estado: 'medido' } : { estado: 'no_medido', motivo: 'el registro no existe en esta máquina' });
+      const fuentes = { bypass: fuente(m.registros.bypass), frenos: fuente(m.registros.frenos) };
       fs.writeFileSync(path.join(r, 'cobertura.json'), JSON.stringify({ esquema: 1, fecha: HOY, fuentes }));
       if (m.registros.bypass) fs.writeFileSync(path.join(r, 'bypass.log.gz'), zlib.gzipSync(m.registros.bypass.map((l) => JSON.stringify(l)).join('\n') + '\n'));
+      if (m.registros.frenos) fs.writeFileSync(path.join(r, 'frenos.jsonl.gz'), zlib.gzipSync(m.registros.frenos.map((l) => (typeof l === 'string' ? l : JSON.stringify(l))).join('\n') + '\n'));
     }
   }
   return dir;
@@ -409,7 +411,7 @@ test('T19 LastRunCompletoYParcial @story-4.10 @ac-13', async () => {
   assert.strictEqual(ambienteDurante, ambienteAntes, 'la pasada no cambia el ambiente para la bajada');
   assert.strictEqual(desde, '2026-10-15', 'conversaciones desde hoy menos la ventana');
   const a = lastRun(op);
-  assert.deepStrictEqual(Object.keys(a).sort(), ['causas', 'completo', 'con_fallas', 'fecha', 'hilos_sin_hooks', 'ilegibles', 'miradas', 'motivo', 'nuevas', 'sin_hilo']);
+  assert.deepStrictEqual(Object.keys(a).sort(), ['causas', 'completo', 'con_fallas', 'escapes_autorizados', 'fecha', 'hilos_sin_hooks', 'ilegibles', 'maquinas_sin_frenos', 'miradas', 'motivo', 'nuevas', 'sin_hilo']);
   assert.strictEqual(a.completo, true);
   assert.deepStrictEqual([a.miradas, a.con_fallas, a.nuevas], [2, 1, 1]);
   // la parcial, sin una pasada entera de hoy delante (con una, no se pisa: AC 13, T47)
@@ -1408,4 +1410,189 @@ test('T96b Ejecuciones_PedidoCerrado_SoloConEjecucionNueva @story-4.11 @ac-29', 
   await correr(mb, op, { today: '2026-10-23', plataforma: p.run });
   assert.deepStrictEqual(p.llamados.map((x) => [x.op, x.args.id]), [['work-item.read', 901], ['work-item.update', 901]], 'la que volvió de verdad avisa');
   assert.strictEqual(fichaEn(op, 'pending', nombre).aviso_cerrado_el, '2026-10-23');
+});
+
+// ── Los escapes autorizados ──────────────────────────────────────────────────────────────────────────────────────
+
+/** Una línea de frenos.jsonl con el escape autorizado por una persona en la sesión `s`, dentro de la ventana. */
+const freno = (escape, extra = {}) => ({ ts: `${HOY}T15:00:00.000Z`, freno: 'safety-guard', regla: 'ESC-C1', veredicto: 'escape', sha256: null, via: 'persona', sesion: 's', escape, ...extra });
+const conFrenos = (frenos, bypass = [], estado = 'medido') => ({ cobertura: { fuentes: { bypass: { estado: 'medido' }, frenos: { estado } } }, bypass, frenos });
+const NO_DEEP = `TYCON_NO_DEEP_REVIEW=1 ${PIPE} next`;
+
+// T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38
+// 🔴 Falla con: no cruzar con frenos.jsonl (los cinco escapes siguen con ficha); aceptar la vía `ambiente` o
+//    `sin-conversacion`, otra sesión, una hora fuera de la ventana, una línea sin nombre o con el de otro escape; autorizar
+//    un escape fuera de la tabla (la suite completa); autorizar sin el registro medido; dejar que una línea tape dos
+//    escapes; o tomar la línea de otra máquina con la misma sesión.
+test('T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38', async () => {
+  const conversacion = [...cmd(NO_DEEP), ...cmd(`${MARKER} story-skill-bypass --reason x`), ...cmd(`${MARKER} set-autonomous false`)];
+  const bypass = [
+    { ts: `${HOY}T15:00:00.000Z`, type: 'DOD_BYPASS_UI', sessionId: 's' },
+    { ts: `${HOY}T15:00:00.000Z`, type: 'ADVERSARIAL_SKIP_FORZADO', sessionId: 's' },
+  ];
+  const autorizadas = [freno('TYCON_NO_DEEP_REVIEW'), freno('story-skill-bypass', { via: 'reenvio' }), freno('set-autonomous', { regla: 'ESC-C3' }),
+    freno('DOD_BYPASS'), freno('no-deep-review')];
+  // el salteo del pase visto en el comando y en bypass.log es un solo hecho: tres escapes y un apagado
+  const sinFrenos = revisar(conversacion, { registros: conFrenos([], bypass) });
+  assert.strictEqual(regla(sinFrenos, 'RR-ESCAPE').length, 3, 'sin autorización, los tres escapes tienen ficha');
+  assert.strictEqual(sinFrenos.escapes_autorizados, 0);
+  const ok = revisar(conversacion, { registros: conFrenos(autorizadas, bypass) });
+  assert.deepStrictEqual(ok.reglas, [], 'cada escape con su línea: nada para la ficha');
+  assert.strictEqual(ok.escapes_autorizados, 4);
+  assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('no-deep-review')]) }).reglas, [], 'el nombre de la bandera también autoriza');
+  // el salteo autorizado con la variable en línea: el freno deja UNA línea y marker.js una en bypass.log
+  const salteo = cmd(`TYCON_NO_DEEP_REVIEW=1 node ${MARKER} mark-adversarial-skipped --files a.js`);
+  const lineaSalteo = [{ ts: `${HOY}T15:00:01.000Z`, kind: 'ADVERSARIAL_SKIP_FORZADO', sessionId: 's' }];
+  assert.deepStrictEqual(regla(revisar(salteo, { registros: conFrenos([], lineaSalteo) }), 'RR-ESCAPE').map((x) => x.cuenta), [1], 'sin autorización, una sola ficha');
+  const salteoOk = revisar(salteo, { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW')], lineaSalteo) });
+  assert.deepStrictEqual([salteoOk.reglas, salteoOk.escapes_autorizados], [[], 1]);
+  // sin archivar, la ventana va desde el arranque
+  const abierta = revisar(cmd(NO_DEEP), { volcado: volcado({ sid: 's', sinCerrar: true }), registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T23:59:00.000Z` })]) });
+  assert.deepStrictEqual(regla(abierta, 'RR-ESCAPE'), []);
+
+  // las líneas que no autorizan: el escape sigue con su ficha
+  const contrarias = {
+    'vía ambiente': freno('TYCON_NO_DEEP_REVIEW', { via: 'ambiente' }),
+    'vía sin-conversacion': freno('TYCON_NO_DEEP_REVIEW', { via: 'sin-conversacion' }),
+    'otra sesión': freno('TYCON_NO_DEEP_REVIEW', { sesion: 'otra' }),
+    'antes del arranque': freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T09:00:00.000Z` }),
+    'después del archivo': freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T23:00:00.000Z` }),
+    'sin nombre': freno(undefined),
+    'el nombre de otro escape': freno('DOD_BYPASS'),
+    'un paso, no un escape': freno('TYCON_NO_DEEP_REVIEW', { veredicto: 'paso' }),
+  };
+  for (const [caso, l] of Object.entries(contrarias)) {
+    const r = revisar(cmd(NO_DEEP), { registros: conFrenos([l]) });
+    assert.deepStrictEqual(regla(r, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`), ['TYCON_NO_DEEP_REVIEW:1'], caso);
+    assert.strictEqual(r.escapes_autorizados, 0, caso);
+  }
+  const suite = revisar(cmd('TYCON_FULL_SUITE=1 npm test'), { registros: conFrenos([freno('TYCON_FULL_SUITE')]) });
+  assert.deepStrictEqual(regla(suite, 'RR-ESCAPE').map((x) => x.categoria), ['TYCON_FULL_SUITE'], 'la suite completa no está en la tabla');
+  for (const registros of [conFrenos([freno('TYCON_NO_DEEP_REVIEW')], [], 'no_medido'), { cobertura: { fuentes: { bypass: { estado: 'medido' }, frenos: { estado: 'medido' } } }, bypass: [] }, null]) {
+    const r = revisar(cmd(NO_DEEP), { registros });
+    assert.strictEqual(regla(r, 'RR-ESCAPE').length, 1, 'sin el registro medido no se autoriza');
+    assert.strictEqual(r.escapes_autorizados, null, 'sin el registro, la cuenta no se sabe');
+  }
+
+  // uno a uno: dos escapes y una línea dejan uno con ficha; el apagado conserva su `con_frase`
+  const dos = revisar([...cmd(NO_DEEP), ...cmd(NO_DEEP), ...cmd(`${MARKER} set-autonomous false`), ...cmd(`${MARKER} set-autonomous off`)],
+    { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW'), freno('set-autonomous')]) });
+  assert.strictEqual(regla(dos, 'RR-ESCAPE')[0].cuenta, 1);
+  assert.deepStrictEqual(regla(dos, 'RR-APAGO').map((x) => [x.cuenta, x.con_frase]), [[1, null]]);
+  assert.strictEqual(dos.escapes_autorizados, 2);
+
+  // otra máquina: la misma sesión en el registro de otra carpeta del buzón no autoriza
+  const mb = buzon({
+    'acme-0000aaaa': { corridas: [{ base: `1.1-${HOY}T1519`, volcado: volcado({ sid: SID(1) }), hilo: cmd(NO_DEEP) }], registros: { bypass: [], frenos: [] } },
+    'acme-0000bbbb': { registros: { bypass: [], frenos: [freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(1) })] } },
+  });
+  const op = ops();
+  await correr(mb, op);
+  assert.deepStrictEqual(fichas(op).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], 'la línea de la otra máquina no cuenta');
+  assert.strictEqual(lastRun(op).escapes_autorizados, 0);
+
+  // la misma ejecución en la carpeta vieja de la máquina y en la de código: cuentan los registros de las dos, si el
+  // archivo de uniones del bajador dice que la vieja es de esa máquina
+  const dobles = (hilo = cmd(NO_DEEP)) => ({ base: `1.8-${HOY}T1519`, volcado: volcado({ sid: SID(8) }), hilo });
+  const UNIONES = {
+    unida: JSON.stringify({ schema: 1, carpetas: { acme: { estado: 'unida', nueva: 'acme-0000aaaa', declarantes: 1, desde: null } } }),
+    ninguna: JSON.stringify({ schema: 1, carpetas: {} }),
+    rota: '{ esto no es json',
+  };
+  const dosCarpetas = async (vieja, nueva, { hilo, union = 'unida' } = {}) => {
+    const o = ops();
+    const mb = buzon({ acme: { corridas: [dobles(hilo)], registros: { bypass: [], frenos: vieja } }, 'acme-0000aaaa': { corridas: [dobles(hilo)], registros: { bypass: [], frenos: nueva } } });
+    if (union) fs.writeFileSync(path.join(mb, '.carpetas-de-maquina.json'), UNIONES[union]);
+    await correr(mb, o);
+    return { fichas: fichas(o).map((f) => f.causa), cuenta: [lastRun(o).escapes_autorizados, lastRun(o).maquinas_sin_frenos] };
+  };
+  const L8 = freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(8) });
+  assert.deepStrictEqual(await dosCarpetas([], [L8]), { fichas: [], cuenta: [1, 0] }, 'la autorización de la carpeta de código cuenta');
+  // las uniones medidas y sin esa carpeta: es otra máquina con la misma sesión, y no autoriza
+  assert.deepStrictEqual(await dosCarpetas([], [L8], { union: 'ninguna' }), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [0, 0] }, 'otra máquina: no se juntan');
+  // sin poder leer las uniones no se sabe si son la misma máquina: no se juntan, y la cuenta queda sin medir
+  for (const union of [false, 'rota']) {
+    assert.deepStrictEqual(await dosCarpetas([], [L8], { union }), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [null, 1] }, `uniones ${union || 'ausentes'}: no medido`);
+  }
+  // una carpeta con el registro roto pudo perder una autorización: la máquina queda sin medir aunque la otra mida
+  assert.deepStrictEqual(await dosCarpetas(['esto no es json'], [L8]), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [null, 1] }, 'una carpeta rota: no medido');
+  assert.deepStrictEqual(await dosCarpetas(undefined, [L8]), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [null, 1] }, 'una carpeta sin los frenos: no medido');
+  // dos autorizaciones iguales en una carpeta son dos; la misma línea en las dos carpetas es una
+  const dosSalteos = [...cmd(NO_DEEP), ...cmd(NO_DEEP)];
+  assert.deepStrictEqual(await dosCarpetas([], [L8, L8], { hilo: dosSalteos }), { fichas: [], cuenta: [2, 0] }, 'dos iguales en una carpeta');
+  assert.deepStrictEqual(await dosCarpetas([L8], [L8], { hilo: dosSalteos }), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [1, 0] }, 'la misma en las dos carpetas');
+
+  // sin la hora de arranque, o con una línea de la sesión sin hora legible, la ventana no se sabe: no medido
+  const sinArranque = volcado({ sid: 's' });
+  delete sinArranque.marker.startedAt;
+  const cierreIlegible = volcado({ sid: 's' });
+  cierreIlegible.archivedAt = 'mañana';
+  for (const [caso, v, l] of [['sin arranque', sinArranque, freno('TYCON_NO_DEEP_REVIEW')], ['hora ilegible', undefined, freno('TYCON_NO_DEEP_REVIEW', { ts: 'ayer' })],
+    ['cierre ilegible', cierreIlegible, freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T23:59:00.000Z` })]]) {
+    const r = revisar(cmd(NO_DEEP), { ...(v ? { volcado: v } : {}), registros: conFrenos([l]) });
+    assert.deepStrictEqual([regla(r, 'RR-ESCAPE').length, r.escapes_autorizados], [1, null], caso);
+  }
+});
+
+// T48 Resumen_EscapesAutorizados_SinRegistroNoMedido @story-4.11 @ac-39
+// 🔴 Falla con: no sumar las autorizaciones de cada máquina en last-run.json; dar 0 cuando una máquina con ejecuciones
+//    miradas no tiene el registro (o contarla una vez por ejecución); contar una máquina sin ejecuciones miradas; o
+//    copiar texto de una línea de frenos.jsonl a la ficha o a last-run.json.
+test('T48 Resumen_EscapesAutorizados_SinRegistroNoMedido @story-4.11 @ac-39', async () => {
+  const corrida = (k, hilo) => ({ base: `1.${k}-${HOY}T1519`, volcado: volcado({ sid: SID(k) }), hilo });
+  const centinela = { regla: 'ZZCENTINELA-regla', relevo: 'ZZCENTINELA-relevo', freno: 'ZZCENTINELA-freno' };
+  const def = {
+    'acme-0000aaaa': { corridas: [corrida(1, cmd(NO_DEEP))], registros: { bypass: [], frenos: [freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(1), ...centinela })] } },
+    'acme-0000bbbb': { corridas: [corrida(2, cmd(`${MARKER} set-autonomous false`))], registros: { bypass: [],
+      frenos: [freno('set-autonomous', { sesion: SID(2) }), freno('ZZCENTINELA-escape', { sesion: SID(2), ...centinela })] } },
+    // sin ejecuciones miradas: no cuenta aunque no tenga el registro
+    'acme-0000cccc': { corridas: [] },
+  };
+  const op = ops();
+  await correr(buzon(def), op);
+  const a = lastRun(op);
+  assert.deepStrictEqual([a.escapes_autorizados, a.maquinas_sin_frenos], [2, 0]);
+  assert.deepStrictEqual(fichas(op), [], 'las dos autorizadas: ninguna ficha');
+
+  // una máquina con dos ejecuciones miradas y sin el registro: «no se sabe», contada una vez
+  def['acme-0000dddd'] = { corridas: [corrida(3, cmd(NO_DEEP)), corrida(4, [])] };
+  def['acme-0000bbbb'].corridas.push(corrida(5, cmd(NO_DEEP)));
+  const op2 = ops();
+  await correr(buzon(def), op2);
+  const b = lastRun(op2);
+  assert.deepStrictEqual([b.escapes_autorizados, b.maquinas_sin_frenos], [null, 1]);
+  assert.deepStrictEqual(fichas(op2).map((f) => [f.causa, f.casos.length]), [['RR-ESCAPE:TYCON_NO_DEEP_REVIEW', 2]], 'la de la máquina sin registro y la que no tiene línea');
+
+  // un registro con una línea rota es un registro a medias: «no se sabe», y su escape no se da por autorizado
+  const op3 = ops();
+  await correr(buzon({ 'acme-0000eeee': { corridas: [corrida(6, cmd(NO_DEEP))],
+    registros: { bypass: [], frenos: [freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(6) }), '{"ts":'] } } }), op3);
+  const c = lastRun(op3);
+  assert.deepStrictEqual([c.escapes_autorizados, c.maquinas_sin_frenos], [null, 1]);
+  assert.deepStrictEqual(fichas(op3).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW']);
+
+  // un registro que descomprimido pasa el tope de 64 MiB es ilegible: no se lee entero ni autoriza
+  const dirGrande = buzon({ 'acme-0000ffff': { corridas: [corrida(7, cmd(NO_DEEP))], registros: { bypass: [], frenos: [] } } });
+  const linea = JSON.stringify(freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(7) })) + '\n';
+  fs.writeFileSync(path.join(dirGrande, 'acme-0000ffff', 'registros', 'frenos.jsonl.gz'),
+    zlib.gzipSync(Buffer.concat([Buffer.from(linea), Buffer.alloc(64 * 1024 * 1024 + 1, '\n')])));
+  const op4 = ops();
+  await correr(dirGrande, op4);
+  const g = lastRun(op4);
+  assert.deepStrictEqual([g.escapes_autorizados, g.maquinas_sin_frenos, g.ilegibles], [null, 1, 1]);
+  assert.deepStrictEqual(fichas(op4).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW']);
+  // el tope es de los registros: una conversación que pasa los 64 MiB se lee entera
+  const dirHilo = buzon({ 'acme-0000ffff': { corridas: [corrida(9, [])], registros: { bypass: [], frenos: [] } } });
+  const hilo = cmd(NO_DEEP).map((l) => JSON.stringify(l)).join('\n') + '\n';
+  fs.writeFileSync(path.join(dirHilo, 'acme-0000ffff', `1.9-${HOY}T1519.hilo.jsonl.gz`), zlib.gzipSync(Buffer.concat([Buffer.from(hilo), Buffer.alloc(64 * 1024 * 1024 + 1, '\n')])));
+  const op5 = ops();
+  await correr(dirHilo, op5);
+  const gh = lastRun(op5);
+  assert.deepStrictEqual([gh.sin_hilo, gh.ilegibles, gh.completo], [0, 0, true]);
+  assert.deepStrictEqual(fichas(op5).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW']);
+  for (const o of [op, op2]) {
+    const d = path.join(o, 'inbox', 'runs-review');
+    const todo = fs.readdirSync(d, { recursive: true }).filter((f) => /\.(ya?ml|json)$/.test(f)).map((f) => fs.readFileSync(path.join(d, f), 'utf8')).join('\n');
+    assert.doesNotMatch(todo, /ZZCENTINELA/, 'del registro de frenos sólo salen cuentas');
+  }
 });

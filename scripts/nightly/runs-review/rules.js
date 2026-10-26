@@ -57,7 +57,8 @@ function esLaboratorio(dir) {
 const ESCAPES = ['TYCON_SAFETY_OFF', 'TYCON_PR_BY_HAND', 'TYCON_FULL_SUITE', 'TYCON_SESSION_GUARD_OK', 'TYCON_ENGRAM_MANIFEST_OK',
   'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', 'TYCON_NO_DEEP_REVIEW', 'STOP_AUTONOMY'];
 // Una línea de bypass.log y el comando que la dejó son el mismo escape: cuenta la del registro, que trae el motivo.
-const EQUIVALENTES = { GIT_NO_VERIFY: '--no-verify', ATDD_BYPASS: 'atddBypass', PR_A_MANO: 'TYCON_PR_BY_HAND', FULL_SUITE_RUN: 'TYCON_FULL_SUITE' };
+const EQUIVALENTES = { GIT_NO_VERIFY: '--no-verify', ATDD_BYPASS: 'atddBypass', PR_A_MANO: 'TYCON_PR_BY_HAND', FULL_SUITE_RUN: 'TYCON_FULL_SUITE',
+  ADVERSARIAL_SKIP_FORZADO: 'TYCON_NO_DEEP_REVIEW' };
 // Los valores con que marker.js prende una bandera (cmdSetFlag) y deja prendido el modo automático (cmdSetAutonomous):
 // cualquier otro valor de set-autonomous lo apaga.
 const PRENDE_BANDERA = ['true', '1'];
@@ -472,7 +473,58 @@ function categoriaDeHook(a) {
 /** El `type` de una línea de bypass.log, sólo con forma de constante; si no, `otro`. */
 const tipoDeEscape = (t) => (typeof t === 'string' && /^[A-Z][A-Z0-9_]{2,40}$/.test(t) ? t : 'otro');
 
-function reglasDelHilo(lineas, volcado, out) {
+// Qué nombre de `escape` de frenos.jsonl autoriza cada cosa que ve la revisión: sólo los escapes que su freno anota con
+// la sesión y el nombre. Lo que no está acá sigue creando ficha aunque una persona lo haya autorizado.
+const AUTORIZABLES = Object.freeze({
+  TYCON_NO_DEEP_REVIEW: ['TYCON_NO_DEEP_REVIEW', 'no-deep-review'],
+  ADVERSARIAL_SKIP_FORZADO: ['TYCON_NO_DEEP_REVIEW', 'no-deep-review'],
+  'story-skill-bypass': ['story-skill-bypass'],
+  STORY_SKILL_BYPASS: ['story-skill-bypass'],
+  DOD_BYPASS: ['DOD_BYPASS'],
+  DOD_BYPASS_UI: ['DOD_BYPASS'],
+  DOD_BYPASS_ACMATRIX: ['DOD_BYPASS'],
+  'RR-APAGO': ['set-autonomous'],
+});
+// las vías con la frase de una persona: la suya en la conversación, o la que reenvió la sesión relevo
+const VIAS_QUE_AUTORIZAN = ['persona', 'reenvio'];
+
+/**
+ * Las autorizaciones de una ejecución, de las líneas de frenos.jsonl de su máquina (`null`: el registro no se midió y
+ * nada se autoriza). Una línea autoriza un solo escape: `autoriza(clave)` la consume. De la línea sólo se cuenta.
+ */
+function autorizaciones(frenos, volcado) {
+  if (!frenos) return null;
+  const m = (volcado && volcado.marker) || {};
+  const desde = Date.parse(m.startedAt || '');
+  // sin `archivedAt` (sin cerrar), desde el arranque
+  const hasta = Date.parse((volcado && volcado.archivedAt) || '');
+  // una línea que autoriza en esta sesión y la ventana no se puede medir (sin arranque, o la línea sin hora legible): no
+  // se sabe si autoriza, así que la cuenta queda sin medir
+  const deLaSesion = frenos.filter((l) => l && typeof l === 'object' && l.veredicto === 'escape' && VIAS_QUE_AUTORIZAN.includes(l.via) && typeof m.sessionId === 'string' && l.sesion === m.sessionId);
+  // un `archivedAt` que no se puede leer no es «sin cerrar»: la ventana no se sabe dónde termina
+  const cierreIlegible = Boolean(volcado && volcado.archivedAt) && !Number.isFinite(hasta);
+  if (deLaSesion.some((l) => !Number.isFinite(desde) || cierreIlegible || !Number.isFinite(Date.parse(l.ts || '')))) return null;
+  const libres = frenos.filter((l) => {
+    if (!l || typeof l !== 'object' || l.veredicto !== 'escape' || !VIAS_QUE_AUTORIZAN.includes(l.via)) return false;
+    if (typeof m.sessionId !== 'string' || l.sesion !== m.sessionId || typeof l.escape !== 'string') return false;
+    const t = Date.parse(l.ts || '');
+    return Number.isFinite(desde) && Number.isFinite(t) && t >= desde && (!Number.isFinite(hasta) || t <= hasta);
+  });
+  const aut = {
+    cuenta: 0,
+    autoriza(clave) {
+      const nombres = Object.prototype.hasOwnProperty.call(AUTORIZABLES, clave) ? AUTORIZABLES[clave] : [];
+      const i = libres.findIndex((l) => nombres.includes(l.escape));
+      if (i < 0) return false;
+      libres.splice(i, 1);
+      aut.cuenta += 1;
+      return true;
+    },
+  };
+  return aut;
+}
+
+function reglasDelHilo(lineas, volcado, out, aut = null) {
   // un hook que se pasó de tiempo (`hook_cancelled`, categoría `tiempo`) también es un aviso que no anduvo
   const hooks = (lineas || []).filter((o) => o && o.type === 'attachment' && o.attachment && (o.attachment.type === 'hook_non_blocking_error' || o.attachment.type === 'hook_cancelled'));
   for (const h of hooks) sumar(out, { regla: 'RR-HOOK', categoria: categoriaDeHook(h.attachment), cuenta: 1 });
@@ -495,7 +547,8 @@ function reglasDelHilo(lineas, volcado, out) {
       if (cat) sumar(out, { regla: 'RR-NODE', categoria: enObra ? 'en-obra' : cat, cuenta: 1 });
     }
     const marker = argsDe(c.command, 'marker.js');
-    const apagos = marker.filter((r) => r[0] === 'set-autonomous' && !PRENDE_AUTONOMO.includes(String(r[1]).toLowerCase())).length;
+    let apagos = marker.filter((r) => r[0] === 'set-autonomous' && !PRENDE_AUTONOMO.includes(String(r[1]).toLowerCase())).length;
+    while (apagos && aut && aut.autoriza('RR-APAGO')) apagos -= 1;
     if (apagos) sumar(out, { regla: 'RR-APAGO', categoria: null, cuenta: apagos, con_frase: cierre ? cierre.via === 'persona' : null });
     for (const [bandera, { parte, nombre }] of partes) {
       if (!marker.some((r) => r[0] === 'set-flag' && r[1] === bandera && PRENDE_BANDERA.includes(r[2]))) continue;
@@ -546,7 +599,8 @@ function escapesDeComandos(cs, repoPath) {
 // (también lo que se le da a un shell por un tubo, por `<<<` o con `env -S`)
 const INTERPRETE = /(?:^|[\s;&|(/\\])(?:ba|z|k|da)?sh(?:\.exe)?\s+(?:-\w+\s+)*-\w*c\b|(?:^|[\s;&|(])eval\b|python3?(?:\.exe)?\s+-c\b|node(?:\.exe)?\s+(?:-e|-p|--eval)\b|\|\s*(?:\S*[\\/])?(?:ba|z|k|da)?sh\b|(?:ba|z|k|da)?sh(?:\.exe)?(?:\s+-\w+)*\s*<<<|\benv\s+(?:-\S+\s+)*(?:-S|--split-string)\b/;
 // Cómo se llama en el registro el escape que se ve en un comando: la categoría de una línea emparejada.
-const DEL_REGISTRO = { '--no-verify': 'GIT_NO_VERIFY', TYCON_FULL_SUITE: 'FULL_SUITE_RUN', TYCON_PR_BY_HAND: 'PR_A_MANO', atddBypass: 'ATDD_BYPASS' };
+const DEL_REGISTRO = { '--no-verify': 'GIT_NO_VERIFY', TYCON_FULL_SUITE: 'FULL_SUITE_RUN', TYCON_PR_BY_HAND: 'PR_A_MANO', atddBypass: 'ATDD_BYPASS',
+  TYCON_NO_DEEP_REVIEW: 'ADVERSARIAL_SKIP_FORZADO' };
 
 /**
  * Dónde cuenta una línea de `bypass.log` que no se emparejó con un comando de la conversación, o `null` si no cuenta:
@@ -655,14 +709,18 @@ function emparejar(lineas, vistos) {
 
 /**
  * Las fallas de una ejecución. `lineasHilo: null` = no hay conversación: sólo corren las reglas del volcado y los
- * registros, y `sin_hilo: true` (nunca «sin fallas»). `registros: { bypass: [líneas] | null, cobertura }`.
+ * registros, y `sin_hilo: true` (nunca «sin fallas»). `registros: { bypass: [líneas] | null, frenos: [líneas] | null,
+ * cobertura }`, los de la máquina de la ejecución. Un escape autorizado en frenos.jsonl no va a la ficha: suma a
+ * `escapes_autorizados` (`null` sin el registro medido).
  */
 function revisar({ volcado, lineasHilo, registros }) {
   const out = new Map();
   const sinHilo = lineasHilo === null || lineasHilo === undefined;
+  const fuenteFrenos = registros && registros.cobertura && registros.cobertura.fuentes && registros.cobertura.fuentes.frenos;
+  const aut = autorizaciones(fuenteFrenos && fuenteFrenos.estado === 'medido' && Array.isArray(registros.frenos) ? registros.frenos : null, volcado);
   let hiloSinHooks = null;
   let cs = [];
-  if (!sinHilo) { const r = reglasDelHilo(lineasHilo, volcado, out); hiloSinHooks = r.hilo_sin_hooks; cs = r.comandos; }
+  if (!sinHilo) { const r = reglasDelHilo(lineasHilo, volcado, out, aut); hiloSinHooks = r.hilo_sin_hooks; cs = r.comandos; }
   reglaDeCierre(volcado, out);
   const fuente = registros && registros.cobertura && registros.cobertura.fuentes && registros.cobertura.fuentes.bypass;
   const medido = Boolean(fuente && fuente.estado === 'medido' && Array.isArray(registros.bypass));
@@ -676,12 +734,13 @@ function revisar({ volcado, lineasHilo, registros }) {
     let categoria = par ? (DEL_REGISTRO[par.categoria] || par.categoria) : categoriaDeLinea(l, repoPath);
     // sin `cd` ni `-C`, el commit corrió en la carpeta de la sesión: la de la línea es la exacta
     if (par && par.porLaEjecucion && carpetaCierta(l.cwd)) categoria = esLaboratorio(l.cwd) ? 'GIT_NO_VERIFY/laboratorio' : 'GIT_NO_VERIFY';
-    if (categoria === null) continue;
+    if (categoria === null || (aut && aut.autoriza(categoria))) continue;
     sumar(out, { regla: 'RR-ESCAPE', categoria, cuenta: 1, con_motivo: typeof l.reason === 'string' && l.reason.trim() !== '' });
   }
-  for (const v of vistos) if (!v.usado) sumar(out, { regla: 'RR-ESCAPE', categoria: v.categoria, cuenta: 1 });
+  for (const v of vistos) if (!v.usado && !(aut && aut.autoriza(v.categoria))) sumar(out, { regla: 'RR-ESCAPE', categoria: v.categoria, cuenta: 1 });
   const reglas = [...out.values()].map((r) => { const x = { ...r }; for (const k of Object.keys(x)) if (x[k] === undefined) delete x[k]; return x; });
-  return { reglas, sin_hilo: sinHilo, escapes_registro: medido ? 'medido' : 'no_medido', hilo_sin_hooks: hiloSinHooks };
+  return { reglas, sin_hilo: sinHilo, escapes_registro: medido ? 'medido' : 'no_medido', hilo_sin_hooks: hiloSinHooks,
+    escapes_autorizados: aut ? aut.cuenta : null };
 }
 
 module.exports = { CODIGOS, ESCAPES, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,

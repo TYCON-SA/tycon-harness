@@ -1329,6 +1329,8 @@ fichas_nuevas() { # las fichas de hoy que traen las nuevas 0..6, salvo la 3 (su 
 console.log(JSON.stringify(out));' "$HOY" "$NUEVAS_RR"
 }
 bloque() { ultimo 'j.text.split("\n").filter((l) => /^(ejecuciones:|· |🆕 )/.test(l)).join("\n")'; }
+# el bloque entero, con el renglón de los escapes autorizados que va debajo (4.11, AC 39)
+bloque_entero() { ultimo 'j.text.split("\n").filter((l) => /^(ejecuciones:|· |🆕 |escapes autorizados:)/.test(l)).join("\n")'; }
 
 # T31 ResumenAgrupadoPorCausa @story-4.10 @ac-14
 # 🔴 Falla con: un enlace por ejecución (71 enlaces no se leen), mezclar lo nuevo con lo conocido, perder el orden de
@@ -1385,11 +1387,11 @@ done
 D="$TMP/rr32"; mundo "$D"; snap "$D" "$HOY" '{}'
 rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 2 1)")" "$(fichas_nuevas)"
 reset_srv ok:777; entregar "$D" dependencias "$HOY" --runs-review "$D/ops" >/dev/null
-B04=$(bloque)
+B04=$(bloque_entero)
 GUARDADO=$(q "$D/out/dependencias-$HOY.json" 'j.resumen.ejecuciones.join("\n")')
 vsnap "$D" "$HOY" '{}'
 reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
-[ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] && [ -n "$B04" ] && [ "$GUARDADO" = "$B04" ] && [ "$(bloque)" = "$B04" ] \
+[ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] && [ -n "$B04" ] && [ "$GUARDADO" = "$B04" ] && [ "$(bloque_entero)" = "$B04" ] \
   && grep -q '^fichas de ejecuciones: vivas ' <<<"$(ultimo 'j.text')" \
   && ok "4.10-T32 la edición de las 08:00 vuelve a escribir la línea desde la constancia, sin la opción" || no "4.10-T32 rc=$RC · 04:00 «${B04}» · guardado «${GUARDADO}» · 08:00 «$(bloque)»"
 node -e 'const fs = require("fs"); const f = process.argv[1]; const s = JSON.parse(fs.readFileSync(f, "utf8"));
@@ -1423,6 +1425,56 @@ reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops-mot
 [ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: parcial — motivo sin la forma esperada · 0 con fallas del arnés (30 miradas)" ] && ! grep -q ZZTEXTO "$TMP/pedidos.jsonl" \
   && ok "4.10-T33 un motivo fuera de las frases fijas no se imprime" || no "4.10-T33 motivo libre: $(bloque)"
 
+# T48 Resumen_EscapesAutorizados_SinRegistroNoMedido @story-4.11 @ac-39
+# 🔴 Falla con: no poner el renglón debajo del bloque de ejecuciones (con 0 fallas y con fallas); decir 0 sin el registro
+#    de alguna máquina, con un last-run.json de antes o con una pasada que no fue entera; imprimir un valor fuera de forma;
+#    ponerlo sin la pasada de hoy; o perderlo en la edición de las 08:00.
+D="$TMP/rr48"; mundo "$D"; snap "$D" "$HOY" '{}'
+con_escapes() { sed "s/}\$/,\"escapes_autorizados\":$1,\"maquinas_sin_frenos\":$2}/"; }
+escapes() { ultimo 'j.text.split("\n").filter((l) => /^escapes autorizados:/.test(l)).join("\n")'; }
+antes_de_escapes() { ultimo '(() => { const L = j.text.split("\n"); const i = L.findIndex((l) => /^escapes autorizados:/.test(l)); return i > 0 ? L[i - 1] : ""; })()'; }
+rr_ops "$D/ops-0" "$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_fallas":0/' | con_escapes 2 0)"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops-0")
+[ "$RC" = 0 ] && [ "$(escapes)" = "escapes autorizados: 2" ] && [ "$(antes_de_escapes)" = "ejecuciones: 0 con fallas del arnés (30 miradas)" ] \
+  && ok "4.11-T48 con 0 fallas, la cuenta va debajo del renglón de ejecuciones" || no "4.11-T48 con 0: rc=$RC · $(escapes) · $(antes_de_escapes)"
+rr_ops "$D/ops-k" "$(lastrun "$HOY" true null "$(causas 1 0)" | con_escapes null 3)"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops-k")
+[ "$RC" = 0 ] && [ "$(escapes)" = "escapes autorizados: ? (sin el registro de los frenos de 3 máquinas)" ] && [ "$(antes_de_escapes)" = "· pedido armado a mano: 10" ] \
+  && ok "4.11-T48 sin el registro de K máquinas, «?» con K y nunca 0, debajo de las causas" || no "4.11-T48 sin registro: rc=$RC · $(escapes) · $(antes_de_escapes)"
+rr_ops "$D/ops-1" "$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_fallas":0/' | con_escapes null 1)"
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --runs-review "$D/ops-1" >/dev/null
+[ "$(escapes)" = "escapes autorizados: ? (sin el registro de los frenos de 1 máquina)" ] \
+  && ok "4.11-T48 una sola máquina sin el registro, en singular" || no "4.11-T48 singular: $(escapes)"
+for CASO in vieja centinela negativo nula-sin-k; do
+  case "$CASO" in
+    vieja) LR=$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_fallas":0/') ;;
+    centinela) LR=$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_fallas":0/' | con_escapes '"ZZCENTINELA del registro"' 0) ;;
+    negativo) LR=$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_fallas":0/' | con_escapes -1 0) ;;
+    nula-sin-k) LR=$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_fallas":0/' | con_escapes null 0) ;;
+  esac
+  rm -rf "$D/ops-x"; rr_ops "$D/ops-x" "$LR"
+  reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops-x")
+  [ "$RC" = 0 ] && [ "$(escapes)" = "escapes autorizados: ? (la revisión no lo midió)" ] && ! grep -q ZZCENTINELA "$TMP/pedidos.jsonl" \
+    && ok "4.11-T48 $CASO: «?», sin imprimir el valor" || no "4.11-T48 $CASO: rc=$RC · $(escapes)"
+done
+rr_ops "$D/ops-parcial" "$(lastrun "$HOY" false '"la bajada del buzón no fue entera (sin_permiso)"' '[]' | sed 's/"con_fallas":20/"con_fallas":0/' | con_escapes 0 0)"
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --runs-review "$D/ops-parcial" >/dev/null
+[ "$(escapes)" = "escapes autorizados: ? (la revisión no fue entera)" ] \
+  && ok "4.11-T48 una pasada que no fue entera no dice 0" || no "4.11-T48 parcial: $(escapes)"
+rr_ops "$D/ops-ayer" "$(lastrun "$AYER" true null '[]' | con_escapes 2 0)"
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --runs-review "$D/ops-ayer" >/dev/null
+[ -z "$(escapes)" ] && [ "$(bloque)" = "ejecuciones: la revisión NO CORRIÓ hoy" ] \
+  && ok "4.11-T48 sin la pasada de hoy, no hay renglón" || no "4.11-T48 sin pasada: $(escapes)"
+# la edición de las 08:00 lo repite tal cual, desde la constancia
+D="$TMP/rr48v"; mundo "$D"; snap "$D" "$HOY" '{}'
+rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 2 1)" | con_escapes 4 0)" "$(fichas_nuevas)"
+reset_srv ok:777; entregar "$D" dependencias "$HOY" --runs-review "$D/ops" >/dev/null
+E04=$(escapes)
+vsnap "$D" "$HOY" '{}'
+reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$E04" = "escapes autorizados: 4" ] && [ "$(escapes)" = "$E04" ] \
+  && ok "4.11-T48 la edición de las 08:00 repite el renglón" || no "4.11-T48 08:00: rc=${RC} · 04:00 «${E04}» · 08:00 «$(escapes)»"
+
 # T34 ResumenSinOpcionIdentico @story-4.10 @ac-27
 # 🔴 Falla con: una línea `ejecuciones:` o una línea en blanco de más sin la opción. Que el resto del texto no cambia lo
 #    fijan los demás casos de esta suite, que corren todos sin `--runs-review`; el mensaje largo que llega al tope, T5b.
@@ -1431,8 +1483,8 @@ rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 2 1)")" "$(fichas_nuevas)"
 reset_srv ok:1; entregar "$D" dependencias "$HOY" >/dev/null; SIN=$(ultimo 'j.text')
 reset_srv ok:1; entregar "$D" dependencias "$HOY" --runs-review "$D/ops" >/dev/null
 # los renglones de fichas del clon van con la opción, debajo de la línea de las ejecuciones (Casos: scripts/tests/findings-cycle.test.js)
-CON_SIN_BLOQUE=$(ultimo 'j.text.split("\n").filter((l) => !/^(ejecuciones:|· |🆕 |fichas de )/.test(l)).join("\n")')
-[ "$SIN" = "$CON_SIN_BLOQUE" ] && ! grep -qE '^(ejecuciones:|🆕 )' <<<"$SIN" && [[ "$SIN" != *$'\n\n\n'* ]] \
+CON_SIN_BLOQUE=$(ultimo 'j.text.split("\n").filter((l) => !/^(ejecuciones:|· |🆕 |fichas de |escapes autorizados:)/.test(l)).join("\n")')
+[ "$SIN" = "$CON_SIN_BLOQUE" ] && ! grep -qE '^(ejecuciones:|🆕 |escapes autorizados:)' <<<"$SIN" && [[ "$SIN" != *$'\n\n\n'* ]] \
   && ok "4.10-T34 sin la opción, el mismo texto sin la línea ni blancos de más" || no "4.10-T34 sin la opción cambió: $(diff <(printf %s "$SIN") <(printf %s "$CON_SIN_BLOQUE"))"
 
 echo
