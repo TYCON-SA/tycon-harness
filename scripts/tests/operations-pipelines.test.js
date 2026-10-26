@@ -495,7 +495,7 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
   assert.match(y, /open-prs\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --json "\.dashboard\/open-prs\/open-prs-\$DAY\.json"/);
   assert.match(y, /assigned-items\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --out \.dashboard\/assigned/);
-  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json\n/, 'se guardan con la página (la marca de la configuración aplicada, tanda C de la 2.29)');
+  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json \.dashboard\/merges\n/, 'se guardan con la página (la marca de la configuración aplicada y las métricas de cada merge)');
   assert.match(y, /push-nightly-data\.js sync -- \.dashboard /, 'el sync trae .dashboard: guardar sus carpetas no sale 2');
 });
 

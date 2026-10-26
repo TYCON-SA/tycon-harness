@@ -168,12 +168,14 @@ jobs:
             echo "##vso[task.logissue type=warning]No hay carpeta de skills en el arnés (motivo arriba) — la medición sigue con el buscador de respaldo"
           fi
           # --only-harness: sólo los repos con huella del arnés (.tycon/ o .advisors/). Una organización tiene cursos, demos
-          # y repos de otros equipos que ensuciarían la estadística.
+          # y repos de otros equipos que ensuciarían la estadística. --merges-receipt: la primera vuelta se mide con las
+          # métricas de cada merge que el nocturno del tablero bajó del buzón, sólo si esa bajada está completa y al día.
           INICIO=$(date +%s)
           node scripts/metrics/sdlc-stage-metrics.js \
             --scan "$(Agent.TempDirectory)/repos" \
             --only-harness \
             --dashboard "$(Build.SourcesDirectory)/.dashboard" \
+            --merges-receipt "$(Build.SourcesDirectory)/.dashboard/merges/bajada.json" \
             --snapshot
           echo "⏱  medición: $(expr "$(date +%s)" - "$INICIO") s"
           # La foto por repo, sobre los MISMOS clones: copia las métricas del snapshot de HOY (por su nombre, no «el más

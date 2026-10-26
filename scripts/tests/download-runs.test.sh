@@ -1180,6 +1180,109 @@ bajar_js "${T}/h3" "${T}/por-parametro" TYCON_MAILBOX_DIR="${T}/no-aca"
   && ok "Bajar_SinDirBuzon_ComoAntes: con dirBuzon gana el parámetro sobre la variable, y el ambiente queda igual" \
   || mal "Bajar_SinDirBuzon_ComoAntes (parámetro): rc=${RC} · $(head -2 "${T}/js-err.txt")"
 
+# ── Los archivos de cada merge (story 8.132, tanda B) ───────────────────────────────────────────────────────────
+# merge_doc <archivo> <sha> <project> <repo> <vueltas|null> <ts> — un archivo 2.0 como el que escribe retro-heartbeat.js
+merge_doc() {
+  mkdir -p "$(dirname "$1")"
+  node -e '
+const { METRICS } = require(process.argv[1]);
+const [, , archivo, sha, project, repo, vueltas, ts] = process.argv;
+const metrics = {};
+for (const k of Object.keys(METRICS)) metrics[k] = { value: null, unavailable_reason: "no la mide esta prueba" };
+metrics.advisor_rerun_loop_iterations = vueltas === "null" ? { value: null, unavailable_reason: "sin volcado" } : { value: Number(vueltas) };
+require("fs").writeFileSync(archivo, JSON.stringify({ schema_version: "2.0", project, captured_at: ts.slice(0, 10), ts, repo, merge_commit: sha, story: "8.1", generated_by: "retro-latido.js", metrics }, null, 2) + "\n");
+' "${RAIZ}/scripts/lib/dashboard-metrics.js" "$@"
+}
+SHA_A="aaaaaaa1111111111111111111111111111111111"; SHA_A="${SHA_A:0:40}"
+SHA_B="bbbbbbb2222222222222222222222222222222222"; SHA_B="${SHA_B:0:40}"
+
+# ── T19 Download_MergesTo_OnePerMerge @story-8.132 @ac-12 ──
+# 🔴 rojo previo: la bajada no conoce `<maquina>/merges/…` (los cuenta en ignorados) o no deja un archivo por merge:
+#    el repetido de dos máquinas entraría dos veces, o ganaría la versión vieja de un archivo que se volvió a subir.
+T="${BASE}/t8132-19"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+M="${T}/b/blobs/corridas"
+# el mismo merge desde dos máquinas, cada una con su ruta: el de maq-b trae las vueltas
+merge_doc "${M}/maq-a/merges/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness /srv/maq-a/tycon-harness null 2026-10-25T12:00:00.000Z
+merge_doc "${M}/maq-b/merges/metrics-2026-10-25-tycon-harness-wt-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness-wt /srv/maq-b/tycon-harness-wt 2 2026-10-25T10:00:00.000Z
+# otro merge que se volvió a subir: la versión más nueva trae 1 vuelta, la vieja ninguna
+merge_doc "${M}/maq-a/merges/metrics-2026-10-25-tycon-harness-8.1-bbbbbbb.json" "${SHA_B}" tycon-harness /srv/maq-a/tycon-harness null 2026-10-25T09:00:00.000Z
+merge_doc "${M}/maq-a/merges/v20261025T120000000Z/metrics-2026-10-25-tycon-harness-8.1-bbbbbbb.json" "${SHA_B}" tycon-harness /srv/maq-a/tycon-harness 1 2026-10-25T13:00:00.000Z
+blob "${T}/b" "maq-a/2.1-2026-10-25T1000.json" 600
+bajar "${T}" "${T}/bin/az" --merges-to "${T}/nuevos"
+QUEDAN="$(cd "${T}/nuevos" 2>/dev/null && ls metrics-*.json 2>/dev/null | sort | tr '\n' ' ')"
+vueltas_de() { python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['metrics']['advisor_rerun_loop_iterations']['value'])" "$1" 2>/dev/null; }
+[ "${RC}" -eq 0 ] && [ "$(echo "${QUEDAN}" | wc -w | tr -d ' ')" = "2" ] && ok "T19 dos máquinas y una versión nueva: quedan 2 archivos, uno por merge" || mal "T19 rc=${RC}, quedaron: ${QUEDAN} · $(head -3 "${T}/err.txt")"
+[ "$(vueltas_de "${T}/nuevos/metrics-2026-10-25-tycon-harness-wt-8.1-aaaaaaa.json")" = "2" ] && [ ! -e "${T}/nuevos/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json" ] \
+  && ok "T19 el repetido de dos máquinas: gana el que trae las vueltas" || mal "T19 repetido: ${QUEDAN}"
+[ "$(vueltas_de "${T}/nuevos/metrics-2026-10-25-tycon-harness-8.1-bbbbbbb.json")" = "1" ] && ok "T19 el que se volvió a subir: baja la versión más nueva" || mal "T19 versión: vueltas=$(vueltas_de "${T}/nuevos/metrics-2026-10-25-tycon-harness-8.1-bbbbbbb.json")"
+[ "$(campo "${T}" merges)" = '{"bajados": 2, "repetidos": 1}' ] && ok "T19 la salida cuenta merges: {bajados: 2, repetidos: 1}" || mal "T19 merges=$(campo "${T}" merges)"
+[ "$(campo "${T}" ignorados)" = "0" ] && [ "$(campo "${T}" completo)" = "true" ] && ok "T19 ningún archivo de merges cuenta como ignorado y la bajada sale completa" || mal "T19 ignorados=$(campo "${T}" ignorados) completo=$(campo "${T}" completo)"
+
+# ── T20 Download_NoFlag_MergesIgnored @story-8.132 @ac-12 ──
+# 🔴 rojo previo: sin `--merges-to` la bajada igual escribe los merges (al espejo o a otra carpeta), o deja de contarlos.
+T="${BASE}/t8132-20"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+merge_doc "${T}/b/blobs/corridas/maq-a/merges/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness /srv/maq-a/tycon-harness 1 2026-10-25T12:00:00.000Z
+merge_doc "${T}/b/blobs/corridas/maq-a/merges/v20261025T120000000Z/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness /srv/maq-a/tycon-harness 2 2026-10-25T13:00:00.000Z
+blob "${T}/b" "maq-a/2.1-2026-10-25T1000.json" 600
+bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" ignorados)" = "2" ] && ok "T20 sin --merges-to, los dos archivos de merges se cuentan en ignorados" || mal "T20 rc=${RC} ignorados=$(campo "${T}" ignorados)"
+[ -z "$(find "${T}/estado" -path '*merges*' 2>/dev/null)" ] && [ "$(campo "${T}" bajados)" = "1" ] && ok "T20 y ninguno llega al disco (sólo baja la ejecución)" || mal "T20 en disco: $(find "${T}/estado" -path '*merges*' | head -3) · bajados=$(campo "${T}" bajados)"
+
+# ── T19b Download_MergesTo_SinValor @story-8.132 @ac-12 ──
+# 🔴 rojo previo: `--merges-to` sin valor (una variable vacía en el YAML) se toma como «sin opción» y los merges van a
+#    ignorados con la bajada completa; con otra opción detrás, esa opción se toma por la carpeta.
+T="${BASE}/t8132-19b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+merge_doc "${T}/b/blobs/corridas/maq-a/merges/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness /srv/maq-a/tycon-harness 1 2026-10-25T12:00:00.000Z
+bajar "${T}" "${T}/bin/az" --merges-to
+rc19b="${RC}"; est19b="$(campo "${T}" estado)"
+bajar "${T}" "${T}/bin/az" --merges-to --budget-ms 600000
+[ "${rc19b}" -eq 2 ] && [ "${est19b}" = "config_rota" ] && [ "${RC}" -eq 2 ] && [ "$(campo "${T}" estado)" = "config_rota" ] && [ "$(gets "${T}/b")" = "0" ] \
+  && ok "T19b --merges-to sin valor, al final o con otra opción detrás: config_rota, exit 2, sin bajar nada" \
+  || mal "T19b al final rc=${rc19b} estado=${est19b} · con otra opción detrás rc=${RC} estado=$(campo "${T}" estado) gets=$(gets "${T}/b")"
+
+# ── T19c Download_MergesTo_InvalidNeverWins @story-8.132 @ac-12 ──
+# 🔴 rojo previo: se elige uno por merge ANTES de validar: un archivo que no es 2.0 válido con más vueltas le gana al
+#    legítimo del mismo merge, `juntar` lo descarta después y ese merge se pierde esa noche.
+T="${BASE}/t8132-19c"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+M="${T}/b/blobs/corridas"
+merge_doc "${M}/maq-a/merges/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness /srv/maq-a/tycon-harness 1 2026-10-25T12:00:00.000Z
+merge_doc "${M}/maq-b/merges/metrics-2026-10-25-tycon-harness-wt-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness-wt /srv/maq-b/tycon-harness-wt 3 2026-10-25T13:00:00.000Z
+python3 -c "import json,sys;p=sys.argv[1];d=json.load(open(p));d['schema_version']='1.0';json.dump(d,open(p,'w'))" "${M}/maq-b/merges/metrics-2026-10-25-tycon-harness-wt-8.1-aaaaaaa.json"
+blob "${T}/b" "maq-a/2.1-2026-10-25T1000.json" 600
+bajar "${T}" "${T}/bin/az" --merges-to "${T}/nuevos"
+[ "${RC}" -eq 0 ] && [ "$(vueltas_de "${T}/nuevos/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json")" = "1" ] && [ ! -e "${T}/nuevos/metrics-2026-10-25-tycon-harness-wt-8.1-aaaaaaa.json" ] \
+  && [ "$(campo "${T}" merges)" = '{"bajados": 1, "repetidos": 0, "invalidos": 1}' ] \
+  && ok "T19c el que no es 2.0 válido no le gana al legítimo: queda el de 1 vuelta y se cuenta inválido" \
+  || mal "T19c rc=${RC} merges=$(campo "${T}" merges) · $(ls "${T}/nuevos" 2>/dev/null | tr '\n' ' ')"
+
+# ── T32 NotMeasured_DownloadForcedToFail @story-8.132 @ac-22 ──
+# 🔴 rojo previo: con la bajada rechazada, el nocturno mide `first_pass_ratio` con lo que había versionado en git (un
+#    número parcial que parece bueno), o la constancia dice «completa».
+T="${BASE}/t8132-32"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+merge_doc "${T}/b/blobs/corridas/maq-a/merges/metrics-2026-10-25-tycon-harness-8.1-aaaaaaa.json" "${SHA_A}" tycon-harness /srv/maq-a/tycon-harness 1 2026-10-25T12:00:00.000Z
+echo 403 > "${T}/b/modo-lista"
+bajar "${T}" "${T}/bin/az" --merges-to "${T}/nuevos"
+RC_BAJADA="${RC}"; cp "${T}/out.json" "${T}/bajada-resultado.json"
+DASH="${T}/repo-datos/.dashboard"
+merge_doc "${DASH}/metrics-2026-10-20-tycon-harness-8.1-bbbbbbb.json" "${SHA_B}" tycon-harness /srv/maq-a/tycon-harness 1 2026-10-20T12:00:00.000Z
+node "${RAIZ}/scripts/lib/merge-metrics.js" juntar --from "${T}/nuevos" --to "${DASH}/merges" --result "${T}/bajada-resultado.json" > "${T}/juntar.out" 2>&1
+RC_JUNTAR=$?
+COMPLETA="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['completo'])" "${DASH}/merges/bajada.json" 2>/dev/null)"
+[ "${RC_BAJADA}" -eq 0 ] && [ "${RC_JUNTAR}" -eq 0 ] && [ "${COMPLETA}" = "False" ] && ok "T32 la bajada rechazada (403) deja la constancia incompleta" || mal "T32 bajada rc=${RC_BAJADA} juntar rc=${RC_JUNTAR} completo=${COMPLETA} · $(cat "${T}/juntar.out")"
+mkdir -p "${T}/r/specs"; git -C "${T}/r" init -q 2>/dev/null; printf -- '---\nstory: 1.1\nstatus: done\n---\n' > "${T}/r/specs/story-1.1.md"
+git -C "${T}/r" add -A >/dev/null 2>&1
+GIT_AUTHOR_DATE='2026-10-01T12:00:00Z' GIT_COMMITTER_DATE='2026-10-01T12:00:00Z' \
+  git -C "${T}/r" -c user.name=t -c user.email=t@t -c maintenance.auto=false -c gc.auto=0 commit -qm x >/dev/null 2>&1
+TYCON_SKILLS_DIR=/nonexistent-8132 node "${RAIZ}/scripts/metrics/sdlc-stage-metrics.js" --repo "${T}/r" --dashboard "${DASH}" --merges-receipt "${DASH}/merges/bajada.json" --json > "${T}/sdlc.json" 2> "${T}/sdlc.err"
+RC_SDLC=$?
+FP="$(python3 -c "
+import json,sys
+g=json.load(open(sys.argv[1]))['global']
+fp=g['first_pass_ratio']
+print('null' if fp.get('value', 'x') is None and 'num' not in fp else 'num=%s' % fp.get('num'), '|', ' · '.join(g.get('not_measured') or []))" "${T}/sdlc.json" 2>&1)"
+[ "${RC_SDLC}" -eq 0 ] && [[ "${FP}" == null* ]] && [[ "${FP}" == *"no medido: la bajada de los merges"* ]] \
+  && ok "T32 first_pass_ratio null con «no medido: la bajada de los merges…», nunca el número de los versionados" || mal "T32 sdlc rc=${RC_SDLC}: ${FP} · $(head -2 "${T}/sdlc.err")"
+
 # ── T24 · esta suite NO toca el tablero del repo (ver la cabecera) ───────────────────────────────────────────────
 [ "$(huella "${ENTREGABLE_SEIS}")" = "${HUELLA_SEIS_ANTES}" ] && ok "T24 la suite no tocó artifacts/tablero-del-arnes.html" \
   || mal "T24 la suite ESCRIBIÓ artifacts/tablero-del-arnes.html — algún caso genera la página del equipo sin --output a un temporal"

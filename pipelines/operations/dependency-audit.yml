@@ -316,6 +316,7 @@ jobs:
             --team-repos "$(Build.SourcesDirectory)/team-repos.json" \
             --clone-dir "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/retro-sweep" \
             --out "$(Build.SourcesDirectory)/.dashboard/retros" \
+            --covered-in "$(Build.SourcesDirectory)/.dashboard/merges" \
             --report "$(Build.SourcesDirectory)/.dashboard/retros/barrido/retro-sweep-$HOY.json"
           CODIGO=$?
           [ "$CODIGO" = 0 ] || echo "##vso[task.logissue type=warning]El barrido de las retrospectivas no pudo mirar todo (código $CODIGO): el resumen dice qué faltó."

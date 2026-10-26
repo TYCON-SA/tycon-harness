@@ -34,7 +34,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * anterior, se lee ése, y antes de escribir el nuevo se le pasa su contenido (scripts/lib/renames.json).
  *
  * Uso:
- *   node scripts/metrics/download-runs.js [--json] [--budget-ms N] [--no-threads] [--instincts]
+ *   node scripts/metrics/download-runs.js [--json] [--budget-ms N] [--no-threads] [--instincts] [--merges-to <dir>]
  *   node scripts/metrics/download-runs.js --overwrites-report [--json]
  *   node scripts/metrics/download-runs.js --harness-node-report [--json]
  *
@@ -57,6 +57,11 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   --instincts: baja también los días de instintos (`<maquina>/instincts/v<versión>/<día>.jsonl.gz`, la versión más
  *   nueva de cada día) a `<maquina>/instincts/<día>.jsonl.gz`. Traen comandos: sin la opción —el nocturno, el sitio—
  *   no se bajan y se cuentan en `omitidos`, uno por carpeta y día. Lo usa el que propone instintos.
+ *
+ *   --merges-to <dir>: baja también los archivos de métricas de cada merge (`<maquina>/merges/<archivo>` y sus
+ *   versiones, la más nueva de cada uno) al espejo, y deja en <dir> uno por merge de todas las máquinas: el que trae
+ *   vueltas y, entre iguales, el más nuevo. Lo cuenta en `merges: { bajados, repetidos }`. Lo usa el nocturno del
+ *   tablero, que después los junta con `merge-metrics.js juntar`. Sin la opción, esos blobs van a `ignorados`.
  *
  *   --overwrites-report: sólo LISTA el contenedor —no baja nada, no escribe el espejo— y cuenta los blobs
  *   re-escritos (última modificación más de 1 s después de la creación) por tipo y por máquina con su alias, y si cada
@@ -98,6 +103,9 @@ const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
 const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+
+// el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
+const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
 
 const CASA_PIPELINE = path.join(stateDirOf(os.homedir()));
 const DONDE = 'scripts/metrics/download-runs.js';
@@ -164,6 +172,13 @@ function formaDelNombre(nombre) {
   // un día de instintos: siempre con versión
   if (partes.length === 4 && partes[1] === 'instincts' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_INSTINTO.test(partes[3])) {
     return { maquina: partes[0], archivo: `instincts/${partes[3]}`, version: partes[2] };
+  }
+  // el archivo de métricas de un merge: `<maquina>/merges/<archivo>` y, re-subido, `<maquina>/merges/v<versión>/<archivo>`
+  if (partes.length === 4 && partes[1] === 'merges' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_MERGE.test(partes[3])) {
+    return { maquina: partes[0], archivo: `merges/${partes[3]}`, version: partes[2] };
+  }
+  if (partes.length === 3 && partes[1] === 'merges' && FORMA_MAQUINA.test(partes[0]) && FORMA_MERGE.test(partes[2])) {
+    return { maquina: partes[0], archivo: `merges/${partes[2]}`, version: null };
   }
   if (partes.length === 3 && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[1]) && FORMA_ARCHIVO.test(partes[2])) {
     return { maquina: partes[0], archivo: partes[2], version: partes[1] };
@@ -536,6 +551,36 @@ function leerResumenDe(volcado) {
  * queda mientras el volcado de su corrida esté en el buzón). Sólo en las carpetas con forma de máquina, sólo esos
  * archivos: los registros de una máquina y lo demás del espejo no se tocan. Devuelve cuántos borró.
  */
+/**
+ * Los archivos de los merges del espejo (`<maquina>/merges/metrics-*.json`, de todas las máquinas) a `destino`, uno por
+ * merge: dos máquinas que mandaron el mismo merge dejan el que trae vueltas y, entre iguales, el más nuevo
+ * (merge-metrics.js `unoPorMerge`). Uno que no es un archivo 2.0 válido se cuenta en `invalidos` y no se copia: se
+ * valida ANTES de elegir, así uno roto con más vueltas no le gana al legítimo del mismo merge.
+ */
+function mergesDelEspejo(dirBuzon, destino) {
+  const { unoPorMerge } = require('../lib/merge-metrics.js');
+  const { validate } = require('../lib/dashboard-metrics.js');
+  const items = [];
+  let invalidos = 0;
+  for (const maquina of fs.readdirSync(dirBuzon, { withFileTypes: true }).filter((e) => e.isDirectory() && FORMA_MAQUINA.test(e.name)).map((e) => e.name)) {
+    const dir = path.join(dirBuzon, maquina, 'merges');
+    let fs_ = [];
+    try { fs_ = fs.readdirSync(dir).filter((f) => FORMA_MERGE.test(f)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+    for (const f of fs_) {
+      const cuerpo = fs.readFileSync(path.join(dir, f));
+      let doc;
+      try { doc = JSON.parse(cuerpo.toString('utf8')); } catch (_) { invalidos += 1; continue; }
+      const v = doc && typeof doc === 'object' ? validate(doc) : null;
+      if (!v || v.legacy || !v.ok) { invalidos += 1; continue; }
+      items.push({ doc, f, cuerpo });
+    }
+  }
+  const { elegidos, repetidos } = unoPorMerge(items);
+  fs.mkdirSync(destino, { recursive: true });
+  for (const e of elegidos) escribirAtomico(path.join(destino, e.f), e.cuerpo);
+  return { bajados: elegidos.length, repetidos, ...(invalidos ? { invalidos } : {}) };
+}
+
 function podarEspejo(dirBuzon, listado, log) {
   const CORRIDA = /^(.+)\.(json|hilo\.jsonl\.gz|cambio\.json\.gz|resumen\.json\.gz)$/;
   const listados = new Set();
@@ -651,6 +696,10 @@ async function bajar(opts = {}) {
   // Una pasada que no terminó bien nunca dice «bajado»: lo que sí bajó queda en disco y contado en `bajados`.
   const fin = (codigo, estado, motivo) => {
     if (espejoParaUniones) { const m = escribirCarpetasDeMaquina(espejoParaUniones); res.uniones = m || 'escritas'; if (m) log(m); }
+    if (espejoParaUniones && opts.mergesA) {
+      try { res.merges = mergesDelEspejo(espejoParaUniones, opts.mergesA); }
+      catch (e) { res.merges = null; log(`no se pudieron dejar los merges en ${opts.mergesA} (${e.code || e.message})`); if (codigo === 0) { codigo = 1; estado = 'error_merges'; motivo = `los merges bajados no se pudieron escribir (${e.code || e.message})`; } }
+    }
     res.estado = estado; if (motivo) res.motivo = motivo; if (codigo !== 0) res.bajado = false;
     // El único criterio de «leído entero» (ver la cabecera).
     res.codigo = codigo;
@@ -664,6 +713,7 @@ async function bajar(opts = {}) {
   // con forma y que exista: un mes 13 tiene la forma, y comparado como texto omitiría todo en silencio
   const diaReal = (f) => { const d = new Date(`${f}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === f; };
   if (hilosDesde !== null && !(/^\d{4}-\d{2}-\d{2}$/.test(hilosDesde) && diaReal(hilosDesde))) return fin(2, 'config_rota', `hilosDesde no es una fecha AAAA-MM-DD real: «${hilosDesde.slice(0, 20)}»`);
+  if (opts.mergesA === '') return fin(2, 'config_rota', '--merges-to sin carpeta');
   // el sitio con las conversaciones prendidas sobre un disco chico (`resumenes`): una corrida ya resumida
   // (dashboard/runs.js → resumirEspejo) no vuelve a bajar su conversación ni su cambio, y una pasada no baja más de
   // `topeBytesHilos` de esas dos partes: el sitio resume la tanda, la borra del disco, y la pasada siguiente sigue
@@ -770,6 +820,8 @@ async function bajar(opts = {}) {
     // los días de instintos traen comandos: se bajan sólo con `--instincts` (el que propone); sin la opción se
     // cuentan una vez por carpeta y día, no por versión
     if (forma.archivo.startsWith('instincts/') && opts.instintos !== true) { instintosOmitidos.add(`${forma.maquina}/${forma.archivo}`); continue; }
+    // los archivos de los merges los baja sólo quien los junta (`--merges-to`, el nocturno del tablero)
+    if (forma.archivo.startsWith('merges/') && !opts.mergesA) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
     if (forma.archivo.startsWith('registros/')) {
       if (!juegos.has(forma.maquina)) juegos.set(forma.maquina, new Map());
       const vs = juegos.get(forma.maquina);
@@ -1011,6 +1063,9 @@ if (require.main === module) {
     // así nunca se apaga el filtro en silencio
     hilosDesde: args.includes('--threads-since') ? (valor('--threads-since') || '') : undefined,
     instintos: args.includes('--instincts'),
+    // como `--threads-since`: sin valor, o con otra opción detrás, llega vacío y `bajar()` lo rechaza (si no, los
+    // merges irían a `ignorados` con la bajada completa, sin que nadie se entere)
+    mergesA: args.includes('--merges-to') ? (valor('--merges-to') && !valor('--merges-to').startsWith('--') ? path.resolve(valor('--merges-to')) : '') : undefined,
     log: (m) => (json ? console.error : console.log)(`[${stamp()}] ${m}`),
   }).then(({ codigo, res }) => {
     if (res.motivo && codigo !== 0) console.error(`[${stamp()}] ${res.estado}: ${res.motivo}`);

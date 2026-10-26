@@ -465,3 +465,25 @@ test('T12 Configuracion_DeLaOrganizacion @story-1.27 @ac-10: weekly_review de la
   assert.strictEqual(rMal.code, 2);
   assert.match(rMal.out, /--budget pide un monto en dólares mayor que 0/);
 });
+
+// Sin esto,entre dos latidos del mismo merge gana el último que lista git (el de retros/, sin vueltas), no el que
+//    bajó del buzón con la última vuelta; o el de merges/ le gana a una retro con aprendizajes.
+test('T28 WeeklyReview_RetrosAndMerges_PrefersMerges @story-8.132 @ac-21: entre latidos gana merges/; los aprendizajes siguen ganando', () => {
+  const W = require(REVIEW);
+  const [s1, s2] = ['1'.repeat(40), '2'.repeat(40)];
+  const doc = (sha, extra) => JSON.stringify({ schema_version: '2.0', repo: '/agente/x', merge_commit: sha, generated_by: HEARTBEAT, metrics: {}, ...extra });
+  const dir = repo([{ date: '2026-10-18T23:00:00', branch: 'chore/retros', files: {
+    '.dashboard/retros/metrics-1111111.json': doc(s1, { story: null }),
+    '.dashboard/merges/metrics-1111111.json': doc(s1, { story: '8.9', metrics: { advisor_rerun_loop_iterations: { value: 1 } } }),
+    '.dashboard/retros/metrics-2222222.json': doc(s2, { story: '8.7', generated_by: 'tycon-retrospective-capturer', learnings: ['una lección'] }),
+    '.dashboard/merges/metrics-2222222.json': doc(s2, { story: '8.8' }),
+  } }]).dir;
+  const into = new Map();
+  const ilegibles = [];
+  W.retrosDe(dir, 'HEAD', into, ilegibles);
+  assert.deepStrictEqual(ilegibles, []);
+  assert.strictEqual(into.get(s1).story, '8.9', 'el latido de merges/ gana sobre el de retros/');
+  assert.strictEqual(into.get(s1).tipo, 'latido');
+  assert.strictEqual(into.get(s2).tipo, 'aprendizajes', 'la retro con aprendizajes sigue ganando');
+  assert.strictEqual(into.get(s2).story, '8.7');
+});

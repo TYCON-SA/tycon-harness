@@ -375,7 +375,8 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
     productos: [{ producto: 'Producto X', estado: 'medido', motivo: null, concentracion: 0.82, en_riesgo: true, commits: 120, commits_de_maquina: 10, repos: [] },
       { producto: 'Producto Y', estado: 'medido', motivo: null, concentracion: 0.55, en_riesgo: false, commits: 60, commits_de_maquina: 4, repos: [] }],
     cobertura: { productos_declarados: 2, productos_medidos: 2, repos_declarados: 2, repos_medidos: 2 } };
-  f[`.dashboard/metrics-${hoy}-producto-x-1.4-abc1234.json`] = { schema_version: '2.0', repo: '/home/dev/acme/Producto-X/FrontEnd', merge_commit: 'abc1234', project: 'Producto X', captured_at: `${hoy}T09:00:00Z`, story: '1.4', metrics: {} };
+  f['.dashboard/merges/bajada.json'] = { fecha: ts, estado: 'completo', completo: true, juntados: 1, repetidos: 0, invalidos: 0 };
+  f[`.dashboard/merges/metrics-${hoy}-producto-x-1.4-abc1234.json`] = { schema_version: '2.0', repo: '/home/dev/acme/Producto-X/FrontEnd', merge_commit: 'abc1234', project: 'Producto X', captured_at: `${hoy}T09:00:00Z`, story: '1.4', metrics: {} };
   return f;
 }
 

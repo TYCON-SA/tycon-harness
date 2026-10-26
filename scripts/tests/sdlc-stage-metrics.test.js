@@ -253,3 +253,95 @@ test('la matriz por AC sola NO cubre una story en el tablero (mismo criterio que
     'M-1 (matriz+self-audit) NO cubre; M-2 (informe) y M-3 (ledger) SÍ — mismo criterio que el portón');
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// ── los merges que baja el nocturno (`.dashboard/merges/`) y su constancia ─────────────────────────
+// Un archivo 2.0 mínimo, con la forma del fixture de arriba.
+function metricsDoc(dir, nombre, sha, iter, fecha, project = 'test') {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, nombre), JSON.stringify({
+    schema_version: '2.0', repo: fx.repo, merge_commit: sha, project, captured_at: fecha,
+    metrics: { advisor_rerun_loop_iterations: { value: iter } },
+  }));
+}
+const copiaDash = () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-8132-'));
+  for (const f of fs.readdirSync(fx.dash)) fs.copyFileSync(path.join(fx.dash, f), path.join(d, f));
+  return d;
+};
+const notMeasured = (r) => (r.global.not_measured || []).join(' · ');
+
+// Sin esto,`merges/` no se lee (el merge que sólo está ahí no entra), o se lee sumado a la raíz y el merge que
+//    está en las dos cuenta dos veces.
+test('T23 FirstPass_RootAndMerges_NoDouble @story-8.132 @ac-14: raíz + merges/, el repetido una vez', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-8132-'));
+  metricsDoc(d, 'metrics-1.json', '1'.repeat(40), 1, '2026-10-20T00:00:00Z');
+  metricsDoc(d, 'metrics-2.json', '2'.repeat(40), 2, '2026-10-20T00:00:00Z');
+  // el mismo merge que metrics-2, bajado después con su última vuelta; y uno que sólo está en merges/
+  metricsDoc(path.join(d, 'merges'), 'metrics-2b.json', '2'.repeat(40), 1, '2026-10-21T00:00:00Z', 'test-wt');
+  metricsDoc(path.join(d, 'merges'), 'metrics-3.json', '3'.repeat(40), 1, '2026-10-21T00:00:00Z');
+  const r = run(['--repo', fx.repo, '--dashboard', d]);
+  assert.equal(r.global.first_pass_ratio.den, 3, JSON.stringify(r.global.first_pass_ratio));
+  assert.equal(r.global.first_pass_ratio.num, 3, 'entre los dos del mismo merge, el más nuevo; el de merges/ solo entra');
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+// Sin esto, una corrida sin `--merges-receipt` (a mano, o un nocturno que no la pasa) cambia la medida o sale «no medido».
+test('T33 FirstPass_NoReceiptFlag_AsToday @story-8.132 @ac-22 @ac-20: sin la opción, como hoy', () => {
+  const r = run(['--repo', fx.repo, '--dashboard', fx.dash]);
+  assert.deepEqual([r.global.first_pass_ratio.num, r.global.first_pass_ratio.den], [2, 3]);
+  assert.doesNotMatch(notMeasured(r), /bajada de los merges/);
+});
+
+// Sin esto,la primera noche nueva, sin `merges/` ni constancia, el nocturno sale distinto de 0, no deja la foto, o
+//    mide la primera vuelta con lo versionado en la raíz.
+test('T36 Transition_NewNightNoMergesFolder_NotMeasured @story-8.132 @ac-22: sin constancia, foto entera y «no medido»', () => {
+  const d = copiaDash();
+  const out = execFileSync('node', [SCRIPT, '--repo', fx.repo, '--dashboard', d, '--merges-receipt', path.join(d, 'merges', 'bajada.json'), '--snapshot', '--json'], {
+    encoding: 'utf8', env: { ...process.env, TYCON_SKILLS_DIR: '/nonexistent-sdlc-metrics-test' },
+  });
+  const r = JSON.parse(out);
+  assert.strictEqual(r.global.first_pass_ratio.value, null, JSON.stringify(r.global.first_pass_ratio));
+  assert.strictEqual(r.global.first_pass_ratio.num, undefined, 'nunca el número de la raíz');
+  assert.match(notMeasured(r), /no medido: la bajada de los merges/);
+  assert.ok(r.global.lead_time_days, 'las demás métricas se miden igual');
+  assert.equal(fs.readdirSync(d).filter((f) => /^sdlc-stage-\d{4}-\d{2}-\d{2}\.json$/.test(f)).length, 1, 'la foto del día queda escrita');
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+// La línea de `sdlc-stage-metrics.js` de un `stage-metrics.yml` de operaciones sin `--merges-receipt`, copiada tal
+// cual: mientras el público tiene el código nuevo y operaciones no, ésta es la que corre.
+const STAGE_METRICS_ANTES = `
+          node scripts/metrics/sdlc-stage-metrics.js \\
+            --scan "$(Agent.TempDirectory)/repos" \\
+            --only-harness \\
+            --dashboard "$(Build.SourcesDirectory)/.dashboard" \\
+            --snapshot
+          FIN=$(date +%s)
+`;
+// Sin esto, el código nuevo exige `--merges-receipt`, o sin ella deja de medir la primera vuelta: la noche de
+//    transición sale roja o con el número en blanco.
+test('T43 Transition_NewCodeOldYaml_AsToday @story-8.132 @ac-22: el YAML viejo con el código nuevo mide como hoy', () => {
+  const lineas = STAGE_METRICS_ANTES.split('\n').map((l) => l.trim());
+  const i = lineas.findIndex((l) => l.startsWith('node scripts/metrics/sdlc-stage-metrics.js'));
+  const comando = [];
+  for (let k = i; k < lineas.length; k++) { comando.push(lineas[k].replace(/\\$/, '').trim()); if (!lineas[k].endsWith('\\')) break; }
+  const cont = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-8132-yaml-'));
+  const repos = path.join(cont, 'repos');
+  const r = path.join(repos, 'delequipo');
+  fs.mkdirSync(path.join(r, 'specs'), { recursive: true });
+  fs.mkdirSync(path.join(r, '.tycon'), { recursive: true });
+  sh(repos, 'git', ['init', '-q', 'delequipo']);
+  fs.writeFileSync(path.join(r, 'specs', 'story-y1.md'), story('Y-1', 'done'));
+  gitCommit(r, 'y1', '2026-08-05T10:00:00-03:00');
+  const d = copiaDash();
+  const args = comando.join(' ').replace('$(Agent.TempDirectory)', cont).replace('$(Build.SourcesDirectory)/.dashboard', d)
+    .match(/"[^"]*"|\S+/g).map((x) => x.replace(/^"|"$/g, '')).slice(2);
+  assert.ok(!args.includes('--merges-receipt'), 'la línea de antes no trae la constancia');
+  execFileSync('node', [SCRIPT, ...args], { encoding: 'utf8', env: { ...process.env, TYCON_SKILLS_DIR: '/nonexistent-sdlc-metrics-test' } });
+  const foto = fs.readdirSync(d).find((f) => /^sdlc-stage-\d{4}-\d{2}-\d{2}\.json$/.test(f));
+  assert.ok(foto, 'la foto del día queda escrita');
+  const doc = JSON.parse(fs.readFileSync(path.join(d, foto), 'utf8'));
+  assert.deepEqual([doc.global.first_pass_ratio.num, doc.global.first_pass_ratio.den], [2, 3], 'el mismo número que hoy');
+  assert.doesNotMatch((doc.global.not_measured || []).join(' '), /bajada de los merges/);
+  fs.rmSync(cont, { recursive: true, force: true }); fs.rmSync(d, { recursive: true, force: true });
+});
