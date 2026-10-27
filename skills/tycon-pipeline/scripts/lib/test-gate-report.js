@@ -424,6 +424,62 @@ function pruebasCorridas(runner, t, todo = 0) {
 /** El texto sin las secuencias de control de la terminal (colores y movimientos del cursor, `ESC [ … letra`). */
 const sinAnsi = (s) => String(s).replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
 
+/** La consola de la corrida de una herramienta de fábrica (run.log), sin colores; vacía si no está. */
+function leerRunLog(resultsDir) {
+  try { return sinAnsi(fs.readFileSync(path.join(resultsDir, 'run.log'), 'utf8')); } catch (_) { return ''; }
+}
+
+/**
+ * Lo que Karma dice en la consola: la última línea «<navegador>: Executed N of M (K FAILED) (skipped S)» de CADA
+ * navegador, sumadas. `{ total, executed, failed, skipped }`, o null si no lo dijo. Una corrida cortada (`DISCONNECTED`)
+ * no cuenta lo que no corrió como salteado.
+ */
+function karmaPorConsola(log) {
+  const ultima = new Map();
+  // el reportero de progreso reescribe la línea con \r: cada tramo es una línea
+  for (const tramo of log.split(/[\r\n]+/)) {
+    const m = /(.*?)Executed (\d+) of (\d+)((?: \((?:\d+ FAILED|skipped \d+)\))*)/.exec(tramo);
+    if (m) ultima.set(m[1].replace(/:\s*$/, '').trim(), m);
+  }
+  if (!ultima.size) return null;
+  const t = { total: 0, executed: 0, failed: 0, skipped: 0 };
+  for (const m of ultima.values()) {
+    const f = /\((\d+) FAILED\)/.exec(m[4]);
+    const s = /\(skipped (\d+)\)/.exec(m[4]);
+    t.executed += +m[2]; t.total += +m[3]; t.failed += f ? +f[1] : 0; t.skipped += s ? +s[1] : 0;
+  }
+  return t;
+}
+
+// las firmas de una herramienta que no arrancó: el servidor de Karma, el navegador, un paquete de la herramienta que
+// falta, el plugin de Angular CLI fuera de `ng test`, el MD4 de un Angular viejo sobre OpenSSL 3
+const NO_ARRANCO = /Server start failed|Cannot start \w+|No binary for|Cannot find module '(?:karma|@angular-devkit|@angular\/cli|puppeteer)|could not determine executable|command not found|meant to be used from within Angular CLI|0308010C/;
+/** La línea que explica por qué no arrancó: la primera con un error; si no hay, la última. */
+function lineaDelError(log) {
+  const lineas = log.split('\n').map((l) => l.trim()).filter(Boolean);
+  const l = lineas.find((x) => /error|failed|no binary|not found|cannot/i.test(x)) || lineas[lineas.length - 1] || 'no dejó salida';
+  return l.length > 240 ? `${l.slice(0, 240)}…` : l;
+}
+
+/**
+ * Una línea: qué Node instalar para el Angular del repo (el de su época), y el atajo para la falla de OpenSSL; null si
+ * no es el caso. Las dos firmas de un Angular viejo sobre un Node nuevo: el MD4 que OpenSSL 3 ya no trae (0308010C), y
+ * el servidor de archivos de webpack-dev-middleware 3 que muere tras la primera prueba (reading 'range').
+ */
+function nodeDeSuEpoca(repoRun, log) {
+  let pkg = '';
+  try { pkg = fs.readFileSync(path.join(repoRun, 'package.json'), 'utf8'); } catch (_) { /* sin package.json: sin versión */ }
+  const v = /"@angular\/(?:core|cli)"\s*:\s*"[^\d"]*(\d+)/.exec(pkg);
+  const angular = v ? +v[1] : null;
+  // sólo un Angular de antes de la 13 (o uno sin versión legible); `reading 'range'` sólo con la versión a la vista
+  const firma = /0308010C/.test(log) || (angular !== null && /reading 'range'/.test(log));
+  if (!firma || !/"@angular\//.test(pkg) || (angular !== null && angular > 12)) return null;
+  const era = angular === null ? 16 : angular <= 8 ? 10 : angular <= 11 ? 12 : angular === 12 ? 14 : 16;
+  const quien = angular === null ? 'Angular de antes de la 13' : `Angular ${angular}`;
+  const openssl = /0308010C/.test(log) ? '; sólo para la falla de OpenSSL alcanza con NODE_OPTIONS=--openssl-legacy-provider' : '';
+  return `${quien} no corre sus pruebas con Node ${process.versions.node.split('.')[0]}: instalá Node ${era}, el de su época (nvm install ${era} && nvm use ${era})${openssl}.`;
+}
+
 /**
  * sum() de Python sobre números de punto flotante es una suma compensada (Neumaier) desde Python 3.12, y el promedio de
  * cobertura tiene que dar el mismo número: con una suma simple, 70,1 + 92,8 + 62,1 da 224,99999999999997 y un
@@ -508,11 +564,34 @@ function informe(argv) {
           result.suite_green = false;
           result.failed_in_report = `${j.failed} prueba(s) fallida(s) en el reporte aunque la herramienta salió 0`;
         }
+      } else if (generico.name === 'karma' && !archivos.length && karmaPorConsola(leerRunLog(resultsDir))) {
+        // sin karma-junit-reporter (un Angular de fábrica no lo trae), Karma igual dice en la consola cuántas corrió
+        const k = karmaPorConsola(leerRunLog(resultsDir));
+        result.totals = { total: k.total, passed: k.executed - k.failed, failed: k.failed, skipped: k.skipped, executed: k.executed };
+        if (k.executed + k.skipped < k.total) result.incomplete = `Karma corrió ${k.executed} de ${k.total}: la corrida se cortó`;
+        result.totals_source = 'consola de Karma';
+        if (k.failed > 0 && result.suite_green) {
+          result.suite_green = false;
+          result.failed_in_report = `${k.failed} prueba(s) fallida(s) en la consola aunque la herramienta salió 0`;
+        }
       } else {
         result.totals_error = generico.name === 'karma' && !archivos.length
           ? 'Karma sin reporte JUnit: configurá karma-junit-reporter en karma.conf.js (sin él la puerta no puede contar las pruebas)'
           : j.reason;
-        process.stderr.write(`[test-gate] 🔴 ${result.totals_error}\n`);
+        // con la herramienta caída, el motivo es ése (abajo, «no arrancó»), no el reporte que falta
+        if (suiteExit === 0 || generico.name !== 'karma') process.stderr.write(`[test-gate] 🔴 ${result.totals_error}\n`);
+      }
+      // Karma salió con error sin correr ninguna prueba y sin un error del código: la herramienta no arrancó (un plugin
+      // que no carga, un navegador que no está). No es un rojo de las pruebas: test-gate.sh lo deja «sin medir».
+      // Sólo con una firma conocida de la herramienta y sin ninguna línea «Executed» (el navegador nunca arrancó): todo
+      // lo demás (no compila, un spec que tira al cargar) es un rojo del código.
+      const log = generico.name === 'karma' && suiteExit !== 0 && !archivos.length ? leerRunLog(resultsDir) : '';
+      if (log && !/Executed \d+ of/.test(log) && NO_ARRANCO.test(log)) result.not_started = { reason: lineaDelError(log) };
+      // Angular de antes de la 13 sobre Node 17 o más nuevo: sólo cuando falló con esa firma, con qué Node instalar
+      const hint = generico.name === 'karma' && suiteExit !== 0 ? nodeDeSuEpoca(repoRun, leerRunLog(resultsDir)) : null;
+      if (hint) {
+        result.node_hint = hint;
+        process.stderr.write(`[test-gate] 🟡 ${hint}\n`);
       }
     } else if (runner === 'dotnet') {
       // Con corrida secuencial por proyecto hay UN trx por ensamblado: se suman TODOS.
