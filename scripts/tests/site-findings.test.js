@@ -723,11 +723,13 @@ test('M6 Mantenimiento_QuePaso_ClaseDeError — las ejecuciones dicen su error m
 // Mantenimiento_VigilanteEnLlano
 // 🔴 Falla con: la clave de la regla («deriva», «latido») como título de la tarjeta o de la fila de En marcha, sin el
 // producto, el plugin o las veces; una regla sin su «?»; la promesa de que la noche vuelve a analizar lo que no analiza;
-// o la propuesta del modelo escondida.
+// la de producción sin análisis que diga que la noche no analiza, o la que dejó de pedirse sin decirlo; o la propuesta
+// del modelo escondida.
 test('M7 Mantenimiento_VigilanteEnLlano — el título dice producto, plugin, qué pasó y cuántas veces, con su «?»', { timeout: 60000 }, async () => {
   const extra = {
     'inbox/watcher/pending/vig-tres.yaml': 'id: vig-tres\nfecha: 2026-10-22\nproducto: facturas\nregla: deriva\nseveridad: alta\nplugin: utilesx\nsenal:\n  errores: 12\n  estado_http: 502\n  total_pedidos: 21\nveredicto: pendiente\nnoches_seguidas: 1\n',
     'inbox/watcher/pending/vig-cinco.yaml': 'id: vig-cinco\nfecha: 2026-10-22\nproducto: facturas\nregla: goteo\nseveridad: media\nendpoint: /api/cobros\nsenal:\n  errores: 0\nveredicto: pendiente\n',
+    'inbox/watcher/pending/vig-seis.yaml': 'id: vig-seis\nfecha: 2026-10-21\nproducto: facturas\nregla: deriva\nseveridad: alta\nplugin: utilesx\nveredicto: pendiente\nanalisis_motivo: modelo-caido\nanalisis_fallas: 3\nanalisis_fallo_el: 2026-10-24\n',
     'inbox/watcher/promoted/vig-cuatro.yaml': 'id: vig-cuatro\nfecha: 2026-10-20\nproducto: abc\nregla: latido\nseveridad: alta\nplugin: abcbackend\nveredicto: util\n',
   };
   await conSitio({ extra }, async ({ h, lead, lista, fila }) => {
@@ -743,7 +745,8 @@ test('M7 Mantenimiento_VigilanteEnLlano — el título dice producto, plugin, qu
     assert.strictEqual(cuatro.nombre, 'ABC · plugin abcbackend: no tuvo actividad, o está caído');
     assert.strictEqual(cuatro.regla, 'latido');
     // sin análisis: lo dice tal cual, sin prometer que la noche lo vuelve a intentar; y la propuesta del modelo, a la vista
-    assert.match(tres.sin_analizar, /la noche todavía no analiza estas fichas/);
+    assert.match(tres.sin_analizar, /la noche todavía no le llegó a esta ficha/);
+    assert.match(fila(j, 'vigilante', 'vig-seis').sin_analizar, /el modelo falló tres noches seguidas y la noche dejó de pedírselo/);
     assert.doesNotMatch(tres.sin_analizar, /vuelve a intentar/);
     assert.deepStrictEqual(fila(j, 'vigilante', 'vig-uno').propuesta, { accion: 'aceptar', razon: 'Es ruido de un cliente de prueba' });
     assert.deepStrictEqual(fila(j, 'vigilante', 'vig-dos').propuesta, { accion: 'arreglar', razon: null }, 'la razón que no pasa el filtro no se muestra');

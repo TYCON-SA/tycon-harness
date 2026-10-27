@@ -418,9 +418,13 @@ test('T62 Propone_FallasPorNoche @story-4.11 @ac-13 @ac-16', async () => {
 });
 
 // T63 Propone_TopeEntreFuentes @story-4.11 @ac-17
-// 🔴 Falla con: un tope por fuente en vez de entre todas, un orden que no sea de la más vieja a la más nueva, o que las
-//    que no entraron no se pidan la noche siguiente.
+// 🔴 Falla con: un tope por fuente en vez de entre todas, un orden que no sea producción primero y el resto de la más vieja
+//    a la más nueva, o que las que no entraron no se pidan la noche siguiente.
 test('T63 Propone_TopeEntreFuentes @story-4.11 @ac-17', async () => {
+  // el vigilante recibe el pedido del análisis; las otras, el de la propuesta
+  const porFuente = () => modelo((p) => ({ ok: true, texto: JSON.stringify(p.datos.fuente === 'vigilante'
+    ? { recomendacion: 'aceptar', por_que_pasa: 'Un goteo de errores en acme', por_que_recomienda: 'Es esperable' }
+    : { accion: 'aceptar', razon: 'es esperable: la causa se repite sin efecto' }) }));
   const base = tmp();
   const vig = path.join(base, 'inbox', 'watcher', 'pending');
   fs.mkdirSync(vig, { recursive: true });
@@ -432,16 +436,18 @@ test('T63 Propone_TopeEntreFuentes @story-4.11 @ac-17', async () => {
     else if (i % 3 === 1) fichaDep(base, `dep${i}`, { detectado: dia, veredicto: 'pendiente', paquete: `p${i}`, severidad: 'low' });
     else fs.writeFileSync(path.join(vig, `v${i}.yaml`), `id: v${i}\nfuente: vigilante\ncausa: goteo\nfecha: ${dia}\nproducto: acme\nregla: goteo\nseveridad: media\nhuella: aaaa${String(i).padStart(4, '0')}\nveredicto: pendiente\n`);
   }
-  const m = modelo();
+  const m = porFuente();
   const r = await correr(base, { llamar: m.llamar });
   assert.strictEqual(m.pedidos.length, 30, 'el tope es entre todas las fuentes');
   assert.strictEqual(r.sin_propuesta.tope, 3);
   assert.deepStrictEqual(new Set(m.pedidos.map((p) => p.datos.fuente)), new Set(['ejecuciones', 'dependencias', 'vigilante']));
+  const deVig = fechas.filter((_, i) => i % 3 === 2).sort();
+  const otras = fechas.filter((_, i) => i % 3 !== 2).sort();
+  assert.ok(m.pedidos.slice(0, deVig.length).every((p) => p.datos.fuente === 'vigilante'), 'producción primero');
   const pedidas = m.pedidos.map((p) => p.datos.primera_vez);
-  assert.deepStrictEqual(pedidas, [...pedidas].sort(), 'de la más vieja a la más nueva');
-  assert.deepStrictEqual(pedidas, [...fechas].sort().slice(0, 30));
+  assert.deepStrictEqual(pedidas, [...deVig, ...otras.slice(0, 30 - deVig.length)], 'y cada grupo, de la más vieja a la más nueva');
   // la noche siguiente se piden las tres que quedaron
-  const m2 = modelo();
+  const m2 = porFuente();
   const r2 = await correr(base, { hoy: '2026-10-25', llamar: m2.llamar });
   assert.strictEqual(m2.pedidos.length, 3);
   assert.strictEqual(r2.sin_propuesta.tope, undefined);
@@ -454,7 +460,7 @@ test('T63 Propone_TopeEntreFuentes @story-4.11 @ac-17', async () => {
   fs.mkdirSync(dirV, { recursive: true });
   const borrador = path.join(dirV, 'v1.yaml');
   fs.writeFileSync(borrador, '# Borrador del vigilante de producción — NO es una story.\n# Lo decide una persona.\nid: v1\nfuente: vigilante\ncausa: goteo\nfecha: 2026-10-20\nproducto: acme\nregla: goteo\nseveridad: media\nhuella: aaaa0001\nveredicto: pendiente\n');
-  await correr(otro, { llamar: modelo().llamar });
+  await correr(otro, { llamar: porFuente().llamar });
   const lineas = fs.readFileSync(borrador, 'utf8').split('\n');
   assert.match(lineas[0], /^# Borrador del vigilante/, 'el encabezado sigue primero');
   assert.ok(lineas.findIndex((l) => /^propuesta_accion:/.test(l)) > lineas.findIndex((l) => /^id:/.test(l)));
@@ -540,4 +546,171 @@ test('T66 Resumen_ConPropuestas_DiceCuantasSi', async () => {
   fichaComun(nada, 'RR-ESCAPE:q');
   await correr(nada, { llamar: async () => ({ ok: true, texto: 'no es json' }) });
   assert.strictEqual(P.lineaDelResumen(nada, HOY), 'sin propuesta del modelo: 1 (respuesta-invalida 1)');
+});
+
+// ── el análisis del vigilante ────────────────────────────────────────────────────────────────
+
+/** Un borrador del vigilante con su señal, su diagnóstico y su evidencia (que nunca viajan al modelo). */
+function fichaVig(base, id, extra = '') {
+  const dir = path.join(base, 'inbox', 'watcher', 'pending');
+  fs.mkdirSync(dir, { recursive: true });
+  const ruta = path.join(dir, `${id}.yaml`);
+  fs.writeFileSync(ruta, `# Borrador del vigilante de producción — NO es una story.\nid: ${id}\nfecha: "2026-10-22"\nproducto: "acme"\nregla: "deriva"\nseveridad: "alta"\nhuella: "3635c48b"\nplugin: "cobrosbackend"\nendpoint: null\nsenal:\n  errores: 15\n  estado_http: 502\n  total_pedidos: 21\ndiagnostico: "DIAGNOSTICO-PRIVADO de persona@acme.example"\nevidencia:\n  - {"usuario":"u-SECRETO","mensaje":"TEXTO-CRUDO del error","duracion_ms":1200}\n# ── Lo que decide la persona que lo lee ──\nveredicto: pendiente\nmotivo: null\nnoches_seguidas: 1\n${extra}`);
+  return ruta;
+}
+const ANALISIS = { recomendacion: 'arreglar', por_que_pasa: 'El plugin cobrosbackend devolvió 15 errores 502 sobre 21 pedidos, un tipo de error que no se había visto.', por_que_recomienda: 'Casi tres de cada cuatro pedidos fallan', arreglo: 'Revisar la dependencia que devuelve 502 al plugin y su despliegue', si_vuelve: 'Mirar si coincide con un despliegue' };
+const fichaVista = (ruta) => require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'sources.js')).comoFicha('vigilante', fs.readFileSync(ruta, 'utf8'));
+
+// A1 Analiza_Vigilante_ProduccionPrimero
+// 🔴 Falla con: que la ficha del vigilante, más nueva, espere detrás de las viejas de otra fuente cuando hay tope.
+test('A1 Analiza_Vigilante_ProduccionPrimero — la del vigilante entra primero; el resto, de la más vieja a la más nueva', async () => {
+  const base = tmp();
+  for (let i = 0; i < 31; i += 1) fichaComun(base, `RR-ESCAPE:c${String(i).padStart(2, '0')}`, { primera_vez: `2026-09-${String(i + 1).padStart(2, '0')}`.replace(/-3[1-9]$/, '-30') });
+  const v = fichaVig(base, 'v1');
+  const m = modelo((p) => ({ ok: true, texto: JSON.stringify(p.datos.fuente === 'vigilante' ? ANALISIS : { accion: 'aceptar', razon: 'es esperable' }) }));
+  const r = await correr(base, { llamar: m.llamar });
+  assert.strictEqual(m.pedidos.length, 30);
+  assert.strictEqual(m.pedidos[0].datos.fuente, 'vigilante', 'producción primero');
+  const resto = m.pedidos.slice(1).map((p) => p.datos.primera_vez);
+  assert.deepStrictEqual(resto, [...resto].sort(), 'el resto, por antigüedad');
+  assert.strictEqual(r.sin_propuesta.tope, 2);
+  assert.ok(fichaVista(v).analisis, 'la del vigilante quedó analizada');
+});
+
+// A2 Analiza_Vigilante_GuardaAnalisisYPropuesta
+// 🔴 Falla con: que la noche no escriba el análisis, que el sitio no lo lea, o que no quede la propuesta que sale de él.
+test('A2 Analiza_Vigilante_GuardaAnalisisYPropuesta — el análisis queda en la ficha, con autor, modelo y fecha', async () => {
+  const base = tmp();
+  const ruta = fichaVig(base, 'v1');
+  const r = await correr(base, { llamar: modelo(ANALISIS).llamar });
+  assert.strictEqual(r.propuestas, 1);
+  const f = fichaVista(ruta);
+  assert.deepStrictEqual(f.analisis, { ...ANALISIS, autor: 'modelo', modelo: 'haiku', el: HOY });
+  assert.deepStrictEqual(f.propuesta, { accion: 'arreglar', razon: 'Casi tres de cada cuatro pedidos fallan', modelo: 'haiku' });
+  assert.strictEqual(f.analisis_motivo, null);
+  const t = fs.readFileSync(ruta, 'utf8');
+  assert.match(t, /^# Borrador del vigilante/, 'el encabezado sigue primero');
+  assert.match(t, /^diagnostico: "DIAGNOSTICO-PRIVADO/m, 'lo demás de la ficha no se toca');
+  // la noche siguiente no lo vuelve a pedir
+  const m2 = modelo(ANALISIS);
+  await correr(base, { hoy: '2026-10-25', llamar: m2.llamar });
+  assert.strictEqual(m2.pedidos.length, 0);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(base, 'inbox', 'model-proposals.json'), 'utf8')).analyzed, 0);
+});
+
+// A3 Analiza_Vigilante_SoloDatosConForma
+// 🔴 Falla con: mandarle al modelo el diagnóstico, la evidencia, el usuario, un correo, el texto crudo de un error o la
+//    ruta del endpoint (puede llevar el identificador de un usuario).
+test('A3 Analiza_Vigilante_SoloDatosConForma — al modelo le llegan cifras, piezas y fechas; nada de la evidencia', async () => {
+  const base = tmp();
+  const ruta = fichaVig(base, 'v1');
+  fs.writeFileSync(ruta, fs.readFileSync(ruta, 'utf8').replace('endpoint: null', 'endpoint: "/api/usuarios/48213"'));
+  const m = modelo(ANALISIS);
+  await correr(base, { llamar: m.llamar });
+  const texto = m.pedidos[0].texto;
+  for (const x of ['DIAGNOSTICO-PRIVADO', 'persona@acme.example', 'u-SECRETO', 'TEXTO-CRUDO', '@', '48213', '/api/usuarios']) assert.ok(!texto.includes(x), `no viaja «${x}»`);
+  for (const x of ['cobrosbackend', '"errores":15', '"estado_http":502', '"total_pedidos":21', '"regla":"deriva"']) assert.ok(texto.includes(x), `viaja ${x}`);
+});
+
+// A4 Analiza_Vigilante_SinDatoCitado_Descarta
+// 🔴 Falla con: guardar un análisis que no cita ningún dato de la ficha (repite el problema).
+test('A4 Analiza_Vigilante_SinDatoCitado_Descarta — sin una cifra o una pieza citada, el análisis no se guarda', async () => {
+  const base = tmp();
+  const ruta = fichaVig(base, 'v1');
+  await correr(base, { llamar: modelo({ recomendacion: 'aceptar', por_que_pasa: 'Es un error nuevo en producción', por_que_recomienda: 'Parece esperable' }).llamar });
+  const f = fichaVista(ruta);
+  assert.strictEqual(f.analisis, null);
+  assert.strictEqual(f.analisis_motivo, 'no-aporta');
+  assert.deepStrictEqual(f.propuesta, { accion: 'aceptar', razon: 'Parece esperable', modelo: 'haiku' }, 'la propuesta corta sí queda');
+});
+
+// A5 Analiza_Vigilante_RespuestaSinForma
+// 🔴 Falla con: guardar un análisis con un enlace, un correo, una etiqueta, comillas o un campo de más.
+test('A5 Analiza_Vigilante_RespuestaSinForma — un enlace, un correo o un campo de más: no se guarda nada de eso', async () => {
+  const malos = [
+    { ...ANALISIS, por_que_pasa: 'Ver https://acme.example/log: 15 errores en cobrosbackend' },
+    { ...ANALISIS, arreglo: 'Avisarle a persona@acme.example por los 15 errores' },
+    { ...ANALISIS, si_vuelve: '<script>15</script>' },
+    { ...ANALISIS, por_que_recomienda: 'Dijo "15 errores"' },
+    { ...ANALISIS, usuario: 'u-SECRETO' },
+    { ...ANALISIS, recomendacion: 'borrar' },
+  ];
+  for (const malo of malos) {
+    const base = tmp();
+    const ruta = fichaVig(base, 'v1');
+    await correr(base, { llamar: modelo(malo).llamar });
+    const f = fichaVista(ruta);
+    const t = fs.readFileSync(ruta, 'utf8');
+    assert.strictEqual(f.analisis, null, JSON.stringify(malo).slice(0, 80));
+    assert.strictEqual(f.analisis_motivo, 'respuesta-invalida');
+    for (const x of ['https://', 'persona@acme.example', '<script>', 'u-SECRETO']) assert.ok(!t.slice(t.indexOf('veredicto:')).includes(x), `no se escribe «${x}»`);
+  }
+});
+
+// A6 Analiza_Vigilante_TresFallas_DejaDePedir
+// 🔴 Falla con: borrar la propuesta que ya tenía al fallar, sumar dos fallas la misma noche, o seguir pidiendo tras tres.
+test('A6 Analiza_Vigilante_TresFallas_DejaDePedir — cada noche fallada suma una; tras tres no se pide más y la ficha lo dice', async () => {
+  const base = tmp();
+  const ruta = fichaVig(base, 'v1', 'propuesta_accion: aceptar\npropuesta_razon: "Es ruido conocido"\n');
+  const caido = async () => ({ ok: false, caido: true });
+  for (const dia of ['2026-10-24', '2026-10-24', '2026-10-25', '2026-10-26']) await correr(base, { hoy: dia, llamar: caido });
+  let f = fichaVista(ruta);
+  assert.strictEqual(f.analisis_motivo, 'modelo-caido');
+  assert.strictEqual(f.analisis_agotado, true);
+  assert.deepStrictEqual(f.propuesta, { accion: 'aceptar', razon: 'Es ruido conocido' }, 'la propuesta que tenía no se pierde');
+  const m = modelo(ANALISIS);
+  await correr(base, { hoy: '2026-10-27', llamar: m.llamar });
+  assert.strictEqual(m.pedidos.length, 0, 'tras tres noches falladas no se pide más');
+  f = fichaVista(ruta);
+  assert.strictEqual(f.analisis, null);
+});
+
+// A7 Analiza_Vigilante_PluginNull_NoEsUnaPieza
+// 🔴 Falla con: leer `plugin: null` del borrador como un plugin llamado «null»: viaja al modelo y cuenta como dato citado.
+test('A7 Analiza_Vigilante_PluginNull_NoEsUnaPieza — la falta del plugin no viaja ni se cita', async () => {
+  const base = tmp();
+  const ruta = fichaVig(base, 'v1');
+  fs.writeFileSync(ruta, fs.readFileSync(ruta, 'utf8').replace('plugin: "cobrosbackend"', 'plugin: null'));
+  const m = modelo({ recomendacion: 'aceptar', por_que_pasa: 'El plugin null tuvo errores', por_que_recomienda: 'Es esperable' });
+  await correr(base, { llamar: m.llamar });
+  assert.ok(!m.pedidos[0].texto.includes('"plugin":"null"'), 'el plugin que falta va como null');
+  assert.strictEqual(fichaVista(ruta).analisis_motivo, 'no-aporta', '«null» no es un dato citado');
+});
+
+// A8 Analiza_Vigilante_OpcionalVacio_SeGuarda
+// 🔴 Falla con: descartar entero un «aceptar» que trae «arreglo» o «si_vuelve» vacíos, y sumarle una falla.
+test('A8 Analiza_Vigilante_OpcionalVacio_SeGuarda — un campo opcional vacío es un campo que no vino', async () => {
+  const base = tmp();
+  const ruta = fichaVig(base, 'v1');
+  const resp = { recomendacion: 'aceptar', por_que_pasa: 'Fueron 15 errores en cobrosbackend', por_que_recomienda: 'Es esperable', arreglo: '', si_vuelve: '' };
+  await correr(base, { llamar: modelo(resp).llamar });
+  assert.deepStrictEqual(fichaVista(ruta).analisis, { recomendacion: 'aceptar', por_que_pasa: resp.por_que_pasa, por_que_recomienda: 'Es esperable', autor: 'modelo', modelo: 'haiku', el: HOY });
+});
+
+// A9 Analiza_Vigilante_Agotada_SinPropuesta_PideLaCorta
+// 🔴 Falla con: dejar sin nada, para siempre, a la del vigilante que falló el análisis tres noches y no tenía propuesta.
+test('A9 Analiza_Vigilante_Agotada_SinPropuesta_PideLaCorta — tras tres noches sin análisis, se le pide la propuesta corta', async () => {
+  const base = tmp();
+  const ruta = fichaVig(base, 'v1', 'analisis_motivo: respuesta-invalida\nanalisis_fallas: 3\nanalisis_fallo_el: 2026-10-20\n');
+  const m = modelo();
+  const r = await correr(base, { llamar: m.llamar });
+  assert.strictEqual(m.pedidos.length, 1);
+  assert.match(m.pedidos[0].texto, /"accion":"aceptar"\|"arreglar"/, 'el pedido corto, no el del análisis');
+  assert.strictEqual(r.propuestas, 1);
+  assert.strictEqual(fichaVista(ruta).propuesta.accion, 'aceptar');
+  // con la propuesta ya escrita, no se le pide nada más
+  const m2 = modelo();
+  await correr(base, { hoy: '2026-10-25', llamar: m2.llamar });
+  assert.strictEqual(m2.pedidos.length, 0);
+});
+
+// A10 Analiza_Vigilante_Tope_ConPropuesta_NoCuentaComoSinPropuesta
+// 🔴 Falla con: contar como «sin propuesta» por el tope a la del vigilante que ya tiene la suya, y no contarla sin análisis.
+test('A10 Analiza_Vigilante_Tope_ConPropuesta — la que queda fuera por el tope y ya tiene propuesta cuenta sólo sin análisis', async () => {
+  const base = tmp();
+  for (let i = 0; i < 31; i += 1) fichaVig(base, `v${String(i).padStart(2, '0')}`, 'propuesta_accion: aceptar\npropuesta_razon: "Es ruido conocido"\n');
+  const r = await correr(base, { llamar: modelo(ANALISIS).llamar });
+  assert.strictEqual(r.analizadas, 30);
+  assert.strictEqual(r.sin_propuesta.tope, undefined);
+  assert.strictEqual(r.sin_analisis.tope, 1);
 });

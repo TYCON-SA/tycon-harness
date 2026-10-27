@@ -57,6 +57,8 @@ const HUELLA_DE_MAQUINA = /-[0-9a-f]{8}$/;
 const PRODUCTO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
 const AYUDAS = ['aceptar', 'arreglar', 'enviar', 'tarea', 'deuda', 'analisis', 'seguir'];
 // las reglas del vigilante que tienen su frase y su «?»; la que la noche no conoce va como `otra`
+/** Por qué la ficha no tiene análisis: dejó de pedirse, el motivo de la noche, o que la noche todavía no le llegó. */
+const motivoSinAnalisis = (f) => (f.analisis_agotado ? 'agotado' : f.analisis_motivo || (f.fuente === 'vigilante' ? 'sinIntentoProduccion' : 'sinIntento'));
 const REGLAS = ['deriva', 'goteo', 'desagregacion', 'latido', 'otra'];
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -304,7 +306,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), regla: reglaDe(f), meta: metaDe(f, idioma), que_paso: quePaso(f, idioma), analisis,
       // la propuesta corta de la noche; la razón que no pasó el filtro no se muestra
       propuesta: pr ? { accion: pr.accion, razon: pr.razon === SOURCES.SIN_FORMA ? null : pr.razon } : null,
-      sin_analizar: analisis ? null : T(idioma, 'mant.sinAnalizar', { motivo: T(idioma, `mant.sinAnalizar.${f.analisis_motivo || 'sinIntento'}`) }),
+      sin_analizar: analisis ? null : T(idioma, 'mant.sinAnalizar', { motivo: T(idioma, `mant.sinAnalizar.${motivoSinAnalisis(f)}`) }),
       recomendada: analisis ? analisis.recomendacion : null, veces: c.veces || f.apariciones || 1,
       detalle: { maquinas: c.maquinas || [], stories: c.stories || [] },
     };

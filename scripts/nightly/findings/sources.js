@@ -4,7 +4,7 @@
 // después: el ciclo los admite, esta lista todavía no.
 
 const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD,
-  problemasDeAnalisis, hechosConForma } = require('./cycle.js');
+  problemasDeAnalisis, hechosConForma, FALLAS_MAX } = require('./cycle.js');
 const { nombreDe } = require('./cause-names.js');
 
 // ── dependencias: su formato y sus palabras de hoy ─────────────────────────────────────────────
@@ -81,6 +81,7 @@ function bloqueDe(txt, clave) {
 }
 
 const REGLAS_DEL_VIGILANTE = ['deriva', 'goteo', 'desagregacion', 'latido'];
+const SEVERIDADES_DEL_VIGILANTE = ['critica', 'alta', 'media', 'baja'];
 const RUTA = /^\/[A-Za-z0-9/_.{}-]{0,200}$/;
 const NOMBRE_DE_PIEZA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const numero = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
@@ -101,15 +102,17 @@ function duracionMediana(evidencia) {
 
 /** Los datos del borrador del vigilante con forma: números, la ruta, el nombre del plugin y de la regla. */
 function hechosDelVigilante(e, txt, listaDe) {
+  // el borrador escribe `plugin: null`: es la falta del dato, no un plugin llamado «null»
+  const dato = (v) => (/^(null|~)?$/i.test(String(v === undefined || v === null ? '' : v).trim()) ? '' : String(v));
   const senal = bloqueDe(txt, 'senal') || {};
   const reincidente = bloqueDe(txt, 'reincidente') || {};
   return {
     errores: numero(senal.errores), total_pedidos: numero(senal.total_pedidos), estado_http: numero(senal.estado_http),
-    endpoint: RUTA.test(String(e.endpoint || '')) ? e.endpoint : null,
-    plugin: NOMBRE_DE_PIEZA.test(String(e.plugin || '')) ? e.plugin : null,
+    endpoint: RUTA.test(dato(e.endpoint)) ? e.endpoint : null,
+    plugin: NOMBRE_DE_PIEZA.test(dato(e.plugin)) ? e.plugin : null,
     regla: REGLAS_DEL_VIGILANTE.includes(e.regla) ? e.regla : null,
     reincidente_desde: fecha(reincidente.desde), duracion_ms: duracionMediana(listaDe(String(txt), 'evidencia')),
-    producto: NOMBRE_DE_PIEZA.test(String(e.producto || '')) ? e.producto : null,
+    producto: NOMBRE_DE_PIEZA.test(dato(e.producto)) ? e.producto : null,
   };
 }
 
@@ -258,7 +261,10 @@ function comoFicha(fuente, txt) {
     // el pedido que creó la noche y, sin él, la story que creó una persona con /tycon-vigilante
     pedido: pedidoDe(e.pedido) || pedidoDe(e.story_creada), pedido_de_la_noche: pedidoDeLaNocheDe(e.pedido), asignado: asignadoDe(e.asignado), pedido_motivo: motivoPedidoDe(e.pedido_motivo),
     noches: null, analisis: analisisDe(bloqueDe(txt, 'analisis')), analisis_motivo: motivoDeAnalisis(e.analisis_motivo),
+    // la noche dejó de pedirle el análisis: falló tres noches seguidas
+    analisis_agotado: (entero(e.analisis_fallas) || 0) >= FALLAS_MAX,
+    severidad: SEVERIDADES_DEL_VIGILANTE.includes(e.severidad) ? e.severidad : null,
     hechos: hechosDelVigilante(e, txt, reg.formato.listaDe) };
 }
 
-module.exports = { SIN_FORMA, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, esVieja, comoFicha, pedidoDeLaNocheDe };
+module.exports = { SIN_FORMA, bloqueDe, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, esVieja, comoFicha, pedidoDeLaNocheDe };
