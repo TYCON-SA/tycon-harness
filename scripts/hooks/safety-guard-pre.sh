@@ -1946,14 +1946,14 @@ if ps_match "${_PS_AT}setx[[:space:]]+(${_PS_OFF})([[:space:]]|;|$)" \
 fi
 
 # HARNESS-C2: sacar un control del arnés de la configuración de la herramienta (`.claude/settings.json` o
-# `settings.local.json`): prender `disableAllHooks`, poner en `env` un interruptor que apaga, sacar un hook del arnés,
-# o borrar, mover o reemplazar entera una configuración que los tiene. Lo decide lib/controls-off.js, la misma pieza que
-# mira las ediciones (on-controls-off.js). Sólo corre si el comando nombra un `settings*.json` y `.claude` (también
-# `cd ~/.claude && rm settings.json`): el resto no paga el proceso.
+# `.claude/settings.local.json`): prender `disableAllHooks`, poner en `env` un interruptor que apaga, sacar un hook del
+# arnés, o borrar, mover o reemplazar entera una configuración que los tiene. Lo decide lib/controls-off.js, la misma
+# pieza que mira las ediciones (on-controls-off.js), y que sabe cuáles son esas configuraciones. Sólo corre si el
+# comando nombra un `settings*.json` (también entrando antes a su carpeta): el resto no paga el proceso.
 # Sin el lector no se sabe qué hace el comando, y pasa con su constancia: este freno no puede trabar a quien lee su
 # configuración.
 shopt -s nocasematch
-if [[ "$CMD" == *settings*.json* && "$CMD" == *.claude* ]]; then
+if [[ "$CMD" == *settings*.json* ]]; then
   shopt -u nocasematch
   _c2_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/controls-off.js" || _c2_lib=""
   _c2_out=""; _c2_leido=0; _c2_shell=bash; tool_is_ps && _c2_shell=powershell

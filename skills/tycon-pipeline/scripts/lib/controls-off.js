@@ -2,8 +2,8 @@
 /**
  * controls-off.js — ¿este cambio a la configuración de la herramienta saca un control del arnés? (HARNESS-C2)
  *
- * Los controles del arnés son hooks registrados en la configuración de Claude Code: `settings.json` y
- * `settings.local.json`, en `~/.claude/` o en `<repo>/.claude/`. La misma configuración los apaga de tres maneras:
+ * Los controles del arnés son hooks registrados en la configuración de Claude Code: `~/.claude/settings.json`,
+ * `~/.claude/settings.local.json` y las dos del repo. La misma configuración los apaga de tres maneras:
  * `disableAllHooks: true`, un interruptor en `env` (los escapes de los frenos y los `TYCON_*` que apagan), o el hook
  * sacado (o con un `matcher` que ya no cubre lo que cubría). Una edición o un comando que hace cualquiera de las tres
  * frena antes.
@@ -46,10 +46,15 @@ function apaga(nombre, valor) {
   return false;
 }
 
+// Las dos configuraciones de Claude Code, relativas a la casa o al repo: son enchufes de la herramienta, que se quedan
+// donde Claude Code las lee aunque el arnés se mude
+const CONFIGS = [path.join('.claude', 'settings.json'), path.join('.claude', 'settings.local.json')]
+  .map((c) => c.replace(/\\/g, '/').toLowerCase());
+
 /** ¿La ruta es una configuración de Claude Code? Un `settings.json` cualquiera (el de VS Code) no lo es. */
 function esConfig(ruta) {
-  const r = String(ruta || '').replace(/\\/g, '/');
-  return /(^|\/)\.claude\/settings(\.local)?\.json$/i.test(r);
+  const r = String(ruta || '').replace(/\\/g, '/').toLowerCase();
+  return CONFIGS.some((c) => r === c || r.endsWith(`/${c}`));
 }
 
 /** ¿El comando del hook es del arnés? Los hooks del arnés corren desde su casa o desde sus skills. */
@@ -155,7 +160,7 @@ function esConfigOEnlace(abs, cwd, home) {
   const candidatas = [];
   for (const base of [home, cwd]) {
     if (!base) continue;
-    for (const n of ['settings.json', 'settings.local.json']) candidatas.push(path.join(base, '.claude', n));
+    for (const c of CONFIGS) candidatas.push(path.join(base, c));
   }
   return candidatas.some((c) => real(c) === r);
 }
@@ -525,7 +530,7 @@ function juzgarComando({ cmd, cwd, home = os.homedir(), shell = 'bash' }) {
       if (incierta) {
         const armaLaCasa = /\bHOME\b|homedir\(|expanduser\(|USERPROFILE/.test(codigo);
         for (const m of codigo.matchAll(/[^\s"'`<>|;&()=,+]*settings(?:\.local)?\.json/gi)) {
-          const enLaCasa = armaLaCasa && /^[\\/]\.claude[\\/]/.test(m[0]);
+          const enLaCasa = armaLaCasa && CONFIGS.includes(m[0].replace(/\\/g, '/').toLowerCase().replace(/^\/+/, ''));
           const abs = enLaCasa ? path.join(home, m[0]) : resolver(m[0], d, home);
           if (esConfig(abs)) configs.set(abs, m[0]);
         }
