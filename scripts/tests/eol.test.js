@@ -32,6 +32,9 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { sinGitDelPadre } = require('../lib/clean-git-env.js');
+// El ambiente de una copia de esta suite que se corre adentro de ella: sin el canal binario que `node --test` le pasa
+// a sus hijos, para que su salida se lea como texto.
+const nestedEnv = (extra) => { const env = { ...sinGitDelPadre(), ...extra }; delete env.NODE_TEST_CONTEXT; return env; };
 
 const REPO = path.resolve(__dirname, '..', '..');
 const RULE = '* text=auto eol=lf';
@@ -241,7 +244,7 @@ test('T15c2 Eol_SkillsReader_BrokenNeighborIsRed — si quien ubica las skills n
       fs.copyFileSync(path.join(REPO, 'scripts', 'lib', f), path.join(clone, 'scripts', 'lib', f));
     }
     if (broken) fs.writeFileSync(path.join(clone, 'scripts', 'lib', 'canonical-path.js'), 'throw new Error("biblioteca rota a propósito")\n');
-    const env = { ...sinGitDelPadre(), HOME: home, USERPROFILE: home };
+    const env = nestedEnv({ HOME: home, USERPROFILE: home });
     delete env.TYCON_SKILLS_DIR;
     const r = spawnSync(process.execPath, ['--test-name-pattern', 'T15c Eol_SkillsRepo', path.join(clone, 'scripts', 'tests', 'eol.test.js')],
       { encoding: 'utf8', env, cwd: dir });
@@ -367,7 +370,7 @@ test('T15g Eol_CannotLookIsNotGreen — con un clon que git no puede leer la pru
   };
   // sólo T15b y T15c de la copia: las que miden el repo (y así la copia no vuelve a lanzar esta misma prueba)
   const run = (dir) => spawnSync(process.execPath, ['--test-reporter=tap', '--test-name-pattern=T15[bc] ', path.join(dir, 'scripts', 'tests', 'eol.test.js')],
-    { encoding: 'utf8', env: { ...sinGitDelPadre(), TYCON_SKILLS_DIR: dir } });
+    { encoding: 'utf8', env: nestedEnv({ TYCON_SKILLS_DIR: dir }) });
   const unreadable = run(build(true));
   assert.notStrictEqual(unreadable.status, 0, `un clon que no se puede leer no puede dar verde:\n${unreadable.stdout}`);
   assert.match(unreadable.stdout, /not ok \d+ - T15b/);
