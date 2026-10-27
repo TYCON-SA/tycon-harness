@@ -205,9 +205,11 @@ function avisoDelTope({ stateDir, story, iter }) {
   return ultimo;
 }
 
-// el sí a otra vuelta: nombra la vuelta («otra vuelta», «una vuelta más», «vuelta extra») sin negarla ni preguntar
-const RE_VUELTA = /(?<![\p{L}\p{N}])(?:otra\s+vuelta|una\s+vuelta\s+m[aá]s|vuelta\s+(?:extra|m[aá]s|adicional))(?![\p{L}\p{N}])/iu;
-const RE_NO_VUELTA = /(?<![\p{L}\p{N}])(?:no|ni|nunca|sin)\s+(?:(?:quiero|hagas|hace\s+falta|va|vamos\s+a\s+hacer)\s+)?(?:otra|una|m[aá]s)?\s*vuelta/iu;
+// el sí a otra vuelta: nombra la vuelta («otra vuelta», «una vuelta más», «vuelta extra», «tercera vuelta», «3ra vuelta»)
+// sin negarla ni preguntar
+const ORDINAL = String.raw`(?:segunda|tercera|cuarta|quinta|sexta|s[eé]ptima|octava|\d+\s*(?:ra|da|ta|na|ma|va|a|ª|°|º))`;
+const RE_VUELTA = new RegExp(String.raw`(?<![\p{L}\p{N}])(?:otra\s+vuelta|una\s+vuelta\s+m[aá]s|vuelta\s+(?:extra|m[aá]s|adicional)|${ORDINAL}\s+vuelta)(?![\p{L}\p{N}])`, 'iu');
+const RE_NO_VUELTA = new RegExp(String.raw`(?<![\p{L}\p{N}])(?:no|ni|nunca|sin)\s+(?:(?:quiero|hagas|hace\s+falta|va|vamos\s+a\s+hacer)\s+)?(?:(?:otra|una|la|m[aá]s)\s+)?(?:${ORDINAL}\s+)?vuelta`, 'iu');
 /** ¿El mensaje autoriza otra vuelta, sin negarla ni preguntar? `(texto) => null | motivo`. */
 function juezDeLaVuelta() {
   const f = (texto) => {

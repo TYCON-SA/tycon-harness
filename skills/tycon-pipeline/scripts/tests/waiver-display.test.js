@@ -192,6 +192,23 @@ test('WaiverJudge_OnlyAPlainYesSigns @story-8.78 @ac-4', () => {
   }
 });
 
+test('WaiverJudge_ListaDeCriterios: «firmo los AC 3, 5 y 7» firma los tres, y una lista incompleta no', () => {
+  const juez = require(path.join(SCRIPTS, 'lib', 'waiver-display.js')).juez([3, 5, 7]);
+  for (const t of ['firmo los AC 3, 5 y 7', 'firmo los criterios 3, 5 y 7', 'Firmo ACs 3, 5 e 7', 'firmo el AC 3, el AC 5 y el AC 7', 'firmo #3, #5 y #7']) {
+    assert.equal(juez(t), null, `«${t}» firma los tres`);
+  }
+  for (const t of ['firmo los AC 3 y 5', 'firmo los AC 3, 5 y 17', 'firmo los AC 35 y 7', 'no firmo los AC 3, 5 y 7', '¿firmo los AC 3, 5 y 7?']) {
+    assert.ok(juez(t), `«${t}» no firma los tres`);
+  }
+});
+
+test('WaiverShown_VariosCriterios: el aviso propone la firma de todos en una sola frase', () => {
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const msg = wd.bloque({ storyId: '9.94', criterios: [{ ac: 3, text: 'a' }, { ac: 5, text: 'b' }, { ac: 7, text: 'c' }] });
+  assert.ok(msg.includes('«firmo los AC 3, 5 y 7»'), msg);
+  assert.equal(wd.juez([3, 5, 7])('firmo los AC 3, 5 y 7'), null, 'la frase que propone el aviso firma');
+});
+
 test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y cómo contestar', () => {
   // Claude Code antepone su propio rótulo a cada renglón del aviso: cada renglón de más es un aviso repetido en pantalla
   const msg = mostrar(laboratorio());

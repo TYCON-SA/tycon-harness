@@ -276,3 +276,13 @@ test('Close_SaysRoundsAndOpen @story-7.37 @ac-8', () => {
   const paso8 = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   assert.match(paso8, /pipeline\.js review-rounds/);
 });
+
+test('Cap_ExtraRound_Judge: «tercera vuelta» y los ordinales autorizan; negarla o preguntarla, no', () => {
+  const juez = require(path.join(SCRIPTS, 'lib', 'review-rounds.js')).juezDeLaVuelta();
+  for (const t of ['dale, tercera vuelta', 'hacé una tercera vuelta para el SEC-C1', 'ok, 3ra vuelta', 'va la cuarta vuelta', 'dale, una vuelta más']) {
+    assert.equal(juez(t), null, `«${t}» autoriza otra vuelta`);
+  }
+  for (const t of ['no hagas una tercera vuelta', 'sin tercera vuelta, cerrala', '¿tercera vuelta?', 'cerrá sin más vueltas', 'la tercera revisión']) {
+    assert.ok(juez(t), `«${t}» no autoriza otra vuelta`);
+  }
+});
