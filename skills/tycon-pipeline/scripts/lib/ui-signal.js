@@ -332,9 +332,10 @@ function batchLines(fm) {
  * (a) una tanda `blocked` cuyas líneas nombran el frente o una extensión de pantalla, (b) ninguna otra tanda las
  * nombra, y (c) ningún criterio fuera de los `acs_pending` de las bloqueadas es de pantalla con la regla de la matriz
  * (`esDePantalla`). Sólo `blocked`, como la matriz: una `pending` puede ser la que se entrega en esta corrida.
- * Ante cualquier duda, `active` es `story`.
+ * Ante cualquier duda, `active` es `story`. Con `changed` (los archivos que cambió el commit o la corrida), un archivo
+ * de pantalla entre ellos deja la baja sin efecto: lo declarado no alcanza si el commit cambia la pantalla.
  */
-function screenScope(content, repoRoot) {
+function screenScope(content, repoRoot, { changed } = {}) {
   const story = storyTouchesUi(content, repoRoot);
   const same = { story, active: story, blocked: [], note: null };
   if (!story) return same;
@@ -370,6 +371,14 @@ function screenScope(content, repoRoot) {
   const { esDePantalla } = require('../runtime-matrix.js');
   if ([...universo].some((n) => !pendientes.has(n) && esDePantalla(textos[n], true))) return same;
   const blocked = bloqueadas.map((t) => t.name);
+  const pantallas = Array.isArray(changed) ? changed.filter((f) => UI_EXT_RE.test(String(f)) || hit(String(f))) : [];
+  if (pantallas.length) {
+    return {
+      story, active: true, blocked: [],
+      note: `ℹ️  La pantalla de la story es de la tanda bloqueada ${blocked.join(', ')}, pero el commit cambia `
+        + `${pantallas.slice(0, 3).join(', ')}${pantallas.length > 3 ? '…' : ''}: se piden su prueba de navegador y su revisión.`,
+    };
+  }
   return {
     story, active: false, blocked,
     note: `ℹ️  La pantalla de la story es de la tanda bloqueada ${blocked.join(', ')}: esta corrida no pide su prueba `
@@ -383,11 +392,27 @@ const REACT_EXT_RE = /\.(tsx|jsx)\b/i;
  * El veredicto de pantalla según la regla `screen_test` de la organización: `ui` = el de siempre; `react` = una story
  * que sólo nombra pantallas `.svelte`/`.vue` no pide E2E; `off` = ninguna lo pide. Cuando la regla saca una story que
  * toca pantalla, `note` lo dice en una línea. Con `scope: 'active'` (la prueba de navegador) la regla se aplica sobre
- * la pantalla de las tandas que no están bloqueadas (`screenScope`); sin `scope`, sobre la story entera.
+ * la pantalla de las tandas que no están bloqueadas (`screenScope`, con los archivos cambiados de `changed`); sin
+ * `scope`, sobre la story entera.
  * Devuelve `{ ui, note }`.
  */
-function applyScreenRule(content, repoRoot, rule = 'ui', { scope } = {}) {
-  const ui = scope === 'active' ? screenScope(content, repoRoot).active : storyTouchesUi(content, repoRoot);
+/**
+ * Los archivos que cambiaron en el repo desde `base` (un sha; HEAD sin él), más los nuevos sin rastrear, relativos a la
+ * raíz. null si git no responde: sin la lista, la baja se decide como antes.
+ */
+function changedFiles(repoRoot, base) {
+  const { spawnSync } = require('child_process');
+  const git = (args) => spawnSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', timeout: 10000 });
+  const out = [];
+  for (const r of [git(['diff', '--name-only', base || 'HEAD']), git(['ls-files', '--others', '--exclude-standard'])]) {
+    if (r.error || r.status !== 0) return null;
+    out.push(...String(r.stdout).split('\n').filter(Boolean));
+  }
+  return out;
+}
+
+function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed } = {}) {
+  const ui = scope === 'active' ? screenScope(content, repoRoot, { changed }).active : storyTouchesUi(content, repoRoot);
   if (!ui || rule === 'ui') return { ui, note: null };
   if (rule === 'off') {
     return { ui: false, note: 'ℹ️  La story toca pantalla, pero la organización no exige la prueba E2E de pantalla (screen_test: off).' };
@@ -400,6 +425,6 @@ function applyScreenRule(content, repoRoot, rule = 'ui', { scope } = {}) {
 }
 
 module.exports = {
-  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope,
+  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope, changedFiles,
   UI_FM_FILES_RE, UI_FM_PATHS_RE, UI_BODY_RE,
 };

@@ -306,17 +306,18 @@ function storyRequiresRuntimeEvidence(specContent) {
 // E2E Playwright REAL (no curl/unit): sin eso, una story se declara "probada en runtime" sin correr Playwright. La señal la decide lib/ui-signal.js (fuente única:
 // listas de archivos, campos estructurados y tandas; la prosa sólo de respaldo; escenarios de navegador
 // en el spec; nombres declarados en .tycon/advisors.yaml → evidence.fe_paths). Nada de productos acá.
-// La pantalla de una tanda bloqueada no se pide en este commit (`screenScope`, la misma regla que marker.js).
-function storyIsUiStory(specContent, repoRoot) {
-  return require('./lib/ui-signal.js').screenScope(specContent, repoRoot).active;
+// La pantalla de una tanda bloqueada no se pide en este commit (`screenScope`, la misma regla que marker.js), salvo
+// que el commit cambie un archivo de pantalla (`changed`, lo preparado para commitear).
+function storyIsUiStory(specContent, repoRoot, changed) {
+  return require('./lib/ui-signal.js').screenScope(specContent, repoRoot, { changed }).active;
 }
 
 // La baja de pantalla se dice al cerrar: una línea por stderr y por story, sin
 // bloquear. El texto lo arma lib/ui-signal.js.
-function avisoBajaDePantalla(specContent, repoRoot) {
+function avisoBajaDePantalla(specContent, repoRoot, changed) {
   try {
     const ui = require('./lib/ui-signal.js');
-    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot)) || ui.screenScope(specContent, repoRoot).note;
+    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot)) || ui.screenScope(specContent, repoRoot, { changed }).note;
   } catch (_e) { return null; }   // el aviso nunca rompe el cierre: es informativo y el veredicto ya se decidió
 }
 
@@ -1469,7 +1470,7 @@ function main() {
     if (!statusTransition && !pipelineTransition) continue;
 
     {
-      const baja = avisoBajaDePantalla(staged, cwd);
+      const baja = avisoBajaDePantalla(staged, cwd, diffFiles);
       if (baja) process.stderr.write(`[on-pre-commit] ${specRel}: ${baja}\n`);
     }
 
@@ -1527,7 +1528,7 @@ function main() {
     // Playwright REAL (no curl/unit). Cierra el agujero de "probada en runtime" con solo curl al
     // backend (una story de UI puede declararse probada sin correr el Playwright de sus ACs).
     // La prueba con navegador que la persona dejó pendiente, con sus dos marcas (lib/browser-test.js): no frena, se dice.
-    const deudaNavegador = storyIsUiStory(staged, cwd) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
+    const deudaNavegador = storyIsUiStory(staged, cwd, diffFiles) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
       ? require('./lib/browser-test.js').debtDeclared({ stateDir: stateDirOf(os.homedir()), storyPath: path.resolve(cwd, specRel), content: staged })
       : null;
     if (deudaNavegador && deudaNavegador.declared) {

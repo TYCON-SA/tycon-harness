@@ -2066,9 +2066,12 @@ function markerScreenRule(marker, opts) {
     const p = marker && marker.storyPath;
     if (!p || !fs.existsSync(p)) return false;
     const content = fs.readFileSync(p, 'utf8');
+    const ui = require(path.join(__dirname, 'lib', 'ui-signal.js'));
+    const repo = (marker && marker.repoPath) || process.cwd();
+    // la baja de una tanda bloqueada se cruza con lo que cambió la corrida desde su arranque
+    const changed = opts.scope === 'active' ? ui.changedFiles(repo, marker.baseSha) : undefined;
     // qué cuenta como pantalla lo dice la regla screen_test de la organización (ui de fábrica, react u off)
-    return require(path.join(__dirname, 'lib', 'ui-signal.js'))
-      .applyScreenRule(content, (marker && marker.repoPath) || process.cwd(), screenRule(), opts).ui;
+    return ui.applyScreenRule(content, repo, screenRule(), { ...opts, changed }).ui;
   } catch (e) {
     // no deja la exigencia de pantalla apagada en silencio
     console.error(`⚠️  no pude decidir si la story toca pantalla (${e && e.message ? e.message : e}): se trata como sin pantalla`);
@@ -2093,7 +2096,8 @@ function avisarBajaDePantalla(marker) {
     const linea = ui.proseDropNotice(ui.uiSignalDetail(content, marker.repoPath || process.cwd()));
     if (linea) console.error(linea);
     // la pantalla de una tanda bloqueada no se pide en esta corrida, y se dice
-    const tanda = ui.screenScope(content, marker.repoPath || process.cwd()).note;
+    const repo = marker.repoPath || process.cwd();
+    const tanda = ui.screenScope(content, repo, { changed: ui.changedFiles(repo, marker.baseSha) }).note;
     if (tanda) console.error(tanda);
     // con screen_test: off, el cierre dice que la prueba de pantalla no se exigió
     const regla = ui.applyScreenRule(content, marker.repoPath || process.cwd(), screenRule()).note;

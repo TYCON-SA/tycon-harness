@@ -942,8 +942,11 @@ function main() {
     }
     if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
     // La pantalla de una tanda bloqueada no se revisa en esta corrida: puede estar a medias en el disco, y su
-    // maqueta es de esa tanda. La guía de los criterios de backend, sí.
-    const alcance = require(path.join(__dirname, 'lib', 'ui-signal.js')).screenScope(content, matrix.repoRoot);
+    // maqueta es de esa tanda. La guía de los criterios de backend, sí. Si lo que cambió en el repo toca pantalla, se
+    // revisa igual.
+    const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
+    const alcance = uiSignal.screenScope(content, matrix.repoRoot, { changed: uiSignal.changedFiles(matrix.repoRoot) });
+    if (alcance.note && !alcance.blocked.length) console.log(`   · ${alcance.note}`);
     let pantalla = { problems: [], notes: [], screens: [] };
     const deTandaBloqueada = alcance.blocked.length > 0;
     if (!deTandaBloqueada) {
