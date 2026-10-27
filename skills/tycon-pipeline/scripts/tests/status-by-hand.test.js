@@ -726,6 +726,9 @@ test('EdicionFueraDelRepo_NoEsLaHistoria', () => {
     `S=${h.repo}; sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"`,
     `S=${h.repo}; sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"; echo "$(( $(wc -l < x) - 1 ))"`,
     `S=${h.repo}; : $(( N = 1 )); sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"`,
+    // la variable de la cuenta vale una asignación: el shell la evalúa y cambia `D`
+    `D=/tmp; e=D=0; : $((e)); sed -i '' 's/^status: .*/status: done/' "$D/../${HISTORIA}"`,
+    `S=${h.repo}; e=S=0; echo $((e)) > /dev/null; sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"`,
   ]) {
     const r = consola(h, c);
     assert.strictEqual(r.status, 2, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);

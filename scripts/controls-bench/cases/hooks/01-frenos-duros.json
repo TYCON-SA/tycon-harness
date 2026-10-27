@@ -4698,6 +4698,32 @@
           }
         },
         {
+          "id": "block-sql-c1-git-grep-open-abreviada",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git grep --open=\"sh -c 'sqlcmd -S localhost -Q \\\"DROP DATABASE acmebase_dev\\\"'\" \"DROP DATABASE\""
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "block-sql-c1-git-grep-O-pegada",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git grep -iO\"sh -c 'sqlcmd -S localhost -Q \\\"DROP DATABASE acmebase_dev\\\"'\" \"DROP DATABASE\""
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
           "id": "allow-sql-c1-git-grep-que-busca-el-texto",
           "type": "must-not-block",
           "stdin": {

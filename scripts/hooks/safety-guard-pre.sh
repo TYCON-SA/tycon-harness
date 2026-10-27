@@ -1816,8 +1816,9 @@ _sql_c1_solo_busca() {
   local c="${CMD#"${CMD%%[![:space:]]*}"}"
   [[ "$c" =~ ^(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep)[[:space:]] ]] || return 1
   [[ "$c" == *[\|\;\&\`\<\>]* || "$c" == *'$('* || "$c" == *$'\n'* || "$c" == *--pre* ]] && return 1
-  # las opciones con las que el buscador ejecuta otro programa: ahí el texto corre
-  [[ "$c" == *--pager* || "$c" == *--open-files-in-pager* || "$c" == *--hostname-bin* || "$c" =~ [[:space:]]-O ]] && return 1
+  # las opciones con las que el buscador ejecuta otro programa: ahí el texto corre. git y ag aceptan la opción larga
+  # abreviada (`--open`, `--pag`) y la corta pegada a otras (`-iO`)
+  [[ "$c" == *--pag* || "$c" == *--op* || "$c" == *--ho* || "$c" =~ [[:space:]]-[[:alnum:]]*O ]] && return 1
   return 0
 }
 _sql_c1_cliente_re='(^|[^[:alnum:]_-])(sqlcmd|osql|isql|psql|mysql|mariadb|sqlite3|bcp|invoke-sqlcmd|mssql-cli|usql|sqlpackage)([^[:alnum:]_-]|$)'

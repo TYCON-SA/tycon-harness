@@ -763,8 +763,16 @@ function expandirLlaves(w) {
 const OPCIONES_DE_TEXTO = new Set(['--title', '--description', '--body', '--comment', '--message', '-m', '--notes']);
 // los programas cuyas opciones de texto son un mensaje (en otro programa, `-m` puede ser cualquier cosa)
 const CON_MENSAJE = new Set(['git', 'gh', 'az', 'glab', 'hg', 'svn']);
-// las opciones con las que un buscador ejecuta otro programa
-const BUSCADOR_EJECUTA = /^(?:--pre|--pager|--open-files-in-pager|--hostname-bin|-O)(?:=|$)|^-O./;
+// las opciones con las que un buscador ejecuta otro programa. git y ag aceptan la opción larga abreviada (`--open`) y
+// la corta pegada a otras (`-iO`): cuenta cualquier comienzo de dos letras o más de uno de estos nombres
+const OPCIONES_QUE_EJECUTAN = ['pre', 'pager', 'open-files-in-pager', 'hostname-bin'];
+const BUSCADOR_EJECUTA = {
+  test: (w) => {
+    if (/^-[A-Za-z0-9]*O/.test(w)) return true;
+    const nombre = /^--([^=]{2,})/.exec(w);
+    return !!nombre && OPCIONES_QUE_EJECUTAN.some((o) => o.startsWith(nombre[1]) || nombre[1].startsWith(o));
+  },
+};
 const BUSCADORES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
 // la salida de un comando que la ejecuta otro: ahí lo citado puede terminar corriendo
 const A_UN_SHELL = /\|&?\s*(?:(?:\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;

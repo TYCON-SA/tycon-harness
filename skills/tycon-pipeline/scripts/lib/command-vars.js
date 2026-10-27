@@ -116,8 +116,14 @@ function fueraDeComillas(s) {
  * ¿Alguna cuenta `$(( … ))` del texto asigna (`N = 5`, `x += 1`, `i++`)? Una que sólo cuenta (`$(( $(wc -l < f) - N0 ))`)
  * no cambia ninguna variable. Lo que corre en un `$(…)` de adentro va en un subshell: no asigna afuera. Sin cierre, sí.
  * Un desplazamiento (`1 << 2`) también cuenta como «no sé»: el lector de heredocs lo confunde con una apertura.
+ * Una variable adentro (`$((e))`, `$(( N0 ))`) se evalúa como cuenta: si vale `D=0`, asigna. Sólo se la deja pasar en
+ * el `echo` o `printf` final del comando, sin redirección: lo que asigne ahí ya no cambia ningún destino.
  */
 function aritmeticaQueAsigna(s) {
+  const f = fueraDeComillas(s);
+  const corte = Math.max(f.lastIndexOf(';'), f.lastIndexOf('&'), f.lastIndexOf('|'), f.lastIndexOf('\n'));
+  const cola = f.slice(corte + 1);
+  const desdeLaCola = /^\s*(?:echo|printf(?!\s+-v))\s/.test(cola) && !/[<>]/.test(cola) ? corte + 1 : Infinity;
   for (let i = s.indexOf('$(('); i >= 0; i = s.indexOf('$((', i + 3)) {
     let prof = 0;
     let k = i + 1;
@@ -126,6 +132,7 @@ function aritmeticaQueAsigna(s) {
     let cuenta = s.slice(i + 3, k - 1);
     for (let antes = null; antes !== cuenta;) { antes = cuenta; cuenta = cuenta.replace(/\$\([^()]*\)/g, '0'); }
     if (/[()]/.test(cuenta) || /(^|[^=!<>])=(?!=)|\+\+|--|<<|>>/.test(cuenta)) return true;
+    if (/[A-Za-z_]/.test(cuenta) && i < desdeLaCola) return true;
   }
   return false;
 }
