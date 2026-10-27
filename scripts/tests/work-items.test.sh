@@ -548,6 +548,56 @@ for variante in invalido ausente; do
 done
 rm -f "$TMP/operations.json"
 
+# ── T10f. WorkItems_Mentions_HarnessMaintainers: cada pedido menciona también a quienes mantienen el arnés ──────
+# Los maintainers de `site.access` (o `site.maintainers`) se mencionan además del responsable de respaldo, una vez
+# cada persona: el respaldo que también mantiene no se repite, una persona con varios correos se resuelve por el
+# primero que Azure conoce, y quien no tiene identidad en Azure se saltea con un aviso que no dice su correo. Un dev
+# del sitio no se menciona. Gemelos: sin maintainers, sólo el respaldo; con la forma corta, el mismo resultado.
+ADMIN_ID=ad2a0000-0000-0000-0000-0000000000a2
+DOM=prueba.test   # el dominio de los correos del sitio: el lector pide un dominio con punto
+admins(){ # el mundo de T10f: la identidad de la segunda persona sólo por su segundo correo; el respaldo, con su
+  # correo del sitio, es la misma identidad que el de owners
+  mundo; config true ""
+  echo "{ \"count\": 1, \"value\": [ { \"id\": \"$ADMIN_ID\", \"providerDisplayName\": \"Admin Prueba\" } ] }" > "$TMP/fixaz/identidades-admin-azure@${DOM}.json"
+  cp "$TMP/fixaz/identidades-${BACKUP_OWNER_MAIL}.json" "$TMP/fixaz/identidades-respaldo@${DOM}.json"
+  ficha pending abc12345 browserslist high 1 "A/A"
+  snapshot $HOY "[$(p1 abc12345 browserslist A/A)]"
+}
+admins
+ops '{ "version": 1, "owners": { "default": "respaldo@prueba" }, "site": { "access": [
+  { "role": "maintainer", "emails": ["respaldo@prueba.test"] },
+  { "role": "maintainer", "emails": ["admin-casa@prueba.test", "admin-azure@prueba.test"] },
+  { "role": "maintainer", "emails": ["fueradeazure@prueba.test"] },
+  { "role": "dev", "emails": ["dev-uno@prueba.test"] } ] } }'
+rc=$(correr --operations "$TMP/operations.json")
+{ [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 1 ] && ped 'p.fallidos.length === 0' \
+  && llamada comentario 0 'b.split(`version:2.0,${process.env.BACKUP_OWNER_ID}`).length === 2 && b.split("version:2.0,ad2a0000-0000-0000-0000-0000000000a2").length === 2 && b.includes("@Admin Prueba") && !/dev-uno|fueradeazure|admin-casa/.test(b)' \
+  && ped 'p.maintainers_sin_identidad === 1' \
+  && grep -q 'mantiene el arnés y no tiene identidad en Azure' "$TMP/o.txt" \
+  && ! grep -q 'fueradeazure' "$TMP/o.txt" "$TMP/out/"*.json; } \
+  && ok "T10f WorkItems_Mentions_HarnessMaintainers: el pedido menciona al respaldo y a cada maintainer una vez; el que no está en Azure se saltea con aviso y sin su correo; el dev no" \
+  || no "T10f WorkItems_Mentions_HarnessMaintainers: rc=$rc creates=$(cuenta crear) identidad=$(cuenta identidad) · $(pie)"
+
+admins
+echo "{ \"count\": 1, \"value\": [ { \"id\": \"$ADMIN_ID\" } ] }" > "$TMP/fixaz/identidades-admin-azure@${DOM}.json"   # sin nombre visible
+ops '{ "version": 1, "owners": { "default": "respaldo@prueba" }, "site": { "maintainers": ["admin-azure@prueba.test", "respaldo@prueba.test"] } }'
+rc=$(correr --operations "$TMP/operations.json")
+{ [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 1 ] \
+  && llamada comentario 0 'b.split("data-vss-mention").length === 3 && b.includes("version:2.0,ad2a0000-0000-0000-0000-0000000000a2") && !b.includes("admin-azure")' \
+  && ped 'p.maintainers_sin_identidad === 0'; } \
+  && ok "T10f WorkItems_Mentions_HarnessMaintainers (forma corta): site.maintainers menciona igual, sin repetir al respaldo" \
+  || no "T10f WorkItems_Mentions_HarnessMaintainers (forma corta): rc=$rc · $(pie)"
+
+admins
+ops '{ "version": 1, "owners": { "default": "respaldo@prueba" } }'
+rc=$(correr --operations "$TMP/operations.json")
+{ [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 1 ] && [ "$(cuenta identidad)" -eq 1 ] \
+  && llamada comentario 0 'b.split("data-vss-mention").length === 2' \
+  && ! grep -q 'mantiene el arnés' "$TMP/o.txt"; } \
+  && ok "T10f WorkItems_Mentions_HarnessMaintainers (gemelo): sin maintainers declarados, sólo el respaldo y ningún aviso" \
+  || no "T10f WorkItems_Mentions_HarnessMaintainers (gemelo): rc=$rc · $(pie)"
+rm -f "$TMP/operations.json"
+
 # ── T54b. Pedido_MotivoDeResponsables_Fijo: el motivo no copia lo que dice el lector de operations.json ─────────
 # El motivo va a la foto de la noche y a su salida: el problema del lector trae valores del archivo (correos,
 # identidades), así que el motivo es fijo, como el de nochesParaResolver.
