@@ -39,6 +39,8 @@
 #   T24 BaseControls_ApprovalFolder_Classified — la carpeta de constancias queda clasificada en el inventario
 #   T53 BaseControls_Run_AceptaLaLineaDelegada — la línea firmada por delegación vale completa; sin la frase, la máquina
 #       o la sesión que firmó no firma nada (en la carpeta y en el jsonl)
+#   T54 BaseControls_NewFileOfLoosenedControl_EntersTheSignature — el archivo nuevo que carga un control que se afloja
+#       entra en lo que se firma, y cambiarlo después deja la firma sin valer; un control nuevo sigue sin trámite
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -885,6 +887,40 @@ firma_delegada "${ENTRIES}" "quote" > "${R}/.tycon/control-changes.jsonl"; commi
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-jsonl > "${T}/t53-jsonl.out" 2>&1; RC=$?
 is "T53 en el jsonl, la línea delegada sin quote tampoco firma" "1" "${RC}"
 has "T53 …y lo dice" "${T}/t53-jsonl.out" "es una firma por delegación sin quote"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T54 · el archivo nuevo que carga un control que se afloja entra en la firma; un control nuevo sigue sin trámite
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 Falla con: la firma armada sólo con los archivos de regla de la base (el nuevo se cambia después y la firma vale igual)
+R="${T}/t54"; make_base "${R}"; pr "${R}"
+cat > "${R}/scripts/ci/toy-check.sh" <<'SH'
+#!/usr/bin/env bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+node "$REPO_ROOT/scripts/ci/toy-lib.js"
+SH
+printf '%s\n' 'process.exit(0);' > "${R}/scripts/ci/toy-lib.js"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t54-pending.out" 2>&1
+has "T54 el archivo nuevo que carga el control aflojado queda listado" "${T}/t54-pending.out" "scripts/ci/toy-lib.js (código que corre un control): nuevo"
+ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t54-pending.out" | head -n 1)"
+case "${ENTRIES}" in *'"scripts/ci/toy-lib.js"'*) ok "T54 …y entra en lo que se firma" ;; *) no "T54 el archivo nuevo no entra en lo que se firma: ${ENTRIES}" ;; esac
+mkdir -p "${R}/.tycon"; firma "${ENTRIES}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "constancia"
+run "${R}" "${T}/t54a.out"
+is "T54 con la constancia del dueño: verde" "0" "${RC}"
+has "T54 lo dice" "${T}/t54a.out" "cambio de control aprobado"
+# cambiar el archivo nuevo después de la firma la deja sin valer
+printf '%s\n' '// otra versión' 'process.exit(0);' > "${R}/scripts/ci/toy-lib.js"; commit "${R}" "otra versión del nuevo"
+run "${R}" "${T}/t54b.out"
+is "T54 cambiar el archivo nuevo después de firmar: rojo" "1" "${RC}"
+has "T54 …por la constancia" "${T}/t54b.out" "afloja un control sin la constancia del dueño"
+# el gemelo: un control nuevo (un archivo nuevo que el control carga y que endurece) sigue entrando sin firma
+R="${T}/t54c"; make_base "${R}"; pr "${R}"
+printf '%s\n' 'node "$REPO_ROOT/scripts/ci/toy-extra.js" || exit 1' >> "${R}/scripts/ci/toy-check.sh"
+printf '%s\n' 'process.exit(0);' > "${R}/scripts/ci/toy-extra.js"
+printf 'limpio\n' > "${R}/docs/otro.txt"; commit "${R}"
+run "${R}" "${T}/t54c.out"
+is "T54 un control nuevo que endurece: verde" "0" "${RC}"
+has "T54 …sin constancia" "${T}/t54c.out" "la base y el pedido pasan: entra sin constancia"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
