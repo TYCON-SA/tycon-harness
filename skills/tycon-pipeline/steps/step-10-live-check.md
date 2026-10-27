@@ -123,7 +123,7 @@ verificablemente (no por inferencia conversacional):
 1. **Story exempta declarada en frontmatter**: el spec trae `dod_runtime_exempt` en verdadero, con su
    `dod_runtime_exempt_reason: "<razón concreta>"`. Solo aceptable cuando la story NO toca UI ni endpoints (puro
    docs, migraciones DB SOLAS, refactor interno sin surface, etc). La exención la decide la persona: agregarla a una
-   story que ya está en implementación pide «autorizo dod_runtime_exempt» en su mensaje (el hook del encabezado y el
+   story, en cualquier estado (también al crearla), pide «autorizo dod_runtime_exempt» en su mensaje (el hook del encabezado y el
    freno de seguridad frenan sin la frase).
 
 2. **Story con scope puramente backend integration tests** y los tests

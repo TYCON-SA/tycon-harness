@@ -994,6 +994,18 @@ function cmdCompleteStep(nRaw, flags) {
       appendLog('gates.log', { name: 'expected-red', status: 'accepted', story: marker.storyId, check: k, deuda: marker.cierre.deuda });
       console.error(`⚠️  ${k}: ${v} — aceptado por la deuda ${marker.cierre.deuda} (${((marker.expectedRed || {})[k] || {}).tests || []})`);
     }
+    // Un control en rojo común tampoco llega al commit sin la deuda: o se arregla, o se cierra como deuda con la frase.
+    const rojos = Object.entries(marker.checks || {}).filter(([, v]) => /^red\b/.test(String(v)));
+    if (rojos.length && !enDeuda) {
+      appendLog('gates.log', { name: 'red-check', status: 'blocked', story: marker.storyId, checks: rojos.map(([k]) => k) });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${rojos.map(([k, v]) => `${k}=${v}`).join(', ')} sin una ejecución en deuda.`);
+      console.error('  Dos salidas: arreglarlo y volver a correr el control, o cerrar la historia como deuda (marker.js close-as-debt, con la frase de la persona).');
+      process.exit(1);
+    }
+    for (const [k, v] of rojos) {
+      appendLog('gates.log', { name: 'red-check', status: 'accepted', story: marker.storyId, check: k, deuda: marker.cierre.deuda });
+      console.error(`⚠️  ${k}: ${v} — aceptado por la deuda ${marker.cierre.deuda}`);
+    }
     // la deuda llega al commit: la línea exacta que lleva el mensaje
     if (enDeuda) console.error(`📌 El mensaje de commit lleva esta línea: Deuda: ${marker.cierre.deuda} — ${marker.cierre.motivo}`);
   }
@@ -1600,7 +1612,7 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<path>"}\'');
       // Setear `marker.dodRuntimeChecked` a mano con `set` no es una exención válida: esta es la forma.
       // Queda escrito como exención (evidencePath «exenta: …») y sólo vale para una story sin UI.
-      console.error('  (b) Story exenta (sin UI ni endpoints — «Probar en vivo»): eximirla ya en implementación lo decide la');
+      console.error('  (b) Story exenta (sin UI ni endpoints — «Probar en vivo»): eximirla lo decide la');
       console.error('      persona («autorizo dod_runtime_exempt» en su mensaje), con dod_runtime_exempt_reason en el frontmatter. Después:');
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <razón>"}\'');
     }
