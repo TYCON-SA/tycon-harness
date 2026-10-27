@@ -689,7 +689,7 @@ async function bajarUnaCorrida(opts = {}) {
 }
 
 async function bajar(opts = {}) {
-  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0 };
+  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, registros_enteros: true };
   const log = (m) => { if (opts.log) opts.log(m); };
   // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo
   let espejoParaUniones = null;
@@ -719,6 +719,9 @@ async function bajar(opts = {}) {
   // `topeBytesHilos` de esas dos partes: el sitio resume la tanda, la borra del disco, y la pasada siguiente sigue
   const conResumenes = opts.resumenes === true && !sinHilos;
   const topeHilos = conResumenes && Number.isFinite(opts.topeBytesHilos) && opts.topeBytesHilos > 0 ? opts.topeBytesHilos : null;
+  // y una conversación que sola pasa `hiloTopeBytes` no se baja nunca: la corrida queda con un resumen que dice que su
+  // conversación no se leyó y por qué, con la huella de lo que hay en el buzón (no se vuelve a decidir hasta que cambie)
+  const topeHilo = conResumenes && Number.isFinite(opts.hiloTopeBytes) && opts.hiloTopeBytes > 0 ? opts.hiloTopeBytes : null;
 
   const where = DONDE;
   // Con `cuenta` en las opciones, la bajada es la del sitio de la organización — la cuenta, el contenedor, la
@@ -916,11 +919,38 @@ async function bajar(opts = {}) {
     }
     return resumidas.get(k);
   };
+  const grandes = new Map();
+  const grandeSinBajar = (k) => {
+    if (!grandes.has(k)) {
+      const partes = partesDe.get(k);
+      const hilo = partes.find(({ forma }) => /\.hilo\.jsonl\.gz$/.test(forma.archivo));
+      const es = Boolean(hilo && hilo.b.largo > topeHilo);
+      if (es) {
+        const cambio = partes.find(({ forma }) => /\.cambio\.json\.gz$/.test(forma.archivo));
+        const mb = (n) => Math.round(n / (1024 * 1024));
+        const doc = { v: 1, hilo_md5: hilo.b.md5 || null, cambio_md5: cambio ? cambio.b.md5 || null : null, cambios: {
+          estado: 'sin_hilo',
+          motivo: `la conversación pesa ${mb(hilo.b.largo)} MB y pasa el tope del sitio (${mb(topeHilo)} MB): no se bajó ni se leyó, y esta corrida queda sin su descripción ni sus cambios`,
+        } };
+        try {
+          const destino = require('../nightly/dashboard/changes.js').rutaDeResumen(path.join(dirBuzon, ...k.split('/')) + '.json');
+          fs.mkdirSync(path.dirname(destino), { recursive: true });
+          const tmp = `${destino}.tmp-${process.pid}`;
+          fs.writeFileSync(tmp, require('zlib').gzipSync(JSON.stringify(doc)));
+          fs.renameSync(tmp, destino);
+          res.hilos_grandes += 1;
+        } catch (e) { noLeidos.push(`${hilo.b.nombre} (pasa el tope y su resumen no se pudo escribir: ${e.code || e.message})`); }
+      }
+      grandes.set(k, es);
+    }
+    return grandes.get(k);
+  };
   for (const { b, forma } of elegidos) {
     const local = path.join(dirBuzon, forma.maquina, forma.archivo);
     const parte = conResumenes ? PARTE_DE_CORRIDA.exec(forma.archivo) : null;
     const base = parte ? `${forma.maquina}/${parte[1]}` : null;
     if (base && estaResumida(base)) { res.resumidos += 1; continue; }
+    if (base && topeHilo && grandeSinBajar(base)) continue;
     const previo = indice.blobs[b.nombre];
     let st = null;
     try { st = fs.statSync(local); } catch (e) { if (e.code !== 'ENOENT') { noLeidos.push(`${b.nombre} (${e.code})`); continue; } }
@@ -1028,7 +1058,7 @@ async function bajar(opts = {}) {
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
     if (fatal) return fin(...fatal);
-    if (corto) { res.sin_tiempo = pendientes.length - tomados; break; }
+    if (corto) { res.sin_tiempo = pendientes.length - tomados; if (fase < 2) res.registros_enteros = false; break; }
   }
   // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
   // siguiente sigue (sources.js → buzon.seguir)

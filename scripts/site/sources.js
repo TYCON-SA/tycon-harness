@@ -80,6 +80,10 @@ const ARCHIVO_ESTADO = 'configuracion-estado.json';
 // cuánto bajan de conversaciones (y cambios de git) una pasada del buzón, antes de resumirlas y borrarlas del disco: el
 // disco del sitio guarda a lo sumo esto más los resúmenes y los volcados
 const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
+// la conversación más grande que el sitio baja y lee. Una sesión que queda abierta días crece sin parar (se vio una de
+// 159 MB que cada máquina volvía a subir con otra huella): bajarla de nuevo cada vez llenaba la tanda entera y la pestaña
+// no terminaba nunca de leer el buzón. Por arriba de esto la corrida queda en la tabla sin su conversación, y lo dice
+const TOPE_CONVERSACION_BYTES = 50 * 1024 * 1024;
 const SOURCES_DEL_ARNES = path.join(__dirname, '..', 'nightly', 'dashboard', 'sources.json');
 
 /** La regla de operations.json: la de people.js, la única. */
@@ -538,7 +542,7 @@ function estadoDeGit(stderr) {
 
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
-  topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
+  topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, topeConversacionBytes = TOPE_CONVERSACION_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
   leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {} }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control
@@ -563,7 +567,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0, seguir: false }, copia: null, copiaHora: null };
+  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, armable: false, generacion: 0, seguir: false, pendientes: 0 }, copia: null, copiaHora: null };
   // quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
@@ -761,7 +765,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
       // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
       const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
-        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) };
+        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) };
       r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
     if (conHilos) {
@@ -774,14 +778,19 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     }
     const est = r.res.estado;
     // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
-    // la pestaña Corridas arma SÓLO con una bajada entera, la misma que fija lo informado
-    // por las máquinas; con una a medias, la foto del espejo y la de quién es quién no serían la misma
+    // la pestaña Corridas arma con una bajada entera, la misma que fija lo informado por las máquinas; con una a medias,
+    // la foto del espejo y la de quién es quién no serían la misma. Una pasada que cortó DESPUÉS de bajar todos los
+    // volcados y los registros (`registros_enteros`) también arma: lo que falta son conversaciones de corridas que ya
+    // están en la tabla, y la pestaña dice cuántos archivos quedan (`pendientes`) en vez de quedarse en la foto vieja
     st.buzon.completo = r.codigo === 0 && r.res.completo === true;
+    st.buzon.armable = st.buzon.completo || (r.codigo === 0 && r.res.registros_enteros === true);
+    st.buzon.pendientes = st.buzon.armable && !st.buzon.completo ? r.res.sin_tiempo || 0 : 0;
     // la pasada cortó por TIEMPO pero avanzó: la siguiente va enseguida y retoma donde quedó, en vez de
     // esperar el refresco de los minutos de siempre. Sin avance, no: sería un lazo.
     st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
     if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} archivo(s) pendientes; la siguiente sigue enseguida`);
-    if (r.codigo === 0 && r.res.completo === true) {
+    if (r.res.hilos_grandes) log(`buzón: ${r.res.hilos_grandes} conversación(es) pasan el tope de ${Math.round(topeConversacionBytes / (1024 * 1024))} MB: no se bajan, y sus corridas lo dicen en la tabla`);
+    if (st.buzon.armable) {
       st.buzon.generacion += 1;
       st.fallas.buzon = null;
       st.hilos = conHilos;
@@ -945,8 +954,10 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
     },
     /** ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
+    // `armable`: la pestaña puede armar (entera, o con todos los volcados y registros); `pendientes`: archivos de
+    // conversaciones que esa pasada dejó para la siguiente
     // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
-    buzonEstado: () => ({ completo: st.buzon.completo, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir }),
+    buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0 }),
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
     proximoRefrescoMs,
     /** `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
