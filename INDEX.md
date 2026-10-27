@@ -70,6 +70,7 @@ la fila aplica.
 | Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |
 | Activar/desactivar el freno de mano del harness (bloqueo de `rm -rf /`, `--no-verify`, `curl\|bash`, `DROP DATABASE`, etc.) | `guides/safety-guard.md` |
+| Qué firmas le pide el arnés al dueño, cuáles se pueden delegar a la coordinadora y cuáles son sólo del dueño (`approvals.delegated_signing`, `approvals.owner_only`) | `guides/firmas-del-arnes.md` |
 | Setup del grabador silencioso (instinct mining) + comando `/tycon-instincts` | `guides/integrations/instinct-mining.md` |
 | Bajar costo del pipeline TYCON (Haiku como executor, Opus como advisor on-demand) + flag `--cost-tier lean` + qué effort/modelo de sesión usar para una story (effort hint PIPE-C8) | `guides/harness-cost-tiering.md` |
 | Adoptar la "wiki por temas" en un repo de specs, o entender/arreglar el lint story↔wiki (`scripts/tools/lint-wiki.sh`) | `guides/wiki-topics.md` |

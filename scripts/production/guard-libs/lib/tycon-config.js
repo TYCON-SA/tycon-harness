@@ -206,9 +206,9 @@ const VOCABULARIO = Object.freeze({
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
-  // `delegated_signing` y `delegated_machines` (firmas por delegación): el freno no las usa, pero las acepta para no leer
-  // como ROTO un perfil que las trae.
-  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'aceptada', delegated_machines: 'aceptada' }),
+  // `delegated_signing`, `delegated_machines` y `owner_only` (firmas por delegación y sólo del dueño): el freno no las
+  // usa, pero las acepta para no leer como ROTO un perfil que las trae.
+  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'aceptada', delegated_machines: 'aceptada', owner_only: 'aceptada' }),
   // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
   // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
   // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.

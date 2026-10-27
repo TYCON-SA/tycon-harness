@@ -2065,6 +2065,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.139 (tanda A): el catálogo de las firmas del dueño (scripts/lib/signatures.js) y su guía (guides/firmas-del-arnes.md) dicen lo mismo, y la guía dice que lo delegado no está protegido.",
+      "raiz": "arnes",
+      "ruta": "tests/signatures-guide.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.116 (tanda A): la huella de la máquina (scripts/lib/machine-id.js, el id del sistema por ruta fija y con el ambiente vacío, guardado como resumen) y la casa de la cuenta (scripts/lib/real-home.js, de la base de usuarios y no de HOME).",
       "raiz": "arnes",
       "ruta": "tests/machine-id.test.js",

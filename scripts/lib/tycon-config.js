@@ -215,13 +215,17 @@ const VOCABULARIO = Object.freeze({
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
   // `delegated_signing`: qué firmas puede hacer esa misma sesión en nombre del dueño. Un valor solo (como siempre) o una
-  // lista, de un vocabulario cerrado con todas las firmas del arnés; `off` va solo. Sin valor, ninguna. Sólo del perfil.
+  // lista, con los ids del catálogo de firmas (`signatures.js`) y los nombres de grupo de antes; `off` va solo. Sin
+  // valor, ninguna. Sólo del perfil.
+  // `owner_only`: qué firmas son sólo del dueño, por id del catálogo. Una firma en las dos listas rompe
+  // `delegated_signing` (no delega nada). Sólo del perfil: si la máquina pudiera decirlo, el agente se sacaría firmas.
   // `delegated_machines`: en qué máquinas vale esa delegación, por la huella de `machine-id.js` (16 hex) y un nombre para
   // la persona. Sin valor, en ninguna. Sólo del perfil: si la máquina pudiera decirlo, el agente se elegiría solo.
   approvals: Object.freeze({
     relay_session: 'texto',
-    delegated_signing: 'opciones:off|refresh-after-main|adversarial-skip|critical-waiver|escape-phrases|plan-approval|browser-test|runtime-waiver|manual-test|extra-round|control-change|lost-run',
+    delegated_signing: 'firmas',
     delegated_machines: 'maquinas',
+    owner_only: 'firmas-ids',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -273,7 +277,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
@@ -302,6 +306,12 @@ function rangoDe(tipo) { const m = typeof tipo === 'string' ? /^entero:(\d+)-(\d
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
 /** Las opciones de un tipo `opciones:` (un valor solo, o una lista sin repetidos, de una lista cerrada). */
 function subsetOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opciones:') ? tipo.slice('opciones:'.length).split('|') : null; }
+/** El catálogo de firmas, o null si no se puede cargar: entonces una clave de firmas se lee rota, nunca abierta. */
+function catalogoDeFirmas() {
+  try { return require('./signatures.js'); } catch (e) { fallaDelCatalogo = String((e && (e.code || e.message)) || e); return null; }
+}
+/** Por qué no cargó el catálogo la última vez: va en el error, para que se sepa qué arreglar. */
+let fallaDelCatalogo = null;
 const HUELLA_DE_MAQUINA = /^[0-9a-f]{16}$/;
 const NOMBRE_DE_MAQUINA = /^[\p{L}\p{N} ._()-]{1,40}$/u;
 /** Iguales por valor: dos listas con lo mismo no son «distintas» por ser dos objetos. */
@@ -480,7 +490,7 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
   if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
   // una lista de opciones sigue siendo lista y un valor solo sigue solo: quien lo lee pregunta con `delegaFirma`
-  if (subsetOf(tipo)) return Array.isArray(valor) ? valor.map((v) => v.trim()) : String(valor).trim();
+  if (subsetOf(tipo) || tipo === 'firmas' || tipo === 'firmas-ids') return Array.isArray(valor) ? valor.map((v) => v.trim()) : String(valor).trim();
   if (Array.isArray(valor)) return valor.slice();
   return typeof valor === 'string' ? valor.trim() : valor;   // un booleano sigue siendo booleano
 }
@@ -813,6 +823,29 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       plano[ruta] = normalizarValor(tipo, valor, home, ruta);
     }
   }
+  // Una firma delegada y sólo del dueño a la vez: gana el dueño. La lista de delegadas se lee rota (no delega nada) y el
+  // error nombra la firma; la de sólo del dueño vale igual. Si la de sólo del dueño está rota, también: no se sabe qué
+  // se reservó el dueño. Va acá y no en cargar() para que el sitio (parse) rechace el mismo perfil que las máquinas.
+  // Sin catálogo no hace falta: las dos claves ya salieron rotas en validarTipo.
+  if (esPerfil && tiene(plano, 'approvals.delegated_signing')) {
+    const escritas = esObjeto(datos.approvals) ? datos.approvals : {};
+    const soloDueno = plano['approvals.owner_only'];
+    let motivo = null;
+    if (tiene(escritas, 'owner_only') && !Array.isArray(soloDueno)) {
+      motivo = 'approvals.owner_only está rota: hasta que se arregle no se sabe qué firmas son sólo del dueño, y no se delega ninguna';
+    } else if (Array.isArray(soloDueno)) {
+      const delegadas = plano['approvals.delegated_signing'];
+      const cat = catalogoDeFirmas();
+      const nombradas = cat ? (Array.isArray(delegadas) ? delegadas : [delegadas]).flatMap((v) => cat.expand(v)) : [];
+      const cruce = soloDueno.filter((id) => nombradas.includes(id));
+      if (!cat) motivo = `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): no se puede saber si alguna firma es sólo del dueño`;
+      else if (cruce.length) motivo = `${cruce.join(', ')} está también en approvals.owner_only: una firma no puede ser delegada y sólo del dueño a la vez — sacala de una de las dos listas`;
+    }
+    if (motivo) {
+      errores.push({ archivo, clave: `${comoVino('approvals')}.delegated_signing`, motivo });
+      delete plano['approvals.delegated_signing'];
+    }
+  }
   return { errores, plano, retiradas };
 }
 
@@ -871,6 +904,17 @@ function validarTipo(tipo, valor) {
       const ids = valor.map((m) => m.id.trim());
       return new Set(ids).size === ids.length ? null : `la lista repite una máquina: ${JSON.stringify(ids)}`;
     }
+    case 'firmas':
+    case 'firmas-ids': {
+      // las firmas del catálogo (signatures.js): `firmas` acepta además los nombres de grupo y `off`; `firmas-ids`, sólo ids
+      const cat = catalogoDeFirmas();
+      if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
+      if (tipo === 'firmas') return motivoDeOpciones(['off', ...cat.groupNames(), ...cat.ids()], valor, 'un id de firma de guides/firmas-del-arnes.md, un grupo, u «off»');
+      if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de ids de firma (guides/firmas-del-arnes.md), no ${JSON.stringify(valor)}`;
+      const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
+      if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
+      return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
+    }
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
@@ -887,9 +931,9 @@ function validarTipo(tipo, valor) {
 }
 
 /** null si `valor` es una opción de `varias`, o una lista no vacía de ellas sin repetir, con `off` sólo si va solo. */
-function motivoDeOpciones(varias, valor) {
+function motivoDeOpciones(varias, valor, descripcion) {
   const lista = Array.isArray(valor) ? valor : [valor];
-  const como = `uno de: ${varias.join(', ')}, o una lista de ellos`;
+  const como = `${descripcion || `uno de: ${varias.join(', ')}`}, o una lista de ellos`;
   if (!lista.length) return `tiene que ser ${como}; una lista vacía no dice nada (para ninguna, «off» o sin valor)`;
   const malo = lista.find((v) => typeof v !== 'string' || !varias.includes(v.trim()));
   if (malo !== undefined) return `tiene que ser ${como} — no ${JSON.stringify(malo)}`;
@@ -1378,8 +1422,8 @@ function explicar(opts = {}) {
     const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '';
     L.push(`  approvals.relay_session = ${v.approvals.relay_session ? `${v.approvals.relay_session} (${o['approvals.relay_session']}${ignorado})` : `sin valor (nadie reenvía${ignorado})`}`);
   }
-  // la firma delegada y cómo se actualiza el freno: sólo del perfil, como relay_session
-  for (const [ruta, sinValor] of [['approvals.delegated_signing', 'off'], ['guard.update', 'password']]) {
+  // las firmas delegadas, las sólo del dueño y cómo se actualiza el freno: sólo del perfil, como relay_session
+  for (const [ruta, sinValor] of [['approvals.delegated_signing', 'off'], ['approvals.owner_only', 'ninguna'], ['guard.update', 'password']]) {
     const s = c.shadowed[ruta];
     const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
     const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '; vale sólo desde el perfil del equipo';

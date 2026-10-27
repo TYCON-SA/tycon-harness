@@ -329,6 +329,12 @@ const COORDINATION_SINCE = '2026.10.25.25';
  */
 const DELEGATED_LIST_SINCE = '2026.10.24.14';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.owner_only` y los ids del catálogo de firmas en
+ * `approvals.delegated_signing` (`escape:trust-ran`): la etiqueta del merge que los trae, como DELEGATED_LIST_SINCE. Un
+ * lector anterior leería esa clave o ese id como un valor roto.
+ */
+const OWNER_ONLY_SINCE = '2026.10.27.90';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -404,9 +410,16 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   if (firma !== undefined && (!isObject(actual) || canonico(firma) !== canonico(firmaAntes))) {
     // lo que lee el lector de una sola opción (`off` o `refresh-after-main`, sueltos) pide su versión; una lista o
     // cualquier otro valor, la del lector que conoce el vocabulario entero: se decide por el valor, no por la forma
+    // un id del catálogo que no es uno de los grupos de antes, la del lector que conoce el catálogo
     const deLa888 = firma === 'off' || firma === 'refresh-after-main';
-    pedidas.push(deLa888 ? ['approvals.delegated_signing', GUARD_SINCE, 'org.capaSinGuard'] : ['approvals.delegated_signing', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
+    const grupos = ['off', ...require('./signatures.js').groupNames()];
+    const conIds = (Array.isArray(firma) ? firma : [firma]).some((v) => !grupos.includes(typeof v === 'string' ? v.trim() : v));
+    if (conIds) pedidas.push(['approvals.delegated_signing', OWNER_ONLY_SINCE, 'org.capaSinSoloDelDueno']);
+    else pedidas.push(deLa888 ? ['approvals.delegated_signing', GUARD_SINCE, 'org.capaSinGuard'] : ['approvals.delegated_signing', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
   }
+  const soloDueno = isObject(doc) && isObject(doc.approvals) ? doc.approvals.owner_only : undefined;
+  const soloDuenoAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.owner_only : undefined;
+  if (soloDueno !== undefined && (!isObject(actual) || canonico(soloDueno) !== canonico(soloDuenoAntes))) pedidas.push(['approvals.owner_only', OWNER_ONLY_SINCE, 'org.capaSinSoloDelDueno']);
   const maquinas = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_machines : undefined;
   const maquinasAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_machines : undefined;
   if (maquinas !== undefined && (!isObject(actual) || canonico(maquinas) !== canonico(maquinasAntes))) pedidas.push(['approvals.delegated_machines', DELEGATED_LIST_SINCE, 'org.capaSinListaDeFirmas']);
@@ -3677,7 +3690,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, DELEGATED_LIST_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,
