@@ -814,3 +814,15 @@ test('T18 Politica_AplicarSolo_MotivosGithubYSinPolitica @story-2.39 @ac-4 @ac-5
     assert.ok(!('aplicaSolo' in apagada), 'con la opción apagada, la respuesta es la de siempre');
   } finally { await gh.cerrar(); }
 });
+
+test('T19 Tareas_DestinoYEnlace_PorPlataforma — la organización de operations.json o la del repo de operaciones, y el enlace de la tarea', () => {
+  const az = propuesta.remoteOf('https://dev.azure.com/acme/Operaciones/_git/ops');
+  assert.deepStrictEqual(propuesta.destinoDeTareas({ org: 'otra', project: 'Producto Y' }, az), { org: 'https://dev.azure.com/otra', proyecto: 'Producto Y' });
+  assert.deepStrictEqual(propuesta.destinoDeTareas({}, az), { org: 'https://dev.azure.com/acme', proyecto: 'Operaciones' });
+  assert.deepStrictEqual(propuesta.destinoDeTareas({}, propuesta.remoteOf('https://github.com/acme/ops')), { org: null, proyecto: null });
+  assert.deepStrictEqual(propuesta.destinoDeTareas({ org: 'no es/una org' }, null), { org: null, proyecto: null });
+  const d = propuesta.destinoDeTareas({}, az);
+  assert.strictEqual(propuesta.enlaceDeTarea(d, 'Producto Y', 5003), 'https://dev.azure.com/acme/Producto%20Y/_workitems/edit/5003');
+  assert.strictEqual(propuesta.enlaceDeTarea(d, 'Producto Y', 'x'), null);
+  assert.strictEqual(propuesta.enlaceDeTarea({ org: null }, 'Producto Y', 5003), null);
+});

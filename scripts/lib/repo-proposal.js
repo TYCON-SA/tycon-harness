@@ -132,6 +132,31 @@ function remoteOf(url) {
   return { platform: null, web: null };
 }
 
+/**
+ * Dónde viven las tareas: `{ org, proyecto }`, con la organización como dirección. Sale de `work_items` de
+ * operations.json (`org` como nombre o como dirección) o, sin él, del repo de operaciones cuando está en Azure DevOps;
+ * null en lo que no se sabe.
+ */
+function destinoDeTareas(workItems, remote) {
+  const w = workItems && typeof workItems === 'object' ? workItems : {};
+  const azure = remote && remote.platform === 'azure' ? remote : null;
+  const ORGANIZACION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+  let org = typeof w.org === 'string' ? w.org.trim() : '';
+  if (org && ORGANIZACION.test(org)) org = `${URL_BASE.azure}/${org}`;
+  if (!org && azure && ORGANIZACION.test(String(azure.org || ''))) org = `${URL_BASE.azure}/${azure.org}`;
+  org = ENLACE_WEB.test(org) ? org.replace(/\/+$/, '') : null;
+  const proyecto = typeof w.project === 'string' && w.project.trim() ? w.project.trim() : azure && azure.project ? azure.project : null;
+  return { org, proyecto };
+}
+
+/** El enlace de la tarea `numero` de `proyecto` en el destino de `destinoDeTareas`, o null. */
+function enlaceDeTarea(destino, proyecto, numero) {
+  if (!destino || !destino.org || !proyecto || !/^\d{1,12}$/.test(String(numero))) return null;
+  const u = `${destino.org}/${encodeURIComponent(proyecto)}/_workitems/edit/${numero}`;
+  return ENLACE_WEB.test(u) ? u : null;
+}
+const ENLACE_WEB = /^https:\/\/[^\s"'<>\\]{1,500}$/;
+
 /** El sello de la rama: AAAAMMDD-HHMMSS, el mismo de team-config.js. */
 const stamp = (d) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 const fechaDe = (now) => { const v = typeof now === 'function' ? now() : now; return v instanceof Date ? v : new Date(v == null ? Date.now() : v); };
@@ -905,4 +930,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, archivosDelPedido, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, archivosDelPedido, destinoDeTareas, enlaceDeTarea, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

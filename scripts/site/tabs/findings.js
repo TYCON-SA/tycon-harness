@@ -52,7 +52,6 @@ const LINEA_DE_DECISION = /(vigilante|ejecuciones)\/([A-Za-z0-9][A-Za-z0-9._-]{0
 const SEVERIDADES = { critical: 0, high: 1, moderate: 2, medium: 2, low: 3 };
 const NOMBRE_SEVERIDAD = { critical: 'critica', high: 'alta', moderate: 'media', medium: 'media', low: 'baja' };
 const PAQUETE = /^[@A-Za-z0-9][@A-Za-z0-9._/-]{0,213}$/;
-const ORGANIZACION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 // el nombre de la máquina sin la huella del final (`mac-mini-b274e100` → `mac-mini`)
 const HUELLA_DE_MAQUINA = /-[0-9a-f]{8}$/;
 const PRODUCTO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
@@ -199,24 +198,12 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
   // ── la tarea de cada arreglo y de cada vulnerabilidad ──
 
-  /** Dónde viven las tareas: la organización y el proyecto de operations.json, o los del repo de operaciones en Azure. */
+  /** Dónde viven las tareas: la organización y el proyecto de operations.json, o los del repo de operaciones. */
   function destinoDeTareas() {
     const c = (typeof fuentes.config === 'function' && fuentes.config()) || {};
-    const w = isObject(c.work_items) ? c.work_items : {};
-    const rem = remote();
-    const azure = rem && rem.platform === 'azure' ? rem : null;
-    let org = typeof w.org === 'string' ? w.org.trim() : '';
-    if (org && ORGANIZACION.test(org)) org = `https://dev.azure.com/${org}`;
-    if (!org && azure && ORGANIZACION.test(String(azure.org || ''))) org = `https://dev.azure.com/${azure.org}`;
-    org = ENLACE.test(org) ? org.replace(/\/+$/, '') : null;
-    const proyecto = typeof w.project === 'string' && w.project.trim() ? w.project.trim() : azure && azure.project ? azure.project : null;
-    return { org, proyecto };
+    return RP.destinoDeTareas(isObject(c.work_items) ? c.work_items : {}, remote());
   }
-  const enlaceDeTarea = (destino, proyecto, numero) => {
-    if (!destino.org || !proyecto || !/^\d{1,12}$/.test(String(numero))) return null;
-    const u = `${destino.org}/${encodeURIComponent(proyecto)}/_workitems/edit/${numero}`;
-    return ENLACE.test(u) ? u : null;
-  };
+  const enlaceDeTarea = RP.enlaceDeTarea;
   const nombreDePersona = (x) => (typeof x === 'string' && SOURCES.NOMBRE_DE_PERSONA.test(x.trim()) ? x.trim() : null);
 
   function arregloDe(f, destino) {
