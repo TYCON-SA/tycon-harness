@@ -28,6 +28,8 @@ source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 # la política de la máquina de juguete: aplicar sin preguntar (`update --yes` sin terminal exige `auto`); lo de `ask`
 # —la pregunta, el aviso de «disponible»— lo miden otras suites y vale igual para la versión bajada
 export TYCON_UPDATE_APPLY=auto
+# el respaldo busca un Node de nvm cuando el del PATH no alcanza: que no encuentre el de la máquina que corre la suite
+export NVM_DIR="${TMPDIR:-/tmp}/harness-release-without-nvm"; unset NVM_HOME
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 FALLOS=0

@@ -29,17 +29,8 @@ const RUTAS_INSTALADAS = ['.tycon/harness/', '.tycon\\harness\\', '.claude/agent
 // Desde esta fecha (el merge a main del cambio que la agregó) marker.js deja la constancia del cierre: una ejecución
 // archivada antes no la podía tener. La prueba: T64 CierreSinConstancia.
 const CIERRE_DESDE = '2026-10-22T21:14:33Z';
-// Lo que cuenta aparte: se ve en la ficha, pero no es una falla nueva del arnés. El resumen de la mañana y el ciclo de
-// las fichas no lo suman; una categoría fuera de esta lista sigue siendo una falla.
-const APARTE = Object.freeze({
-  'RR-ESCAPE:GIT_NO_VERIFY/laboratorio': 'un commit sin los hooks de git en una carpeta de laboratorio: pruebas y ensayos, no trabajo de un producto',
-  'RR-ESCAPE:PR_A_MANO/sobra': 'el pedido armado con el escape cumplía la regla del freno: el prefijo estaba de más',
-  'RR-CIERRE:derivada/arnes-anterior': 'la ejecución se archivó antes de que el arnés dejara la constancia del cierre (8.92)',
-  'RR-ESCAPE:ADVERSARIAL_RELAUNCH/dato': 'relanzar el pase adversarial no esquiva nada: el pase corre igual',
-  'RR-ESCAPE:SIZE_FORCED_LIGHT_WITH_CODE/con-motivo': 'la ejecución liviana con código trae su motivo: es una decisión anotada',
-  'RR-ESCAPE:FULL_SUITE_RUN/laboratorio': 'la suite completa en una carpeta de laboratorio no es la de un repo',
-  'RR-NODE:en-obra': 'el guion que no cargó es una prueba del arnés en obra (el clon o un worktree), no una pieza instalada',
-});
+// Lo que cuenta aparte (una falla que no es nueva): la lista vive con los nombres de las causas, que el sitio también lee.
+const { APARTE } = require('../findings/cause-names.js');
 /**
  * La lista de carpetas de laboratorio es una sola, la de la vista de ejecuciones. Se carga al usarla, sin red: si no
  * carga, el error sale (la pasada termina con error) en vez de contar callada los laboratorios como fallas.
@@ -453,11 +444,42 @@ function comandos(lineas) {
 const esShell = (c) => c.name === 'Bash' || c.name === 'PowerShell';
 const tieneRutaDelArnes = (t) => RUTAS_DEL_ARNES.some((r) => String(t || '').includes(r));
 
-/** Suma `cuenta` por la clave de un objeto de regla. */
+/** Suma `cuenta` por la clave de un objeto de regla; con `error`, cuenta también su clase en `errores`. */
 function sumar(mapa, regla) {
-  const k = JSON.stringify([regla.regla, regla.categoria, regla.con_frase, regla.con_motivo]);
+  const { error, ...r } = regla;
+  const k = JSON.stringify([r.regla, r.categoria, r.con_frase, r.con_motivo]);
+  if (!mapa.has(k)) mapa.set(k, { ...r, cuenta: 0 });
   const prev = mapa.get(k);
-  if (prev) prev.cuenta += regla.cuenta; else mapa.set(k, { ...regla });
+  prev.cuenta += r.cuenta;
+  if (error) {
+    prev.errores = prev.errores || {};
+    prev.errores[error.clase] = (prev.errores[error.clase] || 0) + 1;
+    if (error.codigo !== undefined) prev.codigo = error.codigo;
+  }
+}
+
+// La clase de un error, de la lista cerrada de la ficha, por patrones del texto; el texto no sale de acá. El orden
+// importa: un JSON ilegible también dice «Unexpected token», y una falta de procesos también nombra una ruta.
+const CLASES_POR_TEXTO = [
+  ['sin-procesos', /resource temporarily unavailable|\bEAGAIN\b/i],
+  ['json-ilegible', /in JSON at position|is not valid JSON|Unexpected end of JSON|JSON\.parse/i],
+  ['permiso', /\bEACCES\b|\bEPERM\b|permission denied|operation not permitted/i],
+  ['red', /\bECONNREFUSED\b|\bENOTFOUND\b|\bECONNRESET\b|\bETIMEDOUT\b|\bEAI_AGAIN\b|getaddrinfo|could not resolve host/i],
+  ['tiempo', /\btimed out\b|\btimeout (?:of|after|exceeded)\b|\bexceeded (?:the |its )?time ?limit\b/i],
+];
+// sin Node en la máquina, el aviso no encontró el programa que necesitaba
+const CLASES_POR_CATEGORIA = { 'node-viejo': 'node-viejo', tiempo: 'tiempo', 'node-ausente': 'archivo-no-encontrado' };
+const POR_ARCHIVO = /\bENOENT\b|Cannot find module|MODULE_NOT_FOUND|no such file or directory|command not found|is not recognized/i;
+/** `{ clase, codigo? }` de un error: su texto, su código de salida, el tipo del adjunto y la categoría que ya trae. */
+function claseDeError({ texto, exitCode, tipo, categoria } = {}) {
+  if (tipo === 'hook_cancelled') return { clase: 'tiempo' };
+  const t = typeof texto === 'string' ? texto : '';
+  const porTexto = CLASES_POR_TEXTO.find(([, re]) => re.test(t));
+  if (porTexto) return { clase: porTexto[0] };
+  if (Object.prototype.hasOwnProperty.call(CLASES_POR_CATEGORIA, categoria)) return { clase: CLASES_POR_CATEGORIA[categoria] };
+  if (POR_ARCHIVO.test(t)) return { clase: 'archivo-no-encontrado' };
+  if (Number.isInteger(exitCode) && exitCode > 0) return { clase: 'salida', codigo: exitCode };
+  return { clase: 'otro' };
 }
 
 // Las categorías que vienen de afuera se cierran acá, al nacer: la ficha y el resumen de la mañana no llevan texto de
@@ -527,7 +549,10 @@ function autorizaciones(frenos, volcado) {
 function reglasDelHilo(lineas, volcado, out, aut = null) {
   // un hook que se pasó de tiempo (`hook_cancelled`, categoría `tiempo`) también es un aviso que no anduvo
   const hooks = (lineas || []).filter((o) => o && o.type === 'attachment' && o.attachment && (o.attachment.type === 'hook_non_blocking_error' || o.attachment.type === 'hook_cancelled'));
-  for (const h of hooks) sumar(out, { regla: 'RR-HOOK', categoria: categoriaDeHook(h.attachment), cuenta: 1 });
+  for (const h of hooks) {
+    const a = h.attachment;
+    sumar(out, { regla: 'RR-HOOK', categoria: categoriaDeHook(a), cuenta: 1, error: claseDeError({ texto: a.texto, exitCode: a.exitCode, tipo: a.type, categoria: a.categoria }) });
+  }
   const cs = comandos(lineas);
   const cierre = volcado && volcado.marker && volcado.marker.cierre && typeof volcado.marker.cierre === 'object' ? volcado.marker.cierre : null;
   const partes = partesPorBandera();
@@ -544,7 +569,7 @@ function reglasDelHilo(lineas, volcado, out, aut = null) {
       const cat = errorCat(c.resultado.texto);
       // un guion del arnés que no es del instalado (el clon, un worktree) es una prueba en obra
       const enObra = guiones.every((g) => !RUTAS_INSTALADAS.some((r) => g.includes(r)));
-      if (cat) sumar(out, { regla: 'RR-NODE', categoria: enObra ? 'en-obra' : cat, cuenta: 1 });
+      if (cat) sumar(out, { regla: 'RR-NODE', categoria: enObra ? 'en-obra' : cat, cuenta: 1, error: claseDeError({ texto: c.resultado.texto, categoria: cat }) });
     }
     const marker = argsDe(c.command, 'marker.js');
     let apagos = marker.filter((r) => r[0] === 'set-autonomous' && !PRENDE_AUTONOMO.includes(String(r[1]).toLowerCase())).length;
@@ -744,4 +769,4 @@ function revisar({ volcado, lineasHilo, registros }) {
 }
 
 module.exports = { CODIGOS, ESCAPES, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,
-  banderasDePartes, segmentos, argsDe, corre, comandos, revisar };
+  banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError };

@@ -255,6 +255,16 @@ if extract_step 'Traer los repos de los productos' "$PSNIP" && [ -s "$PSNIP" ]; 
   if [ "$RC" = 0 ] && grep -q '##vso\[task.logissue type=warning\]' "$OUT" && ! grep '##vso' "$OUT" | grep 'RepoX' >/dev/null && grep -q 'RepoX' "$OUT"; then
     ok "T11e un repo que no se clona avisa (con texto fijo; el nombre en el registro) y el paso sigue"
   else bad "T11e esperaba aviso de texto fijo y código 0 (código $RC)"; show; fi
+  # la lista viaja en el pedido y el clon corre con el token: una ruta con `..` o absoluta, o un repo con más tramos, no
+  # se clona, ni un tramo que empieza con punto ni un punto o una barra codificados; avisa con texto fijo (sin repetir la
+  # entrada) y las sanas se clonan igual
+  printf '%s\n' '{"repos":[{"ruta":"Lab/RepoA","ado":"LabProj/RepoA"},{"ruta":"../fuera","ado":"LabProj/RepoB"},{"ruta":"/tmp/abs-lab","ado":"LabProj/RepoB"},{"ruta":"Lab/RepoC","ado":"LabProj/x/../RepoB"},{"ruta":"Lab/RepoD","ado":"-c/RepoB"},{"ruta":"Lab/.git","ado":"LabProj/RepoB"},{"ruta":"Lab/RepoE","ado":"LabProj%2e%2E/RepoB"},{"ruta":"Lab/RepoF","ado":"LabProj/x%2FRepoB"}]}' > "$LAB/reg-shape.json"
+  HP6="$LAB/home-p6"; mkdir -p "$HP6"; run_products "$HP6" "$LAB/reg-shape.json"; RC=$?
+  if [ "$RC" = 0 ] && [ -d "$HP6/SourceCode/Lab/RepoA/.git" ] && [ ! -e "$HP6/fuera" ] && [ ! -e "$HP6/SourceCode/Lab/RepoC" ] && [ ! -e "$HP6/SourceCode/Lab/RepoD" ] \
+     && [ ! -e "$HP6/SourceCode/Lab/.git" ] && [ ! -e "$HP6/SourceCode/Lab/RepoE" ] && [ ! -e "$HP6/SourceCode/Lab/RepoF" ] \
+     && [ "$(grep -c 'fuera de forma' "$OUT")" = 7 ] && ! grep '##vso' "$OUT" | grep 'fuera"\|\.\./\|abs-lab\|-c/\|\.git\|%2' >/dev/null; then
+    ok "T11f una entrada con la ruta o el repo fuera de forma no se clona (avisa con texto fijo) y las sanas sí"
+  else bad "T11f esperaba clonar sólo la entrada sana y avisar siete veces (código $RC)"; show; fi
 else
   bad "T11 no pude sacar el paso «Traer los repos de los productos»: $(cat "$LAB/extract.err")"
 fi

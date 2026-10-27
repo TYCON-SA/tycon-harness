@@ -774,6 +774,44 @@ if quiero T67; then
   si "…y lo dice" contiene "$(SALIDA)" 'operations.json no se pudo leer'
 fi
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# T68 — con el sitio, la ficha que ya está en promoted/ (se decidió arreglar ahí) cierra el pull request viejo de la noche
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+if quiero T68; then
+  caso "T68 OpenPr_ConSitio_CierraElPedidoViejoDeLoDecidido" "@mantenimiento"
+  montar
+  ficha promoted sd01 2026-10-12 "pr: 61" "pr_repo: $OPERATIONS_REPO"
+  armar_todo '{ pulls: { [OPERATIONS_REPO]: [P(61, "dependencias/sd01", "open")] } }'
+  git -C "$T/semilla" push -q origin "main:refs/heads/dependencias/sd01"
+  printf '{"site":{"url":"https://sitio.acme.example"}}\n' > "$T/job/operations.json"
+  correr
+  si "con site.url la noche sale 0" [ "$RC" = 0 ]
+  si "decidida en el sitio: cierra su pull request viejo" [ "$(nllam 'e.method==="PATCH"&&/\/pulls\/61$/.test(e.ruta)&&e.cuerpo.state==="closed"')" = 1 ]
+  si "…con un comentario que dice que se decidió en el sitio" [ "$(nllam 'e.method==="POST"&&/\/issues\/61\/comments$/.test(e.ruta)&&/se decidió en el sitio/.test(e.cuerpo.body)')" = 1 ]
+  si "…y anota pr_cerrado:" contiene "$(enmain promoted sd01)" "^pr_cerrado: $HOY\$"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# T69 — la ficha decidida en el sitio cierra su pedido viejo con el día de la decisión, y no queda como rechazo
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+if quiero T69; then
+  caso "T69 OpenPr_DecididaEnElSitio_CierraConLaFecha" "@mantenimiento"
+  montar
+  ficha promoted sd02 2026-10-12 "pr: 62" "pr_repo: $OPERATIONS_REPO" "decidido_en_sitio: 2026-10-24"
+  ficha archived sd03 2026-10-12 "pr: 63" "pr_repo: $OPERATIONS_REPO" "decidido_en_sitio: 2026-10-25"
+  ficha promoted sd04 2026-10-12 "pr: 64" "pr_repo: $OPERATIONS_REPO" "decidido_en_sitio: 2026-10-24" "resuelto: 2026-10-26"
+  armar_todo '{ pulls: { [OPERATIONS_REPO]: [P(62, "dependencias/sd02", "open"), P(63, "dependencias/sd03", "open"), P(64, "dependencias/sd04", "open")] } }'
+  printf '{"site":{"url":"https://sitio.acme.example"}}\n' > "$T/job/operations.json"
+  correr
+  si "la noche sale 0" [ "$RC" = 0 ]
+  si "arreglar en el sitio: el comentario dice el día" [ "$(nllam 'e.method==="POST"&&/\/issues\/62\/comments$/.test(e.ruta)&&/se decidió en el sitio el 2026-10-24/.test(e.cuerpo.body)')" = 1 ]
+  si "archivar en el sitio: también, y no dice «se archivó»" [ "$(nllam 'e.method==="POST"&&/\/issues\/63\/comments$/.test(e.ruta)&&/se decidió en el sitio el 2026-10-25/.test(e.cuerpo.body)&&!/se archivó/.test(e.cuerpo.body)')" = 1 ]
+  si "decidida y después resuelta: dice que se resolvió" [ "$(nllam 'e.method==="POST"&&/\/issues\/64\/comments$/.test(e.ruta)&&/se resolvió/.test(e.cuerpo.body)')" = 1 ]
+  si "…los dos quedan cerrados" [ "$(val 'st.pulls[OPERATIONS_REPO].filter(p=>[62,63].includes(p.number)&&p.state==="closed").length')" = 2 ]
+  si "…y la de arreglar no queda como rechazada" no_contiene "$(enmain promoted sd02)" '^rechazado:'
+  si "…ni la de archivar" no_contiene "$(enmain archived sd03)" '^rechazado:'
+fi
+
 echo
 if [ "$FALLOS" = 0 ]; then echo "open-pr-per-finding-github: todo en verde"; exit 0; fi
 echo "open-pr-per-finding-github: $FALLOS verificación(es) en rojo"; exit 1

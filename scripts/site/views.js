@@ -54,6 +54,7 @@ const medida = (f) => Boolean(f && f.estado === 'medido');
 const enlace = (u) => (typeof u === 'string' && /^https?:\/\//.test(u) ? u : null);
 
 function filaMedida(clave, titulo, valor, extra = {}) { return { clave, titulo, estado: 'medido', valor, motivo: null, ...extra }; }
+const SOLO_SEGUIMIENTO = new Set(['dependencias_nuevas', 'dependencias_rechazadas_sin_deuda']);
 function filaNoMedida(clave, titulo, motivo) { return { clave, titulo, estado: 'no_medido', valor: null, motivo }; }
 
 /** Cuántos de `hoy` no estaban en `ayer`. */
@@ -71,7 +72,8 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
     const titulo = T(`inicio.${clave}`);
     if (!rub) filas.push(filaNoMedida(clave, titulo, cf(dep)));
     else if (!Number.isFinite(rub[k])) filas.push(filaNoMedida(clave, titulo, sinDato));
-    else filas.push(filaMedida(clave, titulo, rub[k], { fecha: dep.fecha }));
+    // las vulnerabilidades no se deciden en el sitio: cada equipo las sigue en su tarea
+    else filas.push(filaMedida(clave, titulo, rub[k], { fecha: dep.fecha, ...(SOLO_SEGUIMIENTO.has(clave) ? { seguimiento: true } : {}) }));
   }
   const vig = m.vigilante;
   for (const k of ['pendientes', 'aceptadas_sin_story']) {
@@ -267,7 +269,7 @@ function tile(f, idioma) {
   const T = (k, v) => t(idioma, k, v);
   if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div></div>`;
   const est = f.valor > 0 ? 'warn' : 'ok';
-  return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? 'vista.decidir' : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${f.fecha ? `<div class="t-den">${esc(T('vista.fuenteDel', { fecha: f.fecha }))}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T('vista.dondeSeDecide'))}</a></div>` : ''}</div>`;
+  return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${f.fecha ? `<div class="t-den">${esc(T('vista.fuenteDel', { fecha: f.fecha }))}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T('vista.dondeSeDecide'))}</a></div>` : ''}</div>`;
 }
 
 function banda(texto) { return `<div class="banda">${esc(texto)}</div>`; }

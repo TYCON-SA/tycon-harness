@@ -1104,6 +1104,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/startup-batch.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/tokens-digest-other-tools.test.js",
       "requiere": []
     },
@@ -3493,6 +3498,12 @@
       "requiere": [
         "agent-skills"
       ]
+    },
+    {
+      "__nota": "la suite rápida del arranque corre con tope, una a la vez por máquina y sólo si cambió lo que prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/quick-suite-run.test.js",
+      "requiere": []
     },
     {
       "__nota": "story 8.18 (2026-10-05): salió de config-lint.test.js (suite del arranque); mira las configuraciones reales de la máquina.",

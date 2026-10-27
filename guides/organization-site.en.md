@@ -198,6 +198,33 @@ view, with the date it is from, while the mailbox is downloaded in full again; a
 its own. Each run's changes come back when the new view finishes building. The saved view lives on the site's disk
 (`SITE_DATA_DIR`): **with no disk**, after a restart the tab waits for the first full download.
 
+### Maintenance (Mantenimiento)
+
+Only for **maintainers**: what the night found, ordered by who has the ball. Next to the name, in the menu, goes how
+many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has three
+blocks:
+
+- **Your decision**: what the production watcher and the review of the runs found. Production first, because those are
+  real customers. Within each group, first what the analysis recommends fixing, then what it recommends archiving, and
+  last what has no analysis.
+- **Waiting for approval**: what you already sent and someone else has to approve, grouped by pull request, with its
+  link. Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
+  stay to decide, but nothing is sent until it answers: that way no duplicate pull request is opened.
+- **In progress** (closed at first): what was already decided and someone is doing, with its work item number and who
+  it is assigned to, and the package vulnerabilities. Vulnerabilities are not decided here: each team has its work item
+  and, if it cannot update the package, declares the debt in its repo, with a deadline.
+
+Each card says **what happened** with the finding's data, for example "It happened 4 times, from 21/10 to 24/10". With
+an analysis, it says **why** it happens, what it **recommends** and what fixing it would do, and whether the night's model
+or a person wrote it (the analysis is in Spanish). Without one, it says why, and the buttons stay behind "Decide without
+analysis".
+
+**Archive** means "this is normal, nothing to touch". **Fix** means the night creates a work item to correct it. You
+mark an option on each card (or "Follow the recommendations" for all the analyzed ones) and then **Send for approval**:
+it opens a single pull request to the operations repo with all your choices. Nothing changes until someone else
+approves it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
+explanation.
+
 ### Projects (Proyectos)
 
 **What it answers:** how is each product doing?
@@ -437,7 +464,7 @@ The sections, in the order of the screen:
   someone approves it; if the repository does not allow auto-merge either, the request stays. Before proposing, next to
   the button, the section says what will
   happen. Who did it stays written: the request's description names who asked for it, and the site's log records
-  `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
+  `cambio aplicado: <file>, pedido <link>`. What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
   `operations.json`, in the operations repo.
 - **"How the site is updated"** (*Cómo se actualiza el sitio*): whether the site brings itself up to date with the new
@@ -702,12 +729,12 @@ reported with its last run. It is view only: the machines update themselves on s
 
 The site decides who you are by your email, and only with the "Who gets into the site" list:
 
-| Role | Home | Runs | Projects | Harness | How it works | Configuration |
-|---|---|---|---|---|---|---|
-| **Maintainer** | "What to decide today", for the whole organization | all runs | all products | yes | yes, and proposes changes to its reviewers | yes, and proposes changes |
-| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | the products they work on | no | no | no |
-| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no | no |
-| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no | no |
+| Role | Home | Runs | Maintenance | Projects | Harness | How it works | Configuration |
+|---|---|---|---|---|---|---|---|
+| **Maintainer** | "What to decide today", for the whole organization | all runs | yes, and decides each one | all products | yes | yes, and proposes changes to its reviewers | yes, and proposes changes |
+| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | no | the products they work on | no | no | no |
+| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | no | the products they work on | no | no | no |
+| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no | no | no |
 
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
@@ -884,6 +911,12 @@ a few seconds to wake it. The configuration file does not accept a mailbox, a re
 does not run and says which. Running the `demo` phase again on an instance that already exists updates it (it does not create
 another); if a step fails, it stops, says which one and what was created, and running it again finishes the job. It never
 touches an app that is not a demo instance.
+
+**Up to date.** The site updater also keeps it up to date with `stable`: `update-site.js` with `--demo` and the demo's
+app and group. Since the demo is open, it does not run the check without a session on it: it asks for `/livez` with
+`demo: true` and for the home page with the "Example data" strip. If that fails, it goes back to the previous digest, as
+with the real site. The nightly runs it in its own step, with the same credential; that credential needs its role on the
+demo's app too.
 
 **Deleting it.** Everything of the demo is in its resource group: `az group delete --name <group> --subscription
 <subscription>` deletes it all (it asks for confirmation). Do it only if that group is the demo's own. Without deleting it,
@@ -1141,7 +1174,7 @@ is the push rule by path in the GitHub README: the site validates and downloads 
 opens the pull request by hand.
 
 **What you give up.** Nobody reviews those changes before they go in. A record remains: each change from the site is a
-request with who asked for it, and the site's log records `cambio aplicado: <file> por <email>, pedido <link>`. Whoever
+request with who asked for it, and the site's log records `cambio aplicado: <file>, pedido <link>`. Whoever
 can write to the operations repo can make themselves a site maintainer or change a night process without anyone else
 looking: what you guard is who has write access to that repo.
 
@@ -1238,7 +1271,8 @@ creates the request count, asks for a single reviewer, does not prohibit the mos
 no reviewers. If it asks for more, the request stays and the section says what is missing. With no policy at all on `main`,
 "Propose" stays off even with the option on. To turn it on, first the new image, then the key: an older image does not
 know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
-leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
+leaves its line in the site's log with the link to its request; the email of whoever asked for it does not go to the
+log: the request says it.
 
 ### How it keeps itself up to date
 

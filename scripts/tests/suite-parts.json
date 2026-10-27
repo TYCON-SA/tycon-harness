@@ -500,7 +500,8 @@
         "T35 Adv_RedactKeepsLongPathSegments — una ruta o una rama larga no se tapa; un permiso suelto sí": 0.0,
         "T37 ErrorBranches_SubfolderLockLaunchAndMore — subcarpeta, candado imposible, lanzamiento que tira, y «y N más»": 1.3,
         "T38 Iter2_RedactEnvInvisibleAndRelay — más formas de permiso, más variables de git, invisibles y el relevo": 0.0,
-        "T36 Adv_UntrackedLeadingSpaceName — un nombre con espacio adelante choca igual, aunque sea el primero": 1.0
+        "T36 Adv_UntrackedLeadingSpaceName — un nombre con espacio adelante choca igual, aunque sea el primero": 1.0,
+        "T39 Redact_AtInPasswordInvisiblesAndBareKeys — nothing of the password or the key is left": 0.0
       }
     }
   }

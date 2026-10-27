@@ -355,8 +355,13 @@ cerrar_pr(){ # <pr> <id> <ficha>
   local J; J=$(mktemp) || return 1
   printf '{"state":"closed"}' > "$J"
   if ! gh_cmd api --method PATCH "repos/$REPO/pulls/$1" --input "$J" >/dev/null 2>"$ERR"; then rm -f "$J"; return 1; fi
+  local POR_QUE="se archivó" EL
+  # la decidida en el sitio dice el día: el cierre es la decisión de una persona, no un rechazo del pull request
+  EL=$(escalar "$3" decidido_en_sitio)
+  case "$EL" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) POR_QUE="se decidió en el sitio el $EL" ;; esac
+  case "$3" in */promoted/*) [ -n "$EL" ] || POR_QUE="se decidió en el sitio"; grep -q '^resuelto:' "$3" && POR_QUE="se resolvió" ;; esac
   if ! node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ body: "La ficha "+process.argv[2]+" ya salió de la cola ("+process.argv[3]+"): este pull request no tiene nada que decidir, y la noche lo cerró.\n\n<!-- tycon-nocturno -->" }))' \
-         "$J" "$2" "$(case "$3" in */promoted/*) echo "se resolvió" ;; *) echo "se archivó" ;; esac)" 2>"$ERR" \
+         "$J" "$2" "$POR_QUE" 2>"$ERR" \
      || ! gh_cmd api --method POST "repos/$REPO/issues/$1/comments" --input "$J" >/dev/null 2>"$ERR"; then
     aviso "$2: el #$1 quedó cerrado, pero no se pudo dejar el comentario que dice por qué — $(cat "$ERR")"
   fi
@@ -753,9 +758,11 @@ for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
   grep -q '^pr_cerrado:' "$F" && continue
   ficha_valida "$F" || continue
   # En `promoted/` sólo se cierra la que YA se resolvió: una aceptada que sigue viva necesita su
-  # pull request abierto, que es donde se decidió arreglarla.
+  # pull request abierto, que es donde se decidió arreglarla. Con el sitio, no: la decisión se tomó ahí y el pull
+  # request viejo de la noche ya no tiene nada que decidir.
   case "$F" in
-    */promoted/*) grep -q '^resuelto:' "$F" || continue ;;
+    */promoted/*) grep -q '^resuelto:' "$F" \
+      || { [ -n "$SITIO_DECIDE" ] && grep -qE '^veredicto:[ \t]*"?util"?[ \t]*$' "$F"; } || continue ;;
   esac
   PR=$(escalar "$F" pr)
   if [ -z "$PR" ]; then echo "$ID: cerrada sin pr: — no sé qué PR cerrar"; continue; fi

@@ -2,7 +2,8 @@
 # El sitio al día con stable — MODELO para cualquier organización en Azure DevOps
 #
 # Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones de la organización y
-# se cambian DOS líneas: el `name:` del recurso `harness` y la conexión de servicio (`azureSubscription`), marcadas abajo.
+# se cambian las líneas marcadas abajo: el `name:` del recurso `harness` y la conexión de servicio (`azureSubscription`,
+# una vez por sitio).
 #
 # Cada noche, una hora antes del nocturno de dependencias (que prueba el sitio sin sesión y arma el resumen de la mañana):
 # resuelve la etiqueta `stable` de la imagen del sitio en el registro, la compara con lo que corre y, si
@@ -20,6 +21,8 @@
 #   SITE_PLATFORM        — azure (por defecto) o render
 #   SITE_IMAGE_NAME      — la imagen del sitio en el registro, sin etiqueta (ghcr.io/<organización>/<repo>)
 #   SITE_RESOURCE_GROUP, SITE_APP, SITE_URL — dónde corre el sitio en Azure (con render, no hacen falta)
+#   SITE_DEMO_RESOURCE_GROUP, SITE_DEMO_APP, SITE_DEMO_URL — optativas: el sitio demo en Azure, que se pone al día igual
+#                        (sin SITE_DEMO_APP, ese paso no corre)
 #   SITE_RENDER_DEPLOY_HOOK (secreta) — sólo con render
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -60,23 +63,21 @@ jobs:
       - template: pipelines/operations/templates/fetch-harness.yml@harness
       - template: pipelines/operations/templates/ops-data.yml@harness
 
-      - task: AzureCLI@2
-        displayName: 'El sitio en Azure: comparar, actualizar y probar'
-        condition: and(succeeded(), eq(variables['SITE_PLATFORM'], 'azure'))
-        inputs:
+      - template: pipelines/operations/templates/site-update-azure.yml@harness
+        parameters:
           azureSubscription: 'site-update'        # ← CAMBIAR: la conexión de servicio propia de este nocturno
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -uo pipefail
-            cd "$(Build.SourcesDirectory)"
-            SECO=$([ "${{ parameters.efectos }}" = "True" ] || echo --dry-run)
-            node scripts/site/deploy/update-site.js --platform "$(SITE_PLATFORM)" --image "$(SITE_IMAGE_NAME)" \
-              --resource-group "$(SITE_RESOURCE_GROUP)" --app "$(SITE_APP)" --site-url "$(SITE_URL)" \
-              --operations-json operations.json --state-dir .dashboard/site-update $SECO
-            rc=$?
-            [ $rc -eq 0 ] || echo "##vso[task.logissue type=warning]el sitio no se actualizó (ver el resultado en .dashboard/site-update)"
-            exit 0
+          efectos: ${{ parameters.efectos }}
+
+      # el sitio demo, si la definición trae SITE_DEMO_APP: la misma stable y la misma credencial (con su rol también
+      # sobre la aplicación del demo), su propia prueba y su propia carpeta de resultado
+      - template: pipelines/operations/templates/site-update-azure.yml@harness
+        parameters:
+          azureSubscription: 'site-update'        # ← CAMBIAR: la misma conexión de arriba
+          efectos: ${{ parameters.efectos }}
+          prefix: SITE_DEMO
+          stateDir: .dashboard/site-update/demo
+          demo: true
+          displayName: 'El sitio demo en Azure: comparar, actualizar y probar'
 
       - script: |
           set -uo pipefail

@@ -1095,6 +1095,73 @@ else
   bad "T28 · 4.10 otros adjuntos afuera" "esperaba 1 mensaje y ningún relleno; salió mensajes=$m28"
 fi
 
+# ── T28b T_TiposNuevosDeClaudeCodeAfuera ────────────────────────────────────────────────────────────────
+# Claude Code escribe cinco tipos de línea que no son mensajes del hilo: la copia de cada pedido a la API
+# (`api-request`, `api-request-blob` con el mensaje entero, `api-request-shape`) y dos de estado (`mode`, `cost-state`).
+# Medido en una conversación real: 3887 de 14 727 líneas y 10 MB; con ellos el hilo guarda cada comando tres veces.
+# 🔴 Falla con: sacar cualquiera de los cinco de TIPOS_DESCARTADOS (la lista va escrita acá, no leída del programa).
+S=sesion-t28b
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
+relleno = "D" * 30000
+lineas = [
+    {"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}},
+    {"type": "api-request-blob", "hash": "h1", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "id": "toolu_b1", "name": "Bash", "input": {"command": "echo " + relleno}}]}},
+    {"type": "api-request", "timestamp": "2026-09-01T10:00:01.000Z", "params": {"x": relleno}},
+    {"type": "api-request-shape", "timestamp": "2026-09-01T10:00:02.000Z", "shape": {"x": relleno}},
+    {"type": "mode", "timestamp": "2026-09-01T10:00:03.000Z", "mode": relleno},
+    {"type": "cost-state", "timestamp": "2026-09-01T10:00:04.000Z", "state": relleno},
+]
+PY
+volcado "$HIST/t28b.json" "$S" '{}' '[]'
+correr --run "$HIST/t28b.json" --projects-dir "$PROJ" --json
+m28b="$(leer "d['hilo']['mensajes']")"
+if [ "$m28b" = "1" ] && ! gzip -dc "$HIST/t28b.hilo.jsonl.gz" | grep 'DDDDDDDDDD' >/dev/null; then
+  ok "T28b · los cinco tipos nuevos de Claude Code quedan afuera del hilo"
+else
+  bad "T28b · tipos nuevos afuera" "esperaba 1 mensaje y ningún relleno; salió mensajes=$m28b"
+fi
+
+# ── T38 T_HiloGrandeUnaVezPorDia ─────────────────────────────────────────────────────────────────────────
+# 🔴 Una conversación viva y grande crece entre un arranque y el siguiente: guardarla de nuevo en cada arranque reescribía
+#    150 MB comprimidos, la subida los volvía a subir y la bajada los volvía a bajar. Una transcripción que pasa el tope
+#    (TYCON_THREAD_DAILY_MAX_SIZE) se guarda como mucho una vez por día aunque haya crecido.
+BARR3="$TMP/barrido-grande"; mkdir -p "$BARR3"
+S=sesion-t29
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
+lineas = [{"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}}]
+PY2
+volcado "$BARR3/t29.json" "$S" '{}' '[]'
+OUT="$(TYCON_THREAD_DAILY_MAX_SIZE=1 node "$DIGEST" --pending --history-dir "$BARR3" --projects-dir "$PROJ" --json 2>&1)"
+primera="$(leer "'t29' in d['procesadas']")"
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
+lineas = [{"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}},
+          {"type": "user", "timestamp": "2026-09-01T11:00:00.000Z", "message": {"role": "user", "content": "creció"}}]
+PY2
+OUT="$(TYCON_THREAD_DAILY_MAX_SIZE=1 node "$DIGEST" --pending --history-dir "$BARR3" --projects-dir "$PROJ" --json 2>&1)"
+segunda="$(leer "'t29' in d['procesadas']")"
+if [ "$primera" = "true" ] && [ "$segunda" = "false" ]; then
+  ok "T38 · un hilo grande que creció no se vuelve a guardar el mismo día"
+else
+  bad "T38 · hilo grande, una vez por día" "primera=$primera segunda=$segunda (esperaba true y false) · $OUT"
+fi
+
+# ── T39 T_HiloChicoQueCrecioSeGuardaIgual ─────────────────────────────────────────────────────────────────
+# El tope diario es sólo para lo grande: una conversación chica que creció se guarda en el arranque siguiente, como
+# siempre (el caso del cierre truncado, la razón de ser del barrido).
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
+lineas = [{"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}},
+          {"type": "user", "timestamp": "2026-09-01T11:00:00.000Z", "message": {"role": "user", "content": "creció"}},
+          {"type": "user", "timestamp": "2026-09-01T12:00:00.000Z", "message": {"role": "user", "content": "otra vez"}}]
+PY2
+OUT="$(node "$DIGEST" --pending --history-dir "$BARR3" --projects-dir "$PROJ" --json 2>&1)"
+chica="$(leer "'t29' in d['procesadas']")"
+if [ "$chica" = "true" ]; then
+  ok "T39 · debajo del tope, un hilo que creció se guarda en el arranque siguiente"
+else
+  bad "T39 · el tope no frena lo chico" "esperaba true; salió $chica · $OUT"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 if [ "$fallos" -eq 0 ]; then echo "✅ tokens-digest: todo verde"; exit 0; fi
 echo "❌ tokens-digest: $fallos rojos"; exit 1

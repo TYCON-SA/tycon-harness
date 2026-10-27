@@ -1411,6 +1411,8 @@ function cmdInstall(ctx, H) {
   };
   // los requisitos del aplicador, sin git (la versión bajada no lo usa). El aplicador es el enchufe de Claude Code: una
   // máquina que sólo enchufa a Codex no lo corre y no necesita lo suyo (bash y python3, o PowerShell 7)
+  const oldNode = H.installNodeProblem(ctx);
+  if (oldNode) return { code: 1, lines: [`harness.js install: ${oldNode}`] };
   const missing = withClaude ? H.missingRequirement(ctx, { release: true }) : null;
   if (missing) return { code: 1, lines: [`harness.js install: ${missing}`] };
   const repoInfo = repoOf({ tree: ctx.tree, option: ctx.opts.repo || null });
@@ -2056,6 +2058,10 @@ function rollback(ctx, state, H, { log = null } = {}) {
 // ── doctor ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Los archivos de `harness/` contra su manifiesto: editados, de más, faltantes (lo de terceros y el manifiesto no cuentan). */
+// Lo que Claude Code escribe al cargar un mod (los tipos para el editor y su tsconfig): no viene en el manifiesto, la
+// próxima actualización lo pierde y Claude Code lo vuelve a escribir. No es «de más». ([.]claude-plugin es la carpeta del
+// plugin dentro del mod, no la carpeta de Claude Code en la casa: no cuenta para el techo de rutas.)
+const modGenerated = (rel) => /^mods\/[^/]+\/(?:tsconfig\.json|[.]claude-plugin\/types(?:\/|$))/.test(rel);
 function auditTree(ctx, tree) {
   const m = readManifest(tree);
   if (!m) return { ok: false, reason: `${tree} no trae su manifiesto (${MANIFEST_NAME}): no sé qué archivos debería tener` };
@@ -2078,7 +2084,7 @@ function auditTree(ctx, tree) {
   let teamPaths = new Set();
   let isLayerTemp = () => false;
   try { const TEAM = require('./team.js'); teamPaths = new Set(TEAM.layerPaths(tree)); isLayerTemp = TEAM.isLayerTemp; } catch (_) { teamPaths = new Set(); }
-  const skip = (rel) => rel === MANIFEST_NAME || teamPaths.has(rel) || rel.startsWith('.dashboard/') || rel.startsWith('.advisors/') || rel.startsWith('node_modules/') || thirdTargets.some((t) => rel === t || rel.startsWith(`${t}/`));
+  const skip = (rel) => rel === MANIFEST_NAME || teamPaths.has(rel) || modGenerated(rel) || rel.startsWith('.dashboard/') || rel.startsWith('.advisors/') || rel.startsWith('node_modules/') || thirdTargets.some((t) => rel === t || rel.startsWith(`${t}/`));
   const walk = (dir, rel) => {
     let ents = [];
     try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }

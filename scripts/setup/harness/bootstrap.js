@@ -61,7 +61,13 @@ const LOCK_STALE_MS = 10 * 60 * 1000;
 function log(line) {
   try {
     fs.mkdirSync(HARNESS_DIR, { recursive: true });
-    try { if (fs.statSync(LOG_FILE).size > 1024 * 1024) fs.renameSync(LOG_FILE, LOG_FILE + '.1'); } catch (_) { /* no hay registro todavía */ }
+    // rota una sola sesión, la que crea el candado (el mismo de report.js); con el candado puesto se agrega y sigue
+    try {
+      if (fs.statSync(LOG_FILE).size > 1024 * 1024) {
+        fs.mkdirSync(LOG_FILE + '.rotating');
+        try { if (fs.statSync(LOG_FILE).size > 1024 * 1024) fs.renameSync(LOG_FILE, LOG_FILE + '.1'); } finally { fs.rmdirSync(LOG_FILE + '.rotating'); }
+      }
+    } catch (_) { /* no hay registro todavía, u otra sesión está rotando */ }
     fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} bootstrap: ${line}\n`);
   } catch (_) { /* el registro nunca frena el arranque */ }
 }

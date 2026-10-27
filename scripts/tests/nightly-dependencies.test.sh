@@ -364,6 +364,18 @@ node "$NOC" clone-list --config "$TMP/c27.json" > "$TMP/cl.txt" 2>&1
   && ok "\`clones\` lista cada ruta activa una sola vez (raíz + subcarpeta = un clon; apagado = ninguno)" \
   || no "27: la lista de clones no deduplica o no existe — $(cat "$TMP/cl.txt" | head -3 | tr '\n' ' ')"
 
+# ── 27b. una entrada con forma rara no se clona: ni fuera de la carpeta de clones ni otro repo ─
+# La lista es un archivo del repo y el clon corre con el token de la corrida: una `ruta` con `..` o absoluta escribiría
+# fuera de la carpeta, y un `ado` con más tramos pediría otra cosa. Se saltea con un aviso que nombra la entrada por su
+# número, sin repetir el texto; las sanas se clonan igual. Tampoco un tramo que empieza con punto (`.git`) ni un punto o
+# una barra codificados (`%2e`, `%2f`, `%5c`), que el servidor podría leer como `..` o como otro tramo.
+configsub "$TMP/c27b.json" "$RAIZ_A, {\"producto\":\"X\",\"ruta\":\"../fuera\",\"ado\":\"ado/X\",\"tipo\":\"npm\"}, {\"producto\":\"Y\",\"ruta\":\"/abs/y\",\"ado\":\"ado/Y\",\"tipo\":\"npm\"}, {\"producto\":\"Z\",\"ruta\":\"Z\",\"ado\":\"ado/Z/../W\",\"tipo\":\"npm\"}, {\"producto\":\"V\",\"ruta\":\"V\",\"ado\":\"-c/V\",\"tipo\":\"npm\"}, {\"producto\":\"E\",\"ruta\":\"E/R\",\"ado\":\"Mi%20Proyecto/R.E-1\",\"tipo\":\"npm\"}, {\"producto\":\"G\",\"ruta\":\".git/G\",\"ado\":\"ado/G\",\"tipo\":\"npm\"}, {\"producto\":\"H\",\"ruta\":\"H\",\"ado\":\"P%2e%2E/H\",\"tipo\":\"npm\"}, {\"producto\":\"K\",\"ruta\":\"K\",\"ado\":\"P/K%2Fx\",\"tipo\":\"npm\"}"
+node "$NOC" clone-list --config "$TMP/c27b.json" > "$TMP/cl.txt" 2> "$TMP/cl.err"; RC=$?
+{ [ "$RC" -eq 0 ] && [ "$(grep -c . "$TMP/cl.txt")" -eq 2 ] && grep -q "^A	ado/A$" "$TMP/cl.txt" && grep -q "^E/R	Mi%20Proyecto/R.E-1$" "$TMP/cl.txt" \
+  && [ "$(grep -c 'forma' "$TMP/cl.err")" -eq 7 ] && ! grep -q '\.\./fuera\|/abs\|ado/Z\|-c/V\|\.git\|%2' "$TMP/cl.err"; } \
+  && ok "\`clones\` saltea las entradas con \`ruta\` o \`ado\` fuera de forma (avisa por número) y lista las sanas" \
+  || no "27b: clonaría una entrada fuera de forma — rc=$RC · $(tr '\n' ' ' < "$TMP/cl.txt") · $(tr '\n' ' ' < "$TMP/cl.err" | head -c 300)"
+
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 # Que «resuelto» signifique resuelto
 #

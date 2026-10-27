@@ -420,7 +420,14 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   function pestanasPara(rol, idioma) {
     // una pestaña sin su clave en la tabla se ve con su título de la tabla de rutas, y se dice en el registro
     const titulo = (p) => { try { return texto(idioma, `pestana.${p.id}`); } catch (e) { registrar(`idioma: la pestaña ${p.id} no tiene su título en la tabla de textos (${e.message})`); return p.titulo; } };
-    return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => ({ ...r.pestana, titulo: titulo(r.pestana), path: r.path })).sort((a, b) => a.orden - b.orden);
+    // `cuenta`: cuántas cosas esperan en la pestaña, al lado de su nombre («Mantenimiento (3)»); en cero o si no se
+    // pudo contar, sólo el nombre: el menú sale igual
+    const cuenta = (p) => { if (typeof p.cuenta !== 'function') return 0; try { const n = p.cuenta(); return Number.isInteger(n) && n > 0 ? n : 0; } catch (e) { registrar(`menú: la pestaña ${p.id} no pudo contar (${e.message})`); return 0; } };
+    return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => {
+      const { cuenta: _c, ...p } = r.pestana;
+      const n = cuenta(r.pestana);
+      return { ...p, titulo: n ? `${titulo(p)} (${n})` : titulo(p), path: r.path };
+    }).sort((a, b) => a.orden - b.orden);
   }
 
   // ── el idioma de cada pedido y dónde se recuerda (language.js) ──
@@ -744,15 +751,14 @@ async function main() {
     // al terminar cada ciclo de fuentes
     const invitaciones = require('./invitations.js').crearInvitaciones({ cfg: v.cfg, env, dataDir: v.cfg.dataDir, llave: v.cfg.sessionKey, log });
     fuentes.alRefrescar(() => { invitaciones.enviarPendientes(fuentes.config()); });
-    // «Lo que encontró la noche»: la sección de Ejecuciones donde quien mantiene confirma cada ficha
-    const hallazgos = require('./tabs/findings.js').crearRutas({ cfg: v.cfg, fuentes, log });
     const rutasExtra = [
       ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log, invitaciones }),
       // la pestaña Cómo trabaja: el recorrido de una historia, con los revisores propios editables
       ...require('./tabs/how-it-works.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
       // la pestaña Corridas: arma su vista en un hilo aparte con el espejo del buzón
-      ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log, hallazgos: hallazgos.seccion }),
-      ...hallazgos,
+      ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
+      // la pestaña Mantenimiento: lo que encontró la noche, que quien mantiene decide con un clic
+      ...require('./tabs/findings.js').crearRutas({ cfg: v.cfg, fuentes, log }),
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol
       ...require('./help.js').crearRutas({ log }),
     ];

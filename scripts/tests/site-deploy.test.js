@@ -438,6 +438,69 @@ test('T29d Aca_VolverACorrer_ActualizaImagenSecretosYVariables @story-2.30 @ac-8
   assert.ok(!nuevas.some((l) => l.args[1] === 'secret' && l.args[2] === 'set'), 'nada de `secret set` con el valor por argumento');
 });
 
+// Volver a correr la fase sitio sin un secreto opcional que la aplicación ya tiene no lo borra: lo lee de Azure y lo
+// conserva en el archivo, y el plan lo dice. Antes, actualizar sin el token de escritura dejaba a Configuración sin poder
+// proponer.
+// 🔴 Falla con: el archivo de la actualización armado sólo con los secretos del entorno.
+test('Aca_Actualizar_ConservaLosSecretosOpcionalesQueYaTiene', () => {
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  const prim = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix });
+  assert.strictEqual(prim.status, 0, prim.out);
+  const { SITE_OPERATIONS_WRITE_TOKEN: _fuera, ...sinEscritura } = SECRETOS;
+  const otra = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, env: sinEscritura });
+  assert.strictEqual(otra.status, 0, otra.out);
+  const nuevas = otra.llamadas.slice(prim.llamadas.length);
+  const upd = nuevas.find((l) => l.paso === 'aplicacion' && l.args[1] === 'update' && l.args.includes('--yaml'));
+  assert.ok(upd, otra.out);
+  const y = JSON.parse(Object.values(upd.archivos)[0]);
+  assert.ok(y.properties.configuration.secrets.some((x) => x.name === 'site-operations-write-token' && x.value === 'valor-guardado-site-operations-write-token'), 'el secreto que ya tenía sigue, con su valor de Azure');
+  assert.ok(y.properties.template.containers[0].env.some((e) => e.name === 'SITE_OPERATIONS_WRITE_TOKEN' && e.secretRef === 'site-operations-write-token'), 'y su variable, por referencia');
+  assert.match(otra.out, /se conservan los que la aplicación ya tiene: SITE_OPERATIONS_WRITE_TOKEN/);
+  assert.match(otra.out, /secretos: los mismos nombres/);
+  assert.ok(!otra.out.includes('valor-guardado-'), 'el valor leído no sale');
+  assert.ok(!nuevas.some((l) => l.args[1] === 'secret' && l.args[2] === 'set'), 'nada de `secret set` con el valor por argumento');
+});
+
+// Un secreto opcional que vive en un almacén de claves no tiene valor que leer: se conserva como referencia al almacén.
+// Y quien quiere apagar uno lo pasa vacío (VAR=): no venir en el entorno lo conserva, venir vacío lo saca.
+// 🔴 Falla con: leer el valor de un secreto del almacén (viene vacío y el alta frena entera), o conservar también el
+//    que vino vacío a propósito.
+test('Aca_Actualizar_SecretoDelAlmacenYApagarAPropósito', () => {
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  const prim = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, env: { ...SECRETOS, SITE_PROFILE_TOKEN: marca('TOKEN', 'DE-PERFIL-QUE-NO-DEBE-APARECER') } });
+  assert.strictEqual(prim.status, 0, prim.out);
+  const archivo = path.join(amb.fix, 'azure.json');
+  assert.ok(JSON.parse(fs.readFileSync(archivo, 'utf8')).apl.secretos.includes('site-profile-token'), 'la aplicación arranca con el token del perfil');
+  const est = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  est.apl.boveda = { 'site-operations-write-token': { keyVaultUrl: 'https://boveda.vault.azure.net/secrets/escritura', identity: 'system' } };
+  fs.writeFileSync(archivo, JSON.stringify(est));
+  const { SITE_OPERATIONS_WRITE_TOKEN: _fuera, ...sinEscritura } = SECRETOS;
+  const otra = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, env: { ...sinEscritura, SITE_PROFILE_TOKEN: '' } });
+  assert.strictEqual(otra.status, 0, otra.out);
+  const upd = otra.llamadas.slice(prim.llamadas.length).find((l) => l.paso === 'aplicacion' && l.args[1] === 'update' && l.args.includes('--yaml'));
+  assert.ok(upd, otra.out);
+  const y = JSON.parse(Object.values(upd.archivos)[0]);
+  const sec = y.properties.configuration.secrets;
+  assert.deepStrictEqual(sec.find((x) => x.name === 'site-operations-write-token'),
+    { name: 'site-operations-write-token', keyVaultUrl: 'https://boveda.vault.azure.net/secrets/escritura', identity: 'system' }, 'sigue apuntando al almacén');
+  assert.ok(!sec.some((x) => x.name === 'site-profile-token'), 'el que vino vacío se apaga');
+  assert.match(otra.out, /quedan apagadas[^\n]*SITE_PROFILE_TOKEN/);
+});
+
+// az no recibe los secretos del sitio: el alta le pasa su entorno sin las variables SITE_*, que sólo van en el archivo.
+// 🔴 Falla con: `spawnSync(az)` heredando el entorno entero.
+test('Aca_Az_SinLasVariablesDelSitio', () => {
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  const sitio = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix });
+  assert.strictEqual(sitio.status, 0, sitio.out);
+  assert.ok(sitio.llamadas.length > 5, 'el alta llamó a az');
+  const con = sitio.llamadas.filter((l) => (l.siteEnv || []).length);
+  assert.deepStrictEqual(con.map((l) => `${l.args.slice(0, 3).join(' ')}: ${l.siteEnv.join(',')}`), [], 'az recibió variables SITE_*');
+});
+
 test('T29b Aca_NoPudePreguntar_NoEsNoExiste @story-2.30 @ac-8', () => {
   // la regla de la casa: una salida vacía puede ser un comando que falló. Un `show` que falla por otra cosa que «no existe»
   // frena el alta con el motivo: no se crea de nuevo encima de lo que capaz ya está.

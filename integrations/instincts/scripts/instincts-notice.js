@@ -95,7 +95,8 @@ if (require.main === module) {
     if (prendida) {
       try {
         const m = cfg.integracionParaHook('mailbox', { env: process.env, home });
-        mailbox = m.ok && m.prendida && m.config && m.config.buzon && m.config.buzon.presente ? 'con_buzon' : 'sin_buzon';
+        const leida = m.ok && m.prendida ? cfg.leerParaHook({ env: process.env, home }) : null;
+        mailbox = leida && leida.ok && leida.config.buzon && leida.config.buzon.presente ? 'con_buzon' : 'sin_buzon';
       } catch (_) { mailbox = undefined; }
     }
     const stateDir = require('../../../scripts/setup/harness/tycon-home.js').stateDir(home);

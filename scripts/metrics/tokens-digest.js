@@ -103,10 +103,12 @@ const VENTANA_ADELANTE_MS = 15000;
 // Largo del mensaje rescatado. Es texto crudo de una herramienta: alcanza para entender qué falló.
 const LARGO_MENSAJE = 700;
 // Lo que NO es un mensaje del hilo. Medido sobre una transcripción real de 4,1 MB: `attachment`
-// 381 KB, `file-history-snapshot` 60 KB, el resto son metadatos de la herramienta.
+// 381 KB, `file-history-snapshot` 60 KB, el resto son metadatos de la herramienta. Los `api-request*` son la copia de
+// cada pedido a la API (el `-blob` trae el mensaje entero otra vez): con ellos cada comando queda tres veces en el hilo.
 const TIPOS_DESCARTADOS = new Set([
   'attachment', 'file-history-snapshot', 'file-history-delta',
   'queue-operation', 'bridge-session', 'atis-latch', 'last-prompt', 'ai-title',
+  'api-request', 'api-request-blob', 'api-request-shape', 'mode', 'cost-state',
 ]);
 // Los únicos adjuntos que viajan: el aviso de un hook que falló sin frenar y el de uno que se pasó de tiempo (Claude
 // Code lo anota como `hook_cancelled` con `timedOut`). Sin ellos, la revisión nocturna de las ejecuciones no ve un
@@ -977,6 +979,10 @@ function rescatarCorrida(volcado, opciones) {
     // Y se calcula sobre los MENSAJES que entran al archivo, no sobre todas las líneas: si la
     // última fuera un adjunto (que se descarta), avanzaría sin haber guardado ese contenido.
     c.hilo_hasta = ultimaHora(mensajes);
+    // Cuándo se guardó y de qué tamaño era la transcripción: con eso `estaPendiente` guarda una conversación grande a
+    // lo sumo una vez por día (ver THREAD_DAILY_MAX_SIZE_DEFAULT).
+    c.hilo_guardado_en = ahora;
+    try { c.transcripcion_bytes = fs.statSync(ubi.ruta).size; } catch { /* se movió recién; la próxima vez se mide */ }
   } catch (e) {
     res.hilo = { archivo: destino, error: `no pude guardar el hilo: ${e.code || e.message}` };
   }
@@ -1014,6 +1020,24 @@ function escribirVolcado(ruta, dump) {
   }
 }
 
+// Una conversación viva y grande crece entre un arranque y el siguiente. Guardarla de nuevo en cada arranque reescribía
+// 150 MB comprimidos, la subida los volvía a subir y cada máquina los volvía a bajar. Desde este tamaño de transcripción
+// se guarda a lo sumo una vez por día; lo que crezca mientras tanto entra en la vuelta siguiente.
+const THREAD_DAILY_MAX_SIZE_DEFAULT = 20 * 1024 * 1024;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** ¿La transcripción pasa el tope y su hilo ya se guardó en las últimas 24 h? */
+function grandeYaGuardadaHoy(ruta, c, opciones) {
+  const env = opciones.env || process.env;
+  const tope = Number(env.TYCON_THREAD_DAILY_MAX_SIZE) > 0 ? Number(env.TYCON_THREAD_DAILY_MAX_SIZE) : THREAD_DAILY_MAX_SIZE_DEFAULT;
+  if (!c.hilo_guardado_en) return false;
+  let bytes;
+  try { bytes = fs.statSync(ruta).size; } catch { return false; }
+  if (bytes < tope) return false;
+  const ahora = ms(opciones.ahora || new Date().toISOString());
+  return ahora - ms(c.hilo_guardado_en) < DAY_MS;
+}
+
 /**
  * ¿Esta corrida necesita que se le pase el rescate?
  * Sí si nunca se le pasó, o si su conversación CRECIÓ desde la última vez — que es el caso del
@@ -1034,6 +1058,7 @@ function estaPendiente(volcado, projectsDir, opciones = {}) {
   if (c.herramienta === 'codex') return codexCrecio(sid, c, opciones);
   const ubi = ubicarTranscripcion(sid, projectsDir);
   if (!ubi.ruta) return false;
+  if (grandeYaGuardadaHoy(ubi.ruta, c, opciones)) return false;
   const leido = leerTranscripcion(ubi.ruta);
   if (leido.error) return false;
   // La MISMA vara que usó `procesarCorrida` para escribir `hilo_hasta`: los mensajes que entran al

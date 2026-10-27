@@ -734,7 +734,7 @@ function medidaPara({ producto, regla, plugin, origen }, medidas) {
 
 const FMT_BORRADOR = () => require('../findings/sources.js').FUENTES.vigilante.formato;
 // las marcas de la propuesta y del contador, que una reapertura borra
-const CLAVES_QUE_SE_REINICIAN = ['noches_sin_aparecer', 'noche_contada', 'resuelta_el', 'aviso_volvio_el', 'aviso_cerrado_el',
+const CLAVES_QUE_SE_REINICIAN = ['noches_sin_aparecer', 'noche_contada', 'resuelta_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'decidido_en_sitio',
   'propuesta_accion', 'propuesta_razon', 'propuesta_modelo', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el'];
 
 /**

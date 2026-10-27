@@ -927,6 +927,34 @@ test('T93 Plataforma_LeerEstado_DosConectores @story-4.11 @ac-29', async () => {
   for (const id of [7, 99]) assert.strictEqual((await P().run('work-item.read', { repoDir: gr, id }, { env: g.env })).reason, 'no_encontrado', String(id));
 });
 
+// Azure_LeerEstado_TipoYProyectoConForma
+// 🔴 Falla con: pasar a --route-parameters el tipo o el proyecto que devuelve Azure sin mirarles la forma: un valor con
+//    «=» o un espacio de más agrega un parámetro de ruta (otro proyecto, otro tipo) y la lectura contesta por otro pedido.
+test('T93b Azure_LeerEstado_TipoYProyectoConForma', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const repo = repoCon('ado-config.yaml', ADO_CONFIG);
+  const wi = (id, tipo, proyecto) => fs.writeFileSync(path.join(m.fixaz, `wi-${id}.json`),
+    JSON.stringify({ id, fields: { 'System.State': 'Done', 'System.WorkItemType': tipo, 'System.TeamProject': proyecto } }));
+  fs.writeFileSync(path.join(m.fixaz, 'estados-Proy.A-Task.json'), JSON.stringify({ value: [{ name: 'Done', category: 'Completed' }] }));
+  wi(21, 'Task type=Epic', 'Proy.A'); wi(22, 'Task', 'Proy.A project=Otro'); wi(23, 'Task', '../Otro'); wi(24, 'Task', 'Proy.A');
+  const leer = (id) => P().run('work-item.read', { repoDir: repo, id }, { env: m.env });
+  for (const id of [21, 22, 23]) {
+    const r = await leer(id);
+    assert.strictEqual(r.reason, 'no_medido', `${id}: ${JSON.stringify(r)}`);
+    assert.doesNotMatch(JSON.stringify(r), /Epic|Otro/, `${id}: el valor fuera de forma no se repite`);
+  }
+  assert.strictEqual(llamadasAz(m).filter(([p]) => p === 'estados').length, 0, 'ninguno llegó a pedir estados');
+  // el espejo: un proyecto con punto, o con los signos que Azure DevOps acepta en un nombre, se lee
+  const raro = 'I&D (Ops) ~!@ Cía';
+  fs.writeFileSync(path.join(m.fixaz, `estados-${raro}-Task.json`), JSON.stringify({ value: [{ name: 'Done', category: 'Completed' }] }));
+  wi(25, 'Task', raro);
+  for (const id of [24, 25]) {
+    const ok = await leer(id);
+    assert.strictEqual(ok.ok, true, `${id}: ${JSON.stringify(ok)}`);
+    assert.strictEqual(ok.value.cerrado, true);
+  }
+});
+
 // Azure_DescripcionPorArchivo_NoLeeArchivosLocales @story-4.11 @ac-42
 // 🔴 Falla con: mandar la descripción o los criterios en la línea de comandos: az lee como archivo un valor que empieza
 //    con «@», y el pedido saldría con el contenido de un archivo de la máquina en vez del texto.

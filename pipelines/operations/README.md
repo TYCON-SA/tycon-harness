@@ -298,9 +298,12 @@ automático o sólo aviso: la guía del sitio («Cómo se mantiene al día»).
 1. **La conexión de servicio del nocturno** («site-update», Workload identity federation), autorizada sólo para este
    pipeline, con un **rol propio** sobre la aplicación del sitio y nada más. La guía trae el rol y la orden que lo crea.
    Es propia: ni la de la copia de operaciones, ni la del buzón, ni la de dependencias.
-2. **El pipeline**: copiá `site-update.yml` a `pipelines/` del repo de operaciones y cambiá las dos líneas marcadas. Las
+2. **El pipeline**: copiá `site-update.yml` a `pipelines/` del repo de operaciones y cambiá las líneas marcadas. Las
    variables son `SITE_PLATFORM` (`azure`), `SITE_IMAGE_NAME`, `SITE_RESOURCE_GROUP`, `SITE_APP` y `SITE_URL`. En
-   Render: `SITE_PLATFORM=render` y la variable secreta `SITE_RENDER_DEPLOY_HOOK`.
+   Render: `SITE_PLATFORM=render` y la variable secreta `SITE_RENDER_DEPLOY_HOOK`. Con un sitio demo en Azure, sumá
+   `SITE_DEMO_RESOURCE_GROUP`, `SITE_DEMO_APP` y `SITE_DEMO_URL`, y dale a la misma conexión su rol también sobre la
+   aplicación del demo: se pone al día con la misma `stable`, con la prueba del demo. Sin esas variables, ese paso no
+   corre.
 3. **El modo**: sin `site.update` en `operations.json`, sólo aviso. `"auto"` se elige desde la pestaña Configuración,
    después de una actualización a mano que salió bien.
 

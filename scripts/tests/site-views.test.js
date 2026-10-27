@@ -424,3 +424,17 @@ test('8.101-Retrospectivas_SinFotoComoHoy_ConFotoSeVe', () => {
   assert.strictEqual(r.estado, 'medido');
   assert.strictEqual(r.valor, 2);
 });
+
+// Inicio_Vulnerabilidades_DicenSeguimiento
+// 🔴 Falla con: un recuadro de vulnerabilidades que diga «decidir» cuando en Mantenimiento no se deciden (cada equipo
+// las sigue en su tarea), o que el cambio se lleve puesto a los recuadros que sí se deciden.
+test('T11 Inicio_Vulnerabilidades_DicenSeguimiento — los recuadros de dependencias dicen «seguimiento», no «decidir»', () => {
+  const html = views.paginaInicio({ modelo: access.filtrar(modeloCompleto({ vigilante: noMedida('sin_foto') }), { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  const recuadro = (titulo) => html.split('<div class="tile ').find((x) => x.includes(`<div class="t-label">${titulo}</div>`)) || '';
+  for (const titulo of ['Dependencias nuevas', 'Dependencias rechazadas sin deuda']) {
+    assert.ok(recuadro(titulo), `${titulo}: el recuadro está`);
+    assert.doesNotMatch(recuadro(titulo), />decidir</, `${titulo}: no dice decidir`);
+  }
+  assert.match(recuadro('Dependencias nuevas'), />seguimiento</, 'con algo adentro, dice seguimiento');
+  assert.match(recuadro('Pull requests abiertos hace más de 2 días'), />decidir</, 'los demás siguen diciendo decidir');
+});

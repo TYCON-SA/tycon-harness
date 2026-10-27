@@ -282,6 +282,45 @@ function take({ home = os.homedir(), env = process.env, tree, reason, from = nul
   return { dir, created: true, pruned: prune(home, { protect: [dir, ...(Array.isArray(protect) ? protect : [protect])] }) };
 }
 
+/** Una ruta comparable: absoluta y sin el `/private` con que macOS resuelve /tmp y /var. */
+const comparable = (p) => path.resolve(String(p)).replace(/^\/private(?=\/(?:var|tmp|etc)\/)/, '');
+const COPY_RE = /^files\/[^/\\]+$/;
+/** La ruta real: la del archivo, o la de su carpeta más cercana que exista, con los enlaces resueltos. */
+function realish(p) {
+  let base = path.resolve(String(p)); const rest = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync(base), ...rest); } catch (_) { /* no existe: se sube un nivel */ }
+    const up = path.dirname(base);
+    if (up === base) return path.resolve(String(p));
+    rest.unshift(path.basename(base)); base = up;
+  }
+}
+
+/**
+ * Los archivos del manifiesto de `copy` que se pueden usar: la ruta, absoluta y (resuelta) dentro de la HOME o en la lista
+ * fija de hoy (las variables de `files` pueden ponerla en otro lado); la copia, `files/<nombre>` dentro de la carpeta. Un
+ * manifiesto tocado a mano no hace escribir, borrar ni leer fuera de eso. `skipped` son las rutas que no pasan.
+ * @returns {{ files: object[], skipped: string[] }}
+ */
+function safeFiles(copy, { home = os.homedir(), env = process.env, tree } = {}) {
+  const all = copy && copy.manifest && Array.isArray(copy.manifest.files) ? copy.manifest.files : [];
+  const homeDir = comparable(realish(home));
+  let declared = null;
+  const isDeclared = (p) => {
+    if (!declared) { try { declared = new Set(files({ home, env, tree }).map(comparable)); } catch (_) { declared = new Set(); } }
+    return declared.has(comparable(p));
+  };
+  const out = { files: [], skipped: [] };
+  for (const f of all) {
+    if (!f || typeof f.path !== 'string') continue;
+    // dentro de la HOME por el nombre y también por donde llevan los enlaces
+    const okPath = path.isAbsolute(f.path) && ((comparable(f.path).startsWith(comparable(home) + path.sep) && comparable(realish(f.path)).startsWith(homeDir + path.sep)) || isDeclared(f.path));
+    const okCopy = f.copy === null || f.copy === undefined || (typeof f.copy === 'string' && COPY_RE.test(f.copy) && !f.copy.endsWith('/..'));
+    if (okPath && okCopy) out.files.push(f); else out.skipped.push(f.path);
+  }
+  return out;
+}
+
 /** Escribe `sha256_after` de cada archivo del manifiesto (null si después del cambio no está). Devuelve el manifiesto. */
 function finish(dir, { home = os.homedir(), env = process.env } = {}) { // eslint-disable-line no-unused-vars
   const file = path.join(dir, MANIFEST);
@@ -307,4 +346,4 @@ function countBak({ home = os.homedir(), env = process.env, tree } = {}) {
   return found.size;
 }
 
-module.exports = { SCHEMA, KEEP, backupsRoot, files, take, finish, list, prune, countBak };
+module.exports = { SCHEMA, KEEP, backupsRoot, files, take, finish, list, prune, countBak, safeFiles };

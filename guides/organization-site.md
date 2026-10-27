@@ -194,6 +194,32 @@ guardada, con la fecha de cuándo es, mientras el buzón se vuelve a bajar enter
 día sola. Los cambios de cada ejecución vuelven cuando termina de armarse la vista nueva. La vista guardada vive en el
 disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pestaña espera la primera bajada entera.
 
+### Mantenimiento
+
+Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién tiene la pelota. Al lado del nombre, en el
+menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
+tiene tres bloques:
+
+- **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones. Primero lo de
+  producción, porque son clientes reales. Dentro de cada grupo, primero lo que el análisis recomienda arreglar, después
+  lo que recomienda archivar y al final lo que no tiene análisis.
+- **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace.
+  Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
+  pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
+- **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
+  está asignada, y las vulnerabilidades de paquetes. Las vulnerabilidades no se deciden acá: cada equipo tiene su tarea
+  y, si no puede actualizar el paquete, declara la deuda en su repo, con plazo.
+
+Cada tarjeta dice **qué pasó** con los datos de la ficha, por ejemplo «Pasó 4 veces, del 21/10 al 24/10». Si hay
+análisis, dice **por qué** pasa, qué **recomienda** y qué se haría si se arregla, y aclara si lo escribió el modelo de la
+noche o una persona. Sin análisis, dice por qué no lo tiene y los botones quedan detrás de «Decidir sin análisis».
+
+**Archivar** quiere decir «es normal, no hay que tocar nada». **Arreglar** quiere decir que la noche crea una tarea para
+corregirlo. Marcás una opción en cada tarjeta (o «Seguir las recomendaciones» para todas las que tienen análisis) y al
+final **Enviar para aprobar**: abre un solo pedido al repo de operaciones con todas tus elecciones. Nada cambia hasta
+que otra persona lo aprueba. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
+tiene su «?» con la explicación.
+
 ### Proyectos
 
 **Qué contesta:** ¿cómo va cada producto?
@@ -424,7 +450,7 @@ Las secciones, en el orden de la pantalla:
   el repo deja a su identidad saltear la revisión, y si pide la aprobación de otra persona le prende el auto-merge y
   entra en cuanto alguien lo apruebe; si el repo tampoco deja el auto-merge, queda el pedido. Antes de proponer, al
   lado del botón, la sección dice qué va a pasar. Queda escrito quién lo hizo: la descripción del pedido nombra a quien
-  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
+  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`. Cuenta la opción
   que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios
   entran solos. Queda en `operations.json`, en el repo de operaciones.
 - **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
@@ -675,12 +701,12 @@ las máquinas se actualizan solas al arrancar.
 
 El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra al sitio»:
 
-| Rol | Inicio | Ejecuciones | Proyectos | Arnés | Cómo trabaja | Configuración |
-|---|---|---|---|---|---|---|
-| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las ejecuciones | todos los productos | sí | sí, y propone cambios a sus revisores | sí, y propone cambios |
-| **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no | no |
-| **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no | no |
-| **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no |
+| Rol | Inicio | Ejecuciones | Mantenimiento | Proyectos | Arnés | Cómo trabaja | Configuración |
+|---|---|---|---|---|---|---|---|
+| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las ejecuciones | sí, y decide cada una | todos los productos | sí | sí, y propone cambios a sus revisores | sí, y propone cambios |
+| **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | no | los productos en los que trabaja | no | no | no |
+| **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | no | los productos en los que trabaja | no | no | no |
+| **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no | no |
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
@@ -852,6 +878,11 @@ un rato tarda unos segundos en despertarla. No acepta buzón, repo, inquilino ni
 los trae, no corre y dice cuáles. Repetir la fase `demo` sobre una instancia que ya existe la actualiza (no crea otra);
 si un paso falla, se detiene, dice cuál y qué quedó creado, y correrla de nuevo la completa. Nunca toca una aplicación que
 no sea una instancia demo.
+
+**Al día.** El actualizador del sitio también lo pone al día con `stable`: `update-site.js` con `--demo` y la aplicación
+y el grupo del demo. Como el demo es abierto, no le corre la prueba sin sesión: le pide `/livez` con `demo: true` y la
+portada con la franja «Datos de ejemplo». Si no pasa, vuelve a la huella anterior, como con el sitio real. El nocturno
+lo corre en un paso propio, con la misma credencial; ésta necesita su rol también sobre la aplicación del demo.
 
 **Borrarlo.** Todo lo del demo está en su grupo de recursos: `az group delete --name <grupo> --subscription <suscripción>`
 lo borra entero (pide confirmación). Hacelo sólo si ese grupo es propio del demo. Sin borrarlo, apagado ya está: con cero
@@ -1110,7 +1141,7 @@ empuje por ruta del README de GitHub: el sitio valida y descarga `operations.jso
 request a mano.
 
 **Lo que se resigna.** Nadie revisa esos cambios antes de que entren. Queda la constancia: cada cambio del sitio es un
-pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`.
+pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`.
 Quien puede escribir en el repo de operaciones puede hacerse mantenedor del sitio o cambiar un proceso de la noche sin
 que otro lo mire: lo que se cuida es quién tiene escritura en ese repo.
 
@@ -1206,8 +1237,8 @@ organización (arriba): deja que cuente el voto de quien crea el pedido, pide un
 empujó el último cambio y no nombra revisores. Si pide más, el pedido queda y la sección dice qué falta.
 Sin ninguna política en `main`, «Proponer» sigue apagado aunque la opción esté prendida. Para encenderla, primero la
 imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply` y daría `operations.json` por inválido
-(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
-pidió; es la única línea del registro que lleva un correo.
+(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el enlace a su pedido;
+el correo de quien lo pidió no va al registro: lo dice el pedido.
 
 ### Cómo se mantiene al día
 
