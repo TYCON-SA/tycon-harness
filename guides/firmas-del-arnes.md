@@ -26,24 +26,24 @@ La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la
 | `runtime-waiver` | aceptar un criterio imposible de probar en vivo | `marker.js runtime-waiver` | no, por la terminal | `marker.js runtime-waiver` |
 | `manual-test` | marcar un criterio como probado a mano | `marker.js mark-tested --acs` | sí | `marker.js mark-tested --acs --terminal` |
 | `browser-test` | preparar la prueba con navegador, o decirle que no | `e2e-setup.js prepare --ok (o decline --ok)` | sí | `e2e-setup.js prepare --terminal (o decline --terminal)` |
-| `lost-run` | dar por perdida una corrida y cerrarla | `marker.js clear-session --lost` | sí | `marker.js clear-session --lost --terminal` |
+| `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost` | sí | `marker.js clear-session --lost --terminal` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip (todavía no existe)` | todavía sin comando | — |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, por la terminal | `TYCON_SAFETY_OFF=1 <comando>` |
 | `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, por la terminal | `TYCON_PROD_LINT=0 <comando>` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, por la terminal | `TYCON_NEW_NAMES=0 <comando>` |
 | `escape:TYCON_TEST_GATE` | saltear el portón de pruebas del commit | `TYCON_TEST_GATE=1 <comando>` | no, por la terminal | `TYCON_TEST_GATE=1 <comando>` |
 | `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, por la terminal | `DOD_BYPASS=1 <comando>` |
-| `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una corrida | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, por la terminal | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
+| `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una ejecución | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, por la terminal | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
 | `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, por la terminal | `TYCON_STATUS_GATE=off <comando>` |
 | `escape:story-skill-bypass` | usar una skill de stories fuera del pipeline | `invocar una skill de stories fuera del pipeline` | no, por la terminal | `correr el mismo comando en tu terminal` |
-| `escape:set-autonomous` | cambiar el modo autónomo de una corrida | `marker.js set-autonomous` | no, por la terminal | `correr el mismo comando en tu terminal` |
-| `escape:cerrar-la-ejecucion` | cerrar una corrida con un control en rojo | `marker.js clear` | no, por la terminal | `correr el mismo comando en tu terminal` |
-| `escape:cerrar-como-deuda` | cerrar una corrida dejando lo que falta como deuda | `marker.js close-as-debt` | no, por la terminal | `correr el mismo comando en tu terminal` |
+| `escape:set-autonomous` | cambiar el modo autónomo de una ejecución | `marker.js set-autonomous` | no, por la terminal | `correr el mismo comando en tu terminal` |
+| `escape:cerrar-la-ejecucion` | cerrar una ejecución con un control en rojo | `marker.js clear` | no, por la terminal | `correr el mismo comando en tu terminal` |
+| `escape:cerrar-como-deuda` | cerrar una ejecución dejando lo que falta como deuda | `marker.js close-as-debt` | no, por la terminal | `correr el mismo comando en tu terminal` |
 | `escape:force-manual` | marcar a mano en verde la prueba de pantalla | `marker.js set-check dod green --force-manual` | no, por la terminal | `correr el mismo comando en tu terminal` |
 | `escape:trust-ran` | contar los revisores sin la constancia de que corrieron | `pipeline.js check-count --trust-ran` | no, por la terminal | `correr el mismo comando en tu terminal` |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `escribir el archivo de evidencia de la prueba en vivo` | no, por la terminal | `correr el mismo comando en tu terminal` |
 | `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `poner dod_runtime_exempt: true en una story` | no, por la terminal | `correr el mismo comando en tu terminal` |
-| `escape:no-deep-review` | saltear el pase adversarial de una corrida | `pipeline.js start --no-deep-review` | no, por la terminal | `correr el mismo comando en tu terminal` |
+| `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, por la terminal | `correr el mismo comando en tu terminal` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js update-story-status` | no, por la terminal | `correr el mismo comando en tu terminal` |
 
 ## Los grupos de la 8.116
