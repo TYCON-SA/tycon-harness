@@ -188,6 +188,22 @@ test('T23 RojoEsperado_LoAceptanSoloEnDeuda @story-8.93 @ac-11 — el cierre del
   assert.strictEqual(rc.abierta(rc.estado({ checks: { tests: 'red:exit=1' }, cierre: deuda, stepsPending: [] })), true);
 });
 
+test('T23b RojoComun_FrenaPrepareCommitSinDeuda — un control en rojo frena el commit y nombra las dos salidas; con deuda, pasa diciéndolo', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-t23b');
+  const base = { ...E.leer('s-t23b'), checks: { tests: 'red:exit=1', build: 'green' } };
+  const deuda = { estado: 'deuda', motivo: 'siete rojas de main', deuda: 'DEF-9.9-angular', via: 'persona', at: '2026-10-22T20:00:00Z' };
+  E.escribir('s-t23b', base);
+  let r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-t23b');
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(r.stderr, /tests=red:exit=1/);
+  assert.match(r.stderr, /close-as-debt/);
+  E.escribir('s-t23b', { ...base, cierre: deuda });
+  r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-t23b');
+  assert.doesNotMatch(r.stderr, /tests=red:exit=1 sin una ejecución en deuda/, r.stderr);
+  assert.match(r.stderr, /tests: red:exit=1 — aceptado por la deuda DEF-9\.9-angular/);
+});
+
 test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al preparar el commit y el volcado dice deuda', () => {
   const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
   E.arrancar('s-t24');
