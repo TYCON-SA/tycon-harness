@@ -44,12 +44,18 @@ function esLaboratorio(dir) {
 // (TYCON_PR_BY_HAND, TYCON_SAFETY_OFF, TYCON_FULL_SUITE), scripts/setup/hooks-list.json (TYCON_SESSION_GUARD_OK),
 // scripts/hooks/engram-pre-commit.sh (TYCON_ENGRAM_MANIFEST_OK), steps/step-08-adversarial-pass.md
 // (TYCON_NO_DEEP_REVIEW), scripts/controls-bench/live-fire-stop.js (STOP_AUTONOMY) y
-// skills/tycon-pipeline/scripts/runtime-matrix.js (TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK).
+// skills/tycon-pipeline/scripts/runtime-matrix.js (TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK),
+// scripts/hooks/advisor-liveness-on-change.js (TYCON_NO_LIVENESS_PRECOMMIT), skills/tycon-pipeline/scripts/lib/mutation-gate.js
+// (TYCON_MUTATION_CHECK) y skills/tycon-pipeline/scripts/marker.js `adhoc set` (TYCON_STORY_GATE).
 const ESCAPES = ['TYCON_SAFETY_OFF', 'TYCON_PR_BY_HAND', 'TYCON_FULL_SUITE', 'TYCON_SESSION_GUARD_OK', 'TYCON_ENGRAM_MANIFEST_OK',
-  'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', 'TYCON_NO_DEEP_REVIEW', 'STOP_AUTONOMY'];
+  'TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK', 'TYCON_NO_DEEP_REVIEW', 'STOP_AUTONOMY', 'TYCON_NO_LIVENESS_PRECOMMIT', 'TYCON_MUTATION_CHECK',
+  'TYCON_STORY_GATE'];
+// El valor con que cada freno se apaga, cuando no es `1`.
+const VALOR_QUE_APAGA = { TYCON_MUTATION_CHECK: 'off', TYCON_STORY_GATE: 'off' };
 // Una línea de bypass.log y el comando que la dejó son el mismo escape: cuenta la del registro, que trae el motivo.
 const EQUIVALENTES = { GIT_NO_VERIFY: '--no-verify', ATDD_BYPASS: 'atddBypass', PR_A_MANO: 'TYCON_PR_BY_HAND', FULL_SUITE_RUN: 'TYCON_FULL_SUITE',
-  ADVERSARIAL_SKIP_FORZADO: 'TYCON_NO_DEEP_REVIEW' };
+  ADVERSARIAL_SKIP_FORZADO: 'TYCON_NO_DEEP_REVIEW', LIVENESS_PRECOMMIT_OFF: 'TYCON_NO_LIVENESS_PRECOMMIT', MUTATION_CHECK_OFF: 'TYCON_MUTATION_CHECK',
+  STORY_GATE_OFF_ADHOC: 'TYCON_STORY_GATE' };
 // Los valores con que marker.js prende una bandera (cmdSetFlag) y deja prendido el modo automático (cmdSetAutonomous):
 // cualquier otro valor de set-autonomous lo apaga.
 const PRENDE_BANDERA = ['true', '1'];
@@ -247,8 +253,10 @@ function saltearOpciones(p, i, conValor) {
   }
   return { i, opciones, cadena };
 }
-/** ¿El segmento activa el escape? Cada freno lo toma sólo con `1`. Casos: T3 de scripts/tests/runs-review.test.js. */
-const activa = (s, nombre) => s.asignaciones.includes(nombre) && s.valor[nombre] === '1';
+/** ¿El segmento activa el escape? Cada freno lo toma sólo con `1`, o con su `VALOR_QUE_APAGA`. Casos: T3 y M4 de
+ * scripts/tests/runs-review.test.js. */
+const activa = (s, nombre) => s.asignaciones.includes(nombre)
+  && (VALOR_QUE_APAGA[nombre] ? String(s.valor[nombre] || '').toLowerCase() === VALOR_QUE_APAGA[nombre] : s.valor[nombre] === '1');
 
 /** Lo que sigue a `<guion>` en cada segmento que lo corre (por `node` o el guion mismo): una lista por segmento. */
 function argsDe(command, guion) {
@@ -262,6 +270,12 @@ function argsDe(command, guion) {
 }
 /** ¿Algún segmento corre `<guion>` seguido exactamente de `sub`? */
 const corre = (command, guion, sub) => argsDe(command, guion).some((r) => sub.every((w, j) => r[j] === w));
+// Los apagados que sólo toma un comando: fuera de él, la variable en la línea no apaga nada y no es un escape.
+const CON_EFECTO = {
+  TYCON_NO_LIVENESS_PRECOMMIT: (command) => segmentos(command).some((s) => s.programa === 'git' && s.args.includes('commit')),
+  TYCON_MUTATION_CHECK: (command) => argsDe(command, 'marker.js').some((r) => r[0] === 'complete-step' && (r[1] === 'run-tests' || r[1] === '4')),
+  TYCON_STORY_GATE: (command) => corre(command, 'marker.js', ['adhoc', 'set']),
+};
 
 // Programas que corren otro programa: lo que corre de verdad viene después, y dónde corre ya no es seguro.
 const ENVOLTORIOS = new Set(['sudo', 'doas', 'nice', 'ionice', 'nohup', 'timeout', 'stdbuf', 'xargs', 'env', 'time', 'command', 'exec', 'caffeinate']);
@@ -604,6 +618,7 @@ function escapesDeComandos(cs, repoPath) {
       // con el valor que activa su freno
       for (const a of seg.s.asignaciones) {
         if (!ESCAPES.includes(a) || a === 'TYCON_PR_BY_HAND' || !activa(seg.s, a)) continue;
+        if (CON_EFECTO[a] && !CON_EFECTO[a](c.command)) continue;
         if (a === 'TYCON_FULL_SUITE' && enLaboratorio(seg, repoPath)) add(a, 'FULL_SUITE_RUN/laboratorio');
         else add(a);
       }
@@ -626,7 +641,8 @@ function escapesDeComandos(cs, repoPath) {
 const INTERPRETE = /(?:^|[\s;&|(/\\])(?:ba|z|k|da)?sh(?:\.exe)?\s+(?:-\w+\s+)*-\w*c\b|(?:^|[\s;&|(])eval\b|python3?(?:\.exe)?\s+-c\b|node(?:\.exe)?\s+(?:-e|-p|--eval)\b|\|\s*(?:\S*[\\/])?(?:ba|z|k|da)?sh\b|(?:ba|z|k|da)?sh(?:\.exe)?(?:\s+-\w+)*\s*<<<|\benv\s+(?:-\S+\s+)*(?:-S|--split-string)\b/;
 // Cómo se llama en el registro el escape que se ve en un comando: la categoría de una línea emparejada.
 const DEL_REGISTRO = { '--no-verify': 'GIT_NO_VERIFY', TYCON_FULL_SUITE: 'FULL_SUITE_RUN', TYCON_PR_BY_HAND: 'PR_A_MANO', atddBypass: 'ATDD_BYPASS',
-  TYCON_NO_DEEP_REVIEW: 'ADVERSARIAL_SKIP_FORZADO' };
+  TYCON_NO_DEEP_REVIEW: 'ADVERSARIAL_SKIP_FORZADO', TYCON_NO_LIVENESS_PRECOMMIT: 'LIVENESS_PRECOMMIT_OFF', TYCON_MUTATION_CHECK: 'MUTATION_CHECK_OFF',
+  TYCON_STORY_GATE: 'STORY_GATE_OFF_ADHOC' };
 
 /**
  * Dónde cuenta una línea de `bypass.log` que no se emparejó con un comando de la conversación, o `null` si no cuenta:

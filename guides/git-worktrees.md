@@ -18,7 +18,9 @@ cuando se corre una story a la vez, que es el caso del 95% del tiempo.
 > otra viva. Por qué: con dos sesiones sobre el mismo checkout, un commit puede arrastrar una deleción ajena
 > del índice y otro caer en la rama de la otra sesión.
 > En los dos repos donde el worktree está prohibido (éste y `agent-skills`) el consejo es coordinar,
-> no abrir un worktree.
+> no abrir un worktree. Si la persona decide seguir igual porque está coordinado, el comando lleva
+> `TYCON_SESSION_GUARD_OK=1` pegado adelante: pasa y queda constancia, que la revisión de la noche
+> cuenta. Lo decide la persona, no el agente.
 >
 > **Cómo se trabaja entonces con otra sesión viva:** en un CLON
 > descartable en el scratchpad de la sesión, con `origin` apuntando al remoto real, y se pushea desde

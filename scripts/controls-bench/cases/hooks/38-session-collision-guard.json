@@ -29,7 +29,12 @@
               "OTRA sesi[oó]n viva",
               "aaaa1111",
               "implementemos la story 2.1",
-              "UNA sola sesi[oó]n|worktree"
+              "UNA sola sesi[oó]n|worktree",
+              "lo decide la persona"
+            ],
+            "stderr_not_re": [
+              "TYCON_SESSION_GUARD_OK=1",
+              "TYCON_SESSION_GUARD=0"
             ]
           }
         },

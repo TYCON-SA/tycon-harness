@@ -496,7 +496,7 @@ function runPass(a, work, label, rev, parentRev) {
         continue;
       }
       const argv = pass.cmd.map((x) => x.replace(/\{base\}/g, parentRev).replace(/\{tip\}/g, rev).replace(/\{root\}/g, dir));
-      const env = { ...GIT_ENV, TYCON_GUIDES_DIR: dir, TYCON_SKILLS_DIR: dir, TYCON_NO_LIVENESS_PRECOMMIT: '1' };
+      const env = { ...GIT_ENV, TYCON_GUIDES_DIR: dir, TYCON_SKILLS_DIR: dir, TYCON_NO_LIVENESS_PRECOMMIT: 'ci' };
       const r = spawnSync(argv[0], argv.slice(1), { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 });
       const output = `${r.stdout || ''}${r.stderr || ''}`.trim();
       const ok = r.status === 0 && !r.error;

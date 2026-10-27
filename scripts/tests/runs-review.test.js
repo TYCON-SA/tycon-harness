@@ -1668,3 +1668,39 @@ test('M3 Ficha_ClaseMasComun_SoloCasosNuevos @mantenimiento', async () => {
   await correr(mb, op);
   assert.deepStrictEqual(fichas(op).find((x) => x.causa === f1.causa).hechos, { errores: { red: 1 }, error_clase: 'red', error_clase_veces: 1, error_veces: 1 });
 });
+
+// M4 Escapes_ApagadosDeFrenos_LaNocheLosCuenta @mantenimiento
+// 🔴 Falla con: un freno apagado en la línea del comando (el chequeo de vida de los revisores, el de mutantes o el portón
+//    de carril en `adhoc set`) que la noche no cuenta, o uno con un valor que no apaga nada que sí cuenta.
+test('M4 Escapes_ApagadosDeFrenos_LaNocheLosCuenta @mantenimiento', () => {
+  const r = revisar([
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=1 git commit -m x'),
+    ...cmd(`TYCON_MUTATION_CHECK=off ${MARKER} complete-step run-tests`),
+    ...cmd(`TYCON_STORY_GATE=off ${MARKER} adhoc set '{"reason":"x"}'`),
+    ...cmd(`TYCON_MUTATION_CHECK=on ${MARKER} complete-step run-tests`),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=0 git commit -m y'),
+    // la variable en la línea de un comando que no la toma no apaga nada
+    ...cmd('TYCON_STORY_GATE=off sed -i s/a/b/ src/a.cs'),
+    ...cmd('TYCON_MUTATION_CHECK=off node --test foo.test.js'),
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=1 git status'),
+  ]);
+  const e = regla(r, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort();
+  assert.deepStrictEqual(e, ['TYCON_MUTATION_CHECK:1', 'TYCON_NO_LIVENESS_PRECOMMIT:1', 'TYCON_STORY_GATE:1']);
+});
+
+// M5 Escapes_ApagadoEnRegistroYComando_CuentaUnaVez @mantenimiento
+// 🔴 Falla con: la constancia del registro y el comando que la dejó contados dos veces.
+test('M5 Escapes_ApagadoEnRegistroYComando_CuentaUnaVez @mantenimiento', () => {
+  const registros = { bypass: [
+    { ts: ts(), sessionId: 's', kind: 'LIVENESS_PRECOMMIT_OFF' },
+    { ts: ts(), sessionId: 's', kind: 'MUTATION_CHECK_OFF', story: '1.1' },
+    { ts: ts(), sessionId: 's', kind: 'STORY_GATE_OFF_ADHOC', reason: 'x' },
+  ], cobertura: { fuentes: { bypass: { estado: 'medido' } } } };
+  const r = RULES.revisar({ volcado: volcado({ sid: 's' }), lineasHilo: [
+    ...cmd('TYCON_NO_LIVENESS_PRECOMMIT=1 git commit -m x'),
+    ...cmd(`TYCON_MUTATION_CHECK=off ${MARKER} complete-step run-tests`),
+    ...cmd(`TYCON_STORY_GATE=off ${MARKER} adhoc set '{"reason":"x"}'`),
+  ], registros });
+  const e = regla(r, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort();
+  assert.deepStrictEqual(e, ['LIVENESS_PRECOMMIT_OFF:1', 'MUTATION_CHECK_OFF:1', 'STORY_GATE_OFF_ADHOC:1']);
+});

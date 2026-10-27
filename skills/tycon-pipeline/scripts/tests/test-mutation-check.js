@@ -555,6 +555,8 @@ test('gate: exit 1 (cero muertos) → BLOQUEA y el mensaje nombra mutantes sobre
   assert.match(texto, /BLOQUEADO/, 'el mensaje dice que bloquea');
   assert.match(texto, /ejercen/i, 'explica en castellano llano que los tests no ejercen el código nuevo');
   assert.ok(texto.includes('a.js:7'), 'lista sobrevivientes de ejemplo (archivo:línea)');
+  assert.doesNotMatch(texto, /--no-mutation|TYCON_MUTATION_CHECK/, 'el cartel no le dicta al agente cómo saltearlo');
+  assert.match(texto, /lo decide la persona/, 'dice de quién es la decisión de saltearlo');
   const g = h.entries['gates.log'];
   assert.equal(g.length, 1, 'el veredicto queda SIEMPRE en gates.log');
   assert.equal(g[0].name, 'mutation');
@@ -611,7 +613,7 @@ test('gate: exit 2 (estructural, ej. story sin tests) → AVISA, no bloquea, y q
   assert.equal(g[0].status, 'structural');
 });
 
-test('gate: TYCON_MUTATION_CHECK=off → ni se invoca', async () => {
+test('gate: TYCON_MUTATION_CHECK=off → ni se invoca, y el apagado queda en bypass.log', async () => {
   const h = gateHarness();
   let llamadas = 0;
   const r = runMutationGate({
@@ -622,7 +624,22 @@ test('gate: TYCON_MUTATION_CHECK=off → ni se invoca', async () => {
   assert.equal(llamadas, 0, 'apagado global: el chequeo NI se invoca');
   assert.equal(r.block, false);
   assert.equal(h.entries['gates.log'].length, 0);
-  assert.equal(h.entries['bypass.log'].length, 0);
+  assert.equal(h.entries['bypass.log'].length, 1, 'el apagado no es silencioso: la noche lo cuenta');
+  assert.equal(h.entries['bypass.log'][0].kind, 'MUTATION_CHECK_OFF');
+  assert.equal(h.lines.length, 0, 'y no suma un aviso en la consola');
+});
+
+test('gate: TYCON_MUTATION_CHECK=OFF (mayúsculas) apaga igual, como lo cuenta la noche', async () => {
+  const h = gateHarness();
+  let llamadas = 0;
+  const r = runMutationGate({
+    marker: MARKER_FAKE, opts: [], env: { TYCON_MUTATION_CHECK: 'OFF' },
+    appendLog: h.appendLog, log: h.log,
+    invokeCheck: () => { llamadas += 1; return { code: 0, result: {} }; },
+  });
+  assert.equal(llamadas, 0);
+  assert.equal(r.reason, 'off');
+  assert.equal(h.entries['bypass.log'][0].kind, 'MUTATION_CHECK_OFF');
 });
 
 test('gate: --no-mutation → no se invoca y queda en bypass.log', async () => {

@@ -261,6 +261,17 @@ test('adhoc set sin modelo: la cita literal decide — paráfrasis denegada, cit
   const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   r = markerCli(home2, sid, ['adhoc', 'set', '{"reason":"motivo inventado con kill-switch"}'], { TYCON_STORY_GATE: 'off' });
   assert.equal(r.status, 0, r.stderr);
+  // …pero no en silencio: la constancia dice que el portón estaba apagado, y la noche la cuenta como escape.
+  const leer = (f) => fs.readFileSync(path.join(home2, '.claude', '.tycon-pipeline', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const set = leer('adhoc.log').filter((l) => l.kind === 'ADHOC_SET');
+  assert.equal(set.length, 1);
+  assert.equal(set[0].gate, 'off', 'el ADHOC_SET dice que se abrió con el portón apagado');
+  const bypass = leer('bypass.log').filter((l) => l.kind === 'STORY_GATE_OFF_ADHOC');
+  assert.equal(bypass.length, 1, 'el apagado queda en bypass.log');
+  assert.equal(bypass[0].reason, 'motivo inventado con kill-switch');
+  // Con el portón prendido, ni una cosa ni la otra.
+  const p0 = path.join(home, '.claude', '.tycon-pipeline', 'bypass.log');
+  assert.ok(!fs.existsSync(p0) || !fs.readFileSync(p0, 'utf8').includes('STORY_GATE_OFF_ADHOC'));
 });
 
 // Las cercas del caso crítico: sin modelo, el carril por prompt quedaría MÁS DÉBIL que el regex que reemplazó
