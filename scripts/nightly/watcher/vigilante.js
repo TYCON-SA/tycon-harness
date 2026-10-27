@@ -733,19 +733,22 @@ function medidaPara({ producto, regla, plugin, origen }, medidas) {
 }
 
 const FMT_BORRADOR = () => require('../findings/sources.js').FUENTES.vigilante.formato;
-// las marcas de la propuesta y del contador, que una reapertura borra
+// las marcas de la propuesta, del contador y de las fallas del análisis, que una reapertura borra
 const CLAVES_QUE_SE_REINICIAN = ['noches_sin_aparecer', 'noche_contada', 'resuelta_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'decidido_en_sitio',
-  'propuesta_accion', 'propuesta_razon', 'propuesta_modelo', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el'];
+  'propuesta_accion', 'propuesta_razon', 'propuesta_modelo', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
+  'analisis_motivo', 'analisis_fallas', 'analisis_fallo_el'];
 
 /**
  * Un resuelto o un ignorado de `archived/` que vuelve se reabre en `pending/` con el mismo archivo: otra vez pendiente,
- * el veredicto de antes en `veredicto_anterior`, el día en `reaparecio_el`, una noche más vista, y sin la propuesta ni
- * el contador. Primero se escribe el de `pending/` y después se borra el archivado.
+ * el veredicto de antes en `veredicto_anterior`, el día en `reaparecio_el`, una noche más vista, y sin la propuesta, el
+ * contador ni el análisis del modelo. Primero se escribe el de `pending/` y después se borra el archivado.
  */
 function reabrirBorrador(b, pendingDir, hoy) {
   const fmt = FMT_BORRADOR();
   let t = b.texto;
   for (const k of CLAVES_QUE_SE_REINICIAN) t = fmt.quitarClave(t, k);
+  // el análisis del modelo era de la vez anterior: la noche lo vuelve a escribir; el de una persona se conserva
+  t = t.replace(/^analisis:[ \t]*\n(?:[ \t]+[a-z_]+:.*\n?)*/m, (b) => (/^[ \t]+autor:[ \t]*"?modelo"?[ \t]*$/m.test(b) ? '' : b));
   t = t.replace(/^veredicto:.*$/m, 'veredicto: pendiente');
   t = fmt.ponerEscalar(t, 'veredicto_anterior', b.campos.veredicto || 'pendiente');
   t = fmt.ponerEscalar(t, 'reaparecio_el', JSON.stringify(hoy));

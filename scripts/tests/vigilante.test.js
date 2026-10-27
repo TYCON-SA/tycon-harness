@@ -978,8 +978,8 @@ test('T16 Resuelta_TrasNNoches (el vigilante) @story-4.11 @ac-27', () => {
 
 // T17 Reaparecio_Reabre (el vigilante) @story-4.11 @ac-28
 // 🔴 Falla con: callar un resuelto o un ignorado que vuelve (o abrirle un borrador nuevo en vez de reabrir el mismo),
-//    perder el veredicto de antes o la cuenta de noches, conservar la propuesta vieja, o reabrir un descartado dentro
-//    de su silencio.
+//    perder el veredicto de antes o la cuenta de noches, conservar la propuesta vieja o las fallas del análisis, o reabrir
+//    un descartado dentro de su silencio.
 test('T17 Reaparecio_Reabre (el vigilante) @story-4.11 @ac-28', () => {
   const o = operacionesDelVigilante({ n: 1 });
   try {
@@ -987,7 +987,7 @@ test('T17 Reaparecio_Reabre (el vigilante) @story-4.11 @ac-28', () => {
     const [nombre] = o.en('pending');
     o.noche('2026-10-20', SANO);
     assert.deepStrictEqual(o.en('archived'), [nombre], 'resuelto con N=1');
-    const conPropuesta = `${o.texto('archived', nombre)}propuesta_accion: arreglar\npropuesta_razon: "la de antes"\n`;
+    const conPropuesta = `${o.texto('archived', nombre)}propuesta_accion: arreglar\npropuesta_razon: "la de antes"\nanalisis_motivo: modelo-caido\nanalisis_fallas: 3\nanalisis_fallo_el: 2026-10-20\nanalisis:\n  recomendacion: "aceptar"\n  por_que_pasa: "La de antes"\n  por_que_recomienda: "La de antes"\n  autor: "modelo"\n  el: "2026-10-19"\n`;
     _fs.writeFileSync(_path.join(o.cola, 'archived', nombre), conPropuesta);
     o.noche('2026-10-21', CAIDO);
     assert.deepStrictEqual([o.en('pending'), o.en('archived')], [[nombre], []], 'el mismo borrador vuelve a pending/');
@@ -995,6 +995,8 @@ test('T17 Reaparecio_Reabre (el vigilante) @story-4.11 @ac-28', () => {
     assert.deepStrictEqual([escalar(t, 'reaparecio_el'), escalar(t, 'veredicto'), escalar(t, 'veredicto_anterior'), escalar(t, 'resuelta_el'),
       escalar(t, 'propuesta_accion'), escalar(t, 'noches_seguidas'), escalar(t, 'vista_por_ultima_vez')],
     ['2026-10-21', 'pendiente', 'pendiente', undefined, undefined, '2', '2026-10-21']);
+    assert.deepStrictEqual(['analisis_motivo', 'analisis_fallas', 'analisis_fallo_el'].map((k) => escalar(t, k)), [undefined, undefined, undefined], 'la que vuelve se analiza de nuevo');
+    assert.doesNotMatch(t, /^analisis:/m, 'sin el análisis del modelo de la vez anterior');
     const v = SOURCES_V.comoFicha('vigilante', t);
     assert.deepStrictEqual([v.estado, v.reaparecido], ['reaparecio', '2026-10-21']);
     // un ignorado que vuelve se reabre, aun dentro de sus 7 días
