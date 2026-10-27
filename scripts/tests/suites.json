@@ -1104,6 +1104,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/startup-batch.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/tokens-digest-other-tools.test.js",
       "requiere": []
     },
