@@ -81,11 +81,17 @@ pestaña Configuración, «Cuántas sesiones trabajan a la vez»), y cada máqui
 aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.js status` muestra quién trabaja, quién
 espera y por qué, y el tope con su origen.
 
+La coordinadora, además, lo ve sin pedirlo: en cada turno, si la máquina está en el tope, un aviso le dice quiénes
+trabajan; si lo pasó, por cuánto y cuál trabaja hace menos. Debajo del tope no dice nada, y ninguna otra sesión lo ve.
+Se apaga con `TYCON_COORDINATION_NOTICE=0`.
+
 ## Los pases adversariales, de a uno
 
 Un pase adversarial pesa mucho en la máquina: dos a la vez la saturan. Antes de lanzarlo, la sesión le pide turno a la
 coordinadora, y la coordinadora lo da cuando no hay otro en vuelo. `coordination.js status` dice qué pase está en
-vuelo, de qué historia, en qué sesión y desde cuándo.
+vuelo, de qué historia, en qué sesión y desde cuándo. Y cuando una sesión consulta el portón del pase
+(`pipeline.js deep-review-gate`) con otro en vuelo, la respuesta trae `other_in_flight` (historia, sesión y hora) y la
+línea que le dice que pida turno. Sin coordinadora designada, el portón responde como siempre.
 
 ## Las firmas, por sus dos vías
 
@@ -130,11 +136,11 @@ Lo mide el medidor de estilo que ya existe; esta receta no agrega otro.
 | Regla | Mide | Por qué |
 |---|---|---|
 | Al dueño van firmas, contraseñas y decisiones de producto | nadie | Qué es una decisión de producto es criterio: no hay un dato que lo diga. |
-| Las preguntas de las sesiones van a la coordinadora | nadie | Hoy no hay aviso; la coordinadora lo recuerda cuando una sesión le pregunta al dueño. |
+| Las preguntas de las sesiones van a la coordinadora | nadie | No hay aviso, por decisión del dueño: lo vería cada sesión de trabajo. La coordinadora lo recuerda cuando una sesión le pregunta al dueño. |
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
-| No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada, y `status` la cuenta. |
-| Pases adversariales de a uno | nadie | El turno lo da la coordinadora; `status` le muestra si hay uno en vuelo. |
+| No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, en el tope, el aviso de cada turno de la coordinadora. |
+| Pases adversariales de a uno | aviso | El turno lo da la coordinadora. El portón del pase le dice a la sesión que hay otro en vuelo y que pida turno; no la frena. |
 | Confirmar que una firma falta antes de pedirla | nadie | Cómo se confirma depende de cada firma; `signature` sólo evita dos archivos con el mismo comando. |
 | Un archivo por firma, borrado al firmar | aviso | `status` cuenta las firmas pendientes; `signature` no escribe un segundo archivo con el mismo comando. |
 | Pedidos en orden | nadie | Ningún dato de la máquina dice qué pedido es par de cuál sin preguntarle a la red en cada turno. |

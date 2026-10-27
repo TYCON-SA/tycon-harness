@@ -16,6 +16,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   open --name <n> --cwd <carpeta> -- <encargo>
  *                            abre una sesión de fondo con ese nombre; nunca reintenta
  *
+ * Además, sin línea de comandos: `capNotice` es el aviso del tope que la coordinadora ve en cada turno
+ * (scripts/hooks/coordination-notice.js) y `adversarialTurn` es lo que `deep-review-gate` agrega cuando otra sesión
+ * tiene un pase adversarial en vuelo. Los dos callan sin coordinadora designada.
+ *
  * Trabaja una sesión cuyo archivo dice `busy`, una de Codex con actividad en los últimos 5 minutos y una que abrió
  * `open` hace menos de 10 minutos y todavía no escribió su archivo. Las sesiones se leen con lo mismo que usa /wip.
  * El tope sale del lector de configuración (`coordination.max_working`, 3 sin valor); la carpeta de las firmas,
@@ -47,8 +51,9 @@ const coordinationDir = (home) => path.join(stateDir(home), 'coordination');
 // Un renglón sin caracteres de control ni invisibles: lo que llega a la pantalla del dueño o al contexto de la
 // coordinadora no puede mover el cursor ni esconder texto.
 const oneLine = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
-// Un nombre leído de afuera (una sesión, un hilo de Codex), acotado.
-const label = (s) => Array.from(oneLine(s)).slice(0, LABEL_MAX).join('');
+// Un nombre leído de afuera (una sesión, un hilo de Codex, una historia), acotado y sin `<` ni `>`: va dentro del bloque
+// que el aviso inyecta y no puede cerrarlo.
+const label = (s) => Array.from(oneLine(s).replace(/[<>]/g, '')).slice(0, LABEL_MAX).join('');
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
@@ -141,13 +146,22 @@ function recentOpened(home, now, problems) {
   return valid.filter((o) => now - o.at < OPENED_WINDOW_MS);
 }
 
-/** El estado de la máquina, como datos. */
+// Los pases adversariales en vuelo, con la sesión de cada uno.
+function inFlight(markers, nameOf) {
+  const out = [];
+  for (const [sid, m] of markers) {
+    if (adversarialInFlight(m)) out.push({ storyId: m.storyId ? label(m.storyId) : null, session: nameOf(sid), since: m.adversarial.launchedAt, sid });
+  }
+  return out;
+}
+
+/** El estado de la máquina, como datos. `noTranscripts`: sin abrir las conversaciones (el aviso de cada turno). */
 function status(opts = {}) {
   const home = opts.home || require('os').homedir();
   const env = opts.env || process.env;
   const now = opts.now == null ? Date.now() : Number(opts.now);
   const problems = [];
-  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), problems, path.join(claudeDir(home), 'projects'));
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), problems, opts.noTranscripts ? null : path.join(claudeDir(home), 'projects'));
   const markers = markersBySid(home, problems);
   const nameOf = (sid) => { const s = sessions.get(sid); return (s && s.name && label(s.name)) || String(sid).slice(0, 8); };
   const working = [];
@@ -164,24 +178,21 @@ function status(opts = {}) {
     const m = markers.get(sid);
     const story = m && m.storyId ? `la ${m.storyId}` : null;
     if (s.nameSource === 'derived' && s.name) unnamed.push(label(s.name));
-    if (s.busy) working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline' });
-    else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando' });
+    if (s.busy) working.push({ session: nameOf(sid), sid, why: story || 'trabajando sin pipeline', since: s.statusAt });
+    else if (justOpened.has(s.name)) working.push({ session: nameOf(sid), sid, why: 'recién abierta, todavía arrancando', since: (opened.find((o) => o.name === s.name) || {}).at || null });
     else waiting.push({ session: nameOf(sid), sid, why: story ? `${story}, ${s.status || 'sin estado'}` : 'sin trabajo' });
   }
   for (const c of codexThreads(opts.codexHome || path.join(home, '.codex'), problems)) {
     const session = c.name || c.id.slice(0, 8);
     const ago = c.last ? now - c.last : null;
-    if (ago != null && ago >= 0 && ago < CODEX_WINDOW_MS) working.push({ session, sid: c.id, why: 'Codex, con actividad en los últimos 5 minutos' });
+    if (ago != null && ago >= 0 && ago < CODEX_WINDOW_MS) working.push({ session, sid: c.id, why: 'Codex, con actividad en los últimos 5 minutos', since: c.last });
     else if (ago != null && ago >= 0 && ago < CODEX_IDLE_MS) waiting.push({ session, sid: c.id, why: 'Codex, sin actividad en los últimos 5 minutos' });
     else if (ago == null) waiting.push({ session, sid: c.id, why: 'Codex, sin fecha de actividad' });
   }
   for (const o of opened) {
-    if (!alive.has(o.name)) working.push({ session: o.name, sid: null, why: 'recién abierta, todavía sin archivo de sesión' });
+    if (!alive.has(o.name)) working.push({ session: o.name, sid: null, why: 'recién abierta, todavía sin archivo de sesión', since: o.at });
   }
-  const adversarial = [];
-  for (const [sid, m] of markers) {
-    if (adversarialInFlight(m)) adversarial.push({ storyId: m.storyId || null, session: nameOf(sid), since: m.adversarial.launchedAt });
-  }
+  const adversarial = inFlight(markers, nameOf).map(({ sid, ...a }) => a);
   const r = recipe({ home, arnes: opts.arnes, env });
   if (r.problem) problems.push(r.problem);
   let pending = [];
@@ -233,6 +244,73 @@ function coordinate(opts = {}) {
     ].join('\n') };
   }
   return { code: 0, text: statusText(status(opts)) };
+}
+
+// ── Lo que ve la coordinadora sin pedirlo ──
+
+// El rol de la coordinadora, sólo si esta sesión es la designada. `{ role }`, `{ problem }` cuando la designación dice
+// que es ella pero la configuración no se lee, o null: sin rol, sin designación, en otra sesión o sin poder leer el
+// registro (en la duda, callar: el aviso no puede llegarle a una sesión de trabajo).
+function coordinatorRole(opts, sid) {
+  const env = opts.env || process.env;
+  const home = opts.home || require('os').homedir();
+  if (!sid) return null;
+  const d = designacionVigente({ home });
+  if (!d || d.error || d.sesion !== sid) return null;
+  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
+  if (rol.valor) return { role: rol.valor };
+  return rol.aviso && /no se pudo leer|falló/.test(rol.aviso) ? { problem: rol.aviso.replace(/: nadie reenvía$/, '') } : null;
+}
+const sessionOf = (opts) => opts.sessionId || (opts.env || process.env).CLAUDE_CODE_SESSION_ID || null;
+
+/**
+ * El aviso del tope para la sesión coordinadora: en el tope, quiénes trabajan; pasado el tope, por cuánto y cuál trabaja
+ * hace menos. Debajo del tope, null. Lo que no pudo leer va en una línea. No abre ninguna conversación.
+ */
+function capNotice(opts = {}) {
+  const sid = sessionOf(opts);
+  const who = coordinatorRole(opts, sid);
+  if (!who) return null;
+  const s = status({ ...opts, noTranscripts: true });
+  const problems = who.problem ? [who.problem, ...s.problems] : s.problems;
+  const working = s.working.filter((w) => w.sid !== sid);
+  const cap = s.cap.value;
+  const lines = [];
+  if (working.length >= cap) {
+    const names = working.map((w) => w.session).join(', ');
+    if (working.length === cap) lines.push(`Coordinación: la máquina está en el tope (${working.length} de ${cap} trabajando: ${names}). Antes de asignar, esperá que una termine.`);
+    else {
+      const newest = working.filter((w) => Number.isFinite(w.since)).sort((a, b) => b.since - a.since)[0];
+      lines.push(`Coordinación: la máquina pasó el tope por ${working.length - cap} (${working.length} de ${cap} trabajando: ${names})${newest ? `; la que trabaja hace menos: ${newest.session}` : ''}.`);
+    }
+  }
+  if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
+  return lines.length ? lines.join('\n') : null;
+}
+
+/**
+ * Lo que `deep-review-gate` agrega cuando otra sesión tiene un pase adversarial en vuelo: `{ other_in_flight, turn }`.
+ * Sin otro pase, o sin coordinadora designada, null.
+ */
+function adversarialTurn(opts = {}) {
+  const env = opts.env || process.env;
+  const home = opts.home || require('os').homedir();
+  const sid = sessionOf(opts);
+  const d = designacionVigente({ home });
+  if (!d || d.error) return null;
+  const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
+  if (!rol.valor) return null;
+  const problems = [];
+  const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), problems, null);
+  // Una coordinadora que ya se cerró no da turnos; el pase de una sesión que ya no vive quedó abandonado.
+  if (!(sessions.get(d.sesion) || {}).alive) return null;
+  const markers = markersBySid(home, problems);
+  const others = [...markers].filter(([k, m]) => k !== sid && adversarialInFlight(m) && (!sessions.has(k) || sessions.get(k).alive));
+  if (!others.length) return null;
+  const nameOf = (k) => { const s = sessions.get(k); return (s && s.name && label(s.name)) || String(k).slice(0, 8); };
+  const other_in_flight = inFlight(new Map(others), nameOf).map(({ sid: _s, ...a }) => a);
+  const list = other_in_flight.map((a) => `${a.storyId ? `la ${a.storyId}` : 'sin story'}, ${a.session}, desde las ${hhmm(a.since)}`).join(' · ');
+  return { other_in_flight, turn: `Hay otro pase adversarial en vuelo (${list}): pedile turno a la ${rol.valor} antes de lanzar este.` };
 }
 
 // ── Las firmas por la terminal ──
@@ -444,4 +522,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, coordinate, signature, signatureBody, signatureDone, open, coordinationDir, permissionPhrase };
+module.exports = { status, statusText, capNotice, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir, permissionPhrase };
