@@ -689,12 +689,28 @@ function descripcionDelPedido(fuente, v, crudo) {
 }
 
 /**
+ * Qué hace la noche con una ficha (la vista de sources.js `comoFicha`) al pedir trabajo, con el destino de
+ * `pedidoDeLaNoche`: `{ pide: true }` si la pide esta noche; `{ pide: false, por }` si la saltea (`no-es-arreglo`,
+ * `pedido`: ya tiene su tarea, `historia`: ya tiene su story); `{ pide: false, motivo }` si no la pide y lo anota en la
+ * ficha (`sin-confirmar`: quedó «pidiendo» de una noche anterior; `sin-configurar`: no hay dónde crearla). Es la única
+ * condición: la usan `pedirTrabajo` y el sitio, que dice «se crea esta noche» sólo con `pide: true`.
+ */
+function queHaraLaNoche(v, destino) {
+  if (!v || v.veredicto !== 'arreglo' || v.estado === 'resuelta') return { pide: false, por: 'no-es-arreglo' };
+  if (v.pedido) return { pide: false, por: 'pedido' };
+  if (v.historia) return { pide: false, por: 'historia' };
+  if (v.pidiendo) return { pide: false, motivo: 'sin-confirmar' };
+  if (!destino) return { pide: false, motivo: 'sin-configurar' };
+  return { pide: true };
+}
+
+/**
  * Crea el pedido de cada arreglo de la fuente sin pedido. Antes de llamar deja `pedido: pidiendo`; sin poder escribirla,
  * no llama. Con el id lo anota, con el asignado que la plataforma confirmó y `pedido_motivo`. Con la plataforma que dice
  * que no, la ficha queda sin pedido con `plataforma-caida` y se reintenta la noche siguiente; si lo que falta es
  * configuración (o operations.json no dice dónde va), con `sin-configurar` y sin llamar. Una respuesta que no dice que no
  * pero tampoco trae el número (o que lanza) deja la marca: pudo crearlo. Una ficha que ya estaba `pidiendo` no pide otro
- * y queda `sin-confirmar`. Un hallazgo del vigilante con `story_creada` ya tiene su pedido. Devuelve `{ creados, sinAsignado, sinCrear, lineas }`; los
+ * y queda `sin-confirmar`. Qué ficha se pide lo decide `queHaraLaNoche`. Devuelve `{ creados, sinAsignado, sinCrear, lineas }`; los
  * renglones no copian el texto de un error.
  */
 async function pedirTrabajo({ base, fuente, operations, run = null, dir = null, repoDir = null }) {
@@ -726,15 +742,16 @@ async function pedirTrabajo({ base, fuente, operations, run = null, dir = null, 
       r.lineas.push(`pedido de ${nombre.slice(0, -5)}: la ficha no se pudo leer (${(e && e.code) || 'sin forma'})`);
       continue;
     }
-    if (!v || v.veredicto !== 'arreglo' || v.estado === 'resuelta' || v.pedido || conValor(crudo.story_creada)) continue;
+    const noche = queHaraLaNoche(v, destino);
+    if (noche.por) continue;
     const escribir = (campos) => { txt = acceso.poner(txt, campos); fs.writeFileSync(ruta, txt); };
-    if (String(crudo.pedido) === PIDIENDO) {
+    if (noche.motivo === 'sin-confirmar') {
       try { if (crudo.pedido_motivo !== 'sin-confirmar') escribir({ pedido_motivo: 'sin-confirmar' }); } catch { /* se vuelve a decir mañana */ }
       r.sinCrear.push({ id: v.id, motivo: 'sin-confirmar' });
       r.lineas.push(`pedido de ${v.id}: quedó «pidiendo» de una noche anterior sin el número; no se pide otro (lo mira una persona)`);
       continue;
     }
-    if (!destino) {
+    if (noche.motivo === 'sin-configurar') {
       try { if (crudo.pedido_motivo !== 'sin-configurar') escribir({ pedido_motivo: 'sin-configurar' }); } catch { /* se vuelve a decir mañana */ }
       r.sinCrear.push({ id: v.id, motivo: 'sin-configurar' });
       r.lineas.push(`pedido de ${v.id}: ${FALTA_CONFIGURAR}; no se pide`);
@@ -1016,7 +1033,7 @@ async function cruzarCerrados({ base, fuente, operations, hoy, run, repoDir, car
 }
 
 module.exports = {
-  MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, pedirTrabajo, avisarQueVolvio, avisarCerradoConFallaViva, leerAvisoCerrado, AVISO_CERRADO, noche,
+  MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, conValor, queHaraLaNoche, pedidoDeLaNoche, pedirTrabajo, avisarQueVolvio, avisarCerradoConFallaViva, leerAvisoCerrado, AVISO_CERRADO, noche,
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
   ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, FALLAS_MAX, razonSegura, textoDeAnalisis, problemasDeAnalisis, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,

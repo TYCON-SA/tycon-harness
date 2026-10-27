@@ -1128,7 +1128,7 @@ function volcar(a) {
         if (Object.prototype.hasOwnProperty.call(pedidos, id)) continue;      // un id es único en la organización
         // 🔴 LISTA BLANCA: estos campos y ninguno más. Nunca `fields` entero.
         const e = { ficha: f.idFicha, proyecto, leido: false, estado: null, categoria: null, motivo: null,
-          estado_desde: null, cambiado_por_persona_el: null, cambiado_por_persona: null, asignado: null, motivo_no_leido: null };
+          estado_desde: null, cambiado_por_persona_el: null, cambiado_por_persona: null, asignado: null, sin_asignar: null, motivo_no_leido: null };
         pedidos[id] = e;
         const w = leerPedidoDeAzure(az, id);
         if (!w.ok) { e.motivo_no_leido = w.motivo; continue; }
@@ -1140,7 +1140,8 @@ function volcar(a) {
         Object.assign(e, { leido: true, estado, categoria: cats.categorias[estado],
           motivo: typeof w.fields['System.Reason'] === 'string' ? w.fields['System.Reason'] : null,
           estado_desde: w.fields['Microsoft.VSTS.Common.StateChangeDate'] || null,
-          cambiado_por_persona_el: persona.el, cambiado_por_persona: persona.nombre, asignado: nombreDeAsignado(w.fields['System.AssignedTo']) });
+          cambiado_por_persona_el: persona.el, cambiado_por_persona: persona.nombre, asignado: nombreDeAsignado(w.fields['System.AssignedTo']),
+          sin_asignar: !w.fields['System.AssignedTo'] });
       }
     }
     // Nombrado = en `pedidos:` de CUALQUIER ficha, archivadas incluidas: un Bug de una ficha descartada
@@ -1181,7 +1182,7 @@ function nombreDeAsignado(asg) {
 
 /**
  * Lo que la noche anota en cada ficha viva para el sitio: quién tiene cada tarea (`asignados:`, del volcado de
- * `state`) y, si a alguna le falta su tarea, por qué (`pedido_motivo:`). Con el sitio, la ficha que ya tiene su
+ * `state`; la leída sin nadie, con `SIN_ASIGNAR`) y, si a alguna le falta su tarea, por qué (`pedido_motivo:`). Con el sitio, la ficha que ya tiene su
  * tarea no espera ninguna decisión: pasa a promoted/ con `veredicto: util`. Sin el sitio, se anota y no se mueve.
  */
 function anotarSeguimiento(ctx, res, rutaOperations) {
@@ -1195,6 +1196,8 @@ function anotarSeguimiento(ctx, res, rutaOperations) {
       const asignados = pedidos.map(({ id }) => {
         const v = volcados[id];
         const nombre = v && typeof v.asignado === 'string' ? nombreDeAsignado(v.asignado) : null;
+        // leída y sin nadie: se anota, para que el sitio diga «sin asignar» sólo cuando se midió
+        if (!nombre && v && v.leido === true && v.sin_asignar === true) return `${id}: ${fuentes.SIN_ASIGNAR}`;
         return nombre ? `${id}: ${nombre}` : null;
       }).filter(Boolean);
       const falta = res.sin_pedido.find((x) => x.ficha === f.idFicha);

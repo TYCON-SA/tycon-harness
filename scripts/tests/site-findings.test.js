@@ -161,7 +161,7 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
       tarea: { numero: '77', enlace: 'https://dev.acme.example/acme/_workitems/edit/77' }, asignado: null, motivo: null }]);
     // y la vulnerabilidad, con la tarea de su proyecto armada con la organización de operations.json
     assert.deepStrictEqual(j.marcha.vulnerabilidades, [{ id: 'dep-uno', paquete: 'pkg-uno', severidad: 'high', repos: 1, desde: '2026-10-19', volvio: null,
-      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null }], motivo: null }]);
+      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null, sinAsignar: false }], motivo: null }]);
     // la página: tarjetas, no tabla; los números son enlaces; nada de lo que no se muestra
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.strictEqual(p.status, 200);
@@ -460,18 +460,19 @@ test('T58 Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche — con la decisión en
 // ── T66 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // Mantenimiento_Vulnerabilidades_Seguimiento @story-4.11 @ac-20
-// 🔴 Falla con: un botón en una vulnerabilidad, una tarea sin enlace con número, el correo de quien la tiene, o la frase
-// de la deuda repetida por fila.
+// 🔴 Falla con: un botón en una vulnerabilidad, una tarea sin enlace con número, el correo de quien la tiene, «sin asignar»
+// en una tarea que la noche no midió, o la frase de la deuda repetida por fila.
 test('T66 Mantenimiento_Vulnerabilidades_Seguimiento — paquetes: severidad, repos, desde, la tarea de cada proyecto y quién la tiene', { timeout: 60000 }, async () => {
   const extra = {
-    'inbox/dependencies/pending/dep-uno.yaml': `${FICHAS['inbox/dependencies/pending/dep-uno.yaml']}  - Producto Y: 5003\nasignados:\n  - "5002: Ana Pérez"\n  - "5003: dev.a@acme.example"\nreaparecido: 2026-10-22\n`,
+    'inbox/dependencies/pending/dep-uno.yaml': `${FICHAS['inbox/dependencies/pending/dep-uno.yaml']}  - Producto Y: 5003\n  - Producto Z: 5004\n  - Producto W: 5005\nasignados:\n  - "5002: Ana Pérez"\n  - "5003: <nadie>"\n  - "5004: dev.a@acme.example"\nreaparecido: 2026-10-22\n`,
     'inbox/dependencies/pending/dep-sin.yaml': 'id: dep-sin\ndetectado: 2026-09-09\nveredicto: pendiente\npaquete: pkg-sin\nseveridad: high\nnoches: 9\npedido_motivo: sin-proyecto\nrepos:\n  - A/x\n  - B/y\n',
   };
   await conSitio({ extra }, async ({ h, lead, lista }) => {
     const v = (await lista()).json.marcha.vulnerabilidades;
     // críticas primero; después, la más vieja
     assert.deepStrictEqual(v.map((x) => x.id), ['dep-sin', 'dep-uno']);
-    assert.deepStrictEqual(v[1].tareas.map((t) => [t.proyecto, t.numero, t.asignado]), [['Producto X', '5002', 'Ana Pérez'], ['Producto Y', '5003', null]]);
+    assert.deepStrictEqual(v[1].tareas.map((t) => [t.proyecto, t.numero, t.asignado, t.sinAsignar]),
+      [['Producto X', '5002', 'Ana Pérez', false], ['Producto Y', '5003', null, true], ['Producto Z', '5004', null, false], ['Producto W', '5005', null, false]]);
     assert.strictEqual(v[1].volvio, '2026-10-22');
     assert.strictEqual(v[0].motivo, 'sin-proyecto');
     const p = await h.pedir('/mantenimiento', { cookie: lead });
@@ -480,10 +481,13 @@ test('T66 Mantenimiento_Vulnerabilidades_Seguimiento — paquetes: severidad, re
     assert.match(p.texto, /Vulnerabilidades de paquetes: 2 \(0 críticas, 2 altas\)\. Cada equipo ya tiene su tarea\. La más vieja, desde el 09\/09\./);
     assert.match(bloque, /en 2 repos · desde 09\/09/);
     assert.match(bloque, /en 1 repo · desde 19\/10 · volvió el 22\/10/);
-    assert.match(bloque, /<summary>2 tareas<\/summary>/);
+    assert.match(bloque, /<summary>4 tareas<\/summary>/);
     assert.match(bloque, /Tarea 5002 \(Producto X\)<\/a> · asignada a Ana Pérez/);
-    // la tarea sin persona lo dice, en vez de callarlo
+    // la tarea que la noche leyó sin nadie dice «sin asignar»; la que no se midió (o con un correo), que no se sabe
     assert.match(bloque, /Tarea 5003 \(Producto Y\)<\/a> · sin asignar/);
+    assert.match(bloque, /Tarea 5004 \(Producto Z\)<\/a> · asignada a: no se sabe todavía/);
+    assert.match(bloque, /Tarea 5005 \(Producto W\)<\/a> · asignada a: no se sabe todavía/);
+    assert.doesNotMatch(bloque, /&lt;nadie&gt;|<nadie>/);
     assert.match(bloque, /Todavía sin tarea: sus repos no tienen un proyecto conocido/);
     assert.doesNotMatch(bloque, /data-accion|dev\.a@acme/);
     assert.strictEqual(p.texto.split('Declara la deuda en su repo, con plazo.').length - 1, 1, 'la frase de la deuda, una vez');
@@ -762,5 +766,58 @@ test('M7 Mantenimiento_VigilanteEnLlano — el título dice producto, plugin, qu
     const pEn = (await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto;
     assert.match(pEn, /Model proposal: Archive\. <span lang="es">Es ruido de un cliente de prueba<\/span> \(the reason is in Spanish\)/);
     assert.strictEqual(fila(en, 'vigilante', 'vig-tres').nombre, 'Facturas · plugin utilesx: a new error, or one that came with a deployment (12 times)');
+  });
+});
+
+// Mantenimiento_EnMarcha_SeCreaSoloSiLaNocheLaCrea
+// 🔴 Falla con: «La tarea se crea esta noche» en una ficha que la noche saltea (ya tiene su historia, quedó «pidiendo»
+// de una noche anterior, o la organización no dijo dónde crear las tareas); la historia mostrada como la ruta cruda; o
+// una ficha que el sitio da por creada esta noche y la noche no pide (o al revés).
+test('M8 Mantenimiento_EnMarcha_SeCreaSoloSiLaNocheLaCrea — «se crea esta noche» sólo donde la noche la va a crear', { timeout: 60000 }, async () => {
+  const extra = {
+    'inbox/watcher/promoted/vig-historia.yaml': 'id: vig-historia\nfecha: 2026-09-07\nproducto: abc\nregla: latido\nseveridad: media\nplugin: abcbackend\nveredicto: util\nstory_creada: "Acme/Project/specs/epics/stories/7-9-latido-sin-uso.md"\npr: 3587\n',
+    'inbox/watcher/promoted/vig-pidiendo.yaml': 'id: vig-pidiendo\nfecha: 2026-10-21\nproducto: abc\nregla: deriva\nseveridad: alta\nplugin: abcbackend\nveredicto: util\npedido: "pidiendo"\n',
+    'inbox/watcher/promoted/vig-nueva.yaml': 'id: vig-nueva\nfecha: 2026-10-22\nproducto: abc\nregla: deriva\nseveridad: alta\nplugin: abcbackend\nveredicto: util\n',
+    // la nota de una noche sin configurar no manda: hoy está configurado y la noche la pide
+    'inbox/watcher/promoted/vig-vieja.yaml': 'id: vig-vieja\nfecha: 2026-10-23\nproducto: abc\nregla: deriva\nseveridad: alta\nplugin: abcbackend\nveredicto: util\npedido_motivo: "sin-configurar"\n',
+    // la story sin número de pedido, y la que no tiene forma de nombre: nunca la ruta
+    'inbox/watcher/promoted/vig-sinpr.yaml': 'id: vig-sinpr\nfecha: 2026-09-08\nproducto: abc\nregla: latido\nseveridad: media\nplugin: abcbackend\nveredicto: util\nstory_creada: "Acme/specs/8-1-otra.md"\n',
+    'inbox/watcher/promoted/vig-rara.yaml': 'id: vig-rara\nfecha: 2026-09-09\nproducto: abc\nregla: latido\nseveridad: media\nplugin: abcbackend\nveredicto: util\nstory_creada: "Acme/specs/una story rara.md"\n',
+    // la decidida que todavía no pasó a promoted/: la noche no la pide
+    'inbox/watcher/pending/vig-quieta.yaml': 'id: vig-quieta\nfecha: 2026-10-24\nproducto: abc\nregla: deriva\nseveridad: alta\nplugin: abcbackend\nveredicto: util\n',
+  };
+  const estados = (j) => Object.fromEntries(j.marcha.arreglos.filter((x) => x.fuente === 'vigilante').map((x) => [x.id, [x.estado, x.motivo || (x.historia && x.historia.nombre) || null]]));
+  await conSitio({ extra }, async ({ h, ops, lead, lista }) => {
+    const j = (await lista()).json;
+    assert.deepStrictEqual(estados(j), {
+      'vig-historia': ['historia', '7-9-latido-sin-uso'], 'vig-pidiendo': ['sin_tarea', 'sin-confirmar'], 'vig-nueva': ['se_crea', null],
+      'vig-vieja': ['se_crea', null], 'vig-sinpr': ['historia', '8-1-otra'], 'vig-rara': ['historia', null], 'vig-quieta': ['sin_tarea', 'sin-mover'] });
+    assert.deepStrictEqual(j.marcha.arreglos.find((x) => x.id === 'vig-historia').historia, { nombre: '7-9-latido-sin-uso', pedido: 3587 });
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(p, /Ya tiene su historia: 7-9-latido-sin-uso \(pedido 3587\)/);
+    assert.doesNotMatch(p, /Acme\/Project\/specs/, 'nunca la ruta cruda');
+    assert.match(p, /Ya tiene su historia: 8-1-otra</);
+    assert.match(p, /Ya tiene su historia</, 'la de nombre raro, sin nombre');
+    assert.doesNotMatch(p, /una story rara|Acme\/specs/, 'nunca la ruta cruda');
+    assert.match(p, /Sin tarea: todavía no pasó a las decididas/);
+    assert.strictEqual((p.match(/La tarea se crea esta noche/g) || []).length, 2, 'sólo las que la noche va a pedir');
+    // la noche, sobre las mismas fichas, pide exactamente las que el sitio da por creadas esta noche
+    const pedidas = [];
+    const run = async (op, args) => { pedidas.push(args.tags.find((t) => t.startsWith('arnes:')).slice(6)); return { ok: true, value: { id: 900 + pedidas.length } }; };
+    await CYCLE.pedirTrabajo({ fuente: 'vigilante', dir: path.join(ops.trabajo, 'inbox', 'watcher'), operations: path.join(ops.trabajo, 'operations.json'), run, repoDir: ops.trabajo });
+    assert.deepStrictEqual(pedidas, j.marcha.arreglos.filter((x) => x.fuente === 'vigilante' && x.estado === 'se_crea').map((x) => x.id));
+  });
+  // sin dónde crear las tareas en operations.json, la noche no pide ninguna: el sitio lo dice
+  const sinDestino = { version: 1, owners: { default: LEAD }, site: { access: [{ role: 'maintainer', emails: [LEAD] }] } };
+  await conSitio({ extra: { ...extra, 'operations.json': `${JSON.stringify(sinDestino, null, 2)}\n` } }, async ({ lista }) => {
+    const j = (await lista()).json;
+    assert.deepStrictEqual(estados(j)['vig-nueva'], ['sin_tarea', 'sin-configurar']);
+    assert.ok(!j.marcha.arreglos.some((x) => x.estado === 'se_crea'), JSON.stringify(j.marcha.arreglos));
+  });
+  // con operations.json ilegible la noche tampoco pide, pero no es que no se haya configurado: lo dice
+  await conSitio({ extra: { ...extra, 'operations.json': '{ esto no es json\n' } }, async ({ lista }) => {
+    const j = (await lista()).json;
+    assert.deepStrictEqual(estados(j)['vig-nueva'], ['sin_tarea', 'configuracion-ilegible']);
+    assert.ok(!j.marcha.arreglos.some((x) => x.estado === 'se_crea'), JSON.stringify(j.marcha.arreglos));
   });
 });

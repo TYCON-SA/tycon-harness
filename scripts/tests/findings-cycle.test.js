@@ -1806,10 +1806,12 @@ test('T102 VistaComun_AnalisisHechosYTareas', () => {
   // dependencias: todas las tareas, con el nombre de quien la tiene (nunca un correo) y el motivo de las que faltan
   const dep = ['id: dep-uno', 'detectado: 2026-09-09', 'veredicto: util', 'paquete: next', 'severidad: critical', 'noches: 3',
     'pedido_motivo: tope', 'repos:', '  - Producto X/FrontEnd', '  - Producto Y/Forms', 'pedidos:', '  - Producto X: 5467', '  - Producto Y: 5445',
-    'asignados:', '  - "5467: Ana Pérez"', '  - "5445: ana@acme.example"', ''].join('\n');
+    '  - Producto Z: 5446', 'asignados:', '  - "5467: Ana Pérez"', '  - "5445: ana@acme.example"', '  - "5446: <nadie>"', ''].join('\n');
   const d = sources.comoFicha('dependencias', dep);
-  assert.deepStrictEqual(d.pedidos, [{ proyecto: 'Producto X', id: '5467', asignado: 'Ana Pérez' }, { proyecto: 'Producto Y', id: '5445', asignado: null }]);
-  assert.deepStrictEqual(d.pedido, { id: '5445', enlace: null }, 'el último sigue siendo el vigente');
+  // «<nadie>» es la tarea que la noche leyó sin nadie; la que no se midió (o con un correo) no dice ninguna de las dos
+  assert.deepStrictEqual(d.pedidos, [{ proyecto: 'Producto X', id: '5467', asignado: 'Ana Pérez', sin_asignar: false },
+    { proyecto: 'Producto Y', id: '5445', asignado: null, sin_asignar: false }, { proyecto: 'Producto Z', id: '5446', asignado: null, sin_asignar: true }]);
+  assert.deepStrictEqual(d.pedido, { id: '5446', enlace: null }, 'el último sigue siendo el vigente');
   assert.strictEqual(d.pedido_motivo, 'tope');
   assert.strictEqual(d.repos, 2);
   assert.strictEqual(d.severidad, 'critical');
