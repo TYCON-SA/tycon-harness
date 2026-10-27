@@ -1419,8 +1419,22 @@ if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECT
   #    segunda sesión del día borraría el aviso de vencimiento de la llave, que sale una sola vez por día.
   #    El barrido sigue con `>`: su registro es el estado de este arranque, no un historial.
   # (este bash nuevo no ve la función `node` del instalador: el Node del arnés le llega como argumento, `${11}`)
+  # 🔴 Una tanda a la vez por máquina. Cada sesión nueva lanzaba otra entera aunque hubiera una corriendo: con varias
+  #    sesiones abiertas, una máquina llegó a una carga de 49. El candado es una carpeta con el pid adentro; si el pid
+  #    ya no vive (la tanda murió), el arranque siguiente lo toma. Sin pid y con más de 10 minutos, también.
+  # 🔴 La bajada del arranque es liviana (--no-threads): sin esa opción traía el buzón entero del equipo —4,1 GB, casi
+  #    todo conversaciones— en cada arranque de cada máquina, incluso lo que esta misma máquina acababa de subir. Las
+  #    conversaciones y los cambios de git se bajan a pedido (la vista de corridas, el tablero).
   nohup bash -c '
     N="${11:-node}"
+    L="$4/startup-batch.lock"
+    if ! mkdir "$L" 2>/dev/null; then
+      p=$(cat "$L/pid" 2>/dev/null)
+      if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then exit 0; fi
+      if [ -z "$p" ] && [ -z "$(find "$L" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then exit 0; fi
+      rm -rf "$L"; mkdir "$L" 2>/dev/null || exit 0
+    fi
+    echo $$ > "$L/pid"; trap "rm -rf \"$L\"" EXIT
     rotar() { [ -f "$1" ] && [ "$(wc -c < "$1" | tr -d " ")" -gt 524288 ] && mv -f "$1" "$1.1"; return 0; }
     # los registros con nombre viejo (story 8.9, D2): copiados antes de abrirlos. Si alguno no se puede llevar, los otros se
     # llevan igual y la falla queda en hook-errors.log (el registro nuevo de ése nace sin la historia del viejo, que sigue ahí)
@@ -1431,7 +1445,7 @@ if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECT
     if [ "$1" = 1 ]; then "$N" "$2" --pending --budget-ms 45000 > "$4/thread-rescue.log" 2>&1; fi
     if [ "$8" = 1 ]; then rotar "$4/collect-findings.log"; "$N" "$9" --budget-ms 60000 >> "$4/collect-findings.log" 2>&1 < /dev/null; fi
     if [ "$5" = 1 ]; then rotar "$4/upload-runs.log"; "$N" "$3" --budget-ms 90000 >> "$4/upload-runs.log" 2>&1; fi
-    if [ "$6" = 1 ]; then rotar "$4/download-runs.log"; "$N" "$7" --budget-ms 120000 >> "$4/download-runs.log" 2>&1 < /dev/null; fi
+    if [ "$6" = 1 ]; then rotar "$4/download-runs.log"; "$N" "$7" --no-threads --budget-ms 120000 >> "$4/download-runs.log" 2>&1 < /dev/null; fi
   ' _ "$_RESCATAR" "$TOKENS_DIGEST_JS" "$SUBIR_CORRIDAS_JS" "$HOME/.claude/.tycon-pipeline" "$_SUBIR" "$_BAJAR" "$BAJAR_CORRIDAS_JS" \
     "$_RECOLECTAR" "$RECOLECTAR_JS" "$LEGACY_NAMES_JS" "$HNODE" \
     >/dev/null 2>&1 &
