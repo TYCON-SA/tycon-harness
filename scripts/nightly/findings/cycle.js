@@ -32,8 +32,8 @@ const NOCHES_POR_DEFECTO = 3;
 // `aviso_volvio_el`, el día que se le avisó a su pedido que volvió, y `aviso_cerrado_el`, el día que se le avisó a su
 // pedido cerrado que la falla sigue (o que se vio que el pedido ya no existe).
 const CLAVES = ['id', 'fuente', 'causa', 'nombre', 'primera_vez', 'ultima_vez', 'apariciones', 'noches_sin_aparecer',
-  'noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'veredicto', 'veredicto_anterior', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
-  'analisis', 'analisis_motivo', 'pedido', 'asignado', 'pedido_motivo', 'estado', 'casos', 'casos_total', 'casos_vistos'];
+  'noche_contada', 'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'veredicto', 'veredicto_anterior', 'decidido_en_sitio', 'propuesta', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el',
+  'hechos', 'analisis', 'analisis_motivo', 'pedido', 'asignado', 'pedido_motivo', 'estado', 'casos', 'casos_total', 'casos_vistos'];
 // Por qué un arreglo quedó sin pedido o sin asignado: una lista cerrada, nunca el texto de un error.
 const MOTIVOS_SIN_PEDIDO = ['sin-responsable', 'plataforma-sin-asignado', 'plataforma-caida', 'sin-confirmar', 'sin-configurar'];
 // La marca que la noche deja en la ficha antes de pedirle el pedido a la plataforma: una ficha que la tiene sin id no
@@ -49,6 +49,8 @@ const MOTIVOS_SIN_ANALISIS = [...MOTIVOS_SIN_PROPUESTA, 'no-aporta', 'sin-hechos
 // vuelve, con quién lo escribió. Cada texto con su tope; `arreglo` sólo y siempre con «arreglar».
 const TOPES_DE_ANALISIS = { por_que_pasa: 220, por_que_recomienda: 160, arreglo: 220, si_vuelve: 160 };
 const AUTORES = ['modelo', 'persona'];
+// La clase de un error, de una lista cerrada: la ficha nunca lleva el texto del error. `salida` va con su código.
+const CLASES_DE_ERROR = ['sin-procesos', 'tiempo', 'archivo-no-encontrado', 'json-ilegible', 'node-viejo', 'permiso', 'red', 'salida', 'otro'];
 // Las noches seguidas que una ficha puede fallar antes de dejar de pedirle propuesta.
 const FALLAS_MAX = 3;
 
@@ -109,6 +111,33 @@ function valorConForma(v) {
   return typeof v === 'string' && (FECHA.test(v) || ENLACE.test(v) || CLAVE.test(v));
 }
 
+/** ¿Los hechos de una ficha tienen forma? La cuenta por clase y la más común, con números; nada de texto. */
+function hechosConForma(h) {
+  if (!esObjeto(h) || Object.keys(h).some((k) => !['errores', 'error_clase', 'error_clase_veces', 'error_veces', 'error_codigo'].includes(k))) return false;
+  if (!esObjeto(h.errores) || Object.entries(h.errores).some(([k, v]) => !CLASES_DE_ERROR.includes(k) || !entero(v, 1))) return false;
+  if (!CLASES_DE_ERROR.includes(h.error_clase) || !entero(h.error_clase_veces, 1) || !entero(h.error_veces, h.error_clase_veces)) return false;
+  return !('error_codigo' in h) || entero(h.error_codigo, 0);
+}
+
+/**
+ * Suma a los hechos de una ficha los errores de un caso nuevo (`{ errores: { clase: n }, codigo }`) y recalcula la clase
+ * más común; en un empate, la que ya era la más común.
+ */
+function sumarErrores(hechos, de) {
+  if (!de || !esObjeto(de.errores)) return hechos;
+  const errores = { ...((hechos && hechos.errores) || {}) };
+  let suma = 0;
+  for (const [k, v] of Object.entries(de.errores)) if (CLASES_DE_ERROR.includes(k) && entero(v, 1)) { errores[k] = (errores[k] || 0) + v; suma += v; }
+  if (!suma) return hechos;
+  const max = Math.max(...Object.values(errores));
+  const antes = hechos && hechos.error_clase;
+  const clase = errores[antes] === max ? antes : CLASES_DE_ERROR.find((k) => errores[k] === max);
+  const h = { errores, error_clase: clase, error_clase_veces: errores[clase], error_veces: Object.values(errores).reduce((a, b) => a + b, 0) };
+  const codigo = entero(de.codigo, 0) ? de.codigo : hechos && hechos.error_codigo;
+  if (errores.salida && entero(codigo, 0)) h.error_codigo = codigo;
+  return h;
+}
+
 /** Los problemas de forma de una ficha común; vacío si se puede escribir. */
 function problemasDeForma(f) {
   if (!esObjeto(f)) return ['la ficha no es un objeto'];
@@ -141,6 +170,8 @@ function problemasDeForma(f) {
   if ('propuesta_motivo' in f && f.propuesta_motivo !== null && !MOTIVOS_SIN_PROPUESTA.includes(f.propuesta_motivo)) p.push('propuesta_motivo: fuera del vocabulario');
   if ('propuesta_fallas' in f && !(entero(f.propuesta_fallas, 0) && f.propuesta_fallas <= FALLAS_MAX)) p.push(`propuesta_fallas: un entero de 0 a ${FALLAS_MAX}`);
   if ('propuesta_fallo_el' in f && !(typeof f.propuesta_fallo_el === 'string' && FECHA.test(f.propuesta_fallo_el))) p.push('propuesta_fallo_el: una fecha');
+  if ('decidido_en_sitio' in f && !(typeof f.decidido_en_sitio === 'string' && FECHA.test(f.decidido_en_sitio))) p.push('decidido_en_sitio: no es una fecha');
+  if ('hechos' in f && f.hechos !== null && !hechosConForma(f.hechos)) p.push('hechos: sin forma');
   if ('analisis' in f && f.analisis !== null) p.push(...problemasDeAnalisis(f.analisis));
   if ('analisis_motivo' in f && f.analisis_motivo !== null && !MOTIVOS_SIN_ANALISIS.includes(f.analisis_motivo)) p.push('analisis_motivo: fuera del vocabulario');
   if (f.pedido !== null && !(entero(f.pedido, 1) || (typeof f.pedido === 'string' && CLAVE.test(f.pedido)))) p.push('pedido: sin forma');
@@ -177,36 +208,41 @@ const huellaDe = (c) => crypto.createHash('sha1').update(JSON.stringify(c)).dige
  * caso ya visto no se vuelve a contar aunque haya salido de la ventana: lo dicen las huellas de `casos_vistos` (las
  * últimas 1000).
  */
-function conCasos(f, nuevos) {
+function conCasos(f, nuevos, errores = []) {
   const casos = [...(f.casos || [])];
   const huellas = [...(f.casos_vistos || casos.map(huellaDe))];
   const vistas = new Set(huellas);
   let total = f.casos_total || casos.length;
-  for (const c of nuevos || []) {
+  let hechos = f.hechos || null;
+  (nuevos || []).forEach((c, i) => {
     const h = huellaDe(c);
-    if (vistas.has(h)) continue;
+    if (vistas.has(h)) return;
     vistas.add(h);
     huellas.push(h);
     casos.push(c);
     total += 1;
-  }
+    // los errores de un caso se suman una sola vez: con el caso nuevo, no cada noche que se lo vuelve a ver
+    hechos = sumarErrores(hechos, errores[i]);
+  });
   // los casos llegan en el orden en que se leyeron (carpeta de máquina, nombre de archivo): se ordenan por día antes de
   // cortar, así la ventana guarda los más nuevos. El orden es estable: los del mismo día quedan como llegaron.
   const diaDe = (c) => String((c && (c.dia || c.fecha)) || '');
   casos.sort((a, b) => (diaDe(a) < diaDe(b) ? -1 : diaDe(a) > diaDe(b) ? 1 : 0));
-  return { ...f, casos: casos.slice(-TOPE_CASOS), casos_total: total, casos_vistos: huellas.slice(-TOPE_HUELLAS) };
+  const g = { ...f, casos: casos.slice(-TOPE_CASOS), casos_total: total, casos_vistos: huellas.slice(-TOPE_HUELLAS) };
+  if (hechos) g.hechos = hechos;
+  return g;
 }
 
 /** El id de una causa: estable por (fuente, causa), así la noche que la vuelve a ver encuentra la misma ficha. */
 const idDe = (fuente, causa) => crypto.createHash('sha1').update(`${fuente}|${causa}`).digest('hex').slice(0, 12);
 
-function nuevaFicha({ fuente, causa, nombre, hoy, casos = [] }) {
+function nuevaFicha({ fuente, causa, nombre, hoy, casos = [], errores = [] }) {
   if (!FUENTES.includes(fuente)) throw new Error(`fuente desconocida: ${fuente}`);
   const f = ordenar(conCasos({
     id: idDe(fuente, causa), fuente, causa, nombre, primera_vez: hoy, ultima_vez: hoy, apariciones: 1,
     veredicto: 'pendiente', veredicto_anterior: null, propuesta: null, pedido: null, asignado: null, estado: 'viva',
     casos: [], casos_total: 0,
-  }, casos));
+  }, casos, errores));
   const p = problemasDeForma(f);
   if (p.length) throw new Error(`la ficha no tiene forma: ${p.join('; ')}`);
   return f;
@@ -220,14 +256,14 @@ const seReabre = (f) => f.veredicto !== 'migrada' && (f.estado === 'resuelta' ||
  * resuelta o una ignorada que vuelve se reabre: `reaparecio`, otra vez pendiente con el veredicto de antes en
  * `veredicto_anterior`, el día en `reaparecio_el`, y sin la propuesta del modelo ni sus fallas (se le vuelve a pedir).
  */
-function registrarAparicion(f, hoy, casos) {
-  const g = conCasos({ ...f }, casos);
+function registrarAparicion(f, hoy, casos, errores = []) {
+  const g = conCasos({ ...f }, casos, errores);
   if (g.ultima_vez !== hoy) { g.apariciones = (g.apariciones || 0) + 1; g.ultima_vez = hoy; }
   delete g.noches_sin_aparecer;
   delete g.noche_contada;
   if (seReabre(f)) {
     Object.assign(g, { estado: 'reaparecio', veredicto: 'pendiente', veredicto_anterior: f.veredicto, reaparecio_el: hoy, propuesta: null });
-    for (const k of ['resuelta_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el']) delete g[k];
+    for (const k of ['resuelta_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'decidido_en_sitio', 'propuesta_motivo', 'propuesta_fallas', 'propuesta_fallo_el']) delete g[k];
   }
   return ordenar(g);
 }
@@ -540,7 +576,7 @@ function aplicarDecisiones({ base, fuente, dir = null }) {
       if (reg.formato) {
         const vista = reg.vista(reg.formato.leerFicha(txt));
         if (vista.veredicto === 'pendiente' && vista.estado !== 'resuelta') {
-          nuevo = reg.formato.ponerEscalar(txt, 'veredicto', palabra);
+          nuevo = reg.formato.ponerEscalar(reg.formato.ponerEscalar(txt, 'veredicto', palabra), 'decidido_en_sitio', d.el);
           destino = reg.carpetaDe(reg.vista(reg.formato.leerFicha(nuevo)));
         }
       } else {
@@ -549,6 +585,8 @@ function aplicarDecisiones({ base, fuente, dir = null }) {
         if (!f) { ilegible('no tiene la forma de una ficha'); return; }
         if (f.veredicto === 'pendiente' && f.estado !== 'resuelta') {
           f.veredicto = palabra;
+          // el día de la decisión: la noche cierra con él el pedido viejo que la ficha tuviera, sin contarlo como rechazo
+          f.decidido_en_sitio = d.el;
           nuevo = serializar(f);
           destino = reg.carpetaDe(f);
         }
@@ -982,7 +1020,7 @@ module.exports = {
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
   ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, FALLAS_MAX, razonSegura, textoDeAnalisis, problemasDeAnalisis, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,
-  CLAVES_DE_DECISION, VEREDICTO_DE_DECISION, decisionConForma, aplicarDecisiones, sitioDecide,
+  CLAVES_DE_DECISION, VEREDICTO_DE_DECISION, decisionConForma, aplicarDecisiones, sitioDecide, CLASES_DE_ERROR, hechosConForma,
 };
 
 // A mano: node scripts/nightly/findings/cycle.js site-decides --operations <operations.json>

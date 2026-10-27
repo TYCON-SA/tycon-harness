@@ -235,9 +235,14 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const n = c.veces || f.apariciones || 1;
       const desde = c.desde || f.primera_vez;
       const hasta = c.hasta || f.ultima_vez || desde;
-      if (n === 1) return T(idioma, 'mant.paso.vecesUna', { dia: dia(hasta) });
-      if (desde === hasta) return T(idioma, 'mant.paso.vecesUnDia', { n, dia: dia(hasta) });
-      return T(idioma, 'mant.paso.veces', { n, desde: dia(desde), hasta: dia(hasta) });
+      const veces = n === 1 ? T(idioma, 'mant.paso.vecesUna', { dia: dia(hasta) })
+        : desde === hasta ? T(idioma, 'mant.paso.vecesUnDia', { n, dia: dia(hasta) })
+          : T(idioma, 'mant.paso.veces', { n, desde: dia(desde), hasta: dia(hasta) });
+      // la clase del error más común, en llano: la ficha nunca trae el texto del error
+      const h = f.hechos;
+      if (!h || !h.error_clase) return veces;
+      const clase = T(idioma, `mant.error.${h.error_clase}`, { codigo: h.error_codigo });
+      return `${veces} ${T(idioma, 'mant.paso.error', { clase, k: h.error_clase_veces, n: h.error_veces })}`;
     }
     const h = f.hechos || {};
     const regla = T(idioma, `mant.regla.${h.regla || 'otra'}`);

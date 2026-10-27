@@ -1596,3 +1596,73 @@ test('T48 Resumen_EscapesAutorizados_SinRegistroNoMedido @story-4.11 @ac-39', as
     assert.doesNotMatch(todo, /ZZCENTINELA/, 'del registro de frenos sólo salen cuentas');
   }
 });
+
+// ── La clase de error de cada causa (Mantenimiento) ─────────────────────────────────────────────────────────────
+
+// M1 ClaseDeError_ListaCerrada @mantenimiento
+// 🔴 Falla con: una clase fuera de la lista, el texto del error en lugar de la clase, o «otro» para un código de salida.
+test('M1 ClaseDeError_ListaCerrada @mantenimiento', () => {
+  const c = (texto, extra = {}) => RULES.claseDeError({ texto, ...extra });
+  assert.deepStrictEqual(c('fork: Resource temporarily unavailable'), { clase: 'sin-procesos' });
+  assert.deepStrictEqual(c('cualquier cosa', { tipo: 'hook_cancelled' }), { clase: 'tiempo' });
+  assert.deepStrictEqual(c('Error: Command timed out after 10s'), { clase: 'tiempo' });
+  assert.deepStrictEqual(c('SyntaxError: Unexpected token < in JSON at position 0'), { clase: 'json-ilegible' });
+  assert.deepStrictEqual(c("Error: Cannot find module '/opt/acme/x.js'"), { clase: 'archivo-no-encontrado' });
+  assert.deepStrictEqual(c('ENOENT: no such file or directory'), { clase: 'archivo-no-encontrado' });
+  assert.deepStrictEqual(c('x', { categoria: 'node-viejo' }), { clase: 'node-viejo' });
+  assert.deepStrictEqual(c('EACCES: permission denied, open'), { clase: 'permiso' });
+  assert.deepStrictEqual(c('connect ECONNREFUSED 127.0.0.1:443'), { clase: 'red' });
+  assert.deepStrictEqual(c('algo raro', { exitCode: 2 }), { clase: 'salida', codigo: 2 });
+  // «timeout» suelto en una traza no es «se pasó de tiempo»; sin Node, no encontró lo que necesitaba
+  assert.deepStrictEqual(c("Error: Cannot find module 'x'\n    at listOnTimeout (node:internal/timers:573:17)"), { clase: 'archivo-no-encontrado' });
+  assert.deepStrictEqual(c('env: node: No such file or directory', { exitCode: 127, categoria: 'node-ausente' }), { clase: 'archivo-no-encontrado' });
+  assert.deepStrictEqual(c('/bin/sh: node: command not found', { exitCode: 127 }), { clase: 'archivo-no-encontrado' });
+  assert.deepStrictEqual(c('algo raro'), { clase: 'otro' });
+  assert.deepStrictEqual(c(undefined, { exitCode: 'x' }), { clase: 'otro' });
+  for (const k of ['sin-procesos', 'tiempo', 'archivo-no-encontrado', 'json-ilegible', 'node-viejo', 'permiso', 'red', 'salida', 'otro']) assert.ok(CYCLE.CLASES_DE_ERROR.includes(k), k);
+});
+
+// M2 Reglas_TraenSusErrores @mantenimiento
+// 🔴 Falla con: contar los errores de RR-HOOK o RR-NODE sin su clase, o mezclar las clases de dos causas.
+test('M2 Reglas_TraenSusErrores @mantenimiento', () => {
+  const lineas = [hook('UserPromptSubmit', 'carga', 'fork: resource temporarily unavailable'), hook('UserPromptSubmit', 'carga', 'fork: resource temporarily unavailable'),
+    hook('UserPromptSubmit', 'carga', 'raro'), hook('Stop', 'otro', 'connect ECONNREFUSED')];
+  const r = revisar(lineas);
+  assert.deepStrictEqual(regla(r, 'RR-HOOK', 'UserPromptSubmit/carga')[0].errores, { 'sin-procesos': 2, salida: 1 });
+  assert.deepStrictEqual(regla(r, 'RR-HOOK', 'UserPromptSubmit/carga')[0].codigo, 1);
+  assert.deepStrictEqual(regla(r, 'RR-HOOK', 'Stop/otro')[0].errores, { red: 1 });
+  const n = revisar(cmd(`node D:\\acme\\.claude\\skills\\tycon-pipeline\\scripts\\pipeline.js next`, { texto: "D:\\acme\\.claude\\skills\\tycon-pipeline\\scripts\\pipeline.js:1809\nSyntaxError: Unexpected token '.'" }));
+  assert.deepStrictEqual(regla(n, 'RR-NODE')[0].errores, { 'node-viejo': 1 });
+});
+
+// M3 Ficha_ClaseMasComun_SoloCasosNuevos @mantenimiento
+// 🔴 Falla con: sumar dos veces los errores de una ejecución ya vista, guardar el texto del error, o una ficha vieja
+//    sin `hechos` que no los gana cuando la causa vuelve.
+test('M3 Ficha_ClaseMasComun_SoloCasosNuevos @mantenimiento', async () => {
+  const corrida = (k, hilo) => ({ base: `1.${k}-${HOY}T1519`, volcado: volcado({ sid: SID(k) }), hilo });
+  const h = (t) => hook('UserPromptSubmit', 'carga', t);
+  const mb = buzon({ 'acme-0000aaaa': { corridas: [corrida(1, [h('fork: resource temporarily unavailable ZZSECRETO'), h('fork: resource temporarily unavailable'), h('raro')])] } });
+  const op = ops();
+  await correr(mb, op, { today: '2026-10-21' });
+  const f1 = fichas(op).find((x) => x.causa === 'RR-HOOK:UserPromptSubmit/carga');
+  assert.deepStrictEqual(f1.hechos, { errores: { 'sin-procesos': 2, salida: 1 }, error_clase: 'sin-procesos', error_clase_veces: 2, error_veces: 3, error_codigo: 1 });
+  // la misma ejecución otra noche no suma; una nueva sí
+  await correr(mb, op);
+  assert.deepStrictEqual(fichas(op).find((x) => x.causa === f1.causa).hechos.error_veces, 3);
+  fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `1.2-${HOY}T1519.json`), JSON.stringify(volcado({ sid: SID(2) })));
+  fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `1.2-${HOY}T1519.hilo.jsonl.gz`), zlib.gzipSync([h('raro'), h('raro'), h('raro')].map((l) => JSON.stringify(l)).join('\n')));
+  await correr(mb, op);
+  const f2 = fichas(op).find((x) => x.causa === f1.causa);
+  assert.deepStrictEqual(f2.hechos, { errores: { 'sin-procesos': 2, salida: 4 }, error_clase: 'salida', error_clase_veces: 4, error_veces: 6, error_codigo: 1 });
+  const d = path.join(op, 'inbox', 'runs-review');
+  const todo = fs.readdirSync(d, { recursive: true }).filter((x) => /\.ya?ml$/.test(x)).map((x) => fs.readFileSync(path.join(d, x), 'utf8')).join('\n');
+  assert.doesNotMatch(todo, /ZZSECRETO|temporarily/, 'la ficha guarda la clase, nunca el texto');
+  // una ficha sin hechos (de antes) los gana con el caso nuevo
+  const ruta = path.join(d, 'pending', f2.f);
+  const { f: _a, reglas: _r, hechos: _h, ...vieja } = f2;
+  fs.writeFileSync(ruta, CYCLE.serializar(vieja));
+  fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `1.3-${HOY}T1519.json`), JSON.stringify(volcado({ sid: SID(3) })));
+  fs.writeFileSync(path.join(mb, 'acme-0000aaaa', `1.3-${HOY}T1519.hilo.jsonl.gz`), zlib.gzipSync([h('ECONNRESET')].map((l) => JSON.stringify(l)).join('\n')));
+  await correr(mb, op);
+  assert.deepStrictEqual(fichas(op).find((x) => x.causa === f1.causa).hechos, { errores: { red: 1 }, error_clase: 'red', error_clase_veces: 1, error_veces: 1 });
+});
