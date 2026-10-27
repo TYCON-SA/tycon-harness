@@ -672,7 +672,7 @@ async function pedirTrabajo({ base, fuente, operations, run = null, dir = null, 
       continue;
     }
     const args = { repoDir: repoDir || base || path.dirname(path.dirname(carpetas.promoted)), title: `${v.nombre} (${fuente})`,
-      description: descripcionDelPedido(fuente, v, crudo), tags: [`arnes-${fuente}`, `arnes:${v.id}`], forNight: true, ...destino };
+      description: descripcionDelPedido(fuente, v, crudo), tags: [`arnes-${fuente}`, `arnes:${v.id}`], forNight: true, typeOrBacklog: true, ...destino };
     if (responsable) args.assignTo = responsable;
     let res = null;
     let lanzo = null;
@@ -711,6 +711,9 @@ async function pedirTrabajo({ base, fuente, operations, run = null, dir = null, 
     r.creados.push({ id: v.id, pedido: id, asignado });
     if (motivo) r.sinAsignado.push({ id: v.id, motivo });
     r.lineas.push(`pedido de ${v.id}: creado el ${id}${asignado ? '' : ` sin asignado (${motivo})`}`);
+    // del tipo con que cayó al backlog sólo entra el nombre, con forma de nombre de tipo
+    const tipo = res.value.typeFallback === true && typeof res.value.type === 'string' && /^[\p{L}\p{N} _-]{1,64}$/u.test(res.value.type) ? res.value.type : null;
+    if (tipo) r.lineas.push(`pedido de ${v.id}: ${res.value.typeAsked ? 'el tipo configurado no existe en el proyecto' : 'no hay tipo configurado'}; va como ${tipo}`);
   }
   return r;
 }

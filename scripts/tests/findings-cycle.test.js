@@ -1090,6 +1090,39 @@ test('T41 Pedido_AsignadoAlResponsable', async () => {
   assert.strictEqual(f.pedido_motivo, null);
 });
 
+// Pedido_DeLaNoche_PideCaerAlBacklog @story-4.11 @ac-44
+// 🔴 Falla con: no pedirle a la plataforma que caiga al elemento de backlog (con «Riesgo» en un proyecto que no lo tiene,
+//    cada «arreglar» falla todas las noches), no pedirlo sin tipo configurado, callar que cayó, copiar al registro un tipo
+//    sin forma, o mandar la marca en el comentario o en la lectura del cierre, que no crean nada.
+test('T99 Pedido_DeLaNoche_PideCaerAlBacklog', async () => {
+  for (const workItems of [{ org: 'acme', project: 'Operaciones', type: 'Riesgo' }, { org: 'acme', project: 'Operaciones' }]) {
+    const { base, operations } = opsConArreglos({ workItems });
+    const p = plataforma((n) => ({ ok: true, value: { id: 900 + n, assigned: 'lead@acme.example', type: n === 1 ? 'Issue' : 'Tipo\nmalo', typeFallback: true, typeAsked: workItems.type || null, warnings: [], unsupported: [] } }));
+    const r1 = await cycle.pedirTrabajo({ base, fuente: 'ejecuciones', operations, run: p.run });
+    const r2 = await cycle.pedirTrabajo({ base, fuente: 'vigilante', operations, run: p.run });
+    assert.deepStrictEqual(p.pedidos.map((x) => [x.op, x.args.typeOrBacklog]), [['work-item.create', true], ['work-item.create', true]], JSON.stringify(workItems));
+    assert.strictEqual(p.pedidos[0].args.type, workItems.type, 'el tipo configurado viaja igual');
+    const dice = workItems.type ? 'el tipo configurado no existe en el proyecto; va como Issue' : 'no hay tipo configurado; va como Issue';
+    assert.ok(r1.lineas.some((l) => l.endsWith(dice)), r1.lineas.join('\n'));
+    assert.ok(!r2.lineas.some((l) => /va como/.test(l)), 'un tipo sin forma no llega al registro');
+  }
+  const vig = tmp();
+  borradorCon(vig, 'pending', 'aaaa0099', 'latido', { reaparecio_el: HOY_B, veredicto_anterior: 'util', pedido: '903' });
+  const ops = path.join(vig, 'operations.json');
+  fs.writeFileSync(ops, JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items: { org: 'acme', project: 'Operaciones', type: 'Riesgo' } }));
+  const llamados = [];
+  const run = async (op, args) => {
+    llamados.push([op, args.typeOrBacklog]);
+    return op === 'work-item.read' ? { ok: true, value: { id: args.id, estado: 'Active', cerrado: false } } : { ok: true, value: { id: args.id, changed: false, commented: true } };
+  };
+  await cycle.avisarQueVolvio({ fuente: 'vigilante', dir: vig, operations: ops, hoy: HOY_B, repoDir: vig, run });
+  const ej = fuenteConFichas('runs-review', { 'pending/a.yaml': comun('RR-CIERRE:abortada', { veredicto: 'arreglo', ultima_vez: HOY_B, pedido: 901 }) });
+  const opsEj = path.join(ej, 'operations.json');
+  fs.writeFileSync(opsEj, fs.readFileSync(ops));
+  await cycle.avisarCerradoConFallaViva({ fuente: 'ejecuciones', dir: ej, operations: opsEj, hoy: HOY_B, repoDir: ej, vistas: new Set(['RR-CIERRE:abortada']), run });
+  assert.deepStrictEqual(llamados, [['work-item.update', undefined], ['work-item.read', undefined]], 'ni el comentario ni la lectura crean: no llevan la marca');
+});
+
 // Pedido_UnoPorFicha @story-4.11 @ac-26
 // 🔴 Falla con: pedir de nuevo una ficha con pedido, pedir sin haber dejado la marca, o crear otro pedido sobre una ficha
 //    que quedó «pidiendo» (la noche anterior se cortó entre crear y anotar).
