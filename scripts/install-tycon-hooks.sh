@@ -757,7 +757,10 @@ QUICK_SUITE_JS="$SCRIPT_DIR/lib/quick-suite-run.js"
 if [[ ${#UT_PRESENT[@]} -gt 0 && ! -f "$QUICK_SUITE_JS" ]]; then
   echo "⚠ tycon: la suite de la capa determinista NO corrió — falta $QUICK_SUITE_JS"
 elif [[ ${#UT_PRESENT[@]} -gt 0 ]]; then
-  if ! node "$QUICK_SUITE_JS" --state-dir "$HOME/.claude/.tycon-pipeline" --watch "$UT_SKILLS/tycon-pipeline/scripts" "${UT_PRESENT[@]}" >/dev/null 2>&1; then
+  # la carpeta del estado la sabe tycon-home.js; en una copia parcial sin él, una carpeta temporal
+  QS_STATE="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$SCRIPT_DIR/setup/harness/tycon-home.js" 2>/dev/null || true)"
+  [[ -n "$QS_STATE" ]] || QS_STATE="${TMPDIR:-/tmp}/tycon-quick-suite"
+  if ! node "$QUICK_SUITE_JS" --state-dir "$QS_STATE" --watch "$UT_SKILLS/tycon-pipeline/scripts" "${UT_PRESENT[@]}" >/dev/null 2>&1; then
     UT_FROM="installed"
     if [[ -f "$SKILLS_DIR_JS" ]]; then UT_FROM="$(_skills_dir read --source 2>/dev/null)" || UT_FROM="sin dato"; fi
     echo "🛑 tycon: la suite de la capa determinista FALLÓ tras el pull (skills: ${UT_SKILLS} · salió de: ${UT_FROM}) — hooks/gates pueden tener una regresión."
