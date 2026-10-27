@@ -1971,13 +1971,16 @@ function frenoConEscrituras(comando, { home, entrada = {}, escrituras = [], tope
       try { process.kill(-hijo.pid, 'SIGKILL'); } catch (_e) { hijo.kill('SIGKILL'); }
       resolve({ status: 'colgado', stderr, ms: Date.now() - t0 });
     }, tope) : null;
-    hijo.on('close', (status) => { if (reloj) clearTimeout(reloj); if (!colgado) resolve({ status, stderr, ms: Date.now() - t0 }); });
+    // `escritas`: a qué ms quedó escrito cada renglón de verdad (con la máquina cargada, el temporizador se atrasa)
+    const escritas = [];
+    hijo.on('close', (status) => { if (reloj) clearTimeout(reloj); if (!colgado) resolve({ status, stderr, ms: Date.now() - t0, escritas }); });
     hijo.stdin.end(JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: comando }, cwd: home, ...entrada }));
     for (const { ms, archivo, registros } of escrituras) {
       setTimeout(() => {
         const f = path.join(proyectos(home), archivo);
         fs.mkdirSync(path.dirname(f), { recursive: true });
         fs.appendFileSync(f, renglones(registros));
+        escritas.push(Date.now() - t0);
       }, ms);
     }
   });
@@ -2034,13 +2037,25 @@ test('EscC6Paso T9 PedidoDeUnSubagente_Frena — el pedido real va al archivo de
 });
 
 test('EscC6Paso T10 ForjadoAntesQueElReal_Frena — durante la espera entra primero el forjado y después el real, en el mismo archivo', async () => {
+  // El caso vale si el real quedó escrito mientras el freno todavía miraba. Con la máquina cargada el temporizador de la
+  // prueba se atrasa, y un real escrito después de la espera es el límite que el lector ya declara (para forjar antes
+  // hace falta el id del pedido, que no se ve afuera del freno): se reintenta, y si nunca entra, el caso no se midió.
+  const MARGEN_MS = 500;
   for (const [forjadoMs, realMs] of [[300, 800], [200, 1500]]) {
-    const home = homeConMarcador(PLAN_ABIERTO, [deLaPersona('mostrame el plan')]);
-    const real = sacarPedido(home);
-    const r = await frenoConEscrituras(APROBAR_PLAN, { home, escrituras: [
-      { ms: forjadoMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: forjadosCon(TUID, 'u-0') },
-      { ms: realMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: [real] },
-    ] });
+    let r = null;
+    for (let intento = 0; intento < 3; intento++) {
+      const home = homeConMarcador(PLAN_ABIERTO, [deLaPersona('mostrame el plan')]);
+      const real = sacarPedido(home);
+      r = await frenoConEscrituras(APROBAR_PLAN, { home, escrituras: [
+        { ms: forjadoMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: forjadosCon(TUID, 'u-0') },
+        { ms: realMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: [real] },
+      ] });
+      const escritoElReal = r.escritas.length === 2 ? r.escritas[1] : Infinity;
+      // si frenó, lo vio; si dejó pasar con el real escrito bien antes de que terminara, es un rojo de verdad
+      if (r.status === 2 || escritoElReal + MARGEN_MS < r.ms) break;
+      r = { ...r, noMedido: `el real quedó escrito a los ${escritoElReal} ms y el freno terminó a los ${r.ms} ms` };
+    }
+    assert.ok(!r.noMedido, `${forjadoMs}/${realMs}: NO se midió en 3 intentos (máquina cargada): ${r.noMedido}`);
     assert.strictEqual(r.status, 2, `${forjadoMs}/${realMs}: ${r.stderr}`);
     assert.match(r.stderr, /más de un registro con este pedido/);
   }
