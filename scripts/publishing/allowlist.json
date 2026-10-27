@@ -37,6 +37,7 @@
           { "glob": "artifacts/**", "reason": "páginas generadas por y para el equipo (tablero, mapa, planes)" },
           { "glob": ".tycon/**", "reason": "la configuración del equipo para este repo: revisores, portones y los servidores de producción declarados" },
           { "glob": "CLAUDE.md", "reason": "la portada interna del repo del equipo, que cargan las sesiones abiertas ahí; el público no la trae" },
+          { "glob": "AGENTS.md", "reason": "el puntero a CLAUDE.md para las otras herramientas: va donde va su CLAUDE.md, y el público no la trae" },
           { "glob": "onboarding/**", "reason": "el onboarding interno del equipo, con el material de charla (onboarding/mini-class/, que se publica aparte, si se publica); el de afuera es la portada pública (README.md) y el INSTALL.md con sus bloques sólo-públicos (story 8.7)" },
           { "glob": "scripts/publishing/public-files/**", "reason": "los papeles de la copia pública (licencia, NOTICE, portadas, comunidad, incident-log público): cada uno llega a su destino por un sintético (story 8.7, AC 9)" },
           { "glob": "scripts/publishing/public-repos.json", "reason": "sólo lo leen el exportador, la sincronización y el reconocedor de repos del arnés (harness-repo.js, story 8.26), en el interno; la copia lleva el nombre ya puesto en sus papeles (story 8.7, AC 14) y en scripts/setup/public-remotes.json" },
