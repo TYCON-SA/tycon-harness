@@ -50,6 +50,9 @@ function labEnv(lab, more = {}) {
     TYCON_NIGHTLY: '1',
     // el examen de los revisores no es de esta prueba: nadie lo corre en el laboratorio, y lo local queda vacío
     TYCON_EXAM_CONFIG: path.join(lab.base, 'exam-config.json'), TYCON_BENCH_DIR: path.join(lab.base, 'bench-local'),
+    // sin llave del buzón, salvo que el caso traiga la suya: sin esto se lee la del árbol que corre la prueba, y el repo
+    // del equipo la trae
+    TYCON_MAILBOX_JSON: path.join(lab.base, 'llaves', 'no-hay-llave.json'),
     ...more,
   };
   if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
