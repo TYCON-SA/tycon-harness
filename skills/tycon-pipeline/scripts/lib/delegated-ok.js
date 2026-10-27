@@ -69,7 +69,7 @@ function leerGates(dir) {
  * queda anotado. `desde`: la hora a partir de la cual vale el «aprobá» del dueño (el aviso del tope, para una vuelta
  * más); nunca antes de la ventana. `pedido`: la punta de la cadena de esta conversación (el freno la tiene).
  */
-function okDelegado({ firma, sesion, pedido, home, env = process.env, arnes, ahora = Date.now(), desde } = {}) {
+function okDelegado({ firma, sesion, pedido, transcript, home, env = process.env, arnes, ahora = Date.now(), desde } = {}) {
   const no = (motivo) => ({ ok: false, motivo });
   if (!Object.prototype.hasOwnProperty.call(DELEGABLES, firma)) return no(`«${firma}» no se aprueba por delegación`);
   const casa = home || os.homedir();
@@ -80,7 +80,7 @@ function okDelegado({ firma, sesion, pedido, home, env = process.env, arnes, aho
   const relevo = cw.sesionQueReenvia({ env: e, home: casa, ...(arnes ? { arnes } : {}) });
   if (!relevo.valor) return no(`la organización no declara la sesión que aprueba por el dueño (approvals.relay_session)${relevo.aviso ? `: ${relevo.aviso}` : ''}`);
   const pok = require('./person-ok.js');
-  const l = pok.laDesignada(relevo.valor, { sesion, home: casa, env: e, soloCadena: !!pedido, pedido });
+  const l = pok.laDesignada(relevo.valor, { sesion, home: casa, env: e, soloCadena: !!pedido, pedido, transcript });
   if (!l.legible) return no(`no puedo leer la conversación de esta sesión (${l.motivo})`);
   if (l.rechazo) return no(l.rechazo);
   let t0 = ahora - VENTANA_MIN * 60000;

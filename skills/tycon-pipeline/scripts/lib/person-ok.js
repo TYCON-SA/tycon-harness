@@ -32,36 +32,182 @@ const BLOQUES_DEL_ARNES = ['system-reminder', 'command-name', 'command-message',
 // Bloques cuyo contenido puede haber escrito el agente (el resultado de un subagente, la salida de un comando, el
 // mensaje de otra sesión). Un texto que trae alguno —abierto o cerrado, bien armado o no— no cuenta entero: si sólo se
 // sacara el bloque, un cierre impreso a propósito («</task-notification> <la cita>») dejaría la cita afuera.
+// `browser_instruction` lo pega la extensión con lo que viene del navegador, que puede traer texto de una página.
 const BLOQUES_AJENOS = ['task-notification', 'cross-session-message', 'agent-message', 'local-command-stdout', 'local-command-stderr',
-  'bash-stdout', 'bash-stderr', 'command-stdout', 'command-stderr'];
+  'bash-stdout', 'bash-stderr', 'command-stdout', 'command-stderr', 'browser_instruction'];
 const RE_AJENO = new RegExp(`</?(?:${BLOQUES_AJENOS.join('|')})\\b`, 'i');
 const ENCABEZADO_OTRA_SESION = /^\s*Another Claude session sent a message:\s*/;
 
+// Claude Code escribe el registro con el pedido al mismo tiempo que corre el freno, y a veces después (medido: hasta 1,5 s
+// tarde). Sin el pedido no hay punta: se vuelve a leer cada `RELECTURA_MS` hasta `ESPERA_PASO_MS`. Sólo espera cuando
+// falta el pedido; el camino normal no suma nada.
+// Lo que la espera no prueba: que el pedido que aparece lo escribió Claude Code. Para forjar uno hace falta su id, y el id
+// no se ve afuera del freno: el freno se lo pasa al lector por la entrada, nunca en la línea de comandos (`ps`).
+const ESPERA_PASO_MS = 3000;
+const RELECTURA_MS = 100;
+const MOTIVO_PASO_NO_UBICADO = 'no pude ubicar este paso en la conversación: el registro de esta llamada no llegó a escribirse a tiempo; reintentá el mismo comando';
+const MOTIVO_PASO_DUPLICADO = 'no pude ubicar este paso en la conversación: hay más de un registro con este pedido, y uno no lo escribió Claude Code';
+const MOTIVO_PASO_OTRO_ARCHIVO = 'no pude ubicar este paso en la conversación: el pedido también está en otro archivo de esta sesión, y uno no lo escribió Claude Code';
+const MOTIVO_ARCHIVO_AJENO = 'no pude ubicar este paso en la conversación: el archivo que dice la herramienta no es el registro de esta sesión';
+const MOTIVO_ARCHIVO_ILEGIBLE = 'no pude ubicar este paso en la conversación: el registro de esta sesión está donde dice la herramienta, pero no se puede leer';
+// los pedidos que ya se esperaron sin suerte en este proceso: otra lectura del mismo no vuelve a esperar
+const pasosNoUbicados = new Set();
+const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 /**
- * El registro de la conversación de esta sesión: `{ legible, motivo?, registros }`. Con `soloCadena`, sólo los registros
- * de la cadena de la conversación (`enLaCadena`), con la punta en `pedido` si viene: lo que se agregó por fuera no cuenta.
+ * El texto de un archivo común. Un archivo especial (una tubería, un dispositivo) es un error, no una espera: se abre sin
+ * bloquear y se mira lo que se abrió, así el cambio entre mirar y leer no cuenta.
  */
-function leerConversacion({ env = process.env, home = os.homedir(), sesion, soloCadena = false, pedido } = {}) {
+function leerArchivoComun(file) {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0));
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw Object.assign(new Error('no es un archivo común'), { code: 'ENOTREG' });
+    return fs.readFileSync(fd, 'utf8');
+  } finally { fs.closeSync(fd); }
+}
+
+/** ¿Hay un archivo común en esa ruta? */
+function esArchivoComun(file) {
+  try { return fs.statSync(file).isFile(); } catch (_e) { return false; }
+}
+
+function leerRegistros(file) {
+  const registros = [];
+  for (const l of leerArchivoComun(file).split('\n')) {
+    if (!l.trim()) continue;
+    try { registros.push(JSON.parse(l)); } catch (_e) { /* un renglón a medio escribir no tapa a los demás */ }
+  }
+  return registros;
+}
+
+/** ¿La ruta está dentro de la carpeta de proyectos de Claude Code, escrita tal cual o con la ruta real de la carpeta? */
+function enProyectos(ruta, root) {
+  const dentro = (raiz) => {
+    const rel = path.relative(raiz, path.resolve(ruta));
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+  };
+  if (dentro(path.resolve(root))) return true;
+  try { return dentro(fs.realpathSync(root)); } catch (_e) { return false; }
+}
+
+/**
+ * El archivo que la herramienta dice que es el registro de esta sesión (`transcript_path` de la entrada del freno), si
+ * es `<projects>/<carpeta>/<sesión>.jsonl` con la ruta real: otro archivo, aunque se llame igual, no vale (`null`).
+ */
+function archivoDeLaHerramienta(transcript, root, sid) {
+  let real;
+  let raiz;
+  try { real = fs.realpathSync(transcript); raiz = fs.realpathSync(root); } catch (_e) { return null; }
+  const partes = path.relative(raiz, real).split(path.sep);
+  if (partes.length !== 2 || !partes[0] || partes[0] === '..' || partes[1] !== `${sid}.jsonl`) return null;
+  if (!esArchivoComun(real)) return null;
+  return real;
+}
+
+/**
+ * ¿El pedido aparece en otro archivo de esta sesión? Los otros `<carpeta>/<sesión>.jsonl` (la misma sesión puede tener
+ * registro en dos carpetas) y todo `.jsonl` debajo de `<carpeta>/<sesión>/` (sus subagentes). Un pedido lo escribe
+ * Claude Code una sola vez: si está en dos archivos, uno es una copia. Lo que no se puede leer, o no es un archivo común
+ * (una tubería dejaría al freno esperando), cuenta como que está.
+ */
+function pedidoEnOtroArchivo(root, sid, propio, pedido) {
+  const contiene = (f) => {
+    try { return fs.realpathSync(f) !== propio && leerArchivoComun(f).includes(pedido); } catch (_e) { return true; }
+  };
+  const recorrer = (dir) => {
+    let entradas;
+    try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return e.code !== 'ENOENT'; }
+    for (const e of entradas) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory() ? recorrer(f) : e.name.endsWith('.jsonl') && (!e.isFile() || contiene(f))) return true;
+    }
+    return false;
+  };
+  let carpetas;
+  try { carpetas = fs.readdirSync(root); } catch (_e) { return true; }
+  for (const d of carpetas) {
+    const f = path.join(root, d, `${sid}.jsonl`);
+    if (fs.existsSync(f) && contiene(f)) return true;
+    if (recorrer(path.join(root, d, sid))) return true;
+  }
+  return false;
+}
+
+/**
+ * El registro de la conversación de esta sesión: `{ legible, motivo?, registros }`. Con `transcript` (la ruta que da la
+ * herramienta), ese archivo, si es el de esta sesión; si no, el primero que aparece en las carpetas de proyectos.
+ * Una ruta fuera de la carpeta de proyectos es la conversación de otra herramienta (Codex): `legible: false`, como sin
+ * ruta. Una ruta adentro es de Claude Code: si no es el registro de esta sesión o no se puede leer (el permiso quitado,
+ * demasiado grande), vuelve `pasoNoUbicado`, nunca `legible: false`, que dejaría pasar sin mirar.
+ *
+ * Con `soloCadena`, sólo los registros de la cadena de la conversación (`enLaCadena`), con la punta en `pedido` si
+ * viene: lo que se agregó por fuera no cuenta. Vuelve `pasoNoUbicado` con su motivo, y la cadena vacía, si el pedido no
+ * aparece dentro de la espera, si aparece más de una vez o si aparece también en otro archivo de la sesión: no se busca
+ * otra punta, porque el último renglón del archivo puede ser uno forjado. Cuando el pedido llega durante la espera, se
+ * sigue mirando hasta el final de la espera: una copia forjada puede llegar antes o después que el real.
+ */
+function leerConversacion({ env = process.env, home = os.homedir(), sesion, soloCadena = false, pedido, transcript } = {}) {
   const sid = String(sesion || env.CLAUDE_CODE_SESSION_ID || '');
   if (!/^[\w-]+$/.test(sid)) return { legible: false, motivo: 'la sesión no dice su identificador' };
   const root = path.join(home, '.claude', 'projects');
   let file = null;
-  try {
-    for (const d of fs.readdirSync(root)) {
-      const f = path.join(root, d, `${sid}.jsonl`);
-      if (fs.existsSync(f)) { file = f; break; }
-    }
-  } catch (e) { return { legible: false, motivo: `no pude leer ${root} (${e.code || e.message})` }; }
-  if (!file) return { legible: false, motivo: 'no encontré su registro' };
-  let registros = [];
-  try {
-    for (const l of fs.readFileSync(file, 'utf8').split('\n')) {
-      if (!l.trim()) continue;
-      try { registros.push(JSON.parse(l)); } catch (_e) { /* un renglón a medio escribir no tapa a los demás */ }
-    }
-  } catch (e) { return { legible: false, motivo: `no pude leer su registro (${e.code || e.message})` }; }
-  if (soloCadena) registros = enLaCadena(registros, { pedido });
-  return { legible: true, registros, archivo: file };
+  const deLaHerramienta = !!transcript && enProyectos(String(transcript), root);
+  if (transcript && !deLaHerramienta) return { legible: false, motivo: 'la conversación es de otra herramienta, que no sé leer' };
+  if (deLaHerramienta) {
+    file = archivoDeLaHerramienta(String(transcript), root, sid);
+    if (!file) return { legible: true, registros: [], pasoNoUbicado: true, motivo: MOTIVO_ARCHIVO_AJENO };
+  } else {
+    try {
+      for (const d of fs.readdirSync(root)) {
+        const f = path.join(root, d, `${sid}.jsonl`);
+        if (esArchivoComun(f)) { file = fs.realpathSync(f); break; }
+      }
+    } catch (e) { return { legible: false, motivo: `no pude leer ${root} (${e.code || e.message})` }; }
+    if (!file) return { legible: false, motivo: 'no encontré su registro' };
+  }
+  let registros;
+  try { registros = leerRegistros(file); } catch (e) {
+    if (deLaHerramienta) return { legible: true, registros: [], archivo: file, pasoNoUbicado: true, motivo: `${MOTIVO_ARCHIVO_ILEGIBLE} (${e.code || e.message})` };
+    return { legible: false, motivo: `no pude leer su registro (${e.code || e.message})` };
+  }
+  if (!soloCadena) return { legible: true, registros, archivo: file };
+  const noUbicado = (motivo) => ({ legible: true, registros: [], archivo: file, pasoNoUbicado: true, motivo });
+  // lo que invalida la punta: el pedido dos veces en el archivo, o también en otro archivo de la sesión
+  const sospecha = (regs) => {
+    if (registrosDelPedido(regs, pedido) > 1) return MOTIVO_PASO_DUPLICADO;
+    if (pedidoEnOtroArchivo(root, sid, file, pedido)) return MOTIVO_PASO_OTRO_ARCHIVO;
+    return null;
+  };
+  if (!pedido) return { legible: true, registros: enLaCadena(registros), archivo: file };
+  let cadena = enLaCadena(registros, { pedido });
+  const ya = sospecha(registros);
+  if (ya) return noUbicado(ya);
+  if (cadena.length) return { legible: true, registros: cadena, archivo: file };
+  const clave = `${file}\0${pedido}`;
+  if (pasosNoUbicados.has(clave)) return noUbicado(MOTIVO_PASO_NO_UBICADO);
+  const hasta = Date.now() + ESPERA_PASO_MS;
+  while (Date.now() < hasta) {
+    dormir(Math.min(RELECTURA_MS, Math.max(0, hasta - Date.now())));
+    let regs;
+    try { regs = leerRegistros(file); } catch (_e) { continue; /* se reintenta hasta el tope */ }
+    const motivo = sospecha(regs);
+    if (motivo) return noUbicado(motivo);
+    if (!cadena.length) cadena = enLaCadena(regs, { pedido });
+  }
+  if (cadena.length) return { legible: true, registros: cadena, archivo: file };
+  pasosNoUbicados.add(clave);
+  return noUbicado(MOTIVO_PASO_NO_UBICADO);
+}
+
+/** Cuántos registros distintos (por uuid) del agente, fuera de los subagentes, traen el `tool_use` con ese id. */
+function registrosDelPedido(registros, pedido) {
+  const uuids = new Set();
+  for (const x of registros) {
+    if (!x || x.isSidechain || x.type !== 'assistant' || typeof x.uuid !== 'string') continue;
+    const c = x.message && Array.isArray(x.message.content) ? x.message.content : [];
+    if (c.some((b) => b && b.type === 'tool_use' && b.id === pedido)) uuids.add(x.uuid);
+  }
+  return uuids.size;
 }
 
 /**
@@ -201,7 +347,8 @@ function citaDeLaPersona(cita, opts = {}) {
   // `sinPegado`: lo que pegó no cuenta como dicho por ella (la designación de la sesión que reenvía)
   const propios = textosDeUsuario(conv.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
     .map((t) => ({ texto: escritoPorLaPersona(opts.sinPegado ? sinTextoPegado(t.texto) : t.texto), cuando: t.cuando })).filter((t) => t.texto !== null);
-  return { legible: true, archivo: conv.archivo, ...buscar(cita, propios, opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
+  const paso = conv.pasoNoUbicado ? { pasoNoUbicado: true, motivo: conv.motivo } : {};
+  return { legible: true, archivo: conv.archivo, ...paso, ...buscar(cita, propios, opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
 }
 
 /**
@@ -236,7 +383,7 @@ function laDesignada(sesion, opts = {}) {
   const juez = cw.juezDesignacion(rol);
   if (juez(d.cita)) return { legible: true, archivo: conv.archivo, rechazo: `la designación de esta máquina no vale: ${juez(d.cita)}` };
   // con `soloCadena`, también la conversación designada: un renglón forjado ahí (la designación, un envío) no cuenta
-  const designada = leerConversacion({ ...opts, sesion: d.sesion, pedido: undefined });
+  const designada = leerConversacion({ ...opts, sesion: d.sesion, pedido: undefined, transcript: undefined });
   if (!designada.legible) return { legible: true, archivo: conv.archivo, rechazo: `no puedo leer la conversación designada como «${rol}» (${designada.motivo})` };
   const duenio = textosDeUsuario(designada.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
     .map((t) => ({ texto: escritoPorLaPersona(sinTextoPegado(t.texto)), cuando: t.cuando })).filter((t) => t.texto !== null);
@@ -356,4 +503,4 @@ function planEnLaConversacion(planTxt, opts = {}) {
   return { legible: true, mostrado: vistos * 2 >= renglones.length };
 }
 
-module.exports = { CITA_MINIMA, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, laDesignada, citaDeOpciones, planEnLaConversacion };
+module.exports = { CITA_MINIMA, ESPERA_PASO_MS, MOTIVO_PASO_NO_UBICADO, MOTIVO_PASO_DUPLICADO, MOTIVO_PASO_OTRO_ARCHIVO, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, laDesignada, citaDeOpciones, planEnLaConversacion };
