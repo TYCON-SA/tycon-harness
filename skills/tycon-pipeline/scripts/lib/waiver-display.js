@@ -52,10 +52,20 @@ function huella(text, reason, coveredBy) {
   return require('crypto').createHash('sha256').update(JSON.stringify([String(text ?? '').trim(), String(reason ?? '').trim(), String(coveredBy ?? '').trim()])).digest('hex').slice(0, 16);
 }
 
-/** ¿El mensaje dice que firma («firmo …») nombrando cada criterio («AC 3», «criterio 3», «#3»), sin negarlo ni preguntar? */
+// una lista de criterios: «AC 3», «los AC 3, 5 y 7», «criterios 3 y 5», «ACs #3, #5»
+const RE_LISTA = /(?<![\p{L}\p{N}])(?:acs?|criterios?)\s*(?:n[°º.]?\s*)?#?\s*\d+(?:\s*(?:,|\by\b|\be\b)\s*#?\s*\d+)*/giu;
+/** Los números de criterio que nombra el mensaje, sueltos («#3») o en una lista tras «AC» o «criterio». */
+function nombrados(t) {
+  const nums = new Set();
+  for (const m of t.matchAll(RE_LISTA)) for (const d of m[0].matchAll(/\d+/g)) nums.add(Number(d[0]));
+  for (const m of t.matchAll(/#(\d+)(?![\p{N}])/gu)) nums.add(Number(m[1]));
+  return nums;
+}
+
+/** ¿El mensaje dice que firma («firmo …») nombrando cada criterio («AC 3», «los AC 3 y 5», «#3»), sin negarlo ni preguntar? */
 function juez(acs) {
   const lista = [...new Set((acs || []).map(Number))];
-  const nombra = (t, n) => new RegExp(`(?<![\\p{L}\\p{N}])(?:ac|criterio)\\s*(?:n[°º.]?\\s*)?#?\\s*${n}(?![\\p{N}])`, 'iu').test(t) || new RegExp(`#${n}(?![\\p{N}])`).test(t);
+  const nombra = (t, n) => nombrados(t).has(n);
   const f = (texto) => {
     const t = String(texto || '');
     if (RE_NIEGA.test(t)) return 'el mensaje dice que no lo firma';
@@ -70,7 +80,8 @@ function juez(acs) {
 }
 
 function bloque({ storyId, criterios }) {
-  const formas = criterios.map((c) => `«firmo el AC ${c.ac}»`).join(' y ');
+  const nums = criterios.map((c) => c.ac);
+  const formas = nums.length === 1 ? `«firmo el AC ${nums[0]}»` : `«firmo los AC ${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}»`;
   // un renglón por criterio, más el encabezado y cómo contestar: Claude Code antepone su rótulo a cada renglón del aviso
   return [
     `Te piden firmar ${criterios.length === 1 ? 'un criterio' : `${criterios.length} criterios`} de la historia ${storyId} que no se ${criterios.length === 1 ? 'puede' : 'pueden'} probar en vivo (te lo muestra el arnés). Un criterio firmado cuenta como probado sin haberlo corrido contra la aplicación.`,

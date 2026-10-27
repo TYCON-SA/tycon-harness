@@ -654,8 +654,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
        `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m>` y la puerta lo muestra en pantalla
        (texto, por qué no se puede probar en vivo, qué lo cubre); en la instalación mínima, escribí con Write
        `firma-pedida.json` ({ "acs": [n] }) en la carpeta de la corrida. Con su respuesta, que nombra cada criterio
-       («firmo el AC n»), el mismo comando con `--approved-by "<el dev>" --quote "<sus palabras, textuales>"`. El
-       arnés busca la cita en un mensaje del dev posterior a la muestra; un «dale» suelto no firma. El ok reenviado
+       («firmo el AC n», o todos juntos: «firmo los AC 3, 5 y 7»), el mismo comando con
+       `--approved-by "<el dev>" --quote "<sus palabras, textuales>"`. El arnés busca la cita en un mensaje del dev
+       posterior a la muestra; un «dale» suelto no firma. El ok reenviado
        por otra sesión (`--relayed-by`) no se acepta acá: lo firma la persona que vio el criterio.
     2. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md>`
        (pide confirmación criterio por criterio; en Windows abre una ventana para firmar).
