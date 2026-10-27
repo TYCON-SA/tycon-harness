@@ -189,3 +189,7 @@ skills/xlsx
 # los secretos del sitio en una máquina propia van FUERA de todo repo (start.js se niega si no); por las dudas,
 # un sitio.env olvidado en el árbol no se commitea
 **/sitio.env
+
+# lo que Claude Code escribe al cargar un mod: los tipos para el editor y su tsconfig (se regeneran solos)
+mods/*/tsconfig.json
+mods/*/.claude-plugin/types/
