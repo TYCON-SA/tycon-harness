@@ -930,7 +930,7 @@ async function bajar(opts = {}) {
         const mb = (n) => Math.round(n / (1024 * 1024));
         const doc = { v: 1, hilo_md5: hilo.b.md5 || null, cambio_md5: cambio ? cambio.b.md5 || null : null, cambios: {
           estado: 'sin_hilo',
-          motivo: `la conversación pesa ${mb(hilo.b.largo)} MB y pasa el tope del sitio (${mb(topeHilo)} MB): no se bajó ni se leyó, y esta corrida queda sin su descripción ni sus cambios`,
+          motivo: `la conversación pesa ${mb(hilo.b.largo)} MB y pasa el tope del sitio (${mb(topeHilo)} MB): no se bajó ni se leyó, y esta ejecución queda sin su descripción ni sus cambios`,
         } };
         try {
           const destino = require('../nightly/dashboard/changes.js').rutaDeResumen(path.join(dirBuzon, ...k.split('/')) + '.json');
