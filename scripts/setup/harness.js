@@ -2279,10 +2279,10 @@ function versionLabel(ctx, state) {
   if (lay && state.source === 'public') return `${versionNumber(ctx, state)} · capa ${sha7(lay.commit) || '—'}`;
   const n = versionNumber(ctx, state);
   const as = (state.sources || []).find((s) => s && s.name === 'agent_skills');
-  const h = as && as.dir ? mod('sources').head(as.dir, { env: ctx.env }) : null;
+  const h = as && as.dir ? mod('sources').head(as.dir, { env: ctx.env, cached: true }) : null;
   // con el clon de skills re-apuntado los dos clones están en el mismo commit: se nombra uno solo
   const hs = harnessSource(state);
-  if (h && hs && hs.dir && h === mod('sources').head(hs.dir, { env: ctx.env })) return n;
+  if (h && hs && hs.dir && h === mod('sources').head(hs.dir, { env: ctx.env, cached: true })) return n;
   return h ? `${n} · agent-skills ${sha7(h)}` : n;
 }
 /** ¿Las puntas de ahora son las mismas que fallaron? (`{ <fuente>: sha }` contra `failed.sources`) */
@@ -3841,7 +3841,7 @@ function cmdDoctor(ctx) {
     const o = SRC.origin(src.dir, { env });
     if (src.url && o !== src.url) add('fail', `fuente ${src.name}: el origen cambió: ${src.url} → ${o || '(ninguno)'}; si es a propósito, harness.js install --source <url>`);
     else add('ok', `fuente ${src.name}: origin ${o || '—'} · ref ${src.ref}${src.rewrites ? ' (se reescribe)' : ''}`);
-    const h = SRC.head(src.dir, { env });
+    const h = SRC.head(src.dir, { env, cached: true });
     const rewrites = Boolean(src.rewrites) || SRC.isPublicRemote(tree, src.url);
     // rojo: una ref que no se puede LEER no es «no existe». Sin poder leer la
     // rama del mecanismo —o HEAD— `update` y `rollback` no mueven el clon: se dice acá, antes de que la persona los corra
@@ -4392,7 +4392,7 @@ function cmdChannel(ctx) {
           if (!src || !src.rewrites) continue;
           // la versión bajada no tiene clon que mirar: lo dice el próximo update, sin git
           if (mod('state').kindOf(src) === 'release') { lines.push('si la estable es más vieja que lo instalado lo dice el próximo update'); continue; }
-          const from = SRC.head(src.dir, { env: ctx.env });
+          const from = SRC.head(src.dir, { env: ctx.env, cached: true });
           // lo último traído de `main`, en tres estados: sin nada traído no hay qué decir; ilegible, se dice que no se sabe
           const tip = SRC.refState(src.dir, `refs/remotes/origin/${SRC.MAIN_REF}`, { env: ctx.env });
           if (tip.status === 'problem' || !from) { lines.push(`no pude leer ${from ? `origin/${SRC.MAIN_REF}` : 'HEAD'} de ${src.name}${tip.reason ? ` (${tip.reason})` : ''}: si la estable es más vieja que lo instalado lo dice el próximo update`); continue; }

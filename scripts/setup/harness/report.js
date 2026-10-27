@@ -69,8 +69,8 @@ function derive(state, { env = process.env, trees = {} } = {}) {
   const as = sourceOf(state, 'agent_skills');
   const harnessDir = trees.harness || state.tree || (hs && hs.dir) || null;
   const skillsDir = trees.agent_skills || (as && as.dir) || null;
-  const harnessCommit = (harnessDir && sources.head(harnessDir, { env })) || (hs && hs.commit) || null;
-  const skillsCommit = (skillsDir && sources.head(skillsDir, { env })) || (as && as.commit) || null;
+  const harnessCommit = (harnessDir && sources.head(harnessDir, { env, cached: true })) || (hs && hs.commit) || null;
+  const skillsCommit = (skillsDir && sources.head(skillsDir, { env, cached: true })) || (as && as.commit) || null;
   const stamped = harnessDir ? stampedVersion(harnessDir) : null;
   if (stamped) {
     // en un clon, el número de la etiqueta que puso el merge, si HEAD la tiene; el version.json dice el piso

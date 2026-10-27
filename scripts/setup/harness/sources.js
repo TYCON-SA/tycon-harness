@@ -95,8 +95,10 @@ function git(dir, args, { env, timeout = 30000, input } = {}) {
 const value = (dir, args, opts) => { const r = git(dir, args, opts); return r.ok ? r.out : null; };
 
 // La punta de un clon cambia sólo si cambia su HEAD, la rama a la que apunta o packed-refs: mientras la huella de esos
-// tres sea la misma, la respuesta anterior sigue valiendo. Sin huella segura (un worktree, refs en reftable, un ambiente
-// que lleva git a otro repo) se pregunta siempre.
+// tres sea la misma, la respuesta anterior sigue valiendo. Esa memoria la pide sólo quien muestra o compara para un
+// mensaje (`cached: true`): lo que decide algo que cambia el disco (mover, borrar, cambiar de versión, anotar el estado)
+// le pregunta a git cada vez, y si git no contesta no se hace nada. Sin huella segura (un worktree, refs en reftable, un
+// ambiente que lleva git a otro repo) se pregunta siempre.
 const headMemo = new Map();
 const GIT_REDIRECT = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY'];
 function headPrint(dir, env) {
@@ -115,7 +117,7 @@ function headPrint(dir, env) {
 function head(dir, opts = {}) {
   const key = path.resolve(dir);
   const print = headPrint(key, opts.env);
-  const seen = print && headMemo.get(key);
+  const seen = print && opts.cached && headMemo.get(key);
   if (seen && seen.print === print) return seen.sha;
   const sha = value(dir, ['rev-parse', 'HEAD'], opts);
   if (print && sha) headMemo.set(key, { print, sha }); else headMemo.delete(key);

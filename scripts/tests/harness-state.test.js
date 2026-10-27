@@ -439,31 +439,34 @@ test('T12 · sources.head pregunta a git una vez mientras el clon no cambia, y s
   const env = Object.assign({}, L.env, { GIT_TRACE2_EVENT: trace });
   const asks = () => (fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').split('\n').filter((l) => l.includes('"event":"start"') && l.includes('"rev-parse","HEAD"')).length : 0);
   const truth = () => git(L.tree, ['rev-parse', 'HEAD']);
-  const first = sources.head(L.tree, { env });
+  const first = sources.head(L.tree, { env, cached: true });
   assert.strictEqual(first, truth());
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), first);
+  assert.strictEqual(asks(), 1, 'la segunda pregunta para mostrar, con el clon igual, no lanza git');
+  // lo que decide algo que cambia el disco pregunta siempre: si git no contesta, no se hace nada
   assert.strictEqual(sources.head(L.tree, { env }), first);
-  assert.strictEqual(asks(), 1, 'la segunda pregunta, con el clon igual, no lanza git');
+  assert.strictEqual(asks(), 2, 'sin cached, pregunta aunque el clon esté igual');
   const commit = (msg) => { fs.writeFileSync(path.join(L.tree, 'VERSION'), `${msg}\n`); git(L.tree, ['commit', '-qam', msg]); };
   commit('dos');
-  assert.strictEqual(sources.head(L.tree, { env }), truth(), 'después de un commit');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'después de un commit');
   git(L.tree, ['pack-refs', '--all']);
-  assert.strictEqual(sources.head(L.tree, { env }), truth(), 'con las refs empaquetadas');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'con las refs empaquetadas');
   commit('tres');
-  assert.strictEqual(sources.head(L.tree, { env }), truth(), 'un commit sobre las refs empaquetadas');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'un commit sobre las refs empaquetadas');
   git(L.tree, ['checkout', '-q', '--detach', 'HEAD~1']);
-  assert.strictEqual(sources.head(L.tree, { env }), truth(), 'con HEAD suelto');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'con HEAD suelto');
   git(L.tree, ['checkout', '-q', '-b', 'otra']);
   commit('cuatro');
-  assert.strictEqual(sources.head(L.tree, { env }), truth(), 'en otra rama');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'en otra rama');
   // la ref reescrita en el mismo archivo, con el mismo tamaño y la misma hora (dos escrituras en el mismo tic del reloj)
   const refFile = path.join(L.tree, '.git', 'refs', 'heads', 'otra');
   const tic = new Date('2026-01-01T00:00:00Z');
   fs.utimesSync(refFile, tic, tic);
-  assert.strictEqual(sources.head(L.tree, { env }), truth());
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth());
   const punta = truth();
   fs.writeFileSync(refFile, `${git(L.tree, ['rev-parse', 'HEAD~1'])}\n`);
   fs.utimesSync(refFile, tic, tic);
-  assert.strictEqual(sources.head(L.tree, { env }), truth(), 'la ref cambió aunque su archivo se vea igual');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'la ref cambió aunque su archivo se vea igual');
   fs.writeFileSync(refFile, `${punta}\n`);
   // un worktree (su .git es un archivo): sin memoria, pero bien
   const wt = path.join(BASE, 'tmp', `head-memo-wt-${process.pid}`);
