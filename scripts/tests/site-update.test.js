@@ -526,3 +526,56 @@ test('A12 2.33-Rev_PruebaLaRevisionNueva @story-2.33 @ac-10 @ac-12 — prueba re
     assert.ok(est.fallidas[NUEVA], 'la huella nueva queda anotada');
   } finally { await reg.cerrar(); }
 });
+
+/** Un sitio de juguete: `/livez` con `demo` y la portada con o sin la franja. `vida: null` no contesta `/livez`. */
+async function sitioDeJuguete({ vida = { ok: true, demo: true }, franja = true } = {}) {
+  const srv = http.createServer((req, res) => {
+    if (req.url === '/livez' && vida) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(vida)); return; }
+    if (req.url === '/') { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<html><body${franja ? ' class="demo"><div class="franja-demo" role="note">' : '>'}acme</body></html>`); return; }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  return { url: `http://127.0.0.1:${srv.address().port}`, cerrar: () => new Promise((ok) => srv.close(ok)) };
+}
+
+test('D1 SitioDemo_PruebaPropia — el demo pasa con /livez en demo y la franja; un sitio real o sin franja, no', async () => {
+  const casos = [
+    [{}, true, null],
+    [{ vida: { ok: true, demo: false } }, false, /no está en modo demo/],
+    [{ vida: { ok: true } }, false, /no está en modo demo/],
+    [{ franja: false }, false, /no trae la franja/],
+    [{ vida: null }, false, /\/livez no contestó/],
+  ];
+  for (const [forma, pasa, motivo] of casos) {
+    const s = await sitioDeJuguete(forma);
+    try {
+      const r = await UP.probarDemo({ espera: 0, pausa: 1 })(`${s.url}/`);
+      assert.strictEqual(r.ok, pasa, `${JSON.stringify(forma)}: ${JSON.stringify(r)}`);
+      if (motivo) {
+        assert.match(r.motivo, /^la prueba sin sesión falló \(/, 'el motivo sigue la lista cerrada');
+        assert.match(r.motivo, motivo);
+      }
+    } finally { await s.cerrar(); }
+  }
+});
+
+test('D2 SitioDemo_ActualizaConSuPrueba — con demo, la prueba es la del demo: actualiza el demo y vuelve atrás en un sitio real', async () => {
+  const reg = await registro();
+  try {
+    const demo = await sitioDeJuguete();
+    try {
+      const az = azDeJuguete();
+      const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', demo: true, azure: { ...AZURE, url: demo.url }, correr: az.correr });
+      assert.strictEqual(r.resultado, 'actualizado', JSON.stringify(r));
+      assert.strictEqual(az.imagen(), `${IMAGEN}@${NUEVA}`);
+    } finally { await demo.cerrar(); }
+    const real = await sitioDeJuguete({ vida: { ok: true, demo: false }, franja: false });
+    try {
+      const az = azDeJuguete();
+      const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', demo: true, azure: { ...AZURE, url: real.url }, correr: az.correr });
+      assert.strictEqual(r.resultado, 'vuelto_atras', JSON.stringify(r));
+      assert.match(r.motivo, /no está en modo demo/);
+      assert.strictEqual(az.imagen(), `${IMAGEN}@${VIEJA}`);
+    } finally { await real.cerrar(); }
+  } finally { await reg.cerrar(); }
+});

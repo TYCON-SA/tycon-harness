@@ -853,6 +853,11 @@ los trae, no corre y dice cuáles. Repetir la fase `demo` sobre una instancia qu
 si un paso falla, se detiene, dice cuál y qué quedó creado, y correrla de nuevo la completa. Nunca toca una aplicación que
 no sea una instancia demo.
 
+**Al día.** El actualizador del sitio también lo pone al día con `stable`: `update-site.js` con `--demo` y la aplicación
+y el grupo del demo. Como el demo es abierto, no le corre la prueba sin sesión: le pide `/livez` con `demo: true` y la
+portada con la franja «Datos de ejemplo». Si no pasa, vuelve a la huella anterior, como con el sitio real. El nocturno
+lo corre en un paso propio, con la misma credencial; ésta necesita su rol también sobre la aplicación del demo.
+
 **Borrarlo.** Todo lo del demo está en su grupo de recursos: `az group delete --name <grupo> --subscription <suscripción>`
 lo borra entero (pide confirmación). Hacelo sólo si ese grupo es propio del demo. Sin borrarlo, apagado ya está: con cero
 réplicas no corre ningún contenedor.

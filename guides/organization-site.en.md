@@ -885,6 +885,12 @@ does not run and says which. Running the `demo` phase again on an instance that 
 another); if a step fails, it stops, says which one and what was created, and running it again finishes the job. It never
 touches an app that is not a demo instance.
 
+**Up to date.** The site updater also keeps it up to date with `stable`: `update-site.js` with `--demo` and the demo's
+app and group. Since the demo is open, it does not run the check without a session on it: it asks for `/livez` with
+`demo: true` and for the home page with the "Example data" strip. If that fails, it goes back to the previous digest, as
+with the real site. The nightly runs it in its own step, with the same credential; that credential needs its role on the
+demo's app too.
+
 **Deleting it.** Everything of the demo is in its resource group: `az group delete --name <group> --subscription
 <subscription>` deletes it all (it asks for confirmation). Do it only if that group is the demo's own. Without deleting it,
 it is already off: with zero replicas no container runs.

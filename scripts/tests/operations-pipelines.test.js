@@ -12,10 +12,10 @@ const { spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'pipelines', 'operations');
 const MODELS = ['dependency-audit.yml', 'stage-metrics.yml', 'team-dashboard.yml', 'runs-review.yml'];
-const TEMPLATES = ['fetch-harness.yml', 'ops-data.yml', 'check-tree.yml'];
+const TEMPLATES = ['fetch-harness.yml', 'ops-data.yml', 'check-tree.yml', 'site-update-azure.yml'];
 const read = (rel) => fs.readFileSync(path.join(DIR, rel), 'utf8');
 
-test('T1 Models_FilesInPlace: los cuatro modelos, las tres plantillas, la página y los ejemplos; cada template: existe y va con @harness', () => {
+test('T1 Models_FilesInPlace: los cuatro modelos, las plantillas, la página y los ejemplos; cada template: existe y va con @harness', () => {
   for (const f of [...MODELS, ...TEMPLATES.map((t) => `templates/${t}`), 'README.md', 'examples/repos.json', 'examples/operations.json', 'examples/sources.json']) {
     assert.ok(fs.existsSync(path.join(DIR, f)), `falta pipelines/operations/${f}`);
   }
@@ -788,4 +788,24 @@ test('T2 8.58-UnaSolaRegla_GitHub @story-8.58: el README de GitHub dice la regla
   assert.match(s, /la noche entra sola; el sitio, todavía no/);
   assert.match(s, /Lo que se resigna/);
   assert.match(s, /Volver a pedir aprobación/);
+});
+
+test('D3 SitioDemo_UnPasoMasConLaMismaPlantilla (Azure) — el demo va por la plantilla del sitio, con su prueba y su carpeta', () => {
+  // 🔴 rojo: el demo copia el paso del sitio (dos lógicas que se separan), corre con la prueba sin sesión (que lo da por
+  // roto y vuelve atrás cada noche), pisa el resultado del sitio de la organización, o corre en quien no tiene demo.
+  const t = read('site-update.yml');
+  const usos = [...t.matchAll(/- template: pipelines\/operations\/templates\/site-update-azure\.yml@harness\n\s+parameters:\n((?:\s{10}.*\n)+)/g)].map((x) => x[1]);
+  assert.strictEqual(usos.length, 2, 'la plantilla, una vez por sitio');
+  assert.doesNotMatch(t, /- task: AzureCLI@2/, 'ningún paso de Azure copiado en el modelo');
+  assert.doesNotMatch(usos[0], /prefix:|demo:|stateDir:/, 'el sitio de la organización, con lo de siempre');
+  assert.match(usos[1], /prefix: SITE_DEMO\n/);
+  assert.match(usos[1], /demo: true\n/);
+  assert.match(usos[1], /stateDir: \.dashboard\/site-update\/demo\n/, 'su propia carpeta, dentro de lo que se guarda');
+  for (const u of usos) assert.match(u, /efectos: \$\{\{ parameters\.efectos \}\}/, 'el ensayo vale para los dos');
+  const p = read('templates/site-update-azure.yml');
+  assert.match(p, /ne\(variables\['\$\{\{ parameters\.prefix \}\}_APP'\], ''\)/, 'sin su aplicación, el paso no corre');
+  assert.match(p, /\[ "\$\{\{ parameters\.demo \}\}" = "True" \] && echo --demo/, 'el demo, con su prueba');
+  assert.match(p, /--app "\$\(\$\{\{ parameters\.prefix \}\}_APP\)"/);
+  assert.match(p, /--state-dir \$\{\{ parameters\.stateDir \}\}/);
+  assert.match(p, /exit 0\s*$/, 'un sitio que no se actualizó no corta la noche');
 });
