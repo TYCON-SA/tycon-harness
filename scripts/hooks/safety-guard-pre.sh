@@ -1813,8 +1813,32 @@ fi
 # --- SQL destructivo (sqlcmd / dotnet ef / inline) ---------------------------
 
 # DROP DATABASE — las bases de los clientes (acmebase, acmebase_dev, etc.).
-# Drop accidental es catastrófico.
+# Drop accidental es catastrófico. SQL no distingue mayúsculas y acepta comentarios entre las dos palabras:
+# `drop database`, `Drop Database`, `DROP /* x */ DATABASE` y `drop -- x` + salto + `database` borran igual.
+# Esas formas cuentan donde corre SQL (un cliente de base en el comando); en mayúsculas, en cualquier comando, como
+# siempre. La prosa en minúscula de un mensaje o de un `grep | head` no borra nada.
+# Un buscador de texto solo (`grep -rn "DROP DATABASE" scripts/`), sin tuberías, redirecciones ni sustituciones,
+# sólo lee: no se frena.
+_sql_c1_re=$'(^|[^[:alnum:]_])drop([[:space:]]|/\\*([^*]|\\*+[^*/])*\\*+/|--[^\n]*\n)+database([^[:alnum:]_]|$)'
+_sql_c1_solo_busca() {
+  local c="${CMD#"${CMD%%[![:space:]]*}"}"
+  [[ "$c" =~ ^(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep)[[:space:]] ]] || return 1
+  [[ "$c" == *[\|\;\&\`\<\>]* || "$c" == *'$('* || "$c" == *$'\n'* || "$c" == *--pre* ]] && return 1
+  # las opciones con las que el buscador ejecuta otro programa: ahí el texto corre. git y ag aceptan la opción larga
+  # abreviada (`--open`, `--pag`) y la corta pegada a otras (`-iO`)
+  [[ "$c" == *--pag* || "$c" == *--op* || "$c" == *--ho* || "$c" =~ [[:space:]]-[[:alnum:]]*O ]] && return 1
+  return 0
+}
+_sql_c1_cliente_re='(^|[^[:alnum:]_-])(sqlcmd|osql|isql|psql|mysql|mariadb|sqlite3|bcp|invoke-sqlcmd|mssql-cli|usql|sqlpackage)([^[:alnum:]_-]|$)'
+_sql_c1=0
 if [[ "$CMD" =~ DROP[[:space:]]+DATABASE ]]; then
+  _sql_c1=1
+else
+  shopt -s nocasematch
+  [[ "$CMD" =~ $_sql_c1_cliente_re && "$CMD" =~ $_sql_c1_re ]] && _sql_c1=1
+  shopt -u nocasematch
+fi
+if [ "$_sql_c1" = 1 ] && ! _sql_c1_solo_busca; then
   block "SQL-C1" \
     "DROP DATABASE. Te llevás esquema + datos + historial." \
     "Si hay que recrear la base (típicamente *_DEV), lo autoriza la persona (abajo); después se restaura el backup."

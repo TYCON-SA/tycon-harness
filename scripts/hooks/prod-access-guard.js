@@ -53,6 +53,9 @@ const CLIENTES = {
 };
 // Variables de entorno que los clientes leen cuando NO viene la bandera: `SQLCMDSERVER=<prod> sqlcmd -Q …`
 // conecta a producción sin un solo `-S` (documentado, y reproducido en el pase adversarial).
+// Los clientes que distinguen mayúsculas en sus banderas: en `sqlcmd` y compañía `-s` es el separador de columnas
+// (`sqlcmd -S localhost -s '|'`) y sólo `-S` nombra el servidor. En los demás, la bandera corta se compara sin mayúsculas.
+const BANDERAS_EXACTAS = new Set(['sqlcmd', 'bcp', 'osql', 'mssql-cli', 'tsql']);
 const VARIABLES_SERVIDOR = ['SQLCMDSERVER', 'MSSQL_HOST', 'PGHOST', 'DBSERVER'];
 // ── el texto crudo nombra algo de bases: eso decide si una falla propia frena o deja pasar ────
 // 🔴 Se DERIVA de la misma lista de clientes que usa la detección. Eran dos listas escritas a mano y
@@ -692,14 +695,16 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
     else out.push({ texto: v, shell: !!shell, contenido, ps: !!ps, codigo: !!codigo });
   };
 
-  // (a) cuerpos de heredoc: `bash <<EOF … EOF` — `sinHeredocs` los borra del análisis normal
-  const heredoc = /<<-?\s*(['"]?)([^\s'"<>|&;]+)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
-  let h; while ((h = heredoc.exec(cmd))) {
-    const shell = heredocAlimentaShell(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir);
-    const linea = cmd.slice(cmd.lastIndexOf('\n', h.index) + 1, h.index);
+  // (a) cuerpos de heredoc: `bash <<EOF … EOF` — `sinHeredocs` los borra del análisis normal. El cierre es el del shell
+  // (`<<\EOF` y `<<E"OF"` cierran en `EOF`): con el delimitador tal como está escrito, lo que sigue al cierre real se
+  // ejecutaba y acá se leía como cuerpo
+  const { heredocs } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
+  for (const h of heredocs(cmd)) {
+    const shell = heredocAlimentaShell(cmd, h.indice, partes, tokens, PREFIJOS, vars, expandir);
+    const linea = cmd.slice(cmd.lastIndexOf('\n', h.indice) + 1, h.indice);
     const tl = tokensDeSegmento(linea.split(/[;&|]/).pop() || '', tokens, PREFIJOS);
     const progH = tl.length ? basename(tl[0]).toLowerCase().replace(/\.exe$/, '') : '';
-    agregar(h[3], shell, !shell && heredocSoloAArchivo(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir), false,
+    agregar(h.cuerpo, shell, !shell && heredocSoloAArchivo(cmd, h.indice, partes, tokens, PREFIJOS, vars, expandir), false,
       !shell && (Boolean(INTERPRETES[progH]) || CORRE_ARCHIVO.has(progH)));
   }
 
@@ -791,11 +796,11 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
  */
 function heredocAlimentaShell(cmd, indice, partes, tokens, PREFIJOS, vars, expandir) {
   const path = require('path');
-  const { segmentos, parseSimpleCommand } = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
+  const { segmentos, parseSimpleCommand, OPERADOR_HEREDOC } = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
   const ini = cmd.lastIndexOf('\n', indice) + 1;
   const finLinea = cmd.indexOf('\n', indice);
   const linea = cmd.slice(ini, finLinea < 0 ? cmd.length : finLinea)
-    .replace(/<<-?\s*(['"]?)[^\s'"<>|&;]+\1/g, ' ');             // sin los operadores: queda el comando
+    .replace(new RegExp(OPERADOR_HEREDOC.source, 'g'), ' ');     // sin los operadores: queda el comando
   // 🔴 Sin cortar en `$(…)`: `T=$(date …) && cat > "$D/x" <<'EOF'` partido en el `$(` dejaba un segmento `T=` «sin
   // programa», que se leía como duda, y el cuerpo (el CONTENIDO de un archivo) se juzgaba como comandos (medición T30 de la
   // tanda A, segunda corrida: un freno falso con un cuerpo que mencionaba `.tycon/…` en prosa).
@@ -878,17 +883,13 @@ function heredocSoloAArchivo(cmd, indice, partes, tokens, PREFIJOS, vars, expand
   const path = require('path');
   const os = require('os');
   const fs = require('fs');
-  const { parseSimpleCommand, sinHeredocs } = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
+  const { parseSimpleCommand, sinHeredocs, heredocs } = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
   if (/\$\(|`|[<>]\(|[(){}]/.test(sinHeredocs(cmd))) return false;
   // Con el delimitador sin comillas (`<<EOF`) el shell expande el cuerpo: un `$(…)` o una comilla invertida adentro SE
   // EJECUTA. Sólo se libera un cuerpo con delimitador entre comillas, o sin `$` ni comillas invertidas.
-  // El delimitador, sólo en sus formas simples (`EOF`, `'EOF'`, `"EOF"`): con `<<\EOF` o `<<E"OF"` el shell cierra en
-  // `EOF` y lo que sigue se ejecuta, pero acá se leería como parte del cuerpo
-  if (!/^<<-?\s*(?:[A-Za-z0-9_.-]+|'[A-Za-z0-9_.-]+'|"[A-Za-z0-9_.-]+")(?=[\s;&|<>]|$)/.test(cmd.slice(indice))) return false;
-  const este = /<<-?\s*(['"]?)([^\s'"<>|&;]+)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/y;
-  este.lastIndex = indice;
-  const h = este.exec(cmd);
-  if (!h || (!h[1] && /[$`]/.test(h[3]))) return false;
+  // El cierre es el del shell (`<<\EOF` y `<<E"OF"` cierran en `EOF`); el delimitador, de letras, números, `_`, `.` y `-`
+  const h = heredocs(cmd).find((x) => x.indice === indice);
+  if (!h || !/^[A-Za-z0-9_.-]+$/.test(h.delim) || (!h.comillas && /[$`]/.test(h.cuerpo))) return false;
   // Todos los tramos, no sólo la línea del `<<`: un `echo … > ~/.zshrc` al lado también escribe. Las redirecciones las
   // lee el parser del shell (`>&archivo` y `a>archivo` también escriben; una regex con espacio delante no las veía).
   const destinos = [];
@@ -1023,6 +1024,8 @@ const CATALOGOS = ['production.json', 'produccion.json'];
 const ESTADOS = ['production-index.json', 'production-memory.json', 'production-firewall.json', 'produccion-indice.json', 'produccion-memoria.json'];
 const NOMBRES_PROTEGIDOS = [...CATALOGOS, ...ESTADOS];
 const CARPETAS_PROTEGIDAS = ['.tycon', '.tycon-pipeline'];
+// la carpeta del estado dentro de `.tycon`: cuenta como protegida sólo ahí, no cualquier `state`
+const CARPETA_DE_ESTADO = 'state';
 // los dos nombres (`production…`, `produccion…`) y nada más: `product*` es un comodín cualquiera, y frenarlo en un
 // freno sin escape es cómo muere un control (pase adversarial de la tanda P, 2026-09-30)
 const NOMBRA_PRODUCCION = /^(?:production|produccion)/i;
@@ -1052,6 +1055,8 @@ const GIT_LEE = new Set(['diff', 'show', 'status', 'log', 'ls-files', 'blame', '
 // la carpeta entera cuenta sólo para quien la BORRA o la MUEVE; crearla o listarla es trabajo normal — medido:
 // `mkdir -p .tycon` estaba entre los falsos positivos reales
 const BORRAN_O_MUEVEN = new Set(['rm', 'rmdir', 'mv', 'cp', 'ln', 'rsync', 'trash', 'unlink', 'shred', 'chmod', 'chown', 'chflags']);
+// la carpeta del estado se pierde si se la borra o se la mueve; copiarla (`cp -r ~/.tycon/state /tmp/x`) sólo la lee
+const QUITAN_LA_CARPETA = new Set(['rm', 'rmdir', 'mv', 'trash', 'unlink', 'shred']);
 const CAMBIAN_CARPETA = new Set(['cd', 'pushd', 'chdir', 'popd']);
 // Lo que va antes del programa de verdad, con las banderas que llevan argumento (`sudo -u x`, `nice -n 5`).
 // `stdbuf`, `caffeinate`, `arch`, `ionice`, `setsid` y `unbuffer` escondían a `xargs` y a `find` (pase adversarial de la
@@ -1166,6 +1171,7 @@ function escrituraProtegida(cmd, payload) {
       ruta: s, base, dir, dirDesconocida,
       enRaizTycon: ultima !== null && componenteEs(ultima, '.tycon'),
       enRaizPipeline: ultima !== null && componenteEs(ultima, '.tycon-pipeline'),
+      enEstado: comps.length >= 2 && componenteEs(ultima, CARPETA_DE_ESTADO) && componenteEs(comps[comps.length - 2], '.tycon'),
     };
   };
   /**
@@ -1196,11 +1202,16 @@ function escrituraProtegida(cmd, payload) {
     }
     if (literal) {
       if (CARPETAS_PROTEGIDAS.includes(n)) return { tipo: 'carpeta', ruta, alcance, literal };
+      // la carpeta del estado (`~/.tycon/state`) guarda los marcadores de todas las corridas: borrarla o moverla es
+      // perderlas, igual que con las dos carpetas protegidas
+      if (n === CARPETA_DE_ESTADO && i.enRaizTycon) return { tipo: 'carpeta', ruta, alcance, literal, estado: true };
       if (ESTADOS.includes(n)) return { tipo: 'archivo', ruta, alcance, literal };
       // con la carpeta desconocida (`cd -`, `cd "$X"`), el nombre pelado del catálogo cuenta (AC 12)
       if (CATALOGOS.includes(n) && (i.enRaizTycon || i.dirDesconocida)) return { tipo: 'archivo', ruta, alcance, literal };
       return { tipo: null, ruta, alcance, literal };
     }
+    // `~/.tycon/state/*` vacía la carpeta entera de una vez: para quien borra, es lo mismo que borrarla
+    if (i.enEstado && i.base === '*') return { tipo: 'carpeta', ruta, alcance, literal, estado: true };
     let re; try { re = sp.patternToRegExp(i.base, { nocase: true }); } catch { return alcance ? { tipo: 'archivo', ruta, alcance, literal } : null; }
     const candidatos = new Set([
       ...(i.enRaizTycon ? CATALOGOS : []), ...(i.enRaizPipeline ? ESTADOS : []),
@@ -1208,6 +1219,7 @@ function escrituraProtegida(cmd, payload) {
     ]);
     const hit = [...candidatos].find((c) => re.test(c));
     if (hit) return { tipo: 'archivo', ruta: mostrar(i.dir ? `${i.dir === '/' ? '' : i.dir}/${escPatron(hit)}` : escPatron(hit)), alcance, literal, desde: ruta };
+    if (i.enRaizTycon && re.test(CARPETA_DE_ESTADO)) return { tipo: 'carpeta', ruta, alcance, literal, estado: true };
     // sin dotglob, sólo un comodín que empieza con punto puede ser `.tycon`/`.tycon-pipeline` (`.tyc*` sí, `*-*` no)
     if (/[^*?]/.test(baseTxt) && puedeSerOculto(i.base) && CARPETAS_PROTEGIDAS.some((c) => re.test(c))) return { tipo: 'carpeta', ruta, alcance, literal };
     return { tipo: null, ruta, alcance, literal };
@@ -1286,7 +1298,7 @@ function escrituraProtegida(cmd, payload) {
       // arma «production-index.json» desde «"$X"»; es lo que no se puede leer dentro del alcance (AC 14), y se dice así
       if (v.tipo === 'archivo' && r.unknown && !v.literal && !deXargs) return motivoIndecidible(raw, r.reason || 'una variable o una sustitución que el freno no puede resolver');
       if (v.tipo === 'archivo') return { motivo: motivoEscribe(v.ruta, raw) };
-      if (v.tipo === 'carpeta' && BORRAN_O_MUEVEN.has(prog)) return { motivo: `ese comando ESCRIBE sobre ${v.ruta}.` };
+      if (v.tipo === 'carpeta' && (v.estado ? QUITAN_LA_CARPETA : BORRAN_O_MUEVEN).has(prog)) return { motivo: `ese comando ESCRIBE sobre ${v.ruta}.` };
       if (v.tipo === 'carpeta-indecidible' && BORRAN_O_MUEVEN.has(prog)) return motivoIndecidible(raw, r.reason);
     }
     for (const p of r.patterns) {
@@ -1497,7 +1509,9 @@ function escrituraProtegida(cmd, payload) {
         if (!v || !v.tipo) continue;
         const nombre = v.ruta.split('/').pop();
         if (v.tipo === 'indecidible') return motivoIndecidible(raw, r.reason);
-        if ((v.tipo === 'archivo' || (v.tipo === 'carpeta' && borraCarpeta)) && tomaElNombre(nombre)) {
+        // `find ~/.tycon/state -delete` sin filtro la vacía y la borra; con un filtro (`-name 'active*'`) borra sólo eso
+        const vaciaElEstado = v.estado && borra && !fuente && !escritores.length && !patrones.length;
+        if ((v.tipo === 'archivo' || (v.tipo === 'carpeta' && (borraCarpeta || vaciaElEstado))) && tomaElNombre(nombre)) {
           return { motivo: `ese comando ESCRIBE sobre ${v.ruta} (${fuente ? `xargs le pasa a «${fuente.prog}»` : 'find borra o reescribe'} su punto de partida «${corto(pal(raw))}»).` };
         }
       }
@@ -1844,11 +1858,10 @@ function escrituraProtegida(cmd, payload) {
    */
   const heredocsOf = (doc) => {
     const lista = [];
-    const re = /<<-?\s*(['"]?)([^\s'"<>|&;]+)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
-    let h; let partesDoc = null; let varsDoc = null;
-    while ((h = re.exec(doc))) {
+    let partesDoc = null; let varsDoc = null;
+    for (const h of sp.heredocs(doc)) {
       if (partesDoc === null) { partesDoc = sp.segmentos(doc); varsDoc = sp.variablesDelComando(doc); }
-      lista.push({ cuerpo: h[3], shell: heredocAlimentaShell(doc, h.index, partesDoc, sp.tokens, sp.PREFIJOS, varsDoc, sp.expandir) });
+      lista.push({ cuerpo: h.cuerpo, shell: heredocAlimentaShell(doc, h.indice, partesDoc, sp.tokens, sp.PREFIJOS, varsDoc, sp.expandir) });
     }
     return { lista, sig: 0 };
   };
@@ -1987,6 +2000,9 @@ function printfOutput(fmt, args) {
 const TEXTUALES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'sed', 'awk', 'less', 'cat', 'head', 'tail', 'man', 'echo', 'printf']);
 // Claves de cadena de conexión: `Addr`, `Address` y `Network Address` son sinónimos documentados de
 // SqlClient y no estaban.
+// Un valor que es una llamada de código (`const server = http.createServer(…)` en un `node -e`) no es un servidor:
+// una cadena de conexión no lleva paréntesis después de un nombre.
+const LLAMADA_DE_CODIGO = /^[A-Za-z_][\w$]*(?:\.[\w$]+)*\(/;            // `$(` no: es una sustitución del shell
 const CONEXION = /(^|[;"'\s(])(server|data source|addr|address|network address)\s*=\s*("[^"]*"|'[^']*'|[^;"'\s)]+)/gi;
 // Sólo un id de recurso (`…/providers/Microsoft.Sql/servers/<nombre>`) nombra un servidor: el tipo
 // `microsoft.sql/servers/databases` de una consulta de `az graph` no nombra ninguno, y leído como servidor
@@ -2245,10 +2261,12 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
     const clientes = dondeEsta(t, new Set(Object.keys(CLIENTES)));
     for (const i of clientes) {
       const antesNombrados = out.length;
-      const banderas = CLIENTES[basename(t[i]).toLowerCase()];
+      const cliente = basename(t[i]).toLowerCase();
+      const banderas = CLIENTES[cliente];
       for (let j = i + 1; j < t.length; j++) {
         for (const b of banderas) {
-          const igualBandera = t[j] === b || (b.startsWith('-') && !b.startsWith('--') && t[j].toLowerCase() === b.toLowerCase());
+          const igualBandera = t[j] === b
+            || (!BANDERAS_EXACTAS.has(cliente) && b.startsWith('-') && !b.startsWith('--') && t[j].toLowerCase() === b.toLowerCase());
           if (igualBandera && t[j + 1] !== undefined) agregar(crudoDe(texto, t[j + 1]), 'cliente');
           const pegado = new RegExp(`^${b.replace(/[/\\-]/g, '\\$&')}[:=]?(.+)$`).exec(t[j]);
           if (pegado && pegado[1]) agregar(crudoDe(texto, pegado[1]), 'cliente');
@@ -2308,7 +2326,7 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
       let m; CONEXION.lastIndex = 0;
       while ((m = CONEXION.exec(sinPrefijo))) {
         const valor = sinComillas(m[3]).trim();
-        if (!valor) continue;
+        if (!valor || LLAMADA_DE_CODIGO.test(valor)) continue;
         agregar(valor.replace(/^tcp:/i, ''), 'cadena');
       }
       const url = URL_SQL.exec(sinPrefijo);

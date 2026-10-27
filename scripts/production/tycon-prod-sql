@@ -131,8 +131,10 @@ HOST_VALIDO='^[A-Za-z0-9][A-Za-z0-9._-]*$'
 LLAVERO_VALIDO='^tycon-prod-[A-Za-z0-9._-]+$'
 BASE_VALIDA='^[A-Za-z0-9_][A-Za-z0-9_.-]*$'       # el mismo charset que exige lint-production-json.js
 
+# Lo que no se pudo anotar se dice en rojo, sin cambiar la salida: algo que corrió sin constancia no puede pasar callado.
+sin_registro(){ printf '🔴 no pude anotar esta operación en el registro de producción (%s): quedó sin constancia.\n' "$1" >&2; }
 anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaron su charset)
-  mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null || return 0
+  mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null || { sin_registro "$REGISTRO"; return 0; }
   # a un temporal y entra con `ln`, que no pisa (otro proceso nunca ve uno a medio copiar); si la historia no se pudo
   # pasar, se sigue anotando en el viejo: nunca un registro nuevo sin su historia (AC 18)
   local destino="$REGISTRO"
@@ -142,7 +144,7 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
     rm -f "$tmp" 2>/dev/null
     [ -e "$REGISTRO" ] || destino="$REGISTRO_VIEJO"
   fi
-  printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$destino" 2>/dev/null || true
+  printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" 2>/dev/null >> "$destino" || sin_registro "$destino"
 }
 
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
@@ -340,9 +342,11 @@ if [ "$MODO" = verificar ]; then
 fi
 
 # ── az, para el firewall y los candados ─────────────────────────────────────────────────────────────────────────
-# El tope de cada llamada: fijo instalada (un cierre hace 3 o 4 llamadas y el hook tiene 110 s en total); la variable
-# sólo vale con la raíz de prueba. az se busca en rutas fijas, nunca en el PATH.
-AZ_TOPE=25; [ -n "$RAIZ" ] && [ -n "${TYCON_PROD_AZ_TIMEOUT:-}" ] && AZ_TOPE="$TYCON_PROD_AZ_TIMEOUT"
+# El tope de cada llamada, fijo instalada: 25 s a mano. El cierre de fin de sesión (`--session`, que sólo pasa el hook)
+# hace 3 o 4 llamadas y el hook tiene ~60 s de verdad (medido con `claude -p`; no los 120 de la configuración): 13 s
+# cada una. Lo que no alcanza a cerrar lo cierra el barrido del próximo arranque. La variable sólo vale con la raíz de
+# prueba. az se busca en rutas fijas, nunca en el PATH.
+AZ_TOPE=25; [ -n "$SESION_CIERRE" ] && AZ_TOPE=13; [ -n "$RAIZ" ] && [ -n "${TYCON_PROD_AZ_TIMEOUT:-}" ] && AZ_TOPE="$TYCON_PROD_AZ_TIMEOUT"
 AZ=""; for c in "$RAIZ/opt/homebrew/bin/az" "$RAIZ/usr/local/bin/az" "$RAIZ/usr/bin/az"; do [ -x "$c" ] && { AZ="$c"; break; }; done
 SUBS_ACTIVAS="[?state=='Enabled' || state=='Warned' || state=='PastDue'].id"
 # az con un entorno limpio (nada del Llavero ni de la base), con tope de tiempo; 142 = el tope lo cortó

@@ -661,3 +661,104 @@ test('BorrarEstado_PalabraSuelta_NoAbreLaRegla', () => {
     assert.match(r.stderr, BORRADO, c);
   }
 });
+
+// TextoCitado_NoEsComando
+// Dos frenos falsos del mismo día: un `grep` de sólo lectura cuyo patrón citaba un `sed` que edita en el lugar frenó
+// «HISTORIA ESCRITA POR CONSOLA», y la descripción de un pedido que contaba en prosa cómo se borraba la carpeta del estado
+// frenó «BORRADO DEL ESTADO DEL PIPELINE». El patrón de un buscador y el texto de una descripción, un cuerpo o un mensaje
+// se citan: no se ejecutan.
+// 🔴 Falla con: la palabra entre comillas leída como comando cuando sólo la busca un `grep` o sólo la lleva un mensaje.
+test('TextoCitado_NoEsComando', () => {
+  const h = nuevaHomeDeEstado();
+  const E = h.estado;
+  for (const c of [
+    `grep -n "sed -i 's/x/y/'" ${HISTORIA}`,
+    `rg -n "sed -i 's/x/y/'" specs/`,
+    'az repos pr create --title "Freno" --description "Un gh pr close --delete-branch borraba ~/.tycon/state/active/ y se perdía el marcador."',
+    'gh pr create --title "Freno" --body "Antes, rm -rf ~/.tycon/state/active borraba el marcador."',
+    `git commit -m "Ya no se usa sed -i 's/x/y/' sobre ${HISTORIA}"`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${JSON.stringify(c)}: ${r.stderr}`);
+  }
+  // lo que se ejecuta de verdad, con el mismo texto cerca, sigue frenando
+  for (const c of [
+    `grep -n x ${HISTORIA} && sed -i '' 's/status: in-progress/status: done/' ${HISTORIA}`,
+    `grep -l x specs/*.md | xargs sed -i '' 's/a/b/'`,
+    `echo "sed -i '' 's/x/y/' ${HISTORIA}" | sh`,
+    `rg --pre "sed -i '' 's/x/y/'" x ${HISTORIA}`,
+    // las opciones con las que el buscador ejecuta el texto, y la salida que va a un shell detrás de otro programa
+    `ag --pager "sed -i '' 's/x/y/' ${HISTORIA}" x .`,
+    `git grep -O"sed -i '' 's/x/y/' ${HISTORIA}" x`,
+    `grep -h "sed -i '' 's/x/y/' ${HISTORIA}" notas.txt | env sh`,
+    `grep -h "sed -i '' 's/x/y/' ${HISTORIA}" notas.txt | sudo bash`,
+    // `-m` es un mensaje en git y gh; en otro programa no se sabe
+    `xyz -m "sed -i '' 's/x/y/' ${HISTORIA}"`,
+    `az repos pr create --title "Freno" --description "$(rm -rf ${E})"`,
+    `gh pr create --title "Freno" --body "x" && rm -rf ${E}`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${JSON.stringify(c)}: ${r.stderr}`);
+  }
+});
+
+// EdicionFueraDelRepo_NoEsLaHistoria
+// Un `sed -i` sobre un guion del scratchpad, y después `expect` corriendo desde una carpeta de laboratorio, con la sesión
+// parada en un repo con historias: nada escribe en specs/, y el freno listaba todas las historias del repo. El freno mira
+// el destino real de la edición, no la carpeta donde está parada la sesión.
+// 🔴 Falla con: el destino de la edición o la carpeta de trabajo del comando leídos como la carpeta de la sesión.
+test('EdicionFueraDelRepo_NoEsLaHistoria', () => {
+  const h = nuevaHome();
+  const S = fs.mkdtempSync(path.join(os.tmpdir(), 'scratchpad-'));
+  fs.mkdirSync(path.join(S, 'lab'));
+  fs.writeFileSync(path.join(S, 'auto.exp'), 'spawn claude -p x\n');
+  const muñe = `S=${S}; L=$S/lab; sed -i '' 's/^spawn claude /spawn env -u CLAUDE_CODE_CHILD_SESSION claude /' "$S/auto.exp"; `
+    + `grep -n '^spawn' "$S/auto.exp"; cd "$L" && rm -f out-exempt.txt; N0=$(wc -l < hook-input.log); `
+    + `expect "$S/auto.exp" "$S/B2.log" yes 'Run exactly this bash command once, without changing it: ./exempt.sh --critical SEC-C1 --reason "the owner exempts it"' > "$S/B2.out" 2>&1; `
+    + `grep -E '###|line [0-9]+' "$S/B2.out"; ls | grep out-exempt; echo "hook nuevas: $(( $(wc -l < hook-input.log) - N0 ))"`;
+  for (const c of [muñe, `S=${S}; sed -i '' 's/^spawn claude /spawn env claude /' "$S/auto.exp"`]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
+  }
+  // el mismo sed sobre la historia, con el destino armado igual, sigue frenando; también con una cuenta que no asigna
+  // cerca, y con una que sí asigna (el freno ya no sabe qué vale la variable)
+  for (const c of [
+    `S=${h.repo}; sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"`,
+    `S=${h.repo}; sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"; echo "$(( $(wc -l < x) - 1 ))"`,
+    `S=${h.repo}; : $(( N = 1 )); sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"`,
+    // la variable de la cuenta vale una asignación: el shell la evalúa y cambia `D`
+    `D=/tmp; e=D=0; : $((e)); sed -i '' 's/^status: .*/status: done/' "$D/../${HISTORIA}"`,
+    `S=${h.repo}; e=S=0; echo $((e)) > /dev/null; sed -i '' 's/^status: .*/status: done/' "$S/${HISTORIA}"`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
+  }
+});
+
+// EdicionSinFormaConocida_PalabraQueNoEsArchivo
+// Con un editor en el lugar que el freno no sabe leer (`sed -i ''` con el sed de GNU, de Linux y de Git Bash; `perl -i`
+// en cualquier sistema), cada palabra del comando cuenta como destino. El `))` de una cuenta quedaba vacío sin sus
+// paréntesis y caía en la carpeta de la sesión: frenaba por todas sus historias. Un destino real sigue frenando.
+// 🔴 Falla con: una palabra que no nombra un archivo (vacía, o la `/` suelta de un guion) leída como carpeta.
+test('EdicionSinFormaConocida_PalabraQueNoEsArchivo', () => {
+  const h = nuevaHome();
+  const S = fs.mkdtempSync(path.join(os.tmpdir(), 'scratchpad-'));
+  fs.writeFileSync(path.join(S, 'auto.exp'), 'spawn claude -p x\n');
+  for (const c of [
+    `S=${S}; perl -i -pe 's/^spawn claude /spawn env claude /' "$S/auto.exp"; echo "$(( $(wc -l < x) - 1 ))"`,
+    `S=${S}; perl -i -pe 's/^spawn claude /spawn env claude /' "$S/auto.exp"; : $(( N = 1 ))`,
+    `S=${S}; perl -i -pe 's/^spawn claude /spawn env claude /' "$S/auto.exp"`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
+  }
+  // la historia nombrada, una carpeta con historias, o la cuenta en el mismo comando: siguen frenando
+  for (const c of [
+    `perl -i -pe 's/^status: .*/status: done/' ${HISTORIA}; echo "$(( $(wc -l < x) - 1 ))"`,
+    `S=${h.repo}; perl -i -pe 's/^status: .*/status: done/' "$S/${HISTORIA}"; : $(( N = 1 ))`,
+    `grep -rl x specs | xargs perl -i -pe 's/^status: .*/status: done/'; echo "$(( 1 + 1 ))"`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
+  }
+});
