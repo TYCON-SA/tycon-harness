@@ -480,6 +480,16 @@ function nodeDeSuEpoca(repoRun, log) {
   return `${quien} no corre sus pruebas con Node ${process.versions.node.split('.')[0]}: instalá Node ${era}, el de su época (nvm install ${era} && nvm use ${era})${openssl}.`;
 }
 
+const METRICA = Object.freeze({ lines: 'líneas', statements: 'sentencias', branches: 'ramas', functions: 'funciones' });
+/** Los mínimos globales de cobertura que el repo pide y no se cumplieron, como los escriben jest y vitest. */
+function umbralesDelRepo(resultsDir) {
+  const log = leerRunLog(resultsDir);
+  const out = new Map();
+  for (const m of log.matchAll(/Jest: "global" coverage threshold for (\w+) \(([\d.]+)%\) not met: ([\d.]+)%/g)) out.set(m[1], { metric: m[1], threshold: +m[2], actual: +m[3] });
+  for (const m of log.matchAll(/Coverage for (\w+) \(([\d.]+)%\) does not meet global threshold \(([\d.]+)%\)/g)) out.set(m[1], { metric: m[1], threshold: +m[3], actual: +m[2] });
+  return [...out.values()];
+}
+
 /**
  * sum() de Python sobre números de punto flotante es una suma compensada (Neumaier) desde Python 3.12, y el promedio de
  * cobertura tiene que dar el mismo número: con una suma simple, 70,1 + 92,8 + 62,1 da 224,99999999999997 y un
@@ -682,6 +692,19 @@ function informe(argv) {
     }
   } catch (e) {
     result.totals_error = String(e && e.message !== undefined ? e.message : e);
+  }
+
+  // ── El mínimo de cobertura del propio repo (jest `coverageThreshold`, vitest `thresholds`) ──
+  // La herramienta sale 1 con todas las pruebas en verde: se dice cuál mínimo y cuánto falta, no un rojo sin motivo.
+  // sólo con la suite en rojo: con salida 0 no hay mínimo que falte, y una prueba que imprime esa forma no lo inventa
+  const umbralRepo = suiteExit !== 0 ? umbralesDelRepo(resultsDir) : [];
+  if (umbralRepo.length) {
+    result.coverage_threshold_failed = umbralRepo;
+    const t = result.totals || {};
+    const detalle = umbralRepo.map((u) => `${METRICA[u.metric] || u.metric} ${u.actual} % de ${u.threshold} % (faltan ${+(u.threshold - u.actual).toFixed(2)} puntos)`).join('; ');
+    const pasan = t.passed > 0 && !t.failed ? `las ${t.passed} pruebas pasan; ` : '';
+    process.stderr.write(`[test-gate] 🔴 ${pasan}falta cobertura: ${detalle}. Es el mínimo que pide el propio repo, y la `
+      + 'puerta lo respeta: escribí pruebas para el código que no cubren.\n');
   }
 
   // ── Cero pruebas corridas no es verde ──

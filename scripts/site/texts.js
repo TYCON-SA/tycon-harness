@@ -2009,6 +2009,7 @@ const TEXTOS = {
   'control.followup-story-create': { es: 'Anota qué historias previas hay que enlazar cuando se crea una historia de seguimiento.', en: 'Records which earlier stories must be linked when a follow-up story is created.' },
   'control.on-atdd-preedit': { es: 'Frena escribir código antes de haber escrito las pruebas que lo verifican.', en: 'Blocks writing code before the tests that verify it.' },
   'control.on-config-lint': { es: 'Avisa si un cambio a la configuración de revisores apaga controles o tiene errores.', en: 'Warns when a change to the reviewer settings switches off checks or contains errors.' },
+  'control.on-controls-off': { es: 'Frena una edición que saca un control del arnés de la configuración de la herramienta.', en: 'Blocks an edit that removes a harness control from the tool settings.' },
   'control.on-deprecated-edit': { es: 'Avisa o frena si se edita código deprecado del repo sin una historia que lo pida.', en: 'Warns or blocks when deprecated code in the repo is edited without a story that asks for it.' },
   'control.on-dod-evidence-guard': { es: 'Frena que el agente escriba a mano las pruebas de que algo funciona.', en: 'Blocks the agent from hand-writing the evidence that something works.' },
   'control.on-edit': { es: 'Anota qué archivos toca cada historia y avisa si editás los de una sin su proceso.', en: 'Records which files each story touches and warns when you edit a story\'s files outside its process.' },

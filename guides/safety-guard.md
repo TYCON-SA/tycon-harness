@@ -188,7 +188,8 @@ Cada escape queda en `~/.claude/.tycon-pipeline/frenos.jsonl`, con la regla esqu
 
 **Por sesión, desde la terminal del dev** (cuando hacés varios destructivos legítimos seguidos): la variable en el
 ambiente **antes de abrir la sesión**. El agente no la puede poner: el prefijo de un comando no llega al freno, y
-escribirla en el `.zshrc` la frena `HARNESS-C1`.
+escribirla en el `.zshrc` la frena `HARNESS-C1`. Sacar un control de la configuración de la herramienta (`disableAllHooks`,
+un interruptor en `env`, un hook del arnés) lo frena `HARNESS-C2`, por la terminal y por las herramientas de edición.
 
 ```bash
 TYCON_SAFETY_OFF=1 claude

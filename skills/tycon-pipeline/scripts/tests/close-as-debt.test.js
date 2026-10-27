@@ -205,6 +205,7 @@ test('T23b RojoComun_FrenaPrepareCommitSinDeuda — un control en rojo frena el 
   assert.strictEqual(r.status, 1, r.stderr);
   assert.match(r.stderr, /tests=red:exit=1/);
   assert.match(r.stderr, /close-as-debt/);
+  assert.doesNotMatch(r.stderr, /autorizo/, 'el aviso no le dicta la frase al agente');
   E.escribir('s-t23b', { ...base, cierre: deuda });
   r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-t23b');
   assert.doesNotMatch(r.stderr, /tests=red:exit=1 sin una ejecución en deuda/, r.stderr);
@@ -249,4 +250,51 @@ test('T25 Pasos_NombranCloseAsDebt @story-8.93 @ac-13 — implementar y el SKILL
     assert.doesNotMatch(t, /set-autonomous false[^\n]*(salida|si no se puede|para cerrar)/i, `${f} ofrece apagar el lazo como salida`);
     assert.doesNotMatch(t, /(si no se puede|salida prevista)[^\n]*marker\.js clear/i, `${f} ofrece clear como salida`);
   }
+});
+
+test('T23c RojoDePruebas_DiceQueFallaYQueSeArregla — el aviso nombra las pruebas que fallan, manda a arreglarlas y no dicta la frase', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-t23c');
+  E.escribir('s-t23c', { ...E.leer('s-t23c'), checks: { tests: 'red:exit=1', build: 'green' }, checksProvenance: { tests: 'test-gate' } });
+  fs.mkdirSync(path.join(E.repo, '.advisors'), { recursive: true });
+  fs.writeFileSync(path.join(E.repo, '.advisors', 'tests-result.json'), JSON.stringify({
+    suite_green: false, totals: { failed: 2, failures: ['cobro.test.js', 'alta.test.js'] },
+  }));
+  const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-t23c');
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(r.stderr, /cobro\.test\.js/, 'nombra lo que falla');
+  assert.match(r.stderr, /alta\.test\.js/);
+  assert.match(r.stderr, /arregl/i, 'dice que se arregla');
+  assert.match(r.stderr, /test-gate\.sh/, 'y cómo se vuelve a medir');
+  assert.doesNotMatch(r.stderr, /autorizo/);
+  // sin el informe, el aviso igual sale y no inventa nombres
+  fs.rmSync(path.join(E.repo, '.advisors', 'tests-result.json'));
+  const sin = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-t23c');
+  assert.strictEqual(sin.status, 1, sin.stderr);
+  assert.match(sin.stderr, /tests=red:exit=1/);
+  assert.doesNotMatch(sin.stderr, /cobro\.test\.js/);
+});
+
+test('T23d VerdeParcial_DiceQueFaltaYNoDictaLaFrase — un verde de pruebas que no salió de la suite completa manda a correr el gate, sin la frase', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-t23d');
+  E.escribir('s-t23d', { ...E.leer('s-t23d'), checks: { tests: 'green' }, checksProvenance: { tests: 'run-check' } });
+  const r = E.correr('marker.js', ['complete-step', 'run-tests', '--out-of-order'], 's-t23d');
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(r.stderr, /no salió de la suite completa/);
+  assert.match(r.stderr, /test-gate\.sh/);
+  assert.match(r.stderr, /guides\/safety-guard\.md/, 'si la persona pregunta cómo seguir, la guía');
+  assert.doesNotMatch(r.stderr, /autorizo/, 'el aviso no le dicta la frase al agente');
+});
+
+test('T23e CompleteStepConForceManual_DiceDondeVa — el flag de declarar a mano va en set-check: complete-step lo dice y no cierra nada', () => {
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-t23e');
+  const antes = E.leer('s-t23e');
+  const r = E.correr('marker.js', ['complete-step', 'run-tests', '--force-manual'], 's-t23e');
+  assert.notStrictEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /set-check/, 'dice dónde va el flag');
+  assert.match(r.stderr, /set-check tests green --force-manual/, 'con el control de pruebas de ejemplo');
+  assert.doesNotMatch(r.stderr, /autorizo/, 'no le dicta la frase al agente');
+  assert.deepStrictEqual(E.leer('s-t23e').stepsPending, antes.stepsPending, 'no cerró el paso');
 });

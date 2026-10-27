@@ -118,7 +118,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   del gate en verde; las guías marcan `✅ verificado-por-mí` vs `🔲 para-que-lo-pruebe-el-user` (ACCOV-C7).
   Para UI, `prepare-commit` exige `checks.dod` verde con provenance `run-check`
   (`run-check dod -- npx playwright test <spec> --workers=1`); `set-check dod --manual` está rechazado;
-  `--force-manual`: «autorizo force-manual» de la persona. No-UI: `mark-dod-runtime-checked` con evidencia.
+  `--force-manual` (en `set-check`) lo decide la persona. No-UI: `mark-dod-runtime-checked` con evidencia.
 - **F.ii — matriz runtime por AC (DODRT-C6, HARD)**: `marker.js run-check acmatrix -- node
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `prepare-commit` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
