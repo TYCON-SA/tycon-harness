@@ -3529,6 +3529,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/agents-per-run.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.23, tanda E (T35): las guías de instalación dicen ~/.tycon, «usar no es mantener» y el modo desarrollador, y ninguna pide clonar para USAR el arnés (el clon queda para quien lo mantiene). Sólo lee archivos: no carga el laboratorio.",
       "raiz": "arnes",
       "ruta": "tests/docs-no-clone.test.js",
