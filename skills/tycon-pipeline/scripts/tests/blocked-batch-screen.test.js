@@ -107,7 +107,7 @@ function repoCon(opts, tag = 'r') {
 }
 
 /** Un marcador de juguete sobre la story, en una carpeta personal de juguete. */
-function marcador(r, tag) {
+function marcador(r, tag, extra = {}) {
   const home = tmp(`bbs-home-${tag}-`);
   const sid = `bbs-${tag}`;
   const dir = path.join(home, '.claude', '.tycon-pipeline', 'active');
@@ -115,7 +115,7 @@ function marcador(r, tag) {
   fs.writeFileSync(path.join(dir, `${sid}.json`), JSON.stringify({
     storyId: '9.26', storyPath: r.storyPath, repoPath: r.repo, sessionId: sid,
     startedAt: '2026-10-26T10:00:00.000Z', lastTouch: '2026-10-26T10:00:00.000Z',
-    stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8], filesTouched: [], iterations: {}, fileEvents: [],
+    stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8], filesTouched: [], iterations: {}, fileEvents: [], ...extra,
   }));
   const correr = (...args) => spawnSync(process.execPath, [MARKER, ...args],
     { env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: sid }, encoding: 'utf8', cwd: r.repo });
@@ -321,4 +321,63 @@ test('T12 ManualChecks_BlockedScreenBatch_SkipsBlockedCriteria', () => {
   const sinTandas = repoCon({}, 't12b');
   assert.deepEqual(criterios(bloqueada.storyPath).map((c) => c.n), [1, 2]);
   assert.deepEqual(criterios(sinTandas.storyPath).map((c) => c.n), [1, 2, 3]);
+});
+
+// ── La baja se cruza con los archivos que cambió el commit ───────────────────────────────────────────────────────────
+
+const PANEL = 'acme-admin/src/components/SwitchPanel.tsx';
+
+/** Un commit con la story; devuelve su sha. Después se escribe la pantalla, sin commitear: es lo que cambió. */
+function conCommit(r, { pantalla = true } = {}) {
+  const FECHA = '2026-01-01T10:00:00';
+  const git = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', r.repo, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a],
+    { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA } });
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  const sha = git('rev-parse', 'HEAD').stdout.trim();
+  if (pantalla) escribir(path.join(r.repo, PANEL), 'export const SwitchPanel = () => null;\n');
+  return sha;
+}
+
+test('T13 ScreenScope_CommitTouchesBlockedScreen_NoDrop', () => {
+  const r = repoCon({ tandas: TANDAS_126 }, 't13');
+  const s = ui.screenScope(r.content, r.repo, { changed: [PANEL, 'Acme/Features/Switch/SwitchEndpoints.cs'] });
+  assert.equal(s.active, true, 'el commit cambia la pantalla de la tanda bloqueada: la baja no se da');
+  assert.deepEqual(s.blocked, []);
+  assert.match(String(s.note), /B-frontend/);
+  assert.match(String(s.note), /SwitchPanel\.tsx/);
+  // sin pantalla entre los cambios, o sin la lista, como hoy
+  assert.equal(ui.screenScope(r.content, r.repo, { changed: ['Acme/Features/Switch/SwitchEndpoints.cs'] }).active, false);
+  assert.equal(ui.screenScope(r.content, r.repo, { changed: [] }).active, false);
+  assert.equal(ui.screenScope(r.content, r.repo).active, false);
+  // la regla de la organización también la recibe
+  assert.equal(ui.applyScreenRule(r.content, r.repo, 'ui', { scope: 'active', changed: [PANEL] }).ui, true);
+});
+
+test('T14 PreCommit_CommitTouchesBlockedScreen_BrowserDemanded', () => {
+  const { storyIsUiStory } = require(path.join(SCRIPTS, 'on-pre-commit.js'));
+  const r = repoCon({ tandas: TANDAS_126 }, 't14');
+  assert.equal(storyIsUiStory(r.content, r.repo, [PANEL]), true);
+  assert.equal(storyIsUiStory(r.content, r.repo, ['Acme/Features/Switch/SwitchEndpoints.cs']), false);
+});
+
+test('T15 Marker_RunTouchesBlockedScreen_DodManualRejected', () => {
+  const r = repoCon({ tandas: TANDAS_126 }, 't15');
+  const baseSha = conCommit(r);
+  const out = marcador(r, 't15', { baseSha }).correr('set-check', 'dod', 'green', '--manual');
+  assert.equal(out.status, 2, `la corrida cambió la pantalla: sigue frenando:\n${out.stderr}`);
+  assert.match(out.stderr || '', /RECHAZADO/);
+  // sin la pantalla entre los cambios, la baja se da como antes
+  const r2 = repoCon({ tandas: TANDAS_126 }, 't15b');
+  const sha2 = conCommit(r2, { pantalla: false });
+  assert.equal(marcador(r2, 't15b', { baseSha: sha2 }).correr('set-check', 'dod', 'green', '--manual').status, 0);
+});
+
+test('T16 QaCheck_CommitTouchesBlockedScreen_AsksScreenReview', () => {
+  const r = repoCon({ tandas: TANDAS_126 }, 't16');
+  guiaLista(r);
+  conCommit(r);
+  const out = qaCheck(r);
+  assert.equal(out.status, 2, `la pantalla cambió: la revisa:\n${out.stdout}\n${out.stderr}`);
+  assert.match(out.stderr, /\(7\)/);
 });
