@@ -500,11 +500,13 @@ test('T19 8.56-Tope_SoloPorElError_YSecretosTapados @story-8.56 @ac-6', () => {
   // Clase 5: el pedido habla de «rate limit» (codex lo repite en su salida) y una falla cualquiera pasaba por tope.
   const dir = tmp('adv856-t19-');
   const stub = path.join(dir, 'stub.js');
+  // armada por partes: entera, el escaneo de secretos de GitHub la toma por una clave de verdad
+  const clave = 'sk' + '-abcdefghijklmnop';
   fs.writeFileSync(stub, `
 const fs = require('fs');
 fs.appendFileSync(process.env.STUB_LOG, 'x\\n');
 process.stdout.write('pedido: revisá el rate limit y la quota del cliente\\n');
-process.stderr.write('se cayó con Authorization: Bearer abc.def.ghi y la clave sk-abcdefghijklmnop\\n');
+process.stderr.write('se cayó con Authorization: Bearer abc.def.ghi y la clave ${clave}\\n');
 process.exit(1);
 `);
   const log = path.join(dir, 'log.txt'); fs.writeFileSync(log, '');
@@ -512,7 +514,8 @@ process.exit(1);
   assert.equal(r.result.corredor.tope, null, 'no es el tope: el renglón del error no lo dice');
   assert.equal(fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length, 12, 'seis cazadores, dos intentos cada uno');
   const causa = r.result.corredor.muertos[0].causa;
-  assert.doesNotMatch(causa, /sk-abcdefghijklmnop|abc\.def\.ghi/);
+  assert.ok(!causa.includes(clave), `la clave llega a la causa: ${causa}`);
+  assert.doesNotMatch(causa, /abc\.def\.ghi/);
   assert.match(causa, /<REDACTED>/);
   // «Token rate limit» sí es el tope: se reconoce en el renglón crudo, antes de tapar (revisor de seguridad, vuelta 2).
   fs.writeFileSync(stub, "process.stderr.write('Error: Token rate limit exceeded, x-api-key=abc123secret\\n'); process.exit(1);\n");
