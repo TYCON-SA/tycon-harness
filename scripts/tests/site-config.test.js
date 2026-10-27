@@ -3748,8 +3748,10 @@ test('8.116 T48 OrgConfig_DelegatedListSince_EsLaEtiquetaReal', () => {
 // leería como un valor roto.
 test('8.139 T6 OrgConfig_OwnerOnlyPideSuVersion', () => {
   const gate = (approvals, version) => ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(version)), versionImagen: '2026.10.15.48', doc: { ...PERFIL_TYCON, approvals } });
-  assert.ok(ORG.OWNER_ONLY_SINCE, 'la constante existe');
-  assert.ok(ORG.OWNER_ONLY_SINCE > ORG.DELEGATED_LIST_SINCE, 'es posterior a la de la lista');
+  // la etiqueta real del merge que trajo el lector de las dos listas (`git tag --contains` del merge da ésta primero)
+  assert.strictEqual(ORG.OWNER_ONLY_SINCE, '2026.10.27.7');
+  assert.ok(ORG.versionAtLeast(ORG.OWNER_ONLY_SINCE, ORG.DELEGATED_LIST_SINCE) && ORG.OWNER_ONLY_SINCE !== ORG.DELEGATED_LIST_SINCE, 'es posterior a la de la lista');
+  assert.match(String(gate({ owner_only: ['control-change'] }, '2026.10.27.6')), /todavía no se puede proponer/, 'la etiqueta de antes no alcanza');
   for (const approvals of [{ owner_only: ['control-change'] }, { delegated_signing: ['escape:trust-ran'] }, { delegated_signing: 'escape:force-manual' },
     { delegated_signing: ['plan-approval', 'escape:trust-ran'] }]) {
     const bajo = gate(approvals, ORG.DELEGATED_LIST_SINCE);
