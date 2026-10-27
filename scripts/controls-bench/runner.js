@@ -116,14 +116,19 @@ function buildStdin(tool, event, extra, vars) {
     session_id: 'bench-' + Math.random().toString(36).slice(2, 10),
     cwd: vars.FIXTURE,
     hook_event_name: event,
-    transcript_path: path.join(vars.SANDBOX_HOME, '.claude', 'transcript.jsonl'),
     permission_mode: 'default',
   };
   if (tool === 'codex') {
     base.turn_id = 'turn-1';
     base.model = 'gpt-5.6-terra';
   }
-  return Object.assign(base, substDeep(extra || {}, vars));
+  const stdin = Object.assign(base, substDeep(extra || {}, vars));
+  // la conversación, donde la guarda Claude Code: <home>/.claude/projects/<carpeta>/<sesión>.jsonl. Es la que escribe
+  // conversation-fixture.js, y los frenos leen sólo la que nombra la entrada
+  if (!(extra && 'transcript_path' in extra)) {
+    stdin.transcript_path = path.join(vars.SANDBOX_HOME, '.claude', 'projects', '-bench', `${stdin.session_id}.jsonl`);
+  }
+  return stdin;
 }
 
 // ---------- portabilidad: Windows ----------

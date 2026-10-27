@@ -208,12 +208,17 @@ escape_ok() {
   sid="$(read_field session_id 2>/dev/null)" || sid=""
   # el pedido que se juzga: la punta de la cadena de la conversación
   tuid="$(read_field tool_use_id 2>/dev/null)" || tuid=""
+  # el registro de la conversación que dice la herramienta: se lee ése, no el primero con ese nombre
+  local tp
+  tp="$(read_field transcript_path 2>/dev/null)" || tp=""
   # en una lista con `||`: un `out=$(…)` suelto que sale ≠ 0 dispararía el `trap 'exit 0' ERR` y dejaría pasar el comando
   # $2 y $3 sólo en la salida de una ejecución perdida: la frase vale desde su apertura y, con 1, sin reenvío
   local extra=()
   [[ -n "${2:-}" && "${2:-}" != "-" ]] && extra+=(--since "$2")
   [[ "${3:-}" == "1" ]] && extra+=(--no-relay)
-  out="$("$HNODE" "$lib" --shell --variable "$1" --session "$sid" --tool-use-id "$tuid" ${extra[@]+"${extra[@]}"} 2>/dev/null)" && rc=0 || rc=$?
+  [[ -n "$tp" ]] && extra+=(--transcript "$tp")
+  # el pedido va por la entrada, nunca en la línea de comandos: ahí lo ve `ps`, y con él se arma un pedido forjado
+  out="$(printf '%s' "$tuid" | "$HNODE" "$lib" --shell --variable "$1" --session "$sid" --tool-use-id-stdin ${extra[@]+"${extra[@]}"} 2>/dev/null)" && rc=0 || rc=$?
   local k v
   while IFS='=' read -r k v; do
     case "$k" in
@@ -601,11 +606,14 @@ shopt -u nocasematch
 if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee]* || "$_c3_node" == "1" ]]; then
   _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""
   _c3_tuid="$(read_field tool_use_id 2>/dev/null)" || _c3_tuid=""
+  _c3_tp="$(read_field transcript_path 2>/dev/null)" || _c3_tp=""
+  _c3_extra=(); [[ -n "$_c3_tp" ]] && _c3_extra+=(--transcript "$_c3_tp")
   _c3_shell="bash"; tool_is_ps && _c3_shell="powershell"
   _c3_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/run-close.js" || _c3_lib=""
   _c3_out=""; _c3_leido=0
   if [[ -n "$_c3_lib" && -f "$_c3_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
-    if _c3_out="$(printf '%s' "$CMD" | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" --tool-use-id "$_c3_tuid" --command-stdin --shell "$_c3_shell" 2>/dev/null)"; then
+    # el pedido va por la entrada, en el primer renglón y antes del comando: en la línea de comandos lo ve `ps`
+    if _c3_out="$({ printf '%s\n' "$_c3_tuid"; printf '%s' "$CMD"; } | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" ${_c3_extra[@]+"${_c3_extra[@]}"} --tool-use-id-stdin --command-stdin --shell "$_c3_shell" 2>/dev/null)"; then
       _c3_leido=1
     else
       _c3_out=""

@@ -14,7 +14,10 @@
  * escapes del freno de seguridad: la última línea de esta sesión con `escape: cerrar-la-ejecucion`, posterior al
  * arranque de la ejecución; sin ella, `sin-registro`.
  *
- * Uso desde el freno de seguridad: node run-close.js --gate --session <id> [--command-stdin --shell bash|powershell]
+ * Uso desde el freno de seguridad: node run-close.js --gate --session <id> [--transcript <ruta>] [--tool-use-id-stdin] [--command-stdin --shell bash|powershell]
+ *   `--transcript`: el registro de la conversación que dice la herramienta (`transcript_path`); se lee ése y no otro.
+ *   Con `--tool-use-id-stdin`, el primer renglón de la entrada es el pedido que se juzga y el resto, el comando: en la
+ *   línea de comandos lo vería `ps`, y con el pedido a la vista se puede forjar uno igual en la conversación.
  *   imprime `hay=0|1|?`, `autonomo=0|1`, `abierta=0|1` y `motivo=…`, un renglón por campo. Con el comando por la
  *   entrada, además un `frena=<escape>\t<subcomando>\t<valor>` por cada llamada a marker.js o pipeline.js que, con este
  *   marcador, pide la frase de la persona (lib/marker-command.js las encuentra). La salida de una ejecución perdida
@@ -191,15 +194,18 @@ function juezDeLaCita(cita) {
  * opciones (leída del resultado de esa herramienta, nunca de un texto) o la reenviada por la sesión designada. Con
  * `--delegated-by`, sólo la reenviada. Todo leído de la cadena de la conversación con la punta en el pedido que se juzga.
  */
-function citaSinPersona(l, { sesion, pedido, home, env } = {}) {
+function citaSinPersona(l, { sesion, pedido, transcript, home, env } = {}) {
   const po = require('./person-ok.js');
   const a = l.args || [];
   const valor = (f) => { const i = a.findIndex((x) => x.texto === f); return i < 0 ? undefined : (a[i + 1] || null); };
   const citas = BANDERAS_CITA.map(valor).filter((v) => v !== undefined);
   // la bandera misma en una variable: no se sabe qué cita trae
   if (!citas.length) return a.some((x) => !x.literal) ? { motivo: 'la bandera de la cita viene en una variable y no se puede leer' } : {};
-  const opts = { sesion, pedido, home, env, soloCadena: true, enteroSiCorta: true };
-  if (!po.leerConversacion(opts).legible) return { sinConversacion: true };
+  const opts = { sesion, pedido, transcript, home, env, soloCadena: true, enteroSiCorta: true };
+  const conv = po.leerConversacion(opts);
+  if (!conv.legible) return { sinConversacion: true };
+  // el pedido que se juzga no apareció en la conversación: frena diciéndolo, no como una cita que no es de la persona
+  if (conv.pasoNoUbicado) return { motivo: conv.motivo };
   const delegada = a.some((x) => x.texto === '--delegated-by');
   let rol = null;
   try { const d = require('./critical-waivers.js').designacionVigente({ home }); rol = d && !d.error ? d.rol : null; } catch (_) { rol = null; }
@@ -227,6 +233,15 @@ if (require.main === module) {
   }
   const sid = arg('--session');
   const una = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ');
+  // el pedido por la entrada (el primer renglón): lo que sigue es el comando
+  let pedidoId = arg('--tool-use-id');
+  let entradaCmd;
+  if (process.argv.includes('--tool-use-id-stdin')) {
+    const t = fs.readFileSync(0, 'utf8');
+    const i = t.indexOf('\n');
+    pedidoId = (i < 0 ? t : t.slice(0, i)).trim();
+    entradaCmd = i < 0 ? '' : t.slice(i + 1);
+  }
   // con el comando por la entrada: las llamadas a marker.js que piden a la persona, ya cruzadas con el marcador
   let pedidas = null;
   let aprobaciones = null;
@@ -237,7 +252,7 @@ if (require.main === module) {
     try {
       const { llamadas, escapeDe, salidaPerdida } = require('./marker-command.js');
       const or = require('./open-runs.js');
-      const cmd = fs.readFileSync(0, 'utf8');
+      const cmd = entradaCmd !== undefined ? entradaCmd : fs.readFileSync(0, 'utf8');
       const todas = llamadas(cmd, { shell: arg('--shell') === 'powershell' ? 'powershell' : 'bash' });
       // la salida de una ejecución perdida: la frase vale desde la apertura de esa ejecución y, según la decisión única de
       // open-runs.js, sin reenvío
@@ -298,7 +313,7 @@ if (require.main === module) {
     for (const l of aprobaciones) {
       // no poder comprobar la cita no es poder pasar: frena con el motivo
       let v;
-      try { v = citaSinPersona(l, { sesion: sid, pedido: arg('--tool-use-id') }); } catch (e) { v = { motivo: `no pude comprobar la cita (${e.message})` }; }
+      try { v = citaSinPersona(l, { sesion: sid, pedido: pedidoId, transcript: arg('--transcript') }); } catch (e) { v = { motivo: `no pude comprobar la cita (${e.message})` }; }
       if (v.sinConversacion) process.stdout.write('sinconversacion=1\n');
       else if (v.motivo) process.stdout.write(`aprobacion=${una(l.sub || '?')}\t${una(v.motivo)}\n`);
     }
