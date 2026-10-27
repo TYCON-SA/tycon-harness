@@ -703,7 +703,7 @@ fi
 
 # ============================================================
 # Suite de tests de la capa determinista.
-# Corre tras cada git pull (~300ms, node:test 0-deps). Silenciosa si verde;
+# Corre tras cada cambio de lo que prueban (node:test 0-deps). Silenciosa si verde;
 # si una regresión rompe isGitCommit/matchGlob/check-count se ve EL MISMO DÍA,
 # no en la próxima auditoría manual. Skip si node no está (improbable).
 # ============================================================
@@ -750,8 +750,17 @@ fi
 # Con --check no corren (--check no escribe): sobre una HOME vacía, estas suites
 # dejan ~/.claude/.tycon-pipeline/file-events/ y story-dirs-cache.json. El aviso no se pierde: lo da la corrida normal de
 # cada arranque.
-if [[ ${#UT_PRESENT[@]} -gt 0 ]]; then
-  if ! node --test "${UT_PRESENT[@]}" >/dev/null 2>&1; then
+# 🔴 Por `quick-suite-run.js`, nunca con un `node --test` suelto: corre sólo si cambió lo que prueban desde la última
+# corrida verde, con tope de la mitad de los núcleos y una sola corrida por máquina. Suelto, cada sesión que abría
+# lanzaba las seis enteras: con varias sesiones abriendo juntas, decenas de procesos y la máquina trabada.
+QUICK_SUITE_JS="$SCRIPT_DIR/lib/quick-suite-run.js"
+if [[ ${#UT_PRESENT[@]} -gt 0 && ! -f "$QUICK_SUITE_JS" ]]; then
+  echo "⚠ tycon: la suite de la capa determinista NO corrió — falta $QUICK_SUITE_JS"
+elif [[ ${#UT_PRESENT[@]} -gt 0 ]]; then
+  # la carpeta del estado la sabe tycon-home.js; en una copia parcial sin él, una carpeta temporal
+  QS_STATE="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$SCRIPT_DIR/setup/harness/tycon-home.js" 2>/dev/null || true)"
+  [[ -n "$QS_STATE" ]] || QS_STATE="${TMPDIR:-/tmp}/tycon-quick-suite"
+  if ! node "$QUICK_SUITE_JS" --state-dir "$QS_STATE" --watch "$UT_SKILLS/tycon-pipeline/scripts" "${UT_PRESENT[@]}" >/dev/null 2>&1; then
     UT_FROM="installed"
     if [[ -f "$SKILLS_DIR_JS" ]]; then UT_FROM="$(_skills_dir read --source 2>/dev/null)" || UT_FROM="sin dato"; fi
     echo "🛑 tycon: la suite de la capa determinista FALLÓ tras el pull (skills: ${UT_SKILLS} · salió de: ${UT_FROM}) — hooks/gates pueden tener una regresión."

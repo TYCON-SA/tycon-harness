@@ -372,7 +372,8 @@ test('T15g Eol_CannotLookIsNotGreen — con un clon que git no puede leer la pru
   assert.notStrictEqual(unreadable.status, 0, `un clon que no se puede leer no puede dar verde:\n${unreadable.stdout}`);
   assert.match(unreadable.stdout, /not ok \d+ - T15b/);
   assert.match(unreadable.stdout, /no pude medir/);
-  assert.match(unreadable.stdout, /not a git repository/, 'y trae lo que dijo git');
+  // git 2.56 dice «gitfile does not point to a valid repository» ante un `.git` que apunta a la nada; antes, «not a git repository»
+  assert.match(unreadable.stdout, /not a git repository|does not point to a valid repository/, 'y trae lo que dijo git');
   const exported = run(build(false));
   assert.strictEqual(exported.status, 0, `${exported.stdout}${exported.stderr}`);
   assert.match(exported.stdout, /ok \d+ - T15b[^\n]*# SKIP NO MEDIDO: esta carpeta no es un clon de git/);
