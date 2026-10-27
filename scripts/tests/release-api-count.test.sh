@@ -42,8 +42,8 @@ while [ $# -gt 0 ]; do
 done
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 FALLOS=0
-ok()  { echo "  ok   — $1"; }
-mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
+ok()  { suite_check; echo "  ok   — $1"; }
+mal() { suite_check; echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 BASE="$(mktemp -d)"
 node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" release-api-count || exit 1
 trap 'rm -rf "$BASE"; kill $(jobs -p) 2>/dev/null' EXIT
@@ -420,6 +420,7 @@ if corre T2 || corre T10; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 fi   # ── fin de la parte 2 ──
+suite_parts_end
 
 if [ "$FALLOS" -gt 0 ]; then echo "❌ release-api-count: $FALLOS falla(s)"; exit 1; fi
 echo "✅ release-api-count: todo en verde"

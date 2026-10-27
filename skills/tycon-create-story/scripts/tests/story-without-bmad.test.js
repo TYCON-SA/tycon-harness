@@ -650,3 +650,41 @@ test('T41 Mode_VecinoDeOtroProducto_NoCuenta: en la misma carpeta, sólo cuentan
   const conCompanero = repoDe(raiz2, 'app', { yaml: 'evidence:\n  companion_repos:\n    - ../docs\n' });
   assert.strictEqual(correr(['mode', '--repo', conCompanero]).json.mode, 'existing');
 });
+
+// ── el número siguiente no repite el de una historia que ya existe ───────────────────────────────────────────────────
+test('T42 Numero_DosCarpetas_CuentaLasDos: con historias en specs/ y en stories/, el número sigue al mayor de las dos', () => {
+  const d = repo({ specs: true });
+  historiaDeJuguete(path.join(d, 'specs'), 'a.md', '1.1');
+  historiaDeJuguete(path.join(d, 'stories'), 'b.md', '1.4');
+  const r = correr(['mode', '--repo', d]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.json.folder, 'specs');
+  assert.strictEqual(r.json.number, '1.5');
+});
+
+test('T43 Numero_BomSinStatusYComentario_Cuentan: cada forma que el lector estricto no ve igual ocupa su número', () => {
+  const formas = {
+    bom: (dir) => fs.writeFileSync(path.join(dir, 'x.md'), '﻿---\nepic: 1\nstory: "1.3"\nstatus: done\n---\n'),
+    'sin status': (dir) => fs.writeFileSync(path.join(dir, 'x.md'), '---\nepic: 1\nstory: "1.3"\n---\n'),
+    comentario: (dir) => fs.writeFileSync(path.join(dir, 'x.md'), '---\nepic: 1\nstory: 1.3 # renumerada\nstatus: done\n---\n'),
+  };
+  for (const [forma, escribir] of Object.entries(formas)) {
+    const d = repo();
+    historiaDeJuguete(path.join(d, 'stories'), 'a.md', '1.1');
+    escribir(path.join(d, 'stories'));
+    const r = correr(['mode', '--repo', d]);
+    assert.strictEqual(r.status, 0, `${forma}: ${r.stderr}`);
+    assert.strictEqual(r.json.number, '1.4', `${forma}: el número no puede repetir el 1.3`);
+  }
+});
+
+test('T44 Numero_IlegibleConNumeroEnElNombre_NoLoPisa: un story: sin número legible cuenta el de su nombre', () => {
+  const d = repo();
+  historiaDeJuguete(path.join(d, 'stories'), 'a.md', '1.1');
+  fs.writeFileSync(path.join(d, 'stories', 'story-1.6-a-medias.md'), '---\nstory:\n---\n');
+  // una nota sin `story:` con números en el nombre no mueve la cuenta
+  fs.writeFileSync(path.join(d, 'stories', 'notas-1-2026.md'), '# notas\n');
+  const r = correr(['mode', '--repo', d]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.json.number, '1.7');
+});

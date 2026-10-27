@@ -56,7 +56,9 @@ test('el cartel es un renglón corto: story, paso, avance y minutos, sin dinero'
   const ui = await mount($)
   expect(await ui.find({ type: 'Text', text: /^9\.9$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Implementar/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /4\/\d+ · 40 min/ })).toBeDefined()
+  // el paso EN CURSO de los 11 (Implementar es el 5), no los hechos: «4/11» se leía como «estoy en el 4»
+  expect(await ui.find({ type: 'Text', text: /paso 5 de 11 · 40 min/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\d+\/\d+/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /paso 4/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /contexto usado/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /USD|\$/ })).toBeUndefined()

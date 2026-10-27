@@ -108,7 +108,8 @@ function archivoDeLaHerramienta(transcript, root, sid) {
  * ¿El pedido aparece en otro archivo de esta sesión? Los otros `<carpeta>/<sesión>.jsonl` (la misma sesión puede tener
  * registro en dos carpetas) y todo `.jsonl` debajo de `<carpeta>/<sesión>/` (sus subagentes). Un pedido lo escribe
  * Claude Code una sola vez: si está en dos archivos, uno es una copia. Lo que no se puede leer, o no es un archivo común
- * (una tubería dejaría al freno esperando), cuenta como que está.
+ * (una tubería dejaría al freno esperando), cuenta como que está. Un archivo suelto en la carpeta de proyectos no es una
+ * carpeta de sesión: no cuenta.
  */
 function pedidoEnOtroArchivo(root, sid, propio, pedido) {
   const contiene = (f) => {
@@ -116,7 +117,9 @@ function pedidoEnOtroArchivo(root, sid, propio, pedido) {
   };
   const recorrer = (dir) => {
     let entradas;
-    try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return e.code !== 'ENOENT'; }
+    // no existe, o no es una carpeta (el `.DS_Store` que deja Finder en la raíz): ahí no hay una sesión. Lo demás
+    // (sin permiso, error de disco) no se pudo mirar y cuenta como que está.
+    try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return e.code !== 'ENOENT' && e.code !== 'ENOTDIR'; }
     for (const e of entradas) {
       const f = path.join(dir, e.name);
       if (e.isDirectory() ? recorrer(f) : e.name.endsWith('.jsonl') && (!e.isFile() || contiene(f))) return true;

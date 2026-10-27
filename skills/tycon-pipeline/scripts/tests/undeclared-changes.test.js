@@ -313,3 +313,59 @@ test('T34 Cierre_IgualAMainPeroSinEntrarDespuesDelArranque_Sobra @story-8.115 @a
   assert.deepEqual(r.sobra, ['package.json'], JSON.stringify(r));
   fs.rmSync(c.home, { recursive: true, force: true });
 });
+
+// Poner la rama al día con main: lo que trajo un merge (incluida la resolución, que el log de main no muestra) y lo que
+// main borró no son de la ejecución. Lo que la ejecución borró y main conserva, sí.
+test('T35 Cierre_LoQueEntroPorUnMergeDeMain_NoSobra', () => {
+  const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
+  const c = corral({ modificar: ['src/a.ts'] });
+  // main: otra rama entra con un merge, y la resolución agrega un archivo que no viene de ningún commit de las ramas
+  git(c.repo, 'checkout', '-q', '-b', 'lado');
+  fs.writeFileSync(path.join(c.repo, 'lado.js'), 'module.exports = 1;\n');
+  git(c.repo, 'add', '-A'); git(c.repo, 'commit', '-q', '-m', 'lado');
+  git(c.repo, 'checkout', '-q', '-b', 'principal', c.baseSha);
+  fs.writeFileSync(path.join(c.repo, 'principal.js'), 'module.exports = 2;\n');
+  git(c.repo, 'add', '-A'); git(c.repo, 'commit', '-q', '-m', 'principal');
+  git(c.repo, 'merge', '-q', '--no-ff', '--no-commit', 'lado');
+  fs.writeFileSync(path.join(c.repo, 'resolucion.js'), 'module.exports = 3;\n');
+  git(c.repo, 'add', '-A'); git(c.repo, 'commit', '-q', '-m', 'merge de lado');
+  git(c.repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  fs.writeFileSync(path.join(c.repo, 'src', 'a.ts'), 'export const a = 2;\n');
+  const r = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')] });
+  assert.equal(r.medido, true);
+  assert.deepEqual(r.sobra, [], JSON.stringify(r));
+  assert.match(r.avisos.join('\n'), /entró por main.*resolucion\.js/s, 'lo descontado se dice');
+  fs.rmSync(c.home, { recursive: true, force: true });
+});
+
+function conUnArchivoMas() {
+  const c = corral({ modificar: ['src/a.ts'] });
+  fs.writeFileSync(path.join(c.repo, 'viejo.js'), 'module.exports = 0;\n');
+  git(c.repo, 'add', '-A'); git(c.repo, 'commit', '-q', '-m', 'arranque con viejo.js');
+  c.baseSha = git(c.repo, 'rev-parse', 'HEAD');
+  return c;
+}
+
+test('T35 Cierre_BorradoQueMainTambienBorro_NoSobra', () => {
+  const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
+  const c = conUnArchivoMas();
+  git(c.repo, 'rm', '-q', 'viejo.js'); git(c.repo, 'commit', '-q', '-m', 'main borra viejo.js');
+  git(c.repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  fs.writeFileSync(path.join(c.repo, 'src', 'a.ts'), 'export const a = 2;\n');
+  const r = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')] });
+  assert.deepEqual(r.sobra, [], JSON.stringify(r));
+  fs.rmSync(c.home, { recursive: true, force: true });
+});
+
+test('T34 Cierre_BorradoPorLaEjecucionQueMainConserva_Sobra', () => {
+  const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
+  const c = conUnArchivoMas();
+  // main avanza con otra cosa y conserva viejo.js; la ejecución lo borra sin declararlo
+  fs.writeFileSync(path.join(c.repo, 'otro.js'), 'module.exports = 4;\n');
+  git(c.repo, 'add', '-A'); git(c.repo, 'commit', '-q', '-m', 'main sigue');
+  git(c.repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  fs.rmSync(path.join(c.repo, 'viejo.js'));
+  const r = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath });
+  assert.deepEqual(r.sobra, ['viejo.js'], JSON.stringify(r));
+  fs.rmSync(c.home, { recursive: true, force: true });
+});

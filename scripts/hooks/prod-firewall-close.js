@@ -86,9 +86,12 @@ function viva(id) {
   });
 }
 
-// El tope del hook en la configuración administrada es 120 s: todo lo que hace el hook entra en 110, y lo que no
-// alcanzó a cerrar se dice (un cierre cortado a la mitad no puede salir callado).
-const PRESUPUESTO_MS = 110 * 1000;
+// La configuración administrada le da 120 s al hook, pero al terminar la sesión el tope real es ~60 s (medido con
+// `claude -p`): todo lo que hace el hook entra en 55, y lo que no alcanzó a cerrar se dice (un cierre cortado a la mitad
+// no puede salir callado). La puerta, llamada con `--session`, acota cada llamada a az a 13 s.
+// El barrido de arranque es el respaldo de lo que el fin de sesión no alcanzó a cerrar: conserva los 110 s del tope de
+// 120 de la configuración administrada.
+let PRESUPUESTO_MS = 55 * 1000;
 const inicio = Date.now();
 function puerta(args) {
   const quedan = PRESUPUESTO_MS - (Date.now() - inicio);
@@ -103,6 +106,8 @@ function puerta(args) {
 
 const cierreAMano = (host) => `/opt/tycon/bin/tycon-prod-sql --close-firewall ${host}`;
 const ultimaLinea = (s) => (s.split('\n').pop() || 'sin salida');
+// la línea de la puerta que dice que la operación quedó sin constancia (sale aunque la operación anduvo)
+const sinConstancia = (s) => String(s || '').split('\n').find((l) => /no pude anotar/.test(l));
 
 function finDeSesion(sesion) {
   const { reglas, ilegible } = leerEstado();
@@ -111,6 +116,7 @@ function finDeSesion(sesion) {
     if (!Array.isArray(r.sesiones) || !r.sesiones.includes(sesion)) continue;
     const res = puerta(['--close-firewall', r.host, '--session', sesion]);
     if (res.rc !== 0) console.log(`🔴 prod-firewall: no pude cerrar la regla ${r.regla || 'tycon-gate'} de ${r.host} al terminar la sesión: ${ultimaLinea(res.salida)}. Queda anotada; cerrala con: ${cierreAMano(r.host)}`);
+    else if (sinConstancia(res.salida)) console.log(`🔴 prod-firewall: cerré la regla de ${r.host}, pero ${sinConstancia(res.salida).replace(/^🔴\s*/, '')}`);
   }
 }
 
@@ -131,6 +137,7 @@ function barrido() {
     } else if (/cerrada/.test(res.salida)) {
       lineas.push(`🔒 prod-firewall: cerré la regla ${r.regla || 'tycon-gate'} de ${r.host}${desde}: la sesión que la abrió ya no está.`);
     }
+    if (res.rc === 0 && sinConstancia(res.salida)) lineas.push(`🔴 prod-firewall: ${sinConstancia(res.salida).replace(/^🔴\s*/, '')}`);
   }
   lineas.unshift(...avisos);
   if (lineas.length) console.log(lineas.join('\n'));
@@ -147,7 +154,7 @@ function main() {
   const evento = ev.hook_event_name || '';
   const sesion = typeof ev.session_id === 'string' && SESION_VALIDA.test(ev.session_id) ? ev.session_id : '';
   if (evento === 'SessionEnd' && sesion) finDeSesion(sesion);
-  else if (evento === 'SessionStart') barrido();
+  else if (evento === 'SessionStart') { PRESUPUESTO_MS = 110 * 1000; barrido(); }
 }
 
 try { main(); } catch (err) {

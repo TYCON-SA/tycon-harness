@@ -10,7 +10,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { Snapshot } from '../types'
-import { readRun, readRunError, boardParts, storyPathOf, specTitle, pipelineTable, warnKey, waitingToast, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
+import { readRun, readRunError, boardParts, storyPathOf, specTitle, pipelineTable, progressText, warnKey, waitingToast, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
 import { runModsCommand, isActive, isShown } from './mods.mjs'
 
 const BOARD = 'pipeline-board'
@@ -235,7 +235,7 @@ export const register: Register = on => {
     const { step } = boardParts(run, snap.context ?? undefined)
     // un renglón corto: story, paso, avance y total; el resto va en la ventana del detalle
     const warnings = ((run as any).warnings || []).length
-    const compact = [`${run.done}/${run.total}`, (run as any).totalText ?? `${run.minutesTotal ?? '—'} min`, ...(warnings ? [`⚠ ${warnings}`] : [])]
+    const compact = [progressText(run), (run as any).totalText ?? `${run.minutesTotal ?? '—'} min`, ...(warnings ? [`⚠ ${warnings}`] : [])]
     const open = await read($, expanded)
     const showDetail = async () => {
       // donde no hay ventanas (la extensión de VS Code), el detalle se despliega bajo el renglón

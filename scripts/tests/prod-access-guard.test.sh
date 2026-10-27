@@ -59,7 +59,7 @@ corre(){ local cmd="$1"; shift
   # TYCON_PROD_SESSION_SINCE: el arranque de la sesión, en ms. En producción sale de la ascendencia de
   # procesos hasta el `claude` que invocó el hook; acá no hay ninguno, así que se inyecta. La costura
   # sólo puede cerrar el freno (0 = TODOS los snapshots son candidatos, el lado seguro), nunca abrirlo.
-  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE="${DESDE:-0}" "$@" node "$HOOK" >"$TMP/out" 2>"$TMP/err"
+  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE="${DESDE:-0}" "$@" node "${HOOK_USAR:-$HOOK}" >"$TMP/out" 2>"$TMP/err"
   echo $?
 }
 frena(){ local etiqueta="$1" cmd="$2"; shift 2
@@ -261,16 +261,29 @@ pasa  "T34c · el mismo comando sin nada de bases pasa" 'bash -c "$CMD"'
 
 # ── T17 · falla propia del hook, con y sin base ───────────────────────────────────────────────
 # Sin esto, un `require` fuera del try, o sin reloj propio, rompe el hook y DEJA PASAR.
-mundo
-frena "T17a · con el índice ilegible y una base nombrada, frena" "sqlcmd -S $PROD -Q \"select 1\"" TYCON_PROD_FAIL=1
-pasa  "T17b · con el mismo fallo y sin base, pasa" "git status" TYCON_PROD_FAIL=1
+# La falla es real: una copia del freno a la que le faltan sus bibliotecas, y el `require` revienta
+# adentro del try (la misma receta que el caso del banco `falla-real-del-freno-con-base-frena-y-anota`).
+freno_roto(){ # deja en $TMP/roto una copia del freno sin sus bibliotecas, e imprime la ruta del hook
+  local r="$TMP/roto"; rm -rf "$r"
+  mkdir -p "$r/scripts/hooks" "$r/scripts/lib" "$r/scripts/production"
+  cp "$HOOK" "$r/scripts/hooks/"
+  cp "$AQUI/scripts/lib/repos-root.js" "$r/scripts/lib/"
+  cp "$INDICE" "$r/scripts/production/"
+  echo "$r/scripts/hooks/prod-access-guard.js"
+}
+mundo; ROTO="$(freno_roto)"
+HOOK_USAR="$ROTO" frena "T17a · con el freno roto y una base nombrada, frena" "sqlcmd -S $PROD -Q \"select 1\""
+if [ -s "$CASA/.claude/.tycon-pipeline/hook-errors.log" ]; then ok "T17a · la falla queda anotada en hook-errors.log"
+else no "T17a · la falla no quedó anotada en hook-errors.log"; fi
+HOOK_USAR="$ROTO" pasa "T17b · con el mismo freno roto y sin base, pasa" "git status"
 
 # T17c · CADA cliente que el freno conoce, ante una falla propia, sale 2. Una lista del
 # criterio de falla-cerrado escrita a mano podría no tener `tsql` ni `sqlpackage`.
-mundo
+mundo; ROTO="$(freno_roto)"
 clientes="$(node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8"); const m=/const CLIENTES = \{([\s\S]*?)\};/.exec(s); console.log([...m[1].matchAll(/([\w-]+)\x27?\s*:/g)].map(x=>x[1]).join(" "))' "$HOOK")"
+[ -n "$clientes" ] || no "T17c · no pude leer la lista de clientes del freno"
 for cli in $clientes; do
-  frena "T17c · falla propia con «${cli}» frena" "${cli} -S $PROD" TYCON_PROD_FAIL=1
+  HOOK_USAR="$ROTO" frena "T17c · falla propia con «${cli}» frena" "${cli} -S $PROD"
 done
 
 # T17d · un comando GIGANTE con miles de `<<` que nombra producción: se frena sin parsearlo, y a
@@ -846,6 +859,89 @@ case "$t27" in
   OK*) ok "8.14 T27 BasesCriterion_Unchanged (${t27#OK })" ;;
   *)   no "8.14 T27 BasesCriterion_Unchanged — ${t27#NO }" ;;
 esac
+
+# ── Agujeros y frenos falsos del freno de producción ─────────────────────────────────────────────────────────────────────────────
+# Cada caso que pasa a frenar trae al lado uno parecido e inofensivo que sigue pasando.
+mundo
+# Delimitador raro: con `<<\EOF` o `<<E"OF"` el shell cierra en `EOF`, y lo que sigue hasta `\EOF` (o `E`) se EJECUTA.
+# El freno buscaba el cierre en el delimitador tal como está escrito y trataba ese tramo como cuerpo. (Con el nombre
+# de un servidor de producción a la vista ya frenaba por el texto crudo; el agujero es lo que no lo nombra.)
+# 🔴 Falla con: el cierre buscado en el delimitador escrito y no en el que usa el shell.
+frena "G1 DelimitadorRaro_LoQueSigueAlCierreSeJuzga (<<\\EOF)" "cat <<\\EOF
+hola
+EOF
+rm -f $P/$NI
+\\EOF"
+frena "G1 DelimitadorRaro_LoQueSigueAlCierreSeJuzga (<<E\"OF\")" "cat <<E\"OF\"
+hola
+EOF
+rm -f $P/$NI
+E"
+frena "G1 DelimitadorRaro_LoQueSigueAlCierreSeJuzga (<<'E'OF)" "cat <<'E'OF
+hola
+EOF
+sqlcmd -S \"\$H\" -Q \"select 1\"
+E"
+frena "G1 DelimitadorRaro_CuerpoQueAlimentaUnShell_Frena" "bash <<\\EOF
+$CUERPO_SQL
+EOF"
+pasa  "G1 DelimitadorRaro_NotaAUnArchivo_Pasa" "cat > notas.md <<\\EOF
+$CUERPO_SQL
+EOF"
+# `<<$'E\x4fF'` cierra en `EOF` (bash decodifica la palabra), y `<<EO\` con `F` en la línea siguiente también: bash
+# junta las dos líneas. Lo que sigue a ese cierre se ejecuta.
+# 🔴 Falla con: la palabra `$'…'` sin decodificar, o la continuación de línea leída como el fin de la palabra.
+frena "G1 DelimitadorAnsiC_LoQueSigueAlCierreSeJuzga" "cat <<\$'E\\x4fF'
+hola
+EOF
+rm -f $P/$NI
+E\\x4fF"
+frena "G1 DelimitadorPartido_LoQueSigueAlCierreSeJuzga" "cat <<EO\\
+F
+hola
+EOF
+rm -f $P/$NI
+EO"
+pasa  "G1 DelimitadorAnsiC_NotaAUnArchivo_Pasa" "cat > notas.md <<\$'EOF'
+$CUERPO_SQL
+EOF"
+# Un `node -e` o un guion con una variable `server` de código no es una cadena de conexión: el texto se ejecuta, pero
+# `server = http.createServer(…)` no nombra ninguna base.
+# 🔴 Falla con: la regla de cadenas de conexión leyendo la llamada a una función como el nombre de un servidor.
+pasa  "G1 NodeE_VariableServer_Pasa" "node -e 'const http=require(\"http\"); const server = http.createServer(()=>{}); server.listen(0, ()=>server.close())'"
+printf 'const http = require("http");\nconst server = http.createServer(() => {});\nserver.listen(0, () => server.close());\n' > "$TMP/servidor.js"
+pasa  "G1 GuionConVariableServer_Pasa" "node $TMP/servidor.js"
+frena "G1 NodeE_CadenaDeConexion_Frena" "node -e 'const cs = \"Server=$PROD;Database=x\"'"
+# `Server=$(…)` es una sustitución del shell, no la llamada de un programa: el servidor no se sabe y sigue frenando.
+# 🔴 Falla con: `$(` aceptado como el nombre de una función.
+frena "G1 ServidorPorSustitucion_Frena" "node -e 'cs=\"Server=\$(cat /tmp/h);Database=x\"'"
+# `sqlcmd -s '|'`: la `-s` minúscula es el separador de columnas; el servidor es la `-S` mayúscula.
+# 🔴 Falla con: las banderas de sqlcmd comparadas sin distinguir mayúsculas.
+pasa  "G1 SqlcmdSeparador_Pasa" "sqlcmd -S localhost -s '|' -Q \"select 1\""
+frena "G1 SqlcmdSeparadorContraProduccion_Frena" "sqlcmd -S $PROD -s '|' -Q \"select 1\""
+frena "G1 SqlcmdSeparadorAntesDelServidor_Frena" "sqlcmd -s '|' -S $PROD -Q \"select 1\""
+frena "G1 InvokeSqlcmdSinDistinguir_SigueFrenando" "pwsh -c 'Invoke-Sqlcmd -serverinstance \$h -Query \"select 1\"'"
+# La carpeta de estado del arnés: borrarla esconde a la vez el estado de las reglas y el registro de producción.
+# 🔴 Falla con: sólo los archivos de la carpeta protegidos, y no la carpeta entera.
+frena "G1 CarpetaDeEstado_Borrarla_Frena" "rm -rf ~/.tycon/state"
+frena "G1 CarpetaDeEstado_Moverla_Frena" "mv ~/.tycon/state /tmp/estado-viejo"
+frena "G1 CarpetaDeEstado_ConComodin_Frena" "rm -rf ~/.tycon/sta*"
+pasa  "G1 CarpetaDeEstado_Crearla_Pasa" "mkdir -p ~/.tycon/state"
+pasa  "G1 CarpetaDeEstado_Listarla_Pasa" "ls ~/.tycon/state"
+pasa  "G1 OtraCarpetaState_Pasa" "rm -rf build/state"
+pasa  "G1 SubcarpetaDelEstado_Pasa" "rm -rf ~/.tycon/state/tmp-lab"
+# Copiarla la lee, no la pierde: un respaldo o una copia para mirarla pasan.
+# 🔴 Falla con: la carpeta del estado tratada como cualquier carpeta protegida (cp y rsync también escriben).
+pasa  "G1 CarpetaDeEstado_Copiarla_Pasa" "cp -r ~/.tycon/state /tmp/estado-copia"
+pasa  "G1 CarpetaDeEstado_Rsync_Pasa" "rsync -a ~/.tycon/state/ /tmp/estado-copia/"
+# Vaciarla de una vez es perderla igual. Borrar algo de adentro, con su nombre o con un filtro, sigue pasando.
+# 🔴 Falla con: sólo la carpeta por su nombre, y no su contenido entero.
+frena "G1 CarpetaDeEstado_VaciarlaConComodin_Frena" "rm -rf ~/.tycon/state/*"
+frena "G1 CarpetaDeEstado_VaciarlaConFind_Frena" "find ~/.tycon/state -delete"
+pasa  "G1 CarpetaDeEstado_BorrarConFiltro_Pasa" "find ~/.tycon/state -name '*.tmp' -delete"
+pasa  "G1 CarpetaDeEstado_BorrarUnaCosa_Pasa" "rm -rf ~/.tycon/state/active/viejo.json"
+pasa  "G1 CarpetaDeEstado_ListarConComodin_Pasa" "ls ~/.tycon/state/*"
+pasa  "G1 CarpetaDeEstado_CopiarConComodin_Pasa" "cp -r ~/.tycon/state/* /tmp/estado-copia/"
 
 # ── T35 · la consulta de un archivo cerca del tope llega ENTERA por una tubería ─────────────
 # El anfitrión lee el mensaje por una tubería: si el freno sale antes de terminar de escribirlo, llegan los primeros

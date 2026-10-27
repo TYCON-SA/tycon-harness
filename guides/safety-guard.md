@@ -80,7 +80,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **PUB-C1** | `npm publish` | Publicación accidental al registry público |
 | **PUB-C2** | `yarn publish` | Idem npm |
 | **PUB-C3** | `dotnet nuget push` | Solo CI debería pushear a NuGet feed |
-| **SQL-C1** | `DROP DATABASE` | Te llevás esquema + datos + historial |
+| **SQL-C1** | `DROP DATABASE`, en mayúsculas o minúsculas y con comentarios entre las dos palabras (un `grep` solo que busca el texto no frena) | Te llevás esquema + datos + historial |
 | **SQL-C2** | `DROP TABLE` inline (no en `.sql`) | Modificaciones de schema van por migration numerada |
 | **SEC-C1** | `cat ~/.ssh/...` / `cat .../aws/credentials` | Secretos al contexto del LLM |
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |

@@ -13,7 +13,7 @@
         {
           "id": "maquina-sin-nada-no-recibe-aviso",
           "type": "must-stay-quiet",
-          "__doc": "T20a · una máquina del equipo que NO toca producción: ni freno instalado, ni entrada en el Llavero (el Llavero contesta «no está», 44). No recibe una sola línea. ROJO PREVIO: avisarle a cualquiera que tenga el repo de ACME clonado → ruido en cada arranque.",
+          "__doc": "T20a · una máquina del equipo con un repo que declara producción, sin freno y SIN el llavero de producción (el Llavero contesta «no está», 44), en su SEGUNDO arranque: el aviso de que falta el freno ya salió una vez y quedó sellado. No recibe una sola línea. ROJO PREVIO: el aviso salía en cada arranque a cualquiera que tuviera el repo de ACME clonado → ruido.",
           "files": {
             "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
           },
@@ -21,7 +21,8 @@
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/produccion-notice.js $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js $TCG/scripts/production/tycon-prod-sql $TCG/scripts/production/node-shim.sh $TCG/scripts/production/managed-settings.tycon-production.json.template tcg/scripts/production/ && mkdir -p tcg/scripts/production/guard-libs && cp -R $TCG/scripts/production/guard-libs/. tcg/scripts/production/guard-libs/",
             "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
             "mkdir -p sys/usr/bin && printf '#!/usr/bin/env bash\\nexit ${SEC_RC:-44}\\n' > sys/usr/bin/security && chmod +x sys/usr/bin/security",
-            "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q ."
+            "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q .",
+            "TYCON_REPOS_ROOT=$FIXTURE/repos TYCON_PROD_ROOT=$FIXTURE/sys TYCON_GUIDES_DIR=$FIXTURE/tcg SEC_RC=44 node tcg/scripts/hooks/produccion-notice.js </dev/null >/dev/null"
           ],
           "stdin": {
             "hook_event_name": "SessionStart"
@@ -40,7 +41,7 @@
         {
           "id": "llavero-que-no-contesta-no-se-lee-como-no-autorizada",
           "type": "must-emit",
-          "__doc": "T20a2 · si el Llavero falla (código distinto de «no está»), eso NO es «máquina no autorizada»: se dice que no se pudo preguntar. ROJO PREVIO: cualquier error del Llavero callaba el aviso (revisores del Step 5, 2026-09-15).",
+          "__doc": "T20a2 · si el Llavero falla (código distinto de «no está»), eso NO es «máquina no autorizada»: se dice que no se pudo preguntar. ROJO PREVIO: cualquier error del Llavero callaba el aviso (revisores del Step 5, 2026-09-15). Con un repo que declara producción, es su segundo arranque: «no pude preguntar» no sella el aviso de una sola vez, así que vuelve a decir que falta el freno.",
           "files": {
             "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
           },
@@ -48,7 +49,8 @@
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/produccion-notice.js $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js $TCG/scripts/production/tycon-prod-sql $TCG/scripts/production/node-shim.sh $TCG/scripts/production/managed-settings.tycon-production.json.template tcg/scripts/production/ && mkdir -p tcg/scripts/production/guard-libs && cp -R $TCG/scripts/production/guard-libs/. tcg/scripts/production/guard-libs/",
             "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
             "mkdir -p sys/usr/bin && printf '#!/usr/bin/env bash\\nexit ${SEC_RC:-44}\\n' > sys/usr/bin/security && chmod +x sys/usr/bin/security",
-            "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q ."
+            "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q .",
+            "TYCON_REPOS_ROOT=$FIXTURE/repos TYCON_PROD_ROOT=$FIXTURE/sys TYCON_GUIDES_DIR=$FIXTURE/tcg SEC_RC=51 node tcg/scripts/hooks/produccion-notice.js </dev/null >/dev/null"
           ],
           "stdin": {
             "hook_event_name": "SessionStart"
@@ -56,7 +58,8 @@
           "expect": {
             "exit": 0,
             "stdout_re": [
-              "no pude consultar el llavero"
+              "no pude consultar el llavero",
+              "FRENO DE PRODUCCIÓN no está instalado"
             ]
           },
           "env": {
@@ -70,7 +73,7 @@
         {
           "id": "autorizada-por-llavero-sin-freno-grita",
           "type": "must-emit",
-          "__doc": "T20b · la máquina TIENE la clave de producción y NO tiene el freno: el estado peligroso (clave sin protección). Grita en rojo y da el comando exacto.",
+          "__doc": "T20b · la máquina TIENE la clave de producción y NO tiene el freno: el estado peligroso (clave sin protección). Grita en rojo y da el comando exacto. Es su segundo arranque: con la clave, el aviso no se sella — sale en cada arranque.",
           "files": {
             "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
           },
@@ -78,7 +81,8 @@
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/produccion-notice.js $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js $TCG/scripts/production/tycon-prod-sql $TCG/scripts/production/node-shim.sh $TCG/scripts/production/managed-settings.tycon-production.json.template tcg/scripts/production/ && mkdir -p tcg/scripts/production/guard-libs && cp -R $TCG/scripts/production/guard-libs/. tcg/scripts/production/guard-libs/",
             "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
             "mkdir -p sys/usr/bin && printf '#!/usr/bin/env bash\\nexit ${SEC_RC:-44}\\n' > sys/usr/bin/security && chmod +x sys/usr/bin/security",
-            "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q ."
+            "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q .",
+            "TYCON_REPOS_ROOT=$FIXTURE/repos TYCON_PROD_ROOT=$FIXTURE/sys TYCON_GUIDES_DIR=$FIXTURE/tcg SEC_RC=0 node tcg/scripts/hooks/produccion-notice.js </dev/null >/dev/null"
           ],
           "stdin": {
             "hook_event_name": "SessionStart"
@@ -110,7 +114,7 @@
             "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
             "mkdir -p sys/usr/bin && printf '#!/usr/bin/env bash\\nexit ${SEC_RC:-44}\\n' > sys/usr/bin/security && chmod +x sys/usr/bin/security",
             "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q .",
-            "mkdir -p sys/opt/tycon/bin sys/opt/tycon/hooks sys/opt/tycon/production 'sys/Library/Application Support/ClaudeCode/managed-settings.d' && cp tcg/scripts/hooks/prod-access-guard.js sys/opt/tycon/hooks/ && mkdir -p sys/opt/tycon/lib && cp $TCG/scripts/production/guard-libs/lib/shell-parse.js $TCG/scripts/production/guard-libs/lib/repos-root.js $TCG/scripts/production/guard-libs/lib/tycon-config.js $TCG/scripts/production/guard-libs/lib/skills-dir.js $TCG/scripts/production/guard-libs/lib/legacy-names.js sys/opt/tycon/lib/ && cp $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/guard-record.js tcg/scripts/lib/ && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm bibliotecas && git -C tcg update-ref refs/remotes/origin/main HEAD && cp $TCG/scripts/production/guard-libs/lib/guard-record.js sys/opt/tycon/lib/ && cp $TCG/scripts/production/guard-libs/lib/guard-record.js \"sys/opt/tycon/$(sed -n 's/^NOMBRE_VIEJO_CONSTANCIA=//p' $TCG/scripts/production/install-guard.sh)\" && cp $TCG/scripts/production/production-index.js sys/opt/tycon/production/ &&cp tcg/scripts/production/tycon-prod-sql sys/opt/tycon/bin/ && cp tcg/scripts/production/node-shim.sh sys/opt/tycon/ && cp tcg/scripts/production/managed-settings.tycon-production.json.template 'sys/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json' && cp $(command -v node) sys/opt/tycon/bin/node && printf '#!/bin/sh\\nexit 0\\n' > sys/opt/tycon/bin/sqlcmd && chmod +x sys/opt/tycon/bin/sqlcmd && node -e 'const c=require(\"crypto\"),f=require(\"fs\"),h=p=>c.createHash(\"sha256\").update(f.readFileSync(\"sys\"+p)).digest(\"hex\");const k=[\"/opt/tycon/bin/tycon-prod-sql\",\"/opt/tycon/bin/node\",\"/opt/tycon/bin/sqlcmd\",\"/opt/tycon/hooks/prod-access-guard.js\"];f.writeFileSync(\"sys/opt/tycon/huellas.json\",JSON.stringify(Object.fromEntries(k.map(x=>[x,h(x)]))))'"
+            "mkdir -p sys/opt/tycon/bin sys/opt/tycon/hooks sys/opt/tycon/production 'sys/Library/Application Support/ClaudeCode/managed-settings.d' && cp tcg/scripts/hooks/prod-access-guard.js sys/opt/tycon/hooks/ && mkdir -p sys/opt/tycon/lib && cp $TCG/scripts/production/guard-libs/lib/shell-parse.js $TCG/scripts/production/guard-libs/lib/repos-root.js $TCG/scripts/production/guard-libs/lib/tycon-config.js $TCG/scripts/production/guard-libs/lib/skills-dir.js $TCG/scripts/production/guard-libs/lib/legacy-names.js sys/opt/tycon/lib/ && cp $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/guard-record.js tcg/scripts/lib/ && mkdir -p tcg/scripts/setup/harness sys/opt/tycon/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && cp $TCG/scripts/production/guard-libs/setup/harness/tycon-home.js sys/opt/tycon/setup/harness/ && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm bibliotecas && git -C tcg update-ref refs/remotes/origin/main HEAD && cp $TCG/scripts/production/guard-libs/lib/guard-record.js sys/opt/tycon/lib/ && cp $TCG/scripts/production/guard-libs/lib/guard-record.js \"sys/opt/tycon/$(sed -n 's/^NOMBRE_VIEJO_CONSTANCIA=//p' $TCG/scripts/production/install-guard.sh)\" && cp $TCG/scripts/production/production-index.js sys/opt/tycon/production/ &&cp tcg/scripts/production/tycon-prod-sql sys/opt/tycon/bin/ && cp tcg/scripts/production/node-shim.sh sys/opt/tycon/ && cp tcg/scripts/production/managed-settings.tycon-production.json.template 'sys/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json' && cp $(command -v node) sys/opt/tycon/bin/node && printf '#!/bin/sh\\nexit 0\\n' > sys/opt/tycon/bin/sqlcmd && chmod +x sys/opt/tycon/bin/sqlcmd && node -e 'const c=require(\"crypto\"),f=require(\"fs\"),h=p=>c.createHash(\"sha256\").update(f.readFileSync(\"sys\"+p)).digest(\"hex\");const k=[\"/opt/tycon/bin/tycon-prod-sql\",\"/opt/tycon/bin/node\",\"/opt/tycon/bin/sqlcmd\",\"/opt/tycon/hooks/prod-access-guard.js\"];f.writeFileSync(\"sys/opt/tycon/huellas.json\",JSON.stringify(Object.fromEntries(k.map(x=>[x,h(x)]))))'"
           ],
           "stdin": {
             "hook_event_name": "SessionStart"
@@ -204,7 +208,7 @@
             "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
             "mkdir -p sys/usr/bin && printf '#!/usr/bin/env bash\\nexit ${SEC_RC:-44}\\n' > sys/usr/bin/security && chmod +x sys/usr/bin/security",
             "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q .",
-            "mkdir -p sys/opt/tycon/bin sys/opt/tycon/hooks sys/opt/tycon/production 'sys/Library/Application Support/ClaudeCode/managed-settings.d' && cp tcg/scripts/hooks/prod-access-guard.js sys/opt/tycon/hooks/ && mkdir -p sys/opt/tycon/lib && cp $TCG/scripts/production/guard-libs/lib/shell-parse.js $TCG/scripts/production/guard-libs/lib/repos-root.js $TCG/scripts/production/guard-libs/lib/tycon-config.js $TCG/scripts/production/guard-libs/lib/skills-dir.js $TCG/scripts/production/guard-libs/lib/legacy-names.js sys/opt/tycon/lib/ && cp $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/guard-record.js tcg/scripts/lib/ && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm bibliotecas && git -C tcg update-ref refs/remotes/origin/main HEAD && cp $TCG/scripts/production/guard-libs/lib/guard-record.js sys/opt/tycon/lib/ && cp $TCG/scripts/production/guard-libs/lib/guard-record.js \"sys/opt/tycon/$(sed -n 's/^NOMBRE_VIEJO_CONSTANCIA=//p' $TCG/scripts/production/install-guard.sh)\" && cp $TCG/scripts/production/production-index.js sys/opt/tycon/production/ &&cp tcg/scripts/production/tycon-prod-sql sys/opt/tycon/bin/ && cp tcg/scripts/production/node-shim.sh sys/opt/tycon/ && cp tcg/scripts/production/managed-settings.tycon-production.json.template 'sys/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json' && cp $(command -v node) sys/opt/tycon/bin/node && printf '#!/bin/sh\\nexit 0\\n' > sys/opt/tycon/bin/sqlcmd && chmod +x sys/opt/tycon/bin/sqlcmd && node -e 'const c=require(\"crypto\"),f=require(\"fs\"),h=p=>c.createHash(\"sha256\").update(f.readFileSync(\"sys\"+p)).digest(\"hex\");const k=[\"/opt/tycon/bin/tycon-prod-sql\",\"/opt/tycon/bin/node\",\"/opt/tycon/bin/sqlcmd\",\"/opt/tycon/hooks/prod-access-guard.js\"];f.writeFileSync(\"sys/opt/tycon/huellas.json\",JSON.stringify(Object.fromEntries(k.map(x=>[x,h(x)]))))'",
+            "mkdir -p sys/opt/tycon/bin sys/opt/tycon/hooks sys/opt/tycon/production 'sys/Library/Application Support/ClaudeCode/managed-settings.d' && cp tcg/scripts/hooks/prod-access-guard.js sys/opt/tycon/hooks/ && mkdir -p sys/opt/tycon/lib && cp $TCG/scripts/production/guard-libs/lib/shell-parse.js $TCG/scripts/production/guard-libs/lib/repos-root.js $TCG/scripts/production/guard-libs/lib/tycon-config.js $TCG/scripts/production/guard-libs/lib/skills-dir.js $TCG/scripts/production/guard-libs/lib/legacy-names.js sys/opt/tycon/lib/ && cp $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/skills-dir.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/guard-record.js tcg/scripts/lib/ && mkdir -p tcg/scripts/setup/harness sys/opt/tycon/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && cp $TCG/scripts/production/guard-libs/setup/harness/tycon-home.js sys/opt/tycon/setup/harness/ && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm bibliotecas && git -C tcg update-ref refs/remotes/origin/main HEAD && cp $TCG/scripts/production/guard-libs/lib/guard-record.js sys/opt/tycon/lib/ && cp $TCG/scripts/production/guard-libs/lib/guard-record.js \"sys/opt/tycon/$(sed -n 's/^NOMBRE_VIEJO_CONSTANCIA=//p' $TCG/scripts/production/install-guard.sh)\" && cp $TCG/scripts/production/production-index.js sys/opt/tycon/production/ &&cp tcg/scripts/production/tycon-prod-sql sys/opt/tycon/bin/ && cp tcg/scripts/production/node-shim.sh sys/opt/tycon/ && cp tcg/scripts/production/managed-settings.tycon-production.json.template 'sys/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json' && cp $(command -v node) sys/opt/tycon/bin/node && printf '#!/bin/sh\\nexit 0\\n' > sys/opt/tycon/bin/sqlcmd && chmod +x sys/opt/tycon/bin/sqlcmd && node -e 'const c=require(\"crypto\"),f=require(\"fs\"),h=p=>c.createHash(\"sha256\").update(f.readFileSync(\"sys\"+p)).digest(\"hex\");const k=[\"/opt/tycon/bin/tycon-prod-sql\",\"/opt/tycon/bin/node\",\"/opt/tycon/bin/sqlcmd\",\"/opt/tycon/hooks/prod-access-guard.js\"];f.writeFileSync(\"sys/opt/tycon/huellas.json\",JSON.stringify(Object.fromEntries(k.map(x=>[x,h(x)]))))'",
             "printf '// retocado en el disco\\n' >> tcg/scripts/hooks/prod-access-guard.js"
           ],
           "stdin": {
@@ -449,7 +453,7 @@
         {
           "id": "repo-que-declara-produccion-sin-freno-avisa-solo",
           "type": "must-emit",
-          "__doc": "🔴 «Tiene que ser todo automático» (pedido del dev, 2026-09-15): sumar a alguien al freno era mandarle un instructivo y confiar. Ahora basta con tener en la máquina un repo que DECLARA un servidor de producción: el arranque le dice que le falta el freno, con el comando. Sin llavero y sin nada instalado. ROJO PREVIO: hacía falta el freno ya instalado o la clave cargada, así que a quien todavía no lo tenía —justo el que hay que avisar— el arnés le callaba.",
+          "__doc": "🔴 «Tiene que ser todo automático» (pedido del dev, 2026-09-15): sumar a alguien al freno era mandarle un instructivo y confiar. Ahora basta con tener en la máquina un repo que DECLARA un servidor de producción: el arranque le dice que le falta el freno, con el comando. Sin llavero y sin nada instalado. ROJO PREVIO: hacía falta el freno ya instalado o la clave cargada, así que a quien todavía no lo tenía —justo el que hay que avisar— el arnés le callaba. Sin el llavero de producción, el aviso sale UNA vez y lo dice; el arranque siguiente calla (maquina-sin-nada-no-recibe-aviso).",
           "files": {
             "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
           },
@@ -467,7 +471,8 @@
             "exit": 0,
             "stdout_re": [
               "FRENO DE PRODUCCIÓN no está instalado",
-              "install-guard.command"
+              "install-guard.command",
+              "sale una sola vez"
             ]
           },
           "env": {
@@ -481,7 +486,7 @@
         {
           "id": "sin-freno-abre-el-instalador-solo-y-deja-constancia",
           "type": "must-emit",
-          "__doc": "«¿Por qué no viene con el arnés?» (dev, 2026-09-15). El arnés se instala solo en cada arranque; el freno entra por el mismo camino: cuando falta (o quedó viejo), el aviso ABRE la ventana del instalador, que pide la contraseña del Mac. Bajo la raíz de prueba no abre ninguna ventana pero deja la constancia (un sello con la fecha), que es lo que este caso mira. ROJO PREVIO: el aviso sólo imprimía el comando y esperaba que alguien lo copiara.",
+          "__doc": "«¿Por qué no viene con el arnés?» (dev, 2026-09-15). El arnés se instala solo en cada arranque; el freno entra por el mismo camino: cuando falta (o quedó viejo), el aviso ABRE la ventana del instalador, que pide la contraseña del Mac. Bajo la raíz de prueba no abre ninguna ventana pero deja la constancia (un sello con la fecha), que es lo que este caso mira. ROJO PREVIO: el aviso sólo imprimía el comando y esperaba que alguien lo copiara. La máquina tiene la clave de producción: sin ella no se abre nada (sin-llavero-no-abre-el-instalador).",
           "files": {
             "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
           },
@@ -508,7 +513,7 @@
             "TYCON_REPOS_ROOT": "${FIXTURE}/repos",
             "TYCON_PROD_ROOT": "${FIXTURE}/sys",
             "TYCON_GUIDES_DIR": "${FIXTURE}/tcg",
-            "SEC_RC": "44"
+            "SEC_RC": "0"
           },
           "sin_freno_instalado": true
         },
@@ -545,8 +550,46 @@
             "TYCON_REPOS_ROOT": "${FIXTURE}/repos",
             "TYCON_PROD_ROOT": "${FIXTURE}/sys",
             "TYCON_GUIDES_DIR": "${FIXTURE}/tcg",
-            "SEC_RC": "44",
+            "SEC_RC": "0",
             "TYCON_PRODUCTION_AUTOINSTALL": "0"
+          },
+          "sin_freno_instalado": true
+        },
+        {
+          "id": "sin-llavero-no-abre-el-instalador",
+          "type": "must-emit",
+          "__doc": "Una máquina sin el llavero de producción, con un repo que declara producción y sin freno: el aviso dice cómo instalarlo, pero NO abre la ventana del instalador ni deja su sello. Ese dev no toca producción: abrirle una ventana es molestarlo. ROJO PREVIO: la ventana se abría igual en la máquina de cualquiera que tuviera el repo clonado.",
+          "files": {
+            "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}]}"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/produccion-notice.js $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js $TCG/scripts/production/tycon-prod-sql $TCG/scripts/production/node-shim.sh $TCG/scripts/production/managed-settings.tycon-production.json.template tcg/scripts/production/ && mkdir -p tcg/scripts/production/guard-libs && cp -R $TCG/scripts/production/guard-libs/. tcg/scripts/production/guard-libs/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
+            "mkdir -p sys/usr/bin && printf '#!/usr/bin/env bash\\nexit ${SEC_RC:-44}\\n' > sys/usr/bin/security && chmod +x sys/usr/bin/security",
+            "mkdir -p repos/backend-acme/.tycon && git -C repos/backend-acme init -q .",
+            "rm -rf sys/opt/tycon 'sys/Library/Application Support/ClaudeCode/managed-settings.d'"
+          ],
+          "stdin": {
+            "hook_event_name": "SessionStart"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "FRENO DE PRODUCCIÓN no está instalado",
+              "install-guard.command"
+            ],
+            "stdout_not_re": [
+              "Te abrí la ventana"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/instalar-freno-abierto"
+            ]
+          },
+          "env": {
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos",
+            "TYCON_PROD_ROOT": "${FIXTURE}/sys",
+            "TYCON_GUIDES_DIR": "${FIXTURE}/tcg",
+            "SEC_RC": "44"
           },
           "sin_freno_instalado": true
         },

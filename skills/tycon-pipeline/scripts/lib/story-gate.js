@@ -272,6 +272,14 @@ function storyNeedsMockup(marker) {
   } catch { return false; }
 }
 
+// La pregunta a la persona cuando el código no tiene carril, con el texto que aprobó el dueño: la misma en cada sesión.
+const PREGUNTA_SIN_CARRIL = [
+  'Este cambio no tiene historia. ¿Cómo sigo?',
+  '1. Directo en el código (arreglo rápido: corre igual las pruebas y la revisión). Escribí: arreglo rápido: <qué cambio>',
+  '2. Con historia. Escribí: con historia',
+  'Lo tenés que escribir vos en el chat: el cuadro de botones no vale.',
+];
+
 function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } = {}) {
   const f = norm(filePath);
   const viaLine = via ? `  (detectado en ${via})\n` : '';
@@ -386,11 +394,13 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '     esta salida está escrita para VOS, no para él. "carril", "marker", "ad-hoc", "story Mary+GOLD",',
     '     "el arnés" no significan nada para el user: si se los pegás, queda frenado sin saber qué',
     '     contestar, que es exactamente la falla que este mensaje existe para evitar.',
-    '     Preguntale en castellano llano, con las dos opciones concretas, p. ej.:',
-    '       "Esto toca código del repo. ¿Lo hago como ajuste puntual (rápido, sin story) o querés que',
-    '        vaya con story y revisión completa?"',
-    '     Su respuesta destraba: alcanza con que diga "es un hotfix" / "ajuste chico" / "sin story"',
-    '     (o que elija esa opción) para poder declarar (b) citándolo.',
+    '     Mostrale esta pregunta TEXTUAL, en castellano llano como está: no la reescribas ni la pongas',
+    '     en un cuadro de opciones (la respuesta tiene que ser algo que él escriba en el chat):',
+    '',
+    ...PREGUNTA_SIN_CARRIL.map((l) => `       ${l}`),
+    '',
+    '     Su respuesta destraba: cualquier frase clara suya vale —"arreglo rápido: …", "es un hotfix",',
+    '     "sin story"— para declarar (b) citándolo; "con historia" es (a).',
     '   · SUBAGENTE (sin AskUserQuestion): no elijas vos. Cerrá tu reporte pidiéndole al orquestador',
     '     que le pregunte al user cuál de las dos va, y no toques el archivo.',
     '',

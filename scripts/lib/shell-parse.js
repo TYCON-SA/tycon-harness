@@ -53,20 +53,95 @@ const os = require('os');
 // (`node - <<EOF`, `cat > f <<EOF`, `python3 - <<EOF`), donde es texto. Sin la opción, todo igual que siempre.
 const SHELL_ANTES = /(?:^|[\s;&|(])(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh)(?:\s+-[A-Za-z]+)*\s*$/;
 const SHELL_DESPUES = /\|\s*(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh)(?=\s|$)/;
-function sinHeredocs(cmd, opciones) {
-  if (opciones && opciones.salvoShell) {
-    const s = String(cmd);
-    return s.replace(/<<-?\s*(['"]?)([^\s'"<>|&;]+)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, (m, q, delim, resto, offset) => {
-      const antes = s.slice(s.lastIndexOf('\n', offset - 1) + 1, offset);
-      return SHELL_ANTES.test(antes) || SHELL_DESPUES.test(resto) ? m : ` __HEREDOC__${resto}`;
-    });
+
+// El operador de un heredoc con su palabra, como la escribe el shell: `EOF`, `'EOF'`, `"EOF"`, `\EOF`, `E"OF"`, `'E'OF`.
+// Sin `<<<`: eso es una cadena, no un heredoc.
+const OPERADOR_HEREDOC = /(?<!<)<<(?!<)-?[ \t]*((?:[^\s'"<>|&;()\\]|\\[^\n]|\$?'[^'\n]*'|\$?"(?:[^"\\\n]|\\[^\n])*")+)/g;
+
+/**
+ * El delimitador que usa el shell: la palabra sin sus comillas ni sus barras (`<<\EOF` y `<<E"OF"` cierran en `EOF`), y
+ * `$'…'` decodificado (`<<$'E\x4fF'` cierra en `EOF`).
+ */
+function delimitadorDelShell(palabra) {
+  let out = '';
+  for (let i = 0; i < palabra.length; i++) {
+    const c = palabra[i];
+    if (c === '\\') { out += palabra[i + 1] || ''; i++; }
+    else if (c === '$' && palabra[i + 1] === "'") { const j = palabra.indexOf("'", i + 2); out += decodeAnsiC(palabra.slice(i + 2, j)); i = j; }
+    else if (c === '$' && palabra[i + 1] === '"') continue;
+    else if (c === "'") { const j = palabra.indexOf("'", i + 1); out += palabra.slice(i + 1, j); i = j; }
+    else if (c === '"') {
+      let j = i + 1;
+      for (; j < palabra.length && palabra[j] !== '"'; j++) {
+        if (palabra[j] === '\\' && /["\\$`]/.test(palabra[j + 1] || '')) j++;
+        out += palabra[j];
+      }
+      i = j;
+    } else out += c;
   }
+  return out;
+}
+
+/**
+ * Los heredocs del texto, en orden: `{ indice, fin, delim, comillas, resto, cuerpo }`. `indice` es la posición del `<<`
+ * y `fin` la del final de la línea que lo cierra. `delim` es el que usa el shell y `comillas` dice si la palabra traía
+ * comillas o barras (entonces el shell no expande el cuerpo). `resto` es lo que sigue a la palabra en su línea.
+ * La línea de cierre admite blancos alrededor, por el lado seguro: un cierre antes del real deja más texto como comandos.
+ * Un heredoc sin cierre no sale: su texto queda como comandos.
+ */
+function heredocs(texto) {
+  const s = String(texto);
+  const out = [];
+  let lineas = null;                                      // por texto de línea, dónde empieza cada una (en orden)
+  const lineasDe = () => {
+    if (lineas) return lineas;
+    lineas = new Map();
+    for (let ini = 0; ini <= s.length;) {
+      let fin = s.indexOf('\n', ini); if (fin < 0) fin = s.length;
+      const t = s.slice(ini, fin).replace(/^[ \t]+|[ \t]+$/g, '');
+      if (!lineas.has(t)) lineas.set(t, []);
+      lineas.get(t).push([ini, fin]);
+      ini = fin + 1;
+    }
+    return lineas;
+  };
+  const re = new RegExp(OPERADOR_HEREDOC.source, 'g');
+  let m;
+  while ((m = re.exec(s))) {
+    const finLinea = s.indexOf('\n', re.lastIndex);
+    if (finLinea < 0) break;
+    // `<<EO\` y en la línea siguiente `F`: bash junta las dos líneas y cierra en `EOF`. No se adivina: el texto queda
+    // como comandos, que es el lado que frena.
+    if (s[re.lastIndex] === '\\' && s[re.lastIndex + 1] === '\n') continue;
+    const delim = delimitadorDelShell(m[1]);
+    const cierre = (lineasDe().get(delim) || []).find(([ini]) => ini > finLinea);
+    if (!cierre) continue;
+    out.push({
+      indice: m.index, fin: cierre[1], delim, comillas: /[\\'"]/.test(m[1]),
+      resto: s.slice(re.lastIndex, finLinea), cuerpo: cierre[0] > finLinea + 1 ? s.slice(finLinea + 1, cierre[0] - 1) : '',
+    });
+    re.lastIndex = cierre[1];
+  }
+  return out;
+}
+
+function sinHeredocs(cmd, opciones) {
+  const s = String(cmd);
   // bash acepta cualquier palabra como delimitador (END-DOC, EOF.1), con o sin comillas.
   // 🔴 El RESTO de la línea del `<<` se conserva (2026-09-16): `cat <<EOF > destino` y `cat <<EOF | bash`
   // son comandos de verdad —la redirección y la tubería las ejecuta el shell—, y borrarlos junto con el
   // cuerpo dejaba al freno de producción sin ver que el heredoc iba a parar a un archivo protegido o a
   // un shell. Sólo el cuerpo es texto; la línea del operador no.
-  return String(cmd).replace(/<<-?\s*(['"]?)([^\s'"<>|&;]+)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, ' __HEREDOC__$3');
+  let out = '';
+  let desde = 0;
+  for (const h of heredocs(s)) {
+    out += s.slice(desde, h.indice);
+    const antes = s.slice(s.lastIndexOf('\n', h.indice - 1) + 1, h.indice);
+    const alimentaShell = opciones && opciones.salvoShell && (SHELL_ANTES.test(antes) || SHELL_DESPUES.test(h.resto));
+    out += alimentaShell ? s.slice(h.indice, h.fin) : ` __HEREDOC__${h.resto}`;
+    desde = h.fin;
+  }
+  return out + s.slice(desde);
 }
 
 /**
@@ -1230,6 +1305,7 @@ function commandVariables(texto, ctx) {
 module.exports = {
   // las de siempre
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,
+  heredocs, OPERADOR_HEREDOC,
   // story 8.14
   lex, lexWords, splitWords, parseSimpleCommand, substitutions, decodeAnsiC,
   expandWord, ExpansionBudget, EXPANSION_LIMIT, applyAssignments, commandVariables, changesShellOptions,

@@ -132,6 +132,9 @@ function api(req, res) {
 
 const srv = http.createServer(api);
 srv.listen(0, '127.0.0.1', () => {
-  fs.writeFileSync(PORT_FILE, `AZURE=http://127.0.0.1:${srv.address().port}\n`);
+  // un temporal y un rename: quien espera el archivo nunca lo ve a medio escribir
+  const tmp = `${PORT_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `AZURE=http://127.0.0.1:${srv.address().port}\n`);
+  fs.renameSync(tmp, PORT_FILE);
 });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { srv.close(); process.exit(0); });

@@ -39,7 +39,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PIPELINE_LIB = path.join(__dirname, '..', '..', 'tycon-pipeline', 'scripts', 'lib');
-const { probeStoryFile } = require(path.join(PIPELINE_LIB, 'story-discovery.js'));
+const { probeStoryFile, declaredStoryId } = require(path.join(PIPELINE_LIB, 'story-discovery.js'));
 const { productSiblings } = require(path.join(PIPELINE_LIB, 'product-siblings.js'));
 const { writeRecord, RECORD_DIR } = require(path.join(PIPELINE_LIB, 'first-time-record.js'));
 
@@ -90,16 +90,45 @@ function markdownFiles(dir, depth = 0) {
   return out;
 }
 
-/** La carpeta de las historias y el número siguiente de la primera épica (por el `story:` de cada .md, no por su nombre). */
+const EPIC_NUMBER = new RegExp(`^${EPIC}\\.(\\d+)$`);
+// el número en el nombre del archivo: la épica y la historia separadas por guion o punto, con o sin `story-` delante
+// (una épica de dos cifras que termina igual no cuenta)
+const EPIC_NUMBER_IN_NAME = new RegExp(`(?:^|\\D)${EPIC}[-.](\\d+)(?=\\D|$)`);
+const READ_LIMIT = 256 * 1024;
+
+/**
+ * El número de la primera épica que ocupa un .md, o 0. Más tolerante que `probeStoryFile`: acepta el BOM, un `story:`
+ * con un comentario al final y una historia sin `status:`. Si el .md dice `story:` y aun así no se lee el número, cuenta
+ * el de su nombre: el número siguiente no puede pisar una historia que existe.
+ */
+function epicNumberOf(file) {
+  const s = probeStoryFile(file);
+  const probed = s && String(s.id).match(EPIC_NUMBER);
+  if (probed) return Number(probed[1]);
+  let text;
+  try {
+    const fd = fs.openSync(file, 'r');
+    try { const buf = Buffer.alloc(READ_LIMIT); text = buf.toString('utf8', 0, fs.readSync(fd, buf, 0, READ_LIMIT, 0)); } finally { fs.closeSync(fd); }
+  } catch (err) {
+    throw new Refusal(`no pude leer ${file} para saber qué número le toca a la historia (${err.code || err.message})`);
+  }
+  const declared = declaredStoryId(text);
+  const own = declared && declared.replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim().match(EPIC_NUMBER);
+  if (own) return Number(own[1]);
+  if (!/^\s*story\s*:/im.test(text)) return 0;
+  const named = path.basename(file, '.md').match(EPIC_NUMBER_IN_NAME);
+  return named ? Number(named[1]) : 0;
+}
+
+/**
+ * La carpeta de las historias y el número siguiente de la primera épica (por el `story:` de cada .md, no por su nombre).
+ * Cuenta `specs/` y `stories/` las dos: un repo con historias en las dos no puede recibir un número repetido.
+ */
 function nextStory(repo) {
   const folder = fs.existsSync(path.join(repo, 'specs')) ? 'specs' : 'stories';
   const dir = path.join(repo, folder);
   let max = 0;
-  for (const f of markdownFiles(dir)) {
-    const s = probeStoryFile(f);
-    const m = s && String(s.id).match(new RegExp(`^${EPIC}\\.(\\d+)$`));
-    if (m) max = Math.max(max, Number(m[1]));
-  }
+  for (const f of ['specs', 'stories'].flatMap((d) => markdownFiles(path.join(repo, d)))) max = Math.max(max, epicNumberOf(f));
   return { folder, dir, number: `${EPIC}.${max + 1}` };
 }
 
@@ -116,7 +145,7 @@ function storiesOf(repo) {
   const ids = [];
   for (const f of markdownFiles(dir)) {
     const s = probeStoryFile(f);
-    if (s) ids.push(String(s.id));
+    if (s) ids.push(String(s.id).replace(/\s+#.*$/, ''));   // `story: 1.3 # nota`: el comentario no es parte del número
   }
   return { folder, dir, ids };
 }

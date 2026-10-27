@@ -31,8 +31,8 @@ CFG="$RAIZ/scripts/lib/tycon-config.js"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 LLAMADAS="$T/llamadas.log"
 FALLOS=0; TOTAL=0
-ok() { TOTAL=$((TOTAL+1)); echo "✅ integraciones: $1"; }
-no() { TOTAL=$((TOTAL+1)); FALLOS=$((FALLOS+1)); echo "❌ integraciones: $1"; }
+ok() { suite_check; TOTAL=$((TOTAL+1)); echo "✅ integraciones: $1"; }
+no() { suite_check; TOTAL=$((TOTAL+1)); FALLOS=$((FALLOS+1)); echo "❌ integraciones: $1"; }
 
 # agent-skills: TYCON_SKILLS_DIR (raíz o skills/) o ~/.claude/agent-skills. Sin él el instalador aborta.
 # 🔴 «No pude preguntar» no es «no está»: la biblioteca tira cuando su vecina está y no carga.
@@ -208,7 +208,7 @@ else ok "T10 ningún comando apagado llamó a az/engram/curl"; fi
 # no hay un «default por proyecto conocido»
 for f in skills/tycon-pipeline/steps/step-01-start.md skills/tycon-pipeline/steps/close-work-item.md skills/tycon-story-work-item/SKILL.md; do
   p="$SK_REPO/$f"
-  if [ ! -f "$p" ]; then echo "  ℹ NO MEDIDO — $f no está en $SK_REPO"; continue; fi
+  if [ ! -f "$p" ]; then suite_check; echo "  ℹ NO MEDIDO — $f no está en $SK_REPO"; continue; fi
   if grep -qiE 'default por proyecto conocido|defaults conocidos' "$p"; then no "T10 $f: sigue teniendo el «default por proyecto conocido»"; else ok "T10 $f: sin «default por proyecto conocido»"; fi
   if grep -qiE 'Azure DevOps (está )?apagad' "$p" && grep -q 'ado.org' "$p"; then ok "T10 $f: la organización sale de ado.org y, apagada, el paso lo dice y se saltea"
   else no "T10 $f: no resuelve la organización por ado.org ni dice qué hace con Azure DevOps apagado"; fi
@@ -457,7 +457,7 @@ else no "T32 configuración rota y bloque presente: se quitó, no se actualizó 
 
 # ── sin node el lector no contesta: lo mismo ──
 if env -i PATH=/usr/bin:/bin /bin/sh -c 'command -v node' > /dev/null 2>&1 || ! env -i PATH=/usr/bin:/bin python3 -c 'pass' > /dev/null 2>&1; then
-  echo "  ℹ NO MEDIDO — T32 sin node: /usr/bin:/bin trae node o no trae python3 en esta máquina"
+  suite_check; echo "  ℹ NO MEDIDO — T32 sin node: /usr/bin:/bin trae node o no trae python3 en esta máquina"
 else
   S1="$(home32 no-node-absent)"; S2="$(home32 no-node-present seed)"; seed_stale "$S2/.claude/CLAUDE.md" "$B_ADO"
   SAL="$(PATH32=/usr/bin:/bin sync32 "$S1" "$ADO_ON" 2>&1)"
@@ -515,6 +515,7 @@ if has_block "$M2/.claude/CLAUDE.md" upper && grep -q '^texto de upper$' "$M2/.c
 else no "T32 marcador mal escrito y bloque presente: $(echo "$SAL" | head -3 | tr '\n' ' ' | cut -c1-240)"; fi
 
 fi   # ── fin de los bloques: lo que sigue corre en todas las partes ──
+suite_parts_end
 
 # ── lo prometido en la cabecera: agent-skills se lee, no se escribe ────────────────────────────────
 SK_DESPUES="$(ls -A "$SK_REPO")"

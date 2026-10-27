@@ -144,21 +144,29 @@ function computeUndeclared({ repo, baseSha, storyPath, startedAt = null, registr
 
 /**
  * De `candidatos` (rutas relativas a la carpeta de la ejecución, ya sin lo que la ejecución tocó), los que llegaron por
- * main: una tanda que sale de main después de que otra story entró ve en el diff contra su arranque los archivos de esa
- * story. Cuenta como de main sólo si su contenido es el mismo blob que en `origin/main` y algún commit de main posterior
- * al arranque lo cambió. Sin `origin/main`, o si git no contesta, no se descuenta nada: se sigue contando.
+ * main: una tanda que sale de main después de que otra story entró, o que pone su rama al día con main, ve en el diff
+ * contra su arranque los archivos que trajo main. Cuenta como de main sólo si main lo cambió después del arranque (el
+ * diff entre el ancestro común y `origin/main`: incluye lo que entró como resolución de un merge, que el log no muestra)
+ * y quedó igual que en `origin/main`: el mismo blob, o borrado en los dos. Sin `origin/main`, o si git no contesta, no
+ * se descuenta nada: se sigue contando.
  */
 function entradosPorMain(repo, baseSha, candidatos) {
   if (!candidatos.length) return [];
   const MAIN = 'refs/remotes/origin/main';
   if (git(repo, ['rev-parse', '--verify', '--quiet', MAIN]).error) return [];
-  const log = git(repo, ['log', '--format=', '--name-only', '--no-renames', '--relative', `${baseSha}..${MAIN}`, '--']);
-  if (log.error) return [];
-  const enMain = new Set(lineas(log.out).map(toPosix));
+  const d = git(repo, ['diff', '--name-only', '--no-renames', '--relative', `${baseSha}...${MAIN}`, '--']);
+  if (d.error) return [];
+  const enMain = new Set(lineas(d.out).map(toPosix));
+  const repoReal = real(repo);
   return candidatos.filter((f) => {
     if (!enMain.has(f)) return false;
-    const local = git(repo, ['hash-object', '--', f]);
+    // borrado en la carpeta y también en main: el mismo estado que main (git tiene que contestar que no está)
+    if (!fs.existsSync(path.join(repoReal, f))) {
+      const t = git(repo, ['ls-tree', '--name-only', MAIN, '--', f]);
+      return !t.error && lineas(t.out).length === 0;
+    }
     const remoto = git(repo, ['rev-parse', '--verify', '--quiet', `${MAIN}:./${f}`]);
+    const local = git(repo, ['hash-object', '--', f]);
     return !local.error && !remoto.error && local.out.trim() !== '' && local.out.trim() === remoto.out.trim();
   }).sort();
 }
