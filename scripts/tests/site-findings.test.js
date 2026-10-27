@@ -1,6 +1,6 @@
 'use strict';
 /*
- * site-findings.test.js — la pestaña «Pendientes», lo que encontró la noche: una fila por ficha viva de las tres fuentes,
+ * site-findings.test.js — la pestaña «Mantenimiento», lo que encontró la noche: una fila por ficha viva de las tres fuentes,
  * que quien mantiene confirma con un clic. El clic abre un pedido al repo de operaciones con un archivo de decisión; la
  * noche que lo ve en main lo aplica (scripts/nightly/findings/cycle.js).
  *
@@ -10,9 +10,9 @@
  *   T34 Sitio_Confirmar_AbrePedidoAOperaciones  T57 Sitio_Decision_LaAplicaLaNoche
  *   T35 Sitio_Confirmar_NoEscribeMain           T58 Sitio_DecisionEnMain_DiceSeAplicaEstaNoche
  *   T36 Sitio_AutorNoAprueba                    T66 Sitio_Dependencias_SoloArreglar
- *   T70 Pendientes_SaleDeEjecuciones            T69 Sitio_Demo_FichasYConfirmarNoAbreNada
- *   T71 Pendientes_FilaDiceQuePaso              T72 Pendientes_QueHariaArreglar_PorFamilia
- *   T73 Pendientes_BotonesUnaVez_EnElIdioma
+ *   T70 Mantenimiento_SaleDeEjecuciones            T69 Sitio_Demo_FichasYConfirmarNoAbreNada
+ *   T71 Mantenimiento_FilaDiceQuePaso              T72 Mantenimiento_QueHariaArreglar_PorFamilia
+ *   T73 Mantenimiento_BotonesUnaVez_EnElIdioma  T74 Mantenimiento_MenuConCuantasEsperan
  *
  * El servidor real del sitio sobre un clon de operaciones de mentira: el repo es un repo git local y la API de GitHub un
  * servidor falso en el proceso (lib/fake-github-api.js). Sin red. Correos y repos inventados.
@@ -97,7 +97,7 @@ function armarOperaciones({ opsDoc, extra = {} }) {
 }
 
 /**
- * El sitio con las pestañas Pendientes y Ejecuciones, sobre el clon de operaciones. `fn` recibe los ayudantes.
+ * El sitio con las pestañas Mantenimiento y Ejecuciones, sobre el clon de operaciones. `fn` recibe los ayudantes.
  * `politica`: la rama principal pide la aprobación de otra persona (por defecto, sí).
  */
 async function conSitio({ politica = true, autoApply = false, extra = {}, clones } = {}, fn) {
@@ -120,7 +120,7 @@ async function conSitio({ politica = true, autoApply = false, extra = {}, clones
     const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true })).sesion;
     const lead = await entrar(LEAD);
     const dev = await entrar(DEV);
-    const pagina = await h.pedir('/pendientes', { cookie: lead });
+    const pagina = await h.pedir('/mantenimiento', { cookie: lead });
     // la sección lleva el token de escritura de la sesión (la página no lo trae en su cabecera)
     const tok = (/<section id="hallazgos"[^>]* data-token="([^"]+)"/.exec(pagina.texto) || [])[1];
     const lista = async (cookie = lead) => h.pedir('/api/hallazgos', { cookie });
@@ -178,9 +178,9 @@ test('T31 Sitio_SeccionUnaFilaPorFicha — una fila por ficha viva de las tres f
     assert.strictEqual(e1.propuesta_motivo, null);
     assert.strictEqual(e1.asignado, null);
     // la página: la sección con una fila por ficha, el enlace sólo donde hay uno con forma, nada de lo que no se muestra
-    const p = await h.pedir('/pendientes', { cookie: lead });
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.strictEqual(p.status, 200);
-    assert.match(p.texto, /<h1>Pendientes<\/h1>/);
+    assert.match(p.texto, /<h1>Mantenimiento<\/h1>/);
     assert.strictEqual((p.texto.match(/<tr data-ficha="/g) || []).length, 5, 'una fila por ficha viva');
     assert.match(p.texto, /href="https:\/\/dev\.acme\.example\/acme\/_workitems\/edit\/88"/);
     assert.match(p.texto, /razón sin la forma esperada/);
@@ -196,13 +196,13 @@ test('T31 Sitio_SeccionUnaFilaPorFicha — una fila por ficha viva de las tres f
 // ── T32 / T33 ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // Sitio_SoloQuienMantiene @story-4.11 @ac-19
-// 🔴 Falla con: mostrarle la pestaña Pendientes a una persona que no mantiene.
-test('T32 Sitio_SoloQuienMantiene — la pestaña Pendientes sale sólo para quien mantiene @story-4.11 @ac-19', { timeout: 60000 }, async () => {
+// 🔴 Falla con: mostrarle la pestaña Mantenimiento a una persona que no mantiene.
+test('T32 Sitio_SoloQuienMantiene — la pestaña Mantenimiento sale sólo para quien mantiene @story-4.11 @ac-19', { timeout: 60000 }, async () => {
   await conSitio({}, async ({ h, lead, dev }) => {
-    const suya = await h.pedir('/pendientes', { cookie: lead });
+    const suya = await h.pedir('/mantenimiento', { cookie: lead });
     assert.strictEqual(suya.status, 200);
     assert.match(suya.texto, /id="hallazgos"/);
-    const ajena = await h.pedir('/pendientes', { cookie: dev });
+    const ajena = await h.pedir('/mantenimiento', { cookie: dev });
     assert.strictEqual(ajena.status, 403, 'otro rol no entra a la pestaña');
     assert.doesNotMatch(ajena.texto, /id="hallazgos"/);
     for (const x of MARCAS) assert.ok(!ajena.texto.includes(x), `sin «${x}» para otro rol`);
@@ -215,17 +215,17 @@ test('T33 Sitio_OtroRol_403YSinMenu — las rutas de la pestaña dan 403 a otro 
   await conSitio({}, async ({ h, api, lead, dev, lista, confirmar }) => {
     assert.strictEqual((await lista(dev)).status, 403);
     // otro rol no recibe la sección ni su token: va con uno inventado, y lo frena el rol antes que el token
-    const tokDev = (/data-token="([^"]+)"/.exec((await h.pedir('/pendientes', { cookie: dev })).texto || '') || [])[1] || 'sin-token';
+    const tokDev = (/data-token="([^"]+)"/.exec((await h.pedir('/mantenimiento', { cookie: dev })).texto || '') || [])[1] || 'sin-token';
     const r = await confirmar({ fuente: 'vigilante', id: 'vig-uno', accion: 'aceptar' }, dev, tokDev);
     assert.strictEqual(r.status, 403);
     assert.strictEqual(api.st.pedidos.length, 0, 'ningún pedido');
     // el menú: quien mantiene tiene la pestaña; otro rol, no
     const menu = async (cookie) => (/<nav[\s\S]*?<\/nav>/.exec((await h.pedir('/corridas', { cookie })).texto) || [''])[0];
     const suyo = await menu(lead);
-    assert.match(suyo, /href="\/pendientes"[^>]*>(?:<span[^>]*>\d+<\/span>)?Pendientes</, 'quien mantiene tiene la pestaña');
+    assert.match(suyo, /href="\/mantenimiento"[^>]*>(?:<span[^>]*>\d+<\/span>)?Mantenimiento \(\d+\)</, 'quien mantiene tiene la pestaña');
     const ajeno = await menu(dev);
     assert.ok(ajeno, 'la página tiene su menú');
-    assert.doesNotMatch(ajeno, /pendientes|hallazgos/i, 'otro rol no tiene la pestaña');
+    assert.doesNotMatch(ajeno, /mantenimiento|hallazgos/i, 'otro rol no tiene la pestaña');
   });
 });
 
@@ -375,7 +375,7 @@ test('T38 Sitio_SinClon_UnaFrase — sin clon, sin fichas o con carpetas que no 
       const j = (await lista()).json;
       assert.strictEqual(j.estado, c.estado, `${c.nombre}: ${JSON.stringify(j)}`);
       assert.match(j.frase, c.frase, c.nombre);
-      const p = await h.pedir('/pendientes', { cookie: lead });
+      const p = await h.pedir('/mantenimiento', { cookie: lead });
       const seccion = (/<section id="hallazgos"[\s\S]*?<\/section>/.exec(p.texto) || [''])[0];
       assert.ok(seccion, `${c.nombre}: la sección está`);
       assert.match(seccion, c.frase, c.nombre);
@@ -446,7 +446,7 @@ test('T58 Sitio_DecisionEnMain_DiceSeAplicaEstaNoche — con la decisión en mai
     const v = fila((await lista()).json, 'vigilante', 'vig-uno');
     assert.strictEqual(v.estado_fila, 'decidido');
     assert.deepStrictEqual(v.acciones, []);
-    const p = await h.pedir('/pendientes', { cookie: lead });
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.match(p.texto, /decidido, se aplica esta noche/);
     // y un clic tardío no abre otro pedido
     const r = await confirmar({ fuente: 'vigilante', id: 'vig-uno', accion: 'arreglar' });
@@ -464,7 +464,7 @@ test('T66 Sitio_Dependencias_SoloArreglar — la fila de dependencias trae sólo
     const d = fila((await lista()).json, 'dependencias', 'dep-uno');
     assert.deepStrictEqual(d.acciones, ['arreglar']);
     assert.strictEqual(d.por_defecto, 'arreglar');
-    const p = await h.pedir('/pendientes', { cookie: lead });
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
     const tr = (/<tr data-ficha="dependencias\/dep-uno"[\s\S]*?<\/tr>/.exec(p.texto) || [''])[0];
     assert.ok(tr, 'la fila de dependencias');
     assert.doesNotMatch(tr, /data-accion="aceptar"/);
@@ -494,7 +494,7 @@ test('T69 Sitio_Demo_FichasYConfirmarNoAbreNada — el demo muestra fichas de la
     assert.deepStrictEqual([...new Set(j.filas.map((x) => x.fuente))].sort(), ['dependencias', 'ejecuciones', 'vigilante']);
     const pendiente = j.filas.find((x) => x.fuente === 'vigilante' && x.estado_fila === 'pendiente');
     assert.ok(pendiente, 'una ficha del vigilante para confirmar');
-    const pagina = await pedir('/pendientes');
+    const pagina = await pedir('/mantenimiento');
     assert.strictEqual(pagina.status, 200, pagina.texto);
     const tok = (/<section id="hallazgos"[^>]* data-token="([^"]+)"/.exec(pagina.texto) || [])[1];
     assert.ok(tok, 'la sección del demo lleva su token');
@@ -512,7 +512,7 @@ test('T69 Sitio_Demo_FichasYConfirmarNoAbreNada — el demo muestra fichas de la
   } finally { await sitio.cerrar(); }
 });
 
-// ── T70..T73: la pestaña Pendientes ──────────────────────────────────────────────────────────────────────────────────
+// ── T70..T73: la pestaña Mantenimiento ──────────────────────────────────────────────────────────────────────────────────
 
 /** Una ficha de ejecuciones con sus casos (máquina y story de cada uno). */
 const conCasos = (causa, nombre, casos) => CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa, nombre, hoy: '2026-10-22', casos });
@@ -526,27 +526,27 @@ const EJ_RARA = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-NUEVA:algo'
 const extraDe = (...fichas) => Object.fromEntries(fichas.map((f) => [`inbox/runs-review/pending/${f.id}.yaml`, CYCLE.serializar(f)]));
 const filaDe = (html, ficha) => (new RegExp(`<tr data-ficha="${ficha.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[\\s\\S]*?</tr>`).exec(html) || [''])[0];
 
-// Pendientes_SaleDeEjecuciones
+// Mantenimiento_SaleDeEjecuciones
 // 🔴 Falla con: la sección todavía al pie de Ejecuciones, o la pestaña sin su lugar en el menú de quien mantiene.
-test('T70 Pendientes_SaleDeEjecuciones — lo que encontró la noche tiene su pestaña y ya no está en Ejecuciones', { timeout: 60000 }, async () => {
+test('T70 Mantenimiento_SaleDeEjecuciones — lo que encontró la noche tiene su pestaña y ya no está en Ejecuciones', { timeout: 60000 }, async () => {
   await conSitio({}, async ({ h, lead, dev }) => {
     for (const cookie of [lead, dev]) {
       const corridas = await h.pedir('/corridas', { cookie });
       assert.doesNotMatch(corridas.texto, /id="hallazgos"|data-ficha=/, 'Ejecuciones no trae las fichas');
       for (const x of MARCAS) assert.ok(!corridas.texto.includes(x), `Ejecuciones no muestra «${x}»`);
     }
-    const p = await h.pedir('/pendientes', { cookie: lead });
-    assert.match(p.texto, /class="activa" aria-current="page"><span class="ix">\d+<\/span>Pendientes</, 'la pestaña activa es Pendientes');
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
+    assert.match(p.texto, /class="activa" aria-current="page"><span class="ix">\d+<\/span>Mantenimiento \(\d+\)</, 'la pestaña activa es Mantenimiento');
     // entre Ejecuciones y Proyectos
     const nav = (/<nav[\s\S]*?<\/nav>/.exec(p.texto) || [''])[0];
     const orden = [...nav.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
-    assert.ok(orden.indexOf('/corridas') < orden.indexOf('/pendientes') && orden.indexOf('/pendientes') < orden.indexOf('/proyectos'), orden.join(' '));
+    assert.ok(orden.indexOf('/corridas') < orden.indexOf('/mantenimiento') && orden.indexOf('/mantenimiento') < orden.indexOf('/proyectos'), orden.join(' '));
   });
 });
 
-// Pendientes_FilaDiceQuePaso
+// Mantenimiento_FilaDiceQuePaso
 // 🔴 Falla con: una fila que dice sólo el nombre de la causa, sin cuántas veces, en qué máquinas ni en qué stories.
-test('T71 Pendientes_FilaDiceQuePaso — cada fila dice qué pasó, con los datos de la ficha', { timeout: 60000 }, async () => {
+test('T71 Mantenimiento_FilaDiceQuePaso — cada fila dice qué pasó, con los datos de la ficha', { timeout: 60000 }, async () => {
   await conSitio({ extra: extraDe(EJ_CASOS, EJ_UNA) }, async ({ h, lead, lista, fila }) => {
     const j = (await lista()).json;
     // las máquinas sin su huella, de la más reciente a la más vieja; pasadas tres stories, «y N más»
@@ -558,7 +558,7 @@ test('T71 Pendientes_FilaDiceQuePaso — cada fila dice qué pasó, con los dato
     assert.strictEqual(fila(j, 'dependencias', 'dep-uno').que_paso, 'El paquete pkg-uno (high) tiene una vulnerabilidad conocida, vista 3 noches seguidas, en Producto X/FrontEnd.');
     assert.strictEqual(fila(j, 'vigilante', 'vig-uno').que_paso, 'En producción de acme: errores-500, vista 3 noches seguidas.');
     // la página y en inglés
-    const p = await h.pedir('/pendientes', { cookie: lead });
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.ok(filaDe(p.texto, `ejecuciones/${EJ_CASOS.id}`).includes('Pasó 5 veces, en las máquinas mac-b y mac-a'));
     const en = (await lista(`${lead}; sitio-idioma=en`)).json;
     assert.strictEqual(fila(en, 'ejecuciones', EJ_CASOS.id).que_paso,
@@ -566,10 +566,10 @@ test('T71 Pendientes_FilaDiceQuePaso — cada fila dice qué pasó, con los dato
   });
 });
 
-// Pendientes_QueHariaArreglar_PorFamilia
+// Mantenimiento_QueHariaArreglar_PorFamilia
 // 🔴 Falla con: una familia de causa sin su texto, un texto en un solo idioma, o «Arreglar» escondido en una fila sin
 // propuesta del modelo.
-test('T72 Pendientes_QueHariaArreglar_PorFamilia — cada fila dice qué haría «Arreglar»; la propuesta va debajo, como sugerencia', { timeout: 60000 }, async () => {
+test('T72 Mantenimiento_QueHariaArreglar_PorFamilia — cada fila dice qué haría «Arreglar»; la propuesta va debajo, como sugerencia', { timeout: 60000 }, async () => {
   const FAMILIAS = { 'RR-ESCAPE': 'escape', 'RR-HOOK': 'hook', 'RR-CIERRE': 'cierre', 'RR-NODE': 'node', 'RR-BANDERA': 'bandera', 'RR-APAGO': 'apago' };
   const porFamilia = Object.keys(FAMILIAS).map((r, i) => CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: `${r}:x`, nombre: `familia ${i}`, hoy: '2026-10-22' }));
   await conSitio({ extra: extraDe(...porFamilia, EJ_RARA) }, async ({ h, lead, lista, fila }) => {
@@ -585,7 +585,7 @@ test('T72 Pendientes_QueHariaArreglar_PorFamilia — cada fila dice qué haría 
     assert.match(fila(j, 'dependencias', 'dep-uno').que_arreglaria, /^Actualizar el paquete/);
     assert.match(fila(j, 'vigilante', 'vig-uno').que_arreglaria, /^Investigar ese error de producción/);
     // la página: el texto de la familia y, debajo, la propuesta del modelo como sugerencia
-    const p = await h.pedir('/pendientes', { cookie: lead });
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
     const tr = filaDe(p.texto, `ejecuciones/${EJ1.id}`);
     assert.match(tr, /Se busca por qué se salteó el freno\./);
     assert.match(tr, /Sugerencia del modelo \(Arreglar\): <span lang="es">Se repite cada semana en el mismo paso<\/span>/);
@@ -593,22 +593,46 @@ test('T72 Pendientes_QueHariaArreglar_PorFamilia — cada fila dice qué haría 
   });
 });
 
-// Pendientes_BotonesUnaVez_EnElIdioma
+// Mantenimiento_BotonesUnaVez_EnElIdioma
 // 🔴 Falla con: qué hace cada botón repetido en cada fila (o en ningún lado), o la página en inglés con textos en
 // castellano sin decirlo.
-test('T73 Pendientes_BotonesUnaVez_EnElIdioma — qué hace cada botón, una vez arriba, en el idioma de la página', { timeout: 60000 }, async () => {
+test('T73 Mantenimiento_BotonesUnaVez_EnElIdioma — qué hace cada botón, una vez arriba, en el idioma de la página', { timeout: 60000 }, async () => {
   await conSitio({}, async ({ h, lead }) => {
-    const es = (await h.pedir('/pendientes', { cookie: lead })).texto;
+    const es = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
     for (const x of ['Aceptar: está bien así; la ficha se archiva.', 'Arreglar: queda como trabajo pendiente. Abre un pedido que aprueba otra persona; no arregla nada solo.']) {
       assert.strictEqual(es.split(x).length - 1, 1, `«${x}», una vez`);
     }
     assert.ok(es.indexOf('Aceptar: está bien así') < es.indexOf('<table'), 'arriba de la tabla');
-    const en = (await h.pedir('/pendientes', { cookie: `${lead}; sitio-idioma=en` })).texto;
-    assert.match(en, /<h1>Pending<\/h1>/);
+    const en = (await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto;
+    assert.match(en, /<h1>Maintenance<\/h1>/);
     assert.strictEqual(en.split('Accept: it is fine as it is; the finding is archived.').length - 1, 1);
     assert.match(en, /<th>What happened<\/th><th>What «Fix» would do<\/th>/);
     // la razón del modelo viene en castellano: lo dice la etiqueta
     assert.match(filaDe(en, `ejecuciones/${EJ1.id}`), /Model suggestion, written in Spanish \(Fix\): <span lang="es">/);
     assert.match(filaDe(en, `ejecuciones/${EJ1.id}`), /We find out why the check was skipped\./);
+  });
+});
+
+// Mantenimiento_MenuConCuantasEsperan
+// 🔴 Falla con: el menú sin el número de fichas que esperan, un número que cuenta las decididas, movidas o con el
+// pedido de la noche, o un «(0)» cuando no queda nada.
+test('T74 Mantenimiento_MenuConCuantasEsperan — al lado del nombre, cuántas fichas esperan decisión; sin ninguna, sin número', { timeout: 90000 }, async () => {
+  const enlace = (html) => (/<a href="\/mantenimiento"[^>]*>([\s\S]*?)<\/a>/.exec(html) || [])[1];
+  // las vivas en pending/ sin decidir: dep-uno, vig-uno, vig-dos y la de ejecuciones (EJ2 está en promoted/ y decidida)
+  await conSitio({}, async ({ h, lead }) => {
+    assert.match(enlace((await h.pedir('/corridas', { cookie: lead })).texto), /Mantenimiento \(4\)$/);
+    assert.match(enlace((await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto), /Maintenance \(4\)$/);
+  });
+  // una con su decisión en main y otra con el pedido de la noche abierto ya no esperan en el sitio
+  const extra = {
+    'inbox/watcher/decisions/vig-uno.json': `${JSON.stringify({ fuente: 'vigilante', id: 'vig-uno', accion: 'aceptar', quien: LEAD, el: '2026-10-24' })}\n`,
+    'inbox/watcher/pending/vig-dos.yaml': `${FICHAS['inbox/watcher/pending/vig-dos.yaml']}pr: 123\n`,
+  };
+  await conSitio({ extra }, async ({ h, lead }) => {
+    assert.match(enlace((await h.pedir('/corridas', { cookie: lead })).texto), /Mantenimiento \(2\)$/);
+  });
+  // sin fichas, el nombre solo
+  await conSitio({ extra: Object.fromEntries(Object.keys(FICHAS).map((k) => [k, null])) }, async ({ h, lead }) => {
+    assert.match(enlace((await h.pedir('/corridas', { cookie: lead })).texto), /<\/span>Mantenimiento$/);
   });
 });

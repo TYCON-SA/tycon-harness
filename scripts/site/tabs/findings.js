@@ -1,6 +1,6 @@
 'use strict';
 /*
- * tabs/findings.js — LA PESTAÑA «PENDIENTES»: LO QUE ENCONTRÓ LA NOCHE Y ESPERA UNA DECISIÓN.
+ * tabs/findings.js — LA PESTAÑA «MANTENIMIENTO»: LO QUE ENCONTRÓ LA NOCHE Y ESPERA UNA DECISIÓN.
  *
  * Qué resuelve: quien mantiene decide cada ficha de la noche (dependencias, el vigilante y la revisión de las
  * ejecuciones) con un clic, sin abrir el repo de operaciones. El clic no escribe nada en main: abre un pedido con el
@@ -10,13 +10,14 @@
  * UNA FILA POR FICHA VIVA, leída del clon de operaciones con la vista común (sources.js `comoFicha`): sin el diagnóstico
  * ni la evidencia del vigilante, y con la razón del modelo pasada otra vez por su filtro. Cada fila dice en llano qué
  * pasó (cuántas veces, en qué máquinas y en qué stories, de los casos de la ficha) y qué haría «Arreglar» según la familia
- * de la causa; la propuesta del modelo va debajo, como sugerencia. Qué hace cada botón se dice una vez, arriba. Estados:
+ * de la causa; la propuesta del modelo va debajo, como sugerencia. Qué hace cada botón se dice una vez, arriba. El menú
+ * lleva al lado del nombre cuántas fichas esperan decisión (`cuantasEsperan`). Estados:
  * «pendiente» (con los botones), «propuesto en el pedido N» (UNA consulta de pedidos abiertos para todas las filas,
  * guardada un minuto) y «decidido, se aplica esta noche» (el archivo de decisión ya está en main). Dependencias ofrece
  * sólo «Arreglar»: aceptar el riesgo es declarar la deuda en cada repo, con plazo. Sin clon, sin fichas o con carpetas
  * que no se pueden leer, una frase: nunca una tabla vacía.
  *
- * Rutas (todas `maintainer`: otro rol no ve la pestaña en el menú): GET /pendientes · GET /api/hallazgos · POST
+ * Rutas (todas `maintainer`: otro rol no ve la pestaña en el menú): GET /mantenimiento · GET /api/hallazgos · POST
  * /api/hallazgos/confirmar · GET /hallazgos/cliente.js. Casos: scripts/tests/site-findings.test.js.
  */
 const fs = require('fs');
@@ -104,6 +105,14 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     if (fuente === 'dependencias') return { repos: reg.formato.listaDe(String(txt), 'repos') };
     const producto = reg.formato.leerFicha(String(txt)).escalares.producto;
     return { producto: PRODUCTO.test(String(producto || '')) ? producto : null };
+  }
+
+  /** Las fichas que esperan decisión, para el número del menú: pendientes, en pending/, sin decisión en main ni pedido de la noche. */
+  function cuantasEsperan() {
+    const l = leerFichas();
+    if (l.estado !== 'leido') return 0;
+    const dir = dirOps();
+    return l.fichas.filter((f) => f.carpeta === 'pending' && f.veredicto === 'pendiente' && !f.pr_noche && !fs.existsSync(path.join(dir, rutaDecision(f.fuente, f.id)))).length;
   }
 
   // ── los pedidos abiertos: una consulta para todas las filas, guardada un minuto ──
@@ -290,9 +299,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   const solo = ['maintainer'];
   const rutas = [
     {
-      method: 'GET', path: '/pendientes', needs: solo, pestana: { id: 'pendientes', titulo: 'Pendientes', orden: 25 }, handler: async (ctx) => {
+      method: 'GET', path: '/mantenimiento', needs: solo, pestana: { id: 'mantenimiento', titulo: 'Mantenimiento', orden: 25, cuenta: cuantasEsperan }, handler: async (ctx) => {
         const idioma = views.idiomaDe(ctx);
-        return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, T(idioma, 'pestana.pendientes'), await seccion(ctx), T(idioma, 'hallazgos.lede')) };
+        return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, T(idioma, 'pestana.mantenimiento'), await seccion(ctx), T(idioma, 'hallazgos.lede')) };
       },
     },
     { method: 'GET', path: '/api/hallazgos', needs: solo, handler: async (ctx) => json(200, await modelo(views.idiomaDe(ctx))) },

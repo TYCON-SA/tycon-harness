@@ -198,9 +198,10 @@ view, with the date it is from, while the mailbox is downloaded in full again; a
 its own. Each run's changes come back when the new view finishes building. The saved view lives on the site's disk
 (`SITE_DATA_DIR`): **with no disk**, after a restart the tab waits for the first full download.
 
-### Pending (Pendientes)
+### Maintenance (Mantenimiento)
 
-Only for **maintainers**: what the night found that waits for a decision. There are three sources: the review of the
+Only for **maintainers**: what the night found that waits for a decision. Next to the name, in the menu, goes how
+many findings are waiting, for example "Maintenance (12)"; with none, just the name. There are three sources: the review of the
 runs (a skipped control, an automatic notice that fails), dependencies with a known vulnerability, and the production
 watcher. Each row says:
 
@@ -718,7 +719,7 @@ reported with its last run. It is view only: the machines update themselves on s
 
 The site decides who you are by your email, and only with the "Who gets into the site" list:
 
-| Role | Home | Runs | Pending | Projects | Harness | How it works | Configuration |
+| Role | Home | Runs | Maintenance | Projects | Harness | How it works | Configuration |
 |---|---|---|---|---|---|---|---|
 | **Maintainer** | "What to decide today", for the whole organization | all runs | yes, and decides each one | all products | yes | yes, and proposes changes to its reviewers | yes, and proposes changes |
 | **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | no | the products they work on | no | no | no |

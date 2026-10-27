@@ -93,7 +93,7 @@ const TEXTOS = {
   // ── las pestañas ───────────────────────────────────────────────────────────────────────────────────────────────
   'pestana.inicio': { es: 'Inicio', en: 'Home' },
   'pestana.corridas': { es: 'Ejecuciones', en: 'Runs' },
-  'pestana.pendientes': { es: 'Pendientes', en: 'Pending' },
+  'pestana.mantenimiento': { es: 'Mantenimiento', en: 'Maintenance' },
   'pestana.proyectos': { es: 'Proyectos', en: 'Projects' },
   'pestana.arnes': { es: 'Arnés', en: 'Harness' },
   'pestana.configuracion': { es: 'Configuración', en: 'Configuration' },
