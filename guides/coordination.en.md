@@ -82,11 +82,17 @@ Configuration tab, "How many sessions work at once"), and each machine can chang
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
 
+The coordinator also sees it without asking: on each turn, if the machine is at the cap, a notice tells her who is
+working; if it is over, by how much and which one has been working the shortest. Below the cap it says nothing, and no
+other session sees it. It is turned off with `TYCON_COORDINATION_NOTICE=0`.
+
 ## Adversarial passes, one at a time
 
 An adversarial pass weighs a lot on the machine: two at once overload it. Before launching one, the session asks the
 coordinator for its turn, and the coordinator gives it when no other pass is in flight. `coordination.js status` says
-which pass is in flight, for which story, in which session and since when.
+which pass is in flight, for which story, in which session and since when. And when a session asks the pass's gate
+(`pipeline.js deep-review-gate`) while another is in flight, the answer carries `other_in_flight` (story, session and
+time) and the line telling it to ask for its turn. With no coordinator designated, the gate answers as always.
 
 ## Signatures, by their two paths
 
@@ -134,11 +140,11 @@ work, not one per session. The style meter that already exists measures this; th
 | Rule | Measured by | Why |
 |---|---|---|
 | Signatures, passwords and product decisions go to the owner | nadie | What a product decision is is a judgment call: no piece of data says it. |
-| The sessions' questions go to the coordinator | nadie | There is no notice today; the coordinator reminds a session that asks the owner. |
+| The sessions' questions go to the coordinator | nadie | There is no notice, by the owner's decision: every working session would see it. The coordinator reminds a session that asks the owner. |
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
-| No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand, and `status` counts it. |
-| Adversarial passes one at a time | nadie | The coordinator gives the turn; `status` shows her whether one is in flight. |
+| No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, at the cap, so does the coordinator's notice on each turn. |
+| Adversarial passes one at a time | aviso | The coordinator gives the turn. The pass's gate tells the session another one is in flight and to ask for its turn; it does not stop it. |
 | Confirm a signature is missing before asking for it | nadie | How to confirm depends on each signature; `signature` only avoids two files with the same command. |
 | One file per signature, deleted once signed | aviso | `status` counts the pending signatures; `signature` does not write a second file with the same command. |
 | Requests in order | nadie | No data on the machine says which request pairs with which without asking the network on every turn. |

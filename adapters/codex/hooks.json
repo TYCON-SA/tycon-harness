@@ -108,6 +108,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/coordination-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/rebuild-before-verify.js"
           },
           {

@@ -1,0 +1,30 @@
+{
+  "__doc": "Aviso del tope de sesiones (guides/coordination.md): sólo la sesión designada como coordinadora lo ve. Lo que el banco fija es la regla del dueño: una sesión de trabajo no ve nada aunque la máquina esté pasada del tope, y un evento ilegible no frena el turno. El lado que avisa no se puede armar desde el banco: quién es la coordinadora sale del perfil del árbol del arnés, que una variable no cambia. Lo cubre scripts/tests/coordination-notice.test.js.",
+  "hooks": [
+    {
+      "hook": "coordination-notice.js (el aviso del tope, sólo para la coordinadora)",
+      "script": "${TCG}/scripts/hooks/coordination-notice.js",
+      "event": "UserPromptSubmit",
+      "matcher": "",
+      "cases": [
+        {
+          "id": "sesion-de-trabajo-pasada-del-tope-no-ve-nada",
+          "type": "must-stay-quiet",
+          "__doc": "Cuatro sesiones ocupadas (tope de fábrica 3; el pid 1 siempre está vivo) y quien escribe no es la coordinadora designada: sale 0 y sin salida. ROJO PREVIO: avisarle el tope a cualquier sesión.",
+          "stdin": { "hook_event_name": "UserPromptSubmit", "session_id": "s-1", "prompt": "sigamos" },
+          "expect": { "exit": 0 },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/sessions\" && for i in 1 2 3 4; do printf \"{\\\"pid\\\":1,\\\"sessionId\\\":\\\"s-$i\\\",\\\"name\\\":\\\"Sesion$i\\\",\\\"nameSource\\\":\\\"user\\\",\\\"status\\\":\\\"busy\\\",\\\"statusUpdatedAt\\\":1,\\\"cwd\\\":\\\"/x\\\"}\" > \"$SANDBOX_HOME/.claude/sessions/s-$i.json\"; done"
+          ]
+        },
+        {
+          "id": "evento-ilegible-no-frena",
+          "type": "must-stay-quiet",
+          "__doc": "Sin sesión en el evento, el hook calla y sale 0. ROJO PREVIO: tirar un error que corte el turno.",
+          "stdin": { "hook_event_name": "UserPromptSubmit", "prompt": "hola" },
+          "expect": { "exit": 0 }
+        }
+      ]
+    }
+  ]
+}

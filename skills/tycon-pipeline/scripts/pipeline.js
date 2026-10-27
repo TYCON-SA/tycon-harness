@@ -7000,6 +7000,17 @@ function main() {
         process.stderr.write(`deep-review-gate: no pude anotar el veredicto en la corrida (${e.message.split('\n')[0]}) — \`next\` va a pedir consultar el portón otra vez\n`);
       }
     }
+    // Con otra sesión en su pase adversarial, el turno lo da la coordinadora (guides/coordination.md). Sin coordinadora
+    // designada, o sin otro pase, el veredicto sale igual que siempre.
+    if (result && result.run === true) {
+      try {
+        const turno = require(path.join(__dirname, '..', '..', '..', 'scripts', 'tools', 'coordination.js'))
+          .adversarialTurn({ sessionId: (corrida && corrida.sessionId) || sessionIdFileKey() });
+        if (turno) Object.assign(result, turno);
+      } catch (e) {
+        process.stderr.write(`deep-review-gate: no pude ver si hay otro pase adversarial en vuelo (${String(e.message).split('\n')[0]})\n`);
+      }
+    }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
   }

@@ -85,7 +85,7 @@ const MEASURES = {
   'La coordinadora cierra los detalles con la opción más segura': 'nadie',
   'Cada sesión con un nombre puesto por una persona': 'aviso',
   'No más sesiones trabajando que el tope': 'freno',
-  'Pases adversariales de a uno': 'nadie',
+  'Pases adversariales de a uno': 'aviso',
   'Confirmar que una firma falta antes de pedirla': 'nadie',
   'Un archivo por firma, borrado al firmar': 'aviso',
   'Pedidos en orden': 'nadie',

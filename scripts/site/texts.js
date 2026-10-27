@@ -1939,6 +1939,7 @@ const TEXTOS = {
   'control.@tcg:blocking-meter.js': { es: 'Mide cuánto tiempo quedó trabada la conversación esperando un paso largo.', en: 'Measures how long the conversation was stuck waiting on one long step.' },
   'control.@tcg:blocking-notice.js': { es: 'Te dice si el turno anterior se quedó esperando demasiado en un paso largo.', en: 'Tells you if the previous turn waited too long on a single long step.' },
   'control.@tcg:branch-guard-notice.js': { es: 'Avisa si los repos compartidos del arnés no están en main, están atrasados o trabados.', en: 'Warns if the harness\'s shared repos are off main, behind, or stuck.' },
+  'control.@tcg:coordination-notice.js': { es: 'Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó.', en: 'Only in the coordinator session: warns when the machine is at or over its cap of working sessions.' },
   'control.@tcg:dashboard-notice.js': { es: 'Te dice de cuándo es el tablero del arnés y si salió completo o desactualizado.', en: 'Tells you how recent the harness dashboard is and whether it is complete or stale.' },
   'control.@tcg:dependencies-notice.js': { es: 'Avisa si la revisión nocturna de dependencias dejó de correr o no pudo medir algo.', en: 'Warns if the nightly dependency review stopped running or could not measure something.' },
   'control.@tcg:engram-drift-notice.js': { es: 'Avisa si la memoria de algún repo está partida en varios nombres o sin subir.', en: 'Warns if a repo\'s memory is split across several names or never pushed.' },
