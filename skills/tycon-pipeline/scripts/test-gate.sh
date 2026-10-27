@@ -937,11 +937,11 @@ elif [[ "$RUNNER" == "jest" ]]; then
   JEST_WORKERS="${TYCON_JEST_MAX_WORKERS:-50%}"
   echo "[test-gate] jest --coverage (1 sola corrida, maxWorkers=$JEST_WORKERS)"
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
-      npx jest --coverage --maxWorkers="$JEST_WORKERS" --json --outputFile "$RESULTS_DIR/jest.json" ) || SUITE_EXIT=$?
+      bash -c "set -o pipefail; npx jest --coverage --maxWorkers=$(printf %q "$JEST_WORKERS") --json --outputFile $(printf %q "$RESULTS_DIR/jest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
 else
   echo "[test-gate] vitest run --coverage (1 sola corrida)"
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
-      npx vitest run --coverage --reporter=json --outputFile "$RESULTS_DIR/vitest.json" ) || SUITE_EXIT=$?
+      bash -c "set -o pipefail; npx vitest run --coverage --reporter=json --outputFile $(printf %q "$RESULTS_DIR/vitest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
 fi
 
 # 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde

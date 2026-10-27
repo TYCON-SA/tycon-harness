@@ -434,3 +434,44 @@ fi`);
   assert.deepEqual([r.art.totals.total, r.art.totals.executed, r.art.totals.failed, r.art.totals.skipped], [30, 24, 2, 0], JSON.stringify(r.art.totals));
   assert.match(String(r.art.incomplete), /se cortó/);
 });
+
+// ── El mínimo de cobertura del propio repo ────────────────────────────────────────────────────────────────────────
+
+/** Un npx falso de un solo caso: `cuerpo` es bash; `$1` es la herramienta (jest, vitest); `$O`, su `--outputFile`. */
+function npxConInforme(cuerpo) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-npx-'));
+  fs.writeFileSync(path.join(bin, 'npx'), `#!/usr/bin/env bash
+prev=""; for a in "$@"; do [ "$prev" = "--outputFile" ] && O="$a"; prev="$a"; done
+${cuerpo}
+echo "npx falso: no sé correr $*" >&2; exit 127
+`);
+  fs.chmodSync(path.join(bin, 'npx'), 0o755);
+  return bin;
+}
+
+// 🔴 Falla con: la salida 1 de la herramienta leída como pruebas en rojo, sin decir que todas pasan y qué mínimo falta.
+test('TestGate_UmbralDeCoberturaDelRepo_DiceQueFalta — las pruebas pasan y falla el mínimo del propio repo: lo dice con el número y manda a escribir pruebas', () => {
+  const casos = [
+    ['jest', `if [ "$1" = "jest" ]; then
+  printf '{"numTotalTests":158,"numPassedTests":158,"numFailedTests":0,"numPendingTests":0,"numTodoTests":0,"numFailedTestSuites":0}' > "$O"
+  echo 'Jest: "global" coverage threshold for lines (90%) not met: 82%' >&2; exit 1
+fi`],
+    ['vitest', `if [ "$1" = "vitest" ]; then
+  printf '{"numTotalTests":158,"numPassedTests":158,"numFailedTests":0,"numPendingTests":0,"numTodoTests":0}' > "$O"
+  echo 'ERROR: Coverage for lines (82%) does not meet global threshold (90%)' >&2; exit 1
+fi`],
+  ];
+  for (const [herramienta, cuerpo] of casos) {
+    const d = repo({ 'package.json': `{"devDependencies":{"${herramienta}":"1"}}\n`, 'src/a.js': 'x\n' }, ['src/a.js']);
+    const r = correr(d, { bin: npxConInforme(cuerpo) });
+    assert.equal(r.status, 1, `${herramienta}: el mínimo del repo sigue frenando: ${r.out}`);
+    const u = (r.art.coverage_threshold_failed || [])[0];
+    assert.ok(u, `${herramienta}: ${JSON.stringify(r.art)}`);
+    assert.deepEqual([u.metric, u.threshold, u.actual], ['lines', 90, 82], herramienta);
+    assert.match(r.out, /las 158 pruebas pasan; falta cobertura/, herramienta);
+    assert.match(r.out, /82 ?% de 90 ?%/, herramienta);
+    assert.match(r.out, /faltan 8/, herramienta);
+    assert.match(r.out, /escrib\S* pruebas/, herramienta);
+    assert.doesNotMatch(r.out, /autorizo/, herramienta);
+  }
+});

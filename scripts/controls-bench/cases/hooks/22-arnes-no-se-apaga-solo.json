@@ -85,13 +85,140 @@
       ]
     },
     {
+      "hook": "safety-guard-pre.sh (HARNESS-C2 — sacar un control de la configuración de la herramienta)",
+      "script": "${TCG}/scripts/hooks/safety-guard-pre.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "__doc": "La configuración de Claude Code registra los hooks del arnés y también los apaga: disableAllHooks, un interruptor en env, el hook sacado. Un comando que hace eso frena antes; cada caso que frena tiene su gemelo inofensivo al lado. Los casos que dependen de lo que la configuración tiene registrado (borrarla, sacarle un hook) están en controls-off.test.js, con una casa de juguete.",
+      "cases": [
+        {
+          "id": "harness-c2-bloquea-prender-disableallhooks",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "jq '.disableAllHooks=true' ~/.claude/settings.json > /tmp/s && mv /tmp/s ~/.claude/settings.json"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C2"
+            ]
+          }
+        },
+        {
+          "id": "harness-c2-pass-apagar-disableallhooks",
+          "type": "must-not-block",
+          "__doc": "El gemelo: el mismo comando con false no saca nada.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "jq '.disableAllHooks=false' ~/.claude/settings.json > /tmp/s && mv /tmp/s ~/.claude/settings.json"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "harness-c2-pass-leer-disableallhooks",
+          "type": "must-not-block",
+          "__doc": "Leer la configuración no la cambia.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "jq '.disableAllHooks' ~/.claude/settings.json"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "harness-c2-bloquea-escape-en-env",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "jq '.env.TYCON_SAFETY_OFF=\"1\"' ~/.claude/settings.json | sponge ~/.claude/settings.json"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C2"
+            ]
+          }
+        },
+        {
+          "id": "harness-c2-pass-variable-que-no-apaga",
+          "type": "must-not-block",
+          "__doc": "El gemelo: una variable del arnés que no apaga nada.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "jq '.env.TYCON_REPOS_ROOT=\"/otra\"' ~/.claude/settings.json | sponge ~/.claude/settings.json"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "harness-c2-bloquea-escape-en-la-config-del-repo",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 -c \"import json;p='.claude/settings.local.json';d=json.load(open(p));d.setdefault('env',{})['TYCON_TEST_GATE']='skip';json.dump(d,open(p,'w'))\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C2"
+            ]
+          }
+        },
+        {
+          "id": "harness-c2-pass-permiso-en-la-config-del-repo",
+          "type": "must-not-block",
+          "__doc": "El gemelo: el mismo programa agrega un permiso.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 -c \"import json;p='.claude/settings.local.json';d=json.load(open(p));d.setdefault('permissions',{}).setdefault('allow',[]).append('Bash(ls:*)');json.dump(d,open(p,'w'))\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "harness-c2-pass-otro-settings",
+          "type": "must-not-block",
+          "__doc": "El settings.json de otra herramienta no es la configuración de Claude Code.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "jq '.disableAllHooks=true' .vscode/settings.json > /tmp/s && mv /tmp/s .vscode/settings.json"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    },
+    {
       "hook": "bench-notice.js (sello diario que no escribió el job)",
       "script": "${TCG}/scripts/hooks/bench-notice.js",
       "event": "SessionStart",
       "matcher": "*",
       "env": {
         "TYCON_BENCH_DIR": "${FIXTURE}/bench",
-        "TYCON_EXAM_REPORT":"${FIXTURE}/ultimo-examen.json"
+        "TYCON_EXAM_REPORT": "${FIXTURE}/ultimo-examen.json"
       },
       "cases": [
         {
@@ -190,6 +317,106 @@
       ],
       "__doc": "Los CUATRO sellos diarios. Las dos suites en línea (backfill/lints y matriz runtime) empezaron a dejar reporte el 2026-08-25 justamente para poder entrar acá: sin reporte propio, un sello escrito a mano en ésas era indetectable.",
       "__doc_examen": "Desde la Story 1.1 el aviso contesta además '¿el examen de revisores está corriendo?'. Estos casos son sobre OTRA cosa (un sello escrito a mano), así que ese eje se fija en un reporte fresco de fixture: sin eso, el estado REAL del examen en la máquina que corre el banco podría voltear un caso."
+    },
+    {
+      "hook": "hook-pre-edit.js → on-controls-off (HARNESS-C2 por las herramientas de edición)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "c2-edit-prende-disableallhooks",
+          "type": "must-block",
+          "_por_que": "Prender disableAllHooks apaga todos los hooks del arnés.",
+          "setup": [
+            "mkdir -p .claude",
+            "printf '%s\\n' '{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"node /h/.tycon/harness/scripts/hooks/retro-pending.js\"}]}]}}' > .claude/settings.json"
+          ],
+          "stdin": {
+            "session_id": "bench-c2-edit",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/.claude/settings.json",
+              "old_string": "{\"hooks\":",
+              "new_string": "{\"disableAllHooks\":true,\"hooks\":"
+            },
+            "tool_use_id": "bench-tu"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C2"
+            ]
+          }
+        },
+        {
+          "id": "c2-edit-otra-clave-pasa",
+          "type": "must-not-block",
+          "_por_que": "Gemelo: otra clave en la misma configuración.",
+          "setup": [
+            "mkdir -p .claude",
+            "printf '%s\\n' '{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"node /h/.tycon/harness/scripts/hooks/retro-pending.js\"}]}]}}' > .claude/settings.json"
+          ],
+          "stdin": {
+            "session_id": "bench-c2-edit",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/.claude/settings.json",
+              "old_string": "{\"hooks\":",
+              "new_string": "{\"model\":\"opus\",\"hooks\":"
+            },
+            "tool_use_id": "bench-tu"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "c2-write-sin-los-hooks",
+          "type": "must-block",
+          "_por_que": "Reescribirla entera sin el hook del arnés lo saca.",
+          "setup": [
+            "mkdir -p .claude",
+            "printf '%s\\n' '{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"node /h/.tycon/harness/scripts/hooks/retro-pending.js\"}]}]}}' > .claude/settings.json"
+          ],
+          "stdin": {
+            "session_id": "bench-c2-edit",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/.claude/settings.json",
+              "content": "{\"model\":\"opus\"}\n"
+            },
+            "tool_use_id": "bench-tu"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C2"
+            ]
+          }
+        },
+        {
+          "id": "c2-write-otro-archivo-pasa",
+          "type": "must-not-block",
+          "_por_que": "Gemelo: el mismo texto en un archivo que no es la configuración.",
+          "setup": [
+            "mkdir -p .claude",
+            "printf '%s\\n' '{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"node /h/.tycon/harness/scripts/hooks/retro-pending.js\"}]}]}}' > .claude/settings.json"
+          ],
+          "stdin": {
+            "session_id": "bench-c2-edit",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/notas.json",
+              "content": "{\"disableAllHooks\":true}\n"
+            },
+            "tool_use_id": "bench-tu"
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
     }
   ]
 }

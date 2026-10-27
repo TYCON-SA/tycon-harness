@@ -1945,6 +1945,37 @@ if ps_match "${_PS_AT}setx[[:space:]]+(${_PS_OFF})([[:space:]]|;|$)" \
     "Si el dev quiere apagar un control: por sesión (\$env:TYCON_X=0; <cmd>) o que lo persista él a mano. El agente no persiste apagados."
 fi
 
+# HARNESS-C2: sacar un control del arnés de la configuración de la herramienta (`.claude/settings.json` o
+# `settings.local.json`): prender `disableAllHooks`, poner en `env` un interruptor que apaga, sacar un hook del arnés,
+# o borrar, mover o reemplazar entera una configuración que los tiene. Lo decide lib/controls-off.js, la misma pieza que
+# mira las ediciones (on-controls-off.js). Sólo corre si el comando nombra un `settings*.json` y `.claude` (también
+# `cd ~/.claude && rm settings.json`): el resto no paga el proceso.
+# Sin el lector no se sabe qué hace el comando, y pasa con su constancia: este freno no puede trabar a quien lee su
+# configuración.
+shopt -s nocasematch
+if [[ "$CMD" == *settings*.json* && "$CMD" == *.claude* ]]; then
+  shopt -u nocasematch
+  _c2_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/controls-off.js" || _c2_lib=""
+  _c2_out=""; _c2_leido=0; _c2_shell=bash; tool_is_ps && _c2_shell=powershell
+  if [[ -n "$_c2_lib" && -f "$_c2_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+    if _c2_out="$(printf '%s' "$CMD" | "$HNODE" "$_c2_lib" --command-stdin --cwd "$CWD" --shell "$_c2_shell" 2>/dev/null)"; then _c2_leido=1; else _c2_out=""; fi
+  fi
+  if [[ "$_c2_leido" == "0" ]]; then
+    constancia HARNESS-C2 sin-lector
+  else
+    _c2_motivos=""
+    while IFS= read -r _c2_l; do
+      [[ "$_c2_l" == frena=* ]] && _c2_motivos+="${_c2_motivos:+; }${_c2_l#frena=}"
+    done <<< "$_c2_out"
+    if [[ -n "$_c2_motivos" ]]; then
+      block "HARNESS-C2" \
+        "El comando saca un control del arnés de la configuración de la herramienta: ${_c2_motivos}." \
+        "Apagar un control lo decide el dev, y lo hace él a mano: el agente no saca controles. Si el control molesta, decíselo a la persona con el caso. Cualquier otro cambio a la configuración pasa."
+    fi
+  fi
+fi
+shopt -u nocasematch
+
 # --- Secret reading ----------------------------------------------------------
 # Lectura de secretos vía cat / less. Read tool de Claude es harder to block from Bash
 # matcher — eso requiere matcher=Read (v2).
