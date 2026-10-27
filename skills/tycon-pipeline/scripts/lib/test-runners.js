@@ -32,6 +32,8 @@ function enElPath(nombre) {
     .some((d) => exts.some((e) => { try { return fs.statSync(path.join(d, nombre + e)).isFile(); } catch (_) { return false; } }));
 }
 const existe = (dir, f) => fs.existsSync(path.join(dir, f));
+/** ¿Es un proyecto de Angular CLI? (`angular.json`, o `@angular/cli` en el package.json) */
+const esAngularCli = (d) => existe(d, 'angular.json') || /"@angular\/cli"/.test(lee(d, 'package.json') || '');
 const PLAYWRIGHT_CONFIGS = Object.freeze(['playwright.config.js', 'playwright.config.ts', 'playwright.config.mjs', 'playwright.config.cjs']);
 
 /** Las de fábrica, en orden. `detect(dir)` dice si el proyecto es de ese stack; `tool(dir)` qué binario tiene que estar. */
@@ -79,9 +81,12 @@ const FACTORY = Object.freeze([
   },
   {
     name: 'karma',
-    detect: (d) => existe(d, 'karma.conf.js'),
+    // Angular 15 o más nuevo ya no trae karma.conf.js: ng test arma la configuración solo
+    detect: (d) => existe(d, 'karma.conf.js') || (esAngularCli(d) && /"karma"/.test(lee(d, 'package.json') || '')),
     tool: () => 'npx',
     command: 'npx karma start --single-run',
+    // el plugin de Karma de Angular CLI no arranca fuera de `ng test`; sin vigilar y en un navegador sin pantalla
+    commandFor: (d) => (esAngularCli(d) ? 'npx ng test --watch=false --browsers=ChromeHeadless' : null),
     // el reporte lo deja karma-junit-reporter donde su configuración diga: se buscan los escritos en la corrida
     results: { format: 'junit', path: '**/TESTS-*.xml', alt: '**/junit*.xml', writtenDuringRun: true },
     coverage: { format: 'lcov', path: 'coverage/**/lcov.info', optional: true, writtenDuringRun: true },
@@ -294,7 +299,7 @@ function elegir(projectDir, { results, org, problems = [] }) {
     const tool = f.tool(projectDir);
     return {
       name: f.name, source: 'fabrica', tool,
-      command: conResults(f.command.split('{tool}').join(tool), res),
+      command: conResults(((f.commandFor && f.commandFor(projectDir)) || f.command).split('{tool}').join(tool), res),
       commandWithoutCoverage: f.commandWithoutCoverage ? conResults(f.commandWithoutCoverage.split('{tool}').join(tool), res) : null,
       results: { ...f.results, path: conResults(f.results.path, res) },
       coverage: f.coverage ? { ...f.coverage, path: conResults(f.coverage.path, res) } : null,
@@ -312,6 +317,7 @@ function detectorFiles(stack) {
     { file: 'pytest.ini', name: 'pytest' }, { file: 'conftest.py', name: 'pytest' }, { file: 'pyproject.toml', name: 'pytest' },
     { file: 'setup.cfg', name: 'pytest' }, { file: 'go.mod', name: 'go' }, { file: 'pom.xml', name: 'maven' },
     { file: 'build.gradle', name: 'gradle' }, { file: 'build.gradle.kts', name: 'gradle' }, { file: 'karma.conf.js', name: 'karma' },
+    { file: 'angular.json', name: 'karma' },
     ...PLAYWRIGHT_CONFIGS.map((file) => ({ file, name: 'playwright' })),
   ];
 }

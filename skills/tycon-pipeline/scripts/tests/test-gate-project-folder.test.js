@@ -239,3 +239,24 @@ test('T8 CoverageReviewer_NoStack_W11NotC1 @story-7.45 @ac-8 @ac-9 — el reviso
   const paso8 = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   assert.match(paso8, /pruebas no medidas: el portón no sabe correr/);
 });
+
+test('TestGate_NoArranco_ConHermanoVerde_NoEsVerde — la herramienta que no arrancó en el repo de la story no se combina como «sin pruebas acá»: el total queda «sin medir»', () => {
+  const bin = herramientas();
+  // Karma que no arranca: el plugin de Angular CLI fuera de `ng test`
+  fs.writeFileSync(path.join(bin, 'npx'), `#!/usr/bin/env bash
+if [ "$1" = "karma" ]; then echo "ERROR [karma-server]: Server start failed on port 9876: Error: The karma plugin is meant to be used from within Angular CLI" >&2; exit 1; fi
+echo "npx falso: $*" >&2; exit 127
+`);
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tgs-hermano-')));
+  const mover = (d, destino) => { fs.renameSync(d, destino); return destino; };
+  const back = mover(repo({ '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n', 'karma.conf.js': 'module.exports = () => {}\n',
+    'src/a.ts': 'x\n', 'specs/s.md': STORY(['src/a.ts', 'Front/backend/app/precios.py']) }, ['src/a.ts']), path.join(raiz, 'Back'));
+  mover(repo(BACK, ['backend/app/precios.py']), path.join(raiz, 'Front'));
+  const home = casa();
+  const mk = markerFalso(home, 'tgs-na', back);
+  const r = correr(back, { bin, home, sid: 'tgs-na', story: path.join(back, 'specs', 's.md') });
+  assert.equal(r.status, 3, r.out);
+  assert.equal(r.art.all_green, false, JSON.stringify(r.art));
+  assert.equal(r.art.not_measured, true);
+  assert.equal(JSON.parse(fs.readFileSync(mk, 'utf8')).checks.tests, 'sin-medir');
+});

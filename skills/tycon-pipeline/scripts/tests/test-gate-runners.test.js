@@ -331,3 +331,106 @@ test('@story-8.48 @ac-12 TestGate_Parts_SealedCopyIsTheTotal', () => {
   assert.ok(fs.existsSync(sello), `${r.stdout}\n${r.stderr}`);
   assert.equal(JSON.parse(fs.readFileSync(sello, 'utf8')).suite_green, false);
 });
+
+// ── Angular CLI, la herramienta que no arrancó y el Node de la época ───────────────────────────────────────────────
+
+/** Un npx falso de un solo caso: `cuerpo` es bash; `$1` es la herramienta (ng, karma). */
+function npxFalso(cuerpo) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-npx-'));
+  fs.writeFileSync(path.join(bin, 'npx'), `#!/usr/bin/env bash
+${cuerpo}
+echo "npx falso: no sé correr $*" >&2; exit 127
+`);
+  fs.chmodSync(path.join(bin, 'npx'), 0o755);
+  return bin;
+}
+const ANGULAR = {
+  'angular.json': '{"projects":{}}\n', 'karma.conf.js': 'module.exports = () => {}\n',
+  'package.json': '{"dependencies":{"@angular/core":"~9.1.0"},"devDependencies":{"@angular/cli":"9.1.0","karma":"4.3.0"}}\n',
+  'src/app.ts': 'export const a = 1\n',
+};
+const PLUGIN_FUERA_DE_NG = "ERROR [karma-server]: Server start failed on port 9876: Error: The '@angular-devkit/build-angular/plugins/karma' karma plugin is meant to be used from within Angular CLI and will not work correctly outside of it.";
+
+test('TestGate_AngularCli_CorreNgTestYCuentaPorLaConsola — un proyecto de Angular CLI corre ng test sin vigilar, en un navegador sin pantalla, y cuenta sin karma-junit-reporter', () => {
+  const bin = npxFalso(`if [ "$1" = "ng" ]; then
+  [[ " $* " == *" --watch=false "* && " $* " == *" --browsers=ChromeHeadless "* ]] || { echo "ng sin las banderas: $*"; exit 9; }
+  echo "Chrome Headless 120.0 (Mac OS 10.15.7): Executed 13 of 14 (skipped 1) SUCCESS (0.31 secs / 0.25 secs)"; exit 0
+fi
+if [ "$1" = "karma" ]; then echo "${PLUGIN_FUERA_DE_NG}"; exit 1; fi`);
+  const d = repo(ANGULAR, ['src/app.ts']);
+  const r = correr(d, { bin });
+  assert.equal(r.status, 0, r.out);
+  assert.equal(r.art.runner, 'karma');
+  assert.deepEqual([r.art.totals.total, r.art.totals.executed, r.art.totals.passed, r.art.totals.skipped], [14, 13, 13, 1], JSON.stringify(r.art.totals));
+  assert.equal(r.art.suite_green, true);
+  assert.doesNotMatch(r.out, /karma-junit-reporter/, 'el pedido del reportero no sale en cada corrida de Angular');
+  assert.doesNotMatch(r.out, /nvm|openssl-legacy-provider/, 'sin la falla, ningún aviso del Node de la época');
+});
+
+test('TestGate_AngularCli_FallasEnLaConsola_EsRojo — las pruebas que fallan en la consola de Karma siguen siendo un rojo', () => {
+  const bin = npxFalso(`if [ "$1" = "ng" ]; then echo "Chrome Headless 120.0: Executed 23 of 23 (8 FAILED) (0.4 secs / 0.3 secs)"; exit 1; fi`);
+  const d = repo(ANGULAR, ['src/app.ts']);
+  const r = correr(d, { bin });
+  assert.equal(r.status, 1, r.out);
+  assert.equal(r.art.totals.failed, 8, JSON.stringify(r.art.totals));
+  assert.equal(r.art.totals.total, 23);
+  assert.ok(!r.art.not_started, JSON.stringify(r.art));
+});
+
+test('TestGate_RunnerNoArranco_EsSinMedirNoRojo — la herramienta que no arrancó (ninguna prueba corrió) deja «sin medir», no un rojo', () => {
+  const bin = npxFalso(`if [ "$1" = "karma" ]; then echo "${PLUGIN_FUERA_DE_NG}" >&2; exit 1; fi`);
+  const d = repo({ 'karma.conf.js': 'module.exports = () => {}\n', 'src/a.ts': 'x\n' }, ['src/a.ts']);
+  const r = correr(d, { bin });
+  assert.equal(r.status, 3, r.out);
+  assert.equal(r.art.suite_green, false);
+  assert.ok(r.art.not_started, JSON.stringify(r.art));
+  assert.match(r.out, /no arrancó/);
+  assert.match(r.out, /Server start failed/, 'dice lo que escribió la herramienta');
+  assert.doesNotMatch(r.out, /🔴/, 'no lo llama rojo');
+});
+
+test('TestGate_AngularQueNoCompila_SigueRojo — un error de compilación no es «no arrancó»: es un rojo del código', () => {
+  const bin = npxFalso(`if [ "$1" = "ng" ]; then echo "ERROR in src/app.ts:1:14 - error TS2304: Cannot find name 'b'." >&2; echo "Executed 0 of 0 ERROR (0.001 secs / 0 secs)"; exit 1; fi`);
+  const d = repo(ANGULAR, ['src/app.ts']);
+  const r = correr(d, { bin });
+  assert.equal(r.status, 1, r.out);
+  assert.ok(!r.art.not_started, JSON.stringify(r.art));
+});
+
+test('TestGate_AngularViejoNodeNuevo_DiceQueInstalarSoloSiFalla — con la firma de OpenSSL 3 o de reading range, una línea con el Node de su época', () => {
+  for (const firma of ['Error: error:0308010C:digital envelope routines::unsupported',
+    "TypeError: Cannot read properties of undefined (reading 'range')"]) {
+    const bin = npxFalso(`if [ "$1" = "ng" ]; then echo "${firma}" >&2; exit 1; fi`);
+    const d = repo(ANGULAR, ['src/app.ts']);
+    const r = correr(d, { bin });
+    assert.notEqual(r.status, 0, r.out);
+    assert.match(r.out, /Angular 9/, firma);
+    assert.match(r.out, /nvm install 12/, firma);
+    assert.equal((r.out.match(/nvm install/g) || []).length, 1, 'una sola línea');
+    assert.match(String(r.art.node_hint), /Node 12/, firma);
+  }
+});
+
+test('TestGate_Karma_ErroresDelCodigoSiguenRojos — no compila con esbuild, o un spec que tira al cargar: rojo, no «sin medir»', () => {
+  for (const salida of [
+    "✘ [ERROR] TS2304: Cannot find name 'b'. [plugin angular-compiler]",
+    'Chrome Headless 120.0: Executed 0 of 0 ERROR (0.001 secs / 0 secs)\nAn error was thrown in afterAll\nUncaught TypeError: x is not a function thrown',
+  ]) {
+    const bin = npxFalso(`if [ "$1" = "ng" ]; then printf '%s\\n' "${salida.replace(/\n/g, '" "')}"; exit 1; fi`);
+    const d = repo(ANGULAR, ['src/app.ts']);
+    const r = correr(d, { bin });
+    assert.equal(r.status, 1, `${salida}: ${r.out}`);
+    assert.ok(!r.art.not_started, JSON.stringify(r.art));
+  }
+});
+
+test('TestGate_Karma_VariosNavegadores_SeSuman — cada navegador cuenta, y una corrida cortada no es «salteada»', () => {
+  const bin = npxFalso(`if [ "$1" = "ng" ]; then
+  printf 'Chrome: Executed 1 of 10\\rChrome: Executed 10 of 10 (2 FAILED)\\nFirefox: Executed 10 of 10 SUCCESS\\nEdge: Executed 4 of 10 DISCONNECTED\\n'; exit 1
+fi`);
+  const d = repo(ANGULAR, ['src/app.ts']);
+  const r = correr(d, { bin });
+  assert.equal(r.status, 1, r.out);
+  assert.deepEqual([r.art.totals.total, r.art.totals.executed, r.art.totals.failed, r.art.totals.skipped], [30, 24, 2, 0], JSON.stringify(r.art.totals));
+  assert.match(String(r.art.incomplete), /se cortó/);
+});

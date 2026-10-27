@@ -265,7 +265,8 @@ correr_hermanos_al_salir() {
     # Un rojo de verdad gana; «sin acotar» (7) gana sobre verde y sobre «sin pruebas» (3).
     if [[ "$final" == "0" || "$final" == "3" || "$final" == "7" ]] && [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then final="$hrc"
     elif [[ "$final" == "0" || "$final" == "3" ]] && [[ "$hrc" == "7" ]]; then final=7
-    elif [[ "$final" == "3" && "$hrc" == "0" ]]; then final=0; fi
+    # el 3 de «la herramienta no arrancó» no es «sin pruebas acá»: este repo tiene pruebas y no se midieron
+    elif [[ "$final" == "3" && "$hrc" == "0" && -z "${TG_NOT_MEASURED:-}" ]]; then final=0; fi
   done <<< "$blancos"
   node -e '
     const fs = require("fs"), p = require("path");
@@ -311,6 +312,10 @@ correr_hermanos_al_salir() {
     marcar_tests_en_rojo 7 "sin acotar: la cubre la CI del pedido (un repo hermano no se pudo acotar a lo tocado); no es verde"
     ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "un repo hermano no se pudo acotar a lo tocado" ) >&2 || true
     echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — el merge exige la CI completa en verde." >&2
+  elif [[ "$final" == "3" && -n "${TG_NOT_MEASURED:-}" ]]; then
+    # la corrida del hermano dejó su verde en el marcador: el total vuelve a «sin medir»
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-measured "$TG_NOT_MEASURED" ) >&2 \
+      || marcar_tests_en_rojo 3 "pruebas no medidas (no pude anotar «sin medir»): $TG_NOT_MEASURED"
   elif [[ "$final" != "0" ]]; then
     marcar_tests_en_rojo "$final" "el total de la story (este repo + sus repos hermanos) no está en verde: salida $final"
   fi
@@ -1007,6 +1012,25 @@ TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/t
 # 🔴 Una suite que sale 0 sin haber corrido ninguna prueba (o sin informe que lo cuente) NO es verde (story 8.17,
 # AC 50: «nunca pasaron»). El informe ya lo dejó dicho en el artefacto; acá el check `tests` del marcador queda en
 # rojo con el mismo motivo —`run-check` ya lo había puesto verde por la salida 0— y el gate sale 6.
+# La herramienta no arrancó (el informe lo dejó en `not_started`): salió con error sin correr ninguna prueba y sin un
+# error del código. No es un rojo de las pruebas: es «sin medir», con lo que escribió la herramienta. En una parte o un
+# repo hermano sigue contando como falla: ahí la salida 3 es «sin pruebas acá» y el total podría salir verde.
+_NO_ARRANCO=""
+[[ -n "$GENERICO" && "$SUITE_EXIT" != "0" ]] && _NO_ARRANCO="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.not_started?String(j.not_started.reason||"sin detalle"):"")}catch(e){}' "$OUT_FILE")"
+if [[ -n "$_NO_ARRANCO" ]]; then
+  echo "🟡 [test-gate] sin medir: $RUNNER no arrancó y no corrió ninguna prueba. Escribió: $_NO_ARRANCO" >&2
+  echo "   No es verde ni rojo: arreglá cómo se lanza la herramienta y volvé a medir." >&2
+  if [[ "${TYCON_TEST_GATE_PART:-}" != "1" && "${TYCON_TEST_GATE_COMPANION:-}" != "1" ]]; then
+    TG_NOT_MEASURED="la herramienta de pruebas ($RUNNER) no arrancó: $_NO_ARRANCO"
+    # quien lee sólo el artefacto (el revisor de cobertura) tiene que ver «sin medir», no el rojo de la herramienta
+    node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));j.gate_exit=3;j.not_measured=true;fs.writeFileSync(process.argv[1],JSON.stringify(j,null,2)+"\n")}catch(e){}' "$OUT_FILE" || true
+    if ! ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-measured "$TG_NOT_MEASURED" ) >&2; then
+      marcar_tests_en_rojo 3 "pruebas no medidas (no pude anotar «sin medir»): $RUNNER no arrancó"
+    fi
+    exit 3
+  fi
+  exit 1
+fi
 if [[ "$SUITE_EXIT" == "7" ]] && ! { [[ "$RUNNER" == "suites-json" ]] && es_sin_acotar "$OUT_FILE"; }; then
   echo "🔴 [test-gate] la suite salió 7 y no es «sin acotar» (no hay constancia de una corrida cruzada sin acotar): es un rojo; el gate sale 1" >&2
   SUITE_EXIT=1
