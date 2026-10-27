@@ -1238,9 +1238,11 @@ test('Confirmar_RevisionFalla_ElMotivoEnElRenglon — un rechazo de la revisión
 });
 
 // En un navegador de verdad, contra el sitio entero y el GitHub de juguete. Playwright no es una dependencia del arnés:
-// se busca en TYCON_PLAYWRIGHT (la carpeta del módulo) o entre los módulos de node; sin él, se saltea con constancia.
-const PLAYWRIGHT = (() => { try { return require(process.env.TYCON_PLAYWRIGHT || 'playwright'); } catch { return null; } })();
-const SIN_NAVEGADOR = (!PLAYWRIGHT && 'Playwright no está en esta máquina (TYCON_PLAYWRIGHT=<carpeta del módulo playwright>)') || SIN_BACKEND;
+// se usa su versión fija (scripts/lib/pinned-playwright.js), nunca la que haya entre los módulos de node; sin ella, se
+// saltea con constancia.
+const PINNED_PW = require('../lib/pinned-playwright.js');
+const PLAYWRIGHT = PINNED_PW.load();
+const SIN_NAVEGADOR = (!PLAYWRIGHT && PINNED_PW.locate().why) || SIN_BACKEND;
 
 test('Confirmar_EnElNavegador_RecorridoCompleto — Confirmar, la confirmación en el renglón, el pedido abierto y su enlace ahí mismo', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
   const informados = H.informados({ 'maq-c': 'c@acme.example' });

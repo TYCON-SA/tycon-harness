@@ -5148,15 +5148,16 @@ test('T75 Config_Pedidos_ValorInvalido_ProblemaDelLector @story-4.11 @ac-43', as
 
 // T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43
 // En un navegador de verdad, contra el sitio entero, el GitHub de juguete y el repo de operaciones por HTTP. Playwright no
-// es una dependencia del arnés: se busca en TYCON_PLAYWRIGHT o entre los módulos de node; sin él se saltea con constancia,
-// salvo con la llave exigente (E2E_REQUIRED=1), que lo hace fallar.
+// es una dependencia del arnés: se usa su versión fija (scripts/lib/pinned-playwright.js), nunca la que haya entre los
+// módulos de node; sin ella se saltea con constancia, salvo con la llave exigente (E2E_REQUIRED=1), que lo hace fallar.
 // 🔴 Falla con: que la organización y el proyecto no se puedan cargar en la pantalla, que la propuesta no los lleve, o que
 //    la prueba se saltee sin navegador con la llave exigente prendida.
-const PLAYWRIGHT = (() => { try { return require(process.env.TYCON_PLAYWRIGHT || 'playwright'); } catch { return null; } })();
+const PINNED_PW = require('../lib/pinned-playwright.js');
+const PLAYWRIGHT = PINNED_PW.load();
 const SIN_NAVEGADOR = process.env.E2E_REQUIRED === '1' ? false
-  : (!PLAYWRIGHT && 'Playwright no está en esta máquina (TYCON_PLAYWRIGHT=<carpeta del módulo playwright>)') || SIN_BACKEND;
+  : (!PLAYWRIGHT && PINNED_PW.locate().why) || SIN_BACKEND;
 test('T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
-  assert.ok(PLAYWRIGHT, 'con la llave exigente prendida, Playwright tiene que estar (TYCON_PLAYWRIGHT)');
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
   assert.ok(!SIN_BACKEND, `con la llave exigente prendida: ${SIN_BACKEND}`);
   const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
   let gh, r, dir;
