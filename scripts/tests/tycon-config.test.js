@@ -298,6 +298,32 @@ const GH_LOWER = 'gh' + 'p_abcdefghijklmnopqrstuvwxyz1234567890';
 const AWS_SHAPE = 'AKIA' + 'IOSFODNN7EXAMPLE';
 const PEM_BEGIN = '-----BEGIN RSA PRIVATE ' + 'KEY-----';
 const SLACK_SHAPE = 'xox' + 'b-1234567890-abcdefghij';
+const API_SHAPE = 'sk' + '-abcdefghijklmnop1234';
+
+// Las formas que el escaneo de secretos de GitHub reconoce: ninguna prueba del repo escribe un valor así entero
+const FORMAS_DE_PROVEEDOR = /(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|sk_(?:live|test)_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9]{16,}|glpat-[\w-]{12,}|AIza[\w-]{20,}|npm_[A-Za-z0-9]{16,}|xox[abprs]-[\w-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[\w-]{10,}\.eyJ[\w-]{10,}\./;
+test('T3 ProviderShapes_NoTestWritesAWholeKey: ningún archivo de pruebas del repo trae entero un valor con forma de secreto de proveedor', () => {
+  const raiz = path.resolve(__dirname, '..', '..');
+  const hallados = [];
+  // sin seguir enlaces ni entrar en .advisors: ahí otras suites arman y borran carpetas personales de juguete
+  // mientras esta corre, y esas carpetas enlazan de vuelta al repo
+  const recorrer = (dir) => {
+    let entradas;
+    try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+    for (const e of entradas) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) { if (!['node_modules', '.git', '.advisors'].includes(e.name)) recorrer(abs); continue; }
+      if (!e.isFile() || !/\.test\.(?:js|mjs|ts|sh)$/.test(e.name)) continue;
+      const rel = path.relative(raiz, abs);
+      fs.readFileSync(abs, 'utf8').split('\n').forEach((linea, i) => {
+        if (FORMAS_DE_PROVEEDOR.test(linea)) hallados.push(`${rel}:${i + 1}`);
+      });
+    }
+  };
+  recorrer(raiz);
+  assert.deepEqual(hallados, [], `armalos por partes, como las constantes de arriba: ${hallados.join(', ')}`);
+});
+
 // Un JWT son tres tramos unidos por puntos: {"alg":"HS256"}, {"sub":"dev"} y la firma (una larga y una corta).
 const JWT_PARTS = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJkZXYifQ'];
 const JWT_LONG = [...JWT_PARTS, 'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'].join('.');
@@ -389,9 +415,9 @@ test('T5 Config_ComentarioConDatoPersonal_SigueRechazado — lo inequívoco (ema
     // armado en pedazos: escrito entero, el freno de nombres en castellano lo lee como una variable; y el pedazo
     // de la derecha, escrito entero, tiene la forma de una llave de AWS: por eso viene de la constante
     [{ __doc: 'TYCON_' + AWS_SHAPE }, '__doc', /AWS/],
-    [{ __doc: 'clave: TYCON_ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123' }, '__doc', /GitHub/],
+    [{ __doc: 'clave: TYCON_' + GH_UPPER }, '__doc', /GitHub/],
     [{ __doc: `ver ${SLACK_SHAPE}` }, '__doc', /Slack/],
-    [{ __doc: 'usar sk-abcdefghijklmnop1234' }, '__doc', /API/],
+    [{ __doc: `usar ${API_SHAPE}` }, '__doc', /API/],
     [{ __doc: 'la contraseña: password=hunter2' }, '__doc', /credencial/],
     [{ __doc: 'secret: s3cr3t0' }, '__doc', /credencial/],
     [{ __doc: 'chat_id: 1122334455' }, '__doc', /credencial/],
