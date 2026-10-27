@@ -158,7 +158,7 @@ function anotarApagado(advisors) {
   const sessionId = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID;
   if (!sessionId) return;
   try {
-    const dir = path.join(os.homedir(), '.claude', '.tycon-pipeline');
+    const dir = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
     fs.mkdirSync(dir, { recursive: true });
     const linea = { ts: new Date().toISOString(), sessionId, kind: 'LIVENESS_PRECOMMIT_OFF', advisors, cwd: process.cwd() };
     fs.appendFileSync(path.join(dir, 'bypass.log'), JSON.stringify(linea) + '\n', 'utf8');
