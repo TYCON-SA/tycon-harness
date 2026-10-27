@@ -5785,7 +5785,7 @@ function projectRunToStoryRepo(runDir, storyPath) {
 // la maqueta aprobada, la corrida abierta trae además su línea, también con un solo repo. Las carpetas son las que mira
 // el portón (`carpetasDeCorrida`: la raíz y las subcarpetas de primer nivel).
 // Devuelve { medido, motivo?, storyRepo, mismo, proyecciones, faltas: [{ corrida, dir, regla, detalle, abierta }] }.
-function aprobacionesEnElRepoDeLaStory({ runDir, storyPath, storyId, codeRepo, maquetaAprobada }) {
+function aprobacionesEnElRepoDeLaStory({ runDir, storyPath, storyId, codeRepo, maquetaAprobada, ref = 'origin/main' }) {
   const ec = require('./lib/evidence-config.js');
   const approvals = require('./lib/approvals.js');
   const storyRepo = storyPath ? ec.discoverRepoRoot(storyPath) : null;
@@ -5830,7 +5830,8 @@ function aprobacionesEnElRepoDeLaStory({ runDir, storyPath, storyId, codeRepo, m
     }
     const registro = approvals.leer(dir);
     // `advisors_exempt` perdona que falte el registro o el plan, como en el portón; un registro malo frena igual.
-    const p = approvals.problemasDelRegistro({ registro, roster }).filter((x) => !(exenta && approvals.POR_FALTA.has(x.regla))).slice(0, 1);
+    const anterior = approvals.anteriorAlControl(dir, path.basename(dir), ref);
+    const p = approvals.problemasDelRegistro({ registro, roster, anterior }).filter((x) => !(exenta && approvals.POR_FALTA.has(x.regla))).slice(0, 1);
     if (maquetaAprobada && abiertaAca && !p.length) {
       const m = approvals.faltaLaMaqueta(registro);
       if (m) p.push(m);

@@ -164,15 +164,46 @@ function resumir(lineas) {
   return r;
 }
 
+/** El día desde el que la corrida copia su registro al repo de la story (AAAAMMDD). */
+const DESDE_EN_LA_STORY = '20261026';
+
+/**
+ * La fecha (AAAAMMDD) del nombre de una carpeta de corrida, o null. Hay dos formas en los repos reales:
+ * `1.1-AAAAMMDDhhmmss` y `4.2-AAAAMMDD-hhmm`.
+ */
+function selloDeCorrida(nombre) {
+  const m = String(nombre).match(/-(\d{8})(?:-?\d*)?$/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Si la corrida de `dir` es anterior a `DESDE_EN_LA_STORY` por algo que el agente no elige: el nombre trae una fecha
+ * anterior Y su `review-roster.json` entró antes de ese día en la historia de `ref` (la base del pedido en el portón,
+ * `origin/main` en la máquina). Un nombre viejo sin ese rastro, una ref que no existe o un git que falla: no es anterior.
+ */
+function anteriorAlControl(dir, nombre, ref = 'origin/main') {
+  const sello = selloDeCorrida(nombre);
+  if (!sello || sello >= DESDE_EN_LA_STORY || !ref) return false;
+  let salida;
+  try {
+    salida = require('child_process').execFileSync('git', ['-C', dir, 'log', ref, '--diff-filter=A', '--format=%cs', '--', 'review-roster.json'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (_e) { return false; }
+  const fechas = salida.split('\n').map((l) => l.trim().replace(/-/g, '')).filter((l) => /^\d{8}$/.test(l));
+  return fechas.length > 0 && fechas[fechas.length - 1] < DESDE_EN_LA_STORY;
+}
+
 /**
  * Lo que le falta al registro de una corrida, con la regla que aplican el portón de CI y el cierre del pipeline.
  * `registro` es lo que devuelve `leer`; `roster`, el `review-roster.json` de la misma carpeta (o null). La ausencia
- * cuenta sólo si la corrida declara que la hizo un arnés que anota aprobaciones (`roster.registro_aprobaciones`).
+ * cuenta sólo si la corrida declara que la hizo un arnés que anota aprobaciones (`roster.registro_aprobaciones`) y no
+ * es `anterior` al control (`anteriorAlControl`): antes de `DESDE_EN_LA_STORY` el registro quedaba sólo en el repo del
+ * código y el repo de la story no pudo recibirlo. Un registro presente y malo cuenta siempre.
  * Devuelve la lista en orden: registro ilegible, registro ausente, plan sin anotar. Vacía = no falta nada.
  */
-function problemasDelRegistro({ registro, roster }) {
+function problemasDelRegistro({ registro, roster, anterior = false }) {
   const p = [];
-  const exigible = !!(roster && roster.registro_aprobaciones);
+  const exigible = !!(roster && roster.registro_aprobaciones) && !anterior;
   if (registro.error || registro.ilegibles) {
     p.push({ regla: 'registro-de-aprobaciones-invalido',
       detalle: registro.error ? `no se puede leer (${registro.error})` : `tiene ${registro.ilegibles} línea(s) que no son JSON` });
@@ -271,5 +302,5 @@ function unir(origenDir, destinoDir) {
 
 module.exports = {
   FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
-  problemasDelRegistro, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA,
+  problemasDelRegistro, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA, DESDE_EN_LA_STORY, selloDeCorrida, anteriorAlControl,
 };

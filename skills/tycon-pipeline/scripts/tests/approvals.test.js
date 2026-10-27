@@ -804,3 +804,57 @@ test('Cierre_CorridaVieja_ArregloDeCorridaVieja @story-8.133 @ac-20', () => {
   assert.match(r.stderr, /advisors_exempt/);
   assert.doesNotMatch(r.stderr, /complete-step approve-plan/, 'approve-plan anota en la abierta, no en la vieja');
 });
+
+test('Cierre_CorridaAnteriorAlControl_NoFrena', () => {
+  // Una corrida que arrancó antes de que el registro se exigiera en el repo de la story no pudo dejarlo ahí: la falta
+  // avisa en el portón y no frena en ninguno de los dos. «Antes» lo dicen el nombre Y la historia (su roster entró
+  // antes de ese día). Desde el día del control, la misma falta frena.
+  const ANTES = '9.95-20261025120000';
+  const DESDE = '9.95-20261026120000';
+  const { storyRepo, codeRepo, story } = dosRepos();
+  const runDir = corridaEn(codeRepo, CORRIDA, { registro: plan });
+  const vieja = corridaEn(storyRepo, ANTES);
+  const git = gitEn(storyRepo);
+  git('add', '.'); git('commit', '-qm', 'corrida vieja');
+  const cerrar = () => pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo, maquetaAprobada: false, ref: 'HEAD' });
+  assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true);
+  let r = cerrar();
+  assert.deepEqual(r.faltas, [], JSON.stringify(r.faltas));
+  let porton = revisarAprobaciones(storyRepo, '9.95', story, 'HEAD');
+  assert.deepEqual(porton.hallazgos, [], JSON.stringify(porton.hallazgos));
+  assert.ok(porton.avisos.some((a) => a.regla === 'sin-registro-de-aprobaciones' && a.mensaje.includes(ANTES)), JSON.stringify(porton.avisos));
+  // un registro presente y malo frena igual, sea de la fecha que sea
+  fs.writeFileSync(path.join(vieja, approvals.FILE), `${plan}esto no es json\n`);
+  r = cerrar();
+  assert.deepEqual(r.faltas.map((f) => f.regla), ['registro-de-aprobaciones-invalido']);
+  fs.rmSync(path.join(vieja, approvals.FILE));
+  // la corrida del día del control frena por la misma falta, en los dos
+  corridaEn(storyRepo, DESDE);
+  r = cerrar();
+  assert.deepEqual(r.faltas.map((f) => [f.corrida, f.regla]), [[DESDE, 'sin-registro-de-aprobaciones']]);
+  porton = revisarAprobaciones(storyRepo, '9.95', story, 'HEAD');
+  assert.deepEqual(porton.hallazgos.map((h) => h.regla), ['sin-registro-de-aprobaciones']);
+});
+
+test('Cierre_NombreViejoSinRastro_Frena', () => {
+  // La fecha del nombre la elige quien crea la carpeta: sin el rastro en la historia, una corrida con nombre viejo se
+  // exige igual. Tampoco alcanza un roster que entró a la historia desde el día del control, ni una ref que no existe.
+  const ANTES = '9.95-20261020120000';
+  const { storyRepo, codeRepo, story } = dosRepos();
+  const runDir = corridaEn(codeRepo, CORRIDA, { registro: plan });
+  const vieja = corridaEn(storyRepo, ANTES);
+  const cerrar = (ref) => pl().aprobacionesEnElRepoDeLaStory({ runDir, storyPath: story, storyId: '9.95', codeRepo, maquetaAprobada: false, ref });
+  assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), false);
+  assert.deepEqual(cerrar('HEAD').faltas.map((f) => [f.corrida, f.regla]), [[ANTES, 'sin-registro-de-aprobaciones']]);
+  assert.deepEqual(revisarAprobaciones(storyRepo, '9.95', story, 'HEAD').hallazgos.map((h) => h.regla), ['sin-registro-de-aprobaciones']);
+  // commiteada hoy, con el nombre viejo: frena igual
+  const hoy = { ...process.env, GIT_AUTHOR_DATE: '2026-10-27T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-27T12:00:00Z' };
+  for (const a of [['add', '.'], ['commit', '-qm', 'corrida nueva con nombre viejo']]) {
+    execFileSync('git', ['-C', storyRepo, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { stdio: 'ignore', env: hoy });
+  }
+  assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), false);
+  assert.deepEqual(cerrar('HEAD').faltas.map((f) => f.regla), ['sin-registro-de-aprobaciones']);
+  // una ref que no existe no la vuelve anterior
+  assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'origin/main'), false);
+  assert.deepEqual(cerrar('origin/main').faltas.map((f) => f.regla), ['sin-registro-de-aprobaciones']);
+});
