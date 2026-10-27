@@ -194,6 +194,23 @@ guardada, con la fecha de cuándo es, mientras el buzón se vuelve a bajar enter
 día sola. Los cambios de cada ejecución vuelven cuando termina de armarse la vista nueva. La vista guardada vive en el
 disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pestaña espera la primera bajada entera.
 
+### Mantenimiento
+
+Sólo para **quien mantiene**: lo que encontró la noche y espera una decisión. Al lado del nombre, en el menú, va
+cuántas fichas esperan, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. Son tres fuentes: la revisión de las
+ejecuciones (un control salteado, un aviso automático que falla), las dependencias con una vulnerabilidad conocida y
+el vigilante de producción. Cada fila dice:
+
+- **Qué pasó**, en llano: cuántas veces, en qué máquinas y en qué stories. Por ejemplo, «Pasó 2 veces, en la máquina
+  mac-mini, en dos stories distintas».
+- **Qué haría «Arreglar»**: un texto fijo según el tipo de problema, por ejemplo «averiguar quién apagó el control y por
+  qué, y volverlo a prender». Si el modelo de la noche dejó una propuesta, va debajo como sugerencia.
+
+Los botones se explican una vez, arriba de la tabla. **Aceptar** quiere decir «está bien así»: la ficha se archiva.
+**Arreglar** la deja como trabajo pendiente. Ninguno de los dos cambia nada en el momento: abren un pedido al repo de
+operaciones que tiene que aprobar otra persona, y la noche siguiente lo aplica. En dependencias sólo se puede arreglar:
+para aceptar el riesgo hay que declarar la deuda en cada repo, con plazo.
+
 ### Proyectos
 
 **Qué contesta:** ¿cómo va cada producto?
@@ -675,12 +692,12 @@ las máquinas se actualizan solas al arrancar.
 
 El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra al sitio»:
 
-| Rol | Inicio | Ejecuciones | Proyectos | Arnés | Cómo trabaja | Configuración |
-|---|---|---|---|---|---|---|
-| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las ejecuciones | todos los productos | sí | sí, y propone cambios a sus revisores | sí, y propone cambios |
-| **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no | no |
-| **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no | no |
-| **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no |
+| Rol | Inicio | Ejecuciones | Mantenimiento | Proyectos | Arnés | Cómo trabaja | Configuración |
+|---|---|---|---|---|---|---|---|
+| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las ejecuciones | sí, y decide cada una | todos los productos | sí | sí, y propone cambios a sus revisores | sí, y propone cambios |
+| **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | no | los productos en los que trabaja | no | no | no |
+| **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | no | los productos en los que trabaja | no | no | no |
+| **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no | no |
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
