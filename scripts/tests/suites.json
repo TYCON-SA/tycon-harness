@@ -3495,6 +3495,12 @@
       ]
     },
     {
+      "__nota": "la suite rápida del arranque corre con tope, una a la vez por máquina y sólo si cambió lo que prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/quick-suite-run.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.18 (2026-10-05): salió de config-lint.test.js (suite del arranque); mira las configuraciones reales de la máquina.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/config-lint-real-configs.test.js",
