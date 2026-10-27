@@ -407,8 +407,8 @@ function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc
   const e = { ts: nowIso, story: String(story), acs: [...acs].sort((a, b) => a - b), matrixHash, approvedBy: approvedBy || null, tty: true };
   if (declHashByAc !== undefined) e.declHashByAc = declHashByAc;
   if (migratedFrom !== undefined) e.migratedFrom = migratedFrom;
-  // firmada con el ok de una persona escrito en el chat (marker.js runtime-waiver --approved-by --quote), no
-  // por terminal: `tty` queda en false y `ok` dice quién, cómo, con qué palabras y a qué hora
+  // firmada fuera de la terminal (en la ventana de permiso; las viejas, con el ok escrito en el chat): `tty` queda en
+  // false y `ok` dice quién y cómo (las viejas, también con qué palabras y a qué hora)
   if (ok !== undefined) { e.tty = false; e.ok = ok; }
   e.chain = sha(prev + canonical(e)).slice(0, 16);
   // Si el archivo quedó sin salto final (recortado a mano en un editor, o una resolución de conflicto), la firma nueva

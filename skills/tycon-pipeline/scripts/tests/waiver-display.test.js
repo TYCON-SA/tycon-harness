@@ -1,8 +1,9 @@
 'use strict';
 /**
  * waiver-display.test.js — firmar un criterio que no se puede probar en vivo: el arnés le muestra el criterio a la
- * persona antes del ok, el ok tiene que nombrarlo, no se acepta el reenvío de otra sesión, y el bloqueo sin terminal
- * dice en llano las dos vías.
+ * persona, la firma la da en la ventana de permiso (la cita del chat ya no firma), no se acepta el reenvío de otra
+ * sesión, y el bloqueo sin terminal dice en llano las dos vías. El juez de la respuesta se prueba en la librería mientras
+ * siga ahí.
  *
  * Todo corre los comandos de verdad contra un HOME y un repo de juguete. 0 deps (node:test).
  */
@@ -16,6 +17,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const TEXTO = 'el aviso queda registrado en el servicio externo del cliente';
 const RAZON = 'el servicio externo no tiene ambiente de prueba';
 // stable-data: las horas de la conversación van después de la muestra, que se anota con el reloj real
@@ -44,7 +46,7 @@ function laboratorio({ sid = 's-wd' } = {}) {
   fs.writeFileSync(path.join(repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.94', suite_green: true }));
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', TYCON_PROFILE: '0', TYCON_WAIVER_LOG: path.join(base, 'home-waivers.jsonl') };
   for (const k of ['TYCON_HOME', 'TYCON_WAIVER_PLATFORM', 'TYCON_WAIVER_IN_WINDOW', 'NODE_TEST_CONTEXT']) delete env[k];
-  const marker = (args, extra = {}) => spawnSync(process.execPath, [MARKER, ...args], { cwd: repo, encoding: 'utf8', env: { ...env, ...extra }, input: '', detached: true });
+  const marker = (args, extra = {}, { ventana = false } = {}) => spawnSync(process.execPath, [MARKER, ...args], { cwd: repo, encoding: 'utf8', env: ventana ? conVentana({ ...env, ...extra }) : { ...env, ...extra }, input: '', detached: true });
   const set = marker(['set', JSON.stringify({ storyId: '9.94', storyPath: story, repoPath: repo })]);
   assert.equal(set.status, 0, set.stderr);
   const runDir = require(PIPELINE).resolveRunDir(repo, '9.94', true, story);
@@ -79,7 +81,7 @@ const mostrar = (lab) => {
   assert.equal(p.status, 0, p.stderr);
   return p.stdout.trim() ? JSON.parse(p.stdout).systemMessage : '';
 };
-const firmar = (lab, quote, extra = []) => lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', quote, ...extra]);
+const firmar = (lab, quote, extra = [], opts = {}) => lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', ...(quote === null ? [] : ['--quote', quote]), ...extra], {}, opts);
 const lineas = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const gates = (lab) => lineas(path.join(lab.home, '.claude', '.tycon-pipeline', 'gates.log'));
 const firmados = (lab) => lineas(require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js')).repoWaiverLogPath(lab.repo));
@@ -109,30 +111,32 @@ test('WaiverShown_Minimal_RequestFile @story-8.78 @ac-2', () => {
   assert.equal(gates(lab).filter((x) => x.name === 'ac-shown').length, 1);
 });
 
-test('WaiverOk_WithoutShowing_NotSigned @story-8.78 @ac-3', () => {
+test('WaiverOk_SinVentana_NotSigned @story-8.78 @ac-3 — el ok escrito en el chat no firma: sin la ventana, frena', () => {
   const lab = laboratorio();
+  mostrar(lab);
   lab.conversar([delDev('firmo el AC 1, el servicio no tiene ambiente de prueba')]);
-  const r = firmar(lab, 'firmo el AC 1, el servicio no tiene ambiente de prueba');
+  const r = firmar(lab, null);
   assert.notEqual(r.status, 0, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /no se le mostró/);
-  assert.match(r.stderr, /firma-pedida\.json/);
+  assert.match(r.stderr, /no pasó por la ventana/);
+  assert.match(r.stderr, /--terminal/);
   assert.equal(firmados(lab).length, 0);
 });
 
-test('WaiverOk_Generic_NotSigned_Named_Signed @story-8.78 @ac-4', () => {
+test('WaiverOk_CitaNoFirma_VentanaFirma @story-8.78 @ac-4 — la cita, aun la que nombra el criterio, no firma; la ventana sí', () => {
   const lab = laboratorio();
   mostrar(lab);
-  lab.conversar([delDev('apruebo, seguí', T(1))]);
-  const g = firmar(lab, 'apruebo, seguí');
-  assert.notEqual(g.status, 0, 'un ok genérico no firma');
-  assert.match(g.stderr, /AC 1/);
-  lab.conversar([delDev('no firmo el AC 1 todavía', T(2))]);
-  assert.notEqual(firmar(lab, 'no firmo el AC 1 todavía').status, 0, 'un ok que lo niega no firma');
+  lab.conversar([delDev('firmo el AC 1', T(1))]);
+  const c = firmar(lab, 'firmo el AC 1', [], { ventana: true });
+  assert.notEqual(c.status, 0, 'la cita no firma');
+  assert.match(c.stderr, /la cita ya no firma un criterio que no se puede probar en vivo/);
   assert.equal(firmados(lab).length, 0);
-  lab.conversar([delDev('no firmo el AC 1 todavía', T(2)), delDev('firmo el AC 1', T(3))]);
-  const ok = firmar(lab, 'firmo el AC 1');
+  const ok = firmar(lab, null, [], { ventana: true });
   assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
-  assert.equal(firmados(lab).length, 1);
+  assert.match(ok.stderr, /Firmado en la ventana de permiso \(Dev de Prueba\)/);
+  const f = firmados(lab);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].ok.via, 'ventana');
+  assert.ok(!('cita' in f[0].ok));
 });
 
 test('WaiverOk_Relayed_Rejected @story-8.78 @ac-5', () => {
@@ -147,38 +151,35 @@ test('WaiverOk_Relayed_Rejected @story-8.78 @ac-5', () => {
 
 test('WaiverBlocked_SaysBothWays @story-8.78 @ac-6', () => {
   const lab = laboratorio();
-  for (const extra of [{}, { TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', TYCON_WAIVER_TIMEOUT_S: '1' }]) {
-    const r = lab.marker(['runtime-waiver', lab.story], extra);
-    assert.notEqual(r.status, 0);
-    const t = r.stderr;
-    assert.match(t, /BLOQUEADO/, t);
-    assert.match(t, /firmo el AC/, 'la vía del chat');
-    assert.match(t, /tu terminal/, 'la vía de la terminal');
-    assert.match(t, /versión del arnés: \S+/i);
-    assert.match(t, /\/tycon-harness/, 'cómo actualizar');
-    if (extra.TYCON_WAIVER_PLATFORM) assert.match(t, /ventana/);
-  }
+  // desde la sesión, sin la ventana: frena y dice cómo firmarlo en la terminal
+  const s = lab.marker(['runtime-waiver', lab.story]);
+  assert.notEqual(s.status, 0);
+  assert.match(s.stderr, /no pasó por la ventana/, s.stderr);
+  assert.match(s.stderr, /runtime-waiver .*--terminal/, 'la vía de la terminal');
+  assert.equal(firmados(lab).length, 0);
+  // en la ventana nueva de Windows, sin terminal de una persona: las dos vías, en llano
+  const r = lab.marker(['runtime-waiver', lab.story], { TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', TYCON_WAIVER_TIMEOUT_S: '1' });
+  assert.notEqual(r.status, 0);
+  const t = r.stderr;
+  assert.match(t, /BLOQUEADO/, t);
+  assert.match(t, /lo aprobás en la ventana de permiso/, 'la vía de la sesión');
+  assert.match(t, /tu terminal/, 'la vía de la terminal');
+  assert.match(t, /versión del arnés: \S+/i);
+  assert.match(t, /\/tycon-harness/, 'cómo actualizar');
 });
 
-test('WaiverShown_OtherCopyOrChangedText_NotSigned @story-8.78 @ac-4', () => {
-  // una copia de la historia con otro texto y la misma razón no se muestra ni se firma; y cambiar el texto del criterio
-  // después de la muestra la deja sin valor: la persona firma lo que vio
+test('WaiverShown_OtherCopy_NotSigned @story-8.78 @ac-4', () => {
+  // una copia de la historia con otro texto y la misma razón no se muestra ni se firma: la persona firma lo que vio
   const lab = laboratorio();
   const copia = path.join(lab.base, 'copia.md');
   fs.writeFileSync(copia, fs.readFileSync(lab.story, 'utf8').replace(TEXTO, 'el botón tiene el color de la marca'));
   const p = puertaBash(lab, `node ${MARKER} runtime-waiver ${copia} --acs 1`);
   assert.equal(p.stdout.trim(), '', 'una historia que no es la de la corrida no se muestra');
   assert.equal(gates(lab).filter((x) => x.name === 'ac-shown').length, 0);
-  const c = lab.marker(['runtime-waiver', copia, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', 'firmo el AC 1']);
+  // ni con la ventana: la copia no es la historia de la corrida
+  const c = lab.marker(['runtime-waiver', copia, '--acs', '1', '--approved-by', 'Dev de Prueba'], {}, { ventana: true });
   assert.notEqual(c.status, 0);
   assert.match(c.stderr, /no es la historia de la corrida/);
-  // mostrada la verdadera, cambia el texto del criterio: la muestra ya no vale para firmar
-  mostrar(lab);
-  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace(TEXTO, 'el aviso queda en cualquier lado'));
-  lab.conversar([delDev('firmo el AC 1')]);
-  const r = firmar(lab, 'firmo el AC 1');
-  assert.notEqual(r.status, 0, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /no se le mostró/);
   assert.equal(firmados(lab).length, 0);
 });
 

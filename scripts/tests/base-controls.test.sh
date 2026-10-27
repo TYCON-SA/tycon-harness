@@ -16,7 +16,8 @@
 #   T6  BaseControls_NewControlInPR_RunsToo — un control nuevo del pedido corre y su rojo cuenta; la base corre igual
 #   T7  BaseControls_StricterControl_OwnTestsGreen_Passes — el pedido endurece el control: verde, sin constancia
 #   T8  BaseControls_LoosenedControl_WithoutApproval_Red_WithApproval_Passes — aflojar: sin la constancia del dueño rojo;
-#       con ella «cambio de control aprobado» nombrando la regla; `approve` sin terminal se niega
+#       con ella «cambio de control aprobado» nombrando la regla; `approve` sin el «Sí» de la ventana no firma, y
+#       `approve --terminal` sin terminal se niega
 #   T9  BaseControls_BaseUnreachable_NotRunRed — la base no se lee: «no pude correr», nunca verde
 #   T10 BaseControls_InventoryMissingScript_Red — el inventario nombra un guion que la base no trae: rojo
 #   T11 BaseControls_UninventoriedControl_Red — el pre-commit llama un guion sin entrada: «control sin inventariar»
@@ -225,9 +226,9 @@ printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
 run "${R}" "${T}/t8a.out"
 is "T8 aflojar sin la constancia del dueño: rojo" "1" "${RC}"
 has "T8 el rojo dice que es un aflojamiento y cómo firmarlo" "${T}/t8a.out" "afloja un control sin la constancia del dueño"
-bash "${SCRIPT}" approve --root "${R}" --base main --range main...pedido < /dev/null > "${T}/t8-approve.out" 2>&1; RC=$?
-is "T8 approve sin terminal se niega (exit 2)" "2" "${RC}"
-has "T8 approve sin terminal dice por qué" "${T}/t8-approve.out" "pide una terminal"
+bash "${SCRIPT}" approve --root "${R}" --file scripts/ci/toy-rules.json --rev HEAD --terminal < /dev/null > "${T}/t8-approve.out" 2>&1; RC=$?
+is "T8 approve --terminal sin terminal se niega (exit 2)" "2" "${RC}"
+has "T8 approve --terminal sin terminal dice por qué" "${T}/t8-approve.out" "pide una terminal"
 [ ! -e "${R}/.tycon/control-changes.jsonl" ] && ok "T8 approve sin terminal no escribe nada" || no "T8 approve sin terminal escribió la constancia"
 # `pending` dice qué cambia y el comando de la firma, nunca la constancia lista para pegar
 bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t8-pending.out" 2>&1
@@ -235,7 +236,9 @@ has "T8 pending da el comando de la firma, con las entradas" "${T}/t8-pending.ou
 lacks "T8 pending no imprime la constancia lista para pegar" "${T}/t8-pending.out" '"by":"dueño"'
 ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t8-pending.out" | head -n 1)"
 bash "${SCRIPT}" approve --root "${R}" --entries "${ENTRIES}" < /dev/null > "${T}/t8-approve2.out" 2>&1; RC=$?
-is "T8 approve --entries sin terminal también se niega" "2" "${RC}"
+is "T8 approve --entries sin el «Sí» de la ventana no firma (exit 1)" "1" "${RC}"
+has "T8 …y lo dice" "${T}/t8-approve2.out" "no se firmó nada"
+[ ! -e "${R}/.tycon/control-changes.jsonl" ] && ok "T8 …sin escribir la constancia" || no "T8 approve sin la ventana escribió la constancia"
 # la constancia, como la escribe el dueño desde su terminal (acá, a mano: la prueba no tiene terminal)
 LINE="$(node -e 'const e=JSON.parse(process.argv[1]);const t=e.map(x=>`${x.path}\t${x.blob}\n`).sort().join("");console.log(JSON.stringify({hash:require("crypto").createHash("sha256").update(t).digest("hex"),rules:e,at:"2026-10-17",by:"dueño"}))' "${ENTRIES}" 2>/dev/null)"
 if [ -n "${LINE}" ]; then mkdir -p "${R}/.tycon"; printf '%s\n' "${LINE}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "constancia"; else no "T8 pending no dio las entradas a firmar"; fi
@@ -696,8 +699,8 @@ mkdir -p "${T}/t18-vacio"
 BASE_CONTROLS_STDIN_INTERACTIVE=1 bash "${SCRIPT}" approve --root "${T}/t18-vacio" --entries '[{"path":"x","blob":"y"}]' < /dev/null > "${T}/t18e.out" 2>&1; RC=$?
 is "T18 approve sobre algo que no es un repo: no pude (exit 2)" "2" "${RC}"
 has "T18 …y lo dice" "${T}/t18e.out" "no pude leer la punta"
-# --file con --rev fuera de HEAD firma esa versión: el chequeo de la punta no aplica (llega a pedir la terminal)
-bash "${SCRIPT}" approve --root "${R}" --file scripts/ci/toy-rules.json --rev main < /dev/null > "${T}/t18f.out" 2>&1
+# --file con --rev fuera de HEAD firma esa versión: el chequeo de la punta no aplica (llega a pedir la firma)
+bash "${SCRIPT}" approve --root "${R}" --file scripts/ci/toy-rules.json --rev main --terminal < /dev/null > "${T}/t18f.out" 2>&1
 lacks "T18 approve --file --rev no choca con el chequeo de la punta" "${T}/t18f.out" "no coinciden con la punta"
 has "T18 …y pide la terminal como siempre" "${T}/t18f.out" "pide una terminal"
 

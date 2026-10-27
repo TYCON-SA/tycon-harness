@@ -11,10 +11,10 @@
  * La muestra el arnés en la pantalla de la persona (`systemMessage`), por el mismo camino que el plan
  * (`plan-display.js`): lo que el agente lee no siempre le llega a la persona.
  *
- * El «no» se aprueba como las otras decisiones en nombre del dev (`critical-waivers.okDeUnaPersona`): el mensaje que
- * escribió la persona, reconocido por su origen, o el que reenvió la sesión que la organización declara como relevo; y
- * además posterior a la oferta mostrada para esa historia. La constancia sola no alcanza: cada freno del cierre vuelve a
- * buscar ese ok en la conversación de la sesión que lo anotó, y sin conversación legible no vale.
+ * El «no» lo aprueba la persona en la ventana de permiso (o en su terminal), después de la oferta mostrada para esa
+ * historia. La constancia sola no alcanza: cada freno del cierre busca la línea de esa firma en el registro del arnés,
+ * entre la oferta y la constancia. Una constancia vieja, de antes de la ventana, se sigue comprobando por la cita en la
+ * conversación de la sesión que la anotó.
  *
  *   · `offerText(clave)`: el texto aprobado, una sola fuente.
  *   · `repoReady(repo)`: ¿el repo resuelve un portón de navegador (`e2eConfig`) y tiene `@playwright/test` instalado
@@ -225,6 +225,14 @@ function okQueNoAparece(g, { home, env } = {}) {
   return null;
 }
 
+function firmaQueNoAparece(g, filas) {
+  const desde = Date.parse(g.offerTs || '');
+  const hasta = Date.parse(g.ts || '');
+  const ok = filas.some((f) => f.name === 'browser-test-signed' && f.via === g.via && f.destino === g.sessionId
+    && Date.parse(f.ts) >= desde && Date.parse(f.ts) <= hasta);
+  return ok ? null : 'no hay constancia de que la persona lo haya aprobado en la ventana de permiso o en su terminal';
+}
+
 function debtDeclared({ stateDir, storyPath, content = null, home = os.homedir(), env = process.env }) {
   let txt = content;
   if (txt == null) {
@@ -243,7 +251,8 @@ function debtDeclared({ stateDir, storyPath, content = null, home = os.homedir()
   const g = rs[rs.length - 1];
   const ofertas = gates(stateDir).filter((o) => o.name === OFFER_SHOWN && o.story === id && o.sessionId === g.sessionId && o.ts === g.offerTs);
   if (!ofertas.length) return { declared: false, motivo: 'no hay constancia de la oferta a la que contestó la persona', story: id };
-  const falta = okQueNoAparece(g, { home, env });
+  // firmada en la ventana o en la terminal: vale la línea de la firma, entre la oferta y la constancia; una vieja, la cita
+  const falta = ['ventana', 'terminal'].includes(g.via) ? firmaQueNoAparece(g, gates(stateDir)) : okQueNoAparece(g, { home, env });
   if (falta) return { declared: false, motivo: falta, story: id };
   // la fecha que se dice es la de la constancia, no la que trae la historia (que se puede editar)
   return { declared: true, story: id, fecha: String(g.ts || marca.fecha).slice(0, 10), cita: marca.cita, quien: g.approvedBy || null };

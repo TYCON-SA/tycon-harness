@@ -5444,14 +5444,15 @@ function topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId }) {
     return null;
   }
   if (args.extraRound) {
-    // el ok responde al aviso del tope de ESTA vuelta (lo anota el arnés al decirlo) y autoriza otra vuelta, sin negarla
-    const cw = require('./lib/critical-waivers.js');
+    // la aprueba la persona en la ventana de permiso (o con --terminal), después del aviso del tope de ESTA vuelta
     const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
-    const r = cw.okDeUnaPersona({ approvedBy: args.approvedBy, quote: args.quote, desde: marcador && marcador.startedAt,
-      respuesta: { desde: aviso && aviso.ts, juez: rr.juezDeLaVuelta(), sinAviso: 'todavía no se avisó el tope de esta vuelta: pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale el ok de la persona' } });
-    if (!r.ok) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}. Una vuelta más allá del tope la autoriza una persona, con sus palabras en esta conversación, después del aviso del tope.\n`;
-    const e = r.entrada;
-    anotar({ name: 'extra-round', status: 'ok', quien: e.quien, cita: e.cita, via: e.via });
+    if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
+    if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
+    const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+    const r = ow.exigir({ firma: 'extra-round', argv: process.argv.slice(1), resumen: `vuelta extra ${iter} de revisores de la story ${storyId}`,
+      propia: sessionIdFileKey(), anotar: (g) => anotar(g) });
+    if (r.codigo !== 0) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}.\n`;
+    anotar({ name: 'extra-round', status: 'ok', quien: args.approvedBy || process.env.USER || 'persona', via: r.via });
     return null;
   }
   const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
@@ -5460,11 +5461,10 @@ function topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId }) {
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
-    renglones.push('   (a) Una vuelta más para arreglarlo: con su ok, el mismo comando con');
-    renglones.push(`       --extra-round --approved-by "<la persona>" --quote "<sus palabras, textuales>"`);
-    renglones.push('       o, si el perfil del equipo la delega, con --extra-round --delegated después de que la sesión designada la apruebe');
-    renglones.push('       (el dueño le escribe «aprobá una vuelta más» en su chat).');
-    renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (el arnés le muestra el crítico y ella contesta).');
+    renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
+    renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, con --extra-round --delegated después de');
+    renglones.push('       que la sesión designada la apruebe (el dueño le escribe «aprobá una vuelta más» en su chat).');
+    renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (la persona lo aprueba en la ventana de permiso).');
   }
   if (deuda.length) {
     renglones.push(`   ${bloquean.length ? 'El resto' : 'Lo abierto'} queda como deuda visible (${deuda.length}) y el recorrido sigue sin otra vuelta:`);
@@ -5950,14 +5950,11 @@ function writeFindings(args) {
     const rev = cw.revisar(records, runDir, { reverificar: true, story: storyId });
     const faltan = rev.faltan;
     if (faltan.length) {
-      const rs = cw.sesionQueReenvia();
-      const relay = rs.valor;
       const marker = path.join(__dirname, 'marker.js');
       const lineas = [`Un crítico lo decide una persona: ${faltan.length} CRITICAL marcado(s) como waived sin el ok de una persona:`];
       lineas.push(...cw.renglonesDeFaltantes(rev));
-      lineas.push('Arreglalo, o pedile el ok al dev y anotalo antes de escribir los hallazgos. Los caminos:');
-      for (const f of faltan) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>', relaySession: relay }));
-      if (rs.aviso) lineas.push(`   (sin reenvío: ${rs.aviso})`);
+      lineas.push('Arreglalo, o que el dev lo exima antes de escribir los hallazgos. Los caminos:');
+      for (const f of faltan) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));
       return { error: lineas.join('\n'), criticos_sin_ok: faltan, run_dir: runDir,
         note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
     }

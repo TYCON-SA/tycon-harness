@@ -9,6 +9,8 @@
  * Cada entrada:
  *   id            el nombre con que se la nombra en el perfil del equipo; un escape es `escape:<nombre>`, con los
  *                 espacios como guiones y sin acentos.
+ *   kind          cómo se pide: 'guion' (un guion que firma, y verifica la ventana), 'freno' (un escape que el freno
+ *                 deja pasar con la ventana) o 'archivo' (se firma escribiendo un archivo: no pasa por la ventana).
  *   approves      qué aprueba, en llano.
  *   command       el comando que la pide.
  *   otherSession  'yes' si el comando se puede correr desde la pestaña de otra sesión, 'no' si no, 'pending' si la firma
@@ -30,17 +32,21 @@ const POR_VARIABLE = [
 ];
 
 const CON_NOMBRE = [
-  ['story-skill-bypass', 'usar una skill de stories fuera del pipeline', 'invocar una skill de stories fuera del pipeline'],
+  ['story-skill-bypass', 'usar una skill de stories fuera del pipeline', 'invocar una skill de stories fuera del pipeline', 'archivo'],
   ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous'],
   ['cerrar-la-ejecucion', 'cerrar una ejecución con un control en rojo', 'marker.js clear'],
   ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda', 'marker.js close-as-debt'],
   ['force-manual', 'marcar a mano en verde la prueba de pantalla', 'marker.js set-check dod green --force-manual'],
   ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --trust-ran'],
-  ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'escribir el archivo de evidencia de la prueba en vivo'],
-  ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'poner dod_runtime_exempt: true en una story'],
+  ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'escribir el archivo de evidencia de la prueba en vivo', 'archivo'],
+  ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'poner dod_runtime_exempt: true en una story', 'archivo'],
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'marker.js update-story-status'],
 ];
+
+// los escapes que se firman escribiendo un archivo (la cuarta columna de CON_NOMBRE)
+const POR_ARCHIVO = new Set(CON_NOMBRE.filter((f) => f[3] === 'archivo').map((f) => f[0]));
+const kindDe = (id) => (!id.startsWith('escape:') ? 'guion' : POR_ARCHIVO.has(id.slice('escape:'.length)) ? 'archivo' : 'freno');
 
 const SIGNATURES = Object.freeze([
   { id: 'plan-approval', approves: 'aprobar el plan de una story', command: 'marker.js complete-step approve-plan --approved', otherSession: 'yes', terminal: 'marker.js complete-step approve-plan --terminal' },
@@ -48,18 +54,18 @@ const SIGNATURES = Object.freeze([
   { id: 'refresh-after-main', approves: 'refirmar los controles tras traer main, sin cambio propio', command: 'run-base-controls.sh approve', otherSession: 'yes', terminal: 'run-base-controls.sh approve --terminal' },
   { id: 'control-change', approves: 'aprobar un cambio de los controles del repo', command: 'run-base-controls.sh approve', otherSession: 'yes', terminal: 'run-base-controls.sh approve --terminal' },
   { id: 'critical-waiver', approves: 'eximir un hallazgo crítico de los revisores', command: 'marker.js waive-critical', otherSession: 'yes', terminal: 'marker.js waive-critical --terminal' },
-  { id: 'runtime-waiver', approves: 'aceptar un criterio imposible de probar en vivo', command: 'marker.js runtime-waiver', otherSession: 'no', terminal: 'marker.js runtime-waiver' },
+  { id: 'runtime-waiver', approves: 'aceptar un criterio imposible de probar en vivo', command: 'marker.js runtime-waiver', otherSession: 'no', terminal: 'marker.js runtime-waiver <historia> --terminal' },
   { id: 'manual-test', approves: 'marcar un criterio como probado a mano', command: 'marker.js mark-tested --acs', otherSession: 'yes', terminal: 'marker.js mark-tested --acs --terminal' },
-  { id: 'browser-test', approves: 'preparar la prueba con navegador, o decirle que no', command: 'e2e-setup.js prepare --ok (o decline --ok)', otherSession: 'yes', terminal: 'e2e-setup.js prepare --terminal (o decline --terminal)' },
-  { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal' },
+  { id: 'browser-test', approves: 'preparar la prueba con navegador, o decirle que no', command: 'e2e-setup.js prepare (o defer --no)', otherSession: 'yes', terminal: 'e2e-setup.js prepare --terminal (o defer --no --terminal)' },
+  { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip (todavía no existe)', otherSession: 'pending', terminal: null },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
   ...CON_NOMBRE.map(([nombre, approves, command]) => ({
-    id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'correr el mismo comando en tu terminal',
+    id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando',
   })),
-].map((s) => Object.freeze(s)));
+].map((s) => Object.freeze({ ...s, kind: kindDe(s.id) })));
 
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
 

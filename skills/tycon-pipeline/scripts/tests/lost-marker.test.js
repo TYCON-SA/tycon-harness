@@ -6,8 +6,9 @@
 // de la apertura en la carpeta de la ejecución del repo (`run-open.json`). Cada cierre legítimo anota `run-close`. Si
 // falta una pieza (el marcador borrado con cualquier comando, `gates.log` borrado o movido, la copia editada), la edición,
 // la consola, el cierre del turno y el commit frenan con «EJECUCIÓN PERDIDA». La salida es del dueño: `marker.js
-// clear-session <sesión> --lost` o `marker.js restore <sesión>`, con «autorizo cerrar la ejecución» posterior a la
-// apertura y sin reenvío.
+// clear-session <sesión> --lost` o `marker.js restore <sesión>`, aprobados en la ventana de permiso o con --terminal: la
+// frase en la conversación y el reenvío ya no firman. Los guiones se lanzan con la ventana dada por pasada
+// (scripts/tests/lib/window-passed.js); sin ella, no cierran.
 //
 // Corre los guiones reales: `pipeline.js start` en una HOME y un repo de juguete, los borrados de verdad y los ganchos
 // con el evento por la entrada. Los comandos que juzgan los ganchos van en las tablas de abajo, no en la línea de un
@@ -26,6 +27,7 @@ const SCRIPTS = path.join(__dirname, '..');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const GUARD = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
+const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
 const TUID = 'toolu_8121';
 const FRASE = 'autorizo cerrar la ejecución';
 const PERDIDA = /EJECUCIÓN PERDIDA/;
@@ -450,60 +452,47 @@ test('T16 PrimeraCapa_RutasDelRegistro_Frenan @story-8.121 @ac-18 — rm, mv y \
 
 // ── La salida (AC 10, 11, 19, 20) ─────────────────────────────────────────────────────────────────────────────────────
 
-test('T10 EjecucionPerdida_ConFrase_SeCierra @story-8.121 @ac-10 — la frase del dueño posterior a la apertura cierra la ejecución como perdida', () => {
+test('T10 EjecucionPerdida_ConVentana_SeCierra @story-8.121 @ac-10 — aprobada en la ventana, cierra la ejecución como perdida', () => {
   const E = entorno();
   E.arrancar('s-t10');
   E.atrasarApertura('s-t10', 10);
   borrarMarcador(E, 's-t10');
+  // la frase en la conversación ya no la firma: la ventana o la terminal
   E.conversacion('s-t10', [deLaPersona(`${FRASE}.`, 2)]);
-  const cmd = `node ${MARKER} clear-session s-t10 --lost`;
-  const f = E.freno('s-t10', cmd);
-  assert.strictEqual(f.status, 0, f.out);
-  // una constancia de hace más de unos minutos no vale para el guion, aunque sea posterior a la apertura
-  const frenos = path.join(E.estado(), 'frenos.jsonl');
-  const fresca = fs.readFileSync(frenos, 'utf8');
-  fs.writeFileSync(frenos, fresca.split('\n').map((l) => {
-    try { const o = JSON.parse(l); if (o.escape === 'cerrar-la-ejecucion') return JSON.stringify({ ...o, ts: hace(7) }); } catch { /* otra línea */ }
-    return l;
-  }).join('\n'));
-  assert.notStrictEqual(E.correr('marker.js', ['clear-session', 's-t10', '--lost'], 's-t10').status, 0, 'cerró con una constancia vieja');
-  fs.writeFileSync(frenos, fresca);
-  const r = E.correr('marker.js', ['clear-session', 's-t10', '--lost'], 's-t10');
+  const sin = E.correr('marker.js', ['clear-session', 's-t10', '--lost'], 's-t10');
+  assert.notStrictEqual(sin.status, 0, 'cerró sin la ventana');
+  assert.match(sin.stderr, /no pasó por la ventana/);
+  assert.match(sin.stderr, /--terminal/);
+  assert.ok(!E.eventos('s-t10').some((l) => l.name === 'run-close'), 'anotó un cierre sin la ventana');
+  const r = E.correr('marker.js', ['clear-session', 's-t10', '--lost'], 's-t10', conVentana({}));
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const cierre = E.eventos('s-t10').pop();
   assert.strictEqual(cierre.name, 'run-close');
   assert.strictEqual(cierre.estado, 'perdida');
-  assert.match(String(cierre.cita), /autorizo cerrar la ejecución/);
+  assert.strictEqual(cierre.via, 'ventana');
+  assert.ok(!cierre.cita, 'el cierre no lleva cita');
   assert.ok(Date.parse(cierre.ts));
   assert.ok(!fs.existsSync(path.join(cierre.runDir, 'run-open.json')), 'la copia se borró');
   assert.doesNotMatch(E.editar('s-t10').out, PERDIDA);
 });
 
-test('T11 EjecucionPerdida_SinFraseViejaOReenviada_NoSeCierra @story-8.121 @ac-11 — sin frase, anterior a la apertura, de otra sesión o reenviada', () => {
+test('T11 EjecucionPerdida_SinVentana_NoSeCierra @story-8.121 @ac-11 — sin la ventana ni la terminal, ni con la frase', () => {
   for (const sub of ['clear-session', 'restore']) {
     const extra = sub === 'clear-session' ? ['--lost'] : [];
-    for (const [que, registros, quien] of [
-      ['sin la frase', [deLaPersona('seguí')], null],
-      ['anterior a la apertura', [deLaPersona(`${FRASE}.`, 20)], null],
-      ['de otra sesión', [deLaPersona('seguí')], 's-t11-otra'],
-    ]) {
-      const E = entorno();
-      const sid = 's-t11';
-      E.arrancar(sid);
-      E.atrasarApertura(sid, 10);
-      borrarMarcador(E, sid);
-      E.conversacion(sid, registros);
-      if (quien) E.conversacion(quien, [deLaPersona(`${FRASE}.`, 2)]);
-      const f = E.freno(sid, `node ${MARKER} ${sub} ${sid} ${extra.join(' ')}`);
-      assert.strictEqual(f.status, 2, `${sub} · ${que}: ${f.out}`);
-      assert.match(f.out, /ESC-C3/, `${sub} · ${que}`);
-      assert.match(f.out, /autorizo cerrar la ejecución/, `${sub} · ${que}: el cartel dice la frase`);
-      assert.match(f.out, /dueño/, `${sub} · ${que}: dice que la escribe el dueño`);
-      // la segunda capa: el guion, sin la constancia del freno, tampoco cierra
-      const r = E.correr('marker.js', [sub, sid, ...extra], sid);
-      assert.notStrictEqual(r.status, 0, `${sub} · ${que}: el guion cerró sin la constancia`);
-      assert.ok(!E.eventos(sid).some((l) => l.name === 'run-close' && l.estado === 'perdida'), `${sub} · ${que}`);
-    }
+    const E = entorno();
+    const sid = 's-t11';
+    E.arrancar(sid);
+    E.atrasarApertura(sid, 10);
+    borrarMarcador(E, sid);
+    E.conversacion(sid, [deLaPersona(`${FRASE}.`, 2)]);
+    // lo que pide el freno (la ventana) se prueba en proceso, con el árbol y la casa inyectados
+    // (scripts/tests/owner-window.test.js): por subproceso leería el árbol real y escribiría en la casa de la cuenta.
+    // Acá, el guion: sin la ventana no cierra, y dice cómo se firma en la terminal.
+    const r = E.correr('marker.js', [sub, sid, ...extra], sid);
+    assert.notStrictEqual(r.status, 0, `${sub}: el guion cerró sin la ventana`);
+    assert.match(r.stderr, /no pasó por la ventana/, sub);
+    assert.match(r.stderr, new RegExp(`${sub}[^\\n]*--terminal`), `${sub}: dice el comando de la terminal`);
+    assert.ok(!E.eventos(sid).some((l) => l.name === 'run-close' && l.estado === 'perdida'), sub);
   }
   // las otras salidas del marcador no sacan una ejecución perdida (la copia borrada, el marcador vivo)
   const otras = [
@@ -588,9 +577,7 @@ test('T17 Restore_ConFrase_ReabreSinFraseFrena @story-8.121 @ac-19 — restore c
   const antes = E.apertura('s-t17');
   E.atrasarApertura('s-t17', 10);
   borrarMarcador(E, 's-t17');
-  E.conversacion('s-t17', [deLaPersona(`${FRASE}.`, 2)]);
-  assert.strictEqual(E.freno('s-t17', `node ${MARKER} restore s-t17`).status, 0);
-  const r = E.correr('marker.js', ['restore', 's-t17'], 's-t17');
+  const r = E.correr('marker.js', ['restore', 's-t17'], 's-t17', conVentana({}));
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const m = E.leerMarcador('s-t17');
   assert.strictEqual(String(m.storyId), '9.9');
@@ -605,9 +592,7 @@ test('T17 Restore_ConFrase_ReabreSinFraseFrena @story-8.121 @ac-19 — restore c
   F.arrancar('s-t17x');
   F.atrasarApertura('s-t17x', 10);
   borrarMarcador(F, 's-t17x');
-  F.conversacion('s-t17y', [deLaPersona(`${FRASE}.`, 2)]);
-  assert.strictEqual(F.freno('s-t17y', `node ${MARKER} restore s-t17x`).status, 0);
-  const ry = F.correr('marker.js', ['restore', 's-t17x'], 's-t17y');
+  const ry = F.correr('marker.js', ['restore', 's-t17x'], 's-t17y', conVentana({}));
   assert.strictEqual(ry.status, 0, ry.stderr + ry.stdout);
   const cierre = F.eventos('s-t17y').find((l) => l.name === 'run-close');
   assert.ok(cierre && String(cierre.story) === '9.8', 'la ejecución propia (9.8) quedó cerrada');

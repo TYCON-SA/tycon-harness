@@ -21,8 +21,9 @@
 #   · la base frena y el pedido pasa → es un AFLOJAMIENTO: rojo, salvo la constancia del dueño en uno de los archivos de
 #     constancias del inventario, anclada al hash del cambio (ruta y blob de cada archivo cambiado). Con la constancia, la
 #     pasada se repite con lo aprobado en su versión del pedido y lo demás de la base, y tiene que dar verde: una
-#     constancia no tapa un rojo que viene de otra regla. La firma `approve` pide una terminal de verdad, como
-#     `marker.js runtime-waiver`; el rojo imprime el comando exacto;
+#     constancia no tapa un rojo que viene de otra regla. La firma `approve` la da el dueño: desde una sesión, con su «Sí»
+#     en la ventana de permiso; con `--terminal`, en una terminal de verdad, como `marker.js runtime-waiver`. El rojo
+#     imprime el comando exacto;
 #   · borrar una regla o un workflow que la base tiene es un aflojamiento;
 #   · el pedido frena → rojo, como siempre.
 # Cada cambio queda listado archivo por archivo: lo que se suma (+), lo que se saca (-) y lo que cambia (~).
@@ -37,10 +38,10 @@
 #        [--alarm-range <a>..<b>] [--approvals-out <ruta>]
 #   bash scripts/ci/run-base-controls.sh check-inventory --root <dir> [--ref <rev>]
 #   bash scripts/ci/run-base-controls.sh pending --root <pedido> --base <rev> --range <base>...<punta> [--approvals-out <ruta>]
-#   bash scripts/ci/run-base-controls.sh approve --root <dir> --entries '<json>' [--out <ruta>]     (pide terminal)
-#   bash scripts/ci/run-base-controls.sh approve --root <dir> --file <ruta> --rev <commit> [--out <ruta>] (pide terminal)
+#   bash scripts/ci/run-base-controls.sh approve --root <dir> --entries '<json>' [--out <ruta>] [--terminal]
+#   bash scripts/ci/run-base-controls.sh approve --root <dir> --file <ruta> --rev <commit> [--out <ruta>] [--terminal]
 #
-# SALIDAS: 0 verde · 1 rojo · 2 uso (o `approve` sin terminal) · 9 no pude correr (la última línea dice por qué). «No pude
+# SALIDAS: 0 verde · 1 rojo (o `approve` sin la firma) · 2 uso (o `approve --terminal` sin terminal) · 9 no pude correr (la última línea dice por qué). «No pude
 # correr» nunca cae a los controles del pedido: eso es el hueco que esto cierra.
 #
 # LOS LÍMITES (guides/piezas-del-arnes.md §scripts/ci/run-base-controls.sh): el propio workflow corre del pedido
@@ -54,7 +55,7 @@ STDIN_INTERACTIVE=0
 [ -t 0 ] && STDIN_INTERACTIVE=1
 command -v node >/dev/null 2>&1 || { echo "no pude correr: no encuentro node en el PATH"; exit 9; }
 command -v git >/dev/null 2>&1 || { echo "no pude correr: no encuentro git en el PATH"; exit 9; }
-# la carpeta de este guion, para cargar la firma por delegación de su mismo árbol (la pone siempre este guion)
+# la carpeta de este guion, para cargar la ventana de permiso de su mismo árbol (la pone siempre este guion)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || { echo "no pude correr: no encuentro la carpeta del guion"; exit 9; }
 BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" exec node - "$@" <<'JS'
 'use strict';
@@ -717,23 +718,9 @@ function cmdPending() {
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
   console.log(`hash: ${a.hash}`);
-  const terminal = signCommand(a.root, a.entries, a.approvalsOut);
-  console.log(`la firma, desde tu terminal: ${terminal}`);
-  // donde el perfil delega la firma, la muestra queda anotada en la cuenta: sin ella no se firma por delegación
-  const ds = delegatedSigning();
-  if (!ds) { console.log('⚠️ base-controls: aviso — no encontré la firma por delegación junto a este guion: sólo la terminal'); return; }
-  console.log(`o por delegación, si el perfil del equipo la prende en esta máquina: ${ds.delegatedCommand(terminal, ds.relayRole())}`);
-  const m = ds.machineDelegates();
-  if (!m.ok) { console.log(`base-controls: acá no se firma por delegación — ${m.reason}`); return; }
-  const shown = ds.recordShown({ hash: a.hash });
-  if (!shown.ok) console.log(`⚠️ base-controls: aviso — ${shown.reason}: la firma por delegación no va a andar, la de la terminal sí`);
-}
-
-// la firma por delegación, del mismo árbol que este guion; sin ella, sólo la terminal
-function delegatedSigning() {
-  const dir = process.env.BASE_CONTROLS_SELF_DIR;
-  if (!dir) return null;
-  try { return require(path.join(dir, '..', 'lib', 'delegated-signing.js')); } catch (_) { return null; }
+  const firma = signCommand(a.root, a.entries, a.approvalsOut);
+  console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso): ${firma}`);
+  console.log(`o desde tu terminal: ${firma} --terminal`);
 }
 
 function readFromTty(prompt) {
@@ -768,11 +755,13 @@ function cmdApprove() {
       process.exit(1);
     }
   }
-  const delegated = rest.includes('--relayed-by');
-  if (!delegated && process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
-    console.error('🔒 run-base-controls approve: pide una terminal interactiva de verdad (la constancia es del dueño, no de un agente). Correlo vos, en tu terminal.');
-    process.exit(2);
+  // aprobar un control es sólo del dueño: la delegación con la cita ya no vale
+  if (rest.includes('--relayed-by')) {
+    console.error('🚫 run-base-controls approve: aprobar un control por delegación ya no vale: no se firmó nada. Lo aprueba el dueño en la ventana de permiso (este comando sin --relayed-by) o en su terminal (--terminal).');
+    process.exit(1);
   }
+  // con --terminal, o corrido a mano en una terminal, firma la terminal; si no, la ventana de permiso
+  const enTerminal = rest.includes('--terminal') || process.env.BASE_CONTROLS_STDIN_INTERACTIVE === '1';
   // con --file la entrada sale de --rev, así que coincide con ella por construcción
   if (!entries && opt('--file')) {
     const p = opt('--file'); const rev = opt('--rev') || 'HEAD';
@@ -785,7 +774,11 @@ function cmdApprove() {
   // el destino puede salir del inventario del pedido: se mira antes de preguntar, y la persona ve adónde va la firma
   const where = insideRepo(root, out);
   if (where) { console.error(`run-base-controls approve: el destino ${safe(out)} ${where}: no se firmó nada.`); process.exit(2); }
-  if (delegated) { approveDelegated(root, out, entries); return; }
+  if (!enTerminal) { approveByWindow(root, out, entries); return; }
+  if (process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
+    console.error('🔒 run-base-controls approve --terminal: pide una terminal interactiva de verdad (la constancia es del dueño, no de un agente). Correlo vos, en tu terminal.');
+    process.exit(2);
+  }
   console.error('Vas a firmar, como dueño, este cambio de control:');
   for (const e of entries) console.error(`   ${safe(e.path)} (blob ${short(e.blob)})`);
   console.error(`La firma va a: ${safe(out)}${isApprovalDir(out) ? `${hashOf(entries)}.json` : ''}`);
@@ -795,17 +788,20 @@ function cmdApprove() {
   writeApproval(root, out, entries, approvalLine(entries));
 }
 
-// la firma en nombre del dueño: sólo con todas las llaves (scripts/lib/delegated-signing.js); si falta una, no se firma
-// y se repite el comando de la terminal
-function approveDelegated(root, out, entries) {
-  const ds = delegatedSigning();
-  const terminal = signCommand(root, entries, out);
-  if (!ds) { console.error(`run-base-controls approve: no encuentro la firma por delegación al lado de este guion: no se firmó nada. Desde tu terminal: ${terminal}`); process.exit(1); }
-  const hash = hashOf(entries);
-  const check = ds.checkDelegatedApprove({ args: rest, hash, entries });
-  if (!check.ok) { console.error(`run-base-controls approve: no se firmó por delegación: ${check.reason}. Desde tu terminal: ${terminal}`); process.exit(1); }
-  const w = ds.writeDelegatedApproval({ hash, entries, fields: check.fields, writeApproval: (line) => writeApproval(root, out, entries, line) });
-  if (!w.ok) { console.error(`run-base-controls approve: ${w.reason}`); process.exit(1); }
+// desde una sesión: vale sólo si el dueño dijo «Sí» en la ventana de permiso a este mismo comando
+// (scripts/lib/owner-window.js, del mismo árbol que este guion); si no, no se firma y se dice el comando de la terminal
+function approveByWindow(root, out, entries) {
+  const terminal = `${signCommand(root, entries, out)} --terminal`;
+  let ow = null;
+  let porQue = '';
+  try { ow = require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'owner-window.js')); } catch (e) { ow = null; porQue = ` (${String((e && e.message) || e).split('\n')[0]})`; }
+  if (!ow) { console.error(`run-base-controls approve: no encuentro la ventana de permiso al lado de este guion${porQue}: no se firmó nada. Desde tu terminal: ${terminal}`); process.exit(1); }
+  // el guion, tal como lo lanzó la consola: este proceso es el del .sh (node lo reemplazó con exec)
+  const argv = [path.join(process.env.BASE_CONTROLS_SELF_DIR, 'run-base-controls.sh'), cmd, ...rest];
+  const sesion = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || undefined;
+  const r = ow.exigir({ firma: 'control-change', argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion });
+  if (r.codigo !== 0) { console.error(`run-base-controls approve: ${r.motivo}: no se firmó nada.`); process.exit(1); }
+  writeApproval(root, out, entries, approvalLine(entries));
 }
 
 // la constancia en un .jsonl, o un archivo por firma en una carpeta

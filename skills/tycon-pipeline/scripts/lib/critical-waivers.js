@@ -21,14 +21,18 @@ const esCriticoEximido = (f) => !!f && String(f.severity || '').trim().toUpperCa
   && String(f.disposition || '').trim().toLowerCase() === 'waived';
 
 /** Una constancia completa: regla, quién, tipo y vía; la que salió del chat, con su cita. null = válida; si no, el motivo. */
+// La firmada en la terminal o en la ventana de permiso no trae cita: la ata su renglón del registro del arnés. Las que
+// salieron del chat (anteriores a la ventana) traen la cita y se vuelven a buscar en la conversación.
+const sinCita = (via) => /terminal|ventana/.test(String(via || ''));
+
 function constanciaInvalida(l) {
   if (!l || typeof l !== 'object') return 'no es un objeto';
   if (!String(l.rule_id || '').trim()) return 'no dice la regla';
   if (!['manual', 'automatica'].includes(l.tipo)) return `tipo ${JSON.stringify(l.tipo)}`;
   if (!String(l.quien || '').trim() || noEsPersona(l.tipo === 'manual' ? l.quien : (l.delegacion || ''))) return 'no nombra a la persona que dio el ok';
   if (!String(l.via || '').trim()) return 'no dice por qué vía';
-  if (!/terminal/.test(l.via) && !String(l.cita || '').trim()) return 'salió del chat y no trae la cita';
-  if (!/terminal/.test(l.via) && !String(l.sesion || '').trim()) return 'salió del chat y no dice de qué sesión';
+  if (!sinCita(l.via) && !String(l.cita || '').trim()) return 'salió del chat y no trae la cita';
+  if (!sinCita(l.via) && !String(l.sesion || '').trim()) return 'salió del chat y no dice de qué sesión';
   if (!String(l.ts || '').trim()) return 'no dice cuándo se anotó';
   return null;
 }
@@ -90,7 +94,7 @@ function leer(runDir) {
  * hace que una línea agregada a mano al archivo, con una cita que nadie escribió, no valga.
  */
 function citaQueNoAparece(l, opts = {}) {
-  if (/terminal/.test(String(l.via || ''))) return null;
+  if (sinCita(l.via)) return null;
   const pok = require('./person-ok.js');
   const o = { ...opts, sesion: l.sesion };
   const r = l.tipo === 'automatica' && l.relevo ? pok.citaReenviada(l.cita, l.relevo, o) : pok.citaDeLaPersona(l.cita, o);
@@ -145,19 +149,17 @@ function verificarExenciones(runDir, opts = {}) {
 }
 
 /**
- * Los caminos para eximir un crítico, un renglón cada uno, en el orden en que se ofrecen: el ok del dev en el chat; la
- * variante reenviada, si la organización declara la sesión que reenvía; la terminal.
+ * Los caminos para eximir un crítico, un renglón cada uno, en el orden en que se ofrecen: la ventana de permiso (el
+ * agente corre el comando y el dev lo aprueba ahí); la terminal.
  */
-function caminos({ marker, ruleId, file, relaySession }) {
+function caminos({ marker, ruleId, file }) {
   // la regla y el archivo vienen de findings.json (los escribe el agente): van entre comillas simples, para que el
   // comando que copia el dev no ejecute nada que traigan adentro
   const base = `node ${sh(marker)} waive-critical --rule ${sh(ruleId)} --file ${sh(file)} --reason '<por qué>'`;
-  const out = [
-    `  · el ok del dev en el chat: preguntale y, con su respuesta, ${base} --approved-by '<el dev>' --quote '<sus palabras, textuales>'`,
+  return [
+    `  · en la ventana de permiso: corré ${base} y el dev lo aprueba ahí`,
+    `  · por la terminal (lo corre el dev): ${base} --terminal`,
   ];
-  if (relaySession) out.push(`  · reenviado por la sesión «${relaySession}»: ${base} --approved-by '<el dev>' --quote '<sus palabras, textuales>' --relayed-by ${sh(relaySession)}`);
-  out.push(`  · por la terminal (lo corre el dev): ${base} --terminal`);
-  return out;
 }
 
 /** Los renglones de lo que falta, para los mensajes de write-findings y de los cierres. */

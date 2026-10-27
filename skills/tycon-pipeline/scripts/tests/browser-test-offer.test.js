@@ -32,6 +32,7 @@ const SCRIPTS = path.join(__dirname, '..');
 const STEPS = path.join(SCRIPTS, '..', 'steps');
 const HARNESS = path.join(SCRIPTS, '..', '..', '..');
 const bt = require(path.join(SCRIPTS, 'lib', 'browser-test.js'));
+const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 
 const tmp = (prefijo) => fs.mkdtempSync(path.join(os.tmpdir(), prefijo));
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-19T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-19T12:00:00Z' };
@@ -61,10 +62,12 @@ function historia(repo, id, conPantalla = true) {
   return story;
 }
 
+// Las firmas del dueño (el plan, la preparación, el «no») se dan en la ventana de permiso; acá se dan por pasadas
+// (window-passed.js) para probar lo que viene después.
 function markerCli(home, sid, cwd, args) {
   return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], {
     cwd, encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
+    env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' }),
   });
 }
 
@@ -111,10 +114,10 @@ function binariosSimulados() {
   return { bin, log };
 }
 
-function setup(home, sid, repo, args, bin, extraEnv = {}) {
+function setup(home, sid, repo, args, bin, extraEnv = {}, { ventana = true } = {}) {
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ...extraEnv };
   return spawnSync('node', [path.join(SCRIPTS, 'e2e-setup.js'), ...args], {
-    cwd: repo, encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ...extraEnv },
+    cwd: repo, encoding: 'utf8', env: ventana ? conVentana(env) : env,
   });
 }
 
@@ -234,8 +237,7 @@ test('Prepare_ConOkDeLaPersona_InstalaEnElRepo @story-8.67 @ac-3', () => {
   const home = tmp('bt-home-');
   const { bin, log } = binariosSimulados();
   const { repo, story } = tienda();
-  conversacion(home, 's-si', { persona: ['sí, preparala'] });
-  const r = setup(home, 's-si', repo, ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev', '--ok', 'sí, preparala'], bin);
+  const r = setup(home, 's-si', repo, ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev'], bin);
   assert.equal(r.status, 0, r.stderr + r.stdout);
   const llamadas = fs.readFileSync(log, 'utf8');
   assert.match(llamadas, /^install --save-dev @playwright\/test$/m);
@@ -262,19 +264,19 @@ test('Prepare_CitaAjena_NoPreparaNada @story-8.67 @ac-3', () => {
   const home = tmp('bt-home-');
   const { bin, log } = binariosSimulados();
   const { repo, story } = tienda();
-  // la cita llega en un mensaje de otra sesión que la organización no declara como relevo, o la escribió el agente
-  conversacion(home, 's-ajena', { otra: [['otra', 'sí, preparala']], agente: ['sí, preparala'] });
-  const args = ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev', '--ok', 'sí, preparala'];
-  const r = setup(home, 's-ajena', repo, args, bin);
+  // la cita ya no firma, aunque la persona la haya escrito: la preparación la aprueba en la ventana de permiso
+  conversacion(home, 's-ajena', { persona: ['sí, preparala'] });
+  const args = ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev'];
+  const r = setup(home, 's-ajena', repo, [...args, '--ok', 'sí, preparala'], bin);
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stderr, /no la encontré en un mensaje escrito por Dev/);
+  assert.match(r.stderr, /la cita o el reenvío ya no firman/);
   const rel = setup(home, 's-ajena', repo, [...args, '--relayed-by', 'otra'], bin);
   assert.equal(rel.status, 2);
-  assert.match(rel.stderr, /no declara ninguna sesión que pueda reenviar|no es la que la organización deja reenviar/);
-  // el agente no es una persona
-  conversacion(home, 's-ajena', { persona: ['sí, preparala'] });
-  const ag = setup(home, 's-ajena', repo, ['prepare', '--repo', repo, '--story', story, '--approved-by', 'orquestador', '--ok', 'sí, preparala'], bin);
-  assert.equal(ag.status, 2);
+  assert.match(rel.stderr, /la cita o el reenvío ya no firman/);
+  // sin la ventana (el guion no lo lanzó la consola de la herramienta), no prepara
+  const sinVentana = setup(home, 's-ajena', repo, args, bin, {}, { ventana: false });
+  assert.equal(sinVentana.status, 2, sinVentana.stdout);
+  assert.match(sinVentana.stderr, /no pasó por la ventana/);
   assert.equal(fs.existsSync(log), false);
   assert.equal(fs.existsSync(path.join(repo, 'playwright.config.ts')), false);
   assert.equal(fs.existsSync(path.join(repo, '.tycon')), false);
@@ -299,8 +301,7 @@ test('Undo_DejaElRepoComoEstaba_YCuidaLoCambiado @story-8.67 @ac-4', () => {
   assert.match(nada.stdout + nada.stderr, /No hay una preparación anotada/);
 
   const { repo, story } = tienda();
-  conversacion(home, 's-undo', { persona: ['sí, preparala'] });
-  assert.equal(setup(home, 's-undo', repo, ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev', '--ok', 'sí, preparala'], bin).status, 0);
+  assert.equal(setup(home, 's-undo', repo, ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev'], bin).status, 0);
   fs.appendFileSync(path.join(repo, 'tests', 'e2e', '1.1.spec.ts'), '// el criterio 1\n');
   const u = setup(home, 's-undo', repo, ['undo', '--repo', repo], bin);
   assert.equal(u.status, 0, u.stderr);
@@ -335,16 +336,15 @@ test('Rutas_SiempreDentroDelRepo @story-8.67 @ac-4', async () => {
   const afuera = path.join(path.dirname(repo), 'otra.md');
   fs.writeFileSync(afuera, '---\nstory: "1.1"\n---\n');
   conversacion(home, 's-rutas', { persona: ['no, por ahora no'] });
-  for (const cmd of [['defer', '--no', 'no, por ahora no'], ['prepare', '--ok', 'no, por ahora no']]) {
-    const r = setup(home, 's-rutas', repo, [cmd[0], '--repo', repo, '--story', afuera, '--approved-by', 'Dev', cmd[1], cmd[2]], bin);
+  for (const cmd of [['defer', '--no', 'no, por ahora no'], ['prepare']]) {
+    const r = setup(home, 's-rutas', repo, [cmd[0], '--repo', repo, '--story', afuera, '--approved-by', 'Dev', ...cmd.slice(1)], bin);
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, /no está dentro del repo/);
   }
   assert.equal(fs.readFileSync(afuera, 'utf8'), '---\nstory: "1.1"\n---\n');
   // un número de historia que no sirve de nombre de archivo: no prepara
   fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace('story: "1.1"', 'story: "../../x"'));
-  conversacion(home, 's-rutas', { persona: ['sí, preparala'] });
-  const mal = setup(home, 's-rutas', repo, ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev', '--ok', 'sí, preparala'], bin);
+  const mal = setup(home, 's-rutas', repo, ['prepare', '--repo', repo, '--story', story, '--approved-by', 'Dev'], bin);
   assert.equal(mal.status, 2, mal.stderr);
   assert.equal(fs.existsSync(path.join(path.dirname(repo), 'x.spec.ts')), false);
   // el servidor de la página no sirve nada fuera de su carpeta
@@ -371,6 +371,31 @@ test('Rutas_SiempreDentroDelRepo @story-8.67 @ac-4', async () => {
   } finally { hijo.kill(); }
 });
 
+test('Defer_FirmadoEnLaTerminalSinSesion_QuedaDeclarado (pase adversarial)', (t) => {
+  // el dueño lo firma en su terminal, donde no hay variable de sesión: el «no» contesta la oferta de la sesión del agente
+  if (spawnSync('python3', ['--version']).error) { t.skip('sin python3: la firma por terminal se mide en el laboratorio'); return; }
+  const home = tmp('bt-home-');
+  const { bin } = binariosSimulados();
+  const c = tienda();
+  hasta3(home, 's-term', c.repo, c.story);
+  conversacion(home, 's-term');
+  puertaBash(home, 's-term', c.repo, cierre3);
+  const guion = path.join(tmp('bt-pty-'), 'terminal-simulada.py');
+  fs.writeFileSync(guion, ['import os, pty, sys', 'pid, fd = pty.fork()', 'if pid == 0:', '    os.execvp(sys.argv[1], sys.argv[1:])', 'buf = b""', 'respondido = False',
+    'while True:', '    try:', '        d = os.read(fd, 4096)', '    except OSError:', '        break', '    if not d:', '        break', '    buf += d',
+    '    if not respondido and "«firmo»".encode() in buf:', '        os.write(fd, b"firmo\\n")', '        respondido = True',
+    '_, st = os.waitpid(pid, 0)', 'sys.stdout.write(buf.decode("utf8", "replace"))', 'sys.exit(os.WEXITSTATUS(st))'].join('\n'));
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  for (const v of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[v];
+  for (const extra of [[], ['--for-session', 's-term']]) {
+    fs.writeFileSync(c.story, fs.readFileSync(c.story, 'utf8').replace(/^browser_test(_reason)?:.*\n/gm, ''));
+    const r = spawnSync('python3', ['-I', guion, process.execPath, path.join(SCRIPTS, 'e2e-setup.js'), 'defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', ...extra, '--terminal'],
+      { cwd: c.repo, encoding: 'utf8', env, timeout: 60000 });
+    assert.equal(r.status, 0, `${extra.join(' ')}: ${r.stdout}${r.stderr}`);
+    assert.equal(bt.debtDeclared({ stateDir: stateOf(home), storyPath: c.story, home }).declared, true, extra.join(' '));
+  }
+});
+
 test('Defer_ConElNoDespuesDeLaOferta_DeudaConNombre @story-8.67 @ac-5', () => {
   const home = tmp('bt-home-');
   const { bin } = binariosSimulados();
@@ -380,14 +405,14 @@ test('Defer_ConElNoDespuesDeLaOferta_DeudaConNombre @story-8.67 @ac-5', () => {
   const sinOferta = setup(home, 's-sinof', a.repo, ['defer', '--repo', a.repo, '--story', a.story, '--approved-by', 'Dev', '--no', 'no, por ahora no'], bin);
   assert.equal(sinOferta.status, 2);
   assert.match(sinOferta.stderr, /sin la oferta, el «no» no vale/);
-  // una respuesta de antes de la oferta: no vale
+  // con la oferta mostrada pero sin la ventana de permiso: el no no se anota
   const b = tienda();
   hasta3(home, 's-antes', b.repo, b.story);
-  conversacion(home, 's-antes', { persona: ['no, por ahora no'], cuando: '2026-01-01T00:00:00Z' });
+  conversacion(home, 's-antes');
   puertaBash(home, 's-antes', b.repo, cierre3);
-  const antes = setup(home, 's-antes', b.repo, ['defer', '--repo', b.repo, '--story', b.story, '--approved-by', 'Dev', '--no', 'no, por ahora no'], bin);
+  const antes = setup(home, 's-antes', b.repo, ['defer', '--repo', b.repo, '--story', b.story, '--approved-by', 'Dev', '--no', 'no, por ahora no'], bin, {}, { ventana: false });
   assert.equal(antes.status, 2);
-  assert.match(antes.stderr, /antes de la oferta/);
+  assert.match(antes.stderr, /no pasó por la ventana/);
   assert.doesNotMatch(fs.readFileSync(b.story, 'utf8'), /browser_test/);
   // la respuesta de la persona después de la oferta: la historia lleva el no con nombre
   const c = tienda();
@@ -463,19 +488,20 @@ test('Cierre_SinElOkDeLaPersona_Frena @story-8.67 @ac-7', () => {
   assert.equal(bt.debtDeclared({ stateDir, storyPath: b.story, home }).declared, false);
   hasta3(home, 's-marca', b.repo, b.story);
   assert.match(markerCli(home, 's-marca', b.repo, ['complete-step', '8', '--out-of-order']).stderr, /story de UI sin el gate `dod`/);
-  // la marca y la constancia, pero la respuesta ya no está en la conversación: la constancia sola no alcanza
+  // la marca y la constancia, pero sin la línea de la firma en la ventana: la constancia sola no alcanza
   const c = tienda();
   assert.equal(ofertaYNo(home, 's-borrada', bin, c).status, 0);
-  conversacion(home, 's-borrada');
+  const log = path.join(stateDir, 'gates.log');
+  fs.writeFileSync(log, fs.readFileSync(log, 'utf8').split('\n').filter((l) => !/"name":"browser-test-signed"[^\n]*"destino":"s-borrada"/.test(l)).join('\n'));
   const sinOk = bt.debtDeclared({ stateDir, storyPath: c.story, home });
   assert.equal(sinOk.declared, false);
-  assert.match(sinOk.motivo, /no está en la conversación/);
-  assert.match(markerCli(home, 's-borrada', c.repo, ['complete-step', '8', '--out-of-order']).stderr, /no está en la conversación/);
-  // sin la conversación (otra máquina): no vale
+  assert.match(sinOk.motivo, /en la ventana de permiso o en su terminal/);
+  assert.match(markerCli(home, 's-borrada', c.repo, ['complete-step', '8', '--out-of-order']).stderr, /en la ventana de permiso o en su terminal/);
+  // firmado en la ventana, la conversación ya no hace falta (otra máquina): vale
   const d = tienda();
   assert.equal(ofertaYNo(home, 's-otra-maquina', bin, d).status, 0);
   fs.rmSync(path.join(home, '.claude', 'projects', '-tienda', 's-otra-maquina.jsonl'));
-  assert.match(bt.debtDeclared({ stateDir, storyPath: d.story, home }).motivo, /no puedo leer la conversación/);
+  assert.equal(bt.debtDeclared({ stateDir, storyPath: d.story, home }).declared, true);
   // la marca con otra cita que la de la constancia: no vale
   const e = tienda();
   assert.equal(ofertaYNo(home, 's-cita', bin, e).status, 0);
@@ -518,20 +544,24 @@ test('Regresion_PaseAdversarial_CitaConDolarNumeroYCarpetaRaros @story-8.67 @ac-
   fs.writeFileSync(path.join(esp.repo, 'mi app', 'web', 'index.html'), 'hola');
   fs.writeFileSync(path.join(esp.repo, 'mi app', 'web', 'src', 'a.js'), '');
   fs.writeFileSync(esp.story, fs.readFileSync(esp.story, 'utf8').replace('frontend/src/main.js', '"mi app/web/src/a.js"'));
-  conversacion(home, 's-esp', { persona: ['sí, preparala'] });
-  const p = setup(home, 's-esp', esp.repo, ['prepare', '--repo', esp.repo, '--story', esp.story, '--approved-by', 'Dev', '--ok', 'sí, preparala'], bin);
+  const p = setup(home, 's-esp', esp.repo, ['prepare', '--repo', esp.repo, '--story', esp.story, '--approved-by', 'Dev'], bin);
   assert.equal(p.status, 2, p.stderr + p.stdout);
   assert.equal(fs.existsSync(path.join(esp.repo, '.tycon', 'advisors.yaml')), false);
 });
 
 test('Instrucciones_PasoTresSieteYGuia_DicenLaOfertaYComoSeDeshace @story-8.67 @ac-8', () => {
   const paso3 = fs.readFileSync(path.join(STEPS, 'step-04-approve-plan.md'), 'utf8');
-  assert.match(paso3, /e2e-setup\.js prepare[^\n]*--ok/);
+  assert.match(paso3, /e2e-setup\.js prepare --repo/);
   assert.match(paso3, /e2e-setup\.js defer[^\n]*--no/);
   assert.match(paso3, /la muestra el arnés/);
+  assert.match(paso3, /ventana de permiso/);
   const paso7c = fs.readFileSync(path.join(STEPS, 'step-10-live-check.md'), 'utf8');
   assert.match(paso7c, /browser_test: deferred/);
   assert.match(paso7c, /e2e-setup\.js prepare/);
+  // la cita ya no firma: ningún paso enseña `--ok` ni el reenvío para estos dos comandos
+  for (const [nombre, txt] of [['step-04', paso3], ['step-10', paso7c]]) {
+    assert.doesNotMatch(txt, /e2e-setup\.js (prepare|defer)[^\n]*(--ok|--relayed-by)/, nombre);
+  }
   for (const g of ['reference.es.md', 'reference.md']) {
     assert.match(fs.readFileSync(path.join(HARNESS, 'getting-started', g), 'utf8'), /e2e-setup\.js undo/, g);
   }

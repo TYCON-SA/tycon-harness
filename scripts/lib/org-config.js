@@ -333,7 +333,7 @@ const DELEGATED_LIST_SINCE = '2026.10.24.14';
  * `approvals.delegated_signing` (`escape:trust-ran`): la etiqueta del merge que los trae, como DELEGATED_LIST_SINCE. Un
  * lector anterior leería esa clave o ese id como un valor roto.
  */
-const OWNER_ONLY_SINCE = '2026.10.27.90';
+const OWNER_ONLY_SINCE = '2026.10.27.7';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina

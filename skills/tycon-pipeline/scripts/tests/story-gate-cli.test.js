@@ -22,6 +22,7 @@ const PUBLIC_NAME = (() => { try { return require(path.join(__dirname, '..', '..
 const twin = (fn) => (PUBLIC_NAME ? fn() : console.log('⏭ gemelo con el nombre público: NO MEDIDO — sin scripts/setup/harness/place.js (clon de skills suelto)'));
 
 const SCRIPTS = path.join(__dirname, '..');
+const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
 const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
 const bash = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
@@ -54,10 +55,11 @@ test('io.gateEnabledForRepo: lee lo COMMITEADO — el yaml del working tree no a
 // en los dos denies de `adhoc set`, y si no se apaga acá la suite saldría a invocar Haiku de
 // verdad: lenta, con red, y con veredictos que cambian entre corridas. Un test que lo quiera
 // probar lo prende por extraEnv e inyecta su propia respuesta.
+// La firma del plan la da el dueño en la ventana de permiso; acá se da por pasada (window-passed.js).
 function markerCli(home, sid, args, extraEnv = {}) {
   return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], {
     encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', ...extraEnv },
+    env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', ...extraEnv }),
   });
 }
 
