@@ -160,7 +160,8 @@ test('Portable_ParseTap_BothForms_NoTotalsIsNotAPass', () => {
   // la suite de bash del arnés se lee por sus ✅ y ❌; sin ninguno no es un «sí»
   assert.deepStrictEqual(P.parseShellSuite('✅ h: uno\n✅ h: dos\n❌ h: tres se rompió\nh: 1 fallas\n'), { tests: 3, pass: 2, fail: 1, skipped: null, first_failure: 'h: tres se rompió' });
   assert.strictEqual(P.testPassed(Object.assign({ exit: 0, error: null }, P.parseShellSuite('Error: no está bash'))), false);
-  assert.deepStrictEqual(P.SUITES.slice(3), ['apply-hooks', 'harness-node', 'story-gate', 'ledger-visible', 'safety-escape', 'run-close', 'pipeline-unit'], 'las siete del AC 21 de la 8.93, después de las de W1');
+  assert.deepStrictEqual(P.SUITES.slice(3), ['apply-hooks', 'harness-node', 'story-gate', 'ledger-visible', 'safety-escape', 'run-close', 'pipeline-unit', 'work-items-az'],
+    'las siete del AC 21 de la 8.93, después de las de W1, y la del conector de pedidos de trabajo');
   const t = (o) => Object.assign({ exit: 0, error: null, pass: 6, fail: 0 }, o);
   assert.strictEqual(P.testPassed(t({})), true);
   for (const bad of [t({ exit: 1 }), t({ fail: 1 }), t({ pass: null, fail: null }), t({ pass: 0 }), t({ error: 'ETIMEDOUT', exit: null }), null]) assert.strictEqual(P.testPassed(bad), false, JSON.stringify(bad));
