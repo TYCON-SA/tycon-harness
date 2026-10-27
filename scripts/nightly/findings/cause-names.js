@@ -19,6 +19,7 @@ const NOMBRES_CAUSA = {
     TYCON_SAFETY_OFF: 'freno de seguridad apagado', TYCON_SESSION_GUARD_OK: 'freno de sesiones salteado',
     TYCON_ENGRAM_MANIFEST_OK: 'freno de memoria salteado', STOP_AUTONOMY: 'cierre sin esperar a la persona',
     DOD_EVIDENCE_MANUAL_WRITE: 'evidencia escrita a mano', SIZE_FORCED_LIGHT_WITH_CODE: 'pipeline liviano con código',
+    'story-skill-bypass': 'freno de stories salteado', STORY_SKILL_BYPASS: 'freno de stories salteado',
   },
   'RR-NODE': { _: 'guion del arnés que no arrancó', 'node-viejo': 'Node viejo', carga: 'guion del arnés que no cargó' },
   'RR-HOOK': { _: 'aviso automático con error' },
@@ -31,11 +32,17 @@ const NOMBRES_CAUSA = {
 };
 const HOOK_TIEMPO = 'aviso automático que se pasó de tiempo';
 const hasOwnCausa = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-/** El nombre de una causa de ejecuciones (`{ regla, categoria }`); la regla tiene que estar en la tabla. */
+/**
+ * El nombre de una causa de ejecuciones (`{ regla, categoria }`); la regla tiene que estar en la tabla. Una variante
+ * (`X/variante`) que la tabla no nombra lleva el nombre de `X`.
+ */
 const nombreCausa = (c) => {
   const t = NOMBRES_CAUSA[c.regla];
   if (c.regla === 'RR-HOOK' && typeof c.categoria === 'string' && c.categoria.endsWith('/tiempo')) return HOOK_TIEMPO;
-  return c.categoria !== null && hasOwnCausa(t, c.categoria) ? t[c.categoria] : t._;
+  if (c.categoria === null || typeof c.categoria !== 'string') return t._;
+  if (hasOwnCausa(t, c.categoria)) return t[c.categoria];
+  const raiz = c.categoria.split('/')[0];
+  return raiz !== c.categoria && hasOwnCausa(t, raiz) ? t[raiz] : t._;
 };
 const NOMBRES_VALIDOS = new Set([HOOK_TIEMPO, ...Object.values(NOMBRES_CAUSA).flatMap((t) => Object.values(t))]);
 
@@ -59,4 +66,17 @@ function nombreDe(fuente, x) {
   throw new Error(`fuente desconocida: ${fuente}`);
 }
 
-module.exports = { NOMBRES_CAUSA, HOOK_TIEMPO, nombreCausa, NOMBRES_VALIDOS, hasOwnCausa, nombreDe };
+// Lo que cuenta aparte: se ve en la ficha, pero no es una falla nueva del arnés. El resumen de la mañana y el ciclo de
+// las fichas no lo suman, y el sitio no lo pregunta; una categoría fuera de esta lista sigue siendo una falla. Vive acá,
+// y no en la regla que la crea, porque el sitio la lee y la imagen del sitio no lleva las reglas de la revisión.
+const APARTE = Object.freeze({
+  'RR-ESCAPE:GIT_NO_VERIFY/laboratorio': 'un commit sin los hooks de git en una carpeta de laboratorio: pruebas y ensayos, no trabajo de un producto',
+  'RR-ESCAPE:PR_A_MANO/sobra': 'el pedido armado con el escape cumplía la regla del freno: el prefijo estaba de más',
+  'RR-CIERRE:derivada/arnes-anterior': 'la ejecución se archivó antes de que el arnés dejara la constancia del cierre (8.92)',
+  'RR-ESCAPE:ADVERSARIAL_RELAUNCH/dato': 'relanzar el pase adversarial no esquiva nada: el pase corre igual',
+  'RR-ESCAPE:SIZE_FORCED_LIGHT_WITH_CODE/con-motivo': 'la ejecución liviana con código trae su motivo: es una decisión anotada',
+  'RR-ESCAPE:FULL_SUITE_RUN/laboratorio': 'la suite completa en una carpeta de laboratorio no es la de un repo',
+  'RR-NODE:en-obra': 'el guion que no cargó es una prueba del arnés en obra (el clon o un worktree), no una pieza instalada',
+});
+
+module.exports = { NOMBRES_CAUSA, HOOK_TIEMPO, nombreCausa, NOMBRES_VALIDOS, hasOwnCausa, nombreDe, APARTE };

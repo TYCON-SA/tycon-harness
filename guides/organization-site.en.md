@@ -200,20 +200,30 @@ its own. Each run's changes come back when the new view finishes building. The s
 
 ### Maintenance (Mantenimiento)
 
-Only for **maintainers**: what the night found that waits for a decision. Next to the name, in the menu, goes how
-many findings are waiting, for example "Maintenance (12)"; with none, just the name. There are three sources: the review of the
-runs (a skipped control, an automatic notice that fails), dependencies with a known vulnerability, and the production
-watcher. Each row says:
+Only for **maintainers**: what the night found, ordered by who has the ball. Next to the name, in the menu, goes how
+many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has three
+blocks:
 
-- **What happened**, in plain words: how many times, on which machines and in which stories. For example, "It happened
-  2 times, on the machine mac-mini, in two different stories".
-- **What "Fix" would do**: a fixed text by kind of problem, for example "find out who turned the control off and why,
-  and turn it back on". If the night's model left a proposal, it goes below as a suggestion (written in Spanish).
+- **Your decision**: what the production watcher and the review of the runs found. Production first, because those are
+  real customers. Within each group, first what the analysis recommends fixing, then what it recommends archiving, and
+  last what has no analysis.
+- **Waiting for approval**: what you already sent and someone else has to approve, grouped by pull request, with its
+  link. Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
+  stay to decide, but nothing is sent until it answers: that way no duplicate pull request is opened.
+- **In progress** (closed at first): what was already decided and someone is doing, with its work item number and who
+  it is assigned to, and the package vulnerabilities. Vulnerabilities are not decided here: each team has its work item
+  and, if it cannot update the package, declares the debt in its repo, with a deadline.
 
-The buttons are explained once, above the table. **Accept** means "it is fine as it is": the finding is archived.
-**Fix** leaves it as pending work. Neither changes anything on the spot: they open a pull request to the operations
-repo that someone else has to approve, and the next night applies it. In dependencies you can only fix: to accept the
-risk, declare the debt in each repo, with a deadline.
+Each card says **what happened** with the finding's data, for example "It happened 4 times, from 21/10 to 24/10". With
+an analysis, it says **why** it happens, what it **recommends** and what fixing it would do, and whether the night's model
+or a person wrote it (the analysis is in Spanish). Without one, it says why, and the buttons stay behind "Decide without
+analysis".
+
+**Archive** means "this is normal, nothing to touch". **Fix** means the night creates a work item to correct it. You
+mark an option on each card (or "Follow the recommendations" for all the analyzed ones) and then **Send for approval**:
+it opens a single pull request to the operations repo with all your choices. Nothing changes until someone else
+approves it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
+explanation.
 
 ### Projects (Proyectos)
 

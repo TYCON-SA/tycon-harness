@@ -3,7 +3,8 @@
 // palabras, y la pieza se los lee con un mapa; ejecuciones escribe la ficha común de cycle.js. Los instintos entran
 // después: el ciclo los admite, esta lista todavía no.
 
-const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD } = require('./cycle.js');
+const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD,
+  problemasDeAnalisis } = require('./cycle.js');
 const { nombreDe } = require('./cause-names.js');
 
 // ── dependencias: su formato y sus palabras de hoy ─────────────────────────────────────────────
@@ -17,7 +18,11 @@ const ORDEN_FICHA = ['id', 'detectado', 'veredicto', 'paquete', 'severidad', 'no
   'pr', 'pr_repo', 'rechazado', 'motivo_rechazo', 'pr_cerrado', 'alineado',
   'reaparecido', 'bloqueada_por', 'resuelto', 'resuelto_antes', 'descartado', 'descartado_antes',
   'motivo', 'motivo_antes', 'pr_antes', 'pr_repo_antes', 'rechazado_antes', 'motivo_rechazo_antes',
-  'ids', 'repos', 'declarada_en', 'avisos'];
+  'ids', 'repos', 'declarada_en', 'avisos', 'pedido_motivo', 'pedidos', 'asignados'];
+
+// Por qué una vulnerabilidad sigue sin la tarea de algún proyecto (`pedido_motivo:`, lo escribe work-items.js): la
+// noche llegó a su tope, un repo no tiene proyecto conocido, o un paso falló al pedirla.
+const MOTIVOS_SIN_TAREA = ['tope', 'sin-proyecto', 'falla'];
 
 // El archivo sigue escribiendo sus palabras; la pieza las lee así. `descartado` es la deuda declarada en todos sus
 // repos: el riesgo se aceptó.
@@ -56,6 +61,79 @@ function vistaVigilante(fi) {
   const e = fi.escalares;
   const estado = fecha(e.resuelta_el) ? 'resuelta' : fecha(e.reaparecio_el) ? 'reaparecio' : 'viva';
   return { estado, veredicto: VEREDICTO_COMUN[e.veredicto] || 'pendiente' };
+}
+
+/**
+ * Un bloque con sangría (`senal:`, `reincidente:`, `analisis:`) como `{ clave: valor }`: el formato por secciones lee
+ * sólo las claves de arriba. Los valores van sin comillas; `null` y `~` son null; un número entero, número.
+ */
+function bloqueDe(txt, clave) {
+  const m = new RegExp(`^${clave}:[ \\t]*\\n((?:[ \\t]+[a-z_]+:.*\\n?)*)`, 'm').exec(String(txt));
+  if (!m) return null;
+  const b = {};
+  for (const l of m[1].split('\n')) {
+    const x = /^[ \t]+([a-z_]+):[ \t]*(.*)$/.exec(l);
+    if (!x) continue;
+    const v = x[2].trim();
+    b[x[1]] = /^(null|~|)$/i.test(v) ? null : /^-?\d{1,12}$/.test(v) ? Number(v) : v.replace(/^"([\s\S]*)"$/, '$1');
+  }
+  return b;
+}
+
+const REGLAS_DEL_VIGILANTE = ['deriva', 'goteo', 'desagregacion', 'latido'];
+const RUTA = /^\/[A-Za-z0-9/_.{}-]{0,200}$/;
+const NOMBRE_DE_PIEZA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+const numero = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+
+/** La mediana de la duración de la evidencia, en milisegundos: sólo el número, nada del texto. */
+function duracionMediana(evidencia) {
+  const ds = [];
+  for (const l of evidencia) {
+    let x;
+    try { x = JSON.parse(l); } catch { continue; }
+    if (x && Number.isFinite(x.duracion_ms) && x.duracion_ms >= 0) ds.push(Math.round(x.duracion_ms));
+  }
+  if (!ds.length) return null;
+  ds.sort((a, b) => a - b);
+  const mitad = Math.floor(ds.length / 2);
+  return ds.length % 2 ? ds[mitad] : Math.round((ds[mitad - 1] + ds[mitad]) / 2);
+}
+
+/** Los datos del borrador del vigilante con forma: números, la ruta, el nombre del plugin y de la regla. */
+function hechosDelVigilante(e, txt, listaDe) {
+  const senal = bloqueDe(txt, 'senal') || {};
+  const reincidente = bloqueDe(txt, 'reincidente') || {};
+  return {
+    errores: numero(senal.errores), total_pedidos: numero(senal.total_pedidos), estado_http: numero(senal.estado_http),
+    endpoint: RUTA.test(String(e.endpoint || '')) ? e.endpoint : null,
+    plugin: NOMBRE_DE_PIEZA.test(String(e.plugin || '')) ? e.plugin : null,
+    regla: REGLAS_DEL_VIGILANTE.includes(e.regla) ? e.regla : null,
+    reincidente_desde: fecha(reincidente.desde), duracion_ms: duracionMediana(listaDe(String(txt), 'evidencia')),
+    producto: NOMBRE_DE_PIEZA.test(String(e.producto || '')) ? e.producto : null,
+  };
+}
+
+/** El análisis, si tiene la forma cerrada de cycle.js; si no, ninguno: nunca uno a medias. */
+function analisisDe(a) {
+  if (!a || typeof a !== 'object') return null;
+  const limpio = Object.fromEntries(Object.entries(a).filter(([, v]) => v !== null && v !== undefined));
+  return problemasDeAnalisis(limpio).length ? null : limpio;
+}
+const motivoDeAnalisis = (m) => (MOTIVOS_SIN_ANALISIS.includes(m) ? m : null);
+
+// El nombre de quien tiene la tarea, como lo guarda la noche: nunca un correo
+const NOMBRE_DE_PERSONA = /^[^\s@"<>`\u0000-\u001f][^@"<>`\u0000-\u001f]{0,79}$/u;
+
+/** Las tareas de una vulnerabilidad: `[{ proyecto, id, asignado }]`, de `pedidos:` («Proyecto: id») y `asignados:` («id: Nombre»). */
+function tareasDe(txt, listaDe) {
+  const sinComillas = (l) => l.replace(/^"([\s\S]*)"$/, '$1');
+  const nombres = new Map();
+  for (const l of listaDe(txt, 'asignados').map(sinComillas)) {
+    const m = /^(\d{1,12}):\s*(.+)$/.exec(l);
+    if (m && NOMBRE_DE_PERSONA.test(m[2].trim())) nombres.set(m[1], m[2].trim());
+  }
+  return listaDe(txt, 'pedidos').map(sinComillas).map((l) => /^(.{1,120}?):\s*(\d{1,12})$/.exec(l)).filter(Boolean)
+    .map((m) => ({ proyecto: m[1].trim(), id: m[2], asignado: nombres.get(m[2]) || null }));
 }
 
 // Las claves de la propuesta del modelo en el formato por secciones (dependencias y el vigilante). La ficha común las
@@ -143,6 +221,7 @@ function comoFicha(fuente, txt) {
       apariciones: f.apariciones, veredicto: f.veredicto, estado: f.estado, resuelto: f.resuelta_el || null,
       reaparecido: f.reaparecio_el || null, aviso_volvio: f.aviso_volvio_el || null, aviso_cerrado: f.aviso_cerrado_el || null,
       propuesta: pr ? propuestaDe(pr.accion, pr.razon, pr.modelo) : null, propuesta_motivo: motivoDe(f.propuesta_motivo),
+      analisis: analisisDe(f.analisis), analisis_motivo: motivoDeAnalisis(f.analisis_motivo), hechos: null,
       pedido: pedidoDe(f.pedido), pedido_de_la_noche: pedidoDeLaNocheDe(f.pedido), asignado: f.asignado || null, pedido_motivo: motivoPedidoDe(f.pedido_motivo), noches: null, pr_noche: null };
   }
   const reg = FUENTES[fuente];
@@ -155,19 +234,23 @@ function comoFicha(fuente, txt) {
   const comun = { veredicto, estado, propuesta: propuestaDe(e.propuesta_accion, e.propuesta_razon, e.propuesta_modelo),
     propuesta_motivo: motivoDe(e.propuesta_motivo), asignado: null, pedido_motivo: null, pr_noche: prNoche };
   if (fuente === 'dependencias') {
-    // `pedidos:` es la lista «Proyecto: id» de los pedidos del líder; el último es el vigente
-    const ultimo = reg.formato.listaDe(String(txt), 'pedidos').slice(-1)[0];
-    const m = ultimo ? /:\s*(\d+)$/.exec(ultimo) : null;
+    // `pedidos:` es la lista «Proyecto: id» de las tareas de los líderes, una por proyecto; la última es la vigente
+    const pedidos = tareasDe(String(txt), reg.formato.listaDe);
+    const ultimo = pedidos[pedidos.length - 1];
     return { fuente, id: e.id || null, causa: e.id || null, nombre: nombreDe('dependencias', e), primera_vez: fecha(e.detectado),
       ultima_vez: null, apariciones: entero(e.noches), resuelto: fecha(e.resuelto), reaparecido: fecha(e.reaparecido), aviso_volvio: null, aviso_cerrado: null, ...comun,
-      pedido: m ? { id: m[1], enlace: null } : null, pedido_de_la_noche: null, noches: entero(e.noches) };
+      pedido: ultimo ? { id: ultimo.id, enlace: null } : null, pedido_de_la_noche: null, noches: entero(e.noches),
+      pedidos, pedido_motivo: MOTIVOS_SIN_TAREA.includes(e.pedido_motivo) ? e.pedido_motivo : null,
+      repos: fi.listas.repos.length, severidad: /^[a-z]{1,20}$/.test(String(e.severidad || '')) ? e.severidad : null,
+      analisis: null, analisis_motivo: null, hechos: null };
   }
   return { fuente, id: e.id || null, causa: e.causa || e.huella || null, nombre: nombreDe('vigilante', e), primera_vez: fecha(e.fecha),
     ultima_vez: fecha(e.vista_por_ultima_vez), apariciones: entero(e.noches_seguidas) || 1, resuelto: fecha(e.resuelta_el),
     reaparecido: fecha(e.reaparecio_el), aviso_volvio: fecha(e.aviso_volvio_el), aviso_cerrado: fecha(e.aviso_cerrado_el), ...comun,
     // el pedido que creó la noche y, sin él, la story que creó una persona con /tycon-vigilante
     pedido: pedidoDe(e.pedido) || pedidoDe(e.story_creada), pedido_de_la_noche: pedidoDeLaNocheDe(e.pedido), asignado: asignadoDe(e.asignado), pedido_motivo: motivoPedidoDe(e.pedido_motivo),
-    noches: null };
+    noches: null, analisis: analisisDe(bloqueDe(txt, 'analisis')), analisis_motivo: motivoDeAnalisis(e.analisis_motivo),
+    hechos: hechosDelVigilante(e, txt, reg.formato.listaDe) };
 }
 
-module.exports = { FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, esVieja, comoFicha, pedidoDeLaNocheDe };
+module.exports = { FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, esVieja, comoFicha, pedidoDeLaNocheDe };

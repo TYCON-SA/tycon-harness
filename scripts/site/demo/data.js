@@ -330,7 +330,8 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   });
   const CYCLE = require('../../nightly/findings/cycle.js');
   const ej1 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: ayer }),
-    ultima_vez: hoy, apariciones: 3, propuesta: { accion: 'arreglar', razon: 'Pasa en la mitad de las ejecuciones de la semana' } };
+    ultima_vez: hoy, apariciones: 3, propuesta: { accion: 'arreglar', razon: 'Pasa en la mitad de las ejecuciones de la semana' },
+    analisis: { recomendacion: 'arreglar', por_que_pasa: 'Se apagó con la variable de escape en 3 de las 6 ejecuciones de la semana, siempre en la misma máquina', por_que_recomienda: 'sin el pase adversarial los errores llegan a la revisión humana', arreglo: 'que el escape pida el ok de una persona y quede anotado', autor: 'modelo', modelo: 'sonnet', el: hoy } };
   const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo al cerrar', hoy: ayer }), veredicto: 'arreglo', pedido: 5001 };
   f[`inbox/runs-review/pending/${ej1.id}.yaml`] = CYCLE.serializar(ej1);
   f[`inbox/runs-review/promoted/${ej2.id}.yaml`] = CYCLE.serializar(ej2);

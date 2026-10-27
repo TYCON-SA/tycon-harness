@@ -726,10 +726,11 @@ test('T14 Resumen_AceptadasNoSeRepiten', () => {
 
 // T15 Nombres_MudanzaSinCambiarTexto @story-4.11 @ac-12
 // 🔴 Falla con: cambiar una letra de la tabla al mudarla (la huella es la de la tabla de antes), que el resumen use otra
-//    copia, o un nombre de más de 120 caracteres o con un salto de renglón.
+//    copia, o un nombre de más de 120 caracteres o con un salto de renglón. La huella cambió una vez a propósito, cuando
+//    el freno de stories ganó su nombre (T101).
 test('T15 Nombres_MudanzaSinCambiarTexto', () => {
   const crypto = require('crypto');
-  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fd038a3b2dc6425db833b67c3794569e062be4c3');
+  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), '06231254fbdb3ada7e512ebe4a4b6861aa8ff119');
   assert.strictEqual(DS.NOMBRES_CAUSA, NOMBRES.NOMBRES_CAUSA, 'el resumen usa la misma tabla');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-HOOK', categoria: 'Stop/tiempo' }), 'aviso automático que se pasó de tiempo');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria: 'ZZDESCONOCIDA' }), 'otro freno salteado');
@@ -1712,4 +1713,105 @@ test('T18c PedidoCerrado_AvisadoSoloConConstancia @story-4.11 @ac-29', async () 
   // una lista de avisados sin forma es un archivo roto
   fs.writeFileSync(path.join(ej, cycle.AVISO_CERRADO), JSON.stringify({ fecha: HOY_B, avisados: ['901'], sin_leer: 0, no_existen: [] }));
   assert.deepStrictEqual(cycle.leerAvisoCerrado(ej, HOY_B), { roto: true });
+});
+
+// ── El análisis de cada ficha (la pantalla Mantenimiento) ──────────────────────────────────────────────────────────
+
+const ANALISIS = {
+  recomendacion: 'arreglar', por_que_pasa: 'Su tope es de 2 segundos y con la máquina cargada no le alcanza: 479 cortes desde el 22/10.',
+  por_que_recomienda: 'No es una falla del arnés y hoy infla la cuenta.', arreglo: 'La revisión de la noche separa los avisos de complementos de afuera.',
+  autor: 'persona', el: '2026-10-27',
+};
+
+// Analisis_FormaCerrada_SeGuardaYSeLee
+// 🔴 Falla con: una ficha con análisis que la noche no puede escribir (campo desconocido), un análisis con un enlace,
+// un correo o una ruta, o un motivo fuera de la lista.
+test('T100 Analisis_FormaCerrada_SeGuardaYSeLee', () => {
+  const base = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-HOOK:UserPromptSubmit/tiempo', nombre: 'aviso automático que se pasó de tiempo', hoy: '2026-10-26' });
+  const con = { ...base, analisis: ANALISIS };
+  assert.deepStrictEqual(cycle.problemasDeForma(con), []);
+  assert.deepStrictEqual(cycle.parsear(cycle.serializar(con)).analisis, ANALISIS, 'se escribe y se vuelve a leer igual');
+  // con el modelo que lo escribió y lo opcional de aceptar
+  const delModelo = { recomendacion: 'aceptar', por_que_pasa: 'Fue un solo episodio la madrugada del 24/10, con 146 errores en una hora.', por_que_recomienda: 'No frenó nada.', si_vuelve: 'Se limitan las sesiones a la vez.', autor: 'modelo', modelo: 'sonnet', el: '2026-10-27' };
+  assert.deepStrictEqual(cycle.problemasDeForma({ ...base, analisis: delModelo }), []);
+  for (const m of ['no-aporta', 'sin-hechos', 'tope', 'modelo-caido']) assert.deepStrictEqual(cycle.problemasDeForma({ ...base, analisis_motivo: m }), [], m);
+  const malos = [
+    ['un enlace', { ...ANALISIS, arreglo: 'Ver https://acme.example/x' }],
+    ['un correo', { ...ANALISIS, por_que_pasa: 'Lo dijo alguien@acme.example' }],
+    ['un dominio', { ...ANALISIS, por_que_pasa: 'Falla contra acme.example cada noche' }],
+    ['código', { ...ANALISIS, arreglo: 'Correr `rm -rf` en la carpeta' }],
+    ['un renglón de más', { ...ANALISIS, por_que_pasa: 'uno\ndos' }],
+    ['muy largo', { ...ANALISIS, por_que_pasa: 'a'.repeat(221) }],
+    ['arreglar sin arreglo', { ...ANALISIS, arreglo: undefined }],
+    ['otra recomendación', { ...ANALISIS, recomendacion: 'ignorar' }],
+    ['otro autor', { ...ANALISIS, autor: 'otro' }],
+    ['un campo de más', { ...ANALISIS, nota: 'x' }],
+    ['sin fecha', { ...ANALISIS, el: 'ayer' }],
+  ];
+  for (const [que, a] of malos) {
+    const limpio = JSON.parse(JSON.stringify(a));
+    assert.ok(cycle.problemasDeForma({ ...base, analisis: limpio }).some((p) => p.startsWith('analisis')), que);
+  }
+  assert.ok(cycle.problemasDeForma({ ...base, analisis_motivo: 'porque sí' }).some((p) => p.startsWith('analisis_motivo')));
+});
+
+// Nombres_VarianteYStories_ConNombrePropio
+// 🔴 Falla con: «otro freno salteado» para una variante de un escape conocido o para el freno de stories.
+test('T101 Nombres_VarianteYStories_ConNombrePropio', () => {
+  const n = (categoria) => NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria });
+  assert.strictEqual(n('story-skill-bypass'), 'freno de stories salteado');
+  assert.strictEqual(n('STORY_SKILL_BYPASS'), 'freno de stories salteado');
+  assert.strictEqual(n('GIT_NO_VERIFY/otra'), 'commit sin controles');
+  assert.strictEqual(n('TYCON_NO_DEEP_REVIEW/x'), 'pase adversarial salteado');
+  assert.strictEqual(n('ZZDESCONOCIDA/x'), 'otro freno salteado');
+  assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-CIERRE', categoria: 'derivada/otra' }), 'cerrada con pendientes');
+});
+
+// VistaComun_AnalisisHechosYTareas
+// 🔴 Falla con: un análisis sin forma a la vista, el diagnóstico o la evidencia del vigilante en sus datos, un correo
+// como nombre del asignado, o sólo la última tarea de una vulnerabilidad con varios proyectos.
+test('T102 VistaComun_AnalisisHechosYTareas', () => {
+  // ejecuciones: el análisis con forma; sin forma, nada; y el motivo de «sin analizar»
+  const base = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-HOOK:Stop/otro', nombre: 'aviso automático con error', hoy: '2026-10-26' });
+  const e = sources.comoFicha('ejecuciones', cycle.serializar({ ...base, analisis: ANALISIS }));
+  assert.deepStrictEqual(e.analisis, ANALISIS);
+  assert.strictEqual(e.analisis_motivo, null);
+  const m = sources.comoFicha('ejecuciones', cycle.serializar({ ...base, analisis_motivo: 'no-aporta' }));
+  assert.strictEqual(m.analisis, null);
+  assert.strictEqual(m.analisis_motivo, 'no-aporta');
+
+  // el vigilante: los datos con forma, la mediana de la duración, el análisis en su bloque; nada del diagnóstico
+  const vig = [
+    'id: "2026-10-20-acme-621d9c62"', 'fecha: "2026-10-20"', 'producto: "acme"', 'regla: "deriva"', 'huella: "621d9c62"',
+    'plugin: "acmebackend"', 'endpoint: "/dashboard/acciones-cartera"', 'senal:', '  errores: 3', '  total_pedidos: null',
+    '  estado_http: 500', 'diagnostico: "DIAGNOSTICO-PRIVADO"', 'evidencia:',
+    '  - {"ts":"2026-10-19T10:00:00","estado":500,"duracion_ms":32000,"usuario":"#aa","mensaje":"EVIDENCIA-PRIVADA"}',
+    '  - {"ts":"2026-10-20T10:00:00","estado":500,"duracion_ms":31000,"usuario":"#aa","mensaje":""}',
+    '  - {"ts":"2026-10-20T11:00:00","estado":500,"duracion_ms":33000,"usuario":"#bb","mensaje":""}',
+    'reincidente:', '  desde: "2026-10-06"', '  veredicto_previo: ignorado', 'analisis:', '  recomendacion: aceptar',
+    '  por_que_pasa: "Fueron 3 errores 500 en dos días, cada uno tras 32 segundos de espera."', '  por_que_recomienda: "No se repitió."',
+    '  autor: persona', '  el: "2026-10-27"', 'veredicto: pendiente', 'vista_por_ultima_vez: "2026-10-23"', 'noches_seguidas: 2', '',
+  ].join('\n');
+  const v = sources.comoFicha('vigilante', vig);
+  assert.deepStrictEqual(v.hechos, { errores: 3, total_pedidos: null, estado_http: 500, endpoint: '/dashboard/acciones-cartera',
+    plugin: 'acmebackend', regla: 'deriva', reincidente_desde: '2026-10-06', duracion_ms: 32000, producto: 'acme' });
+  assert.deepStrictEqual(v.analisis, { recomendacion: 'aceptar', por_que_pasa: 'Fueron 3 errores 500 en dos días, cada uno tras 32 segundos de espera.',
+    por_que_recomienda: 'No se repitió.', autor: 'persona', el: '2026-10-27' });
+  assert.ok(!JSON.stringify(v).includes('PRIVAD'), 'ni el diagnóstico ni la evidencia');
+  // un endpoint sin forma de ruta y un análisis con un enlace no salen
+  const raro = sources.comoFicha('vigilante', vig.replace('"/dashboard/acciones-cartera"', '"https://acme.example/x"').replace('No se repitió.', 'Ver https://acme.example'));
+  assert.strictEqual(raro.hechos.endpoint, null);
+  assert.strictEqual(raro.analisis, null);
+
+  // dependencias: todas las tareas, con el nombre de quien la tiene (nunca un correo) y el motivo de las que faltan
+  const dep = ['id: dep-uno', 'detectado: 2026-09-09', 'veredicto: util', 'paquete: next', 'severidad: critical', 'noches: 3',
+    'pedido_motivo: tope', 'repos:', '  - Producto X/FrontEnd', '  - Producto Y/Forms', 'pedidos:', '  - Producto X: 5467', '  - Producto Y: 5445',
+    'asignados:', '  - "5467: Ana Pérez"', '  - "5445: ana@acme.example"', ''].join('\n');
+  const d = sources.comoFicha('dependencias', dep);
+  assert.deepStrictEqual(d.pedidos, [{ proyecto: 'Producto X', id: '5467', asignado: 'Ana Pérez' }, { proyecto: 'Producto Y', id: '5445', asignado: null }]);
+  assert.deepStrictEqual(d.pedido, { id: '5445', enlace: null }, 'el último sigue siendo el vigente');
+  assert.strictEqual(d.pedido_motivo, 'tope');
+  assert.strictEqual(d.repos, 2);
+  assert.strictEqual(d.severidad, 'critical');
+  assert.strictEqual(sources.comoFicha('dependencias', dep.replace('pedido_motivo: tope', 'pedido_motivo: cualquiera')).pedido_motivo, null);
 });

@@ -196,20 +196,29 @@ disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pes
 
 ### Mantenimiento
 
-Sólo para **quien mantiene**: lo que encontró la noche y espera una decisión. Al lado del nombre, en el menú, va
-cuántas fichas esperan, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. Son tres fuentes: la revisión de las
-ejecuciones (un control salteado, un aviso automático que falla), las dependencias con una vulnerabilidad conocida y
-el vigilante de producción. Cada fila dice:
+Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién tiene la pelota. Al lado del nombre, en el
+menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
+tiene tres bloques:
 
-- **Qué pasó**, en llano: cuántas veces, en qué máquinas y en qué stories. Por ejemplo, «Pasó 2 veces, en la máquina
-  mac-mini, en dos stories distintas».
-- **Qué haría «Arreglar»**: un texto fijo según el tipo de problema, por ejemplo «averiguar quién apagó el control y por
-  qué, y volverlo a prender». Si el modelo de la noche dejó una propuesta, va debajo como sugerencia.
+- **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones. Primero lo de
+  producción, porque son clientes reales. Dentro de cada grupo, primero lo que el análisis recomienda arreglar, después
+  lo que recomienda archivar y al final lo que no tiene análisis.
+- **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace.
+  Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
+  pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
+- **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
+  está asignada, y las vulnerabilidades de paquetes. Las vulnerabilidades no se deciden acá: cada equipo tiene su tarea
+  y, si no puede actualizar el paquete, declara la deuda en su repo, con plazo.
 
-Los botones se explican una vez, arriba de la tabla. **Aceptar** quiere decir «está bien así»: la ficha se archiva.
-**Arreglar** la deja como trabajo pendiente. Ninguno de los dos cambia nada en el momento: abren un pedido al repo de
-operaciones que tiene que aprobar otra persona, y la noche siguiente lo aplica. En dependencias sólo se puede arreglar:
-para aceptar el riesgo hay que declarar la deuda en cada repo, con plazo.
+Cada tarjeta dice **qué pasó** con los datos de la ficha, por ejemplo «Pasó 4 veces, del 21/10 al 24/10». Si hay
+análisis, dice **por qué** pasa, qué **recomienda** y qué se haría si se arregla, y aclara si lo escribió el modelo de la
+noche o una persona. Sin análisis, dice por qué no lo tiene y los botones quedan detrás de «Decidir sin análisis».
+
+**Archivar** quiere decir «es normal, no hay que tocar nada». **Arreglar** quiere decir que la noche crea una tarea para
+corregirlo. Marcás una opción en cada tarjeta (o «Seguir las recomendaciones» para todas las que tienen análisis) y al
+final **Enviar para aprobar**: abre un solo pedido al repo de operaciones con todas tus elecciones. Nada cambia hasta
+que otra persona lo aprueba. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
+tiene su «?» con la explicación.
 
 ### Proyectos
 

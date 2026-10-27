@@ -1,59 +1,72 @@
 'use strict';
 /*
- * tabs/findings.js — LA PESTAÑA «MANTENIMIENTO»: LO QUE ENCONTRÓ LA NOCHE Y ESPERA UNA DECISIÓN.
+ * tabs/findings.js — LA PESTAÑA «MANTENIMIENTO»: LO QUE ENCONTRÓ LA NOCHE, POR QUIÉN TIENE LA PELOTA.
  *
- * Qué resuelve: quien mantiene decide cada ficha de la noche (dependencias, el vigilante y la revisión de las
- * ejecuciones) con un clic, sin abrir el repo de operaciones. El clic no escribe nada en main: abre un pedido con el
- * archivo `inbox/<carpeta>/decisions/<id>.json`, que otra persona aprueba; la noche siguiente lo aplica
- * (scripts/nightly/findings/cycle.js, `aplicarDecisiones`).
+ * Qué resuelve: quien mantiene decide las fichas de la noche sin abrir el repo de operaciones. La pantalla tiene tres
+ * bloques. «Te toca decidir»: las fichas del vigilante y de la revisión de las ejecuciones que esperan Archivar o
+ * Arreglar. «Esperando aprobación»: lo que ya se envió y otra persona tiene que aprobar, agrupado por pedido. «En
+ * marcha»: los arreglos con su tarea y las vulnerabilidades de paquetes, que cada equipo sigue en su tarea (acá no se
+ * deciden). Lo que la revisión declara «aparte» (cause-names.js `APARTE`) no se pregunta.
  *
- * UNA FILA POR FICHA VIVA, leída del clon de operaciones con la vista común (sources.js `comoFicha`): sin el diagnóstico
- * ni la evidencia del vigilante, y con la razón del modelo pasada otra vez por su filtro. Cada fila dice en llano qué
- * pasó (cuántas veces, en qué máquinas y en qué stories, de los casos de la ficha) y qué haría «Arreglar» según la familia
- * de la causa; la propuesta del modelo va debajo, como sugerencia. Qué hace cada botón se dice una vez, arriba. El menú
- * lleva al lado del nombre cuántas fichas esperan decisión (`cuantasEsperan`). Estados:
- * «pendiente» (con los botones), «propuesto en el pedido N» (UNA consulta de pedidos abiertos para todas las filas,
- * guardada un minuto) y «decidido, se aplica esta noche» (el archivo de decisión ya está en main). Dependencias ofrece
- * sólo «Arreglar»: aceptar el riesgo es declarar la deuda en cada repo, con plazo. Sin clon, sin fichas o con carpetas
- * que no se pueden leer, una frase: nunca una tabla vacía.
+ * Cada tarjeta dice qué pasó con los datos de la ficha, sin modelo, y el análisis si lo hay (el de la noche o el de
+ * una persona), con lo que recomienda. Las elecciones se marcan en el navegador; «Enviar para aprobar» abre UN pedido
+ * con un archivo `inbox/<carpeta>/decisions/<id>.json` por ficha, que la noche aplica cuando está en main
+ * (scripts/nightly/findings/cycle.js, `aplicarDecisiones`). Nada se escribe en main desde acá.
+ *
+ * Qué espera aprobación sale de los pedidos abiertos de decisiones (sus archivos y la acción de su cuerpo): una
+ * consulta para toda la pantalla, guardada un minuto. Si la plataforma no contesta, lo dice una frase y las filas
+ * quedan para decidir: el pedido se nombra por su contenido, y reenviarlo no abre otro. El menú lleva al lado del
+ * nombre cuántas fichas esperan decisión (`cuantasEsperan`). Sin clon, sin fichas o con carpetas que no se pueden leer,
+ * una frase.
  *
  * Rutas (todas `maintainer`: otro rol no ve la pestaña en el menú): GET /mantenimiento · GET /api/hallazgos · POST
  * /api/hallazgos/confirmar · GET /hallazgos/cliente.js. Casos: scripts/tests/site-findings.test.js.
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const ORG = require('../../lib/org-config.js');
 const RP = require('../../lib/repo-proposal.js');
 const SOURCES = require('../../nightly/findings/sources.js');
 const CYCLE = require('../../nightly/findings/cycle.js');
+const { APARTE } = require('../../nightly/findings/cause-names.js');
 const views = require('../views.js');
 const TX = require('../texts.js');
 const LANG = require('../language.js');
 const { defensaDeEscritura } = require('./config.js');
 
 const FUENTES = CYCLE.FUENTES;
+// las que se deciden acá, en el orden de la pantalla: producción primero, porque son clientes reales
+const SE_DECIDEN = ['vigilante', 'ejecuciones'];
 // el id de una ficha va a una ruta del clon y a la rama del pedido: sin barras ni nada que salga de su carpeta. Es más
-// estricto que la CLAVE de cycle.js a propósito: una ficha con `:` o `/` en el id sale como ilegible y no se confirma
+// estricto que la CLAVE de cycle.js a propósito: una ficha con `:` o `/` en el id sale como ilegible y no se envía
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
 const ENLACE = /^https:\/\/[^\s"'<>\\]{1,500}$/;
 const VIGENCIA_PEDIDOS_MS = 60 * 1000;
 const CARPETAS_VIVAS = ['pending', 'promoted'];
+const TOPE_ENVIO = 100;
+// las ramas de los pedidos de decisiones: las de a una (`decision-…`) y las de varias (`decisiones-…`)
+const RAMA_DE_DECISIONES = 'team-config/decision';
+// lo que el cuerpo del pedido dice de cada ficha: «fuente/id → acción»
+const LINEA_DE_DECISION = /(vigilante|ejecuciones)\/([A-Za-z0-9][A-Za-z0-9._-]{0,119}) → (aceptar|arreglar)/g;
+const SEVERIDADES = { critical: 0, high: 1, moderate: 2, medium: 2, low: 3 };
+const NOMBRE_SEVERIDAD = { critical: 'critica', high: 'alta', moderate: 'media', medium: 'media', low: 'baja' };
+const PAQUETE = /^[@A-Za-z0-9][@A-Za-z0-9._/-]{0,213}$/;
+const ORGANIZACION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+// el nombre de la máquina sin la huella del final (`mac-mini-b274e100` → `mac-mini`)
+const HUELLA_DE_MAQUINA = /-[0-9a-f]{8}$/;
+const PRODUCTO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
+const AYUDAS = ['aceptar', 'arreglar', 'enviar', 'tarea', 'deuda', 'analisis', 'seguir'];
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
 const norm = (c) => String(c || '').trim().toLowerCase();
-// las familias de causa de ejecuciones con un texto fijo de qué haría «Arreglar» (hallazgos.arreglo.<familia>)
-const FAMILIAS = { 'RR-ESCAPE': 'escape', 'RR-HOOK': 'hook', 'RR-CIERRE': 'cierre', 'RR-NODE': 'node', 'RR-BANDERA': 'bandera', 'RR-APAGO': 'apago' };
-// el nombre de la máquina sin la huella del final (`mac-mini-b274e100` → `mac-mini`)
-const HUELLA_DE_MAQUINA = /-[0-9a-f]{8}$/;
-const PRODUCTO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
-const TOPE_LISTA = 3;
-
-/** Las acciones que se pueden confirmar en una fuente (decisión 14: dependencias, sólo arreglar). */
-const accionesDe = (fuente) => Object.keys(CYCLE.VEREDICTO_DE_DECISION[fuente]).sort();
-/** El identificador del pedido de una ficha: un segundo clic encuentra el pedido abierto y no abre otro. */
-const idCortoDe = (fuente, id) => `decision-${fuente}-${id}`;
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+/** Una fecha `AAAA-MM-DD` como `DD/MM`. */
+const dia = (f) => (typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) ? `${f.slice(8, 10)}/${f.slice(5, 7)}` : '');
+const clave = (f) => `${f.fuente}/${f.id}`;
 const numeroDe = (enlace) => { const m = /\/(?:pull|pullrequest)\/(\d+)$/.exec(String(enlace || '')); return m ? Number(m[1]) : null; };
+const aparte = (f) => typeof f.causa === 'string' && hasOwn(APARTE, f.causa);
 
 function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, demo = false }) {
   const T = (idioma, k, v) => TX.t(idioma, k, v);
@@ -84,7 +97,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
           let v;
           let txt;
           try { txt = fs.readFileSync(path.join(d, n), 'utf8'); v = SOURCES.comoFicha(fuente, txt); } catch { ilegibles.add(fuente); continue; }
-          // una ficha por ejecución de antes no es de este ciclo; una resuelta ya no se decide
+          // una ficha por ejecución de antes no es de este ciclo; una resuelta ya no se sigue
           if (!v || v.estado === 'resuelta') continue;
           if (!(typeof v.id === 'string' && ID.test(v.id))) { ilegibles.add(fuente); continue; }
           fichas.push({ ...v, carpeta, contexto: contextoDe(fuente, reg, txt) });
@@ -94,181 +107,386 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return { estado: 'leido', fichas, ilegibles: [...ilegibles] };
   }
 
-  /** Lo que hace falta para decir qué pasó y que la vista común no trae: los casos, los repos, el producto. */
+  /** Lo que hace falta para decir qué pasó y que la vista común no trae: los casos de ejecuciones, el paquete. */
   function contextoDe(fuente, reg, txt) {
     if (fuente === 'ejecuciones') {
       const f = CYCLE.parsear(txt);
       const casos = Array.isArray(f.casos) ? f.casos : [];
       const unicos = (k) => [...new Set(casos.map((c) => c[k]).filter((x) => typeof x === 'string' && x).reverse())];
-      return { veces: f.casos_total || f.apariciones || null, maquinas: unicos('maquina').map((m) => m.replace(HUELLA_DE_MAQUINA, '')), stories: unicos('story') };
+      const dias = casos.map((c) => c.dia).filter((x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+      return { veces: f.casos_total || f.apariciones || null, maquinas: unicos('maquina').map((m) => m.replace(HUELLA_DE_MAQUINA, '')),
+        stories: unicos('story'), desde: dias[0] || null, hasta: dias[dias.length - 1] || null };
     }
-    if (fuente === 'dependencias') return { repos: reg.formato.listaDe(String(txt), 'repos') };
-    const producto = reg.formato.leerFicha(String(txt)).escalares.producto;
-    return { producto: PRODUCTO.test(String(producto || '')) ? producto : null };
+    if (fuente === 'dependencias') {
+      const p = reg.formato.leerFicha(String(txt)).escalares.paquete;
+      return { paquete: PAQUETE.test(String(p || '')) ? p : null };
+    }
+    return {};
   }
 
-  /** Las fichas que esperan decisión, para el número del menú: pendientes, en pending/, sin decisión en main ni pedido de la noche. */
+  /** La decisión de una ficha que ya está en main: `{ accion }`, null si no hay, o 'ilegible'. */
+  function decisionEnMain(dir, f) {
+    let txt;
+    try { txt = fs.readFileSync(path.join(dir, rutaDecision(f.fuente, f.id)), 'utf8'); } catch (e) {
+      return e && e.code === 'ENOENT' ? null : 'ilegible';
+    }
+    let d = null;
+    try { d = JSON.parse(txt); } catch { /* sin forma: igual está decidida, sin acción que mostrar */ }
+    return { accion: isObject(d) && CYCLE.ACCIONES.includes(d.accion) ? d.accion : null };
+  }
+
+  /** ¿Espera que alguien decida? Las del vigilante y ejecuciones pendientes en pending/, que no cuentan aparte. */
+  const porDecidir = (f) => SE_DECIDEN.includes(f.fuente) && f.carpeta === 'pending' && f.veredicto === 'pendiente' && !aparte(f);
+
+  // ── lo que espera aprobación: los pedidos de decisiones abiertos, una consulta para toda la pantalla ──
+  let membresiaGuardada = null;
+  let ultimaMembresia = null;
+
+  /** La ficha de una ruta de un pedido (`inbox/<carpeta>/decisions/<id>.json`), o null. */
+  function claveDeRuta(ruta) {
+    for (const fuente of SE_DECIDEN) {
+      const prefijo = `inbox/${carpetaDe(fuente)}/decisions/`;
+      if (!ruta.startsWith(prefijo) || !ruta.endsWith('.json')) continue;
+      const id = ruta.slice(prefijo.length, -'.json'.length);
+      if (ID.test(id)) return `${fuente}/${id}`;
+    }
+    return null;
+  }
+
+  async function leerMembresia() {
+    const rem = remote();
+    if (!rem || !rem.platform) return { estado: 'no_se_pudo', error: 'sin plataforma' };
+    const credencial = cfg.escritura && cfg.escritura.operaciones;
+    const p = await RP.pedidosAbiertos({ remote: rem, credencial, urlBase, fetch });
+    if (p.error) return { estado: 'no_se_pudo', error: p.error };
+    const porFicha = new Map();
+    const deDecisiones = p.pedidos.filter((x) => String(x.rama).startsWith(RAMA_DE_DECISIONES) && Number.isInteger(x.numero)).sort((a, b) => a.numero - b.numero);
+    for (const x of deDecisiones) {
+      const a = await RP.archivosDelPedido({ remote: rem, credencial, numero: x.numero, urlBase, fetch });
+      if (a.error) return { estado: 'no_se_pudo', error: a.error };
+      const acciones = new Map([...a.cuerpo.matchAll(LINEA_DE_DECISION)].map((m) => [`${m[1]}/${m[2]}`, m[3]]));
+      for (const ruta of a.archivos) {
+        const k = claveDeRuta(ruta);
+        if (k && !porFicha.has(k)) porFicha.set(k, { numero: x.numero, enlace: ENLACE.test(String(x.enlace)) ? x.enlace : null, accion: acciones.get(k) || null });
+      }
+    }
+    return { estado: 'leido', porFicha };
+  }
+
+  /** `{ estado: 'leido', porFicha: Map(fuente/id → { numero, enlace, accion }) }` o `{ estado: 'no_se_pudo' }`. */
+  async function membresia() {
+    if (membresiaGuardada && ahora() - membresiaGuardada.t < VIGENCIA_PEDIDOS_MS) return membresiaGuardada.r;
+    let r;
+    if (demo) r = { estado: 'leido', porFicha: new Map() };
+    else {
+      try { r = await leerMembresia(); } catch (e) { r = { estado: 'no_se_pudo', error: (e && e.code) || 'error' }; }
+      if (r.estado !== 'leido') log(`hallazgos: no se pudo ver qué espera aprobación (${String(r.error).slice(0, 120)})`);
+    }
+    // una falla no se guarda: la lectura siguiente vuelve a preguntar
+    membresiaGuardada = r.estado === 'leido' ? { t: ahora(), r } : null;
+    if (r.estado === 'leido') ultimaMembresia = r;
+    return r;
+  }
+
+  /** Las fichas que esperan decisión, para el número del menú: sin preguntar a la plataforma, con lo último que contestó. */
   function cuantasEsperan() {
     const l = leerFichas();
     if (l.estado !== 'leido') return 0;
     const dir = dirOps();
-    return l.fichas.filter((f) => f.carpeta === 'pending' && f.veredicto === 'pendiente' && !f.pr_noche && !fs.existsSync(path.join(dir, rutaDecision(f.fuente, f.id)))).length;
+    const enPedido = ultimaMembresia ? ultimaMembresia.porFicha : new Map();
+    return l.fichas.filter((f) => porDecidir(f) && decisionEnMain(dir, f) === null && !enPedido.has(clave(f))).length;
   }
 
-  // ── los pedidos abiertos: una consulta para todas las filas, guardada un minuto ──
-  let pedidosGuardados = null;
-  async function pedidos() {
-    if (pedidosGuardados && ahora() - pedidosGuardados.t < VIGENCIA_PEDIDOS_MS) return pedidosGuardados.r;
-    let r;
-    if (demo) r = { pedidos: [] };
-    else {
-      const rem = remote();
-      try { r = rem && rem.platform ? await RP.pedidosAbiertos({ remote: rem, credencial: cfg.escritura && cfg.escritura.operaciones, urlBase, fetch }) : { error: 'sin plataforma' }; } catch (e) { r = { error: (e && e.code) || 'error' }; }
-      if (r.error) log(`hallazgos: no se pudo ver si hay pedidos abiertos (${String(r.error).slice(0, 120)})`);
+  // ── la tarea de cada arreglo y de cada vulnerabilidad ──
+
+  /** Dónde viven las tareas: la organización y el proyecto de operations.json, o los del repo de operaciones en Azure. */
+  function destinoDeTareas() {
+    const c = (typeof fuentes.config === 'function' && fuentes.config()) || {};
+    const w = isObject(c.work_items) ? c.work_items : {};
+    const rem = remote();
+    const azure = rem && rem.platform === 'azure' ? rem : null;
+    let org = typeof w.org === 'string' ? w.org.trim() : '';
+    if (org && ORGANIZACION.test(org)) org = `https://dev.azure.com/${org}`;
+    if (!org && azure && ORGANIZACION.test(String(azure.org || ''))) org = `https://dev.azure.com/${azure.org}`;
+    org = ENLACE.test(org) ? org.replace(/\/+$/, '') : null;
+    const proyecto = typeof w.project === 'string' && w.project.trim() ? w.project.trim() : azure && azure.project ? azure.project : null;
+    return { org, proyecto };
+  }
+  const enlaceDeTarea = (destino, proyecto, numero) => {
+    if (!destino.org || !proyecto || !/^\d{1,12}$/.test(String(numero))) return null;
+    const u = `${destino.org}/${encodeURIComponent(proyecto)}/_workitems/edit/${numero}`;
+    return ENLACE.test(u) ? u : null;
+  };
+  const nombreDePersona = (x) => (typeof x === 'string' && SOURCES.NOMBRE_DE_PERSONA.test(x.trim()) ? x.trim() : null);
+
+  function arregloDe(f, destino) {
+    const base = { fuente: f.fuente, id: f.id, nombre: f.nombre };
+    const asignado = nombreDePersona(f.asignado);
+    if (f.pedido) {
+      const numero = f.pedido.enlace ? (/(\d{1,12})\/?$/.exec(f.pedido.enlace) || [])[1] || null : f.pedido.id;
+      const enlace = f.pedido.enlace || enlaceDeTarea(destino, destino.proyecto, numero);
+      return { ...base, estado: enlace ? 'tarea' : 'sin_enlace', tarea: enlace ? { numero, enlace } : null, asignado, motivo: null };
     }
-    // una falla no se guarda: la lectura siguiente vuelve a preguntar
-    pedidosGuardados = r.error ? null : { t: ahora(), r };
-    return r;
+    if (f.pedido_motivo) return { ...base, estado: 'sin_tarea', tarea: null, asignado: null, motivo: f.pedido_motivo };
+    return { ...base, estado: 'se_crea', tarea: null, asignado: null, motivo: null };
   }
 
-  /** El modelo de la sección: lo mismo para la página y para /api/hallazgos. */
-  async function modelo(idioma) {
-    const l = leerFichas();
-    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'hallazgos.sinClon'), pedidos: null, filas: [] };
-    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'hallazgos.sinFichas'), pedidos: null, filas: [] };
-    const p = await pedidos();
-    const abiertos = p.error ? null : p.pedidos;
-    const dir = dirOps();
-    const filas = l.fichas.map((f) => {
-      const id = idCortoDe(f.fuente, f.id);
-      const decidido = fs.existsSync(path.join(dir, rutaDecision(f.fuente, f.id)));
-      const pr = abiertos && abiertos.find((x) => RP.esRamaDe(x.rama, id));
-      // sólo una ficha de pending/ se confirma (es la que leen confirmar y la noche); una con el pedido de la noche
-      // abierto se decide en ese pedido, o quedaría huérfano
-      const estado = decidido ? 'decidido' : f.veredicto !== 'pendiente' ? 'decidida' : pr ? 'propuesto'
-        : f.carpeta !== 'pending' ? 'movida' : f.pr_noche ? 'pedido_noche' : 'pendiente';
-      const acciones = estado === 'pendiente' ? accionesDe(f.fuente) : [];
-      const propuesta = f.propuesta ? { accion: f.propuesta.accion, razon: f.propuesta.razon } : null;
-      return {
-        fuente: f.fuente, id: f.id, nombre: f.nombre, que_paso: quePaso(f, idioma), que_arreglaria: T(idioma, `hallazgos.arreglo.${familiaDe(f)}`), apariciones: f.apariciones, noches: f.noches, primera_vez: f.primera_vez,
-        ultima_vez: f.ultima_vez, veredicto: f.veredicto, propuesta, propuesta_motivo: propuesta ? null : f.propuesta_motivo || null,
-        pedido: f.pedido, asignado: f.asignado || null, pr_noche: f.pr_noche || null,
-        estado_fila: estado, propuesto: pr ? { numero: pr.numero, enlace: ENLACE.test(String(pr.enlace)) ? pr.enlace : null } : null,
-        acciones, por_defecto: acciones.length ? (propuesta && acciones.includes(propuesta.accion) ? propuesta.accion : acciones[0]) : null,
-      };
-    });
-    const ilegible = l.ilegibles.length > 0;
+  function vulnerabilidadDe(f, destino) {
+    const severidad = String(f.severidad || '').toLowerCase() || null;
     return {
-      estado: ilegible ? 'ilegible' : 'leido',
-      frase: ilegible ? T(idioma, 'hallazgos.ilegible', { fuentes: l.ilegibles.map((x) => T(idioma, `hallazgos.fuente.${x}`)).join(', ') }) : null,
-      pedidos: p.error ? { estado: 'no_se_pudo', frase: T(idioma, 'hallazgos.sinPedidos') } : { estado: 'leido', frase: null },
-      filas,
+      id: f.id, paquete: f.contexto.paquete || f.nombre, severidad, repos: Number.isInteger(f.repos) ? f.repos : 0, desde: f.primera_vez, volvio: f.reaparecido,
+      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado) })),
+      motivo: f.pedido_motivo || null,
     };
   }
 
-  // ── qué pasó y qué haría «Arreglar» ──
+  // ── qué pasó, sin modelo ──
 
-  /** La familia de la causa: la de ejecuciones por su regla; dependencias y el vigilante, la fuente. */
-  const familiaDe = (f) => (f.fuente !== 'ejecuciones' ? f.fuente : FAMILIAS[String(f.causa || '').split(':')[0]] || 'desconocida');
-
-  /** «a, b y c» (con «y N más» pasado el tope), en el idioma de la página. */
-  function lista(idioma, xs) {
-    const vistos = xs.slice(0, TOPE_LISTA);
-    const resto = xs.length - vistos.length;
-    if (resto > 0) return `${vistos.join(', ')} ${T(idioma, 'hallazgos.paso.yMas', { n: resto })}`;
-    return vistos.length > 1 ? `${vistos.slice(0, -1).join(', ')} ${T(idioma, 'hallazgos.paso.y')} ${vistos[vistos.length - 1]}` : vistos.join('');
-  }
-
-  /** Una frase en llano de qué pasó, con los datos de la ficha. */
   function quePaso(f, idioma) {
     const c = f.contexto || {};
-    const uno = (n, k) => T(idioma, n === 1 ? `${k}Una` : k, { n, lista: '' });
     if (f.fuente === 'ejecuciones') {
-      const partes = [c.veces ? uno(c.veces, 'hallazgos.paso.veces') : T(idioma, 'hallazgos.paso.sinCuenta')];
-      if (c.maquinas.length) partes.push(T(idioma, c.maquinas.length === 1 ? 'hallazgos.paso.maquina' : 'hallazgos.paso.maquinas', { lista: lista(idioma, c.maquinas) }));
-      if (c.stories.length) partes.push(T(idioma, c.stories.length === 1 ? 'hallazgos.paso.story' : 'hallazgos.paso.stories', { lista: lista(idioma, c.stories) }));
-      const ultima = f.ultima_vez || f.primera_vez;
-      return `${partes.join(', ')}.${ultima ? ` ${T(idioma, 'hallazgos.paso.ultima', { dia: ultima })}` : ''}`;
+      const n = c.veces || f.apariciones || 1;
+      const desde = c.desde || f.primera_vez;
+      const hasta = c.hasta || f.ultima_vez || desde;
+      if (n === 1) return T(idioma, 'mant.paso.vecesUna', { dia: dia(hasta) });
+      if (desde === hasta) return T(idioma, 'mant.paso.vecesUnDia', { n, dia: dia(hasta) });
+      return T(idioma, 'mant.paso.veces', { n, desde: dia(desde), hasta: dia(hasta) });
     }
-    if (f.fuente === 'dependencias') {
-      const partes = [T(idioma, 'hallazgos.paso.paquete', { nombre: f.nombre })];
-      if (f.noches) partes.push(uno(f.noches, 'hallazgos.paso.nochesSeguidas'));
-      if (c.repos.length) partes.push(T(idioma, 'hallazgos.paso.repos', { lista: lista(idioma, c.repos) }));
-      return `${partes.join(', ')}.`;
+    const h = f.hechos || {};
+    const regla = T(idioma, `mant.regla.${h.regla || 'otra'}`);
+    let frase;
+    if (Number.isInteger(h.errores)) {
+      const donde = h.endpoint || (h.plugin ? T(idioma, 'mant.paso.plugin', { plugin: h.plugin }) : T(idioma, 'mant.paso.producto', { producto: h.producto || '?' }));
+      const sobre = Number.isInteger(h.total_pedidos) ? T(idioma, 'mant.paso.sobre', { n: h.total_pedidos }) : '';
+      frase = T(idioma, h.estado_http ? 'mant.paso.produccion' : 'mant.paso.produccionSinHttp', { errores: h.errores, http: h.estado_http, donde, sobre, regla });
+    } else frase = T(idioma, 'mant.paso.produccionSinCifras', { regla });
+    const partes = [frase];
+    if (h.reincidente_desde) partes.push(T(idioma, 'mant.paso.reincidente', { dia: dia(h.reincidente_desde) }));
+    if (Number.isInteger(h.duracion_ms)) partes.push(T(idioma, 'mant.paso.duracion', { s: Math.round(h.duracion_ms / 1000) }));
+    return partes.join(' ');
+  }
+
+  function metaDe(f, idioma) {
+    if (f.fuente === 'vigilante') {
+      const producto = PRODUCTO.test(String((f.hechos && f.hechos.producto) || '')) ? f.hechos.producto : null;
+      return T(idioma, producto ? 'mant.meta.produccion' : 'mant.meta.produccionSinProducto', { producto, dia: dia(f.ultima_vez || f.primera_vez) });
     }
-    const partes = [T(idioma, c.producto ? 'hallazgos.paso.produccionDe' : 'hallazgos.paso.produccion', { producto: c.producto, nombre: f.nombre })];
-    if (f.apariciones) partes.push(uno(f.apariciones, 'hallazgos.paso.nochesSeguidas'));
-    return `${partes.join(', ')}.`;
+    const c = f.contexto || {};
+    const n = c.veces || f.apariciones || 1;
+    const partes = [n === 1 ? T(idioma, 'mant.meta.vez') : T(idioma, 'mant.meta.veces', { n })];
+    if (c.maquinas && c.maquinas.length) partes.push(c.maquinas.length === 1 ? T(idioma, 'mant.meta.maquina') : T(idioma, 'mant.meta.maquinas', { n: c.maquinas.length }));
+    partes.push(T(idioma, 'mant.meta.ultima', { dia: dia(c.hasta || f.ultima_vez || f.primera_vez) }));
+    return partes.join(' · ');
+  }
+
+  function filaParaDecidir(f, idioma) {
+    const a = f.analisis;
+    const analisis = a ? { recomendacion: a.recomendacion, por_que_pasa: a.por_que_pasa, por_que_recomienda: a.por_que_recomienda, arreglo: a.arreglo || null, si_vuelve: a.si_vuelve || null, autor: a.autor } : null;
+    const c = f.contexto || {};
+    return {
+      fuente: f.fuente, id: f.id, nombre: f.nombre, meta: metaDe(f, idioma), que_paso: quePaso(f, idioma), analisis,
+      sin_analizar: analisis ? null : T(idioma, 'mant.sinAnalizar', { motivo: T(idioma, `mant.sinAnalizar.${f.analisis_motivo || 'sinIntento'}`) }),
+      recomendada: analisis ? analisis.recomendacion : null, veces: c.veces || f.apariciones || 1,
+      detalle: { maquinas: c.maquinas || [], stories: c.stories || [] },
+    };
+  }
+
+  // orden: producción primero; lo que recomienda arreglar, después aceptar, después lo sin analizar; más veces primero
+  const tramo = (x) => (x.recomendada === 'arreglar' ? 0 : x.recomendada === 'aceptar' ? 1 : 2);
+  const ordenParaDecidir = (a, b) => SE_DECIDEN.indexOf(a.fuente) - SE_DECIDEN.indexOf(b.fuente) || tramo(a) - tramo(b) || b.veces - a.veces || a.nombre.localeCompare(b.nombre) || a.id.localeCompare(b.id);
+  const ordenFuente = (a, b) => SE_DECIDEN.indexOf(a.fuente) - SE_DECIDEN.indexOf(b.fuente) || a.nombre.localeCompare(b.nombre);
+  const rangoSeveridad = (s) => (hasOwn(SEVERIDADES, s) ? SEVERIDADES[s] : 9);
+  const ordenVulns = (a, b) => rangoSeveridad(a.severidad) - rangoSeveridad(b.severidad) || String(a.desde || '9').localeCompare(String(b.desde || '9')) || a.paquete.localeCompare(b.paquete);
+
+  /** El modelo de la pantalla: lo mismo para la página y para /api/hallazgos. */
+  async function modelo(idioma) {
+    const l = leerFichas();
+    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'mant.sinClon'), pedidos: null, toca: [], espera: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
+    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'mant.sinFichas'), pedidos: null, toca: [], espera: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
+    const m = await membresia();
+    const enPedido = m.estado === 'leido' ? m.porFicha : new Map();
+    const dir = dirOps();
+    const destino = destinoDeTareas();
+    const ilegibles = new Set(l.ilegibles);
+    const toca = [];
+    const pedidos = new Map();
+    const aprobadas = [];
+    const arreglos = [];
+    const vulnerabilidades = [];
+    for (const f of l.fichas) {
+      if (f.fuente === 'dependencias') {
+        if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino));
+        continue;
+      }
+      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino)); continue; }
+      if (!porDecidir(f)) continue;
+      const enMain = decisionEnMain(dir, f);
+      if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
+      if (enMain) { aprobadas.push({ fuente: f.fuente, id: f.id, nombre: f.nombre, accion: enMain.accion }); continue; }
+      const p = enPedido.get(clave(f));
+      if (p) {
+        if (!pedidos.has(p.numero)) pedidos.set(p.numero, { numero: p.numero, enlace: p.enlace, aprobado: false, filas: [] });
+        pedidos.get(p.numero).filas.push({ fuente: f.fuente, id: f.id, nombre: f.nombre, accion: p.accion });
+        continue;
+      }
+      toca.push(filaParaDecidir(f, idioma));
+    }
+    toca.sort(ordenParaDecidir);
+    const espera = [...pedidos.values()].sort((a, b) => a.numero - b.numero);
+    if (aprobadas.length) espera.push({ numero: null, enlace: null, aprobado: true, filas: aprobadas });
+    for (const g of espera) g.filas.sort(ordenFuente);
+    arreglos.sort(ordenFuente);
+    vulnerabilidades.sort(ordenVulns);
+    const ilegible = ilegibles.size > 0;
+    return {
+      estado: ilegible ? 'ilegible' : 'leido',
+      frase: ilegible ? T(idioma, 'mant.ilegible', { fuentes: [...ilegibles].map((x) => T(idioma, `mant.fuente.${x}`)).join(', ') }) : null,
+      pedidos: m.estado === 'leido' ? { estado: 'leido', frase: null } : { estado: 'no_se_pudo', frase: T(idioma, 'mant.sinPedidos') },
+      toca, espera, marcha: { arreglos, vulnerabilidades },
+      cuentas: { toca: toca.length, espera: espera.reduce((n, g) => n + g.filas.length, 0), marcha: arreglos.length + vulnerabilidades.length },
+    };
   }
 
   // ── la página ──
 
-  function filaHtml(f, idioma) {
-    const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer">${esc(texto)}</a>` : esc(texto));
-    const sinPropuesta = f.propuesta_motivo ? T(idioma, `hallazgos.motivo.${f.propuesta_motivo}`) : T(idioma, 'hallazgos.sinPropuesta');
-    // la razón del modelo está en castellano (se le pide así): lo dice la etiqueta, y `lang` para quien la lee en voz alta
-    const sugerencia = f.propuesta ? `${esc(T(idioma, 'hallazgos.sugerencia', { accion: T(idioma, `hallazgos.accion.${f.propuesta.accion}`) }))} <span lang="es">${esc(f.propuesta.razon)}</span>` : esc(sinPropuesta);
-    const arreglo = `${esc(f.que_arreglaria)}<div class="q-note">${sugerencia}</div>`;
-    const asignado = f.asignado ? `<div class="q-note">${esc(T(idioma, 'hallazgos.asignado', { quien: f.asignado }))}</div>` : '';
-    const pedido = `${f.pedido ? enlace(f.pedido.id || T(idioma, 'hallazgos.col.pedido'), f.pedido.enlace) : '—'}${asignado}`;
-    const estado = f.estado_fila === 'propuesto' ? enlace(T(idioma, 'hallazgos.estado.propuesto', { numero: f.propuesto.numero }), f.propuesto.enlace)
-      : f.estado_fila === 'pedido_noche' ? esc(T(idioma, 'hallazgos.estado.pedido_noche', { numero: f.pr_noche }))
-      : f.estado_fila === 'decidida' ? esc(T(idioma, 'hallazgos.estado.decidida', { veredicto: T(idioma, `hallazgos.veredicto.${f.veredicto === 'arreglo' ? 'arreglo' : 'aceptada'}`) }))
-        : esc(T(idioma, `hallazgos.estado.${f.estado_fila}`));
-    const botones = f.acciones.map((a) => `<button type="button" class="btn${a === f.por_defecto ? ' primario' : ''}" data-accion="${esc(a)}" data-fuente="${esc(f.fuente)}" data-id="${esc(f.id)}">${esc(T(idioma, `hallazgos.accion.${a}`))}</button>`).join(' ');
-    return `<tr data-ficha="${esc(`${f.fuente}/${f.id}`)}"><td>${esc(T(idioma, `hallazgos.fuente.${f.fuente}`))}</td><td><b>${esc(f.nombre)}</b><div>${esc(f.que_paso)}</div></td>`
-      + `<td>${arreglo}</td><td>${pedido}</td><td class="h-estado" aria-live="polite">${estado}</td><td>${botones}</td></tr>`;
-  }
+  function seccion(m, idioma, tok) {
+    const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${k}`) }))}">?</button>`;
+    const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer" target="_blank">${esc(texto)}</a>` : esc(texto));
+    const accion = (a) => T(idioma, `mant.accion.${a}`);
+    // el análisis está en castellano (se escribe así): `lang` para quien lo lee en voz alta, y la nota en otro idioma
+    const es = (s) => `<span lang="es">${esc(s)}</span>`;
+    const renglon = (k, s) => `<p><b>${esc(T(idioma, k))}</b> ${es(s)}</p>`;
 
-  async function seccion(ctx) {
-    if (!ctx || !ctx.quien || ctx.quien.rol !== 'maintainer') return '';
-    const idioma = views.idiomaDe(ctx);
-    const m = await modelo(idioma);
-    const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok.replace(/[^A-Za-z0-9_-]/g, '') : '';
+    function carta(f) {
+      const a = f.analisis;
+      const botones = ['aceptar', 'arreglar'].map((x) => `<button type="button" class="m-elegir${x === f.recomendada ? ' recomendada' : ''}" data-accion="${x}" aria-pressed="false">${esc(accion(x))}</button>`).join('');
+      const acciones = `<div class="m-acciones" role="group" aria-label="${esc(f.nombre)}">${botones}</div>`;
+      let cuerpo;
+      if (a) {
+        cuerpo = renglon('mant.porQue', a.por_que_pasa) + renglon(`mant.recomienda.${a.recomendacion}`, a.por_que_recomienda)
+          + (a.arreglo ? renglon('mant.siSeArregla', a.arreglo) : '') + (a.si_vuelve ? renglon('mant.siVuelve', a.si_vuelve) : '')
+          + `<div class="m-pie"><span class="m-autor">${esc(T(idioma, a.autor === 'persona' ? 'mant.autor.persona' : 'mant.autor.modelo'))}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.analisisEnCastellano'))}`} ${ayuda('analisis')}</span>${acciones}</div>`;
+      } else {
+        cuerpo = `<p class="m-sin">${esc(f.sin_analizar)}</p><details class="m-sin-analisis"><summary>${esc(T(idioma, 'mant.decidirSinAnalisis'))}</summary>${acciones}</details>`;
+      }
+      const d = f.detalle;
+      const detalle = d.maquinas.length || d.stories.length
+        ? `<details class="m-detalle"><summary>${esc(T(idioma, 'mant.verDetalle'))}</summary>${d.maquinas.length ? `<p>${esc(T(idioma, 'mant.detalle.maquinas', { lista: d.maquinas.join(', ') }))}</p>` : ''}${d.stories.length ? `<p>${esc(T(idioma, 'mant.detalle.stories', { lista: d.stories.join(', ') }))}</p>` : ''}</details>`
+        : '';
+      return `<article class="m-carta${a ? '' : ' sin-analizar'}" data-ficha="${esc(clave(f))}"${f.recomendada ? ` data-recomendada="${esc(f.recomendada)}"` : ''}>`
+        + `<header class="m-cab"><b class="m-nombre">${esc(f.nombre)}</b><span class="m-meta">${esc(f.meta)}</span></header>`
+        + `<p><b>${esc(T(idioma, 'mant.quePaso'))}</b> ${esc(f.que_paso)}</p>${cuerpo}${detalle}</article>`;
+    }
+
+    // te toca decidir
+    const subgrupos = SE_DECIDEN.map((fuente) => {
+      const filas = m.toca.filter((x) => x.fuente === fuente);
+      return filas.length ? `<h3 class="m-sub">${esc(T(idioma, fuente === 'vigilante' ? 'mant.sub.produccion' : 'mant.sub.ejecuciones', { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
+    }).join('');
+    const toca = `<div class="m-bloque m-toca"><h2>${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
+      + `<p class="m-intro">${esc(T(idioma, 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
+      + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`) + '</div>';
+
+    // esperando aprobación
+    const grupo = (g) => {
+      // «Pedido 12 · 3 decisiones»: el enlace va sobre la primera parte
+      const [nombre, ...resto] = T(idioma, g.filas.length === 1 ? 'mant.espera.pedidoUna' : 'mant.espera.pedido', { numero: g.numero, n: g.filas.length }).split(' · ');
+      const cab = g.aprobado ? esc(T(idioma, 'mant.espera.aprobado')) : [enlace(nombre, g.enlace), ...resto.map(esc)].join(' · ');
+      const filas = g.filas.map((x) => `<li>${esc(x.nombre)} → ${esc(x.accion ? accion(x.accion) : '?')}</li>`).join('');
+      return `<div class="m-pedido"><p class="m-pedido-cab">${cab}</p><ul>${filas}</ul></div>`;
+    };
+    const espera = m.espera.length
+      ? `<div class="m-bloque m-espera"><h2>${esc(T(idioma, 'mant.espera.titulo', { n: m.cuentas.espera }))}</h2><p class="m-intro">${esc(T(idioma, 'mant.espera.intro'))}</p>${m.espera.map(grupo).join('')}</div>`
+      : '';
+
+    // en marcha
+    const tarea = (numero, url, proyecto) => enlace(T(idioma, proyecto ? 'mant.marcha.tareaProyecto' : 'mant.marcha.tarea', { numero, proyecto }), url);
+    const arreglo = (x) => {
+      const t = x.estado === 'tarea' ? `${tarea(x.tarea.numero, x.tarea.enlace)}${x.asignado ? ` · ${esc(T(idioma, 'mant.marcha.asignada', { quien: x.asignado }))}` : ''}`
+        : x.estado === 'sin_enlace' ? esc(T(idioma, 'mant.marcha.sinEnlace'))
+          : x.estado === 'sin_tarea' ? esc(T(idioma, 'mant.marcha.sinTarea', { motivo: T(idioma, `mant.sinTarea.${x.motivo}`) }))
+            : esc(T(idioma, 'mant.marcha.seCrea'));
+      return `<li><b>${esc(x.nombre)}</b> <span class="m-tarea">${t}</span></li>`;
+    };
+    const tareaDeVuln = (t) => (t.enlace ? `${tarea(t.numero, t.enlace, t.proyecto)}` : esc(T(idioma, 'mant.marcha.sinEnlace')))
+      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, 'mant.marcha.sinAsignar'))}`;
+    const vuln = (v) => {
+      const sev = NOMBRE_SEVERIDAD[v.severidad] || null;
+      const meta = [T(idioma, v.repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: v.repos, dia: dia(v.desde) })];
+      if (v.volvio) meta.push(T(idioma, 'mant.vuln.volvio', { dia: dia(v.volvio) }));
+      const tareas = v.tareas.length === 1 ? tareaDeVuln(v.tareas[0])
+        : v.tareas.length ? `<details class="m-tareas"><summary>${esc(T(idioma, 'mant.marcha.tareas', { n: v.tareas.length }))}</summary><ul>${v.tareas.map((t) => `<li>${tareaDeVuln(t)}</li>`).join('')}</ul></details>`
+          : esc(v.motivo ? T(idioma, 'mant.vuln.sinTarea', { motivo: T(idioma, `mant.sinTarea.${v.motivo}`) }) : T(idioma, 'mant.vuln.sinTareaSinMotivo'));
+      return `<li class="m-vuln">${sev ? `<span class="m-sev sev-${sev}">${esc(T(idioma, `mant.vuln.${sev}`))}</span> ` : ''}<b>${esc(v.paquete)}</b> <span class="m-meta">${esc(meta.join(' · '))}</span> <span class="m-tarea">${tareas}</span></li>`;
+    };
+    const vs = m.marcha.vulnerabilidades;
+    const masVieja = vs.map((v) => v.desde).filter(Boolean).sort()[0];
+    const vulns = vs.length
+      ? `<details class="m-vulns"><summary>${esc(T(idioma, 'mant.vuln.resumen', { n: vs.length, c: vs.filter((v) => v.severidad === 'critical').length, a: vs.filter((v) => v.severidad === 'high').length, dia: dia(masVieja) }))}</summary><ul class="m-lista">${vs.map(vuln).join('')}</ul></details>`
+        + `<p class="m-deuda q-note">${esc(T(idioma, 'mant.vuln.deuda'))} ${ayuda('deuda')}</p>`
+      : '';
+    const marcha = m.cuentas.marcha
+      ? `<details class="m-bloque m-marcha"><summary>${esc(T(idioma, 'mant.marcha.titulo', { n: m.cuentas.marcha }))}</summary><p class="m-intro">${esc(T(idioma, 'mant.marcha.intro'))} ${ayuda('tarea')}</p>`
+        + (m.marcha.arreglos.length ? `<ul class="m-lista">${m.marcha.arreglos.map(arreglo).join('')}</ul>` : '') + `${vulns}</details>`
+      : '';
+
+    // la barra y la ayuda: sólo si hay algo para decidir
+    const k = m.toca.filter((x) => x.recomendada).length;
+    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', ok: 'mant.envio.ok', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
+    const datos = Object.entries(textos).map(([n, kk]) => ` data-t-${n.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(T(idioma, kk))}"`).join('')
+      + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}"`;
+    const barra = m.toca.length
+      ? `<div class="m-barra"${datos}><span class="m-cuenta" aria-live="polite"></span><button type="button" class="btn prim m-enviar" disabled>${esc(T(idioma, 'mant.barra.enviar'))}</button>`
+        + `<button type="button" class="btn m-seguir"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
+      : '';
+    const negritas = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${x}`))}</p></div>`).join('');
     const frases = [m.frase, m.pedidos && m.pedidos.frase].filter(Boolean).map((t) => `<p class="q-note">${esc(t)}</p>`).join('');
-    const cols = ['fuente', 'quePaso', 'arreglo', 'pedido', 'estado', 'decidir'].map((c) => `<th>${esc(T(idioma, `hallazgos.col.${c}`))}</th>`).join('');
-    const tabla = m.filas.length ? `<div class="tabla-scroll"><table class="tabla"><thead><tr>${cols}</tr></thead><tbody>${m.filas.map((f) => filaHtml(f, idioma)).join('')}</tbody></table></div>` : '';
-    const textos = ['abriendo', 'abierto', 'noSePudo', 'demo'].map((k) => ` data-t-${k.toLowerCase()}="${esc(T(idioma, `hallazgos.${k}`))}"`).join('');
-    // qué hace cada botón, una vez arriba: no en cada fila
-    const conDependencias = m.filas.some((f) => f.fuente === 'dependencias' && f.acciones.length);
-    const botones = m.filas.length ? `<ul class="lista">${['aceptar', 'arreglar'].map((a) => `<li>${esc(T(idioma, `hallazgos.botones.${a}`))}</li>`).join('')}${conDependencias ? `<li>${esc(T(idioma, 'hallazgos.deuda'))}</li>` : ''}</ul>` : '';
-    return `<section id="hallazgos" class="hallazgos" data-token="${esc(tok)}"${textos}>${frases}${botones}${tabla}<script src="/hallazgos/cliente.js" defer></script></section>`;
+    const contenido = m.estado === 'sin_clon' || m.estado === 'sin_fichas' ? '' : toca + espera + marcha + barra + ayudas;
+    return `<section id="hallazgos" class="m-pantalla" data-token="${esc(tok)}">${frases}${contenido}<script src="/hallazgos/cliente.js" defer></script></section>`;
   }
 
-  // ── confirmar ──
+  // ── enviar para aprobar ──
 
   async function confirmar(body, ctx, idioma) {
-    if (!isObject(body) || !FUENTES.includes(body.fuente) || typeof body.id !== 'string' || !ID.test(body.id) || !CYCLE.ACCIONES.includes(body.accion)) {
-      return json(400, { ok: false, message: T(idioma, 'hallazgos.pedidoInvalido') });
-    }
-    const { fuente, id, accion } = body;
-    if (!accionesDe(fuente).includes(accion)) return json(400, { ok: false, message: T(idioma, 'hallazgos.soloArreglar') });
+    const invalido = json(400, { ok: false, message: T(idioma, 'hallazgos.pedidoInvalido') });
+    // la forma de varias (`{ decisiones: [...] }`) o la de a una, como antes
+    const lista = isObject(body) && Array.isArray(body.decisiones) ? body.decisiones : isObject(body) && 'fuente' in body ? [body] : null;
+    if (!lista || !lista.length || lista.length > TOPE_ENVIO) return invalido;
+    if (lista.some((x) => !isObject(x) || !FUENTES.includes(x.fuente) || typeof x.id !== 'string' || !ID.test(x.id) || !CYCLE.ACCIONES.includes(x.accion))) return invalido;
+    if (lista.some((x) => x.fuente === 'dependencias')) return json(400, { ok: false, message: T(idioma, 'mant.envio.sinDependencias') });
+    if (lista.some((x) => !SE_DECIDEN.includes(x.fuente))) return invalido;
+    if (new Set(lista.map(clave)).size !== lista.length) return invalido;
     const dir = dirOps();
-    if (!dir) return json(200, { ok: false, codigo: 'sin_clon', message: T(idioma, 'hallazgos.sinClon') });
-    // la ficha, otra vez del clon: sólo una pendiente se confirma
-    const reg = SOURCES.FUENTES[fuente];
-    // 🔴 Sólo «el archivo no está» es «ya no está pendiente»: una ficha o una carpeta que no se pueden leer no abren
-    // un pedido a ciegas ni le dicen a la persona que otro ya la decidió.
-    const fichaIlegible = json(200, { ok: false, codigo: 'ficha_ilegible', message: T(idioma, 'hallazgos.fichaIlegible') });
-    let f = null;
-    try { f = SOURCES.comoFicha(fuente, fs.readFileSync(path.join(dir, 'inbox', reg.carpeta, 'pending', `${id}${reg.extension}`), 'utf8')); } catch (e) {
-      if (!(e && e.code === 'ENOENT')) return fichaIlegible;
+    if (!dir) return json(200, { ok: false, codigo: 'sin_clon', message: T(idioma, 'mant.sinClon') });
+    // sin saber qué espera aprobación no se envía: una ficha ya enviada en otro pedido abriría un segundo
+    const m = await membresia();
+    if (m.estado !== 'leido') return json(200, { ok: false, codigo: 'sin_pedidos', message: T(idioma, 'mant.sinPedidos') });
+    const enPedido = m.porFicha;
+    const omitidas = [];
+    const van = [];
+    for (const x of lista) {
+      const reg = SOURCES.FUENTES[x.fuente];
+      // 🔴 Sólo «el archivo no está» es «ya no está pendiente»: una ficha o una carpeta que no se pueden leer no abren
+      // un pedido a ciegas ni dicen que otro ya la decidió.
+      let f = null;
+      try { f = SOURCES.comoFicha(x.fuente, fs.readFileSync(path.join(dir, 'inbox', reg.carpeta, 'pending', `${x.id}${reg.extension}`), 'utf8')); } catch (e) {
+        if (!(e && e.code === 'ENOENT')) return json(200, { ok: false, codigo: 'ficha_ilegible', message: T(idioma, 'hallazgos.fichaIlegible') });
+      }
+      if (!f || f.id !== x.id || f.veredicto !== 'pendiente' || f.estado === 'resuelta' || aparte(f)) { omitidas.push(clave(x)); continue; }
+      const enMain = decisionEnMain(dir, x);
+      if (enMain === 'ilegible') return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
+      if (enMain || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
+      van.push({ fuente: x.fuente, id: x.id, accion: x.accion });
     }
-    if (!f || f.id !== id || f.veredicto !== 'pendiente' || f.estado === 'resuelta') return json(200, { ok: false, codigo: 'no_pendiente', message: T(idioma, 'hallazgos.noPendiente') });
-    if (f.pr_noche) return json(200, { ok: false, codigo: 'pedido_de_la_noche', message: T(idioma, 'hallazgos.pedidoDeLaNoche', { numero: f.pr_noche }) });
-    const archivo = rutaDecision(fuente, id);
-    try {
-      fs.statSync(path.join(dir, archivo));
-      return json(200, { ok: false, codigo: 'ya_decidido', message: T(idioma, 'hallazgos.yaDecidido') });
-    } catch (e) {
-      if (!(e && e.code === 'ENOENT')) return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
-    }
+    if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas });
     const quien = norm((ctx.sesion && ctx.sesion.email) || (ctx.quien && ctx.quien.email));
-    const decision = { fuente, id, accion, quien, el: new Date(ahora()).toISOString().slice(0, 10) };
-    const contenido = `${JSON.stringify(decision, null, 2)}\n`;
-    if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivo, contenido } });
+    const el = new Date(ahora()).toISOString().slice(0, 10);
+    const decisiones = van.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el }));
+    const archivos = decisiones.map((d) => ({ archivo: rutaDecision(d.fuente, d.id), contenido: `${JSON.stringify(d, null, 2)}\n`, oidEsperado: null }));
+    if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivos: archivos.map(({ archivo, contenido }) => ({ archivo, contenido })) }, omitidas });
     // la noche sólo aplica una decisión con forma: una que no la tiene (sin correo, por ejemplo) no se propone
-    if (!CYCLE.decisionConForma(decision, fuente, id)) return json(200, { ok: false, codigo: 'sin_identidad', message: T(idioma, 'hallazgos.sinIdentidad') });
+    if (decisiones.some((d) => !CYCLE.decisionConForma(d, d.fuente, d.id))) return json(200, { ok: false, codigo: 'sin_identidad', message: T(idioma, 'hallazgos.sinIdentidad') });
     let clon = dir;
     if (clones().operaciones.indice) {
       if (typeof fuentes.clonDeEscritura !== 'function') return json(200, { ok: false, message: TX.t('es', 'config.sinClonEscritura') });
@@ -276,18 +494,20 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!e || !e.dir) return json(200, { ok: false, message: TX.t('es', 'config.clonFallo', { motivo: (e && e.motivo) || TX.t('es', 'config.noSeArmoClon') }) });
       clon = e.dir;
     }
+    const secciones = van.map((x) => `${clave(x)} → ${x.accion}`);
+    // el pedido se nombra por lo que trae: reenviar lo mismo encuentra el abierto y no abre otro
+    const idCorto = `decisiones-${crypto.createHash('sha1').update([...secciones].sort().join('\n')).digest('hex').slice(0, 12)}`;
     const c = fuentes.config();
     const r = await RP.proponer({
-      clon, archivo, contenido, oidEsperado: null, idCorto: idCortoDe(fuente, id), secciones: [TX.t('es', 'hallazgos.titulo')],
-      titulo: `Decisión sobre lo que encontró la noche: ${f.nombre}`, quien, credencial: cfg.escritura && cfg.escritura.operaciones,
-      remote: remote(), urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()), now: new Date(ahora()), fetch, log,
-      aplicarSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
+      clon, archivos, idCorto, secciones, titulo: `Decisiones sobre lo que encontró la noche (${van.length})`, quien,
+      credencial: cfg.escritura && cfg.escritura.operaciones, remote: remote(), urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
+      now: new Date(ahora()), fetch, log, aplicarSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
     });
-    // el próximo pedido de la sección vuelve a mirar los pedidos abiertos
-    pedidosGuardados = null;
+    // la próxima lectura vuelve a mirar qué espera aprobación
+    membresiaGuardada = null;
     const { textoActual: _t, oidActual: _o, ...resto } = r || {};
     const numero = numeroDe(resto.enlace);
-    return json(200, { ...resto, ...(numero ? { numero } : {}) });
+    return json(200, { ...resto, ...(numero ? { numero } : {}), omitidas, enviadas: van.map(clave) });
   }
 
   /** Los mensajes de la casa, en el idioma del pedido (como la Configuración). */
@@ -297,11 +517,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   };
 
   const solo = ['maintainer'];
-  const rutas = [
+  return [
     {
       method: 'GET', path: '/mantenimiento', needs: solo, pestana: { id: 'mantenimiento', titulo: 'Mantenimiento', orden: 25, cuenta: cuantasEsperan }, handler: async (ctx) => {
         const idioma = views.idiomaDe(ctx);
-        return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, T(idioma, 'pestana.mantenimiento'), await seccion(ctx), T(idioma, 'hallazgos.lede')) };
+        const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok.replace(/[^A-Za-z0-9_-]/g, '') : '';
+        const cuerpo = ctx.quien && ctx.quien.rol === 'maintainer' ? seccion(await modelo(idioma), idioma, tok) : '';
+        return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, T(idioma, 'pestana.mantenimiento'), cuerpo, T(idioma, 'mant.lede')) };
       },
     },
     { method: 'GET', path: '/api/hallazgos', needs: solo, handler: async (ctx) => json(200, await modelo(views.idiomaDe(ctx))) },
@@ -315,46 +537,124 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     },
     { method: 'GET', path: '/hallazgos/cliente.js', needs: solo, handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CLIENTE }) },
   ];
-  return rutas;
 }
 
-// El cliente: un clic manda la decisión y la fila dice qué pasó. Sin el clic no se escribe nada.
+// El cliente: marcar Archivar o Arreglar en cada tarjeta (se recuerda en el navegador), seguir las recomendaciones y
+// enviar todo junto. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» sin recargar.
 const CLIENTE = `(function () {
   var s = document.getElementById('hallazgos');
-  if (!s) return;
+  var barra = s && s.querySelector('.m-barra');
+  if (!s || !barra) return;
+  var GUARDA = 'mant-elecciones';
+  var t = function (n) { return barra.getAttribute('data-t-' + n) || ''; };
+  var elecciones = {};
+  try { elecciones = JSON.parse(localStorage.getItem(GUARDA) || '{}') || {}; } catch (e) { elecciones = {}; }
+  var cartas = function () { return s.querySelectorAll('article[data-ficha]'); };
+  var vivas = {};
+  Array.prototype.forEach.call(cartas(), function (c) { vivas[c.getAttribute('data-ficha')] = true; });
+  Object.keys(elecciones).forEach(function (k) { if (!vivas[k] || (elecciones[k] !== 'aceptar' && elecciones[k] !== 'arreglar')) delete elecciones[k]; });
+  var enviando = false;
+  var hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
+  function guardar() { try { localStorage.setItem(GUARDA, JSON.stringify(elecciones)); } catch (e) { /* sin almacenamiento: sólo se pierde la marca al recargar */ } }
+  function pintar() {
+    Array.prototype.forEach.call(cartas(), function (c) {
+      var k = c.getAttribute('data-ficha');
+      Array.prototype.forEach.call(c.querySelectorAll('button[data-accion]'), function (b) { b.setAttribute('aria-pressed', elecciones[k] === b.getAttribute('data-accion') ? 'true' : 'false'); });
+      if (elecciones[k]) { var d = c.querySelector('details.m-sin-analisis'); if (d) d.open = true; }
+    });
+    var n = Object.keys(elecciones).length;
+    barra.querySelector('.m-cuenta').textContent = n === 1 ? t('elegida-una') : t('elegidas').replace('{n}', n);
+    barra.querySelector('.m-enviar').disabled = n === 0 || enviando;
+    // mientras se envía no se cambia nada: otra elección abriría un segundo pedido con las mismas fichas
+    Array.prototype.forEach.call(s.querySelectorAll('button[data-accion], .m-seguir, .m-borrar'), function (b) { b.disabled = enviando; });
+    // la barra aparece cuando hay algo que enviar o una recomendación para seguir
+    barra.hidden = n === 0 && !hayRecomendadas && !barra.querySelector('.m-estado').textContent;
+    guardar();
+  }
   s.addEventListener('click', function (ev) {
     var b = ev.target.closest('button[data-accion]');
-    if (!b) return;
-    var fila = b.closest('tr');
-    var estado = fila && fila.querySelector('.h-estado');
-    var botones = fila ? fila.querySelectorAll('button[data-accion]') : [b];
-    for (var i = 0; i < botones.length; i++) botones[i].disabled = true;
-    if (estado) estado.textContent = s.getAttribute('data-t-abriendo');
-    fetch('/api/hallazgos/confirmar', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-site-token': s.getAttribute('data-token') || '' },
-      body: JSON.stringify({ fuente: b.getAttribute('data-fuente'), id: b.getAttribute('data-id'), accion: b.getAttribute('data-accion') }) })
+    if (!b || enviando) return;
+    var c = b.closest('article[data-ficha]');
+    var k = c.getAttribute('data-ficha');
+    var a = b.getAttribute('data-accion');
+    if (elecciones[k] === a) delete elecciones[k]; else elecciones[k] = a;
+    pintar();
+  });
+  barra.querySelector('.m-seguir').addEventListener('click', function () {
+    Array.prototype.forEach.call(cartas(), function (c) { var r = c.getAttribute('data-recomendada'); if (r) elecciones[c.getAttribute('data-ficha')] = r; });
+    pintar();
+  });
+  barra.querySelector('.m-borrar').addEventListener('click', function () { elecciones = {}; pintar(); });
+  function quitar(k) {
+    var c = s.querySelector('article[data-ficha="' + k.replace(/"/g, '') + '"]');
+    if (c) c.parentNode.removeChild(c);
+    delete elecciones[k];
+    hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
+  }
+  function aEspera(j, enviadas, acciones) {
+    var bloque = s.querySelector('.m-espera');
+    if (!bloque) {
+      bloque = document.createElement('div'); bloque.className = 'm-bloque m-espera';
+      var h = document.createElement('h2'); bloque.appendChild(h);
+      var toca = s.querySelector('.m-toca'); toca.parentNode.insertBefore(bloque, toca.nextSibling);
+    }
+    var g = document.createElement('div'); g.className = 'm-pedido';
+    var cab = document.createElement('p'); cab.className = 'm-pedido-cab';
+    var texto = (enviadas.length === 1 ? t('pedido-una') : t('pedido')).replace('{numero}', j.numero || '').replace('{n}', enviadas.length);
+    if (j.enlace && /^https:\\/\\//.test(j.enlace)) { var a = document.createElement('a'); a.href = j.enlace; a.rel = 'noopener noreferrer'; a.target = '_blank'; a.textContent = texto; cab.appendChild(a); } else cab.textContent = texto;
+    g.appendChild(cab);
+    var ul = document.createElement('ul');
+    enviadas.forEach(function (k) {
+      var c = s.querySelector('article[data-ficha="' + k.replace(/"/g, '') + '"]');
+      if (!c) return;
+      var li = document.createElement('li'); li.textContent = c.querySelector('.m-nombre').textContent + ' → ' + t(acciones[k]); ul.appendChild(li);
+      quitar(k);
+    });
+    g.appendChild(ul); bloque.appendChild(g);
+    bloque.querySelector('h2').textContent = t('espera-titulo').replace('{n}', bloque.querySelectorAll('li').length);
+  }
+  barra.querySelector('.m-enviar').addEventListener('click', function () {
+    var ks = Object.keys(elecciones);
+    if (!ks.length) return;
+    var estado = barra.querySelector('.m-estado');
+    var boton = barra.querySelector('.m-enviar');
+    enviando = true; estado.textContent = t('enviando'); pintar();
+    var acciones = {};
+    ks.forEach(function (k) { acciones[k] = elecciones[k]; });
+    var decisiones = ks.map(function (k) { var i = k.indexOf('/'); return { fuente: k.slice(0, i), id: k.slice(i + 1), accion: acciones[k] }; });
+    fetch('/api/hallazgos/confirmar', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-site-token': s.getAttribute('data-token') || '' }, body: JSON.stringify({ decisiones: decisiones }) })
       .then(function (r) { return r.json().catch(function () { return { ok: false, message: String(r.status) }; }); })
       .then(function (j) {
-        if (!estado) return;
+        enviando = false;
         estado.textContent = '';
-        if (j && j.ok && j.enlace && /^https:\\/\\//.test(j.enlace)) {
-          estado.appendChild(document.createTextNode(s.getAttribute('data-t-abierto') + ' '));
-          var a = document.createElement('a'); a.href = j.enlace; a.rel = 'noopener noreferrer'; a.textContent = j.numero ? '#' + j.numero : j.enlace;
-          estado.appendChild(a);
-          return;
-        }
+        // las que el sitio salteó ya no están por decidir (decididas en otro lado, o ya en un pedido): salen de la lista
+        ((j && j.omitidas) || []).forEach(quitar);
+        if (j && j.codigo === 'nada_que_enviar') { location.reload(); return; }
         if (j && j.ok && j.demo && j.loQuePasaria) {
-          estado.appendChild(document.createTextNode(s.getAttribute('data-t-demo') + ' '));
-          var c = document.createElement('code'); c.textContent = String(j.loQuePasaria.archivo || '');
-          var pre = document.createElement('pre'); pre.textContent = String(j.loQuePasaria.contenido || '');
-          estado.appendChild(c); estado.appendChild(pre);
+          estado.appendChild(document.createTextNode(t('demo') + ' '));
+          (j.loQuePasaria.archivos || []).forEach(function (x) { var c = document.createElement('code'); c.textContent = String(x.archivo || ''); estado.appendChild(c); estado.appendChild(document.createTextNode(' ')); });
+          pintar();
           return;
         }
-        if (j && j.ok) { estado.textContent = j.message || s.getAttribute('data-t-abierto'); return; }
-        estado.textContent = s.getAttribute('data-t-nosepudo') + ' ' + ((j && j.message) || '');
-        if (j && j.codigo !== 'pedido_abierto' && j.codigo !== 'ya_decidido' && j.codigo !== 'no_pendiente' && j.codigo !== 'pedido_de_la_noche') for (var k = 0; k < botones.length; k++) botones[k].disabled = false;
+        if (j && j.codigo === 'aplicado') {
+          (j.enviadas || ks).forEach(quitar);
+          estado.textContent = j.message || '';
+          pintar();
+          return;
+        }
+        // un pedido abierto con lo mismo: ya está esperando aprobación
+        if (j && (j.ok || (j.codigo === 'pedido_abierto' && j.enlace))) {
+          aEspera(j, j.enviadas || ks, acciones);
+          estado.textContent = t('ok').replace('{numero}', j.numero || '');
+          pintar();
+          return;
+        }
+        estado.textContent = t('error').replace('{motivo}', (j && j.message) || '');
+        pintar();
       })
-      .catch(function () { if (estado) estado.textContent = s.getAttribute('data-t-nosepudo'); for (var k = 0; k < botones.length; k++) botones[k].disabled = false; });
+      .catch(function () { enviando = false; estado.textContent = t('error').replace('{motivo}', ''); pintar(); });
   });
+  pintar();
 })();
 `;
 

@@ -513,6 +513,56 @@ p1c=0; { [ "$rc" -eq 0 ] && ped 'p.fallidos.some((x) => x.paso === "escribir-fic
 [ "$p1b$p1c" = 11 ] \
   && ok "P1b/P1c (story 4.5, vuelta 3): en simulado la ficha no se toca aunque la vulnerabilidad haya vuelto; si el marcador no se puede borrar, el fallo queda en fallidos" \
   || no "P1b/P1c: simulado-no-escribe=${p1b} fallo-dicho=${p1c} · $(pie)"
+# ── T30. el volcado guarda el NOMBRE de quien tiene la tarea, nunca su correo ─────────────────
+mundo
+ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101" "  - Proy A: 102" "  - Proy A: 103"
+wi 101 Active New; wi 102 Active New; wi 103 New New
+asignar(){ node -e 'const [f, v] = process.argv.slice(1); const w = JSON.parse(require("fs").readFileSync(f, "utf8")); w.fields["System.AssignedTo"] = JSON.parse(v); require("fs").writeFileSync(f, JSON.stringify(w));' "$TMP/fixaz/wi-$1.json" "$2"; }
+asignar 101 '{"displayName":"Ana Pérez","uniqueName":"ana@prueba"}'
+asignar 102 '{"displayName":"ana@prueba","uniqueName":"ana@prueba"}'
+revs 101; revs 102; revs 103
+rc=$(estado)
+{ [ "$rc" -eq 0 ] && volc 'v.pedidos["101"].asignado === "Ana Pérez" && v.pedidos["102"].asignado === null && v.pedidos["103"].asignado === null' \
+  && ! grep -q 'ana@prueba' "$TMP/out/bugs-$HOY.json"; } \
+  && ok "T30: el volcado guarda el nombre de quien tiene cada tarea; un correo como nombre, o sin asignar, queda en null" \
+  || no "T30: rc=$rc · $(volcj)"
+
+# ── T31. la noche anota en la ficha quién tiene cada tarea, por qué falta alguna, y con el sitio la pasa a «arreglar» ──
+# Con el sitio, la vulnerabilidad que ya tiene su tarea no espera una decisión: queda en promoted/ con `veredicto:
+# util`, y sus `asignados:` dicen el nombre de cada uno. Sin el sitio, la ficha se queda donde está.
+ops_con_sitio(){ printf '{ "version": 1, "owners": { "default": "respaldo@prueba" }, "site": { "access": [{ "role": "maintainer", "emails": ["respaldo@prueba"] }], "url": "https://sitio.prueba" } }\n' > "$TMP/ops.json"; }
+mundo
+ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101" "pedido_motivo: tope"
+snapshot "$(presente abc12345 browserslist)"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ fecha: process.argv[2], consultado: true, proyectos: {}, huerfanos: [], huerfanos_no_consultados: [],
+  pedidos: { "101": { ficha: "abc12345", proyecto: "Proy A", leido: true, estado: "Active", categoria: "InProgress", asignado: "Ana Pérez" } } }))' "$TMP/out/bugs-$HOY.json" "$HOY"
+wi 101 Active New; revs 101
+ops_con_sitio
+rc=$(correr --operations "$TMP/ops.json")
+F="$TMP/pend/promoted/abc12345.yaml"
+{ [ "$rc" -eq 0 ] && [ -f "$F" ] && [ ! -f "$TMP/pend/pending/abc12345.yaml" ] && grep -qx 'veredicto: util' "$F" \
+  && grep -qx 'asignados:' "$F" && grep -qx '  - 101: Ana Pérez' "$F" && ! grep -q '^pedido_motivo:' "$F" && grep -qx '  - Proy A: 101' "$F"; } \
+  && ok "T31: con el sitio, la ficha con su tarea pasa a «arreglar» en promoted/, con el nombre de quien la tiene y sin el motivo viejo" \
+  || no "T31: rc=$rc · $(cat "$F" "$TMP/pend/pending/abc12345.yaml" 2>/dev/null | tr '\n' '|' | cut -c1-400) · $(pie)"
+# sin el sitio, se anota igual pero la ficha no se mueve; y la que no tiene tarea dice por qué
+mundo
+ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
+ficha pending zzz99999 lodash "B/B,X/Y"
+config false
+snapshot "[$(presente abc12345 browserslist | sed 's/^\[//; s/\]$//'),{\"id\":\"zzz99999\",\"paquete\":\"lodash\",\"severidad\":\"high\",\"advisories\":[],\"repos\":[{\"repo\":\"B/B\",\"declarada\":false,\"vence\":null},{\"repo\":\"X/Y\",\"declarada\":false,\"vence\":null}]}]"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ fecha: process.argv[2], consultado: true, proyectos: {}, huerfanos: [], huerfanos_no_consultados: [],
+  pedidos: { "101": { ficha: "abc12345", proyecto: "Proy A", leido: true, estado: "Active", categoria: "InProgress", asignado: "Ana Pérez" } } }))' "$TMP/out/bugs-$HOY.json" "$HOY"
+wi 101 Active New; revs 101
+cp "$TMP/pend/pending/zzz99999.yaml" "$TMP/antes-z.yaml"
+rc=$(correr --operations "$TMP/no-hay.json")
+p31b=0; { [ "$rc" -eq 0 ] && cmp -s "$TMP/antes-z.yaml" "$TMP/pend/pending/zzz99999.yaml" && ! grep -q 'asignados:' "$TMP/pend/pending/abc12345.yaml"; } && p31b=1
+config true
+rc=$(correr --operations "$TMP/no-hay.json")
+p31c=0; { [ "$rc" -eq 0 ] && [ -f "$TMP/pend/pending/abc12345.yaml" ] && grep -qx '  - 101: Ana Pérez' "$TMP/pend/pending/abc12345.yaml" \
+  && grep -qx 'veredicto: pendiente' "$TMP/pend/pending/abc12345.yaml" && grep -qE '^pedido_motivo: (sin-proyecto|falla|tope)$' "$TMP/pend/pending/zzz99999.yaml"; } && p31c=1
+[ "$p31b$p31c" = 11 ] \
+  && ok "T31b: en simulado no se escribe nada; sin el sitio la ficha se anota y se queda en pending/, y la que falta dice por qué" \
+  || no "T31b: simulado=$p31b anotado=$p31c · $(cat "$TMP/pend/pending/zzz99999.yaml" | tr '\n' '|' | cut -c1-300) · $(pie)"
 echo
 total=$((pasaron + fallos))
 [ "$fallos" -eq 0 ] && { echo "✅ estado-de-pedidos: $pasaron/$total"; exit 0; } \

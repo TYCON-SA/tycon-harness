@@ -330,6 +330,29 @@ test('T37b PedidosAbiertos_MasDeUnaPagina_LosTraeTodos @story-4.11 @ac-22 — co
   }
 });
 
+// ArchivosDelPedido_RutasYCuerpo_AzureYGithub
+// 🔴 Falla con: saber qué fichas lleva un pedido sólo por su rama (un envío en lote lleva varias), o el cuerpo cortado
+// de Azure DevOps al listar.
+test('T37d ArchivosDelPedido_RutasYCuerpo_AzureYGithub — lo que trae un pedido abierto: sus rutas y su cuerpo entero', async () => {
+  const tokenApi = `api-${crypto.randomBytes(4).toString('hex')}`;
+  const cuerpo = `propuesta de varias decisiones\n${'x'.repeat(600)}\nvigilante/vig-uno → aceptar`;
+  const rutas = ['inbox/watcher/decisions/vig-uno.json', 'inbox/runs-review/decisions/ej-1.json'];
+  for (const plataforma of ['azure', 'github']) {
+    const api = plataforma === 'azure' ? await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops', token: tokenApi }) : await arrancarGithubFalso({ owner: 'acme', repo: 'ops', token: tokenApi });
+    try {
+      api.st.pedidos.push(plataforma === 'azure'
+        ? { pullRequestId: 7, status: 'active', sourceRefName: 'refs/heads/team-config/decisiones-x-20261025-120000', targetRefName: 'refs/heads/main', title: 't', description: cuerpo }
+        : { number: 7, state: 'open', html_url: 'https://github.com/acme/ops/pull/7', title: 't', body: cuerpo, head: { ref: 'team-config/decisiones-x-20261025-120000' }, base: { ref: 'main' } });
+      api.st.archivosDe = () => rutas;
+      const base = { remote: plataforma === 'azure' ? REMOTO_AZURE : REMOTO_GITHUB, credencial: { git: TOKEN, api: tokenApi }, urlBase: plataforma === 'azure' ? { azure: api.base } : { github: api.base } };
+      const r = await propuesta.archivosDelPedido({ ...base, numero: 7 });
+      assert.deepStrictEqual(r, { archivos: rutas, cuerpo }, plataforma);
+      // un pedido que no existe: «no pude mirar», nunca «no trae nada»
+      assert.ok((await propuesta.archivosDelPedido({ ...base, numero: 8 })).error, `${plataforma}: sin el pedido, un error`);
+    } finally { await api.cerrar(); }
+  }
+});
+
 test('T15c Registro_SinElCorreoDeQuienPropone @story-2.29 @ac-14 — el registro del sitio dice archivo y rama, no la persona', { skip: SIN_BACKEND }, async () => {
   const m = await montar({ plataforma: 'github' });
   try {
