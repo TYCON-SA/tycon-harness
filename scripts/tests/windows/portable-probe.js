@@ -86,6 +86,8 @@ const TEST_FILES = Object.freeze({
   'safety-escape': 'scripts/tests/safety-escape.test.js',
   'run-close': 'skills/tycon-pipeline/scripts/tests/run-close.test.js',
   'pipeline-unit': 'skills/tycon-pipeline/scripts/tests/unit.test.js',
+  // el conector de pedidos de trabajo: en Windows az es az.cmd y va por la consola
+  'work-items-az': 'scripts/tests/work-items-az-windows.test.js',
 });
 const GIT_BASH = path.join(__dirname, '..', '..', 'lib', 'git-bash.js');
 const FINDER = 'scripts/lib/git-bash.js';

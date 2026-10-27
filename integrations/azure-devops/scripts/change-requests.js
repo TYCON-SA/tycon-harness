@@ -25,8 +25,9 @@ const recordadas = new Map();
 const no = (reason, detail) => ({ ok: false, reason, detail });
 
 // En Windows `az` es az.cmd, que node sólo corre por la consola: cada argumento entre comillas, y sólo con caracteres
-// que la consola no interpreta adentro de ellas. Un doble con ruta (TYCON_ADO_CMD) se corre directo.
-const seguroEnConsola = (args) => args.every((a) => /^[\p{L}\p{N}_ .:/=$-]+$/u.test(a));
+// que la consola no interpreta adentro de ellas. Una barra invertida al final escaparía la comilla de cierre. Un doble
+// con ruta (TYCON_ADO_CMD) se corre directo.
+const seguroEnConsola = (args) => args.every((a) => /^[\p{L}\p{N}_ .:/=$@~\\-]+$/u.test(a) && !a.endsWith('\\'));
 function llamadaAz(cmd, args, plataforma = process.platform) {
   if (plataforma !== 'win32' || cmd !== 'az') return { args, shell: false };
   if (!seguroEnConsola(args)) return { problem: 'az: argumentos con caracteres no seguros para la consola' };

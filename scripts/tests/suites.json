@@ -2149,6 +2149,12 @@
       "requiere": []
     },
     {
+      "__nota": "El conector de pedidos de trabajo de Azure DevOps en Windows: az es az.cmd y va por la consola, entre comillas, y lo que la consola interpretaría (un título con comillas o «&», la consulta con comillas del estado) va por archivo. La parte pura corre en cualquier máquina; la de la consola de verdad, sólo en Windows (la corre el escenario portable de la prueba de Windows). Sin red: un az.cmd de mentira.",
+      "raiz": "arnes",
+      "ruta": "tests/work-items-az-windows.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.23 (tanda A1): la única raíz de las rutas del arnés (scripts/setup/harness/tycon-home.js) con los valores de hoy, las cinco piezas que se la piden con sus variables parciales ganando, y el techo de «.claude» que sólo baja (fixtures/dot-claude-ceiling.json, fixtures/legacy-home-names.json). Sin red: HOME de juguete en procesos hijos y un repo de juguete para el techo.",
       "raiz": "arnes",
       "ruta": "tests/tycon-home.test.js",

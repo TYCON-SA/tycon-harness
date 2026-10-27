@@ -26,6 +26,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { llamadaAz } = require('./change-requests.js');
 
 // El estado activo según la plantilla de proceso, desde el estado inicial (Basic, Agile, CMMI); en Scrum `New` pasa a
 // `Committed`, que se declara con `state_active`. Lo que diga la configuración manda.
@@ -38,9 +39,40 @@ const HORAS = 'Microsoft.VSTS.Scheduling.CompletedWork';
 
 const no = (reason, detail) => ({ ok: false, reason, detail });
 
+/**
+ * La llamada a az: `{ args, shell, cleanup }` o `{ problem, cleanup }`. En Windows `az` es az.cmd y va por la consola
+ * (`llamadaAz`): un valor que la consola interpretaría (un título con comillas, «&» o «%», la consulta con comillas del
+ * estado) va por archivo, que az lee cuando el argumento empieza con «@». Fuera de Windows, o con un doble con ruta, la
+ * llamada no cambia. `cleanup()` borra los archivos.
+ */
+function azConsoleCall(cmd, args, platform = process.platform) {
+  const direct = llamadaAz(cmd, args, platform);
+  if (!direct.problem) return { ...direct, cleanup: () => {} };
+  let dir = null;
+  const cleanup = () => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); };
+  const routed = args.map((a, i) => {
+    if (!llamadaAz(cmd, [a], platform).problem) return a;
+    if (!dir) dir = fs.mkdtempSync(path.join(os.tmpdir(), 'az-arg-'));
+    const f = path.join(dir, `arg-${i}.txt`);
+    fs.writeFileSync(f, a);
+    return `@${f}`;
+  });
+  const call = llamadaAz(cmd, routed, platform);
+  // az parte el argumento en el primer «=»: una carpeta temporal con «=» no se leería como archivo
+  const problem = call.problem || (dir && dir.includes('=') ? 'az: la carpeta temporal tiene «=»' : null);
+  if (problem) { cleanup(); return { problem: `${problem} (carpeta temporal: ${dir})`, cleanup: () => {} }; }
+  return { ...call, cleanup };
+}
+
 function az(ctx, args) {
   const cmd = ctx.env.TYCON_ADO_CMD || 'az';
-  const r = spawnSync(cmd, args, { env: ctx.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000 });
+  const call = azConsoleCall(cmd, args);
+  // no corrió: nada se creó ni se cambió
+  if (call.problem) return { problem: no('rechazado', call.problem) };
+  let r;
+  try {
+    r = spawnSync(cmd, call.args, { env: ctx.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000, shell: call.shell, windowsHide: true });
+  } finally { call.cleanup(); }
   if (r.error) return { problem: no('no_medido', `${cmd} no se pudo ejecutar (${r.error.code || r.error.message})`) };
   if (r.status !== 0) {
     // el texto de az, recortado: el detalle llega a la salida (la capa lo limpia de credenciales y direcciones)
@@ -349,3 +381,4 @@ function read(args, ctx) {
 }
 
 module.exports = { 'work-item.create': create, 'work-item.update': update, 'work-item.close': close, 'work-item.find': find, 'work-item.read': read };
+Object.defineProperty(module.exports, 'azConsoleCall', { value: azConsoleCall, enumerable: false });

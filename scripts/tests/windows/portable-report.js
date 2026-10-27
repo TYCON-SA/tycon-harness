@@ -181,7 +181,7 @@ const testMatch = (t) => (!t || t.not_run ? null : testPassed(t));
 const testExpected = (name) => `sale 0, sin fallas${REFERENCE.tests[name] ? ` (el informe de W1: ${REFERENCE.tests[name]} pruebas)` : REFERENCE.tests_893[name] ? ` (en la Mac: ${REFERENCE.tests_893[name]})` : ''}`;
 // las suites del paso 6, en el orden en que corren: las tres de W1 y las del registro de hooks, el piso de Node, los
 // frenos y el cierre
-const SUITES = Object.freeze(['bench-portable', 'windows-support', 'test-scope-table', 'apply-hooks', 'harness-node', 'story-gate', 'ledger-visible', 'safety-escape', 'run-close', 'pipeline-unit']);
+const SUITES = Object.freeze(['bench-portable', 'windows-support', 'test-scope-table', 'apply-hooks', 'harness-node', 'story-gate', 'ledger-visible', 'safety-escape', 'run-close', 'pipeline-unit', 'work-items-az']);
 const REPO_TEXT = { harness: 'arnés', skills: 'agent-skills' };
 const OF_REPO = { harness: 'del arnés', skills: 'de agent-skills' };
 
