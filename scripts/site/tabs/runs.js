@@ -86,18 +86,18 @@ function huellaDelEspejo(dir, extra = []) {
 async function armarEnElHilo({ buzon, skillsDir = null, sinHilos = false, umbralesArchivo = null, textosDir, guardarEn = null, informados = null }) {
   const runs = require(RUNS);
   const vacia = fs.mkdtempSync(path.join(os.tmpdir(), 'site-corridas-sin-registro-'));
-  let M;
-  try { M = runs.modelo(vacia, { buzon, soloBuzon: true, sinUnificar: true, sinHilos, umbralesArchivo, skillsDir }); }
-  finally { fs.rmSync(vacia, { recursive: true, force: true }); }
   fs.mkdirSync(textosDir, { recursive: true });
   // las corridas cuyos cambios salieron de su resumen (la conversación ya no está en el disco): sus textos se bajan
   // a demanda, cuando alguien abre los cambios. Del volcado de cada una, sólo la ruta, y sólo del lado del servidor
   const aDemanda = {};
-  for (const c of M.corridas) {
-    const t = runs.textosDe(c);
+  // cada corrida escribe sus textos apenas se arma: juntarlos todos antes duplicaba el pico de memoria
+  const alTexto = (c, t) => {
     if (t.texto || t.textoGit) fs.writeFileSync(path.join(textosDir, `${c.id}.json`), JSON.stringify(t));
     else if (c.cambios && c.cambios.estado === 'leido' && c._volcado) aDemanda[c.id] = c._volcado;
-  }
+  };
+  let M;
+  try { M = runs.modelo(vacia, { buzon, soloBuzon: true, sinUnificar: true, sinHilos, umbralesArchivo, skillsDir, alTexto }); }
+  finally { fs.rmSync(vacia, { recursive: true, force: true }); }
   M.corridas = M.corridas.map(runs.paraDetalle);
   // la vista para el próximo arranque, a un temporal: el hilo principal la pone en su lugar cuando sirve este modelo. No
   // poder escribirla no tumba el armado: vuelve su código, y lo escrito a medias se borra

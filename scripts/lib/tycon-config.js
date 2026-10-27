@@ -1200,8 +1200,11 @@ function integraciones(config) {
  */
 function timeTracking(config) {
   const v = config.valores.integraciones.timeTracking;
-  if (typeof v === 'string' && v.trim()) return { value: v.trim().toLowerCase(), origin: config.origenes['integraciones.timeTracking'], legacy: false };
   const o = config.origenes['integraciones.clockify'];
+  // la llave vieja escrita en la máquina (o en su variable) le gana a la elección que trae el perfil: el perfil no
+  // prende la herramienta que esa máquina apagó
+  const viejaDeLaMaquina = (o === 'maquina' || o === 'env') && config.origenes['integraciones.timeTracking'] === 'perfil';
+  if (typeof v === 'string' && v.trim() && !viejaDeLaMaquina) return { value: v.trim().toLowerCase(), origin: config.origenes['integraciones.timeTracking'], legacy: false };
   if (o && o !== 'apagado') {
     anotarViejo('key', 'integrations.clockify', 'integrations.timeTracking', config.home);
     return { value: config.valores.integraciones.clockify ? 'clockify' : 'none', origin: o, legacy: true };

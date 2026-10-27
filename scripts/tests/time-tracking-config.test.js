@@ -72,6 +72,27 @@ test('Config_LegacyClockifyTrue_ReadsClockify @story-7.40 @ac-5', () => {
   assert.ok(!TC.LAS_OCHO.includes('timeTracking'));
 });
 
+test('Config_ProfileTimeTracking_MachineOldKeyStillWins — el perfil que elige la herramienta no prende la que la máquina apagó', () => {
+  const perfil = path.join(tmp('ttc-perfil-'), 'team-profile.json');
+  fs.writeFileSync(perfil, JSON.stringify({ integrations: { timeTracking: 'clockify' } }));
+  const conPerfil = (home, extra = {}) => env(home, Object.assign({ TYCON_PROFILE: perfil }, extra));
+  // sin nada en la máquina, la elección del perfil vale
+  const nada = casa();
+  assert.strictEqual(TC.timeTracking(TC.leer({ home: nada, env: conPerfil(nada) })).value, 'clockify');
+  // la máquina la apagó con la llave vieja: sigue apagada
+  const apagada = casa();
+  machineFile(apagada, { integrations: { clockify: false } });
+  const a = TC.timeTracking(TC.leer({ home: apagada, env: conPerfil(apagada) }));
+  assert.strictEqual(a.value, 'none', 'la llave vieja de la máquina gana a la elección del perfil');
+  assert.strictEqual(a.origin, 'maquina');
+  // la variable vieja, igual
+  assert.strictEqual(TC.timeTracking(TC.leer({ home: nada, env: conPerfil(nada, { TYCON_CLOCKIFY: '0' }) })).value, 'none');
+  // la clave nueva escrita en la máquina gana a todo, como siempre
+  const nueva = casa();
+  machineFile(nueva, { integrations: { clockify: false, timeTracking: 'solidtime' } });
+  assert.strictEqual(TC.timeTracking(TC.leer({ home: nueva, env: conPerfil(nueva) })).value, 'solidtime');
+});
+
 function harness(args, home, input) {
   return spawnSync(process.execPath, [HARNESS, 'config', ...args], { env: env(home), input, encoding: 'utf8', timeout: 60000 });
 }

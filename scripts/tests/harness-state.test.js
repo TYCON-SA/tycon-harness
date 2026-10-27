@@ -107,6 +107,31 @@ test('T1 · con un node por debajo del piso (v18) imprime UNA línea y sale 2 an
   assert.ok(/20/.test(lines[0]) && /18\.0\.0/.test(lines[0]), `la línea no dice el piso y la versión: ${lines[0]}`);
 });
 
+// El piso de Node 22 corta sólo una instalación nueva, con una línea que dice qué hacer; el arranque, `version` y la cola
+// del aplicador (`install --from-existing`, la que corre en cada actualización) siguen tolerando 20.
+// 🔴 Sin esto: `install` con Node 20 instala igual (o frena recién en el aplicador, sin decir qué hacer), o el piso
+//    nuevo frena en cada arranque a quien todavía no actualizó su Node.
+test('T1 · Node 20: install corta con una línea clara y sin escribir nada; startup, version e install --from-existing no', () => {
+  const H = require(HARNESS);
+  assert.strictEqual(H.INSTALL_NODE_FLOOR, 22);
+  assert.strictEqual(H.installNodeProblem({ env: {} }), null, 'con el Node de esta máquina no hay problema');
+  const fake = { TYCON_NODE_FLOOR_FAKE_VERSION: 'v20.11.1' };
+  for (const args of [['install', '--dry-run'], ['install', '--version', 'latest', '--tool', 'codex', '--dry-run']]) {
+    const home = casa('n22-' + args.length);
+    const r = run(args, { home, env: fake });
+    assert.strictEqual(r.rc, 1, `${args.join(' ')} rc ${r.rc}: ${r.all}`);
+    const lines = r.all.split('\n').filter(Boolean);
+    assert.strictEqual(lines.length, 1, `${args.join(' ')}: más de una línea: ${r.all}`);
+    assert.match(lines[0], /^harness\.js install: Node 20\.11\.1: para instalar el arnés hace falta Node 22 o más nuevo\. Instalá Node 22/, lines[0]);
+    for (const d of [path.join(home, '.tycon'), path.join(home, '.claude', 'tycon-harness-state.json')]) assert.ok(!fs.existsSync(d), `${args.join(' ')} escribió ${d}`);
+  }
+  // espejo: lo que corre en cada arranque o actualización no menciona el piso de la instalación
+  for (const args of [['startup'], ['version'], ['install', '--from-existing']]) {
+    const r = run(args, { env: fake });
+    assert.ok(!/para instalar el arnés hace falta Node 22/.test(r.all), `${args.join(' ')} cortó por el piso de la instalación: ${r.all}`);
+  }
+});
+
 test('T1 · nombres en inglés y sin nombres reales: los dos frenos del pre-commit en 0 sobre scripts/setup/', () => {
   // un clon compartido del repo bajo prueba (sin copiar objetos) con scripts/setup/ stageado tal como está en el disco
   const copia = path.join(BASE, 'copia');
@@ -401,6 +426,55 @@ function lab(name, { commitEnv, gitignore = '.dashboard/\n' } = {}) {
   const skillsDir = skills.clone(path.join(home, '.claude', 'agent-skills'));
   return { home, env: labEnv(home), harness, skills, tree, skillsDir };
 }
+
+// La punta de un clon se pregunta una vez mientras el clon no cambie: instalar preguntaba lo mismo 8 veces por clon
+// (16 de sus 33 procesos de git) y actualizar, 23 de 82. Cualquier cambio de HEAD, de la rama o de packed-refs vuelve a
+// preguntar.
+// 🔴 Sin esto: la segunda pregunta lanza otro git (la traza cuenta 2). Y con una memoria que no mira el clon, la punta
+//    sale vieja después de un commit, de empaquetar las refs, de soltar HEAD o de cambiar de rama.
+test('T12 · sources.head pregunta a git una vez mientras el clon no cambia, y sigue la punta después de cada cambio', () => {
+  const sources = mod('sources');
+  const L = lab('t12-head-memo');
+  const trace = path.join(BASE, 'tmp', `head-memo-${process.pid}.trace`);
+  const env = Object.assign({}, L.env, { GIT_TRACE2_EVENT: trace });
+  const asks = () => (fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').split('\n').filter((l) => l.includes('"event":"start"') && l.includes('"rev-parse","HEAD"')).length : 0);
+  const truth = () => git(L.tree, ['rev-parse', 'HEAD']);
+  const first = sources.head(L.tree, { env, cached: true });
+  assert.strictEqual(first, truth());
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), first);
+  assert.strictEqual(asks(), 1, 'la segunda pregunta para mostrar, con el clon igual, no lanza git');
+  // lo que decide algo que cambia el disco pregunta siempre: si git no contesta, no se hace nada
+  assert.strictEqual(sources.head(L.tree, { env }), first);
+  assert.strictEqual(asks(), 2, 'sin cached, pregunta aunque el clon esté igual');
+  const commit = (msg) => { fs.writeFileSync(path.join(L.tree, 'VERSION'), `${msg}\n`); git(L.tree, ['commit', '-qam', msg]); };
+  commit('dos');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'después de un commit');
+  git(L.tree, ['pack-refs', '--all']);
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'con las refs empaquetadas');
+  commit('tres');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'un commit sobre las refs empaquetadas');
+  git(L.tree, ['checkout', '-q', '--detach', 'HEAD~1']);
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'con HEAD suelto');
+  git(L.tree, ['checkout', '-q', '-b', 'otra']);
+  commit('cuatro');
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'en otra rama');
+  // la ref reescrita en el mismo archivo, con el mismo tamaño y la misma hora (dos escrituras en el mismo tic del reloj)
+  const refFile = path.join(L.tree, '.git', 'refs', 'heads', 'otra');
+  const tic = new Date('2026-01-01T00:00:00Z');
+  fs.utimesSync(refFile, tic, tic);
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth());
+  const punta = truth();
+  fs.writeFileSync(refFile, `${git(L.tree, ['rev-parse', 'HEAD~1'])}\n`);
+  fs.utimesSync(refFile, tic, tic);
+  assert.strictEqual(sources.head(L.tree, { env, cached: true }), truth(), 'la ref cambió aunque su archivo se vea igual');
+  fs.writeFileSync(refFile, `${punta}\n`);
+  // un worktree (su .git es un archivo): sin memoria, pero bien
+  const wt = path.join(BASE, 'tmp', `head-memo-wt-${process.pid}`);
+  git(L.tree, ['worktree', 'add', '-q', '--detach', wt, 'HEAD~2']);
+  assert.strictEqual(sources.head(wt, { env }), git(wt, ['rev-parse', 'HEAD']), 'un worktree');
+  // un ambiente que redirige git a otro repo no usa la memoria del directorio
+  assert.strictEqual(sources.head(L.tree, { env: Object.assign({}, env, { GIT_DIR: git(wt, ['rev-parse', '--absolute-git-dir']) }) }), git(wt, ['rev-parse', 'HEAD']), 'con GIT_DIR');
+});
 
 // ─── T2 · Harness_State_AtomicUnderLock_BrokenIsNotUninstalled ─────────────────────────────────────────────────────
 

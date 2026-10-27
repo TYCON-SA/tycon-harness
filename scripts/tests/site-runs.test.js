@@ -602,6 +602,30 @@ test('T16 DetalleYTextos_APedido_MismaFormaQueHoy @story-2.27 @ac-16', async () 
   });
 });
 
+test('T16b Armado_LosTextosSalenAlDiscoCorridaPorCorrida — el modelo no junta los textos de todas antes de escribirlos', async () => {
+  const espejo = mundo({ marcadores: false });
+  const entero = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true, sinUnificar: true });
+  const esperados = Object.fromEntries(entero.corridas.map((c) => [c.id, runs.textosDe(c)]).filter(([, t]) => t.texto || t.textoGit));
+  assert.ok(Object.keys(esperados).length >= 1, 'el mundo trae corridas con textos');
+  // con `alTexto`, cada corrida entrega sus textos al armarse y queda sin ellos: ninguna los conserva hasta el final
+  const entregados = {};
+  const conTextosAlEntregar = [];
+  const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true, sinUnificar: true, alTexto: (c, t) => {
+    entregados[c.id] = t;
+    conTextosAlEntregar.push(Boolean(c.cambios && (c.cambios._texto || c.cambios._textoGit)));
+  } });
+  assert.strictEqual(Object.keys(entregados).length, entero.corridas.length, 'una entrega por corrida');
+  assert.ok(conTextosAlEntregar.every((x) => !x), 'la corrida ya no los trae cuando los entrega');
+  assert.ok(M.corridas.every((c) => !runs.textosDe(c).texto && !runs.textosDe(c).textoGit), 'el modelo vuelve sin textos');
+  for (const [id, t] of Object.entries(esperados)) assert.deepStrictEqual(entregados[id], t, `los mismos textos de ${id}`);
+  // el armado del sitio escribe los mismos archivos que antes, y baja a demanda las mismas
+  const textosDir = path.join(tmp('textos-'), 'x');
+  const r = await TAB().armarEnElHilo({ buzon: espejo, textosDir });
+  assert.deepStrictEqual(fs.readdirSync(textosDir).sort(), Object.keys(esperados).map((id) => `${id}.json`).sort());
+  for (const [id, t] of Object.entries(esperados)) assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(textosDir, `${id}.json`), 'utf8')), t);
+  assert.deepStrictEqual(r.aDemanda, {});
+});
+
 test('T17 Modelo_ListaBlanca_SinCamposNuevos @story-2.27 @ac-17', () => {
   const espejo = mundo({ marcadores: false });
   const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true });

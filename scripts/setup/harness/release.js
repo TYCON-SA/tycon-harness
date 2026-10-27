@@ -1411,6 +1411,8 @@ function cmdInstall(ctx, H) {
   };
   // los requisitos del aplicador, sin git (la versión bajada no lo usa). El aplicador es el enchufe de Claude Code: una
   // máquina que sólo enchufa a Codex no lo corre y no necesita lo suyo (bash y python3, o PowerShell 7)
+  const oldNode = H.installNodeProblem(ctx);
+  if (oldNode) return { code: 1, lines: [`harness.js install: ${oldNode}`] };
   const missing = withClaude ? H.missingRequirement(ctx, { release: true }) : null;
   if (missing) return { code: 1, lines: [`harness.js install: ${missing}`] };
   const repoInfo = repoOf({ tree: ctx.tree, option: ctx.opts.repo || null });
