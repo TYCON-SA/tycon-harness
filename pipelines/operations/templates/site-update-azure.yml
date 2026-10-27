@@ -1,0 +1,48 @@
+# pipelines/operations/templates/site-update-azure.yml — un sitio en Azure al día con stable (update-site.js).
+#
+# La usa site-update.yml una vez por sitio: el de la organización y, si la definición trae sus variables, el sitio demo.
+# Cada sitio se nombra por el PREFIJO de sus variables: `<prefijo>_RESOURCE_GROUP`, `<prefijo>_APP` y `<prefijo>_URL`.
+# Un sitio cuyo `<prefijo>_APP` no está definido no corre: así el demo es optativo y el modelo no cambia para quien no lo
+# tiene. Con `demo: true`, update-site.js prueba el sitio con la prueba del demo (`--demo`), porque el demo es abierto y la
+# prueba sin sesión lo daría siempre por roto. Cada sitio deja su resultado en su propia carpeta (`stateDir`).
+#
+# Un resultado que no es «al día» o «actualizado» no corta la noche: queda como advertencia y en el resultado guardado.
+
+parameters:
+  - name: azureSubscription      # la conexión de servicio propia del nocturno (la de site-update.yml)
+    type: string
+  - name: efectos
+    type: boolean
+  - name: prefix                 # SITE para el sitio de la organización; SITE_DEMO para el demo
+    type: string
+    default: SITE
+  - name: stateDir
+    type: string
+    default: .dashboard/site-update
+  - name: demo
+    type: boolean
+    default: false
+  - name: displayName
+    type: string
+    default: 'El sitio en Azure: comparar, actualizar y probar'
+
+steps:
+  - task: AzureCLI@2
+    displayName: ${{ parameters.displayName }}
+    condition: and(succeeded(), eq(variables['SITE_PLATFORM'], 'azure'), ne(variables['${{ parameters.prefix }}_APP'], ''))
+    inputs:
+      azureSubscription: ${{ parameters.azureSubscription }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -uo pipefail
+        cd "$(Build.SourcesDirectory)"
+        SECO=$([ "${{ parameters.efectos }}" = "True" ] || echo --dry-run)
+        DEMO=$([ "${{ parameters.demo }}" = "True" ] && echo --demo)
+        node scripts/site/deploy/update-site.js --platform "$(SITE_PLATFORM)" --image "$(SITE_IMAGE_NAME)" \
+          --resource-group "$(${{ parameters.prefix }}_RESOURCE_GROUP)" --app "$(${{ parameters.prefix }}_APP)" \
+          --site-url "$(${{ parameters.prefix }}_URL)" \
+          --operations-json operations.json --state-dir ${{ parameters.stateDir }} $DEMO $SECO
+        rc=$?
+        [ $rc -eq 0 ] || echo "##vso[task.logissue type=warning]el sitio no se actualizó (ver el resultado en ${{ parameters.stateDir }})"
+        exit 0

@@ -14,7 +14,9 @@
  *   · `vuelto_atras` la prueba falló: volvió a la huella anterior y la probó otra vez;
  *   · `pedido`       Render: el redespliegue se pidió (Render lo hace de fondo; la prueba es la de la noche siguiente).
  * «Arranca sana» lo prueba esto, no se supone: después de cambiar la imagen despierta el sitio y le corre la prueba sin
- * sesión (check-deploy.js), que espera a que despierte.
+ * sesión (check-deploy.js), que espera a que despierte. El sitio demo (`--demo`) es abierto a propósito y esa prueba lo
+ * daría siempre por roto: se prueba con su propia prueba, `/livez` con `demo: true` y la portada con la franja «Datos de
+ * ejemplo».
  *
  * Plataformas: `azure` (Container Apps, con la sesión de `az` del nocturno: `containerapp show` y `update --image`),
  * `render` (el hook de redespliegue con `imgURL=<imagen>@<huella>`; el hook es un secreto y nunca sale en la salida) y
@@ -27,7 +29,7 @@
  *
  * Uso:
  *   node update-site.js --platform azure --resource-group <g> --app <a> --site-url <https://…> --image <registro/repo>
- *                       --operations-json <operations.json> --state-dir <carpeta> [--subscription <s>] [--dry-run]
+ *                       --operations-json <operations.json> --state-dir <carpeta> [--subscription <s>] [--demo] [--dry-run]
  *   node update-site.js --platform render --image <registro/repo> --operations-json <…> --state-dir <…>  (el hook, en
  *                       la variable SITE_RENDER_DEPLOY_HOOK)
  *   node update-site.js --platform local --compose <compose.yaml> --site-url http://127.0.0.1:8080 --image <…> --mode auto
@@ -210,7 +212,7 @@ async function actualizar(o) {
     if (prev && prev.huella === st.huella) {
       // lo pedido la noche anterior se prueba ahora (Render redespliega de fondo): «al día» sólo si el sitio contesta sano
       if (o.render && o.render.url) {
-        const pr = await (o.probar || probarDe())(o.render.url);
+        const pr = await (o.probar || (o.demo ? probarDemo() : probarDe()))(o.render.url);
         if (!pr.ok) return fin('no_pudo', prev.version, st.version, 'la prueba sin sesión falló');
       }
       return fin('al_dia', prev.version, st.version);
@@ -244,7 +246,7 @@ async function actualizar(o) {
   if (o.dryRun) return fin('aviso', desde, st.version);
 
   // la máquina propia se prueba por /livez en la dirección local (la prueba sin sesión pide https y un candado delante)
-  const probar = o.probar || (plataforma === 'local' ? probarLocal() : probarDe());
+  const probar = o.probar || (plataforma === 'local' ? probarLocal() : o.demo ? probarDemo() : probarDe());
   // dos corridas a la vez: si la imagen que corre cambió desde que se miró (otra la actualizó), ésta no toca nada
   const otraVez = p.actual();
   if (otraVez.error || otraVez.huella !== a.huella) return fin('no_pudo', desde, st.version, 'la imagen que corre cambió durante la ejecución');
@@ -278,6 +280,30 @@ function probarLocal(intentos = 30) {
       await new Promise((ok) => setTimeout(ok, 1000));
     }
     return { ok: false, motivo: 'la prueba sin sesión falló (/livez no contestó)' };
+  };
+}
+
+/**
+ * La prueba del sitio demo: `/livez` con `demo: true` (despierta y espera) y la portada con la franja «Datos de ejemplo».
+ * Pide las dos cosas para que un sitio real, que también contesta `/livez`, nunca pase por demo.
+ */
+function probarDemo({ espera = 180000, pausa = 5000, f = globalThis.fetch } = {}) {
+  const fallo = (m) => ({ ok: false, motivo: `la prueba sin sesión falló (${m})` });
+  return async (url) => {
+    const raiz = url.replace(/\/$/, '');
+    const hasta = Date.now() + espera;
+    let vida = null;
+    for (;;) {
+      try { const r = await f(`${raiz}/livez`); if (r.ok) { vida = await r.json(); break; } } catch { /* todavía no contesta */ }
+      if (Date.now() >= hasta) break;
+      await new Promise((ok) => setTimeout(ok, pausa));
+    }
+    if (!vida) return fallo('/livez no contestó');
+    if (vida.demo !== true) return fallo('el sitio no está en modo demo');
+    let pagina = null;
+    try { const r = await f(`${raiz}/`); if (r.ok) pagina = await r.text(); } catch { /* sin portada */ }
+    if (!pagina || !pagina.includes('class="franja-demo"')) return fallo('la portada no trae la franja de datos de ejemplo');
+    return { ok: true };
   };
 }
 
@@ -331,12 +357,12 @@ async function main(argv) {
   }
   const plataforma = op('--platform');
   if (!['azure', 'render', 'local'].includes(plataforma) || !op('--image')) {
-    process.stderr.write('uso: update-site.js --platform azure|render|local --image <registro/repo> [--operations-json <archivo> | --mode auto|notice] [--state-dir <carpeta>] …\n');
+    process.stderr.write('uso: update-site.js --platform azure|render|local --image <registro/repo> [--operations-json <archivo> | --mode auto|notice] [--state-dir <carpeta>] [--demo] …\n');
     return 2;
   }
   const modo = op('--mode') ? (['auto', 'notice'].includes(op('--mode')) ? op('--mode') : null) : (op('--operations-json') ? modoDe(op('--operations-json')) : 'notice');
   const r = await actualizar({
-    plataforma, modo, imagen: op('--image'), estadoDir: op('--state-dir'), dryRun: argv.includes('--dry-run'),
+    plataforma, modo, imagen: op('--image'), estadoDir: op('--state-dir'), dryRun: argv.includes('--dry-run'), demo: argv.includes('--demo'),
     log: (l) => process.stdout.write(`[sitio] ${l}\n`),
     azure: { grupo: op('--resource-group'), app: op('--app'), suscripcion: op('--subscription'), url: op('--site-url') },
     render: { hook: process.env.SITE_RENDER_DEPLOY_HOOK || null, url: op('--site-url') },
@@ -345,7 +371,7 @@ async function main(argv) {
   return ['no_pudo', 'vuelto_atras'].includes(r.resultado) ? 1 : 0;
 }
 
-module.exports = { actualizar, modoDe, sitioDePrueba, RESULTADOS, MOTIVOS };
+module.exports = { actualizar, modoDe, sitioDePrueba, probarDemo, RESULTADOS, MOTIVOS };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`update-site: falló: ${e && e.stack ? e.stack : e}\n`); process.exit(1); });
