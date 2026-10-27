@@ -81,10 +81,14 @@ const SECTIONS = {
       return h[1].length <= level && !FORM['titulo-ac'].re.test(line);
     },
   },
-  // Pruebas: nivel 2 a 6 (75 stories reales la escriben con `##`). Termina en el próximo título de nivel 1 a 3.
+  // Pruebas: nivel 2 a 6 (75 stories reales la escriben con `##`). Termina en el próximo título de nivel 1 a 3, salvo
+  // un título de pruebas más hondo: `## Tests` con `### Tests (N verificaciones)` y la tabla debajo es la misma sección.
   tests: {
     title: new RegExp(`^(#{2,6})[ \\t]+(?:${TITLE_WORDS.tests})[^\\n]*$`, 'i'),
-    ends: (line) => { const h = HEADING_LINE.exec(line); return !!h && h[1].length <= 3; },
+    ends: (line, level) => {
+      const h = HEADING_LINE.exec(line);
+      return !!h && h[1].length <= 3 && !(h[1].length > level && TESTS_TITLE_LINE.test(line));
+    },
   },
 };
 

@@ -317,6 +317,17 @@ test('T25 Criteria_TestsGroupWithoutTable_DoesNotEnd', () => {
   assert.deepEqual(sc.parseAcsFromSpec(canonica), [1, 2], 'la tabla de story-format sigue cortando la sección');
 });
 
+test('T26 TestsTable_NestedTestsTitle_ReadsTheTable', () => {
+  // `## Tests` y debajo `### Tests (N verificaciones)` con la tabla: el título de adentro no corta la sección
+  const anidada = `${fm()}\n# Story 1.1\n\n## Tests\n\n### Tests (2 verificaciones)\n\n| ID | Test | AC |\n|---|---|---|\n| T1 | \`A\` | 1 |\n| T2 | \`B\` | 2 |\n\n## Dev Agent Record\n\n| T9 | no es de la tabla | 3 |\n`;
+  const tabla = sc.parseTestsTable(anidada);
+  assert.deepEqual(tabla.rows.map((r) => r.tid), ['T1', 'T2']);
+  assert.deepEqual(tabla.warnings.filter((w) => /CERO tests/.test(w)), []);
+  // un título de otro tema dentro de la sección sigue cortando, como antes
+  const otro = `${fm()}\n# Story 1.1\n\n## Tests\n\n| ID | Test | AC |\n|---|---|---|\n| T1 | \`A\` | 1 |\n\n### Notas\n\n| T9 | no es de la tabla | 3 |\n`;
+  assert.deepEqual(sc.parseTestsTable(otro).rows.map((r) => r.tid), ['T1']);
+});
+
 // ── Falla cerrada ─────────────────────────────────────────────────────────────
 
 const SIN_TITULO = `${fm()}\n# Story 1.1\n\n## Context\n\nAlgo.\n\n### Tests\n\n| ID | Test | AC |\n|---|---|---|\n| T1 | \`A\` | 1 |\n`;
