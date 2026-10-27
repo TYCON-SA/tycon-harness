@@ -639,7 +639,8 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
     const aplicado = remote.platform === 'github'
       ? await aplicarEnGithub({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, rama })
       : await aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, quien, rama, esperar });
-    registrar(aplicado.codigo === 'aplicado' ? `cambio aplicado: ${archivo} por ${quien || 'alguien'}, pedido ${pedido.enlace}` : `propuesta de ${archivo}: no se aplicó sola (${aplicado.codigo}): ${aplicado.message}`);
+    // sin el correo de quien propone (un dato personal en el registro del servidor): el pedido dice quién lo pidió
+    registrar(aplicado.codigo === 'aplicado' ? `cambio aplicado: ${archivo}, pedido ${pedido.enlace}` : `propuesta de ${archivo}: no se aplicó sola (${aplicado.codigo}): ${aplicado.message}`);
     return aplicado;
   });
 }

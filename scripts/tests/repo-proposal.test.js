@@ -634,7 +634,9 @@ test('T7 Proponer_GitHubEncendido_MergeDirectoOAutoMerge @story-2.39 @ac-5 — e
       const merge = m.api.llamadas.find((l) => /\/merge$/.test(l.ruta));
       assert.match(merge.cuerpo.sha, /^[0-9a-f]{40}$/, 'mergea el commit que empujó, no lo que haya en la rama');
       assert.deepStrictEqual(m.api.llamadas.filter((l) => /reviews/.test(l.ruta)), [], 'ninguna revisión: en GitHub quien abre el pedido no puede aprobarlo');
-      assert.ok(m.registro.some((l) => l.startsWith(`cambio aplicado: operations.json por ${QUIEN}`)), m.registro.join('\n'));
+      // el registro del servidor no lleva el correo de quien propone (un dato personal): el pedido dice quién lo pidió
+      assert.ok(m.registro.some((l) => l.startsWith('cambio aplicado: operations.json, pedido ')), m.registro.join('\n'));
+      assert.ok(!m.registro.some((l) => l.includes(QUIEN)), `el registro trae el correo: ${m.registro.join('\n')}`);
     } finally { await m.cerrar(); }
   }
   {
@@ -680,8 +682,8 @@ test('T10 Registro_Aplicado_NombraQuienYElPedido @story-2.39 @ac-6', { skip: SIN
     dejarCompletar(aplicado);
     const res = await proponer(aplicando(aplicado));
     assert.strictEqual(res.codigo, 'aplicado', textoDe(res));
-    const lineas = aplicado.registro.filter((l) => l.includes(QUIEN));
-    assert.deepStrictEqual(lineas, [`cambio aplicado: operations.json por ${QUIEN}, pedido ${res.enlace}`], aplicado.registro.join('\n'));
+    assert.deepStrictEqual(aplicado.registro.filter((l) => l.includes(QUIEN)), [], 'el registro no trae el correo');
+    assert.ok(aplicado.registro.includes(`cambio aplicado: operations.json, pedido ${res.enlace}`), aplicado.registro.join('\n'));
   } finally { await aplicado.cerrar(); }
   const queda = await montar();
   try {

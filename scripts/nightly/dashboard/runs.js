@@ -1438,6 +1438,11 @@ function cabecera(M, opts = {}) {
     : M.buzon.estado !== 'leido' ? banda(x('v.buzonSinLeer'), `${esc(enIdioma(I, M.buzon.motivo))} — ${x('v.buzonSinLeerResto')}`)
     : M.buzon.carpetas_ilegibles ? banda(x(M.buzon.carpetas_ilegibles === 1 ? 'v.carpetasIlegibles1' : 'v.carpetasIlegibles', { n: M.buzon.carpetas_ilegibles }), x('v.carpetasIlegiblesResto'))
     : '';
+  // el sitio armó con una pasada que bajó todos los volcados y dejó conversaciones para la siguiente: las corridas están,
+  // y las que esperan su conversación todavía no tienen descripción ni cambios
+  const bandaPendientes = M.multi && M.buzon && M.buzon.pendientes > 0
+    ? banda(x(M.buzon.pendientes === 1 ? 'v.pendientes1' : 'v.pendientes', { n: M.buzon.pendientes }), x('v.pendientesResto'))
+    : '';
   // Sin el archivo de uniones del bajador, la carpeta vieja de una máquina que se mudó sale como otra máquina
   const bandaUniones = M.multi && M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas'
     ? banda(x('v.carpetasDeMaquina'), x('v.unionesNoMedidas', { motivo: enIdioma(I, M.buzon.uniones.motivo) }))
@@ -1460,7 +1465,7 @@ function cabecera(M, opts = {}) {
   <h1>${x('v.titulo')}</h1>
   <p class="lede">${x('v.lede1')} <b>${x('v.lede2')}</b>${x('v.lede3')} <b>${x('v.lede4')}</b>${x('v.lede5')}</p>
   <div class="stamp"><span><b>${x('v.selloEjecuciones')}</b> ${selloCorridas}</span><span><b>${x('v.selloConsumo')}</b> ${x('v.deN', { n: conConsumo, t: N })}</span><span><b>${x('v.selloControles')}</b> ${x('v.deN', { n: conControles, t: N })}</span><span><b>${x('v.selloAlFinal')}</b> ${x('v.deN', { n: alFinal, t: N })}</span><span><b>${x('v.selloGenerado')}</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · ${origen}</span><span><b>${x('v.selloAlcance')}</b> ${esc(alcance)}</span></div>
-  ${bandaBuzon}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaPartidos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
+  ${bandaBuzon}${bandaPendientes}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaPartidos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
 </header>
 `;
 }

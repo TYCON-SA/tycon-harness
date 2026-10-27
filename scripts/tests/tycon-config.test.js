@@ -300,28 +300,36 @@ const PEM_BEGIN = '-----BEGIN RSA PRIVATE ' + 'KEY-----';
 const SLACK_SHAPE = 'xox' + 'b-1234567890-abcdefghij';
 const API_SHAPE = 'sk' + '-abcdefghijklmnop1234';
 
-// Las formas que el escaneo de secretos de GitHub reconoce: ninguna prueba del repo escribe un valor así entero
-const FORMAS_DE_PROVEEDOR = /(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|sk_(?:live|test)_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9]{16,}|glpat-[\w-]{12,}|AIza[\w-]{20,}|npm_[A-Za-z0-9]{16,}|xox[abprs]-[\w-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[\w-]{10,}\.eyJ[\w-]{10,}\./;
-test('T3 ProviderShapes_NoTestWritesAWholeKey: ningún archivo de pruebas del repo trae entero un valor con forma de secreto de proveedor', () => {
+// Las formas que el escaneo de secretos de GitHub reconoce (scripts/lib/provider-secret-shapes.js): ningún archivo del
+// árbol trae un valor así entero. Corre en la CI del público; el pre-commit del arnés mira lo que agrega cada commit.
+// 🔴 Falla con: el recorrido limitado a los archivos de pruebas, o una forma de proveedor sacada de la lista.
+const SHAPES = require(path.join(SCRIPTS, 'lib', 'provider-secret-shapes.js'));
+test('T3 ProviderShapes_NoFileWritesAWholeKey: ningún archivo del árbol trae entero un valor con forma de secreto de proveedor', () => {
   const raiz = path.resolve(__dirname, '..', '..');
-  const hallados = [];
-  // sin seguir enlaces ni entrar en .advisors: ahí otras suites arman y borran carpetas personales de juguete
-  // mientras esta corre, y esas carpetas enlazan de vuelta al repo
-  const recorrer = (dir) => {
-    let entradas;
-    try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
-    for (const e of entradas) {
-      const abs = path.join(dir, e.name);
-      if (e.isDirectory()) { if (!['node_modules', '.git', '.advisors'].includes(e.name)) recorrer(abs); continue; }
-      if (!e.isFile() || !/\.test\.(?:js|mjs|ts|sh)$/.test(e.name)) continue;
-      const rel = path.relative(raiz, abs);
-      fs.readFileSync(abs, 'utf8').split('\n').forEach((linea, i) => {
-        if (FORMAS_DE_PROVEEDOR.test(linea)) hallados.push(`${rel}:${i + 1}`);
-      });
-    }
-  };
-  recorrer(raiz);
+  const hallados = SHAPES.allLines(raiz).filter((l) => SHAPES.find(l.texto).length).map((l) => `${l.archivo}:${l.linea}`);
   assert.deepEqual(hallados, [], `armalos por partes, como las constantes de arriba: ${hallados.join(', ')}`);
+  // una forma entera en cualquier archivo cuenta; la palabra sola o la forma cortada, no
+  const dir = tmp('shapes-');
+  fs.writeFileSync(path.join(dir, 'notas.md'), `la llave ${AWS_SHAPE}\n`);
+  fs.writeFileSync(path.join(dir, 'inofensivo.md'), 'AKIA a secas, gh' + 'p_corto y sk-abc\n');
+  assert.deepEqual(SHAPES.allLines(dir).filter((l) => SHAPES.find(l.texto).length).map((l) => l.archivo), ['notas.md']);
+});
+
+// Lo que el commit agrega se lee del diff: una línea agregada que empieza con «++ » se ve como «+++ …», igual que una
+// cabecera de archivo, y no por eso deja de mirarse (ni ella ni las que siguen). Y «sk-» cuenta sólo al empezar una
+// palabra: «risk-assessment…» o «flask-sqlalchemy…» no son claves.
+// 🔴 Falla con: tomar por cabecera cualquier «+++ » del diff, o buscar «sk-» en medio de una palabra.
+test('T3b ProviderShapes_DiffYPalabras: la línea «++ …» se mira y «sk-» en medio de una palabra no cuenta', () => {
+  const repo = tmp('shapes-staged-');
+  spawnSync('git', ['-C', repo, 'init', '-q']);
+  fs.writeFileSync(path.join(repo, 'a.txt'), `++ /dev/null\nla llave ${AWS_SHAPE}\n`);
+  fs.writeFileSync(path.join(repo, 'b.txt'), `++ ${AWS_SHAPE}\n`);
+  spawnSync('git', ['-C', repo, 'add', 'a.txt', 'b.txt']);
+  const hallados = SHAPES.stagedLines(repo).filter((l) => SHAPES.find(l.texto).length).map((l) => `${l.archivo}:${l.linea}`);
+  assert.deepEqual(hallados.sort(), ['a.txt:2', 'b.txt:1']);
+  for (const palabra of ['risk-assessmentframeworkv2', 'desk-reservationservice1', 'flask-sqlalchemyintegration']) assert.deepEqual(SHAPES.find(palabra), [], palabra);
+  const sk = 'sk-' + 'abcdefghijklmnop1234';
+  for (const linea of [sk, `clave=${sk}`, `"${sk}"`]) assert.strictEqual(SHAPES.find(linea).length, 1, linea);
 });
 
 // Un JWT son tres tramos unidos por puntos: {"alg":"HS256"}, {"sub":"dev"} y la firma (una larga y una corta).
@@ -2318,4 +2326,21 @@ test('T9 Config_CapMachineWins_FolderMachineOnly @story-8.122 @ac-9: el tope de 
   const err = enPerfil.errores.find((e) => e.clave === 'coordination.owner_folder');
   assert.ok(err, JSON.stringify(enPerfil.errores.map((e) => e.clave)));
   assert.match(err.motivo, /es de la máquina/);
+});
+
+test('Config_PersonalData_NotShown — explain shows the chat cut short, and the hook answer carries no configuration', () => {
+  const home = casa();
+  const arnes = arnesCon(null);
+  maquina(home, { telegram: { chat_id: '987654321012' }, integrations: { instincts: true } });
+  const texto = lib().explicar({ env: {}, home, arnes });
+  assert.match(texto, /telegram\.chat_id = número de 12 dígitos \(maquina\)/, texto);
+  assert.doesNotMatch(texto, /987654321012/);
+  // what a diagnosis prints of the hook answer: the state of the key, without the chat, the paths or the other keys
+  const r = lib().integracionParaHook('instincts', { env: {}, home, arnes });
+  assert.equal(r.ok, true);
+  assert.equal(r.prendida, true);
+  assert.equal(r.config, undefined);
+  const impreso = JSON.stringify(r);
+  assert.doesNotMatch(impreso, /987654321012/);
+  assert.ok(!impreso.includes(home), impreso);
 });

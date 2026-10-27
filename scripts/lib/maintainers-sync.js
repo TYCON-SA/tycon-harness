@@ -69,29 +69,37 @@ const realOrNull = (p) => { try { return fs.realpathSync(p); } catch (_) { retur
 /**
  * Una línea de un error de git, ≤ 200, sin lo que pueda ser un permiso: lo que haya entre `://` y `@` (usuario y
  * clave, aunque la clave traiga `/` o comillas), un `token=…`/`api_key=…`/`client_secret=…` de una consulta, un JWT
- * (`eyJ….….…`), lo que siga a `Bearer`/`Basic` y cualquier tira larga de letras y números (un permiso suelto). Sólo la
- * primera línea: las demás no se guardan.
+ * (`eyJ….….…`), lo que siga a `Bearer`/`Basic`, una clave con forma de proveedor y cualquier tira larga de letras y
+ * números (un permiso suelto). Sólo la primera línea: las demás no se guardan.
  */
+// las claves con forma de proveedor (una llave de AWS, un token de GitHub) se tapan aunque no tengan una palabra antes;
+// sin la biblioteca al lado, el resto del borrado sigue igual
+let redactShapes = (t) => t;
+try { ({ redactShapes } = require('./provider-secret-shapes.js')); } catch (_) { /* sin la biblioteca: sin ese paso */ }
 function redact(text) {
   const first = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] || '';
-  return first
-    .replace(/:\/\/[^\s@]*@/g, '://')
+  // hasta la ÚLTIMA `@` de la dirección: una clave puede traer `@`
+  return redactShapes(first
+    .replace(/:\/\/\S*@/g, '://')
     .replace(/\b(Bearer|Basic)\s+\S+/gi, '$1 ***')
     .replace(/\beyJ[\w-]*\.[\w-]*\.[\w-]*/g, '***')
     .replace(/([\w-]*(?:token|password|passwd|pwd|secret|sig|key))=[^&\s'"]+/gi, '$1=***')
     // una tira suelta de 32 o más con letras Y números (un permiso; también un sha, que en un error no hace falta). Un
     // tramo de una ruta o de una rama (pegado a `/` o `.`) no es un permiso y sirve para entender el error
     .replace(/(?<![/.\w+=-])(?=[A-Za-z0-9_+=-]*\d)(?=[A-Za-z0-9_+=-]*[A-Za-z])[A-Za-z0-9_+=-]{32,}(?![/.\w+=-])/g, '***')
+    )
     .slice(0, 200);
 }
 
 /** Un texto para la línea del aviso: sin caracteres de control (un nombre de archivo puede traer un salto), ≤ max. */
 // los caracteres de control, los separadores de línea de Unicode (U+2028, U+2029), los de ancho cero (U+200B-U+200F,
-// U+2060-U+2064, U+FEFF) y los de dirección (U+202A-U+202E, U+2066-U+2069): con ellos un nombre de archivo puede partir o
-// disfrazar la línea que lee el modelo. Armados por código: escritos como escape en el fuente, una herramienta de
-// edición los convierte en el carácter real y rompe la expresión
-const ch = (a, b) => `${String.fromCharCode(a)}-${String.fromCharCode(b)}`;
-const CONTROL = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f${ch(0x2028, 0x2029)}${ch(0x200b, 0x200f)}${ch(0x202a, 0x202e)}${ch(0x2060, 0x2069)}${String.fromCharCode(0xfeff)}]+`, 'g');
+// U+2060-U+2064, U+180E, U+FEFF), los de dirección (U+061C, U+202A-U+202E, U+2066-U+2069) y los Tag (U+E0000-U+E007F,
+// letras invisibles): con ellos un nombre de archivo puede partir o disfrazar la línea que lee el modelo. Armados por
+// código: escritos como escape en el fuente, una herramienta de edición los convierte en el carácter real y rompe la
+// expresión
+const ch = (a, b) => `${String.fromCodePoint(a)}-${String.fromCodePoint(b)}`;
+const uno = (a) => String.fromCodePoint(a);
+const CONTROL = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f${ch(0x2028, 0x2029)}${ch(0x200b, 0x200f)}${ch(0x202a, 0x202e)}${ch(0x2060, 0x2069)}${uno(0xfeff)}${uno(0x061c)}${uno(0x180e)}${ch(0xe0000, 0xe007f)}]+`, 'gu');
 function clean(s, max = 120) {
   const t = String(s === undefined || s === null ? '' : s).replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;

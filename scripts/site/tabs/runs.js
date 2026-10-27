@@ -310,7 +310,12 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   }
 
   /** El estado de la última bajada del buzón: `{ completo, generacion }` (unas fuentes sin la función: entera). */
-  const bajada = () => (typeof fuentes.buzonEstado === 'function' ? fuentes.buzonEstado() : { completo: true, generacion: 1 });
+  // `armable`: entera, o con todos los volcados y registros bajados y conversaciones pendientes (unas fuentes que no lo
+  // dicen: lo mismo que `completo`)
+  const bajada = () => {
+    const b = typeof fuentes.buzonEstado === 'function' ? fuentes.buzonEstado() : { completo: true, generacion: 1 };
+    return { ...b, armable: b.armable === undefined ? b.completo : b.armable };
+  };
 
   function asegurar() {
     if (!fuentes.estado().cargado) return;
@@ -319,7 +324,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     // se arma SÓLO con una bajada entera: con una a medias, el espejo sería más nuevo que lo informado
     // por las máquinas, y una máquina que cambió de dueño mostraría corridas nuevas a su dueño anterior. Mientras tanto
     // se sirve el último armado, y la respuesta dice que puede faltar alguna corrida.
-    if (!bajada().completo) return;
+    if (!bajada().armable) return;
     const umbralesArchivo = umbralesDeLaOrganizacion();
     // las conversaciones sólo cuentan con un disco del sitio: sin SITE_DATA_DIR, lo del hilo es «no medido»
     const sinHilos = !(typeof fuentes.hilos === 'function' && fuentes.hilos() && cfg.dataDir);
@@ -333,7 +338,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
 
   function armarSiCambio(huella, { sinHilos, umbralesArchivo }) {
     // la huella tardó: si mientras tanto la bajada quedó a medias, no se arma (la misma regla de asegurar)
-    if (st.armando || !bajada().completo) return;
+    if (st.armando || !bajada().armable) return;
     // el espejo volvió a ser el del modelo que se sirve: lo que falló después ya no vale para la banda
     if (huella === st.huella) { st.error = null; st.huellaFallida = null; return; }
     // el mismo espejo ya fallado: no se repite (un armado que falla por memoria no se reintenta en cada pedido)
@@ -459,7 +464,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     if (vista.estado().sinBuzon) return false;
     if (vista.viene() || vista.bajada().siguiendo) return true;
     const ef = typeof fuentes.estado === 'function' ? fuentes.estado() : null;
-    return !vista.bajada().completo && !(ef && ef.bandaRefresco);
+    return !vista.bajada().armable && !(ef && ef.bandaRefresco);
   };
   // la guardada se filtra con lo informado guardado con ella (la misma foto) y con todo lo demás de hoy: un objeto por
   // par, para que lo filtrado por persona no se rehaga en cada pedido
@@ -500,7 +505,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const t = tx(idiomaDe(ctx), 'corridas.cargando');
         return { falla: esApi ? texto(503, t, { 'Retry-After': '5' }) : { status: 503, tipo: 'text/html; charset=utf-8', cuerpo: views.layout({ ...ctx, recargar: 5 }, tx(idiomaDe(ctx), 'pestana.corridas'), `<p class="lede">${runsEsc(t)}.</p>`), extra: { 'Retry-After': '5' } } };
       }
-      const sinArmar = !vista.armando() && !vista.bajada().completo;
+      const sinArmar = !vista.armando() && !vista.bajada().armable;
       if ((vista.bajada().generacion === 0 && c && c.estado === 'no_medido' && c.codigo) || sinArmar) {
         const t = c && c.codigo ? tx(idiomaDe(ctx), 'corridas.buzonIncompletoCodigo', { codigo: c.codigo }) : tx(idiomaDe(ctx), 'corridas.buzonIncompleto');
         return { falla: esApi ? texto(503, t, { 'Retry-After': '60' }) : pagina(ctx, gris(ctx, t)) };
@@ -511,8 +516,9 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     // se reemplazan enteros al refrescar, y de las personas cambian sus dos partes
     const config = fuentes.config(); const modeloFondo = fuentes.modelo();
     const personas = personasPara(typeof fuentes.personas === 'function' ? fuentes.personas() : null, vista.guardada());
-    const completo = Boolean(vista.bajada().completo);
-    const deps = [config, modeloFondo, personas, personas && personas.informados, personas && personas.repos, completo];
+    const completo = Boolean(vista.bajada().armable);
+    const pendientes = completo ? vista.bajada().pendientes || 0 : 0;
+    const deps = [config, modeloFondo, personas, personas && personas.informados, personas && personas.repos, completo, pendientes];
     let porPersona = guardados.get(M);
     if (!porPersona) { porPersona = new Map(); guardados.set(M, porPersona); }
     const clave = `${ctx.quien.rol}\0${ctx.quien.email || ''}`;
@@ -524,6 +530,8 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       if (vis) runs.agruparRepos(vis.corridas, personas && personas.repos);
       // la última bajada no terminó entera: se sirve el último armado entero, y la respuesta dice que puede faltar alguna
       if (vis && !completo) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), parcial: true, ...(ctx.quien.rol === 'maintainer' ? { incompleto: true } : {}) };
+      // armada con conversaciones que quedaron para la pasada siguiente: las corridas están, y la banda dice cuánto falta
+      if (vis && pendientes > 0) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), pendientes };
       g = { deps, vis, salidas: {} };
       porPersona.set(clave, g);
     }
