@@ -734,3 +734,31 @@ test('EdicionFueraDelRepo_NoEsLaHistoria', () => {
     assert.strictEqual(r.status, 2, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
   }
 });
+
+// EdicionSinFormaConocida_PalabraQueNoEsArchivo
+// Con un editor en el lugar que el freno no sabe leer (`sed -i ''` con el sed de GNU, de Linux y de Git Bash; `perl -i`
+// en cualquier sistema), cada palabra del comando cuenta como destino. El `))` de una cuenta quedaba vacío sin sus
+// paréntesis y caía en la carpeta de la sesión: frenaba por todas sus historias. Un destino real sigue frenando.
+// 🔴 Falla con: una palabra que no nombra un archivo (vacía, o la `/` suelta de un guion) leída como carpeta.
+test('EdicionSinFormaConocida_PalabraQueNoEsArchivo', () => {
+  const h = nuevaHome();
+  const S = fs.mkdtempSync(path.join(os.tmpdir(), 'scratchpad-'));
+  fs.writeFileSync(path.join(S, 'auto.exp'), 'spawn claude -p x\n');
+  for (const c of [
+    `S=${S}; perl -i -pe 's/^spawn claude /spawn env claude /' "$S/auto.exp"; echo "$(( $(wc -l < x) - 1 ))"`,
+    `S=${S}; perl -i -pe 's/^spawn claude /spawn env claude /' "$S/auto.exp"; : $(( N = 1 ))`,
+    `S=${S}; perl -i -pe 's/^spawn claude /spawn env claude /' "$S/auto.exp"`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 0, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
+  }
+  // la historia nombrada, una carpeta con historias, o la cuenta en el mismo comando: siguen frenando
+  for (const c of [
+    `perl -i -pe 's/^status: .*/status: done/' ${HISTORIA}; echo "$(( $(wc -l < x) - 1 ))"`,
+    `S=${h.repo}; perl -i -pe 's/^status: .*/status: done/' "$S/${HISTORIA}"; : $(( N = 1 ))`,
+    `grep -rl x specs | xargs perl -i -pe 's/^status: .*/status: done/'; echo "$(( 1 + 1 ))"`,
+  ]) {
+    const r = consola(h, c);
+    assert.strictEqual(r.status, 2, `${JSON.stringify(c.slice(0, 120))}: ${r.stderr}`);
+  }
+});

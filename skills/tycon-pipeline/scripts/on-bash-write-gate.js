@@ -1758,6 +1758,10 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   for (const raw of crudos) {
     // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`
     const valor = expandirRuta(cmd, String(raw).replace(/\)+$/, '')).valor;
+    // una palabra que no nombra un archivo no es un destino: el `))` que cierra una cuenta queda vacío sin sus
+    // paréntesis, y la `/` suelta de un guion (`'s/^a /b /'`) no es la raíz que el editor escribe; la raíz que se
+    // borra o que es destino de una escritura sigue contando
+    if (!valor || (/^\/+$/.test(valor) && !borrados.includes(raw) && !targets.includes(raw))) continue;
     const anotar = (abs) => {
       vistos.add(abs);
       (soloRepone.has(raw) ? repuestos : otros).add(abs);
