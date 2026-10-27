@@ -288,7 +288,8 @@ function lineaDeLaCorrida(base, hoy, r) {
 
 /**
  * La línea del resumen: «sin propuesta del modelo: N (motivo n · …)», sin línea si todas tuvieron propuesta, y «?» si el
- * paso no corrió hoy o no terminó (la constancia es de otra noche, dice `ran: false` o no se puede leer). Sin constancia,
+ * paso no corrió hoy o no terminó. Si esa noche hubo propuestas, va adelante cuántas: «propuestas del modelo: P · sin
+ * propuesta: N (…)»; sin eso, «sin propuesta: 37 (tope 37)» se lee como que el modelo no propuso nada (la constancia es de otra noche, dice `ran: false` o no se puede leer). Sin constancia,
  * ninguna: la organización todavía no tiene el paso. Los motivos salen de la lista cerrada; nada del archivo se copia tal cual.
  */
 function lineaDelResumen(base, hoy) {
@@ -301,10 +302,14 @@ function lineaDelResumen(base, hoy) {
   }
   const partes = CYCLE.MOTIVOS_SIN_PROPUESTA.filter((m) => Number.isInteger(e.without[m]) && e.without[m] > 0).map((m) => [m, e.without[m]]);
   const total = partes.reduce((s, [, n]) => s + n, 0);
-  return total ? `sin propuesta del modelo: ${total} (${partes.map(([m, n]) => `${m} ${n}`).join(' · ')})` : null;
+  if (!total) return null;
+  const motivos = partes.map(([m, n]) => `${m} ${n}`).join(' · ');
+  const hechas = Number.isInteger(e.proposed) && e.proposed > 0 ? e.proposed : 0;
+  return hechas ? `propuestas del modelo: ${hechas} · sin propuesta: ${total} (${motivos})` : `sin propuesta del modelo: ${total} (${motivos})`;
 }
 // La forma de esa línea, para la constancia de las 08:00.
-const RENGLON = new RegExp(`^sin propuesta del modelo: (\\? \\(el paso de la propuesta no corrió hoy\\)|\\d+ \\((${CYCLE.MOTIVOS_SIN_PROPUESTA.join('|')}) \\d+( · (${CYCLE.MOTIVOS_SIN_PROPUESTA.join('|')}) \\d+)*\\))$`);
+const MOTIVOS_RE = `\\((${CYCLE.MOTIVOS_SIN_PROPUESTA.join('|')}) \\d+( · (${CYCLE.MOTIVOS_SIN_PROPUESTA.join('|')}) \\d+)*\\)`;
+const RENGLON = new RegExp(`^(sin propuesta del modelo: (\\? \\(el paso de la propuesta no corrió hoy\\)|\\d+ ${MOTIVOS_RE})|propuestas del modelo: \\d+ · sin propuesta: \\d+ ${MOTIVOS_RE})$`);
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
