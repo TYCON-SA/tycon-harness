@@ -121,7 +121,17 @@ jobs:
         env:
           TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
           TYCON_PUBLIC_CI_PART: installer-floor
-        run: bash scripts/ci/public-ci.sh --clean-machine
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # sólo en un pedido: con el rango, un cambio que no toca la instalación sale verde sin correrlas. En la cola
+          # y en el push a main corre siempre: nada entra a main sin pasar el piso. El guion sale de la base, como arriba
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            BASE="$(git rev-parse --verify "origin/${BASE_REF}^{commit}")" || exit 1
+            git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"
+            bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD"
+          else
+            bash scripts/ci/public-ci.sh --clean-machine
+          fi
       - name: La salida completa de cada paso (sólo si algo quedó en rojo)
         if: failure()
         env:

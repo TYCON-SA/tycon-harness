@@ -172,7 +172,15 @@ const SHAPE = [
   '        env:',
   '          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci',
   '          TYCON_PUBLIC_CI_PART: installer-floor',
-  '        run: bash scripts/ci/public-ci.sh --clean-machine',
+  '          BASE_REF: ${{ github.base_ref }}',
+  '        run: |',
+  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then',
+  '            BASE="$(git rev-parse --verify "origin/${BASE_REF}^{commit}")" || exit 1',
+  '            git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"',
+  '            bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD"',
+  '          else',
+  '            bash scripts/ci/public-ci.sh --clean-machine',
+  '          fi',
   '      - name: La salida completa de cada paso (sólo si algo quedó en rojo)',
   '        if: failure()',
   '        env:',
@@ -568,7 +576,11 @@ const RULES = [
     id: 'base-controls',
     check(lines) {
       const code = lines.filter((l) => l.code).map((l) => l.body);
-      if (!code.some((b) => b === 'git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"')) return 'el public-ci.sh que corre en un pedido no sale de la base (`git show "${BASE}:scripts/ci/public-ci.sh"`)';
+      // cada job que corre el guion de la base lo saca de la base: tantas líneas `git show` como llamadas (el piso
+      // del instalador también lo corre de la base)
+      const shows = code.filter((b) => b === 'git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"').length;
+      const baseRuns = code.filter((b) => /^bash "\$\{RUNNER_TEMP\}\/public-ci-base\.sh" /.test(b)).length;
+      if (!shows || shows < baseRuns) return 'el public-ci.sh que corre en un pedido no sale de la base (`git show "${BASE}:scripts/ci/public-ci.sh"`)';
       if (!code.some((b) => /^bash "\$\{RUNNER_TEMP\}\/public-ci-base\.sh" .* --base "\$\{BASE\}"$/.test(b))) return 'el public-ci.sh de la base no corre con `--base "${BASE}"`';
       // el rango sale de la misma base: en la cola, desde main se colarían los cambios del grupo de adelante
       if (!code.some((b) => /^bash "\$\{RUNNER_TEMP\}\/public-ci-base\.sh" .* --range "\$\{BASE\}\.\.\.HEAD" /.test(b))) return 'el public-ci.sh de la base no corre con `--range "${BASE}...HEAD"` (el rango sale de la misma base)';

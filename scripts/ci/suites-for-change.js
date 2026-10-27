@@ -235,7 +235,7 @@ function readHeavy(file) {
     if (entry.graph_whole_lines !== undefined) graphLines.set(name, { lines: entry.graph_whole_lines, sha: entry.graph_whole_sha });
     suites.set(name, entry.shared === false ? own : [...shared, ...own]);
   }
-  return { suites, readsMd, depsMode, graphLines, ignore, grouped };
+  return { suites, readsMd, depsMode, graphLines, ignore, grouped, groups };
 }
 
 // Lo que, si el cambio lo toca, hace correr todo: cómo se eligen las suites.
@@ -257,6 +257,41 @@ function groupCriterion(file, groupName) {
       const norm = files.map((f) => String(f).replace(/\\/g, '/'));
       if (norm.some((f) => SELECTION_ITSELF.includes(f))) return false;
       return !norm.some((f) => heavy.suites.get(name).some((re) => re.test(f)));
+    },
+  };
+}
+
+/**
+ * El piso del instalador (la parte installer-floor de scripts/ci/public-ci.sh): si el cambio toca lo que leen sus
+ * suites. Eso es lo que el repo ya declara: los patrones del grupo `installer` de heavy-suites.json, y por cada suite del
+ * piso su propio archivo, sus patrones en heavy-suites.json y su `gate_only_when_touching` de suites.json. Tocar cómo
+ * se elige también la corre. `problem` si algo no se deja leer: entonces corre.
+ */
+function floorCriterion(heavyFile, suitesFile, rutas) {
+  const heavy = readHeavy(heavyFile);
+  if (heavy.problem) return { problem: heavy.problem };
+  if (!heavy.groups.has('installer')) return { problem: `${heavyFile} no trae el grupo «installer»` };
+  let entries;
+  try {
+    const s = JSON.parse(fs.readFileSync(suitesFile, 'utf8'));
+    entries = [...(s.diarias || []), ...(s.semanales || [])];
+  } catch (e) {
+    return { problem: `${suitesFile} no se deja leer (${e.code || e.message})` };
+  }
+  const patterns = [...heavy.groups.get('installer')];
+  for (const ruta of rutas) {
+    patterns.push(heavyPattern(`scripts/${ruta}`), ...(heavy.suites.get(path.basename(ruta)) || []));
+    const entry = entries.find((e) => e && e.raiz === 'arnes' && e.ruta === ruta);
+    for (const g of (entry && entry.gate_only_when_touching) || []) {
+      const re = heavyPattern(g);
+      if (!re) return { problem: `${suitesFile}: «${ruta}» trae un patrón que no se puede interpretar: ${JSON.stringify(g)}` };
+      patterns.push(re);
+    }
+  }
+  const itself = [...SELECTION_ITSELF, 'scripts/ci/public-ci.sh', '.github/workflows/ci.yml', 'scripts/tests/suites.json'];
+  return {
+    touched(files) {
+      return files.map((f) => String(f).replace(/\\/g, '/')).find((f) => itself.includes(f) || patterns.some((re) => re && re.test(f))) || null;
     },
   };
 }
@@ -628,4 +663,4 @@ function main(argv) {
 // a los 8 KB (con la lista real quedan 140 de 219 líneas, sin la copia pública ni la máquina limpia). En
 // el pipeline va a un archivo y no muerde; a quien la lea por una tubería, sí.
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { main, nightlyNet, readOverLimit, overLimitProblems, groupCriterion };
+module.exports = { main, nightlyNet, readOverLimit, overLimitProblems, groupCriterion, floorCriterion };
