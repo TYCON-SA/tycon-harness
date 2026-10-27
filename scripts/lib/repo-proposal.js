@@ -132,6 +132,31 @@ function remoteOf(url) {
   return { platform: null, web: null };
 }
 
+/**
+ * Dónde viven las tareas: `{ org, proyecto }`, con la organización como dirección. Sale de `work_items` de
+ * operations.json (`org` como nombre o como dirección) o, sin él, del repo de operaciones cuando está en Azure DevOps;
+ * null en lo que no se sabe.
+ */
+function destinoDeTareas(workItems, remote) {
+  const w = workItems && typeof workItems === 'object' ? workItems : {};
+  const azure = remote && remote.platform === 'azure' ? remote : null;
+  const ORGANIZACION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+  let org = typeof w.org === 'string' ? w.org.trim() : '';
+  if (org && ORGANIZACION.test(org)) org = `${URL_BASE.azure}/${org}`;
+  if (!org && azure && ORGANIZACION.test(String(azure.org || ''))) org = `${URL_BASE.azure}/${azure.org}`;
+  org = ENLACE_WEB.test(org) ? org.replace(/\/+$/, '') : null;
+  const proyecto = typeof w.project === 'string' && w.project.trim() ? w.project.trim() : azure && azure.project ? azure.project : null;
+  return { org, proyecto };
+}
+
+/** El enlace de la tarea `numero` de `proyecto` en el destino de `destinoDeTareas`, o null. */
+function enlaceDeTarea(destino, proyecto, numero) {
+  if (!destino || !destino.org || !proyecto || !/^\d{1,12}$/.test(String(numero))) return null;
+  const u = `${destino.org}/${encodeURIComponent(proyecto)}/_workitems/edit/${numero}`;
+  return ENLACE_WEB.test(u) ? u : null;
+}
+const ENLACE_WEB = /^https:\/\/[^\s"'<>\\]{1,500}$/;
+
 /** El sello de la rama: AAAAMMDD-HHMMSS, el mismo de team-config.js. */
 const stamp = (d) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 const fechaDe = (now) => { const v = typeof now === 'function' ? now() : now; return v instanceof Date ? v : new Date(v == null ? Date.now() : v); };
@@ -342,6 +367,43 @@ async function pedidosAbiertos({ remote, credencial, urlBase, fetch: f }) {
 }
 const POR_PAGINA = 100;
 const PAGINAS_MAX = 20;
+
+/**
+ * Lo que trae un pedido abierto: `{ archivos: [ruta], cuerpo }`, o `{ error }` si la API no contesta bien. Las rutas van
+ * sin barra inicial, como en el repo. El cuerpo entero: al listar, Azure DevOps corta la descripción.
+ */
+async function archivosDelPedido({ remote, credencial, numero, urlBase, fetch: f }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { error: 'sin plataforma' };
+  if (!Number.isInteger(numero) || numero < 1) return { error: 'sin número' };
+  const cred = credenciales(credencial);
+  const secretos = secretosDe(cred);
+  const base = baseDe(remote, urlBase);
+  const pedir = (url) => llamar({ url, remote, cred, fetch: f, secretos });
+  if (remote.platform === 'github') {
+    const p = await pedir(`${base}/pulls/${numero}`);
+    if (p.status !== 200 || !p.doc) return { error: motivoCorto(p) };
+    const archivos = [];
+    for (let pagina = 0; pagina < PAGINAS_MAX; pagina++) {
+      const r = await pedir(`${base}/pulls/${numero}/files?per_page=${POR_PAGINA}&page=${pagina + 1}`);
+      if (r.status !== 200 || !Array.isArray(r.doc)) return { error: motivoCorto(r) };
+      archivos.push(...r.doc.map((x) => x && x.filename).filter((x) => typeof x === 'string'));
+      if (r.doc.length < POR_PAGINA) break;
+    }
+    return { archivos, cuerpo: String(p.doc.body || '') };
+  }
+  const repo = `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests/${numero}`;
+  const p = await pedir(`${repo}?${API_AZURE}`);
+  if (p.status !== 200 || !p.doc) return { error: motivoCorto(p) };
+  const it = await pedir(`${repo}/iterations?${API_AZURE}`);
+  const vueltas = it.doc && Array.isArray(it.doc.value) ? it.doc.value : null;
+  if (it.status !== 200 || !vueltas) return { error: motivoCorto(it) };
+  const ultima = vueltas.map((x) => x && x.id).filter(Number.isInteger).sort((a, b) => b - a)[0];
+  if (!ultima) return { archivos: [], cuerpo: String(p.doc.description || '') };
+  const c = await pedir(`${repo}/iterations/${ultima}/changes?$top=2000&${API_AZURE}`);
+  const cambios = c.doc && Array.isArray(c.doc.changeEntries) ? c.doc.changeEntries : null;
+  if (c.status !== 200 || !cambios) return { error: motivoCorto(c) };
+  return { archivos: cambios.map((x) => x && x.item && x.item.path).filter((x) => typeof x === 'string').map((x) => x.replace(/^\/+/, '')), cuerpo: String(p.doc.description || '') };
+}
 
 // Lo que sigue al `<idCorto>-` en la rama de un pedido: la marca de `stamp`. Comparar sólo el prefijo confundiría
 // `repos` con `repos-otro`.
@@ -869,4 +931,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos, nombreDeOrganizacion, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidosAbiertos, archivosDelPedido, destinoDeTareas, enlaceDeTarea, esRamaDe, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, leerDeMain, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

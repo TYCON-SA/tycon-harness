@@ -29,17 +29,8 @@ const RUTAS_INSTALADAS = ['.tycon/harness/', '.tycon\\harness\\', '.claude/agent
 // Desde esta fecha (el merge a main del cambio que la agregó) marker.js deja la constancia del cierre: una ejecución
 // archivada antes no la podía tener. La prueba: T64 CierreSinConstancia.
 const CIERRE_DESDE = '2026-10-22T21:14:33Z';
-// Lo que cuenta aparte: se ve en la ficha, pero no es una falla nueva del arnés. El resumen de la mañana y el ciclo de
-// las fichas no lo suman; una categoría fuera de esta lista sigue siendo una falla.
-const APARTE = Object.freeze({
-  'RR-ESCAPE:GIT_NO_VERIFY/laboratorio': 'un commit sin los hooks de git en una carpeta de laboratorio: pruebas y ensayos, no trabajo de un producto',
-  'RR-ESCAPE:PR_A_MANO/sobra': 'el pedido armado con el escape cumplía la regla del freno: el prefijo estaba de más',
-  'RR-CIERRE:derivada/arnes-anterior': 'la ejecución se archivó antes de que el arnés dejara la constancia del cierre (8.92)',
-  'RR-ESCAPE:ADVERSARIAL_RELAUNCH/dato': 'relanzar el pase adversarial no esquiva nada: el pase corre igual',
-  'RR-ESCAPE:SIZE_FORCED_LIGHT_WITH_CODE/con-motivo': 'la ejecución liviana con código trae su motivo: es una decisión anotada',
-  'RR-ESCAPE:FULL_SUITE_RUN/laboratorio': 'la suite completa en una carpeta de laboratorio no es la de un repo',
-  'RR-NODE:en-obra': 'el guion que no cargó es una prueba del arnés en obra (el clon o un worktree), no una pieza instalada',
-});
+// Lo que cuenta aparte (una falla que no es nueva): la lista vive con los nombres de las causas, que el sitio también lee.
+const { APARTE } = require('../findings/cause-names.js');
 /**
  * La lista de carpetas de laboratorio es una sola, la de la vista de ejecuciones. Se carga al usarla, sin red: si no
  * carga, el error sale (la pasada termina con error) en vez de contar callada los laboratorios como fallas.

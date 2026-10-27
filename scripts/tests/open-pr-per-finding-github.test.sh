@@ -774,6 +774,23 @@ if quiero T67; then
   si "…y lo dice" contiene "$(SALIDA)" 'operations.json no se pudo leer'
 fi
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# T68 — con el sitio, la ficha que ya está en promoted/ (se decidió arreglar ahí) cierra el pull request viejo de la noche
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+if quiero T68; then
+  caso "T68 OpenPr_ConSitio_CierraElPedidoViejoDeLoDecidido" "@mantenimiento"
+  montar
+  ficha promoted sd01 2026-10-12 "pr: 61" "pr_repo: $OPERATIONS_REPO"
+  armar_todo '{ pulls: { [OPERATIONS_REPO]: [P(61, "dependencias/sd01", "open")] } }'
+  git -C "$T/semilla" push -q origin "main:refs/heads/dependencias/sd01"
+  printf '{"site":{"url":"https://sitio.acme.example"}}\n' > "$T/job/operations.json"
+  correr
+  si "con site.url la noche sale 0" [ "$RC" = 0 ]
+  si "decidida en el sitio: cierra su pull request viejo" [ "$(nllam 'e.method==="PATCH"&&/\/pulls\/61$/.test(e.ruta)&&e.cuerpo.state==="closed"')" = 1 ]
+  si "…con un comentario que dice que se decidió en el sitio" [ "$(nllam 'e.method==="POST"&&/\/issues\/61\/comments$/.test(e.ruta)&&/se decidió en el sitio/.test(e.cuerpo.body)')" = 1 ]
+  si "…y anota pr_cerrado:" contiene "$(enmain promoted sd01)" "^pr_cerrado: $HOY\$"
+fi
+
 echo
 if [ "$FALLOS" = 0 ]; then echo "open-pr-per-finding-github: todo en verde"; exit 0; fi
 echo "open-pr-per-finding-github: $FALLOS verificación(es) en rojo"; exit 1

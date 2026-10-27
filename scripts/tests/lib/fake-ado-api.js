@@ -21,7 +21,8 @@
  * `st`: mainOid · pedidos[] · fallarPedido (500 | 403) · politicas[] · politicas403 · repoId · pipelines{} · builds{} ·
  * timeline[] · pipelines403 · exigirAuth (la cabecera exacta; con `token`, `Basic base64(':' + token)`) · creadorId ·
  * projectId · permitirCompletar · alCompletar · evaluaciones · fallarVoto · fallarEvaluacion · fallarCompletar ·
- * completarTarde (el pedido sigue activo después del completar) · fallarLecturaPedido (el GET del pedido contesta ese código).
+ * completarTarde (el pedido sigue activo después del completar) · fallarLecturaPedido (el GET del pedido contesta ese código) ·
+ * archivosDe(pedido) (las rutas que trae el pedido, con su vuelta y sus cambios).
  */
 const http = require('http');
 
@@ -94,6 +95,15 @@ async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', 
       if (st.fallarVoto) return json(st.fallarVoto, { message: 'TF401027: sin permiso para votar' });
       p.votos.push({ id: m[2], vote: cuerpo && cuerpo.vote });
       return json(200, { id: m[2], vote: cuerpo && cuerpo.vote });
+    }
+    if ((m = new RegExp(`^git/repositories/${repo}/pullrequests/(\\d+)/iterations$`, 'i').exec(resto)) && req.method === 'GET') {
+      const p = st.pedidos.find((x) => String(x.pullRequestId) === m[1]);
+      return p ? json(200, { count: 1, value: [{ id: 1 }] }) : json(404, { message: 'no existe el pedido' });
+    }
+    if ((m = new RegExp(`^git/repositories/${repo}/pullrequests/(\\d+)/iterations/1/changes$`, 'i').exec(resto)) && req.method === 'GET') {
+      const p = st.pedidos.find((x) => String(x.pullRequestId) === m[1]);
+      if (!p) return json(404, { message: 'no existe el pedido' });
+      return json(200, { changeEntries: (st.archivosDe ? st.archivosDe(p) : []).map((r) => ({ changeType: 'add', item: { path: `/${r}` } })) });
     }
     if ((m = new RegExp(`^git/repositories/${repo}/pullrequests/(\\d+)$`, 'i').exec(resto)) && req.method === 'GET') {
       if (st.fallarLecturaPedido) return json(st.fallarLecturaPedido, { message: 'no se pudo leer el pedido' });
