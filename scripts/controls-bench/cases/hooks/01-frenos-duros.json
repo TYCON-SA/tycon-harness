@@ -4576,7 +4576,7 @@
             "stderr_re": [
               "ESC-C6",
               "Codex no tiene ventana de permiso",
-              "Esta firma se da en tu terminal: marker\\.js complete-step approve-plan --terminal\\."
+              "Esta firma se da en tu terminal: marker\\.js complete-step approve-plan --terminal, con --for-session bench-escape\\."
             ]
           },
           "tools": [
