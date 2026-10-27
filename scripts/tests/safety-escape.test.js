@@ -2133,6 +2133,34 @@ test('EscC6Paso T14 ConversacionQueNoSeLee_Frena — la ruta de Claude Code sin 
   }
 });
 
+test('EscC6Paso T16 ArchivoSueltoEnLaCarpetaDeProyectos_NoFrena — un `.DS_Store` en la raíz, o un archivo con nombre de carpeta, no es otra copia del pedido', async () => {
+  // Finder deja un `.DS_Store` en la carpeta de proyectos: adentro no puede haber una sesión, y no tapa una aprobación real
+  const casos = [
+    ['.DS_Store en la raíz', (h) => fs.writeFileSync(path.join(proyectos(h), '.DS_Store'), 'x')],
+    ['archivo con nombre de carpeta de proyecto', (h) => fs.writeFileSync(path.join(proyectos(h), '-otro-repo'), 'x')],
+  ];
+  for (const [nombre, sembrar] of casos) {
+    for (const conRuta of [true, false]) {
+      const home = homeConMarcador(PLAN_ABIERTO, [deLaPersona('mostrame el plan'), deLaPersona(CITA_PLAN)]);
+      sembrar(home);
+      const r = await frenoConEscrituras(APROBAR_PLAN, { home, entrada: conRuta ? { transcript_path: archivoReal(home) } : {} });
+      assert.strictEqual(r.status, 0, `${nombre}, ${conRuta ? 'con' : 'sin'} transcript_path: ${r.stderr}`);
+    }
+  }
+});
+
+test('EscC6Paso T17 CarpetaDeSesionQueNoSeLee_Frena — la carpeta de subagentes de otra copia de la sesión, sin permiso, sigue contando como que está', async (t) => {
+  if (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) { t.skip('sin permisos de carpeta como root ni en Windows'); return; }
+  const home = homeConMarcador(PLAN_ABIERTO, [deLaPersona('mostrame el plan'), deLaPersona(CITA_PLAN)]);
+  const cerrada = path.join(proyectos(home), '-0', SID);
+  fs.mkdirSync(cerrada, { recursive: true });
+  fs.chmodSync(cerrada, 0o000);
+  let r;
+  try { r = await frenoConEscrituras(APROBAR_PLAN, { home, entrada: { transcript_path: archivoReal(home) } }); } finally { fs.chmodSync(cerrada, 0o700); }
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /ESC-C6/);
+});
+
 test('EscC6Paso T15 TuberiaConElNombreDeLaSesion_NoCuelga — un archivo especial donde va un registro frena, no deja al freno esperando', async (t) => {
   if (process.platform === 'win32') { t.skip('sin mkfifo en Windows'); return; }
   const tuberia = (f) => {
