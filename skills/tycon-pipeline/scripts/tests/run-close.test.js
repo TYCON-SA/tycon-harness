@@ -166,6 +166,15 @@ test('T1 RunCloseGate_DeudaCubreCerrar @story-8.140 @ac-1 @ac-3 — con la deuda
   }
 });
 
+test('T1b RunCloseGate_DeudaCubrePasarARevision — con la deuda ya autorizada, pasar la historia a revisión no pide otra frase', () => {
+  const cmd = `${MK} update-story-status specs/story-9-9.md review`;
+  const sin = lector(corral(ROJO), cmd);
+  assert.deepStrictEqual([sin.frena.map((f) => f[0]), sin.cubre.length], [['cerrar la ejecución'], 0]);
+  const v = lector(corral(ROJO, [deuda(5)]), cmd);
+  assert.strictEqual(v.frena.length, 0, JSON.stringify(v));
+  assert.deepStrictEqual(v.cubre.map((f) => [f[0], f[3], f[4]]), [['cerrar la ejecución', 'cerrar-como-deuda', 'persona']]);
+});
+
 test('T2 RunCloseGate_TrustRanCubreForceManualDeRevisores @story-8.140 @ac-2 @ac-3 — con trust-ran ya autorizado, force-manual del control de revisores no pide otra frase', () => {
   const cmd = `${MK} set-check advisors green --force-manual`;
   assert.deepStrictEqual(lector(corral(VERDE), cmd).frena.map((f) => f[0]), ['force-manual']);
