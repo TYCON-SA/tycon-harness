@@ -197,7 +197,8 @@ test('@story-waiver-windows el agente corre el comando con la marca y la respues
 test('@story-waiver-windows sin poder abrir la ventana, no firma y lo dice (acá no hay cmd.exe)', () => {
   if (process.platform === 'win32') return;   // en Windows de verdad se abriría: eso lo mide el ensayo
   const { home, repo, story } = laboratorio();
-  const r = spawnSync(process.execPath, [MARKER, 'runtime-waiver', story], {
+  // la firma en la terminal (--terminal): en Windows abre la ventana nueva; desde la sesión iría por la ventana de permiso
+  const r = spawnSync(process.execPath, [MARKER, 'runtime-waiver', story, '--terminal'], {
     encoding: 'utf8', timeout: 60000,
     env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '', CLAUDE_CODE_SESSION_ID: 'waiver-win-test' },
   });

@@ -72,8 +72,10 @@ const ours = (cmd, rel) => /^(node|bash) "/.test(cmd) && cmd.endsWith('/' + rel 
 for (const [event, rels] of Object.entries(WANT)) {
   for (const rel of rels) {
     const all = rows.filter((r) => r.event === event && ours(r.cmd, rel) && r.matcher !== 'Edit|Write');
-    const good = all.filter((r) => r.matcher === 'Bash|PowerShell');
-    if (good.length !== 1 || all.length !== 1) out.push(`${event} ${rel}: ${good.length} con «Bash|PowerShell», ${all.length} en total (${all.map((r) => r.matcher || '*').join(', ')})`);
+    // el freno de mano mira también la herramienta Monitor: su comando corre en la misma consola
+    const want = rel === 'safety-guard-pre.sh' ? 'Bash|Monitor|PowerShell' : 'Bash|PowerShell';
+    const good = all.filter((r) => r.matcher === want);
+    if (good.length !== 1 || all.length !== 1) out.push(`${event} ${rel}: ${good.length} con «${want}», ${all.length} en total (${all.map((r) => r.matcher || '*').join(', ')})`);
   }
 }
 // rebuild-before-verify.js también va con Edit|Write en PostToolUse: ése no se toca
@@ -96,8 +98,15 @@ make_old() {
   node -e '
     const fs = require("fs"); const [src, dst] = process.argv.slice(1);
     const s = JSON.parse(fs.readFileSync(src, "utf8"));
-    for (const ev of ["PreToolUse", "PostToolUse"]) for (const e of s.hooks[ev] || []) if (e.matcher === "Bash|PowerShell") {
-      e.matcher = "Bash"; e.hooks.push({ type: "command", command: ev === "PreToolUse" ? "echo lab-pre-bash" : "echo lab-post-bash" });
+    // antes había un solo bloque `Bash`: el del freno (que hoy suma Monitor) se junta con el resto
+    for (const ev of ["PreToolUse", "PostToolUse"]) {
+      const shell = (s.hooks[ev] || []).filter((e) => /^Bash\|PowerShell(\|Monitor)?$/.test(e.matcher));
+      if (!shell.length) continue;
+      const [first, ...rest] = shell;
+      first.matcher = "Bash";
+      for (const e of rest) first.hooks.push(...e.hooks);
+      s.hooks[ev] = s.hooks[ev].filter((e) => !rest.includes(e));
+      first.hooks.push({ type: "command", command: ev === "PreToolUse" ? "echo lab-pre-bash" : "echo lab-post-bash" });
     }
     fs.writeFileSync(dst, JSON.stringify(s, null, 2) + "\n");' "$1" "$2"
 }
@@ -145,7 +154,7 @@ R="$(node "$T/check.js" "$T/both.json")"; CK=$?
 # 5) --check sobre la de antes
 cp "$T/old.before.json" "$T/check.json"
 run "$T/check.json" --check > "$T/5.out" 2>&1; RC=$?
-[ "$RC" -eq 0 ] && cmp -s "$T/check.json" "$T/old.before.json" && grep -q "PreToolUse (matcher='Bash|PowerShell') → @tcg:safety-guard-pre.sh" "$T/5.out" \
+[ "$RC" -eq 0 ] && cmp -s "$T/check.json" "$T/old.before.json" && grep -q "PreToolUse (matcher='Bash|PowerShell|Monitor') → @tcg:safety-guard-pre.sh" "$T/5.out" \
   && ok "5. --check sobre la de antes: sale 0, no escribe y nombra el freno con su matcher nuevo" \
   || bad "5. --check sobre la de antes (rc $RC): $(grep -m1 'safety-guard' "$T/5.out") · $(cmp -s "$T/check.json" "$T/old.before.json" && echo 'sin escribir' || echo 'ESCRIBIÓ')"
 
@@ -164,7 +173,7 @@ R="$(node "$T/check.js" "$T/via-link.json" foreign)"; CK=$?
 node -e '
   const fs = require("fs"); const [src, dst] = process.argv.slice(1);
   const s = JSON.parse(fs.readFileSync(src, "utf8"));
-  for (const ev of ["PreToolUse", "PostToolUse"]) for (const e of s.hooks[ev] || []) if (e.matcher === "Bash|PowerShell") e.matcher = "Bash, PowerShell";
+  for (const ev of ["PreToolUse", "PostToolUse"]) for (const e of s.hooks[ev] || []) if (/^Bash\|PowerShell(\|Monitor)?$/.test(e.matcher)) e.matcher = e.matcher.split("|").join(", ");
   fs.writeFileSync(dst, JSON.stringify(s, null, 2) + "\n");' "$T/fresh.json" "$T/comma.json"
 cp "$T/comma.json" "$T/comma.before.json"
 run "$T/comma.json" > "$T/7.out" 2>&1; RC=$?

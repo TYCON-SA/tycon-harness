@@ -6,15 +6,14 @@ if (require.main === module) { try { require('./lib/node-floor.js').guard(); } c
  * e2e-setup.js — prepara la prueba con navegador en el repo, la deshace, o deja anotado el «no» de la persona.
  *
  * Lo pide la oferta que el arnés le muestra a la persona (lib/browser-test.js) cuando una historia cambia una pantalla
- * y el repo no tiene cómo probar en un navegador. Preparar y anotar el «no» piden el ok de la persona, verificado en la
- * conversación como las otras decisiones en nombre del dev (lib/critical-waivers.js `okDeUnaPersona`): ni el agente ni
- * otra sesión deciden por ella, salvo la sesión que la organización declara como relevo.
+ * y el repo no tiene cómo probar en un navegador. Preparar y anotar el «no» los aprueba la persona en la ventana de
+ * permiso (o los corre ella con --terminal): ni el agente ni otra sesión deciden por ella.
  *
  * Uso:
  *   e2e-setup.js status  --repo <r>
- *   e2e-setup.js prepare --repo <r> --story <spec.md> --approved-by "<el dev>" --ok "<su respuesta>" [--relayed-by <sesión>] [--url <dirección>]
+ *   e2e-setup.js prepare --repo <r> --story <spec.md> [--approved-by "<el dev>"] [--url <dirección>] [--terminal]
  *   e2e-setup.js undo    --repo <r>
- *   e2e-setup.js defer   --repo <r> --story <spec.md> --approved-by "<el dev>" --no "<su respuesta>" [--relayed-by <sesión>]
+ *   e2e-setup.js defer   --repo <r> --story <spec.md> --no "<su respuesta>" [--approved-by "<el dev>"] [--terminal]
  *
  * Qué escribe `prepare`, en el repo: `@playwright/test` como dependencia de desarrollo en el package.json más cercano
  * a la pantalla (si no hay ninguno, crea uno en la raíz), Chromium en la carpeta de navegadores de Playwright (fuera
@@ -24,8 +23,8 @@ if (require.main === module) { try { require('./lib/node-floor.js').guard(); } c
  * archivo: `undo` borra sólo lo que nadie cambió, y nunca fuera del repo.
  *
  * `defer` pide además que la respuesta sea posterior a la oferta mostrada para esa historia. Escribe en la historia
- * `browser_test: deferred` y `browser_test_reason`, y deja la constancia en `gates.log`; cada freno del cierre vuelve a
- * buscar la respuesta en la conversación (la constancia sola no alcanza).
+ * `browser_test: deferred` y `browser_test_reason`, y deja la constancia en `gates.log` junto a la línea de la firma;
+ * cada freno del cierre vuelve a buscar esa línea (la constancia sola no alcanza).
  *
  * Sale: 0 hecho · 1 no había nada que hacer (o falló un paso: lo dice) · 2 sin el ok de la persona, o uso.
  */
@@ -80,13 +79,6 @@ function stateDir() {
   return require('./lib/story-gate-io.js').DEFAULT_STATE_DIR;
 }
 
-/** Cuándo arrancó la corrida de esta sesión (`startedAt` del marcador), o null. */
-function arranqueDeLaCorrida() {
-  const sid = String(process.env.CLAUDE_CODE_SESSION_ID || '');
-  if (!/^[\w-]+$/.test(sid)) return null;
-  try { return JSON.parse(fs.readFileSync(path.join(stateDir(), 'active', `${sid}.json`), 'utf8')).startedAt || null; } catch (_e) { return null; }
-}
-
 /** ¿`p` queda dentro de `repo` también siguiendo los enlaces? Para lo que existe (lo que no existe, por su carpeta). */
 function dentroDeVerdad(repo, p) {
   let q = path.resolve(repo, p);
@@ -94,11 +86,19 @@ function dentroDeVerdad(repo, p) {
   try { return dentro(fs.realpathSync(repo), fs.realpathSync(q)); } catch (_e) { return false; }
 }
 
-/** El ok de la persona (o de la sesión relevo), desde `desde`. `{ ok, entrada }` o `{ ok: false, motivo }`. */
-function okDeLaPersona(argv, cual, desde) {
-  return require('./lib/critical-waivers.js').okDeUnaPersona({
-    approvedBy: opcion(argv, '--approved-by'), quote: opcion(argv, cual), relayedBy: opcion(argv, '--relayed-by'), desde,
-  });
+/**
+ * La aprobación de la persona en la ventana de permiso (o con --terminal, en su terminal). La cita y el reenvío ya no
+ * firman. `{ codigo: 0, via }` o `{ codigo, motivo }`.
+ */
+function firmaDeLaPersona(argv, resumen, propia = require('./lib/session-id.js').sessionIdFileKey()) {
+  if (argv.includes('--relayed-by') || argv.includes('--ok')) {
+    return { codigo: 2, motivo: 'la cita o el reenvío ya no firman: la persona lo aprueba en la ventana de permiso (este comando sin --ok ni --relayed-by) o en su terminal (--terminal)' };
+  }
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const r = ow.exigir({ firma: 'browser-test', argv: process.argv.slice(1), resumen,
+    propia,
+    anotar: (renglon) => bt.anotar(stateDir(), { ts: new Date().toISOString(), ...renglon }) });
+  return r.codigo === 0 ? r : { codigo: 2, motivo: r.motivo };
 }
 
 /** La historia, resuelta y dentro del repo; o el motivo. */
@@ -214,12 +214,8 @@ function cmdPrepare(argv) {
   if (h.motivo) { process.stderr.write(`e2e-setup.js prepare: ${h.motivo}\n`); return 2; }
   const content = fs.readFileSync(h.path, 'utf8');
   const id = bt.storyIdDe(content, h.path);
-  // el sí cuenta desde la oferta de esta historia; si no se mostró (la persona lo pidió sola), desde que arrancó la
-  // corrida de esta sesión, o la última hora
-  const oferta = bt.lastOffer(stateDir(), id, repo);
-  const desde = oferta ? oferta.ts : (arranqueDeLaCorrida() || new Date(Date.now() - 3600 * 1000).toISOString());
-  const ok = okDeLaPersona(argv, '--ok', desde);
-  if (!ok.ok) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
+  const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`);
+  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
   if (fs.existsSync(path.join(repo, MANIFEST))) { process.stderr.write('e2e-setup.js prepare: este repo ya tiene una preparación anotada (.tycon/e2e-setup.json)\n'); return 1; }
   if (bt.repoReady(repo).ready) { process.stdout.write('El repo ya tiene la prueba con navegador: no hace falta preparar nada.\n'); return 1; }
   const clave = bt.claveDe(h.path, content);
@@ -274,7 +270,7 @@ function cmdPrepare(argv) {
     process.stderr.write(`e2e-setup.js prepare: terminé, pero el repo todavía no tiene la prueba con navegador (falta: ${listo.missing.join(', ')}).${saltados.length ? ` No toqué lo que ya existía: ${saltados.join(', ')}.` : ''}\n  Lo hecho quedó anotado en ${MANIFEST}: «e2e-setup.js undo» lo deshace.\n`);
     return 1;
   }
-  bt.anotar(stateDir(), { ts: new Date().toISOString(), sessionId: process.env.CLAUDE_CODE_SESSION_ID || null, repoPath: repo, name: bt.PREPARED, status: 'ok', story: id, via: ok.entrada.via });
+  bt.anotar(stateDir(), { ts: new Date().toISOString(), sessionId: process.env.CLAUDE_CODE_SESSION_ID || null, repoPath: repo, name: bt.PREPARED, status: 'ok', story: id, via: ok.via });
   process.stdout.write([
     'Listo: la prueba con navegador está preparada en el repo.',
     `  Playwright quedó en ${rel(repo, path.join(pkg, 'package.json'))} (herramienta de desarrollo) y Chromium en ${browserDir()}.`,
@@ -340,22 +336,26 @@ function cmdDefer(argv) {
   if (bt.repoReady(repo).ready) { process.stderr.write('e2e-setup.js defer: el repo ya tiene prueba con navegador: se corre, no se deja pendiente.\n'); return 2; }
   const oferta = bt.lastOffer(stateDir(), id, repo);
   if (!oferta) { process.stderr.write(`e2e-setup.js defer: no hay constancia de que el arnés le haya mostrado la oferta a la persona para la historia ${id}: sin la oferta, el «no» no vale.\n`); return 2; }
-  const ok = okDeLaPersona(argv, '--no', oferta.ts);
-  if (!ok.ok) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo.replace('antes de que arrancara esta corrida', 'antes de la oferta')}\n`); return 2; }
-  const cita = bt.citaEnUnRenglon(ok.entrada.cita);
+  // la respuesta de la persona va a la historia; firmarla, la firma ella en la ventana de permiso, que muestra el comando
+  const cita = bt.citaEnUnRenglon(opcion(argv, '--no'));
   // tiene que ser un no: el ok de otra cosa («aprobado el plan») no declara que la prueba queda pendiente
-  if (!/\bno\b/i.test(cita)) { process.stderr.write(`e2e-setup.js defer: «${cita}» no dice que no: citá la respuesta de la persona a la oferta.\n`); return 2; }
+  if (!/\bno\b/i.test(cita)) { process.stderr.write(`e2e-setup.js defer: «${cita}» no dice que no: poné en --no la respuesta de la persona a la oferta.\n`); return 2; }
+  // en la terminal del dueño no hay variable de sesión: el «no» contesta la oferta, y la firma es para su sesión
+  const propia = require('./lib/session-id.js').sessionIdFileKey();
+  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`,
+    propia === '_nosession' && oferta.sessionId ? oferta.sessionId : propia);
+  if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo}\n`); return 2; }
   const m = txt.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) { process.stderr.write('e2e-setup.js defer: la historia no tiene frontmatter\n'); return 2; }
   const fecha = new Date().toISOString().slice(0, 10);
   const motivo = `${fecha} — la persona: «${cita}»`.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const fm = m[1].split(/\r?\n/).filter((l) => !/^browser_test(_reason)?\s*:/.test(l));
   fm.push('browser_test: deferred', `browser_test_reason: "${motivo}"`);
-  // la constancia primero: dice dónde volver a buscar el ok (la sesión, desde la oferta, y si lo reenvió el relevo)
+  // la constancia primero, después de la línea de la firma que dejó la ventana (o la terminal), para la sesión firmada
   bt.anotar(stateDir(), {
-    ts: new Date().toISOString(), sessionId: process.env.CLAUDE_CODE_SESSION_ID || null, repoPath: repo, storyPath: fs.realpathSync(h.path),
-    name: bt.DEFERRED, status: 'ok', story: id, cita: ok.entrada.cita, quoteSha: bt.huella(cita), offerTs: oferta.ts,
-    approvedBy: ok.entrada.delegacion || ok.entrada.quien, relevo: ok.entrada.relevo || null,
+    ts: new Date().toISOString(), sessionId: ok.destino || propia, repoPath: repo, storyPath: fs.realpathSync(h.path),
+    name: bt.DEFERRED, status: 'ok', story: id, cita, quoteSha: bt.huella(cita), offerTs: oferta.ts,
+    approvedBy: opcion(argv, '--approved-by') || process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona', via: ok.via,
   });
   // con función: una respuesta con `$&` o `$$` no se interpreta como patrón de reemplazo
   fs.writeFileSync(h.path, txt.replace(m[0], () => `---\n${fm.join('\n')}\n---`));

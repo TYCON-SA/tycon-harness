@@ -20,6 +20,7 @@ const SCRIPTS = path.join(__dirname, '..');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const GATE = path.join(RAIZ, 'scripts', 'ci', 'tycon-ci-gate.js');
 const approvals = require(path.join(SCRIPTS, 'lib', 'approvals.js'));
+const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
 
 function tmp(prefijo) { return fs.mkdtempSync(path.join(os.tmpdir(), prefijo)); }
 // Commits de juguete con fecha fija y sin el mantenimiento automático de git (guides/test-execution-discipline.md).
@@ -131,10 +132,12 @@ function repoConStory() {
   return { repo, story };
 }
 
+// La firma del plan y de la maqueta la da el dueño en la ventana de permiso; acá se da por pasada (window-passed.js)
+// para probar lo que el marcador anota después.
 function markerCli(home, sid, cwd, args) {
   return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], {
     cwd, encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
+    env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' }),
   });
 }
 

@@ -193,11 +193,11 @@ function anotarFallo(home, motivo) {
 // lo aprobó: el rol que declara el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea
 // se escribe igual). `delegacion`: la sesión designada lo aprobó en nombre del dueño (delegated-ok.js).
 // `sin-conversacion`: la regla no pudo mirar porque la herramienta no guarda la conversación (Codex) y dejó pasar.
-const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion'];
+const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
-const ESCAPES_CON_NOMBRE = ['set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
+const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
   'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
   'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado'];
 const SESION = /^[\w-]{1,80}$/;

@@ -18,6 +18,7 @@ process.env.TYCON_PACKS_DEFAULT = (process.env.TYCON_PACKS_DEFAULT || '').trim()
 const SCRIPTS = path.join(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const MARKER = path.join(SCRIPTS, 'marker.js');
+const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const SID = 'test-rounds';
 const RUN = '9.8-20261020000000';
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
@@ -61,9 +62,9 @@ function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml 
   for (const k of ['TYCON_REVIEW_MAX_ROUNDS', 'TYCON_GUIDES_DIR', 'NODE_TEST_CONTEXT']) delete env[k];
   if (arbol) env.TYCON_GUIDES_DIR = arbol;
   const lab = { repo, home, story, run, state, markerFile, env };
-  lab.reloop = (iter, extra = [], envExtra = {}) => spawnSync(process.execPath,
+  lab.reloop = (iter, extra = [], envExtra = {}, { ventana = false } = {}) => spawnSync(process.execPath,
     [PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', repo, '--story', story, '--files', 'src/a.js', ...extra],
-    { encoding: 'utf8', env: { ...env, ...envExtra } });
+    { encoding: 'utf8', env: ventana ? conVentana({ ...env, ...envExtra }) : { ...env, ...envExtra } });
   lab.cmd = (bin, args, envExtra = {}) => spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', cwd: repo, env: { ...env, ...envExtra } });
   lab.foto = (n) => { const m = JSON.parse(fs.readFileSync(markerFile, 'utf8')); m.iterations[n] = { ts: new Date().toISOString(), files: {} }; fs.writeFileSync(markerFile, JSON.stringify(m)); };
   // el ajuste de la máquina: un archivo en la carpeta de estado, donde el agente no escribe
@@ -209,19 +210,20 @@ test('Cap_SecurityCritical_AsksThePerson @story-7.37 @ac-5', () => {
   assert.match(r.stderr, /seguridad o (de )?datos/);
   assert.match(r.stderr, /--extra-round/);
   assert.match(r.stderr, /waive-critical/);
-  // un «no» a otra vuelta, o un ok que no la nombra, no la autoriza
-  for (const dice of ['no hace falta otra vuelta, lo eximo', 'ok, seguí']) {
-    lab.conversar([delDev(dice)]);
-    const no = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba', '--quote', dice]);
-    assert.equal(no.status, 3, `«${dice}» no autoriza otra vuelta`);
-    assert.match(no.stderr, /No se autorizó la vuelta extra/);
-  }
-  // con el ok de la persona, la vuelta extra se sirve (la tercera, además, pide su nota de repensar)
+  // lo escrito en el chat no la autoriza: ni con la cita (aun la que la nombra), ni sin la ventana
   lab.conversar([delDev('dale, una vuelta más para arreglar el SEC-C1')]);
+  const cita = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba', '--quote', 'dale, una vuelta más para arreglar el SEC-C1'], {}, { ventana: true });
+  assert.equal(cita.status, 3, 'la cita no autoriza otra vuelta');
+  assert.match(cita.stderr, /No se autorizó la vuelta extra 3: la cita ya no la autoriza/);
+  const sin = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba']);
+  assert.equal(sin.status, 3, 'sin la ventana no se sirve');
+  assert.match(sin.stderr, /no pasó por la ventana/);
+  assert.ok(!gates(lab).some((g) => g.name === 'extra-round'), 'no se anota una vuelta que no se sirvió');
+  // aprobada en la ventana, la vuelta extra se sirve (la tercera, además, pide su nota de repensar)
   const nota = lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
     '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]);
   assert.equal(nota.status, 0, nota.stderr);
-  const ok = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba', '--quote', 'dale, una vuelta más para arreglar el SEC-C1']);
+  const ok = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba'], {}, { ventana: true });
   assert.equal(ok.status, 0, ok.stderr);
   assert.ok(gates(lab).some((g) => g.name === 'extra-round' && g.iter === 3), 'la vuelta extra queda anotada');
 });

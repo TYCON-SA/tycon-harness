@@ -20,6 +20,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
+const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const STEPS = path.join(SCRIPTS, '..', 'steps');
 const PLAN = 'step-02-bmad-plan.md';
 
@@ -41,10 +42,11 @@ function repoConStory() {
   return { repo, story };
 }
 
+// La firma del plan la da el dueño en la ventana de permiso; acá se da por pasada (window-passed.js).
 function markerCli(home, sid, cwd, args) {
   return spawnSync('node', [path.join(SCRIPTS, 'marker.js'), ...args], {
     cwd, encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' },
+    env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' }),
   });
 }
 

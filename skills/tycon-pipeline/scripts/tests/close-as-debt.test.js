@@ -61,12 +61,12 @@ function entorno({ todo = null, enHistoria = false } = {}) {
   const leer = (sid) => JSON.parse(fs.readFileSync(activo(sid), 'utf8'));
   const escribir = (sid, m) => fs.writeFileSync(activo(sid), JSON.stringify(m));
   // lo que deja el freno de seguridad cuando la persona dijo «autorizo cerrar como deuda» (ESC-C4); el arranque, antes
-  const arrancar = (sid, { autorizada = true } = {}) => {
+  const arrancar = (sid, { autorizada = true, via = 'persona' } = {}) => {
     const r = correr('pipeline.js', ['start', '--story', story, '--repo', repo, '--brief'], sid);
     assert.strictEqual(r.status, 0, r.stderr + r.stdout);
     if (autorizada) {
       require(path.join(RAIZ, 'scripts', 'lib', 'guard-record.js')).anotar({ freno: 'safety-guard', regla: 'ESC-C4', veredicto: 'escape', cmd: 'x',
-        home, via: 'persona', sesion: sid, escape: 'cerrar-como-deuda' });
+        home, via, sesion: sid, escape: 'cerrar-como-deuda' });
     }
   };
   return { home, repo, story, correr, leer, escribir, activo, arrancar, dir };
@@ -126,8 +126,15 @@ test('T21 CloseAsDebt_EscribeCierreYSigue @story-8.93 @ac-10 — el cierre es de
   sin.arrancar('s-t21b', { autorizada: false });
   const n = sin.correr('marker.js', CERRAR, 's-t21b');
   assert.strictEqual(n.status, 2, n.stderr);
-  assert.match(n.stderr, /autorizo cerrar como deuda/);
+  assert.match(n.stderr, /ventana de permiso/);
+  assert.doesNotMatch(n.stderr, /autorizo/, 'el aviso no enseña la frase');
   assert.strictEqual(sin.leer('s-t21b').cierre, undefined);
+  // aprobada en la ventana de permiso: cierra, y anota esa vía
+  const ven = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  ven.arrancar('s-t21c', { via: 'ventana' });
+  const v = ven.correr('marker.js', CERRAR, 's-t21c');
+  assert.strictEqual(v.status, 0, v.stderr);
+  assert.strictEqual(ven.leer('s-t21c').cierre.via, 'ventana');
 });
 
 test('T22 ExpectRed_SoloEnDeuda @story-8.93 @ac-11 — un rojo esperado se registra sólo en una ejecución en deuda', () => {

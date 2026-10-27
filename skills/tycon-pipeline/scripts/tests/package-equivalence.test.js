@@ -186,3 +186,24 @@ for (const caso of CASOS) {
     assert.deepEqual(sinOrden(nuevo), foto.casos[caso.nombre]);
   });
 }
+
+// La configuración de la organización de quien mide (los modelos por revisor de su arnés) no entra a la medición: la foto
+// se tomó sin ella, y en una máquina que la declara la sugerencia de modelo salía vacía en cada caso.
+test('Equivalencia_ModelosDeLaOrganizacionDeQuienMide_NoEntranALaMedicion', (t) => {
+  const caso = CASOS.find((c) => c.nombre === 'solo-sh');
+  assert.ok(caso && foto, 'el caso y la foto existen');
+  const arbol = fs.mkdtempSync(path.join(os.tmpdir(), 'equiv-arbol-con-modelos-'));
+  fs.mkdirSync(path.join(arbol, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(RAIZ, 'scripts', 'lib'), path.join(arbol, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(arbol, 'scripts', 'install-tycon-hooks.sh'), '');
+  const repo = (r) => ({ platform: 'github', org: 'acme', repo: r });
+  fs.writeFileSync(path.join(arbol, 'team-repos.json'), JSON.stringify({ version: 1, public: repo('harness'), profile: repo('harness-profile'),
+    operations: repo('harness-ops'), models: { reviewer: { 'tycon-spec-first-checker': 'sonnet' } } }, null, 2));
+  const antes = process.env.TYCON_GUIDES_DIR;
+  process.env.TYCON_GUIDES_DIR = arbol;
+  t.after(() => { if (antes === undefined) delete process.env.TYCON_GUIDES_DIR; else process.env.TYCON_GUIDES_DIR = antes; });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'equiv-caso-'));
+  const { files } = caso.armar(dir);
+  const nuevo = medir({ pipeline: PIPELINE, repo: dir, files, env: { HOME: HOME_AISLADO, TYCON_SESSION_ID: 'equivalencia-test', TYCON_PACKS_DIR: PACKS_REALES } });
+  assert.deepEqual(sinOrden(nuevo), foto.casos[caso.nombre], 'con un arnés que declara modelos, la medición es la misma que la foto');
+});

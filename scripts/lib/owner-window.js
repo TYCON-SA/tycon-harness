@@ -1,0 +1,586 @@
+'use strict';
+/**
+ * owner-window.js — las firmas del dueño se dan en la ventana de permiso de la herramienta.
+ *
+ * Dos lados de un mismo módulo:
+ *
+ *   El freno (`decidir`, y `gate` por consola): ante un comando que pide una firma del catálogo (signatures.js), niega
+ *   o pide la ventana («ask»). Para una firma `guion` escribe antes un registro del pedido; una firma `freno` (un escape)
+ *   pide la ventana sin registro, porque el «Sí» corre el comando y no hay guion que lo consuma.
+ *
+ *   El guion (`verificar`, `exigir`, y `verify` por consola): el guion de la firma comprueba en el árbol de procesos que
+ *   lo lanzó la consola de la herramienta con el comando exacto de un registro vigente, y lo consume una sola vez. Sin
+ *   eso no firma: la persona lo firma en su terminal (`porTerminal`).
+ *
+ * El registro vive en `owner-window/`, dentro de la carpeta del estado de la casa de la cuenta, un archivo por (firma, sesión
+ * destino, sesión del pedido). La casa sale de real-home.js: `HOME`, `USERPROFILE` y `TYCON_HOME` no la cambian.
+ *
+ * La envoltura de la consola es la medida en la Mac (`zsh -c source <foto del ambiente> … && eval '<comando>' <
+ * /dev/null && pwd -P >| /tmp/claude-…-cwd`). Una que no coincide, un árbol que no se lee (Windows) o una herramienta
+ * lanzada por otra herramienta o por su consola se niegan: lo indecidible se firma en la terminal. Lo que no ve: una
+ * herramienta abierta por el agente dentro de `tmux`, cuyo servidor no tiene padre (límite declarado en la guía).
+ *
+ * El árbol, el evento, la casa y la hora se pasan como parámetros en las pruebas; nada se finge por el ambiente.
+ */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+const { SIGNATURES } = require('./signatures.js');
+const { casaDeLaCuenta } = require('./real-home.js');
+
+const LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+const markerCommand = () => require(path.join(LIB, 'marker-command.js'));
+const stateDir = (casa) => require(path.join(LIB, 'state-dir.js')).stateDir(casa);
+
+const VENCE_MIN = 30;
+const SESION = /^[\w-]+$/;
+const VARIABLES_DE_SESION = /(^|[^\w])(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|CODEX_SESSION_ID)(?![\w])/;
+// los guiones de las firmas `guion`, por su nombre de archivo
+const GUIONES = new Set(['marker.js', 'pipeline.js', 'e2e-setup.js', 'run-base-controls.sh']);
+const NODES = new Set(['node', 'nodejs']);
+const SHS = new Set(['bash', 'sh']);
+// los dos escapes que la delegación aprobada por el dueño sigue cubriendo en el freno
+const DELEGABLES_DEL_FRENO = new Set(['escape:force-manual', 'escape:trust-ran']);
+
+const firmaDe = (id) => SIGNATURES.find((s) => s.id === id) || null;
+const base = (w) => String(w || '').split(/[\\/]/).pop().toLowerCase();
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const una = (s, n = 300) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** La carpeta del registro de la ventana en esa casa. */
+function carpeta(casa) { return path.join(stateDir(casa), 'owner-window'); }
+
+// --- el árbol de procesos ------------------------------------------------------------------------------------------
+
+/**
+ * Los procesos de la máquina como `{ pid, ppid, inicio, comando, ejecutable? }`, o null si no se pueden leer (Windows
+ * siempre). `ps` corre con un idioma fijo: la fecha en inglés (la que se lee acá) y los acentos tal cual (sin UTF-8,
+ * el `ps` de la Mac los escribe en otra notación y el comando ya no es el que se pidió). El ejecutable sale de otra
+ * lectura porque su ruta puede tener espacios; sin ella, se lee de la línea.
+ */
+function leerArbol({ spawnSync = require('child_process').spawnSync, plataforma = process.platform } = {}) {
+  if (plataforma === 'win32') return null;
+  const o = { encoding: 'utf8', timeout: 5000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C.UTF-8' } };
+  let r;
+  try { r = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,lstart=,command='], o); } catch (_) { return null; }
+  if (!r || r.error || r.status !== 0 || !r.stdout) return null;
+  const ejecutables = new Map();
+  try {
+    const c = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,comm='], o);
+    if (c && !c.error && c.status === 0 && c.stdout) {
+      for (const l of c.stdout.split('\n')) { const m = /^\s*(\d+)\s(.+)$/.exec(l); if (m) ejecutables.set(Number(m[1]), m[2].trim()); }
+    }
+  } catch (_) { /* sin la segunda lectura, el ejecutable se lee de la línea */ }
+  const fuera = [];
+  for (const l of r.stdout.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\d+\s+\d+:\d+:\d+\s+\d+)\s+(.*)$/.exec(l);
+    if (m) fuera.push({ pid: Number(m[1]), ppid: Number(m[2]), inicio: m[3].replace(/\s+/g, ' '), comando: m[4], ...(ejecutables.has(Number(m[1])) ? { ejecutable: ejecutables.get(Number(m[1])) } : {}) });
+  }
+  return fuera.length ? fuera : null;
+}
+
+/**
+ * ¿Es el proceso de la herramienta? `claude` (o `node <…>/claude`, el lanzador del paquete), con minúscula: la app de
+ * escritorio, `Claude`, no lo es. El ejecutable puede venir aparte (una ruta con espacios, la de la copia de escritorio).
+ */
+function esHerramienta(p) {
+  const linea = String((p && p.comando) || '').trim();
+  const exe = p && p.ejecutable ? String(p.ejecutable) : '';
+  const w = linea.split(/\s+/);
+  let nombre = w[0];
+  let resto = w.slice(1);
+  if (exe && linea.startsWith(exe)) { nombre = exe; resto = linea.slice(exe.length).trim().split(/\s+/); } else if (exe) nombre = exe;
+  const crudo = (x) => String(x || '').split(/[\\/]/).pop();
+  if (/^claude(\.exe)?$/.test(crudo(nombre))) return true;
+  return (NODES.has(base(nombre)) || base(nombre) === 'bun') && (/^claude(\.exe)?$/.test(crudo(resto[0])) || /claude-code[\\/]cli\.(m?js)$/.test(resto[0] || ''));
+}
+
+/** ¿La línea de la herramienta trae `-p` o `--print` (sin pantalla)? */
+function sinPantalla(p) {
+  return String(p.comando).trim().split(/\s+/).slice(1).some((w) => w === '-p' || w === '--print' || w.startsWith('--print='));
+}
+
+/**
+ * El comando que corre una consola de la herramienta, sacado de su envoltura medida; null si la línea no es esa
+ * envoltura (otra casa en la foto del ambiente, otra forma, una comilla suelta adentro). La consola de fondo va sin
+ * `< /dev/null`. La consola es la de la persona: zsh o bash, de cualquier carpeta (la del sistema o la de Homebrew).
+ */
+function desenvolver(linea, casa) {
+  const re = new RegExp('^(?:/[\\w.+-]+)*/(?:zsh|bash) -c source ' + escRe(casa)
+    + '/\\.claude/shell-snapshots/snapshot-(?:zsh|bash)-[\\w.-]+\\.sh 2>/dev/null \\|\\| true && '
+    + '(?:setopt(?: [A-Z_]+)+ 2>/dev/null \\|\\| true && )?'
+    + '(?:shopt -u extglob 2>/dev/null \\|\\| true && )?'
+    + "(?:\\{(?: \\\\builtin (?:unalias|unset -f) -- '[\\w-]+';)+ \\} >/dev/null 2>&1 \\|\\| true && )?"
+    + "eval '([\\s\\S]*)'(?: < /dev/null)? && pwd -P >\\| (?:/private)?/tmp/claude-[0-9a-f]+-cwd$");
+  const m = re.exec(String(linea || ''));
+  if (!m) return null;
+  const partes = m[1].split(`'"'"'`);
+  if (partes.some((p) => p.includes("'"))) return null;
+  return partes.join("'");
+}
+
+function porPid(arbol) { return new Map(arbol.map((p) => [p.pid, p])); }
+
+/** Los padres de `pid`, del más cercano al más lejano (sin el propio). */
+function padres(arbol, pid) {
+  const m = porPid(arbol);
+  const fuera = [];
+  const vistos = new Set([pid]);
+  let p = m.get(pid);
+  while (p && m.has(p.ppid) && !vistos.has(p.ppid)) {
+    vistos.add(p.ppid);
+    p = m.get(p.ppid);
+    fuera.push(p);
+  }
+  return fuera;
+}
+
+// --- qué firmas pide un comando --------------------------------------------------------------------------------------
+
+/**
+ * La forma canónica: un solo comando, sin envolturas, variables ni redirecciones, que corre uno de los guiones de
+ * firma (`node <ruta>/marker.js …`, `bash <ruta>/run-base-controls.sh …`). Devuelve las palabras desde el guion, o null.
+ */
+function canonica(comando) {
+  let t;
+  try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return null; }
+  if (t.abierta || t.subs.length || t.tramos.length !== 1 || t.tramos[0].heredocs.length) return null;
+  const w = t.tramos[0].palabras;
+  if (!w.length || w.some((x) => !x.literal || /^\d*[<>&|]/.test(x.texto) || /[\r\n]/.test(x.texto))) return null;
+  const prog = base(w[0].texto);
+  let desde = 0;
+  if (NODES.has(prog) || SHS.has(prog)) desde = 1;
+  const guion = w[desde];
+  if (!guion || guion.texto.startsWith('-') || !GUIONES.has(base(guion.texto))) return null;
+  const esSh = base(guion.texto).endsWith('.sh');
+  if (esSh ? NODES.has(prog) : !NODES.has(prog)) return null;
+  return w.slice(desde).map((x) => x.texto);
+}
+
+/** La firma `guion` que piden las palabras de un llamado (el guion, el subcomando y sus argumentos), o null. */
+function firmaDeLlamado(guion, sub, args) {
+  const a = args.map(String);
+  // una palabra que no se lee hasta correr (`$F`, una sustitución) puede ser cualquier bandera: cuenta como puesta
+  const opaca = a.some((w) => /[$`]/.test(w));
+  const con = (b) => opaca || a.some((w) => w === b || w.startsWith(`${b}=`));
+  if (guion === 'marker.js') {
+    // la firma la piden la cita del plan o la de la maqueta, como en marker.js; el plan que se aprueba solo, no
+    if (sub === 'complete-step' && ['approve-plan', '3'].includes(String(a[0] || '').trim()) && (con('--approved') || con('--mockup-approved'))) return 'plan-approval';
+    if (sub === 'approve-mockup') return 'plan-approval';
+    if (sub === 'waive-critical') return 'critical-waiver';
+    if (sub === 'mark-tested') return 'manual-test';
+    if (sub === 'runtime-waiver') return 'runtime-waiver';
+    if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
+    return null;
+  }
+  // con --delegated la vuelta extra la juzga pipeline.js por la delegación, sin ventana
+  if (guion === 'pipeline.js') return ['smart-reloop', 'advisors'].includes(sub) && con('--extra-round') && !a.some((w) => w === '--delegated' || w.startsWith('--delegated=')) ? 'extra-round' : null;
+  if (guion === 'e2e-setup.js') return ['prepare', 'defer'].includes(sub) ? 'browser-test' : null;
+  if (guion === 'run-base-controls.sh') return sub === 'approve' ? 'control-change' : null;
+  return null;
+}
+
+/** Los llamados a e2e-setup.js y run-base-controls.sh de un comando (los de marker.js los lee marker-command.js). */
+function llamadosSueltos(comando, hondo = 0) {
+  const fuera = [];
+  if (hondo > 3 || !/e2e-setup|run-base-controls/i.test(comando)) return fuera;
+  const t = markerCommand().tramos(String(comando), 'bash');
+  for (const tr of t.tramos) {
+    const w = tr.palabras;
+    for (let i = 0; i < w.length; i++) {
+      const b = base(w[i].texto);
+      if (b === 'e2e-setup.js' || b === 'run-base-controls.sh') {
+        const prog = base(w[0].texto);
+        if (i === 0 || (i === 1 && (NODES.has(prog) || SHS.has(prog)))) fuera.push({ guion: b, sub: (w[i + 1] && w[i + 1].texto) || null, args: w.slice(i + 2).map((x) => x.texto) });
+        break;
+      }
+      // un texto con espacios es un comando sólo si lo corre una consola (`bash -c '…'`, `eval '…'`); un mensaje
+      // (`git commit -m '…'`) que nombra la firma no la pide
+      const ant = i > 0 ? w[i - 1].texto : '';
+      if (/\s/.test(w[i].texto) && (/^-(?:[a-z]*c[a-z]*|command)$/i.test(ant) || base(w[0].texto) === 'eval')) fuera.push(...llamadosSueltos(w[i].texto, hondo + 1));
+    }
+  }
+  for (const s of t.subs) fuera.push(...llamadosSueltos(s, hondo + 1));
+  return fuera;
+}
+
+/**
+ * Las firmas `guion` que pide el comando, en cualquier forma (la canónica o una escondida que el freno ve). Si el lector
+ * del comando se cae y el comando nombra un guion de firma, la lista vuelve vacía con `ilegible: true`: no se sabe qué
+ * pide, y eso se niega.
+ */
+function firmasDelComando(comando) {
+  const ids = [];
+  try {
+    for (const l of markerCommand().llamadas(String(comando))) {
+      const id = firmaDeLlamado(`${l.guion}.js`, l.sub, (l.args || []).map((x) => x.texto));
+      if (id) ids.push(id);
+    }
+    for (const l of llamadosSueltos(comando)) {
+      const id = firmaDeLlamado(l.guion, l.sub, l.args);
+      if (id) ids.push(id);
+    }
+  } catch (_) {
+    return Object.assign([], { ilegible: [...GUIONES].some((g) => String(comando).includes(g.replace(/\.(js|sh)$/, ''))) });
+  }
+  return [...new Set(ids)];
+}
+
+/** La firma que pide el comando en forma canónica, con sus palabras; null si no la tiene. */
+function canonicaDe(comando) {
+  const palabras = canonica(comando);
+  if (!palabras) return null;
+  const id = firmaDeLlamado(base(palabras[0]), palabras[1], palabras.slice(2));
+  return id ? { id, palabras } : null;
+}
+
+/** La sesión destino: `--for-session <id>` en el comando canónico, o la del pedido. */
+function destinoDe(palabras, sesion) {
+  const i = palabras ? palabras.indexOf('--for-session') : -1;
+  return i >= 0 ? palabras[i + 1] || '' : sesion;
+}
+
+/** ¿El escape por variable viene en su forma de siempre (la asignación literal al principio del comando, una vez)? */
+function variableALaVista(nombre, valor, comando) {
+  let t;
+  try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
+  if (!t.tramos.length) return false;
+  const w = t.tramos[0].palabras;
+  let i = 0;
+  let esta = false;
+  for (; i < w.length && /^[A-Za-z_]\w*=/.test(w[i].texto); i++) {
+    if (!w[i].literal) return false;
+    if (w[i].texto === `${nombre}=${valor}`) esta = true;
+  }
+  if (!esta || i >= w.length) return false;
+  const veces = String(comando).match(new RegExp(`(^|[^\\w])${escRe(nombre)}(?![\\w])`, 'g')) || [];
+  return veces.length === 1;
+}
+
+/** ¿El escape con nombre viene en su forma de siempre (el comando de marker.js o pipeline.js, canónico)? */
+function nombreALaVista(comando) {
+  const p = canonica(comando);
+  return !!p && ['marker.js', 'pipeline.js'].includes(base(p[0]));
+}
+
+// --- los textos ---------------------------------------------------------------------------------------------------
+
+function storyDe(casa, destino) {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(stateDir(casa), 'active', `${destino}.json`), 'utf8'));
+    return m.storyId || (m.storyPath ? path.basename(m.storyPath) : null) || 'sin story en su ejecución';
+  } catch (_) { return 'sin ejecución abierta'; }
+}
+
+function detalleDe(id, comando, palabras) {
+  if (id === 'plan-approval' && palabras) {
+    const i = palabras.findIndex((w) => w === '--approved' || w === '--mockup-approved');
+    if (i >= 0 && palabras[i + 1]) return `la cita: «${una(palabras[i + 1], 200)}»`;
+  }
+  return `el comando: ${una(comando)}`;
+}
+
+/**
+ * Los criterios que pide eximir un `runtime-waiver` canónico, para la ventana: cada uno con su texto, por qué no se
+ * prueba en vivo y qué lo cubre. Sin `--acs`, todos los pendientes de firma. `{ texto }`, o `{ error }` si no se pueden
+ * mostrar: sin ellos el dueño firmaría a ciegas.
+ */
+function criteriosDelPedido(palabras, cwd) {
+  const story = palabras[2] && !palabras[2].startsWith('-') ? palabras[2] : '';
+  if (!story) return { error: 'el comando no nombra la historia: sin sus criterios a la vista no se firma' };
+  const abs = path.isAbsolute(story) ? story : path.resolve(cwd || process.cwd(), story);
+  if (!fs.existsSync(abs)) return { error: `no encuentro la historia ${una(abs, 200)}: sin sus criterios a la vista no se firma` };
+  const i = palabras.indexOf('--acs');
+  const pedidos = i >= 0 ? [...new Set(String(palabras[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))] : null;
+  if (pedidos && !pedidos.length) return { error: '--acs no dice qué criterios: sin ellos a la vista no se firma' };
+  const wd = require(path.join(LIB, 'waiver-display.js'));
+  let c;
+  try {
+    c = wd.criteriosDe(abs, pedidos || []);
+    if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || []);
+  } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
+  if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
+  const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
+  if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
+  if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma` };
+  return { texto: `los criterios a eximir: ${c.lista.map((x) => `AC ${x.ac}: ${una(x.text || '(sin texto en la historia)', 300)} · por qué no se prueba en vivo: ${una(x.reason || '(sin razón declarada)', 200)} · lo cubre: ${una(x.coveredBy || '(ninguna prueba declarada)', 100)}`).join(' | ')}` };
+}
+
+/** El comando de la terminal; para un guion, con la sesión: en la terminal del dueño no hay variable de sesión. */
+function terminalDe(ids, sesion) {
+  const t = [...new Set(ids.map((id) => (firmaDe(id) || {}).terminal).filter(Boolean))].join(' · ');
+  const guion = ids.some((id) => (firmaDe(id) || {}).kind === 'guion');
+  return t && guion && sesion && SESION.test(sesion) ? `${t}, con --for-session ${sesion}` : t;
+}
+function negarCon(motivo, ids, sesion) {
+  const t = terminalDe(ids, sesion);
+  return { decision: 'deny', firmas: ids, texto: `${motivo}. Esta firma se da en tu terminal${t ? `: ${t}` : ''}.` };
+}
+
+// --- el freno -----------------------------------------------------------------------------------------------------
+
+function escribirRegistro(casa, reg) {
+  const dir = carpeta(casa);
+  fs.mkdirSync(dir, { recursive: true });
+  const nombre = `${reg.firma.replace(/[^\w-]/g, '_')}--${reg.destino}--${reg.sesion}.json`;
+  const destino = path.join(dir, nombre);
+  // un pedido igual sin consumir queda vencido: el «Sí» de su ventana ya no firma
+  if (fs.existsSync(destino)) fs.renameSync(destino, `${destino}.vencido-${Date.parse(reg.ts)}`);
+  const tmp = `${destino}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(reg), { mode: 0o600 });
+  fs.renameSync(tmp, destino);
+  return destino;
+}
+
+/**
+ * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`.
+ * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
+ * `delegado(opciones)`: la delegación aprobada por el dueño (delegated-ok.js); `arbol` y `casa` se leen si faltan.
+ */
+function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegado, userInfo } = {}) {
+  const comando = String((evento.tool_input && evento.tool_input.command) || '');
+  const sesion = evento.session_id == null ? '' : String(evento.session_id);
+  const negar = (motivo, ids) => negarCon(motivo, ids, sesion);
+  const guiones = firmasDelComando(comando);
+  const pedidas = [...new Set([...guiones, ...escapes])];
+  if (guiones.ilegible) return negar('no se pudo leer el comando, y nombra un guion de firma', pedidas);
+  if (!pedidas.length) return { decision: 'none', firmas: [] };
+  const desconocida = pedidas.find((id) => { const s = firmaDe(id); return !s || !['guion', 'freno'].includes(s.kind); });
+  if (desconocida) return negar(`«${desconocida}» no es una firma que se pida por consola`, pedidas.filter((id) => firmaDe(id)));
+  // el Sí del dueño es de un comando de la consola: otra herramienta que corre la misma envoltura (Monitor) usaría el
+  // registro de ese pedido sin que nadie lo apruebe
+  const herramientaDelEvento = evento.tool_name == null ? 'Bash' : String(evento.tool_name);
+  if (!['Bash', 'PowerShell'].includes(herramientaDelEvento)) return negar(`las firmas se piden por la consola de la herramienta, no por ${una(herramientaDelEvento, 40)}`, pedidas);
+  if (evento.turn_id) return negar('Codex no tiene ventana de permiso: pedirla deja correr el comando', pedidas);
+  if (VARIABLES_DE_SESION.test(comando)) return negar('la sesión destino va con --for-session, no con una variable de sesión en el comando', pedidas);
+  if (!SESION.test(sesion)) return negar('el evento no dice de qué sesión es el pedido', pedidas);
+  // el guion niega estas formas sin mirar la ventana: pedirla le haría aprobar al dueño algo que no firma
+  if (guiones.length && /(^|\s)--(quote|relayed-by|ok)(\s|=|$)/.test(comando)) return negar('la cita, el reenvío o el --ok ya no firman: el mismo comando sin --quote, --relayed-by ni --ok', pedidas);
+  // la forma: una firma `guion` sólo en su forma canónica; un escape, en su forma de siempre
+  const can = canonicaDe(comando);
+  const guion = guiones.length ? guiones[0] : null;
+  if (guiones.length > 1 || (guion && (!can || can.id !== guion))) {
+    const s = firmaDe(guion);
+    return negar(`la firma va en su forma exacta, sola, sin \`cd …&&\`, variables ni envolturas (${s.command} …)`, pedidas);
+  }
+  if (guion && escapes.length) return negar('una firma y un escape en el mismo comando: van por separado', pedidas);
+  for (const id of escapes) {
+    const nombre = id.slice('escape:'.length);
+    const s = firmaDe(id);
+    const porVariable = /^[A-Za-z_]\w*=\S+ <comando>$/.test(s.command);
+    const aLaVista = porVariable ? variableALaVista(nombre, s.command.split('=')[1].split(' ')[0], comando) : nombreALaVista(comando);
+    if (!aLaVista) return negar(`el escape ${nombre} viene escondido (un nombre armado, env, export o una envoltura)`, pedidas);
+  }
+  if (casa === undefined) {
+    try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return negar(`no se pudo resolver la casa de la cuenta (${e.message})`, pedidas); }
+  }
+  // la delegación aprobada por el dueño: force-manual y trust-ran se firman acá; la vuelta extra delegada va con
+  // --delegated y la juzga pipeline.js (firmaDeLlamado no la cuenta como firma)
+  const consultar = delegado || ((o) => require(path.join(LIB, 'delegated-ok.js')).okDelegado(o));
+  let pendientes = pedidas;
+  const delegadas = [];
+  try {
+    pendientes = pedidas.filter((id) => {
+      if (!DELEGABLES_DEL_FRENO.has(id)) return true;
+      const r = consultar({ firma: id, sesion, pedido: evento.tool_use_id, home: casa, ahora, consumir: true });
+      if (r && r.ok) { delegadas.push({ id, relevo: r.relevo || null }); return false; }
+      return true;
+    });
+  } catch (e) { return negar(`no se pudo consultar la delegación del dueño (${e.message})`, pedidas); }
+  if (!pendientes.length) return { decision: 'allow', via: 'delegacion', relevo: delegadas[0].relevo, firmas: delegadas.map((d) => d.id), texto: 'firmada por la delegación del dueño' };
+  // el árbol: la herramienta, sin otra herramienta ni consola por arriba, con pantalla y sin consolas de fondo
+  if (arbol === undefined) arbol = leerArbol();
+  if (!arbol) return negar('no pude leer los procesos de la máquina', pendientes);
+  const arriba = padres(arbol, pid);
+  const i = arriba.findIndex(esHerramienta);
+  if (i < 0) return negar('no encontré el proceso de la herramienta', pendientes);
+  const tool = arriba[i];
+  if (arriba.slice(i + 1).some((p) => esHerramienta(p) || desenvolver(p.comando, casa) !== null)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
+  if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
+  if (arbol.some((p) => p.ppid === tool.pid && desenvolver(p.comando, casa) !== null)) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
+  const destino = destinoDe(can && can.palabras, sesion);
+  if (!SESION.test(destino)) return negar('la sesión de --for-session no se puede leer', pendientes);
+  let detalle = detalleDe(pendientes[0], comando, can && can.palabras);
+  if (guion === 'runtime-waiver') {
+    const c = criteriosDelPedido(can.palabras, evento.cwd);
+    if (c.error) return negar(c.error, pendientes);
+    detalle = c.texto;
+  }
+  if (guion) {
+    try {
+      escribirRegistro(casa, { firma: guion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
+        sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString() });
+    } catch (e) { return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes); }
+  }
+  const que = pendientes.map((id) => firmaDe(id).approves).join('; ');
+  const texto = `Firma del dueño: ${que}. Story ${storyDe(casa, destino)}, sesión ${destino}. Detalle: ${detalle}. `
+    + `Si preferís, firmala en tu terminal: ${terminalDe(pendientes, destino)}.`;
+  return { decision: 'ask', firmas: pendientes, texto };
+}
+
+// --- el guion -----------------------------------------------------------------------------------------------------
+
+function mismoArchivo(a, b) {
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+  return real(a) === real(b);
+}
+
+/**
+ * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
+ * consume el registro; `{ ok: false, motivo }` no escribe nada.
+ */
+function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, destino } = {}) {
+  const s = firmaDe(firma);
+  const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Firmala en tu terminal: ${(s && s.terminal) || 'el mismo comando con --terminal'}` });
+  if (!s || s.kind !== 'guion') return no(`«${firma}» no es una firma de guion`);
+  if (casa === undefined) {
+    try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return no(`no se pudo resolver la casa de la cuenta (${e.message})`); }
+  }
+  if (arbol === undefined) arbol = leerArbol();
+  if (!arbol) return no('no pude leer los procesos de la máquina');
+  const m = porPid(arbol);
+  let yo = m.get(pid);
+  // el piso de Node relanza el guion con el Node del arnés: su padre es el mismo guion con el Node viejo
+  // (el relanzado lleva la ruta entera del guion; el padre, la que escribió la consola)
+  const llamado = (p) => { const w = String((p && p.comando) || '').trim().split(/\s+/); return { node: NODES.has(base(w[0])), guion: base(w[1]), resto: w.slice(2).join(' ') }; };
+  const padre = yo && m.get(yo.ppid);
+  if (padre) {
+    const a = llamado(padre);
+    const b = llamado(yo);
+    if (a.node && b.node && GUIONES.has(b.guion) && a.guion === b.guion && a.resto === b.resto) yo = padre;
+  }
+  const consola = yo && m.get(yo.ppid);
+  const comando = consola ? desenvolver(consola.comando, casa) : null;
+  if (comando === null) return no('el guion no lo lanzó la consola de la herramienta');
+  const tool = m.get(consola.ppid);
+  if (!tool || !esHerramienta(tool)) return no('la consola no es de la herramienta');
+  const can = canonicaDe(comando);
+  if (!can || can.id !== firma) return no('el comando no tiene la forma canónica de la firma');
+  const esperado = can.palabras;
+  // la consola expande `~/` al principio de cada palabra, con su HOME
+  const conTilde = (w, a) => w === a || (w.startsWith('~/') && [casa, os.homedir()].some((h) => path.join(h, w.slice(2)) === a));
+  const guion = esperado[0].startsWith('~/') ? path.join(casa, esperado[0].slice(2)) : esperado[0];
+  if (argv.length !== esperado.length || !mismoArchivo(guion, argv[0]) || esperado.slice(1).some((w, k) => !conTilde(w, String(argv[k + 1])))) {
+    return no('los argumentos del guion no son los del comando');
+  }
+  const dir = carpeta(casa);
+  const prefijo = `${firma.replace(/[^\w-]/g, '_')}--`;
+  let archivos = [];
+  try { archivos = fs.readdirSync(dir).filter((f) => f.startsWith(prefijo) && f.endsWith('.json')); } catch (_) { archivos = []; }
+  const huella = sha256(comando);
+  let ilegibles = 0;
+  const validos = [];
+  for (const f of archivos) {
+    let reg;
+    try { reg = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { ilegibles++; continue; }
+    const edad = ahora - Date.parse(reg.ts);
+    if (reg.firma !== firma || reg.sha256 !== huella || reg.comando !== comando) continue;
+    if (destino && reg.destino !== destino) continue;
+    if (!reg.herramienta || reg.herramienta.pid !== tool.pid || reg.herramienta.inicio !== tool.inicio) continue;
+    if (!(edad >= 0 && edad <= VENCE_MIN * 60000)) continue;
+    validos.push({ f, reg });
+  }
+  if (validos.length) {
+    // sólo vale el último pedido: el más nuevo se consume y los anteriores vencen
+    validos.sort((a, b) => Date.parse(b.reg.ts) - Date.parse(a.reg.ts));
+    const [ultimo, ...viejos] = validos;
+    try { fs.renameSync(path.join(dir, ultimo.f), path.join(dir, `${ultimo.f}.consumido-${ahora}`)); } catch (_) { return no('el pedido de la ventana ya se usó'); }
+    for (const v of viejos) { try { fs.renameSync(path.join(dir, v.f), path.join(dir, `${v.f}.vencido-${ahora}`)); } catch (_) { /* otro guion ya lo movió */ } }
+    return { ok: true, registro: ultimo.reg };
+  }
+  return no(`no hay un pedido vigente de la ventana para este comando${ilegibles ? ` (${ilegibles} registro(s) de la ventana no se pudieron leer)` : ''}`);
+}
+
+/**
+ * El renglón `<firma>-signed` del gates.log: cómo se firmó, quién y para quién. Va antes de la constancia del guion.
+ * `anotar(renglon)`: el guion que lo escribe en su propio registro (marker.js, con su carpeta de estado).
+ */
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), anotar } = {}) {
+  const renglon = { name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
+  if (anotar) { anotar(renglon); return; }
+  const dir = stateDir(casa === undefined ? casaDeLaCuenta() : casa);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date(ahora).toISOString(), ...renglon })}\n`);
+}
+
+function ttyDeVerdad() {
+  const rw = require(path.join(LIB, 'runtime-waiver.js'));
+  const windows = process.platform === 'win32';
+  return { windows, hay: rw.hasTty, preguntar: rw.promptTty, confirmarFrase: rw.confirmarFrase };
+}
+
+/**
+ * La firma en la terminal del dueño (`--terminal`): `/dev/tty` y «firmo»; en Windows, la ventana nueva y tres palabras.
+ * `{ codigo: 0 }` firmó (con `via: terminal`), 1 no firmó, 2 no hay terminal (nada escrito).
+ */
+function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), tty, anotar } = {}) {
+  const s = firmaDe(firma);
+  const t = tty || ttyDeVerdad();
+  if (!t.hay()) return { codigo: 2, motivo: 'esta firma se da en la terminal del dueño, y aquí no hay una' };
+  const que = `Firma del dueño: ${s ? s.approves : firma}${resumen ? ` (${una(resumen, 200)})` : ''}${destino ? `, sesión ${destino}` : ''}.`;
+  let ok;
+  if (t.windows) ok = t.confirmarFrase({});
+  else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
+  if (!ok) return { codigo: 1, motivo: 'no se firmó' };
+  firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar });
+  return { codigo: 0, via: 'terminal' };
+}
+
+/**
+ * Lo que llama cada guion de firma antes de actuar: con `--terminal`, la terminal; si no, la ventana. Devuelve
+ * `{ codigo, motivo?, via?, destino? }`; con 0, el renglón `-signed` ya está escrito. `propia`: la sesión sobre la que
+ * actúa el guion; un registro para otra sesión destino no la firma.
+ */
+function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia } = {}) {
+  // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
+  if (propia === '_nosession') propia = null;
+  const i = argv.indexOf('--for-session');
+  const pedida = i >= 0 ? argv[i + 1] : null;
+  if (pedida && propia && pedida !== propia) {
+    return { codigo: 1, motivo: `este guion actúa sobre la sesión ${propia}: firmar para otra sesión (--for-session ${pedida}) se corre desde la sesión destino` };
+  }
+  if (argv.includes('--terminal')) {
+    const r = porTerminal({ firma, destino: pedida || propia || null, resumen, casa, ahora, tty, anotar });
+    return { ...r, destino: pedida || propia || null };
+  }
+  const v = verificar({ firma, argv, pid, arbol, casa, ahora, destino: propia });
+  if (!v.ok) return { codigo: 1, motivo: v.motivo };
+  firmar({ firma, via: 'ventana', sesion: v.registro.sesion, destino: v.registro.destino, resumen: resumen || v.registro.comando, casa, ahora, anotar });
+  return { codigo: 0, via: 'ventana', destino: v.registro.destino, sesion: v.registro.sesion };
+}
+
+module.exports = { VENCE_MIN, carpeta, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir };
+
+if (require.main === module) {
+  const argv = process.argv.slice(2);
+  const sub = argv[0];
+  const lineas = (o) => process.stdout.write(Object.entries(o).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${k}=${k === 'json' ? v : una(v, 4000)}\n`).join(''));
+  if (sub === 'gate') {
+    // el evento por la entrada; los escapes que vio el freno de seguridad, con --escape <id>
+    const escapes = [];
+    for (let k = 1; k < argv.length; k++) if (argv[k] === '--escape' && argv[k + 1]) escapes.push(argv[++k]);
+    let r;
+    try {
+      const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
+      r = decidir({ evento, escapes });
+    } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
+    const ask = r.decision === 'ask' ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } }) : undefined;
+    lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, texto: r.texto, json: ask });
+    process.exit(0);
+  }
+  if (sub === 'verify') {
+    // para los guiones de consola: `verify --signature <id> --process-id <pid del guion> -- <guion> <argumentos…>`
+    const val = (n) => { const k = argv.indexOf(n); return k > 0 ? argv[k + 1] : undefined; };
+    const corte = argv.indexOf('--');
+    const delGuion = corte >= 0 ? argv.slice(corte + 1) : [];
+    const r = exigir({ firma: val('--signature'), argv: delGuion, pid: Number(val('--process-id')), resumen: val('--summary') || '' });
+    if (r.codigo !== 0) process.stderr.write(`${r.motivo}\n`);
+    lineas({ via: r.via, destino: r.destino });
+    process.exit(r.codigo);
+  }
+  process.stderr.write('uso: owner-window.js gate [--escape <id>]… < evento  |  verify --signature <id> --process-id <n> -- <guion> <args…>\n');
+  process.exit(2);
+}

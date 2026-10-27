@@ -5,7 +5,8 @@
  * El arnés le muestra a la persona el crítico que se quiere eximir (la puerta Bash antes de `marker.js waive-critical`,
  * o el despachador de ediciones al escribir `exencion-pedida.json`) y deja la constancia `critical-shown`. El ok vale
  * sólo si es posterior a esa muestra y dice que exime ese crítico (con su regla o su nombre en llano). Un «apruebo,
- * seguí» genérico no exime nada.
+ * seguí» genérico no exime nada. El comando ya no exime con la cita: lo aprueba la persona en la ventana de permiso; el
+ * juez de la respuesta se prueba en la librería mientras siga ahí.
  *
  * Todo corre los comandos de verdad contra un HOME y un repo de juguete. 0 deps (node:test).
  */
@@ -99,7 +100,21 @@ const mostrar = (lab, rule, file, reason) => {
   assert.equal(p.status, 0, p.stderr);
   return p.stdout.trim() ? JSON.parse(p.stdout).systemMessage : '';
 };
-const waive = (lab, quote, { rule = REGLA, file = ARCHIVO, reason = MOTIVO } = {}) => lab.marker(['waive-critical', '--rule', rule, '--file', file, '--reason', reason, '--approved-by', 'Dev de Prueba', '--quote', quote]);
+// `waive-critical` ya no exime con la cita (lo aprueba la persona en la ventana de permiso; CriticalShown_CitaPorElComando
+// _YaNoExime). El juez de la respuesta a la muestra sigue en la librería mientras la lectura de la conversación no se
+// saque: estas pruebas lo juzgan ahí, con el arranque de la corrida del marcador, y anotan lo que aprobaría.
+const waive = (lab, quote, { rule = REGLA, file = ARCHIVO, reason = MOTIVO } = {}) => {
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const stateDir = path.join(lab.home, '.claude', '.tycon-pipeline');
+  const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', `${lab.sid}.json`), 'utf8'));
+  const r = cw.okDeUnaPersona({
+    approvedBy: 'Dev de Prueba', quote, desde: m.startedAt, home: lab.home,
+    env: { HOME: lab.home, CLAUDE_CODE_SESSION_ID: lab.sid, TYCON_PROFILE: '0' },
+    critico: { rule, file, reason, storyId: '9.93', sessionId: lab.sid, stateDir, runDir: lab.runDir },
+  });
+  if (r.ok) fs.appendFileSync(path.join(lab.runDir, 'critical-waivers.jsonl'), `${JSON.stringify({ rule, file, reason, ...r.entrada })}\n`);
+  return { status: r.ok ? 0 : 1, stdout: '', stderr: r.ok ? '' : `${r.motivo}\n` };
+};
 const lineas = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const eximidos = (lab) => lineas(path.join(lab.runDir, 'critical-waivers.jsonl'));
 const gates = (lab) => lineas(path.join(lab.home, '.claude', '.tycon-pipeline', 'gates.log'));
@@ -226,6 +241,17 @@ test('CriticalShown_CaminosBuenos @story-8.71 @ac-6 @ac-7 @ac-8', () => {
   const rc = okReenviado(c, 'eximo TEST-C1 por delegación del dueño. Firma: coordinadora', arnesConRelevo());
   assert.equal(rc.ok, true, rc.motivo);
   assert.equal(rc.entrada.tipo, 'automatica');
+});
+
+test('CriticalShown_CitaPorElComando_YaNoExime — con la muestra y un ok que el juez acepta, el comando no exime por la cita', () => {
+  const lab = laboratorio({ sid: 's-cs-cli' });
+  mostrar(lab);
+  lab.conversar([delDev('eximo TEST-C1, la corrí a mano')]);
+  const r = lab.marker(['waive-critical', '--rule', REGLA, '--file', ARCHIVO, '--reason', MOTIVO, '--approved-by', 'Dev de Prueba', '--quote', 'eximo TEST-C1, la corrí a mano']);
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /la cita o el reenvío ya no eximen un crítico: lo aprueba la persona en la ventana de permiso/);
+  assert.equal(eximidos(lab).length, 0);
+  assert.equal(gates(lab).filter((g) => g.name === 'critical-waiver').length, 0);
 });
 
 test('CriticalShown_DosArchivos_PideElArchivo @story-8.71 @ac-7', () => {
@@ -536,9 +562,9 @@ test('CriticalShown_RetractaSiNombraHablaDeEximirOEsCorto @story-8.77 @ac-6', ()
 
 test('CriticalShown_Paso7YBloqueEnsenanLaForma @story-8.77 @ac-7', () => {
   const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-09-findings.md'), 'utf8');
-  assert.match(paso, /antes de pedirle el ok/);
-  assert.match(paso, /apruebo eximir/i);
-  assert.match(paso, /en otro mensaje/);
+  assert.match(paso, /La ventana de permiso/);
+  assert.match(paso, /sin\s+`--quote` ni `--relayed-by`/);
+  assert.match(paso, /ya no exime/);
   const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
   assert.match(cd.bloque({ storyId: '9.93', rule: REGLA, file: ARCHIVO, reason: MOTIVO, arnes: tmp('cs-bloque-') }), /Contestá sólo eso.*cualquier otra cosa, en otro mensaje/);
 });

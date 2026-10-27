@@ -161,7 +161,13 @@ const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
 const STALE_HOURS = 24;
 
 // sessionId de ESTA invocación — Claude Code lo expone a todo subproceso Bash.
-const SID = resolveSessionId();
+// En la terminal del dueño no hay variable de sesión: la firma por `--terminal` dice su sesión con `--for-session`.
+const SID = (() => {
+  const s = resolveSessionId();
+  const i = process.argv.indexOf('--for-session');
+  const pedida = i >= 0 ? process.argv[i + 1] : null;
+  return s === '_nosession' && process.argv.includes('--terminal') && pedida && /^[\w-]+$/.test(pedida) ? pedida : s;
+})();
 
 function ensureActiveDir() {
   if (!fs.existsSync(ACTIVE_DIR)) {
@@ -954,6 +960,25 @@ const CONTROLES_DEL_PASO = STEPS_LIB.closeControlsByStep();
 // El orden del marcador viejo (cadena: 3 ← {1,2} · 4 ← {3} · 5 ← {4} · 8 ← {5}); el nuevo es STEPS_LIB.ORDER_REQUIRES.
 const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 
+// Una firma del dueño (scripts/lib/owner-window.js): la aprobó en la ventana de permiso de la herramienta (el registro
+// que escribió el freno, consumido acá) o la da en su terminal (`--terminal`). Sin eso sale 1 sin escribir nada (2 sin
+// terminal). Con eso, el renglón `<firma>-signed` queda en gates.log antes de la constancia de siempre.
+function firmaDelDueno(firma, resumen) {
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: SID || undefined, anotar: (renglon) => appendLog('gates.log', renglon) });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js: ${r.motivo}`);
+    process.exit(r.codigo);
+  }
+  return r;
+}
+
+// El renglón `<firma>-signed` de una firma que el guion ya confirmó en la terminal con su propia pregunta.
+function firmadoEnLaTerminal(firma, resumen) {
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  ow.firmar({ firma, via: 'terminal', sesion: SID || null, destino: SID || null, resumen, anotar: (renglon) => appendLog('gates.log', renglon) });
+}
+
 function cmdCompleteStep(nRaw, flags) {
   const marker = readMarker();
   if (!marker) {
@@ -987,7 +1012,7 @@ function cmdCompleteStep(nRaw, flags) {
     if (esperados.length && !enDeuda) {
       appendLog('gates.log', { name: 'expected-red', status: 'blocked', story: marker.storyId, checks: esperados.map(([k]) => k) });
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${esperados.map(([k, v]) => `${k}=${v}`).join(', ')} sin una ejecución en deuda.`);
-      console.error('  Un rojo esperado vale sólo con la historia cerrada como deuda (marker.js close-as-debt, con la frase de la persona).');
+      console.error('  Un rojo esperado vale sólo con la historia cerrada como deuda (marker.js close-as-debt, con el permiso de la persona en la ventana de permiso).');
       process.exit(1);
     }
     for (const [k, v] of esperados) {
@@ -999,7 +1024,7 @@ function cmdCompleteStep(nRaw, flags) {
     if (rojos.length && !enDeuda) {
       appendLog('gates.log', { name: 'red-check', status: 'blocked', story: marker.storyId, checks: rojos.map(([k]) => k) });
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${rojos.map(([k, v]) => `${k}=${v}`).join(', ')} sin una ejecución en deuda.`);
-      console.error('  Dos salidas: arreglarlo y volver a correr el control, o cerrar la historia como deuda (marker.js close-as-debt, con la frase de la persona).');
+      console.error('  Dos salidas: arreglarlo y volver a correr el control, o cerrar la historia como deuda (marker.js close-as-debt, con el permiso de la persona en la ventana de permiso).');
       process.exit(1);
     }
     for (const [k, v] of rojos) {
@@ -1038,7 +1063,9 @@ function cmdCompleteStep(nRaw, flags) {
   if (controles.has('plan')) {
     const approved = optVal('--approved');
     const auto = optVal('--auto-approved');
-    if (!approved && !auto) {
+    // el dueño lo aprueba en su terminal: la cita es esa firma
+    const enTerminal = opts.includes('--terminal');
+    if (!approved && !auto && !enTerminal) {
       console.error(`marker.js complete-step ${n} BLOQUEADO — falta la aprobación del plan.`);
       console.error(`  HITL:     marker.js complete-step ${n} --approved "<cita textual de la aprobación del user>"`);
       console.error(`  Nivel 2:  marker.js complete-step ${n} --auto-approved "<criterios LOW-risk>"  (sólo si risk-class = LOW)`);
@@ -1048,7 +1075,7 @@ function cmdCompleteStep(nRaw, flags) {
     // ── En una story con pantalla, la maqueta y su aprobación (también con LOW) ──
     // La detección es la de la revisión de la pantalla (mockup.screenStory, raíz del repo de la STORY), no la de
     // markerStoryIsUi. «No pude leer la story» frena: nunca es «sin pantalla». Nada se escribe hasta el final.
-    const mockupCita = optVal('--mockup-approved');
+    const mockupCita = optVal('--mockup-approved') || (enTerminal ? 'firmado en la terminal' : null);
     const mk = require('./mockup.js');
     const bloquear3 = (motivo, extra = []) => {
       appendLog('gates.log', { name: 'mockup-approval', status: 'blocked', story: marker.storyId, motivo });
@@ -1083,7 +1110,7 @@ function cmdCompleteStep(nRaw, flags) {
       }
       mockupPlan = { p, sha: mk.mockupHash(html) };
     }
-    if (auto && !approved) {
+    if (auto && !approved && !enTerminal) {
       let rc = null;
       try {
         const { computeRiskClass } = require('./pipeline.js');
@@ -1165,6 +1192,9 @@ function cmdCompleteStep(nRaw, flags) {
         }
       }
     }
+    // lo que aprueba una persona (el plan, o la maqueta aunque el plan se apruebe solo) es una firma del dueño
+    const firmaPlan = (approved || enTerminal || optVal('--mockup-approved'))
+      ? firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`) : null;
     const at3 = nowIso();
     if (mockupPlan) {
       // El archivo de aprobación viaja con la story (va en el commit); la cita queda sólo en el marcador.
@@ -1172,8 +1202,9 @@ function cmdCompleteStep(nRaw, flags) {
         mk.writeApproval({ approvalPath: mockupPlan.p.approval, mockupPath: mockupPlan.p.mockup, story: marker.storyId, sha256: mockupPlan.sha, approvedAt: at3 });
       } catch (e) { bloquear3(`no pude escribir la aprobación de la maqueta (${mockupPlan.p.approval}): ${e.code || e.message}`); }
     }
-    marker.planApproval = { mode: approved ? 'user' : 'auto-low-risk', text: approved || auto, at: at3 };
-    appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text });
+    const delUser = !!(approved || enTerminal);
+    marker.planApproval = { mode: delUser ? 'user' : 'auto-low-risk', text: approved || (enTerminal ? 'firmado en la terminal' : auto), at: at3, ...(firmaPlan ? { via: firmaPlan.via } : {}) };
+    appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...(firmaPlan ? { via: firmaPlan.via } : {}) });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; `--auto-approved`
     // es la regla de riesgo bajo. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
     const quienPlan = approved ? quienDeLasOpciones(optVal) : quienDeLasOpciones(() => null, { regla: 'risk-class LOW' });
@@ -1388,10 +1419,8 @@ function cmdCompleteStep(nRaw, flags) {
       appendLog('gates.log', { name: 'critical-waivers', status: 'blocked', story: marker.storyId, step: n, faltan: v.faltan });
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${v.faltan.length} crítico(s) marcado(s) como eximido(s) sin el ok de una persona:`);
       for (const l of cw.renglonesDeFaltantes(v)) console.error(l);
-      console.error('   Un crítico lo decide una persona: arreglalo, o pedile el ok al dev y anotalo. Los caminos:');
-      const rs = cw.sesionQueReenvia();
-      for (const f of v.faltan) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>', relaySession: rs.valor })) console.error(l);
-      if (rs.aviso) console.error(`   (sin reenvío: ${rs.aviso})`);
+      console.error('   Un crítico lo decide una persona: arreglalo, o que el dev lo exima. Los caminos:');
+      for (const f of v.faltan) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>' })) console.error(l);
       process.exit(1);
     }
   }
@@ -1452,8 +1481,8 @@ function cmdCompleteStep(nRaw, flags) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
         for (const l of rr.resumen(bloquean)) console.error(`   · ${l}`);
-        console.error('   Lo decide una persona: arreglarlo (con su ok para una vuelta más, si se llegó al tope: smart-reloop --extra-round');
-        console.error('   --approved-by "<la persona>" --quote "<sus palabras>"), o eximirlo (marker.js waive-critical, con su ok a ese crítico).');
+        console.error('   Lo decide una persona: arreglarlo (si se llegó al tope, una vuelta más con pipeline.js smart-reloop --extra-round,');
+        console.error('   que le pide el permiso en la ventana de permiso), o eximirlo (marker.js waive-critical, con su permiso a ese crítico).');
         process.exit(1);
       }
     }
@@ -2007,7 +2036,7 @@ function cmdApproveMockup(flags) {
   if (!marker) { console.error('marker.js approve-mockup: no hay marker activo para esta sesión'); process.exit(1); }
   const opts = Array.isArray(flags) ? flags : [];
   const i = opts.indexOf('--approved');
-  const cita = i >= 0 ? (opts[i + 1] || '') : '';
+  const cita = i >= 0 ? (opts[i + 1] || '') : (opts.includes('--terminal') ? 'firmado en la terminal' : '');
   if (!STEPS_LIB.isDone(marker, 'approve-plan')) {
     console.error(`marker.js approve-mockup: la maqueta se aprueba con el plan: complete-step ${STEPS_LIB.schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita>" --mockup-approved "<cita>"`);
     process.exit(2);
@@ -2035,11 +2064,12 @@ function cmdApproveMockup(flags) {
   if (!v.ok) no(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
   const sha = mk.mockupHash(html);
   const prev = marker.mockupApproval && marker.mockupApproval.sha256;
+  const firma = firmaDelDueno('plan-approval', `maqueta de ${marker.storyId}: ${cita}`);
   const at = nowIso();
   try { mk.writeApproval({ approvalPath: p.approval, mockupPath: p.mockup, story: marker.storyId, sha256: sha, approvedAt: at }); } catch (e) {
     no(`no pude escribir la aprobación de la maqueta (${p.approval}): ${e.code || e.message}`);
   }
-  marker.mockupApproval = { file: p.mockup, sha256: sha, mode: 'user', text: cita, at };
+  marker.mockupApproval = { file: p.mockup, sha256: sha, mode: 'user', text: cita, at, via: firma.via };
   if (!marker.mockupDecision || marker.mockupDecision.screen !== true) marker.mockupDecision = { screen: true, signal: sc.signal || null, at };
   appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}) });
   {
@@ -2651,8 +2681,8 @@ function opcion(args, nombre) {
   return i >= 0 ? String(nn(args[i + 1], '')).trim() : '';
 }
 
-// Cerrar una historia por su salida prevista: `close-as-debt --reason "<texto>" --debt <DEF-id>`. La frase de la persona
-// la pide el freno de seguridad (ESC-C4) antes de que esto corra. El marcador recibe `cierre = deuda` y la ejecución
+// Cerrar una historia por su salida prevista: `close-as-debt --reason "<texto>" --debt <DEF-id>`. El permiso de la
+// persona lo pide el freno de seguridad (ESC-C4, en la ventana de permiso) antes de que esto corra. El marcador recibe `cierre = deuda` y la ejecución
 // SIGUE: la deuda tiene que llegar al commit (revisores sobre lo que sí cambió, el pase y la línea `Deuda:`); el
 // `clear` del final conserva el cierre escrito. La deuda tiene que estar anotada antes: en la historia o en el
 // `tasks/todo.md` de su repo.
@@ -2693,12 +2723,12 @@ function cmdCloseAsDebt(args) {
   }
   const frenos = require('./lib/run-close.js').leerFrenos();
   const l = frenos ? require('./lib/run-close.js').escapeDeCierre(frenos, SID, marker.startedAt, 'cerrar-como-deuda') : null;
-  const via = l && ['persona', 'reenvio'].includes(l.via) ? l.via : null;
+  const via = l && ['persona', 'reenvio', 'ventana'].includes(l.via) ? l.via : null;
   // la frase la juzga el freno; acá se exige su constancia: si el freno no vio la llamada (un nombre armado, otra copia
   // del guion), la deuda no se cierra sin que una persona la haya autorizado
   if (!via) {
     console.error(frenos
-      ? 'marker.js close-as-debt: no encuentro la constancia de que una persona autorizó esta deuda («autorizo cerrar como deuda», regla ESC-C4 del freno de seguridad). Pedile la frase y volvé a correr el comando tal cual.'
+      ? 'marker.js close-as-debt: no encuentro la constancia de que una persona autorizó esta deuda (regla ESC-C4 del freno de seguridad). Volvé a correr el comando tal cual: el freno le abre a la persona la ventana de permiso.'
       : 'marker.js close-as-debt: no pude leer el registro de escapes del freno de seguridad: sin él no sé si una persona autorizó la deuda.');
     process.exit(2);
   }
@@ -2726,7 +2756,7 @@ function cmdExpectRed(args) {
     process.exit(1);
   }
   if (!marker.cierre || marker.cierre.estado !== 'deuda') {
-    console.error('marker.js expect-red: sólo en una ejecución en deuda — primero marker.js close-as-debt --reason "<texto>" --debt <DEF-id> (con la frase de la persona)');
+    console.error('marker.js expect-red: sólo en una ejecución en deuda — primero marker.js close-as-debt --reason "<texto>" --debt <DEF-id> (con el permiso de la persona en la ventana de permiso)');
     process.exit(2);
   }
   const actual = String(nn(at(marker.checks, check), ''));
@@ -3847,13 +3877,10 @@ function cmdClearSession(sid, rest = []) {
 }
 
 // La salida de una ejecución perdida (lib/open-runs.js), que decide el dueño: `clear-session <sesión> --lost` la cierra
-// como perdida y `restore <sesión>` rearma el marcador desde la copia de la apertura. El freno de seguridad pide la frase
-// «autorizo cerrar la ejecución», sin reenvío y posterior a la apertura, y deja la constancia; acá se vuelve a mirar esa
-// constancia: sin ella, el guion no cierra ni rearma nada.
-const CONSTANCIA_RECIENTE_MIN = 5;
+// como perdida y `restore <sesión>` rearma el marcador desde la copia de la apertura. Lo aprueba el dueño en la ventana
+// de permiso, o lo corre él con --terminal: sin esa firma, el guion no cierra ni rearma nada.
 function cmdSalidaPerdida(modo, sesion) {
   const or = require('./lib/open-runs.js');
-  const rc = require('./lib/run-close.js');
   const nombre = modo === 'lost' ? `clear-session ${sesion} --lost` : `restore ${sesion}`;
   const ult = or.vigente(sesion);
   const raiz = or.raizDeGit(process.cwd());
@@ -3864,24 +3891,17 @@ function cmdSalidaPerdida(modo, sesion) {
     console.error(`marker.js ${nombre}: la sesión ${sesion} no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que ${modo === 'lost' ? 'cerrar' : 'restaurar'}.`);
     process.exit(1);
   }
-  // sin la hora de la apertura no se puede saber si la frase es posterior: no se adivina
+  // una apertura sin hora legible está dañada: no se cierra ni se rearma a ciegas
   if (!Number.isFinite(Date.parse(apertura.ts))) {
-    console.error(`marker.js ${nombre}: la apertura de la sesión ${sesion} no trae una hora legible (${apertura.ts}): no se puede saber si la frase es posterior.`);
+    console.error(`marker.js ${nombre}: la apertura de la sesión ${sesion} no trae una hora legible (${apertura.ts}): está dañada, y no se ${modo === 'lost' ? 'cierra' : 'rearma'} a ciegas.`);
     process.exit(3);
   }
-  const frenos = rc.leerFrenos();
-  // la constancia es la que el freno dejó al dejar pasar ESTE comando: posterior a la apertura y de los últimos minutos
-  const reciente = new Date(Date.now() - CONSTANCIA_RECIENTE_MIN * 60000).toISOString();
-  const desde = Date.parse(apertura.ts) > Date.parse(reciente) ? apertura.ts : reciente;
-  const l = frenos ? rc.escapeDeCierre(frenos, SID, desde) : null;
-  if (!l || l.via !== 'persona') {
-    console.error(`marker.js ${nombre}: falta la constancia de que el dueño escribió «autorizo cerrar la ejecución» después de la apertura (${apertura.ts}). La deja el freno de seguridad al dejar pasar este comando.`);
-    process.exit(3);
-  }
-  const cita = 'autorizo cerrar la ejecución';
+  // el dueño lo aprueba en la ventana de permiso (o lo corre con --terminal): sin eso, el guion no cierra ni rearma nada
+  const { via } = firmaDelDueno('lost-run', `${modo === 'lost' ? 'cerrar como perdida' : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`);
+  const cita = null;
   if (modo === 'lost') {
     try { fs.unlinkSync(markerFilePath(sesion)); } catch (_e) { /* ya no estaba: es lo perdido */ }
-    or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via: 'persona', cita,
+    or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via, cita,
       motivo: `cerrada como perdida desde la sesión ${SID}` });
     process.stdout.write(`cerrada como perdida: la ejecución de la story ${apertura.story} (sesión ${sesion})\n`);
     return;
@@ -3890,7 +3910,7 @@ function cmdSalidaPerdida(modo, sesion) {
   let copia = null;
   try { copia = JSON.parse(fs.readFileSync(path.join(apertura.runDir, 'run-open.json'), 'utf8')); } catch (_e) { copia = null; }
   const base = copia && copia.sesion === sesion ? copia : apertura;
-  or.cerrar({ sid: SID, sesion, runDir: base.runDir, story: base.story, estado: 'perdida', via: 'persona', cita, motivo: `restaurada en la sesión ${SID}` });
+  or.cerrar({ sid: SID, sesion, runDir: base.runDir, story: base.story, estado: 'perdida', via, cita, motivo: `restaurada en la sesión ${SID}` });
   // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`
   let previo = readMarker();
   if (previo && previo.storyId && !(previo.runDir && or.mismaRuta(previo.runDir, base.runDir))) {
@@ -4221,21 +4241,19 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
 }
 
 /**
- * `runtime-waiver <spec> --acs n,m --approved-by "<el dev>" --quote "<cita>" [--relayed-by <sesión>]`: firma los
- * criterios declarados imposibles de probar en vivo con el ok de una persona, en la misma cadena que la firma por terminal
+ * `runtime-waiver <spec> --acs n,m --approved-by "<el dev>"`: firma los criterios declarados imposibles de probar en vivo
+ * con la aprobación de la persona en la ventana de permiso, en la misma cadena que la firma por terminal
  * (la matriz la lee igual) y con su línea en approvals.jsonl. Sólo los criterios nombrados, y sólo si están pendientes.
  */
 function runtimeWaiverConOk(storyPath, argv, m) {
   const waiver = require('./lib/runtime-waiver.js');
   const rm = require('./runtime-matrix.js');
-  const cw = require('./lib/critical-waivers.js');
   const { val } = opcionesDe(argv);
-  const pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
-  if (!pedidos.length) { console.error('marker.js runtime-waiver: con --approved-by hay que nombrar los criterios: --acs <n,m>.'); process.exit(2); }
+  let pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
   // lo firma la persona que vio el criterio: el ok reenviado por otra sesión no vale acá
   if (argv.includes('--relayed-by')) {
     console.error('🚫 marker.js runtime-waiver: no se firmó — el ok para un criterio que no se puede probar en vivo no se acepta reenviado');
-    console.error('   por otra sesión: lo da la persona que lo vio, en esta conversación o en su terminal.');
+    console.error('   por otra sesión: lo da la persona que lo vio, en la ventana de permiso o en su terminal.');
     process.exit(2);
   }
   const wd = require('./lib/waiver-display.js');
@@ -4252,43 +4270,35 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     process.exit(2);
   }
   const pend = new Set(matrix.notVerifiable || []);
+  // sin --acs, todos los pendientes: la ventana los muestra en el comando que la persona aprueba
+  if (!pedidos.length) pedidos = [...pend].sort((a, b) => a - b);
+  if (!pedidos.length) { console.error('marker.js runtime-waiver: no hay criterios declarados imposibles de probar en vivo pendientes de firma.'); process.exit(2); }
   const ajenos = pedidos.filter((n) => !pend.has(n));
   if (ajenos.length) { console.error(`marker.js runtime-waiver: AC ${ajenos.join(', ')} no está(n) declarado(s) imposible(s) de probar en vivo y pendiente(s) de firma.`); process.exit(2); }
-  const criterios = { storyId: String(matrix.sid), sessionId: SID, stateDir: STATE_DIR,
-    acs: pedidos.map((n) => ({ ac: n, sha: wd.huella(matrix.perAc[n].text, matrix.perAc[n].declReason, matrix.perAc[n].coveredBy) })) };
-  const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), desde: m && m.startedAt, criterios });
-  if (!r.ok) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${r.motivo}.`);
-    if (r.sinMuestra) {
-      const runDir = m && m.storyId ? require('./pipeline.js').resolveRunDir((m && m.repoPath) || process.cwd(), String(m.storyId), true, storyPath) : null;
-      console.error('   Si no apareció en pantalla un bloque «Te piden firmar … que no se puede probar en vivo», escribí con Write');
-      console.error(`   (no por la terminal) ${runDir ? path.join(runDir, wd.PEDIDO) : wd.PEDIDO} con ${JSON.stringify({ acs: pedidos })}`);
-      console.error('   y el arnés se lo muestra. Después, la persona contesta nombrando el criterio; recién ahí, este comando con su cita.');
-      console.error(`   O que lo firme en su terminal: node ${__filename} runtime-waiver ${storyPath}`);
-      process.exit(1);
-    }
-    console.error('   El agente nunca firma por su cuenta. El arnés le muestra al dev cada criterio; con su ok, que lo nombre:');
-    console.error(`     node ${__filename} runtime-waiver ${storyPath} --acs ${pedidos.join(',')} --approved-by "<el dev>" --quote "<sus palabras, textuales>"`);
-    console.error(`   O lo firma el dev en su terminal: node ${__filename} runtime-waiver ${storyPath}`);
+  // la persona lo aprueba en la ventana de permiso; la cita en la conversación ya no alcanza
+  if (val('--quote')) {
+    console.error('🚫 marker.js runtime-waiver: no se firmó — la cita ya no firma un criterio que no se puede probar en vivo: lo aprueba la persona');
+    console.error(`   en la ventana de permiso (este comando sin --quote) o en su terminal: node ${__filename} runtime-waiver ${storyPath} --terminal`);
     process.exit(1);
   }
+  firmaDelDueno('runtime-waiver', `criterios ${pedidos.join(', ')} de ${matrix.sid}, imposibles de probar en vivo`);
+  const quien = String(val('--approved-by') || process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona').trim();
+  const e = { tipo: 'manual', quien, via: 'ventana' };
   const declHashByAc = {};
   for (const n of pedidos) declHashByAc[n] = waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy);
   const repoRoot = matrix.repoRoot || null;
-  const e = r.entrada;
   const entry = waiver.appendWaiver({
-    story: matrix.key || matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.delegacion || e.quien, nowIso: nowIso(), declHashByAc,
+    story: matrix.key || matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, nowIso: nowIso(), declHashByAc,
     logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
-    ok: { tipo: e.tipo, quien: e.quien, ...(e.delegacion ? { delegacion: e.delegacion } : {}), cita: e.cita, cita_cuando: e.cita_cuando, via: e.via },
+    ok: { tipo: e.tipo, quien: e.quien, via: e.via },
   });
   appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via });
   const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
   for (const n of pedidos) {
-    anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien,
-      ...(e.delegacion ? { delegacion: e.delegacion } : {}), cita: e.cita, cita_cuando: e.cita_cuando });
+    anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien });
   }
   if (repoRoot) console.error(`📌 Firmado en ${waiver.repoWaiverLogPath(repoRoot)} — commitealo: así vale en otra máquina y en CI.`);
-  console.error(`✅ Firmado (${e.tipo === 'manual' ? `ok de ${e.quien} en el chat` : `ok de ${e.delegacion} reenviado por ${e.quien}`}): story ${matrix.sid}, AC ${pedidos.join(',')}. Cadena: ${entry.chain}`);
+  console.error(`✅ Firmado en la ventana de permiso (${e.quien}): story ${matrix.sid}, AC ${pedidos.join(',')}. Cadena: ${entry.chain}`);
   process.exit(0);
 }
 
@@ -4296,14 +4306,11 @@ function runtimeWaiverConOk(storyPath, argv, m) {
 // Un crítico lo decide una persona
 // ============================================================
 // `waive-critical --rule <id> --file <f> --reason "<r>"` deja la constancia de que una persona eximió ese CRITICAL, y
-// sólo así `write-findings` y los cierres de «Hallazgos» y «Preparar el commit» aceptan un CRITICAL `waived`. Tres caminos, en este orden:
-//   1. `--approved-by "<el dev>" --quote "<sus palabras>"`: la cita, textual, en un mensaje escrito por el dev en esta
-//      conversación (lib/person-ok.js). Manual, a su nombre, con la cita y la hora del mensaje.
-//   2. lo mismo + `--relayed-by <rol>`: la cita llegó en un mensaje de la sesión designada en esta máquina para el rol
-//      que la organización declara en `approvals.relay_session` (`designate-relay`). Automática, por delegación del dev,
-//      a nombre de la sesión.
-//   3. `--terminal`: lo corre el dev en su terminal (o la ventana nueva en Windows), como `runtime-waiver`.
-// El agente solo no exime: sin ok de nadie, a nombre de «orquestador» o de un agente, o con una cita que no aparece, frena.
+// sólo así `write-findings` y los cierres de «Hallazgos» y «Preparar el commit» aceptan un CRITICAL `waived`. Dos caminos:
+//   1. la ventana de permiso: el agente corre el comando (sin `--quote` ni `--relayed-by`) y el dev lo aprueba ahí; el
+//      guion comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (scripts/lib/owner-window.js).
+//   2. `--terminal`: lo corre el dev en su terminal (o la ventana nueva en Windows), como `runtime-waiver`.
+// El agente solo no exime: la cita o el reenvío ya no firman, y sin la ventana ni la terminal frena.
 function opcionesDe(argv) {
   // una bandera seguida de otra bandera no tiene valor: `--approved-by --quote x` no aprueba a nombre de «--quote»
   const val = (n) => { const i = argv.indexOf(n); if (i < 0) return null; const v = argv[i + 1]; return v === undefined || /^--/.test(v) ? '' : v; };
@@ -4328,11 +4335,6 @@ function cmdWaiveCritical(argv) {
     runDir = require('./pipeline.js').resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), true, storyAbs);
   } catch (e) { console.error(`marker.js waive-critical: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2); }
   if (!runDir) { console.error('marker.js waive-critical: la story no da una clave para su carpeta de corrida'); process.exit(2); }
-  const caminos = () => {
-    const rs = cw.sesionQueReenvia();
-    return [...cw.caminos({ marker: __filename, ruleId: rule, file: file || '<archivo>', relaySession: rs.valor }), ...(rs.aviso ? [`   (sin reenvío: ${rs.aviso})`] : [])];
-  };
-
   let entrada;
   if (tiene('--terminal')) {
     const waiver = require('./lib/runtime-waiver.js');
@@ -4358,28 +4360,17 @@ function cmdWaiveCritical(argv) {
     if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js waive-critical: no lo eximiste — el crítico sigue abierto.'); process.exit(1); }
     if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js waive-critical: la frase no coincide — no se eximió nada.'); process.exit(1); }
     const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user';
+    firmadoEnLaTerminal('critical-waiver', `${rule}${file ? ` en ${file}` : ''}: ${reason}`);
     entrada = { tipo: 'manual', quien, via: 'waive-critical (terminal)' };
   } else {
-    const critico = { rule, file, reason, storyId: String(m.storyId), sessionId: SID, stateDir: STATE_DIR, runDir };
-    const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), relayedBy: val('--relayed-by'), desde: m.startedAt, critico });
-    if (!r.ok) {
-      console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — ${r.motivo}.`);
-      if (r.sinConversacion) console.error('   Sin la conversación no puedo comprobar el ok: que el dev lo firme por la terminal (--terminal).');
-      if (r.sinMuestra) {
-        const pedido = path.join(runDir, require('./lib/critical-display.js').PEDIDO);
-        console.error('   Si no apareció en pantalla un bloque «Te piden eximir un crítico» (o el comando llevaba variables de la terminal,');
-        console.error('   que el arnés no puede leer: escribí los valores tal cual), escribí con Write (no por la terminal):');
-        console.error(`     ${pedido}`);
-        console.error(`     ${JSON.stringify({ rule, file, reason })}`);
-        console.error('   y el arnés se lo muestra. Después, la persona contesta nombrando el crítico; recién ahí, este comando con su cita.');
-        console.error('   O que lo firme en su terminal (--terminal).');
-        process.exit(1);
-      }
-      console.error('   Un crítico lo decide una persona. Los caminos:');
-      for (const l of caminos()) console.error(l);
+    // eximir un crítico lo aprueba la persona en la ventana de permiso; la cita en la conversación ya no alcanza
+    if (val('--relayed-by') || val('--quote')) {
+      console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — la cita o el reenvío ya no eximen un crítico: lo aprueba la persona en la ventana de permiso (este comando sin --quote ni --relayed-by) o en su terminal (--terminal).`);
       process.exit(1);
     }
-    entrada = r.entrada;
+    firmaDelDueno('critical-waiver', `${rule}${file ? ` en ${file}` : ''}: ${reason}`);
+    const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
+    entrada = { tipo: 'manual', quien, via: 'waive-critical (ventana)' };
   }
   // Primero el renglón del registro del arnés (que el agente no puede escribir): es lo que hace valer la constancia al
   // cerrar. Si no quedó escrito, no se anota nada ni se anuncia un éxito que después el cierre contradiría.
@@ -4422,16 +4413,15 @@ function cmdDesignateRelay(argv) {
   process.exit(0);
 }
 
-// `mark-tested --acs <n,m> (--approved-by <quién> --quote "<cita>" | --terminal)` deja la marca de que una persona probó
-// a mano esos criterios de la guía, si la organización lo pide (`qa.manual_check: required`, lib/manual-checks.js). La
-// respuesta tiene que ser posterior a la muestra del arnés y nombrar cada criterio. Un reenvío de otra sesión no marca:
-// la marca es de quien probó.
+// `mark-tested --acs <n,m> [--approved-by <quién>] [--terminal]` deja la marca de que una persona probó a mano esos
+// criterios de la guía, si la organización lo pide (`qa.manual_check: required`, lib/manual-checks.js). La aprueba la
+// persona en la ventana de permiso, o la firma en su terminal. Un reenvío de otra sesión no marca: la marca es de quien probó.
 function cmdMarkTested(argv) {
   const mc = require('./lib/manual-checks.js');
   const { val, tiene } = opcionesDe(argv);
   const acs = [...new Set(String(val('--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))];
   if (!acs.length || acs.some((n) => !Number.isInteger(n) || n <= 0)) {
-    console.error('marker.js mark-tested: falta --acs <números de criterio, separados por coma> (y --approved-by <quién> --quote "<su respuesta>", o --terminal).');
+    console.error('marker.js mark-tested: falta --acs <números de criterio, separados por coma> (la persona lo aprueba en la ventana de permiso, o con --terminal).');
     process.exit(2);
   }
   const p = mc.prendida();
@@ -4474,36 +4464,20 @@ function cmdMarkTested(argv) {
     } catch (e) { console.error(`🔒 ${e.message}`); process.exit(2); }
     if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js mark-tested: no se marcó nada.'); process.exit(1); }
     if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js mark-tested: la frase no coincide — no se marcó nada.'); process.exit(1); }
+    firmadoEnLaTerminal('manual-test', `criterios ${acs.join(', ')} de ${m.storyId}`);
     entrada = { quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user', via: 'terminal' };
   } else {
+    // la persona que probó lo aprueba en la ventana de permiso; la cita en la conversación ya no alcanza
     const cw = require('./lib/critical-waivers.js');
-    const persona = cw.noEsPersona(val('--approved-by'));
+    const persona = val('--approved-by') !== null ? cw.noEsPersona(val('--approved-by')) : null;
     if (persona) { console.error(`🚫 marker.js mark-tested: no se marcó nada — ${persona}.`); process.exit(1); }
-    const cita = String(val('--quote') || '').trim();
-    if (!cita) { console.error('marker.js mark-tested: falta la cita (--quote "<la respuesta de la persona, textual>").'); process.exit(2); }
-    const visto = mc.mostrado({ stateDir: STATE_DIR, sessionId: SID, storyId: String(m.storyId), acs });
-    if (visto && visto.error) { console.error(`🚫 marker.js mark-tested: no pude leer el registro del arnés (${visto.error}): no sé si a la persona se le mostró qué marca.`); process.exit(1); }
-    if (!visto) {
-      const pok = require('./lib/person-ok.js');
-      const conv = pok.leerConversacion({});
-      if (!conv.legible) { console.error(`🚫 marker.js mark-tested: no puedo leer la conversación de esta sesión (${conv.motivo}): que la persona lo marque en su terminal (--terminal).`); process.exit(1); }
-      console.error('🚫 marker.js mark-tested: no se marcó nada — a la persona no se le mostró qué va a marcar; el arnés se lo muestra al correr este comando (o al escribir marca-pedida.json), y después hace falta su respuesta nombrando los criterios.');
-      console.error('   Si no apareció en pantalla el bloque «Vas a marcar como probado a mano», escribí con Write (no por la terminal):');
-      console.error(`     ${path.join(runDir, mc.PEDIDO)}`);
-      console.error(`     ${JSON.stringify({ acs })}`);
-      console.error('   O que la persona lo marque en su terminal (--terminal).');
+    if (val('--quote') || val('--relayed-by')) {
+      console.error('🚫 marker.js mark-tested: no se marcó nada — la cita o el reenvío ya no firman: lo aprueba la persona en la ventana de permiso (este comando sin --quote ni --relayed-by) o en su terminal (--terminal).');
       process.exit(1);
     }
-    let desde = m.startedAt;
-    if (!desde || Date.parse(visto.ts) > Date.parse(desde)) desde = visto.ts;
-    const r = require('./lib/person-ok.js').citaDeLaPersona(cita, { desde, juzgar: mc.juez(acs) });
-    if (!r.legible) { console.error(`🚫 marker.js mark-tested: no puedo leer la conversación de esta sesión (${r.motivo}): que la persona lo marque en su terminal (--terminal).`); process.exit(1); }
-    if (r.corta) { console.error('🚫 marker.js mark-tested: la cita es muy corta.'); process.exit(1); }
-    if (!r.encontrada) {
-      console.error(`🚫 marker.js mark-tested: no se marcó nada — ${r.rechazo || (r.anterior ? 'la respuesta es de antes de que se le mostrara qué marcaba: hace falta su respuesta a la muestra' : 'la cita no la encontré en un mensaje escrito por la persona en esta conversación')}.`);
-      process.exit(1);
-    }
-    entrada = { quien: String(val('--approved-by')).trim(), cita, cita_cuando: r.cuando || null, via: 'ok de la persona en el chat' };
+    firmaDelDueno('manual-test', `criterios ${acs.join(', ')} de ${m.storyId}`);
+    const quien = String(val('--approved-by') || process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona').trim();
+    entrada = { quien, via: 'ventana' };
   }
   const ts = nowIso();
   const renglones = acs.map((ac) => ({ ac, story: String(m.storyId), ...entrada, ts }));
@@ -4539,9 +4513,9 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     process.exit(2);
   }
 
-  // Con el ok del dev escrito en el chat (o reenviado por la sesión que declara la organización), sin
-  // terminal. El agente nunca firma por su cuenta: la cita tiene que estar en un mensaje de la persona.
-  if (argv.includes('--approved-by') || argv.includes('--quote') || argv.includes('--relayed-by')) {
+  // Desde una sesión, sin terminal: lo aprueba la persona en la ventana de permiso. `--terminal` firma en la terminal.
+  const desdeSesion = !argv.includes('--terminal') && process.env[waiver.MARCA_VENTANA] !== '1' && !waiver.hasTty();
+  if (desdeSesion || argv.includes('--approved-by') || argv.includes('--quote') || argv.includes('--relayed-by')) {
     runtimeWaiverConOk(storyPath, argv, m);
     return;
   }
@@ -4576,8 +4550,8 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
       ? '🔒 marker.js runtime-waiver BLOQUEADO — en Windows firma sólo la ventana NUEVA que abre este comando, sin otro proceso conectado: corrido desde el agente o con la entrada redirigida, no firma.'
       : '🔒 marker.js runtime-waiver BLOQUEADO — acá no hay una terminal de una persona (/dev/tty): el agente no puede firmar.');
     console.error('   Un criterio que no se puede probar en vivo lo firma una persona, de una de estas dos formas:');
-    console.error('   (a) En el chat: pedile al agente la firma de ese criterio; el arnés te lo muestra y vos contestás «firmo el AC N».');
-    console.error(`   (b) En tu terminal: node ${__filename} runtime-waiver ${storyPath}${waiver.esWindows() ? '  (en Windows abre una ventana para firmar)' : ''}`);
+    console.error('   (a) Desde la sesión: el agente corre este comando sin --terminal y vos lo aprobás en la ventana de permiso.');
+    console.error(`   (b) En tu terminal: node ${__filename} runtime-waiver ${storyPath} --terminal${waiver.esWindows() ? '  (en Windows abre una ventana para firmar)' : ''}`);
     console.error(`   Versión del arnés: ${version}. Si no está al día (en Windows la firma por ventana llegó el 2026-10-15), actualizalo con /tycon-harness.`);
     process.exit(2);
   }
@@ -5029,7 +5003,9 @@ switch (cmd) {
     cmdSnapshotIter(arg1, process.argv.slice(4));
     break;
   case 'runtime-waiver':
-    cmdRuntimeWaiver(arg1, process.argv.slice(4));
+    // sin la story, la primera palabra ya es una bandera (`runtime-waiver --terminal`): la story sale del marcador
+    if (arg1 && arg1.startsWith('--')) cmdRuntimeWaiver(null, process.argv.slice(3));
+    else cmdRuntimeWaiver(arg1, process.argv.slice(4));
     break;
   case 'waive-critical':
     cmdWaiveCritical(process.argv.slice(3));

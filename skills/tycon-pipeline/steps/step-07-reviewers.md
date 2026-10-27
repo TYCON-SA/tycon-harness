@@ -562,8 +562,8 @@ iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vue
 tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
   sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
-  preguntale: una vuelta más con su ok (`smart-reloop … --extra-round --approved-by "<la persona>" --quote "<sus
-  palabras>"`; vale «una vuelta más», «otra vuelta» o «tercera vuelta»), o eximirlo (`marker.js waive-critical`).
+  preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
+  la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`).
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.

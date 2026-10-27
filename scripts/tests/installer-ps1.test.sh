@@ -665,6 +665,8 @@ wrong_counts() { # <settings> <n> <evento|matcher|relpath>…: los que NO están
   printf '%s' "$bad"
 }
 same_cmd() { [ "$(hook_cmd "$1" "$2" "$3" "$4")" = "$5" ]; }   # <settings> <evento> <matcher> <relpath> <comando esperado, entero>
+BRAKE_M='Bash|PowerShell|Monitor'   # el matcher del freno: también Monitor, que corre su comando en la misma consola
+shell_m() { [ "$1" = safety-guard-pre.sh ] && printf '%s' "$BRAKE_M" || printf 'Bash|PowerShell'; }   # <relpath> → su matcher
 sh_state3() { local s="$1" r out=""; for r in safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh; do out="$out$(hook_n "$s" PreToolUse '*' "$r")"; done; printf '%s' "$out"; }   # <settings> → cuántas veces está cada .sh, en cualquier matcher
 hook_order() { # <settings>: una línea por hook, en el orden del archivo (evento, matcher, guion) — para decir QUÉ quedó fuera de lugar
   node -e 'const s=require(process.argv[1]);for(const[e,b]of Object.entries(s.hooks||{}))for(const x of b)for(const h of x.hooks||[])console.log(e,x.matcher||"*",String(h.command||"").split("/").pop())' "$1" 2>&1
@@ -673,7 +675,7 @@ hook_order() { # <settings>: una línea por hook, en el orden del archivo (event
 # los que faltaban y tienen sentido en Windows, los dos reemplazados que sobraban, lo que queda afuera con su
 # motivo en windows-support.json y el opt-in que nace apagado
 MISSING_CONTROLS=(
-  "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
+  "PreToolUse|Bash|PowerShell|Monitor|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
   "PreToolUse|Bash|PowerShell|push-phantom-ref-notice.js" "PreToolUse|Bash|PowerShell|pr-auto-complete-guard.js"
   "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-bash-write-gate.js" "PostToolUse|Skill|tycon-pipeline/scripts/on-skill-invoke.js"
   "PostToolUse|Artifact|artifact-archive.js" "UserPromptSubmit||rebuild-before-verify.js" "Stop||large-read-meter.js"
@@ -768,7 +770,7 @@ else no "(n) T90 una máquina con los dos reemplazados (rc $RC):${BAD:- —} · 
 # ── (o) T91 · Ps1_InterpreterByExtension_ShAsBash_SecondRunIdentical_NoShellMetachars ───────────────────────────
 BAD=""
 for rel in safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh; do
-  same_cmd "$ST" PreToolUse 'Bash|PowerShell' "$rel" "$SH_PREFIX\"$CLONE/scripts/hooks/$rel\"" || BAD="$BAD $rel(«$(hook_cmd "$ST" PreToolUse 'Bash|PowerShell' "$rel")»)"
+  same_cmd "$ST" PreToolUse "$(shell_m "$rel")" "$rel" "$SH_PREFIX\"$CLONE/scripts/hooks/$rel\"" || BAD="$BAD $rel(«$(hook_cmd "$ST" PreToolUse "$(shell_m "$rel")" "$rel")»)"
 done
 same_cmd "$ST" Stop '' large-read-meter.js "node \"$CLONE/scripts/hooks/large-read-meter.js\"" || BAD="$BAD large-read-meter.js(«$(hook_cmd "$ST" Stop '' large-read-meter.js)»)"
 same_cmd "$ST" PreToolUse 'Bash|PowerShell' tycon-pipeline/scripts/on-bash-write-gate.js "node \"$HT/.claude/agent-skills/skills/tycon-pipeline/scripts/on-bash-write-gate.js\"" || BAD="$BAD on-bash-write-gate.js(«$(hook_cmd "$ST" PreToolUse 'Bash|PowerShell' tycon-pipeline/scripts/on-bash-write-gate.js)»)"
@@ -776,7 +778,7 @@ if [ -z "$BAD" ]; then ok "(o) T91 el intérprete sale de la extensión: un .sh 
 else no "(o) T91 el comando no es <intérprete> \"<ruta>\":$BAD"; fi
 cp "$ST" "$T/t.settings.json"
 installer "$HT" "${HELD[@]}" "${TEAM[@]}" > "$T/t2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(hook_n "$ST" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && cmp -s "$ST" "$T/t.settings.json"; then ok "(o) T91 con los .sh registrados, una segunda ejecución deja settings.json byte a byte igual"
+if [ "$RC" -eq 0 ] && [ "$(hook_n "$ST" PreToolUse "$BRAKE_M" safety-guard-pre.sh)" = 1 ] && cmp -s "$ST" "$T/t.settings.json"; then ok "(o) T91 con los .sh registrados, una segunda ejecución deja settings.json byte a byte igual"
 else no "(o) T91 la segunda corrida (rc $RC) cambió settings.json o no había .sh registrado: $(brief "$T/t2.out")"; fi
 # un espacio en la carpeta (la del usuario y la del clon): cada ruta en un nivel de comillas, sin `$`, sin acento grave,
 # sin comillas adentro
@@ -798,29 +800,29 @@ HO="$(new_home other-path-form)"; mkdir -p "$HO/.claude"; ln -s "$CLONE" "$HO/.c
 printf '{\n  "hooks": {\n    "PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": "bash \\"/c/lab/.claude/tycon-claude-guides/scripts/hooks/safety-guard-pre.sh\\"" } ] } ]\n  }\n}\n' > "$HO/.claude/settings.json"
 installer "$HO" "${HELD[@]}" > "$T/o.out" 2>&1; RC=$?
 SO="$HO/.claude/settings.json"
-if [ "$RC" -eq 0 ] && [ "$(hook_n "$SO" PreToolUse '*' safety-guard-pre.sh)" = 1 ] && [ "$(hook_n "$SO" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] \
+if [ "$RC" -eq 0 ] && [ "$(hook_n "$SO" PreToolUse '*' safety-guard-pre.sh)" = 1 ] && [ "$(hook_n "$SO" PreToolUse "$BRAKE_M" safety-guard-pre.sh)" = 1 ] \
    && same_cmd "$SO" PreToolUse 'Bash|PowerShell' test-scope-guard-pre.sh "$SH_PREFIX\"$CLONE/scripts/hooks/test-scope-guard-pre.sh\""; then
   ok "(o) T91 un .sh ya registrado con otra forma de ruta y el matcher de antes no se duplica y pasa al matcher nuevo; el espejo: el .sh que no estaba, entra"
-else no "(o) T91 un .sh ya registrado con otra forma de ruta (rc $RC): safety-guard está $(hook_n "$SO" PreToolUse '*' safety-guard-pre.sh) vez/veces ($(hook_n "$SO" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh) con «Bash|PowerShell») como «$(hook_cmd "$SO" PreToolUse '*' safety-guard-pre.sh)»; test-scope-guard «$(hook_cmd "$SO" PreToolUse 'Bash|PowerShell' test-scope-guard-pre.sh)» · $(brief "$T/o.out" 200)"; fi
+else no "(o) T91 un .sh ya registrado con otra forma de ruta (rc $RC): safety-guard está $(hook_n "$SO" PreToolUse '*' safety-guard-pre.sh) vez/veces ($(hook_n "$SO" PreToolUse "$BRAKE_M" safety-guard-pre.sh) con «Bash|PowerShell») como «$(hook_cmd "$SO" PreToolUse '*' safety-guard-pre.sh)»; test-scope-guard «$(hook_cmd "$SO" PreToolUse 'Bash|PowerShell' test-scope-guard-pre.sh)» · $(brief "$T/o.out" 200)"; fi
 cp "$SO" "$T/o.settings.json"
 installer "$HO" "${HELD[@]}" > "$T/o2.out" 2>&1; RC2=$?
-if [ "$RC" -eq 0 ] && same_cmd "$T/o.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh 'bash "/c/lab/.claude/tycon-claude-guides/scripts/hooks/safety-guard-pre.sh"' && [ "$RC2" -eq 0 ] && cmp -s "$SO" "$T/o.settings.json"; then
+if [ "$RC" -eq 0 ] && same_cmd "$T/o.settings.json" PreToolUse "$BRAKE_M" safety-guard-pre.sh 'bash "/c/lab/.claude/tycon-claude-guides/scripts/hooks/safety-guard-pre.sh"' && [ "$RC2" -eq 0 ] && cmp -s "$SO" "$T/o.settings.json"; then
   ok "(o) ese .sh con otra forma de ruta y el matcher de antes conserva su comando tal cual (sólo cambia el matcher); la siguiente ejecución no cambia nada"
 else no "(o) un .sh con otra forma de ruta y el matcher de antes: tras la primera ejecución quedó «$(hook_cmd "$T/o.settings.json" PreToolUse '*' safety-guard-pre.sh)» (esperaba el de antes, bash \"/c/lab/…/safety-guard-pre.sh\"); la segunda (rc $RC2) $(cmp -s "$SO" "$T/o.settings.json" && echo 'no cambió nada' || echo "lo cambió a «$(hook_cmd "$SO" PreToolUse '*' safety-guard-pre.sh)»")"; fi
 # la forma actual: los .sh con el matcher nuevo y `bash "<ruta>"`, entre dos hooks ajenos. Quedan
 # una vez cada uno, en su mismo lugar y con su mismo matcher; lo ajeno queda; la segunda corrida no cambia nada.
 HW3A="$(new_home w3a-bare-bash)"; mkdir -p "$HW3A/.claude"; ln -s "$CLONE" "$HW3A/.claude/agent-skills"; SW3A="$HW3A/.claude/settings.json"
-printf '{\n  "hooks": {\n    "PreToolUse": [ { "matcher": "Bash|PowerShell", "hooks": [\n      { "type": "command", "command": "echo lab-antes" },\n      { "type": "command", "command": "bash \\"%s/scripts/hooks/safety-guard-pre.sh\\"" },\n      { "type": "command", "command": "bash \\"%s/scripts/hooks/test-scope-guard-pre.sh\\"" },\n      { "type": "command", "command": "echo lab-despues" } ] } ]\n  }\n}\n' "$CLONE" "$CLONE" > "$SW3A"
-w3a_order() { node -e 'const s=require(process.argv[1]);const b=(s.hooks.PreToolUse||[]).find((e)=>e.matcher==="Bash|PowerShell");console.log(b?b.hooks.map((h)=>/^echo /.test(h.command)?h.command.slice(5):h.command.split("/").pop().replace(/"$/,"")).filter((x)=>/^lab-|guard-pre/.test(x)).join(" "):"sin bloque")' "$1" 2>&1; }   # <settings>: lo ajeno y los dos frenos, en su orden
+printf '{\n  "hooks": {\n    "PreToolUse": [ { "matcher": "Bash|PowerShell|Monitor", "hooks": [\n      { "type": "command", "command": "echo lab-antes" },\n      { "type": "command", "command": "bash \\"%s/scripts/hooks/safety-guard-pre.sh\\"" } ] },\n      { "matcher": "Bash|PowerShell", "hooks": [\n      { "type": "command", "command": "bash \\"%s/scripts/hooks/test-scope-guard-pre.sh\\"" },\n      { "type": "command", "command": "echo lab-despues" } ] } ]\n  }\n}\n' "$CLONE" "$CLONE" > "$SW3A"
+w3a_order() { node -e 'const s=require(process.argv[1]);const b=(s.hooks.PreToolUse||[]).filter((e)=>/^Bash\|PowerShell(\|Monitor)?$/.test(e.matcher));console.log(b.length?b.flatMap((e)=>e.hooks).map((h)=>/^echo /.test(h.command)?h.command.slice(5):h.command.split("/").pop().replace(/"$/,"")).filter((x)=>/^lab-|guard-pre/.test(x)).join(" "):"sin bloque")' "$1" 2>&1; }   # <settings>: lo ajeno y los dos frenos, en su orden (el freno en su bloque, con Monitor)
 installer "$HW3A" "${HELD[@]}" > "$T/w3a1.out" 2>&1; RC=$?
 cp "$SW3A" "$T/w3a.settings.json"
 installer "$HW3A" "${HELD[@]}" > "$T/w3a2.out" 2>&1; RC2=$?
-if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ -z "$(wrong_counts "$SW3A" 1 "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh")" ] \
-   && same_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh "$SH_PREFIX\"$CLONE/scripts/hooks/safety-guard-pre.sh\"" \
+if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ -z "$(wrong_counts "$SW3A" 1 "PreToolUse|Bash|PowerShell|Monitor|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh")" ] \
+   && same_cmd "$T/w3a.settings.json" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$SH_PREFIX\"$CLONE/scripts/hooks/safety-guard-pre.sh\"" \
    && same_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' test-scope-guard-pre.sh "$SH_PREFIX\"$CLONE/scripts/hooks/test-scope-guard-pre.sh\"" \
    && [ "$(w3a_order "$T/w3a.settings.json")" = "lab-antes safety-guard-pre.sh test-scope-guard-pre.sh lab-despues" ] && cmp -s "$SW3A" "$T/w3a.settings.json"; then
   ok "(o) los .sh registrados como «bash \"<ruta>\"» quedan una vez cada uno, en su lugar y con su matcher; lo ajeno queda; la segunda ejecución no cambia nada"
-else no "(o) los .sh registrados como «bash \"<ruta>\"» (rc $RC y $RC2): $(wrong_counts "$SW3A" 1 "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh") · safety «$(hook_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)» · orden «$(w3a_order "$T/w3a.settings.json")» · segunda ejecución $(cmp -s "$SW3A" "$T/w3a.settings.json" && echo igual || echo CAMBIÓ) · $(brief "$T/w3a1.out" 200)"; fi
+else no "(o) los .sh registrados como «bash \"<ruta>\"» (rc $RC y $RC2): $(wrong_counts "$SW3A" 1 "PreToolUse|Bash|PowerShell|Monitor|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh") · safety «$(hook_cmd "$T/w3a.settings.json" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» · orden «$(w3a_order "$T/w3a.settings.json")» · segunda ejecución $(cmp -s "$SW3A" "$T/w3a.settings.json" && echo igual || echo CAMBIÓ) · $(brief "$T/w3a1.out" 200)"; fi
 # (El aplicador no busca el bash de Git ni manda avisos por su ausencia, así que no hay nada que medir.)
 
 # ── (p) T92 · Ps1_OptIn_OffRemoves_BrokenConfigKeeps ────────────────────────────────────────────────────────────
@@ -936,7 +938,7 @@ else no "(q) T93 la segunda ejecución con un .sh con \\r\\n (rc $RC): $(crlf_no
 HK="$(new_home crlf-registered)"; mkdir -p "$HK/.claude"; ln -s "$CRLF_CLONE" "$HK/.claude/agent-skills"; SK="$HK/.claude/settings.json"
 printf '{\n  "hooks": {\n    "PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": "bash \\"%s/scripts/hooks/safety-guard-pre.sh\\"" } ] } ]\n  }\n}\n' "$CRLF_CLONE" > "$SK"
 crlf_installer "$HK" "${HELD[@]}" > "$T/k.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(hook_n "$SK" PreToolUse '*' safety-guard-pre.sh)" = 1 ] && same_cmd "$SK" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh "bash \"$CRLF_CLONE/scripts/hooks/safety-guard-pre.sh\"" && [ "$(crlf_notice "$T/k.out")" = 1 ]; then
+if [ "$RC" -eq 0 ] && [ "$(hook_n "$SK" PreToolUse '*' safety-guard-pre.sh)" = 1 ] && same_cmd "$SK" PreToolUse "$BRAKE_M" safety-guard-pre.sh "bash \"$CRLF_CLONE/scripts/hooks/safety-guard-pre.sh\"" && [ "$(crlf_notice "$T/k.out")" = 1 ]; then
   ok "(q) T93 un .sh con \\r\\n que ya estaba registrado: queda registrado y una línea avisa, con el remedio"
 else no "(q) T93 un .sh con \\r\\n ya registrado (rc $RC): está $(hook_n "$SK" PreToolUse '*' safety-guard-pre.sh) vez/veces, $(crlf_notice "$T/k.out") aviso(s) · $(brief "$T/k.out" 200)"; fi
 # con -Check: lo dice, no lo cuenta entre «los que faltan» (correr el instalador no lo registraría) y no escribe nada
@@ -988,16 +990,16 @@ else no "(s) -Check con un .sh que no se puede leer (rc $RC): $(unread_notice "$
 # el espejo: el mismo guion, legible y sano, en la corrida siguiente → registrado, sin aviso (era «se vuelve a intentar»)
 make_readable
 unread_installer "$HQ" "${HELD[@]}" > "$T/q2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && same_cmd "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh "$SH_PREFIX\"$UNREAD_CLONE/scripts/hooks/safety-guard-pre.sh\"" && [ "$(grep -c 'no pude leer' "$T/q2.out")" = 0 ]; then
+if [ "$RC" -eq 0 ] && [ "$(hook_n "$SQ" PreToolUse "$BRAKE_M" safety-guard-pre.sh)" = 1 ] && same_cmd "$SQ" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$SH_PREFIX\"$UNREAD_CLONE/scripts/hooks/safety-guard-pre.sh\"" && [ "$(grep -c 'no pude leer' "$T/q2.out")" = 0 ]; then
   ok "(s) el espejo: legible y sano en la ejecución siguiente, queda registrado y sin aviso"
-else no "(s) el espejo, legible y sano (rc $RC): está $(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh) vez/veces, $(grep -c 'no pude leer' "$T/q2.out") aviso(s) de ilegible · $(brief "$T/q2.out" 200)"; fi
+else no "(s) el espejo, legible y sano (rc $RC): está $(hook_n "$SQ" PreToolUse "$BRAKE_M" safety-guard-pre.sh) vez/veces, $(grep -c 'no pude leer' "$T/q2.out") aviso(s) de ilegible · $(brief "$T/q2.out" 200)"; fi
 # ya estaba registrado y deja de poder leerse: queda registrado, settings.json no cambia, y una línea avisa
 cp "$SQ" "$T/q.settings.json"
 make_unreadable
 unread_installer "$HQ" "${HELD[@]}" > "$T/q3.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$SQ" "$T/q.settings.json" && [ "$(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && [ "$(unread_notice "$T/q3.out")" = 1 ] && grep 'safety-guard-pre\.sh' "$T/q3.out" | grep 'Queda registrado' >/dev/null; then
+if [ "$RC" -eq 0 ] && cmp -s "$SQ" "$T/q.settings.json" && [ "$(hook_n "$SQ" PreToolUse "$BRAKE_M" safety-guard-pre.sh)" = 1 ] && [ "$(unread_notice "$T/q3.out")" = 1 ] && grep 'safety-guard-pre\.sh' "$T/q3.out" | grep 'Queda registrado' >/dev/null; then
   ok "(s) un .sh ya registrado que deja de poder leerse: queda registrado (settings.json byte a byte igual) y una línea avisa, con el motivo y el reintento"
-else no "(s) un .sh ya registrado que deja de poder leerse (rc $RC): está $(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh) vez/veces, $(unread_notice "$T/q3.out") aviso(s) · $(grep 'safety-guard-pre\.sh' "$T/q3.out" | head -1 | cut -c1-240)"; fi
+else no "(s) un .sh ya registrado que deja de poder leerse (rc $RC): está $(hook_n "$SQ" PreToolUse "$BRAKE_M" safety-guard-pre.sh) vez/veces, $(unread_notice "$T/q3.out") aviso(s) · $(grep 'safety-guard-pre\.sh' "$T/q3.out" | head -1 | cut -c1-240)"; fi
 make_readable
 
 # ── (t) Ps1_UnsafePathChar_HookNotRegistered_Named ────────────────────────
@@ -1018,9 +1020,9 @@ else no "(t) con \$ en la carpeta de usuario (rc $RC): comandos inseguros «$(un
 if [ "$(unsafe_notice "$T/p.out" '«\$»')" = 8 ] && [ "$(unsafe_notice "$T/p.out" 'tycon-pipeline/scripts/on-bash-write-gate\.js (PreToolUse)')" = 1 ] && [ "$(unsafe_notice "$T/p.out" 'clockify/scripts/on-prompt\.js')" = 0 ]; then
   ok "(t) …y una línea por cada uno lo dice: el guion y el carácter (\$)"
 else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba 8) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
-if [ "$(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)$(hook_n "$SP" Stop '*' large-read-meter.js)" = 11 ] && ! grep 'su ruta trae' "$T/p.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
+if [ "$(hook_n "$SP" PreToolUse "$BRAKE_M" safety-guard-pre.sh)$(hook_n "$SP" Stop '*' large-read-meter.js)" = 11 ] && ! grep 'su ruta trae' "$T/p.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
   ok "(t) el espejo, en la misma ejecución: los guiones del clon (su ruta no trae \$) se registran sin aviso, .sh y .js"
-else no "(t) el espejo en la misma corrida: safety-guard $(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh), large-read-meter $(hook_n "$SP" Stop '*' large-read-meter.js)"; fi
+else no "(t) el espejo en la misma corrida: safety-guard $(hook_n "$SP" PreToolUse "$BRAKE_M" safety-guard-pre.sh), large-read-meter $(hook_n "$SP" Stop '*' large-read-meter.js)"; fi
 cp "$SP" "$T/p.settings.json"
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" > "$T/p2.out" 2>&1; RC=$?
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" -- -Check > "$T/p3.out" 2>&1; RC3=$?
@@ -1111,7 +1113,7 @@ if suite_part 2; then   # ── parte 2 de 2: de (u) al final ──
 # estén, y no los pone en el reporte—, y lo dice en una línea; los .js, como siempre. Suelto, registra todo.
 OLD_HARNESS=TYCON_HARNESS_LOCK_HELD=1
 SH_HOOKS=(safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh)
-sh_state() { local s="$1" r out=""; for r in "${SH_HOOKS[@]}"; do out="$out$(hook_n "$s" PreToolUse 'Bash|PowerShell' "$r")"; done; printf '%s' "$out"; }   # <settings> → «111» = los tres una vez
+sh_state() { local s="$1" r out=""; for r in "${SH_HOOKS[@]}"; do out="$out$(hook_n "$s" PreToolUse "$(shell_m "$r")" "$r")"; done; printf '%s' "$out"; }   # <settings> → «111» = los tres una vez
 # (el reporte nombra un hook por evento y guion: las dos filas PostToolUse de rebuild-before-verify.js son UN id, así que
 # los registrados son un id menos; sin los .sh, otros tres menos — los dos números, de la lista declarada)
 REPORT_IDS=$((TEAM_HOOKS - 1)); NO_SH_IDS=$((REPORT_IDS - ${#SH_HOOKS[@]}))
@@ -1169,7 +1171,7 @@ else no "(u) -Check lanzado por un harness.js de antes (rc $RC): $(grep -c '+ Pr
 # nuevo y dejaría el viejo (en Bash, el freno dos veces). La misma pieza con un matcher más angosto se MUEVE al nuevo, con
 # su comando tal cual; una copia que sobre se saca; lo ajeno de ese bloque queda donde estaba.
 SHELL_ROWS=(
-  "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
+  "PreToolUse|Bash|PowerShell|Monitor|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
   "PreToolUse|Bash|PowerShell|push-phantom-ref-notice.js" "PreToolUse|Bash|PowerShell|pr-auto-complete-guard.js" "PreToolUse|Bash|PowerShell|public-push-guard.js"
   "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-pre-commit.js" "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-bash-write-gate.js"
   "PostToolUse|Bash|PowerShell|retro-pending.js" "PostToolUse|Bash|PowerShell|unpushed-work-notice.js" "PostToolUse|Bash|PowerShell|failed-query-notice.js"
@@ -1185,8 +1187,15 @@ const [mode, a, b] = process.argv.slice(2);
 const s = JSON.parse(fs.readFileSync(a, 'utf8'));
 const ours = (c) => /^(node|bash) "/.test(String(c || ''));   // un .js con node, un .sh con bash (W3W4)
 if (mode === 'old') {
-  for (const ev of ['PreToolUse', 'PostToolUse']) for (const e of s.hooks[ev] || []) if (e.matcher === 'Bash|PowerShell') {
-    e.matcher = 'Bash'; e.hooks.push({ type: 'command', command: `echo lab-${ev}-bash` });
+  // antes había un solo bloque `Bash`: el del freno (que hoy suma Monitor) se junta con el resto
+  for (const ev of ['PreToolUse', 'PostToolUse']) {
+    const shell = (s.hooks[ev] || []).filter((e) => /^Bash\|PowerShell(\|Monitor)?$/.test(e.matcher));
+    if (!shell.length) continue;
+    const [first, ...rest] = shell;
+    first.matcher = 'Bash';
+    for (const e of rest) first.hooks.push(...e.hooks);
+    s.hooks[ev] = s.hooks[ev].filter((e) => !rest.includes(e));
+    first.hooks.push({ type: 'command', command: `echo lab-${ev}-bash` });
   }
   fs.writeFileSync(b, JSON.stringify(s, null, 2) + '\n');
 } else if (mode === 'both') {
@@ -1214,8 +1223,8 @@ if [ "$RC" -eq 0 ] && [ -z "$BAD" ] && [ "$RB" = 112 ] && [ "$(node "$T/widen.js
 else no "(v) una settings.json de antes (rc $RC):${BAD:- —} · rebuild «${RB}» (esperaba 112) · estado «$(node "$T/widen.js" state "$SW")» (esperaba «0 2/2») · $(brief "$T/n1.out" 200)"; fi
 N="$(grep -c 'matcher ampliado' "$T/n1.out")"
 OLD_SG="$(node -e 'const s=require(process.argv[1]);for(const e of s.hooks.PreToolUse)for(const h of e.hooks)if(/safety-guard-pre\.sh"$/.test(h.command))console.log(h.command)' "$T/n.old.json")"
-if [ "$N" = 12 ] && same_cmd "$SW" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (12) y el guion conserva su comando tal cual"
-else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 12); safety-guard quedó «$(hook_cmd "$SW" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
+if [ "$N" = 12 ] && same_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh "$OLD_SG"; then ok "(v) el reporte dice cada matcher ampliado (12) y el guion conserva su comando tal cual"
+else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 12); safety-guard quedó «$(hook_cmd "$SW" PreToolUse "$BRAKE_M" safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
 cp "$SW" "$T/n.after.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && cmp -s "$SW" "$T/n.after.json"; then ok "(v) una segunda ejecución deja settings.json byte a byte igual"
@@ -1231,7 +1240,7 @@ else no "(v) el viejo y el nuevo a la vez (rc $RC):$(wrong_counts "$SW2" 1 "${SH
 # -Check sobre la de antes: sale 0, no escribe, y nombra lo que falta con su matcher nuevo
 HW3="$(new_home widen-check)"; mkdir -p "$HW3/.claude"; ln -s "$CLONE" "$HW3/.claude/agent-skills"; cp "$T/n.old.json" "$HW3/.claude/settings.json"
 installer "$HW3" "${HELD[@]}" "${TEAM[@]}" -- -Check > "$T/n5.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$HW3/.claude/settings.json" "$T/n.old.json" && grep -q "+ PreToolUse (matcher='Bash|PowerShell') → @tcg:safety-guard-pre.sh" "$T/n5.out"; then
+if [ "$RC" -eq 0 ] && cmp -s "$HW3/.claude/settings.json" "$T/n.old.json" && grep -q "+ PreToolUse (matcher='$BRAKE_M') → @tcg:safety-guard-pre.sh" "$T/n5.out"; then
   ok "(v) -Check sobre la de antes: sale 0, no escribe y nombra el freno con su matcher nuevo"
 else no "(v) -Check sobre la de antes (rc $RC): $(grep -m1 'safety-guard' "$T/n5.out" | cut -c1-200) · $(cmp -s "$HW3/.claude/settings.json" "$T/n.old.json" && echo 'sin escribir' || echo 'ESCRIBIÓ')"; fi
 

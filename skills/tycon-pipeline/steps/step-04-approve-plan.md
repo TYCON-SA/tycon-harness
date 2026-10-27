@@ -40,15 +40,14 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
 - 🧪 **La oferta de la prueba con navegador la muestra el arnés.** Si la historia cambia una pantalla y el repo no tiene
   cómo probar en un navegador, en Claude Code el arnés le muestra a la persona, junto con el plan, la oferta de
   prepararla: qué instala, qué escribe y cómo se vuelve atrás. Un repo ya preparado no la recibe, sea la historia que
-  sea. Con la respuesta de la persona, tal cual la escribió:
-  - el sí → `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js prepare --repo <repo> --story <spec> --approved-by "<el dev>" --ok "<su respuesta>"`
+  sea. Según lo que conteste la persona:
+  - el sí → `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js prepare --repo <repo> --story <spec> --approved-by "<el dev>"`
     (sin página estática, `--url <dirección donde corre la app>`, que se le pregunta);
   - el no → `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js defer --repo <repo> --story <spec> --approved-by "<el dev>" --no "<su respuesta>"`:
     la historia queda con la prueba con navegador pendiente, y la próxima historia con pantalla vuelve a recibir la oferta.
-  Los dos comandos piden el ok de la persona como las otras decisiones en su nombre: lo que ella escribió en la
-  conversación, o lo que reenvió la sesión relevo designada en la máquina (`--relayed-by <rol>`). La tuya, o la
-  de otra sesión, no cuenta; el no, además, tiene que ser posterior a la oferta, y el cierre lo vuelve a buscar en la
-  conversación. Por qué: medido en un repo nuevo, el agente instaló Playwright fuera del repo sin preguntar, y sin eso
+  Los dos comandos los aprueba la persona en la ventana de permiso, que le muestra el comando, o los firma en su
+  terminal con `--terminal`. Lo escrito en el chat o reenviado por otra sesión no firma; el no, además, va después de
+  la oferta, con su respuesta en `--no`, que queda en la historia. Por qué: medido en un repo nuevo, el agente instaló Playwright fuera del repo sin preguntar, y sin eso
   el cierre frenaba sin salida.
 - **risk=NORMAL** → checkpoint HITL exactamente como se describe abajo.
 - El user puede forzar HITL siempre con `warnings_pause: true` en `.tycon/advisors.yaml` del repo.

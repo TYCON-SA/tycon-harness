@@ -5,12 +5,13 @@
  * La opción es `qa.manual_check` del perfil del equipo (`required` = se pide; `off` o sin valor = no). Vale sólo desde el
  * perfil: una variable o el archivo de la máquina los puede escribir el agente, que así se apagaría el freno.
  *
- * La marca es de quien probó, y la deja el arnés con su respuesta, como el ok de un crítico (lib/critical-display.js):
+ * La marca es de quien probó: la aprueba en la ventana de permiso al correr `marker.js mark-tested`, o la firma en su
+ * terminal (`--terminal`). La muestra y el juez de la respuesta quedan de cuando la marca salía de la conversación:
  *   · antes de `marker.js mark-tested --acs N,M` sin `--terminal`, la puerta Bash le muestra a la persona qué criterios va
  *     a marcar (`paraMostrar`); con la instalación mínima, el despachador de ediciones lo hace al escribirse
  *     `marca-pedida.json` ({ acs }) en la carpeta de la corrida (`handle`). Queda la constancia `manual-check-shown` en
  *     `gates.log`, donde el agente no escribe.
- *   · la respuesta de la persona vale si es posterior a esa muestra, nombra cada criterio y no lo niega (`juez`).
+ *   · la respuesta de la persona valía si era posterior a esa muestra, nombraba cada criterio y no lo negaba (`juez`).
  *   · `marker.js mark-tested` deja un renglón por criterio en `<corrida>/manual-checks.jsonl` y su par `manual-check`, con
  *     la huella del renglón, en `gates.log`. Un renglón del archivo sin su par no cuenta (`validas`).
  *   · `freno(...)`: lo que mira el cierre (`complete-step prepare-commit`).
@@ -303,9 +304,8 @@ function freno({ storyPath, storyId, runDir, stateDir, esPantalla, arnes, home }
     ...(p.motivo ? [`  (${p.motivo})`] : []),
     ...(v.error ? [`  No pude leer las marcas (${v.error}): sin poder leerlas, ninguna cuenta.`] : []),
     ...(v.sinPar.length ? [`  Criterio${v.sinPar.length > 1 ? 's' : ''} ${v.sinPar.join(', ')}: marca sin muestra previa, no cuenta (el renglón no lo dejó el arnés).`] : []),
-    '  Cómo se marca: la persona prueba cada criterio con la guía y contesta en el chat nombrándolo',
-    `  («probé a mano el criterio ${ns[0]}»); antes, el arnés le muestra qué va a marcar al correr`,
-    `    marker.js mark-tested --acs ${ns.join(',')} --approved-by "<quién>" --quote "<su respuesta, textual>"`,
+    '  Cómo se marca: la persona prueba cada criterio con la guía y lo aprueba en la ventana de permiso al correr',
+    `    marker.js mark-tested --acs ${ns.join(',')} --approved-by "<quién>"`,
     '  O lo firma en su terminal con --terminal. El agente no puede marcarlo.',
   ];
   return { status: 'blocked', faltan: ns, mensaje };

@@ -951,18 +951,25 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   assert.deepEqual(v.json.validadores, ['tycon-story-validator'], 'apagado: el revisor de validación del paquete no entra');
 
   // con el perfil REAL del equipo (el arnés de esta máquina, HOME de laboratorio): el mismo set de la foto de la equivalencia
-  const perfilReal = path.join(ARNES_DE_LA_MAQUINA, 'perfil-equipo.json');
-  if (!fs.existsSync(perfilReal)) { t.diagnostic(`NO MEDIDO: ${perfilReal} no está (la copia pública no lo trae)`); return; }
+  // el perfil se llama team-profile.json; perfil-equipo.json es el nombre de antes, que sigue valiendo
+  const perfilReal = ['team-profile.json', 'perfil-equipo.json'].map((n) => path.join(ARNES_DE_LA_MAQUINA, n)).find((p) => fs.existsSync(p));
+  if (!perfilReal) { t.diagnostic(`NO MEDIDO: el perfil del equipo no está en ${ARNES_DE_LA_MAQUINA} (la copia pública no lo trae)`); return; }
   // en la copia pública, corrida en una máquina que SÍ tiene el arnés del equipo instalado, el perfil
   // está pero el paquete de clientes no: la foto de la equivalencia nombra a sus revisores y no se puede comparar. Se dice.
   if (SKIP_PUBLIC) { t.diagnostic(`NO MEDIDO: el set de la foto con el perfil del equipo (${SKIP_PUBLIC}); se mide en el repo del equipo`); return; }
   const { CASOS, medir, sinOrden, leerFoto } = require('../lib/equivalence-cases.js');
   const foto = leerFoto(path.join(__dirname, 'fixtures', 'equivalence-main.json'));   // la que viaja + la de cada paquete con casos
+  // el perfil real, en un arnés sin los modelos por revisor de la organización (team-repos.json no se copia): la foto se
+  // tomó sin ellos. Lleva la biblioteca entera del arnés, que valida todas las claves del perfil.
+  const conPerfil = tmp('packs-arnes-perfil-');
+  fs.cpSync(path.join(ARNES_DE_LA_MAQUINA, 'scripts', 'lib'), path.join(conPerfil, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(conPerfil, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/sh\n');
+  fs.copyFileSync(perfilReal, path.join(conPerfil, path.basename(perfilReal)));
   for (const caso of CASOS) {
     const dir = tmp('packs-foto-');
     const { files } = caso.armar(dir);
     const nuevo = medir({ pipeline: PIPELINE, repo: dir, files,
-      env: { HOME: tmp('packs-home-foto-'), TYCON_SESSION_ID: 'packs-test', TYCON_PACKS_DIR: PACKS_REALES, TYCON_GUIDES_DIR: ARNES_DE_LA_MAQUINA } });
+      env: { HOME: tmp('packs-home-foto-'), TYCON_SESSION_ID: 'packs-test', TYCON_PACKS_DIR: PACKS_REALES, TYCON_GUIDES_DIR: conPerfil } });
     assert.deepEqual(sinOrden(nuevo), foto.casos[caso.nombre], `con el perfil del equipo, el caso «${caso.nombre}» da la foto de la 8.2`);
   }
 });

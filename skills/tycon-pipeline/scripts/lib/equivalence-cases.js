@@ -287,11 +287,11 @@ function medir({ pipeline, repo, files, story, env = {} }) {
     PATH: process.env.PATH, LANG: 'en_US.UTF-8',
     HOME: env.HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'equiv-home-')),
     TYCON_SESSION_ID: 'equivalencia',
-    // Sin `packs:` en el repo, el default sale de la configuración del arnés (el perfil del equipo dice
-    // «todos»); con la HOME aislada el cargador no lo encuentra solo
-    TYCON_GUIDES_DIR: env.TYCON_GUIDES_DIR || process.env.TYCON_GUIDES_DIR || require('./harness-path.js').rutaArnesHook().dir || '',
-    // sin un arnés de quien llama, el default es el de la foto de la equivalencia («todos los instalados»): en la CI no hay perfil
-    // ni enlace que lo diga. Con TYCON_GUIDES_DIR (la prueba del perfil real) manda la configuración de ese arnés.
+    // El arnés de quien mide no entra: su configuración de la organización (los modelos por revisor) cambiaría lo que se
+    // compara con la foto, que se tomó sin ella. Sólo con TYCON_GUIDES_DIR explícito (la prueba del perfil real).
+    TYCON_GUIDES_DIR: env.TYCON_GUIDES_DIR || '',
+    // sin un arnés, el default es el de la foto de la equivalencia («todos los instalados»). Con TYCON_GUIDES_DIR (la
+    // prueba del perfil real) manda la configuración de ese arnés.
     // (recortada, como la lee el cargador: sólo espacios = sin poner)
     ...(env.TYCON_GUIDES_DIR ? {} : { TYCON_PACKS_DEFAULT: (process.env.TYCON_PACKS_DEFAULT || '').trim() || 'all' }),
     ...env,

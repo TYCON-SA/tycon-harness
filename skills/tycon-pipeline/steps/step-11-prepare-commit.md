@@ -23,7 +23,7 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   nombrarlo en el File List o revertirlo. Lo borrado por la terminal (node_modules) sale como aviso; sin git o sin
   commit de arranque dice «no medido» y no frena.
 - **Un control en rojo** (`red-check`, y `expected-red` para el rojo esperado): sin la ejecución en deuda frena. Las
-  salidas son arreglarlo y volver a correr el control, o `marker.js close-as-debt` con la frase de la persona; en deuda
+  salidas son arreglarlo y volver a correr el control, o `marker.js close-as-debt` con el permiso de la persona; en deuda
   pasa y lo dice.
 - **Matriz de verificación en ejecución** (`checks.acmatrix`, DODRT-C6): tiene que estar en verde con `provenance:
   run-check` (`marker.js run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <abs spec.md>`, que se

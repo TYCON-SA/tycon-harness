@@ -99,7 +99,8 @@ const CUBRE = { 'cerrar la ejecución': 'cerrar-como-deuda', 'force-manual': 'tr
 
 /**
  * La constancia que cubre ese pedido, o null. No cubre la salida de una ejecución perdida ni un comando dudoso, ni sin
- * un arranque legible, ni force-manual sobre un control que no sea `advisors` escrito literal.
+ * un arranque legible, ni force-manual sobre un control que no sea `advisors` escrito literal. Una aprobación en la
+ * ventana de permiso tampoco cubre otra: cada comando la pide de nuevo.
  */
 function cubiertaPor({ l, esc, siempre, perdida }, frenos, sid, desde) {
   const clave = CUBRE[esc];
@@ -121,7 +122,7 @@ function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) 
   }
   const frenos = leerFrenos(home);
   const l = frenos ? escapeDeCierre(frenos, sid || m.sessionId, m.startedAt) : null;
-  const via = l && ['persona', 'reenvio'].includes(l.via) ? l.via : 'sin-registro';
+  const via = l && ['persona', 'reenvio', 'ventana'].includes(l.via) ? l.via : 'sin-registro';
   const sinVia = frenos ? '; sin constancia de quién autorizó cerrar' : '; el registro de escapes no se pudo leer';
   const motivo = motivoDe(e) + (via === 'sin-registro' ? sinVia : '');
   return { estado: 'abortada', motivo, via, ...(l && l.relevo ? { relevo: l.relevo } : {}), at: ahora };

@@ -460,12 +460,13 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 
 Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (en «Aprobar el plan»), la historia lleva
 `browser_test: deferred` y `browser_test_reason: "<fecha> — la persona: «<su respuesta>»"`, y `gates.log` la constancia
-`browser-test-deferred` que escribió `e2e-setup.js defer`. `complete-step prepare-commit`, el commit y el paso a `review` vuelven a
-buscar esa respuesta en la conversación de la sesión que la anotó, posterior a la oferta: si la encuentran, el gate no
-corre (la historia se prueba con la guía para probarla a mano) y dicen en una línea «Prueba con navegador pendiente en
-la historia …», que queda anotada (`browser-test-debt`). Si falta la marca, la constancia, la oferta o la respuesta en
-la conversación, o si el repo ya tiene prueba con navegador (ahí se corre), frenan como siempre y dicen por qué. Se paga
-preparando el repo: `e2e-setup.js prepare --repo <repo> --story <spec> --approved-by "<el dev>" --ok "<su respuesta>"` y
+`browser-test-deferred` que escribió `e2e-setup.js defer`, después de la firma de la persona en la ventana de permiso o
+en su terminal (`browser-test-signed`). `complete-step prepare-commit`, el commit y el paso a `review` vuelven a buscar
+esa firma, posterior a la oferta: si la encuentran, el gate no corre (la historia se prueba con la guía para probarla a
+mano) y dicen en una línea «Prueba con navegador pendiente en la historia …», que queda anotada (`browser-test-debt`).
+Si falta la marca, la constancia, la oferta o la firma, o si el repo ya tiene prueba con navegador (ahí se corre),
+frenan como siempre y dicen por qué. Se paga
+preparando el repo: `e2e-setup.js prepare --repo <repo> --story <spec> --approved-by "<el dev>"` (lo aprueba la persona en la ventana de permiso) y
 corriendo el gate. Se deshace con `e2e-setup.js undo --repo <repo>`.
 
 ### Parte 3, escape — Cuándo se permite NO correr el gate (estrictísimo)
@@ -650,19 +651,15 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
     uno en el chat** con el resumen llano ("probado corriendo: N de T; solo tests de
     código: M; sin evidencia: K"), y decide una persona. **El agente nunca firma por su
     cuenta.** Dos caminos:
-    1. **El ok del dev en el chat** (el principal). Primero el arnés le muestra cada criterio: corré
-       `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m>` y la puerta lo muestra en pantalla
-       (texto, por qué no se puede probar en vivo, qué lo cubre); en la instalación mínima, escribí con Write
-       `firma-pedida.json` ({ "acs": [n] }) en la carpeta de la corrida. Con su respuesta, que nombra cada criterio
-       («firmo el AC n», o todos juntos: «firmo los AC 3, 5 y 7»), el mismo comando con
-       `--approved-by "<el dev>" --quote "<sus palabras, textuales>"`. El arnés busca la cita en un mensaje del dev
-       posterior a la muestra; un «dale» suelto no firma. El ok reenviado
-       por otra sesión (`--relayed-by`) no se acepta acá: lo firma la persona que vio el criterio.
-    2. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md>`
+    1. **La ventana de permiso** (el principal). Corré
+       `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m> --approved-by "<el dev>"`, sin
+       `--quote`: la herramienta le abre al dev la ventana de permiso con el comando, y lo aprueba ahí. Lo que escriba
+       en el chat ya no firma, y el ok reenviado por otra sesión (`--relayed-by`) no se acepta: lo firma la persona que
+       vio el criterio.
+    2. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --terminal`
        (pide confirmación criterio por criterio; en Windows abre una ventana para firmar).
 
-    Después, re-correr el `run-check acmatrix` (ahora verde). El límite: comprobar la cita prueba que el mensaje
-    está en la conversación; no prueba quién está detrás de la sesión que reenvía.
+    Después, re-correr el `run-check acmatrix` (ahora verde).
   - 🔴 **NO se escribe `runtime_verification_ack` en el frontmatter**: el ack escribible por
     el agente fue el agujero que se cerró el 2026-07-10 y no se reintroduce. La firma vive
     en `.tycon/runtime-waivers.jsonl` del repo de la story, anclada al hash de la
@@ -688,15 +685,15 @@ la matriz en las transiciones a review/done (el .md escrito no se confía).
 declarado imposible → **el agente DEBE correrlo**, no waiveable) de `NOT-VERIFIABLE` (declarado
 en el frontmatter `runtime_not_verifiable:` con `reason:`+`covered_by:` → imposible de ejercer
 corriendo la app → lo decide el usuario). El agente presenta CADA `NOT-VERIFIABLE` en la
-conversación (razón + test que lo cubre) y el usuario decide AC por AC: con su ok escrito en el chat
-(`runtime-waiver … --approved-by --quote`) o desde su terminal. Ver SKILL.md F.ii.
+conversación (razón + test que lo cubre) y el usuario decide AC por AC: lo aprueba en la ventana de permiso
+(`runtime-waiver <historia> --acs N --approved-by "<quién>"`, sin `--quote`) o desde su terminal (`--terminal`). Lo que
+escriba en el chat ya no firma. Ver SKILL.md F.ii.
 
 **Un crítico de este paso también lo decide una persona**. Si el revisor de la prueba en vivo marca un
-CRITICAL que el dev decide no arreglar, el agente nunca se exime solo: le pregunta al dev y, con el ok del dev escrito
-en el chat, `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"
---quote "<sus palabras>"` (o `--relayed-by <rol>`, o el dev desde su terminal con `--terminal`). Recién ahí el
-hallazgo se anota `waived`. El límite es el mismo: la cita prueba que el mensaje está en la conversación, no prueba
-quién está detrás de la sesión que reenvía.
+CRITICAL que el dev decide no arreglar, el agente nunca se exime solo: corre
+`marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"` y el dev lo
+aprueba en la ventana de permiso (o lo corre desde su terminal con `--terminal`). La cita o el reenvío ya no eximen.
+Recién ahí el hallazgo se anota `waived`.
 
 #### Una función sin pantalla ni servidor
 
@@ -747,11 +744,9 @@ probó», «El arnés no lo probó: probalo a mano»).
 **La marca a mano, si la organización la pide** (`qa.manual_check: required` en el perfil del equipo, pestaña
 Configuración del sitio): `complete-step prepare-commit` frena hasta que una persona marque cada criterio de la guía como probado a
 mano. Se pide así, nunca se pone por la persona:
-1. La persona prueba con la guía y te contesta en el chat nombrando los criterios («probé a mano los criterios 1 y 2»).
-2. Corré `node <skill>/scripts/marker.js mark-tested --acs 1,2 --approved-by "<quién>" --quote "<su respuesta, textual>"`.
-   La primera vez el arnés le muestra a la persona qué va a marcar y el comando frena: su respuesta tiene que ser
-   posterior a esa muestra. Si el bloque no apareció en pantalla (instalación mínima), escribí con Write
-   `<carpeta de la corrida>/marca-pedida.json` con `{ "acs": [1, 2] }` y el arnés lo muestra.
+1. La persona prueba con la guía y te dice qué criterios probó.
+2. Corré `node <skill>/scripts/marker.js mark-tested --acs 1,2 --approved-by "<quién>"`, sin `--quote`: la persona lo
+   aprueba en la ventana de permiso, que le muestra los criterios. Lo que escriba en el chat ya no marca.
 3. O la persona lo firma en su terminal: `marker.js mark-tested --acs 1,2 --terminal`.
 Un reenvío de la sesión coordinadora no marca: la marca es de quien probó. Las marcas quedan en
 `<carpeta de la corrida>/manual-checks.jsonl`, cada una con su par en el registro del arnés.

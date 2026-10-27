@@ -69,7 +69,7 @@ function leerGates(dir) {
  * queda anotado. `desde`: la hora a partir de la cual vale el «aprobá» del dueño (el aviso del tope, para una vuelta
  * más); nunca antes de la ventana. `pedido`: la punta de la cadena de esta conversación (el freno la tiene).
  */
-function okDelegado({ firma, sesion, pedido, transcript, home, env = process.env, arnes, ahora = Date.now(), desde } = {}) {
+function okDelegado({ firma, sesion, pedido, transcript, home, env = process.env, arnes, ahora = Date.now(), desde, consumir = true } = {}) {
   const no = (motivo) => ({ ok: false, motivo });
   if (!Object.prototype.hasOwnProperty.call(DELEGABLES, firma)) return no(`«${firma}» no se aprueba por delegación`);
   const casa = home || os.homedir();
@@ -106,6 +106,8 @@ function okDelegado({ firma, sesion, pedido, transcript, home, env = process.env
   let usos;
   try { usos = leerGates(dir); } catch (err) { return no(`no pude leer el registro del arnés (${err.code || err.message}): no sé si ese «aprobá» ya se usó`); }
   if (usos.some((g) => g.name === USADA && g.clave === clave)) return no('ese «aprobá» del dueño ya se usó para otra firma: cada firma pide el suyo');
+  // `consumir: false`: el freno sólo pregunta; el uso lo anota el guion que firma (la vuelta extra, en pipeline.js)
+  if (consumir === false) return { ok: true, relevo: relevo.valor, cita: pedidoDelDuenio.texto, cuando: pedidoDelDuenio.cuando };
   fs.mkdirSync(dir, { recursive: true });
   fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date(ahora).toISOString(), name: USADA, status: 'ok', firma, clave, relevo: relevo.valor, sesion: sesion || null, cita: pedidoDelDuenio.texto.slice(0, 200) })}\n`);
   return { ok: true, relevo: relevo.valor, cita: pedidoDelDuenio.texto, cuando: pedidoDelDuenio.cuando };

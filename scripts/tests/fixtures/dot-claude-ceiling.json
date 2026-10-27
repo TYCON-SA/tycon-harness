@@ -5,7 +5,7 @@
     "direction": "sube en tres archivos del freno de producción, por decisión del dueño (vía la coordinadora)",
     "reason": "La story 6.2 sumó rutas «.claude» en el freno de producción: prod-firewall-close.js 0 → 1, install-guard.sh 8 → 9 y la plantilla de los managed settings 4 → 6. El freno corre fuera del arnés y necesita la ruta literal; tocarlo obliga a firmar y reinstalar. Por eso quedan declarados en legacy-home-names.json (until_d), cada uno con su motivo, y el freno no se toca. Además on-pre-commit.js bajó 4 → 3. La suma de los archivos da 903 (el total anterior, 908, no era la suma)."
   },
-  "total": 841,
+  "total": 839,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -65,7 +65,7 @@
     "scripts/hooks/instinct-trigger.sh": 3,
     "scripts/hooks/large-read-meter.js": 1,
     "scripts/hooks/large-read-notice.js": 1,
-    "scripts/hooks/prod-access-guard.js": 11,
+    "scripts/hooks/prod-access-guard.js": 10,
     "scripts/hooks/prod-firewall-close.js": 1,
     "scripts/hooks/produccion-notice.js": 1,
     "scripts/hooks/response-style-meter.js": 1,
@@ -120,7 +120,6 @@
     "scripts/production/guard-libs/setup/harness/tycon-home.js": 7,
     "scripts/production/install-guard.sh": 9,
     "scripts/production/managed-settings.tycon-production.json.template": 6,
-    "scripts/production/measure-guard.js": 1,
     "scripts/production/node-shim.sh": 1,
     "scripts/production/production-index.js": 4,
     "scripts/production/tycon-prod-sql": 1,

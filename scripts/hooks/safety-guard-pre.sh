@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # safety-guard-pre.sh — freno de mano del harness TYCON.
 #
-# Hook PreToolUse matcher=Bash|PowerShell. Intercepta comandos destructivos irreversibles
+# Hook PreToolUse matcher=Bash|PowerShell|Monitor (Monitor corre su comando en la misma consola). Intercepta comandos destructivos irreversibles
 # y los BLOQUEA (exit 2) antes de que se ejecuten. Inspirado en ECC safety-guard
 # pero adaptado al stack TYCON (.NET, SQL Server, monorepos, multi-tenant).
 #
@@ -17,9 +17,9 @@
 #   - Solo BLOCK (exit 2) — no hay WARN para evitar ruido.
 #   - Denylist explícita y corta. v1 cubre los desastres irreversibles.
 #   - Opt-in vía hook registrado (la guía explica cómo activarlo).
-#   - Escape por comando: `TYCON_SAFETY_OFF=1 <cmd>`, que vale sólo si la persona escribió «autorizo
-#     TYCON_SAFETY_OFF» en esta conversación (o lo reenvió la sesión designada) en los últimos 30 minutos: el
-#     agente lo puede escribir, la frase no (escape-ok.js).
+#   - Escape por comando: `TYCON_SAFETY_OFF=1 <cmd>`, que vale sólo si la persona lo aprueba en la ventana de
+#     permiso de la herramienta (lib/owner-window.js) o lo corre ella en su terminal: el agente lo puede escribir,
+#     la aprobación no.
 #   - Escape de sesión: `TYCON_SAFETY_OFF=1` en el ambiente, puesto por el dev antes de abrir la sesión.
 #   - Off completo: remové el hook de settings.json.
 #   - Log de bloqueos en ~/.claude/safety-guard.log para retro/audit.
@@ -73,8 +73,14 @@
 
 set -u
 
-# Fail-open: cualquier error inesperado → exit 0 (no bloquear).
-trap 'exit 0' ERR
+# Fail-open: cualquier error inesperado → exit 0 (no bloquear). Si una firma ya pidió la ventana de permiso, la salida
+# 0 la emite igual: sin ella el comando correría sin que la persona lo apruebe.
+OW_ASK_JSON=""
+salida_ok() {
+  if [[ -n "$OW_ASK_JSON" ]]; then printf '%s\n' "$OW_ASK_JSON"; fi
+  exit 0
+}
+trap 'salida_ok' ERR
 
 # Override de emergencia. NO se sale acá: se marca y se sigue evaluando, para que la
 # constancia pueda anotar QUÉ regla se esquivó. El comportamiento no cambia:
@@ -158,8 +164,8 @@ CWD="$(read_field cwd)" || cannot_read
 if [[ -z "$CMD" ]]; then exit 0; fi
 
 # `TYCON_SAFETY_OFF=1 <cmd>` pegado al principio del comando es un PEDIDO de escape, no un escape: el agente lo
-# puede escribir solo. Vale si la persona escribió «autorizo TYCON_SAFETY_OFF» en esta conversación (lo mira
-# `block()` con escape-ok.js, y sólo cuando una regla frena).
+# puede escribir solo. Vale si la persona lo aprueba en la ventana de permiso (lo pide `block()` con ow_gate, y sólo
+# cuando una regla frena).
 SAFETY_OFF_PEDIDO=0
 if [[ "$CMD" =~ ^[[:space:]]*TYCON_SAFETY_OFF=1[[:space:]] ]]; then
   SAFETY_OFF_PEDIDO=1
@@ -231,32 +237,47 @@ escape_ok() {
   [[ "$rc" == "0" && -n "$ESC_VIA" ]]
 }
 
-# safety_off_autorizado — ¿el prefijo `TYCON_SAFETY_OFF=1` de este comando lo autorizó la persona? Se pregunta una
-# sola vez por comando (block() y el aviso de GIT-C4 la usan) y sólo si el comando trae el prefijo. Deja ESC_VIA y
-# ESC_RELEVO de esa consulta.
-SAFETY_OFF_OK=""
-SAFETY_VIA=""; SAFETY_RELEVO=""; SAFETY_MOTIVO=""; ESC_MOTIVO_VAR=""
-safety_off_autorizado() {
-  [[ "$SAFETY_OFF_PEDIDO" == "1" ]] || return 1
-  if [[ -z "$SAFETY_OFF_OK" ]]; then
-    if escape_ok TYCON_SAFETY_OFF; then SAFETY_OFF_OK=1; else SAFETY_OFF_OK=0; fi
-    SAFETY_VIA="$ESC_VIA"; SAFETY_RELEVO="$ESC_RELEVO"; SAFETY_MOTIVO="$ESC_MOTIVO"
+# ow_gate <firma>… — la ventana de permiso (lib/owner-window.js gate): el evento va por la entrada y las firmas `freno`
+# que vio este freno, con `--escape`; las firmas de los guiones las lee el propio módulo del comando. Deja OW_DECISION
+# (ask, deny, allow o none), OW_TEXTO, OW_FIRMA, OW_VIA, OW_RELEVO y OW_JSON (lo que se emite para pedir la ventana).
+# Sin con qué consultar, o si la consulta se cae, niega: lo que no se pudo decidir lo firma la persona en su terminal.
+OW_ESCAPES=(); OW_NEGANDO=0
+OW_DECISION=""; OW_TEXTO=""; OW_FIRMA=""; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
+ow_gate() {
+  OW_DECISION=""; OW_FIRMA="${1:-}"; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
+  OW_TEXTO="no pude consultar la ventana de permiso. Esta firma se da en tu terminal"
+  local lib out k args=()
+  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/owner-window.js" || lib=""
+  if [[ -n "$lib" && -f "$lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+    for k in "$@"; do args+=(--escape "$k"); done
+    out="$(printf '%s' "$INPUT" | "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
+    while IFS= read -r k; do
+      case "$k" in
+        decision=*) OW_DECISION="${k#decision=}" ;;
+        texto=*) OW_TEXTO="${k#texto=}" ;;
+        firma=*) OW_FIRMA="${k#firma=}" ;;
+        via=*) OW_VIA="${k#via=}" ;;
+        relevo=*) OW_RELEVO="${k#relevo=}" ;;
+        json=*) OW_JSON="${k#json=}" ;;
+      esac
+    done <<< "$out"
   fi
-  [[ "$SAFETY_OFF_OK" == "1" ]]
+  case "$OW_DECISION" in ask|allow|none) ;; *) OW_DECISION="deny" ;; esac
+  if [[ "$OW_DECISION" == "ask" && -z "$OW_JSON" ]]; then OW_DECISION="deny"; fi
+  return 0
 }
+
+# El prefijo `TYCON_SAFETY_OFF=1` que pidió el comando no valió: el porqué, para el cartel de block().
+SAFETY_MOTIVO=""; ESC_MOTIVO_VAR=""
 
 # cartel_escape <VARIABLE> <valor> — lo que dice el cartel de cómo se saltea el freno: lo decide la persona.
 cartel_escape() {
-  echo "Saltear este freno lo decide la persona, no el agente: que escriba en el chat «autorizo $1» y después se"
   if tool_is_ps; then
-    echo "repite el comando con \$env:$1=$2; adelante (vale 30 minutos)."
+    echo "Saltear este freno lo decide la persona, no el agente: se repite el comando con \$env:$1=$2; adelante y la"
   else
-    echo "repite el comando con $1=$2 adelante (vale 30 minutos)."
+    echo "Saltear este freno lo decide la persona, no el agente: se repite el comando con $1=$2 adelante y la"
   fi
-  echo "También vale la frase reenviada por la sesión que la organización designó para eso."
-  if [[ "$ESC_SIN_CONV" == "1" ]]; then
-    echo "Esta herramienta no deja leer la conversación: la persona pone $1=$2 en su terminal antes de abrir la sesión."
-  fi
+  echo "persona lo aprueba en la ventana de permiso de la herramienta, o lo corre ella en su terminal."
 }
 
 # El `cwd` como lo escribe Windows (`C:\Users\…`), con barras hacia adelante: así lo leen las reglas que lo
@@ -309,15 +330,20 @@ block() {
   local alt="${3:-}"
 
   # Freno apagado: se sale 0 SIN mensaje y SIN escribir el registro propio, pero dejando constancia de QUÉ regla se
-  # esquivó y por qué camino. La variable del ambiente la puso el dev antes de abrir la sesión; el prefijo, sólo con
-  # la frase de la persona.
+  # esquivó y por qué camino. La variable del ambiente la puso el dev antes de abrir la sesión; el prefijo pide la
+  # ventana de permiso, y el comando corre sólo si la persona dice que sí.
   if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
     constancia "$rule" escape ambiente
     exit 0
   fi
-  if safety_off_autorizado; then
-    constancia "$rule" escape "$SAFETY_VIA" "$SAFETY_RELEVO"
-    exit 0
+  if [[ "$SAFETY_OFF_PEDIDO" == "1" && "$OW_NEGANDO" != "1" ]]; then
+    ow_gate escape:TYCON_SAFETY_OFF ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}
+    if [[ "$OW_DECISION" == "ask" ]]; then
+      constancia "$rule" escape ventana
+      OW_ASK_JSON="$OW_JSON"
+      salida_ok
+    fi
+    SAFETY_MOTIVO="$OW_TEXTO"
   fi
   local ts
   ts="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -339,13 +365,16 @@ block() {
     fi
     echo ""
     if [[ -n "$ESC_CARTEL" ]]; then
-      # ESC-C3: el cartel lo trae la regla, sin receta (el escape es una frase de la persona, no una variable)
+      # ESC-C3: el cartel lo trae la regla, sin receta (el escape lo firma la persona, no es una variable)
       echo "$ESC_CARTEL"
     else
+      # el motivo de la ventana ya cierra con punto: no se le suma otro
       if [[ -n "$ESC_VARIABLE" ]]; then
-        echo "El comando trae $ESC_VARIABLE=$ESC_VALOR y no vale: ${ESC_MOTIVO_VAR:-la persona no lo autorizó}."
+        _m="${ESC_MOTIVO_VAR:-la persona no lo autorizó}"
+        echo "El comando trae $ESC_VARIABLE=$ESC_VALOR y no vale: ${_m%.}."
       elif [[ "$SAFETY_OFF_PEDIDO" == "1" ]]; then
-        echo "El comando pidió el escape (TYCON_SAFETY_OFF=1) y no vale: ${SAFETY_MOTIVO:-la persona no lo autorizó}."
+        _m="${SAFETY_MOTIVO:-la persona no lo autorizó}"
+        echo "El comando pidió el escape (TYCON_SAFETY_OFF=1) y no vale: ${_m%.}."
       fi
       # la regla ESC-C1 nombra su propia variable en el motivo; las demás, la del freno
       cartel_escape "${ESC_VARIABLE:-TYCON_SAFETY_OFF}" "${ESC_VALOR:-1}"
@@ -400,7 +429,7 @@ fi
 # partido con comillas), así que se frena CUALQUIER asignación a esas variables salvo `=1` literal, en cualquier parte
 # del comando y con las comillas y barras invertidas sacadas; también `export`, `declare`, `typeset`, `local`,
 # `readonly`, `read` y `printf -v` sobre ellas, y `$env:` en PowerShell (sin distinguir mayúsculas). Nombrarlas sin
-# asignar no frena. Con la frase de la persona («autorizo <variable>») queda la constancia y siguen las demás reglas.
+# asignar no frena. Lo aprueba la persona en la ventana de permiso; aprobado, queda la constancia y siguen las demás reglas.
 # Como GIT-C2, mira el comando crudo: un texto (un heredoc, un -m) que trae la asignación también frena. Es de más y
 # nunca de menos; ignorar el cuerpo de un heredoc o las comillas se puede falsificar (ver GIT-C2). Lo que no ve: la
 # asignación armada con el nombre en una variable (`declare "$n=0"`) o escrita en un guion que después se corre.
@@ -408,9 +437,8 @@ fi
 # corrió) y `DOD_BYPASS` (cierra un paso sin la evidencia de la prueba en vivo) van al revés: activan el escape con
 # cualquier valor que no sea 0 ni vacío, así que se frena cualquier asignación salvo a 0 o a nada. El nombre se compara
 # exacto (`TYCON_TEST_GATE_PART` no es ella). Su cartel no trae la receta y su constancia anota la sesión y el escape.
-# `TYCON_NO_DEEP_REVIEW` (apaga el pase adversarial) sigue la misma regla de valores; «autorizo no-deep-review» también
-# la autoriza (escape-ok.js, sinónimos). `TYCON_STATUS_GATE` (apaga el freno que no deja pasar una historia a review o
-# done a mano) también; «autorizo cambiar el estado» también la autoriza.
+# `TYCON_NO_DEEP_REVIEW` (apaga el pase adversarial) sigue la misma regla de valores. `TYCON_STATUS_GATE` (apaga el
+# freno que no deja pasar una historia a review o done a mano) también.
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""
 # el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
 # (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
@@ -477,52 +505,55 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_
     CMD="$_esc_save"
   fi
   fi
+  # la firma se da en la ventana de permiso: la decide owner-window.js junto con las demás firmas del comando (más
+  # abajo, después de ESC-C7). Con el freno apagado por el ambiente, pasa con su constancia (como en block()).
   if [[ "$_esc_hit" == "1" ]]; then
-    _esc_nuevo=0; [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" || "$_esc" == "TYCON_STATUS_GATE" ]] && _esc_nuevo=1
-    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_esc"; then
-      if [[ "$_esc_nuevo" == "1" ]]; then
-        constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO" "$(read_field session_id 2>/dev/null || true)" "$_esc"
-      else
-        constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO"
-      fi
-      continue
-    fi
-    # el motivo de esta consulta, antes de que la del prefijo (si el comando lo trae) lo pise en block()
-    ESC_VARIABLE="$_esc"; ESC_VALOR=0; ESC_MOTIVO_VAR="$ESC_MOTIVO"
-    if [[ "$_esc_nuevo" == "1" ]]; then
-      # las dos del pipeline: el cartel lo trae la regla, sin receta (como ESC-C3)
-      ESC_VALOR=1
-      ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_esc}»).${ESC_MOTIVO:+ (No valió: ${ESC_MOTIVO}.)}
-Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>."
-    fi
-    if [[ "$_esc" == "TYCON_TEST_GATE" ]]; then
-      block "ESC-C1" \
-        "TYCON_TEST_GATE la pone test-gate.sh dentro de su propio proceso. Escrita por el agente, da un verde de pruebas (o un «sin medir») que no corrió." \
-        "Corré la suite con test-gate.sh <repo> <ruta de la story>: el verde sale de las pruebas de verdad. Si no se puede medir, decíselo a la persona."
-    elif [[ "$_esc" == "DOD_BYPASS" ]]; then
-      block "ESC-C1" \
-        "DOD_BYPASS cierra un paso sin la evidencia de la prueba en vivo." \
-        "Corré la prueba en vivo de verdad (la evidencia la escriben los guiones que corren las pruebas). Si no se puede, decíselo a la persona."
-    elif [[ "$_esc" == "TYCON_NO_DEEP_REVIEW" ]]; then
-      block "ESC-C1" \
-        "TYCON_NO_DEEP_REVIEW apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
-        "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona («autorizo TYCON_NO_DEEP_REVIEW»)."
-    elif [[ "$_esc" == "TYCON_STATUS_GATE" ]]; then
-      block "ESC-C1" \
-        "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
-        "El estado lo cambia el orquestador, que corre los controles del cierre: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona («autorizo cambiar el estado»)."
-    elif [[ "$_esc" == "TYCON_PROD_LINT" ]]; then
-      block "ESC-C1" \
-        "TYCON_PROD_LINT=0 apaga, al commitear, la revisión del catálogo de servidores de producción (.tycon/production.json). Un catálogo roto deja al freno de producción decidiendo con datos malos." \
-        "Arreglá el catálogo para que la revisión pase. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo."
+    if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
+      constancia ESC-C1 escape ambiente "" "$(read_field session_id 2>/dev/null || true)" "$_esc"
     else
-      block "ESC-C1" \
-        "TYCON_NEW_NAMES=0 apaga, al commitear, el freno de nombres reales (clientes, personas, servidores) en lo que se publica." \
-        "Reemplazá el nombre por uno inventado, o pedí su excepción en la lista. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo."
+      OW_ESCAPES+=("escape:$_esc")
     fi
   fi
 done
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+
+# esc_c1_negar <VARIABLE> — la ventana negó un escape por variable: frena con el motivo de esa variable. El cartel es
+# lo que dijo la ventana (por qué no, y cómo se firma en la terminal), quién lo decide y, en las del pipeline, la salida
+# normal de una historia que no se pudo terminar.
+esc_c1_negar() {
+  # las del pipeline, sin la receta: el agente no aprende a ponerse la variable
+  case "$1" in
+    TYCON_TEST_GATE|DOD_BYPASS|TYCON_NO_DEEP_REVIEW|TYCON_STATUS_GATE) ESC_CARTEL="$OW_TEXTO
+Esto lo decide la persona, no el agente: lo aprueba ella en la ventana de permiso de la herramienta, o lo corre ella en su terminal.
+Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>." ;;
+    TYCON_PROD_LINT|TYCON_NEW_NAMES) ESC_CARTEL="$OW_TEXTO
+$(cartel_escape "$1" 0)" ;;
+    *) ESC_CARTEL="$OW_TEXTO" ;;
+  esac
+  case "$1" in
+    TYCON_TEST_GATE) block "ESC-C1" \
+        "TYCON_TEST_GATE la pone test-gate.sh dentro de su propio proceso. Escrita por el agente, da un verde de pruebas (o un «sin medir») que no corrió." \
+        "Corré la suite con test-gate.sh <repo> <ruta de la story>: el verde sale de las pruebas de verdad. Si no se puede medir, decíselo a la persona." ;;
+    DOD_BYPASS) block "ESC-C1" \
+        "DOD_BYPASS cierra un paso sin la evidencia de la prueba en vivo." \
+        "Corré la prueba en vivo de verdad (la evidencia la escriben los guiones que corren las pruebas). Si no se puede, decíselo a la persona." ;;
+    TYCON_NO_DEEP_REVIEW) block "ESC-C1" \
+        "TYCON_NO_DEEP_REVIEW apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
+        "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;
+    TYCON_STATUS_GATE) block "ESC-C1" \
+        "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
+        "El estado lo cambia el orquestador, que corre los controles del cierre: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso." ;;
+    TYCON_PROD_LINT) block "ESC-C1" \
+        "TYCON_PROD_LINT=0 apaga, al commitear, la revisión del catálogo de servidores de producción (.tycon/production.json). Un catálogo roto deja al freno de producción decidiendo con datos malos." \
+        "Arreglá el catálogo para que la revisión pase. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo." ;;
+    TYCON_NEW_NAMES) block "ESC-C1" \
+        "TYCON_NEW_NAMES=0 apaga, al commitear, el freno de nombres reales (clientes, personas, servidores) en lo que se publica." \
+        "Reemplazá el nombre por uno inventado, o pedí su excepción en la lista. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo." ;;
+    *) block "ESC-C1" \
+        "El comando apaga el freno de seguridad (${1}) y la ventana de permiso no lo dejó pasar." \
+        "Si la persona quiere hacerlo igual, lo corre ella en su terminal." ;;
+  esac
+}
 
 # ESC-C1, el nombre armado: una asignación con el nombre de la variable en otra variable (`V=TYCON_…; export $V=1`,
 # `declare -x "$V=1"`, `env "$V=1"`, `printf -v "$V"`, `read $V`, `eval "$V=1"`; en PowerShell `Set-Item env:$V` o
@@ -571,22 +602,22 @@ if [[ "$_arm_hit" == "1" ]]; then
   ESC_CARTEL=""
   block "ESC-C1" \
     "El comando asigna una variable con el nombre armado (en otra variable) y corre los guiones del pipeline: el nombre de la variable no se ve, así que el freno no puede saber si es un escape." \
-    "Escribí el nombre de la variable entero: si es un escape, su regla decide y la persona lo autoriza con su frase."
+    "Escribí el nombre de la variable entero: si es un escape, su regla decide y la persona lo aprueba en la ventana de permiso."
 fi
 
 # ESC-C3: apagar el lazo de las pruebas o cerrar una ejecución que no terminó lo decide la persona. Con un control en
 # rojo, el modo autónomo no deja cerrar el turno; `marker.js set-autonomous <valor que lo apaga>` lo apaga, y `clear`,
 # `clear-session` de la propia sesión o `update-story-status <h> review|done` la cierran como si hubiera terminado.
 # Frena sólo si el marcador de la sesión lo justifica (lib/run-close.js: modo autónomo prendido para apagarlo; un
-# control en rojo, pasos sin correr o el pase sin cerrar para cerrar) y la persona no escribió «autorizo set-autonomous»
-# o «autorizo cerrar la ejecución». Con la frase queda la constancia con la sesión y el escape (`marker.js clear` la lee
-# para anotar quién autorizó) y siguen las demás reglas. `adhoc clear` y `doing clear` no tocan la ejecución: no frena.
+# control en rojo, pasos sin correr o el pase sin cerrar para cerrar), salvo que la persona lo apruebe en la ventana de
+# permiso. Aprobado, queda la constancia con la sesión y el escape (`marker.js clear` la lee para anotar quién autorizó)
+# y siguen las demás reglas. `adhoc clear` y `doing clear` no tocan la ejecución: no frena.
 ESC_CARTEL=""
 # Declarar un control en verde a mano (`marker.js set-check … --force-manual`) o dar por corridos revisores que el arnés
-# no vio (`pipeline.js check-count --trust-ran`) también lo decide la persona («autorizo force-manual», «autorizo
-# trust-ran»), y frena con la ejecución en verde: el escape es el verde, no cerrar en rojo. Apagar el pase adversarial
-# (`--no-deep-review` en `pipeline.js start|deep-review-gate` o `marker.js mark-adversarial-skipped`) frena siempre, también
-# antes de que exista la ejecución: `start` la crea («autorizo no-deep-review» o «autorizo TYCON_NO_DEEP_REVIEW»).
+# no vio (`pipeline.js check-count --trust-ran`) también lo decide la persona, y frena con la ejecución en verde: el
+# escape es el verde, no cerrar en rojo. Apagar el pase adversarial (`--no-deep-review` en `pipeline.js
+# start|deep-review-gate` o `marker.js mark-adversarial-skipped`) frena siempre, también antes de que exista la
+# ejecución: `start` la crea.
 # El comando lo lee lib/marker-command.js como lo lee el shell (comillas, renglones, `$(…)`, barras de Windows,
 # mayúsculas); acá sólo se mira si nombra `marker` o `pipeline`, sin distinguir mayúsculas, para no correr node en cada
 # comando.
@@ -599,6 +630,7 @@ ESC_CARTEL=""
 # El filtro mira el comando sin comillas ni barras invertidas (`_esc_cmd`, de ESC-C1): `pipe''line.js` es `pipeline.js`
 # para el shell, y sin esto no llegaba al lector. Un comando que corre `node` o `bun` también va al lector: el nombre del
 # guion puede venir armado por el shell (`pipelin?.js`, `mar$'k'er.js`), y el lector lo trata como cualquiera de los dos.
+_c3_negables=(); _c3_perdida=""; _c3_sid=""
 _c3_node=0; _c3_re='(^|[[:space:];&|(]|/)(node|nodejs|bun)(\.exe)?[[:space:]]'
 shopt -s nocasematch
 [[ "$_esc_cmd" =~ $_c3_re ]] && _c3_node=1
@@ -637,6 +669,10 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
       sinconversacion=1) _c3_sinconv=1 ;;
     esac
   done <<< "$_c3_out"
+  # Cada escape va a la ventana de permiso (más abajo, después de ESC-C7), con lo que hace falta para frenar con su
+  # motivo si la ventana lo niega: «<clave>\t<escape>\t<subcomando>\t<argumento>». La salida de una ejecución perdida
+  # (con `desde`: lib/open-runs.js) es la firma `lost-run`, que la ventana lee del comando; se anota aparte.
+  _c3_negables=(); _c3_perdida=""
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
     _c3_desde=""; _c3_sinr=""
     IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde _c3_sinr <<< "$_c3_f" || true
@@ -644,59 +680,26 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
     case "$_c3_esc" in
       "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
       "cerrar como deuda") _c3_clave="cerrar-como-deuda"; _c3_regla="ESC-C4" ;;
-      *) _c3_clave="$_c3_esc" ;;
+      *) _c3_clave="${_c3_esc// /-}" ;;
     esac
     # la salida de una ejecución perdida sin apertura visible (la sesión no está escrita literal, o no tiene apertura):
-    # no hay desde cuándo medir la frase, y la ventana de minutos aceptaría una anterior a la apertura. Frena sin frase.
+    # no se sabe de qué ejecución es lo que se firmaría. Frena sin ventana.
     if [[ "$_c3_desde" == "-" ]]; then
-      ESC_CARTEL="Escribí la sesión tal cual (marker.js ${_c3_sub} <sesión>), sin variables ni comandos: sin ella no se sabe cuándo se abrió la ejecución, y la frase del dueño tiene que ser posterior a esa apertura."
+      ESC_CARTEL="Escribí la sesión tal cual (marker.js ${_c3_sub} <sesión>), sin variables ni comandos: sin ella no se sabe de qué ejecución es ni cuándo se abrió."
       block "ESC-C3" \
         "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) sin que se vea de qué sesión es ni cuándo se abrió." \
         "Repetí el comando con la sesión escrita literal."
     fi
-    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c3_esc" "$_c3_desde" "$_c3_sinr"; then
-      constancia "$_c3_regla" escape "$ESC_VIA" "$ESC_RELEVO" "$_c3_sid" "$_c3_clave"
+    if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
+      constancia "$_c3_regla" escape ambiente "" "$_c3_sid" "$_c3_clave"
       continue
     fi
-    # la salida de una ejecución perdida (lib/open-runs.js): la decide el dueño, con su frase posterior a la apertura
     if [[ -n "$_c3_desde" ]]; then
-      ESC_CARTEL="Esto lo decide el dueño, no el agente: si quiere sacar la ejecución perdida, lo dice él en su mensaje («autorizo cerrar la ejecución»), después de la apertura de la ejecución${_c3_desde:+ (${_c3_desde})}. Un reenvío de otra sesión no vale."
-      block "ESC-C3" \
-        "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) la cierra o la rearma sin la pieza que le falta.${ESC_MOTIVO:+ ${ESC_MOTIVO}.}" \
-        "Explicale al dueño qué pieza falta y pedile la frase."
+      _c3_perdida="${_c3_sub}"$'\t'"${_c3_a1}"
+      continue
     fi
-    if [[ "$_c3_regla" == "ESC-C4" ]]; then
-      # ESC-C4: cerrar la historia como deuda (o registrar un control en rojo como esperado) deja una salida prevista
-      # por la historia como el final de la ejecución. Lo decide la persona, siempre: no depende del estado del marcador.
-      ESC_CARTEL="Esto lo decide la persona, no el agente: si la historia quedó como deuda, lo dice ella en su mensaje («autorizo cerrar como deuda»)."
-      block "ESC-C4" \
-        "Cerrar la historia como deuda (marker.js ${_c3_sub}) deja lo que no se pudo hacer como el final de la ejecución, con su deuda anotada." \
-        "Si se puede terminar, terminá. Si no, explicale a la persona qué quedó pendiente y por qué, y pedile la frase."
-    fi
-    # primero la salida que no necesita a la persona: con el escape adelante, el agente se lo pedía en vez de hacerla
-    ESC_CARTEL="Primero lo que no necesita a la persona: lo de «Alternativa» (correr el paso o el control, arreglar lo que está en rojo). No le pidas la frase antes de intentarlo.
-Si no se puede, explicale a la persona qué falta y por qué: lo que sigue lo decide la persona, entre dejar la historia como deuda (marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>, con su frase «autorizo cerrar como deuda») o hacerlo igual («autorizo ${_c3_esc}»)."
-    if [[ "$_c3_esc" == "force-manual" ]]; then
-      block "ESC-C3" \
-        "Declarar un control en verde a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo." \
-        "Corré el control de verdad: marker.js run-check <nombre> -- <comando>. Si no se puede, decíselo a la persona."
-    elif [[ "$_c3_esc" == "trust-ran" ]]; then
-      block "ESC-C3" \
-        "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr." \
-        "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona."
-    elif [[ "$_c3_esc" == "no-deep-review" ]]; then
-      block "ESC-C3" \
-        "--no-deep-review en ${_c3_sub} apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
-        "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona («autorizo no-deep-review» o «autorizo TYCON_NO_DEEP_REVIEW»)."
-    elif [[ "$_c3_esc" == "set-autonomous" ]]; then
-      block "ESC-C3" \
-        "Apagar el modo autónomo (marker.js set-autonomous ${_c3_a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \
-        "Arreglá lo que está en rojo y volvé a correr el control. Si no se puede, decíselo a la persona."
-    else
-      block "ESC-C3" \
-        "Cerrar la ejecución ahora (marker.js ${_c3_sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
-        "Terminá lo pendiente. Si no se puede, decíselo a la persona."
-    fi
+    OW_ESCAPES+=("escape:${_c3_clave}")
+    _c3_negables+=("${_c3_clave}"$'\t'"${_c3_esc}"$'\t'"${_c3_sub}"$'\t'"${_c3_a1}")
   done
   # una decisión, una frase: el paso que cubre la frase ya dada pasa, con su constancia y la vía de esa frase
   for _c3_f in ${_c3_cubre[@]+"${_c3_cubre[@]}"}; do
@@ -708,49 +711,101 @@ Si no se puede, explicale a la persona qué falta y por qué: lo que sigue lo de
     esac
     constancia ESC-C3 escape "$_c3_via" "$_c3_rel" "$_c3_sid" "$_c3_clave"
   done
-  if [[ "$_c3_sinconv" == "1" ]]; then
-    constancia ESC-C6 escape sin-conversacion "" "$_c3_sid"
-  fi
-  for _c3_f in ${_c3_aprob[@]+"${_c3_aprob[@]}"}; do
-    IFS=$'\t' read -r _c3_sub _c3_por <<< "$_c3_f" || true
-    ESC_CARTEL="La aprobación del plan es de la persona: no hay frase para saltear esta regla. Mostrale el plan y pedile que lo apruebe con sus palabras (o eligiendo una opción); la cita es lo que ella dijo."
-    block "ESC-C6" \
-      "La cita de la aprobación (marker.js ${_c3_sub} --approved) no es de la persona: ${_c3_por:-no la encontré en la conversación}." \
-      "Citá textual lo que escribió la persona, o la opción que eligió, sin agregarle ni resumirle nada. Si aprobó otra sesión por delegación, la cita es su frase tal cual, y quién aprobó va en --delegated-by."
-  done
+  # ESC-C6: aprobar el plan es una firma del guion; la pide la ventana siempre, con la cita o sin ella (más abajo). Lo
+  # que el lector dice de la cita (`aprobacion=`) ya no frena.
 fi
 ESC_CARTEL=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 
-# ESC-C7: firmar un cambio de control por delegación (`run-base-controls.sh approve … --relayed-by <rol>`). Sólo la sesión
-# designada, sin trabajo propio abierto y con el comando escrito literal: entonces el lector (lib/delegated-signing.js
-# guard-token) deja la ficha que `approve` consume, y el comando pasa. Si no, frena con su motivo y no hay ficha. Un
-# comando que esconde la firma (`node -e`, otro guion) no llega acá: no hay ficha y `approve` no firma.
-# Casos: scripts/tests/safety-escape.test.js
+# --- La ventana de permiso: las firmas del dueño -----------------------------
+# Una sola consulta a lib/owner-window.js con las firmas `freno` que juntaron ESC-C1, ESC-C3 y ESC-C4; las de los
+# guiones (aprobar el plan, ESC-C6; aprobar un control, ESC-C7; eximir un crítico, la vuelta extra, …) las lee el propio
+# módulo del comando. Contesta una de cuatro:
+#   · deny: frena con la regla de la firma y el motivo de la ventana, que trae cómo firmarla en la terminal;
+#   · ask: se guarda y se emite al salir 0 (salida_ok), así una regla posterior que frena sigue frenando;
+#   · allow: la delegación aprobada por el dueño (force-manual, trust-ran) la firmó, con su constancia;
+#   · none: no hay firma que pedir (o la vuelta extra delegada, que la consume pipeline.js).
+# Aprobar un control con `--relayed-by` ya no vale: la ventana lo niega (ESC-C7). Con el freno apagado por el ambiente
+# no se consulta: los escapes ya dejaron su constancia, y los guiones sin registro de la ventana sólo firman en la
+# terminal. Casos: scripts/tests/owner-window.test.js (la decisión) y scripts/tests/safety-escape.test.js (el freno).
+ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
+  case "$1" in
+    escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_NO_DEEP_REVIEW|escape:TYCON_STATUS_GATE) echo "ESC-C1" ;;
+    escape:cerrar-como-deuda) echo "ESC-C4" ;;
+    plan-approval) echo "ESC-C6" ;;
+    control-change|refresh-after-main) echo "ESC-C7" ;;
+    *) echo "ESC-C3" ;;
+  esac
+}
+ow_negar() { # la ventana negó: frena con el motivo de la firma
+  OW_NEGANDO=1
+  local regla f clave esc sub a1
+  regla="$(ow_regla "$OW_FIRMA")" || regla="ESC-C3"
+  if [[ "$regla" == "ESC-C1" ]]; then esc_c1_negar "${OW_FIRMA#escape:}"; fi
+  for f in ${_c3_negables[@]+"${_c3_negables[@]}"}; do
+    IFS=$'\t' read -r clave esc sub a1 <<< "$f" || true
+    [[ "escape:$clave" == "$OW_FIRMA" ]] || continue
+    ESC_CARTEL="$OW_TEXTO
+Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, explicale qué falta y por qué: lo que sigue lo decide ella, entre dejar la historia como deuda (marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>) o hacerlo igual."
+    case "$clave" in
+      cerrar-como-deuda) block "ESC-C4" \
+          "Cerrar la historia como deuda (marker.js ${sub}) deja lo que no se pudo hacer como el final de la ejecución, con su deuda anotada." \
+          "Si se puede terminar, terminá. Si no, explicale a la persona qué quedó pendiente y por qué." ;;
+      force-manual) block "ESC-C3" \
+          "Declarar un control en verde a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo." \
+          "Corré el control de verdad: marker.js run-check <nombre> -- <comando>. Si no se puede, decíselo a la persona." ;;
+      trust-ran) block "ESC-C3" \
+          "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr." \
+          "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona." ;;
+      no-deep-review) block "ESC-C3" \
+          "--no-deep-review en ${sub} apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
+          "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;
+      set-autonomous) block "ESC-C3" \
+          "Apagar el modo autónomo (marker.js set-autonomous ${a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \
+          "Arreglá lo que está en rojo y volvé a correr el control. Si no se puede, decíselo a la persona." ;;
+      *) block "ESC-C3" \
+          "Cerrar la ejecución ahora (marker.js ${sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
+          "Terminá lo pendiente. Si no se puede, decíselo a la persona." ;;
+    esac
+  done
+  ESC_CARTEL="$OW_TEXTO"
+  case "$OW_FIRMA" in
+    plan-approval) block "ESC-C6" \
+        "Aprobar el plan es una firma de la persona, y este comando no la puede pedir en la ventana de permiso." \
+        "Mostrale el plan a la persona y corré la aprobación en su forma exacta, sola, para que la apruebe en la ventana; o que la firme ella en su terminal." ;;
+    control-change|refresh-after-main) block "ESC-C7" \
+        "Aprobar un cambio de los controles del repo es una firma del dueño, y este comando no la puede pedir en la ventana de permiso." \
+        "Corré run-base-controls.sh approve en su forma exacta, sola, para que el dueño lo apruebe en la ventana; o que lo firme él en su terminal." ;;
+    *) block "$regla" \
+        "Esto lo firma la persona, y este comando no la puede pedir en la ventana de permiso." \
+        "Corré el comando de la firma en su forma exacta, solo, para que la persona lo apruebe en la ventana; o que lo firme ella en su terminal." ;;
+  esac
+}
+_ow_mira=0
 shopt -s nocasematch
-if [[ "$_esc_cmd" == *run-base-controls* && "$_esc_cmd" == *approve* && "$_esc_cmd" == *--relayed-by* ]]; then
-  shopt -u nocasematch
-  _c7_sid="$(read_field session_id 2>/dev/null)" || _c7_sid=""
-  _c7_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/delegated-signing.js" || _c7_lib=""
-  # el lector sale 0 si dejó la ficha, 3 si el comando no corre la firma (un grep, un cat) y otro código si frena; un
-  # código que frena sin motivo escrito igual frena
-  _c7_motivo="este arnés no trae con qué dejar la ficha de la firma"
-  if [[ -n "$_c7_lib" && -f "$_c7_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
-    _c7_rc=0
-    _c7_motivo="$(printf '%s' "$CMD" | "$HNODE" "$_c7_lib" guard-token --session "$_c7_sid" --command-stdin 2>&1)" || _c7_rc=$?
-    if [[ "$_c7_rc" == 0 || "$_c7_rc" == 3 ]]; then
-      _c7_motivo=""
-    elif [[ -z "$_c7_motivo" ]]; then
-      _c7_motivo="el lector de la firma salió con código ${_c7_rc} sin decir por qué"
-    fi
-  fi
-  if [[ -n "$_c7_motivo" ]]; then
-    ESC_CARTEL="La firma de un cambio de control por delegación es de la sesión designada, con la frase del dueño en su chat. Si no se puede, la firma el dueño en su terminal."
-    block "ESC-C7" \
-      "No se puede firmar este cambio de control por delegación: ${_c7_motivo}" \
-      "Que el dueño lo firme en su terminal con el comando que da \`pending\`."
-  fi
-fi
+if [[ ${#OW_ESCAPES[@]} -gt 0 || -n "$_c3_perdida" || "$_esc_cmd" == *marker* || "$_esc_cmd" == *pipeline* || "$_esc_cmd" == *e2e-setup* || "$_esc_cmd" == *run-base-controls* ]]; then _ow_mira=1; fi
 shopt -u nocasematch
+if [[ "$_ow_mira" == "1" && "${SAFETY_OFF:-0}" != "1" ]]; then
+  [[ -n "$_c3_sid" ]] || { _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""; }
+  ow_gate ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}
+  case "$OW_DECISION" in
+    deny) ow_negar ;;
+    ask)
+      OW_ASK_JSON="$OW_JSON"
+      for _ow_e in ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}; do
+        constancia "$(ow_regla "$_ow_e")" escape ventana "" "$_c3_sid" "${_ow_e#escape:}"
+      done ;;
+    allow) constancia "$(ow_regla "$OW_FIRMA")" escape delegacion "$OW_RELEVO" "$_c3_sid" "${OW_FIRMA#escape:}" ;;
+    none)
+      # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
+      if [[ -n "$_c3_perdida" ]]; then
+        IFS=$'\t' read -r _c3_sub _c3_a1 <<< "$_c3_perdida" || true
+        ESC_CARTEL="Esto lo decide el dueño: la salida de una ejecución perdida se firma con marker.js clear-session <sesión> --lost, en la ventana de permiso o en su terminal (--terminal)."
+        block "ESC-C3" \
+          "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) la cierra o la rearma sin la pieza que le falta." \
+          "Explicale al dueño qué pieza falta y que la firme con marker.js clear-session <sesión> --lost."
+      fi ;;
+  esac
+fi
 ESC_CARTEL=""
 
 # ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y la exención de
@@ -1745,8 +1800,9 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     block "GIT-C4"     "Este comando trae un git add -A / git add . y nombra más de ${GIT_C4_MAX} carpetas distintas con cd, pushd o -C (o tantas, encadenadas, que dan más de ${GIT_C4_MAX_TRIES} combinaciones): el freno no las puede seguir a todas, y no pudo saber si el git add cae en el árbol del que salen las skills instaladas. Lo que no se pudo mirar no pasa callado."     "Partí el comando en dos, o stageá por nombre (git add <archivo>)."
   fi
   # No frenó, y no pudo mirar el árbol: se dice al terminar el guion (ver el punto 2 de arriba).
-  # Con el freno apagado (por el dev, o por el prefijo que la persona autorizó) no hay nada que avisar.
-  if [[ -n "$GIT_C4_BLIND" && "${SAFETY_OFF:-0}" != "1" ]] && ! safety_off_autorizado; then
+  # Con el freno apagado por el dev no hay nada que avisar. Con una firma esperando la ventana de permiso tampoco: el
+  # aviso sale con código 1, que haría correr el comando sin la ventana, y la persona ya mira el comando en ella.
+  if [[ -n "$GIT_C4_BLIND" && "${SAFETY_OFF:-0}" != "1" && -z "$OW_ASK_JSON" ]]; then
     trap 'git_c4_blind_notice "$?"' EXIT
   fi
 fi
@@ -1920,6 +1976,6 @@ if ps_match "${_PS_READ}"'[^[:space:]]*\.env(\.|[[:space:]]|$)'; then
 fi
 
 # ============================================================
-# Sin match → permitir.
+# Sin match → permitir (con la ventana de permiso, si una firma la pidió).
 # ============================================================
-exit 0
+salida_ok

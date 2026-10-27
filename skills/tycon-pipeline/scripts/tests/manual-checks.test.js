@@ -18,6 +18,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const REAL = path.join(__dirname, '..', '..', '..', '..');
+const { conVentana } = require(path.join(REAL, 'scripts', 'tests', 'lib', 'window-passed.js'));
 // stable-data: las horas de la conversación van después de la muestra, que se anota con el reloj real
 const T = (seg) => new Date(Date.now() + 60000 + seg * 1000).toISOString();
 function tmp(prefijo) { return fs.mkdtempSync(path.join(os.tmpdir(), prefijo)); }
@@ -62,7 +63,7 @@ function laboratorio({ sid = 's-mc', opcion = 'required' } = {}) {
   git('add', '.'); git('commit', '-qm', 'base');
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', TYCON_PROFILE: '0' };
   delete env.TYCON_HOME;
-  const marker = (args, extra = {}) => spawnSync(process.execPath, [MARKER, ...args], { cwd: repo, encoding: 'utf8', env: { ...env, ...extra }, detached: true });
+  const marker = (args, extra = {}, { ventana = true } = {}) => spawnSync(process.execPath, [MARKER, ...args], { cwd: repo, encoding: 'utf8', env: ventana ? conVentana({ ...env, ...extra }) : { ...env, ...extra }, detached: true });
   const set = marker(['set', JSON.stringify({ storyId: '9.94', storyPath: story, repoPath: repo })]);
   assert.equal(set.status, 0, set.stderr);
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.94', true, story);
@@ -104,7 +105,7 @@ const mostrar = (lab, acs) => {
   assert.equal(p.status, 0, p.stderr);
   return p.stdout.trim() ? JSON.parse(p.stdout).systemMessage : '';
 };
-const marcar = (lab, acs, quote, extra = []) => lab.marker(['mark-tested', '--acs', acs, '--approved-by', 'Dev de Prueba', '--quote', quote, ...extra]);
+const marcar = (lab, acs, extra = [], opts = {}) => lab.marker(['mark-tested', '--acs', acs, '--approved-by', 'Dev de Prueba', ...extra], {}, opts);
 const lineas = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const marcas = (lab) => lineas(path.join(lab.runDir, 'manual-checks.jsonl'));
 const gates = (lab) => lineas(path.join(lab.stateDir, 'gates.log'));
@@ -160,52 +161,48 @@ test('ManualChecks_InstalacionMinima_AlEscribirElPedido @story-7.46 @ac-9', () =
 
 test('ManualChecks_OkQueNombra_Marca @story-7.46 @ac-10', () => {
   const lab = laboratorio();
-  mostrar(lab, '2,3');
-  lab.conversar([delDev('probé a mano los criterios 2 y 3')]);
-  const r = marcar(lab, '2,3', 'probé a mano los criterios 2 y 3');
+  const r = marcar(lab, '2,3');
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /Criterios 2, 3 marcados como probados a mano por Dev de Prueba/);
   const m = marcas(lab);
   assert.deepEqual(m.map((x) => x.ac), [2, 3]);
-  assert.ok(m.every((x) => x.quien === 'Dev de Prueba' && x.cita === 'probé a mano los criterios 2 y 3' && x.via === 'ok de la persona en el chat' && x.story === '9.94'));
+  assert.ok(m.every((x) => x.quien === 'Dev de Prueba' && x.via === 'ventana' && !('cita' in x) && x.story === '9.94'));
   assert.equal(gates(lab).filter((x) => x.name === 'manual-check').length, 2);
+  const firma = gates(lab).filter((x) => x.name === 'manual-test-signed');
+  assert.equal(firma.length, 1);
+  assert.deepEqual([firma[0].via, firma[0].destino], ['ventana', lab.sid]);
 });
 
 test('ManualChecks_Rechazos @story-7.46 @ac-11', () => {
-  // sin muestra
+  // sin la ventana: no marca, aunque la persona lo haya escrito en el chat
   let lab = laboratorio();
+  mostrar(lab, '2');
   lab.conversar([delDev('probé a mano el criterio 2')]);
-  let r = marcar(lab, '2', 'probé a mano el criterio 2');
+  let r = marcar(lab, '2', [], { ventana: false });
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /no se le mostró qué va a marcar/);
-  assert.match(r.stderr, /marca-pedida\.json/);
-  // ok anterior a la muestra
-  lab = laboratorio({ sid: 's-mc-ant' });
-  const antes = new Date().toISOString();
-  const espera = Date.now() + 30; while (Date.now() < espera) { /* la muestra queda después */ }
+  assert.match(r.stderr, /no pasó por la ventana/);
+  assert.match(r.stderr, /--terminal/);
+  assert.equal(marcas(lab).length, 0);
+  // la cita ya no firma, ni con la ventana
+  lab = laboratorio({ sid: 's-mc-cita' });
   mostrar(lab, '2');
-  lab.conversar([delDev('probé a mano el criterio 2', antes)]);
-  r = marcar(lab, '2', 'probé a mano el criterio 2');
+  lab.conversar([delDev('probé a mano el criterio 2')]);
+  r = marcar(lab, '2', ['--quote', 'probé a mano el criterio 2']);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /de antes de que se le mostrara qué marcaba/);
-  // genérico
-  lab = laboratorio({ sid: 's-mc-gen' });
-  mostrar(lab, '2');
-  lab.conversar([delDev('dale, seguí adelante con la historia')]);
-  r = marcar(lab, '2', 'dale, seguí adelante con la historia');
+  assert.match(r.stderr, /la cita o el reenvío ya no firman/);
+  assert.equal(marcas(lab).length, 0);
+  // quien aprueba tiene que ser una persona
+  lab = laboratorio({ sid: 's-mc-agente' });
+  r = lab.marker(['mark-tested', '--acs', '2', '--approved-by', 'Claude']);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /no nombra el criterio 2: una respuesta genérica no marca/);
-  // negación
-  lab = laboratorio({ sid: 's-mc-neg' });
-  mostrar(lab, '2');
-  lab.conversar([delDev('no lo probé, el criterio 2 no')]);
-  r = marcar(lab, '2', 'no lo probé, el criterio 2 no');
-  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /no se marcó nada/);
+  assert.equal(marcas(lab).length, 0);
   // reenvío de la sesión que la organización declara: no marca
   lab = laboratorio({ sid: 's-mc-rel' });
   perfil({ qa: { manual_check: 'required' }, approvals: { relay_session: 'coordinadora' } });
   mostrar(lab, '2');
   lab.conversar([deOtraSesion('coordinadora', 'probé a mano el criterio 2')]);
-  r = marcar(lab, '2', 'probé a mano el criterio 2', ['--relayed-by', 'coordinadora']);
+  r = marcar(lab, '2', ['--relayed-by', 'coordinadora']);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /la prueba a mano la marca la persona que probó; un reenvío no la marca/);
   assert.equal(marcas(lab).length, 0);
@@ -231,7 +228,7 @@ test('ManualChecks_JuezLeeRespuestasDeVerdad @story-7.46 @ac-10 @ac-11 — lo qu
 test('ManualChecks_Apagada_NoAnota @story-7.46 @ac-11', () => {
   const lab = laboratorio({ opcion: null });
   lab.conversar([delDev('probé a mano el criterio 2')]);
-  const r = marcar(lab, '2', 'probé a mano el criterio 2');
+  const r = marcar(lab, '2');
   assert.equal(r.status, 0, r.stderr);
   assert.match(`${r.stdout}${r.stderr}`, /tu organización no pide la marca a mano; no anoté nada/);
   assert.equal(marcas(lab).length, 0);
@@ -241,7 +238,7 @@ test('ManualChecks_Cierre_FrenaConLoQueFalta @story-7.46 @ac-13', () => {
   const lab = laboratorio();
   mostrar(lab, '1,3');
   lab.conversar([delDev('probé a mano los criterios 1 y 3')]);
-  assert.equal(marcar(lab, '1,3', 'probé a mano los criterios 1 y 3').status, 0);
+  assert.equal(marcar(lab, '1,3').status, 0);
   const f = cierre(lab);
   assert.equal(f.status, 'blocked');
   assert.deepEqual(f.faltan, [2]);
@@ -257,7 +254,7 @@ test('ManualChecks_Cierre_PasaYMarcaAMano @story-7.46 @ac-14', () => {
   const lab = laboratorio();
   mostrar(lab, '1,2,3');
   lab.conversar([delDev('probé a mano los criterios 1, 2 y 3')]);
-  assert.equal(marcar(lab, '1,2,3', 'probé a mano los criterios 1, 2 y 3').status, 0);
+  assert.equal(marcar(lab, '1,2,3').status, 0);
   assert.equal(cierre(lab).status, 'ok');
   assert.equal(MC().freno({ storyPath: lab.story, storyId: '9.94', runDir: lab.runDir, stateDir: lab.stateDir, esPantalla: false }).status, 'no-ui');
   perfil(null);

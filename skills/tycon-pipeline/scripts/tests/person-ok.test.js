@@ -239,3 +239,27 @@ test('LeerConversacion_PasoQueNoEsta_LoDiceSinOtraPunta — sin el pedido no hay
   assert.equal(ok.leerConversacion({ ...c, soloCadena: true }).registros.length, 1);
   assert.ok(Date.now() - t2 < 1000);
 });
+
+test('LeerConversacion_ArchivoSueltoEnProyectos_NoEsOtraCopia — un `.DS_Store` en la raíz, o un archivo con nombre de carpeta, no tapa el pedido', (t) => {
+  const pedido = { type: 'assistant', uuid: 'u-2', parentUuid: 'u-1', timestamp: '2026-10-19T22:00:02.000Z',
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_x', name: 'Bash', input: {} }] } };
+  const raiz = (c) => path.join(c.home, '.claude', 'projects');
+  // Finder deja un `.DS_Store` en la carpeta de proyectos: adentro no puede haber una sesión
+  for (const suelto of ['.DS_Store', '-otro-repo']) {
+    const c = conversacion([{ ...delDev(CITA), uuid: 'u-1', parentUuid: null }, pedido]);
+    fs.writeFileSync(path.join(raiz(c), suelto), 'x');
+    const conv = ok.leerConversacion({ ...c, soloCadena: true, pedido: 'toolu_x' });
+    assert.equal(conv.pasoNoUbicado, undefined, `${suelto}: ${conv.motivo}`);
+    assert.equal(conv.registros.length, 2, suelto);
+  }
+  // lo que de verdad no se puede mirar sigue contando como otra copia
+  if (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) { t.skip('sin permisos de carpeta como root ni en Windows'); return; }
+  const c = conversacion([{ ...delDev(CITA), uuid: 'u-1', parentUuid: null }, pedido]);
+  const cerrada = path.join(raiz(c), '-0');
+  fs.mkdirSync(cerrada);
+  fs.chmodSync(cerrada, 0o000);
+  let conv;
+  try { conv = ok.leerConversacion({ ...c, soloCadena: true, pedido: 'toolu_x' }); } finally { fs.chmodSync(cerrada, 0o700); }
+  assert.equal(conv.pasoNoUbicado, true);
+  assert.equal(conv.motivo, ok.MOTIVO_PASO_OTRO_ARCHIVO);
+});

@@ -2076,6 +2076,18 @@
       "requiere": []
     },
     {
+      "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
+      "raiz": "arnes",
+      "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el ayudante que da la ventana por pasada en las pruebas por subproceso vive sólo en la carpeta de pruebas: ningún guion de afuera lo nombra, y con la HOME de la cuenta no firma nada.",
+      "raiz": "arnes",
+      "ruta": "tests/window-passed-guard.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la sesión designada aprueba force-manual, trust-ran y una vuelta más en nombre del dueño (skills/tycon-pipeline/scripts/lib/delegated-ok.js): sólo si el perfil las delega y el dueño tipeó «aprobá X» en su chat hace 30 minutos o menos, una firma por pedido.",
       "raiz": "arnes",
       "ruta": "tests/delegated-ok.test.js",

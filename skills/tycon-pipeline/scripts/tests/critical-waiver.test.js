@@ -22,6 +22,7 @@ const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const SMOKE = path.join(SCRIPTS, 'smoke-run.sh');
+const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
 // el ok dice que exime el crítico que se le mostró, nombrándolo: un «eximilo» suelto no alcanza (critical-shown.test.js)
 const CITA = 'ok, eximo DODRT-C9: es un falso positivo del humo';
 // las horas de la conversación, después del arranque de la corrida (antes no valen: una frase vieja no aprueba nada)
@@ -56,7 +57,8 @@ function laboratorio({ perfil = null, conversacion = [] } = {}) {
     env.TYCON_PROFILE = p;
   }
   escribirConversacion(home, sid, conversacion);
-  const marker = (args) => spawnSync(process.execPath, [MARKER, ...args], { cwd: repo, encoding: 'utf8', env, detached: true });
+  // la firma del dueño se da en la ventana de permiso; acá se da por pasada (window-passed.js), salvo `ventana: false`
+  const marker = (args, { ventana = true } = {}) => spawnSync(process.execPath, [MARKER, ...args], { cwd: repo, encoding: 'utf8', env: ventana ? conVentana(env) : env, detached: true });
   const set = marker(['set', JSON.stringify({ storyId: '9.91', storyPath: story, repoPath: repo })]);
   assert.equal(set.status, 0, set.stderr);
   const runDir = require(PIPELINE).resolveRunDir(repo, '9.91', true, story);
@@ -94,13 +96,13 @@ function designarCoordinadora(home, { sid = 's-coord', enviados = ['m-1'], frase
 const CRITICO = { rule_id: 'DODRT-C9', severity: 'CRITICAL', advisor: 'orquestador', file: '.advisors/dod-runtime/9.91-smoke.md', disposition: 'waived', reason: 'repo sin commits' };
 const lineas = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 // como en Claude Code: antes del comando corre la puerta Bash, que le muestra el crítico a la persona
-const waive = (lab, extra) => {
+const waive = (lab, extra, opts) => {
   const args = ['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'falso positivo del humo', ...extra];
   spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
     cwd: lab.repo, encoding: 'utf8', env: lab.env,
     input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: `node ${MARKER} ${args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(' ')}` } }),
   });
-  return lab.marker(args);
+  return lab.marker(args, opts);
 };
 
 test('DesignateRelay_FraseDelDev_DesignaEstaSesion — la coordinadora se designa con la frase del dev en su chat', () => {
@@ -156,7 +158,8 @@ test('WriteFindings_CriticoEximidoSinConstancia_NoEscribe @story-8.63 @ac-1', ()
   const salida = `${r.stdout}${r.stderr}`;
   assert.match(salida, /un crítico lo decide una persona/i);
   assert.match(salida, /DODRT-C9/);
-  assert.match(salida, /waive-critical .*--approved-by .*--quote/);
+  assert.match(salida, /en la ventana de permiso: corré .*waive-critical/);
+  assert.doesNotMatch(salida, /--quote|--relayed-by/);
   assert.match(salida, /--terminal/);
   assert.equal(fs.existsSync(path.join(lab.runDir, 'findings.json')), false, 'no se escribió nada');
   // el WARNING eximido solo se sigue escribiendo
@@ -164,30 +167,34 @@ test('WriteFindings_CriticoEximidoSinConstancia_NoEscribe @story-8.63 @ac-1', ()
   assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
 });
 
+// El ok del dev ya no es una cita en el chat: lo da en la ventana de permiso, y la constancia queda manual, a nombre de
+// la cuenta, con `via` ventana.
 test('WaiveCritical_OkDelDevEnElChat_Manual @story-8.63 @ac-2', () => {
-  const cuando = T(2);
-  const lab = laboratorio({ conversacion: [delAgente('¿Lo eximo?'), delDev(CITA, cuando)] });
-  const r = waive(lab, ['--approved-by', 'Dev de Prueba', '--quote', CITA]);
+  const lab = laboratorio();
+  lab.env.USER = 'dev-de-prueba';
+  const r = waive(lab, []);
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
   const [c] = lineas(path.join(lab.runDir, 'critical-waivers.jsonl'));
-  assert.deepEqual([c.rule_id, c.file, c.tipo, c.quien, c.cita, c.cita_cuando], [CRITICO.rule_id, CRITICO.file, 'manual', 'Dev de Prueba', CITA, cuando]);
+  assert.deepEqual([c.rule_id, c.file, c.tipo, c.quien, c.via, c.cita], [CRITICO.rule_id, CRITICO.file, 'manual', 'dev-de-prueba', 'waive-critical (ventana)', undefined]);
   const ap = lineas(path.join(lab.runDir, 'approvals.jsonl')).find((l) => /DODRT-C9/.test(l.que));
-  assert.deepEqual([ap.tipo, ap.quien, ap.cita, ap.cita_cuando], ['manual', 'Dev de Prueba', CITA, cuando]);
+  assert.deepEqual([ap.tipo, ap.quien], ['manual', 'dev-de-prueba']);
+  const firma = lineas(path.join(lab.home, '.claude', '.tycon-pipeline', 'gates.log')).find((l) => l.name === 'critical-waiver-signed');
+  assert.deepEqual([firma && firma.via, firma && firma.destino], ['ventana', lab.sid]);
   const w = lab.writeFindings([CRITICO]);
   assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
 });
 
+// Ni la cita, ni el reenvío, ni el comando sin la ventana eximen: el agente solo no se exime.
 test('WaiveCritical_QuienNoEsPersona_Frena @story-8.63 @ac-3', () => {
   const lab = laboratorio({ conversacion: [delDev(CITA)] });
-  for (const quien of ['orquestador', 'tycon-dod-runtime-checker', 'coordinadora', 'claude-opus-5-5', '']) {
-    const r = waive(lab, ['--approved-by', quien, '--quote', CITA]);
-    assert.notEqual(r.status, 0, `«${quien}» no es una persona: ${r.stderr}`);
+  for (const extra of [['--approved-by', 'Dev de Prueba', '--quote', CITA], ['--quote', CITA, '--relayed-by', 'coordinadora']]) {
+    const r = waive(lab, extra);
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /la cita o el reenvío ya no eximen un crítico/);
   }
-  // la cita que sólo escribió el agente no cuenta
-  lab.conversar([delAgente(CITA)]);
-  const r = waive(lab, ['--approved-by', 'Dev de Prueba', '--quote', CITA]);
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /no la encontré en un mensaje escrito por/i);
+  const sinVentana = waive(lab, [], { ventana: false });
+  assert.equal(sinVentana.status, 1, sinVentana.stderr);
+  assert.match(sinVentana.stderr, /no pasó por la ventana/);
   assert.equal(lineas(path.join(lab.runDir, 'critical-waivers.jsonl')).length, 0, 'no se anotó nada');
 });
 
@@ -198,12 +205,11 @@ test('WaiveCritical_Reenviada_SoloConLaClave @story-8.63 @ac-4', () => {
   const sin = laboratorio({ perfil: { approvals: { relay_session: 'coordinadora' } }, conversacion: [reenvio] });
   const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
   // por el comando, sólo si el árbol que corre la prueba no declara relevo: la noche le pone encima el perfil del equipo
-  if (!cw.sesionQueReenvia({ env: { TYCON_PROFILE: '0' }, home: sin.home }).valor) {
-    const r = waive(sin, ['--approved-by', 'Dev de Prueba', '--quote', CITA, '--relayed-by', 'coordinadora']);
-    assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /approvals\.relay_session/);
-    assert.equal(lineas(path.join(sin.runDir, 'critical-waivers.jsonl')).length, 0);
-  }
+  // por el comando, el reenvío ya no exime: lo exime la persona en la ventana de permiso
+  const r = waive(sin, ['--approved-by', 'Dev de Prueba', '--quote', CITA, '--relayed-by', 'coordinadora']);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /la cita o el reenvío ya no eximen un crítico/);
+  assert.equal(lineas(path.join(sin.runDir, 'critical-waivers.jsonl')).length, 0);
   // y siempre con un árbol de juguete sin la clave, aunque TYCON_PROFILE la traiga
   const sinClave = tmp('cw-sin-clave-');
   fs.writeFileSync(path.join(sinClave, 'team-profile.json'), JSON.stringify({}));
@@ -242,12 +248,13 @@ test('WaiveCritical_Reenviada_SoloConLaClave @story-8.63 @ac-4', () => {
   assert.equal(cw.okDeUnaPersona({ approvedBy: 'Dev de Prueba', quote: CITA, relayedBy: 'coordinadora', env, home: sin.home, arnes, desde }).ok, false);
 });
 
+// Sin la ventana (el guion no lo lanzó la consola de la herramienta), el rechazo ofrece la terminal.
 test('WaiveCritical_SinConversacion_OfreceLaTerminal @story-8.63 @ac-2', () => {
   const lab = laboratorio();
   fs.rmSync(path.join(lab.home, '.claude', 'projects'), { recursive: true, force: true });
-  const r = waive(lab, ['--approved-by', 'Dev de Prueba', '--quote', CITA]);
+  const r = waive(lab, [], { ventana: false });
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /no puedo leer la conversación/i);
+  assert.match(r.stderr, /no pasó por la ventana/i);
   assert.match(r.stderr, /--terminal/);
 });
 
@@ -272,7 +279,7 @@ test('Step7_CriticoEximidoSinConstancia_Frena @story-8.63 @ac-6', () => {
   assert.equal(lineas(path.join(lab.runDir, 'approvals.jsonl')).filter((l) => /exencion/.test(l.que)).length, 0, 'ninguna exención automática «sin nombrar»');
   const { verificarExenciones } = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
   assert.equal(verificarExenciones(lab.runDir).faltan.length, 1, 'la misma verificación que usa el 8');
-  const w = waive(lab, ['--approved-by', 'Dev de Prueba', '--quote', CITA]);
+  const w = waive(lab, []);
   assert.equal(w.status, 0, w.stderr);
   assert.equal(verificarExenciones(lab.runDir, { home: lab.home, env: lab.env }).faltan.length, 0);
   r = lab.marker(['complete-step', '7']);
@@ -305,7 +312,7 @@ test('Step8_CriticoEximidoSinConstancia_Frena @story-8.63 @ac-6', () => {
   // con la constancia del ok, el cierre del 8 ya no frena por esto (lo que frene después es de otros portones)
   fs.writeFileSync(path.join(lab.runDir, 'findings.json'), JSON.stringify([CRITICO]));
   fs.rmSync(path.join(lab.runDir, 'critical-waivers.jsonl'));
-  assert.equal(waive(lab, ['--approved-by', 'Dev de Prueba', '--quote', CITA]).status, 0);
+  assert.equal(waive(lab, []).status, 0);
   r = lab.marker(['complete-step', '8', '--out-of-order']);
   assert.doesNotMatch(r.stderr, /sin el ok de una persona/);
   // una constancia legítima no se puede copiar a otra historia, ni cambiarle la vía o el «quién» (vuelta 3 de revisores)
@@ -355,34 +362,39 @@ function mostrarCriterio(lab) {
 }
 const FIRMA = 'firmo el AC 1: el servicio externo no tiene ambiente de prueba';
 
+// Sin terminal, el criterio lo firma la persona en la ventana de permiso: la firma queda sin cita, con `via` ventana.
 test('RuntimeWaiver_OkDelDev_FirmaSinTerminal @story-8.63 @ac-7', () => {
   const lab = laboratorioDeCriterio([delAgente('Hay un criterio para firmar.', new Date().toISOString())]);
   mostrarCriterio(lab);
-  lab.conversar([delDev(FIRMA, T(2))]);
-  const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', FIRMA]);
+  const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba']);
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
   const lib = require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js'));
   const firmados = lib.waivedAcs('9.91', { declHashByAc: { 1: lib.declHashFor('x', 'T1') }, repoRoot: lab.repo });
   assert.ok(firmados.has(1), 'la matriz lo cuenta');
   const [e] = lineas(lib.repoWaiverLogPath(lab.repo));
-  assert.deepEqual([e.tty, e.ok && e.ok.tipo, e.ok && e.ok.cita], [false, 'manual', FIRMA]);
+  assert.deepEqual([e.tty, e.ok && e.ok.tipo, e.ok && e.ok.via, e.ok && e.ok.cita], [false, 'manual', 'ventana', undefined]);
   const ap = lineas(path.join(lab.runDir, 'approvals.jsonl')).find((l) => /AC 1/.test(l.que));
-  assert.deepEqual([ap.tipo, ap.quien, ap.cita], ['manual', 'Dev de Prueba', FIRMA]);
+  assert.deepEqual([ap.tipo, ap.quien], ['manual', 'Dev de Prueba']);
 });
 
 test('RuntimeWaiver_SinOk_Frena @story-8.63 @ac-7', () => {
   const lab = laboratorioDeCriterio([delAgente(CITA)]);
+  const log = () => fs.existsSync(require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js')).repoWaiverLogPath(lab.repo));
+  // la cita ya no firma
   const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', CITA]);
   assert.notEqual(r.status, 0);
-  assert.equal(fs.existsSync(require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js')).repoWaiverLogPath(lab.repo)), false);
+  assert.match(r.stderr, /la cita ya no firma/);
+  assert.equal(log(), false);
   // reenviado por otra sesión: no se acepta para un criterio, lo firma la persona que lo vio
   const rel = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', CITA, '--relayed-by', 'coordinadora']);
   assert.notEqual(rel.status, 0);
   assert.match(rel.stderr, /no se acepta reenviad/);
-  // sin opciones sigue siendo la terminal
-  const t = lab.marker(['runtime-waiver', lab.story]);
+  // sin la ventana, no firma y ofrece la terminal
+  const t = lab.marker(['runtime-waiver', lab.story], { ventana: false });
   assert.notEqual(t.status, 0);
+  assert.match(t.stderr, /no pasó por la ventana/);
   assert.match(t.stderr, /terminal/);
+  assert.equal(log(), false);
 });
 
 test('RuntimeWaiver_FirmasViejasSiguen @story-8.63 @ac-7', () => {
@@ -435,11 +447,11 @@ test('Guias_DicenElOrdenEnLlano @story-8.63 @ac-13', () => {
   const fii = skill.slice(skill.indexOf('**F.ii'), skill.indexOf('**F.iii'));
   for (const [nombre, texto] of [['F.ii', fii], ['paso 7', leer('skills/tycon-pipeline/steps/step-09-findings.md')], ['paso 7c', leer('skills/tycon-pipeline/steps/step-10-live-check.md')]]) {
     assert.match(texto, /nunca se exime solo|nunca firma por su cuenta/i, `${nombre}: el agente no decide solo`);
-    const chat = texto.search(/ok del dev/i);
+    const ventana = texto.search(/ventana de permiso/i);
     const terminal = texto.search(/--terminal|desde su terminal|en su terminal/i);
-    assert.ok(chat >= 0 && terminal > chat, `${nombre}: el ok del dev en el chat va antes que la terminal`);
-    assert.match(texto, /--relayed-by/, `${nombre}: la variante reenviada`);
-    assert.match(texto, /no prueba quién/i, `${nombre}: el límite`);
+    assert.ok(ventana >= 0 && terminal > ventana, `${nombre}: la ventana de permiso va antes que la terminal`);
+    // la cita y el reenvío ya no firman: ninguna guía enseña a pasarlos a estos comandos
+    assert.doesNotMatch(texto, /(waive-critical|runtime-waiver|mark-tested)[^\n]*--(quote|relayed-by) ["<]/, `${nombre}: no enseña la cita`);
   }
   assert.doesNotMatch(fii, /El agente JAMÁS aprueba/);
 });
@@ -476,4 +488,11 @@ test('WaiveCritical_Terminal_ConTty_Manual @story-8.63 @ac-5', (t) => {
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
   const [c] = lineas(path.join(lab.runDir, 'critical-waivers.jsonl'));
   assert.deepEqual([c.tipo, c.quien, c.via], ['manual', 'dev-de-prueba', 'waive-critical (terminal)']);
+  // la terminal del dueño no tiene la variable de sesión: la sesión va con --for-session, como la dice el freno
+  const sinSesion = { ...lab.env, USER: 'dev-de-prueba' };
+  for (const v of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete sinSesion[v];
+  const r2 = spawnSync('python3', ['-I', guion, process.execPath, MARKER, 'waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'falso positivo', '--for-session', lab.sid, '--terminal'],
+    { cwd: lab.repo, encoding: 'utf8', env: sinSesion, timeout: 60000 });
+  assert.equal(r2.status, 0, `${r2.stdout}${r2.stderr}`);
+  assert.equal(lineas(path.join(lab.runDir, 'critical-waivers.jsonl')).length, 2);
 });

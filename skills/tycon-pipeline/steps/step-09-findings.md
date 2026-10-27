@@ -289,40 +289,19 @@ quita la fricción, no la trazabilidad.
   (no-negociable — los revisores auditaron la versión ANTERIOR al fix), se vuelve a «Revisores» (vuelta N+1) sobre el diff actualizado, siguiendo la sección «Otra vuelta» de `step-07-reviewers.md`.
   `pipeline.js next` la pide solo («Revisores, vuelta N») cuando hay ediciones de código posteriores. Si el dev prefiere cortar acá y retomar después, el marcador queda activo.
 - **"override" (eximir el crítico)** → un crítico lo decide una persona: **el agente nunca se exime solo**, ni
-  firmando como `orquestador`, ni con «hacé lo que recomiendes». Tres caminos, en este orden:
-  1. **El ok del dev en el chat** (el principal). El crítico se lo muestra el arnés, no vos, y **antes de pedirle el ok**:
-     contarlo vos en el chat no cuenta como muestra, y un ok que llega antes de la muestra del arnés no vale (el comando
-     dice a qué hora la mostró y que se lo pidas de nuevo). Corré
-     `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>"` y, antes de que corra, el arnés le
-     pone en pantalla un bloque «Te piden eximir un crítico» con la regla, su nombre en llano, el archivo, lo que dijo
-     el revisor y tu motivo. El comando frena hasta que el dev conteste a ESE bloque. Si el bloque no apareció (la
-     instalación mínima no trae la puerta de comandos), escribí con Write `exencion-pedida.json` en la carpeta de la
-     corrida con `{ "rule", "file", "reason" }` y el arnés lo muestra. El bloque trae, además, **todos los otros
-     críticos abiertos de la corrida** que todavía no se mostraron ni se eximieron: pedí la muestra UNA vez, antes de
-     pedirle el ok a nadie, y la persona contesta uno por mensaje o todos en uno («eximo TEST-C1. eximo ADV-C1»). Un
-     código largo del pase adversarial se nombra entero, tal como está en findings.json. Con su respuesta,
-     `marker.js waive-critical … --approved-by "<el dev>" --quote "<sus palabras, textuales>"`. La cita vale si está
-     en un mensaje escrito por el dev (no en lo que escribiste vos, una herramienta, un subagente u otra sesión),
-     **posterior a la muestra**, y si ese mensaje **dice que exime ese crítico**: una frase con «exim…» y su regla
-     («eximo TEST-C1», o «apruebo eximir TEST-C1») o el nombre en llano que le enseñó el bloque («eximo la suite
-     completa»); si la regla está en
-     más de un archivo, también el archivo. Un «apruebo, seguí» o un «dale» suelto no exime: es un ok a algo, no a este crítico. Tampoco un ok de
-     antes de la muestra, uno a otro crítico, una pregunta, ni uno con una negación, un freno o una condición («no»,
-     «esperá», «si lo arreglás…») en cualquier parte del mensaje, aunque sea una aclaración de otra cosa: el ok va solo
-     en su mensaje («eximo TEST-C1», con su motivo si quiere) y **cualquier otra cosa, en otro mensaje**. Una aclaración
-     en un mensaje aparte no tumba el ok; uno posterior que nombra el crítico, habla de eximir o es un «No.» / «Esperá.»
-     corto, sí. Ante la duda no exime, y el arnés dice qué escribir. Queda manual, con la cita y su hora.
-  2. **Reenviado por la sesión coordinadora**, si la organización la usa (`approvals.relay_session` del perfil del
-     equipo, con el nombre del rol; por defecto ninguna): lo mismo con `--relayed-by <rol>`. La cita tiene que llegar
-     textual en un mensaje que mandó la sesión designada en esta máquina (`marker.js designate-relay`, con la frase del
-     dev en su chat), posterior a la muestra y nombrando el crítico. El nombre de la sesión no cuenta. Queda
-     automático, por delegación del dev.
-  3. **Desde su terminal**, si el dev prefiere: `marker.js waive-critical … --terminal` (lo corre el dev).
+  firmando como `orquestador`, ni con «hacé lo que recomiendes». Dos caminos:
+  1. **La ventana de permiso** (el principal). Corré
+     `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"`, sin
+     `--quote` ni `--relayed-by`. La herramienta le abre al dev la ventana de permiso con el comando: ahí ve la regla,
+     el archivo y tu motivo, y lo aprueba o no. El guion comprueba que lo lanzó la herramienta con ese comando; si no
+     pasó por la ventana, frena y dice cómo firmarlo en la terminal. Lo que el dev escriba en el chat, o lo que reenvíe
+     otra sesión, ya no exime: el comando con `--quote` o `--relayed-by` se niega. Queda manual, a nombre del dev, con
+     `via: ventana`.
+  2. **Desde su terminal**, si el dev prefiere o la herramienta no tiene ventana: `marker.js waive-critical … --terminal`
+     (lo corre el dev).
 
   Recién con la constancia, el hallazgo se anota `waived` en `pipeline.js write-findings`: sin ella, `write-findings`
   no escribe, y `complete-step findings` y `complete-step prepare-commit` frenan. Proceder con flag `had_override: true`.
-  El límite: comprobar la cita prueba que el mensaje está en la conversación; no prueba quién está detrás de la
-  sesión que reenvía.
 - **"cancelar"** → terminar el pipeline.
 
 #### Si hay solo WARNING:

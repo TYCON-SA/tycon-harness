@@ -202,7 +202,7 @@ test('T95h HooksLists_EmptyReader_IsRed — un lector que no lee nada no da verd
 test('PS1a HooksLists_ShellCommandRows_CoverPowerShell — todo registro que mira comandos cubre también la herramienta PowerShell', () => {
   assert.deepStrictEqual(shellToolProblems(real()), []);
   for (const g of ['@tcg:safety-guard-pre.sh', '@tcg:test-scope-guard-pre.sh']) {
-    assert.ok(real().list.hooks.some((h) => h.event === 'PreToolUse' && h.spec === g && normMatcher(h.matcher) === 'Bash|PowerShell'), `${g} no está con «Bash|PowerShell»`);
+    assert.ok(real().list.hooks.some((h) => h.event === 'PreToolUse' && h.spec === g && ['Bash', 'PowerShell'].every((x) => normMatcher(h.matcher).split('|').includes(x))), `${g} no está con «Bash|PowerShell»`);
   }
 });
 

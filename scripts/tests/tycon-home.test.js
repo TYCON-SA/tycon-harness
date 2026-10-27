@@ -367,7 +367,7 @@ const SWEEP_DIRS = ['scripts', 'skills', 'agents', 'build', 'adapters', 'integra
 const NOT_CODE = /\.(md|txt|png|jpe?g|gif|svg|ico|pdf|woff2?|ttf|trx|bpmn|vdw|xlsx|docx|pptx)$/i;
 const IS_TEST = (f) => /(^|\/)(tests?|__tests__|fixtures)\//.test(f) || /\.test\.[a-z0-9]+$/.test(f) || /controls-bench\/cases\//.test(f);
 // los enchufes de Claude Code, que se quedan en ~/.claude aunque el arnés se mude
-const PLUG_AFTER = /^(?:\.json\b|(?:['"`]\s*,\s*['"`]|[\\/]+)(?:settings\.json|settings\.local\.json|CLAUDE\.md|skills|agents|commands|projects|plugins|channels)\b)/;
+const PLUG_AFTER = /^(?:\.json\b|(?:['"`]\s*,\s*['"`]|[\\/]+)(?:settings\.json|settings\.local\.json|CLAUDE\.md|skills|agents|commands|projects|plugins|channels|shell-snapshots)\b)/;
 
 // la línea del respaldo de los que viajan sueltos, que T5 evalúa con vm: entera y exacta, salvo el tramo hasta el lector
 const FALLBACK_LINE = /^const stateDirOf = \(\(\) => \{ const lib = path\.join\(__dirname, ((?:'[^'\\]+', )*)'tycon-home\.js'\); return require\('fs'\)\.existsSync\(lib\) \? require\(lib\)\.stateDir : \(h\) => path\.join\(h \|\| require\('os'\)\.homedir\(\), '\.claude', '\.tycon-pipeline'\); \}\)\(\);$/;

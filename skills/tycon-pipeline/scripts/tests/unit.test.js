@@ -1868,7 +1868,7 @@ test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no c
     lastTouch: new Date().toISOString(), stepsCompleted: [], stepsPending: [8],
   }));
 
-  // `runtime-waiver` sin argumento, corriendo desde un cwd que NO es el repo (el caso habitual).
+  // `runtime-waiver --terminal` sin la story, corriendo desde un cwd que NO es el repo (el caso habitual).
   // Tiene que pasar el chequeo de existencia y morir recién en el candado de TTY — o sea que
   // ENCONTRÓ la story. Si no, muere antes, en "no encuentro la story".
   // En Windows, sin la marca de la ventana, el comando abriría una ventana de consola real y la esperaría 5 minutos: con
@@ -1877,7 +1877,7 @@ test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no c
   let salida = '';
   try {
     require('child_process').execFileSync(
-      process.execPath, [path.join(SCRIPTS, 'marker.js'), 'runtime-waiver'],
+      process.execPath, [path.join(SCRIPTS, 'marker.js'), 'runtime-waiver', '--terminal'],
       { env: { ...process.env, ...fakeHomeEnv(fakeHome), CLAUDE_CODE_SESSION_ID: SID, ...(enWindows ? { TYCON_WAIVER_IN_WINDOW: '1' } : {}) },
         cwd: os.tmpdir(), encoding: 'utf8', stdio: 'pipe', timeout: 60000 }
     );

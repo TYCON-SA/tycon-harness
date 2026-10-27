@@ -223,11 +223,11 @@ cierra como deuda y **sigue hasta el commit**.
 
 1. Anotar la deuda en el Dev Agent Record de la historia, con un id `DEF-…` y lo que quedó pendiente (o en
    `tasks/todo.md` del repo de la historia, si lo tiene).
-2. Explicarle a la persona qué no se pudo hacer y por qué, y pedirle la frase «autorizo cerrar como deuda»: el freno de
-   seguridad la pide (regla ESC-C4).
+2. Explicarle a la persona qué no se pudo hacer y por qué: el freno de seguridad le pide el permiso en la ventana de
+   permiso al correr el paso siguiente (regla ESC-C4).
 3. `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js close-as-debt --reason "<qué quedó pendiente>" --debt <DEF-id>`.
 4. Las pruebas: primero, ajustarlas para que verifiquen la deuda mantenida y documentada (verde normal). Sólo si no se
-   puede, con la misma frase: `marker.js expect-red <control> --tests <T2,T5>`, que registra el rojo como esperado.
+   puede, con el mismo permiso: `marker.js expect-red <control> --tests <T2,T5>`, que registra el rojo como esperado.
 5. Seguir el pipeline: los revisores corren sobre lo que sí cambió (pruebas, historia, documentación), el pase
    adversarial con su regla de siempre, y «Preparar el commit» pone la línea `Deuda: <DEF-id> — <motivo>`.
 
