@@ -295,7 +295,10 @@ function sTablaVsRealidad(ctx) {
   // Conjuntos por los nombres mcp__<server>__ (estructura), no prosa.
   const registrados = ctx.pol.mcp.OWN_LABELS.filter((l) => ctx.pol.mcp.serverRegistered(ctx.toml, l));
   const mencionados = new Set([...tabla.matchAll(/mcp__([a-z0-9_]+)__/gi)].map((m) => m[1]));
-  const ocultos = registrados.filter((l) => !mencionados.has(l));
+  // el servidor de una herramienta de horas que no es la elegida queda en config.toml (el despliegue no lo saca), pero
+  // sus reglas no corren: que la tabla no lo nombre no apaga nada
+  const apagados = new Set(ctx.pol.mcp.integrationMcps().filter((e) => e.kind === 'timeTracking' && e.integration !== elegida).map((e) => e.server));
+  const ocultos = registrados.filter((l) => !mencionados.has(l) && !apagados.has(l));
   const fantasma = [...mencionados].filter((l) => ctx.pol.mcp.OWN_LABELS.includes(l) && !ctx.pol.mcp.serverRegistered(ctx.toml, l))
     .filter((l) => {
       const fila = tabla.split('\n').find((ln) => ln.includes(`mcp__${l}__`)) || '';
