@@ -523,8 +523,9 @@ asignar 102 '{"displayName":"ana@prueba","uniqueName":"ana@prueba"}'
 revs 101; revs 102; revs 103
 rc=$(estado)
 { [ "$rc" -eq 0 ] && volc 'v.pedidos["101"].asignado === "Ana Pérez" && v.pedidos["102"].asignado === null && v.pedidos["103"].asignado === null' \
+  && volc 'v.pedidos["101"].sin_asignar === false && v.pedidos["102"].sin_asignar === false && v.pedidos["103"].sin_asignar === true' \
   && ! grep -q 'ana@prueba' "$TMP/out/bugs-$HOY.json"; } \
-  && ok "T30: el volcado guarda el nombre de quien tiene cada tarea; un correo como nombre, o sin asignar, queda en null" \
+  && ok "T30: el volcado guarda el nombre de quien tiene cada tarea; un correo como nombre, o sin asignar, queda en null; la que no tiene a nadie lo dice" \
   || no "T30: rc=$rc · $(volcj)"
 
 # ── T31. la noche anota en la ficha quién tiene cada tarea, por qué falta alguna, y con el sitio la pasa a «arreglar» ──
@@ -544,6 +545,22 @@ F="$TMP/pend/promoted/abc12345.yaml"
   && grep -qx 'asignados:' "$F" && grep -qx '  - 101: Ana Pérez' "$F" && ! grep -q '^pedido_motivo:' "$F" && grep -qx '  - Proy A: 101' "$F"; } \
   && ok "T31: con el sitio, la ficha con su tarea pasa a «arreglar» en promoted/, con el nombre de quien la tiene y sin el motivo viejo" \
   || no "T31: rc=$rc · $(cat "$F" "$TMP/pend/pending/abc12345.yaml" 2>/dev/null | tr '\n' '|' | cut -c1-400) · $(pie)"
+# T31d. 🔴 la tarea leída sin nadie se anota con «<nadie>»; la que no se pudo leer no se anota: el sitio dice «sin
+# asignar» sólo de la primera
+mundo
+ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101" "  - Proy A: 102" "  - Proy A: 103"
+snapshot "$(presente abc12345 browserslist)"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ fecha: process.argv[2], consultado: true, proyectos: {}, huerfanos: [], huerfanos_no_consultados: [],
+  pedidos: { "101": { ficha: "abc12345", proyecto: "Proy A", leido: true, estado: "Active", categoria: "InProgress", asignado: "Ana Pérez", sin_asignar: false },
+    "102": { ficha: "abc12345", proyecto: "Proy A", leido: true, estado: "Active", categoria: "InProgress", asignado: null, sin_asignar: true },
+    "103": { ficha: "abc12345", proyecto: "Proy A", leido: false, estado: null, categoria: null, asignado: null, sin_asignar: null } } }))' "$TMP/out/bugs-$HOY.json" "$HOY"
+wi 101 Active New; revs 101; wi 102 Active New; revs 102; wi 103 Active New; revs 103
+ops_con_sitio
+rc=$(correr --operations "$TMP/ops.json")
+F="$TMP/pend/promoted/abc12345.yaml"
+{ [ "$rc" -eq 0 ] && [ -f "$F" ] && grep -qx '  - 101: Ana Pérez' "$F" && grep -qx '  - 102: <nadie>' "$F" && ! grep -q '^  - 103: ' "$F"; } \
+  && ok "T31d: la tarea leída sin nadie queda anotada como «<nadie>»; la que no se leyó, sin anotar" \
+  || no "T31d: rc=$rc · $(cat "$F" "$TMP/pend/pending/abc12345.yaml" 2>/dev/null | tr '\n' '|' | cut -c1-400) · $(pie)"
 # sin el sitio, se anota igual pero la ficha no se mueve; y la que no tiene tarea dice por qué
 mundo
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"

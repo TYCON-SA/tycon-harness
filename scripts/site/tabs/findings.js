@@ -27,6 +27,7 @@ const path = require('path');
 const crypto = require('crypto');
 const ORG = require('../../lib/org-config.js');
 const RP = require('../../lib/repo-proposal.js');
+const OPS = require('../../lib/operations-config.js');
 const SOURCES = require('../../nightly/findings/sources.js');
 const CYCLE = require('../../nightly/findings/cycle.js');
 const { APARTE } = require('../../nightly/findings/cause-names.js');
@@ -38,6 +39,8 @@ const { defensaDeEscritura } = require('./config.js');
 const FUENTES = CYCLE.FUENTES;
 // las que se deciden acá, en el orden de la pantalla: producción primero, porque son clientes reales
 const SE_DECIDEN = ['vigilante', 'ejecuciones'];
+// los motivos sin tarea que la noche vuelve a calcular cada vez que pide
+const RECALCULADOS = ['sin-confirmar', 'sin-configurar'];
 // el id de una ficha va a una ruta del clon y a la rama del pedido: sin barras ni nada que salga de su carpeta. Es más
 // estricto que la CLAVE de cycle.js a propósito: una ficha con `:` o `/` en el id sale como ilegible y no se envía
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
@@ -207,6 +210,17 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const c = (typeof fuentes.config === 'function' && fuentes.config()) || {};
     return RP.destinoDeTareas(isObject(c.work_items) ? c.work_items : {}, remote());
   }
+  /**
+   * Dónde crea la noche las tareas: sólo operations.json (`pedidoDeLaNoche`). `{ leido: false }` si el archivo no se
+   * pudo leer o no valida: la noche tampoco crea ninguna, pero no es que la organización no lo haya configurado.
+   */
+  function destinoDeLaNoche() {
+    const dir = dirOps();
+    if (!dir) return { leido: false, destino: null };
+    const ruta = path.join(dir, 'operations.json');
+    if (!OPS.load(ruta).ok) return { leido: false, destino: null };
+    return { leido: true, destino: CYCLE.pedidoDeLaNoche(ruta).destino };
+  }
   const enlaceDeTarea = RP.enlaceDeTarea;
   const nombreDePersona = (x) => (typeof x === 'string' && SOURCES.NOMBRE_DE_PERSONA.test(x.trim()) ? x.trim() : null);
 
@@ -232,7 +246,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return T(idioma, 'mant.titulo', { producto, donde, que: T(idioma, `mant.titulo.${regla}`), veces });
   }
 
-  function arregloDe(f, destino, idioma) {
+  function arregloDe(f, destino, deLaNoche, idioma) {
     const base = { fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), regla: reglaDe(f) };
     const asignado = nombreDePersona(f.asignado);
     if (f.pedido) {
@@ -240,7 +254,15 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const enlace = f.pedido.enlace || enlaceDeTarea(destino, destino.proyecto, numero);
       return { ...base, estado: enlace ? 'tarea' : 'sin_enlace', tarea: enlace ? { numero, enlace } : null, asignado, motivo: null };
     }
-    if (f.pedido_motivo) return { ...base, estado: 'sin_tarea', tarea: null, asignado: null, motivo: f.pedido_motivo };
+    if (f.historia) return { ...base, estado: 'historia', tarea: null, historia: f.historia, asignado: null, motivo: null };
+    // la noche sólo pide las de promoted/: otra carpeta no tiene tarea hasta que pase
+    if (f.carpeta !== 'promoted') return { ...base, estado: 'sin_tarea', tarea: null, asignado: null, motivo: 'sin-mover' };
+    // la misma condición con la que pide la noche (queHaraLaNoche): «se crea esta noche» sólo si la pide. El motivo que
+    // la noche recalcula cada vez (sin confirmar, sin configurar) se toma de ahora, no de lo que dejó anotado
+    const noche = CYCLE.queHaraLaNoche(f, deLaNoche.destino);
+    const motivo = noche.pide ? (RECALCULADOS.includes(f.pedido_motivo) ? null : f.pedido_motivo)
+      : noche.motivo === 'sin-configurar' && !deLaNoche.leido ? 'configuracion-ilegible' : noche.motivo || f.pedido_motivo || 'sin-mover';
+    if (motivo) return { ...base, estado: 'sin_tarea', tarea: null, asignado: null, motivo };
     return { ...base, estado: 'se_crea', tarea: null, asignado: null, motivo: null };
   }
 
@@ -248,7 +270,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const severidad = String(f.severidad || '').toLowerCase() || null;
     return {
       id: f.id, paquete: f.contexto.paquete || f.nombre, severidad, repos: Number.isInteger(f.repos) ? f.repos : 0, desde: f.primera_vez, volvio: f.reaparecido,
-      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado) })),
+      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado), sinAsignar: t.sin_asignar === true })),
       motivo: f.pedido_motivo || null,
     };
   }
@@ -328,6 +350,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const enPedido = m.estado === 'leido' ? m.porFicha : new Map();
     const dir = dirOps();
     const destino = destinoDeTareas();
+    let deLaNoche = null;
     const ilegibles = new Set(l.ilegibles);
     const toca = [];
     const pedidos = new Map();
@@ -339,7 +362,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino));
         continue;
       }
-      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, idioma)); continue; }
+      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, deLaNoche || (deLaNoche = destinoDeLaNoche()), idioma)); continue; }
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
@@ -425,15 +448,21 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
     // en marcha
     const tarea = (numero, url, proyecto) => enlace(T(idioma, proyecto ? 'mant.marcha.tareaProyecto' : 'mant.marcha.tarea', { numero, proyecto }), url);
+    // la story por su nombre, nunca por la ruta; con el número del pedido si lo hay
+    const historia = (h) => (h && h.nombre
+      ? T(idioma, Number.isInteger(h.pedido) ? 'mant.marcha.historiaPedido' : 'mant.marcha.historia', { nombre: h.nombre, pedido: h.pedido })
+      : T(idioma, 'mant.marcha.historiaSinNombre'));
     const arreglo = (x) => {
       const t = x.estado === 'tarea' ? `${tarea(x.tarea.numero, x.tarea.enlace)}${x.asignado ? ` · ${esc(T(idioma, 'mant.marcha.asignada', { quien: x.asignado }))}` : ''}`
         : x.estado === 'sin_enlace' ? esc(T(idioma, 'mant.marcha.sinEnlace'))
           : x.estado === 'sin_tarea' ? esc(T(idioma, 'mant.marcha.sinTarea', { motivo: T(idioma, `mant.sinTarea.${x.motivo}`) }))
-            : esc(T(idioma, 'mant.marcha.seCrea'));
+            : x.estado === 'historia' ? esc(historia(x.historia))
+              : esc(T(idioma, 'mant.marcha.seCrea'));
       return `<li><b>${esc(x.nombre)}</b>${ayudaRegla(x.regla)} <span class="m-tarea">${t}</span></li>`;
     };
     const tareaDeVuln = (t) => (t.enlace ? `${tarea(t.numero, t.enlace, t.proyecto)}` : esc(T(idioma, 'mant.marcha.sinEnlace')))
-      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, 'mant.marcha.sinAsignar'))}`;
+      // «sin asignar» sólo si la noche leyó la tarea y no la tiene nadie; sin medir, lo dice
+      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, t.sinAsignar ? 'mant.marcha.sinAsignar' : 'mant.marcha.asignadoSinMedir'))}`;
     const vuln = (v) => {
       const sev = NOMBRE_SEVERIDAD[v.severidad] || null;
       const meta = [T(idioma, v.repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: v.repos, dia: dia(v.desde) })];

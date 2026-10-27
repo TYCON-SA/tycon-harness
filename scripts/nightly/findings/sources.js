@@ -3,7 +3,7 @@
 // palabras, y la pieza se los lee con un mapa; ejecuciones escribe la ficha común de cycle.js. Los instintos entran
 // después: el ciclo los admite, esta lista todavía no.
 
-const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD,
+const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, conValor,
   problemasDeAnalisis, hechosConForma, FALLAS_MAX } = require('./cycle.js');
 const { nombreDe } = require('./cause-names.js');
 
@@ -126,17 +126,22 @@ const motivoDeAnalisis = (m) => (MOTIVOS_SIN_ANALISIS.includes(m) ? m : null);
 
 // El nombre de quien tiene la tarea, como lo guarda la noche: nunca un correo
 const NOMBRE_DE_PERSONA = /^[^\s@"<>`\u0000-\u001f][^@"<>`\u0000-\u001f]{0,79}$/u;
+// Lo que anota la noche en `asignados:` cuando leyó la tarea y no la tiene nadie. No tiene forma de nombre: un lector
+// que no la conoce no la muestra como persona.
+const SIN_ASIGNAR = '<nadie>';
 
 /** Las tareas de una vulnerabilidad: `[{ proyecto, id, asignado }]`, de `pedidos:` («Proyecto: id») y `asignados:` («id: Nombre»). */
 function tareasDe(txt, listaDe) {
   const sinComillas = (l) => l.replace(/^"([\s\S]*)"$/, '$1');
   const nombres = new Map();
+  const nadie = new Set();
   for (const l of listaDe(txt, 'asignados').map(sinComillas)) {
     const m = /^(\d{1,12}):\s*(.+)$/.exec(l);
-    if (m && NOMBRE_DE_PERSONA.test(m[2].trim())) nombres.set(m[1], m[2].trim());
+    if (m && m[2].trim() === SIN_ASIGNAR) nadie.add(m[1]);
+    else if (m && NOMBRE_DE_PERSONA.test(m[2].trim())) nombres.set(m[1], m[2].trim());
   }
   return listaDe(txt, 'pedidos').map(sinComillas).map((l) => /^(.{1,120}?):\s*(\d{1,12})$/.exec(l)).filter(Boolean)
-    .map((m) => ({ proyecto: m[1].trim(), id: m[2], asignado: nombres.get(m[2]) || null }));
+    .map((m) => ({ proyecto: m[1].trim(), id: m[2], asignado: nombres.get(m[2]) || null, sin_asignar: nadie.has(m[2]) }));
 }
 
 // Las claves de la propuesta del modelo en el formato por secciones (dependencias y el vigilante). La ficha común las
@@ -207,6 +212,18 @@ function pedidoDeLaNocheDe(v) {
   return p && p.id && /^\d{1,12}$/.test(p.id) ? p.id : null;
 }
 
+/**
+ * La story que ya tiene la ficha (`story_creada`, la anotó una persona con /tycon-vigilante): `{ nombre, pedido }`, con el
+ * nombre del archivo sin la ruta ni `.md` (null si no tiene forma) y el número del pedido de la ficha (`pr:`). Sin story,
+ * null. La noche no le pide tarea a una ficha con historia.
+ */
+function historiaDe(story, pr) {
+  if (!conValor(story)) return null;
+  const base = String(story).trim().split(/[\\/]/).pop().replace(/\.md$/i, '');
+  return { nombre: /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(base) ? base : null, pedido: entero(pr) };
+}
+const pidiendo = (v) => v !== undefined && v !== null && String(v).trim() === PIDIENDO;
+
 /** Lo que se muestra de los hechos de una ficha de ejecuciones: la clase más común y sus cuentas, sin la cuenta por clase. */
 function hechosDeEjecuciones(h) {
   if (!h || !hechosConForma(h)) return null;
@@ -221,7 +238,8 @@ function hechosDeEjecuciones(h) {
  * (`propuesta`, `propuesta_motivo`), el pedido de trabajo (`pedido: { id, enlace }`), el número del que creó la noche
  * (`pedido_de_la_noche`, el único que recibe el aviso de que volvió y el de que sigue con el pedido cerrado, con su
  * fecha en `aviso_cerrado`), `asignado`, las `noches` de
- * dependencias y `pr_noche`, el número del pedido que la noche abrió por la ficha si sigue abierto. Sin texto libre. Una ficha que no se lee lanza; una vieja de ejecuciones da `null`.
+ * dependencias, `pr_noche`, el número del pedido que la noche abrió por la ficha si sigue abierto, `historia` (la story que
+ * ya tiene, `historiaDe`) y `pidiendo` (quedó la marca de una noche que pidió sin anotar el número). Sin texto libre. Una ficha que no se lee lanza; una vieja de ejecuciones da `null`.
  */
 function comoFicha(fuente, txt) {
   if (fuente === 'ejecuciones') {
@@ -233,7 +251,8 @@ function comoFicha(fuente, txt) {
       reaparecido: f.reaparecio_el || null, aviso_volvio: f.aviso_volvio_el || null, aviso_cerrado: f.aviso_cerrado_el || null,
       propuesta: pr ? propuestaDe(pr.accion, pr.razon, pr.modelo) : null, propuesta_motivo: motivoDe(f.propuesta_motivo),
       analisis: analisisDe(f.analisis), analisis_motivo: motivoDeAnalisis(f.analisis_motivo), hechos: hechosDeEjecuciones(f.hechos),
-      pedido: pedidoDe(f.pedido), pedido_de_la_noche: pedidoDeLaNocheDe(f.pedido), asignado: f.asignado || null, pedido_motivo: motivoPedidoDe(f.pedido_motivo), noches: null, pr_noche: null };
+      pedido: pedidoDe(f.pedido), pedido_de_la_noche: pedidoDeLaNocheDe(f.pedido), asignado: f.asignado || null, pedido_motivo: motivoPedidoDe(f.pedido_motivo), noches: null, pr_noche: null,
+      historia: historiaDe(f.story_creada, null), pidiendo: pidiendo(f.pedido) };
   }
   const reg = FUENTES[fuente];
   if (!reg || !reg.formato) throw new Error(`fuente desconocida: ${fuente}`);
@@ -260,6 +279,7 @@ function comoFicha(fuente, txt) {
     reaparecido: fecha(e.reaparecio_el), aviso_volvio: fecha(e.aviso_volvio_el), aviso_cerrado: fecha(e.aviso_cerrado_el), ...comun,
     // el pedido que creó la noche y, sin él, la story que creó una persona con /tycon-vigilante
     pedido: pedidoDe(e.pedido) || pedidoDe(e.story_creada), pedido_de_la_noche: pedidoDeLaNocheDe(e.pedido), asignado: asignadoDe(e.asignado), pedido_motivo: motivoPedidoDe(e.pedido_motivo),
+    historia: historiaDe(e.story_creada, e.pr), pidiendo: pidiendo(e.pedido),
     noches: null, analisis: analisisDe(bloqueDe(txt, 'analisis')), analisis_motivo: motivoDeAnalisis(e.analisis_motivo),
     // la noche dejó de pedirle el análisis: falló tres noches seguidas
     analisis_agotado: (entero(e.analisis_fallas) || 0) >= FALLAS_MAX,
@@ -267,4 +287,4 @@ function comoFicha(fuente, txt) {
     hechos: hechosDelVigilante(e, txt, reg.formato.listaDe) };
 }
 
-module.exports = { SIN_FORMA, bloqueDe, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, esVieja, comoFicha, pedidoDeLaNocheDe };
+module.exports = { SIN_FORMA, bloqueDe, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, SIN_ASIGNAR, esVieja, comoFicha, pedidoDeLaNocheDe };
