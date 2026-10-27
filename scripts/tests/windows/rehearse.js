@@ -75,6 +75,9 @@ const SCENARIOS = Object.freeze({
   'codex-only': ['inventory', 'codex-only'],
   // las ventanas de consola del arranque desprendido: va aparte, `all` no lo incluye
   'console-windows': ['inventory', 'console-windows'],
+  // con un Node viejo primero en el PATH, el respaldo en PowerShell del arranque elige uno de 22 o más (el propio del
+  // arnés o uno de nvm-windows). Va aparte, `all` no lo incluye
+  'old-node': ['inventory', 'old-node'],
   // la mudanza de una máquina del clon a ~/.tycon en Windows —el plan, el archivo tomado que frena,
   // la mudanza con uniones y los hooks al árbol nuevo—. Va aparte, como `no-clone`
   migrate: ['inventory', 'migrate'],
@@ -89,7 +92,7 @@ const SCENARIOS = Object.freeze({
   'npx-published': ['inventory', 'npx-published'],
 });
 // todos los pasos que este guion sabe correr, en el orden en que salen en el reporte
-const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published']);
+const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'old-node', 'migrate', 'waiver', 'npx', 'npx-published']);
 // los pasos propios de los ensayos, con su tope en segundos (los demás son los de run.js, con el suyo)
 const OWN_STEPS = Object.freeze(Object.assign({
   // los dos ensayos del equipo: ninguna corrida suya pasa de 40 minutos (medido: unos 9 y unos 4). El tope de cada
@@ -99,6 +102,7 @@ const OWN_STEPS = Object.freeze(Object.assign({
   'no-clone': { script: path.join(HERE, 'no-clone-probe.js'), cap: 2400, pass: ['allow-temp'] },
   'codex-only': { script: path.join(HERE, 'codex-only-probe.js'), cap: 2400, pass: ['allow-temp'] },
   'console-windows': { script: path.join(HERE, 'console-windows-probe.js'), cap: 600, pass: ['allow-temp'] },
+  'old-node': { script: path.join(HERE, 'old-node-probe.js'), cap: 900, pass: ['allow-temp'] },
   migrate: { script: path.join(HERE, 'migrate-probe.js'), cap: 2400, pass: ['allow-temp'] },
   waiver: { script: path.join(HERE, 'waiver-probe.js'), cap: 600, pass: ['allow-temp'] },
   npx: { script: path.join(HERE, 'npx-probe.js'), cap: 1800, pass: ['allow-temp'] },
