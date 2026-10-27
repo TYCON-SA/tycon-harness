@@ -244,7 +244,7 @@ const installHint = (platform, name) => { const h = (INSTALL_HINT[platform] || {
 /** Cada requisito del aplicador con lo que hay en la máquina: `{ name, path, version, problem }` (`problem` es null si
  *  está bien). Una sola lectura para `install` (frena con el primero que falla) y para `doctor` (los lista todos). */
 function requirementChecks(ctx, { release = false } = {}) {
-  const all = isWin(ctx) ? `${release ? '' : 'Git, '}PowerShell 7 (pwsh) y Node ${NODE_FLOOR}+` : `${release ? '' : 'Git, '}Bash, Python 3 y Node ${NODE_FLOOR}+`;
+  const all = isWin(ctx) ? `${release ? '' : 'Git, '}PowerShell 7 (pwsh) y Node ${INSTALL_NODE_FLOOR}+` : `${release ? '' : 'Git, '}Bash, Python 3 y Node ${INSTALL_NODE_FLOOR}+`;
   return requirementsFor(ctx.platform, { release }).map((n) => {
     const p = findInPath(n, ctx.env);
     if (!p) return { name: n, path: null, version: null, problem: `falta ${n} en el PATH — requisitos: ${all} (ver los requisitos de la portada)${installHint(ctx.platform, n)}` };
@@ -261,6 +261,17 @@ function requirementChecks(ctx, { release = false } = {}) {
 function missingRequirement(ctx, { release = false } = {}) {
   const bad = requirementChecks(ctx, { release }).find((r) => r.problem);
   return bad ? bad.problem : null;
+}
+
+/** El piso de Node de una instalación nueva: 22, el de la portada. Corta sólo `install` (no `--from-existing`, que es la
+ *  cola del aplicador de cada actualización): el arranque y `update` siguen tolerando 20 para que una máquina vieja se
+ *  ponga al día sola. `TYCON_NODE_FLOOR_FAKE_VERSION` (sólo pruebas) puede bajar la versión, nunca subirla. */
+const INSTALL_NODE_FLOOR = 22;
+function installNodeProblem(ctx) {
+  const NF = require('../lib/node-floor.js');
+  const v = NF.effectiveVersion(ctx.env, process.version);
+  if (NF.major(v) >= INSTALL_NODE_FLOOR) return null;
+  return `Node ${String(v).replace(/^v/, '')}: para instalar el arnés hace falta Node ${INSTALL_NODE_FLOOR} o más nuevo. Instalá Node ${INSTALL_NODE_FLOOR} (https://nodejs.org) y volvé a correr la instalación. No escribí nada`;
 }
 
 /** agent-skills: ~/.claude/agent-skills/skills/tycon-pipeline, o skills/ y agents/ en la raíz del clon. */
@@ -1775,7 +1786,7 @@ function releaseHelpers(ctx) {
   return {
     takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
-    applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
+    applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
       if (!findInPath('engram', c.env)) return;
@@ -1861,7 +1872,9 @@ function cmdInstall(ctx) {
   }
   tree = real(tree) || tree;
 
-  // (0) antes de escribir nada: los requisitos del aplicador y agent-skills
+  // (0) antes de escribir nada: el piso de Node de una instalación nueva, los requisitos del aplicador y agent-skills
+  const oldNode = fromExisting ? null : installNodeProblem(ctx);
+  if (oldNode) return { code: 1, lines: [`harness.js install: ${oldNode}`] };
   const missing = missingRequirement(ctx);
   if (missing) return { code: 1, lines: [`harness.js install: ${missing}`] };
   if (!skillsPresent(ctx, tree)) {
@@ -4998,4 +5011,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff };

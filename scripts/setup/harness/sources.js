@@ -94,7 +94,33 @@ function git(dir, args, { env, timeout = 30000, input } = {}) {
 }
 const value = (dir, args, opts) => { const r = git(dir, args, opts); return r.ok ? r.out : null; };
 
-function head(dir, opts = {}) { return value(dir, ['rev-parse', 'HEAD'], opts); }
+// La punta de un clon cambia sólo si cambia su HEAD, la rama a la que apunta o packed-refs: mientras la huella de esos
+// tres sea la misma, la respuesta anterior sigue valiendo. Sin huella segura (un worktree, refs en reftable, un ambiente
+// que lleva git a otro repo) se pregunta siempre.
+const headMemo = new Map();
+const GIT_REDIRECT = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY'];
+function headPrint(dir, env) {
+  if (GIT_REDIRECT.some((k) => (env || process.env)[k])) return null;
+  const gd = path.join(dir, '.git');
+  try {
+    if (!fs.statSync(gd).isDirectory() || fs.existsSync(path.join(gd, 'reftable'))) return null;
+    // el contenido, no los datos del archivo: dos escrituras en el mismo tic del reloj, con el mismo tamaño y un inode
+    // reusado, se ven iguales por fuera
+    const stamp = (p) => { try { return require('crypto').createHash('sha1').update(fs.readFileSync(p)).digest('hex'); } catch (e) { if (e.code === 'ENOENT') return '-'; throw e; } };
+    const h = fs.readFileSync(path.join(gd, 'HEAD'), 'utf8');
+    const ref = /^ref: (refs\/\S+)\s*$/.exec(h);
+    return [h, ref ? stamp(path.join(gd, ref[1])) : '', stamp(path.join(gd, 'packed-refs'))].join('|');
+  } catch (_) { return null; }
+}
+function head(dir, opts = {}) {
+  const key = path.resolve(dir);
+  const print = headPrint(key, opts.env);
+  const seen = print && headMemo.get(key);
+  if (seen && seen.print === print) return seen.sha;
+  const sha = value(dir, ['rev-parse', 'HEAD'], opts);
+  if (print && sha) headMemo.set(key, { print, sha }); else headMemo.delete(key);
+  return sha;
+}
 
 // ── «no existe» / «no se pudo leer» ───────────────────────────────────────────────────────────────
 // Un `.ok` falso de git NO dice «no hay»: sale igual cuando la ref está y no se deja leer (basura en su archivo, un commit

@@ -1150,6 +1150,12 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     if (opts.sinHilos && c.tiempos) c.tiempos.espera_del_hilo_ms = null;
     aplicarEsperasDelHilo(c, d.marker);
     c.descripcion = descripcionDe(d.marker, c.cambios);
+    // `alTexto`: los textos salen corrida por corrida y no se juntan los de todas en memoria (son casi todo el modelo)
+    if (opts.alTexto) {
+      const t = textosDe(c);
+      if (c.cambios) { delete c.cambios._texto; delete c.cambios._textoGit; }
+      opts.alTexto(c, t);
+    }
     out.corridas.push(c);
   }
   out.corridas.sort((a, b) => String(b.inicio || '').localeCompare(String(a.inicio || '')));
