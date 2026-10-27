@@ -157,6 +157,9 @@ const CAMPOS_PROPIOS = new Set(['System.Title', 'System.State', 'System.AreaId',
 const sinCrear = (p, que) => no(p.reason === 'no_medido' ? 'rechazado' : p.reason, `no pude leer ${que}: no se crea (${p.detail})`);
 // el nombre de un tipo, como el que el ciclo copia al registro: va en la ruta de la API, nada que la cambie
 const tipoConForma = (t) => typeof t === 'string' && /^[\p{L}\p{N} _-]{1,64}$/u.test(t);
+// el nombre de un proyecto, con las reglas de Azure DevOps: hasta 64, sin control ni \ / : * ? " ' < > ; # $ % { } , + = [ ] |,
+// sin empezar con «_» ni empezar o terminar con «.»
+const proyectoConForma = (p) => typeof p === 'string' && /^[^\p{Cc}\\/:*?"'<>;#$%{},+=[\]|]{1,64}$/u.test(p) && !/^[_.]|\.$/.test(p);
 
 /**
  * El tipo con que se crea el pedido de la noche (`typeOrBacklog`), como lo elige dependencias: el configurado si existe
@@ -372,6 +375,8 @@ function read(args, ctx) {
   const tipo = f['System.WorkItemType'];
   const proyecto = f['System.TeamProject'];
   if (![estado, tipo, proyecto].every((x) => typeof x === 'string' && x)) return no('no_medido', `az no devolvió el estado, el tipo o el proyecto del pedido #${id}`);
+  // van a --route-parameters: un valor con «=» o un espacio de más agregaría otro parámetro de ruta
+  if (!tipoConForma(tipo) || !proyectoConForma(proyecto)) return no('no_medido', `az devolvió un tipo o un proyecto sin forma de nombre para el pedido #${id}`);
   const e = azJson(ctx, ['devops', 'invoke', '--organization', org, '--area', 'wit', '--resource', 'workItemTypeStates',
     '--route-parameters', `project=${proyecto}`, `type=${tipo}`, '--api-version', '7.1', '--output', 'json']);
   if (e.problem) return no('no_medido', `no se pudieron leer los estados de ${tipo} en ${proyecto}: ${e.problem.detail}`);

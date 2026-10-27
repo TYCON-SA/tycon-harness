@@ -56,19 +56,20 @@ const expandHome = (p, home) => (typeof p === 'string' ? p.replace(/^~(?=$|[\\/]
  * = `{ [ruta]: <sha256_after> }` (cómo dejó cada archivo esa instalación: con eso remove.js sabe si un hooks.json de
  * Codex o un comando sin su par en el árbol siguen siendo sólo del arnés). `{}` sin copia.
  */
-function baseline(home) {
+function baseline(home, env = process.env) {
   let copies = [];
   try { copies = SN.list(home); } catch (_) { copies = []; }
   const installs = copies.filter((c) => c.manifest && c.manifest.reason === 'install');
   const oldest = installs[installs.length - 1];   // list: la más nueva primero
   const map = {}; const after = {};
-  if (!oldest || !Array.isArray(oldest.manifest.files)) return { map, after, dir: null };
-  for (const f of oldest.manifest.files) {
-    if (!f || typeof f.path !== 'string') continue;
+  if (!oldest || !Array.isArray(oldest.manifest.files)) return { map, after, dir: null, skipped: [] };
+  // sólo lo que la copia puede nombrar: dentro de la HOME (o la lista fija de hoy) y con su copia en su carpeta
+  const { files: usables, skipped } = SN.safeFiles(oldest, { home, env });
+  for (const f of usables) {
     map[f.path] = f.existed && f.copy ? path.join(oldest.dir, f.copy) : null;
     if (typeof f.sha256_after === 'string') after[f.path] = f.sha256_after;
   }
-  return { map, after, dir: oldest.dir };
+  return { map, after, dir: oldest.dir, skipped };
 }
 
 /** La raíz de repos: `TYCON_REPOS_ROOT` o `rutas.repos` de ~/.claude/tycon.json (como la lee el aplicador). */
@@ -125,7 +126,7 @@ function plan(ctx, state) {
   if (!isObject(state)) return { remove: [], retry: [], failing: [], keep: [], review: [], pointers: [], tree: null, treeMissing: false, nothing: true, baseline: {}, afterSha: {}, stateFile };
   const tree = (typeof state.tree === 'string' && state.tree) || (ctx && ctx.tree) || null;
   const treeMissing = !tree || !fs.existsSync(tree);
-  const base = baseline(home);
+  const base = baseline(home, env);
   const managed = (Array.isArray(state.managed) ? state.managed : []).filter((p) => isObject(p) && p.kind && typeof p.where === 'string' && typeof p.id === 'string');
   const dry = removePieces(managed, { home, env, tree, restoreIfEqual: base.map, afterSha: base.after, platform: (ctx && ctx.platform) || process.platform, dryRun: true });
   const remove = [...dry.removed, ...ownExtras(home, managed)];
@@ -170,6 +171,7 @@ function plan(ctx, state) {
   }
 
   const review = dry.review.map((r) => r.why);
+  for (const p of base.skipped) review.push(`${p}: la copia de la instalación lo nombra fuera de la HOME o con su copia fuera de la carpeta — no lo tomo como base`);
   const hooksDir = (env.TYCON_GIT_HOOKS_DIR) || path.join(home, '.git-hooks');
   let names = [];
   try { names = fs.readdirSync(hooksDir); } catch (_) { names = []; }

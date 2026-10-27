@@ -454,7 +454,7 @@ The sections, in the order of the screen:
   someone approves it; if the repository does not allow auto-merge either, the request stays. Before proposing, next to
   the button, the section says what will
   happen. Who did it stays written: the request's description names who asked for it, and the site's log records
-  `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
+  `cambio aplicado: <file>, pedido <link>`. What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
   `operations.json`, in the operations repo.
 - **"How the site is updated"** (*Cómo se actualiza el sitio*): whether the site brings itself up to date with the new
@@ -1164,7 +1164,7 @@ is the push rule by path in the GitHub README: the site validates and downloads 
 opens the pull request by hand.
 
 **What you give up.** Nobody reviews those changes before they go in. A record remains: each change from the site is a
-request with who asked for it, and the site's log records `cambio aplicado: <file> por <email>, pedido <link>`. Whoever
+request with who asked for it, and the site's log records `cambio aplicado: <file>, pedido <link>`. Whoever
 can write to the operations repo can make themselves a site maintainer or change a night process without anyone else
 looking: what you guard is who has write access to that repo.
 
@@ -1261,7 +1261,8 @@ creates the request count, asks for a single reviewer, does not prohibit the mos
 no reviewers. If it asks for more, the request stays and the section says what is missing. With no policy at all on `main`,
 "Propose" stays off even with the option on. To turn it on, first the new image, then the key: an older image does not
 know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
-leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
+leaves its line in the site's log with the link to its request; the email of whoever asked for it does not go to the
+log: the request says it.
 
 ### How it keeps itself up to date
 

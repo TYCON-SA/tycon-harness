@@ -182,6 +182,8 @@ function secretosDe(c, env) {
 // ── la conversación con az ─────────────────────────────────────────────────────────────────────
 const comillas = (a) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(a) ? a : `"${a.replace(/(["\\$`])/g, '\\$1')}"`);
 const AZ = () => process.env.TYCON_AZ_CMD || 'az';
+// az recibe el entorno sin las variables del sitio (SITE_*): los secretos van sólo en el archivo, nunca a su proceso
+const azEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('SITE_')));
 
 /**
  * El que corre (o imprime) cada paso. En ensayo no llama a az: los valores que vendrían de Azure se muestran como
@@ -197,7 +199,7 @@ function corredor({ ensayo, salida, dirTmp }) {
    * con su código: nunca «sin motivo», y nunca como si Azure hubiera contestado.
    */
   const az = (args) => {
-    const r = spawnSync(AZ(), args, { encoding: 'utf8', timeout: 900000 });
+    const r = spawnSync(AZ(), args, { encoding: 'utf8', timeout: 900000, env: azEnv() });
     if (r.error) return { status: null, stdout: '', stderr: `no pude correr az (${r.error.code || r.error.message})` };
     return { status: r.status, stdout: String(r.stdout || ''), stderr: String(r.stderr || '') };
   };
@@ -400,8 +402,8 @@ function faseSitio(c, run, salida, env, sec) {
         },
       },
     };
-    if (sec.apagadas.length) salida(`  (quedan apagadas, porque no vinieron en el entorno: ${sec.apagadas.join(', ')})`);
     if (!yaExiste) {
+      if (sec.apagadas.length) salida(`  (quedan apagadas, porque no vinieron en el entorno: ${sec.apagadas.join(', ')})`);
       run.paso({ que: 'crear la aplicación, con la entrada INTERNA (todavía no se ve desde afuera)', args: ['containerapp', 'create', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
     } else {
       // lo que tiene hoy, para decir qué cambia; la entrada se deja como está (un sitio ya abierto no se cierra al actualizar)
@@ -414,6 +416,22 @@ function faseSitio(c, run, salida, env, sec) {
         externa: q('properties.configuration.ingress.external', 'false') === 'true',
       };
       yaml.properties.configuration.ingress.external = antes.externa;
+      // un secreto opcional que la aplicación ya tiene y no vino en el entorno se conserva: se lee de Azure y va en el
+      // archivo (el --yaml reemplaza la lista entera; sin esto, actualizar sin el token de escritura lo borraba). Uno que
+      // vive en un almacén de claves no tiene valor que leer: va su referencia. El que vino vacío (VAR=) se apaga.
+      const conservados = OPCIONALES.filter(([v, nombre]) => env[v] === undefined && antes.secretos.includes(nombre));
+      for (const [v, nombre] of conservados) {
+        const show = (consulta) => ['containerapp', 'secret', 'show', ...g, '-n', c.app, '--secret-name', nombre, '--query', consulta, '-o', 'tsv', ...SUB(c)];
+        const enAlmacen = (x) => (x && x !== 'None' ? x : '');
+        const keyVaultUrl = enAlmacen(run.leer(show('keyVaultUrl'), ''));
+        yaml.properties.configuration.secrets.push(keyVaultUrl
+          ? { name: nombre, keyVaultUrl, identity: enAlmacen(run.leer(show('identity'), '')) || 'system' }
+          : { name: nombre, value: run.leerSecreto(show('value'), v) });
+        yaml.properties.template.containers[0].env.push({ name: v, secretRef: nombre });
+      }
+      const apagadas = sec.apagadas.filter((v) => !conservados.some(([x]) => x === v));
+      if (conservados.length) salida(`  (no vinieron en el entorno, y se conservan los que la aplicación ya tiene: ${conservados.map(([v]) => v).join(', ')}; para apagar uno, pasalo vacío: VARIABLE=)`);
+      if (apagadas.length) salida(`  (quedan apagadas, porque no vinieron en el entorno: ${apagadas.join(', ')})`);
       const ahora = { secretos: yaml.properties.configuration.secrets.map((s) => s.name).sort(), variables: yaml.properties.template.containers[0].env.map((e) => e.name).sort() };
       const dif = (a, b) => ({ mas: b.filter((x) => !a.includes(x)), menos: a.filter((x) => !b.includes(x)) });
       const ds = dif(antes.secretos, ahora.secretos);
@@ -617,7 +635,7 @@ function main(argv) {
   }
   const ensayo = modo === 'dry-run';
   if (!ensayo) {
-    const s = spawnSync(AZ(), ['account', 'show', '-o', 'json'], { encoding: 'utf8', timeout: 60000 });
+    const s = spawnSync(AZ(), ['account', 'show', '-o', 'json'], { encoding: 'utf8', timeout: 60000, env: azEnv() });
     // que az no corra (no está, o se cortó) no es «sin sesión»: se dice cuál de las dos es
     if (s.error) {
       process.stderr.write(`🔴 no pude correr az (${s.error.code || s.error.message}): instalalo o revisá el PATH y volvé a lanzarlo\n`);

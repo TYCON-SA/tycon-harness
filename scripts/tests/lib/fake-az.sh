@@ -143,7 +143,9 @@ else if (tiene('boards', 'work-item', 'show')) paso = 'wi';
 else if (tiene('boards', 'work-item', 'create')) paso = 'crear';
 else if (tiene('boards', 'work-item', 'update')) paso = args.includes('--discussion') ? 'comentario' : 'actualizar';
 
-fs.appendFileSync(path.join(FIX, 'llamadas.log'), `${paso}\t${JSON.stringify({ args, archivos })}\n`);
+// los nombres de las variables SITE_* que le llegaron (az no las necesita: el alta no se las pasa)
+const siteEnv = Object.keys(process.env).filter((k) => k.startsWith('SITE_'));
+fs.appendFileSync(path.join(FIX, 'llamadas.log'), `${paso}\t${JSON.stringify({ args, archivos, siteEnv })}\n`);
 // con TYCON_AZ_SNAPSHOT, cada llamada también va a ese archivo: la foto de lo que el arnés le pide a Azure DevOps, que
 // scripts/tests/lib/record-platform-golden.js compara antes y después de un cambio
 if (process.env.TYCON_AZ_SNAPSHOT) fs.appendFileSync(process.env.TYCON_AZ_SNAPSHOT, `${paso}\t${JSON.stringify(args)}\n`);
@@ -243,6 +245,16 @@ if (familia) {
     if (q === 'id') return `/subscriptions/suscripcion-de-mentira/resourceGroups/${arg('--resource-group') || arg('-g') || 'rg'}/providers/x/${nombre}`;
     return 'valor-de-mentira';
   };
+  // el valor de un secreto que la aplicación ya tiene (`containerapp secret show`): uno fijo por nombre, nunca el real
+  if (paso === 'aplicacion' && args[1] === 'secret' && verbo === 'show') {
+    const s = String(arg('--secret-name') || '');
+    if (!estado[`containerapp|${nombre}`] || !((estado.apl || {}).secretos || []).includes(s)) falla(`(SecretNotFound) ${s} no existe`, 3);
+    // uno que vive en un almacén de claves trae su dirección y su identidad, y el valor vacío (como Azure)
+    const ref = ((estado.apl || {}).boveda || {})[s];
+    const q = String(arg('--query') || 'value');
+    if (q === 'keyVaultUrl' || q === 'identity') { tsv(ref ? ref[q] : ''); process.exit(0); }
+    tsv(ref ? '' : `valor-guardado-${s}`); process.exit(0);
+  }
   if (verbo === 'show' || verbo === 'list') {
     // un ambiente creado por `rest` existe para `containerapp env show`
     const porRest = paso === 'ambiente' && Object.keys(estado).some((k) => k.startsWith('rest|') && k.endsWith(`/managedEnvironments/${nombre}`));
@@ -264,7 +276,8 @@ if (familia) {
     const y = JSON.parse(Object.values(archivos)[0] || '{}');
     const cfg = (y.properties || {}).configuration || {};
     const cont = (((y.properties || {}).template || {}).containers || [])[0] || {};
-    estado.apl = { demo: ((cont.env || []).find((e) => e.name === 'SITE_DEMO') || {}).value, imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external) };
+    estado.apl = { demo: ((cont.env || []).find((e) => e.name === 'SITE_DEMO') || {}).value, imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external),
+      boveda: Object.fromEntries((cfg.secrets || []).filter((s) => s.keyVaultUrl).map((s) => [s.name, { keyVaultUrl: s.keyVaultUrl, identity: s.identity }])) };
   }
   if (paso === 'entrada' && args.includes('external')) estado.apl = { ...(estado.apl || {}), externa: true };
   if (paso === 'aplicacion' && verbo === 'update' && args.includes('--set-env-vars')) {

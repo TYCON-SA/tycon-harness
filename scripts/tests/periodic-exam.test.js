@@ -2235,3 +2235,32 @@ test('T7 NoticeShowsLastAttemptMotivo @ac-5: el aviso nombra el último intento 
   escribir(b.intento, { kind: 'examen-periodico-intento', ts: haceDias(12), estado: 'incompleto', fase: 'corrida', motivo: 'algo viejo' });
   assert.doesNotMatch(avisar(b).stdout, /último intento/, 'un intento anterior al reporte no se nombra');
 });
+
+// T78 — the login shell query: each way of not getting the PATH says its cause, and a folder that cannot be noted
+// says so instead of passing as «not in the PATH». The spawn is faked: no real shell is started.
+// 🔴 Fails with: a branch of consultarShellDeInicio that returns no cause, or revalidarHerramientas without its catch.
+test('T78 ToolsPath_ShellQueryBranches_SayTheirCause', () => {
+  const TP = require(path.join(TCG, 'scripts', 'controls-bench', 'tools-path.js'));
+  const env = { SHELL: '/bin/zsh-de-mentira' };
+  const con = (r) => () => r;
+  assert.match(TP.consultarShellDeInicio({ env: {}, platform: 'darwin' }).causa, /no hay SHELL/);
+  assert.match(TP.consultarShellDeInicio({ env, platform: 'darwin', spawnSync: con({ error: { code: 'ETIMEDOUT' }, stdout: '' }) }).causa, /20 s/);
+  assert.match(TP.consultarShellDeInicio({ env, platform: 'darwin', spawnSync: con({ error: { code: 'ENOENT' }, stdout: '' }) }).causa, /no se pudo lanzar \(ENOENT\)/);
+  assert.match(TP.consultarShellDeInicio({ env, platform: 'darwin', spawnSync: con({ status: 1, stdout: 'ruido del rc' }) }).causa, /no devolvió su PATH \(salió 1\)/);
+  assert.deepStrictEqual(TP.consultarShellDeInicio({ env, platform: 'darwin', spawnSync: con({ status: 0, stdout: '\n__TYCON_PATH__/a:/b__TYCON_FIN__\n' }) }), { path: '/a:/b', causa: null });
+  assert.deepStrictEqual(TP.consultarShellDeInicio({ env: {}, platform: 'win32' }), { path: null, causa: null });
+  // the shell answers, but the folder cannot be noted: the cause says so
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tools-path-'));
+  const bloqueado = path.join(dir, 'no-es-carpeta');
+  fs.writeFileSync(bloqueado, '');
+  const herramienta = path.join(dir, 'bin');
+  fs.mkdirSync(herramienta);
+  const r = TP.revalidarHerramientas(['herramienta-que-no-esta'], {
+    env, platform: 'darwin', file: path.join(bloqueado, 'tools.json'),
+    // the shell answers its PATH; the tool itself never starts
+    spawnSync: (bin, args) => (args[0] === '-lic' ? { status: 0, stdout: `\n__TYCON_PATH__${herramienta}__TYCON_FIN__\n` } : { error: { code: 'ENOENT' } }),
+    ejecutable: () => true,
+  });
+  assert.strictEqual(r.ok, false);
+  assert.match(String(r.causa), /no se pudo anotar la carpeta/, JSON.stringify(r));
+});

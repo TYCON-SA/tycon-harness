@@ -65,7 +65,8 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *   · un COMANDO: `integracionParaComando(llave)` → `{ prendida, estado, origen, apagada }` (`apagada` es la línea
  *     que imprime, exit 0: «<integración> apagada en esta máquina — prender: …»); rota → tira `ConfigError`;
  *   · un HOOK: `integracionParaHook(llave)` nunca tira → `{ ok, prendida, estado, origen, aviso }`: rota → `ok:false`,
- *     `prendida:false` y el aviso para stderr (no hace su parte, no frena);
+ *     `prendida:false` y el aviso para stderr (no hace su parte, no frena). No trae la configuración: quien la imprime
+ *     para diagnosticar no vuelca rutas, el chat ni las llaves; el hook que necesita otro valor la lee con `leerParaHook()`;
  *   · shell: `key <integracion> [--hook [--switch VAR]]` (0 prendida · 3 apagada · 2 rota; con --hook siempre 0 y el
  *     estado por stdout) e `integrations [--shell|--json]` (el instalador lee las ocho de una vez; rota → nada por stdout, exit 2).
  * La llave del buzón: `TYCON_MAILBOX_JSON` (la misma variable que lee upload-runs.js) dice dónde está; sin ella,
@@ -1300,12 +1301,12 @@ function integracionParaHook(llave0, opts) {
   const valorInter = inter && INTERRUPTORES_POR_HOOK.includes(inter) ? leerVariable(env, inter) : undefined;
   if (valorInter !== undefined && (String(valorInter) === '1' || String(valorInter) === '0')) {
     const prendida = String(valorInter) === '1';
-    return { ok: true, prendida, estado: prendida ? 'prendida' : 'apagada', origen: `interruptor ${inter}=${valorInter}`, apagada: comoSePrende(llave, opts && opts.home), config: null };
+    return { ok: true, prendida, estado: prendida ? 'prendida' : 'apagada', origen: `interruptor ${inter}=${valorInter}`, apagada: comoSePrende(llave, opts && opts.home) };
   }
   const r = leerParaHook(opts);
   if (!r.ok) return { ok: false, prendida: false, estado: 'rota', origen: null, aviso: r.aviso, errores: r.errores, apagada: comoSePrende(llave, opts && opts.home) };
   const { estado, origen } = estadoIntegracion(r.config, llave);
-  return { ok: true, prendida: estado !== 'apagada', estado, origen, apagada: comoSePrende(llave, opts && opts.home, r.config), config: r.config };
+  return { ok: true, prendida: estado !== 'apagada', estado, origen, apagada: comoSePrende(llave, opts && opts.home, r.config) };
 }
 
 /** Modo COMANDO: tira `ConfigError` si hay errores. */
@@ -1394,7 +1395,8 @@ function explicar(opts = {}) {
   // la carpeta del árbol gestionado (story 8.13.1): siempre con valor, siempre con origen
   L.push(`  paths.tree = ${fmt(v.rutas.tree)} (${o['rutas.tree']})`);
   L.push(`  ado.org = ${v.ado.org ? `${v.ado.org} (${o['ado.org']})` : 'sin valor'}`);
-  L.push(`  telegram.chat_id = ${v.telegram.chat_id ? `${v.telegram.chat_id} (${o['telegram.chat_id']})` : 'sin valor'}`);
+  // el chat es un dato de una persona: se muestra recortado, como en los mensajes (`get telegram.chat_id` lo da entero)
+  L.push(`  telegram.chat_id = ${v.telegram.chat_id ? `${muestra(String(v.telegram.chat_id))} (${o['telegram.chat_id']})` : 'sin valor'}`);
   L.push('  integrations:');
   for (const llave of LAS_OCHO) L.push(`    ${llave.padEnd(10)} ${integraciones[llave]}`);
   // la política de actualización (story 8.13): siempre con valor, siempre con origen
