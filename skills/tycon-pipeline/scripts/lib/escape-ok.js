@@ -13,7 +13,7 @@
  * por su salida prevista o registrar un control en rojo como esperado, «autorizo force-manual» declarar un control en
  * verde a mano, «autorizo trust-ran» la constancia de revisores que el arnés no vio correr, «autorizo
  * ALLOW_DOD_EVIDENCE_WRITE» una escritura a mano de la evidencia de la prueba en vivo y «autorizo dod_runtime_exempt»
- * la exención de esa prueba en una historia que ya está en implementación. Apagar el pase adversarial tiene dos nombres
+ * la exención de esa prueba en una historia, en cualquier estado. Apagar el pase adversarial tiene dos nombres
  * (`TYCON_NO_DEEP_REVIEW` y `no-deep-review`) y la frase de cualquiera de los dos vale para los dos. Pasar una historia
  * a review o done a mano también tiene dos: «autorizo cambiar el estado» y el interruptor `TYCON_STATUS_GATE`.
  *

@@ -95,20 +95,19 @@ const EXENTA = /^\s*dod_runtime_exempt:\s*["']?true\b/m;
 const EN_IMPLEMENTACION = new Set(['in-progress', 'review', 'done']);
 // El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
 const estadoDe = (c) => { const m = /^status:\s*["']?([\w-]+)/m.exec(fmBlock(c)); return m ? m[1].toLowerCase() : ''; };
+// Una historia: un encabezado con `story:` o `status:`. Una guía que nombra la exención no lo tiene.
+const esHistoria = (c) => /^(?:story|status):/m.test(fmBlock(c));
 
 /**
- * La exención de la prueba en vivo que se agrega a una historia que ya está en implementación (pasa de ausente o
- * `false` a `true`) la decide la persona: sin «autorizo dod_runtime_exempt» en su mensaje, `{ block }`; con la frase,
- * pasa (null) y queda la constancia con la sesión. Mientras la historia se escribe (nueva, `draft`, `ready-for-dev`) no
- * se pide: ahí la miran el validador y la revisión adversarial de la historia.
+ * La exención de la prueba en vivo que se agrega a una historia (pasa de ausente o `false` a `true`, también al crearla)
+ * la decide la persona, en cualquier estado: sin «autorizo dod_runtime_exempt» en su mensaje, `{ block }`; con la
+ * frase, pasa (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo.
  */
 function exencionNueva(event, oldContent, newContent) {
-  if (!oldContent || !EXENTA.test(newContent) || EXENTA.test(oldContent)) return null;
-  // el estado de antes o el de después: pasar la historia a implementación en la misma escritura no la saltea
-  const antes = estadoDe(oldContent);
-  const despues = estadoDe(newContent);
-  const estado = EN_IMPLEMENTACION.has(antes) ? antes : despues;
-  if (!EN_IMPLEMENTACION.has(estado)) return null;
+  if (!EXENTA.test(newContent) || (oldContent && EXENTA.test(oldContent)) || !esHistoria(newContent)) return null;
+  // el estado de antes o el de después, para el mensaje; la historia nueva no tiene estado de antes
+  const antes = estadoDe(oldContent || '');
+  const estado = EN_IMPLEMENTACION.has(antes) ? antes : (estadoDe(newContent) || antes || 'sin estado');
   const sid = event.session_id;
   let r = { ok: false };
   try {
@@ -127,7 +126,7 @@ function exencionNueva(event, oldContent, newContent) {
     block: [
       `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`,
       '',
-      'Eximir una historia que ya está en implementación lo decide la persona, no el agente: si quiere,',
+      'Eximir una historia lo decide la persona, no el agente, también mientras se escribe: si quiere,',
       'lo dice en su mensaje («autorizo dod_runtime_exempt»).',
       'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
       '(marker.js close-as-debt).',
@@ -605,7 +604,7 @@ function handle(event) {
       : oldContent.replace(oldStr, () => newStr);
   }
 
-  // La exención nueva en una historia que ya está en implementación la decide la persona.
+  // La exención nueva en una historia la decide la persona, en cualquier estado.
   const exencion = exencionNueva(event, oldContent, newContent);
   if (exencion) return exencion;
 
@@ -744,7 +743,7 @@ function handle(event) {
   lines.push('  (a) Invocar tycon-dod-runtime-checker advisor (auto-captura evidencia).');
   lines.push('  (b) Ejecutar E2E specs + capturar log → escribir manualmente el archivo.');
   lines.push('  (c) Si la story NO tiene UI/E2E reales: eximirla de la prueba en vivo lo decide la persona,');
-  lines.push('      no el agente (en una historia ya en implementación, con «autorizo dod_runtime_exempt» en su mensaje).');
+  lines.push('      no el agente (con «autorizo dod_runtime_exempt» en su mensaje).');
   lines.push('');
   lines.push('Caso disparador: Ceibo Story 4.2 2026-05-20 — Claude marcó done sin');
   lines.push('ejecutar E2E. Este hook es la infra que lo enforce. Docs:');

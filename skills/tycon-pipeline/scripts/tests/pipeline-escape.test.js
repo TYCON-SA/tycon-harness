@@ -142,19 +142,30 @@ test('T9 FrontmatterWrite_ExencionNueva_PideLaFrase @story-8.96 — agregarla a 
   assert.deepStrictEqual(c && [c.veredicto, c.via, c.sesion, c.escape], ['escape', 'persona', SID, 'dod_runtime_exempt']);
 });
 
-test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya estaba y la de una historia que se escribe pasan; entre comillas no', () => {
+test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya estaba pasa; la de una historia que se escribe y entre comillas no', () => {
   const home = nuevaHome([deLaPersona('seguí')], 'Edit');
   // ya la tenía: se edita otra parte
   const ya = historia(home, 'in-progress', 'dod_runtime_exempt: true\n');
   const otra = correr(ENCABEZADO, home, { tool_name: 'Edit', tool_input: { file_path: ya, old_string: 'Texto.', new_string: 'Texto nuevo.' } });
   assert.strictEqual(otra.status, 0, otra.stderr);
-  // mientras se escribe la historia no la pide
+  // mientras se escribe la historia también la pide: el agente que la escribe no se exime solo
   for (const s of ['draft', 'ready-for-dev']) {
-    assert.strictEqual(correr(ENCABEZADO, home, agregarExencion(historia(home, s))).status, 0, s);
+    assert.strictEqual(correr(ENCABEZADO, home, agregarExencion(historia(home, s))).status, 2, s);
   }
   const nueva = path.join(home, 'repo', 'specs', 'story-9.10-nueva.md');
   const contenido = '---\nepic: 9\nstory: "9.10"\ntitle: "Nueva"\nstatus: draft\ndod_runtime_exempt: true\n---\n\n# Story 9.10\n';
-  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: nueva, content: contenido } }).status, 0);
+  const crear = { tool_name: 'Write', tool_input: { file_path: nueva, content: contenido } };
+  const r = correr(ENCABEZADO, home, crear);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /autorizo dod_runtime_exempt/);
+  // con la frase de la persona, crearla exenta pasa
+  const conFrase = nuevaHome([deLaPersona('Es puro texto. Autorizo dod_runtime_exempt')], 'Write');
+  const nuevaOk = path.join(conFrase, 'repo', 'specs', 'story-9.10-nueva.md');
+  fs.mkdirSync(path.dirname(nuevaOk), { recursive: true });
+  assert.strictEqual(correr(ENCABEZADO, conFrase, { tool_name: 'Write', tool_input: { file_path: nuevaOk, content: contenido } }).status, 0);
+  // un .md que no es una historia (una guía que la nombra) no la pide
+  const guia = path.join(home, 'repo', 'guia.md');
+  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: guia, content: '# Guía\n\ndod_runtime_exempt: true\n' } }).status, 0);
   // con comillas también la pide
   for (const v of ['"true"', "'true'"]) {
     assert.strictEqual(correr(ENCABEZADO, home, agregarExencion(historia(home, 'in-progress'), v)).status, 2, v);
