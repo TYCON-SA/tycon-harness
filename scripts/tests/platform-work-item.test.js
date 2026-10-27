@@ -151,6 +151,106 @@ test('T43c Pedido_OrganizacionYProyectoDelPedido (el conector de Azure)', async 
   assert.deepStrictEqual([a2[a2.indexOf('--organization') + 1], a2[a2.indexOf('--project') + 1]], [ORG, 'Operaciones']);
 });
 
+// Pedido_TipoQueNoExiste_VaComoBacklog @story-4.11 @ac-44 (el conector de Azure)
+// 🔴 Falla con: crear con un tipo que el proyecto no tiene, no caer al elemento de backlog sin tipo configurado, leer los
+//    tipos sin la marca, crear sin haber podido leerlos o con un obligatorio sin cubrir, o contestar no_medido (el ciclo
+//    lo lee como «pudo crearlo»).
+test('T98 Pedido_TipoQueNoExiste_VaComoBacklog (el conector de Azure)', async () => {
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const ops = repoCon(null, null);
+  const noche = (extra) => P().run('work-item.create', { repoDir: ops, org: 'acme', project: 'Operaciones', title: 'Las pruebas quedaron en rojo (ejecuciones)', forNight: true, ...extra }, { env: m.env });
+  const tipoCreado = () => { const c = llamadasAz(m).filter(([p]) => p === 'crear'); const a = c[c.length - 1][1]; return a[a.indexOf('--type') + 1]; };
+  const creaciones = () => llamadasAz(m).filter(([p]) => p === 'crear').length;
+  const lecturas = () => llamadasAz(m).filter(([p]) => p === 'campos' || p === 'categorias').length;
+
+  const r1 = await noche({ type: 'Riesgo', typeOrBacklog: true });
+  assert.strictEqual(r1.ok, true, JSON.stringify(r1));
+  assert.strictEqual(tipoCreado(), 'Bug', 'el tipo que no existe va como el elemento de backlog');
+  assert.deepStrictEqual([r1.value.type, r1.value.typeFallback, r1.value.typeAsked], ['Bug', true, 'Riesgo']);
+  assert.ok(r1.value.warnings.some((w) => /«Riesgo» no existe en Operaciones/.test(w)), JSON.stringify(r1.value.warnings));
+
+  const r2 = await noche({ typeOrBacklog: true });
+  assert.strictEqual(r2.ok, true, JSON.stringify(r2));
+  assert.strictEqual(tipoCreado(), 'Bug', 'sin tipo configurado, directo al backlog');
+  assert.deepStrictEqual([r2.value.typeFallback, r2.value.typeAsked], [true, null]);
+  assert.ok(r2.value.warnings.some((w) => /^sin tipo configurado/.test(w)), JSON.stringify(r2.value.warnings));
+
+  const r3 = await noche({ type: 'Bug', typeOrBacklog: true });
+  assert.strictEqual(r3.ok, true, JSON.stringify(r3));
+  assert.strictEqual(tipoCreado(), 'Bug');
+  assert.strictEqual(r3.value.type, 'Bug');
+  assert.ok(!('typeFallback' in r3.value), 'el que existe va tal cual');
+
+  const antes = lecturas();
+  const r4 = await noche({ type: 'Riesgo' });
+  assert.strictEqual(r4.ok, true, JSON.stringify(r4));
+  assert.strictEqual(tipoCreado(), 'Riesgo', 'sin la marca, el tipo que le dan');
+  assert.strictEqual(lecturas(), antes, 'sin la marca no lee los tipos');
+
+  for (const paso of ['campos', 'categorias']) {
+    m.env.TYCON_AZ_FAIL = paso;
+    const n = creaciones();
+    const r = await noche({ type: 'Riesgo', typeOrBacklog: true });
+    assert.strictEqual(r.ok, false, `${paso}: ${JSON.stringify(r)}`);
+    assert.notStrictEqual(r.reason, 'no_medido', paso);
+    assert.strictEqual(creaciones(), n, `${paso}: sin poder leer los tipos no se crea`);
+  }
+  // una caída que no es «el tipo no existe» no cae al backlog: no lee la categoría
+  m.env.TYCON_AZ_FAIL = 'campos';
+  const cats = llamadasAz(m).filter(([p]) => p === 'categorias').length;
+  assert.strictEqual((await noche({ type: 'Riesgo', typeOrBacklog: true })).ok, false);
+  assert.strictEqual(llamadasAz(m).filter(([p]) => p === 'categorias').length, cats, 'la caída de la lectura no se toma por un tipo que no existe');
+  delete m.env.TYCON_AZ_FAIL;
+
+  // una respuesta rara de la categoría, o sin tipo legible, es un no con motivo: nunca no_medido, nunca se crea
+  const catFix = path.join(m.fixaz, 'categorias-Operaciones.json');
+  for (const cuerpo of [{ value: {} }, { value: 'x' }, { count: 1, value: [{ referenceName: 'Microsoft.RequirementCategory' }] },
+    { count: 1, value: [{ referenceName: 'Microsoft.RequirementCategory', defaultWorkItemType: { name: 'Bu/g' } }] }]) {
+    fs.writeFileSync(catFix, JSON.stringify(cuerpo));
+    const n = creaciones();
+    const r = await noche({ typeOrBacklog: true });
+    assert.deepStrictEqual([r.ok, r.reason], [false, 'rechazado'], `${JSON.stringify(cuerpo)}: ${JSON.stringify(r)}`);
+    assert.strictEqual(creaciones(), n, `${JSON.stringify(cuerpo)}: no se crea`);
+  }
+  fs.unlinkSync(catFix);
+  // los campos del tipo con un «value» que no es lista: tampoco se crea
+  fs.writeFileSync(path.join(m.fixaz, 'campos-Operaciones-Bug.json'), JSON.stringify({ value: {} }));
+  const nc = creaciones();
+  const rCampos = await noche({ type: 'Bug', typeOrBacklog: true });
+  assert.deepStrictEqual([rCampos.ok, rCampos.reason], [false, 'rechazado'], JSON.stringify(rCampos));
+  assert.strictEqual(creaciones(), nc);
+  fs.unlinkSync(path.join(m.fixaz, 'campos-Operaciones-Bug.json'));
+
+  // un tipo configurado sin forma de nombre no entra en la ruta de la API
+  const antesRaro = lecturas();
+  const rRaro = await noche({ type: 'Ries/../go', typeOrBacklog: true });
+  assert.deepStrictEqual([rRaro.ok, rRaro.reason], [false, 'rechazado'], JSON.stringify(rRaro));
+  assert.strictEqual(lecturas(), antesRaro, 'un tipo sin forma no se lee');
+
+  // el tipo configurado existe pero exige un obligatorio que el pedido no trae; uno que trae, o con valor por defecto, no frena
+  fs.writeFileSync(path.join(m.fixaz, 'campos-Operaciones-Riesgo.json'), JSON.stringify({ count: 4, value: [
+    { referenceName: 'System.Title', alwaysRequired: true }, { referenceName: 'Custom.Probabilidad', alwaysRequired: true },
+    { referenceName: 'Custom.Origen', alwaysRequired: true, defaultValue: 'noche' }, { referenceName: 'Custom.Area', alwaysRequired: true }] }));
+  const nr = creaciones();
+  const rFalta = await noche({ type: 'Riesgo', typeOrBacklog: true, fields: { 'Custom.Area': 'x' } });
+  assert.deepStrictEqual([rFalta.ok, rFalta.reason], [false, 'rechazado'], JSON.stringify(rFalta));
+  assert.match(rFalta.detail, /Custom\.Probabilidad/);
+  assert.doesNotMatch(rFalta.detail, /Custom\.(Area|Origen)|System\.Title/);
+  assert.strictEqual(creaciones(), nr);
+  const rTrae = await noche({ type: 'Riesgo', typeOrBacklog: true, fields: { 'Custom.Area': 'x', 'Custom.Probabilidad': 'alta' } });
+  assert.strictEqual(rTrae.ok, true, JSON.stringify(rTrae));
+  assert.strictEqual(tipoCreado(), 'Riesgo');
+  fs.unlinkSync(path.join(m.fixaz, 'campos-Operaciones-Riesgo.json'));
+
+  fs.writeFileSync(path.join(m.fixaz, 'campos-Operaciones-Bug.json'), JSON.stringify({ count: 2, value: [
+    { referenceName: 'System.Title', alwaysRequired: true }, { referenceName: 'Custom.Impacto', alwaysRequired: true }] }));
+  const n = creaciones();
+  const r5 = await noche({ type: 'Riesgo', typeOrBacklog: true });
+  assert.deepStrictEqual([r5.ok, r5.reason], [false, 'rechazado'], JSON.stringify(r5));
+  assert.match(r5.detail, /Custom\.Impacto/);
+  assert.strictEqual(creaciones(), n, 'con un obligatorio sin cubrir no se crea');
+});
+
 test('WorkItem_Create_Github_OpensIssue @story-8.85 @ac-7', async () => {
   const m = mundo({ platform: { default: 'github' } });
   const repo = repoCon('work-items.yaml', GH_CONFIG);

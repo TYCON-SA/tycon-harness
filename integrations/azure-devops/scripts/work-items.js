@@ -118,6 +118,48 @@ function camposConArchivos(pares, porArchivo) {
 // un GUID, con guiones después del punto), nunca algo que az lea como opción
 const camposMalos = (fields) => Object.keys(fields && typeof fields === 'object' ? fields : {}).filter((k) => !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)*$/.test(k));
 
+// los obligatorios que el pedido ya trae (o que Azure pone solo); los mismos que el Bug de dependencias
+const CAMPOS_PROPIOS = new Set(['System.Title', 'System.State', 'System.AreaId', 'System.AreaPath', 'System.IterationId', 'System.IterationPath',
+  'System.TeamProject', 'System.WorkItemType', 'System.Description', 'System.Tags', 'System.AssignedTo', 'System.Reason']);
+// una lectura de tipos que no se pudo hacer no se crea; no_medido no vale acá: quien llama lo lee como «pudo crearlo»
+const sinCrear = (p, que) => no(p.reason === 'no_medido' ? 'rechazado' : p.reason, `no pude leer ${que}: no se crea (${p.detail})`);
+// el nombre de un tipo, como el que el ciclo copia al registro: va en la ruta de la API, nada que la cambie
+const tipoConForma = (t) => typeof t === 'string' && /^[\p{L}\p{N} _-]{1,64}$/u.test(t);
+
+/**
+ * El tipo con que se crea el pedido de la noche (`typeOrBacklog`), como lo elige dependencias: el configurado si existe
+ * en el proyecto; si no existe (VS402323), o sin tipo, su elemento de backlog. `{ tipo, fallback }` o `{ problem }`: sin
+ * poder leer los tipos, o con un obligatorio sin valor por defecto que el pedido no trae, no se crea.
+ */
+function tipoDeLaNoche(ctx, org, project, configurado, fields) {
+  const leerCampos = (tipo) => azJson(ctx, ['devops', 'invoke', '--organization', org, '--area', 'wit', '--resource', 'workitemtypesfield',
+    '--route-parameters', `project=${project}`, `type=${tipo}`, '--api-version', '7.1', '--output', 'json']);
+  if (configurado && !tipoConForma(configurado)) return { problem: no('rechazado', `el tipo configurado no tiene forma de nombre de tipo: no se crea`) };
+  let tipo = configurado;
+  let fallback = false;
+  let campos = configurado ? leerCampos(configurado) : null;
+  if (campos && campos.problem && !/VS402323/.test(campos.problem.detail)) return { problem: sinCrear(campos.problem, `los campos del tipo ${configurado} en ${project}`) };
+  if (!campos || campos.problem) {
+    const cat = azJson(ctx, ['devops', 'invoke', '--organization', org, '--area', 'wit', '--resource', 'workitemtypecategories',
+      '--route-parameters', `project=${project}`, '--api-version', '7.1', '--output', 'json']);
+    if (cat.problem) return { problem: sinCrear(cat.problem, `la categoría de elemento de backlog de ${project}`) };
+    const filas = cat.value && cat.value.value;
+    const fila = Array.isArray(filas) ? filas.find((x) => x && x.referenceName === 'Microsoft.RequirementCategory') : null;
+    tipo = fila && fila.defaultWorkItemType && tipoConForma(fila.defaultWorkItemType.name) ? fila.defaultWorkItemType.name : null;
+    if (!tipo) return { problem: no('rechazado', `${project} no tiene una categoría de elemento de backlog legible: no se inventa un tipo`) };
+    fallback = true;
+    campos = leerCampos(tipo);
+    if (campos.problem) return { problem: sinCrear(campos.problem, `los campos del tipo ${tipo} en ${project}`) };
+  }
+  const lista = campos.value && campos.value.value;
+  if (!Array.isArray(lista)) return { problem: no('rechazado', `no pude leer los campos del tipo ${tipo} en ${project}: la respuesta no trae «value»; no se crea`) };
+  const traidos = new Set(Object.keys(fields && typeof fields === 'object' ? fields : {}));
+  const sinDefecto = (x) => x.defaultValue === undefined || x.defaultValue === null || x.defaultValue === '';
+  const faltan = lista.filter((x) => x && x.alwaysRequired === true && sinDefecto(x) && !CAMPOS_PROPIOS.has(x.referenceName) && !traidos.has(x.referenceName)).map((x) => x.referenceName);
+  if (faltan.length) return { problem: no('rechazado', `el tipo ${tipo} de ${project} exige campos que el pedido no trae (${faltan.join(', ')}): no se crea`) };
+  return { tipo, fallback };
+}
+
 function create(args, ctx) {
   if (typeof args.title !== 'string' || !args.title.trim()) return no('rechazado', 'falta el título del pedido de trabajo');
   const malos = camposMalos(args.fields);
@@ -127,7 +169,13 @@ function create(args, ctx) {
   const { c, org } = d;
   const project = args.project || c.project || ctx.env.TYCON_ADO_PROJECT;
   if (!project) return no('sin_plataforma', 'el repo no dice en qué proyecto de Azure DevOps van sus pedidos: project en .tycon/work-items.yaml');
-  const type = args.type || c.type;
+  let type = args.type || c.type;
+  let fallback = false;
+  if (args.typeOrBacklog === true) {
+    const t = tipoDeLaNoche(ctx, org, String(project), type || null, args.fields);
+    if (t.problem) return t.problem;
+    ({ tipo: type, fallback } = t);
+  }
   if (!type) return no('sin_plataforma', 'el repo no dice el tipo de sus pedidos de trabajo: type en .tycon/work-items.yaml (Agile: "User Story"; Scrum: "Product Backlog Item")');
   const sprint = args.sprint !== undefined && /^\d+$/.test(String(args.sprint)) ? String(args.sprint) : null;
   const iteracion = args.iteration || c.iteration_path || (c.iteration_auto_from_frontmatter === true && sprint ? `${c.iteration_root || project}\\Sprint ${sprint}` : '');
@@ -163,6 +211,14 @@ function create(args, ctx) {
   }
   const value = { id, url: `${org}/${encodeURIComponent(String(project))}/_workitems/edit/${id}`, warnings, unsupported: [] };
   if (asignar) value.assigned = String(args.assignTo);
+  if (args.typeOrBacklog === true) {
+    value.type = String(type);
+    if (fallback) {
+      value.typeFallback = true;
+      value.typeAsked = args.type || c.type || null;
+      warnings.push(args.type || c.type ? `el tipo «${args.type || c.type}» no existe en ${project}: el pedido #${id} va como ${type}, su elemento de backlog` : `sin tipo configurado: el pedido #${id} va como ${type}, el elemento de backlog de ${project}`);
+    }
+  }
   return { ok: true, value };
 }
 
