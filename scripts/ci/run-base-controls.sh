@@ -540,7 +540,14 @@ function analyze() {
   const inv = read.inv;
   const { rules, owner, workflows } = resolveInventory(root, base, inv);
   const controlFiles = [...new Set([...rules, ...workflows.map((w) => w.path)])].sort();
-  const changed = controlFiles.filter((p) => blobOf(root, mb, p) !== blobOf(root, tip, p));
+  // un archivo que el pedido suma y que el código de un control carga en la punta también entra: la base no lo conoce,
+  // y sin él la firma de un control que se afloja no lo ancla (se podría cambiar después con la firma valiendo). Lo que
+  // trajo main mientras el pedido estaba abierto no es del pedido
+  const scriptsOfBase = inv.controls.map((c) => c.script).filter(Boolean);
+  const added = [...codeClosure(root, tip, [inv.hook, ...scriptsOfBase])]
+    .filter((p) => !controlFiles.includes(p) && !blobOf(root, mb, p) && !blobOf(root, base, p));
+  for (const p of added) owner.set(p, 'código que corre un control');
+  const changed = [...controlFiles.filter((p) => blobOf(root, mb, p) !== blobOf(root, tip, p)), ...added].sort();
   // la constancia ancla lo que el dueño ve en su rama: el pedido, no el merge que arma GitHub
   const signedRev = prHead || tip;
   const entries = changed.map((p) => ({ path: p, blob: blobOf(root, signedRev, p) || 'borrado' }));
