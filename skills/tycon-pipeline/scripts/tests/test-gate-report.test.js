@@ -11,6 +11,7 @@
  *         Python sobre las mismas entradas; lo mismo la copia que viaja y la línea de gates.log. Y test-gate.sh corre
  *         de punta a punta con un PATH sin `python3`.
  *   T70 · smoke-run.sh corre contra un servidor de juguete con un PATH sin `python3` y deja lo mismo que con Python.
+ *   T74 · una suite no medida llega al artefacto con su motivo (además de contar como ausente).
  *   T73 · sin el corredor (`npx` o `dotnet` fuera del PATH) test-gate.sh dice «no pude correr las pruebas: falta …» y
  *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado. (La parte del `claude`
  *         que en Windows es un `.cmd` está en lane-classifier.test.js.)
@@ -781,4 +782,28 @@ test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «s
   const regla = fs.readFileSync(path.join(SCRIPTS, '..', '..', '..', 'agents', 'tycon-plugin-tests-coverage.md'), 'utf8')
     .split('\n').find((l) => l.startsWith('| **TEST-C1** |')) || '';
   assert.match(regla, /unscoped/, `la regla TEST-C1 no nombra «sin acotar»: ${regla}`);
+});
+
+test('T74 TestGate_SuitesJson_UnmeasuredReasonReachesArtifact — la suite no medida llega a tests-result.json con su motivo', () => {
+  // 🔴 rojo: el informe la contaba como ausente y perdía el motivo que da run-suites-json.js.
+  const tmp = tmpReal('tgr-nomedida-');
+  const repo = path.join(tmp, 'repo');
+  const results = path.join(tmp, 'results');
+  fs.mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+  escribir(repo, { 'scripts/tests/suites.json': { text: '{"diarias":[],"semanales":[]}\n' } });
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  fs.mkdirSync(results, { recursive: true });
+  const noMedida = { suite: 'scripts/tests/hermana.test.js', reason: 'su raíz no existe en esta máquina' };
+  fs.writeFileSync(path.join(results, 'suites.json'), JSON.stringify({ corridas: 1, verdes: 1, fallas: [], ausentes: [noMedida.suite], deferred_suites: [], unmeasured_suites: [noMedida] }));
+  const out = path.join(tmp, 'out.json');
+  const r = spawnSync(process.execPath, [REPORT, 'suites-json', repo, repo, results, out, '1', '8.18', '75', '2026-10-27T12:00:00Z',
+    '0', '', 'explicito', '', '{"git":true}', '', '{"ref":null,"source":null,"descartadas":[]}'],
+  { encoding: 'utf8', env: { ...process.env, HOME: tmp, USERPROFILE: tmp, TYCON_GUIDES_DIR: tmp, TYCON_EVIDENCE_DIR: path.join(tmp, 'ev') } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const art = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.strictEqual(art.totals.missing, 1, 'la no medida sigue contando como ausente');
+  assert.strictEqual(art.totals.unmeasured, 1);
+  assert.deepStrictEqual(art.totals.unmeasured_suites, [noMedida]);
+  assert.strictEqual(art.suite_green, false, 'nunca verde');
 });

@@ -47,6 +47,11 @@ export function idleStep(entering) {
   return entering.failed ? 'sin paso abierto (no pude consultar los pedidos)' : 'lista para cerrar';
 }
 const stepText = (run) => (run.current ? run.current.name : idleStep(run.entering));
+/**
+ * El avance, en el cartel y en /pipeline: el paso EN CURSO con su número de la tabla («paso 10 de 11»); sin paso abierto,
+ * los hechos («9 de 11 hechos»). «9/11» se leía como «estoy en el 9» con el 10 en curso.
+ */
+export const progressText = (run) => (run.current && run.current.number ? `paso ${run.current.number} de ${run.total}` : `${run.done} de ${run.total} hechos`);
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 
 /** 2 (pasos por nombre), 1 (el marker viejo, por número) o `null` (ninguno de los dos). */
@@ -203,7 +208,7 @@ export function readRun(text, now) {
   return {
     storyId: m.storyId,
     title: typeof m.storyTitle === 'string' && m.storyTitle.trim() !== '' ? m.storyTitle.trim() : null,
-    current: current ? { id: current.id, name: nameOf(current) } : null,
+    current: current ? { id: current.id, name: nameOf(current), number: current.number } : null,
     done: STEPS.filter((s) => finished(s.id)).length,
     total: TOTAL,
     minutesStep: current ? minutes(startOf(current.id) !== null ? startOf(current.id) : previousClose(current.id), now) : null,
@@ -263,7 +268,7 @@ export function shortTitle(title, max = 40) {
 export function boardParts(run, contextPercent) {
   const pct = typeof contextPercent === 'number' && Number.isFinite(contextPercent) ? Math.round(contextPercent) : null;
   const rest = [
-    `${run.done} de ${run.total} hechos`,
+    progressText(run),
     `${show(run.minutesStep)} min en este paso`,
     `${run.totalText || `${show(run.minutesTotal)} min`} en total`,
     `contexto usado ${show(pct)} %`,
@@ -343,7 +348,7 @@ export function warnKey(run, warned) {
 export function pipelineTable(run) {
   const title = typeof run.title === 'string' && run.title !== '' ? ` «${run.title}»` : '';
   const head = `Story ${run.storyId}${title} — ${stepText(run)}` +
-    ` · ${run.done} de ${run.total} pasos hechos · ${run.totalText || `${show(run.minutesTotal)} min`} en total${run.waiting ? ' · te espera' : ''}`;
+    ` · ${progressText(run)} · ${run.totalText || `${show(run.minutesTotal)} min`} en total${run.waiting ? ' · te espera' : ''}`;
   const lines = [head, ...(run.warnings || []), ...(run.oldScheme ? [OLD_RUN_TEXT] : []), '', '| Paso | Estado | Tiempo |', '|---|---|---|'];
   for (const r of run.rows) lines.push(`| ${r.number ? `${r.number}. ` : ''}${r.name} | ${r.state} | ${r.minutes === null ? '—' : `${r.minutes} min`} |`);
   return lines.join('\n');

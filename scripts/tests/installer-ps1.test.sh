@@ -68,8 +68,8 @@ T="$(mktemp -d /tmp/installer-ps1.XXXXXX)" && T="$(cd "$T" && pwd -P)" || { echo
 trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/tmp" "$T/xdg" "$T/bin"
 FAILURES=0; TOTAL=0
-ok() { TOTAL=$((TOTAL+1)); echo "✅ installer-ps1: $1"; }
-no() { TOTAL=$((TOTAL+1)); FAILURES=$((FAILURES+1)); echo "❌ installer-ps1: $1"; }
+ok() { suite_check; TOTAL=$((TOTAL+1)); echo "✅ installer-ps1: $1"; }
+no() { suite_check; TOTAL=$((TOTAL+1)); FAILURES=$((FAILURES+1)); echo "❌ installer-ps1: $1"; }
 brief() { tail -2 "$1" 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | tr '\n' ' ' | cut -c1-"${2:-300}"; }   # <archivo> [largo]: el final de una salida, en un renglón y sin colores
 
 # ── el clon de laboratorio: el repo único (scripts/ + skills/ y agents/ de juguete en la raíz) ─────────────────
@@ -539,7 +539,7 @@ if [ "$OTHER_CLONE/scripts/install-tycon-hooks.ps1" -ef "$CLONE/scripts/install-
   if [ "$RC" -eq 0 ] && [ "$CK" -eq 0 ] && cmp -s "$HJ/.claude/settings.json" "$T/j.settings.json"; then ok "(j) orden inverso: después, por la carpeta del clon, los ${R% } siguen una vez cada uno y settings.json no cambia"
   else no "(j) orden inverso (rc $RC): ${R}·$(brief "$T/j4.out")"; fi
 else
-  echo "⏭ installer-ps1: NO MEDIDO — (j) este disco distingue mayúsculas: $OTHER_CLONE no es $CLONE"
+  suite_check; echo "⏭ installer-ps1: NO MEDIDO — (j) este disco distingue mayúsculas: $OTHER_CLONE no es $CLONE"
 fi
 
 # ═══ (k) el core.hooksPath local cuya carpeta no está en el disco no es vestigial si el repo la sigue ═
@@ -2374,6 +2374,7 @@ else
   ok "T79 la prueba no trae escrita ninguna ruta con forma de carpeta de usuario (viaja en la copia pública)"
 fi
 fi   # ── fin de la parte 2 ──
+suite_parts_end
 
 echo
 [ -z "${ELAPSED_INSTALL:-}" ] || echo "ℹ installer-ps1: una instalación entera del .ps1 con pwsh tardó ${ELAPSED_INSTALL} s"   # (la mide (b), en la parte 1)

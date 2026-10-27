@@ -31,8 +31,8 @@ HOOK_REPO="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"
 # real, para que la cadena sea la misma de siempre.
 source "$RAIZ/scripts/tests/lib/fake-home.sh"
 FALLOS=0
-ok()  { echo "  ok   — $1"; }
-mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
+ok()  { suite_check; echo "  ok   — $1"; }
+mal() { suite_check; echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 # Si el ayudante no pudiera armar la HOME, el commit saldría ≠0 y los casos que esperan «no se crea» darían
 # verde por el motivo equivocado: se prueba una vez acá, afuera, y sin él no se corre nada.
 SONDA="$(mktemp -d)"
@@ -550,7 +550,7 @@ printf 'const cmd = process.argv[2];\nswitch (cmd) {\n  case %s: break;\n}\n' "'
 if [ -r "$DICC" ]; then
   nuevo_bloqueado "$T" "un subcomando nuevo" "scripts/english-tool.js:3" "[subcomando]" "$C_SUB"
 else
-  echo "  ⏭   — C-16 T6 un subcomando nuevo NO verificado: «${C_SUB}» no está en la lista y se juzga con el diccionario, que esta máquina no tiene ($DICC). No es un verde."
+  suite_check; echo "  ⏭   — C-16 T6 un subcomando nuevo NO verificado: «${C_SUB}» no está en la lista y se juzga con el diccionario, que esta máquina no tiene ($DICC). No es un verde."
   ( cd "$T/repo" && git reset -q --hard HEAD && git clean -qfd )
 fi
 printf 'if (process.env.%s) {}\n' "$C_ENV" > "$T/repo/scripts/english-tool.js"; ( cd "$T/repo" && git add -A )
@@ -687,7 +687,7 @@ rm -rf "$T"
 # C-22 · T12 SpanishNames_PrStep — el paso de lint del PR, con sus líneas de pipelines/azure-pipelines-maintainers-pr.yml, suma a FALLAS.
 # La copia pública no trae los pipelines del equipo (el exportador deja afuera pipelines/**): ahí se saltea con constancia.
 if [ ! -f "$RAIZ/pipelines/azure-pipelines-maintainers-pr.yml" ]; then
-  echo "  ⏭   — C-22 (T12) NO verificado: no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
+  suite_check; echo "  ⏭   — C-22 (T12) NO verificado: no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
 else
 T=$(mktemp -d); montar_castellano "$T"
 BASE_LAB=$(git -C "$T/repo" rev-parse HEAD)
@@ -776,7 +776,7 @@ if suite_part 1; then   # ── parte 1 de 2 ──
 PUBLIC_COPY=0
 if [ ! -f "$RAIZ/perfil-equipo.json" ] || [ ! -f "$RAIZ/scripts/lib/renames.json" ]; then PUBLIC_COPY=1; fi
 if [ "$PUBLIC_COPY" = 1 ]; then
-  echo "  ⏭️   — C-25 NO MEDIDO — copia pública sin el mapa de renombres: no hay mapa del que armar el de laboratorio. No es un verde."
+  suite_check; echo "  ⏭️   — C-25 NO MEDIDO — copia pública sin el mapa de renombres: no hay mapa del que armar el de laboratorio. No es un verde."
 else
 T=$(mktemp -d); montar_castellano "$T"
 # El mapa de laboratorio parte del mapa real recortado a lo que el laboratorio tiene en disco, y le suma su entrada. Uno
@@ -893,7 +893,7 @@ if python3 -c 'import yaml' >/dev/null 2>&1; then
   elif [ -z "$R3_NOT_SHIPPED" ]; then ok "C-28 T26 los cuatro yml de este carril parsean"
   elif [ "$R3_PARSED" -gt 0 ]; then ok "C-28 T26 los $R3_PARSED yml de este carril que la copia trae parsean"; fi
 else
-  echo "  ⚠️   — C-28 T26 yml NO MEDIDO — sin PyYAML en esta máquina. No es un verde."
+  suite_check; echo "  ⚠️   — C-28 T26 yml NO MEDIDO — sin PyYAML en esta máquina. No es un verde."
 fi
 if [ ! -f "$RAIZ/perfil-equipo.json" ] || [ ! -f "$RAIZ/scripts/lib/renames.json" ]; then
   echo "  ⏭️   — C-28 T26 rutas viejas y reemplazo: NO MEDIDO — copia pública sin el mapa"
@@ -1142,6 +1142,7 @@ else
 fi
 
 fi   # ── fin de los bloques: lo que sigue corre en todas las partes ──
+suite_parts_end
 
 rm -f "$SK_ERR"
 echo

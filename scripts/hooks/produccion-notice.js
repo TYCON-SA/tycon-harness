@@ -6,7 +6,8 @@
  * POR QUÉ SÓLO EN ESAS MÁQUINAS: el resto del equipo no instala nada, así que un
  * aviso ahí sería ruido en cada arranque — y un aviso que suena sin motivo es el que se aprende a
  * ignorar. «Autorizada» = ya instaló el freno alguna vez, o tiene una entrada `tycon-prod-*` en el
- * llavero propio (se pregunta si EXISTE, sin leer la clave ni abrir cuadro).
+ * llavero propio (se pregunta si EXISTE, sin leer la clave ni abrir cuadro). Una máquina sin llavero que sólo tiene
+ * clonado un repo que declara producción recibe el aviso de que falta el freno UNA vez, y queda sellado.
  *
  * CONTRA QUÉ COMPARA: contra lo PUBLICADO (`origin/main` del clon del arnés), no contra el disco —
  * un archivo retocado en el clon diría «actualizalo» y el instalador instalaría lo retocado.
@@ -85,6 +86,8 @@ const existe = (f) => { try { fs.statSync(f); return true; } catch { return fals
 // prueba no abre ninguna ventana, pero deja la constancia igual, que es lo que el banco mira.
 // Off: TYCON_PRODUCTION_AUTOINSTALL=0.
 const SELLO_INSTALADOR = path.join(stateDirOf(HOME), 'instalar-freno-abierto');
+// el aviso de una sola vez de la máquina sin el llavero de producción (ver `soloPorRepo` en main)
+const SELLO_SIN_LLAVERO = path.join(stateDirOf(HOME), 'aviso-freno-sin-llavero-dado');
 function abrirInstalador() {
   if (variable('TYCON_PRODUCTION_AUTOINSTALL') === '0') return false;
   if (process.platform !== 'darwin') return false;
@@ -279,15 +282,24 @@ function main() {
   // el aviso de arranque te da el comando. Lo único que no se puede automatizar es la contraseña del
   // Mac que pide instalar (escribe en /opt y en /Library).
   const trabajaConProduccion = !!(indice && Object.values(indice.hosts || {}).some((h) => h.ambiente === 'produccion'));
-  const autorizada = instaladoAlgunaVez || tieneClave || existe(LLAVERO_PROPIO) || trabajaConProduccion;
+  // 🔴 Sin el llavero de producción, el repo que declara producción es lo único que la hace «autorizada»: es la máquina
+  // de cualquiera que tenga el proyecto clonado. Ahí el aviso sale UNA vez, con cómo instalar, y queda sellado; un aviso
+  // que sale en cada arranque a quien no toca producción se aprende a ignorar. Con el llavero, o sin poder consultarlo
+  // («no pude preguntar» no es «no tiene»), sale en cada arranque.
+  const soloPorRepo = trabajaConProduccion && !instaladoAlgunaVez && !tieneClave && !existe(LLAVERO_PROPIO) && !llaveroIlegible;
+  const sellado = soloPorRepo && existe(SELLO_SIN_LLAVERO);
+  const autorizada = !sellado && (instaladoAlgunaVez || tieneClave || existe(LLAVERO_PROPIO) || trabajaConProduccion);
   if (!autorizada) {
     // La configuración del arnés rota se DICE aunque esta máquina no tenga producción: el resto de
     // los avisos del freno no aplican acá, éste sí — es un archivo de la máquina, no del freno.
     for (const a of avisos.filter((a) => /configuración del arnés/.test(a))) console.log(a);
     if (llaveroIlegible) console.log('🟠 freno de producción: no pude consultar el llavero propio para saber si esta máquina tiene la clave de producción.');
-    else if (REPORTE) console.log('freno de producción: esta máquina no está autorizada (sin freno instalado ni clave de producción): nada que avisar.');
+    else if (REPORTE) console.log(sellado
+      ? 'freno de producción: esta máquina no tiene el llavero de producción y el aviso de que falta el freno ya salió una vez.'
+      : 'freno de producción: esta máquina no está autorizada (sin freno instalado ni clave de producción): nada que avisar.');
     process.exit(0);                     // el resto del equipo no recibe nada (AC 25)
   }
+  if (llaveroIlegible) avisos.push('🟠 freno de producción: no pude consultar el llavero propio para saber si esta máquina tiene la clave de producción.');
 
   // ── 3. lo que tiene que estar, contra lo PUBLICADO ───────────────────────────────────────────
   const piezas = [
@@ -398,7 +410,8 @@ function main() {
   }
 
   // ── 3b. si algo de arriba pide (re)instalar, la ventana del instalador se abre sola ──────────
-  if (avisos.some((a) => a.includes(INSTALADOR)) && abrirInstalador()) {
+  // Sin el llavero de producción no se abre: ese dev no toca producción, y la línea del aviso ya dice cómo instalarlo.
+  if (!soloPorRepo && avisos.some((a) => a.includes(INSTALADOR)) && abrirInstalador()) {
     avisos.push('   → Te abrí la ventana del instalador: sólo pide tu contraseña del Mac. (Una vez por día; off: TYCON_PRODUCTION_AUTOINSTALL=0)');
   }
 
@@ -426,6 +439,14 @@ function main() {
     else if (errores.length) lineas.push(`   ⚠ ${errores.length} proyecto(s) con su catálogo de servidores ilegible (el detalle, con --report)`);
     // sin catálogos en una máquina autorizada, TODO host se frena: eso se dice aunque no haya otro aviso
     if (!indice.catalogos.length) avisos.push('🟠 ningún proyecto de esta máquina declara servidores: TODO host de base se va a tratar como producción (¿la raíz de repos está bien?).');
+  }
+
+  if (soloPorRepo && avisos.length) {
+    try {
+      fs.mkdirSync(path.dirname(SELLO_SIN_LLAVERO), { recursive: true });
+      fs.writeFileSync(SELLO_SIN_LLAVERO, new Date().toISOString().slice(0, 10) + '\n');
+      avisos.push('   Este aviso sale una sola vez: esta máquina no tiene el llavero de producción. Si te toca producción, instalá el freno con el comando de arriba.');
+    } catch { /* sin sello, vuelve a salir: mejor que callarlo */ }
   }
 
   if (avisos.length || REPORTE) {

@@ -24,10 +24,11 @@
 #
 # 🔴 La variable se saca del ambiente al cargar: si la heredaran los procesos que la suite lanza, otra suite partida
 #    corrida desde adentro haría un solo bloque sin que nadie se lo pida.
-# 🔴 Lo que esta biblioteca NO puede saber: si un bloque, una vez adentro, verifica algo. Un bloque vaciado a mano (o con
-#    todo comentado y un `:`) deja a su parte verde sin verificar nada. La red es el conteo: al partir o tocar los bloques
-#    se corre el archivo entero y cada parte, y la suma de verificaciones tiene que dar la del entero. Que cada parte tenga
-#    al menos un bloque sí se mide solo (`layoutProblems`, en la gemela de Node).
+# 🔴 Un bloque vaciado a mano (o con todo comentado y un `:`) dejaría a su parte verde sin verificar nada. Por eso la
+#    suite cuenta cada verificación con `suite_check` (desde su `ok`, su `mal` y su «no medido») y llama a
+#    `suite_parts_end` después del último bloque: una parte con cero verificaciones sale 2. El conteo es por parte, no por
+#    bloque: un bloque que se saltea a propósito (por plataforma, o filtrado) no la deja roja si otro de la parte verificó.
+#    Que cada parte tenga al menos un bloque, y que la suite llame a las dos, lo mide `layoutProblems` (la gemela de Node).
 # Una variable mal escrita, una parte que no existe o un archivo que declara otra cantidad cortan con 2 antes de correr
 # nada: «no sé qué parte soy» nunca es «corro todo» ni «no corro nada y salgo verde».
 #
@@ -65,5 +66,22 @@ suite_parts() {
 
 # suite_part <k> — ¿corre este bloque? Entera, siempre; como parte, sólo el suyo.
 suite_part() {
-  [ -z "$__suite_part_asked" ] || [ "$1" = "$__suite_part_k" ]
+  [ -z "$__suite_part_asked" ] || [ "$1" = "$__suite_part_k" ] || return 1
+  __suite_part_entered=1
+}
+
+# suite_check — la suite cuenta una verificación (la llaman su `ok`, su `mal` y su «no medido»). Cuenta sólo desde el
+# bloque de la parte pedida: lo de antes de los bloques corre en todas las partes y no vale como verificación de una.
+__suite_part_checks=0
+__suite_part_entered=""
+suite_check() {
+  [ -z "$__suite_part_entered" ] || __suite_part_checks=$((__suite_part_checks+1))
+}
+
+# suite_parts_end — va después del último bloque, antes de lo que corre en todas las partes y del resumen. Una parte que
+# no verificó nada (un bloque vaciado a mano, o todo comentado con un `:`) sale 2 y lo dice: nunca un verde sin mirar.
+suite_parts_end() {
+  if [ -n "$__suite_part_asked" ] && [ "$__suite_part_checks" -eq 0 ]; then
+    echo "❌ suite-parts: la parte ${__suite_part_k} de ${__suite_part_n} terminó sin ninguna verificación (¿un bloque vacío?)" >&2; exit 2
+  fi
 }

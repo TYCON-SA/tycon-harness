@@ -1431,6 +1431,13 @@ test('T12b NombreArmado_FormasQueNoAsignan_NoFrenan — cuentas, palabras que em
   }
 });
 
+const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+/**
+ * ¿El costo de ahora (`b`, ms) es aceptable contra el de antes (`a`)? Hasta un 20 % más, o hasta 20 ms más: en una
+ * máquina compartida el ruido de una mediana llega a 14 ms, y un proceso hijo de más cuesta 40 ms o más.
+ */
+const costoAceptable = (a, b) => b <= Math.max(a * 1.2, a + 20);
+
 // stable-data: T8 mide cuánto tarda el freno; ninguna fecha entra en lo que se compara.
 test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no corre node de más', (t) => {
   // el freno de antes (la rama de la 8.104), en un árbol de juguete que comparte las bibliotecas de éste
@@ -1451,14 +1458,21 @@ test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no 
     spawnSync('bash', [hook], { input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: c }, cwd: home }), env: e, encoding: 'utf8' });
     return Number(process.hrtime.bigint() - t) / 1e6;
   };
-  const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
   for (const c of ['ls -la', 'git status']) {
     const antes = [], ahora = [];
     // alternadas, para que la carga de la máquina pese igual en las dos
     for (let i = 0; i < 50; i++) { antes.push(vuelta(hookViejo, c)); ahora.push(vuelta(HOOK, c)); }
     const [a, b] = [mediana(antes), mediana(ahora)];
-    assert.ok(b <= a * 1.2, `${c}: mediana antes ${a.toFixed(1)} ms, ahora ${b.toFixed(1)} ms (más de un 20 % arriba)`);
+    assert.ok(costoAceptable(a, b), `${c}: mediana antes ${a.toFixed(1)} ms, ahora ${b.toFixed(1)} ms (más de un 20 % y de 20 ms arriba)`);
   }
+});
+
+test('T8b FiltroPrevio_MedicionToleraRuido @story-8.107 @ac-6 — la comparación del costo no da rojo por el ruido de una máquina cargada', () => {
+  // el rojo de la CI compartida, en un pedido que no tocaba el freno: 68,5 ms antes, 82,4 ms ahora
+  assert.ok(costoAceptable(68.5, 82.4));
+  // un proceso hijo más cuesta 40 ms o más: eso sí se ve
+  assert.ok(!costoAceptable(68.5, 128.5));
+  assert.ok(!costoAceptable(300, 400));
 });
 
 // ── El interruptor del estado a mano (@story-8.109) ─────────────────────────────────────────────────────────────────────

@@ -56,8 +56,8 @@ corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
 suite_parts 2
 FALLOS=0
-ok()  { echo "  ok   — $1"; }
-mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
+ok()  { suite_check; echo "  ok   — $1"; }
+mal() { suite_check; echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 T="$(mktemp -d "${TMPDIR:-/tmp}/shared-pieces.XXXXXX")"
 node "$RAIZ/scripts/tests/lib/lab-guard.js" "$T" installer-shared-pieces || exit 1
 trap 'rm -rf "$T"' EXIT
@@ -788,6 +788,7 @@ if corre S13 && suite_part 1; then
     || mal "S13 (espejo): rc $rc · motivo «$(q "$T/s13c.json" 'r.reason')» · temporal «$(leftover_tmp "$H")» · copia «$(leftover_bak "$H")»"
 fi
 
+suite_parts_end
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"; exit 0

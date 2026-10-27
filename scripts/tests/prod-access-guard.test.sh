@@ -59,7 +59,7 @@ corre(){ local cmd="$1"; shift
   # TYCON_PROD_SESSION_SINCE: el arranque de la sesión, en ms. En producción sale de la ascendencia de
   # procesos hasta el `claude` que invocó el hook; acá no hay ninguno, así que se inyecta. La costura
   # sólo puede cerrar el freno (0 = TODOS los snapshots son candidatos, el lado seguro), nunca abrirlo.
-  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE="${DESDE:-0}" "$@" node "$HOOK" >"$TMP/out" 2>"$TMP/err"
+  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE="${DESDE:-0}" "$@" node "${HOOK_USAR:-$HOOK}" >"$TMP/out" 2>"$TMP/err"
   echo $?
 }
 frena(){ local etiqueta="$1" cmd="$2"; shift 2
@@ -261,16 +261,29 @@ pasa  "T34c · el mismo comando sin nada de bases pasa" 'bash -c "$CMD"'
 
 # ── T17 · falla propia del hook, con y sin base ───────────────────────────────────────────────
 # Sin esto, un `require` fuera del try, o sin reloj propio, rompe el hook y DEJA PASAR.
-mundo
-frena "T17a · con el índice ilegible y una base nombrada, frena" "sqlcmd -S $PROD -Q \"select 1\"" TYCON_PROD_FAIL=1
-pasa  "T17b · con el mismo fallo y sin base, pasa" "git status" TYCON_PROD_FAIL=1
+# La falla es real: una copia del freno a la que le faltan sus bibliotecas, y el `require` revienta
+# adentro del try (la misma receta que el caso del banco `falla-real-del-freno-con-base-frena-y-anota`).
+freno_roto(){ # deja en $TMP/roto una copia del freno sin sus bibliotecas, e imprime la ruta del hook
+  local r="$TMP/roto"; rm -rf "$r"
+  mkdir -p "$r/scripts/hooks" "$r/scripts/lib" "$r/scripts/production"
+  cp "$HOOK" "$r/scripts/hooks/"
+  cp "$AQUI/scripts/lib/repos-root.js" "$r/scripts/lib/"
+  cp "$INDICE" "$r/scripts/production/"
+  echo "$r/scripts/hooks/prod-access-guard.js"
+}
+mundo; ROTO="$(freno_roto)"
+HOOK_USAR="$ROTO" frena "T17a · con el freno roto y una base nombrada, frena" "sqlcmd -S $PROD -Q \"select 1\""
+if [ -s "$CASA/.claude/.tycon-pipeline/hook-errors.log" ]; then ok "T17a · la falla queda anotada en hook-errors.log"
+else no "T17a · la falla no quedó anotada en hook-errors.log"; fi
+HOOK_USAR="$ROTO" pasa "T17b · con el mismo freno roto y sin base, pasa" "git status"
 
 # T17c · CADA cliente que el freno conoce, ante una falla propia, sale 2. Una lista del
 # criterio de falla-cerrado escrita a mano podría no tener `tsql` ni `sqlpackage`.
-mundo
+mundo; ROTO="$(freno_roto)"
 clientes="$(node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8"); const m=/const CLIENTES = \{([\s\S]*?)\};/.exec(s); console.log([...m[1].matchAll(/([\w-]+)\x27?\s*:/g)].map(x=>x[1]).join(" "))' "$HOOK")"
+[ -n "$clientes" ] || no "T17c · no pude leer la lista de clientes del freno"
 for cli in $clientes; do
-  frena "T17c · falla propia con «${cli}» frena" "${cli} -S $PROD" TYCON_PROD_FAIL=1
+  HOOK_USAR="$ROTO" frena "T17c · falla propia con «${cli}» frena" "${cli} -S $PROD"
 done
 
 # T17d · un comando GIGANTE con miles de `<<` que nombra producción: se frena sin parsearlo, y a

@@ -1971,8 +1971,9 @@ async function main() {
     for (const t of tools) jobsList.push({ suite: s, caseDef: c, tool: t, key, excluded: !caseTools.includes(t) });
   }
   const llmRuns = jobsList.filter((j) => !j.excluded).length * RUNS;
-  // un examen de paquete que no corre ningún caso (un `--only` que no coincide) no es verde: frena
+  // un examen que no corre ningún caso (un `--only` que no coincide, con o sin paquete) no es verde: frena
   if (PACK && !llmRuns) { console.error(`--pack: ningún caso de ${PACK.casesDir} queda para correr${ONLY.length ? ` con --only ${ONLY.join(',')}` : ''}`); return 2; }
+  if (ONLY.length && !llmRuns) { console.error(`ningún caso queda para correr con --only ${ONLY.join(',')}: revisá cómo está escrito`); return 2; }
   console.log(`advisor-bench: ${jobsList.length} casos·herramienta × ${RUNS} ejecuciones = ${llmRuns} invocaciones LLM (jobs=${JOBS})`);
   // Con los hooks apagados dentro de las corridas, el servidor de memoria lo levanta el banco.
   if (jobsList.some((j) => j.caseDef.expect_engram || j.caseDef.expect_mcp)) asegurarMemoriaViva();

@@ -166,6 +166,14 @@ test('@story-8.59 @ac-5 8.59-Runner_SinPack_IgualQueAntes', () => {
   assert.ok(!/example-/.test(r.stdout), 'ningún caso del ejemplo');
 });
 
+test('@story-8.59 @ac-5 8.59-Runner_SinPack_OnlySinCasos_Sale2', () => {
+  // un `--only` mal tipeado no da un examen «verde» que no corrió nada (sale antes de llamar a ningún modelo)
+  const r = runner(['--tool', 'claude', '--runs', '1', '--only', 'zzz-no-coincide']);
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /--only zzz-no-coincide/);
+  assert.ok(!/advisor-bench:/.test(r.stdout), 'no anuncia invocaciones');
+});
+
 test('@story-8.59 @ac-6 8.59-Runner_Pack_FrenaLoQueNoAplica', () => {
   const sinExam = tmp('example-pack-noexam-');
   fs.copyFileSync(path.join(EXAMPLE, 'pack.json'), path.join(sinExam, 'pack.json'));

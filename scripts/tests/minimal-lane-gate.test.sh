@@ -48,8 +48,8 @@ pasa() { [ "$RC" = 0 ] && ! grep -q '"permissionDecision":"deny"' <<<"$OUT"; }
 
 echo "T2 · MinimalLab_EditWithoutLane_DeniedPlain @story-8.74 @ac-2"
 editar s874a "$R/src/formato.js"
-if negado && grep -q 'CÓDIGO SIN CARRIL' <<<"$OUT" && grep -q 'ajuste puntual' <<<"$OUT" && grep -q 'story y revisión completa' <<<"$OUT"; then
-  ok "editar src/formato.js sin recorrido se niega, con la pregunta en llano (ajuste puntual o historia y revisión)"
+if negado && grep -q 'CÓDIGO SIN CARRIL' <<<"$OUT" && grep -q 'Este cambio no tiene historia. ¿Cómo sigo?' <<<"$OUT" && grep -q 'Escribí: con historia' <<<"$OUT"; then
+  ok "editar src/formato.js sin recorrido se niega, con la pregunta en llano (arreglo rápido o con historia)"
 else mal "no se negó o el mensaje no trae la pregunta: rc=$RC $(head -c 300 <<<"$OUT")"; fi
 
 echo "T3 · MinimalLab_AdhocWithQuote_Allowed @story-8.74 @ac-3"

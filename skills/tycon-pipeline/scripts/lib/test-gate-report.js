@@ -639,6 +639,9 @@ function informe(argv) {
             workers: get(r, 'workers', null),
             wall_ms: get(r, 'wall_ms', null),
           };
+          // Las no medidas ya cuentan como ausentes; acá va su motivo (sólo si hay alguna: el informe de siempre no cambia).
+          const noMedidas = get(r, 'unmeasured_suites', []);
+          if (pyLen(noMedidas)) Object.assign(result.totals, { unmeasured: pyLen(noMedidas), unmeasured_suites: noMedidas });
         }
       } else {
         result.totals_error = 'el runner de suites.json no dejó su resumen';
