@@ -77,6 +77,17 @@ case "$OUT" in *"NO registrados"*"$TT_ONE"*) bad "T69 con ninguna elegida, la ta
 printf '[mcp_servers]\n\n[mcp_servers.%s]\ncommand = "x"\nargs = []\n' "$TT_ONE" > "$LAB/codex/config.toml"
 OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" TYCON_TIME_TRACKING="$TT_ONE" node "$PARITY" 2>&1)
 case "$OUT" in *"que la tabla no nombra"*"$TT_ONE"*) bad "T69 con ${TT_ONE} elegida y registrada, la tabla la nombra" "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" ;; *) ok "T69 con ${TT_ONE} elegida y registrada, la tabla de Codex la nombra" ;; esac
+# Registrada pero con ninguna elegida: la integración está apagada, sus reglas no corren y el despliegue deja la tabla
+# del servidor como estaba. No es un servidor «oculto».
+OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" TYCON_TIME_TRACKING=none node "$PARITY" 2>&1)
+case "$OUT" in *"que la tabla no nombra"*"$TT_ONE"*) bad "T69 con ${TT_ONE} registrada y apagada, no cuenta como oculta" "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" ;; *) ok "T69 con ${TT_ONE} registrada y apagada, no cuenta como oculta" ;; esac
+rm -rf "$LAB"
+
+# ── 3d. T70: el índice de código sin instalar no es un servidor «fantasma» ───────────────────────────────────────────
+# El despliegue registra codebase_memory sólo si su programa está en el PATH: la fila de la tabla lo dice.
+LAB=$(mktemp -d); mkdir -p "$LAB/codex"; echo '{"hooks":{}}' > "$LAB/codex/hooks.json"
+OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" TYCON_TIME_TRACKING=none node "$PARITY" 2>&1)
+case "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" in *"NO registrados"*codebase_memory*) bad "T70 sin codebase_memory registrado, la tabla no lo promete" "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" ;; *) ok "T70 sin codebase_memory registrado, la tabla no lo promete" ;; esac
 rm -rf "$LAB"
 
 # ── 3b. T25: la paridad mide POR HERRAMIENTA ENCHUFADA ─────────
