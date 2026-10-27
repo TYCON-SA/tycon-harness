@@ -305,12 +305,22 @@ const FORMAS_DE_PROVEEDOR = /(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,
 test('T3 ProviderShapes_NoTestWritesAWholeKey: ningún archivo de pruebas del repo trae entero un valor con forma de secreto de proveedor', () => {
   const raiz = path.resolve(__dirname, '..', '..');
   const hallados = [];
-  for (const rel of fs.readdirSync(raiz, { recursive: true })) {
-    if (/(?:^|[\\/])(?:node_modules|\.git)(?:[\\/]|$)/.test(rel) || !/\.test\.(?:js|mjs|ts|sh)$/.test(rel)) continue;
-    fs.readFileSync(path.join(raiz, rel), 'utf8').split('\n').forEach((linea, i) => {
-      if (FORMAS_DE_PROVEEDOR.test(linea)) hallados.push(`${rel}:${i + 1}`);
-    });
-  }
+  // sin seguir enlaces ni entrar en .advisors: ahí otras suites arman y borran carpetas personales de juguete
+  // mientras esta corre, y esas carpetas enlazan de vuelta al repo
+  const recorrer = (dir) => {
+    let entradas;
+    try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+    for (const e of entradas) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) { if (!['node_modules', '.git', '.advisors'].includes(e.name)) recorrer(abs); continue; }
+      if (!e.isFile() || !/\.test\.(?:js|mjs|ts|sh)$/.test(e.name)) continue;
+      const rel = path.relative(raiz, abs);
+      fs.readFileSync(abs, 'utf8').split('\n').forEach((linea, i) => {
+        if (FORMAS_DE_PROVEEDOR.test(linea)) hallados.push(`${rel}:${i + 1}`);
+      });
+    }
+  };
+  recorrer(raiz);
   assert.deepEqual(hallados, [], `armalos por partes, como las constantes de arriba: ${hallados.join(', ')}`);
 });
 
