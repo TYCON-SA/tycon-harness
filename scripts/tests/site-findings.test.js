@@ -76,7 +76,7 @@ const FICHAS = {
 /** Lo que nunca puede salir del sitio: el diagnóstico y la evidencia del vigilante, y las fichas que no están vivas. */
 const NUNCA = ['DIAGNOSTICO-PRIVADO', 'EVIDENCIA-PRIVADA', 'pkg-resuelto', 'pkg-archivado', 'Una causa ya resuelta', '/etc/passwd'];
 /** Lo que sí sale de cada fuente: para ver que otra ruta no lo filtra (T39). */
-const MARCAS = ['pkg-uno', 'errores-500', 'lentitud', 'Se saltó el pase adversarial', 'Las pruebas quedaron en rojo', 'dep-uno', 'vig-uno', EJ1.id];
+const MARCAS = ['pkg-uno', 'Acme: un error que la noche marcó', 'Es ruido de un cliente de prueba', 'Se saltó el pase adversarial', 'Las pruebas quedaron en rojo', 'dep-uno', 'vig-uno', EJ1.id];
 
 /** El repo de operaciones (un bare local) y el clon del sitio. `extra`: archivos de más o null para borrar uno. */
 function armarOperaciones({ opsDoc, extra = {} }) {
@@ -155,9 +155,9 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
     const e1 = fila(j, 'ejecuciones', EJ1.id);
     assert.strictEqual(e1.analisis, null);
     assert.strictEqual(e1.recomendada, null);
-    assert.match(e1.sin_analizar, /^Sin analizar: el modelo no lo analizó todavía\./);
+    assert.match(e1.sin_analizar, /^Sin analizar: la noche todavía no analiza estas fichas\./);
     // en marcha: el arreglo con su tarea (el enlace guardado) y sin el correo de quien la tiene
-    assert.deepStrictEqual(j.marcha.arreglos, [{ fuente: 'ejecuciones', id: EJ2.id, nombre: 'Las pruebas quedaron en rojo', estado: 'tarea',
+    assert.deepStrictEqual(j.marcha.arreglos, [{ fuente: 'ejecuciones', id: EJ2.id, nombre: 'Las pruebas quedaron en rojo', regla: null, estado: 'tarea',
       tarea: { numero: '77', enlace: 'https://dev.acme.example/acme/_workitems/edit/77' }, asignado: null, motivo: null }]);
     // y la vulnerabilidad, con la tarea de su proyecto armada con la organización de operations.json
     assert.deepStrictEqual(j.marcha.vulnerabilidades, [{ id: 'dep-uno', paquete: 'pkg-uno', severidad: 'high', repos: 1, desde: '2026-10-19', volvio: null,
@@ -291,7 +291,7 @@ test('T37 Sitio_Enviado_PasaAEsperandoAprobacion — lo enviado espera en su ped
     const j = (await lista()).json;
     assert.deepStrictEqual(j.toca.map((x) => x.id), ['vig-dos']);
     assert.deepStrictEqual(j.espera, [{ numero: 1, enlace: api.st.pedidos[0].html_url, aprobado: false, filas: [
-      { fuente: 'vigilante', id: 'vig-uno', nombre: 'errores-500', accion: 'aceptar' },
+      { fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar' },
       { fuente: 'ejecuciones', id: EJ1.id, nombre: 'Se saltó el pase adversarial', accion: 'arreglar' }] }]);
     assert.strictEqual(llamadasPedidos() - n0, 1, 'una sola consulta para todas las filas');
     // reenviar lo mismo: nada que enviar, y ningún pedido nuevo; con una más, sólo esa
@@ -446,10 +446,10 @@ test('T58 Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche — con la decisión en
   await conSitio({ extra }, async ({ h, api, lead, lista, enviar }) => {
     const j = (await lista()).json;
     assert.ok(!j.toca.some((x) => x.id === 'vig-uno'));
-    assert.deepStrictEqual(j.espera, [{ numero: null, enlace: null, aprobado: true, filas: [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'errores-500', accion: 'aceptar' }] }]);
+    assert.deepStrictEqual(j.espera, [{ numero: null, enlace: null, aprobado: true, filas: [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar' }] }]);
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.match(p.texto, /Aprobado: se aplica esta noche/);
-    assert.match(p.texto, /errores-500 → Archivar/);
+    assert.match(p.texto, /Acme: un error que la noche marcó → Archivar/);
     // y un envío tardío no abre otro pedido
     const r = await enviar(['vigilante', 'vig-uno', 'arreglar']);
     assert.strictEqual(r.json.codigo, 'nada_que_enviar');
@@ -607,7 +607,7 @@ test('T72 Mantenimiento_Analisis_RecomiendaYOrden — el análisis dice por qué
     assert.strictEqual(fila(j, 'ejecuciones', A.id).recomendada, 'arreglar');
     assert.strictEqual(fila(j, 'ejecuciones', B.id).recomendada, 'aceptar');
     assert.strictEqual(fila(j, 'ejecuciones', C.id).recomendada, null);
-    assert.strictEqual(fila(j, 'ejecuciones', C.id).sin_analizar, 'Sin analizar: el análisis del modelo no citaba ningún dato o repetía el problema, y se descartó. Con estos datos solos no alcanza para decidir; la noche lo vuelve a intentar.');
+    assert.strictEqual(fila(j, 'ejecuciones', C.id).sin_analizar, 'Sin analizar: el análisis del modelo no citaba ningún dato o repetía el problema, y se descartó. Con estos datos solos no alcanza para decidir.');
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     const a = cartaDe(p.texto, `ejecuciones/${A.id}`);
     assert.match(a, /Por qué:<\/b> <span lang="es">Su tope es de 2 s/);
@@ -717,5 +717,47 @@ test('M6 Mantenimiento_QuePaso_ClaseDeError — las ejecuciones dicen su error m
     assert.strictEqual(fila(j, 'ejecuciones', conSalida.id).que_paso, 'Pasó una vez, el 22/10. Error más común: terminó con error (código 2) sin un mensaje reconocible (3 de 3).');
     const en = (await lista(`${lead}; sitio-idioma=en`)).json;
     assert.strictEqual(fila(en, 'ejecuciones', conClase.id).que_paso, 'It happened 2 times, on 22/10. Most common error: the machine could not start another process ("resource temporarily unavailable") (146 of 148).');
+  });
+});
+
+// Mantenimiento_VigilanteEnLlano
+// 🔴 Falla con: la clave de la regla («deriva», «latido») como título de la tarjeta o de la fila de En marcha, sin el
+// producto, el plugin o las veces; una regla sin su «?»; la promesa de que la noche vuelve a analizar lo que no analiza;
+// o la propuesta del modelo escondida.
+test('M7 Mantenimiento_VigilanteEnLlano — el título dice producto, plugin, qué pasó y cuántas veces, con su «?»', { timeout: 60000 }, async () => {
+  const extra = {
+    'inbox/watcher/pending/vig-tres.yaml': 'id: vig-tres\nfecha: 2026-10-22\nproducto: facturas\nregla: deriva\nseveridad: alta\nplugin: utilesx\nsenal:\n  errores: 12\n  estado_http: 502\n  total_pedidos: 21\nveredicto: pendiente\nnoches_seguidas: 1\n',
+    'inbox/watcher/pending/vig-cinco.yaml': 'id: vig-cinco\nfecha: 2026-10-22\nproducto: facturas\nregla: goteo\nseveridad: media\nendpoint: /api/cobros\nsenal:\n  errores: 0\nveredicto: pendiente\n',
+    'inbox/watcher/promoted/vig-cuatro.yaml': 'id: vig-cuatro\nfecha: 2026-10-20\nproducto: abc\nregla: latido\nseveridad: alta\nplugin: abcbackend\nveredicto: util\n',
+  };
+  await conSitio({ extra }, async ({ h, lead, lista, fila }) => {
+    const j = (await lista()).json;
+    const tres = fila(j, 'vigilante', 'vig-tres');
+    assert.strictEqual(tres.nombre, 'Facturas · plugin utilesx: un error nuevo, o que apareció con un despliegue (12 veces)');
+    assert.strictEqual(tres.regla, 'deriva');
+    // sin plugin, el endpoint; sin errores contados, sin cifra
+    assert.strictEqual(fila(j, 'vigilante', 'vig-cinco').nombre, 'Facturas · /api/cobros: errores que se repiten sin llegar a la alarma');
+    // la regla que la noche no conoce: una frase genérica, nunca su clave
+    assert.strictEqual(fila(j, 'vigilante', 'vig-uno').nombre, 'Acme: un error que la noche marcó');
+    const cuatro = j.marcha.arreglos.find((x) => x.id === 'vig-cuatro');
+    assert.strictEqual(cuatro.nombre, 'ABC · plugin abcbackend: no tuvo actividad, o está caído');
+    assert.strictEqual(cuatro.regla, 'latido');
+    // sin análisis: lo dice tal cual, sin prometer que la noche lo vuelve a intentar; y la propuesta del modelo, a la vista
+    assert.match(tres.sin_analizar, /la noche todavía no analiza estas fichas/);
+    assert.doesNotMatch(tres.sin_analizar, /vuelve a intentar/);
+    assert.deepStrictEqual(fila(j, 'vigilante', 'vig-uno').propuesta, { accion: 'aceptar', razon: 'Es ruido de un cliente de prueba' });
+    assert.deepStrictEqual(fila(j, 'vigilante', 'vig-dos').propuesta, { accion: 'arreglar', razon: null }, 'la razón que no pasa el filtro no se muestra');
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(p, /<b class="m-nombre">Facturas · plugin utilesx: un error nuevo, o que apareció con un despliegue \(12 veces\)<\/b> <button type="button" class="m-q" popovertarget="m-ayuda-regla-deriva"/);
+    assert.match(p, /<li><b>ABC · plugin abcbackend: no tuvo actividad, o está caído<\/b> <button type="button" class="m-q" popovertarget="m-ayuda-regla-latido"/);
+    for (const r of ['deriva', 'goteo', 'desagregacion', 'latido', 'otra']) assert.match(p, new RegExp(`<div id="m-ayuda-regla-${r}" popover`), `la ayuda de ${r}`);
+    assert.match(p, /Es un tipo de error que no se había visto, o que coincide con un despliegue/);
+    assert.doesNotMatch(p, /<b(?: class="m-nombre")?>(deriva|latido|goteo|desagregacion)</, 'ninguna clave cruda como título');
+    assert.doesNotMatch(p, /vuelve a intentar/);
+    assert.match(p, /Propuesta del modelo: Archivar\. <span lang="es">Es ruido de un cliente de prueba<\/span>/);
+    const en = (await lista(`${lead}; sitio-idioma=en`)).json;
+    const pEn = (await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto;
+    assert.match(pEn, /Model proposal: Archive\. <span lang="es">Es ruido de un cliente de prueba<\/span> \(the reason is in Spanish\)/);
+    assert.strictEqual(fila(en, 'vigilante', 'vig-tres').nombre, 'Facturas · plugin utilesx: a new error, or one that came with a deployment (12 times)');
   });
 });

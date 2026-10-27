@@ -56,6 +56,8 @@ const PAQUETE = /^[@A-Za-z0-9][@A-Za-z0-9._/-]{0,213}$/;
 const HUELLA_DE_MAQUINA = /-[0-9a-f]{8}$/;
 const PRODUCTO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
 const AYUDAS = ['aceptar', 'arreglar', 'enviar', 'tarea', 'deuda', 'analisis', 'seguir'];
+// las reglas del vigilante que tienen su frase y su «?»; la que la noche no conoce va como `otra`
+const REGLAS = ['deriva', 'goteo', 'desagregacion', 'latido', 'otra'];
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
@@ -206,8 +208,30 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   const enlaceDeTarea = RP.enlaceDeTarea;
   const nombreDePersona = (x) => (typeof x === 'string' && SOURCES.NOMBRE_DE_PERSONA.test(x.trim()) ? x.trim() : null);
 
-  function arregloDe(f, destino) {
-    const base = { fuente: f.fuente, id: f.id, nombre: f.nombre };
+  // ── el título de cada ficha ──
+
+  const reglaDe = (f) => (f.fuente === 'vigilante' ? (REGLAS.includes(f.hechos && f.hechos.regla) ? f.hechos.regla : 'otra') : null);
+
+  /**
+   * El título en llano: el de ejecuciones ya lo es; el del vigilante se arma con el producto, el plugin (o el endpoint),
+   * qué pasó según la regla y cuántas veces. Nunca la clave de la regla ni el diagnóstico.
+   */
+  function tituloDe(f, idioma) {
+    if (f.fuente !== 'vigilante') return f.nombre;
+    const h = f.hechos || {};
+    // el producto ya viene validado por la noche (hechosDelVigilante)
+    const p = typeof h.producto === 'string' && h.producto ? h.producto : null;
+    // las siglas cortas van en mayúsculas (abc → ABC); el resto, con la primera en mayúscula (facturas → Facturas)
+    const producto = !p ? T(idioma, 'mant.titulo.sinProducto') : p.length <= 3 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1);
+    const donde = h.plugin ? T(idioma, 'mant.titulo.plugin', { plugin: h.plugin }) : h.endpoint ? T(idioma, 'mant.titulo.endpoint', { endpoint: h.endpoint }) : '';
+    const regla = reglaDe(f);
+    // el latido cuenta la falta de actividad, no errores; sin errores contados, no hay cifra
+    const veces = regla === 'latido' || !Number.isInteger(h.errores) || h.errores < 1 ? '' : h.errores === 1 ? T(idioma, 'mant.titulo.vez') : T(idioma, 'mant.titulo.veces', { n: h.errores });
+    return T(idioma, 'mant.titulo', { producto, donde, que: T(idioma, `mant.titulo.${regla}`), veces });
+  }
+
+  function arregloDe(f, destino, idioma) {
+    const base = { fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), regla: reglaDe(f) };
     const asignado = nombreDePersona(f.asignado);
     if (f.pedido) {
       const numero = f.pedido.enlace ? (/(\d{1,12})\/?$/.exec(f.pedido.enlace) || [])[1] || null : f.pedido.id;
@@ -275,8 +299,11 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const a = f.analisis;
     const analisis = a ? { recomendacion: a.recomendacion, por_que_pasa: a.por_que_pasa, por_que_recomienda: a.por_que_recomienda, arreglo: a.arreglo || null, si_vuelve: a.si_vuelve || null, autor: a.autor } : null;
     const c = f.contexto || {};
+    const pr = f.propuesta;
     return {
-      fuente: f.fuente, id: f.id, nombre: f.nombre, meta: metaDe(f, idioma), que_paso: quePaso(f, idioma), analisis,
+      fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), regla: reglaDe(f), meta: metaDe(f, idioma), que_paso: quePaso(f, idioma), analisis,
+      // la propuesta corta de la noche; la razón que no pasó el filtro no se muestra
+      propuesta: pr ? { accion: pr.accion, razon: pr.razon === SOURCES.SIN_FORMA ? null : pr.razon } : null,
       sin_analizar: analisis ? null : T(idioma, 'mant.sinAnalizar', { motivo: T(idioma, `mant.sinAnalizar.${f.analisis_motivo || 'sinIntento'}`) }),
       recomendada: analisis ? analisis.recomendacion : null, veces: c.veces || f.apariciones || 1,
       detalle: { maquinas: c.maquinas || [], stories: c.stories || [] },
@@ -310,15 +337,15 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino));
         continue;
       }
-      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino)); continue; }
+      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, idioma)); continue; }
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
-      if (enMain) { aprobadas.push({ fuente: f.fuente, id: f.id, nombre: f.nombre, accion: enMain.accion }); continue; }
+      if (enMain) { aprobadas.push({ fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), accion: enMain.accion }); continue; }
       const p = enPedido.get(clave(f));
       if (p) {
         if (!pedidos.has(p.numero)) pedidos.set(p.numero, { numero: p.numero, enlace: p.enlace, aprobado: false, filas: [] });
-        pedidos.get(p.numero).filas.push({ fuente: f.fuente, id: f.id, nombre: f.nombre, accion: p.accion });
+        pedidos.get(p.numero).filas.push({ fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), accion: p.accion });
         continue;
       }
       toca.push(filaParaDecidir(f, idioma));
@@ -342,6 +369,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   // ── la página ──
 
   function seccion(m, idioma, tok) {
+    const ayudaRegla = (r) => (r ? ` <button type="button" class="m-q" popovertarget="m-ayuda-regla-${r}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, 'mant.ayuda.termino.regla', { que: T(idioma, `mant.titulo.${r}`) }) }))}">?</button>` : '');
     const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${k}`) }))}">?</button>`;
     const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer" target="_blank">${esc(texto)}</a>` : esc(texto));
     const accion = (a) => T(idioma, `mant.accion.${a}`);
@@ -359,14 +387,16 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
           + (a.arreglo ? renglon('mant.siSeArregla', a.arreglo) : '') + (a.si_vuelve ? renglon('mant.siVuelve', a.si_vuelve) : '')
           + `<div class="m-pie"><span class="m-autor">${esc(T(idioma, a.autor === 'persona' ? 'mant.autor.persona' : 'mant.autor.modelo'))}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.analisisEnCastellano'))}`} ${ayuda('analisis')}</span>${acciones}</div>`;
       } else {
-        cuerpo = `<p class="m-sin">${esc(f.sin_analizar)}</p><details class="m-sin-analisis"><summary>${esc(T(idioma, 'mant.decidirSinAnalisis'))}</summary>${acciones}</details>`;
+        const pr = f.propuesta;
+        const propuesta = pr ? `<p class="m-propuesta">${esc(T(idioma, 'mant.propuesta', { accion: accion(pr.accion) }))}${pr.razon ? ` ${es(pr.razon)}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.razonEnCastellano'))}`}` : ''}</p>` : '';
+        cuerpo = `<p class="m-sin">${esc(f.sin_analizar)}</p>${propuesta}<details class="m-sin-analisis"><summary>${esc(T(idioma, 'mant.decidirSinAnalisis'))}</summary>${acciones}</details>`;
       }
       const d = f.detalle;
       const detalle = d.maquinas.length || d.stories.length
         ? `<details class="m-detalle"><summary>${esc(T(idioma, 'mant.verDetalle'))}</summary>${d.maquinas.length ? `<p>${esc(T(idioma, 'mant.detalle.maquinas', { lista: d.maquinas.join(', ') }))}</p>` : ''}${d.stories.length ? `<p>${esc(T(idioma, 'mant.detalle.stories', { lista: d.stories.join(', ') }))}</p>` : ''}</details>`
         : '';
       return `<article class="m-carta${a ? '' : ' sin-analizar'}" data-ficha="${esc(clave(f))}"${f.recomendada ? ` data-recomendada="${esc(f.recomendada)}"` : ''}>`
-        + `<header class="m-cab"><b class="m-nombre">${esc(f.nombre)}</b><span class="m-meta">${esc(f.meta)}</span></header>`
+        + `<header class="m-cab"><b class="m-nombre">${esc(f.nombre)}</b>${ayudaRegla(f.regla)}<span class="m-meta">${esc(f.meta)}</span></header>`
         + `<p><b>${esc(T(idioma, 'mant.quePaso'))}</b> ${esc(f.que_paso)}</p>${cuerpo}${detalle}</article>`;
     }
 
@@ -398,7 +428,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         : x.estado === 'sin_enlace' ? esc(T(idioma, 'mant.marcha.sinEnlace'))
           : x.estado === 'sin_tarea' ? esc(T(idioma, 'mant.marcha.sinTarea', { motivo: T(idioma, `mant.sinTarea.${x.motivo}`) }))
             : esc(T(idioma, 'mant.marcha.seCrea'));
-      return `<li><b>${esc(x.nombre)}</b> <span class="m-tarea">${t}</span></li>`;
+      return `<li><b>${esc(x.nombre)}</b>${ayudaRegla(x.regla)} <span class="m-tarea">${t}</span></li>`;
     };
     const tareaDeVuln = (t) => (t.enlace ? `${tarea(t.numero, t.enlace, t.proyecto)}` : esc(T(idioma, 'mant.marcha.sinEnlace')))
       + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, 'mant.marcha.sinAsignar'))}`;
@@ -432,7 +462,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         + `<button type="button" class="btn m-seguir"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
       : '';
     const negritas = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-    const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${x}`))}</p></div>`).join('');
+    const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${x}`))}</p></div>`).join('')
+      + REGLAS.map((r) => `<div id="m-ayuda-regla-${r}" popover class="m-pop"><p>${esc(T(idioma, `mant.regla.${r}`))}.</p></div>`).join('');
     const frases = [m.frase, m.pedidos && m.pedidos.frase].filter(Boolean).map((t) => `<p class="q-note">${esc(t)}</p>`).join('');
     const contenido = m.estado === 'sin_clon' || m.estado === 'sin_fichas' ? '' : toca + espera + marcha + barra + ayudas;
     return `<section id="hallazgos" class="m-pantalla" data-token="${esc(tok)}">${frases}${contenido}<script src="/hallazgos/cliente.js" defer></script></section>`;

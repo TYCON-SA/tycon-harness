@@ -261,4 +261,4 @@ function comoFicha(fuente, txt) {
     hechos: hechosDelVigilante(e, txt, reg.formato.listaDe) };
 }
 
-module.exports = { FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, esVieja, comoFicha, pedidoDeLaNocheDe };
+module.exports = { SIN_FORMA, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, esVieja, comoFicha, pedidoDeLaNocheDe };
