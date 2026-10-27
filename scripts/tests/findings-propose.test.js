@@ -245,7 +245,7 @@ test('T30 Resumen_SinPropuestaN @story-4.11 @ac-16', async () => {
   let n = 0;
   await correr(base, { llamar: async () => { n += 1; return { ok: true, texto: n <= 2 ? 'no es json' : JSON.stringify({ accion: 'aceptar', razon: 'esperable' }) }; } });
   const linea = P.lineaDelResumen(base, HOY);
-  assert.strictEqual(linea, 'sin propuesta del modelo: 4 (respuesta-invalida 2 · tope 2)');
+  assert.strictEqual(linea, 'propuestas del modelo: 28 · sin propuesta: 4 (respuesta-invalida 2 · tope 2)');
   assert.ok(DS.lineasFichasDelClon(base, HOY).includes(linea), 'va con los renglones de fichas del resumen');
   assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: [linea] }), [linea], 'y se rearma a las 08:00');
   assert.strictEqual(DS.fichasDeLaConstancia({ fichas: ['sin propuesta del modelo: 2 (ZZTEXTO 2)'] }), null);
@@ -482,7 +482,7 @@ test('T64 Propone_FichaQueNoSeEscribe_NoFrena @story-4.11 @ac-16', { skip: proce
   assert.doesNotMatch(fs.readFileSync(dep, 'utf8'), /^propuesta_/m);
   assert.strictEqual(r.propuestas, 1);
   assert.strictEqual(r.sin_propuesta['sin-escribir'], 1);
-  assert.strictEqual(P.lineaDelResumen(base, HOY), 'sin propuesta del modelo: 1 (sin-escribir 1)');
+  assert.strictEqual(P.lineaDelResumen(base, HOY), 'propuestas del modelo: 1 · sin propuesta: 1 (sin-escribir 1)');
   assert.match(P.lineaDelResumen(base, HOY), P.RENGLON);
 });
 
@@ -518,4 +518,26 @@ test('T65 Propone_FormaDeNombreYRazon @story-4.11 @ac-14 @ac-15 @ac-16', async (
   assert.strictEqual(leerComun(ruta).propuesta_motivo, 'no-permitido');
   assert.strictEqual(leerComun(ruta).propuesta_fallas ?? 0, 0);
   assert.strictEqual(r.sin_propuesta['no-permitido'], 1);
+});
+
+// T66 Resumen_ConPropuestas_DiceCuantasSi
+// Una noche con propuestas y con fichas fuera del tope: la línea dice las dos cosas. Sin la primera parte, «sin propuesta
+// del modelo: 37 (tope 37)» se leía como que el modelo no había propuesto nada, cuando había propuesto 30.
+// 🔴 Falla con: una línea que cuenta sólo lo que quedó sin propuesta, o una que la constancia de las 08:00 no rearma.
+test('T66 Resumen_ConPropuestas_DiceCuantasSi', async () => {
+  const base = tmp();
+  for (let i = 0; i < 33; i += 1) fichaComun(base, `RR-ESCAPE:p${i}`);
+  const r = await correr(base, { llamar: async () => ({ ok: true, texto: JSON.stringify({ accion: 'aceptar', razon: 'esperable' }) }) });
+  assert.strictEqual(r.propuestas, 30);
+  const linea = P.lineaDelResumen(base, HOY);
+  assert.strictEqual(linea, 'propuestas del modelo: 30 · sin propuesta: 3 (tope 3)');
+  assert.strictEqual(P.lineaDeLaCorrida(base, HOY, r), linea, 'el registro del paso dice lo mismo');
+  assert.match(linea, P.RENGLON);
+  assert.ok(DS.lineasFichasDelClon(base, HOY).includes(linea), 'va con los renglones de fichas del resumen');
+  assert.deepStrictEqual(DS.fichasDeLaConstancia({ fichas: [linea] }), [linea], 'y se rearma a las 08:00');
+  // sin ninguna propuesta, la línea queda como siempre
+  const nada = tmp();
+  fichaComun(nada, 'RR-ESCAPE:q');
+  await correr(nada, { llamar: async () => ({ ok: true, texto: 'no es json' }) });
+  assert.strictEqual(P.lineaDelResumen(nada, HOY), 'sin propuesta del modelo: 1 (respuesta-invalida 1)');
 });
