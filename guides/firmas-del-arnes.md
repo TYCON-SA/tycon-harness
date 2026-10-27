@@ -72,5 +72,21 @@ La sesión de la coordinadora es un agente. Si decide aprobar una firma delegada
 el arnés no lo distingue de un ok del dueño. Por eso a la lista de delegadas sólo va lo de bajo riesgo: aprobar planes, la vuelta extra de revisores y refirmar los
 controles tras traer `main`.
 
-Tocar un freno es sólo del dueño: aprobar un cambio de los controles, los escapes que apagan un freno, eximir pruebas o
-un crítico, aceptar un criterio imposible de probar y saltear el pase adversarial.
+Tocar un freno es sólo del dueño: aprobar un cambio de los controles, los escapes que apagan un freno (salvo los dos de
+abajo), eximir pruebas o un crítico, aceptar un criterio imposible de probar y saltear el pase adversarial.
+
+## Aprobar en nombre del dueño
+
+Tres firmas las puede aprobar la sesión designada en nombre del dueño: `escape:force-manual`, `escape:trust-ran` y
+`extra-round`. Hace falta todo esto:
+
+- el perfil del equipo las pone en `approvals.delegated_signing` y no en `approvals.owner_only`;
+- el dueño escribe a mano «aprobá force-manual», «aprobá trust-ran» o «aprobá una vuelta más» en el chat de la sesión
+  designada. Lo pegado, lo que llega de otra sesión o de una herramienta no cuenta, y «aprobá todo» no nombra ninguna
+  firma;
+- después, la sesión designada le manda a la sesión que trabaja un mensaje que aprueba esa firma («apruebo
+  force-manual»), dentro de los 30 minutos del pedido del dueño.
+
+Cada «aprobá» del dueño sirve para una sola firma, y su uso queda anotado. Para la vuelta extra, el pedido del dueño
+tiene que ser posterior al aviso del tope, y la sesión que trabaja corre `pipeline.js smart-reloop --extra-round
+--delegated`. Para los dos escapes no hay comando aparte: el freno lo busca solo.

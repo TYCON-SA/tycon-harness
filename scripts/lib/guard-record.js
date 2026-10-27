@@ -189,10 +189,11 @@ function anotarFallo(home, motivo) {
  * Anota una decisión. Devuelve `{ escrito, motivo? }` para los tests; NUNCA tira y nunca cambia el
  * comportamiento de quien la llama.
  */
-// Por qué camino se autorizó un escape (lista cerrada) y, si vino por relevo, qué sesión lo reenvió: el rol que declara
-// el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea se escribe igual).
+// Por qué camino se autorizó un escape (lista cerrada) y, si vino por relevo o por delegación, qué sesión lo reenvió o
+// lo aprobó: el rol que declara el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea
+// se escribe igual). `delegacion`: la sesión designada lo aprobó en nombre del dueño (delegated-ok.js).
 // `sin-conversacion`: la regla no pudo mirar porque la herramienta no guarda la conversación (Codex) y dejó pasar.
-const VIAS = ['persona', 'reenvio', 'ambiente', 'sin-conversacion'];
+const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
@@ -220,7 +221,7 @@ function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escap
       sha256: typeof cmd === 'string' && cmd ? crypto.createHash('sha256').update(cmd).digest('hex') : null,
     };
     if (veredicto === 'escape' && VIAS.includes(via)) linea.via = via;
-    if (linea.via === 'reenvio') {
+    if (linea.via === 'reenvio' || linea.via === 'delegacion') {
       if (typeof relevo === 'string' && RELEVO.test(relevo)) linea.relevo = relevo;
       // la línea se escribe igual, sin quién lo reenvió: que quede dicho por qué
       else anotarFallo(home, `relevo fuera de forma en un escape de ${freno}: no se anotó quién lo reenvió`);

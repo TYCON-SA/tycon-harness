@@ -205,40 +205,44 @@ function citaDeLaPersona(cita, opts = {}) {
 }
 
 /**
- * ¿La cita llegó dentro de un mensaje de la sesión designada en esta máquina para el rol `sesion` (por ejemplo
- * «coordinadora»)? `{ legible, motivo?, encontrada, cuando?, corta?, rechazo? }`.
+ * Lo que dijo la sesión designada en esta máquina para el rol `sesion` (por ejemplo «coordinadora»), leído de las dos
+ * conversaciones: `{ legible, motivo?, archivo?, rechazo?, duenio?, reenviados? }`.
+ *   duenio      lo que tipeó la persona en la conversación designada (no lo pegado, ni lo de otra sesión, ni lo de una
+ *               herramienta): `[{ texto, cuando }]`
+ *   reenviados  los mensajes de esa sesión que llegaron a ESTA conversación: `[{ texto, cuando }]`
  * Cuenta un mensaje de otra sesión cuyo número de mensaje (`origin.msg_id`, lo pone Claude Code al entregarlo) figura
  * entre los que mandó la conversación designada (el `msg_id` del resultado de cada envío, en su registro). El nombre de
  * la sesión que manda no cuenta: lo pone el sistema, cambia al reiniciar y otra sesión puede llevar el mismo. La
  * designación vale mientras la frase del dev que la nombra siga en esa conversación (lib/critical-waivers.js).
  */
-function citaReenviada(cita, sesion, opts = {}) {
+function laDesignada(sesion, opts = {}) {
   const conv = leerConversacion(opts);
-  if (!conv.legible) return { legible: false, motivo: conv.motivo, encontrada: false };
+  if (!conv.legible) return { legible: false, motivo: conv.motivo };
   const rol = String(sesion || '').trim();
   const cw = require('./critical-waivers.js');
   const d = cw.designacionVigente({ home: opts.home });
   if (!d || d.error) {
-    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: d && d.error ? d.error
+    return { legible: true, archivo: conv.archivo, rechazo: d && d.error ? d.error
       : `ninguna sesión de esta máquina está designada como «${rol}»: el dev escribe en el chat de esa sesión «Esta sesión es la ${rol}» y la sesión corre marker.js designate-relay con su frase` };
   }
   if (d.rol && d.rol.toLowerCase() !== rol.toLowerCase()) {
-    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `la sesión designada en esta máquina es la «${d.rol}», no la «${rol}»` };
+    return { legible: true, archivo: conv.archivo, rechazo: `la sesión designada en esta máquina es la «${d.rol}», no la «${rol}»` };
   }
   // una sesión no se reenvía a sí misma: su propio ok tiene que ser del dev, en su chat
   const propia = String((opts.env || process.env).CLAUDE_CODE_SESSION_ID || '');
   if (d.sesion === propia) {
-    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `esta sesión es la «${rol}» designada: no puede reenviarse un ok a sí misma` };
+    return { legible: true, archivo: conv.archivo, rechazo: `esta sesión es la «${rol}» designada: no puede reenviarse un ok a sí misma` };
   }
   const juez = cw.juezDesignacion(rol);
-  if (juez(d.cita)) return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `la designación de esta máquina no vale: ${juez(d.cita)}` };
+  if (juez(d.cita)) return { legible: true, archivo: conv.archivo, rechazo: `la designación de esta máquina no vale: ${juez(d.cita)}` };
   // con `soloCadena`, también la conversación designada: un renglón forjado ahí (la designación, un envío) no cuenta
   const designada = leerConversacion({ ...opts, sesion: d.sesion, pedido: undefined });
-  if (!designada.legible) return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `no puedo leer la conversación designada como «${rol}» (${designada.motivo})` };
-  const frase = buscar(d.cita, textosDeUsuario(designada.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
-    .map((t) => ({ texto: escritoPorLaPersona(sinTextoPegado(t.texto)), cuando: t.cuando })).filter((t) => t.texto !== null), null, juez);
+  if (!designada.legible) return { legible: true, archivo: conv.archivo, rechazo: `no puedo leer la conversación designada como «${rol}» (${designada.motivo})` };
+  const duenio = textosDeUsuario(designada.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
+    .map((t) => ({ texto: escritoPorLaPersona(sinTextoPegado(t.texto)), cuando: t.cuando })).filter((t) => t.texto !== null);
+  const frase = buscar(d.cita, duenio, null, juez);
   if (!frase.encontrada) {
-    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: frase.rechazo
+    return { legible: true, archivo: conv.archivo, rechazo: frase.rechazo
       ? `la designación de esta máquina no vale: ${frase.rechazo}`
       : `la designación de esta máquina no vale: la frase del dev que nombra la sesión «${rol}» no está en esa conversación` };
   }
@@ -262,7 +266,18 @@ function citaReenviada(cita, sesion, opts = {}) {
     const m = typeof o.body === 'string' ? { cuerpo: o.body } : mensajeDeOtraSesion(t.texto);
     if (m && !RE_AJENO.test(m.cuerpo)) reenviados.push({ texto: m.cuerpo, cuando: t.cuando });
   }
-  return { legible: true, archivo: conv.archivo, ...buscar(cita, reenviados, opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
+  return { legible: true, archivo: conv.archivo, designada: d.sesion, duenio, reenviados };
+}
+
+/**
+ * ¿La cita llegó dentro de un mensaje de la sesión designada en esta máquina para el rol `sesion`? `{ legible, motivo?,
+ * encontrada, cuando?, corta?, rechazo? }` (laDesignada dice qué mensaje cuenta).
+ */
+function citaReenviada(cita, sesion, opts = {}) {
+  const l = laDesignada(sesion, opts);
+  if (!l.legible) return { legible: false, motivo: l.motivo, encontrada: false };
+  if (l.rechazo) return { legible: true, archivo: l.archivo, encontrada: false, rechazo: l.rechazo };
+  return { legible: true, archivo: l.archivo, ...buscar(cita, l.reenviados, opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
 }
 
 /**
@@ -341,4 +356,4 @@ function planEnLaConversacion(planTxt, opts = {}) {
   return { legible: true, mostrado: vistos * 2 >= renglones.length };
 }
 
-module.exports = { CITA_MINIMA, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, citaDeOpciones, planEnLaConversacion };
+module.exports = { CITA_MINIMA, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, laDesignada, citaDeOpciones, planEnLaConversacion };
