@@ -703,3 +703,19 @@ test('T75 Mantenimiento_Envio_FormaYTope — el envío se rechaza entero si no t
     assert.strictEqual(api.st.pedidos.length, 1);
   });
 });
+
+// Mantenimiento_QuePaso_ClaseDeError
+// 🔴 Falla con: la clase sin decir, su clave cruda en lugar del texto, el código de salida perdido, o el otro idioma.
+test('M6 Mantenimiento_QuePaso_ClaseDeError — las ejecuciones dicen su error más común, con la clase en llano', { timeout: 60000 }, async () => {
+  const conClase = { ...conCasos('RR-HOOK:UserPromptSubmit/carga', 'aviso automático con error', [caso(7, '2026-10-22', 'mac-a-0123abcd', '3.1'), caso(8, '2026-10-22', 'mac-a-0123abcd', '3.2')]),
+    hechos: { errores: { 'sin-procesos': 146, otro: 2 }, error_clase: 'sin-procesos', error_clase_veces: 146, error_veces: 148 } };
+  const conSalida = { ...conCasos('RR-HOOK:Stop/carga', 'aviso automático con error', [caso(9, '2026-10-22', 'mac-a-0123abcd', '3.3')]),
+    hechos: { errores: { salida: 3 }, error_clase: 'salida', error_clase_veces: 3, error_veces: 3, error_codigo: 2 } };
+  await conSitio({ extra: extraDe(conClase, conSalida) }, async ({ lead, lista, fila }) => {
+    const j = (await lista()).json;
+    assert.strictEqual(fila(j, 'ejecuciones', conClase.id).que_paso, 'Pasó 2 veces, el 22/10. Error más común: la máquina no pudo abrir un proceso más («resource temporarily unavailable») (146 de 148).');
+    assert.strictEqual(fila(j, 'ejecuciones', conSalida.id).que_paso, 'Pasó una vez, el 22/10. Error más común: terminó con error (código 2) sin un mensaje reconocible (3 de 3).');
+    const en = (await lista(`${lead}; sitio-idioma=en`)).json;
+    assert.strictEqual(fila(en, 'ejecuciones', conClase.id).que_paso, 'It happened 2 times, on 22/10. Most common error: the machine could not start another process ("resource temporarily unavailable") (146 of 148).');
+  });
+});

@@ -993,7 +993,8 @@ function reactivarFicha(f, h, hoy, pendingDir) {
     txt = renombrarClave(txt, de, a);
   }
   // `alineado:` dice qué decisión del pull request ya se reflejó en los issues: la ficha que vuelve tiene otra por tomar.
-  txt = quitarClave(quitarClave(txt, 'pr_cerrado'), 'alineado');
+  // `decidido_en_sitio:` también es del episodio anterior: con él, el cierre de un pull request nuevo nombraría esa fecha.
+  txt = quitarClave(quitarClave(quitarClave(txt, 'pr_cerrado'), 'alineado'), 'decidido_en_sitio');
   // Los marcadores del CRUCE son de un episodio: una ficha que vuelve empieza de cero. Si no, el
   // Bug cerrado con la vulnerabilidad de vuelta saldría «ya avisado» y el aviso nuevo no saldría nunca. `pedidos:`
   // se conserva: el Bug es el mismo. 🔴 `pagado_avisado:` NO se borra acá: es por proyecto, y borrarlo entero

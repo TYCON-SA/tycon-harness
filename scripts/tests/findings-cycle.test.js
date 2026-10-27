@@ -1815,3 +1815,36 @@ test('T102 VistaComun_AnalisisHechosYTareas', () => {
   assert.strictEqual(d.severidad, 'critical');
   assert.strictEqual(sources.comoFicha('dependencias', dep.replace('pedido_motivo: tope', 'pedido_motivo: cualquiera')).pedido_motivo, null);
 });
+
+// M4 Decision_DejaLaFecha_ParaCerrarElPedidoViejo @mantenimiento
+// 🔴 Falla con: aplicar la decisión sin anotar el día, anotarlo con otra fecha que la de la decisión, o una ficha común
+//    que después no se lee.
+test('M4 Decision_DejaLaFecha_ParaCerrarElPedidoViejo', () => {
+  const { base, ej, decidir } = opsConFichas();
+  decidir('dependencies', 'dep-uno', decision('dependencias', 'dep-uno', 'arreglar'));
+  decidir('watcher', 'vig-uno', decision('vigilante', 'vig-uno', 'aceptar'));
+  decidir('runs-review', ej.id, decision('ejecuciones', ej.id, 'aceptar'));
+  for (const f of ['dependencias', 'vigilante', 'ejecuciones']) cycle.aplicarDecisiones({ base, fuente: f });
+  const leer = (rel) => fs.readFileSync(path.join(base, rel), 'utf8');
+  assert.match(leer('inbox/dependencies/promoted/dep-uno.yaml'), /^decidido_en_sitio: 2026-10-24$/m);
+  assert.match(leer('inbox/watcher/archived/vig-uno.yaml'), /^decidido_en_sitio: "?2026-10-24"?$/m);
+  assert.strictEqual(cycle.parsear(leer(`inbox/runs-review/promoted/${ej.id}.yaml`)).decidido_en_sitio, '2026-10-24');
+  // la que vuelve a aparecer ya no lleva el día de la decisión anterior
+  const vuelta = cycle.registrarAparicion({ ...cycle.parsear(leer(`inbox/runs-review/promoted/${ej.id}.yaml`)), veredicto: 'ignorada' }, '2026-10-30', []);
+  assert.ok(!('decidido_en_sitio' in vuelta));
+  // sin forma de fecha, la ficha común no se escribe
+  assert.ok(cycle.problemasDeForma({ ...ej, decidido_en_sitio: 'ayer' }).some((p) => /decidido_en_sitio/.test(p)));
+});
+
+// M5 VistaComun_ClaseDeError @mantenimiento
+// 🔴 Falla con: exponer la cuenta por clase entera, una clase fuera de la lista, o los hechos de ejecuciones en null.
+test('M5 VistaComun_ClaseDeError', () => {
+  const base = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-HOOK:Stop/otro', nombre: 'aviso automático con error', hoy: '2026-10-26' });
+  const hechos = { errores: { salida: 3, red: 1 }, error_clase: 'salida', error_clase_veces: 3, error_veces: 4, error_codigo: 2 };
+  const e = sources.comoFicha('ejecuciones', cycle.serializar({ ...base, hechos }));
+  assert.deepStrictEqual(e.hechos, { error_clase: 'salida', error_clase_veces: 3, error_veces: 4, error_codigo: 2 });
+  assert.strictEqual(sources.comoFicha('ejecuciones', cycle.serializar(base)).hechos, null);
+  for (const mal of [{ ...hechos, error_clase: 'inventada' }, { ...hechos, errores: { inventada: 1 } }, { ...hechos, texto: 'x' }, { ...hechos, error_veces: -1 }]) {
+    assert.ok(cycle.problemasDeForma({ ...base, hechos: mal }).some((p) => /hechos/.test(p)), JSON.stringify(mal));
+  }
+});

@@ -4,7 +4,7 @@
 // después: el ciclo los admite, esta lista todavía no.
 
 const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD,
-  problemasDeAnalisis } = require('./cycle.js');
+  problemasDeAnalisis, hechosConForma } = require('./cycle.js');
 const { nombreDe } = require('./cause-names.js');
 
 // ── dependencias: su formato y sus palabras de hoy ─────────────────────────────────────────────
@@ -15,7 +15,7 @@ const CLAVES_LISTA = ['ids', 'repos', 'declarada_en', 'avisos'];
 const ORDEN_FICHA = ['id', 'detectado', 'veredicto', 'paquete', 'severidad', 'noches', 'noches_sin_aparecer', 'noche_contada',
   // La identidad del pull request y la decisión que una persona tomó sobre él. Van
   // juntas y arriba porque son lo que el pipeline lee ANTES de decidir si abre uno nuevo.
-  'pr', 'pr_repo', 'rechazado', 'motivo_rechazo', 'pr_cerrado', 'alineado',
+  'pr', 'pr_repo', 'rechazado', 'motivo_rechazo', 'pr_cerrado', 'alineado', 'decidido_en_sitio',
   'reaparecido', 'bloqueada_por', 'resuelto', 'resuelto_antes', 'descartado', 'descartado_antes',
   'motivo', 'motivo_antes', 'pr_antes', 'pr_repo_antes', 'rechazado_antes', 'motivo_rechazo_antes',
   'ids', 'repos', 'declarada_en', 'avisos', 'pedido_motivo', 'pedidos', 'asignados'];
@@ -51,7 +51,7 @@ function carpetaDependencias({ estado, veredicto }) {
 // necesita para decidir. La vista común no los trae, y nada de lo que se le manda al modelo sale de ahí.
 
 const ORDEN_VIGILANTE = ['id', 'fuente', 'causa', 'fecha', 'producto', 'regla', 'severidad', 'huella', 'plugin', 'endpoint',
-  'senal', 'diagnostico', 'ultimo_deploy', 'ya_alertado_por_azure', 'evidencia', 'reincidente', 'veredicto', 'motivo',
+  'senal', 'diagnostico', 'ultimo_deploy', 'ya_alertado_por_azure', 'evidencia', 'reincidente', 'veredicto', 'decidido_en_sitio', 'motivo',
   'vista_por_ultima_vez', 'noches_seguidas', 'recordado_el', 'noches_sin_aparecer', 'noche_contada', 'veredicto_anterior',
   'resuelta_el', 'reaparecio_el', 'aviso_volvio_el', 'aviso_cerrado_el', 'story_creada', 'pedido', 'asignado', 'pedido_motivo'];
 
@@ -204,6 +204,14 @@ function pedidoDeLaNocheDe(v) {
   return p && p.id && /^\d{1,12}$/.test(p.id) ? p.id : null;
 }
 
+/** Lo que se muestra de los hechos de una ficha de ejecuciones: la clase más común y sus cuentas, sin la cuenta por clase. */
+function hechosDeEjecuciones(h) {
+  if (!h || !hechosConForma(h)) return null;
+  const out = { error_clase: h.error_clase, error_clase_veces: h.error_clase_veces, error_veces: h.error_veces };
+  if (h.error_clase === 'salida' && Number.isInteger(h.error_codigo)) out.error_codigo = h.error_codigo;
+  return out;
+}
+
 /**
  * La vista común de una ficha de cualquier fuente: `{ fuente, id, causa, nombre, primera_vez, ultima_vez, apariciones,
  * veredicto, estado }`, más `resuelto` y `reaparecido` (las fechas de dependencias), la propuesta del modelo
@@ -221,7 +229,7 @@ function comoFicha(fuente, txt) {
       apariciones: f.apariciones, veredicto: f.veredicto, estado: f.estado, resuelto: f.resuelta_el || null,
       reaparecido: f.reaparecio_el || null, aviso_volvio: f.aviso_volvio_el || null, aviso_cerrado: f.aviso_cerrado_el || null,
       propuesta: pr ? propuestaDe(pr.accion, pr.razon, pr.modelo) : null, propuesta_motivo: motivoDe(f.propuesta_motivo),
-      analisis: analisisDe(f.analisis), analisis_motivo: motivoDeAnalisis(f.analisis_motivo), hechos: null,
+      analisis: analisisDe(f.analisis), analisis_motivo: motivoDeAnalisis(f.analisis_motivo), hechos: hechosDeEjecuciones(f.hechos),
       pedido: pedidoDe(f.pedido), pedido_de_la_noche: pedidoDeLaNocheDe(f.pedido), asignado: f.asignado || null, pedido_motivo: motivoPedidoDe(f.pedido_motivo), noches: null, pr_noche: null };
   }
   const reg = FUENTES[fuente];

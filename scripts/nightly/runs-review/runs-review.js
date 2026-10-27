@@ -269,6 +269,8 @@ function reglasParaFicha(reglas) {
   return reglas.map((r) => {
     const x = { regla: r.regla, categoria: r.categoria === null ? null : (/^[A-Za-z0-9:/._-]{1,80}$/.test(String(r.categoria)) ? r.categoria : 'otro'), cuenta: r.cuenta };
     for (const k of ['con_frase', 'con_motivo', 'pendientes', 'rojos']) if (r[k] !== undefined) x[k] = r[k];
+    // los errores por clase: claves de la lista cerrada y cuentas, nada más
+    if (r.errores) x.errores = { errores: r.errores, codigo: r.codigo };
     return x;
   });
 }
@@ -379,7 +381,7 @@ async function run(opts) {
       if (!FORMA_CAUSA.test(clave) || escritas.has(clave)) continue;
       const prev = previas.porCausa.get(clave);
       if (prev && prev.carpeta === 'archived') {
-        const g = CYCLE.registrarAparicion(prev.ficha, today, c.casos);
+        const g = CYCLE.registrarAparicion(prev.ficha, today, c.casos, c.errores);
         if (totalDe(g) > totalDe(prev.ficha)) conCasoNuevo.add(clave);
         // se reabrió esta noche: una ignorada que ya había vuelto antes guarda `reaparecio` y igual se reabre
         if (g.estado === 'reaparecio' && g.reaparecio_el === today) {
@@ -390,13 +392,13 @@ async function run(opts) {
         continue;
       }
       if (prev) {
-        const g = CYCLE.registrarAparicion(prev.ficha, today, c.casos);
+        const g = CYCLE.registrarAparicion(prev.ficha, today, c.casos, c.errores);
         if (totalDe(g) > totalDe(prev.ficha)) conCasoNuevo.add(clave);
         escribirEntero(prev.ruta, CYCLE.serializar(g));
         escritas.add(clave);
         continue;
       }
-      const f = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: clave, nombre: NOMBRES.nombreDe('ejecuciones', c), hoy: today, casos: c.casos });
+      const f = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: clave, nombre: NOMBRES.nombreDe('ejecuciones', c), hoy: today, casos: c.casos, errores: c.errores });
       // una ficha de esa causa que está y no se pudo leer (ya contada en ilegibles) no se pisa con una nueva
       if (!libre(raiz, `${f.id}.yaml`)) { escritas.add(clave); continue; }
       escribirEntero(path.join(raiz, 'pending', `${f.id}.yaml`), CYCLE.serializar(f));
@@ -528,9 +530,16 @@ async function run(opts) {
       const caso = casoDe({ id: sesion.id, base, dia, maquina: sesion.maquina, story: volcado.marker.storyId });
       for (const x of reglasParaFicha(r.reglas)) {
         const k = parDe(x);
-        if (!causas.has(k)) causas.set(k, { regla: x.regla, categoria: x.categoria, ejecuciones: 0, vista: null, casos: [] });
+        if (!causas.has(k)) causas.set(k, { regla: x.regla, categoria: x.categoria, ejecuciones: 0, vista: null, casos: [], errores: [] });
         const c = causas.get(k);
-        if (c.vista !== unaVez) { c.vista = unaVez; c.ejecuciones += 1; c.casos.push(caso); }
+        if (c.vista !== unaVez) { c.vista = unaVez; c.ejecuciones += 1; c.casos.push(caso); c.errores.push(x.errores || null); }
+        else if (x.errores) {
+          // otra regla de la misma ejecución que cae en esta causa: sus errores van al mismo caso
+          const ult = c.errores[c.errores.length - 1] || { errores: {} };
+          for (const [cl, v] of Object.entries(x.errores.errores)) ult.errores[cl] = (ult.errores[cl] || 0) + v;
+          if (x.errores.codigo !== undefined) ult.codigo = x.errores.codigo;
+          c.errores[c.errores.length - 1] = ult;
+        }
       }
     }
     estado.causas = armarCausas();
