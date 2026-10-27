@@ -1431,6 +1431,13 @@ test('T12b NombreArmado_FormasQueNoAsignan_NoFrenan — cuentas, palabras que em
   }
 });
 
+const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+/**
+ * ¿El costo de ahora (`b`, ms) es aceptable contra el de antes (`a`)? Hasta un 20 % más, o hasta 20 ms más: en una
+ * máquina compartida el ruido de una mediana llega a 14 ms, y un proceso hijo de más cuesta 40 ms o más.
+ */
+const costoAceptable = (a, b) => b <= Math.max(a * 1.2, a + 20);
+
 // stable-data: T8 mide cuánto tarda el freno; ninguna fecha entra en lo que se compara.
 test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no corre node de más', (t) => {
   // el freno de antes (la rama de la 8.104), en un árbol de juguete que comparte las bibliotecas de éste
@@ -1451,14 +1458,21 @@ test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no 
     spawnSync('bash', [hook], { input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: c }, cwd: home }), env: e, encoding: 'utf8' });
     return Number(process.hrtime.bigint() - t) / 1e6;
   };
-  const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
   for (const c of ['ls -la', 'git status']) {
     const antes = [], ahora = [];
     // alternadas, para que la carga de la máquina pese igual en las dos
     for (let i = 0; i < 50; i++) { antes.push(vuelta(hookViejo, c)); ahora.push(vuelta(HOOK, c)); }
     const [a, b] = [mediana(antes), mediana(ahora)];
-    assert.ok(b <= a * 1.2, `${c}: mediana antes ${a.toFixed(1)} ms, ahora ${b.toFixed(1)} ms (más de un 20 % arriba)`);
+    assert.ok(costoAceptable(a, b), `${c}: mediana antes ${a.toFixed(1)} ms, ahora ${b.toFixed(1)} ms (más de un 20 % y de 20 ms arriba)`);
   }
+});
+
+test('T8b FiltroPrevio_MedicionToleraRuido @story-8.107 @ac-6 — la comparación del costo no da rojo por el ruido de una máquina cargada', () => {
+  // el rojo de la CI compartida, en un pedido que no tocaba el freno: 68,5 ms antes, 82,4 ms ahora
+  assert.ok(costoAceptable(68.5, 82.4));
+  // un proceso hijo más cuesta 40 ms o más: eso sí se ve
+  assert.ok(!costoAceptable(68.5, 128.5));
+  assert.ok(!costoAceptable(300, 400));
 });
 
 // ── El interruptor del estado a mano (@story-8.109) ─────────────────────────────────────────────────────────────────────
@@ -1957,13 +1971,16 @@ function frenoConEscrituras(comando, { home, entrada = {}, escrituras = [], tope
       try { process.kill(-hijo.pid, 'SIGKILL'); } catch (_e) { hijo.kill('SIGKILL'); }
       resolve({ status: 'colgado', stderr, ms: Date.now() - t0 });
     }, tope) : null;
-    hijo.on('close', (status) => { if (reloj) clearTimeout(reloj); if (!colgado) resolve({ status, stderr, ms: Date.now() - t0 }); });
+    // `escritas`: a qué ms quedó escrito cada renglón de verdad (con la máquina cargada, el temporizador se atrasa)
+    const escritas = [];
+    hijo.on('close', (status) => { if (reloj) clearTimeout(reloj); if (!colgado) resolve({ status, stderr, ms: Date.now() - t0, escritas }); });
     hijo.stdin.end(JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: comando }, cwd: home, ...entrada }));
     for (const { ms, archivo, registros } of escrituras) {
       setTimeout(() => {
         const f = path.join(proyectos(home), archivo);
         fs.mkdirSync(path.dirname(f), { recursive: true });
         fs.appendFileSync(f, renglones(registros));
+        escritas.push(Date.now() - t0);
       }, ms);
     }
   });
@@ -2020,13 +2037,25 @@ test('EscC6Paso T9 PedidoDeUnSubagente_Frena — el pedido real va al archivo de
 });
 
 test('EscC6Paso T10 ForjadoAntesQueElReal_Frena — durante la espera entra primero el forjado y después el real, en el mismo archivo', async () => {
+  // El caso vale si el real quedó escrito mientras el freno todavía miraba. Con la máquina cargada el temporizador de la
+  // prueba se atrasa, y un real escrito después de la espera es el límite que el lector ya declara (para forjar antes
+  // hace falta el id del pedido, que no se ve afuera del freno): se reintenta, y si nunca entra, el caso no se midió.
+  const MARGEN_MS = 500;
   for (const [forjadoMs, realMs] of [[300, 800], [200, 1500]]) {
-    const home = homeConMarcador(PLAN_ABIERTO, [deLaPersona('mostrame el plan')]);
-    const real = sacarPedido(home);
-    const r = await frenoConEscrituras(APROBAR_PLAN, { home, escrituras: [
-      { ms: forjadoMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: forjadosCon(TUID, 'u-0') },
-      { ms: realMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: [real] },
-    ] });
+    let r = null;
+    for (let intento = 0; intento < 3; intento++) {
+      const home = homeConMarcador(PLAN_ABIERTO, [deLaPersona('mostrame el plan')]);
+      const real = sacarPedido(home);
+      r = await frenoConEscrituras(APROBAR_PLAN, { home, escrituras: [
+        { ms: forjadoMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: forjadosCon(TUID, 'u-0') },
+        { ms: realMs, archivo: path.join('-repo', `${SID}.jsonl`), registros: [real] },
+      ] });
+      const escritoElReal = r.escritas.length === 2 ? r.escritas[1] : Infinity;
+      // si frenó, lo vio; si dejó pasar con el real escrito bien antes de que terminara, es un rojo de verdad
+      if (r.status === 2 || escritoElReal + MARGEN_MS < r.ms) break;
+      r = { ...r, noMedido: `el real quedó escrito a los ${escritoElReal} ms y el freno terminó a los ${r.ms} ms` };
+    }
+    assert.ok(!r.noMedido, `${forjadoMs}/${realMs}: NO se midió en 3 intentos (máquina cargada): ${r.noMedido}`);
     assert.strictEqual(r.status, 2, `${forjadoMs}/${realMs}: ${r.stderr}`);
     assert.match(r.stderr, /más de un registro con este pedido/);
   }

@@ -305,6 +305,22 @@ test('sin carril el portón bloquea y el mensaje manda a preguntar en castellano
   assert.match(msg, /adhoc set/, 'el camino del atajo declarado sigue documentado');
 });
 
+test('T34 SinCarril_TraeLaPreguntaAprobada_TextualYSinCuadro', () => {
+  const msg = gate.blockMessage({ kind: 'no-lane' }, { filePath: '/repo/src/a.ts', repoRoot: '/repo', otherMarkers: [] });
+  const pregunta = [
+    'Este cambio no tiene historia. ¿Cómo sigo?',
+    '1. Directo en el código (arreglo rápido: corre igual las pruebas y la revisión). Escribí: arreglo rápido: <qué cambio>',
+    '2. Con historia. Escribí: con historia',
+    'Lo tenés que escribir vos en el chat: el cuadro de botones no vale.',
+  ];
+  const lineas = msg.split('\n').map((l) => l.trim());
+  const desde = lineas.indexOf(pregunta[0]);
+  assert.ok(desde >= 0, 'el bloqueo trae la pregunta aprobada, con su primera línea tal cual');
+  assert.deepEqual(lineas.slice(desde, desde + pregunta.length), pregunta, 'las cuatro líneas, seguidas y sin cambios');
+  assert.match(msg, /textual/i, 'le dice al agente que la muestre tal cual');
+  assert.match(msg, /cuadro de opciones/i, 'y que no la ponga en un cuadro de opciones');
+});
+
 test('reasonInPrompts: fragmento literal del user sí (sin mayúsculas/acentos/comillas), paráfrasis no, corto no, sin prompts no', () => {
   const prompts = ['Hotfix del botón "Guardar": queda deshabilitado', 'dale'];
   assert.equal(gate.reasonInPrompts('hotfix del boton guardar', prompts), true);

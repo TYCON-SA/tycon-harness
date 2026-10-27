@@ -182,6 +182,35 @@ test('T41 — una parte que no existe, una variable mal escrita o un entero que 
   assert.match(bash(path.join(dir, 'toy.test.sh'), { SUITE_PART: '2/5' }).stderr, /declara 3 partes y le pidieron la 2 de 5/);
 });
 
+// ── T43 · una parte que no verifica nada ────────────────────────────────────────────────────────────────────
+test('T43 SuiteParts_Shell_EmptyPartFails — una parte con su bloque vaciado sale 2 y la nombra; entera y la otra parte, verdes', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'sh-vacia-'));
+  put(dir, 'lib/suite-parts.sh', fs.readFileSync(LIB_SH, 'utf8'));
+  put(dir, 'toy.test.sh', `#!/usr/bin/env bash
+set -uo pipefail
+. "$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
+ok() { suite_check; echo "ok $1"; }
+suite_parts 2
+ok "antes de los bloques: no cuenta para ninguna parte"
+if suite_part 1; then
+ok "bloque 1"
+fi
+if suite_part 2; then
+:
+fi
+suite_parts_end
+echo "resumen"
+`);
+  const whole = bash(path.join(dir, 'toy.test.sh'));
+  assert.strictEqual(whole.status, 0, whole.stdout + whole.stderr);
+  const one = bash(path.join(dir, 'toy.test.sh'), { SUITE_PART: '1/2' });
+  assert.strictEqual(one.status, 0, one.stdout + one.stderr);
+  const two = bash(path.join(dir, 'toy.test.sh'), { SUITE_PART: '2/2' });
+  assert.strictEqual(two.status, 2, `la parte vacía no puede salir verde: ${two.stdout}${two.stderr}`);
+  assert.match(two.stderr, /la parte 2 de 2 terminó sin ninguna verificación/);
+  assert.doesNotMatch(two.stdout, /resumen/, 'corta antes del resumen');
+});
+
 // ── T42 · las suites partidas de verdad ─────────────────────────────────────────────────────────────────────
 const LIST = JSON.parse(fs.readFileSync(path.join(TESTS, 'suites.json'), 'utf8'));
 const ENTRIES = [...(LIST.diarias || []), ...(LIST.semanales || [])].filter((e) => e && e.raiz === 'arnes');
@@ -256,7 +285,7 @@ function toyLayout(mutate) {
   put(dir, 'lib/suite-parts.js', fs.readFileSync(LIB_JS, 'utf8'));
   put(dir, 'lib/suite-parts.sh', fs.readFileSync(LIB_SH, 'utf8'));
   put(dir, 'uno.test.js', "const test = require('./lib/suite-parts.js').test;\ntest('a', () => {});\ntest('b', () => {});\n");
-  put(dir, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2\nif suite_part 1; then echo a; fi\nif suite_part 2; then echo b; fi\n');
+  put(dir, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2\nok() { suite_check; echo "$1"; }\nif suite_part 1; then ok a; fi\nif suite_part 2; then ok b; fi\nsuite_parts_end\n');
   for (const k of [1, 2]) {
     put(dir, `uno.p${k}.test.js`, "require('./lib/suite-parts.js').runPart(__filename);\n");
     put(dir, `dos.p${k}.test.sh`, `#!/usr/bin/env bash\n# parte ${k} de 2 de scripts/tests/dos.test.sh\nSUITE_PART=${k}/2 exec bash "$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)/dos.test.sh"\n`);
@@ -324,6 +353,8 @@ test('T42 — rojo previo: un entero que no usa la biblioteca, una parte que no 
     ['el entero de consola declara una parte de más', (c, d) => put(d, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 3\nif suite_part 1; then echo a; fi\nif suite_part 2; then echo b; fi\n'), /dos\.p3\.test\.sh no existe/],
     ['una de consola anotada en el registro', (c) => { c.registry.suites['dos.test.sh'] = { parts: 2 }; }, /dos\.test\.sh: en suite-parts\.json van sólo las de Node/],
     ['falta un bloque', (c, d) => put(d, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2\nif suite_part 1; then echo a; fi\n'), /dos\.test\.sh no tiene ningún bloque de la parte 2/],
+    ['una de consola que no llama a suite_parts_end', (c, d) => put(d, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2\nok() { suite_check; echo "$1"; }\nif suite_part 1; then ok a; fi\nif suite_part 2; then ok b; fi\n'), /dos\.test\.sh no llama a `suite_parts_end`/],
+    ['una de consola que no cuenta sus verificaciones', (c, d) => put(d, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2\nif suite_part 1; then echo a; fi\nif suite_part 2; then echo b; fi\nsuite_parts_end\n'), /dos\.test\.sh no cuenta sus verificaciones con `suite_check`/],
     ['un bloque de una parte que no hay', (c, d) => put(d, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2\nif suite_part 1; then echo a; fi\nif suite_part 2; then echo b; fi\nif suite_part 3; then echo c; fi\n'), /dos\.test\.sh tiene un bloque de la parte 3 y sus partes son 2/],
     ['una parte de consola que pide otra cosa', (c, d) => put(d, 'dos.p1.test.sh', '#!/usr/bin/env bash\nSUITE_PART=2/2 exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dos.test.sh"\n'), /dos\.p1\.test\.sh no es la línea de una parte/],
   ];
@@ -446,7 +477,7 @@ test('T40 — una duración de suite-parts.json que no es de ninguna prueba del 
 
 test('T42 — una suite de consola que declara sus partes con un comentario al final de la línea sigue contando como partida', () => {
   const { layoutProblems, partitioned } = require(LIB_JS);
-  const ctx = toyLayout((c, d) => put(d, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2   # dos mitades\nif suite_part 1; then echo a; fi\nif suite_part 2; then echo b; fi\n'));
+  const ctx = toyLayout((c, d) => put(d, 'dos.test.sh', '. "$DIR/lib/suite-parts.sh"\nsuite_parts 2   # dos mitades\nok() { suite_check; echo "$1"; }\nif suite_part 1; then ok a; fi\nif suite_part 2; then ok b; fi\nsuite_parts_end\n'));
   assert.deepStrictEqual(layoutProblems(ctx), []);
   put(ctx.dir, 'suite-parts.json', JSON.stringify(ctx.registry));
   assert.strictEqual(partitioned(ctx.dir).get('dos.test.sh'), 2);

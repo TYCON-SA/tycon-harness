@@ -184,6 +184,9 @@ function layoutProblems(ctx) {
       if (!/require\(['"]\.\/lib\/suite-parts\.js['"]\)\.test\b/.test(whole)) out.push(`${base} no toma \`test\` de lib/suite-parts.js: sus partes correrían todas las pruebas`);
     } else {
       if (!/lib\/suite-parts\.sh/.test(whole)) out.push(`${base} no carga lib/suite-parts.sh`);
+      // sin contar verificaciones, una parte con su bloque vaciado sale verde sin mirar nada
+      if (!/^\s*suite_parts_end\b/m.test(whole)) out.push(`${base} no llama a \`suite_parts_end\` después de sus bloques: una parte vacía saldría verde`);
+      if (!/\bsuite_check\b/.test(whole)) out.push(`${base} no cuenta sus verificaciones con \`suite_check\`: una parte vacía saldría verde`);
       const blocks = new Set([...whole.matchAll(/\bsuite_part\s+(\d+)\b/g)].map((x) => Number(x[1])));
       for (let k = 1; k <= spec.parts; k++) if (!blocks.has(k)) out.push(`${base} no tiene ningún bloque de la parte ${k}`);
       for (const b of blocks) if (b < 1 || b > spec.parts) out.push(`${base} tiene un bloque de la parte ${b} y sus partes son ${spec.parts}`);

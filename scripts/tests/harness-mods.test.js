@@ -60,7 +60,7 @@ test('T1 Board_LineFromMarker_NoMoney — el renglón trae story, el nombre del 
   const line = boardLine(run, 37);
   assert.match(line, /Story 9\.9/);
   assert.match(line, / · Implementar · /, 'el paso por su nombre llano; el 4 viejo arrancado es «Implementar»');
-  assert.match(line, /4 de 11 hechos/, 'el marker viejo con la equivalencia: Arranque, Validar, Armar y Aprobar el plan');
+  assert.match(line, / · Implementar · paso 5 de 11 · /, 'el paso en curso, con su número de la tabla: el marker viejo con 4 hechos (Arranque, Validar, Armar y Aprobar el plan) está en el 5');
   assert.match(line, /12 min en este paso/);
   assert.match(line, /40 min en total/);
   assert.match(line, /contexto usado 37 %/);
@@ -378,10 +378,10 @@ test('T16 (7.23) Board_ReadsBothSchemes @story-7.23 @ac-16 — el marker nuevo y
   });
   const run = readRun(vuelta, NOW);
   const line = boardLine(run, 41);
-  assert.match(line, /^Story 7\.23 · Los pasos del pipeline, claros… · Revisores, vuelta 2 · 8 de 11 hechos · /, line);
+  assert.match(line, /^Story 7\.23 · Los pasos del pipeline, claros… · Revisores, vuelta 2 · paso 7 de 11 · /, line);
   assert.match(line, /Arranque: hecho, con aviso: no se pudo abrir el registro de horas/);
   const t = pipelineTable(run);
-  assert.match(t.split('\n')[0], /^Story 7\.23 «Los pasos del pipeline, claros: nombres» — Revisores, vuelta 2 · 8 de 11 pasos hechos/);
+  assert.match(t.split('\n')[0], /^Story 7\.23 «Los pasos del pipeline, claros: nombres» — Revisores, vuelta 2 · paso 7 de 11/);
   assert.strictEqual(t.split('\n')[1], 'Arranque: hecho, con aviso: no se pudo abrir el registro de horas');
   assert.ok(t.includes('| 1. Arranque | hecho, con aviso |'), t);
   assert.ok(t.includes('| 7. Revisores (vuelta 2) | corriendo |'), t);
@@ -405,7 +405,7 @@ test('T16 (7.23) Board_ReadsBothSchemes @story-7.23 @ac-16 — el marker nuevo y
   assert.strictEqual(readRunError(vuelta), null);
 });
 
-test('T4 (7.23) Board_ShowsPlainNamesWithoutStepId — el cartel, /pipeline y el aviso, por nombre y sin «paso N»', async () => {
+test('T4 (7.23) Board_ShowsPlainNamesWithoutStepId — el cartel, /pipeline y el aviso, por nombre y sin el id del paso; el número es el de la tabla, «paso N de 11»', async () => {
   const { readRun, boardLine, pipelineTable, waitingToast } = await mod('run.mjs');
   const en5b = JSON.stringify({
     ...JSON.parse(markerEnPaso4()), stepsCompleted: [0, 1, 2, 3, 4, 5], stepsPending: [6, 7, 8],
@@ -413,10 +413,10 @@ test('T4 (7.23) Board_ShowsPlainNamesWithoutStepId — el cartel, /pipeline y el
   });
   const run = readRun(en5b, NOW);
   const line = boardLine(run, 20);
-  assert.match(line, /^Story 9\.9 · Pase adversarial · 7 de 11 hechos · /, line);
-  assert.doesNotMatch(line, /\bpaso \d|\b5b\b|búsqueda de fallas/);
+  assert.match(line, /^Story 9\.9 · Pase adversarial · paso 8 de 11 · /, line);
+  assert.doesNotMatch(line, /\bpaso (?!8 de 11\b)\d|\b5b\b|búsqueda de fallas/);
   const t = pipelineTable(run);
-  assert.match(t.split('\n')[0], /^Story 9\.9 — Pase adversarial · 7 de 11 pasos hechos/);
+  assert.match(t.split('\n')[0], /^Story 9\.9 — Pase adversarial · paso 8 de 11/);
   assert.doesNotMatch(t, /\| (?:0|0b|0c|1|2|3|4|5|5b|6|7|7c|8) \|/, 'la tabla no muestra el id del paso');
   assert.ok(t.includes('| 8. Pase adversarial | corriendo |'), t);
   // el aviso «te espera»: el paso por su nombre
@@ -453,7 +453,7 @@ test('T19 Board_ShowsShortStoryTitle — el cartel trae el título corto de la s
   // el título que trae el marker gana; el renglón queda «Story · título corto · paso · …»
   const run = readRun(markerEnPaso4({ storyTitle: LARGO }), NOW);
   assert.strictEqual(run.title, LARGO);
-  assert.match(boardLine(run, 20), /^Story 9\.9 · El video de 0 a 100… · Implementar · 4 de 11 hechos · /);
+  assert.match(boardLine(run, 20), /^Story 9\.9 · El video de 0 a 100… · Implementar · paso 5 de 11 · /);
   assert.ok(pipelineTable(run).split('\n')[0].startsWith(`Story 9.9 «${LARGO}» — `), pipelineTable(run));
   // sin título, el título es null
   const sin = readRun(markerEnPaso4(), NOW);

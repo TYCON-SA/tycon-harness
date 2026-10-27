@@ -13,6 +13,7 @@ process.env.TYCON_HARNESS_NODE = '0';
 //   TA4 · el acceso, como Azure lo da: anónimo o PAT inválido → la página de login (302) → «sin credencial / no vale» con la
 //         acción; 403 → sin permiso de lectura; 404 → el repo o el proyecto no existe; nunca «sin red».
 //   TA5 · bajar: los archivos uno por uno a la caché con su manifiesto; la segunda vez, desde la caché sin pedir nada.
+//   TA7 · una falla del laboratorio después de lanzar el Azure de juguete no lo deja vivo (la suite no se cuelga).
 //   T41 · el reloj de la bajada, contra el Azure de juguete LENTO: bajar no hereda el reloj de mirar; si el suyo no alcanza
 //         dice «se acabó el tiempo» (no «sin red») y el intento siguiente sigue desde lo ya bajado; el cliente de GitHub, igual.
 //
@@ -46,7 +47,20 @@ const PROFILE = '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations
 // pedido, una máquina con carga lo pasa y la prueba falla por tiempo y no por lo que mide.
 const DOWN = { deadlineFor: (pending) => Date.now() + Math.max(120, Math.ceil(pending) * 3) * 1000 };
 
-async function lab(name, { pat = 'pat-lab' } = {}) {
+// Los servidores vivos: si una prueba falla sin pasar por su `stop()`, el `after` del archivo los mata y la suite termina.
+const LIVE = new Set();
+test.after(() => { for (const srv of LIVE) srv.kill('SIGKILL'); });
+const stopServer = (srv) => {
+  if (srv.exitCode !== null || srv.signalCode !== null) { LIVE.delete(srv); return; }
+  const hard = setTimeout(() => srv.kill('SIGKILL'), 2000);
+  srv.once('exit', () => { clearTimeout(hard); LIVE.delete(srv); });
+  srv.kill('SIGTERM');
+};
+const PORTS_READY = /^AZURE=(.+)$/m;
+const readPorts = (file) => { try { return PORTS_READY.exec(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+
+// `afterStart` (sólo para TA7): corre con el servidor ya escuchando, para probar que una falla ahí no lo deja vivo.
+async function lab(name, { pat = 'pat-lab', afterStart } = {}) {
   const dir = casa(name);
   const work = path.join(dir, 'work');
   fs.mkdirSync(path.join(work, 'scripts', 'metrics'), { recursive: true });
@@ -60,9 +74,15 @@ async function lab(name, { pat = 'pat-lab' } = {}) {
   const control = path.join(dir, 'control.json'); fs.writeFileSync(control, JSON.stringify({ pat }));
   const ports = path.join(dir, 'ports.env'); const logFile = path.join(dir, 'requests.log');
   const srv = spawn(process.execPath, [SERVER, '--repo', bare, '--org', 'acme', '--project', 'proyecto', '--name', 'equipo-lab', '--control', control, '--log', logFile, '--port-file', ports], { stdio: 'ignore' });
-  for (let i = 0; i < 100 && !fs.existsSync(ports); i++) await wait(50);
-  if (!fs.existsSync(ports)) throw new Error('el Azure de juguete no arrancó');
-  const api = /^AZURE=(.+)$/m.exec(fs.readFileSync(ports, 'utf8'))[1].trim();
+  LIVE.add(srv);
+  let api;
+  try {
+    let m = null;
+    for (let i = 0; i < 100 && !(m = readPorts(ports)); i++) await wait(50);
+    if (!m) throw new Error('el Azure de juguete no arrancó');
+    api = m[1].trim();
+    if (afterStart) afterStart(srv);
+  } catch (e) { stopServer(srv); fs.rmSync(dir, { recursive: true, force: true }); throw e; }
   const home = path.join(dir, 'home'); fs.mkdirSync(path.join(home, '.tycon'), { recursive: true });
   const env = { TYCON_AZURE_API: api, TYCON_HOME: path.join(home, '.tycon'), TYCON_AZURE_GIT_CREDENTIAL: '0', PATH: process.env.PATH };
   const src = AZ.parseAzureUrl('https://dev.azure.com/acme/proyecto/_git/equipo-lab');
@@ -71,7 +91,7 @@ async function lab(name, { pat = 'pat-lab' } = {}) {
   const savePat = (value) => fs.writeFileSync(path.join(home, '.tycon', 'config.json'), JSON.stringify({ azure: { token: value } }));
   const head = () => git(['rev-parse', 'main'], bare);
   const publish = (file, text, msg) => { const f = path.join(work, ...file.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); git(['add', '-A'], work); git(['commit', '-q', '-m', msg], work); git(['push', '-q', bare, 'main'], work); };
-  return { dir, work, bare, home, env, src, requests, setControl, savePat, head, publish, api, stop: () => { srv.kill(); fs.rmSync(dir, { recursive: true, force: true }); } };
+  return { dir, work, bare, home, env, src, requests, setControl, savePat, head, publish, api, stop: () => { stopServer(srv); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
 
 test('TA1 TeamAzure_Url_DevAzureCom_WithUserSlashOrGit_Parsed_OthersRefused', () => {
@@ -268,6 +288,15 @@ test('TA6 TeamAzure_ConfigSetAzureToken_CliSavesByStdinUserOnlyNeverEchoes_Rewri
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).azure.token, PAT, 'y el PAT sigue ahí');
   }
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('TA7 TeamAzure_LabFailsAfterSpawn_ServerStopped', async () => {
+  // Una falla del laboratorio después de lanzar el servidor no lo deja vivo: si quedara, la suite no terminaría nunca.
+  let pid = null;
+  await assert.rejects(lab('fails', { afterStart: (srv) => { pid = srv.pid; throw new Error('forzada'); } }), /forzada/);
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (let i = 0; i < 60 && alive(); i++) await wait(50);
+  assert.equal(alive(), false, `el servidor ${pid} quedó vivo`);
 });
 
 test('TA5 TeamAzure_Fetch_ItemsToCacheWithManifest_SecondTimeFromCacheWithoutRequests', async () => {
