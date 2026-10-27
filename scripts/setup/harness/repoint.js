@@ -911,7 +911,7 @@ function back(ctx, state, o) {
   const remote = remoteAnswers(dir, from.url, { env });
   if (!remote.ok) return stop({ cause: remote.offline ? 'offline' : 'remote', reason: `el remoto viejo no contesta: ${remote.reason} — no toqué nada`, transient: true });
 
-  if (o.dryRun) return { status: 'would', proceed: true, lines: [`se volvería al repo viejo: ${dir} pasaría de ${SRC.origin(dir, { env })} @ ${sha7(SRC.head(dir, { env }))} a ${from.url} @ ${sha7(from.commit)}, mostrando todo otra vez`], notice: null };
+  if (o.dryRun) return { status: 'would', proceed: true, lines: [`se volvería al repo viejo: ${dir} pasaría de ${SRC.origin(dir, { env })} @ ${sha7(SRC.head(dir, { env, cached: true }))} a ${from.url} @ ${sha7(from.commit)}, mostrando todo otra vez`], notice: null };
 
   const snap = o.backup ? o.backup('repoint-back', `agent_skills@${sha7(from.commit)}`) : null;
   if (!snap) return stop({ cause: 'no-backup', reason: 'no pude tomar la copia de seguridad de antes de mover', transient: true });

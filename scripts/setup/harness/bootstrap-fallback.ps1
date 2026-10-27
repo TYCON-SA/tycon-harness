@@ -67,6 +67,40 @@ $Skills = Join-Path $H '.claude\agent-skills'
 New-Item -ItemType Directory -Force -Path $HDir | Out-Null
 if ((Test-Path $Log) -and ((Get-Item $Log).Length -gt 1048576)) { Move-Item -Force $Log "$Log.1" }
 
+# ── el node del PATH por debajo del piso de bootstrap.js (20; un nvm con una versión vieja por defecto), gemelo del .sh ──
+# bootstrap.js no llegó a correr harness.js. Antes del respaldo, el mismo arranque con un Node de 22 o más (el piso para
+# instalar): el propio del arnés (<casa>\node\current, la regla de tycon-home.js → harnessNode, escrita acá) o uno de nvm
+# (nvm-windows: NVM_HOME\v<versión>\node.exe). Si sale 0, la sesión arrancó como siempre y el respaldo no hace nada más.
+# Sin ninguno, la línea dice qué instalar.
+function Get-NodeMajor([string]$Exe) {
+    try { $v = (& $Exe --version 2>$null) } catch { return 0 }
+    if ([string]$v -match '^v(\d+)\.') { return [int]$Matches[1] }
+    return 0
+}
+$NodeHint = ''
+$PathNodeV = ''
+if (Get-Command node -ErrorAction SilentlyContinue) { try { $PathNodeV = [string](& node --version 2>$null) } catch {} }
+$PathMajor = if ($PathNodeV -match '^v(\d+)\.') { [int]$Matches[1] } else { 0 }
+if ($PathMajor -lt 20) {
+    $Cands = @((Join-Path $Own 'node\current\node.exe'), (Join-Path $Own 'node/current/bin/node'))
+    if ($env:NVM_HOME -and (Test-Path $env:NVM_HOME)) { $Cands += @(Get-ChildItem -LiteralPath $env:NVM_HOME -Directory -Filter 'v*' -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.FullName 'node.exe' }) }
+    $Better = ''
+    foreach ($c in $Cands) { if (-not $Better -and (Test-Path -LiteralPath $c -PathType Leaf) -and ((Get-NodeMajor $c) -ge 22)) { $Better = $c } }
+    $ShownV = if ($PathNodeV) { $PathNodeV } else { 'ausente' }
+    if ($Better) {
+        & $Better (Join-Path $PSScriptRoot 'bootstrap.js')
+        $Rc = $LASTEXITCODE
+        if ($Rc -eq 0) {
+            $Stamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            Add-Content -Path $Log -Value "$Stamp fallback: el node del PATH ($ShownV) está debajo del piso: el arranque corrió con $Better ($(& $Better --version 2>$null))"
+            exit 0
+        }
+        $NodeHint = "el node del PATH ($ShownV) está debajo del piso y bootstrap.js con $Better salió $Rc; "
+    } else {
+        $NodeHint = "el node del PATH ($ShownV) está debajo del piso y no encontré otro: instalá Node 22 o más (con nvm: nvm install 22 y nvm use 22); "
+    }
+}
+
 # ── la versión BAJADA, gemelo del .sh: sin git y sin Node en este camino ─────────
 # Si el estado dice `kind: release`, el árbol es ~/.tycon/harness (o TYCON_HOME\harness) y no hay pull: un cambio de
 # versión cortado a mitad se repara desde su diario (swap.json), y si harness.js no arranca y hay una versión anterior
@@ -288,7 +322,7 @@ if ($Tree) {
 }
 if (-not $NodeV) { $NodeV = 'ausente' }
 if (-not $Pulled) { $Pulled = ' ninguno' }
-$Line = "respaldo en shell: bootstrap.js no arrancó harness.js (${Why}node $NodeV); pull:$Pulled; $Applier"
+$Line = "respaldo en shell: bootstrap.js no arrancó harness.js (${NodeHint}${Why}node $NodeV); pull:$Pulled; $Applier"
 $Stamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 Add-Content -Path $Log -Value "$Stamp fallback: $Line"
 

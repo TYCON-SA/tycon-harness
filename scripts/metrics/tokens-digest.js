@@ -103,10 +103,12 @@ const VENTANA_ADELANTE_MS = 15000;
 // Largo del mensaje rescatado. Es texto crudo de una herramienta: alcanza para entender qué falló.
 const LARGO_MENSAJE = 700;
 // Lo que NO es un mensaje del hilo. Medido sobre una transcripción real de 4,1 MB: `attachment`
-// 381 KB, `file-history-snapshot` 60 KB, el resto son metadatos de la herramienta.
+// 381 KB, `file-history-snapshot` 60 KB, el resto son metadatos de la herramienta. Los `api-request*` son la copia de
+// cada pedido a la API (el `-blob` trae el mensaje entero otra vez): con ellos cada comando queda tres veces en el hilo.
 const TIPOS_DESCARTADOS = new Set([
   'attachment', 'file-history-snapshot', 'file-history-delta',
   'queue-operation', 'bridge-session', 'atis-latch', 'last-prompt', 'ai-title',
+  'api-request', 'api-request-blob', 'api-request-shape', 'mode', 'cost-state',
 ]);
 // Los únicos adjuntos que viajan: el aviso de un hook que falló sin frenar y el de uno que se pasó de tiempo (Claude
 // Code lo anota como `hook_cancelled` con `timedOut`). Sin ellos, la revisión nocturna de las ejecuciones no ve un

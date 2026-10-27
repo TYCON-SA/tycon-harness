@@ -1609,6 +1609,10 @@
     {
       "words": ["coordination", "coordinate"],
       "reason": "palabras inglesas del nombre del comando (`/coordinate`, `scripts/tools/coordination.js`) y de la clave de configuración (`coordination.*`, TYCON_COORDINATION_*). Sólo estas dos formas. Aprobadas por la coordinadora, por delegación del dueño, el 2026-10-25 (story 8.122)."
+    },
+    {
+      "words": ["nvm"],
+      "reason": "nombre propio de la herramienta nvm (y nvm-windows): el respaldo del arranque lee sus variables NVM_DIR y NVM_HOME para buscar un Node de 22 o más. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-27."
     }
   ],
   "schemaFiles": [

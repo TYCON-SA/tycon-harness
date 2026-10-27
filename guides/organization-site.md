@@ -196,20 +196,29 @@ disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pes
 
 ### Mantenimiento
 
-Sólo para **quien mantiene**: lo que encontró la noche y espera una decisión. Al lado del nombre, en el menú, va
-cuántas fichas esperan, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. Son tres fuentes: la revisión de las
-ejecuciones (un control salteado, un aviso automático que falla), las dependencias con una vulnerabilidad conocida y
-el vigilante de producción. Cada fila dice:
+Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién tiene la pelota. Al lado del nombre, en el
+menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
+tiene tres bloques:
 
-- **Qué pasó**, en llano: cuántas veces, en qué máquinas y en qué stories. Por ejemplo, «Pasó 2 veces, en la máquina
-  mac-mini, en dos stories distintas».
-- **Qué haría «Arreglar»**: un texto fijo según el tipo de problema, por ejemplo «averiguar quién apagó el control y por
-  qué, y volverlo a prender». Si el modelo de la noche dejó una propuesta, va debajo como sugerencia.
+- **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones. Primero lo de
+  producción, porque son clientes reales. Dentro de cada grupo, primero lo que el análisis recomienda arreglar, después
+  lo que recomienda archivar y al final lo que no tiene análisis.
+- **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace.
+  Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
+  pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
+- **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
+  está asignada, y las vulnerabilidades de paquetes. Las vulnerabilidades no se deciden acá: cada equipo tiene su tarea
+  y, si no puede actualizar el paquete, declara la deuda en su repo, con plazo.
 
-Los botones se explican una vez, arriba de la tabla. **Aceptar** quiere decir «está bien así»: la ficha se archiva.
-**Arreglar** la deja como trabajo pendiente. Ninguno de los dos cambia nada en el momento: abren un pedido al repo de
-operaciones que tiene que aprobar otra persona, y la noche siguiente lo aplica. En dependencias sólo se puede arreglar:
-para aceptar el riesgo hay que declarar la deuda en cada repo, con plazo.
+Cada tarjeta dice **qué pasó** con los datos de la ficha, por ejemplo «Pasó 4 veces, del 21/10 al 24/10». Si hay
+análisis, dice **por qué** pasa, qué **recomienda** y qué se haría si se arregla, y aclara si lo escribió el modelo de la
+noche o una persona. Sin análisis, dice por qué no lo tiene y los botones quedan detrás de «Decidir sin análisis».
+
+**Archivar** quiere decir «es normal, no hay que tocar nada». **Arreglar** quiere decir que la noche crea una tarea para
+corregirlo. Marcás una opción en cada tarjeta (o «Seguir las recomendaciones» para todas las que tienen análisis) y al
+final **Enviar para aprobar**: abre un solo pedido al repo de operaciones con todas tus elecciones. Nada cambia hasta
+que otra persona lo aprueba. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
+tiene su «?» con la explicación.
 
 ### Proyectos
 
@@ -441,7 +450,7 @@ Las secciones, en el orden de la pantalla:
   el repo deja a su identidad saltear la revisión, y si pide la aprobación de otra persona le prende el auto-merge y
   entra en cuanto alguien lo apruebe; si el repo tampoco deja el auto-merge, queda el pedido. Antes de proponer, al
   lado del botón, la sección dice qué va a pasar. Queda escrito quién lo hizo: la descripción del pedido nombra a quien
-  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
+  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`. Cuenta la opción
   que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios
   entran solos. Queda en `operations.json`, en el repo de operaciones.
 - **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
@@ -1132,7 +1141,7 @@ empuje por ruta del README de GitHub: el sitio valida y descarga `operations.jso
 request a mano.
 
 **Lo que se resigna.** Nadie revisa esos cambios antes de que entren. Queda la constancia: cada cambio del sitio es un
-pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`.
+pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`.
 Quien puede escribir en el repo de operaciones puede hacerse mantenedor del sitio o cambiar un proceso de la noche sin
 que otro lo mire: lo que se cuida es quién tiene escritura en ese repo.
 
@@ -1228,8 +1237,8 @@ organización (arriba): deja que cuente el voto de quien crea el pedido, pide un
 empujó el último cambio y no nombra revisores. Si pide más, el pedido queda y la sección dice qué falta.
 Sin ninguna política en `main`, «Proponer» sigue apagado aunque la opción esté prendida. Para encenderla, primero la
 imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply` y daría `operations.json` por inválido
-(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
-pidió; es la única línea del registro que lleva un correo.
+(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el enlace a su pedido;
+el correo de quien lo pidió no va al registro: lo dice el pedido.
 
 ### Cómo se mantiene al día
 

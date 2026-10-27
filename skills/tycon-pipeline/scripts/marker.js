@@ -2228,6 +2228,8 @@ function cmdTestsFailed(argv) {
 /** La línea que dicen «Correr las pruebas» y «Preparar el commit» cuando el check `tests` quedó «sin medir». */
 function testsNotMeasuredLine(marker) {
   const r = String((marker && marker.testsNotMeasuredReason) || '');
+  // el portón sabe correrlas, pero la herramienta no arrancó: el motivo es ése
+  if (r.startsWith('la herramienta de pruebas')) return `pruebas no medidas: ${r.slice(0, 300)}`;
   const m = r.match(/no encontré (un proyecto de [^.]*?)(?:\. |$)/);
   return `pruebas no medidas: el portón no sabe correr las pruebas de este repo${m ? ` (no encontré ${m[1]})` : ''}`;
 }

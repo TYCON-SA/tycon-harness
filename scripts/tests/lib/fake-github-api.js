@@ -12,7 +12,8 @@
  *   g.base · g.llamadas · g.st · g.prohibidas() · await g.cerrar()
  *
  * `st`: mainOid · proteccion (null = 404, sin protección) · reglas[] · politicas403 · pedidos[] · fallarPedido (500 |
- * 403) · environments[] · environments403 · exigirAuth (la cabecera exacta; con `token`, `Bearer <token>`).
+ * 403) · environments[] · environments403 · exigirAuth (la cabecera exacta; con `token`, `Bearer <token>`) · archivosDe(pedido)
+ * (las rutas que trae el pedido; sin ella, ninguna).
  */
 const http = require('http');
 
@@ -85,6 +86,13 @@ async function arrancarGithubFalso({ owner = 'acme', repo = 'ops', token } = {})
       if (st.mergeDirecto === 'perdido') return json(502, { message: 'Bad Gateway' });
       if (st.mergeDirecto !== 200) return json(st.mergeDirecto, { message: 'At least 1 approving review is required by reviewers with write access.' });
       return json(200, { merged: true, sha: 'c'.repeat(40) });
+    }
+    if ((m = /^pulls\/(\d+)\/files$/.exec(resto)) && req.method === 'GET') {
+      const pedido = st.pedidos.find((p) => p.number === Number(m[1]));
+      if (!pedido) return json(404, { message: 'Not Found' });
+      const porPagina = Math.min(Number(u.searchParams.get('per_page')) || 30, 100);
+      const pagina = Math.max(Number(u.searchParams.get('page')) || 1, 1);
+      return json(200, (st.archivosDe ? st.archivosDe(pedido) : []).map((filename) => ({ filename, status: 'added' })).slice((pagina - 1) * porPagina, pagina * porPagina));
     }
     if ((m = /^pulls\/(\d+)$/.exec(resto)) && req.method === 'GET') {
       const pedido = st.pedidos.find((p) => p.number === Number(m[1]));

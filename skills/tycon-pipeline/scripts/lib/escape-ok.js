@@ -25,7 +25,9 @@
  *
  * La punta de la cadena es el pedido que se está juzgando (`tool_use_id` de la entrada del freno): sin él no vale.
  *
- * Uso desde el freno: node escape-ok.js --variable TYCON_SAFETY_OFF --session <id> --tool-use-id <id> [--shell]
+ * Uso desde el freno: node escape-ok.js --variable TYCON_SAFETY_OFF --session <id> --tool-use-id-stdin [--shell]
+ *   (el pedido llega por la entrada: en la línea de comandos lo vería `ps`; `--tool-use-id <id>` sigue para quien llama
+ *   desde node)
  *   [--since <hora>] [--no-relay]   (la salida de una ejecución perdida: la frase posterior a su apertura, sin reenvío)
  *   imprime `{ ok, via, relevo?, motivo?, sinConversacion? }` y sale 0 si está autorizado, 3 si no.
  */
@@ -105,7 +107,7 @@ function escapeAutorizado(opciones = {}) {
 
 // `desdeTs`: la frase vale desde esa hora en vez de la ventana (la salida de una ejecución perdida: posterior a su
 // apertura). `sinReenvio`: sólo la frase de la persona, no la reenviada por la sesión designada.
-function autorizadoPorNombre({ variable, sesion, pedido, home, env = process.env, arnes, ahora = Date.now(), ventanaMin = VENTANA_MIN, desdeTs, sinReenvio = false } = {}) {
+function autorizadoPorNombre({ variable, sesion, pedido, transcript, home, env = process.env, arnes, ahora = Date.now(), ventanaMin = VENTANA_MIN, desdeTs, sinReenvio = false } = {}) {
   if (!esEscape(variable)) return { ok: false, motivo: `${variable} no es un escape que se autorice con una frase` };
   if (!sesion || !/^[\w-]+$/.test(String(sesion))) return { ok: false, sinConversacion: true, motivo: 'la herramienta no dijo de qué sesión es el comando' };
   // la punta de la cadena: el pedido que se está juzgando. Sin él, un renglón agregado después del pedido sería la punta
@@ -121,18 +123,20 @@ function autorizadoPorNombre({ variable, sesion, pedido, home, env = process.env
   // la sesión de la conversación es la del comando: un reenvío a sí misma no cuenta (citaReenviada)
   const e = { ...env, CLAUDE_CODE_SESSION_ID: String(sesion) };
   // sólo la cadena de la conversación: un «turno de la persona» agregado al archivo por fuera no cuenta
-  const propia = pok.citaDeLaPersona(cita, { sesion, home, env: e, desde, sinPegado: true, juzgar, soloCadena: true, pedido });
+  const propia = pok.citaDeLaPersona(cita, { sesion, home, env: e, desde, sinPegado: true, juzgar, soloCadena: true, pedido, transcript });
   if (!propia.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${propia.motivo})` };
   if (propia.encontrada) return { ok: true, via: 'persona', cuando: propia.cuando || null };
+  // el pedido que se juzga no apareció en la conversación: sin punta no hay nada que buscar, tampoco el reenvío
+  if (propia.pasoNoUbicado) return { ok: false, motivo: propia.motivo };
   const relevo = sinReenvio ? {} : cw.sesionQueReenvia({ env: e, home, ...(arnes ? { arnes } : {}) });
   if (relevo.valor) {
-    const r = pok.citaReenviada(cita, relevo.valor, { sesion, home, env: e, desde, juzgar, soloCadena: true, pedido });
+    const r = pok.citaReenviada(cita, relevo.valor, { sesion, home, env: e, desde, juzgar, soloCadena: true, pedido, transcript });
     if (r.encontrada) return { ok: true, via: 'reenvio', relevo: relevo.valor, cuando: r.cuando || null };
   }
   // la sesión designada lo aprueba en nombre del dueño, si el perfil lo delega y el dueño se lo pidió (delegated-ok.js)
   const dok = require('./delegated-ok.js');
   if (!sinReenvio && dok.DELEGABLES[`escape:${variable}`]) {
-    const d = dok.okDelegado({ firma: `escape:${variable}`, sesion, pedido, home, env: e, arnes, ahora });
+    const d = dok.okDelegado({ firma: `escape:${variable}`, sesion, pedido, transcript, home, env: e, arnes, ahora });
     if (d.ok) return { ok: true, via: 'delegacion', relevo: d.relevo, cuando: d.cuando || null };
   }
   const vieja = apertura ? `la frase es anterior a la apertura de la ejecución (${apertura})` : `la frase es de hace más de ${ventanaMin} minutos`;
@@ -147,7 +151,8 @@ if (require.main === module) {
   let r;
   try {
     // el perfil del equipo que declara la sesión que reenvía se lee del árbol de este archivo, nunca de una variable
-    r = escapeAutorizado({ variable: arg('--variable'), sesion: arg('--session'), pedido: arg('--tool-use-id'), arnes: path.join(__dirname, '..', '..', '..', '..'),
+    const pedido = process.argv.includes('--tool-use-id-stdin') ? require('fs').readFileSync(0, 'utf8').trim() : arg('--tool-use-id');
+    r = escapeAutorizado({ variable: arg('--variable'), sesion: arg('--session'), pedido, transcript: arg('--transcript'), arnes: path.join(__dirname, '..', '..', '..', '..'),
       desdeTs: arg('--since'), sinReenvio: process.argv.includes('--no-relay') });
   } catch (e) {
     r = { ok: false, motivo: `no pude buscar la autorización (${e.message})` };

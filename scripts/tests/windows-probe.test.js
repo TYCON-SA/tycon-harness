@@ -58,6 +58,15 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 const node = (args, opts = {}) => spawnSync(process.execPath, args, Object.assign({ encoding: 'utf8', timeout: 120000 }, opts));
 const tmp = (name) => fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `windows-probe-${name}-`));
 const listing = (dir) => { const out = []; const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); out.push(path.relative(dir, p)); if (e.isDirectory()) walk(p); } }; if (fs.existsSync(dir)) walk(dir); return out.sort(); };
+// La carpeta real del mecanismo (~/.claude/.tycon-pipeline/harness) la usan también las otras sesiones de la máquina: una
+// que arranca deja su candado (harness.lock/), su constancia de arranque (startup-result.<pid>.json y su .started) y su
+// línea en startup.log. La foto de esa carpeta sólo mira lo que el ensayo podría escribir; lo de las otras ni se recorre
+// (un candado que se suelta a mitad de la recorrida no rompe nada). Como un ensayo que se escapara escribiría justo
+// esos archivos, se los mira por dentro: ninguno puede nombrar la carpeta del laboratorio (mentionsLab).
+const OTHER_SESSIONS = /^(?:harness\.lock|startup-result\..+|startup\.log(?:\.\d+)?)$/;
+const readdirOrNone = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
+const realHarnessListing = (dir) => { const out = []; const walk = (d) => { for (const e of readdirOrNone(d)) { if (d === dir && OTHER_SESSIONS.test(e.name)) continue; const p = path.join(d, e.name); out.push(path.relative(dir, p)); if (e.isDirectory()) walk(p); } }; walk(dir); return out.sort(); };
+const mentionsLab = (dir, labName) => { const out = []; const look = (p) => { let st; try { st = fs.statSync(p); } catch (_) { return; } if (st.isDirectory()) { for (const e of readdirOrNone(p)) look(path.join(p, e.name)); return; } let text = ''; try { text = fs.readFileSync(p, 'utf8'); } catch (_) { return; } if (text.includes(labName)) out.push(path.relative(dir, p)); }; for (const e of readdirOrNone(dir)) if (OTHER_SESSIONS.test(e.name)) look(path.join(dir, e.name)); return out; };
 const has = (bin) => L.scanPath(bin).length > 0;
 
 // los trabajos del pipeline de Windows, en orden, y cómo se leen del yml (sin comentarios)
@@ -659,12 +668,12 @@ test('Probe_NamesInEnglish_RefusesRealUserFolder', async (t) => {
       const real = os.homedir();
       // la carpeta de usuario real, una carpeta sin la marca, y una dentro del .claude real: se niega las tres veces
       for (const [lab, why] of [[real, /carpeta de usuario real/], [path.join(base, 'not-a-lab'), /no tiene la marca del laboratorio/], [path.join(real, '.claude', 'windows-lab'), /dentro de la carpeta \.claude real/]]) {
-        const before = listing(lab === real ? path.join(real, '.claude', '.tycon-pipeline', 'harness') : lab);
+        const before = (lab === real ? realHarnessListing(path.join(real, '.claude', '.tycon-pipeline', 'harness')) : listing(lab));
         const r = node([path.join(DIR, 'run.js'), 'step', 'install', '--lab', lab, '--out', out, '--allow-temp']);
         assert.strictEqual(r.status, 2, `${lab}: salió ${r.status}`);
         assert.match(r.stderr, why);
         assert.ok(!fs.existsSync(out), 'no escribió ni la carpeta del reporte');
-        assert.deepStrictEqual(listing(lab === real ? path.join(real, '.claude', '.tycon-pipeline', 'harness') : lab), before, 'no escribió en la carpeta');
+        assert.deepStrictEqual((lab === real ? realHarnessListing(path.join(real, '.claude', '.tycon-pipeline', 'harness')) : listing(lab)), before, 'no escribió en la carpeta');
       }
       assert.match(run.labRootProblem(path.dirname(real)) || '', /la contiene/, 'un laboratorio que contiene la carpeta de usuario real tampoco');
       assert.match(run.labRootProblem('C:\\Users\\agent\\AppData\\Local\\Temp\\lab', { realHome: 'C:\\Users\\agent', tmpdir: 'C:\\Users\\agent\\AppData\\Local\\Temp', platform: 'win32' }) || '', /bajo la carpeta temporal/, 'en Windows, el laboratorio va fuera de %TEMP%');
@@ -920,6 +929,26 @@ else process.exit(2);
 `,
 };
 
+test('Probe_RealHarnessDir_IgnoresOtherSessions: la foto de la carpeta real deja afuera lo que escriben otras sesiones', () => {
+  const dir = tmp('own-listing');
+  try {
+    fs.writeFileSync(path.join(dir, 'bootstrap.js'), '');
+    const before = realHarnessListing(dir);
+    // otra sesión que arranca mientras corre el caso: su candado, su constancia de arranque y su registro
+    fs.mkdirSync(path.join(dir, 'harness.lock')); fs.writeFileSync(path.join(dir, 'harness.lock', 'owner.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'startup-result.96207.json.started'), '');
+    fs.writeFileSync(path.join(dir, 'startup-result.96207.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'startup.log'), 'x'); fs.writeFileSync(path.join(dir, 'startup.log.1'), 'x');
+    assert.deepStrictEqual(realHarnessListing(dir), before, 'lo de otras sesiones no cuenta');
+    assert.deepStrictEqual(mentionsLab(dir, 'windows-probe-lab-x1'), [], 'lo de otras sesiones no nombra el laboratorio');
+    // el espejo: lo que sí podría escribir el ensayo se ve, como archivo nuevo y dentro de los de las otras sesiones
+    fs.writeFileSync(path.join(dir, 'harness-state.json'), '{}');
+    assert.notDeepStrictEqual(realHarnessListing(dir), before, 'un archivo del arnés nuevo sí cuenta');
+    fs.appendFileSync(path.join(dir, 'startup.log'), '\nstartup: despliegue /tmp/windows-probe-lab-x1/lab/.tycon/harness → ok');
+    assert.deepStrictEqual(mentionsLab(dir, 'windows-probe-lab-x1'), ['startup.log'], 'una línea del ensayo en el registro real se ve');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows mide la ejecución de verdad') || (!has('git') && 'NO MEDIDO — sin git') || (!has('bash') && 'NO MEDIDO — sin bash') }, () => {
   const base = tmp('lab');
   try {
@@ -938,7 +967,7 @@ test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (proce
 
     // la corrida entera
     const lab = path.join(base, 'lab'); const out = path.join(base, 'out');
-    const realBefore = listing(path.join(os.homedir(), '.claude', '.tycon-pipeline', 'harness'));
+    const realBefore = realHarnessListing(path.join(os.homedir(), '.claude', '.tycon-pipeline', 'harness'));
     // el arnés de juguete se juzga con una lista propia, sin línea de base: la versionada es la del arnés de verdad
     const toyGaps = path.join(base, 'toy-gaps.json');
     fs.writeFileSync(toyGaps, JSON.stringify({ baseline: null, gaps: [] }));
@@ -981,7 +1010,8 @@ test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (proce
     assert.strictEqual(JSON.parse(fs.readFileSync(path.join(team.home, '.claude', '.tycon-pipeline', 'harness-state.json'), 'utf8')).profile.value, 'full', 'quedó instalada con el perfil completo');
     assert.deepStrictEqual([ins.measured_variant, ins.variants.accent.uninstall.exit, ins.variants.accent.uninstall.links_left], ['team', 0, []]);
     assert.strictEqual(spawnSync('git', ['-C', ins.variants.plain.clone, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), report.run.copy_commit, 'lo instalado es un clon de la copia del bundle');
-    assert.deepStrictEqual(listing(path.join(os.homedir(), '.claude', '.tycon-pipeline', 'harness')), realBefore, 'la carpeta de usuario real quedó como estaba');
+    assert.deepStrictEqual(realHarnessListing(path.join(os.homedir(), '.claude', '.tycon-pipeline', 'harness')), realBefore, 'la carpeta de usuario real quedó como estaba');
+    assert.deepStrictEqual(mentionsLab(path.join(os.homedir(), '.claude', '.tycon-pipeline', 'harness'), path.basename(base)), [], 'ni el candado ni la constancia ni el registro reales nombran el laboratorio');
     assert.ok(!step('install').findings.some((f) => f.id === 'homes:wrote-to-real-home'));
 
     // count-hooks: contra la lista leída del instalador de la copia

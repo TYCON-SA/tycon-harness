@@ -375,3 +375,68 @@ test('T54 Sitio_ResumiendoElBuzonGrande_LivezContestaYElHiloPrincipalNoTocaElEsp
     await git.cerrar(); await buzon.cerrar();
   }
 });
+
+test('T55 Bajada_ConversacionQuePasaElTope_NoSeBajaYQuedaDicha', async () => {
+  // una conversación que pasa el tope por archivo (una sesión viva que pesa cientos de megas) no se baja: la corrida
+  // queda con su volcado y un resumen que dice que la conversación no se leyó y por qué. La pasada sí queda entera, y la
+  // siguiente tampoco la pide mientras su huella no cambie
+  const blobs = blobsDe(2);
+  blobs['maq-a/r1.hilo.jsonl.gz'] = conversacion(iso('2026-08-05T09:00:00.000Z', 300), 1, 60000);
+  const grande = Buffer.from(blobs['maq-a/r1.hilo.jsonl.gz']).length;
+  const buzon = await H.arrancarBuzon({ blobs });
+  try {
+    const dir = path.join(tmp('mbx-grande-'), 'buzon');
+    const opts = { sinHilos: false, resumenes: true, topeBytesHilos: 1 << 30, hiloTopeBytes: grande - 1 };
+    const r = await bajada(buzon, dir, opts);
+    assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
+    const pedidas = () => buzon.pedidos.filter((p) => !p.query.includes('comp=list')).map((p) => p.ruta);
+    assert.ok(!pedidas().some((p) => /r1\.(hilo\.jsonl|cambio\.json)\.gz$/.test(p)), `la conversación grande no se pide, ni su cambio: ${pedidas().join(' ')}`);
+    assert.ok(pedidas().some((p) => /r2\.hilo\.jsonl\.gz$/.test(p)), 'la chica sí');
+    assert.strictEqual(r.res.completo, true, 'la pasada queda entera: lo grande quedó dicho, no pendiente');
+    assert.strictEqual(r.res.hilos_grandes, 1, 'cuenta la conversación que pasó el tope');
+    const doc = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(dir, 'maq-a', runs.RESUMEN.nombre('r1.json')))).toString('utf8'));
+    assert.strictEqual(doc.cambios.estado, 'sin_hilo', 'la corrida no queda como leída');
+    assert.match(doc.cambios.motivo, /tope/, 'y dice por qué');
+    // la tabla la muestra sin leer, con el motivo
+    runs.resumirEspejo(dir);
+    const M = runs.modelo(tmp('mbx-grande-reg-'), { buzon: dir, soloBuzon: true, sinUnificar: true });
+    const c1 = M.corridas.find((c) => c._volcado && c._volcado.endsWith('r1.json'));
+    assert.ok(c1 && c1.cambios.estado === 'sin_hilo' && /tope/.test(c1.cambios.motivo), `r1 en la tabla: ${JSON.stringify(c1 && c1.cambios)}`);
+    // la pasada siguiente no la vuelve a pedir
+    const antes = pedidas().length;
+    await bajada(buzon, dir, opts);
+    assert.ok(!pedidas().slice(antes).some((p) => /r1\.(hilo\.jsonl|cambio\.json)\.gz$/.test(p)), 'la segunda pasada tampoco la pide');
+  } finally { await buzon.cerrar(); }
+});
+
+test('T56 Sitio_ConversacionesPendientes_LaVistaSeArmaYLoDice', { skip: SIN_BACKEND }, async () => {
+  // una pasada que corta por el tope de conversaciones ya bajó los volcados y los registros: la pestaña se arma con eso
+  // (no se congela en la última foto) y dice cuántos archivos de ejecuciones faltan; la fuente no queda en rojo
+  const blobs = blobsDe(4, 20000);
+  const largo = Buffer.from(blobs['maq-a/r1.hilo.jsonl.gz']).length + Buffer.from(blobs['maq-a/r1.cambio.json.gz']).length;
+  const buzon = await H.arrancarBuzon({ blobs });
+  const raiz = tmp('mbx-pend-');
+  const ops = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs', threads: true } } };
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: ops }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
+  const datos = tmp('mbx-pend-datos-');
+  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(), SITE_DATA_DIR: datos });
+  const v = validarConfiguracion(env);
+  assert.ok(v.ok, JSON.stringify(v.problemas));
+  const registro = [];
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: datos, log: (l) => registro.push(l), urlBuzon: buzon.base, topeConversacionesBytes: Math.floor(largo * 1.5) });
+  try {
+    await fuentes.refrescar();
+    const e = fuentes.buzonEstado();
+    assert.strictEqual(e.armable, true, `la vista se arma con la pasada que cortó por el tope: ${registro.slice(-4).join(' | ')}`);
+    assert.strictEqual(e.completo, false, 'pero no dice que el buzón se leyó entero');
+    assert.ok(e.generacion > 0, 'y lo informado por las máquinas se fija con esa pasada');
+    assert.ok(e.pendientes > 0, `dice cuántos archivos faltan: ${JSON.stringify(e)}`);
+    assert.ok(!registro.some((l) => /no se leyó entero/.test(l)), 'la fuente no queda en rojo por lo pendiente');
+  } finally { fuentes.detener(); await git.cerrar(); await buzon.cerrar(); }
+  // y la cabecera de la pestaña lo dice
+  const M = runs.modelo(tmp('mbx-pend-reg-'), { buzon: path.join(datos, 'buzon'), soloBuzon: true, sinUnificar: true });
+  M.multi = true;
+  M.buzon = { estado: 'leido', pendientes: 3 };
+  assert.match(runs.cabecera(M, { sitio: { rol: 'maintainer' } }), /3 archivo/, 'la banda nombra lo que falta');
+});

@@ -4062,7 +4062,11 @@
        "cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c",
        "--sha256"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-con-huella-vieja-da-la-actual",
@@ -4089,7 +4093,11 @@
       "stderr_re": [
        "cf0775a30a4ced382854d382d935b8c0313ddc342afd126658e7e4b86e3d694c"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-enlace-se-frena",
@@ -4117,7 +4125,11 @@
       "stderr_re": [
        "enlace"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-carpeta-se-frena",
@@ -4144,7 +4156,11 @@
       "stderr_re": [
        "archivo común"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-grande-se-frena",
@@ -4172,7 +4188,11 @@
       "stderr_re": [
        "mide"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-binario-se-frena",
@@ -4200,7 +4220,11 @@
       "stderr_re": [
        "UTF-8"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-protegido-se-frena",
@@ -4286,7 +4310,11 @@
       "stderr_re": [
        "control"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-con-retorno-se-frena",
@@ -4314,7 +4342,11 @@
       "stderr_re": [
        "control"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-con-invisible-se-frena",
@@ -4342,7 +4374,11 @@
       "stderr_re": [
        "invisible"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "archivo-cerca-del-tope-se-muestra-entero",
@@ -4431,7 +4467,11 @@
       "stderr_re": [
        "protegido"
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "En Codex el freno no lee el archivo: toda invocación de la puerta se frena antes, con su propio motivo. Lo cubre `codex-frena-archivo`."
     },
     {
      "id": "az-group-delete-se-frena",
@@ -4822,7 +4862,8 @@
      },
      "tools": [
       "codex"
-     ]
+     ],
+     "asymmetry": "Del lado de Claude Code el mismo borrado lo cubren `az-group-delete-se-frena` y los demás casos del borrado de grupo, que corren en las dos herramientas."
     },
     {
      "id": "candados-forma-sola-pasa-al-cuadro",
@@ -4849,7 +4890,8 @@
      "tools": [
       "claude"
      ],
-     "sin_freno_instalado": true
+     "sin_freno_instalado": true,
+     "asymmetry": "En Codex toda invocación de la puerta se frena: lo cubre `candados-codex-se-frena`."
     },
     {
      "id": "candados-con-argumento-se-frena",
@@ -4878,7 +4920,8 @@
      "tools": [
       "claude"
      ],
-     "sin_freno_instalado": true
+     "sin_freno_instalado": true,
+     "asymmetry": "En Codex toda invocación de la puerta se frena: lo cubre `candados-codex-se-frena`."
     },
     {
      "id": "candados-codex-se-frena",
@@ -4906,7 +4949,8 @@
      },
      "tools": [
       "codex"
-     ]
+     ],
+     "asymmetry": "En Codex no existe la configuración administrada de Claude Code: sin cuadro de aprobación, la puerta tampoco se acepta y la sentencia la corre el dev."
     },
     {
      "id": "borrar-grupo-forma-sola-pasa-al-cuadro",
@@ -4933,7 +4977,8 @@
      "tools": [
       "claude"
      ],
-     "sin_freno_instalado": true
+     "sin_freno_instalado": true,
+     "asymmetry": "En Codex toda invocación de la puerta se frena: lo cubre `borrar-grupo-codex-se-frena`."
     },
     {
      "id": "borrar-grupo-con-argumento-se-frena",
@@ -4962,7 +5007,8 @@
      "tools": [
       "claude"
      ],
-     "sin_freno_instalado": true
+     "sin_freno_instalado": true,
+     "asymmetry": "En Codex toda invocación de la puerta se frena: lo cubre `borrar-grupo-codex-se-frena`."
     },
     {
      "id": "az-group-delete-directo-sigue-frenado",
@@ -5015,7 +5061,8 @@
      },
      "tools": [
       "codex"
-     ]
+     ],
+     "asymmetry": "En Codex no existe la configuración administrada de Claude Code: sin cuadro de aprobación, la puerta tampoco se acepta y la sentencia la corre el dev."
     }
    ]
   }

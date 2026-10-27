@@ -200,20 +200,30 @@ its own. Each run's changes come back when the new view finishes building. The s
 
 ### Maintenance (Mantenimiento)
 
-Only for **maintainers**: what the night found that waits for a decision. Next to the name, in the menu, goes how
-many findings are waiting, for example "Maintenance (12)"; with none, just the name. There are three sources: the review of the
-runs (a skipped control, an automatic notice that fails), dependencies with a known vulnerability, and the production
-watcher. Each row says:
+Only for **maintainers**: what the night found, ordered by who has the ball. Next to the name, in the menu, goes how
+many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has three
+blocks:
 
-- **What happened**, in plain words: how many times, on which machines and in which stories. For example, "It happened
-  2 times, on the machine mac-mini, in two different stories".
-- **What "Fix" would do**: a fixed text by kind of problem, for example "find out who turned the control off and why,
-  and turn it back on". If the night's model left a proposal, it goes below as a suggestion (written in Spanish).
+- **Your decision**: what the production watcher and the review of the runs found. Production first, because those are
+  real customers. Within each group, first what the analysis recommends fixing, then what it recommends archiving, and
+  last what has no analysis.
+- **Waiting for approval**: what you already sent and someone else has to approve, grouped by pull request, with its
+  link. Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
+  stay to decide, but nothing is sent until it answers: that way no duplicate pull request is opened.
+- **In progress** (closed at first): what was already decided and someone is doing, with its work item number and who
+  it is assigned to, and the package vulnerabilities. Vulnerabilities are not decided here: each team has its work item
+  and, if it cannot update the package, declares the debt in its repo, with a deadline.
 
-The buttons are explained once, above the table. **Accept** means "it is fine as it is": the finding is archived.
-**Fix** leaves it as pending work. Neither changes anything on the spot: they open a pull request to the operations
-repo that someone else has to approve, and the next night applies it. In dependencies you can only fix: to accept the
-risk, declare the debt in each repo, with a deadline.
+Each card says **what happened** with the finding's data, for example "It happened 4 times, from 21/10 to 24/10". With
+an analysis, it says **why** it happens, what it **recommends** and what fixing it would do, and whether the night's model
+or a person wrote it (the analysis is in Spanish). Without one, it says why, and the buttons stay behind "Decide without
+analysis".
+
+**Archive** means "this is normal, nothing to touch". **Fix** means the night creates a work item to correct it. You
+mark an option on each card (or "Follow the recommendations" for all the analyzed ones) and then **Send for approval**:
+it opens a single pull request to the operations repo with all your choices. Nothing changes until someone else
+approves it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
+explanation.
 
 ### Projects (Proyectos)
 
@@ -454,7 +464,7 @@ The sections, in the order of the screen:
   someone approves it; if the repository does not allow auto-merge either, the request stays. Before proposing, next to
   the button, the section says what will
   happen. Who did it stays written: the request's description names who asked for it, and the site's log records
-  `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
+  `cambio aplicado: <file>, pedido <link>`. What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
   `operations.json`, in the operations repo.
 - **"How the site is updated"** (*Cómo se actualiza el sitio*): whether the site brings itself up to date with the new
@@ -1164,7 +1174,7 @@ is the push rule by path in the GitHub README: the site validates and downloads 
 opens the pull request by hand.
 
 **What you give up.** Nobody reviews those changes before they go in. A record remains: each change from the site is a
-request with who asked for it, and the site's log records `cambio aplicado: <file> por <email>, pedido <link>`. Whoever
+request with who asked for it, and the site's log records `cambio aplicado: <file>, pedido <link>`. Whoever
 can write to the operations repo can make themselves a site maintainer or change a night process without anyone else
 looking: what you guard is who has write access to that repo.
 
@@ -1261,7 +1271,8 @@ creates the request count, asks for a single reviewer, does not prohibit the mos
 no reviewers. If it asks for more, the request stays and the section says what is missing. With no policy at all on `main`,
 "Propose" stays off even with the option on. To turn it on, first the new image, then the key: an older image does not
 know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
-leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
+leaves its line in the site's log with the link to its request; the email of whoever asked for it does not go to the
+log: the request says it.
 
 ### How it keeps itself up to date
 

@@ -330,6 +330,29 @@ test('T37b PedidosAbiertos_MasDeUnaPagina_LosTraeTodos @story-4.11 @ac-22 — co
   }
 });
 
+// ArchivosDelPedido_RutasYCuerpo_AzureYGithub
+// 🔴 Falla con: saber qué fichas lleva un pedido sólo por su rama (un envío en lote lleva varias), o el cuerpo cortado
+// de Azure DevOps al listar.
+test('T37d ArchivosDelPedido_RutasYCuerpo_AzureYGithub — lo que trae un pedido abierto: sus rutas y su cuerpo entero', async () => {
+  const tokenApi = `api-${crypto.randomBytes(4).toString('hex')}`;
+  const cuerpo = `propuesta de varias decisiones\n${'x'.repeat(600)}\nvigilante/vig-uno → aceptar`;
+  const rutas = ['inbox/watcher/decisions/vig-uno.json', 'inbox/runs-review/decisions/ej-1.json'];
+  for (const plataforma of ['azure', 'github']) {
+    const api = plataforma === 'azure' ? await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops', token: tokenApi }) : await arrancarGithubFalso({ owner: 'acme', repo: 'ops', token: tokenApi });
+    try {
+      api.st.pedidos.push(plataforma === 'azure'
+        ? { pullRequestId: 7, status: 'active', sourceRefName: 'refs/heads/team-config/decisiones-x-20261025-120000', targetRefName: 'refs/heads/main', title: 't', description: cuerpo }
+        : { number: 7, state: 'open', html_url: 'https://github.com/acme/ops/pull/7', title: 't', body: cuerpo, head: { ref: 'team-config/decisiones-x-20261025-120000' }, base: { ref: 'main' } });
+      api.st.archivosDe = () => rutas;
+      const base = { remote: plataforma === 'azure' ? REMOTO_AZURE : REMOTO_GITHUB, credencial: { git: TOKEN, api: tokenApi }, urlBase: plataforma === 'azure' ? { azure: api.base } : { github: api.base } };
+      const r = await propuesta.archivosDelPedido({ ...base, numero: 7 });
+      assert.deepStrictEqual(r, { archivos: rutas, cuerpo }, plataforma);
+      // un pedido que no existe: «no pude mirar», nunca «no trae nada»
+      assert.ok((await propuesta.archivosDelPedido({ ...base, numero: 8 })).error, `${plataforma}: sin el pedido, un error`);
+    } finally { await api.cerrar(); }
+  }
+});
+
 test('T15c Registro_SinElCorreoDeQuienPropone @story-2.29 @ac-14 — el registro del sitio dice archivo y rama, no la persona', { skip: SIN_BACKEND }, async () => {
   const m = await montar({ plataforma: 'github' });
   try {
@@ -634,7 +657,9 @@ test('T7 Proponer_GitHubEncendido_MergeDirectoOAutoMerge @story-2.39 @ac-5 — e
       const merge = m.api.llamadas.find((l) => /\/merge$/.test(l.ruta));
       assert.match(merge.cuerpo.sha, /^[0-9a-f]{40}$/, 'mergea el commit que empujó, no lo que haya en la rama');
       assert.deepStrictEqual(m.api.llamadas.filter((l) => /reviews/.test(l.ruta)), [], 'ninguna revisión: en GitHub quien abre el pedido no puede aprobarlo');
-      assert.ok(m.registro.some((l) => l.startsWith(`cambio aplicado: operations.json por ${QUIEN}`)), m.registro.join('\n'));
+      // el registro del servidor no lleva el correo de quien propone (un dato personal): el pedido dice quién lo pidió
+      assert.ok(m.registro.some((l) => l.startsWith('cambio aplicado: operations.json, pedido ')), m.registro.join('\n'));
+      assert.ok(!m.registro.some((l) => l.includes(QUIEN)), `el registro trae el correo: ${m.registro.join('\n')}`);
     } finally { await m.cerrar(); }
   }
   {
@@ -680,8 +705,8 @@ test('T10 Registro_Aplicado_NombraQuienYElPedido @story-2.39 @ac-6', { skip: SIN
     dejarCompletar(aplicado);
     const res = await proponer(aplicando(aplicado));
     assert.strictEqual(res.codigo, 'aplicado', textoDe(res));
-    const lineas = aplicado.registro.filter((l) => l.includes(QUIEN));
-    assert.deepStrictEqual(lineas, [`cambio aplicado: operations.json por ${QUIEN}, pedido ${res.enlace}`], aplicado.registro.join('\n'));
+    assert.deepStrictEqual(aplicado.registro.filter((l) => l.includes(QUIEN)), [], 'el registro no trae el correo');
+    assert.ok(aplicado.registro.includes(`cambio aplicado: operations.json, pedido ${res.enlace}`), aplicado.registro.join('\n'));
   } finally { await aplicado.cerrar(); }
   const queda = await montar();
   try {
@@ -790,4 +815,16 @@ test('T18 Politica_AplicarSolo_MotivosGithubYSinPolitica @story-2.39 @ac-4 @ac-5
     const apagada = await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase });
     assert.ok(!('aplicaSolo' in apagada), 'con la opción apagada, la respuesta es la de siempre');
   } finally { await gh.cerrar(); }
+});
+
+test('T19 Tareas_DestinoYEnlace_PorPlataforma — la organización de operations.json o la del repo de operaciones, y el enlace de la tarea', () => {
+  const az = propuesta.remoteOf('https://dev.azure.com/acme/Operaciones/_git/ops');
+  assert.deepStrictEqual(propuesta.destinoDeTareas({ org: 'otra', project: 'Producto Y' }, az), { org: 'https://dev.azure.com/otra', proyecto: 'Producto Y' });
+  assert.deepStrictEqual(propuesta.destinoDeTareas({}, az), { org: 'https://dev.azure.com/acme', proyecto: 'Operaciones' });
+  assert.deepStrictEqual(propuesta.destinoDeTareas({}, propuesta.remoteOf('https://github.com/acme/ops')), { org: null, proyecto: null });
+  assert.deepStrictEqual(propuesta.destinoDeTareas({ org: 'no es/una org' }, null), { org: null, proyecto: null });
+  const d = propuesta.destinoDeTareas({}, az);
+  assert.strictEqual(propuesta.enlaceDeTarea(d, 'Producto Y', 5003), 'https://dev.azure.com/acme/Producto%20Y/_workitems/edit/5003');
+  assert.strictEqual(propuesta.enlaceDeTarea(d, 'Producto Y', 'x'), null);
+  assert.strictEqual(propuesta.enlaceDeTarea({ org: null }, 'Producto Y', 5003), null);
 });

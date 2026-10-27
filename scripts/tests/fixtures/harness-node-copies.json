@@ -11,6 +11,8 @@
     { "file": "scripts/setup/harness/bootstrap.js", "why": "la copia fija de arranque no carga nada del árbol", "needles": ["'node', 'current', 'node.exe'", "'node', 'current', 'bin', 'node'", "process.env.TYCON_HOME"] },
     { "file": "scripts/lib/harness-node.sh", "why": "los guiones de shell no cargan JavaScript para saber una ruta", "needles": ["${TYCON_HOME:-${HOME:-}/.tycon}", "/node/current/bin/node", "/node/current/node.exe"] },
     { "file": "scripts/install-tycon-hooks.ps1", "why": "el instalador de Windows es PowerShell", "needles": ["$env:TYCON_HOME", "'.tycon'", "'node'", "'current'", "'node.exe'"] },
+    { "file": "scripts/setup/harness/bootstrap-fallback.sh", "why": "el respaldo de la copia fija, en shell: con el node del PATH viejo, reintenta el arranque con el Node propio", "needles": ["OWN=\"${TYCON_HOME:-$H/.tycon}\"", "$OWN/node/current/bin/node", "$OWN/node/current/node.exe"] },
+    { "file": "scripts/setup/harness/bootstrap-fallback.ps1", "why": "el respaldo de la copia fija, en PowerShell: lo mismo, gemelo del .sh", "needles": ["$env:TYCON_HOME", "'.tycon'", "'node\\current\\node.exe'", "'node/current/bin/node'"] },
     { "file": "scripts/controls-bench/periodic-exam.js", "why": "el examen corre también donde no está scripts/setup/ (laboratorios); con tycon-home.js presente, usa harnessNode", "needles": ["harnessNode(", "'.tycon'), 'node', 'current', 'bin', 'node'", "env.TYCON_HOME"] }
   ]
 }

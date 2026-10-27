@@ -84,6 +84,9 @@ const noc = require('./nightly-dependencies');
 
 const { listaDe, ponerLista, proyectoDe, proyectoAzureDe, etiqueta, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml } = noc;
 const operaciones = require('../../lib/operations-config.js');
+const fuentes = require('../findings/sources.js');
+const { sitioDecide } = require('../findings/cycle.js');
+const { ponerEscalar, quitarClave } = fuentes.FUENTES.dependencias.formato;
 
 /** La capa de plataforma con el conector de Azure DevOps: `(operación, args) → Promise<resultado del contrato>`. */
 function plataformaAzure() {
@@ -1125,7 +1128,7 @@ function volcar(a) {
         if (Object.prototype.hasOwnProperty.call(pedidos, id)) continue;      // un id es único en la organización
         // 🔴 LISTA BLANCA: estos campos y ninguno más. Nunca `fields` entero.
         const e = { ficha: f.idFicha, proyecto, leido: false, estado: null, categoria: null, motivo: null,
-          estado_desde: null, cambiado_por_persona_el: null, cambiado_por_persona: null, motivo_no_leido: null };
+          estado_desde: null, cambiado_por_persona_el: null, cambiado_por_persona: null, asignado: null, motivo_no_leido: null };
         pedidos[id] = e;
         const w = leerPedidoDeAzure(az, id);
         if (!w.ok) { e.motivo_no_leido = w.motivo; continue; }
@@ -1137,7 +1140,7 @@ function volcar(a) {
         Object.assign(e, { leido: true, estado, categoria: cats.categorias[estado],
           motivo: typeof w.fields['System.Reason'] === 'string' ? w.fields['System.Reason'] : null,
           estado_desde: w.fields['Microsoft.VSTS.Common.StateChangeDate'] || null,
-          cambiado_por_persona_el: persona.el, cambiado_por_persona: persona.nombre });
+          cambiado_por_persona_el: persona.el, cambiado_por_persona: persona.nombre, asignado: nombreDeAsignado(w.fields['System.AssignedTo']) });
       }
     }
     // Nombrado = en `pedidos:` de CUALQUIER ficha, archivadas incluidas: un Bug de una ficha descartada
@@ -1164,6 +1167,55 @@ function volcar(a) {
 }
 
 /** El volcado de hoy si consultó; `null` si falta, es ilegible o no pudo consultar. */
+/**
+ * El nombre de quien tiene la tarea, para mostrarlo en el sitio. 🔴 Nunca un correo: si el nombre que da Azure
+ * es un correo (cuentas sin nombre cargado), o no tiene forma de nombre, queda en null.
+ */
+function nombreDeAsignado(asg) {
+  let nombre = null;
+  if (asg && typeof asg === 'object') nombre = asg.displayName;
+  else if (typeof asg === 'string') nombre = asg.split('<')[0];
+  nombre = typeof nombre === 'string' ? nombre.trim() : '';
+  return nombre && fuentes.NOMBRE_DE_PERSONA.test(nombre) ? nombre : null;
+}
+
+/**
+ * Lo que la noche anota en cada ficha viva para el sitio: quién tiene cada tarea (`asignados:`, del volcado de
+ * `state`) y, si a alguna le falta su tarea, por qué (`pedido_motivo:`). Con el sitio, la ficha que ya tiene su
+ * tarea no espera ninguna decisión: pasa a promoted/ con `veredicto: util`. Sin el sitio, se anota y no se mueve.
+ */
+function anotarSeguimiento(ctx, res, rutaOperations) {
+  const conSitio = sitioDecide(rutaOperations).codigo === 0;
+  const postergadas = new Set(res.postergados.map((x) => x.ficha));
+  const volcados = (ctx.volcado && ctx.volcado.pedidos) || {};
+  for (const f of ctx.fichas.filter((x) => x.estado !== 'archived')) {
+    try {
+      const antes = fs.readFileSync(f.archivo, 'utf8');
+      const pedidos = leerPedidos(antes);
+      const asignados = pedidos.map(({ id }) => {
+        const v = volcados[id];
+        const nombre = v && typeof v.asignado === 'string' ? nombreDeAsignado(v.asignado) : null;
+        return nombre ? `${id}: ${nombre}` : null;
+      }).filter(Boolean);
+      const falta = res.sin_pedido.find((x) => x.ficha === f.idFicha);
+      const motivo = postergadas.has(f.idFicha) ? 'tope'
+        : falta ? (falta.proyectos.length ? 'falla' : 'sin-proyecto') : null;
+      let txt = ponerLista(antes, 'asignados', asignados);
+      txt = motivo ? ponerEscalar(txt, 'pedido_motivo', motivo) : quitarClave(txt, 'pedido_motivo');
+      const promover = conSitio && f.estado === 'pending' && pedidos.length && /^veredicto:[ \t]*"?pendiente"?[ \t]*$/m.test(txt);
+      if (promover) {
+        txt = ponerEscalar(txt, 'veredicto', 'util');
+        const destino = path.join(path.dirname(path.dirname(f.archivo)), 'promoted', path.basename(f.archivo));
+        fs.mkdirSync(path.dirname(destino), { recursive: true });
+        fs.writeFileSync(destino, txt);
+        fs.rmSync(f.archivo);
+      } else if (txt !== antes) fs.writeFileSync(f.archivo, txt);
+    } catch (e) {
+      res.fallidos.push({ ficha: f.idFicha, proyecto: null, paso: 'escribir-ficha', motivo: `no pude anotar el seguimiento: ${e.code || e.message}` });
+    }
+  }
+}
+
 function leerVolcadoDeHoy(outDir, hoy) {
   try {
     const v = JSON.parse(fs.readFileSync(path.join(outDir, `bugs-${hoy}.json`), 'utf8'));
@@ -1302,6 +1354,7 @@ async function correr(a) {
   try { resultado = await hablar(ctx); }
   catch (e) { if (e instanceof NoSePuedeIntentar) return noPudo(e.message); throw e; }
   finally { fs.rmSync(ctx.tmp, { recursive: true, force: true }); }
+  if (!ctx.simulado) anotarSeguimiento(ctx, resultado.res, a.operations);
 
   // La sección se AGREGA al snapshot que dejó el nocturno, sin tocar el resto. Archivo temporal +
   // rename: un corte a mitad de escritura no puede dejar el snapshot de la noche ilegible.

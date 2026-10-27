@@ -482,3 +482,49 @@ test('T21 · suelto (sin la variable) el aplicador sigue dejando su settings.jso
   assert.strictEqual(listBak(path.dirname(r.settings), 'settings.json').length, 1, 'suelto tenía que dejar su settings.json.bak.*');
   assert.strictEqual(listBak(r.gitHooks, 'pre-commit').length, 1, 'suelto tenía que dejar su pre-commit.bak-*');
 });
+
+// Un manifiesto tocado a mano no hace escribir, borrar ni leer fuera de lo que la copia declara: la ruta de cada archivo
+// vale si está dentro de la HOME o es uno de la lista fija de hoy (las variables pueden ponerla en otro lado), y su copia
+// vive dentro de la carpeta de la copia.
+// 🔴 Falla con: rollback o uninstall usando `path` o `copy` del manifiesto sin mirarlos.
+test('Manifest_PathsOutsideHome_NotTouched — un manifiesto tocado a mano no escribe, borra ni lee fuera de la HOME', () => {
+  const SN = snapshot();
+  const RB = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'rollback.js'));
+  const UN = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'uninstall.js'));
+  const home = makeHome('manifest-out');
+  const tree = makeTree('manifest-out');
+  const afuera = fs.mkdtempSync(path.join(BASE, 'afuera-'));
+  const victima = path.join(afuera, 'victima.txt');
+  const secreto = path.join(afuera, 'secreto.txt');
+  write(victima, 'de la persona\n');
+  write(secreto, 'no se lee\n');
+  const tycon = path.join(home, '.claude', 'tycon.json');
+  write(tycon, '{"antes":true}\n');
+  const env = {};
+  const { dir } = SN.take({ home, env, tree, reason: 'install', now: new Date('2026-10-02T12:00:00Z') });
+  write(tycon, '{"despues":true}\n');
+  SN.finish(dir, { home, env });
+  const m = manifestOf(dir);
+  write(path.join(dir, 'files', '99-malo'), 'pisado\n');
+  m.files.push(
+    { path: victima, existed: true, sha256: sha('pisado\n'), sha256_after: sha('de la persona\n'), copy: 'files/99-malo' },
+    { path: path.join(home, '.claude', 'otro.json'), existed: true, sha256: sha('no se lee\n'), sha256_after: null, copy: path.relative(dir, secreto) },
+    { path: path.join(home, '..', path.basename(afuera), 'victima.txt'), existed: true, sha256: sha('pisado\n'), sha256_after: sha('de la persona\n'), copy: 'files/99-malo' },
+    // dentro de la HOME por el nombre, pero por un enlace que lleva afuera
+    { path: path.join(home, 'enlace', 'victima.txt'), existed: true, sha256: sha('pisado\n'), sha256_after: sha('de la persona\n'), copy: 'files/99-malo' },
+  );
+  fs.symlinkSync(afuera, path.join(home, 'enlace'));
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(m));
+  const copy = SN.list(home).find((c) => c.dir === dir);
+  const r = RB.restore({ home, env, tree }, { managed: [], tree }, copy, { filesOnly: true });
+  assert.equal(fs.readFileSync(victima, 'utf8'), 'de la persona\n', 'rollback pisó un archivo fuera de la HOME');
+  assert.ok(!fs.existsSync(path.join(home, '.claude', 'otro.json')), 'rollback copió un archivo leído fuera de la copia');
+  assert.equal(fs.readFileSync(tycon, 'utf8'), '{"antes":true}\n', 'el archivo sano de la copia también tiene que volver');
+  assert.ok(r.lines.some((l) => /fuera de la HOME/.test(l)), `rollback no dijo que salteó entradas: ${r.lines.join(' | ')}`);
+  const base = UN.baseline(home, env);
+  assert.ok(!(victima in base.map), 'uninstall tomó como base una ruta fuera de la HOME');
+  assert.ok(!Object.values(base.map).some((v) => v && !v.startsWith(dir + path.sep)), 'uninstall tomó una copia fuera de la carpeta de la copia');
+  assert.ok(tycon in base.map, 'el archivo sano de la copia tiene que seguir en la base');
+  assert.ok(!(path.join(home, 'enlace', 'victima.txt') in base.map), 'uninstall tomó una ruta que un enlace lleva fuera de la HOME');
+  assert.ok(base.skipped.includes(victima) && base.skipped.includes(path.join(home, 'enlace', 'victima.txt')), `uninstall no anotó lo que salteó: ${base.skipped}`);
+});

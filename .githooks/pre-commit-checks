@@ -4,8 +4,9 @@
 # Dos partes, cada una en su propio proceso: una salida temprana de una (un «no me toca») no saltea a la otra. El commit
 # se crea sólo si pasan las dos.
 #   · checks_harness — lo que mira el árbol entero: el frontmatter de las stories, el portón de cierre, los frenos de
-#     nombres y de historia interna, el mapa de renombres, el quoting de bash 3.2, la versión bajada, las reglas de la CI,
-#     el presupuesto de los bloques del CLAUDE.md, la versión pública del mapa del arnés y la paridad Claude↔Codex.
+#     claves enteras, de nombres y de historia interna, el mapa de renombres, el quoting de bash 3.2, la versión bajada,
+#     las reglas de la CI, el presupuesto de los bloques del CLAUDE.md, la versión pública del mapa del arnés y la
+#     paridad Claude↔Codex.
 #   · checks_skills — lo que mira las skills y los revisores: los frenos de nombres con la fuente de las skills, las skills
 #     de terceros sin declarar, la paridad de un revisor tocado y su chequeo de vida.
 # La llama `.githooks/pre-commit`. Los cuerpos de las dos partes van sin sangría: las pruebas que cortan el tramo de un
@@ -117,6 +118,18 @@ if [ -f "$NEW_NAMES" ]; then
   fi
 elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
   echo "⛔ COMMIT RECHAZADO — nombres nuevos: no pude mirar (falta ${NEW_NAMES}). El arnés del equipo tiene el freno; sin él no se mira, y no poder mirar no es verde." >&2
+  exit 1
+fi
+
+# ── El freno de claves enteras con forma de proveedor ──
+# Una clave con la forma que el escaneo de secretos de GitHub reconoce (AWS, GitHub, Stripe, Google, una llave privada…)
+# que el commit AGREGA no entra: lo que ya estaba, retocado o movido, no frena, y «AKIA» suelto o una clave armada por
+# partes tampoco. Sin el guion (un repo que no es el arnés) no dice nada. La CI del público mira el árbol entero (T3 de
+# tycon-config.test.js).
+# Casos: C-35 de githook-livefire.test.sh
+PROVIDER_SHAPES="$REPO_ROOT/scripts/lib/provider-secret-shapes.js"
+if [ -f "$PROVIDER_SHAPES" ] && ! node "$PROVIDER_SHAPES" --staged --repo "$REPO_ROOT"; then
+  echo "⛔ COMMIT RECHAZADO — una clave entera en lo que agrega el commit, o no se pudo mirar (arriba dice dónde y cómo seguir)." >&2
   exit 1
 fi
 
