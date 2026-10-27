@@ -186,25 +186,19 @@ function puertoLibre() {
 }
 
 // ── el navegador ────────────────────────────────────────────────────────────────────────────────────────────────────
-const CACHE_PW = path.join(os.homedir(), '.cache', 'site-guide-captures', 'playwright');
-const VERSION_PW = '1.63.0';
+// la versión fija del arnés (scripts/lib/pinned-playwright.js): si no está en la caché, la instala una vez, fuera del repo
+const PINNED_PW = req('scripts/lib/pinned-playwright.js');
 function playwright() {
-  try { return require('playwright-core'); } catch { /* abajo */ }
-  const enCache = path.join(CACHE_PW, 'node_modules', 'playwright-core');
-  if (!fs.existsSync(enCache)) {
-    process.stderr.write(`playwright-core no está: lo instalo una vez en ${CACHE_PW} (fuera del repo)\n`);
-    fs.mkdirSync(CACHE_PW, { recursive: true });
-    if (!fs.existsSync(path.join(CACHE_PW, 'package.json'))) fs.writeFileSync(path.join(CACHE_PW, 'package.json'), '{"private":true}\n');
-    const npm = spawnSync('npm', ['install', '--prefix', CACHE_PW, '--no-audit', '--no-fund', `playwright-core@${VERSION_PW}`], { stdio: 'inherit', shell: process.platform === 'win32' });
-    if (npm.status !== 0) return null;
-  }
-  return require(enCache);
+  const pw = PINNED_PW.load();
+  if (pw) return pw;
+  process.stderr.write(`${PINNED_PW.locate().why}: la instalo una vez en ${PINNED_PW.cacheDir()}\n`);
+  return PINNED_PW.install() ? PINNED_PW.load() : null;
 }
 async function abrirNavegador(pw) {
   try { return await pw.chromium.launch({ headless: true }); } catch (e) {
     if (!/Executable doesn't exist|install/i.test(String(e && e.message))) throw e;
     process.stderr.write('falta el Chromium de playwright: lo bajo una vez\n');
-    const cli = path.join(path.dirname(require.resolve('playwright-core/package.json', { paths: [CACHE_PW, ROOT] })), 'cli.js');
+    const cli = path.join(PINNED_PW.locate().dir, 'cli.js');
     const r = spawnSync(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit' });
     if (r.status !== 0) return null;
     return pw.chromium.launch({ headless: true });

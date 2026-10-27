@@ -3283,6 +3283,12 @@
       "requiere": []
     },
     {
+      "__nota": "Las pruebas y herramientas que abren un navegador usan la versión fija de Playwright del arnés (scripts/lib/pinned-playwright.js), nunca la primera que encuentren subiendo carpetas (2026-10-27): un `require('playwright')` suelto tomaba uno viejo de la carpeta personal cuyo Chromium no arranca. Mira que nada en scripts/ pida Playwright por nombre, y con una carpeta personal de juguete que el módulo de ahí no se toma, que la caché con otra versión tampoco, y que TYCON_PLAYWRIGHT sigue siendo la salida explícita; sin red. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/pinned-playwright.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.38: una prueba nueva no depende de un sha ni de una hora que cambian. Las pruebas que crean commits fijan GIT_AUTHOR_DATE y GIT_COMMITTER_DATE y apagan el mantenimiento automático de git; las que leen el reloj inyectan la fecha o lo declaran con «stable-data: <motivo>». Las que ya existían están en fixtures/stable-test-data-baseline.json (y, en el repo del equipo, en …baseline.team.json), una lista que sólo puede achicarse. Mira las pruebas de scripts/ y skills/; viaja.",
       "raiz": "arnes",
       "ruta": "tests/stable-test-data.test.js",
