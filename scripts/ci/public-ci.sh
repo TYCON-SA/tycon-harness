@@ -80,7 +80,9 @@
 #                                                       portable-suites.test.sh, TYCON_PORTABLE_SHARD)
 #                                     installer-floor   sólo el paso 5, con las suites de FLOOR_SUITES (abajo): lo que corre
 #                                                       con el Node del sistema. La CI la corre con el Node más viejo que
-#                                                       acepta el instalador; no es parte de la corrida entera
+#                                                       acepta el instalador; no es parte de la corrida entera. Con
+#                                                       --range, un cambio que no toca la instalación sale verde sin
+#                                                       correrlas («no toca la instalación: salteado»; floor_untouched)
 #                                   Las n+1 partes juntas son la corrida entera: `checks` más `suites-1-of-<n>` …
 #                                   `suites-<n>-of-<n>`. Una parte sola NO es el veredicto: el resumen la nombra, y en la CI
 #                                   lo da el job `public-ci`, que junta todas. Un valor que no sea uno de ésos: 2, con el uso.
@@ -563,6 +565,28 @@ version_bumped() {
   node "${ROOT}/scripts/ci/npm-package-version.js" --root "${ROOT}" --range "${RANGE_BASE}...${RANGE_TIP}"
 }
 
+# ── el piso del instalador: si el cambio no toca la instalación (parte installer-floor, con --range) ─────────────────
+# Lo que leen las suites del piso lo declara el repo (floorCriterion de scripts/ci/suites-for-change.js: el grupo
+# `installer` de heavy-suites.json y lo de cada suite en suites.json). Sin poder saberlo, corre. Sin --range (la cola de
+# merge, el push a main) corre siempre: nada entra a main sin pasarla.
+floor_untouched() {
+  local why="" changed="${WORK}/floor-changed.txt" hit
+  if ! range_ends > "${WORK}/floor-range.txt" 2>&1; then why="$(cat "${WORK}/floor-range.txt")"
+  elif ! git -C "${ROOT}" diff --name-only "${RANGE_BASE}...${RANGE_TIP}" > "${changed}" 2> "${WORK}/floor-diff.err"; then why="git diff no pudo listar el cambio: $(head -n 1 "${WORK}/floor-diff.err")"
+  elif ! hit="$(node -e '
+      const [sel, heavy, suites, floor, changed] = process.argv.slice(1);
+      const c = require(sel).floorCriterion(heavy, suites, floor.split(","));
+      if (c.problem) { console.error(c.problem); process.exit(1); }
+      const files = require("fs").readFileSync(changed, "utf8").split("\n").filter(Boolean);
+      console.log(files.length ? (c.touched(files) || "") : "el cambio no lista archivos");' \
+      "${ROOT}/scripts/ci/suites-for-change.js" "${ROOT}/scripts/ci/heavy-suites.json" "${ROOT}/scripts/tests/suites.json" \
+      "${FLOOR_SUITES}" "${changed}" 2> "${WORK}/floor-plan.err")"; then why="$(head -n 1 "${WORK}/floor-plan.err")"
+  fi
+  if [ -n "${why}" ]; then echo "public-ci: no sé si el cambio toca la instalación (${why}): corre"; return 1; fi
+  if [ -n "${hit}" ]; then echo "public-ci: el cambio toca la instalación (${hit}): corre"; return 1; fi
+  return 0
+}
+
 # ── la corrida ─────────────────────────────────────────────────────────────────────────────────────
 case "${PART}" in
   "") ;;
@@ -570,6 +594,9 @@ case "${PART}" in
   installer-floor) echo "public-ci: parte installer-floor — sólo las portables de la instalación y la actualización, con el Node de esta máquina ($(node --version 2>/dev/null || echo 'sin node'))" ;;
   *) echo "public-ci: parte ${PART} — sólo portable-suites, con la parte ${SHARD_I} de ${SHARD_N} de las portables (los demás pasos van en la parte checks)" ;;
 esac
+if [ "${PART}" = installer-floor ] && [ "${WITH_RANGE}" -eq 1 ] && floor_untouched; then
+  echo "✅ public-ci: no toca la instalación: salteado (sólo la parte installer-floor)"; exit 0
+fi
 wants node-check && run_step node-check own "" "git node" node_check
 wants build-check && run_step build-check file build/check.js "node" node build/check.js
 wants build-generate && run_step build-generate file build/generate.js "node" node build/generate.js --check

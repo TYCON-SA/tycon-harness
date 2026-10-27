@@ -556,6 +556,22 @@ is "T25 (a) con un rango que no resuelve no se saltea ninguna" "" "$(skip_of)"
 has "T25 (a) …y lo dice" "${R}.out" "public-ci: no sé qué portables del instalador saltear"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# T26 · la parte installer-floor con --range: un cambio que no toca la instalación la saltea en verde; uno que la toca
+# la corre; sin poder saber qué tocó, corre
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+floor_run() { export TYCON_PUBLIC_CI_PART=installer-floor; run_ci "$@"; unset TYCON_PUBLIC_CI_PART; }
+installer_variant floor-docs guides/x.md; floor_run --range 'HEAD~1...HEAD'
+is "T26 un cambio que no toca la instalación sale 0" 0 "${RC}"
+has "T26 …y lo dice" "${R}.out" "public-ci: no toca la instalación: salteado"
+lacks "T26 …sin correr las portables" "${R}/.calls" "portable-suites"
+installer_variant floor-setup scripts/setup/a.sh; floor_run --range 'HEAD~1...HEAD'
+is "T26 un cambio en la instalación corre las portables del piso" "portable-suites" "$(steps_of "${R}.out")"
+lacks "T26 …sin decir que se salteó" "${R}.out" "salteado"
+installer_variant floor-badrange guides/x.md; floor_run --range 'no-existe...HEAD'
+is "T26 sin poder saber qué tocó el cambio corre las portables del piso" "portable-suites" "$(steps_of "${R}.out")"
+has "T26 …y dice por qué" "${R}.out" "public-ci: no sé si el cambio toca la instalación"
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T24 (b) · portable-suites.test.sh con una parte (TYCON_PORTABLE_SHARD), sobre un repo de mentira: siete portables
 #           (una pesada y una mediana según el juego `pr`) y una que pide engram
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
