@@ -56,6 +56,7 @@ const sources = require(path.join(DIR, 'build-sources.js'));
 const update = require(path.join(DIR, 'update-probe.js'));
 const onboarding = require(path.join(DIR, 'onboarding-probe.js'));
 const npx = require(path.join(DIR, 'npx-probe.js'));
+const oldNode = require(path.join(DIR, 'old-node-probe.js'));
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(FIXTURES, name), 'utf8'));
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -70,7 +71,7 @@ const listing = (dir) => { const out = []; const walk = (d) => { for (const e of
 
 // los escenarios del pipeline, y la comprobación que los lee del bloque de parámetros: la misma para el yml real y
 // para los de juguete
-const SCENARIOS_TODAY = ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'netfx', 'all'];
+const SCENARIOS_TODAY = ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'old-node', 'migrate', 'waiver', 'npx', 'npx-published', 'netfx', 'all'];
 const checkScenarios = (params) => {
   const scenario = /- name: scenario\n\s+displayName: .*\n\s+type: string\n\s+default: (\w+)\n\s+values:\n((?:\s+- [\w-]+\n)+)/.exec(params);
   assert.ok(scenario, 'el parámetro scenario, con su lista cerrada de valores');
@@ -106,9 +107,9 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   const job = (name) => code.slice(code.indexOf(`- job: ${name}`), jobs[jobs.indexOf(name) + 1] ? code.indexOf(`- job: ${jobs[jobs.indexOf(name) + 1]}`) : undefined);
   for (const name of ['Bundle', 'Windows']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'measure', 'all'\)/, `${name} corre con measure y all`);
   // (y con portable, el escenario de la base portable: su contrato es windows-portable.test.js, P1)
-  for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'all'\)/, `${name} corre con onboarding, update, portable, no-clone, codex-only, console-windows, migrate, waiver, npx, npx-published y all`);
+  for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'old-node', 'migrate', 'waiver', 'npx', 'npx-published', 'all'\)/, `${name} corre con onboarding, update, portable, no-clone, codex-only, console-windows, old-node, migrate, waiver, npx, npx-published y all`);
   // cada escenario aparte corre SU paso del ensayo, y sólo con su valor
-  for (const own of ['no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published']) {
+  for (const own of ['no-clone', 'codex-only', 'console-windows', 'old-node', 'migrate', 'waiver', 'npx', 'npx-published']) {
     assert.match(job('Rehearsal'), new RegExp(`- \\$\\{\\{ if eq\\(parameters\\.scenario, '${own}'\\) \\}\\}:\\n\\s+- script: node scripts/tests/windows/rehearse\\.js step ${own} --lab "\\$\\(lab\\)" --out "\\$\\(report\\)"`), `el escenario ${own} corre su paso`);
   }
   // los dos repos se traen en Linux, con historia y etiquetas (la marca del viernes es una etiqueta), y viajan como bundles
@@ -1717,4 +1718,54 @@ test('NpxProbe_From_UnknownValue_Exit2_WritesNothing', () => {
     assert.match(r.stderr, /--from es pack o registry/);
     assert.ok(!fs.existsSync(out), 'no escribió el reporte');
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+// ═══ el escenario `old-node`: un Node viejo primero en el PATH y el respaldo en PowerShell del arranque ═══════════
+
+test('OldNode_Scenario_OwnStep_OutsideAll_WithItsCap', () => {
+  // el escenario existe en la lista cerrada (sin eso, la 182 dice «escenario desconocido»), va aparte y corre su sonda
+  assert.deepStrictEqual(rehearse.SCENARIOS['old-node'], ['inventory', 'old-node']);
+  assert.ok(rehearse.STEP_ORDER.includes('old-node') && !rehearse.SCENARIOS.all.includes('old-node'), 'va aparte: all no lo corre');
+  const own = rehearse.OWN_STEPS['old-node'];
+  assert.strictEqual(own.script, path.join(DIR, 'old-node-probe.js'));
+  assert.ok(own.cap > 0 && own.cap <= 2400, `su tope (${own.cap} s) deja la ejecución bajo 40 minutos`);
+  assert.deepStrictEqual(own.pass, ['allow-temp']);
+});
+
+test('OldNode_Judge_ChoosesTheRightNode_ElseAFindingPerCase', () => {
+  const OWN = 'C:\\lab\\old-node\\home\\.tycon\\node\\current\\node.exe';
+  const NVM = 'C:\\lab\\old-node\\nvm\\v24.11.0\\node.exe';
+  const V = oldNode.OLD_VERSION;
+  const good = {
+    own: { rc: 0, ran: { execPath: OWN }, log: `2026-10-27T00:00:00Z fallback: el node del PATH (${V}) está debajo del piso: el arranque corrió con ${OWN} (v24.11.0)` },
+    nvm: { rc: 0, ran: { execPath: NVM.toUpperCase() }, log: 'corrió con' },
+    none: { rc: 0, ran: null, log: `respaldo en shell: bootstrap.js no arrancó harness.js (el node del PATH (${V}) está debajo del piso y no encontré otro: instalá Node 22 o más (con nvm: nvm install 22 y nvm use 22); )` },
+    expected: { own: OWN, nvm: NVM },
+  };
+  // las tres bien (la ruta de Windows no distingue mayúsculas): ningún hallazgo
+  assert.deepStrictEqual(oldNode.judge(good), []);
+  const ids = (over) => oldNode.judge(Object.assign(clone(good), over)).map((f) => f.id);
+  // corrió con el viejo del PATH, o con ninguno: rompe
+  assert.deepStrictEqual(ids({ own: { rc: 0, ran: { execPath: 'C:\\old\\node.exe' }, log: '' } }), ['old-node:own-not-chosen']);
+  assert.deepStrictEqual(ids({ own: { rc: 1, ran: null, log: '' } }), ['old-node:own-not-chosen']);
+  // corrió con el propio pero el registro calla: pierde control, no rompe
+  const silent = oldNode.judge(Object.assign(clone(good), { own: { rc: 0, ran: { execPath: OWN }, log: 'otra cosa' } }));
+  assert.deepStrictEqual(silent.map((f) => [f.id, f.severity]), [['old-node:own-log-silent', 'loses-control']]);
+  // con nvm eligió la 12 (el caso real de un Windows con nvm y la 12 por defecto)
+  assert.deepStrictEqual(ids({ nvm: { rc: 0, ran: { execPath: 'C:\\lab\\old-node\\nvm\\v12.22.12\\node.exe' }, log: '' } }), ['old-node:nvm-not-chosen']);
+  // sin otro Node: correr igual rompe; no decir qué instalar pierde control
+  assert.deepStrictEqual(ids({ none: { rc: 0, ran: { execPath: OWN }, log: '' } }), ['old-node:none-ran-anyway']);
+  assert.deepStrictEqual(ids({ none: { rc: 0, ran: null, log: 'respaldo en shell: algo' } }), ['old-node:none-no-hint']);
+});
+
+test('OldNode_OutsideWindows_NotMeasured_WritesNothing', () => {
+  const lab = tmp('old-node');
+  try {
+    const facts = [];
+    const r = oldNode.measure({ lab, platform: 'darwin', rec: { fact: (k, v) => facts.push(k), finding: () => facts.push('finding') } });
+    assert.strictEqual(r.status, L.STATUS.notMeasured);
+    assert.match(r.reason, /sólo mide en Windows/);
+    assert.deepStrictEqual(facts, []);
+    assert.deepStrictEqual(fs.readdirSync(lab), [], 'no escribió nada en el laboratorio');
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
