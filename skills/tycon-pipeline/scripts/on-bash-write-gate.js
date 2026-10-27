@@ -759,13 +759,50 @@ function expandirLlaves(w) {
   return out;
 }
 
-/** Las palabras del comando, también las de adentro de un texto que corre otro shell (`bash -c '…'`) y los textos de un guion. */
+// las opciones cuyo valor es un texto para leer: el título, la descripción o el cuerpo de un pedido, un mensaje
+const OPCIONES_DE_TEXTO = new Set(['--title', '--description', '--body', '--comment', '--message', '-m', '--notes']);
+// los programas cuyas opciones de texto son un mensaje (en otro programa, `-m` puede ser cualquier cosa)
+const CON_MENSAJE = new Set(['git', 'gh', 'az', 'glab', 'hg', 'svn']);
+// las opciones con las que un buscador ejecuta otro programa
+const BUSCADOR_EJECUTA = /^(?:--pre|--pager|--open-files-in-pager|--hostname-bin|-O)(?:=|$)|^-O./;
+const BUSCADORES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
+// la salida de un comando que la ejecuta otro: ahí lo citado puede terminar corriendo
+const A_UN_SHELL = /\|&?\s*(?:(?:\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;
+
+/**
+ * Los textos con blancos de un tramo que se citan y no se ejecutan: el patrón y los argumentos de un buscador (`grep`,
+ * `rg` sin `--pre`…) y el valor de una opción de texto (`--description`, `--body`, `-m`…). Un texto con `$(` o comillas
+ * invertidas no se cita: el shell lo corre antes. Con la salida del comando entero yendo a un shell, nada se cita.
+ */
+function textosCitados(tramo, entero) {
+  const out = new Set();
+  if (A_UN_SHELL.test(String(entero || ''))) return out;
+  const words = palabras(String(tramo).trim().replace(PREFIJO, '')).filter((w) => w !== '');
+  const c = path.basename(words[0] || '').toLowerCase();
+  const busca = (BUSCADORES.has(c) || (c === 'git' && words[1] === 'grep'))
+    && !words.some((w) => BUSCADOR_EJECUTA.test(w));
+  const mensaje = CON_MENSAJE.has(c);
+  const citable = (w) => /\s/.test(w) && !/\$\(|`/.test(w);
+  words.forEach((w, k) => {
+    if (k > 0 && busca && citable(w)) out.add(w);
+    if (mensaje && OPCIONES_DE_TEXTO.has(w) && words[k + 1] !== undefined && citable(words[k + 1])) out.add(words[k + 1]);
+    const pegado = /^(--[a-z]+)=([\s\S]*)$/.exec(w);
+    if (mensaje && pegado && OPCIONES_DE_TEXTO.has(pegado[1]) && citable(pegado[2])) out.add(pegado[2]);
+  });
+  return out;
+}
+
+/**
+ * Las palabras del comando, también las de adentro de un texto que corre otro shell (`bash -c '…'`) y los textos de un
+ * guion. Lo que sólo se cita (`textosCitados`) no es una palabra del comando.
+ */
 function palabrasProfundas(cmd) {
   const out = [];
   const ver = (texto, nivel) => {
     for (const tramo of tramos(texto)) {
+      const citados = textosCitados(tramo, cmd);
       for (const w of palabras(tramo)) {
-        if (!w) continue;
+        if (!w || citados.has(w)) continue;
         out.push(w);
         if (nivel < 2 && /\s/.test(w)) ver(w, nivel + 1);
       }
@@ -1033,7 +1070,8 @@ function borradosProfundos(cmd) {
       if (path.basename(words[0] || '').toLowerCase() === 'find' && borraEnFind) {
         for (const w of words.slice(1)) { if (w.startsWith('-') || w === '!' || w === '(') break; out.push({ raw: w }); }
       }
-      if (nivel < 2) for (const w of palabras(tramo)) if (/\s/.test(w)) ver(w, nivel + 1);
+      const citados = textosCitados(tramo, cmd);
+      if (nivel < 2) for (const w of palabras(tramo)) if (/\s/.test(w) && !citados.has(w)) ver(w, nivel + 1);
     }
   };
   ver(cmd, 0);
@@ -1155,7 +1193,8 @@ function editaEnSitio(cmd) {
         if (['awk', 'gawk'].includes(c) && resto.some((w, j) => w === '-iinplace' || (w === '-i' && resto[j + 1] === 'inplace'))) return true;
         if (k === 0 && (c === 'ed' || c === 'ex')) return true;
       }
-      if (nivel < 2) for (const w of words) if (/\s/.test(w) && ver(w, nivel + 1)) return true;
+      const citados = textosCitados(tramo, cmd);
+      if (nivel < 2) for (const w of words) if (/\s/.test(w) && !citados.has(w) && ver(w, nivel + 1)) return true;
     }
     return false;
   };

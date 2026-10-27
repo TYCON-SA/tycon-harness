@@ -4561,6 +4561,219 @@
               "ESC-C2"
             ]
           }
+        },
+        {
+          "id": "block-sql-c1-mayusculas",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sqlcmd -S localhost -Q \"DROP DATABASE acmebase_dev\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "SQL-C1"
+            ]
+          }
+        },
+        {
+          "id": "block-sql-c1-minusculas",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sqlcmd -S localhost -Q \"drop database acmebase_dev\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "SQL-C1"
+            ]
+          }
+        },
+        {
+          "id": "block-sql-c1-mezcla",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sqlcmd -S localhost -Q \"Drop Database acmebase_dev\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "SQL-C1"
+            ]
+          }
+        },
+        {
+          "id": "block-sql-c1-comentario-de-bloque",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sqlcmd -S localhost -Q \"DROP /* x */ DATABASE acmebase_dev\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "SQL-C1"
+            ]
+          }
+        },
+        {
+          "id": "block-sql-c1-comentario-de-linea",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "sqlcmd -S localhost -Q \"drop -- x\ndatabase acmebase_dev\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "SQL-C1"
+            ]
+          }
+        },
+        {
+          "id": "block-sql-c1-grep-con-tuberia",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "grep -l x a.sql | xargs sqlcmd -S localhost -Q \"drop database acmebase_dev\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "SQL-C1"
+            ]
+          }
+        },
+        {
+          "id": "allow-sql-c1-grep-que-busca-el-texto",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "grep -rn \"DROP DATABASE\" scripts/hooks/"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "block-sql-c1-ag-pager",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ag --pager 'sqlcmd -S localhost -Q \"drop database acmebase_dev\"' x ."
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "block-sql-c1-git-grep-O",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git grep -O'sqlcmd -S localhost -Q \"drop database acmebase_dev\" #' x"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "allow-sql-c1-git-grep-que-busca-el-texto",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git grep -n \"drop database\" -- scripts/"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "block-sql-c1-psql-minusculas",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "psql -h localhost -c \"drop database acmebase_dev\""
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "allow-sql-c1-mensaje-de-commit-en-minuscula",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"freno: drop database en minúscula\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "allow-sql-c1-grep-con-tuberia-a-head",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "grep -ri \"drop database\" scripts | head"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "allow-sql-c1-git-log-grep",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git log --oneline --grep \"drop database\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "allow-sql-c1-palabras-parecidas",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo backdrop databases"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         }
       ]
     },

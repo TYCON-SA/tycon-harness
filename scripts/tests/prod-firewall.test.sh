@@ -726,5 +726,32 @@ if [ "$rc" = 0 ] && [ -z "$otras" ] && [ ! -s "$TMP/impostor.log" ] && ! grep "$
   ok "6.5 T12 BorrarGrupo_OnlyListedAzOperations_FixedPaths_CleanEnv"
 else no "6.5 T12 · otras=«${otras}» · $(cat "$TMP/az.log")"; fi
 
+# ── Gate_CannotLog_SaysSoInRed — la puerta avisa en rojo sólo cuando no pudo anotar ───────────────────────────────
+# La puerta se tragaba el fallo al escribir el registro de producción: algo podía correr sin quedar anotado y nadie se
+# enteraba. El aviso sale sólo cuando la escritura falla; con el registro sano, la puerta no dice nada nuevo.
+# 🔴 Falla con: el fallo de escritura callado, un aviso en cada uso, o el aviso que cambia la salida de la puerta.
+mundo; rc="$(puerta --reclasificar "$STAGING")"
+if [ "$rc" = 0 ] && ! grep -q "no pude anotar" "$TMP/err" && grep -q '"accion":"reclasificar"' "$CASA/.claude/.tycon-pipeline/production.log"; then
+  ok "Gate_CannotLog_SaysSoInRed · con el registro sano anota y no avisa"
+else no "Gate_CannotLog_SaysSoInRed · registro sano: rc=$rc · err: $(head -c 200 "$TMP/err")"; fi
+mundo; mkdir -p "$CASA/.claude/.tycon-pipeline/production.log"
+rc="$(puerta --reclasificar "$STAGING")"
+if [ "$rc" = 0 ] && grep -q "🔴 no pude anotar" "$TMP/err" && grep -q "production.log" "$TMP/err"; then
+  ok "Gate_CannotLog_SaysSoInRed · sin poder escribir el registro, lo dice en rojo con la ruta y sale igual"
+else no "Gate_CannotLog_SaysSoInRed · sin registro: rc=$rc · err: $(head -c 200 "$TMP/err")"; fi
+# El cierre que hace el hook al terminar la sesión también lo dice: la puerta cierra bien (rc 0) y avisa por stderr.
+# 🔴 Falla con: el hook que sólo muestra la salida de la puerta cuando el cierre falló.
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+rm -f "$CASA/.claude/.tycon-pipeline/production.log"; mkdir -p "$CASA/.claude/.tycon-pipeline/production.log"
+rc="$(gancho SessionEnd "$SES_A")"
+if [ "$rc" = 0 ] && grep -q "🔴.*no pude anotar" "$TMP/hook.out" && ! grep -q "^$REGLA " "$TMP/az-reglas"; then
+  ok "Gate_CannotLog_SaysSoInRed · el cierre del fin de sesión que no se pudo anotar lo dice en rojo"
+else no "Gate_CannotLog_SaysSoInRed · fin de sesión: rc=$rc · $(cat "$TMP/hook.out" "$TMP/hook.err")"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+rc="$(gancho SessionEnd "$SES_A")"
+if [ "$rc" = 0 ] && ! grep -q "no pude anotar" "$TMP/hook.out"; then
+  ok "Gate_CannotLog_SaysSoInRed · con el registro sano, el fin de sesión no avisa nada nuevo"
+else no "Gate_CannotLog_SaysSoInRed · fin de sesión sano: rc=$rc · $(cat "$TMP/hook.out")"; fi
+
 echo "— prod-firewall: $pasaron ok, $fallos fallos —"
 [ "$fallos" = 0 ]

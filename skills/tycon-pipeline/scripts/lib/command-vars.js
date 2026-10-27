@@ -112,14 +112,32 @@ function fueraDeComillas(s) {
   return out;
 }
 
+/**
+ * ¿Alguna cuenta `$(( … ))` del texto asigna (`N = 5`, `x += 1`, `i++`)? Una que sólo cuenta (`$(( $(wc -l < f) - N0 ))`)
+ * no cambia ninguna variable. Lo que corre en un `$(…)` de adentro va en un subshell: no asigna afuera. Sin cierre, sí.
+ * Un desplazamiento (`1 << 2`) también cuenta como «no sé»: el lector de heredocs lo confunde con una apertura.
+ */
+function aritmeticaQueAsigna(s) {
+  for (let i = s.indexOf('$(('); i >= 0; i = s.indexOf('$((', i + 3)) {
+    let prof = 0;
+    let k = i + 1;
+    for (; k < s.length; k++) { if (s[k] === '(') prof++; else if (s[k] === ')' && --prof === 0) break; }
+    if (k >= s.length) return true;
+    let cuenta = s.slice(i + 3, k - 1);
+    for (let antes = null; antes !== cuenta;) { antes = cuenta; cuenta = cuenta.replace(/\$\([^()]*\)/g, '0'); }
+    if (/[()]/.test(cuenta) || /(^|[^=!<>])=(?!=)|\+\+|--|<<|>>/.test(cuenta)) return true;
+  }
+  return false;
+}
+
 /** ¿El lector no puede decir nada seguro de las variables de este comando? */
 function noSeLee(s, sinCierre = false) {
   if (sinCierre || ilegible(s)) return true;
   // sobre el texto CRUDO: estas dos asignan en el shell actual aunque vayan entre comillas dobles
-  if (/\$\(\(/.test(s) || /\$\{[A-Za-z_][A-Za-z0-9_]*:?=/.test(s)) return true;
+  if (aritmeticaQueAsigna(s) || /\$\{[A-Za-z_][A-Za-z0-9_]*:?=/.test(s)) return true;
   const f = fueraDeComillas(s);
   return /<<</.test(f)                                   // here-string
-    || /\$\(\(/.test(f)                                   // aritmética
+    || aritmeticaQueAsigna(f)                             // aritmética que asigna
     || /(^|[\s;&|(])[{}](?=\s|;|$)/.test(f)              // llaves: bloque o cuerpo de función
     || /\b[A-Za-z_][A-Za-z0-9_]*[ \t]*\([ \t]*\)/.test(f) // definición de función
     || /(^|[\s;&|(])function\s+[A-Za-z_]/.test(f)
