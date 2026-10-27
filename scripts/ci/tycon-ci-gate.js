@@ -365,7 +365,8 @@ try {
   approvalsLib = require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', 'approvals.js'));
 } catch (e) { approvalsFalta = e.message; }
 
-function revisarAprobaciones(repo, storyId, storyPath) {
+// `ref`: la historia en la que se busca el rastro de una corrida anterior al control (la base del pedido).
+function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
   const hallazgos = [];
   const avisos = [];
   const resumen = { manual: 0, automatica: 0, sinNombrar: 0 };
@@ -383,7 +384,8 @@ function revisarAprobaciones(repo, storyId, storyPath) {
     try { roster = JSON.parse(fs.readFileSync(path.join(dir, 'review-roster.json'), 'utf8')); } catch (_e) { /* la regla 4 juzga el roster */ }
     const llegoARevisores = fs.existsSync(path.join(dir, 'review-roster.json'));
     // La regla es la de lib/approvals.js, la misma con que frena el cierre del pipeline; acá se arma el mensaje.
-    const problemas = approvalsLib.problemasDelRegistro({ registro: reg, roster });
+    const anterior = typeof approvalsLib.anteriorAlControl === 'function' && approvalsLib.anteriorAlControl(dir, nombre, ref);
+    const problemas = approvalsLib.problemasDelRegistro({ registro: reg, roster, anterior });
     const hay = (regla) => problemas.find((p) => p.regla === regla);
     const invalido = hay('registro-de-aprobaciones-invalido');
     if (invalido) {
@@ -396,7 +398,7 @@ function revisarAprobaciones(repo, storyId, storyPath) {
           mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
       } else if (llegoARevisores) {
         avisos.push({ regla: 'sin-registro-de-aprobaciones',
-          mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y su registro de revisores no declara que la ejecución anote aprobaciones (un arnés anterior al registro de aprobaciones): no se sabe quién aprobó el plan. Avisa y no frena.` });
+          mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y la ejecución no tenía por qué dejarlo acá: su registro de revisores no declara que anote aprobaciones (un arnés anterior al registro de aprobaciones), o arrancó antes de que el registro llegara al repo de la story: no se sabe quién aprobó el plan. Avisa y no frena.` });
       }
       continue;
     }
@@ -713,7 +715,7 @@ function revisar({ repo, base, staged }) {
     // `advisors_exempt`: la exención perdona que FALTE el registro (una story cerrada sin pipeline), no un registro
     // presente y malo — un agente anotado como persona frena siempre.
     {
-      const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel));
+      const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel), staged ? 'origin/main' : base);
       const POR_FALTA = (approvalsLib && approvalsLib.POR_FALTA) || new Set(['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan']);
       for (const h of apr.hallazgos) if (!(exentaAdv && POR_FALTA.has(h.regla))) destino.push({ archivo: rel, story: idBruto, ...h });
       if (!exentaAdv) for (const a of apr.avisos) avisos.push({ archivo: rel, story: idBruto, ...a });
