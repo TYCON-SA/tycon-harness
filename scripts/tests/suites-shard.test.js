@@ -409,14 +409,14 @@ test('SuitesShard_CapsFromWeightWithFloor', () => {
 });
 
 test('SuitesWeights_NightlySetMeasuredAndCapped', () => {
-  // El tope por suite rige también en el nocturno. Sus pesos son lo medido (harness-update tarda ~869 s: con un peso
+  // El tope por suite rige también en el nocturno. Sus pesos son lo medido (harness-update tarda ~350 s: con un peso
   // viejo de 96 s, su tope la cortaría todas las noches). Ninguna suite lleva tope propio en el nocturno: el tope de
   // todas es el doble de su peso.
   const real = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8'));
   assert.deepStrictEqual(real.suite_cap, { factor: 2, floor: 180 });
-  assert.deepStrictEqual(real.runs, [12240, 12216, 12196], 'el nocturno cita los bancos de donde salen sus pesos');
+  assert.deepStrictEqual(real.runs, [14049, 14101, 14135, 14281], 'el nocturno cita los bancos de donde salen sus pesos');
   const hu = real.weights['harness-update.test.sh'];
-  assert.ok(hu >= 600 && hu <= 1200, `harness-update pesa lo medido en el nocturno (~869 s): ${hu}`);
+  assert.ok(hu >= 300 && hu <= 1200, `harness-update pesa lo medido en el nocturno (~350 s): ${hu}`);
 
   // `caps` sin juego: el tope del nocturno. per_suite manda sobre el doble del peso.
   const dir = lab({ weights: { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90, per_suite: { 'a-slow.test.sh': 1000 } } } });
