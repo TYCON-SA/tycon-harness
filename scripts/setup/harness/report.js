@@ -19,6 +19,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { paths } = require('./state.js');
+const TH = require('./tycon-home.js');
 const sources = require('./sources.js');
 
 const LOG_MAX_BYTES = 1024 * 1024;
@@ -32,6 +33,28 @@ function stampedVersion(tree) {
     const j = JSON.parse(fs.readFileSync(path.join(tree, VERSION_FILE), 'utf8'));
     return isObject(j) && typeof j.version === 'string' && j.version ? j : null;
   } catch (_) { return null; }
+}
+
+// El manifiesto de una versión bajada (release.js lo llama MANIFEST_NAME; acá no se carga release.js, que carga éste).
+// En un árbol bajado, version.json dice el PISO (el número lo pone la etiqueta del merge): el número de verdad es el
+// que el manifiesto anotó al bajarla.
+const RELEASE_MANIFEST = '.tycon-release.json';
+/** El manifiesto de la versión bajada en `tree`: `{ version, commit, downloadedAt }` (version null si se bajó por
+ *  commit, sin número), o null si no es un árbol bajado (un clon). */
+function releaseInfo(tree) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(path.join(tree, RELEASE_MANIFEST), 'utf8')); } catch (_) { return null; }
+  if (!isObject(j)) return null;
+  const version = typeof j.version === 'string' && /^\d{4}\.\d{2}\.\d{2}\.\d+$/.test(j.version) ? j.version : null;
+  return { version, commit: typeof j.commit === 'string' ? j.commit : null, downloadedAt: typeof j.downloaded_at === 'string' ? j.downloaded_at : null };
+}
+/** El número de la versión bajada en `tree`, o null (un clon, o una versión bajada sin número). */
+function releaseVersion(tree) { return (releaseInfo(tree) || {}).version || null; }
+/** El número que se muestra de una versión bajada: el suyo o, sin número, `YYYY.MM.DD+sha7` de la bajada (nunca el piso). */
+function releaseNumber(info) {
+  if (info.version) return info.version;
+  const date = info.downloadedAt && /^\d{4}-\d{2}-\d{2}/.test(info.downloadedAt) ? info.downloadedAt.slice(0, 10).replace(/-/g, '.') : 'sin-fecha';
+  return `${date}+${sha7(info.commit) || 'sin-sha'}`;
 }
 
 /** Fecha UTC (YYYY.MM.DD) de un commit (por defecto HEAD), o null si no hay git a mano. */
@@ -72,11 +95,12 @@ function derive(state, { env = process.env, trees = {} } = {}) {
   const harnessCommit = (harnessDir && sources.head(harnessDir, { env, cached: true })) || (hs && hs.commit) || null;
   const skillsCommit = (skillsDir && sources.head(skillsDir, { env, cached: true })) || (as && as.commit) || null;
   const stamped = harnessDir ? stampedVersion(harnessDir) : null;
+  const release = harnessDir ? releaseInfo(harnessDir) : null;
   if (stamped) {
     // en un clon, el número de la etiqueta que puso el merge, si HEAD la tiene; el version.json dice el piso
-    const v = harnessDir ? sources.versionAt(harnessDir, 'HEAD', { env }) : null;
+    const v = !release && harnessDir ? sources.versionAt(harnessDir, 'HEAD', { env }) : null;
     return {
-      number: v && v.tagged ? v.version : stamped.version, stamped: true,
+      number: release ? releaseNumber(release) : (v && v.tagged ? v.version : stamped.version), stamped: true,
       source: isObject(stamped.source) ? stamped.source : {},
       harness: { commit: harnessCommit }, agent_skills: { commit: skillsCommit },
     };
@@ -525,20 +549,64 @@ function layerComputeText(r, { list = false } = {}) {
   return L;
 }
 
-/** Una línea con fecha en startup.log; al pasar 1 MB el anterior queda en `.1`. Nunca tira. */
+/**
+ * Una línea con fecha en startup.log, siempre agregada al final; al pasar 1 MB el anterior queda en `.1`. Nunca tira.
+ * Varias sesiones escriben el mismo registro: rota una sola, la que crea el candado `.rotating` (las demás agregan y
+ * siguen), y vuelve a mirar el tamaño con el candado puesto, así una que llega tarde no manda al `.1` el registro recién
+ * empezado. Un registro que termina en bytes nulos se aparta en `.corrupt` y el nuevo lo dice: se vio uno así (una línea
+ * y 1 MB de nulos) sin encontrar qué lo escribió; esto lo contiene y no tapa la próxima vez.
+ */
+const ROTATING_STALE_MS = 60 * 1000;
 function log(home = os.homedir(), line) {
   const { log: file, harnessDir } = paths(home);
+  const stamp = (text) => `${new Date().toISOString()} ${String(text).replace(/\r?\n/g, ' ')}\n`;
   try {
     fs.mkdirSync(harnessDir, { recursive: true });
-    let size = 0;
-    try { size = fs.statSync(file).size; } catch (_) { size = 0; }
-    if (size > LOG_MAX_BYTES) {
-      try { fs.rmSync(`${file}.1`, { force: true }); } catch (_) { /* no estaba */ }
-      fs.renameSync(file, `${file}.1`);
+    let head = '';
+    if (endsInNul(file)) {
+      const aside = setAside(file);
+      if (aside) head = stamp(`registro: el anterior terminaba en bytes nulos; quedó aparte en ${aside}`);
     }
-    fs.appendFileSync(file, `${new Date().toISOString()} ${String(line).replace(/\r?\n/g, ' ')}\n`);
+    if (sizeOf(file) > LOG_MAX_BYTES) withRotatingLock(file, () => { if (sizeOf(file) > LOG_MAX_BYTES) moveTo(file, `${file}.1`); });
+    fs.appendFileSync(file, head + stamp(line));
   } catch (_) { /* el registro nunca frena nada */ }
   return file;
+}
+function sizeOf(file) { try { return fs.statSync(file).size; } catch (_) { return 0; } }
+/** ¿El archivo termina en un byte nulo? Un registro sano termina en un fin de línea. */
+function endsInNul(file) {
+  let fd = null;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    if (!size) return false;
+    const b = Buffer.alloc(1);
+    fs.readSync(fd, b, 0, 1, size - 1);
+    return b[0] === 0;
+  } catch (_) { return false; } finally { if (fd !== null) { try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ } } }
+}
+/** `fn` con el candado `.rotating` puesto (bootstrap.js usa el mismo); sin él, nada: otra sesión está en eso. */
+function withRotatingLock(file, fn) {
+  const lock = `${file}.rotating`;
+  try { fs.mkdirSync(lock); } catch (e) {
+    // un candado de más de un minuto es de una sesión que se cortó
+    let age = 0;
+    try { age = Date.now() - fs.statSync(lock).mtimeMs; } catch (_) { age = 0; }
+    if (e.code !== 'EEXIST' || age < ROTATING_STALE_MS) return null;
+    try { fs.rmSync(lock, { recursive: true, force: true }); fs.mkdirSync(lock); } catch (_) { return null; }
+  }
+  try { return fn(); } catch (_) { return null; /* no se movió: la línea se agrega igual */ } finally { try { fs.rmSync(lock, { recursive: true, force: true }); } catch (_) { /* queda; vence en un minuto */ } }
+}
+function moveTo(from, to) { try { fs.renameSync(from, to); } catch (_) { fs.rmSync(to, { force: true }); fs.renameSync(from, to); } }
+/** Aparta un registro que termina en nulos, con el candado y mirándolo otra vez (otra sesión pudo apartarlo y empezar
+ *  uno sano). Un `.corrupt` anterior no se pisa: el nuevo lleva la hora. Devuelve dónde quedó, o null. */
+function setAside(file) {
+  return withRotatingLock(file, () => {
+    if (!endsInNul(file)) return null;
+    const to = fs.existsSync(`${file}.corrupt`) ? `${file}.corrupt.${Date.now()}` : `${file}.corrupt`;
+    fs.renameSync(file, to);
+    return to;
+  });
 }
 
 function setNotice(state, text) { state.notice = text ? String(text) : null; return state; }
@@ -549,14 +617,41 @@ function clearNotice(state) { state.notice = null; return state; }
 // el que se fue porque otra sesión tenía el candado, que no puede tocar el estado—. Escritura atómica; ilegible = «no sé».
 const FAILURE_SAY_FROM = 2;   // desde el segundo arranque fallido: uno solo puede ser un corte de red de un minuto
 
-function readUpdateFailure(home) {
+// La versión activa de una versión bajada: a dónde apunta `~/.tycon/harness` (un enlace en Windows) o, si es una carpeta,
+// el número de su manifiesto (su version.json dice el piso). null en un clon. La falla anota la de ese momento: si hoy es otra, la falla ya no describe
+// la máquina (otro camino la actualizó: el respaldo en shell, una instalación a mano) y no se dice.
+function activeInstall(home) {
+  const dir = path.join(TH.ownRootOf(home), 'harness');
+  return TH.linkTarget(dir) || releaseVersion(dir) || (stampedVersion(dir) || {}).version || null;
+}
+// Una falla anotada sin la versión activa (de antes de anotarla) se compara por fecha: si el enlace o el version.json
+// de la versión activa son posteriores a la última falla, la versión cambió después.
+function activeChangedAfter(home, at) {
+  const t = Date.parse(at);
+  if (!Number.isFinite(t)) return false;
+  const dir = path.join(TH.ownRootOf(home), 'harness');
+  const times = [];
+  if (TH.isLink(dir)) { try { times.push(fs.lstatSync(dir).mtimeMs); } catch (_) { /* no está */ } }
+  for (const f of [RELEASE_MANIFEST, VERSION_FILE]) { try { times.push(fs.statSync(path.join(dir, f)).mtimeMs); } catch (_) { /* no está */ } }
+  return times.some((m) => m > t);
+}
+function readFailureRecord(home) {
   const file = paths(home).failuresFile;
   let raw;
   try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { return e && e.code === 'ENOENT' ? null : { unreadable: `${file}: ${e.message}` }; }
-  try {
-    const f = JSON.parse(raw);
-    return f && typeof f.since === 'string' && Number.isInteger(f.count) ? f : { unreadable: `${file}: no tiene el formato esperado` };
-  } catch (e) { return { unreadable: `${file}: ${e.message}` }; }
+  let f;
+  try { f = JSON.parse(raw); } catch (e) { return { unreadable: `${file}: ${e.message}` }; }
+  if (!(f && typeof f.since === 'string' && Number.isInteger(f.count))) return { unreadable: `${file}: no tiene el formato esperado` };
+  return f;
+}
+/** ¿La falla anotada es de otra versión? Si la activa cambió desde entonces, ya no describe la máquina. */
+function failureIsStale(home, f) {
+  const now = activeInstall(home);
+  return Boolean(typeof f.active === 'string' ? (now && now !== f.active) : (now && activeChangedAfter(home, f.last || f.since)));
+}
+function readUpdateFailure(home) {
+  const f = readFailureRecord(home);
+  return f && !f.unreadable && failureIsStale(home, f) ? null : f;
 }
 // Dos clases: `busy` (otra sesión tuvo el candado demasiado tiempo) la borra cualquier
 // arranque sano que tuvo el candado; `update` (no se pudo mirar o aplicar: sin red, sin credencial, la versión no
@@ -574,6 +669,8 @@ function recordUpdateFailure(home, reason, { now = Date.now(), kind = 'update' }
   const next = prev && !prev.unreadable
     ? { since: prev.since, count: prev.count + 1, reason: String(reason), last: at, kind: k }
     : { since: at, count: 1, reason: String(reason), last: at, kind };
+  const active = activeInstall(home);
+  if (active) next.active = active;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
@@ -584,7 +681,8 @@ function recordUpdateFailure(home, reason, { now = Date.now(), kind = 'update' }
 }
 /** Borra la falla anotada; con `kind`, sólo si es de esa clase (una sin clase cuenta como `update`). */
 function clearUpdateFailure(home, { kind = null } = {}) {
-  if (kind) { const f = readUpdateFailure(home); if (!f || f.unreadable || (f.kind || 'update') !== kind) return; }
+  // Una falla de otra versión se borra igual: si quedara, un rollback a esa versión la volvería a mostrar.
+  if (kind) { const f = readFailureRecord(home); if (!f || f.unreadable || ((f.kind || 'update') !== kind && !failureIsStale(home, f))) return; }
   try { fs.rmSync(paths(home).failuresFile, { force: true }); } catch (e) { log(home, `startup: no pude borrar la falla anotada (${e.message}): el próximo arranque sano lo reintenta`); }
 }
 /** El aviso, o null si no hay que decir nada todavía. */
@@ -602,7 +700,7 @@ const HELD_FILE_STEPS = 'Para destrabarla: cerrá VS Code (todas las ventanas), 
   + 'el menú Inicio y corré: npx @tyconsa/harness@latest — si vuelve a fallar, reiniciá la máquina y correlo antes de abrir VS Code';
 
 module.exports = {
-  LOG_MAX_BYTES, VERSION_FILE, derive, stampedVersion, numberAt, versionLine, versionJson,
+  LOG_MAX_BYTES, VERSION_FILE, derive, stampedVersion, releaseVersion, releaseInfo, numberAt, versionLine, versionJson,
   installSummary, installFailure, updateBackupLine, warningLines, leftCounts,
   repeatedHooks, repeatedHooksText, doctorText, doctorJson, log, setNotice, clearNotice,
   readUpdateFailure, recordUpdateFailure, clearUpdateFailure, updateFailureText, busyIsFailure, BUSY_FAILURE_MS,

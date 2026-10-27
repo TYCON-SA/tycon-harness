@@ -49,6 +49,8 @@ harness_lab_create "$BASE/lab" || { echo "❌ harness-bootstrap: no pude armar e
 PIPE="$LAB_HOME/.claude/.tycon-pipeline"; HDIR="$PIPE/harness"; STATE="$PIPE/harness-state.json"
 LINK="$LAB_HOME/.claude/tycon-claude-guides"; FAKE_LOG="$PIPE/fake-harness.log"; APPLIER_LOG="$PIPE/lab-applier.log"
 ln -s "$LAB_TREE" "$LINK"
+# el respaldo busca un Node de 22 o más en nvm: el laboratorio no ve el de la máquina
+export NVM_DIR="$LAB_HOME/.nvm"; unset NVM_HOME
 
 NEW_LINE="$(node -e 'process.stdout.write(require(process.argv[1]).new.posix)' "$FIXTURE")"
 
@@ -173,6 +175,43 @@ PATH="$LAB_BIN:$PATH" bash -c "$NEW_LINE" >"$BASE/line.out" 2>"$BASE/line.err"; 
 [ "$(head_of "$LAB_TREE")" = "$T_REMOTE" ] && [ "$(head_of "$LAB_SKILLS")" = "$S_REMOTE" ] && [ "$(applier_runs)" = "$((A0 + 1))" ] && ok "T14 · con node v18 el respaldo avanzó los dos repos y corrió el aplicador" || bad "T14 · con node v18 el respaldo no hizo su trabajo"
 grep -q "18.0.0" "$HDIR/startup.log" && ok "T14 · startup.log dice la versión de Node" || bad "T14 · startup.log no dice la versión: $(tail -1 "$HDIR/startup.log")"
 [ "$(fixed_hash)" = "$H0" ] && ok "T14 · la copia fija sigue igual tras todos los respaldos" || bad "T14 · la copia fija cambió"
+
+# ═══ T14c · node viejo en el PATH (un nvm con la 12 por defecto) y el Node propio del arnés en la casa: el respaldo vuelve a
+# correr bootstrap.js con ése, y la sesión arranca por harness.js sin el trabajo del respaldo. Los dos respaldos ═══════════
+OWN_NODE_DIR="$LAB_HOME/.tycon/node/current/bin"; mkdir -p "$OWN_NODE_DIR"
+printf '#!/usr/bin/env bash\necho x >> "%s"\nexec "%s" "$@"\n' "$BASE/own-node.uses" "$(command -v node)" > "$OWN_NODE_DIR/node"; chmod +x "$OWN_NODE_DIR/node"
+harness_lab_fake_node 12.11.1
+for respaldo in sh ps1; do
+  : > "$FAKE_LOG"; : > "$BASE/own-node.uses"; A0="$(applier_runs)"
+  if [ "$respaldo" = sh ]; then PATH="$LAB_BIN:$PATH" bash -c "$NEW_LINE" >"$BASE/line.out" 2>"$BASE/line.err"; rc=$?
+  else PATH="$LAB_BIN:$PATH" POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off pwsh -NoProfile -NonInteractive -File "$HDIR/bootstrap-fallback.ps1" >"$BASE/line.out" 2>&1; rc=$?; fi
+  [ "$rc" -eq 0 ] && grep -q '^argv=startup ' "$FAKE_LOG" && [ -s "$BASE/own-node.uses" ] && ok "T14c · ($respaldo) con node v12 en el PATH, harness.js arrancó con el Node propio del arnés" \
+    || bad "T14c · ($respaldo) con node v12 no arrancó con el Node propio (rc $rc, usos $(wc -l < "$BASE/own-node.uses" | tr -d ' ')): $(cat "$FAKE_LOG") $(cat "$BASE/line.out")"
+  [ "$(applier_runs)" = "$A0" ] && ok "T14c · ($respaldo) …sin el trabajo del respaldo" || bad "T14c · ($respaldo) el respaldo corrió el aplicador igual"
+  tail -1 "$HDIR/startup.log" | grep -q "v12.11.1" && tail -1 "$HDIR/startup.log" | grep -q "$OWN_NODE_DIR/node" && ok "T14c · ($respaldo) startup.log dice con qué Node arrancó y por qué" || bad "T14c · ($respaldo) startup.log: $(tail -1 "$HDIR/startup.log")"
+done
+# sin el Node propio y con un nvm que tiene una de 22 o más instalada (no la de por defecto): arranca con ésa
+rm -rf "$LAB_HOME/.tycon"
+NVM22="$NVM_DIR/versions/node/v22.0.0/bin"; NVMW="$LAB/nvm-windows/v22.0.0"; mkdir -p "$NVM22" "$NVMW"
+printf '#!/usr/bin/env bash\necho x >> "%s"\nexec "%s" "$@"\n' "$BASE/own-node.uses" "$(command -v node)" > "$NVM22/node"; chmod +x "$NVM22/node"
+cp "$NVM22/node" "$NVMW/node.exe"
+for respaldo in sh ps1; do
+  : > "$FAKE_LOG"; : > "$BASE/own-node.uses"
+  if [ "$respaldo" = sh ]; then PATH="$LAB_BIN:$PATH" bash -c "$NEW_LINE" >/dev/null 2>&1
+  else PATH="$LAB_BIN:$PATH" NVM_HOME="$LAB/nvm-windows" POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off pwsh -NoProfile -NonInteractive -File "$HDIR/bootstrap-fallback.ps1" >/dev/null 2>&1; fi
+  grep -q '^argv=startup ' "$FAKE_LOG" && [ -s "$BASE/own-node.uses" ] && ok "T14c · ($respaldo) sin el Node propio, arrancó con la 22 de nvm" || bad "T14c · ($respaldo) con la 22 de nvm no arrancó: $(tail -1 "$HDIR/startup.log")"
+done
+rm -rf "$NVM_DIR" "$LAB/nvm-windows"
+# el espejo: sin otro Node de 22 o más, la línea del respaldo dice qué hacer (y el respaldo hace su trabajo, como siempre)
+for respaldo in sh ps1; do
+  A0="$(applier_runs)"
+  if [ "$respaldo" = sh ]; then PATH="$LAB_BIN:$PATH" bash -c "$NEW_LINE" >/dev/null 2>&1
+  else PATH="$LAB_BIN:$PATH" POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off pwsh -NoProfile -NonInteractive -File "$HDIR/bootstrap-fallback.ps1" >/dev/null 2>&1; fi
+  last="$(tail -1 "$HDIR/startup.log")"
+  grep -q "v12.11.1" <<<"$last" && grep -q "Node 22" <<<"$last" && grep -q "nvm install 22" <<<"$last" && grep -q "aplicador ok" <<<"$last" \
+    && ok "T14c · ($respaldo) sin otro Node, el respaldo corre y su línea dice qué instalar" || bad "T14c · ($respaldo) sin otro Node: $last (aplicador $(applier_runs) vs $A0)"
+done
+harness_lab_fake_node 18.0.0
 
 # ═══ T11 · estado developer con el árbol borrado → vuelve solo a managed sobre tree_before, re-apunta el enlace ══════
 GONE="$LAB/clones/developer-gone"

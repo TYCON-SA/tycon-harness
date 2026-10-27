@@ -37,6 +37,32 @@ done
 mkdir -p "$HDIR" 2>/dev/null
 [ -f "$LOG" ] && [ "$(wc -c < "$LOG" 2>/dev/null | tr -d ' ')" -gt 1048576 ] 2>/dev/null && mv -f "$LOG" "$LOG.1" 2>/dev/null
 
+# ── el node del PATH por debajo del piso de bootstrap.js (20; un nvm con una versión vieja por defecto) ──────────────
+# bootstrap.js no llegó a correr harness.js. Antes del respaldo, el mismo arranque con un Node de 22 o más (el piso para
+# instalar): el propio del arnés (<casa>/node/current, la regla de tycon-home.js → harnessNode, escrita acá) o uno de nvm.
+# Si sale 0, la sesión arrancó como siempre y el respaldo no hace nada más. Sin ninguno, la línea dice qué instalar.
+node_major() { "$1" --version 2>/dev/null | sed -n 's/^v\([0-9][0-9]*\)\..*/\1/p'; }
+node_hint=""
+_path_major="$(command -v node >/dev/null 2>&1 && node_major node)"
+if [ -z "$_path_major" ] || [ "$_path_major" -lt 20 ]; then
+  _better=""
+  for _cand in "$OWN/node/current/bin/node" "$OWN/node/current/node.exe" "${NVM_DIR:-$H/.nvm}"/versions/node/v*/bin/node; do
+    [ -z "$_better" ] && [ -x "$_cand" ] || continue
+    _m="$(node_major "$_cand")"; [ -n "$_m" ] && [ "$_m" -ge 22 ] && _better="$_cand"
+  done
+  _path_v="$(node --version 2>/dev/null)"
+  if [ -n "$_better" ]; then
+    "$_better" "$(dirname "$0")/bootstrap.js"; _rc=$?
+    if [ "$_rc" -eq 0 ]; then
+      printf '%s fallback: el node del PATH (%s) está debajo del piso: el arranque corrió con %s (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_path_v:-ausente}" "$_better" "$("$_better" --version 2>/dev/null)" >> "$LOG" 2>/dev/null
+      exit 0
+    fi
+    node_hint="el node del PATH (${_path_v:-ausente}) está debajo del piso y bootstrap.js con $_better salió $_rc; "
+  else
+    node_hint="el node del PATH (${_path_v:-ausente}) está debajo del piso y no encontré otro: instalá Node 22 o más (con nvm: nvm install 22 y nvm alias default 22); "
+  fi
+fi
+
 # ── la versión BAJADA: sin git y sin Node en este camino ─────────────────────────
 # Si el estado dice `kind: release`, el árbol es ~/.tycon/harness (o TYCON_HOME/harness) y acá no hay pull: un cambio
 # de versión cortado a mitad se repara desde su diario (swap.json, leído con sed), y si harness.js no arranca y hay una
@@ -184,7 +210,7 @@ if [ -n "$TREE" ]; then
   elif bash "$TREE/scripts/install-tycon-hooks.sh" >/dev/null 2>&1; then applier="aplicador ok"; else applier="aplicador salió $?"; fi
 fi
 
-line="respaldo en shell: bootstrap.js no arrancó harness.js (${why}node ${NODE_V:-ausente}); pull:${pulled:- ninguno}; $applier"
+line="respaldo en shell: bootstrap.js no arrancó harness.js (${node_hint}${why}node ${NODE_V:-ausente}); pull:${pulled:- ninguno}; $applier"
 printf '%s fallback: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$line" >> "$LOG" 2>/dev/null
 
 # el aviso en el estado, para que el hook síncrono se lo diga a la persona (si hay node y el estado se puede leer)
