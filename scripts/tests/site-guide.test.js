@@ -49,10 +49,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano; y que con la copia de operaciones
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida»; y el secreto
-// SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer».
+// SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer»; y la
+// línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone.
 const HUELLA_INSTALACION = {
-  es: '58405cec0a0cca0e851fb13d1d0824f1ff61aaa4cc61202ddf78e8d823b1117d',
-  en: '758bb8483897a8fbd4445e3d1440b3a77f6e57bc2a3f8a0a0d148a8ba6857ad6',
+  es: '098d3645d3efd25ee5e955189fd40c0b0733fd63f5291675ab58ee3d7576e56d',
+  en: 'd756324d881d16071d74eb74e077e374a8fde5bc6a7c28e8e9aa3ec1646de842',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

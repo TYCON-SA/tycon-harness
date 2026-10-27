@@ -1902,12 +1902,28 @@ function leerPedidos(txt) {
  * clonara por entrada, el segundo `git clone` fallaría con "destination path already exists" y el
  * repo figuraría como NO clonado siendo que sí está. Un apagado no se clona.
  */
+// La forma cerrada de lo que llega al `git clone`: la lista es un archivo del repo y el clon corre con el token de la
+// corrida. `ruta` son tramos relativos (sin barra inicial ni barra invertida): no escribe fuera de la carpeta de clones.
+// `ado`/`github` son `<proyecto>/<repo>` (un proyecto de Azure con espacios va como `%20`): no pide otro repo. Ningún
+// tramo empieza con `-` (nada se lee como opción de git) ni con `.` (ni `..`, ni `.git`), y no hay un punto o una barra
+// codificados (`%2e`, `%2f`, `%5c`), que el servidor podría leer como `..` o como otro tramo.
+const TRAMO = '[A-Za-z0-9_%][A-Za-z0-9_.%-]*';
+const RUTA_CLON = new RegExp(`^${TRAMO}(?:/${TRAMO})*$`);
+const REPO_CLON = new RegExp(`^${TRAMO}/${TRAMO}$`);
+const CODIFICADO = /%(?:2e|2f|5c)/i;
+function formaDeClon(r) {
+  const repo = r.ado || r.github || '';
+  return RUTA_CLON.test(r.ruta) && !CODIFICADO.test(r.ruta) && (!repo || (REPO_CLON.test(repo) && !CODIFICADO.test(repo)));
+}
+
 function clones(a) {
   const cfg = leerJson(a.config, null);
   if (!cfg) { console.error(`error: no se pudo leer la configuración ${a.config}`); return 2; }
   const vistas = new Set();
-  for (const r of cfg.repos || []) {
+  for (const [i, r] of (cfg.repos || []).entries()) {
     if (r.activo === false || !r.ruta || vistas.has(r.ruta)) continue;
+    // el aviso nombra la entrada por su número: el texto de una entrada rara no se repite en el registro
+    if (!formaDeClon(r)) { console.error(`⚠️ repos[${i}]: \`ruta\` o \`ado\` fuera de forma, no se clona`); continue; }
     vistas.add(r.ruta);
     // Una entrada de GitHub da `<dueño>/<repo>`. Dos columnas siempre: el modelo de Azure lee dos.
     console.log(`${r.ruta}\t${r.ado || r.github || ''}`);

@@ -682,3 +682,22 @@ test('T36 Adv_UntrackedLeadingSpaceName — un nombre con espacio adelante choca
   assert.strictEqual(r.status, 'archivos-traban', JSON.stringify(r));
   assert.deepStrictEqual(r.files, [' lead.md']);
 });
+
+// T39 — a password with «@», the invisible characters left out of the list, and a provider key with no word before it.
+// The key is built in parts: no whole provider shape is written in this file.
+// 🔴 Fails with: the URL cut at the first «@», U+061C/U+180E/Tag characters missing from CONTROL, or no provider shapes in redact.
+test('T39 Redact_AtInPasswordInvisiblesAndBareKeys — nothing of the password or the key is left', () => {
+  const M = require(PIECE);
+  const red = M.redact("fatal: unable to access 'https://usuario:cla@ve-secreta@dev.example.invalid/x/_git/y/': 500");
+  assert.ok(!red.includes('ve-secreta') && !red.includes('cla@'), red);
+  assert.match(red, /dev\.example\.invalid/, 'the host stays: it explains the error');
+  const aws = 'AKIA' + 'ABCDEFGHIJKLMNOP';
+  const gh = 'gh' + 'p_abcdefghijklmnopqrst';
+  for (const t of [`remote: rejected ${aws}`, `error: ${gh} no sirve`]) {
+    const r = M.redact(t);
+    assert.ok(!r.includes(aws.slice(4)) && !r.includes(gh.slice(4)), `${t} → ${r}`);
+  }
+  assert.strictEqual(M.redact('error: AKIA suelto no es una clave'), 'error: AKIA suelto no es una clave', 'a word alone is not a key');
+  const hidden = ['a', String.fromCharCode(0x061c), 'b', String.fromCharCode(0x180e), 'c', String.fromCodePoint(0xe0041), 'd', String.fromCodePoint(0xe007f)].join('');
+  assert.strictEqual(M.clean(hidden), 'a b c d');
+});

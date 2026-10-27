@@ -441,7 +441,7 @@ Las secciones, en el orden de la pantalla:
   el repo deja a su identidad saltear la revisión, y si pide la aprobación de otra persona le prende el auto-merge y
   entra en cuanto alguien lo apruebe; si el repo tampoco deja el auto-merge, queda el pedido. Antes de proponer, al
   lado del botón, la sección dice qué va a pasar. Queda escrito quién lo hizo: la descripción del pedido nombra a quien
-  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
+  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`. Cuenta la opción
   que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios
   entran solos. Queda en `operations.json`, en el repo de operaciones.
 - **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
@@ -1132,7 +1132,7 @@ empuje por ruta del README de GitHub: el sitio valida y descarga `operations.jso
 request a mano.
 
 **Lo que se resigna.** Nadie revisa esos cambios antes de que entren. Queda la constancia: cada cambio del sitio es un
-pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`.
+pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo>, pedido <enlace>`.
 Quien puede escribir en el repo de operaciones puede hacerse mantenedor del sitio o cambiar un proceso de la noche sin
 que otro lo mire: lo que se cuida es quién tiene escritura en ese repo.
 
@@ -1228,8 +1228,8 @@ organización (arriba): deja que cuente el voto de quien crea el pedido, pide un
 empujó el último cambio y no nombra revisores. Si pide más, el pedido queda y la sección dice qué falta.
 Sin ninguna política en `main`, «Proponer» sigue apagado aunque la opción esté prendida. Para encenderla, primero la
 imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply` y daría `operations.json` por inválido
-(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
-pidió; es la única línea del registro que lleva un correo.
+(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el enlace a su pedido;
+el correo de quien lo pidió no va al registro: lo dice el pedido.
 
 ### Cómo se mantiene al día
 

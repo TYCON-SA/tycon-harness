@@ -208,8 +208,9 @@ function contextFromConfig(env, home) {
     const r = cfg.integracionParaHook('instincts', { env, home });
     ctx.enabled = !!(r && r.ok && r.prendida);
     if (r && r.ok === false) errorLogger(ctx.obsDir, new Date())(`la configuración está rota: no graba (${r.aviso || 'sin detalle'})`);
-    if (ctx.enabled && r.config) {
-      const repos = cfg.valor(r.config, 'rutas.repos');
+    const leida = ctx.enabled ? cfg.leerParaHook({ env, home }) : null;
+    if (leida && leida.ok) {
+      const repos = cfg.valor(leida.config, 'rutas.repos');
       ctx.reposRoot = Array.isArray(repos) ? repos[0] || null : repos || null;
     }
   } catch (e) {

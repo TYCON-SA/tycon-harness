@@ -138,9 +138,10 @@ const describe = (x) => {
 };
 
 /** Paso (1): los archivos enteros. Devuelve `{ restored, warned, problems }` (rutas y líneas). */
-function restoreFiles(copy, state, { say }) {
-  const files = Array.isArray(copy.manifest.files) ? copy.manifest.files : [];
+function restoreFiles(copy, state, { say, home, env, tree }) {
+  const { files, skipped } = require('./snapshot.js').safeFiles(copy, { home, env, tree });
   const out = { restored: [], warned: [], problems: [] };
+  for (const p of skipped) say(`${p}: la copia ${copy.name} lo nombra fuera de la HOME o con su copia fuera de la carpeta: no lo toco`);
   if (!files.some((f) => f && typeof f.sha256_after === 'string')) {
     say(`la copia ${copy.name} no quedó cerrada (sin sha256_after): no restauro archivos enteros; vuelvo sólo por piezas`);
     return out;
@@ -287,7 +288,7 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
   }
 
   // (1) los archivos enteros que nadie tocó desde el cambio
-  const files = restoreFiles(copy, state, { say });
+  const files = restoreFiles(copy, state, { say, home, env, tree });
   result.restored = files.restored; result.warned = files.warned;
   if (files.problems.length) result.ok = false;
   if (onlyFiles) {

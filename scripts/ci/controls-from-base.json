@@ -21,6 +21,7 @@
       { "path": "team-profile.json", "optional": true },
       { "path": "perfil-equipo.json", "optional": true }
     ] },
+    { "name": "provider-secret-shapes", "script": "scripts/lib/provider-secret-shapes.js", "rules": [] },
     { "name": "spanish-names", "script": "scripts/publishing/spanish-names.js", "rules": [
       "scripts/lib/spanish-words.json",
       "scripts/publishing/spanish-names-ceiling.json",

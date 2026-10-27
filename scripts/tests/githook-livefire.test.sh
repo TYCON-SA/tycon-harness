@@ -737,6 +737,33 @@ else
   echo "  ⚠️   — C-23/C-24 (T13, T15) NO verificados: no está agent-skills. No es un verde."
 fi
 
+
+# C-35 · ProviderSecret_WholeKey_CommitNotCreated — una clave entera con forma de proveedor que el commit AGREGA no entra;
+# el mensaje dice dónde y cómo seguir sin mostrar la clave, y lo inofensivo (la palabra sola, la clave por partes, retocar
+# un archivo con una clave de antes) entra. La clave se arma por partes acá, como pide el propio freno.
+CLAVE="AKIA""ABCDEFGHIJKLMNOP"
+T=$(mktemp -d); montar "$T"
+printf 'vieja %s\n' "$CLAVE" > "$T/repo/scripts/vieja.txt"
+( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "una clave de antes" )
+ANTES=$(cuantos "$T")
+printf 'la llave %s\n' "$CLAVE" > "$T/repo/scripts/nueva.txt"; ( cd "$T/repo" && git add scripts/nueva.txt )
+RC=$(commitear "$T" "una clave entera")
+if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q 'scripts/nueva.txt:1: clave entera con forma de AWS (AKIA\*\*\*): armala por partes' "$T/out.txt" \
+   && ! grep -qF "$CLAVE" "$T/out.txt"; then
+  ok "C-35 ProviderSecret_WholeKey_CommitNotCreated: una clave entera nueva, el commit NO se crea (dice dónde y cómo seguir, sin la clave)"
+else
+  mal "C-35 exit $RC · commits ${ANTES}→$(cuantos "$T") — el commit entró, no dijo dónde o mostró la clave"; sed -n '1,12p' "$T/out.txt"
+fi
+( cd "$T/repo" && git reset -q HEAD scripts/nueva.txt && rm -f scripts/nueva.txt )
+printf "AKIA a secas, y 'AKIA' + 'ABCD' por partes\n" > "$T/repo/scripts/inofensivo.txt"
+printf 'vieja %s\nuna línea más\n' "$CLAVE" > "$T/repo/scripts/vieja.txt"
+( cd "$T/repo" && git add scripts/inofensivo.txt scripts/vieja.txt )
+RC=$(commitear "$T" "lo inofensivo")
+if [ "$RC" = "0" ] && [ "$(cuantos "$T")" = "$((ANTES + 1))" ]; then ok "C-35 el espejo: la palabra sola, la clave por partes y retocar un archivo con una clave de antes entran"
+else mal "C-35 el espejo: lo inofensivo fue frenado (exit $RC)"; sed -n '1,12p' "$T/out.txt"; fi
+rm -rf "$T"
+
+
 fi
 if suite_part 1; then   # ── parte 1 de 2 ──
 
