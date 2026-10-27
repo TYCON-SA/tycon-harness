@@ -315,7 +315,7 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   f[`.dashboard/vigilante/vigilante-${hoy}.json`] = { fecha: hoy, generado: `${hoy}T05:30:00Z`, productos: { 'producto-x': { ok: true }, 'producto-y': { ok: true } }, hallazgos: [{ id: 'v1' }], nuevos: 1, repetidos: 0, resumen: { rubros: {
     pendientes: { valor: [{ id: 'v1', producto: 'producto-x', regla: 'errores-500' }], motivo: null },
     aceptadas_sin_story: { valor: [{ id: 'v2', producto: 'producto-y', regla: 'lentitud' }], motivo: null } } } };
-  // las fichas, en el formato de cada fuente: la sección «Lo que encontró la noche» de Ejecuciones las muestra.
+  // las fichas, en el formato de cada fuente: la pestaña Pendientes las muestra.
   // Las pendientes van sin `pr:`: con el pedido de la noche abierto se deciden ahí, no en el sitio
   const conPr = (pr) => (pr ? `pr: ${pr}\n` : '');
   const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${ayer}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;

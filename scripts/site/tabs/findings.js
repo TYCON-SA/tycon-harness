@@ -1,6 +1,6 @@
 'use strict';
 /*
- * tabs/findings.js — «LO QUE ENCONTRÓ LA NOCHE», LA SECCIÓN DE LA PESTAÑA EJECUCIONES.
+ * tabs/findings.js — LA PESTAÑA «PENDIENTES»: LO QUE ENCONTRÓ LA NOCHE Y ESPERA UNA DECISIÓN.
  *
  * Qué resuelve: quien mantiene decide cada ficha de la noche (dependencias, el vigilante y la revisión de las
  * ejecuciones) con un clic, sin abrir el repo de operaciones. El clic no escribe nada en main: abre un pedido con el
@@ -8,15 +8,16 @@
  * (scripts/nightly/findings/cycle.js, `aplicarDecisiones`).
  *
  * UNA FILA POR FICHA VIVA, leída del clon de operaciones con la vista común (sources.js `comoFicha`): sin el diagnóstico
- * ni la evidencia del vigilante, y con la razón del modelo pasada otra vez por su filtro. Tres estados por fila:
+ * ni la evidencia del vigilante, y con la razón del modelo pasada otra vez por su filtro. Cada fila dice en llano qué
+ * pasó (cuántas veces, en qué máquinas y en qué stories, de los casos de la ficha) y qué haría «Arreglar» según la familia
+ * de la causa; la propuesta del modelo va debajo, como sugerencia. Qué hace cada botón se dice una vez, arriba. Estados:
  * «pendiente» (con los botones), «propuesto en el pedido N» (UNA consulta de pedidos abiertos para todas las filas,
  * guardada un minuto) y «decidido, se aplica esta noche» (el archivo de decisión ya está en main). Dependencias ofrece
  * sólo «Arreglar»: aceptar el riesgo es declarar la deuda en cada repo, con plazo. Sin clon, sin fichas o con carpetas
  * que no se pueden leer, una frase: nunca una tabla vacía.
  *
- * Rutas (todas `maintainer`, sin pestaña ni entrada de menú propias): GET /api/hallazgos · POST /api/hallazgos/confirmar
- * · GET /hallazgos/cliente.js. La sección la arma `crearRutas(...).seccion(ctx)`, que tabs/runs.js pone al pie de la
- * página. Casos: scripts/tests/site-findings.test.js.
+ * Rutas (todas `maintainer`: otro rol no ve la pestaña en el menú): GET /pendientes · GET /api/hallazgos · POST
+ * /api/hallazgos/confirmar · GET /hallazgos/cliente.js. Casos: scripts/tests/site-findings.test.js.
  */
 const fs = require('fs');
 const path = require('path');
@@ -40,6 +41,12 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
 const norm = (c) => String(c || '').trim().toLowerCase();
+// las familias de causa de ejecuciones con un texto fijo de qué haría «Arreglar» (hallazgos.arreglo.<familia>)
+const FAMILIAS = { 'RR-ESCAPE': 'escape', 'RR-HOOK': 'hook', 'RR-CIERRE': 'cierre', 'RR-NODE': 'node', 'RR-BANDERA': 'bandera', 'RR-APAGO': 'apago' };
+// el nombre de la máquina sin la huella del final (`mac-mini-b274e100` → `mac-mini`)
+const HUELLA_DE_MAQUINA = /-[0-9a-f]{8}$/;
+const PRODUCTO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
+const TOPE_LISTA = 3;
 
 /** Las acciones que se pueden confirmar en una fuente (decisión 14: dependencias, sólo arreglar). */
 const accionesDe = (fuente) => Object.keys(CYCLE.VEREDICTO_DE_DECISION[fuente]).sort();
@@ -74,15 +81,29 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         }
         for (const n of nombres) {
           let v;
-          try { v = SOURCES.comoFicha(fuente, fs.readFileSync(path.join(d, n), 'utf8')); } catch { ilegibles.add(fuente); continue; }
+          let txt;
+          try { txt = fs.readFileSync(path.join(d, n), 'utf8'); v = SOURCES.comoFicha(fuente, txt); } catch { ilegibles.add(fuente); continue; }
           // una ficha por ejecución de antes no es de este ciclo; una resuelta ya no se decide
           if (!v || v.estado === 'resuelta') continue;
           if (!(typeof v.id === 'string' && ID.test(v.id))) { ilegibles.add(fuente); continue; }
-          fichas.push({ ...v, carpeta });
+          fichas.push({ ...v, carpeta, contexto: contextoDe(fuente, reg, txt) });
         }
       }
     }
     return { estado: 'leido', fichas, ilegibles: [...ilegibles] };
+  }
+
+  /** Lo que hace falta para decir qué pasó y que la vista común no trae: los casos, los repos, el producto. */
+  function contextoDe(fuente, reg, txt) {
+    if (fuente === 'ejecuciones') {
+      const f = CYCLE.parsear(txt);
+      const casos = Array.isArray(f.casos) ? f.casos : [];
+      const unicos = (k) => [...new Set(casos.map((c) => c[k]).filter((x) => typeof x === 'string' && x).reverse())];
+      return { veces: f.casos_total || f.apariciones || null, maquinas: unicos('maquina').map((m) => m.replace(HUELLA_DE_MAQUINA, '')), stories: unicos('story') };
+    }
+    if (fuente === 'dependencias') return { repos: reg.formato.listaDe(String(txt), 'repos') };
+    const producto = reg.formato.leerFicha(String(txt)).escalares.producto;
+    return { producto: PRODUCTO.test(String(producto || '')) ? producto : null };
   }
 
   // ── los pedidos abiertos: una consulta para todas las filas, guardada un minuto ──
@@ -120,12 +141,11 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const acciones = estado === 'pendiente' ? accionesDe(f.fuente) : [];
       const propuesta = f.propuesta ? { accion: f.propuesta.accion, razon: f.propuesta.razon } : null;
       return {
-        fuente: f.fuente, id: f.id, nombre: f.nombre, apariciones: f.apariciones, noches: f.noches, primera_vez: f.primera_vez,
+        fuente: f.fuente, id: f.id, nombre: f.nombre, que_paso: quePaso(f, idioma), que_arreglaria: T(idioma, `hallazgos.arreglo.${familiaDe(f)}`), apariciones: f.apariciones, noches: f.noches, primera_vez: f.primera_vez,
         ultima_vez: f.ultima_vez, veredicto: f.veredicto, propuesta, propuesta_motivo: propuesta ? null : f.propuesta_motivo || null,
         pedido: f.pedido, asignado: f.asignado || null, pr_noche: f.pr_noche || null,
         estado_fila: estado, propuesto: pr ? { numero: pr.numero, enlace: ENLACE.test(String(pr.enlace)) ? pr.enlace : null } : null,
         acciones, por_defecto: acciones.length ? (propuesta && acciones.includes(propuesta.accion) ? propuesta.accion : acciones[0]) : null,
-        nota: f.fuente === 'dependencias' ? T(idioma, 'hallazgos.deuda') : null,
       };
     });
     const ilegible = l.ilegibles.length > 0;
@@ -137,13 +157,49 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     };
   }
 
+  // ── qué pasó y qué haría «Arreglar» ──
+
+  /** La familia de la causa: la de ejecuciones por su regla; dependencias y el vigilante, la fuente. */
+  const familiaDe = (f) => (f.fuente !== 'ejecuciones' ? f.fuente : FAMILIAS[String(f.causa || '').split(':')[0]] || 'desconocida');
+
+  /** «a, b y c» (con «y N más» pasado el tope), en el idioma de la página. */
+  function lista(idioma, xs) {
+    const vistos = xs.slice(0, TOPE_LISTA);
+    const resto = xs.length - vistos.length;
+    if (resto > 0) return `${vistos.join(', ')} ${T(idioma, 'hallazgos.paso.yMas', { n: resto })}`;
+    return vistos.length > 1 ? `${vistos.slice(0, -1).join(', ')} ${T(idioma, 'hallazgos.paso.y')} ${vistos[vistos.length - 1]}` : vistos.join('');
+  }
+
+  /** Una frase en llano de qué pasó, con los datos de la ficha. */
+  function quePaso(f, idioma) {
+    const c = f.contexto || {};
+    const uno = (n, k) => T(idioma, n === 1 ? `${k}Una` : k, { n, lista: '' });
+    if (f.fuente === 'ejecuciones') {
+      const partes = [c.veces ? uno(c.veces, 'hallazgos.paso.veces') : T(idioma, 'hallazgos.paso.sinCuenta')];
+      if (c.maquinas.length) partes.push(T(idioma, c.maquinas.length === 1 ? 'hallazgos.paso.maquina' : 'hallazgos.paso.maquinas', { lista: lista(idioma, c.maquinas) }));
+      if (c.stories.length) partes.push(T(idioma, c.stories.length === 1 ? 'hallazgos.paso.story' : 'hallazgos.paso.stories', { lista: lista(idioma, c.stories) }));
+      const ultima = f.ultima_vez || f.primera_vez;
+      return `${partes.join(', ')}.${ultima ? ` ${T(idioma, 'hallazgos.paso.ultima', { dia: ultima })}` : ''}`;
+    }
+    if (f.fuente === 'dependencias') {
+      const partes = [T(idioma, 'hallazgos.paso.paquete', { nombre: f.nombre })];
+      if (f.noches) partes.push(uno(f.noches, 'hallazgos.paso.nochesSeguidas'));
+      if (c.repos.length) partes.push(T(idioma, 'hallazgos.paso.repos', { lista: lista(idioma, c.repos) }));
+      return `${partes.join(', ')}.`;
+    }
+    const partes = [T(idioma, c.producto ? 'hallazgos.paso.produccionDe' : 'hallazgos.paso.produccion', { producto: c.producto, nombre: f.nombre })];
+    if (f.apariciones) partes.push(uno(f.apariciones, 'hallazgos.paso.nochesSeguidas'));
+    return `${partes.join(', ')}.`;
+  }
+
   // ── la página ──
 
   function filaHtml(f, idioma) {
     const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer">${esc(texto)}</a>` : esc(texto));
-    const veces = f.fuente === 'dependencias' && f.noches != null ? T(idioma, 'hallazgos.noches', { n: f.noches }) : (f.apariciones == null ? '—' : String(f.apariciones));
     const sinPropuesta = f.propuesta_motivo ? T(idioma, `hallazgos.motivo.${f.propuesta_motivo}`) : T(idioma, 'hallazgos.sinPropuesta');
-    const propuesta = f.propuesta ? `<b>${esc(T(idioma, `hallazgos.accion.${f.propuesta.accion}`))}</b>: ${esc(f.propuesta.razon)}` : `<span class="q-note">${esc(sinPropuesta)}</span>`;
+    // la razón del modelo está en castellano (se le pide así): lo dice la etiqueta, y `lang` para quien la lee en voz alta
+    const sugerencia = f.propuesta ? `${esc(T(idioma, 'hallazgos.sugerencia', { accion: T(idioma, `hallazgos.accion.${f.propuesta.accion}`) }))} <span lang="es">${esc(f.propuesta.razon)}</span>` : esc(sinPropuesta);
+    const arreglo = `${esc(f.que_arreglaria)}<div class="q-note">${sugerencia}</div>`;
     const asignado = f.asignado ? `<div class="q-note">${esc(T(idioma, 'hallazgos.asignado', { quien: f.asignado }))}</div>` : '';
     const pedido = `${f.pedido ? enlace(f.pedido.id || T(idioma, 'hallazgos.col.pedido'), f.pedido.enlace) : '—'}${asignado}`;
     const estado = f.estado_fila === 'propuesto' ? enlace(T(idioma, 'hallazgos.estado.propuesto', { numero: f.propuesto.numero }), f.propuesto.enlace)
@@ -151,9 +207,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       : f.estado_fila === 'decidida' ? esc(T(idioma, 'hallazgos.estado.decidida', { veredicto: T(idioma, `hallazgos.veredicto.${f.veredicto === 'arreglo' ? 'arreglo' : 'aceptada'}`) }))
         : esc(T(idioma, `hallazgos.estado.${f.estado_fila}`));
     const botones = f.acciones.map((a) => `<button type="button" class="btn${a === f.por_defecto ? ' primario' : ''}" data-accion="${esc(a)}" data-fuente="${esc(f.fuente)}" data-id="${esc(f.id)}">${esc(T(idioma, `hallazgos.accion.${a}`))}</button>`).join(' ');
-    const nota = f.nota ? `<div class="q-note">${esc(f.nota)}</div>` : '';
-    return `<tr data-ficha="${esc(`${f.fuente}/${f.id}`)}"><td>${esc(T(idioma, `hallazgos.fuente.${f.fuente}`))}</td><td>${esc(f.nombre)}</td><td>${esc(veces)}</td>`
-      + `<td>${esc(f.ultima_vez || f.primera_vez || '—')}</td><td>${propuesta}</td><td>${pedido}</td><td class="h-estado" aria-live="polite">${estado}</td><td>${botones}${nota}</td></tr>`;
+    return `<tr data-ficha="${esc(`${f.fuente}/${f.id}`)}"><td>${esc(T(idioma, `hallazgos.fuente.${f.fuente}`))}</td><td><b>${esc(f.nombre)}</b><div>${esc(f.que_paso)}</div></td>`
+      + `<td>${arreglo}</td><td>${pedido}</td><td class="h-estado" aria-live="polite">${estado}</td><td>${botones}</td></tr>`;
   }
 
   async function seccion(ctx) {
@@ -162,11 +217,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const m = await modelo(idioma);
     const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok.replace(/[^A-Za-z0-9_-]/g, '') : '';
     const frases = [m.frase, m.pedidos && m.pedidos.frase].filter(Boolean).map((t) => `<p class="q-note">${esc(t)}</p>`).join('');
-    const cols = ['fuente', 'nombre', 'veces', 'ultima', 'propuesta', 'pedido', 'estado', 'decidir'].map((c) => `<th>${esc(T(idioma, `hallazgos.col.${c}`))}</th>`).join('');
+    const cols = ['fuente', 'quePaso', 'arreglo', 'pedido', 'estado', 'decidir'].map((c) => `<th>${esc(T(idioma, `hallazgos.col.${c}`))}</th>`).join('');
     const tabla = m.filas.length ? `<div class="tabla-scroll"><table class="tabla"><thead><tr>${cols}</tr></thead><tbody>${m.filas.map((f) => filaHtml(f, idioma)).join('')}</tbody></table></div>` : '';
     const textos = ['abriendo', 'abierto', 'noSePudo', 'demo'].map((k) => ` data-t-${k.toLowerCase()}="${esc(T(idioma, `hallazgos.${k}`))}"`).join('');
-    return `<section id="hallazgos" class="hallazgos" data-token="${esc(tok)}"${textos}><h2>${esc(T(idioma, 'hallazgos.titulo'))}</h2><p class="lede">${esc(T(idioma, 'hallazgos.lede'))}</p>`
-      + `${frases}${tabla}<script src="/hallazgos/cliente.js" defer></script></section>`;
+    // qué hace cada botón, una vez arriba: no en cada fila
+    const conDependencias = m.filas.some((f) => f.fuente === 'dependencias' && f.acciones.length);
+    const botones = m.filas.length ? `<ul class="lista">${['aceptar', 'arreglar'].map((a) => `<li>${esc(T(idioma, `hallazgos.botones.${a}`))}</li>`).join('')}${conDependencias ? `<li>${esc(T(idioma, 'hallazgos.deuda'))}</li>` : ''}</ul>` : '';
+    return `<section id="hallazgos" class="hallazgos" data-token="${esc(tok)}"${textos}>${frases}${botones}${tabla}<script src="/hallazgos/cliente.js" defer></script></section>`;
   }
 
   // ── confirmar ──
@@ -232,6 +289,12 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
   const solo = ['maintainer'];
   const rutas = [
+    {
+      method: 'GET', path: '/pendientes', needs: solo, pestana: { id: 'pendientes', titulo: 'Pendientes', orden: 25 }, handler: async (ctx) => {
+        const idioma = views.idiomaDe(ctx);
+        return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, T(idioma, 'pestana.pendientes'), await seccion(ctx), T(idioma, 'hallazgos.lede')) };
+      },
+    },
     { method: 'GET', path: '/api/hallazgos', needs: solo, handler: async (ctx) => json(200, await modelo(views.idiomaDe(ctx))) },
     {
       method: 'POST', path: '/api/hallazgos/confirmar', needs: solo, handler: async (ctx) => {
@@ -243,7 +306,6 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     },
     { method: 'GET', path: '/hallazgos/cliente.js', needs: solo, handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CLIENTE }) },
   ];
-  rutas.seccion = seccion;
   return rutas;
 }
 

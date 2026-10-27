@@ -198,6 +198,22 @@ view, with the date it is from, while the mailbox is downloaded in full again; a
 its own. Each run's changes come back when the new view finishes building. The saved view lives on the site's disk
 (`SITE_DATA_DIR`): **with no disk**, after a restart the tab waits for the first full download.
 
+### Pending (Pendientes)
+
+Only for **maintainers**: what the night found that waits for a decision. There are three sources: the review of the
+runs (a skipped control, an automatic notice that fails), dependencies with a known vulnerability, and the production
+watcher. Each row says:
+
+- **What happened**, in plain words: how many times, on which machines and in which stories. For example, "It happened
+  2 times, on the machine mac-mini, in two different stories".
+- **What "Fix" would do**: a fixed text by kind of problem, for example "find out who turned the control off and why,
+  and turn it back on". If the night's model left a proposal, it goes below as a suggestion (written in Spanish).
+
+The buttons are explained once, above the table. **Accept** means "it is fine as it is": the finding is archived.
+**Fix** leaves it as pending work. Neither changes anything on the spot: they open a pull request to the operations
+repo that someone else has to approve, and the next night applies it. In dependencies you can only fix: to accept the
+risk, declare the debt in each repo, with a deadline.
+
 ### Projects (Proyectos)
 
 **What it answers:** how is each product doing?
@@ -702,12 +718,12 @@ reported with its last run. It is view only: the machines update themselves on s
 
 The site decides who you are by your email, and only with the "Who gets into the site" list:
 
-| Role | Home | Runs | Projects | Harness | How it works | Configuration |
-|---|---|---|---|---|---|---|
-| **Maintainer** | "What to decide today", for the whole organization | all runs | all products | yes | yes, and proposes changes to its reviewers | yes, and proposes changes |
-| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | the products they work on | no | no | no |
-| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no | no |
-| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no | no |
+| Role | Home | Runs | Pending | Projects | Harness | How it works | Configuration |
+|---|---|---|---|---|---|---|---|
+| **Maintainer** | "What to decide today", for the whole organization | all runs | yes, and decides each one | all products | yes | yes, and proposes changes to its reviewers | yes, and proposes changes |
+| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | no | the products they work on | no | no | no |
+| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | no | the products they work on | no | no | no |
+| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no | no | no |
 
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
