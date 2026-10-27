@@ -329,6 +329,34 @@ function resolverIdentidad(az, mail) {
 }
 
 /**
+ * Quienes mantienen el arnés, para mencionarlos además del responsable de respaldo: una identidad por persona, por el
+ * primero de sus correos que Azure conoce, sin repetir al respaldo ni a otra. Quien no tiene identidad se saltea y se
+ * cuenta en `res.maintainers_sin_identidad`; 🔴 su correo no va a la salida ni a la foto.
+ */
+function maintainersDe(az, personas, respaldoId, res) {
+  const vistos = new Set([String(respaldoId).toLowerCase()]);
+  const extra = [];
+  for (const correos of personas) {
+    let ident = null;
+    let usado = null;
+    for (const mail of correos) { const r = resolverIdentidad(az, mail); if (r.ok) { ident = r; usado = mail; break; } }
+    if (!ident) { res.maintainers_sin_identidad += 1; continue; }
+    const k = String(ident.id).toLowerCase();
+    if (vistos.has(k)) continue;
+    vistos.add(k);
+    // sin nombre visible en Azure, el resolvedor devuelve el correo: en el comentario va un nombre genérico
+    extra.push({ id: ident.id, nombre: ident.nombre === usado ? 'mantiene el arnés' : ident.nombre });
+  }
+  return extra;
+}
+
+/** Las menciones del primer párrafo de un comentario del arnés: el responsable de respaldo y quienes mantienen el arnés. */
+function mencionesDelArnes(respaldo) {
+  return [respaldo, ...(respaldo.extra || [])]
+    .map((x) => `<a href="#" data-vss-mention="version:2.0,${escHtml(x.id)}">@${escHtml(x.nombre)}</a>`).join(' ');
+}
+
+/**
  * Quién responde, sin operations.json: `azure.fallback_owner` de repos.json, sin declarados por proyecto.
  * `{ ok, fuente, respaldo, declarado(p) }` o `{ ok: false, motivo }`.
  */
@@ -352,7 +380,13 @@ function responsables(a, azure) {
     return { ok: false, motivo: 'sin responsable de respaldo: operations.json no sirve (el detalle: node scripts/lib/operations-config.js operations.json) — no se adivina' };
   }
   const bp = r.data.owners.by_project || {};
-  return { ok: true, fuente: 'operations.json', respaldo: r.data.owners.default, workItems: r.data.work_items || null,
+  // quienes mantienen el arnés, cada persona con sus correos: las entradas «maintainer» de site.access o, en la forma
+  // corta, cada correo de site.maintainers
+  const site = r.data.site || {};
+  const maintainers = Array.isArray(site.access)
+    ? site.access.filter((e) => e.role === 'maintainer').map((e) => e.emails)
+    : (site.maintainers || []).map((m) => [m]);
+  return { ok: true, fuente: 'operations.json', respaldo: r.data.owners.default, maintainers, workItems: r.data.work_items || null,
            declarado: (p) => (Object.prototype.hasOwnProperty.call(bp, p) ? operaciones.ownerFor(r.data, p) : null) };
 }
 
@@ -496,7 +530,7 @@ async function hablar(ctx) {
     simulado, tope, fichas_vivas: 0, fichas_sin_pedido: 0, creados: [], adoptados: [], existentes: 0,
     fallidos: [], postergados: [], sin_iteracion: [], sin_dueno_unico: [], pagados_avisados: [], reabiertos: [],
     deuda_avisada: [], sin_pedido: [], cerrados_vivos_avisados: [], huerfanos_adoptados: [], huerfanos_sin_adoptar: [],
-    tipo_de_fabrica: [],
+    tipo_de_fabrica: [], maintainers_sin_identidad: 0,
   };
   const textos = [];
   const unaVez = (lista, item) => { if (!lista.some((x) => x.proyecto === item.proyecto)) lista.push(item); };
@@ -537,7 +571,7 @@ async function hablar(ctx) {
     if (!respaldoLeido) {
       respaldoLeido = true;
       const r = quien.ok ? resolverIdentidad(az, quien.respaldo) : { ok: false, motivo: quien.motivo };
-      if (r.ok) respaldo = r; else motivoRespaldo = r.motivo;
+      if (r.ok) respaldo = { ...r, extra: maintainersDe(az, quien.maintainers || [], r.id, res) }; else motivoRespaldo = r.motivo;
     }
     return respaldo ? { ok: true, ...respaldo } : { ok: false, motivo: motivoRespaldo };
   };
@@ -606,7 +640,7 @@ async function hablar(ctx) {
           // 🔴 El adoptado recibe la mención: si `crear` respondió con error
           // pero Azure sí lo creó, este Bug nunca tuvo su comentario, y «el responsable de respaldo va SIEMPRE». Si el que
           // se perdió fue el push, es un segundo comentario — ruido chico frente a un Bug sin mención.
-          const adop = `<p><a href="#" data-vss-mention="version:2.0,${escHtml(respaldo.id)}">@${escHtml(respaldo.nombre)}</a> — este pedido ya existía en Azure con la etiqueta <code>arnes:${escHtml(idFicha)}</code> y la ficha no lo tenía anotado (se perdió el registro de una noche anterior, o la creación respondió con error aunque se hizo): la revisión nocturna lo adopta.</p>`;
+          const adop = `<p>${mencionesDelArnes(respaldo)} — este pedido ya existía en Azure con la etiqueta <code>arnes:${escHtml(idFicha)}</code> y la ficha no lo tenía anotado (se perdió el registro de una noche anterior, o la creación respondió con error aunque se hizo): la revisión nocturna lo adopta.</p>`;
           const k = comentar(nuestros[0], adop);
           if (!k.ok) fallo('comentario', `adopté el Bug ${nuestros[0]} pero no pude comentarlo: ${k.motivo}`);
         }
@@ -630,7 +664,7 @@ async function hablar(ctx) {
       const cuerpo = aHtml(cuerpoDeFicha({ paquete: f.fi.escalares.paquete, sev: f.fi.escalares.severidad,
         noches: f.fi.escalares.noches, repos: reposP, avisos: f.fi.listas.avisos, id: idFicha }, { destino: 'pedido' }));
       const comentario = [
-        `<p><a href="#" data-vss-mention="version:2.0,${escHtml(respaldo.id)}">@${escHtml(respaldo.nombre)}</a> — pedido abierto por la revisión nocturna de dependencias del arnés (ficha <code>arnes:${escHtml(idFicha)}</code>).</p>`,
+        `<p>${mencionesDelArnes(respaldo)} — pedido abierto por la revisión nocturna de dependencias del arnés (ficha <code>arnes:${escHtml(idFicha)}</code>).</p>`,
         dueno.unico
           ? `<p>Asignado a <strong>${escHtml(dueno.asignado)}</strong>: ${escHtml(dueno.motivo)}.</p>`
           : `<p>Asignado al responsable de respaldo (<strong>${escHtml(dueno.asignado)}</strong>) — ${escHtml(dueno.motivo)}.</p>`,
@@ -832,7 +866,8 @@ function reabrirLeido(az, id, proyecto, desde, f, categoriasDe) {
  * avisa: «no medido» nunca es «limpio».
  */
 /**
- * Las menciones de un aviso del arnés en un Bug: quien lo tiene asignado y el responsable de respaldo, una vez cada uno.
+ * Las menciones de un aviso del arnés en un Bug: quien lo tiene asignado, el responsable de respaldo y quienes mantienen
+ * el arnés, una vez cada uno.
  * 🔴 En esta organización cambiar el estado de un Bug no manda mail a nadie
  * (medido: las únicas suscripciones de work items son «asignado» y «reacción»); una mención sí.
  */
@@ -840,7 +875,9 @@ function menciones(respaldo, fields) {
   const personas = [];
   const asg = fields && fields['System.AssignedTo'];
   if (asg && typeof asg === 'object' && asg.id) personas.push({ id: String(asg.id), nombre: asg.displayName || asg.uniqueName || 'responsable' });
-  if (respaldo && respaldo.ok && !personas.some((x) => x.id.toLowerCase() === String(respaldo.id).toLowerCase())) personas.push({ id: String(respaldo.id), nombre: respaldo.nombre });
+  for (const x of respaldo && respaldo.ok ? [respaldo, ...(respaldo.extra || [])] : []) {
+    if (!personas.some((y) => y.id.toLowerCase() === String(x.id).toLowerCase())) personas.push({ id: String(x.id), nombre: x.nombre });
+  }
   return personas.map((x) => `<a href="#" data-vss-mention="version:2.0,${escHtml(x.id)}">@${escHtml(x.nombre)}</a>`).join(' ');
 }
 
@@ -1230,7 +1267,7 @@ function leerVolcadoDeHoy(outDir, hoy) {
 function textoCerradoVivo(x, paquete, respaldo, hoy) {
   const repos = (Array.isArray(x.repos) && x.repos.length ? x.repos : ['(sin repos)']).map(escHtml).join(', ');
   const est = escHtml(x.estado || '?'), mot = escHtml(x.motivo || 'sin motivo'), desde = escHtml(x.visto_cerrado || '?');
-  const L = [`<p><a href="#" data-vss-mention="version:2.0,${escHtml(respaldo.id)}">@${escHtml(respaldo.nombre)}</a> — revisión nocturna de dependencias del arnés (ficha <code>arnes:${escHtml(x.ficha)}</code>).</p>`];
+  const L = [`<p>${mencionesDelArnes(respaldo)} — revisión nocturna de dependencias del arnés (ficha <code>arnes:${escHtml(x.ficha)}</code>).</p>`];
   if (x.clase === 'no-aplica') {
     L.push(`<p>Este pedido está cerrado como no aplica (${est}, ${mot}) desde el ${desde}, y la vulnerabilidad ${escHtml(paquete)} sigue apareciendo en ${repos}, medido el ${escHtml(hoy)}.</p>`,
       '<p>No lo reabro: decidilo vos. La única salida sin arreglo es declarar la deuda en <code>vulnerabilidades-pendientes.json</code>, con motivo y fecha de revisión: si no, va a seguir apareciendo todas las noches.</p>');
@@ -1387,6 +1424,7 @@ function imprimir(r, textos, hoy) {
   for (const x of r.sin_iteracion) console.log(`🗓️ ${x.proyecto}: ${x.motivo} → el pedido va a la raíz del backlog`);
   for (const x of r.tipo_de_fabrica || []) console.log(`🧩 ${x.proyecto}: ${x.motivo}`);
   for (const x of r.sin_dueno_unico) console.log(`👤 ${x.proyecto}: ${x.motivo} → se asigna al responsable de respaldo`);
+  for (let i = 0; i < (r.maintainers_sin_identidad || 0); i++) console.log('👤 una persona que mantiene el arnés y no tiene identidad en Azure (o no se pudo consultar) no se menciona');
   for (const x of r.reabiertos || []) console.log(`🔁 volvió a aparecer en ${x.proyecto}: Bug ${x.id} reabierto (ficha ${x.ficha})`);
   for (const x of r.pagados_avisados) console.log(`📣 «ya no aparece» en ${x.proyecto} (Bug ${x.id}, ficha ${x.ficha})${x.cerrado === true ? ' · Bug cerrado' : x.cerrado === false ? ' · ya estaba cerrado' : ''}`);
   for (const x of r.deuda_avisada) console.log(`📣 «quedó declarada, vence ${x.vence}» en ${x.proyecto} (Bug ${x.id}, ficha ${x.ficha})`);
