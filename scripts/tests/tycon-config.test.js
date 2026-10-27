@@ -1870,7 +1870,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -1962,7 +1962,7 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
   assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only']);
 });
 
 // ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
@@ -2057,6 +2057,133 @@ test('8.116 T46 TyconConfig_ListaTapadaSeComparaPorValor', () => {
   c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes });
   assert.deepEqual(c.shadowed['approvals.delegated_signing'], { value: ['lost-run'], origin: 'TYCON_PROFILE', by: 'solo-perfil' });
   assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip'], 'gana el del árbol');
+});
+
+// ── Qué firmas son sólo del dueño (approvals.owner_only) y con qué ids se delega (@story-8.139) ─────────────────────
+function catalogo() { return require(path.join(SCRIPTS, 'lib', 'signatures.js')); }
+const SOLO_DUENO = ['control-change', 'critical-waiver', 'escape:TYCON_SAFETY_OFF', 'escape:trust-ran'];
+
+// T3 TyconConfig_OwnerOnly_SoloDelPerfil @story-8.139 @ac-3
+// 🔴 Falla con: la lista leída de la máquina o de una variable (el agente se sacaría firmas de la lista), o un valor que no
+// es una lista de ids del catálogo aceptado.
+test('8.139 T3 TyconConfig_OwnerOnly_SoloDelPerfil', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { owner_only: SOLO_DUENO } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.approvals.owner_only, c.origenes['approvals.owner_only']], [SOLO_DUENO, 'perfil']);
+  const home = casa();
+  maquina(home, { approvals: { owner_only: ['control-change'] } });
+  c = cargar({ home, arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.approvals.owner_only, null, 'desde la máquina no vale');
+  assert.deepEqual(c.shadowed['approvals.owner_only'], { value: ['control-change'], origin: 'maquina', by: 'solo-perfil' });
+  assert.equal(lib().VARIABLES['approvals.owner_only'], undefined, 'ninguna variable la pone');
+  const otro = path.join(tmp('tcfg-perfil-'), 'perfil.json');
+  fs.writeFileSync(otro, JSON.stringify({ approvals: { owner_only: ['control-change'] } }));
+  c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arnesCon({ approvals: { owner_only: SOLO_DUENO } }) });
+  assert.deepEqual(c.valores.approvals.owner_only, SOLO_DUENO, 'el del árbol, no el de la variable');
+  assert.deepEqual(c.shadowed['approvals.owner_only'], { value: ['control-change'], origin: 'TYCON_PROFILE', by: 'solo-perfil' });
+  for (const malo of [[], 'control-change', ['inventado'], ['escape:inventado'], ['escape-phrases'], ['off'],
+    ['control-change', 'control-change'], [1]]) {
+    c = cargar({ home: casa(), arnes: arnesCon({ approvals: { owner_only: malo } }) });
+    assert.ok(c.errores.some((e) => e.clave === 'approvals.owner_only'), `${JSON.stringify(malo)} no vale`);
+  }
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { owner_only: catalogo().ids() } }) });
+  assert.deepEqual(c.errores, [], 'todos los ids del catálogo valen');
+  const r = cli(['set', 'approvals.owner_only', '["control-change"]'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
+  assert.match(lib().explicar({ env: {}, home: casa(), arnes: arnesCon({ approvals: { owner_only: SOLO_DUENO } }) }),
+    /approvals\.owner_only = control-change, critical-waiver, escape:TYCON_SAFETY_OFF, escape:trust-ran/);
+});
+
+// T4 TyconConfig_DelegatedSigning_IdsYGrupos @story-8.139 @ac-4
+// 🔴 Falla con: un id del catálogo que el lector no conoce, un grupo de la 8.116 que deja de valer, o un valor desconocido
+// que se lleva puesta otra clave.
+test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
+  for (const v of [...catalogo().ids(), ...FIRMAS]) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: [v] } }) });
+    assert.deepEqual(c.errores, [], v);
+  }
+  assert.deepEqual([...catalogo().groupNames()].sort(), [...FIRMAS].sort(), 'los grupos son los 11 de la 8.116');
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: 'escape:force-manual' } }) });
+  assert.deepEqual(c.errores, [], 'un id suelto vale');
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['plan-approval', 'escape:trust-ran', 'escape-phrases'] } }) });
+  assert.deepEqual(c.errores, [], 'ids y grupos mezclados');
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: 'off' } }) });
+  assert.deepEqual(c.errores, [], '«off» sigue siendo ninguno');
+  assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), false);
+  for (const malo of [['escape:inventado'], ['inventado'], ['off', 'escape:trust-ran'], ['escape:trust-ran', 'escape:trust-ran']]) {
+    c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: malo } }) });
+    assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_signing'), `${JSON.stringify(malo)} no vale`);
+    assert.deepEqual(c.errores.map((e) => e.clave), ['approvals.delegated_signing'], 'rompe sólo esa clave');
+    assert.equal(c.valores.approvals.relay_session, 'coordinadora');
+  }
+  // la tabla de equivalencias: escape-phrases son todos los escapes; los demás grupos, su propia firma
+  assert.deepEqual(catalogo().expand('escape-phrases'), catalogo().ids().filter((id) => id.startsWith('escape:')));
+  assert.deepEqual(catalogo().expand('lost-run'), ['lost-run']);
+  assert.deepEqual(catalogo().expand('escape:trust-ran'), ['escape:trust-ran']);
+  assert.deepEqual(catalogo().expand('off'), []);
+});
+
+// T5 TyconConfig_FirmaEnLasDosListas_EsError @story-8.139 @ac-5
+// 🔴 Falla con: una firma delegada y sólo del dueño a la vez leída sin error (la delegación ganaría en silencio), o el
+// error que se lleva puesta la lista de lo sólo del dueño.
+test('8.139 T5 TyconConfig_FirmaEnLasDosListas_EsError', () => {
+  const casos = [
+    [['control-change'], ['control-change', 'plan-approval'], 'control-change'],
+    [['escape:trust-ran'], ['escape-phrases'], 'escape:trust-ran'],
+    [['plan-approval'], 'plan-approval', 'plan-approval'],
+  ];
+  for (const [soloDueno, delegada, id] of casos) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', owner_only: soloDueno, delegated_signing: delegada } }) });
+    const err = c.errores.find((e) => e.clave === 'approvals.delegated_signing');
+    assert.ok(err, `${JSON.stringify(delegada)}: ${JSON.stringify(c.errores)}`);
+    assert.ok(err.motivo.includes(id), `el error nombra ${id}: ${err.motivo}`);
+    assert.ok(!c.errores.some((e) => e.clave === 'approvals.owner_only'), 'owner_only vale igual');
+    assert.deepEqual(c.valores.approvals.owner_only, soloDueno);
+    assert.equal(lib().delegaFirma(c.valores, 'plan-approval'), false, 'rota: no delega nada');
+  }
+  const c = cargar({ home: casa(), arnes: arnesCon({ approvals: { owner_only: SOLO_DUENO, delegated_signing: ['plan-approval', 'extra-round', 'refresh-after-main'] } }) });
+  assert.deepEqual(c.errores, [], 'listas sin cruce');
+  assert.equal(lib().delegaFirma(c.valores, 'plan-approval'), true);
+  // 🔴 una lista de sólo del dueño rota no deja abierta la delegación: no se sabe qué se reservó el dueño
+  for (const roto of [['plan-approval', 'critcal-waiver'], ['plan-approval', 'escape-phrases'], 'plan-approval', []]) {
+    const r = cargar({ home: casa(), arnes: arnesCon({ approvals: { owner_only: roto, delegated_signing: ['plan-approval'] } }) });
+    assert.ok(r.errores.some((e) => e.clave === 'approvals.delegated_signing'), `${JSON.stringify(roto)}: ${JSON.stringify(r.errores)}`);
+    assert.equal(lib().delegaFirma(r.valores, 'plan-approval'), false, `${JSON.stringify(roto)}: no delega nada`);
+  }
+  // 🔴 el lector del sitio (parse) aplica la misma regla: si no, el sitio propone un perfil que todas las máquinas leen roto
+  for (const approvals of [{ owner_only: ['control-change'], delegated_signing: ['control-change'] },
+    { owner_only: ['escape:trust-ran'], delegated_signing: ['escape-phrases'] },
+    { owner_only: ['critcal-waiver'], delegated_signing: ['plan-approval'] }]) {
+    const p = lib().parse(JSON.stringify({ approvals }));
+    assert.equal(p.ok, false, JSON.stringify(approvals));
+    assert.ok(p.problems.some((x) => x.path === 'approvals.delegated_signing'), JSON.stringify(p.problems));
+  }
+  assert.equal(lib().parse(JSON.stringify({ approvals: { owner_only: SOLO_DUENO, delegated_signing: ['plan-approval'] } })).ok, true);
+  // 🔴 por TYCON_PROFILE, el error sale del perfil del árbol, que es de donde se leen las dos listas
+  const otro = path.join(tmp('tcfg-perfil-'), 'perfil.json');
+  fs.writeFileSync(otro, JSON.stringify({}));
+  const arbol = arnesCon({ approvals: { owner_only: ['control-change'], delegated_signing: ['control-change'] } });
+  const r = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arbol });
+  const err = r.errores.find((e) => e.clave === 'approvals.delegated_signing');
+  assert.ok(err && err.archivo === lib().perfilDelArbol(arbol).ruta, JSON.stringify(r.errores));
+  assert.equal(lib().delegaFirma(r.valores, 'control-change'), false);
+});
+
+// 🔴 Falla con: un catálogo de firmas que no carga y deja abierta una clave de firmas, o un error que no dice por qué.
+test('8.139 T5 TyconConfig_CatalogoQueNoCarga_ClavesRotas', () => {
+  const d = tmp('tcfg-catalogo-');
+  const pre = path.join(d, 'sin-catalogo.js');
+  fs.writeFileSync(pre, `const M = require('module'); const orig = M.prototype.require;
+M.prototype.require = function (id) { if (/signatures\\.js$/.test(id)) throw Object.assign(new Error('roto a propósito'), { code: 'E_PRUEBA' }); return orig.apply(this, arguments); };`);
+  const perfil = JSON.stringify({ approvals: { owner_only: ['control-change'], delegated_signing: ['plan-approval'] } });
+  const r = spawnSync(process.execPath, ['-r', pre, '-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(LIB)}).parse(${JSON.stringify(perfil)})))`], { encoding: 'utf8', env: ENV_LIMPIO });
+  assert.equal(r.status, 0, r.stderr);
+  const p = JSON.parse(r.stdout);
+  assert.equal(p.ok, false);
+  assert.deepEqual(p.problems.map((x) => x.path).sort(), ['approvals.delegated_signing', 'approvals.owner_only']);
+  assert.ok(p.problems.every((x) => /E_PRUEBA/.test(x.message)), JSON.stringify(p.problems));
 });
 
 test('T31 TyconConfig_InstinctsIntegration_EnvProfileOrder @story-4.7 @ac-1 @ac-2 — el perfil la prende, la variable la apaga, sin nada queda apagada', () => {

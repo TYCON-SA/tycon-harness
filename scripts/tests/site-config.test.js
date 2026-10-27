@@ -3743,6 +3743,29 @@ test('8.116 T48 OrgConfig_DelegatedListSince_EsLaEtiquetaReal', () => {
   assert.ok(String(anterior).includes('>= 2026.10.24.14'), anterior);
 });
 
+// T6 OrgConfig_OwnerOnlyPideSuVersion @story-8.139 @ac-6
+// 🔴 Falla con: la lista de lo sólo del dueño, o un id nuevo en la de lo delegado, propuestos a una capa cuyo lector los
+// leería como un valor roto.
+test('8.139 T6 OrgConfig_OwnerOnlyPideSuVersion', () => {
+  const gate = (approvals, version) => ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(version)), versionImagen: '2026.10.15.48', doc: { ...PERFIL_TYCON, approvals } });
+  assert.ok(ORG.OWNER_ONLY_SINCE, 'la constante existe');
+  assert.ok(ORG.OWNER_ONLY_SINCE > ORG.DELEGATED_LIST_SINCE, 'es posterior a la de la lista');
+  for (const approvals of [{ owner_only: ['control-change'] }, { delegated_signing: ['escape:trust-ran'] }, { delegated_signing: 'escape:force-manual' },
+    { delegated_signing: ['plan-approval', 'escape:trust-ran'] }]) {
+    const bajo = gate(approvals, ORG.DELEGATED_LIST_SINCE);
+    assert.match(String(bajo), /todavía no se puede proponer/, JSON.stringify(approvals));
+    assert.ok(String(bajo).includes(`>= ${ORG.OWNER_ONLY_SINCE}`), bajo);
+    assert.strictEqual(gate(approvals, ORG.OWNER_ONLY_SINCE), null, `con la capa al día pasa: ${JSON.stringify(approvals)}`);
+  }
+  // lo que ya lee el lector de la lista sigue pidiendo sólo su versión
+  assert.strictEqual(gate({ delegated_signing: ['plan-approval', 'escape-phrases'] }, ORG.DELEGATED_LIST_SINCE), null);
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const lengua of ['es', 'en']) {
+    const t = textos.t(lengua, 'org.capaSinSoloDelDueno');
+    assert.ok(t && t !== 'org.capaSinSoloDelDueno', `el mensaje existe en ${lengua}`);
+  }
+});
+
 test('8.88 T53 · Site_Texts_EsAndEn @story-8.88 @ac-30', () => {
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const claves = ['pantalla.frenoProduccionTitulo', 'pantalla.frenoProduccion', 'pantalla.frenoProduccionPassword', 'pantalla.frenoProduccionAuto',
