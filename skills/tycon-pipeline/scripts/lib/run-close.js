@@ -104,7 +104,7 @@ function cubiertaPor({ l, esc, siempre, perdida }, frenos, sid, desde) {
   const a0 = l && l.args && l.args[0];
   if (esc === 'force-manual' && !(l.sub === 'set-check' && a0 && a0.literal && a0.texto === 'advisors')) return null;
   const c = escapeDeCierre(frenos, sid, desde, clave);
-  return c && ['persona', 'reenvio'].includes(c.via) ? c : null;
+  return c && ['persona', 'reenvio', 'delegacion'].includes(c.via) ? c : null;
 }
 
 /** El `cierre` que deja `clear`. Uno ya escrito (`deuda`) se devuelve tal cual. */

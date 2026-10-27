@@ -226,6 +226,22 @@ test('Cap_SecurityCritical_AsksThePerson @story-7.37 @ac-5', () => {
   assert.ok(gates(lab).some((g) => g.name === 'extra-round' && g.iter === 3), 'la vuelta extra queda anotada');
 });
 
+// 🔴 Falla con: --delegated que sirve la vuelta extra sin el aviso del tope, o sin la aprobación de la sesión designada.
+test('Cap_ExtraRoundDelegated_PideAvisoYAprobacion', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  const antes = lab.reloop(3, ['--extra-round', '--delegated']);
+  assert.equal(antes.status, 3);
+  assert.match(antes.stderr, /todavía no se avisó el tope/);
+  const aviso = lab.reloop(3);
+  assert.match(aviso.stderr, /--extra-round --delegated/);
+  // sin designación ni perfil que la delegue en esta HOME, no se sirve, y se dice por qué
+  lab.conversar([delDev('aprobá una vuelta más')]);
+  const sin = lab.reloop(3, ['--extra-round', '--delegated']);
+  assert.equal(sin.status, 3);
+  assert.match(sin.stderr, /por delegación: /);
+  assert.ok(!gates(lab).some((g) => g.name === 'extra-round'), 'no se anota una vuelta que no se sirvió');
+});
+
 test('Cap_OtherOpen_BecomesDebt @story-7.37 @ac-6', () => {
   const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('TEST-C1', 'CRITICAL', 'open'), hallazgo('REACT-W3', 'WARNING', 'deferred')] });
   const r = lab.reloop(3);

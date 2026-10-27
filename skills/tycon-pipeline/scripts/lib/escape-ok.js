@@ -58,11 +58,13 @@ const plano = (texto) => String(texto || '').toLowerCase().replace(/[«»"“”
  * El juez de la frase. Mira la oración que trae «autorizo <VARIABLE>» (hasta un punto, un signo de admiración, un punto
  * y coma o un salto de línea): la variable tiene que terminar ahí (una más larga no la autoriza), y la oración no puede
  * negarla ni ser una pregunta. `retracta` tumba la frase si un mensaje posterior nombra la variable y la niega o la retira.
+ * `verbo` (una expresión) reemplaza a «autorizo»: la aprobación por delegación usa «aprobá» (delegated-ok.js).
  */
-function juez(variable) {
+function juez(variable, verbo = 'autorizo') {
   const esc = (n) => n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const v = esc(variable);
-  const frase = new RegExp(`(?:^|[^\\p{L}\\p{N}_])autorizo\\s+${v}(?![\\p{L}\\p{N}_])`, 'u');
+  // un guion pegado sigue el nombre: «force-manual-extra» es otro
+  const frase = new RegExp(`(?:^|[^\\p{L}\\p{N}_])${verbo}\\s+${v}(?![\\p{L}\\p{N}_]|-[\\p{L}\\p{N}])`, 'u');
   // el escape por cualquiera de sus nombres: una retractación con el otro nombre también la tumba
   const nombres = [variable, ...(SINONIMOS[variable] || [])].map(esc).join('|');
   const nombra = new RegExp(`(?:^|[^\\p{L}\\p{N}_])(?:${nombres})(?![\\p{L}\\p{N}_])`, 'u');
@@ -126,6 +128,12 @@ function autorizadoPorNombre({ variable, sesion, pedido, home, env = process.env
   if (relevo.valor) {
     const r = pok.citaReenviada(cita, relevo.valor, { sesion, home, env: e, desde, juzgar, soloCadena: true, pedido });
     if (r.encontrada) return { ok: true, via: 'reenvio', relevo: relevo.valor, cuando: r.cuando || null };
+  }
+  // la sesión designada lo aprueba en nombre del dueño, si el perfil lo delega y el dueño se lo pidió (delegated-ok.js)
+  const dok = require('./delegated-ok.js');
+  if (!sinReenvio && dok.DELEGABLES[`escape:${variable}`]) {
+    const d = dok.okDelegado({ firma: `escape:${variable}`, sesion, pedido, home, env: e, arnes, ahora });
+    if (d.ok) return { ok: true, via: 'delegacion', relevo: d.relevo, cuando: d.cuando || null };
   }
   const vieja = apertura ? `la frase es anterior a la apertura de la ejecución (${apertura})` : `la frase es de hace más de ${ventanaMin} minutos`;
   const motivo = propia.rechazo || (propia.anterior ? vieja : `la persona no escribió «${cita}» en esta conversación`);

@@ -5433,6 +5433,16 @@ function topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId }) {
   // «no pude mirar» no es «no quedó nada abierto»
   const noMirado = h.error || (!runDir ? 'no encontré la carpeta de la corrida' : null);
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
+  if (args.extraRound && args.delegated) {
+    // la sesión designada la aprueba en nombre del dueño: su «aprobá una vuelta más», posterior al aviso del tope
+    const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
+    if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
+    const inicio = marcador && marcador.startedAt && Date.parse(marcador.startedAt) > Date.parse(aviso.ts) ? marcador.startedAt : aviso.ts;
+    const d = require('./lib/delegated-ok.js').okDelegado({ firma: 'extra-round', sesion: process.env.CLAUDE_CODE_SESSION_ID, desde: inicio });
+    if (!d.ok) return `🛑 No se autorizó la vuelta extra ${iter} por delegación: ${d.motivo}.\n`;
+    anotar({ name: 'extra-round', status: 'ok', quien: 'el dueño, por delegación', cita: d.cita, via: `aprobada por la sesión ${d.relevo} en nombre del dueño` });
+    return null;
+  }
   if (args.extraRound) {
     // el ok responde al aviso del tope de ESTA vuelta (lo anota el arnés al decirlo) y autoriza otra vuelta, sin negarla
     const cw = require('./lib/critical-waivers.js');
@@ -5452,6 +5462,8 @@ function topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId }) {
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
     renglones.push('   (a) Una vuelta más para arreglarlo: con su ok, el mismo comando con');
     renglones.push(`       --extra-round --approved-by "<la persona>" --quote "<sus palabras, textuales>"`);
+    renglones.push('       o, si el perfil del equipo la delega, con --extra-round --delegated después de que la sesión designada la apruebe');
+    renglones.push('       (el dueño le escribe «aprobá una vuelta más» en su chat).');
     renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (el arnés le muestra el crítico y ella contesta).');
   }
   if (deuda.length) {
@@ -6227,6 +6239,7 @@ function parseArgs(argv) {
     else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta más allá del tope que autoriza una persona
     else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: quién la autorizó
     else if (t === '--quote') a.quote = argv[++i];                // con --extra-round: sus palabras, textuales
+    else if (t === '--delegated') a.delegated = true;             // con --extra-round: la aprueba la sesión designada por el dueño
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff
     else if (t === '--scope') a.scope = nn(argv[++i], '');          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
     else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas
