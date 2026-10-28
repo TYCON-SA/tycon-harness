@@ -106,21 +106,27 @@ function heredocs(texto) {
     return lineas;
   };
   const re = new RegExp(OPERADOR_HEREDOC.source, 'g');
+  // dos heredocs en una línea (`cat <<A; python3 - <<B`): el cuerpo del segundo empieza donde cierra el primero
+  let lineaPrevia = -1;
+  let finPrevio = -1;
   let m;
   while ((m = re.exec(s))) {
+    if (lineaPrevia >= 0 && m.index > lineaPrevia && m.index < finPrevio) { re.lastIndex = finPrevio; continue; }
     const finLinea = s.indexOf('\n', re.lastIndex);
     if (finLinea < 0) break;
     // `<<EO\` y en la línea siguiente `F`: bash junta las dos líneas y cierra en `EOF`. No se adivina: el texto queda
     // como comandos, que es el lado que frena.
     if (s[re.lastIndex] === '\\' && s[re.lastIndex + 1] === '\n') continue;
     const delim = delimitadorDelShell(m[1]);
-    const cierre = (lineasDe().get(delim) || []).find(([ini]) => ini > finLinea);
+    const desde = finLinea === lineaPrevia ? finPrevio : finLinea;
+    const cierre = (lineasDe().get(delim) || []).find(([ini]) => ini > desde);
     if (!cierre) continue;
     out.push({
       indice: m.index, fin: cierre[1], delim, comillas: /[\\'"]/.test(m[1]),
-      resto: s.slice(re.lastIndex, finLinea), cuerpo: cierre[0] > finLinea + 1 ? s.slice(finLinea + 1, cierre[0] - 1) : '',
+      resto: s.slice(re.lastIndex, finLinea), cuerpo: cierre[0] > desde + 1 ? s.slice(desde + 1, cierre[0] - 1) : '',
     });
-    re.lastIndex = cierre[1];
+    lineaPrevia = finLinea;
+    finPrevio = cierre[1];
   }
   return out;
 }
@@ -135,9 +141,15 @@ function sinHeredocs(cmd, opciones) {
   let out = '';
   let desde = 0;
   for (const h of heredocs(s)) {
-    out += s.slice(desde, h.indice);
     const antes = s.slice(s.lastIndexOf('\n', h.indice - 1) + 1, h.indice);
     const alimentaShell = opciones && opciones.salvoShell && (SHELL_ANTES.test(antes) || SHELL_DESPUES.test(h.resto));
+    if (h.indice < desde) {
+      // otro heredoc de la misma línea: su marca ya quedó en el resto del anterior y su cuerpo sigue al de aquél
+      if (alimentaShell) out += s.slice(desde, h.fin);
+      desde = h.fin;
+      continue;
+    }
+    out += s.slice(desde, h.indice);
     out += alimentaShell ? s.slice(h.indice, h.fin) : ` __HEREDOC__${h.resto}`;
     desde = h.fin;
   }
@@ -1302,8 +1314,128 @@ function commandVariables(texto, ctx) {
   return c;
 }
 
+// ── el programa que un intérprete lee de su entrada ──────────────────────────────────────────────────────────
+
+// Intérpretes que, sin un archivo de programa, leen el programa de la entrada estándar.
+const LEE_SU_PROGRAMA = /^(?:python(?:\d+(?:\.\d+)*)?|pypy\d*|node|nodejs|bun|deno|perl|ruby|php|osascript|pwsh|powershell)$/;
+// opciones que llevan su valor aparte (`-W ignore`, `-l JavaScript`, `-r ./x.js`)
+const OPCION_CON_VALOR = new Set(['-W', '-X', '-l', '-r', '--require', '--import']);
+// el programa va en un argumento: lo que llega por la entrada es dato
+const PROGRAMA_EN_ARGUMENTO = /^(?:-[A-Za-z]*[ce]|--eval|-p|--print|-m|-Command)$/;
+const ENTRADA = new Set(['-', '/dev/stdin', '/dev/fd/0']);
+
+/**
+ * Si las palabras de una etapa corren un intérprete que lee su programa de la entrada: `{ interprete, conGuion,
+ * despues }` (`despues`: las palabras que siguen al `-` o a `/dev/stdin`, que son los argumentos del programa), o null.
+ * El intérprete se busca en toda la etapa: así también se ve detrás de `env`, `time -p`, `arch`, `stdbuf` o `uv run`.
+ */
+function lectorDePrograma(palabras) {
+  const w = [];
+  for (let i = 0; i < palabras.length; i++) {
+    const p = palabras[i].replace(/^[({]+/, '');
+    if (/^\d*(?:[<>]{1,3}|&>>?|>&|<&|<>)$/.test(p)) { i++; continue; }      // una redirección y su destino
+    if (/^\d*(?:[<>]|&>)/.test(p)) continue;                                // la redirección pegada a su destino
+    if (p && p !== '}' && p !== ')') w.push(p);
+  }
+  const i = w.findIndex((p) => LEE_SU_PROGRAMA.test(p.replace(/^.*[\\/]/, '').toLowerCase().replace(/\.exe$/, '')));
+  if (i < 0) return null;
+  const interprete = w[i].replace(/^.*[\\/]/, '').toLowerCase().replace(/\.exe$/, '');
+  for (let k = i + 1; k < w.length; k++) {
+    if ((interprete === 'deno' || interprete === 'bun') && w[k] === 'run') continue;
+    if (ENTRADA.has(w[k])) return { interprete, conGuion: true, despues: w.slice(k + 1) };
+    if (OPCION_CON_VALOR.has(w[k])) { k++; continue; }
+    if (PROGRAMA_EN_ARGUMENTO.test(w[k])) return null;
+    if (w[k].startsWith('-')) continue;
+    return null;                                                            // un archivo de programa: la entrada es dato
+  }
+  return { interprete, conGuion: false, despues: [] };
+}
+
+/** Cada índice de `s` entre `desde` y `hasta` fuera de comillas y escapes, con su carácter. */
+function* fueraDeComillas(s, desde, hasta) {
+  for (let i = desde; i < hasta; i++) {
+    const c = s[i];
+    if (c === '\\') { i++; continue; }
+    if (c === "'" || c === '"' || (c === '$' && s[i + 1] === "'")) { i = finDeComillas(s, i) - 1; continue; }
+    yield [i, c];
+  }
+}
+
+/** Dónde empieza el comando (la tubería entera) que contiene la posición `i`: después del `;`, `&&`, `(`… anterior. */
+function inicioDeLaTuberia(s, i) {
+  let ini = s.lastIndexOf('\n', i - 1) + 1;
+  while (ini >= 2 && s[ini - 2] === '\\') ini = s.lastIndexOf('\n', ini - 3) + 1;   // la línea continuada con `\`
+  let corte = ini;
+  for (const [k, c] of fueraDeComillas(s, ini, i)) {
+    const sig = s[k + 1];
+    if (c === ';' || c === '`' || c === '(' || c === '\n') corte = k + 1;
+    else if (c === '{' && /\s/.test(sig || '')) corte = k + 1;
+    else if ((c === '&' && sig === '&') || (c === '|' && sig === '|')) corte = k + 2;
+    else if (c === '&' && s[k - 1] !== '>' && s[k - 1] !== '<' && sig !== '>') corte = k + 1;
+  }
+  return corte;
+}
+
+/** El texto desde `i` hasta el final del comando (el `;`, `&&`, `)`… siguiente, o el fin de la línea). */
+function finDelComando(s, i, hasta) {
+  for (const [k, c] of fueraDeComillas(s, i, hasta)) {
+    const sig = s[k + 1];
+    if (c === ';' || c === '`' || c === ')' || c === '\n' || (c === '&' && sig === '&') || (c === '|' && sig === '|')) return k;
+    if (c === '&' && s[k - 1] !== '>' && s[k - 1] !== '<' && sig !== '>') return k;
+  }
+  return hasta;
+}
+
+/** Las etapas de una tubería, por sus `|` fuera de comillas. */
+function etapas(s) {
+  const out = [];
+  let ini = 0;
+  for (const [k, c] of fueraDeComillas(s, 0, s.length)) if (c === '|' && s[k + 1] !== '|' && s[k - 1] !== '|') { out.push(s.slice(ini, k)); ini = k + 1; }
+  out.push(s.slice(ini));
+  return out;
+}
+
+/**
+ * Lo que llega a la entrada estándar de un intérprete como su programa, por un heredoc (`python3 - <<EOF`) o un
+ * here-string (`python3 <<< '…'`): `[{ interprete, conGuion, despues, cuerpo, comillas }]`. Cuenta el intérprete de la
+ * etapa que recibe el texto y el de las etapas que le siguen en la tubería (`cat <<EOF | python3`), también en la
+ * línea que sigue al cierre cuando la del `<<` termina en `|`. `comillas`: el shell no expande el texto.
+ */
+function programasPorEntrada(cmd) {
+  const s = String(cmd);
+  if (!s.includes('<<')) return [];
+  const out = [];
+  const juzgar = (texto, indice, resto, siguiente, cuerpo, comillas) => {
+    const antes = etapas(texto.slice(inicioDeLaTuberia(texto, indice), indice));
+    const despues = etapas(resto.slice(0, finDelComando(resto, 0, resto.length)));
+    if (/\|\s*$/.test(resto) && siguiente != null) despues.push(...etapas(siguiente.slice(0, finDelComando(siguiente, 0, siguiente.length))));
+    const propia = `${antes[antes.length - 1]} ${despues[0]}`;
+    for (const etapa of [propia, ...despues.slice(1)]) {
+      const l = lectorDePrograma(tokens(etapa));
+      if (l) { out.push({ ...l, cuerpo, comillas }); return; }
+    }
+  };
+  for (const h of heredocs(s)) {
+    let sig = null;
+    if (h.fin < s.length) { const f = s.indexOf('\n', h.fin + 1); sig = s.slice(h.fin + 1, f < 0 ? s.length : f); }
+    juzgar(s, h.indice, h.resto, sig, h.cuerpo, h.comillas);
+  }
+  const sin = sinHeredocs(s);
+  for (const [k] of fueraDeComillas(sin, 0, sin.length)) {
+    if (!sin.startsWith('<<<', k)) continue;
+    let j = k + 3;
+    while (sin[j] === ' ' || sin[j] === '\t') j++;
+    let f = j;
+    while (f < sin.length && !/[\s;&|()<>]/.test(sin[f])) f = /['"]/.test(sin[f]) || (sin[f] === '$' && sin[f + 1] === "'") ? finDeComillas(sin, sin[f] === '$' ? f : f) : f + 1;
+    const palabra = sin.slice(j, f);
+    juzgar(sin, k, sin.slice(f), null, tokens(palabra).join(' '), /^\$?'/.test(palabra));
+  }
+  return out;
+}
+
 module.exports = {
   // las de siempre
+  programasPorEntrada,
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,
   heredocs, OPERADOR_HEREDOC,
   // story 8.14

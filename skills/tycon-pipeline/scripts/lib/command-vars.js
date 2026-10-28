@@ -311,7 +311,8 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
 
 /**
  * La ruta `raw`, que aparece en `cmd`, con sus variables expandidas como en ese punto del comando.
- * @param {object} [opts] env (default process.env) · home (default os.homedir())
+ * @param {object} [opts] env (default process.env) · home (default os.homedir()) · posibles (las asignaciones que
+ *   pueden no haber quedado puestas cuentan como puestas)
  * @returns {{ valor: string, sinResolver: string[] }} `valor` es la ruta expandida, o `raw` tal cual si algo no se supo.
  */
 function expandirRuta(cmd, raw, opts = {}) {
@@ -340,7 +341,9 @@ function posicionesDe(s, raw) {
 function expandirRutaSinRed(cmd, raw, opts) {
   const env = opts.env || process.env;
   const home = opts.home || os.homedir();
-  const asigs = asignaciones(cmd);
+  // con `posibles`, una asignación que puede no haber quedado puesta (`cd x && f=a.md`) cuenta como puesta: lo que
+  // valdría si corrió. Sirve a un freno que suma destinos posibles, nunca a uno que deja pasar lo resuelto
+  const asigs = asignaciones(cmd).map((a) => (opts.posibles ? { ...a, cierta: true } : a));
   // Todos los lugares donde aparece el texto del destino (fuera de los cuerpos de heredoc); si no aparece, el final.
   const s = sinCuerposDeHeredoc(cmd);
   const posiciones = [];
