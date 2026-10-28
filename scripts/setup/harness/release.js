@@ -1826,6 +1826,12 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
   return { status: 'failed', answered: true, lines: lines.length ? lines : ['capa del equipo: la versión nueva tampoco la acepta — sigue la de antes'] };
 }
 
+/** ¿La versión publicada es la que la retención deshizo? La retención la nombra por número o por commit. */
+function holdNamesTarget(hold, t) {
+  const named = [hold.commit, hold.sources && hold.sources.harness].filter(Boolean);
+  return named.includes(t.version) || named.includes(t.commit);
+}
+
 function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, yes = false, policy = null, startedAt = null, teamRefresh = false, respectLimit = false } = {}) {
   const src = S.releaseSource(state);
   const channel = (policy && policy.channel) || state.channel || 'stable';
@@ -1868,12 +1874,20 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   if (c0.status !== 'new') return withTeam(c0);
   const t = c0.target;
   const what = `${src.version} → ${t.version} (${t.ref} ${sha7(t.commit)})`;
-  if (state.hold && !yes && mode !== 'dry-run') return withTeam({ status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${H.holdText(state)}`] });
+  // con la actualización fijada por el equipo, la retención de una vuelta atrás vale mientras lo publicado sea lo deshecho:
+  // sale una versión posterior y vence
+  const holdLines = [];
+  if (state.hold && policy && policy.locked && !holdNamesTarget(state.hold, t)) {
+    holdLines.push(`la retención venció: deshiciste ${state.hold.commit} y salió ${t.version}; el perfil del equipo fija la actualización automática`);
+    if (log) log(`update: ${holdLines[0]}`);
+    if (mode !== 'check' && mode !== 'dry-run') state.hold = null;
+  }
+  if (state.hold && !holdLines.length && !yes && mode !== 'dry-run') return withTeam({ status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${H.holdText(state)}`] });
   if (state.failed && state.failed.reason !== 'interrupted' && !yes && mode !== 'dry-run' && state.failed.sources && state.failed.sources.harness === t.commit) {
     return withTeam({ status: 'skipped', code: 0, lines: [`la versión ${state.failed.commit} ya falló (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}): no se reintenta sola hasta que cambie la punta (o ${H.applyHint})`] });
   }
   // `availableText` de harness.js lee `label` y `changes`: la misma forma que la de un clon
-  if (mode === 'check') return withTeam(Object.assign(c0, { available: { label: `${t.version} (${t.ref} ${sha7(t.commit)})`, changes: '', version: t.version, commit: t.commit, ref: t.ref } }));
+  if (mode === 'check') return withTeam(Object.assign(c0, { lines: [...(c0.lines || []), ...holdLines], available: { label: `${t.version} (${t.ref} ${sha7(t.commit)})`, changes: '', version: t.version, commit: t.commit, ref: t.ref } }));
   if (mode === 'dry-run') {
     const own0 = TH.ownPaths({ env: ctx.env });
     // (la versión que corre hoy es la que va a quedar como previous/: el plan la mira en ese lugar del orden)
@@ -2020,7 +2034,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   if (packLine && log) log(`update: ${packLine}`);
   const dataNotice = [...(sw.kept || []), ...moved.lines, ...packLines].join(' · ') || null;
   // las reglas de lectura que esta actualización sumó o sacó (si no cambió ninguna, nada)
-  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...(a.readNotes || []), ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
+  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...holdLines, ...(a.readNotes || []), ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
 }
 
 /** `rollback` en release: el cambio al revés, los enchufes, la salud; sin previous/, dice `install --version`. */

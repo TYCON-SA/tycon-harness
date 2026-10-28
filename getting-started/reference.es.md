@@ -614,12 +614,14 @@ bloques, tareas de fondo) y dice lo que deja: tu `~/.claude/tycon.json`, tus rep
   `node ~/.claude/tycon-harness/scripts/setup/harness.js channel [latest|stable]`, o con `TYCON_UPDATE_CHANNEL`.
 - **Política**: `ask` por defecto (avisa y espera); `auto` aplica sola. Se fija con `TYCON_UPDATE_APPLY` o con
   `update.apply` en `~/.claude/tycon.json`. Elegir `latest` junto con `auto` te pide que lo confirmes: recibís cada
-  cambio que entra a `main`, en minutos, sin revisión tuya.
+  cambio que entra a `main`, en minutos, sin revisión tuya. Si el perfil de tu equipo fija `auto`, manda el perfil: ni
+  la máquina, ni la variable, ni `TYCON_UPDATE=0` lo cambian, y `doctor` dice qué valor no se usó.
 - **A mano**: `harness.js update --check` dice si hay versión nueva; `harness.js update --yes` la aplica;
   `harness.js version` muestra lo instalado; `harness.js doctor` diagnostica sin cambiar nada.
 - **Volver atrás**: `harness.js rollback --list` muestra las copias a las que se puede volver, y
   `harness.js rollback --to <copia>` vuelve a la que elijas. Después de volver atrás, el arnés deja de actualizarse
-  solo hasta que lo sueltes con `harness.js rollback --release`.
+  solo hasta que lo sueltes con `harness.js rollback --release`; si el perfil del equipo fija `auto`, sólo hasta que
+  sale una versión posterior a la que deshiciste.
 - **Quitar todo**: `harness.js uninstall --dry-run` muestra qué quitaría; `harness.js uninstall --yes` quita sólo lo que
   registró el mecanismo, y deja intacto lo tuyo.
 - **El arranque**: la línea de arranque corre desde una copia fija en `~/.claude/.tycon-pipeline/harness/`, no desde

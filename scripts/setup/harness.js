@@ -1521,6 +1521,12 @@ function needState(ctx) {
 }
 const busy = (lock) => ({ code: 3, lines: [`harness.js: ${lock.reason || 'otra sesión está actualizando'}`] });
 
+/** Con la actualización fijada por el perfil del equipo: lo que la máquina o el entorno dicen y no se usa, o null. */
+function fixedLine(policy) {
+  if (!policy || !policy.locked || !(policy.overridden || []).length) return null;
+  const what = policy.overridden.map((o) => (o.origin === 'env' ? `${o.name}=${o.value}` : `«${o.value}» en ${o.name}`)).join(', ');
+  return `el perfil del equipo fija la actualización automática: ${what} no se usa`;
+}
 function policyOf(ctx, tree) {
   const p = mod('channel').read(ctx.home, ctx.env, { tree });
   return p;
@@ -2815,14 +2821,21 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   for (const x of checks) tips[x.src.name] = x.c.status === 'older' ? x.c.from : (x.c.to || x.c.from);
   for (const x of layerChecks) tips[x.src.name] = x.p.commit;
   // la retención de un rollback: ni con `apply: auto` se avanza hasta `rollback --release` o `update --yes`; con
-  // `apply: ask` tampoco se ofrece la versión deshecha como «disponible»
-  if (state.hold && !yes && mode !== 'dry-run') return { status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${holdText(state)}`] };
+  // `apply: ask` tampoco se ofrece la versión deshecha como «disponible». Con la actualización fijada por el equipo, la
+  // retención vale hasta que sale una versión posterior a la deshecha: ahí vence y se avanza
+  const holdLines = [];
+  if (state.hold && !mod('channel').holdStands(state.hold, tips, policy)) {
+    holdLines.push(`la retención venció: deshiciste ${state.hold.commit} y salió una versión posterior; el perfil del equipo fija la actualización automática`);
+    if (log) log(`update: ${holdLines[0]}`);
+    if (persist && mode !== 'check' && mode !== 'dry-run') state.hold = null;
+  }
+  if (state.hold && !holdLines.length && !yes && mode !== 'dry-run') return { status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${holdText(state)}`] };
   // un intento que ya falló sobre ESTAS puntas no se repite solo, ni se ofrece; `interrupted` sí se reintenta
   if (state.failed && state.failed.reason !== 'interrupted' && !yes && mode !== 'dry-run' && sameTips(state.failed.sources, tips)) {
     return { status: 'skipped', code: 0, lines: [`la versión ${state.failed.commit} ya falló (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}): no se reintenta sola hasta que cambie la punta (o ${applyHint})`] };
   }
   // (sólo la capa: el aviso se arma con la línea «capa a → b», no con el número del público, que no cambia)
-  if (mode === 'check') return { status: 'new', code: 3, lines: [`hay versión nueva: ${what}`, ...older, ...layerNotes], available: fresh.length ? describeAvailable(ctx, state, fresh, channel) : null, fresh };
+  if (mode === 'check') return { status: 'new', code: 3, lines: [`hay versión nueva: ${what}`, ...holdLines, ...older, ...layerNotes], available: fresh.length ? describeAvailable(ctx, state, fresh, channel) : null, fresh };
 
   // todas o ninguna: primero el plan de cada una (la que no se baja no se mueve). Con capa, lo que ella pisó a propósito
   // no cuenta como «cambios sin commitear» del árbol: vuelve al público antes de mover y se re-apila después
@@ -2931,6 +2944,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   const done = finishHealth(ctx, state, { snap, ownSnap, rec, before, after, tips, report: applier.report, applierOut: applier.out, log, moved });
   if (done.status === 'applied' && layerMoves.length) done.lines = [done.lines[0], ...layerLines, ...layerNotes, ...done.lines.slice(1)];
   if (done.status === 'applied') { const pl = packRetiredLine(applier); if (pl) { done.lines.push(pl); if (log) log(`update: ${pl}`); } }
+  if (done.status === 'applied' && holdLines.length) done.lines.splice(1, 0, ...holdLines);
   return done;
 }
 
@@ -3748,6 +3762,7 @@ function cmdDoctor(ctx) {
     const policy = policyOf(ctx, tree);
     if (policy.errors.length) add('fail', `política de actualización mal escrita: ${policy.errors.join(' · ')}`);
     else add('ok', `política: canal ${policy.channel} (${policy.origins.channel}) · aplicación ${policy.apply} (${policy.origins.apply})${policy.enabled ? '' : ' · TYCON_UPDATE=0'}`);
+    if (fixedLine(policy)) add('ok', fixedLine(policy));
     for (const it of mod('release').doctorItems(ctx, state, { fetch: Boolean(ctx.opts.fetch), channel: policy.errors.length ? null : policy.channel })) add(it.level, it.text);
     // el clon que esta máquina MANTIENE. Los avisos de los nocturnos no leen de ahí: leen
     // del clon de MANTENIMIENTO (`paths.maintainers`, scripts/lib/night-data.js), que esta misma orden nombra más abajo
@@ -3951,6 +3966,7 @@ function cmdDoctor(ctx) {
     // —un clon interno, o una copia servida desde otro lado— los dos canales son `main` sin reescritura, y se dice
     const publicCopy = isPublicCopy(ctx, state);
     add('ok', `política: canal ${policy.channel} (${policy.origins.channel}) · aplicación ${policy.apply} (${policy.origins.apply})${policy.enabled ? '' : ' · TYCON_UPDATE=0'}${publicCopy ? '' : ` · ${NOT_PUBLIC_NOTE}`}`);
+    if (fixedLine(policy)) add('ok', fixedLine(policy));
     // «una máquina del equipo sin el perfil» sólo en un clon INTERNO de verdad: un árbol que no trae la lista de remotos
     // públicos (la deja el exportador en la copia). Un fork de la copia, o la copia servida desde una carpeta local, trae
     // la lista y su remoto no está en ella: no es una máquina del equipo, y arriba ya se dijo que su remoto no es el

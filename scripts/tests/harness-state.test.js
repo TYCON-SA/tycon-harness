@@ -1323,6 +1323,62 @@ test('T13·módulo · channel.read: sin nada stable/ask (origen default) y prend
   assert.match(r.errors.join('\n'), /latest|stable/);
 });
 
+test('T13·módulo · channel.read: con «auto» en el perfil del equipo, ni el «ask» de la máquina o del entorno ni TYCON_UPDATE=0 lo pisan, y se dice qué no se usó; con «ask» en el perfil, todo como siempre', () => {
+  const channel = mod('channel');
+  const home = casa('t13-fija');
+  const tree = path.join(home, 'tree');
+  fs.mkdirSync(tree);
+  const perfil = path.join(tree, 'team-profile.json');
+  fs.writeFileSync(perfil, JSON.stringify({ update: { channel: 'latest', apply: 'auto' } }));
+  const machine = path.join(home, '.claude', 'tycon.json');
+
+  let r = channel.read(home, labEnv(home), { tree });
+  assert.deepStrictEqual([r.apply, r.origins.apply, r.enabled, r.locked], ['auto', 'perfil', true, true], JSON.stringify(r));
+  assert.deepStrictEqual(r.overridden, []);
+
+  r = channel.read(home, labEnv(home, { TYCON_UPDATE_APPLY: 'ask' }), { tree });
+  assert.deepStrictEqual([r.apply, r.origins.apply, r.locked], ['auto', 'perfil', true], JSON.stringify(r));
+  assert.deepStrictEqual(r.overridden, [{ origin: 'env', name: 'TYCON_UPDATE_APPLY', value: 'ask' }]);
+
+  fs.writeFileSync(machine, JSON.stringify({ update: { apply: 'ask' } }));
+  r = channel.read(home, labEnv(home, { TYCON_UPDATE: '0' }), { tree });
+  assert.deepStrictEqual([r.apply, r.enabled, r.locked], ['auto', true, true], JSON.stringify(r));
+  assert.deepStrictEqual(r.overridden.map((o) => `${o.origin}:${o.name}=${o.value}`).sort(), [`env:TYCON_UPDATE=0`, `maquina:${machine}=ask`].sort());
+
+  // otro perfil por variable no saca la regla: vale el perfil del árbol del arnés
+  const otro = path.join(home, 'otro-perfil.json');
+  fs.writeFileSync(otro, JSON.stringify({ update: { apply: 'ask' } }));
+  r = channel.read(home, labEnv(home, { TYCON_PROFILE: otro }), { tree });
+  assert.deepStrictEqual([r.apply, r.locked], ['auto', true], JSON.stringify(r));
+  r = channel.read(home, labEnv(home, { TYCON_PROFILE: '0' }), { tree });
+  assert.deepStrictEqual([r.apply, r.locked], ['auto', true], JSON.stringify(r));
+
+  // con «ask» en el perfil: la máquina, el entorno y el apagado valen como siempre
+  fs.writeFileSync(perfil, JSON.stringify({ update: { channel: 'latest', apply: 'ask' } }));
+  fs.rmSync(machine);
+  r = channel.read(home, labEnv(home, { TYCON_PROFILE: perfil, TYCON_UPDATE_APPLY: 'auto' }), { tree });
+  assert.deepStrictEqual([r.apply, r.origins.apply, r.locked], ['auto', 'env', false], JSON.stringify(r));
+  assert.deepStrictEqual(r.overridden, []);
+  r = channel.read(home, labEnv(home, { TYCON_PROFILE: perfil, TYCON_UPDATE: '0' }), { tree });
+  assert.deepStrictEqual([r.apply, r.enabled, r.locked], ['ask', false, false], JSON.stringify(r));
+  // sin perfil (la copia pública): como siempre
+  fs.rmSync(perfil);
+  r = channel.read(home, labEnv(home, { TYCON_UPDATE: '0' }), { tree });
+  assert.deepStrictEqual([r.apply, r.enabled, r.locked], ['ask', false, false], JSON.stringify(r));
+});
+
+test('T13·módulo · channel.holdStands: sin la actualización fijada la retención sigue hasta levantarla; fijada por el equipo, vence cuando sale una versión posterior a la deshecha', () => {
+  // 🔴 mutación: con la actualización fijada, una vuelta atrás frenaría para siempre lo que el equipo manda; sin ella,
+  //    la retención se levantaría sola.
+  const channel = mod('channel');
+  const hold = { commit: '2026.10.07.2', sources: { harness: 'b2' } };
+  assert.strictEqual(channel.holdStands(null, { harness: 'b3' }, { locked: true }), false);
+  assert.strictEqual(channel.holdStands(hold, { harness: 'b3' }, { locked: false }), true);
+  assert.strictEqual(channel.holdStands(hold, { harness: 'b2', layer: 'x' }, { locked: true }), true);
+  assert.strictEqual(channel.holdStands(hold, { harness: 'b3' }, { locked: true }), false);
+  assert.strictEqual(channel.holdStands(hold, {}, { locked: true }), true);
+});
+
 test('T13·módulo · channel.set escribe sólo update.channel en ~/.claude/tycon.json y preserva el resto; read lo ve; un valor inválido o un archivo roto no se escriben', () => {
   const channel = mod('channel');
   const home = casa('t13-set');
