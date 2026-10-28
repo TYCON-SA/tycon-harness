@@ -1857,6 +1857,23 @@ if (process.argv.includes('--selftest-classes')) process.exit(selftestClases());
   }
 }
 
+/**
+ * Los archivos de casos del repo del examen que este árbol no trae. El examen corre desde el árbol instalado, y los
+ * casos de algunos revisores viven sólo en el repo de mantenimiento: se suman del mismo repo del que el examen lee su
+ * configuración (`lugarDelExamen` de periodic-exam.js: el clon de `paths.maintainers`, o TYCON_EXAM_REPO). Un archivo
+ * con el mismo nombre sale del árbol propio. → `{ dir, origen, archivos }` (sin archivos si no hay otro repo).
+ */
+function casosDelRepoDelExamen(propios) {
+  const nada = { dir: null, origen: null, archivos: [] };
+  let lugar;
+  try { lugar = require('./periodic-exam.js').lugarDelExamen(); } catch (_) { return nada; }
+  if (!lugar || !lugar.repo || path.resolve(lugar.repo) === path.resolve(TCG)) return nada;
+  const dir = path.join(lugar.repo, 'scripts', 'controls-bench', 'cases', 'advisors');
+  let archivos;
+  try { archivos = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !propios.has(f)).sort(); } catch (_) { return nada; }
+  return { dir, origen: lugar.origen === 'mantenimiento' ? 'el clon de mantenimiento' : lugar.origen, archivos };
+}
+
 async function main() {
   // las opciones se leen separadas («--model sonnet»): «--model=sonnet» no se lee, y la corrida seguiría con el valor
   // de siempre sin decirlo
@@ -1893,6 +1910,13 @@ async function main() {
   if (!fs.existsSync(casesDir)) { console.error(`sin casos: ${casesDir}`); return 1; }
   const archivosDeCasos = fs.readdirSync(casesDir).filter((f) => f.endsWith('.json')).sort();
   const suites = archivosDeCasos.map((f) => JSON.parse(fs.readFileSync(path.join(casesDir, f), 'utf8')));
+  if (!PACK) {
+    const extra = casosDelRepoDelExamen(new Set(archivosDeCasos));
+    if (extra.archivos.length) {
+      console.error(`advisor-runner: ${extra.archivos.length} archivo(s) de casos sumados del repo del examen (${extra.origen}): ${extra.dir}`);
+      for (const f of extra.archivos) suites.push(JSON.parse(fs.readFileSync(path.join(extra.dir, f), 'utf8')));
+    }
+  }
   if (PACK) {
     const mal = suites.map((s, i) => suiteDePaqueteProblema(s, path.join(casesDir, archivosDeCasos[i]))).find(Boolean);
     if (mal) { console.error(mal); return 2; }

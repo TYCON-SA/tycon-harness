@@ -1483,6 +1483,12 @@
       "requiere": []
     },
     {
+      "__nota": "el examen de revisores suma los casos que viven sólo en el clon de mantenimiento.",
+      "raiz": "arnes",
+      "ruta": "tests/exam-maintainers-cases.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el freno de pruebas sin alcance frena el comando corrido y no un texto entre comillas que sólo se busca.",
       "raiz": "arnes",
       "ruta": "tests/test-scope-guard.test.sh",
