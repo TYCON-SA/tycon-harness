@@ -13,8 +13,8 @@
  *
  * El «no» lo aprueba la persona en la ventana de permiso (o en su terminal), después de la oferta mostrada para esa
  * historia. La constancia sola no alcanza: cada freno del cierre busca la línea de esa firma en el registro del arnés,
- * entre la oferta y la constancia. Una constancia vieja, de antes de la ventana, se sigue comprobando por la cita en la
- * conversación de la sesión que la anotó.
+ * entre la oferta y la constancia. Una constancia vieja, firmada con una cita en la conversación, ya no cuenta: el «no»
+ * se pide de nuevo. La oferta se muestra siempre, también si la conversación no se puede leer.
  *
  *   · `offerText(clave)`: el texto aprobado, una sola fuente.
  *   · `repoReady(repo)`: ¿el repo resuelve un portón de navegador (`e2eConfig`) y tiene `@playwright/test` instalado
@@ -194,9 +194,6 @@ function mostrar({ sessionId, stateDir, home = os.homedir() }) {
   const id = String(marker.storyId);
   if (decidida(stateDir, id, repo, story)) return null;
   if (gates(stateDir).some((g) => g.name === OFFER_SHOWN && g.sessionId === sessionId && g.story === id)) return null;
-  // sin la conversación legible (otra herramienta) no se sabe si el aviso se ve: no se muestra ni se anota
-  const conv = require('./person-ok.js').leerConversacion({ sesion: sessionId, home });
-  if (!conv.legible) return null;
   // con un número que no sirve de nombre de archivo la preparación no se puede cumplir: no se ofrece
   const clave = claveDe(story, content);
   if (!clave) return null;
@@ -213,16 +210,6 @@ function marcaDeLaHistoria(content) {
   const fecha = (motivo.match(/^(\d{4}-\d{2}-\d{2})\b/) || [])[1] || null;
   const cita = (motivo.match(/«([^»]*)»\s*$/) || [])[1] || null;
   return { marcada, fecha, cita };
-}
-
-/** ¿La cita sigue en la conversación de la sesión que la anotó, después de la oferta? null si sí; si no, el motivo. */
-function okQueNoAparece(g, { home, env } = {}) {
-  const pok = require('./person-ok.js');
-  const o = { sesion: g.sessionId, desde: g.offerTs, home, env };
-  const r = g.relevo ? pok.citaReenviada(g.cita, g.relevo, o) : pok.citaDeLaPersona(g.cita, o);
-  if (!r.legible) return `no puedo leer la conversación donde la persona dijo que no (${r.motivo})`;
-  if (!r.encontrada) return r.anterior ? 'la respuesta es de antes de la oferta' : 'la respuesta no está en la conversación donde se anotó';
-  return null;
 }
 
 function firmaQueNoAparece(g, filas) {
@@ -251,8 +238,10 @@ function debtDeclared({ stateDir, storyPath, content = null, home = os.homedir()
   const g = rs[rs.length - 1];
   const ofertas = gates(stateDir).filter((o) => o.name === OFFER_SHOWN && o.story === id && o.sessionId === g.sessionId && o.ts === g.offerTs);
   if (!ofertas.length) return { declared: false, motivo: 'no hay constancia de la oferta a la que contestó la persona', story: id };
-  // firmada en la ventana o en la terminal: vale la línea de la firma, entre la oferta y la constancia; una vieja, la cita
-  const falta = ['ventana', 'terminal'].includes(g.via) ? firmaQueNoAparece(g, gates(stateDir)) : okQueNoAparece(g, { home, env });
+  // firmada en la ventana, por la delegación o en la terminal: vale la línea de la firma, entre la oferta y la constancia.
+  // Una vieja, firmada con una cita en la conversación, ya no cuenta: se pide de nuevo
+  const falta = ['ventana', 'delegacion', 'terminal'].includes(g.via) ? firmaQueNoAparece(g, gates(stateDir))
+    : 'el «no» se dio con una cita en la conversación, que ya no cuenta: pedilo de nuevo en la ventana';
   if (falta) return { declared: false, motivo: falta, story: id };
   // la fecha que se dice es la de la constancia, no la que trae la historia (que se puede editar)
   return { declared: true, story: id, fecha: String(g.ts || marca.fecha).slice(0, 10), cita: marca.cita, quien: g.approvedBy || null };

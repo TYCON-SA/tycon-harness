@@ -31,7 +31,6 @@ const { spawnSync } = require('child_process');
 
 const SKILL_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
 const { stateDir, claudeDir } = require(path.join(SKILL_LIB, 'state-dir.js'));
-const { ESCAPES, NAMED, juez } = require(path.join(SKILL_LIB, 'escape-ok.js'));
 const { adversarialInFlight } = require(path.join(SKILL_LIB, 'codex-reviewers.js'));
 const { sesionQueReenvia, designacionVigente } = require(path.join(SKILL_LIB, 'critical-waivers.js'));
 const { sessionsBySid } = require('./work-in-progress.js');
@@ -225,7 +224,7 @@ const isCodex = (env) => Boolean(env.CODEX_SESSION_ID) && !env.CLAUDE_CODE_SESSI
 function coordinate(opts = {}) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
-  if (isCodex(env)) return { code: 1, text: 'Codex no puede coordinar: sus mensajes a otra sesión (codex queue) no pasan por una herramienta que el freno de la frase del dueño pueda mirar. La coordinadora va en Claude Code.' };
+  if (isCodex(env)) return { code: 1, text: 'Codex no puede coordinar: sus mensajes a otra sesión (codex queue) no pasan por una herramienta que el arnés pueda mirar. La coordinadora va en Claude Code.' };
   const rol = sesionQueReenvia({ env, home, arnes: opts.arnes });
   if (!rol.valor) {
     return { code: 1, text: rol.aviso && !/no conoce/.test(rol.aviso)
@@ -409,19 +408,6 @@ function signatureDone(id, opts = {}) {
 
 // ── Abrir una sesión de fondo ──
 
-// Una frase de permiso del dueño en el texto, aunque esté citada, negada o en una pregunta: la busca sin comillas y,
-// además, con el juez de la frase.
-function permissionPhrase(task) {
-  // Sin invisibles y con las letras de compatibilidad llevadas a las comunes: un carácter de ancho cero no la esconde.
-  const visible = String(task || '').normalize('NFKC').replace(/\p{Cf}/gu, '');
-  const plain = visible.toLowerCase().replace(/[«»"“”'‘’`]/g, ' ').replace(/\s+/g, ' ');
-  for (const v of [...Object.keys(ESCAPES), ...NAMED]) {
-    const esc = v.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`(?:^|[^\\p{L}\\p{N}_])autorizo\\s+${esc}(?![\\p{L}\\p{N}_])`, 'u').test(plain) || juez(v)(task) === null || juez(v)(visible) === null) return v;
-  }
-  return null;
-}
-
 /** Abre una sesión de fondo con nombre y encargo. Nunca reintenta; sólo una apertura que salió bien queda anotada. */
 function open(opts = {}) {
   const home = opts.home || require('os').homedir();
@@ -441,8 +427,6 @@ function open(opts = {}) {
   if (openedProblems.length) return no(`No pude saber qué sesiones se abrieron recién (${openedProblems[0]}): no la abrí.`);
   if (taken.has(name)) return no(`«${name}» ya lo usa otra sesión viva: no la abrí.`);
   if (!oneLine(task)) return no('Falta el encargo de la sesión: no la abrí.');
-  const v = permissionPhrase(task);
-  if (v) return no(`El encargo trae una frase de permiso (${v}): esa frase la escribe el dueño en la sesión nueva, nunca va en un encargo. No la abrí.`);
   if (s.working.length >= s.cap.value) return no(`Ya hay ${s.working.length} trabajando y el tope es ${s.cap.value} (${ORIGIN[s.cap.origin] || s.cap.origin}): no la abrí, espera su turno.`);
   if (!cwd || !path.isAbsolute(cwd)) return no('Falta la carpeta de la sesión, absoluta: no la abrí.');
   if (!fs.existsSync(cwd)) return no(`La carpeta ${cwd} no existe: no la abrí.`);
@@ -522,4 +506,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { status, statusText, capNotice, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir, permissionPhrase };
+module.exports = { status, statusText, capNotice, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, coordinationDir };

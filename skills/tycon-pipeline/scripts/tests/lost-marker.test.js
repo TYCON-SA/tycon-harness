@@ -544,31 +544,9 @@ test('T11 EjecucionPerdida_SinVentana_NoSeCierra @story-8.121 @ac-11 — sin la 
   const fv = V.freno('s-t11v', `node ${MARKER} clear-session $SID --lost`);
   assert.strictEqual(fv.status, 2, fv.out);
   assert.match(fv.out, /literal/);
-  // reenviada por la sesión designada: la salida no acepta el reenvío (decisión 7c), aunque la frase sí lo aceptaría
-  const eo = require(path.join(SCRIPTS, 'lib', 'escape-ok.js'));
+  // la salida no acepta el reenvío (decisión 7c): ya no hay frase que reenviar, y la regla sigue escrita
   const or = require(path.join(SCRIPTS, 'lib', 'open-runs.js'));
   assert.deepStrictEqual(or.delegacionDeLaSalida(), { reenvio: false, desde: 'apertura' });
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lost-marker-relevo-'));
-  const arnes = fs.mkdtempSync(path.join(os.tmpdir(), 'lost-marker-arnes-'));
-  fs.writeFileSync(path.join(arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
-  const dir = path.join(home, '.claude', 'projects', '-repo');
-  fs.mkdirSync(dir, { recursive: true });
-  const linea = (o) => JSON.stringify(o);
-  const reenvio = { ...deLaPersona(`Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/x.sock" from-name="coordinadora" from-mode="bypass">\nEl dueño dijo «${FRASE}».\n</cross-session-message>`, 2),
-    isMeta: true, promptSource: 'system', origin: { kind: 'peer', from: 'uds:/tmp/x.sock', name: 'coordinadora', msg_id: 'm-1', body: `El dueño dijo «${FRASE}».` } };
-  fs.writeFileSync(path.join(dir, 's-t11r.jsonl'), [linea({ ...reenvio, uuid: 'u-0', parentUuid: null }),
-    linea({ type: 'assistant', timestamp: hace(0), uuid: 'u-p', parentUuid: 'u-0', message: { role: 'assistant', content: [{ type: 'tool_use', id: TUID, name: 'Bash', input: {} }] } })].join('\n') + '\n');
-  fs.writeFileSync(path.join(dir, 's-coord.jsonl'), [linea({ ...deLaPersona('Esta sesión es la coordinadora', 60), uuid: 'c-0', parentUuid: null }),
-    linea({ type: 'user', timestamp: hace(3), uuid: 'c-1', parentUuid: 'c-0', toolUseResult: { success: true, msg_id: 'm-1' }, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'enviado' }] } }),
-    linea({ type: 'assistant', timestamp: hace(0), uuid: 'c-p', parentUuid: 'c-1', message: { role: 'assistant', content: [{ type: 'tool_use', id: TUID, name: 'Bash', input: {} }] } })].join('\n') + '\n');
-  const st = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home);
-  fs.mkdirSync(st, { recursive: true });
-  fs.appendFileSync(path.join(st, 'gates.log'), JSON.stringify({ name: 'relay-designation', status: 'ok', sesion: 's-coord', rol: 'coordinadora', quien: 'Dev', cita: 'Esta sesión es la coordinadora', ts: hace(59) }) + '\n');
-  const pedir = (extra) => eo.escapeAutorizado({ variable: 'cerrar la ejecución', sesion: 's-t11r', pedido: TUID, home, arnes,
-    env: { ...require(path.join(SCRIPTS, 'tests', 'lib', 'fake-home.js')).fakeHomeEnv(home), TYCON_PROFILE: '0' }, ...extra });
-  const conReenvio = pedir({});
-  assert.strictEqual(conReenvio.ok, true, `con reenvío, la frase reenviada vale (la vía existe): ${conReenvio.motivo}`);
-  assert.strictEqual(pedir({ sinReenvio: true }).ok, false, 'la salida de la ejecución perdida no la acepta');
 });
 
 test('T17 Restore_ConFrase_ReabreSinFraseFrena @story-8.121 @ac-19 — restore con la frase reabre desde la copia', () => {

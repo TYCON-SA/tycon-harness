@@ -18,9 +18,9 @@
  *   - ilegible: el registro existe y no se puede leer, con un marcador o una copia de la sesión a la vista.
  * Sin ninguna de las tres piezas de la sesión, no hay ejecución y nada cambia.
  *
- * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>` con su frase
- * «autorizo cerrar la ejecución» posterior a la apertura. `delegacionDeLaSalida` es el único lugar que decide si la
- * frase puede llegar reenviada por la sesión designada.
+ * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, firmados en la
+ * ventana de permiso o en su terminal. `delegacionDeLaSalida` es el único lugar que decide si la salida admite
+ * reenvío por la sesión designada.
  */
 const fs = require('fs');
 const os = require('os');
@@ -231,16 +231,15 @@ function cartel(r, { markerJs = 'marker.js' } = {}) {
   return [
     `🔴 EJECUCIÓN PERDIDA — la ejecución de la story ${r.story || '?'} (sesión ${r.sesion}), abierta ${r.desde || 'en una hora que no se pudo leer'}: ${FALTA[r.falta] || r.falta}.`,
     'Hasta resolverla no se edita, no se escribe por consola, no se cierra el turno ni se commitea. Leer sí: cat, ls, grep, head, tail, git status/diff/log, marker.js get.',
-    'La salida la decide el dueño, con su frase «autorizo cerrar la ejecución» en esta conversación, posterior a la apertura:',
+    'La salida la decide el dueño: la firma en la ventana de permiso o en su terminal (--terminal), con uno de estos comandos:',
     `  node ${markerJs} clear-session ${r.sesion} --lost   (la cierra como perdida)`,
     `  node ${markerJs} restore ${r.sesion}                (la reabre desde la copia de la apertura)`,
   ].join('\n');
 }
 
 /**
- * Si la frase de la salida puede llegar reenviada por la sesión designada, y desde cuándo vale. Es el único punto de
- * decisión: sin reenvío y desde la apertura. Limitación: todavía no lee `approvals.delegated_signing`, así que la frase
- * reenviada por la sesión designada no abre la salida.
+ * Si la salida admite reenvío por la sesión designada, y desde cuándo vale. Es el único punto de decisión: sin
+ * reenvío y desde la apertura. La firma delegada de `lost-run` la resuelve `approvals.delegated_signing`, no este punto.
  */
 function delegacionDeLaSalida() {
   return { reenvio: false, desde: 'apertura' };
