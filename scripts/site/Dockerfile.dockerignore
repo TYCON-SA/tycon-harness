@@ -29,6 +29,7 @@
 !integrations/
 !scripts/hooks/
 !scripts/setup/hooks-list.json
+!scripts/install-tycon-hooks.sh
 !guides/**/*.md
 !packs/
 !agents/
