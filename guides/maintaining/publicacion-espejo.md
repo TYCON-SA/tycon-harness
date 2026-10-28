@@ -700,10 +700,11 @@ modo público (`TYCON_CLEAN_MACHINE=1` y `TYCON_CLEAN_MACHINE_SOURCE=<raíz>`: p
   `agent-skills-suites/`) y el reporte del banco (`bench.json`). Sin la variable va a una carpeta temporal, que el
   resumen nombra. El resto de las variables está en la cabecera del guion.
 - **`TYCON_PUBLIC_CI_PART=<parte>`** (opcional, 2026-10-14): corre sólo una parte de los pasos, para repartirlos en
-  trabajos que corren a la vez. `checks` es todo menos las portables; `suites-<i>-of-<n>` es sólo la parte `<i>` de las
-  portables, repartidas por peso con `scripts/ci/suites-shard.js` (juego `pr`). `checks` y las `<n>` partes de las
-  suites juntas son la corrida entera; una parte sola no es el veredicto, y el resumen lo dice. La CI de GitHub corre
-  así: una matriz Node × parte, con cinco partes de las suites, y el job `public-ci` junta todas.
+  trabajos que corren a la vez. `checks` es todo menos las portables y el banco de controles; `controls-bench` es sólo
+  el banco, que tarda unos 5 minutos y en su propio trabajo no alarga `checks`; `suites-<i>-of-<n>` es sólo la parte
+  `<i>` de las portables, repartidas por peso con `scripts/ci/suites-shard.js` (juego `pr`). `checks`, `controls-bench`
+  y las `<n>` partes de las suites juntas son la corrida entera; una parte sola no es el veredicto, y el resumen lo dice.
+  La CI de GitHub corre así: una matriz Node × parte, con cinco partes de las suites, y el job `public-ci` junta todas.
 - El sexto paso no corre `export-real.test.sh`: es la suite que corre este guion, y adentro de él sería infinita.
 - **El repo lo decide `--root`, no el entorno de quien llama.** El guion saca al arrancar las variables que git le pasa a
   lo que lanza un hook (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`…): con ellas puestas listaría los
