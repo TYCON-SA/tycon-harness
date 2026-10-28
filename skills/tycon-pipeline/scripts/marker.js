@@ -4847,6 +4847,32 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // mayor y motivo). Todo queda en adhoc.log. `adhoc clear` lo termina; `marker.js set` (pipeline)
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
+/**
+ * ¿Hay una conversación de Claude Code guardada para la sesión `sid`, aunque no se pueda leer? Un `sid` que no
+ * se puede buscar cuenta como sí: falla hacia cerrar.
+ */
+function tieneConversacion(sid) {
+  if (!/^[\w-]+$/.test(String(sid || ''))) return true;
+  const casas = [os.homedir()];
+  let realHome = null;
+  try { realHome = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'real-home.js')); } catch (_e) { /* una copia sin la biblioteca (Codex): la casa de HOME */ }
+  if (realHome) {
+    // la casa de la cuenta que no se puede resolver no es «no hay conversación»: falla hacia cerrar
+    try { casas.push(realHome.casaDeLaCuenta()); } catch (_e) { return true; }
+  }
+  // sólo «no existe» es ausencia: cualquier otro error (un permiso sacado con chmod) cierra
+  const noEsta = (e) => e && (e.code === 'ENOENT' || e.code === 'ENOTDIR');
+  for (const casa of casas) {
+    const raiz = path.join(casa, '.claude', 'projects');
+    let carpetas = [];
+    try { carpetas = fs.readdirSync(raiz); } catch (e) { if (noEsta(e)) continue; return true; }
+    for (const d of carpetas) {
+      try { fs.lstatSync(path.join(raiz, d, `${sid}.jsonl`)); return true; } catch (e) { if (!noEsta(e)) return true; }
+    }
+  }
+  return false;
+}
+
 function cmdAdhoc(sub, payloadJson) {
   if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
   const io = require('./lib/story-gate-io.js');
@@ -4887,18 +4913,33 @@ function cmdAdhoc(sub, payloadJson) {
     // Kill-switch del dev: TYCON_STORY_GATE=off.
     const gate = require('./lib/story-gate.js');
     const lane = io.readLane(STATE_DIR, SID);
-    const recentAll = lane && Array.isArray(lane.recentPrompts) ? lane.recentPrompts : [];
+    const ring = lane && Array.isArray(lane.recentPrompts) ? lane.recentPrompts : [];
     // Se lee como los hooks del portón (on-story-gate.js, on-bash-write-gate.js): sin distinguir mayúsculas.
     const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
+    // Lo que cuenta como palabra del dueño sale de la marca que pone Claude Code en la conversación, leída ahora:
+    // en el aviso de cada mensaje no se puede, porque Claude Code escribe el mensaje en la conversación después. Un
+    // mensaje de otra sesión, una nota de un agente o uno sin marca no se cita ni lo lee el modelo. Sin la conversación,
+    // con Claude Code se niega (abajo); en otra herramienta, que no la guarda, decide el registro de on-prompt.js.
+    let conv = { legible: false, motivo: 'no se consultó' };
+    if (gateOn) {
+      try { conv = require('./lib/person-ok.js').mensajesConOrigen({ sesion: SID }); } catch (e) { conv = { legible: false, motivo: e.message }; }
+    }
+    // Es Claude Code si la sesión tiene su conversación guardada, en la casa de HOME o en la de la cuenta: no lo decide una
+    // variable de entorno, que el agente puede borrar. Esa carpeta no se escribe por consola (freno ESC-C2).
+    const conClaudeCode = gateOn && tieneConversacion(SID);
+    const recentAll = conv.legible
+      ? [...conv.mensajes.filter((m) => m.origen !== 'dueno'), ...conv.delDueno.map((texto) => ({ texto, origen: 'dueno' }))]
+      : (conClaudeCode ? [] : ring);
 
     // Un ring vacío no cita nada: `quoted=true` ahí sería un fail-open doble (hook de prompt roto +
     // sin modelo = cualquier reason inventado pasaría). Un ring
     // vacío significa que NO HAY nada citable: la cita falla, y el mensaje de abajo dice cómo
     // seguir (preguntarle al user; si el user YA contestó y esto se repite, el hook on-prompt no
     // está corriendo y eso es lo que hay que arreglar).
-    const quoted = gateOn ? (recentAll.length > 0 && gate.reasonInPrompts(reason, recentAll)) : true;
+    const delDueno = gate.soloDelDueno(recentAll);
+    const quoted = gateOn ? (delDueno.length > 0 && gate.reasonInPrompts(reason, recentAll)) : true;
     let llm = { lane: null, via: 'sin-consulta' };
-    if (gateOn && recentAll.length) {
+    if (gateOn && delDueno.length) {
       try { llm = require('./lib/lane-classifier.js').classifyLane(recentAll); } catch (_) { llm = { lane: null, via: 'error' }; }
     }
 
@@ -4911,6 +4952,15 @@ function cmdAdhoc(sub, payloadJson) {
       `   · SUBAGENTE (sin AskUserQuestion): no elijas vos — cerrá tu reporte pidiendo que le ` +
       `pregunten al user.`;
 
+    if (gateOn && !conv.legible && conClaudeCode) {
+      // Sin la conversación no se sabe de quién es cada mensaje: el registro guarda también lo de otras sesiones.
+      console.error(
+        `marker.js adhoc set: DENEGADO — no pude leer la conversación de esta sesión (${conv.motivo}), así que no sé ` +
+        `qué escribió el user y qué llegó de otra sesión o de un agente.\n\n` + ask,
+      );
+      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_SIN_CONVERSACION', reason, motivo: conv.motivo, cwd: process.cwd() });
+      process.exit(2);
+    }
     if (gateOn && llm.lane === 'pipeline') {
       // El modelo leyó los prompts del user y dice que pidió una story: el atajo no corre, ni
       // siquiera citándolo (citar un pedido de story como motivo de un ad-hoc es
@@ -4923,6 +4973,19 @@ function cmdAdhoc(sub, payloadJson) {
         `story") — eso cambia el veredicto.\n\n` + ask,
       );
       appendLog('adhoc.log', { kind: 'ADHOC_LLM_DENIED_LANE', reason, via: llm.via, cwd: process.cwd() });
+      process.exit(2);
+    }
+    // El texto citado está, pero en un mensaje que no escribió el dueño: se dice eso, no «citá literal».
+    const r0 = gate.normalizeWords(reason);
+    const ajeno = recentAll.find((e) => e && typeof e === 'object' && e.origen !== 'dueno' && gate.normalizeWords(e.texto).includes(r0));
+    if (gateOn && !quoted && llm.lane !== 'adhoc' && ajeno) {
+      const quien = ajeno.origen === 'sesion' ? 'de otra sesión' : ajeno.origen === 'nota' ? 'de un agente (una nota o un aviso de tarea)' : 'sin la marca de quién lo escribió';
+      console.error(
+        `marker.js adhoc set: DENEGADO — ese texto llegó en un mensaje ${quien}, no lo escribió el user: lo que pide ` +
+        `otra sesión o un agente no abre el atajo, aunque diga «arreglo rápido».\n\n` +
+        `Si el user quiere el atajo, que lo escriba él como un mensaje nuevo; ese mensaje es citable. ` + ask,
+      );
+      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_REASON', reason, origen: ajeno.origen, de: ajeno.de || null, via: llm.via, cwd: process.cwd() });
       process.exit(2);
     }
     if (gateOn && !quoted && llm.lane !== 'adhoc') {
@@ -4967,7 +5030,7 @@ function cmdAdhoc(sub, payloadJson) {
       // evento del clasificador que merece revisión humana (lo grita lane-llm-notice al arranque).
       appendLog('adhoc.log', {
         kind: 'ADHOC_LLM_OVERRIDE_LANE', reason,
-        lanePrompt: String(recentAll[recentAll.length - 1] || '').replace(/\s+/g, ' ').slice(0, 160),
+        lanePrompt: String(delDueno[delDueno.length - 1] || '').replace(/\s+/g, ' ').slice(0, 160),
         via: llm.via, cwd: process.cwd(),
       });
     }

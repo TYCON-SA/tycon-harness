@@ -430,6 +430,38 @@ function citaReenviada(cita, sesion, opts = {}) {
   return { legible: true, archivo: l.archivo, ...buscar(cita, l.reenviados, opts.desde, opts.juzgar, opts.enteroSiCorta === true) };
 }
 
+// La nota de un agente lateral llega marcada `human` (la manda la persona con un clic), pero el texto lo escribió el agente:
+// se reconoce por el encabezado que le pone Claude Code.
+const ENCABEZADO_NOTA = /^\s*Here is a note offered by a side agent:/;
+const ULTIMOS_DEL_DUENO = 8;
+
+/** El origen de un texto de usuario, de su marca: `{ origen: 'dueno'|'sesion'|'nota'|'sin-marca', de? }`. */
+function origenDeLaMarca(t) {
+  const o = t.origen;
+  if (o && o.kind === 'peer') return typeof o.from === 'string' && o.from ? { origen: 'sesion', de: o.from } : { origen: 'sesion' };
+  if (o && o.kind === 'task-notification') return { origen: 'nota' };
+  if (!o || o.kind !== 'human' || t.sistema) return { origen: 'sin-marca' };
+  return { origen: ENCABEZADO_NOTA.test(t.texto) ? 'nota' : 'dueno' };
+}
+
+/**
+ * Cada mensaje de la conversación principal con su origen, leído de la marca que pone Claude Code y no del texto, y lo
+ * que escribió el dueño: `{ legible, motivo?, mensajes: [{ texto, origen, de? }], delDueno: [texto] }`. A diferencia
+ * de citaDeLaPersona, lo que no trae marca no cuenta: Claude Code marca `human` todo lo que tipea la persona, en la
+ * terminal y en VS Code. De un mensaje del dueño cuenta lo que escribió él: sin los bloques del
+ * arnés ni lo pegado, y nada si trae un bloque que pudo escribir otro. `delDueno` son los últimos `ULTIMOS_DEL_DUENO`.
+ */
+function mensajesConOrigen(opts = {}) {
+  const conv = leerConversacion(opts);
+  if (!conv.legible) return { legible: false, motivo: conv.motivo, mensajes: [], delDueno: [] };
+  const mensajes = textosDeUsuario(conv.registros).map((t) => ({ texto: t.texto, ...origenDeLaMarca(t) }));
+  const delDueno = mensajes.filter((m) => m.origen === 'dueno')
+    .map((m) => escritoPorLaPersona(sinTextoPegado(m.texto)))
+    .filter((t) => t !== null && t.trim())
+    .map((t) => t.replace(/\s+/g, ' ').trim());
+  return { legible: true, archivo: conv.archivo, mensajes, delDueno: delDueno.slice(-ULTIMOS_DEL_DUENO) };
+}
+
 /**
  * Las respuestas que la persona eligió (o escribió en «Otra») en una pregunta con opciones de la sesión principal: el
  * resultado estructurado (`toolUseResult.answers`) de un registro que contesta un `tool_use` de `AskUserQuestion` del
@@ -506,4 +538,4 @@ function planEnLaConversacion(planTxt, opts = {}) {
   return { legible: true, mostrado: vistos * 2 >= renglones.length };
 }
 
-module.exports = { CITA_MINIMA, ESPERA_PASO_MS, MOTIVO_PASO_NO_UBICADO, MOTIVO_PASO_DUPLICADO, MOTIVO_PASO_OTRO_ARCHIVO, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, laDesignada, citaDeOpciones, planEnLaConversacion };
+module.exports = { CITA_MINIMA, ESPERA_PASO_MS, MOTIVO_PASO_NO_UBICADO, MOTIVO_PASO_DUPLICADO, MOTIVO_PASO_OTRO_ARCHIVO, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, laDesignada, citaDeOpciones, planEnLaConversacion, mensajesConOrigen };
