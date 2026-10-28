@@ -248,13 +248,14 @@ function topeVentanaS() {
 }
 
 /**
- * Abre la ventana nueva y espera. `script` y `args` son lo que corre adentro (el mismo comando). Devuelve
+ * Abre la ventana nueva y espera. `script` y `args` son lo que corre adentro (el mismo comando), con `programa` (node, o
+ * bash para un guion de bash). Devuelve
  * `{ estado: 'cerrada', codigo }`, `{ estado: 'vencida' }` (pasó el tope: se la cerró, no se firmó nada) o
  * `{ estado: 'no-abrio', motivo }`. `opts.spawn` y `opts.kill` sólo para las pruebas.
  */
-function abrirVentana({ script, args = [], titulo = 'Firma del waiver', spawn, kill } = {}) {
+function abrirVentana({ script, args = [], titulo = 'Firma del waiver', programa = process.execPath, spawn, kill } = {}) {
   const cp = require('child_process');
-  const todo = [process.execPath, script, ...args];
+  const todo = [programa, script, ...args];
   const malo = todo.find((a) => /["%\r\n]/.test(String(a)));
   if (malo) return { estado: 'no-abrio', motivo: `una ruta trae un carácter que la consola de Windows no deja pasar entre comillas (${malo})` };
   const pidFile = path.join(os.tmpdir(), `tycon-waiver-ventana-${process.pid}-${Date.now()}.pid`);
