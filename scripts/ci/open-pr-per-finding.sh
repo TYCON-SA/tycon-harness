@@ -999,6 +999,13 @@ for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
     echo "$ID: cerrada con su pr: $PR de $PR_REPO_F, no de $DONDE — este guion no lo cierra"; continue
   fi
   if ! OUT=$(pr_por_id "$PR"); then
+    # Un pull request que Azure dice que no está (TF401180: lo borraron, o era de un repo que ya no existe) es una
+    # respuesta, no un «no pude preguntar»: no queda nada que cerrar. Se anota y no se vuelve a mirar; si no, la ficha
+    # pondría roja cada noche para siempre. Cualquier otro error sigue siendo un fallo.
+    if [ "$PLATAFORMA" = azure ] && grep -q 'TF401180' "$ERR"; then
+      aviso "$ID: su ${NR}$PR ya no existe (Azure: TF401180): no hay nada que cerrar; se anota y no se vuelve a mirar"
+      encolar "$F" pr-cerrado "$HOY"; continue
+    fi
     fallo "$ID: no se pudo consultar el ${NR}$PR de una ficha cerrada — $(cat "$ERR")"; continue
   fi
   if ! LEIDO=$(printf '%s' "$OUT" | campo_pr 2>"$ERR"); then
