@@ -321,7 +321,7 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${ayer}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
   const fichaVig = (id, pr, veredicto, regla, extra = '') => `id: ${id}\nfuente: vigilante\ncausa: producto-x:${regla}\nfecha: ${ayer}\nproducto: producto-x\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
   Object.assign(f, {
-    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, 'propuesta_accion: arreglar\npropuesta_razon: Hay una versión corregida del paquete\npedidos:\n  - Producto X: 5002\n'),
+    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, 'aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\npedidos:\n  - Producto X: 5002\n'),
     'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5),
     'inbox/dependencies/archived/f3.yaml': fichaDep('f3', 203, 'descartado', 'pkg-tres', 'low', 8),
     'inbox/dependencies/promoted/f4.yaml': fichaDep('f4', 204, 'util', 'pkg-cuatro', 'high', 6),

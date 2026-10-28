@@ -448,9 +448,14 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const meta = [sev ? T(idioma, `mant.vuln.${sev}`) : null, T(idioma, repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: repos, dia: dia(f.primera_vez) })].filter(Boolean).join(' · ');
     const pedido = c.pr ? { numero: Number(c.pr), enlace: enlaceDePedido(c.pr, c.pr_repo) } : null;
     const fallo = !c.fallida ? null : c.motivo_fallida ? T(idioma, 'mant.dep.fallo', { dia: dia(c.fallida), motivo: c.motivo_fallida }) : T(idioma, 'mant.dep.falloSinMotivo', { dia: dia(c.fallida) });
+    // qué es la vulnerabilidad (el aviso de GitHub, en su idioma) y la sugerencia del modelo, que sólo llega con el aviso
+    const av = f.aviso;
+    const aviso = av && av.resumen ? { resumen: av.resumen, parche: av.parche || null } : av && av.motivo ? { sin_leer: true } : null;
+    const pr = aviso && aviso.resumen ? f.propuesta : null;
     return { fuente: f.fuente, id: f.id, nombre: c.paquete || f.nombre, regla: null, meta, que_paso: T(idioma, pedido ? 'mant.dep.conPedido' : 'mant.dep.sinPedido'),
-      analisis: null, propuesta: null, sin_analizar: null, recomendada: null, veces: f.noches || 1, detalle: { maquinas: [], stories: [] },
-      severidad: f.severidad || null, pedido, fallo };
+      analisis: null, propuesta: pr ? { accion: pr.accion, razon: pr.razon === SOURCES.SIN_FORMA ? null : pr.razon } : null,
+      sin_analizar: null, recomendada: null, veces: f.noches || 1, detalle: { maquinas: [], stories: [] },
+      severidad: f.severidad || null, pedido, fallo, aviso };
   }
 
   function filaParaDecidir(f, idioma) {
@@ -573,7 +578,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       let cuerpo;
       if (deDependencias) {
         const pedido = f.pedido ? ` ${enlace(T(idioma, 'mant.dep.pedido', { numero: f.pedido.numero }), f.pedido.enlace)}.` : '';
-        cuerpo = `${f.fallo ? `<p class="m-fallo">${esc(f.fallo)}</p>` : ''}<p>${esc(f.que_paso)}${pedido}</p><div class="m-pie">${acciones}</div>`;
+        const av = f.aviso;
+        const aviso = !av ? ''
+          : av.sin_leer ? `<p class="m-aviso">${esc(T(idioma, 'mant.dep.avisoSinLeer'))}</p>`
+            : `<p class="m-aviso"><b>${esc(T(idioma, 'mant.dep.queEs'))}</b> <span lang="en">${esc(av.resumen)}</span>${av.parche ? ` ${esc(T(idioma, 'mant.dep.parche', { version: av.parche }))}` : ''}</p>`;
+        const pr = f.propuesta;
+        const sugerencia = pr ? `<p class="m-propuesta">${esc(T(idioma, 'mant.dep.sugerencia', { accion: T(idioma, `mant.dep.sugerencia.${pr.accion}`) }))}${pr.razon ? ` ${es(pr.razon)}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.razonEnCastellano'))}`}` : ''}</p>` : '';
+        cuerpo = `${f.fallo ? `<p class="m-fallo">${esc(f.fallo)}</p>` : ''}${aviso}${sugerencia}<p>${esc(f.que_paso)}${pedido}</p><div class="m-pie">${acciones}</div>`;
       } else if (a) {
         cuerpo = renglon('mant.porQue', a.por_que_pasa) + renglon(`mant.recomienda.${a.recomendacion}`, a.por_que_recomienda)
           + (a.arreglo ? renglon('mant.siSeArregla', a.arreglo) : '') + (a.si_vuelve ? renglon('mant.siVuelve', a.si_vuelve) : '')

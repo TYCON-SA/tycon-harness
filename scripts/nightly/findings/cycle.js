@@ -22,6 +22,8 @@ const ESTADOS = ['viva', 'resuelta', 'reaparecio'];
 const CARPETAS = ['pending', 'promoted', 'archived', 'decisions'];
 const CARPETAS_DE_FICHAS = ['pending', 'promoted', 'archived'];
 const ACCIONES = ['aceptar', 'arreglar'];
+// Lo que el modelo sugiere sobre una dependencia: aceptar su pedido, rechazarlo, o mirar algo antes de decidir.
+const ACCIONES_DE_DEPENDENCIAS = ['aceptar', 'rechazar', 'revisar'];
 const TOPE_CASOS = 50;
 // Las huellas de los casos ya vistos: así un caso que salió de la ventana de 50 y vuelve no se cuenta dos veces.
 const TOPE_HUELLAS = 1000;
@@ -41,7 +43,8 @@ const MOTIVOS_SIN_PEDIDO = ['sin-responsable', 'plataforma-sin-asignado', 'plata
 const PIDIENDO = 'pidiendo';
 // Por qué una ficha quedó sin propuesta del modelo: una lista cerrada, nunca el texto de un error. `tope` y `sin-escribir`
 // (la ficha no se pudo escribir) no se escriben en la ficha: los cuenta la constancia de la noche.
-const MOTIVOS_SIN_PROPUESTA = ['sin-modelo', 'sin-llave', 'no-permitido', 'modelo-caido', 'respuesta-invalida', 'tope', 'sin-escribir'];
+// `sin-aviso`: una dependencia cuyo aviso de GitHub no se pudo leer; sin él, el modelo no sugiere.
+const MOTIVOS_SIN_PROPUESTA = ['sin-modelo', 'sin-llave', 'no-permitido', 'modelo-caido', 'respuesta-invalida', 'tope', 'sin-escribir', 'sin-aviso'];
 // Por qué una ficha quedó sin análisis: los de la propuesta, más `no-aporta` (el del modelo no citaba ningún dato o
 // repetía el problema, y se descartó) y `sin-hechos` (la ficha es de antes de que la noche guardara sus datos).
 const MOTIVOS_SIN_ANALISIS = [...MOTIVOS_SIN_PROPUESTA, 'no-aporta', 'sin-hechos'];
@@ -1120,7 +1123,7 @@ async function cruzarCerrados({ base, fuente, operations, hoy, run, repoDir, car
 module.exports = {
   MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, conValor, queHaraLaNoche, pedidoDeLaNoche, pedirTrabajo, avisarQueVolvio, avisarCerradoConFallaViva, leerAvisoCerrado, AVISO_CERRADO, noche,
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
-  ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, FALLAS_MAX, razonSegura, textoDeAnalisis, problemasDeAnalisis, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
+  ACCIONES, ACCIONES_DE_DEPENDENCIAS, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, FALLAS_MAX, razonSegura, textoDeAnalisis, problemasDeAnalisis, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,
   CLAVES_DE_DECISION, VEREDICTO_DE_DECISION, MOTIVO_MAX, motivoConForma, clavesDeDecision, decisionConForma, mismoPedido, aplicarDecisiones, sitioDecide, CLASES_DE_ERROR, hechosConForma,
 };
