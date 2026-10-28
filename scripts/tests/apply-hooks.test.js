@@ -727,13 +727,14 @@ test('T18 ApplyHooks_FormaNueva_ElAplicadorViejoNoDuplica @story-8.39 @ac-18 —
 });
 
 // ── el Node del arnés, siempre ───────────────────────────────────────────────────────────────────────────────────────
-/** Un Node del arnés de juguete en la HOME del laboratorio: una copia del Node que corre las pruebas. */
+/** Un Node del arnés de juguete en la HOME del laboratorio: el Node que corre las pruebas. */
 function withHarnessNode(L) {
-  // en Windows, `current\node.exe`: la copia del node.exe real, que Windows sí lanza
+  // en Windows, `current\node.exe`: la copia del node.exe real, que Windows sí lanza. En el resto, un enlace: un Node que
+  // carga su librería aparte (el de Homebrew, `@rpath/libnode.*.dylib`) no arranca copiado a otra carpeta
   const bin = EN_WINDOWS ? path.join(L.home, '.tycon', 'node', 'current', 'node.exe') : path.join(L.home, '.tycon', 'node', 'current', 'bin', 'node');
   fs.mkdirSync(path.dirname(bin), { recursive: true });
-  fs.copyFileSync(process.execPath, bin);
-  fs.chmodSync(bin, 0o755);
+  if (EN_WINDOWS) fs.copyFileSync(process.execPath, bin);
+  else fs.symlinkSync(process.execPath, bin);
   return bin;
 }
 const FLOOR = path.join(ROOT, 'scripts', 'lib', 'node-floor.js');
@@ -828,7 +829,9 @@ test('T5 Update_ListaMasNuevaQueElNodeBajado_HooksConElDelArnes @story-8.93 @ac-
   const L = lab(t, { list: LIST_A(), files: FILES_A, settings: {} });
   // el Node de juguete contesta una versión que no es la de la lista, sea cual sea el Node que corre la prueba
   const bin = withHarnessNode(L);
-  fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v99.0.0; exit 0; fi\nexec "${process.execPath}" "$@"\n`);
+  // es un enlace al Node real: se saca antes de escribir, o se escribiría sobre el Node de la máquina
+  fs.unlinkSync(bin);
+  fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v99.0.0; exit 0; fi\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
   const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'production', 'node-official.json'), 'utf8'));
   assert.notStrictEqual(list.version, 'v99.0.0', 'la prueba necesita una lista con otra versión que el Node de juguete');
   const interp = HN.interpreter({ env: { ...fakeHomeEnv(L.home), TYCON_HOME: path.join(L.home, '.tycon') }, platform: 'darwin' });

@@ -31,8 +31,10 @@ function home(t, { withNode = true } = {}) {
   const bin = process.platform === 'win32' ? path.join(tyconHome, 'node', 'current', 'node.exe') : path.join(tyconHome, 'node', 'current', 'bin', 'node');
   if (withNode) {
     fs.mkdirSync(path.dirname(bin), { recursive: true });
-    fs.copyFileSync(process.execPath, bin);
-    fs.chmodSync(bin, 0o755);
+    // Fuera de Windows se enlaza: un Node que carga su librería aparte (el de Homebrew, `@rpath/libnode.*.dylib`) no
+    // arranca copiado a otra carpeta, y enlazado la busca junto al binario real.
+    if (process.platform === 'win32') fs.copyFileSync(process.execPath, bin);
+    else fs.symlinkSync(process.execPath, bin);
   }
   return { base, tyconHome, bin };
 }
