@@ -13,6 +13,9 @@
  *   2. el comando normal: abre la ventana, nadie escribe, vence el plazo (bajado a 25 s para la sonda) y no se firma; y no
  *      queda vivo ningún proceso del comando;
  *   3. la consola del proceso de la sonda (la del agente) no pasa por «consola nueva».
+ *   5. las firmas del dueño por terminal (`complete-step approve-plan --terminal`, `run-base-controls.sh approve
+ *      --terminal`), corridas como en su terminal: abren la ventana nueva, nadie escribe, vence y no firman. Sin la
+ *      ventana contestaban «aquí no hay una terminal del dueño» y en Windows ninguna story pasaba de «Aprobar el plan».
  * Si la ventana ni siquiera arranca el comando en este agente, el paso 2 lo dice como hallazgo (no se probó la espera).
  *
  * Fuera de Windows no mide nada (no medido). Uso: node scripts/tests/windows/waiver-probe.js --lab <laboratorio> --out <carpeta del reporte>
@@ -25,6 +28,7 @@ const NAME = 'waiver';
 const SKILLS = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts');
 const MARKER = path.join(SKILLS, 'marker.js');
 const LIB = path.join(SKILLS, 'lib', 'runtime-waiver.js');
+const CONTROLES = path.join(__dirname, '..', '..', 'ci', 'run-base-controls.sh');
 const say = (s) => process.stdout.write(`${s}\n`);
 
 /** Una story de juguete con un AC declarado imposible de verificar corriendo: lo que el waiver firmaría. */
@@ -115,8 +119,47 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   if (!pos) rec.finding('waiver:new-window-not-measured', 'waiver', 'la ventana nueva no llegó a contestar: el caso positivo no se midió en este agente');
   else if (!pos.nueva) rec.finding('waiver:new-window-not-recognized', 'waiver', `una ventana NUEVA no pasa por «nueva» (${pos.conectados} conectados${pos.motivo ? `, ${pos.motivo}` : ''}): la persona tampoco podría firmar`);
 
+  // 5 · las firmas del dueño por terminal: abren la ventana nueva y, sin persona, vencen sin firmar
+  firmasPorTerminal({ dir, x, env, rec });
+
   return { status: L.STATUS.measured, reason: null };
 }
+
+/** Una corrida parada en «Aprobar el plan» (sesión waiver-owner) y su story commiteada, para las firmas por terminal. */
+function firmasPorTerminal({ dir, x, env, rec }) {
+  const pasos = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'];
+  const activos = path.join(x.home, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  fs.writeFileSync(path.join(activos, 'waiver-owner.json'), JSON.stringify({ sessionId: 'waiver-owner', storyId: '9.9', storyPath: x.story, repo: x.repo, stepScheme: 2, stepsCompleted: pasos.slice(0, 3), stepsPending: pasos.slice(3) }));
+  const repo = path.join(dir, 'controles');
+  fs.mkdirSync(repo, { recursive: true });
+  const FECHA = '2026-01-01T10:00:00';
+  const git = (...a) => L.run('git', ['-C', repo, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-c', 'user.email=s@s', '-c', 'user.name=s', ...a],
+    { env: Object.assign({}, env, { GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA }), timeoutMs: 60000 });
+  git('init', '-q');
+  fs.writeFileSync(path.join(repo, 'regla.txt'), 'una regla\n');
+  git('add', '.');
+  git('commit', '-qm', 'inicio');
+  // como en la terminal del dueño: sin variable de sesión, con la sesión destino en --for-session
+  const owner = Object.assign({}, env, { TYCON_WAIVER_TIMEOUT_S: '25' });
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete owner[k];
+  const bash = L.scanPath('bash', { env })[0];
+  const casos = [
+    ['approve-plan', process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'waiver-owner'], () => /plan-approval-signed/.test(leer(path.join(x.home, '.claude', '.tycon-pipeline', 'gates.log')))],
+    ['control-change', bash, [CONTROLES, 'approve', '--root', repo, '--file', 'regla.txt', '--out', '.tycon/control-changes.jsonl', '--terminal'], () => fs.existsSync(path.join(repo, '.tycon', 'control-changes.jsonl'))],
+  ];
+  for (const [nombre, prog, args, firmo] of casos) {
+    if (!prog) { rec.finding(`waiver:owner-terminal-${nombre}-not-measured`, 'waiver', 'no encuentro bash en este agente: la firma del portón por terminal no se midió'); continue; }
+    const r = L.run(prog, args, { env: owner, cwd: repo, timeoutMs: 180000 });
+    const dice = `${r.stdout || ''}${r.stderr || ''}`;
+    rec.fact(`owner_terminal_${nombre.replace(/-/g, '_')}`, { exit: r.exit, signed: firmo(), says: dice.split(/\r?\n/).filter(Boolean).slice(0, 3) });
+    if (firmo()) rec.finding(`waiver:owner-terminal-${nombre}-signed`, 'waiver', 'sin nadie que escriba, la firma por terminal FIRMÓ');
+    else if (/aquí no hay una|terminal interactiva de verdad/.test(dice)) rec.finding(`waiver:owner-terminal-${nombre}-no-window`, 'waiver', `la firma por terminal no abrió la ventana nueva: ${dice.slice(0, 300)}`);
+    else if (!/venció/.test(dice)) rec.finding(`waiver:owner-terminal-${nombre}-no-timeout`, 'waiver', `la firma por terminal no venció el plazo como se espera: ${dice.slice(0, 300)}`);
+  }
+}
+
+function leer(f) { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } }
 
 function main(argv) {
   const args = L.parseArgs(argv, { '--lab': 'value', '--out': 'value', '--allow-temp': 'flag' });

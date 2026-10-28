@@ -556,8 +556,26 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa,
 
 function ttyDeVerdad() {
   const rw = require(path.join(LIB, 'runtime-waiver.js'));
-  const windows = process.platform === 'win32';
-  return { windows, hay: rw.hasTty, preguntar: rw.promptTty, confirmarFrase: rw.confirmarFrase };
+  return {
+    windows: rw.esWindows(), hay: rw.hasTty, preguntar: rw.promptTty, confirmarFrase: rw.confirmarFrase,
+    // Windows: la ventana nueva (la abre el proceso de afuera; el de adentro se anota y espera una tecla al terminar)
+    enVentana: () => process.env[rw.MARCA_VENTANA] === '1',
+    abrir: (o) => rw.abrirVentana(o),
+    dentro: () => rw.dentroDeLaVentana(),
+  };
+}
+
+/**
+ * En Windows la terminal no se lee: el comando se corre otra vez en una ventana nueva y la firma se da adentro. El
+ * proceso de afuera sale con el código de la ventana (`salir`); si no se abrió o venció, devuelve 1 sin firmar.
+ */
+function porLaVentana({ argv, t, salir = process.exit }) {
+  console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+  const v = t.abrir({ programa: process.execPath, script: argv[0], args: argv.slice(1), titulo: 'Firma del dueño' });
+  if (v.estado === 'vencida') return { codigo: 1, motivo: `la ventana venció a los ${v.tope} s sin firmar${v.pid ? ` (la ventana arrancó: pid ${v.pid})` : ' (la ventana no llegó a arrancar el comando)'}` };
+  if (v.estado !== 'cerrada') return { codigo: 1, motivo: `no pude abrir la ventana (${v.motivo})` };
+  salir(v.codigo === 0 ? 0 : (v.codigo || 1));
+  return { codigo: v.codigo === 0 ? 0 : (v.codigo || 1), via: 'ventana-nueva' };
 }
 
 /**
@@ -570,7 +588,8 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
   if (!t.hay()) return { codigo: 2, motivo: 'esta firma se da en la terminal del dueño, y aquí no hay una' };
   const que = `Firma del dueño: ${s ? s.approves : firma}${resumen ? ` (${una(resumen, 200)})` : ''}${destino ? `, sesión ${destino}` : ''}.`;
   let ok;
-  if (t.windows) ok = t.confirmarFrase({});
+  // en Windows también: la ventana dice qué se firma antes de pedir las tres palabras
+  if (t.windows) { console.error(`\n${que}`); ok = t.confirmarFrase({}); }
   else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
   if (!ok) return { codigo: 1, motivo: 'no se firmó' };
   firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar });
@@ -582,7 +601,7 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
  * `{ codigo, motivo?, via?, destino? }`; con 0, el renglón `-signed` ya está escrito. `propia`: la sesión sobre la que
  * actúa el guion; un registro para otra sesión destino no la firma.
  */
-function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia } = {}) {
+function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir } = {}) {
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -591,7 +610,10 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
     return { codigo: 1, motivo: `este guion actúa sobre la sesión ${propia}: firmar para otra sesión (--for-session ${pedida}) se corre desde la sesión destino` };
   }
   if (argv.includes('--terminal')) {
-    const r = porTerminal({ firma, destino: pedida || propia || null, resumen, casa, ahora, tty, anotar });
+    const t = tty || ttyDeVerdad();
+    if (t.windows && t.enVentana && !t.enVentana()) return { ...porLaVentana({ argv, t, salir }), destino: pedida || propia || null };
+    if (t.windows && t.enVentana && t.dentro) t.dentro();
+    const r = porTerminal({ firma, destino: pedida || propia || null, resumen, casa, ahora, tty: t, anotar });
     return { ...r, destino: pedida || propia || null };
   }
   const v = verificar({ firma, argv, pid, arbol, casa, ahora, destino: propia });
