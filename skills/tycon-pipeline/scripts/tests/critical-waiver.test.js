@@ -360,11 +360,9 @@ function mostrarCriterio(lab) {
   });
   assert.equal(p.status, 0, p.stderr);
 }
-const FIRMA = 'firmo el AC 1: el servicio externo no tiene ambiente de prueba';
-
 // Sin terminal, el criterio lo firma la persona en la ventana de permiso: la firma queda sin cita, con `via` ventana.
 test('RuntimeWaiver_OkDelDev_FirmaSinTerminal @story-8.63 @ac-7', () => {
-  const lab = laboratorioDeCriterio([delAgente('Hay un criterio para firmar.', new Date().toISOString())]);
+  const lab = laboratorioDeCriterio([delAgente('Hay un criterio para firmar.')]);
   mostrarCriterio(lab);
   const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba']);
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);

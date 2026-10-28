@@ -16,7 +16,6 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
 const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));

@@ -1636,8 +1636,6 @@ test('Mirror_Token_OnlyExplicitNeverInArgsNorDisk', async () => {
   }
 });
 
-const openPulls = (fx) => fx.api.state.pulls.filter((p) => p.state === 'open');
-
 // ── BLOQUE T21-T22: inicio ───────────────────────────────────────────────────────────────────────────────────────
 // El token de instalación de la App: `github-app-token.js` contra una API de mentira en 127.0.0.1,
 // con un par de llaves generado en cada prueba. El servidor vive en este mismo proceso: el guion se lanza con `spawn` y

@@ -29,7 +29,7 @@ const { spawnSync } = require('child_process');
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { ROOT, IS_WIN, PLACE, placeOf, legacyOf, link, machineEnv, machine, homeHash, hookCommands, readJson, legacyMentions } = LABLIB;
+const { ROOT, PLACE, placeOf, legacyOf, link, machineEnv, machine, homeHash, hookCommands, readJson, legacyMentions } = LABLIB;
 const LN = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
 const { clone, home } = LABLIB.makeLab(LAB);
 test.after(() => { try { fs.rmSync(LAB, { recursive: true, force: true }); } catch (_) { /* nada */ } });

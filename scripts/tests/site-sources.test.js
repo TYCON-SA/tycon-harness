@@ -226,10 +226,10 @@ test('T40 Configuracion_UltimoBuenoBandaYFreno', { skip: SIN_BACKEND }, async ()
   try {
     await m.fuentes.refrescar();
     h = await H.arrancarSitio({ env: { ...m.env, SITE_OIDC_ISSUER: emisor.issuer }, fuentes: m.fuentes, ahora: () => t });
-    let s = await entrar(h, emisor, 'lead@acme.example', t);
+    await entrar(h, emisor, 'lead@acme.example', t);
     // a las 0 h, operations.json deja de validar (una clave desconocida)
     t = T0;
-    s = await entrar(h, emisor, 'lead@acme.example', t);
+    let s = await entrar(h, emisor, 'lead@acme.example', t);
     m.repo.cambiar({ 'operations.json': { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] }, clave_nueva: 1 } });
     await m.fuentes.refrescar();
     let e = m.fuentes.estado();

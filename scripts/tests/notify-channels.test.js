@@ -436,7 +436,7 @@ test('T53 Notify_Night_FallsBackToOldChannel @story-7.40 @ac-20', () => {
   // y uno que no está, igual
   armar(null);
   reset('ok:44');
-  r = entregar(['--profile', path.join(D, 'team-profile.json')]);
+  entregar(['--profile', path.join(D, 'team-profile.json')]);
   assert.strictEqual(alTelegram().length, 1);
   assert.match(texto(), /no se pudo leer el perfil/);
 

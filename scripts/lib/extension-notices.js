@@ -107,7 +107,7 @@ function repoRoot(cwd) {
   } catch (e) {
     // git sale 128 también con un repo que se niega a abrir (dueño distinto, un worktree cuyo .git apunta a una carpeta
     // que ya no está): con un .git en el camino eso es «no pude preguntar», no «no es un repo»
-    let existe = true;
+    let existe;
     try { existe = fs.statSync(cwd).isDirectory(); } catch (_) { existe = false; }
     if (!existe) return { root: null, error: `la carpeta de la sesión (${cwd}) no existe` };
     if (e && e.status === 128 && !gitMarkerAbove(cwd)) return { root: null };

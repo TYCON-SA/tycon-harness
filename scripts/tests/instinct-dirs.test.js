@@ -237,7 +237,7 @@ test('T6 InstinctDirs_PrepareLog_CreatesOnlyItsPlace_ExactBytes — el registro:
   assert.ok(!fs.existsSync(path.join(t, 'inbox')), 'el árbol no gana inbox/');
   // otra corrida no pisa lo escrito
   fs.writeFileSync(log, 'una línea del observador\n');
-  r = run(t, h, ['--prepare-log']);
+  run(t, h, ['--prepare-log']);
   assert.strictEqual(fs.readFileSync(log, 'utf8'), 'una línea del observador\n');
   // con buzón, el registro va al árbol y la casa no se crea
   const clon = tree(lab, 'clon', { inboxReadme: true });

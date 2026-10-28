@@ -775,7 +775,7 @@ test('PrShards_HeavySuites_PublishingChangeOrFailedDiff_RunsBoth', { skip: NO_BA
 test('PrShards_ShardNumberOutsideTheMatrix_GoesRedWithoutRunningAnything', { skip: NO_BASH }, () => {
   const shards = maxShards();
   const dir = toy(SIX);
-  const plan = runPlan(dir, shards);
+  runPlan(dir, shards);
   const r = runShard(dir, shards + 1, shards);
   assert.notStrictEqual(r.code, 0, r.out);
   assert.match(r.out, /##vso\[task\.logissue type=error\]/);

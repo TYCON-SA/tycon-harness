@@ -49,7 +49,6 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
 
 const OWN_ROOT = path.resolve(__dirname, '..', '..');
 const CONFIG_DIR = 'scripts/publishing';

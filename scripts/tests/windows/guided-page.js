@@ -151,7 +151,6 @@ function readBlock(pageText, m) {
   const closes = lines.filter((l) => l === `<!-- /${mark} -->`).length;
   if (opens !== 1 || closes !== 1) return { problem: `la marca <!-- ${mark} --> y su cierre tienen que estar una sola vez cada una, solas en su renglón (abre ${opens}, cierra ${closes}${opens > 1 || closes > 1 ? ': más de una vez' : ''})` };
   const open = lines.indexOf(`<!-- ${mark} -->`);
-  const close = lines.indexOf(`<!-- /${mark} -->`);
   // afuera del bloque de código: hasta la marca, las vallas abiertas están todas cerradas
   const fencesBefore = lines.slice(0, open).filter((l) => /^```/.test(l)).length;
   if (fencesBefore % 2 !== 0) return { problem: `la marca <!-- ${mark} --> está DENTRO de un bloque de código: ahí deja de ser invisible, se copia con el bloque` };
