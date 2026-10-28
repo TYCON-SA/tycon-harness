@@ -1914,7 +1914,31 @@ function escrituraProtegida(cmd, payload) {
   };
 
   const r0 = texto(cmd, escPatron(path.resolve(String((payload && payload.cwd) || process.cwd()))), 0);
-  return r0.veredicto || null;
+  return r0.veredicto || programaPorHeredoc(cmd, sp) || null;
+}
+
+/**
+ * El programa de un intérprete (python, node…) que llega por un heredoc se juzga como el de `python3 -c`: si nombra el
+ * catálogo, el índice o la memoria, frena. Cuenta cualquier intérprete de la línea del `<<`, también del otro lado de
+ * un caño (`cat <<EOF | python3`); lo que va a un archivo (`cat > x.py <<EOF`) no tiene intérprete y sigue siendo
+ * contenido.
+ */
+function programaPorHeredoc(cmd, sp) {
+  if (!cmd.includes('<<')) return null;
+  for (const h of sp.heredocs(cmd)) {
+    const ini = cmd.lastIndexOf('\n', h.indice) + 1;
+    const fin = cmd.indexOf('\n', h.indice);
+    const linea = cmd.slice(ini, fin < 0 ? cmd.length : fin);
+    const corre = linea.split(/[;&|]/).some((s) => {
+      const t = tokensDeSegmento(s, sp.tokens, sp.PREFIJOS);
+      const i = t.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));             // `F=x python3 -` también
+      return i >= 0 && INTERPRETE_DE_PROGRAMA.test(basename(t[i]).toLowerCase().replace(/\.exe$/, ''));
+    });
+    if (!corre) continue;
+    const m = MENCION_PROTEGIDA.exec(String(h.cuerpo || ''));
+    if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por un heredoc).` };
+  }
+  return null;
 }
 
 /** El patrón de `find -name` como RegExp (find no expande llaves: `production-{index,memory}.json` es literal, X10). */

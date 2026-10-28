@@ -1449,14 +1449,22 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     if (c === 'tee') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
     if (c === 'sponge') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
     if (c === 'curl' || c === 'wget') { out.push(...lleva(['-o', '--output', '-O', '--output-document']).filter(es)); continue; }
-    if (c === 'tar' || c === 'bsdtar' || c === 'unzip') {
+    if (c === 'tar' || c === 'bsdtar' || c === 'unzip' || c === 'cpio') {
       // lo que trae un archivo comprimido no se ve antes de abrirlo: a la carpeta de una constancia, no pasa
-      // `tar -xf`, `tar xzf` (el primer argumento sin guion) o `--extract`
-      const extrae = c === 'unzip' || args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get');
-      const dirs = lleva(c === 'unzip' ? ['-d'] : ['-C', '--directory']);
+      // `tar -xf`, `tar xzf` (el primer argumento sin guion) o `--extract`; `cpio -i` o `--extract`
+      const extrae = c === 'unzip' || (c === 'cpio'
+        ? args.some((w) => /^-[A-Za-z]*i/.test(w) || w === '--extract')
+        : args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get'));
+      if (!extrae) continue;
+      const dirs = lleva(c === 'unzip' ? ['-d'] : c === 'cpio' ? ['-D', '--directory'] : ['-C', '--directory']);
       const destinos = dirs.length ? dirs.map((d) => abs(d)) : [cwd];
       const enFirma = destinos.find(carpetaDeFirma);
-      if (extrae && enFirma) out.push(`${enFirma} (no se puede ver qué trae lo que se descomprime)`);
+      if (enFirma) { out.push(`${enFirma} (no se puede ver qué trae lo que se descomprime)`); continue; }
+      // a cualquier otra carpeta, lo que trae se mira antes: una constancia adentro, o un archivo que no se puede
+      // listar (por la entrada estándar, que todavía no existe) dentro de un repo, no pasa
+      const lista = contenidoDelArchivo(c, args, tramo, abs);
+      if (lista === null) { if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`); continue; }
+      if (lista.some((e) => /control-changes/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
       continue;
     }
     if (c === 'git') {
@@ -1503,6 +1511,29 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
       }
     } else if (c === 'git update-index' || (c === 'git checkout' && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2)) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
       out.push(...sueltos.flatMap((w) => w.split(',')).filter(es));
+      // una carpeta repuesta desde otra rama (`git checkout otra -- .`) trae las constancias que esa rama tenga distintas:
+      // se le pregunta a git cuáles cambiarían; si git no contesta, la carpeta que las puede contener no pasa
+      const desdeRef = c === 'git checkout' ? (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).find((w) => !w.startsWith('-')) : sueltos[0])
+        : c === 'git restore' ? lleva(['--source', '-s'])[0] : null;
+      if (desdeRef) {
+        const fuentes = c === 'git restore' ? lleva(['--source', '-s']) : [desdeRef];
+        const rutas = (c === 'git checkout' && args.indexOf('--') > 0 ? args.slice(args.indexOf('--') + 1) : sueltos.filter((w) => !fuentes.includes(w)))
+          .filter((w) => w && !w.startsWith('-') && !es(w));
+        if (rutas.length) {
+          const r = require('child_process').spawnSync('git', ['-C', base, 'diff', '--name-only', desdeRef, '--', ...rutas],
+            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+          if (r.error || r.status !== 0) {
+            const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+            const top = raiz.status === 0 ? String(raiz.stdout).trim() : null;
+            const cubre = (w) => /[*?[]/.test(w) || !top || ['.github', '.tycon'].some((d) => { const rel = path.relative(abs(w), path.join(top, d)); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); });
+            const dudosas = rutas.filter(cubre);
+            if (dudosas.length) out.push(`${tramo.trim()} (no pude ver qué constancias trae ${desdeRef})`);
+          } else {
+            const traidas = String(r.stdout).split(/\r?\n/).filter(Boolean).filter((p) => isControlApproval(p));
+            if (traidas.length) out.push(...traidas.map((p) => `${p} (desde ${desdeRef})`));
+          }
+        }
+      }
     } else if (c === 'git apply' || c === 'git am' || c === 'patch') {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);
@@ -1578,6 +1609,48 @@ function parcheNombraConstancia(texto, isControlApproval) {
     if (m) rutas.push(m[1].trim());
   }
   return rutas.some((r) => isControlApproval(r));
+}
+
+/** El archivo que lee un `tar` (`-f x`, `-xzf x`, `-fx`, `--file=x`, `xzf x`), o null si lee la entrada estándar. */
+function archivoDeTar(args) {
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--file' || w === '-f') return args[i + 1] && args[i + 1] !== '-' ? args[i + 1] : null;
+    let m = /^--file=(.+)$/.exec(w);
+    if (m) return m[1] === '-' ? null : m[1];
+    // en un grupo de letras, la `f` se lleva lo que sigue pegado o la palabra siguiente
+    m = /^-[A-Za-z]*f(.*)$/.exec(w);
+    if (m && !w.startsWith('--')) { const a = m[1] || args[i + 1]; return a && a !== '-' ? a : null; }
+    if (i === 0 && /^[A-Za-z]*f[A-Za-z]*$/.test(w)) return args[1] && args[1] !== '-' ? args[1] : null;
+  }
+  return null;
+}
+
+/**
+ * Las rutas que trae un archivo que `tar`, `unzip` o `cpio` va a abrir, listadas antes con la misma herramienta; null
+ * si no se pueden ver (por la entrada estándar, un archivo que no existe, la herramienta que falla o tarda).
+ */
+function contenidoDelArchivo(c, args, tramo, abs) {
+  const { spawnSync } = require('child_process');
+  const correr = (bin, argv, input) => {
+    const r = spawnSync(bin, argv, { input, encoding: 'utf8', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
+    return r.error || r.status !== 0 ? null : String(r.stdout).split(/\r?\n/).filter(Boolean);
+  };
+  if (c === 'cpio') {
+    const entrada = /(?<!<)<(?!<)\s*([^\s<>;&|]+)/.exec(tramo);
+    if (!entrada) return null;
+    let datos;
+    try { datos = fs.readFileSync(abs(entrada[1])); } catch (_) { return null; }
+    return correr('cpio', ['-it'], datos);
+  }
+  if (c === 'unzip') {
+    const i = args.findIndex((w, k) => !w.startsWith('-') && args[k - 1] !== '-d');
+    if (i < 0 || !fs.existsSync(abs(args[i]))) return null;
+    return correr('unzip', ['-Z1', abs(args[i])]);
+  }
+  const archivo = archivoDeTar(args);
+  if (!archivo || !fs.existsSync(abs(archivo))) return null;
+  return correr(c, ['-tf', abs(archivo)]);
 }
 
 /** Lo que se llama como una constancia adentro de una carpeta, en rutas relativas; null si no se pudo revisar entera. */
@@ -1807,9 +1880,13 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   const noSoloSed = new Set();
   const deSed = new Set(seds ? nombradas : []);
   const sedsDe = new Map();
-  for (const raw of crudos) {
-    // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`
-    const valor = expandirRuta(cmd, String(raw).replace(/\)+$/, '')).valor;
+  // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`. Una variable que puede no
+  // haber quedado puesta (`cd wt && f=specs/h.md && python3 - "$f" <<EOF`) cuenta también por lo que valdría si corrió
+  const valoresDe = (raw) => {
+    const limpio = String(raw).replace(/\)+$/, '');
+    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor])];
+  };
+  for (const raw of crudos) for (const valor of valoresDe(raw)) {
     // una palabra que no nombra un archivo no es un destino: el `))` que cierra una cuenta queda vacío sin sus
     // paréntesis, y la `/` suelta de un guion (`'s/^a /b /'`) no es la raíz que el editor escribe; la raíz que se
     // borra o que es destino de una escritura sigue contando

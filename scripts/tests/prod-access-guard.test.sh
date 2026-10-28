@@ -675,6 +675,28 @@ rm -f $P/production-{index,memory}.json
 EOF
 bash -c 'rm -f $P/production-{index,memory}.json'"
 
+# El programa de python o node que llega por un heredoc se juzga como el de `python3 -c`: si nombra el índice, el
+# catálogo o la memoria, frena. Lo que sólo se guarda en un archivo sigue siendo contenido.
+frena "HeredocDePrograma_EscribeElIndice_Frena (python3 -)" "python3 - <<'EOF'
+import os
+open(os.path.expanduser('$P/$NI'),'w').write('{}')
+EOF"
+frena "HeredocDePrograma_EscribeElIndice_Frena (node, en un cd)" "cd /tmp && node <<'EOF'
+require('fs').writeFileSync(require('os').homedir() + '/.claude/.tycon-pipeline/$NM', '{}')
+EOF"
+frena "HeredocDePrograma_EscribeElIndice_Frena (del otro lado de un caño)" "cat <<'EOF' | python3
+open('/x/.tycon/$CAT','w').write('{}')
+EOF"
+frena "HeredocDePrograma_EscribeElIndice_Frena (con argumentos)" "f=a.md && python3 - \"\$f\" <<'EOF'
+import sys, os; os.remove(os.path.expanduser('$P/$NI'))
+EOF"
+pasa  "HeredocDePrograma_SinNombreProtegido_Pasa" "python3 - <<'EOF'
+print('hola')
+EOF"
+pasa  "HeredocDePrograma_AUnArchivo_EsContenido_Pasa" "cat > /tmp/notas.py <<'EOF'
+open('$NI').read()
+EOF"
+
 # ── 6.1.1 · el contenido de un archivo que el comando escribe y no ejecuta no se juzga ─────────
 # El cuerpo que sólo se guarda en un archivo no se lee buscando servidores ni el Llavero: `const server = …` en código
 # cumple la cadena de conexión `Server=` y, sin esto, frena. Lo que se ejecuta sigue frenando.
