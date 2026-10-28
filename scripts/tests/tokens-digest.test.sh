@@ -1051,13 +1051,12 @@ fi
 # 🔴 Falla con: dejar pasar un nombre largo o con saltos (texto libre por el costado) o un código que no es entero.
 #    También con: un nombre de hasta 80 que no viaja, o uno con una ruta del home sin sanear.
 r27c="$(node -e '
-const os = require("os");
 const { reducirErrorDeHook } = require(process.argv[1]);
 const red = (at) => reducirErrorDeHook({ type: "attachment", attachment: { type: "hook_non_blocking_error", stderr: "x", ...at } }).attachment;
 const a = red({ hookName: "h".repeat(81), hookEvent: "Stop\nZZ", exitCode: "1" });
-// la carpeta temporal, que sanear() tapa y es corta en todas las máquinas: con la carpeta personal del agente de la CI
-// (más larga) el nombre pasaba de 80 y no viajaba
-const b = red({ hookName: "h".repeat(80), hookEvent: os.tmpdir() + "/ZZCLIENTE/x.sh", exitCode: 2 });
+// una ruta fija que sanear() tapa en cualquier máquina: la carpeta temporal o la personal de quien corre dependen
+// del entorno (en las portables de la CI, TMPDIR es una carpeta larga), y con más de 80 el nombre no viaja
+const b = red({ hookName: "h".repeat(80), hookEvent: "/tmp/ZZCLIENTE/x.sh", exitCode: 2 });
 console.log(JSON.stringify([a.hookName, a.hookEvent, a.exitCode, b.hookName.length, b.hookEvent.includes("ZZCLIENTE"), b.exitCode]));
 ' "$DIGEST" 2>&1)"
 if [ "$r27c" = '[null,null,null,80,false,2]' ]; then
