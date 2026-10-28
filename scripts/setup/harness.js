@@ -1478,19 +1478,22 @@ function bootstrapStatus(ctx, tree, state) {
   return { missing, vsState, vsTree };
 }
 
-/** El `@import` de ~/.claude/CLAUDE.md, una sola vez. */
-function ensureImport(ctx) {
+/** El `@import` de ~/.claude/CLAUDE.md, una sola vez. Con `backup` (quien llama no tiene la copia del mecanismo), un
+ *  CLAUDE.md que ya existe se copia a `CLAUDE.md.bak.<sello>` antes de escribirlo: nunca un cambio sin ninguna copia. */
+function ensureImport(ctx, { backup = false } = {}) {
   const file = claudeMdPath(ctx);
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch (_) { text = ''; }
+  const copyFirst = () => { if (backup && fs.existsSync(file)) mod('startup-line').backupCopy(file); };
   if (text.split('\n').some(IMPORT.isIndexLine)) {
     // una forma vieja (nombre viejo del lugar, o el README.md que era el índice) pasa a la de hoy en su lugar; con varias
     // (el código de antes, corrido después de una vuelta atrás, agrega la suya) queda una
     const d = IMPORT.rewrite(text);
-    if (d.changed) mod('state').writeAtomic(file, d.text);
+    if (d.changed) { copyFirst(); mod('state').writeAtomic(file, d.text); }
     return false;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  copyFirst();
   mod('state').writeAtomic(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}${IMPORT_LINE}\n`);
   return true;
 }
@@ -2136,7 +2139,7 @@ function cmdInstall(ctx) {
     if (!m.changed && m.reason && !/sin cambios|nada que migrar/.test(m.reason)) notes.push(m.reason);
 
     // (e) el @import, una vez (no en --from-existing: ya está en la máquina)
-    if (!fromExisting && ensureImport(ctx)) pieces.push('import');
+    if (!fromExisting && ensureImport(ctx, { backup: !snap })) pieces.push('import');
 
     // `--from-existing` sobre lo mismo: nada cambió, y se dice; no corre el aplicador ni la salud (su atajo es el de
     // siempre, sin la línea de la copia). Sin `--from-existing`, «sin cambios» lo decide el PLAN (más
@@ -3168,7 +3171,7 @@ function cmdStartup(ctx) {
       // el `@import` del índice: si falta (una vuelta atrás de otra versión lo quitó), se repone acá, en cada
       // arranque, como la pieza propia que es; nadie más lo repone y la máquina queda sin las guías cargadas. Con una
       // forma vieja (el README.md que era el índice), la pasa a la de hoy
-      if (state.mode !== 'developer') { try { if (ensureImport(ctx)) log('startup: el @import del índice faltaba en CLAUDE.md: repuesto'); } catch (e) { log(`startup: no pude reponer el @import (${e.message})`); } }
+      if (state.mode !== 'developer') { try { if (ensureImport(ctx, { backup: true })) log('startup: el @import del índice faltaba en CLAUDE.md: repuesto'); } catch (e) { log(`startup: no pude reponer el @import (${e.message})`); } }
       // sin saber qué sobraba, el perfil de antes queda anotado y el próximo arranque lo reintenta
       if (sw.profile && sw.profile.ok && dropped !== null) state.profile = { value: sw.profile.value, origin: sw.profile.origin };
       if (ctx.opts.force) {
@@ -5011,4 +5014,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff, ensureImport };

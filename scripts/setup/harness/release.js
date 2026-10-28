@@ -1597,7 +1597,7 @@ function cmdInstall(ctx, H) {
       const n = SL.checkNode({ env: ctx.env });
       const m = SL.migrate(H.settingsPath(ctx), { home: ctx.home, platform: ctx.platform, nodeOk: n.ok, nodeVersion: n.version, addIfMissing: true, backup: !snap });
       if (m.changed) pieces.push('startup-line');
-      if (H.ensureImport(ctx)) pieces.push('import');
+      if (H.ensureImport(ctx, { backup: !snap })) pieces.push('import');
     }
     // 8. el perfil pedido (con --profile o contestado) y lo contestado, con el escritor único de la configuración y antes
     // del aplicador, como el camino del clon: sin esto el aplicador instalaría full aunque se pidiera minimal.
