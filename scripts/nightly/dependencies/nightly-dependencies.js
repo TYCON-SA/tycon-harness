@@ -105,6 +105,7 @@ function parseArgs(argv) {
     else if (v === '--reason') a.motivo = argv[++i];
     else if (v === '--pr-closed') a.prCerrado = argv[++i];
     else if (v === '--clear-rejection') a.quitarRechazo = true;
+    else if (v === '--decision-failed') a.decisionFallida = argv[++i];
     else if (v === '--json') a.json = true;
     else if (v === '--dry-run') a.dryRun = true;
     else if (v === '--help' || v === '-h') a.cmd = 'help';
@@ -613,7 +614,7 @@ function correr(a) {
   const hoy = a.hoy || new Date().toISOString().slice(0, 10);
   // las decisiones confirmadas en el sitio que otra persona aprobó, antes de mirar las fichas; a la
   // salida de error, para no romper la de --json
-  if (!a.dryRun) for (const l of cycle.aplicarDecisiones({ fuente: 'dependencias', dir: a.pending }).lineas) console.error(l);
+  if (!a.dryRun) for (const l of cycle.aplicarDecisiones({ fuente: 'dependencias', dir: a.pending, hoy }).lineas) console.error(l);
   const raiz = expandir(a.raiz || cfg.raiz_por_defecto || '~/SourceCode');
   const pres = cfg.presupuesto_de_ruido || {};
   const tope = Number.isInteger(pres.tope_pr_por_noche) ? pres.tope_pr_por_noche : 2;
@@ -994,7 +995,9 @@ function reactivarFicha(f, h, hoy, pendingDir) {
   }
   // `alineado:` dice qué decisión del pull request ya se reflejó en los issues: la ficha que vuelve tiene otra por tomar.
   // `decidido_en_sitio:` también es del episodio anterior: con él, el cierre de un pull request nuevo nombraría esa fecha.
+  // Y la decisión que no se pudo aplicar era sobre el pull request viejo.
   txt = quitarClave(quitarClave(quitarClave(txt, 'pr_cerrado'), 'alineado'), 'decidido_en_sitio');
+  txt = quitarClave(quitarClave(txt, 'decision_fallida'), 'motivo_decision_fallida');
   // Los marcadores del CRUCE son de un episodio: una ficha que vuelve empieza de cero. Si no, el
   // Bug cerrado con la vulnerabilidad de vuelta saldría «ya avisado» y el aviso nuevo no saldría nunca. `pedidos:`
   // se conserva: el Bug es el mismo. 🔴 `pagado_avisado:` NO se borra acá: es por proyecto, y borrarlo entero
@@ -1324,6 +1327,9 @@ function archivarIgnorados(pendingDir, hoy, cfg, volcado, frenados = []) {
     // 🔴 La que está contando sus noches sin aparecer tampoco: dejó de aparecer porque alguien la arregló, y en N
     // noches se resuelve sola. Archivarla como ignorada contaría un arreglo como «nadie la miró».
     if (/^noches_sin_aparecer:/m.test(txt)) continue;
+    // 🔴 La que una persona ya decidió en el sitio tampoco: su decisión espera en decisions/ a que la aplique la noche,
+    // y archivarla antes la perdería y la contaría como «nadie la miró».
+    if (fs.existsSync(path.join(pendingDir, 'decisions', f.replace(/\.yaml$/, '.json')))) continue;
     if (exigirPedido) {
       const conPedido = new Set(leerPedidos(txt).map((x) => x.proyecto));
       // Sólo los proyectos a los que se les PUEDE pedir: un repo fuera de la config nunca va a tener
@@ -1653,7 +1659,7 @@ function anotar(a) {
   if (!a.ficha || !fs.existsSync(a.ficha)) {
     console.error(`error: falta --card <archivo existente>\n\n${AYUDA}`); return 2;
   }
-  const acciones = [a.pr !== null, a.rechazado !== null, a.prCerrado !== null, a.quitarRechazo, !!a.alineado];
+  const acciones = [a.pr !== null, a.rechazado !== null, a.prCerrado !== null, a.quitarRechazo, !!a.alineado, a.decisionFallida !== undefined];
   if (!acciones.some(Boolean)) { console.error(`error: note sin acción\n\n${AYUDA}`); return 2; }
   if (a.pr !== null && !/^\d+$/.test(String(a.pr))) {
     console.error(`error: --pr tiene que ser el número del pull request, no «${a.pr}»`); return 2;
@@ -1666,6 +1672,9 @@ function anotar(a) {
   }
   if (a.rechazado !== null && !/^\d{4}-\d{2}-\d{2}$/.test(a.rechazado)) {
     console.error(`error: --rejected espera una fecha YYYY-MM-DD, no «${a.rechazado}»`); return 2;
+  }
+  if (a.decisionFallida !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(String(a.decisionFallida)) || !a.motivo)) {
+    console.error(`error: --decision-failed espera una fecha YYYY-MM-DD y --reason <por qué>`); return 2;
   }
 
   let txt = fs.readFileSync(a.ficha, 'utf8');
@@ -1681,6 +1690,14 @@ function anotar(a) {
       txt = ponerEscalar(txt, 'rechazado', a.rechazado);
       txt = ponerEscalar(txt, 'motivo_rechazo', unaLinea(a.motivo || 'sin motivo escrito'));
     }
+    // un rechazo que llegó es la decisión aplicada: la marca de una que falló antes ya no vale
+    txt = quitarClave(quitarClave(txt, 'decision_fallida'), 'motivo_decision_fallida');
+  }
+  // La decisión del sitio que la noche no pudo aplicar: el día y por qué. El sitio la vuelve a mostrar para decidir, y el
+  // resumen de la mañana la cuenta.
+  if (a.decisionFallida !== undefined) {
+    txt = ponerEscalar(txt, 'decision_fallida', a.decisionFallida);
+    txt = ponerEscalar(txt, 'motivo_decision_fallida', unaLinea(a.motivo));
   }
   if (a.prCerrado !== null) txt = ponerEscalar(txt, 'pr_cerrado', a.prCerrado);
   escribirSiCambio(a.ficha, txt);
@@ -1697,7 +1714,7 @@ function anotar(a) {
  * anidadas cortarían el valor) y se recorta a 200: la ficha viaja por git a todas las máquinas.
  */
 function unaLinea(t) {
-  const limpio = String(t).replace(/[\r\n\t]+/g, ' / ').replace(/"/g, "'").replace(/\s+/g, ' ').trim();
+  const limpio = String(t).replace(/[\r\n\t]+/g, ' / ').replace(/"/g, "'").replace(/\\/g, '/').replace(/\s+/g, ' ').trim();
   return `"${(limpio.length > 198 ? `${limpio.slice(0, 195)}...` : limpio) || 'sin motivo escrito'}"`;
 }
 
@@ -2050,6 +2067,9 @@ pipelines nocturnos; ninguna toca la red):
   --aligned <n>:<estado>         el issue ya sigue la decisión del pull request n (merged, closed o reopened)
   --clear-rejection              alguien reactivó el pull request en Azure: se borra el rechazo
   --pr-closed <fecha>            cuándo se cerró el pull request de una ficha archivada
+  --decision-failed <fecha> --reason <texto>
+                                 la decisión del sitio no se pudo aplicar (el pedido cambió, no se pudo
+                                 mergear o cerrar): la ficha vuelve a «Te toca decidir» con el porqué
 Exit en note: 0 escribio (idempotente) · 2 error de uso
 
 Exit en run: 0 midió · 1 no se pudo medir NINGÚN repo · 2 error de uso`;

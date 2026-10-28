@@ -16,6 +16,8 @@ const ORDEN_FICHA = ['id', 'detectado', 'veredicto', 'paquete', 'severidad', 'no
   // La identidad del pull request y la decisión que una persona tomó sobre él. Van
   // juntas y arriba porque son lo que el pipeline lee ANTES de decidir si abre uno nuevo.
   'pr', 'pr_repo', 'rechazado', 'motivo_rechazo', 'pr_cerrado', 'alineado', 'decidido_en_sitio',
+  // La decisión del sitio que la noche no pudo aplicar (el pedido cambió, no se pudo mergear o cerrar): el día y por qué.
+  'decision_fallida', 'motivo_decision_fallida',
   'reaparecido', 'bloqueada_por', 'resuelto', 'resuelto_antes', 'descartado', 'descartado_antes',
   'motivo', 'motivo_antes', 'pr_antes', 'pr_repo_antes', 'rechazado_antes', 'motivo_rechazo_antes',
   'ids', 'repos', 'declarada_en', 'avisos', 'pedido_motivo', 'pedidos', 'asignados'];

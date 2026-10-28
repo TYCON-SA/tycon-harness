@@ -4459,7 +4459,7 @@ function cmdWaiveCritical(argv) {
       if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js waive-critical: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se eximió nada.`); process.exit(1); }
       process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
     }
-    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
     if (!waiver.hasTty()) {
       console.error('🔒 marker.js waive-critical --terminal BLOQUEADO — necesita una terminal de verdad: lo corre el dev, no el agente.');
       console.error(`     node ${__filename} waive-critical ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
@@ -4520,7 +4520,7 @@ function cmdSignAdversarialSkip(argv) {
       if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js sign-adversarial-skip: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se firmó nada.`); process.exit(1); }
       process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
     }
-    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
   }
   // Sin la huella la constancia va sin máquina (no es una de sus llaves), y se dice.
   let maquina = null;
@@ -4615,7 +4615,7 @@ function cmdMarkTested(argv) {
       if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js mark-tested: ${v.estado === 'vencida' ? 'la ventana venció sin marcar' : `no pude abrir la ventana (${v.motivo})`} — no se marcó nada.`); process.exit(1); }
       process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
     }
-    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
     if (!waiver.hasTty()) {
       console.error('🔒 marker.js mark-tested --terminal BLOQUEADO — necesita una terminal de verdad: lo corre la persona que probó, no el agente.');
       console.error(`     node ${__filename} mark-tested ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
@@ -4698,11 +4698,8 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     }
     process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
   }
-  if (waiver.esWindows()) {
-    waiver.anotarVentana();
-    // en la ventana, toda salida espera un Enter antes de cerrarse: que la persona lea el resultado (el tope igual corre)
-    process.on('exit', () => waiver.pausaFinal());
-  }
+  // en la ventana, toda salida espera un Enter antes de cerrarse: que la persona lea el resultado (el tope igual corre)
+  if (waiver.esWindows()) waiver.dentroDeLaVentana();
 
   // Freno físico ANTES de computar nada: si no hay terminal, ni arrancamos.
   if (!waiver.hasTty()) {

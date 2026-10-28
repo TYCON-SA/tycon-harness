@@ -132,10 +132,11 @@ function esWindows() {
   return process.env.TYCON_WAIVER_PLATFORM === 'win32';
 }
 
-/** Un programa del sistema por su ruta entera: sin ruta, Windows lo busca primero en la carpeta actual (el repo, que
- *  controla el agente) y un `powershell.exe` de mentira que diga «2» saltaría el control de la consola. */
+/** Un programa del sistema por su ruta entera y fija: sin ruta, Windows lo busca primero en la carpeta actual (el repo,
+ *  que controla el agente), y la carpeta de `SystemRoot` la elige el ambiente. En los dos casos un `powershell.exe` de
+ *  mentira que diga «2» saltaría el control de la consola. Con Windows en otra carpeta no hay programa: no se firma. */
 function delSistema(...partes) {
-  return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', ...partes);
+  return path.win32.join('C:\\Windows', 'System32', ...partes);
 }
 
 /**
@@ -248,14 +249,16 @@ function topeVentanaS() {
 }
 
 /**
- * Abre la ventana nueva y espera. `script` y `args` son lo que corre adentro (el mismo comando). Devuelve
+ * Abre la ventana nueva y espera. `script` y `args` son lo que corre adentro (el mismo comando), con `programa` (node, o
+ * bash para un guion de bash). Devuelve
  * `{ estado: 'cerrada', codigo }`, `{ estado: 'vencida' }` (pasó el tope: se la cerró, no se firmó nada) o
  * `{ estado: 'no-abrio', motivo }`. `opts.spawn` y `opts.kill` sólo para las pruebas.
  */
-function abrirVentana({ script, args = [], titulo = 'Firma del waiver', spawn, kill } = {}) {
+function abrirVentana({ script, args = [], titulo = 'Firma del waiver', programa = process.execPath, spawn, kill } = {}) {
   const cp = require('child_process');
-  const todo = [process.execPath, script, ...args];
-  const malo = todo.find((a) => /["%\r\n]/.test(String(a)));
+  const todo = [programa, script, ...args];
+  // una barra al final escapa la comilla de cierre y junta ese argumento con el siguiente
+  const malo = todo.find((a) => /["%\r\n]|\\$/.test(String(a)));
   if (malo) return { estado: 'no-abrio', motivo: `una ruta trae un carácter que la consola de Windows no deja pasar entre comillas (${malo})` };
   const pidFile = path.join(os.tmpdir(), `tycon-waiver-ventana-${process.pid}-${Date.now()}.pid`);
   const linea = `start "${titulo}" /wait ${todo.map((a) => `"${a}"`).join(' ')}`;
@@ -278,10 +281,24 @@ function abrirVentana({ script, args = [], titulo = 'Firma del waiver', spawn, k
   return { estado: 'cerrada', codigo: r.status };
 }
 
-/** Lo primero que hace el proceso de la ventana: anotarse, para que el que la abrió la pueda cerrar al vencer el plazo. */
+/**
+ * El proceso de la ventana se anota, para que el que la abrió la pueda cerrar al vencer el plazo. Sólo en el archivo
+ * que eligió `abrirVentana` (la carpeta temporal y su forma de nombre) y sólo si no existe: la variable la puede poner
+ * cualquiera, y sin esos límites serviría para pisar un registro o una constancia con un número.
+ */
 function anotarVentana() {
   const f = process.env.TYCON_WAIVER_WINDOW_PROCESS_FILE;
-  if (f) { try { fs.writeFileSync(f, String(process.pid)); } catch { /* sin anotarse, el plazo igual cierra el comando */ } }
+  if (!f || path.dirname(path.resolve(f)) !== path.resolve(os.tmpdir()) || !/^tycon-waiver-ventana-\d+-\d+\.pid$/.test(path.basename(f))) return;
+  try { fs.writeFileSync(f, String(process.pid), { flag: 'wx' }); } catch { /* sin anotarse, el plazo igual cierra el comando */ }
+}
+
+let dentroHecho = false;
+/** Ya en la ventana nueva y con su consola comprobada: anotarse y esperar un Enter al salir. Una sola vez por proceso. */
+function dentroDeLaVentana() {
+  if (dentroHecho) return;
+  dentroHecho = true;
+  anotarVentana();
+  process.on('exit', () => pausaFinal());
 }
 
 // ¿Hay una terminal interactiva real? open(/dev/tty) es no-bloqueante: falla YA con
@@ -519,6 +536,6 @@ function discardedFor(story, arg2) {
 
 module.exports = {
   hasTty, promptTty, appendWaiver, waivedAcs, verifyChain, waiverLogPath, repoWaiverLogPath, declHashFor, discardedFor,
-  esWindows, enVentana, consolaNueva, abrirVentana, anotarVentana, confirmarFrase, fraseAlAzar, pausaFinal, topeVentanaS,
+  esWindows, enVentana, consolaNueva, abrirVentana, anotarVentana, dentroDeLaVentana, confirmarFrase, fraseAlAzar, pausaFinal, topeVentanaS,
   MARCA_VENTANA, VENTANA_TOPE_S, PALABRAS,
 };

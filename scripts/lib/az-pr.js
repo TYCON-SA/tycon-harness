@@ -239,9 +239,13 @@ function textoDe(seg) {
  * el entorno sería permanente y silencioso, y en cualquier otra parte del texto sería un accidente.
  * El nombre viejo de la variable sigue valiendo hasta el retiro y anota su uso.
  */
+// Los nombres de cada variable de escape, pedidos al mapa de renombres una sola vez por proceso: la revisión de la noche
+// llama a `tieneEscape` por cada pedido de cada comando, y cada consulta al mapa mira el disco y recorre el mapa entero.
+const NOMBRES = new Map();
 function tieneEscape(seg, nombre = 'TYCON_PR_BY_HAND') {
   const legacy = (() => { try { return require('./legacy-names.js'); } catch (_) { return null; } })();
-  const nombres = legacy ? legacy.envNames(nombre) : [nombre];
+  if (!NOMBRES.has(nombre)) NOMBRES.set(nombre, legacy ? legacy.envNames(nombre) : [nombre]);
+  const nombres = NOMBRES.get(nombre);
   let i = 0;
   let visto = false;
   while (i < seg.length && seg[i].esBandera && /^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[i].texto)) {
