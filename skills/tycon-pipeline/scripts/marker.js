@@ -4754,7 +4754,8 @@ function cmdAdhoc(sub, payloadJson) {
     const gate = require('./lib/story-gate.js');
     const lane = io.readLane(STATE_DIR, SID);
     const recentAll = lane && Array.isArray(lane.recentPrompts) ? lane.recentPrompts : [];
-    const gateOn = process.env.TYCON_STORY_GATE !== 'off';
+    // Se lee como los hooks del portón (on-story-gate.js, on-bash-write-gate.js): sin distinguir mayúsculas.
+    const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
 
     // Un ring vacío no cita nada: `quoted=true` ahí sería un fail-open doble (hook de prompt roto +
     // sin modelo = cualquier reason inventado pasaría). Un ring
@@ -4846,7 +4847,10 @@ function cmdAdhoc(sub, payloadJson) {
       cwd: process.cwd(),
     };
     io.writeAdhoc(STATE_DIR, SID, obj);
-    appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null, files: obj.files.length, cwd: process.cwd() });
+    appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null, files: obj.files.length, cwd: process.cwd(),
+      ...(gateOn ? {} : { gate: 'off' }) });
+    // Con el portón apagado no hubo cita ni juez: queda en bypass.log y la revisión de la noche lo cuenta como escape.
+    if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }

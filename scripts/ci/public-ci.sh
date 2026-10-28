@@ -523,7 +523,7 @@ repo_lint() {
   fi
   echo "repo-lint: lo que trae ${RANGE} ($(git -C "${wt}" diff --cached --name-only | wc -l | tr -d ' ') archivo(s)), con el pre-commit de la punta"
   echo "repo-lint: sin --base: los controles salen de este mismo árbol (la punta del rango), como en una máquina"
-  ( cd "${wt}" && TYCON_GUIDES_DIR="${wt}" TYCON_SKILLS_DIR="${wt}" TYCON_NO_LIVENESS_PRECOMMIT=1 bash .githooks/pre-commit-checks < /dev/null ); rc=$?
+  ( cd "${wt}" && TYCON_GUIDES_DIR="${wt}" TYCON_SKILLS_DIR="${wt}" TYCON_NO_LIVENESS_PRECOMMIT=ci bash .githooks/pre-commit-checks < /dev/null ); rc=$?
   git -C "${ROOT}" worktree remove --force "${wt}" >/dev/null 2>&1
   return "${rc}"
 }

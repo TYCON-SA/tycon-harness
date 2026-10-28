@@ -277,6 +277,7 @@ console.error(`🔴 ${TAG} ${bloques}
    solo error de git.
 
    ${consejo(frenos[0].raiz)}
-   Si es a propósito y lo tenés coordinado: TYCON_SESSION_GUARD_OK=1 ${cmd.split('\n')[0].slice(0, 60)}${cmd.length > 60 ? '…' : ''}  (queda constancia)
-   Ventana: ${Math.round(VENTANA_MS / 60000)} min sin actividad de la otra sesión libera el freno. Off: TYCON_SESSION_GUARD=0.`);
+   Si es a propósito y está coordinado con la otra sesión, seguir igual lo decide la persona, no el agente: no le
+   dictes cómo. Si pregunta cómo seguir, señalale la guía (guides/git-worktrees.md).
+   Ventana: ${Math.round(VENTANA_MS / 60000)} min sin actividad de la otra sesión libera el freno.`);
 process.exit(2);

@@ -7631,10 +7631,13 @@
             "exit": 2,
             "stderr_re": [
               "TEST-DISCIPLINE",
-              "\\$env:TYCON_FULL_SUITE=1; npm test"
+              "lo decide la persona"
+            ],
+            "stderr_not_re": [
+              "TYCON_FULL_SUITE"
             ]
           },
-          "nota": "En PowerShell el prefijo «TYCON_FULL_SUITE=1 <cmd>» no corre: el mensaje dice la forma que sí."
+          "nota": "Por PowerShell el freno frena igual, y el cartel no le dicta al agente la forma del escape: la decide la persona y está en la guía."
         },
         {
           "id": "ps-block-dotnet-test-pelado",

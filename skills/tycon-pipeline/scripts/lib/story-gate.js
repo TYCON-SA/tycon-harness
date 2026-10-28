@@ -337,8 +337,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',
       '      `marker.js get` y cerrá los pasos que efectivamente ya pasaron, con su evidencia.',
       '',
-      '  No hay escape por comando para este portón: la aprobación del plan es del user, no del agente',
-      '  (el kill-switch del dev TYCON_STORY_GATE=off apaga el hook entero; la config por repo NO apaga éste).',
+      '  No hay escape por comando para este portón: la aprobación del plan es del user, no del agente.',
     ].join('\n');
   }
   if (r.kind === 'adhoc-cap') {
@@ -404,8 +403,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '   · SUBAGENTE (sin AskUserQuestion): no elijas vos. Cerrá tu reporte pidiéndole al orquestador',
     '     que le pregunte al user cuál de las dos va, y no toques el archivo.',
     '',
-    '  Kill-switch del dev (no del agente): env TYCON_STORY_GATE=off · por repo (commiteado):',
-    '  .tycon/advisors.yaml → pipeline.story_gate: false.',
+    '  Apagar este portón lo decide la persona, no el agente: no le dictes cómo. Si pregunta cómo seguir,',
+    '  señalale la guía (getting-started/reference.es.md, el portón de edición).',
   ].join('\n');
 }
 

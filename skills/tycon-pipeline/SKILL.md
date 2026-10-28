@@ -156,8 +156,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   (`.tycon/atdd-gate` con `block` para frenar). La guía de QA se pide sólo si hay superficie operable a
   mano (`qa_guide: auto|off|always`). Un smoke corrido a mano no cuenta: va por `smoke-run.sh`.
 - **I.ii — mutantes**: `run-tests` corre `scripts/mutation-check.js` sobre los archivos que la story
-  declara; bloquea sólo si NINGÚN mutante murió; sobrevivientes → aviso. Escapes
-  `TYCON_MUTATION_CHECK=off` / `--no-mutation`. Sólo sabe correr `node --test`.
+  declara; bloquea sólo si NINGÚN mutante murió; sobrevivientes → aviso. Escapes (persona):
+  `TYCON_MUTATION_CHECK=off` / `--no-mutation`. Corre sólo `node --test`.
 - **Modo autónomo Nivel 1 (default ON)**: el Stop-hook `on-stop-dod-gate.js` no deja cerrar el turno con
   un check registrado en rojo (cap 6 iteraciones, no-progreso → escala). Opt-out `--no-autonomous` /
   `TYCON_PIPELINE_NO_AUTONOMOUS=1`; pánico `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY`. Los checks se

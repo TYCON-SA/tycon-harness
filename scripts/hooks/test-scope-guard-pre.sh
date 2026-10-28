@@ -192,11 +192,8 @@ block() {
     constancia suite-completa escape
     exit 0
   fi
-  # por la herramienta PowerShell el prefijo `TYCON_FULL_SUITE=1 <cmd>` no corre: se dice la forma que sí
-  local ps_hint=""
-  if [[ "$(read_field tool_name 2>/dev/null)" == "PowerShell" ]]; then
-    ps_hint=$'\n'"    En PowerShell (ahí el prefijo no es sintaxis válida): \$env:TYCON_FULL_SUITE=1; $1"
-  fi
+  # El cartel no dicta el escape: con él a la vista, el agente lo usa o se lo pide a la persona en vez de acotar el
+  # comando. La forma (también la de PowerShell) está en la guía, y la conocen el portón del merge y test-gate.sh.
   cat >&2 <<EOF
 🛑 TYCON test-scope-guard BLOCK [TEST-DISCIPLINE]
 
@@ -211,10 +208,9 @@ Regla (test-execution-discipline.md):
       dotnet test --filter "FullyQualifiedName~<Clase>"
       dotnet test tests/<Proyecto>/<Proyecto>.csproj
   - Suite completa → en el portón de /tycon-merge-to-main o cuando el dev la pide (el paso «Correr las pruebas» del
-    pipeline la corre por test-gate.sh); fuera de eso, preguntale antes. Nunca en paralelo con
-    subagentes. En el portón o con su OK:
-      TYCON_FULL_SUITE=1 $1
-    (el prefijo la permite y queda registrada en bypass.log)${ps_hint}
+    pipeline la corre por test-gate.sh). Nunca en paralelo con subagentes. Fuera de eso, correrla igual
+    lo decide la persona, no el agente: no le dictes cómo. Si pregunta cómo seguir, señalale la guía
+    (guides/test-execution-discipline.md).
 EOF
   constancia suite-completa bloqueo
   exit 2

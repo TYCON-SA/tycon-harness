@@ -234,11 +234,13 @@ test('T18 Terminal_CatQueEscribeLaConfig_SeJuzgaPorLoQueDeja', () => {
 });
 
 test('T19 ControlsOff_CadaEscapeDelArnesEnEnv_Apaga', () => {
-  const { ESCAPES } = require(path.join(ROOT, 'scripts', 'nightly', 'runs-review', 'rules.js'));
+  const { ESCAPES, VALOR_QUE_APAGA } = require(path.join(ROOT, 'scripts', 'nightly', 'runs-review', 'rules.js'));
   // TYCON_EVAL_SANDBOX calla los avisos de los hooks de arranque: en la configuración, los calla en cada sesión
   for (const k of [...ESCAPES, 'TYCON_EVAL_SANDBOX']) {
-    assert.ok(CO.apaga(k, '1'), `${k}=1`);
-    assert.ok(!CO.apaga(k, '0'), `${k}=0`);
+    // los que apagan con su propio valor (`off`) no se apagan con 1, y se prenden con `on`
+    const [off, on] = VALOR_QUE_APAGA[k] ? [VALOR_QUE_APAGA[k], 'on'] : ['1', '0'];
+    assert.ok(CO.apaga(k, off), `${k}=${off}`);
+    assert.ok(!CO.apaga(k, on), `${k}=${on}`);
   }
   const c = casa();
   frena(comando('jq \'.env.STOP_AUTONOMY="1"\' ~/.claude/settings.json | sponge ~/.claude/settings.json', c), 'STOP_AUTONOMY');

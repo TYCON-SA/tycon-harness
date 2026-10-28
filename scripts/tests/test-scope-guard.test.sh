@@ -139,5 +139,16 @@ veredictos="$(grep -o '"veredicto":"[a-z]*"' "$CASA/.claude/.tycon-pipeline/fren
 [ "$veredictos" = '"veredicto":"bloqueo" "veredicto":"paso" "veredicto":"escape" ' ] && ok "la constancia: bloqueo, paso y escape, en orden" \
   || mal "la constancia dio: [$veredictos]"
 
+# Guard_Cartel_NoDictaElEscape — el cartel dice de quién es la decisión de correr la suite completa y dónde está el
+# camino, sin dictarle al agente el prefijo pegado al comando (por Bash ni por PowerShell)
+for herr in Bash PowerShell; do
+  cartel="$(printf '%s' "$(node -e 'process.stdout.write(JSON.stringify({ tool_name: process.argv[1], tool_input: { command: "npm test" }, cwd: "/tmp" }))' "$herr")" \
+    | env -u TYCON_TEST_SCOPE_GUARD -u TYCON_FULL_SUITE HOME="$T" "$BASH" "$GUARD" 2>&1 >/dev/null)"
+  if printf '%s' "$cartel" | grep -q 'TYCON_FULL_SUITE'; then mal "por $herr, el cartel dicta el escape"
+  elif ! printf '%s' "$cartel" | grep -q 'lo decide la persona'; then mal "por $herr, el cartel no dice de quién es la decisión"
+  elif ! printf '%s' "$cartel" | grep -q 'test-execution-discipline.md'; then mal "por $herr, el cartel no señala la guía"
+  else ok "por $herr, el cartel no dicta el escape y señala la guía"; fi
+done
+
 echo "test-scope-guard: $PASA ok, $FALLA mal"
 [ "$FALLA" = "0" ]
