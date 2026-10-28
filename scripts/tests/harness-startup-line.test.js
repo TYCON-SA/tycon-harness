@@ -594,3 +594,27 @@ test('BAK-3 · Import_WithoutSnapshot_CopiesClaudeMdFirst: sin la copia del meca
   H.ensureImport({ home: home2, env: { HOME: home2 } }, { backup: false });
   assert.deepStrictEqual(fs.readdirSync(path.join(home2, '.claude')).filter((x) => x.includes('.bak')), []);
 });
+
+// ─── la copia fija tras una vuelta atrás ──────────────────────────────────────────────────────────────────────────────
+
+test('ROLLBACK-1 · FixedCopyFailsAfterRollback_NoticeSaysSo: si la copia fija no se repone tras volver atrás, el aviso no dice «volvió sola»', () => {
+  const H = require(path.join(RAIZ, 'scripts', 'setup', 'harness.js'));
+  const S = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'state.js'));
+  const home = path.join(BASE, `rb1-${++n}`);
+  const { bootstrapDir } = S.paths(home);
+  // the fixed copy's folder is a plain file: the copy cannot be written
+  fs.mkdirSync(path.dirname(bootstrapDir), { recursive: true });
+  fs.writeFileSync(bootstrapDir, 'no soy una carpeta\n');
+  const why = H.restoreFixedCopy({ home, env: { HOME: home } }, RAIZ, {});
+  assert.ok(typeof why === 'string' && why.length, `tiene que devolver el motivo: ${why}`);
+  const text = H.rollbackOutcome({ ok: true }, '2026.10.07.2', why);
+  assert.doesNotMatch(text, /volvió sola/);
+  assert.match(text, /volvió a 2026\.10\.07\.2, pero NO pude reponer la copia fija de arranque/);
+  assert.match(text, /harness\.js install/);
+  // the other two outcomes keep their words
+  assert.strictEqual(H.rollbackOutcome({ ok: true }, '2026.10.07.2', null), 'volvió sola a 2026.10.07.2');
+  assert.match(H.rollbackOutcome({ ok: false, lines: ['sin copia'] }, '2026.10.07.2', null), /^NO pudo volver sola \(sin copia\): harness\.js rollback$/);
+  // with a writable folder the copy goes through
+  const ok = path.join(BASE, `rb1b-${++n}`);
+  assert.strictEqual(H.restoreFixedCopy({ home: ok, env: { HOME: ok } }, RAIZ, {}), null);
+});

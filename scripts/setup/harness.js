@@ -2341,6 +2341,17 @@ function syncSourceCommits(ctx, state) {
     if (h) s.commit = h;
   }
 }
+/** Repone la copia fija desde el árbol tras una vuelta atrás: null si salió bien, o el motivo del fallo. */
+function restoreFixedCopy(ctx, tree, state) {
+  try { copyBootstrap(ctx, tree, state); return null; } catch (e) { return e.message; }
+}
+/** Cómo terminó la vuelta atrás, para el aviso: volvió, volvió sin poder reponer la copia fija, o no pudo volver. Una
+ *  copia fija que no se repuso hace fallar la próxima actualización, así que el aviso lo dice y nombra el arreglo. */
+function rollbackOutcome(restored, number, copyError) {
+  if (!restored.ok) return `NO pudo volver sola (${(restored.lines || [])[0] || 'sin detalle'}): harness.js rollback`;
+  if (copyError) return `volvió a ${number}, pero NO pude reponer la copia fija de arranque (${copyError}): la próxima actualización va a fallar hasta que la repongas con harness.js install`;
+  return `volvió sola a ${number}`;
+}
 /**
  * La versión nueva no quedó sana: el «después» de la copia es lo que quedó roto, se restaura por piezas a esa
  * copia (mismo camino que `rollback`), se anota `failed` con las puntas que fallaron y se deja el aviso. La copia fija
@@ -2376,9 +2387,11 @@ function failUpdate(ctx, state, { snap, rec, before, after, tips, failures, reas
   state.version.number = versionNumber(ctx, state);
   // la copia fija vuelve con el árbol: si quedó la de la versión que falló (la salud pasó, la copia se refrescó y el
   // proceso murió antes de grabar), sin esto toda actualización siguiente fallaría por «copia fija adulterada»
-  if (restored.ok) { try { copyBootstrap(ctx, state.tree, state); } catch (e) { if (log) log(`update: no pude reponer la copia fija tras la vuelta atrás (${e.message})`); } }
+  const copyError = restored.ok ? restoreFixedCopy(ctx, state.tree, state) : null;
+  if (copyError && log) log(`update: no pude reponer la copia fija tras la vuelta atrás (${copyError})`);
   state.failed = { commit: after, sources: tips, at: nowIso(), log: S.paths(ctx.home).log, reason };
-  const back = restored.ok ? `volvió sola a ${state.version.number}` : `NO pudo volver sola (${(restored.lines || [])[0] || 'sin detalle'}): harness.js rollback`;
+  if (copyError) state.failed.fixed_copy = copyError;
+  const back = rollbackOutcome(restored, state.version.number, copyError);
   R.setNotice(state, `la actualización ${before} → ${after} no quedó sana (${failures[0]}): ${back}; esa versión no se reintenta sola (cuando cambie la punta, o con ${applyHint}) — detalle en ${S.paths(ctx.home).log}`);
   if (log) log(`update: ${reason}: ${failures.join(' · ')} · ${(restored.lines || []).join(' · ')}`);
   return { status: 'failed', code: 1, lines: [`harness.js update: la versión ${after} no quedó sana (${failures.join(' · ')}) — ${back}`, ...(restored.lines || []).slice(0, 5)] };
@@ -3190,7 +3203,7 @@ function cmdStartup(ctx) {
     // una falla de `install` no es una actualización que volvió atrás: no se movió nada, y lo que la
     // retoma es `install` otra vez
     if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma — harness.js doctor lo detalla`;
-    if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y volvió sola a ${state.version && state.version.number}; ${state.failed.reason === 'interrupted' ? 'se reintenta en el próximo arranque' : `no se reintenta sola hasta que cambie la punta (o ${applyHint})`} — harness.js doctor lo detalla`;
+    if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y ${state.failed.fixed_copy ? rollbackOutcome({ ok: true }, state.version && state.version.number, state.failed.fixed_copy) : `volvió sola a ${state.version && state.version.number}`}; ${state.failed.reason === 'interrupted' ? 'se reintenta en el próximo arranque' : `no se reintenta sola hasta que cambie la punta (o ${applyHint})`} — harness.js doctor lo detalla`;
     if (!notice && keepFromLastLook && !fetched && policy.enabled && state.mode !== 'developer') notice = state.notice;
     // una herramienta instalada y sin enchufar: se dice en cada arranque, sin pisar otro
     // aviso; se enchufa en la próxima instalación, no sola
@@ -5014,4 +5027,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff, ensureImport };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };
