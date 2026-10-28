@@ -29,7 +29,8 @@
 //   "remotes": { "<o>/<r>": "<ruta del repo bare>" }   POST pulls exige que la rama `head` exista allá (422 si no), como GitHub
 // GET pulls?head=<dueño>:<rama>&state=&per_page=&page= filtra y pagina de verdad (state por defecto: open). GET pulls/N sobre un
 // número que es un issue da 404. PATCH pulls/N cambia `state` (uno mergeado no se puede reabrir). POST pulls/N/requested_reviewers
-// pide revisores (422 si el repo declara `collaborators` y alguno no está).
+// pide revisores (422 si el repo declara `collaborators` y alguno no está). PUT pulls/N/merge junta la rama en la base del
+// repo bare de `remotes` con un solo commit (405 si no está abierto, 409 si `sha` no es la punta de la rama).
 const fs = require('fs');
 
 const argv = process.argv.slice(2);
@@ -176,6 +177,31 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)(\/reviews|\/requested_
     }
     save(); out(pullApi(repo, p));
   }
+}
+if (method === 'PUT' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/merge$/))) {
+  const repo = m[1], n = Number(m[2]);
+  const p = pullsOf(repo).find((x) => x.number === n);
+  if (!p) err(404, 'Not Found');
+  if (p.state !== 'open') err(405, 'Pull Request is not mergeable');
+  const remoto = (st.remotes || {})[repo];
+  if (!remoto) err(405, 'Pull Request is not mergeable');
+  const git = (...a) => {
+    // fecha fija y sin mantenimiento automático: el commit del merge sale igual en cada corrida
+    const r = require('child_process').spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', remoto, ...a], {
+      encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-28T00:00:00Z', GIT_COMMITTER_DATE: '2026-10-28T00:00:00Z' } });
+    if (r.status !== 0) err(409, `git ${a[0]}: ${r.stderr.trim()}`);
+    return r.stdout.trim();
+  };
+  const baseRef = (p.base && p.base.ref) || 'main';
+  const cabeza = git('rev-parse', `refs/heads/${p.head.ref}`);
+  if (cuerpo && cuerpo.sha && cuerpo.sha !== cabeza) err(409, 'Head branch was modified. Review and try the merge again.');
+  const destino = git('rev-parse', `refs/heads/${baseRef}`);
+  const arbol = git('merge-tree', '--write-tree', destino, cabeza).split('\n')[0];
+  const titulo = (cuerpo && cuerpo.commit_title) || `${p.title} (#${n})`;
+  const nuevo = git('commit-tree', arbol, '-p', destino, '-m', titulo);
+  git('update-ref', `refs/heads/${baseRef}`, nuevo, destino);
+  Object.assign(p, { state: 'closed', merged_at: st.now, closed_at: st.now });
+  save(); out({ sha: nuevo, merged: true, message: 'Pull Request successfully merged' });
 }
 if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues$/))) {
   const repo = m[1];

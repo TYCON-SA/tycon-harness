@@ -89,7 +89,9 @@ const RUBROS = {
   dependencias: ['nuevos', 'pedidos_creados', 'pedidos_cerrados', 'pedidos_reabiertos', 'vivas_por_proyecto', 'edad_mas_vieja', 'aceptadas_sin_resolver', 'rechazadas_sin_deuda',
     'deuda_con_pedido_abierto', 'postergadas_por_presupuesto', 'proyectos_sin_iteracion', 'proyectos_con_tipo_de_fabrica',
     // El cruce «pedido cerrado, vulnerabilidad viva» — se LEEN de `cruce`, no se recalculan
-    'pedidos_cerrados_con_vivas', 'resueltas_con_pedido_abierto'],
+    'pedidos_cerrados_con_vivas', 'resueltas_con_pedido_abierto',
+    // Lo que una persona decidió en el sitio y la noche no pudo aplicar: la fila volvió a «Te toca decidir»
+    'decisiones_no_aplicadas'],
   vigilante: ['nuevos', 'pendientes', 'aceptadas_sin_story', 'no_medido', 'ignoradas_hoy'],
 };
 const ETIQUETA = {
@@ -99,6 +101,7 @@ const ETIQUETA = {
   proyectos_sin_iteracion: 'proyectos sin iteración', proyectos_con_tipo_de_fabrica: 'proyectos sin el tipo configurado', pendientes: 'pendientes',
   aceptadas_sin_story: 'aceptadas sin story', no_medido: 'no medido', ignoradas_hoy: 'ignoradas hoy',
   pedidos_cerrados_con_vivas: 'pedidos cerrados con la vulnerabilidad viva', resueltas_con_pedido_abierto: 'resueltas con pedido abierto',
+  decisiones_no_aplicadas: 'decisiones del sitio que no se aplicaron',
 };
 const PREFIJO = { dependencias: 'dependencias', vigilante: 'vigilante' };
 const DECIDIR = {
@@ -205,7 +208,15 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
   if (!fichas) {
     const m = 'no se pudieron leer las fichas de dependencias';
     R.vivas_por_proyecto = nulo(m); R.edad_mas_vieja = nulo(m); R.aceptadas_sin_resolver = nulo(m);
+    R.decisiones_no_aplicadas = nulo(m);
   } else {
+    // La marca la pone la noche (`note --decision-failed`) y la borra la próxima decisión: el porqué queda en la ficha
+    // (puede nombrar un repo), acá sólo quién y desde cuándo.
+    R.decisiones_no_aplicadas = {
+      valor: fichas.pending.filter((x) => esFecha(x.f.escalares.decision_fallida))
+        .map((x) => ({ id: x.id, el: x.f.escalares.decision_fallida })),
+      de: null, motivo: null,
+    };
     const vivas = [
       ...fichas.pending.filter((x) => x.f.escalares.veredicto === 'pendiente'),
       ...fichas.promoted.filter((x) => !x.f.escalares.resuelto),
@@ -366,6 +377,7 @@ function identidad(nombre, r) {
       case 'edad_mas_vieja': return `id:${r.id}`;
       case 'vivas_por_proyecto': return orden(v.flatMap((g) => g.ids.map((id) => `${g.proyecto}:${id}`)));
       case 'aceptadas_sin_resolver': return orden(v.map((x) => `${x.id}:${x.bloqueada_por || ''}`));
+      case 'decisiones_no_aplicadas': return orden(v.map((x) => `${x.id}:${x.el}`));
       case 'deuda_con_pedido_abierto': return orden(v.map((x) => `${x.ficha}:${x.proyecto}`));
       case 'pedidos_creados': case 'pedidos_cerrados': case 'pedidos_reabiertos': return orden(v.map((x) => `${x.ficha}:${x.proyecto}:${x.id}`));
       // La edad de una resuelta con pedido abierto crece sola: se compara QUIÉN está, no hace cuánto.
@@ -560,6 +572,10 @@ function veredicto(fuente, rubros, cambios, fallos, cuando) {
       `${cuenta(rubros.vivas_por_proyecto, (r) => r.de, '?')} vivas`,
       `${cuenta(rubros.aceptadas_sin_resolver, (r) => r.valor.length, '?')} aceptadas sin resolver`,
       `${cuenta(rubros.postergadas_por_presupuesto, (r) => r.valor.hallazgos.length, '?')} postergadas`);
+    // va en la cabecera mientras haya alguna: «sigue igual» la escondería, y es una decisión que hay que volver a tomar
+    const sinAplicar = rubros.decisiones_no_aplicadas && Array.isArray(rubros.decisiones_no_aplicadas.valor)
+      ? rubros.decisiones_no_aplicadas.valor.length : 0;
+    if (sinAplicar) partes.push(`${sinAplicar} decisión(es) del sitio sin aplicar`);
   } else {
     const pend = rubros.pendientes;
     partes.push(`🌙 vigilante`, cab,

@@ -55,11 +55,17 @@ const fila = (filas, clave) => filas.find((f) => f.clave === clave);
 test('T28 Inicio_Mantenedor_LeeNoMide', () => {
   const filas = filasDe(modeloCompleto({ vigilante: noMedida('sin_foto') }));
   assert.deepStrictEqual(filas.map((f) => f.clave), [
-    'dependencias_nuevas', 'dependencias_aceptadas_sin_resolver', 'dependencias_rechazadas_sin_deuda',
+    'dependencias_por_decidir', 'dependencias_aceptadas_sin_resolver', 'dependencias_rechazadas_sin_deuda',
     'vigilante_pendientes', 'vigilante_aceptadas_sin_story', 'prs_trabados', 'pedidos_cerrados_con_vivas',
     'suites_rojas_nuevas', 'banco_rojos_nuevos', 'declarados_por_vencer', 'maquinas_sin_confirmar', 'retrospectivas',
   ], 'las filas en orden');
-  assert.deepStrictEqual([fila(filas, 'dependencias_nuevas').estado, fila(filas, 'dependencias_nuevas').valor], ['medido', 3]);
+  // las dependencias por decidir salen de la cuenta de Mantenimiento: sin ella, «no medido», nunca 0 ni lo de anoche
+  assert.deepStrictEqual([fila(filas, 'dependencias_por_decidir').estado, fila(filas, 'dependencias_por_decidir').valor], ['no_medido', null]);
+  assert.ok(fila(filas, 'dependencias_por_decidir').motivo);
+  const conCuenta = views.filasInicioMantenedor(modeloCompleto({}), { ahora: AHORA, esperan: (f) => (f === 'dependencias' ? 22 : null) });
+  assert.deepStrictEqual([fila(conCuenta, 'dependencias_por_decidir').estado, fila(conCuenta, 'dependencias_por_decidir').valor], ['medido', 22]);
+  const enCero = views.filasInicioMantenedor(modeloCompleto({}), { ahora: AHORA, esperan: () => 0 });
+  assert.strictEqual(fila(enCero, 'dependencias_por_decidir').valor, 0, 'ninguna por decidir es un 0 medido');
   for (const k of ['vigilante_pendientes', 'vigilante_aceptadas_sin_story']) {
     assert.strictEqual(fila(filas, k).estado, 'no_medido', `${k}: sin la foto del vigilante`);
     assert.strictEqual(fila(filas, k).valor, null, 'nunca 0');
@@ -426,15 +432,15 @@ test('8.101-Retrospectivas_SinFotoComoHoy_ConFotoSeVe', () => {
 });
 
 // Inicio_Vulnerabilidades_DicenSeguimiento
-// 🔴 Falla con: un recuadro de vulnerabilidades que diga «decidir» cuando en Mantenimiento no se deciden (cada equipo
-// las sigue en su tarea), o que el cambio se lleve puesto a los recuadros que sí se deciden.
-test('T11 Inicio_Vulnerabilidades_DicenSeguimiento — los recuadros de dependencias dicen «seguimiento», no «decidir»', () => {
-  const html = views.paginaInicio({ modelo: access.filtrar(modeloCompleto({ vigilante: noMedida('sin_foto') }), { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+// 🔴 Falla con: un recuadro de lo que sólo se sigue (las rechazadas sin deuda, que cada equipo sigue en su tarea) que diga
+// «decidir», o las dependencias por decidir, que se deciden en Mantenimiento, diciendo «seguimiento».
+test('T11 Inicio_Vulnerabilidades_DicenSeguimiento — las por decidir dicen «decidir»; las rechazadas sin deuda, «seguimiento»', () => {
+  const html = views.paginaInicio({ modelo: access.filtrar(modeloCompleto({ vigilante: noMedida('sin_foto') }), { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA, esperan: () => 4 });
   const recuadro = (titulo) => html.split('<div class="tile ').find((x) => x.includes(`<div class="t-label">${titulo}</div>`)) || '';
-  for (const titulo of ['Dependencias nuevas', 'Dependencias rechazadas sin deuda']) {
-    assert.ok(recuadro(titulo), `${titulo}: el recuadro está`);
-    assert.doesNotMatch(recuadro(titulo), />decidir</, `${titulo}: no dice decidir`);
-  }
-  assert.match(recuadro('Dependencias nuevas'), />seguimiento</, 'con algo adentro, dice seguimiento');
+  for (const titulo of ['Dependencias por decidir', 'Dependencias rechazadas sin deuda']) assert.ok(recuadro(titulo), `${titulo}: el recuadro está`);
+  assert.doesNotMatch(recuadro('Dependencias rechazadas sin deuda'), />decidir</, 'lo que sólo se sigue no dice decidir');
+  assert.match(recuadro('Dependencias por decidir'), />decidir</, 'se deciden en Mantenimiento');
+  assert.match(recuadro('Dependencias por decidir'), /href="\/mantenimiento"/, 'y «dónde se decide» lleva ahí');
+  assert.match(recuadro('Dependencias por decidir'), />4</, 'con el número de Mantenimiento');
   assert.match(recuadro('Pull requests abiertos hace más de 2 días'), />decidir</, 'los demás siguen diciendo decidir');
 });

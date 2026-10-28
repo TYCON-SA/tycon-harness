@@ -204,15 +204,21 @@ Only for **maintainers**: what the night found, ordered by who has the ball. Nex
 many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has three
 blocks:
 
-- **Your decision**: what the production watcher and the review of the runs found. Production first, because those are
-  real customers. Within each group, first what the analysis recommends fixing, then what it recommends archiving, and
-  last what has no analysis.
+- **Your decision**: what the production watcher and the review of the runs found, and the pending package
+  vulnerabilities. Production first, because those are real customers. Within each group, first what the analysis
+  recommends fixing, then what it recommends archiving, and last what has no analysis; packages, the most severe first.
 - **Waiting for approval**: what you already sent and someone else has to approve, grouped by pull request, with its
   link. Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
   stay to decide, but nothing is sent until it answers: that way no duplicate pull request is opened.
 - **In progress** (closed at first): what was already decided and someone is doing, with its work item number and who
-  it is assigned to, and the package vulnerabilities. Vulnerabilities are not decided here: each team has its work item
-  and, if it cannot update the package, declares the debt in its repo, with a deadline.
+  it is assigned to, and the package vulnerabilities. Each team follows its own in its work item and, if it cannot
+  update the package, declares the debt in its repo, with a deadline.
+
+A package vulnerability is decided with **Accept** or **Reject**. Accept merges its pull request, which upgrades the
+package. Reject closes it and asks for a one-line reason, which stays as a comment on the pull request and in the
+finding. A finding without a pull request is decided too: Accept moves it to be fixed in its work item and Reject records
+it. The night applies it, and only if the pull request is still the finding's. If it could not, the morning summary says
+so and the row comes back to "Your decision" with the reason. The work item type does not change.
 
 Each card says **what happened** with the finding's data, for example "It happened 4 times, from 21/10 to 24/10". With
 an analysis, it says **why** it happens, what it **recommends** and what fixing it would do, and whether the night's model

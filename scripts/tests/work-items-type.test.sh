@@ -463,6 +463,20 @@ for ty in 'Riesgo' 'Product Backlog Item' 'Pedido de Mejora' 'Tipo_1.2-b'; do
 done
 [ -z "$t36" ] && ok "T36 Config_WorkItemsTipoConFormaValida: el tipo no puede ser una opción, un archivo ni una ruta" || no "T36:$t36"
 
+# ── T37. decidir una dependencia en el sitio no cambia su pedido de trabajo ─────────────────────────────────────
+# 🔴 Falla con: una ficha aceptada en el sitio (pasa a promoted/ con `decidido_en_sitio:`) o rechazada ahí (sigue en
+#    pending/ con `rechazado:` y su motivo) cuyo pedido sale con otro tipo, sin los campos de la organización o no sale.
+mundo; opsw "$RIESGO"
+campos "Proy A" Riesgo "$BASICOS,Custom.Cat*,Custom.Prob*,Custom.Imp*,Custom.Prio"
+ficha promoted acc12345 browserslist high 1 "A/A" "pr: 12" "decidido_en_sitio: 2026-09-09"
+ficha pending rec12345 lodash high 1 "A/A" "pr: 13" "rechazado: 2026-09-09" 'motivo_rechazo: "rompe el build"'
+snapshot $HOY "[$(p1 acc12345 browserslist A/A),$(p1 rec12345 lodash A/A)]"
+rc=$(correr --operations "$TMP/operations.json")
+riesgo37='arg("--type") === "Riesgo" && a.includes("Custom.Cat=Seguridad-de-prueba") && a.includes("Custom.Imp=4") && a.some((x) => /^System\.Tags=.*arnes:(acc|rec)12345/.test(x))'
+{ [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 2 ] && llamada crear 0 "$riesgo37" && llamada crear 1 "$riesgo37"; } \
+  && ok "T37 Sitio_DecidirNoCambiaElPedido: aceptada o rechazada en el sitio, su pedido sigue siendo un Riesgo con sus campos" \
+  || no "T37: rc=$rc crear=$(cuenta crear) · $(pie)"
+
 # ── T30 (AC 23). el núcleo no trae valores de una organización ──────────────────────────────────────────────────
 t30=$(node -e 'const fs = require("fs"); const sin = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"\x27`])\/\/.*$/gm, "$1");
 const malos = [];

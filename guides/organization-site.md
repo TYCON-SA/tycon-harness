@@ -200,15 +200,22 @@ Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién ti
 menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
 tiene tres bloques:
 
-- **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones. Primero lo de
-  producción, porque son clientes reales. Dentro de cada grupo, primero lo que el análisis recomienda arreglar, después
-  lo que recomienda archivar y al final lo que no tiene análisis.
+- **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones, y las
+  vulnerabilidades de paquetes pendientes. Primero lo de producción, porque son clientes reales. Dentro de cada grupo,
+  primero lo que el análisis recomienda arreglar, después lo que recomienda archivar y al final lo que no tiene
+  análisis; los paquetes, la más grave primero.
 - **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace.
   Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
   pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
 - **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
-  está asignada, y las vulnerabilidades de paquetes. Las vulnerabilidades no se deciden acá: cada equipo tiene su tarea
-  y, si no puede actualizar el paquete, declara la deuda en su repo, con plazo.
+  está asignada, y las vulnerabilidades de paquetes. Cada equipo sigue la suya en su tarea y, si no puede actualizar el
+  paquete, declara la deuda en su repo, con plazo.
+
+Una vulnerabilidad de paquetes se decide con **Aceptar** o **Rechazar**. Aceptar mergea su pull request, que sube el
+paquete. Rechazar lo cierra y pide un motivo de una línea, que queda como comentario del pull request y en la ficha. Una
+ficha sin pull request también se decide: Aceptar la pasa a arreglar en su tarea y Rechazar la anota. Lo aplica la
+noche, y sólo si el pull request sigue siendo el de la ficha. Si no lo pudo aplicar, el resumen de la mañana lo dice y
+la fila vuelve a «Te toca decidir» con el porqué. El tipo del pedido de trabajo no cambia.
 
 Cada tarjeta dice **qué pasó** con los datos de la ficha, por ejemplo «Pasó 4 veces, del 21/10 al 24/10». Si hay
 análisis, dice **por qué** pasa, qué **recomienda** y qué se haría si se arregla, y aclara si lo escribió el modelo de la

@@ -54,25 +54,31 @@ const medida = (f) => Boolean(f && f.estado === 'medido');
 const enlace = (u) => (typeof u === 'string' && /^https?:\/\//.test(u) ? u : null);
 
 function filaMedida(clave, titulo, valor, extra = {}) { return { clave, titulo, estado: 'medido', valor, motivo: null, ...extra }; }
-const SOLO_SEGUIMIENTO = new Set(['dependencias_nuevas', 'dependencias_rechazadas_sin_deuda']);
+const SOLO_SEGUIMIENTO = new Set(['dependencias_rechazadas_sin_deuda']);
 function filaNoMedida(clave, titulo, motivo) { return { clave, titulo, estado: 'no_medido', valor: null, motivo }; }
 
 /** Cuántos de `hoy` no estaban en `ayer`. */
 const nuevos = (hoy, ayer) => { const a = new Set(ayer || []); return (hoy || []).filter((x) => !a.has(x)).length; };
 
 /** Inicio de quien mantiene: qué decidir hoy. Una fila por cosa, en este orden. */
-function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null, idioma = POR_DEFECTO } = {}) {
+function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null, idioma = POR_DEFECTO, esperan = null } = {}) {
   const T = (k, v) => t(idioma, k, v);
   const cf = (f) => conFecha(f, idioma);
   const sinDato = fraseDeCodigo('sin_dato', idioma);
   const filas = [];
   const dep = m.dependencias;
   const rub = medida(dep) && dep.rubros ? dep.rubros : null;
-  for (const [k, clave] of [['nuevos', 'dependencias_nuevas'], ['aceptadas_sin_resolver', 'dependencias_aceptadas_sin_resolver'], ['rechazadas_sin_deuda', 'dependencias_rechazadas_sin_deuda']]) {
+  // las que esperan decisión, con la misma cuenta que Mantenimiento (`esperan`, de la pestaña): el número que se ve acá
+  // es el de las filas que hay allá
+  const tPor = T('inicio.dependencias_por_decidir');
+  const porDecidir = typeof esperan === 'function' ? esperan('dependencias') : null;
+  if (Number.isInteger(porDecidir) && porDecidir >= 0) filas.push(filaMedida('dependencias_por_decidir', tPor, porDecidir));
+  else filas.push(filaNoMedida('dependencias_por_decidir', tPor, T('inicio.porDecidirSinCuenta')));
+  for (const [k, clave] of [['aceptadas_sin_resolver', 'dependencias_aceptadas_sin_resolver'], ['rechazadas_sin_deuda', 'dependencias_rechazadas_sin_deuda']]) {
     const titulo = T(`inicio.${clave}`);
     if (!rub) filas.push(filaNoMedida(clave, titulo, cf(dep)));
     else if (!Number.isFinite(rub[k])) filas.push(filaNoMedida(clave, titulo, sinDato));
-    // las vulnerabilidades no se deciden en el sitio: cada equipo las sigue en su tarea
+    // las rechazadas sin deuda no se deciden en el sitio: cada equipo las sigue en su tarea
     else filas.push(filaMedida(clave, titulo, rub[k], { fecha: dep.fecha, ...(SOLO_SEGUIMIENTO.has(clave) ? { seguimiento: true } : {}) }));
   }
   const vig = m.vigilante;
@@ -122,6 +128,8 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   // en Arnés; los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
   const DONDE = { prs_trabados: '#prs-trabados', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
   for (const clave of Object.keys(LISTAS_DE_DECISION)) DONDE[clave] = `#decidir-${clave}`;
+  // las dependencias se deciden en Mantenimiento: una fila por ficha, con Aceptar o Rechazar
+  DONDE.dependencias_por_decidir = '/mantenimiento';
   void enlaceOperaciones;
   for (const f of filas) f.enlace = DONDE[f.clave] || null;
   return filas;
@@ -129,7 +137,6 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
 
 // Las tarjetas de «Qué decidir hoy» que llevan a una lista de fichas: su fuente y su rubro en decisions.js
 const LISTAS_DE_DECISION = Object.freeze({
-  dependencias_nuevas: { fuente: 'dependencias', rubro: 'nuevos' },
   dependencias_aceptadas_sin_resolver: { fuente: 'dependencias', rubro: 'aceptadas_sin_resolver' },
   dependencias_rechazadas_sin_deuda: { fuente: 'dependencias', rubro: 'rechazadas_sin_deuda' },
   vigilante_pendientes: { fuente: 'vigilante', rubro: 'pendientes' },
@@ -406,7 +413,7 @@ function paginaInicio(ctx) {
   const T = (k, v) => t(idioma, k, v);
   const m = ctx.modelo || {};
   if (ctx.quien.rol === 'maintainer') {
-    const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma });
+    const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma, esperan: ctx.esperan });
     return layout(ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
@@ -583,7 +590,7 @@ function paginaArnes(ctx) {
 /** Lo mismo que Inicio, como datos (para /api/inicio). */
 function inicioJson(ctx) {
   const idioma = idiomaDe(ctx);
-  if (ctx.quien.rol === 'maintainer') return { rol: 'maintainer', filas: filasInicioMantenedor(ctx.modelo || {}, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma }) };
+  if (ctx.quien.rol === 'maintainer') return { rol: 'maintainer', filas: filasInicioMantenedor(ctx.modelo || {}, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma, esperan: ctx.esperan }) };
   return { rol: 'person', ...inicioDev(ctx.modelo || {}, { ahora: ctx.ahora, idioma }) };
 }
 

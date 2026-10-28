@@ -503,34 +503,79 @@ function formatoPorSecciones({ orden, listas }) {
 
 const CLAVES_DE_DECISION = ['fuente', 'id', 'accion', 'quien', 'el'];
 
-// La palabra que escribe cada fuente por cada acción. Dependencias no tiene «aceptar»: aceptar el riesgo es declarar
-// la deuda en cada repo, con plazo, y una decisión que lo pida no tiene forma.
+// La palabra que escribe cada fuente por cada acción. En dependencias se decide el pull request de la ficha: aceptar
+// lo mergea (la ficha pasa a `util`) y rechazar lo cierra con el motivo (la ficha sigue viva, con su rechazo anotado).
 const VEREDICTO_DE_DECISION = {
-  dependencias: { arreglar: 'util' },
+  dependencias: { aceptar: 'util', reject: null },
   vigilante: { aceptar: 'descartado', arreglar: 'util' },
   ejecuciones: { aceptar: 'aceptada', arreglar: 'arreglo' },
 };
 
+// Dependencias lleva además el pull request que la persona vio (`pr`, y `pr_repo` en GitHub; null si la ficha no tenía)
+// y, al rechazar, el motivo: lo escribe una persona y termina en un comentario del pedido y en la ficha.
+const CLAVES_DE_PEDIDO = ['pr', 'pr_repo'];
+const MOTIVO_MAX = 180;
+const NUMERO_DE_PR = /^[0-9]{1,9}$/;
+const REPO_DE_PR = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/**
+ * Un motivo escrito por una persona como escalar de la ficha, entre comillas dobles y en una línea: la comilla doble
+ * pasa a simple y la barra invertida a barra, porque dentro de las comillas escaparía la de cierre.
+ */
+function entreComillas(texto) {
+  return `"${String(texto).replace(/"/g, "'").replace(/\\/g, '/').replace(/\s+/g, ' ').trim().slice(0, MOTIVO_MAX)}"`;
+}
+
+/** El motivo de un rechazo: una línea escrita por una persona, sin caracteres de control y con tope de largo. */
+function motivoConForma(m) {
+  return typeof m === 'string' && m.trim().length > 0 && m.length <= MOTIVO_MAX && !CONTROL.test(m);
+}
+
+/** Las claves que la decisión tiene que traer, ni una más: las comunes, y en dependencias el pedido y el motivo. */
+function clavesDeDecision(fuente, accion) {
+  if (fuente !== 'dependencias') return CLAVES_DE_DECISION;
+  return [...CLAVES_DE_DECISION, ...CLAVES_DE_PEDIDO, ...(accion === 'reject' ? ['motivo'] : [])];
+}
+
 /** ¿La decisión tiene la forma cerrada de la fuente? `id` tiene que ser el del nombre del archivo. */
 function decisionConForma(d, fuente, id) {
-  return esObjeto(d) && Object.keys(d).length === CLAVES_DE_DECISION.length && CLAVES_DE_DECISION.every((k) => Object.hasOwn(d, k))
+  if (!esObjeto(d) || !Object.hasOwn(VEREDICTO_DE_DECISION, fuente)) return false;
+  const claves = clavesDeDecision(fuente, d.accion);
+  return Object.keys(d).length === claves.length && claves.every((k) => Object.hasOwn(d, k))
     && d.fuente === fuente && d.id === id && typeof d.id === 'string' && CLAVE.test(d.id)
     && Object.hasOwn(VEREDICTO_DE_DECISION[fuente], d.accion)
     && typeof d.quien === 'string' && d.quien.length <= 200 && IDENTIDAD.test(d.quien) && !CONTROL.test(d.quien)
-    && typeof d.el === 'string' && FECHA.test(d.el);
+    && typeof d.el === 'string' && FECHA.test(d.el)
+    && (fuente !== 'dependencias' || (
+      (d.pr === null || (typeof d.pr === 'string' && NUMERO_DE_PR.test(d.pr)))
+      && (d.pr_repo === null || (typeof d.pr_repo === 'string' && d.pr !== null && REPO_DE_PR.test(d.pr_repo)))
+      && (d.accion !== 'reject' || motivoConForma(d.motivo))));
+}
+
+/** ¿El pedido de la decisión sigue siendo el de la ficha? Mismo número y mismo repo (vacío = sin `pr_repo:`). */
+function mismoPedido(d, escalares) {
+  const pr = escalares.pr ? String(escalares.pr) : null;
+  const repo = escalares.pr_repo ? String(escalares.pr_repo) : null;
+  return pr === d.pr && repo === d.pr_repo;
 }
 
 /**
  * Aplica las decisiones del sitio de una fuente. Una sin forma queda donde está y se cuenta (su contenido nunca va a la
  * salida); una cuya ficha ya no está pendiente se borra con un renglón. Sin carpeta de decisiones, nada. `dir`: la
  * carpeta de la fuente cuando no está en `<base>/inbox/<carpeta>` (el `--pending` de cada noche).
+ *
+ * En dependencias, la decisión sobre una ficha con pull request la aplica el paso de los pull requests
+ * (`open-pr-per-finding.sh`, que lo mergea o lo cierra): acá queda donde está y se cuenta en `delPedido`. La de una
+ * ficha sin pull request se aplica acá: aceptar la pasa a `util`, rechazar le anota `rechazado:` y su motivo. Si el
+ * pedido de la ficha ya no es el que vio la persona, no se aplica: la ficha anota `decision_fallida:` con el porqué,
+ * que el resumen cuenta y el sitio muestra para volver a decidir.
  */
-function aplicarDecisiones({ base, fuente, dir = null }) {
+function aplicarDecisiones({ base, fuente, dir = null, hoy = new Date().toISOString().slice(0, 10) }) {
   const { FUENTES: registro } = require('./sources.js');
   const reg = registro[fuente];
   if (!reg) throw new Error(`fuente desconocida: ${fuente}`);
   const carpetas = dir ? Object.fromEntries(CARPETAS.map((c) => [c, path.join(dir, c)])) : carpetasDe(base, fuente);
-  const r = { aplicadas: [], borradas: [], sinForma: 0, ilegibles: 0, lineas: [] };
+  const r = { aplicadas: [], borradas: [], delPedido: [], fallidas: [], sinForma: 0, ilegibles: 0, lineas: [] };
   let nombres;
   try { nombres = fs.readdirSync(carpetas.decisions).filter((x) => x.endsWith('.json')).sort(); } catch (e) {
     if (e && e.code === 'ENOENT') return r;
@@ -558,6 +603,11 @@ function aplicarDecisiones({ base, fuente, dir = null }) {
       r.lineas.push(`decisión del sitio sin la forma esperada: ${visible} (queda en decisions/; se mira a mano)`);
       return;
     }
+    if (fuente === 'dependencias' && d.pr !== null) {
+      r.delPedido.push({ id, accion: d.accion });
+      r.lineas.push(`decisión del sitio sobre ${id}: la aplica el paso de los pull requests (${d.accion} el pedido ${d.pr})`);
+      return;
+    }
     const palabra = VEREDICTO_DE_DECISION[fuente][d.accion];
     const origen = path.join(carpetas.pending, `${id}${reg.extension}`);
     // 🔴 Sólo «el archivo no está» cuenta como «ya no está pendiente». Una ficha que no se puede leer o no se entiende
@@ -573,7 +623,27 @@ function aplicarDecisiones({ base, fuente, dir = null }) {
     let destino = null;
     let nuevo = null;
     if (txt !== null) {
-      if (reg.formato) {
+      if (fuente === 'dependencias') {
+        const fi = reg.formato.leerFicha(txt);
+        const vista = reg.vista(fi);
+        if (vista.veredicto === 'pendiente' && vista.estado !== 'resuelta' && !fi.escalares.rechazado) {
+          if (!mismoPedido(d, fi.escalares)) {
+            const porQue = 'la ficha ya tiene un pull request que no es el que se vio en el sitio: no se aplicó nada';
+            nuevo = marcarFallida(reg.formato, txt, porQue, hoy);
+            destino = 'pending';
+            r.fallidas.push({ id, motivo: porQue });
+          } else if (d.accion === 'reject') {
+            nuevo = sinFallida(reg.formato, txt);
+            nuevo = reg.formato.ponerEscalar(nuevo, 'rechazado', d.el);
+            nuevo = reg.formato.ponerEscalar(nuevo, 'motivo_rechazo', entreComillas(d.motivo));
+            destino = 'pending';
+          } else {
+            nuevo = sinFallida(reg.formato, txt);
+            nuevo = reg.formato.ponerEscalar(reg.formato.ponerEscalar(nuevo, 'veredicto', palabra), 'decidido_en_sitio', d.el);
+            destino = reg.carpetaDe(reg.vista(reg.formato.leerFicha(nuevo)));
+          }
+        }
+      } else if (reg.formato) {
         const vista = reg.vista(reg.formato.leerFicha(txt));
         if (vista.veredicto === 'pendiente' && vista.estado !== 'resuelta') {
           nuevo = reg.formato.ponerEscalar(reg.formato.ponerEscalar(txt, 'veredicto', palabra), 'decidido_en_sitio', d.el);
@@ -603,9 +673,24 @@ function aplicarDecisiones({ base, fuente, dir = null }) {
     fs.writeFileSync(final, nuevo);
     if (final !== origen) fs.rmSync(origen, { force: true });
     fs.rmSync(ruta, { force: true });
-    r.aplicadas.push({ id, accion: d.accion, veredicto: palabra, carpeta: destino });
-    r.lineas.push(`decisión del sitio aplicada: ${id} → ${palabra}`);
+    if (r.fallidas.some((x) => x.id === id)) {
+      r.lineas.push(`decisión del sitio sobre ${id}: no se aplicó (${r.fallidas.find((x) => x.id === id).motivo}); vuelve a «Te toca decidir»`);
+      return;
+    }
+    r.aplicadas.push({ id, accion: d.accion, veredicto: palabra || 'rechazado', carpeta: destino });
+    r.lineas.push(`decisión del sitio aplicada: ${id} → ${palabra || 'rechazado'}`);
   }
+}
+
+/** Anota en una ficha de dependencias que la decisión del sitio no se pudo aplicar, el día y por qué (una línea). */
+function marcarFallida(formato, txt, porQue, hoy) {
+  const t = formato.ponerEscalar(txt, 'decision_fallida', hoy);
+  return formato.ponerEscalar(t, 'motivo_decision_fallida', entreComillas(porQue));
+}
+
+/** La ficha sin la marca de una decisión que falló: se decidió de nuevo y esta vez se aplicó. */
+function sinFallida(formato, txt) {
+  return formato.quitarClave(formato.quitarClave(txt, 'decision_fallida'), 'motivo_decision_fallida');
 }
 
 /**
@@ -1037,12 +1122,48 @@ module.exports = {
   FUENTES, VEREDICTOS, ESTADOS, CARPETAS, CLAVES, TOPE_CASOS, TOPE_HUELLAS, NOCHES_POR_DEFECTO,
   ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, FALLAS_MAX, razonSegura, textoDeAnalisis, problemasDeAnalisis, problemasDeForma, nuevaFicha, conCasos, registrarAparicion, fichaDeCausa, contarNoche, carpetaDe, carpetasDe,
   asegurarCarpetas, leerCarpetas, serializar, parsear, nochesParaResolver, formatoPorSecciones,
-  CLAVES_DE_DECISION, VEREDICTO_DE_DECISION, decisionConForma, aplicarDecisiones, sitioDecide, CLASES_DE_ERROR, hechosConForma,
+  CLAVES_DE_DECISION, VEREDICTO_DE_DECISION, MOTIVO_MAX, motivoConForma, clavesDeDecision, decisionConForma, mismoPedido, aplicarDecisiones, sitioDecide, CLASES_DE_ERROR, hechosConForma,
 };
 
+/**
+ * Las decisiones de dependencias que aplica el paso de los pull requests (las que traen `pr`), una por línea y separadas
+ * por tabulador: id, acción, pr, pr_repo (`-` sin él), quién, el día y el motivo (`-` al aceptar). Sólo las que tienen
+ * forma: los campos no traen tabuladores ni saltos de línea. Las demás quedan para la noche, que las cuenta.
+ */
+function decisionesDelPedido(dir) {
+  let nombres;
+  try { nombres = fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort(); } catch (e) {
+    if (e && e.code === 'ENOENT') return [];
+    throw e;
+  }
+  const out = [];
+  for (const nombre of nombres) {
+    const id = nombre.slice(0, -'.json'.length);
+    let d = null;
+    try { d = JSON.parse(fs.readFileSync(path.join(dir, nombre), 'utf8')); } catch { d = null; }
+    if (!decisionConForma(d, 'dependencias', id) || d.pr === null) continue;
+    // el motivo va detrás de «:» (vacío: «:»): así un motivo «-» no se confunde con el campo vacío de los otros
+    out.push([id, d.accion, d.pr, d.pr_repo || '-', d.quien, d.el, `:${d.accion === 'reject' ? d.motivo : ''}`].join('\t'));
+  }
+  return out;
+}
+module.exports.decisionesDelPedido = decisionesDelPedido;
+
 // A mano: node scripts/nightly/findings/cycle.js site-decides --operations <operations.json>
+//         node scripts/nightly/findings/cycle.js site-decisions --dir <inbox/dependencies/decisions>
 if (require.main === module) {
   const a = process.argv.slice(2);
+  if (a[0] === 'site-decisions') {
+    const j = a.indexOf('--dir');
+    if (j < 0 || !a[j + 1]) { process.stderr.write('uso: cycle.js site-decisions --dir <carpeta de decisiones>\n'); process.exit(2); }
+    let lineas;
+    try { lineas = decisionesDelPedido(a[j + 1]); } catch (e) {
+      process.stderr.write(`la carpeta de decisiones no se pudo leer (${(e && e.code) || 'error'})\n`);
+      process.exit(1);
+    }
+    if (lineas.length) process.stdout.write(`${lineas.join('\n')}\n`);
+    process.exit(0);
+  }
   const i = a.indexOf('--operations');
   if (a[0] !== 'site-decides' || i < 0 || !a[i + 1]) {
     process.stderr.write('uso: cycle.js site-decides --operations <operations.json>\n');
