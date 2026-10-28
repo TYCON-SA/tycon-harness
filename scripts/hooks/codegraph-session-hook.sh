@@ -86,14 +86,16 @@ fi
 # colisiona con el flag global `-p/--print` del CLI `claude`). SOLO si `claude` está: bajo Codex el
 # server codegraph se registra por ~/.codex/config.toml (lo deja el instalador), no por este CLI —
 # acá sería un no-op, y en una máquina solo-Codex el CLI ni existe.
+# La marca de completado (la próxima sesión sale por el fast path de arriba) se escribe sólo con el trabajo hecho: con
+# `claude`, si el registro salió bien (si falló, la próxima sesión lo reintenta, sin volver a indexar); sin `claude`, el
+# índice es todo lo que hay que hacer.
+DONE=1
 if command -v claude >/dev/null 2>&1; then
   BIN="$(command -v codegraph)"
-  ( cd "$CWD" \
-    && claude mcp remove codegraph >/dev/null 2>&1
-    claude mcp add codegraph -- "$BIN" serve --mcp --path "$CWD" >/dev/null 2>&1 )
+  ( cd "$CWD" || exit 1
+    claude mcp remove codegraph >/dev/null 2>&1
+    claude mcp add codegraph -- "$BIN" serve --mcp --path "$CWD" >/dev/null 2>&1 ) || DONE=0
 fi
-
-# Marca de completado -> la próxima sesión sale por el fast path de arriba.
-[ -d "$CWD/.codegraph" ] && touch "$CWD/.codegraph/.tycon-setup-done" 2>/dev/null
+[ "$DONE" -eq 1 ] && [ -d "$CWD/.codegraph" ] && touch "$CWD/.codegraph/.tycon-setup-done" 2>/dev/null
 
 exit 0

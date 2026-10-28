@@ -14,7 +14,7 @@ const assert = require('node:assert');
 const os = require('os');
 const path = require('path');
 
-const { pieDeRaiz } = require(path.join(__dirname, '..', 'hooks', 'produccion-notice.js'));
+const { pieDeRaiz } = require(path.join(__dirname, '..', 'hooks', 'production-notice.js'));
 // rutas de juguete armadas al correr, dentro de la carpeta temporal
 const BASE = path.join(os.tmpdir(), 'acme');
 const RAIZ = path.join(BASE, 'repos');

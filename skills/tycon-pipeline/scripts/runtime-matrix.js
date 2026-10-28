@@ -916,10 +916,20 @@ function compute(opts) {
   // bloqueada hasta mergear el backend). SOLO `blocked` a propósito:
   // una tanda `pending` puede ser exactamente la que se está entregando en ESTE run, y
   // excluirla vaciaría el gate. La exclusión queda visible en `blockedAcs` + warning.
+  // Lo declarado no alcanza: si el commit (o la corrida, desde `opts.baseSha`) cambia un archivo de pantalla de una
+  // tanda bloqueada, sus criterios vuelven a la matriz, con la misma regla que la baja de la pantalla
+  // (`ui-signal.js → blockedScreenTouched`). `opts.changed` da la lista; sin ella sale de git.
+  const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
+  const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
+  const changed = Array.isArray(opts.changed) ? opts.changed : (repoRoot ? uiSignal.changedFiles(repoRoot, opts.baseSha) : null);
+  const touched = uiSignal.blockedScreenTouched(content, repoRoot, changed);
   const blockedAcs = new Set();
   const blockedByPipeline = [];
+  const blockedBack = [];
   for (const p of sc.parsePipelinesBlock(content)) {
-    if (p.status === 'blocked' && p.acsPending.length) {
+    if (p.status === 'blocked' && p.acsPending.length && touched.names.includes(p.name)) {
+      blockedBack.push(`${p.name || '(sin nombre)'}: ACs ${p.acsPending.join(',')}`);
+    } else if (p.status === 'blocked' && p.acsPending.length) {
       for (const n of p.acsPending) blockedAcs.add(n);
       blockedByPipeline.push(`${p.name || '(sin nombre)'}: ACs ${p.acsPending.join(',')}`);
     }
@@ -933,6 +943,10 @@ function compute(opts) {
   const warnings = [];
   // Avisos que no bloquean: un AC de pantalla sin imagen en una story que arrancó antes del corte.
   const avisos = [];
+  if (blockedBack.length) {
+    const lista = touched.screens.slice(0, 3).join(', ') + (touched.screens.length > 3 ? '…' : '');
+    warnings.push(`ACs de tanda blocked que VUELVEN al gate porque el commit cambia su pantalla (${lista}): ${blockedBack.join(' · ')}.`);
+  }
   if (blockedAcs.size) {
     warnings.push(`ACs EXCLUIDOS del gate por tanda blocked (deuda declarada con blocked_by, no "sin correr"): ${blockedByPipeline.join(' · ')}. Se re-incorporan solos cuando esa tanda deje de estar blocked.`);
   }
@@ -950,7 +964,6 @@ function compute(opts) {
   // companions declarados. `opts.repoRoot` existe para el caller que computa sobre una COPIA
   // tmp del spec (on-pre-commit.js, contenido staged) — ahí la discovery desde el path no ve
   // el repo real y sin el opt degradaría a fail-closed con la evidencia intacta en disco.
-  const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
   const evCfg = parseEvidenceConfig(repoRoot);
   const fePaths = evCfg.fePaths;
   // Cada hermano declarado cuenta también en su worktree de la rama de la story: es el mismo repo, y es donde el portón

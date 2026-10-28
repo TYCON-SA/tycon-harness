@@ -69,6 +69,14 @@ caso "una clave con su nombre viejo y el nuevo"          "{\"servers\":[{$SRV,\"
 caso "la lista con su nombre viejo y el nuevo"           "{\"servers\":[{$SRV}],\"$S_OLD\":[]}" 1
 caso "el viejo mal puesto sigue rechazándose"            "{\"$S_OLD\":[{\"host\":\"srv.acme.test\",\"$E_OLD\":\"produccion\",\"$K_OLD\":\"otro\"}]}" 1
 
+# ── el valor de environment en inglés: «production» y «non-production»; los de antes siguen valiendo ─
+caso "environment production con su llave"               '{"servers":[{"host":"srv.acme.test","environment":"production","keychain":"tycon-prod-acme"}]}' 0
+caso "environment non-production, pelado"                '{"servers":[{"host":"stg.acme.test","environment":"non-production"}]}' 0
+caso "production sin llave se rechaza"                   '{"servers":[{"host":"srv.acme.test","environment":"production"}]}' 1
+caso "non-production con llave se rechaza"               '{"servers":[{"host":"stg.acme.test","environment":"non-production","keychain":"tycon-prod-acme"}]}' 1
+caso "nonproduction (sin guion) no existe"               '{"servers":[{"host":"stg.acme.test","environment":"nonproduction"}]}' 1
+caso "Production con mayúscula no existe"                '{"servers":[{"host":"srv.acme.test","environment":"Production","keychain":"tycon-prod-acme"}]}' 1
+
 # los dos catálogos en el mismo repo, en lo que va a quedar commiteado
 R="$TMP/repo"; mkdir -p "$R/.tycon" "$R/database"
 ( cd "$R" && git init -q . ) >/dev/null 2>&1

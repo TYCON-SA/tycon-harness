@@ -119,7 +119,7 @@ function stepMedians(dir, unreadable) {
   for (const file of jsonFiles(dir, unreadable)) {
     let dump;
     try { dump = readObject(file); } catch { broken += 1; continue; }
-    const m = dump && dump.marker;
+    const m = dump.marker;
     if (!m || !m.stepTimings) continue;
     let t;
     try { t = tiempos(m.stepTimings, { inicio: m.startedAt }); } catch { broken += 1; continue; }
@@ -688,7 +688,7 @@ function latestClosures(dir, nowMs, unreadable) {
   for (const { file, mtime } of recent) {
     let h;
     try { h = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
-    const m = h && h.marker;
+    const m = h.marker;
     if (!m || !m.sessionId) continue;
     const at = Date.parse(h.archivedAt);
     closed.push({ m, at: Number.isFinite(at) ? at : mtime });

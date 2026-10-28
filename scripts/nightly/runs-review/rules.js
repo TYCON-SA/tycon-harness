@@ -93,12 +93,27 @@ const ACCIONES_DE_PARTE = {
 
 /** Los servidores MCP de las integraciones de horas (`kind: timeTracking` con `mcp.server`): el núcleo no los nombra. */
 let servidores = null;
+// la frase para el resumen cuando la lista no se leyó entera: sin un servidor de horas, la bandera de horas puesta tras
+// abrir el registro por ese servidor cuenta como falla, y eso se dice en vez de contar de más callado
+const HORAS_SIN_MEDIR = 'la lista de integraciones no se leyó entera: la bandera de horas puede contar de más';
+let motivoHoras = null;
 function servidoresDeHoras() {
   if (servidores === null) {
-    try { servidores = INTEGRATIONS.listManifests().manifests.filter((m) => m.kind === 'timeTracking' && m.mcp && m.mcp.server).map((m) => m.mcp.server); }
-    catch { servidores = []; }
+    try {
+      const { manifests, problems } = INTEGRATIONS.listManifests();
+      servidores = manifests.filter((m) => m.kind === 'timeTracking' && m.mcp && m.mcp.server).map((m) => m.mcp.server);
+      if (problems.length) motivoHoras = HORAS_SIN_MEDIR;
+    } catch {
+      servidores = [];
+      motivoHoras = HORAS_SIN_MEDIR;
+    }
   }
   return servidores;
+}
+/** null si la lista de integraciones se leyó entera; si no, la frase que lo dice. */
+function horasSinMedir() {
+  servidoresDeHoras();
+  return motivoHoras;
 }
 
 /** Las banderas de las partes del Arranque, con la parte y el nombre de hoy de cada una (la primera de su lista). */
@@ -786,4 +801,4 @@ function revisar({ volcado, lineasHilo, registros }) {
 }
 
 module.exports = { CODIGOS, ESCAPES, VALOR_QUE_APAGA, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,
-  banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError };
+  banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError, horasSinMedir, HORAS_SIN_MEDIR };

@@ -1584,6 +1584,9 @@ function cmdInstall(ctx, H) {
     // del perfil y el arranque siguiente no anuncia «el canal vigente cambió»
     const policyAfter = teamStack ? H.policyOf(ctx, tree) : null;
     if (policyAfter && policyAfter.errors.length) notes.push(`la política del equipo no se pudo leer después de apilar la capa (${policyAfter.errors[0]}): sigue con el canal de antes (${policy.channel})`);
+    // con «auto» en el perfil, lo ilegible no frena: se dice qué no se usa
+    const fixed = policyAfter && H.fixedLine ? H.fixedLine(policyAfter) : null;
+    if (fixed) notes.push(fixed);
     const policyNow = policyAfter && !policyAfter.errors.length ? policyAfter : policy;
     state.policy = { channel: policyNow.channel, apply: policyNow.apply, enabled: policyNow.enabled };
     H.applyPolicy(ctx, state, policyNow);
@@ -1597,7 +1600,7 @@ function cmdInstall(ctx, H) {
       const n = SL.checkNode({ env: ctx.env });
       const m = SL.migrate(H.settingsPath(ctx), { home: ctx.home, platform: ctx.platform, nodeOk: n.ok, nodeVersion: n.version, addIfMissing: true, backup: !snap });
       if (m.changed) pieces.push('startup-line');
-      if (H.ensureImport(ctx)) pieces.push('import');
+      if (H.ensureImport(ctx, { backup: !snap })) pieces.push('import');
     }
     // 8. el perfil pedido (con --profile o contestado) y lo contestado, con el escritor único de la configuración y antes
     // del aplicador, como el camino del clon: sin esto el aplicador instalaría full aunque se pidiera minimal.
@@ -1788,7 +1791,7 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
  * contestó). Sólo ayuda cuando la versión que instala ya trae esta función: el paso desde una versión anterior sigue
  * curándose en la actualización siguiente.
  */
-function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
+function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null, timeoutMs: timeoutOverride = null } = {}) {
   const say = (l) => { if (log) log(`update: ${l}`); };
   const script = path.join(harnessDir, 'scripts', 'setup', 'harness', 'team-after-swap.js');
   const failed = (why) => {
@@ -1797,7 +1800,8 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
     return { status: 'failed', lines: [text] };
   };
   if (!exists(script)) return failed(`la versión instalada no trae ${path.relative(harnessDir, script)}`);
-  const timeoutMs = (Math.max(budgetS(ctx.env), 60) + TARBALL_BUDGET_S_DEFAULT) * 1000;
+  // el tope cubre la red de refreshTeam (la punta del equipo y su comprimido); `timeoutMs` lo fija quien llama
+  const timeoutMs = timeoutOverride > 0 ? timeoutOverride : (Math.max(budgetS(ctx.env), 60) + TARBALL_BUDGET_S_DEFAULT) * 1000;
   const r = require('child_process').spawnSync(process.execPath, [script], {
     input: JSON.stringify({ home: ctx.home, state }), env: ctx.env, encoding: 'utf8', timeout: timeoutMs, windowsHide: true, maxBuffer: 16 * 1024 * 1024,
   });
@@ -1824,6 +1828,12 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
   }
   if (out.result.status === 'same') return { status: 'same', answered: true, lines };
   return { status: 'failed', answered: true, lines: lines.length ? lines : ['capa del equipo: la versión nueva tampoco la acepta — sigue la de antes'] };
+}
+
+/** ¿La versión publicada es la que la retención deshizo? La retención la nombra por número o por commit. */
+function holdNamesTarget(hold, t) {
+  const named = [hold.commit, hold.sources && hold.sources.harness].filter(Boolean);
+  return named.includes(t.version) || named.includes(t.commit);
 }
 
 function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, yes = false, policy = null, startedAt = null, teamRefresh = false, respectLimit = false } = {}) {
@@ -1868,12 +1878,20 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   if (c0.status !== 'new') return withTeam(c0);
   const t = c0.target;
   const what = `${src.version} → ${t.version} (${t.ref} ${sha7(t.commit)})`;
-  if (state.hold && !yes && mode !== 'dry-run') return withTeam({ status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${H.holdText(state)}`] });
+  // con la actualización fijada por el equipo, la retención de una vuelta atrás vale mientras lo publicado sea lo deshecho:
+  // sale una versión posterior y vence
+  const holdLines = [];
+  if (state.hold && policy && policy.locked && !holdNamesTarget(state.hold, t)) {
+    holdLines.push(`la retención venció: deshiciste ${state.hold.commit} y salió ${t.version}; el perfil del equipo fija la actualización automática`);
+    if (log) log(`update: ${holdLines[0]}`);
+    if (mode !== 'check' && mode !== 'dry-run') state.hold = null;
+  }
+  if (state.hold && !holdLines.length && !yes && mode !== 'dry-run') return withTeam({ status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${H.holdText(state)}`] });
   if (state.failed && state.failed.reason !== 'interrupted' && !yes && mode !== 'dry-run' && state.failed.sources && state.failed.sources.harness === t.commit) {
     return withTeam({ status: 'skipped', code: 0, lines: [`la versión ${state.failed.commit} ya falló (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}): no se reintenta sola hasta que cambie la punta (o ${H.applyHint})`] });
   }
   // `availableText` de harness.js lee `label` y `changes`: la misma forma que la de un clon
-  if (mode === 'check') return withTeam(Object.assign(c0, { available: { label: `${t.version} (${t.ref} ${sha7(t.commit)})`, changes: '', version: t.version, commit: t.commit, ref: t.ref } }));
+  if (mode === 'check') return withTeam(Object.assign(c0, { lines: [...(c0.lines || []), ...holdLines], available: { label: `${t.version} (${t.ref} ${sha7(t.commit)})`, changes: '', version: t.version, commit: t.commit, ref: t.ref } }));
   if (mode === 'dry-run') {
     const own0 = TH.ownPaths({ env: ctx.env });
     // (la versión que corre hoy es la que va a quedar como previous/: el plan la mira en ese lugar del orden)
@@ -2020,7 +2038,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   if (packLine && log) log(`update: ${packLine}`);
   const dataNotice = [...(sw.kept || []), ...moved.lines, ...packLines].join(' · ') || null;
   // las reglas de lectura que esta actualización sumó o sacó (si no cambió ninguna, nada)
-  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...(a.readNotes || []), ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
+  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...holdLines, ...(a.readNotes || []), ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
 }
 
 /** `rollback` en release: el cambio al revés, los enchufes, la salud; sin previous/, dice `install --version`. */

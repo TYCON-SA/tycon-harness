@@ -19,9 +19,9 @@
 const path = require('path');
 
 // Los marcadores se arman por partes: ninguna línea de este archivo es exactamente un marcador.
-const INTERNAL_START = '<!-- tycon:' + 'internal-start -->';
-const INTERNAL_END = '<!-- tycon:' + 'internal-end -->';
-const PUBLIC_START = '<!-- tycon:' + 'public-only';
+const INTERNAL_START = '<!-- ' + 'tycon:internal-start -->';
+const INTERNAL_END = '<!-- ' + 'tycon:internal-end -->';
+const PUBLIC_START = '<!-- ' + 'tycon:public-only';
 const PUBLIC_END = '-' + '->';
 // Un marcador «casi» bien escrito: un comentario HTML que empieza como un marcador
 // y no ES uno —un espacio de más o de menos, otra caja, un guion bajo, dentro de una cita o de un ítem de lista, con

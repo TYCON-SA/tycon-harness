@@ -68,7 +68,7 @@ const CACHE_MAX_DIAS = 30;
 // ── 1. cortar el comando en segmentos ─────────────────────────────────────────────────────────
 // La definición es una sola y la comparten este hook, el freno de
 // sesiones y el freno de producción: ver scripts/lib/shell-parse.js.
-const { sinHeredocs, segmentos, tokens, PREFIJOS } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
+const { segmentos, tokens, PREFIJOS } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
 
 const AZ_LEE = new Set(['list', 'show', 'ls', 'get', 'query', 'search', 'check', 'status', 'diff', 'version', 'validate']);
 const AZ_ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);

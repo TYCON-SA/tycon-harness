@@ -100,7 +100,7 @@ test('desagregación: el total no llama la atención pero una cuenta concentra l
 test('la evidencia se persiste TACHADA y con el usuario seudonimizado', () => {
   const filas = [
     // la contraseña se arma en dos pedazos: escrita entera, el detector de publicación la toma (con razón) por una de verdad
-    ej({ msg: "Login failed for user 'sa'; Pass" + "word=Sup3rSecreta; contacto persona@example.com desde 10.0.0.7", u: 'cuenta-servicio' }),
+    ej({ msg: "Login failed for user 'sa'; Password" + "=Sup3rSecreta; contacto persona@example.com desde 10.0.0.7", u: 'cuenta-servicio' }),
     ej({ msg: 'otra cosa', ts: '2026-08-31T03:00:00Z' }),
     ej({ msg: 'otra cosa', ts: '2026-08-31T04:00:00Z' }),
   ];

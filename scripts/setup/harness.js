@@ -1478,19 +1478,22 @@ function bootstrapStatus(ctx, tree, state) {
   return { missing, vsState, vsTree };
 }
 
-/** El `@import` de ~/.claude/CLAUDE.md, una sola vez. */
-function ensureImport(ctx) {
+/** El `@import` de ~/.claude/CLAUDE.md, una sola vez. Con `backup` (quien llama no tiene la copia del mecanismo), un
+ *  CLAUDE.md que ya existe se copia a `CLAUDE.md.bak.<sello>` antes de escribirlo: nunca un cambio sin ninguna copia. */
+function ensureImport(ctx, { backup = false } = {}) {
   const file = claudeMdPath(ctx);
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch (_) { text = ''; }
+  const copyFirst = () => { if (backup && fs.existsSync(file)) mod('startup-line').backupCopy(file); };
   if (text.split('\n').some(IMPORT.isIndexLine)) {
     // una forma vieja (nombre viejo del lugar, o el README.md que era el índice) pasa a la de hoy en su lugar; con varias
     // (el código de antes, corrido después de una vuelta atrás, agrega la suya) queda una
     const d = IMPORT.rewrite(text);
-    if (d.changed) mod('state').writeAtomic(file, d.text);
+    if (d.changed) { copyFirst(); mod('state').writeAtomic(file, d.text); }
     return false;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  copyFirst();
   mod('state').writeAtomic(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}${IMPORT_LINE}\n`);
   return true;
 }
@@ -1521,6 +1524,13 @@ function needState(ctx) {
 }
 const busy = (lock) => ({ code: 3, lines: [`harness.js: ${lock.reason || 'otra sesión está actualizando'}`] });
 
+/** Con la actualización fijada por el perfil del equipo: lo que la máquina o el entorno dicen y no se usa, o null. */
+function fixedLine(policy) {
+  if (!policy || !policy.locked || !(policy.overridden || []).length) return null;
+  const what = policy.overridden.map((o) => (o.origin === 'error' ? `lo ilegible (${o.value})`
+    : o.origin === 'env' ? `${o.name}=${o.value}` : `«${o.value}» en ${o.name}`)).join(', ');
+  return `el perfil del equipo fija la actualización automática: ${what} no se usa`;
+}
 function policyOf(ctx, tree) {
   const p = mod('channel').read(ctx.home, ctx.env, { tree });
   return p;
@@ -1785,7 +1795,7 @@ function releaseHelpers(ctx) {
   const S = mod('state');
   return {
     takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
-    settingsPath, policyOf, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
+    settingsPath, policyOf, fixedLine, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
@@ -1841,7 +1851,7 @@ function cmdInstall(ctx) {
   // (o sin estado) es una instalación, como siempre.
   if (ctx.opts.tool !== undefined && !['channel', 'local', 'from-existing', 'source', 'profile', 'integrations', 'packs', 'harness-clone'].some((k) => ctx.opts[k] !== undefined)) {
     const st = loadState(ctx);
-    if (st.status === 'ok') return mod('tool-change').add(ctx, st.state, toolHelpers(ctx));
+    if (st.status === 'ok') return mod('tool-change').add(ctx, st.state, toolHelpers());
   }
   const fromExisting = Boolean(ctx.opts['from-existing']);
   let tree = ctx.opts.local ? real(ctx.opts.local) : ctx.tree;
@@ -2136,7 +2146,7 @@ function cmdInstall(ctx) {
     if (!m.changed && m.reason && !/sin cambios|nada que migrar/.test(m.reason)) notes.push(m.reason);
 
     // (e) el @import, una vez (no en --from-existing: ya está en la máquina)
-    if (!fromExisting && ensureImport(ctx)) pieces.push('import');
+    if (!fromExisting && ensureImport(ctx, { backup: !snap })) pieces.push('import');
 
     // `--from-existing` sobre lo mismo: nada cambió, y se dice; no corre el aplicador ni la salud (su atajo es el de
     // siempre, sin la línea de la copia). Sin `--from-existing`, «sin cambios» lo decide el PLAN (más
@@ -2338,6 +2348,17 @@ function syncSourceCommits(ctx, state) {
     if (h) s.commit = h;
   }
 }
+/** Repone la copia fija desde el árbol tras una vuelta atrás: null si salió bien, o el motivo del fallo. */
+function restoreFixedCopy(ctx, tree, state) {
+  try { copyBootstrap(ctx, tree, state); return null; } catch (e) { return e.message; }
+}
+/** Cómo terminó la vuelta atrás, para el aviso: volvió, volvió sin poder reponer la copia fija, o no pudo volver. Una
+ *  copia fija que no se repuso hace fallar la próxima actualización, así que el aviso lo dice y nombra el arreglo. */
+function rollbackOutcome(restored, number, copyError) {
+  if (!restored.ok) return `NO pudo volver sola (${(restored.lines || [])[0] || 'sin detalle'}): harness.js rollback`;
+  if (copyError) return `volvió a ${number}, pero NO pude reponer la copia fija de arranque (${copyError}): la próxima actualización va a fallar hasta que la repongas con harness.js install`;
+  return `volvió sola a ${number}`;
+}
 /**
  * La versión nueva no quedó sana: el «después» de la copia es lo que quedó roto, se restaura por piezas a esa
  * copia (mismo camino que `rollback`), se anota `failed` con las puntas que fallaron y se deja el aviso. La copia fija
@@ -2373,9 +2394,11 @@ function failUpdate(ctx, state, { snap, rec, before, after, tips, failures, reas
   state.version.number = versionNumber(ctx, state);
   // la copia fija vuelve con el árbol: si quedó la de la versión que falló (la salud pasó, la copia se refrescó y el
   // proceso murió antes de grabar), sin esto toda actualización siguiente fallaría por «copia fija adulterada»
-  if (restored.ok) { try { copyBootstrap(ctx, state.tree, state); } catch (e) { if (log) log(`update: no pude reponer la copia fija tras la vuelta atrás (${e.message})`); } }
+  const copyError = restored.ok ? restoreFixedCopy(ctx, state.tree, state) : null;
+  if (copyError && log) log(`update: no pude reponer la copia fija tras la vuelta atrás (${copyError})`);
   state.failed = { commit: after, sources: tips, at: nowIso(), log: S.paths(ctx.home).log, reason };
-  const back = restored.ok ? `volvió sola a ${state.version.number}` : `NO pudo volver sola (${(restored.lines || [])[0] || 'sin detalle'}): harness.js rollback`;
+  if (copyError) state.failed.fixed_copy = copyError;
+  const back = rollbackOutcome(restored, state.version.number, copyError);
   R.setNotice(state, `la actualización ${before} → ${after} no quedó sana (${failures[0]}): ${back}; esa versión no se reintenta sola (cuando cambie la punta, o con ${applyHint}) — detalle en ${S.paths(ctx.home).log}`);
   if (log) log(`update: ${reason}: ${failures.join(' · ')} · ${(restored.lines || []).join(' · ')}`);
   return { status: 'failed', code: 1, lines: [`harness.js update: la versión ${after} no quedó sana (${failures.join(' · ')}) — ${back}`, ...(restored.lines || []).slice(0, 5)] };
@@ -2815,14 +2838,21 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   for (const x of checks) tips[x.src.name] = x.c.status === 'older' ? x.c.from : (x.c.to || x.c.from);
   for (const x of layerChecks) tips[x.src.name] = x.p.commit;
   // la retención de un rollback: ni con `apply: auto` se avanza hasta `rollback --release` o `update --yes`; con
-  // `apply: ask` tampoco se ofrece la versión deshecha como «disponible»
-  if (state.hold && !yes && mode !== 'dry-run') return { status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${holdText(state)}`] };
+  // `apply: ask` tampoco se ofrece la versión deshecha como «disponible». Con la actualización fijada por el equipo, la
+  // retención vale hasta que sale una versión posterior a la deshecha: ahí vence y se avanza
+  const holdLines = [];
+  if (state.hold && !mod('channel').holdStands(state.hold, tips, policy)) {
+    holdLines.push(`la retención venció: deshiciste ${state.hold.commit} y salió una versión posterior; el perfil del equipo fija la actualización automática`);
+    if (log) log(`update: ${holdLines[0]}`);
+    if (persist && mode !== 'check' && mode !== 'dry-run') state.hold = null;
+  }
+  if (state.hold && !holdLines.length && !yes && mode !== 'dry-run') return { status: 'held', code: 0, lines: [`hay versión nueva (${what}), pero ${holdText(state)}`] };
   // un intento que ya falló sobre ESTAS puntas no se repite solo, ni se ofrece; `interrupted` sí se reintenta
   if (state.failed && state.failed.reason !== 'interrupted' && !yes && mode !== 'dry-run' && sameTips(state.failed.sources, tips)) {
     return { status: 'skipped', code: 0, lines: [`la versión ${state.failed.commit} ya falló (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}): no se reintenta sola hasta que cambie la punta (o ${applyHint})`] };
   }
   // (sólo la capa: el aviso se arma con la línea «capa a → b», no con el número del público, que no cambia)
-  if (mode === 'check') return { status: 'new', code: 3, lines: [`hay versión nueva: ${what}`, ...older, ...layerNotes], available: fresh.length ? describeAvailable(ctx, state, fresh, channel) : null, fresh };
+  if (mode === 'check') return { status: 'new', code: 3, lines: [`hay versión nueva: ${what}`, ...holdLines, ...older, ...layerNotes], available: fresh.length ? describeAvailable(ctx, state, fresh, channel) : null, fresh };
 
   // todas o ninguna: primero el plan de cada una (la que no se baja no se mueve). Con capa, lo que ella pisó a propósito
   // no cuenta como «cambios sin commitear» del árbol: vuelve al público antes de mover y se re-apila después
@@ -2931,6 +2961,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   const done = finishHealth(ctx, state, { snap, ownSnap, rec, before, after, tips, report: applier.report, applierOut: applier.out, log, moved });
   if (done.status === 'applied' && layerMoves.length) done.lines = [done.lines[0], ...layerLines, ...layerNotes, ...done.lines.slice(1)];
   if (done.status === 'applied') { const pl = packRetiredLine(applier); if (pl) { done.lines.push(pl); if (log) log(`update: ${pl}`); } }
+  if (done.status === 'applied' && holdLines.length) done.lines.splice(1, 0, ...holdLines);
   return done;
 }
 
@@ -3168,7 +3199,7 @@ function cmdStartup(ctx) {
       // el `@import` del índice: si falta (una vuelta atrás de otra versión lo quitó), se repone acá, en cada
       // arranque, como la pieza propia que es; nadie más lo repone y la máquina queda sin las guías cargadas. Con una
       // forma vieja (el README.md que era el índice), la pasa a la de hoy
-      if (state.mode !== 'developer') { try { if (ensureImport(ctx)) log('startup: el @import del índice faltaba en CLAUDE.md: repuesto'); } catch (e) { log(`startup: no pude reponer el @import (${e.message})`); } }
+      if (state.mode !== 'developer') { try { if (ensureImport(ctx, { backup: true })) log('startup: el @import del índice faltaba en CLAUDE.md: repuesto'); } catch (e) { log(`startup: no pude reponer el @import (${e.message})`); } }
       // sin saber qué sobraba, el perfil de antes queda anotado y el próximo arranque lo reintenta
       if (sw.profile && sw.profile.ok && dropped !== null) state.profile = { value: sw.profile.value, origin: sw.profile.origin };
       if (ctx.opts.force) {
@@ -3187,7 +3218,7 @@ function cmdStartup(ctx) {
     // una falla de `install` no es una actualización que volvió atrás: no se movió nada, y lo que la
     // retoma es `install` otra vez
     if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma — harness.js doctor lo detalla`;
-    if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y volvió sola a ${state.version && state.version.number}; ${state.failed.reason === 'interrupted' ? 'se reintenta en el próximo arranque' : `no se reintenta sola hasta que cambie la punta (o ${applyHint})`} — harness.js doctor lo detalla`;
+    if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y ${state.failed.fixed_copy ? rollbackOutcome({ ok: true }, state.version && state.version.number, state.failed.fixed_copy) : `volvió sola a ${state.version && state.version.number}`}; ${state.failed.reason === 'interrupted' ? 'se reintenta en el próximo arranque' : `no se reintenta sola hasta que cambie la punta (o ${applyHint})`} — harness.js doctor lo detalla`;
     if (!notice && keepFromLastLook && !fetched && policy.enabled && state.mode !== 'developer') notice = state.notice;
     // una herramienta instalada y sin enchufar: se dice en cada arranque, sin pisar otro
     // aviso; se enchufa en la próxima instalación, no sola
@@ -3748,6 +3779,7 @@ function cmdDoctor(ctx) {
     const policy = policyOf(ctx, tree);
     if (policy.errors.length) add('fail', `política de actualización mal escrita: ${policy.errors.join(' · ')}`);
     else add('ok', `política: canal ${policy.channel} (${policy.origins.channel}) · aplicación ${policy.apply} (${policy.origins.apply})${policy.enabled ? '' : ' · TYCON_UPDATE=0'}`);
+    if (fixedLine(policy)) add('ok', fixedLine(policy));
     for (const it of mod('release').doctorItems(ctx, state, { fetch: Boolean(ctx.opts.fetch), channel: policy.errors.length ? null : policy.channel })) add(it.level, it.text);
     // el clon que esta máquina MANTIENE. Los avisos de los nocturnos no leen de ahí: leen
     // del clon de MANTENIMIENTO (`paths.maintainers`, scripts/lib/night-data.js), que esta misma orden nombra más abajo
@@ -3951,6 +3983,7 @@ function cmdDoctor(ctx) {
     // —un clon interno, o una copia servida desde otro lado— los dos canales son `main` sin reescritura, y se dice
     const publicCopy = isPublicCopy(ctx, state);
     add('ok', `política: canal ${policy.channel} (${policy.origins.channel}) · aplicación ${policy.apply} (${policy.origins.apply})${policy.enabled ? '' : ' · TYCON_UPDATE=0'}${publicCopy ? '' : ` · ${NOT_PUBLIC_NOTE}`}`);
+    if (fixedLine(policy)) add('ok', fixedLine(policy));
     // «una máquina del equipo sin el perfil» sólo en un clon INTERNO de verdad: un árbol que no trae la lista de remotos
     // públicos (la deja el exportador en la copia). Un fork de la copia, o la copia servida desde una carpeta local, trae
     // la lista y su remoto no está en ella: no es una máquina del equipo, y arriba ya se dijo que su remoto no es el
@@ -4601,7 +4634,7 @@ function cmdUninstall(ctx) {
   if (read.status === 'missing') return { code: 0, lines: ['nada que quitar: el arnés no está instalado (no hay estado)'] };
   if (read.status !== 'ok' && !(read.status === 'tree_missing' && read.state)) { const f = S.fail(read, { home: ctx.home }); return { code: f.code, lines: [f.line] }; }
   // `uninstall --tool <una>`: desenchufa sólo esa herramienta; el arnés y la otra quedan
-  if (ctx.opts.tool !== undefined) return mod('tool-change').remove(ctx, read.state, toolHelpers(ctx));
+  if (ctx.opts.tool !== undefined) return mod('tool-change').remove(ctx, read.state, toolHelpers());
   const U = mod('uninstall');
   const noTree = read.status === 'tree_missing';
   const head = noTree ? [`el árbol ${read.state.tree} no está: trabajo con el registro`] : [];
@@ -5011,4 +5044,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };

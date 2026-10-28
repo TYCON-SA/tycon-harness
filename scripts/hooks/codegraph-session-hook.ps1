@@ -22,9 +22,9 @@ $CwdFull = [System.IO.Path]::GetFullPath($Cwd).TrimEnd('\', '/')
 $HomeFull = if ($HOME) { [System.IO.Path]::GetFullPath($HOME).TrimEnd('\', '/') } else { $null }
 if (($HomeFull -and $CwdFull -ieq $HomeFull) -or ($CwdFull -eq [System.IO.Path]::GetPathRoot($Cwd).TrimEnd('\', '/'))) { exit 0 }
 
-# Herramientas presentes
+# El binario de codegraph es imprescindible (indexa). El CLI claude no: sólo registra el servidor del lado Claude. Una
+# máquina sólo con Codex tiene codegraph sin claude, y sin indexar su servidor respondería vacío (como el gancho de Mac).
 if (-not (Get-Command codegraph -ErrorAction SilentlyContinue)) { exit 0 }
-if (-not (Get-Command claude -ErrorAction SilentlyContinue))    { exit 0 }
 
 # Es un proyecto?
 $IsProject = $false
@@ -56,17 +56,21 @@ if ($LASTEXITCODE -eq 0 -and $Ex) {
     if ($ExLines -notcontains ".codegraph/") { Add-Content -LiteralPath $Ex -Value ".codegraph/" }
 }
 
-# Registrar el MCP server (forma larga --path por la colision de -p)
-$Bin = (Get-Command codegraph).Source
-Push-Location -LiteralPath $Cwd
-try {
-    claude mcp remove codegraph 2>$null | Out-Null
-    & claude mcp add codegraph -- $Bin serve --mcp --path $Cwd 2>$null | Out-Null
+# Registrar el MCP server del lado Claude (forma larga --path por la colision de -p), sólo si claude está. La marca de
+# completado se escribe sólo con el trabajo hecho: con claude, si el registro salió bien (si falló, la próxima sesión
+# lo reintenta, sin volver a indexar); sin claude, el índice es todo lo que hay que hacer.
+$Done = $true
+if (Get-Command claude -ErrorAction SilentlyContinue) {
+    $Bin = (Get-Command codegraph).Source
+    Push-Location -LiteralPath $Cwd
+    try {
+        claude mcp remove codegraph 2>$null | Out-Null
+        & claude mcp add codegraph -- $Bin serve --mcp --path $Cwd 2>$null | Out-Null
+        $Done = ($LASTEXITCODE -eq 0)
+    }
+    finally { Pop-Location }
 }
-finally { Pop-Location }
-
-# Marca de completado
-if (Test-Path -LiteralPath (Join-Path $Cwd ".codegraph")) {
+if ($Done -and (Test-Path -LiteralPath (Join-Path $Cwd ".codegraph"))) {
     New-Item -ItemType File -Path $Marker -Force | Out-Null
 }
 

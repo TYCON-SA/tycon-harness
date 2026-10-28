@@ -32,10 +32,8 @@ const STEPS = ['after-snapshot', 'after-reroot', 'after-import'];
 const IMPORT = require('./import-line.js');
 const NEW_IMPORT = IMPORT.IMPORT_LINE;
 const OLD_IMPORT = IMPORT.LEGACY_PLACE_FORMS.find((l) => l.endsWith('/README.md'));
-const lexists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } };
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 const claudeMdPath = (ctx) => ctx.env.CLAUDE_MD_PATH || path.join(ctx.home, '.claude', 'CLAUDE.md');
-const trimmed = (l) => l.replace(/\r$/, '').trim();
 
 /**
  * CLAUDE.md con la línea del índice en su forma de hoy: la del nombre viejo (o la del README.md que era el índice) pasa al

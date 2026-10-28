@@ -1028,7 +1028,7 @@ function selftest() {
   fs.writeFileSync(path.join(tmp3, 'otra-cosa.txt'), 'x');
   sh3('add', '-A'); sh3('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'nada que ver');
   const baseSinEngram = git(tmp3, ['rev-parse', 'HEAD~1']).trim();
-  const prSinEngram = revisar({ repo: tmp3, base: git(tmp3, ['rev-parse', 'HEAD~1']).trim() });
+  const prSinEngram = revisar({ repo: tmp3, base: baseSinEngram });
 
   // `--staged`: el mismo criterio antes de que el commit exista.
   escribirIndice(['aaaa1111']);                       // pierde otra más, sin commitear

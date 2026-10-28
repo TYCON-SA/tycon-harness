@@ -36,7 +36,6 @@
  * Uso:  node operations-copy.js subir --repo <clon de main> --account <c> --container <k> [--dry-run]
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
