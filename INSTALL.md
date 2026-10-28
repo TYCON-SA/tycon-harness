@@ -299,7 +299,9 @@ depende de la política, `update.apply`:
 - **`auto`**: la instala sola al arrancar la sesión.
 
 La política se fija con `update.apply` en `~/.claude/tycon.json` o con la variable `TYCON_UPDATE_APPLY`; `TYCON_UPDATE=0`
-apaga la consulta. `harness.js update --check` dice si hay una versión nueva sin aplicarla.
+apaga la consulta. Si el perfil del equipo fija `update.apply: auto`, manda el perfil: ni la máquina, ni la variable, ni
+`TYCON_UPDATE=0` lo cambian, y `doctor` dice qué valor no se usó. `harness.js update --check` dice si hay una versión
+nueva sin aplicarla.
 
 La versión anterior queda guardada en `~/.tycon/previous`. Si la nueva no pasa la comprobación de salud, el arnés vuelve
 solo a la anterior; para volver a mano, `harness.js rollback` (sin bajar nada). Después de volver atrás, el arnés deja

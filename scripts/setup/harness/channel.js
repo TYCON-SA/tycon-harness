@@ -7,6 +7,13 @@
 // Un valor fuera del vocabulario es un ERROR, no «apagado». `TYCON_UPDATE=0` apaga la actualización del todo
 // (`startup` queda en importar engram + aplicador + salud).
 //
+// LA ACTUALIZACIÓN FIJADA POR EL EQUIPO: si el perfil del ÁRBOL del arnés dice `update.apply: auto`, la aplicación es
+// `auto` y la actualización está prendida, digan lo que digan la máquina, `TYCON_UPDATE_APPLY` o `TYCON_UPDATE=0`
+// (`locked: true`). Lo que no se usó queda en `overridden`, para decirlo. Ni `TYCON_PROFILE=<ruta>` ni
+// `TYCON_PROFILE=0` lo cambian: una variable la puede poner cualquiera. Quedan afuera el modo desarrollador (el clon de
+// quien mantiene no se actualiza solo) y la retención de una vuelta atrás, que con la actualización fijada vale sólo
+// hasta que sale una versión posterior a la deshecha (`holdStands`).
+//
 // Mientras `tycon-config.js` no conozca la sección `update` (otra pieza la suma), su ausencia se
 // trata como «sin valor» y se leen las variables y `~/.claude/tycon.json` directamente, con las mismas reglas; cuando la
 // sección exista, manda `tycon-config`. `set` escribe SÓLO `update.channel` en `~/.claude/tycon.json` (atómico, preserva
@@ -114,10 +121,43 @@ function readFromConfig(home, env, tree) {
 function read(home = os.homedir(), env = process.env, { tree } = {}) {
   const r = vocabularyHasUpdate() ? readFromConfig(home, env, tree) : readFallback(home, env);
   const off = env[OFF_VAR] === undefined ? '' : String(env[OFF_VAR]).trim();
-  return {
+  const out = {
     channel: r.channel, apply: r.apply, enabled: off !== '0', origins: r.origins, errors: r.errors,
     skillsSource: r.skillsSource || SKILLS_SEPARATE, skillsSourceOrigin: r.skillsSourceOrigin || 'default',
+    locked: false, overridden: [],
   };
+  if (!teamFixesAuto(tree || config.RAIZ_ARNES)) return out;
+  out.locked = true;
+  const applyVar = env[VARS.apply] === undefined ? '' : String(env[VARS.apply]).trim();
+  if (applyVar && applyVar !== 'auto') out.overridden.push({ origin: 'env', name: VARS.apply, value: applyVar });
+  const machine = readMachine(home);
+  const mApply = machine.data && isObject(machine.data.update) ? machine.data.update.apply : undefined;
+  if (mApply !== undefined && mApply !== 'auto') out.overridden.push({ origin: 'maquina', name: machine.file, value: mApply });
+  if (off === '0') out.overridden.push({ origin: 'env', name: OFF_VAR, value: off });
+  out.apply = 'auto';
+  out.origins = { ...out.origins, apply: 'perfil' };
+  out.enabled = true;
+  return out;
+}
+
+/** ¿El perfil del equipo en la raíz del árbol fija `update.apply: auto`? Un perfil ausente o ilegible no fija nada. */
+function teamFixesAuto(tree) {
+  if (!tree || typeof config.perfilDelArbol !== 'function') return false;
+  try {
+    const data = JSON.parse(fs.readFileSync(config.perfilDelArbol(tree).ruta, 'utf8').replace(/^\uFEFF/, ''));
+    return isObject(data) && isObject(data.update) && data.update.apply === 'auto';
+  } catch (_) { return false; }
+}
+
+/**
+ * ¿Sigue valiendo la retención de una vuelta atrás? Sin la actualización fijada, hasta levantarla a mano. Fijada por el
+ * equipo, mientras lo publicado sea la versión deshecha: cuando alguna fuente de la retención trae otra punta, vence.
+ */
+function holdStands(hold, tips, policy) {
+  if (!hold) return false;
+  if (!policy || !policy.locked) return true;
+  const undone = isObject(hold.sources) ? hold.sources : {};
+  return !Object.keys(undone).some((k) => tips && tips[k] && tips[k] !== undone[k]);
 }
 
 // La copia del lector de configuración que instala el freno de producción (con sudo; se actualiza sólo al reinstalarlo)
@@ -160,4 +200,4 @@ function set(home = os.homedir(), value, { guardLib = GUARD_LIB } = {}) {
   return out;
 }
 
-module.exports = { CHANNELS, APPLIES, DEFAULTS, VARS, OFF_VAR, read, set, machineFile };
+module.exports = { CHANNELS, APPLIES, DEFAULTS, VARS, OFF_VAR, read, set, machineFile, holdStands };
