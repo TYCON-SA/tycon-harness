@@ -26,6 +26,10 @@
 #     por peso con scripts/ci/suites-shard.js. Las partes juntas son la corrida entera (public-ci.sh,
 #     TYCON_PUBLIC_CI_PART); la lista tiene que traer `checks` y TODAS las `suites-<i>-of-<n>`, de 1 a n: una que falta
 #     deja suites sin correr y el veredicto igual verde;
+#   · en un pull request corre SÓLO la parte `checks`: cada `suites-<i>-of-<n>` y `installer-floor` terminan al
+#     instante, verdes, con una línea que lo dice. La corrida entera va en la cola (merge_group) y en un push a main que
+#     no hizo la cola: un pedido no la paga dos veces (unos 20 minutos cada una). Lo que entra por la cola la pasó antes;
+#     lo que un administrador mergea salteándola la corre después, en main, sin que nada la corte (ver `concurrency`);
 #   · el último job se llama `public-ci` y es el ÚNICO chequeo que las reglas de la rama exigen. Tiene nombre estable a
 #     propósito: cambiárselo deja los merges esperando un chequeo que no llega nunca.
 #
@@ -43,9 +47,11 @@ on:
 
 # Un cambio nuevo en la misma rama (o en el mismo pedido) corta la corrida anterior: sólo importa la última.
 # En la cola cada grupo tiene su propia rama (gh-readonly-queue/main/pr-<n>-<sha>): los grupos no se cortan entre sí.
+# En main no se corta nada: el push que no viene de la cola (el merge directo de un administrador) es la única corrida
+# entera de ese commit, porque el pedido corrió sólo `checks`; el push siguiente la cortaría y el commit quedaría sin ella.
 concurrency:
   group: public-ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -76,6 +82,11 @@ jobs:
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
+          # en un pedido corre sólo `checks`: las suites las corre la cola, y nada entra a main sin pasarlas
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ]; then
+            echo "en un pedido corre sólo la parte checks: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"
+            exit 0
+          fi
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
             # los controles y su regla salen de la base: en la cola, la base del grupo; en un pedido, la punta de la rama
@@ -121,17 +132,13 @@ jobs:
         env:
           TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
           TYCON_PUBLIC_CI_PART: installer-floor
-          BASE_REF: ${{ github.base_ref }}
         run: |
-          # sólo en un pedido: con el rango, un cambio que no toca la instalación sale verde sin correrlas. En la cola
-          # y en el push a main corre siempre: nada entra a main sin pasar el piso. El guion sale de la base, como arriba
+          # en un pedido no corre: el piso lo corre la cola, y en la cola y en el push a main corre siempre, entero
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            BASE="$(git rev-parse --verify "origin/${BASE_REF}^{commit}")" || exit 1
-            git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"
-            bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD"
-          else
-            bash scripts/ci/public-ci.sh --clean-machine
+            echo "en un pedido corre sólo la parte checks: installer-floor corre en la cola de merge"
+            exit 0
           fi
+          bash scripts/ci/public-ci.sh --clean-machine
       - name: La salida completa de cada paso (sólo si algo quedó en rojo)
         if: failure()
         env:
