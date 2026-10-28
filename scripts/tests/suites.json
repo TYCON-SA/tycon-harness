@@ -1008,6 +1008,12 @@
       "requiere": []
     },
     {
+      "__nota": "una vuelta de revisores no se lanza sobre una carpeta sin ningún cambio contra la rama principal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/empty-work-gate.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/step-7c-macro.test.js",
       "requiere": []
@@ -1484,6 +1490,12 @@
       "__nota": "el examen de revisores encuentra los revisores donde el arnés los instala, también en una máquina sólo con Codex.",
       "raiz": "arnes",
       "ruta": "tests/advisor-runner-agents-dir.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el examen de revisores suma los casos que viven sólo en el clon de mantenimiento.",
+      "raiz": "arnes",
+      "ruta": "tests/exam-maintainers-cases.test.js",
       "requiere": []
     },
     {

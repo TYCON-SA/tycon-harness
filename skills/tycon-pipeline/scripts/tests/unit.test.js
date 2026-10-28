@@ -1236,6 +1236,34 @@ test('writeFollowups preserva items ABIERTOS que no vienen en el nuevo set (BUG-
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('writeFollowups conserva los resueltos de otras tandas con la misma regla y archivo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-fu-tandas-'));
+  const story = path.join(dir, '3-1.md');
+  fs.writeFileSync(story, '---\nstory: 3-1\nstatus: review\n---\n\n## Story\nBody.\n');
+  // la primera tanda: dos hallazgos distintos de la misma regla sobre el mismo archivo, los dos arreglados
+  const fa = path.join(dir, 'fa.json');
+  fs.writeFileSync(fa, JSON.stringify([
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'fixed', reason: 'log sin sanitizar en Alta' },
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'fixed', reason: 'log sin sanitizar en Baja' },
+  ]));
+  writeFollowups({ story, findings: fa });
+  // la segunda tanda: la misma regla sobre el mismo archivo, un hallazgo nuevo y abierto
+  const fb = path.join(dir, 'fb.json');
+  fs.writeFileSync(fb, JSON.stringify([
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'open', reason: 'log sin sanitizar en Modificar' },
+  ]));
+  const r = writeFollowups({ story, findings: fb });
+  const txt = fs.readFileSync(story, 'utf8');
+  assert.match(txt, /- \[x\].*en Alta/, 'el resuelto de la primera tanda sigue');
+  assert.match(txt, /- \[x\].*en Baja/, 'el segundo resuelto de la primera tanda también');
+  assert.match(txt, /- \[ \].*en Modificar/, 'el abierto de la segunda tanda entra abierto');
+  assert.equal(r.total, 3);
+  assert.equal(r.open, 1);
+  // re-escribir el mismo set es idempotente: no duplica
+  assert.equal(writeFollowups({ story, findings: fb }).total, 3);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // ── BUG-PIPELINE-004: findRepoRootsForStory layout-agnóstico (docs/ y --repo) ──
 test('findRepoRootsForStory resuelve el repo-root con stories en docs/ (BUG-004)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-rr004-'));
