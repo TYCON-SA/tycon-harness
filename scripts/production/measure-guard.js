@@ -42,7 +42,8 @@ const muestra = cmds.slice(-N);
 const RAIZ_REPOS = process.argv[3] || (() => {
   const r = require(path.join(__dirname, '..', 'lib', 'repos-root.js')).resolveReposRoot();
   if (!r.root) { console.error(`measure-guard: no medido — sin raíz de repos (${r.motivo}). Pasala como 3er argumento o definí TYCON_REPOS_ROOT.`); process.exit(2); }
-  return r.root;
+  // todas las carpetas de repos, en la forma que el freno lee de TYCON_REPOS_ROOT (separadas como en el PATH)
+  return (Array.isArray(r.roots) && r.roots.length ? r.roots : [r.root]).join(path.delimiter);
 })();
 const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'measure-guard-'));
 fs.mkdirSync(path.join(casa, '.claude', 'shell-snapshots'), { recursive: true });

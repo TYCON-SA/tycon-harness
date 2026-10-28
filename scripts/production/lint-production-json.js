@@ -61,7 +61,9 @@ function aNuevas(obj, viejas, donde, malos) {
 // dos escrituras, y la que importa para frenar —el nombre pelado— podría no estar declarada.
 // Con el puerto acá, la persona sigue tipeando el nombre pelado y NINGUNA validación se afloja.
 const CLAVES_SERVIDOR = new Set(['host', 'environment', 'keychain', 'base', 'port']);
-const AMBIENTES = new Set(['produccion', 'no-produccion']);
+// «production» y «non-production»; los de antes del renombre siguen valiendo
+const AMBIENTES = new Set(['production', 'non-production', 'produccion', 'no-produccion']);
+const ES_PRODUCCION = new Set(['production', 'produccion']);
 const PREFIJO_LLAVERO = 'tycon-prod-';
 const HOST = /^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 // sin corchetes, comillas, espacios ni `;`: va como argumento `-d` del cliente y nada más
@@ -108,14 +110,14 @@ function revisar(texto, etiqueta) {
       else vistos.set(clave, i);
     }
     if (!AMBIENTES.has(s.environment)) {
-      malos.push(`${donde}: «environment» tiene que ser «produccion» o «no-produccion» (vino ${JSON.stringify(s.environment)})`);
+      malos.push(`${donde}: «environment» tiene que ser «production» o «non-production» (vino ${JSON.stringify(s.environment)})`);
       return;
     }
-    if (s.environment === 'produccion') {
+    if (ES_PRODUCCION.has(s.environment)) {
       if (typeof s.keychain !== 'string' || !s.keychain) malos.push(`${donde}: un servidor de producción necesita «keychain» (la entrada del Llavero con el usuario y la contraseña)`);
       else if (!s.keychain.startsWith(PREFIJO_LLAVERO)) malos.push(`${donde}: «keychain» tiene que empezar con «${PREFIJO_LLAVERO}» (vino «${s.keychain}»)`);
     } else if ('keychain' in s) {
-      malos.push(`${donde}: un servidor «no-produccion» no lleva «keychain» (no hace falta la puerta para consultarlo)`);
+      malos.push(`${donde}: un servidor «non-production» no lleva «keychain» (no hace falta la puerta para consultarlo)`);
     }
   });
   return malos;
@@ -125,7 +127,7 @@ function revisar(texto, etiqueta) {
 function declaraProduccion(doc) {
   if (!doc || typeof doc !== 'object') return false;
   const lista = Array.isArray(doc.servers) ? doc.servers : Array.isArray(doc.servidores) ? doc.servidores : [];
-  return lista.some((x) => x && (x.environment === 'produccion' || x.ambiente === 'produccion'));
+  return lista.some((x) => x && (ES_PRODUCCION.has(x.environment) || ES_PRODUCCION.has(x.ambiente)));
 }
 
 /** Los `.tycon/production.json` (o con su nombre viejo) STAGEADOS del repo, con su contenido del índice (no el del disco). */
@@ -196,8 +198,8 @@ function main(argv) {
   console.error('⛔ catálogo de producción (.tycon/production.json) rechazado:');
   for (const m of malos) console.error(`   · ${m}`);
   console.error('\n   Forma aceptada (sólo estas claves; «base» es opcional y dice a qué base entra la puerta):');
-  console.error('   {"servers":[{"host":"x.database.windows.net","environment":"produccion","keychain":"tycon-prod-x","base":"xdb"},');
-  console.error('               {"host":"test.bizuit.example","environment":"no-produccion"}]}');
+  console.error('   {"servers":[{"host":"x.database.windows.net","environment":"production","keychain":"tycon-prod-x","base":"xdb"},');
+  console.error('               {"host":"acme-test.example.com","environment":"non-production"}]}');
   console.error('   Detalle: guides/produccion-con-permiso.md');
   return 1;
 }

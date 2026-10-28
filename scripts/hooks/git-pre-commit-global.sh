@@ -162,8 +162,36 @@ if [ "${TYCON_PROD_LINT:-1}" != "0" ]; then
   fi
 fi
 
-# ── 2. Sync de engram (conducta previa, intacta) ──────────────────────────────────────────────
-# Sólo en repos que lo pidieron: con .engram/ Y .engram-project. Nunca rechaza un commit.
+# ── 2. Sync de engram ──────────────────────────────────────────────────────────────────────────
+# Sólo en repos que lo pidieron: con .engram/ Y .engram-project. Rechaza el commit sólo si la memoria que el commit puede
+# llevar trae una clave: exportarla y prepararla la llevaría al repo y a su historia.
+cd "$REPO_ROOT" || exit 0
+# sin la carpeta en el disco y sin nada de ella preparado, no hay memoria que mirar (un preparado cuya carpeta se borró
+# después igual viaja: por eso no alcanza con mirar el disco)
+if [ ! -d "$REPO_ROOT/.engram" ] && [ -z "$(git diff --cached --name-only -- .engram 2>/dev/null)" ]; then exit 0; fi
+
+# La revisión de claves corre en todo repo con .engram/, antes de cualquier salida de abajo: con el sync apagado o sin
+# engram, un `git add -A` igual prepara la memoria. Mira lo preparado (como está en el índice, que es lo que se guarda) y
+# lo pendiente en el disco. Con una clave, el commit no se crea y la memoria se saca de lo preparado. Sin el detector
+# (un arnés viejo) o sin poder mirar, la memoria se saca de lo preparado y el commit pasa: viaja cuando se pueda revisar.
+_SECRETOS="$_TCG_DIR/scripts/lib/engram-chunk-secrets.js"
+revisar_memoria() {
+  local rc
+  if [ -f "$_SECRETOS" ] && command -v "$HNODE" >/dev/null 2>&1; then
+    "$HNODE" "$_SECRETOS" --repo "$REPO_ROOT"
+    rc=$?
+  else
+    rc=2
+    echo "engram: no pude revisar la memoria antes de prepararla (falta $_SECRETOS o node): no se prepara; viaja en un commit cuando el arnés esté al día" >&2
+  fi
+  case "$rc" in
+    0) return 0 ;;
+    1) git reset -q -- .engram/ 2>/dev/null; exit 1 ;;
+    *) git reset -q -- .engram/ 2>/dev/null; exit 0 ;;
+  esac
+}
+revisar_memoria
+
 [ -d "$REPO_ROOT/.engram" ] || exit 0
 [ -f "$REPO_ROOT/.engram-project" ] || exit 0
 
@@ -187,10 +215,11 @@ PROJECT="$(tr -d '[:space:]' < "$REPO_ROOT/.engram-project")"
 [ -n "$PROJECT" ] || exit 0
 command -v engram >/dev/null 2>&1 || exit 0
 
-cd "$REPO_ROOT" || exit 0
 OUTPUT="$(engram sync --project "$PROJECT" 2>&1 || true)"
 
 if printf '%s' "$OUTPUT" | grep "Created chunk" >/dev/null; then
+  # lo recién exportado pasa por la misma revisión antes de prepararse
+  revisar_memoria
   git add .engram/
   echo "engram: nuevo chunk auto-staged ($PROJECT)"
 fi

@@ -70,7 +70,11 @@ COPY guide[s]/ guides/
 COPY agents* agents/
 COPY packs* packs/
 
-ENV NODE_ENV=production PORT=8080 TYCON_SKILLS_DIR=/app/skills
+# dónde está el arnés: /app. Sin la variable, cargar el pipeline lo busca en el HOME y escribe «no encuentro el arnés» en
+# cada carga. El lector reconoce un clon por el instalador (harness-path.js), por eso viaja aunque el sitio no lo corre
+COPY scripts/install-tycon-hooks.sh scripts/
+
+ENV NODE_ENV=production PORT=8080 TYCON_SKILLS_DIR=/app/skills TYCON_GUIDES_DIR=/app
 
 # /data es del usuario del sitio y es un VOLUME: un volumen con nombre nuevo montado ahí copia este dueño. Sin esto nace
 # de root, y el sitio (que corre como node) no puede clonar ni guardar su estado: se frena.

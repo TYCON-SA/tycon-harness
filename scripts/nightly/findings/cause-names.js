@@ -23,14 +23,24 @@ const NOMBRES_CAUSA = {
     TYCON_ENGRAM_MANIFEST_OK: 'freno de memoria salteado', STOP_AUTONOMY: 'cierre sin esperar a la persona',
     DOD_EVIDENCE_MANUAL_WRITE: 'evidencia escrita a mano', SIZE_FORCED_LIGHT_WITH_CODE: 'pipeline liviano con código',
     'story-skill-bypass': 'freno de stories salteado', STORY_SKILL_BYPASS: 'freno de stories salteado',
+    // las categorías que la revisión cuenta aparte (APARTE, abajo) llevan su propio nombre: no son la falla de su raíz
+    'GIT_NO_VERIFY/laboratorio': 'commit sin controles en un laboratorio',
+    'FULL_SUITE_RUN/laboratorio': 'suite completa en un laboratorio',
+    'PR_A_MANO/sobra': 'pedido a mano con el escape de más',
+    'ADVERSARIAL_RELAUNCH/dato': 'pase adversarial relanzado, sin esquivar nada',
+    'SIZE_FORCED_LIGHT_WITH_CODE/con-motivo': 'pipeline liviano con código y su motivo',
   },
-  'RR-NODE': { _: 'guion del arnés que no arrancó', 'node-viejo': 'Node viejo', carga: 'guion del arnés que no cargó' },
+  'RR-NODE': {
+    _: 'guion del arnés que no arrancó', 'node-viejo': 'Node viejo', carga: 'guion del arnés que no cargó',
+    'en-obra': 'prueba del arnés en obra que no cargó',
+  },
   'RR-HOOK': { _: 'aviso automático con error' },
   'RR-APAGO': { _: 'pipeline pasado a manual' },
   'RR-BANDERA': { _: 'paso del arranque que falló' },
   'RR-CIERRE': {
     _: 'cierre desconocido', abortada: 'ejecución abortada', abandonada: 'ejecución abandonada',
     incoherente: 'cerrada con pendientes', derivada: 'cerrada con pendientes', 'sin-cerrar': 'ejecución sin cerrar',
+    'derivada/arnes-anterior': 'cerrada antes de que el arnés anotara el cierre',
   },
 };
 const HOOK_TIEMPO = 'aviso automático que se pasó de tiempo';

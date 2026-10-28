@@ -82,7 +82,7 @@ function findRepo(cwd) {
       const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
       if (!m) return { root: dir, common: null };
       const gitdir = path.resolve(dir, m[1].trim());
-      let common = gitdir;
+      let common;
       try { common = path.resolve(gitdir, fs.readFileSync(path.join(gitdir, 'commondir'), 'utf8').trim()); } catch (_) { common = gitdir; }
       return { root: dir, common };
     }

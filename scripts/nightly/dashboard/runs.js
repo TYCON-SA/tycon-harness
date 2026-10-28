@@ -83,7 +83,7 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup'
 const os = require('os');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
-const { mediana, num1, esc, CSS_BASE, CSS_CHIPS } = require('./common');
+const { num1, esc, CSS_BASE, CSS_CHIPS } = require('./common');
 const { readEnv, prepareStateWrite } = require('../../lib/legacy-names.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');

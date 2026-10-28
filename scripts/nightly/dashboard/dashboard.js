@@ -51,7 +51,7 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { execSync } = require('child_process');
-const { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, GLIFO, juzgar, chip, ficha, CSS_BASE, CSS_CHIPS } = require('./common');
+const { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, juzgar, chip, ficha, CSS_BASE, CSS_CHIPS } = require('./common');
 const { readEnv } = require('../../lib/legacy-names.js');
 const { constancia } = require('../../lib/merge-metrics.js');
 
@@ -922,13 +922,21 @@ function datoDelArbol(...partes) {
 }
 const SRC = path.dirname(RAIZ); // la carpeta que contiene a todos los repos del equipo
 
+const REPOS_JSON = 'scripts/nightly/dependencies/repos.json';
+/** El motivo de una ficha que cuenta productos y no tiene ninguno: el de la lista de repos, o que no nombra productos. */
+const sinProductos = (ctx) => ctx.reposMotivo || `${REPOS_JSON} no nombra ningún producto (la clave «producto» de cada repo)`;
 function contexto() {
-  const rj = datoDelArbol('scripts', 'nightly', 'dependencies', 'repos.json');
+  const rj = datoDelArbol(...REPOS_JSON.split('/'));
   const repos = rj && Array.isArray(rj.repos) ? rj.repos : (Array.isArray(rj) ? rj : []);
   const productos = [...new Set(repos.map((r) => r.producto).filter(Boolean))];
   const debt = datoDelArbol('scripts', 'ci', 'pipeline-debt.json');
   const declarados = datoDelArbol('scripts', 'nightly', 'dashboard', 'declared.json');
-  return { repos, productos, debt, declarados: (declarados && declarados.declared) || [] };
+  // por qué no hay lista de repos, para el motivo de cada ficha que la usa: falta el archivo, no se lee, o no declara
+  // productos. Las tres se dicen distinto: «no medido» sin el archivo nombrado se confunde con una organización sin productos
+  const reposMotivo = rj === null
+    ? (fs.existsSync(path.join(AMB.raiz, ...REPOS_JSON.split('/'))) ? `${REPOS_JSON} no se lee (no es JSON)` : `falta ${REPOS_JSON}: la organización no declaró sus productos (la lista de productos del equipo no viene con la copia pública; la trae el repo de operaciones)`)
+    : (repos.length ? null : `${REPOS_JSON} no declara ningún repo`);
+  return { repos, productos, debt, declarados: (declarados && declarados.declared) || [], reposMotivo };
 }
 
 /**
@@ -1264,13 +1272,13 @@ function extra(por, ctx, cfg) {
 
   m.vigilados = desde(por.vigilante, (d) => {
     const ok = Object.entries(d.productos || {}).filter(([, v]) => v && v.ok).map(([k]) => k);
-    if (!ctx.productos.length) return noMedida('la lista de productos del equipo no viene con la copia pública');
+    if (!ctx.productos.length) return noMedida(sinProductos(ctx));
     return { ...ratio(ok.length, ctx.productos.length), den_etiqueta: 'productos declarados', detalle: ok.length ? `vigilados: ${ok.join(' · ')}` : 'ninguno' };
   });
 
   m.sin_prod = (() => {
     if (!ctx.debt || !Array.isArray(ctx.debt.debt)) return noMedida('no se pudo leer la deuda declarada de pipelines');
-    if (!ctx.productos.length) return noMedida('la lista de productos del equipo no viene con la copia pública');
+    if (!ctx.productos.length) return noMedida(sinProductos(ctx));
     const abiertas = ctx.debt.debt.filter((x) => /^PROD-PIPELINE-/.test(String(x.id)));
     const nombres = abiertas.map((x) => String(x.id).replace(/^PROD-PIPELINE-/, '').replace(/-\d+$/, '').toLowerCase());
     const rev = abiertas.map((x) => x.revision).filter(Boolean).sort()[0];
@@ -1333,7 +1341,7 @@ function localExtra(ctx, por, cfg) {
   if (AMB.nocturno) {
     const f = por && por.concentracion;
     if (f && f.vigente) m.bus_factor = fichaConcentracion(f.doc);
-    else if (!ctx.repos.length) m.bus_factor = noMedida('la organización no declaró sus productos (repos.json)');
+    else if (!ctx.repos.length) m.bus_factor = noMedida(ctx.reposMotivo);
     else m.bus_factor = noMedida(f ? (f.motivo || 'el archivo de concentración no está al día') : 'la fuente «concentracion» no está declarada en sources.json');
     return m;
   }
@@ -1342,7 +1350,7 @@ function localExtra(ctx, por, cfg) {
   // Leerlas acá publicaría el estado crudo de cada línea de guía en el detalle —la prueba de fuga lo caza con un
   // nombre de cliente sembrado— y la proporción de guías presentes sería 0 por construcción.
 
-  if (!ctx.repos.length) m.bus_factor = noMedida('la organización no declaró sus productos (repos.json)');
+  if (!ctx.repos.length) m.bus_factor = noMedida(ctx.reposMotivo);
   else {
     const ac = require(path.join(__dirname, '..', '..', 'metrics', 'author-concentration.js'));
     const r = ac.concentracion({ repos: ac.resolverLocal(ctx.repos, SRC), today: hoyUTC(), maquinas: ac.maquinasDe(cfg) });
@@ -1714,7 +1722,8 @@ function main() {
   const salida = path.resolve(valor('--output', AMB.nocturno ? SALIDA_DEFAULT : SALIDA_LOCAL_DEFAULT));
   // Sólo si la raíz es un repo git: es lo que se commitea. Una copia suelta de los guiones (una prueba, un zip) no lo es.
   if (!flag('--dry-run') && !AMB.nocturno && fs.existsSync(path.join(RAIZ, '.git'))) {
-    let dentro = true;   // sin el detector no se puede afirmar que la ruta está afuera
+    let dentro;
+    // sin el detector no se puede afirmar que la ruta está afuera
     try { dentro = require('./runs').dentroDelRepoDelEquipo(salida); } catch (e) { dentro = true; }
     if (dentro) {
       console.error(`se niega a escribir ${salida}: la página del repo la escribe sólo el nocturno (pipelines/azure-pipelines-tablero.yml) — generada en una máquina, mezclaría el disco de esa máquina con los datos del equipo. Sin --output va a ${SALIDA_LOCAL_DEFAULT}.`);

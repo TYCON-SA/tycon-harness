@@ -101,11 +101,6 @@ function readSettings() {
   try { return JSON.parse(safeRead(SETTINGS)); } catch { return {}; }
 }
 
-function countFiles(dir, ext) {
-  if (!exists(dir)) return 0;
-  return fs.readdirSync(dir).filter(f => f.endsWith(ext)).length;
-}
-
 // ============================================================
 // Categorías de check
 // ============================================================

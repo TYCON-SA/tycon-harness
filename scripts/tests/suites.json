@@ -369,6 +369,12 @@
       "requiere": []
     },
     {
+      "__nota": "la memoria compartida no lleva claves al repo: el pre-commit global pasa cada archivo pendiente de .engram/chunks/ por el detector de claves antes de prepararlo; con una, el commit no se crea. Git de verdad en un repo de laboratorio, con un engram de mentira.",
+      "raiz": "arnes",
+      "ruta": "tests/engram-chunk-secrets.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/pipeline-debt.test.js",
       "requiere": []
@@ -1014,6 +1020,12 @@
       "requiere": []
     },
     {
+      "__nota": "una vuelta de revisores no se lanza sobre una carpeta sin ningún cambio contra la rama principal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/empty-work-gate.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/step-7c-macro.test.js",
       "requiere": []
@@ -1445,6 +1457,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/production-environment-alias.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/reducer.test.sh",
       "requiere": []
     },
@@ -1485,6 +1502,12 @@
       "__nota": "el examen de revisores encuentra los revisores donde el arnés los instala, también en una máquina sólo con Codex.",
       "raiz": "arnes",
       "ruta": "tests/advisor-runner-agents-dir.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el examen de revisores suma los casos que viven sólo en el clon de mantenimiento.",
+      "raiz": "arnes",
+      "ruta": "tests/exam-maintainers-cases.test.js",
       "requiere": []
     },
     {

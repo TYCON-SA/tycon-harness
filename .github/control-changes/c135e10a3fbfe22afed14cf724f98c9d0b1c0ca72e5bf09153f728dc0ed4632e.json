@@ -1,0 +1,1 @@
+{"hash":"c135e10a3fbfe22afed14cf724f98c9d0b1c0ca72e5bf09153f728dc0ed4632e","rules":[{"path":"scripts/hooks/git-pre-commit-global.sh","blob":"e6112cbcf969f88776b71b9b5fdc686c15407ed8"},{"path":"scripts/lib/engram-chunk-secrets.js","blob":"b63337aa3e648b02670cd31e2d11db5d8446c64c"}],"at":"2026-10-28","by":"dueño"}

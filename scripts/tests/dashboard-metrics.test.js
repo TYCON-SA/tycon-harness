@@ -484,5 +484,28 @@ if (fs.existsSync(MAP_PATH)) {
   });
 } else console.log('  NO MEDIDO — copia pública sin el mapa (T23: el reemplazo de la serie)');
 
+// Sin la lista de repos de la organización, las fichas que la usan dicen que falta (o que no se lee), con su ruta: un
+// «no medido» que no nombra el archivo se confunde con una organización sin productos.
+t('ReposListMissing_CardsSayItIsMissing: sin repos.json, o con uno ilegible, las fichas lo nombran', () => {
+  const D = require(path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'dashboard.js'));
+  const dash = fs.mkdtempSync(path.join(os.tmpdir(), 'repos-dash-'));
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'repos-raiz-'));
+  fs.mkdirSync(path.join(raiz, 'scripts', 'ci'), { recursive: true });
+  fs.writeFileSync(path.join(raiz, 'scripts', 'ci', 'pipeline-debt.json'), '{ "debt": [] }\n');
+  const motivos = () => {
+    const p = D.colectar({ dir: dash, raiz }).paneles;
+    return { bus: p.local.bus_factor.motivo, sinProd: p.extra.sin_prod.motivo };
+  };
+  let m = motivos();
+  assert.match(m.bus, /falta scripts\/nightly\/dependencies\/repos\.json/);
+  assert.match(m.sinProd, /falta scripts\/nightly\/dependencies\/repos\.json/);
+  fs.mkdirSync(path.join(raiz, 'scripts', 'nightly', 'dependencies'), { recursive: true });
+  fs.writeFileSync(path.join(raiz, 'scripts', 'nightly', 'dependencies', 'repos.json'), '{ roto');
+  m = motivos();
+  assert.match(m.bus, /scripts\/nightly\/dependencies\/repos\.json no se lee/);
+  assert.match(m.sinProd, /scripts\/nightly\/dependencies\/repos\.json no se lee/);
+  fs.rmSync(dash, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true });
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(process.exitCode ? '\nFALLARON tests' : `\n${n} tests OK`);

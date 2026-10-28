@@ -28,9 +28,9 @@ const path = require('path');
 
 const pc = require(path.join(__dirname, '..', 'publishing', 'public-copy.js'));
 
-const IS = '<!-- tycon:' + 'internal-start -->';
-const IE = '<!-- tycon:' + 'internal-end -->';
-const PS = '<!-- tycon:' + 'public-only';
+const IS = '<!-- ' + 'tycon:internal-start -->';
+const IE = '<!-- ' + 'tycon:internal-end -->';
+const PS = '<!-- ' + 'tycon:public-only';
 const PE = '-' + '->';
 const FENCE = '`'.repeat(3);
 const lines = (...l) => l.join('\n');

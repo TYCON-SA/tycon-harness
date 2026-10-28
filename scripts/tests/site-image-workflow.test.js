@@ -26,7 +26,9 @@ const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'",
   "'scripts/setup/public-remotes.json'",
   "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/**'", "'skills/tycon-pipeline/steps/**'",
   // lo que lee la pestaña Cómo trabaja: los guiones de los controles, su lista y las guías
-  "'integrations/**'", "'scripts/hooks/**'", "'scripts/setup/hooks-list.json'", "'guides/**'", "'agents/**'", "'packs/**'", "'LICENSE*'", "'NOTICE*'",
+  "'integrations/**'", "'scripts/hooks/**'", "'scripts/setup/hooks-list.json'",
+  // la marca con la que el lector del arnés reconoce un clon: la imagen dice que el arnés está en /app
+  "'scripts/install-tycon-hooks.sh'", "'guides/**'", "'agents/**'", "'packs/**'", "'LICENSE*'", "'NOTICE*'",
   // la guía del sitio y sus capturas: la pestaña Ayuda la arma de la imagen
   "'guides/organization-site.md'", "'guides/organization-site.en.md'", "'guides/sitio-de-la-organizacion/capturas/**'",
   // y el propio workflow: un cambio a cómo se arma la imagen la vuelve a armar

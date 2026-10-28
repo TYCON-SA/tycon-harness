@@ -76,7 +76,7 @@ function declaredCompanions(repo) {
     self.add(path.dirname(common));
   }
   for (const base of bases) {
-    let cfg = { roots: [], missing: [] };
+    let cfg;
     // sin poder leer la configuración no se sabe qué compañeros hay: cuenta como uno que falta
     try { cfg = parseEvidenceConfig(base); } catch { cfg = { roots: [], missing: ['(no pude leer .tycon/advisors.yaml)'] }; }
     for (const c of cfg.roots || []) if (!self.has(path.resolve(c))) roots.add(path.resolve(c));

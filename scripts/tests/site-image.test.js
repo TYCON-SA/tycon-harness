@@ -153,8 +153,11 @@ test('T8 Imagen_LaPestanaComoTrabajaArmaSuModelo @story-2.61.1 @story-2.61.2 @ac
     assert.strictEqual(b.status, 0, `la imagen se arma: ${(b.stderr || '').slice(-800)}`);
     const lib = path.join(ROOT, 'scripts', 'tests', 'lib');
     const arbol = sonda(spawnSync(process.execPath, [path.join(lib, 'how-it-works-probe.js'), ROOT], { cwd: ROOT, encoding: 'utf8', timeout: 120000 }));
-    const enImagen = sonda(docker(['run', '--rm', '-v', `${lib}:/app/scripts/tests/lib:ro`, imagen, 'node', '/app/scripts/tests/lib/how-it-works-probe.js'], { timeout: 120000 }));
+    const corrida = docker(['run', '--rm', '-v', `${lib}:/app/scripts/tests/lib:ro`, imagen, 'node', '/app/scripts/tests/lib/how-it-works-probe.js'], { timeout: 120000 });
+    const enImagen = sonda(corrida);
     assert.strictEqual(enImagen.error, undefined, `en la imagen, el modelo se arma: ${enImagen.error}`);
+    // la imagen dice dónde está el arnés: armar el modelo no ensucia el registro con «no encuentro el arnés»
+    assert.doesNotMatch(corrida.stderr || '', /no encuentro el arnés|la ignoro/, 'en la imagen, el arnés se encuentra');
     assert.deepStrictEqual(enImagen.problems, [], 'en la imagen, nada que no se pudo leer');
     assert.ok(enImagen.steps.length > 10 && enImagen.controls.length > 0, 'pasos y controles');
     // 2.61.2: el repo público viaja en la imagen, y con él los «Ver el código»
@@ -164,4 +167,20 @@ test('T8 Imagen_LaPestanaComoTrabajaArmaSuModelo @story-2.61.1 @story-2.61.2 @ac
   } finally {
     docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
   }
+});
+
+// M1 Imagen_DiceDondeEstaElArnes @mantenimiento
+// 🔴 Falla con: la imagen sin TYCON_GUIDES_DIR (cargar el pipeline imprime «no encuentro el arnés» en cada carga), o con
+//    la variable y sin el archivo con el que el lector reconoce un clon (imprime que la ignora).
+test('M1 Imagen_DiceDondeEstaElArnes @mantenimiento', () => {
+  const fs = require('fs');
+  const dockerfile = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile'), 'utf8').split('\n');
+  const fuera = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile.dockerignore'), 'utf8').split('\n').map((l) => l.trim());
+  assert.ok(dockerfile.some((l) => /^WORKDIR \/app$/.test(l)), 'el sitio vive en /app');
+  assert.ok(dockerfile.some((l) => /^ENV .*\bTYCON_GUIDES_DIR=\/app(\s|$)/.test(l)), 'la imagen define TYCON_GUIDES_DIR=/app');
+  // el lector reconoce un clon por este archivo (harness-path.js, esClon): la imagen lo trae y la lista lo deja entrar
+  const { esClon } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'harness-path.js'));
+  assert.ok(esClon(ROOT), 'el árbol es un clon');
+  assert.ok(dockerfile.includes('COPY scripts/install-tycon-hooks.sh scripts/'), 'el Dockerfile copia la marca del clon');
+  assert.ok(fuera.includes('!scripts/install-tycon-hooks.sh'), 'la lista de exclusiones deja entrar la marca del clon');
 });

@@ -808,7 +808,6 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
     for (const [marca, cuerpo] of cuerpos) if (t.includes(marca)) t = t.split(marca).join(cuerpo);
     return t;
   };
-  const plano = (f) => conBloque(f).replace(/["'\\]/g, '');
   // el cuerpo de un bloque heredoc no llega como ficha: se busca en el texto
   const bloques = cuerposDeHeredoc(texto);
   // ¿Este texto, corrido como comando, publica? Se LEE como una línea más (un nivel): `bash -c "gh pr view 5"` es de

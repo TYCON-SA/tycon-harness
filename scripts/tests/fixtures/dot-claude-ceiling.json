@@ -67,7 +67,7 @@
     "scripts/hooks/large-read-notice.js": 1,
     "scripts/hooks/prod-access-guard.js": 10,
     "scripts/hooks/prod-firewall-close.js": 1,
-    "scripts/hooks/produccion-notice.js": 1,
+    "scripts/hooks/production-notice.js": 1,
     "scripts/hooks/response-style-meter.js": 1,
     "scripts/hooks/response-style-notice.js": 1,
     "scripts/hooks/retro-pending.js": 3,

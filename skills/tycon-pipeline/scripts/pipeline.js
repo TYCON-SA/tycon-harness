@@ -1404,13 +1404,16 @@ function archivosDotnetDelRepo(repo, tope = 200) {
  */
 function hermanosDelRepo(activos) {
   let raiz = null;
+  let raices = [];
   let motivo = null;
   try {
     const r = require(path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'repos-root.js')).resolveReposRoot();
     raiz = r.root || null;
+    raices = Array.isArray(r.roots) ? r.roots : [];
     if (!raiz) motivo = r.motivo || 'sin raíz de repos';
   } catch (e) { motivo = `no pude leer la raíz de repos (${e.message})`; }
-  const lista = packsLib.hermanosResueltos({ paquetes: activos, reposRoot: raiz });
+  // con varias carpetas de repos, el hermano se busca en todas
+  const lista = packsLib.hermanosResueltos({ paquetes: activos, reposRoot: raiz, reposRoots: raices });
   return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
 }
 
@@ -4445,9 +4448,9 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
-  if (result && result.skip_request && mostrar && !ej) {
+  if (result.skip_request && mostrar && !ej) {
     result.skip_request.muestra = 'sin corrida abierta: la firma se pide dentro de una corrida de esta story (pipeline.js start)';
-  } else if (result && result.skip_request && mostrar) {
+  } else if (result.skip_request && mostrar) {
     const m = sk.muestra({ story: ej.story, carpeta: ej.carpeta, ejecucion: ej.ejecucion,
       camino: result.skip_request.camino, casa, userInfo });
     texto = m.texto;
@@ -5130,16 +5133,14 @@ function normalizeFinding(f) {
 function followupKey(f) {
   return `${String(f.ruleId || f.rule || f.rule_id || '?').trim()}|${String(f.file || '?').trim()}`;
 }
-function renderFollowupItem(nf, checked, key) {
+function renderFollowupItem(nf, checked) {
   const loc = nf.file ? `\`${nf.file}${nf.line ? ':' + nf.line : ''}\`` : '(sin archivo)';
-  return `- [${checked ? 'x' : ' '}] **[${nf.severity}]** ${nf.ruleId} — ${loc} — ${nf.summary} <!-- fkey:${key || `${nf.ruleId}|${nf.file || '?'}`} -->`;
+  return `- [${checked ? 'x' : ' '}] **[${nf.severity}]** ${nf.ruleId} — ${loc} — ${nf.summary} <!-- fkey:${nf.ruleId}|${nf.file || '?'} -->`;
 }
-// La corrida de un findings.json que vive en su carpeta (`.advisors/pipeline-runs/<corrida>/`): va en la clave para
-// que, en una story de varias tandas, la misma regla sobre el mismo archivo de otra tanda no pise a la de ésta.
-function followupRunOf(findingsPath) {
-  if (!findingsPath) return null;
-  const dir = path.dirname(path.resolve(String(findingsPath)));
-  return path.basename(path.dirname(dir)) === 'pipeline-runs' ? path.basename(dir) : null;
+// El texto de un item ya escrito (lo que sigue a la ubicación), para distinguir dos hallazgos de la misma regla y archivo.
+function followupSummary(raw) {
+  const m = String(raw).match(/^- \[[ xX]\]\s\*\*\[[^\]]*\]\*\*\s.*? — .*? — (.*?)\s*<!--\s*fkey:/);
+  return m ? m[1].trim() : '';
 }
 function parseFollowupsSection(content) {
   const lines = (content || '').split(/\r?\n/);
@@ -5352,26 +5353,26 @@ function writeFollowups(args) {
   }
   const content = readText(storyPath);
   const parsed = parseFollowupsSection(content);
+  // Un hallazgo es la regla, el archivo y su texto: en una story de varias tandas la misma regla sobre el mismo archivo
+  // aparece una vez por tanda, con otro texto. La clave `regla|archivo` sola los juntaba y borraba los de las tandas
+  // anteriores.
+  const ident = (key, summary) => `${key}\u0000${summary || ''}`;
   const prevChecked = new Map();
-  if (parsed) for (const it of parsed.items) prevChecked.set(it.key, it.checked);
+  if (parsed) for (const it of parsed.items) prevChecked.set(ident(it.key, followupSummary(it.raw)), it.checked);
 
   const seen = new Set();
+  const newKeys = new Set();
   const merged = [];
-  const run = followupRunOf(args.findings);
   for (const raw of findings) {
     const f = normalizeFinding(raw);
-    const viejo = `${f.ruleId}|${f.file || '?'}`;
-    const k = run ? `${viejo}|${run}` : viejo;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    // Una sección escrita antes de que la clave llevara la corrida tiene `regla|archivo`: ese renglón se migra una vez
-    // a la clave nueva, con su marca, en vez de quedar duplicado y abierto para siempre.
-    const migra = run && !prevChecked.has(k) && prevChecked.has(viejo) && !seen.has(viejo);
-    if (migra) seen.add(viejo);
-    // Preservar el checkbox previo por fkey (idempotente en re-loops); resolved lo fuerza a [x].
-    const previo = prevChecked.has(k) ? prevChecked.get(k) : (migra ? prevChecked.get(viejo) : false);
-    const checked = f.resolved ? true : previo;
-    merged.push(renderFollowupItem(f, checked, k));
+    const k = `${f.ruleId}|${f.file || '?'}`;
+    const id = ident(k, f.summary);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    newKeys.add(k);
+    // Preservar el checkbox previo del mismo hallazgo (idempotente en re-loops); resolved lo fuerza a [x].
+    const checked = f.resolved ? true : (prevChecked.has(id) ? prevChecked.get(id) : false);
+    merged.push(renderFollowupItem(f, checked));
   }
   // Conservar TODOS los items previos que no vienen en el nuevo set — resueltos [x] (historial)
   // Y abiertos [ ] (deuda viva). Conservar SOLO los
@@ -5379,9 +5380,15 @@ function writeFollowups(args) {
   // deferred/gated como TEST-W4a, que el advisor no re-flaggea) se dropeara SILENCIOSAMENTE →
   // deuda técnica trackeada borrada sin rastro. Un item sale de [ ] SOLO explícitamente: viene en
   // un findings posterior con resolved:true (→ [x]), o un humano lo marca [x] a mano. Nunca por omisión.
+  // Con la misma regla y archivo en el nuevo set: el abierto lo reemplaza el reporte de ahora (es la misma deuda,
+  // con su texto al día); el resuelto con otro texto queda, porque es el historial de otra tanda o corrida.
   if (parsed) {
     for (const it of parsed.items) {
-      if (!seen.has(it.key)) { merged.push(it.raw); seen.add(it.key); }
+      const id = ident(it.key, followupSummary(it.raw));
+      if (seen.has(id)) continue;
+      if (newKeys.has(it.key) && !it.checked) continue;
+      merged.push(it.raw);
+      seen.add(id);
     }
   }
   if (!merged.length && !parsed) {
@@ -5549,6 +5556,43 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   // el aviso queda anotado: el ok de una vuelta extra tiene que ser posterior
   anotar({ name: 'review-cap-shown', status: 'blocked', tope: tope.value, abiertos: ab.map((a) => a.regla) });
   return `${renglones.join('\n')}\n`;
+}
+
+// El freno de la carpeta sin trabajo: antes de una vuelta de revisores, si la carpeta de la story no tiene ningún cambio
+// contra la rama principal (ni commits propios ni cambios sin commitear), los revisores leerían la principal y dirían
+// «no está el código». Pasa cuando algo aparta los cambios mientras corre la vuelta (un `git stash` de fondo). Null si
+// puede seguir, o el mensaje de por qué no. Sin git, sin rama principal conocida o ante un error de git, no frena: no
+// puede afirmar que la carpeta está vacía. Tampoco frena parada en la propia rama principal. Los commits desde el
+// `baseSha` del marcador también cuentan como trabajo.
+function emptyWorkGate(args) {
+  const { spawnSync } = require('child_process');
+  const repo = path.resolve(args.repo || '.');
+  const git = (a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', timeout: 10000 });
+  const top = git(['rev-parse', '--show-toplevel']);
+  if (top.error || top.status !== 0) return null;
+  const status = git(['status', '--porcelain', '--untracked-files=normal']);
+  if (status.error || status.status !== 0 || String(status.stdout).trim()) return null;
+  const ahead = (ref) => {
+    const r = git(['rev-list', '--count', `${ref}..HEAD`]);
+    return r.error || r.status !== 0 ? null : Number(String(r.stdout).trim());
+  };
+  let marcador = null;
+  try { marcador = readSessionMarkerStrict().marcador; } catch (_e) { marcador = null; }
+  if (marcador && typeof marcador.baseSha === 'string' && marcador.baseSha) {
+    const n = ahead(marcador.baseSha);
+    if (n === null || n > 0) return null;
+  }
+  const principal = ['origin/main', 'main', 'origin/master', 'master']
+    .find((ref) => { const r = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return !r.error && r.status === 0; });
+  if (!principal) return null;
+  // Parado en la propia rama principal no hay contra qué comparar: el trabajo pudo commitearse ahí antes de la corrida.
+  const rama = git(['symbolic-ref', '--short', '-q', 'HEAD']);
+  if (!rama.error && rama.status === 0 && String(rama.stdout).trim() === principal.replace(/^origin\//, '')) return null;
+  const n = ahead(principal);
+  if (n === null || n > 0) return null;
+  return `🛑 La carpeta de la story no tiene ningún cambio contra ${principal}: ni commits propios ni cambios sin commitear (${repo}).\n` +
+    '   Los revisores leerían la rama principal y dirían «no está el código»: la vuelta se perdería.\n' +
+    '   Causa típica: algo apartó los cambios mientras tanto (un `git stash` de fondo, un checkout). Recuperalos y volvé a pedir la vuelta.\n';
 }
 
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
@@ -6379,6 +6423,8 @@ function main() {
     // El freno corre DESPUÉS de las validaciones propias del comando: sus errores salen como siempre.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const emptyWork = emptyWorkGate(args);
+    if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const set = computeAdvisorSet(args);
@@ -6501,6 +6547,8 @@ function main() {
     // corromperían el recompute de force-full-reloop.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const emptyWork = emptyWorkGate(args);
+    if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const conModelos = conModelosDeLaCorrida(args);
@@ -7495,7 +7543,7 @@ function main() {
     '       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n' +
     '  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n' +
     '       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n' +
-    '       story (idempotente por fkey ruleId|file|corrida, preserva [x] previos). Solo toca el body.)\n' +
+    '       story (idempotente por fkey ruleId|file, preserva [x] previos). Solo toca el body.)\n' +
     '  node pipeline.js followups-status  --story <spec.md>\n' +
     '       (adopción BMAD — Arranque y «Validar la historia»: cuenta review follow-ups abiertos/resueltos. exit 3 si\n' +
     '       hay abiertos (priorizarlos sobre tasks nuevas), 0 si limpio.)\n' +

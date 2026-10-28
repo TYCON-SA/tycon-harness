@@ -34,7 +34,6 @@
 // Guía: guides/maintaining/nombres-en-ingles.md
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const nn = require('./new-names.js');
 const exporter = require('../publishing/export.js');
@@ -48,7 +47,6 @@ const RENAMES_PATH = 'scripts/lib/renames.json';
 const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
 const hasProfile = (dir) => PROFILES.some((n) => fs.existsSync(path.join(dir, n)));
 const DEFAULT_DICT = '/usr/share/dict/words';
-const CATEGORIES = ['path', 'option', 'subcommand', 'value', 'env', 'key'];
 const LABEL = { path: 'ruta', option: 'opción', subcommand: 'subcomando', value: 'valor', env: 'variable', key: 'clave' };
 const CEILING_FIELDS = ['files', 'folders', 'options', 'subcommands', 'values', 'env', 'keys', 'total'];
 // Lo que puede cambiar qué sale o qué cuenta aunque no sea un ejecutable. El techo y la lista también por su ruta vieja
@@ -58,7 +56,6 @@ const TRIGGERS = [WORDS_PATH, CEILING_PATH, RENAMES_PATH, nn.CONFIG.list, nn.CON
 const PACK = /^packs\/[^/]+\/pack\.json$/;
 
 const say = (s) => process.stderr.write(`${s}\n`);
-const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
 // ── la lista de palabras ─────────────────────────────────────────────────────────────────────────────────────────
 /** Valida y arma la lista. Cualquier problema es «no pude mirar»: una lista rota no puede dar un verde. */
@@ -1146,7 +1143,7 @@ const LEGACY_READERS = new Set([
   'scripts/production/production-index.js', 'scripts/production/tycon-prod-sql', 'scripts/production/node-shim.sh',
   'scripts/production/install-guard.sh', 'scripts/production/lint-production-json.js',
   'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/prod-access-guard.js',
-  'scripts/hooks/produccion-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
+  'scripts/hooks/production-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
   // los controles del commit: la copia propia del repo privado busca los guiones de las skills también en la carpeta de
   // antes del renombre, para un arnés atrasado; sale con el retiro de los nombres viejos
   '.githooks/pre-commit-checks',

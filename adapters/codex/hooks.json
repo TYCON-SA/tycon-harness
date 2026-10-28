@@ -86,7 +86,7 @@
           },
           {
             "type": "command",
-            "command": "node ${TCG}/scripts/hooks/produccion-notice.js"
+            "command": "node ${TCG}/scripts/hooks/production-notice.js"
           },
           {
             "type": "command",

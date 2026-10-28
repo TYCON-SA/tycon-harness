@@ -1172,7 +1172,7 @@ test('writeFollowups + followups-status: idempotente, preserva [x], acepta shape
   assert.equal(st.open, 2); assert.equal(st.has_section, true);
 
   // dev marca SEC-C3 resuelto a mano.
-  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace('- [ ] **[CRITICAL]** SEC-C3', '- [x] **[CRITICAL]** SEC-C3'));
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').split('- [ ] **[CRITICAL]** SEC-C3').join('- [x] **[CRITICAL]** SEC-C3'));
   // 2da escritura: shape Step6 (rule_id/disposition) + 1 nuevo. Debe preservar SEC-C3 [x].
   const f2 = path.join(dir, 'f2.json');
   fs.writeFileSync(f2, JSON.stringify([
@@ -1236,34 +1236,31 @@ test('writeFollowups preserva items ABIERTOS que no vienen en el nuevo set (BUG-
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('writeFollowups: la misma regla sobre el mismo archivo en otra corrida no pisa a la de la tanda anterior', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-fu-corridas-'));
-  const story = path.join(dir, '8-9.md');
-  fs.writeFileSync(story, '---\nstory: 8-9\nstatus: review\n---\n\n## Story\nBody.\n');
-  const runs = path.join(dir, '.advisors', 'pipeline-runs');
-  const enCorrida = (nombre, lista) => {
-    fs.mkdirSync(path.join(runs, nombre), { recursive: true });
-    const f = path.join(runs, nombre, 'findings.json');
-    fs.writeFileSync(f, JSON.stringify(lista));
-    return f;
-  };
-  const a = enCorrida('8.9-B3a-20261001120000', [{ severity: 'WARNING', ruleId: 'SEC-W1', file: 'src/a.js', summary: 'de la tanda A' }]);
-  writeFollowups({ story, findings: a });
-  const b = enCorrida('8.9-B3b-20261002120000', [{ severity: 'WARNING', ruleId: 'SEC-W1', file: 'src/a.js', summary: 'de la tanda B' }]);
-  writeFollowups({ story, findings: b });
-  const texto = fs.readFileSync(story, 'utf8');
-  assert.ok(texto.includes('de la tanda A'), 'el seguimiento de la tanda A sigue en la story');
-  assert.ok(texto.includes('de la tanda B'), 'y el de la tanda B se suma');
-  // re-correr la misma corrida no duplica
-  writeFollowups({ story, findings: b });
-  assert.equal(computeFollowupsStatus({ story }).total, 2, 'uno por corrida, sin duplicar en un re-loop');
-  // una sección escrita con la clave vieja (regla|archivo) se migra una vez: sin duplicar y con su marca
-  const vieja = path.join(dir, '8-10.md');
-  fs.writeFileSync(vieja, '---\nstory: 8-10\n---\n\n## Review Follow-ups (Advisors)\n\n- [x] **[WARNING]** SEC-W1 — `src/a.js` — de antes <!-- fkey:SEC-W1|src/a.js -->\n');
-  writeFollowups({ story: vieja, findings: b });
-  const st = computeFollowupsStatus({ story: vieja });
-  assert.equal(st.total, 1, 'el renglón de la clave vieja se migra, no se duplica');
-  assert.equal(st.open, 0, 'y conserva su marca [x]');
+test('writeFollowups conserva los resueltos de otras tandas con la misma regla y archivo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-fu-tandas-'));
+  const story = path.join(dir, '3-1.md');
+  fs.writeFileSync(story, '---\nstory: 3-1\nstatus: review\n---\n\n## Story\nBody.\n');
+  // la primera tanda: dos hallazgos distintos de la misma regla sobre el mismo archivo, los dos arreglados
+  const fa = path.join(dir, 'fa.json');
+  fs.writeFileSync(fa, JSON.stringify([
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'fixed', reason: 'log sin sanitizar en Alta' },
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'fixed', reason: 'log sin sanitizar en Baja' },
+  ]));
+  writeFollowups({ story, findings: fa });
+  // la segunda tanda: la misma regla sobre el mismo archivo, un hallazgo nuevo y abierto
+  const fb = path.join(dir, 'fb.json');
+  fs.writeFileSync(fb, JSON.stringify([
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'open', reason: 'log sin sanitizar en Modificar' },
+  ]));
+  const r = writeFollowups({ story, findings: fb });
+  const txt = fs.readFileSync(story, 'utf8');
+  assert.match(txt, /- \[x\].*en Alta/, 'el resuelto de la primera tanda sigue');
+  assert.match(txt, /- \[x\].*en Baja/, 'el segundo resuelto de la primera tanda también');
+  assert.match(txt, /- \[ \].*en Modificar/, 'el abierto de la segunda tanda entra abierto');
+  assert.equal(r.total, 3);
+  assert.equal(r.open, 1);
+  // re-escribir el mismo set es idempotente: no duplica
+  assert.equal(writeFollowups({ story, findings: fb }).total, 3);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

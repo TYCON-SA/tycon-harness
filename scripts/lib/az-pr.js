@@ -23,7 +23,6 @@
 
 const CIERTO = new Set(['true', 't', 'yes', 'y', '1']);
 const FALSO = new Set(['false', 'f', 'no', 'n', '0']);
-const OPERADORES = new Set(['&&', '||', ';', '|', '\n']);
 
 /**
  * Parte el comando en FICHAS y operadores, en un solo recorrido.
