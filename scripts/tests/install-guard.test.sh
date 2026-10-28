@@ -647,6 +647,21 @@ if [ -f "$INSTALADOR" ]; then
     ok "6.2-T34 · con una regla abierta y sin poder cerrarla, el instalador lo dice en rojo con el comando y termina"
   else no "6.2-T34 · rc=$rc34 · $(grep -i firewall "$TMP/inst34" | head -2)"; fi
 
+  # M1 · reinstalar con una regla abierta que la puerta instalada SÍ puede cerrar: la cierra con ella, como el dev,
+  # ANTES de reemplazarla, lo dice en verde y no avisa en rojo
+  # 🔴 Falla con: reemplazar la puerta sin cerrar la regla, cerrarla con la puerta nueva (la regla queda sin quién la
+  #    cierre si la nueva falla), o un cierre que salió bien contado como rojo.
+  PUERTA_INST="$TMP/sys2/opt/tycon/bin/tycon-prod-sql"
+  { printf '#!/usr/bin/env bash\n# doble de la puerta instalada: sabe --close-firewall, anota lo que recibe y cierra bien\n'
+    printf 'printf "%%s\\n" "$*" >> "%s/cierre-vieja.log"\nexit 0\n' "$TMP"; } > "$PUERTA_INST"; chmod 755 "$PUERTA_INST"
+  rm -f "$TMP/cierre-vieja.log"
+  HOME="$CASA34" PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys2" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-m1" 2>&1; rcm1=$?
+  if [ "$rcm1" = 0 ] && [ "$(cat "$TMP/cierre-vieja.log" 2>/dev/null)" = "--close-firewall acme-sql.database.windows.net" ] \
+     && grep -q "regla de firewall de acme-sql.database.windows.net cerrada antes de reinstalar" "$TMP/inst-m1" \
+     && ! grep -i firewall "$TMP/inst-m1" | grep "🔴" >/dev/null && ! grep -q 'cierre-vieja.log' "$PUERTA_INST"; then
+    ok "M1 Reinstall_OpenRuleClosable_ClosesWithInstalledGateFirst · la cerró la puerta vieja, en verde, y después la reemplazó"
+  else no "M1 · rc=$rcm1 · cierre: $(cat "$TMP/cierre-vieja.log" 2>/dev/null) · $(grep -i firewall "$TMP/inst-m1" | head -2)"; fi
+
   # --no-sudo corriendo como root: se niega
   rm -rf "$TMP/sys3"; mkdir -p "$TMP/sys3"
   TYCON_PROD_AS_ROOT=1 TYCON_PROD_ROOT="$TMP/sys3" TYCON_PROD_HARNESS="$AQUI" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >/dev/null 2>&1; rc=$?
