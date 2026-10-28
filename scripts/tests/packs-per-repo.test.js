@@ -64,6 +64,23 @@ function correr({ viejo, nuevo, repos, valor = 'all' }) {
   return { status: r.status, stderr: r.stderr, md: fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '' };
 }
 
+test('PacksPerRepo_TwoRepoFolders_WalksBoth', () => {
+  // two folders of repos in the variable, as in the PATH: the repos of both are measured
+  const arbolDos = arbol({ prueba: ['rev-uno'] });
+  const una = tmp('ppr-raiz-'); const otra = tmp('ppr-raiz-');
+  const r1 = repo(null); const r2 = repo(null);
+  fs.renameSync(r1, path.join(una, 'uno')); fs.renameSync(r2, path.join(otra, 'dos'));
+  const perfil = path.join(tmp('ppr-perfil-'), 'team-profile.json');
+  W(perfil, JSON.stringify({ packs: { default: 'all' } }));
+  const out = path.join(tmp('ppr-out-'), 'medicion.md');
+  const r = spawnSync(process.execPath, [SCRIPT, 'per-repo', '--old-tree', arbolDos, '--new-tree', arbolDos, '--since', '30', '--profile', perfil, '--out', out],
+    { encoding: 'utf8', timeout: 300000, env: { PATH: process.env.PATH, HOME: tmp('ppr-home-'), LANG: 'en_US.UTF-8', TYCON_REPOS_ROOT: [una, otra].join(path.delimiter) } });
+  const md = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
+  assert.equal(r.status, 0, r.stderr + md);
+  assert.match(md, /\(2\), commits/, md);
+  assert.ok(md.includes('uno') && md.includes('dos'), md);
+});
+
 test('PacksPerRepo_NoRepoLosesReviewer', (t) => {
   const conDos = arbol({ prueba: ['rev-uno', 'rev-dos'] });
   const r1 = repo(null);

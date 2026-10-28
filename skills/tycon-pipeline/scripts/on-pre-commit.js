@@ -495,7 +495,7 @@ function findAdvisorsEvidence(cwd, storyId, opts = {}) {
   const clave = k.key;
   const compartido = Boolean(k.info && k.info.repeated);
   let root = cwd;
-  let roots = [cwd];
+  let roots;
   try {
     const ec = require('./lib/evidence-config.js');
     root = ec.discoverRepoRoot(cwd) || cwd;
@@ -609,11 +609,6 @@ function findDodEvidence(cwd, storyId, opts = {}) {
     }
   }
   return best;
-}
-
-// Backwards-compat wrapper.
-function hasDodEvidence(cwd, storyId, opts = {}) {
-  return findDodEvidence(cwd, storyId, opts) !== null;
 }
 
 // ── Constancia de lo que decide este freno ───────────────────

@@ -176,6 +176,16 @@ function stamp() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
 }
 
+/** Copia `file` a `<file>.bak.<sello>` sin pisar nunca otra copia: el sello es al segundo, y otra pieza del mismo
+ *  arranque puede haber copiado el mismo archivo en ese segundo; con el nombre ocupado suma `-1`, `-2`… Devuelve la ruta. */
+function backupCopy(file) {
+  const base = `${file}.bak.${stamp()}`;
+  for (let n = 0; ; n++) {
+    const p = n ? `${base}-${n}` : base;
+    try { fs.copyFileSync(file, p, fs.constants.COPYFILE_EXCL); return p; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  }
+}
+
 /** Escritura atómica: temporal en la misma carpeta + rename; tres reintentos ante EPERM (Windows). */
 function writeAtomic(file, text) {
   const tmp = path.join(path.dirname(file), `.settings.${process.pid}.${Date.now()}.tmp`);
@@ -292,7 +302,7 @@ function commit(settingsPath, raw, s, result) {
   try {
     let backup = null;
     // un archivo que todavía no existe no tiene qué respaldar
-    if (withBackup && fs.existsSync(settingsPath)) { backup = `${settingsPath}.bak.${stamp()}`; fs.copyFileSync(settingsPath, backup); }
+    if (withBackup && fs.existsSync(settingsPath)) backup = backupCopy(settingsPath);
     writeAtomic(settingsPath, JSON.stringify(s, null, 2) + '\n');
     return Object.assign(result, { changed: true, backup });
   } catch (e) {
@@ -300,4 +310,4 @@ function commit(settingsPath, raw, s, result) {
   }
 }
 
-module.exports = { NODE_FLOOR, NEW_LINE, BOOTSTRAP_MARK, FORM_IDS, newLine, isNew, isSuperseded, classify, analyze, mentionsHarness, checkNode, migrate };
+module.exports = { NODE_FLOOR, NEW_LINE, BOOTSTRAP_MARK, FORM_IDS, newLine, isNew, isSuperseded, classify, analyze, mentionsHarness, checkNode, migrate, backupCopy };

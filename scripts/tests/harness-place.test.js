@@ -399,7 +399,7 @@ function sweepOffenders(root, files) {
 }
 /** Las líneas de un .md que quedan DENTRO de un bloque `tycon:internal-start` … `internal-end`. */
 function insideInternal(text) {
-  const start = '<!-- tycon:' + 'internal-start -->'; const end = '<!-- tycon:' + 'internal-end -->';
+  const start = '<!-- ' + 'tycon:internal-start -->'; const end = '<!-- ' + 'tycon:internal-end -->';
   let inside = false; const out = [];
   for (const l of text.split('\n')) {
     if (l.trim() === start) { inside = true; continue; }
@@ -437,7 +437,7 @@ test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', ()
   for (const s of declared.lines) assert.ok(install.includes(s), `INSTALL.md: la línea declarada ya no está: ${s}`);
   // el párrafo de los dos nombres: adentro de las marcas de sólo interno, con los dos nombres y relocate
   const lines = install.split('\n'); const inside = insideInternal(install);
-  const marks = ['<!-- tycon:' + 'internal-start -->', '<!-- tycon:' + 'internal-end -->'];   // armadas por partes: no son marcadores
+  const marks = ['<!-- ' + 'tycon:internal-start -->', '<!-- ' + 'tycon:internal-end -->'];   // armadas por partes: no son marcadores
   const content = lines.filter((l) => !marks.includes(l.trim()));
   const at = content.findIndex((l) => l.includes('harness.js relocate'));
   assert.ok(at >= 0, 'INSTALL.md: falta el párrafo de los dos nombres (harness.js relocate)');
@@ -552,7 +552,7 @@ test('T39 RepoAnchorsUnchanged_HistoryUntouched', () => {
 const INTERNAL_NAME_RX = new RegExp(PLACE.LEGACY_PLACE_NAME, 'i');
 /** Las líneas de un .md que llegan a la copia (fuera de los bloques de sólo interno y de los de instalación interna). */
 function publishedLines(text) {
-  const start = '<!-- tycon:' + 'internal-start -->'; const end = '<!-- tycon:' + 'internal-end -->';
+  const start = '<!-- ' + 'tycon:internal-start -->'; const end = '<!-- ' + 'tycon:internal-end -->';
   let inside = false; const out = [];
   for (const l of text.split('\n')) {
     const t = l.trim();
@@ -583,7 +583,7 @@ test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () =
     assert.ok(!INTERNAL_NAME_RX.test(e.why), `${e.path}: el motivo nombra al repo interno`);
   }
   // el espejo: una línea sembrada fuera de las marcas cuenta; adentro, no
-  const toy = ['# Título', `Leé la guía del repo ${PLACE.LEGACY_PLACE_NAME}.`, '<!-- tycon:' + 'internal-start -->', `Cloná ${PLACE.LEGACY_PLACE_NAME}.`, '<!-- tycon:' + 'internal-end -->'].join('\n');
+  const toy = ['# Título', `Leé la guía del repo ${PLACE.LEGACY_PLACE_NAME}.`, '<!-- ' + 'tycon:internal-start -->', `Cloná ${PLACE.LEGACY_PLACE_NAME}.`, '<!-- ' + 'tycon:internal-end -->'].join('\n');
   assert.deepStrictEqual(publishedLines(toy).filter((l) => INTERNAL_NAME_RX.test(l)).length, 1, 'el espejo de publishedLines');
 });
 

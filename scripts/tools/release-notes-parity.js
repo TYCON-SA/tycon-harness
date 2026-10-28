@@ -54,20 +54,29 @@ const CORPUS = [
   ['perf(listado): la consulta baja de 4s a 300ms', false],
 ];
 
-function copias(root) {
+/** Las carpetas `<producto>/<repo>` de todas las raíces, con su nombre para la persona (con varias raíces, el nombre
+ *  lleva la raíz delante: dos raíces pueden tener el mismo producto). */
+function repoDirs(roots) {
   const out = [];
-  for (const prod of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!prod.isDirectory()) continue;
-    const pd = path.join(root, prod.name);
-    let hijos;
-    try { hijos = fs.readdirSync(pd, { withFileTypes: true }); } catch { continue; }
-    for (const repo of hijos) {
-      if (!repo.isDirectory()) continue;
-      const f = path.join(pd, repo.name, 'scripts', 'release-notes.sh');
-      if (fs.existsSync(f)) out.push({ nombre: `${prod.name}/${repo.name}`, archivo: f });
+  for (const root of roots) {
+    for (const prod of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!prod.isDirectory()) continue;
+      const pd = path.join(root, prod.name);
+      let hijos;
+      try { hijos = fs.readdirSync(pd, { withFileTypes: true }); } catch { continue; }
+      for (const repo of hijos) {
+        if (repo.isDirectory()) out.push({ nombre: `${roots.length > 1 ? `${root}: ` : ''}${prod.name}/${repo.name}`, dir: path.join(pd, repo.name) });
+      }
     }
   }
-  return out.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  return out;
+}
+
+function copias(roots) {
+  return repoDirs(roots)
+    .map((r) => ({ nombre: r.nombre, archivo: path.join(r.dir, 'scripts', 'release-notes.sh') }))
+    .filter((c) => fs.existsSync(c.archivo))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
 function filtroDe(archivo) {
@@ -120,14 +129,15 @@ function main() {
   const argv = process.argv.slice(2);
   const explicita = argv.includes('--root');
   const json = argv.includes('--json');
-  let root;
-  if (explicita) root = argv[argv.indexOf('--root') + 1];
+  let roots;
+  if (explicita) roots = [argv[argv.indexOf('--root') + 1]];
   else {
-    // La raíz la resuelve el arnés: nunca una carpeta escrita a mano. Sin raíz no hay copias que
-    // comparar, y se DICE: «no medido» no es «todo alineado». Un ~/.claude/tycon.json roto tira: un comando frena.
+    // La raíz la resuelve el arnés: nunca una carpeta escrita a mano; puede ser más de una, y se recorren todas. Sin
+    // raíz no hay copias que comparar, y se DICE: «no medido» no es «todo alineado». Un ~/.claude/tycon.json roto
+    // tira: un comando frena.
     const r = require('../lib/repos-root.js').resolveReposRoot();
     if (!r.root) { console.log(`release-notes-parity: no medido — sin raíz de repos en esta máquina (${r.motivo}); no hay copias que comparar.`); return 0; }
-    root = r.root;
+    roots = r.roots && r.roots.length ? r.roots : [r.root];
   }
 
   // 🔴 Una raíz que NO existe se trata distinto según quién la eligió, y la diferencia importa:
@@ -135,13 +145,16 @@ function main() {
   //     un `ls` a la carpeta equivocada leído como "acá no hay nada". Sale 1.
   //   · la dedujo el arnés    → esta máquina simplemente no tiene ese árbol de repos. Sale 0,
   //     pero DICIÉNDOLO: un silencio acá se lee como "todo alineado".
-  if (!fs.existsSync(root)) {
-    if (explicita) { console.error(`❌ release-notes-parity: la raíz ${root} no existe — no se revisó nada, y eso NO es "todo bien".`); return 1; }
-    console.log(`release-notes-parity: no existe ${root} en esta máquina — no hay copias que comparar.`);
-    return 0;
+  const faltan = roots.filter((r) => !fs.existsSync(r));
+  if (faltan.length) {
+    if (explicita) { console.error(`❌ release-notes-parity: la raíz ${faltan[0]} no existe — no se revisó nada, y eso NO es "todo bien".`); return 1; }
+    for (const r of faltan) console.log(`release-notes-parity: no existe ${r} en esta máquina — no hay copias que comparar ahí.`);
+    roots = roots.filter((r) => fs.existsSync(r));
+    if (!roots.length) return 0;
   }
+  const root = roots.join(', ');
 
-  const cs = copias(root);
+  const cs = copias(roots);
   // El CANÓNICO entra en la comparación: mientras las 8 copias existan, lo que
   // importa es que TODAS —incluida la fuente— clasifiquen igual. Si el canónico se rompe, este
   // control tiene que gritar antes de que la rotura se propague.
@@ -216,19 +229,14 @@ function main() {
     const can = path.join(__dirname, '..', 'ci', nombre);
     if (!fs.existsSync(can)) { fallas.push({ repo: `⭐ ${nombre}`, motivo: 'falta el canónico en el arnés' }); continue; }
     const ref = codigo(can);
-    for (const prod of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!prod.isDirectory()) continue;
-      let hijos; try { hijos = fs.readdirSync(path.join(root, prod.name), { withFileTypes: true }); } catch { continue; }
-      for (const repo of hijos) {
-        if (!repo.isDirectory()) continue;
-        for (const copia of nombresDeCopia(nombre)) {
-          const f = path.join(root, prod.name, repo.name, 'scripts', copia);
-          if (!fs.existsSync(f)) continue;
-          filas.push({ nombre: `${prod.name}/${repo.name} · ${copia}`, archivo: f, copia: true });
-          try {
-            if (codigo(f) !== ref) fallas.push({ repo: `${prod.name}/${repo.name}`, motivo: `su copia de ${copia} DIVERGE del canónico del arnés` });
-          } catch (e) { fallas.push({ repo: `${prod.name}/${repo.name}`, motivo: `no se pudo leer ${copia}: ${e.message}` }); }
-        }
+    for (const rd of repoDirs(roots)) {
+      for (const copia of nombresDeCopia(nombre)) {
+        const f = path.join(rd.dir, 'scripts', copia);
+        if (!fs.existsSync(f)) continue;
+        filas.push({ nombre: `${rd.nombre} · ${copia}`, archivo: f, copia: true });
+        try {
+          if (codigo(f) !== ref) fallas.push({ repo: rd.nombre, motivo: `su copia de ${copia} DIVERGE del canónico del arnés` });
+        } catch (e) { fallas.push({ repo: rd.nombre, motivo: `no se pudo leer ${copia}: ${e.message}` }); }
       }
     }
   }

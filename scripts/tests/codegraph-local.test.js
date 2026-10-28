@@ -150,3 +150,48 @@ test('T7 Plan_DiceModoAutomatico y Ps1_MismoTexto @story-8.75.1 @ac-1 @ac-5 @ac-
   const ps1 = fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-codegraph.ps1'), 'utf8');
   for (const words of ['al abrir una sesión en un repo', 'no corre en cada mensaje', '-NoAuto', 'reiniciá Claude Code', 'saqué el modo automático']) assert.ok(ps1.includes(words), words);
 });
+
+// A bin folder whose fake `claude` ends `mcp add` with the given code; without `claude` when claudeExit is null.
+function binWithClaude(claudeExit) {
+  const bin = fakeBin();
+  fs.rmSync(path.join(bin, 'claude'));
+  if (claudeExit !== null) fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n[ "$2" = add ] && exit ${claudeExit}\nexit 0\n`, { mode: 0o755 });
+  return bin;
+}
+const marker = (dir) => fs.existsSync(path.join(dir, '.codegraph', '.tycon-setup-done'));
+// Only the toy bin and the system folders: a real `claude` installed next to node must not leak into these cases.
+const closedEnv = (bin, home) => ({ HOME: home, PATH: [bin, '/usr/bin', '/bin'].join(path.delimiter), TYCON_NO_BOOTSTRAP_HEAL: '1' });
+const runHookClosed = (cwd, bin, home) => spawnSync('bash', [HOOK], { cwd, env: closedEnv(bin, home), encoding: 'utf8', input: '' });
+
+test('T8 Hook_MarcaSoloTrasRegistrar: la marca de listo se escribe sólo si el registro del servidor salió bien, y se reintenta', { skip: onWindows }, () => {
+  const dir = repo();
+  const home = tmp('cgl-home-');
+  runHookClosed(dir, binWithClaude(1), home);
+  assert.ok(fs.existsSync(path.join(dir, '.codegraph')), 'indexa aunque el registro falle');
+  assert.strictEqual(marker(dir), false, 'registro fallido: sin marca, la próxima sesión lo reintenta');
+  runHookClosed(dir, binWithClaude(0), home);
+  assert.strictEqual(marker(dir), true, 'registro bueno: queda la marca');
+  // without the claude CLI the index is the whole job: it indexes and marks
+  const solo = repo();
+  runHookClosed(solo, binWithClaude(null), home);
+  assert.ok(fs.existsSync(path.join(solo, '.codegraph')), 'sin claude indexa igual');
+  assert.strictEqual(marker(solo), true, 'sin claude, con el índice hecho, queda la marca');
+});
+
+const PWSH_BIN = spawnSync('sh', ['-c', 'command -v pwsh'], { encoding: 'utf8' }).stdout.trim();
+const HOOK_PS1 = path.join(ROOT, 'scripts', 'hooks', 'codegraph-session-hook.ps1');
+const runHookPs1 = (cwd, bin, home) => spawnSync(PWSH_BIN, ['-NoProfile', '-NonInteractive', '-File', HOOK_PS1], { cwd, env: closedEnv(bin, home), encoding: 'utf8', input: '' });
+
+test('T9 HookPs1_IndexaSinClaudeYMarcaSoloTrasRegistrar: el gancho de Windows indexa sin claude y marca sólo tras registrar', { skip: onWindows || (!PWSH_BIN && 'sin pwsh') }, () => {
+  const home = tmp('cgl-home-');
+  const solo = repo();
+  runHookPs1(solo, binWithClaude(null), home);
+  assert.ok(fs.existsSync(path.join(solo, '.codegraph')), 'sin claude indexa igual');
+  assert.strictEqual(marker(solo), true, 'sin claude, con el índice hecho, queda la marca');
+  const dir = repo();
+  runHookPs1(dir, binWithClaude(1), home);
+  assert.ok(fs.existsSync(path.join(dir, '.codegraph')));
+  assert.strictEqual(marker(dir), false, 'registro fallido: sin marca');
+  runHookPs1(dir, binWithClaude(0), home);
+  assert.strictEqual(marker(dir), true, 'registro bueno: queda la marca');
+});

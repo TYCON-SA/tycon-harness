@@ -351,10 +351,6 @@ function promptTty(message) {
   return Buffer.from(bytes).toString('utf8').trim();
 }
 
-function readRawLines(logPath) {
-  return readNumberedLines(logPath).map((l) => l.text);
-}
-
 // Las líneas no vacías con su número FÍSICO (contado desde 1), para que un aviso pueda decir «archivo:línea».
 // Sin la marca de orden de bytes que agregan algunos editores de Windows: pegada a la primera línea, rompe su
 // JSON y, como todo cuelga de ahí, descartaría el registro entero.

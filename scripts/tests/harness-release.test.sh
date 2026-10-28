@@ -511,7 +511,7 @@ if corre T18; then
   T="$(TYCON_DIR)"
   harness_lab_git_witness
   # los avisos REALES del repo bajo prueba, apuntados al árbol bajado (TYCON_GUIDES_DIR) y con la HOME de juguete
-  avisos="scripts/hooks/branch-guard-notice.js scripts/hooks/dependencies-notice.js scripts/hooks/dashboard-notice.js scripts/hooks/produccion-notice.js skills/tycon-pipeline/scripts/lib/guides-heal.js"
+  avisos="scripts/hooks/branch-guard-notice.js scripts/hooks/dependencies-notice.js scripts/hooks/dashboard-notice.js scripts/hooks/production-notice.js skills/tycon-pipeline/scripts/lib/guides-heal.js"
   corre_avisos() { # corre_avisos <etiqueta>
     local a out rc
     for a in $avisos; do
@@ -649,6 +649,30 @@ if corre T15; then
   harness_release rollback >/dev/null 2>&1   # otra vez en la .1, con retención
   harness_release rollback --release >/dev/null 2>&1
   [ "$(estado "d['hold']")" = None ] && ok "rollback --release levanta la retención" || mal "la retención sigue: $(estado "d['hold']")"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── T15b ───────────────────────────────────────────
+if corre T15b; then
+  echo "T15b · con «auto» fijado por el perfil del equipo, la retención vale mientras lo publicado sea lo deshecho"
+  # 🔴 mutación: sin el vencimiento, una vuelta atrás frena para siempre la actualización que el equipo fijó
+  harness_lab_create "$BASE/lab15b"
+  harness_lab_release_server
+  harness_lab_publish_stable 2026.10.07.1
+  instala latest
+  harness_lab_publish_stable 2026.10.07.2
+  harness_release update --yes >/dev/null 2>&1
+  harness_release rollback >/dev/null 2>&1
+  [ "$(estado "d['hold']['commit']")" = 2026.10.07.2 ] && ok "retención sobre la .2" || mal "sin retención: $(estado "d['hold']")"
+  printf '{ "update": { "apply": "auto" } }\n' > "$(TYCON_DIR)/harness/team-profile.json"
+  out="$(harness_release update 2>&1)"; rc=$?
+  case "$out" in *retenci*) ok "sin versión posterior a la deshecha, la retención sigue" ;; *) mal "update sin la retención: rc=$rc $out" ;; esac
+  [ "$(estado "d['version']['number']")" = 2026.10.07.1 ] && ok "y no sube a la .2" || mal "subió: $(estado "d['version']['number']")"
+  harness_lab_publish_stable 2026.10.07.3
+  out="$(harness_release update 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.07.3 ] && ok "sale la .3: se aplica sin --yes" || mal "rc=$rc versión $(estado "d['version']['number']"): $out"
+  case "$out" in *"la retención venció"*) ok "y dice que la retención venció" ;; *) mal "no lo dice: $out" ;; esac
+  [ "$(estado "d['hold']")" = None ] && ok "la retención quedó borrada" || mal "la retención sigue: $(estado "d['hold']")"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 

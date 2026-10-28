@@ -109,7 +109,7 @@ function exencionNueva(event, oldContent, newContent) {
   const antes = estadoDe(oldContent || '');
   const estado = EN_IMPLEMENTACION.has(antes) ? antes : (estadoDe(newContent) || antes || 'sin estado');
   const sid = event.session_id;
-  let r = { ok: false };
+  let r;
   try {
     r = require('./lib/escape-ok.js').escapeAutorizado({ variable: 'dod_runtime_exempt', sesion: sid, pedido: event.tool_use_id });
   } catch { r = { ok: false }; }

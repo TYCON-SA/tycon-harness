@@ -249,8 +249,9 @@ function piezas() {
 
 function exclusiones() {
   let data;
-  try { data = JSON.parse(fs.readFileSync(FUERA, 'utf8')); } catch (e) { return noMedido(`no pude leer ${FUERA}: ${e.message}`); }
-  const lista = Array.isArray(data.fuera) ? data.fuera : noMedido(`${FUERA} no tiene la lista "fuera"`);
+  try { data = JSON.parse(fs.readFileSync(FUERA, 'utf8')); } catch (e) { noMedido(`no pude leer ${FUERA}: ${e.message}`); }
+  if (!Array.isArray(data.fuera)) noMedido(`${FUERA} no tiene la lista "fuera"`);
+  const lista = data.fuera;
   const mapa = new Map();
   for (const x of lista) {
     if (!x || !x.ruta || !String(x.motivo || '').trim()) noMedido(`una exclusión no tiene ruta o motivo: ${JSON.stringify(x)} — excluir sin motivo es esconder`);

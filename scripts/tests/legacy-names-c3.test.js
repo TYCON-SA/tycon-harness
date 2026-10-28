@@ -32,8 +32,11 @@ const REPORT = path.join(RAIZ, 'scripts', 'ci', 'suites-report.js');
 // Lo que se espera mudar: 30 archivos, 1 con reemplazo.
 const EXPECTED_FILES = 30;
 const EXPECTED_SHIMS = 1;
-// Los ejecutables internos que quedan en castellano a propósito: el aviso del freno (lo protege el freno por nombre).
-const STILL_SPANISH = ['arnes:scripts/hooks/produccion-notice.js'];
+// Los ejecutables internos que quedan en castellano a propósito: ninguno.
+const STILL_SPANISH = [];
+// Un nombre en castellano para los árboles de juguete, que el detector reconoce con o sin el diccionario del sistema.
+// Armado por concatenación: es el nombre viejo del aviso del freno, que se retira.
+const LAB_SPANISH = 'produ' + 'ccion-notice.js';
 
 /**
  * agent-skills, por la regla común de scripts/lib/skills-dir.js: TYCON_SKILLS_DIR (el clon o su carpeta `skills`) › el
@@ -139,10 +142,10 @@ test('T41b · BatchC3_MapChecksAndNoSpanishInternals — --check-map pasa y no q
 
 // El mismo veredicto con un repo que con dos: un ejecutable en castellano sale UNA vez y con su fuente, esté
 // agent-skills en otro clon, en el mismo, o dado por un enlace al mismo. Árboles de juguete; el nombre en castellano es el
-// del aviso del freno, que el detector reconoce con o sin el diccionario del sistema.
+// de antes del aviso del freno (LAB_SPANISH).
 test('T41b · BatchC3_MapChecksAndNoSpanishInternals — el repo unido y los dos repos dan el mismo veredicto, cada archivo con su fuente', { skip: SKIP_PUBLIC }, () => {
   const { det } = detector();
-  const spanish = path.posix.basename(STILL_SPANISH[0].split(':')[1]);
+  const spanish = LAB_SPANISH;
   const harnessFiles = { [`scripts/lab/${spanish}`]: '#!/usr/bin/env node\n', 'scripts/lab/reader.js': '#!/usr/bin/env node\n' };
   const skillsFiles = { [`skills/lab-skill/scripts/${spanish}`]: '#!/usr/bin/env node\n', 'agents/lab-reviewer.md': '# lab\n' };
   const expected = [`agent-skills:skills/lab-skill/scripts/${spanish}`, `arnes:scripts/lab/${spanish}`];

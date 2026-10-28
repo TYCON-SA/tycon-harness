@@ -1207,7 +1207,7 @@ async function pool(items, worker, jobs) {
   async function lane() {
     while (i < items.length) { const idx = i++; results[idx] = await worker(items[idx], idx); }
   }
-  await Promise.all(Array.from({ length: Math.min(jobs, items.length) }, lane));
+  await Promise.all(Array.from({ length: Math.min(jobs, items.length) }, () => lane()));
   return results;
 }
 
@@ -1474,7 +1474,6 @@ function reclasificar(archivo, opts = {}) {
   // hecho (muchas fugas del lado claude) inflaría TRES números (de criterio, de paridad rota y de
   // regresiones). Contar una vez lo que pasó una vez.
   const esPlomeria = (v) => ['fuga', 'error'].includes(claseDeVeredicto(v));
-  const juicioOk = (v) => !v || v.pass !== false || esPlomeria(v);
   let paridadReal = 0, paridadRuido = 0, paridadPlomeria = 0;
   for (const [key, caso] of Object.entries(r)) {
     for (const [tool, v] of Object.entries(caso.tools || {})) {
@@ -1857,6 +1856,23 @@ if (process.argv.includes('--selftest-classes')) process.exit(selftestClases());
   }
 }
 
+/**
+ * Los archivos de casos del repo del examen que este árbol no trae. El examen corre desde el árbol instalado, y los
+ * casos de algunos revisores viven sólo en el repo de mantenimiento: se suman del mismo repo del que el examen lee su
+ * configuración (`lugarDelExamen` de periodic-exam.js: el clon de `paths.maintainers`, o TYCON_EXAM_REPO). Un archivo
+ * con el mismo nombre sale del árbol propio. → `{ dir, origen, archivos }` (sin archivos si no hay otro repo).
+ */
+function casosDelRepoDelExamen(propios) {
+  const nada = { dir: null, origen: null, archivos: [] };
+  let lugar;
+  try { lugar = require('./periodic-exam.js').lugarDelExamen(); } catch (_) { return nada; }
+  if (!lugar || !lugar.repo || path.resolve(lugar.repo) === path.resolve(TCG)) return nada;
+  const dir = path.join(lugar.repo, 'scripts', 'controls-bench', 'cases', 'advisors');
+  let archivos;
+  try { archivos = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !propios.has(f)).sort(); } catch (_) { return nada; }
+  return { dir, origen: lugar.origen === 'mantenimiento' ? 'el clon de mantenimiento' : lugar.origen, archivos };
+}
+
 async function main() {
   // las opciones se leen separadas («--model sonnet»): «--model=sonnet» no se lee, y la corrida seguiría con el valor
   // de siempre sin decirlo
@@ -1893,6 +1909,13 @@ async function main() {
   if (!fs.existsSync(casesDir)) { console.error(`sin casos: ${casesDir}`); return 1; }
   const archivosDeCasos = fs.readdirSync(casesDir).filter((f) => f.endsWith('.json')).sort();
   const suites = archivosDeCasos.map((f) => JSON.parse(fs.readFileSync(path.join(casesDir, f), 'utf8')));
+  if (!PACK) {
+    const extra = casosDelRepoDelExamen(new Set(archivosDeCasos));
+    if (extra.archivos.length) {
+      console.error(`advisor-runner: ${extra.archivos.length} archivo(s) de casos sumados del repo del examen (${extra.origen}): ${extra.dir}`);
+      for (const f of extra.archivos) suites.push(JSON.parse(fs.readFileSync(path.join(extra.dir, f), 'utf8')));
+    }
+  }
   if (PACK) {
     const mal = suites.map((s, i) => suiteDePaqueteProblema(s, path.join(casesDir, archivosDeCasos[i]))).find(Boolean);
     if (mal) { console.error(mal); return 2; }

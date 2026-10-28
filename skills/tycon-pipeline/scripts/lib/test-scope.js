@@ -104,11 +104,6 @@ function storyIdOf(content) {
 // sobre "qué cuenta como proyecto testeable"): .NET por `.sln`/`.csproj` hasta
 // profundidad 3; node por `package.json` en la raíz o en un subdir inmediato,
 // con vitest o con `node --test` en el script `test`.
-function topSegment(rel) {
-  const i = rel.indexOf('/');
-  return i === -1 ? '.' : rel.slice(0, i);
-}
-
 function walkFiles(root, maxDepth, cb) {
   const stack = [{ dir: root, depth: 0, rel: '' }];
   while (stack.length) {
@@ -150,7 +145,7 @@ function discoverCandidates(repoDir) {
 
   // ── .NET ───────────────────────────────────────────────────────────────────
   // 🔴 El candidato es la carpeta que CONTIENE el .sln/.csproj, no el primer segmento del camino
-  // Colapsar a `topSegment(rel)` haría que en un repo con
+  // Colapsar al primer segmento haría que en un repo con
   // `custom-forms/backend-api-dotnet/App.sln` el candidato salga `custom-forms` — una carpeta
   // contenedora donde `dotnet test` responde MSB1003 ("especifique un archivo de proyecto o
   // solución"). El gate correría igual y dejaría constancia EN ROJO con el id de la story puesto.

@@ -98,7 +98,8 @@ const srv = http.createServer((req, res) => {
     res.writeHead(201); res.end();
   });
 });
-srv.listen(0, '127.0.0.1', () => fs.writeFileSync(path.join(dir, 'puerto'), String(srv.address().port)));
+// el puerto se escribe de una vez (temporal y renombre): leído a medio escribir, la URL queda sin puerto
+srv.listen(0, '127.0.0.1', () => { fs.writeFileSync(path.join(dir, 'puerto.tmp'), String(srv.address().port)); fs.renameSync(path.join(dir, 'puerto.tmp'), path.join(dir, 'puerto')); });
 `;
 
 const servidores = [];
@@ -111,8 +112,10 @@ function buzon(dir) {
   const p = spawn(process.execPath, [path.join(dir, 'servidor.js'), dir], { stdio: 'ignore' });
   servidores.push(p);
   const puerto = path.join(dir, 'puerto');
-  for (let i = 0; i < 200 && !fs.existsSync(puerto); i++) spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},25)']);
-  return `http://127.0.0.1:${fs.readFileSync(puerto, 'utf8').trim()}`;
+  const leido = () => { try { return fs.readFileSync(puerto, 'utf8').trim(); } catch (_) { return ''; } };
+  for (let i = 0; i < 200 && !leido(); i++) spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},25)']);
+  assert.ok(leido(), 'el buzón de mentira no dijo su puerto');
+  return `http://127.0.0.1:${leido()}`;
 }
 
 /** Los PUT que recibió el buzón, en orden. */

@@ -168,6 +168,11 @@ RUN_LINE="run check=$CHECK lock_held=${TYCON_HARNESS_LOCK_HELD:-} snapshot_dir=$
 # integraciones —la salida de `tycon-config.js integrations` del árbol desde el que corre—: así se mide que el aplicador de
 # un arranque ya lee el perfil que ese mismo arranque refrescó
 [ "${LAB_APPLIER_INTEG:-0}" = "1" ] && RUN_LINE="$RUN_LINE integ=$(node "$AQUI/lib/tycon-config.js" integrations 2>&1 | tr '\n' ',')"
+# LAB_APPLIER_SEES=<ruta relativa al árbol>: anota si ese archivo ya está cuando corre el aplicador (sees=1) o no (sees=0):
+# así se mide que una pieza de la capa llegó antes de que el aplicador enlace las piezas
+if [ -n "${LAB_APPLIER_SEES:-}" ]; then
+  if [ -e "$AQUI/../$LAB_APPLIER_SEES" ]; then RUN_LINE="$RUN_LINE sees=1"; else RUN_LINE="$RUN_LINE sees=0"; fi
+fi
 if [ "$CHECK" = "1" ]; then
   # --check no escribe nada en la HOME (story 8.7, AC 24; story 8.16, AC 3): su corrida se anota fuera, en el laboratorio
   [ -n "${LAB_APPLIER_CHECK_LOG:-}" ] && echo "$RUN_LINE" >> "$LAB_APPLIER_CHECK_LOG"

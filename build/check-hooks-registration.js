@@ -26,6 +26,9 @@ const fs = require('fs');
 const path = require('path');
 
 const TCG = path.resolve(__dirname, '..');
+// Los marcadores que el banco lleva como texto (no son plantillas de JS).
+const PH_FIXTURE = '$' + '{FIXTURE}';
+const PH_TCG = '$' + '{TCG}';
 
 function basename(cmdOrScript) {
   const parts = String(cmdOrScript).trim().split(/\s+/);
@@ -38,7 +41,7 @@ function bankEntries(casesDir) {
   for (const f of fs.readdirSync(casesDir).filter((x) => x.endsWith('.json')).sort()) {
     const d = JSON.parse(fs.readFileSync(path.join(casesDir, f), 'utf8'));
     for (const h of d.hooks || []) {
-      const script = String(h.script).replace('${FIXTURE}/tcg/', '${TCG}/');
+      const script = String(h.script).replace(`${PH_FIXTURE}/tcg/`, `${PH_TCG}/`);
       out.push({ event: h.event, matcher: h.matcher || '*', script, base: basename(script) });
     }
   }

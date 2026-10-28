@@ -19,6 +19,9 @@
 #   T9 · (con T2) update: la punta del repo del equipo se apila sobre la versión nueva; el campo `team` sobrevive a update,
 #        startup y rollback; sin acceso, la capa instalada se arrastra y se dice; una versión pública que trae una ruta de la
 #        capa no se instala, queda anotada como fallida y no se vuelve a bajar.
+#   T9P · las plantillas de un paquete que sólo acepta la versión nueva se apilan con su código antes del aplicador.
+#   T9F · el reintento con el código nuevo: sin guion, tiempo agotado, salida distinta de 0, respuesta ilegible y «apilé»
+#         sin la entrada del estado dan `failed` sin tocar el estado; team-after-swap.js sale 2 con una entrada ilegible.
 #   T10 · un commit SÓLO del equipo llega en el arranque fuera de la ventana, dentro de harness/: atómico como
 #        transacción (un archivo que no se puede reemplazar deja todo como estaba), lo que ya no viene se borra sólo con su
 #        blob, lo editado a mano no se pisa, el aplicador de ESE arranque lee el perfil nuevo; una punta rechazada no se
@@ -40,7 +43,7 @@
 # checkout real. 🔴 Sin pipes sobre el comando medido. El perfil del laboratorio (TYCON_PROFILE) se VACÍA: la variable le
 # ganaría al árbol y el perfil que se mide es el de la capa.
 #
-# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T9N|T10|T11|T12|T33|TPN]
+# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T9N|T9P|T9F|T10|T11|T12|T33|TPN]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -138,11 +141,12 @@ if corre T7; then
   OUT="$(harness install --version latest --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "sin el árbol: install --version latest sale 0" || mal "sin el árbol: rc $RC: $OUT"
   [ -f "$(NEW)/perfil-equipo.json" ] && [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && ok "…y vuelve con la capa que el estado recordaba" || mal "sin el árbol perdió la capa: $(estado "d.get('team')")"
-  # la política del equipo que no se puede leer después de apilar (el archivo de la máquina roto) se DICE, y el canal sigue el de antes
+  # el archivo de la máquina roto, con «auto» en el perfil del equipo: no frena la actualización, se DICE que no se usa
   harness_lab_release_fresh_home
   printf '{ roto\n' > "$LAB_HOME/.claude/tycon.json"
   instala_team
-  case "$INSTALL_OUT" in *"la política del equipo no se pudo leer después de apilar la capa"*"sigue con el canal de antes"*) ok "con la configuración de la máquina rota, install dice que la política no se pudo leer y qué canal sigue" ;; *) mal "no dice la política (rc $INSTALL_RC): $INSTALL_OUT" ;; esac
+  case "$INSTALL_OUT" in *"el perfil del equipo fija la actualización automática: lo ilegible ("*") no se usa"*) ok "con la configuración de la máquina rota y «auto» en el perfil, install dice que lo ilegible no se usa" ;; *) mal "no dice lo ilegible (rc $INSTALL_RC): $INSTALL_OUT" ;; esac
+  [ "$INSTALL_RC" = 0 ] && [ "$(estado "d['policy']['channel']")" = latest ] && ok "…y sigue con el canal del perfil" || mal "con la configuración rota: rc $INSTALL_RC, canal $(estado "d.get('policy')")"
   rm -f "$LAB_HOME/.claude/tycon.json"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
@@ -403,6 +407,104 @@ PY
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
+# ───────────────────────────────────────────── T9P ────────────────────────────────────────────────────────────────────
+# Lo mismo que T9N con una ruta real de la capa: las plantillas de un paquete (packs/<p>/templates/). La versión
+# instalada no las acepta y la nueva sí; la capa con el paquete se apila con el código nuevo ANTES del aplicador: el
+# aplicador de esa misma corrida ya ve las plantillas (LAB_APPLIER_SEES).
+if corre T9P; then
+  echo "T9P · update: las plantillas de un paquete que sólo acepta la versión nueva llegan antes de enlazar las piezas"
+  lab_team "$BASE/lab9p"
+  TEAM_ORIG="$(cat "$LAB_AUTHOR_TREE/scripts/setup/harness/team.js")"
+  TEAM_OLD="$(python3 - "$LAB_AUTHOR_TREE/scripts/setup/harness/team.js" <<'PY'
+import sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+hit = [i for i, l in enumerate(lines) if l.lstrip().startswith('new RegExp(`^packs/${SEG}/templates/')]
+assert len(hit) == 1, 'la línea de las plantillas no está una sola vez'
+del lines[hit[0]]
+sys.stdout.write('\n'.join(lines))
+PY
+)"
+  [ -n "$TEAM_OLD" ] && ok "la versión instalada no acepta packs/<p>/templates/" || mal "no pude armar el team.js de la versión instalada"
+  # una capa con paquetes pide el cargador de paquetes en la versión: va el pipeline de esta rama, sin sus pruebas
+  mkdir -p "$LAB_AUTHOR_TREE/skills/tycon-pipeline"
+  cp -R "$RAIZ/skills/tycon-pipeline/scripts" "$LAB_AUTHOR_TREE/skills/tycon-pipeline/"
+  rm -rf "$LAB_AUTHOR_TREE/skills/tycon-pipeline/scripts/tests"
+  printf -- '---\nname: publica-juguete\ndescription: skill pública de juguete\n---\n' > "$LAB_AUTHOR_TREE/skills/tycon-pipeline/SKILL.md"
+  harness_lab_publish_stable 2026.10.08.2 scripts/setup/harness/team.js "$TEAM_OLD"
+  instala_team
+  [ "$INSTALL_RC" = 0 ] && ok "instalada (sin plantillas) con la capa" || mal "install: rc $INSTALL_RC: $INSTALL_OUT"
+  PLANTILLA="packs/equipolab/templates/plantilla.json"
+  mkdir -p "$LAB_AUTHOR_TEAM/packs/equipolab/templates" "$LAB_AUTHOR_TEAM/packs/equipolab/agents"
+  printf '{ "name": "equipolab", "description": "paquete del equipo de juguete", "reviewers": [ { "agent": "rev-equipolab", "group": "base", "when": { "detection": "codeModified" }, "surface": { "paths": ["**/*.ts"] }, "depth": "standard", "prefixes": ["JUG"] } ] }\n' > "$LAB_AUTHOR_TEAM/packs/equipolab/pack.json"
+  printf -- '---\nname: rev-equipolab\ndescription: revisor del equipo de juguete\n---\nRevisa cosas del equipo.\n' > "$LAB_AUTHOR_TEAM/packs/equipolab/agents/rev-equipolab.md"
+  printf '{ "plantilla": true }\n' > "$LAB_AUTHOR_TEAM/$PLANTILLA"
+  harness_lab_team_publish "un paquete con plantillas"
+  C1="$(team_head)"
+  harness_lab_publish_stable 2026.10.08.3 scripts/setup/harness/team.js "$TEAM_ORIG"
+  OUT="$(LAB_APPLIER_SEES="$PLANTILLA" harness_release update --yes 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.08.3 ] && ok "update sale 0 con la versión nueva" || mal "update rc $RC $(estado "d['version']['number']"): $OUT"
+  [ "$(estado "d['team']['commit']")" = "$C1" ] && [ -f "$(NEW)/$PLANTILLA" ] && [ -f "$(NEW)/packs/equipolab/pack.json" ] \
+    && ok "el paquete con sus plantillas quedó apilado en la misma ejecución" \
+    || mal "la capa quedó en $(estado "d.get('team',{}).get('commit','—')[:7]"); plantilla: $([ -f "$(NEW)/$PLANTILLA" ] && echo está || echo falta) · $OUT"
+  RUN9P="$(grep "^run check=0" "$(dirname "$(ESTADO)")/lab-applier.log" 2>/dev/null | tail -n 1)"
+  case "$RUN9P" in *"sees=1"*) ok "el aplicador de esa corrida ya ve las plantillas (la capa llegó antes de enlazar)" ;; *) mal "el aplicador no vio las plantillas: $RUN9P" ;; esac
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── T9F ────────────────────────────────────────────────────────────────────
+# Las ramas de falla del reintento con el código nuevo (refreshTeamWithNewCode): sin el guion, con el tiempo agotado,
+# con una salida distinta de 0, con una respuesta ilegible y con «apilé» sin la entrada del estado. Cada una devuelve
+# `failed`, no deja el estado tocado y dice por qué y que se reintenta. Y team-after-swap.js: sale 2 con una entrada que
+# no se lee, y 0 con su línea JSON con una que sí. Sin red ni laboratorio: árboles de juguete con su propio guion.
+if corre T9F; then
+  echo "T9F · el reintento con el código nuevo: cada rama de falla y la entrada de team-after-swap.js"
+  F9="$BASE/t9f"; mkdir -p "$F9"
+  OUT="$(node - "$RAIZ" "$F9" <<'JS' 2>&1
+const fs = require('fs'); const path = require('path');
+const [root, base] = process.argv.slice(2);
+const R = require(path.join(root, 'scripts', 'setup', 'harness', 'release.js'));
+const home = path.join(base, 'home'); fs.mkdirSync(home, { recursive: true });
+const ctx = { home, env: { HOME: home, PATH: process.env.PATH }, tree: root };
+// a toy installed tree whose team-after-swap.js is the given body (null: the tree does not bring it)
+let n = 0;
+function tree(body) {
+  const dir = path.join(base, `tree-${++n}`);
+  fs.mkdirSync(path.join(dir, 'scripts', 'setup', 'harness'), { recursive: true });
+  if (body !== null) fs.writeFileSync(path.join(dir, 'scripts', 'setup', 'harness', 'team-after-swap.js'), body);
+  return dir;
+}
+const cases = [
+  ['sin el guion', null, {}, /no se pudo evaluar con el código de la versión nueva \(la versión instalada no trae scripts.setup.harness.team-after-swap\.js\)/],
+  ['tiempo agotado', 'setTimeout(() => {}, 60000);', { timeoutMs: 300 }, /se acabó el tiempo \(0 s\)/],
+  ['sale distinto de 0', 'process.stderr.write("se rompió\\n"); process.exit(3);', {}, /salió 3: se rompió/],
+  ['respuesta ilegible', 'process.stdout.write("esto no es json\\n");', {}, /salió 0 sin una respuesta que se lea/],
+  ['apilé sin la entrada', 'process.stdout.write(JSON.stringify({ result: { status: "refreshed", lines: [] }, team: null, log: [] }) + "\\n");', {}, /dijo que apiló la capa pero no devolvió su entrada del estado/],
+];
+for (const [name, body, opts, want] of cases) {
+  const state = { team: { repo: 'acme/equipo', commit: 'c0' } };
+  const before = JSON.stringify(state);
+  const logged = [];
+  const r = R.refreshTeamWithNewCode(ctx, state, tree(body), Object.assign({ log: (l) => logged.push(l) }, opts));
+  const text = (r.lines || []).join(' ');
+  const okCase = r.status === 'failed' && want.test(text) && /se vuelve a intentar en el próximo arranque/.test(text) && JSON.stringify(state) === before && logged.some((l) => want.test(l)) && !r.answered;
+  console.log(`${okCase ? 'OK' : 'MAL'} ${name}: ${r.status} · ${text} · estado ${JSON.stringify(state)}`);
+}
+JS
+)"
+  while IFS= read -r line; do
+    case "$line" in "OK "*) ok "refreshTeamWithNewCode, ${line#OK }" ;; "MAL "*) mal "refreshTeamWithNewCode, ${line#MAL }" ;; *) mal "salida inesperada: $line" ;; esac
+  done <<< "$OUT"
+  SWAP="$RAIZ/scripts/setup/harness/team-after-swap.js"
+  for entrada in '' 'no es json' '{"home":"x"}'; do
+    SALIDA="$(printf '%s' "$entrada" | node "$SWAP" 2>&1)"; RC=$?
+    [ "$RC" = 2 ] && ok "team-after-swap.js con la entrada «${entrada}» sale 2 (${SALIDA})" || mal "team-after-swap.js con «${entrada}»: rc $RC: $SALIDA"
+  done
+  # a readable entry without a team: one JSON line with result, team and log, exit 0; nothing written in the toy HOME
+  SALIDA="$(printf '{"home":"%s","state":{}}' "$F9/home-swap" | HOME="$F9/home-swap" node "$SWAP" 2>/dev/null)"; RC=$?
+  LINEA="$(printf '%s' "$SALIDA" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read().strip().split("\n")[-1]); print(sorted(d.keys()) == ["log","result","team"] and isinstance(d["result"].get("status"), str))' 2>/dev/null)"
+  [ "$RC" = 0 ] && [ "$LINEA" = True ] && ok "team-after-swap.js con un estado sin capa sale 0 con su línea JSON (result, team, log)" || mal "team-after-swap.js con estado sin capa: rc $RC: $SALIDA"
+fi
+
 # ── ayudantes de T10-T12 ──────────────────────────────────────────────────────────────────────────────────
 ventana() { # ventana now|none — la última mirada a la red: recién (dentro de la ventana) o nunca (fuera)
   python3 - "$(ESTADO)" "$1" <<'PY'
@@ -423,6 +525,9 @@ sha7() { printf '%s' "$1" | cut -c1-7; }
 aviso() { estado "d.get('notice') or ''"; }
 PERFIL_SIN_NIGHTLY='{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": false, "mailbox": true }, "update": { "channel": "latest", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }'
 PERFIL_CON_NIGHTLY='{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "latest", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }'
+# los mismos con «ask»: el tramo de T10 en que la versión pública nueva espera los usa (con «auto» en el perfil, se aplica)
+PERFIL_SIN_NIGHTLY_ASK="${PERFIL_SIN_NIGHTLY/\"apply\": \"auto\"/\"apply\": \"ask\"}"
+PERFIL_CON_NIGHTLY_ASK="${PERFIL_CON_NIGHTLY/\"apply\": \"auto\"/\"apply\": \"ask\"}"
 LLAVE_2='{ "_que_es": "la llave de JUGUETE del buzón (laboratorio): no abre nada", "cuenta": "labcorridas", "contenedor": "corridas", "sas": "sv=lab&sig=juguete-2", "vence": "2099-01-01" }'
 
 # ───────────────────────────────────────────── T10 ────────────────────────────────────────────────────────────────────
@@ -524,8 +629,12 @@ if corre T10; then
   [ "$RC" = 0 ] && [ "$(estado "d['team']['commit']")" = "$C4b" ] && ok "(f) T22: con el aplicador fallando, la capa entró y update salió 0" || mal "(f) T22: aplicador fallando: rc $RC $(estado "d.get('team')")"
   case "$OUT" in *"el aplicador falló"*) ok "(f) T22: …y lo dice en una línea" ;; *) mal "(f) T22: update no dice que el aplicador falló: $OUT" ;; esac
   [ "$(estado "json.dumps(d.get('managed'), sort_keys=True)")" = "$P0" ] && ok "(f) T22: …y no anotó piezas de un aplicador que falló" || mal "(f) T22: anotó piezas con el aplicador fallando"
-  # (g) política ask y una versión pública nueva sin aplicar: la capa nueva entra igual
-  publica_perfil "$PERFIL_SIN_NIGHTLY" "nightly apagada (ask)"
+  # (g) política ask y una versión pública nueva sin aplicar: la capa nueva entra igual. El «ask» lo fija el perfil
+  # INSTALADO (con «auto» en el perfil, la máquina no puede saltear la actualización), así que primero entra un perfil
+  # con «ask» y después llegan juntas la versión pública nueva y otra capa
+  publica_perfil "$PERFIL_CON_NIGHTLY_ASK" "nightly prendida (ask)"
+  ventana none; TYCON_UPDATE_APPLY=ask harness_release startup >/dev/null 2>&1
+  publica_perfil "$PERFIL_SIN_NIGHTLY_ASK" "nightly apagada (ask)"
   C5="$(team_head)"
   harness_lab_publish_stable 2026.10.08.2
   ventana none
@@ -544,13 +653,13 @@ if corre T10; then
 import json,sys
 f,b=sys.argv[1:3]; d=json.load(open(f)); d['files'].append({'path':'version.json','mode':'100644','blob':b}); json.dump(d, open(f,'w'), indent=1)
 PY
-  publica_perfil "$PERFIL_CON_NIGHTLY" "nightly prendida (i)"
+  publica_perfil "$PERFIL_CON_NIGHTLY_ASK" "nightly prendida (i)"
   ventana none
   harness_release startup >/dev/null 2>&1
   [ -f "$(NEW)/version.json" ] && ok "(i) version.json sigue: el refresco sólo borra rutas de la lista cerrada" || mal "(i) el refresco borró version.json"
   [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && ok "(i) …y la capa nueva entró" || mal "(i) state.team: $(estado "d.get('team')")"
   # (j) un commit que cambia update.channel: la política se relee después del refresco
-  publica_perfil '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "stable", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }' "canal stable"
+  publica_perfil '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "stable", "apply": "ask" }, "packs": { "default": "all" }, "install": { "profile": "full" } }' "canal stable"
   ventana none
   harness_release startup >/dev/null 2>&1
   [ "$(estado "d['channel']")" = stable ] && ok "(j) state.channel pasó a stable en el mismo arranque" || mal "(j) state.channel: $(estado "d.get('channel')")"
@@ -559,7 +668,7 @@ PY
   harness_release startup >/dev/null 2>&1
   [ "$(grep -c 'canal vigente cambió' "$(STARTUP_LOG)" 2>/dev/null)" = "$K0" ] && ok "(j) el arranque siguiente no dice «el canal cambió»" || mal "(j) el arranque siguiente dijo que el canal cambió"
   # (k) la llave borrada a mano con la misma punta: repuesta desde la caché, sin bajar nada
-  publica_perfil "$PERFIL_CON_NIGHTLY" "canal latest otra vez" && printf '%s\n' "$LLAVE_2" > "$LAB_AUTHOR_TEAM/scripts/metrics/corridas-buzon.json" && harness_lab_team_publish "la llave de vuelta (k)"
+  publica_perfil "$PERFIL_CON_NIGHTLY_ASK" "canal latest otra vez" && printf '%s\n' "$LLAVE_2" > "$LAB_AUTHOR_TEAM/scripts/metrics/corridas-buzon.json" && harness_lab_team_publish "la llave de vuelta (k)"
   ventana none
   harness_release startup >/dev/null 2>&1
   [ -f "$(NEW)/scripts/metrics/corridas-buzon.json" ] && ok "(k) la llave está (commit con la llave)" || mal "(k) la llave no entró"
@@ -583,7 +692,7 @@ PY
   [ "$(( $(team_pedidos) - T0 ))" = 1 ] && ok "(l) el arranque siguiente no la revalida: un solo pedido (la ref)" || mal "(l) revalidó: $(( $(team_pedidos) - T0 )) pedidos"
   case "$(aviso)" in *"inventada"*) ok "(l) …y el aviso sigue diciendo el motivo" ;; *) mal "(l) el aviso se perdió: $(aviso)" ;; esac
   # (m) la mirada a la copia pública bloqueada (sin permiso) y un commit sano del equipo: la capa entra igual
-  publica_perfil "$PERFIL_SIN_NIGHTLY" "perfil sano (m)"
+  publica_perfil "$PERFIL_SIN_NIGHTLY_ASK" "perfil sano (m)"
   harness_lab_release_control "{ \"auth\": \"token:solo-otro-11\", \"auth_by_repo\": { \"$LAB_TEAM\": \"none\" } }"
   ventana none
   harness_release startup >/dev/null 2>&1

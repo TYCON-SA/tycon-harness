@@ -97,8 +97,8 @@ function storyText({ files = ARCHIVOS, tandas = '', acs = ACS_MARCADOS } = {}) {
 }
 
 /** Un repo de juguete con la story; devuelve `{ repo, storyPath, content }`. */
-function repoCon(opts, tag = 'r') {
-  const repo = tmp(`bbs-${tag}-`);
+function repoCon(opts, tag = 'r', padre = null) {
+  const repo = padre ? path.join(padre, tag) : tmp(`bbs-${tag}-`);
   spawnSync('git', ['init', '-q', repo], { encoding: 'utf8' });
   const storyPath = path.join(repo, 'specs', 'story-9.26-panel.md');
   const content = storyText(opts);
@@ -380,4 +380,24 @@ test('T16 QaCheck_CommitTouchesBlockedScreen_AsksScreenReview', () => {
   const out = qaCheck(r);
   assert.equal(out.status, 2, `la pantalla cambió: la revisa:\n${out.stdout}\n${out.stderr}`);
   assert.match(out.stderr, /\(7\)/);
+});
+
+test('T17 RuntimeMatrix_CommitTouchesBlockedScreen_CriteriaBack', () => {
+  const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+  // los repos van en una carpeta propia: la matriz mira los repos vecinos, y recorrer la carpeta temporal entera es lento
+  const padre = tmp('bbs-t17-');
+  const r = repoCon({ tandas: TANDAS_126 }, 't17', padre);
+  // con la lista dada: la pantalla de la tanda bloqueada cambió, su criterio vuelve a la matriz
+  const conPantalla = rm.compute({ storyPath: r.storyPath, changed: [PANEL] });
+  assert.deepEqual(conPantalla.acs, [1, 2, 3], 'el commit cambia la pantalla de la tanda bloqueada: su criterio vuelve');
+  assert.ok(conPantalla.warnings.some((w) => /B-frontend/.test(w) && /SwitchPanel\.tsx/.test(w)), conPantalla.warnings.join('\n'));
+  // sin pantalla entre los cambios, la baja se da como antes
+  assert.deepEqual(rm.compute({ storyPath: r.storyPath, changed: ['Acme/Features/Switch/SwitchEndpoints.cs'] }).acs, [1, 2]);
+  // sin la lista, la saca de git: la pantalla escrita después del commit cuenta
+  const r2 = repoCon({ tandas: TANDAS_126 }, 't17b', padre);
+  conCommit(r2);
+  assert.deepEqual(rm.compute({ storyPath: r2.storyPath }).acs, [1, 2, 3]);
+  const r3 = repoCon({ tandas: TANDAS_126 }, 't17c', padre);
+  conCommit(r3, { pantalla: false });
+  assert.deepEqual(rm.compute({ storyPath: r3.storyPath }).acs, [1, 2]);
 });

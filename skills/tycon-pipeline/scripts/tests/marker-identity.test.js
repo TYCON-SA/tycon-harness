@@ -133,6 +133,40 @@ test('Set_OtraStoryConReplace_ReemplazaYDejaCopia — la copia trae la ejecució
   assert.match(log, /marker-replace/);
 });
 
+test('Set_OtraStoryConPasosHechos_OfreceRenumerar — el freno dice cómo conservar la ejecución', () => {
+  const home = laboratorio();
+  marker(home, 'set', JSON.stringify({ storyId: '9.1', stepScheme: 2, stepsCompleted: ['start', 'validate-story'], stepsPending: ['plan', 'approve-plan'] }));
+  const r = marker(home, 'set', JSON.stringify({ storyId: '9.7', stepScheme: 2, stepsPending: ['plan', 'approve-plan'] }));
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stderr, /--renumber/);
+});
+
+test('Set_OtraStoryConRenumber_ConservaLaEjecucion — cambia el número, no los pasos ni los controles', () => {
+  const home = laboratorio();
+  marker(home, 'set', JSON.stringify({ storyId: '9.1', storyPath: '/x/specs/story-9.1.md', stepScheme: 2, stepsCompleted: ['start', 'validate-story'], stepsPending: ['plan', 'approve-plan'] }));
+  const antes = leer(home);
+  // un control y una iteración de la corrida, escritos como los deja el arnés
+  const f = path.join(estado(home), 'active', `${SID}.json`);
+  fs.writeFileSync(f, JSON.stringify({ ...antes, checks: { build: 'green' }, iterations: { 1: { ts: 't', filesSnapshot: ['a'] } } }));
+  const r = marker(home, 'set', JSON.stringify({ storyId: '9.7', storyPath: '/x/specs/story-9.7.md' }), '--renumber');
+  assert.strictEqual(r.status, 0, r.stderr);
+  const m = leer(home);
+  assert.strictEqual(m.storyId, '9.7');
+  assert.strictEqual(m.storyPath, '/x/specs/story-9.7.md');
+  assert.deepStrictEqual(m.stepsCompleted, ['start', 'validate-story'], 'conserva los pasos hechos');
+  assert.deepStrictEqual(m.stepsPending, ['plan', 'approve-plan']);
+  assert.deepStrictEqual(m.checks, { build: 'green' }, 'conserva los controles');
+  assert.ok(m.iterations && m.iterations[1], 'conserva las iteraciones');
+  assert.strictEqual(m.startedAt, antes.startedAt);
+  assert.match(r.stderr, /9\.1/);
+  assert.match(r.stderr, /9\.7/);
+  const c = copias(home);
+  assert.strictEqual(c.length, 1, 'deja la copia del marcador anterior');
+  assert.strictEqual(c[0].storyId, '9.1');
+  const log = fs.readFileSync(path.join(estado(home), 'gates.log'), 'utf8');
+  assert.match(log, /marker-renumber/);
+});
+
 test('Set_OtraStorySinPasosHechos_ReemplazaConCopia — un marcador recién armado no frena', () => {
   const home = laboratorio();
   marker(home, 'set', JSON.stringify({ storyId: '9.1', stepScheme: 2, stepsPending: ['start', 'approve-plan'] }));
