@@ -1433,6 +1433,23 @@ test('motivo del pull: un texto largo se recorta Y SE NOTA que fue recortado', (
 /** El PATH exacto con el que launchd lanza sus trabajos programados. */
 const PATH_DE_LAUNCHD = '/usr/bin:/bin:/usr/sbin:/sbin';
 
+/**
+ * Una copia del node `origen` en `destino` (un clon en APFS). Un node que carga su librería aparte (el de Homebrew:
+ * `@rpath/libnode.*.dylib`, buscada en `../lib` junto al binario) no arranca copiado solo: la copia lleva también esa
+ * librería, en el mismo lugar relativo.
+ */
+function copiarNode(origen, destino) {
+  fs.copyFileSync(origen, destino, fs.constants.COPYFILE_FICLONE);
+  fs.chmodSync(destino, 0o755);
+  const libReal = path.join(path.dirname(fs.realpathSync(origen)), '..', 'lib');
+  let libs = [];
+  try { libs = fs.readdirSync(libReal).filter((n) => /^libnode\..*dylib$/.test(n)); } catch (_) { /* sin librería aparte */ }
+  if (!libs.length) return;
+  const libCopia = path.join(path.dirname(destino), '..', 'lib');
+  fs.mkdirSync(libCopia, { recursive: true });
+  for (const n of libs) if (!fs.existsSync(path.join(libCopia, n))) fs.copyFileSync(path.join(libReal, n), path.join(libCopia, n), fs.constants.COPYFILE_FICLONE);
+}
+
 /** Un bin/ con node y —según el caso— `claude` y `codex` al lado, como el bin de nvm. */
 function binDeNode(b, { conHerramientas = true, real: rutaReal = process.execPath } = {}) {
   const bin = path.join(b.raiz, 'bin-falso');
@@ -1446,10 +1463,7 @@ function binDeNode(b, { conHerramientas = true, real: rutaReal = process.execPat
   const real = fs.statSync(rutaReal);
   const esElReal = (p) => { try { const st = fs.statSync(p); return st.ino === real.ino && st.dev === real.dev; } catch (_) { return false; } };
   if (esElReal(nodeFalso)) throw new Error(`binDeNode: ${nodeFalso} es el node real (${rutaReal}); no se escribe sobre él`);
-  if (!fs.existsSync(nodeFalso)) {
-    fs.copyFileSync(rutaReal, nodeFalso, fs.constants.COPYFILE_FICLONE);
-    fs.chmodSync(nodeFalso, 0o755);
-  }
+  if (!fs.existsSync(nodeFalso)) copiarNode(rutaReal, nodeFalso);
   if (conHerramientas) {
     // La forma REAL de cada una: `claude` es un binario nativo — acá un sh
     // alcanza —; `codex` es un script `#!/usr/bin/env node`, y ésa es la trampa que el caso tiene
@@ -1900,14 +1914,14 @@ test('T24 Examen_NodeDelArnes_PlistConCurrentYHerramientas @story-8.39 @ac-9', (
   // `#!/usr/bin/env node`): copias, nunca un enlace al node real
   const delDev = path.join(b.raiz, 'npm-global', 'bin');
   fs.mkdirSync(delDev, { recursive: true });
-  fs.copyFileSync(process.execPath, path.join(delDev, 'node'), fs.constants.COPYFILE_FICLONE); fs.chmodSync(path.join(delDev, 'node'), 0o755);
+  copiarNode(process.execPath, path.join(delDev, 'node'));
   fs.writeFileSync(path.join(delDev, 'claude'), '#!/bin/sh\necho ok\nexit 0\n'); fs.chmodSync(path.join(delDev, 'claude'), 0o755);
   fs.writeFileSync(path.join(delDev, 'codex'), '#!/usr/bin/env node\nconsole.log("ok");\n'); fs.chmodSync(path.join(delDev, 'codex'), 0o755);
   // el Node del arnés: una COPIA del node real en versions/<v>/bin/node y el enlace current
   const nodo = (v) => {
     const d = path.join(b.casa, '.tycon', 'node', 'versions', v, 'bin');
     fs.mkdirSync(d, { recursive: true });
-    if (!fs.existsSync(path.join(d, 'node'))) { fs.copyFileSync(process.execPath, path.join(d, 'node'), fs.constants.COPYFILE_FICLONE); fs.chmodSync(path.join(d, 'node'), 0o755); }
+    if (!fs.existsSync(path.join(d, 'node'))) copiarNode(process.execPath, path.join(d, 'node'));
     const cur = path.join(b.casa, '.tycon', 'node', 'current');
     try { fs.unlinkSync(cur); } catch (_) { /* no había */ }
     fs.symlinkSync(path.join('versions', v), cur, 'dir');
@@ -1962,7 +1976,7 @@ test('T24 Examen_NodeDelArnes_PlistConCurrentYHerramientas @story-8.39 @ac-9', (
 /** Una carpeta con `claude`, `codex` (`#!/usr/bin/env node`, con su node al lado) y, si se pide, `engram`. */
 function herramientasEn(dir, { engram = false } = {}) {
   fs.mkdirSync(dir, { recursive: true });
-  if (!fs.existsSync(path.join(dir, 'node'))) { fs.copyFileSync(process.execPath, path.join(dir, 'node'), fs.constants.COPYFILE_FICLONE); fs.chmodSync(path.join(dir, 'node'), 0o755); }
+  if (!fs.existsSync(path.join(dir, 'node'))) copiarNode(process.execPath, path.join(dir, 'node'));
   fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\necho ok\nexit 0\n'); fs.chmodSync(path.join(dir, 'claude'), 0o755);
   fs.writeFileSync(path.join(dir, 'codex'), '#!/usr/bin/env node\nconsole.log("ok");\n'); fs.chmodSync(path.join(dir, 'codex'), 0o755);
   if (engram) { fs.writeFileSync(path.join(dir, 'engram'), '#!/bin/sh\necho engram\nexit 0\n'); fs.chmodSync(path.join(dir, 'engram'), 0o755); }
