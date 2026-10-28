@@ -135,5 +135,15 @@ test('sin la lib de rutas el portón de la terminal sigue cargando (y resuelve c
     const h = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(JSON.stringify(g.extractWriteTargets(${JSON.stringify(cmd)})));`], { encoding: 'utf8' });
     assert.strictEqual(h.status, 0, h.stderr);
     assert.deepStrictEqual(JSON.parse(h.stdout), ['src/a.cs']);
+    // el delimitador es cualquier palabra que el shell acepta: con guion o con punto también es un programa, y el
+    // destino que arma con una variable se lee igual
+    // 🔴 Falla con: un delimitador sólo de letras, números y `_` en el respaldo (`<<'END-DOC'` deja de ser un programa)
+    for (const cab of ["<<'END-DOC'", '<<END-DOC', "<<-'END.DOC'"]) {
+      const delim = cab.replace(/^<<-?'?|'$/g, '');
+      const c = `python3 - ${cab}\np = 'specs/story-x.md'\nopen(p, 'w').write('x')\n${delim}`;
+      const r2 = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(JSON.stringify(g.destinosArmados(${JSON.stringify(c)})));`], { encoding: 'utf8' });
+      assert.strictEqual(r2.status, 0, r2.stderr);
+      assert.deepStrictEqual(JSON.parse(r2.stdout).flatMap((a) => a.literales || []), ['specs/story-x.md'], cab);
+    }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

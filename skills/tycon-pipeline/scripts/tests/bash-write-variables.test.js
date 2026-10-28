@@ -554,6 +554,76 @@ test('T36 GuionEnArchivoDetrasDeEnvoltoriosOpcionesYEnlaces_Frena', () => {
   });
 });
 
+// T37 GuionDelArbolPropio_SoloLoVersionadoSinCambios_Pasa
+// En una máquina que corre el arnés desde un clon, no hay instalación: el orquestador es un guion del árbol del propio
+// freno. Pasa si git lo tiene versionado, sin cambios y en un commit que también está en el servidor; uno nuevo, cambiado,
+// commiteado sólo en ese clon o que git dejó de mirar frena, y lo que importa uno eximido pasa la misma prueba. Sin git
+// (una versión bajada), el árbol es el arnés.
+// 🔴 Falla con: eximir el árbol propio entero (un guion dejado en el clon escribe cualquier historia), no eximirlo
+//    nunca (el orquestador no puede marcar nada en una máquina de clon), pasarle la ruta a git como patrón, o creerle
+//    a un commit local.
+test('T37 GuionDelArbolPropio_SoloLoVersionadoSinCambios_Pasa', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const copiar = (destino) => {
+    fs.cpSync(SCRIPTS, path.join(destino, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+    fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(destino, 'scripts', 'lib'), { recursive: true });
+  };
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const clon = path.join(raiz, 'clon');
+  copiar(clon);
+  const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+  fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
+  fs.writeFileSync(path.join(guiones, 'orq-y.js'), "require('./mod-y');\n");
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  fs.writeFileSync(path.join(guiones, 'nuevo-x.js'), ESCRIBE);
+  fs.writeFileSync(path.join(guiones, 'mod-y.js'), ESCRIBE);
+  fs.writeFileSync(path.join(guiones, 'orq-[x].js'), ESCRIBE);
+  fs.writeFileSync(path.join(guiones, '.gitignore'), 'orq-\\[x\\].js\n');
+  const bajada = path.join(raiz, 'bajada');
+  copiar(bajada);
+  fs.writeFileSync(path.join(bajada, 'skills', 'tycon-pipeline', 'scripts', 'orq-x.js'), ESCRIBE);
+  conEnv(ENV, () => {
+    const freno = (arbol, archivo) => tituloDe(require(path.join(arbol, 'skills', 'tycon-pipeline', 'scripts', 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(arbol, 'skills', 'tycon-pipeline', 'scripts', archivo)}`, repo), { stateDir: estado, installedRoots: [] }));
+    assert.equal(freno(clon, 'orq-x.js'), '', 'versionado y sin cambios: es el orquestador');
+    assert.equal(freno(clon, 'nuevo-x.js'), HISTORIA, 'un guion nuevo en el clon no es del arnés');
+    assert.equal(freno(clon, 'orq-y.js'), HISTORIA, 'lo que importa un guion eximido pasa la misma prueba');
+    assert.equal(freno(clon, 'orq-[x].js'), HISTORIA, 'la ruta es literal: no la encuentra un patrón de git');
+    fs.appendFileSync(path.join(guiones, 'orq-x.js'), '// cambiado\n');
+    assert.equal(freno(clon, 'orq-x.js'), HISTORIA, 'uno cambiado en el clon tampoco');
+    git('update-index', '--assume-unchanged', path.join(guiones, 'orq-x.js'));
+    assert.equal(freno(clon, 'orq-x.js'), HISTORIA, 'ni uno que git dejó de mirar');
+    git('update-index', '--no-assume-unchanged', path.join(guiones, 'orq-x.js'));
+    git('add', '-A'); git('commit', '-q', '-m', 'local');
+    assert.equal(freno(clon, 'orq-x.js'), HISTORIA, 'ni uno commiteado sólo en este clon');
+    assert.equal(freno(bajada, 'orq-x.js'), '', 'sin git, el árbol es el arnés');
+  });
+});
+
+// T38 HeredocQueElShellNoAbre_NoEscondeLoQueSigue
+// Un `<<` dentro de comillas, de `$((` o de `<<<`, o con la palabra pegada a una comilla, no abre un heredoc: el shell
+// corre las líneas siguientes, y el freno también las mira. Un heredoc de verdad sigue sin contar su cuerpo.
+// 🔴 Falla con: tomar cualquier `<<` como apertura, o el delimitador hasta la primera comilla.
+test('T38 HeredocQueElShellNoAbre_NoEscondeLoQueSigue', () => {
+  const { estado, repo } = corralConHistorias();
+  conEnv(ENV, () => {
+    const freno = (c) => tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots: [] }));
+    const ESCRIBE = 'echo x > specs/story-x.md';
+    for (const [abre, cierre] of [['cat <<<1', '1'], ['echo $((1<<2))', '2'], ['echo "a <<-"', '-'], ['cat <<1"x"', '1'], ["echo 'b <<E'", 'E']]) {
+      assert.equal(freno(`${abre}\n${ESCRIBE}\n${cierre}`), HISTORIA, abre);
+    }
+    for (const abre of ["cat <<'END-DOC' > /tmp/nota.txt", 'cat <<-1EOF > /tmp/nota.txt']) {
+      const fin = abre.includes('END-DOC') ? 'END-DOC' : '1EOF';
+      assert.equal(freno(`${abre}\n${ESCRIBE}\n${fin}`), '', `el cuerpo de ${abre} es texto`);
+    }
+  });
+});
+
 test('el mensaje del freno dice de quién es el escape y nombra la receta', () => {
   const lv = require(path.join(SCRIPTS, 'lib', 'ledger-visible.js'));
   const m = lv.mensaje(['/repo/src/Foo.cs'], '9.9');

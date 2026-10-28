@@ -114,7 +114,7 @@ function lastWord(seg) {
  */
 function stripNonCommandText(s) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador.
-  let t = String(s).replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
   // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
   t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
@@ -196,7 +196,7 @@ function resolverCd(cmd, baseCwd) {
     return d ? { dir: resolveTarget(d, baseCwd), forma: 'hoy', s } : { dir: baseCwd, forma: 'hoy', s };
   };
   try {
-    s = raw.replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)([\s\S]*?)(\n[ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
+    s = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)([\s\S]*?)(\n[ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
     cds = [...s.matchAll(/\bcd\b/g)];
     if (!cds.length) return { dir: baseCwd, forma: 'sin-cd', s };
     const m = /(^|;|\n|&&)[ \t]*cd[ \t]+([^\s;&|()<>'"`\\]+)[ \t]*&&/.exec(s.slice(Math.max(0, cds[0].index - 3)));
@@ -443,7 +443,7 @@ function scriptsInline(cmd) {
   // cada parte con una sola lectura posible: una barra invertida es siempre escape, una opción empieza con letra
   const conFlag = new RegExp(`${inicio}((?:\\s+-{1,2}[A-Za-z][\\w-]*(?:=[^\\s'"]+)?)*?)\\s+(?:-[a-zA-Z]*[epc]|--eval|--print|-Command)\\s+(['"])((?:\\\\[\\s\\S]|(?!\\2)[^\\\\])*)\\2([^\\n;&|]*)`, 'gi');
   // sin los cuerpos de los heredocs: un `node -e` adentro de un `.md` que se escribe es texto, no un comando
-  const sinCuerpos = raw.replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const sinCuerpos = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   for (const m of sinCuerpos.matchAll(conFlag)) out.push({ script: m[3], argv: argumentosDe(m[4]) });
   // por la entrada: el heredoc o el here-string que llega a un intérprete como su programa, detrás de un envoltorio,
   // en otra etapa de la tubería o con `/dev/stdin`
@@ -465,7 +465,7 @@ function programasPorEntrada(raw) {
     try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch { lectorDeEntrada = null; }
   }
   if (lectorDeEntrada) return lectorDeEntrada(raw);
-  return [...raw.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
+  return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
     .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3], comillas: Boolean(m[1]) }));
 }
 
@@ -543,7 +543,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
     const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
     try { return fs.realpathSync.native(crudo); } catch { return null; }
   };
-  const instalado = (real) => instalados.some((r) => isInsideReal(r, real));
+  const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real);
   const leer = (real) => {
     try {
       const st = fs.statSync(real);
@@ -553,17 +553,18 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
       return { texto, grande: st.size > GUION_TOPE };
     } catch { return null; }
   };
-  // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos
-  const agregar = (interprete, real, leido, argv, hondo = 0) => {
+  // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos; uno del arnés no se revisa, pero
+  // lo que importa pasa la misma prueba
+  const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
     if (vistos.has(real) || vistos.size >= 20) return;
     vistos.add(real);
-    out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
-    if (hondo >= 2 || leido.grande) return;
+    if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
+    if (hondo >= 2 || (leido.grande && !exento)) return;
     for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
       const r = rutaReal(m, path.dirname(real));
-      if (!r || instalado(r)) continue;
+      if (!r) continue;
       const l = leer(r);
-      if (l) agregar(interprete, r, l, argv, hondo + 1);
+      if (l) agregar(interprete, r, l, argv, hondo + 1, instalado(r));
     }
   };
   // un guion nombrado: su archivo, la carpeta (`__main__.py`, `index.js`) o el heredoc que lo escribe
@@ -575,10 +576,9 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
         if (!real) return false;
       }
       if (real) {
-        if (instalado(real)) return true;
         const leido = leer(real);
-        if (!leido) continue;
-        agregar(interprete, real, leido, argv);
+        if (!leido) { if (instalado(real)) return true; continue; }
+        agregar(interprete, real, leido, argv, 0, instalado(real));
         return true;
       }
       const abs = resolveTarget(valor, base, process.platform, { homeVariable: true });
@@ -606,9 +606,9 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
           const interprete = nombreDeComando(partes[0]) === 'env'
             ? nombreDeComando(partes.slice(1).find((x) => !x.startsWith('-') && !x.includes('=')))
             : nombreDeComando(partes[0]);
-          if (interprete && CORRE_ARCHIVO.test(interprete) && !instalado(real)) {
+          if (interprete && CORRE_ARCHIVO.test(interprete)) {
             const leido = leer(real);
-            if (leido) agregar(interprete, real, leido, argumentos(words.slice(k + 1)));
+            if (leido) agregar(interprete, real, leido, argumentos(words.slice(k + 1)), 0, instalado(real));
           }
         } catch { /* no se lee: no es un guion */ }
         break;
@@ -657,6 +657,40 @@ function importsLocales(familia, texto, dir) {
     }
   }
   return out.filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
+}
+
+/**
+ * ¿`real` es un guion del árbol de este freno, y ese árbol es el arnés y no un repo donde se trabaja? Sin git (una
+ * versión bajada) es el arnés. En un clon de trabajo, el de quien lo mantiene, cuenta sólo lo versionado y sin
+ * cambios: un guion nuevo o cambiado ahí no es del arnés. Si git no responde, tampoco.
+ */
+function versionadoEnElArbolPropio(real) {
+  const arbol = (() => { try { return fs.realpathSync.native(path.resolve(__dirname, '..', '..', '..')); } catch { return null; } })();
+  if (!arbol || !isInsideReal(arbol, real)) return false;
+  const conGit = (() => {
+    for (let d = arbol; ; d = path.dirname(d)) {
+      if (fs.existsSync(path.join(d, '.git'))) return true;
+      if (path.dirname(d) === d) return false;
+    }
+  })();
+  if (!conGit) return true;
+  const rel = path.relative(arbol, real);
+  const { spawnSync } = require('child_process');
+  // sin el repo de quien llama: un GIT_DIR heredado haría contestar a otro repo; la ruta, literal: `orq-[x].js` no
+  // es un patrón que encuentre a `orq-x.js`
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) delete env[k];
+  const git = (args) => spawnSync('git', ['-C', arbol, ...args], { encoding: 'utf8', timeout: 3000, env });
+  // `-v` marca con minúscula o con `S` lo que git dejó de mirar (`--assume-unchanged`, `--skip-worktree`)
+  const versionado = git(['ls-files', '-v', '--error-unmatch', '--', rel]);
+  if (versionado.status !== 0) return false;
+  const lineas = versionado.stdout.split('\n').filter(Boolean);
+  if (lineas.length !== 1 || lineas[0] !== `H ${rel.split(path.sep).join('/')}`) return false;
+  const cambios = git(['status', '--porcelain', '--', rel]);
+  if (cambios.status !== 0 || cambios.stdout.trim() !== '') return false;
+  // versionado en un commit que sólo está en este clon no cuenta: lo pudo escribir quien llama
+  const locales = git(['rev-list', '-n1', 'HEAD', '--not', '--remotes']);
+  return locales.status === 0 && locales.stdout.trim() === '';
 }
 
 /** ¿`p` (ya resuelta) cae adentro de la carpeta `dir`, comparadas por su ruta real? */
@@ -883,7 +917,7 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
 
 /** Los tramos de un comando (`;`, `&&`, `||`, `|`, salto de línea), sin cortar adentro de las comillas ni de los heredocs. */
 function tramos(cmd) {
-  const s = String(cmd || '').replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const s = String(cmd || '').replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   const out = [];
   let q = null;
   let actual = '';
@@ -2390,7 +2424,7 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
  */
 function heredocs(cmd) {
   const out = [];
-  const re = /(^|[\n;&|][ \t]*)([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\3([^\n]*)\n([\s\S]*?)\n[ \t]*\4[ \t]*(?=\n|$)/g;
+  const re = /(^|[\n;&|][ \t]*)([^\n]*?)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\3(?=[\s;&|()<>]|$)([^\n]*)\n([\s\S]*?)\n[ \t]*\4[ \t]*(?=\n|$)/g;
   let m;
   while ((m = re.exec(String(cmd || '')))) {
     const line = `${m[2]} ${m[5]}`;
