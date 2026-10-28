@@ -74,7 +74,10 @@
 # VARIABLES (todas opcionales):
 #   TYCON_PUBLIC_CI_PART=<parte>    corre sólo una PARTE de los pasos, para repartirlos en trabajos que corren a la vez
 #                                   (la CI de GitHub, con una matriz Node × parte). Sin la variable (o vacía), todos:
-#                                     checks            todos los pasos menos el 5 (portable-suites)
+#                                     checks            todos los pasos menos el 5 (portable-suites) y el 7
+#                                                       (controls-bench)
+#                                     controls-bench    sólo el paso 7: el banco tarda unos 5 minutos y en su propio
+#                                                       trabajo corre a la vez que los demás pasos de checks
 #                                     suites-<i>-of-<n> sólo el paso 5, con la parte <i> de <n> de las portables: las
 #                                                       reparte scripts/ci/suites-shard.js por peso (juego `pr`, ver
 #                                                       portable-suites.test.sh, TYCON_PORTABLE_SHARD)
@@ -83,9 +86,10 @@
 #                                                       acepta el instalador; no es parte de la corrida entera. Con
 #                                                       --range, un cambio que no toca la instalación sale verde sin
 #                                                       correrlas («no toca la instalación: salteado»; floor_untouched)
-#                                   Las n+1 partes juntas son la corrida entera: `checks` más `suites-1-of-<n>` …
-#                                   `suites-<n>-of-<n>`. Una parte sola NO es el veredicto: el resumen la nombra, y en la CI
-#                                   lo da el job `public-ci`, que junta todas. Un valor que no sea uno de ésos: 2, con el uso.
+#                                   Las n+2 partes juntas son la corrida entera: `checks`, `controls-bench` y
+#                                   `suites-1-of-<n>` … `suites-<n>-of-<n>`. Una parte sola NO es el veredicto: el resumen
+#                                   la nombra, y en la CI lo da el job `public-ci`, que junta todas. Un valor que no sea uno
+#                                   de ésos: 2, con el uso.
 #   TYCON_PUBLIC_CI_OUT=<carpeta>   dónde queda la salida: `<n>-<paso>.log` por paso, `agent-skills-suites.tsv` (una
 #                                   línea `✅|❌<TAB>raiz/ruta` por suite del paso 6, ordenadas), la salida de cada una
 #                                   en `agent-skills-suites/` y el reporte del banco en `bench.json`. Sin la variable va a
@@ -151,7 +155,7 @@ PART="${TYCON_PUBLIC_CI_PART:-}"; PORTABLE_SHARD=""; PORTABLE_ONLY=""
 # instalador: el resto de la CI corre sólo con Node 24, que es el que el arnés se instala.
 FLOOR_SUITES="tests/harness-bootstrap.test.sh,tests/harness-update.test.sh,tests/harness-node.test.sh,tests/harness-release.test.sh,tests/harness-release-links.test.sh,tests/version-by-merge.test.js"
 case "${PART}" in
-  ""|checks) ;;
+  ""|checks|controls-bench) ;;
   installer-floor) PORTABLE_ONLY="${FLOOR_SUITES}" ;;
   suites-*-of-*)
     # sólo dígitos, i entre 1 y n: «suites-0-of-3», «suites-4-of-3», «suites-1-of-3x» o «suites-1-of-2-of-3» no son una parte
@@ -159,16 +163,17 @@ case "${PART}" in
     if [[ "${PART}" =~ ${PART_RE} ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ]; then
       SHARD_I="${BASH_REMATCH[1]}"; SHARD_N="${BASH_REMATCH[2]}"
     else
-      echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2
+      echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, controls-bench, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2
     fi
     PORTABLE_SHARD="${SHARD_I}/${SHARD_N}" ;;
-  *) echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2 ;;
+  *) echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, controls-bench, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2 ;;
 esac
 # wants <paso> → 0 si el paso le toca a esta parte
 wants() {
   case "${PART}" in
     "") return 0 ;;
-    checks) [ "$1" != portable-suites ] ;;
+    checks) [ "$1" != portable-suites ] && [ "$1" != controls-bench ] ;;
+    controls-bench) [ "$1" = controls-bench ] ;;
     *) [ "$1" = portable-suites ] ;;   # suites-<i>-of-<n> e installer-floor: sólo las portables
   esac
 }
@@ -590,7 +595,8 @@ floor_untouched() {
 # ── la corrida ─────────────────────────────────────────────────────────────────────────────────────
 case "${PART}" in
   "") ;;
-  checks) echo "public-ci: parte checks — todos los pasos menos portable-suites (las portables van en las partes suites-<i>-of-<n>)" ;;
+  checks) echo "public-ci: parte checks — todos los pasos menos portable-suites y controls-bench (las portables van en las partes suites-<i>-of-<n>, el banco en la suya)" ;;
+  controls-bench) echo "public-ci: parte controls-bench — sólo el banco de controles (los demás pasos van en la parte checks)" ;;
   installer-floor) echo "public-ci: parte installer-floor — sólo las portables de la instalación y la actualización, con el Node de esta máquina ($(node --version 2>/dev/null || echo 'sin node'))" ;;
   *) echo "public-ci: parte ${PART} — sólo portable-suites, con la parte ${SHARD_I} de ${SHARD_N} de las portables (los demás pasos van en la parte checks)" ;;
 esac

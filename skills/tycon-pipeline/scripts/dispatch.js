@@ -39,13 +39,16 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta 
 // cross-repo es seguro por orden. Lado Claude: editEventsFrom es identidad, cero cambio.
 let editEventsFrom = null;
 let ARNES_DIR = null;
+let AVISO_SIN_ARNES = null;
 try {
   // Dónde está el arnés lo dice UN lector (lib/harness-path.js): TYCON_GUIDES_DIR (o TCG, que
   // exporta el runner del banco, cuyo HOME va sandboxeado) › el lugar `~/.claude/tycon-harness`.
   // Nunca una carpeta escrita a mano. Un hook no frena por esto: lo dice y sigue (fail-open).
   const r = require('./lib/harness-path.js').rutaArnesHook();
   if (r.dir) { ARNES_DIR = r.dir; ({ editEventsFrom } = require(path.join(r.dir, 'scripts', 'lib', 'hook-io.js'))); }
-  else process.stderr.write(r.aviso + '\n');
+  // el aviso lo da dispatch(), cuando corre un gancho; quien sólo carga el archivo para leer sus cadenas (el sitio,
+  // al armar «Cómo trabaja») no corre ninguno, y en su registro sería ruido en cada carga
+  else AVISO_SIN_ARNES = r.aviso;
 } catch { /* fallback: sin normalización, conducta actual */ }
 
 // Una llave de integración del arnés. Configuración ROTA: el aviso en cada edición y apagada. Sin arnés, o con un arnés
@@ -241,12 +244,36 @@ function prepareEvents(rawEvent, platform = process.platform) {
   return events.map((event) => nativeEvent(event, platform));
 }
 
+/**
+ * Las firmas sobre un archivo (scripts/lib/owner-window.js) se gastan sólo si la escritura pasa la cadena entera: con
+ * los consumos abiertos, la regla que valida una firma la reserva, y al terminar se gastan (pasó) o vuelven a su lugar
+ * (frenó otra regla, de este u otro handler). Un gancho de otro proceso que frena después no se entera: ése la gasta igual.
+ * Devuelve las que no se pudieron cerrar; cada una queda en el registro de errores de los ganchos.
+ */
+const CONSUMOS = Symbol.for('tycon.consumos-diferidos');
+function abrirConsumos() { globalThis[CONSUMOS] = []; }
+function cerrarConsumos({ paso }) {
+  const lista = globalThis[CONSUMOS];
+  delete globalThis[CONSUMOS];
+  if (!Array.isArray(lista) || !lista.length) return [];
+  let errores;
+  try {
+    errores = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).confirmarConsumos(lista, { paso: !!paso });
+  } catch (e) {
+    errores = lista.map(({ f }) => ({ f, error: e.message }));
+  }
+  for (const { f, error } of errores) logHookError('consumos-de-firmas', new Error(`la firma ${path.basename(f)} no se pudo ${paso ? 'gastar' : 'devolver'} (${error}): queda reservada, no se reusa`));
+  return errores;
+}
+
 function dispatch(mode) {
+  if (AVISO_SIN_ARNES) process.stderr.write(AVISO_SIN_ARNES + '\n');
   const chain = CHAINS[mode];
   if (!chain) {
     // modo desconocido → no-op (nunca romper el tool call por esto)
     process.exit(0);
   }
+  abrirConsumos();
 
   const rawEvent = readEvent();
   // Un block en CUALQUIER archivo de un patch bloquea el patch entero (es un solo tool call
@@ -319,7 +346,8 @@ function dispatch(mode) {
 
     if (result.block) {
       // BLOQUEAR inmediatamente. Los reminders advisory acumulados se descartan
-      // (el tool call va a ser denegado de todas formas).
+      // (el tool call va a ser denegado de todas formas). Las firmas que validaron las reglas anteriores no se gastan.
+      cerrarConsumos({ paso: false });
       process.stderr.write(result.block);
       process.exit(2);
     }
@@ -328,6 +356,8 @@ function dispatch(mode) {
     }
     if (result.systemMessage && mode === 'post-edit') paraLaPersona.push({ texto: String(result.systemMessage), alMostrar: result.alMostrar, name: h.name });
   }
+  // ninguna regla frenó: la escritura pasa y las firmas que la dejaron pasar quedan usadas
+  cerrarConsumos({ paso: true });
 
   if (paraLaPersona.length && !escribioAparte) {
     const contexto = reminders.map((t) => `<system-reminder>\n${String(t).trim()}\n</system-reminder>`).join('\n');
@@ -349,7 +379,7 @@ function dispatch(mode) {
   process.exit(0);
 }
 
-module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries };
+module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos };
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {

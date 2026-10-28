@@ -608,7 +608,7 @@ function decidir(entrada) {
       'Lo que no está declarado se trata como producción.',
       ...caminoFirewall(n.host),
       `Si es de un ambiente de prueba, declaralo en <repo>/.tycon/production.json:`,
-      `  {"servers":[{"host":"${n.host}","environment":"no-produccion"}]}`,
+      `  {"servers":[{"host":"${n.host}","environment":"non-production"}]}`,
       indice.catalogos.length
         ? `  (catálogos que hoy conoce esta máquina: ${indice.catalogos.map((c2) => c2.repo).join(', ')})`
         : '  (esta máquina no tiene NINGÚN catálogo: revisá la raíz de repos con `node scripts/lib/repos-root.js`)',
@@ -741,7 +741,11 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
         // los clientes de base porque ESO es lo que vigilan. Leerlas como si fueran un guion ajeno
         // hace que el freno se frene a sí mismo (2026-09-15).
         // (con el nombre de antes del renombre a inglés también: su reemplazo sigue en la carpeta vieja)
-        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|produccion-notice\.js)$/.test(abs);
+        // Se reconocen por el nombre Y por dónde viven (la instalación en /opt o el arnés de este mismo freno): un guion
+        // recién hecho en otra carpeta con el nombre de una pieza se lee igual que cualquiera.
+        const raizDelFreno = require('path').resolve(__dirname, '..', '..') + require('path').sep;
+        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|production-notice\.js|produccion-notice\.js)$/.test(abs)
+          && (abs.startsWith('/opt/tycon/') || abs.startsWith(raizDelFreno));
         const esTemporal = !esDelFreno && (
              /^(?:\/tmp\/|\/private\/tmp\/|\/var\/folders\/|\/private\/var\/folders\/)/.test(abs)
           || (process.env.TMPDIR && abs.startsWith(require('path').resolve(process.env.TMPDIR)))
@@ -1914,7 +1918,28 @@ function escrituraProtegida(cmd, payload) {
   };
 
   const r0 = texto(cmd, escPatron(path.resolve(String((payload && payload.cwd) || process.cwd()))), 0);
-  return r0.veredicto || null;
+  return r0.veredicto || programaPorHeredoc(cmd, sp) || null;
+}
+
+/**
+ * El programa de un intérprete (python, node…) que llega por su entrada —un heredoc o un here-string— se juzga como el
+ * de `python3 -c`: si nombra el catálogo, el índice o la memoria, frena. Cuenta el intérprete del comando que recibe el
+ * texto y el de las etapas que le siguen en la tubería (`cat <<EOF | python3`); lo que va a un archivo
+ * (`cat > x.py <<EOF`) o a un programa que vive en un archivo (`node tool.js <<EOF`) es dato. Un `bash -c "…"` se mira
+ * por dentro.
+ */
+function programaPorHeredoc(cmd, sp, prof = 0) {
+  if (!cmd.includes('<<')) return null;
+  for (const p of sp.programasPorEntrada(cmd)) {
+    const m = MENCION_PROTEGIDA.exec(String(p.cuerpo || ''));
+    if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por su entrada).` };
+  }
+  if (prof >= 6) return null;                                               // el mismo tope de anidamiento de `texto`
+  for (const interno of sp.tokens(cmd).filter((t, i, ts) => i > 0 && ts[i - 1] === '-c' && t.includes('<<'))) {
+    const v = programaPorHeredoc(interno, sp, prof + 1);
+    if (v) return v;
+  }
+  return null;
 }
 
 /** El patrón de `find -name` como RegExp (find no expande llaves: `production-{index,memory}.json` es literal, X10). */
@@ -1931,7 +1956,8 @@ function globDeFind(g, ci) {
     }
     re += c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   }
-  try { return new RegExp(`^${re}$`, ci ? 'i' : ''); } catch { return /^/; }
+  // Un patrón que no se puede leer coincide con todo: el freno frena (por el lado seguro).
+  try { return new RegExp(`^${re}$`, ci ? 'i' : ''); } catch { return { test: () => true }; }
 }
 
 /** Los nombres de las variables que una palabra cruda usa (`$F`, `${F}`, `${F:-…}`). Por el lado seguro: no mira comillas. */

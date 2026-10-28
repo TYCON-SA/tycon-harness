@@ -75,7 +75,12 @@ const INVENTORY = 'scripts/ci/controls-from-base.json';
 const NOT_RUN = 9;
 const SELF = 'scripts/ci/run-base-controls.sh';
 const CODE = /\.(c?js|mjs|sh)$/;
-const [cmd, ...rest] = process.argv.slice(2);
+// en la ventana nueva de Windows los argumentos llegan por el ambiente: la consola no deja pasar las comillas del JSON.
+// Sólo para `approve` en Windows, y se borran al leerlos: un ambiente heredado no cambia los de otro comando
+const enLaVentana = process.env.TYCON_WAIVER_IN_WINDOW === '1' && !!process.env.BASE_CONTROLS_WINDOW_ARGS
+  && process.argv[2] === 'approve' && (process.platform === 'win32' || process.env.TYCON_WAIVER_PLATFORM === 'win32');
+const [cmd, ...rest] = enLaVentana ? JSON.parse(process.env.BASE_CONTROLS_WINDOW_ARGS) : process.argv.slice(2);
+delete process.env.BASE_CONTROLS_WINDOW_ARGS;
 
 function usage(code) {
   console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json>');
@@ -790,6 +795,41 @@ function cmdPending() {
   console.log(`o desde tu terminal: ${firma} --terminal`);
 }
 
+// la ventana nueva de Windows (skills/tycon-pipeline/scripts/lib/runtime-waiver.js, del mismo árbol que este guion)
+function waiverLib() {
+  try { return require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'runtime-waiver.js')); } catch (_) {
+    if (process.platform !== 'win32') return null;
+    console.error('🔒 run-base-controls approve --terminal: en Windows la firma se da en una ventana nueva, y no encuentro su biblioteca al lado de este guion: no se firmó nada.');
+    process.exit(2);
+  }
+}
+
+// En Windows la terminal no se lee: el comando corre otra vez en una ventana nueva, y ahí se firma con tres palabras al azar
+function approveInNewWindow(rw, root, out, entries) {
+  if (process.env[rw.MARCA_VENTANA] !== '1') {
+    console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+    process.env.BASE_CONTROLS_WINDOW_ARGS = JSON.stringify([cmd, ...rest]);
+    // adentro, node lee el programa de un archivo y no de la entrada, que queda para la consola
+    // el código de la ventana no alcanza: firmó si la constancia está escrita
+    const dest = path.join(root, isApprovalDir(out) ? `${out}${hashOf(entries)}.json` : out);
+    const leer = () => { try { return fs.readFileSync(dest, 'utf8'); } catch (_) { return null; } };
+    const antes = leer();
+    const v = rw.abrirVentana({ script: path.join(process.env.BASE_CONTROLS_SELF_DIR || '', 'run-base-controls-window.js'), args: [cmd], titulo: 'Firma del dueño' });
+    if (v.estado !== 'cerrada') { console.error(`🔒 run-base-controls approve: ${v.estado === 'vencida' ? `la ventana venció a los ${v.tope} s sin firmar${v.pid ? ` (la ventana arrancó: pid ${v.pid})` : ''}` : `no pude abrir la ventana (${v.motivo})`}: no se firmó nada.`); process.exit(1); }
+    const despues = leer();
+    const firmo = despues !== null && (isApprovalDir(out) || despues !== antes);
+    if (v.codigo === 0 && !firmo) { console.error('🔒 run-base-controls approve: la ventana se cerró sin escribir la constancia: no se firmó nada.'); process.exit(1); }
+    process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+  }
+  if (!rw.hasTty()) { console.error('🔒 run-base-controls approve --terminal: en Windows firma sólo la ventana nueva que abre este comando: no se firmó nada.'); process.exit(2); }
+  rw.dentroDeLaVentana();
+  console.error('Vas a firmar, como dueño, este cambio de control:');
+  for (const e of entries) console.error(`   ${safe(e.path)} (blob ${short(e.blob)})`);
+  console.error(`La firma va a: ${safe(out)}${isApprovalDir(out) ? `${hashOf(entries)}.json` : ''}`);
+  if (!rw.confirmarFrase({})) { console.error('run-base-controls approve: no se firmó nada.'); process.exit(1); }
+  writeApproval(root, out, entries, approvalLine(entries));
+}
+
 function readFromTty(prompt) {
   let fd;
   try { fd = fs.openSync('/dev/tty', 'r+'); } catch (_) { return null; }
@@ -842,6 +882,8 @@ function cmdApprove() {
   const where = insideRepo(root, out);
   if (where) { console.error(`run-base-controls approve: el destino ${safe(out)} ${where}: no se firmó nada.`); process.exit(2); }
   if (!enTerminal) { approveByWindow(root, out, entries, classifyApprove(root, entries, read.inv)); return; }
+  const rw = waiverLib();
+  if (rw && rw.esWindows()) { approveInNewWindow(rw, root, out, entries); return; }
   if (process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
     console.error('🔒 run-base-controls approve --terminal: pide una terminal interactiva de verdad (la constancia es del dueño, no de un agente). Correlo vos, en tu terminal.');
     process.exit(2);

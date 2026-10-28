@@ -15,6 +15,10 @@
  * El registro vive en `owner-window/`, dentro de la carpeta del estado de la casa de la cuenta, un archivo por (firma, sesión
  * destino, sesión del pedido). La casa sale de real-home.js: `HOME`, `USERPROFILE` y `TYCON_HOME` no la cambian.
  *
+ * Las firmas sobre un archivo (`marker.js sign-file <firma> <archivo>`, FIRMAS_DE_ARCHIVO de signatures.js) son un
+ * guion más; con la firma dada, el guion deja una constancia en `owner-window/files/` (`firmarArchivo`) que el Edit o
+ * Write siguiente de esa sesión sobre ese archivo consume (`consumirArchivo`), dentro de los mismos 30 minutos.
+ *
  * La envoltura de la consola es la medida en la Mac (`zsh -c source <foto del ambiente> … && eval '<comando>' <
  * /dev/null && pwd -P >| /tmp/claude-…-cwd`). Una que no coincide, un árbol que no se lee (Windows) o una herramienta
  * lanzada por otra herramienta o por su consola se niegan: lo indecidible se firma en la terminal. Lo que no ve: una
@@ -27,7 +31,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const { SIGNATURES } = require('./signatures.js');
+const { SIGNATURES, FIRMAS_DE_ARCHIVO } = require('./signatures.js');
 const { casaDeLaCuenta } = require('./real-home.js');
 
 const LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
@@ -41,6 +45,10 @@ const VARIABLES_DE_SESION = /(^|[^\w])(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|C
 const GUIONES = new Set(['marker.js', 'pipeline.js', 'e2e-setup.js', 'run-base-controls.sh']);
 const NODES = new Set(['node', 'nodejs']);
 const SHS = new Set(['bash', 'sh']);
+// las consolas que corren el texto de `-c` como un comando (`grep -c '…'` cuenta renglones: no corre nada)
+const CONSOLAS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'pwsh', 'powershell', 'pwsh.exe', 'powershell.exe', 'bash.exe']);
+// los consumos de las firmas sobre un archivo que dejó pendientes el despachador (dispatch.js)
+const CONSUMOS = Symbol.for('tycon.consumos-diferidos');
 const REFIRMA = 'refresh-after-main';
 const CONTROL = 'control-change';
 
@@ -175,6 +183,8 @@ function firmaDeLlamado(guion, sub, args) {
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
+    // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
+    if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;
     return null;
   }
   if (guion === 'pipeline.js') return ['smart-reloop', 'advisors'].includes(sub) && con('--extra-round') ? 'extra-round' : null;
@@ -200,7 +210,8 @@ function llamadosSueltos(comando, hondo = 0) {
       // un texto con espacios es un comando sólo si lo corre una consola (`bash -c '…'`, `eval '…'`); un mensaje
       // (`git commit -m '…'`) que nombra la firma no la pide
       const ant = i > 0 ? w[i - 1].texto : '';
-      if (/\s/.test(w[i].texto) && (/^-(?:[a-z]*c[a-z]*|command)$/i.test(ant) || base(w[0].texto) === 'eval')) fuera.push(...llamadosSueltos(w[i].texto, hondo + 1));
+      const consola = w.slice(0, i - 1).some((x) => CONSOLAS.has(base(x.texto)));
+      if (/\s/.test(w[i].texto) && ((consola && /^-(?:[a-z]*c[a-z]*|command)$/i.test(ant)) || base(w[0].texto) === 'eval')) fuera.push(...llamadosSueltos(w[i].texto, hondo + 1));
     }
   }
   for (const s of t.subs) fuera.push(...llamadosSueltos(s, hondo + 1));
@@ -275,10 +286,16 @@ function storyDe(casa, destino) {
   } catch (_) { return 'sin ejecución abierta'; }
 }
 
-function detalleDe(id, comando, palabras) {
+function detalleDe(id, comando, palabras, cwd) {
   if (id === 'plan-approval' && palabras) {
     const i = palabras.findIndex((w) => w === '--approved' || w === '--mockup-approved');
     if (i >= 0 && palabras[i + 1]) return `la cita: «${una(palabras[i + 1], 200)}»`;
+  }
+  if (palabras && palabras[1] === 'sign-file' && palabras[3]) {
+    // la consola expande la tilde antes de correr el guion: la ventana muestra la ruta que se va a firmar
+    const tilde = /^~(?=[\\/]|$)/.test(palabras[3]) ? os.homedir() + palabras[3].slice(1) : palabras[3];
+    const real = rutaReal(tilde, cwd);
+    return `sobre el archivo ${una(palabras[3], 300)}${real !== palabras[3] ? ` (${una(real, 300)})` : ''}`;
   }
   return `el comando: ${una(comando)}`;
 }
@@ -441,7 +458,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
     // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
     else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
-  let detalle = detalleDe(pendientes[0], comando, can && can.palabras);
+  let detalle = detalleDe(pendientes[0], comando, can && can.palabras, evento.cwd);
   if (guion === 'runtime-waiver') {
     const c = criteriosDelPedido(can.palabras, evento.cwd);
     if (c.error) return negar(c.error, pendientes);
@@ -554,10 +571,113 @@ function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa,
   fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date(ahora).toISOString(), ...renglon })}\n`);
 }
 
+// --- las firmas sobre un archivo ------------------------------------------------------------------------------------
+
+/** La ruta real de un archivo: la de su carpeta resuelta y su nombre (el archivo puede no existir todavía). */
+function rutaReal(archivo, cwd) {
+  const abs = path.resolve(cwd || process.cwd(), String(archivo));
+  try { return fs.realpathSync(abs); } catch (_) { /* todavía no existe */ }
+  try { return path.join(fs.realpathSync(path.dirname(abs)), path.basename(abs)); } catch (_) { return abs; }
+}
+
+function constanciaDe(casa, firma, sesion, real) {
+  return path.join(carpeta(casa), 'files', `${firma}--${sesion}--${sha256(real).slice(0, 16)}.json`);
+}
+
+function deArchivo(firma) {
+  if (!FIRMAS_DE_ARCHIVO.includes(firma)) throw new Error(`«${firma}» no es una firma sobre un archivo (${FIRMAS_DE_ARCHIVO.join(', ')})`);
+}
+
+/** La constancia de una firma sobre un archivo, para la sesión que lo va a escribir: la deja el guion después de firmar. */
+function firmarArchivo({ firma, via, sesion, archivo, cwd, casa, ahora = Date.now() } = {}) {
+  deArchivo(firma);
+  if (!SESION.test(String(sesion || ''))) throw new Error('la constancia necesita la sesión que escribe el archivo');
+  if (casa === undefined) casa = casaDeLaCuenta();
+  const real = rutaReal(archivo, cwd);
+  const destino = constanciaDe(casa, firma, sesion, real);
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  const tmp = `${destino}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify({ ts: new Date(ahora).toISOString(), firma, via, sesion, destino: sesion, archivo: real }), { mode: 0o600 });
+  fs.renameSync(tmp, destino);
+  return destino;
+}
+
+/**
+ * ¿Hay una constancia vigente de `firma` para esta sesión y este archivo? `{ ok: true, constancia }` la consume (una
+ * escritura por firma); `{ ok: false, motivo }` no toca nada.
+ */
+function consumirArchivo({ firma, sesion, archivo, cwd, casa, ahora = Date.now() } = {}) {
+  deArchivo(firma);
+  if (!SESION.test(String(sesion || ''))) return { ok: false, motivo: 'el evento no dice de qué sesión es la escritura' };
+  if (casa === undefined) {
+    try { casa = casaDeLaCuenta(); } catch (e) { return { ok: false, motivo: `no se pudo resolver la casa de la cuenta (${e.message})` }; }
+  }
+  const real = rutaReal(archivo, cwd);
+  const f = constanciaDe(casa, firma, sesion, real);
+  let c;
+  try { c = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT') return { ok: false, motivo: `la constancia de la ventana no se pudo leer (${e.code || e.message})` };
+    // una escritura que murió con la firma reservada la dejó perdida: no es lo mismo que no haberla firmado
+    let perdida = false;
+    try { perdida = fs.readdirSync(path.dirname(f)).some((x) => x.startsWith(`${path.basename(f)}.reservado-`)); } catch (_) { /* sin carpeta: no hay firma */ }
+    return { ok: false, motivo: perdida ? 'la firma de la ventana quedó reservada por una escritura que no terminó: se perdió, firmala de nuevo' : 'no hay una firma de la ventana para este archivo' };
+  }
+  if (c.firma !== firma || c.sesion !== sesion || c.archivo !== real) return { ok: false, motivo: 'la constancia de la ventana es de otra firma, sesión o archivo' };
+  const edad = ahora - Date.parse(c.ts);
+  if (!(edad >= 0 && edad <= VENCE_MIN * 60000)) return { ok: false, motivo: `la firma de la ventana venció (vale ${VENCE_MIN} minutos)` };
+  // dentro del despachador la firma queda reservada (otra escritura ya no la encuentra) y al final se gasta, si ninguna
+  // regla del evento frenó la escritura, o vuelve a su lugar; si el despachador muere en el medio, queda reservada: perdida
+  const espera = globalThis[CONSUMOS];
+  if (Array.isArray(espera) && espera.some((x) => x.f === f)) return { ok: true, constancia: c };
+  const destino = Array.isArray(espera) ? `${f}.reservado-${process.pid}-${ahora}` : `${f}.consumido-${ahora}`;
+  try { fs.renameSync(f, destino); } catch (e) {
+    return { ok: false, motivo: e.code === 'ENOENT' ? 'la firma de la ventana ya se usó' : `la firma de la ventana no se pudo reservar (${e.code || e.message})` };
+  }
+  if (Array.isArray(espera)) espera.push({ f, reservado: destino, ahora });
+  return { ok: true, constancia: c };
+}
+
+/**
+ * Cierra las firmas que reservó `consumirArchivo` dentro del despachador: con `paso` se gastan, sin `paso` vuelven a su
+ * lugar. Devuelve los errores (`[{ f, error }]`): una firma que no se pudo cerrar no se da por cerrada en silencio.
+ */
+function confirmarConsumos(lista, { paso = true } = {}) {
+  const errores = [];
+  for (const { f, reservado, ahora } of lista || []) {
+    try { fs.renameSync(reservado, paso ? `${f}.consumido-${ahora}` : f); } catch (e) { errores.push({ f, error: e.code || e.message }); }
+  }
+  return errores;
+}
+
+/** El renglón que dice cómo se pide una firma sobre un archivo: lo usan los carteles de los frenos de escritura. */
+function comoSeFirma(firma, archivo) {
+  // entre comillas simples si la consola leería otra cosa (espacios, `$`, `;`, comillas, paréntesis…)
+  const ruta = archivo ? (/^[A-Za-z0-9_./:@%+=,-]+$/.test(archivo) ? archivo : `'${String(archivo).replace(/'/g, "'\\''")}'`) : '<archivo>';
+  return `marker.js sign-file ${firma} ${ruta}`;
+}
+
 function ttyDeVerdad() {
   const rw = require(path.join(LIB, 'runtime-waiver.js'));
-  const windows = process.platform === 'win32';
-  return { windows, hay: rw.hasTty, preguntar: rw.promptTty, confirmarFrase: rw.confirmarFrase };
+  return {
+    windows: rw.esWindows(), hay: rw.hasTty, preguntar: rw.promptTty, confirmarFrase: rw.confirmarFrase,
+    // Windows: la ventana nueva (la abre el proceso de afuera; el de adentro se anota y espera una tecla al terminar)
+    enVentana: () => process.env[rw.MARCA_VENTANA] === '1',
+    abrir: (o) => rw.abrirVentana(o),
+    dentro: () => rw.dentroDeLaVentana(),
+  };
+}
+
+/**
+ * En Windows la terminal no se lee: el comando se corre otra vez en una ventana nueva y la firma se da adentro. El
+ * proceso de afuera sale con el código de la ventana (`salir`); si no se abrió o venció, devuelve 1 sin firmar.
+ */
+function porLaVentana({ argv, t, salir = process.exit }) {
+  console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+  const v = t.abrir({ programa: process.execPath, script: argv[0], args: argv.slice(1), titulo: 'Firma del dueño' });
+  if (v.estado === 'vencida') return { codigo: 1, motivo: `la ventana venció a los ${v.tope} s sin firmar${v.pid ? ` (la ventana arrancó: pid ${v.pid})` : ' (la ventana no llegó a arrancar el comando)'}` };
+  if (v.estado !== 'cerrada') return { codigo: 1, motivo: `no pude abrir la ventana (${v.motivo})` };
+  salir(v.codigo === 0 ? 0 : (v.codigo || 1));
+  return { codigo: v.codigo === 0 ? 0 : (v.codigo || 1), via: 'ventana-nueva' };
 }
 
 /**
@@ -570,7 +690,8 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
   if (!t.hay()) return { codigo: 2, motivo: 'esta firma se da en la terminal del dueño, y aquí no hay una' };
   const que = `Firma del dueño: ${s ? s.approves : firma}${resumen ? ` (${una(resumen, 200)})` : ''}${destino ? `, sesión ${destino}` : ''}.`;
   let ok;
-  if (t.windows) ok = t.confirmarFrase({});
+  // en Windows también: la ventana dice qué se firma antes de pedir las tres palabras
+  if (t.windows) { console.error(`\n${que}`); ok = t.confirmarFrase({}); }
   else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
   if (!ok) return { codigo: 1, motivo: 'no se firmó' };
   firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar });
@@ -582,7 +703,7 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
  * `{ codigo, motivo?, via?, destino? }`; con 0, el renglón `-signed` ya está escrito. `propia`: la sesión sobre la que
  * actúa el guion; un registro para otra sesión destino no la firma.
  */
-function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia } = {}) {
+function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir } = {}) {
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -591,7 +712,10 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
     return { codigo: 1, motivo: `este guion actúa sobre la sesión ${propia}: firmar para otra sesión (--for-session ${pedida}) se corre desde la sesión destino` };
   }
   if (argv.includes('--terminal')) {
-    const r = porTerminal({ firma, destino: pedida || propia || null, resumen, casa, ahora, tty, anotar });
+    const t = tty || ttyDeVerdad();
+    if (t.windows && t.enVentana && !t.enVentana()) return { ...porLaVentana({ argv, t, salir }), destino: pedida || propia || null };
+    if (t.windows && t.enVentana && t.dentro) t.dentro();
+    const r = porTerminal({ firma, destino: pedida || propia || null, resumen, casa, ahora, tty: t, anotar });
     return { ...r, destino: pedida || propia || null };
   }
   const v = verificar({ firma, argv, pid, arbol, casa, ahora, destino: propia });
@@ -602,7 +726,17 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
 }
 
-module.exports = { VENCE_MIN, carpeta, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, vencerPedidos };
+/**
+ * Quién firmó, para la constancia del guion, a partir de lo que devolvió `exigir`: por la delegación del perfil firmó
+ * la coordinadora (la sesión del evento) en nombre de `persona`; por la ventana, la persona.
+ */
+function quienFirmo({ via, sesion } = {}, persona) {
+  if (via === 'delegacion') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion})`, delegacion: persona, via: 'delegada · coordinadora' };
+  return { tipo: 'manual', quien: persona, via: 'ventana' };
+}
+
+module.exports = { VENCE_MIN, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, vencerPedidos,
+  rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

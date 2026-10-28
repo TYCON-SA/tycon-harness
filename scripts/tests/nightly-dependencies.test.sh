@@ -1025,6 +1025,22 @@ rc2=$(note --card "$F8" --pr-closed 2026-09-10)
   && ok "U8: se anota cuándo se cerró el pull request de una archivada (idempotente)" \
   || no "U8: rc=$rc rc2=$rc2 · $(grep -E '^pr' "$F8" | tr '\n' ' ')"
 
+# ── U9. la decisión del sitio que la noche no pudo aplicar ────────────────────────────────
+# El sitio la vuelve a mostrar para decidir y el resumen la cuenta: sin el día y el porqué en la ficha, la persona cree
+# que su decisión se aplicó. Un rechazo que sí llega borra la marca; sin fecha o sin motivo es error de uso.
+F9="$TMP/u9.yaml"; fichafalsa "$F9"
+rc=$(note --card "$F9" --decision-failed 2026-10-29 --reason "el pull request ya estaba cerrado
+a mano # por alguien")
+LEIDO9=$(node -e "const{leerFicha}=require('$NOC');console.log(leerFicha(require('fs').readFileSync('$F9','utf8')).escalares.motivo_decision_fallida)")
+rcsin=$(note --card "$F9" --decision-failed 2026-10-29); rcmalf=$(note --card "$F9" --decision-failed ayer --reason x)
+grep -q '^decision_fallida: 2026-10-29$' "$F9" && marca=1 || marca=0
+rcr=$(note --card "$F9" --rejected 2026-10-30 --reason "no aplica" --pr 7)
+{ [ "$rc" -eq 0 ] && [ "$marca" -eq 1 ] && [ "$(grep -c '^motivo_decision_fallida:' "$F9")" = 0 ] && [ "$rcsin" -eq 2 ] && [ "$rcmalf" -eq 2 ] \
+  && case "$LEIDO9" in *"ya estaba cerrado"*"por alguien"*) true ;; *) false ;; esac \
+  && [ "$rcr" -eq 0 ] && ! grep -q '^decision_fallida:' "$F9" && grep -q '^rechazado: 2026-10-30$' "$F9"; } \
+  && ok "U9: la decisión que no se aplicó queda con su día y su porqué en una línea; el rechazo que llega la borra" \
+  || no "U9: rc=$rc marca=$marca sin=$rcsin malf=$rcmalf rcr=$rcr leido=«${LEIDO9}» · $(grep -E '^(decision|motivo|rechaz)' "$F9" | tr '\n' ' ')"
+
 # ── U1b. sin acción, o con una ficha que no está, es error de USO (no un cero silencioso) ──────
 rcv=$(note --card "$F8"); rcx=$(note --card "$TMP/no-existe.yaml" --pr 1)
 { [ "$rcv" -eq 2 ] && [ "$rcx" -eq 2 ]; } \

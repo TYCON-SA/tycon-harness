@@ -100,7 +100,7 @@ test('desagregación: el total no llama la atención pero una cuenta concentra l
 test('la evidencia se persiste TACHADA y con el usuario seudonimizado', () => {
   const filas = [
     // la contraseña se arma en dos pedazos: escrita entera, el detector de publicación la toma (con razón) por una de verdad
-    ej({ msg: "Login failed for user 'sa'; Pass" + "word=Sup3rSecreta; contacto persona@example.com desde 10.0.0.7", u: 'cuenta-servicio' }),
+    ej({ msg: "Login failed for user 'sa'; Password" + "=Sup3rSecreta; contacto persona@example.com desde 10.0.0.7", u: 'cuenta-servicio' }),
     ej({ msg: 'otra cosa', ts: '2026-08-31T03:00:00Z' }),
     ej({ msg: 'otra cosa', ts: '2026-08-31T04:00:00Z' }),
   ];
@@ -1157,6 +1157,48 @@ test('T84 Vigilante_LecturaCortada_NoEsMedida @story-4.11 @ac-36', () => {
   assert.strictEqual(V.medidaPara(deStats, m()), true, 'las estadísticas de su plugin alcanzan');
   assert.strictEqual(V.medidaPara(deStats, m({ stats: {} })), false, 'sin las de su plugin no');
   assert.strictEqual(V.medidaPara({ ...deStats, origen: 'ejecuciones' }, m()), false, 'el de las filas pide las filas');
+});
+
+// T98 Vigilante_FilasCortadas_CuentaLos5xxDeLasEstadisticas
+// 🔴 Falla con: que la noche con las filas cortadas en el tope (500 errores 4xx, ningún 5xx adentro) diga «0 errores»
+//    y no vea los 5xx que el host sí cuenta en las estadísticas del plugin; o que los 5xx que ya vinieron en las filas
+//    se cuenten dos veces, una por cada fuente.
+test('T98 Vigilante_FilasCortadas_CuentaLos5xxDeLasEstadisticas', () => {
+  const cuatrocientos = Array.from({ length: 500 }, (_, i) => ({ executedAt: `2026-10-04T0${i % 10}:00:00Z`, pluginName: 'Roto',
+    endpoint: '/y', statusCode: 404, errorMessage: 'No encontrado' }));
+  const cortada = (filas, cincoxx) => ({ ejecuciones: filas, truncado: 'sólo se leyeron los primeros 500', salud: { Roto: 'Running' },
+    stats: { Roto: { total: 900, porCodigo: { 404: 500, 500: cincoxx } } } });
+  const o = operacionesDelVigilante();
+  try {
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-03']) o.noche(d, LIMPIA);
+    const r = o.noche('2026-10-04', cortada(cuatrocientos, 7));
+    assert.strictEqual(r.productos.acme.errores, 7, 'los 5xx de las estadísticas se cuentan');
+    const ficha = delOrigen(o, 'stats');
+    assert.ok(ficha, `deja el borrador de las estadísticas: ${o.en('pending')}`);
+    assert.match(o.texto('pending', ficha), /se cortó en las primeras filas/);
+    assert.ok(r.no_medido.some((l) => /primeros 500/.test(l)), 'el corte sigue declarado');
+    assert.ok(Object.values(r.conteos.acme).includes(7), 'la noche queda en la línea base');
+  } finally { o.borrar(); }
+
+  const p = operacionesDelVigilante();
+  try {
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-03']) p.noche(d, LIMPIA);
+    const r = p.noche('2026-10-04', cortada([...filasDeError(5), ...cuatrocientos.slice(5)], 5));
+    assert.strictEqual(r.productos.acme.errores, 5, 'los que vinieron en las filas no se cuentan dos veces');
+    assert.strictEqual(delOrigen(p, 'stats'), undefined, 'sin 5xx fuera de las filas, no hay borrador de las estadísticas');
+    const s = p.noche('2026-10-05', cortada([...filasDeError(5), ...cuatrocientos.slice(5)], 9));
+    assert.strictEqual(s.productos.acme.errores, 9, '5 de las filas y 4 que quedaron afuera');
+    assert.ok(delOrigen(p, 'stats'), 'los 4 de afuera pasan el piso y dejan su borrador');
+  } finally { p.borrar(); }
+
+  // un nombre de plugin que manda el host no escribe en el prototipo: con `{}` estos 7 se perderían en Object.prototype
+  const q = operacionesDelVigilante();
+  try {
+    for (const d of ['2026-10-01', '2026-10-02', '2026-10-03']) q.noche(d, LIMPIA);
+    const raro = cortada(cuatrocientos, 0);
+    raro.stats = JSON.parse('{"__proto__": {"total": 9, "porCodigo": {"500": 7}}}');
+    assert.strictEqual(q.noche('2026-10-04', raro).productos.acme.errores, 7, 'un plugin «__proto__» también se cuenta');
+  } finally { q.borrar(); }
 });
 
 // T97 Vigilante_PedidoCerradoFallaViva_Cableado @story-4.11 @ac-29

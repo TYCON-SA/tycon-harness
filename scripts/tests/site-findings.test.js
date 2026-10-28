@@ -153,10 +153,10 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
     assert.strictEqual(r.status, 200, r.texto);
     const j = r.json;
     assert.strictEqual(j.estado, 'leido');
-    // te toca decidir: el vigilante primero, después ejecuciones; dependencias nunca
-    assert.deepStrictEqual(j.toca.map((x) => `${x.fuente}/${x.id}`), ['vigilante/vig-uno', 'vigilante/vig-dos', `ejecuciones/${EJ1.id}`]);
+    // te toca decidir: el vigilante primero, después ejecuciones y al final las dependencias
+    assert.deepStrictEqual(j.toca.map((x) => `${x.fuente}/${x.id}`), ['vigilante/vig-uno', 'vigilante/vig-dos', `ejecuciones/${EJ1.id}`, 'dependencias/dep-uno']);
     assert.deepStrictEqual(j.espera, []);
-    assert.deepStrictEqual(j.cuentas, { toca: 3, espera: 0, decididas: 0, marcha: 2 });
+    assert.deepStrictEqual(j.cuentas, { toca: 4, espera: 0, decididas: 0, marcha: 2 });
     // las de antes no traen análisis: sin analizar, con su motivo en llano, y sin recomendación
     const e1 = fila(j, 'ejecuciones', EJ1.id);
     assert.strictEqual(e1.analisis, null);
@@ -173,8 +173,8 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
     assert.strictEqual(p.status, 200);
     assert.match(p.texto, /<h1>Mantenimiento<\/h1>/);
     assert.doesNotMatch(p.texto, /<table/);
-    assert.strictEqual((p.texto.match(/<article class="m-carta[^"]*" data-ficha="/g) || []).length, 3, 'una tarjeta por ficha que espera decisión');
-    assert.match(p.texto, /Te toca decidir \(3\)/);
+    assert.strictEqual((p.texto.match(/<article class="m-carta[^"]*" data-ficha="/g) || []).length, 4, 'una tarjeta por ficha que espera decisión');
+    assert.match(p.texto, /Te toca decidir \(4\)/);
     assert.match(p.texto, /<details class="m-bloque m-marcha"><summary>[^<]*En marcha \(2\)/, 'en marcha, cerrado');
     assert.doesNotMatch(p.texto, /<h2>Esperando aprobación/, 'sin nada esperando, el bloque no se ve');
     assert.match(p.texto, /href="https:\/\/dev\.acme\.example\/acme\/_workitems\/edit\/77"[^>]*>Tarea 77</);
@@ -295,7 +295,7 @@ test('T37 Sitio_Enviado_PasaAEsperandoAprobacion — lo enviado espera en su ped
     const n0 = llamadasPedidos();
     reloj.t += 61000;
     const j = (await lista()).json;
-    assert.deepStrictEqual(j.toca.map((x) => x.id), ['vig-dos']);
+    assert.deepStrictEqual(j.toca.map((x) => x.id), ['vig-dos', 'dep-uno']);
     assert.deepStrictEqual(j.espera, [{ numero: 1, enlace: api.st.pedidos[0].html_url, aprobado: false, filas: [
       { fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar' },
       { fuente: 'ejecuciones', id: EJ1.id, nombre: 'Se saltó el pase adversarial', accion: 'arreglar' }] }]);
@@ -327,7 +327,7 @@ test('T37 Sitio_Enviado_PasaAEsperandoAprobacion — lo enviado espera en su ped
     const caida = (await lista()).json;
     assert.strictEqual(caida.pedidos.estado, 'no_se_pudo');
     assert.match(caida.pedidos.frase, /No se pudo ver qué está esperando aprobación/);
-    assert.deepStrictEqual(caida.toca.map((x) => x.id).sort(), ['vig-dos', 'vig-uno', EJ1.id].sort());
+    assert.deepStrictEqual(caida.toca.map((x) => x.id).sort(), ['vig-dos', 'vig-uno', EJ1.id, 'dep-uno'].sort());
     // y sin saber qué espera aprobación no se envía: podría abrir un segundo pedido para una ficha ya enviada
     const pedidosAntes = api.st.pedidos.length;
     const aCiegas = await enviar(['vigilante', 'vig-uno', 'arreglar']);
@@ -337,15 +337,15 @@ test('T37 Sitio_Enviado_PasaAEsperandoAprobacion — lo enviado espera en su ped
     api.st.exigirAuth = null;
     const vuelta = (await lista()).json;
     assert.strictEqual(vuelta.pedidos.estado, 'leido');
-    assert.deepStrictEqual(vuelta.toca, []);
+    assert.deepStrictEqual(vuelta.toca.map((x) => x.id), ['dep-uno'], 'sólo lo que nunca se envió');
     assert.ok(fila(caida, 'vigilante', 'vig-uno'));
   });
 });
 
 // Sitio_PedidoViejoDeLaNoche_SeDecideIgual @story-4.11 @ac-20
 // 🔴 Falla con: una ficha que tiene el pedido viejo de la noche fuera de «Te toca decidir», o una vulnerabilidad que se
-// pueda decidir desde el sitio.
-test('T37c Sitio_PedidoViejoDeLaNoche_SeDecideIgual — la ficha con el pedido viejo se decide acá; la de paquetes, no @story-4.11 @ac-20', { timeout: 60000 }, async () => {
+// pueda arreglar desde el sitio (sus acciones son aceptar o rechazar su pull request: T83).
+test('T37c Sitio_PedidoViejoDeLaNoche_SeDecideIgual — la ficha con el pedido viejo se decide acá; la de paquetes, con sus acciones @story-4.11 @ac-20', { timeout: 60000 }, async () => {
   const extra = {
     'inbox/dependencies/promoted/dep-mov.yaml': 'id: dep-mov\ndetectado: 2026-10-19\nveredicto: pendiente # decision-en-curso\npaquete: pkg-movido\nseveridad: critical\nnoches: 2\n',
     'inbox/watcher/pending/vig-uno.yaml': `${FICHAS['inbox/watcher/pending/vig-uno.yaml']}pr: 123\n`,
@@ -353,7 +353,8 @@ test('T37c Sitio_PedidoViejoDeLaNoche_SeDecideIgual — la ficha con el pedido v
   await conSitio({ extra }, async ({ api, lista, enviar, fila }) => {
     const j = (await lista()).json;
     assert.ok(fila(j, 'vigilante', 'vig-uno'), 'con el pedido viejo de la noche, igual se decide');
-    assert.ok(!j.toca.some((x) => x.fuente === 'dependencias'));
+    // la pendiente se decide acá; la movida a promoted/ ya no espera a nadie
+    assert.deepStrictEqual(j.toca.filter((x) => x.fuente === 'dependencias').map((x) => x.id), ['dep-uno']);
     // la crítica primero, sin tarea todavía
     assert.deepStrictEqual(j.marcha.vulnerabilidades.map((x) => [x.id, x.severidad, x.tareas.length]), [['dep-mov', 'critical', 0], ['dep-uno', 'high', 1]]);
     const r = await enviar(['vigilante', 'vig-uno', 'aceptar']);
@@ -361,7 +362,6 @@ test('T37c Sitio_PedidoViejoDeLaNoche_SeDecideIgual — la ficha con el pedido v
     assert.strictEqual(api.st.pedidos.length, 1);
     const dep = await enviar(['dependencias', 'dep-uno', 'arreglar']);
     assert.strictEqual(dep.status, 400);
-    assert.match(dep.json.message, /las vulnerabilidades de paquetes no se deciden acá/);
     assert.strictEqual(api.st.pedidos.length, 1);
   });
 });
@@ -517,7 +517,7 @@ test('T69 Sitio_Demo_FichasYEnviarNoAbreNada — el demo muestra los tres bloque
   try {
     const j = (await pedir('/api/hallazgos')).json;
     assert.strictEqual(j.estado, 'leido', JSON.stringify(j));
-    assert.deepStrictEqual([...new Set(j.toca.map((x) => x.fuente))].sort(), ['ejecuciones', 'vigilante']);
+    assert.deepStrictEqual([...new Set(j.toca.map((x) => x.fuente))].sort(), ['dependencias', 'ejecuciones', 'vigilante']);
     assert.ok(j.toca.some((x) => x.analisis), 'una con análisis');
     assert.ok(j.toca.some((x) => !x.analisis), 'una sin analizar');
     assert.ok(j.marcha.vulnerabilidades.length && j.marcha.arreglos.length, JSON.stringify(j.marcha));
@@ -659,7 +659,7 @@ test('T73 Mantenimiento_AyudaYBarra_EnElIdioma — el «?» de cada concepto, un
     assert.ok(es.indexOf('Te toca decidir') < es.indexOf('class="m-barra"'));
     const en = (await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto;
     assert.match(en, /<h1>Maintenance<\/h1>/);
-    assert.match(en, /Your decision \(3\)/);
+    assert.match(en, /Your decision \(4\)/);
     assert.match(en, /<b>Archive<\/b> means/);
     assert.match(en, /Send for approval/);
   });
@@ -670,11 +670,11 @@ test('T73 Mantenimiento_AyudaYBarra_EnElIdioma — el «?» de cada concepto, un
 // que cuenta aparte, o un «(0)» cuando no queda nada.
 test('T74 Mantenimiento_MenuConCuantasEsperan — al lado del nombre, cuántas fichas esperan decisión; sin ninguna, sin número', { timeout: 90000 }, async () => {
   const enlace = (html) => (/<a href="\/mantenimiento"[^>]*>([\s\S]*?)<\/a>/.exec(html) || [])[1];
-  // las que esperan: vig-uno, vig-dos y la de ejecuciones; ni la de paquetes, ni EJ2 (decidida), ni la que cuenta aparte
+  // las que esperan: vig-uno, vig-dos, la de ejecuciones y la dependencia; ni EJ2 (decidida), ni la que cuenta aparte
   const APARTE = CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:GIT_NO_VERIFY/laboratorio', nombre: 'commit sin controles', hoy: '2026-10-22' });
   await conSitio({ extra: extraDe(APARTE) }, async ({ h, lead, lista }) => {
-    assert.match(enlace((await h.pedir('/corridas', { cookie: lead })).texto), /Mantenimiento \(3\)$/);
-    assert.match(enlace((await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto), /Maintenance \(3\)$/);
+    assert.match(enlace((await h.pedir('/corridas', { cookie: lead })).texto), /Mantenimiento \(4\)$/);
+    assert.match(enlace((await h.pedir('/mantenimiento', { cookie: `${lead}; sitio-idioma=en` })).texto), /Maintenance \(4\)$/);
     assert.ok(!(await lista()).json.toca.some((x) => x.id === APARTE.id), 'lo que cuenta aparte no se pregunta');
   });
   // una con su decisión en main ya no espera; la del pedido viejo de la noche, sí
@@ -683,7 +683,7 @@ test('T74 Mantenimiento_MenuConCuantasEsperan — al lado del nombre, cuántas f
     'inbox/watcher/pending/vig-dos.yaml': `${FICHAS['inbox/watcher/pending/vig-dos.yaml']}pr: 123\n`,
   };
   await conSitio({ extra }, async ({ h, lead }) => {
-    assert.match(enlace((await h.pedir('/corridas', { cookie: lead })).texto), /Mantenimiento \(2\)$/);
+    assert.match(enlace((await h.pedir('/corridas', { cookie: lead })).texto), /Mantenimiento \(3\)$/);
   });
   // sin fichas, el nombre solo
   await conSitio({ extra: Object.fromEntries(Object.keys(FICHAS).map((k) => [k, null])) }, async ({ h, lead }) => {
@@ -949,8 +949,8 @@ test('T79 Mantenimiento_Envio_DiceQuePasa — mientras envía, si tarda, si se c
 test('T80 Mantenimiento_Cuentas_BajanConLoDecidido — los tres números cuentan sólo lo que sigue esperando', { timeout: 60000 }, async () => {
   await conSitio({}, async ({ h, ops, lead, enviar }) => {
     const antes = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
-    assert.match(antes, /Mantenimiento \(3\)<\/a>/);
-    assert.match(antes, /<h2[^>]*>Te toca decidir \(3\)<\/h2>/);
+    assert.match(antes, /Mantenimiento \(4\)<\/a>/);
+    assert.match(antes, /<h2[^>]*>Te toca decidir \(4\)<\/h2>/);
     // la pantalla recuenta sola al sacar una ficha: cada número trae su molde
     assert.match(antes, /<h2 data-t="Te toca decidir \(\{n\}\)">/);
     assert.match(antes, /<h3 class="m-sub" data-fuente="ejecuciones" data-t="Ejecuciones del pipeline · \{n\}">Ejecuciones del pipeline · 1<\/h3>/);
@@ -960,8 +960,8 @@ test('T80 Mantenimiento_Cuentas_BajanConLoDecidido — los tres números cuentan
     decisionYaEnMain(ops, 'ejecuciones', 'runs-review', EJ1.id);
     assert.strictEqual((await enviar(['ejecuciones', EJ1.id, 'aceptar'])).json.codigo, 'ya_decidida');
     const despues = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
-    assert.match(despues, /Mantenimiento \(2\)<\/a>/, 'el menú no cuenta lo ya decidido');
-    assert.match(despues, /<h2[^>]*>Te toca decidir \(2\)<\/h2>/);
+    assert.match(despues, /Mantenimiento \(3\)<\/a>/, 'el menú no cuenta lo ya decidido');
+    assert.match(despues, /<h2[^>]*>Te toca decidir \(3\)<\/h2>/);
     assert.doesNotMatch(despues, /data-fuente="ejecuciones"/, 'sin fichas de la fuente, sin su subtítulo');
   });
 });
@@ -1041,5 +1041,234 @@ test('T82 Mantenimiento_Numeros_CambianSinRecargar — cada número trae su mold
     assert.match(cli, /aDecididas\(j && j\.decididas\);\s*\/\/[^\n]*\n\s*\(\(j && j\.omitidas\)/, 'antes de sacar las omitidas, que se llevan su título');
     const recontar = cli.slice(cli.indexOf('function recontar('), cli.indexOf('function aDecididas('));
     for (const x of ['.m-seguir', 'article[data-recomendada]', '.m-decididas', 'data-t-vacio']) assert.ok(recontar.includes(x), `recontar actualiza ${x}`);
+  });
+});
+
+// ── las dependencias se deciden acá: aceptar mergea su pull request, rechazar lo cierra con el motivo ──────────────────
+
+const DEP_PR = 'id: dep-pr\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-pr\nseveridad: high\nnoches: 2\npr: 7\npr_repo: acme/ops\nrepos:\n  - Producto X/FrontEnd\n';
+const DEP_RECH = 'id: dep-rech\ndetectado: 2026-10-18\nveredicto: pendiente\npaquete: pkg-rechazado\nseveridad: low\nnoches: 4\npr: 8\npr_repo: acme/ops\nrechazado: 2026-10-21\nmotivo_rechazo: "rompe el build"\n';
+const DEP_FALLO = 'id: dep-fallo\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-fallo\nseveridad: moderate\nnoches: 3\npr: 9\npr_repo: acme/ops\ndecision_fallida: 2026-10-25\nmotivo_decision_fallida: "el pedido 9 ya no estaba abierto"\n';
+const EXTRA_DEP = { 'inbox/dependencies/pending/dep-pr.yaml': DEP_PR, 'inbox/dependencies/pending/dep-rech.yaml': DEP_RECH };
+const decidir = (fuente, id, accion, motivo) => ({ fuente, id, accion, ...(motivo === undefined ? {} : { motivo }) });
+
+// Mantenimiento_Dependencias_FilasParaDecidir
+// 🔴 Falla con: una dependencia pendiente que no se puede decidir acá, Archivar o Arreglar en lugar de Aceptar o
+//    Rechazar, sin el lugar para el motivo, sin el enlace a su pull request, una ya rechazada que se vuelve a preguntar,
+//    o un número de la pestaña que no la cuenta.
+test('T83 Mantenimiento_Dependencias_FilasParaDecidir — cada dependencia pendiente es una fila con Aceptar o Rechazar', { timeout: 60000 }, async () => {
+  await conSitio({ extra: EXTRA_DEP }, async ({ h, lead, lista, fila }) => {
+    const j = (await lista()).json;
+    const conPedido = fila(j, 'dependencias', 'dep-pr');
+    assert.ok(conPedido, JSON.stringify(j.toca.map((x) => x.id)));
+    assert.deepStrictEqual(conPedido.pedido, { numero: 7, enlace: 'https://github.com/acme/ops/pull/7' });
+    const sinPedido = fila(j, 'dependencias', 'dep-uno');
+    assert.ok(sinPedido, 'la que no tiene pull request también se decide');
+    assert.strictEqual(sinPedido.pedido, null);
+    assert.strictEqual(fila(j, 'dependencias', 'dep-rech'), undefined, 'la ya rechazada no se vuelve a preguntar');
+    assert.strictEqual(j.cuentas.toca, j.toca.length);
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    const carta = cartaDe(p, 'dependencias/dep-pr');
+    assert.match(carta, /data-accion="aceptar"[^>]*>Aceptar</);
+    assert.match(carta, /data-accion="reject"[^>]*>Rechazar</);
+    assert.doesNotMatch(carta, /data-accion="arreglar"|>Archivar</);
+    assert.match(carta, /<input[^>]* class="m-motivo"[^>]* maxlength="180"/);
+    assert.match(carta, /href="https:\/\/github\.com\/acme\/ops\/pull\/7"/);
+    assert.match(p, /<h3 class="m-sub" data-fuente="dependencias"/);
+    const menu = (/<nav[\s\S]*?<\/nav>/.exec((await h.pedir('/corridas', { cookie: lead })).texto) || [''])[0];
+    assert.match(menu, new RegExp(`Mantenimiento \\(${j.toca.length}\\)<`), 'el número de la pestaña las cuenta');
+    const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
+    assert.match(cli, /'reject'/, 'el navegador recuerda también Rechazar');
+    assert.match(cli, /if \(acciones\[k\] === 'reject'\) d\.motivo = motivoDe\(k\);/, 'y manda el motivo del rechazo');
+    assert.match(cli, /if \(!ks\.length \|\| faltaMotivo\(\)\) return;/, 'un rechazo sin motivo no se envía');
+  });
+});
+
+// Sitio_Dependencias_EnvioLlevaElPedidoDeLaFicha
+// 🔴 Falla con: un pedido o un repo que vienen del navegador en lugar de la ficha (la noche mergearía otro pull
+//    request), un rechazo sin su motivo, una decisión que la noche no acepta, o un envío que no pasa a «Esperando
+//    aprobación».
+test('T84 Sitio_Dependencias_EnvioLlevaElPedidoDeLaFicha — el pull request sale de la ficha; el motivo, de la persona', { timeout: 60000 }, async () => {
+  await conSitio({ extra: EXTRA_DEP }, async ({ api, ops, confirmar, lista }) => {
+    const r = await confirmar({ decisiones: [{ ...decidir('dependencias', 'dep-pr', 'aceptar'), pr: '999', pr_repo: 'otro/repo' }, decidir('dependencias', 'dep-uno', 'reject', '  No aplica a nuestro uso  ')] });
+    assert.strictEqual(r.json.ok, true, r.texto);
+    assert.strictEqual(api.st.pedidos.length, 1);
+    const p = api.st.pedidos[0];
+    const doc = (ruta) => JSON.parse(g(ops.bare, 'show', `${p.head.ref}:${ruta}`));
+    const a = doc('inbox/dependencies/decisions/dep-pr.json');
+    const b = doc('inbox/dependencies/decisions/dep-uno.json');
+    assert.deepStrictEqual(a, { fuente: 'dependencias', id: 'dep-pr', accion: 'aceptar', quien: LEAD, el: '2026-10-25', pr: '7', pr_repo: 'acme/ops' });
+    assert.deepStrictEqual(b, { fuente: 'dependencias', id: 'dep-uno', accion: 'reject', quien: LEAD, el: '2026-10-25', pr: null, pr_repo: null, motivo: 'No aplica a nuestro uso' });
+    assert.ok(CYCLE.decisionConForma(a, 'dependencias', 'dep-pr') && CYCLE.decisionConForma(b, 'dependencias', 'dep-uno'), 'la noche las acepta');
+    assert.match(p.body, /dependencias\/dep-pr → aceptar/);
+    assert.match(p.body, /dependencias\/dep-uno → reject/);
+    const j = (await lista()).json;
+    assert.deepStrictEqual(j.espera.flatMap((x) => x.filas).map((x) => [x.id, x.accion]).sort(), [['dep-pr', 'aceptar'], ['dep-uno', 'reject']]);
+  });
+});
+
+// Sitio_Dependencias_MotivoYAcciones
+// 🔴 Falla con: un rechazo sin motivo, con un salto de línea o de más de 180 caracteres, un motivo en un aceptar, o
+//    una acción de otra fuente (Arreglar en una dependencia, Rechazar en el vigilante) que abre un pedido.
+test('T85 Sitio_Dependencias_MotivoYAcciones — el motivo es obligatorio, de una línea y con tope; cada fuente, sus acciones', { timeout: 60000 }, async () => {
+  await conSitio({ extra: EXTRA_DEP }, async ({ api, confirmar }) => {
+    const malos = [
+      decidir('dependencias', 'dep-pr', 'reject'),
+      decidir('dependencias', 'dep-pr', 'reject', ''),
+      decidir('dependencias', 'dep-pr', 'reject', '   '),
+      decidir('dependencias', 'dep-pr', 'reject', 'una línea\notra'),
+      decidir('dependencias', 'dep-pr', 'reject', 'x'.repeat(181)),
+      decidir('dependencias', 'dep-pr', 'reject', 123),
+      decidir('dependencias', 'dep-pr', 'aceptar', 'sobra'),
+      decidir('dependencias', 'dep-pr', 'arreglar'),
+      decidir('vigilante', 'vig-uno', 'reject', 'no va'),
+    ];
+    for (const m of malos) {
+      const r = await confirmar({ decisiones: [m] });
+      assert.strictEqual(r.status, 400, `${JSON.stringify(m).slice(0, 80)}: ${r.texto}`);
+    }
+    assert.strictEqual(api.st.pedidos.length, 0, 'ninguno abre un pedido');
+    const justo = await confirmar({ decisiones: [decidir('dependencias', 'dep-pr', 'reject', 'x'.repeat(180))] });
+    assert.strictEqual(justo.json.ok, true, justo.texto);
+  });
+});
+
+// Sitio_Dependencias_SoloQuienMantiene
+// 🔴 Falla con: otro rol que decide una dependencia mandando el pedido a mano (esconder el botón no alcanza).
+test('T86 Sitio_Dependencias_SoloQuienMantiene — el servidor no deja a otro rol aceptar ni rechazar', { timeout: 60000 }, async () => {
+  await conSitio({ extra: EXTRA_DEP }, async ({ api, tok, dev, confirmar }) => {
+    for (const d of [decidir('dependencias', 'dep-pr', 'aceptar'), decidir('dependencias', 'dep-pr', 'reject', 'no')]) {
+      const r = await confirmar({ decisiones: [d] }, dev, tok);
+      assert.strictEqual(r.status, 403, r.texto);
+    }
+    assert.strictEqual(api.st.pedidos.length, 0);
+  });
+});
+
+// Mantenimiento_Dependencias_DecisionNoAplicadaVuelve
+// 🔴 Falla con: una decisión que la noche no pudo aplicar y la fila sigue escondida (un éxito callado), «Ya decididas»
+//    que la da por aplicada, o la que sí espera la noche de vuelta en «Te toca decidir».
+test('T87 Mantenimiento_Dependencias_DecisionNoAplicadaVuelve — lo que la noche no aplicó vuelve a «Te toca decidir» y lo dice', { timeout: 60000 }, async () => {
+  const datos = tmp('site-findings-datos-');
+  const anotada = (el) => ({ accion: 'aceptar', en: AHORA - 3600 * 1000, quien: LEAD, el });
+  fs.writeFileSync(path.join(datos, 'mantenimiento-decididas.json'), JSON.stringify({ 'dependencias/dep-fallo': anotada('2026-10-24'), 'dependencias/dep-pr': anotada('2026-10-25') }));
+  const extra = { ...EXTRA_DEP, 'inbox/dependencies/pending/dep-fallo.yaml': DEP_FALLO };
+  await conSitio({ extra, dataDir: datos }, async ({ h, lead, lista, fila }) => {
+    const j = (await lista()).json;
+    assert.ok(fila(j, 'dependencias', 'dep-fallo'), 'la que no se aplicó vuelve');
+    assert.strictEqual(fila(j, 'dependencias', 'dep-pr'), undefined, 'la que espera la noche, no');
+    const estado = Object.fromEntries(j.decididas.map((x) => [x.id, x.estado]));
+    assert.deepStrictEqual([estado['dep-fallo'], estado['dep-pr']], ['no_aplicada', 'esta_noche']);
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(cartaDe(p, 'dependencias/dep-fallo'), /La noche no pudo aplicar la decisión del 25\/10: el pedido 9 ya no estaba abierto/);
+    assert.match(p, /<li data-ficha="dependencias\/dep-fallo">[^\n]*la noche no la pudo aplicar/);
+  });
+});
+
+// Inicio_DependenciasPorDecidir_MismoNumeroQueMantenimiento
+// 🔴 Falla con: el recuadro de Inicio con otro número que las filas de Mantenimiento a las que lleva (las nuevas de
+//    anoche en lugar de todas las que esperan), o que sigue contando una ya enviada.
+test('T88 Inicio_DependenciasPorDecidir_MismoNumeroQueMantenimiento — el número de Inicio es el de las filas de Mantenimiento', { timeout: 60000 }, async () => {
+  await conSitio({ extra: EXTRA_DEP }, async ({ h, lead, lista, confirmar }) => {
+    const recuadro = async () => {
+      const p = (await h.pedir('/', { cookie: lead })).texto;
+      const r = p.split('<div class="tile ').find((x) => x.includes('<div class="t-label">Dependencias por decidir</div>')) || '';
+      assert.match(r, /href="\/mantenimiento"/, 'lleva a Mantenimiento');
+      return Number((/<div class="t-val">(\d+)<\/div>/.exec(r) || [])[1]);
+    };
+    const filas = async () => (await lista()).json.toca.filter((x) => x.fuente === 'dependencias').length;
+    assert.strictEqual(await filas(), 2, 'dep-uno y dep-pr esperan; la rechazada, no');
+    assert.strictEqual(await recuadro(), 2);
+    assert.strictEqual((await confirmar({ decisiones: [decidir('dependencias', 'dep-pr', 'aceptar')] })).json.ok, true);
+    assert.strictEqual(await filas(), 1);
+    assert.strictEqual(await recuadro(), 1, 'la enviada deja de contarse en los dos lados');
+  });
+});
+
+// Mantenimiento_Dependencias_RedecidirElMismoDia
+// 🔴 Falla con: una decisión tomada después de leer la falla, el mismo día en que la noche la anotó, que el sitio
+//    ignora (la fila vuelve a «Te toca decidir», se cuenta otra vez y «Ya decididas» dice que no se aplicó).
+test('T89 Mantenimiento_Dependencias_RedecidirElMismoDia — decidir otra vez tras leer la falla vale aunque sea el mismo día', { timeout: 60000 }, async () => {
+  const datos = tmp('site-findings-datos-');
+  // la falla es del 25/10 y la persona vuelve a decidir ese mismo día (hoy, en la prueba), después de verla
+  const extra = { 'inbox/dependencies/pending/dep-fallo.yaml': DEP_FALLO };
+  await conSitio({ extra, dataDir: datos, autoApply: true }, async ({ lista, fila, confirmar }) => {
+    assert.ok(fila((await lista()).json, 'dependencias', 'dep-fallo'), 'la que no se aplicó está para decidir');
+    const r = await confirmar({ decisiones: [decidir('dependencias', 'dep-fallo', 'aceptar')] });
+    assert.strictEqual(r.json.ok, true, r.texto);
+    const guardada = JSON.parse(fs.readFileSync(path.join(datos, 'mantenimiento-decididas.json'), 'utf8'))['dependencias/dep-fallo'];
+    assert.deepStrictEqual([guardada.el, guardada.vio], ['2026-10-25', '2026-10-25'], 'recuerda la falla que tenía a la vista');
+    const j = (await lista()).json;
+    assert.strictEqual(fila(j, 'dependencias', 'dep-fallo'), undefined, 'la nueva decisión no se tapa con la falla vieja');
+    assert.strictEqual(j.decididas.find((x) => x.id === 'dep-fallo').estado, 'esta_noche');
+  });
+});
+
+// Mantenimiento_Cuenta_PlataformaCaidaNoSeReconsulta
+// 🔴 Falla con: con la plataforma de pedidos caída, cada página que muestra el número del menú vuelve a preguntarle
+//    (una consulta remota y una línea de registro por página abierta, sin espera).
+test('T90 Mantenimiento_Cuenta_PlataformaCaidaNoSeReconsulta — si la plataforma no contesta, se vuelve a preguntar al minuto', { timeout: 60000 }, async () => {
+  const opsDoc = { version: 1, owners: { default: LEAD }, site: { access: [{ role: 'maintainer', emails: [LEAD] }] } };
+  const ops = armarOperaciones({ opsDoc, extra: EXTRA_DEP });
+  const fuentes = H.fuentesFijas({ config: opsDoc });
+  fuentes.clones = () => ({ operaciones: { dir: ops.clon }, perfil: null });
+  const env = H.envBase({ SITE_OIDC_ISSUER: 'https://emisor.acme.example', SITE_OPERATIONS_REPO: 'https://github.com/acme/ops', SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA });
+  const cfg = validarConfiguracion(env).cfg;
+  let llamadas = 0;
+  const fetch = async () => { llamadas++; return new Response('', { status: 503 }); };
+  const reloj = { t: AHORA };
+  const rutas = FINDINGS().crearRutas({ cfg, fuentes, ahora: () => reloj.t, fetch, urlBase: { github: 'http://127.0.0.1:9' } });
+  const cuenta = rutas.find((r) => r.pestana && r.pestana.id === 'mantenimiento').pestana.cuenta;
+  const pausa = () => new Promise((r) => setTimeout(r, 20));
+  const n = cuenta();
+  assert.ok(Number.isInteger(n) && n > 0, 'el número sale sin esperar a la plataforma');
+  for (let i = 0; i < 5; i++) { assert.strictEqual(cuenta(), n, 'y no cambia porque la plataforma no conteste'); await pausa(); }
+  const primeras = llamadas;
+  assert.ok(primeras >= 1, 'pregunta de fondo una vez');
+  for (let i = 0; i < 5; i++) { cuenta(); await pausa(); }
+  assert.strictEqual(llamadas, primeras, 'en el mismo minuto no vuelve a preguntar');
+  reloj.t += 61 * 1000;
+  cuenta(); await pausa();
+  assert.ok(llamadas > primeras, 'pasado el minuto, vuelve a preguntar');
+});
+
+// ── la carta de una dependencia dice qué es la vulnerabilidad y qué sugiere el modelo ─────────────────────────────────
+
+const DEP_AVISO = 'id: dep-aviso\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-aviso\nseveridad: high\nnoches: 2\npr: 7\npr_repo: acme/ops\nrepos:\n  - Producto X/FrontEnd\n'
+  + 'avisos:\n  - https://github.com/advisories/GHSA-2345-6789-cfgh\n'
+  + 'aviso_resumen: "Denial of Service via RouterLink <img src=x onerror=alert(1)> in SSR (CVE-2026-111751)"\naviso_parche: "22.2.1, 21.2.25"\n'
+  + 'propuesta_accion: revisar\npropuesta_razon: "Antes de aceptar, mirá si el sitio usa la representación del lado del servidor"\npropuesta_modelo: gemma4:31b\n';
+const DEP_SIN_AVISO = 'id: dep-sinaviso\ndetectado: 2026-10-21\nveredicto: pendiente\npaquete: pkg-sinaviso\nseveridad: low\nnoches: 1\nrepos:\n  - Producto X/FrontEnd\n'
+  + 'aviso_motivo: no-se-pudo-leer\npropuesta_accion: aceptar\npropuesta_razon: "Una razón sin el aviso"\n';
+const DEP_VIEJA = 'id: dep-vieja\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-vieja\nseveridad: low\nnoches: 3\nrepos:\n  - Producto X/FrontEnd\n'
+  + 'propuesta_accion: arreglar\npropuesta_razon: "Se detectó una vulnerabilidad de severidad alta"\n';
+const EXTRA_AVISO = { 'inbox/dependencies/pending/dep-aviso.yaml': DEP_AVISO, 'inbox/dependencies/pending/dep-sinaviso.yaml': DEP_SIN_AVISO, 'inbox/dependencies/pending/dep-vieja.yaml': DEP_VIEJA };
+
+// Mantenimiento_Dependencia_QueEsYSugerencia
+// 🔴 Falla con: una carta sin qué es la vulnerabilidad o sin la versión que la corrige, sin la sugerencia del modelo y
+//    su por qué, el texto del aviso sin escapar, una sugerencia en la carta cuyo aviso no se pudo leer, la propuesta
+//    vieja (hecha sin el aviso) mostrada como sugerencia, o la sugerencia marcada como recomendada para seguirla en
+//    bloque.
+test('T91 Mantenimiento_Dependencia_QueEsYSugerencia — la carta dice qué es la vulnerabilidad y qué sugiere el modelo', { timeout: 60000 }, async () => {
+  await conSitio({ extra: EXTRA_AVISO }, async ({ h, lead, lista, fila }) => {
+    const j = (await lista()).json;
+    const con = fila(j, 'dependencias', 'dep-aviso');
+    assert.deepStrictEqual(con.aviso, { resumen: 'Denial of Service via RouterLink <img src=x onerror=alert(1)> in SSR (CVE-2026-111751)', parche: '22.2.1, 21.2.25' });
+    assert.deepStrictEqual(con.propuesta, { accion: 'revisar', razon: 'Antes de aceptar, mirá si el sitio usa la representación del lado del servidor' });
+    assert.strictEqual(con.recomendada, null, 'la sugerencia no se sigue en bloque');
+    assert.deepStrictEqual(fila(j, 'dependencias', 'dep-sinaviso').aviso, { sin_leer: true });
+    assert.strictEqual(fila(j, 'dependencias', 'dep-sinaviso').propuesta, null);
+    assert.strictEqual(fila(j, 'dependencias', 'dep-vieja').aviso, null);
+    assert.strictEqual(fila(j, 'dependencias', 'dep-vieja').propuesta, null, 'la de antes del aviso no se muestra');
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    const carta = cartaDe(p, 'dependencias/dep-aviso');
+    assert.match(carta, /<p class="m-aviso"><b>Qué es:<\/b> <span lang="en">Denial of Service via RouterLink &lt;img src=x onerror=alert\(1\)&gt; in SSR \(CVE-2026-111751\)<\/span> Se corrige en la versión 22\.2\.1, 21\.2\.25\.<\/p>/);
+    assert.doesNotMatch(carta, /<img/);
+    assert.match(carta, /<p class="m-propuesta">Sugerencia del modelo: mirá algo antes de decidir\. <span lang="es">Antes de aceptar, mirá si el sitio usa la representación del lado del servidor<\/span><\/p>/);
+    assert.doesNotMatch(carta, /class="m-elegir recomendada"/);
+    const sin = cartaDe(p, 'dependencias/dep-sinaviso');
+    assert.match(sin, /No se pudo leer el aviso de seguridad: sin él, el modelo no sugiere nada\./);
+    assert.doesNotMatch(sin, /m-propuesta|Una razón sin el aviso/);
+    assert.doesNotMatch(cartaDe(p, 'dependencias/dep-vieja'), /m-aviso|m-propuesta/);
   });
 });

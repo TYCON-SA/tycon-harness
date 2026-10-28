@@ -241,7 +241,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `dashboard-notice.js` | SessionStart | Dice de cuándo es el tablero del arnés publicado y si está completo | No | minimal y full | `TYCON_DASHBOARD_NOTICE=0`; integración de los nocturnos (`TYCON_NIGHTLY=0`) |
 | `owner-email-notice.js` | SessionStart | Dice una vez que la máquina informa al equipo el correo global de git, y cómo verlo o cambiarlo; otra vez sólo si cambia | No | minimal y full | `TYCON_OWNER_EMAIL_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `unclosed-runs-notice.js` | SessionStart | Dice una vez por día si alguna corrida del pipeline quedó sin cerrar, de qué stories y qué hacer; esas corridas se suben marcadas | No | minimal y full | `TYCON_UNCLOSED_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
-| `produccion-notice.js` | SessionStart | Regenera el índice de servidores de producción declarados y, en las máquinas autorizadas, avisa si el freno de producción falta | No | full | `TYCON_PRODUCTION_NOTICE=0` |
+| `production-notice.js` | SessionStart | Regenera el índice de servidores de producción declarados y, en las máquinas autorizadas, avisa si el freno de producción falta | No | full | `TYCON_PRODUCTION_NOTICE=0` |
 | `guard-update-notice.js` | SessionStart | En las máquinas con el freno de producción, compara el permiso de actualizarlo sin contraseña con lo que eligió la organización y da el comando para corregirlo | No | full | `TYCON_GUARD_UPDATE_NOTICE=0` |
 | `lane-llm-notice.js` | SessionStart | Avisa si el desempate por modelo del portón de carril abrió permisos | No | full | `TYCON_LANE_LLM_NOTICE=0` |
 | `engram-drift-notice.js` | SessionStart | Revisa la memoria de engram una vez por día: proyectos sin nombre fijo, memoria repartida, observaciones sin exportar | No | minimal y full | `TYCON_ENGRAM_DRIFT=0`; integración engram (`TYCON_ENGRAM=0`) |
@@ -258,7 +258,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `rebuild-before-verify.js` | PostToolUse (Edit\|Write, Bash) | Marca el frontend como «sucio» al editar un componente y lo limpia al correr el build de desarrollo que declara el repo | No | full | `TYCON_REBUILD_VERIFY=0` |
 | `rebuild-before-verify.js` | UserPromptSubmit | Con el frontend sucio, recuerda correr el build antes de pedir una verificación visual | No | full | `TYCON_REBUILD_VERIFY=0` |
 | `artifact-archive.js` | PostToolUse (Artifact) | Al publicar un artefacto, copia su fuente a la carpeta artifacts del repo, sin commitear | No | full | `TYCON_ARTIFACT_ARCHIVE=0` |
-| `safety-guard-pre.sh` | PreToolUse (Bash) | Freno de mano: bloquea comandos destructivos o riesgosos (`rm -rf /`, `git push --force` a `main`, `curl \| bash`, `DROP DATABASE`, leer `.env` o `.ssh`…) | Sí | minimal y full | `TYCON_SAFETY_GUARD=0` · puntual: `TYCON_SAFETY_OFF=1` pegado al comando, con la frase «autorizo TYCON_SAFETY_OFF» de la persona en el chat |
+| `safety-guard-pre.sh` | PreToolUse (Bash) | Freno de mano: bloquea comandos destructivos o riesgosos (`rm -rf /`, `git push --force` a `main`, `curl \| bash`, `DROP DATABASE`, leer `.env` o `.ssh`…) | Sí | minimal y full | `TYCON_SAFETY_GUARD=0` · puntual: `TYCON_SAFETY_OFF=1` pegado al comando, que la persona firma en la ventana de permiso o en su terminal |
 | `test-scope-guard-pre.sh` | PreToolUse (Bash) | Bloquea correr pruebas sin filtro (`npm test`, `vitest run` o `dotnet test` pelados) | Sí | full | `TYCON_TEST_SCOPE_GUARD=0` · la suite completa a propósito: `TYCON_FULL_SUITE=1` pegado al comando |
 | `engram-pre-commit.sh` | PreToolUse (Bash) | En un `git commit` de un repo con su archivo .engram-project, exporta la memoria y la suma al commit; frena si el commit pierde una entrada del índice de memoria | Sí, por el índice | minimal y full | `TYCON_ENGRAM_HOOK=0` · sólo el freno del índice: `TYCON_ENGRAM_MANIFEST_GUARD=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `telegram-zombie-sweep.sh` | SessionStart | Sólo en máquinas con el plugin oficial de Telegram: cierra sus lanzadores huérfanos | No | full | `TYCON_TG_ZOMBIE_SWEEP=0` |
@@ -299,7 +299,9 @@ depende de la política, `update.apply`:
 - **`auto`**: la instala sola al arrancar la sesión.
 
 La política se fija con `update.apply` en `~/.claude/tycon.json` o con la variable `TYCON_UPDATE_APPLY`; `TYCON_UPDATE=0`
-apaga la consulta. `harness.js update --check` dice si hay una versión nueva sin aplicarla.
+apaga la consulta. Si el perfil del equipo fija `update.apply: auto`, manda el perfil: ni la máquina, ni la variable, ni
+`TYCON_UPDATE=0` lo cambian, y `doctor` dice qué valor no se usó. `harness.js update --check` dice si hay una versión
+nueva sin aplicarla.
 
 La versión anterior queda guardada en `~/.tycon/previous`. Si la nueva no pasa la comprobación de salud, el arnés vuelve
 solo a la anterior; para volver a mano, `harness.js rollback` (sin bajar nada). Después de volver atrás, el arnés deja

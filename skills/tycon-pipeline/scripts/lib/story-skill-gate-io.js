@@ -65,7 +65,7 @@ function purgeStaleMarks(dir, nowMs) {
   for (const f of files) {
     if (!f.endsWith('.json')) continue;
     const p = path.join(dir, f);
-    let at = NaN;
+    let at;
     try { at = Date.parse(JSON.parse(fs.readFileSync(p, 'utf8')).at); } catch { at = NaN; }
     if (!Number.isFinite(at) || nowMs - at > MARK_PURGE_MS) { try { fs.unlinkSync(p); } catch { /* noop */ } }
   }
@@ -98,7 +98,7 @@ function afterEdit(disk, edit) {
  * @param {string}      [p.stateDir]
  * @returns {{ verdict:{action,kind,reason}, message:string|null }}
  */
-function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, event, stateDir = DEFAULT_STATE_DIR }) {
+function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, event, stateDir = DEFAULT_STATE_DIR, casa }) {
   const abs = String(absPath);
   const quiet = { verdict: { action: 'pass', kind: 'not-story', reason: 'no es .md' }, message: null };
   if (!/\.md$/i.test(abs)) return quiet;
@@ -171,28 +171,28 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
   // Veredicto por NOMBRE (sin contenido legible): se distingue en el log —para poder medir cuánto
   // ruido mete— y en el mensaje, que no puede afirmar "ES una story" cuando sólo lo parece (F3).
   const byName = !existsOnDisk && !(typeof content === 'string' && content.length) && nameHint;
-  // Escribirla sin la skill lo decide la persona: «autorizo story-skill-bypass» en un turno suyo (o reenviada por la
-  // sesión designada) abre el freno para este pedido. El agente no la puede escribir por ella (escape-ok.js).
-  let escapeRoto = null;   // la búsqueda de la frase falló: se frena igual, y se dice por qué en el registro y el mensaje
-  let paso = null;
+  // Escribirla sin la skill lo decide la persona: su firma en la ventana sobre este archivo (`marker.js sign-file
+  // story-skill-bypass <archivo>`, scripts/lib/owner-window.js) la deja pasar una vez, sólo por Edit o Write: por la
+  // consola no se sabe con certeza a qué archivo escribe el comando.
+  let firma = null;
   if (verdict.action === 'block' && !isCodex) {
-    let ok = null;
+    const porEdicion = !!event && ['Edit', 'Write', 'MultiEdit'].includes(event.tool_name);
     try {
-      ok = require('./escape-ok.js').escapeAutorizado({ variable: 'story-skill-bypass', sesion: event && event.session_id, pedido: event && event.tool_use_id });
-    } catch (e) { escapeRoto = `no pude buscar la frase de la persona (${e.message})`; ok = { ok: false }; }
-    if (ok && ok.ok) {
-      io.appendLog(stateDir, 'bypass.log', sessionId, { repoPath: repo.repoRoot || null, kind: 'STORY_SKILL_BYPASS_USED', file: abs, via: ok.via, ...(ok.relevo ? { relevo: ok.relevo } : {}) });
-      return { verdict: { action: 'pass', kind: 'persona', reason: `la persona autorizó escribirla sin la skill (${ok.via})` }, message: null };
+      const ow = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+      firma = porEdicion ? ow.consumirArchivo({ firma: 'story-skill-bypass', sesion: event.session_id, archivo: abs, cwd: event.cwd, casa })
+        : { ok: false, motivo: 'por la consola no vale: escribila con Edit o Write' };
+      firma.comando = ow.comoSeFirma('story-skill-bypass', abs);
+    } catch (e) { firma = { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file story-skill-bypass ${abs}` }; }
+    if (firma.ok) {
+      io.appendLog(stateDir, 'bypass.log', sessionId, { repoPath: repo.repoRoot || null, kind: 'STORY_SKILL_BYPASS_USED', file: abs, via: firma.constancia.via });
+      return { verdict: { action: 'pass', kind: 'persona', reason: `la persona la firmó sin la skill (${firma.constancia.via})` }, message: null };
     }
-    // el pedido que se juzga no se ubicó en la conversación: el cartel dice por qué (el reintento, o el duplicado)
-    if (ok) paso = { reintento: ok.pasoNoUbicado === true, cartel: require('./escape-ok.js').cartelDelPaso(ok) };
   }
   if (verdict.action === 'block' && byName) verdict = { ...verdict, kind: `${verdict.kind}-by-name` };
   const line = { repoPath: repo.repoRoot || null, name: 'story-skill-gate', file: abs, via: via || null, kind: verdict.kind, reason: verdict.reason, storyId: declaredId };
   if (verdict.action === 'block') {
-    io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'blocked', ...(escapeRoto ? { escape: escapeRoto } : {}), ...(recordNote ? { record: recordNote } : {}) });
-    const message = gate.blockMessage(verdict, { filePath: abs, via, byName, paso });
-    return { verdict, message: escapeRoto ? `${message}\n   ⚠ ${escapeRoto}: la frase de la persona no se pudo verificar.` : message };
+    io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'blocked', ...(recordNote ? { record: recordNote } : {}) });
+    return { verdict, message: gate.blockMessage(verdict, { filePath: abs, via, byName, firma }) };
   }
   // "No se frena pero se mide" (trampa 5 del handoff: ante la duda no bloquear, y dejar el caso
   // registrado para poder decidir después si valía la pena).

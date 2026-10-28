@@ -363,6 +363,18 @@
       "requiere": []
     },
     {
+      "__nota": "lo que se decide sobre una dependencia en la pestaña Mantenimiento llega al pull request de su ficha: Aceptar lo mergea, Rechazar lo cierra con el motivo; en GitHub con el gh de mentira y en Azure con un az de mentira de la propia suite.",
+      "raiz": "arnes",
+      "ruta": "tests/dependency-site-decisions.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "la memoria compartida no lleva claves al repo: el pre-commit global pasa cada archivo pendiente de .engram/chunks/ por el detector de claves antes de prepararlo; con una, el commit no se crea. Git de verdad en un repo de laboratorio, con un engram de mentira.",
+      "raiz": "arnes",
+      "ruta": "tests/engram-chunk-secrets.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/pipeline-debt.test.js",
       "requiere": []
@@ -1018,6 +1030,12 @@
       "requiere": []
     },
     {
+      "__nota": "una vuelta de revisores no se lanza sobre una carpeta sin ningún cambio contra la rama principal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/empty-work-gate.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/step-7c-macro.test.js",
       "requiere": []
@@ -1449,6 +1467,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/production-environment-alias.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/reducer.test.sh",
       "requiere": []
     },
@@ -1489,6 +1512,12 @@
       "__nota": "el examen de revisores encuentra los revisores donde el arnés los instala, también en una máquina sólo con Codex.",
       "raiz": "arnes",
       "ruta": "tests/advisor-runner-agents-dir.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el examen de revisores suma los casos que viven sólo en el clon de mantenimiento.",
+      "raiz": "arnes",
+      "ruta": "tests/exam-maintainers-cases.test.js",
       "requiere": []
     },
     {
@@ -2112,9 +2141,21 @@
       "requiere": []
     },
     {
+      "__nota": "una constancia de cambio de control sólo la escribe el guion de la firma: el freno de escritura por consola frena cualquier otro camino que la ponga en el repo.",
+      "raiz": "arnes",
+      "ruta": "tests/control-changes-by-console.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el ayudante que da la ventana por pasada en las pruebas por subproceso vive sólo en la carpeta de pruebas: ningún guion de afuera lo nombra, y con la HOME de la cuenta no firma nada.",
       "raiz": "arnes",
       "ruta": "tests/window-passed-guard.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la sonda de la ventana de permiso (controls-bench/ask-window-probe.exp): sin expect o sin claude en el camino dice «NO MEDIDO» y sale distinto de 0, nunca verde. La medición con la sesión de verdad se corre a mano.",
+      "raiz": "arnes",
+      "ruta": "tests/ask-window-probe.test.js",
       "requiere": []
     },
     {
@@ -2124,27 +2165,9 @@
       "requiere": []
     },
     {
-      "__nota": "el paso que el freno no encuentra en el registro de la conversación: los cuatro guiones dicen el motivo real y piden un reintento, sin dictar la frase.",
-      "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/step-not-found.test.js",
-      "requiere": []
-    },
-    {
-      "__nota": "la sesión designada aprueba force-manual, trust-ran y una vuelta más en nombre del dueño (skills/tycon-pipeline/scripts/lib/delegated-ok.js): sólo si el perfil las delega y el dueño tipeó «aprobá X» en su chat hace 30 minutos o menos, una firma por pedido.",
-      "raiz": "arnes",
-      "ruta": "tests/delegated-ok.test.js",
-      "requiere": []
-    },
-    {
       "__nota": "story 8.116 (tanda A): la huella de la máquina (scripts/lib/machine-id.js, el id del sistema por ruta fija y con el ambiente vacío, guardado como resumen) y la casa de la cuenta (scripts/lib/real-home.js, de la base de usuarios y no de HOME).",
       "raiz": "arnes",
       "ruta": "tests/machine-id.test.js",
-      "requiere": []
-    },
-    {
-      "__nota": "story 8.116 (tanda B0): la firma de un cambio de control por delegación (scripts/lib/delegated-signing.js): todas las llaves, la ficha del freno de un solo uso y la casa de la cuenta, nunca la de HOME.",
-      "raiz": "arnes",
-      "ruta": "tests/delegated-approve.test.js",
       "requiere": []
     },
     {

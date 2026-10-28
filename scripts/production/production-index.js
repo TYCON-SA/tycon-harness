@@ -57,6 +57,9 @@ const rutaMemoria = (home) => path.join(dirDatos(home), 'production-memory.json'
 // los nombres de antes del renombre (escritura doble, ver la cabecera)
 const rutaIndiceVieja = (home) => path.join(dirDatos(home), 'produccion-indice.json');
 const rutaMemoriaVieja = (home) => path.join(dirDatos(home), 'produccion-memoria.json');
+// El valor de `environment` también va en inglés («production», «non-production»); el índice guarda siempre el de antes,
+// porque la copia del freno instalada en /opt lo lee y no conoce el nuevo hasta que la máquina reinstala.
+const AMBIENTE_DE_ANTES = { production: 'produccion', 'non-production': 'no-produccion' };
 const CATALOGO = path.join('.tycon', 'production.json');
 const CATALOGO_VIEJO = path.join('.tycon', 'produccion.json');
 
@@ -190,7 +193,7 @@ function construir(opts = {}) {
         const campos = { ambiente: clave(s0, 'environment', 'ambiente'), llavero: clave(s0, 'keychain', 'llavero'), puerto: clave(s0, 'port', 'puerto') };
         const choque = Object.values(campos).find((c) => c.conflicto);
         if (choque) { errores.push({ repo: path.basename(repo), archivo, motivo: `servidor mal declarado: ${choque.conflicto} (${JSON.stringify(s0.host)})` }); continue; }
-        s = { host: s0.host, base: s0.base, ambiente: campos.ambiente.valor, llavero: campos.llavero.valor, puerto: campos.puerto.valor };
+        s = { host: s0.host, base: s0.base, ambiente: AMBIENTE_DE_ANTES[campos.ambiente.valor] || campos.ambiente.valor, llavero: campos.llavero.valor, puerto: campos.puerto.valor };
       }
       const host = normalizar(s && s.host);
       if (!host || (s.ambiente !== 'produccion' && s.ambiente !== 'no-produccion')) {

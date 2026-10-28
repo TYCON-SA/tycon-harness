@@ -39,8 +39,9 @@
  *   node github-issues.js run    [--config <f>] [--operations <f>] [--pending <dir>] [--out <dir>] [--today <fecha>]
  *                                [--simulate] [--json]
  *   node github-issues.js state  [--config <f>] [--pending <dir>] [--out <dir>] [--today <fecha>]
- * Habla con GitHub sólo por `gh api` (TYCON_GH_CMD lo reemplaza: un ejecutable, o un `.js` que corre con node) y
- * necesita GH_TOKEN (o GITHUB_TOKEN).
+ * Buscar los issues de una ficha y crearlos va por la capa de plataforma (`work-item.find` y `work-item.create` del
+ * conector de GitHub), como en Azure; lo demás habla con GitHub por `gh api`. Los dos usan TYCON_GH_CMD (un ejecutable,
+ * o un `.js` que corre con node) y necesitan GH_TOKEN (o GITHUB_TOKEN).
  * Exit: 0 habló con GitHub (los fallos por par van al snapshot) · 2 no pudo intentar nada.
  */
 
@@ -51,6 +52,22 @@ const { spawnSync } = require('child_process');
 const noc = require('./nightly-dependencies');
 const wi = require('./work-items');
 const operaciones = require('../../lib/operations-config.js');
+
+/** La capa de plataforma con el conector de GitHub: `(operación, args) → Promise<resultado del contrato>`. */
+function plataformaGithub() {
+  const P = require('../../lib/platform/platform.js');
+  const INT = require('../../lib/integrations.js');
+  return (op, args) => {
+    const manifiesto = INT.find('github', { kind: 'platform', env: process.env });
+    if (!manifiesto) return Promise.resolve({ ok: false, reason: 'sin_plataforma', detail: 'no está el conector de GitHub' });
+    return P.call(manifiesto, op, args, { env: process.env });
+  };
+}
+/** El motivo de un «no» de la plataforma, para la ficha; una credencial que no sirve corta la corrida entera. */
+function motivoPlataforma(r) {
+  if (r && r.ok === false && r.reason === 'sin_credencial') throw new NoSePuedeIntentar(`la credencial no sirve: ${recortar(r.detail, 160)}`);
+  return r && typeof r.reason === 'string' ? `${r.reason}: ${recortar(r.detail)}` : 'la plataforma no contestó';
+}
 
 const { listaDe, ponerLista, proyectoDe, proyectoAzureDe, etiqueta, leerTodasLasFichas, leerPedidos, cuerpoDeFicha } = noc;
 
@@ -197,8 +214,11 @@ function validarConfig(cfg) {
 
 function comentarioCuerpo(texto, idFicha) { return `${texto}\n\n${MARCA(idFicha)}`; }
 
-function hablar(ctx) {
+async function hablar(ctx) {
   const { gh, cfg, hoy, simulado, tope, fichas, ident } = ctx;
+  const plataforma = ctx.plataforma || plataformaGithub();
+  // la configuración del pedido de trabajo se lee del repo de operaciones; el repo de cada issue lo trae el pedido
+  const repoDir = ctx.repoDir || process.cwd();
   const res = {
     plataforma: 'github', simulado, tope, fichas_vivas: 0, fichas_sin_pedido: 0, creados: [], adoptados: [], existentes: 0,
     fallidos: [], postergados: [], sin_iteracion: [], sin_dueno_unico: [], pagados_avisados: [], reabiertos: [],
@@ -251,11 +271,14 @@ function hablar(ctx) {
         fallo('duplicados', `otra ficha viva del mismo paquete ya tiene issue en ${repo}: ${otra.ficha} (issue ${otra.id === null ? 'que se crearía esta noche' : `#${otra.id}`}) — son dos fichas para el mismo hecho; una persona decide cuál queda`);
         continue;
       }
-      const w = issuesConEtiqueta(gh, repo, `arnes:${idFicha}`);
-      if (!w.ok) { fallo('duplicados', `no pude consultar duplicados (${w.motivo})`); continue; }
-      if (w.valor.length > 1) { fallo('duplicados', `issues duplicados en ${repo}: ${w.valor.map((i) => `#${i.number}`).sort().join(', ')} — una persona decide cuál queda`); continue; }
-      if (w.valor.length === 1) {
-        const n = w.valor[0].number;
+      // Duplicados: los issues del repo con la etiqueta exacta de la ficha. Una búsqueda que no se pudo hacer no crea.
+      let w;
+      try { w = await plataforma('work-item.find', { repoDir, repo, tag: `arnes:${idFicha}` }); } catch { w = null; }
+      if (!(w && w.ok === true && w.value && Array.isArray(w.value.ids))) { fallo('duplicados', `no pude consultar duplicados (${motivoPlataforma(w)})`); continue; }
+      const nuestros = w.value.ids.filter(Number.isInteger);
+      if (nuestros.length > 1) { fallo('duplicados', `issues duplicados en ${repo}: ${nuestros.map((x) => `#${x}`).sort().join(', ')} — una persona decide cuál queda`); continue; }
+      if (nuestros.length === 1) {
+        const n = nuestros[0];
         pedidoDelPaquete.set(clavePaquete(f, repo), { ficha: idFicha, id: n });
         if (!simulado) {
           try { wi.anotarPedido(f.archivo, repo, n); }
@@ -285,19 +308,22 @@ function hablar(ctx) {
         pedidoDelPaquete.set(clavePaquete(f, repo), { ficha: idFicha, id: null });
         continue;
       }
-      const c = gh('POST', `repos/${repo}/issues`, { cuerpo: { title: titulo, body: cuerpo, labels: [ETIQUETA, `arnes:${idFicha}`], assignees: [asignado] },
-        valida: (v) => (v && Number.isInteger(v.number) ? null : 'la respuesta no trae «number»') });
-      if (!c.ok) {
-        fallo('crear', c.http === 410 ? `${repo} tiene los issues apagados o está archivado (${c.motivo})` : c.motivo);
+      let c;
+      try {
+        c = await plataforma('work-item.create', { repoDir, repo, title: titulo, description: cuerpo, tags: [ETIQUETA, `arnes:${idFicha}`],
+          assignTo: asignado, forNight: true });
+      } catch { c = null; }
+      if (!(c && c.ok === true && c.value && Number.isInteger(c.value.id))) {
+        const motivo = motivoPlataforma(c);
+        fallo('crear', /HTTP 410/.test(motivo) ? `${repo} tiene los issues apagados o está archivado (${motivo})` : motivo);
         continue;
       }
-      const n = c.valor.number;
+      const n = c.value.id;
       pedidoDelPaquete.set(clavePaquete(f, repo), { ficha: idFicha, id: n });
       try { wi.anotarPedido(f.archivo, repo, n); }
       catch (e) { fallo('escribir-ficha', `el issue #${n} se creó pero no pude anotarlo en la ficha: ${e.message} — mañana se adopta por la etiqueta`); }
-      const asignados = (Array.isArray(c.valor.assignees) ? c.valor.assignees : []).map((u) => u && u.login);
-      if (!asignados.some((l) => igual(l, asignado))) fallo('asignar', `el issue #${n} quedó sin asignar a ${asignado}: GitHub descarta en silencio a quien no tiene acceso al repo`);
-      const faltan = [ETIQUETA, `arnes:${idFicha}`].filter((l) => !etiquetasDe(c.valor).includes(l.toLowerCase()));
+      if (!igual(c.value.assigned, asignado)) fallo('asignar', `el issue #${n} quedó sin asignar a ${asignado}: GitHub descarta en silencio a quien no tiene acceso al repo`);
+      const faltan = Array.isArray(c.value.missingTags) ? c.value.missingTags : [ETIQUETA, `arnes:${idFicha}`];
       if (faltan.length) fallo('etiquetar', `el issue #${n} se creó sin la(s) etiqueta(s) ${faltan.join(', ')} (¿la identidad no puede crear etiquetas?): mañana no se lo encuentra por la etiqueta`);
       res.creados.push({ ficha: idFicha, proyecto: repo, id: n, asignado_a: asignado, motivo_dueno: motivoDueno, iteracion: null });
     }
@@ -616,7 +642,7 @@ function leerVolcadoDeHoy(outDir, hoy) {
   } catch { return null; }
 }
 
-function correr(a) {
+async function correr(a) {
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(a.config, 'utf8')); } catch (e) { return noPudo(`no se pudo leer la configuración ${a.config}: ${e.message}`); }
   const mal = validarConfig(cfg);
@@ -636,12 +662,13 @@ function correr(a) {
     cfg, hoy, snap, out: a.out, simulado: a.simular || !(cfg.github && cfg.github.issues_enabled === true),
     tope: Number.isInteger(pres.tope_pr_por_noche) ? pres.tope_pr_por_noche : 2,
     fichas: leerTodasLasFichas(a.pending), volcado: leerVolcadoDeHoy(a.out, hoy), responsables: responsables(a), avisosDeSalida: [],
+    repoDir: path.dirname(path.resolve(a.operations)),
   };
   let resultado;
   try {
     ctx.gh = crearGh({ cmd, tmp });
     ctx.ident = leerIdentidad(ctx.gh, cfg);
-    resultado = hablar(ctx);
+    resultado = await hablar(ctx);
   } catch (e) { if (e instanceof NoSePuedeIntentar) return noPudo(e.message); throw e; }
   finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   const actual = JSON.parse(fs.readFileSync(archSnap, 'utf8'));
@@ -705,7 +732,9 @@ function main(argv = process.argv) {
   return a.cmd === 'help' ? 0 : 2;
 }
 
-if (require.main === module) process.exitCode = main();
+if (require.main === module) {
+  Promise.resolve(main()).then((c) => { process.exitCode = c; }, (e) => { console.error(e && e.stack ? e.stack : String(e)); process.exitCode = 1; });
+}
 
 module.exports = { main, crearGh, paginar, issuesConEtiqueta, leerSuIssue, abiertoPorArnes, categoriaDe, leerIdentidad,
   responsables, validarConfig, personaMasReciente, hablar, correr, volcar, MARCA };

@@ -133,7 +133,34 @@ test('T10 GithubIssues_NoRepeat: anotado no crea; encontrado por etiqueta se ado
   r = correr(d);
   assert.strictEqual(r.code, 0, r.out);
   assert.strictEqual(creaciones(d).length, 0);
-  assert.match(JSON.stringify(snap(d).pedidos.fallidos), /no pude consultar duplicados \(HTTP 502/);
+  assert.match(JSON.stringify(snap(d).pedidos.fallidos), /no pude consultar duplicados \(no_medido: .*HTTP 502/);
+});
+
+// M1 GithubIssues_PorLaPlataforma @mantenimiento
+// 🔴 Falla con: buscar o crear el issue con `gh` directo en vez del conector de GitHub de la capa de plataforma, o no
+//    pedirle que asigne el issue de la noche.
+test('M1 GithubIssues_PorLaPlataforma: buscar y crear van por el conector de GitHub, que asigna el issue de la noche', () => {
+  const d = mundo({});
+  ficha(d, 'abc12345');
+  snapshot(d, { presencias: [pres('abc12345', 'lodash', 'Web/web')] });
+  // las integraciones del árbol, con el conector de GitHub envuelto en un doble que anota cada operación
+  const ints = path.join(d, 'integraciones');
+  fs.cpSync(path.join(ROOT, 'integrations'), ints, { recursive: true });
+  const log = path.join(d, 'operaciones.log');
+  const real = path.join(ROOT, 'integrations', 'github', 'scripts', 'connector.js');
+  fs.writeFileSync(path.join(ints, 'github', 'scripts', 'connector.js'), `'use strict';
+const fs = require('fs');
+const real = require(${JSON.stringify(real)});
+module.exports = { run(op, args, ctx) { fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ op, assignTo: args.assignTo, forNight: args.forNight, repo: args.repo }) + '\\n'); return real.run(op, args, ctx); } };
+`);
+  const r = correr(d, 'run', { env: { TYCON_INTEGRATIONS_DIR: ints } });
+  assert.strictEqual(r.code, 0, r.out);
+  const ops = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : [];
+  assert.deepStrictEqual(ops.map((o) => o.op), ['work-item.find', 'work-item.create'], r.out);
+  assert.deepStrictEqual(ops[1], { op: 'work-item.create', assignTo: 'dueno-web', forNight: true, repo: 'acme/web' });
+  const i = estado(d).issues['acme/web'][0];
+  assert.deepStrictEqual(i.assignees, ['dueno-web']);
+  assert.deepStrictEqual(snap(d).pedidos.fallidos, []);
 });
 
 test('T10b GithubIssues_Budget: las críticas no consumen tope, lo demás por noches; dos fichas del mismo paquete en el mismo repo no abren dos', () => {

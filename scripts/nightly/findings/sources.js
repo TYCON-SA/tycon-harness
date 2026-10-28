@@ -3,7 +3,7 @@
 // palabras, y la pieza se los lee con un mapa; ejecuciones escribe la ficha común de cycle.js. Los instintos entran
 // después: el ciclo los admite, esta lista todavía no.
 
-const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, conValor,
+const { formatoPorSecciones, parsear, carpetaDe: carpetaComun, razonSegura, ACCIONES, ACCIONES_DE_DEPENDENCIAS, MOTIVOS_SIN_PROPUESTA, MOTIVOS_SIN_ANALISIS, MOTIVOS_SIN_PEDIDO, PIDIENDO, IDENTIDAD, conValor,
   problemasDeAnalisis, hechosConForma, FALLAS_MAX } = require('./cycle.js');
 const { nombreDe } = require('./cause-names.js');
 
@@ -16,6 +16,8 @@ const ORDEN_FICHA = ['id', 'detectado', 'veredicto', 'paquete', 'severidad', 'no
   // La identidad del pull request y la decisión que una persona tomó sobre él. Van
   // juntas y arriba porque son lo que el pipeline lee ANTES de decidir si abre uno nuevo.
   'pr', 'pr_repo', 'rechazado', 'motivo_rechazo', 'pr_cerrado', 'alineado', 'decidido_en_sitio',
+  // La decisión del sitio que la noche no pudo aplicar (el pedido cambió, no se pudo mergear o cerrar): el día y por qué.
+  'decision_fallida', 'motivo_decision_fallida',
   'reaparecido', 'bloqueada_por', 'resuelto', 'resuelto_antes', 'descartado', 'descartado_antes',
   'motivo', 'motivo_antes', 'pr_antes', 'pr_repo_antes', 'rechazado_antes', 'motivo_rechazo_antes',
   'ids', 'repos', 'declarada_en', 'avisos', 'pedido_motivo', 'pedidos', 'asignados'];
@@ -148,6 +150,8 @@ function tareasDe(txt, listaDe) {
 // lleva en `propuesta`, `propuesta_motivo`, `propuesta_fallas` y `propuesta_fallo_el`.
 const CLAVES_DE_PROPUESTA = ['propuesta_accion', 'propuesta_razon', 'propuesta_modelo', 'propuesta_motivo', 'propuesta_fallas',
   'propuesta_fallo_el'];
+// Lo que la noche deja en una ficha de dependencias del aviso de GitHub: el resumen, la versión que corrige, o el motivo.
+const CLAVES_DEL_AVISO = ['aviso_resumen', 'aviso_parche', 'aviso_motivo'];
 
 const FUENTES = {
   dependencias: {
@@ -180,13 +184,25 @@ const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;
 const SIN_FORMA = 'razón sin la forma esperada';
 
 /** La propuesta del modelo, con su razón pasada otra vez por el filtro: la que no lo pasa no se muestra. */
-function propuestaDe(accion, razon, modelo) {
-  if (!ACCIONES.includes(accion)) return null;
+function propuestaDe(accion, razon, modelo, acciones = ACCIONES) {
+  if (!acciones.includes(accion)) return null;
   const p = { accion, razon: razonSegura(razon) ? razon : SIN_FORMA };
   if (typeof modelo === 'string' && MODELO.test(modelo)) p.modelo = modelo;
   return p;
 }
 const motivoDe = (m) => (MOTIVOS_SIN_PROPUESTA.includes(m) ? m : null);
+// El texto del aviso de GitHub que la noche dejó en la ficha (propose.js lo limpia al bajarlo; acá se mira otra vez):
+// una línea sin comillas, barras invertidas ni enlaces, con tope (un «<» de un rango de versiones queda: el sitio
+// escapa todo lo que muestra). El tope cubre los dos resúmenes que la noche junta, cada uno con el suyo y su CVE. La
+// versión que corrige, con forma de versión.
+const RESUMEN_DE_AVISO = /^[^"\\\u0000-\u001f\u007f]{1,480}$/;
+const PARCHE_DE_AVISO = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,39}(, [0-9A-Za-z][0-9A-Za-z.+-]{0,39}){0,2}$/;
+/** Qué es la vulnerabilidad: `{ resumen, parche }`, `{ motivo: 'no-se-pudo-leer' }` si la noche no pudo leerlo, o null. */
+function avisoDe(e) {
+  const r = typeof e.aviso_resumen === 'string' ? e.aviso_resumen.trim() : '';
+  if (r && RESUMEN_DE_AVISO.test(r) && !/:\/\//.test(r)) return { resumen: r, parche: PARCHE_DE_AVISO.test(String(e.aviso_parche || '')) ? e.aviso_parche : null };
+  return e.aviso_motivo === 'no-se-pudo-leer' ? { motivo: 'no-se-pudo-leer' } : null;
+}
 const motivoPedidoDe = (m) => (MOTIVOS_SIN_PEDIDO.includes(m) ? m : null);
 const asignadoDe = (v) => (typeof v === 'string' && IDENTIDAD.test(v) && v !== 'null' ? v : null);
 
@@ -234,7 +250,8 @@ function hechosDeEjecuciones(h) {
 
 /**
  * La vista común de una ficha de cualquier fuente: `{ fuente, id, causa, nombre, primera_vez, ultima_vez, apariciones,
- * veredicto, estado }`, más `resuelto` y `reaparecido` (las fechas de dependencias), la propuesta del modelo
+ * veredicto, estado }`, más `resuelto` y `reaparecido` (las fechas de dependencias), en dependencias `aviso` (qué es la
+ * vulnerabilidad, del aviso de GitHub: `avisoDe`), la propuesta del modelo
  * (`propuesta`, `propuesta_motivo`), el pedido de trabajo (`pedido: { id, enlace }`), el número del que creó la noche
  * (`pedido_de_la_noche`, el único que recibe el aviso de que volvió y el de que sigue con el pedido cerrado, con su
  * fecha en `aviso_cerrado`), `asignado`, las `noches` de
@@ -261,7 +278,11 @@ function comoFicha(fuente, txt) {
   const { estado, veredicto } = reg.vista(fi);
   // el pedido que abrió la noche por la ficha (`pr:`), si sigue abierto: ni rechazado ni cerrado
   const prNoche = e.rechazado || e.pr_cerrado ? null : entero(e.pr);
-  const comun = { veredicto, estado, propuesta: propuestaDe(e.propuesta_accion, e.propuesta_razon, e.propuesta_modelo),
+  const aviso = fuente === 'dependencias' ? avisoDe(e) : null;
+  // una dependencia sin su aviso no lleva sugerencia: el modelo no sabía qué era la vulnerabilidad
+  const propuesta = fuente !== 'dependencias' ? propuestaDe(e.propuesta_accion, e.propuesta_razon, e.propuesta_modelo)
+    : aviso && aviso.resumen ? propuestaDe(e.propuesta_accion, e.propuesta_razon, e.propuesta_modelo, ACCIONES_DE_DEPENDENCIAS) : null;
+  const comun = { veredicto, estado, propuesta,
     propuesta_motivo: motivoDe(e.propuesta_motivo), asignado: null, pedido_motivo: null, pr_noche: prNoche };
   if (fuente === 'dependencias') {
     // `pedidos:` es la lista «Proyecto: id» de las tareas de los líderes, una por proyecto; la última es la vigente
@@ -272,7 +293,7 @@ function comoFicha(fuente, txt) {
       pedido: ultimo ? { id: ultimo.id, enlace: null } : null, pedido_de_la_noche: null, noches: entero(e.noches),
       pedidos, pedido_motivo: MOTIVOS_SIN_TAREA.includes(e.pedido_motivo) ? e.pedido_motivo : null,
       repos: fi.listas.repos.length, severidad: /^[a-z]{1,20}$/.test(String(e.severidad || '')) ? e.severidad : null,
-      analisis: null, analisis_motivo: null, hechos: null };
+      aviso, analisis: null, analisis_motivo: null, hechos: null };
   }
   return { fuente, id: e.id || null, causa: e.causa || e.huella || null, nombre: nombreDe('vigilante', e), primera_vez: fecha(e.fecha),
     ultima_vez: fecha(e.vista_por_ultima_vez), apariciones: entero(e.noches_seguidas) || 1, resuelto: fecha(e.resuelta_el),
@@ -287,4 +308,4 @@ function comoFicha(fuente, txt) {
     hechos: hechosDelVigilante(e, txt, reg.formato.listaDe) };
 }
 
-module.exports = { SIN_FORMA, bloqueDe, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, SIN_ASIGNAR, esVieja, comoFicha, pedidoDeLaNocheDe };
+module.exports = { SIN_FORMA, CLAVES_DEL_AVISO, bloqueDe, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, SIN_ASIGNAR, esVieja, comoFicha, pedidoDeLaNocheDe };

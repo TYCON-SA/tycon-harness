@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * produccion-notice.js — al abrir la sesión: regenera el índice de servidores y, SÓLO en las
+ * production-notice.js — al abrir la sesión: regenera el índice de servidores y, SÓLO en las
  * máquinas autorizadas a tocar producción, grita si el freno no está, quedó viejo o fue alterado.
  *
  * POR QUÉ SÓLO EN ESAS MÁQUINAS: el resto del equipo no instala nada, así que un
@@ -33,8 +33,8 @@
  * copia es «quedó viejo: reinstalalo», nunca «alguien lo cambió».
  *
  * Nunca bloquea nada: imprime y sale 0. Off: TYCON_PRODUCTION_NOTICE=0
- * A mano:  node produccion-notice.js --report        (dice todo, aunque esté bien)
- *          node produccion-notice.js --reindex --json (regenera el índice e imprime el resumen)
+ * A mano:  node production-notice.js --report        (dice todo, aunque esté bien)
+ *          node production-notice.js --reindex --json (regenera el índice e imprime el resumen)
  */
 'use strict';
 const fs = require('fs');
@@ -49,7 +49,7 @@ const { spawnSync } = require('child_process');
 
 // los nombres viejos de las variables y de las rutas: sin la biblioteca, sólo los nuevos
 const legacy = (() => { try { return require(path.join(__dirname, '..', 'lib', 'legacy-names.js')); } catch { return null; } })();
-const variable = (nombre) => (legacy ? legacy.readEnv(nombre, { where: 'scripts/hooks/produccion-notice.js' }) : process.env[nombre]);
+const variable = (nombre) => (legacy ? legacy.readEnv(nombre, { where: 'scripts/hooks/production-notice.js' }) : process.env[nombre]);
 
 const ARGS = process.argv.slice(2);
 const REPORTE = ARGS.includes('--report');
@@ -479,7 +479,7 @@ if (COMO_MODULO) {
 } else {
   try { main(); } catch (e) {
     // un aviso que se rompe no puede romper el arranque de la sesión
-    console.log(`🟠 produccion-notice: no pude chequear el freno de producción (${e.message})`);
+    console.log(`🟠 production-notice: no pude chequear el freno de producción (${e.message})`);
     process.exit(0);
   }
 }

@@ -52,7 +52,8 @@ function destino(args, ctx) {
   const leido = W.read(args.repoDir || process.cwd());
   if (leido.problem) return { problem: no('no_medido', `no pude leer la configuración del pedido de trabajo: ${leido.problem}`) };
   const c = leido.config || {};
-  const repo = String(c.repo || (String(c.project || '').includes('/') ? c.project : '')).trim();
+  // el pedido de la noche trae el suyo (el repo del producto): gana sobre el de la configuración del repo
+  const repo = String(args.repo || c.repo || (String(c.project || '').includes('/') ? c.project : '')).trim();
   // dueño/nombre, sin segmentos que empiecen con punto: «../..» armaría otra ruta de la API
   if (!/^[\w-][\w.-]*\/[\w-][\w.-]*$/.test(repo)) return { problem: no('sin_plataforma', 'el repo no dice en qué repo de GitHub van sus issues: repo: dueño/nombre en .tycon/work-items.yaml') };
   const warnings = (leido.unknown || []).length ? [`${path.basename(leido.file)} trae claves que no conozco: ${leido.unknown.join(', ')}`] : [];
@@ -77,11 +78,27 @@ function create(args, ctx) {
   unsupported.push(...camposPropios(args.fields));
   // la épica, con o sin mapeo: un issue no se cuelga de ella en GitHub, y se dice en los dos casos
   if (args.epic !== undefined && args.epic !== null && String(args.epic) !== '') unsupported.push(noSoportado('Épica', 'el issue no se cuelga de su épica en GitHub'));
-  const r = gh(ctx, 'POST', `repos/${repo}/issues`, { title: args.title, body, labels: [...new Set(labels)] });
+  // auto_assign decide si el pedido de una story va a quien la crea; el de la noche no tiene autor y va siempre al
+  // responsable que eligió la organización (forNight)
+  const asignar = Boolean(args.assignTo) && (c.auto_assign === true || args.forNight === true);
+  const pedido = { title: args.title, body, labels: [...new Set(labels)] };
+  if (asignar) pedido.assignees = [String(args.assignTo)];
+  const r = gh(ctx, 'POST', `repos/${repo}/issues`, pedido);
   if (r.problem) return r.problem;
   const id = r.value && r.value.number;
   if (!Number.isInteger(id)) return no('no_medido', 'gh creó algo, pero la respuesta no trae el número');
-  return { ok: true, value: { id, url: `https://github.com/${repo}/issues/${id}`, warnings: d.warnings, unsupported } };
+  const warnings = [...d.warnings];
+  const value = { id, url: `https://github.com/${repo}/issues/${id}`, warnings, unsupported };
+  if (asignar) {
+    // GitHub descarta EN SILENCIO a quien no tiene acceso al repo: lo que vale es la respuesta, no el pedido
+    const quedo = ((r.value && r.value.assignees) || []).map((u) => (typeof u === 'string' ? u : u && u.login)).filter(Boolean);
+    value.assigned = quedo.some((l) => l.toLowerCase() === String(args.assignTo).toLowerCase()) ? String(args.assignTo) : null;
+    if (value.assigned === null) warnings.push(`el issue #${id} quedó sin asignar a ${args.assignTo}: GitHub descarta en silencio a quien no tiene acceso al repo`);
+  }
+  // una etiqueta que no quedó (la cuenta no puede crearlas) hace que el issue no se encuentre después por ella
+  const quedaron = etiquetas(r.value).map((l) => l.toLowerCase());
+  value.missingTags = pedido.labels.filter((l) => !quedaron.includes(l.toLowerCase()));
+  return { ok: true, value };
 }
 
 function update(args, ctx) {

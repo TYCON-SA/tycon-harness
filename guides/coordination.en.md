@@ -47,11 +47,10 @@ shows. It is set in a single step:
 
 The coordinator opens a new session with `coordination.js open --name <name> --cwd <folder> -- <task>`. It opens a real
 session, in the background, never a subagent, and returns how to go in and watch it (`claude attach <name>`). Before
-opening it checks three things, in order, and if one fails it does not open and says why:
+opening it checks two things, in order, and if one fails it does not open and says why:
 
 1. The name: only letters, digits, hyphen and underscore, and not used by another live session.
-2. The task: if it carries a permission phrase from the owner, it does not open (see "The owner's phrase").
-3. The cap: if as many sessions as the cap are already working, it does not open.
+2. The cap: if as many sessions as the cap are already working, it does not open.
 
 `open` never retries. If the tool refuses because nobody approved the folder, it says in one line which folder the
 owner has to open once; meanwhile, the owner opens the session and the coordinator gives it the task. The approval
@@ -121,14 +120,11 @@ mean nothing is left to sign.
 Requests to the public repo go in through its queue. The private repo's requests start as drafts, and the coordinator
 publishes them in order, once their public pair is in.
 
-## The owner's phrase
+## The owner's signatures
 
-A permission phrase from the owner ("autorizo …") is written by the owner, in their chat. If another session writes or
-forwards it, the permission no longer proves a person gave it. That is why the coordinator never puts it in a message
-to another session, and `open` does not open a session whose task carries it, not even quoted: the owner writes the
-phrase in the new session.
-
-Forwarding a dev's ok with their quote is not a permission phrase and works as always.
+A phrase in the chat, in a task or in a message between sessions signs nothing: the harness does not read the
+conversation to sign. The owner signs in the permission window or in their terminal, and what the coordinator can sign
+on the owner's behalf is in `guides/firmas-del-arnes.md`.
 
 ## The notices to the owner
 
@@ -148,9 +144,8 @@ work, not one per session. The style meter that already exists measures this; th
 | Confirm a signature is missing before asking for it | nadie | How to confirm depends on each signature; `signature` only avoids two files with the same command. |
 | One file per signature, deleted once signed | aviso | `status` counts the pending signatures; `signature` does not write a second file with the same command. |
 | Requests in order | nadie | No data on the machine says which request pairs with which without asking the network on every turn. |
-| Another session does not write the owner's phrase | freno | `open` does not open a session whose task carries it. Nothing checks a message between sessions yet. |
 | Short and plain notices | aviso | The style meter that already exists. |
-| Codex does not coordinate | aviso | `/coordinate` says so in Codex and stops. Codex can send messages with codex queue, but that command does not go through a tool the phrase brake can see. |
+| Codex does not coordinate | aviso | `/coordinate` says so in Codex and stops. Codex can send messages with codex queue, but that command does not go through a tool the harness can see. |
 
 The "Measured by" column keeps the Spanish words the harness uses everywhere: **aviso** (a notice), **freno** (a brake)
 and **nadie** (nobody).

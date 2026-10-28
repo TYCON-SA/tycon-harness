@@ -1,10 +1,10 @@
 'use strict';
 /**
- * waiver-display — el criterio que no se puede probar en vivo se lo muestra el arnés a la persona antes de que lo firme,
- * y el ok vale si responde a eso.
+ * waiver-display — el criterio que no se puede probar en vivo se lo muestra el arnés a la persona antes de que lo firme
+ * en la ventana de permiso.
  *
- * Una cita de la persona, de esta corrida, no dice qué firmó: un «dale» escrito por otra cosa firmaría un criterio que
- * nunca vio. Por eso el arnés muestra cada criterio en pantalla (`systemMessage`, como el crítico en
+ * La ventana muestra el comando, no el criterio: sin el aviso, la persona firmaría un criterio que nunca vio. Por eso el
+ * arnés muestra cada criterio en pantalla (`systemMessage`, como el crítico en
  * lib/critical-display.js) con su texto, por qué no se puede probar en vivo y qué prueba lo cubre, y deja la constancia
  * `ac-shown` en `gates.log`, donde el agente no escribe.
  *
@@ -13,9 +13,9 @@
  *   · `handle(event, opts)`: el despachador de ediciones (la instalación mínima no trae la puerta Bash). Un Write o Edit
  *     de `firma-pedida.json` ({ "acs": [n] }) en la carpeta de la corrida abierta de la sesión.
  *   · `mostrado(...)`: la constancia más nueva de ese criterio con esa declaración, o null. La lee `runtime-waiver`.
- *   · `juez(acs)`: `(texto) => null | motivo`. ¿El mensaje nombra cada criterio y no dice que no lo firma?
  *
- * Sin la conversación legible (otra herramienta) no se muestra ni se anota: no se sabe si el aviso se ve.
+ * Se muestra siempre, con la conversación legible o sin ella: la firma no sale de la conversación sino de la ventana de
+ * permiso o de la terminal.
  */
 const fs = require('fs');
 const os = require('os');
@@ -39,11 +39,6 @@ function mostrado({ stateDir, sessionId, storyId, ac, sha }) {
   return del.length ? del[del.length - 1] : null;
 }
 
-// lo que no es un sí: una negación antes de «firmar» (con «quiero», «voy a», «puedo» en el medio) o una pregunta
-const RE_NIEGA = /(?<![\p{L}\p{N}])(?:no|ni|nunca|jam[aá]s|todav[ií]a\s+no)\s+(?:(?:quiero|voy\s+a|puedo|pienso|vamos\s+a)\s+)?(?:(?:lo|la|los|las|te|se)\s+)?firm/iu;
-// el sí: «firmo», «firmamos», «firmalo», «lo firmo»… en primera persona o como orden
-const RE_FIRMA = /(?<![\p{L}\p{N}])(?:firmo|firmamos|f[ií]rmalo|f[ií]rmalos|firmá|firmalo|lo\s+firmo|los\s+firmo)(?![\p{L}\p{N}])/iu;
-
 /**
  * La huella de lo que se le mostró a la persona: el texto del criterio, por qué no se puede probar en vivo y qué lo
  * cubre. Si cambia cualquiera de los tres, la muestra ya no vale para la firma.
@@ -52,41 +47,12 @@ function huella(text, reason, coveredBy) {
   return require('crypto').createHash('sha256').update(JSON.stringify([String(text ?? '').trim(), String(reason ?? '').trim(), String(coveredBy ?? '').trim()])).digest('hex').slice(0, 16);
 }
 
-// una lista de criterios: «AC 3», «los AC 3, 5 y 7», «criterios 3 y 5», «ACs #3, #5»
-const RE_LISTA = /(?<![\p{L}\p{N}])(?:acs?|criterios?)\s*(?:n[°º.]?\s*)?#?\s*\d+(?:\s*(?:,|\by\b|\be\b)\s*#?\s*\d+)*/giu;
-/** Los números de criterio que nombra el mensaje, sueltos («#3») o en una lista tras «AC» o «criterio». */
-function nombrados(t) {
-  const nums = new Set();
-  for (const m of t.matchAll(RE_LISTA)) for (const d of m[0].matchAll(/\d+/g)) nums.add(Number(d[0]));
-  for (const m of t.matchAll(/#(\d+)(?![\p{N}])/gu)) nums.add(Number(m[1]));
-  return nums;
-}
-
-/** ¿El mensaje dice que firma («firmo …») nombrando cada criterio («AC 3», «los AC 3 y 5», «#3»), sin negarlo ni preguntar? */
-function juez(acs) {
-  const lista = [...new Set((acs || []).map(Number))];
-  const nombra = (t, n) => nombrados(t).has(n);
-  const f = (texto) => {
-    const t = String(texto || '');
-    if (RE_NIEGA.test(t)) return 'el mensaje dice que no lo firma';
-    if (/[¿?]/.test(t)) return 'el mensaje pregunta: una pregunta no es un ok';
-    if (!RE_FIRMA.test(t)) return `el mensaje no dice que lo firma: tiene que decir, por ejemplo, «firmo el AC ${lista[0]}»`;
-    const faltan = lista.filter((n) => !nombra(t, n));
-    if (faltan.length) return `el ok no nombra ${faltan.map((n) => `el AC ${n}`).join(' ni ')}: tiene que decir, por ejemplo, «firmo el AC ${faltan[0]}»`;
-    return null;
-  };
-  f.retracta = (texto) => RE_NIEGA.test(String(texto || ''));
-  return f;
-}
-
 function bloque({ storyId, criterios }) {
-  const nums = criterios.map((c) => c.ac);
-  const formas = nums.length === 1 ? `«firmo el AC ${nums[0]}»` : `«firmo los AC ${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}»`;
-  // un renglón por criterio, más el encabezado y cómo contestar: Claude Code antepone su rótulo a cada renglón del aviso
+  // un renglón por criterio, más el encabezado y dónde se aprueba: Claude Code antepone su rótulo a cada renglón del aviso
   return [
     `Te piden firmar ${criterios.length === 1 ? 'un criterio' : `${criterios.length} criterios`} de la historia ${storyId} que no se ${criterios.length === 1 ? 'puede' : 'pueden'} probar en vivo (te lo muestra el arnés). Un criterio firmado cuenta como probado sin haberlo corrido contra la aplicación.`,
     ...criterios.map((c) => `AC ${c.ac}: ${c.text || '(sin texto en la historia)'} · Por qué no se puede probar en vivo: ${c.reason || '(sin razón declarada)'} · Qué lo cubre: ${c.coveredBy || '(ninguna prueba declarada)'}`),
-    `Si estás de acuerdo, contestá ${formas}. Un «dale» o un «apruebo» suelto no lo firma.`,
+    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No». Una respuesta en el chat no lo firma.',
   ].join('\n');
 }
 
@@ -99,7 +65,6 @@ function leerMarcador(stateDir, sessionId) {
 /** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
 function criteriosDe(storyPath, acs) {
   const rm = require('../runtime-matrix.js');
-  const waiver = require('./runtime-waiver.js');
   const matrix = rm.compute({ storyPath });
   if (matrix.structuralError) return { error: matrix.structuralError };
   const pend = new Set(matrix.notVerifiable || []);
@@ -125,11 +90,10 @@ function esLaDelMarcador(storyPath, marker) {
 }
 
 // Arma la muestra de los criterios pedidos, si corresponde. La constancia la escribe quien muestra, después de mostrar.
-function preparar({ sessionId, stateDir, home = os.homedir(), storyPath, acs }) {
+function preparar({ sessionId, stateDir, storyPath, acs }) {
   if (!sessionId || !storyPath || !acs || !acs.length) return null;
   const marker = leerMarcador(stateDir, sessionId);
   if (!marker || !marker.storyId) return null;
-  if (!require('./person-ok.js').leerConversacion({ sesion: sessionId, home }).legible) return null;
   const abs = path.isAbsolute(storyPath) ? storyPath : path.join(marker.repoPath || process.cwd(), storyPath);
   if (!fs.existsSync(abs) || !esLaDelMarcador(abs, marker)) return null;
   const c = criteriosDe(abs, acs);
@@ -149,7 +113,7 @@ function preparar({ sessionId, stateDir, home = os.homedir(), storyPath, acs }) 
 }
 
 /**
- * Los `marker.js runtime-waiver <spec> --acs n,m` del comando que piden el ok en el chat (los de la terminal no llevan
+ * Los `marker.js runtime-waiver <spec> --acs n,m` del comando que piden la firma en la ventana (los de la terminal no llevan
  * `--acs`). Uno con variables o sustituciones de la terminal no entra: su valor no se sabe hasta que corre.
  */
 function pedidosDelComando(command) {
@@ -203,4 +167,4 @@ function handle(event, opts = {}) {
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, mostrado, juez, huella, bloque, criteriosDe, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, mostrado, huella, bloque, criteriosDe, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };

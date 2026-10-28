@@ -89,7 +89,9 @@ const RUBROS = {
   dependencias: ['nuevos', 'pedidos_creados', 'pedidos_cerrados', 'pedidos_reabiertos', 'vivas_por_proyecto', 'edad_mas_vieja', 'aceptadas_sin_resolver', 'rechazadas_sin_deuda',
     'deuda_con_pedido_abierto', 'postergadas_por_presupuesto', 'proyectos_sin_iteracion', 'proyectos_con_tipo_de_fabrica',
     // El cruce «pedido cerrado, vulnerabilidad viva» — se LEEN de `cruce`, no se recalculan
-    'pedidos_cerrados_con_vivas', 'resueltas_con_pedido_abierto'],
+    'pedidos_cerrados_con_vivas', 'resueltas_con_pedido_abierto',
+    // Lo que una persona decidió en el sitio y la noche no pudo aplicar: la fila volvió a «Te toca decidir»
+    'decisiones_no_aplicadas'],
   vigilante: ['nuevos', 'pendientes', 'aceptadas_sin_story', 'no_medido', 'ignoradas_hoy'],
 };
 const ETIQUETA = {
@@ -99,6 +101,7 @@ const ETIQUETA = {
   proyectos_sin_iteracion: 'proyectos sin iteración', proyectos_con_tipo_de_fabrica: 'proyectos sin el tipo configurado', pendientes: 'pendientes',
   aceptadas_sin_story: 'aceptadas sin story', no_medido: 'no medido', ignoradas_hoy: 'ignoradas hoy',
   pedidos_cerrados_con_vivas: 'pedidos cerrados con la vulnerabilidad viva', resueltas_con_pedido_abierto: 'resueltas con pedido abierto',
+  decisiones_no_aplicadas: 'decisiones del sitio que no se aplicaron',
 };
 const PREFIJO = { dependencias: 'dependencias', vigilante: 'vigilante' };
 const DECIDIR = {
@@ -205,7 +208,15 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
   if (!fichas) {
     const m = 'no se pudieron leer las fichas de dependencias';
     R.vivas_por_proyecto = nulo(m); R.edad_mas_vieja = nulo(m); R.aceptadas_sin_resolver = nulo(m);
+    R.decisiones_no_aplicadas = nulo(m);
   } else {
+    // La marca la pone la noche (`note --decision-failed`) y la borra la próxima decisión: el porqué queda en la ficha
+    // (puede nombrar un repo), acá sólo quién y desde cuándo.
+    R.decisiones_no_aplicadas = {
+      valor: fichas.pending.filter((x) => esFecha(x.f.escalares.decision_fallida))
+        .map((x) => ({ id: x.id, el: x.f.escalares.decision_fallida })),
+      de: null, motivo: null,
+    };
     const vivas = [
       ...fichas.pending.filter((x) => x.f.escalares.veredicto === 'pendiente'),
       ...fichas.promoted.filter((x) => !x.f.escalares.resuelto),
@@ -366,6 +377,7 @@ function identidad(nombre, r) {
       case 'edad_mas_vieja': return `id:${r.id}`;
       case 'vivas_por_proyecto': return orden(v.flatMap((g) => g.ids.map((id) => `${g.proyecto}:${id}`)));
       case 'aceptadas_sin_resolver': return orden(v.map((x) => `${x.id}:${x.bloqueada_por || ''}`));
+      case 'decisiones_no_aplicadas': return orden(v.map((x) => `${x.id}:${x.el}`));
       case 'deuda_con_pedido_abierto': return orden(v.map((x) => `${x.ficha}:${x.proyecto}`));
       case 'pedidos_creados': case 'pedidos_cerrados': case 'pedidos_reabiertos': return orden(v.map((x) => `${x.ficha}:${x.proyecto}:${x.id}`));
       // La edad de una resuelta con pedido abierto crece sola: se compara QUIÉN está, no hace cuánto.
@@ -560,6 +572,10 @@ function veredicto(fuente, rubros, cambios, fallos, cuando) {
       `${cuenta(rubros.vivas_por_proyecto, (r) => r.de, '?')} vivas`,
       `${cuenta(rubros.aceptadas_sin_resolver, (r) => r.valor.length, '?')} aceptadas sin resolver`,
       `${cuenta(rubros.postergadas_por_presupuesto, (r) => r.valor.hallazgos.length, '?')} postergadas`);
+    // va en la cabecera mientras haya alguna: «sigue igual» la escondería, y es una decisión que hay que volver a tomar
+    const sinAplicar = rubros.decisiones_no_aplicadas && Array.isArray(rubros.decisiones_no_aplicadas.valor)
+      ? rubros.decisiones_no_aplicadas.valor.length : 0;
+    if (sinAplicar) partes.push(`${sinAplicar} decisión(es) del sitio sin aplicar`);
   } else {
     const pend = rubros.pendientes;
     partes.push(`🌙 vigilante`, cab,
@@ -873,6 +889,24 @@ function lineaRetros(archivo) {
   }
   const lista = faltan.length ? ` (${faltan.slice(0, 3).join(', ')}${faltan.length > 3 ? ` y ${faltan.length - 3} más` : ''})` : '';
   return `retros: ${t.merges} merges a main · latido sin modelo ${t.latido} · retro con aprendizajes ${t.aprendizajes} · no piden retro ${t.no_piden} · faltan ${faltan.length}${lista}${sinMirar.length ? ` · sin mirar: ${sinMirar.join(', ')}` : ''}`;
+}
+
+/**
+ * La línea de las pruebas de navegador que ningún pipeline corre, del informe que deja el paso de la noche
+ * (`check-tests-without-ci.js --json`, pasado con `--tests-without-ci`). Sólo cuentas: los nombres de los repos
+ * quedan en el informe guardado. Sin informe, o con uno que no se lee, lo dice: no es «0 sin correr».
+ */
+function lineaPruebasSinCi(archivo) {
+  const T = 'pruebas de navegador sin pipeline';
+  let r;
+  try { r = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch { return `${T}: ? (el control de la noche no dejó su informe)`; }
+  const n = (x) => (Number.isInteger(x) && x >= 0 ? x : null);
+  if (!r || typeof r !== 'object' || !Array.isArray(r.resultados) || [r.medidos, r.ausentes, r.no_aplican].map(n).includes(null)) return `${T}: ? (el informe del control no se pudo leer)`;
+  if (typeof r.sin_productos === 'string') return `${T}: no aplica (no hay productos declarados)`;
+  const sinCi = r.resultados.filter((x) => x && (x.veredicto === 'sin-ci' || x.veredicto === 'sin-pipeline')).length;
+  const sinMirar = r.ausentes + r.resultados.filter((x) => x && x.veredicto === 'no-medido').length;
+  if (r.medidos === 0) return `${T}: ? (el control no midió ningún repo${sinMirar ? ` · sin mirar ${sinMirar}` : ''})`;
+  return `${T}: ${sinCi} de ${r.medidos} repos medidos${sinMirar ? ` · sin mirar ${sinMirar}` : ''}`;
 }
 
 /**
@@ -1338,6 +1372,7 @@ function entregar(a) {
   let cola = '';
   if (a.extra !== null) cola = `${cola}\n\n${seccionExtra(a.extra)}`;
   if (a.retros !== null) cola = `${cola}\n${lineaRetros(a.retros)}`;
+  if (a.pruebasSinCi !== null) cola = `${cola}\n${lineaPruebasSinCi(a.pruebasSinCi)}`;
   // la línea de las ejecuciones va en su lugar con una marca: el mensaje aparte de los canales que no editan no la lleva
   // cuando sale de la constancia de la mañana (ya les llegó a las 04:00)
   const MARCA_EJ = '\u0000ejecuciones\u0000';
@@ -1482,7 +1517,7 @@ function perfilDeLaNoche(a) {
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, retros: null, runsReview: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
+    vigOut: null, depsOut: null, extra: null, retros: null, pruebasSinCi: null, runsReview: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
     siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
@@ -1497,6 +1532,7 @@ function parseArgs(argv) {
     else if (v === '--deps-out') a.depsOut = valor(++i);
     else if (v === '--extra') a.extra = valor(++i);
     else if (v === '--retros') a.retros = valor(++i);
+    else if (v === '--tests-without-ci') a.pruebasSinCi = valor(++i);
     else if (v === '--runs-review') a.runsReview = valor(++i);
     else if (v === '--weekly') a.weekly = valor(++i);
     else if (v === '--runs') a.runs = valor(++i);
@@ -1516,7 +1552,7 @@ function parseArgs(argv) {
 
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
-    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--runs-review <clon de operaciones>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
+    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--tests-without-ci <informe de check-tests-without-ci.js --json>] [--runs-review <clon de operaciones>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]\n' +
     '       [--profile <team-profile.json> | --team-repos <team-repos.json> --clone-dir <dir>]');
 }

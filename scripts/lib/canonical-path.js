@@ -369,11 +369,11 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
     try {
       try { plan = current = planOf(); }
       catch (e) { current = null; return out('error', [`⚠️ tycon: no pude mirar el lugar ${placeRuta} (${e && e.message}); el nombre viejo sigue como estaba`], null); }
-      if (quiet(plan)) return finish(plan, null);
+      if (quiet(plan)) return finish(plan);
       return write(plan);
     } finally { releasePlaceLock(lock); }
   }
-  return finish(plan, null);
+  return finish(plan);
 
   function describe(p, written) {
     const L = [];

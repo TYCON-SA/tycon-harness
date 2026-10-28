@@ -1404,13 +1404,16 @@ function archivosDotnetDelRepo(repo, tope = 200) {
  */
 function hermanosDelRepo(activos) {
   let raiz = null;
+  let raices = [];
   let motivo = null;
   try {
     const r = require(path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'repos-root.js')).resolveReposRoot();
     raiz = r.root || null;
+    raices = Array.isArray(r.roots) ? r.roots : [];
     if (!raiz) motivo = r.motivo || 'sin raíz de repos';
   } catch (e) { motivo = `no pude leer la raíz de repos (${e.message})`; }
-  const lista = packsLib.hermanosResueltos({ paquetes: activos, reposRoot: raiz });
+  // con varias carpetas de repos, el hermano se busca en todas
+  const lista = packsLib.hermanosResueltos({ paquetes: activos, reposRoot: raiz, reposRoots: raices });
   return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
 }
 
@@ -4445,9 +4448,9 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
-  if (result && result.skip_request && mostrar && !ej) {
+  if (result.skip_request && mostrar && !ej) {
     result.skip_request.muestra = 'sin corrida abierta: la firma se pide dentro de una corrida de esta story (pipeline.js start)';
-  } else if (result && result.skip_request && mostrar) {
+  } else if (result.skip_request && mostrar) {
     const m = sk.muestra({ story: ej.story, carpeta: ej.carpeta, ejecucion: ej.ejecucion,
       camino: result.skip_request.camino, casa, userInfo });
     texto = m.texto;
@@ -5134,6 +5137,11 @@ function renderFollowupItem(nf, checked) {
   const loc = nf.file ? `\`${nf.file}${nf.line ? ':' + nf.line : ''}\`` : '(sin archivo)';
   return `- [${checked ? 'x' : ' '}] **[${nf.severity}]** ${nf.ruleId} — ${loc} — ${nf.summary} <!-- fkey:${nf.ruleId}|${nf.file || '?'} -->`;
 }
+// El texto de un item ya escrito (lo que sigue a la ubicación), para distinguir dos hallazgos de la misma regla y archivo.
+function followupSummary(raw) {
+  const m = String(raw).match(/^- \[[ xX]\]\s\*\*\[[^\]]*\]\*\*\s.*? — .*? — (.*?)\s*<!--\s*fkey:/);
+  return m ? m[1].trim() : '';
+}
 function parseFollowupsSection(content) {
   const lines = (content || '').split(/\r?\n/);
   const hIdx = lines.findIndex((l) => l.trim() === FOLLOWUPS_HEADING);
@@ -5345,18 +5353,25 @@ function writeFollowups(args) {
   }
   const content = readText(storyPath);
   const parsed = parseFollowupsSection(content);
+  // Un hallazgo es la regla, el archivo y su texto: en una story de varias tandas la misma regla sobre el mismo archivo
+  // aparece una vez por tanda, con otro texto. La clave `regla|archivo` sola los juntaba y borraba los de las tandas
+  // anteriores.
+  const ident = (key, summary) => `${key}\u0000${summary || ''}`;
   const prevChecked = new Map();
-  if (parsed) for (const it of parsed.items) prevChecked.set(it.key, it.checked);
+  if (parsed) for (const it of parsed.items) prevChecked.set(ident(it.key, followupSummary(it.raw)), it.checked);
 
   const seen = new Set();
+  const newKeys = new Set();
   const merged = [];
   for (const raw of findings) {
     const f = normalizeFinding(raw);
     const k = `${f.ruleId}|${f.file || '?'}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    // Preservar el checkbox previo por fkey (idempotente en re-loops); resolved lo fuerza a [x].
-    const checked = f.resolved ? true : (prevChecked.has(k) ? prevChecked.get(k) : false);
+    const id = ident(k, f.summary);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    newKeys.add(k);
+    // Preservar el checkbox previo del mismo hallazgo (idempotente en re-loops); resolved lo fuerza a [x].
+    const checked = f.resolved ? true : (prevChecked.has(id) ? prevChecked.get(id) : false);
     merged.push(renderFollowupItem(f, checked));
   }
   // Conservar TODOS los items previos que no vienen en el nuevo set — resueltos [x] (historial)
@@ -5365,9 +5380,15 @@ function writeFollowups(args) {
   // deferred/gated como TEST-W4a, que el advisor no re-flaggea) se dropeara SILENCIOSAMENTE →
   // deuda técnica trackeada borrada sin rastro. Un item sale de [ ] SOLO explícitamente: viene en
   // un findings posterior con resolved:true (→ [x]), o un humano lo marca [x] a mano. Nunca por omisión.
+  // Con la misma regla y archivo en el nuevo set: el abierto lo reemplaza el reporte de ahora (es la misma deuda,
+  // con su texto al día); el resuelto con otro texto queda, porque es el historial de otra tanda o corrida.
   if (parsed) {
     for (const it of parsed.items) {
-      if (!seen.has(it.key)) { merged.push(it.raw); seen.add(it.key); }
+      const id = ident(it.key, followupSummary(it.raw));
+      if (seen.has(id)) continue;
+      if (newKeys.has(it.key) && !it.checked) continue;
+      merged.push(it.raw);
+      seen.add(id);
     }
   }
   if (!merged.length && !parsed) {
@@ -5535,6 +5556,43 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   // el aviso queda anotado: el ok de una vuelta extra tiene que ser posterior
   anotar({ name: 'review-cap-shown', status: 'blocked', tope: tope.value, abiertos: ab.map((a) => a.regla) });
   return `${renglones.join('\n')}\n`;
+}
+
+// El freno de la carpeta sin trabajo: antes de una vuelta de revisores, si la carpeta de la story no tiene ningún cambio
+// contra la rama principal (ni commits propios ni cambios sin commitear), los revisores leerían la principal y dirían
+// «no está el código». Pasa cuando algo aparta los cambios mientras corre la vuelta (un `git stash` de fondo). Null si
+// puede seguir, o el mensaje de por qué no. Sin git, sin rama principal conocida o ante un error de git, no frena: no
+// puede afirmar que la carpeta está vacía. Tampoco frena parada en la propia rama principal. Los commits desde el
+// `baseSha` del marcador también cuentan como trabajo.
+function emptyWorkGate(args) {
+  const { spawnSync } = require('child_process');
+  const repo = path.resolve(args.repo || '.');
+  const git = (a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', timeout: 10000 });
+  const top = git(['rev-parse', '--show-toplevel']);
+  if (top.error || top.status !== 0) return null;
+  const status = git(['status', '--porcelain', '--untracked-files=normal']);
+  if (status.error || status.status !== 0 || String(status.stdout).trim()) return null;
+  const ahead = (ref) => {
+    const r = git(['rev-list', '--count', `${ref}..HEAD`]);
+    return r.error || r.status !== 0 ? null : Number(String(r.stdout).trim());
+  };
+  let marcador = null;
+  try { marcador = readSessionMarkerStrict().marcador; } catch (_e) { marcador = null; }
+  if (marcador && typeof marcador.baseSha === 'string' && marcador.baseSha) {
+    const n = ahead(marcador.baseSha);
+    if (n === null || n > 0) return null;
+  }
+  const principal = ['origin/main', 'main', 'origin/master', 'master']
+    .find((ref) => { const r = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return !r.error && r.status === 0; });
+  if (!principal) return null;
+  // Parado en la propia rama principal no hay contra qué comparar: el trabajo pudo commitearse ahí antes de la corrida.
+  const rama = git(['symbolic-ref', '--short', '-q', 'HEAD']);
+  if (!rama.error && rama.status === 0 && String(rama.stdout).trim() === principal.replace(/^origin\//, '')) return null;
+  const n = ahead(principal);
+  if (n === null || n > 0) return null;
+  return `🛑 La carpeta de la story no tiene ningún cambio contra ${principal}: ni commits propios ni cambios sin commitear (${repo}).\n` +
+    '   Los revisores leerían la rama principal y dirían «no está el código»: la vuelta se perdería.\n' +
+    '   Causa típica: algo apartó los cambios mientras tanto (un `git stash` de fondo, un checkout). Recuperalos y volvé a pedir la vuelta.\n';
 }
 
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
@@ -6365,6 +6423,8 @@ function main() {
     // El freno corre DESPUÉS de las validaciones propias del comando: sus errores salen como siempre.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const emptyWork = emptyWorkGate(args);
+    if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const set = computeAdvisorSet(args);
@@ -6487,6 +6547,8 @@ function main() {
     // corromperían el recompute de force-full-reloop.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const emptyWork = emptyWorkGate(args);
+    if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const conModelos = conModelosDeLaCorrida(args);
@@ -6615,7 +6677,7 @@ function main() {
           '🛑 check-count FALLÓ CERRADO — no hay step5-start en el registro: `pipeline.js advisors` no corrió en esta corrida.\n' +
           'Sin ese registro no hay set esperado ni spawns contra qué contar, y un OK sería un verde sobre nada.\n' +
           'Corré `pipeline.js advisors --repo <r> --story <s> --files <…>`, lanzá los revisores y volvé a contar.\n' +
-          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo firma en la ventana de permiso o en su terminal.\n',
         );
         process.exit(2);
       }
@@ -6645,7 +6707,7 @@ function main() {
               'Verificá:\n' +
               '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
               '  2. ¿on-advisor-run.js está en settings.json (PreToolUse Task|Agent)? → install-tycon-hooks.sh --check\n') +
-          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo firma en la ventana de permiso o en su terminal.\n',
         );
         process.exit(2);
       }
@@ -7445,7 +7507,7 @@ function main() {
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
     '  node pipeline.js check-count    [--ran a,b,c]\n' +
     '       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n' +
-    '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona: «autorizo trust-ran»)\n' +
+    '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona, en la ventana de permiso o en su terminal)\n' +
     '  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n' +
     '                                  [--allow-missing-files]\n' +
     '       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n' +

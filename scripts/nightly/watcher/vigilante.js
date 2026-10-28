@@ -267,6 +267,7 @@ async function traerProducto(prod, cfg, fixtureDir, desdeIso) {
       degradada: d.degradada || null,
       hostLogs: d.hostLogs === undefined ? null : d.hostLogs,
       tablaLeida: d.tablaLeida !== false,
+      truncado: d.truncado || null,
     };
   }
   const user = process.env[prod.env_user];
@@ -329,7 +330,11 @@ async function traerProducto(prod, cfg, fixtureDir, desdeIso) {
       degradada = `el host dice ${total} pedidos con error (cuenta desde 400) y devuelve la lista vacía: es el bug de inquilino del host, ya reportado. Sin el detalle por pedido no hay mensaje ni usuario, así que deriva y desagregación no se pueden evaluar`;
     }
   }
-  const truncado = filas.length >= TOPE ? `sólo se leyeron los primeros ${TOPE} errores: puede haber más` : null;
+  // Lo que quedó después del corte se cuenta con las estadísticas por plugin, pero sin mensaje ni usuario: por eso
+  // sigue declarado como no medido.
+  const truncado = filas.length >= TOPE
+    ? `sólo se leyeron los primeros ${TOPE} errores: los 5xx de más se cuentan por las estadísticas de cada plugin, sin mensaje ni usuario`
+    : null;
 
   const hl = await pedir(`${prod.url}/api/admin/host-logs/stats?lastDays=1`, T);
   return {
@@ -357,10 +362,46 @@ function yaAlertadoPorAzure(filas, umbralRafaga) {
 }
 
 /**
+ * Los 5xx de las estadísticas, `{ plugin: { codigo: cantidad } }`, sin los códigos en cero. Sin prototipo: las claves
+ * son nombres de plugin que manda el host, y un `__proto__` no puede escribir en el de todos los objetos.
+ */
+function cincoxxDeEstadisticas(stats) {
+  const out = Object.create(null);
+  for (const [plugin, st] of Object.entries(stats || {})) {
+    for (const [codigo, cant] of Object.entries((st && st.porCodigo) || {})) {
+      if (Number(codigo) < 500 || !cant) continue;
+      (out[plugin] = out[plugin] || Object.create(null))[codigo] = cant;
+    }
+  }
+  return out;
+}
+
+/**
+ * Los 5xx de las estadísticas que NO vinieron en las filas de detalle: lo que quedó después del corte. Las
+ * estadísticas miran 24 h y las filas la ventana de la noche, así que la resta puede dar negativa; ésa no cuenta.
+ */
+function cincoxxFueraDeLasFilas(stats, ejecuciones) {
+  const vistas = Object.create(null);
+  for (const e of ejecuciones || []) {
+    if (e.estado < 500) continue;
+    const k = `${e.plugin}|${e.estado}`;
+    vistas[k] = (vistas[k] || 0) + 1;
+  }
+  const out = Object.create(null);
+  for (const [plugin, codigos] of Object.entries(cincoxxDeEstadisticas(stats))) {
+    for (const [codigo, cant] of Object.entries(codigos)) {
+      const resto = cant - (vistas[`${plugin}|${Number(codigo)}`] || 0);
+      if (resto > 0) (out[plugin] = out[plugin] || Object.create(null))[codigo] = resto;
+    }
+  }
+  return out;
+}
+
+/**
  * Evalúa las cuatro reglas de un producto. PURA (no toca disco ni red): es lo que la hace testeable
  * y lo que permite reproducir incidentes históricos contra datos reales.
  */
-function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modoFrio, fuente, ahoraIso }) {
+function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modoFrio, fuente, truncado, ahoraIso }) {
   const hallazgos = [];
   const errores = ejecuciones.filter((e) => e.estado >= 500);
   const piso = cfg.umbral_piso;
@@ -413,22 +454,26 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
   // (2b) GOTEO POR ESTADÍSTICAS — el camino cuando el host no entrega el detalle de cada error.
   // Más grueso (no hay mensaje ni usuario, así que agrupa por plugin y código de estado), pero es
   // real y hoy es lo único que hay. Cuando el host devuelva las filas, manda la regla fina.
-  if (fuente !== 'ejecuciones') {
-    for (const [plugin, st] of Object.entries(stats || {})) {
-      for (const [codigo, cant] of Object.entries(st.porCodigo || {})) {
-        if (Number(codigo) < 500 || !cant) continue;
-        const fp = huella(producto, plugin, `codigo-${codigo}`, codigo, 'stats');
-        const m = base[fp] === undefined ? null : base[fp];
-        const umbral = Math.max(piso, Math.ceil(cfg.factor * (m || 0)));
-        if (cant < umbral) continue;
-        hallazgos.push({
-          regla: m === null || m === 0 ? 'deriva' : 'goteo', producto, plugin, endpoint: null, ya_alertado: false,
-          huella: fp, origen: 'stats', severidad: cant >= umbral * 2 ? 'alta' : 'media',
-          senal: { errores: cant, estado_http: Number(codigo), total_pedidos: st.total, linea_base_mediana: m, umbral_aplicado: umbral },
-          diagnostico: `${cant} × ${codigo} en el plugin "${plugin}" en 24 h sobre ${nn(st.total, '?')} pedidos (mediana previa ${m === null ? 'sin historia' : m}, umbral ${umbral}). Sin el detalle por pedido no se puede decir en qué endpoint ni con qué mensaje: el host no lo está entregando.`,
-          evidencia: [],
-        });
-      }
+  // Con las filas cortadas en el tope, los 5xx que quedaron después del corte sólo están en las
+  // estadísticas: esos, y sólo esos, pasan por esta misma regla.
+  const porCodigo = fuente !== 'ejecuciones' ? cincoxxDeEstadisticas(stats) : (truncado ? cincoxxFueraDeLasFilas(stats, ejecuciones) : {});
+  for (const [plugin, codigos] of Object.entries(porCodigo)) {
+    const st = stats[plugin] || {};
+    for (const [codigo, cant] of Object.entries(codigos)) {
+      const fp = huella(producto, plugin, `codigo-${codigo}`, codigo, 'stats');
+      const m = base[fp] === undefined ? null : base[fp];
+      const umbral = Math.max(piso, Math.ceil(cfg.factor * (m || 0)));
+      if (cant < umbral) continue;
+      const porQue = fuente === 'ejecuciones'
+        ? `El detalle por pedido se cortó en las primeras filas, y estos ${cant} quedaron afuera: no se puede decir en qué endpoint ni con qué mensaje.`
+        : 'Sin el detalle por pedido no se puede decir en qué endpoint ni con qué mensaje: el host no lo está entregando.';
+      hallazgos.push({
+        regla: m === null || m === 0 ? 'deriva' : 'goteo', producto, plugin, endpoint: null, ya_alertado: false,
+        huella: fp, origen: 'stats', severidad: cant >= umbral * 2 ? 'alta' : 'media',
+        senal: { errores: cant, estado_http: Number(codigo), total_pedidos: st.total, linea_base_mediana: m, umbral_aplicado: umbral },
+        diagnostico: `${cant} × ${codigo} en el plugin "${plugin}" en 24 h sobre ${nn(st.total, '?')} pedidos (mediana previa ${m === null ? 'sin historia' : m}, umbral ${umbral}). ${porQue}`,
+        evidencia: [],
+      });
     }
   }
 
@@ -882,7 +927,7 @@ async function cmdRun(a) {
     const { hallazgos, rafagaAzure, modo } = evaluar({
       producto: prod.id, ejecuciones: datos.ejecuciones, salud: datos.salud,
       stats: datos.stats || {}, totales: datos.totales || {}, base: baseMediana, cfg,
-      modoFrio: frioProducto, fuente: datos.fuente, ahoraIso: new Date(ancla).toISOString(),
+      modoFrio: frioProducto, fuente: datos.fuente, truncado: Boolean(datos.truncado), ahoraIso: new Date(ancla).toISOString(),
     });
 
     // Conteos de ESTA noche → son la línea base de las próximas.
@@ -894,13 +939,12 @@ async function cmdRun(a) {
         const fp = huella(prod.id, e.plugin, e.endpoint, e.estado, e.mensaje);
         conteos[fp] = (conteos[fp] || 0) + 1;
       }
-    } else {
-      for (const [plugin, st] of Object.entries(datos.stats || {})) {
-        for (const [codigo, cant] of Object.entries(st.porCodigo || {})) {
-          if (Number(codigo) < 500 || !cant) continue;
-          conteos[huella(prod.id, plugin, `codigo-${codigo}`, codigo, 'stats')] = cant;
-        }
-      }
+    }
+    // lo que la regla de las estadísticas leyó esta noche: todo, sin filas; con las filas cortadas, lo que quedó afuera
+    const deEstadisticas = datos.fuente !== 'ejecuciones' ? cincoxxDeEstadisticas(datos.stats)
+      : (datos.truncado ? cincoxxFueraDeLasFilas(datos.stats, datos.ejecuciones) : {});
+    for (const [plugin, codigos] of Object.entries(deEstadisticas)) {
+      for (const [codigo, cant] of Object.entries(codigos)) conteos[huella(prod.id, plugin, `codigo-${codigo}`, codigo, 'stats')] = cant;
     }
     resultado.conteos[prod.id] = conteos;
     // una huella con errores esta noche se vio, aunque no pase el umbral: la mediana sube con un error que sigue
@@ -915,10 +959,11 @@ async function cmdRun(a) {
     // 🔴 El conteo de errores sale de la fuente que SE USÓ. Mostrar las filas de detalle
     // (0 por un bug del host) mientras el aviso dice 158 daría dos números distintos para lo mismo en
     // la misma pantalla, que es exactamente la confusión que esta pieza existe para evitar.
+    // Con las filas cortadas, se suman los que sólo vieron las estadísticas.
+    const sumar = (porPlugin) => Object.values(porPlugin).reduce((n, cs) => n + Object.values(cs).reduce((m, v) => m + v, 0), 0);
     const erroresContados = datos.fuente === 'ejecuciones'
-      ? datos.ejecuciones.filter((x) => x.estado >= 500).length
-      : Object.values(datos.stats || {}).reduce((n, st) => n + Object.entries(st.porCodigo || {})
-        .filter(([c]) => Number(c) >= 500).reduce((m, [, v]) => m + (v || 0), 0), 0);
+      ? datos.ejecuciones.filter((x) => x.estado >= 500).length + sumar(deEstadisticas)
+      : sumar(deEstadisticas);
     resultado.productos[prod.id] = {
       ok: true, modo, errores: erroresContados,
       hallazgos: hallazgos.length, ya_alertado_por_azure: rafagaAzure,

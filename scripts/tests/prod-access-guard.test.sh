@@ -44,7 +44,7 @@ mundo(){ # deja $CASA (HOME falso) y $REPOS (raíz de repos) recién hechos
   cat > "$REPOS/backend-acme/.tycon/production.json" <<JSON
 {"servers":[{"host":"$PROD","environment":"produccion","keychain":"tycon-prod-acme"},
                {"host":"$STAGING","environment":"no-produccion"},
-               {"host":"test.bizuit.example","environment":"no-produccion"}]}
+               {"host":"acme-test.example.com","environment":"no-produccion"}]}
 JSON
   printf '{"servers":[{"host":"otro.database.windows.net","environment":"no-produccion"}]}' > "$REPOS/otro/.tycon/production.json"
 }
@@ -674,6 +674,71 @@ frena "8.14 #42 SameTextHeredocAndShell_ShellIsJudged" "cat > /tmp/notas.txt <<'
 rm -f $P/production-{index,memory}.json
 EOF
 bash -c 'rm -f $P/production-{index,memory}.json'"
+
+# El programa de python o node que llega por un heredoc se juzga como el de `python3 -c`: si nombra el índice, el
+# catálogo o la memoria, frena. Lo que sólo se guarda en un archivo sigue siendo contenido.
+frena "HeredocDePrograma_EscribeElIndice_Frena (python3 -)" "python3 - <<'EOF'
+import os
+open(os.path.expanduser('$P/$NI'),'w').write('{}')
+EOF"
+frena "HeredocDePrograma_EscribeElIndice_Frena (node, en un cd)" "cd /tmp && node <<'EOF'
+require('fs').writeFileSync(require('os').homedir() + '/.claude/.tycon-pipeline/$NM', '{}')
+EOF"
+frena "HeredocDePrograma_EscribeElIndice_Frena (del otro lado de un caño)" "cat <<'EOF' | python3
+open('/x/.tycon/$CAT','w').write('{}')
+EOF"
+frena "HeredocDePrograma_EscribeElIndice_Frena (con argumentos)" "f=a.md && python3 - \"\$f\" <<'EOF'
+import sys, os; os.remove(os.path.expanduser('$P/$NI'))
+EOF"
+pasa  "HeredocDePrograma_SinNombreProtegido_Pasa" "python3 - <<'EOF'
+print('hola')
+EOF"
+pasa  "HeredocDePrograma_AUnArchivo_EsContenido_Pasa" "cat > /tmp/notas.py <<'EOF'
+open('$NI').read()
+EOF"
+# Las otras formas de darle el programa por la entrada: el here-string, los envoltorios (`/usr/bin/env`, `time -p`,
+# `arch`, `stdbuf`, `uv run`), un subshell o un grupo, la línea continuada, el intérprete en otra línea del caño, el
+# segundo heredoc de una línea y otros intérpretes (bun, deno, pypy3, osascript).
+PROG="open(__import__('os').path.expanduser('$P/$NI'),'w').write('{}')"
+frena "ProgramaPorEntrada_HereString_Frena" "python3 <<< \"$PROG\""
+frena "ProgramaPorEntrada_HereStringConGuion_Frena" "python3 - <<<'$PROG'"
+for envoltorio in "/usr/bin/env python3 -" "time -p python3 -" "arch -arm64 python3 -" "caffeinate -i python3 -" "stdbuf -o0 python3 -" "uv run python -" "bun -" "pypy3 -" "deno run -" "osascript -l JavaScript"; do
+  frena "ProgramaPorEntrada_Envoltorio_Frena ($envoltorio)" "$envoltorio <<'EOF'
+$PROG
+EOF"
+done
+frena "ProgramaPorEntrada_Subshell_Frena" "(python3 - <<'EOF'
+$PROG
+EOF
+)"
+frena "ProgramaPorEntrada_Grupo_Frena" "{ python3 - <<'EOF'
+$PROG
+EOF
+}"
+frena "ProgramaPorEntrada_LineaContinuada_Frena" "python3 - \\
+<<'EOF'
+$PROG
+EOF"
+frena "ProgramaPorEntrada_IntérpreteEnOtraLíneaDelCaño_Frena" "cat <<'EOF' |
+$PROG
+EOF
+python3"
+frena "ProgramaPorEntrada_SegundoHeredocDeLaLínea_Frena" "cat <<'A' >/dev/null; python3 - <<'B'
+nada
+A
+$PROG
+B"
+frena "ProgramaPorEntrada_DentroDeBashC_Frena" "bash -c \"python3 - <<<'$PROG'\""
+# Lo que el heredoc le da a otro comando, o a un programa que vive en un archivo, es dato.
+pasa  "ProgramaPorEntrada_OtroComandoDeLaLínea_Pasa" "python3 -V; cat > notas.md <<'EOF'
+el $NI se regenera solo
+EOF"
+pasa  "ProgramaPorEntrada_ProgramaEnUnArchivo_EsDato_Pasa" "node tool.js <<'EOF'
+{\"archivo\":\"$NI\"}
+EOF"
+pasa  "ProgramaPorEntrada_ConMenosC_LaEntradaEsDato_Pasa" "python3 -c 'import sys; print(sys.stdin.read())' <<'EOF'
+el $NI
+EOF"
 
 # ── 6.1.1 · el contenido de un archivo que el comando escribe y no ejecuta no se juzga ─────────
 # El cuerpo que sólo se guarda en un archivo no se lee buscando servidores ni el Llavero: `const server = …` en código

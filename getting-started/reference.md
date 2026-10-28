@@ -337,7 +337,9 @@ processes and the `harness.js team-config` page are the next step, separately.
 **If you work alone**, `harness.js team-init --local --name <name>` builds a one-person profile on this machine, with no
 address and no account: the declaration and the profile (no `team-repos.json`), in `~/<name>-profile`, with git and a
 commit on `main`. The harness reads it from that folder (`harness.js install --team <folder>`), only what is committed
-on `main`. Your reviewer packs go there, so they survive updates (`guides/reviewer-packs.en.md`, "If you work alone").
+on `main`. It takes two steps: the first install, the package line on the front page, does not accept a folder in
+`--team`, only a GitHub or Azure DevOps repo. Install first without `--team`, build the profile, then install with `--team <folder>`.
+Your reviewer packs go there, so they survive updates (`guides/reviewer-packs.en.md`, "If you work alone").
 While it lives only on your machine, `doctor` warns that it has no backup; to get one, push it to GitHub or Azure DevOps
 and install again with `--team <address>`.
 
@@ -621,12 +623,14 @@ of yours stay untouched. `--tool claude` or `--tool codex` unplugs only that too
   `node ~/.claude/tycon-harness/scripts/setup/harness.js channel [latest|stable]`, or with `TYCON_UPDATE_CHANNEL`.
 - **Policy**: `ask` by default (it tells you and waits); `auto` applies on its own. Set it with `TYCON_UPDATE_APPLY` or
   `update.apply` in `~/.claude/tycon.json`. Choosing `latest` together with `auto` asks you to confirm: you get every
-  change that lands on `main`, within minutes, with no review of yours.
+  change that lands on `main`, within minutes, with no review of yours. If your team profile sets `auto`, the profile
+  wins: neither the machine, the variable nor `TYCON_UPDATE=0` changes it, and `doctor` says which value went unused.
 - **By hand**: `harness.js update --check` says whether there is a new version; `harness.js update --yes` applies it;
   `harness.js version` shows what is installed; `harness.js doctor` diagnoses without changing anything.
 - **Going back**: `harness.js rollback --list` shows the copies it can go back to, and
   `harness.js rollback --to <copy>` goes back to the one you choose. After going back, the harness stops updating on
-  its own until you release it with `harness.js rollback --release`.
+  its own until you release it with `harness.js rollback --release`; if the team profile sets `auto`, only until a
+  version later than the one you undid comes out.
 - **Removing everything**: `harness.js uninstall --dry-run` shows what it would remove; `harness.js uninstall --yes`
   removes only what the mechanism recorded, and leaves anything of yours untouched.
 - **Startup**: the startup line runs from a pinned copy in `~/.claude/.tycon-pipeline/harness/`, not from the folder that gets updated,

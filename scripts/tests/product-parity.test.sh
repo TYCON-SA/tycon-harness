@@ -962,7 +962,10 @@ HOME="$TMP/a8/m1/home" TYCON_HOME="$TMP/a8/m1/home/.tycon" node "$AQUI/scripts/c
   && ok "A8 ConfigDadaGana_YDisparosLeeOperaciones: --config manda; check-trigger-without-docs compara la lista de operaciones" \
   || no "🔴 A8e rc=$rc $(head -2 "$TMP/o8t1" | tr '\n' ' ')"
 p4=$(en_maquina "$TMP/a8/m4" config-path 2>&1); r4=$?
-{ [ "$r4" -eq 0 ] && [ "$p4" = "$AQUI/scripts/ci/product-parity.json" ]; } && ok "A8 MaquinaSinDeclarar_UsaLaDeAlLado: la de un dev o la CI, como siempre" \
+# la misma carpeta puede llegar con dos nombres (/var y /private/var en macOS, si el árbol vive en la carpeta temporal):
+# se comparan resueltas
+d4="$(cd "$(dirname "$p4")" 2>/dev/null && pwd -P)/$(basename "$p4")"
+{ [ "$r4" -eq 0 ] && [ "$d4" = "$(cd "$AQUI/scripts/ci" && pwd -P)/product-parity.json" ]; } && ok "A8 MaquinaSinDeclarar_UsaLaDeAlLado: la de un dev o la CI, como siempre" \
   || no "🔴 A8c rc=$r4 [$p4]"
 
 # story 2.29 (T35, decisión P7): la pestaña Configuración valida las diferencias declaradas con la MISMA lectura que el

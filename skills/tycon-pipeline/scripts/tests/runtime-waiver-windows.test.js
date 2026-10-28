@@ -168,7 +168,41 @@ test('@story-waiver-windows vencido el plazo se cierra la ventana (su pid) y no 
     const comillas = W.abrirVentana({ script: 'C:\\a"b\\m.js', spawn: () => { throw new Error('no se tenía que lanzar'); } });
     assert.equal(comillas.estado, 'no-abrio');
     assert.match(comillas.motivo, /no deja pasar entre comillas/);
+    // una barra al final escapa la comilla de cierre y junta dos argumentos: el de adentro recibiría otro comando
+    const barra = W.abrirVentana({ script: 'm.js', args: ['--file', 'C:\\repo\\'], spawn: () => { throw new Error('no se tenía que lanzar'); } });
+    assert.equal(barra.estado, 'no-abrio');
   });
+});
+
+test('@story-waiver-windows los programas del sistema salen de su ruta fija, no de SystemRoot', () => {
+  conAmbiente({ ...WIN, SystemRoot: 'C:\\repo\\falso' }, (W) => {
+    let visto = null;
+    W.abrirVentana({ script: 'm.js', spawn: (cmd) => { visto = cmd; return { status: 1 }; } });
+    assert.equal(visto, 'C:\\Windows\\System32\\cmd.exe');
+  });
+});
+
+test('@story-waiver-windows anotarse escribe sólo el archivo del pid que eligió la ventana, y nunca pisa uno', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'waiver-anota-'));
+  const ajeno = path.join(dir, 'gates.log');
+  fs.writeFileSync(ajeno, 'renglón\n');
+  conAmbiente({ ...WIN, TYCON_WAIVER_WINDOW_PROCESS_FILE: ajeno }, (W) => W.anotarVentana());
+  assert.equal(fs.readFileSync(ajeno, 'utf8'), 'renglón\n', 'un archivo fuera de la forma no se toca');
+  const propio = path.join(os.tmpdir(), `tycon-waiver-ventana-1-${process.pid}.pid`);
+  fs.writeFileSync(propio, 'otro');
+  conAmbiente({ ...WIN, TYCON_WAIVER_WINDOW_PROCESS_FILE: propio }, (W) => W.anotarVentana());
+  assert.equal(fs.readFileSync(propio, 'utf8'), 'otro', 'uno que ya existe no se pisa');
+  fs.unlinkSync(propio);
+  conAmbiente({ ...WIN, TYCON_WAIVER_WINDOW_PROCESS_FILE: propio }, (W) => W.anotarVentana());
+  assert.equal(fs.readFileSync(propio, 'utf8'), String(process.pid));
+  fs.unlinkSync(propio);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('@story-waiver-windows entrar a la ventana es una vez por proceso: un solo Enter al cerrar', () => {
+  const antes = process.listenerCount('exit');
+  conAmbiente(WIN, (W) => { W.dentroDeLaVentana(); W.dentroDeLaVentana(); });
+  assert.equal(process.listenerCount('exit') - antes, 1);
 });
 
 function laboratorio() {

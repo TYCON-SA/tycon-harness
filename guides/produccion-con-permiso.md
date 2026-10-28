@@ -83,7 +83,10 @@ sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --remove-auto-upd
 La carpeta es `scripts/production/`, el instalador es `install-guard.command` (el `.command` con su nombre de antes
 sigue abriendo éste), el catálogo es `.tycon/production.json` con las claves `servers`,
 `environment`, `keychain` y `port`, y el índice y la memoria son `production-index.json` y `production-memory.json`.
-Los valores `produccion` y `no-produccion` **no** cambian.
+Los valores de `environment` son `production` y `non-production`; `produccion` y `no-produccion` siguen valiendo, y el
+índice guarda siempre éstos, porque la copia de `/opt/tycon` es la que lo lee. Una máquina con un arnés anterior a los
+valores en inglés no reconoce `production` ni `non-production`: trata ese servidor como no declarado y lo frena (nunca
+lo deja pasar). Para un repo que comparten máquinas que todavía no se actualizaron, conviene seguir con los de antes.
 
 Lo que corre de verdad es la copia de `/opt/tycon`, y ésa cambia sólo cuando cada persona **reinstala con su
 contraseña**. Hasta que reinstalen todas las máquinas autorizadas:
@@ -159,10 +162,10 @@ claves — el usuario de la base NO va acá, va junto a la contraseña en el Lla
 ```json
 {
   "servers": [
-    { "host": "acme-sql.database.windows.net", "environment": "produccion", "keychain": "tycon-prod-acme", "base": "acmebase" },
-    { "host": "srv.globex.test", "environment": "produccion", "keychain": "tycon-prod-globex", "base": "GlobexDb", "port": 1435 },
-    { "host": "acme-sql-staging.database.windows.net", "environment": "no-produccion" },
-    { "host": "test.bizuit.example", "environment": "no-produccion" }
+    { "host": "acme-sql.database.windows.net", "environment": "production", "keychain": "tycon-prod-acme", "base": "acmebase" },
+    { "host": "srv.globex.test", "environment": "production", "keychain": "tycon-prod-globex", "base": "GlobexDb", "port": 1435 },
+    { "host": "acme-sql-staging.database.windows.net", "environment": "non-production" },
+    { "host": "acme-test.example.com", "environment": "non-production" }
   ]
 }
 ```
@@ -381,7 +384,7 @@ trabajo normal se termina apagando. No imprime ningún comando.
 Medido el 2026-09-15: la primera versión, con todas sus pruebas en verde, frenaba
 **313 de 4.000 (7,8 %)** comandos que no tocaban ninguna base; después del arreglo, **0**. Los que sí
 frena son comandos que nombran servidores que la máquina todavía no tiene declarados — por eso, antes
-de instalar, conviene declarar los servidores de prueba que se usan (por ejemplo `test.bizuit.example`).
+de instalar, conviene declarar los servidores de prueba que se usan (por ejemplo `acme-test.example.com`).
 
 ## Cuando algo se frena y creés que no debería
 
@@ -411,7 +414,7 @@ freno que molesta sin motivo es el que alguien termina apagando.
 ## Para el que mantiene el arnés
 
 - El freno: `scripts/hooks/prod-access-guard.js` · la puerta: `scripts/production/tycon-prod-sql`
-- Aviso de arranque e índice: `scripts/hooks/produccion-notice.js` ·
+- Aviso de arranque e índice: `scripts/hooks/production-notice.js` ·
   `scripts/production/production-index.js`
 - Instalador: `scripts/production/install-guard.sh` (+ el `.command`) · configuración administrada:
   `scripts/production/managed-settings.tycon-production.json.template`. La organización del equipo sale
@@ -447,7 +450,7 @@ freno que molesta sin motivo es el que alguien termina apagando.
   Lo que difiere sólo en lo que el freno no usa se dice y no frena. Un freno instalado antes de la copia propia pide
   reinstalar una sola vez más, y ese aviso lo explica.
 - Red: `scripts/tests/prod-access-guard.test.sh`, `tycon-prod-sql.test.sh`, `install-guard.test.sh`
-  y los casos `40-prod-access-guard.json` / `41-produccion-notice.json` del banco.
+  y los casos `40-prod-access-guard.json` / `41-production-notice.json` del banco.
 - Registro de ayuda: `~/.claude/.tycon-pipeline/production.log` (nunca la sentencia, sólo su huella).
 
 ## Lo que el freno NO deja pasar aunque esté escondido (desde 2026-09-15)

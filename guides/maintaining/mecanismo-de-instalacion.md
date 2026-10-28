@@ -16,7 +16,7 @@ política, deja estado, y arranca desde una copia fija que no vive en el árbol 
 | `apply` | corre el aplicador | sí |
 | `version [--json]` | versión instalada, canal, modo, fuentes, shas | no |
 | `doctor [--json] [--fetch]` | diagnóstico de sólo lectura (`--fetch` es la única excepción: escribe `FETCH_HEAD`) | no |
-| `channel [latest\|stable]` | muestra o fija el canal en `~/.claude/tycon.json` | sólo `tycon.json` |
+| `channel [latest\|stable]` | muestra o fija el canal en la configuración de la máquina (`~/.tycon/config.json`; en una máquina sin mudar, `~/.claude/tycon.json`) | sólo ese archivo |
 | `rollback …` · `uninstall …` | la vuelta atrás que se queda y la desinstalación de sólo lo registrado | sí |
 | `link --local <clon> [--allow-temporary]` / `link --managed` | modo desarrollador: el enlace apunta a un clon propio y `update` no toca su git | enlace y estado |
 
@@ -57,10 +57,19 @@ Variables: `TYCON_UPDATE_CHANNEL`, `TYCON_UPDATE_APPLY`, `TYCON_UPDATE=0` (apaga
 desde los repos internos, `stable` y `latest` son lo mismo (`main`), y `doctor` avisa si una máquina con remoto interno quedó
 en `ask` («una máquina del equipo sin el perfil»).
 
+**La actualización fijada por el equipo.** Si el perfil del árbol del arnés dice `update.apply: auto`, la aplicación es
+`auto` y la actualización está prendida aunque la máquina diga `ask`, aunque `TYCON_UPDATE_APPLY` diga otra cosa y aunque
+esté `TYCON_UPDATE=0` (`channel.read` devuelve `locked` y, en `overridden`, lo que no se usó; `doctor` lo dice en una
+línea). Ni `TYCON_PROFILE=<ruta>` ni `TYCON_PROFILE=0` lo cambian: el perfil que manda es el del árbol, y una variable la
+pone cualquiera. Quedan dos salidas: el modo desarrollador (el clon de quien mantiene no se actualiza solo) y la vuelta
+atrás de emergencia, cuya retención vale hasta que sale una versión posterior a la deshecha (`holdStands`); al vencer, la
+actualización lo dice en su primera línea.
+
 «Preguntar» desde un hook de arranque —que no tiene terminal— es un **aviso** que `startup` deja en el estado (`notice`) y que
 imprime el hook síncrono `branch-guard-notice.js`, dirigido a la persona: «decile a la persona; no lo apliques sin que te lo
 pida». La decisión es de la persona, nunca del agente. El grito «arnés atrasado» de ese hook sólo suena en `managed` con
-`apply: auto`: en `developer`, en `ask` o con `TYCON_UPDATE=0` el atraso es decisión de esa persona y lo dice `doctor`.
+`apply: auto`: en `developer`, en `ask` o con `TYCON_UPDATE=0` el atraso es decisión de esa persona y lo dice `doctor`
+(con la actualización fijada por el equipo, `ask` y `TYCON_UPDATE=0` no se usan y la máquina queda en `auto`).
 
 Con `ask`:
 
@@ -182,7 +191,7 @@ viejo avanza **en línea recta** al repo unificado y nada se mueve en el disco:
   venía —repo, commit y configuración de git— queda en el estado (`repoint.applied.from`) y en `.git/tycon-repoint.json`
   del propio clon: el estado se pierde al desinstalar y el clon no.
 - Con la política en `ask` no se muda sola: deja el aviso y se aplica con `update --yes`. En modo desarrollador o con
-  `TYCON_UPDATE=0`, tampoco.
+  `TYCON_UPDATE=0`, tampoco (salvo que el perfil del equipo fije `auto`: ahí ni `ask` ni `TYCON_UPDATE=0` se usan).
 
 **Cuando no puede pasar**, no se actualiza **ninguna** fuente, `doctor` queda en rojo («la llave pide el repo unificado y
 este clon sigue en el viejo») y el aviso sale en cada sesión, con la causa y su comando. Esa máquina queda congelada
@@ -811,8 +820,9 @@ sin frenar el resto; lo que el repo del equipo ya tenga de ella no se toca. Una 
 que trae esas rutas y conservaría la suya.
 
 **Lo que la capa no hace todavía:**
-`uninstall --dry-run` no anticipa la capa; un commit malo del equipo se arregla con otro commit (o `TYCON_UPDATE=0`
-mientras tanto); la llave del buzón entra sin validar su forma.
+`uninstall --dry-run` no anticipa la capa; un commit malo del equipo se arregla con otro commit (mientras tanto,
+`harness.js rollback`: con la actualización fijada por el equipo, `TYCON_UPDATE=0` ya no la frena); la llave del buzón
+entra sin validar su forma.
 
 ## Lo que todavía no está
 

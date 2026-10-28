@@ -376,6 +376,9 @@ G="$(leer "${BASE}/t26.cambio.json.gz" 'const p=c.repos[0].sin_commitear.find(x=
 R="${BASE}/t27"; repo "${R}"
 GIT_COMMITTER_DATE="$("${NODE}" -e 'console.log(new Date(Date.now()-300000).toISOString())')" GIT_AUTHOR_DATE="${ANTES}" bash -c 'printf "ajeno\n" > "$1/z.js"; git -C "$1" add z.js; git -C "$1" commit -qm "ajeno: la otra sesión commitea z.js"' _ "${R}"
 GIT_COMMITTER_DATE="$("${NODE}" -e 'console.log(new Date(Date.now()-200000).toISOString())')" GIT_AUTHOR_DATE="${ANTES}" bash -c 'printf "dudoso\n" > "$1/y.js"; git -C "$1" add y.js; git -C "$1" commit -qm "dudoso: mientras corría un ls"' _ "${R}"
+# La hora del dudoso se lee del commit, no se recalcula: con la máquina cargada, dos `Date.now()` en procesos distintos
+# se separan más que el segundo de margen de la ventana del `ls`, y el dudoso salía como ajeno.
+TC="$(git -C "${R}" log -1 --format=%cI)"
 printf 'uno\npropio\n' > "${R}/a.js"; git -C "${R}" commit -qam "propio: la corrida toca a.js"
 TA="$(git -C "${R}" log -1 --format=%cI)"
 V="${BASE}/t27v.json"; volcado "${V}" "${R}"
@@ -383,14 +386,14 @@ mkdir -p "${BASE}/estado/file-events"
 "${NODE}" -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({path: process.argv[2], ts: new Date(Date.now()-250000).toISOString()})+"\n")' "${BASE}/estado/file-events/otra-sesion.jsonl" "${R}/z.js"
 # el hilo: un Bash con `git commit` alrededor del commit propio, un `ls` alrededor del dudoso, nada alrededor del ajeno
 "${NODE}" -e '
-  const zlib=require("zlib"), [f, ta]=process.argv.slice(1), tA=Date.parse(ta), tC=Date.now()-200000, t0=Date.now()-600000;
+  const zlib=require("zlib"), [f, ta, tc]=process.argv.slice(1), tA=Date.parse(ta), tC=Date.parse(tc), t0=Date.now()-600000;
   const uso=(t,id,cmd)=>({type:"assistant",timestamp:new Date(t).toISOString(),message:{content:[{type:"tool_use",id,name:"Bash",input:{command:cmd}}]}});
   const res=(t,id,txt)=>({type:"user",timestamp:new Date(t).toISOString(),message:{content:[{type:"tool_result",tool_use_id:id,content:txt}]}});
   const l=[{type:"user",timestamp:new Date(t0).toISOString(),message:{content:"arrancamos"}},
     uso(tC-1000,"c","ls -la"), res(tC+1000,"c","a.js"),
     uso(tA-1500,"a","git -C . commit -qam \"propio: la corrida toca a.js\""), res(tA+1500,"a","[main abc] propio"),
     {type:"user",timestamp:new Date().toISOString(),message:{content:"fin"}}];
-  require("fs").writeFileSync(f, zlib.gzipSync(l.map(x=>JSON.stringify(x)).join("\n")+"\n"));' "${BASE}/t27v.hilo.jsonl.gz" "${TA}"
+  require("fs").writeFileSync(f, zlib.gzipSync(l.map(x=>JSON.stringify(x)).join("\n")+"\n"));' "${BASE}/t27v.hilo.jsonl.gz" "${TA}" "${TC}"
 correr "${V}"
 G="$(leer "${BASE}/t27v.cambio.json.gz" 'const r=c.repos[0]; [c.estado, r.otras_sesiones, r.commits.map(k=>k.asunto.split(":")[0]+"="+(k.atribucion||"propio")).join(","), (r.commits_de_otras_sesiones||[]).map(k=>k.asunto.split(":")[0]+":"+k.h.length).join(","), "atribucion_motivo" in r].join("|")')"
 [ "${G}" = "medido|1|dudoso=coincide_la_hora,propio=propio|ajeno:12|false" ] && ok "T27 propio sin marca, el de la hora coincidente marcado, y el ajeno afuera pero listado con su asunto" || mal "T27 salió: ${G}"

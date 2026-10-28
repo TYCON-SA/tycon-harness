@@ -690,14 +690,18 @@ function rendirPrompt(prompt, { story_path, repo_path, siblings }) {
  * son hermanos; una raíz distinta en otra máquina se arregla declarándola, no buscando. Sin raíz, ninguno «está».
  * @returns {Array<{ paquete, nombre, ruta, rutaEsperada: string|null, esta: boolean }>}
  */
-function hermanosResueltos({ paquetes = [], reposRoot = null } = {}) {
+function hermanosResueltos({ paquetes = [], reposRoot = null, reposRoots = null } = {}) {
+  // varias carpetas de repos: el hermano está si su ruta existe en alguna (la primera que lo tiene); si no está en
+  // ninguna, su ruta esperada es la de la primera carpeta
+  const raices = (Array.isArray(reposRoots) && reposRoots.length ? reposRoots : [reposRoot]).filter(Boolean);
+  const esDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_e) { return false; } };
   const out = [];
   for (const p of paquetes) {
     for (const h of p.hermanos || []) {
-      const rutaEsperada = reposRoot ? path.join(reposRoot, ...String(h.ruta).split('/')) : null;
-      let esta = false;
-      if (rutaEsperada) { try { esta = fs.statSync(rutaEsperada).isDirectory(); } catch (_e) { esta = false; } }
-      out.push({ paquete: p.nombre, nombre: h.nombre, ruta: h.ruta, rutaEsperada, esta });
+      const candidatas = raices.map((r) => path.join(r, ...String(h.ruta).split('/')));
+      const hallada = candidatas.find(esDir);
+      const rutaEsperada = hallada || candidatas[0] || null;
+      out.push({ paquete: p.nombre, nombre: h.nombre, ruta: h.ruta, rutaEsperada, esta: Boolean(hallada) });
     }
   }
   return out;

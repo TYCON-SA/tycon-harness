@@ -127,7 +127,7 @@ function add(ctx, state, H) {
       const SL = require('./startup-line.js');
       const n = SL.checkNode({ env: ctx.env });
       SL.migrate(H.settingsPath(ctx), { home: ctx.home, platform: ctx.platform, nodeOk: n.ok, nodeVersion: n.version, addIfMissing: true, backup: !snap });
-      H.ensureImport(ctx);
+      H.ensureImport(ctx, { backup: !snap });
       // su instalador, avisado de lo de Codex: `done` si ya está enchufado (no lo toca), `off` si no
       const a = H.runClaudeApplier(ctx, tree, { log, snapshotDir: snap && snap.dir, codex: wanted.includes('codex') ? 'done' : 'off' });
       if (!a.ok) return fail(`el aplicador falló (${a.reason})`);
@@ -173,7 +173,7 @@ function removal(ctx, state, tool, H, { codexStays = false } = {}) {
     // el lugar y el enlace de las skills: `install --version` los crea sin registrarlos; se van si apuntan al arnés
     // a dónde APUNTA (readlink), contra la casa del arnés escrita de las dos formas: como se la nombra y resuelta (en
     // Mac la carpeta temporal y algunas HOME viven detrás de un enlace, y el enlace guarda la ruta resuelta)
-    const root = TH.ownPaths({ env: ctx.env }).root;
+    const root = TH.ownPathsOf(ctx).root;
     const roots = [root];
     try { const real = fs.realpathSync(root); if (real !== root) roots.push(real); } catch (_) { /* la casa no está */ }
     for (const l of [H.linkPath(ctx.home), TH.installedSkillsDir(ctx.home)]) {

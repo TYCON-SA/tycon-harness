@@ -214,7 +214,7 @@ function terminar(o, R, rc, estado, motivo) {
   if (!o.out) return rc;
   R.res.rc = rc;
   R.res.estado = estado;
-  R.res.motivo = motivo == null ? null : String(motivo).replace(/^[🔴⚠️ℹ️✅\s]+/u, '');
+  R.res.motivo = motivo == null ? null : String(motivo).replace(/^(?:[🔴⚠ℹ✅\s]️?)+/u, '');
   R.res.comparaciones = R.res.comparaciones || 0;
   R.res.por_ruta = [...R.rutas.values()];
   const tmp = `${o.out}.tmp-${process.pid}`;

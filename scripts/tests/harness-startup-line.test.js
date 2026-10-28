@@ -531,3 +531,90 @@ test('W-S5 · Doctor_OldStartupLine_IsSaid: con la línea de arranque en una for
   d = doctor(lab('doc-alien', 'node "/Users/Lab-user/bin/alien-first.js"'));
   assert.ok(!said(d.fail) && !said(d.warn), JSON.stringify(d));
 });
+
+// ─── las copias .bak cuando el mecanismo no pudo tomar la suya ────────────────────────────────────────────────────────
+
+/** Ocupa el nombre `.bak.<sello>` de este segundo y de los dos siguientes, con un contenido que no se puede pisar. */
+function occupyStamps(file) {
+  const p = (x) => String(x).padStart(2, '0');
+  const taken = [];
+  for (let s = 0; s < 3; s++) {
+    // stable-data: the module stamps its .bak with the real clock; three seconds in a row are occupied, so the result does not depend on the hour
+    const d = new Date(Date.now() + s * 1000);
+    const name = `${file}.bak.${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+    fs.writeFileSync(name, 'copia anterior\n');
+    taken.push(name);
+  }
+  return taken;
+}
+
+test('BAK-1 · StartupLine_BakNameTaken_KeepsBothCopies: con el nombre de la copia ya ocupado en ese segundo, la línea de arranque no lo pisa', () => {
+  const form = KNOWN.find((f) => f.platform === 'posix');
+  const file = settingsWith(form);
+  const before = fs.readFileSync(file, 'utf8');
+  const taken = occupyStamps(file);
+  const r = mod().migrate(file, { home: homeOf(form), platform: platformOf(form), nodeOk: true, nodeVersion: '20.19.6' });
+  assert.ok(r.changed, JSON.stringify(r));
+  for (const t of taken) assert.strictEqual(fs.readFileSync(t, 'utf8'), 'copia anterior\n', `pisó ${t}`);
+  assert.ok(r.backup && !taken.includes(r.backup), `la copia nueva tiene que tener su propio nombre: ${r.backup}`);
+  assert.strictEqual(fs.readFileSync(r.backup, 'utf8'), before);
+});
+
+test('BAK-2 · SharedPieces_BakNameTaken_KeepsBothCopies: las piezas compartidas tampoco pisan una copia del mismo segundo', () => {
+  const SH = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'shared.js'));
+  const home = path.join(BASE, `bak2-${++n}`);
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const file = path.join(home, '.claude', 'settings.json');
+  fs.writeFileSync(file, '{\n  "mio": true\n}\n');
+  const taken = occupyStamps(file);
+  const r = SH.applyShared({ home, env: { HOME: home, TYCON_NO_COMMANDS_SYNC: '1' }, tree: RAIZ, backup: true, platform: 'darwin' });
+  assert.ok(r.ok && r.changed.length, JSON.stringify(r));
+  for (const t of taken) assert.strictEqual(fs.readFileSync(t, 'utf8'), 'copia anterior\n', `pisó ${t}`);
+  const mine = backups(file).map((x) => path.join(home, '.claude', x)).filter((x) => !taken.includes(x));
+  assert.strictEqual(mine.length, 1, `una copia nueva con su propio nombre: ${backups(file)}`);
+  assert.strictEqual(fs.readFileSync(mine[0], 'utf8'), '{\n  "mio": true\n}\n');
+});
+
+test('BAK-3 · Import_WithoutSnapshot_CopiesClaudeMdFirst: sin la copia del mecanismo, el @import copia CLAUDE.md antes de escribirlo', () => {
+  const H = require(path.join(RAIZ, 'scripts', 'setup', 'harness.js'));
+  const home = path.join(BASE, `bak3-${++n}`);
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const md = path.join(home, '.claude', 'CLAUDE.md');
+  fs.writeFileSync(md, '# lo mío\n');
+  const taken = occupyStamps(md);
+  assert.strictEqual(H.ensureImport({ home, env: { HOME: home } }, { backup: true }), true);
+  const copies = fs.readdirSync(path.dirname(md)).filter((x) => x.startsWith('CLAUDE.md.bak.')).map((x) => path.join(home, '.claude', x)).filter((x) => !taken.includes(x));
+  assert.strictEqual(copies.length, 1, 'una copia de CLAUDE.md, con su propio nombre');
+  assert.strictEqual(fs.readFileSync(copies[0], 'utf8'), '# lo mío\n');
+  for (const t of taken) assert.strictEqual(fs.readFileSync(t, 'utf8'), 'copia anterior\n');
+  // with the mechanism's copy taken, no loose .bak
+  const home2 = path.join(BASE, `bak3b-${++n}`);
+  fs.mkdirSync(path.join(home2, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home2, '.claude', 'CLAUDE.md'), '# lo mío\n');
+  H.ensureImport({ home: home2, env: { HOME: home2 } }, { backup: false });
+  assert.deepStrictEqual(fs.readdirSync(path.join(home2, '.claude')).filter((x) => x.includes('.bak')), []);
+});
+
+// ─── la copia fija tras una vuelta atrás ──────────────────────────────────────────────────────────────────────────────
+
+test('ROLLBACK-1 · FixedCopyFailsAfterRollback_NoticeSaysSo: si la copia fija no se repone tras volver atrás, el aviso no dice «volvió sola»', () => {
+  const H = require(path.join(RAIZ, 'scripts', 'setup', 'harness.js'));
+  const S = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'state.js'));
+  const home = path.join(BASE, `rb1-${++n}`);
+  const { bootstrapDir } = S.paths(home);
+  // the fixed copy's folder is a plain file: the copy cannot be written
+  fs.mkdirSync(path.dirname(bootstrapDir), { recursive: true });
+  fs.writeFileSync(bootstrapDir, 'no soy una carpeta\n');
+  const why = H.restoreFixedCopy({ home, env: { HOME: home } }, RAIZ, {});
+  assert.ok(typeof why === 'string' && why.length, `tiene que devolver el motivo: ${why}`);
+  const text = H.rollbackOutcome({ ok: true }, '2026.10.07.2', why);
+  assert.doesNotMatch(text, /volvió sola/);
+  assert.match(text, /volvió a 2026\.10\.07\.2, pero NO pude reponer la copia fija de arranque/);
+  assert.match(text, /harness\.js install/);
+  // the other two outcomes keep their words
+  assert.strictEqual(H.rollbackOutcome({ ok: true }, '2026.10.07.2', null), 'volvió sola a 2026.10.07.2');
+  assert.match(H.rollbackOutcome({ ok: false, lines: ['sin copia'] }, '2026.10.07.2', null), /^NO pudo volver sola \(sin copia\): harness\.js rollback$/);
+  // with a writable folder the copy goes through
+  const ok = path.join(BASE, `rb1b-${++n}`);
+  assert.strictEqual(H.restoreFixedCopy({ home: ok, env: { HOME: ok } }, RAIZ, {}), null);
+});

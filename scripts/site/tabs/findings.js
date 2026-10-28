@@ -4,15 +4,18 @@
  *
  * Qué resuelve: quien mantiene decide las fichas de la noche sin abrir el repo de operaciones. La pantalla tiene cuatro
  * bloques. «Te toca decidir»: las fichas del vigilante y de la revisión de las ejecuciones que esperan Archivar o
- * Arreglar. «Esperando aprobación»: lo que ya se envió y otra persona tiene que aprobar, agrupado por pedido. «Ya
+ * Arreglar, y las de dependencias que esperan Aceptar o Rechazar su pull request (rechazar pide un motivo de una línea,
+ * que la noche deja como comentario del pull request). «Esperando aprobación»: lo que ya se envió y otra persona tiene que aprobar, agrupado por pedido. «Ya
  * decididas»: lo decidido en los últimos 30 días, con quién, cuándo y si la noche ya lo aplicó. «En
- * marcha»: los arreglos con su tarea y las vulnerabilidades de paquetes, que cada equipo sigue en su tarea (acá no se
- * deciden). Lo que la revisión declara «aparte» (cause-names.js `APARTE`) no se pregunta.
+ * marcha»: los arreglos con su tarea y las vulnerabilidades de paquetes, que cada equipo sigue en su tarea. Lo que la revisión declara «aparte» (cause-names.js `APARTE`) no se pregunta.
  *
  * Cada tarjeta dice qué pasó con los datos de la ficha, sin modelo, y el análisis si lo hay (el de la noche o el de
  * una persona), con lo que recomienda. Las elecciones se marcan en el navegador; «Enviar para aprobar» abre UN pedido
  * con un archivo `inbox/<carpeta>/decisions/<id>.json` por ficha, que la noche aplica cuando está en main
- * (scripts/nightly/findings/cycle.js, `aplicarDecisiones`). Nada se escribe en main desde acá.
+ * (scripts/nightly/findings/cycle.js, `aplicarDecisiones`; en dependencias con pull request, open-pr-per-finding.sh, que
+ * lo mergea o lo cierra). El pull request de cada decisión de dependencias sale de la ficha, nunca del navegador. Si la
+ * noche no pudo aplicar una, la ficha lo anota (`decision_fallida:`) y la fila vuelve a «Te toca decidir» con el porqué.
+ * Nada se escribe en main desde acá.
  *
  * Qué espera aprobación sale de los pedidos abiertos de decisiones (sus archivos y la acción de su cuerpo): una
  * consulta para toda la pantalla, guardada un minuto. Si la plataforma no contesta, lo dice una frase y las filas
@@ -39,7 +42,13 @@ const { defensaDeEscritura } = require('./config.js');
 
 const FUENTES = CYCLE.FUENTES;
 // las que se deciden acá, en el orden de la pantalla: producción primero, porque son clientes reales
-const SE_DECIDEN = ['vigilante', 'ejecuciones'];
+const SE_DECIDEN = ['vigilante', 'ejecuciones', 'dependencias'];
+// las acciones de cada una, las que aplica la noche: en dependencias se decide su pull request (aceptar lo mergea,
+// rechazar lo cierra con el motivo)
+const ACCIONES_DE = Object.fromEntries(SE_DECIDEN.map((f) => [f, Object.keys(CYCLE.VEREDICTO_DE_DECISION[f])]));
+const ACCIONES = [...new Set(Object.values(ACCIONES_DE).flat())];
+const NUMERO_DE_PR = /^[0-9]{1,9}$/;
+const REPO_DE_PR = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 // los motivos sin tarea que la noche vuelve a calcular cada vez que pide
 const RECALCULADOS = ['sin-confirmar', 'sin-configurar'];
 // el id de una ficha va a una ruta del clon y a la rama del pedido: sin barras ni nada que salga de su carpeta. Es más
@@ -60,7 +69,7 @@ const VIGENCIA_ENVIO_MS = 15 * 60 * 1000;
 // las ramas de los pedidos de decisiones: las de a una (`decision-…`) y las de varias (`decisiones-…`)
 const RAMA_DE_DECISIONES = 'team-config/decision';
 // lo que el cuerpo del pedido dice de cada ficha: «fuente/id → acción»
-const LINEA_DE_DECISION = /(vigilante|ejecuciones)\/([A-Za-z0-9][A-Za-z0-9._-]{0,119}) → (aceptar|arreglar)/g;
+const LINEA_DE_DECISION = /(vigilante|ejecuciones|dependencias)\/([A-Za-z0-9][A-Za-z0-9._-]{0,119}) → (aceptar|arreglar|reject)/g;
 const SEVERIDADES = { critical: 0, high: 1, moderate: 2, medium: 2, low: 3 };
 const NOMBRE_SEVERIDAD = { critical: 'critica', high: 'alta', moderate: 'media', medium: 'media', low: 'baja' };
 const PAQUETE = /^[@A-Za-z0-9][@A-Za-z0-9._/-]{0,213}$/;
@@ -102,11 +111,16 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
       if (!(e && e.code === 'ENOENT')) log(`mantenimiento: la lista de lo ya decidido no se pudo leer (${e.code || 'sin forma'}): se empieza vacía`);
     }
   }
-  const enHistoria = (x) => isObject(x) && (x.accion === null || CYCLE.ACCIONES.includes(x.accion)) && Number.isFinite(x.en) && ahora() - x.en < VIGENCIA_HISTORIA_MS;
+  // el día de la decisión: el que anotó, o el de cuando se anotó
+  const diaDe = (x) => (DIA.test(String(x.el || '')) ? x.el : new Date(x.en).toISOString().slice(0, 10));
+  const enHistoria = (x) => isObject(x) && (x.accion === null || ACCIONES.includes(x.accion)) && Number.isFinite(x.en) && ahora() - x.en < VIGENCIA_HISTORIA_MS;
   const vigente = (x) => enHistoria(x) && x.accion !== null && !x.visto && ahora() - x.en < VIGENCIA_DECIDIDA_MS;
   // quién y cuándo, si tienen forma: lo demás no se guarda
   const datos = (x) => ({ ...(typeof x.quien === 'string' && x.quien ? { quien: norm(x.quien) } : {}), ...(DIA.test(String(x.el || '')) ? { el: x.el } : {}),
-    ...(typeof x.nombre === 'string' && x.nombre ? { nombre: x.nombre.slice(0, 300) } : {}) });
+    ...(typeof x.nombre === 'string' && x.nombre ? { nombre: x.nombre.slice(0, 300) } : {}), ...(DIA.test(String(x.vio || '')) ? { vio: x.vio } : {}) });
+  // la noche anotó que no pudo aplicar ESTA decisión: una falla del día de la decisión o posterior, que no es la que la
+  // persona tenía a la vista al decidir (`vio`; decidir otra vez después de leer la falla vale aunque sea el mismo día)
+  const superada = (x, fallida) => Boolean(fallida) && fallida !== x.vio && !(fallida < diaDe(x));
   function guardar() {
     for (const k of Object.keys(memoria)) if (!enHistoria(memoria[k])) delete memoria[k];
     if (!archivo) return;
@@ -116,17 +130,25 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
     }
   }
   return {
-    /** `[{ clave, accion, quien?, el?, nombre? }]`: decididas recién. */
+    /** `[{ clave, accion, quien?, el?, nombre?, vio? }]`: decididas recién (`vio`: la falla que tenía la ficha al decidir). */
     marcar(lista) { for (const x of lista) memoria[x.clave] = { accion: x.accion, en: ahora(), ...datos(x) }; guardar(); },
-    /** La acción decidida, mientras la foto no la trae; o null. */
-    accionDe(k) { return hasOwn(memoria, k) && vigente(memoria[k]) ? memoria[k].accion : null; },
+    /**
+     * La acción decidida, mientras la foto no la trae; o null. `fallida`: el día en que la noche anotó en la ficha que no
+     * pudo aplicar una decisión; si anotó que no pudo aplicar ésta, ya no vale y la fila vuelve.
+     */
+    accionDe(k, fallida = null) {
+      if (!hasOwn(memoria, k) || !vigente(memoria[k])) return null;
+      return superada(memoria[k], fallida) ? null : memoria[k].accion;
+    },
+    /** ¿La noche anotó que no pudo aplicar esta decisión? (`fallida`: el día de la anotación en la ficha) */
+    noAplicada(x, fallida) { return superada(x, fallida); },
     /**
      * La foto ya trae la decisión (`{ accion, quien?, el?, nombre? }`, lo que dice main): ya no hace falta taparla, y
      * queda en «Ya decididas» con lo que falte. Una decisión que el sitio no vio enviar entra recién acá.
      */
     olvidar(k, d = {}) {
       const x = hasOwn(memoria, k) && enHistoria(memoria[k]) ? memoria[k] : null;
-      const nuevo = { accion: CYCLE.ACCIONES.includes(d.accion) ? d.accion : x ? x.accion : null, en: x ? x.en : ahora(), ...datos(d), ...(x ? datos(x) : {}), visto: true };
+      const nuevo = { accion: ACCIONES.includes(d.accion) ? d.accion : x ? x.accion : null, en: x ? x.en : ahora(), ...datos(d), ...(x ? datos(x) : {}), visto: true };
       if (x && JSON.stringify(x) === JSON.stringify(nuevo)) return;
       memoria[k] = nuevo;
       guardar();
@@ -190,8 +212,14 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         stories: unicos('story'), desde: dias[0] || null, hasta: dias[dias.length - 1] || null };
     }
     if (fuente === 'dependencias') {
-      const p = reg.formato.leerFicha(String(txt)).escalares.paquete;
-      return { paquete: PAQUETE.test(String(p || '')) ? p : null };
+      const e = reg.formato.leerFicha(String(txt)).escalares;
+      // el pull request de la ficha, tal como lo compara la noche (`mismoPedido`): el número y, en GitHub, su repo
+      const pr = NUMERO_DE_PR.test(String(e.pr || '')) ? String(e.pr) : null;
+      const prRepo = pr && REPO_DE_PR.test(String(e.pr_repo || '')) ? String(e.pr_repo) : null;
+      return { paquete: PAQUETE.test(String(e.paquete || '')) ? e.paquete : null, pr, pr_repo: prRepo, rechazado: Boolean(e.rechazado),
+        // la decisión del sitio que la noche no pudo aplicar: el día y por qué (lo escribe la noche, sin saltos de línea)
+        fallida: DIA.test(String(e.decision_fallida || '')) ? e.decision_fallida : null,
+        motivo_fallida: typeof e.motivo_decision_fallida === 'string' && e.motivo_decision_fallida.trim() ? e.motivo_decision_fallida.trim().slice(0, CYCLE.MOTIVO_MAX) : null };
     }
     return {};
   }
@@ -205,15 +233,22 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     let d = null;
     try { d = JSON.parse(txt); } catch { /* sin forma: igual está decidida, sin acción que mostrar */ }
     if (!isObject(d)) return { accion: null, quien: null, el: null };
-    return { accion: CYCLE.ACCIONES.includes(d.accion) ? d.accion : null, quien: typeof d.quien === 'string' ? d.quien : null, el: DIA.test(String(d.el || '')) ? d.el : null };
+    return { accion: ACCIONES.includes(d.accion) ? d.accion : null, quien: typeof d.quien === 'string' ? d.quien : null, el: DIA.test(String(d.el || '')) ? d.el : null };
   }
 
-  /** ¿Espera que alguien decida? Las del vigilante y ejecuciones pendientes en pending/, que no cuentan aparte. */
-  const porDecidir = (f) => SE_DECIDEN.includes(f.fuente) && f.carpeta === 'pending' && f.veredicto === 'pendiente' && !aparte(f);
+  /**
+   * ¿Espera que alguien decida? Las pendientes en pending/ que no cuentan aparte; en dependencias, las que nadie rechazó
+   * todavía (una rechazada sigue en pending/ con su rechazo anotado).
+   */
+  const porDecidir = (f) => SE_DECIDEN.includes(f.fuente) && f.carpeta === 'pending' && f.veredicto === 'pendiente' && !aparte(f)
+    && !(f.fuente === 'dependencias' && f.contexto && f.contexto.rechazado);
+  const fallidaDe = (f) => (f.contexto && f.contexto.fallida) || null;
 
   // ── lo que espera aprobación: los pedidos de decisiones abiertos, una consulta para toda la pantalla ──
   let membresiaGuardada = null;
   let ultimaMembresia = null;
+  let membresiaEnCamino = null;
+  let membresiaIntentada = -Infinity;
 
   /** La ficha de una ruta de un pedido (`inbox/<carpeta>/decisions/<id>.json`), o null. */
   function claveDeRuta(ruta) {
@@ -261,13 +296,22 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return r;
   }
 
-  /** Las fichas que esperan decisión, para el número del menú: sin preguntar a la plataforma, con lo último que contestó. */
-  function cuantasEsperan() {
+  /**
+   * Las fichas que esperan decisión, para el número del menú y, con `fuente`, para el de Inicio: sin preguntar a la
+   * plataforma, con lo último que contestó. Sin fichas legibles, null: el menú muestra sólo el nombre e Inicio, «no medido».
+   */
+  function cuantasEsperan(fuente = null) {
     const l = leerFichas();
-    if (l.estado !== 'leido') return 0;
+    if (l.estado !== 'leido') return null;
     const dir = dirOps();
+    // recién arrancado no se sabe todavía qué espera aprobación: se pregunta de fondo y la próxima cuenta ya lo descuenta;
+    // si la plataforma no contesta, se vuelve a preguntar al minuto, no en cada página que se abre
+    if (!ultimaMembresia && !membresiaEnCamino && ahora() - membresiaIntentada >= VIGENCIA_PEDIDOS_MS) {
+      membresiaIntentada = ahora();
+      membresiaEnCamino = membresia().catch(() => null).finally(() => { membresiaEnCamino = null; });
+    }
     const enPedido = ultimaMembresia ? ultimaMembresia.porFicha : new Map();
-    return l.fichas.filter((f) => porDecidir(f) && decisionEnMain(dir, f) === null && !decididas.accionDe(clave(f)) && !enPedido.has(clave(f))).length;
+    return l.fichas.filter((f) => (fuente === null || f.fuente === fuente) && porDecidir(f) && decisionEnMain(dir, f) === null && !decididas.accionDe(clave(f), fallidaDe(f)) && !enPedido.has(clave(f))).length;
   }
 
   // ── la tarea de cada arreglo y de cada vulnerabilidad ──
@@ -386,7 +430,36 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return partes.join(' · ');
   }
 
+  /** El pull request de una ficha de dependencias, en la plataforma del repo de operaciones; null si no se sabe armar. */
+  function enlaceDePedido(pr, prRepo) {
+    const r = remote();
+    if (!r || !r.web || !/^https:\/\//.test(r.web)) return null;
+    const base = r.web.replace(/\.git$/, '').replace(/\/+$/, '');
+    if (r.platform === 'github') return `${prRepo ? `${new URL(base).origin}/${prRepo}` : base}/pull/${pr}`;
+    // la otra plataforma (como en decisions.js): el pedido vive en el mismo repo de operaciones
+    return prRepo ? null : `${base}/pullrequest/${pr}`;
+  }
+
+  /** Una dependencia: el paquete, su severidad, dónde está, su pull request y, si la noche no aplicó la decisión, por qué. */
+  function filaDeDependencia(f, idioma) {
+    const c = f.contexto || {};
+    const sev = NOMBRE_SEVERIDAD[f.severidad] || null;
+    const repos = Number.isInteger(f.repos) ? f.repos : 0;
+    const meta = [sev ? T(idioma, `mant.vuln.${sev}`) : null, T(idioma, repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: repos, dia: dia(f.primera_vez) })].filter(Boolean).join(' · ');
+    const pedido = c.pr ? { numero: Number(c.pr), enlace: enlaceDePedido(c.pr, c.pr_repo) } : null;
+    const fallo = !c.fallida ? null : c.motivo_fallida ? T(idioma, 'mant.dep.fallo', { dia: dia(c.fallida), motivo: c.motivo_fallida }) : T(idioma, 'mant.dep.falloSinMotivo', { dia: dia(c.fallida) });
+    // qué es la vulnerabilidad (el aviso de GitHub, en su idioma) y la sugerencia del modelo, que sólo llega con el aviso
+    const av = f.aviso;
+    const aviso = av && av.resumen ? { resumen: av.resumen, parche: av.parche || null } : av && av.motivo ? { sin_leer: true } : null;
+    const pr = aviso && aviso.resumen ? f.propuesta : null;
+    return { fuente: f.fuente, id: f.id, nombre: c.paquete || f.nombre, regla: null, meta, que_paso: T(idioma, pedido ? 'mant.dep.conPedido' : 'mant.dep.sinPedido'),
+      analisis: null, propuesta: pr ? { accion: pr.accion, razon: pr.razon === SOURCES.SIN_FORMA ? null : pr.razon } : null,
+      sin_analizar: null, recomendada: null, veces: f.noches || 1, detalle: { maquinas: [], stories: [] },
+      severidad: f.severidad || null, pedido, fallo, aviso };
+  }
+
   function filaParaDecidir(f, idioma) {
+    if (f.fuente === 'dependencias') return filaDeDependencia(f, idioma);
     const a = f.analisis;
     const analisis = a ? { recomendacion: a.recomendacion, por_que_pasa: a.por_que_pasa, por_que_recomienda: a.por_que_recomienda, arreglo: a.arreglo || null, si_vuelve: a.si_vuelve || null, autor: a.autor } : null;
     const c = f.contexto || {};
@@ -403,9 +476,10 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
   // orden: producción primero; lo que recomienda arreglar, después aceptar, después lo sin analizar; más veces primero
   const tramo = (x) => (x.recomendada === 'arreglar' ? 0 : x.recomendada === 'aceptar' ? 1 : 2);
-  const ordenParaDecidir = (a, b) => SE_DECIDEN.indexOf(a.fuente) - SE_DECIDEN.indexOf(b.fuente) || tramo(a) - tramo(b) || b.veces - a.veces || a.nombre.localeCompare(b.nombre) || a.id.localeCompare(b.id);
-  const ordenFuente = (a, b) => SE_DECIDEN.indexOf(a.fuente) - SE_DECIDEN.indexOf(b.fuente) || a.nombre.localeCompare(b.nombre);
+  // los paquetes, la más grave primero
   const rangoSeveridad = (s) => (hasOwn(SEVERIDADES, s) ? SEVERIDADES[s] : 9);
+  const ordenParaDecidir = (a, b) => SE_DECIDEN.indexOf(a.fuente) - SE_DECIDEN.indexOf(b.fuente) || tramo(a) - tramo(b) || rangoSeveridad(a.severidad) - rangoSeveridad(b.severidad) || b.veces - a.veces || a.nombre.localeCompare(b.nombre) || a.id.localeCompare(b.id);
+  const ordenFuente = (a, b) => SE_DECIDEN.indexOf(a.fuente) - SE_DECIDEN.indexOf(b.fuente) || a.nombre.localeCompare(b.nombre);
   const ordenVulns = (a, b) => rangoSeveridad(a.severidad) - rangoSeveridad(b.severidad) || String(a.desde || '9').localeCompare(String(b.desde || '9')) || a.paquete.localeCompare(b.paquete);
 
   /** El modelo de la pantalla: lo mismo para la página y para /api/hallazgos. */
@@ -422,19 +496,20 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const toca = [];
     const pedidos = new Map();
     const aprobadas = [];
+    // las que la noche anotó que no pudo aplicar: «Ya decididas» lo dice
+    const fallidas = new Map();
     const arreglos = [];
     const vulnerabilidades = [];
     for (const f of l.fichas) {
-      if (f.fuente === 'dependencias') {
-        if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino));
-        continue;
-      }
-      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, deLaNoche || (deLaNoche = destinoDeLaNoche()), idioma)); continue; }
+      // una vulnerabilidad se sigue en su tarea y, mientras está pendiente, además se decide su pull request
+      if (f.fuente === 'dependencias') { if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino)); }
+      else if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, deLaNoche || (deLaNoche = destinoDeLaNoche()), idioma)); continue; }
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
+      if (fallidaDe(f)) fallidas.set(clave(f), fallidaDe(f));
       if (enMain) decididas.olvidar(clave(f), { ...enMain, nombre: tituloDe(f, LANG.POR_DEFECTO) });
-      const yaDecidida = enMain ? enMain.accion : decididas.accionDe(clave(f));
+      const yaDecidida = enMain ? enMain.accion : decididas.accionDe(clave(f), fallidaDe(f));
       if (enMain || yaDecidida) { aprobadas.push({ clave: clave(f), nombre: tituloDe(f, idioma) }); continue; }
       const p = enPedido.get(clave(f));
       if (p) {
@@ -448,7 +523,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const espera = [...pedidos.values()].sort((a, b) => a.numero - b.numero);
     // lo ya decidido no espera la aprobación de nadie: sale de la lista y se cuenta en una línea
     for (const g of espera) g.filas.sort(ordenFuente);
-    const yaDecididas = listaDecididas(aprobadas);
+    const yaDecididas = listaDecididas(aprobadas, fallidas);
     arreglos.sort(ordenFuente);
     vulnerabilidades.sort(ordenVulns);
     const ilegible = ilegibles.size > 0;
@@ -466,14 +541,16 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
   /**
    * «Ya decididas», de lo anotado: la que la foto muestra decidida y todavía en pending la aplica esta noche; la que ya
-   * no está ahí, la aplicó la noche. `aprobadas`: `[{ clave, nombre }]`, las decididas que siguen en pending.
+   * no está ahí, la aplicó la noche; la que la noche anotó que no pudo aplicar, no se aplicó. `aprobadas`: `[{ clave,
+   * nombre }]`, las decididas que siguen en pending; `fallidas`: clave → el día de la anotación.
    */
-  function listaDecididas(aprobadas) {
+  function listaDecididas(aprobadas, fallidas = new Map()) {
     const pendientes = new Map(aprobadas.map((x) => [x.clave, x.nombre]));
     return decididas.historia().map((x) => {
       const i = x.clave.indexOf('/');
+      const estado = decididas.noAplicada(x, fallidas.get(x.clave)) ? 'no_aplicada' : pendientes.has(x.clave) ? 'esta_noche' : 'aplicada';
       return { fuente: x.clave.slice(0, i), id: x.clave.slice(i + 1), nombre: pendientes.get(x.clave) || x.nombre || x.clave.slice(i + 1), accion: x.accion,
-        quien: alias(x.quien), el: x.el || null, estado: pendientes.has(x.clave) ? 'esta_noche' : 'aplicada' };
+        quien: alias(x.quien), el: x.el || null, estado };
     });
   }
 
@@ -485,17 +562,30 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const deAyuda = (k) => (m.aplicaSolo && (k === 'enviar' || k === 'seguir') ? `${k}Solo` : k);
     const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${deAyuda(k)}`) }))}">?</button>`;
     const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer" target="_blank">${esc(texto)}</a>` : esc(texto));
-    const accion = (a) => T(idioma, `mant.accion.${a}`);
+    // en dependencias, aceptar es aceptar su pull request; en las demás, archivar la ficha
+    const accion = (a, fuente) => T(idioma, fuente === 'dependencias' && a === 'aceptar' ? 'mant.accionDep.aceptar' : `mant.accion.${a}`);
     // el análisis está en castellano (se escribe así): `lang` para quien lo lee en voz alta, y la nota en otro idioma
     const es = (s) => `<span lang="es">${esc(s)}</span>`;
     const renglon = (k, s) => `<p><b>${esc(T(idioma, k))}</b> ${es(s)}</p>`;
 
     function carta(f) {
       const a = f.analisis;
-      const botones = ['aceptar', 'arreglar'].map((x) => `<button type="button" class="m-elegir${x === f.recomendada ? ' recomendada' : ''}" data-accion="${x}" aria-pressed="false">${esc(accion(x))}</button>`).join('');
-      const acciones = `<div class="m-acciones" role="group" aria-label="${esc(f.nombre)}">${botones}</div>`;
+      const deDependencias = f.fuente === 'dependencias';
+      const botones = ACCIONES_DE[f.fuente].map((x) => `<button type="button" class="m-elegir${x === f.recomendada ? ' recomendada' : ''}" data-accion="${x}" aria-pressed="false">${esc(accion(x, f.fuente))}</button>`).join('');
+      // el motivo del rechazo: aparece al elegir Rechazar, una línea con el mismo tope que acepta la noche
+      const motivo = deDependencias ? `<label class="m-motivo-caja" hidden>${esc(T(idioma, 'mant.dep.motivo'))} <input type="text" class="m-motivo" maxlength="${CYCLE.MOTIVO_MAX}" autocomplete="off"></label>` : '';
+      const acciones = `<div class="m-acciones" role="group" aria-label="${esc(f.nombre)}">${botones}${motivo}</div>`;
       let cuerpo;
-      if (a) {
+      if (deDependencias) {
+        const pedido = f.pedido ? ` ${enlace(T(idioma, 'mant.dep.pedido', { numero: f.pedido.numero }), f.pedido.enlace)}.` : '';
+        const av = f.aviso;
+        const aviso = !av ? ''
+          : av.sin_leer ? `<p class="m-aviso">${esc(T(idioma, 'mant.dep.avisoSinLeer'))}</p>`
+            : `<p class="m-aviso"><b>${esc(T(idioma, 'mant.dep.queEs'))}</b> <span lang="en">${esc(av.resumen)}</span>${av.parche ? ` ${esc(T(idioma, 'mant.dep.parche', { version: av.parche }))}` : ''}</p>`;
+        const pr = f.propuesta;
+        const sugerencia = pr ? `<p class="m-propuesta">${esc(T(idioma, 'mant.dep.sugerencia', { accion: T(idioma, `mant.dep.sugerencia.${pr.accion}`) }))}${pr.razon ? ` ${es(pr.razon)}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.razonEnCastellano'))}`}` : ''}</p>` : '';
+        cuerpo = `${f.fallo ? `<p class="m-fallo">${esc(f.fallo)}</p>` : ''}${aviso}${sugerencia}<p>${esc(f.que_paso)}${pedido}</p><div class="m-pie">${acciones}</div>`;
+      } else if (a) {
         cuerpo = renglon('mant.porQue', a.por_que_pasa) + renglon(`mant.recomienda.${a.recomendacion}`, a.por_que_recomienda)
           + (a.arreglo ? renglon('mant.siSeArregla', a.arreglo) : '') + (a.si_vuelve ? renglon('mant.siVuelve', a.si_vuelve) : '')
           + `<div class="m-pie"><span class="m-autor">${a.autor === 'persona' ? '' : `${esc(T(idioma, 'mant.autor.modelo'))} `}${idioma === 'es' ? '' : `${esc(T(idioma, 'mant.analisisEnCastellano'))} `}${ayuda('analisis')}</span>${acciones}</div>`;
@@ -505,18 +595,18 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         cuerpo = `<p class="m-sin">${esc(f.sin_analizar)}</p>${propuesta}<details class="m-sin-analisis"><summary>${esc(T(idioma, 'mant.decidirSinAnalisis'))}</summary>${acciones}</details>`;
       }
       const d = f.detalle;
-      const detalle = d.maquinas.length || d.stories.length
+      const detalle = !deDependencias && (d.maquinas.length || d.stories.length
         ? `<details class="m-detalle"><summary>${esc(T(idioma, 'mant.verDetalle'))}</summary>${d.maquinas.length ? `<p>${esc(T(idioma, 'mant.detalle.maquinas', { lista: d.maquinas.join(', ') }))}</p>` : ''}${d.stories.length ? `<p>${esc(T(idioma, 'mant.detalle.stories', { lista: d.stories.join(', ') }))}</p>` : ''}</details>`
-        : '';
-      return `<article class="m-carta${a ? '' : ' sin-analizar'}" data-ficha="${esc(clave(f))}"${f.recomendada ? ` data-recomendada="${esc(f.recomendada)}"` : ''}>`
+        : '');
+      return `<article class="m-carta${a || deDependencias ? '' : ' sin-analizar'}" data-ficha="${esc(clave(f))}"${f.recomendada ? ` data-recomendada="${esc(f.recomendada)}"` : ''}>`
         + `<header class="m-cab"><b class="m-nombre">${esc(f.nombre)}</b>${ayudaRegla(f.regla)}<span class="m-meta">${esc(f.meta)}</span></header>`
-        + `<p><b>${esc(T(idioma, 'mant.quePaso'))}</b> ${esc(f.que_paso)}</p>${cuerpo}${detalle}</article>`;
+        + `${deDependencias ? '' : `<p><b>${esc(T(idioma, 'mant.quePaso'))}</b> ${esc(f.que_paso)}</p>`}${cuerpo}${detalle || ''}</article>`;
     }
 
     // te toca decidir
     const subgrupos = SE_DECIDEN.map((fuente) => {
       const filas = m.toca.filter((x) => x.fuente === fuente);
-      const sub = fuente === 'vigilante' ? 'mant.sub.produccion' : 'mant.sub.ejecuciones';
+      const sub = { vigilante: 'mant.sub.produccion', ejecuciones: 'mant.sub.ejecuciones', dependencias: 'mant.sub.dependencias' }[fuente];
       // el molde del número va en la página: la pantalla recuenta sola cuando saca una ficha
       return filas.length ? `<h3 class="m-sub" data-fuente="${esc(fuente)}" data-t="${esc(T(idioma, sub, { n: '{n}' }))}">${esc(T(idioma, sub, { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
     }).join('');
@@ -529,7 +619,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       // «Pedido 12 · 3 decisiones»: el enlace va sobre la primera parte
       const [nombre, ...resto] = T(idioma, g.filas.length === 1 ? 'mant.espera.pedidoUna' : 'mant.espera.pedido', { numero: g.numero, n: g.filas.length }).split(' · ');
       const cab = [enlace(nombre, g.enlace), ...resto.map(esc)].join(' · ');
-      const filas = g.filas.map((x) => `<li>${esc(x.nombre)} → ${esc(x.accion ? accion(x.accion) : '?')}</li>`).join('');
+      const filas = g.filas.map((x) => `<li>${esc(x.nombre)} → ${esc(x.accion ? accion(x.accion, x.fuente) : '?')}</li>`).join('');
       return `<div class="m-pedido"><p class="m-pedido-cab">${cab}</p><ul>${filas}</ul></div>`;
     };
     const espera = m.espera.length
@@ -537,8 +627,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       : '';
 
     // ya decididas: va en la página aunque esté vacía, para que lo enviado pase ahí sin recargar
-    const estadoDe = (e) => T(idioma, e === 'aplicada' ? 'mant.decididas.aplicada' : 'mant.decididas.estaNoche');
-    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(x.nombre)}</b> <span class="m-tarea">${esc([x.accion ? accion(x.accion) : '?', dia(x.el), x.quien, estadoDe(x.estado)].filter(Boolean).join(' · '))}</span></li>`;
+    const estadoDe = (e) => T(idioma, { aplicada: 'mant.decididas.aplicada', no_aplicada: 'mant.decididas.noAplicada' }[e] || 'mant.decididas.estaNoche');
+    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(x.nombre)}</b> <span class="m-tarea">${esc([x.accion ? accion(x.accion, x.fuente) : '?', dia(x.el), x.quien, estadoDe(x.estado)].filter(Boolean).join(' · '))}</span></li>`;
     const ya = `<details class="m-bloque m-decididas"${m.decididas.length ? '' : ' hidden'} data-t-esta-noche="${esc(estadoDe('esta_noche'))}">`
       + `<summary data-t="${esc(T(idioma, 'mant.decididas.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.decididas.titulo', { n: m.decididas.length }))}</summary>`
       + `<p class="m-intro">${esc(T(idioma, 'mant.decididas.intro'))}</p><ul class="m-lista">${m.decididas.map(decidida).join('')}</ul></details>`;
@@ -582,9 +672,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
     // la barra y la ayuda: sólo si hay algo para decidir
     const k = m.toca.filter((x) => x.recomendada).length;
-    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', lento: 'mant.envio.lento', verificando: 'mant.envio.verificando', yaEnviado: 'mant.envio.yaEnviado', noLlego: 'mant.envio.noLlego', aplicado: 'mant.envio.aplicado', ok: 'mant.envio.ok', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
+    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', faltaMotivo: 'mant.barra.faltaMotivo', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', lento: 'mant.envio.lento', verificando: 'mant.envio.verificando', yaEnviado: 'mant.envio.yaEnviado', noLlego: 'mant.envio.noLlego', aplicado: 'mant.envio.aplicado', ok: 'mant.envio.ok', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
     const datos = Object.entries(textos).map(([n, kk]) => ` data-t-${n.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(T(idioma, kk))}"`).join('')
-      + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}"`;
+      + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}" data-t-reject="${esc(accion('reject'))}" data-t-dep-aceptar="${esc(accion('aceptar', 'dependencias'))}"`;
     const barra = m.toca.length
       ? `<div class="m-barra"${datos}><span class="m-cuenta" aria-live="polite"></span><button type="button" class="btn prim m-enviar" disabled>${esc(T(idioma, m.aplicaSolo ? 'mant.barra.enviarSolo' : 'mant.barra.enviar'))}</button>`
         + `<button type="button" class="btn m-seguir" data-t="${esc(T(idioma, 'mant.barra.seguir', { n: '{n}' }))}"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
@@ -604,9 +694,10 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // la forma de varias (`{ decisiones: [...] }`) o la de a una, como antes
     const lista = isObject(body) && Array.isArray(body.decisiones) ? body.decisiones : isObject(body) && 'fuente' in body ? [body] : null;
     if (!lista || !lista.length || lista.length > TOPE_ENVIO) return invalido;
-    if (lista.some((x) => !isObject(x) || !FUENTES.includes(x.fuente) || typeof x.id !== 'string' || !ID.test(x.id) || !CYCLE.ACCIONES.includes(x.accion))) return invalido;
-    if (lista.some((x) => x.fuente === 'dependencias')) return json(400, { ok: false, message: T(idioma, 'mant.envio.sinDependencias') });
-    if (lista.some((x) => !SE_DECIDEN.includes(x.fuente))) return invalido;
+    if (lista.some((x) => !isObject(x) || !SE_DECIDEN.includes(x.fuente) || typeof x.id !== 'string' || !ID.test(x.id) || !ACCIONES_DE[x.fuente].includes(x.accion))) return invalido;
+    // 🔴 El motivo va sólo en un rechazo y lo escribe una persona: termina como comentario del pull request. Una línea,
+    // con el tope de la noche (`motivoConForma`); uno que no lo cumple no se recorta: se rechaza el envío entero.
+    if (lista.some((x) => (x.accion === 'reject') !== hasOwn(x, 'motivo') || (x.accion === 'reject' && !(typeof x.motivo === 'string' && CYCLE.motivoConForma(x.motivo.trim()))))) return invalido;
     if (new Set(lista.map(clave)).size !== lista.length) return invalido;
     const dir = dirOps();
     if (!dir) return json(200, { ok: false, codigo: 'sin_clon', message: T(idioma, 'mant.sinClon') });
@@ -618,22 +709,31 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // lo que ya está decidido en main: sale de la lista y pasa a «Ya decididas»
     const previas = [];
     const nombres = new Map();
+    const vistas = new Map();
     let van = [];
     for (const x of lista) {
       const reg = SOURCES.FUENTES[x.fuente];
       // 🔴 Sólo «el archivo no está» es «ya no está pendiente»: una ficha o una carpeta que no se pueden leer no abren
       // un pedido a ciegas ni dicen que otro ya la decidió.
       let f = null;
-      try { f = SOURCES.comoFicha(x.fuente, fs.readFileSync(path.join(dir, 'inbox', reg.carpeta, 'pending', `${x.id}${reg.extension}`), 'utf8')); } catch (e) {
+      try {
+        const txt = fs.readFileSync(path.join(dir, 'inbox', reg.carpeta, 'pending', `${x.id}${reg.extension}`), 'utf8');
+        f = SOURCES.comoFicha(x.fuente, txt);
+        if (f) f = { ...f, carpeta: 'pending', contexto: contextoDe(x.fuente, reg, txt) };
+      } catch (e) {
         if (!(e && e.code === 'ENOENT')) return json(200, { ok: false, codigo: 'ficha_ilegible', message: T(idioma, 'hallazgos.fichaIlegible') });
       }
-      if (!f || f.id !== x.id || f.veredicto !== 'pendiente' || f.estado === 'resuelta' || aparte(f)) { omitidas.push(clave(x)); continue; }
+      if (!f || f.id !== x.id || f.estado === 'resuelta' || !porDecidir(f)) { omitidas.push(clave(x)); continue; }
       const enMain = decisionEnMain(dir, x);
       if (enMain === 'ilegible') return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
       nombres.set(clave(x), tituloDe(f, LANG.POR_DEFECTO));
+      vistas.set(clave(x), fallidaDe(f));
       if (enMain) previas.push({ clave: clave(x), ...enMain });
-      if (enMain || decididas.accionDe(clave(x)) || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
-      van.push({ fuente: x.fuente, id: x.id, accion: x.accion });
+      if (enMain || decididas.accionDe(clave(x), fallidaDe(f)) || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
+      // 🔴 En dependencias, el pull request es el de la ficha, nunca el que diga el navegador: la noche lo compara antes
+      // de mergear o cerrar (`mismoPedido`), y otro número haría que actúe sobre un pedido que la persona no vio.
+      const deLaFicha = x.fuente === 'dependencias' ? { pr: f.contexto.pr, pr_repo: f.contexto.pr_repo } : {};
+      van.push({ fuente: x.fuente, id: x.id, accion: x.accion, ...deLaFicha, ...(x.accion === 'reject' ? { motivo: x.motivo.trim() } : {}) });
     }
     const quien = norm((ctx.sesion && ctx.sesion.email) || (ctx.quien && ctx.quien.email));
     const el = new Date(ahora()).toISOString().slice(0, 10);
@@ -641,7 +741,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const paraLaPantalla = (xs) => xs.map((x) => ({ clave: x.clave, accion: x.accion, quien: alias(x.quien), el: x.el || null }));
     for (const x of previas) decididas.olvidar(x.clave, { ...x, nombre: nombres.get(x.clave) });
     if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas, decididas: paraLaPantalla(previas) });
-    const conForma = (lista) => lista.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el }));
+    const conForma = (lista) => lista.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el,
+      ...(x.fuente === 'dependencias' ? { pr: x.pr, pr_repo: x.pr_repo } : {}), ...(x.accion === 'reject' ? { motivo: x.motivo } : {}) }));
     const archivosDe = (decs) => decs.map((d) => ({ archivo: rutaDecision(d.fuente, d.id), contenido: `${JSON.stringify(d, null, 2)}\n`, oidEsperado: null }));
     if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivos: archivosDe(conForma(van)).map(({ archivo, contenido }) => ({ archivo, contenido })) }, omitidas });
     // la noche sólo aplica una decisión con forma: una que no la tiene (sin correo, por ejemplo) no se propone
@@ -682,7 +783,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // lo decidido queda anotado y sale de la lista ya; no se refresca acá: la foto todavía no lo trae, y un refresco baja
     // el buzón (un minuto en un sitio real) con la pantalla esperando
     const hechas = [...yaDecididas, ...aplicadas];
-    if (hechas.length) decididas.marcar(hechas.map((x) => ({ ...x, nombre: nombres.get(x.clave) })));
+    if (hechas.length) decididas.marcar(hechas.map((x) => ({ ...x, nombre: nombres.get(x.clave), vio: vistas.get(x.clave) })));
     const omitidasTodas = [...omitidas, ...yaDecididas.map((x) => x.clave)];
     const alaVista = paraLaPantalla([...previas, ...hechas]);
     if (!van.length) return json(200, { ok: true, codigo: 'ya_decidida', message: T(idioma, 'mant.envio.yaDecidida'), omitidas: omitidasTodas, enviadas: [], decididas: alaVista });
@@ -697,7 +798,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     if (!m || typeof texto !== 'string') return null;
     let d = null;
     try { d = JSON.parse(texto); } catch { return null; }
-    if (!isObject(d) || !SE_DECIDEN.includes(d.fuente) || carpetaDe(d.fuente) !== m[1] || d.id !== m[2] || !CYCLE.ACCIONES.includes(d.accion)) return null;
+    if (!isObject(d) || !SE_DECIDEN.includes(d.fuente) || carpetaDe(d.fuente) !== m[1] || d.id !== m[2] || !ACCIONES_DE[d.fuente].includes(d.accion)) return null;
     return { clave: `${d.fuente}/${d.id}`, accion: d.accion, quien: typeof d.quien === 'string' ? d.quien : null, el: DIA.test(String(d.el || '')) ? d.el : null };
   }
 
@@ -723,7 +824,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   const solo = ['maintainer'];
   return [
     {
-      method: 'GET', path: '/mantenimiento', needs: solo, pestana: { id: 'mantenimiento', titulo: 'Mantenimiento', orden: 25, cuenta: cuantasEsperan }, handler: async (ctx) => {
+      method: 'GET', path: '/mantenimiento', needs: solo, pestana: { id: 'mantenimiento', titulo: 'Mantenimiento', orden: 25, cuenta: () => cuantasEsperan(), esperanDe: (fuente) => cuantasEsperan(fuente) }, handler: async (ctx) => {
         const idioma = views.idiomaDe(ctx);
         const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok.replace(/[^A-Za-z0-9_-]/g, '') : '';
         const cuerpo = ctx.quien && ctx.quien.rol === 'maintainer' ? seccion(await modelo(idioma), idioma, tok) : '';
@@ -758,33 +859,50 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   ];
 }
 
-// El cliente: marcar Archivar o Arreglar en cada tarjeta (se recuerda en el navegador), seguir las recomendaciones y
-// enviar todo junto. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» o a «Ya
+// El cliente: marcar Archivar o Arreglar en cada tarjeta (en dependencias, Aceptar o Rechazar con su motivo; todo se
+// recuerda en el navegador), seguir las recomendaciones y enviar todo junto. Un rechazo sin motivo no se envía. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» o a «Ya
 // decididas» sin recargar, y cada número de la pantalla se recuenta.
 const CLIENTE = `(function () {
   var s = document.getElementById('hallazgos');
   var barra = s && s.querySelector('.m-barra');
   if (!s || !barra) return;
-  var GUARDA = 'mant-elecciones';
+  var GUARDA = 'mant-elecciones', GUARDA_MOTIVOS = 'mant-motivos';
   var t = function (n) { return barra.getAttribute('data-t-' + n) || ''; };
   var elecciones = {};
   try { elecciones = JSON.parse(localStorage.getItem(GUARDA) || '{}') || {}; } catch (e) { elecciones = {}; }
+  var motivos = {};
+  try { motivos = JSON.parse(localStorage.getItem(GUARDA_MOTIVOS) || '{}') || {}; } catch (e) { motivos = {}; }
   var cartas = function () { return s.querySelectorAll('article[data-ficha]'); };
   var vivas = {};
   Array.prototype.forEach.call(cartas(), function (c) { vivas[c.getAttribute('data-ficha')] = true; });
-  Object.keys(elecciones).forEach(function (k) { if (!vivas[k] || (elecciones[k] !== 'aceptar' && elecciones[k] !== 'arreglar')) delete elecciones[k]; });
+  var ACCIONES = ['aceptar', 'arreglar', 'reject'];
+  Object.keys(elecciones).forEach(function (k) { if (!vivas[k] || ACCIONES.indexOf(elecciones[k]) < 0) delete elecciones[k]; });
+  Object.keys(motivos).forEach(function (k) { if (!vivas[k] || typeof motivos[k] !== 'string') delete motivos[k]; });
+  // el motivo de un rechazo: una línea, con el tope del campo
+  var motivoDe = function (k) { return String(motivos[k] || '').replace(/[\\u0000-\\u001f\\u007f\\u2028\\u2029]+/g, ' ').trim(); };
+  var faltaMotivo = function () { return Object.keys(elecciones).some(function (k) { return elecciones[k] === 'reject' && !motivoDe(k); }); };
+  // en dependencias, aceptar es aceptar su pull request
+  var etiqueta = function (k, a) { return k.indexOf('dependencias/') === 0 && a === 'aceptar' ? t('dep-aceptar') : t(a); };
   var enviando = false;
   var hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
-  function guardar() { try { localStorage.setItem(GUARDA, JSON.stringify(elecciones)); } catch (e) { /* sin almacenamiento: sólo se pierde la marca al recargar */ } }
+  function guardar() { try { localStorage.setItem(GUARDA, JSON.stringify(elecciones)); localStorage.setItem(GUARDA_MOTIVOS, JSON.stringify(motivos)); } catch (e) { /* sin almacenamiento: sólo se pierde la marca al recargar */ } }
   function pintar() {
     Array.prototype.forEach.call(cartas(), function (c) {
       var k = c.getAttribute('data-ficha');
       Array.prototype.forEach.call(c.querySelectorAll('button[data-accion]'), function (b) { b.setAttribute('aria-pressed', elecciones[k] === b.getAttribute('data-accion') ? 'true' : 'false'); });
       if (elecciones[k]) { var d = c.querySelector('details.m-sin-analisis'); if (d) d.open = true; }
+      var caja = c.querySelector('.m-motivo-caja');
+      if (caja) {
+        caja.hidden = elecciones[k] !== 'reject';
+        var campo = caja.querySelector('.m-motivo');
+        if (campo.value !== (motivos[k] || '')) campo.value = motivos[k] || '';
+        campo.disabled = enviando;
+      }
     });
     var n = Object.keys(elecciones).length;
-    barra.querySelector('.m-cuenta').textContent = n === 1 ? t('elegida-una') : t('elegidas').replace('{n}', n);
-    barra.querySelector('.m-enviar').disabled = n === 0 || enviando;
+    var falta = faltaMotivo();
+    barra.querySelector('.m-cuenta').textContent = (n === 1 ? t('elegida-una') : t('elegidas').replace('{n}', n)) + (falta ? ' ' + t('falta-motivo') : '');
+    barra.querySelector('.m-enviar').disabled = n === 0 || enviando || falta;
     // mientras se envía no se cambia nada: otra elección abriría un segundo pedido con las mismas fichas
     Array.prototype.forEach.call(s.querySelectorAll('button[data-accion], .m-borrar'), function (b) { b.disabled = enviando; });
     barra.querySelector('.m-seguir').disabled = enviando || !hayRecomendadas;
@@ -800,16 +918,25 @@ const CLIENTE = `(function () {
     var a = b.getAttribute('data-accion');
     if (elecciones[k] === a) delete elecciones[k]; else elecciones[k] = a;
     pintar();
+    var campo = a === 'reject' && elecciones[k] === 'reject' && c.querySelector('.m-motivo');
+    if (campo) campo.focus();
+  });
+  s.addEventListener('input', function (ev) {
+    var campo = ev.target;
+    if (!campo.classList || !campo.classList.contains('m-motivo')) return;
+    motivos[campo.closest('article[data-ficha]').getAttribute('data-ficha')] = campo.value;
+    pintar();
   });
   barra.querySelector('.m-seguir').addEventListener('click', function () {
     Array.prototype.forEach.call(cartas(), function (c) { var r = c.getAttribute('data-recomendada'); if (r) elecciones[c.getAttribute('data-ficha')] = r; });
     pintar();
   });
-  barra.querySelector('.m-borrar').addEventListener('click', function () { elecciones = {}; pintar(); });
+  barra.querySelector('.m-borrar').addEventListener('click', function () { elecciones = {}; motivos = {}; pintar(); });
   function quitar(k) {
     var c = s.querySelector('article[data-ficha="' + k.replace(/"/g, '') + '"]');
     if (c) c.parentNode.removeChild(c);
     delete elecciones[k];
+    delete motivos[k];
     hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
     recontar();
   }
@@ -856,7 +983,7 @@ const CLIENTE = `(function () {
         var b = document.createElement('b'); b.textContent = c.querySelector('.m-nombre').textContent; li.appendChild(b);
         var el = /^\\d{4}-\\d{2}-\\d{2}$/.test(x.el || '') ? x.el.slice(8, 10) + '/' + x.el.slice(5, 7) : '';
         var sp = document.createElement('span'); sp.className = 'm-tarea';
-        sp.textContent = [t(x.accion) || '?', el, x.quien || '', ya.getAttribute('data-t-esta-noche') || ''].filter(Boolean).join(' · ');
+        sp.textContent = [etiqueta(k, x.accion) || '?', el, x.quien || '', ya.getAttribute('data-t-esta-noche') || ''].filter(Boolean).join(' · ');
         li.appendChild(document.createTextNode(' ')); li.appendChild(sp);
         ul.insertBefore(li, ul.firstChild);
       }
@@ -879,7 +1006,7 @@ const CLIENTE = `(function () {
     enviadas.forEach(function (k) {
       var c = s.querySelector('article[data-ficha="' + k.replace(/"/g, '') + '"]');
       if (!c) return;
-      var li = document.createElement('li'); li.textContent = c.querySelector('.m-nombre').textContent + ' → ' + t(acciones[k]); ul.appendChild(li);
+      var li = document.createElement('li'); li.textContent = c.querySelector('.m-nombre').textContent + ' → ' + etiqueta(k, acciones[k]); ul.appendChild(li);
       quitar(k);
     });
     g.appendChild(ul); bloque.appendChild(g);
@@ -960,12 +1087,17 @@ const CLIENTE = `(function () {
   }
   barra.querySelector('.m-enviar').addEventListener('click', function () {
     var ks = Object.keys(elecciones);
-    if (!ks.length) return;
+    if (!ks.length || faltaMotivo()) return;
     var estado = barra.querySelector('.m-estado');
     enviando = true; estado.textContent = t('enviando'); pintar();
     var acciones = {};
     ks.forEach(function (k) { acciones[k] = elecciones[k]; });
-    var decisiones = ks.map(function (k) { var i = k.indexOf('/'); return { fuente: k.slice(0, i), id: k.slice(i + 1), accion: acciones[k] }; });
+    var decisiones = ks.map(function (k) {
+      var i = k.indexOf('/');
+      var d = { fuente: k.slice(0, i), id: k.slice(i + 1), accion: acciones[k] };
+      if (acciones[k] === 'reject') d.motivo = motivoDe(k);
+      return d;
+    });
     var id = 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
     var corte = typeof AbortController === 'function' ? new AbortController() : null;
     var lento = setTimeout(function () { if (enviando) estado.textContent = t('lento'); }, LENTO_MS);

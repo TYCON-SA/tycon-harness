@@ -14,20 +14,13 @@
  * escapes del freno de seguridad: la última línea de esta sesión con `escape: cerrar-la-ejecucion`, posterior al
  * arranque de la ejecución; sin ella, `sin-registro`.
  *
- * Uso desde el freno de seguridad: node run-close.js --gate --session <id> [--transcript <ruta>] [--tool-use-id-stdin] [--command-stdin --shell bash|powershell]
- *   `--transcript`: el registro de la conversación que dice la herramienta (`transcript_path`); se lee ése y no otro.
- *   Con `--tool-use-id-stdin`, el primer renglón de la entrada es el pedido que se juzga y el resto, el comando: en la
- *   línea de comandos lo vería `ps`, y con el pedido a la vista se puede forjar uno igual en la conversación.
+ * Uso desde el freno de seguridad: node run-close.js --gate --session <id> [--command-stdin --shell bash|powershell]
  *   imprime `hay=0|1|?`, `autonomo=0|1`, `abierta=0|1` y `motivo=…`, un renglón por campo. Con el comando por la
  *   entrada, además un `frena=<escape>\t<subcomando>\t<valor>` por cada llamada a marker.js o pipeline.js que, con este
- *   marcador, pide la frase de la persona (lib/marker-command.js las encuentra). La salida de una ejecución perdida
- *   (`clear-session <sesión> --lost`, `restore <sesión>`) frena siempre y su renglón suma `\t<apertura>\t<sin reenvío 0|1>`:
- *   la frase vale desde la apertura de esa ejecución (`-` si no se ve) y lo del reenvío lo decide lib/open-runs.js. Si la
- *   frase de la misma decisión ya se dio en esta sesión y esta ejecución (la deuda cubre el cierre; trust-ran, force-manual
- *   del control de revisores), sale `cubre=<escape>\t<subcomando>\t<valor>\t<clave que cubre>\t<vía>\t<relevo>` en lugar
- *   de `frena=` (`-` en el campo vacío). Con `--tool-use-id`, también un
- *   `aprobacion=<subcomando>\t<motivo>` por cada aprobación del plan cuya cita no es de la persona (ESC-C6), o
- *   `sinconversacion=1` si la conversación no se puede leer.
+ *   marcador, pide la firma de la persona (lib/marker-command.js las encuentra); cada una va a la ventana de permiso. La
+ *   salida de una ejecución perdida (`clear-session <sesión> --lost`, `restore <sesión>`) frena siempre y su renglón
+ *   suma `\t<apertura>\t<sin reenvío 0|1>`: la apertura de esa ejecución (`-` si no se ve) y lo del reenvío, que lo
+ *   decide lib/open-runs.js. No lee la conversación: ninguna firma sale de ahí.
  */
 const fs = require('fs');
 const path = require('path');
@@ -94,22 +87,8 @@ function escapeDeCierre(frenos, sid, desde, escape = 'cerrar-la-ejecucion') {
   return null;
 }
 
-// una decisión, una frase: el escape ya autorizado de esta sesión y esta ejecución cubre el que viene atrás
-const CUBRE = { 'cerrar la ejecución': 'cerrar-como-deuda', 'force-manual': 'trust-ran' };
-
-/**
- * La constancia que cubre ese pedido, o null. No cubre la salida de una ejecución perdida ni un comando dudoso, ni sin
- * un arranque legible, ni force-manual sobre un control que no sea `advisors` escrito literal. Una aprobación en la
- * ventana de permiso tampoco cubre otra: cada comando la pide de nuevo.
- */
-function cubiertaPor({ l, esc, siempre, perdida }, frenos, sid, desde) {
-  const clave = CUBRE[esc];
-  if (!clave || siempre || perdida || !frenos || !sid || !Number.isFinite(Date.parse(desde || ''))) return null;
-  const a0 = l && l.args && l.args[0];
-  if (esc === 'force-manual' && !(l.sub === 'set-check' && a0 && a0.literal && a0.texto === 'advisors')) return null;
-  const c = escapeDeCierre(frenos, sid, desde, clave);
-  return c && ['persona', 'reenvio', 'delegacion'].includes(c.via) ? c : null;
-}
+// las vías del registro de escapes por las que una persona autorizó cerrar (la delegación firma en su nombre)
+const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion'];
 
 /** El `cierre` que deja `clear`. Uno ya escrito (`deuda`) se devuelve tal cual. */
 function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) {
@@ -122,7 +101,7 @@ function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) 
   }
   const frenos = leerFrenos(home);
   const l = frenos ? escapeDeCierre(frenos, sid || m.sessionId, m.startedAt) : null;
-  const via = l && ['persona', 'reenvio', 'ventana'].includes(l.via) ? l.via : 'sin-registro';
+  const via = l && VIAS_DE_CIERRE.includes(l.via) ? l.via : 'sin-registro';
   const sinVia = frenos ? '; sin constancia de quién autorizó cerrar' : '; el registro de escapes no se pudo leer';
   const motivo = motivoDe(e) + (via === 'sin-registro' ? sinVia : '');
   return { estado: 'abortada', motivo, via, ...(l && l.relevo ? { relevo: l.relevo } : {}), at: ahora };
@@ -147,84 +126,7 @@ function consulta(sid, home) {
   }
 }
 
-// ESC-C6: las llamadas que aprueban el plan o la maqueta con una cita (`complete-step approve-plan|3 --approved "<cita>"`,
-// `--mockup-approved`, `approve-mockup --approved`). `--auto-approved` no trae cita de nadie: no se mira.
-const PASO_APROBAR = new Set(['approve-plan', '3']);
-const BANDERAS_CITA = ['--approved', '--mockup-approved'];
-function esAprobacion(l) {
-  if (!l || l.guion !== 'marker') return false;
-  const a = l.args || [];
-  // marker.js recorta el nombre del paso (`" approve-plan "`); una bandera en una variable puede ser `--approved`
-  const paso = l.sub === 'complete-step' && a[0] && (!a[0].literal || PASO_APROBAR.has(a[0].texto.trim()));
-  return (paso || l.sub === 'approve-mockup') && a.some((x) => BANDERAS_CITA.includes(x.texto) || !x.literal);
-}
-
-// Las palabras que niegan o retiran (las mismas del juez de la frase): una cita sacada de una oración que rechaza el
-// plan no lo aprueba.
-// («sin» y «ni» no: «apruebo sin cambios» aprueba)
-const NIEGA = /(?:^|[^\p{L}\p{N}_])(?:no|nunca|jam[aá]s|not|never|don'? ?t|rechaz\p{L}*|retiro|cancel\p{L}*|anul\p{L}*)(?![\p{L}\p{N}_])/iu;
-const plano = (s) => String(s).toLowerCase().replace(/[«»"“”'‘’`]/g, ' ').replace(/\s+/g, ' ').trim();
-/**
- * El juez del mensaje que trae la cita: lo que rodea a la cita en su oración (desde el corte de oración anterior hasta
- * el siguiente) no puede negar, y la cita no puede empezar negando. Una cita que cruza oraciones se mira igual, por su
- * principio y su fin: el resto del mensaje (una condición más abajo) no la tumba.
- */
-function juezDeLaCita(cita) {
-  const c = plano(cita);
-  return (texto) => {
-    // el renglón también corta la oración
-    const t = plano(String(texto).replace(/\r?\n/g, '. '));
-    const i = t.indexOf(c);
-    if (i < 0) return null;
-    const antes = t.slice(0, i);
-    // una cita que termina su oración no se lleva la que sigue
-    const despues = /[.!?;]$/.test(c) ? '' : t.slice(i + c.length);
-    const corte = /[.!?;]/g;
-    let desde = 0;
-    for (let m; (m = corte.exec(antes));) desde = m.index + 1;
-    const fin = despues.search(/[.!?;]/);
-    const alrededor = `${antes.slice(desde)} ${fin < 0 ? despues : despues.slice(0, fin)}`;
-    return NIEGA.test(alrededor) || /^(?:no|nunca|not|never)\b/.test(c) ? 'la oración de la cita niega o rechaza' : null;
-  };
-}
-
-/**
- * ¿La cita de la aprobación es de la persona? `{}` si lo es, `{ sinConversacion: true }` si la conversación no se puede
- * leer (Codex: la regla no mira y queda la constancia) o `{ motivo }` si no. Vale la cita que está en un mensaje de la
- * persona (una más corta que `CITA_MINIMA`, sólo si es el mensaje entero), la respuesta que eligió en una pregunta de
- * opciones (leída del resultado de esa herramienta, nunca de un texto) o la reenviada por la sesión designada. Con
- * `--delegated-by`, sólo la reenviada. Todo leído de la cadena de la conversación con la punta en el pedido que se juzga.
- */
-function citaSinPersona(l, { sesion, pedido, transcript, home, env } = {}) {
-  const po = require('./person-ok.js');
-  const a = l.args || [];
-  const valor = (f) => { const i = a.findIndex((x) => x.texto === f); return i < 0 ? undefined : (a[i + 1] || null); };
-  const citas = BANDERAS_CITA.map(valor).filter((v) => v !== undefined);
-  // la bandera misma en una variable: no se sabe qué cita trae
-  if (!citas.length) return a.some((x) => !x.literal) ? { motivo: 'la bandera de la cita viene en una variable y no se puede leer' } : {};
-  const opts = { sesion, pedido, transcript, home, env, soloCadena: true, enteroSiCorta: true };
-  const conv = po.leerConversacion(opts);
-  if (!conv.legible) return { sinConversacion: true };
-  // el pedido que se juzga no apareció en la conversación: frena diciéndolo, no como una cita que no es de la persona
-  if (conv.pasoNoUbicado) return { motivo: conv.motivo };
-  const delegada = a.some((x) => x.texto === '--delegated-by');
-  let rol = null;
-  try { const d = require('./critical-waivers.js').designacionVigente({ home }); rol = d && !d.error ? d.rol : null; } catch (_) { rol = null; }
-  for (const v of citas) {
-    if (!v || !v.literal || !v.texto.trim()) return { motivo: 'la cita no se puede leer en el comando (falta o viene en una variable)' };
-    const c = v.texto;
-    const corta = c.length > 80 ? `${c.slice(0, 80)}…` : c;
-    const conJuez = { ...opts, juzgar: juezDeLaCita(c) };
-    const dePersona = !delegada && (po.citaDeLaPersona(c, conJuez).encontrada || po.citaDeOpciones(c, opts).encontrada);
-    if (dePersona || (rol && po.citaReenviada(c, rol, conJuez).encontrada)) continue;
-    return { motivo: delegada
-      ? `con --delegated-by la cita tiene que llegar reenviada por la sesión designada, y «${corta}» no está en ningún mensaje suyo`
-      : `«${corta}» no está en un mensaje de la persona de esta conversación, ni es la respuesta que eligió en una pregunta, ni la reenvió la sesión designada` };
-  }
-  return {};
-}
-
-module.exports = { ESTADOS, requeridos, estado, abierta, motivoDe, leerFrenos, escapeDeCierre, cubiertaPor, cierreDe, consulta, esAprobacion, citaSinPersona };
+module.exports = { ESTADOS, VIAS_DE_CIERRE, requeridos, estado, abierta, motivoDe, leerFrenos, escapeDeCierre, cierreDe, consulta };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -234,18 +136,8 @@ if (require.main === module) {
   }
   const sid = arg('--session');
   const una = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ');
-  // el pedido por la entrada (el primer renglón): lo que sigue es el comando
-  let pedidoId = arg('--tool-use-id');
-  let entradaCmd;
-  if (process.argv.includes('--tool-use-id-stdin')) {
-    const t = fs.readFileSync(0, 'utf8');
-    const i = t.indexOf('\n');
-    pedidoId = (i < 0 ? t : t.slice(0, i)).trim();
-    entradaCmd = i < 0 ? '' : t.slice(i + 1);
-  }
   // con el comando por la entrada: las llamadas a marker.js que piden a la persona, ya cruzadas con el marcador
   let pedidas = null;
-  let aprobaciones = null;
   if (process.argv.includes('--command-stdin')) {
     // el comando no se pudo leer o el lector falló: se trata como un cierre dudoso (no poder mirar no es poder pasar)
     // frena aunque no haya ejecución o esté en verde: el comando no leído puede traer cualquier escape
@@ -253,7 +145,7 @@ if (require.main === module) {
     try {
       const { llamadas, escapeDe, salidaPerdida } = require('./marker-command.js');
       const or = require('./open-runs.js');
-      const cmd = entradaCmd !== undefined ? entradaCmd : fs.readFileSync(0, 'utf8');
+      const cmd = fs.readFileSync(0, 'utf8');
       const todas = llamadas(cmd, { shell: arg('--shell') === 'powershell' ? 'powershell' : 'bash' });
       // la salida de una ejecución perdida: la frase vale desde la apertura de esa ejecución y, según la decisión única de
       // open-runs.js, sin reenvío
@@ -271,11 +163,10 @@ if (require.main === module) {
         const ap = s.sesion ? aperturaDe(s.sesion) : null;
         return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde: (ap && ap.ts) || '-', sinReenvio: !salida.reenvio };
       }).filter((x) => x.esc);
-      aprobaciones = todas.filter(esAprobacion);
     } catch (e) {
       pedidas = dudoso(`no pude leer el comando: ${e.message}`);
     }
-    if (!pedidas.length && !(aprobaciones && aprobaciones.length)) { process.stdout.write('hay=0\n'); process.exit(0); }
+    if (!pedidas.length) { process.stdout.write('hay=0\n'); process.exit(0); }
   }
   let r;
   try { r = consulta(sid); } catch (e) { r = { hay: '?', motivo: `no pude consultar la ejecución (${e.message})` }; }
@@ -283,40 +174,22 @@ if (require.main === module) {
   process.stdout.write(`hay=${hay}\nautonomo=${r.autonomo ? 1 : 0}\nabierta=${r.abierta ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
-  let frenos;
   for (const pedida of pedidas || []) {
     const { l, esc, siempre, perdida, desde, sinReenvio } = pedida;
-    // la salida de una ejecución perdida: además, desde cuándo vale la frase y si acepta el reenvío (nunca vacíos: el
+    // la salida de una ejecución perdida: además, desde cuándo vale la firma y si acepta el reenvío (nunca vacíos: el
     // freno parte el renglón por tabuladores y dos seguidos se juntan)
     if (perdida) {
       process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${una(desde)}\t${sinReenvio ? 1 : 0}\n`);
       continue;
     }
-    // apagar el pase adversarial pide la frase siempre, también sin ejecución: `pipeline.js start` la crea. Un comando
+    // apagar el pase adversarial pide la firma siempre, también sin ejecución: `pipeline.js start` la crea. Un comando
     // que no se pudo leer, también
     if (hay === 0 && esc !== 'no-deep-review' && !siempre) continue;
-    // cerrar como deuda, declarar un control a mano y dar por corridos los revisores piden la frase siempre que haya una
+    // cerrar como deuda, declarar un control a mano y dar por corridos los revisores piden la firma siempre que haya una
     // ejecución: no dependen de cómo esté
     const aplica = siempre || esc === 'cerrar como deuda' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
       : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
     if (!aplica) continue;
-    // la frase ya dada para la misma decisión: pasa, y el freno anota el paso con la vía y el relevo de esa frase
-    if (frenos === undefined) frenos = r.hay === true && CUBRE[esc] ? leerFrenos() : undefined;
-    const c = r.hay === true ? cubiertaPor(pedida, frenos || null, sid, r.desde) : null;
-    if (c) {
-      process.stdout.write(`cubre=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${CUBRE[esc]}\t${c.via}\t${una(c.relevo) || '-'}\n`);
-      continue;
-    }
     process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
-  }
-  // ESC-C6: la cita de la aprobación del plan tiene que ser de la persona
-  if (hay !== 0 && aprobaciones && aprobaciones.length) {
-    for (const l of aprobaciones) {
-      // no poder comprobar la cita no es poder pasar: frena con el motivo
-      let v;
-      try { v = citaSinPersona(l, { sesion: sid, pedido: pedidoId, transcript: arg('--transcript') }); } catch (e) { v = { motivo: `no pude comprobar la cita (${e.message})` }; }
-      if (v.sinConversacion) process.stdout.write('sinconversacion=1\n');
-      else if (v.motivo) process.stdout.write(`aprobacion=${una(l.sub || '?')}\t${una(v.motivo)}\n`);
-    }
   }
 }

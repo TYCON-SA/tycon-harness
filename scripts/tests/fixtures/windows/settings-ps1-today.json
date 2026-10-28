@@ -162,7 +162,7 @@
           },
           {
             "type": "command",
-            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/produccion-notice.js\""
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/production-notice.js\""
           },
           {
             "type": "command",
