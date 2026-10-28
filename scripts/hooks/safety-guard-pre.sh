@@ -1295,9 +1295,9 @@ GIT_C4_SHELL_STRING="(^|[^A-Za-z0-9_.-])((bash|sh|zsh|dash|ksh)[[:blank:]]+(-[-A
 # coincidencia, sin tramo en el medio: el recorrido avanza de a una (ver el punto b). Tras `cd` o `-C`
 # van espacios o tabulaciones, no un salto de línea: un `cd` solo en su renglón no nombra nada.
 GIT_C4_NAV="(^|[^A-Za-z0-9_./-])(cd|pushd)[[:blank:]]+|(^|[[:space:]])-C[[:blank:]]+"
-# De una ruta absoluta, el tramo que se lee entero: desde la raíz hasta la última `/` anterior a la primera
-# variable, sustitución o comodín.
-GIT_C4_KNOWN_HEAD='^/[^$`*?[]*/'
+# De una ruta absoluta, el tramo que se lee entero: desde la raíz (`/` o, en Windows, `C:/`) hasta la última
+# `/` anterior a la primera variable, sustitución o comodín.
+GIT_C4_KNOWN_HEAD='^(/|[A-Za-z]:/)[^$`*?[]*/'
 # Cuándo un `cd`/`pushd` ARRANCA un comando (y entonces puede mover al shell): lo que tiene delante termina
 # en el principio, un separador, un salto de línea, o una palabra que abre un bloque. Una comilla no abre
 # un comando (`echo "cd <otro>"` es texto); `$(` tampoco cuenta: es un subshell, el shell de afuera no se mueve.
@@ -1782,7 +1782,9 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     # otro lado, valga lo que valga lo que falta. No vale si el comando trae un `..` en cualquier parte (lo
     # que no se lee podría salir de esa carpeta) ni si la ruta se armó con una variable asignada más de una vez.
     GIT_C4_HEAD_PROOF=0
-    if [[ "$GIT_C4_KNOWN" == "0" && "$GIT_C4_AMBIGUOUS" == "0" && "$CMD" != *..* && "$GIT_C4_DIR" =~ $GIT_C4_KNOWN_HEAD ]]; then
+    GIT_C4_SLASHED="$GIT_C4_DIR"
+    case "$GIT_C4_SLASHED" in [A-Za-z]:*) GIT_C4_SLASHED="${GIT_C4_SLASHED//\\//}" ;; esac
+    if [[ "$GIT_C4_KNOWN" == "0" && "$GIT_C4_AMBIGUOUS" == "0" && "$CMD" != *..* && "$GIT_C4_SLASHED" =~ $GIT_C4_KNOWN_HEAD ]]; then
       GIT_C4_HEAD="${BASH_REMATCH[0]%/}"
       if [[ -d "$GIT_C4_HEAD" ]] && ! git_c4_in_tree "$GIT_C4_HEAD" && ! git_c4_holds_tree "$GIT_C4_HEAD"; then GIT_C4_HEAD_PROOF=1; fi
     fi
