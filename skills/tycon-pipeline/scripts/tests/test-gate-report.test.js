@@ -784,6 +784,34 @@ test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «s
   assert.match(regla, /unscoped/, `la regla TEST-C1 no nombra «sin acotar»: ${regla}`);
 });
 
+test('T75 TestGate_AcotadaPorElRepo_NadieLee_EsVerde — acotada por el repo y sin suite que lea lo tocado es verde y dice quién corre la completa; sin esa constancia, cero corridas sigue sin ser verde', () => {
+  // 🔴 rojo: sin la excepción, la corrida acotada de un cambio de sólo documentación saldría «no corrió ninguna prueba»;
+  //    con la excepción sin mirar `none_touched`, cualquier corrida vacía pasaría por verde.
+  const tmp = tmpReal('tgr-acotada-');
+  const repo = path.join(tmp, 'repo');
+  fs.mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+  escribir(repo, { 'scripts/tests/suites.json': { text: '{"diarias":[],"semanales":[]}\n' } });
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  const correrCon = (scoped, nombre) => {
+    const results = path.join(tmp, `results-${nombre}`);
+    fs.mkdirSync(results, { recursive: true });
+    fs.writeFileSync(path.join(results, 'suites.json'), JSON.stringify({ corridas: 0, verdes: 0, fallas: [], ausentes: [], deferred_suites: [{ suite: 'x', reason: 'no lee lo tocado' }], scoped }));
+    const out = path.join(tmp, `out-${nombre}.json`);
+    const r = spawnSync(process.execPath, [REPORT, 'suites-json', repo, repo, results, out, '0', 'adhoc', '75', '2026-10-28T12:00:00Z',
+      '0', '', 'explicito', '', '{"git":true}', '', '{"ref":null,"source":null,"descartadas":[]}'],
+    { encoding: 'utf8', env: { ...process.env, HOME: tmp, USERPROFILE: tmp, TYCON_GUIDES_DIR: tmp, TYCON_EVIDENCE_DIR: path.join(tmp, 'ev') } });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return JSON.parse(fs.readFileSync(out, 'utf8'));
+  };
+  const nadie = correrCon({ by: 'repo', full_suite_by: 'la CI del pedido', none_touched: true }, 'nadie');
+  assert.strictEqual(nadie.suite_green, true, JSON.stringify(nadie));
+  assert.deepStrictEqual(nadie.scoped_by_repo, { full_suite_by: 'la CI del pedido', none_touched: true });
+  assert.strictEqual(nadie.merge_requires_ci, true);
+  const vacia = correrCon({ by: 'repo', full_suite_by: 'la CI del pedido', none_touched: false }, 'vacia');
+  assert.strictEqual(vacia.suite_green, false, 'cero corridas sin la constancia de «nadie lee lo tocado» no es verde');
+});
+
 test('T74 TestGate_SuitesJson_UnmeasuredReasonReachesArtifact — la suite no medida llega a tests-result.json con su motivo', () => {
   // 🔴 rojo: el informe la contaba como ausente y perdía el motivo que da run-suites-json.js.
   const tmp = tmpReal('tgr-nomedida-');

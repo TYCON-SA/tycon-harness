@@ -845,6 +845,57 @@ test('T5 8.55-SoloLoTocado_SinSaber_O_SinSuites_Sale7 @story-8.55 @ac-5 — sin 
   assert.match(nadieLee.resumen.unscoped.reason, /ninguna suite lee lo que la story tocó en este repo/);
 });
 
+function runScopedByRepo(f, { touched, ci = 'la CI de GitHub del pedido' } = {}) {
+  const out = path.join(f.root, 'out.json');
+  const args = [RUNNER, f.repo, out, '--skills', f.skills, '--scoped-by-repo', ci];
+  if (touched !== undefined) {
+    const tf = path.join(f.root, 'touched.json');
+    fs.writeFileSync(tf, JSON.stringify(touched));
+    args.push('--touched', tf);
+  }
+  const e = { ...process.env };
+  delete e.TYCON_GATE_ALL_SUITES;
+  const r = spawnSync('node', args, { encoding: 'utf8', env: e });
+  const resumen = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;
+  return { status: r.status, stdout: r.stdout, stderr: r.stderr, resumen };
+}
+
+test('T29 PortonAcotadoPorElRepo_CorreSoloLoTocado — con --scoped-by-repo corre sólo lo que lee lo tocado y el resumen dice qué CI corre la completa', () => {
+  // 🔴 mutación: sin el modo, el corredor corre las dos; sin `scoped`, el informe no puede decir quién corre la completa.
+  const f = hermanoLab();
+  const r = runScopedByRepo(f, { touched: { known: true, files: ['scripts/lib/acme.js'] } });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 1, JSON.stringify(r.resumen));
+  assert.match(r.resumen.deferred_suites[0].suite, /otra\.test\.js$/);
+  assert.match(r.resumen.deferred_suites[0].reason, /la suite completa la corre la CI del pedido \(la CI de GitHub del pedido\)/);
+  assert.deepEqual(r.resumen.scoped, { by: 'repo', full_suite_by: 'la CI de GitHub del pedido', none_touched: false });
+  assert.equal(r.resumen.unscoped, undefined);
+});
+
+test('T30 PortonAcotadoPorElRepo_NadieLee_Verde_SinSaber_CorreTodo — si ninguna suite lee lo tocado sale verde y lo dice; sin saber qué se tocó, corre todo', () => {
+  // 🔴 mutación: «ninguna lo lee» no debe salir 3 (rojo) ni 7 (el repo declaró que lo respalda la CI); «no sé» no debe
+  //    acotar: saldría 7 sin correr nada, y una suite roja pasaría.
+  const f = hermanoLab();
+  const nadieLee = runScopedByRepo(f, { touched: { known: true, files: ['docs/nada.md'] } });
+  assert.equal(nadieLee.status, 0, `${nadieLee.stdout}\n${nadieLee.stderr}`);
+  assert.equal(nadieLee.resumen.corridas, 0);
+  assert.equal(nadieLee.resumen.scoped.none_touched, true);
+  assert.match(nadieLee.stdout, /ninguna suite lee lo tocado; la suite completa la corre la CI del pedido/);
+  const sinSaber = runScopedByRepo(f, { touched: { known: false, files: [], reason: 'la base cayó a HEAD' } });
+  assert.equal(sinSaber.status, 0, sinSaber.stdout);
+  assert.equal(sinSaber.resumen.corridas, 2, JSON.stringify(sinSaber.resumen));
+  assert.equal(sinSaber.resumen.unscoped, undefined);
+  assert.equal(sinSaber.resumen.scoped, undefined);
+  assert.match(sinSaber.stdout, /no sé qué se tocó \(la base cayó a HEAD\): corren todas las suites/);
+  // una suite roja entre las elegidas sigue siendo rojo
+  f.escribir('arnes', 'tests/lee.test.js', "// lee scripts/lib/acme.js\nprocess.exit(1)\n");
+  const roja = runScopedByRepo(f, { touched: { known: true, files: ['scripts/lib/acme.js'] } });
+  assert.equal(roja.status, 1, roja.stdout);
+  // sin texto de la CI, el modo no se prende: «no sé quién corre la completa» no acota
+  const sinCi = spawnSync('node', [RUNNER, f.repo, path.join(f.root, 'o2.json'), '--skills', f.skills, '--scoped-by-repo'], { encoding: 'utf8' });
+  assert.equal(sinCi.status, 2, sinCi.stderr);
+});
+
 test('T15 8.55-Suites_NoHeredanLasVariablesDelPorton @story-8.55 @ac-10 — las suites no ven las variables internas del portón', () => {
   // 🔴 mutación: cada suite hereda la clave de la evidencia y las marcas del hermano; una suite que corre su propio portón de
   //    juguete las toma como suyas (la clave renombra su copia sellada; la marca del hermano la acota).

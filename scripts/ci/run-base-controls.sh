@@ -134,6 +134,9 @@ const writeOut = console.log.bind(console);
 console.log = (...args) => writeOut(args.map(String).join(' ').split('\n').map(neutral).join('\n'));
 const asPath = (r) => (typeof r === 'string' ? r : r && r.path);
 const isOptional = (r) => typeof r === 'object' && r !== null && r.optional === true;
+// una regla que ninguna pasada lee (un modo que sólo mira la máquina, como el alcance del portón): con «sign_on_change» su
+// cambio pide la constancia aunque la base y el pedido pasen
+const signsOnChange = (r) => typeof r === 'object' && r !== null && r.sign_on_change === true;
 const approvalFiles = (inv) => [].concat(inv.approvals || []).filter((x) => typeof x === 'string' && x);
 
 // ── el inventario ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -234,13 +237,14 @@ function dataNamedBy(root, rev, file, text) {
 function resolveInventory(root, rev, inv) {
   const owner = new Map();
   const rules = new Set();
+  const signOnChange = new Set();
   const add = (p, who) => { if (!p) return; rules.add(p); if (!owner.has(p)) owner.set(p, who); };
   add(inv.hook, 'el pre-commit');
   add(INVENTORY, 'el inventario');
   const scripts = inv.controls.map((c) => c.script).filter(Boolean);
   for (const c of inv.controls) {
     add(c.script, `control ${c.name}`);
-    for (const r of c.rules || []) add(asPath(r), `control ${c.name}`);
+    for (const r of c.rules || []) { add(asPath(r), `control ${c.name}`); if (signsOnChange(r) && asPath(r)) signOnChange.add(asPath(r)); }
   }
   const closure = codeClosure(root, rev, [inv.hook, ...scripts]);
   for (const f of closure) add(f, 'código que corre un control');
@@ -250,7 +254,7 @@ function resolveInventory(root, rev, inv) {
   if (hookText !== null) for (const p of scriptsCalledByHook(hookText)) add(p, 'el pre-commit');
   const workflows = (inv.workflows || []).filter((w) => w && w.path);
   for (const w of workflows) if (!owner.has(w.path)) owner.set(w.path, 'workflow');
-  return { rules, owner, closure, workflows };
+  return { rules, owner, closure, workflows, signOnChange };
 }
 
 /** Los problemas del inventario contra un árbol: guiones que faltan, controles sin entrada o que nada corre, datos sin clasificar. */
@@ -587,7 +591,7 @@ function analyze() {
   if (read.missing) notRun(`la base ${short(base)} no trae ${INVENTORY}: no sé qué controles correr desde ella`);
   if (read.error) notRun(`el inventario de la base (${INVENTORY}) no se lee: ${read.error}`);
   const inv = read.inv;
-  const { rules, owner, workflows } = resolveInventory(root, base, inv);
+  const { rules, owner, workflows, signOnChange } = resolveInventory(root, base, inv);
   const controlFiles = [...new Set([...rules, ...workflows.map((w) => w.path)])].sort();
   // un archivo que el pedido suma y que el código de un control carga en la punta también entra: la base no lo conoce,
   // y sin él la firma de un control que se afloja no lo ancla (se podría cambiar después con la firma valiendo). Lo que
@@ -602,7 +606,7 @@ function analyze() {
   const entries = changed.map((p) => ({ path: p, blob: blobOf(root, signedRev, p) || 'borrado' }));
   const files = approvalFiles(inv);
   const approvalsOut = opt('--approvals-out') || files[0] || '.tycon/control-changes.jsonl';
-  return { root, base, baseArg, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut };
+  return { root, base, baseArg, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, signOnChange, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut };
 }
 function printChanges(a) {
   if (!a.changed.length) { console.log('base-controls: el pedido no cambia ningún archivo de regla ni workflow del inventario'); return; }
@@ -735,7 +739,8 @@ function cmdRun() {
     if (unproven.length && !inBase) reasons.push(`no pude leer las constancias de la base ${short(a.base)}: una aprobación por delegación no se da por buena sin compararla (${unproven.map((x) => short(x.hash)).join(', ')})`);
     else if (unproven.length) reasons.push(`una aprobación por delegación nueva ya no vale: el dueño la firma en la ventana o en su terminal (${unproven.map((x) => short(x.hash)).join(', ')})`);
     let approved = false;
-    if (baseRed && !prRed) {
+    const mustSign = a.changed.filter((p) => a.signOnChange.has(p));
+    if ((baseRed || mustSign.length) && !prRed) {
       if (a.changed.length) {
         // la línea tiene que cuadrar entera: el hash del cambio, y sus reglas son las que dan ese hash
         const signed = approvals.some((x) => x && x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash && !unproven.includes(x));

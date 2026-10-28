@@ -634,6 +634,13 @@ function informe(argv) {
           result.unscoped_reason = get(sinAcotar, 'reason', null);
           result.merge_requires_ci = true;
         }
+        // Acotada por el repo (`test_gate` de .test-gate.yaml): en la máquina corrió sólo lo que lee lo tocado; la
+        // suite completa la corre la CI que el repo declaró, y el merge la exige en verde.
+        const acotada = get(r, 'scoped', null);
+        if (acotada && get(acotada, 'by', null) === 'repo') {
+          result.scoped_by_repo = { full_suite_by: get(acotada, 'full_suite_by', null), none_touched: get(acotada, 'none_touched', false) === true };
+          result.merge_requires_ci = true;
+        }
         if (get(r, 'no_medido')) {
           result.totals_error = r.no_medido;
         } else {
@@ -711,7 +718,10 @@ function informe(argv) {
   // Acá el informe no da verde con cualquier salida 0. Ejemplo: lanzada desde una prueba de `node --test`,
   // el hijo hereda NODE_TEST_CONTEXT, la suite escribe en el formato
   // interno de Node, no se cuenta nada… y quedaría `suite_green: true`. La salida real de la suite se conserva.
-  if (result.suite_green) {
+  // La excepción: acotada por el repo y ninguna suite lee lo tocado. No corrió nada a propósito y lo respalda la CI
+  // del pedido, que el repo declaró y que el merge exige en verde.
+  const nadaQueLea = Boolean(result.scoped_by_repo && result.scoped_by_repo.none_touched && runner === 'suites-json');
+  if (result.suite_green && !nadaQueLea) {
     const corridas = pruebasCorridas(runner, result.totals, todo);
     if (!(corridas > 0)) {
       result.suite_green = false;

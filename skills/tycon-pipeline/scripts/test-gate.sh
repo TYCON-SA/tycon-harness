@@ -874,8 +874,12 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   fi
   BASE_JSON="$(TYCON_TEST_GATE_CROSS_REPO="$TG_CROSS" node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
   [[ -n "$BASE_JSON" ]] || BASE_JSON='{"ref":null,"source":null,"descartadas":[{"source":"coverage-base","motivo":"no se pudo correr lib/coverage-base.js"}]}'
-  # Sin base, touched-files dice «no sé» y el runner corre todo (el lado seguro); igual se dice por qué.
-  _TG_BASE="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.ref||"")}catch(e){process.stderr.write(`[test-gate] ⚠️  la base de la corrida es ilegible (${e.message}): corren todas las suites\n`)}' "$BASE_JSON" || true)"
+  # Sin base, touched-files dice «no sé» y el runner corre todo (el lado seguro; la corrida cruzada sale 7 sin correr
+  # nada); igual se dice por qué. En el árbol armado del privado lo tocado sale de los dos repos, no de esta base.
+  _TG_SIN_TOCADO="corren todas las suites"
+  [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_SIN_TOCADO="en el árbol armado lo tocado sale de los dos repos, no de esta base"
+  [[ "$TG_CROSS" == "1" ]] && _TG_SIN_TOCADO="sin acotar — no corre ninguna suite (salida 7), la cubre la CI del pedido"
+  _TG_BASE="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.ref||"")}catch(e){process.stderr.write(`[test-gate] ⚠️  la base de la corrida es ilegible (${e.message}): ${process.argv[2]}\n`)}' "$BASE_JSON" "$_TG_SIN_TOCADO" || true)"
   # De dónde salió la base (env · marcador · HEAD): con «HEAD» por defecto lo commiteado no se ve, y
   # touched-files contesta «no sé» (pase adversarial 2026-09-29).
   _TG_BASE_SRC="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.source||"")}catch(e){}' "$BASE_JSON" 2>/dev/null || true)"
@@ -895,7 +899,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   elif node "$SCRIPT_DIR/lib/touched-files.js" "$REPO_RUN" "$_TG_STORY_FILE" "$_TG_BASE" "$_TG_BASE_SRC" > "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
     TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
   else
-    echo "[test-gate] ⚠️  no pude averiguar qué archivos toca la story ($(head -1 "$RESULTS_DIR/touched.err")): corren todas las suites" >&2
+    echo "[test-gate] ⚠️  no pude averiguar qué archivos toca la story ($(head -1 "$RESULTS_DIR/touched.err")): $_TG_SIN_TOCADO" >&2
   fi
   # Story 7.32: en una corrida liviana (sólo documentación) corren sólo las suites que leen lo tocado; las demás quedan
   # «diferidas por corrida liviana», con la lista en el resumen. El tamaño lo dice el marcador de la sesión; sin
@@ -906,6 +910,17 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   if [[ "$TG_CROSS" == "1" ]]; then
     LIGHT_ARGS=(--only-touched)
     echo "[test-gate] la story vive en otro repo: corren sólo las suites que leen lo tocado (la completa la corre la CI del pedido)"
+  elif [[ -z "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+    # El repo declara en `.test-gate.yaml` (lo commiteado: `test_gate`, lib/test-gate-scope.js) que su suite entera
+    # la corre una CI antes del merge: en la máquina corren sólo las suites que leen lo tocado. Sin la clave, todo.
+    _tg_scope_rc=0
+    TG_FULL_SUITE_BY="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO_RUN")" || _tg_scope_rc=$?
+    if [[ "$_tg_scope_rc" == "0" && -n "$TG_FULL_SUITE_BY" ]]; then
+      LIGHT_ARGS=(--scoped-by-repo "$TG_FULL_SUITE_BY")
+      echo "[test-gate] el repo acota el portón (test_gate en .test-gate.yaml): corren sólo las suites que leen lo tocado; la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY)"
+    elif [[ "$_tg_scope_rc" != "10" ]]; then
+      echo "[test-gate] ⚠️  no pude leer test_gate de .test-gate.yaml (salió $_tg_scope_rc): corre la suite entera" >&2
+    fi
   fi
   _TG_SIZE="$(node "$MARKER_JS" get 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(t).size||""))}catch(e){process.stderr.write("[test-gate] no pude leer el tamaño de la corrida del marcador: corren las suites de siempre\n")}})' || true)"
   if [[ "$_TG_SIZE" == "liviana" ]]; then
@@ -1051,6 +1066,13 @@ if [[ "$SUITE_EXIT" == "0" ]]; then
     ( cd "$REPO_RUN" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite salió 0 sin ninguna prueba corrida (o sin informe que lo cuente): no es verde"); process.exit(6)' ) || true
     SUITE_EXIT=6
   fi
+fi
+
+# Acotada por el repo: el cierre lo dice en una línea, verde o rojo, sólo si el corredor acotó de verdad (con
+# TYCON_GATE_ALL_SUITES=1, o sin saber qué se tocó, corrió todo y su resumen no trae `scoped`).
+if [[ -n "${TG_FULL_SUITE_BY:-}" && "$RUNNER" == "suites-json" ]] \
+  && node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scoped ? 0 : 1)' "$RESULTS_DIR/suites.json" 2>/dev/null; then
+  echo "[test-gate] la suite completa la corre la CI del pedido ($TG_FULL_SUITE_BY): en esta máquina corrieron sólo las suites que leen lo tocado" >&2
 fi
 
 exit "$SUITE_EXIT"
