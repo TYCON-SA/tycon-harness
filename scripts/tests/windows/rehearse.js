@@ -60,8 +60,8 @@ const HERE = __dirname;
 // Las partes de la base portable, en el orden en que corren. Las suites van ANTES que el banco: si `bench-portable`
 // falla, lo que diga el banco entero no es de fiar. Cada una con su tope en segundos.
 // suites: las de W1 más las del registro de hooks, el piso de Node, los frenos y el cierre (~3 min en la Mac; se cuenta
-// cuatro veces eso en Windows)
-const PORTABLE_STEPS = Object.freeze({ 'fresh-clone': 2400, 'existing-clone': 3000, 'git-bash': 1500, suites: 2900, bench: 6600, 'path-shapes': 2100 });
+// cuatro veces eso en Windows; safety-escape tiene su tope propio, de 30 min)
+const PORTABLE_STEPS = Object.freeze({ 'fresh-clone': 2400, 'existing-clone': 3000, 'git-bash': 1500, suites: 3600, bench: 6600, 'path-shapes': 2100 });
 const SCENARIOS = Object.freeze({
   update: ['inventory', 'update'],
   onboarding: ['inventory', 'onboarding', 'count-hooks', 'fire-registered'],

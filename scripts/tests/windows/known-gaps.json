@@ -39,22 +39,10 @@
       "note": "@tcg:failed-query-notice.js frena (el banco le pide frenar) y el banco no trae, para PostToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
     },
     {
-      "id": "fire:no-portable-case:PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js",
-      "step": "fire-registered",
-      "closes": "W1",
-      "note": "tycon-pipeline/scripts/hook-pre-edit.js frena (el banco le pide frenar) y el banco no trae, para PreToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
-    },
-    {
       "id": "fire:no-portable-case:PreToolUse:tycon-pipeline/scripts/on-pre-commit.js",
       "step": "fire-registered",
       "closes": "W1",
       "note": "tycon-pipeline/scripts/on-pre-commit.js frena (el banco le pide frenar) y el banco no trae, para PreToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
-    },
-    {
-      "id": "fire:no-portable-case:PreToolUse:tycon-pipeline/scripts/on-bash-write-gate.js",
-      "step": "fire-registered",
-      "closes": "W1",
-      "note": "tycon-pipeline/scripts/on-bash-write-gate.js frena (el banco le pide frenar) y el banco no trae, para PreToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
     },
     {
       "id": "fire:brake-passes:PreToolUse:@tcg:pr-auto-complete-guard.js:pwsh-command",
@@ -103,6 +91,30 @@
       "step": "fire-registered",
       "closes": "W5",
       "note": "@tcg:test-scope-guard-pre.sh, lanzado por pwsh-file, NO frenó la entrada que tiene que frenar (caso block-npm-test-sin-scope): salió 0 — 🛑 TYCON test-scope-guard BLOCK [TEST-DISCIPLINE]"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js:pwsh-command",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "tycon-pipeline/scripts/hook-pre-edit.js, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar (caso control-approvals-write-carpeta-del-publico): salió 1 — ⛔ una constancia de cambio de control no se escribe a mano"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js:pwsh-file",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "tycon-pipeline/scripts/hook-pre-edit.js, lanzado por pwsh-file, NO frenó la entrada que tiene que frenar (caso control-approvals-write-carpeta-del-publico): salió 0 — ⛔ una constancia de cambio de control no se escribe a mano"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:tycon-pipeline/scripts/on-bash-write-gate.js:pwsh-command",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "tycon-pipeline/scripts/on-bash-write-gate.js, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar (caso control-approvals-consola-redireccion): salió 1 — ⛔ una constancia de cambio de control no se escribe a mano"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:tycon-pipeline/scripts/on-bash-write-gate.js:pwsh-file",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "tycon-pipeline/scripts/on-bash-write-gate.js, lanzado por pwsh-file, NO frenó la entrada que tiene que frenar (caso control-approvals-consola-redireccion): salió 0 — ⛔ una constancia de cambio de control no se escribe a mano"
     },
     {
       "id": "fire:no-portable-case:Stop:tycon-pipeline/scripts/on-stop-dod-gate.js",

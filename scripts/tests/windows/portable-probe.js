@@ -93,7 +93,9 @@ const GIT_BASH = path.join(__dirname, '..', '..', 'lib', 'git-bash.js');
 const FINDER = 'scripts/lib/git-bash.js';
 const RUNNER = 'scripts/controls-bench/runner.js';
 // los topes, en segundos
-const CAP = Object.freeze({ git: 600, test: 900, quick: 120, bench: 5100, 'bench-part': 900 });
+const CAP = Object.freeze({ git: 600, test: 900, quick: 120, bench: 5100, 'bench-part': 900, 'slow-test': 1800 });
+// las suites que en Windows no entran en `test`: safety-escape, con 112 pruebas, pasa los 15 min (en la Mac tarda 9,5)
+const SLOW_TESTS = new Set(['safety-escape']);
 
 const say = (s) => process.stdout.write(`${s}\n`);
 const isBashScript = (rel) => /\.sh$/.test(rel) || /^\.githooks\//.test(rel);
@@ -186,9 +188,10 @@ function runTest(runner, name, { clone, env, id = name, look = null, bash = null
   if (!fs.existsSync(path.join(clone, file))) return { file, not_run: `el commit que se mide no trae ${file}` };
   const sh = /\.sh$/.test(file);
   if (sh && !bash) return { file, not_run: `${file} es de bash y no hay bash de Git` };
+  const cap = SLOW_TESTS.has(name) ? CAP['slow-test'] : CAP.test;
   const r = sh
-    ? runner.run(id, `la suite ${path.basename(file)}`, bash, [file], { cwd: clone, env, cap: CAP.test, line: `<bash de findGitBash()> ${file}` })
-    : runner.run(id, `la suite ${path.basename(file)}`, process.execPath, [file], { cwd: clone, env, cap: CAP.test, line: `node ${file}` });
+    ? runner.run(id, `la suite ${path.basename(file)}`, bash, [file], { cwd: clone, env, cap, line: `<bash de findGitBash()> ${file}` })
+    : runner.run(id, `la suite ${path.basename(file)}`, process.execPath, [file], { cwd: clone, env, cap, line: `node ${file}` });
   const t = Object.assign({ file, exit: r.exit, error: r.error, timed_out: r.timed_out, saved: r.saved }, sh ? P.parseShellSuite(r.text) : P.parseTap(r.text));
   if (look) t.says = Object.fromEntries(Object.entries(look).map(([k, rx]) => [k, rx.test(r.text)]));
   // de una suite que no pasó, el principio y el final de lo que dijo (entero está en `saved`)
@@ -556,4 +559,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { PARTS, NORMALIZE, PLAIN_RESTORE, TEST_FILES, CAP, isBashScript, scriptsWithCr, listing, commandRunner, parseFound, places, isUnified, skillsFor, reposOf, singleRepo, skillsProblem, measure };
+module.exports = { PARTS, NORMALIZE, PLAIN_RESTORE, TEST_FILES, CAP, SLOW_TESTS, isBashScript, scriptsWithCr, listing, commandRunner, parseFound, places, isUnified, skillsFor, reposOf, singleRepo, skillsProblem, measure };
