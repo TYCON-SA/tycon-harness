@@ -1492,14 +1492,31 @@ test('T12b NombreArmado_FormasQueNoAsignan_NoFrenan — cuentas, palabras que em
   }
 });
 
-const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
-/**
- * ¿El costo de ahora (`b`, ms) es aceptable contra el de antes (`a`)? Hasta un 20 % más, o hasta 20 ms más: en una
- * máquina compartida el ruido de una mediana llega a 14 ms, y un proceso hijo de más cuesta 40 ms o más.
- */
-const costoAceptable = (a, b) => b <= Math.max(a * 1.2, a + 20);
+// El costo del freno es, sobre todo, cuántos `node` arranca: cada uno cuesta 40 ms o más. Se cuentan, no se cronometran:
+// los milisegundos de una máquina compartida cambian con su carga y daban rojo en pedidos que no tocaban el freno. Un
+// preload de Node (heredado por NODE_OPTIONS) anota cada proceso Node que arranca el guion. Los otros programas del guion
+// (jq, git, sed) no se cuentan: lo que este caso cuida es que un comando común no arranque node de más. Si el preload no
+// cargara, T8b (los mismos contadores con un node seguro) da rojo.
 
-// stable-data: T8 mide cuánto tarda el freno; ninguna fecha entra en lo que se compara.
+/** Un preload que anota en `TYCON_TEST_NODE_LOG` cada `node` que arranca; se escribe en una carpeta temporal. */
+function contadorDeNodes() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'safety-escape-nodes-'));
+  const preload = path.join(dir, 'contar-nodes.js');
+  fs.writeFileSync(preload, "try { require('fs').appendFileSync(process.env.TYCON_TEST_NODE_LOG, `node ${process.argv[1] || '-e'}\\n`); } catch (_) {}\n");
+  return { dir, preload };
+}
+
+/** Cuántos `node` arranca el guion `hook` al juzgar el comando `c`, con la HOME `home`. */
+function nodesDe(hook, home, c, contador) {
+  const log = path.join(contador.dir, `nodes-${Date.now()}-${Math.random()}.log`);
+  const e = { ...process.env, HOME: home, USERPROFILE: home };
+  for (const k of Object.keys(e)) if (/^TYCON_/.test(k)) delete e[k];
+  Object.assign(e, { NODE_OPTIONS: `--require "${contador.preload}"`, TYCON_TEST_NODE_LOG: log });
+  spawnSync('bash', [hook], { input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: c }, cwd: home }), env: e, encoding: 'utf8' });
+  return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+}
+
+// stable-data: T8 cuenta los node que arranca el freno; ninguna fecha entra en lo que se compara.
 test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no corre node de más', (t) => {
   // el freno de antes (la rama de la 8.104), en un árbol de juguete que comparte las bibliotecas de éste
   const viejo = spawnSync('git', ['-C', RAIZ, 'show', '17b4315a:scripts/hooks/safety-guard-pre.sh'], { encoding: 'utf8' });
@@ -1512,28 +1529,26 @@ test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no 
   const hookViejo = path.join(arbol, 'scripts', 'hooks', 'safety-guard-pre.sh');
   fs.writeFileSync(hookViejo, viejo.stdout);
   const home = homeConMarcador(VERDE, [deLaPersona('seguí')]);
-  const vuelta = (hook, c) => {
-    const e = { ...process.env, HOME: home, USERPROFILE: home };
-    for (const k of Object.keys(e)) if (/^TYCON_/.test(k)) delete e[k];
-    const t = process.hrtime.bigint();
-    spawnSync('bash', [hook], { input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: c }, cwd: home }), env: e, encoding: 'utf8' });
-    return Number(process.hrtime.bigint() - t) / 1e6;
-  };
+  const contador = contadorDeNodes();
   for (const c of ['ls -la', 'git status']) {
-    const antes = [], ahora = [];
-    // alternadas, para que la carga de la máquina pese igual en las dos
-    for (let i = 0; i < 50; i++) { antes.push(vuelta(hookViejo, c)); ahora.push(vuelta(HOOK, c)); }
-    const [a, b] = [mediana(antes), mediana(ahora)];
-    assert.ok(costoAceptable(a, b), `${c}: mediana antes ${a.toFixed(1)} ms, ahora ${b.toFixed(1)} ms (más de un 20 % y de 20 ms arriba)`);
+    const antes = nodesDe(hookViejo, home, c, contador);
+    const ahora = nodesDe(HOOK, home, c, contador);
+    assert.ok(ahora.length <= antes.length,
+      `${c}: el freno arranca ${ahora.length} node y antes arrancaba ${antes.length}\n  antes: ${antes.join(' · ') || '—'}\n  ahora: ${ahora.join(' · ') || '—'}`);
   }
 });
 
-test('T8b FiltroPrevio_MedicionToleraRuido @story-8.107 @ac-6 — la comparación del costo no da rojo por el ruido de una máquina cargada', () => {
-  // el rojo de la CI compartida, en un pedido que no tocaba el freno: 68,5 ms antes, 82,4 ms ahora
-  assert.ok(costoAceptable(68.5, 82.4));
-  // un proceso hijo más cuesta 40 ms o más: eso sí se ve
-  assert.ok(!costoAceptable(68.5, 128.5));
-  assert.ok(!costoAceptable(300, 400));
+test('T8b FiltroPrevio_ConteoVeUnNodeDeMas @story-8.107 @ac-6 — el conteo ve un node de más y no depende del reloj', () => {
+  // dos guiones de juguete: uno arranca un node y el otro dos; el conteo los distingue, en cualquier máquina
+  const contador = contadorDeNodes();
+  const home = homeConMarcador(VERDE, [deLaPersona('seguí')]);
+  const guion = (n) => {
+    const f = path.join(contador.dir, `freno-${n}.sh`);
+    fs.writeFileSync(f, `#!/usr/bin/env bash\ncat >/dev/null\nfor i in $(seq 1 ${n}); do node -e 0; done\nexit 0\n`);
+    return f;
+  };
+  assert.strictEqual(nodesDe(guion(1), home, 'ls', contador).length, 1);
+  assert.strictEqual(nodesDe(guion(2), home, 'ls', contador).length, 2, 'un node de más se ve');
 });
 
 // ── El interruptor del estado a mano (@story-8.109) ─────────────────────────────────────────────────────────────────────

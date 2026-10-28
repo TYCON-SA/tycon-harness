@@ -257,16 +257,33 @@ test('T8 EstadoLeerYUsar_Pasa @story-8.109 @ac-6 — leer, copiar afuera, los co
 });
 
 // ── Costo (AC 7) ──────────────────────────────────────────────────────────────────────────────────────────────────────
+// El costo de la puerta es, sobre todo, cuántos procesos lanza: cada proceso hijo cuesta 40 ms o más. Se cuentan, no se
+// cronometran: los milisegundos de una máquina compartida cambian con su carga y daban rojo en pedidos que no tocaban la
+// puerta. Un preload de Node anota cada llamada de `child_process` del gancho (y de los procesos Node que lance).
 
-const mediana = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
-/**
- * ¿El costo de ahora (`b`, ms) es aceptable contra el de antes (`a`)? Hasta un 20 % más, o hasta 20 ms más: en una
- * máquina compartida el ruido de una mediana llega a 14 ms, y un proceso hijo de más cuesta 40 ms o más.
- */
-const costoAceptable = (a, b) => b <= Math.max(a * 1.2, a + 20);
+/** Un preload que anota en `TYCON_TEST_CHILD_LOG` cada proceso que se lanza; se escribe en una carpeta temporal. */
+function contadorDeHijos() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'status-by-hand-hijos-'));
+  const preload = path.join(dir, 'contar-hijos.js');
+  fs.writeFileSync(preload, [
+    "const cp = require('child_process'); const fs = require('fs'); const log = process.env.TYCON_TEST_CHILD_LOG;",
+    "for (const f of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'exec', 'execSync', 'fork']) {",
+    "  const original = cp[f];",
+    "  cp[f] = function (...a) { try { fs.appendFileSync(log, `${f} ${String(a[0])}\\n`); } catch (_) {} return original.apply(this, a); };",
+    "}",
+  ].join('\n'));
+  return { dir, preload };
+}
 
-// stable-data: T9 mide cuánto tarda la puerta; ninguna fecha entra en lo que se compara.
-test('T9 Porton_NoSubeElCosto @story-8.109 @ac-7 — un comando común no tarda más de un 20 % que antes', (t) => {
+/** Cuántos procesos lanza `gancho` al juzgar el comando `c`. */
+function hijosDe(gancho, h, c, contador) {
+  const log = path.join(contador.dir, `hijos-${Date.now()}-${Math.random()}.log`);
+  correr(gancho, h, { tool_name: 'Bash', tool_input: { command: c } }, { NODE_OPTIONS: `--require "${contador.preload}"`, TYCON_TEST_CHILD_LOG: log });
+  return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+}
+
+// stable-data: T9 cuenta los procesos de la puerta; ninguna fecha entra en lo que se compara.
+test('T9 Porton_NoSubeElCosto @story-8.109 @ac-7 — un comando común o una escritura no lanzan más procesos que antes', (t) => {
   const viejo = spawnSync('git', ['-C', RAIZ, 'show', '2b58150c:skills/tycon-pipeline/scripts/on-bash-write-gate.js'], { encoding: 'utf8' });
   // sin la historia del repo no hay puerta de antes con qué comparar: se saltea diciéndolo, no sale verde
   if (viejo.status !== 0) { t.skip('sin la historia del repo (2b58150c) no hay puerta de antes con qué comparar'); return; }
@@ -279,26 +296,30 @@ test('T9 Porton_NoSubeElCosto @story-8.109 @ac-7 — un comando común no tarda 
   const puertaVieja = path.join(dir, 'on-bash-write-gate.js');
   fs.writeFileSync(puertaVieja, viejo.stdout);
   const h = nuevaHome();
-  const vuelta = (gancho, c) => {
-    const t0 = process.hrtime.bigint();
-    correr(gancho, h, { tool_name: 'Bash', tool_input: { command: c } });
-    return Number(process.hrtime.bigint() - t0) / 1e6;
-  };
-  for (const c of ['ls -la', 'git status']) {
-    const antes = [], ahora = [];
-    // alternadas, para que la carga de la máquina pese igual en las dos
-    for (let i = 0; i < 50; i++) { antes.push(vuelta(puertaVieja, c)); ahora.push(vuelta(PUERTA, c)); }
-    const [a, b] = [mediana(antes), mediana(ahora)];
-    assert.ok(costoAceptable(a, b), `${c}: mediana antes ${a.toFixed(1)} ms, ahora ${b.toFixed(1)} ms (más de un 20 % y de 20 ms arriba)`);
+  const contador = contadorDeHijos();
+  // dos comandos comunes (hoy no lanzan ningún proceso) y una escritura (hoy lanza los de git que la ubican)
+  for (const c of ['ls -la', 'git status', 'echo hola > archivo.txt']) {
+    const antes = hijosDe(puertaVieja, h, c, contador);
+    const ahora = hijosDe(PUERTA, h, c, contador);
+    // la escritura lanza procesos en la puerta de antes: si el contador no anotara nada, «0 contra 0» saldría verde
+    if (c.startsWith('echo')) assert.ok(antes.length >= 1, `${c}: el contador no vio ningún proceso de la puerta de antes`);
+    assert.ok(ahora.length <= antes.length,
+      `${c}: la puerta lanza ${ahora.length} procesos y antes lanzaba ${antes.length}\n  antes: ${antes.join(' · ') || '—'}\n  ahora: ${ahora.join(' · ') || '—'}`);
   }
 });
 
-test('T9b Porton_MedicionToleraRuido @story-8.109 @ac-7 — la comparación del costo no da rojo por el ruido de una máquina cargada', () => {
-  // el rojo de la CI compartida, en un pedido que no tocaba la puerta: 68,5 ms antes, 82,4 ms ahora
-  assert.ok(costoAceptable(68.5, 82.4));
-  // un proceso hijo más cuesta 40 ms o más: eso sí se ve
-  assert.ok(!costoAceptable(68.5, 128.5));
-  assert.ok(!costoAceptable(300, 400));
+test('T9b Porton_ConteoVeUnProcesoDeMas @story-8.109 @ac-7 — el conteo ve un proceso de más y no depende del reloj', () => {
+  // dos ganchos de juguete: uno lanza un proceso y el otro dos; el conteo los distingue, en cualquier máquina
+  const contador = contadorDeHijos();
+  const h = nuevaHome();
+  const gancho = (n) => {
+    const f = path.join(contador.dir, `gancho-${n}.js`);
+    fs.writeFileSync(f, `const { spawnSync } = require('child_process'); for (let i = 0; i < ${n}; i++) spawnSync('git', ['--version']);\n`);
+    return f;
+  };
+  assert.strictEqual(hijosDe(gancho(1), h, 'ls', contador).length, 1);
+  assert.strictEqual(hijosDe(gancho(2), h, 'ls', contador).length, 2, 'un proceso de más se ve');
+  assert.strictEqual(hijosDe(gancho(0), h, 'ls', contador).length, 0);
 });
 
 // ── Lo que encontró el pase adversarial ───────────────────────────────────────────────────────────────────────────────
