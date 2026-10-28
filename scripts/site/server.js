@@ -417,6 +417,13 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     return { status: 200, tipo, cuerpo: datos, extra: { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox", 'Cache-Control': 'private, max-age=300' } };
   }
 
+  /** Cuántas fichas de `fuente` esperan decisión, según la pestaña que las decide; null si ninguna sabe o falla. */
+  function esperanDe(fuente) {
+    const r = rutas.find((x) => x.pestana && typeof x.pestana.esperanDe === 'function');
+    if (!r) return null;
+    try { const n = r.pestana.esperanDe(fuente); return Number.isInteger(n) && n >= 0 ? n : null; } catch (e) { registrar(`inicio: la pestaña ${r.pestana.id} no pudo contar ${fuente} (${e.message})`); return null; }
+  }
+
   function pestanasPara(rol, idioma) {
     // una pestaña sin su clave en la tabla se ve con su título de la tabla de rutas, y se dice en el registro
     const titulo = (p) => { try { return texto(idioma, `pestana.${p.id}`); } catch (e) { registrar(`idioma: la pestaña ${p.id} no tiene su título en la tabla de textos (${e.message})`); return p.titulo; } };
@@ -424,7 +431,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // pudo contar, sólo el nombre: el menú sale igual
     const cuenta = (p) => { if (typeof p.cuenta !== 'function') return 0; try { const n = p.cuenta(); return Number.isInteger(n) && n > 0 ? n : 0; } catch (e) { registrar(`menú: la pestaña ${p.id} no pudo contar (${e.message})`); return 0; } };
     return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => {
-      const { cuenta: _c, ...p } = r.pestana;
+      const { cuenta: _c, esperanDe: _e, ...p } = r.pestana;
       const n = cuenta(r.pestana);
       return { ...p, titulo: n ? `${titulo(p)} (${n})` : titulo(p), path: r.path };
     }).sort((a, b) => a.orden - b.orden);
@@ -669,6 +676,9 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
       avisoSesiones: !demo && quien.rol === 'maintainer' && !cerradas.verificable(),
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
+      // cuántas fichas de una fuente esperan decisión, con la cuenta de la pestaña que las decide (Inicio muestra el
+      // mismo número que esa pestaña); null si no se pudo contar
+      esperan: quien.rol === 'maintainer' ? esperanDe : null,
       // el remoto de operaciones ya resuelto: sólo lo trae el modo demo (sus direcciones de ejemplo no las reconoce remoteOf)
       remotoOperaciones: quien.rol === 'maintainer' && demo ? demo.remotoOperaciones || null : null,
       version, ahora: ahora(),

@@ -162,11 +162,11 @@ test('T24 Despertar_CargandoYDespues', { skip: SIN_BACKEND }, async () => {
     assert.strictEqual(antes.status, 503, 'antes de la primera lectura');
     assert.strictEqual(antes.headers['retry-after'], '5');
     assert.match(antes.texto, /cargando las fuentes/);
-    assert.ok(!/Dependencias nuevas/.test(antes.texto), 'nunca una página con ceros');
+    assert.ok(!/Dependencias por decidir/.test(antes.texto), 'nunca una página con ceros');
     await m.fuentes.refrescar();
     const despues = await h.pedir('/', { cookie: s });
     assert.strictEqual(despues.status, 200);
-    assert.match(despues.texto, /Dependencias nuevas/);
+    assert.match(despues.texto, /Dependencias por decidir/);
   } finally { if (h) await h.cerrar(); await m.cerrar(); await emisor.cerrar(); }
   // primera lectura con el buzón caído y una foto que falta: filas «no medido» con su estado, nunca 0
   const m2 = await montar({ archivos: { [`.dashboard/vigilante/vigilante-${HOY}.json`]: null } });
@@ -254,7 +254,7 @@ test('T40 Configuracion_UltimoBuenoBandaYFreno', { skip: SIN_BACKEND }, async ()
     for (const r of RUTAS) {
       const res = await h.pedir(r.path, { cookie: s });
       assert.strictEqual(res.status, 503, r.path);
-      assert.ok(!/clave_nueva|operations\.json|Dependencias nuevas/.test(res.texto), `${r.path}: sin rutas ni nombres del archivo, sin datos`);
+      assert.ok(!/clave_nueva|operations\.json|Dependencias por decidir/.test(res.texto), `${r.path}: sin rutas ni nombres del archivo, sin datos`);
     }
     assert.match((await h.pedir('/', { cookie: s })).texto, /el sitio está frenado desde .*: la configuración de la organización no valida; se destraba cuando un refresco la lee bien/);
     const hz = await h.pedir('/healthz');

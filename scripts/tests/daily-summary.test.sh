@@ -201,9 +201,9 @@ ficha "$D" pending aaa11111 "$HOY" pendiente A/A
 ficha "$D" promoted ccc33333 "$(fecha "$HOY" -4)" util A/A
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 CLAVES=$(q "$D/a.json" 'Object.keys(j.rubros).sort().join(",")')
-ESPERADAS="aceptadas_sin_resolver,deuda_con_pedido_abierto,edad_mas_vieja,nuevos,pedidos_cerrados,pedidos_cerrados_con_vivas,pedidos_creados,pedidos_reabiertos,postergadas_por_presupuesto,proyectos_con_tipo_de_fabrica,proyectos_sin_iteracion,rechazadas_sin_deuda,resueltas_con_pedido_abierto,vivas_por_proyecto"
-# (catorce rubros: ocho de base, dos del cruce, tres de los pedidos creados, cerrados y reabiertos por el arnés, y uno con los proyectos donde el pedido salió con su elemento de backlog)
-[ "$CLAVES" = "$ESPERADAS" ] && ok "T1 armar devuelve los catorce rubros de dependencias" || no "T1 rubros: esperaba [$ESPERADAS], obtuve [$CLAVES] ($(head -c 300 "$D/a.err"))"
+ESPERADAS="aceptadas_sin_resolver,decisiones_no_aplicadas,deuda_con_pedido_abierto,edad_mas_vieja,nuevos,pedidos_cerrados,pedidos_cerrados_con_vivas,pedidos_creados,pedidos_reabiertos,postergadas_por_presupuesto,proyectos_con_tipo_de_fabrica,proyectos_sin_iteracion,rechazadas_sin_deuda,resueltas_con_pedido_abierto,vivas_por_proyecto"
+# (quince rubros: ocho de base, dos del cruce, tres de los pedidos creados, cerrados y reabiertos por el arnés, uno con los proyectos donde el pedido salió con su elemento de backlog, y las decisiones del sitio que no se aplicaron)
+[ "$CLAVES" = "$ESPERADAS" ] && ok "T1 armar devuelve los quince rubros de dependencias" || no "T1 rubros: esperaba [$ESPERADAS], obtuve [$CLAVES] ($(head -c 300 "$D/a.err"))"
 [ "$(q "$D/a.json" 'Object.values(j.rubros).every(r => r && ["valor","de","motivo"].every(k => Object.prototype.hasOwnProperty.call(r, k)))')" = true ] \
   && ok "T1 cada rubro trae valor, de y motivo (ninguna clave ausente)" || no "T1 algún rubro no trae valor/de/motivo"
 [ "$(q "$D/a.json" '["fuente","fecha","rubros","cambios","fallos","texto"].every(k => k in j) && j.fuente === "dependencias" && j.fecha === "'"$HOY"'"')" = true ] \
@@ -366,8 +366,8 @@ sellar "$D" "$AYER"
 armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
 [ "$(q "$D/a.json" 'JSON.stringify(j.cambios) + "|" + j.fallos.length + "|" + j.texto.split("\n").length')" = '[]|0|3' ] \
   && ok "T5 ayer = hoy y sin fallos: cero cambios (la edad que crece no cuenta) y el texto son tres líneas" || no "T5: $(q "$D/a.json" '[j.cambios, j.fallos, j.texto]')"
-[ "$(q "$D/a.json" 'j.texto.split("\n")[0].startsWith("Sin cambios desde ayer · 2 vivas · 1 aceptadas sin resolver · 0 postergadas") && j.texto.split("\n")[1] === "Sigue igual (14 rubros)"')" = true ] \
-  && ok "T5 primera línea «Sin cambios desde ayer · …» y segunda «Sigue igual (14 rubros)»" || no "T5 forma: $(q "$D/a.json" 'j.texto')"
+[ "$(q "$D/a.json" 'j.texto.split("\n")[0].startsWith("Sin cambios desde ayer · 2 vivas · 1 aceptadas sin resolver · 0 postergadas") && j.texto.split("\n")[1] === "Sigue igual (15 rubros)"')" = true ] \
+  && ok "T5 primera línea «Sin cambios desde ayer · …» y segunda «Sigue igual (15 rubros)»" || no "T5 forma: $(q "$D/a.json" 'j.texto')"
 reset_srv ok:501; RC=$(entregar "$D" dependencias "$HOY")
 [ "$RC" = 0 ] && [ "$(pedidos)" = 1 ] && ok "T5 la noche sin cambios SE ENTREGA igual (un POST, sale 0): el silencio no es un canal" || no "T5 entrega sin cambios: rc=$RC pedidos=$(pedidos) · $(cat "$D/entregar.txt")"
 
@@ -914,8 +914,8 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
   && ok "T31 🔴 un rubro que se mide por primera vez y viene vacío no es un cambio: una línea «Empezó a medirse»" || no "T31 rubros nuevos: $(q "$D/a.json" '[j.cambios, j.texto]')"
 [ "$(q "$D/a.json" '/^• postergadas por presupuesto: 0 hallazgo\(s\) · pedidos: 0 \(antes 0 hallazgo\(s\) · pedidos: 1\)$/m.test(j.texto)')" = true ] \
   && ok "T31 🔴 el cambio dice qué había antes" || no "T31 sin «antes»: $(q "$D/a.json" 'j.texto')"
-[ "$(q "$D/a.json" 'JSON.stringify(j.cambios) === JSON.stringify(["pedidos_creados", "postergadas_por_presupuesto"]) && j.texto.startsWith("2 cambio(s) desde ayer") && /^Sigue igual \(8 rubros\)$/m.test(j.texto)')" = true ] \
-  && ok "T31 la cuenta: 2 cambios (los Bugs y el postergado que salió), 4 rubros que empezaron, 8 que siguen igual" || no "T31 cuenta: $(q "$D/a.json" '[j.cambios, j.texto]')"
+[ "$(q "$D/a.json" 'JSON.stringify(j.cambios) === JSON.stringify(["pedidos_creados", "postergadas_por_presupuesto"]) && j.texto.startsWith("2 cambio(s) desde ayer") && /^Sigue igual \(9 rubros\)$/m.test(j.texto)')" = true ] \
+  && ok "T31 la cuenta: 2 cambios (los Bugs y el postergado que salió), 4 rubros que empezaron, 9 que siguen igual" || no "T31 cuenta: $(q "$D/a.json" '[j.cambios, j.texto]')"
 # El espejo: una noche que se APAGA vuelve a simulado — también es una línea, no tres cambios.
 D="$TMP/t31b"; mundo "$D"
 snap "$D" "$AYER" '{"pedidos":{"simulado":false,"creados":[],"adoptados":[],"fallidos":[],"postergados":[],"sin_iteracion":[],"deuda_avisada":[]}}'
@@ -1486,6 +1486,19 @@ reset_srv ok:1; entregar "$D" dependencias "$HOY" --runs-review "$D/ops" >/dev/n
 CON_SIN_BLOQUE=$(ultimo 'j.text.split("\n").filter((l) => !/^(ejecuciones:|· |🆕 |fichas de |escapes autorizados:)/.test(l)).join("\n")')
 [ "$SIN" = "$CON_SIN_BLOQUE" ] && ! grep -qE '^(ejecuciones:|🆕 |escapes autorizados:)' <<<"$SIN" && [[ "$SIN" != *$'\n\n\n'* ]] \
   && ok "4.10-T34 sin la opción, el mismo texto sin la línea ni blancos de más" || no "4.10-T34 sin la opción cambió: $(diff <(printf %s "$SIN") <(printf %s "$CON_SIN_BLOQUE"))"
+
+# T49 Resumen_DecisionesDelSitioNoAplicadas
+# 🔴 Falla con: una decisión del sitio que la noche no pudo aplicar y el resumen calla (la fila vuelve a «Te toca decidir»
+#    sin que nadie lo sepa), contar una ficha ya decidida otra vez, o poner en el mensaje el porqué (puede nombrar un repo).
+D="$TMP/t49"; mundo "$D"; snap "$D" "$HOY" '{}'
+ficha "$D" pending aaa11111 "$(fecha "$HOY" -3)" pendiente A/A "pr: 12" "decision_fallida: $HOY" 'motivo_decision_fallida: "el #12 es de acme-org/secreto"'
+ficha "$D" pending bbb22222 "$(fecha "$HOY" -3)" pendiente A/A
+ficha "$D" promoted ccc33333 "$(fecha "$HOY" -3)" util A/A
+armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
+[ "$(q "$D/a.json" 'JSON.stringify(j.rubros.decisiones_no_aplicadas.valor)')" = '[{"id":"aaa11111","el":"'"$HOY"'"}]' ] \
+  && ok "T49 cuenta la ficha cuya decisión del sitio no se aplicó, con el día" || no "T49 rubro: $(q "$D/a.json" 'j.rubros.decisiones_no_aplicadas') $(head -c 200 "$D/a.err")"
+[ "$(q "$D/a.json" '/decisiones del sitio que no se aplicaron: 1/.test(j.texto) && !/secreto/.test(j.texto)')" = true ] \
+  && ok "T49 el mensaje lo dice con la cantidad, sin el porqué" || no "T49 texto: $(q "$D/a.json" 'j.texto')"
 
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi
