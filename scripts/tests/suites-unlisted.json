@@ -5,7 +5,7 @@
       "why": "No es una suite más: es el corredor que la CI pública de GitHub (.github/workflows/ci.yml) lanza directamente para correr, en una HOME vacía, las suites que dicen no necesitar nada (TYCON_PORTABLE_SHARD). En suites.json correría las suites portables otra vez, adentro de la ejecución de las suites."
     },
     "scripts/tests/packs-update-keeps-pieces.test.sh": {
-      "why": "Laboratorio de instalación: instala una versión del arnés en una carpeta de usuario aparte, publica la siguiente y compara las piezas; necesita pwsh y tarda minutos. Es el mismo ensayo que corre la 182 en Windows (escenario update). No se midió en la story 7.35 para no tocar el arnés instalado: deuda DEF-7.35-packs-update-sin-medir (medirla en un laboratorio con HOME aparte y decidir si va al nocturno)."
+      "why": "Laboratorio de instalación: instala una versión del arnés en una carpeta de usuario aparte, publica la siguiente y compara las piezas; necesita pwsh y tarda minutos. Es el mismo ensayo que corre la 182 en Windows (escenario update). Medida el 2026-10-28 en una HOME vacía: verde, 195 s. No va a suites.json: es un envoltorio que corre los casos PacksUpdate_* de windows-guided-lab.test.js, que ya está registrada y corre de noche; registrarla los correría dos veces."
     }
   }
 }

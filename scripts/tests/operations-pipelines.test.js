@@ -469,7 +469,21 @@ test('T11 DependencyAudit_GuardaLaParidad @story-2.25 @ac-7: guardar lleva .dash
   const s = steps(read('dependency-audit.yml')).find((x) => /push-nightly-data\.js save/.test(x));
   // detrás, lo que escribe la propuesta del modelo (Casos: scripts/tests/findings-propose.test.js): las fichas de las
   // otras dos fuentes y su constancia
-  assert.match(s, /-- \.dashboard\/dependencias inbox\/dependencies \.dashboard\/paridad( \.dashboard\/retros)?( inbox\/runs-review\/pending inbox\/watcher\/pending inbox\/model-proposals\.json)?\s*$/m);
+  assert.match(s, /-- \.dashboard\/dependencias inbox\/dependencies \.dashboard\/paridad( \.dashboard\/pruebas-sin-ci)?( \.dashboard\/retros)?( inbox\/runs-review\/pending inbox\/watcher\/pending inbox\/model-proposals\.json)?\s*$/m);
+});
+
+test('DependencyAudit_PruebasSinPipeline: la noche busca las pruebas de navegador sin pipeline, el resumen las cuenta y se guardan', () => {
+  const pasos = steps(read('dependency-audit.yml'));
+  const at = (re) => pasos.findIndex((x) => re.test(x));
+  const control = at(/check-tests-without-ci\.js --root "\$\(Agent\.TempDirectory\)\/repos" --json/);
+  const paridad = at(/check-product-parity\.js --root/);
+  const revision = at(/displayName: 'Correr la revisión de dependencias'/);
+  assert.ok(control > paridad && control < revision, `orden: paridad ${paridad} < pruebas sin pipeline ${control} < revisión ${revision}`);
+  // nunca pone roja la noche, y sólo un informe que se lee queda como el del día
+  assert.match(pasos[control], /exit 0\s*\n\s*displayName:/);
+  assert.match(pasos[control], /mv "\$OUT\.tmp" "\$OUT"/);
+  assert.match(pasos[at(/daily-summary\.js deliver/)], /--tests-without-ci "\$\(Build\.SourcesDirectory\)\/\.dashboard\/pruebas-sin-ci\/pruebas-sin-ci-\$HOY\.json"/);
+  assert.match(pasos[at(/push-nightly-data\.js save/)], / \.dashboard\/pruebas-sin-ci /);
 });
 
 test('T12 OpsData_TraeLaListaDeLaOrganizacion @story-2.25 @ac-9: la lista de productos de operaciones va encima; sin ella queda la del arnés', () => {

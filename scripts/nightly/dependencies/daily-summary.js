@@ -892,6 +892,24 @@ function lineaRetros(archivo) {
 }
 
 /**
+ * La línea de las pruebas de navegador que ningún pipeline corre, del informe que deja el paso de la noche
+ * (`check-tests-without-ci.js --json`, pasado con `--tests-without-ci`). Sólo cuentas: los nombres de los repos
+ * quedan en el informe guardado. Sin informe, o con uno que no se lee, lo dice: no es «0 sin correr».
+ */
+function lineaPruebasSinCi(archivo) {
+  const T = 'pruebas de navegador sin pipeline';
+  let r;
+  try { r = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch { return `${T}: ? (el control de la noche no dejó su informe)`; }
+  const n = (x) => (Number.isInteger(x) && x >= 0 ? x : null);
+  if (!r || typeof r !== 'object' || !Array.isArray(r.resultados) || [r.medidos, r.ausentes, r.no_aplican].map(n).includes(null)) return `${T}: ? (el informe del control no se pudo leer)`;
+  if (typeof r.sin_productos === 'string') return `${T}: no aplica (no hay productos declarados)`;
+  const sinCi = r.resultados.filter((x) => x && (x.veredicto === 'sin-ci' || x.veredicto === 'sin-pipeline')).length;
+  const sinMirar = r.ausentes + r.resultados.filter((x) => x && x.veredicto === 'no-medido').length;
+  if (r.medidos === 0) return `${T}: ? (el control no midió ningún repo${sinMirar ? ` · sin mirar ${sinMirar}` : ''})`;
+  return `${T}: ${sinCi} de ${r.medidos} repos medidos${sinMirar ? ` · sin mirar ${sinMirar}` : ''}`;
+}
+
+/**
  * La línea de las ejecuciones (casos: scripts/tests/daily-summary.test.sh, 4.10-T31 a T34), de lo que deja la revisión nocturna en el clon de operaciones
  * (`--runs-review`): `inbox/runs-review/last-run.json` y las fichas de hoy en `pending/`. Agrupa por causa (regla y
  * categoría): un renglón por causa conocida y lo nuevo aparte, con el enlace de una ficha. Devuelve la lista de renglones.
@@ -1354,6 +1372,7 @@ function entregar(a) {
   let cola = '';
   if (a.extra !== null) cola = `${cola}\n\n${seccionExtra(a.extra)}`;
   if (a.retros !== null) cola = `${cola}\n${lineaRetros(a.retros)}`;
+  if (a.pruebasSinCi !== null) cola = `${cola}\n${lineaPruebasSinCi(a.pruebasSinCi)}`;
   // la línea de las ejecuciones va en su lugar con una marca: el mensaje aparte de los canales que no editan no la lleva
   // cuando sale de la constancia de la mañana (ya les llegó a las 04:00)
   const MARCA_EJ = '\u0000ejecuciones\u0000';
@@ -1498,7 +1517,7 @@ function perfilDeLaNoche(a) {
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, retros: null, runsReview: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
+    vigOut: null, depsOut: null, extra: null, retros: null, pruebasSinCi: null, runsReview: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
     siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
@@ -1513,6 +1532,7 @@ function parseArgs(argv) {
     else if (v === '--deps-out') a.depsOut = valor(++i);
     else if (v === '--extra') a.extra = valor(++i);
     else if (v === '--retros') a.retros = valor(++i);
+    else if (v === '--tests-without-ci') a.pruebasSinCi = valor(++i);
     else if (v === '--runs-review') a.runsReview = valor(++i);
     else if (v === '--weekly') a.weekly = valor(++i);
     else if (v === '--runs') a.runs = valor(++i);
@@ -1532,7 +1552,7 @@ function parseArgs(argv) {
 
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
-    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--runs-review <clon de operaciones>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
+    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--tests-without-ci <informe de check-tests-without-ci.js --json>] [--runs-review <clon de operaciones>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]\n' +
     '       [--profile <team-profile.json> | --team-repos <team-repos.json> --clone-dir <dir>]');
 }
