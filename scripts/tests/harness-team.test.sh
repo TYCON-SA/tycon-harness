@@ -141,11 +141,12 @@ if corre T7; then
   OUT="$(harness install --version latest --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "sin el árbol: install --version latest sale 0" || mal "sin el árbol: rc $RC: $OUT"
   [ -f "$(NEW)/perfil-equipo.json" ] && [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && ok "…y vuelve con la capa que el estado recordaba" || mal "sin el árbol perdió la capa: $(estado "d.get('team')")"
-  # la política del equipo que no se puede leer después de apilar (el archivo de la máquina roto) se DICE, y el canal sigue el de antes
+  # el archivo de la máquina roto, con «auto» en el perfil del equipo: no frena la actualización, se DICE que no se usa
   harness_lab_release_fresh_home
   printf '{ roto\n' > "$LAB_HOME/.claude/tycon.json"
   instala_team
-  case "$INSTALL_OUT" in *"la política del equipo no se pudo leer después de apilar la capa"*"sigue con el canal de antes"*) ok "con la configuración de la máquina rota, install dice que la política no se pudo leer y qué canal sigue" ;; *) mal "no dice la política (rc $INSTALL_RC): $INSTALL_OUT" ;; esac
+  case "$INSTALL_OUT" in *"el perfil del equipo fija la actualización automática: lo ilegible ("*") no se usa"*) ok "con la configuración de la máquina rota y «auto» en el perfil, install dice que lo ilegible no se usa" ;; *) mal "no dice lo ilegible (rc $INSTALL_RC): $INSTALL_OUT" ;; esac
+  [ "$INSTALL_RC" = 0 ] && [ "$(estado "d['policy']['channel']")" = latest ] && ok "…y sigue con el canal del perfil" || mal "con la configuración rota: rc $INSTALL_RC, canal $(estado "d.get('policy')")"
   rm -f "$LAB_HOME/.claude/tycon.json"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi

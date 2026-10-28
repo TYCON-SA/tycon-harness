@@ -1584,6 +1584,9 @@ function cmdInstall(ctx, H) {
     // del perfil y el arranque siguiente no anuncia «el canal vigente cambió»
     const policyAfter = teamStack ? H.policyOf(ctx, tree) : null;
     if (policyAfter && policyAfter.errors.length) notes.push(`la política del equipo no se pudo leer después de apilar la capa (${policyAfter.errors[0]}): sigue con el canal de antes (${policy.channel})`);
+    // con «auto» en el perfil, lo ilegible no frena: se dice qué no se usa
+    const fixed = policyAfter && H.fixedLine ? H.fixedLine(policyAfter) : null;
+    if (fixed) notes.push(fixed);
     const policyNow = policyAfter && !policyAfter.errors.length ? policyAfter : policy;
     state.policy = { channel: policyNow.channel, apply: policyNow.apply, enabled: policyNow.enabled };
     H.applyPolicy(ctx, state, policyNow);

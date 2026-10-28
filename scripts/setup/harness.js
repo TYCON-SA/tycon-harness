@@ -1795,7 +1795,7 @@ function releaseHelpers(ctx) {
   const S = mod('state');
   return {
     takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
-    settingsPath, policyOf, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
+    settingsPath, policyOf, fixedLine, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
