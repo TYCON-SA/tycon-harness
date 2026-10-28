@@ -1231,3 +1231,44 @@ test('T90 Mantenimiento_Cuenta_PlataformaCaidaNoSeReconsulta — si la plataform
   cuenta(); await pausa();
   assert.ok(llamadas > primeras, 'pasado el minuto, vuelve a preguntar');
 });
+
+// ── la carta de una dependencia dice qué es la vulnerabilidad y qué sugiere el modelo ─────────────────────────────────
+
+const DEP_AVISO = 'id: dep-aviso\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-aviso\nseveridad: high\nnoches: 2\npr: 7\npr_repo: acme/ops\nrepos:\n  - Producto X/FrontEnd\n'
+  + 'avisos:\n  - https://github.com/advisories/GHSA-2345-6789-cfgh\n'
+  + 'aviso_resumen: "Denial of Service via RouterLink <img src=x onerror=alert(1)> in SSR (CVE-2026-111751)"\naviso_parche: "22.2.1, 21.2.25"\n'
+  + 'propuesta_accion: revisar\npropuesta_razon: "Antes de aceptar, mirá si el sitio usa la representación del lado del servidor"\npropuesta_modelo: gemma4:31b\n';
+const DEP_SIN_AVISO = 'id: dep-sinaviso\ndetectado: 2026-10-21\nveredicto: pendiente\npaquete: pkg-sinaviso\nseveridad: low\nnoches: 1\nrepos:\n  - Producto X/FrontEnd\n'
+  + 'aviso_motivo: no-se-pudo-leer\npropuesta_accion: aceptar\npropuesta_razon: "Una razón sin el aviso"\n';
+const DEP_VIEJA = 'id: dep-vieja\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-vieja\nseveridad: low\nnoches: 3\nrepos:\n  - Producto X/FrontEnd\n'
+  + 'propuesta_accion: arreglar\npropuesta_razon: "Se detectó una vulnerabilidad de severidad alta"\n';
+const EXTRA_AVISO = { 'inbox/dependencies/pending/dep-aviso.yaml': DEP_AVISO, 'inbox/dependencies/pending/dep-sinaviso.yaml': DEP_SIN_AVISO, 'inbox/dependencies/pending/dep-vieja.yaml': DEP_VIEJA };
+
+// Mantenimiento_Dependencia_QueEsYSugerencia
+// 🔴 Falla con: una carta sin qué es la vulnerabilidad o sin la versión que la corrige, sin la sugerencia del modelo y
+//    su por qué, el texto del aviso sin escapar, una sugerencia en la carta cuyo aviso no se pudo leer, la propuesta
+//    vieja (hecha sin el aviso) mostrada como sugerencia, o la sugerencia marcada como recomendada para seguirla en
+//    bloque.
+test('T91 Mantenimiento_Dependencia_QueEsYSugerencia — la carta dice qué es la vulnerabilidad y qué sugiere el modelo', { timeout: 60000 }, async () => {
+  await conSitio({ extra: EXTRA_AVISO }, async ({ h, lead, lista, fila }) => {
+    const j = (await lista()).json;
+    const con = fila(j, 'dependencias', 'dep-aviso');
+    assert.deepStrictEqual(con.aviso, { resumen: 'Denial of Service via RouterLink <img src=x onerror=alert(1)> in SSR (CVE-2026-111751)', parche: '22.2.1, 21.2.25' });
+    assert.deepStrictEqual(con.propuesta, { accion: 'revisar', razon: 'Antes de aceptar, mirá si el sitio usa la representación del lado del servidor' });
+    assert.strictEqual(con.recomendada, null, 'la sugerencia no se sigue en bloque');
+    assert.deepStrictEqual(fila(j, 'dependencias', 'dep-sinaviso').aviso, { sin_leer: true });
+    assert.strictEqual(fila(j, 'dependencias', 'dep-sinaviso').propuesta, null);
+    assert.strictEqual(fila(j, 'dependencias', 'dep-vieja').aviso, null);
+    assert.strictEqual(fila(j, 'dependencias', 'dep-vieja').propuesta, null, 'la de antes del aviso no se muestra');
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    const carta = cartaDe(p, 'dependencias/dep-aviso');
+    assert.match(carta, /<p class="m-aviso"><b>Qué es:<\/b> <span lang="en">Denial of Service via RouterLink &lt;img src=x onerror=alert\(1\)&gt; in SSR \(CVE-2026-111751\)<\/span> Se corrige en la versión 22\.2\.1, 21\.2\.25\.<\/p>/);
+    assert.doesNotMatch(carta, /<img/);
+    assert.match(carta, /<p class="m-propuesta">Sugerencia del modelo: mirá algo antes de decidir\. <span lang="es">Antes de aceptar, mirá si el sitio usa la representación del lado del servidor<\/span><\/p>/);
+    assert.doesNotMatch(carta, /class="m-elegir recomendada"/);
+    const sin = cartaDe(p, 'dependencias/dep-sinaviso');
+    assert.match(sin, /No se pudo leer el aviso de seguridad: sin él, el modelo no sugiere nada\./);
+    assert.doesNotMatch(sin, /m-propuesta|Una razón sin el aviso/);
+    assert.doesNotMatch(cartaDe(p, 'dependencias/dep-vieja'), /m-aviso|m-propuesta/);
+  });
+});
