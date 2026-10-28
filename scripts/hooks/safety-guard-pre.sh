@@ -200,11 +200,12 @@ fi
 
 # escape_ok <VARIABLE> — ¿la persona autorizó ese escape en esta conversación? Deja en ESC_VIA el camino
 # (`persona` o `reenvio`), en ESC_RELEVO la sesión que lo reenvió y, si no, en ESC_MOTIVO el porqué y en
-# ESC_SIN_CONV=1 si la conversación no se puede leer (Codex). Cuesta un proceso de node: se llama sólo cuando
-# el comando trae un escape y una regla lo frenaría.
-ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+# ESC_SIN_CONV=1 si la conversación no se puede leer (Codex), y ESC_PASO=1 si el renglón del pedido todavía no estaba
+# escrito (se reintenta el comando). Cuesta un proceso de node: se llama sólo cuando el comando trae un escape y una
+# regla lo frenaría.
+ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0; ESC_PASO=0
 escape_ok() {
-  ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+  ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0; ESC_PASO=0
   local lib sid tuid out rc
   # en una lista con `||`: si el `cd` fallara, una asignación suelta dispararía el `trap 'exit 0' ERR`
   lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/escape-ok.js" || lib=""
@@ -232,6 +233,7 @@ escape_ok() {
       relevo) ESC_RELEVO="$v" ;;
       motivo) ESC_MOTIVO="$v" ;;
       sinConversacion) [[ "$v" == "1" ]] && ESC_SIN_CONV=1 ;;
+      pasoNoUbicado) [[ "$v" == "1" ]] && ESC_PASO=1 ;;
     esac
   done <<< "$out"
   [[ "$rc" == "0" && -n "$ESC_VIA" ]]
@@ -265,6 +267,41 @@ ow_gate() {
   case "$OW_DECISION" in ask|allow|none) ;; *) OW_DECISION="deny" ;; esac
   if [[ "$OW_DECISION" == "ask" && -z "$OW_JSON" ]]; then OW_DECISION="deny"; fi
   return 0
+}
+
+# ow_vencer — un comando que no es una firma vence los pedidos de la ventana que su sesión dejó sin consumir (el «No»
+# del dueño deja el pedido vivo, y un guion lanzado desde una consola disfrazada lo tomaría por el «Sí»). Sólo consulta
+# a lib/owner-window.js si en las carpetas del estado hay un pedido de esta sesión; si no pudo vencerlo, frena. Las
+# carpetas se buscan en la casa de la cuenta, como las escribe la ventana (un HOME cambiado no las esconde), y en HOME;
+# si esa casa no se puede resolver, se consulta igual. Un comando común no abre ningún proceso: la sesión se lee sólo
+# si hay algún pedido vigente.
+ow_vencer() {
+  local sid lib d u="${USER:-${LOGNAME:-}}" casa="" hay=0 dirs=()
+  [[ -n "$u" ]] || u="$(id -un 2>/dev/null)" || u=""
+  if [[ "$u" =~ ^[A-Za-z0-9._-]+$ ]]; then eval "casa=~$u"; fi
+  [[ "$casa" == /* && -d "$casa" ]] || casa=""
+  for d in ${casa:+"$casa"} ${HOME:+"$HOME"}; do
+    dirs+=("$d/.tycon/state/owner-window" "$d/.claude/.tycon-pipeline/owner-window")
+  done
+  [[ -n "${TYCON_HOME:-}" ]] && dirs+=("$TYCON_HOME/state/owner-window")
+  if [[ -z "$casa" ]]; then
+    hay=1
+  else
+    for d in "${dirs[@]}"; do compgen -G "$d/*.json" >/dev/null 2>&1 && hay=1; done
+  fi
+  [[ "$hay" == "1" ]] || return 0
+  sid="$(read_field session_id 2>/dev/null)" || sid=""
+  [[ "$sid" =~ ^[A-Za-z0-9_-]+$ ]] || return 0
+  if [[ -n "$casa" ]]; then
+    hay=0
+    for d in "${dirs[@]}"; do compgen -G "$d/*--$sid.json" >/dev/null 2>&1 && hay=1; done
+    [[ "$hay" == "1" ]] || return 0
+  fi
+  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/owner-window.js" || lib=""
+  if [[ -n "$lib" && -f "$lib" ]] && command -v "$HNODE" >/dev/null 2>&1 && printf '%s' "$INPUT" | "$HNODE" "$lib" sweep >/dev/null 2>&1; then return 0; fi
+  block "ESC-C3" \
+    "Esta sesión tiene un pedido de firma en la ventana sin consumir, y no pude vencerlo antes de este comando." \
+    "Avisale a la persona: el pedido se vence solo a los 30 minutos, o lo firma ella en su terminal."
 }
 
 # El prefijo `TYCON_SAFETY_OFF=1` que pidió el comando no valió: el porqué, para el cartel de block().
@@ -784,6 +821,8 @@ _ow_mira=0
 shopt -s nocasematch
 if [[ ${#OW_ESCAPES[@]} -gt 0 || -n "$_c3_perdida" || "$_esc_cmd" == *marker* || "$_esc_cmd" == *pipeline* || "$_esc_cmd" == *e2e-setup* || "$_esc_cmd" == *run-base-controls* ]]; then _ow_mira=1; fi
 shopt -u nocasematch
+# lo que no consulta la ventana (no es una firma, o el freno está apagado) vence igual los pedidos de su sesión
+if [[ "$_ow_mira" != "1" || "${SAFETY_OFF:-0}" == "1" ]]; then ow_vencer; fi
 if [[ "$_ow_mira" == "1" && "${SAFETY_OFF:-0}" != "1" ]]; then
   [[ -n "$_c3_sid" ]] || { _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""; }
   ow_gate ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}
@@ -845,7 +884,13 @@ if [[ -n "$_c5_esc" ]]; then
     if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c5_esc"; then
       constancia ESC-C5 escape "$ESC_VIA" "$ESC_RELEVO" "$_c5_sid" "$_c5_esc"
     else
-      ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_c5_esc}»).${ESC_MOTIVO:+ (No valió: ${ESC_MOTIVO}.)}"
+      # el cartel no dicta la frase: lo que la persona hace para darlo está en la guía. El motivo que la nombra tampoco va
+      _c5_motivo="$ESC_MOTIVO"; [[ "$_c5_motivo" == *autoriz* ]] && _c5_motivo=""
+      if [[ "$ESC_PASO" == "1" ]]; then
+        ESC_CARTEL="No pude leer el registro de la conversación para este paso: todavía no estaba escrito. Reintentá el mismo comando una vez, sin pedirle nada a la persona; si vuelve a salir esto, decíselo."
+      else
+        ESC_CARTEL="Esto lo decide la persona, no el agente: explicale qué falta y por qué. Cómo lo da ella está en guides/safety-guard.md.${_c5_motivo:+ (No valió: ${_c5_motivo}.)}"
+      fi
       if [[ "$_c5_esc" == "ALLOW_DOD_EVIDENCE_WRITE" ]]; then
         block "ESC-C5" \
           "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \

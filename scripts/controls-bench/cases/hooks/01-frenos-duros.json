@@ -7763,6 +7763,19 @@
           "type": "must-block",
           "stdin": { "session_id": "bench-constancia", "tool_name": "Edit", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/owner-window/x.json", "old_string": "a", "new_string": "b" } },
           "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "gates-log-write-frena",
+          "type": "must-block",
+          "_por_que": "gates.log guarda la designación de la sesión que firma por delegación y su confirmación; escrito a mano, una sesión se designaría sola.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "gates-log-edit-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Edit", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
         }
       ]
     },
@@ -7797,6 +7810,19 @@
           "_por_que": "El mismo registro de la ventana por la consola: una redirección a su carpeta.",
           "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' > \"$HOME/.claude/.tycon-pipeline/owner-window/x.json\"" }, "cwd": "${FIXTURE}" },
           "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "gates-log-consola-frena",
+          "type": "must-block",
+          "_por_que": "gates.log por la consola: un renglón agregado con una redirección.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' >> ~/.claude/.tycon-pipeline/gates.log" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "gates-log-y-registro-leer-pasa",
+          "type": "must-not-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cat ~/.claude/.tycon-pipeline/gates.log ~/.claude/.tycon-pipeline/owner-window/x.json" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 0 }
         }
       ]
     }

@@ -174,6 +174,7 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
   // Escribirla sin la skill lo decide la persona: «autorizo story-skill-bypass» en un turno suyo (o reenviada por la
   // sesión designada) abre el freno para este pedido. El agente no la puede escribir por ella (escape-ok.js).
   let escapeRoto = null;   // la búsqueda de la frase falló: se frena igual, y se dice por qué en el registro y el mensaje
+  let paso = null;
   if (verdict.action === 'block' && !isCodex) {
     let ok = null;
     try {
@@ -183,12 +184,14 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
       io.appendLog(stateDir, 'bypass.log', sessionId, { repoPath: repo.repoRoot || null, kind: 'STORY_SKILL_BYPASS_USED', file: abs, via: ok.via, ...(ok.relevo ? { relevo: ok.relevo } : {}) });
       return { verdict: { action: 'pass', kind: 'persona', reason: `la persona autorizó escribirla sin la skill (${ok.via})` }, message: null };
     }
+    // el pedido que se juzga no se ubicó en la conversación: el cartel dice por qué (el reintento, o el duplicado)
+    if (ok) paso = { reintento: ok.pasoNoUbicado === true, cartel: require('./escape-ok.js').cartelDelPaso(ok) };
   }
   if (verdict.action === 'block' && byName) verdict = { ...verdict, kind: `${verdict.kind}-by-name` };
   const line = { repoPath: repo.repoRoot || null, name: 'story-skill-gate', file: abs, via: via || null, kind: verdict.kind, reason: verdict.reason, storyId: declaredId };
   if (verdict.action === 'block') {
     io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'blocked', ...(escapeRoto ? { escape: escapeRoto } : {}), ...(recordNote ? { record: recordNote } : {}) });
-    const message = gate.blockMessage(verdict, { filePath: abs, via, byName });
+    const message = gate.blockMessage(verdict, { filePath: abs, via, byName, paso });
     return { verdict, message: escapeRoto ? `${message}\n   ⚠ ${escapeRoto}: la frase de la persona no se pudo verificar.` : message };
   }
   // "No se frena pero se mide" (trampa 5 del handoff: ante la duda no bloquear, y dejar el caso

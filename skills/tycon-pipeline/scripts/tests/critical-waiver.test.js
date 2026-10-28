@@ -406,6 +406,23 @@ test('RuntimeWaiver_FirmasViejasSiguen @story-8.63 @ac-7', () => {
   assert.equal(lib.verifyChain(log).entries.length, 1);
 });
 
+// 🔴 Falla con: la rama de criterios de okDeUnaPersona de vuelta (leía la conversación y nadie la llamaba).
+test('CriticalWaivers_SinRamaDeCriterios @story-8.139 @ac-39', () => {
+  const fuente = fs.readFileSync(path.join(SCRIPTS, 'lib', 'critical-waivers.js'), 'utf8');
+  const cuerpo = fuente.slice(fuente.indexOf('function okDeUnaPersona'), fuente.indexOf('function sesionActual'));
+  assert.ok(cuerpo.length > 0, 'encuentro okDeUnaPersona');
+  assert.doesNotMatch(cuerpo, /criterios/);
+  assert.doesNotMatch(cuerpo, /waiver-display/);
+  // con `criterios`, ni se carga waiver-display.js ni se lee la conversación: el ok se juzga como uno sin crítico
+  const wd = require.resolve(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  delete require.cache[wd];
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const r = cw.okDeUnaPersona({ approvedBy: 'Dev de Prueba', quote: '', desde: new Date().toISOString(), criterios: { acs: [{ ac: 1, sha: 'x' }] } });
+  assert.equal(r.ok, false);
+  assert.match(r.motivo, /falta la cita/);
+  assert.equal(require.cache[wd], undefined, 'waiver-display.js no se cargó');
+});
+
 // ── el humo dice contra qué corrió ──────────────────────────────────────────────────────────────
 
 test('SmokeRun_AnotaLaProcedencia @story-8.63 @ac-8', () => {

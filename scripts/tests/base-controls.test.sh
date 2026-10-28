@@ -38,8 +38,12 @@
 #   T23 BaseControls_TwoSignedPRs_MergeWithoutConflict — dos pedidos firmados, cada uno en su archivo, entran uno detrás
 #       del otro sin conflicto y la revisión del segundo sobre la base nueva sale verde
 #   T24 BaseControls_ApprovalFolder_Classified — la carpeta de constancias queda clasificada en el inventario
-#   T53 BaseControls_Run_AceptaLaLineaDelegada — la línea firmada por delegación vale completa; sin la frase, la máquina
-#       o la sesión que firmó no firma nada (en la carpeta y en el jsonl)
+#   T53 BaseControls_Run_AceptaLaLineaDelegada — la línea firmada por delegación que ya está en la base vale; sin la
+#       frase, la máquina o la sesión que firmó no firma nada (en la carpeta y en el jsonl)
+#   T36 (8.139) BaseControls_DelegacionNueva_Rojo + _DelegacionDeLaBase_Pasa + _RefirmaComprobada_Pasa +
+#       _RefirmaQueNoCuadra_Rojo — una línea delegada nueva es rojo; la de la base pasa; la refirma tras traer main
+#       pasa sólo si el clasificador de la base la comprueba
+#   T26 (8.139) BaseControls_ApproveConCita_YaNoVale — la clase de approve --base: refirma real, sin --base, otro cambio
 #   T54 BaseControls_NewFileOfLoosenedControl_EntersTheSignature — el archivo nuevo que carga un control que se afloja
 #       entra en lo que se firma, y cambiarlo después deja la firma sin valer; un control nuevo sigue sin trámite
 #
@@ -869,15 +873,34 @@ is "T24 el inventario real: las carpetas primero, los jsonl viejos después" '["
   "$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).approvals))' "${ROOT}/scripts/ci/controls-from-base.json")"
 grep -qF '".github/control-changes/**"' "${ROOT}/scripts/publishing/allowlist.json" && ok "T24 la carpeta de firmas del público se publica" || no "T24 allowlist.json no publica .github/control-changes/**"
 
-# T53 BaseControls_Run_AceptaLaLineaDelegada @story-8.116 @ac-55
-# 🔴 Falla con: una revisión que no acepta la línea firmada por delegación, o que acepta una sin sus campos.
+# T53 BaseControls_Run_AceptaLaLineaDelegada @story-8.116 @ac-55 · T36 (8.139): la línea delegada vale sólo si ya está en
+# la base; una nueva es rojo, salvo la refirma que el clasificador de la base comprueba
+# 🔴 Falla con: una revisión que acepta una línea delegada nueva, o que no acepta la que ya estaba en la base.
 # firma_delegada '<entradas json>' '<campos que se sacan, separados por coma>'
 firma_delegada() { node -e 'const l=JSON.parse(process.argv[1]);Object.assign(l,{via:"delegacion",delegated_by:"dueño",signed_by_session:"sesion-designada",quote:"Firmá el cambio, lo leí",quote_at:"2026-10-25T12:00:10.000Z",maquina:"a1b2c3d4e5f60718"});for(const k of process.argv[2].split(",").filter(Boolean))delete l[k];console.log(JSON.stringify(l))' "$(firma "$1")" "$2"; }
+NUEVA='una aprobación por delegación nueva ya no vale: el dueño la firma en la ventana o en su terminal'
+# T36 BaseControls_DelegacionNueva_Rojo @story-8.139 @ac-36
 R="${T}/t53"; carpeta_base "${R}"; H="$(hash_de "${ENTRIES}")"
 lab_git -C "${R}" checkout -q -b t53-completa; mkdir -p "${R}/${CARPETA}"; firma_delegada "${ENTRIES}" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "firma delegada"
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-completa > "${T}/t53-completa.out" 2>&1; RC=$?
-is "T53 la línea delegada completa vale" "0" "${RC}"
-has "T53 …y lo dice nombrando la regla" "${T}/t53-completa.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+is "T36 la línea delegada nueva, aun completa, no vale (rojo)" "1" "${RC}"
+has "T36 …y dice por qué" "${T}/t53-completa.out" "${NUEVA}"
+# una línea delegada nueva de otro cambio también es rojo, aunque el pedido no afloje nada
+lab_git -C "${R}" checkout -q -b t53-otra main; mkdir -p "${R}/${CARPETA}"
+OTRAS='[{"path":"scripts/ci/toy-rules.json","blob":"0000000000000000000000000000000000000000"}]'
+firma_delegada "${OTRAS}" "" > "${R}/${CARPETA}$(hash_de "${OTRAS}").json"; commit "${R}" "otra delegada"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-otra > "${T}/t53-otra.out" 2>&1; RC=$?
+is "T36 una línea delegada nueva de otro cambio: rojo" "1" "${RC}"
+has "T36 …con el mismo motivo" "${T}/t53-otra.out" "${NUEVA}"
+# T36 BaseControls_DelegacionDeLaBase_Pasa @story-8.139 @ac-36: la misma línea ya en main (en otra ruta) vale
+lab_git -C "${R}" checkout -q main; mkdir -p "${R}/.tycon"; firma_delegada "${ENTRIES}" "" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "la delegada ya entró"
+lab_git -C "${R}" checkout -q -b t53-base pedido; lab_git -C "${R}" merge -q --no-edit main > /dev/null 2>&1
+mkdir -p "${R}/${CARPETA}"; firma_delegada "${ENTRIES}" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "la delegada en la carpeta"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-base > "${T}/t53-base.out" 2>&1; RC=$?
+is "T36 la línea delegada que ya está en la base vale" "0" "${RC}"
+has "T36 …y lo dice nombrando la regla" "${T}/t53-base.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+lacks "T36 …sin el motivo de la nueva" "${T}/t53-base.out" "${NUEVA}"
+# la que ya está en la base conserva el chequeo de forma de la 8.116
 for falta in quote maquina signed_by_session; do
   lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t53-sin-${falta}"; mkdir -p "${R}/${CARPETA}"
   firma_delegada "${ENTRIES}" "${falta}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "sin ${falta}"
@@ -890,6 +913,103 @@ firma_delegada "${ENTRIES}" "quote" > "${R}/.tycon/control-changes.jsonl"; commi
 bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-jsonl > "${T}/t53-jsonl.out" 2>&1; RC=$?
 is "T53 en el jsonl, la línea delegada sin quote tampoco firma" "1" "${RC}"
 has "T53 …y lo dice" "${T}/t53-jsonl.out" "es una firma por delegación sin quote"
+
+# T36 BaseControls_RefirmaComprobada_Pasa + BaseControls_RefirmaQueNoCuadra_Rojo @story-8.139 @ac-36 @ac-40
+# 🔴 Falla con: una refirma que pasa sin que el clasificador de la base la compruebe, o una real que sale roja.
+# refirma_base <carpeta>: la regla en varias líneas (la fusión es por línea); el pedido la afloja y la firma el dueño;
+# main cambia otra línea de la misma regla; el pedido trae main. Deja H1 (la del dueño) y ENTRIES (lo que pide firma ahora)
+# regla <carpeta> <modo> <lista> <nota>: la regla del juguete en líneas, con dos líneas fijas entre la lista y la nota
+# (git no fusiona dos cambios en líneas pegadas)
+regla() { printf '%s\n' '{' "  \"allow\": [$3]," "  \"mode\": \"$2\"," '  "otro": 1,' "  \"nota\": \"$4\"" '}' > "$1/scripts/ci/toy-rules.json"; }
+refirma_base() {
+  local r="$1"; make_base "${r}"; inv "${r}" "j.approvals=[\"${CARPETA}\",\".tycon/control-changes.jsonl\"]"
+  mkdir -p "${r}/scripts/lib"; cp "${ROOT}/scripts/lib/refresh-after-main.js" "${r}/scripts/lib/refresh-after-main.js"
+  regla "${r}" block '"docs/permitido.txt"' uno; commit "${r}" "regla en líneas"
+  pr "${r}"
+  regla "${r}" block '"docs/permitido.txt", "docs/malo.txt"' uno
+  printf 'PROHIBIDO\n' > "${r}/docs/malo.txt"; commit "${r}"
+  bash "${SCRIPT}" pending --root "${r}" --base main --range main...pedido > "${r}.p1" 2>&1
+  local e1; e1="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${r}.p1" | head -n 1)"; H1="$(hash_de "${e1}")"
+  mkdir -p "${r}/${CARPETA}"; firma "${e1}" > "${r}/${CARPETA}${H1}.json"; commit "${r}" "la firma del dueño"
+  lab_git -C "${r}" checkout -q main
+  regla "${r}" block '"docs/permitido.txt"' dos; commit "${r}" "main cambia la nota"
+  lab_git -C "${r}" checkout -q pedido; lab_git -C "${r}" merge -q --no-edit main > /dev/null 2>&1
+  bash "${SCRIPT}" pending --root "${r}" --base main --range main...pedido > "${r}.p2" 2>&1
+  ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${r}.p2" | head -n 1)"
+}
+# refirma '<entradas json>' <refirma_de> '<campos que se sacan>': la línea de la refirma, como la escribe approve
+refirma() { node -e 'const l=JSON.parse(process.argv[1]);Object.assign(l,{by:"refirma",via:"delegacion",clase:"refresh-after-main",refirma_de:process.argv[2],maquina:"a1b2c3d4e5f60718",signed_by_session:"sesion-designada"});for(const k of process.argv[3].split(",").filter(Boolean))delete l[k];console.log(JSON.stringify(l))' "$(firma "$1")" "$2" "$3"; }
+R="${T}/t36"; refirma_base "${R}"; H="$(hash_de "${ENTRIES}")"
+[ -n "${ENTRIES}" ] && [ "${H}" != "${H1}" ] && ok "T36 traer main pide firmar otra vez" || no "T36 traer main no cambió lo que se firma: ${ENTRIES}"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t36-sin.out" 2>&1; RC=$?
+is "T36 sin la refirma: rojo" "1" "${RC}"
+lab_git -C "${R}" checkout -q -b t36-ok pedido; refirma "${ENTRIES}" "${H1}" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-ok > "${T}/t36-ok.out" 2>&1; RC=$?
+is "T36 la refirma que el clasificador de la base comprueba: verde" "0" "${RC}"
+has "T36 …y lo dice nombrando la regla" "${T}/t36-ok.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+# que main avance después no cambia el resultado
+lab_git -C "${R}" checkout -q main; printf 'otra cosa\n' > "${R}/docs/leeme.txt"; commit "${R}" "main avanza"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-ok > "${T}/t36-avanza.out" 2>&1; RC=$?
+is "T36 main avanza después de la refirma: sigue verde" "0" "${RC}"
+lab_git -C "${R}" reset -q --hard HEAD~1
+# refirma_de que no es la constancia del dueño
+lab_git -C "${R}" checkout -q -b t36-de pedido; refirma "${ENTRIES}" "$(printf '0%.0s' $(seq 64))" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma de otra"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-de > "${T}/t36-de.out" 2>&1; RC=$?
+is "T36 una refirma de una constancia que no es la del dueño: rojo" "1" "${RC}"
+has "T36 …con el motivo de la nueva" "${T}/t36-de.out" "${NUEVA}"
+# la refirma sin uno de sus campos no firma, y no lleva la frase
+for falta in clase refirma_de maquina signed_by_session; do
+  lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t36-sin-${falta}"
+  refirma "${ENTRIES}" "${H1}" "${falta}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma sin ${falta}"
+  bash "${SCRIPT}" run --root "${R}" --base main --range "main...t36-sin-${falta}" > "${T}/t36-${falta}.out" 2>&1; RC=$?
+  is "T36 la refirma sin ${falta}: rojo" "1" "${RC}"
+done
+has "T36 sin maquina: dice qué le falta" "${T}/t36-maquina.out" "es una refirma sin maquina"
+lab_git -C "${R}" checkout -q -b t36-quote pedido
+node -e 'const l=JSON.parse(process.argv[1]);l.quote="Firmá el cambio, lo leí";console.log(JSON.stringify(l))' "$(refirma "${ENTRIES}" "${H1}" "")" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma con frase"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-quote > "${T}/t36-quote.out" 2>&1; RC=$?
+is "T36 la refirma con frase no firma (rojo)" "1" "${RC}"
+has "T36 …y lo dice" "${T}/t36-quote.out" "una refirma no lleva quote"
+# BaseControls_RefirmaQueNoCuadra_Rojo: el pedido cambia la regla después de traer main; la refirma la firma igual
+lab_git -C "${R}" checkout -q -b t36-cambio pedido
+regla "${R}" block '"docs/permitido.txt", "docs/malo.txt", "docs/otro.txt"' dos; commit "${R}" "afloja más"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...t36-cambio > "${T}/t36-cambio.p" 2>&1
+E3="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t36-cambio.p" | head -n 1)"
+refirma "${E3}" "${H1}" "" > "${R}/${CARPETA}$(hash_de "${E3}").json"; commit "${R}" "refirma de algo que no es traer main"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...t36-cambio > "${T}/t36-cambio.out" 2>&1; RC=$?
+is "T36 una refirma cuyo blob no es el de traer main: rojo" "1" "${RC}"
+has "T36 …con el motivo de la nueva" "${T}/t36-cambio.out" "${NUEVA}"
+# la base sin el clasificador no comprueba nada: rojo
+R="${T}/t36b"; refirma_base "${R}"; H="$(hash_de "${ENTRIES}")"
+lab_git -C "${R}" checkout -q main; lab_git -C "${R}" rm -q scripts/lib/refresh-after-main.js; commit "${R}" "sin clasificador"
+lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" merge -q --no-edit main > /dev/null 2>&1
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t36b.p" 2>&1
+ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t36b.p" | head -n 1)"; H="$(hash_de "${ENTRIES}")"
+refirma "${ENTRIES}" "${H1}" "" > "${R}/${CARPETA}${H}.json"; commit "${R}" "refirma"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t36b.out" 2>&1; RC=$?
+is "T36 la base no trae el clasificador: la refirma no se comprueba (rojo)" "1" "${RC}"
+has "T36 …y lo dice" "${T}/t36b.out" "${NUEVA}"
+
+# T26 BaseControls_ApproveConCita_YaNoVale (la parte de la clase) @story-8.139 @ac-26
+# 🔴 Falla con: un approve --base que toma por refirma lo que no lo es, o que no ve la refirma real.
+R="${T}/t26"; refirma_base "${R}"
+clase() { bash "${SCRIPT}" classify --root "${R}" --entries "$1" "${@:2}" 2>&1 | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).clase)}catch(_){console.log("no-json: "+s.trim())}})'; }
+is "T26 approve --base, la refirma real: refresh-after-main" "refresh-after-main" "$(clase "${ENTRIES}" --base main)"
+is "T26 approve sin --base: control-change" "control-change" "$(clase "${ENTRIES}")"
+# con la cita, aunque sea la refirma real: sale 1 y no escribe nada
+bash "${SCRIPT}" approve --root "${R}" --base main --out "${CARPETA}" --entries "${ENTRIES}" --relayed-by coordinadora --quote "dale" > "${T}/t26r.out" 2>&1; RC=$?
+is "T26 approve --relayed-by --quote: sale 1" "1" "${RC}"
+has "T26 …con el motivo" "${T}/t26r.out" "aprobar un control por delegación ya no vale: no se firmó nada"
+lab_git -C "${R}" checkout -q -b t26-cambio pedido
+regla "${R}" warn '"docs/permitido.txt", "docs/malo.txt"' dos; commit "${R}" "baja el modo"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...t26-cambio > "${T}/t26.p" 2>&1
+is "T26 approve --base de un cambio que no es traer main: control-change" "control-change" "$(clase "$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t26.p" | head -n 1)" --base main)"
+has "T26 pending imprime la firma con --base" "${T}/t26.p" "--base 'main'"
+# una base sin inventario legible no se lee como «sin constancias»: control-change, y el motivo lo dice
+lab_git -C "${R}" checkout -q -b t26-sin-inventario main; lab_git -C "${R}" rm -q scripts/ci/controls-from-base.json; commit "${R}" "sin inventario"
+lab_git -C "${R}" checkout -q pedido
+bash "${SCRIPT}" classify --root "${R}" --entries "${ENTRIES}" --base t26-sin-inventario > "${T}/t26-sin-inv.out" 2>&1
+has "T26 la base sin inventario: control-change con su motivo" "${T}/t26-sin-inv.out" "no pude leer las constancias de la base"
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T54 · el archivo nuevo que carga un control que se afloja entra en la firma; un control nuevo sigue sin trámite
