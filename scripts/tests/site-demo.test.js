@@ -947,6 +947,27 @@ test('2.76-Demo_SitioPublico_NoindexYTope', async () => {
   assert.strictEqual(tope(req).ok, true);
 });
 
+// los hilos aparte de estas pruebas tienen tope propio: uno colgado sale rojo diciendo qué esperaba y se termina,
+// en vez de dejar viva la suite hasta el tope de la CI (15 min) sin decir dónde
+const TOPE_HILO_MS = 60000;
+const conTope = (promesa, que, alCortar, ms = TOPE_HILO_MS) => {
+  let corte;
+  const tope = new Promise((_, reject) => {
+    corte = setTimeout(() => { if (alCortar) alCortar(); reject(new Error(`se colgó esperando ${que} (${ms / 1000} s)`)); }, ms);
+  });
+  return Promise.race([promesa, tope]).finally(() => clearTimeout(corte));
+};
+
+test('2.76-Demo_HiloColgado_SaleRojoYSeTermina', async () => {
+  // un hilo que nunca contesta ni termina: la espera sale roja diciendo qué esperaba, y el hilo queda terminado
+  const { Worker } = require('worker_threads');
+  const w = new Worker('setInterval(() => {}, 1000)', { eval: true });
+  const salida = new Promise((r) => w.once('exit', r));
+  await assert.rejects(conTope(new Promise((r) => w.once('message', r)), 'el mensaje del hilo', () => { w.terminate(); }, 300),
+    /se colgó esperando el mensaje del hilo \(0\.3 s\)/);
+  assert.strictEqual(await conTope(salida, 'el fin del hilo', null, 5000), 1, 'terminado desde afuera: sale 1');
+});
+
 test('2.76-Demo_FrenoEnElHiloAparte', async () => {
   const { ponerFreno, crearFuentesDemo } = DEMO();
   const { armarEnWorker } = require(path.join(SITE, 'tabs', 'runs.js'));
@@ -954,13 +975,15 @@ test('2.76-Demo_FrenoEnElHiloAparte', async () => {
   const afuera = tmp('demo-hilo-afuera-');
   const fuentes = crearFuentesDemo({ dir });
   const freno = ponerFreno({ dir });
+  // `tiempoMs`: el armado corta y termina su hilo solo; el código del corte dice cuál de los dos armados se colgó
+  const armar = () => armarEnWorker({ buzon: fuentes.dirBuzon, textosDir: path.join(afuera, 'textos'), tiempoMs: TOPE_HILO_MS });
   try {
     // el hilo aparte arma la vista de ejecuciones con el freno puesto adentro: lo que quiera escribir afuera falla cerrado
-    await assert.rejects(() => armarEnWorker({ buzon: fuentes.dirBuzon, textosDir: path.join(afuera, 'textos') }), (e) => e.code === 'EDEMO_FRENO');
+    await assert.rejects(armar, (e) => { assert.strictEqual(e.code, 'EDEMO_FRENO', 'el armado con el freno'); return true; });
   } finally { freno.quitar(); }
   assert.deepStrictEqual(fs.readdirSync(afuera), [], 'afuera no se escribió nada');
   // sin el freno el mismo armado anda: lo anterior falló por el freno, no por otra cosa
-  const r = await armarEnWorker({ buzon: fuentes.dirBuzon, textosDir: path.join(afuera, 'textos') });
+  const r = await armar();
   assert.strictEqual(r.M.corridas.length, 5);
   await subcasoHiloAnotaElIntento();
 });
@@ -975,8 +998,11 @@ async function subcasoHiloAnotaElIntento() {
     parentPort.postMessage({ c, n: f.intentos.length });`;
   const w = new Worker(codigo, { eval: true, stderr: true, workerData: { freno: path.join(SITE, 'demo-guard.js'), dir } });
   let err = ''; w.stderr.on('data', (d) => { err += d; });
-  const m = await new Promise((resolve, reject) => { w.once('message', resolve); w.once('error', reject); });
-  await new Promise((r) => w.once('exit', r));
+  // el fin se escucha desde el principio: escucharlo recién después del mensaje se pierde un fin que ya llegó
+  const salida = new Promise((r) => w.once('exit', r));
+  const terminar = () => { w.terminate(); };
+  const m = await conTope(new Promise((resolve, reject) => { w.once('message', resolve); w.once('error', reject); }), 'el mensaje del hilo', terminar);
+  await conTope(salida, 'el fin del hilo', terminar);
   assert.deepStrictEqual(m, { c: 'EDEMO_FRENO', n: 1 });
   assert.match(err, /freno: red: request: .*otro\.example/, 'el intento del hilo queda anotado en su salida de error');
 }
