@@ -13,7 +13,8 @@
  *   1. El RESUMEN de consumo (tokens por modelo y por paso) → adentro del volcado, bajo `consumo`.
  *   2. El HILO de la conversación, comprimido → `<volcado sin .json>.hilo.jsonl.gz`, al lado. Sin adjuntos, salvo
  *      el aviso de un hook que falló o se pasó de tiempo, reducido a nombre, evento, salida, categoría y el texto
- *      del error saneado y recortado (`reducirErrorDeHook`).
+ *      del error saneado y recortado (`reducirErrorDeHook`). Sólo el tramo de ESTA corrida (`ventanaDelHilo`): una
+ *      sesión larga con varias corridas guardaba la sesión entera en cada una, y cada corrida la volvía a subir.
  *   3. El MENSAJE REAL del error de cada freno en rojo → `gates[i].mensaje`.
  *
  * DE QUÉ HERRAMIENTA, Y CUÁNTO COSTÓ
@@ -769,6 +770,53 @@ function ultimaHora(lineas) {
   return max === null ? null : new Date(max).toISOString();
 }
 
+// El tramo de la conversación que es de la corrida. Antes del arranque se dejan unos minutos: el pedido que la abrió.
+// Después del cierre, una hora: el pipeline sigue hablando tras el `clear` (el cierre truncado), y el cambio de git y
+// el pedido que salen de la corrida se leen en esa cola.
+const THREAD_WINDOW_BEFORE_MS = 10 * 60 * 1000;
+const THREAD_WINDOW_AFTER_MS = 60 * 60 * 1000;
+
+/**
+ * Desde y hasta qué hora es de esta corrida. `null` sin hora de arranque (un volcado viejo): se guarda la conversación
+ * entera, como siempre. `hasta` es `null` mientras la corrida no se archivó: queda abierta y sigue creciendo.
+ * Una corrida que quedó sin cerrar (`sinCerrar`, la escribe `unclosed-runs.js`) no se archiva nunca: su marcador ya
+ * desapareció, así que termina en su último freno registrado (o en su arranque, sin ninguno).
+ */
+function ventanaDelHilo(dump) {
+  const marker = (dump && dump.marker) || {};
+  const inicio = ms(marker.startedAt);
+  if (inicio === null) return null;
+  let ultimo = ms(dump.archivedAt);
+  if (ultimo === null && dump.sinCerrar) {
+    ultimo = inicio;
+    for (const g of dump.gates || []) {
+      const t = ms(g && g.ts);
+      if (t !== null && t > ultimo) ultimo = t;
+    }
+  }
+  const toque = ms(marker.lastTouch);
+  if (ultimo !== null && toque !== null && toque > ultimo) ultimo = toque;
+  return { desde: inicio - THREAD_WINDOW_BEFORE_MS, hasta: ultimo === null ? null : ultimo + THREAD_WINDOW_AFTER_MS };
+}
+
+/** Los mensajes dentro de la ventana. Uno sin hora toma la del anterior (o la del siguiente, si va primero). */
+function recortarAVentana(mensajes, ventana) {
+  if (!ventana) return mensajes;
+  const horas = mensajes.map((o) => ms(o && o.timestamp));
+  let previa = null;
+  for (let i = 0; i < horas.length; i += 1) {
+    if (horas[i] === null) horas[i] = previa;
+    else previa = horas[i];
+  }
+  let siguiente = null;
+  for (let i = horas.length - 1; i >= 0; i -= 1) {
+    if (horas[i] === null) horas[i] = siguiente;
+    else siguiente = horas[i];
+  }
+  return mensajes.filter((_, i) => horas[i] !== null && horas[i] >= ventana.desde
+    && (ventana.hasta === null || horas[i] <= ventana.hasta));
+}
+
 function rutaHilo(volcado) {
   return `${volcado.replace(/\.json$/, '')}.hilo.jsonl.gz`;
 }
@@ -960,8 +1008,9 @@ function rescatarCorrida(volcado, opciones) {
   dump.consumo = c;
   res.consumo = c;
 
-  // El hilo. Se reescribe entero: idempotente sobre la misma entrada, actualizado si creció.
-  const mensajes = hilo(leido.lineas);
+  // El hilo. Se reescribe entero: idempotente sobre la misma entrada, actualizado si creció. Sólo el tramo de la corrida.
+  const ventana = ventanaDelHilo(dump);
+  const mensajes = recortarAVentana(hilo(leido.lineas), ventana);
   const destino = rutaHilo(volcado);
   try {
     const cuerpo = `${mensajes.map((m) => JSON.stringify(m)).join('\n')}\n`;
@@ -972,6 +1021,12 @@ function rescatarCorrida(volcado, opciones) {
       mensajes: mensajes.length,
       descartadas: leido.lineas.length - mensajes.length,
     };
+    if (ventana) {
+      res.hilo.ventana = {
+        desde: new Date(ventana.desde).toISOString(),
+        hasta: ventana.hasta === null ? null : new Date(ventana.hasta).toISOString(),
+      };
+    }
     // 🔴 `hilo_hasta` SÓLO avanza si el archivo llegó a escribirse. Si se fijara con lo leído de la
     // transcripción, sin mirar el resultado de la escritura, con el disco lleno o un permiso mal ese
     // tramo de conversación se perdería PARA SIEMPRE —`estaPendiente` lo daría por resuelto— y el barrido lo
@@ -1058,12 +1113,16 @@ function estaPendiente(volcado, projectsDir, opciones = {}) {
   if (c.herramienta === 'codex') return codexCrecio(sid, c, opciones);
   const ubi = ubicarTranscripcion(sid, projectsDir);
   if (!ubi.ruta) return false;
+  // Guardada después de que cerró su ventana: lo que la conversación crezca ya no es de esta corrida.
+  const ventana = ventanaDelHilo(dump);
+  if (ventana && ventana.hasta !== null && c.hilo_guardado_en && ms(c.hilo_guardado_en) > ventana.hasta) return false;
   if (grandeYaGuardadaHoy(ubi.ruta, c, opciones)) return false;
   const leido = leerTranscripcion(ubi.ruta);
   if (leido.error) return false;
   // La MISMA vara que usó `procesarCorrida` para escribir `hilo_hasta`: los mensajes que entran al
-  // archivo, no todas las líneas. Con dos varas distintas nunca coincidirían y se reprocesaría siempre.
-  const ultima = ultimaHora(hilo(leido.lineas));
+  // archivo (con el mismo recorte), no todas las líneas. Con dos varas distintas nunca coincidirían y se reprocesaría
+  // siempre.
+  const ultima = ultimaHora(recortarAVentana(hilo(leido.lineas), ventana));
   // Sin `hilo_hasta` sólo vale la pena volver si hay algo con hora: una conversación sin una
   // sola marca de tiempo se re-procesaría en cada arranque, para siempre, sin cambiar nada.
   if (!c.hilo_hasta) return ultima !== null;
@@ -1206,7 +1265,7 @@ function resumenBarrido(s) {
 
 module.exports = {
   esRojo, normalizar, sanear, colaDeSalida, mensajesDeSalida, LARGO_MENSAJE, cortesDePaso, consumo, hilo, mensajesDeError,
-  ubicarTranscripcion, carpetasDeConversaciones, leerTranscripcion, costo, leerPrecios, precioEn, indexarComandos, procesarCorrida, rescatarCorrida, encadenarMedidor, estaPendiente,
+  ventanaDelHilo, recortarAVentana, ubicarTranscripcion, carpetasDeConversaciones, leerTranscripcion, costo, leerPrecios, precioEn, indexarComandos, procesarCorrida, rescatarCorrida, encadenarMedidor, estaPendiente,
   esNotificacionEncolada, reducirErrorDeHook, CATEGORIAS_HOOK, TIPOS_DESCARTADOS,
 };
 
