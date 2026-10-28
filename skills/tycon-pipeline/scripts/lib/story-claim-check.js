@@ -98,7 +98,7 @@ function editedMarkdown(stateDir, sessionId, since) {
       try {
         const e = JSON.parse(l);
         // sólo lo de este turno: una historia escrita en un turno anterior no respalda la afirmación de ahora
-        if (e && typeof e.path === 'string' && /\.md$/i.test(e.path) && (!since || String(e.ts || '') > since)) out.add(e.path);
+        if (e && typeof e.path === 'string' && /\.md$/i.test(e.path) && String(e.ts || '') > since) out.add(e.path);
       } catch { /* línea partida */ }
     }
     return [...out];
@@ -186,9 +186,9 @@ const INSIST_DIR = 'story-insist';
 /** Los registros que cuentan de la conversación del cierre (la cadena y las respuestas que cuelgan de ella), o null. */
 function chainRecords(event, home) {
   const vr = require('./validator-record.js');
-  const records = event && event.transcript_path ? readTranscript(event.transcript_path) : null;
+  const records = event.transcript_path ? readTranscript(event.transcript_path) : null;
   if (records) return vr.conRespuestas(records);
-  const conv = require('./person-ok.js').leerConversacion({ home, sesion: event && event.session_id });
+  const conv = require('./person-ok.js').leerConversacion({ home, sesion: event.session_id });
   return conv.legible ? vr.conRespuestas(conv.registros) : null;
 }
 

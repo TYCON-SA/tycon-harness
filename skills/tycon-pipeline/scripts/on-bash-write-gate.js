@@ -290,10 +290,11 @@ function posicionesDeComando(cmd) {
  */
 function subcomandosComoComodin(cmd, seguro) {
   const destinos = [];
+  const texto0 = String(cmd || '');
   // un `date` que el comando redefine (función, alias, otro PATH) ya no es el de siempre: su salida no se sabe
-  if (/\bdate\s*\(\s*\)|\bfunction\s+date\b|\balias\s+date\b|(?:^|[\s;&|(])(?:export\s+)?PATH=/.test(String(cmd || ''))) return { cmd, destinos };
+  if (/\bdate\s*\(\s*\)|\bfunction\s+date\b|\balias\s+date\b|(?:^|[\s;&|(])(?:export\s+)?PATH=/.test(texto0)) return { cmd, destinos };
   const es = posicionesDeComando(cmd);
-  const texto = String(cmd || '').replace(DESTINO_CON_SUBCOMANDO, (todo, antes, palabra, en) => {
+  const texto = texto0.replace(DESTINO_CON_SUBCOMANDO, (todo, antes, palabra, en) => {
     const desde = en + antes.length;
     if (!es.slice(desde, desde + palabra.length).every(Boolean)) return todo;
     if (!new RegExp(SUBCOMANDO_EN_DESTINO).test(palabra) || !/\.(?:md|log)$/.test(palabra)) return todo;
@@ -2136,7 +2137,7 @@ function anotarEscriturasConsola(stateDir, sessionId, rutas, kind = null) {
   const where = 'skills/tycon-pipeline/scripts/on-bash-write-gate.js';
   if (!rutas.length || legacy.readEnv('TYCON_NO_RUN_CHANGE', { where }) === '1') return;
   const nueva = path.join(stateDir, 'console-writes');
-  let dir = nueva;
+  let dir;
   try { dir = legacy.prepareStateWrite(nueva, { where }); } catch (e) {
     logHookError(e);
     try { dir = legacy.legacyStatePath(nueva) || nueva; } catch (_) { dir = nueva; }

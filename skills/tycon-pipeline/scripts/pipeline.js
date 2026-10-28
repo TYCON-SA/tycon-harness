@@ -1698,7 +1698,7 @@ const VARIABLES_DE_NIVEL = [['economy', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'], ['bala
 function proveedorDeModelos(org, opts = {}) {
   const env = opts.env || process.env;
   const warnings = [];
-  let prov = { provider: 'anthropic', origin: 'derivado', problem: null };
+  let prov;
   try {
     const dir = opts.tree || require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
     const lector = dir ? path.join(dir, 'scripts', 'lib', 'tycon-config.js') : null;
@@ -2585,7 +2585,6 @@ function buildAdvisorContext({ repo, story, files, iter }) {
   const bloqueReglas = bloqueParaContexto(reglas);
   try {
     fs.mkdirSync(ctxDir, { recursive: true });
-    const { execFileSync } = require('child_process');
     const storyContent = story ? readText(story) : '';
     const digest = buildStoryDigest(storyContent);
     // ── El diff POR REPO ─────────────────────────────────────────────────────────────────────────
@@ -5338,7 +5337,7 @@ const DISPOSITION_ALIAS = { 'false-positive': 'refuted', 'false_positive': 'refu
 
 function deriveStoryId(storyPath) {
   if (!storyPath || !exists(storyPath)) return null;
-  const fm = parseFrontmatterPipeline(readText(storyPath)) || {};
+  const fm = parseFrontmatterPipeline(readText(storyPath));
   return String(fm.story || path.basename(storyPath, '.md')).trim() || null;
 }
 
@@ -5909,7 +5908,6 @@ function writeFindings(args) {
   const runDir = args.runDir || resolveRunDir(args.repo, storyId, true, args.story);
   if (!runDir) return { error: 'no se pudo resolver/crear el run dir bajo .advisors/pipeline-runs/ (si el número de la story se repite en su repo, la carpeta lleva la clave: `pipeline.js evidence-key --story <ruta>` dice por qué no se pudo calcular)' };
   fs.mkdirSync(runDir, { recursive: true });
-  const rlib = require('./lib/review-roster.js');
   // Los tres modos de «no puedo validar» (AC 7/8). Ninguno frena —el roster se escribe cuando el
   // hook cierra la ronda de revisores, o sea DESPUÉS de que el dev quiera anotar lo que encontró—
   // pero los tres lo DICEN, y dicen cuál de los tres es. Un control que no puede correr no aprueba.
@@ -7492,7 +7490,6 @@ module.exports = {
   // findings.json determinista — exportados para regresión.
   writeFindings,
   computeFindingsStatus,
-  resolveRunDir,
   deriveStoryId,
   normalizeFindingRecord,
   // gate E2E multi-app — exportados para unit tests.

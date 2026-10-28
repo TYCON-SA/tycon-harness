@@ -441,7 +441,6 @@ function medirPiso({ home = HOME, dias = 7 } = {}) {
   const porTipo = {};
   let ilegibles = 0;
   let sinConsumo = 0;   // primer pedido con el consumo en cero: no es un piso de 0, es «no se pudo medir»
-  let huboRaiz = false;
 
   // 🔴 `.sort()` en cada listado de directorio: sin él, dos tipos con la MISMA mediana saldrían en el
   // orden incidental con que el sistema de archivos devuelve las carpetas, y con más de 8 tipos un
@@ -470,13 +469,11 @@ function medirPiso({ home = HOME, dias = 7 } = {}) {
   };
   const proyectos = dirs(raiz);
   if (proyectos === null) return { estado: 'no_medido', motivo: `no pude leer ${raiz.replace(home, '~')} (¿esta máquina no corrió subagentes?)`, n: null, desde };
-  huboRaiz = true;
 
   for (const proy of proyectos) {
     for (const ses of dirs(path.join(raiz, proy)) || []) {
       const sub = path.join(raiz, proy, ses, 'subagents');
       for (const ruta of transcripciones(sub)) {
-        const f = path.basename(ruta);
         let txt; try { txt = fs.readFileSync(ruta, 'utf8'); } catch { ilegibles++; continue; }
         let primero = null, ts = null, roto = false;
         for (const linea of txt.split('\n')) {
@@ -506,7 +503,7 @@ function medirPiso({ home = HOME, dias = 7 } = {}) {
   const mediana = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
   if (!pisos.length) {
     return { estado: 'no_medido', n: null, ilegibles, sin_consumo: sinConsumo, desde,
-      motivo: huboRaiz ? `sin transcripciones de subagentes en los últimos ${dias} día(s)` : 'no pude leer las transcripciones' };
+      motivo: `sin transcripciones de subagentes en los últimos ${dias} día(s)` };
   }
   for (const t of Object.keys(porTipo)) { porTipo[t].mediana = mediana(porTipo[t].pisos); delete porTipo[t].pisos; }
   // `por_tipo` se devuelve con las claves ORDENADAS: así el JSON es el mismo con los mismos datos,

@@ -96,7 +96,7 @@ function readSecret({ stdin = process.stdin, fd = 0, readSync = fs.readSync, wri
       }
       if (!n || n <= 0) { aborted = true; break; }   // fin de entrada sin Enter: no hay valor
       let chunk = Buffer.concat([pending, buf.subarray(0, n)]); pending = Buffer.alloc(0);
-      for (let i = 0; i < chunk.length && !done; i++) {
+      for (let i = 0; i < chunk.length; i++) {
         const b = chunk[i];
         if (b === 0x1b) {
           // Las secuencias de la terminal: CSI (ESC [ … <final 0x40-0x7e>; las marcas del pegado son ESC[200~ y

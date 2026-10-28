@@ -26,7 +26,7 @@ const path = require('path');
 const SCRIPTS = path.join(__dirname, '..');
 const { isGitCommit, parseAcsFromSpec } = require(path.join(SCRIPTS, 'on-pre-commit.js'));
 const { matchGlob, advisorAffectedByDelta, buildStoryDigest, parseFrontmatterList, computeRiskClass,
-  computeDepGate, writeFollowups, computeFollowupsStatus, parseFollowupsSection,
+  computeDepGate, writeFollowups, computeFollowupsStatus,
   computeDeepReviewGate, findRepoRootsForStory, computePreflightFrontmatter, computeModelHint,
   computeToolingExpected, writeFindings, computeFindingsStatus, resolveRunDir,
   computeGitignoreNeeds,

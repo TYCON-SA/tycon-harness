@@ -82,7 +82,7 @@ test('T2 Estado_PasoEnPalabras: los nombres llanos del pipeline, y «paso N» si
   const m = toyMachine();
   // un marcador viejo, con los nombres nuevos de la equivalencia; el 4 viejo no se reparte
   const cases = { 2: 'Armar el plan', 4: 'Implementar + pruebas', 5: 'Revisores', 12: 'paso 12', 'run-tests': 'Correr las pruebas' };
-  for (const [step, name] of Object.entries(cases)) {
+  for (const step of Object.keys(cases)) {
     const sid = `step${step}-0000`;
     const nuevo = !/^\d+$/.test(step);
     marker(m, sid, { storyId: `8.${step}`, storyPath: story(m.root, `8.${step}`, 't'), stepsCompleted: [], stepsPending: [nuevo ? step : Number(step)], ...(nuevo ? { stepScheme: 2 } : {}) });
