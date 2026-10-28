@@ -525,6 +525,9 @@ sha7() { printf '%s' "$1" | cut -c1-7; }
 aviso() { estado "d.get('notice') or ''"; }
 PERFIL_SIN_NIGHTLY='{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": false, "mailbox": true }, "update": { "channel": "latest", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }'
 PERFIL_CON_NIGHTLY='{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "latest", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }'
+# los mismos con «ask»: el tramo de T10 en que la versión pública nueva espera los usa (con «auto» en el perfil, se aplica)
+PERFIL_SIN_NIGHTLY_ASK="${PERFIL_SIN_NIGHTLY/\"apply\": \"auto\"/\"apply\": \"ask\"}"
+PERFIL_CON_NIGHTLY_ASK="${PERFIL_CON_NIGHTLY/\"apply\": \"auto\"/\"apply\": \"ask\"}"
 LLAVE_2='{ "_que_es": "la llave de JUGUETE del buzón (laboratorio): no abre nada", "cuenta": "labcorridas", "contenedor": "corridas", "sas": "sv=lab&sig=juguete-2", "vence": "2099-01-01" }'
 
 # ───────────────────────────────────────────── T10 ────────────────────────────────────────────────────────────────────
@@ -626,8 +629,12 @@ if corre T10; then
   [ "$RC" = 0 ] && [ "$(estado "d['team']['commit']")" = "$C4b" ] && ok "(f) T22: con el aplicador fallando, la capa entró y update salió 0" || mal "(f) T22: aplicador fallando: rc $RC $(estado "d.get('team')")"
   case "$OUT" in *"el aplicador falló"*) ok "(f) T22: …y lo dice en una línea" ;; *) mal "(f) T22: update no dice que el aplicador falló: $OUT" ;; esac
   [ "$(estado "json.dumps(d.get('managed'), sort_keys=True)")" = "$P0" ] && ok "(f) T22: …y no anotó piezas de un aplicador que falló" || mal "(f) T22: anotó piezas con el aplicador fallando"
-  # (g) política ask y una versión pública nueva sin aplicar: la capa nueva entra igual
-  publica_perfil "$PERFIL_SIN_NIGHTLY" "nightly apagada (ask)"
+  # (g) política ask y una versión pública nueva sin aplicar: la capa nueva entra igual. El «ask» lo fija el perfil
+  # INSTALADO (con «auto» en el perfil, la máquina no puede saltear la actualización), así que primero entra un perfil
+  # con «ask» y después llegan juntas la versión pública nueva y otra capa
+  publica_perfil "$PERFIL_CON_NIGHTLY_ASK" "nightly prendida (ask)"
+  ventana none; TYCON_UPDATE_APPLY=ask harness_release startup >/dev/null 2>&1
+  publica_perfil "$PERFIL_SIN_NIGHTLY_ASK" "nightly apagada (ask)"
   C5="$(team_head)"
   harness_lab_publish_stable 2026.10.08.2
   ventana none
@@ -646,13 +653,13 @@ if corre T10; then
 import json,sys
 f,b=sys.argv[1:3]; d=json.load(open(f)); d['files'].append({'path':'version.json','mode':'100644','blob':b}); json.dump(d, open(f,'w'), indent=1)
 PY
-  publica_perfil "$PERFIL_CON_NIGHTLY" "nightly prendida (i)"
+  publica_perfil "$PERFIL_CON_NIGHTLY_ASK" "nightly prendida (i)"
   ventana none
   harness_release startup >/dev/null 2>&1
   [ -f "$(NEW)/version.json" ] && ok "(i) version.json sigue: el refresco sólo borra rutas de la lista cerrada" || mal "(i) el refresco borró version.json"
   [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && ok "(i) …y la capa nueva entró" || mal "(i) state.team: $(estado "d.get('team')")"
   # (j) un commit que cambia update.channel: la política se relee después del refresco
-  publica_perfil '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "stable", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }' "canal stable"
+  publica_perfil '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "stable", "apply": "ask" }, "packs": { "default": "all" }, "install": { "profile": "full" } }' "canal stable"
   ventana none
   harness_release startup >/dev/null 2>&1
   [ "$(estado "d['channel']")" = stable ] && ok "(j) state.channel pasó a stable en el mismo arranque" || mal "(j) state.channel: $(estado "d.get('channel')")"
@@ -661,7 +668,7 @@ PY
   harness_release startup >/dev/null 2>&1
   [ "$(grep -c 'canal vigente cambió' "$(STARTUP_LOG)" 2>/dev/null)" = "$K0" ] && ok "(j) el arranque siguiente no dice «el canal cambió»" || mal "(j) el arranque siguiente dijo que el canal cambió"
   # (k) la llave borrada a mano con la misma punta: repuesta desde la caché, sin bajar nada
-  publica_perfil "$PERFIL_CON_NIGHTLY" "canal latest otra vez" && printf '%s\n' "$LLAVE_2" > "$LAB_AUTHOR_TEAM/scripts/metrics/corridas-buzon.json" && harness_lab_team_publish "la llave de vuelta (k)"
+  publica_perfil "$PERFIL_CON_NIGHTLY_ASK" "canal latest otra vez" && printf '%s\n' "$LLAVE_2" > "$LAB_AUTHOR_TEAM/scripts/metrics/corridas-buzon.json" && harness_lab_team_publish "la llave de vuelta (k)"
   ventana none
   harness_release startup >/dev/null 2>&1
   [ -f "$(NEW)/scripts/metrics/corridas-buzon.json" ] && ok "(k) la llave está (commit con la llave)" || mal "(k) la llave no entró"
@@ -685,7 +692,7 @@ PY
   [ "$(( $(team_pedidos) - T0 ))" = 1 ] && ok "(l) el arranque siguiente no la revalida: un solo pedido (la ref)" || mal "(l) revalidó: $(( $(team_pedidos) - T0 )) pedidos"
   case "$(aviso)" in *"inventada"*) ok "(l) …y el aviso sigue diciendo el motivo" ;; *) mal "(l) el aviso se perdió: $(aviso)" ;; esac
   # (m) la mirada a la copia pública bloqueada (sin permiso) y un commit sano del equipo: la capa entra igual
-  publica_perfil "$PERFIL_SIN_NIGHTLY" "perfil sano (m)"
+  publica_perfil "$PERFIL_SIN_NIGHTLY_ASK" "perfil sano (m)"
   harness_lab_release_control "{ \"auth\": \"token:solo-otro-11\", \"auth_by_repo\": { \"$LAB_TEAM\": \"none\" } }"
   ventana none
   harness_release startup >/dev/null 2>&1
