@@ -439,9 +439,36 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
   }
 }
 
-/** `harness.js uninstall --yes`, y qué quedó. */
+/**
+ * Lo que `uninstall --dry-run` tiene que dejar igual: cada enlace, el estado y `settings.json` (si está y qué tiene).
+ * Devuelve una línea por cosa, para comparar antes y después.
+ */
+function uninstallFootprint(home) {
+  const one = (p) => { let st; try { st = fs.lstatSync(p); } catch (_) { return `${p}: no está`; } if (!st.isFile()) return `${p}: ${st.isSymbolicLink() ? 'enlace' : 'carpeta'}`; return `${p}: ${crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')}`; };
+  return [...LINKS.map(([n]) => path.join(home, '.claude', n)), path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json'), path.join(home, '.claude', 'settings.json')].map(one);
+}
+
+/**
+ * `harness.js uninstall --dry-run`: sale 0, dice qué quita y qué deja, y no cambia nada. `{ facts, problems }`: los
+ * problemas son lo que no cumplió, en palabras.
+ */
+function judgeUninstallDryRun({ exit, error, output, before, after }) {
+  const problems = [];
+  if (error || exit !== 0) problems.push(`salió ${error || exit}`);
+  else if (!/quita \(sólo lo registrado\):/.test(output) || !/^deja:/m.test(output)) problems.push('no dice qué quita y qué deja');
+  const changed = before.filter((l, i) => l !== after[i]);
+  if (changed.length) problems.push(`cambió ${changed.map((l) => l.split(': ')[0]).join(', ')}`);
+  return { problems, changed: changed.length };
+}
+
+/** `harness.js uninstall --dry-run`, después `uninstall --yes`, y qué quedó. */
 function measureUninstall({ v, home, clone, env, finding }) {
   const harness = path.join(clone, 'scripts', 'setup', 'harness.js');
+  const before = uninstallFootprint(home);
+  const d = L.run(process.execPath, [harness, 'uninstall', '--dry-run'], { env, cwd: clone, timeoutMs: 300000 });
+  const dryOutput = `${d.stdout}\n${d.stderr}`.trim();
+  const dry = judgeUninstallDryRun({ exit: d.exit, error: d.error, output: dryOutput, before, after: uninstallFootprint(home) });
+  if (dry.problems.length) finding(`uninstall:${v.id}:dry-run`, 'uninstall', `harness.js uninstall --dry-run: ${dry.problems.join('; ')}`, 'W4');
   const r = L.run(process.execPath, [harness, 'uninstall', '--yes'], { env, cwd: clone, timeoutMs: 300000 });
   // la carpeta real de `skills` o `agents` es del dev y se queda; lo que no puede quedar es un enlace al arnés
   // (la carpeta entera enlazada, o una entrada suya que todavía lleve al clon)
@@ -452,7 +479,7 @@ function measureUninstall({ v, home, clone, env, finding }) {
     if (sub && st.isDirectory() && !st.isSymbolicLink()) return harnessEntries(p, path.join(realClone, sub)) > 0;
     return true;
   }).map(([n]) => n);
-  const out = { exit: r.exit, error: r.error, output: L.clip(`${r.stdout}\n${r.stderr}`.trim(), 1500), links_left: left, state_left: fs.existsSync(path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json')), clone_still_there: fs.existsSync(path.join(clone, '.git')) };
+  const out = { dry_run: { exit: d.exit, error: d.error, output: L.clip(dryOutput, 1500), changed: dry.changed, problems: dry.problems }, exit: r.exit, error: r.error, output: L.clip(`${r.stdout}\n${r.stderr}`.trim(), 1500), links_left: left, state_left: fs.existsSync(path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json')), clone_still_there: fs.existsSync(path.join(clone, '.git')) };
   if (r.error || r.exit !== 0) finding(`uninstall:${v.id}:failed`, 'uninstall', `harness.js uninstall --yes salió ${r.error || r.exit}: ${lastLines(r.stderr || r.stdout)}`, 'W4');
   else if (left.length || out.state_left) finding(`uninstall:${v.id}:left-pieces`, 'uninstall', `tras uninstall quedan: ${[...left, out.state_left ? 'el estado' : ''].filter(Boolean).join(', ')}`, 'W4');
   return out;
@@ -630,4 +657,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, VARIANTS, LINKS, measure, measureStartupTiming, measureMailboxUpload, findClone, runBlock, seenHomes, shellFilesWithCr, measureLinks, photoDiff };
+module.exports = { NAME, VARIANTS, LINKS, measure, judgeUninstallDryRun, uninstallFootprint, measureStartupTiming, measureMailboxUpload, findClone, runBlock, seenHomes, shellFilesWithCr, measureLinks, photoDiff };

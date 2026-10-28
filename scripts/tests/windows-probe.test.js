@@ -80,6 +80,27 @@ const checkJobs = (code) => {
 
 // ═══ T1 ════════════════════════════════════════════════════════════════════════════════════════════════════════
 
+// `uninstall --dry-run`: sale 0, dice qué quita y qué deja, y no cambia nada
+test('Uninstall_DryRun_JudgesExitPlanAndChanges', () => {
+  const IP = require(path.join(DIR, 'install-probe.js'));
+  const plan = 'quita (sólo lo registrado):\n  - el estado x\ndeja:\n  - el clon';
+  const same = ['a: enlace', 'b: 12ab'];
+  assert.deepStrictEqual(IP.judgeUninstallDryRun({ exit: 0, error: null, output: plan, before: same, after: same }), { problems: [], changed: 0 });
+  assert.deepStrictEqual(IP.judgeUninstallDryRun({ exit: 2, error: null, output: plan, before: same, after: same }).problems, ['salió 2']);
+  assert.deepStrictEqual(IP.judgeUninstallDryRun({ exit: 0, error: null, output: 'nada', before: same, after: same }).problems, ['no dice qué quita y qué deja']);
+  assert.deepStrictEqual(IP.judgeUninstallDryRun({ exit: 0, error: null, output: plan, before: same, after: ['a: no está', 'b: 12ab'] }), { problems: ['cambió a'], changed: 1 });
+  // la huella mira cada enlace, el estado y settings.json: lo que falta se dice, no tira
+  const home = fs.mkdtempSync(path.join(require('os').tmpdir(), 'huella-'));
+  try {
+    fs.mkdirSync(path.join(home, '.claude'));
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{}');
+    const f = IP.uninstallFootprint(home);
+    assert.strictEqual(f.length, IP.LINKS.length + 2);
+    assert.match(f[f.length - 1], /settings\.json: [0-9a-f]{64}$/);
+    assert.match(f[f.length - 2], /harness-state\.json: no está$/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('WindowsPipeline_Yaml_TrabajoDeMasODeMenos_Frena', () => {
   // la lista es exacta: un trabajo nuevo o uno que falta se ve, no pasa de largo
   const toy = (names) => names.map((n) => `  - job: ${n}\n    steps: []`).join('\n');
@@ -1175,6 +1196,9 @@ test('Probe_LabRun_PowershellBlockOfTheCover_RunsUnderPwsh', { skip: (process.pl
     }
     // un bloque que falla: el código que se anota es el del programa, no el que PowerShell le pone a su -Command
     const probe = require(path.join(DIR, 'install-probe.js'));
+    // `uninstall --dry-run`: sale 0, dice qué quita y qué deja, y no cambia nada (en la última variante con acento)
+    const accent = step.facts.variants.accent;
+    if (accent.uninstall) assert.deepStrictEqual([accent.uninstall.dry_run.exit, accent.uninstall.dry_run.problems, accent.uninstall.dry_run.changed], [0, [], 0], accent.uninstall.dry_run.output);
     const failed = probe.runBlock({ block: 'node -e "process.exit(7)"', fence: 'powershell', work: path.join(base, 'work con espacio y ñ'), scratch: path.join(base, 'scratch'), env: process.env, id: 'x', pwsh: L.scanPath('pwsh')[0] });
     assert.strictEqual(failed.exit, 7);
   } finally { fs.rmSync(base, { recursive: true, force: true }); }

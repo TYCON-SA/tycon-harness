@@ -27,7 +27,9 @@
  * CÓMO FALLA. Una máquina que no se actualiza o que no avisa es un HECHO del reporte, con su gravedad; no se arregla
  * acá. «Error» es no haber podido ensayar.
  */
+const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const L = require('./lab.js');
 const T = require('./team-lab.js');
 const TL = require('./toy-lab.js');
@@ -44,6 +46,9 @@ const VARIANTS = Object.freeze([
   { id: 'pwsh-missing', home: ['users', 'update-without-ps7'], team: true, pwsh_after: false, what: 'instalada con PowerShell 7 y con la capa; después pwsh no está en el PATH' },
   // sin la capa y sin ningún paquete activo, con la política de aplicar sola elegida en la máquina
   { id: 'no-pack', home: ['users', 'update-no-pack'], team: false, pwsh_after: true, apply_alone: true, what: 'sin la capa ni paquetes activos, con «aplicar sola» elegido en la máquina' },
+  // dos sesiones que se abren a la vez con una versión nueva por aplicar, mientras otro programa (otra sesión, un
+  // antivirus) tiene `settings.json` abierto sin dejar reemplazarlo
+  { id: 'two-sessions', home: ['users', 'update-two-sessions'], team: false, pwsh_after: true, apply_alone: true, together: true, what: 'aplica sola con dos sesiones abriéndose a la vez y settings.json tomado por otro programa' },
 ]);
 /**
  * La mudanza de juguete que trae la versión nueva: la de antes tiene una skill y un agente en el núcleo; la
@@ -187,6 +192,101 @@ function judgeReached(read, when, { expected, sessions = 0 } = {}) {
   return { number, reached, by_hand: reached === false, findings };
 }
 
+// los temporales que deja una escritura atómica de `settings.json` a su lado (el arnés y el aplicador)
+const SETTINGS_TEMP = /^\.settings\..*\.tmp$|^settings\.json\.tmp/;
+/**
+ * Dos sesiones abiertas a la vez durante una actualización, con `settings.json` tomado por otro programa. `pair`: cómo
+ * salió la línea de arranque de cada una; `settings`: `{ readable, startup }` al final; `leftovers`: los temporales que
+ * quedaron al lado de `settings.json`; `failed`: el intento fallido que guarda el estado al final (o nulo). Que llegue a
+ * la versión nueva lo juzga `judgeReached`.
+ *   · una línea de arranque que no sale 0 → `two-sessions:startup-failed:<sesión>` (rompe);
+ *   · `settings.json` ilegible o sin la línea de arranque → `two-sessions:settings-broken` (rompe);
+ *   · un intento fallido que no es «interrumpido» (ése no se reintenta solo) → `two-sessions:failed-not-retried`;
+ *   · temporales a su lado → `two-sessions:temp-left` (ruido).
+ */
+function judgeTwoSessions({ pair = [], settings, leftovers = [], failed = null }) {
+  const findings = [];
+  for (const p of pair) if (p.error || p.exit !== 0) findings.push({ id: `two-sessions:startup-failed:${p.label}`, severity: T.SEVERITY.breaks, kind: 'startup', detail: `la línea de arranque de la sesión ${p.label} salió ${p.error || p.exit} con la otra abriéndose a la vez${p.err ? `: ${L.clip(p.err.trim(), 300)}` : ''}` });
+  if (!settings || !settings.readable) findings.push({ id: 'two-sessions:settings-broken', severity: T.SEVERITY.breaks, kind: 'settings', detail: 'después de la actualización settings.json no se deja leer' });
+  else if (!settings.startup) findings.push({ id: 'two-sessions:settings-broken', severity: T.SEVERITY.breaks, kind: 'settings', detail: 'después de la actualización settings.json ya no tiene la línea de arranque del arnés' });
+  if (failed && failed.reason !== 'interrupted') findings.push({ id: 'two-sessions:failed-not-retried', severity: T.SEVERITY.loses, kind: 'version', detail: `el estado guarda un intento fallido («${failed.reason || 'sin motivo'}») que la sesión siguiente no reintenta sola` });
+  if (leftovers.length) findings.push({ id: 'two-sessions:temp-left', severity: T.SEVERITY.noise, kind: 'settings', detail: `quedaron temporales al lado de settings.json: ${leftovers.join(', ')}` });
+  return findings;
+}
+
+// lanza cada trabajo de una lista a la vez y espera a todos; imprime cómo salió cada uno (lo usa `fireTogether`)
+const TOGETHER_RUNNER = `const { spawn } = require('child_process');
+const jobs = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
+const out = [];
+let left = jobs.length;
+jobs.forEach((j, i) => {
+  // stable-data: el reloj sólo mide cuánto tardó cada sesión, para el informe; no decide ningún resultado
+  const t0 = Date.now();
+  let so = '', se = '';
+  const c = spawn(j.bin, j.args, Object.assign({ cwd: j.cwd, env: j.env, windowsHide: true }, j.opts || {}));
+  const timer = setTimeout(() => c.kill(), j.timeoutMs);
+  c.stdout.on('data', (d) => { so += d; });
+  c.stderr.on('data', (d) => { se += d; });
+  c.on('error', (e) => { out[i] = Object.assign({}, out[i], { error: e.code || e.message }); });
+  c.on('close', (code) => {
+    clearTimeout(timer);
+    out[i] = Object.assign({ label: j.label, exit: code, ms: Date.now() - t0, out: so.slice(-2000), err: se.slice(-2000) }, out[i]);
+    if (--left === 0) process.stdout.write(JSON.stringify(out));
+  });
+  c.stdin.end(j.input);
+});
+`;
+/** La línea de arranque de `settings.json`, lanzada por `form` en dos sesiones A LA VEZ: `[{ label, exit, error, ms, out, err }]`. */
+function fireTogether({ form, settingsFile, home, env, scratch, labels, seen }) {
+  const line = T.registeredStartup(settingsFile);
+  if (!line) throw new Error('no hay línea de arranque en settings.json para lanzar las dos sesiones');
+  const input = JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', cwd: home, session_id: 'dos-a-la-vez' });
+  const jobs = labels.map((label, i) => {
+    const [bin, args, opts] = form.launch(line.command, `j${i}`);
+    return { label, bin, args, opts, cwd: home, env, input, timeoutMs: 120000 };
+  });
+  fs.mkdirSync(scratch, { recursive: true });
+  const runner = path.join(scratch, 'together.js');
+  const list = path.join(scratch, 'together.json');
+  fs.writeFileSync(runner, TOGETHER_RUNNER);
+  fs.writeFileSync(list, JSON.stringify(jobs));
+  try {
+    const r = seen(L.run(process.execPath, [runner, list], { env, cwd: home, timeoutMs: 300000, cap: 400000 }), 'las dos sesiones a la vez');
+    if (r.error || r.exit !== 0) throw new Error(`no pude lanzar las dos sesiones a la vez (salió ${r.error || r.exit}: ${L.firstLine(r.stderr)})`);
+    return JSON.parse(r.stdout).map((x) => Object.assign(x, { out: L.clip(x.out || '', 600), err: L.clip(x.err || '', 600) }));
+  } finally { fs.rmSync(list, { force: true }); }
+}
+
+/**
+ * Otro programa abre `file` como lo abre un antivirus o un editor: se deja leer, no escribir ni reemplazar (en Windows;
+ * en otro sistema el archivo queda abierto y nada más). Devuelve `{ release() }` cuando ya lo tiene tomado.
+ */
+function holdOpen({ file, ps, env, scratch }) {
+  fs.mkdirSync(scratch, { recursive: true });
+  const script = path.join(scratch, 'hold.ps1');
+  const ready = path.join(scratch, 'hold.ready');
+  const release = path.join(scratch, 'hold.release');
+  const done = path.join(scratch, 'hold.done');
+  for (const f of [ready, release, done]) fs.rmSync(f, { force: true });
+  fs.writeFileSync(script, "param($File, $Ready, $Release, $Done)\n$f = [IO.File]::Open($File, 'Open', 'Read', 'Read')\nNew-Item -ItemType File -Path $Ready -Force | Out-Null\n$n = 0\nwhile (-not (Test-Path $Release) -and $n -lt 1500) { Start-Sleep -Milliseconds 200; $n++ }\n$f.Close()\nNew-Item -ItemType File -Path $Done -Force | Out-Null\n");
+  const child = spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, file, ready, release, done], { env, detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+  // stable-data: el reloj sólo mide las esperas (que tome el archivo, que lo suelte), con su tope; ningún dato que se compara
+  const t0 = Date.now();
+  while (!fs.existsSync(ready) && Date.now() - t0 < 60000) TL.sleep(200);
+  if (!fs.existsSync(ready)) { try { child.kill(); } catch (_) { /* ya no está */ } throw new Error('el programa que toma settings.json no lo abrió en 60 s'); }
+  return {
+    took_ms: Date.now() - t0,
+    release() {
+      fs.writeFileSync(release, '');
+      const t1 = Date.now();
+      // (soltó = dejó su marca después de cerrar el archivo: un proceso que ya terminó puede seguir figurando vivo)
+      while (!fs.existsSync(done) && Date.now() - t1 < 10000) TL.sleep(200);
+      return { released: fs.existsSync(done) };
+    },
+  };
+}
+
 /**
  * La lista de piezas antes y después: `{ before, after, before_text, after_text, diff, findings }`.
  * Con un paquete activo (`packActive`) la máquina no pierde ninguna pieza; sin ninguno, salen exactamente la skill y el
@@ -312,7 +412,7 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   // una sesión con la versión de antes: la máquina queda asentada (el arranque mira, y no hay nada nuevo)
   facts.settled = open(forms, 'default-shell', 'antes', sessionEnv);
   judgeSessions([facts.settled], 'before:');
-  const alone = v.id === 'auto' || v.apply_alone === true;
+  const alone = !v.together && (v.id === 'auto' || v.apply_alone === true);
   if (alone) {
     facts.before = RP.photo({ home, tree, env: sessionEnv, paths, platform, scratch: scratchPieces });
     // la máquina de antes, ya con la capa, se juzga por sí sola: después sólo es la base de la comparación
@@ -330,7 +430,39 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   // es un hallazgo de la máquina: es no poder ensayar
   if (!facts.out_of_window.done) throw new Error(`no pude sacar al arranque de su ventana de red: ${facts.out_of_window.why}`);
 
-  if (alone) {
+  if (v.together) {
+    // otro programa toma settings.json, y dos sesiones se abren a la vez: las dos ven la versión nueva
+    const held = holdOpen({ file: settings, ps, env: sessionEnv, scratch: path.join(scratch, 'hold') });
+    const marks = TL.detachedMarks(paths.harnessDir);
+    let pair;
+    let wait;
+    try {
+      pair = fireTogether({ form: forms['default-shell'], settingsFile: settings, home, env: sessionEnv, scratch: path.join(scratch, 'together'), labels: ['una', 'otra'], seen });
+      wait = TL.waitDetached({ harnessDir: paths.harnessDir, lockDir: paths.lockDir, before: marks, capMs: waitCapMs, budget });
+    } finally { facts.hold = Object.assign({ took_ms: held.took_ms }, held.release()); }
+    const stHeld = TL.stateOf(paths);
+    facts.while_held = { pair: pair.map(({ label, exit, error, ms }) => ({ label, exit, error, ms })), wait, version: TL.installedVersion(tree), failed: stHeld && stHeld.failed ? { reason: stHeld.failed.reason || null } : null };
+    say(`update: ${v.id} — dos sesiones a la vez con settings.json tomado: salieron ${pair.map((p) => p.error || p.exit).join(' y ')}; ${wait.detached ? `esperé ${round(wait.waited_ms)} s (${wait.ended_by})` : 'no se desprendió'}; versión ${facts.while_held.version}`);
+    save();
+    // suelto el archivo: la sesión siguiente, de nuevo fuera de su ventana de red, termina lo que haya quedado a medias
+    facts.out_of_window_again = TL.outOfWindow(paths);
+    if (!facts.out_of_window_again.done) throw new Error(`no pude sacar al arranque de su ventana de red otra vez: ${facts.out_of_window_again.why}`);
+    const next1 = open(forms, 'default-shell', 'después-de-soltar', sessionEnv);
+    facts.sessions = [next1];
+    judgeSessions([next1]);
+    const reached = judgeReached(TL.versionFacts(tree), 'después de soltar settings.json y abrir otra sesión', { expected: next, sessions: 3 });
+    for (const f of reached.findings) add(f);
+    facts.version_after = reached.number;
+    facts.updated = reached.reached;
+    const st = TL.stateOf(paths);
+    let readable = true;
+    try { T.readJsonLoose(settings); } catch (_) { readable = false; }
+    const leftovers = fs.readdirSync(path.dirname(settings)).filter((n) => SETTINGS_TEMP.test(n));
+    facts.end = { settings: { readable, startup: Boolean(T.registeredStartup(settings)) }, leftovers, failed: st && st.failed ? { reason: st.failed.reason || null } : null };
+    for (const f of judgeTwoSessions({ pair, settings: facts.end.settings, leftovers, failed: facts.end.failed })) add(f);
+    facts.answers = { by_severity: bySeverity() };
+    say(`update: ${v.id} — quedó en ${facts.version_after || 'una versión que no se pudo leer'}${facts.updated ? ' (la nueva)' : ' (NO la nueva)'}; settings.json ${readable ? 'legible' : 'ILEGIBLE'}; intento fallido en el estado: ${facts.end.failed ? facts.end.failed.reason : 'ninguno'}`);
+  } else if (alone) {
     const sessions = SESSIONS.filter(([, formId]) => forms[formId]).map(([label, formId]) => open(forms, formId, label, sessionEnv));
     facts.sessions = sessions;
     missingForms(forms, ['bash-c', 'default-shell']);
@@ -472,4 +604,4 @@ function measure({ lab, out, state, platform = process.platform, baseEnv = proce
   });
 }
 
-module.exports = { NAME, VARIANTS, SESSIONS, INSTALL_STEPS, SAME_MACHINE_NOTE, MOVED, PACK_LINE, moveChanges, judgePieces, judgeAsk, judgeByHand, judgePwshMissing, judgeInstalled, judgeVersionRead, judgeReached, measure };
+module.exports = { NAME, VARIANTS, SESSIONS, INSTALL_STEPS, SAME_MACHINE_NOTE, MOVED, PACK_LINE, SETTINGS_TEMP, moveChanges, judgePieces, judgeAsk, judgeByHand, judgePwshMissing, judgeInstalled, judgeVersionRead, judgeReached, judgeTwoSessions, measure };

@@ -75,7 +75,7 @@ function points(report) {
       : none(whyNot(inv, 'inventory') || 'el inventario no midió las carpetas de usuario'));
 
   const links = Object.entries(variants).filter(([, v]) => Array.isArray(v.links)).map(([id, v]) => `${id}: ${v.links.map((l) => `${l.name} ${l.present ? `${l.link_type || l.kind}${l.to_clone ? '' : ' (no resuelve al clon)'}` : 'ausente'}`).join(', ')}`);
-  const removed = Object.entries(variants).filter(([, v]) => v.uninstall).map(([id, v]) => `${id}: uninstall salió ${v.uninstall.error || v.uninstall.exit}, quedaron ${list(v.uninstall.links_left)}`);
+  const removed = Object.entries(variants).filter(([, v]) => v.uninstall).map(([id, v]) => `${id}: ${v.uninstall.dry_run ? `uninstall --dry-run salió ${v.uninstall.dry_run.error || v.uninstall.dry_run.exit} y ${v.uninstall.dry_run.problems.length ? `NO cumplió (${v.uninstall.dry_run.problems.join('; ')})` : 'dijo qué quita y qué deja sin cambiar nada'}; ` : ''}uninstall salió ${v.uninstall.error || v.uninstall.exit}, quedaron ${list(v.uninstall.links_left)}`);
   add('Si el junction se crea, se lee y se borra; y el enlace de archivo sin «modo desarrollador»',
     links.length ? fact(`creados y leídos — ${links.join(' · ')}; borrados — ${removed.length ? removed.join(' · ') : 'no se midió (ninguna variante se desinstaló)'}; el enlace de archivo sin modo desarrollador NO se mide acá (administrador: ${yes((F(inv).administrator || {}).value)}, modo desarrollador: ${yes((F(inv).developer_mode || {}).value)}): lo contesta la máquina real`)
       : none(whyNot(ins, 'install') || 'ninguna instalación dejó enlaces que mirar'));
@@ -90,7 +90,11 @@ function points(report) {
   add('Si `claude` y `az` son un `.exe` o un `.cmd`',
     answered ? fact([kind('az'), kind('claude')].filter(Boolean).join(' · ')) : none(whyNot(inv, 'inventory') || 'el inventario no ubicó az ni claude'));
 
-  add('Cómo se comporta el reemplazo atómico de `settings.json` con el archivo abierto por otra sesión o un antivirus', none('lo contesta W8: dos sesiones durante una actualización, en una máquina real'));
+  // la variante de la actualización con dos sesiones a la vez y settings.json tomado por otro programa
+  const two = ((F(stepOf(report, 'update')).variants) || {})['two-sessions'] || null;
+  add('Cómo se comporta el reemplazo atómico de `settings.json` con el archivo abierto por otra sesión o un antivirus',
+    two && two.end && two.while_held ? fact(`con settings.json tomado y dos sesiones a la vez, las líneas de arranque salieron ${two.while_held.pair.map((p) => p.error || p.exit).join(' y ')} y la máquina quedó en ${two.while_held.version || 'una versión que no se pudo leer'}${two.while_held.failed ? ` con un intento fallido («${two.while_held.failed.reason}»)` : ''}; soltado el archivo, la sesión siguiente la dejó en ${two.version_after || 'una versión que no se pudo leer'} (${two.updated ? 'la nueva' : 'NO la nueva'}), settings.json ${two.end.settings.readable ? 'legible' : 'ILEGIBLE'}${two.end.leftovers.length ? `, con temporales al lado (${two.end.leftovers.join(', ')})` : ''}`)
+      : none((two && (two.not_run || two.threw)) || 'lo contesta la variante two-sessions de la actualización guiada, que no corrió'));
   add('Si `-ExecutionPolicy Bypass` alcanza en una máquina con políticas de empresa', none('nadie en esta story: queda declarado como no medido'));
   add('Si el equipo tuvo alguna vez una sesión de Claude Code en Windows con el arnés andando', none('W8 es la primera con constancia'));
   return out;
