@@ -146,6 +146,10 @@ case "${SALIDA1}" in *"/repo/enorme.md"*) ok "T2: el aviso nombra el archivo";; 
 case "${SALIDA1}" in *"30000"*|*"30.000"*|*"29"*) ok "T2: el aviso dice el tamaño";; *) mal "T2: el aviso no dice el tamaño";; esac
 case "${SALIDA1}" in *"system-reminder"*) ok "T2: el aviso viaja como system-reminder";; *) mal "T2: el aviso no es un system-reminder";; esac
 case "${SALIDA1}" in *rango*) ok "T2: el aviso trae la regla en criollo (leer por rango)";; *) mal "T2: el aviso no dice la regla (leer por rango o por búsqueda, no el archivo entero)";; esac
+# Falla si el aviso vuelve a ser un párrafo: entre las dos etiquetas va una sola línea, como los otros dos medidores.
+if [ "$(printf '%s\n' "${SALIDA1}" | grep -v 'system-reminder>' | grep -c .)" = "1" ]; then ok "T2: el aviso es una sola línea"; else mal "T2: el aviso ocupa más de una línea"; fi
+# Falla si el aviso empuja a leer por rango siempre: leer por rango a ciegas pierde hallazgos, así que la lectura entera que hacía falta queda permitida.
+case "${SALIDA1}" in *"si te alcanzaba"*"lectura-entera-ok"*) ok "T2: el aviso pide el rango sólo si alcanzaba, y deja la marca para la lectura entera";; *) mal "T2: el aviso empuja a leer por rango sin dejar la salida de la lectura entera";; esac
 SALIDA2="$(printf '{"session_id":"s-t2"}' | node "${AVISO}" 2>/dev/null)"
 if [ -z "${SALIDA2}" ]; then ok "T2: el segundo turno ya no cobra (consumió el pendiente)"; else mal "T2: volvió a cobrar lo mismo en el turno siguiente — el aviso no consume el pendiente"; fi
 
@@ -227,13 +231,11 @@ echo "T6 — el medidor entra por el instalador canónico y su suite está regis
 # los hooks que registra el instalador están en la lista única, no en su texto
 INST="${RAIZ}/scripts/setup/hooks-list.json"
 if node -e 'process.exit(require(process.argv[1]).hooks.some((h) => h.event === "Stop" && h.spec === "@tcg:large-read-meter.js") ? 0 : 1)' "${INST}"; then ok "T6: el medidor está en el set canónico del instalador (hook Stop)"; else mal "T6: el instalador no registra large-read-meter.js como hook Stop"; fi
-# 🔴 El aviso NO se registra, a propósito. Su único efecto es empujar
-# a leer por rango, y eso se mide como pérdida de hallazgos: el banco de 115 casos de revisores,
-# corrido con lectura normal contra «leé por rango, nunca el archivo entero», dio 0 defectos no
-# encontrados en la primera y 2 en la segunda, sin ninguna mejora. El medidor queda MUDO: anota y
-# no empuja. Este caso vigila que nadie lo enchufe sin volver a medir.
-if node -e 'process.exit(require(process.argv[1]).hooks.some((h) => h.spec === "@tcg:large-read-notice.js") ? 0 : 1)' "${INST}"; then mal "T6: el aviso quedó REGISTRADO — se midió que empujar a leer por rango cuesta hallazgos; si se prende, hay que volver a medir y actualizar este caso"; else ok "T6: el aviso NO se registra (medidor mudo), como se decidió"; fi
-if grep -q 'MODO MUDO' "${INST}"; then ok "T6: el instalador deja escrito POR QUÉ el aviso no se instala"; else mal "T6: el instalador no explica por qué falta el aviso — un control ausente sin motivo escrito se vuelve a prender por olvido"; fi
+# El aviso se registra como sus dos hermanos: sin él, el medidor anota y nadie se entera.
+# Falla si el instalador o el adaptador de Codex lo dejan afuera — el medidor vuelve a quedar mudo.
+if node -e 'process.exit(require(process.argv[1]).hooks.some((h) => h.event === "UserPromptSubmit" && h.spec === "@tcg:large-read-notice.js" && h.effect === "warns") ? 0 : 1)' "${INST}"; then ok "T6: el aviso está en el set canónico del instalador (UserPromptSubmit, avisa)"; else mal "T6: el instalador no registra large-read-notice.js como aviso de UserPromptSubmit — el medidor anota y no avisa"; fi
+if grep -q 'scripts/hooks/large-read-notice.js"' "${RAIZ}/adapters/codex/hooks.json" && ! grep -q 'sin registrar en ninguna herramienta' "${RAIZ}/adapters/codex/hooks.json"; then ok "T6: Codex también registra el aviso"; else mal "T6: el adaptador de Codex no registra el aviso (o lo sigue declarando fuera)"; fi
+if grep -q 'MODO MUDO' "${INST}"; then mal "T6: el instalador sigue diciendo que el medidor está mudo"; else ok "T6: el instalador ya no dice que el medidor está mudo"; fi
 if grep -q 'TYCON_READ_METER' "${INST}"; then ok "T6: el instalador documenta la variable de apagado"; else mal "T6: el instalador no documenta TYCON_READ_METER"; fi
 if python3 -c "
 import json,sys

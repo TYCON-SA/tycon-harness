@@ -227,7 +227,8 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
 | `coordination-notice.js` | UserPromptSubmit | Sólo en la sesión coordinadora: avisa cuando la máquina está en el tope de sesiones trabajando o lo pasó | No | full | `TYCON_COORDINATION_NOTICE=0` |
-| `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno; anota y no avisa | No | full | `TYCON_READ_METER=0` |
+| `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno y lo anota | No | full | `TYCON_READ_METER=0` |
+| `large-read-notice.js` | UserPromptSubmit | Avisa en una línea la lectura entera de un archivo grande del turno anterior, si alcanzaba un pedazo | No | full | `TYCON_READ_METER=0` |
 | `harness-bootstrap-heal.sh` | SessionStart | Si la línea de arranque hace los `git pull` pero no corre el instalador, le agrega la llamada (con copia de seguridad) | No | minimal y full | `TYCON_NO_BOOTSTRAP_HEAL=1` |
 | `branch-guard-notice.js` | SessionStart | Avisa si el clon del arnés o el de las skills no está en `main`, o está atrasado; con `paths.maintainers`, pone al día de fondo el clon de mantenimiento (sólo en full) | No | minimal y full | `TYCON_BRANCH_GUARD=0` · `TYCON_MAINTAINERS_SYNC=0` |
 | `deprecated-session-notice.js` | SessionStart | Si el repo declara código deprecado (`deprecated` en `.tycon/advisors.yaml`), le da al modelo la lista y la regla; una vez por día avisa las entradas que ya no apuntan a nada o pasaron su fecha | No | full | — (sin la clave, calla) |

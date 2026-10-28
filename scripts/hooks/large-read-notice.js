@@ -6,6 +6,11 @@
  * Mismo reparto de tareas que los otros dos medidores del arnés: el que mide no interrumpe, y el
  * que cobra no mide. Consume el pendiente → un aviso por infracción, nunca dos.
  *
+ * El aviso es UNA línea y deja la decisión al agente: el medidor no sabe si le alcanzaba un pedazo.
+ * Leer por rango a ciegas cuesta hallazgos (banco de 115 casos de revisores: 2 defectos perdidos
+ * leyendo por rango, 0 leyendo normal), así que el aviso pide el rango sólo cuando alcanzaba, y la
+ * lectura entera que hacía falta sigue igual, con su marca.
+ *
  * Opt-out: TYCON_READ_METER=0 (apaga medidor y aviso a la vez).
  */
 
@@ -60,27 +65,11 @@ function main() {
   // pendiente escrito a medias se parsea a null y se borraría igual. El borrado va DESPUÉS de escribir el aviso, al final de esta función.
   if (!p || !p.peor) return;
 
-  const canal = p.peor.canal === 'read'
-    ? 'la herramienta de lectura, sin pedirle un rango'
-    : 'un comando de terminal que trajo el archivo entero';
-
-  const acotadas = p.acotadas > 0
-    ? `En el mismo turno hiciste ${p.acotadas} lectura(s) acotada(s): ésa es la forma, aplicala también acá.\n`
-    : '';
+  const canal = p.peor.canal === 'read' ? 'la herramienta de lectura' : 'la terminal';
+  const tope = p.umbral || 8000;
 
   process.stdout.write(`<system-reminder>
-lecturas por rango — el turno anterior se trajo ${p.peor.chars} caracteres de un solo archivo (tope ${p.umbral}).
-
-  archivo: ${saneado(p.peor.archivo)}
-  canal:   ${canal}
-
-${acotadas}
-La regla, en criollo: leer POR RANGO o POR BÚSQUEDA, no el archivo entero. Antes de traerte un archivo:
-1. Si buscás un símbolo o una definición, usá el índice de código o una búsqueda — no lo abras entero.
-2. Si ya sabés qué parte necesitás, pedí ese rango (las primeras N líneas, un rango de líneas, las líneas alrededor de una coincidencia).
-3. Si de verdad necesitás el archivo completo —es chico, o el dev pidió verlo entero— escribí \`lectura-entera-ok: <razón>\` en el propio comando: queda la razón donde se lee después, y no se cobra.
-
-Esto es una medición automática, no un reto del user — no lo comentes en la respuesta salvo que él lo saque. Simplemente pedí el rango.
+lecturas por rango: el turno anterior trajo entero ${saneado(p.peor.archivo)} (${p.peor.chars} caracteres, tope ${tope}, por ${canal}); si te alcanzaba un pedazo, la próxima pedí el rango o buscá, y si lo necesitabas entero, seguí igual con \`lectura-entera-ok: <razón>\` en el comando (aviso automático: no lo comentes en la respuesta).
 </system-reminder>
 `);
 

@@ -58,6 +58,7 @@
     { "kind": "hook", "id": "UserPromptSubmit:@tcg:blocking-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "UserPromptSubmit:@tcg:coordination-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:@tcg:large-read-meter.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "UserPromptSubmit:@tcg:large-read-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:harness-bootstrap-heal.sh", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": false },
     { "kind": "hook", "id": "SessionStart:@tcg:branch-guard-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:deprecated-session-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
