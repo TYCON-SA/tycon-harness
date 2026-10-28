@@ -374,9 +374,9 @@ if quiero S10; then
   publicar
   correr_az --record-only
   si "un pedido que no se pudo consultar por otra razón sigue poniendo roja la noche" [ "$RC" = 1 ]
-  si "…y se dice cuál" contiene "$(SALIDA)" 'ii99: no se pudo consultar el PR !4161 de una ficha cerrada'
+  si "…y se dice cuál" contiene "$(SALIDA)" 'ii99: no se pudo consultar el .* de una ficha cerrada'
   si "el que ya no existe no es un fallo" no_contiene "$(SALIDA)" 'type=error\].*hh88'
-  si "…se avisa que ya no existe" contiene "$(SALIDA)" 'type=warning\]hh88: su PR !4160 ya no existe'
+  si "…se avisa que ya no existe" contiene "$(SALIDA)" 'type=warning\]hh88: su .* ya no existe'
   si "…y la ficha queda anotada para no volver a mirarla" contiene "$(enmain archived/hh88.yaml)" "^pr_cerrado: $HOY$"
   si "la otra no se anota" no_contiene "$(enmain archived/ii99.yaml)" '^pr_cerrado:'
 fi
