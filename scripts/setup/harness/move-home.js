@@ -102,18 +102,10 @@ function linkDir(target, link, platform) {
 }
 const readlink = (p) => { try { return fs.readlinkSync(p); } catch (_) { return null; } };
 /**
- * La casa propia del arnés de ESTE contexto: la `TYCON_HOME` de su ambiente si la trae (una vacía o relativa tira, como
- * siempre); si no, `<ctx.home>/.tycon`. Nunca la de quien corre: `TH.ownPaths({ env: ctx.env })` con un ambiente sin
- * `TYCON_HOME` cae a `os.homedir()`, y un contexto con OTRA `home` (una prueba, un ensayo) mezclaría las dos — el estado
- * en la carpeta pedida y `harness/` en la de la máquina, y un «deshacer» de prueba borraría el arnés instalado de una
- * máquina mudada. En una corrida real `ctx.home` es `os.homedir()` y da lo mismo.
+ * La casa propia del arnés de ESTE contexto (`TH.ownPathsOf`): con otra `home` (una prueba, un ensayo), un «deshacer»
+ * de prueba no borra el arnés instalado de una máquina mudada. En una corrida real `ctx.home` es `os.homedir()` y da lo mismo.
  */
-function ownOf(ctx) {
-  const env = ctx.env || {};
-  const asked = Object.prototype.hasOwnProperty.call(env, 'TYCON_HOME') && env.TYCON_HOME !== undefined;
-  if (asked || !ctx.home) return TH.ownPaths({ env });
-  return TH.ownPaths({ env: { TYCON_HOME: path.join(path.resolve(ctx.home), TH.OWN_DIR_NAME) } });
-}
+const ownOf = (ctx) => TH.ownPathsOf(ctx);
 const journalPath = (ctx) => path.join(ownOf(ctx).root, JOURNAL_NAME);
 const readJournal = (ctx) => { const j = readJson(journalPath(ctx)); return isObject(j) && STAGES.includes(j.stage) ? j : null; };
 function writeStage(ctx, j, stage, log) {

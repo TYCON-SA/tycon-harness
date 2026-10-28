@@ -171,13 +171,14 @@ function parseVerdict(raw) {
 }
 
 /**
- * @param {string[]} prompts  prompts REALES del user (lane.recentPrompts)
+ * @param {Array<string|{texto: string, origen: string}>} prompts  el registro de la sesión (lane.recentPrompts): el
+ *   modelo lee sólo lo que escribió el dueño, no lo de otra sesión, de un agente o sin marca
  * @param {{call?: function, platform?: string, env?: object, warn?: function}} [opts]  inyección para tests
  * @returns {{lane: ('adhoc'|'pipeline'|null), via: string, motivo?: string}}
  */
 function classifyLane(prompts, opts = {}) {
   if (!enabled()) return { lane: null, via: 'off' };
-  const list = (Array.isArray(prompts) ? prompts : []).filter((p) => String(p || '').trim());
+  const list = require('./story-gate.js').soloDelDueno(prompts).filter((p) => String(p || '').trim());
   if (!list.length) return { lane: null, via: 'sin-prompts' };
   // Acá no se tiran prompts enteros si el total pasa
   // MAX_CHARS: enterrar el pedido de story 3 prompts atrás con prompts largos lo sacaría de la

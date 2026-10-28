@@ -85,13 +85,13 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **SEC-C1** | `cat ~/.ssh/...` / `cat .../aws/credentials` | Secretos al contexto del LLM |
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |
 | **CMD-C1** | Un comando que trae un `\r` (retorno de carro); en PowerShell, también `\f`, `\v`, el espacio duro, NEL o un espacio de Unicode | Bash lee el `\r` como una letra y PowerShell como un salto de línea: con él, una parte del comando se le esconde al freno. Un comando escrito a mano no lo trae. Frena también si el carácter va dentro de un texto entre comillas (un mensaje de commit con un espacio duro pegado de una página, un heredoc con saltos de Windows): el freno no puede saber si las comillas son de verdad. La misma regla la aplican el freno de alcance de pruebas y el aviso de memoria: con este freno apagado, un `\r` sigue frenado |
-| **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE`, `DOD_BYPASS` o `TYCON_NO_DEEP_REVIEW` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | Las dos primeras apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo; `TYCON_NO_DEEP_REVIEW` apaga el pase adversarial, que el agente apagaba después de preguntar si lo corría. Vale con la frase de la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
-| **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo («autorizo force-manual», «autorizo trust-ran»); `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución («autorizo no-deep-review»); `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, siempre, sólo con la frase del dueño posterior a la apertura de la ejecución y sin reenvío («autorizo cerrar la ejecución»; abajo, «La ejecución perdida»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
+| **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE`, `DOD_BYPASS` o `TYCON_NO_DEEP_REVIEW` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | Las dos primeras apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo; `TYCON_NO_DEEP_REVIEW` apaga el pase adversarial, que el agente apagaba después de preguntar si lo corría. Lo firma la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
+| **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo; `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución; `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, siempre (abajo, «La ejecución perdida»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
 | **ESC-C4** | `marker.js close-as-debt` o `marker.js expect-red`, con una ejecución en la sesión | Dejan una salida prevista por la historia como el final de la ejecución, o un control en rojo como esperado. Lo autoriza la persona, siempre (abajo); un texto que sólo nombra el comando no frena |
-| **ESC-C5** | Un comando que crea, toca o copia un archivo `ALLOW_DOD_EVIDENCE_WRITE` (`touch`, `cp`, `mv`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …), o que escribe `dod_runtime_exempt: true` en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`) | El permiso de escribir a mano la evidencia de la prueba en vivo y la exención de esa prueba los decide la persona («autorizo ALLOW_DOD_EVIDENCE_WRITE», «autorizo dod_runtime_exempt»). Mirarlo, buscarlo, borrarlo o sacar la exención no frena. Por la herramienta de escribir archivos lo miran el guardián de la evidencia (consume el permiso sólo con la constancia de este freno de la misma sesión, dentro de los 30 minutos, o con la frase) y el hook del encabezado (pide la frase para agregar la exención a una historia en implementación) |
-| **ESC-C6** | `marker.js complete-step approve-plan` (o `3`) con `--approved "<cita>"` o `--mockup-approved "<cita>"`, o `approve-mockup --approved`, cuando la cita no está en un mensaje de la persona de esta conversación (una de menos de 10 letras, sólo si es el mensaje entero), ni es la opción que eligió en una pregunta con opciones (leída del resultado de esa herramienta), ni la reenvió la sesión designada; con `--delegated-by`, sólo la reenviada | La aprobación del plan es de la persona: no tiene frase para saltearla. Sin conversación legible (Codex) no mira y deja la constancia `sin-conversacion` (asimetría declarada). `--auto-approved` no cambia |
-| **ESC-C7** | Un comando que corre `run-base-controls.sh approve … --relayed-by <rol>` (firmar un cambio de control por delegación; también adentro de un `bash -c`, un `eval` o un `"$(…)"`; un `grep`, un `cat` o un mensaje de commit que nombran esas palabras no la corren y pasan) pedido desde una sesión que no es la designada, desde la designada con una ejecución o un ad-hoc propio abierto, o con algo que el shell expande (`$`, comillas invertidas, `;`, `\|`, `&`, redirecciones, un salto de línea) | Si nada de eso pasa, deja la ficha de un solo uso que `approve` consume (vale 60 s) y el comando sigue. No tiene frase para saltearla: si no se puede, firma el dueño en su terminal con el comando de `pending`. Un comando que esconde la firma (`node -e`, otro guion) no deja ficha, y `approve` no firma |
-| **ESC-C2** | Un comando que nombra `~/.claude/projects` (también tras un `cd`) y trae una forma de escribir: redirección (salvo a `/dev/null`), `tee`, `sponge`, `sed -i`, `awk -i`, `dd`, `truncate`, `cp`, `mv`, un intérprete con código en la línea; en PowerShell `Add-Content`, `Set-Content`, `Out-File`, `Copy-Item`, `Move-Item` | Las conversaciones guardadas son de donde se lee la frase que autoriza un escape. Leer con `tail`, `grep`, `ls` o `wc` no frena |
+| **ESC-C5** | Un comando que crea, toca o copia un archivo `ALLOW_DOD_EVIDENCE_WRITE` (`touch`, `cp`, `mv`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …), o que escribe `dod_runtime_exempt: true` en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`) | El permiso de escribir a mano la evidencia de la prueba en vivo y la exención de esa prueba los firma la persona, con `marker.js sign-file <firma> <archivo>`, y la escritura va después con Edit o Write: por la consola frena siempre. Mirarlo, buscarlo, borrarlo o sacar la exención no frena. Por la herramienta de escribir archivos lo miran el guardián de la evidencia (consume el permiso sólo con la constancia de esa firma, de la misma sesión y sobre ese archivo, dentro de los 30 minutos) y el hook del encabezado (pide la misma firma para agregar la exención a una historia en implementación) |
+| **ESC-C6** | `marker.js complete-step approve-plan` (o `3`) con `--approved "<cita>"` o `--mockup-approved "<cita>"`, o `approve-mockup --approved`, cuando no se la puede pedir en la ventana (la forma escondida, Codex, otra consola) | La aprobación del plan es de la persona: la da en la ventana de permiso o en su terminal; la cita no se busca en la conversación. `--auto-approved` no cambia |
+| **ESC-C7** | Un comando que corre `run-base-controls.sh approve` (aprobar un cambio de los controles del repo, o refirmarlos tras traer main) que no se puede pedir en la ventana: escondido detrás de otro comando o adentro de un `bash -c`, un `eval` o un `"$(…)"`, en Codex, o lanzado desde otra consola; también con `--relayed-by`, que ya no firma. Un `grep`, un `cat` o un mensaje de commit que nombran esas palabras no lo corren y pasan | El cambio de un control lo firma el dueño, en la ventana de permiso o en su terminal con el comando de `pending`. La coordinadora lo firma desde su pestaña sólo si el perfil del equipo se lo delega. Un comando que esconde la firma (`node -e`, otro guion) no la pide, y `approve` no firma |
+| **ESC-C2** | Un comando que nombra `~/.claude/projects` (también tras un `cd`) y trae una forma de escribir: redirección (salvo a `/dev/null`), `tee`, `sponge`, `sed -i`, `awk -i`, `dd`, `truncate`, `cp`, `mv`, un intérprete con código en la línea; en PowerShell `Add-Content`, `Set-Content`, `Out-File`, `Copy-Item`, `Move-Item` | De las conversaciones guardadas salen la constancia del validador y el plan que vio la persona. Leer con `tail`, `grep`, `ls` o `wc` no frena |
 
 **Lo que NO bloquea (a propósito):**
 
@@ -104,38 +104,28 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 
 ## Saltear el freno: lo decide la persona
 
-Hay dos formas, y ninguna la puede usar el agente solo:
+Ninguna frase escrita en el chat abre el freno: el arnés no lee la conversación para firmar. Cada salteo es una firma
+de la persona, con su comando; la lista entera está en [las firmas del dueño](firmas-del-arnes.md). Se da de una de
+dos formas, y ninguna la puede usar el agente solo:
 
-**Por comando, con la frase de la persona.** La persona escribe en el chat de la sesión:
+**En la ventana de permiso (Claude Code).** El agente corre el comando de la firma en su forma exacta, solo:
+`TYCON_SAFETY_OFF=1 <comando>`, `marker.js close-as-debt …`, `marker.js sign-file dod_runtime_exempt <archivo>`. El
+freno no lo deja correr por su cuenta: le pide a la herramienta la ventana de permiso, con el texto de qué se aprueba.
+Con «Sí» el comando corre; con «No», no. Para las firmas de un guion (aprobar el plan, eximir un crítico, las firmas
+sobre un archivo) el freno deja antes un registro del pedido, y el guion firma sólo si el árbol de procesos muestra que
+lo lanzó la consola de la herramienta con ese comando exacto. El registro vale una sola vez y vence a los 30 minutos.
+Una firma sobre un archivo deja una constancia que consume el Edit o Write siguiente de esa sesión sobre ese archivo.
 
-```text
-autorizo TYCON_SAFETY_OFF
-```
+**En la terminal de la persona**, donde no hay freno: el comando de la columna «Firmarla en la terminal» de esa lista
+(casi siempre el mismo con `--terminal`). Es la única forma en Codex, que no tiene ventana de permiso. También es la
+forma de toda firma que el freno no puede decidir: el comando escondido detrás de otro (`cd … && <firma>`), la
+herramienta lanzada por otra herramienta o por su consola, una consola de fondo viva, o Windows, donde el árbol de
+procesos no se lee. El cartel de cada freno trae el comando de la terminal.
 
-y después se repite el comando con el prefijo (`TYCON_SAFETY_OFF=1 <comando>`; en PowerShell,
-`$env:TYCON_SAFETY_OFF=1; <comando>`). El freno deja pasar ese comando sólo si encuentra la frase:
-
-- en un turno **tipeado por la persona** en esta conversación: no cuenta lo que escribió el agente, la salida de una
-  herramienta, un archivo leído, un subagente ni un texto pegado;
-- o textual dentro de un mensaje de la **sesión que la organización designó** para reenviar el ok de un dev
-  (`approvals.relay_session` del perfil del equipo, y la designación de la máquina);
-- **de los últimos 30 minutos**. Una frase negada («no autorizo …») o retirada en un mensaje posterior no vale.
-- y **en la cadena de la conversación** que lleva al pedido del comando: Claude Code guarda cada registro con el de su
-  padre y le pasa al freno el id del pedido. Un renglón agregado al archivo por fuera no está en esa cadena, así que no
-  cuenta; y escribir en las conversaciones lo frena `ESC-C2`. Reescribir con un guion un mensaje que ya está en la
-  cadena es el límite conocido: Claude Code no firma sus registros.
-
-Lo mismo para `ESC-C1`: «autorizo TYCON_PROD_LINT», «autorizo TYCON_NEW_NAMES», «autorizo TYCON_TEST_GATE»,
-«autorizo DOD_BYPASS», «autorizo TYCON_NO_DEEP_REVIEW» o «autorizo TYCON_STATUS_GATE» (que también autoriza «autorizo
-cambiar el estado»). Para `ESC-C4`: «autorizo cerrar como deuda»; la ejecución queda con `cierre: deuda`, la deuda y
-quién la autorizó, y sigue hasta el commit. Para `ESC-C3`, que no es una variable sino el comando: «autorizo
-set-autonomous», «autorizo cerrar la ejecución», «autorizo force-manual», «autorizo trust-ran» o «autorizo no-deep-review» (apagar el pase
-adversarial tiene dos nombres, y la frase de cualquiera vale para los dos); para `ESC-C5`,
-«autorizo ALLOW_DOD_EVIDENCE_WRITE» o «autorizo dod_runtime_exempt». El cartel de `ESC-C5` no repite la frase: dice que
-lo decide la persona y la manda acá. Si la conversación todavía no tenía escrito el renglón del comando que se juzga, el
-cartel lo dice («no pude leer el registro de la conversación para este paso») y el agente reintenta el mismo comando una
-vez, sin pedirle nada a la persona; si se repite, lo avisa. La constancia de estos escapes anota la sesión y el
-nombre del escape. Una ejecución cerrada así queda
+Algunas firmas las puede dar la coordinadora desde su pestaña, si el perfil del equipo se las delega
+(`approvals.delegated_signing`); las que son sólo del dueño, no (`approvals.owner_only`). La constancia de cada escape
+anota la sesión y el nombre del escape. Cerrar como deuda (`ESC-C4`) deja la ejecución con `cierre: deuda` y la deuda,
+y sigue hasta el commit. Una ejecución cerrada así queda
 con `cierre: abortada`, su motivo y quién lo autorizó (`marker.js clear` lo lee del registro de escapes); sin esa
 línea, `via: sin-registro`. `ESC-C3` lee el comando como lo lee la terminal: cuenta toda llamada a `marker.js` (o
 `marker`, sin distinguir mayúsculas) que no sea argumento de un programa que sólo lee o muestra texto (`grep`, `rg`,
@@ -183,11 +173,12 @@ escribe, no pisa los controles (`checks`, `checksProvenance`), el pase ni el mod
 pasar a otra historia deja la anterior anotada como abortada si no había terminado.
 
 Por qué: el prefijo lo puede escribir el agente. Un modelo frenado por `--no-verify` reescribió el comando con
-`TYCON_SAFETY_OFF=1` por su cuenta y commiteó, aunque la orden decía que no buscara otra forma. Con la frase, saltear
-el freno vuelve a ser una decisión de una persona.
+`TYCON_SAFETY_OFF=1` por su cuenta y commiteó, aunque la orden decía que no buscara otra forma. Una frase en el chat
+tampoco alcanzaba: el agente la escribía en la conversación por otros caminos. Con la ventana, el agente pide y la
+persona ve el comando y dice que sí o que no.
 
-Cada escape queda en `~/.claude/.tycon-pipeline/frenos.jsonl`, con la regla esquivada y el camino (`persona`,
-`reenvio` con la sesión que lo reenvió, o `ambiente`), sin el texto del comando.
+Cada escape queda en `~/.claude/.tycon-pipeline/frenos.jsonl`, con la regla esquivada y el camino (`ventana`,
+`delegacion` con la sesión que firmó, o `ambiente`), sin el texto del comando.
 
 **Por sesión, desde la terminal del dev** (cuando hacés varios destructivos legítimos seguidos): la variable en el
 ambiente **antes de abrir la sesión**. El agente no la puede poner: el prefijo de un comando no llega al freno, y
@@ -198,9 +189,9 @@ un interruptor en `env`, un hook del arnés) lo frena `HARNESS-C2`, por la termi
 TYCON_SAFETY_OFF=1 claude
 ```
 
-⚠️ Apaga el freno para toda esa sesión. Preferí la frase por comando.
+⚠️ Apaga el freno para toda esa sesión. Preferí la firma por comando.
 
-**Codex** no deja leer su conversación: ahí el escape por comando no vale y queda sólo el de la sesión.
+**Codex** no tiene ventana de permiso: ahí el escape por comando se firma en la terminal, o queda el de la sesión.
 
 ### El estado de la historia y el marcador
 
@@ -231,10 +222,10 @@ historia a mano y borrar el marcador. Los ganchos del pipeline lo frenan, con cu
   heredoc no cuenta.
 - **El paso a review o done a mano.** Un Edit, un Write o un `apply_patch` de Codex que pasa la historia a `review` o
   `done` frena aunque esté la evidencia. En su lugar: `marker.js update-story-status`, `update-pipeline-status` o
-  `/tycon-pipeline close`. Hacerlo a mano lo decide la persona («autorizo cambiar el estado»).
+  `/tycon-pipeline close`. Hacerlo a mano (cambiar el estado sin el comando) lo decide la persona: lo firma con `marker.js sign-file cambiar-el-estado <historia>`, y la escritura va después con Edit o Write.
 - **Borrar el marcador.** Borrar o mover por consola un marcador de ejecución (`active/`, `active.json`), de esta
   sesión o de otra, frena con «BORRADO DEL ESTADO DEL PIPELINE». En su lugar: `marker.js clear` o `marker.js
-  clear-session <sesión>`. No tiene frase. Los demás archivos de la carpeta del estado siguen como siempre. **Freno
+  clear-session <sesión>`. No tiene firma para saltearlo. Los demás archivos de la carpeta del estado siguen como siempre. **Freno
   aceptado por duda:** `gh pr close 7 --delete-branch; gh pr view 7 --json state` frena «BORRADO DEL ESTADO DEL
   PIPELINE» cuando la carpeta del estado se llama `state` (`~/.tycon/state`). `--delete-branch` borra una rama de git,
   pero esa palabra es lo único que hace mirar el comando a formas de borrar que la lista no conoce (`zip -m`, `rsync
@@ -258,7 +249,7 @@ El freno del paso a mano también frena volver una historia en implementación a
 después escribirla por consola), sacarle el encabezado y cambiarle el id. Por consola, un borrador sólo pasa si el
 comando lo reescribe entero y lo deja en borrador; y borrar una historia, sacarla de `.md` con un `mv` o reponer una
 versión vieja (`git checkout -- <historia>`, `git restore`) también frena. Se apaga con `TYCON_STATUS_GATE=off` en el ambiente del gancho (lo usan pruebas que miden
-la evidencia), y cada escritura que deja pasar así queda anotada; escrita en un comando, la frena `ESC-C1` sin la frase.
+la evidencia), y cada escritura que deja pasar así queda anotada; escrita en un comando, la frena `ESC-C1` sin la firma de la persona.
 
 Lo que no ve: un guion que el agente escribe en un archivo y después corre; `patch` o `git apply` con un parche que toca
 la historia; `git stash pop`; un enlace (`ln -sf`) sobre el marcador; y el nombre de la carpeta del estado partido entre una variable y
@@ -287,16 +278,14 @@ del turno; el commit en el repo de la ejecución; y en la consola, todo lo que n
 `head` y `tail` sin redirección. `gates.log` y `run-open.json` son además rutas protegidas de la primera capa, al lado
 del marcador.
 
-**La salida es del dueño.** Con «autorizo cerrar la ejecución», escrita por el dueño en la pestaña de esa sesión
-después de la apertura, pasan:
+**La salida es del dueño.** La firma en la ventana de permiso, o en su terminal con `--terminal`, uno de estos dos
+comandos:
 
-- `marker.js clear-session <sesión> --lost`: anota `run-close` con `estado: perdida`, la cita y la hora, y borra la copia.
+- `marker.js clear-session <sesión> --lost`: anota `run-close` con `estado: perdida`, el camino de la firma y la hora, y borra la copia.
 - `marker.js restore <sesión>`: vuelve a abrir la ejecución desde la copia del repo (marcador nuevo y `run-open` con
   `motivo: restaurada`).
 
-Los dos la piden también para una sesión ajena, y los frena `ESC-C3` sin ella. Una frase anterior a la apertura no vale,
-y tampoco la reenviada por la sesión designada (`approvals.relay_session`): reenviarla sería lavar un permiso. Si esa
-salida admite delegación lo decide una sola función (`delegacionDeLaSalida`, en `lib/open-runs.js`); hoy dice que no.
+Los dos piden la firma también para una sesión ajena, y los frena `ESC-C3` sin ella.
 `clear-session <sesión>` sin `--lost` y sin marcador no cierra nada y dice que hace falta `--lost`.
 
 Límite: si se borran las tres piezas, en la sesión no se ve. Lo ve el portón de la CI, que pide el registro de autoría
@@ -336,7 +325,7 @@ Cada bloqueo se loggea en `~/.claude/safety-guard.log`:
 
 **El hook bloquea algo legítimo (false positive):**
 
-1. Que la persona escriba «autorizo TYCON_SAFETY_OFF» en el chat y repetir el comando con `TYCON_SAFETY_OFF=1` adelante.
+1. Repetir el comando con `TYCON_SAFETY_OFF=1` adelante, solo, para que la persona lo apruebe en la ventana de permiso; o que lo corra ella en su terminal.
 2. Si la regla está mal calibrada (bloquea muchos legítimos), abrí un issue en el arnés con el caso. La regla puede refinarse o exceptarse.
 
 **Quiero probar reglas nuevas sin afectar el real:**

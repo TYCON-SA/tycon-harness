@@ -6,12 +6,11 @@
  * perfil: una variable o el archivo de la máquina los puede escribir el agente, que así se apagaría el freno.
  *
  * La marca es de quien probó: la aprueba en la ventana de permiso al correr `marker.js mark-tested`, o la firma en su
- * terminal (`--terminal`). La muestra y el juez de la respuesta quedan de cuando la marca salía de la conversación:
+ * terminal (`--terminal`). La muestra le dice qué va a marcar:
  *   · antes de `marker.js mark-tested --acs N,M` sin `--terminal`, la puerta Bash le muestra a la persona qué criterios va
  *     a marcar (`paraMostrar`); con la instalación mínima, el despachador de ediciones lo hace al escribirse
  *     `marca-pedida.json` ({ acs }) en la carpeta de la corrida (`handle`). Queda la constancia `manual-check-shown` en
  *     `gates.log`, donde el agente no escribe.
- *   · la respuesta de la persona valía si era posterior a esa muestra, nombraba cada criterio y no lo negaba (`juez`).
  *   · `marker.js mark-tested` deja un renglón por criterio en `<corrida>/manual-checks.jsonl` y su par `manual-check`, con
  *     la huella del renglón, en `gates.log`. Un renglón del archivo sin su par no cuenta (`validas`).
  *   · `freno(...)`: lo que mira el cierre (`complete-step prepare-commit`).
@@ -101,72 +100,12 @@ function mostrado({ stateDir, sessionId, storyId, acs }) {
   return hits.reduce((a, b) => (Date.parse(b.ts) > Date.parse(a.ts) ? b : a));
 }
 
-// Lo que tumba la marca: que diga que NO lo probó (o que falta probarlo), o que la prueba salió mal. Una negación que no
-// es de la prueba («sin problemas», «no hubo problemas», «nunca falló») no la tumba: medido en el pase adversarial,
-// rechazaba las confirmaciones de verdad.
-const PROBAR = '(?:prob(?:[eé]|ad[oa]s?|amos|aron|[oó]|ar|ando|aste)|revis(?:[eé]|ad[oa]s?|amos|aron|[oó]|ar|ando|aste)|marc(?:ad[oa]s?|ar|amos|aron|[oó]|ues|uen|alo|alos))(?![\\p{L}])';
-const RE_NO_PROBO = new RegExp(`(?<![\\p{L}])(?:(?:no|ni|nunca|jam[aá]s|tampoco)\\s+(?:\\p{L}+\\s+){0,2}?${PROBAR}|sin\\s+${PROBAR}|faltan?\\s+(?:\\p{L}+\\s+){0,1}?${PROBAR})`, 'iu');
-const RE_FALLA = /(?<![\p{L}])(fall[oóa]\p{L}*|no\s+(?:anda|funciona|funcion[oó]|pasa|pas[oó]|sirve))(?![\p{L}])/giu;
-const RE_ANTES_SIN_FALLA = /(?:no|nunca|jam[aá]s|sin|ni)\s+$/iu;
-function noLaProbo(texto) {
-  const t = String(texto || '');
-  if (RE_NO_PROBO.test(t)) return true;
-  for (const m of t.matchAll(RE_FALLA)) {
-    // «nunca falló», «sin fallas», «no falló»: no es una falla
-    if (/^fall/i.test(m[1]) && RE_ANTES_SIN_FALLA.test(t.slice(0, m.index))) continue;
-    return true;
-  }
-  return false;
-}
-const RE_PROBO = new RegExp(`(?<![\\p{L}])${PROBAR}`, 'iu');
-
-/**
- * Los números de criterio que nombra un texto: «criterio 2», «criterios 2 y 3», «los criterios 2, 3, y 4», «el criterio 2
- * y el 3». Después de «criterio(s)» sigue la lista mientras haya números unidos por coma, «y», «e», «el» o «criterio».
- */
-function numerosNombrados(texto) {
-  const out = new Set();
-  const t = String(texto || '');
-  const re = /criterios?(?![\p{L}])/giu;
-  let m;
-  while ((m = re.exec(t))) {
-    let resto = t.slice(m.index + m[0].length);
-    for (;;) {
-      const p = /^\s*(?:(?:,|y|e|el|la|tambi[eé]n|criterios?)(?![\p{L}])\s*)*(\d+)(?![\d])/iu.exec(resto);
-      if (!p) break;
-      out.add(Number(p[1]));
-      resto = resto.slice(p[0].length);
-    }
-  }
-  return out;
-}
-
-/** `(texto) => null | motivo`: la respuesta dice que probó a mano y nombra cada criterio pedido, sin negarlo. */
-function juez(acs) {
-  const pedidos = ordenados(acs);
-  const forma = pedidos.length > 1 ? `«probé a mano los criterios ${pedidos.slice(0, -1).join(', ')} y ${pedidos[pedidos.length - 1]}»` : `«probé a mano el criterio ${pedidos[0]}»`;
-  const juzgar = (texto) => {
-    const t = String(texto || '');
-    const nombrados = numerosNombrados(t);
-    const falta = pedidos.find((n) => !nombrados.has(n));
-    if (falta !== undefined) return `la respuesta no nombra el criterio ${falta}: una respuesta genérica no marca. Para marcarlo: ${forma}`;
-    if (noLaProbo(t)) return `la respuesta dice que no lo probó o que falló («no lo probé», «falta probar», «falló»…): no marca. Para marcarlo: ${forma}`;
-    if (!RE_PROBO.test(t)) return `la respuesta nombra los criterios pero no dice que los probó a mano: ${forma}`;
-    return null;
-  };
-  // ¿un mensaje posterior se echa atrás? (nombra uno de esos criterios y dice que no lo probó o que falló)
-  juzgar.retracta = (texto) => pedidos.some((n) => numerosNombrados(texto).has(n)) && noLaProbo(texto);
-  return juzgar;
-}
-
 /** El bloque que ve la persona. */
 function bloque({ storyId, lista }) {
-  const ns = lista.map((c) => c.n);
-  const forma = ns.length > 1 ? `«probé a mano los criterios ${ns.slice(0, -1).join(', ')} y ${ns[ns.length - 1]}»` : `«probé a mano el criterio ${ns[0]}»`;
   return [
     `Vas a marcar como probado a mano, en la historia ${storyId}:`,
     ...lista.map((c) => `  · Criterio ${c.n} — ${c.text}`),
-    `Para confirmarlo, contestá nombrándolo: ${forma}. Un «dale» suelto no lo marca.`,
+    'Para confirmarlo, aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No». Una respuesta en el chat no lo marca.',
   ].join('\n');
 }
 
@@ -192,7 +131,6 @@ function preparar({ sessionId, stateDir, home = os.homedir(), acs, arnes }) {
   const marker = leerMarcador(stateDir, sessionId);
   if (!marker || !marker.storyId) return null;
   if (!prendida({ home, ...(arnes ? { arnes } : {}) }).prendida) return null;
-  if (!require('./person-ok.js').leerConversacion({ sesion: sessionId, home }).legible) return null;
   const storyId = String(marker.storyId);
   const ya = mostrado({ stateDir, sessionId, storyId, acs: pedidos });
   if (ya && !ya.error) return null;
@@ -311,4 +249,4 @@ function freno({ storyPath, storyId, runDir, stateDir, esPantalla, arnes, home }
   return { status: 'blocked', faltan: ns, mensaje };
 }
 
-module.exports = { PEDIDO, FILE, prendida, criterios, huella, huellaMarca, mostrado, juez, bloque, pedidosDelComando, paraMostrar, handle, leer, anotar, validas, freno };
+module.exports = { PEDIDO, FILE, prendida, criterios, huella, huellaMarca, mostrado, bloque, pedidosDelComando, paraMostrar, handle, leer, anotar, validas, freno };

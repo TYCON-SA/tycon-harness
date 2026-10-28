@@ -627,6 +627,10 @@ test('OwnerWindow_SoloDelDueno_GanaAlGrupo + OwnerWindow_SesionPropia_NoSeDelega
     perfil: () => ({ ...PERFIL, delegated_signing: ['escape-phrases'], owner_only: ['escape:force-manual'] }), huella: () => ({ huella: HUELLA }) });
   assert.strictEqual(s.ok, false);
   assert.match(s.motivo, /sólo del dueño/);
+  // saltear el pase adversarial no se delega aunque el perfil lo liste y no esté en owner_only
+  const salteo = DS.delegaSinVentana({ firma: 'adversarial-skip', sesion: 'ses-coord', destino: 'ses-a', home: casa, estado: path.join(casa, '.claude', '.tycon-pipeline'),
+    perfil: () => ({ ...PERFIL, delegated_signing: ['adversarial-skip'], owner_only: [] }), huella: () => ({ huella: HUELLA }) });
+  assert.deepStrictEqual(salteo, { ok: false, motivo: 'saltear el pase adversarial es sólo del dueño: no se delega' });
   // sin perfil inyectado, las listas las lee el lector de configuración del árbol (owner_only incluido)
   const conPerfil = (approvals) => {
     const arnes = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-arnes-'));
@@ -868,6 +872,334 @@ test('OwnerWindow_Envoltura_SeDesenvuelveTalCual', (t) => {
   assert.strictEqual(ow.desenvolver(envolver('/otra', 'x'), casa), null);
   assert.strictEqual(ow.desenvolver(envolver(casa, 'x').replace("eval 'x'", "eval 'x' ; 'y'"), casa), null);
   assert.strictEqual(ow.desenvolver(`bash -c 'x'`, casa), null);
+});
+
+// --- las cuatro firmas sobre un archivo (marker.js sign-file, AC 43) y las constancias (AC 30) ------------------------
+// Los frenos de escritura anotan con el HOME del proceso: una casa de mentira para ellos (las constancias de la ventana
+// van a la casa de la prueba, que se les pasa; el HOME no las cambia), y sin el registro del cierre.
+const HOME_DE_LOS_FRENOS = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-home-'));
+const HOME_ANTES = process.env.HOME;
+process.env.HOME = HOME_DE_LOS_FRENOS;
+process.env.TYCON_CLOSURE_RECORD = 'off';
+test.after(() => {
+  if (HOME_ANTES === undefined) delete process.env.HOME; else process.env.HOME = HOME_ANTES;
+  fs.rmSync(HOME_DE_LOS_FRENOS, { recursive: true, force: true });
+});
+const SCRIPTS_PIPE = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts');
+const fw = () => require(path.join(SCRIPTS_PIPE, 'on-frontmatter-write.js'));
+const eg = () => require(path.join(SCRIPTS_PIPE, 'on-dod-evidence-guard.js'));
+const sio = () => require(path.join(SCRIPTS_PIPE, 'lib', 'story-skill-gate-io.js'));
+
+/** Un repo con una historia en implementación, y la evidencia de la prueba en vivo por escribir. */
+function repoNuevo(t) {
+  const r = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-repo-'));
+  t.after(() => fs.rmSync(r, { recursive: true, force: true }));
+  for (const d of ['.git', 'specs', '.tycon', path.join('.advisors', 'dod-runtime')]) fs.mkdirSync(path.join(r, d), { recursive: true });
+  fs.writeFileSync(path.join(r, '.tycon', 'advisors.yaml'), "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n");
+  const historia = path.join(r, 'specs', 'story-9.99-x.md');
+  fs.writeFileSync(historia, '---\nstory: "9.99"\nepic: "9"\nstatus: in-progress\ntitle: "X"\n---\n# Story 9.99\n');
+  return { repo: r, historia };
+}
+
+/**
+ * Cada firma con el archivo que firma y el freno que lo escribe: `escribir(casa, sesion)` devuelve true si el freno lo
+ * dejó pasar, o el texto con que lo negó.
+ */
+function frenosDeArchivo(t) {
+  const { repo, historia } = repoNuevo(t);
+  const viejo = fs.readFileSync(historia, 'utf8');
+  const ev = (sesion, archivo, content) => ({ session_id: sesion, tool_use_id: 'toolu_w', tool_name: 'Write', cwd: repo, transcript_path: path.join(HOME_DE_LOS_FRENOS, '.claude', 'projects', '-repo', `${sesion}.jsonl`), tool_input: { file_path: archivo, content } });
+  const paso = (r) => (r == null || (r && !r.block) ? true : r.block);
+  const nueva = path.join(repo, 'specs', 'story-AS-1-pedidos.md');
+  const evidencia = path.join(repo, '.advisors', 'dod-runtime', '9.99-20261027.md');
+  return [
+    ['dod_runtime_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\ndod_runtime_exempt: true')), { casa }))],
+    ['cambiar-el-estado', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: ready-for-dev')), { casa }))],
+    ['ALLOW_DOD_EVIDENCE_WRITE', evidencia, (casa, s) => paso(eg().handle(ev(s, evidencia, '# evidencia\n'), { casa }))],
+    ['story-skill-bypass', nueva, (casa, s) => {
+      const estado = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-ssg-'));
+      t.after(() => fs.rmSync(estado, { recursive: true, force: true }));
+      const r = sio().evaluate({ absPath: nueva, content: '---\nstory: "AS-1"\nepic: "pedidos"\nstatus: ready-for-dev\ntitle: "Pedidos"\n---\n# Story AS-1\n',
+        sessionId: s, via: 'Write', event: ev(s, nueva, ''), stateDir: estado, casa });
+      return r.verdict.action === 'pass' ? true : r.message;
+    }],
+  ];
+}
+
+const SIGN_FILE = (firma, archivo) => `node ${MARKER} sign-file ${firma} ${archivo}`;
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** El «Sí» de la ventana para `marker.js sign-file`: el pedido del freno, el guion que lo verifica y su constancia. */
+function firmarEnLaVentana(casa, firma, archivo, ahora = AHORA) {
+  const cmd = SIGN_FILE(firma, archivo);
+  const r = pedir(casa, cmd, { ahora });
+  assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
+  assert.ok(r.texto.includes(archivo), `${cmd}: la ventana nombra el archivo`);
+  const e = ow.exigir({ firma: `escape:${firma}`, argv: [MARKER, 'sign-file', firma, archivo], pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora, propia: 'ses-a' });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  ow.firmarArchivo({ firma, via: e.via, sesion: 'ses-a', archivo, casa, ahora });
+}
+
+test('SignFile_ConLaVentana_ElArchivoPasa (T45) @story-8.139 @ac-43', (t) => {
+  for (const [firma, archivo, escribir] of frenosDeArchivo(t)) {
+    const casa = casaNueva(t);
+    firmarEnLaVentana(casa, firma, archivo, Date.now());
+    assert.strictEqual(escribir(casa, 'ses-a'), true, `${firma}: con la constancia de la ventana pasa`);
+    // la consume: la segunda escritura vuelve a frenar
+    assert.notStrictEqual(escribir(casa, 'ses-a'), true, `${firma}: la constancia es de un solo uso`);
+  }
+});
+
+test('SignFile_SinConstancia_NiegaYNombraElComando (T45) @story-8.139 @ac-43', (t) => {
+  for (const [firma, , escribir] of frenosDeArchivo(t)) {
+    const r = escribir(casaNueva(t), 'ses-a');
+    assert.notStrictEqual(r, true, `${firma}: sin constancia frena`);
+    assert.match(String(r), new RegExp(`marker\\.js sign-file ${escRe(firma)}`), `${firma}: nombra el comando`);
+    assert.doesNotMatch(String(r), /«autorizo/, `${firma}: no dicta una frase`);
+  }
+});
+
+test('SignFile_FraseEnLaConversacion_NoFirma (T45) @story-8.139 @ac-43', (t) => {
+  for (const [firma, , escribir] of frenosDeArchivo(t)) {
+    // la conversación con la frase de la persona, como la guarda la herramienta y anclada al pedido
+    const dir = path.join(HOME_DE_LOS_FRENOS, '.claude', 'projects', '-repo');
+    fs.mkdirSync(dir, { recursive: true });
+    const hace = new Date(Date.now() - 60000).toISOString();
+    const regs = [
+      { type: 'user', timestamp: hace, uuid: 'u-0', parentUuid: null, message: { role: 'user', content: `autorizo ${firma.replace(/-/g, ' ')}` } },
+      { type: 'user', timestamp: hace, uuid: 'u-1', parentUuid: 'u-0', message: { role: 'user', content: `autorizo ${firma}` } },
+      { type: 'assistant', timestamp: new Date().toISOString(), uuid: 'u-2', parentUuid: 'u-1', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_w', name: 'Write', input: {} }] } },
+    ];
+    fs.writeFileSync(path.join(dir, 'ses-frase.jsonl'), regs.map((x) => JSON.stringify(x)).join('\n') + '\n');
+    assert.notStrictEqual(escribir(casaNueva(t), 'ses-frase'), true, `${firma}: la frase no firma`);
+  }
+});
+
+test('SignFile_OtroArchivoOVencida_Niega (T45) @story-8.139 @ac-43', (t) => {
+  for (const [firma, archivo, escribir] of frenosDeArchivo(t)) {
+    // la constancia de otro archivo
+    let casa = casaNueva(t);
+    const otro = path.join(path.dirname(archivo), 'otro.md');
+    fs.writeFileSync(otro, '# otro\n');
+    ow.firmarArchivo({ firma, via: 'ventana', sesion: 'ses-a', archivo: otro, casa, ahora: Date.now() });
+    assert.notStrictEqual(escribir(casa, 'ses-a'), true, `${firma}: la de otro archivo no vale`);
+    // la de otra sesión
+    casa = casaNueva(t);
+    ow.firmarArchivo({ firma, via: 'ventana', sesion: 'ses-b', archivo, casa, ahora: Date.now() });
+    assert.notStrictEqual(escribir(casa, 'ses-a'), true, `${firma}: la de otra sesión no vale`);
+    // la de otra firma sobre el mismo archivo
+    casa = casaNueva(t);
+    ow.firmarArchivo({ firma: firma === 'dod_runtime_exempt' ? 'cambiar-el-estado' : 'dod_runtime_exempt', via: 'ventana', sesion: 'ses-a', archivo, casa, ahora: Date.now() });
+    assert.notStrictEqual(escribir(casa, 'ses-a'), true, `${firma}: la de otra firma no vale`);
+    // vencida: de hace 31 minutos
+    casa = casaNueva(t);
+    ow.firmarArchivo({ firma, via: 'ventana', sesion: 'ses-a', archivo, casa, ahora: Date.now() - 31 * 60000 });
+    const r = escribir(casa, 'ses-a');
+    assert.notStrictEqual(r, true, `${firma}: vencida no vale`);
+    assert.match(String(r), /marker\.js sign-file/, `${firma}: vencida, nombra el comando`);
+  }
+  // una firma que no es de archivo no se pide con sign-file
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, SIGN_FILE('TYCON_SAFETY_OFF', '/r/x.md')).decision, 'none');
+  assert.throws(() => ow.firmarArchivo({ firma: 'plan-approval', via: 'ventana', sesion: 'ses-a', archivo: '/r/x.md', casa }), /no es una firma sobre un archivo/);
+});
+
+test('Constancias_DicenViaQuienYDestino_SinCita (T46) @story-8.139 @ac-30', (t) => {
+  const SIN_CITA = /^(cita|quote|relevo|relayed_?by|ok|frase|approved_?by)$/i;
+  const mira = (r, como) => {
+    for (const k of ['via', 'sesion', 'destino']) assert.ok(r[k], `${como}: trae ${k}`);
+    for (const k of Object.keys(r)) assert.doesNotMatch(k, SIN_CITA, `${como}: no guarda una cita (${k})`);
+  };
+  // por la ventana, cada firma `guion`
+  for (const [firma, cmd, argv] of GUIONES) {
+    const casa = casaNueva(t);
+    pedir(casa, cmd);
+    const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+    assert.strictEqual(e.codigo, 0, `${cmd}: ${e.motivo}`);
+    const g = gates(casa).find((x) => x.name === `${firma}-signed`);
+    mira(g, `${cmd} (ventana)`);
+    assert.strictEqual(g.via, 'ventana');
+  }
+  // por la delegación
+  const casa = casaConDesignada(t);
+  pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal() });
+  assert.strictEqual(ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: 'ses-a' }).codigo, 0);
+  const d = gates(casa).find((x) => x.name === 'plan-approval-signed');
+  mira(d, 'delegación');
+  assert.strictEqual(d.via, 'delegacion');
+  assert.strictEqual(d.sesion, 'ses-coord');
+  // la constancia del guion dice que firmó la coordinadora por delegación, no el dueño en la ventana
+  const quien = ow.quienFirmo({ via: 'delegacion', sesion: 'ses-coord' }, 'el-dueno');
+  assert.strictEqual(quien.via, 'delegada · coordinadora');
+  assert.strictEqual(quien.tipo, 'automatica');
+  assert.match(quien.quien, /^coordinadora \(sesión ses-coord\)$/);
+  assert.strictEqual(quien.delegacion, 'el-dueno');
+  const cw = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
+  assert.strictEqual(cw.constanciaInvalida({ rule_id: 'X-C1', ts: 't', ...quien }), null, 'la exención delegada vale');
+  assert.deepStrictEqual(ow.quienFirmo({ via: 'ventana', sesion: 'ses-a' }, 'el-dueno'), { tipo: 'manual', quien: 'el-dueno', via: 'ventana' });
+  // el cierre de la corrida reconoce la vía de la delegación
+  const rc = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-close.js'));
+  assert.ok(rc.VIAS_DE_CIERRE.includes('delegacion'), 'un cierre firmado por delegación no queda «sin registro»');
+  // por la terminal
+  const casaT = casaNueva(t);
+  const tty = { windows: false, hay: () => true, preguntar: () => 'firmo' };
+  assert.strictEqual(ow.exigir({ firma: 'manual-test', argv: [MARKER, 'mark-tested', '--acs', '1', '--for-session', 'ses-a', '--terminal'], propia: '_nosession', casa: casaT, tty, ahora: AHORA }).codigo, 0);
+  const tr = gates(casaT).find((x) => x.name === 'manual-test-signed');
+  assert.strictEqual(tr.via, 'terminal');
+  assert.strictEqual(tr.destino, 'ses-a');
+  for (const k of Object.keys(tr)) assert.doesNotMatch(k, SIN_CITA, `terminal: no guarda una cita (${k})`);
+  // la constancia de una firma sobre un archivo
+  const casaF = casaNueva(t);
+  ow.firmarArchivo({ firma: 'dod_runtime_exempt', via: 'ventana', sesion: 'ses-a', archivo: '/r/specs/story-9.99.md', casa: casaF, ahora: AHORA });
+  const dir = path.join(ow.carpeta(casaF), 'files');
+  const [f] = fs.readdirSync(dir);
+  const c = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+  mira(c, 'archivo');
+  assert.strictEqual(c.archivo, '/r/specs/story-9.99.md');
+});
+
+// --- lo que encontró el pase adversarial ---------------------------------------------------------------------------
+
+const DISPATCH = path.join(SCRIPTS_PIPE, 'dispatch.js');
+const constanciasVigentes = (casa) => { try { return fs.readdirSync(path.join(ow.carpeta(casa), 'files')).filter((f) => f.endsWith('.json')); } catch (_) { return []; } };
+
+test('SignFile_EscrituraFrenadaPorOtraRegla_NoGastaLaFirma (pase adversarial) @story-8.139 @ac-43', (t) => {
+  const { repo, historia } = repoNuevo(t);
+  const casa = casaNueva(t);
+  const viejo = fs.readFileSync(historia, 'utf8');
+  // una sola escritura que agrega la exención y cambia el estado: pide las dos firmas
+  const nuevo = viejo.replace('status: in-progress', 'status: ready-for-dev\ndod_runtime_exempt: true');
+  const ev = { session_id: 'ses-a', tool_use_id: 'toolu_w', tool_name: 'Write', cwd: repo, tool_input: { file_path: historia, content: nuevo } };
+  const d = require(DISPATCH);
+  ow.firmarArchivo({ firma: 'dod_runtime_exempt', via: 'ventana', sesion: 'ses-a', archivo: historia, casa, ahora: Date.now() });
+  d.abrirConsumos();
+  const r = fw().handle(ev, { casa });
+  assert.ok(r && r.block, 'sin la firma del estado frena');
+  assert.match(r.block, /sign-file cambiar-el-estado/, 'el cartel nombra la firma que falta');
+  d.cerrarConsumos({ paso: false });
+  assert.strictEqual(constanciasVigentes(casa).length, 1, 'la firma de la exención no se gastó');
+  // con la otra firma pasa, y recién ahí se gastan las dos
+  ow.firmarArchivo({ firma: 'cambiar-el-estado', via: 'ventana', sesion: 'ses-a', archivo: historia, casa, ahora: Date.now() });
+  d.abrirConsumos();
+  const r2 = fw().handle(ev, { casa });
+  assert.ok(!r2 || !r2.block, `con las dos firmas pasa: ${r2 && r2.block}`);
+  assert.strictEqual(constanciasVigentes(casa).length, 0, 'mientras el evento no terminó, las dos quedan reservadas');
+  assert.deepStrictEqual(d.cerrarConsumos({ paso: true }), []);
+  assert.strictEqual(constanciasVigentes(casa).length, 0, 'la escritura pasó: las dos quedan usadas');
+  assert.strictEqual(fs.readdirSync(path.join(ow.carpeta(casa), 'files')).filter((f) => /\.consumido-/.test(f)).length, 2);
+});
+
+test('SignFile_DosEscriturasALaVez_UnaSolaUsaLaFirma (pase adversarial) @story-8.139 @ac-43', (t) => {
+  const { repo, historia } = repoNuevo(t);
+  const casa = casaNueva(t);
+  const nuevo = fs.readFileSync(historia, 'utf8').replace('status: in-progress', 'status: in-progress\ndod_runtime_exempt: true');
+  const ev = { session_id: 'ses-a', tool_use_id: 'toolu_w', tool_name: 'Write', cwd: repo, tool_input: { file_path: historia, content: nuevo } };
+  const d = require(DISPATCH);
+  ow.firmarArchivo({ firma: 'dod_runtime_exempt', via: 'ventana', sesion: 'ses-a', archivo: historia, casa, ahora: Date.now() });
+  // el primer despachador valida la firma y todavía no terminó; el segundo (otro proceso) ya no la encuentra
+  d.abrirConsumos();
+  const r1 = fw().handle(ev, { casa });
+  assert.ok(!r1 || !r1.block, `la primera escritura pasa: ${r1 && r1.block}`);
+  const primero = globalThis[Symbol.for('tycon.consumos-diferidos')];
+  globalThis[Symbol.for('tycon.consumos-diferidos')] = [];
+  const r2 = fw().handle(ev, { casa });
+  assert.ok(r2 && r2.block, 'la segunda escritura no usa la misma firma');
+  globalThis[Symbol.for('tycon.consumos-diferidos')] = primero;
+  d.cerrarConsumos({ paso: false });
+  assert.strictEqual(constanciasVigentes(casa).length, 1, 'la primera frenó después: la firma vuelve a su lugar');
+});
+
+test('ConfirmarConsumos_NoSePuedeGastar_LoDice (pase adversarial) @story-8.139 @ac-43', (t) => {
+  const casa = casaNueva(t);
+  const f = path.join(ow.carpeta(casa), 'files', 'no-existe.json');
+  const errores = ow.confirmarConsumos([{ f, reservado: `${f}.reservado-1-1`, ahora: 1 }], { paso: true });
+  assert.strictEqual(errores.length, 1, 'una firma que no se pudo gastar no se da por gastada');
+  assert.strictEqual(errores[0].error, 'ENOENT');
+});
+
+test('SignFile_FirmaReservadaYPerdida_LoDice (pase adversarial) @story-8.139 @ac-43', (t) => {
+  const { repo, historia } = repoNuevo(t);
+  const casa = casaNueva(t);
+  ow.firmarArchivo({ firma: 'dod_runtime_exempt', via: 'ventana', sesion: 'ses-a', archivo: historia, casa, ahora: Date.now() });
+  // un despachador reserva la firma y muere sin cerrarla
+  globalThis[Symbol.for('tycon.consumos-diferidos')] = [];
+  assert.ok(ow.consumirArchivo({ firma: 'dod_runtime_exempt', sesion: 'ses-a', archivo: historia, cwd: repo, casa }).ok);
+  delete globalThis[Symbol.for('tycon.consumos-diferidos')];
+  const r = ow.consumirArchivo({ firma: 'dod_runtime_exempt', sesion: 'ses-a', archivo: historia, cwd: repo, casa });
+  assert.strictEqual(r.ok, false, 'la firma reservada no se reusa');
+  assert.match(r.motivo, /se perdió, firmala de nuevo/);
+});
+
+test('Dispatch_UnFrenoPosterior_NoGastaLaFirma (pase adversarial) @story-8.139 @ac-43', (t) => {
+  const casa = casaNueva(t);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-dispatch-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const archivo = path.join(dir, 'x.md');
+  // dos reglas de la cadena: la primera valida la firma, la segunda frena según BLOCK_NEXT
+  fs.writeFileSync(path.join(dir, 'valida.js'), `const ow = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'))});
+module.exports = { handle: (e) => { const r = ow.consumirArchivo({ firma: 'dod_runtime_exempt', sesion: e.session_id, archivo: e.tool_input.file_path, casa: process.env.SIGNING_HOME }); return r.ok ? null : { block: r.motivo }; } };\n`);
+  fs.writeFileSync(path.join(dir, 'frena.js'), "module.exports = { handle: () => (process.env.BLOCK_NEXT === '1' ? { block: 'otra regla' } : null) };\n");
+  const corre = `const d = require(${JSON.stringify(DISPATCH)}); const c = d.CHAINS['pre-edit']; c.length = 0;
+c.push({ name: 'valida', path: ${JSON.stringify(path.join(dir, 'valida.js'))} }, { name: 'frena', path: ${JSON.stringify(path.join(dir, 'frena.js'))} });
+d.dispatch('pre-edit');`;
+  const ev = JSON.stringify({ session_id: 'ses-a', tool_use_id: 'toolu_w', hook_event_name: 'PreToolUse', tool_name: 'Write', cwd: dir, tool_input: { file_path: archivo, content: 'x' } });
+  const lanzar = (frena) => spawnSync(process.execPath, ['-e', corre], { input: ev, encoding: 'utf8', env: { ...process.env, SIGNING_HOME: casa, BLOCK_NEXT: frena } });
+  ow.firmarArchivo({ firma: 'dod_runtime_exempt', via: 'ventana', sesion: 'ses-a', archivo, casa, ahora: Date.now() });
+  const r = lanzar('1');
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /otra regla/);
+  assert.strictEqual(constanciasVigentes(casa).length, 1, 'frenó otra regla: la firma sigue sin usar');
+  const r2 = lanzar('0');
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  assert.strictEqual(constanciasVigentes(casa).length, 0, 'la escritura pasó: la firma quedó usada');
+  assert.strictEqual(lanzar('0').status, 2, 'usada, no vuelve a valer');
+});
+
+test('SignFile_TerminalSinSesion_NoFirma (pase adversarial) @story-8.139 @ac-43', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-window-sinsesion-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (/SESSION_ID$/.test(k)) delete env[k];
+  const r = spawnSync(process.execPath, [MARKER, 'sign-file', 'dod_runtime_exempt', path.join(dir, 'x.md'), '--terminal'], { input: '', encoding: 'utf8', env });
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /sin --for-session/, 'dice qué falta');
+  assert.doesNotMatch(r.stdout, /firmada/);
+});
+
+test('FirmasDelComando_BanderaConCDeOtroPrograma_NoEsUnaConsola (pase adversarial) @story-8.139', () => {
+  assert.deepStrictEqual([...ow.firmasDelComando("grep -c 'e2e-setup.js prepare' log.txt")], []);
+  assert.deepStrictEqual([...ow.firmasDelComando("grep -rc 'bash /h/scripts/ci/run-base-controls.sh approve' .")], []);
+  assert.deepStrictEqual([...ow.firmasDelComando("rg -ic 'node /h/e2e-setup.js defer --no x' .")], []);
+  // una consola de verdad sigue contando, también detrás de env o con su ruta
+  assert.deepStrictEqual([...ow.firmasDelComando("bash -c 'node /h/e2e-setup.js prepare --repo /r --story s.md'")], ['browser-test']);
+  assert.deepStrictEqual([...ow.firmasDelComando("env bash -c 'node /h/e2e-setup.js prepare --repo /r --story s.md'")], ['browser-test']);
+  assert.deepStrictEqual([...ow.firmasDelComando("/bin/zsh -lc 'bash /h/scripts/ci/run-base-controls.sh approve'")], ['control-change']);
+});
+
+test('Ventana_ArchivoConTilde_MuestraLaRutaDeLaCasa (pase adversarial) @story-8.139 @ac-43', (t) => {
+  const casa = casaNueva(t);
+  const r = pedir(casa, SIGN_FILE('dod_runtime_exempt', '~/notas/story-9.99.md'));
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.ok(r.texto.includes(path.join(os.homedir(), 'notas', 'story-9.99.md')), `la ventana muestra la ruta que firma la consola: ${r.texto}`);
+  assert.doesNotMatch(r.texto, /[\\/]~[\\/]/, 'no muestra una carpeta «~» que no existe');
+});
+
+test('ComoSeFirma_RutaConCaracteresDeLaConsola_VaEntreComillas (pase adversarial) @story-8.139 @ac-43', () => {
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md'), 'marker.js sign-file dod_runtime_exempt /r/specs/story-9.99.md');
+  assert.strictEqual(ow.comoSeFirma('dod_runtime_exempt'), 'marker.js sign-file dod_runtime_exempt <archivo>');
+  for (const ruta of ["/r/it's $HOME (1).md", '/r/a b;c&d.md', '/r/`x`.md']) {
+    const linea = ow.comoSeFirma('dod_runtime_exempt', ruta);
+    const arg = linea.slice('marker.js sign-file dod_runtime_exempt '.length);
+    const eco = spawnSync('bash', ['-c', `printf %s ${arg}`], { encoding: 'utf8' });
+    assert.strictEqual(eco.stdout, ruta, `${ruta}: copiado tal cual, la consola lee la misma ruta (${linea})`);
+  }
+});
+
+test('Ventana_SalteoDelPase_NoDiceQueNoSeDelego (pase adversarial) @story-8.139', (t) => {
+  const casa = casaNueva(t);
+  const r = pedir(casa, `node ${MARKER} sign-adversarial-skip --story /r/specs/story-9.99.md --reason "sin código"`, { delegacion: delegacionReal() });
+  assert.notStrictEqual(r.decision, 'allow');
+  assert.doesNotMatch(r.texto || '', /No se firmó por delegación/, 'que no se delegue es lo normal: no se anuncia');
 });
 
 // En Windows la terminal no se lee: `--terminal` abre la ventana NUEVA con el mismo comando, como waive-critical, y la

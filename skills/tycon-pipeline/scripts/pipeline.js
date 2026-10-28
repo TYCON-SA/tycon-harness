@@ -6677,7 +6677,7 @@ function main() {
           '🛑 check-count FALLÓ CERRADO — no hay step5-start en el registro: `pipeline.js advisors` no corrió en esta corrida.\n' +
           'Sin ese registro no hay set esperado ni spawns contra qué contar, y un OK sería un verde sobre nada.\n' +
           'Corré `pipeline.js advisors --repo <r> --story <s> --files <…>`, lanzá los revisores y volvé a contar.\n' +
-          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo firma en la ventana de permiso o en su terminal.\n',
         );
         process.exit(2);
       }
@@ -6707,7 +6707,7 @@ function main() {
               'Verificá:\n' +
               '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
               '  2. ¿on-advisor-run.js está en settings.json (PreToolUse Task|Agent)? → install-tycon-hooks.sh --check\n') +
-          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo firma en la ventana de permiso o en su terminal.\n',
         );
         process.exit(2);
       }
@@ -7507,7 +7507,7 @@ function main() {
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
     '  node pipeline.js check-count    [--ran a,b,c]\n' +
     '       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n' +
-    '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona: «autorizo trust-ran»)\n' +
+    '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona, en la ventana de permiso o en su terminal)\n' +
     '  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n' +
     '                                  [--allow-missing-files]\n' +
     '       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n' +

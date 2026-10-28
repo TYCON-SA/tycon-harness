@@ -16,7 +16,7 @@
             "M=\"$HOME/.claude/.tycon-pipeline/active/bench-perdida.json\"; zip -qm \"$HOME/marcador.zip\" \"$M\" 2>/dev/null || mv \"$M\" \"$HOME/marcador.json\"; test ! -e \"$M\""
           ],
           "stdin": { "session_id": "bench-perdida", "tool_name": "Bash", "tool_input": { "command": "echo x > src/a.js" } },
-          "expect": { "exit": 2, "stderr_re": ["EJECUCIÓN PERDIDA", "falta su marcador", "autorizo cerrar la ejecución"] }
+          "expect": { "exit": 2, "stderr_re": ["EJECUCIÓN PERDIDA", "falta su marcador", "La salida la decide el dueño: la firma en la ventana de permiso o en su terminal"] }
         },
         {
           "id": "marcador-perdido-gemelo-cerrado-por-el-camino-legitimo-pasa",

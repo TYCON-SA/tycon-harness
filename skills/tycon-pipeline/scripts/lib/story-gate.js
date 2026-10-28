@@ -471,11 +471,29 @@ const STORY_INTENT_PATTERNS = [
   /\b(apply|run|correr|ejecutar)\b.*\btycon[- ]pipeline\b/i,
 ];
 
-/** ¿Alguno de los prompts que CONTIENEN la cita es un pedido explícito de story? */
+// El registro de una versión anterior guarda textos sueltos, sin origen. Lo que llegó de otra sesión, de un agente o como
+// nota lateral empieza con lo que le pone Claude Code; eso no cuenta, y el resto se lee como antes hasta que vence la
+// sesión.
+const AJENO_EN_REGISTRO_VIEJO = /^\s*(?:Another Claude session sent a message:|<cross-session-message\b|<agent-message\b|Here is a note offered by a side agent)/;
+
+/**
+ * Los textos que escribió el dueño, en orden. Cada entrada del registro es `{ texto, origen, de? }` (cuenta sólo
+ * `origen: 'dueno'`, que sale de la marca de Claude Code, no del texto) o un texto de la forma vieja.
+ */
+function soloDelDueno(entradas) {
+  const out = [];
+  for (const e of Array.isArray(entradas) ? entradas : []) {
+    if (typeof e === 'string') { if (!AJENO_EN_REGISTRO_VIEJO.test(e)) out.push(e); continue; }
+    if (e && e.origen === 'dueno' && typeof e.texto === 'string') out.push(e.texto);
+  }
+  return out;
+}
+
+/** ¿Alguno de los prompts del dueño que CONTIENEN la cita es un pedido explícito de story? */
 function quotedPromptAsksStory(reason, prompts) {
   const r = normalizeWords(reason);
   if (!r) return false;
-  return (Array.isArray(prompts) ? prompts : [])
+  return soloDelDueno(prompts)
     .filter((p) => normalizeWords(p).includes(r))
     .some((p) => STORY_INTENT_PATTERNS.some((re) => re.test(String(p))));
 }
@@ -495,12 +513,12 @@ const ADHOC_REASON_MIN_CHARS = 8;
 /**
  * ¿El motivo del ad-hoc es un fragmento LITERAL de algo que escribió el user? (≥8 caracteres
  * normalizados). Cierra el agujero de "reason en palabras del user" que nadie verificaba: una
- * paráfrasis del agente no pasa; citarlo, sí.
+ * paráfrasis del agente no pasa; citarlo, sí. Lo de otra sesión, de un agente o sin marca no se cita.
  */
 function reasonInPrompts(reason, prompts) {
   const r = normalizeWords(reason);
   if (r.length < ADHOC_REASON_MIN_CHARS) return false;
-  return (Array.isArray(prompts) ? prompts : []).some((p) => normalizeWords(p).includes(r));
+  return soloDelDueno(prompts).some((p) => normalizeWords(p).includes(r));
 }
 
 /** El cartel de borrar o mover un marcador de ejecución por consola: qué se tocó y qué comando usar en su lugar. */
@@ -535,7 +553,7 @@ function storyByConsoleMessage(rutas, via) {
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
   computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
-  reasonInPrompts, normalizeWords, ADHOC_REASON_MIN_CHARS,
+  reasonInPrompts, soloDelDueno, normalizeWords, ADHOC_REASON_MIN_CHARS,
   STORY_INTENT_PATTERNS, quotedPromptAsksStory,
   DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };

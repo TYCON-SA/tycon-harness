@@ -109,6 +109,13 @@ test('Tooling_FindsToolsOnEveryPlatform_RunCheckUsesGitBash', async (t) => {
     const lost = portable.runCheckLaunch(['bash', 'x.sh'], { platform: 'win32', harnessDir: fs.mkdtempSync(path.join(os.tmpdir(), 'sin-arnes-')) });
     assert.strictEqual(lost.file, null);
     assert.match(lost.error, /git-bash\.js/, 'un arnés que no trae la búsqueda lo dice');
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sin-enlace-'));
+    const winEnv = { PATH: 'C:\\Windows\\System32', ProgramFiles: 'C:\\Program Files', TYCON_GUIDES_DIR: path.join(home, 'no-existe') };
+    const own = portable.runCheckLaunch(['bash', 'x.sh'], { platform: 'win32', env: winEnv, home, ownClone: HARNESS, exists: (p) => p === want });
+    assert.deepStrictEqual([own.file, own.error], [want, null], 'sin variable válida ni enlace, la búsqueda del mismo clon');
+    const none = portable.runCheckLaunch(['bash', 'x.sh'], { platform: 'win32', env: winEnv, home, ownClone: home, exists: (p) => p === want });
+    assert.strictEqual(none.file, null);
+    assert.match(none.error, /no encuentro el arnés/, 'sin clon propio con la búsqueda, el motivo es el de siempre');
     const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
     assert.match(marker, /runCheckLaunch\(/, 'marker.js run-check lanza por runCheckLaunch()');
   });

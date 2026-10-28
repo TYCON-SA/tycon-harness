@@ -33,6 +33,8 @@
 #
 # Uso: bash scripts/tests/harness-plan.test.sh [--only T15|T17|T14|T18|T19|T20|T21|T22|REG]
 set -uo pipefail
+# el Python de Xcode guarda su caché en ~/Library/Caches de la HOME de prueba: T15 compara la HOME antes y después
+export PYTHONDONTWRITEBYTECODE=1
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FIX="$RAIZ/scripts/tests/fixtures/harness-managed-pieces.json"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"

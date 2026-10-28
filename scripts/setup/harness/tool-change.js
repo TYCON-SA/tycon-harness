@@ -173,7 +173,7 @@ function removal(ctx, state, tool, H, { codexStays = false } = {}) {
     // el lugar y el enlace de las skills: `install --version` los crea sin registrarlos; se van si apuntan al arnés
     // a dónde APUNTA (readlink), contra la casa del arnés escrita de las dos formas: como se la nombra y resuelta (en
     // Mac la carpeta temporal y algunas HOME viven detrás de un enlace, y el enlace guarda la ruta resuelta)
-    const root = TH.ownPaths({ env: ctx.env }).root;
+    const root = TH.ownPathsOf(ctx).root;
     const roots = [root];
     try { const real = fs.realpathSync(root); if (real !== root) roots.push(real); } catch (_) { /* la casa no está */ }
     for (const l of [H.linkPath(ctx.home), TH.installedSkillsDir(ctx.home)]) {

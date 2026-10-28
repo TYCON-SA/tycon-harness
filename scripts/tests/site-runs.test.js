@@ -1149,10 +1149,13 @@ function foto260(nombre, texto) {
   compararConFoto(nombre, n, fs.readFileSync(f, 'utf8'));
 }
 function compararConFoto(nombre, n, guardada) {
-  // los textos comprimidos de la página llevan en su cabecera el sistema que los comprimió (macOS o Linux): el contenido
-  // es el mismo y ese dato no se compara
+  // los textos comprimidos de la página se comparan descomprimidos: la cabecera dice el sistema que los comprimió (macOS o
+  // Linux) y los bytes cambian con la versión de zlib del Node que corre (el de Homebrew usa otra); el contenido es el mismo
   // la versión del pie sale del archivo de versión de la copia, que no toda copia trae: tampoco se compara
-  const sinSistema = (s) => s.replace(/H4sIAAAAAAAA[A-Za-z0-9+/]/g, 'H4sIAAAAAAAA_')
+  const descomprimido = (b64) => {
+    try { return `GZ[${zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('utf8')}]`; } catch (_) { return b64; }
+  };
+  const sinSistema = (s) => s.replace(/H4sIAAAAAAAA[A-Za-z0-9+/=]*/g, descomprimido)
     .replace(/(<footer class="pie"><span>[^<]*?) v[\w.+-]+<\/span>/g, '$1</span>');
   const foto = sinSistema(guardada);
   if (sinSistema(n) === foto) return;

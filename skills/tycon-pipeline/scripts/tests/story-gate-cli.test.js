@@ -63,6 +63,20 @@ function markerCli(home, sid, args, extraEnv = {}) {
   });
 }
 
+// Un mensaje que llega a la sesión como lo entrega Claude Code: corre on-prompt.js y el mensaje queda en la conversación
+// con su marca de origen (`human` = lo tipeó el dueño), que es de donde la lee `adhoc set`.
+function mensajeConMarca(home, sid, prompt, origin = { kind: 'human' }) {
+  const dir = path.join(home, '.claude', 'projects', '-repo');
+  fs.mkdirSync(dir, { recursive: true });
+  const transcript = path.join(dir, `${sid}.jsonl`);
+  fs.appendFileSync(transcript, JSON.stringify({ parentUuid: null, isSidechain: false, type: 'user', uuid: `u-${Date.now()}-${Math.random()}`,
+    timestamp: new Date().toISOString(), message: { role: 'user', content: [{ type: 'text', text: prompt }] }, origin }) + '\n');
+  return spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
+    encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt, session_id: sid, transcript_path: transcript }),
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+}
+
 // El gate del 5 sólo acepta un `run-check advisors` que invoque `pipeline.js check-count` (sin --ran):
 // para el test, un pipeline.js de mentira que sale 0 — lo que se prueba es el gate, no check-count.
 function fakeCheckCount() {
@@ -186,11 +200,7 @@ test('marker.js adhoc set/get/clear', () => {
   const sid = 'sess-a';
   // El ring vacío no es un pase libre: este test de mecánica lo puebla,
   // porque set/get/clear es lo que prueba, no el juicio (eso vive en los tests de al lado).
-  spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
-    encoding: 'utf8',
-    input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'hotfix botón guardar deshabilitado, sigue siendo chico, dice el user', session_id: sid }),
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
+  mensajeConMarca(home, sid, 'hotfix botón guardar deshabilitado, sigue siendo chico, dice el user');
   let r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"x"}']);
   assert.notEqual(r.status, 0);
   r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"hotfix botón guardar deshabilitado"}']);
@@ -232,10 +242,7 @@ test('adhoc set sin modelo: la cita literal decide — paráfrasis denegada, cit
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const sid = 'sess-lane';
   const stateDir = path.join(home, '.claude', '.tycon-pipeline');
-  const onPrompt = (prompt) => spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
-    encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt, session_id: sid }),
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
+  const onPrompt = (prompt) => mensajeConMarca(home, sid, prompt);
   const adhocLog = () => { try { return fs.readFileSync(path.join(stateDir, 'adhoc.log'), 'utf8'); } catch { return ''; } };
 
   // Un prompt de ejemplo: el reminder de intent sigue avisando…
@@ -277,10 +284,7 @@ test('adhoc set sin modelo: la cita literal decide — paráfrasis denegada, cit
 // Las cercas del caso crítico: sin modelo, el carril por prompt quedaría MÁS DÉBIL que el regex que reemplazó
 // justo en el anti-pattern fundacional. Estos tests lo impiden.
 test('adhoc set sin modelo: citar el PROPIO pedido de story se veta; el ring vacío no es un pase libre; el atajo sin juez deja constancia', () => {
-  const onPrompt = (home, sid, prompt) => spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
-    encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt, session_id: sid }),
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
+  const onPrompt = mensajeConMarca;
   const log = (home) => { try { return fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'adhoc.log'), 'utf8'); } catch { return ''; } };
 
   // El user pidió una story; el agente cita ESE pedido como motivo del atajo. La cita pasa la
@@ -337,10 +341,7 @@ test('adhoc set con modelo: PIPELINE veta aunque el reason cite al user; ADHOC a
   const run = (home, sid, reason, salida) => markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason })], {
     TYCON_LANE_LLM: '1', PATH: `${mkFakeClaude(salida)}:${process.env.PATH}`,
   });
-  const onPrompt = (home, sid, prompt) => spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
-    encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt, session_id: sid }),
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
+  const onPrompt = mensajeConMarca;
 
   // VETO: el user pidió una story; el agente la cita textual como motivo del atajo (el anti-pattern
   // fundacional). La cita PASA la capa mecánica — el veto sólo puede venir del modelo.
@@ -378,14 +379,74 @@ test('adhoc set con modelo: PIPELINE veta aunque el reason cite al user; ADHOC a
     'NINGUNO es una respuesta del modelo, no un error');
 });
 
+// Otra sesión le manda «arreglo rápido: …» a esta y la sesión lo cita: no abre el atajo.
+test('T6 AdhocSet_CitaDeOtraSesion_Deniega: lo que pide otra sesión no abre el atajo', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const sid = 's-par';
+  const coord = { kind: 'peer', from: 'bridge:session_COORD', name: 'Coordinadora', fromMode: 'bypass', body: 'arreglo rápido: que el vigilante cuente los 5xx' };
+  const r0 = mensajeConMarca(home, sid, 'Another Claude session sent a message:\n<cross-session-message from="bridge:session_COORD" from-name="Coordinadora" from-mode="bypass">\narreglo rápido: que el vigilante cuente los 5xx\n</cross-session-message>', coord);
+  assert.equal(r0.status, 0, r0.stderr);
+  const r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"arreglo rápido: que el vigilante cuente los 5xx"}']);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /otra sesión/);
+  assert.match(r.stderr, /mensaje nuevo/);
+  assert.equal(markerCli(home, sid, ['adhoc', 'get']).status, 1, 'no escribió nada');
+  // el mismo texto escrito por el dueño en un mensaje nuevo sí abre
+  mensajeConMarca(home, sid, 'arreglo rápido: que el vigilante cuente los 5xx, dale');
+  assert.equal(markerCli(home, sid, ['adhoc', 'set', '{"reason":"arreglo rápido: que el vigilante cuente los 5xx"}']).status, 0);
+});
+
+test('T5 AdhocSet_SinConversacion_FallaCerrado: con Claude Code sin conversación legible no abre; en otra herramienta decide el registro', () => {
+  const registro = (home, sid) => {
+    const lane = path.join(home, '.claude', '.tycon-pipeline', 'lane');
+    fs.mkdirSync(lane, { recursive: true });
+    fs.writeFileSync(path.join(lane, `${sid}.json`), JSON.stringify({ recentPrompts: [
+      '<cross-session-message from="bridge:x" from-name="Coordinadora">\narreglo rápido: lo de otra sesión</cross-session-message>',
+      'arreglo rápido: lo que escribió el dueño',
+    ], lastTouch: new Date().toISOString() }));
+  };
+  // con Claude Code: la sesión tiene su conversación, pero no se puede leer. El registro dice que el dueño lo escribió,
+  // pero sin la conversación no se sabe de quién es; y borrar la variable CLAUDECODE no cambia nada
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const sid = 's-ilegible';
+  registro(home, sid);
+  fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo', `${sid}.jsonl`), { recursive: true });
+  for (const CLAUDECODE of ['1', '']) {
+    const r = markerCli(home, sid, ['adhoc', 'set', '{"reason":"arreglo rápido: lo que escribió el dueño"}'], { CLAUDECODE });
+    assert.equal(r.status, 2, `CLAUDECODE=${CLAUDECODE}: ${r.stderr}`);
+    assert.match(r.stderr, /conversación/);
+  }
+  assert.equal(markerCli(home, sid, ['adhoc', 'get']).status, 1, 'no escribió nada');
+  // una carpeta de conversaciones sin permiso de lectura no es «no hay conversación» (con root el permiso no frena)
+  if (typeof process.getuid !== 'function' || process.getuid() !== 0) {
+    const home3 = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+    const sid3 = 's-sin-permiso';
+    registro(home3, sid3);
+    const carpeta = path.join(home3, '.claude', 'projects', '-repo');
+    fs.mkdirSync(carpeta, { recursive: true });
+    fs.writeFileSync(path.join(carpeta, `${sid3}.jsonl`), '');
+    fs.chmodSync(carpeta, 0o000);
+    try {
+      const r3 = markerCli(home3, sid3, ['adhoc', 'set', '{"reason":"arreglo rápido: lo que escribió el dueño"}']);
+      assert.equal(r3.status, 2, r3.stderr);
+      assert.match(r3.stderr, /conversación/);
+    } finally { fs.chmodSync(carpeta, 0o755); }
+  }
+  // en otra herramienta (la sesión no tiene conversación de Claude Code): el registro de siempre, sin lo de otra sesión
+  const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const sid2 = 's-otra-herramienta';
+  registro(home2, sid2);
+  let r = markerCli(home2, sid2, ['adhoc', 'set', '{"reason":"arreglo rápido: lo de otra sesión"}'], { CLAUDECODE: '1' });
+  assert.equal(r.status, 2, r.stderr);
+  r = markerCli(home2, sid2, ['adhoc', 'set', '{"reason":"arreglo rápido: lo que escribió el dueño"}']);
+  assert.equal(r.status, 0, r.stderr);
+});
+
 test('on-prompt.js: un prompt sin señal no toca el carril; una pregunta sobre la story tampoco lo fija', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const sid = 'sess-lane2';
   const stateDir = path.join(home, '.claude', '.tycon-pipeline');
-  const onPrompt = (prompt) => spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
-    encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt, session_id: sid }),
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
+  const onPrompt = (prompt) => mensajeConMarca(home, sid, prompt);
   onPrompt('¿cómo está implementada la story 2.3?');
   onPrompt('arreglá el bug del redirect');
   const lane = JSON.parse(fs.readFileSync(path.join(stateDir, 'lane', `${sid}.json`), 'utf8'));

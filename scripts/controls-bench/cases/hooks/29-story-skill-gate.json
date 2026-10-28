@@ -287,9 +287,9 @@
      }
     },
     {
-     "id": "bypass-auditado-deja-pasar-y-queda-en-bypass-log",
-     "type": "must-run",
-     "__doc": "El escape lo decide la persona: con «autorizo story-skill-bypass» escrita en un turno suyo, el freno deja pasar la historia sin la skill (anclado al pedido que juzga, tool_use_id) y su uso queda auditado (STORY_SKILL_BYPASS_USED con su via).",
+     "id": "bypass-con-frase-de-la-persona-frena",
+     "type": "must-block",
+     "__doc": "8.139: «autorizo story-skill-bypass» escrita por la persona ya no abre el freno ni queda como salteo: el cartel nombra la firma de la ventana sobre el archivo (marker.js sign-file). Con la firma pasa: SignFile_ConLaVentana_ElArchivoPasa (T45), que corre en proceso porque la constancia vive en la casa de la cuenta, no en la del banco.",
      "env": {
       "CLAUDE_CODE_SESSION_ID": "bench-ssg"
      },
@@ -309,18 +309,18 @@
       "tool_use_id": "bench-tu"
      },
      "expect": {
-      "exit": 0,
-      "file_contains": [
-       {
-        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/bypass.log",
-        "re": "STORY_SKILL_BYPASS_USED.*\"via\":\"persona\""
-       }
+      "exit": 2,
+      "stderr_re": [
+       "sign-file story-skill-bypass"
+      ],
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/bypass.log"
       ]
      },
      "tools": [
       "claude"
      ],
-     "asymmetry": "La frase de la persona se lee de la conversación que guarda Claude Code; bajo Codex no hay conversación legible ni evento de skill, y el freno no frena (caso codex-no-frena-pero-queda-medido)."
+     "asymmetry": "Bajo Codex no hay evento de skill y el freno no frena (caso codex-no-frena-pero-queda-medido)."
     },
     {
      "id": "bypass-con-razon-inventada-no-abre-el-freno",
@@ -349,7 +349,7 @@
       "exit": 2,
       "stderr_re": [
        "HISTORIA SIN VALIDAR",
-       "autorizo story-skill-bypass"
+       "sign-file story-skill-bypass"
       ]
      },
      "tools": [

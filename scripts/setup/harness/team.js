@@ -1522,7 +1522,7 @@ function skillDataDoctor({ home = os.homedir(), env = process.env, tree, team = 
     const layerSet = new Set(layer.map(foldPath));
     const entries = extrasInLayer(layer);
     if (!entries.length) return { items, foreign: foreignSet };
-    const ownRoot = realOrNull(TH.ownPaths({ env }).root) || TH.ownPaths({ env }).root;
+    const ownRoot = realOrNull(TH.ownPathsOf({ home, env }).root) || TH.ownPathsOf({ home, env }).root;
     const strays = extrasForeign(tree, { entries });
     for (const u of strays.unreadable) items.push({ level: 'warn', text: `${u}: dentro de la carpeta de una skill de la lista fija, no se pudo listar — lo que haya ahí no se revisó (y se pierde con la próxima versión)` });
     for (const x of strays) {
@@ -1660,7 +1660,7 @@ const layerFilesOf = (tree) => { const m = tree ? readTeamManifest(tree) : null;
  */
 function findLegacyData(e, { home, env, migrateHome = null, previousDir = null }) {
   const sub = e.skill.slice('skills/'.length).split('/');
-  const ownRoot = realOrNull(TH.ownPaths({ env }).root) || TH.ownPaths({ env }).root;
+  const ownRoot = realOrNull(TH.ownPathsOf({ home, env }).root) || TH.ownPathsOf({ home, env }).root;
   const dirs = [];
   const own = path.join(home, '.claude', 'skills', ...sub);
   const ownReal = realOrNull(own);
