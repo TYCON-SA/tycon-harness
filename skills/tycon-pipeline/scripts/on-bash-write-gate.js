@@ -442,16 +442,28 @@ function scriptsInline(cmd) {
   // sin los cuerpos de los heredocs: un `node -e` adentro de un `.md` que se escribe es texto, no un comando
   const sinCuerpos = raw.replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   for (const m of sinCuerpos.matchAll(conFlag)) out.push({ script: m[3], argv: argumentosDe(m[4]) });
-  const porEntrada = new RegExp(`(?:^|[\\s;&|(\`])(?:[^\\s;&|()'"]*[\\\\/])?(${INTERPRETES})(?:\\.exe)?([^\\n<|;&]*)<<-?[ \\t]*(['"]?)([A-Za-z_]\\w*)\\3[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*\\4[ \\t]*(?=\\n|$)`, 'gi');
-  for (const m of raw.matchAll(porEntrada)) {
-    const antes = palabras(m[2]).filter((x) => x !== '');
-    const i = antes.indexOf('-');
+  // por la entrada: el heredoc o el here-string que llega a un intérprete como su programa, detrás de un envoltorio,
+  // en otra etapa de la tubería o con `/dev/stdin`
+  for (const p of programasPorEntrada(raw)) {
     // `node - a`: process.argv[1] es '-' y el primer argumento es process.argv[2]; en python, sys.argv[1] ya es `a`
-    const desde = i < 0 ? -1 : (/^node/i.test(m[1]) ? i : i + 1);
+    const argv = !p.conGuion ? [] : /^(?:node|nodejs|bun|deno)$/.test(p.interprete) ? ['-', ...p.despues] : p.despues;
     // un heredoc sin comillas (`<<EOF`): el shell expande las variables del cuerpo antes de correrlo
-    out.push({ script: m[5], argv: desde >= 0 ? antes.slice(desde) : antes.filter((x) => !x.startsWith('-')), expande: !m[3] });
+    out.push({ script: p.cuerpo, argv, expande: !p.comillas });
   }
   return out;
+}
+
+// Quién lee el programa de la entrada lo decide el lector compartido, el mismo del freno de producción: los dos juzgan
+// igual el mismo comando. Sólo se usa esta función; las variables las sigue resolviendo command-vars.js. Sin el lector
+// (una instalación a medias) el portón carga igual, y cada cuerpo de heredoc cuenta como programa: frena de más
+let lectorDeEntrada;
+function programasPorEntrada(raw) {
+  if (lectorDeEntrada === undefined) {
+    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch { lectorDeEntrada = null; }
+  }
+  if (lectorDeEntrada) return lectorDeEntrada(raw);
+  return [...raw.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
+    .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3], comillas: Boolean(m[1]) }));
 }
 
 /**
@@ -625,6 +637,12 @@ function destinosArmados(cmd) {
       }
     };
     llamadas(/\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream)\s*\(/g);
+    // lo que reemplaza, mueve o copia sobre el destino, su segundo argumento: `os.replace(tmp, <destino>)`,
+    // `shutil.move`, `fs.renameSync`, `fs.copyFileSync`
+    for (const m of script.matchAll(/\b(?:os\.(?:replace|rename)|shutil\.(?:move|copy|copy2|copyfile)|renameSync|rename|copyFileSync|copyFile)\s*\(/g)) {
+      const a = primerArgumento(script, m.index + m[0].length);
+      if (script[a.fin] === ',') add(primerArgumento(script, a.fin + 1).arg);
+    }
     // python: open(<destino>, 'w'|'a'|'x'|'+'); sin modo es lectura
     llamadas(/\bopen\s*\(/g, (a) => script[a.fin] === ',' && /^\s*(?:mode\s*=\s*)?[rbt]*['"][^'"]*[wax+]/.test(script.slice(a.fin + 1)));
     // python: Path(<destino>).write_text / write_bytes
@@ -1449,14 +1467,39 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     if (c === 'tee') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
     if (c === 'sponge') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
     if (c === 'curl' || c === 'wget') { out.push(...lleva(['-o', '--output', '-O', '--output-document']).filter(es)); continue; }
-    if (c === 'tar' || c === 'bsdtar' || c === 'unzip') {
+    if (c === 'tar' || c === 'bsdtar' || c === 'unzip' || c === 'cpio') {
       // lo que trae un archivo comprimido no se ve antes de abrirlo: a la carpeta de una constancia, no pasa
-      // `tar -xf`, `tar xzf` (el primer argumento sin guion) o `--extract`
-      const extrae = c === 'unzip' || args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get');
-      const dirs = lleva(c === 'unzip' ? ['-d'] : ['-C', '--directory']);
+      // `tar -xf`, `tar xzf` (el primer argumento sin guion) o `--extract`; `cpio -i` o `--extract`
+      // listar (`unzip -l`, `unzip -Z1`, `unzip -t`, `cpio -it`) o mandar a la salida (`unzip -p`) no escribe
+      const extrae = c === 'unzip' ? !args.some((w) => /^-[A-Za-z]*[lZtpv]/.test(w))
+        : c === 'cpio' ? args.some((w) => /^-[A-Za-z]*i/.test(w) || w === '--extract') && !args.some((w) => /^-[A-Za-z]*t/.test(w) || w === '--list')
+          : args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get');
+      if (!extrae) continue;
+      const dirs = lleva(c === 'unzip' ? ['-d'] : c === 'cpio' ? ['-D', '--directory'] : ['-C', '--directory']);
       const destinos = dirs.length ? dirs.map((d) => abs(d)) : [cwd];
       const enFirma = destinos.find(carpetaDeFirma);
-      if (extrae && enFirma) out.push(`${enFirma} (no se puede ver qué trae lo que se descomprime)`);
+      if (enFirma) { out.push(`${enFirma} (no se puede ver qué trae lo que se descomprime)`); continue; }
+      // con los nombres cambiados al extraer (`tar -s`, `--transform`, `--strip-components`), lo que se lista no es lo
+      // que queda escrito: dentro de un repo, no pasa
+      if (c !== 'unzip' && c !== 'cpio' && args.some((w) => w === '-s' || /^--(?:transform|xform|strip-components)(?:=|$)/.test(w))) {
+        if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (cambia los nombres al extraer: no se puede ver si trae una constancia)`);
+        continue;
+      }
+      // a cualquier otra carpeta, lo que trae se mira antes: una constancia adentro, o un archivo que no se puede
+      // listar (por la entrada estándar, que todavía no existe) dentro de un repo, no pasa
+      const lista = contenidoDelArchivo(c, args, tramo, abs);
+      if (lista === null) { if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`); continue; }
+      if (lista.some((e) => /control-changes/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
+      continue;
+    }
+    // otros que extraen y que el freno no sabe listar: `pax -r`, `ditto -x`, `python3 -m zipfile|tarfile -e`. A la
+    // carpeta de una constancia o dentro de un repo, no pasan
+    const extractor = (c === 'pax' && args.some((w) => /^-[A-Za-z]*r/.test(w))) ? cwd
+      : (c === 'ditto' && args.some((w) => /^-[A-Za-z]*x/.test(w))) ? abs(args.filter((w) => !w.startsWith('-')).pop() || '.')
+        : (/^python[\d.]*$/.test(c) && args[0] === '-m' && /^(?:zipfile|tarfile)$/.test(args[1] || '') && args.some((w) => w === '-e' || w === '--extract'))
+          ? abs(args[args.length - 1] && !args[args.length - 1].startsWith('-') && args.length > 4 ? args[args.length - 1] : '.') : null;
+    if (extractor) {
+      if (carpetaDeFirma(extractor) || dentroDeUnRepo(extractor)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`);
       continue;
     }
     if (c === 'git') {
@@ -1501,8 +1544,42 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
         }
         if (hallados.some((rel) => esRuta(path.join(lugar, rel)))) { out.push(o); break; }
       }
-    } else if (c === 'git update-index' || (c === 'git checkout' && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2)) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
+    } else if (c === 'git update-index' || (c === 'git checkout' && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2 || (sueltos.length === 1 && args.some((w) => /^--pathspec-from-file(?:=|$)/.test(w))))) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
       out.push(...sueltos.flatMap((w) => w.split(',')).filter(es));
+      // una carpeta repuesta desde otra rama (`git checkout otra -- .`) trae las constancias que esa rama tenga distintas:
+      // se le pregunta a git cuáles cambiarían; si git no contesta, la carpeta que las puede contener no pasa
+      const desdeRef = c === 'git checkout' ? (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).find((w) => !w.startsWith('-')) : sueltos[0])
+        : c === 'git restore' ? lleva(['--source', '-s'])[0] : null;
+      // una ref que empieza con guion sería una opción de `git diff` (`--output=<archivo>`): no se le pregunta a git
+      if (desdeRef && desdeRef.startsWith('-')) out.push(`${tramo.trim()} (no pude ver qué constancias trae ${desdeRef})`);
+      else if (desdeRef && args.some((w) => /^--pathspec-from-file(?:=|$)/.test(w))) out.push(`${tramo.trim()} (las rutas vienen de un archivo: no pude ver qué constancias trae ${desdeRef})`);
+      else if (desdeRef) {
+        const fuentes = c === 'git restore' ? lleva(['--source', '-s']) : [desdeRef];
+        const rutas = (c === 'git checkout' && args.indexOf('--') > 0 ? args.slice(args.indexOf('--') + 1) : sueltos.filter((w) => !fuentes.includes(w)))
+          .filter((w) => w && !w.startsWith('-') && !es(w));
+        if (rutas.length) {
+          // `checkout <ref> -- <rutas>` escribe lo que la ref trae y no borra lo que no tiene (lo que en el diff aparece
+          // como agregado); `restore --source` también borra, así que cuenta todo
+          const filtro = c === 'git checkout' ? ['--diff-filter=a'] : [];
+          const r = require('child_process').spawnSync('git', ['-C', base, 'diff', '--name-only', ...filtro, '--end-of-options', desdeRef, '--', ...rutas],
+            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+          if (r.error || r.status !== 0) {
+            const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+            const top = raiz.status === 0 ? String(raiz.stdout).trim() : null;
+            // sin la raíz del repo, una ruta suelta a un archivo no puede traer una constancia; una carpeta, un patrón o
+            // una ruta que nombra la carpeta de las constancias, sí
+            const esCarpeta = (w) => { try { return fs.statSync(abs(w)).isDirectory(); } catch (_) { return false; } };
+            const cubre = (w) => /[*?[]/.test(w) || w.startsWith(':') || (top
+              ? ['.github', '.tycon'].some((d) => { const rel = path.relative(abs(w), path.join(top, d)); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); })
+              : w === '.' || esCarpeta(w) || /(?:^|[\\/])(?:\.github|\.tycon|control-changes)(?:[\\/]|$)/i.test(w));
+            const dudosas = rutas.filter(cubre);
+            if (dudosas.length) out.push(`${tramo.trim()} (no pude ver qué constancias trae ${desdeRef})`);
+          } else {
+            const traidas = String(r.stdout).split(/\r?\n/).filter(Boolean).filter((p) => isControlApproval(p));
+            if (traidas.length) out.push(...traidas.map((p) => `${p} (desde ${desdeRef})`));
+          }
+        }
+      }
     } else if (c === 'git apply' || c === 'git am' || c === 'patch') {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);
@@ -1578,6 +1655,48 @@ function parcheNombraConstancia(texto, isControlApproval) {
     if (m) rutas.push(m[1].trim());
   }
   return rutas.some((r) => isControlApproval(r));
+}
+
+/** El archivo que lee un `tar` (`-f x`, `-xzf x`, `-fx`, `--file=x`, `xzf x`), o null si lee la entrada estándar. */
+function archivoDeTar(args) {
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--file' || w === '-f') return args[i + 1] && args[i + 1] !== '-' ? args[i + 1] : null;
+    let m = /^--file=(.+)$/.exec(w);
+    if (m) return m[1] === '-' ? null : m[1];
+    // en un grupo de letras, la `f` se lleva lo que sigue pegado o la palabra siguiente
+    m = /^-[A-Za-z]*f(.*)$/.exec(w);
+    if (m && !w.startsWith('--')) { const a = m[1] || args[i + 1]; return a && a !== '-' ? a : null; }
+    if (i === 0 && /^[A-Za-z]*f[A-Za-z]*$/.test(w)) return args[1] && args[1] !== '-' ? args[1] : null;
+  }
+  return null;
+}
+
+/**
+ * Las rutas que trae un archivo que `tar`, `unzip` o `cpio` va a abrir, listadas antes con la misma herramienta; null
+ * si no se pueden ver (por la entrada estándar, un archivo que no existe, la herramienta que falla o tarda).
+ */
+function contenidoDelArchivo(c, args, tramo, abs) {
+  const { spawnSync } = require('child_process');
+  const correr = (bin, argv, input) => {
+    const r = spawnSync(bin, argv, { input, encoding: 'utf8', stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'], timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
+    return r.error || r.status !== 0 ? null : String(r.stdout).split(/\r?\n/).filter(Boolean);
+  };
+  if (c === 'cpio') {
+    const entrada = /(?<!<)<(?!<)\s*([^\s<>;&|]+)/.exec(tramo);
+    if (!entrada) return null;
+    let datos;
+    try { datos = fs.readFileSync(abs(entrada[1])); } catch (_) { return null; }
+    return correr('cpio', ['-it'], datos);
+  }
+  if (c === 'unzip') {
+    const i = args.findIndex((w, k) => !w.startsWith('-') && args[k - 1] !== '-d');
+    if (i < 0 || !fs.existsSync(abs(args[i]))) return null;
+    return correr('unzip', ['-Z1', abs(args[i])]);
+  }
+  const archivo = archivoDeTar(args);
+  if (!archivo || !fs.existsSync(abs(archivo))) return null;
+  return correr(c, ['-tf', abs(archivo)]);
 }
 
 /** Lo que se llama como una constancia adentro de una carpeta, en rutas relativas; null si no se pudo revisar entera. */
@@ -1807,9 +1926,13 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   const noSoloSed = new Set();
   const deSed = new Set(seds ? nombradas : []);
   const sedsDe = new Map();
-  for (const raw of crudos) {
-    // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`
-    const valor = expandirRuta(cmd, String(raw).replace(/\)+$/, '')).valor;
+  // el paréntesis que cierra un subshell no es parte de la ruta: `(cd specs; echo x >> h.md)`. Una variable que puede no
+  // haber quedado puesta (`cd wt && f=specs/h.md && python3 - "$f" <<EOF`) cuenta también por lo que valdría si corrió
+  const valoresDe = (raw) => {
+    const limpio = String(raw).replace(/\)+$/, '');
+    return [...new Set([expandirRuta(cmd, limpio).valor, expandirRuta(cmd, limpio, { posibles: true }).valor])];
+  };
+  for (const raw of crudos) for (const valor of valoresDe(raw)) {
     // una palabra que no nombra un archivo no es un destino: el `))` que cierra una cuenta queda vacío sin sus
     // paréntesis, y la `/` suelta de un guion (`'s/^a /b /'`) no es la raíz que el editor escribe; la raíz que se
     // borra o que es destino de una escritura sigue contando

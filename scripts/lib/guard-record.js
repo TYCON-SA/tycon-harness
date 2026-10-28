@@ -191,8 +191,9 @@ function anotarFallo(home, motivo) {
  */
 // Por qué camino se autorizó un escape (lista cerrada) y, si vino por relevo o por delegación, qué sesión lo reenvió o
 // lo aprobó: el rol que declara el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea
-// se escribe igual). `delegacion`: la sesión designada lo aprobó en nombre del dueño (delegated-ok.js).
-// `sin-conversacion`: la regla no pudo mirar porque la herramienta no guarda la conversación (Codex) y dejó pasar.
+// se escribe igual). `delegacion`: la sesión designada lo aprobó en nombre del dueño (lib/owner-window.js). `persona`,
+// `reenvio` y `sin-conversacion` son de antes de la ventana de permiso, cuando la autorización salía de la
+// conversación: ya no se escriben, y siguen en la lista para leer los renglones viejos.
 const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,

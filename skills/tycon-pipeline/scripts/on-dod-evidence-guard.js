@@ -12,15 +12,11 @@
  * `.advisors/dod-runtime/*.md`. Los únicos escritores legítimos son los scripts
  * (el gate E2E del proyecto, step-7c-macro.js) vía Bash — que no pasan por este hook.
  *
- * Override de la persona (one-shot, auditable): el archivo `ALLOW_DOD_EVIDENCE_WRITE` en la carpeta del estado del
- * pipeline, autorizado por la persona. Vale sólo con una de dos: la constancia que escribe el freno de seguridad al
- * dejar crearlo con «autorizo ALLOW_DOD_EVIDENCE_WRITE» (ESC-C5, de esta sesión, dentro de los 30 minutos antes del
- * archivo), o esa frase de la persona en la conversación (lo creó ella en su terminal). El archivo solo no alcanza: el
- * agente lo puede crear con la herramienta de escribir archivos, que el freno no ve. Una línea imitada en
- * `frenos.jsonl` no vale: tiene que ser de ese freno, esa regla, esa sesión y esa ventana, y la carpeta del estado no
- * se escribe a mano. El hook CONSUME (borra) el archivo al permitir UNA escritura y la registra en bypass.log con quién
- * lo autorizó. (No es provenance criptográfica: el agente tiene Bash y puede escribir la evidencia por fuera del hook —
- * pero ese camino también es auditable en el transcript.)
+ * Override de la persona (one-shot, auditable): la firma `ALLOW_DOD_EVIDENCE_WRITE` sobre ese archivo, dada en la ventana de
+ * permiso (`marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>`, scripts/lib/owner-window.js) o en la terminal del dueño.
+ * El hook CONSUME la constancia al permitir UNA escritura de esa sesión sobre ese archivo, dentro de los 30 minutos, y
+ * la registra en bypass.log con la vía. (No es provenance criptográfica: el agente tiene Bash y puede escribir la
+ * evidencia por fuera del hook; ese camino lo frena el freno de seguridad, ESC-C5.)
  */
 
 const fs = require('fs');
@@ -37,7 +33,6 @@ function anotar(regla, veredicto, filePath) {
     require('./lib/closing-record.js').anotarCierre({ freno: 'on-dod-evidence-guard', regla, veredicto, huella: filePath });
   } catch { /* ayuda, no evidencia */ }
 }
-const FLAG = path.join(STATE_DIR, 'ALLOW_DOD_EVIDENCE_WRITE');
 
 function appendBypassLog(obj) {
   try {
@@ -50,7 +45,7 @@ function appendBypassLog(obj) {
   } catch { /* logging nunca rompe */ }
 }
 
-function handle(event) {
+function handle(event, { casa } = {}) {
   if (!event) return null;
   const tool = event.tool_name;
   if (tool !== 'Edit' && tool !== 'Write') return null;
@@ -75,24 +70,19 @@ function handle(event) {
   // esa la escribe SOLO el script (a mano sería el fakeo exacto que este guard impide).
   if (/-manual-test-plan\.md$/.test(normPath)) { anotar('archivo-exento', 'paso', filePath); return null; }
 
-  // Override one-shot: el permiso presente Y autorizado por la persona → permitir UNA vez, consumir, loguear. Crear el
-  // archivo solo no alcanza (lo puede crear el agente con la herramienta de escribir archivos, que el freno no ve).
-  const { via, paso } = fs.existsSync(FLAG) ? permisoAutorizado(event) : { via: null };
-  if (via) {
-    try { fs.unlinkSync(FLAG); } catch { /* ignore */ }
-    appendBypassLog({ type: 'DOD_EVIDENCE_MANUAL_WRITE', file: filePath, sessionId: event.session_id || null, via });
+  // Override one-shot: la firma de la ventana sobre este archivo → permitir UNA vez, consumirla, loguear.
+  const firma = firmaDeLaVentana(event, filePath, casa);
+  if (firma.ok) {
+    appendBypassLog({ type: 'DOD_EVIDENCE_MANUAL_WRITE', file: filePath, sessionId: event.session_id || null, via: firma.constancia.via });
     anotar('escritura-manual', 'aviso', filePath);
     return {
       reminder:
-        `⚠ Escritura MANUAL de evidencia DoD permitida por flag one-shot (consumido) y registrada en bypass.log: ${filePath}. ` +
+        `⚠ Escritura MANUAL de evidencia DoD permitida por la firma de la ventana (consumida) y registrada en bypass.log: ${filePath}. ` +
         'La evidencia manual NO tiene la garantía de un run real — preferí el gate E2E del proyecto (pipeline.js e2e-config → e2e.gate) / step-7c-macro.js.',
     };
   }
 
   anotar('escritura-manual', 'bloqueo', filePath);
-  if (paso && paso.reintento) {
-    return { block: ['🚨 BLOQUEADO — el permiso de escribir la evidencia DoD a mano no se pudo verificar', '', `  File: ${filePath}`, '', paso.cartel].join('\n') + '\n' };
-  }
   return {
     block: [
       '🚨 BLOQUEADO — el agente no escribe evidencia DoD a mano (provenance, auditoría 2026-06-09)',
@@ -106,46 +96,24 @@ function handle(event) {
       '  - Smoke backend:     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story <id> --scenario <s.json> --evidence-dir <dir>',
       '',
       'Escribirla a mano (caso excepcional, p.ej. evidencia vacua de E2E diferidos a un pipeline pending)',
-      'lo decide la persona, no el agente: crea el permiso de una escritura en su terminal y lo dice en su',
-      'mensaje («autorizo ALLOW_DOD_EVIDENCE_WRITE»). El permiso se consume y queda en bypass.log.',
-      ...(fs.existsSync(FLAG) ? ['', 'El permiso existe, pero la persona no lo autorizó en esta sesión: no se consume.'] : []),
-      ...(paso && paso.cartel ? [paso.cartel] : []),
+      'lo decide la persona, no el agente: la firma en la ventana de permiso, para este archivo, con',
+      `  ${firma.comando}`,
+      'y con su «Sí» se repite esta escritura. La firma vale una vez y queda en bypass.log.',
+      `(No hay firma: ${firma.motivo}.)`,
     ].join('\n') + '\n',
   };
 }
 
-const VENTANA_MS = 30 * 60 * 1000;
 /**
- * ¿Quién autorizó el permiso? 'freno' si `frenos.jsonl` tiene la constancia que escribe el freno de seguridad al dejar
- * crearlo con la frase (ESC-C5, escape ALLOW_DOD_EVIDENCE_WRITE) de esta misma sesión, dentro de los 30 minutos antes
- * del archivo (se anota antes de que el comando corra); 'persona' si la persona escribió «autorizo
- * ALLOW_DOD_EVIDENCE_WRITE» en esta conversación (lo creó en su terminal); null si ninguna. Vuelve `{ via, paso? }`:
- * `paso` es lo que la búsqueda de la frase dijo del pedido que se juzga cuando no lo ubicó (escape-ok.js `cartelDelPaso`).
+ * La firma de la ventana sobre este archivo: `{ ok: true, constancia }` la consume; `{ ok: false, motivo }` si no la hay.
+ * Siempre con `comando`, el que la pide. `casa`: la de las pruebas.
  */
-function permisoAutorizado(event) {
-  const sid = event.session_id;
-  if (sid) {
-    try {
-      const creado = fs.statSync(FLAG).mtimeMs;
-      for (const l of fs.readFileSync(path.join(STATE_DIR, 'frenos.jsonl'), 'utf8').split('\n')) {
-        let x;
-        try { x = JSON.parse(l); } catch { continue; }
-        if (!x || x.freno !== 'safety-guard' || x.regla !== 'ESC-C5' || x.veredicto !== 'escape') continue;
-        if (x.sesion !== sid || x.escape !== 'ALLOW_DOD_EVIDENCE_WRITE') continue;
-        const t = Date.parse(x.ts);
-        // un minuto de margen: la constancia y el archivo se escriben casi juntos
-        if (t <= creado + 60000 && t >= creado - VENTANA_MS) return { via: 'freno' };
-      }
-    } catch { /* sin registro, se mira la frase */ }
-  }
+function firmaDeLaVentana(event, filePath, casa) {
   try {
-    const { escapeAutorizado, cartelDelPaso } = require('./lib/escape-ok.js');
-    const r = escapeAutorizado({ variable: 'ALLOW_DOD_EVIDENCE_WRITE', sesion: sid, pedido: event.tool_use_id });
-    if (r.ok) return { via: 'persona' };
-    return { via: null, paso: { reintento: r.pasoNoUbicado === true, cartel: cartelDelPaso(r) } };
+    const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+    return { ...ow.consumirArchivo({ firma: 'ALLOW_DOD_EVIDENCE_WRITE', sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), comando: ow.comoSeFirma('ALLOW_DOD_EVIDENCE_WRITE', filePath) };
   } catch (e) {
-    // sin la biblioteca no hay frase que buscar: se dice eso, no «el agente no escribe evidencia»
-    return { via: null, paso: { reintento: true, cartel: `falló la búsqueda de la frase (${e.message}): el permiso no se puede verificar. Avisale a la persona.` } };
+    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE ${filePath}` };
   }
 }
 

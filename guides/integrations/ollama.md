@@ -263,13 +263,14 @@ quien usa los modelos de OpenAI; con él, el despliegue saca la línea `model =`
 - **Un modelo puede intentar escribir el escape de un freno.** En el laboratorio, `gpt-oss` escribió
   `TYCON_SAFETY_OFF=1` delante de un commit con `--no-verify`, aunque la orden decía que no buscara otra salida. Eso ya
   no alcanza: el escape del freno de seguridad, y los de la revisión de producción (`TYCON_PROD_LINT`) y de nombres
-  (`TYCON_NEW_NAMES`), valen sólo si la persona escribió en el chat **«autorizo <variable>»** en los últimos 30 minutos
+  (`TYCON_NEW_NAMES`), valen sólo si la persona los firma en la ventana de permiso o en su terminal
   ([guía del freno](../safety-guard.md)). El freno de pruebas sigue con su escape liviano: `beam` lo usó por su cuenta,
-  y sólo cuida la carga de la máquina. Codex no deja leer su conversación: ahí el escape por comando no vale.
+  y sólo cuida la carga de la máquina. Codex no tiene ventana de permiso: ahí el escape por comando se firma en la
+  terminal.
 - **Un modelo puede saltearse los pasos de la skill de historias.** En el laboratorio, `gemma4` llamó a
   `tycon-create-story` sin seguir sus pasos, se autorizó solo el bypass del freno de historia a mano y escribió la
-  historia igual. Ya no alcanza: escribir una historia sin la skill vale sólo si la persona escribió
-  **«autorizo story-skill-bypass»** en el chat.
+  historia igual. Ya no alcanza: escribir una historia sin la skill vale sólo si la persona lo firma con
+  `node ~/.codex/skills/tycon-pipeline/scripts/marker.js sign-file story-skill-bypass <historia>`, en la ventana de permiso o en su terminal.
 - **Mirá el estado, no el relato.** `gpt-oss` cargó la skill del pipeline y contó en cinco vueltas los pasos 1 a 7
   «completados» sin correr un guion ni escribir un archivo. Los controles no lo frenaron porque no había nada que
   frenar. Lo que lo delata es el estado: la story seguía en `ready-for-dev` y no había archivos nuevos. Revisá

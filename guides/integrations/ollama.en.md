@@ -262,14 +262,14 @@ profiles.
 - **A model may try to write a control's escape.** In the lab, `gpt-oss` put `TYCON_SAFETY_OFF=1` in front of a
   commit with `--no-verify`, although the order said not to look for another way. That no longer works: the escape of
   the security control, and those of the production check (`TYCON_PROD_LINT`) and the names check (`TYCON_NEW_NAMES`),
-  only count if the person wrote **"autorizo <variable>"** ("I authorize <variable>") in the chat in the last 30
-  minutes ([control guide](../safety-guard.md)). The tests control keeps its light escape: `beam` used it on its own,
-  and it only protects the machine's load. Codex does not let the harness read its conversation, so there the
-  per-command escape does not count.
+  only count if the person signs them in the permission prompt or in their own terminal
+  ([control guide](../safety-guard.md)). The tests control keeps its light escape: `beam` used it on its own, and it
+  only protects the machine's load. Codex has no permission prompt, so there the per-command escape is signed in the
+  terminal.
 - **A model may skip the steps of the stories skill.** In the lab, `gemma4` called `tycon-create-story` without
   following its steps, authorized the hand-written-story bypass by itself and wrote the story anyway. That no longer
-  works: writing a story without the skill only counts if the person wrote **"autorizo story-skill-bypass"** ("I
-  authorize story-skill-bypass") in the chat.
+  works: writing a story without the skill only counts if the person signs it with
+  `node ~/.codex/skills/tycon-pipeline/scripts/marker.js sign-file story-skill-bypass <story>`, in the permission prompt or in their own terminal.
 - **Check the state, not the story.** `gpt-oss` loaded the pipeline skill and, over five turns, reported steps 1 to 7
   as "completed" without running a script or writing a file. The controls did not stop it because there was nothing to
   stop. What gives it away is the state: the story stayed in `ready-for-dev` and no new files appeared. Check

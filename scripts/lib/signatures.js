@@ -9,8 +9,9 @@
  * Cada entrada:
  *   id            el nombre con que se la nombra en el perfil del equipo; un escape es `escape:<nombre>`, con los
  *                 espacios como guiones y sin acentos.
- *   kind          cómo se pide: 'guion' (un guion que firma, y verifica la ventana), 'freno' (un escape que el freno
- *                 deja pasar con la ventana) o 'archivo' (se firma escribiendo un archivo: no pasa por la ventana).
+ *   kind          cómo se pide: 'guion' (un guion que firma, y verifica la ventana) o 'freno' (un escape que el freno
+ *                 deja pasar con la ventana). Las cuatro que se dan sobre un archivo (FIRMAS_DE_ARCHIVO) son 'guion':
+ *                 `marker.js sign-file` las pide en la ventana y deja la constancia que consume el Edit o Write.
  *   approves      qué aprueba, en llano.
  *   command       el comando que la pide.
  *   otherSession  'yes' si el comando se puede correr desde la pestaña de otra sesión, 'no' si no, 'pending' si la firma
@@ -32,16 +33,16 @@ const POR_VARIABLE = [
 ];
 
 const CON_NOMBRE = [
-  ['story-skill-bypass', 'usar una skill de stories fuera del pipeline', 'invocar una skill de stories fuera del pipeline', 'archivo'],
+  ['story-skill-bypass', 'escribir una story sin la skill de stories', 'file'],
   ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous'],
   ['cerrar-la-ejecucion', 'cerrar una ejecución con un control en rojo', 'marker.js clear'],
   ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda', 'marker.js close-as-debt'],
   ['force-manual', 'marcar a mano en verde la prueba de pantalla', 'marker.js set-check dod green --force-manual'],
   ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --trust-ran'],
-  ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'escribir el archivo de evidencia de la prueba en vivo', 'archivo'],
-  ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'poner dod_runtime_exempt: true en una story', 'archivo'],
+  ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'file'],
+  ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'file'],
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
-  ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'marker.js update-story-status'],
+  ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
 ];
 
 // qué aprueba cada firma, en inglés: lo muestra la pantalla de Configuración en ese idioma
@@ -63,7 +64,7 @@ const APPROVES_EN = {
   'escape:DOD_BYPASS': "skip the commit's checks (it is logged)",
   'escape:TYCON_NO_DEEP_REVIEW': "turn off a run's adversarial pass",
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
-  'escape:story-skill-bypass': 'use a story skill outside the pipeline',
+  'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:set-autonomous': "change a run's autonomous mode",
   'escape:cerrar-la-ejecucion': 'close a run with a check in red',
   'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
@@ -75,9 +76,11 @@ const APPROVES_EN = {
   'escape:cambiar-el-estado': "change a story's status by hand",
 };
 
-// los escapes que se firman escribiendo un archivo (la cuarta columna de CON_NOMBRE)
-const POR_ARCHIVO = new Set(CON_NOMBRE.filter((f) => f[3] === 'archivo').map((f) => f[0]));
-const kindDe = (id) => (!id.startsWith('escape:') ? 'guion' : POR_ARCHIVO.has(id.slice('escape:'.length)) ? 'archivo' : 'freno');
+// las firmas que se dan sobre un archivo (`file` en vez del comando, en CON_NOMBRE): `marker.js sign-file` las pide en
+// la ventana, y el Edit o Write que sigue consume la constancia
+const FIRMAS_DE_ARCHIVO = Object.freeze(CON_NOMBRE.filter((f) => f[2] === 'file').map((f) => f[0]));
+const kindDe = (id) => (!id.startsWith('escape:') || FIRMAS_DE_ARCHIVO.includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
+const sobreArchivo = (nombre) => `marker.js sign-file ${nombre} <archivo>`;
 
 const SIGNATURES = Object.freeze([
   { id: 'plan-approval', approves: 'aprobar el plan de una story', command: 'marker.js complete-step approve-plan --approved', otherSession: 'yes', terminal: 'marker.js complete-step approve-plan --terminal' },
@@ -93,9 +96,9 @@ const SIGNATURES = Object.freeze([
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
-  ...CON_NOMBRE.map(([nombre, approves, command]) => ({
-    id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando',
-  })),
+  ...CON_NOMBRE.map(([nombre, approves, command]) => (command === 'file'
+    ? { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: 'no', terminal: `${sobreArchivo(nombre)} --terminal` }
+    : { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' })),
 ].map((s) => Object.freeze({ ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id) })));
 
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
@@ -114,4 +117,4 @@ function expand(v) {
   return isId(v) ? [v] : [];
 }
 
-module.exports = { SIGNATURES, GROUPS, ids, groupNames, isId, expand };
+module.exports = { SIGNATURES, GROUPS, FIRMAS_DE_ARCHIVO, ids, groupNames, isId, expand };

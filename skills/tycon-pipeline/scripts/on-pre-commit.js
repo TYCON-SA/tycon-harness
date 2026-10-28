@@ -1809,7 +1809,7 @@ function main() {
   lines.push('      → escribir .advisors/dod-runtime/<storyId>-<timestamp>.md con');
   lines.push('      el log + screenshots/curl outputs');
   lines.push('  (c) Story sin UI/E2E (puro docs/config): eximirla de la prueba en vivo lo decide la persona,');
-  lines.push('      no el agente (con «autorizo dod_runtime_exempt» en su mensaje).');
+  lines.push('      no el agente (lo firma con marker.js sign-file dod_runtime_exempt <historia>).');
   lines.push('  (d) Bypass excepcional (NO recomendado, queda flag en stderr):');
   lines.push('        git commit --no-verify');
   lines.push('');
