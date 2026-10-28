@@ -516,7 +516,7 @@ const porFicha = (a, b) => String(a.ficha).localeCompare(String(b.ficha)) || Str
 // ── la conversación con Azure ──────────────────────────────────────────────────────────────────
 
 async function hablar(ctx) {
-  const { az, cfg, azure, hoy, simulado, tope, snap, tmp, fichas } = ctx;
+  const { az, cfg, azure, hoy, simulado, tope, tmp, fichas } = ctx;
   const plataforma = ctx.plataforma || plataformaAzure();
   // la carpeta temporal no tiene configuración del pedido de trabajo: la de un repo no se mezcla con la de dependencias
   const destino = (p) => ({ repoDir: tmp, org: azure.org, project: p });

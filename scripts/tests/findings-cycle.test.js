@@ -201,7 +201,7 @@ test('T19 Dependencias_NNoches_NoReabreLasResueltas', () => {
   assert.match(leer('pending/aaaa1111.yaml'), /^noches_sin_aparecer: 1$/m);
   assert.doesNotMatch(leer('pending/aaaa1111.yaml'), /^resuelto:/m);
   assert.deepStrictEqual(r.esperando_resolver, [{ id: 'aaaa1111', noches_sin_aparecer: 1, n: 3 }]);
-  r = noche('2026-10-21');
+  noche('2026-10-21');
   assert.match(leer('pending/aaaa1111.yaml'), /^noches_sin_aparecer: 2$/m);
   r = noche('2026-10-22');
   assert.deepStrictEqual(r.resueltos, ['aaaa1111']);

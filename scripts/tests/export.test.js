@@ -20,7 +20,6 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
@@ -77,7 +76,6 @@ function listar(dir, base = dir, out = []) {
 }
 
 const clonar = (x) => JSON.parse(JSON.stringify(x));
-const existe = (salida, rel) => fs.existsSync(path.join(salida, rel));
 /**
  * Un .gitignore de la copia de un solo repo, partido donde empieza el bloque de las carpetas de las que no sale nada
  *: `{ own, folders }` — lo que viene del repo, tal cual, y las carpetas que sumó el exportador. El
@@ -332,8 +330,6 @@ test('Exporter_ReplaceShortcut_SameResultInEveryCase', () => {
   assert.strictEqual(r('ÑANDÚX').texto, 'PATO', 'una forma con letras fuera de ASCII no se atajea');
   assert.deepStrictEqual([r('nada que ver').texto, r('nada que ver').cuenta.size], ['nada que ver', 0], 'sin la primera parte, nada');
 });
-
-const sinArchivo = (tabla) => tabla.exclusionesSinArchivo.map((x) => `${x.origen} ${x.fuente}/${x.glob}`).sort();
 
 // En el arnés del equipo, las guías privadas protegidas por su nombre de archivo (export.js y los
 // «out» de la lista blanca) están cubiertas por su archivo, no por un reemplazo. En la copia pública no están.

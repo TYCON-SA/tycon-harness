@@ -21,7 +21,6 @@
  * Casos: scripts/tests/site-demo.test.js.
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 

@@ -315,7 +315,6 @@ test('camino feliz del restore: el runner LEE el archivo para verificar byte a b
   // originales al entrar y la VERIFICACIÓN post-restore. Con la verificación
   // mutada a `restoreOk = true;`, la segunda lectura desaparece → rojo.
   const repo = mkRepo();
-  const target = path.join(repo, 'calc.js');
   let lecturasBinarias = 0;
   let corridas = 0;
   const r = await checker.runMutationCheck({

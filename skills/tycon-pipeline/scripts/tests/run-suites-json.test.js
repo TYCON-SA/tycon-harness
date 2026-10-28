@@ -15,7 +15,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const RUNNER = path.join(__dirname, '..', 'lib', 'run-suites-json.js');
 

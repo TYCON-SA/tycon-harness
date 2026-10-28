@@ -77,7 +77,7 @@ for (let i = 0, cur = null; i < process.argv.length; i++) {
   else if (a === '--org' && v !== undefined && cur) { cur.org = v; i++; }
   else if (a === '--name' && v !== undefined && cur) { cur.name = v; i++; }
 }
-const REPO = REPOS.length ? REPOS[0].bare : null, ORG = REPOS.length ? REPOS[0].org : 'TYCON-LAB', NAME = REPOS.length ? REPOS[0].name : 'arnes-lab';
+const REPO = REPOS.length ? REPOS[0].bare : null;
 const CONTROL = arg('--control'), LOG = arg('--log'), PORT_FILE = arg('--port-file');
 // `--git <ruta>`: el git de verdad por ruta absoluta, para que un `git` testigo en el PATH no vea los del servidor
 const GIT = arg('--git', 'git');

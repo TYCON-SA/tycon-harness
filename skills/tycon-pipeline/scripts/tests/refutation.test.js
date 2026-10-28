@@ -433,9 +433,9 @@ test('WriteFindings_FixedConReproducido_ExigeSuPrueba', () => {
   assert.strictEqual(r.exit, 0, r.out);
   assert.strictEqual(leer(L)[0].disposition, 'open');
   assert.match(r.out, /prueba/);
-  r = escribir(L, [hallazgo('fixed', { test: '   ' })]);
+  escribir(L, [hallazgo('fixed', { test: '   ' })]);
   assert.strictEqual(leer(L)[0].disposition, 'open', 'una prueba en blanco no es prueba');
-  r = escribir(L, [hallazgo('fixed', { test: 'tests/a.test.js::devuelve 403' })]);
+  escribir(L, [hallazgo('fixed', { test: 'tests/a.test.js::devuelve 403' })]);
   const f = leer(L)[0];
   assert.strictEqual(f.disposition, 'fixed');
   assert.strictEqual(f.test, 'tests/a.test.js::devuelve 403');

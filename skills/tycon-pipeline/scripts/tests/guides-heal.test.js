@@ -371,7 +371,7 @@ test('T35 GuidesHeal_CannotTellWhereSkillsComeFrom_NotApplied — no se pudo res
   fs.symlinkSync(clone, path.join(locked, 'agent-skills'));
   const home = homeWith(path.join(locked, 'agent-skills'));   // ~/.claude/agent-skills → <sin permisos>/agent-skills → el clon
   fs.chmodSync(locked, 0o000);
-  let blind = true;
+  let blind;
   try { fs.realpathSync(path.join(home, '.claude', 'agent-skills')); blind = false; } catch { blind = true; }
   if (!blind) { fs.chmodSync(locked, 0o755); t.skip('NO MEDIDO: la carpeta sin permisos se deja resolver igual (¿corre como root?)'); return; }
   const stateDir = path.join(BASE, `estado-${++n}`);

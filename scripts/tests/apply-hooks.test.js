@@ -634,7 +634,7 @@ test('T17 ApplyHooks_CambioDeForma_EnElLugarSinDuplicar @story-8.39 @ac-6 — T1
   // y de vuelta: sin current, al piso de Node
   const viaFloor = `node "${conBarras(FLOOR_JS)}" "${conBarras(L.abs('@tcg:p.js'))}"`;
   quitarCurrent(casa);
-  r = run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
+  run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
   hooks = settingsOf(L).hooks.PostToolUse;
   assert.deepStrictEqual(hooks[0].hooks.map((h) => h.command), [before.command, viaFloor, after.command], 'de vuelta al piso, en su lugar');
   assert.strictEqual(hooks[0].hooks[1].async, true);
@@ -642,7 +642,7 @@ test('T17 ApplyHooks_CambioDeForma_EnElLugarSinDuplicar @story-8.39 @ac-6 — T1
   const casa2 = path.join(L.base, 'mi casa', '.tycon');
   const bin2 = fakeHarnessNode(casa2);
   write(`"${conBarras(bin2)}" "${conBarras(L.abs('@tcg:p.js'))}"`);
-  r = run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
+  run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
   assert.deepStrictEqual(settingsOf(L).hooks.PostToolUse[0].hooks.map((h) => h.command), [before.command, viaFloor, after.command], 'la forma con comillas pasa al piso en su lugar');
   // otro comando que empieza distinto (no un Node) no se toca
   assert.strictEqual(after.command, 'bash "/ajeno/despues.sh"');

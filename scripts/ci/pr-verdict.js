@@ -144,10 +144,6 @@ function edadDias(rep) {
   const t = rep && rep.ts ? Date.parse(rep.ts) : NaN;
   return isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
 }
-const fotoVieja = (rep) => {
-  const t = rep && rep.ts ? Date.parse(rep.ts) : NaN;
-  return isNaN(t) || (Date.now() - t) > FOTO_VIEJA_MS;
-};
 
 // ── El conjunto de rojos de un reporte del BANCO ────────────────────────────────────────────────
 // Se deriva de `results`, que es lo que el runner deja escrito, con la MISMA regla que él usa:

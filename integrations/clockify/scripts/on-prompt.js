@@ -22,7 +22,6 @@ const {
   findActiveEntryForCwd,
   flattenActive,
   touchHeartbeat,
-  heartbeatIdleMinutes,
 } = require('./lib');
 
 // Keywords de intent/stop: FUENTE ÚNICA en lib.js (DEFAULT_SETTINGS, narrow/precision-first).
@@ -31,7 +30,6 @@ const {
 
 function detectIntent(prompt, keywords) {
   if (!prompt || typeof prompt !== 'string') return null;
-  const lower = prompt.toLowerCase();
   for (const kw of keywords) {
     const kwLower = kw.toLowerCase();
     // Match como palabra completa o al inicio de palabra
