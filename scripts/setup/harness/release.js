@@ -612,7 +612,7 @@ function treeNumberOk(json, version) {
  * `incoming/<versión>/` con su manifiesto. `{ ok, dir, manifest }` o `{ ok: false, status, reason }` sin dejar nada.
  */
 function download(ctx, c, repoName, { commit, version, ref, tagged = false, log = null }) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   // el nombre de la carpeta sale del número publicado, que tiene forma fija: otra cosa no se usa como ruta
   if (version && !VO.isOrdered(version)) return { ok: false, status: 'blocked', reason: `la versión «${version}» no tiene la forma YYYY.MM.DD.N: no se instala una versión sin número` };
   const dir = path.join(own.incoming, version || sha7(commit));
@@ -719,7 +719,7 @@ function restoreThirdParty(ctx, c, incomingDir, { log = null, only = null } = {}
   } catch (e) { return { notes: [`skills de terceros: no pude leer su manifiesto (${e.message}): quedan para el aplicador`] }; }
   const TR = lib('tar-reader.js');
   const GH = lib('git-tree-hash.js');
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   // el manifiesto crudo escribe `third_party` y cada entrada hereda origen y commit de su bloque `origins` (campo `from`);
   // su lector (loadManifest) ya lo resuelve y lo renombra a `thirdParty`: se aceptan los dos, resolviendo lo crudo igual
   const origins = isObject(manifest.origins) ? manifest.origins : {};
@@ -900,7 +900,7 @@ function restoreLinks(own, j) {
  * y nada cambió para `harness`. Lo llaman el arranque (cada vez, sin frenar nada) y el cambio de versión.
  */
 function convertLayout(ctx, { log = null } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const real = (p) => exists(p) && !TH.isLink(p);
   if (!real(own.harness) && !real(own.previous)) return { ok: true, converted: false };
   if (exists(own.linkJournal)) return { ok: false, reason: `hay un cambio de enlaces a medias (${own.linkJournal}): primero se repara` };
@@ -936,7 +936,7 @@ function convertLayout(ctx, { log = null } = {}) {
 
 /** El cambio con enlaces: `incoming/<v>` → `versions/<v>`, `previous` → donde estaba `harness`, `harness` → la nueva. */
 function swapLinks(ctx, { incomingDir, version, log = null }) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const conv = convertLayout(ctx, { log });
   if (!conv.ok) {
     // la versión no se pierde: queda en versions/<v>; la máquina sigue en la de antes
@@ -989,7 +989,7 @@ function swapLinks(ctx, { incomingDir, version, log = null }) {
 
 /** La vuelta con enlaces: `rollback` intercambia los destinos; la salud roja vuelve `harness` y quita `previous`. */
 function swapBackLinks(ctx, { log = null, reason = 'rollback' } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const conv = convertLayout(ctx, { log });
   if (!conv.ok) return { ok: false, reason: `no pude pasar a la forma con enlaces: ${conv.reason}` };
   const harnessWas = TH.linkTarget(own.harness);
@@ -1013,7 +1013,7 @@ function swapBackLinks(ctx, { log = null, reason = 'rollback' } = {}) {
 
 /** Repara un cambio de enlaces cortado. `{ repaired, lines }`; sin `link-swap.json`, nada. */
 function repairLinks(ctx, { log = null } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   if (!exists(own.linkJournal)) return { repaired: false, lines: [] };
   const say = (l) => { if (log) log(`release: reparación: ${l}`); return l; };
   const j = readJournal(own.linkJournal);
@@ -1054,7 +1054,7 @@ const CONVERT_SAY_ATTEMPTS = 10;
  * se toca. Devuelve lo de `cleanupDeferred` más `held` y `oldHeld` (las tomadas de 7 días o más).
  */
 function cleanupVersions(ctx, state, out, { log = null } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   out.held = [];
   out.oldHeld = [];
   // con la conversión pendiente (`harness` todavía es una carpeta), lo que hay en versions/ es la versión que espera a
@@ -1113,7 +1113,7 @@ function convertHeldText(own) {
  */
 function swap(ctx, { incomingDir, version, log = null }) {
   if (linksOn(ctx)) return swapLinks(ctx, { incomingDir, version, log });
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const journal = own.journal;
   const base = { incoming: incomingDir, version, at: nowIso(), harness: own.harness, previous: own.previous };
   writeJournal(journal, Object.assign({ stage: 'start' }, base));
@@ -1164,7 +1164,7 @@ function swap(ctx, { incomingDir, version, log = null }) {
  */
 function swapBack(ctx, { log = null, reason = 'rollback' } = {}) {
   if (linksOn(ctx)) return swapBackLinks(ctx, { log, reason });
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   if (!exists(own.previous)) return { ok: false, reason: 'no hay versión anterior (previous/) a la que volver' };
   const journal = own.journal;
   const base = { incoming: null, version: null, at: nowIso(), harness: own.harness, previous: own.previous, why: reason };
@@ -1198,7 +1198,7 @@ function swapBack(ctx, { log = null, reason = 'rollback' } = {}) {
  * respaldos. `{ repaired: boolean, lines }`. Sin diario, nada.
  */
 function repair(ctx, { log = null } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   // el diario de los enlaces primero; después, el de carpetas, como siempre
   const rl = repairLinks(ctx, { log });
   if (exists(own.linkJournal)) return rl;
@@ -1323,7 +1323,7 @@ function isNamed(ctx, dir, { state = null } = {}) {
  * que alguna pieza nombra no se toca. `{ removed, kept, lines }`.
  */
 function cleanupDeferred(ctx, state, { log = null } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const out = { removed: [], kept: [], lines: [] };
   if (!state.last_health) return out;
   if (exists(own.journal) || exists(own.linkJournal)) return out;   // un cambio a medias: primero se repara
@@ -1467,7 +1467,7 @@ function cmdInstall(ctx, H) {
   }
 
   // 2. antes de bajar nada: `--dry-run` sólo dice qué instalaría; sin `--yes` y sin terminal no se escribe nada (ni se baja)
-  const tree = TH.ownPaths({ env: ctx.env }).harness;
+  const tree = TH.ownPathsOf(ctx).harness;
   const P = require('./prompt.js');
   const what = `la versión ${target.version} (${target.ref} ${sha7(target.commit)}) de ${repoInfo.url} en ${tree}`;
   const teamLine = teamPlan ? [TEAM.planLine(teamPlan)] : [];
@@ -1485,7 +1485,7 @@ function cmdInstall(ctx, H) {
   if (ctx.opts['dry-run']) {
     // la conexión vieja de una skill de la lista que la capa trae: el plan dice qué se copiaría, sin escribir
     const st0 = read.status === 'ok' ? read.state : null;
-    const dataPlan = teamPlan ? TEAM.moveSkillData({ home: ctx.home, env: ctx.env, dryRun: true, team: Object.assign({}, st0 && st0.team), layerPaths: teamPlan.files.map((f) => f.path), migrateHome: st0 && st0.migrate_home, previousDir: TH.ownPaths({ env: ctx.env }).previous }).lines : [];
+    const dataPlan = teamPlan ? TEAM.moveSkillData({ home: ctx.home, env: ctx.env, dryRun: true, team: Object.assign({}, st0 && st0.team), layerPaths: teamPlan.files.map((f) => f.path), migrateHome: st0 && st0.migrate_home, previousDir: TH.ownPathsOf(ctx).previous }).lines : [];
     return { code: 0, lines: [`se instalaría ${what}`, tc.line, profileLine({ dryRun: true }), ...teamLine, ...dataPlan, ...(target.note ? [target.note] : []), ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
   }
   if (!ctx.opts.yes && !P.isTerminal()) return { code: 2, lines: [`se instala ${what}`, tc.line, 'harness.js install: sin `--yes` y sin terminal no escribo nada: harness.js install --version ' + wanted + ' --yes'] };
@@ -1657,7 +1657,7 @@ function cmdInstall(ctx, H) {
     markHealth(state);
     // la conexión vieja de una skill de la lista fija: después del cambio sano, una vez por skill; lo que
     // no se pudo copiar se dice y no frena la instalación
-    const moved = TEAM.moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: tree, migrateHome: existing && existing.migrate_home, previousDir: TH.ownPaths({ env: ctx.env }).previous });
+    const moved = TEAM.moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: tree, migrateHome: existing && existing.migrate_home, previousDir: TH.ownPathsOf(ctx).previous });
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
     H.finishSnapshot(ctx, snap, log);
@@ -1689,7 +1689,7 @@ function cmdInstall(ctx, H) {
 function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
   if (!isObject(state.team) || typeof state.team.repo !== 'string' || !state.team.repo) return { status: 'none', lines: [] };
   const TEAM = require('./team.js');
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const SHA40 = /^[0-9a-f]{40}$/;
   let onDisk = TEAM.readTeamManifest(own.harness);
   const label = onDisk ? sha7(onDisk.commit) : 'sin capa en esta versión';
@@ -1865,7 +1865,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     // una skill de terceros que no se pudo bajar al instalar (sin red, el origen caído) queda sin reponer hasta la
     // versión siguiente, y el aviso del aplicador manda a «harness.js update», que al día no hace nada:
     // al día, se repone lo que FALTA, nada más
-    const own = TH.ownPaths({ env: ctx.env });
+    const own = TH.ownPathsOf(ctx);
     const missing = missingThirdParty(own.harness, own);
     if (missing.length) {
       const c = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), TARBALL_BUDGET_S_DEFAULT) * 1000, waitUntil });
@@ -1893,7 +1893,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   // `availableText` de harness.js lee `label` y `changes`: la misma forma que la de un clon
   if (mode === 'check') return withTeam(Object.assign(c0, { lines: [...(c0.lines || []), ...holdLines], available: { label: `${t.version} (${t.ref} ${sha7(t.commit)})`, changes: '', version: t.version, commit: t.commit, ref: t.ref } }));
   if (mode === 'dry-run') {
-    const own0 = TH.ownPaths({ env: ctx.env });
+    const own0 = TH.ownPathsOf(ctx);
     // (la versión que corre hoy es la que va a quedar como previous/: el plan la mira en ese lugar del orden)
     const dataPlan = require('./team.js').moveSkillData({ home: ctx.home, env: ctx.env, dryRun: true, team: Object.assign({}, state.team), harnessDir: own0.harness, migrateHome: state.migrate_home, previousDir: own0.harness }).lines;
     return { status: 'new', code: 0, lines: [`se actualizaría: ${what}`, ...dataPlan] };
@@ -1913,7 +1913,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   // versión queda `failed` y el arranque siguiente pasa por la rama «ya falló», que refresca)
   if (!d.ok) { if (d.status === 'unknown') state.last_fetch_failed = nowIso(); return withTeam({ status: d.status === 'unknown' ? 'unknown' : 'blocked', code: 2, lines: [`harness.js update: ${d.reason}`] }); }
   const tp = restoreThirdParty(ctx, c, d.dir, { log });
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   // la capa del equipo: la punta del repo del equipo, apilada sobre la versión nueva ANTES del cambio;
   // sin acceso (o con una punta que no valida), la que YA está en harness/ —comprobada contra su manifiesto— y se dice;
   // una versión que trae una ruta de la capa no se instala y queda anotada como fallida (no se vuelve a bajar en cada
@@ -1980,7 +1980,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     H.finishSnapshot(ctx, snap, log);
     if (sw.waiting && sw.convert) {
       // la conversión a la forma con enlaces trabada: la versión quedó en versions/, la máquina en la de antes
-      const own0 = TH.ownPaths({ env: ctx.env });
+      const own0 = TH.ownPathsOf(ctx);
       if (log) log(`update: la conversión a la forma con enlaces está trabada (${sw.reason})${sw.kept ? `; la versión ${t.version} quedó en ${sw.kept}` : ''}`);
       return withTeam({ status: 'waiting', convert: true, code: 2, lines: [`harness.js update: ${convertHeldText(own0)}`] });
     }
@@ -2043,7 +2043,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
 
 /** `rollback` en release: el cambio al revés, los enchufes, la salud; sin previous/, dice `install --version`. */
 function rollback(ctx, state, H, { log = null } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const src = S.releaseSource(state);
   if (!exists(own.previous)) return { ok: false, lines: [`harness.js rollback: no hay versión anterior en ${own.previous}; para volver a un número publicado: harness.js install --version <n>`] };
   const prevManifest = readManifest(own.previous);
@@ -2128,7 +2128,7 @@ const FETCH_RETRY_MS = 10 * 60 * 1000;
  * lo diferido y deja el aviso. Devuelve `{ code: 0, lines }` (el arranque sale 0 siempre).
  */
 function startup(ctx, state, H, { log, snapshot = null }) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   let line = null;
   let notice = null;
   const rep = repair(ctx, { log });
@@ -2306,7 +2306,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
 
 /** `update [--check|--dry-run|--yes]` en release (lo llama cmdUpdate, ya con el candado y el estado). */
 function cmdUpdate(ctx, state, H, { log, asked = null }) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const policy = H.policyOf(ctx, own.harness);
   if (policy.errors.length) return { code: 2, lines: [`harness.js update: la política de actualización está mal escrita: ${policy.errors.join(' · ')}`] };
   if (!policy.enabled) return { code: 0, lines: ['TYCON_UPDATE=0: la actualización está apagada del todo (sacá la variable para actualizar)'] };
@@ -2446,7 +2446,7 @@ function teamDoctorItems(ctx, state, tree) {
 
 /** Lo que `doctor` dice de una instalación release: versión, canal, previous/, el árbol contra su manifiesto. */
 function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
-  const own = TH.ownPaths({ env: ctx.env });
+  const own = TH.ownPathsOf(ctx);
   const src = S.releaseSource(state);
   const items = [];
   const add = (level, text) => items.push({ level, text });

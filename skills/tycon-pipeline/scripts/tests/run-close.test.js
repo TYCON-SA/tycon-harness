@@ -136,7 +136,8 @@ test('T11c RunClose_SetNoLavaLaEjecucion @story-8.92 — un `set` con otra histo
   assert.strictEqual(cerrar(b).cierre.estado, 'abortada');
 });
 
-// ── Una decisión, una frase: la frase ya registrada cubre el paso que viene atrás (@story-8.140) ──────────────────────
+// ── Cada escape de cierre va a la ventana: el ya dado para la misma decisión no cubre el que viene atrás (@story-8.139, AC 29;
+// antes, @story-8.140, lo cubría con la salida `cubre=`) ───────────────────────────────────────────────────────────────
 const RUN_CLOSE = path.join(__dirname, '..', 'lib', 'run-close.js');
 const MK = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
 const PL = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js';
@@ -155,32 +156,27 @@ function lector(c, comando) {
   return { frena: de('frena='), cubre: de('cubre=') };
 }
 
-test('T1 RunCloseGate_DeudaCubreCerrar @story-8.140 @ac-1 @ac-3 — con la deuda ya autorizada, cerrar la ejecución no pide otra frase', () => {
-  const sin = lector(corral(ROJO), `${MK} clear`);
-  assert.deepStrictEqual([sin.frena.map((f) => f[0]), sin.cubre.length], [['cerrar la ejecución'], 0]);
-  for (const via of ['persona', 'reenvio']) {
-    const v = lector(corral(ROJO, [deuda(5, { via, ...(via === 'reenvio' ? { relevo: 'coordinadora' } : {}) })]), `${MK} clear`);
-    assert.strictEqual(v.frena.length, 0, JSON.stringify(v));
-    assert.deepStrictEqual(v.cubre.map((f) => [f[0], f[3], f[4], f[5]]),
-      [['cerrar la ejecución', 'cerrar-como-deuda', via, via === 'reenvio' ? 'coordinadora' : '-']]);
+test('T1 RunCloseGate_DeudaYaNoCubreCerrar @story-8.140 @ac-1 @story-8.139 @ac-29 — con la deuda ya autorizada, cerrar la ejecución pide su propia ventana', () => {
+  for (const frenos of [[], [deuda(5)], [deuda(5, { via: 'reenvio', relevo: 'coordinadora' })], [deuda(5, { via: 'delegacion', relevo: 'coordinadora' })]]) {
+    const v = lector(corral(ROJO, frenos), `${MK} clear`);
+    assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['cerrar la ejecución'], 0], JSON.stringify(frenos));
   }
 });
 
-test('T1b RunCloseGate_DeudaCubrePasarARevision — con la deuda ya autorizada, pasar la historia a revisión no pide otra frase', () => {
+test('T1b RunCloseGate_DeudaYaNoCubrePasarARevision @story-8.139 @ac-29 — con la deuda ya autorizada, pasar la historia a revisión pide su propia ventana', () => {
   const cmd = `${MK} update-story-status specs/story-9-9.md review`;
-  const sin = lector(corral(ROJO), cmd);
-  assert.deepStrictEqual([sin.frena.map((f) => f[0]), sin.cubre.length], [['cerrar la ejecución'], 0]);
-  const v = lector(corral(ROJO, [deuda(5)]), cmd);
-  assert.strictEqual(v.frena.length, 0, JSON.stringify(v));
-  assert.deepStrictEqual(v.cubre.map((f) => [f[0], f[3], f[4]]), [['cerrar la ejecución', 'cerrar-como-deuda', 'persona']]);
+  for (const frenos of [[], [deuda(5)]]) {
+    const v = lector(corral(ROJO, frenos), cmd);
+    assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['cerrar la ejecución'], 0], JSON.stringify(frenos));
+  }
 });
 
-test('T2 RunCloseGate_TrustRanCubreForceManualDeRevisores @story-8.140 @ac-2 @ac-3 — con trust-ran ya autorizado, force-manual del control de revisores no pide otra frase', () => {
+test('T2 RunCloseGate_TrustRanYaNoCubreForceManual @story-8.140 @ac-2 @story-8.139 @ac-29 — con trust-ran ya autorizado, force-manual del control de revisores pide su propia ventana', () => {
   const cmd = `${MK} set-check advisors green --force-manual`;
-  assert.deepStrictEqual(lector(corral(VERDE), cmd).frena.map((f) => f[0]), ['force-manual']);
-  const v = lector(corral(VERDE, [trustRan(3)]), cmd);
-  assert.strictEqual(v.frena.length, 0, JSON.stringify(v));
-  assert.deepStrictEqual(v.cubre, [['force-manual', 'set-check', 'advisors', 'trust-ran', 'persona', '-']]);
+  for (const frenos of [[], [trustRan(3)]]) {
+    const v = lector(corral(VERDE, frenos), cmd);
+    assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['force-manual'], 0], JSON.stringify(frenos));
+  }
 });
 
 test('T3 RunCloseGate_AlReves_Frena @story-8.140 @ac-4 — la segunda frase no cubre la primera', () => {
@@ -202,12 +198,7 @@ test('T5 RunCloseGate_EjecucionPerdida_Frena @story-8.140 @ac-4 — la salida de
     const v = lector(corral(ROJO, [deuda(5)]), cmd);
     assert.deepStrictEqual([v.frena.map((f) => f[0]), v.cubre.length], [['cerrar la ejecución'], 0], cmd);
   }
-  // el comando que no se pudo leer sale como un cierre dudoso (`siempre`): la deuda no lo cubre
-  const { cubiertaPor } = require(RUN_CLOSE);
-  const clear = { l: { sub: 'clear', args: [] }, esc: 'cerrar la ejecución' };
-  assert.ok(cubiertaPor(clear, [deuda(5)], SID, hace(60)));
-  assert.strictEqual(cubiertaPor({ ...clear, l: { sub: null, args: [{ texto: 'no pude leer', literal: true }] }, siempre: true },
-    [deuda(5)], SID, hace(60)), null);
+  assert.strictEqual(require(RUN_CLOSE).cubiertaPor, undefined, 'la deuda ya no cubre ningún cierre');
 });
 
 test('T6 RunCloseGate_OtraSesionOtraEjecucionOtraVia_Frena @story-8.140 @ac-4 — otra sesión, otra ejecución, otro veredicto u otra vía no cubren', () => {

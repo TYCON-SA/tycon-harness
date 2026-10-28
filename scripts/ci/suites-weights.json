@@ -156,7 +156,6 @@
     "package-equivalence.test.js": 10,
     "browser-test-offer.test.js": 10,
     "critical-shown.test.js": 10,
-    "delegated-ok.test.js": 10,
     "reloop-rethink.test.js": 16,
     "clean-machine.test.sh": 252,
     "mirror.p1.test.js": 25,

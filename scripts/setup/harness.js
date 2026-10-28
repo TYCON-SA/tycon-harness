@@ -116,7 +116,7 @@ const COMMANDS = {
   apply:     { opts: { '--dry-run': 'flag' }, help: 'corre el aplicador (install-tycon-hooks.sh / .ps1); --dry-run muestra lo que cambiaría, sin escribir' },
   version:   { opts: { '--json': 'flag' }, help: 'versión instalada, canal, modo, fuentes y shas' },
   doctor:    { opts: { '--json': 'flag', '--fetch': 'flag' }, help: 'diagnóstico de sólo lectura (--fetch es la única excepción: escribe FETCH_HEAD; además le pregunta al remoto del clon de la lista del freno antes de publicar si está al día, sin escribir nada)' },
-  channel:   { opts: {}, positional: ['latest', 'stable'], help: 'muestra o fija el canal en ~/.claude/tycon.json' },
+  channel:   { opts: {}, positional: ['latest', 'stable'], help: 'muestra o fija el canal en la configuración de la máquina' },
   rollback:  { opts: { '--to': 'value', '--list': 'flag', '--release': 'flag' }, help: 'vuelve atrás por piezas y deja una retención (tanda C)' },
   uninstall: { opts: { '--dry-run': 'flag', '--yes': 'flag', '--tool': 'list' }, help: 'quita sólo lo registrado (tanda C); --tool claude|codex desenchufa sólo esa herramienta y deja el arnés (story 8.23, tanda C)' },
   link:      { opts: { '--local': 'value', '--allow-temporary': 'flag', '--managed': 'flag' }, help: 'modo desarrollador: el enlace apunta a un clon propio (--local) o vuelve a managed (--managed)' },
@@ -183,6 +183,11 @@ function parse(argv) {
 
 // ── módulos (carga perezosa: `--help` y un error de uso no cargan nada) ─────────────────────────────────────────────
 const mod = (name) => require(`./harness/${name}.js`);
+/** El archivo de configuración de la máquina como se le nombra a la persona: `~/.tycon/config.json` donde la máquina vive ahí. */
+function machineConfigName(home) {
+  const f = mod('tycon-home').configFile(home);
+  return f.startsWith(home + path.sep) ? `~/${f.slice(home.length + 1).split(path.sep).join('/')}` : f;
+}
 
 // ── ayudantes ───────────────────────────────────────────────────────────────────────────────────────────────────────
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
@@ -1949,7 +1954,7 @@ function cmdInstall(ctx) {
   const PR = mod('profile');
   // `--from-existing` lo lanza el aplicador sobre lo que ya está y no corre el aplicador: `--profile` ahí no haría nada, y
   // una opción que no hace efecto no pasa en silencio
-  if (fromExisting && ctx.opts.profile !== undefined) return { code: 2, lines: ['harness.js install: --profile no va con --from-existing (esa ejecución no aplica nada): el perfil se elige con install --profile, o con install.profile en ~/.claude/tycon.json'] };
+  if (fromExisting && ctx.opts.profile !== undefined) return { code: 2, lines: [`harness.js install: --profile no va con --from-existing (esa ejecución no aplica nada): el perfil se elige con install --profile, o con install.profile en ${machineConfigName(ctx.home)}`] };
   const profileError = PR.checkOption(ctx.opts.profile, ctx.env);
   if (profileError) return { code: 2, lines: [`harness.js install: ${profileError}`] };
   // las preguntas, y las opciones que las contestan, ANTES del plan: lo contestado
@@ -2166,7 +2171,7 @@ function cmdInstall(ctx) {
       try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
       if (!sk || !sk.ok) {
         finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
-        return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ~/.claude/tycon.json: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] };
+        return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${machineConfigName(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] };
       }
       if (sk.warning) notes.push(sk.warning);
       pieces.push('profile');
@@ -2179,7 +2184,7 @@ function cmdInstall(ctx) {
       const wa = writeAnswers(ctx, tree, asked.writes);
       if (!wa.ok) {
         finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
-        return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas en ~/.claude/tycon.json: ${wa.reason}. No corrí el aplicador`] };
+        return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas en ${machineConfigName(ctx.home)}: ${wa.reason}. No corrí el aplicador`] };
       }
       notes.push(...wa.warnings);
       pieces.push('config');
@@ -3991,7 +3996,7 @@ function cmdDoctor(ctx) {
     const internalClone = SRC.publicRemotes(tree) === null;
     if (internalClone && policy.apply === 'ask' && policy.origins.apply === 'default') add('warn', 'remoto interno con la política en ask: una máquina del equipo sin el perfil (TYCON_PROFILE=0 o perfil no resuelto) — con el perfil, el equipo va en latest + auto');
     // afuera, `latest` + `auto` se recuerda en cada corrida
-    if (publicCopy && policy.channel === 'latest' && policy.apply === 'auto') add('warn', `${LATEST_AUTO_REMINDER} (para revisar cada versión antes: update.apply «ask» en ~/.claude/tycon.json, o harness.js channel stable)`);
+    if (publicCopy && policy.channel === 'latest' && policy.apply === 'auto') add('warn', `${LATEST_AUTO_REMINDER} (para revisar cada versión antes: update.apply «ask» en ${machineConfigName(ctx.home)}, o harness.js channel stable)`);
   }
   if (state.mode === 'developer') add('warn', `modo desarrollador sobre ${tree}: update no toca su git; la versión es la del clon`);
   if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
@@ -4661,7 +4666,7 @@ function cmdUninstall(ctx) {
     // la capa del equipo lo editado a mano en harness/ o previous/ se copia a ~/.tycon/team/kept-…/
     // ANTES de quitar nada —también antes de U.run, que quita la copia fija de arranque de la que este programa puede estar
     // corriendo (sus módulos ya no se podrían cargar después)—. team.js calcula el blob solo, sin scripts/lib/
-    const relOwn = S.isRelease(state) ? mod('tycon-home').ownPaths({ env: ctx.env }) : null;
+    const relOwn = S.isRelease(state) ? mod('tycon-home').ownPathsOf(ctx) : null;
     const teamDir = relOwn ? path.join(relOwn.root, 'team') : null;
     let keep = { copied: [], failedTrees: [], problems: [], dir: null };
     // (y lo ajeno dentro de la carpeta de una skill de la lista fija —una spec escrita ahí por error—)
@@ -4681,7 +4686,7 @@ function cmdUninstall(ctx) {
     // la versión bajada: además de lo registrado, las carpetas de versiones de ~/.tycon y los
     // enlaces que apuntan adentro; quedan y se nombran el permiso (config.json) y la caché de terceros
     if (S.isRelease(state)) {
-      const own = mod('tycon-home').ownPaths({ env: ctx.env });
+      const own = mod('tycon-home').ownPathsOf(ctx);
       // (lo editado de la capa ya se copió antes de U.run; un árbol con algo que no se pudo copiar no se quita)
       if (keep.copied.length) lines.push(`capa del equipo: editado(s) a mano o dentro de una skill de la lista fija, conservado(s) en ${keep.dir}: ${keep.copied.join(', ')}`);
       const spared = new Set(keep.failedTrees.map((t) => (t === 'harness' ? own.harness : own.previous)));

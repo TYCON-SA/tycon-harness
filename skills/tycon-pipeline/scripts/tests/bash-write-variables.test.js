@@ -412,6 +412,50 @@ test('T4 DestinoConSubcomando_Variantes_SiguenComoHoy', () => {
   });
 });
 
+// T34 GuionPorEntradaQueEscribeSusArgumentos_Frena
+// `python3 - "$f" <<'EOF' … open(p, 'w').write(s) … EOF` reescribe la historia que recibe por argumento: la ruta no
+// está en el texto del guion, está en sus argumentos.
+// 🔴 Falla con: contar sólo los textos del guion y no sus argumentos, o frenar un guion que sólo lee sus argumentos.
+test('T34 GuionPorEntradaQueEscribeSusArgumentos_Frena', () => {
+  const { estado, repo } = corralConHistorias();
+  conEnv(ENV, () => {
+    const freno = (c) => tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots: [] }));
+    const escribePy = "import sys\np = sys.argv[1]\ns = open(p, encoding='utf-8').read()\nopen(p, 'w', encoding='utf-8').write(s.replace('in-progress', 'done'))";
+    const leePy = "import sys\nprint(open(sys.argv[1], encoding='utf-8').read())";
+    const escribeNode = "const fs = require('fs');\nconst p = process.argv[2];\nfs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('a', 'b'));";
+    // otro worktree con su historia, el `cd` y la variable encadenados con `&&`, y más comandos después
+    const wt = path.join(path.dirname(repo), 'repo-wt');
+    fs.mkdirSync(path.join(wt, 'specs'), { recursive: true });
+    fs.writeFileSync(path.join(wt, 'specs', 'story-z.md'), '---\nstory: "9.7"\ntitle: "z"\nstatus: ready-for-dev\n---\n\n# z\n');
+    const real = `cd ${wt} && f=specs/story-z.md && python3 - "$f" <<'EOF'\nimport sys\np=sys.argv[1];s=open(p).read()\ns=s.replace("a","b",1)\nopen(p,'w').write(s)\nEOF\n`
+      + `node lint-story-frontmatter.js $f 2>&1 | head -4\ncat >> specs/sprint-status.yaml <<'EOF'\n9-7-z: ready-for-dev\nEOF\ntail -2 specs/sprint-status.yaml | cut -c1-80`;
+    const realEnElCuerpo = `cd ${wt} && python3 - <<'EOF'\np='specs/story-z.md'; s=open(p).read()\ns=s.replace("a","b",1)\nopen(p,'w').write(s)\nEOF\ngit diff --stat`;
+    assert.equal(freno(real), HISTORIA, 'el caso real');
+    assert.equal(freno(realEnElCuerpo), HISTORIA, 'el caso real, con la ruta en el cuerpo del guion');
+    for (const c of [
+      `f=specs/story-x.md; python3 - "$f" <<'EOF'\n${escribePy}\nEOF`,
+      `python3 - specs/story-x.md <<'EOF'\n${escribePy}\nEOF`,
+      `F=docs/stories/story-y.md\npython3 - "$F" <<EOF\n${escribePy}\nEOF`,
+      `node - docs/stories/story-y.md <<'EOF'\n${escribeNode}\nEOF`,
+      `python3 -c "import sys; open(sys.argv[1], 'w').write('x')" specs/story-x.md`,
+      // las otras formas de darle el programa por la entrada
+      `python3 /dev/stdin specs/story-x.md <<'EOF'\n${escribePy}\nEOF`,
+      `python3 - specs/story-x.md <<'END-DOC'\n${escribePy}\nEND-DOC`,
+      `cat <<'EOF' | python3 - specs/story-x.md\n${escribePy}\nEOF`,
+      `python3 - \\\n  specs/story-x.md <<'EOF'\n${escribePy}\nEOF`,
+      `python3 - specs/story-x.md <<< "import sys; open(sys.argv[1],'w').write('x')"`,
+      `/usr/bin/env python3 - specs/story-x.md <<'EOF'\n${escribePy}\nEOF`,
+      `python3 - specs/story-x.md <<'EOF'\nimport os, sys\nopen('/tmp/t', 'w').write('x')\nos.replace('/tmp/t', sys.argv[1])\nEOF`,
+    ]) assert.equal(freno(c), HISTORIA, c);
+    for (const c of [
+      `f=specs/story-x.md; python3 - "$f" <<'EOF'\n${leePy}\nEOF`,
+      `python3 -c "import sys; print(open(sys.argv[1]).read())" specs/story-x.md`,
+      // el guion escribe, pero lo que nombra no es una historia
+      `python3 - out/r.md <<'EOF'\n${escribePy}\nEOF`,
+    ]) assert.equal(freno(c), '', c);
+  });
+});
+
 test('el mensaje del freno dice de quién es el escape y nombra la receta', () => {
   const lv = require(path.join(SCRIPTS, 'lib', 'ledger-visible.js'));
   const m = lv.mensaje(['/repo/src/Foo.cs'], '9.9');

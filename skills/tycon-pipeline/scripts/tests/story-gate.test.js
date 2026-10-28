@@ -550,6 +550,10 @@ function conEnv(vars, fn) {
 }
 const SIN_REGISTRO = { TYCON_LEDGER_VISIBLE: undefined, TYCON_STORY_GATE: undefined, TYCON_NO_RUN_CHANGE: '1' };
 const INVISIBLE = /EDICIÓN INVISIBLE/;
+// los argumentos de un programa que llega por un heredoc los lee el lector compartido de la entrada; una instalación sin
+// él (un clon de skills suelto) toma cada cuerpo de heredoc como programa sin argumentos y frena de más
+const CON_LECTOR = fs.existsSync(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'));
+const heredocConArgumentos = (b, cmd) => (CON_LECTOR ? assert.equal(b, null, cmd) : assert.ok(b && INVISIBLE.test(b.block), cmd));
 
 test('T29 Freno_ManifiestosYLocks_SonCodigo', () => {
   const { stateDir, repo } = corridaAbierta();
@@ -614,8 +618,8 @@ test('T36 Freno_FalsosPositivosDeLaMedicion @story-8.93 @ac-22', () => {
     ]) assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [] }), null, cmd);
     // 2. los argumentos del script por índice (`B, OUTF = sys.argv[1], sys.argv[2]` · `const f = process.argv[2]`)
     const porIndice = `OUTF=${fuera}/evidencia.md; python3 - "$OUTF" "${fuera}/otro.md" <<'EOF'\nimport sys\nOUTF,OTRO=sys.argv[1],sys.argv[2]\nopen(OUTF,'w').write('x')\nopen(OTRO,'w').write('y')\nEOF`;
-    assert.equal(bash.handle(ev(porIndice), { stateDir, installedRoots: [] }), null, 'argumentos por índice, en Python');
-    assert.equal(bash.handle(ev(`node - "${fuera}/a.ts" <<'EOF'\nconst f = process.argv[2]; require('fs').writeFileSync(f, 'x')\nEOF`), { stateDir, installedRoots: [] }), null, 'argumento por índice, en Node');
+    heredocConArgumentos(bash.handle(ev(porIndice), { stateDir, installedRoots: [] }), 'argumentos por índice, en Python');
+    heredocConArgumentos(bash.handle(ev(`node - "${fuera}/a.ts" <<'EOF'\nconst f = process.argv[2]; require('fs').writeFileSync(f, 'x')\nEOF`), { stateDir, installedRoots: [] }), 'argumento por índice, en Node');
     // lo que sigue frenando
     for (const cmd of [
       // una llamada de Node escrita como texto en otro script: frena por duda (no se lee un lenguaje dentro de otro)
@@ -773,10 +777,11 @@ test('T31 Freno_InterpreteConDestinoArmado_Frena', () => {
       `node -e "const p = 'notas.md'; require('fs').writeFileSync(p, 'x')"`,
       `node -e "require('fs').writeFileSync(process.argv[1]+'/findings.json','[]')" .advisors/x`,
       `node -e 'const fs=require("fs"); const f=process.argv[1]; fs.writeFileSync(f, "x")' specs/story-9.9.md`,
-      `S=specs/story-9.9.md; python3 - "$S" <<'PY'\nimport sys\np=sys.argv[1]\nopen(p,'w').write('x')\nPY`,
       `node -e 'const fs=require("fs");const [s,m]=process.argv.slice(1); fs.writeFileSync(s, "x")' specs/story-9.9.md /tmp/lista.md`,
       `python3 -c "import sys; a, b = sys.argv[1:]; open(a,'w').write('x')" notas.md otra.md`,
     ]) assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [] }), null, cmd);
+    const porEntrada = `S=specs/story-9.9.md; python3 - "$S" <<'PY'\nimport sys\np=sys.argv[1]\nopen(p,'w').write('x')\nPY`;
+    heredocConArgumentos(bash.handle(ev(porEntrada), { stateDir, installedRoots: [] }), porEntrada);
     assert.ok(INVISIBLE.test((bash.handle(ev(`node -e "require('fs').writeFileSync(d+'/a.ts','x')"`), { stateDir, installedRoots: [] }) || {}).block || ''), 'cola con extensión de código');
     assert.ok(INVISIBLE.test((bash.handle(ev(`node -e 'const f=process.argv[1]; require("fs").writeFileSync(f, "x")' src/a.ts`), { stateDir, installedRoots: [] }) || {}).block || ''), 'el argumento es código del repo');
     assert.ok(INVISIBLE.test((bash.handle(ev(`perl -e 'open(my $fh, ">", $ARGV[0]); print $fh "x"' src/a.ts`), { stateDir, installedRoots: [] }) || {}).block || ''), 'perl -e: el argumento es código');

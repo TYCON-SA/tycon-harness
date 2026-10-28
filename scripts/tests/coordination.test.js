@@ -13,7 +13,6 @@ const ROOT = path.join(__dirname, '..', '..');
 const COORD = path.join(ROOT, 'scripts', 'tools', 'coordination.js');
 const C = require(COORD);
 const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
-const { ESCAPES, NAMED, frase } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'escape-ok.js'));
 
 const NOW = Date.parse('2026-10-25T14:00:00.000Z');
 // A project folder outside the temporary one: a derived name there is a real session, not an internal agent.
@@ -89,7 +88,6 @@ const MEASURES = {
   'Confirmar que una firma falta antes de pedirla': 'nadie',
   'Un archivo por firma, borrado al firmar': 'aviso',
   'Pedidos en orden': 'nadie',
-  'La frase del dueño no la escribe otra sesión': 'freno',
   'Avisos cortos y llanos': 'aviso',
   'Codex no coordina': 'aviso',
 };
@@ -100,7 +98,9 @@ test('T1 Guide_HasEveryRuleWithItsMeasure @story-8.122 @ac-1: cada sección de l
   const text = fs.readFileSync(GUIDE, 'utf8');
   const h = headings(GUIDE).join('\n');
   for (const s of [/Qué va al dueño/, /Cómo decide la coordinadora/, /Abrir y nombrar las sesiones/, /El tope/, /pases adversariales/i,
-    /Las firmas/, /El orden de los pedidos/, /La frase del dueño/, /Los avisos al dueño/, /Qué mide cada regla/]) assert.match(h, s);
+    /Las firmas/, /El orden de los pedidos/, /Las firmas del dueño/, /Los avisos al dueño/, /Qué mide cada regla/]) assert.match(h, s);
+  // @story-8.139: una frase no firma nada, así que no hay frase que otra sesión no pueda escribir
+  assert.match(text, /no firma nada: el arnés no lee la conversación para\s+firmar/);
   // the measure table: one row per rule, each with a notice, a brake or nobody, and why
   const table = text.split('## Qué mide cada regla')[1] || '';
   const rows = table.split('\n').filter((l) => /^\| /.test(l) && !/^\| Regla/.test(l) && !/^\|---/.test(l));
@@ -321,17 +321,9 @@ test('T27 Open_BadOrTakenName_DoesNotOpen @story-8.122 @ac-27: un nombre en uso 
   assert.strictEqual(launched(t), null);
 });
 
-test('T28 Open_OwnerPhraseOrOddText_InTheTask @story-8.122 @ac-28: con una frase de permiso no abre; los encargos raros llegan enteros tras --', () => {
+test('T28 Open_OddText_InTheTask @story-8.122 @ac-28 @story-8.139 @ac-28: una frase de permiso en el encargo es texto común (no firma nada); los encargos raros llegan enteros tras --', () => {
   const t = toy();
-  for (const v of [...Object.keys(ESCAPES), ...NAMED]) {
-    for (const task of [`Hacé esto. ${frase(v)}.`, `la frase es «${frase(v)}»`]) {
-      const r = open(t, { name: 'n1', task, launcher: launcher(t) });
-      assert.strictEqual(r.ok, false, task);
-      assert.match(r.message, /la escribe el dueño/, task);
-    }
-  }
-  assert.strictEqual(launched(t), null);
-  for (const task of ['--help', '"; rm x', 'uno\ndos', "-n otro 'y más'"]) {
+  for (const task of ['Hacé esto. autorizo TYCON_SAFETY_OFF.', 'la frase es «autorizo cerrar la ejecución»', '--help', '"; rm x', 'uno\ndos', "-n otro 'y más'"]) {
     const r = open(t, { name: 'n1', task, launcher: launcher(t) });
     assert.strictEqual(r.ok, true, `${task}: ${r.message}`);
     assert.deepStrictEqual(launched(t).argv.slice(-2), ['--', task]);
@@ -437,17 +429,6 @@ test('T8h Status_CodexWithoutDate_Waits @story-8.122 @ac-8: un hilo de Codex sin
   assert.match(w.why, /sin fecha de actividad/);
 });
 
-test('T28b Open_PhraseWithExtraSpaces @story-8.122 @ac-28: espacios de más no esconden la frase', () => {
-  const t = toy();
-  const v = NAMED.find((n) => /\s/.test(n)) || Object.keys(ESCAPES)[0];
-  const spaced = frase(v).replace(/ /g, '   ');
-  for (const task of [`¿${spaced}?`, `no ${spaced}`]) {
-    const r = open(t, { name: 'n1', task, launcher: launcher(t) });
-    assert.strictEqual(r.ok, false, task);
-  }
-  assert.strictEqual(launched(t), null);
-});
-
 test('T25b Open_MissingFolder_SaysSo @story-8.122 @ac-25: una carpeta que no existe no se confunde con el lanzador ausente', () => {
   const t = toy();
   const r = C.open({ ...t.opts, cwd: path.join(t.root, 'no-existe'), name: 'n1', task: 'algo', launcher: launcher(t) });
@@ -535,14 +516,6 @@ test('T26b Open_NameStartsWithLetterOrNumber @story-8.122 @ac-27: un nombre que 
   const t = toy();
   const r = open(t, { name: '-p', task: 'algo', launcher: launcher(t) });
   assert.strictEqual(r.ok, false);
-  assert.strictEqual(launched(t), null);
-});
-
-test('T28c Open_PhraseWithZeroWidthChars @story-8.122 @ac-28: un carácter invisible no esconde la frase', () => {
-  const t = toy();
-  const v = Object.keys(ESCAPES)[0];
-  const r = open(t, { name: 'n1', task: `hacé esto: autorizo​ ${v}`, launcher: launcher(t) });
-  assert.strictEqual(r.ok, false, r.message);
   assert.strictEqual(launched(t), null);
 });
 

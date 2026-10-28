@@ -1918,7 +1918,28 @@ function escrituraProtegida(cmd, payload) {
   };
 
   const r0 = texto(cmd, escPatron(path.resolve(String((payload && payload.cwd) || process.cwd()))), 0);
-  return r0.veredicto || null;
+  return r0.veredicto || programaPorHeredoc(cmd, sp) || null;
+}
+
+/**
+ * El programa de un intérprete (python, node…) que llega por su entrada —un heredoc o un here-string— se juzga como el
+ * de `python3 -c`: si nombra el catálogo, el índice o la memoria, frena. Cuenta el intérprete del comando que recibe el
+ * texto y el de las etapas que le siguen en la tubería (`cat <<EOF | python3`); lo que va a un archivo
+ * (`cat > x.py <<EOF`) o a un programa que vive en un archivo (`node tool.js <<EOF`) es dato. Un `bash -c "…"` se mira
+ * por dentro.
+ */
+function programaPorHeredoc(cmd, sp, prof = 0) {
+  if (!cmd.includes('<<')) return null;
+  for (const p of sp.programasPorEntrada(cmd)) {
+    const m = MENCION_PROTEGIDA.exec(String(p.cuerpo || ''));
+    if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por su entrada).` };
+  }
+  if (prof >= 6) return null;                                               // el mismo tope de anidamiento de `texto`
+  for (const interno of sp.tokens(cmd).filter((t, i, ts) => i > 0 && ts[i - 1] === '-c' && t.includes('<<'))) {
+    const v = programaPorHeredoc(interno, sp, prof + 1);
+    if (v) return v;
+  }
+  return null;
 }
 
 /** El patrón de `find -name` como RegExp (find no expande llaves: `production-{index,memory}.json` es literal, X10). */

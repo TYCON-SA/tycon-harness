@@ -173,14 +173,13 @@ test('T4 EdicionAMano_AReviewODone_Frena @story-8.109 @ac-3 — Edit, Write y ap
   assert.match(r2.stderr, A_MANO);
 });
 
-test('T5 EdicionAMano_ConFrase_Pasa @story-8.109 @ac-4 — con la frase pasa y queda anotado; vieja o sin conversación, frena', () => {
+test('T5 EdicionAMano_ConFrase_YaNoPasa @story-8.109 @ac-4 @story-8.139 @ac-43 — la frase de la persona no abre el freno y el cartel nombra la firma de la ventana; vieja o sin conversación, frena', () => {
+  // con la firma de la ventana sí pasa: SignFile_ConLaVentana_ElArchivoPasa (T45, owner-window.test.js)
   for (const frase of ['dale, autorizo cambiar el estado', 'autorizo TYCON_STATUS_GATE']) {
     const h = nuevaHome({ herramienta: 'Edit', conversacion: [deLaPersona(frase)] });
     const r = correr(ENCABEZADO, h, editar(h, 'status: in-progress\nqa', 'status: done\nqa'));
-    assert.strictEqual(r.status, 0, `${frase}: ${r.stderr}`);
-    const lineas = fs.readFileSync(path.join(h.estado, 'frenos.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    const c = lineas.find((l) => l.freno === 'on-frontmatter-write' && l.regla === 'estado-a-mano');
-    assert.deepStrictEqual(c && [c.veredicto, c.via, c.sesion], ['escape', 'persona', SID], frase);
+    assert.strictEqual(r.status, 2, `${frase}: ${r.stderr}`);
+    assert.match(r.stderr, /marker\.js sign-file cambiar-el-estado/, frase);
   }
   for (const [que, conversacion] of [['de hace 31 minutos', [deLaPersona('autorizo cambiar el estado', 31)]], ['sin conversación', null]]) {
     const h = nuevaHome({ herramienta: 'Edit', conversacion });

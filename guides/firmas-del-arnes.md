@@ -38,16 +38,16 @@ mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana venc
 | `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, por la terminal | `DOD_BYPASS=1 <comando>` |
 | `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una ejecución | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, por la terminal | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
 | `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, por la terminal | `TYCON_STATUS_GATE=off <comando>` |
-| `escape:story-skill-bypass` | usar una skill de stories fuera del pipeline | `invocar una skill de stories fuera del pipeline` | no, por la terminal | `el mismo comando` |
+| `escape:story-skill-bypass` | escribir una story sin la skill de stories | `marker.js sign-file story-skill-bypass <archivo>` | no, por la terminal | `marker.js sign-file story-skill-bypass <archivo> --terminal` |
 | `escape:set-autonomous` | cambiar el modo autónomo de una ejecución | `marker.js set-autonomous` | no, por la terminal | `el mismo comando` |
 | `escape:cerrar-la-ejecucion` | cerrar una ejecución con un control en rojo | `marker.js clear` | no, por la terminal | `el mismo comando` |
 | `escape:cerrar-como-deuda` | cerrar una ejecución dejando lo que falta como deuda | `marker.js close-as-debt` | no, por la terminal | `el mismo comando` |
 | `escape:force-manual` | marcar a mano en verde la prueba de pantalla | `marker.js set-check dod green --force-manual` | no, por la terminal | `el mismo comando` |
 | `escape:trust-ran` | contar los revisores sin la constancia de que corrieron | `pipeline.js check-count --trust-ran` | no, por la terminal | `el mismo comando` |
-| `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `escribir el archivo de evidencia de la prueba en vivo` | no, por la terminal | `el mismo comando` |
-| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `poner dod_runtime_exempt: true en una story` | no, por la terminal | `el mismo comando` |
+| `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | no, por la terminal | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal` |
+| `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | no, por la terminal | `marker.js sign-file dod_runtime_exempt <archivo> --terminal` |
 | `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, por la terminal | `el mismo comando` |
-| `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js update-story-status` | no, por la terminal | `el mismo comando` |
+| `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | no, por la terminal | `marker.js sign-file cambiar-el-estado <archivo> --terminal` |
 
 ## Los grupos de la 8.116
 

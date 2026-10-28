@@ -20,10 +20,11 @@ const reglaDe = (f) => String((f && (f.rule_id || f.ruleId || f.rule)) || '').tr
 const esCriticoEximido = (f) => !!f && String(f.severity || '').trim().toUpperCase() === 'CRITICAL'
   && String(f.disposition || '').trim().toLowerCase() === 'waived';
 
-/** Una constancia completa: regla, quién, tipo y vía; la que salió del chat, con su cita. null = válida; si no, el motivo. */
-// La firmada en la terminal o en la ventana de permiso no trae cita: la ata su renglón del registro del arnés. Las que
-// salieron del chat (anteriores a la ventana) traen la cita y se vuelven a buscar en la conversación.
-const sinCita = (via) => /terminal|ventana/.test(String(via || ''));
+/** Una constancia completa: regla, quién, tipo y vía. null = válida; si no, el motivo. */
+// Se firma en la terminal o en la ventana de permiso y la ata su renglón del registro del arnés. Una anterior a la
+// ventana, que salió de una cita en la conversación, ya no vale: la conversación no se lee para firmar nada.
+const sinCita = (via) => /terminal|ventana|delegada/.test(String(via || ''));
+const CITA_VIEJA = 'esta exención se firmó con una cita en la conversación, que ya no cuenta: firmala en la ventana';
 
 function constanciaInvalida(l) {
   if (!l || typeof l !== 'object') return 'no es un objeto';
@@ -31,8 +32,7 @@ function constanciaInvalida(l) {
   if (!['manual', 'automatica'].includes(l.tipo)) return `tipo ${JSON.stringify(l.tipo)}`;
   if (!String(l.quien || '').trim() || noEsPersona(l.tipo === 'manual' ? l.quien : (l.delegacion || ''))) return 'no nombra a la persona que dio el ok';
   if (!String(l.via || '').trim()) return 'no dice por qué vía';
-  if (!sinCita(l.via) && !String(l.cita || '').trim()) return 'salió del chat y no trae la cita';
-  if (!sinCita(l.via) && !String(l.sesion || '').trim()) return 'salió del chat y no dice de qué sesión';
+  if (!sinCita(l.via)) return CITA_VIEJA;
   if (!String(l.ts || '').trim()) return 'no dice cuándo se anotó';
   return null;
 }
@@ -89,35 +89,16 @@ function leer(runDir) {
 }
 
 /**
- * Vuelve a buscar la cita de una constancia en la conversación de la sesión que la anotó (sólo si ese registro está en
- * esta máquina). `null` = se encontró, o no hay con qué comprobar (terminal, otra máquina); si no, el motivo. Es lo que
- * hace que una línea agregada a mano al archivo, con una cita que nadie escribió, no valga.
- */
-function citaQueNoAparece(l, opts = {}) {
-  if (sinCita(l.via)) return null;
-  const pok = require('./person-ok.js');
-  const o = { ...opts, sesion: l.sesion };
-  const r = l.tipo === 'automatica' && l.relevo ? pok.citaReenviada(l.cita, l.relevo, o) : pok.citaDeLaPersona(l.cita, o);
-  // el registro de otra sesión puede no estar en esta máquina: lo que la ata es el registro del arnés; el de ESTA sesión, sí
-  if (!r.legible) {
-    const actual = sesionActual(opts.env);
-    if (!actual) return `no puedo volver a comprobar la cita: esta sesión no dice su identificador y la conversación de la que la anotó no se lee (${r.motivo})`;
-    return l.sesion === actual ? `no puedo leer la conversación de esta sesión (${r.motivo})` : null;
-  }
-  return r.encontrada ? null : 'su cita no está en la conversación de la sesión que la anotó';
-}
-
-/**
  * Los CRITICAL eximidos de `hallazgos` que no tienen una constancia válida: `{ faltan: [{ rule_id, file, motivo? }],
- * ilegibles, error? }`. Con `reverificar`, cada constancia que salió del chat se vuelve a comprobar contra la conversación.
+ * ilegibles, error? }`. Con `reverificar`, cada constancia se busca además en el registro del arnés de esta máquina.
  */
-function revisar(hallazgos, runDir, { reverificar = false, env, home, story } = {}) {
+function revisar(hallazgos, runDir, { reverificar = false, home, story } = {}) {
   const leido = leer(runDir);
   const validas = new Map();
   const malas = new Map();
   for (const l of leido.lineas) {
     const k = clave(l && l.rule_id, l && l.file);
-    const mal = constanciaInvalida(l) || (reverificar ? (fueraDelRegistro(l, { home, story }) || citaQueNoAparece(l, { env, home })) : null);
+    const mal = constanciaInvalida(l) || (reverificar ? fueraDelRegistro(l, { home, story }) : null);
     if (mal) { if (!validas.has(k)) malas.set(k, mal); } else { validas.set(k, l); malas.delete(k); }
   }
   const faltan = (hallazgos || []).filter(esCriticoEximido).filter((f) => !validas.has(clave(reglaDe(f), f.file)))
@@ -195,12 +176,11 @@ function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
 
 // ── Cuál sesión reenvía, en cada máquina ──
 // El perfil dice SI la organización usa una sesión que reenvía el ok de un dev (`approvals.relay_session`: el nombre del
-// rol, por ejemplo «coordinadora»). CUÁL es se designa en la máquina: el dev escribe en el chat de esa sesión una frase
-// que la nombra («Esta sesión es la coordinadora») y la sesión corre `marker.js designate-relay` con esa cita. El renglón
-// queda en el gates.log, pero es sólo un puntero: al verificar cada reenvío se vuelve a buscar la frase del dev en la
-// conversación designada, así que un renglón sin esa frase no designa nada. La conversación se reconoce por su número de
-// sesión, que no cambia al reiniciar el proceso (sí con /clear o con un chat nuevo); el nombre visible no cuenta, porque
-// lo pone el sistema y otra sesión puede llevar el mismo.
+// rol, por ejemplo «coordinadora»). CUÁL es se designa en la máquina: la sesión corre `marker.js designate-relay` con
+// una frase que la nombra («Esta sesión es la coordinadora») y el renglón queda en el gates.log. Ese renglón no designa
+// nada solo: lo confirma el dueño en su terminal (scripts/lib/delegated-signing.js `confirm-designation`). La sesión se
+// reconoce por su número, que no cambia al reiniciar el proceso (sí con /clear o con un chat nuevo); el nombre visible
+// no cuenta, porque lo pone el sistema y otra sesión puede llevar el mismo.
 const DESIGNACION = 'relay-designation';
 const RE_ESTA_SESION = /(esta\s+(sesi[oó]n|conversaci[oó]n)|\bsos\b|this\s+(session|conversation))/i;
 const RE_NIEGA = /\b(no|nunca|jam[aá]s|not|never)\b|\bisn'?t\b|\bdeja\s+de\s+ser\b/i;
@@ -234,8 +214,9 @@ function juezDesignacion(rol) {
 }
 
 /**
- * Designar la sesión que corre el comando como la que reenvía: la frase del dev, textual, en un mensaje que él escribió
- * en esta conversación. `{ ok: true, entrada: { sesion, rol, quien, cita, cita_cuando } }` o `{ ok: false, motivo }`.
+ * Designar la sesión que corre el comando como la que reenvía, con una frase que nombra el rol. La frase no se busca en
+ * la conversación: la designación vale cuando el dueño la confirma en su terminal.
+ * `{ ok: true, entrada: { sesion, rol, quien, cita, cita_cuando } }` o `{ ok: false, motivo }`.
  */
 function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
   const persona = noEsPersona(approvedBy);
@@ -249,11 +230,7 @@ function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
   const juez = juezDesignacion(declarada.valor);
   const mala = juez(cita);
   if (mala) return { ok: false, motivo: mala };
-  const r = require('./person-ok.js').citaDeLaPersona(cita, { env, home, juzgar: juez, sinPegado: true });
-  if (!r.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${r.motivo})` };
-  if (r.corta) return { ok: false, motivo: 'la frase es muy corta' };
-  if (!r.encontrada) return { ok: false, motivo: r.rechazo || 'la frase no la encontré en un mensaje escrito por el dev en esta conversación' };
-  return { ok: true, entrada: { sesion, rol: declarada.valor, quien: String(approvedBy).trim(), cita, cita_cuando: r.cuando || null } };
+  return { ok: true, entrada: { sesion, rol: declarada.valor, quien: String(approvedBy).trim(), cita, cita_cuando: null } };
 }
 
 /** La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, ts }`, null o `{ error }`. */
@@ -286,92 +263,4 @@ function noEsPersona(quien) {
   return null;
 }
 
-/**
- * El ok de una persona para eximir algo, verificado en la conversación de la sesión. Dos formas:
- *   · `approvedBy` + `quote`: la cita está textual en un mensaje escrito por el dev → manual, a su nombre;
- *   · lo mismo + `relayedBy`: la cita llegó en un mensaje de esa sesión, y la organización la declara en
- *     `approvals.relay_session` → automática, por delegación del dev, a nombre de la sesión que reenvió.
- * Con `critico` ({ rule, file, reason, storyId, sessionId, stateDir }), el ok tiene que responder a ESE crítico: a la
- * persona se le mostró (constancia `critical-shown`, lib/critical-display.js), el mensaje es posterior a la muestra y
- * nombra el crítico (su regla o su nombre en llano) sin negarlo. Sin muestra: `{ ok: false, sinMuestra: true }`.
- * `{ ok: true, entrada: { tipo, quien, delegacion?, cita, cita_cuando, via } }` o `{ ok: false, motivo, sinConversacion? }`.
- */
-function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env, home, arnes, critico, respuesta } = {}) {
-  const persona = noEsPersona(approvedBy);
-  if (persona) return { ok: false, motivo: persona };
-  // sin la hora de arranque de la corrida no se puede saber si la cita es vieja: no se aprueba (falla cerrado)
-  if (!desde || Number.isNaN(Date.parse(desde))) return { ok: false, motivo: 'no sé cuándo arrancó esta corrida (el marcador no trae startedAt), así que no puedo saber si la cita es de ahora' };
-  const cita = String(quote || '').trim();
-  if (!cita) return { ok: false, motivo: 'falta la cita (--quote "<las palabras del dev, textuales>")' };
-  const pok = require('./person-ok.js');
-  const quien = String(approvedBy).trim();
-  // Con `critico`, el ok tiene que responder a la muestra de ese crítico: la hora y el juez salen de ahí.
-  let juzgar;
-  let anterior = 'la cita es de antes de que arrancara esta corrida: no aprueba lo que todavía no existía';
-  const respuestaAlCritico = () => {
-    // Con `respuesta` ({ desde, juez, sinAviso }), el ok responde a un aviso que el arnés anotó (el del tope de vueltas):
-    // posterior a ese aviso y con lo que el juez pide
-    if (respuesta) {
-      if (!respuesta.desde) return { ok: false, sinMuestra: true, motivo: respuesta.sinAviso || 'a la persona no se le mostró el aviso que hay que contestar' };
-      if (Date.parse(respuesta.desde) > Date.parse(desde)) desde = respuesta.desde;
-      juzgar = respuesta.juez;
-      anterior = 'el ok es de antes del aviso: hace falta su respuesta a ese aviso';
-      return null;
-    }
-    if (!critico) return null;
-    const cd = require('./critical-display.js');
-    // la primera muestra de esta corrida, con cualquier motivo: reescribir el motivo vuelve a mostrar el crítico, y una
-    // muestra nueva dejaría «anterior» al ok que respondió a la primera
-    const caso = { stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, file: critico.file };
-    const primera = cd.primeraMuestra({ ...caso, desde });
-    const visto = primera && !primera.error ? primera : (primera || cd.mostrado({ ...caso, reason: critico.reason }));
-    if (visto && visto.error) return { ok: false, motivo: `no pude leer el registro del arnés (${visto.error}): no sé si a la persona se le mostró este crítico` };
-    if (!visto) {
-      // sin la conversación el arnés no muestra nada: el motivo es ése, y el camino es la terminal
-      const conv = pok.leerConversacion({ env, home });
-      if (!conv.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${conv.motivo})` };
-      return { ok: false, sinMuestra: true, motivo: `a la persona no se le mostró este crítico; el arnés se lo muestra al correr este comando (o al escribir ${cd.PEDIDO}), y después hace falta su ok a ese crítico` };
-    }
-    // la más nueva entre la muestra y el arranque de la corrida: una muestra vieja no habilita un ok de otra corrida
-    if (Date.parse(visto.ts) > Date.parse(desde)) desde = visto.ts;
-    const ar = cd.archivosDeLaRegla({ stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, runDir: critico.runDir });
-    if (ar.error) return { ok: false, motivo: `${ar.error}: no sé en cuántos archivos está abierta la regla` };
-    juzgar = cd.juez({ rule: critico.rule, file: critico.file, archivos: ar.archivos, arnes: critico.arnes });
-    // dicho en llano: a qué hora lo mostró el arnés y qué pedir ahora (un ok anterior se descarta siempre)
-    const hora = new Date(visto.ts).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-    anterior = `el ok es de antes de que se le mostrara este crítico: el arnés se lo mostró a las ${hora} y lo que contestó antes no cuenta. `
-      + `Pedile que conteste ahora a la muestra, por ejemplo «eximo ${String(critico.rule).trim()}»`;
-    return null;
-  };
-  if (relayedBy !== null && relayedBy !== undefined) {
-    const sesion = String(relayedBy).trim();
-    const declarada = sesionQueReenvia({ env, home, arnes });
-    if (!declarada.valor) {
-      return { ok: false, motivo: `la organización no declara ninguna sesión que pueda reenviar el ok de un dev (approvals.relay_session del perfil del equipo)${declarada.aviso ? `: ${declarada.aviso}` : ''}` };
-    }
-    if (!sesion || sesion.toLowerCase() !== declarada.valor.toLowerCase()) {
-      return { ok: false, motivo: `la sesión «${sesion}» no es la que la organización deja reenviar el ok de un dev («${declarada.valor}», approvals.relay_session)` };
-    }
-    const sinRespuesta = respuestaAlCritico();
-    if (sinRespuesta) return sinRespuesta;
-    const r = pok.citaReenviada(cita, sesion, { env, home, desde, juzgar });
-    if (!r.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${r.motivo})` };
-    if (r.corta) return { ok: false, motivo: `la cita es muy corta: tiene que tener al menos ${pok.CITA_MINIMA} letras o dígitos` };
-    if (!r.encontrada) return { ok: false, motivo: r.rechazo || (r.anterior ? anterior : `la cita no la encontré en un mensaje que haya llegado de la sesión «${sesion}»`) };
-    return { ok: true, entrada: { tipo: 'automatica', quien: `agente ${sesion}`, delegacion: quien, relevo: sesion, cita, cita_cuando: r.cuando || null, sesion: sesionActual(env), via: `ok de ${quien} reenviado por la sesión ${sesion}` } };
-  }
-  const sinRespuesta = respuestaAlCritico();
-  if (sinRespuesta) return sinRespuesta;
-  const r = pok.citaDeLaPersona(cita, { env, home, desde, juzgar });
-  if (!r.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${r.motivo})` };
-  if (r.corta) return { ok: false, motivo: `la cita es muy corta: tiene que tener al menos ${pok.CITA_MINIMA} letras o dígitos` };
-  if (!r.encontrada) return { ok: false, motivo: r.rechazo || (r.anterior ? anterior : `la cita no la encontré en un mensaje escrito por ${quien} en esta conversación (no cuentan lo que escribió el agente, una herramienta, un subagente u otra sesión)`) };
-  return { ok: true, entrada: { tipo: 'manual', quien, cita, cita_cuando: r.cuando || null, sesion: sesionActual(env), via: 'ok del dev en el chat' } };
-}
-
-function sesionActual(env) {
-  const s = String((env || process.env).CLAUDE_CODE_SESSION_ID || '').trim();
-  return /^[\w-]+$/.test(s) ? s : null;
-}
-
-module.exports = { DESIGNACION, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, okDeUnaPersona, sesionQueReenvia, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+module.exports = { DESIGNACION, RE_NIEGA, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, sesionQueReenvia, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };

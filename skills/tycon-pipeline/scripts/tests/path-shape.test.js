@@ -130,5 +130,10 @@ test('sin la lib de rutas el portón de la terminal sigue cargando (y resuelve c
     const r = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(g.resolveTarget('src/a.cs', ${JSON.stringify(dir)}));`], { encoding: 'utf8' });
     assert.strictEqual(r.status, 0, `el portón carga sin la lib: ${r.stderr}`);
     assert.strictEqual(r.stdout, path.resolve(dir, 'src/a.cs'));
+    // sin el lector compartido de la entrada, un heredoc sigue contando como programa: frena de más, nunca de menos
+    const cmd = "python3 - <<'EOF'\nopen('src/a.cs','w').write('x')\nEOF";
+    const h = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(JSON.stringify(g.extractWriteTargets(${JSON.stringify(cmd)})));`], { encoding: 'utf8' });
+    assert.strictEqual(h.status, 0, h.stderr);
+    assert.deepStrictEqual(JSON.parse(h.stdout), ['src/a.cs']);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
