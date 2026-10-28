@@ -94,6 +94,16 @@ test('DeclaredSiblings_Resolver_SinRecorrer @story-8.81 @ac-4 — está si la ru
   assert.match(packs.textoDeHermanos(sinRaiz, { reposRoot: null }), /no sé cuál es la raíz de repos/);
 });
 
+test('DeclaredSiblings_VariasRaices_BuscaEnTodas — con varias carpetas de repos, cada hermano está si su ruta existe en alguna', () => {
+  const packs = require('../lib/packs.js');
+  const una = raizConHermanos([ALFA]);
+  const otra = raizConHermanos([BETA]);
+  const lista = packs.hermanosResueltos({ paquetes: [{ nombre: 'p', hermanos: [{ ruta: ALFA, nombre: 'Alfa' }, { ruta: BETA, nombre: 'Beta' }, { ruta: 'Gama/Api', nombre: 'Gama' }] }], reposRoots: [una, otra] });
+  assert.deepEqual(lista.map((h) => [h.nombre, h.esta]), [['Alfa', true], ['Beta', true], ['Gama', false]]);
+  assert.equal(lista[1].rutaEsperada, path.join(otra, BETA), 'la ruta es la de la carpeta donde está');
+  assert.equal(lista[2].rutaEsperada, path.join(una, 'Gama', 'Api'), 'el que no está, bajo la primera carpeta');
+});
+
 test('DeclaredSiblings_HermanoAusente_LoDice @story-8.81 @ac-5 — el pedido nombra cada hermano y dice cuál no está', () => {
   const { packs, agents } = paqueteDeJuguete([{ path: ALFA, name: 'Alfa' }, { path: BETA, name: 'Beta' }]);
   const raiz = raizConHermanos([ALFA]);
