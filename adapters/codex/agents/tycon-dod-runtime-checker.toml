@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: 8b080985b211253c56ed3f4109120f71379112f845a27ad1968f8035e6f9c4de
+# source_sha256: a2609bd4da95749e73a1244488e39a85d46b45c6c013ae569af13171f946b84e
 # Se despliega como $CODEX_HOME/tycon-dod-runtime-checker.config.toml y se invoca: codex exec -p tycon-dod-runtime-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -349,7 +349,7 @@ Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-ca
 **Output ejemplo**:
 
 ```
-[DODRT-W3] smoke-check.md línea 12: `https://test.bizuit.example/api/pedidos/123` — target staging sin prefijo de plugin. Fix: `https://test.bizuit.example/api/plugins/ceibo/pedidos/123` (nombre de plugin.json, sin versión). Ver la regla BZURL del paquete bizuit (bizuit-plugin-dotnet.md §7).
+[DODRT-W3] smoke-check.md línea 12: `https://acme-test.example.com/api/pedidos/123` — target staging sin prefijo de plugin. Fix: `https://acme-test.example.com/api/plugins/ceibo/pedidos/123` (nombre de plugin.json, sin versión). Ver la regla BZURL del paquete bizuit (bizuit-plugin-dotnet.md §7).
 ```
 
 **Por qué**: es un error recurrente entre proyectos (regla promovida 2026-07-15) — smokear staging con rutas DevHost y diagnosticar el 404 como bug del endpoint. Hasta el 2026-10-14 el arreglo sugerido metía la versión en la ruta; el host nunca la aceptó (medido en seis inquilinos de prueba y en su código), y el humo de despliegue del arnés siempre llamó sin versión.

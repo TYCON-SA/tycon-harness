@@ -338,7 +338,7 @@ Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-ca
 **Output ejemplo**:
 
 ```
-[DODRT-W3] smoke-check.md línea 12: `https://test.bizuit.example/api/pedidos/123` — target staging sin prefijo de plugin. Fix: `https://test.bizuit.example/api/plugins/ceibo/pedidos/123` (nombre de plugin.json, sin versión). Ver la regla BZURL del paquete bizuit (bizuit-plugin-dotnet.md §7).
+[DODRT-W3] smoke-check.md línea 12: `https://acme-test.example.com/api/pedidos/123` — target staging sin prefijo de plugin. Fix: `https://acme-test.example.com/api/plugins/ceibo/pedidos/123` (nombre de plugin.json, sin versión). Ver la regla BZURL del paquete bizuit (bizuit-plugin-dotnet.md §7).
 ```
 
 **Por qué**: es un error recurrente entre proyectos (regla promovida 2026-07-15) — smokear staging con rutas DevHost y diagnosticar el 404 como bug del endpoint. Hasta el 2026-10-14 el arreglo sugerido metía la versión en la ruta; el host nunca la aceptó (medido en seis inquilinos de prueba y en su código), y el humo de despliegue del arnés siempre llamó sin versión.
