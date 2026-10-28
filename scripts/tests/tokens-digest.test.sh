@@ -1162,6 +1162,101 @@ else
   bad "T39 · el tope no frena lo chico" "esperaba true; salió $chica · $OUT"
 fi
 
+# ── T40 T_HiloSoloElTramoDeLaCorrida ──────────────────────────────────────────────────────────────────────
+# 🔴 Una sesión larga con varias corridas guardaba la conversación ENTERA en cada una (medido: 495 MB por corrida, dos
+#    corridas con la misma copia), y la subida la volvía a subir. El hilo de una corrida cerrada va desde unos minutos
+#    antes de su arranque hasta una hora después de su cierre o de su último toque, el que sea más tarde.
+# Falla con: guardar `hilo(lineas)` sin recortar, o cortar en el cierre sin la hora de cola.
+#   $1 destino · $2 sessionId · $3 startedAt · $4 archivedAt (o None) · $5 lastTouch
+volcado_ventana() {
+  python3 -c "
+import json
+d = {'archivedAt': $4,
+     'marker': {'storyId': 'X.Y', 'sessionId': '$2', 'startedAt': '$3', 'lastTouch': '$5', 'stepTimings': {}},
+     'gates': [], 'costo': {'spawns': 0}}
+open('$1', 'w', encoding='utf-8').write(json.dumps(d, indent=2))
+"
+}
+S=sesion-t40
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
+def u(ts, txt): return {"type": "user", "timestamp": ts, "message": {"role": "user", "content": txt}}
+lineas = [u("2026-09-01T08:00:00.000Z", "OTRA-CORRIDA-ANTES"), u("2026-09-01T09:55:00.000Z", "el pedido"),
+          u("2026-09-01T10:30:00.000Z", "trabajo"), u("2026-09-01T11:40:00.000Z", "la cola del cierre"),
+          u("2026-09-01T13:00:00.000Z", "OTRA-CORRIDA-DESPUES")]
+PY2
+volcado_ventana "$HIST/t40.json" "$S" "2026-09-01T10:00:00.000Z" "'2026-09-01T10:40:00.000Z'" "2026-09-01T10:45:00.000Z"
+correr --run "$HIST/t40.json" --projects-dir "$PROJ" --json
+m40="$(leer "d['hilo']['mensajes']")"; h40="$(leer "d['hilo']['ventana']['hasta']")"
+if [ "$m40" = "3" ] && [ "$h40" = "2026-09-01T11:45:00.000Z" ] \
+   && ! gzip -dc "$HIST/t40.hilo.jsonl.gz" | grep 'OTRA-CORRIDA' >/dev/null; then
+  ok "T40 · el hilo de una corrida cerrada es sólo su tramo, con el pedido y la hora de cola"
+else
+  bad "T40 · hilo recortado a la corrida" "esperaba 3 mensajes hasta las 11:45; salió mensajes=$m40 hasta=$h40 · $OUT"
+fi
+
+# ── T41 T_CorridaAbiertaSinFinDeVentana ───────────────────────────────────────────────────────────────────
+# Sin archivar, la corrida sigue: se recorta lo de antes de su arranque, y lo de después queda (crece con ella).
+volcado_ventana "$HIST/t41.json" "$S" "2026-09-01T10:00:00.000Z" "None" "2026-09-01T10:45:00.000Z"
+correr --run "$HIST/t41.json" --projects-dir "$PROJ" --json
+m41="$(leer "d['hilo']['mensajes']")"
+if [ "$m41" = "4" ] && gzip -dc "$HIST/t41.hilo.jsonl.gz" | grep 'OTRA-CORRIDA-DESPUES' >/dev/null; then
+  ok "T41 · una corrida sin archivar guarda desde su arranque y sin tope de fin"
+else
+  bad "T41 · corrida abierta" "esperaba 4 mensajes con el último incluido; salió mensajes=$m41 · $OUT"
+fi
+
+# ── T42 T_GuardadaTrasLaVentanaNoVuelve ───────────────────────────────────────────────────────────────────
+# 🔴 Guardada después de que cerró su ventana, la corrida no vuelve al barrido aunque la sesión siga creciendo: lo nuevo
+#    es de otra corrida. Sin esto, cada arranque releía 500 MB para no cambiar nada.
+# Y con el MISMO recorte que la escritura: si la vara de `estaPendiente` no recortara, una línea fuera de la ventana la
+# daría por pendiente para siempre.
+BARR4="$TMP/barrido-ventana"; mkdir -p "$BARR4"
+volcado_ventana "$BARR4/t42.json" "$S" "2026-09-01T10:00:00.000Z" "'2026-09-01T10:40:00.000Z'" "2026-09-01T10:45:00.000Z"
+OUT="$(node "$DIGEST" --pending --history-dir "$BARR4" --projects-dir "$PROJ" --json 2>&1)"
+p1="$(leer "'t42' in d['procesadas']")"
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
+def u(ts, txt): return {"type": "user", "timestamp": ts, "message": {"role": "user", "content": txt}}
+# Una línea nueva ADENTRO de la ventana: sólo la regla «guardada tras su ventana» la deja afuera del barrido.
+lineas = [u("2026-09-01T09:55:00.000Z", "el pedido"), u("2026-09-01T10:50:00.000Z", "llegó tarde al archivo"),
+          u("2026-09-01T11:40:00.000Z", "la cola del cierre"), u("2026-09-01T15:00:00.000Z", "creció, pero es de otra corrida")]
+PY2
+OUT="$(node "$DIGEST" --pending --history-dir "$BARR4" --projects-dir "$PROJ" --json 2>&1)"
+p2="$(leer "'t42' in d['procesadas']")"
+# Guardada ANTES del fin de su ventana: vuelve sólo si creció adentro de la ventana (la última adentro sigue siendo 11:40).
+python3 -c "
+import json; p='$BARR4/t42.json'; d=json.load(open(p))
+d['consumo']['hilo_guardado_en']='2026-09-01T11:00:00.000Z'; json.dump(d, open(p,'w'))"
+OUT="$(node "$DIGEST" --pending --history-dir "$BARR4" --projects-dir "$PROJ" --json 2>&1)"
+p3="$(leer "'t42' in d['procesadas']")"
+python3 -c "
+import json; p='$BARR4/t42.json'; d=json.load(open(p))
+d['consumo']['hilo_guardado_en']='2026-09-01T11:00:00.000Z'; d['consumo']['hilo_hasta']='2026-09-01T10:30:00.000Z'; json.dump(d, open(p,'w'))"
+OUT="$(node "$DIGEST" --pending --history-dir "$BARR4" --projects-dir "$PROJ" --json 2>&1)"
+p4="$(leer "'t42' in d['procesadas']")"
+if [ "$p1" = "true" ] && [ "$p2" = "false" ] && [ "$p3" = "false" ] && [ "$p4" = "true" ]; then
+  ok "T42 · guardada tras su ventana no vuelve; antes, vuelve sólo si creció adentro"
+else
+  bad "T42 · barrido con ventana" "esperaba true/false/false/true; salió $p1/$p2/$p3/$p4 · $OUT"
+fi
+
+# ── T43 T_CorridaSinCerrarTerminaEnSuUltimoFreno ─────────────────────────────────────────────────────────
+# 🔴 Una corrida sin cerrar (`sinCerrar`, sin `archivedAt` ni `lastTouch`) nunca se archiva: sin fin de ventana guardaría
+#    la sesión entera, y la volvería a guardar y subir cada día mientras la sesión siga viva. Termina en su último freno.
+python3 -c "
+import json
+d = {'archivedAt': None, 'sinCerrar': True,
+     'marker': {'storyId': 'X.Y', 'sessionId': '$S', 'startedAt': '2026-09-01T10:00:00.000Z'},
+     'gates': [{'ts': '2026-09-01T10:20:00.000Z', 'status': 'pass'}]}
+open('$HIST/t43.json', 'w', encoding='utf-8').write(json.dumps(d))
+"
+correr --run "$HIST/t43.json" --projects-dir "$PROJ" --json
+h43="$(leer "d['hilo']['ventana']['hasta']")"
+if [ "$h43" = "2026-09-01T11:20:00.000Z" ] && ! gzip -dc "$HIST/t43.hilo.jsonl.gz" | grep 'otra corrida' >/dev/null; then
+  ok "T43 · una corrida sin cerrar termina una hora después de su último freno"
+else
+  bad "T43 · corrida sin cerrar" "esperaba fin 11:20 y sin lo de otra corrida; salió hasta=$h43 · $OUT"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 if [ "$fallos" -eq 0 ]; then echo "✅ tokens-digest: todo verde"; exit 0; fi
 echo "❌ tokens-digest: $fallos rojos"; exit 1
