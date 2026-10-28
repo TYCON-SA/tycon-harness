@@ -72,7 +72,9 @@
     "if ! REPOS=\"$(az repos list --org \"$ORG\" --project \"$PROJ\" --query '[].[name,remoteUrl]' -o tsv)\"; then"
   ],
   "scripts/ci/open-pr-per-finding.sh": [
+    "az devops invoke --org \"$ORG\" --area git --resource pullRequestThreads \\",
     "az repos pr create --org \"$ORG\" --project \"$PROYECTO\" --repository \"$REPO\" \\",
+    "az repos pr update --org \"$ORG\" --id \"$1\" --status completed --squash true --delete-source-branch true -o none 2>\"$ERR\" || return 1",
     "az_hilos_de(){ az devops invoke --org \"$ORG\" --area git --resource pullRequestThreads \\",
     "az_pr_por_id(){ az repos pr show --org \"$ORG\" --id \"$1\" -o json 2>\"$ERR\"; }",
     "az_pr_por_rama(){ az repos pr list --org \"$ORG\" --project \"$PROYECTO\" --repository \"$REPO\" \\",

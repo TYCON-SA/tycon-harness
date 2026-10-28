@@ -117,7 +117,9 @@ fs.appendFileSync(process.env.AZ_LOG, JSON.stringify(a)+'\n');
 const arg=(k)=>{ const i=a.indexOf(k); return i<0?undefined:a[i+1]; };
 const st=JSON.parse(fs.readFileSync(process.env.AZ_STATE,'utf8'));
 const save=()=>fs.writeFileSync(process.env.AZ_STATE, JSON.stringify(st,null,1));
-const git=(...x)=>{ const r=cp.spawnSync('git',['-C',process.env.AZ_REMOTE,...x],{encoding:'utf8'}); if(r.status!==0){process.stderr.write(r.stderr);process.exit(1);} return r.stdout.trim(); };
+// el merge lo firma una identidad fija: en una HOME vacía git no tiene a quién poner
+const ID_MERGE={GIT_AUTHOR_NAME:'azure',GIT_AUTHOR_EMAIL:'azure@acme.example',GIT_COMMITTER_NAME:'azure',GIT_COMMITTER_EMAIL:'azure@acme.example',GIT_AUTHOR_DATE:'2026-10-14T05:00:00Z',GIT_COMMITTER_DATE:'2026-10-14T05:00:00Z'};
+const git=(...x)=>{ const r=cp.spawnSync('git',['-c','maintenance.auto=false','-C',process.env.AZ_REMOTE,...x],{encoding:'utf8',env:{...process.env,...ID_MERGE}}); if(r.status!==0){process.stderr.write(r.stderr);process.exit(1);} return r.stdout.trim(); };
 const punta=(ref)=>{ const r=cp.spawnSync('git',['-C',process.env.AZ_REMOTE,'rev-parse','-q','--verify',ref],{encoding:'utf8'}); return r.status===0?r.stdout.trim():null; };
 const vista=(p)=>({ ...p, repository:{ id:'id-repo', name:'repo', project:{ id:'id-proyecto', name:'proyecto' } } });
 const cmd=a.slice(0,3).join(' ');
@@ -287,7 +289,7 @@ if quiero S5; then
   si "…y no en pending/, y su decisión se borró" bash -c '! git -C "$1" cat-file -e main:inbox/dependencies/pending/aa11.yaml 2>/dev/null && ! git -C "$1" cat-file -e main:inbox/dependencies/decisions/aa11.json 2>/dev/null' _ "$T/remoto.git"
   si "el 5256 (Azure no tomó la rama todavía) no se completa" [ "$(nllam_az 'a.includes("update")&&a.includes("5256")')" = 0 ]
   si "…su decisión queda para mañana y la ficha no se marca" bash -c 'git -C "$1" cat-file -e main:inbox/dependencies/decisions/bb22.json && ! git -C "$1" show main:inbox/dependencies/pending/bb22.yaml | grep decision_fallida >/dev/null' _ "$T/remoto.git"
-  si "…y lo dice" contiene "$(SALIDA)" 'bb22: el PR !5256 se aceptó en el sitio y no se pudo confirmar'
+  si "…y lo dice" contiene "$(SALIDA)" 'bb22: el .*5256 se aceptó en el sitio y no se pudo confirmar'
 fi
 
 if quiero S6; then

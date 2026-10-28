@@ -1,6 +1,6 @@
 {
   "archivos": 88,
-  "lineas": 318,
+  "lineas": 320,
   "porArchivo": {
     ".github/control-changes/081bc179e3cc1672ceb50f0d7d0a386002838f3fd8d8c04f6bf2a5bd1e378963.json": 1,
     ".github/control-changes/785188987218ec1becd2c31f77a2269f0b8e61674762b3a6a799a103a230eb22.json": 1,
@@ -39,7 +39,7 @@
     "pipelines/operations/team-dashboard.yml": 1,
     "pipelines/operations/templates/ops-data.yml": 2,
     "scripts/ci/grant-new-product-permissions.js": 14,
-    "scripts/ci/open-pr-per-finding.sh": 6,
+    "scripts/ci/open-pr-per-finding.sh": 8,
     "scripts/ci/push-nightly-data.js": 1,
     "scripts/ci/queue-validation.js": 19,
     "scripts/ci/validate-pipeline-in-ado.sh": 4,

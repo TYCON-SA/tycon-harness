@@ -186,9 +186,13 @@ if (method === 'PUT' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/m
   const remoto = (st.remotes || {})[repo];
   if (!remoto) err(405, 'Pull Request is not mergeable');
   const git = (...a) => {
-    // fecha fija y sin mantenimiento automático: el commit del merge sale igual en cada corrida
+    // identidad y fecha fijas y sin mantenimiento automático: el commit del merge sale igual en cada corrida, también en
+    // una HOME vacía, donde git no tiene a quién poner
     const r = require('child_process').spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', remoto, ...a], {
-      encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-28T00:00:00Z', GIT_COMMITTER_DATE: '2026-10-28T00:00:00Z' } });
+      encoding: 'utf8', env: {
+        ...process.env, GIT_AUTHOR_NAME: 'github', GIT_AUTHOR_EMAIL: 'github@acme.example', GIT_COMMITTER_NAME: 'github',
+        GIT_COMMITTER_EMAIL: 'github@acme.example', GIT_AUTHOR_DATE: '2026-10-28T00:00:00Z', GIT_COMMITTER_DATE: '2026-10-28T00:00:00Z',
+      } });
     if (r.status !== 0) err(409, `git ${a[0]}: ${r.stderr.trim()}`);
     return r.stdout.trim();
   };
