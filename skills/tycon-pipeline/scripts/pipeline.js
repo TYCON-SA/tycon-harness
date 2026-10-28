@@ -5469,6 +5469,43 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   return `${renglones.join('\n')}\n`;
 }
 
+// El freno de la carpeta sin trabajo: antes de una vuelta de revisores, si la carpeta de la story no tiene ningún cambio
+// contra la rama principal (ni commits propios ni cambios sin commitear), los revisores leerían la principal y dirían
+// «no está el código». Pasa cuando algo aparta los cambios mientras corre la vuelta (un `git stash` de fondo). Null si
+// puede seguir, o el mensaje de por qué no. Sin git, sin rama principal conocida o ante un error de git, no frena: no
+// puede afirmar que la carpeta está vacía. Tampoco frena parada en la propia rama principal. Los commits desde el
+// `baseSha` del marcador también cuentan como trabajo.
+function emptyWorkGate(args) {
+  const { spawnSync } = require('child_process');
+  const repo = path.resolve(args.repo || '.');
+  const git = (a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', timeout: 10000 });
+  const top = git(['rev-parse', '--show-toplevel']);
+  if (top.error || top.status !== 0) return null;
+  const status = git(['status', '--porcelain', '--untracked-files=normal']);
+  if (status.error || status.status !== 0 || String(status.stdout).trim()) return null;
+  const ahead = (ref) => {
+    const r = git(['rev-list', '--count', `${ref}..HEAD`]);
+    return r.error || r.status !== 0 ? null : Number(String(r.stdout).trim());
+  };
+  let marcador = null;
+  try { marcador = readSessionMarkerStrict().marcador; } catch (_e) { marcador = null; }
+  if (marcador && typeof marcador.baseSha === 'string' && marcador.baseSha) {
+    const n = ahead(marcador.baseSha);
+    if (n === null || n > 0) return null;
+  }
+  const principal = ['origin/main', 'main', 'origin/master', 'master']
+    .find((ref) => { const r = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return !r.error && r.status === 0; });
+  if (!principal) return null;
+  // Parado en la propia rama principal no hay contra qué comparar: el trabajo pudo commitearse ahí antes de la corrida.
+  const rama = git(['symbolic-ref', '--short', '-q', 'HEAD']);
+  if (!rama.error && rama.status === 0 && String(rama.stdout).trim() === principal.replace(/^origin\//, '')) return null;
+  const n = ahead(principal);
+  if (n === null || n > 0) return null;
+  return `🛑 La carpeta de la story no tiene ningún cambio contra ${principal}: ni commits propios ni cambios sin commitear (${repo}).\n` +
+    '   Los revisores leerían la rama principal y dirían «no está el código»: la vuelta se perdería.\n' +
+    '   Causa típica: algo apartó los cambios mientras tanto (un `git stash` de fondo, un checkout). Recuperalos y volvé a pedir la vuelta.\n';
+}
+
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
 // Si sigue, anota la vuelta servida en la carpeta de la corrida (rethink/served.json). La corrida se busca como en el
 // resto del pipeline (`resolveRunDir`); sin story o sin carpeta no hay nota posible. Ante la duda, frena.
@@ -6297,6 +6334,8 @@ function main() {
     // El freno corre DESPUÉS de las validaciones propias del comando: sus errores salen como siempre.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const emptyWork = emptyWorkGate(args);
+    if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const set = computeAdvisorSet(args);
@@ -6419,6 +6458,8 @@ function main() {
     // corromperían el recompute de force-full-reloop.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const emptyWork = emptyWorkGate(args);
+    if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const conModelos = conModelosDeLaCorrida(args);
