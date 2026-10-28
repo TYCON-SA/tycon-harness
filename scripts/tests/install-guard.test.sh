@@ -69,7 +69,7 @@ declara(){ # $1 = json  → deja el archivo en un repo git (CON migraciones) con
 if [ ! -f "$LINT" ]; then
   no "T11 · el lint no existe todavía ($LINT)"
 else
-  BUENO='{"servers":[{"host":"acme-sql.database.windows.net","environment":"produccion","keychain":"tycon-prod-acme"},{"host":"test.bizuit.example","environment":"no-produccion"}]}'
+  BUENO='{"servers":[{"host":"acme-sql.database.windows.net","environment":"produccion","keychain":"tycon-prod-acme"},{"host":"acme-test.example.com","environment":"no-produccion"}]}'
   declara "$BUENO"
   if node "$LINT" --staged --repo "$TMP/r" >/dev/null 2>&1; then ok "T11a · la declaración válida pasa"
   else no "T11a · la declaración válida fue rechazada"; fi
@@ -111,7 +111,7 @@ else
   salida="$(node "$LINT" --staged --repo "$TMP/r" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "sin migraciones" >/dev/null; then ok "T11j · producción declarada en un repo sin migraciones se rechaza"
   else no "T11j · producción en un repo sin database/ ni BD/ pasó (rc=$rc)"; fi
-  declara '{"servers":[{"host":"test.bizuit.example","environment":"no-produccion"}]}'; rm -rf "$TMP/r/database"
+  declara '{"servers":[{"host":"acme-test.example.com","environment":"no-produccion"}]}'; rm -rf "$TMP/r/database"
   if node "$LINT" --staged --repo "$TMP/r" >/dev/null 2>&1; then ok "T11k · un servidor de no-producción se declara en cualquier repo"
   else no "T11k · un no-produccion en un repo sin migraciones fue rechazado"; fi
 fi
@@ -1044,7 +1044,7 @@ PY
       mkdir -p "$INTERNO32/$(dirname "$f")"; cp "$AQUI/$f" "$INTERNO32/$f"; printf '\n# otros bytes: el clon que se mantiene no es la copia que se baja\n' >> "$INTERNO32/$f"
     done
     ( cd "$INTERNO32" && git init -q -b main . && git add -A && git -c user.name=Lab -c user.email=lab@example.com commit -q -m interno && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
-    printf '{"servers":[{"host":"test.bizuit.example","environment":"no-produccion"}]}' > "$REPOS32/backend-acme/.tycon/production.json"
+    printf '{"servers":[{"host":"acme-test.example.com","environment":"no-produccion"}]}' > "$REPOS32/backend-acme/.tycon/production.json"
     git -C "$REPOS32/backend-acme" init -q . >/dev/null 2>&1
     printf '#!/usr/bin/env bash\nexit 44\n' > "$SYS30/usr/bin/security"; chmod +x "$SYS30/usr/bin/security"
     aviso32(){ # $1 = el árbol de la versión que corre

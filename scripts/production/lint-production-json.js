@@ -197,7 +197,7 @@ function main(argv) {
   for (const m of malos) console.error(`   · ${m}`);
   console.error('\n   Forma aceptada (sólo estas claves; «base» es opcional y dice a qué base entra la puerta):');
   console.error('   {"servers":[{"host":"x.database.windows.net","environment":"produccion","keychain":"tycon-prod-x","base":"xdb"},');
-  console.error('               {"host":"test.bizuit.example","environment":"no-produccion"}]}');
+  console.error('               {"host":"acme-test.example.com","environment":"no-produccion"}]}');
   console.error('   Detalle: guides/produccion-con-permiso.md');
   return 1;
 }
