@@ -5130,9 +5130,16 @@ function normalizeFinding(f) {
 function followupKey(f) {
   return `${String(f.ruleId || f.rule || f.rule_id || '?').trim()}|${String(f.file || '?').trim()}`;
 }
-function renderFollowupItem(nf, checked) {
+function renderFollowupItem(nf, checked, key) {
   const loc = nf.file ? `\`${nf.file}${nf.line ? ':' + nf.line : ''}\`` : '(sin archivo)';
-  return `- [${checked ? 'x' : ' '}] **[${nf.severity}]** ${nf.ruleId} — ${loc} — ${nf.summary} <!-- fkey:${nf.ruleId}|${nf.file || '?'} -->`;
+  return `- [${checked ? 'x' : ' '}] **[${nf.severity}]** ${nf.ruleId} — ${loc} — ${nf.summary} <!-- fkey:${key || `${nf.ruleId}|${nf.file || '?'}`} -->`;
+}
+// La corrida de un findings.json que vive en su carpeta (`.advisors/pipeline-runs/<corrida>/`): va en la clave para
+// que, en una story de varias tandas, la misma regla sobre el mismo archivo de otra tanda no pise a la de ésta.
+function followupRunOf(findingsPath) {
+  if (!findingsPath) return null;
+  const dir = path.dirname(path.resolve(String(findingsPath)));
+  return path.basename(path.dirname(dir)) === 'pipeline-runs' ? path.basename(dir) : null;
 }
 function parseFollowupsSection(content) {
   const lines = (content || '').split(/\r?\n/);
@@ -5350,14 +5357,21 @@ function writeFollowups(args) {
 
   const seen = new Set();
   const merged = [];
+  const run = followupRunOf(args.findings);
   for (const raw of findings) {
     const f = normalizeFinding(raw);
-    const k = `${f.ruleId}|${f.file || '?'}`;
+    const viejo = `${f.ruleId}|${f.file || '?'}`;
+    const k = run ? `${viejo}|${run}` : viejo;
     if (seen.has(k)) continue;
     seen.add(k);
+    // Una sección escrita antes de que la clave llevara la corrida tiene `regla|archivo`: ese renglón se migra una vez
+    // a la clave nueva, con su marca, en vez de quedar duplicado y abierto para siempre.
+    const migra = run && !prevChecked.has(k) && prevChecked.has(viejo) && !seen.has(viejo);
+    if (migra) seen.add(viejo);
     // Preservar el checkbox previo por fkey (idempotente en re-loops); resolved lo fuerza a [x].
-    const checked = f.resolved ? true : (prevChecked.has(k) ? prevChecked.get(k) : false);
-    merged.push(renderFollowupItem(f, checked));
+    const previo = prevChecked.has(k) ? prevChecked.get(k) : (migra ? prevChecked.get(viejo) : false);
+    const checked = f.resolved ? true : previo;
+    merged.push(renderFollowupItem(f, checked, k));
   }
   // Conservar TODOS los items previos que no vienen en el nuevo set — resueltos [x] (historial)
   // Y abiertos [ ] (deuda viva). Conservar SOLO los
@@ -7481,7 +7495,7 @@ function main() {
     '       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n' +
     '  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n' +
     '       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n' +
-    '       story (idempotente por fkey ruleId|file, preserva [x] previos). Solo toca el body.)\n' +
+    '       story (idempotente por fkey ruleId|file|corrida, preserva [x] previos). Solo toca el body.)\n' +
     '  node pipeline.js followups-status  --story <spec.md>\n' +
     '       (adopción BMAD — Arranque y «Validar la historia»: cuenta review follow-ups abiertos/resueltos. exit 3 si\n' +
     '       hay abiertos (priorizarlos sobre tasks nuevas), 0 si limpio.)\n' +

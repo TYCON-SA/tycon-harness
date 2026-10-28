@@ -1236,6 +1236,51 @@ test('writeFollowups preserva items ABIERTOS que no vienen en el nuevo set (BUG-
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('writeFollowups: la misma regla sobre el mismo archivo en otra corrida no pisa a la de la tanda anterior', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-fu-corridas-'));
+  const story = path.join(dir, '8-9.md');
+  fs.writeFileSync(story, '---\nstory: 8-9\nstatus: review\n---\n\n## Story\nBody.\n');
+  const runs = path.join(dir, '.advisors', 'pipeline-runs');
+  const enCorrida = (nombre, lista) => {
+    fs.mkdirSync(path.join(runs, nombre), { recursive: true });
+    const f = path.join(runs, nombre, 'findings.json');
+    fs.writeFileSync(f, JSON.stringify(lista));
+    return f;
+  };
+  const a = enCorrida('8.9-B3a-20261001120000', [{ severity: 'WARNING', ruleId: 'SEC-W1', file: 'src/a.js', summary: 'de la tanda A' }]);
+  writeFollowups({ story, findings: a });
+  const b = enCorrida('8.9-B3b-20261002120000', [{ severity: 'WARNING', ruleId: 'SEC-W1', file: 'src/a.js', summary: 'de la tanda B' }]);
+  writeFollowups({ story, findings: b });
+  const texto = fs.readFileSync(story, 'utf8');
+  assert.ok(texto.includes('de la tanda A'), 'el seguimiento de la tanda A sigue en la story');
+  assert.ok(texto.includes('de la tanda B'), 'y el de la tanda B se suma');
+  // re-correr la misma corrida no duplica
+  writeFollowups({ story, findings: b });
+  assert.equal(computeFollowupsStatus({ story }).total, 2, 'uno por corrida, sin duplicar en un re-loop');
+  // una sección escrita con la clave vieja (regla|archivo) se migra una vez: sin duplicar y con su marca
+  const vieja = path.join(dir, '8-10.md');
+  fs.writeFileSync(vieja, '---\nstory: 8-10\n---\n\n## Review Follow-ups (Advisors)\n\n- [x] **[WARNING]** SEC-W1 — `src/a.js` — de antes <!-- fkey:SEC-W1|src/a.js -->\n');
+  writeFollowups({ story: vieja, findings: b });
+  const st = computeFollowupsStatus({ story: vieja });
+  assert.equal(st.total, 1, 'el renglón de la clave vieja se migra, no se duplica');
+  assert.equal(st.open, 0, 'y conserva su marca [x]');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dispatch.js cargado como librería, sin arnés a la vista, no avisa «no encuentro el arnés»; corrido como gancho, sí', () => {
+  const { spawnSync } = require('child_process');
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-dispatch-lib-'));
+  const env = { PATH: process.env.PATH, HOME: casa, USERPROFILE: casa };
+  const dispatch = path.join(SCRIPTS, 'dispatch.js');
+  const lib = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(dispatch)}).CHAINS`], { env, encoding: 'utf8' });
+  assert.equal(lib.status, 0, lib.stderr);
+  assert.ok(!/no encuentro el arnés/.test(lib.stderr), `al cargarlo como librería avisó: ${lib.stderr}`);
+  // los ganchos reales cargan dispatch.js desde su entrada (hook-post-edit.js) y llaman a dispatch()
+  const gancho = spawnSync(process.execPath, [path.join(SCRIPTS, 'hook-post-edit.js')], { env, encoding: 'utf8', input: '{}' });
+  assert.match(gancho.stderr, /no encuentro el arnés/, 'corrido como gancho, el aviso sigue');
+  fs.rmSync(casa, { recursive: true, force: true });
+});
+
 // ── BUG-PIPELINE-004: findRepoRootsForStory layout-agnóstico (docs/ y --repo) ──
 test('findRepoRootsForStory resuelve el repo-root con stories en docs/ (BUG-004)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-rr004-'));

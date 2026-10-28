@@ -39,13 +39,16 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta 
 // cross-repo es seguro por orden. Lado Claude: editEventsFrom es identidad, cero cambio.
 let editEventsFrom = null;
 let ARNES_DIR = null;
+let AVISO_SIN_ARNES = null;
 try {
   // Dónde está el arnés lo dice UN lector (lib/harness-path.js): TYCON_GUIDES_DIR (o TCG, que
   // exporta el runner del banco, cuyo HOME va sandboxeado) › el lugar `~/.claude/tycon-harness`.
   // Nunca una carpeta escrita a mano. Un hook no frena por esto: lo dice y sigue (fail-open).
   const r = require('./lib/harness-path.js').rutaArnesHook();
   if (r.dir) { ARNES_DIR = r.dir; ({ editEventsFrom } = require(path.join(r.dir, 'scripts', 'lib', 'hook-io.js'))); }
-  else process.stderr.write(r.aviso + '\n');
+  // el aviso lo da dispatch(), cuando corre un gancho; quien sólo carga el archivo para leer sus cadenas (el sitio,
+  // al armar «Cómo trabaja») no corre ninguno, y en su registro sería ruido en cada carga
+  else AVISO_SIN_ARNES = r.aviso;
 } catch { /* fallback: sin normalización, conducta actual */ }
 
 // Una llave de integración del arnés. Configuración ROTA: el aviso en cada edición y apagada. Sin arnés, o con un arnés
@@ -242,6 +245,7 @@ function prepareEvents(rawEvent, platform = process.platform) {
 }
 
 function dispatch(mode) {
+  if (AVISO_SIN_ARNES) process.stderr.write(AVISO_SIN_ARNES + '\n');
   const chain = CHAINS[mode];
   if (!chain) {
     // modo desconocido → no-op (nunca romper el tool call por esto)

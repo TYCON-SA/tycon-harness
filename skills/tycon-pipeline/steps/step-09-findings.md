@@ -220,7 +220,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-foll
   --findings <repo>/.advisors/pipeline-runs/<clave>-<sello>/findings.json
 ```
 
-- **Idempotente por `fkey` (`ruleId|file`)**: en re-loops (Hallazgos → Revisores vuelta N+1 → Hallazgos) re-correr
+- **Idempotente por `fkey` (`ruleId|file|corrida`; la corrida es la carpeta del findings.json, así otra tanda no pisa estos)**: en re-loops (Hallazgos → Revisores vuelta N+1 → Hallazgos) re-correr
   esto NO duplica ni pierde el estado — preserva los `[x]` que el dev marcó al resolver, agrega
   los findings nuevos abiertos, y conserva los ya resueltos como historial.
 - **`disposition: fixed` → `[x]`** automático (finding ya resuelto en esta corrida). `waived` /

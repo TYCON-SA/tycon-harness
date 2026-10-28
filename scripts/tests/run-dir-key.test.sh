@@ -311,6 +311,49 @@ t12="$(node -e '
 if [ "$t12" = "rework:1/1 retro:a__1.1-20261001120000 dup:1" ]; then ok "T12 Medidores_VenLasCarpetasNuevas"
 else no "T12 Medidores_VenLasCarpetasNuevas — $t12 (esperaba rework:1/1 retro:a__1.1-20261001120000 dup:1)"; fi
 
+# ── T12b — la retro de una story de varias tandas apunta a la carpeta de la tanda que se mergeó ───────────────────
+# Dos carpetas de la misma story: la de nombre más nuevo es de una tanda sin mergear. Gana la que firmó sobre un commit
+# que el merge trae; sin ninguna atada al merge, null (ambiguo), no la última por nombre.
+M12B="$(mundo m12b)"; g12(){ git -C "$M12B" -c user.email=t@t -c user.name=t "$@"; }
+echo a > "$M12B/a"; g12 add -A >/dev/null; g12 commit -qm base >/dev/null
+g12 checkout -q -b tanda-vieja; echo v > "$M12B/v"; g12 add v; g12 commit -qm vieja >/dev/null; CV="$(g12 rev-parse --short=12 HEAD)"
+g12 checkout -q trabajo; g12 checkout -q -b tanda-nueva; echo n > "$M12B/n"; g12 add n; g12 commit -qm nueva >/dev/null; CN="$(g12 rev-parse --short=12 HEAD)"
+g12 checkout -q trabajo; g12 merge -q --no-ff tanda-vieja -m "merge de la vieja" >/dev/null; MV="$(g12 rev-parse HEAD)"
+corrida "$M12B" "1.2-20261001120000"; corrida "$M12B" "1.2-20261002120000"
+printf '{"que":"plan","cuando":"2026-10-01T12:00:00Z","commit":"%s"}\n' "$CV" > "$M12B/.advisors/pipeline-runs/1.2-20261001120000/approvals.jsonl"
+printf '{"que":"plan","cuando":"2026-10-02T12:00:00Z","commit":"%s"}\n' "$CN" > "$M12B/.advisors/pipeline-runs/1.2-20261002120000/approvals.jsonl"
+t12b="$(node -e '
+  const [aq, repo, merge] = process.argv.slice(1);
+  const rd = require(aq + "/scripts/metrics/retro-heartbeat.js").runDirDe;
+  console.log(String(rd(repo, "1.2", merge)));
+' "$AQUI" "$M12B" "$MV" 2>&1 | tail -1)"
+if [ "$t12b" = ".advisors/pipeline-runs/1.2-20261001120000/" ]; then ok "T12b la retro apunta a la carpeta de la tanda mergeada, no a la última por nombre"
+else no "T12b la retro apunta a «${t12b}» (esperaba la carpeta 1.2-20261001120000)"; fi
+printf '{"que":"plan","cuando":"2026-10-01T12:00:00Z","commit":"%s"}\n' "$CN" > "$M12B/.advisors/pipeline-runs/1.2-20261001120000/approvals.jsonl"
+t12c="$(node -e '
+  const [aq, repo, merge] = process.argv.slice(1);
+  console.log(String(require(aq + "/scripts/metrics/retro-heartbeat.js").runDirDe(repo, "1.2", merge)));
+' "$AQUI" "$M12B" "$MV" 2>&1 | tail -1)"
+if [ "$t12c" = "null" ]; then ok "T12b …sin ninguna carpeta atada al merge es ambiguo: null"
+else no "T12b …sin ninguna atada al merge esperaba null y dio «${t12c}»"; fi
+# la tanda nueva firmó el plan sobre un commit que el merge trae y el cierre sobre el suyo, sin mergear: queda afuera
+printf '{"que":"plan","cuando":"2026-10-01T12:00:00Z","commit":"%s"}\n' "$CV" > "$M12B/.advisors/pipeline-runs/1.2-20261001120000/approvals.jsonl"
+printf '{"que":"plan","cuando":"2026-10-02T12:00:00Z","commit":"%s"}\n{"que":"cierre","cuando":"2026-10-02T13:00:00Z","commit":"%s"}\n' "$CV" "$CN" > "$M12B/.advisors/pipeline-runs/1.2-20261002120000/approvals.jsonl"
+t12d="$(node -e '
+  const [aq, repo, merge] = process.argv.slice(1);
+  console.log(String(require(aq + "/scripts/metrics/retro-heartbeat.js").runDirDe(repo, "1.2", merge)));
+' "$AQUI" "$M12B" "$MV" 2>&1 | tail -1)"
+if [ "$t12d" = ".advisors/pipeline-runs/1.2-20261001120000/" ]; then ok "T12b …una tanda que firmó sobre un commit del merge y también sobre los suyos sin mergear no gana"
+else no "T12b …la tanda sin mergear ganó: «${t12d}»"; fi
+# las dos atadas al merge: ambiguo, no la más nueva
+printf '{"que":"plan","cuando":"2026-10-02T12:00:00Z","commit":"%s"}\n' "$CV" > "$M12B/.advisors/pipeline-runs/1.2-20261002120000/approvals.jsonl"
+t12e="$(node -e '
+  const [aq, repo, merge] = process.argv.slice(1);
+  console.log(String(require(aq + "/scripts/metrics/retro-heartbeat.js").runDirDe(repo, "1.2", merge)));
+' "$AQUI" "$M12B" "$MV" 2>&1 | tail -1)"
+if [ "$t12e" = "null" ]; then ok "T12b …con dos carpetas atadas al merge es ambiguo: null"
+else no "T12b …con dos atadas esperaba null y dio «${t12e}»"; fi
+
 # ── T13 — el portón de Azure sin la story falla cerrado ──────────────────────────────────────────
 M13="$(mundo m13)"; corrida "$M13" "1.1-20261006120000"
 printf '# DoD Runtime Evidence — Story 1.1\nverdict=PASS\n' > "$M13/.advisors/dod-runtime/1.1-202610061200Z.md"
