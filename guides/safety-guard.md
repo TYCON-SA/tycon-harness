@@ -131,7 +131,10 @@ cambiar el estado»). Para `ESC-C4`: «autorizo cerrar como deuda»; la ejecuci�
 quién la autorizó, y sigue hasta el commit. Para `ESC-C3`, que no es una variable sino el comando: «autorizo
 set-autonomous», «autorizo cerrar la ejecución», «autorizo force-manual», «autorizo trust-ran» o «autorizo no-deep-review» (apagar el pase
 adversarial tiene dos nombres, y la frase de cualquiera vale para los dos); para `ESC-C5`,
-«autorizo ALLOW_DOD_EVIDENCE_WRITE» o «autorizo dod_runtime_exempt». La constancia de estos escapes anota la sesión y el
+«autorizo ALLOW_DOD_EVIDENCE_WRITE» o «autorizo dod_runtime_exempt». El cartel de `ESC-C5` no repite la frase: dice que
+lo decide la persona y la manda acá. Si la conversación todavía no tenía escrito el renglón del comando que se juzga, el
+cartel lo dice («no pude leer el registro de la conversación para este paso») y el agente reintenta el mismo comando una
+vez, sin pedirle nada a la persona; si se repite, lo avisa. La constancia de estos escapes anota la sesión y el
 nombre del escape. Una ejecución cerrada así queda
 con `cierre: abortada`, su motivo y quién lo autorizó (`marker.js clear` lo lee del registro de escapes); sin esa
 línea, `via: sin-registro`. `ESC-C3` lee el comando como lo lee la terminal: cuenta toda llamada a `marker.js` (o

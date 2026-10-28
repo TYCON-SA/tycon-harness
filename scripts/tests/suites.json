@@ -2103,6 +2103,18 @@
       "requiere": []
     },
     {
+      "__nota": "la refirma después de traer main (scripts/lib/refresh-after-main.js): es refirma sólo si cada archivo es lo de main más lo ya firmado en este pedido; modo, tipo, renombres y clon superficial son control-change.",
+      "raiz": "arnes",
+      "ruta": "tests/refresh-after-main.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el paso que el freno no encuentra en el registro de la conversación: los cuatro guiones dicen el motivo real y piden un reintento, sin dictar la frase.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/step-not-found.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la sesión designada aprueba force-manual, trust-ran y una vuelta más en nombre del dueño (skills/tycon-pipeline/scripts/lib/delegated-ok.js): sólo si el perfil las delega y el dueño tipeó «aprobá X» en su chat hace 30 minutos o menos, una firma por pedido.",
       "raiz": "arnes",
       "ruta": "tests/delegated-ok.test.js",

@@ -198,7 +198,9 @@ function computeStorySkillGate({
 }
 
 /** Texto del bloqueo: qué pasó, por qué frena, y la salida concreta. */
-function blockMessage(r, { filePath, via, byName = false } = {}) {
+// `paso`: el pedido que se juzga no se ubicó en la conversación (escape-ok.js `cartelDelPaso`). Con `reintento`, el
+// renglón todavía no estaba escrito: el cartel pide reintentar y no la frase; si no, suma el motivo.
+function blockMessage(r, { filePath, via, byName = false, paso = null } = {}) {
   const rel = path.basename(String(filePath || ''));
   const promote = /^draft-promote/.test(r.kind);
   const terminal = promote && /terminal/.test(r.reason || '');
@@ -225,8 +227,11 @@ function blockMessage(r, { filePath, via, byName = false } = {}) {
       : '   (a) Escribila con `status: draft`. Después corré el validador de historias (tycon-story-validator) sobre ese\n' +
         '       archivo y, si pasa, pasala a ready-for-dev. La skill tycon-create-story hace esos pasos en orden.',
     '',
-    '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, tiene que escribir en su mensaje',
-    '       «autorizo story-skill-bypass»; con esa frase suya, este freno la deja pasar solo y lo anota.',
+    ...(paso && paso.reintento ? [`   (b) ${paso.cartel}`] : [
+      '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, tiene que escribir en su mensaje',
+      '       «autorizo story-skill-bypass»; con esa frase suya, este freno la deja pasar solo y lo anota.',
+      paso && paso.cartel ? `   ${paso.cartel}` : '',
+    ]),
   ].filter((l) => l !== '').join('\n');
 }
 

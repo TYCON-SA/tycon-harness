@@ -38,8 +38,14 @@
 #        [--alarm-range <a>..<b>] [--approvals-out <ruta>]
 #   bash scripts/ci/run-base-controls.sh check-inventory --root <dir> [--ref <rev>]
 #   bash scripts/ci/run-base-controls.sh pending --root <pedido> --base <rev> --range <base>...<punta> [--approvals-out <ruta>]
-#   bash scripts/ci/run-base-controls.sh approve --root <dir> --entries '<json>' [--out <ruta>] [--terminal]
+#   bash scripts/ci/run-base-controls.sh approve --root <dir> [--base <rev>] --entries '<json>' [--out <ruta>] [--terminal]
 #   bash scripts/ci/run-base-controls.sh approve --root <dir> --file <ruta> --rev <commit> [--out <ruta>] [--terminal]
+#   bash scripts/ci/run-base-controls.sh classify --root <dir> --base <rev> --entries '<json>'   (la clase de la firma, en JSON)
+#
+# LA REFIRMA TRAS TRAER MAIN. Traer main a un pedido con un cambio de control firmado cambia el blob de lo firmado y pide
+# firmar otra vez. Si `scripts/lib/refresh-after-main.js` comprueba que es sólo eso (`approve --base`), la firma la puede
+# dar la sesión designada y queda como `via: delegacion` con `clase: refresh-after-main`. En la CI, toda otra aprobación
+# por delegación que el pedido agrega es rojo; la refirma vale sólo si el clasificador de la BASE la comprueba.
 #
 # SALIDAS: 0 verde · 1 rojo (o `approve` sin la firma) · 2 uso (o `approve --terminal` sin terminal) · 9 no pude correr (la última línea dice por qué). «No pude
 # correr» nunca cae a los controles del pedido: eso es el hueco que esto cierra.
@@ -72,7 +78,7 @@ const CODE = /\.(c?js|mjs|sh)$/;
 const [cmd, ...rest] = process.argv.slice(2);
 
 function usage(code) {
-  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> --entries <json> | --file <ruta> --rev <commit>');
+  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json>');
   process.exit(code);
 }
 function opt(name) {
@@ -368,13 +374,24 @@ function hashOf(entries) {
 const isApprovalDir = (f) => f.endsWith('/');
 // una constancia vale sólo si sus reglas dan su hash: el chequeo del verde lo exige, y la alarma de lo que entró a main
 // también, así que se filtra al leer
-// una firma por delegación (`via: "delegacion"`) vale sólo con la frase del dueño, la máquina y la sesión que firmó
+// una firma por delegación (`via: "delegacion"`) de las de antes vale sólo con la frase del dueño, la máquina y la sesión
+// que firmó; la refirma tras traer main (`clase: refresh-after-main`) no lleva frase: la anterior del dueño, la máquina y
+// la sesión. Que la forma cuadre no alcanza: una delegada nueva vale sólo si es una refirma que el clasificador comprueba
 const DELEGATED_FIELDS = ['quote', 'maquina', 'signed_by_session'];
+const REFRESH = 'refresh-after-main';
+const REFRESH_FIELDS = ['refirma_de', 'maquina', 'signed_by_session'];
 function approvalProblem(a) {
   if (!(a && typeof a.hash === 'string' && Array.isArray(a.rules) && a.rules.every((r) => r && typeof r.path === 'string' && typeof r.blob === 'string') && hashOf(a.rules) === a.hash)) return 'sus reglas no dan su hash';
-  if (a.via === undefined) return null;
+  if (a.via === undefined) return a.clase === undefined ? null : 'una firma del dueño no lleva clase';
   if (a.via !== 'delegacion') return `su vía «${safe(a.via)}» no es una que el arnés conozca`;
-  const missing = DELEGATED_FIELDS.filter((k) => typeof a[k] !== 'string' || !a[k].trim());
+  const lacking = (fields) => fields.filter((k) => typeof a[k] !== 'string' || !a[k].trim());
+  if (a.clase === REFRESH) {
+    if (a.quote !== undefined) return 'una refirma no lleva quote';
+    const missing = lacking(REFRESH_FIELDS);
+    return missing.length ? `es una refirma sin ${missing.join(', ')}` : null;
+  }
+  if (a.clase !== undefined) return `su clase «${safe(a.clase)}» no es una que el arnés conozca`;
+  const missing = lacking(DELEGATED_FIELDS);
   return missing.length ? `es una firma por delegación sin ${missing.join(', ')}` : null;
 }
 const holdsUp = (a) => approvalProblem(a) === null;
@@ -439,10 +456,41 @@ function readApprovalDir(root, rev, dir) {
 }
 const approvedEntry = (approvals, p, blob) => approvals.some((a) => a && Array.isArray(a.rules) && a.rules.some((r) => r && r.path === p && r.blob === blob));
 const approvalLine = (entries) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'dueño' });
+// la refirma tras traer main, firmada por la sesión designada: la anterior del dueño, la máquina y la sesión del registro
+const refreshLine = (entries, refirmaDe, maquina, sesion) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'refirma', via: 'delegacion', clase: REFRESH, refirma_de: refirmaDe, maquina, signed_by_session: sesion });
+// los hashes de las constancias de la base, en cualquiera de las rutas de su inventario y sin mirar la forma: una
+// constancia está en la base si su hash está, aunque se haya movido de ruta (se compara contra la base, nunca por fecha).
+// null si la base no se pudo leer (sin inventario legible, o git no lista una carpeta de constancias): no es «ninguna»
+function baseApprovalHashes(root, base) {
+  const hashes = new Set();
+  const read = readInventory(root, base);
+  if (!read.inv) return null;
+  const add = (text) => { try { const a = JSON.parse(text); if (a && typeof a.hash === 'string') hashes.add(a.hash); } catch (_) { /* no es una constancia */ } };
+  for (const file of approvalFiles(read.inv)) {
+    if (!isApprovalDir(file)) { const text = show(root, base, file); if (text !== null) text.split('\n').filter((l) => l.trim()).forEach(add); continue; }
+    const r = git(root, ['ls-tree', '-z', '--name-only', base, '--', file], { allowFail: true });
+    if (r.status !== 0) return null;
+    for (const p of r.stdout.split('\0').filter(Boolean)) { const text = show(root, base, p); if (text !== null) add(text); }
+  }
+  return hashes;
+}
+// el clasificador de la refirma: en la CI, el de la base (un pedido no trae el suyo); al firmar, el de al lado del guion
+const CLASSIFIER = 'scripts/lib/refresh-after-main.js';
+function classifierOfBase(root, base, work) {
+  const text = show(root, base, CLASSIFIER);
+  if (text === null) return null;
+  const file = path.join(work, `refresh-after-main-${crypto.randomBytes(4).toString('hex')}.js`);
+  fs.writeFileSync(file, text);
+  // sin clasificador ninguna refirma vale: se dice por qué, para que el rojo no parezca una firma mal hecha
+  try { return require(file); } catch (e) { console.log(`     ⚠️ no pude cargar el clasificador de la refirma de la base: ${e.message}`); return null; }
+}
+function classifierHere() {
+  try { return require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'refresh-after-main.js')); } catch (_) { return null; }
+}
 // un argumento de shell entre comillas simples, para pegar tal cual en una terminal
 const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-function signCommand(root, entries, out) {
-  return `bash ${SELF} approve --root ${root === '<repo>' ? root : shq(root)} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
+function signCommand(root, entries, out, base) {
+  return `bash ${SELF} approve --root ${root === '<repo>' ? root : shq(root)}${base ? ` --base ${shq(base)}` : ''} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
 }
 
 // ── el commit armado ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -554,7 +602,7 @@ function analyze() {
   const entries = changed.map((p) => ({ path: p, blob: blobOf(root, signedRev, p) || 'borrado' }));
   const files = approvalFiles(inv);
   const approvalsOut = opt('--approvals-out') || files[0] || '.tycon/control-changes.jsonl';
-  return { root, base, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut };
+  return { root, base, baseArg, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut };
 }
 function printChanges(a) {
   if (!a.changed.length) { console.log('base-controls: el pedido no cambia ningún archivo de regla ni workflow del inventario'); return; }
@@ -671,14 +719,28 @@ function cmdRun() {
     const baseRed = baseRes.some((r) => !r.ok) || baseProblemsOfPr.length > 0;
     const prRed = prRes.some((r) => !r.ok);
     if (prRed) reasons.push(`la pasada del pedido frena: ${prRes.filter((r) => !r.ok).map((r) => r.name).join(', ')}`);
+    // una aprobación por delegación nueva (su hash no está en la base) ya no vale, salvo la refirma tras traer main que el
+    // clasificador de la base comprueba sobre el pedido, para estas mismas entradas y a partir de esa constancia del dueño
+    const approvals = readApprovals(a.root, a.tip, approvalFiles(a.inv));
+    const inBase = baseApprovalHashes(a.root, a.base);
+    let classifier;
+    const refreshHolds = (x) => {
+      if (x.clase !== REFRESH || x.hash !== a.hash || !inBase) return false;
+      if (classifier === undefined) classifier = classifierOfBase(a.root, a.base, work);
+      if (!classifier || typeof classifier.classify !== 'function') return false;
+      const c = classifier.classify({ root: a.root, base: a.base, tip: a.prHead || a.tip, entries: a.entries, approvals, baseHashes: inBase });
+      return !!c && c.clase === REFRESH && c.refirma_de === x.refirma_de;
+    };
+    const unproven = approvals.filter((x) => x.via === 'delegacion' && !(inBase && inBase.has(x.hash)) && !refreshHolds(x));
+    if (unproven.length && !inBase) reasons.push(`no pude leer las constancias de la base ${short(a.base)}: una aprobación por delegación no se da por buena sin compararla (${unproven.map((x) => short(x.hash)).join(', ')})`);
+    else if (unproven.length) reasons.push(`una aprobación por delegación nueva ya no vale: el dueño la firma en la ventana o en su terminal (${unproven.map((x) => short(x.hash)).join(', ')})`);
     let approved = false;
     if (baseRed && !prRed) {
       if (a.changed.length) {
-        const approvals = readApprovals(a.root, a.tip, approvalFiles(a.inv));
         // la línea tiene que cuadrar entera: el hash del cambio, y sus reglas son las que dan ese hash
-        const signed = approvals.some((x) => x && x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash);
+        const signed = approvals.some((x) => x && x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash && !unproven.includes(x));
         if (!signed) {
-          reasons.push(`el pedido afloja un control sin la constancia del dueño: ${a.changed.join(', ')}. La firma, desde una terminal (con el arnés instalado si el repo no trae este guion): ${signCommand('<repo>', a.entries, a.approvalsOut)}`);
+          reasons.push(`el pedido afloja un control sin la constancia del dueño: ${a.changed.join(', ')}. La firma, desde una terminal (con el arnés instalado si el repo no trae este guion): ${signCommand('<repo>', a.entries, a.approvalsOut, a.baseArg)}`);
         } else {
           // con la constancia: la regla de la base menos lo aprobado, que va en su versión del pedido; tiene que dar verde
           const rest = [...a.rules].filter((p) => !a.changed.includes(p));
@@ -718,7 +780,7 @@ function cmdPending() {
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
   console.log(`hash: ${a.hash}`);
-  const firma = signCommand(a.root, a.entries, a.approvalsOut);
+  const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg);
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso): ${firma}`);
   console.log(`o desde tu terminal: ${firma} --terminal`);
 }
@@ -774,7 +836,7 @@ function cmdApprove() {
   // el destino puede salir del inventario del pedido: se mira antes de preguntar, y la persona ve adónde va la firma
   const where = insideRepo(root, out);
   if (where) { console.error(`run-base-controls approve: el destino ${safe(out)} ${where}: no se firmó nada.`); process.exit(2); }
-  if (!enTerminal) { approveByWindow(root, out, entries); return; }
+  if (!enTerminal) { approveByWindow(root, out, entries, classifyApprove(root, entries, read.inv)); return; }
   if (process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
     console.error('🔒 run-base-controls approve --terminal: pide una terminal interactiva de verdad (la constancia es del dueño, no de un agente). Correlo vos, en tu terminal.');
     process.exit(2);
@@ -788,10 +850,37 @@ function cmdApprove() {
   writeApproval(root, out, entries, approvalLine(entries));
 }
 
+// ¿la firma de `approve` es la refirma tras traer main (`refresh-after-main`) o un cambio de control? Sin `--base`, o ante
+// cualquier duda, cambio de control
+function classifyApprove(root, entries, inv) {
+  const base = opt('--base');
+  if (!base) return { clase: 'control-change', motivo: 'sin --base no se puede comprobar que sea sólo traer main' };
+  const classifier = classifierHere();
+  if (!classifier) return { clase: 'control-change', motivo: 'no encuentro el clasificador de la refirma al lado de este guion' };
+  const baseC = resolveCommit(root, base);
+  if (!baseC) return { clase: 'control-change', motivo: `la base ${safe(base)} no resuelve a un commit` };
+  const approvals = inv ? readApprovals(root, 'HEAD', approvalFiles(inv)) : [];
+  const baseHashes = baseApprovalHashes(root, baseC);
+  if (!baseHashes) return { clase: 'control-change', motivo: `no pude leer las constancias de la base ${safe(base)}` };
+  return classifier.classify({ root, base: baseC, tip: 'HEAD', entries, approvals, baseHashes });
+}
+function cmdClassify() {
+  const root = path.resolve(opt('--root') || '.');
+  let entries;
+  try { entries = JSON.parse(opt('--entries') || ''); } catch (e) { console.error(`run-base-controls classify: --entries no es JSON: ${e.message}`); process.exit(2); }
+  // la salida es sólo el JSON: los avisos de las constancias que no firman nada no se imprimen acá
+  const log = console.log; console.log = () => {};
+  let c;
+  try { c = classifyApprove(root, entries, readInventory(root, 'HEAD').inv); } finally { console.log = log; }
+  process.stdout.write(`${JSON.stringify(c)}\n`);
+}
+
 // desde una sesión: vale sólo si el dueño dijo «Sí» en la ventana de permiso a este mismo comando
-// (scripts/lib/owner-window.js, del mismo árbol que este guion); si no, no se firma y se dice el comando de la terminal
-function approveByWindow(root, out, entries) {
-  const terminal = `${signCommand(root, entries, out)} --terminal`;
+// (scripts/lib/owner-window.js, del mismo árbol que este guion); si no, no se firma y se dice el comando de la terminal.
+// La refirma tras traer main la puede dar la sesión designada (el freno la deja pasar sin ventana, con `via: delegacion`
+// en su registro): el guion la vuelve a clasificar y escribe la línea de la refirma sólo si da lo mismo que el registro
+function approveByWindow(root, out, entries, c) {
+  const terminal = `${signCommand(root, entries, out, opt('--base'))} --terminal`;
   let ow = null;
   let porQue = '';
   try { ow = require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'owner-window.js')); } catch (e) { ow = null; porQue = ` (${String((e && e.message) || e).split('\n')[0]})`; }
@@ -799,9 +888,16 @@ function approveByWindow(root, out, entries) {
   // el guion, tal como lo lanzó la consola: este proceso es el del .sh (node lo reemplazó con exec)
   const argv = [path.join(process.env.BASE_CONTROLS_SELF_DIR, 'run-base-controls.sh'), cmd, ...rest];
   const sesion = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || undefined;
-  const r = ow.exigir({ firma: 'control-change', argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion });
+  const firma = c && c.clase === REFRESH ? REFRESH : 'control-change';
+  const r = ow.exigir({ firma, argv, resumen: entries.map((e) => e.path).join(', '), propia: sesion });
   if (r.codigo !== 0) { console.error(`run-base-controls approve: ${r.motivo}: no se firmó nada.`); process.exit(1); }
-  writeApproval(root, out, entries, approvalLine(entries));
+  if (r.via !== 'delegacion') { writeApproval(root, out, entries, approvalLine(entries)); return; }
+  const reg = r.registro || {};
+  if (firma !== REFRESH || reg.firma !== REFRESH || reg.refirma_de !== c.refirma_de || typeof reg.maquina !== 'string' || !reg.maquina || typeof reg.sesion !== 'string' || !reg.sesion) {
+    console.error(`run-base-controls approve: la refirma no da lo mismo que el registro de la ventana (${safe(c ? c.motivo : 'sin clase')}): no se firmó nada. Va a la ventana del dueño, o a su terminal: ${terminal}`);
+    process.exit(1);
+  }
+  writeApproval(root, out, entries, refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion));
 }
 
 // la constancia en un .jsonl, o un archivo por firma en una carpeta
@@ -845,6 +941,7 @@ try {
   else if (cmd === 'check-inventory') cmdCheckInventory();
   else if (cmd === 'pending') cmdPending();
   else if (cmd === 'approve') cmdApprove();
+  else if (cmd === 'classify') cmdClassify();
   else if (cmd === '-h' || cmd === '--help') usage(0);
   else usage(2);
 } catch (e) {

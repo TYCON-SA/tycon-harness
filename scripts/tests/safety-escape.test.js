@@ -547,6 +547,28 @@ test('T15 SafetyEscape_SinEscape_NoLlamaANode — la ventana sólo se consulta c
   assert.match(llamadas(), /owner-window/, 'con el escape sí la consulta (el node de mentira se usa)');
 });
 
+test('T44 SafetyEscape_PedidoSinConsumir_OtroComandoLoVence — tras un «No», el comando siguiente vence el pedido de su sesión @story-8.139 @ac-42', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'safety-escape-vence-'));
+  const casa = path.join(dir, 'tycon');
+  const log = path.join(dir, 'llamadas.log');
+  // el node de mentira anota la llamada; el barrido sale con el código que pida la prueba, sin tocar ninguna casa
+  const nodo = (rc) => fs.writeFileSync(path.join(dir, 'node'), `#!/bin/bash\necho "$*" >> ${JSON.stringify(log)}\nif [[ "$2" == "sweep" ]]; then exit ${rc}; fi\nexec ${JSON.stringify(process.execPath)} "$@"\n`, { mode: 0o755 });
+  const llamadas = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '');
+  const env = { TYCON_HOME: casa };
+  nodo(0);
+  assert.strictEqual(freno('ls', { path: dir, env }).status, 0);
+  assert.doesNotMatch(llamadas(), /sweep/, 'sin pedido de la sesión no consulta');
+  fs.mkdirSync(path.join(casa, 'state', 'owner-window'), { recursive: true });
+  fs.writeFileSync(path.join(casa, 'state', 'owner-window', `plan-approval--${SID}--${SID}.json`), '{}');
+  assert.strictEqual(freno('ls', { path: dir, env }).status, 0);
+  assert.match(llamadas(), /owner-window\.js sweep/, 'con un pedido de la sesión lo vence');
+  nodo(1);
+  const r = freno('ls', { path: dir, env });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no pude vencerlo/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // ── ESC-C3: apagar el lazo de las pruebas o cerrar una ejecución en rojo lo decide la persona (@story-8.92) ─────────────
 // En una ejecución con las pruebas en rojo, apagar el lazo del modo autónomo y cerrar la ejecución piden la frase de la
 // persona. Los comandos van en una tabla: el freno lee el texto del comando.
@@ -2220,5 +2242,30 @@ test('EscC6Paso T15 TuberiaConElNombreDeLaSesion_NoCuelga — un archivo especia
     const r = await frenoConEscrituras(APROBAR_PLAN, { home, tope: 15000, entrada: conRuta ? { transcript_path: archivoReal(home) } : {} });
     assert.strictEqual(r.status, 2, `${nombre}: ${r.status} ${r.stderr}`);
     assert.match(r.stderr, /ESC-C6/, nombre);
+  }
+});
+
+// FrenoDeSeguridad_C3YC5_NoDictanLaFrase
+// 🔴 Falla con: un cartel de ESC-C3 o ESC-C5 que le da al agente la frase («autorizo …») o la variable para repetir el
+//    comando: con la frase escrita, el agente se la pide a la persona en vez de intentar lo que puede hacer solo.
+test('T37 FrenoDeSeguridad_C3YC5_NoDictanLaFrase @story-8.139 @ac-37 — ningún cartel de ESC-C3 ni de ESC-C5 dicta la frase ni la variable; ESC-C5 nombra la guía', () => {
+  const VARIABLE = /\b[A-Z][A-Z0-9_]{2,}=/;
+  const casos = [
+    ['ESC-C3', CMD.apagar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
+    ['ESC-C3', CMD.cerrar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
+    ['ESC-C3', `${MARKER} set-check tests green --force-manual`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
+    ['ESC-C3', `${PIPELINE} check-count --trust-ran --ran a,b`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
+    ['ESC-C3', START_NDR, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
+    ['ESC-C5', `touch ${PERMISO}`, { conversacion: [deLaPersona('seguí')] }],
+    ['ESC-C5', `echo "dod_runtime_exempt: true" | tee -a specs/story-9.9.md`, { conversacion: [deLaPersona('seguí')] }],
+  ];
+  for (const [regla, comando, opciones] of casos) {
+    const r = freno(comando, { codex: true, ...opciones });
+    assert.strictEqual(r.status, 2, `${comando}: ${r.stderr}`);
+    assert.match(r.stderr, new RegExp(regla), comando);
+    assert.match(r.stderr, /lo decide (?:la persona|ella)/, comando);
+    assert.doesNotMatch(r.stderr, /autorizo/i, `${comando}: el cartel dicta la frase`);
+    assert.doesNotMatch(r.stderr, VARIABLE, `${comando}: el cartel da la variable`);
+    if (regla === 'ESC-C5') assert.match(r.stderr, /Cómo lo da ella está en guides\/safety-guard\.md/, comando);
   }
 });
