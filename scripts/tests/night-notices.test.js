@@ -1025,3 +1025,22 @@ test('T86 NightData_ResolveOperations_TableRowByRow', () => {
   // el texto de la copia nombra el clon que se le pasa
   assert.match(ask(sep, `N.copyAfter(${J(sep.ops)}, Date.now() + ${HOUR}, 'el clon de operaciones')`), /^la copia del clon de operaciones es del \d{4}-\d{2}-\d{2}$/);
 });
+
+test('T85 PhotoFolderThatCannotBeListed_IsSaid_NotReadAsNoHistory', () => {
+  const D = require(path.join(ROOT, 'scripts', 'hooks', 'dependencies-notice.js'));
+  // a source whose listing fails the way a folder without permission does; one where the folder is simply missing
+  const denied = { listar: () => { throw Object.assign(new Error("EACCES: permission denied, scandir '/x'"), { code: 'EACCES' }); }, leer: () => '', exists: () => true };
+  const missing = { listar: () => { throw Object.assign(new Error("ENOENT: no such file or directory, scandir '/x'"), { code: 'ENOENT' }); }, leer: () => '', exists: () => false };
+  const ahora = Date.parse('2026-10-20T12:00:00Z');
+  // dependencies: «could not list» is its own state and always speaks, also on a machine that does not wait for the nightlies
+  const v = D.evaluar({ outDir: '/x', pendingDir: '/y', ahora, fuente: denied });
+  assert.strictEqual(v.estado, 'no-leida', JSON.stringify(v));
+  const line = D.redactar(v, {});
+  assert.match(line || '', /^🔴 dependencias: no pude leer la carpeta de las fotos de la revisión nocturna \(EACCES/);
+  assert.strictEqual(D.evaluar({ outDir: '/x', pendingDir: '/y', ahora, fuente: missing }).estado, 'sin-historia', 'una carpeta que no está sigue siendo «sin historia»');
+  // the watcher: the same
+  const w = D.evaluarVigilante({ vigOut: '/x', ahora, fuente: denied });
+  assert.strictEqual(w.estado, 'no-leida', JSON.stringify(w));
+  assert.match(D.redactarVigilante(w, {}) || '', /^🔴 vigilante: no pude leer la carpeta de sus fotos \(EACCES/);
+  assert.strictEqual(D.evaluarVigilante({ vigOut: '/x', ahora, fuente: missing }).estado, 'sin-historia');
+});

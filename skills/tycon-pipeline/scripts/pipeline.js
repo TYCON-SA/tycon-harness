@@ -1404,13 +1404,16 @@ function archivosDotnetDelRepo(repo, tope = 200) {
  */
 function hermanosDelRepo(activos) {
   let raiz = null;
+  let raices = [];
   let motivo = null;
   try {
     const r = require(path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'repos-root.js')).resolveReposRoot();
     raiz = r.root || null;
+    raices = Array.isArray(r.roots) ? r.roots : [];
     if (!raiz) motivo = r.motivo || 'sin raíz de repos';
   } catch (e) { motivo = `no pude leer la raíz de repos (${e.message})`; }
-  const lista = packsLib.hermanosResueltos({ paquetes: activos, reposRoot: raiz });
+  // con varias carpetas de repos, el hermano se busca en todas
+  const lista = packsLib.hermanosResueltos({ paquetes: activos, reposRoot: raiz, reposRoots: raices });
   return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
 }
 

@@ -333,6 +333,15 @@ else no "T46 --local (rc $RC, commits «${COMMITS}»): $(files_in "$D") — $(br
 if grep -qF "install --version $VERSION --team \"$D\"" "$BASE/t46.out" && grep -q 'git remote add origin' "$BASE/t46.out" && grep -q 'git push' "$BASE/t46.out" && grep -q 'harness.js install --team' "$BASE/t46.out" && grep -qi 'copia de respaldo' "$BASE/t46.out" && ! grep -q 'github.com/new?owner=' "$BASE/t46.out"; then
   ok "T46 el resumen ofrece instalar con la carpeta y dice cómo subirlo después (remote, push e install --team), sin pedir dirección"
 else no "T46 el resumen de --local: $(brief "$BASE/t46.out" 700)"; fi
+# sin red: las rutas públicas apuntan a un puerto cerrado; --local arma igual el perfil mínimo que trae esta versión,
+# válido, con git y su commit, y dice que no usó el ejemplo publicado
+DN="$BASE/solo/sin-red"
+TYCON_RELEASE_GIT="http://127.0.0.1:9" TYCON_RELEASE_ARCHIVE="http://127.0.0.1:9" TYCON_RELEASE_RAW="http://127.0.0.1:9" \
+  H team-init --local --name solo --dir "$DN" < /dev/null > "$BASE/t46n.out" 2>&1; RC=$?
+COMMITS="$("$REAL_GIT" -C "$DN" rev-list --count main 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$(files_in "$DN")" = "team-layer.json team-profile.json " ] && [ "$COMMITS" = 1 ] && [ "$(jget "$DN/team-layer.json" name)" = solo ] && [ "$(jget "$DN/team-layer.json" requires.harness)" = ">= $VERSION" ] && [ "$(jget "$DN/team-profile.json" install.profile)" = minimal ] && grep -q 'sin el ejemplo publicado' "$BASE/t46n.out"; then
+  ok "T46 --local sin red: arma el perfil mínimo de esta versión, con git y un commit en main, y dice que no usó el ejemplo publicado"
+else no "T46 --local sin red (rc $RC, commits «${COMMITS}»): $(files_in "$DN") — $(brief "$BASE/t46n.out" 500)"; fi
 LAB_PTY_DELAY=3 harness_lab_pty $'solo2\nlocal\n'"$BASE/solo/tty-profile"$'\nn' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --no-stories > "$BASE/t46b.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(files_in "$BASE/solo/tty-profile")" = "team-layer.json team-profile.json " ]; then ok "T46 con terminal, «local» como plataforma arma el perfil local sin preguntar dirección"
 else no "T46 con terminal (rc $RC): $(files_in "$BASE/solo/tty-profile") — $(brief "$BASE/t46b.out" 500)"; fi
