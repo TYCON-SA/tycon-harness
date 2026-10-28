@@ -2131,6 +2131,12 @@
       "requiere": []
     },
     {
+      "__nota": "una constancia de cambio de control sólo la escribe el guion de la firma: el freno de escritura por consola frena cualquier otro camino que la ponga en el repo.",
+      "raiz": "arnes",
+      "ruta": "tests/control-changes-by-console.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el ayudante que da la ventana por pasada en las pruebas por subproceso vive sólo en la carpeta de pruebas: ningún guion de afuera lo nombra, y con la HOME de la cuenta no firma nada.",
       "raiz": "arnes",
       "ruta": "tests/window-passed-guard.test.js",
