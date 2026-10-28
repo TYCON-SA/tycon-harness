@@ -324,6 +324,45 @@ function batchLines(fm) {
 }
 
 /**
+ * ¿Las líneas de una tanda nombran el frente o una extensión de pantalla? `blocked_by` es prosa («espera el
+ * frontend»): no dice qué entrega la tanda. Su valor sigue en las líneas con más sangría que la clave (`>`, `|` o
+ * texto que continúa).
+ */
+function batchNamesScreen(seg, hit) {
+  let prosa = -1;
+  return seg.some((l) => {
+    const sangria = l.length - l.trimStart().length;
+    if (prosa >= 0 && sangria > prosa) return false;
+    const m = l.match(/^(\s*)blocked_by\s*:/);
+    prosa = m ? m[1].length : -1;
+    if (m) return false;
+    const t = noComment(l);
+    return UI_EXT_RE.test(t) || hit(t);
+  });
+}
+
+/**
+ * Las tandas bloqueadas cuya pantalla cambió: con `changed` (los archivos que cambió el commit o la corrida), un
+ * archivo de pantalla entre ellos alcanza a cada tanda `blocked` que nombra pantalla en sus líneas. Si los cortes de
+ * las tandas no se pueden alinear, alcanza a todas las bloqueadas: este cruce endurece la matriz, y ante la duda sus
+ * criterios vuelven. Devuelve `{ names, screens }` (vacíos sin pantalla entre los cambios o sin la lista).
+ */
+function blockedScreenTouched(content, repoRoot, changed) {
+  const none = { names: [], screens: [] };
+  if (!Array.isArray(changed) || !changed.length) return none;
+  const f = fmOf(content);
+  const hit = frontHit(f, repoRoot);
+  const screens = changed.map(String).filter((c) => UI_EXT_RE.test(c) || hit(c));
+  if (!screens.length) return none;
+  const tandas = require('./story-checks.js').parsePipelinesBlock(content);
+  const segs = batchLines(f);
+  const names = tandas
+    .filter((t, i) => t.status === 'blocked' && (segs.length !== tandas.length || batchNamesScreen(segs[i], hit)))
+    .map((t) => t.name);
+  return names.length ? { names, screens } : none;
+}
+
+/**
  * ¿La pantalla toca alguna tanda que no está bloqueada? Devuelve `{ story, active, blocked, note }`: `story` es el
  * veredicto sobre la story entera; `active`, el de la corrida; `blocked`, las tandas bloqueadas a las que se atribuyó
  * la pantalla; `note`, la línea que dice la baja (null sin baja).
@@ -346,20 +385,7 @@ function screenScope(content, repoRoot, { changed } = {}) {
   const segs = batchLines(f);
   if (segs.length !== tandas.length) return same;
   const hit = frontHit(f, repoRoot);
-  // `blocked_by` es prosa («espera el frontend»): no dice qué entrega la tanda. Su valor sigue en las líneas con más
-  // sangría que la clave (`>`, `|` o texto que continúa).
-  const nombraPantalla = (seg) => {
-    let prosa = -1;
-    return seg.some((l) => {
-      const sangria = l.length - l.trimStart().length;
-      if (prosa >= 0 && sangria > prosa) return false;
-      const m = l.match(/^(\s*)blocked_by\s*:/);
-      prosa = m ? m[1].length : -1;
-      if (m) return false;
-      const t = noComment(l);
-      return UI_EXT_RE.test(t) || hit(t);
-    });
-  };
+  const nombraPantalla = (seg) => batchNamesScreen(seg, hit);
   const conPantalla = tandas.map((t, i) => ({ ...t, ui: nombraPantalla(segs[i]) }));
   const bloqueadas = conPantalla.filter((t) => t.status === 'blocked' && t.ui);
   if (!bloqueadas.length || conPantalla.some((t) => t.status !== 'blocked' && t.ui)) return same;
@@ -425,6 +451,6 @@ function applyScreenRule(content, repoRoot, rule = 'ui', { scope, changed } = {}
 }
 
 module.exports = {
-  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope, changedFiles,
+  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule, screenScope, changedFiles, blockedScreenTouched,
   UI_FM_FILES_RE, UI_FM_PATHS_RE, UI_BODY_RE,
 };
