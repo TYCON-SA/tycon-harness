@@ -369,6 +369,12 @@
       "requiere": []
     },
     {
+      "__nota": "la memoria compartida no lleva claves al repo: el pre-commit global pasa cada archivo pendiente de .engram/chunks/ por el detector de claves antes de prepararlo; con una, el commit no se crea. Git de verdad en un repo de laboratorio, con un engram de mentira.",
+      "raiz": "arnes",
+      "ruta": "tests/engram-chunk-secrets.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/pipeline-debt.test.js",
       "requiere": []
