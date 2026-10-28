@@ -1394,7 +1394,8 @@ function cmdInstall(ctx, H) {
   // ya vive ahí— hay que esperar a la mudanza: el aplicador en shell tiene el lugar de antes escrito.
   // una `~/.tycon/state` sin estado adentro es el resto de una instalación cortada (Ctrl-C en «¿Instalo?», proceso
   // matado): no marca nada; se barre antes de decidir dónde nace esta
-  if (TH.dropStaleOwnHome(ctx.home, { log: (l) => log(`install: ${l}`) })) log(`install: ${TH.ownStateDir(ctx.home)} estaba vacía (una instalación cortada): la saqué`);
+  const log = (l) => R.log(ctx.home, `install: ${l}`);
+  if (TH.dropStaleOwnHome(ctx.home, { log })) log(`${TH.ownStateDir(ctx.home)} estaba vacía (una instalación cortada): la saqué`);
   const bornInOwnHome = !withClaude && read.status === 'missing' && !TH.livesInOwnHome(ctx.home);
   // Lo que se frena es SUMARLE Claude Code a una máquina que vive en la casa propia SIN él (nació sólo con Codex). Una máquina
   // MUDADA (`migrate --to-home`) vive ahí CON Claude Code enchufado —su estado lo dice—: reinstalarla (por ejemplo,
@@ -1425,7 +1426,6 @@ function cmdInstall(ctx, H) {
   if (teamRepo.problem) return { code: 2, lines: [`harness.js install: ${teamRepo.problem}`] };
   const wanted = String(ctx.opts.version || 'latest').trim();
   if (wanted !== 'latest' && !VO.isOrdered(wanted)) return { code: 2, lines: [`harness.js install: --version tiene que ser latest o un número publicado YYYY.MM.DD.N (dice «${wanted}»)`] };
-  const log = (l) => R.log(ctx.home, `install: ${l}`);
   const c = client(ctx);
   if (c.tokenProblem) return { code: 2, lines: [`harness.js install: ${c.tokenProblem}`] };
   // con la capa en GitHub, un 404/401 de la copia nombra los dos repos que el permiso tiene que ver (con la capa en Azure, el

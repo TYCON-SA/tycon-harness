@@ -868,7 +868,7 @@ test('T61 NoVerifyEnLaboratorio @story-4.10 @ac-29', () => {
   assert.deepStrictEqual(cats(rv({ bypass: [linea('/Users/dev/SourceCode/arnes')] }), 'RR-ESCAPE'), ['GIT_NO_VERIFY:1']);
   assert.ok(RULES.APARTE['RR-ESCAPE:GIT_NO_VERIFY/laboratorio'], 'aparte: el resumen no la suma a las nuevas');
   // sin certeza de que corrió en el laboratorio, es del repo real (el pase adversarial, objetivos 1-3)
-  const real = (v) => volcado({ sid: 's' }) && Object.assign(volcado({ sid: 's' }), { marker: { ...volcado({ sid: 's' }).marker, repoPath: '/Users/dev/SourceCode/prod' } });
+  const real = (v) => Object.assign(volcado({ sid: 's' }), { marker: { ...volcado({ sid: 's' }).marker, repoPath: '/Users/dev/SourceCode/prod' } });
   const dudosos = [
     'cd /tmp/x/../../Users/dev/arnes && git commit --no-verify -m x',
     'git -C /tmp/../Users/dev/arnes commit --no-verify -m x',

@@ -315,7 +315,7 @@ const carpetaNormal = (c) => String(c || '').trim().replace(/^\.\/+/, '').replac
 /** Lo que está mal en las `exclude` de repos.json: cada una necesita `path` y `reason`. Lista vacía = bien. */
 function problemasDeExclusiones(cfg) {
   const P = [];
-  for (const r of (cfg && cfg.repos) || []) {
+  for (const r of cfg.repos || []) {
     if (r.exclude === undefined) continue;
     const et = etiqueta(r);
     if (!Array.isArray(r.exclude)) { P.push(`${et}: "exclude" tiene que ser una lista de { "path", "reason" }`); continue; }
@@ -1043,7 +1043,6 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
   const decididasHoy = new Set();
   const dirPending = path.join(pendingDir, 'pending');
   const dirPromoted = path.join(pendingDir, 'promoted');
-  const presencias = new Map((snapshot.presencias || []).map((p) => [p.id, p]));
   const porId = new Map((snapshot.hallazgos || []).map((h) => [h.id, h]));
   const medidos = new Set((snapshot.repos || []).filter((r) => r.medido).map(etiqueta));
 

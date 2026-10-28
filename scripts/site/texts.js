@@ -1422,7 +1422,6 @@ const TEXTOS = {
   'pantalla.sinDeclararNeutro': { es: "neutro (de fábrica)", en: "neutral (default)" },
   'pantalla.largoMaximoDeProsaEn': { es: "Largo máximo de cada respuesta, en caracteres (300 a 4000; vacío: el del estilo)", en: "Maximum length of each answer, in characters (300 to 4000; empty: the style's)" },
   'pantalla.registroDeHoras': { es: 'Registro de horas: la herramienta donde se cargan las horas de cada historia', en: 'Time tracking: the tool where the hours spent on each story are logged' },
-  'pantalla.sinDeclararNinguno': { es: "ninguno (de fábrica)", en: "none (default)" },
   'pantalla.ningunaHerramienta': { es: 'Ninguno', en: 'None' },
   'pantalla.herramientaQueNoOfrece': { es: '{herramienta} (este sitio no la ofrece)', en: '{herramienta} (this site does not offer it)' },
   'pantalla.urlDeLaInstancia': { es: 'La dirección de la instancia de {herramienta} de tu organización (con https, o localhost para probar)', en: 'Your organization\'s {herramienta} instance address (with https, or localhost for testing)' },

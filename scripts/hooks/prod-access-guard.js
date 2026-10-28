@@ -395,7 +395,6 @@ function decidir(entrada) {
     ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell, contenido: t.contenido, ps: t.ps, codigo: t.codigo }))];
   // lo que se juzga como algo que corre: el contenido de un archivo que el comando no ejecuta queda afuera
   const ejecutados = textos.filter((x) => !x.contenido);
-  let analizado = false;
 
   // ── 1. el Llavero (AC 10) ───────────────────────────────────────────────────────────────────
   // Se busca `security` en CUALQUIER posición del segmento, no sólo como primer token: con
@@ -404,7 +403,6 @@ function decidir(entrada) {
   for (const { texto } of ejecutados.flatMap((x) => x.partes)) {
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
     for (const i of dondeEsta(t, new Set(['security']))) {
-      analizado = true;
       const veredicto = juzgarSecurity(t.slice(i));
       if (veredicto) frenar(veredicto, [
         'La contraseña de producción vive en el Llavero y NO pasa por la conversación.',
@@ -422,7 +420,6 @@ function decidir(entrada) {
   // como textos sueltos juzgados al final con la carpeta en que terminó el comando.
   const destino = escrituraProtegida(cmd, payload);
   if (destino) {
-    analizado = true;
     frenar(destino.motivo, destino.indecidible ? [
       'El freno no ejecuta el comando: decide sobre el texto. Si esa palabra no nombra el catálogo, el índice ni la',
       'memoria de producción, escribila de forma literal (sin opciones del shell que cambien cómo se leen los nombres).',
@@ -528,7 +525,6 @@ function decidir(entrada) {
     if (enCodigo) borrado = { frena: true, que: 'desde el programa de un intérprete (python, node…) algo que puede ser un grupo, un candado o un servidor' };
   }
   if (borrado) {
-    analizado = true;
     if (borrado.frena) {
       frenar(`ese comando borra ${borrado.que} en Azure, y eso puede llevarse un servidor de producción con sus bases: no puedo saber qué contiene.`, [
         'El freno no le pregunta a Azure qué hay adentro: frena todo borrado de grupo, de candado y de recurso del que no',
@@ -543,8 +539,6 @@ function decidir(entrada) {
   const candidatos = ejecutados.flatMap((x) => servidoresNombrados(x.partes, tokens, PREFIJOS, vars, expandir));
   let clasificados = false;   // ¿se llegó a clasificar algún servidor? (story 2.6)
   const nombrados = candidatos.filter((c) => !c.benigno);
-  if (candidatos.length) analizado = true;            // lo benigno también es análisis: se miró y no es un servidor
-  if (invocaLaPuerta) analizado = true;
   if (!nombrados.length) {
     // 🔴 El texto nombra bases y NO se pudo ubicar ni un servidor, ni el Llavero, ni una escritura:
     // eso es «no pude analizarlo», no «no hay nada». Salvo que sea una herramienta de TEXTO (un
@@ -553,8 +547,8 @@ function decidir(entrada) {
     // demasiado grande para leer. «Lo vi entero y no había ningún servidor» —un `az sql server list`,
     // un `command -v sqlcmd`— NO se frena: medido sobre 4.000 comandos reales, esa versión frenaba 4
     // que no tocaban ninguna base, y un freno así se apaga (2026-09-15).
-    // 🔴 Sin `analizado`: un tramo inofensivo del MISMO comando (un `sqlcmd -S localhost`) le compraba
-    // permiso al tramo opaco de al lado, y la red no disparaba (revisión final, 2026-09-15).
+    // 🔴 Ninguna marca de «algo ya se analizó» calla esta red: un tramo inofensivo del MISMO comando (un
+    // `sqlcmd -S localhost`) le compraría permiso al tramo opaco de al lado (revisión final, 2026-09-15).
     if (nombraBases && escondidos.opaco && !soloLeeTexto(partes, tokens, PREFIJOS)) {
       frenar('ese comando nombra bases de datos y esconde lo que ejecuta, así que NO pude analizarlo.', [
         'Pasá la consulta por la puerta, o escribí el comando de forma directa (sin bash -c, sin eval,',
@@ -2016,9 +2010,6 @@ const PARECE_ARCHIVO = /[\\/]|\.(db|db3|sqlite|sqlite3|mdf|sdf|accdb|mdb|csv|jso
 // conocida — caía en una grieta y se descartaba en silencio.
 const NO_LITERAL = /\$\(|`|\$\{?[A-Za-z_]/;
 
-// Los cinco cmdlets de PowerShell que borran un grupo, un recurso, un servidor, una base o un candado. Se frenan siempre,
-// sin mirar el servidor: PowerShell no distingue mayúsculas.
-const REMOVE_AZ = new Set(['remove-azresourcegroup', 'remove-azresource', 'remove-azsqlserver', 'remove-azsqldatabase', 'remove-azresourcelock']);
 const esAz = (tok) => /^az(?:\.cmd|\.exe)?$/i.test(basename(tok)) || esPalabraAz(String(tok));
 // Los programas que sólo leen o muestran texto: un borrado nombrado ahí no corre. Sin `sed` ni `awk`, que ejecutan con
 // `system()`.

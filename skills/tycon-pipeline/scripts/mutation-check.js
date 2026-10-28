@@ -538,12 +538,12 @@ async function runMutationCheck({
       enVuelo = null;
       try { fso.unlinkSync(backupPath); } catch { /* best-effort */ }
       if (mutError) {
-        return fail2(`no pude escribir el mutante en ${abs}: ${mutError && mutError.message} — el archivo quedó intacto (verificado byte a byte)`);
+        return fail2(`no pude escribir el mutante en ${abs}: ${mutError.message} — el archivo quedó intacto (verificado byte a byte)`);
       }
       if (runError) {
         return fail2(
           `el comando de test explotó corriendo el mutante ${m.file}:${m.line} (${m.operator}): ` +
-          `${runError && runError.message}. El archivo fue restaurado byte a byte.`
+          `${runError.message}. El archivo fue restaurado byte a byte.`
         );
       }
       ejecutados += 1;
