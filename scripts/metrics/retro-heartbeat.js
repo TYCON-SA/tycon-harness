@@ -155,7 +155,7 @@ function contieneCodificada(ruta, otra) {
   return caja(ruta).includes(`/${caja(codificada(otra))}/`);
 }
 
-function runDirDe(repo, story) {
+function runDirDe(repo, story, merge) {
   if (!story) return null;
   const base = path.join(repo, '.advisors', 'pipeline-runs');
   let dirs = [];
@@ -166,7 +166,22 @@ function runDirDe(repo, story) {
     dirs = fs.readdirSync(base, { withFileTypes: true })
       .filter((d) => d.isDirectory() && (d.name.startsWith(`${story}-`) || d.name.includes(`__${story}-`))).map((d) => d.name).sort();
   } catch { return null; }
-  return dirs.length ? `.advisors/pipeline-runs/${dirs[dirs.length - 1]}/` : null;
+  if (!dirs.length) return null;
+  if (dirs.length === 1 || !merge) return `.advisors/pipeline-runs/${dirs[dirs.length - 1]}/`;
+  // Una story de varias tandas deja una carpeta por tanda, y la de nombre más nuevo puede ser de una tanda que no es
+  // la que se mergeó. Cada aprobación guarda el commit sobre el que se firmó: una carpeta se ata al merge si TODAS sus
+  // aprobaciones son de commits que el merge trae (una tanda que además firmó sobre sus commits sin mergear queda
+  // afuera). Gana la única que se ata; con ninguna o con más de una es ambiguo: null, no la última por nombre.
+  const atadas = dirs.filter((d) => {
+    let commits = [];
+    try {
+      commits = fs.readFileSync(path.join(base, d, 'approvals.jsonl'), 'utf8').split('\n').filter(Boolean)
+        .map((l) => { try { return JSON.parse(l).commit; } catch { return null; } });
+    } catch { return false; }
+    if (!commits.length || commits.some((c) => !c || !/^[0-9a-f]{7,40}$/i.test(String(c)))) return false;
+    return commits.every((c) => git(repo, ['merge-base', '--is-ancestor', String(c), merge]) !== null);
+  });
+  return atadas.length === 1 ? `.advisors/pipeline-runs/${atadas[0]}/` : null;
 }
 
 // ¿La story del volcado existe en el repo en el commit del merge? Sólo se puede preguntar si la ruta
@@ -437,7 +452,7 @@ function main() {
     repo,
     merge_commit: merge,
     story,
-    run_dir: runDirDe(repo, story),
+    run_dir: runDirDe(repo, story, merge),
     // un campo del registro, no una ruta: no cambia con el renombre, así la serie de .dashboard/ sigue
     // siendo una sola. Se arma por partes para que no se lea como la ruta vieja del archivo.
     generated_by: ['retro', 'latido.js'].join('-'),

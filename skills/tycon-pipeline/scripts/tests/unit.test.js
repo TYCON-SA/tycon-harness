@@ -1264,6 +1264,20 @@ test('writeFollowups conserva los resueltos de otras tandas con la misma regla y
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('dispatch.js cargado como librería, sin arnés a la vista, no avisa «no encuentro el arnés»; corrido como gancho, sí', () => {
+  const { spawnSync } = require('child_process');
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-dispatch-lib-'));
+  const env = { PATH: process.env.PATH, HOME: casa, USERPROFILE: casa };
+  const dispatch = path.join(SCRIPTS, 'dispatch.js');
+  const lib = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(dispatch)}).CHAINS`], { env, encoding: 'utf8' });
+  assert.equal(lib.status, 0, lib.stderr);
+  assert.ok(!/no encuentro el arnés/.test(lib.stderr), `al cargarlo como librería avisó: ${lib.stderr}`);
+  // los ganchos reales cargan dispatch.js desde su entrada (hook-post-edit.js) y llaman a dispatch()
+  const gancho = spawnSync(process.execPath, [path.join(SCRIPTS, 'hook-post-edit.js')], { env, encoding: 'utf8', input: '{}' });
+  assert.match(gancho.stderr, /no encuentro el arnés/, 'corrido como gancho, el aviso sigue');
+  fs.rmSync(casa, { recursive: true, force: true });
+});
+
 // ── BUG-PIPELINE-004: findRepoRootsForStory layout-agnóstico (docs/ y --repo) ──
 test('findRepoRootsForStory resuelve el repo-root con stories en docs/ (BUG-004)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-rr004-'));
