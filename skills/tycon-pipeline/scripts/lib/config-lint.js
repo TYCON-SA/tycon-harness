@@ -48,6 +48,7 @@ const ESQUEMA = {
                           // equipo no disparan NADA' queda en rojo.
   visual_plan: null,      // tycon-pipeline SKILL.md G.ii / paso «Aprobar el plan» / scripts/visual-plan.js
   qa_guide: null,         // lib/atdd-commit-gate.js → qaGuideMode
+  qa_guide_terms: null,   // qa-guide.js → qaGuideTerms (las siglas del rubro que la guía del tester no marca como jerga)
   deep_review: null,      // pipeline.js → deepReviewConfig
   deep_review_always_paths: null,  // pipeline.js → deepReviewAlwaysPaths (superficie compartida
                           // del repo: el diff que la toca corre el pase adversarial aunque el

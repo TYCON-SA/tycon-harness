@@ -278,10 +278,12 @@ function esc(s) {
 // Marca lo que un tester del negocio NO entendería: identificadores de código (camelCase,
 // PascalCase multi-palabra), CONSTANTES, nombres de tabla (PREFIJO_/snake_case), referencias
 // `archivo:línea`, llamadas `.metodo()`, código entre backticks y códigos HTTP crudos (4xx/5xx).
-// NO marca vocabulario del DOMINIO del producto — para sus siglas hay allowlist.
-const JARGON_ALLOW = new Set(['H&E', 'LIS', 'REC', 'ID', 'OK', 'PDF', 'URL']);
-function detectJargon(text) {
+// NO marca vocabulario del DOMINIO del producto: las siglas de uso general están acá, y las de un rubro las declara el
+// repo del producto en `.tycon/advisors.yaml` → `qa_guide_terms` (qaGuideTerms).
+const JARGON_ALLOW = new Set(['ID', 'OK', 'PDF', 'URL']);
+function detectJargon(text, extra = []) {
   if (!text) return [];
+  const permitidas = new Set([...JARGON_ALLOW, ...extra]);
   const found = new Set();
   const patterns = [
     /`[^`]+`/g,                              // código entre backticks
@@ -296,12 +298,44 @@ function detectJargon(text) {
   for (const re of patterns) {
     for (const m of text.matchAll(re)) {
       const tok = m[0];
-      if (JARGON_ALLOW.has(tok.replace(/[`]/g, ''))) continue;
+      if (permitidas.has(tok.replace(/[`]/g, ''))) continue;
       // permitir números sueltos que NO son HTTP (ej "3 bolsas") — el patrón HTTP ya acota a 4xx/5xx
       found.add(tok);
     }
   }
   return [...found];
+}
+
+/**
+ * Las siglas del rubro que el repo declara en `.tycon/advisors.yaml` (o `.yml`) → `qa_guide_terms`, en una línea
+ * (`[A, B]`) o en renglones (`- A`). Sólo en el primer nivel, como `qa_guide`: anidada es una llave de otro bloque. Sin
+ * repo, sin archivo o sin la llave, ninguna.
+ */
+function qaGuideTerms(repoRoot) {
+  if (!repoRoot) return [];
+  let txt = null;
+  for (const nombre of ['advisors.yaml', 'advisors.yml']) {
+    try { txt = fs.readFileSync(path.join(repoRoot, '.tycon', nombre), 'utf8'); break; } catch { /* el siguiente nombre */ }
+  }
+  if (txt === null) return [];
+  const limpio = (v) => v.replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').trim();
+  const out = [];
+  let juntando = false;
+  for (const l of txt.split(/\r?\n/)) {
+    if (juntando) {
+      const item = l.match(/^\s+-\s*(.+)$/);
+      if (item) { const t = limpio(item[1]); if (t) out.push(t); continue; }
+      if (!l.trim() || /^\s*#/.test(l)) continue;
+      juntando = false;
+    }
+    const m = l.match(/^qa_guide_terms\s*:\s*(.*)$/);
+    if (!m) continue;
+    const v = m[1].replace(/\s+#.*$/, '').trim();
+    if (v === '') { juntando = true; continue; }
+    const flow = v.match(/^\[(.*)\]$/);
+    for (const x of flow ? flow[1].split(',') : [v]) { const t = limpio(x); if (t) out.push(t); }
+  }
+  return out;
 }
 
 // markdown inline mínimo (código `x`, negrita **x**) → HTML, sobre texto YA escapado.
@@ -890,6 +924,8 @@ function main() {
     if (!isUi) { console.log(`qa-guide --check: story ${sid} no toca UI → no requiere guía de tester.`); process.exit(0); }
     const problems = [];
     const qaDir = qaDirStory;
+    // las siglas del rubro que declara el repo del producto no son jerga
+    const siglas = qaGuideTerms(matrix.repoRoot);
     const runtimeAcs = acs.map((a) => a.n).filter((n) => (matrix.perAc[n] || {}).verdict === 'RUNTIME');
     // 🔴 La ruta del mensaje se CALCULA de la misma forma que la búsqueda. Si no, el mensaje indica
     // `specs/qa/...` mientras el script busca en `<repo>/qa/...`: manda a crear el archivo donde nunca
@@ -901,7 +937,7 @@ function main() {
     for (const n of Object.keys(pasosByAc)) {
       const b = pasosByAc[n];
       const txt = [b.desc, ...b.pairs.flatMap((p) => [p.escenario, p.esperado])].join(' ');
-      const j = detectJargon(txt);
+      const j = detectJargon(txt, siglas);
       if (j.length) problems.push(`(3) AC #${n}: los pasos tienen JERGA de software (reescribir en criollo): ${j.slice(0, 6).join(', ')}`);
     }
     const readPath = path.join(qaDir, `${qk}-legibilidad.md`);
@@ -924,7 +960,7 @@ function main() {
     const sinDesc = acs.filter((a) => {
       const b = pasosByAc[a.n];
       if (b && b.desc && b.desc.trim()) return false;      // ya tiene descripción propia
-      return detectJargon(a.text || '').length > 0;         // el AC solo se lee con jerga
+      return detectJargon(a.text || '', siglas).length > 0;         // el AC solo se lee con jerga
     });
     if (sinDesc.length) {
       problems.push(
@@ -1094,7 +1130,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
+module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

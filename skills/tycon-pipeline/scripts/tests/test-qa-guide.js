@@ -157,6 +157,27 @@ check('detectJargon caza el dev-wall', qa.detectJargon('authorized with RoleCons
 check('detectJargon deja pasar criollo del dominio', qa.detectJargon('Agregá Tornillos, tenés que ver 3 bolsas con etiqueta A&B; no da error.').length === 0);
 check('detectJargon: HTTP crudo (422/403) es jerga', qa.detectJargon('el sistema devuelve 422').includes('422'));
 check('detectJargon: números no-HTTP no son jerga', qa.detectJargon('contá 3 bolsas').length === 0);
+// las siglas de un rubro las declara el repo del producto (`qa_guide_terms` en .tycon/advisors.yaml), no el código
+check('detectJargon: una sigla de un rubro entre comillas de código es jerga sin declararla', qa.detectJargon('abrí el `ACME` y mirá el informe').includes('`ACME`'));
+check('detectJargon: la sigla declarada por el repo pasa', qa.detectJargon('abrí el `ACME` y mirá el informe', ['ACME']).length === 0);
+check('detectJargon: el código sólo trae siglas de uso general', JSON.stringify([...(qa.JARGON_ALLOW || [])].sort()) === JSON.stringify(['ID', 'OK', 'PDF', 'URL']));
+check('detectJargon: las siglas de uso general pasan sin declarar', qa.detectJargon('el `ID`, el `PDF`, la `URL` y el `OK`').length === 0);
+{
+  const fs = require('fs');
+  const os = require('os');
+  const conYaml = (txt, nombre = 'advisors.yaml') => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-siglas-'));
+    fs.mkdirSync(path.join(d, '.tycon'));
+    if (txt !== null) fs.writeFileSync(path.join(d, '.tycon', nombre), txt);
+    return d;
+  };
+  const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check('qaGuideTerms: lista en una línea', igual(qa.qaGuideTerms(conYaml('qa_guide: auto\nqa_guide_terms: [ACME, "X&Y", \'ZZ\']\n')), ['ACME', 'X&Y', 'ZZ']));
+  check('qaGuideTerms: lista en renglones, con comentarios', igual(qa.qaGuideTerms(conYaml('qa_guide_terms:\n  - ACME  # la sigla del producto\n  - X&Y\ne2e:\n  gate: x\n', 'advisors.yml')), ['ACME', 'X&Y']));
+  check('qaGuideTerms: anidada en otro bloque no cuenta', igual(qa.qaGuideTerms(conYaml('e2e:\n  qa_guide_terms: [ACME]\n')), []));
+  check('qaGuideTerms: sin archivo, ninguna', igual(qa.qaGuideTerms(conYaml(null)), []));
+  check('qaGuideTerms: sin repo, ninguna', igual(qa.qaGuideTerms(null), []));
+}
 
 // isUiStory
 check('isUiStory: frontmatter con .tsx → UI', qa.isUiStory('', '  - src/App.tsx'));
