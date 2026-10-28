@@ -71,7 +71,14 @@ function findBinary(cmd, ctx = {}) {
   } catch (_) { return null; }   // no está (sale 1), o el buscador no arrancó: para el aviso es lo mismo, «no lo encontré»
 }
 
-/** La búsqueda del bash de Git del arnés, ubicado como lo ubica el pipeline (`lib/harness-path.js`). */
+// El clon donde vive esta skill: en el repo unido trae `scripts/lib/git-bash.js` cuatro carpetas arriba.
+const OWN_CLONE = path.join(__dirname, '..', '..', '..', '..');
+
+/**
+ * La búsqueda del bash de Git del arnés, ubicado como lo ubica el pipeline (`lib/harness-path.js`). Si así no aparece
+ * (la variable apunta a algo que no existe, falta el enlace), la del mismo clon de esta skill, si la trae: sin ella,
+ * en Windows ningún `run-check -- bash …` correría, y el check saldría rojo por el lanzamiento y no por el comando.
+ */
 function harnessFindGitBash(ctx) {
   let dir = ctx.harnessDir;
   let why = null;
@@ -79,6 +86,8 @@ function harnessFindGitBash(ctx) {
     const r = require('./harness-path.js').rutaArnesHook({ env: ctx.env, home: ctx.home });
     dir = r.dir;
     why = r.aviso;
+    const own = ctx.ownClone === undefined ? OWN_CLONE : ctx.ownClone;
+    if (!dir && own && fs.existsSync(path.join(own, 'scripts', 'lib', 'git-bash.js'))) dir = own;
   }
   if (!dir) return () => ({ path: null, reason: why || 'no encontré el arnés (TYCON_GUIDES_DIR o el enlace ~/.claude/tycon-harness)' });
   const lib = path.join(dir, 'scripts', 'lib', 'git-bash.js');
@@ -154,8 +163,8 @@ function gitBashFor(ctx) {
  * `.cmd` (un sh que llama a node): cmd.exe no aparece en el camino. Sólo si no hay guion se le pasa el `.cmd` mismo.
  * Sin bash de Git no se lanza: vuelve el motivo, como con `bash`.
  * @param {string[]} cmdArgv  el comando y sus argumentos
- * @param {{platform?: string, findGitBash?: Function, harnessDir?: string|null, env?: object, home?: string,
- *          exists?: Function}} [ctx]
+ * @param {{platform?: string, findGitBash?: Function, harnessDir?: string|null, ownClone?: string|null, env?: object,
+ *          home?: string, exists?: Function}} [ctx]
  * @returns {{file: string|null, args: string[], error: string|null}}  `file: null` = no se lanza; `error` dice por qué
  */
 function runCheckLaunch(cmdArgv, ctx = {}) {
