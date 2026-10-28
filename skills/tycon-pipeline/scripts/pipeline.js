@@ -5066,6 +5066,11 @@ function renderFollowupItem(nf, checked) {
   const loc = nf.file ? `\`${nf.file}${nf.line ? ':' + nf.line : ''}\`` : '(sin archivo)';
   return `- [${checked ? 'x' : ' '}] **[${nf.severity}]** ${nf.ruleId} — ${loc} — ${nf.summary} <!-- fkey:${nf.ruleId}|${nf.file || '?'} -->`;
 }
+// El texto de un item ya escrito (lo que sigue a la ubicación), para distinguir dos hallazgos de la misma regla y archivo.
+function followupSummary(raw) {
+  const m = String(raw).match(/^- \[[ xX]\]\s\*\*\[[^\]]*\]\*\*\s.*? — .*? — (.*?)\s*<!--\s*fkey:/);
+  return m ? m[1].trim() : '';
+}
 function parseFollowupsSection(content) {
   const lines = (content || '').split(/\r?\n/);
   const hIdx = lines.findIndex((l) => l.trim() === FOLLOWUPS_HEADING);
@@ -5277,18 +5282,25 @@ function writeFollowups(args) {
   }
   const content = readText(storyPath);
   const parsed = parseFollowupsSection(content);
+  // Un hallazgo es la regla, el archivo y su texto: en una story de varias tandas la misma regla sobre el mismo archivo
+  // aparece una vez por tanda, con otro texto. La clave `regla|archivo` sola los juntaba y borraba los de las tandas
+  // anteriores.
+  const ident = (key, summary) => `${key}\u0000${summary || ''}`;
   const prevChecked = new Map();
-  if (parsed) for (const it of parsed.items) prevChecked.set(it.key, it.checked);
+  if (parsed) for (const it of parsed.items) prevChecked.set(ident(it.key, followupSummary(it.raw)), it.checked);
 
   const seen = new Set();
+  const newKeys = new Set();
   const merged = [];
   for (const raw of findings) {
     const f = normalizeFinding(raw);
     const k = `${f.ruleId}|${f.file || '?'}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    // Preservar el checkbox previo por fkey (idempotente en re-loops); resolved lo fuerza a [x].
-    const checked = f.resolved ? true : (prevChecked.has(k) ? prevChecked.get(k) : false);
+    const id = ident(k, f.summary);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    newKeys.add(k);
+    // Preservar el checkbox previo del mismo hallazgo (idempotente en re-loops); resolved lo fuerza a [x].
+    const checked = f.resolved ? true : (prevChecked.has(id) ? prevChecked.get(id) : false);
     merged.push(renderFollowupItem(f, checked));
   }
   // Conservar TODOS los items previos que no vienen en el nuevo set — resueltos [x] (historial)
@@ -5297,9 +5309,15 @@ function writeFollowups(args) {
   // deferred/gated como TEST-W4a, que el advisor no re-flaggea) se dropeara SILENCIOSAMENTE →
   // deuda técnica trackeada borrada sin rastro. Un item sale de [ ] SOLO explícitamente: viene en
   // un findings posterior con resolved:true (→ [x]), o un humano lo marca [x] a mano. Nunca por omisión.
+  // Con la misma regla y archivo en el nuevo set: el abierto lo reemplaza el reporte de ahora (es la misma deuda,
+  // con su texto al día); el resuelto con otro texto queda, porque es el historial de otra tanda o corrida.
   if (parsed) {
     for (const it of parsed.items) {
-      if (!seen.has(it.key)) { merged.push(it.raw); seen.add(it.key); }
+      const id = ident(it.key, followupSummary(it.raw));
+      if (seen.has(id)) continue;
+      if (newKeys.has(it.key) && !it.checked) continue;
+      merged.push(it.raw);
+      seen.add(id);
     }
   }
   if (!merged.length && !parsed) {
