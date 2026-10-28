@@ -59,7 +59,8 @@ function huellaDeCorreo(c) { return crypto.createHash('sha256').update(normaliza
 /**
  * Lo que informa cada máquina del espejo del buzón, en la forma que deja el bajador (un
  * `<espejo>/<carpeta>/registros/place.json` por carpeta). Por carpeta: `{ estado: 'informa', correo, dia, corridas }`,
- * `{ estado: 'no_informa', motivo, dia?, corridas }` o `{ estado: 'ilegible', motivo, corridas }`. Trae también la
+ * `{ estado: 'no_informa', motivo, dia?, corridas }` o `{ estado: 'ilegible', motivo, corridas }`; con `machine_id` (la huella del
+ * equipo) cuando place.json la trae bien formada. Trae también la
  * unión de carpetas viejas (`carpetasDeMaquina` del bajador). Sólo lee; nunca tira.
  */
 function leerCorreosInformados(espejoDir) {
@@ -84,11 +85,19 @@ function leerCorreosInformados(espejoDir) {
     // control no se toma por informado (segunda vuelta de seguridad)
     const dia = p && /^\d{4}-\d{2}-\d{2}$/.test(String(p.day)) && new Date(`${p.day}T00:00:00Z`).toISOString().slice(0, 10) === p.day ? p.day : null;
     const o = p && p.owner;
+    // la huella del equipo (machine-id.js) también viene de otra máquina: sólo cuenta con su forma exacta
+    // (con la clave y sin esa forma queda el motivo: «no la midió» no es «no la mandó»)
+    let mid = {};
+    if (p && p.machine_id !== undefined) {
+      const f = p.machine_id && typeof p.machine_id === 'object' ? p.machine_id : {};
+      if (typeof f.fingerprint === 'string' && /^[0-9a-f]{16}$/.test(f.fingerprint)) mid = { machine_id: f.fingerprint };
+      else mid = { machine_id_motivo: (typeof f.reason === 'string' && textoAjeno(f.reason)) || 'la huella que mandó no tiene la forma de una huella' };
+    }
     const correo = o && typeof o.email === 'string' ? normalizarCorreo(o.email) : '';
-    if (correo && FORMA_CORREO.test(correo) && !(new RegExp(NO_IMPRIMIBLES.source)).test(correo)) out.maquinas[e.name] = { estado: 'informa', correo, dia, corridas };
+    if (correo && FORMA_CORREO.test(correo) && !(new RegExp(NO_IMPRIMIBLES.source)).test(correo)) out.maquinas[e.name] = { estado: 'informa', correo, dia, corridas, ...mid };
     else {
       const motivo = o && typeof o.reason === 'string' && textoAjeno(o.reason) ? textoAjeno(o.reason) : (o ? 'el correo informado no tiene forma de correo' : 'place.json no trae el correo (una versión de antes de la 2.28)');
-      out.maquinas[e.name] = { estado: 'no_informa', motivo, ...(dia ? { dia } : {}), corridas };
+      out.maquinas[e.name] = { estado: 'no_informa', motivo, ...(dia ? { dia } : {}), corridas, ...mid };
     }
   }
   // sin uniones cada carpeta cuenta como hoy, pero se DICE: «no pude calcularlas» no es «no hay»

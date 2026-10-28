@@ -28,6 +28,46 @@
      ]
     },
     {
+     "id": "codex-patch-constancia-del-salteo-frena",
+     "type": "must-block",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "Story 8.116 (T41): la constancia del salteo del pase con la forma real de Codex. La escribe sólo marker.js sign-adversarial-skip, con la firma del dueño.",
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Add File: ${FIXTURE}/.advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl\n+{}\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "constancia del salteo del pase adversarial no se escribe a mano"
+      ]
+     }
+    },
+    {
+     "id": "codex-patch-registro-de-la-firma-frena",
+     "type": "must-block",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "Story 8.116 (T41): el renglón firmado del registro del arnés, con la forma real de Codex.",
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Update File: ${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log\n@@\n+{}\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESTADO DEL PIPELINE"
+      ]
+     }
+    },
+    {
      "id": "codex-patch-bloquea-codigo-sin-carril",
      "type": "must-block",
      "tools": [

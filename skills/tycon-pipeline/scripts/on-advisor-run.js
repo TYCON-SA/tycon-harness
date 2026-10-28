@@ -93,6 +93,8 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
         headSha,
         treeSha,
         implementerModel: roster.implementerModel({ marker: m, transcriptPath }),
+        // El salteo firmado del pase, si la ejecución ya lo tiene: un roster que nace después no lo pierde.
+        adversarialSkip: (require('./lib/adversarial-skip.js').firmasDelSalteo(m)[0] || {}).firmado,
       });
       // Story en OTRO repo (las stories en un repo, el código en otro) → el portón de
       // CI del repo de la story exige esta constancia AHÍ. Se proyectan sólo roster y

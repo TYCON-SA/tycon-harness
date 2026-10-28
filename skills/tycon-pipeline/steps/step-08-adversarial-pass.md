@@ -48,10 +48,10 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
   dónde fue cada hallazgo, y cierra el pase en la misma escritura.
 - **El portón dice que no corre** → `mark-adversarial-skipped --files <archivos de código del diff>`:
   el comando le vuelve a preguntar al portón y, si el portón dice que corre, se niega.
-- **Abandonar un pase ya lanzado** es una decisión de la persona, no un salteo ni algo que el agente ofrece: lo dice
-  ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW», o reenviada por la sesión designada). El freno de seguridad
-  pide esa frase para la variable y para `--no-deep-review`, y queda en `bypass.log` como `ADVERSARIAL_ABANDONADO`, con
-  el runId. La respuesta a una pregunta de opciones no cuenta: la pregunta la armaría el agente.
+- **Abandonar un pase ya lanzado** lo firma el dueño, no es un salteo ni algo que el agente ofrece:
+  `mark-adversarial-skipped` anota el pedido (la muestra) y da los dos comandos de `marker.js sign-adversarial-skip`
+  (la ventana de permiso, o `--terminal`). Con la constancia, queda en `bypass.log` como `ADVERSARIAL_ABANDONADO`, con
+  el runId y quién firmó. La respuesta a una pregunta de opciones no cuenta: la pregunta la armaría el agente.
 
 La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step prepare-commit` **frena** si el pase
 se lanzó y su resultado no está (freno `adversarial-result-gate`; `DOD_BYPASS` no lo abre). Medido antes
@@ -98,9 +98,10 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversa
 
 El gate (decisión "siempre en NORMAL"): **risk-class NORMAL → corre**; **LOW → skip** (superficie chica ≤6 files,
 ya barata). Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una línea qué corre y cuánto tarda (la
-duración es información, no una opción). Overrides, en precedencia: (1) `--no-deep-review` / `TYCON_NO_DEEP_REVIEW`,
-que pide la frase de la persona («autorizo TYCON_NO_DEEP_REVIEW»); (2)
-`.tycon/advisors.yaml deep_review: always|off|auto`; (3) `--deep-review` / `--ultracode` fuerza on; (4) risk-class.
+duración es información, no una opción). Overrides, en precedencia: (1) la constancia firmada del salteo
+(`adversarial-skips.jsonl` de la corrida, que firma el dueño con `marker.js sign-adversarial-skip`): `--no-deep-review`,
+`TYCON_NO_DEEP_REVIEW` y `deep_review: off` sólo la piden, y sin ella no apagan nada; (2)
+`.tycon/advisors.yaml deep_review: always|auto`; (3) `--deep-review` / `--ultracode` fuerza on; (4) risk-class.
 
 **Corre UNA sola vez por corrida** (lanzado al cierre de «Implementar» — o acá como fallback), **NUNCA por cada
 re-loop D.i** — re-correr el workflow sería ~N× su costo. Los fixes de sus findings los re-verifican los
@@ -182,8 +183,7 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
   `mark-adversarial-result` lo anota `no-medido` y no cierra el pase, `complete-step prepare-commit` frena (`pase-no-medido`, y
   `DOD_BYPASS` no lo abre), `deep-review-gate` dice que corre (el salteo se niega) y `next` pide relanzarlo.
 - Para destrabar: relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con
-  `--result`. Abandonarlo sigue siendo una decisión de la persona («autorizo TYCON_NO_DEEP_REVIEW»; queda en
-  `bypass.log`).
+  `--result`. Abandonarlo lo firma el dueño (`marker.js sign-adversarial-skip`; queda en `bypass.log`).
 - Bajo Codex, `corredor.muertos` dice la causa de cada agente y la hora. Con el tope de uso no se reintenta y los
   agentes que faltan no se lanzan.
 

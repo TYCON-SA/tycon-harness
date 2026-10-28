@@ -601,7 +601,9 @@ test('T9 Skill_NoOfreceSaltearElPase @story-8.104 @ac-1', () => {
   for (const [nombre, t] of [['SKILL.md', skill], ['step-08', paso]]) {
     assert.doesNotMatch(t, /¿lo corro\?|¿sigo sin el pase/i, `${nombre}: no ofrece saltearlo`);
     assert.doesNotMatch(t, /TYCON_NO_DEEP_REVIEW=1 /, `${nombre}: sin la receta del apagado`);
-    assert.match(t, /autorizo TYCON_NO_DEEP_REVIEW/, `${nombre}: apagarlo lo decide la persona con la frase`);
+    // apagarlo lo firma el dueño: la frase de la persona ya no lo apaga
+    assert.doesNotMatch(t, /autorizo TYCON_NO_DEEP_REVIEW/, `${nombre}: sin la frase vieja`);
+    assert.match(t, /sign-adversarial-skip/, `${nombre}: apagarlo lo firma el dueño`);
   }
   assert.match(tooli, /salida aprobada/, 'TOOL.i: sin Workflow, la salida aprobada');
 });

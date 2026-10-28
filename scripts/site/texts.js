@@ -943,11 +943,36 @@ const TEXTOS = {
   'pantalla.quienReenviaElOkAyuda': { es: "Para que una sesión pueda pasarla, el programador escribe en el chat de esa sesión «Esta sesión es la {nombre}». Otra sesión con el mismo nombre no puede. Si cambiás el nombre, hay que volver a escribirlo con el nombre nuevo.", en: "For a session to pass it on, the developer writes in that session's chat a sentence that names the role ({nombre}) and says it is this session. Another session with the same name cannot. If you change the name, it has to be written again with the new name." },
   'pantalla.quienReenviaElOkComoLaLlaman': { es: '¿Cómo la llaman?', en: 'What do you call it?' },
   'pantalla.quienReenviaElOkEjemplo': { es: 'coordinadora, líder…', en: 'coordinadora, lead…' },
-  'pantalla.firmaDelegada': { es: "Firma delegada de cambios de control", en: "Delegated signing of control changes" },
-  'pantalla.firmaDelegadaNo': { es: "Apagada (de fábrica)", en: "Off (default)" },
-  'pantalla.firmaDelegadaSi': { es: "Prendida: la coordinadora vuelve a firmar tras traer main", en: "On: the coordinator signs again after bringing in main" },
   'pantalla.firmaDelegadaAviso': { es: "Aflojar un control siempre lo firma una persona, en su terminal; esto no lo cambia.", en: "Loosening a control is always signed by a person, at their terminal; this does not change that." },
   'pantalla.firmaDelegadaCosto': { es: "La sesión coordinadora designada vuelve a firmar en nombre del dueño un pedido que él ya firmó, cuando lo único nuevo es que se trajo main; su frase queda registrada. Lo nuevo, un choque resuelto a mano y aflojar un control siguen esperando al dueño.", en: "The designated coordinating session signs again, on the owner's behalf, a pull request the owner already signed, when the only new thing is that main was brought in; its sentence is recorded. Anything new, a conflict resolved by hand and loosening a control still wait for the owner." },
+  'pantalla.firmasTitulo': { es: "Quién firma cada cosa", en: "Who signs each thing" },
+  'pantalla.firmasAyuda': { es: "Cada cosa que un freno le pide firmar a una persona, en una fila. De fábrica, todas van a la ventana del dueño.", en: "Each thing a control asks a person to sign, one row each. By default, all of them go to the owner's window." },
+  'pantalla.firmasColFirma': { es: "Qué se firma", en: "What is signed" },
+  'pantalla.firmasColQuien': { es: "Quién la firma", en: "Who signs it" },
+  'pantalla.firmaVentana': { es: "A la ventana del dueño (de fábrica)", en: "In the owner's window (default)" },
+  'pantalla.firmaVentanaCosto': { es: "el dueño contesta «Sí» en la ventana de permiso, o firma en su terminal. Es lo más seguro y lo que más lo interrumpe.", en: "the owner answers \"Yes\" in the permission window, or signs at their terminal. It is the safest option and the one that interrupts them most." },
+  'pantalla.firmaDelegadaOpcion': { es: "Delegada a la coordinadora", en: "Delegated to the coordinator" },
+  'pantalla.firmaDelegadaOpcionCosto': { es: "la sesión coordinadora la firma en nombre del dueño, en las máquinas de la lista de abajo, y su frase queda registrada. Lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su cuenta, el arnés no lo distingue de un ok del dueño. Delegá sólo lo de bajo riesgo.", en: "the coordinating session signs it on the owner's behalf, on the machines in the list below, and its sentence is recorded. What is delegated is not protected against an agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok. Delegate only low-risk things." },
+  'pantalla.firmaSoloDueno': { es: "Sólo del dueño", en: "Owner only" },
+  'pantalla.firmaSoloDuenoCosto': { es: "va a la ventana del dueño, como de fábrica, y además queda trabada: el sitio no ofrece delegarla, y el perfil que la delegue igual se lee como roto.", en: "it goes to the owner's window, as by default, and is also locked: the site does not offer to delegate it, and a profile that delegates it anyway is read as broken." },
+  'pantalla.firmaSoloDuenoNoSeDelega': { es: "para delegarla, primero pasala a la ventana", en: "to delegate it, first move it to the window" },
+  'pantalla.firmaNoDesdeOtraSesion': { es: "no se firma desde la pestaña de otra sesión: no se puede delegar", en: "it cannot be signed from another session's tab: it cannot be delegated" },
+  'pantalla.firmasSinCatalogo': { es: "El sitio no pudo leer el catálogo de firmas: no se puede elegir quién firma cada cosa.", en: "The site could not read the signature catalog: who signs each thing cannot be chosen." },
+  'pantalla.firmasSinCatalogoPor': { es: "El sitio no pudo leer el catálogo de firmas ({motivo}): no se puede elegir quién firma cada cosa.", en: "The site could not read the signature catalog ({motivo}): who signs each thing cannot be chosen." },
+  'pantalla.maquinasTitulo': { es: "En qué máquinas vale lo delegado", en: "On which machines delegation applies" },
+  'pantalla.maquinasAyuda': { es: "Cada máquina se nombra por su huella, que no cambia aunque cambie su nombre. De fábrica, en ninguna.", en: "Each machine is named by its fingerprint, which does not change even if its name does. By default, on none." },
+  'pantalla.maquinasNinguna': { es: "Ninguna máquina todavía.", en: "No machines yet." },
+  'pantalla.maquinasNingunaConDelegadas': { es: "Ninguna máquina: lo delegado no vale en ninguna hasta agregar una.", en: "No machines: what is delegated applies on none until you add one." },
+  'pantalla.maquinasVistas': { es: "Vistas en el buzón de ejecuciones:", en: "Seen in the runs mailbox:" },
+  'pantalla.maquinasSinVistas': { es: "El buzón de ejecuciones todavía no trae la huella de ninguna máquina: agregala por su huella.", en: "The runs mailbox does not carry any machine's fingerprint yet: add it by its fingerprint." },
+  'pantalla.maquinasSinBuzon': { es: "Sin el buzón de ejecuciones el sitio no ve las máquinas: agregalas por su huella.", en: "Without the runs mailbox the site cannot see the machines: add them by their fingerprint." },
+  'pantalla.maquinasChoque': { es: 'La huella {huella} la mandan varias carpetas ({carpetas}): una puede estar copiando la de otra. Confirmá con cada dev cuál es la suya y agregala por su huella.', en: 'The fingerprint {huella} is sent by several folders ({carpetas}): one may be copying another\'s. Check with each dev which one is theirs and add it by its fingerprint.' },
+  'pantalla.maquinasSinHuellaVieja': { es: 'no mandó la huella (tiene una versión del arnés anterior a la que la manda)', en: 'did not send its fingerprint (its harness version predates the one that does)' },
+  'pantalla.maquinasSinHuella': { es: 'Estas máquinas informaron sin huella, así que no se pueden agregar desde acá:', en: 'These machines reported without a fingerprint, so they cannot be added from here:' },
+  'pantalla.maquinasAgregar': { es: "Agregar", en: "Add" },
+  'pantalla.maquinasHuella': { es: "Huella (16 caracteres, de machine-id.js)", en: "Fingerprint (16 characters, from machine-id.js)" },
+  'pantalla.maquinasNombre': { es: "Nombre", en: "Name" },
+  'pantalla.maquinasAgregarPorHuella': { es: "Agregar por huella", en: "Add by fingerprint" },
   'pantalla.firmaDelegadaSinSesion': { es: "Prendida no sirve hasta designar la sesión que reenvía: elegí «Una sesión coordinadora» arriba.", en: "On does nothing until you designate the session that passes it on: choose \"A coordinating session\" above." },
   'pantalla.frenoProduccionTitulo': { es: "Cómo se actualiza el freno de producción", en: "How the production guard updates" },
   'pantalla.frenoProduccionDescripcion': { es: "El freno que protege las bases de producción corre como administrador en cada máquina autorizada. Acá se elige si para ponerlo al día hace falta la contraseña de la persona de esa máquina.", en: "The guard that protects the production databases runs as administrator on each authorized machine. Here you choose whether bringing it up to date needs the password of that machine's person." },
@@ -2116,6 +2141,16 @@ for (const [k, v] of Object.entries(require('../lib/repo-proposal.js').TEXTOS ||
 // los textos de la vista de ejecuciones (`corridas.v.*`, `.filtro.*`, `.c.*`, `.m.*`) viven al lado de la vista, que viaja
 // sin el sitio (scripts/nightly/dashboard/runs-texts.js): la tabla también los suma
 for (const [k, v] of Object.entries(require('../nightly/dashboard/runs-texts.js').TEXTOS || {})) { if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`); TEXTOS[k] = v; }
+
+// qué aprueba cada firma (`pantalla.firmaQue.<id>`) vive en el catálogo de firmas, con sus dos idiomas: la tabla lo
+// suma. Sin el catálogo, la pantalla ya dice que no lo pudo leer
+try {
+  for (const f of require('../lib/signatures.js').SIGNATURES) {
+    const k = `pantalla.firmaQue.${f.id}`;
+    if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`);
+    TEXTOS[k] = { es: f.approves, en: f.approvesEn || f.approves };
+  }
+} catch (e) { if (/está dos veces/.test(e.message)) throw e; }
 
 /** Los valores con nombre de un texto, ordenados: `{n}`, `{fecha}`. */
 function valoresDe(texto) {

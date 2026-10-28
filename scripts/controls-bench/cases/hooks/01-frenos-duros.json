@@ -7768,6 +7768,32 @@
           "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
         },
         {
+          "id": "adversarial-skip-constancia-write-frena",
+          "type": "must-block",
+          "_por_que": "Story 8.116 (T41): la constancia del salteo del pase la escribe sólo `marker.js sign-adversarial-skip`, con la firma del dueño. Escrita a mano saltearía el pase sin él.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano", "sign-adversarial-skip"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-edit-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/.advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "adversarial-skip-registro-write-frena",
+          "type": "must-block",
+          "_por_que": "Story 8.116 (T41): la constancia vale por su renglón firmado en el registro del arnés; un renglón escrito a mano la haría valer sin el dueño.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-pasa-otro-jsonl-de-la-corrida",
+          "type": "must-not-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.advisors/pipeline-runs/9.99-20261027120000/notas-adversarial-skips.md", "content": "x" } },
+          "expect": { "exit": 0 }
+        },
+        {
           "id": "gates-log-write-frena",
           "type": "must-block",
           "_por_que": "gates.log guarda la designación de la sesión que firma por delegación y su confirmación; escrito a mano, una sesión se designaría sola.",
@@ -7813,6 +7839,143 @@
           "_por_que": "El mismo registro de la ventana por la consola: una redirección a su carpeta.",
           "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' > \"$HOME/.claude/.tycon-pipeline/owner-window/x.json\"" }, "cwd": "${FIXTURE}" },
           "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-consola-redireccion-frena",
+          "type": "must-block",
+          "_por_que": "Story 8.116 (T41): la constancia del salteo por la consola, con una redirección.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' >> .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-consola-cp-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cp /tmp/firma.jsonl .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "adversarial-skip-registro-consola-frena",
+          "type": "must-block",
+          "_por_que": "Story 8.116 (T41): el renglón firmado del registro, por la consola.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' >> \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-bin-cp-frena",
+          "type": "must-block",
+          "_por_que": "Story 8.116, pase adversarial: las formas de consola que escribían el renglón firmado del registro sin intérprete (la huella sale con shasum). Una por caso.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "/bin/cp /tmp/g \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-command-cp-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "command cp /tmp/g \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-install-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "install -m 644 /tmp/g \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-ditto-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "ditto /tmp/g \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-rsync-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "rsync /tmp/g \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-curl-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "curl -s -o \"$HOME/.claude/.tycon-pipeline/gates.log\" file:///tmp/g" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-wget-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "wget -q -O \"$HOME/.claude/.tycon-pipeline/gates.log\" http://localhost/g" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-sponge-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cat /tmp/g | sponge -a \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-bash-c-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "bash -c 'echo x >> \"$HOME/.claude/.tycon-pipeline/gates.log\"'" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-registro-xargs-cp-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo /tmp/g | xargs -I{} cp {} \"$HOME/.claude/.tycon-pipeline/gates.log\"" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-curl-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "curl -o .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl file:///tmp/f" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-opciones-juntas-frena",
+          "type": "must-block",
+          "_por_que": "Story 8.116: la opción de salida junto a otras (`-so`, `-qO`) o con la ruta pegada (`-o<ruta>`).",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "curl -so .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl file:///tmp/f" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "adversarial-skip-registro-opciones-juntas-frena",
+          "type": "must-block",
+          "_por_que": "Story 8.116: la opción de salida junto a otras, al registro.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "wget -qO \"$HOME/.claude/.tycon-pipeline/gates.log\" http://localhost/g" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-sponge-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cat /tmp/f | sponge .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-xargs-cp-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo /tmp/f | xargs -I{} cp {} .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-tar-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "tar -xf /tmp/f.tar -C .advisors/pipeline-runs/9.99-20261027120000" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-constancia-unzip-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "unzip -o /tmp/f.zip -d .advisors/pipeline-runs/9.99-20261027120000" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
+        },
+        {
+          "id": "adversarial-skip-descargas-y-descomprimir-afuera-pasan",
+          "type": "must-not-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "curl -s -o /tmp/x.json file:///tmp/f && tar -xf /tmp/f.tar -C /tmp/salida && echo /tmp/g | xargs -I{} cp {} /tmp/copia" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "adversarial-skip-constancia-consola-leer-pasa",
+          "type": "must-not-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cat .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 0 }
         },
         {
           "id": "gates-log-consola-frena",

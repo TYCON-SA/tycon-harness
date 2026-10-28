@@ -3602,7 +3602,13 @@ function recortarStart(result) {
 const runSizeLib = require('./lib/run-size.js');
 function computeRunSize(args) {
   if (args.runSize && runSizeLib.SIZES.includes(args.runSize.size)) {
-    return { size: args.runSize.size, reason: `forzado a mano: ${args.runSize.reason || '(sin motivo)'}`, first_code_file: null, forced: true };
+    const forzado = { size: args.runSize.size, reason: `forzado a mano: ${args.runSize.reason || '(sin motivo)'}`, first_code_file: null, forced: true };
+    // `set-size` sólo ve lo que la story declara: si el cambio toca código, liviana sin la firma del dueño apagaría el
+    // pase. Ahí manda lo que el cambio toca, y el forzado no vale.
+    if (forzado.size !== 'liviana' || args.runSize.firmado) return forzado;
+    const real = computeRunSize({ ...args, runSize: null });
+    if (real.size === 'liviana') return forzado;
+    return { ...real, reason: `forzada a liviana sin la firma del dueño, y el cambio toca código: no vale · ${real.reason}`, forced_ignored: true };
   }
   const content = args.story && fs.existsSync(args.story) ? readText(args.story) : '';
   const repo = args.repo && fs.existsSync(args.repo) ? args.repo : null;
@@ -3625,8 +3631,8 @@ function computeRunSize(args) {
 function runSizeDelMarcador(storyPath) {
   const m = readSessionMarker();
   if (!m || !m.sizeForced || !runSizeLib.SIZES.includes(m.size)) return null;
-  if (storyPath && m.storyPath && path.resolve(m.storyPath) !== path.resolve(storyPath)) return null;
-  return { size: m.size, reason: m.sizeForced.reason };
+  if (!esLaStoryDelMarcador(storyPath, m)) return null;
+  return { size: m.size, reason: m.sizeForced.reason, firmado: !!m.sizeForced.firmado };
 }
 
 function computeRiskClass(args) {
@@ -4231,8 +4237,9 @@ function equivalenciasDeModelos() {
 // Gate (siempre en NORMAL) = REUSA risk-class:
 //   NORMAL → corre (donde el juicio de correctitud-en-runtime paga) · LOW → skip (superficie
 //   chica ≤6 files, ya barata). Overrides, en orden de precedencia:
-//   1) --no-deep-review / TYCON_NO_DEEP_REVIEW=1 (kill-switch, gana sobre todo)
-//   2) .tycon/advisors.yaml `deep_review: always|off|auto`
+//   1) la constancia firmada por el dueño para esta ejecución (lib/adversarial-skip.js): saltea, con el pedido o sin él.
+//      `--no-deep-review`, `TYCON_NO_DEEP_REVIEW=1` y `deep_review: off` son PEDIDOS: sin constancia el pase corre.
+//   2) .tycon/advisors.yaml `deep_review: always|auto` (`off` es un pedido, punto 1)
 //   3) --deep-review (fuerza on aun en LOW) / --ultracode (el orquestador lo pasa si ultracode ON)
 //   4) .tycon/advisors.yaml `deep_review_always_paths:` — SUPERFICIE COMPARTIDA del repo: si el
 //      diff toca una de esas rutas, corre AUNQUE el risk-class dé LOW. Está en el 4to
@@ -4370,12 +4377,88 @@ function salidaGrande(texto, code) {
 }
 
 let avisosDelPorton = [];
+// El camino del pedido de saltear el pase, o null: la bandera, la variable o `deep_review: off`.
+function pedidoDeSalteo(args) {
+  if (args.noDeepReview) return args.noDeepReviewFrom || '--no-deep-review';
+  return deepReviewConfig(args.repo) === 'off' ? 'deep_review: off' : null;
+}
+
+// El portón del pase. `args.adversarialSkipRecord` es la constancia que la línea de comandos leyó para esta ejecución
+// (`lib/adversarial-skip.js` `vigente`); esta función no lee la máquina. Con una que vale, saltea (decisión 26); sin
+// ella, el pedido no apaga nada y el veredicto lo dice (`skip_request`).
 function computeDeepReviewGate(args) {
   avisosDelPorton = [];
-  // 1) Kill-switch — gana sobre todo (flag ya volcado desde env en parseArgs).
-  if (args.noDeepReview) {
-    return { run: false, model: null, reason: 'forzado OFF (--no-deep-review / TYCON_NO_DEEP_REVIEW=1)' };
+  const constancia = args.adversarialSkipRecord || null;
+  const pedido = pedidoDeSalteo(args);
+  if (constancia && constancia.ok && constancia.linea) {
+    const l = constancia.linea;
+    return {
+      run: false, model: null,
+      adversarial_skip: { via: l.via, quien: l.quien, cuando: l.ts, huella: l.huella, camino: l.camino },
+      reason: `salteado con la constancia firmada por el ${l.quien} (vía ${l.via}, ${l.ts}, huella ${l.huella}): ${l.motivo}`,
+    };
   }
+  const r = criterioDelPase(args);
+  if (!pedido || !r || r.run === null) return r;
+  // Sin el pedido el pase ya no corría: no hay nada que firmar, y pedir la firma sería mentirle al dueño.
+  if (r.run === false) {
+    r.reason = `${pedido} no hace falta: el pase no corre por el criterio de siempre · ${r.reason}`;
+    return r;
+  }
+  const porque = (constancia && constancia.motivo) || 'no hay constancia firmada';
+  r.skip_request = { camino: pedido, firmado: false, motivo: porque };
+  r.reason = `${pedido} es un pedido de saltear sin la firma del dueño (${porque}): el pase sigue el criterio de siempre · ${r.reason}`;
+  return r;
+}
+
+// La ejecución de la corrida que el portón mira: story, carpeta y comienzo. Sin corrida de esta story, null.
+// La story del marcador resuelta contra su repo, como en marker.js, o null.
+function storyDelMarcador(m) {
+  return m && m.storyPath ? path.resolve(m.repoPath || process.cwd(), m.storyPath) : null;
+}
+
+// ¿Es `story` la del marcador? Las dos sin enlaces; sin una de las dos, sí.
+function esLaStoryDelMarcador(story, m) {
+  const delMarcador = storyDelMarcador(m);
+  if (!story || !delMarcador) return true;
+  const { carpetaReal } = require('./lib/adversarial-skip.js');
+  return carpetaReal(story) === carpetaReal(delMarcador);
+}
+
+function ejecucionDeLaCorrida(args, corrida) {
+  if (!corrida || !corrida.storyId || !corrida.startedAt) return null;
+  const { carpetaReal } = require('./lib/adversarial-skip.js');
+  if (!esLaStoryDelMarcador(args.story, corrida)) return null;
+  const repo = corrida.repoPath || args.repo;
+  const rd = repo ? resolveRunDir(path.resolve(repo), corrida.storyId, false, storyDelMarcador(corrida) || args.story) : null;
+  const carpeta = rd ? carpetaReal(rd) : null;
+  return { story: String(corrida.storyId), carpeta, ejecucion: corrida.startedAt };
+}
+
+// El portón con la constancia de la corrida leída de la máquina. Con un pedido sin constancia que valga, anota la
+// muestra (si `mostrar`) y devuelve los dos comandos de la firma en `sign_commands`. `{ result, texto }`.
+function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = false } = {}) {
+  const sk = require('./lib/adversarial-skip.js');
+  const ej = ejecucionDeLaCorrida(args, corrida);
+  const constancia = ej ? sk.vigente({ ...ej, casa, userInfo })
+    : { ok: false, motivo: 'no hay una ejecución abierta de esta story', ninguna: true };
+  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia });
+  let texto = '';
+  // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
+  if (result && result.skip_request && mostrar && !ej) {
+    result.skip_request.muestra = 'sin corrida abierta: la firma se pide dentro de una corrida de esta story (pipeline.js start)';
+  } else if (result && result.skip_request && mostrar) {
+    const m = sk.muestra({ story: ej.story, carpeta: ej.carpeta, ejecucion: ej.ejecucion,
+      camino: result.skip_request.camino, casa, userInfo });
+    texto = m.texto;
+    result.sign_commands = m.comandos;
+    if (m.error) result.skip_request.muestra = `no anotada (${m.error})`;
+  }
+  return { result, texto };
+}
+
+// El criterio de siempre (riesgo, superficie compartida, tamaño, densidad), sin los pedidos de saltear.
+function criterioDelPase(args) {
   // Modelo — escalación mecánica por complejidad.
   // Default sonnet (recorta el $ ~5x vs Opus); story pesada (model-hint ≥2 señales)
   // → opus AUTOMÁTICO (anunciado). Fable no se ofrece nunca: sólo corre con --deep-review-fable,
@@ -4411,23 +4494,8 @@ function computeDeepReviewGate(args) {
   };
   // los avisos del techo los dice la línea de comandos (una vez por corrida): se dejan a mano, sin tocar la salida
   avisosDelPorton = avisos;
-  // 2) Config por repo.
+  // 2) Config por repo (`off` es un pedido: lo mira computeDeepReviewGate).
   const cfg = deepReviewConfig(args.repo);
-  if (cfg === 'off') {
-    // Si el repo apagó el pase adversarial Y declaró superficie compartida, las dos cosas no pueden convivir en
-    // silencio: la lista queda publicada y muerta, y el dueño del repo cree tener una protección
-    // que no tiene. El `off` gana —es la decisión explícita del
-    // dueño— pero se dice.
-    const decl = deepReviewAlwaysPaths(args.repo);
-    return {
-      run: false, model: null,
-      ...(decl.length ? { shared_surface_overridden: decl.length } : {}),
-      reason: '.tycon/advisors.yaml deep_review: off' +
-        (decl.length
-          ? ` — ⚠ este repo declara ${decl.length} ruta(s) de superficie compartida que el \`off\` está dejando SIN efecto: o se saca el off, o se saca la lista (hoy dice una cosa y hace otra)`
-          : ''),
-    };
-  }
   if (cfg === 'always') return { run: true, model, ...extras, reason: '.tycon/advisors.yaml deep_review: always' };
   // 3) Force-on explícito.
   if (args.deepReview) return { run: true, model, ...extras, reason: 'forzado ON (--deep-review)' };
@@ -4485,7 +4553,7 @@ function computeDeepReviewGate(args) {
   // Se CORTA en vez de «correr por las dudas»: una corrida del pase midió 6,5 M de tokens y 30
   // minutos, así que revisar de más no es el lado barato. El error está en la llamada y se arregla
   // ahí; las dos invocaciones reales de los steps ya pasan `--files`. Los overrides explícitos del
-  // dev (`--deep-review`, `--no-deep-review`, `deep_review:` del repo) ya decidieron más arriba y no
+  // dev (`--deep-review`, `deep_review: always` del repo) ya decidieron más arriba y no
   // llegan hasta acá: el corte no puede tapar la puerta que alguien usa a propósito.
   // 🔴 Devuelve el veredicto; NO mata el proceso. `computeDeepReviewGate` es una función pura que
   //    el banco llama directo — un `process.exit` acá se lleva puesto al test que la ejercita.
@@ -4500,8 +4568,8 @@ function computeDeepReviewGate(args) {
       reason: 'no pude medir la densidad del diff: me invocaste sin `--files`. Sin la lista de '
         + 'archivos de código no hay nada que contar, y un «0 líneas» acá sería un número que nadie '
         + 'calculó — se usaría para saltear el pase adversarial sin haber mirado. Pasá los archivos '
-        + 'del diff (ver la guía del pase adversarial §Lanzamiento temprano), o decidí explícito con '
-        + '`--deep-review` / `--no-deep-review`.',
+        + 'del diff (ver la guía del pase adversarial §Lanzamiento temprano), o pedí el pase con '
+        + '`--deep-review` (saltearlo lo firma el dueño: `marker.js sign-adversarial-skip`).',
     };
   }
   const densidad = densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles) });
@@ -4528,8 +4596,8 @@ function computeDeepReviewGate(args) {
       reason: `no pude medir ${densidad.noMedidos.length} archivo(s) de código del diff `
         + `(${densidad.noMedidos.map((n) => `${n.file}: ${n.motivo}`).join(' · ')}); lo medido da `
         + `${densidad.lineas} líneas agregadas (umbral ${densidad.umbral}), pero lo que no se midió no cuenta `
-        + 'como 0. Pasá rutas que estén dentro de un repo git (el de la story o un companion), o decidí '
-        + 'explícito con `--deep-review` / `--no-deep-review`.',
+        + 'como 0. Pasá rutas que estén dentro de un repo git (el de la story o un companion), o pedí '
+        + 'el pase con `--deep-review` (saltearlo lo firma el dueño: `marker.js sign-adversarial-skip`).',
     };
   }
   // Constancia de que se decidió A CIEGAS.
@@ -6216,7 +6284,7 @@ function parseArgs(argv) {
     else if (t === '--verifier-model') a.modeloVerificador = argv[++i];
     else if (t === '--model') a.modelo = argv[++i];                // verify-finding: modelo del verificador (default sonnet)
     else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el pase adversarial (aun en LOW)
-    else if (t === '--no-deep-review') a.noDeepReview = true;      // fuerza OFF el pase adversarial
+    else if (t === '--no-deep-review') { a.noDeepReview = true; a.noDeepReviewFrom = '--no-deep-review'; }   // un pedido: sin la firma del dueño el pase corre
     else if (t === '--deep-review-opus') a.deepReviewOpus = true;  // hunters/verifiers en Opus (default sonnet)
     else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
@@ -6246,8 +6314,8 @@ function parseArgs(argv) {
       }
     }
   }
-  // Kill-switch global del deep-review sin editar código (gana sobre cualquier flag).
-  if (process.env.TYCON_NO_DEEP_REVIEW === '1') a.noDeepReview = true;
+  // La variable es un pedido de saltear el pase, igual que la bandera: sin la firma del dueño el pase corre.
+  if (process.env.TYCON_NO_DEEP_REVIEW === '1') { a.noDeepReview = true; a.noDeepReviewFrom = a.noDeepReviewFrom || 'TYCON_NO_DEEP_REVIEW=1'; }
   // Kill-switch global del modo autónomo sin editar código (gana sobre cualquier flag):
   // export TYCON_PIPELINE_NO_AUTONOMOUS=1 → todas las corridas vuelven a HITL puro.
   if (process.env.TYCON_PIPELINE_NO_AUTONOMOUS === '1') a.autonomous = false;
@@ -6837,6 +6905,19 @@ function main() {
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeStart(conModelos);
     if (result.model_hint && result.model_hint.session_warning) process.stderr.write(`start: ${result.model_hint.session_warning}\n`);
+    // Un pedido de saltear el pase al arrancar (la bandera, la variable o `deep_review: off`) no apaga nada. Con la
+    // corrida abierta se anota la muestra y se dice cómo lo firma el dueño; sin ella no hay ejecución que firmar, y
+    // la muestra la anota el portón del pase dentro de la corrida.
+    const pedido = pedidoDeSalteo(args);
+    if (pedido) {
+      const ej = ejecucionDeLaCorrida(args, readSessionMarker());
+      if (ej) {
+        process.stderr.write(require('./lib/adversarial-skip.js').muestra({ story: ej.story, carpeta: ej.carpeta, ejecucion: ej.ejecucion, camino: pedido }).texto);
+      } else {
+        process.stderr.write(`🔒 ${pedido} es un pedido de saltear el pase adversarial, no un salteo: sin la firma del dueño el pase corre.\n`
+          + '   Todavía no hay una corrida abierta de esta story: la firma se pide cuando el portón del pase lo mire dentro de la corrida (pipeline.js deep-review-gate), que dice los comandos.\n');
+      }
+    }
     const proveedor = proveedorDeModelos(conModelos.orgModels);
     result.models_provider = proveedor.models_provider;
     decirModelos(result, conModelos.orgModels, [...((result.model_hint && result.model_hint._avisos) || []), ...proveedor.warnings]);
@@ -6945,7 +7026,10 @@ function main() {
     // Sólo esta rama lee la máquina —la configuración de la organización y el pedido de la corrida— y se los pasa al
     // portón; los avisos también salen de acá.
     const conModelos = conModelosDeLaCorrida({ ...args, runSize: runSizeDelMarcador(args.story) });
-    const result = computeDeepReviewGate(conModelos);
+    const corrida = readSessionMarker();
+    // La constancia del salteo se lee acá, de la corrida y del registro de la cuenta; un pedido sin ella se muestra.
+    const { result, texto: textoDelPedido } = deepReviewGateDeLaCorrida({ args: conModelos, corrida, mostrar: true });
+    if (textoDelPedido) process.stderr.write(textoDelPedido);
     if (result) decirModelos(result, conModelos.orgModels, avisosDelPorton);
     if (result && result.run === null) {
       // 🔴 No se pudo medir: se dice y se CORTA. «Correr por las dudas» tampoco es gratis — una
@@ -6958,11 +7042,10 @@ function main() {
     // (`adversarialGate`) para que `next` pida el lanzamiento sin recalcular el portón. Lo escribe marker.js (un
     // solo escritor del marker); `computeDeepReviewGate` sigue sin tocarlo. Sin corrida no se anota ni se avisa. El
     // temprano que se imprime es el que vale para la corrida: visto apagado una vez, sigue apagado.
-    const corrida = readSessionMarker();
-    const mismaStory = !args.story || !corrida || !corrida.storyPath || path.resolve(args.story) === path.resolve(corrida.storyPath);
+    const mismaStory = !corrida || esLaStoryDelMarcador(args.story, corrida);
     // Un pase que quedó NO MEDIDO (alguna lente sin su cazador, algún hallazgo sin su verificador) es un
-    // pase que falta. El portón dice que corre —así el salteo se niega— salvo el interruptor del dev, que gana siempre.
-    if (corrida && mismaStory && !args.noDeepReview && result && typeof result.run === 'boolean') {
+    // pase que falta. El portón dice que corre —así el salteo se niega— salvo la constancia firmada por el dueño.
+    if (corrida && mismaStory && !result.adversarial_skip && result && typeof result.run === 'boolean') {
       const { veredictoPaseAdversarial, SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
       const v = veredictoPaseAdversarial(corrida);
       if (v.motivo === 'pase-no-medido') {
@@ -7425,6 +7508,8 @@ module.exports = {
   // se exporta la función en vez de duplicar el criterio de scoring, para que las dos capas no
   // puedan elegir carpetas distintas (pieza "revisor ≠ autor").
   resolveRunDir,
+  // El portón con la constancia del salteo de la corrida: tests/adversarial-skip-signed.test.js.
+  deepReviewGateDeLaCorrida,
   // PIPE-C2 — tests: tests/unit.test.js "PipeC2_*".
   computeGitignoreNeeds,
   gitIgnoraProbe,

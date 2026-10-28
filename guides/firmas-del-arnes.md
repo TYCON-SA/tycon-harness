@@ -27,7 +27,7 @@ La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la
 | `manual-test` | marcar un criterio como probado a mano | `marker.js mark-tested --acs` | sí | `marker.js mark-tested --acs --terminal` |
 | `browser-test` | preparar la prueba con navegador, o decirle que no | `e2e-setup.js prepare (o defer --no)` | sí | `e2e-setup.js prepare --terminal (o defer --no --terminal)` |
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
-| `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip (todavía no existe)` | todavía sin comando | — |
+| `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, por la terminal | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, por la terminal | `TYCON_SAFETY_OFF=1 <comando>` |
 | `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, por la terminal | `TYCON_PROD_LINT=0 <comando>` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, por la terminal | `TYCON_NEW_NAMES=0 <comando>` |
@@ -49,8 +49,8 @@ La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la
 ## Los grupos de la 8.116
 
 Antes de este catálogo, `approvals.delegated_signing` aceptaba estos once nombres, y los sigue aceptando. Cada uno
-vale por las firmas de su fila. `off` no es un grupo: quiere decir «ninguna». Un grupo cuya firma todavía no tiene
-comando (`adversarial-skip`) es válido, pero no habilita nada.
+vale por las firmas de su fila. `off` no es un grupo: quiere decir «ninguna». `adversarial-skip` es válido, pero no
+delega nada: saltear el pase lo firma sólo el dueño.
 
 | Grupo | Firmas |
 |---|---|

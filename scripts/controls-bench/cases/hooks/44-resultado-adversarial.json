@@ -144,6 +144,145 @@
      }
     },
     {
+     "id": "adversarial-skip-bandera-sin-firma-no-saltea",
+     "type": "must-run",
+     "__nota": "Story 8.116 (T32): `--no-deep-review` es un pedido. Con el portón diciendo que el pase corre (`deep_review: always`) y sin la constancia firmada por el dueño, el salteo no se anota y la salida nombra la firma.",
+     "files": {
+      "correr.sh": "#!/bin/sh\nexit 0\n",
+      ".tycon/advisors.yaml": "deep_review: always\n",
+      "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
+      "scripts/x.js": "module.exports = 1;\n",
+      "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-s1\",\n  \"startedAt\": \"2026-10-27T12:00:00.000Z\",\n  \"lastTouch\": \"2026-10-27T12:00:00.000Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5, 6, 7, 8],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {}\n}\n"
+     },
+     "env": {
+      "CLAUDE_CODE_SESSION_ID": "adv-s1"
+     },
+     "setup": [
+      "git init -q .",
+      "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+      "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s1.json",
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --no-deep-review --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
+     ],
+     "stdin": {
+      "session_id": "adv-s1",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${FIXTURE}/rc.txt",
+        "re": "rc=2"
+       },
+       {
+        "path": "${FIXTURE}/sk.err",
+        "re": "sign-adversarial-skip"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s1.json",
+        "re": "\"adversarialSkip\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "adversarial-skip-variable-sin-firma-no-saltea",
+     "type": "must-run",
+     "__nota": "Story 8.116 (T32): la variable del ambiente es el mismo pedido que la bandera.",
+     "files": {
+      "correr.sh": "#!/bin/sh\nexit 0\n",
+      ".tycon/advisors.yaml": "deep_review: always\n",
+      "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
+      "scripts/x.js": "module.exports = 1;\n",
+      "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-s2\",\n  \"startedAt\": \"2026-10-27T12:00:00.000Z\",\n  \"lastTouch\": \"2026-10-27T12:00:00.000Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5, 6, 7, 8],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {}\n}\n"
+     },
+     "env": {
+      "CLAUDE_CODE_SESSION_ID": "adv-s2",
+      "TYCON_NO_DEEP_REVIEW": "1"
+     },
+     "setup": [
+      "git init -q .",
+      "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+      "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s2.json",
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
+     ],
+     "stdin": {
+      "session_id": "adv-s2",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${FIXTURE}/rc.txt",
+        "re": "rc=2"
+       },
+       {
+        "path": "${FIXTURE}/sk.err",
+        "re": "sign-adversarial-skip"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s2.json",
+        "re": "\"adversarialSkip\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "adversarial-skip-pase-lanzado-sin-firma-no-se-abandona",
+     "type": "must-run",
+     "__nota": "Story 8.116 (T32): un pase lanzado se abandona sólo con la constancia firmada; con el pedido de la configuración (`deep_review: off`) y sin ella, sale 2 y no anota nada.",
+     "files": {
+      "correr.sh": "#!/bin/sh\nexit 0\n",
+      ".tycon/advisors.yaml": "deep_review: off\n",
+      "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
+      "scripts/x.js": "module.exports = 1;\n",
+      "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-s3\",\n  \"startedAt\": \"2026-10-27T12:00:00.000Z\",\n  \"lastTouch\": \"2026-10-27T12:00:00.000Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5, 6, 7, 8],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {},\n  \"adversarial\": { \"launchedAtStep\": 4, \"runId\": \"wf_S3\", \"sessionId\": \"adv-s3\", \"launchedAt\": \"2026-10-27T12:10:00.000Z\" }\n}\n"
+     },
+     "env": {
+      "CLAUDE_CODE_SESSION_ID": "adv-s3"
+     },
+     "setup": [
+      "git init -q .",
+      "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+      "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s3.json",
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
+     ],
+     "stdin": {
+      "session_id": "adv-s3",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${FIXTURE}/rc.txt",
+        "re": "rc=2"
+       },
+       {
+        "path": "${FIXTURE}/sk.err",
+        "re": "sign-adversarial-skip"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-s3.json",
+        "re": "\"adversarialSkip\""
+       }
+      ]
+     }
+    },
+    {
      "id": "pase-adversarial-resultado-despues-del-lanzamiento-pasa",
      "type": "must-run",
      "__nota": "Con el resultado anotado después del lanzamiento, ESTE freno pasa (motivo: resultado). El resto del paso 8 decide lo suyo: acá se mira sólo la línea del freno.",

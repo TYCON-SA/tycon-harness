@@ -63,7 +63,7 @@ const SECCIONES = Object.freeze([
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
   // cuál sesión es, se designa en cada máquina)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
   Object.freeze({ id: 'coordinacion', titulo: 'Cuántas sesiones trabajan a la vez', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working']), idCorto: 'profile', necesita: ['coordination'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
@@ -559,6 +559,44 @@ function rutasDeHoras() {
     const INT = require(path.join(__dirname, 'integrations.js'));
     return INT.listManifests().manifests.filter((m) => m.kind === 'timeTracking' && m.settings.some((s) => s.from === 'profile' && s.key === `integrations.${m.name}.url`)).map((m) => `integrations.${m.name}`);
   } catch { return []; }
+}
+/**
+ * Lo que la sección Aprobaciones necesita y el perfil no trae: el catálogo de firmas (`signatures.js`),
+ * sus grupos de antes, y las huellas que el buzón de corridas vio, una por huella con la primera carpeta que la trae.
+ * `informados` es lo de `people.leerCorreosInformados`; sin él, ninguna huella y `buzonMedido: false`. Sin el catálogo,
+ * `firmas: []` con su motivo: la pantalla lo dice y no ofrece nada.
+ */
+function extrasDeAprobaciones(informados) {
+  let firmas = []; let grupos = {}; let firmasMotivo = null;
+  try {
+    const SIG = require(path.join(__dirname, 'signatures.js'));
+    firmas = SIG.SIGNATURES.map((f) => ({ id: f.id, approves: f.approves, otherSession: f.otherSession }));
+    grupos = Object.fromEntries(Object.entries(SIG.GROUPS).map(([g, ids]) => [g, [...ids]]));
+  } catch (e) { firmasMotivo = (e && (e.code || e.message)) || 'error'; }
+  // La huella y la carpeta las manda cada máquina: dos carpetas con la misma huella se muestran como choque (una
+  // puede estar copiando la de otra) y no se ofrecen para agregar; el nombre propuesto es la carpeta en la forma que
+  // acepta el lector. Las que informaron sin huella se cuentan con su motivo.
+  const vistas = isObject(informados) && isObject(informados.maquinas) ? informados.maquinas : {};
+  const porHuella = new Map();
+  const sinHuella = [];
+  for (const carpeta of Object.keys(vistas).sort()) {
+    const v = isObject(vistas[carpeta]) ? vistas[carpeta] : {};
+    const id = v.machine_id;
+    if (typeof id === 'string' && /^[0-9a-f]{16}$/.test(id)) {
+      if (!porHuella.has(id)) porHuella.set(id, []);
+      porHuella.get(id).push(carpeta);
+    } else if (v.estado === 'informa' || v.estado === 'no_informa') {
+      sinHuella.push({ carpeta, motivo: typeof v.machine_id_motivo === 'string' ? v.machine_id_motivo : null });
+    }
+  }
+  const maquinas = [...porHuella].map(([id, carpetas]) => ({
+    id, carpeta: carpetas[0], nombre: nombreDeMaquina(carpetas[0]), ...(carpetas.length > 1 ? { choque: carpetas } : {}),
+  }));
+  return { firmas, grupos, ...(firmasMotivo ? { firmasMotivo } : {}), maquinas, sinHuella, buzonMedido: isObject(informados) && !informados.no_medido };
+}
+/** La carpeta como nombre de máquina en la forma que pide el lector de la configuración (hasta 40, letras, números, ` ._()-`). */
+function nombreDeMaquina(carpeta) {
+  return String(carpeta || '').replace(/[^\p{L}\p{N} ._()-]/gu, '').trim().slice(0, 40).trim();
 }
 /** Las hojas que cambia una sección: las suyas y, en Integraciones, las que piden las herramientas de horas. */
 const rutasDe = (seccion) => (seccion.id === 'integraciones' ? [...seccion.rutas, ...rutasDeHoras()] : seccion.rutas);
@@ -2159,26 +2197,112 @@ function pantalla(idioma = 'es') {
       ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
     }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
     box.appendChild(ayuda);
-    // la firma delegada (story 8.88): apagada de fábrica; el aviso de que aflojar un control no se delega va siempre.
-    // El perfil puede traer una lista de firmas (story 8.116): este selector muestra y cambia sólo refresh-after-main
-    // dentro de ella, y deja las demás como están
-    var firma = (d.approvals || {}).delegated_signing;
-    // las firmas que el perfil ya delega, como lista; off, sin valor o la lista con off sola es ninguna
+    // quién firma cada cosa (story 8.116): una fila por firma del catálogo, que va a la ventana del dueño (de fábrica),
+    // se delega a la sesión que reenvía, o es sólo del dueño. Lo sólo del dueño no se ofrece para delegar (pasa primero
+    // por la ventana), ni lo que no se firma desde la pestaña de otra sesión
+    var ap = d.approvals || {};
+    var ex = s.extras || {};
+    var CAT = ex.firmas || [];
+    var GRUPOS = ex.grupos || {};
+    var orden = CAT.map(function (f) { return f.id; });
+    var firma = ap.delegated_signing;
+    // lo que el perfil ya delega, como lista; off, sin valor o la lista con off sola es ninguna. Un grupo de antes
+    // (escape-phrases) cuenta por sus firmas, y se abre recién cuando se toca una de ellas
     var firmas = (Array.isArray(firma) ? firma : (typeof firma === 'string' && firma ? [firma] : [])).filter(function (v) { return v !== 'off'; });
-    var refirma = firmas.indexOf('refresh-after-main') >= 0;
-    var otras = firmas.filter(function (v) { return v !== 'refresh-after-main'; });
-    box.appendChild(selector(T('pantalla.firmaDelegada'), refirma ? 'refresh-after-main' : '', [['', T('pantalla.firmaDelegadaNo')], ['refresh-after-main', T('pantalla.firmaDelegadaSi')]], function (x) {
-      // sin otras firmas, como siempre (un valor suelto o nada); con otras, la lista con refresh-after-main primero,
-      // así prender y apagar deja el mismo orden y no cuenta como un cambio
-      if (!otras.length) hoja(d, 'approvals', 'delegated_signing', x);
-      else hoja(d, 'approvals', 'delegated_signing', x ? ['refresh-after-main'].concat(otras) : (Array.isArray(firma) || otras.length > 1 ? otras : otras[0]));
-      render();
-    }, 'approvals.delegated_signing', pr));
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaAviso') }));
-    if (refirma) {
-      box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaCosto') }));
-      if (!rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
+    var abre = function (v) { return GRUPOS[v] ? GRUPOS[v].slice() : [v]; };
+    var posDe = function (v) { return orden.indexOf(abre(v)[0]); };
+    var delegadas = [];
+    firmas.forEach(function (v) { abre(v).forEach(function (id) { if (delegadas.indexOf(id) < 0) delegadas.push(id); }); });
+    var soloDueno = Array.isArray(ap.owner_only) ? ap.owner_only : [];
+    // agrega en el orden del catálogo sin mover lo que ya estaba: prender y apagar deja el mismo archivo
+    function enSuLugar(lista, id) {
+      var i = 0;
+      while (i < lista.length && posDe(lista[i]) < orden.indexOf(id)) i += 1;
+      lista.splice(i, 0, id);
     }
+    function ponerDelegada(id, si) {
+      var lista = [];
+      firmas.forEach(function (v) {
+        if (si || abre(v).indexOf(id) < 0) { lista.push(v); return; }
+        abre(v).forEach(function (x) { if (x !== id && lista.indexOf(x) < 0) lista.push(x); });
+      });
+      if (si) enSuLugar(lista, id);
+      // una sola firma, como siempre, va suelta; la lista que ya era lista sigue siéndolo
+      hoja(d, 'approvals', 'delegated_signing', !lista.length ? '' : (lista.length === 1 && (!Array.isArray(firma) || !firmas.length) ? lista[0] : lista));
+    }
+    function ponerSoloDueno(id, si) {
+      var lista = soloDueno.filter(function (x) { return x !== id; });
+      if (si) enSuLugar(lista, id);
+      hoja(d, 'approvals', 'owner_only', lista.length ? lista : '');
+    }
+    box.appendChild(el('p', { class: 'sub-t', text: T('pantalla.firmasTitulo') }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmasAyuda') }));
+    [['firmaVentana', 'firmaVentanaCosto'], ['firmaDelegadaOpcion', 'firmaDelegadaOpcionCosto'], ['firmaSoloDueno', 'firmaSoloDuenoCosto']].forEach(function (par) {
+      box.appendChild(el('p', { class: 'muted' }, el('strong', { text: T('pantalla.' + par[0]) + ': ' }), el('span', { text: T('pantalla.' + par[1]) })));
+    });
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaAviso') }));
+    problemasEn(pr, 'approvals.delegated_signing').concat(problemasEn(pr, 'approvals.owner_only')).forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
+    if (!CAT.length) box.appendChild(el('p', { class: 'err', text: ex.firmasMotivo ? T('pantalla.firmasSinCatalogoPor', { motivo: ex.firmasMotivo }) : T('pantalla.firmasSinCatalogo') }));
+    else {
+      var t = tabla('firmas', T('pantalla.firmasTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.firmasColQuien')]);
+      CAT.forEach(function (f) {
+        var estado = soloDueno.indexOf(f.id) >= 0 ? 'dueno' : (delegadas.indexOf(f.id) >= 0 ? 'delegada' : '');
+        var delegable = estado === 'delegada' || (estado === '' && f.otherSession === 'yes');
+        var opciones = [['', T('pantalla.firmaVentana')]].concat(delegable ? [['delegada', T('pantalla.firmaDelegadaOpcion')]] : []).concat([['dueno', T('pantalla.firmaSoloDueno')]]);
+        var que = T('pantalla.firmaQue.' + f.id);
+        if (que === 'pantalla.firmaQue.' + f.id) que = f.approves;
+        var c = corto(que, estado, opciones, function (x) {
+          if ((x === 'delegada') !== (estado === 'delegada')) ponerDelegada(f.id, x === 'delegada');
+          if ((x === 'dueno') !== (estado === 'dueno')) ponerSoloDueno(f.id, x === 'dueno');
+          render();
+        }, 'approvals.firma.' + f.id, pr);
+        var nota = estado === 'dueno' ? T('pantalla.firmaSoloDuenoNoSeDelega') : (f.otherSession !== 'yes' ? T('pantalla.firmaNoDesdeOtraSesion') : '');
+        t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que }), el('span', { class: 'muted', text: ' · ' + f.id + (nota ? ' · ' + nota : '') })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
+      });
+      box.appendChild(t);
+    }
+    if (delegadas.indexOf('refresh-after-main') >= 0) box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaCosto') }));
+    if (delegadas.length && !rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
+    box.appendChild(editorMaquinasDelegadas(ap, ex, d, pr, delegadas.length > 0));
+    return box;
+  }
+  // en qué máquinas vale lo delegado (approvals.delegated_machines): de fábrica, en ninguna. Las que el buzón de corridas
+  // vio con su huella se agregan con un botón; otra, escribiendo su huella
+  var NUEVA_MAQUINA = { id: '', label: '' };
+  function editorMaquinasDelegadas(ap, ex, d, pr, hayDelegadas) {
+    var lista = Array.isArray(ap.delegated_machines) ? ap.delegated_machines.slice() : [];
+    var poner = function (l) { hoja(d, 'approvals', 'delegated_machines', l.length ? l : ''); };
+    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.maquinasTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.maquinasAyuda') }));
+    problemasEn(pr, 'approvals.delegated_machines').forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
+    if (!lista.length) box.appendChild(el('p', { class: hayDelegadas ? 'err' : 'muted', text: hayDelegadas ? T('pantalla.maquinasNingunaConDelegadas') : T('pantalla.maquinasNinguna') }));
+    lista.forEach(function (m, i) {
+      // el nombre se cambia sin volver a dibujar (se perdería el foco)
+      box.appendChild(el('div', { class: 'fila quitar' }, campo(m && m.id ? m.id : '', m && m.label, function (v) { var l = lista.slice(); l[i] = { id: m.id, label: v }; lista = l; poner(l); }, 'approvals.delegated_machines.' + i, pr, { placeholder: T('pantalla.maquinasNombre') }), quitar(function () { lista.splice(i, 1); poner(lista); render(); })));
+    });
+    var vistas = (ex.maquinas || []).filter(function (m) { return !lista.some(function (x) { return x && x.id === m.id; }); });
+    if (vistas.length) {
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.maquinasVistas') }));
+      vistas.forEach(function (m) {
+        // una huella que mandan dos carpetas no se agrega con un clic: una puede estar copiando la de otra
+        if (m.choque) { box.appendChild(el('p', { class: 'err', text: T('pantalla.maquinasChoque', { huella: m.id, carpetas: m.choque.join(', ') }) })); return; }
+        box.appendChild(el('div', { class: 'fila' }, el('span', { text: m.carpeta + ' · ' + m.id + ' ' }), el('button', { class: 'sec', type: 'button', text: T('pantalla.maquinasAgregar'), onclick: function () { poner(lista.concat([{ id: m.id, label: m.nombre || m.id }])); render(); } })));
+      });
+    } else box.appendChild(el('p', { class: 'muted', text: ex.buzonMedido ? T('pantalla.maquinasSinVistas') : T('pantalla.maquinasSinBuzon') }));
+    if ((ex.sinHuella || []).length) {
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.maquinasSinHuella') }));
+      ex.sinHuella.forEach(function (m) { box.appendChild(el('p', { class: 'muted', text: m.carpeta + ': ' + (m.motivo || T('pantalla.maquinasSinHuellaVieja')) })); });
+    }
+    box.appendChild(el('div', { class: 'fila' },
+      campo(T('pantalla.maquinasHuella'), NUEVA_MAQUINA.id, function (v) { NUEVA_MAQUINA.id = v; }, 'approvals.delegated_machines.nueva.id', pr, { placeholder: 'abcdefabcdefabcd' }),
+      campo(T('pantalla.maquinasNombre'), NUEVA_MAQUINA.label, function (v) { NUEVA_MAQUINA.label = v; }, 'approvals.delegated_machines.nueva.label', pr),
+      el('button', { class: 'sec', type: 'button', text: T('pantalla.maquinasAgregarPorHuella'), onclick: function () {
+        // la forma la juzga el lector al revisar: acá sólo se pide que haya algo escrito
+        var id = String(NUEVA_MAQUINA.id).trim(); var label = String(NUEVA_MAQUINA.label).trim();
+        if (!id || !label) return;
+        poner(lista.concat([{ id: id, label: label }]));
+        NUEVA_MAQUINA = { id: '', label: '' };
+        render();
+      } })));
     return box;
   }
   function editorFrenoProduccion(s, d, pr) {
@@ -3690,6 +3814,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
+  extrasDeAprobaciones, nombreDeMaquina,
   SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,

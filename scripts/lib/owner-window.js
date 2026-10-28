@@ -173,6 +173,7 @@ function firmaDeLlamado(guion, sub, args) {
     if (sub === 'waive-critical') return 'critical-waiver';
     if (sub === 'mark-tested') return 'manual-test';
     if (sub === 'runtime-waiver') return 'runtime-waiver';
+    if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     return null;
   }

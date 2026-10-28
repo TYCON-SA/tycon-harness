@@ -460,17 +460,19 @@ test('T15 8.56-SalidaAprobada_PuntaAPunta @story-8.56 @ac-14', () => {
 
 // ─────────────────────── Bordes: abandono, veredictos raros, el 5b reabierto, el tope ───────────────────────
 
-test('T16 8.56-NoMedido_AbandonoDestraba @story-8.56 @ac-10', () => {
-  // Clase 1 del pase (tres lentes): el freno ofrece abandonar con el interruptor, y el abandono no destrababa.
+test('T16 8.56-NoMedido_AbandonoSinFirma_NoDestraba @story-8.56 @ac-10 @story-8.116', () => {
+  // Clase 1 del pase (tres lentes): el abandono no destrababa. Abandonarlo lo firma el dueño: el
+  // interruptor solo no abandona, y el pase no medido sigue frenando. El abandono con la constancia firmada lo cubre
+  // adversarial-skip-signed.test.js (la constancia se lee de la casa de la cuenta, que una prueba no firma).
   const home = tmp('adv856-t16-'); const SID = 't16'; const { repo, archivos } = mkRepo();
   enPaso8(home, SID, repo, { adversarial: { launchedAtStep: 4, runId: 'wf_X', sessionId: SID, launchedAt: LANZADO } });
   assert.equal(correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b', '--result', resultado(home, SIN_MEDIR())]).status, 0);
   const ab = correr(home, SID, ['mark-adversarial-skipped', '--files', ...archivos], { TYCON_NO_DEEP_REVIEW: '1' });
-  assert.equal(ab.status, 0, ab.stderr);
+  assert.equal(ab.status, 2, ab.stderr);
+  assert.match(ab.stderr, /sign-adversarial-skip/);
   correr(home, SID, ['complete-step', '8']);
   const l = lineaDelFreno(home).at(-1);
-  assert.equal(l.status, 'ok', JSON.stringify(l));
-  assert.equal(l.motivo, 'abandonado');
+  assert.notEqual(l && l.motivo, 'abandonado', JSON.stringify(l));
 });
 
 test('T17 8.56-VeredictoRaro_SinVeredicto @story-8.56 @ac-3', () => {
@@ -568,8 +570,9 @@ test('T8 AvisosDelMarcador_NoRecetanElApagado @story-8.104 @ac-2', () => {
   const src = fs.readFileSync(MARKER, 'utf8');
   const avisos = src.split('\n').filter((l) => /Abandonarlo/.test(l));
   assert.equal(avisos.length, 3, `los tres avisos: el del pase no medido, el del pase sin resultado y el del salteo con el pase lanzado — ${avisos.length}`);
+  // abandonarlo lo firma el dueño: ni la receta de la variable ni la frase de la persona
   for (const l of avisos) {
-    assert.doesNotMatch(l, /TYCON_NO_DEEP_REVIEW=1/, `sin la receta: ${l.trim()}`);
-    assert.match(l, /autorizo TYCON_NO_DEEP_REVIEW/, `con la frase de la persona: ${l.trim()}`);
+    assert.doesNotMatch(l, /TYCON_NO_DEEP_REVIEW/, `sin la receta ni la frase: ${l.trim()}`);
+    assert.match(l, /lo firma el dueño/, `con la firma del dueño: ${l.trim()}`);
   }
 });

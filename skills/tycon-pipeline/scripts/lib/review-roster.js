@@ -431,6 +431,43 @@ function build(o) {
   // La excusa escrita, si el run anterior la traía, viaja (la escribe una persona a mano —
   // ver `validate` y el gate local).
   if (o.previo && typeof o.previo.sin_testigo === 'string') roster.sin_testigo = o.previo.sin_testigo;
+  // El salteo firmado del pase adversarial: quién lo firmó, por dónde y cuándo. Quien escribe con el marcador
+  // (`adversarialSkip`, aunque venga vacío) dice la verdad de la ejecución: un salteo que ya no está (otra ejecución en
+  // la misma carpeta, o `set-size completa`) sale del registro. Sin esa clave, viaja el del roster anterior.
+  const salteo = 'adversarialSkip' in o
+    ? adversarialDe(o.adversarialSkip)
+    : (o.previo && o.previo.adversarial && o.previo.adversarial.salteado ? o.previo.adversarial : null);
+  if (salteo) roster.adversarial = salteo;
+  return roster;
+}
+
+function adversarialDe(firmado) {
+  if (!firmado || typeof firmado !== 'object' || !firmado.via || !firmado.quien) return null;
+  return { salteado: true, via: firmado.via, quien: firmado.quien, cuando: firmado.cuando || null };
+}
+
+/**
+ * Anota el salteo firmado en el roster que ya existe; sin roster no escribe nada (lo trae el que se escriba después,
+ * del marcador). Un roster que está y no se lee lanza: no es «no hay roster».
+ */
+function anotarSalteo(runDir, firmado) {
+  const salteo = adversarialDe(firmado);
+  if (!salteo) return null;
+  return reescribirSalteo(runDir, salteo);
+}
+
+/** El pase ya no está salteado (corrió, o la ejecución volvió a completa): el salteo sale del roster que existe. */
+function quitarSalteo(runDir) {
+  return reescribirSalteo(runDir, null);
+}
+
+function reescribirSalteo(runDir, salteo) {
+  let roster;
+  try { roster = read(runDir); } catch (e) { throw new Error(`el registro de autoría está y no se lee (${String(e.message || e).split('\n')[0]})`); }
+  if (!roster) return null;
+  if (!salteo && !roster.adversarial) return roster;
+  if (salteo) roster.adversarial = salteo; else delete roster.adversarial;
+  fs.writeFileSync(rosterPath(runDir), `${JSON.stringify(roster, null, 2)}\n`, 'utf8');
   return roster;
 }
 
@@ -528,5 +565,5 @@ module.exports = {
   nombreCanonico,
   TRAMO, separarAnotacion, tramoDeFirmante, firmantesValidos, esFuenteSintetica,
   ROSTER_FILE, VERSION,
-  rosterPath, resolveModel, modelFromTranscript, implementerModel, NOT_MEASURED, treeShaDe, build, read, write, validate,
+  rosterPath, resolveModel, modelFromTranscript, implementerModel, NOT_MEASURED, treeShaDe, build, read, write, validate, anotarSalteo, quitarSalteo,
 };

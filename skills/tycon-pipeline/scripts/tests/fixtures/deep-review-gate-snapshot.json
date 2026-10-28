@@ -1,5 +1,5 @@
 {
-  "tomada_de": "el commit anterior a la story 7.19 (103b45d)",
+  "tomada_de": "el commit anterior a la story 7.19 (103b45d); liviana-off y pesada-interruptor, de la story 8.116 (sin la firma del dueño, el pedido de saltear no apaga el pase; si el pase no corría igual, no se pide nada)",
   "casos": [
     {
       "nombre": "liviana-sin-config",
@@ -31,8 +31,13 @@
       "status": 0,
       "salida": {
         "run": false,
+        "risk": "LOW",
         "model": null,
-        "reason": ".tycon/advisors.yaml deep_review: off"
+        "lineas_agregadas": 2,
+        "umbral_lineas": 300,
+        "shared_surface_declared": false,
+        "shared_surface_note": "este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.",
+        "reason": "deep_review: off no hace falta: el pase no corre por el criterio de siempre · risk-class LOW → skip (superficie chica ≤6 files y 2 líneas agregadas < 300; override: --deep-review)"
       }
     },
     {
@@ -95,9 +100,18 @@
       "nombre": "pesada-interruptor",
       "status": 0,
       "salida": {
-        "run": false,
-        "model": null,
-        "reason": "forzado OFF (--no-deep-review / TYCON_NO_DEEP_REVIEW=1)"
+        "run": true,
+        "risk": "NORMAL",
+        "model": "opus",
+        "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
+        "early_launch": true,
+        "reason": "TYCON_NO_DEEP_REVIEW=1 es un pedido de saltear sin la firma del dueño (no hay una ejecución abierta de esta story): el pase sigue el criterio de siempre · risk-class NORMAL → deep-review corre (criterios NORMAL: superficie-chica)",
+        "skip_request": {
+          "camino": "TYCON_NO_DEEP_REVIEW=1",
+          "firmado": false,
+          "motivo": "no hay una ejecución abierta de esta story",
+          "muestra": "sin corrida abierta: la firma se pide dentro de una corrida de esta story (pipeline.js start)"
+        }
       }
     }
   ]
