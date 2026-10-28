@@ -385,8 +385,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   /** El modelo de la pantalla: lo mismo para la página y para /api/hallazgos. */
   async function modelo(idioma) {
     const l = leerFichas();
-    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'mant.sinClon'), pedidos: null, toca: [], espera: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
-    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'mant.sinFichas'), pedidos: null, toca: [], espera: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
+    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'mant.sinClon'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
+    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'mant.sinFichas'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
     const m = await membresia();
     const enPedido = m.estado === 'leido' ? m.porFicha : new Map();
     const dir = dirOps();
@@ -420,16 +420,20 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     }
     toca.sort(ordenParaDecidir);
     const espera = [...pedidos.values()].sort((a, b) => a.numero - b.numero);
-    if (aprobadas.length) espera.push({ numero: null, enlace: null, aprobado: true, filas: aprobadas });
+    // lo ya decidido no espera la aprobación de nadie: sale de la lista y se cuenta en una línea
     for (const g of espera) g.filas.sort(ordenFuente);
+    aprobadas.sort(ordenFuente);
     arreglos.sort(ordenFuente);
     vulnerabilidades.sort(ordenVulns);
     const ilegible = ilegibles.size > 0;
+    const c = fuentes.config();
     return {
       estado: ilegible ? 'ilegible' : 'leido',
       frase: ilegible ? T(idioma, 'mant.ilegible', { fuentes: [...ilegibles].map((x) => T(idioma, `mant.fuente.${x}`)).join(', ') }) : null,
       pedidos: m.estado === 'leido' ? { estado: 'leido', frase: null } : { estado: 'no_se_pudo', frase: T(idioma, 'mant.sinPedidos') },
-      toca, espera, marcha: { arreglos, vulnerabilidades },
+      toca, espera, decididas: aprobadas, marcha: { arreglos, vulnerabilidades },
+      // con auto_apply, lo enviado se guarda sin que nadie más lo apruebe: la pantalla no habla de aprobar
+      aplicaSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
       cuentas: { toca: toca.length, espera: espera.reduce((n, g) => n + g.filas.length, 0), marcha: arreglos.length + vulnerabilidades.length },
     };
   }
@@ -438,7 +442,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
   function seccion(m, idioma, tok) {
     const ayudaRegla = (r) => (r ? ` <button type="button" class="m-q" popovertarget="m-ayuda-regla-${r}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, 'mant.ayuda.termino.regla', { que: T(idioma, `mant.titulo.${r}`) }) }))}">?</button>` : '');
-    const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${k}`) }))}">?</button>`;
+    // con auto_apply, la ayuda de enviar no habla de una aprobación que no hay
+    const deAyuda = (k) => (m.aplicaSolo && (k === 'enviar' || k === 'seguir') ? `${k}Solo` : k);
+    const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${deAyuda(k)}`) }))}">?</button>`;
     const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer" target="_blank">${esc(texto)}</a>` : esc(texto));
     const accion = (a) => T(idioma, `mant.accion.${a}`);
     // el análisis está en castellano (se escribe así): `lang` para quien lo lee en voz alta, y la nota en otro idioma
@@ -453,7 +459,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (a) {
         cuerpo = renglon('mant.porQue', a.por_que_pasa) + renglon(`mant.recomienda.${a.recomendacion}`, a.por_que_recomienda)
           + (a.arreglo ? renglon('mant.siSeArregla', a.arreglo) : '') + (a.si_vuelve ? renglon('mant.siVuelve', a.si_vuelve) : '')
-          + `<div class="m-pie"><span class="m-autor">${esc(T(idioma, a.autor === 'persona' ? 'mant.autor.persona' : 'mant.autor.modelo'))}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.analisisEnCastellano'))}`} ${ayuda('analisis')}</span>${acciones}</div>`;
+          + `<div class="m-pie"><span class="m-autor">${a.autor === 'persona' ? '' : `${esc(T(idioma, 'mant.autor.modelo'))} `}${idioma === 'es' ? '' : `${esc(T(idioma, 'mant.analisisEnCastellano'))} `}${ayuda('analisis')}</span>${acciones}</div>`;
       } else {
         const pr = f.propuesta;
         const propuesta = pr ? `<p class="m-propuesta">${esc(T(idioma, 'mant.propuesta', { accion: accion(pr.accion) }))}${pr.razon ? ` ${es(pr.razon)}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.razonEnCastellano'))}`}` : ''}</p>` : '';
@@ -476,14 +482,15 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       return filas.length ? `<h3 class="m-sub" data-fuente="${esc(fuente)}" data-t="${esc(T(idioma, sub, { n: '{n}' }))}">${esc(T(idioma, sub, { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
     }).join('');
     const toca = `<div class="m-bloque m-toca"><h2 data-t="${esc(T(idioma, 'mant.toca.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
-      + `<p class="m-intro">${esc(T(idioma, 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
-      + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`) + '</div>';
+      + `<p class="m-intro">${esc(T(idioma, m.aplicaSolo ? 'mant.toca.introSolo' : 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
+      + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`)
+      + (m.decididas.length ? `<p class="m-decididas">${esc(T(idioma, m.decididas.length === 1 ? 'mant.decididasUna' : 'mant.decididas', { n: m.decididas.length }))}</p>` : '') + '</div>';
 
     // esperando aprobación
     const grupo = (g) => {
       // «Pedido 12 · 3 decisiones»: el enlace va sobre la primera parte
       const [nombre, ...resto] = T(idioma, g.filas.length === 1 ? 'mant.espera.pedidoUna' : 'mant.espera.pedido', { numero: g.numero, n: g.filas.length }).split(' · ');
-      const cab = g.aprobado ? esc(T(idioma, 'mant.espera.aprobado')) : [enlace(nombre, g.enlace), ...resto.map(esc)].join(' · ');
+      const cab = [enlace(nombre, g.enlace), ...resto.map(esc)].join(' · ');
       const filas = g.filas.map((x) => `<li>${esc(x.nombre)} → ${esc(x.accion ? accion(x.accion) : '?')}</li>`).join('');
       return `<div class="m-pedido"><p class="m-pedido-cab">${cab}</p><ul>${filas}</ul></div>`;
     };
@@ -534,11 +541,11 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const datos = Object.entries(textos).map(([n, kk]) => ` data-t-${n.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(T(idioma, kk))}"`).join('')
       + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}"`;
     const barra = m.toca.length
-      ? `<div class="m-barra"${datos}><span class="m-cuenta" aria-live="polite"></span><button type="button" class="btn prim m-enviar" disabled>${esc(T(idioma, 'mant.barra.enviar'))}</button>`
+      ? `<div class="m-barra"${datos}><span class="m-cuenta" aria-live="polite"></span><button type="button" class="btn prim m-enviar" disabled>${esc(T(idioma, m.aplicaSolo ? 'mant.barra.enviarSolo' : 'mant.barra.enviar'))}</button>`
         + `<button type="button" class="btn m-seguir"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
       : '';
     const negritas = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-    const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${x}`))}</p></div>`).join('')
+    const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${deAyuda(x)}`))}</p></div>`).join('')
       + REGLAS.map((r) => `<div id="m-ayuda-regla-${r}" popover class="m-pop"><p>${esc(T(idioma, `mant.regla.${r}`))}.</p></div>`).join('');
     const frases = [m.frase, m.pedidos && m.pedidos.frase].filter(Boolean).map((t) => `<p class="q-note">${esc(t)}</p>`).join('');
     const contenido = m.estado === 'sin_clon' || m.estado === 'sin_fichas' ? '' : toca + espera + marcha + barra + ayudas;
@@ -619,12 +626,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // la próxima lectura vuelve a mirar qué espera aprobación
     membresiaGuardada = null;
     const aplicadas = r && r.codigo === 'aplicado' ? van.map((x) => ({ clave: clave(x), accion: x.accion })) : [];
-    if (yaDecididas.length || aplicadas.length) {
-      decididas.marcar([...yaDecididas, ...aplicadas]);
-      if (typeof fuentes.refrescar === 'function') {
-        try { await fuentes.refrescar(); } catch (e) { log(`mantenimiento: después de decidir, el refresco falló (${(e && e.name) || 'error'}): se ve en el próximo`); }
-      }
-    }
+    // lo decidido queda anotado y sale de la lista ya; no se refresca acá: la foto todavía no lo trae, y un refresco baja
+    // el buzón (un minuto en un sitio real) con la pantalla esperando
+    if (yaDecididas.length || aplicadas.length) decididas.marcar([...yaDecididas, ...aplicadas]);
     const omitidasTodas = [...omitidas, ...yaDecididas.map((x) => x.clave)];
     if (!van.length) return json(200, { ok: true, codigo: 'ya_decidida', message: T(idioma, 'mant.envio.yaDecidida'), omitidas: omitidasTodas, enviadas: [] });
     const { textoActual: _t, oidActual: _o, ...resto } = r || {};
