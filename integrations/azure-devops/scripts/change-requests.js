@@ -26,12 +26,13 @@ const no = (reason, detail) => ({ ok: false, reason, detail });
 
 // En Windows `az` es az.cmd, que node sólo corre por la consola: cada argumento entre comillas, y sólo con caracteres
 // que la consola no interpreta adentro de ellas. Una barra invertida al final escaparía la comilla de cierre. Un doble
-// con ruta (TYCON_ADO_CMD) se corre directo.
+// con ruta (TYCON_ADO_CMD) se corre directo; si es un `.js`, con Node, que lo corre igual en Windows.
 const seguroEnConsola = (args) => args.every((a) => /^[\p{L}\p{N}_ .:/=$@~\\-]+$/u.test(a) && !a.endsWith('\\'));
 function llamadaAz(cmd, args, plataforma = process.platform) {
-  if (plataforma !== 'win32' || cmd !== 'az') return { args, shell: false };
+  if (/\.[cm]?js$/i.test(cmd)) return { file: process.execPath, args: [cmd, ...args], shell: false };
+  if (plataforma !== 'win32' || cmd !== 'az') return { file: cmd, args, shell: false };
   if (!seguroEnConsola(args)) return { problem: 'az: argumentos con caracteres no seguros para la consola' };
-  return { args: args.map((a) => `"${a}"`), shell: true };
+  return { file: cmd, args: args.map((a) => `"${a}"`), shell: true };
 }
 
 function pagina(ctx, org, project, skip, deadlineMs) {
@@ -42,7 +43,7 @@ function pagina(ctx, org, project, skip, deadlineMs) {
     '--query-parameters', 'searchCriteria.status=active', `$top=${POR_PAGINA}`, `$skip=${skip}`,
     '--api-version', '7.1', '--org', org, '-o', 'json']);
   if (llamada.problem) return { problem: no('no_medido', llamada.problem) };
-  const r = spawnSync(cmd, llamada.args, { env: ctx.env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout, killSignal: 'SIGKILL', shell: llamada.shell, windowsHide: true });
+  const r = spawnSync(llamada.file, llamada.args, { env: ctx.env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout, killSignal: 'SIGKILL', shell: llamada.shell, windowsHide: true });
   if (r.error && r.error.code === 'ETIMEDOUT') return { problem: no('no_medido', `tope: ${cmd} tardó más de lo que había`) };
   if (r.error) return { problem: no('no_medido', `${cmd} no se pudo ejecutar (${r.error.code || r.error.message})`) };
   if (r.status !== 0) {
