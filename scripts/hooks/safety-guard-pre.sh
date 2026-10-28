@@ -284,7 +284,10 @@ ow_vencer() {
     # la carpeta vieja del estado, dentro de la de la herramienta, por patrón: el filtro sólo decide si se consulta
     dirs+=("$d/.tycon/state/owner-window" "$d/.*/.tycon-pipeline/owner-window")
   done
-  [[ -n "${TYCON_HOME:-}" ]] && dirs+=("$TYCON_HOME/state/owner-window")
+  # una casa escrita a la Windows (`C:\…`) va con barras: en el patrón, una barra invertida escapa la letra siguiente
+  local th="${TYCON_HOME:-}"
+  case "$th" in [A-Za-z]:*) th="${th//\\//}" ;; esac
+  [[ -n "$th" ]] && dirs+=("$th/state/owner-window")
   if [[ -z "$casa" ]]; then
     hay=1
   else
