@@ -1,0 +1,1 @@
+{"hash":"269619fa32975374bff91c97277a0875b47f09c7a4a704377e6006775f451221","rules":[{"path":".github/workflows/ci.yml","blob":"f5bd2d61b9153e91d373d7f93eeaa66895b39991"},{"path":"scripts/ci/check-public-workflow.js","blob":"4ba0be0962d85db9099a3b0d3132d9104d31b274"}],"at":"2026-10-28","by":"dueño"}
