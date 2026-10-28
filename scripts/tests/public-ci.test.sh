@@ -18,7 +18,8 @@
 #         de verdad) frena en rojo «no pude correr» sin correr nada; con el guion corre el de la base. Una rama que
 #         corra los controles del pedido, de vuelta, es rojo en `base-controls`; la guía de detalle lo dice.
 #   T24 · PublicCi_PartesQueJuntasSonTodo — la corrida partida para correr a la vez: con
-#         TYCON_PUBLIC_CI_PART=checks corren todos los pasos menos las portables; con suites-<i>-of-<n>, sólo las portables
+#         TYCON_PUBLIC_CI_PART=checks corren todos los pasos menos las portables y el banco; con controls-bench, sólo el
+#         banco; con suites-<i>-of-<n>, sólo las portables
 #         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
 #         portable-suites.test.sh, sobre un repo de mentira: las <n> partes juntas son todas las portables, ninguna en dos,
 #         cada parte con alguna, las más pesadas primero; una parte mal escrita o un reparto imposible es rojo.
@@ -482,16 +483,24 @@ printf '✅\t%s\n' "agent-skills/tycon-pipeline/scripts/tests/beta.test.sh" "arn
 if cmp -s "${R}.ci/agent-skills-suites.tsv" "${R}.tsv"; then ok "T21 con una entrada relativa en el PATH las suites en bash corren (el enlace no queda roto)"
 else no "T21 con una entrada relativa en el PATH las suites no corrieron: $(grep -F 'no pude lanzarla' "${R}.out" | head -n 2 | tr '\n' ' ')"; fi
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# T24 (a) · la corrida partida (TYCON_PUBLIC_CI_PART): checks + las partes de las suites = la corrida entera
+# T24 (a) · la corrida partida (TYCON_PUBLIC_CI_PART): checks + el banco + las partes de las suites = la corrida entera
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ELEVEN="${SEVEN} spanish-names repo-lint version clean-machine"
 variant partchecks; export TYCON_PUBLIC_CI_PART=checks; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
 is "T24 (a) la parte checks, todo verde, sale 0" 0 "${RC}"
-is "T24 (a) la parte checks corre todos los pasos menos las portables, en orden" "node-check build-check build-generate suites-coverage agent-skills-suites controls-bench spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
+is "T24 (a) la parte checks corre todos los pasos menos las portables y el banco, en orden" "node-check build-check build-generate suites-coverage agent-skills-suites spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
 lacks "T24 (a) …y no llama a las portables" "${R}/.calls" "portable-suites"
-has "T24 (a) …y lo dice al arrancar" "${R}.out" "public-ci: parte checks — todos los pasos menos portable-suites"
-is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 10 pasos verdes (sólo la parte checks)" "$(tail -n 1 "${R}.out")"
+lacks "T24 (a) …ni al banco" "${R}/.calls" "controls-bench"
+has "T24 (a) …y lo dice al arrancar" "${R}.out" "public-ci: parte checks — todos los pasos menos portable-suites y controls-bench"
+is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 9 pasos verdes (sólo la parte checks)" "$(tail -n 1 "${R}.out")"
 STEPS_CHECKS="$(steps_of "${R}.out")"
+variant partbench; export TYCON_PUBLIC_CI_PART=controls-bench; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
+is "T24 (a) la parte del banco, todo verde, sale 0" 0 "${RC}"
+is "T24 (a) la parte controls-bench corre sólo el banco" "controls-bench" "$(steps_of "${R}.out")"
+is "T24 (a) …con su llamada de siempre, y nada más" "controls-bench --tool both --baseline check --json ${R}.ci/bench.json" "$(calls_of "${R}" | tr '\n' '|' | sed 's/|$//')"
+has "T24 (a) …y lo dice al arrancar" "${R}.out" "public-ci: parte controls-bench — sólo el banco de controles"
+is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 1 pasos verdes (sólo la parte controls-bench)" "$(tail -n 1 "${R}.out")"
+STEPS_BENCH="$(steps_of "${R}.out")"
 variant partsuites; export TYCON_PUBLIC_CI_PART=suites-2-of-3; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
 is "T24 (a) una parte de las suites, todo verde, sale 0" 0 "${RC}"
 is "T24 (a) la parte suites-2-of-3 corre sólo las portables" "portable-suites" "$(steps_of "${R}.out")"
@@ -499,8 +508,8 @@ is "T24 (a) …con su parte: TYCON_PORTABLE_SHARD=2/3, y nada más" "portable-su
 lacks "T24 (a) …sin las suites que piden agent-skills (van en checks)" "${R}/.calls" "suite-"
 is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 1 pasos verdes (sólo la parte suites-2-of-3)" "$(tail -n 1 "${R}.out")"
 # shellcheck disable=SC2086
-is "T24 (a) checks más una parte de las suites son los once pasos de la corrida entera, ninguno dos veces" \
-  "$(printf '%s\n' ${ELEVEN} | LC_ALL=C sort | tr '\n' ' ')" "$(printf '%s\n' ${STEPS_CHECKS} $(steps_of "${R}.out") | LC_ALL=C sort | tr '\n' ' ')"
+is "T24 (a) checks, el banco y una parte de las suites son los once pasos de la corrida entera, ninguno dos veces" \
+  "$(printf '%s\n' ${ELEVEN} | LC_ALL=C sort | tr '\n' ' ')" "$(printf '%s\n' ${STEPS_CHECKS} ${STEPS_BENCH} $(steps_of "${R}.out") | LC_ALL=C sort | tr '\n' ' ')"
 variant partred; echo 'exit 4' >> "${R}/scripts/tests/portable-suites.test.sh"; commit_all "portables en rojo"
 export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci; unset TYCON_PUBLIC_CI_PART
 is "T24 (a) una parte con su paso en rojo sale 1" 1 "${RC}"
@@ -767,9 +776,12 @@ else
   altered "aparte: la condición del pull request invertida" "" 'return t.replace("= \"pull_request\" ]", "!= \"pull_request\" ]");'
   altered "aparte: un if en el paso que corre el guion" "" 'return t.replace(/^(      - name: Los pasos de la CI pública que le tocan a esta parte)$/m, "$1\n        if: ${{ false }}");'
   altered "aparte: sin persist-credentials false en el checkout" "" 'return t.replace(/^          persist-credentials: false\n/m, "");'
-  # la corrida partida (T24): la lista de partes trae checks y TODAS las de las suites, en orden, y la parte sale de la matriz
+  # la corrida partida (T24): la lista de partes trae checks, el banco y TODAS las de las suites, en orden, y la parte sale
+  # de la matriz
   altered "sin una parte de las suites" "parts" 'return t.replace(", suites-5-of-5]", "]");'
   altered "sin la parte checks" "parts" 'return t.replace("part: [checks, ", "part: [");'
+  altered "sin la parte del banco" "parts" 'return t.replace("part: [checks, controls-bench, ", "part: [checks, ");'
+  altered "con el banco después de las suites" "parts" 'return t.replace("part: [checks, controls-bench, ", "part: [checks, ").replace("suites-5-of-5]", "suites-5-of-5, controls-bench]");'
   altered "con una parte repetida" "parts" 'return t.replace("suites-5-of-5]", "suites-4-of-5]");'
   altered "con las partes desordenadas" "parts" 'return t.replace("suites-1-of-5, suites-2-of-5", "suites-2-of-5, suites-1-of-5");'
   altered "con una parte que dice otra cuenta" "parts" 'return t.replace("suites-5-of-5]", "suites-5-of-6]");'
@@ -778,13 +790,16 @@ else
   altered "con la parte fija en vez de la de la matriz" "parts" 'return t.replace("TYCON_PUBLIC_CI_PART: ${{ matrix.part }}", "TYCON_PUBLIC_CI_PART: checks");'
   altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
   # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
-  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
+  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, controls-bench, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, controls-bench, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
   # en un pedido corre sólo `checks` y la corrida entera va en la cola: cada una de estas falla si un ci.yml vuelve a
   # pagar las suites en el pedido, o si deja el pedido sin `checks`
-  altered "en un pedido corren también las suites" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" != "checks" \]; then\n.*\n *exit 0\n *fi\n/m, "");'
+  altered "en un pedido corren también las suites" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" != "checks" \].*; then\n.*\n *exit 0\n *fi\n/m, "");'
   altered "en un pedido se saltea también checks" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"checks\" ]", "");'
+  altered "en un pedido se saltea también el banco" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"controls-bench\" ]", "");'
+  # una base que no conoce la parte del banco lo corre dentro de checks: la salida verde de esa parte vale sólo para ella
+  altered "el banco sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27|controls-bench)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
   altered "en main un push corta la corrida del anterior" "=shape" 'return t.replace("cancel-in-progress: ${{ github.ref != \x27refs/heads/main\x27 }}", "cancel-in-progress: true");'
-  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corre sólo la parte checks: installer-floor.*\n *exit 0\n *fi\n/m, "");'
+  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corren sólo las partes checks y controls-bench: installer-floor.*\n *exit 0\n *fi\n/m, "");'
   # el push a main que hace la cola al entrar un pedido no corre nada (la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
   altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
@@ -796,6 +811,10 @@ else
   # ── T12 · PublicCi_Workflow_PassesBaseInPullRequestAndMergeGroup — en un pedido y en la cola corre el
   #    public-ci.sh de la BASE con `--base`; en un push, el del árbol y sin `--base` ──
   BASE_CALL="$(grep -n 'public-ci-base\.sh" --root ' "${CI_YML}" | head -n 1)"
+  # la CI decide si la base ya corre el banco en su propia parte buscando este texto en el guion de la base: si el
+  # guion deja de tenerlo, la parte del banco sale verde sin correrlo y checks tampoco lo corre
+  if grep -qF -- "grep -q -- '|controls-bench)'" "${CI_YML}" && grep -qF -- '|controls-bench)' "${SCRIPT}"; then ok "T24 el texto con el que la CI reconoce la parte del banco está en public-ci.sh"
+  else no "T24 la CI busca «|controls-bench)» en el guion de la base y public-ci.sh no lo tiene: la parte del banco saldría verde sin correrlo"; fi
   case "${BASE_CALL}" in *'--base "${BASE}"'*) ok "T12 en un pedido y en la cola corre el public-ci.sh de la base, con --base" ;;
     *) no "T12 no hay una llamada al public-ci.sh de la base con --base: «${BASE_CALL}»" ;; esac
   grep -qF 'git show "${BASE}:scripts/ci/public-ci.sh"' "${CI_YML}" && ok "T12 el guion que corre sale de la base (git show), no del checkout del pedido" \

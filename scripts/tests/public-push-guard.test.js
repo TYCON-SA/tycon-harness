@@ -153,8 +153,11 @@ function assertBlocked(fx, r, { category, place, secret = TERM } = {}) {
   assert.strictEqual(r.json && r.json.verdict, 'findings', r.all);
   if (category) assert.ok(r.json.findings.some((f) => f.category === category), `falta un hallazgo «${category}»: ${JSON.stringify(r.json.findings)}`);
   if (place) assert.ok(r.json.findings.some((f) => place.test(f.place)), `ningún lugar coincide con ${place}: ${JSON.stringify(r.json.findings)}`);
+  // el lugar nombra el commit por su sha corto, que cambia en cada corrida: sin sacarlo, un número corto que se busca
+  // («1234») aparece adentro una vez cada tanto
+  const shown = r.all.replace(/\bcommit [0-9a-f]{7,40}\b/g, 'commit <sha>');
   for (const s of [secret].flat().filter(Boolean)) {
-    assert.ok(!r.all.toLowerCase().includes(s.toLowerCase()), `la salida trae el texto encontrado\n${r.all}`);
+    assert.ok(!shown.toLowerCase().includes(s.toLowerCase()), `la salida trae el texto encontrado\n${r.all}`);
     assert.ok(!everythingWritten(fx).toLowerCase().includes(s.toLowerCase()), 'lo que el freno dejó escrito trae el texto encontrado');
   }
   assert.ok(!/--no-verify/.test(r.all), 'el mensaje del freno nunca sugiere --no-verify');
