@@ -395,6 +395,10 @@
         },
         {
           "id": "frontmatter-frena-forma-barras-invertidas",
+          "env": {
+           "TYCON_STATUS_GATE": "off"
+          },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-block",
           "so": [
             "win32"
@@ -422,6 +426,10 @@
         },
         {
           "id": "frontmatter-frena-forma-barras",
+          "env": {
+           "TYCON_STATUS_GATE": "off"
+          },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-block",
           "so": [
             "win32"
@@ -449,6 +457,10 @@
         },
         {
           "id": "frontmatter-frena-forma-git-bash",
+          "env": {
+           "TYCON_STATUS_GATE": "off"
+          },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-block",
           "so": [
             "win32"
@@ -503,6 +515,10 @@
         },
         {
           "id": "frontmatter-pasa-forma-barras-invertidas",
+          "env": {
+           "TYCON_STATUS_GATE": "off"
+          },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-not-block",
           "so": [
             "win32"
@@ -527,6 +543,10 @@
         },
         {
           "id": "frontmatter-pasa-forma-barras",
+          "env": {
+           "TYCON_STATUS_GATE": "off"
+          },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-not-block",
           "so": [
             "win32"
@@ -551,6 +571,10 @@
         },
         {
           "id": "frontmatter-pasa-forma-git-bash",
+          "env": {
+           "TYCON_STATUS_GATE": "off"
+          },
+          "_env": "8.109: mide la evidencia, no el freno del estado a mano; ése se apaga en el ambiente del gancho",
           "type": "must-not-block",
           "so": [
             "win32"
