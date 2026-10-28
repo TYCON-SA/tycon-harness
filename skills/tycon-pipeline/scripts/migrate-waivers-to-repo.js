@@ -226,10 +226,7 @@ function main(argv) {
     if (v.estado === 'no-abrio') { console.error(`🔒 no pude abrir la ventana de la firma (${v.motivo}) — no se escribió nada.`); process.exit(3); }
     process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
   }
-  if (waiver.esWindows()) {
-    waiver.anotarVentana();
-    process.on('exit', () => waiver.pausaFinal());
-  }
+  if (waiver.esWindows()) waiver.dentroDeLaVentana();
 
   // 🔴 El candado: escribir es firmar, y firmar es del dev. Sin terminal no se escribe nada.
   if (!waiver.hasTty()) {

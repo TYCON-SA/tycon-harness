@@ -42,6 +42,8 @@ const os = require('os');
 const path = require('path');
 
 const TCG = path.resolve(__dirname, '..');
+// El marcador de la raíz del arnés que el banco lleva como texto (no es una plantilla de JS).
+const PH_TCG = '$' + '{TCG}';
 const CASES_DIR = path.join(TCG, 'scripts', 'controls-bench', 'cases', 'hooks');
 const DEUDA_PATH = path.join(TCG, 'scripts', 'controls-bench', 'hook-debt.json');
 
@@ -207,8 +209,8 @@ function selftest() {
   }
   fs.writeFileSync(path.join(casos, 'a.json'), JSON.stringify({
     hooks: [
-      { hook: 'con-casos.js', script: '${TCG}/scripts/hooks/con-casos.js', event: 'Stop', cases: [{ id: 'x' }] },
-      { hook: 'despachador.js → por-despachador', script: '${TCG}/scripts/hooks/despachador.js', event: 'Stop', cases: [{ id: 'y' }] },
+      { hook: 'con-casos.js', script: `${PH_TCG}/scripts/hooks/con-casos.js`, event: 'Stop', cases: [{ id: 'x' }] },
+      { hook: 'despachador.js → por-despachador', script: `${PH_TCG}/scripts/hooks/despachador.js`, event: 'Stop', cases: [{ id: 'y' }] },
     ],
   }));
   const rs = [{ dir: hooks, filtro: (f) => /\.(js|sh|py)$/.test(f) }];

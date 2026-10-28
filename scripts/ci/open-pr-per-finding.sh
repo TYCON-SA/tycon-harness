@@ -41,6 +41,7 @@
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # EL ORDEN DE LAS FASES, que es lo que lo hace correcto
 #
+#   S  decisiones del sitio .... mergea o cierra el pull request que una persona decidió en el sitio
 #   A  decidir por ficha ....... consulta Azure y ENCOLA lo que habrá que anotar (no escribe)
 #   E  barrer las archivadas ... cierra el pull request de lo que ya se archivó (encola también)
 #   B  abrir ................... rama, texto, mover, push, `pr create` → guarda el id
@@ -232,15 +233,20 @@ escalar(){ sed -n "s/^$2:[ \\t]*//p" "$1" | head -1 | awk '{print $1}' | tr -d '
 # cambian. Sale != 0 con el motivo en stderr si la ficha no está en <base> o git no pudo.
 # 🔴 El veredicto se cambia ANTES de guardar el contenido: con `git mv` + `sed` sobre el árbol de
 # trabajo, el commit llevaría el archivo movido con el veredicto VIEJO (rename 100 %, 0 cambios).
-commit_de_rama(){ # <base> <id>
-  local BASE="$1" ID="$2" INDICE CONTENIDO MODO ARBOL
+# Con <el>, la ficha lleva además `decidido_en_sitio: <el>`: la aceptó una persona en el sitio. La marca de una decisión
+# que no se pudo aplicar no viaja: la que llega a `promoted/` ya está decidida.
+commit_de_rama(){ # <base> <id> [<el>]
+  local BASE="$1" ID="$2" EL="${3:-}" INDICE CONTENIDO MODO ARBOL
   INDICE=$(mktemp) || return 1
   rm -f "$INDICE"   # git quiere crear él el archivo del índice
   # «no pude leer» no es «no está»: el código de salida de git se mira antes de leer su salida
   if ! MODO=$(git ls-tree "$BASE" -- "$COLA/pending/$ID.yaml"); then echo "no pude leer $BASE para buscar la ficha $ID" >&2; return 2; fi
   MODO=$(printf '%s' "$MODO" | awk '{print $1}')
   if [ -z "$MODO" ]; then echo "la ficha $ID no está en pending/ de $BASE" >&2; return 1; fi
-  CONTENIDO=$(git show "$BASE:$COLA/pending/$ID.yaml" | sed 's/^veredicto: pendiente$/veredicto: util/' | git hash-object -w --stdin) \
+  CONTENIDO=$(git show "$BASE:$COLA/pending/$ID.yaml" \
+      | awk -v el="$EL" '/^(motivo_)?decision_fallida:/ { next }
+                         /^veredicto:[ \t]*"?pendiente"?[ \t]*(#.*)?$/ { print "veredicto: util"; if (el != "") print "decidido_en_sitio: " el; next }
+                         { print }' | git hash-object -w --stdin) \
     && GIT_INDEX_FILE="$INDICE" git read-tree "$BASE" \
     && GIT_INDEX_FILE="$INDICE" git update-index --force-remove "$COLA/pending/$ID.yaml" \
     && GIT_INDEX_FILE="$INDICE" git update-index --add --cacheinfo "$MODO,$CONTENIDO,$COLA/promoted/$ID.yaml" \
@@ -591,6 +597,219 @@ ficha_valida(){ # <ficha>
   fi
 }
 
+# ── Fase S — lo que una persona decidió en el sitio sobre un pull request ──────────────────────
+# Aceptar en el sitio mergea el pull request de la ficha; Rechazar lo cierra con el motivo como comentario, y la ficha
+# anota `rechazado:` y `motivo_rechazo:` (sigue viva, como cualquier rechazo de dependencias). La decisión de una ficha
+# SIN pull request la aplica la noche (`aplicarDecisiones`): ésta es sólo la que nombra uno.
+#
+# 🔴 SE APLICA SÓLO SOBRE EL PEDIDO QUE VIO LA PERSONA. La decisión trae el `pr:` (y en GitHub el `pr_repo:`) de la
+# ficha tal como estaba en la pantalla. Si la ficha ya tiene otro, si el pull request es de otro repo o si ya no está
+# abierto, no se toca nada: la decisión se borra y la ficha queda con `decision_fallida:` y su porqué, que el resumen
+# de la mañana cuenta y que devuelve la fila a «Te toca decidir». Nunca un éxito callado.
+#
+# 🔴 EL MOTIVO LO ESCRIBIÓ UNA PERSONA. Llega validado (una línea, con tope de largo: `cycle.js site-decisions`), viaja
+# como argumento hasta el JSON del comentario, y nunca se arma dentro de un texto de consola ni se imprime.
+#
+# Antes de mergear, la rama se rehace sobre el `main` de ahora: la ficha cambió en `main` desde que se abrió el pedido
+# (las noches la anotan), y la rama vieja choca al fusionar. Lo mergeado se copia al disco igual que quedó en `main`
+# —la ficha en `promoted/`—: el guardado de la fase C ve el mismo cambio de los dos lados y no choca.
+# Corre en las pasadas que guardan (en GitHub, la del final; la de antes de la noche no puede escribir).
+S_TOCO=""; S_RECHAZADAS=" "
+ESPERA="${TYCON_PR_WAIT_SECONDS:-60}"
+# Cuántas noches se reintenta un merge que no se pudo confirmar antes de devolver la fila a «Te toca decidir».
+NOCHES_SIN_CONFIRMAR=3
+# Días de <desde> a <hasta> (AAAA-MM-DD); sin fechas legibles, 0: se reintenta, nunca se da por fallida a ciegas.
+dias_entre(){ node -e 'const [a,b]=process.argv.slice(1).map((x)=>Date.parse(x+"T00:00:00Z"));console.log(Number.isFinite(a)&&Number.isFinite(b)?Math.max(0,Math.round((b-a)/864e5)):0)' "$1" "$2"; }
+[[ "$ESPERA" =~ ^[0-9]+$ ]] || ESPERA=60
+
+# La decisión no se pudo aplicar: se borra, se avisa y la ficha (si sigue en pending/) anota por qué.
+decision_no_aplicada(){ # <archivo de la decisión> <ficha o vacío> <id> <por qué>
+  rm -f "$1"; S_TOCO=1
+  aviso "$3: la decisión del sitio no se aplicó — $4"
+  [ -z "$2" ] || encolar "$2" decision-fallida "$HOY" "$4"
+}
+
+# El JSON del comentario de un rechazo, escrito por node desde sus argumentos. Un `@` del motivo no menciona a nadie
+# desde la cuenta de la noche.
+comentario_de_rechazo(){ # <archivo> <el> <motivo> azure|github
+  node -e 'const [f,el,m,pl]=process.argv.slice(1);
+    const texto="Se rechazó en el sitio el "+el+". Motivo: "+m.replace(/@/g,"@​");
+    require("fs").writeFileSync(f, JSON.stringify(pl==="azure"
+      ? { comments:[{ parentCommentId:0, content:texto, commentType:1 }], status:4 }
+      : { body:texto }));' "$@" 2>"$ERR"
+}
+
+# El estado de un pull request por su número: imprime «<estado> <punta de la rama que Azure ya vio>».
+estado_y_fuente(){ # <pr>
+  local OUT
+  OUT=$(pr_por_id "$1") || return 1
+  if [ "$PLATAFORMA" = github ]; then
+    printf '%s' "$OUT" | campo_pr 2>"$ERR" | awk '{print $2" -"}'; return "${PIPESTATUS[1]}"
+  fi
+  printf '%s' "$OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{
+    let p; try { p=JSON.parse(d); } catch { process.stderr.write("respuesta ilegible de az\n"); process.exit(1); }
+    if (!p||!p.status) { process.stderr.write("la respuesta no trae el estado del pull request\n"); process.exit(1); }
+    console.log(p.status+" "+(((p.lastMergeSourceCommit||{}).commitId)||"-")+" "+(p.mergeStatus||"-")+" "+(p.sourceRefName||"-")); });' 2>"$ERR"
+}
+
+# Mergea el pull request con la rama recién empujada. Sale 0 si quedó mergeado, 1 si la plataforma dijo que no (el
+# porqué en $ERR) y 2 si no se pudo confirmar: la decisión queda y se reintenta mañana, sin tocar la ficha.
+mergear_pr(){ # <pr> <commit de la rama>
+  local K=0 E F MS J
+  if [ "$PLATAFORMA" = github ]; then
+    J=$(mktemp) || return 2
+    node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ sha:process.argv[2], merge_method:"squash" }))' "$J" "$2" || { rm -f "$J"; return 2; }
+    # GitHub calcula si se puede juntar después del empuje: un 405 o un 409 recién empujado se reintenta un rato
+    until gh_cmd api --method PUT "repos/$REPO/pulls/$1/merge" --input "$J" >/dev/null 2>"$ERR"; do
+      grep -qE 'HTTP (405|409)' "$ERR" && [ "$K" -lt "$ESPERA" ] || { rm -f "$J"; cp "$ERR" "$ERR.merge"; read -r E _ < <(estado_y_fuente "$1" 2>/dev/null); mv "$ERR.merge" "$ERR"; [ "${E:-}" = completed ] && return 0; [ -n "${E:-}" ] || return 2; return 1; }
+      sleep 5; K=$((K+5))
+    done
+    rm -f "$J"; return 0
+  fi
+  # Azure: el pull request toma la rama nueva por su cuenta, y completarlo antes juntaría la punta vieja
+  while :; do
+    read -r E F MS < <(estado_y_fuente "$1") || return 2
+    [ "$F" = "$2" ] && break
+    [ "$K" -lt "$ESPERA" ] || { echo "Azure todavía no tomó la rama rehecha del pull request" > "$ERR"; return 2; }
+    sleep 5; K=$((K+5))
+  done
+  az repos pr update --org "$ORG" --id "$1" --status completed --squash true --delete-source-branch true -o none 2>"$ERR" || return 1
+  K=0
+  while :; do
+    read -r E F MS < <(estado_y_fuente "$1") || return 2
+    case "$E" in
+      completed) return 0 ;;
+      abandoned) echo "el pull request quedó abandonado" > "$ERR"; return 1 ;;
+    esac
+    case "$MS" in conflicts|failure|rejectedByPolicy) echo "Azure no lo pudo juntar (mergeStatus: $MS)" > "$ERR"; return 1 ;; esac
+    [ "$K" -lt "$ESPERA" ] || { echo "Azure todavía no terminó de juntarlo" > "$ERR"; return 2; }
+    sleep 5; K=$((K+5))
+  done
+}
+
+aceptar_pedido(){ # <ficha> <id> <pr> <el> <archivo de la decisión>
+  local F="$1" ID="$2" N="$3" EL="$4" DA="$5" MAIN COMMIT RC
+  if ! git fetch -q origin main 2>"$ERR" || ! MAIN=$(git rev-parse --verify -q 'FETCH_HEAD^{commit}'); then
+    fallo "$ID: no se pudo traer origin/main para mergear el ${NR}$N que se aceptó en el sitio — se reintenta mañana — $(cat "$ERR")"; return
+  fi
+  if [ "$PLATAFORMA" = azure ]; then
+    local SRC=""
+    if ! read -r _ _ _ SRC < <(estado_y_fuente "$N"); then
+      fallo "$ID: no se pudo consultar el ${NR}$N que se aceptó en el sitio — se reintenta mañana — $(cat "$ERR")"; return
+    fi
+    if [ "$SRC" != "refs/heads/$PREFIJO/$ID" ]; then
+      decision_no_aplicada "$DA" "$F" "$ID" "el ${NR}$N sale de la rama ${SRC#refs/heads/}, no de la de la ficha: la noche no la puede rehacer"; return
+    fi
+  fi
+  if ! COMMIT=$(commit_de_rama "$MAIN" "$ID" "$EL" 2>"$ERR"); then
+    decision_no_aplicada "$DA" "$F" "$ID" "no se pudo rehacer la rama del ${NR}$N: $(cat "$ERR")"; return
+  fi
+  if ! empujar_rama "$COMMIT" "$PREFIJO/$ID"; then
+    fallo "$ID: no se pudo empujar la rama del ${NR}$N que se aceptó en el sitio — se reintenta mañana — $(cat "$ERR")"; return
+  fi
+  mergear_pr "$N" "$COMMIT"; RC=$?
+  case "$RC" in
+    0) ;;
+    2) if [ "$(dias_entre "$EL" "$HOY")" -ge "$NOCHES_SIN_CONFIRMAR" ]; then
+         decision_no_aplicada "$DA" "$F" "$ID" "no se pudo confirmar que el ${NR}$N quedó mergeado en $NOCHES_SIN_CONFIRMAR noches: $(cat "$ERR")"
+       else
+         aviso "$ID: el ${NR}$N se aceptó en el sitio y no se pudo confirmar que quedó mergeado — la decisión queda y se mira mañana — $(cat "$ERR")"
+       fi
+       return ;;
+    *) decision_no_aplicada "$DA" "$F" "$ID" "no se pudo mergear el ${NR}$N: $(cat "$ERR")"; return ;;
+  esac
+  # el disco queda como `main`: la ficha, tal como la llevó la rama, en promoted/
+  if git show "$COMMIT:$COLA/promoted/$ID.yaml" > "$COLA/promoted/$ID.yaml.tmp" 2>"$ERR"; then
+    mv "$COLA/promoted/$ID.yaml.tmp" "$COLA/promoted/$ID.yaml" 2>"$ERR" && rm -f "$F" \
+      || aviso "$ID: el ${NR}$N quedó mergeado, pero no pude mover la ficha en el disco — la trae el main de mañana — $(cat "$ERR")"
+  else
+    rm -f "$COLA/promoted/$ID.yaml.tmp"
+    aviso "$ID: el ${NR}$N quedó mergeado, pero no pude copiar la ficha al disco — la trae el main de mañana — $(cat "$ERR")"
+  fi
+  rm -f "$DA"; S_TOCO=1
+  echo "$ID: mergeado el ${NR}$N (se aceptó en el sitio el $EL)"
+}
+
+# Cierra el pull request sin el comentario de la noche (`cerrar_pr` dice «la ficha salió de la cola»: acá decidió una persona).
+cerrar_rechazado(){ # <pr>
+  if [ "$PLATAFORMA" = azure ]; then az repos pr update --org "$ORG" --id "$1" --status abandoned -o none 2>"$ERR"; return; fi
+  local J R; J=$(mktemp) || return 1
+  printf '{"state":"closed"}' > "$J"
+  gh_cmd api --method PATCH "repos/$REPO/pulls/$1" --input "$J" >/dev/null 2>"$ERR"; R=$?
+  rm -f "$J"; return "$R"
+}
+comentar_pr(){ # <pr> <archivo del comentario>
+  if [ "$PLATAFORMA" = azure ]; then
+    az devops invoke --org "$ORG" --area git --resource pullRequestThreads \
+      --route-parameters "project=$PROYECTO" "repositoryId=$REPO" "pullRequestId=$1" \
+      --http-method POST --in-file "$2" --api-version 7.1 -o none 2>"$ERR"; return
+  fi
+  gh_cmd api --method POST "repos/$REPO/issues/$1/comments" --input "$2" >/dev/null 2>"$ERR"
+}
+
+rechazar_pedido(){ # <ficha> <id> <pr> <el> <motivo> <archivo de la decisión>
+  local F="$1" ID="$2" N="$3" EL="$4" MOT="$5" DA="$6" J
+  if ! cerrar_rechazado "$N"; then
+    fallo "$ID: no se pudo cerrar el ${NR}$N que se rechazó en el sitio — se reintenta mañana — $(cat "$ERR")"; return
+  fi
+  # Primero se cierra y después se comenta: si el comentario falla, el rechazo ya está hecho y el motivo queda en la ficha.
+  J=$(mktemp)
+  if ! comentario_de_rechazo "$J" "$EL" "$MOT" "$PLATAFORMA" || ! comentar_pr "$N" "$J"; then
+    aviso "$ID: el ${NR}$N quedó cerrado, pero no se pudo dejar el motivo como comentario — queda en la ficha — $(cat "$ERR")"
+  fi
+  rm -f "$J" "$DA"; S_TOCO=1
+  S_RECHAZADAS="$S_RECHAZADAS$ID "
+  echo "$ID: cerrado el ${NR}$N (se rechazó en el sitio el $EL)"
+  encolar "$F" rechazado "$EL|$N" "$MOT"
+  alinear_issues "$F" "$N" closed "$MOT"
+}
+
+case "$COLA" in */dependencies|dependencies) S_COLA=1 ;; *) S_COLA="" ;; esac
+if [ -z "$SIN_GUARDAR" ] && [ -n "$S_COLA" ] && [ -d "$COLA/decisions" ]; then
+  DECS=""
+  if ! DECS=$(node "$_AQUI_LO/../nightly/findings/cycle.js" site-decisions --dir "$COLA/decisions" 2>"$ERR"); then
+    fallo "no pude leer las decisiones del sitio — se reintenta mañana — $(cat "$ERR")"; DECS=""
+  fi
+  while IFS=$'\t' read -r D_ID D_ACC D_PR D_REPO _ D_EL D_MOT; do
+    [ -n "${D_ID:-}" ] || continue
+    [ "$D_REPO" != - ] || D_REPO=""
+    D_MOT="${D_MOT#:}"
+    if ! [[ "$D_ID" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      fallo "una decisión del sitio con un nombre fuera de [A-Za-z0-9_-] («$(printf '%s' "$D_ID" | tr -c 'A-Za-z0-9_.-' '?')»): no se toca"; continue
+    fi
+    DA="$COLA/decisions/$D_ID.json"; F="$COLA/pending/$D_ID.yaml"
+    # la ficha ya se decidió por otro camino (o se resolvió sola): no hay nada que aplicar ni dónde anotarlo
+    if [ ! -f "$F" ] || ! grep -qE '^veredicto:[ \t]*"?pendiente"?[ \t]*(#.*)?$' "$F" || grep -q '^rechazado:' "$F"; then
+      rm -f "$DA"; S_TOCO=1; aviso "$D_ID: la decisión del sitio llegó cuando la ficha ya no estaba pendiente de decidir: no se aplica"; continue
+    fi
+    ficha_valida "$F" || continue
+    PR=$(escalar "$F" pr); PR_REPO_F=$(escalar "$F" pr_repo)
+    if [ "$PR" != "$D_PR" ] || [ "$PR_REPO_F" != "$D_REPO" ]; then
+      decision_no_aplicada "$DA" "$F" "$D_ID" "el pull request de la ficha cambió: se decidió sobre el ${NR}$D_PR${D_REPO:+ de $D_REPO} y la ficha tiene ${PR:+el ${NR}$PR}${PR:-ninguno}${PR_REPO_F:+ de $PR_REPO_F}"; continue
+    fi
+    if { [ "$PLATAFORMA" = github ] && [ "$PR_REPO_F" != "$REPO" ]; } || { [ "$PLATAFORMA" = azure ] && [ -n "$PR_REPO_F" ]; }; then
+      decision_no_aplicada "$DA" "$F" "$D_ID" "el ${NR}$PR es de ${PR_REPO_F:-otra plataforma}, no de $DONDE: desde acá no se puede aplicar"; continue
+    fi
+    if ! OUT=$(pr_por_id "$PR"); then
+      fallo "$D_ID: no se pudo consultar el ${NR}$PR para aplicar la decisión del sitio — se reintenta mañana — $(cat "$ERR")"; continue
+    fi
+    if ! LEIDO=$(printf '%s' "$OUT" | campo_pr 2>"$ERR") || ! OWNER=$(printf '%s' "$OUT" | pr_owner 2>"$ERR"); then
+      fallo "$D_ID: no pude leer la respuesta sobre el ${NR}$PR para aplicar la decisión del sitio — se reintenta mañana — $(cat "$ERR")"; continue
+    fi
+    read -r _ ESTADO _ _ <<< "$LEIDO"
+    if [ "$OWNER" != own ]; then
+      decision_no_aplicada "$DA" "$F" "$D_ID" "el ${NR}$PR es de otro repo (${OWNER#foreign }), no de $DONDE"; continue
+    fi
+    if [ "$ESTADO" != active ]; then
+      decision_no_aplicada "$DA" "$F" "$D_ID" "el ${NR}$PR ya no está abierto ($ESTADO)"; continue
+    fi
+    case "$D_ACC" in
+      aceptar)  aceptar_pedido "$F" "$D_ID" "$PR" "$D_EL" "$DA" ;;
+      reject) rechazar_pedido "$F" "$D_ID" "$PR" "$D_EL" "$D_MOT" "$DA" ;;
+    esac
+  done <<< "$DECS"
+fi
+
 # ── Fase A — decidir por ficha ─────────────────────────────────────────────────────────────────
 ABRIR=""
 # Con el sitio andando (`site.url` en operations.json) las fichas se deciden ahí: no se abre un pedido nuevo por ficha,
@@ -627,6 +846,8 @@ for F in "$COLA"/pending/*.yaml; do
   # archivada como «ignorado». Dos criterios distintos de «viva» en el mismo sistema se separan solos.
   grep -qE '^veredicto:[ \t]*"?pendiente"?[ \t]*(#.*)?$' "$F" || continue
   ID=$(basename "$F" .yaml)
+  # la que se rechazó recién en el sitio ya está decidida: su motivo lo escribió la noche y `motivo_de` no lo leería
+  case "$S_RECHAZADAS" in *" $ID "*) continue ;; esac
   ficha_valida "$F" || continue
   PR=$(escalar "$F" pr)
 
@@ -778,6 +999,13 @@ for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
     echo "$ID: cerrada con su pr: $PR de $PR_REPO_F, no de $DONDE — este guion no lo cierra"; continue
   fi
   if ! OUT=$(pr_por_id "$PR"); then
+    # Un pull request que Azure dice que no está (TF401180: lo borraron, o era de un repo que ya no existe) es una
+    # respuesta, no un «no pude preguntar»: no queda nada que cerrar. Se anota y no se vuelve a mirar; si no, la ficha
+    # pondría roja cada noche para siempre. Cualquier otro error sigue siendo un fallo.
+    if [ "$PLATAFORMA" = azure ] && grep -q 'TF401180' "$ERR"; then
+      aviso "$ID: su ${NR}$PR ya no existe (Azure: TF401180): no hay nada que cerrar; se anota y no se vuelve a mirar"
+      encolar "$F" pr-cerrado "$HOY"; continue
+    fi
     fallo "$ID: no se pudo consultar el ${NR}$PR de una ficha cerrada — $(cat "$ERR")"; continue
   fi
   if ! LEIDO=$(printf '%s' "$OUT" | campo_pr 2>"$ERR"); then
@@ -924,7 +1152,7 @@ done
 # Las anotaciones se escriben sobre el DISCO del checkout: en la pasada de sólo registrar es lo que
 # la noche va a contar, y en la del final el disco ya es lo que el paso anterior guardó en `main`.
 PR_REPO_ARG=(); [ "$PLATAFORMA" = github ] && PR_REPO_ARG=(--pr-repo "$REPO")
-if [ -s "$ACCIONES" ]; then
+if [ -s "$ACCIONES" ] || [ -n "$S_TOCO" ]; then
   while IFS=$'\t' read -r ARCHIVO OP A1 A2; do
     [ -n "$ARCHIVO" ] || continue
     [ -f "$ARCHIVO" ] || { aviso "$(basename "$ARCHIVO"): ya no está en main, no se anota"; continue; }
@@ -933,6 +1161,7 @@ if [ -s "$ACCIONES" ]; then
       alineado)       node "$GUION" note --card "$ARCHIVO" --aligned "$A1" || fallo "$(basename "$ARCHIVO"): note --aligned falló" ;;
       pr-cerrado)     node "$GUION" note --card "$ARCHIVO" --pr-closed "$A1" || fallo "$(basename "$ARCHIVO"): note --pr-closed falló" ;;
       quitar-rechazo) node "$GUION" note --card "$ARCHIVO" --clear-rejection || fallo "$(basename "$ARCHIVO"): note --clear-rejection falló" ;;
+      decision-fallida) node "$GUION" note --card "$ARCHIVO" --decision-failed "$A1" --reason "$A2" || fallo "$(basename "$ARCHIVO"): note --decision-failed falló" ;;
       rechazado)      node "$GUION" note --card "$ARCHIVO" --rejected "${A1%%|*}" --pr "${A1##*|}" ${PR_REPO_ARG[@]+"${PR_REPO_ARG[@]}"} --reason "$A2" \
                         || fallo "$(basename "$ARCHIVO"): note --rejected falló" ;;
     esac

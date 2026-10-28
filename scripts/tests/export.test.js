@@ -353,9 +353,9 @@ test('T64 PreC1_ExporterExplainBeforeAfter — las guías privadas reales, cada 
 // Los marcadores de bloque se arman por partes: ninguna línea de este archivo es exactamente un marcador (el exportador
 // frena un marcador solo en su línea fuera de un `.md`).
 const MARCA = {
-  IS: '<!-- tycon:' + 'internal-start -->',
-  IE: '<!-- tycon:' + 'internal-end -->',
-  PS: '<!-- tycon:' + 'public-only',
+  IS: '<!-- ' + 'tycon:internal-start -->',
+  IE: '<!-- ' + 'tycon:internal-end -->',
+  PS: '<!-- ' + 'tycon:public-only',
   PE: '-' + '->',
 };
 const PAPELES = 'scripts/publishing/public-files';

@@ -233,6 +233,19 @@ test('T19 Dependencias_NNoches_NoReabreLasResueltas', () => {
   vigilar(dir4, ESC.snapshot, { n: 3, ok: true });
   const ignorados = deps.archivarIgnorados(dir4, '2026-10-20', ESC.cfg, null, []);
   assert.ok(!ignorados.includes('aaaa1111'), 'la que espera no es ignorada');
+
+  // la que una persona ya decidió en el sitio tampoco: su decisión espera a la noche y se perdería
+  const dir5 = tmp();
+  ESC.armar(dir5);
+  const testigo = deps.archivarIgnorados(dir5, '2026-12-31', ESC.cfg, null, []);
+  assert.ok(testigo.includes('bbbb2222'), 'sin decisión, la vieja se archiva (el testigo)');
+  const dir6 = tmp();
+  ESC.armar(dir6);
+  fs.mkdirSync(path.join(dir6, 'decisions'), { recursive: true });
+  fs.writeFileSync(path.join(dir6, 'decisions', 'bbbb2222.json'), JSON.stringify({ fuente: 'dependencias', id: 'bbbb2222', accion: 'aceptar' }));
+  const conDecision = deps.archivarIgnorados(dir6, '2026-12-31', ESC.cfg, null, []);
+  assert.ok(!conDecision.includes('bbbb2222'), 'con decisión del sitio no se archiva');
+  assert.ok(fs.existsSync(path.join(dir6, 'pending', 'bbbb2222.yaml')), '…y sigue en pending/');
 });
 
 test('T51 Ficha_EstadoYVeredicto_DanLaCarpeta', () => {
@@ -728,10 +741,10 @@ test('T14 Resumen_AceptadasNoSeRepiten', () => {
 // 🔴 Falla con: cambiar una letra de la tabla al mudarla (la huella es la de la tabla de antes), que el resumen use otra
 //    copia, o un nombre de más de 120 caracteres o con un salto de renglón. La huella cambió una vez a propósito, cuando
 //    el freno de stories ganó su nombre (T101), y otra cuando los apagados del chequeo de vida, del de mutantes y del
-//    portón de carril ganaron los suyos.
+//    portón de carril ganaron los suyos, y otra cuando las categorías que se cuentan aparte ganaron los suyos (M6).
 test('T15 Nombres_MudanzaSinCambiarTexto', () => {
   const crypto = require('crypto');
-  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fe91c8ccd26080a260e652416ddefc34550707e1');
+  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fad1881298d5d95d3ced3ab8bf8f65e4e58cdc67');
   assert.strictEqual(DS.NOMBRES_CAUSA, NOMBRES.NOMBRES_CAUSA, 'el resumen usa la misma tabla');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-HOOK', categoria: 'Stop/tiempo' }), 'aviso automático que se pasó de tiempo');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria: 'ZZDESCONOCIDA' }), 'otro freno salteado');
@@ -919,18 +932,18 @@ function opsConFichas() {
 const decision = (fuente, id, accion) => ({ fuente, id, accion, quien: 'lead@acme.example', el: '2026-10-24' });
 
 // Noche_DecisionSinForma_QuedaYSeCuenta @story-4.11 @ac-20
-// 🔴 Falla con: aplicar una decisión sin forma (o un «aceptar» de dependencias), o dejar viva la decisión de una ficha que
-// ya no está pendiente.
+// 🔴 Falla con: aplicar una decisión sin forma (o un «arreglar» de dependencias), o dejar viva la decisión de una ficha
+// que ya no está pendiente.
 test('T68 Noche_DecisionSinForma_QuedaYSeCuenta', () => {
   const { base, ej, ej2, decidir } = opsConFichas();
   // las tres fuentes con su mapa (decisión 16)
-  decidir('dependencies', 'dep-uno', decision('dependencias', 'dep-uno', 'arreglar'));
+  decidir('dependencies', 'dep-uno', { ...decision('dependencias', 'dep-uno', 'aceptar'), pr: null, pr_repo: null });
   decidir('watcher', 'vig-uno', decision('vigilante', 'vig-uno', 'aceptar'));
   decidir('watcher', 'vig-dos', decision('vigilante', 'vig-dos', 'arreglar'));
   decidir('runs-review', ej.id, decision('ejecuciones', ej.id, 'aceptar'));
   decidir('runs-review', ej2.id, decision('ejecuciones', ej2.id, 'arreglar'));
-  // sin forma: un «aceptar» de dependencias (decisión 14), JSON roto, una clave de más, una fuente que no es la suya
-  decidir('dependencies', 'dep-dos', decision('dependencias', 'dep-dos', 'aceptar'));
+  // sin forma: un «arreglar» de dependencias (se decide su pedido), JSON roto, una clave de más, una fuente que no es la suya
+  decidir('dependencies', 'dep-dos', { ...decision('dependencias', 'dep-dos', 'arreglar'), pr: null, pr_repo: null });
   decidir('dependencies', 'rota', '{ no es json');
   decidir('watcher', 'vig-extra', { ...decision('vigilante', 'vig-extra', 'aceptar'), nota: 'texto libre' });
   decidir('runs-review', 'otra-fuente', decision('vigilante', 'otra-fuente', 'aceptar'));
@@ -943,7 +956,7 @@ test('T68 Noche_DecisionSinForma_QuedaYSeCuenta', () => {
 
   const en = (rel) => fs.existsSync(path.join(base, rel));
   const leer = (rel) => fs.readFileSync(path.join(base, rel), 'utf8');
-  // dependencias: arreglar → util, a promoted/, decisión borrada
+  // dependencias: aceptar (sin pull request) → util, a promoted/, decisión borrada
   assert.ok(en('inbox/dependencies/promoted/dep-uno.yaml') && !en('inbox/dependencies/pending/dep-uno.yaml'));
   assert.match(leer('inbox/dependencies/promoted/dep-uno.yaml'), /^veredicto: util$/m);
   assert.match(leer('inbox/dependencies/promoted/dep-uno.yaml'), /^repos:\n {2}- Producto X\/FrontEnd$/m, 'el resto de la ficha queda igual');
@@ -976,7 +989,7 @@ test('T68 Noche_DecisionSinForma_QuedaYSeCuenta', () => {
   assert.deepStrictEqual([otra.aplicadas.length, otra.borradas.length], [0, 1]);
   assert.match(leer('inbox/watcher/promoted/vig-dos.yaml'), /^veredicto: util$/m);
   // sin carpeta de decisiones: nada que aplicar, sin error
-  assert.deepStrictEqual(cycle.aplicarDecisiones({ base: tmp(), fuente: 'ejecuciones' }), { aplicadas: [], borradas: [], sinForma: 0, ilegibles: 0, lineas: [] });
+  assert.deepStrictEqual(cycle.aplicarDecisiones({ base: tmp(), fuente: 'ejecuciones' }), { aplicadas: [], borradas: [], delPedido: [], fallidas: [], sinForma: 0, ilegibles: 0, lineas: [] });
 
   // 🔴 «no pude leer la ficha» no es «ya no está pendiente»: la decisión de la persona queda y se cuenta
   const b2 = opsConFichas();
@@ -997,6 +1010,131 @@ test('T68 Noche_DecisionSinForma_QuedaYSeCuenta', () => {
   const d3 = cycle.aplicarDecisiones({ base: b3, fuente: 'dependencias' });
   assert.strictEqual(d3.ilegibles, 1);
   assert.ok(d3.lineas.some((l) => /carpeta de decisiones no se pudo leer/.test(l)), d3.lineas.join('\n'));
+});
+
+// Decision_DependenciasForma: Aceptar o Rechazar, con el pedido que vio la persona y, al rechazar, su motivo
+// 🔴 Falla con: un rechazo sin motivo, con un motivo de varias líneas o más largo que el tope; un pedido que no es un
+// número; un motivo al aceptar; o las claves de dependencias en otra fuente.
+test('T110 Decision_DependenciasForma_PedidoYMotivo', () => {
+  const base = { fuente: 'dependencias', id: 'dep-uno', quien: 'lead@acme.example', el: '2026-10-28' };
+  const ok = (d) => cycle.decisionConForma(d, 'dependencias', 'dep-uno');
+  assert.ok(ok({ ...base, accion: 'aceptar', pr: '5255', pr_repo: null }));
+  assert.ok(ok({ ...base, accion: 'aceptar', pr: '12', pr_repo: 'acme-org/acme-operations' }));
+  assert.ok(ok({ ...base, accion: 'aceptar', pr: null, pr_repo: null }), 'una ficha sin pull request también se decide');
+  assert.ok(ok({ ...base, accion: 'reject', pr: '5255', pr_repo: null, motivo: 'el paquete no viaja al navegador' }));
+  assert.ok(ok({ ...base, accion: 'reject', pr: '5255', pr_repo: null, motivo: 'x'.repeat(cycle.MOTIVO_MAX) }));
+  const malas = [
+    { ...base, accion: 'reject', pr: '5255', pr_repo: null },                                   // sin motivo
+    { ...base, accion: 'reject', pr: '5255', pr_repo: null, motivo: '   ' },                    // motivo vacío
+    { ...base, accion: 'reject', pr: '5255', pr_repo: null, motivo: 'una\nlínea más' },         // salto de línea
+    { ...base, accion: 'reject', pr: '5255', pr_repo: null, motivo: 'con\ttabulador' },
+    { ...base, accion: 'reject', pr: '5255', pr_repo: null, motivo: 'x'.repeat(cycle.MOTIVO_MAX + 1) },
+    { ...base, accion: 'aceptar', pr: '5255', pr_repo: null, motivo: 'al aceptar no va' },
+    { ...base, accion: 'aceptar', pr: 5255, pr_repo: null },                                      // número, no texto
+    { ...base, accion: 'aceptar', pr: '52/55', pr_repo: null },
+    { ...base, accion: 'aceptar', pr: null, pr_repo: 'acme-org/acme-operations' },                // repo sin número
+    { ...base, accion: 'aceptar', pr: '1', pr_repo: 'acme-org/../otro' },
+    { ...base, accion: 'aceptar', pr: '1' },                                                     // falta pr_repo
+    { ...base, accion: 'arreglar', pr: '1', pr_repo: null },
+  ];
+  for (const d of malas) assert.ok(!ok(d), JSON.stringify(d));
+  // las claves del pedido son sólo de dependencias
+  assert.ok(!cycle.decisionConForma({ ...base, fuente: 'vigilante', accion: 'aceptar', pr: '1', pr_repo: null }, 'vigilante', 'dep-uno'));
+  assert.ok(cycle.decisionConForma({ ...base, fuente: 'vigilante', accion: 'aceptar' }, 'vigilante', 'dep-uno'));
+});
+
+// Noche_DependenciasDelSitio: la de una ficha sin pull request se aplica en la noche; la de una con pull request la
+// aplica el paso de los pull requests; la de un pedido que cambió no se aplica y queda anotada.
+// 🔴 Falla con: aplicar acá una decisión con pull request (el pedido quedaría abierto con la ficha ya movida), aplicar
+// la de un pedido que no es el de la ficha, o un rechazo que archive la ficha.
+test('T111 Noche_DependenciasDelSitio_SinPullRequestConPullRequestYCambiado', () => {
+  const base = tmp();
+  const pend = path.join(base, 'inbox/dependencies/pending');
+  fs.mkdirSync(pend, { recursive: true });
+  const ficha = (id, extra = '') => fs.writeFileSync(path.join(pend, `${id}.yaml`),
+    `id: ${id}\ndetectado: 2026-10-20\nveredicto: pendiente\npaquete: pkg-${id}\nseveridad: high\nnoches: 2\n${extra}repos:\n  - Producto X/FrontEnd\n`);
+  ficha('sin-pr-acepta');
+  ficha('sin-pr-rechaza', 'decision_fallida: 2026-10-27\nmotivo_decision_fallida: "no se pudo mergear"\n');
+  ficha('con-pr', 'pr: 5255\n');
+  ficha('cambio', 'pr: 6000\n');
+  ficha('ya-rechazada', 'pr: 7\nrechazado: 2026-10-20\nmotivo_rechazo: "no aplica"\n');
+  const dec = path.join(base, 'inbox/dependencies/decisions');
+  fs.mkdirSync(dec);
+  const d = (id, accion, pr, extra = {}) => fs.writeFileSync(path.join(dec, `${id}.json`), JSON.stringify(
+    { fuente: 'dependencias', id, accion, quien: 'lead@acme.example', el: '2026-10-28', pr, pr_repo: null, ...extra }));
+  d('sin-pr-acepta', 'aceptar', null);
+  d('sin-pr-rechaza', 'reject', null, { motivo: 'no viaja al "navegador" # ni al servidor C:\\tmp\\' });
+  d('con-pr', 'reject', '5255', { motivo: 'lo cierra el paso de los pedidos' });
+  d('cambio', 'aceptar', '5999');
+  d('ya-rechazada', 'aceptar', '7');
+
+  const r = cycle.aplicarDecisiones({ base, fuente: 'dependencias', hoy: '2026-10-29' });
+  const leer = (rel) => fs.readFileSync(path.join(base, 'inbox/dependencies', rel), 'utf8');
+  const en = (rel) => fs.existsSync(path.join(base, 'inbox/dependencies', rel));
+
+  // sin pull request: aceptar → util en promoted/, con el día de la decisión
+  assert.match(leer('promoted/sin-pr-acepta.yaml'), /^veredicto: util$/m);
+  assert.match(leer('promoted/sin-pr-acepta.yaml'), /^decidido_en_sitio: 2026-10-28$/m);
+  // sin pull request: rechazar → sigue viva en pending/, con su rechazo y su motivo en una línea, sin la marca vieja
+  const rech = leer('pending/sin-pr-rechaza.yaml');
+  assert.match(rech, /^veredicto: pendiente$/m);
+  assert.match(rech, /^rechazado: 2026-10-28$/m);
+  assert.match(rech, /^motivo_rechazo: "no viaja al 'navegador' # ni al servidor C:\/tmp\/"$/m, 'la barra invertida final no escapa la comilla de cierre');
+  assert.doesNotMatch(rech, /decision_fallida/);
+  const vista = sources.FUENTES.dependencias.formato.leerFicha(rech).escalares;
+  assert.strictEqual(vista.motivo_rechazo, "no viaja al 'navegador' # ni al servidor C:/tmp/", 'el # no corta el motivo al leerlo');
+  // con pull request: no se toca, la decisión queda para el paso de los pedidos y no cuenta como sin forma
+  assert.ok(en('decisions/con-pr.json') && en('pending/con-pr.yaml'));
+  assert.doesNotMatch(leer('pending/con-pr.yaml'), /rechazado/);
+  assert.deepStrictEqual(r.delPedido.map((x) => x.id), ['cambio', 'con-pr', 'ya-rechazada']);
+  // el pedido cambió: la decisión con pull request también es del paso de los pedidos (es el que compara con Azure o
+  // GitHub). La que vio una ficha SIN pull request y ahora tiene uno, no se aplica acá: queda anotada.
+  assert.ok(en('decisions/cambio.json'), 'la del pedido cambiado la mira el paso de los pedidos');
+  // una ya rechazada no se toca acá (tiene pull request): la mira el paso de los pedidos
+  assert.match(leer('pending/ya-rechazada.yaml'), /^veredicto: pendiente$/m);
+  assert.deepStrictEqual(r.aplicadas.map((x) => x.id).sort(), ['sin-pr-acepta', 'sin-pr-rechaza']);
+  assert.strictEqual(r.sinForma, 0);
+  assert.ok(!r.lineas.join('\n').includes('navegador'), 'el motivo no va a la salida de la noche');
+
+  // la persona vio la ficha sin pull request, y la noche le abrió uno después: no se aplica, queda anotada y se borra
+  ficha('sin-pr-ahora-con', 'pr: 6100\n');
+  d('sin-pr-ahora-con', 'aceptar', null);
+  // una ya rechazada sin pull request no está pendiente de decidir: la decisión se borra y la ficha no cambia
+  ficha('rechazada-sin-pr', 'rechazado: 2026-10-20\nmotivo_rechazo: "no aplica"\n');
+  d('rechazada-sin-pr', 'aceptar', null);
+  const r2 = cycle.aplicarDecisiones({ base, fuente: 'dependencias', hoy: '2026-10-29' });
+  const camb = leer('pending/sin-pr-ahora-con.yaml');
+  assert.match(camb, /^veredicto: pendiente$/m);
+  assert.match(camb, /^decision_fallida: 2026-10-29$/m);
+  assert.match(camb, /^motivo_decision_fallida: ".*pull request.*"$/m);
+  assert.ok(!en('decisions/sin-pr-ahora-con.json'));
+  assert.deepStrictEqual(r2.fallidas.map((x) => x.id), ['sin-pr-ahora-con']);
+  assert.deepStrictEqual(r2.borradas.map((x) => x.id), ['rechazada-sin-pr']);
+  assert.match(leer('pending/rechazada-sin-pr.yaml'), /^motivo_rechazo: "no aplica"$/m);
+});
+
+// Decisiones_DelPedido: lo que lee el paso de los pull requests, sin armar nada en un texto de consola
+// 🔴 Falla con: dejar pasar una decisión sin forma o sin pull request, o un campo con un tabulador.
+test('T112 DecisionesDelPedido_SoloConFormaYConPedido', () => {
+  const dir = tmp();
+  const d = (id, o) => fs.writeFileSync(path.join(dir, `${id}.json`), typeof o === 'string' ? o : JSON.stringify(
+    { fuente: 'dependencias', id, quien: 'lead@acme.example', el: '2026-10-28', pr_repo: null, ...o }));
+  d('a1', { accion: 'aceptar', pr: '5255' });
+  d('b2', { accion: 'reject', pr: '12', pr_repo: 'acme-org/acme-operations', motivo: 'no aplica: es de desarrollo' });
+  d('c3', { accion: 'aceptar', pr: null });
+  d('d4', { accion: 'reject', pr: '9', motivo: 'dos\tcampos' });
+  d('f6', { accion: 'reject', pr: '10', motivo: '-' });
+  d('e5', '{ roto');
+  assert.deepStrictEqual(cycle.decisionesDelPedido(dir), [
+    'a1\taceptar\t5255\t-\tlead@acme.example\t2026-10-28\t:',
+    'b2\treject\t12\tacme-org/acme-operations\tlead@acme.example\t2026-10-28\t:no aplica: es de desarrollo',
+    'f6\treject\t10\t-\tlead@acme.example\t2026-10-28\t:-',
+  ]);
+  assert.deepStrictEqual(cycle.decisionesDelPedido(path.join(dir, 'no-esta')), []);
+  const { spawnSync } = require('child_process');
+  const cli = spawnSync(process.execPath, [path.join(RAIZ, 'scripts/nightly/findings/cycle.js'), 'site-decisions', '--dir', dir], { encoding: 'utf8' });
+  assert.strictEqual(cli.status, 0, cli.stderr);
+  assert.strictEqual(cli.stdout.split('\n').filter(Boolean).length, 3);
 });
 
 // SitioDecide_PorSiteUrl @story-4.11 @ac-20
@@ -1824,7 +1962,7 @@ test('T102 VistaComun_AnalisisHechosYTareas', () => {
 //    que después no se lee.
 test('M4 Decision_DejaLaFecha_ParaCerrarElPedidoViejo', () => {
   const { base, ej, decidir } = opsConFichas();
-  decidir('dependencies', 'dep-uno', decision('dependencias', 'dep-uno', 'arreglar'));
+  decidir('dependencies', 'dep-uno', { ...decision('dependencias', 'dep-uno', 'aceptar'), pr: null, pr_repo: null });
   decidir('watcher', 'vig-uno', decision('vigilante', 'vig-uno', 'aceptar'));
   decidir('runs-review', ej.id, decision('ejecuciones', ej.id, 'aceptar'));
   for (const f of ['dependencias', 'vigilante', 'ejecuciones']) cycle.aplicarDecisiones({ base, fuente: f });
@@ -1849,5 +1987,23 @@ test('M5 VistaComun_ClaseDeError', () => {
   assert.strictEqual(sources.comoFicha('ejecuciones', cycle.serializar(base)).hechos, null);
   for (const mal of [{ ...hechos, error_clase: 'inventada' }, { ...hechos, errores: { inventada: 1 } }, { ...hechos, texto: 'x' }, { ...hechos, error_veces: -1 }]) {
     assert.ok(cycle.problemasDeForma({ ...base, hechos: mal }).some((p) => /hechos/.test(p)), JSON.stringify(mal));
+  }
+});
+
+// M6 Nombres_CategoriasAparteConNombrePropio @mantenimiento
+// 🔴 Falla con: una categoría que la revisión cuenta aparte y que el resumen nombra como la falla de su raíz (un commit
+//    de laboratorio leído como «commit sin controles», una prueba en obra como «guion que no arrancó»).
+test('M6 Nombres_CategoriasAparteConNombrePropio', () => {
+  for (const clave of Object.keys(NOMBRES.APARTE)) {
+    const [regla, categoria] = clave.split(':');
+    const tabla = NOMBRES.NOMBRES_CAUSA[regla];
+    assert.ok(tabla, `${clave}: la regla está en la tabla`);
+    assert.ok(NOMBRES.hasOwnCausa(tabla, categoria), `${clave}: la categoría tiene su nombre en la tabla`);
+    const nombre = NOMBRES.nombreCausa({ regla, categoria });
+    const raiz = categoria.split('/')[0];
+    const deLaRaiz = raiz !== categoria && NOMBRES.hasOwnCausa(tabla, raiz) ? tabla[raiz] : tabla._;
+    assert.notStrictEqual(nombre, deLaRaiz, `${clave}: no se nombra como su raíz`);
+    assert.ok(NOMBRES.NOMBRES_VALIDOS.has(nombre), `${clave}: el resumen lo reconoce`);
+    assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla, categoria }), nombre);
   }
 });

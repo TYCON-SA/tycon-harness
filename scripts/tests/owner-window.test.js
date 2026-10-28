@@ -869,3 +869,133 @@ test('OwnerWindow_Envoltura_SeDesenvuelveTalCual', (t) => {
   assert.strictEqual(ow.desenvolver(envolver(casa, 'x').replace("eval 'x'", "eval 'x' ; 'y'"), casa), null);
   assert.strictEqual(ow.desenvolver(`bash -c 'x'`, casa), null);
 });
+
+// En Windows la terminal no se lee: `--terminal` abre la ventana NUEVA con el mismo comando, como waive-critical, y la
+// firma se da adentro con las tres palabras. Sin eso ninguna story pasaba de «Aprobar el plan» en Windows.
+test('OwnerWindow_TerminalEnWindows_AbreLaVentanaNueva', (t) => {
+  const casa = casaNueva(t);
+  const argv = [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-a'];
+  const exigir = (tty) => { let salida = null; const r = ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', casa, ahora: AHORA, tty, salir: (c) => { salida = c; } }); return { r, salida }; };
+  let abierta = null;
+  const afuera = (v) => ({ windows: true, enVentana: () => false, hay: () => false, confirmarFrase: () => { throw new Error('afuera no se pregunta'); }, abrir: (o) => { abierta = o; return v; } });
+  let e = exigir(afuera({ estado: 'cerrada', codigo: 0 }));
+  assert.strictEqual(abierta.script, MARKER);
+  assert.deepStrictEqual(abierta.args, argv.slice(1), 'el mismo comando');
+  assert.strictEqual(abierta.programa, process.execPath);
+  assert.strictEqual(e.salida, 0, 'sale con el código de la ventana');
+  assert.strictEqual(gates(casa).length, 0, 'afuera no se firma: firma el proceso de la ventana');
+  assert.strictEqual(exigir(afuera({ estado: 'cerrada', codigo: 1 })).salida, 1);
+  // no se abrió, o venció: no firma y lo dice
+  e = exigir(afuera({ estado: 'no-abrio', motivo: 'spawnSync cmd.exe ENOENT' }));
+  assert.strictEqual(e.r.codigo, 1);
+  assert.match(e.r.motivo, /no pude abrir la ventana \(spawnSync cmd\.exe ENOENT\)/);
+  assert.strictEqual(e.salida, null);
+  e = exigir(afuera({ estado: 'vencida', tope: 300 }));
+  assert.strictEqual(e.r.codigo, 1);
+  assert.match(e.r.motivo, /la ventana venció a los 300 s sin firmar \(la ventana no llegó a arrancar el comando\)/);
+  assert.strictEqual(gates(casa).length, 0);
+  // adentro de la ventana: no abre otra, se anota y firma con las tres palabras
+  let anotada = 0;
+  const adentro = { windows: true, enVentana: () => true, hay: () => true, confirmarFrase: () => true, dentro: () => { anotada++; }, abrir: () => { throw new Error('no abre otra'); } };
+  e = exigir(adentro);
+  assert.strictEqual(e.r.codigo, 0, e.r.motivo);
+  assert.strictEqual(e.r.via, 'terminal');
+  assert.strictEqual(anotada, 1);
+  assert.strictEqual(gates(casa).find((g) => g.name === 'plan-approval-signed').via, 'terminal');
+  assert.strictEqual(exigir({ ...adentro, confirmarFrase: () => false }).r.codigo, 1, 'sin las tres palabras no firma');
+  // en la Mac no cambia nada
+  e = exigir({ windows: false, hay: () => true, preguntar: () => 'firmo', abrir: () => { throw new Error('en la Mac no hay ventana'); } });
+  assert.strictEqual(e.r.codigo, 0, e.r.motivo);
+});
+
+test('OwnerWindow_VentanaDeWindows_DiceQueSeFirmaAntesDeLasTresPalabras', (t) => {
+  const casa = casaNueva(t);
+  const argv = [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-a'];
+  const dicho = [];
+  let alPreguntar = null;
+  const original = console.error;
+  console.error = (...a) => { dicho.push(a.join(' ')); };
+  try {
+    ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', resumen: 'el plan de la story 9.97', casa, ahora: AHORA, salir: () => {},
+      tty: { windows: true, enVentana: () => true, hay: () => true, dentro: () => {}, confirmarFrase: () => { alPreguntar = dicho.join('\n'); return true; } } });
+  } finally { console.error = original; }
+  // sin esto el dueño escribe las tres palabras sin saber qué firma: el agente elige el plan, la vuelta o el salteo
+  assert.ok(alPreguntar !== null, 'preguntó las tres palabras');
+  assert.match(alPreguntar, /Firma del dueño: .*\(el plan de la story 9\.97\), sesión ses-a\./);
+});
+
+/** Un HOME con el marcador de una corrida parada en «Aprobar el plan» (sesión ses-w) y un repo con la story. */
+function laboratorioWindows(t) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-win-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const home = path.join(base, 'home');
+  const repo = path.join(base, 'repo');
+  const activos = path.join(home, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  assert.strictEqual(spawnSync('git', ['init', '-q', repo]).status, 0);
+  const story = path.join(repo, 'specs', 'story-9.97-ventana.md');
+  fs.writeFileSync(story, '---\nstory: "9.97"\nstatus: ready-for-dev\n---\n# Story 9.97\n');
+  const pasos = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'];
+  fs.writeFileSync(path.join(activos, 'ses-w.json'), JSON.stringify({ sessionId: 'ses-w', storyId: '9.97', storyPath: story, repo, stepScheme: 2, stepsCompleted: pasos.slice(0, 3), stepsPending: pasos.slice(3) }));
+  // su apertura en el registro: de ahí sale la ejecución que cierra «clear-session --lost»
+  fs.writeFileSync(path.join(activos, '..', 'gates.log'), `${JSON.stringify({ ts: new Date(AHORA).toISOString(), name: 'run-open', sesion: 'ses-w', story: '9.97', runDir: path.join(base, 'run') })}\n`);
+  return { home, repo, story };
+}
+
+test('OwnerWindow_CadaFirmaPorTerminal_AbreLaVentanaEnWindows', (t) => {
+  if (process.platform === 'win32') return;   // en Windows de verdad se abriría: eso lo mide el ensayo de Windows
+  const { home, repo, story } = laboratorioWindows(t);
+  // Windows simulado, sin cmd.exe y en la terminal del dueño (sin variable de sesión): cada firma intenta abrir la ventana
+  // (la vuelta extra pide una corrida con el tope ya avisado; llega a la misma `exigir` que las de acá)
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '', TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '', TYCON_LANE_LLM: '0' };
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const casos = [
+    ['plan-approval', process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-w']],
+    ['lost-run', process.execPath, [MARKER, 'clear-session', 'ses-w', '--lost', '--terminal', '--for-session', 'ses-w']],
+    ['browser-test', process.execPath, [E2E, 'prepare', '--repo', repo, '--story', story, '--terminal', '--for-session', 'ses-w']],
+    ['control-change', 'bash', [CONTROLES, 'approve', '--root', repo, '--file', 'specs/story-9.97-ventana.md', '--terminal']],
+  ];
+  for (const [firma, prog, args] of casos) {
+    const r = spawnSync(prog, args, { cwd: repo, env, encoding: 'utf8', input: '', timeout: 60000 });
+    const out = `${r.stdout}${r.stderr}`;
+    assert.notStrictEqual(r.status, 0, `${firma}: ${out}`);
+    assert.match(out, /no pude abrir la ventana/, `${firma}: intenta abrir la ventana nueva: ${out}`);
+    assert.doesNotMatch(out, /aquí no hay una|terminal interactiva de verdad/, firma);
+  }
+});
+
+test('OwnerWindow_MarcaDeLaVentanaPuestaAMano_NoFirma', (t) => {
+  if (process.platform === 'win32') return;   // acá la consola no se le puede preguntar a Windows: siempre «no es nueva»
+  const { home, repo } = laboratorioWindows(t);
+  // lo que haría el agente para saltear la ventana: la marca puesta y la respuesta por la entrada
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: '', TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', TYCON_LANE_LLM: '0' };
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const plan = spawnSync(process.execPath, [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-w'], { cwd: repo, env, encoding: 'utf8', input: 'gato luna reloj\n', timeout: 60000 });
+  assert.strictEqual(plan.status, 2, `${plan.stdout}${plan.stderr}`);
+  assert.ok(!fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').includes('plan-approval-signed'), 'no firmó el plan');
+  // el portón, con los argumentos por el ambiente como los pasa la ventana: los lee, y sin la ventana nueva no firma
+  const argv = JSON.stringify(['approve', '--root', repo, '--file', 'specs/story-9.97-ventana.md', '--terminal']);
+  const ctl = spawnSync('bash', [CONTROLES, 'approve'], { cwd: repo, env: { ...env, BASE_CONTROLS_WINDOW_ARGS: argv }, encoding: 'utf8', input: 'gato luna reloj\n', timeout: 60000 });
+  assert.strictEqual(ctl.status, 2, `${ctl.stdout}${ctl.stderr}`);
+  assert.match(ctl.stderr, /en Windows firma sólo la ventana nueva que abre este comando/);
+  assert.strictEqual(fs.existsSync(path.join(repo, '.tycon')), false, 'no escribió ninguna constancia');
+});
+
+test('OwnerWindow_PortonEnLaVentana_LeeElProgramaDeUnArchivoYNoDeLaEntrada', (t) => {
+  if (process.platform === 'win32') return;
+  const { repo } = laboratorioWindows(t);
+  const argv = JSON.stringify(['approve', '--root', repo, '--file', 'specs/story-9.97-ventana.md', '--terminal']);
+  const env = { ...process.env, TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', BASE_CONTROLS_WINDOW_ARGS: argv, BASE_CONTROLS_SELF_DIR: path.dirname(CONTROLES) };
+  // lo que corre la ventana: node con el lanzador, sin programa por la entrada (la entrada queda para la consola)
+  const r = spawnSync(process.execPath, [path.join(path.dirname(CONTROLES), 'run-base-controls-window.js'), 'approve'], { cwd: repo, env, encoding: 'utf8', input: 'gato luna reloj\n', timeout: 60000 });
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /en Windows firma sólo la ventana nueva que abre este comando/, 'corrió el programa del portón');
+  assert.strictEqual(fs.existsSync(path.join(repo, '.tycon')), false);
+  // los argumentos por el ambiente valen sólo para approve en Windows: otro comando, o fuera de Windows, usa los suyos
+  const otro = spawnSync('bash', [CONTROLES, 'nada'], { cwd: repo, env, encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(otro.status, 2);
+  assert.match(otro.stderr, /^uso: /m);
+  const mac = spawnSync('bash', [CONTROLES, 'approve'], { cwd: repo, env: { ...env, TYCON_WAIVER_PLATFORM: '' }, encoding: 'utf8', timeout: 60000 });
+  assert.doesNotMatch(mac.stderr, /ventana nueva/, `${mac.stdout}${mac.stderr}`);
+});

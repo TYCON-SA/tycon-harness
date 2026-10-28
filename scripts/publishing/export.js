@@ -2345,7 +2345,6 @@ function contarCastellano(entradas, raiz = RAIZ_PROPIA) {
 }
 
 function main() {
-  const ctx = {};
   let args = {};
   const alSalir = () => limpiar();
   process.on('exit', alSalir);

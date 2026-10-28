@@ -74,7 +74,7 @@ const AVISO_DEUDA_DIAS = 14;
 
 // ── De dónde se lee ──────────────────────────────────────────────────────────────────────────────
 // Una fuente es `{ listar(dir) → nombres, leer(dir, nombre) → texto, exists(dir) → sí/no }`. `listar` tira
-// si no puede mirar (los llamadores ya tratan eso como «sin historia»); `leer` tira si no puede leer
+// si no puede mirar (ENOENT es «sin historia»; cualquier otro error, «no pude leer», y se dice); `leer` tira si no puede leer
 // («ilegible»); `exists` contesta «no» SÓLO cuando la carpeta no está, y tira si no pudo preguntar.
 // 🔴 «No está» es ENOENT y nada más. Un permiso negado, o un archivo donde debería haber una carpeta, es «no
 // pude mirar»: se tira, y quien llama lo dice.
@@ -183,12 +183,17 @@ function fuentePublicada(raiz, gitCmd = 'git') {
   };
 }
 
+/**
+ * Las fotos de una carpeta que coinciden con `patron`, ordenadas: `{ files, error }`. La misma regla que las fichas: una
+ * carpeta que no está (ENOENT) es «sin historia», sin error; cualquier otro error al listar es «no pude leer», con el
+ * motivo, y quien llama lo dice — leído como «sin historia», el aviso callaría con la carpeta sin permiso.
+ */
+function snapshotFiles(dir, patron, fuente) {
+  try { return { files: fuente.listar(dir).filter((f) => patron.test(f)).sort(), error: null }; }
+  catch (e) { return e && e.code === 'ENOENT' ? { files: [], error: null } : { files: [], error: reasonOf(e) }; }
+}
 function snapshots(dir, fuente = DISCO) {
-  try {
-    return fuente.listar(dir)
-      .filter((f) => /^dependencias-\d{4}-\d{2}-\d{2}\.json$/.test(f))
-      .sort();
-  } catch { return []; }
+  return snapshotFiles(dir, /^dependencias-\d{4}-\d{2}-\d{2}\.json$/, fuente);
 }
 
 /**
@@ -274,7 +279,8 @@ function deudasQueVencen(snap, ahora) {
 }
 
 function evaluar({ outDir, pendingDir, ahora, fuente = DISCO, legacyPendingDir = null }) {
-  const files = snapshots(outDir, fuente);
+  const { files, error } = snapshots(outDir, fuente);
+  if (error) return { estado: 'no-leida', motivo: error };
   if (!files.length) return { estado: 'sin-historia' };
 
   const ultimo = files[files.length - 1];
@@ -338,9 +344,8 @@ function lineaResumen(cab, resumen) {
 
 /** El vigilante: sólo su red de entrega. Sus hallazgos se deciden en sus pull requests y en el resumen. */
 function evaluarVigilante({ vigOut, ahora, fuente = DISCO }) {
-  let files;
-  try { files = fuente.listar(vigOut).filter((f) => /^vigilante-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort(); }
-  catch { return { estado: 'sin-historia' }; }
+  const { files, error } = snapshotFiles(vigOut, /^vigilante-\d{4}-\d{2}-\d{2}\.json$/, fuente);
+  if (error) return { estado: 'no-leida', motivo: error };
   if (!files.length) return { estado: 'sin-historia' };
   const ultimo = files[files.length - 1];
   const fecha = ultimo.slice('vigilante-'.length, -'.json'.length);
@@ -355,6 +360,8 @@ function evaluarVigilante({ vigOut, ahora, fuente = DISCO }) {
 }
 
 function redactarVigilante(w, o = {}) {
+  // la carpeta de las fotos no se pudo listar: no se sabe si hay historia, en cualquier máquina
+  if (w.estado === 'no-leida') return `🔴 vigilante: no pude leer la carpeta de sus fotos (${w.motivo}) — no se sabe si corrió ni si entregó su resumen.`;
   // todavía no se estrenó en esta máquina — salvo en la que espera los nocturnos (`o.espera`): ahí «no hay foto» se dice
   if (w.estado === 'sin-historia') {
     if (!o.espera) return null;
@@ -454,6 +461,8 @@ function lineasCruce(v) {
 
 function redactar(v, o = {}) {
   const L = [];
+  // la carpeta de las fotos no se pudo listar: no se sabe si hay historia, en cualquier máquina
+  if (v.estado === 'no-leida') return `🔴 dependencias: no pude leer la carpeta de las fotos de la revisión nocturna (${v.motivo}) — no se sabe si corrió.`;
   // todavía no se estrenó: no hay nada que cobrar — salvo en la máquina que espera los nocturnos (`o.espera`), donde
   // una pieza que nunca dejó foto y una sana no pueden dar el mismo silencio
   if (v.estado === 'sin-historia') {

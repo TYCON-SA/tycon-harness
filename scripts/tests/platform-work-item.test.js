@@ -271,6 +271,37 @@ test('WorkItem_Create_Github_OpensIssue @story-8.85 @ac-7', async () => {
   assert.match(fs.readFileSync(story, 'utf8'), new RegExp(`^depends_on: \\[\\]\\nwork_item: ${issue.number}$`, 'm'));
 });
 
+// M1 WorkItem_Create_Github_AssignsForNight @mantenimiento
+// 🔴 Falla con: no asignar el pedido de la noche, asignar uno común sin auto_assign, tomar por asignado a quien GitHub
+//    descartó en silencio (sin acceso al repo), o no tomar el repo que trae el pedido de la noche.
+test('M1 WorkItem_Create_Github_AssignsForNight @mantenimiento', async () => {
+  const m = mundo({ platform: { default: 'github' }, ghState: { user: 'arnes-bot', now: '2026-10-22T05:00:00Z', issues: {},
+    collaborators: { 'acme/web': ['dueno-web', 'arnes-bot'], 'acme/portal': ['dueno-web'] } } });
+  const ops = repoCon(null, null);
+  const noche = await P().run('work-item.create', { repoDir: ops, repo: 'acme/web', title: 'Dependencia vulnerable', tags: ['arnes-hallazgo', 'arnes:abc12345'],
+    assignTo: 'dueno-web', forNight: true }, { env: m.env });
+  assert.strictEqual(noche.ok, true, JSON.stringify(noche));
+  const issue = estadoGh(m).issues['acme/web'][0];
+  assert.deepStrictEqual(issue.assignees, ['dueno-web']);
+  assert.strictEqual(noche.value.assigned, 'dueno-web');
+  assert.deepStrictEqual(noche.value.missingTags, []);
+  // el repo del pedido gana sobre el de la configuración del repo
+  const otro = repoCon('work-items.yaml', GH_CONFIG);
+  const conRepo = await P().run('work-item.create', { repoDir: otro, repo: 'acme/web', title: 'Otro', assignTo: 'dueno-web', forNight: true }, { env: m.env });
+  assert.strictEqual(conRepo.ok, true, JSON.stringify(conRepo));
+  assert.strictEqual(estadoGh(m).issues['acme/web'].length, 2);
+  // GitHub descarta en silencio a quien no tiene acceso: no se dice «asignado», y se avisa
+  const sinAcceso = await P().run('work-item.create', { repoDir: ops, repo: 'acme/web', title: 'Sin acceso', assignTo: 'ajeno', forNight: true }, { env: m.env });
+  assert.strictEqual(sinAcceso.ok, true, JSON.stringify(sinAcceso));
+  assert.strictEqual(sinAcceso.value.assigned, null);
+  assert.ok(sinAcceso.value.warnings.some((w) => /ajeno/.test(w)), JSON.stringify(sinAcceso.value.warnings));
+  // un pedido común sin auto_assign no se asigna
+  const comun = await P().run('work-item.create', { repoDir: otro, title: 'Story 9.3: Otra', assignTo: 'dueno-web' }, { env: m.env });
+  assert.strictEqual(comun.ok, true, JSON.stringify(comun));
+  assert.ok(!('assigned' in comun.value));
+  assert.deepStrictEqual(estadoGh(m).issues['acme/portal'][0].assignees, []);
+});
+
 test('WorkItem_FieldName_NeutralWithAlias @story-8.85 @ac-8', () => {
   const F = FIELD();
   assert.strictEqual(F.idOf('story: "1"\nado_work_item: 5284\n'), '5284');

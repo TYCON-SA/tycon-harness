@@ -66,6 +66,15 @@ S=$(node "$GATE" --root "$TMP/no-existe-esta-ruta" 2>&1); R=$?
 [ $R -eq 1 ] && ok "una raíz inexistente pasada a mano falla (no se lee como 'todo bien')" || no "raíz inexistente debería fallar (exit $R)"
 echo "$S" | grep -q "no se revisó nada" && ok "y lo dice con todas las letras" || no "no explica que no revisó nada"
 
+# 5c) 🔴 varias carpetas de repos (la variable con varias, como el PATH): se recorren TODAS. Una copia rota en la
+#     segunda carpeta no puede pasar por no mirarla
+mkdir -p "$TMP/dos/uno" "$TMP/dos/otro"
+mkdir -p "$TMP/dos/uno/Prod/A/scripts" "$TMP/dos/otro/Prod2/C/scripts"
+cp "$TMP/Prod/A/scripts/release-notes.sh" "$TMP/dos/uno/Prod/A/scripts/"
+{ printf "#!/usr/bin/env bash\nRUIDO='%s'\n" '^chore: bump version'; printf 'ULTIMO=$(git log --format=%%s "$RANGO" | grep -vE "$RUIDO" | head -50)\n'; } > "$TMP/dos/otro/Prod2/C/scripts/release-notes.sh"
+S=$(TYCON_REPOS_ROOT="$TMP/dos/uno:$TMP/dos/otro" node "$GATE" 2>&1); R=$?
+[ $R -eq 1 ] && echo "$S" | grep -q "Prod2/C" && echo "$S" | grep -q "Prod/A" && ok "con dos carpetas de repos mira las dos y caza la copia rota de la segunda" || no "dos carpetas de repos (exit $R): $S"
+
 # 6) las copias REALES del equipo están alineadas
 if [ -d "$HOME/SourceCode" ]; then
   node "$GATE" >/dev/null 2>&1 && ok "las copias reales del equipo están alineadas" || no "🔴 las copias reales DIVERGEN — corré: node $GATE"

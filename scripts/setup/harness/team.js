@@ -891,7 +891,7 @@ function contentsAt(c, repo, file, sha) {
   const r = c.get(`/repos/${repo}/contents/${file}?ref=${sha}`);
   if (r.ok && r.status === 404) return { ok: true, text: null };
   if (!r.ok || r.status !== 200 || !r.json) return failure(c, r, repo, `el archivo ${file}`);
-  let buf = Buffer.alloc(0);
+  let buf;
   try { buf = Buffer.from(String(r.json.content || ''), 'base64'); } catch (_) { buf = Buffer.alloc(0); }
   return { ok: true, text: buf.toString('utf8'), buf, sha: r.json.sha || null };
 }

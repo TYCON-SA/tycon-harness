@@ -73,6 +73,15 @@ function stamp() {
   const d = new Date(), p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
 }
+/** Copia `file` a `<file>.bak.<sello>` sin pisar nunca otra copia: el sello es al segundo, y la línea de arranque puede
+ *  haber copiado el mismo archivo en ese segundo; con el nombre ocupado suma `-1`, `-2`… Devuelve la ruta. */
+function backupCopy(file) {
+  const base = `${file}.bak.${stamp()}`;
+  for (let n = 0; ; n++) {
+    const p = n ? `${base}-${n}` : base;
+    try { fs.copyFileSync(file, p, fs.constants.COPYFILE_EXCL); return p; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  }
+}
 
 /** Los códigos de «el archivo está ocupado» (Windows: otro proceso lo tiene abierto — un antivirus, Claude Code leyéndolo). */
 const BUSY_CODES = ['EPERM', 'EACCES', 'EBUSY'];
@@ -160,7 +169,7 @@ function applySettings(file, { withBackup, home = os.homedir(), platform = proce
     if (dirs.changed) s.env[PD.PLUGIN_DIRS_KEY] = dirs.value;
     let bak = null;
     try {
-      if (withBackup && raw !== null) { bak = `${file}.bak.${stamp()}`; fs.copyFileSync(file, bak); }
+      if (withBackup && raw !== null) bak = backupCopy(file);
       writeAtomic(file, `${bom}${JSON.stringify(s, null, 2)}\n`, mode);
     } catch (e) {
       // la escritura no ocurrió: la copia que se tomó para ella sobra (si no, cada arranque ocupado dejaría un .bak)

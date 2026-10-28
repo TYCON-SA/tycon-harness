@@ -1172,7 +1172,7 @@ test('writeFollowups + followups-status: idempotente, preserva [x], acepta shape
   assert.equal(st.open, 2); assert.equal(st.has_section, true);
 
   // dev marca SEC-C3 resuelto a mano.
-  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace('- [ ] **[CRITICAL]** SEC-C3', '- [x] **[CRITICAL]** SEC-C3'));
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').split('- [ ] **[CRITICAL]** SEC-C3').join('- [x] **[CRITICAL]** SEC-C3'));
   // 2da escritura: shape Step6 (rule_id/disposition) + 1 nuevo. Debe preservar SEC-C3 [x].
   const f2 = path.join(dir, 'f2.json');
   fs.writeFileSync(f2, JSON.stringify([
@@ -1233,6 +1233,34 @@ test('writeFollowups preserva items ABIERTOS que no vienen en el nuevo set (BUG-
   assert.equal(byKey['SPEC-C4|docs/s.md'], true, 'SPEC-C4 nuevo fixed → [x]');
   assert.equal(st.total, 3, 'SEC-C5 + SPEC-C4 + TEST-W4a preservado');
   assert.equal(r.open, 1, 'solo TEST-W4a queda abierto');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('writeFollowups conserva los resueltos de otras tandas con la misma regla y archivo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-fu-tandas-'));
+  const story = path.join(dir, '3-1.md');
+  fs.writeFileSync(story, '---\nstory: 3-1\nstatus: review\n---\n\n## Story\nBody.\n');
+  // la primera tanda: dos hallazgos distintos de la misma regla sobre el mismo archivo, los dos arreglados
+  const fa = path.join(dir, 'fa.json');
+  fs.writeFileSync(fa, JSON.stringify([
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'fixed', reason: 'log sin sanitizar en Alta' },
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'fixed', reason: 'log sin sanitizar en Baja' },
+  ]));
+  writeFollowups({ story, findings: fa });
+  // la segunda tanda: la misma regla sobre el mismo archivo, un hallazgo nuevo y abierto
+  const fb = path.join(dir, 'fb.json');
+  fs.writeFileSync(fb, JSON.stringify([
+    { rule_id: 'SEC-W2', severity: 'WARNING', file: 'src/a.cs', disposition: 'open', reason: 'log sin sanitizar en Modificar' },
+  ]));
+  const r = writeFollowups({ story, findings: fb });
+  const txt = fs.readFileSync(story, 'utf8');
+  assert.match(txt, /- \[x\].*en Alta/, 'el resuelto de la primera tanda sigue');
+  assert.match(txt, /- \[x\].*en Baja/, 'el segundo resuelto de la primera tanda también');
+  assert.match(txt, /- \[ \].*en Modificar/, 'el abierto de la segunda tanda entra abierto');
+  assert.equal(r.total, 3);
+  assert.equal(r.open, 1);
+  // re-escribir el mismo set es idempotente: no duplica
+  assert.equal(writeFollowups({ story, findings: fb }).total, 3);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

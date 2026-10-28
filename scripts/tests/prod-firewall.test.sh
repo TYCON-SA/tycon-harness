@@ -138,6 +138,8 @@ case "$1 $2 $3 $4" in
     [ -n "$l" ] || { echo "ERROR: (ResourceNotFound) The Resource 'Microsoft.Sql/servers/x/firewallRules/$n' was not found." >&2; exit 3; }
     echo "${l#* }"; exit 0 ;;
   "sql server firewall-rule create"|"sql server firewall-rule update")
+    # crear-sin-permiso: la cuenta de Azure no puede escribir reglas en ese servidor
+    [ "$FAKE_AZ" = crear-sin-permiso ] && { echo "ERROR: (AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Sql/servers/firewallRules/write'." >&2; exit 1; }
     n="$(arg -n "$@")"; ip="$(arg --start-ip-address "$@")"
     grep -v "^$n " "$TMPLOG/az-reglas" > "$TMPLOG/az-reglas.t"; echo "$n $ip" >> "$TMPLOG/az-reglas.t"; mv "$TMPLOG/az-reglas.t" "$TMPLOG/az-reglas"
     # crear-lento: la regla queda creada en Azure, pero la respuesta no llega antes del tope
@@ -752,6 +754,22 @@ rc="$(gancho SessionEnd "$SES_A")"
 if [ "$rc" = 0 ] && ! grep -q "no pude anotar" "$TMP/hook.out"; then
   ok "Gate_CannotLog_SaysSoInRed · con el registro sano, el fin de sesión no avisa nada nuevo"
 else no "Gate_CannotLog_SaysSoInRed · fin de sesión sano: rc=$rc · $(cat "$TMP/hook.out")"; fi
+
+# ── M1 · el intento de conexión tiene tope: un servidor que no contesta no cuelga la puerta ─────────────────────
+# 🔴 Falla con: el intento sin tope de espera (sqlcmd espera lo que quiera el servidor y el cierre de sesión se corta).
+mundo; SES=$SES_A; viva $SES_A; rc="$(puerta --open-firewall "$PROD")"
+if [ "$rc" = 0 ] && grep -Eq -- "(^| )-l [1-9][0-9]?( |$)" "$TMP/sqlcmd.log"; then
+  ok "M1 OpenFirewall_ConnectionAttempt_HasTimeout · el intento de conexión lleva su tope de espera"
+else no "M1 · rc=$rc · sqlcmd: $(cat "$TMP/sqlcmd.log" 2>/dev/null)"; fi
+
+# ── M2 · la cuenta de Azure sin permiso al abrir: sale 2, lo dice y deja la regla anotada ───────────────────────
+# 🔴 Falla con: un permiso negado leído como apertura (sale 0 o dice «abierta»), o la regla que sale del estado y
+#    queda sin rastro si la creación llegó a medias.
+mundo; SES=$SES_A; viva $SES_A; FAKE_AZ=crear-sin-permiso; rc="$(puerta --open-firewall "$PROD")"; unset FAKE_AZ
+if [ "$rc" = 2 ] && grep -q "no pudo crear la regla" "$TMP/err" && grep -q "AuthorizationFailed" "$TMP/err" \
+   && ! grep -q "abierta para" "$TMP/out" && estado | grep "$PROD" >/dev/null && ! grep -q "^$REGLA " "$TMP/az-reglas"; then
+  ok "M2 OpenFirewall_AccountWithoutPermission_Exit2AndKeepsTrace · sale 2 con el motivo de Azure y la regla anotada"
+else no "M2 · rc=$rc · $(cat "$TMP/out" "$TMP/err") · estado: $(estado)"; fi
 
 echo "— prod-firewall: $pasaron ok, $fallos fallos —"
 [ "$fallos" = 0 ]

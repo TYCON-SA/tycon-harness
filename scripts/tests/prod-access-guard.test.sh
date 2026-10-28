@@ -44,7 +44,7 @@ mundo(){ # deja $CASA (HOME falso) y $REPOS (raíz de repos) recién hechos
   cat > "$REPOS/backend-acme/.tycon/production.json" <<JSON
 {"servers":[{"host":"$PROD","environment":"produccion","keychain":"tycon-prod-acme"},
                {"host":"$STAGING","environment":"no-produccion"},
-               {"host":"test.bizuit.example","environment":"no-produccion"}]}
+               {"host":"acme-test.example.com","environment":"no-produccion"}]}
 JSON
   printf '{"servers":[{"host":"otro.database.windows.net","environment":"no-produccion"}]}' > "$REPOS/otro/.tycon/production.json"
 }

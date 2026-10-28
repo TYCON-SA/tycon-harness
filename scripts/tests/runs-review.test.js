@@ -1704,3 +1704,50 @@ test('M5 Escapes_ApagadoEnRegistroYComando_CuentaUnaVez @mantenimiento', () => {
   const e = regla(r, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort();
   assert.deepStrictEqual(e, ['LIVENESS_PRECOMMIT_OFF:1', 'MUTATION_CHECK_OFF:1', 'STORY_GATE_OFF_ADHOC:1']);
 });
+
+// M6 Horas_ListaDeIntegracionesRota_SeDice @mantenimiento
+// 🔴 Falla con: la lista de integraciones que no se lee tragada en silencio (sin servidores de horas, la bandera de horas
+//    puesta tras abrir el registro por su servidor cuenta como falla y nadie se entera), o la frase fuera de las que el
+//    resumen imprime.
+test('M6 Horas_ListaDeIntegracionesRota_SeDice @mantenimiento', () => {
+  const { spawnSync } = require('child_process');
+  // cada caso en un proceso propio: la lista se lee una vez por proceso
+  const medir = (dir) => {
+    const codigo = `const R = require(${JSON.stringify(path.join(ROOT, 'scripts', 'nightly', 'runs-review', 'rules.js'))});
+      process.stdout.write(JSON.stringify({ motivo: R.horasSinMedir(), abre: R.ACCIONES_DE_PARTE['time-tracking']({ name: 'mcp__clockify__start-entry', command: '' }) }));`;
+    const r = spawnSync(process.execPath, ['-e', codigo], { env: { ...process.env, TYCON_INTEGRATIONS_DIR: dir }, encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  const sana = tmp('rr-horas-');
+  fs.cpSync(path.join(ROOT, 'integrations', 'clockify'), path.join(sana, 'clockify'), { recursive: true });
+  assert.deepStrictEqual(medir(sana), { motivo: null, abre: true });
+  const rota = tmp('rr-horas-');
+  fs.cpSync(path.join(ROOT, 'integrations', 'clockify'), path.join(rota, 'clockify'), { recursive: true });
+  fs.mkdirSync(path.join(rota, 'otra'));
+  fs.writeFileSync(path.join(rota, 'otra', 'integration.json'), '{');
+  const m = medir(rota);
+  assert.strictEqual(typeof m.motivo, 'string');
+  assert.ok(RR.MOTIVOS.some((re) => re.test(m.motivo)), `el resumen imprime la frase: ${m.motivo}`);
+  assert.deepStrictEqual(medir(path.join(rota, 'otra', 'integration.json')), { motivo: null, abre: false }, 'sin carpeta de integraciones no hay nada que decir');
+});
+
+// 🔴 La revisión de la noche llama a `tieneEscape` por cada pedido de cada comando de cada conversación. Si cada llamada
+// le pregunta al mapa de renombres —que mira el disco y recorre el mapa entero—, la pasada con el buzón de una semana no
+// entra en el tope de 60 minutos del pipeline. Rojo si `tieneEscape` vuelve a preguntarle al mapa por pedido.
+test('P1 Escape_LosNombresSePidenUnaVez_NoPorComando', () => {
+  const LN = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
+  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const original = LN.envNames;
+  let llamadas = 0;
+  LN.envNames = (...a) => { llamadas += 1; return original(...a); };
+  try {
+    const con = AZ.segmentos('TYCON_PR_BY_HAND=1 az repos pr create --target-branch main')[0];
+    const sin = AZ.segmentos('az repos pr create --target-branch main')[0];
+    for (let i = 0; i < 2000; i += 1) {
+      assert.strictEqual(AZ.tieneEscape(con), true);
+      assert.strictEqual(AZ.tieneEscape(sin), false);
+    }
+    assert.ok(llamadas <= 1, `el mapa se consultó ${llamadas} veces para 4000 pedidos`);
+  } finally { LN.envNames = original; }
+});

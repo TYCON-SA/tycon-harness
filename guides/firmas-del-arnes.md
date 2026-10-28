@@ -16,6 +16,9 @@ lista sale de `scripts/lib/signatures.js`, y una prueba verifica que esta tabla 
 La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la pestaña de otra sesión (medido el
 2026-10-26). Un escape se firma en la propia sesión o corriendo el comando en tu terminal, donde no hay freno.
 
+En Windows la terminal no se lee: cada comando de la columna «Firmarla en la terminal» abre una ventana nueva con el
+mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana vence a los 5 minutos sin firmar nada.
+
 | Firma | Qué aprueba | Comando que la pide | ¿Desde otra sesión? | Firmarla en la terminal |
 |---|---|---|---|---|
 | `plan-approval` | aprobar el plan de una story | `marker.js complete-step approve-plan --approved` | sí | `marker.js complete-step approve-plan --terminal` |

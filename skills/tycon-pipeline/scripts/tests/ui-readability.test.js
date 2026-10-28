@@ -36,10 +36,10 @@ process.on('exit', () => { try { fs.rmSync(TMP, { recursive: true, force: true }
 const HOME = path.join(TMP, 'casa');
 fs.mkdirSync(path.join(HOME, '.claude', '.tycon-pipeline', 'active'), { recursive: true });
 
-let n = 0;
+let mundos = 0;
 // mundo — un repo git propio en su carpeta padre propia (la matriz mira vecinos).
 function mundo() {
-  const repo = path.join(TMP, `m${++n}`, 'repo');
+  const repo = path.join(TMP, `m${++mundos}`, 'repo');
   fs.mkdirSync(path.join(repo, '.advisors', 'dod-runtime'), { recursive: true });
   spawnSync('git', ['init', '-q', '-b', 'trabajo', repo], { stdio: 'ignore' });
   return repo;
@@ -556,7 +556,7 @@ function commitTodo(dir, msg) {
  * `frontRama: null` → Front sin worktree (el principal queda en `main`).
  */
 function hermanos({ declarada = 'Front/src/components/Facturas.tsx', frontRama = 'feat/facturas-1-1-pantalla' } = {}) {
-  const dir = path.join(TMP, `h${++n}`);
+  const dir = path.join(TMP, `h${++mundos}`);
   fs.mkdirSync(dir, { recursive: true });
   const raiz = fs.realpathSync(dir);
   const specs = path.join(raiz, 'Specs');

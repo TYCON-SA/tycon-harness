@@ -127,7 +127,7 @@ function add(ctx, state, H) {
       const SL = require('./startup-line.js');
       const n = SL.checkNode({ env: ctx.env });
       SL.migrate(H.settingsPath(ctx), { home: ctx.home, platform: ctx.platform, nodeOk: n.ok, nodeVersion: n.version, addIfMissing: true, backup: !snap });
-      H.ensureImport(ctx);
+      H.ensureImport(ctx, { backup: !snap });
       // su instalador, avisado de lo de Codex: `done` si ya está enchufado (no lo toca), `off` si no
       const a = H.runClaudeApplier(ctx, tree, { log, snapshotDir: snap && snap.dir, codex: wanted.includes('codex') ? 'done' : 'off' });
       if (!a.ok) return fail(`el aplicador falló (${a.reason})`);

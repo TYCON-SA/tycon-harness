@@ -41,8 +41,9 @@ const PACKS_REALES = path.join(RAIZ, 'packs');
 function raizDeRepos() {
   try {
     const { rutaArnes } = require('./lib/harness-path.js');
+    // la que resuelve el arnés lee también TYCON_REPOS_ROOT, con una carpeta o varias: se recorren todas
     const r = require(path.join(rutaArnes(), 'scripts', 'lib', 'repos-root.js')).resolveReposRoot();
-    if (r.root) return r.root;
+    if (r.root) return Array.isArray(r.roots) && r.roots.length ? r.roots : [r.root];
     throw new Error(r.motivo);
   } catch (e) {
     console.error(`package-equivalence: sin raíz de repos (${e.message}) — pasá --repos-root <dir> o --repos <a,b>, o definí TYCON_REPOS_ROOT`);
@@ -140,7 +141,23 @@ function foto() {
 }
 
 // ── informe ───────────────────────────────────────────────────────────────────────────────────
-function descubrirRepos(root, excluir) {
+/** Las carpetas de repos: la de `--repos-root`; si no, las de TYCON_REPOS_ROOT (una o varias, separadas como en el PATH);
+ *  si no, las que resuelve el arnés (perezoso: con una de las dos primeras no se deduce nada). */
+const raicesPedidas = () => {
+  if (arg('--repos-root', null)) return [arg('--repos-root', null)];
+  const env = String(process.env.TYCON_REPOS_ROOT || '').split(path.delimiter).map((s) => s.trim()).filter(Boolean);
+  return env.length ? env : raizDeRepos();
+};
+/** La ruta de un repo relativa a la carpeta de repos que lo contiene (o entera, si no está bajo ninguna). */
+const relativaA = (roots, repo) => {
+  const r = (roots || []).find((x) => !path.relative(x, repo).startsWith('..'));
+  return r ? path.relative(r, repo) || repo : repo;
+};
+
+function descubrirRepos(roots, excluir) {
+  if (!Array.isArray(roots)) return descubrirRepos([roots], excluir);
+  if (roots.length > 1) return [...new Set(roots.flatMap((r) => descubrirRepos([r], excluir)))].sort();
+  const root = roots[0];
   const out = [];
   // (los dos nombres del arnés, el interno y el público)
   const SALTAR = new Set(['node_modules', 'tycon-claude-guides', 'tycon-harness', 'agent-skills', 'AgentSkills', 'BMAD', ...excluir]);
@@ -232,11 +249,13 @@ function informe() {
   // (b) commits reales
   let filas = [];
   let root = null;
+  let roots = null;
   if (!soloCasos) {
     const explicitos = arg('--repos', null);
-    root = arg('--repos-root', null) || process.env.TYCON_REPOS_ROOT || raizDeRepos();   // perezoso: con --repos-root no se deduce nada
+    roots = explicitos ? null : raicesPedidas();
+    root = roots ? roots.join(', ') : null;
     const excluir = (arg('--exclude', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
-    const repos = explicitos ? explicitos.split(',').map((s) => path.resolve(s.trim())) : descubrirRepos(root, excluir);
+    const repos = explicitos ? explicitos.split(',').map((s) => path.resolve(s.trim())) : descubrirRepos(roots, excluir);
     log(`(b) commits reales: ${repos.length} repos bajo ${explicitos ? '(explícitos)' : root}, ${n} commits cada uno`);
     for (const repo of repos) filas.push(medirCommits({ repo, n, viejo, nuevo: PIPELINE_NUEVO, env }));
   }
@@ -277,7 +296,7 @@ function informe() {
     L.push('| Repo | Pedidos | Medidos | Sin archivos* | Dif. de conjunto | Dif. de orden** | Errores |');
     L.push('|---|---|---|---|---|---|---|');
     for (const f of filas) {
-      L.push(`| ${path.relative(root || '/', f.repo) || f.repo} | ${f.pedidos === 0 ? 'sin commits' : f.pedidos} | ${f.medidos} | ${f.sinArchivos} | ${f.difConjunto ? `❌ ${f.difConjunto}` : '0'} | ${f.difOrden} | ${f.errores} |`);
+      L.push(`| ${roots ? relativaA(roots, f.repo) : path.relative('/', f.repo) || f.repo} | ${f.pedidos === 0 ? 'sin commits' : f.pedidos} | ${f.medidos} | ${f.sinArchivos} | ${f.difConjunto ? `❌ ${f.difConjunto}` : '0'} | ${f.difOrden} | ${f.errores} |`);
     }
     const totales = filas.reduce((a, f) => ({ medidos: a.medidos + f.medidos, difConjunto: a.difConjunto + f.difConjunto, difOrden: a.difOrden + f.difOrden, errores: a.errores + f.errores }), { medidos: 0, difConjunto: 0, difOrden: 0, errores: 0 });
     L.push(`| **Total (${filas.length} repos)** | | **${totales.medidos}** | | **${totales.difConjunto}** | ${totales.difOrden} | ${totales.errores} |`);
@@ -381,8 +400,9 @@ function porRepo() {
   const nuevoDir = path.resolve(arg('--new-tree', RAIZ));
   const lado = (d) => ({ pipeline: path.join(d, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'), env: ambienteDeArbol(d, perfil) });
   const explicitos = arg('--repos', null);
-  const root = explicitos ? null : (arg('--repos-root', null) || process.env.TYCON_REPOS_ROOT || raizDeRepos());
-  const repos = explicitos ? explicitos.split(',').map((s) => path.resolve(s.trim())) : descubrirRepos(root, (arg('--exclude', '') || '').split(',').map((s) => s.trim()).filter(Boolean));
+  const roots = explicitos ? null : raicesPedidas();
+  const root = roots ? roots.join(', ') : null;
+  const repos = explicitos ? explicitos.split(',').map((s) => path.resolve(s.trim())) : descubrirRepos(roots, (arg('--exclude', '') || '').split(',').map((s) => s.trim()).filter(Boolean));
   log(`per-repo: ${repos.length} repos, commits de los últimos ${dias} días`);
   const filas = repos.map((repo) => medirRepo({ repo, dias, viejo: lado(viejoDir), nuevo: lado(nuevoDir) }));
   const pierden = filas.filter((f) => f.pierden.length);
@@ -404,7 +424,7 @@ function porRepo() {
   L.push('');
   L.push('| Repo | Medidos | Sin archivos | Pierden | Ganan | Paquete no activo | Errores |');
   L.push('|---|---|---|---|---|---|---|');
-  for (const f of filas) L.push(`| ${root ? path.relative(root, f.repo) : path.basename(f.repo)} | ${f.medidos} | ${f.sinArchivos} | ${f.pierden.length ? `❌ ${f.pierden.length}` : '0'} | ${f.ganan} | ${f.noActivos.length ? '❌' : '—'} | ${f.errores.length} |`);
+  for (const f of filas) L.push(`| ${roots ? relativaA(roots, f.repo) : path.basename(f.repo)} | ${f.medidos} | ${f.sinArchivos} | ${f.pierden.length ? `❌ ${f.pierden.length}` : '0'} | ${f.ganan} | ${f.noActivos.length ? '❌' : '—'} | ${f.errores.length} |`);
   for (const f of filas.filter((x) => x.pierden.length || x.noActivos.length || x.errores.length)) {
     L.push('');
     L.push(`### ${path.basename(f.repo)}`);

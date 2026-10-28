@@ -79,14 +79,14 @@ test('Decisiones_FuenteAbierta_SeListaIgual', () => {
 test('Inicio_NingunaTarjetaALaPortada', () => {
   const filas = views.filasInicioMantenedor(modelo(), { ahora: AHORA, enlaceOperaciones: ADO });
   for (const f of filas) assert.notStrictEqual(f.enlace, ADO, `${f.clave} no lleva a la portada`);
-  const dep = filas.find((f) => f.clave === 'dependencias_nuevas');
-  assert.strictEqual(dep.enlace, '#decidir-dependencias_nuevas');
+  const dep = filas.find((f) => f.clave === 'dependencias_por_decidir');
+  // las dependencias se deciden en Mantenimiento, una fila por ficha con Aceptar o Rechazar
+  assert.strictEqual(dep.enlace, '/mantenimiento');
   assert.strictEqual(filas.find((f) => f.clave === 'vigilante_pendientes').enlace, '#decidir-vigilante_pendientes');
   // la lista a la que lleva: un renglón por ficha, con el enlace a su pedido o el motivo
   const html = views.listasDeDecision(modelo(), { enlaceOperaciones: ADO });
-  assert.match(html, /id="decidir-dependencias_nuevas"/);
-  assert.match(html, new RegExp(`href="${ADO}/pullrequest/5255"`));
-  assert.match(html, /171bed99[^<]*·[^<]*sin pedido/i);
+  // las nuevas de anoche no tienen lista propia: todas las que esperan están en Mantenimiento
+  assert.doesNotMatch(html, /id="decidir-dependencias_nuevas"/);
   assert.match(html, /id="decidir-vigilante_pendientes"[\s\S]*pullrequest\/4669/);
 });
 

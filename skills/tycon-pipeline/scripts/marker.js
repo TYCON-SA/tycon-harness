@@ -421,12 +421,24 @@ function cmdSet(payloadJson) {
   // de B EN SILENCIO; `checks.build=green` y `dodRuntimeChecked` heredados → gates mintiendo.
   // Por eso, al cambiar de storyId, los campos de CICLO DE VIDA DE
   // CORRIDA se resetean (la identidad de sesión y el startedAt se conservan).
+  // `--renumber`: la MISMA corrida con otro número (un choque de número obliga a renumerar la story). Cambia el
+  // `storyId` (y el `storyPath` si viene) y conserva el ciclo de vida entero: pasos, controles, pase adversarial,
+  // ediciones. Deja la copia del marcador anterior y lo anota en gates.log, como el reemplazo.
+  if (existing && payload.storyId && payload.storyId !== existing.storyId && process.argv.includes('--renumber')) {
+    const copia = path.join(STATE_DIR, 'replaced', `${SID}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    fs.mkdirSync(path.dirname(copia), { recursive: true });
+    fs.writeFileSync(copia, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+    appendLog('gates.log', { name: 'marker-renumber', from: existing.storyId, to: payload.storyId, copy: copia });
+    console.error(`marker.js set: la corrida de la story ${existing.storyId} sigue como ${payload.storyId}, con sus pasos, controles y ediciones. La copia del marcador anterior quedó en ${copia}`);
+    existing = { ...existing, storyId: payload.storyId };
+  }
   if (existing && payload.storyId !== existing.storyId) {
     // Una ejecución que ya avanzó no se reemplaza sin pedirlo: el reinicio borraría sus pasos, sus controles y su
     // pase adversarial sin que nadie lo vea. Con `--replace` se reemplaza; siempre queda la copia del anterior.
     const hechos = Array.isArray(existing.stepsCompleted) ? existing.stepsCompleted.length : 0;
     if (hechos > 0 && !process.argv.includes('--replace')) {
       console.error(`marker.js set: esta sesión tiene la ejecución de la story ${existing.storyId} con ${hechos} paso(s) hecho(s), y el pedido es de la ${payload.storyId}: no la reemplazo.`);
+      console.error('  Si es la MISMA story con otro número (renumerada por un choque): el mismo set con --renumber conserva la corrida (pasos, controles, ediciones).');
       console.error('  Si la de antes terminó o se abandona: marker.js clear y volvé a pedirlo, o el mismo set con --replace (deja una copia del marcador anterior).');
       process.exit(3);
     }
@@ -3493,7 +3505,7 @@ function verificarPruebasPropias(rutas, marker, tipo) {
     if (!isTestPath(rel)) falla(ruta, 'no es un archivo de prueba (el criterio de isTestPath, el mismo del freno ATDD)');
     // (d) evento posterior, o fecha del archivo posterior (la edición por consola no deja evento).
     if (conFecha) {
-      let mtime = NaN;
+      let mtime;
       try { mtime = fs.statSync(abs).mtimeMs; } catch (_e) { mtime = NaN; }
       if (!editadasDespues.has(k) && !(mtime > desde)) {
         falla(ruta, `no se editó después del lanzamiento del pase (${lanz.launchedAt}): ni un evento de edición posterior en esta corrida ni una fecha de modificación posterior`);
@@ -4447,7 +4459,7 @@ function cmdWaiveCritical(argv) {
       if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js waive-critical: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se eximió nada.`); process.exit(1); }
       process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
     }
-    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
     if (!waiver.hasTty()) {
       console.error('🔒 marker.js waive-critical --terminal BLOQUEADO — necesita una terminal de verdad: lo corre el dev, no el agente.');
       console.error(`     node ${__filename} waive-critical ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
@@ -4508,7 +4520,7 @@ function cmdSignAdversarialSkip(argv) {
       if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js sign-adversarial-skip: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se firmó nada.`); process.exit(1); }
       process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
     }
-    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
   }
   // Sin la huella la constancia va sin máquina (no es una de sus llaves), y se dice.
   let maquina = null;
@@ -4603,7 +4615,7 @@ function cmdMarkTested(argv) {
       if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js mark-tested: ${v.estado === 'vencida' ? 'la ventana venció sin marcar' : `no pude abrir la ventana (${v.motivo})`} — no se marcó nada.`); process.exit(1); }
       process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
     }
-    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
     if (!waiver.hasTty()) {
       console.error('🔒 marker.js mark-tested --terminal BLOQUEADO — necesita una terminal de verdad: lo corre la persona que probó, no el agente.');
       console.error(`     node ${__filename} mark-tested ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
@@ -4686,11 +4698,8 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     }
     process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
   }
-  if (waiver.esWindows()) {
-    waiver.anotarVentana();
-    // en la ventana, toda salida espera un Enter antes de cerrarse: que la persona lea el resultado (el tope igual corre)
-    process.on('exit', () => waiver.pausaFinal());
-  }
+  // en la ventana, toda salida espera un Enter antes de cerrarse: que la persona lea el resultado (el tope igual corre)
+  if (waiver.esWindows()) waiver.dentroDeLaVentana();
 
   // Freno físico ANTES de computar nada: si no hay terminal, ni arrancamos.
   if (!waiver.hasTty()) {

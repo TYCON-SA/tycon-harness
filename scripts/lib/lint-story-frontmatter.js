@@ -101,8 +101,6 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const os = require('os');
-
 const REQUIRED = ['story', 'epic', 'status'];
 
 // ── La causa del reproceso — `followup_reason:` ───────────────────────────────────────────────

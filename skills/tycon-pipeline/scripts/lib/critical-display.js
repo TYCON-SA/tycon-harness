@@ -123,7 +123,6 @@ function criticosDe(runDir) {
 
 // un código de regla entero, con sufijo si lo tiene (TEST-C1b, ACCOV-C1-EXT); «TEST-C10» no es «TEST-C1»
 const RE_CODIGO = /(?<![\w-])([A-Z][A-Z0-9]*-[CW]\d(?:[\w.-]*[A-Za-z0-9])?)(?![\w-])/gi;
-const RE_NIEGA = /\bno\s+(?:(?:lo|la|los|las|se)\s+)?exim/i;
 // una negación en cualquier parte del mensaje: «no», «ni», «nunca», «jamás», «tampoco», «sin eximir», «nada de eximir»
 const RE_NIEGA_ALGO = /(?<![\p{L}\p{N}])(?:(?:no|ni|nunca|jam[aá]s|tampoco)(?![\p{L}\p{N}])|sin\s+exim|nada\s+de\s+exim)/iu;
 // una excepción, una condición o un rechazo dicho con otras palabras: cualquiera descarta el ok
@@ -140,8 +139,6 @@ function partes(t) {
   }
   return out;
 }
-// las frases de un mensaje: cortan el punto (seguido de espacio o al final), ; ! ? y el renglón; no la coma
-const frases = (t) => String(t).split(/(?:[.!?](?=\s|$)|[;\n])+/).map((s) => s.trim()).filter(Boolean);
 const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // ¿el texto nombra `x` entero? (no dentro de otro nombre: «barfoo.js» no nombra «foo.js»)
 const nombraEntero = (texto, x) => new RegExp(`(?<![\\w./\\\\-])${escRe(String(x).toLowerCase())}(?![\\w-])`).test(String(texto).toLowerCase());
