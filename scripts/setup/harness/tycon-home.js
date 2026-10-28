@@ -77,8 +77,13 @@ function resolvePlace({ home, isValid = isHarnessClone } = {}) {
   return out;
 }
 
-/** La casa propia del arnés vista desde un HOME: `TYCON_HOME` si está (y vale), o `<home>/.tycon`. Nunca tira. */
+/**
+ * La casa propia del arnés vista desde un HOME: `TYCON_HOME` si está (y vale), o `<home>/.tycon`. Nunca tira.
+ * `TYCON_HOME` es del ambiente de quien corre, así que vale sólo para su propio HOME: con otro (una prueba con una casa
+ * de juguete), la casa es `<home>/.tycon` y el estado no cae en la casa real.
+ */
 function ownRootOf(home) {
+  if (home && path.resolve(home) !== path.resolve(os.homedir())) return path.join(path.resolve(home), OWN_DIR_NAME);
   const v = process.env.TYCON_HOME === undefined ? '' : String(process.env.TYCON_HOME).trim();
   return v && path.isAbsolute(v) ? v : path.join(home || os.homedir(), OWN_DIR_NAME);
 }
@@ -233,6 +238,17 @@ function ownPaths({ env = process.env } = {}) {
 }
 
 /**
+ * Las carpetas de la casa propia vistas desde un contexto `{ home, env }`: `TYCON_HOME` si el ambiente DEL CONTEXTO la
+ * trae; si no, `<home>/.tycon`; sin `home`, la de quien corre. Con `ownPaths({ env: ctx.env })` al lado de `ctx.home`,
+ * un contexto de otra casa y sin `TYCON_HOME` caería en la casa de quien corre (y ahí se borra y se mueve).
+ */
+function ownPathsOf({ home, env } = {}) {
+  const e = env || {};
+  if ((Object.prototype.hasOwnProperty.call(e, 'TYCON_HOME') && e.TYCON_HOME !== undefined) || !home) return ownPaths({ env: e });
+  return ownPaths({ env: { TYCON_HOME: path.join(path.resolve(home), OWN_DIR_NAME) } });
+}
+
+/**
  * El Node propio del arnés: `<casa>/node/` con cada versión en `versions/<v>/` y el enlace `current` a la
  * que está en uso (simbólico en Mac y Linux, unión en Windows). Lo que dura escrito —el comando de un hook, el plist del
  * examen— nombra `current`, nunca la carpeta numerada: cambiar de versión de Node no cambia ningún comando. `bin` es el
@@ -334,7 +350,7 @@ function strayTempLinks(at) {
 module.exports = {
   PLACE_NAME, LEGACY_PLACE_NAME, OWN_DIR_NAME, TyconHomeError, ownRootOf,
   placePath, legacyPlacePath, isHarnessClone, resolvePlace, claudeDir,
-  harnessDir, stateDir, configFile, backupsDir, installedSkillsDir, maintainedDir, dashboardDir, home, ownPaths, isReleaseMachine, maintainedPath,
+  harnessDir, stateDir, configFile, backupsDir, installedSkillsDir, maintainedDir, dashboardDir, home, ownPaths, ownPathsOf, isReleaseMachine, maintainedPath,
   harnessNode,
   maintainersClone,
   linksMode, isLink, linkTarget, makeLink, removeLink, pointLink, strayTempLinks, keepLinkPathsEnv,
