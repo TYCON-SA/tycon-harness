@@ -42,7 +42,7 @@
  * registro y su estado.
  *
  * EL CANDADO: `exclusivo(fn)` corre `fn` sin otro trabajo de git sobre los clones en el medio. El
- * refresco pasa por ahí, y la propuesta de la pestaña también: así un refresco no hace `reset --hard` mientras se arma un
+ * refresco pasa por ahí (salvo la bajada del buzón, que no toca los clones), y la propuesta de la pestaña también: así un refresco no hace `reset --hard` mientras se arma un
  * commit, y un commit no ve un clon a medio bajar.
  *
  * Contrato con server.js: crearFuentes(…) → { arrancar, refrescar, estado, config, modelo, personas, detener, clones,
@@ -849,8 +849,24 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, corridas: corridas || n, carpetas: null };
   }
 
+  /**
+   * Un refresco, en tres tramos: lo de los clones con el candado, la bajada del buzón sin él (no toca los clones y tarda
+   * un minuto en un sitio real: un envío de Mantenimiento no la espera), y lo que vuelve a leer el clon, otra vez con él.
+   */
   async function refrescarUnaVez() {
     const t = ahora();
+    if (!(await exclusivo(() => losClones(t)))) return;
+    const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas && st.modelo.corridas.codigo !== 'cargando' ? st.modelo.corridas : null, t);
+    await exclusivo(async () => {
+      st.fichas = await calcularFichas(corridas, t);
+      st.modelo = construir({ corridas, carpetas: await leerCarpetas(), t });
+      st.cargado = true;
+    });
+    for (const fn of oyentes) { try { fn(); } catch (e) { log(`un aviso de refresco falló: ${e && e.message ? e.message : e}`); } }
+  }
+
+  /** Los clones al día y lo que se lee de ellos. false = el repo no se pudo leer (el refresco termina ahí). */
+  async function losClones(t) {
     const repo = await actualizarRepo();
     if (!repo.ok) {
       log(repo.motivo || 'el repo de operaciones no se pudo leer');
@@ -860,7 +876,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // el perfil no depende del repo de operaciones: se baja igual
       await actualizarPerfil();
       st.cargado = true;
-      return;
+      return false;
     }
     st.fallas.repo = null;
     aplicarConfig(leerOperaciones(), t);
@@ -874,16 +890,12 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // lectura del buzón, las corridas dicen «cargando» (nunca cero), y sólo la pestaña Corridas espera
     if (!st.modelo) st.modelo = construir({ corridas: noMedida('cargando'), carpetas: null, t });
     st.navegable = true;
-    const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas && st.modelo.corridas.codigo !== 'cargando' ? st.modelo.corridas : null, t);
-    st.fichas = await calcularFichas(corridas, t);
-    st.modelo = construir({ corridas, carpetas: await leerCarpetas(), t });
-    st.cargado = true;
-    for (const fn of oyentes) { try { fn(); } catch (e) { log(`un aviso de refresco falló: ${e && e.message ? e.message : e}`); } }
+    return true;
   }
 
   function refrescar() {
     if (enCurso) return enCurso;
-    enCurso = exclusivo(refrescarUnaVez).catch((e) => {
+    enCurso = refrescarUnaVez().catch((e) => {
       // un refresco que se cae por algo inesperado deja el último modelo bueno, pero con banda (nunca en silencio)
       log(`el refresco falló de forma inesperada: ${e && e.stack ? e.stack : e}`);
       st.fallas.repo = st.fallas.repo || { desde: ahora(), estado: 'falla_interna' };

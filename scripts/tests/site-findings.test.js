@@ -17,6 +17,7 @@
  *   T74 Mantenimiento_MenuConCuantasEsperan              T75 Mantenimiento_Envio_FormaYTope
  *   T76 Sitio_DecisionYaEnMain_NoPideRecargar           T77 Sitio_Decididas_NoReaparecen
  *   T78 Sitio_Envio_SeSigueSuNumero                      T79 Mantenimiento_Envio_DiceQuePasa
+ *   T80 Mantenimiento_AplicaSolo_NoHablaDeAprobar
  *   T80 Mantenimiento_Cuentas_BajanConLoDecidido
  *
  * El servidor real del sitio sobre un clon de operaciones de mentira: el repo es un repo git local y la API de GitHub un
@@ -444,16 +445,18 @@ test('T57 Sitio_Decision_LaAplicaLaNoche — lo que deja el envío, en main, lo 
 });
 
 // Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche @story-4.11 @ac-22
-// 🔴 Falla con: seguir ofreciendo decidir (o abrir otro pedido) cuando la decisión ya está en main.
+// 🔴 Falla con: seguir ofreciendo decidir (o abrir otro pedido) cuando la decisión ya está en main, o mostrarla en
+//    «Esperando aprobación» cuando nadie más tiene que aprobar nada: sale de la lista, con una línea llana.
 test('T58 Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche — con la decisión en main, la fila espera la noche y no se reenvía @story-4.11 @ac-22', { timeout: 60000 }, async () => {
   const extra = { 'inbox/watcher/decisions/vig-uno.json': `${JSON.stringify({ fuente: 'vigilante', id: 'vig-uno', accion: 'aceptar', quien: LEAD, el: '2026-10-24' })}\n` };
   await conSitio({ extra }, async ({ h, api, lead, lista, enviar }) => {
     const j = (await lista()).json;
     assert.ok(!j.toca.some((x) => x.id === 'vig-uno'));
-    assert.deepStrictEqual(j.espera, [{ numero: null, enlace: null, aprobado: true, filas: [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar' }] }]);
+    assert.deepStrictEqual(j.espera, [], 'nadie más tiene que aprobarla');
+    assert.deepStrictEqual(j.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar' }]);
     const p = await h.pedir('/mantenimiento', { cookie: lead });
-    assert.match(p.texto, /Aprobado: se aplica esta noche/);
-    assert.match(p.texto, /Acme: un error que la noche marcó → Archivar/);
+    assert.doesNotMatch(p.texto, /<div class="m-bloque m-espera">|Aprobado: se aplica/);
+    assert.match(p.texto, /<p class="m-decididas">Ya decidiste 1 ficha: la revisión de esta noche la aplica\.<\/p>/);
     // y un envío tardío no abre otro pedido
     const r = await enviar(['vigilante', 'vig-uno', 'arreglar']);
     assert.strictEqual(r.json.codigo, 'nada_que_enviar');
@@ -621,14 +624,13 @@ test('T72 Mantenimiento_Analisis_RecomiendaYOrden — el análisis dice por qué
     assert.match(a, /Por qué:<\/b> <span lang="es">Su tope es de 2 s/);
     assert.match(a, /Recomienda Arreglar:<\/b> <span lang="es">no es una falla del arnés/);
     assert.match(a, /Si se arregla:<\/b> <span lang="es">separar los avisos/);
-    // lo escribe a mano una persona o una sesión de trabajo, fuera de la noche: el texto vale para las dos
-    assert.match(a, /Análisis escrito a mano, fuera de la noche/);
-    assert.doesNotMatch(p.texto, /Análisis de una persona|hoy lo escribe una persona\./);
+    // sólo el del modelo de la noche lleva etiqueta; el escrito a mano, ninguna
+    assert.doesNotMatch(a, /Análisis automático|escrito a mano|de una persona/);
     assert.match(a, /<button type="button" class="m-elegir recomendada" data-accion="arreglar" aria-pressed="false">Arreglar<\/button>/);
     assert.doesNotMatch(p.texto.slice(p.texto.indexOf('id="hallazgos"')), /aria-pressed="true"/, 'nada elegido de entrada');
     const b = cartaDe(p.texto, `ejecuciones/${B.id}`);
     assert.match(b, /Si vuelve:<\/b> <span lang="es">limitar las sesiones/);
-    assert.match(b, /Análisis del modelo de la noche/);
+    assert.match(b, /Análisis automático/);
     const c = cartaDe(p.texto, `ejecuciones/${C.id}`);
     assert.match(c, /class="m-carta sin-analizar"/);
     assert.match(c, /<details class="m-sin-analisis"><summary>Decidir sin análisis<\/summary>[\s\S]*data-accion="aceptar"/);
@@ -842,19 +844,19 @@ function decisionYaEnMain(ops, fuente, carpeta, id, accion = 'aceptar') {
 
 // Sitio_DecisionYaEnMain_NoPideRecargar
 // 🔴 Falla con: pedir «recargá» cuando main ya trae la decisión de esa misma ficha (un envío anterior que llegó mientras
-//    la pantalla esperaba, con el sitio leyendo todavía la foto de antes), abrir un pedido con ella, o no refrescar la
-//    foto después de escribir.
+//    la pantalla esperaba, con el sitio leyendo todavía la foto de antes), abrir un pedido con ella, o contestar recién
+//    después de un refresco de las fuentes (en un sitio real baja el buzón: un minuto con la pantalla en «enviando»).
 test('T76 Sitio_DecisionYaEnMain_NoPideRecargar — lo ya decidido en main sale de la lista como hecho, no como error', { timeout: 60000 }, async () => {
   await conSitio({}, async ({ api, ops, enviar, fuentes }) => {
     decisionYaEnMain(ops, 'ejecuciones', 'runs-review', EJ1.id);
-    const antes = fuentes.st.refrescos;
+    // un refresco que no termina nunca: el envío no lo espera
+    fuentes.refrescar = () => new Promise(() => {});
     const sola = await enviar(['ejecuciones', EJ1.id, 'aceptar']);
     assert.strictEqual(sola.json.codigo, 'ya_decidida', sola.texto);
     assert.strictEqual(sola.json.ok, true, 'ya estaba hecho: no es un error');
     assert.deepStrictEqual(sola.json.omitidas, [`ejecuciones/${EJ1.id}`]);
     assert.doesNotMatch(sola.json.message, /recarg/i, 'recargar no lo arregla: no se pide');
     assert.strictEqual(api.st.pedidos.length, 0, 'ningún pedido con lo que ya está en main');
-    assert.ok(fuentes.st.refrescos > antes, 'la foto se refresca enseguida');
     // junto con otra: sale la decidida y la otra va en su pedido
     const mezcla = await enviar(['ejecuciones', EJ1.id, 'arreglar'], ['vigilante', 'vig-uno', 'aceptar']);
     assert.strictEqual(mezcla.json.ok, true, mezcla.texto);
@@ -873,8 +875,8 @@ test('T77 Sitio_Decididas_NoReaparecen — lo que el sitio ya decidió no vuelve
     assert.strictEqual((await enviar(['ejecuciones', EJ1.id, 'aceptar'])).json.codigo, 'ya_decidida');
     const j = (await lista()).json;
     assert.strictEqual(fila(j, 'ejecuciones', EJ1.id), undefined, 'no vuelve a «Te toca decidir» con la foto vieja');
-    const aprobada = j.espera.find((p) => p.aprobado);
-    assert.deepStrictEqual(aprobada && aprobada.filas.map((x) => [x.id, x.accion]), [[EJ1.id, 'arreglar']], 'espera con la decisión que está en main');
+    assert.deepStrictEqual(j.espera, [], 'no espera la aprobación de nadie');
+    assert.deepStrictEqual(j.decididas.map((x) => [x.id, x.accion]), [[EJ1.id, 'arreglar']], 'cuenta como decidida, con la decisión que está en main');
   });
   // otro arranque del sitio sobre el mismo disco y la misma foto vieja: tampoco vuelve
   await conSitio({ dataDir: datos }, async ({ lista, fila }) => {
@@ -929,7 +931,8 @@ test('T79 Mantenimiento_Envio_DiceQuePasa — mientras envía, si tarda, si se c
     for (const [k, attr] of [['mant.envio.enviando', 'enviando'], ['mant.envio.lento', 'lento'], ['mant.envio.verificando', 'verificando'], ['mant.envio.yaEnviado', 'ya-enviado'], ['mant.envio.noLlego', 'no-llego']]) {
       assert.ok(p.texto.includes(`data-t-${attr}="${TX.t('es', k)}"`), `la barra trae «${k}»`);
     }
-    assert.match(TX.t('es', 'mant.envio.enviando'), /par de minutos/, 'dice cuánto puede tardar');
+    // el sitio que contesta la página está despierto: ningún texto dice que dormía
+    for (const k of ['mant.envio.enviando', 'mant.envio.lento']) assert.doesNotMatch(TX.t('es', k), /dormid/, `${k} no inventa la causa`);
     for (const k of ['mant.envio.error', 'mant.envio.noLlego']) assert.match(TX.t('es', k), /probá de nuevo/, `${k} dice qué hacer`);
     const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
     assert.match(cli, /\/api\/hallazgos\/envio\?id=/, 'si se corta, pregunta cómo terminó');
@@ -958,5 +961,23 @@ test('T80 Mantenimiento_Cuentas_BajanConLoDecidido — los tres números cuentan
     assert.match(despues, /Mantenimiento \(2\)<\/a>/, 'el menú no cuenta lo ya decidido');
     assert.match(despues, /<h2[^>]*>Te toca decidir \(2\)<\/h2>/);
     assert.doesNotMatch(despues, /data-fuente="ejecuciones"/, 'sin fichas de la fuente, sin su subtítulo');
+  });
+});
+
+// ── T80 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// 🔴 Falla con: decir «Enviar para aprobar» o «hasta que otra persona lo apruebe» cuando lo enviado se guarda sin que
+// nadie más lo apruebe (site.auto_apply), o dejar de decirlo cuando sí hace falta otra persona.
+test('T80 Mantenimiento_AplicaSolo_NoHablaDeAprobar — con auto_apply la pantalla no promete una aprobación que no hay', { timeout: 60000 }, async () => {
+  await conSitio({ autoApply: true }, async ({ h, lead }) => {
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.doesNotMatch(p, /Enviar para aprobar|otra persona lo apruebe/);
+    assert.match(p, /<button type="button" class="btn prim m-enviar" disabled>Enviar<\/button>/);
+    assert.match(p, /la revisión de esta noche lo aplica/);
+  });
+  await conSitio({}, async ({ h, lead }) => {
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(p, /<button type="button" class="btn prim m-enviar" disabled>Enviar para aprobar<\/button>/);
+    assert.match(p, /Nada cambia hasta que otra persona lo apruebe/);
   });
 });
