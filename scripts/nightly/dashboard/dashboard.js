@@ -51,7 +51,7 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { execSync } = require('child_process');
-const { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, GLIFO, juzgar, chip, ficha, CSS_BASE, CSS_CHIPS } = require('./common');
+const { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, juzgar, chip, ficha, CSS_BASE, CSS_CHIPS } = require('./common');
 const { readEnv } = require('../../lib/legacy-names.js');
 const { constancia } = require('../../lib/merge-metrics.js');
 
@@ -1714,7 +1714,8 @@ function main() {
   const salida = path.resolve(valor('--output', AMB.nocturno ? SALIDA_DEFAULT : SALIDA_LOCAL_DEFAULT));
   // Sólo si la raíz es un repo git: es lo que se commitea. Una copia suelta de los guiones (una prueba, un zip) no lo es.
   if (!flag('--dry-run') && !AMB.nocturno && fs.existsSync(path.join(RAIZ, '.git'))) {
-    let dentro = true;   // sin el detector no se puede afirmar que la ruta está afuera
+    let dentro;
+    // sin el detector no se puede afirmar que la ruta está afuera
     try { dentro = require('./runs').dentroDelRepoDelEquipo(salida); } catch (e) { dentro = true; }
     if (dentro) {
       console.error(`se niega a escribir ${salida}: la página del repo la escribe sólo el nocturno (pipelines/azure-pipelines-tablero.yml) — generada en una máquina, mezclaría el disco de esa máquina con los datos del equipo. Sin --output va a ${SALIDA_LOCAL_DEFAULT}.`);

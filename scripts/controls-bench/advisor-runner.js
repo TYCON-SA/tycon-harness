@@ -1207,7 +1207,7 @@ async function pool(items, worker, jobs) {
   async function lane() {
     while (i < items.length) { const idx = i++; results[idx] = await worker(items[idx], idx); }
   }
-  await Promise.all(Array.from({ length: Math.min(jobs, items.length) }, lane));
+  await Promise.all(Array.from({ length: Math.min(jobs, items.length) }, () => lane()));
   return results;
 }
 
@@ -1474,7 +1474,6 @@ function reclasificar(archivo, opts = {}) {
   // hecho (muchas fugas del lado claude) inflaría TRES números (de criterio, de paridad rota y de
   // regresiones). Contar una vez lo que pasó una vez.
   const esPlomeria = (v) => ['fuga', 'error'].includes(claseDeVeredicto(v));
-  const juicioOk = (v) => !v || v.pass !== false || esPlomeria(v);
   let paridadReal = 0, paridadRuido = 0, paridadPlomeria = 0;
   for (const [key, caso] of Object.entries(r)) {
     for (const [tool, v] of Object.entries(caso.tools || {})) {

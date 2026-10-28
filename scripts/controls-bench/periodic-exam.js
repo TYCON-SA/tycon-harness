@@ -342,9 +342,8 @@ function tomarCandado(ruta, ahoraMs, maquina) {
   if (!est.libre) return { ok: false, motivo: est.motivo, pid: est.pid, desde: est.desde };
   // Lo juzgamos libre: si aun así no se puede sacar del camino, el problema es de la máquina
   // (permisos, una carpeta donde va un archivo, disco), no otra corrida. Y eso se grita.
-  let borrado = true;
   try { fs.unlinkSync(ruta); }
-  catch (e) { borrado = !fs.existsSync(ruta); if (!borrado) return { ok: false, error: true, motivo: `no se pudo liberar un candado abandonado: ${e.message}` }; }
+  catch (e) { if (fs.existsSync(ruta)) return { ok: false, error: true, motivo: `no se pudo liberar un candado abandonado: ${e.message}` }; }
   // Un solo reintento: si en este instante otro lo tomó, ganó él y esta corrida no arranca.
   try { crear(); return { ok: true, robado: est.motivo }; }
   catch (e) {
@@ -840,7 +839,7 @@ async function main(argv) {
     // 🔴 2 = "no instalé y por eso el examen NO va a correr". Salir 0 acá dejaría al instalador de
     // sesión (que lo llama con `|| true`) reportando todo bien sobre un disparador que no existe.
     const r = instalarTarea({ soloChequear: argv.includes('--check') });
-    return r && r.rechazado ? 2 : 0;
+    return r.rechazado ? 2 : 0;
   }
 
   const lugar = lugarDelExamen();

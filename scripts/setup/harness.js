@@ -1841,7 +1841,7 @@ function cmdInstall(ctx) {
   // (o sin estado) es una instalación, como siempre.
   if (ctx.opts.tool !== undefined && !['channel', 'local', 'from-existing', 'source', 'profile', 'integrations', 'packs', 'harness-clone'].some((k) => ctx.opts[k] !== undefined)) {
     const st = loadState(ctx);
-    if (st.status === 'ok') return mod('tool-change').add(ctx, st.state, toolHelpers(ctx));
+    if (st.status === 'ok') return mod('tool-change').add(ctx, st.state, toolHelpers());
   }
   const fromExisting = Boolean(ctx.opts['from-existing']);
   let tree = ctx.opts.local ? real(ctx.opts.local) : ctx.tree;
@@ -4601,7 +4601,7 @@ function cmdUninstall(ctx) {
   if (read.status === 'missing') return { code: 0, lines: ['nada que quitar: el arnés no está instalado (no hay estado)'] };
   if (read.status !== 'ok' && !(read.status === 'tree_missing' && read.state)) { const f = S.fail(read, { home: ctx.home }); return { code: f.code, lines: [f.line] }; }
   // `uninstall --tool <una>`: desenchufa sólo esa herramienta; el arnés y la otra quedan
-  if (ctx.opts.tool !== undefined) return mod('tool-change').remove(ctx, read.state, toolHelpers(ctx));
+  if (ctx.opts.tool !== undefined) return mod('tool-change').remove(ctx, read.state, toolHelpers());
   const U = mod('uninstall');
   const noTree = read.status === 'tree_missing';
   const head = noTree ? [`el árbol ${read.state.tree} no está: trabajo con el registro`] : [];

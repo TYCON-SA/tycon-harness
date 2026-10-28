@@ -23,7 +23,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const TH = require('./tycon-home.js');
 const GA = require('./github-auth.js');
 
 const lib = (name) => require(path.join(__dirname, '..', '..', 'lib', name));

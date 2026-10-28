@@ -3493,7 +3493,7 @@ function verificarPruebasPropias(rutas, marker, tipo) {
     if (!isTestPath(rel)) falla(ruta, 'no es un archivo de prueba (el criterio de isTestPath, el mismo del freno ATDD)');
     // (d) evento posterior, o fecha del archivo posterior (la edición por consola no deja evento).
     if (conFecha) {
-      let mtime = NaN;
+      let mtime;
       try { mtime = fs.statSync(abs).mtimeMs; } catch (_e) { mtime = NaN; }
       if (!editadasDespues.has(k) && !(mtime > desde)) {
         falla(ruta, `no se editó después del lanzamiento del pase (${lanz.launchedAt}): ni un evento de edición posterior en esta corrida ni una fecha de modificación posterior`);

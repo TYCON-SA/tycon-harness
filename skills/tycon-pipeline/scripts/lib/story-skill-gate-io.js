@@ -65,7 +65,7 @@ function purgeStaleMarks(dir, nowMs) {
   for (const f of files) {
     if (!f.endsWith('.json')) continue;
     const p = path.join(dir, f);
-    let at = NaN;
+    let at;
     try { at = Date.parse(JSON.parse(fs.readFileSync(p, 'utf8')).at); } catch { at = NaN; }
     if (!Number.isFinite(at) || nowMs - at > MARK_PURGE_MS) { try { fs.unlinkSync(p); } catch { /* noop */ } }
   }
