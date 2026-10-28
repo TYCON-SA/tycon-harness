@@ -78,6 +78,8 @@
  *    dato de hardware): dos máquinas con el mismo nombre ya no escriben en la misma carpeta. `place.json` trae `folder`
  *    (la carpeta, el código y la carpeta vieja que reemplaza) y los lectores unen la vieja a la nueva con
  *    `carpetasDeMaquina` de `download-runs.js`. Con `TYCON_MACHINE` (las pruebas) la carpeta es ese nombre, sin código.
+ *    Junto a la carpeta va `machine_id`: la huella de la máquina (`scripts/lib/machine-id.js`, 16 hexadecimales), con
+ *    la que el sitio nombra las máquinas de la lista para firmar por delegación, o `no_medido` con el motivo.
  *
  * Nada de esto pregunta ni abre un login: no usa git, ni `az`, ni credenciales de la persona.
  *
@@ -310,6 +312,19 @@ function nombreDeMaquina() {
 }
 
 const FORMA_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * La huella de esta máquina (`scripts/lib/machine-id.js`: 16 hexadecimales, nunca el id crudo), para que el sitio
+ * muestre cada máquina de la lista para firmar por delegación por su nombre. `{ fingerprint }`, o
+ * `{ status: 'no_medido', reason }` sin la fuente, que puede nombrar una ruta.
+ */
+function huellaDeLaMaquina() {
+  let h;
+  try { h = require('../lib/machine-id.js').huella(); } catch (e) {
+    return { status: 'no_medido', reason: `machine-id.js no se pudo cargar (${(e && (e.code || e.name)) || 'error'})` };
+  }
+  return h && /^[0-9a-f]{16}$/.test(h.huella || '') ? { fingerprint: h.huella } : { status: 'no_medido', reason: 'no se pudo leer el id del sistema' };
+}
 
 /**
  * `user.email` de la configuración GLOBAL de git, leída como archivo: si `GIT_CONFIG_GLOBAL` está
@@ -763,6 +778,7 @@ function placeFactsForMailbox(day, folder = null) {
   // el sistema de la máquina: para contar en el buzón las de Windows que quedan trabadas en una versión vieja
   const out = { schema: 1, day, owner: correoDeGitGlobal({ home }), platform: process.platform };
   if (folder) out.folder = folder;
+  out.machine_id = huellaDeLaMaquina();
   let P;
   try { P = require('../setup/harness/place.js'); } catch (e) {
     return Object.assign(out, { place: notMeasured(`place.js no se pudo cargar (${code(e)})`) });

@@ -54,6 +54,28 @@ test('2.28 T4 LeerCorreosInformados_DelEspejo', () => {
   assert.ok(!/[\u0000-\u001f]/.test(m) && !m.includes(String.fromCharCode(0x2028)) && m.length <= 200, JSON.stringify(m.slice(0, 40)));
 });
 
+// ── 8.116 T57 · LeerCorreosInformados_LaHuellaDelEquipo ── 🔴 Falla si una huella mal formada llega al sitio, o si
+// «no la midió» se lee igual que «no la mandó».
+test('8.116 T57 LeerCorreosInformados_LaHuellaDelEquipo', () => {
+  const con = (fp, base) => ({ ...base, machine_id: fp });
+  const dir = espejo(tmp(), {
+    'maq-a': con({ fingerprint: 'abcdefabcdefabcd' }, informa('dev-a@ejemplo.test')),
+    'maq-b': con({ fingerprint: 'abcdefabcdefabcd' }, noMedido('sin git global')),
+    'maq-c': con({ fingerprint: 'ABCDEF<script>xyz' }, informa('dev-c@ejemplo.test')),
+    'maq-d': con({ status: 'no_medido', reason: 'no se pudo leer el id del sistema' }, informa('dev-d@ejemplo.test')),
+    'maq-e': informa('dev-e@ejemplo.test'),
+  });
+  const r = P.leerCorreosInformados(dir);
+  assert.equal(r.maquinas['maq-a'].machine_id, 'abcdefabcdefabcd');
+  assert.equal(r.maquinas['maq-b'].machine_id, 'abcdefabcdefabcd', 'la huella llega aunque el correo no');
+  for (const m of ['maq-c', 'maq-d', 'maq-e']) assert.ok(!('machine_id' in r.maquinas[m]), m);
+  // con la clave y sin su forma queda el motivo; sin la clave, nada (una versión que no la manda)
+  assert.equal(r.maquinas['maq-c'].machine_id_motivo, 'la huella que mandó no tiene la forma de una huella');
+  assert.equal(r.maquinas['maq-d'].machine_id_motivo, 'no se pudo leer el id del sistema');
+  assert.ok(!('machine_id_motivo' in r.maquinas['maq-e']));
+  assert.ok(!('machine_id_motivo' in r.maquinas['maq-a']));
+});
+
 /** ctx con la configuración, los mantenedores y lo informado */
 function ctx({ machines = {}, projects, maintainers = ['jefa@acme.example'], espejoDir, maquinas = {}, corridas = {} }) {
   const dir = espejoDir || espejo(tmp(), maquinas, corridas);

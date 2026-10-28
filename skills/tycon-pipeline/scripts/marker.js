@@ -851,7 +851,7 @@ function mensajeDelPaseAdversarial(v) {
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch');
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …');
     e(`  Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`);
-    e('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»).');
+    e('  Abandonarlo lo firma el dueño, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
     return;
   }
   if (v.motivo === 'resultado-de-otro-lanzamiento') {
@@ -861,7 +861,7 @@ function mensajeDelPaseAdversarial(v) {
   }
   e('  Cada confirmado va a la suite (prueba promovida o prueba propia) o se difiere con motivo:');
   e(`    ${cmdResultado}`);
-  e('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»).');
+  e('  Abandonarlo lo firma el dueño, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
 }
 
 // Cada aprobación que el pipeline ya pide queda en `approvals.jsonl`, en la carpeta de la corrida, como
@@ -1395,6 +1395,17 @@ function cmdCompleteStep(nRaw, flags) {
       rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs78);
       if (!rd) motivo = 'no encontré la carpeta de la corrida';
     } catch (e) { motivo = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
+    // Un salteo firmado del pase (mark-adversarial-skipped o set-size liviana) se sostiene sólo si su constancia sigue
+    // valiendo en el cierre.
+    const skLib = require('./lib/adversarial-skip.js');
+    if (skLib.firmasDelSalteo(marker).length) {
+      const noVale = rd ? skLib.reverificar({ marker, carpeta: rd }) : (motivo || 'no encontré la carpeta de la corrida');
+      if (noVale) {
+        appendLog('gates.log', { name: 'adversarial-skip-recheck', status: 'blocked', story: marker.storyId, step: n, error: noVale });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — el pase adversarial se salteó con una constancia que ya no vale: ${noVale}. Se lanza el pase, o el dueño lo vuelve a firmar.`);
+        process.exit(1);
+      }
+    }
     const cw = require('./lib/critical-waivers.js');
     const v = rd ? cw.verificarExenciones(rd, { story: marker.storyId }) : { faltan: [], ilegibles: 0, existe: false };
     if (cierraHallazgos && !motivo && rd && !v.existe) motivo = 'falta findings.json (pipeline.js write-findings)';
@@ -2799,19 +2810,68 @@ function cmdSetSize(args) {
   try {
     declared = require('./pipeline.js').computeRunSize({ story: marker.storyPath, repo: marker.repoPath });
   } catch (e) {
-    console.error(`marker.js set-size: no pude clasificar lo que declara la story (${String(e.message || e).split('\n')[0]}); se guarda igual`);
+    console.error(`marker.js set-size: no pude clasificar lo que declara la story (${String(e.message || e).split('\n')[0]})`);
+  }
+  // Forzar a liviana una story con código (o que no se pudo clasificar) apaga el pase: es un pedido, y sin la
+  // constancia firmada por el dueño no cambia nada.
+  let firmado = null;
+  if (size === 'liviana' && !(declared && declared.size === 'liviana')) {
+    const p = require('./lib/adversarial-skip.js').pedirFirma({
+      story: String(marker.storyId), carpeta: carpetaDeLaCorrida(marker), ejecucion: marker.startedAt, camino: 'set-size liviana',
+    });
+    if (!p.ok) {
+      process.stderr.write(p.texto);
+      console.error(`marker.js set-size: no se cambió el tamaño — ${p.motivo}.`);
+      process.exit(1);
+    }
+    firmado = { via: p.linea.via, quien: p.linea.quien, cuando: p.linea.ts, huella: p.linea.huella };
   }
   const prev = marker.size || null;
   marker.size = size;
   marker.size_reason = `forzado a mano: ${reason}`;
-  marker.sizeForced = { by, reason, at: nowIso(), from: prev };
+  marker.sizeForced = { by, reason, at: nowIso(), from: prev, ...(firmado ? { firmado } : {}) };
   marker.lastTouch = nowIso();
   writeMarker(marker);
-  if (size === 'liviana' && declared && declared.size === 'completa') {
-    appendLog('bypass.log', { kind: 'SIZE_FORCED_LIGHT_WITH_CODE', storyId: marker.storyId, by, reason, declared: declared.reason });
-    console.error(`⚠️  la story declara algo que no es documentación (${declared.reason}): forzarla a liviana apaga el pase adversarial — queda en bypass.log`);
+  if (!firmado && !require('./lib/adversarial-skip.js').firmasDelSalteo(marker).length) quitarSalteoDelRegistro(marker);
+  if (firmado) {
+    anotarSalteoEnElRegistro(marker, firmado);
+    appendLog('bypass.log', { kind: 'SIZE_FORCED_LIGHT_WITH_CODE', storyId: marker.storyId, by, reason, declared: declared ? declared.reason : null, firmado });
+    console.error(`⚠️  liviana con código, con la constancia firmada por el ${firmado.quien} (huella ${firmado.huella}) — queda en bypass.log`);
   }
   process.stdout.write(`size: ${size} (${reason})\n`);
+}
+
+// La carpeta de la ejecución del marcador, o null. No poder calcularla se dice: no es «no hay ejecución».
+function carpetaDeLaCorrida(marker) {
+  try {
+    const story = resolveStoryPath(marker.storyPath, marker) || undefined;
+    const rd = require('./pipeline.js').resolveRunDir(path.resolve(marker.repoPath || process.cwd()), String(marker.storyId), false, story);
+    return rd ? require('./lib/adversarial-skip.js').carpetaReal(rd) : rd;
+  } catch (e) {
+    console.error(`⚠️  no pude calcular la carpeta de la ejecución (${String(e.message || e).split('\n')[0]})`);
+    return null;
+  }
+}
+
+// Anota en el registro de autoría el salteo firmado. Sin carpeta, o con un registro que no se lee, lo dice.
+function anotarSalteoEnElRegistro(marker, firmado) {
+  const rd = carpetaDeLaCorrida(marker);
+  if (!rd) {
+    console.error('⚠️  el salteo firmado no quedó en el registro de autoría: no hay carpeta de la ejecución (lo trae el próximo que se escriba, del marcador).');
+    return;
+  }
+  try { require('./lib/review-roster.js').anotarSalteo(rd, firmado); } catch (e) {
+    console.error(`⚠️  no pude anotar el salteo en el registro de autoría (${String(e.message || e).split('\n')[0]}): lo trae el próximo que se escriba.`);
+  }
+}
+
+// El pase ya no está salteado (corrió, o la ejecución volvió a completa): el salteo sale del registro de autoría.
+function quitarSalteoDelRegistro(marker) {
+  const rd = carpetaDeLaCorrida(marker);
+  if (!rd) return;
+  try { require('./lib/review-roster.js').quitarSalteo(rd); } catch (e) {
+    console.error(`⚠️  el registro de autoría puede seguir diciendo «salteado»: no pude corregirlo (${String(e.message || e).split('\n')[0]}).`);
+  }
 }
 
 // El pedido para esta corrida: `set-models <trabajo>=<modelo> … | --clear`. `<trabajo>` es
@@ -2954,14 +3014,18 @@ function cmdMarkAdversarialSkipped(argsGate) {
     process.exit(2);
   }
   const args = [...(argsGate || [])];
-  const forzado = process.env.TYCON_NO_DEEP_REVIEW === '1' || args.includes('--no-deep-review');
+  const sk = require('./lib/adversarial-skip.js');
   const lanzado = marker.adversarial ? (typeof marker.adversarial === 'object' ? marker.adversarial : {}) : null;
-  if (lanzado && !forzado) {
-    console.error(`marker.js mark-adversarial-skipped: el pase adversarial YA se lanzó (runId ${lanzado.runId || '?'}, ${lanzado.launchedAt || 'sin fecha'}) — un pase lanzado se cierra con su resultado:`);
-    console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
-    console.error('  Abandonarlo lo decide la persona, no el agente: lo dice ella en su mensaje («autorizo TYCON_NO_DEEP_REVIEW»),');
-    console.error('  y queda en bypass.log como ADVERSARIAL_ABANDONADO.');
-    process.exit(2);
+  if (lanzado) {
+    // Un pase lanzado se abandona sólo con la constancia firmada por el dueño para esta ejecución.
+    const p = sk.pedirFirma({ story: String(marker.storyId), carpeta: carpetaDeLaCorrida(marker), ejecucion: marker.startedAt, camino: 'abandonar el pase lanzado' });
+    if (!p.ok) {
+      console.error(`marker.js mark-adversarial-skipped: el pase adversarial YA se lanzó (runId ${lanzado.runId || '?'}, ${lanzado.launchedAt || 'sin fecha'}) — un pase lanzado se cierra con su resultado:`);
+      console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
+      console.error(`  Abandonarlo lo firma el dueño (${p.motivo}), y queda en bypass.log como ADVERSARIAL_ABANDONADO.`);
+      process.stderr.write(p.texto);
+      process.exit(2);
+    }
   }
   if (!args.includes('--repo')) args.push('--repo', marker.repoPath || process.cwd());
   const story = resolveStoryPath(marker.storyPath, marker);
@@ -2982,6 +3046,11 @@ function cmdMarkAdversarialSkipped(argsGate) {
   }
   if (gate.run !== false) {
     console.error(`marker.js mark-adversarial-skipped: el portón dice que el pase CORRE — ${gate.reason || '(sin reason)'}`);
+    if (Array.isArray(gate.sign_commands) && gate.sign_commands.length) {
+      console.error('  El pedido de saltear no alcanza: lo firma el dueño, y después se repite este comando:');
+      console.error(`    en la ventana de permiso: ${gate.sign_commands[0]}`);
+      if (gate.sign_commands[1]) console.error(`    en su terminal:           ${gate.sign_commands[1]}`);
+    }
     console.error('  No se saltea: se lanza (guía del pase adversarial §Lanzamiento temprano o §Acción) y se registra con');
     console.error('    marker.js mark-adversarial-launched <runId> 4');
     console.error('  No se anotó el salteo (el veredicto del portón sí queda en la corrida: `next` pide el lanzamiento).');
@@ -2995,9 +3064,13 @@ function cmdMarkAdversarialSkipped(argsGate) {
     while (args[i + 1] && !String(args[i + 1]).startsWith('--')) { archivos += 1; i += 1; }
   }
   const abandonado = !!lanzado;
+  if (abandonado && !gate.adversarial_skip) {
+    console.error('marker.js mark-adversarial-skipped: el pase ya se lanzó y el portón no trae la constancia firmada: no se abandona. No se anotó nada.');
+    process.exit(2);
+  }
   const runId = abandonado ? (lanzado.runId || null) : null;
   const at = nowIso();
-  const salteo = { motivo: gate.reason || null, archivos, forzado, abandonado, runId, at };
+  const salteo = sk.salteoDelPorton(gate, { archivos, abandonado, runId, at });
   // Se relee: el portón que se acaba de lanzar anota su veredicto en el marker (`adversarialGate`), y
   // escribir la copia leída antes lo pisaría.
   const fresco = readMarker() || marker;
@@ -3008,14 +3081,16 @@ function cmdMarkAdversarialSkipped(argsGate) {
   writeMarker(fresco);
   appendLog('gates.log', {
     name: 'adversarial-skip', status: 'ok', storyId: marker.storyId, motivo: salteo.motivo,
-    archivos, forzado, abandonado, runId,
+    archivos, abandonado, runId, ...(salteo.firmado ? { firmado: salteo.firmado } : {}),
   });
+  // El registro de autoría lo dice, se haya escrito antes o se escriba después.
+  if (salteo.firmado) anotarSalteoEnElRegistro(marker, salteo.firmado);
   if (abandonado) {
-    appendLog('bypass.log', { kind: 'ADVERSARIAL_ABANDONADO', storyId: marker.storyId, runId, motivo: salteo.motivo });
-    console.error(`⚠️  pase adversarial ABANDONADO (runId ${runId || '?'}) con el interruptor — queda en bypass.log.`);
-  } else if (forzado) {
-    appendLog('bypass.log', { kind: 'ADVERSARIAL_SKIP_FORZADO', storyId: marker.storyId, motivo: salteo.motivo });
-    console.error('⚠️  salteo del pase adversarial FORZADO con el interruptor — queda en bypass.log.');
+    appendLog('bypass.log', { kind: 'ADVERSARIAL_ABANDONADO', storyId: marker.storyId, runId, motivo: salteo.motivo, firmado: salteo.firmado });
+    console.error(`⚠️  pase adversarial ABANDONADO (runId ${runId || '?'}) con la constancia firmada por el dueño — queda en bypass.log.`);
+  } else if (salteo.firmado) {
+    appendLog('bypass.log', { kind: 'ADVERSARIAL_SKIP_FIRMADO', storyId: marker.storyId, motivo: salteo.motivo, firmado: salteo.firmado });
+    console.error(`⚠️  pase adversarial salteado con la constancia firmada por el ${salteo.firmado.quien} (huella ${salteo.firmado.huella}) — queda en bypass.log.`);
   }
   process.stdout.write(JSON.stringify(salteo, null, 2) + '\n');
 }
@@ -3278,6 +3353,8 @@ function cmdMarkAdversarialResult(countRaw) {
     if (tipo === '5b') corrida.deepReviewDone = pase.veredicto !== 'no-medido';
     corrida.lastTouch = nowIso();
     writeMarker(corrida);
+    // Un pase que corrió y midió: si la ejecución no tiene un salteo firmado, el registro de autoría no puede decirlo.
+    if (tipo === '5b' && corrida.deepReviewDone && !require('./lib/adversarial-skip.js').firmasDelSalteo(corrida).length) quitarSalteoDelRegistro(corrida);
   }
   process.stdout.write(JSON.stringify({ storyId, ...pase }, null, 2) + '\n');
 }
@@ -4388,6 +4465,54 @@ function cmdWaiveCritical(argv) {
   process.exit(0);
 }
 
+// `sign-adversarial-skip --story S --reason R [--terminal]`: la firma del dueño que saltea el pase adversarial de la
+// ejecución de S (lib/adversarial-skip.js). La ejecución y el camino salen de la última muestra de S que anotó el
+// pedido; sin muestra sale 1 sin escribir nada. La firma va por la ventana de permiso o por la terminal del dueño; la
+// cita, el reenvío y el --ok no firman.
+function cmdSignAdversarialSkip(argv) {
+  const sk = require('./lib/adversarial-skip.js');
+  const { val, tiene } = opcionesDe(argv);
+  const story = (val('--story') || '').trim();
+  const motivo = (val('--reason') || '').trim();
+  if (tiene('--terminal')) {
+    const waiver = require('./lib/runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: __filename, args: ['sign-adversarial-skip', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js sign-adversarial-skip: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se firmó nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+  }
+  // Sin la huella la constancia va sin máquina (no es una de sus llaves), y se dice.
+  let maquina = null;
+  let sinHuella = null;
+  try {
+    const h = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella();
+    maquina = h.huella || null;
+    if (!maquina) sinHuella = h.error || 'la huella no se pudo medir';
+  } catch (e) { sinHuella = String(e.message || e).split('\n')[0]; }
+  if (sinHuella) console.error(`⚠️  la constancia va sin la huella de esta máquina (${sinHuella}).`);
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const r = sk.firmarSalteo({
+    story, motivo, argv: process.argv.slice(1), sesion: SID || null, maquina,
+    exigir: (o) => ow.exigir(o),
+    aprobar: (linea, entrada) => {
+      const m = readMarker();
+      if (m && String(m.storyId) === String(linea.story)) anotarAprobacion(m, entrada);
+      else require('./lib/approvals.js').anotar(linea.carpeta, entrada);
+    },
+  });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js sign-adversarial-skip: no se firmó el salteo — ${r.motivo}`);
+    process.exit(r.codigo);
+  }
+  if (r.aviso) console.error(`⚠️  ${r.aviso}`);
+  appendLog('gates.log', { name: 'adversarial-skip-recorded', status: 'ok', story: r.linea.story, camino: r.linea.camino, via: r.linea.via, huella: r.linea.huella });
+  console.error(`✅ salteo del pase adversarial firmado (story ${r.linea.story}, ${r.linea.camino}, vía ${r.linea.via}, huella ${r.linea.huella}). El portón lo saltea en esta ejecución.`);
+  process.exit(0);
+}
+
 // `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
 // reenvía el ok de un dev (el rol de `approvals.relay_session`). La frase la escribe el dev en el chat de esta sesión y
 // nombra el rol («Esta sesión es la coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a
@@ -5009,6 +5134,9 @@ switch (cmd) {
     break;
   case 'waive-critical':
     cmdWaiveCritical(process.argv.slice(3));
+    break;
+  case 'sign-adversarial-skip':
+    cmdSignAdversarialSkip(process.argv.slice(3));
     break;
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));

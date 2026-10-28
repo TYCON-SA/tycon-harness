@@ -44,6 +44,37 @@ const CON_NOMBRE = [
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'marker.js update-story-status'],
 ];
 
+// qué aprueba cada firma, en inglés: lo muestra la pantalla de Configuración en ese idioma
+const APPROVES_EN = {
+  'plan-approval': "approve a story's plan",
+  'extra-round': 'one more round of reviewers',
+  'refresh-after-main': 'sign the controls again after bringing in main, with no change of its own',
+  'control-change': "approve a change to the repo's controls",
+  'critical-waiver': "waive a reviewers' critical finding",
+  'runtime-waiver': 'accept a criterion that cannot be tested live',
+  'manual-test': 'mark a criterion as tested by hand',
+  'browser-test': 'set up the browser test, or say no to it',
+  'lost-run': 'give up a run as lost and close it',
+  'adversarial-skip': 'skip the adversarial pass with a signed record',
+  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
+  'escape:TYCON_PROD_LINT': 'turn off the production query check for one command',
+  'escape:TYCON_NEW_NAMES': 'turn off the new names check on what is published',
+  'escape:TYCON_TEST_GATE': "skip the commit's test gate",
+  'escape:DOD_BYPASS': "skip the commit's checks (it is logged)",
+  'escape:TYCON_NO_DEEP_REVIEW': "turn off a run's adversarial pass",
+  'escape:TYCON_STATUS_GATE': "change a story's status by hand",
+  'escape:story-skill-bypass': 'use a story skill outside the pipeline',
+  'escape:set-autonomous': "change a run's autonomous mode",
+  'escape:cerrar-la-ejecucion': 'close a run with a check in red',
+  'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
+  'escape:force-manual': 'mark the screen test green by hand',
+  'escape:trust-ran': 'count the reviewers without the record that they ran',
+  'escape:ALLOW_DOD_EVIDENCE_WRITE': 'write the live test evidence by hand',
+  'escape:dod_runtime_exempt': 'exempt a story from the live test',
+  'escape:no-deep-review': "skip a run's adversarial pass",
+  'escape:cambiar-el-estado': "change a story's status by hand",
+};
+
 // los escapes que se firman escribiendo un archivo (la cuarta columna de CON_NOMBRE)
 const POR_ARCHIVO = new Set(CON_NOMBRE.filter((f) => f[3] === 'archivo').map((f) => f[0]));
 const kindDe = (id) => (!id.startsWith('escape:') ? 'guion' : POR_ARCHIVO.has(id.slice('escape:'.length)) ? 'archivo' : 'freno');
@@ -58,14 +89,14 @@ const SIGNATURES = Object.freeze([
   { id: 'manual-test', approves: 'marcar un criterio como probado a mano', command: 'marker.js mark-tested --acs', otherSession: 'yes', terminal: 'marker.js mark-tested --acs --terminal' },
   { id: 'browser-test', approves: 'preparar la prueba con navegador, o decirle que no', command: 'e2e-setup.js prepare (o defer --no)', otherSession: 'yes', terminal: 'e2e-setup.js prepare --terminal (o defer --no --terminal)' },
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
-  { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip (todavía no existe)', otherSession: 'pending', terminal: null },
+  { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
   ...CON_NOMBRE.map(([nombre, approves, command]) => ({
     id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando',
   })),
-].map((s) => Object.freeze({ ...s, kind: kindDe(s.id) })));
+].map((s) => Object.freeze({ ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id) })));
 
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
 

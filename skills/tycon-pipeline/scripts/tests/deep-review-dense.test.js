@@ -142,18 +142,23 @@ test('…pero `--files` DECLARADO y vacío sí es una medición: el diff no toca
   assert.equal(v.lineas_agregadas, 0, 'acá el cero SÍ se midió: no hay archivos de código');
 });
 
-test('un override explícito del dev decide SIN necesitar la densidad', () => {
-  // 🔴 El corte no puede tapar la puerta que el dev usa a propósito: `--deep-review` fuerza el pase
-  //    y `--no-deep-review` lo apaga. En los dos casos la densidad es irrelevante — pedir archivos
-  //    ahí convertiría un freno útil en un estorbo, que es como se terminan apagando.
+test('un override explícito decide SIN necesitar la densidad: forzar el pase, o el salteo firmado', () => {
+  // 🔴 El corte no puede tapar la puerta que se usa a propósito: `--deep-review` fuerza el pase, y la constancia
+  //    firmada del salteo lo apaga. En los dos casos la densidad es irrelevante. El pedido de saltear sin firma
+  //    no es un override: el pase sigue el criterio de siempre, que sí necesita la densidad.
   const repo = mkRepoConScope(400);
   const on = gateCrudo(repo, {}, ['--deep-review']);
   assert.equal(on.status, 0, `--deep-review debe decidir solo: ${on.stderr}`);
   assert.equal(JSON.parse(on.stdout).run, true);
 
-  const off = gateCrudo(repo, { TYCON_NO_DEEP_REVIEW: '1' }, []);
-  assert.equal(off.status, 0, `el kill-switch debe decidir solo: ${off.stderr}`);
-  assert.equal(JSON.parse(off.stdout).run, false);
+  const pedido = gateCrudo(repo, { TYCON_NO_DEEP_REVIEW: '1' }, []);
+  assert.equal(pedido.status, 2, 'sin la firma, el pedido no decide: falta la densidad');
+  assert.match(pedido.stderr, /saltearlo lo firma el dueño/);
+
+  const { computeDeepReviewGate } = require(PIPELINE);
+  const firmado = computeDeepReviewGate({ repo, story: path.join(repo, 'story.md'), files: [], noDeepReview: true,
+    adversarialSkipRecord: { ok: true, linea: { via: 'ventana', quien: 'dueño', ts: '2026-10-27T10:00:00Z', huella: 'abcd', camino: 'TYCON_NO_DEEP_REVIEW=1', motivo: 'prueba' } } });
+  assert.equal(firmado.run, false, 'con la constancia, saltea sin medir');
 });
 
 // ── Stories de dos repos ──────────────────────────────────────────────

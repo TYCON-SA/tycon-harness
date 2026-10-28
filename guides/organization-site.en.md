@@ -605,12 +605,18 @@ be, to copy it and open the request by hand.
   `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
-  Below it is **delegated signing of control changes** (*Firma delegada de cambios de control*,
-  `approvals.delegated_signing`). "Off" is the default. "On" lets that session sign again, on the owner's behalf, a pull
-  request the owner already signed, when the only new thing is that main was brought in; its sentence is recorded.
-  Anything new, a conflict resolved by hand and loosening a control still wait for the owner. The fixed notice says so:
+  Below it is **who signs each thing** (*Quién firma cada cosa*): one row for each signature in the catalog
+  (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
+  permission window or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) lets that
+  session sign it on the owner's behalf, and its sentence is recorded; what is delegated is not protected against an
+  agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
+  delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
+  and it does not offer it for what cannot be signed from another session's tab either. The fixed notice says so:
   "Loosening a control is always signed by a person, at their terminal; this does not change that." Without a
-  designated session, "on" does nothing, and the section warns about it. It counts only from here, never from a machine.
+  designated session, delegation does nothing, and the section warns about it. Delegation applies only on the machines
+  in the list below (`approvals.delegated_machines`), named by their fingerprint: the ones the runs mailbox saw are
+  added with a button, and another one by typing its fingerprint. By default, on none. All of it counts only from
+  here, never from a machine.
 - **Hand-testing each criterion** (*Prueba a mano de cada punto*): whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,

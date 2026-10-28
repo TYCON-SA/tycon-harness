@@ -1393,8 +1393,23 @@ function movidosFueraDeMd(cmd) {
  * cuentan: lo que no se ve no pasa. Las escrituras comunes (`>`, `tee`, `node -e`) las ve `extractWriteTargets`.
  * Casos: scripts/controls-bench/cases/hooks/01-frenos-duros.json
  */
-function constanciasTocadas(cmd, cwd) {
-  const { isControlApproval } = require('./lib/story-gate.js');
+function constanciasTocadas(cmd, cwd, stateDir = null) {
+  // las constancias firmadas: las de cambio de control, la del salteo del pase adversarial y el registro del arnés
+  // (`gates.log`), que lleva el renglón de la firma del salteo
+  const { signedRecordKind } = require('./lib/story-gate.js');
+  const installedTree = require('./lib/installed-tree.js');
+  const registros = stateDir ? [...new Set([stateDir, installedTree.realPath(stateDir)].filter(Boolean).map((d) => path.join(d, 'gates.log')))] : [];
+  const esRegistro = (p) => {
+    if (!registros.length || !path.isAbsolute(String(p))) return false;
+    const a = path.resolve(String(p));
+    return registros.includes(a) || registros.includes(installedTree.realPath(a));
+  };
+  const isControlApproval = (p) => signedRecordKind(p) !== null || esRegistro(p);
+  // una carpeta donde vive una constancia del salteo: la del estado, o la de una ejecución (`pipeline-runs/<carpeta>`)
+  const carpetaDeFirma = (d) => {
+    const reales = [...new Set([path.resolve(String(d)), installedTree.realPath(path.resolve(String(d)))].filter(Boolean))];
+    return reales.some((r) => registros.some((g) => r === path.dirname(g)) || path.basename(path.dirname(r)) === 'pipeline-runs');
+  };
   let base = cwd;
   const abs = (raw) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw));
@@ -1404,9 +1419,45 @@ function constanciasTocadas(cmd, cwd) {
   for (const tramo of todos) {
     base = cwd;
     // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia
-    const words = palabras(sinPalabrasDelShell(tramo).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ')).filter((w) => w !== '' && w !== '\\');
+    const limpio = sinPalabrasDelShell(tramo);
+    // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`)
+    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?)\|?\s*(['"]?)([^\s<>;&|'"]+)\1/g)) if (es(m[2])) out.push(m[2]);
+    const words = palabras(limpio.replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
     let c = nombreDeComando(words[0]);
     let args = words.slice(1);
+    if (c === 'xargs') {
+      // lo que corre xargs, sin sus opciones (las que llevan valor, con él)
+      let i = 0;
+      while (i < args.length && args[i].startsWith('-')) i += /^-(?:[IinLPdEsa]|-(?:replace|max-args|max-lines|max-procs|delimiter|eof|max-chars|arg-file))$/.test(args[i]) ? 2 : 1;
+      c = nombreDeComando(args[i]);
+      args = args.slice(i + 1);
+    }
+    const lleva = (opciones) => {
+      // las cortas, también juntas (`-qO <ruta>`) o con el valor pegado (`-O<ruta>`); leer de más no frena nada:
+      // sólo cuenta lo que nombra un archivo de la firma
+      const cortas = opciones.filter((o) => /^-[A-Za-z]$/.test(o)).map((o) => o[1]).join('');
+      const r = [];
+      for (let i = 0; i < args.length; i++) {
+        if ((opciones.includes(args[i]) || (cortas && new RegExp(`^-[A-Za-z]*[${cortas}]$`).test(args[i]))) && args[i + 1]) { r.push(args[++i]); continue; }
+        const pegado = opciones.map((o) => (o.startsWith('--') ? new RegExp(`^${o}=(.+)$`).exec(args[i]) : null)).find(Boolean)
+          || (cortas ? new RegExp(`^-[A-Za-z]*[${cortas}](.+)$`).exec(args[i]) : null);
+        if (pegado) r.push(pegado[1]);
+      }
+      return r;
+    };
+    if (c === 'tee') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
+    if (c === 'sponge') { out.push(...args.filter((w) => !w.startsWith('-')).filter(es)); continue; }
+    if (c === 'curl' || c === 'wget') { out.push(...lleva(['-o', '--output', '-O', '--output-document']).filter(es)); continue; }
+    if (c === 'tar' || c === 'bsdtar' || c === 'unzip') {
+      // lo que trae un archivo comprimido no se ve antes de abrirlo: a la carpeta de una constancia, no pasa
+      // `tar -xf`, `tar xzf` (el primer argumento sin guion) o `--extract`
+      const extrae = c === 'unzip' || args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get');
+      const dirs = lleva(c === 'unzip' ? ['-d'] : ['-C', '--directory']);
+      const destinos = dirs.length ? dirs.map((d) => abs(d)) : [cwd];
+      const enFirma = destinos.find(carpetaDeFirma);
+      if (extrae && enFirma) out.push(`${enFirma} (no se puede ver qué trae lo que se descomprime)`);
+      continue;
+    }
     if (c === 'git') {
       // las opciones de git antes del subcomando, con su valor; `-C` cambia la carpeta de las rutas
       let i = 0;
@@ -2279,11 +2330,11 @@ function handleCarrilEHistoria(event, opts = {}) {
   // el estado y el árbol instalado del arnés se miran por ruta real, sea cual sea la extensión; las constancias de los
   // cambios de control, por su final
   const stateReal = installedTree.realPath(stateDir);
-  const { isControlApproval } = require('./lib/story-gate.js');
+  const { signedRecordKind } = require('./lib/story-gate.js');
   const protegido = (abs) => {
     const real = installedTree.realPath(abs);
     return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true })
-      || isControlApproval(abs) || isControlApproval(real);
+      || signedRecordKind(abs) !== null || signedRecordKind(real) !== null;
   };
   // un `.md` también se mira en un `sed -i`: puede ser una historia en borrador (el freno de historia sin validar)
   // (con las variables del comando expandidas: `sed -i … "$F"` con `F=story.md`)
@@ -2292,9 +2343,13 @@ function handleCarrilEHistoria(event, opts = {}) {
     return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(resolveTarget(valor, cwd, process.platform, { homeVariable: true }));
   };
   // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
-  const constancias = constanciasTocadas(cmd, cwd);
+  const constancias = constanciasTocadas(cmd, cwd, stateDir);
   if (constancias.length) {
-    return { block: require('./lib/story-gate.js').blockMessage({ kind: 'control-approvals' }, { filePath: constancias[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+    const sg = require('./lib/story-gate.js');
+    // el registro del arnés y la carpeta de una ejecución son estado del pipeline; lo demás, su constancia
+    const kind = constancias.map((c) => sg.signedRecordKind(String(c).replace(/ \(.*\)$/, ''))).find(Boolean)
+      || (constancias.some((c) => /(^|[\\/])gates\.log$|\(no se puede ver qué trae lo que se descomprime\)$/.test(String(c))) ? 'state-dir' : 'control-approvals');
+    return { block: sg.blockMessage({ kind }, { filePath: constancias[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
   }
   if (!laneOff) {
     // los marcadores de la ejecución, de esta sesión o de otra, con la ejecución abierta o no

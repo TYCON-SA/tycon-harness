@@ -113,21 +113,32 @@ test('NORMAL sigue corriendo por su propio criterio, sin pasar por la lista', ()
   assert.equal(out.risk, 'NORMAL', 'no lo decidió la superficie compartida');
 });
 
-test('el kill-switch sigue ganando sobre la superficie compartida', () => {
+// Una constancia firmada del salteo, inyectada en proceso: la línea de comandos la lee de la máquina.
+const CONSTANCIA = { ok: true, linea: { via: 'ventana', quien: 'dueño', ts: '2026-10-27T10:00:00Z', huella: 'abcd', camino: '--no-deep-review', motivo: 'prueba' } };
+const { computeDeepReviewGate } = require(PIPELINE);
+
+test('la bandera sin constancia no saltea la superficie compartida; con la constancia, sí', () => {
   const repo = mkRepo(YAML_CON_LISTA);
   const r = spawnSync(process.execPath,
     [PIPELINE, 'deep-review-gate', '--repo', repo, '--story', path.join(repo, 'story.md'),
       '--no-deep-review', '--files', 'Services/Plugins/PluginManager.cs'],
     { encoding: 'utf8', env: { ...process.env, HOME } });
   const out = JSON.parse(r.stdout);
-  assert.equal(out.run, false, 'el kill-switch del dev gana sobre todo, incluida la lista nueva');
+  assert.equal(out.run, true, 'sin la firma del dueño, la bandera es un pedido: el pase corre');
+  assert.equal(out.skip_request.camino, '--no-deep-review');
+  const firmado = computeDeepReviewGate({ repo, story: path.join(repo, 'story.md'), files: ['Services/Plugins/PluginManager.cs'],
+    noDeepReview: true, adversarialSkipRecord: CONSTANCIA });
+  assert.equal(firmado.run, false, 'con la constancia firmada, saltea');
 });
 
-test('`deep_review: off` del repo sigue ganando sobre la superficie compartida', () => {
+test('`deep_review: off` del repo sin constancia no saltea la superficie compartida; con la constancia, sí', () => {
   const repo = mkRepo(`deep_review: off\n${YAML_CON_LISTA}`);
   const out = gate(repo, 'Services/Plugins/PluginManager.cs');
-  assert.equal(out.run, false);
+  assert.equal(out.run, true);
   assert.match(out.reason, /deep_review: off/);
+  const firmado = computeDeepReviewGate({ repo, story: path.join(repo, 'story.md'), files: ['Services/Plugins/PluginManager.cs'],
+    adversarialSkipRecord: CONSTANCIA });
+  assert.equal(firmado.run, false);
 });
 
 // ── La llave no puede quedar fuera del lint de config ──────────────────
@@ -183,12 +194,12 @@ test('`./` adelante tampoco rompe el matcheo', () => {
   assert.equal(out.run, true);
 });
 
-test('`deep_review: off` con lista declarada lo DICE, no mata en silencio', () => {
+test('`deep_review: off` con lista declarada lo DICE: es un pedido y la superficie pide el pase', () => {
   const repo = mkRepo(`deep_review: off\n${YAML_CON_LISTA}`);
   const out = gate(repo, 'Services/Plugins/PluginManager.cs');
-  assert.equal(out.run, false, 'el off del repo sigue ganando: es la decisión explícita del dueño');
-  assert.match(out.reason, /superficie compartida/i,
-    'pero tiene que avisar que está apagando una superficie declarada, o la regla queda publicada y muerta');
+  assert.equal(out.run, true, 'sin la firma del dueño, el off no apaga una superficie declarada');
+  assert.equal(out.skip_request.camino, 'deep_review: off');
+  assert.match(out.reason, /superficie compartida/i, 'el veredicto nombra la superficie que pidió el pase');
 });
 
 test('@story-7.26 story de dos repos: un archivo del repo hermano se juzga contra la superficie que declara SU repo', () => {

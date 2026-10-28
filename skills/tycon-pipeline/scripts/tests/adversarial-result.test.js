@@ -193,7 +193,7 @@ test('T4 Skipped_PortonLow_AnotaSalteoYCierra5b @story-1.8 @ac-4', () => {
   assert.equal(m.deepReviewDone, true);
   assert.ok(m.adversarialSkip, 'adversarialSkip escrito');
   assert.equal(m.adversarialSkip.archivos, 1);
-  assert.equal(m.adversarialSkip.forzado, false);
+  assert.equal(m.adversarialSkip.firmado, undefined, 'el portón LOW saltea solo: no hay firma que anotar');
   assert.equal(m.adversarialSkip.abandonado, false);
   assert.equal(m.adversarialSkip.runId, null);
   assert.match(m.adversarialSkip.motivo, /LOW/);
@@ -202,7 +202,7 @@ test('T4 Skipped_PortonLow_AnotaSalteoYCierra5b @story-1.8 @ac-4', () => {
   assert.equal(l.length, 1);
   assert.equal(l[0].status, 'ok');
   assert.equal(l[0].storyId, 'A');
-  assert.equal(l[0].forzado, false);
+  assert.equal(l[0].firmado, undefined);
   assert.equal(l[0].abandonado, false);
   assert.match(l[0].motivo, /LOW/);
   assert.equal(JSON.parse(r.stdout).motivo, m.adversarialSkip.motivo, 'imprime el objeto por stdout');
@@ -251,27 +251,22 @@ test('T7 Skipped_SinFiles_SeNiega @story-1.8 @ac-6', () => {
   assert.equal(crudoLog(home, 'gates.log'), '');
 });
 
-test('T8 Skipped_Interruptor_AnotaForzado @story-1.8 @ac-7', () => {
+test('T8 Skipped_Interruptor_SinFirma_SeNiega @story-1.8 @ac-7 @story-8.116', () => {
+  // El interruptor no es un salteo forzado: es un pedido que firma el dueño. Sin la constancia
+  // firmada no se anota nada: con 7 archivos el portón dice NORMAL y el pase corre. El salteo con la constancia lo
+  // cubre adversarial-skip-signed.test.js (la constancia se lee de la casa de la cuenta, que una prueba no firma).
   const home = casa(); const SID = 't8'; const repo = mkRepo({ codigo: 7 });
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
-  // Con 7 archivos el portón diría NORMAL: sólo el interruptor lo saltea, y eso es lo que se anota como forzado.
   const siete = ['scripts/x.js', 'scripts/x2.js', 'scripts/x3.js', 'scripts/x4.js', 'scripts/x5.js', 'scripts/x6.js', 'scripts/x7.js'];
-  const r = correr(home, SID, ['mark-adversarial-skipped', '--files', ...siete], { env: { TYCON_NO_DEEP_REVIEW: '1' } });
-  assert.equal(r.status, 0, r.stderr);
-  const m = leerMarker(home, SID);
-  assert.equal(m.adversarialSkip.forzado, true);
-  assert.equal(m.adversarialSkip.abandonado, false);
-  assert.equal(m.deepReviewDone, true);
-  const b = lineas(home, 'bypass.log').filter((x) => x.kind === 'ADVERSARIAL_SKIP_FORZADO');
-  assert.equal(b.length, 1);
-  assert.equal(b[0].storyId, 'A');
-  assert.ok(b[0].motivo);
-  // Y por argumento, igual.
-  const home2 = casa();
-  writeFakeMarker(home2, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
-  const r2 = correr(home2, SID, ['mark-adversarial-skipped', '--no-deep-review', '--files', ...siete]);
-  assert.equal(r2.status, 0, r2.stderr);
-  assert.equal(leerMarker(home2, SID).adversarialSkip.forzado, true);
+  for (const [args, env] of [[[], { TYCON_NO_DEEP_REVIEW: '1' }], [['--no-deep-review'], {}]]) {
+    const r = correr(home, SID, ['mark-adversarial-skipped', ...args, '--files', ...siete], { env });
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /sign-adversarial-skip/, 'nombra la firma del dueño');
+    const m = leerMarker(home, SID);
+    assert.equal(m.adversarialSkip, undefined, 'no anotó el salteo');
+    assert.notEqual(m.deepReviewDone, true);
+    assert.equal(lineas(home, 'bypass.log').filter((x) => /^ADVERSARIAL_SKIP/.test(x.kind)).length, 0);
+  }
 });
 
 test('T9 Skipped_PaseLanzado_SinInterruptor_SeNiega @story-1.8 @ac-8', () => {
@@ -281,25 +276,23 @@ test('T9 Skipped_PaseLanzado_SinInterruptor_SeNiega @story-1.8 @ac-8', () => {
   const r = correr(home, SID, ['mark-adversarial-skipped', '--files', 'scripts/x.js']);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /mark-adversarial-result/);
-  assert.match(r.stderr, /TYCON_NO_DEEP_REVIEW|--no-deep-review/, 'dice que abandonarlo se decide con el interruptor');
+  assert.match(r.stderr, /sign-adversarial-skip/, 'dice que abandonarlo lo firma el dueño');
   assert.equal(crudoMarker(home, SID), antes);
   assert.equal(crudoLog(home, 'gates.log'), '');
 });
 
-test('T10 Skipped_PaseLanzado_ConInterruptor_AnotaAbandono @story-1.8 @ac-8', () => {
+test('T10 Skipped_PaseLanzado_ConInterruptor_SinFirma_SeNiega @story-1.8 @ac-8 @story-8.116', () => {
+  // Abandonar un pase lanzado lo firma el dueño: el interruptor solo ya no lo abandona.
   const home = casa(); const SID = 't10'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md'), adversarial: lanzamiento('wf_ABANDONO') });
+  const antes = crudoMarker(home, SID);
   const r = correr(home, SID, ['mark-adversarial-skipped', '--files', 'scripts/x.js'], { env: { TYCON_NO_DEEP_REVIEW: '1' } });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /sign-adversarial-skip/);
   const m = leerMarker(home, SID);
-  assert.equal(m.adversarialSkip.abandonado, true);
-  assert.equal(m.adversarialSkip.forzado, true);
-  assert.equal(m.adversarialSkip.runId, 'wf_ABANDONO');
-  assert.equal(m.deepReviewDone, true);
-  const b = lineas(home, 'bypass.log').filter((x) => x.kind === 'ADVERSARIAL_ABANDONADO');
-  assert.equal(b.length, 1);
-  assert.equal(b[0].runId, 'wf_ABANDONO');
-  assert.equal(b[0].storyId, 'A');
+  assert.equal(m.adversarialSkip, undefined);
+  assert.equal(JSON.stringify(m.adversarial), JSON.stringify(JSON.parse(antes).adversarial), 'el lanzamiento sigue');
+  assert.equal(lineas(home, 'bypass.log').filter((x) => x.kind === 'ADVERSARIAL_ABANDONADO').length, 0);
 });
 
 test('T11 Skipped_SinCorrida_SeNiega @story-1.8 @ac-9', () => {

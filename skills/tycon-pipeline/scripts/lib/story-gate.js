@@ -173,6 +173,14 @@ function isControlApproval(p) {
   const f = norm(String(p || ''));
   return CONTROL_APPROVAL_DIR.test(f) || CONTROL_APPROVAL_FILE.test(f);
 }
+// La constancia del salteo del pase adversarial: la escribe sólo `marker.js sign-adversarial-skip`, con la firma del dueño.
+const ADVERSARIAL_SKIP_FILE = /(^|\/)adversarial-skips\.jsonl$/i;
+function isAdversarialSkipRecord(p) { return ADVERSARIAL_SKIP_FILE.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record` o null. */
+function signedRecordKind(p) {
+  if (isControlApproval(p)) return 'control-approvals';
+  return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
+}
 
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
@@ -198,6 +206,9 @@ function computeStoryGate({
   // kill-switch del repo y en cualquier repo, también en los del arnés.
   if (isControlApproval(filePath) || isControlApproval(real)) {
     return { action: 'block', kind: 'control-approvals', reason: 'escritura a mano de una constancia de cambio de control' };
+  }
+  if (isAdversarialSkipRecord(filePath) || isAdversarialSkipRecord(real)) {
+    return { action: 'block', kind: 'adversarial-skip-record', reason: 'escritura a mano de la constancia del salteo del pase adversarial' };
   }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
@@ -316,6 +327,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       `  ${f}`,
       '  La escribe `bash scripts/ci/run-base-controls.sh approve`: el dueño en su terminal, o la sesión designada con',
       '  la frase del dueño (`--relayed-by`). `pending` da los dos comandos.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'adversarial-skip-record') {
+    return [
+      '⛔ la constancia del salteo del pase adversarial no se escribe a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La escribe `marker.js sign-adversarial-skip --story <S> --reason "<motivo>"`, con la firma del dueño en la',
+      '  ventana de permiso o en su terminal (`--terminal`). Sin ella, el pase corre.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'plan') {
@@ -515,7 +535,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, isControlApproval, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   reasonInPrompts, normalizeWords, ADHOC_REASON_MIN_CHARS,
   STORY_INTENT_PATTERNS, quotedPromptAsksStory,
   DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,

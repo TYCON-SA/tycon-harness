@@ -581,11 +581,17 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
-  Debajo está la **firma delegada de cambios de control** (`approvals.delegated_signing`). «Apagada» es lo de fábrica.
-  «Prendida» deja que esa sesión vuelva a firmar, en nombre del dueño, un pedido que el dueño ya firmó, cuando lo único
-  nuevo es que se trajo main; su frase queda registrada. Lo nuevo, un choque resuelto a mano y aflojar un control siguen
-  esperando al dueño. El aviso fijo lo dice: «Aflojar un control siempre lo firma una persona, en su terminal; esto no lo
-  cambia.» Sin sesión designada, «prendida» no sirve, y la sección lo avisa. Vale sólo desde acá, nunca desde una máquina.
+  Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
+  opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso o firma en su terminal.
+  «Delegada a la coordinadora» (`approvals.delegated_signing`) deja que esa sesión la firme en nombre del dueño, y su
+  frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
+  cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
+  (`approvals.owner_only`) la traba: el sitio no ofrece delegarla, y lo que no se firma desde la pestaña de otra sesión
+  tampoco se ofrece. El aviso fijo lo dice: «Aflojar un control siempre lo firma una persona, en su terminal; esto no lo
+  cambia.» Sin sesión designada, lo delegado no sirve, y la sección lo avisa. Lo delegado vale sólo en las máquinas de
+  la lista de abajo (`approvals.delegated_machines`), nombradas por su huella: las que el buzón de ejecuciones vio se
+  agregan con un botón, y otra escribiendo su huella. De fábrica, en ninguna. Todo vale sólo desde acá, nunca desde
+  una máquina.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra

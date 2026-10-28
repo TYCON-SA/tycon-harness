@@ -1235,6 +1235,23 @@ place_dryrun "${T}"
 [ "$(owner_de "${T}")" = '{"email": "personal@ejemplo.test", "source": "git-global"}' ] \
   && ok "2.28-T1 el includeIf no se sigue: informa el personal" || mal "2.28-T1 includeIf: $(owner_de "${T}")"
 
+# ── 8.116 T31 · UploadRuns_LlevaLaHuella ── 🔴 Atrapa: place.json sin la huella; la huella cruda o con la fuente.
+# La huella es la de la máquina que corre la prueba (machine-id.js): la misma, o no_medido con motivo si no se lee.
+T="${BASE}/t8116-31"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = dev.uno@ejemplo.test\n'
+place_dryrun "${T}"
+ESPERADA="$(node -e 'const h=require(process.argv[1]).huella(); process.stdout.write(h.huella||"")' "${RAIZ}/scripts/lib/machine-id.js" 2>/dev/null)"
+python3 - "${T}/estado/registros-buzon/place.json" "${ESPERADA}" <<'PY' && ok "8.116-T31 place.json lleva la huella junto a la carpeta, sin la fuente" || mal "8.116-T31 rc=${RC}: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 500)"
+import json, re, sys
+d = json.load(open(sys.argv[1])); esperada = sys.argv[2]
+m = d.get('machine_id')
+assert isinstance(m, dict), m
+if esperada:
+    assert m == {'fingerprint': esperada}, m
+else:
+    assert m.get('status') == 'no_medido' and m.get('reason'), m
+assert 'source' not in m and 'fuente' not in m, m
+PY
+
 # ── T2 · Place_OwnerNoMedido_CuatroMotivos ── 🔴 Atrapa: un correo vacío en vez de no_medido; seguir el include.
 MOTIVOS=""
 for caso in sin-email sin-forma solo-include ilegible; do

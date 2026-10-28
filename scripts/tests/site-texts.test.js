@@ -41,7 +41,9 @@ const { textosVisibles, enCastellano } = require('./lib/spanish-text.js');
 // ── el laboratorio Acme: datos con nombres que no son castellano ───────────────────────────────────────────────────
 const leida = (extra) => ({ estado: 'medido', codigo: null, motivo: null, fecha: HOY, ...extra });
 const noMedida = (codigo) => ({ estado: 'no_medido', codigo, motivo: null, fecha: null });
-const DATOS = ['Acme Web', 'Acme Ops', 'web-repo', 'ops-repo', 'acme-mac-1', 'a.test.js', 'b.test.js', 'Acme', MANTIENE, PERSONA, 'ana', 'lead', 'Acme Corp'];
+// el identificador de cada firma es el valor que se escribe en el perfil, no un texto: no se traduce
+const IDS_DE_FIRMAS = require(path.join(H.SITE, '..', 'lib', 'signatures.js')).SIGNATURES.map((f) => f.id);
+const DATOS = ['Acme Web','Acme Ops', 'web-repo', 'ops-repo', 'acme-mac-1', 'a.test.js', 'b.test.js', 'Acme', MANTIENE, PERSONA, 'ana', 'lead', 'Acme Corp'];
 function modeloAcme() {
   return {
     dependencias: leida({ rubros: { nuevos: 3, aceptadas_sin_resolver: 1, rechazadas_sin_deuda: 0, pedidos_cerrados_con_vivas: 2 }, vivas_por_proyecto: { 'Acme Ops': 4 } }),
@@ -220,7 +222,7 @@ test('T9 Textos_ConfiguracionEnLosDosIdiomas @story-2.42 @ac-4 @story-2.57 @ac-5
     // inglés: títulos, ayudas, botones y el mensaje de validación, sin castellano
     assert.ok(vistos.en.some((t) => /Who gets into the site/.test(t)), `el título de la sección en inglés: ${vistos.en.slice(0, 40).join(' | ')}`);
     // el catálogo de lo que instala el arnés también, con su inglés: sin excepción
-    const restos = enCastellano(vistos.en.flatMap((t) => String(t).split('\n')), [...DATOS, 'bizuit', 'operations.json', 'team-profile.json', 'team-repos.json']);
+    const restos = enCastellano(vistos.en.flatMap((t) => String(t).split('\n')), [...DATOS, ...IDS_DE_FIRMAS, 'bizuit','operations.json', 'team-profile.json', 'team-repos.json']);
     assert.deepStrictEqual(restos, [], `Configuración en inglés con castellano:\n${restos.join('\n')}`);
     assert.doesNotMatch(vistos['en-rev'], /la lista tiene que tener/);
     assert.match(vistos['en-rev'], /the list must include a site maintainer/i);
@@ -376,7 +378,7 @@ test('2.57 · Textos_TodasLasSeccionesDeConfiguracionEnIngles @story-2.57 @ac-6'
   assert.deepStrictEqual(faltan, [], 'secciones que la pantalla no dibujó');
   for (const p of ['personas', 'repos', 'avisos', 'claude', 'instalacion']) assert.ok(ids.includes(`pestana-${p}`), `la pestaña ${p}`);
   // y ninguna trae castellano: ni sus títulos, ni sus ayudas, ni el catálogo de lo que instala el arnés
-  const restos = enCastellano(textos, [...DATOS, 'acme-mac-1', 'acmeruns', 'bizuit', 'operations.json', 'team-profile.json', 'team-repos.json']);
+  const restos = enCastellano(textos, [...DATOS, ...IDS_DE_FIRMAS, 'acme-mac-1','acmeruns', 'bizuit', 'operations.json', 'team-profile.json', 'team-repos.json']);
   assert.deepStrictEqual(restos, [], `Configuración en inglés con castellano:\n${restos.join('\n')}`);
   // el detector no ve el castellano sin tildes («Frena comandos destructivos o riesgosos»): el catálogo se compara entero
   const castellano = new Set(EFECTOS().flatMap((e) => [e.title, e.does]));

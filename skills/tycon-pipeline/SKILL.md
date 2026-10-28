@@ -79,7 +79,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
 - **H.ii — pase adversarial** (`steps/step-08-adversarial-pass.md`): reproduce-or-refute que
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre (de fondo, sin preguntar); LOW o
-  liviana → skip. Apagarlo: «autorizo TYCON_NO_DEEP_REVIEW». Overrides: `.tycon/advisors.yaml deep_review: always|off|auto`,
+  liviana → skip. Apagarlo lo firma el dueño (`marker.js sign-adversarial-skip`). Overrides: `deep_review: always|auto`,
   `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` no se ofrece ni se
   pregunta**: sólo con `--deep-review-fable`, a pedido. UNA vez por corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
   y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo

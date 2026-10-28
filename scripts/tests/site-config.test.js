@@ -1369,7 +1369,7 @@ async function pantallaFalsa(secciones, respuestas = {}) {
   const click = async (texto, id) => { const b = todo(sec(id)).find((n) => n.tag === 'button' && n.textContent === texto); assert.ok(b, `hay «${texto}» en ${id}`); b.on.click({}); await esperar(); };
   return { error, sec, textoDe, todo, click, pedidos, app };
 }
-const seccionPerfil = (id, borrador, problems = []) => ({ id, titulo: id, repo: 'perfil', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems, avisos: [], extras: id === 'modelos' ? { hoy: { reviewers: 'sonnet' } } : undefined });
+const seccionPerfil = (id, borrador, problems = []) => ({ id, titulo: id, repo: 'perfil', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems, avisos: [], extras: id === 'modelos' ? { hoy: { reviewers: 'sonnet' } } : (id === 'aprobaciones' ? ORG.extrasDeAprobaciones(null) : undefined) });
 
 test('T41 Pantalla_SuitesYModelos_TodoProblemaSeVe_YSeEditaComoTexto @story-2.29 @ac-4 (tanda C, pase adversarial) — ningún problema del lector queda sin dibujar', async () => {
   const pm = [['models.ceiling', 'un techo sin techo'], ['models.foo', 'clave desconocida foo'], ['models.session.huge', 'subclave huge'], ['models.adversarial', 'adversarial no es objeto']];
@@ -3472,7 +3472,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ approvals: { relay_session: 'coordinadora' } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3508,7 +3508,8 @@ test('Seccion_ReenvioDelOk_ElNombreDelRol — con «Sí», el nombre del rol se 
   };
   // con «No» no se pide el nombre, y la ayuda sale sin la errata
   const no = await abrir({});
-  assert.ok(!no.todos().some((n) => n.tag === 'input'), 'sin «Sí», no hay campo');
+  // (los campos de la lista de máquinas, de la 8.116, están siempre: el que no hay es el del nombre del rol)
+  assert.ok(!no.todos().some((n) => n.tag === 'input' && n.attrs['data-path'] === 'approvals.relay_session.nombre'), 'sin «Sí», no hay campo');
   assert.match(no.texto(), /el programador escribe en el chat de esa sesión «Esta sesión es la coordinadora»/);
   assert.doesNotMatch(no.texto(), /Cuál sesión es se designa/);
   // elegir «Sí» trae el campo con «coordinadora», el nombre de fábrica
@@ -3641,9 +3642,10 @@ test('8.88 T51 · Site_Approvals_DelegatedSigningSelector_DefaultOff @story-8.88
   assert.ok(ORG.seccionPorId('aprobaciones').rutas.includes('approvals.delegated_signing'));
   const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
   assert.strictEqual(p.error, null);
-  const sel = p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.delegated_signing');
+  // desde la 8.116 es la fila de refresh-after-main en la tabla de firmas: a la ventana, delegada o sólo del dueño
+  const sel = p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.firma.refresh-after-main');
   assert.ok(sel, 'hay un selector de firma delegada');
-  assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'refresh-after-main']);
+  assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'delegada', 'dueno']);
   assert.strictEqual(sel.attrs.value || '', '', 'de fábrica, apagada');
   assert.match(p.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona, en su terminal; esto no lo cambia\./);
   const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } }, lectores: { 'harness-config': TC } });
@@ -3660,7 +3662,7 @@ test('8.88 T52 · Site_Approvals_WarnsWhenNoRelaySession @story-8.88 @ac-29', as
 });
 
 // ── la firma delegada en lista ─────────────────────────────────────────────────────────────────
-const selectorDeFirma = (p) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.delegated_signing');
+const selectorDeFirma = (p, id = 'refresh-after-main') => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.firma.${id}`);
 const borradorAlRevisar = async (p) => { await p.click('Revisar cambios', 'aprobaciones'); return p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop().cuerpo.borrador; };
 
 // T36 SiteConfig_SelectorDe888_LeeLaLista @story-8.116 @ac-36
@@ -3669,7 +3671,7 @@ test('8.116 T36 SiteConfig_SelectorDe888_LeeLaLista', async () => {
   for (const [firma, prendida] of [['refresh-after-main', true], [['refresh-after-main', 'adversarial-skip'], true], [['adversarial-skip'], false], [undefined, false]]) {
     const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', ...(firma === undefined ? {} : { delegated_signing: firma }) } })]);
     assert.strictEqual(p.error, null);
-    assert.strictEqual(selectorDeFirma(p).value || '', prendida ? 'refresh-after-main' : '', JSON.stringify(firma));
+    assert.strictEqual(selectorDeFirma(p).value || '', prendida ? 'delegada' : '', JSON.stringify(firma));
     assert.strictEqual(/vuelve a firmar en nombre del dueño un pedido que él ya firmó/.test(p.textoDe('aprobaciones')), prendida, JSON.stringify(firma));
   }
 });
@@ -3681,22 +3683,22 @@ test('8.116 T44 SiteConfig_SelectorDe888_ConservaLaLista', async () => {
   selectorDeFirma(p).on.change({ target: { value: '' } });
   assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['adversarial-skip'], 'apagar saca sólo refresh-after-main');
   p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['adversarial-skip'] } })]);
-  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  selectorDeFirma(p).on.change({ target: { value: 'delegada' } });
   assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip'], 'prender lo agrega, primero');
   // prender y apagar deja el mismo orden: no cuenta como un cambio
   p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'adversarial-skip'] } })]);
   selectorDeFirma(p).on.change({ target: { value: '' } });
-  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  selectorDeFirma(p).on.change({ target: { value: 'delegada' } });
   assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip']);
   // la lista con «off» sola es ninguna: prender da el valor suelto, nunca ['off', 'refresh-after-main']
   p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['off'] } })]);
   assert.strictEqual(selectorDeFirma(p).value || '', '');
-  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  selectorDeFirma(p).on.change({ target: { value: 'delegada' } });
   assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, 'refresh-after-main');
   // un valor suelto distinto de refresh-after-main no se pisa: prender lo suma, apagar lo deja
   p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'adversarial-skip' } })]);
   assert.strictEqual(selectorDeFirma(p).value || '', '');
-  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  selectorDeFirma(p).on.change({ target: { value: 'delegada' } });
   assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, ['refresh-after-main', 'adversarial-skip']);
   p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'adversarial-skip' } })]);
   selectorDeFirma(p).on.change({ target: { value: '' } });
@@ -3706,11 +3708,107 @@ test('8.116 T44 SiteConfig_SelectorDe888_ConservaLaLista', async () => {
   assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, undefined, 'la lista que queda vacía se saca');
   // con el valor suelto, como hoy
   p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
-  selectorDeFirma(p).on.change({ target: { value: 'refresh-after-main' } });
+  selectorDeFirma(p).on.change({ target: { value: 'delegada' } });
   assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, 'refresh-after-main');
   p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } })]);
   selectorDeFirma(p).on.change({ target: { value: '' } });
   assert.strictEqual((await borradorAlRevisar(p)).approvals.delegated_signing, undefined);
+});
+
+// T29 SiteConfig_Aprobaciones_FirmasYMaquinas @story-8.116 @ac-26
+// 🔴 Falla con: una firma del catálogo sin fila, algo marcado de fábrica, «delegada» ofrecida para lo sólo del dueño o
+// lo que no se firma desde otra sesión, o una huella del buzón que no se ofrece.
+test('8.116 T29 SiteConfig_Aprobaciones_FirmasYMaquinas', async () => {
+  const SIG = require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+  const opciones = (p, id) => p.todo(selectorDeFirma(p, id)).filter((n) => n.tag === 'option').map((n) => n.attrs.value);
+  // perfil vacío: una fila por firma, ninguna marcada, y ninguna máquina
+  let p = await pantallaFalsa([seccionPerfil('aprobaciones', {})]);
+  assert.strictEqual(p.error, null);
+  for (const f of SIG.SIGNATURES) {
+    const sel = selectorDeFirma(p, f.id);
+    assert.ok(sel, `la firma ${f.id} tiene su fila`);
+    assert.strictEqual(sel.value || '', '', `${f.id}: de fábrica, a la ventana`);
+    assert.deepStrictEqual(opciones(p, f.id), f.otherSession === 'yes' ? ['', 'delegada', 'dueno'] : ['', 'dueno'], f.id);
+  }
+  assert.match(p.textoDe('aprobaciones'), /Lo delegado no está protegido contra un agente/);
+  assert.match(p.textoDe('aprobaciones'), /Ninguna máquina todavía\./);
+  // con una firma sólo del dueño: no se ofrece delegarla
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', owner_only: ['plan-approval'] } })]);
+  assert.strictEqual(selectorDeFirma(p, 'plan-approval').value, 'dueno');
+  assert.deepStrictEqual(opciones(p, 'plan-approval'), ['', 'dueno']);
+  // con dos máquinas vistas en el buzón, con su huella: se ofrecen, y la que ya está en la lista no se repite
+  const extras = ORG.extrasDeAprobaciones({ maquinas: {
+    'maq-a': { estado: 'informa', correo: 'dev-a@ejemplo.test', machine_id: 'abcdefabcdefabcd', corridas: 1 },
+    'maq-b': { estado: 'no_informa', motivo: 'x', machine_id: '0123456789abcdef', corridas: 0 },
+    'maq-c': { estado: 'informa', correo: 'dev-c@ejemplo.test', corridas: 0 },
+  } });
+  assert.deepStrictEqual(extras.maquinas, [{ id: 'abcdefabcdefabcd', carpeta: 'maq-a', nombre: 'maq-a' }, { id: '0123456789abcdef', carpeta: 'maq-b', nombre: 'maq-b' }]);
+  assert.deepStrictEqual(extras.sinHuella, [{ carpeta: 'maq-c', motivo: null }], 'la que informó sin huella se cuenta');
+  assert.ok(!JSON.stringify(extras).includes('@'), 'ningún correo llega a la pantalla');
+  p = await pantallaFalsa([{ ...seccionPerfil('aprobaciones', { approvals: { delegated_machines: [{ id: '0123456789abcdef', label: 'la de prueba' }] } }), extras }]);
+  const texto = p.textoDe('aprobaciones');
+  assert.match(texto, /maq-a · abcdefabcdefabcd/);
+  assert.ok(!/maq-b · 0123456789abcdef/.test(texto), 'la que ya está en la lista no se ofrece de nuevo');
+  assert.match(texto, /informaron sin huella/);
+  assert.match(texto, /maq-c: no mandó la huella/);
+  await p.click('Agregar', 'aprobaciones');
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_machines, [{ id: '0123456789abcdef', label: 'la de prueba' }, { id: 'abcdefabcdefabcd', label: 'maq-a' }]);
+  // agregar por huella: lo escrito en los dos campos entra a la lista
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', {})]);
+  const campoDe = (ruta) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'input' && n.attrs['data-path'] === ruta);
+  campoDe('approvals.delegated_machines.nueva.id').on.input({ target: { value: ' fedcbafedcbafedc ' } });
+  campoDe('approvals.delegated_machines.nueva.label').on.input({ target: { value: 'Mac de prueba' } });
+  await p.click('Agregar por huella', 'aprobaciones');
+  assert.deepStrictEqual((await borradorAlRevisar(p)).approvals.delegated_machines, [{ id: 'fedcbafedcbafedc', label: 'Mac de prueba' }]);
+  // dos carpetas con la misma huella: choque a la vista, sin el botón; el nombre propuesto, en la forma del lector
+  const choque = ORG.extrasDeAprobaciones({ maquinas: {
+    'maq-a': { estado: 'informa', correo: 'dev-a@ejemplo.test', machine_id: 'abcdefabcdefabcd', corridas: 1 },
+    'maq-z': { estado: 'informa', correo: 'dev-z@ejemplo.test', machine_id: 'abcdefabcdefabcd', corridas: 1 },
+    'maq-x': { estado: 'no_informa', motivo: 'x', machine_id_motivo: 'no se pudo leer el id del sistema', corridas: 0 },
+  } });
+  assert.deepStrictEqual(choque.maquinas, [{ id: 'abcdefabcdefabcd', carpeta: 'maq-a', nombre: 'maq-a', choque: ['maq-a', 'maq-z'] }]);
+  assert.deepStrictEqual(choque.sinHuella, [{ carpeta: 'maq-x', motivo: 'no se pudo leer el id del sistema' }]);
+  p = await pantallaFalsa([{ ...seccionPerfil('aprobaciones', {}), extras: choque }]);
+  assert.match(p.textoDe('aprobaciones'), /La huella abcdefabcdefabcd la mandan varias carpetas \(maq-a, maq-z\)/);
+  assert.ok(!p.todo(p.sec('aprobaciones')).some((n) => n.tag === 'button' && n.textContent === 'Agregar'), 'el choque no se agrega con un clic');
+  assert.match(p.textoDe('aprobaciones'), /maq-x: no se pudo leer el id del sistema/);
+  assert.strictEqual(ORG.nombreDeMaquina('maq/rara:<b>' + 'x'.repeat(50)), ('maqrarab' + 'x'.repeat(50)).slice(0, 40));
+  assert.ok(/^[\p{L}\p{N} ._()-]{1,40}$/u.test(ORG.nombreDeMaquina('maq-a-11111111')));
+  // en inglés, los mismos textos traducidos
+  p = await pantallaFalsa([seccionPerfil('aprobaciones', {})]);
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const k of ['pantalla.firmasTitulo', 'pantalla.firmaVentana', 'pantalla.firmaDelegadaOpcion', 'pantalla.firmaSoloDueno', 'pantalla.firmaVentanaCosto', 'pantalla.firmaDelegadaOpcionCosto',
+    'pantalla.firmaSoloDuenoCosto', 'pantalla.maquinasTitulo', 'pantalla.maquinasAyuda', 'pantalla.maquinasHuella', 'pantalla.maquinasAgregarPorHuella']) {
+    const es = textos.t('es', k); const en = textos.t('en', k);
+    assert.ok(es && en && es !== k && en !== k && es !== en, `${k} existe y está traducida`);
+  }
+  assert.match(textos.t('en', 'pantalla.firmaDelegadaOpcionCosto'), /not protected against an agent/);
+});
+
+// T30 SiteConfig_Aprobaciones_ProponePedido @story-8.116 @ac-27
+// 🔴 Falla con: un cambio de la tabla que escribe otra cosa que las cuatro hojas, o que el lector no valida.
+test('8.116 T30 SiteConfig_Aprobaciones_ProponePedido', async () => {
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
+  selectorDeFirma(p, 'plan-approval').on.change({ target: { value: 'delegada' } });
+  selectorDeFirma(p, 'extra-round').on.change({ target: { value: 'delegada' } });
+  selectorDeFirma(p, 'critical-waiver').on.change({ target: { value: 'dueno' } });
+  const b = await borradorAlRevisar(p);
+  assert.deepStrictEqual(b.approvals, { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'], owner_only: ['critical-waiver'] });
+  // pasar lo delegado a sólo del dueño lo saca de la otra lista: nunca queda en las dos
+  selectorDeFirma(p, 'extra-round').on.change({ target: { value: 'dueno' } });
+  const b2 = await borradorAlRevisar(p);
+  assert.deepStrictEqual([b2.approvals.delegated_signing, b2.approvals.owner_only], [['plan-approval'], ['extra-round', 'critical-waiver']], 'la lista que ya era lista sigue siéndolo');
+  // el lector lo valida, con las máquinas, y el pedido toca sólo approvals
+  const borrador = { approvals: { ...b2.approvals, delegated_machines: [{ id: 'abcdefabcdefabcd', label: 'la de prueba' }] } };
+  const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+  const nuevo = JSON.parse(rev.texto);
+  assert.deepStrictEqual(nuevo.approvals, { ...(PERFIL_TYCON.approvals || {}), ...borrador.approvals });
+  for (const k of Object.keys(PERFIL_TYCON)) if (k !== 'approvals') assert.deepStrictEqual(nuevo[k], PERFIL_TYCON[k], `${k} queda como estaba`);
+  // una huella mal escrita no se propone
+  const malo = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { delegated_machines: [{ id: 'no-es-huella', label: 'x' }] } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(malo.problems.some((x) => x.path === 'approvals.delegated_machines'), JSON.stringify(malo.problems));
 });
 
 // T45 OrgConfig_CapaPideLaVersionDeLaLista @story-8.116 @ac-44
@@ -3771,8 +3869,7 @@ test('8.139 T6 OrgConfig_OwnerOnlyPideSuVersion', () => {
 test('8.88 T53 · Site_Texts_EsAndEn @story-8.88 @ac-30', () => {
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const claves = ['pantalla.frenoProduccionTitulo', 'pantalla.frenoProduccion', 'pantalla.frenoProduccionPassword', 'pantalla.frenoProduccionAuto',
-    'pantalla.frenoProduccionPasswordCosto', 'pantalla.frenoProduccionAutoCosto', 'pantalla.firmaDelegada', 'pantalla.firmaDelegadaNo',
-    'pantalla.firmaDelegadaSi', 'pantalla.firmaDelegadaAviso', 'pantalla.firmaDelegadaCosto', 'pantalla.firmaDelegadaSinSesion'];
+    'pantalla.frenoProduccionPasswordCosto', 'pantalla.frenoProduccionAutoCosto', 'pantalla.firmaDelegadaAviso', 'pantalla.firmaDelegadaCosto', 'pantalla.firmaDelegadaSinSesion'];
   for (const k of claves) {
     const es = textos.t('es', k); const en = textos.t('en', k);
     assert.ok(es && en && es !== k && en !== k, `${k} existe en las dos lenguas`);

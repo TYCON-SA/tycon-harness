@@ -712,21 +712,30 @@ test('computeDeepReviewGate: NORMAL→run(sonnet), LOW→skip, overrides, repo c
     g = computeDeepReviewGate({ ...base, story: low, files: [], deepReview: true });
     assert.equal(g.run, true, '--deep-review fuerza on aun en LOW');
 
-    // NORMAL + --no-deep-review → kill-switch gana sobre todo
+    // NORMAL + --no-deep-review sin constancia → es un pedido: el pase corre y el veredicto lo dice
     g = computeDeepReviewGate({ ...base, story: normal, files: [], noDeepReview: true });
-    assert.equal(g.run, false, '--no-deep-review kill-switch');
+    assert.equal(g.run, true, '--no-deep-review sin la firma del dueño no apaga el pase');
+    assert.equal(g.skip_request.camino, '--no-deep-review');
+    // con la constancia firmada, inyectada en proceso, saltea
+    const CONSTANCIA = { ok: true, linea: { via: 'ventana', quien: 'dueño', ts: '2026-10-27T10:00:00Z', huella: 'abcd', camino: '--no-deep-review', motivo: 'prueba' } };
+    g = computeDeepReviewGate({ ...base, story: normal, files: [], noDeepReview: true, adversarialSkipRecord: CONSTANCIA });
+    assert.equal(g.run, false, 'con la constancia firmada, saltea');
+    assert.equal(g.adversarial_skip.quien, 'dueño');
 
     // --ultracode → run + modelo opus
     g = computeDeepReviewGate({ ...base, story: normal, files: [], ultracode: true });
     assert.equal(g.run, true);
     assert.equal(g.model, 'opus', 'ultracode sube a opus');
 
-    // repo config deep_review: off gana sobre NORMAL (pero no sobre kill-switch)
+    // repo config deep_review: off es un pedido: sin constancia no apaga NORMAL; con ella, sí
     const cfgRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'dr-cfg-'));
     fs.mkdirSync(path.join(cfgRepo, '.tycon'));
     fs.writeFileSync(path.join(cfgRepo, '.tycon', 'advisors.yaml'), 'deep_review: off\n');
     g = computeDeepReviewGate({ repo: cfgRepo, story: normal, files: [] });
-    assert.equal(g.run, false, '.tycon/advisors.yaml deep_review: off apaga aun en NORMAL');
+    assert.equal(g.run, true, '.tycon/advisors.yaml deep_review: off sin la firma del dueño no apaga NORMAL');
+    assert.equal(g.skip_request.camino, 'deep_review: off');
+    g = computeDeepReviewGate({ repo: cfgRepo, story: normal, files: [], adversarialSkipRecord: CONSTANCIA });
+    assert.equal(g.run, false, 'con la constancia firmada, saltea');
     fs.rmSync(cfgRepo, { recursive: true, force: true });
   } finally {
     fs.unlinkSync(normal); fs.unlinkSync(low);
@@ -7190,7 +7199,10 @@ test('7.32-Arranque_AnunciaYGuarda: start --brief dice tamaño, motivo y tiempo,
   assert.equal(m.estimate_min, 45);
 });
 
-test('7.32-Forzado_ConMotivo: set-size sin motivo rechaza, con motivo guarda, a liviana con código deja bypass.log', () => {
+test('7.32-Forzado_ConMotivo: set-size sin motivo rechaza; a liviana con código, sin la firma del dueño, no cambia nada', () => {
+  // Forzar «liviana» con código es un pedido de saltear el pase: con motivo y sin la constancia
+  // firmada sale 1, no escribe y nombra la firma. El forzado con la constancia lo cubre adversarial-skip-signed.test.js
+  // (la constancia se lee de la casa de la cuenta, que una prueba no firma).
   const { story } = story732(['scripts/x.js']);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-size-'));
   writeFakeMarker(home, 'size-732', { storyPath: story, repoPath: path.dirname(story), size: 'completa' });
@@ -7200,18 +7212,20 @@ test('7.32-Forzado_ConMotivo: set-size sin motivo rechaza, con motivo guarda, a 
   assert.match(sinMotivo.stderr, /falta el motivo/);
   const file = path.join(home, '.claude', '.tycon-pipeline', 'active', 'size-732.json');
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).size, 'completa', 'sin motivo no escribe');
-  const ok = run('liviana', '--reason', 'sólo cambia un comentario');
-  assert.equal(ok.status, 0, ok.stderr);
+  const pedido = run('liviana', '--reason', 'sólo cambia un comentario');
+  assert.equal(pedido.status, 1, pedido.stderr);
+  assert.match(pedido.stderr, /sign-adversarial-skip/);
   const m = JSON.parse(fs.readFileSync(file, 'utf8'));
-  assert.equal(m.size, 'liviana');
-  assert.equal(m.sizeForced.reason, 'sólo cambia un comentario');
-  assert.ok(m.sizeForced.by, 'quién');
-  const log = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'bypass.log'), 'utf8');
-  assert.match(log, /SIZE_FORCED_LIGHT_WITH_CODE/);
-  // el forzado manda en el portón por línea de comandos
+  assert.equal(m.size, 'completa', 'sin la firma no escribe');
+  assert.equal(m.sizeForced, undefined);
+  const bp = path.join(home, '.claude', '.tycon-pipeline', 'bypass.log');
+  assert.ok(!fs.existsSync(bp) || !/SIZE_FORCED_LIGHT_WITH_CODE/.test(fs.readFileSync(bp, 'utf8')), 'sin la firma, bypass.log no anota el forzado');
+  // y el portón, sin el forzado, sigue el criterio de siempre: acá no puede medir el archivo (no hay repo git) y lo dice,
+  // en lugar de saltear por la «liviana» pedida
   const g = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'deep-review-gate', '--repo', path.dirname(story), '--story', story, '--files', 'scripts/x.js'],
     { encoding: 'utf8', env: { ...process.env, ...fakeHomeEnv(home), CLAUDE_CODE_SESSION_ID: 'size-732' } });
-  assert.equal(JSON.parse(g.stdout).run, false, g.stderr);
+  assert.equal(g.status, 2, g.stderr);
+  assert.match(g.stderr, /no pude medir/);
 });
 
 test('7.32-CodigoComoHoy: una story de código sale con el mismo riesgo, modelo y pase que antes', () => {
