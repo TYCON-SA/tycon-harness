@@ -608,7 +608,7 @@ function decidir(entrada) {
       'Lo que no está declarado se trata como producción.',
       ...caminoFirewall(n.host),
       `Si es de un ambiente de prueba, declaralo en <repo>/.tycon/production.json:`,
-      `  {"servers":[{"host":"${n.host}","environment":"no-produccion"}]}`,
+      `  {"servers":[{"host":"${n.host}","environment":"non-production"}]}`,
       indice.catalogos.length
         ? `  (catálogos que hoy conoce esta máquina: ${indice.catalogos.map((c2) => c2.repo).join(', ')})`
         : '  (esta máquina no tiene NINGÚN catálogo: revisá la raíz de repos con `node scripts/lib/repos-root.js`)',
@@ -741,7 +741,7 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
         // los clientes de base porque ESO es lo que vigilan. Leerlas como si fueran un guion ajeno
         // hace que el freno se frene a sí mismo (2026-09-15).
         // (con el nombre de antes del renombre a inglés también: su reemplazo sigue en la carpeta vieja)
-        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|produccion-notice\.js)$/.test(abs);
+        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|production-notice\.js|produccion-notice\.js)$/.test(abs);
         const esTemporal = !esDelFreno && (
              /^(?:\/tmp\/|\/private\/tmp\/|\/var\/folders\/|\/private\/var\/folders\/)/.test(abs)
           || (process.env.TMPDIR && abs.startsWith(require('path').resolve(process.env.TMPDIR)))
