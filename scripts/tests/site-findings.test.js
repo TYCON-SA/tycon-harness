@@ -19,6 +19,7 @@
  *   T78 Sitio_Envio_SeSigueSuNumero                      T79 Mantenimiento_Envio_DiceQuePasa
  *   T80 Mantenimiento_AplicaSolo_NoHablaDeAprobar
  *   T80 Mantenimiento_Cuentas_BajanConLoDecidido
+ *   T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico   T82 Mantenimiento_Numeros_CambianSinRecargar
  *
  * El servidor real del sitio sobre un clon de operaciones de mentira: el repo es un repo git local y la API de GitHub un
  * servidor falso en el proceso (lib/fake-github-api.js). Sin red. Correos y repos inventados.
@@ -155,7 +156,7 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
     // te toca decidir: el vigilante primero, después ejecuciones; dependencias nunca
     assert.deepStrictEqual(j.toca.map((x) => `${x.fuente}/${x.id}`), ['vigilante/vig-uno', 'vigilante/vig-dos', `ejecuciones/${EJ1.id}`]);
     assert.deepStrictEqual(j.espera, []);
-    assert.deepStrictEqual(j.cuentas, { toca: 3, espera: 0, marcha: 2 });
+    assert.deepStrictEqual(j.cuentas, { toca: 3, espera: 0, decididas: 0, marcha: 2 });
     // las de antes no traen análisis: sin analizar, con su motivo en llano, y sin recomendación
     const e1 = fila(j, 'ejecuciones', EJ1.id);
     assert.strictEqual(e1.analisis, null);
@@ -453,10 +454,11 @@ test('T58 Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche — con la decisión en
     const j = (await lista()).json;
     assert.ok(!j.toca.some((x) => x.id === 'vig-uno'));
     assert.deepStrictEqual(j.espera, [], 'nadie más tiene que aprobarla');
-    assert.deepStrictEqual(j.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar' }]);
+    assert.deepStrictEqual(j.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-24', estado: 'esta_noche' }]);
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.doesNotMatch(p.texto, /<div class="m-bloque m-espera">|Aprobado: se aplica/);
-    assert.match(p.texto, /<p class="m-decididas">Ya decidiste 1 ficha: la revisión de esta noche la aplica\.<\/p>/);
+    assert.match(p.texto, /<summary data-t="Ya decididas \(\{n\}\)">Ya decididas \(1\)<\/summary>/);
+    assert.match(p.texto, /<li data-ficha="vigilante\/vig-uno"><b>Acme: un error que la noche marcó<\/b> <span class="m-tarea">Archivar · 24\/10 · lead · la aplica la revisión de esta noche<\/span><\/li>/);
     // y un envío tardío no abre otro pedido
     const r = await enviar(['vigilante', 'vig-uno', 'arreglar']);
     assert.strictEqual(r.json.codigo, 'nada_que_enviar');
@@ -979,5 +981,65 @@ test('T80 Mantenimiento_AplicaSolo_NoHablaDeAprobar — con auto_apply la pantal
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
     assert.match(p, /<button type="button" class="btn prim m-enviar" disabled>Enviar para aprobar<\/button>/);
     assert.match(p, /Nada cambia hasta que otra persona lo apruebe/);
+  });
+});
+
+// ── T81 / T82 ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico
+// 🔴 Falla con: no tener dónde ver lo ya decidido, perder quién decidió cuando la noche borra el archivo de la decisión,
+//    decir «esta noche» de algo que la noche ya aplicó (o al revés), mostrar el correo entero, o guardarlo para siempre.
+test('T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico — qué se decidió, quién, cuándo y si la noche ya lo aplicó', { timeout: 60000 }, async () => {
+  const datos = tmp('site-findings-datos-');
+  await conSitio({ autoApply: true, dataDir: datos }, async ({ h, api, ops, lead, lista, enviar, reloj }) => {
+    const antes = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(antes, /<details class="m-bloque m-decididas" hidden/, 'sin nada decidido, la sección está y no se ve: lo enviado pasa ahí sin recargar');
+    const r = await enviar(['vigilante', 'vig-uno', 'aceptar']);
+    assert.strictEqual(r.json.codigo, 'aplicado', r.texto);
+    assert.deepStrictEqual(r.json.decididas, [{ clave: 'vigilante/vig-uno', accion: 'aceptar', quien: 'lead', el: '2026-10-25' }], 'la respuesta trae lo que pasa a «Ya decididas»');
+    const esta = (await lista()).json;
+    assert.deepStrictEqual(esta.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', estado: 'esta_noche' }]);
+    assert.strictEqual(esta.cuentas.decididas, 1);
+    // el pedido entra en main, el sitio trae la foto nueva, y la noche aplica la decisión y borra su archivo
+    const noche = path.join(ops.raiz, 'noche');
+    g(ops.raiz, 'clone', '-q', ops.bare, noche);
+    for (const p of api.st.pedidos) g(noche, 'merge', '-q', '--no-edit', `origin/${p.head.ref}`);
+    g(noche, 'push', '-q', 'origin', 'HEAD:main');
+    g(ops.clon, 'pull', '-q', '--no-rebase');
+    assert.strictEqual((await lista()).json.decididas[0].estado, 'esta_noche', 'en main y todavía en pending: la aplica esta noche');
+    assert.strictEqual(CYCLE.aplicarDecisiones({ base: noche, fuente: 'vigilante' }).aplicadas.length, 1);
+    g(noche, 'add', '-A'); g(noche, 'commit', '-q', '-m', 'la noche');
+    g(noche, 'push', '-q', 'origin', 'HEAD:main');
+    g(ops.clon, 'pull', '-q', '--no-rebase');
+    assert.ok(!fs.existsSync(path.join(ops.clon, 'inbox', 'watcher', 'decisions', 'vig-uno.json')), 'la noche borró el archivo de la decisión');
+    const despues = (await lista()).json;
+    assert.deepStrictEqual(despues.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', estado: 'aplicada' }], 'quién y cuándo siguen aunque el archivo ya no esté');
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(p, /<span class="m-tarea">Archivar · 25\/10 · lead · ya la aplicó la noche<\/span>/);
+    // el correo de la sesión está en la cabecera de la página; en la sección y en la lista, no
+    const seccion = p.slice(p.indexOf('<details class="m-bloque m-decididas"'), p.indexOf('</details>', p.indexOf('<details class="m-bloque m-decididas"')));
+    assert.ok(!seccion.includes(LEAD) && !JSON.stringify(despues).includes(LEAD), 'sin el correo entero');
+    // a los 30 días ya no se muestra
+    reloj.t += 31 * 24 * 3600 * 1000;
+    assert.deepStrictEqual((await lista()).json.decididas, []);
+  });
+});
+
+// Mantenimiento_Numeros_CambianSinRecargar
+// 🔴 Falla con: un número de la pantalla que queda viejo después de enviar hasta recargar: «Seguir las recomendaciones»,
+//    «Ya decididas», o «Te toca decidir» vacío sin su frase.
+test('T82 Mantenimiento_Numeros_CambianSinRecargar — cada número trae su molde y la pantalla los recuenta al enviar', { timeout: 60000 }, async () => {
+  await conSitio({}, async ({ h, lead }) => {
+    const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(p, /<button type="button" class="btn m-seguir" data-t="Seguir las recomendaciones \(\{n\}\)"/);
+    assert.match(p, /<div class="m-bloque m-toca" data-t-vacio="Nada para decidir hoy\.">/);
+    assert.match(p, /<details class="m-bloque m-decididas"[^>]* data-t-esta-noche="la aplica la revisión de esta noche"><summary data-t="Ya decididas \(\{n\}\)">/);
+    const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
+    assert.match(cli, /function aDecididas\(/, 'lo decidido pasa a «Ya decididas»');
+    // la fecha de la fila nueva: la expresión llega entera al navegador (en el molde, `\d` sin duplicar se pierde)
+    assert.ok(cli.includes(String.raw`/^\d{4}-\d{2}-\d{2}$/.test(x.el || '')`), 'la fila que entra sin recargar lleva su fecha');
+    assert.match(cli, /aDecididas\(j && j\.decididas\);\s*\/\/[^\n]*\n\s*\(\(j && j\.omitidas\)/, 'antes de sacar las omitidas, que se llevan su título');
+    const recontar = cli.slice(cli.indexOf('function recontar('), cli.indexOf('function aDecididas('));
+    for (const x of ['.m-seguir', 'article[data-recomendada]', '.m-decididas', 'data-t-vacio']) assert.ok(recontar.includes(x), `recontar actualiza ${x}`);
   });
 });

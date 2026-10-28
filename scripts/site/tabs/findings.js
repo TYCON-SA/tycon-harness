@@ -2,9 +2,10 @@
 /*
  * tabs/findings.js — LA PESTAÑA «MANTENIMIENTO»: LO QUE ENCONTRÓ LA NOCHE, POR QUIÉN TIENE LA PELOTA.
  *
- * Qué resuelve: quien mantiene decide las fichas de la noche sin abrir el repo de operaciones. La pantalla tiene tres
+ * Qué resuelve: quien mantiene decide las fichas de la noche sin abrir el repo de operaciones. La pantalla tiene cuatro
  * bloques. «Te toca decidir»: las fichas del vigilante y de la revisión de las ejecuciones que esperan Archivar o
- * Arreglar. «Esperando aprobación»: lo que ya se envió y otra persona tiene que aprobar, agrupado por pedido. «En
+ * Arreglar. «Esperando aprobación»: lo que ya se envió y otra persona tiene que aprobar, agrupado por pedido. «Ya
+ * decididas»: lo decidido en los últimos 30 días, con quién, cuándo y si la noche ya lo aplicó. «En
  * marcha»: los arreglos con su tarea y las vulnerabilidades de paquetes, que cada equipo sigue en su tarea (acá no se
  * deciden). Lo que la revisión declara «aparte» (cause-names.js `APARTE`) no se pregunta.
  *
@@ -48,9 +49,11 @@ const ENLACE = /^https:\/\/[^\s"'<>\\]{1,500}$/;
 const VIGENCIA_PEDIDOS_MS = 60 * 1000;
 const CARPETAS_VIVAS = ['pending', 'promoted'];
 const TOPE_ENVIO = 100;
-// lo que el sitio ya decidió y su foto de operaciones todavía no trae: en el disco del sitio, una semana como mucho
+// lo ya decidido, en el disco del sitio: tapa la foto vieja una semana como mucho, y se muestra 30 días
 const ARCHIVO_DECIDIDAS = 'mantenimiento-decididas.json';
 const VIGENCIA_DECIDIDA_MS = 7 * 24 * 3600 * 1000;
+const VIGENCIA_HISTORIA_MS = 30 * 24 * 3600 * 1000;
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
 // cómo terminó cada envío, por su número: lo pregunta la pantalla cuando la conexión se corta
 const ENVIO = /^[A-Za-z0-9_-]{8,64}$/;
 const VIGENCIA_ENVIO_MS = 15 * 60 * 1000;
@@ -79,12 +82,17 @@ const dia = (f) => (typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) ? `${
 const clave = (f) => `${f.fuente}/${f.id}`;
 const numeroDe = (enlace) => { const m = /\/(?:pull|pullrequest)\/(\d+)$/.exec(String(enlace || '')); return m ? Number(m[1]) : null; };
 const aparte = (f) => typeof f.causa === 'string' && hasOwn(APARTE, f.causa);
+// quién decidió, sin su correo: lo de antes de la arroba
+const alias = (q) => { const m = /^([a-z0-9][a-z0-9._+-]{0,63})@/.exec(norm(q)); return m ? m[1] : null; };
 
 /**
- * Las fichas que el sitio ya decidió (aplicó él mismo, o encontró decididas en main al enviar) mientras su foto de
- * operaciones no las trae: sin esto vuelven a «Te toca decidir» hasta el próximo refresco, y reenviarlas choca con su
- * propia decisión. Se guardan en el disco del sitio (sobreviven a un reinicio) y se olvidan cuando la foto ya trae la
- * decisión o a la semana. Sin disco, en memoria. Un archivo roto o un disco caído no tiran la pestaña: se empieza vacío.
+ * Las fichas ya decididas, con qué se decidió, quién y cuándo. Dos usos: (1) las que el sitio decidió (aplicó él mismo,
+ * o encontró decididas en main al enviar) mientras su foto de operaciones no las trae: sin esto vuelven a «Te toca
+ * decidir» hasta el próximo refresco, y reenviarlas choca con su propia decisión. Eso vale hasta que la foto trae la
+ * decisión (`olvidar`) o una semana. (2) «Ya decididas»: la noche borra el archivo de la decisión al aplicarla y la
+ * ficha no guarda quién decidió, así que quién y cuándo quedan acá, 30 días. Se guardan en el disco del sitio
+ * (sobreviven a un reinicio). Sin disco, en memoria. Un archivo roto o un disco caído no tiran la pestaña: se empieza
+ * vacío.
  */
 function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {}) {
   const archivo = dataDir ? path.join(dataDir, ARCHIVO_DECIDIDAS) : null;
@@ -94,9 +102,13 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
       if (!(e && e.code === 'ENOENT')) log(`mantenimiento: la lista de lo ya decidido no se pudo leer (${e.code || 'sin forma'}): se empieza vacía`);
     }
   }
-  const vigente = (x) => isObject(x) && CYCLE.ACCIONES.includes(x.accion) && Number.isFinite(x.en) && ahora() - x.en < VIGENCIA_DECIDIDA_MS;
+  const enHistoria = (x) => isObject(x) && (x.accion === null || CYCLE.ACCIONES.includes(x.accion)) && Number.isFinite(x.en) && ahora() - x.en < VIGENCIA_HISTORIA_MS;
+  const vigente = (x) => enHistoria(x) && x.accion !== null && !x.visto && ahora() - x.en < VIGENCIA_DECIDIDA_MS;
+  // quién y cuándo, si tienen forma: lo demás no se guarda
+  const datos = (x) => ({ ...(typeof x.quien === 'string' && x.quien ? { quien: norm(x.quien) } : {}), ...(DIA.test(String(x.el || '')) ? { el: x.el } : {}),
+    ...(typeof x.nombre === 'string' && x.nombre ? { nombre: x.nombre.slice(0, 300) } : {}) });
   function guardar() {
-    for (const k of Object.keys(memoria)) if (!vigente(memoria[k])) delete memoria[k];
+    for (const k of Object.keys(memoria)) if (!enHistoria(memoria[k])) delete memoria[k];
     if (!archivo) return;
     const tmp = `${archivo}.${process.pid}.tmp`;
     try { fs.writeFileSync(tmp, `${JSON.stringify(memoria)}\n`); fs.renameSync(tmp, archivo); } catch (e) {
@@ -104,12 +116,25 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
     }
   }
   return {
-    /** `[{ clave, accion }]`: decididas recién. */
-    marcar(lista) { for (const x of lista) memoria[x.clave] = { accion: x.accion, en: ahora() }; guardar(); },
-    /** La acción decidida, o null. */
+    /** `[{ clave, accion, quien?, el?, nombre? }]`: decididas recién. */
+    marcar(lista) { for (const x of lista) memoria[x.clave] = { accion: x.accion, en: ahora(), ...datos(x) }; guardar(); },
+    /** La acción decidida, mientras la foto no la trae; o null. */
     accionDe(k) { return hasOwn(memoria, k) && vigente(memoria[k]) ? memoria[k].accion : null; },
-    /** La foto ya la trae: no hace falta recordarla. */
-    olvidar(k) { if (hasOwn(memoria, k)) { delete memoria[k]; guardar(); } },
+    /**
+     * La foto ya trae la decisión (`{ accion, quien?, el?, nombre? }`, lo que dice main): ya no hace falta taparla, y
+     * queda en «Ya decididas» con lo que falte. Una decisión que el sitio no vio enviar entra recién acá.
+     */
+    olvidar(k, d = {}) {
+      const x = hasOwn(memoria, k) && enHistoria(memoria[k]) ? memoria[k] : null;
+      const nuevo = { accion: CYCLE.ACCIONES.includes(d.accion) ? d.accion : x ? x.accion : null, en: x ? x.en : ahora(), ...datos(d), ...(x ? datos(x) : {}), visto: true };
+      if (x && JSON.stringify(x) === JSON.stringify(nuevo)) return;
+      memoria[k] = nuevo;
+      guardar();
+    },
+    /** «Ya decididas»: `[{ clave, accion, en, quien?, el?, nombre? }]`, de los últimos 30 días, lo último primero. */
+    historia() {
+      return Object.keys(memoria).filter((k) => enHistoria(memoria[k])).map((k) => ({ clave: k, ...memoria[k] })).sort((a, b) => b.en - a.en || a.clave.localeCompare(b.clave));
+    },
   };
 }
 
@@ -171,7 +196,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return {};
   }
 
-  /** La decisión de una ficha que ya está en main: `{ accion }`, null si no hay, o 'ilegible'. */
+  /** La decisión de una ficha que ya está en main: `{ accion, quien, el }`, null si no hay, o 'ilegible'. */
   function decisionEnMain(dir, f) {
     let txt;
     try { txt = fs.readFileSync(path.join(dir, rutaDecision(f.fuente, f.id)), 'utf8'); } catch (e) {
@@ -179,7 +204,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     }
     let d = null;
     try { d = JSON.parse(txt); } catch { /* sin forma: igual está decidida, sin acción que mostrar */ }
-    return { accion: isObject(d) && CYCLE.ACCIONES.includes(d.accion) ? d.accion : null };
+    if (!isObject(d)) return { accion: null, quien: null, el: null };
+    return { accion: CYCLE.ACCIONES.includes(d.accion) ? d.accion : null, quien: typeof d.quien === 'string' ? d.quien : null, el: DIA.test(String(d.el || '')) ? d.el : null };
   }
 
   /** ¿Espera que alguien decida? Las del vigilante y ejecuciones pendientes en pending/, que no cuentan aparte. */
@@ -385,8 +411,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   /** El modelo de la pantalla: lo mismo para la página y para /api/hallazgos. */
   async function modelo(idioma) {
     const l = leerFichas();
-    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'mant.sinClon'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
-    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'mant.sinFichas'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
+    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'mant.sinClon'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, decididas: 0, marcha: 0 } };
+    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'mant.sinFichas'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, decididas: 0, marcha: 0 } };
     const m = await membresia();
     const enPedido = m.estado === 'leido' ? m.porFicha : new Map();
     const dir = dirOps();
@@ -407,9 +433,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
-      if (enMain) decididas.olvidar(clave(f));
+      if (enMain) decididas.olvidar(clave(f), { ...enMain, nombre: tituloDe(f, LANG.POR_DEFECTO) });
       const yaDecidida = enMain ? enMain.accion : decididas.accionDe(clave(f));
-      if (enMain || yaDecidida) { aprobadas.push({ fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), accion: yaDecidida }); continue; }
+      if (enMain || yaDecidida) { aprobadas.push({ clave: clave(f), nombre: tituloDe(f, idioma) }); continue; }
       const p = enPedido.get(clave(f));
       if (p) {
         if (!pedidos.has(p.numero)) pedidos.set(p.numero, { numero: p.numero, enlace: p.enlace, aprobado: false, filas: [] });
@@ -422,7 +448,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const espera = [...pedidos.values()].sort((a, b) => a.numero - b.numero);
     // lo ya decidido no espera la aprobación de nadie: sale de la lista y se cuenta en una línea
     for (const g of espera) g.filas.sort(ordenFuente);
-    aprobadas.sort(ordenFuente);
+    const yaDecididas = listaDecididas(aprobadas);
     arreglos.sort(ordenFuente);
     vulnerabilidades.sort(ordenVulns);
     const ilegible = ilegibles.size > 0;
@@ -431,11 +457,24 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       estado: ilegible ? 'ilegible' : 'leido',
       frase: ilegible ? T(idioma, 'mant.ilegible', { fuentes: [...ilegibles].map((x) => T(idioma, `mant.fuente.${x}`)).join(', ') }) : null,
       pedidos: m.estado === 'leido' ? { estado: 'leido', frase: null } : { estado: 'no_se_pudo', frase: T(idioma, 'mant.sinPedidos') },
-      toca, espera, decididas: aprobadas, marcha: { arreglos, vulnerabilidades },
+      toca, espera, decididas: yaDecididas, marcha: { arreglos, vulnerabilidades },
       // con auto_apply, lo enviado se guarda sin que nadie más lo apruebe: la pantalla no habla de aprobar
       aplicaSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
-      cuentas: { toca: toca.length, espera: espera.reduce((n, g) => n + g.filas.length, 0), marcha: arreglos.length + vulnerabilidades.length },
+      cuentas: { toca: toca.length, espera: espera.reduce((n, g) => n + g.filas.length, 0), decididas: yaDecididas.length, marcha: arreglos.length + vulnerabilidades.length },
     };
+  }
+
+  /**
+   * «Ya decididas», de lo anotado: la que la foto muestra decidida y todavía en pending la aplica esta noche; la que ya
+   * no está ahí, la aplicó la noche. `aprobadas`: `[{ clave, nombre }]`, las decididas que siguen en pending.
+   */
+  function listaDecididas(aprobadas) {
+    const pendientes = new Map(aprobadas.map((x) => [x.clave, x.nombre]));
+    return decididas.historia().map((x) => {
+      const i = x.clave.indexOf('/');
+      return { fuente: x.clave.slice(0, i), id: x.clave.slice(i + 1), nombre: pendientes.get(x.clave) || x.nombre || x.clave.slice(i + 1), accion: x.accion,
+        quien: alias(x.quien), el: x.el || null, estado: pendientes.has(x.clave) ? 'esta_noche' : 'aplicada' };
+    });
   }
 
   // ── la página ──
@@ -481,10 +520,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       // el molde del número va en la página: la pantalla recuenta sola cuando saca una ficha
       return filas.length ? `<h3 class="m-sub" data-fuente="${esc(fuente)}" data-t="${esc(T(idioma, sub, { n: '{n}' }))}">${esc(T(idioma, sub, { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
     }).join('');
-    const toca = `<div class="m-bloque m-toca"><h2 data-t="${esc(T(idioma, 'mant.toca.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
+    const toca = `<div class="m-bloque m-toca" data-t-vacio="${esc(T(idioma, 'mant.vacio'))}"><h2 data-t="${esc(T(idioma, 'mant.toca.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
       + `<p class="m-intro">${esc(T(idioma, m.aplicaSolo ? 'mant.toca.introSolo' : 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
-      + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`)
-      + (m.decididas.length ? `<p class="m-decididas">${esc(T(idioma, m.decididas.length === 1 ? 'mant.decididasUna' : 'mant.decididas', { n: m.decididas.length }))}</p>` : '') + '</div>';
+      + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`) + '</div>';
 
     // esperando aprobación
     const grupo = (g) => {
@@ -497,6 +535,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const espera = m.espera.length
       ? `<div class="m-bloque m-espera"><h2>${esc(T(idioma, 'mant.espera.titulo', { n: m.cuentas.espera }))}</h2><p class="m-intro">${esc(T(idioma, 'mant.espera.intro'))}</p>${m.espera.map(grupo).join('')}</div>`
       : '';
+
+    // ya decididas: va en la página aunque esté vacía, para que lo enviado pase ahí sin recargar
+    const estadoDe = (e) => T(idioma, e === 'aplicada' ? 'mant.decididas.aplicada' : 'mant.decididas.estaNoche');
+    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(x.nombre)}</b> <span class="m-tarea">${esc([x.accion ? accion(x.accion) : '?', dia(x.el), x.quien, estadoDe(x.estado)].filter(Boolean).join(' · '))}</span></li>`;
+    const ya = `<details class="m-bloque m-decididas"${m.decididas.length ? '' : ' hidden'} data-t-esta-noche="${esc(estadoDe('esta_noche'))}">`
+      + `<summary data-t="${esc(T(idioma, 'mant.decididas.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.decididas.titulo', { n: m.decididas.length }))}</summary>`
+      + `<p class="m-intro">${esc(T(idioma, 'mant.decididas.intro'))}</p><ul class="m-lista">${m.decididas.map(decidida).join('')}</ul></details>`;
 
     // en marcha
     const tarea = (numero, url, proyecto) => enlace(T(idioma, proyecto ? 'mant.marcha.tareaProyecto' : 'mant.marcha.tarea', { numero, proyecto }), url);
@@ -542,13 +587,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}"`;
     const barra = m.toca.length
       ? `<div class="m-barra"${datos}><span class="m-cuenta" aria-live="polite"></span><button type="button" class="btn prim m-enviar" disabled>${esc(T(idioma, m.aplicaSolo ? 'mant.barra.enviarSolo' : 'mant.barra.enviar'))}</button>`
-        + `<button type="button" class="btn m-seguir"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
+        + `<button type="button" class="btn m-seguir" data-t="${esc(T(idioma, 'mant.barra.seguir', { n: '{n}' }))}"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
       : '';
     const negritas = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
     const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${deAyuda(x)}`))}</p></div>`).join('')
       + REGLAS.map((r) => `<div id="m-ayuda-regla-${r}" popover class="m-pop"><p>${esc(T(idioma, `mant.regla.${r}`))}.</p></div>`).join('');
     const frases = [m.frase, m.pedidos && m.pedidos.frase].filter(Boolean).map((t) => `<p class="q-note">${esc(t)}</p>`).join('');
-    const contenido = m.estado === 'sin_clon' || m.estado === 'sin_fichas' ? '' : toca + espera + marcha + barra + ayudas;
+    const contenido = m.estado === 'sin_clon' || m.estado === 'sin_fichas' ? '' : toca + espera + ya + marcha + barra + ayudas;
     return `<section id="hallazgos" class="m-pantalla" data-token="${esc(tok)}">${frases}${contenido}<script src="/hallazgos/cliente.js" defer></script></section>`;
   }
 
@@ -570,6 +615,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     if (m.estado !== 'leido') return json(200, { ok: false, codigo: 'sin_pedidos', message: T(idioma, 'mant.sinPedidos') });
     const enPedido = m.porFicha;
     const omitidas = [];
+    // lo que ya está decidido en main: sale de la lista y pasa a «Ya decididas»
+    const previas = [];
+    const nombres = new Map();
     let van = [];
     for (const x of lista) {
       const reg = SOURCES.FUENTES[x.fuente];
@@ -582,12 +630,17 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!f || f.id !== x.id || f.veredicto !== 'pendiente' || f.estado === 'resuelta' || aparte(f)) { omitidas.push(clave(x)); continue; }
       const enMain = decisionEnMain(dir, x);
       if (enMain === 'ilegible') return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
+      nombres.set(clave(x), tituloDe(f, LANG.POR_DEFECTO));
+      if (enMain) previas.push({ clave: clave(x), ...enMain });
       if (enMain || decididas.accionDe(clave(x)) || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
       van.push({ fuente: x.fuente, id: x.id, accion: x.accion });
     }
-    if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas });
     const quien = norm((ctx.sesion && ctx.sesion.email) || (ctx.quien && ctx.quien.email));
     const el = new Date(ahora()).toISOString().slice(0, 10);
+    // lo que la pantalla pasa a «Ya decididas» en el momento, sin el correo
+    const paraLaPantalla = (xs) => xs.map((x) => ({ clave: x.clave, accion: x.accion, quien: alias(x.quien), el: x.el || null }));
+    for (const x of previas) decididas.olvidar(x.clave, { ...x, nombre: nombres.get(x.clave) });
+    if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas, decididas: paraLaPantalla(previas) });
     const conForma = (lista) => lista.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el }));
     const archivosDe = (decs) => decs.map((d) => ({ archivo: rutaDecision(d.fuente, d.id), contenido: `${JSON.stringify(d, null, 2)}\n`, oidEsperado: null }));
     if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivos: archivosDe(conForma(van)).map(({ archivo, contenido }) => ({ archivo, contenido })) }, omitidas });
@@ -625,25 +678,27 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     }
     // la próxima lectura vuelve a mirar qué espera aprobación
     membresiaGuardada = null;
-    const aplicadas = r && r.codigo === 'aplicado' ? van.map((x) => ({ clave: clave(x), accion: x.accion })) : [];
+    const aplicadas = r && r.codigo === 'aplicado' ? van.map((x) => ({ clave: clave(x), accion: x.accion, quien, el })) : [];
     // lo decidido queda anotado y sale de la lista ya; no se refresca acá: la foto todavía no lo trae, y un refresco baja
     // el buzón (un minuto en un sitio real) con la pantalla esperando
-    if (yaDecididas.length || aplicadas.length) decididas.marcar([...yaDecididas, ...aplicadas]);
+    const hechas = [...yaDecididas, ...aplicadas];
+    if (hechas.length) decididas.marcar(hechas.map((x) => ({ ...x, nombre: nombres.get(x.clave) })));
     const omitidasTodas = [...omitidas, ...yaDecididas.map((x) => x.clave)];
-    if (!van.length) return json(200, { ok: true, codigo: 'ya_decidida', message: T(idioma, 'mant.envio.yaDecidida'), omitidas: omitidasTodas, enviadas: [] });
+    const alaVista = paraLaPantalla([...previas, ...hechas]);
+    if (!van.length) return json(200, { ok: true, codigo: 'ya_decidida', message: T(idioma, 'mant.envio.yaDecidida'), omitidas: omitidasTodas, enviadas: [], decididas: alaVista });
     const { textoActual: _t, oidActual: _o, ...resto } = r || {};
     const numero = numeroDe(resto.enlace);
-    return json(200, { ...resto, ...(numero ? { numero } : {}), omitidas: omitidasTodas, enviadas: van.map(clave) });
+    return json(200, { ...resto, ...(numero ? { numero } : {}), omitidas: omitidasTodas, enviadas: van.map(clave), decididas: alaVista });
   }
 
-  /** Si el texto de main en `archivo` es la decisión de esa misma ficha: `{ clave, accion }`; si no, null. */
+  /** Si el texto de main en `archivo` es la decisión de esa misma ficha: `{ clave, accion, quien, el }`; si no, null. */
   function decisionPropia(archivo, texto) {
     const m = /^inbox\/([^/]+)\/decisions\/([^/]+)\.json$/.exec(String(archivo || ''));
     if (!m || typeof texto !== 'string') return null;
     let d = null;
     try { d = JSON.parse(texto); } catch { return null; }
     if (!isObject(d) || !SE_DECIDEN.includes(d.fuente) || carpetaDe(d.fuente) !== m[1] || d.id !== m[2] || !CYCLE.ACCIONES.includes(d.accion)) return null;
-    return { clave: `${d.fuente}/${d.id}`, accion: d.accion };
+    return { clave: `${d.fuente}/${d.id}`, accion: d.accion, quien: typeof d.quien === 'string' ? d.quien : null, el: DIA.test(String(d.el || '')) ? d.el : null };
   }
 
   /** Un envío con número: el mismo número no se corre dos veces, y cómo terminó queda para preguntarlo. */
@@ -704,7 +759,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 }
 
 // El cliente: marcar Archivar o Arreglar en cada tarjeta (se recuerda en el navegador), seguir las recomendaciones y
-// enviar todo junto. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» sin recargar.
+// enviar todo junto. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» o a «Ya
+// decididas» sin recargar, y cada número de la pantalla se recuenta.
 const CLIENTE = `(function () {
   var s = document.getElementById('hallazgos');
   var barra = s && s.querySelector('.m-barra');
@@ -730,7 +786,8 @@ const CLIENTE = `(function () {
     barra.querySelector('.m-cuenta').textContent = n === 1 ? t('elegida-una') : t('elegidas').replace('{n}', n);
     barra.querySelector('.m-enviar').disabled = n === 0 || enviando;
     // mientras se envía no se cambia nada: otra elección abriría un segundo pedido con las mismas fichas
-    Array.prototype.forEach.call(s.querySelectorAll('button[data-accion], .m-seguir, .m-borrar'), function (b) { b.disabled = enviando; });
+    Array.prototype.forEach.call(s.querySelectorAll('button[data-accion], .m-borrar'), function (b) { b.disabled = enviando; });
+    barra.querySelector('.m-seguir').disabled = enviando || !hayRecomendadas;
     // la barra aparece cuando hay algo que enviar o una recomendación para seguir
     barra.hidden = n === 0 && !hayRecomendadas && !barra.querySelector('.m-estado').textContent;
     guardar();
@@ -756,13 +813,24 @@ const CLIENTE = `(function () {
     hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
     recontar();
   }
-  // los números de la pantalla cuentan lo que sigue esperando: el título, el subtítulo de cada fuente y la pestaña
+  // los números de la pantalla cuentan lo que sigue esperando: el título, el subtítulo de cada fuente, la pestaña,
+  // «Seguir las recomendaciones» y «Ya decididas»; sin nada por decidir, la frase de la lista vacía
   function recontar() {
     var toca = s.querySelector('.m-toca');
     if (!toca) return;
     var n = toca.querySelectorAll('article[data-ficha]').length;
     var h2 = toca.querySelector('h2[data-t]');
     if (h2) h2.textContent = h2.getAttribute('data-t').replace('{n}', n);
+    if (!n && !toca.querySelector('.q-note')) { var vacio = document.createElement('p'); vacio.className = 'q-note'; vacio.textContent = toca.getAttribute('data-t-vacio') || ''; toca.appendChild(vacio); }
+    var seguir = barra.querySelector('.m-seguir');
+    seguir.textContent = (seguir.getAttribute('data-t') || '').replace('{n}', s.querySelectorAll('article[data-recomendada]').length);
+    var ya = s.querySelector('.m-decididas');
+    if (ya) {
+      var cuantas = ya.querySelectorAll('li').length;
+      var sum = ya.querySelector('summary[data-t]');
+      if (sum) sum.textContent = sum.getAttribute('data-t').replace('{n}', cuantas);
+      ya.hidden = !cuantas;
+    }
     Array.prototype.forEach.call(toca.querySelectorAll('h3.m-sub[data-fuente]'), function (h3) {
       var f = h3.getAttribute('data-fuente');
       var m = toca.querySelectorAll('article[data-ficha^="' + f + '/"]').length;
@@ -772,6 +840,28 @@ const CLIENTE = `(function () {
     var tab = document.querySelector('nav.tabs a[href="/mantenimiento"]');
     var txt = tab && tab.lastChild;
     if (txt && txt.nodeType === 3) txt.nodeValue = txt.nodeValue.replace(/\\s*\\(\\d+\\)$/, '') + (n ? ' (' + n + ')' : '');
+  }
+  // lo decidido pasa a «Ya decididas» con lo que contestó el sitio: qué, cuándo y quién; la noche lo aplica
+  function aDecididas(lista) {
+    var ya = s.querySelector('.m-decididas');
+    var ul = ya && ya.querySelector('ul');
+    (lista || []).forEach(function (x) {
+      var k = String(x.clave || '');
+      var c = s.querySelector('article[data-ficha="' + k.replace(/"/g, '') + '"]');
+      if (!c) return;
+      if (ul) {
+        var viejo = ul.querySelector('li[data-ficha="' + k.replace(/"/g, '') + '"]');
+        if (viejo) ul.removeChild(viejo);
+        var li = document.createElement('li'); li.setAttribute('data-ficha', k);
+        var b = document.createElement('b'); b.textContent = c.querySelector('.m-nombre').textContent; li.appendChild(b);
+        var el = /^\\d{4}-\\d{2}-\\d{2}$/.test(x.el || '') ? x.el.slice(8, 10) + '/' + x.el.slice(5, 7) : '';
+        var sp = document.createElement('span'); sp.className = 'm-tarea';
+        sp.textContent = [t(x.accion) || '?', el, x.quien || '', ya.getAttribute('data-t-esta-noche') || ''].filter(Boolean).join(' · ');
+        li.appendChild(document.createTextNode(' ')); li.appendChild(sp);
+        ul.insertBefore(li, ul.firstChild);
+      }
+      quitar(k);
+    });
   }
   function aEspera(j, enviadas, acciones) {
     var bloque = s.querySelector('.m-espera');
@@ -802,6 +892,8 @@ const CLIENTE = `(function () {
     var estado = barra.querySelector('.m-estado');
     enviando = false;
     estado.textContent = '';
+    // primero lo decidido, que se lleva su título; después lo demás que salió de la lista
+    aDecididas(j && j.decididas);
     // las que el sitio salteó ya no están por decidir (decididas en otro lado, o ya en un pedido): salen de la lista
     ((j && j.omitidas) || []).forEach(quitar);
     // nada quedaba por enviar: lo elegido ya estaba decidido o en un pedido; recargar traería la misma foto vieja
@@ -859,6 +951,7 @@ const CLIENTE = `(function () {
         m.toca.forEach(function (x) { siguen[x.fuente + '/' + x.id] = true; });
         var faltan = ks.filter(function (k) { return siguen[k]; });
         if (faltan.length) { estado.textContent = t('no-llego'); pintar(); return; }
+        aDecididas((m.decididas || []).filter(function (x) { return ks.indexOf(x.fuente + '/' + x.id) >= 0; }).map(function (x) { return { clave: x.fuente + '/' + x.id, accion: x.accion, quien: x.quien, el: x.el }; }));
         ks.forEach(quitar);
         estado.textContent = t('ya-enviado');
         pintar();
