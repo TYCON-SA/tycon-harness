@@ -1557,7 +1557,12 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
           if (r.error || r.status !== 0) {
             const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
             const top = raiz.status === 0 ? String(raiz.stdout).trim() : null;
-            const cubre = (w) => /[*?[]/.test(w) || !top || ['.github', '.tycon'].some((d) => { const rel = path.relative(abs(w), path.join(top, d)); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); });
+            // sin la raíz del repo, una ruta suelta a un archivo no puede traer una constancia; una carpeta, un patrón o
+            // una ruta que nombra la carpeta de las constancias, sí
+            const esCarpeta = (w) => { try { return fs.statSync(abs(w)).isDirectory(); } catch (_) { return false; } };
+            const cubre = (w) => /[*?[]/.test(w) || w.startsWith(':') || (top
+              ? ['.github', '.tycon'].some((d) => { const rel = path.relative(abs(w), path.join(top, d)); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); })
+              : w === '.' || esCarpeta(w) || /(?:^|[\\/])(?:\.github|\.tycon|control-changes)(?:[\\/]|$)/i.test(w));
             const dudosas = rutas.filter(cubre);
             if (dudosas.length) out.push(`${tramo.trim()} (no pude ver qué constancias trae ${desdeRef})`);
           } else {

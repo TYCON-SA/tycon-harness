@@ -404,6 +404,10 @@ test('8.116 T55 BaseControls_ConstanciaAMano_PorConsola', () => {
     'sleep 1 & cp /tmp/x.json .github/control-changes/',
     'cat firma.patch | patch -p 1 README.md',
     'cp -r enlace/ .',
+    // sin la raíz del repo (git no contesta), una carpeta o la de las constancias repuesta desde otra ref no pasa
+    'git checkout firma -- .',
+    'git restore --source firma limpio',
+    'git restore --source HEAD~1 .github',
   ];
   for (const c of frenan) {
     const r = correr(c);
@@ -422,6 +426,9 @@ test('8.116 T55 BaseControls_ConstanciaAMano_PorConsola', () => {
     'rsync /tmp/no-existe.txt docs/a.md',
     "git apply <<'EOF'\ndiff --git a/README.md b/README.md\nEOF",
     'bash scripts/ci/run-base-controls.sh approve --root . --out .tycon/control-changes/ --entries x',
+    // un archivo suelto repuesto desde otra ref no trae una constancia, aunque git no conteste
+    'git restore --source HEAD~1 src/a.ts',
+    'git checkout firma -- limpio/docs/a.md',
   ];
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
 });
