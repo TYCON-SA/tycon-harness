@@ -250,6 +250,38 @@ jobs:
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
       - script: |
+          # ¿Hay pruebas de navegador que el pipeline de su producto no corre? Mira los mismos clones de main que la
+          # paridad, sin ejecutar nada de ellos. Deja .dashboard/pruebas-sin-ci/pruebas-sin-ci-<día>.json; el resumen
+          # cuenta lo que dice (--tests-without-ci). Nunca pone roja la noche: un hallazgo o un control que no midió son
+          # un aviso, y sin informe el resumen lo dice.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
+          OUT="$(Build.SourcesDirectory)/.dashboard/pruebas-sin-ci/pruebas-sin-ci-$HOY.json"
+          mkdir -p "$(dirname "$OUT")"
+          rm -f "$OUT"
+          node scripts/ci/check-tests-without-ci.js --root "$(Agent.TempDirectory)/repos" --json > "$OUT.tmp"
+          RC=$?
+          # sólo un informe que se lee queda como el del día (con 2 y sin ningún repo a mano, igual dice cuántos no
+          # miró); sin informe es «no midió»
+          if node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$OUT.tmp" 2>/dev/null; then
+            mv "$OUT.tmp" "$OUT"
+            [ "$RC" = 0 ] || echo "##vso[task.logissue type=warning]Pruebas sin pipeline: no se pudo mirar ningún repo (código $RC)"
+          else
+            echo "##vso[task.logissue type=warning]Pruebas sin pipeline: el control no midió (código $RC): $(head -c 300 "$OUT.tmp" | tr '\r\n' '  ' | sed 's/##vso/## vso/g')"
+            rm -f "$OUT.tmp"
+            exit 0
+          fi
+          AVISO=$(node -e '
+            const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const h = (r.resultados || []).filter((x) => x.veredicto === "sin-ci" || x.veredicto === "sin-pipeline").length;
+            if (h) console.log(`${h} de ${r.medidos} repos con pruebas de navegador que su pipeline no corre`);
+          ' "$OUT")
+          [ -z "$AVISO" ] || echo "##vso[task.logissue type=warning]Pruebas sin pipeline: $AVISO"
+          exit 0
+        displayName: 'Buscar pruebas de navegador que ningún pipeline corre'
+
+      - script: |
           # 🔴 pipefail no es decorativo: sin él, el exit del paso es el de `tee` y un nocturno caído quedaría VERDE.
           set -uo pipefail
           cd "$(Build.SourcesDirectory)"
@@ -418,7 +450,8 @@ jobs:
             --operations "$(Build.SourcesDirectory)/operations.json" \
             --site-check "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/site-check.json" \
             --team-repos "$(Build.SourcesDirectory)/team-repos.json" --clone-dir "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/retro-sweep" \
-            --retros "$(Build.SourcesDirectory)/.dashboard/retros/barrido/retro-sweep-$HOY.json" 2> "$ERR"
+            --retros "$(Build.SourcesDirectory)/.dashboard/retros/barrido/retro-sweep-$HOY.json" \
+            --tests-without-ci "$(Build.SourcesDirectory)/.dashboard/pruebas-sin-ci/pruebas-sin-ci-$HOY.json" 2> "$ERR"
           CODIGO=$?
           cat "$ERR" >&2
           if [ "$CODIGO" != "0" ]; then
@@ -446,7 +479,7 @@ jobs:
           node scripts/ci/push-nightly-data.js save \
             --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
             --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
-            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad .dashboard/retros inbox/runs-review/pending inbox/watcher/pending inbox/model-proposals.json
+            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad .dashboard/pruebas-sin-ci .dashboard/retros inbox/runs-review/pending inbox/watcher/pending inbox/model-proposals.json
         displayName: 'Guardar el snapshot y las fichas en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 

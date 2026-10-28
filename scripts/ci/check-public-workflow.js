@@ -27,9 +27,10 @@
  *                        `--base`, y en la cola la base es la del grupo
  *   clean-machine        toda llamada a `public-ci.sh` lleva `--clean-machine`
  *   aggregate-job        el job `public-ci` corre siempre, depende de todos los demás y falla si alguno no terminó bien
- *   parts                la matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y
- *                        una vez, y la parte llega a public-ci.sh desde la matriz (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`):
- *                        una parte que falta deja suites sin correr y el veredicto igual verde. La única
+ *   parts                la matriz parte la corrida en `checks`, `controls-bench` y `suites-1-of-<n>` … `suites-<n>-of-<n>`,
+ *                        todas, en orden y una vez, y la parte llega a public-ci.sh desde la matriz
+ *                        (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`): una parte que falta deja pasos sin correr —sin
+ *                        `controls-bench`, el banco de controles— y el veredicto igual verde. La única
  *                        otra parte es la fija `installer-floor`, del job del mismo nombre
  *   after-queue          cada job se saltea en el push a main que hace la cola de merge, y SÓLO en ése: la cola ya probó
  *                        ese commit. La condición es exacta: una que saltea más (todo push, o un pedido) deja
@@ -119,7 +120,7 @@ const SHAPE = [
   '      fail-fast: false',
   '      matrix:',
   '        node: [24]',
-  '        part: [checks, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]',
+  '        part: [checks, controls-bench, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]',
   '    steps:',
   pinned('      - uses: ', 'actions/checkout'),
   '        with:',
@@ -135,8 +136,8 @@ const SHAPE = [
   '          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}',
   '          BASE_SHA: ${{ github.event.merge_group.base_sha }}',
   '        run: |',
-  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ]; then',
-  '            echo "en un pedido corre sólo la parte checks: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"',
+  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" != "checks" ] && [ "${TYCON_PUBLIC_CI_PART}" != "controls-bench" ]; then',
+  '            echo "en un pedido corren sólo las partes checks y controls-bench: ${TYCON_PUBLIC_CI_PART} corre en la cola de merge"',
   '            exit 0',
   '          fi',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
@@ -144,6 +145,10 @@ const SHAPE = [
   '            git cat-file -e "${BASE}^{commit}" || exit 1',
   BASE_SCRIPT_GUARD,
   '            git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"',
+  '            if [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench" ] && ! grep -q -- \'|controls-bench)\' "${RUNNER_TEMP}/public-ci-base.sh"; then',
+  '              echo "la base todavía corre el banco de controles dentro de la parte checks: esta parte no tiene nada que correr"',
+  '              exit 0',
+  '            fi',
   '            bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"',
   '          else',
   '            bash scripts/ci/public-ci.sh --clean-machine',
@@ -178,7 +183,7 @@ const SHAPE = [
   '          TYCON_PUBLIC_CI_PART: installer-floor',
   '        run: |',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then',
-  '            echo "en un pedido corre sólo la parte checks: installer-floor corre en la cola de merge"',
+  '            echo "en un pedido corren sólo las partes checks y controls-bench: installer-floor corre en la cola de merge"',
   '            exit 0',
   '          fi',
   '          bash scripts/ci/public-ci.sh --clean-machine',
@@ -193,9 +198,31 @@ const SHAPE = [
   '            tr \'\\r\' \' \' < "${f}" | sed -e \':a\' -e \'s/::/: :/\' -e \'ta\' -e \':b\' -e \'s/##/# #/\' -e \'tb\'',
   '            echo "::endgroup::"',
   '          done',
+  '  windows:',
+  '    name: Windows · ${{ matrix.scenario }}',
+  `    if: ${AFTER_QUEUE}`,
+  '    runs-on: windows-latest',
+  '    timeout-minutes: 150',
+  '    strategy:',
+  '      fail-fast: false',
+  '      matrix:',
+  '        scenario: [all, waiver, old-node, npx]',
+  '    steps:',
+  pinned('      - uses: ', 'actions/checkout'),
+  '        with:',
+  '          fetch-depth: 0',
+  '          persist-credentials: false',
+  '      - name: El ensayo de Windows de este escenario',
+  '        env:',
+  '          SCENARIO: ${{ matrix.scenario }}',
+  '          WORK: ${{ runner.workspace }}\\tycon-rehearsal',
+  '        run: |',
+  "          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { Write-Output 'en un pedido el ensayo de Windows no corre: corre en la cola de merge'; exit 0 }",
+  '          node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"',
+  '          exit $LASTEXITCODE',
   '  public-ci:',
   `    if: always() && (${AFTER_QUEUE})`,
-  '    needs: [checks, installer-floor]',
+  '    needs: [checks, installer-floor, windows]',
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 5',
   '    steps:',
@@ -640,10 +667,10 @@ const RULES = [
         return decl.length ? `hay más de una lista \`part:\` (línea ${at(decl)})` : 'falta la lista `part:` de la matriz: la ejecución no se reparte en partes que juntas sean la entera';
       }
       const parts = listAt(lines, lines.indexOf(decl[0]));
-      const n = parts.filter((p) => p !== 'checks').length;
-      const want = ['checks', ...Array.from({ length: n }, (_, k) => `suites-${k + 1}-of-${n}`)];
+      const n = parts.filter((p) => p !== 'checks' && p !== 'controls-bench').length;
+      const want = ['checks', 'controls-bench', ...Array.from({ length: n }, (_, k) => `suites-${k + 1}-of-${n}`)];
       if (!n || parts.join(',') !== want.join(',')) {
-        return `la matriz parte la ejecución en \`checks\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja suites sin correr), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
+        return `la matriz parte la ejecución en \`checks\`, \`controls-bench\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja pasos sin correr: sin \`controls-bench\`, el banco de controles), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
       }
       const all = lines.filter((l) => l.code && /^TYCON_PUBLIC_CI_PART\s*:/.test(l.body));
       // la única parte fija es la del piso del instalador, dentro de su job
@@ -670,6 +697,21 @@ const RULES = [
         return !cond || valueOf(cond.body) !== want;
       });
       return bad.length ? `el job ${bad.map((l) => `\`${unquote(l.body.replace(/\s*:.*$/, ''))}\``).join(', ')} no lleva \`if: ${AFTER_QUEUE}\` (en \`public-ci\`, detrás de \`always() && \`): se saltea sólo el push a main de la cola, que ya probó ese commit (línea ${at(bad)})` : null;
+    },
+  },
+  {
+    // el ensayo de Windows: un trabajo windows-latest por escenario, los cuatro que corre scripts/ci/windows-rehearsal.js
+    id: 'windows',
+    check(lines) {
+      const job = jobBlock(lines, 'windows');
+      if (!job.length) return 'falta el job `windows`, el ensayo de Windows sobre el árbol del pedido';
+      if (!job.some((l) => l.body === 'runs-on: windows-latest')) return 'el job `windows` corre en `windows-latest`';
+      const decl = job.filter((l) => /^scenario\s*:/.test(l.body));
+      const want = require('./windows-rehearsal.js').SCENARIOS;
+      const have = decl.length === 1 ? listAt(lines, lines.indexOf(decl[0])) : [];
+      if (have.join(',') !== want.join(',')) return `el job \`windows\` ensaya los escenarios ${want.join(', ')}, todos y una vez (uno que falta queda sin ensayar), y dice: ${have.join(', ') || 'nada'}${decl.length ? ` (línea ${at(decl)})` : ''}`;
+      if (!job.some((l) => /^node scripts\/ci\/windows-rehearsal\.js --scenario "\$env:SCENARIO" /.test(l.body))) return 'el job `windows` corre `node scripts/ci/windows-rehearsal.js` con el escenario de la matriz';
+      return null;
     },
   },
   {

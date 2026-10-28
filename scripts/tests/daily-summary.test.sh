@@ -1205,6 +1205,30 @@ RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "
 T8d="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
 [ "$T8d" = "retros: ? (el informe del barrido no se pudo leer)" ] && ok "1.26-T8 un informe sin no_piden no se lee como cero" || no "1.26-T8 sin no_piden: «${T8d}»"
 
+# Resumen_PruebasSinPipeline — la línea de las pruebas de navegador que ningún pipeline corre, del informe que deja
+# el paso de la noche (`check-tests-without-ci.js --json`, pasado con `--tests-without-ci`). Sólo cuentas, ningún
+# nombre de repo; sin informe, o con uno ilegible, lo dice y no es «0».
+psc() { # <opción --tests-without-ci> → RC y la línea en L
+  prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+  RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --tests-without-ci "$1")
+  L="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("pruebas de navegador")) || ""')"
+}
+printf '%s\n' '{"medidos":3,"ausentes":1,"no_aplican":2,"resultados":[{"repo":"zzrepo-a","veredicto":"sin-ci"},{"repo":"zzrepo-b","veredicto":"sin-pipeline"},{"repo":"zzrepo-c","veredicto":"ok"},{"repo":"zzrepo-d","veredicto":"no-medido"},{"repo":"zzrepo-e","veredicto":"no-aplica"},{"repo":"zzrepo-f","veredicto":"no-aplica"}]}' > "$D/psc.json"
+psc "$D/psc.json"
+[ "$RC" = 0 ] && [ "$L" = "pruebas de navegador sin pipeline: 2 de 3 repos medidos · sin mirar 2" ] && [ "$(ultimo 'String(j.text.includes("zzrepo"))')" = false ] \
+  && ok "PSC cuenta los repos sin pipeline y los que no se miraron, sin nombrarlos" || no "PSC rc=$RC · «${L}»"
+psc "$D/no-existe.json"
+[ "$L" = "pruebas de navegador sin pipeline: ? (el control de la noche no dejó su informe)" ] && ok "PSC sin informe lo dice, no es «0»" || no "PSC sin informe: «${L}»"
+printf '%s\n' '🔴 sin raíz de repos' > "$D/psc.json"
+psc "$D/psc.json"
+[ "$L" = "pruebas de navegador sin pipeline: ? (el control de la noche no dejó su informe)" ] && ok "PSC un control que no midió (sin JSON) no es «0»" || no "PSC sin JSON: «${L}»"
+printf '%s\n' '{"medidos":3,"resultados":[]}' > "$D/psc.json"
+psc "$D/psc.json"
+[ "$L" = "pruebas de navegador sin pipeline: ? (el informe del control no se pudo leer)" ] && ok "PSC un informe sin sus cuentas no se lee como cero" || no "PSC incompleto: «${L}»"
+printf '%s\n' '{"medidos":0,"ausentes":5,"no_aplican":0,"resultados":[]}' > "$D/psc.json"
+psc "$D/psc.json"
+[ "$L" = "pruebas de navegador sin pipeline: ? (el control no midió ningún repo · sin mirar 5)" ] && ok "PSC sin ningún repo medido no se lee como «0 de 0»" || no "PSC ninguno medido: «${L}»"
+
 # ResumenDiario_DudasRepetidas — las dudas de los revisores, de las carpetas de corrida commiteadas del repo
 # (`.advisors/pipeline-runs/*/findings.json`, `--runs`) de los últimos 7 días: la misma (revisor, regla) con dos o más
 # «falsos» confirmados por un verificador, o con dos o más desacuerdos (el verificador reprodujo lo que el autor
