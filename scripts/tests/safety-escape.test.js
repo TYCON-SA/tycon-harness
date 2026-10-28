@@ -516,7 +516,8 @@ test('T21 FrenoDeSeguridad_FirmasPasanPorOwnerWindow @story-8.139 @ac-7 @ac-13 @
     [`${marker} restore ses-b`, null],
     [`node ${skills}/pipeline.js smart-reloop --iter 3 --extra-round`, 'pipeline.js'],
     [`node ${skills}/e2e-setup.js prepare --repo /r --story s.md`, 'e2e-setup.js'],
-    [`bash ${path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh')} approve`, 'run-base-controls.sh approve'],
+    // con barras normales: sin comillas, bash borra las barras invertidas de Windows y el comando no correría el guion
+    [`bash ${path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh').split(path.sep).join('/')} approve`, 'run-base-controls.sh approve'],
   ];
   for (const [c, terminal] of firmas) {
     const r = freno(c, { home: nuevaHome() });
