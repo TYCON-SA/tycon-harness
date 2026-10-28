@@ -875,7 +875,7 @@ JS
       if (faltan.length) console.log("el aviso no compara: " + faltan.join(", "));
       if (sobran.length) console.log("el aviso compara y el freno no las requiere: " + sobran.join(", "));
       process.exit(faltan.length || sobran.length ? 1 : 0);
-    ' "$TMP/req-31.json" "$AQUI/scripts/hooks/produccion-notice.js" 2>&1)"
+    ' "$TMP/req-31.json" "$AQUI/scripts/hooks/production-notice.js" 2>&1)"
     if [ $? -eq 0 ]; then ok "T31c · el aviso de arranque compara contra lo publicado exactamente las bibliotecas que el freno requiere"
     else no "T31c · $salida"; fi
   fi
@@ -954,7 +954,7 @@ json.dump({"schema": 1, "version": "2026.10.08.1", "ref": "main", "commit": sys.
   # mantiene (paths.maintained): lo instalado viene de la versión bajada, que no trae los mismos bytes que ese clon.
   # Corriendo una versión bajada, la referencia es ESA versión (su manifiesto) y, para distinguir «quedó viejo» de
   # «alguien lo cambió» sin historia de git, la constancia que el instalador deja como root.
-  NOTICE32="$AQUI/scripts/hooks/produccion-notice.js"
+  NOTICE32="$AQUI/scripts/hooks/production-notice.js"
   CONST32="$SYS30/opt/tycon/production/installed-files.json"
   LIB32="scripts/production/guard-libs/lib/repos-root.js"   # una biblioteca del freno SIN huella en huellas.json: sólo la cuida esta comparación
   # (a) el instalador deja la constancia: el blob de cada archivo que copió, el mismo que trae el manifiesto verificado
@@ -1084,7 +1084,7 @@ PY
     # el aviso corriendo DESDE la versión bajada con TYCON_GUIDES_DIR apuntando al clon (una variable que quedó de antes
     # de la mudanza): el arnés que corre es la versión bajada, y contra ella se juzga
     CORRE32="$TMP/arnes-32-corre"; rm -rf "$CORRE32"; cp -R "$ARNES30" "$CORRE32"; mkdir -p "$CORRE32/scripts/hooks"; cp "$NOTICE32" "$CORRE32/scripts/hooks/"
-    out="$(env -u TF_BUILD HOME="$CASA32" TYCON_REPOS_ROOT="$REPOS32" TYCON_GUIDES_DIR="$INTERNO32" TYCON_PROD_ROOT="$SYS30" TYCON_PRODUCTION_AUTOINSTALL=0 node "$CORRE32/scripts/hooks/produccion-notice.js" --report 2>&1)"
+    out="$(env -u TF_BUILD HOME="$CASA32" TYCON_REPOS_ROOT="$REPOS32" TYCON_GUIDES_DIR="$INTERNO32" TYCON_PROD_ROOT="$SYS30" TYCON_PRODUCTION_AUTOINSTALL=0 node "$CORRE32/scripts/hooks/production-notice.js" --report 2>&1)"
     if printf '%s' "$out" | grep "al día y con sus huellas" >/dev/null && ! printf '%s' "$out" | grep "alguien lo cambió\|NO coincide" >/dev/null; then
       ok "T32n · con TYCON_GUIDES_DIR apuntando al clon, el aviso que corre desde la versión bajada juzga contra ella: «al día»"
     else no "T32n · el aviso desde la versión bajada con TYCON_GUIDES_DIR al clon — $(printf '%s' "$out" | head -c 400)"; fi
@@ -1324,7 +1324,7 @@ fi
 #       que el freno usa frena nombrándola y diciendo las dos salidas, una en lo que no usa se dice y no frena, y las dos
 #       decisiones (dejar la copia, refrescarla) quedan anotadas y lo dejan en verde.
 GL34="scripts/production/guard-libs"
-salida="$(node - "$INSTALADOR" "$AQUI/scripts/hooks/produccion-notice.js" "$AQUI/$GL34/sources.json" <<'JS' 2>&1
+salida="$(node - "$INSTALADOR" "$AQUI/scripts/hooks/production-notice.js" "$AQUI/$GL34/sources.json" <<'JS' 2>&1
 const fs = require('fs');
 const [inst, notice, sources] = process.argv.slice(2);
 const bloque = /^ARCHIVOS=\(\n([\s\S]*?)^\)/m.exec(fs.readFileSync(inst, 'utf8'));

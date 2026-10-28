@@ -47,7 +47,7 @@ OLD_NO_SUDO="--s""in-sudo"
 K_SERVERS="servi""dores"; K_ENV="ambi""ente"; K_KEYCHAIN="llave""ro"
 
 NEW_DIR="$AQUI/scripts/production"
-NOTICE="$AQUI/scripts/hooks/produccion-notice.js"
+NOTICE="$AQUI/scripts/hooks/production-notice.js"
 GUARD="$AQUI/scripts/hooks/prod-access-guard.js"
 SHIM="$NEW_DIR/node-shim.sh"
 INSTALLER="$NEW_DIR/install-guard.sh"

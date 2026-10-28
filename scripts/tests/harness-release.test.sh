@@ -511,7 +511,7 @@ if corre T18; then
   T="$(TYCON_DIR)"
   harness_lab_git_witness
   # los avisos REALES del repo bajo prueba, apuntados al árbol bajado (TYCON_GUIDES_DIR) y con la HOME de juguete
-  avisos="scripts/hooks/branch-guard-notice.js scripts/hooks/dependencies-notice.js scripts/hooks/dashboard-notice.js scripts/hooks/produccion-notice.js skills/tycon-pipeline/scripts/lib/guides-heal.js"
+  avisos="scripts/hooks/branch-guard-notice.js scripts/hooks/dependencies-notice.js scripts/hooks/dashboard-notice.js scripts/hooks/production-notice.js skills/tycon-pipeline/scripts/lib/guides-heal.js"
   corre_avisos() { # corre_avisos <etiqueta>
     local a out rc
     for a in $avisos; do

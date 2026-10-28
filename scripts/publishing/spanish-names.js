@@ -1143,7 +1143,7 @@ const LEGACY_READERS = new Set([
   'scripts/production/production-index.js', 'scripts/production/tycon-prod-sql', 'scripts/production/node-shim.sh',
   'scripts/production/install-guard.sh', 'scripts/production/lint-production-json.js',
   'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/prod-access-guard.js',
-  'scripts/hooks/produccion-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
+  'scripts/hooks/production-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
   // los controles del commit: la copia propia del repo privado busca los guiones de las skills también en la carpeta de
   // antes del renombre, para un arnés atrasado; sale con el retiro de los nombres viejos
   '.githooks/pre-commit-checks',

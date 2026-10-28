@@ -309,7 +309,7 @@ regla. El freno corta la forma como a toda invocación de la puerta. Caso del ba
 cuadro no hay quién mire lo que el freno muestra en pantalla. Caso: `codex-frena-archivo`.
 
 **Windows**: el binario lee `%PROGRAMDATA%\ClaudeCode\managed-settings.json`; el aviso de arranque
-(`produccion-notice.js`) se registra por el `.ps1`, pero el `.ps1` **no instala hooks de git**, así
+(`production-notice.js`) se registra por el `.ps1`, pero el `.ps1` **no instala hooks de git**, así
 que el lint del catálogo (`.tycon/production.json`) no corre ahí — deuda ya declarada del instalador
 de Windows, no nueva de este freno.
 

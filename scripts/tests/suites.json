@@ -1439,6 +1439,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/production-environment-alias.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/reducer.test.sh",
       "requiere": []
     },
