@@ -385,6 +385,9 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   // python: Path('f').write_text(…) / pathlib.Path('f').write_bytes(…)
   const rePathWrite = /\bPath\(\s*(['"])([^'"]+)\1\s*\)\s*\.(?:write_text|write_bytes)\s*\(/g;
   while ((m = rePathWrite.exec(raw))) out.add(m[2]);
+  // ruby: File.write('f', …) / IO.write / File.binwrite (`File.open('f', 'w')` ya lo ve el `open(` de arriba)
+  const reRubyWrite = /\b(?:File|IO)\.(?:write|binwrite)\(\s*(['"])([^'"]+)\1/g;
+  while ((m = reRubyWrite.exec(raw))) out.add(m[2]);
   const rePs = /\b(?:Set-Content|Out-File|Add-Content)\b(?:\s+-(?:Path|LiteralPath|FilePath))?\s+(['"]?)([^\s'"]+)\1/gi;
   while ((m = rePs.exec(raw))) out.add(m[2]);
   // [IO.File]::WriteAllText / AppendAllText / WriteAllLines('f', …): escriben como Set-Content
@@ -407,7 +410,7 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
 
 // ── lo que el registro tampoco ve: un intérprete que escribe en un destino armado, y borrar o deshacer ────────────
 
-const INTERPRETES = 'node|nodejs|python[0-9.]*|perl|pwsh|powershell';
+const INTERPRETES = 'node|nodejs|python[0-9.]*|perl|ruby|pwsh|powershell';
 // un destino escrito como una sola ruta literal, o la salida estándar: no está armado. Con un `$` adentro no es literal:
 // perl, PowerShell y el shell interpolan entre comillas dobles
 const DESTINO_LITERAL = /^(?:(['"])[^'"$]*\1|`[^`$]*`|\d+|process\.std(?:out|err)(?:\.fd)?|sys\.std(?:out|err)|['"]?\/dev\/std(?:out|err)['"]?)$/;
@@ -466,21 +469,243 @@ function programasPorEntrada(raw) {
     .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3], comillas: Boolean(m[1]) }));
 }
 
+// los intérpretes que corren un guion guardado en un archivo
+const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-node)$/;
+// lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
+const GUION_TOPE = 256 * 1024;
+const GUION_TOPE_DURO = 64 * 1024 * 1024;
+const MENCIONA_HISTORIA = /control-changes|stor(?:y|ies)|historia/i;
+const EXTENSION_DE = { python: /\.py$/i, node: /\.(?:[cm]?js|[cm]?ts)$/i, perl: /\.p[lm]$/i, ruby: /\.rb$/i };
+const familiaDe = (interprete) => (/^python/.test(interprete) ? 'python' : interprete === 'perl' ? 'perl' : interprete === 'ruby' ? 'ruby' : 'node');
+
+/**
+ * Las opciones de un intérprete hasta su guion: `{ enLinea, desde, modulos, precargas }`. `enLinea` si el programa va
+ * en la línea (`-c`, `-e`: lo ve `scriptsInline`), `desde` la primera palabra que ya no es opción, `modulos` lo que se
+ * corre como módulo (`python3 -m x`) y `precargas` los guiones que se cargan antes (`node -r ./p.js`). Cada familia lee
+ * sus opciones agrupadas y con el valor pegado (`-Wignore`, `-mx`, `-Ilib`, `--require=./p.js`).
+ */
+function opcionesDelInterprete(familia, words, i) {
+  const r = { enLinea: false, desde: words.length, modulos: [], precargas: [] };
+  for (; i < words.length; i++) {
+    const w = words[i];
+    if (w === '--') { r.desde = i + 1; return r; }
+    if (!w.startsWith('-') || w === '-') { r.desde = i; return r; }
+    if (familia === 'node') {
+      const largo = /^(--[\w-]+)(?:=(.*))?$/.exec(w);
+      const nombre = largo ? largo[1] : w;
+      if (['-e', '-p', '--eval', '--print'].includes(nombre) || /^-[A-Za-z]*[ep]$/.test(w)) r.enLinea = true;
+      if (['-r', '--require', '--import', '--loader', '--experimental-loader'].includes(nombre)) {
+        const v = largo && largo[2] != null ? largo[2] : words[++i];
+        if (v) r.precargas.push(v);
+      }
+      continue;
+    }
+    // una opción larga con su valor aparte deja el valor como palabra: no existe como archivo, y se sigue buscando
+    if (w.startsWith('--')) continue;
+    // opciones cortas agrupadas: la que lleva valor se queda con el resto de la palabra, o con la siguiente
+    const conValor = { python: 'WXm', perl: 'IMmlCx0', ruby: 'IrCEFKTWx0' }[familia] || '';
+    const enLinea = { python: 'c', perl: 'eE', ruby: 'e' }[familia] || '';
+    for (let k = 1; k < w.length; k++) {
+      const c = w[k];
+      if (enLinea.includes(c)) { r.enLinea = true; break; }
+      if (conValor.includes(c)) {
+        const v = k + 1 < w.length ? w.slice(k + 1) : (c === 'x' || c === '0' ? '' : words[++i]);
+        if (familia === 'python' && c === 'm' && v) r.modulos.push(v);
+        if (familia === 'ruby' && c === 'r' && v) r.precargas.push(v);
+        break;
+      }
+    }
+  }
+  return r;
+}
+
+/** La palabra sin los signos del shell que la pegan a un grupo: `(python3`, `p.py)`, `{`. */
+const sinGrupo = (w) => String(w).replace(/^[({]+/, '').replace(/[)};]+$/, '');
+
+/**
+ * Los guiones que el comando corre desde un archivo (`python3 p.py a`, `time node p.js`, `./x.py`, `python3 -m x`,
+ * `node -r ./p.js`), leídos: `[{ interprete, archivo, texto, argv, grande }]`. El intérprete se busca en cualquier
+ * palabra del tramo, detrás de cualquier envoltorio (`time`, `sudo -u x`, `nice -10`, `if … then`, `xargs`); el guion
+ * es la primera palabra después de sus opciones que existe, desde cada carpeta donde puede estar parado el comando, o
+ * que escribe un heredoc del mismo comando. Se lee de su ruta real, la misma que corre el intérprete, y con él los
+ * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
+ * orquestador escribe historias.
+ */
+function guionesEnArchivo(cmd, bases, instalados = []) {
+  const out = [];
+  const vistos = new Set();
+  const escritos = heredocs(cmd).filter((h) => h.target);
+  const todosLosTramos = comandosAnidados(cmd).flatMap((sub) => tramos(sub));
+  const palabrasDe = (tramo) => palabras(tramo.trim().replace(PREFIJO, '')).map(sinGrupo).filter((w) => w !== '');
+  // la ruta real del guion tal como la abre el intérprete: unida a la carpeta sin normalizar, para que `enlace/..` se
+  // resuelva por donde lleva el enlace y no por el texto (la versión nativa: la otra normaliza el `..` antes)
+  const rutaReal = (valor, base) => {
+    const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
+    try { return fs.realpathSync.native(crudo); } catch { return null; }
+  };
+  const instalado = (real) => instalados.some((r) => isInsideReal(r, real));
+  const leer = (real) => {
+    try {
+      const st = fs.statSync(real);
+      if (!st.isFile()) return null;
+      if (st.size > GUION_TOPE_DURO) return { texto: '', grande: true };
+      const texto = fs.readFileSync(real, 'utf8').replace(/\u0000/g, ' ');
+      return { texto, grande: st.size > GUION_TOPE };
+    } catch { return null; }
+  };
+  // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos
+  const agregar = (interprete, real, leido, argv, hondo = 0) => {
+    if (vistos.has(real) || vistos.size >= 20) return;
+    vistos.add(real);
+    out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
+    if (hondo >= 2 || leido.grande) return;
+    for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
+      const r = rutaReal(m, path.dirname(real));
+      if (!r || instalado(r)) continue;
+      const l = leer(r);
+      if (l) agregar(interprete, r, l, argv, hondo + 1);
+    }
+  };
+  // un guion nombrado: su archivo, la carpeta (`__main__.py`, `index.js`) o el heredoc que lo escribe
+  const abrir = (interprete, valor, argv) => {
+    for (const base of bases) {
+      let real = rutaReal(valor, base);
+      if (real && fs.statSync(real).isDirectory()) {
+        real = rutaReal(familiaDe(interprete) === 'python' ? '__main__.py' : 'index.js', real);
+        if (!real) return false;
+      }
+      if (real) {
+        if (instalado(real)) return true;
+        const leido = leer(real);
+        if (!leido) continue;
+        agregar(interprete, real, leido, argv);
+        return true;
+      }
+      const abs = resolveTarget(valor, base, process.platform, { homeVariable: true });
+      const h = escritos.find((x) => resolveTarget(expandirRuta(cmd, x.target).valor, base, process.platform, { homeVariable: true }) === abs);
+      if (h) { agregar(interprete, abs, { texto: h.body.replace(/\u0000/g, ' '), grande: false }, argv); return true; }
+    }
+    return false;
+  };
+  const argumentos = (ws) => ws.filter((w) => !/^(?:\d|&)?[<>]/.test(w)).map((w) => expandirRuta(cmd, w).valor);
+  for (const tramo of todosLosTramos) {
+    const words = palabrasDe(tramo);
+    // el ejecutable directo con su línea `#!` (`./x.py`, `bin/x`)
+    for (let k = 0; k < words.length; k++) {
+      if (!words[k].includes('/')) continue;
+      const valor = expandirRuta(cmd, words[k]).valor;
+      for (const base of bases) {
+        const real = rutaReal(valor, base);
+        if (!real) continue;
+        try {
+          const st = fs.statSync(real);
+          if (!st.isFile() || !(st.mode & 0o111)) break;
+          const linea = fs.readFileSync(real, 'utf8').slice(0, 200).split('\n')[0];
+          // `#!/usr/bin/python3` · `#!/usr/bin/env -S python3 -u`: con `env`, el intérprete es su primera palabra
+          const partes = linea.startsWith('#!') ? linea.slice(2).trim().split(/\s+/) : [];
+          const interprete = nombreDeComando(partes[0]) === 'env'
+            ? nombreDeComando(partes.slice(1).find((x) => !x.startsWith('-') && !x.includes('=')))
+            : nombreDeComando(partes[0]);
+          if (interprete && CORRE_ARCHIVO.test(interprete) && !instalado(real)) {
+            const leido = leer(real);
+            if (leido) agregar(interprete, real, leido, argumentos(words.slice(k + 1)));
+          }
+        } catch { /* no se lee: no es un guion */ }
+        break;
+      }
+    }
+    for (let k = 0; k < words.length; k++) {
+      const interprete = nombreDeComando(words[k]);
+      if (!CORRE_ARCHIVO.test(interprete)) continue;
+      const familia = familiaDe(interprete);
+      let i = k + 1;
+      if (/^(?:bun|deno)$/.test(interprete) && words[i] === 'run') i++;
+      const op = opcionesDelInterprete(familia, words, i);
+      for (const p of op.precargas) abrir(interprete, p, []);
+      for (const m of op.modulos) {
+        const rel = m.replace(/\./g, '/');
+        if (!abrir(interprete, `${rel}.py`, argumentos(words.slice(op.desde)))) abrir(interprete, `${rel}/__main__.py`, argumentos(words.slice(op.desde)));
+      }
+      if (op.enLinea || op.modulos.length) continue;
+      let hallado = false;
+      for (let j = op.desde; j < words.length && !hallado; j++) {
+        const w = words[j];
+        if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) break;
+        hallado = abrir(interprete, expandirRuta(cmd, w).valor, argumentos(words.slice(j + 1)));
+      }
+      // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
+      if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
+        for (const w of todosLosTramos.flatMap(palabrasDe)) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
+      }
+    }
+  }
+  return out;
+}
+
+/** Los módulos locales que importa un guion, como rutas relativas a su carpeta (los de la biblioteca no existen ahí). */
+function importsLocales(familia, texto, dir) {
+  const out = [];
+  if (familia === 'python') {
+    for (const m of texto.matchAll(/^[ \t]*(?:from[ \t]+\.?([\w.]+)[ \t]+import\b|import[ \t]+([\w.]+(?:[ \t]*,[ \t]*[\w.]+)*))/gm)) {
+      for (const n of (m[1] || m[2]).split(',').map((x) => x.trim().replace(/\./g, '/'))) out.push(`${n}.py`, `${n}/__init__.py`);
+    }
+  } else if (familia === 'ruby') {
+    for (const m of texto.matchAll(/\brequire_relative\s*\(?\s*['"]([^'"]+)['"]/g)) out.push(/\.rb$/.test(m[1]) ? m[1] : `${m[1]}.rb`);
+  } else if (familia === 'node') {
+    for (const m of texto.matchAll(/(?:\brequire\s*\(\s*|\bimport\s*\(\s*|\bfrom\s+|\bimport\s+)(['"])(\.{1,2}\/[^'"]+)\1/g)) {
+      out.push(m[2], ...['.js', '.cjs', '.mjs', '.ts', '/index.js'].map((e) => m[2] + e));
+    }
+  }
+  return out.filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
+}
+
+/** ¿`p` (ya resuelta) cae adentro de la carpeta `dir`, comparadas por su ruta real? */
+function isInsideReal(dir, p) {
+  const installedTree = require('./lib/installed-tree.js');
+  const d = installedTree.realPath(dir) || path.resolve(dir);
+  const rel = path.relative(d, p);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Lo que un guion en archivo escribe con una ruta que se sabe: las escrituras literales y las que arma con sus
+ * argumentos, como si llegara en la línea. `armadosSinSaber` cuenta los destinos que arma de un modo que no se lee
+ * (`argparse`, un desempaquetado): con una historia entre los argumentos, cuenta esa historia. Los demás textos del
+ * guion no cuentan: un guion que sólo lee una historia no la escribe.
+ */
+function escritosDelGuion(g) {
+  const comillas = (a) => `'${String(a).replace(/'/g, `'\\''`)}'`;
+  const forma = `${g.interprete} - ${g.argv.map(comillas).join(' ')} <<'__TYCON_GUION__'\n${g.texto}\n__TYCON_GUION__`;
+  const armados = destinosArmados('', [{ script: g.texto, argv: g.argv }]);
+  const perl = [...g.texto.matchAll(/\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*(['"])\+?>{1,2}\s*([^'"\s]+)\1/g)].map((m) => m[2])
+    .concat([...g.texto.matchAll(/\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*['"]\+?>{1,2}['"]\s*,\s*(['"])([^'"]+)\1/g)].map((m) => m[2]));
+  return {
+    rutas: [
+      ...extractWriteTargets(forma, { keep: () => true }),
+      ...armados.flatMap((a) => (a.literal ? [a.literal] : (a.literales || []))),
+      ...perl,
+    ],
+    armadosSinSaber: armados.some((a) => !a.literal && !a.literales && (!a.ext || a.ext === '.md')),
+  };
+}
+
 /**
  * El primer argumento de la llamada que abre en `desde` (el carácter después del paréntesis), respetando comillas y
- * paréntesis anidados: `{ arg, fin }` con `fin` en la coma o el paréntesis que lo cierra.
+ * paréntesis anidados: `{ arg, fin }` con `fin` en la coma o el paréntesis que lo cierra. Se busca hasta 4 KB: un guion
+ * con miles de llamadas sin cerrar no hace recorrer el texto entero por cada una.
  */
 function primerArgumento(texto, desde) {
   let nivel = 0;
   let q = null;
-  for (let i = desde; i < texto.length; i++) {
+  const hasta = Math.min(texto.length, desde + 4096);
+  for (let i = desde; i < hasta; i++) {
     const c = texto[i];
     if (q) { if (c === '\\') i++; else if (c === q) q = null; continue; }
     if (c === '"' || c === "'" || c === '`') q = c;
     else if (c === '(' || c === '[' || c === '{') nivel++;
     else if (c === ')' || c === ']' || c === '}') { if (nivel === 0) return { arg: texto.slice(desde, i).trim(), fin: i }; nivel--; } else if (c === ',' && nivel === 0) return { arg: texto.slice(desde, i).trim(), fin: i };
   }
-  return { arg: texto.slice(desde).trim(), fin: texto.length };
+  return { arg: texto.slice(desde, hasta).trim(), fin: hasta };
 }
 
 /**
@@ -621,11 +846,11 @@ function leerArmado(expr, script, argv) {
 
 /**
  * Los destinos con que un script inline nombra el archivo que escribe, cuando no son una ruta literal:
- * `[{ expr, literal?, ext?, cola? }]` (ver leerArmado).
+ * `[{ expr, literal?, ext?, cola? }]` (ver leerArmado). `guiones` son los del comando, o los de un archivo ya leído.
  */
-function destinosArmados(cmd) {
+function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
   const vistos = new Map();
-  for (const { script, argv } of scriptsInline(cmd)) {
+  for (const { script, argv } of guiones) {
     const add = (e) => {
       const x = String(e || '').trim();
       if (x && !DESTINO_LITERAL.test(x) && !vistos.has(x)) vistos.set(x, { expr: x, ...leerArmado(x, script, argv) });
@@ -2474,6 +2699,31 @@ function handleCarrilEHistoria(event, opts = {}) {
     const kind = constancias.map((c) => sg.signedRecordKind(String(c).replace(/ \(.*\)$/, ''))).find(Boolean)
       || (constancias.some((c) => /(^|[\\/])gates\.log$|\(no se puede ver qué trae lo que se descomprime\)$/.test(String(c))) ? 'state-dir' : 'control-approvals');
     return { block: sg.blockMessage({ kind }, { filePath: constancias[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
+  // un guion guardado en un archivo (`python3 p.py`, `node p.js <historia>`): lo que escribe se mira como si llegara por
+  // la entrada. La constancia frena sin interruptor; la historia, con el freno de historias prendido
+  {
+    for (const g of guionesEnArchivo(cmd, [...new Set([cwd, baseCwd])], installedRoots)) {
+      const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 100)} (el guion ${path.basename(g.archivo)})`;
+      // uno muy grande no se lee entero: si escribe y nombra una historia o una constancia, frena
+      if (g.grande) {
+        if (!g.texto || (GUION_ESCRIBE.test(g.texto) && MENCIONA_HISTORIA.test(g.texto))) {
+          return { block: `⛔ tycon-pipeline — GUION QUE NO SE PUEDE LEER ENTERO\n\n  ${g.archivo}\n  (detectado en ${via})\n  Es demasiado grande para ver qué escribe, y nombra una historia o una constancia. Una historia se edita con\n  la herramienta de edición (Edit/Write); una constancia la firma una persona.\n` };
+        }
+        continue;
+      }
+      const escritos = escritosDelGuion(g);
+      const resolver = (t) => resolveTarget(t, cwd, process.platform, { homeVariable: true });
+      // un destino que arma de un modo que no se lee (`argparse`, un desempaquetado) puede ser cualquier argumento
+      const abs = [...escritos.rutas, ...(escritos.armadosSinSaber ? g.argv : [])].map(resolver);
+      const constancia = abs.find((p) => signedRecordKind(p) !== null || signedRecordKind(installedTree.realPath(p) || p) !== null);
+      if (constancia) {
+        const sg = require('./lib/story-gate.js');
+        return { block: sg.blockMessage({ kind: sg.signedRecordKind(constancia) || 'control-approvals' }, { filePath: constancia, via }) + '\n' };
+      }
+      const historias = skillOff ? [] : abs.filter((p) => /\.md$/i.test(p) && fs.existsSync(p) && estadoDeHistoria(p) !== null);
+      if (historias.length) return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, via) + '\n' };
+    }
   }
   if (!laneOff) {
     // los marcadores de la ejecución, de esta sesión o de otra, con la ejecución abierta o no

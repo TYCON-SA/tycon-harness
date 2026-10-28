@@ -456,6 +456,104 @@ test('T34 GuionPorEntradaQueEscribeSusArgumentos_Frena', () => {
   });
 });
 
+// T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena
+// `python3 p.py`, `node p.js <historia>`: el programa no está en el comando, está en un archivo. El freno lo lee y mira
+// lo que escribe, como si llegara por la entrada. `ruby -e` es un guion en línea más.
+// 🔴 Falla con: mirar sólo el texto del comando, contar como destino todo texto entre comillas del guion (un guion que
+//    sólo lee la historia frenaría), o eximir un guion por el nombre de su carpeta en vez de por la instalación real.
+test('T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  conEnv(ENV, () => {
+    const freno = (c, installedRoots = []) => tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots }));
+    const CONSTANCIA = /constancia de cambio de control/;
+    const guion = (nombre, texto) => { fs.mkdirSync(path.dirname(path.join(repo, nombre)), { recursive: true }); fs.writeFileSync(path.join(repo, nombre), texto); return nombre; };
+    guion('p.py', "s = open('specs/story-x.md').read()\nopen('specs/story-x.md', 'w').write(s.replace('in-progress', 'done'))\n");
+    guion('arg.py', "import sys\np = sys.argv[1]\ns = open(p).read()\nopen(p, 'w').write(s.replace('in-progress', 'done'))\n");
+    guion('arg.js', "const fs = require('fs');\nconst p = process.argv[2];\nfs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('a', 'b'));\n");
+    guion('w.rb', "File.write('specs/story-x.md', 'x')\n");
+    guion('c.py', "open('.github/control-changes/abc.json', 'w').write('{}')\n");
+    guion('c.js', "require('fs').writeFileSync('.github/control-changes/abc.json', '{}');\n");
+    guion('lee.py', "import sys\nprint(open(sys.argv[1]).read())\nprint(open('specs/story-x.md').read())\n");
+    guion('lee.js', "const fs = require('fs');\nconst t = fs.readFileSync('specs/story-x.md', 'utf8');\nfs.writeFileSync('out/r.md', t);\n");
+    // con el nombre de la carpeta del arnés, pero en el repo: no es la instalación
+    guion('skills/tycon-pipeline/scripts/marker.js', "require('fs').writeFileSync('specs/story-x.md', 'x');\n");
+    const instalado = path.join(raiz, 'instalado');
+    fs.mkdirSync(instalado, { recursive: true });
+    fs.writeFileSync(path.join(instalado, 'orq.js'), "require('fs').writeFileSync('specs/story-x.md', 'x');\n");
+    for (const c of [
+      'python3 p.py',
+      'python3 -u p.py',
+      'python3 arg.py specs/story-x.md',
+      'node arg.js docs/stories/story-y.md',
+      'f=specs/story-x.md; python3 arg.py "$f"',
+      'ruby w.rb',
+      `ruby -e "File.write('specs/story-x.md', 'x')"`,
+      'node skills/tycon-pipeline/scripts/marker.js',
+      `cat > nuevo.py <<'EOF'\nopen('specs/story-x.md', 'w').write('x')\nEOF\npython3 nuevo.py`,
+      `cd specs && python3 ../arg.py story-x.md`,
+    ]) assert.equal(freno(c), HISTORIA, c);
+    for (const c of [
+      'python3 c.py',
+      'node c.js',
+      `ruby -e "File.write('.github/control-changes/abc.json', '{}')"`,
+    ]) assert.match(freno(c), CONSTANCIA, c);
+    for (const c of [
+      'python3 lee.py specs/story-x.md',
+      'node lee.js',
+      'python3 arg.py out/r.md',
+      'python3 no-existe.py specs/story-x.md',
+      `node ${path.join(instalado, 'orq.js')}`,
+    ]) assert.equal(freno(c, [instalado]), '', c);
+  });
+});
+
+// T36 GuionEnArchivoDetrasDeEnvoltoriosOpcionesYEnlaces_Frena
+// El mismo guion, corrido de las formas que el freno no leía: detrás de un envoltorio, con opciones pegadas, como módulo
+// o precarga, como carpeta o ejecutable directo, en perl, importado, muy grande, con un NUL, con `argparse`, y por un
+// enlace que hace caer el `..` en la instalación. Uno con miles de llamadas sin cerrar se juzga en poco tiempo.
+// 🔴 Falla con: buscar el intérprete sólo al principio del tramo, leer las opciones de todos los intérpretes igual,
+//    eximir por la ruta normalizada antes de seguir los enlaces, o pasar un guion que no se lee entero.
+test('T36 GuionEnArchivoDetrasDeEnvoltoriosOpcionesYEnlaces_Frena', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  conEnv(ENV, () => {
+    const freno = (c, installedRoots = []) => tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots }));
+    const guion = (nombre, texto) => { fs.mkdirSync(path.dirname(path.join(repo, nombre)), { recursive: true }); fs.writeFileSync(path.join(repo, nombre), texto); return path.join(repo, nombre); };
+    const PY = "open('specs/story-x.md', 'w').write('x')\n";
+    const JS = "require('fs').writeFileSync('specs/story-x.md', 'x');\n";
+    guion('p.py', PY); guion('evil.py', PY); guion('p.js', JS); guion('pkg/__main__.py', PY);
+    fs.chmodSync(guion('x.py', '#!/usr/bin/env python3\n' + PY), 0o755);
+    guion('pl.pl', "open(F, '>specs/story-x.md'); print F 'x';\n");
+    guion('big.py', PY + '#' + 'a'.repeat(300 * 1024) + '\n');
+    guion('nul.js', JS.trim() + ' // \u0000\n');
+    guion('imp.py', 'import evil\n');
+    guion('ap.py', "import argparse\na = argparse.ArgumentParser(); a.add_argument('f'); f = a.parse_args().f\nopen(f, 'w').write('x')\n");
+    guion('lee.js', "const fs = require('fs');\nconst t = fs.readFileSync(process.argv[2], 'utf8');\nfs.writeFileSync('out/r.md', t);\n");
+    // `M/../evil.py`: por el texto es `evil.py`, un enlace a la instalación; el intérprete sigue `M` y corre `deep/evil.py`
+    const instalado = path.join(raiz, 'instalado');
+    fs.mkdirSync(instalado, { recursive: true });
+    fs.writeFileSync(path.join(instalado, 'orq.js'), JS);
+    guion('deep/sub/.keep', '');
+    guion('deep/evil.py', PY);
+    fs.symlinkSync(path.join(repo, 'deep', 'sub'), path.join(repo, 'M'));
+    fs.symlinkSync(path.join(instalado, 'orq.js'), path.join(repo, 'evil2.py'));
+    fs.renameSync(path.join(repo, 'deep', 'evil.py'), path.join(repo, 'deep', 'evil2.py'));
+    for (const c of [
+      'time python3 p.py', '( python3 p.py )', 'true & python3 p.py', 'sudo -u root python3 p.py',
+      'if true; then python3 p.py; fi', 'nice -10 python3 p.py', 'echo p.py | xargs python3',
+      'python3 -Wignore p.py', 'node --stack-size 1000 p.js', 'python3 -m evil', 'python3 -mevil', 'node -r ./p.js -e 1',
+      'node --require=./p.js -e 1', 'python3 pkg', './x.py', 'perl pl.pl', 'perl -Ilib pl.pl', 'python3 big.py',
+      'node nul.js', 'python3 imp.py', 'python3 ap.py specs/story-x.md', 'npx tsx p.js',
+    ]) assert.notEqual(freno(c), '', c);
+    assert.equal(freno('python3 M/../evil2.py', [instalado]), HISTORIA, 'el enlace no exime lo que corre afuera de la instalación');
+    assert.equal(freno('node evil2.py', [instalado]), '', 'el enlace a la instalación, sin `..`, sí');
+    for (const c of ['node lee.js specs/story-x.md', 'python3 -m json.tool specs/story-x.md', 'python3 -I -E lee.py']) assert.equal(freno(c), '', c);
+    guion('lento.js', 'fs.writeFileSync('.repeat(8000) + '\n');
+    const t0 = Date.now();
+    freno('node lento.js specs/story-x.md');
+    assert.ok(Date.now() - t0 < 5000, `miles de llamadas sin cerrar: ${Date.now() - t0} ms`);
+  });
+});
+
 test('el mensaje del freno dice de quién es el escape y nombra la receta', () => {
   const lv = require(path.join(SCRIPTS, 'lib', 'ledger-visible.js'));
   const m = lv.mensaje(['/repo/src/Foo.cs'], '9.9');
