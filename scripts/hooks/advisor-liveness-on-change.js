@@ -39,10 +39,13 @@
  *   node advisor-liveness-on-change.js <agents/foo.md> [...]   # lo llama el pre-commit de AgentSkills
  *   node advisor-liveness-on-change.js --selftest              # lógica pura, sin gastar un solo modelo
  *
- * Apagado: TYCON_NO_LIVENESS_PRECOMMIT=1
+ * Apagado: TYCON_NO_LIVENESS_PRECOMMIT=1. Con algún revisor que se hubiera mirado, queda una línea
+ * `LIVENESS_PRECOMMIT_OFF` en bypass.log con la sesión: la revisión de la noche la cuenta como escape. Con `ci` lo apagan
+ * los guiones del arnés que repiten el pre-commit, sin constancia.
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { readEnv } = require('../lib/legacy-names.js');
@@ -146,17 +149,53 @@ function selftest() {
   return bad ? 1 : 0;
 }
 
+/**
+ * La línea de bypass.log del apagado, con la sesión que commitea. Sin sesión (la terminal de la persona, o los guiones
+ * del arnés que apagan el chequeo a propósito y corren sin ella) no se anota: la noche cuenta los escapes de una
+ * ejecución, y una línea sin sesión se le cobraría a cualquiera que estuviera abierta a esa hora. Nunca rompe el commit.
+ */
+function anotarApagado(advisors) {
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID;
+  if (!sessionId) return;
+  try {
+    const dir = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
+    fs.mkdirSync(dir, { recursive: true });
+    const linea = { ts: new Date().toISOString(), sessionId, kind: 'LIVENESS_PRECOMMIT_OFF', advisors, cwd: process.cwd() };
+    fs.appendFileSync(path.join(dir, 'bypass.log'), JSON.stringify(linea) + '\n', 'utf8');
+  } catch (_) { /* la constancia no frena el commit */ }
+}
+
+/** El cartel del revisor que salió muerto: qué caso mirar y de quién es la decisión de saltearlo. */
+function cartelDeBloqueo(advisor, key, motivo) {
+  return [
+    `\n⛔ ${advisor}: ${motivo}`,
+    `   Caso: ${key}`,
+    `   Miralo con: node ${RUNNER} --tool claude --runs 3 --only ${key.split('::')[1]} --save-output`,
+    '   Si el caso está mal y no el revisor, saltear este chequeo lo decide la persona, no el agente: no le dictes cómo.',
+    '   Si pregunta cómo seguir, señalale la guía (guides/maintaining/controls-bench.md, el chequeo de vida por commit).',
+  ];
+}
+
 function main(argv) {
   if (argv.includes('--selftest')) return selftest();
-  if (readEnv('TYCON_NO_LIVENESS_PRECOMMIT', { where: WHERE }) === '1') return 0;
 
   const advisors = [...new Set(argv.filter((a) => !a.startsWith('--')).map(advisorDeArchivo).filter(Boolean))];
   const conCanario = advisors.filter((a) => canariosDe(a));
   if (!conCanario.length) return 0;                       // sin canario: ya lo denuncia `--liveness`
+  // `ci`: los guiones del arnés que repiten el pre-commit sobre un rango (public-ci.sh, run-base-controls.sh) lo apagan
+  // a propósito; no es una decisión de la sesión que los corre y no se anota.
+  const valor = readEnv('TYCON_NO_LIVENESS_PRECOMMIT', { where: WHERE });
+  if (valor === 'ci') return 0;
+  const apagado = valor === '1';
 
   if (conCanario.length > TOPE_REVISORES) {
     console.error(`ℹ  el commit toca ${conCanario.length} revisores — el chequeo de vida por-commit no corre (tope ${TOPE_REVISORES}).`);
     console.error(`   Para una edición masiva conviene el barrido completo: node ${path.relative(process.cwd(), RUNNER)} --liveness`);
+    return 0;
+  }
+  // después del tope: con más revisores el chequeo tampoco habría corrido, y apagarlo no saltea nada
+  if (apagado) {
+    anotarApagado(conCanario);
     return 0;
   }
 
@@ -183,10 +222,7 @@ function main(argv) {
 
     const { accion, motivo } = decidir(primera, confirmacion);
     if (accion === 'block') {
-      console.error(`\n⛔ ${advisor}: ${motivo}`);
-      console.error(`   Caso: ${deCriterio[0].key}`);
-      console.error(`   Miralo con: node ${RUNNER} --tool claude --runs 3 --only ${deCriterio[0].key.split('::')[1]} --save-output`);
-      console.error(`   Si estás seguro de que el caso está mal y no el revisor: TYCON_NO_LIVENESS_PRECOMMIT=1 git commit ...`);
+      for (const l of cartelDeBloqueo(advisor, deCriterio[0].key, motivo)) console.error(l);
       frena = true;
     } else if (accion === 'warn') {
       console.error(`⚠️  ${advisor}: ${motivo}`);
@@ -198,4 +234,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { decidir, advisorDeArchivo, canariosDe };
+module.exports = { decidir, advisorDeArchivo, canariosDe, cartelDeBloqueo };

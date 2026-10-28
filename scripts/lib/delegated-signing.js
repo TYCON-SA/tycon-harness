@@ -1,9 +1,14 @@
 'use strict';
 
 /**
- * delegated-signing.js — la firma de un cambio de control por delegación (`run-base-controls.sh approve --relayed-by`).
+ * delegated-signing.js — la delegación de firmas del dueño a la sesión designada.
  *
- * La sesión designada firma en nombre del dueño sólo si están todas las llaves:
+ * Lo que decide hoy es `delegaSinVentana`: una firma de `approvals.delegated_signing`, fuera de `owner_only`, en una
+ * máquina de `delegated_machines`, pedida por la sesión designada para otra sesión, corre sin ventana. La cita ya no
+ * firma: `run-base-controls.sh approve --relayed-by` se niega.
+ *
+ * Lo que sigue describe el camino de la cita (`checkDelegatedApprove`), que ya no llama nadie; firmaba sólo si estaban
+ * todas las llaves:
  *   (a) el perfil del equipo delega `control-change` y nombra esta máquina por su huella;
  *   (b) la designación vigente es de ese rol y el dueño la confirmó en su terminal (`confirm-designation`);
  *   (c) la máquina mostró ese cambio (`pending` anotó `control-change-shown`);
@@ -24,7 +29,6 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const PIPELINE_LIB = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
@@ -218,6 +222,57 @@ function machineDelegates({ home, userInfo, profile, fingerprint } = {}) {
   const machines = (prof.doc.approvals && prof.doc.approvals.delegated_machines) || [];
   if (!Array.isArray(machines) || !machines.some((x) => x && x.id === fp.huella)) return no('esta máquina no está en la lista del perfil (approvals.delegated_machines): acá no se firma por delegación');
   return { ok: true, huella: fp.huella };
+}
+
+/** Las listas de firmas del perfil, leídas con el lector de configuración. */
+function profileLists({ env = process.env, home, arnes } = {}) {
+  const r = require('./tycon-config.js').cargar({ env, home, ...(arnes ? { arnes } : {}) });
+  // un archivo roto o una lista de firmas retirada por el validador no se lee como «sin owner_only»: sin la lista que
+  // veta, la delegación no se decide
+  const roto = (r.errores || []).find((e) => e.clave == null || /^approvals(\.|$)/.test(String(e.clave)));
+  if (roto) throw new Error(`${roto.clave || roto.archivo}: ${roto.motivo}`);
+  return { approvals: (r.valores && r.valores.approvals) || {} };
+}
+
+/**
+ * ¿La firma `firma` corre sin ventana (AC 22-25)? `{ ok, motivo?, maquina? }`. Todas las llaves: el id en
+ * `approvals.delegated_signing` (los grupos, expandidos) y no en `approvals.owner_only`; esta máquina en
+ * `approvals.delegated_machines`; `sesion` es la designada y el dueño confirmó la designación; el destino no es `sesion`
+ * ni la story de una ejecución abierta de `sesion`. `estado`: la carpeta del estado de la casa. Inyectables:
+ * `perfil()` → las listas (`{ delegated_signing, owner_only, delegated_machines }`), `huella()` → `{ huella }` o `{ error }`.
+ */
+function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, perfil, huella } = {}) {
+  const no = (motivo) => ({ ok: false, motivo });
+  if (!sesion || !destino) return no('sin la sesión del pedido y la destino no se delega');
+  if (destino === sesion) return no('la sesión que implementa no se firma sola sin ventana');
+  let a;
+  try {
+    a = perfil ? perfil() : profileLists({ env, home, arnes }).approvals;
+  } catch (e) { return no(`no pude leer el perfil del equipo (${e.message})`); }
+  a = a || {};
+  const cat = require('./signatures.js');
+  const ids = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []).flatMap((x) => cat.expand(x));
+  const malFormada = ['owner_only', 'delegated_signing', 'delegated_machines'].find((k) => a[k] != null && !Array.isArray(a[k]) && !(k !== 'delegated_machines' && typeof a[k] === 'string'));
+  if (malFormada) return no(`no pude leer approvals.${malFormada} del perfil: no es una lista`);
+  if (ids(a.owner_only).includes(firma)) return no(`«${firma}» es sólo del dueño (approvals.owner_only)`);
+  if (!ids(a.delegated_signing).includes(firma)) return no(`el perfil del equipo no delega «${firma}» (approvals.delegated_signing)`);
+  let fp;
+  try { fp = (huella || (() => require('./machine-id.js').huella()))(); } catch (e) { return no(`no pude leer la huella de esta máquina (${e.message})`); }
+  if (!fp || fp.error || !fp.huella) return no(`no pude leer la huella de esta máquina: ${(fp && fp.error) || 'sin huella'}`);
+  const maquinas = Array.isArray(a.delegated_machines) ? a.delegated_machines : [];
+  if (!maquinas.some((m) => m && m.id === fp.huella)) return no('esta máquina no está en approvals.delegated_machines');
+  const p = { state: estado, gates: path.join(estado, 'gates.log') };
+  const d = confirmedDesignation(p);
+  if (!d.ok) return no(d.reason);
+  if (d.designacion.sesion !== sesion) return no('la sesión del pedido no es la designada');
+  // la story del destino no puede ser la de una ejecución abierta de la sesión del pedido
+  const storyDe = (sid) => { try { const m = JSON.parse(fs.readFileSync(path.join(estado, 'active', `${safeSid(sid)}.json`), 'utf8')); return m.storyId || m.storyPath || null; } catch (e) { return e.code === 'ENOENT' ? null : undefined; } };
+  const propia = storyDe(sesion);
+  if (propia === undefined) return no('no pude leer el marcador de la sesión del pedido');
+  const suya = propia ? storyDe(destino) : null;
+  if (suya === undefined) return no('no pude leer el marcador de la sesión destino');
+  if (propia && suya === propia) return no('la sesión destino trabaja la misma story que la ejecución abierta de la sesión del pedido');
+  return { ok: true, maquina: fp.huella };
 }
 
 function argOf(args, name) { const i = args.indexOf(name); return i >= 0 && i + 1 < args.length ? args[i + 1] : null; }
@@ -480,7 +535,7 @@ function cli(argv) {
     const d = cw.designacionVigente({ dir: p.state });
     if (!d || d.error) { console.error((d && d.error) || 'ninguna sesión de esta máquina está designada'); return 1; }
     console.error(`La sesión designada es la «${d.rol}» (${d.sesion}), desde ${d.ts}, con la frase: «${d.cita}».`);
-    console.error('Con esto, esa sesión puede firmar cambios de control en tu nombre, con tu frase en su chat.');
+    console.error('Con esto, esa sesión firma sin ventana, en las otras sesiones, sólo las firmas que el perfil del equipo delega (approvals.delegated_signing), y sólo en las máquinas que nombra; las demás, y las de approvals.owner_only, las firmás vos.');
     if (!rw.confirmarFrase()) { console.error('No coincide: no se confirmó nada.'); return 1; }
     appendGatesLine(p, confirmationRecord(d, new Date().toISOString()));
     console.error('✅ designación confirmada.');
@@ -492,7 +547,7 @@ function cli(argv) {
 
 module.exports = {
   accountPaths, digestOf, confirmationRecord, recordShown, relayRole, delegatedCommand, issueToken, checkDelegatedApprove,
-  writeDelegatedApproval, parseApproveCommand, executesApprove, machineDelegates, openWork, quoteJudge, TOKEN_TTL_MS, QUOTE_PLACEHOLDER,
+  writeDelegatedApproval, parseApproveCommand, executesApprove, machineDelegates, delegaSinVentana, openWork, quoteJudge, TOKEN_TTL_MS, QUOTE_PLACEHOLDER,
 };
 
 if (require.main === module) process.exit(cli(process.argv.slice(2)));

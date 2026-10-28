@@ -18,7 +18,6 @@ const { arrancarEmisor } = require('./lib/fake-oidc.js');
 
 const LR = require(path.join(H.SITE, 'latest-release.js'));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'site-ultima-'));
-const HORA = 3600000;
 const LEAD = 'lead@acme.example';
 const A = 'ana@acme.example';
 // stable-data: el reloj de las pruebas es inyectado (T0); la hora real sólo la usa el emisor de mentira, como uno de verdad

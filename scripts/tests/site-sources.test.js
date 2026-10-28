@@ -7,6 +7,7 @@
  * T24 Despertar_CargandoYDespues                    T41 Configuracion_PlazoNoSeReiniciaAlDespertar
  * T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos (lo informado aparte del modelo)
  * T26 2.27-Espejo_BajaHilosYCambios_SoloConThreads (hilos y cambios sólo con `site.mailbox.threads` y disco)
+ * T47 Refresco_BuzonFueraDelCandado (bajar el buzón no traba lo que espera el candado de los clones)
  *
  * Sin red: el repo de operaciones es un repo git por HTTP local que exige la cabecera (lib/git-http-server.js), el buzón
  * un servidor local con la forma de Azure Blob, y la identidad administrada un servidor local que hace de la plataforma.
@@ -225,10 +226,10 @@ test('T40 Configuracion_UltimoBuenoBandaYFreno', { skip: SIN_BACKEND }, async ()
   try {
     await m.fuentes.refrescar();
     h = await H.arrancarSitio({ env: { ...m.env, SITE_OIDC_ISSUER: emisor.issuer }, fuentes: m.fuentes, ahora: () => t });
-    let s = await entrar(h, emisor, 'lead@acme.example', t);
+    await entrar(h, emisor, 'lead@acme.example', t);
     // a las 0 h, operations.json deja de validar (una clave desconocida)
     t = T0;
-    s = await entrar(h, emisor, 'lead@acme.example', t);
+    let s = await entrar(h, emisor, 'lead@acme.example', t);
     m.repo.cambiar({ 'operations.json': { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] }, clave_nueva: 1 } });
     await m.fuentes.refrescar();
     let e = m.fuentes.estado();
@@ -779,4 +780,29 @@ test('T23 2.34-Fuente_MismoModeloQueElRepo @story-2.34 @ac-6 @ac-16 — el mismo
       assert.strictEqual(op.indice.commit, sub.commit);
     } finally { f.detener(); }
   } finally { await m.cerrar(); }
+});
+
+// Refresco_BuzonFueraDelCandado
+// 🔴 Falla con: bajar el buzón (un minuto en un sitio real) dentro del candado de los clones: un envío de Mantenimiento,
+//    que toma el mismo candado, esperaría la bajada entera antes de escribir.
+test('T47 Refresco_BuzonFueraDelCandado — mientras se baja el buzón, el candado de los clones está libre', async () => {
+  let soltar; let empezo;
+  const enBuzon = new Promise((r) => { empezo = r; });
+  const nube = { PROVEEDORES_DE_BUZON: ['azure-blob'], bajarBuzon: async () => { empezo(); await new Promise((r) => { soltar = r; }); return { codigo: 0, res: { estado: 'bajado', completo: true, bajados: 0 } }; } };
+  const dataDir = tmp('site-t47-');
+  const v = validarConfiguracion(H.envBase({ SITE_MAILBOX_SAS: H.sas() }));
+  const raiz = tmp('site-t47-repo-');
+  try {
+    repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } } }), path.join(raiz, 'trabajo'));
+    const f = crearFuentes({ cfg: { ...v.cfg, operationsRepo: path.join(raiz, 'ops.git') }, dataDir, log: () => {}, nubes: [nube] });
+    const refresco = f.refrescar();
+    await enBuzon;
+    const tope = new Promise((r) => setTimeout(() => r('esperó'), 3000));
+    assert.strictEqual(await Promise.race([f.exclusivo(async () => 'libre'), tope]), 'libre', 'el candado no espera la bajada del buzón');
+    soltar();
+    await refresco;
+    assert.strictEqual(f.estado().cargado, true);
+    // el buzón de mentira no baja nada: lo que importa es que el refresco terminó y guardó lo que leyó
+    assert.ok(f.modelo().corridas && f.modelo().corridas.codigo !== 'cargando', JSON.stringify(f.modelo().corridas));
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
 });

@@ -122,16 +122,27 @@ function exencionNueva(event, oldContent, newContent) {
       cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.via || 'persona', relevo: r.relevo, sesion: sid, escape: 'dod_runtime_exempt' } : {}) });
   } catch { /* ayuda, no evidencia */ }
   if (ok) return null;
+  const titulo = `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`;
+  const paso = cartelDelPaso(r);
+  if (r.pasoNoUbicado === true) return { block: [titulo, '', paso].join('\n') + '\n' };
   return {
     block: [
-      `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`,
+      titulo,
       '',
       'Eximir una historia lo decide la persona, no el agente, también mientras se escribe: si quiere,',
       'lo dice en su mensaje («autorizo dod_runtime_exempt»).',
       'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
       '(marker.js close-as-debt).',
+      ...(paso ? [paso] : []),
     ].join('\n') + '\n',
   };
+}
+
+/** El renglón del paso no ubicado de escape-ok.js; sin la biblioteca, el motivo dicho igual si no se ubicó el paso. */
+function cartelDelPaso(r) {
+  try { return require('./lib/escape-ok.js').cartelDelPaso(r); } catch {
+    return r && r.pasoNoUbicado === true ? 'no pude leer el registro de la conversación para este paso. Reintentá el mismo comando una vez, sin pedirle nada a la persona; si vuelve a salir esto, decíselo.' : null;
+  }
 }
 
 // 🔴 Qué es «evidencia de cierre» lo decide UNA función compartida. Un hook que aceptara cualquier
@@ -506,9 +517,12 @@ function estadoAMano(event, filePath, oldContent, newContent) {
   if (ok) return null;
   const marker = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
   const destino = isCriticalStatus(t.estado) || !/^pipelines\./.test(t.estado) ? t.estado : `done en ${t.estado}`;
+  const titulo = `🚨 BLOQUEADO — la story ${t.storyId} pasa a ${destino} escribiendo el archivo a mano.`;
+  const paso = cartelDelPaso(r);
+  if (r.pasoNoUbicado === true) return { block: [titulo, '', paso].join('\n') + '\n' };
   return {
     block: [
-      `🚨 BLOQUEADO — la story ${t.storyId} pasa a ${destino} escribiendo el archivo a mano.`,
+      titulo,
       '',
       'El estado de una historia lo cambia el orquestador, que corre los controles del cierre. Usá en su lugar:',
       `  · node ${marker} update-story-status ${filePath} <estado>`,
@@ -517,6 +531,7 @@ function estadoAMano(event, filePath, oldContent, newContent) {
       'Si el comando frena porque la ejecución está en rojo, cerrarla igual lo decide la persona; si la historia no',
       'se puede terminar, la salida es dejarla como deuda (marker.js close-as-debt).',
       'Escribirla a mano lo decide la persona («autorizo cambiar el estado»).',
+      ...(paso ? [paso] : []),
     ].join('\n') + '\n',
   };
 }

@@ -544,7 +544,7 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 /* Mantenimiento (tabs/findings.js): tres bloques por quién tiene la pelota, tarjetas con su decisión y la barra de abajo. */
 .m-pantalla{padding-bottom:84px}
 .m-bloque{margin:0 0 28px}
-.m-bloque>h2,.m-marcha>summary{font:600 18px var(--serif);margin:0 0 6px}
+.m-bloque>h2,.m-marcha>summary,.m-decididas>summary{font:600 18px var(--serif);margin:0 0 6px}
 .m-intro{color:var(--ink-2);font-size:14px;margin:0 0 14px}
 .m-sub{font:600 12px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin:18px 0 8px}
 .m-carta{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 10px;box-shadow:var(--shadow)}
@@ -572,8 +572,9 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .m-pedido{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 16px;margin:0 0 10px}
 .m-pedido-cab{margin:0 0 4px;font-weight:600;font-size:14px}
 .m-pedido ul,.m-lista{margin:0;padding-left:18px;font-size:14px;line-height:1.6}
-.m-marcha>summary{cursor:pointer}
-.m-marcha{border-top:1px solid var(--line);padding-top:14px}
+.m-marcha>summary,.m-decididas>summary{cursor:pointer}
+.m-marcha,.m-decididas{border-top:1px solid var(--line);padding-top:14px}
+.m-decididas[hidden]{display:none}
 .m-tarea{color:var(--ink-2);font-size:13px}
 .m-vulns{margin:12px 0 0}
 .m-vuln{margin:4px 0}

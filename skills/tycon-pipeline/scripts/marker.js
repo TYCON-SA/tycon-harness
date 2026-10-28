@@ -957,6 +957,17 @@ function quienDeLasOpciones(optVal, extra) {
 // Los controles que corren al cerrar cada paso. En un marcador nuevo, por nombre; en uno viejo, por su número de
 // entonces. La tabla vive en lib/steps.js, que «Cómo trabaja» también lee para mostrar cada freno en su paso.
 const CONTROLES_DEL_PASO = STEPS_LIB.closeControlsByStep();
+
+// Las pruebas que fallan según el informe del gate (`.advisors/tests-result.json`), para que el aviso diga qué falta.
+// Sin informe, o sin la lista (los corredores que sólo cuentan), null: el aviso sale igual, sin nombres.
+function pruebasQueFallan(repo) {
+  try {
+    const t = JSON.parse(fs.readFileSync(path.join(repo || process.cwd(), '.advisors', 'tests-result.json'), 'utf8')).totals || {};
+    const lista = Array.isArray(t.failures) ? t.failures.map(String) : [];
+    if (!lista.length) return null;
+    return lista.slice(0, 10).join(', ') + (lista.length > 10 ? ` y ${lista.length - 10} más` : '');
+  } catch { return null; }
+}
 // El orden del marcador viejo (cadena: 3 ← {1,2} · 4 ← {3} · 5 ← {4} · 8 ← {5}); el nuevo es STEPS_LIB.ORDER_REQUIRES.
 const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 
@@ -1002,6 +1013,14 @@ function cmdCompleteStep(nRaw, flags) {
   const opts = Array.isArray(flags) ? flags : [];
   const optVal = (name) => { const i = opts.indexOf(name); return i >= 0 ? nn(opts[i + 1], '') : null; };
 
+  // Declarar un control a mano es de `set-check`: acá el flag no hace nada, y cerrar el paso igual confundiría
+  if (opts.includes('--force-manual') || opts.includes('--manual')) {
+    console.error('marker.js complete-step: --force-manual y --manual no van acá: van en set-check, sobre el control');
+    console.error('  (por ejemplo, marker.js set-check tests green --force-manual). Declararlo a mano lo decide la persona:');
+    console.error('  no le dictes cómo; si pregunta cómo seguir, señalale la guía del freno (guides/safety-guard.md, regla ESC-C3).');
+    process.exit(2);
+  }
+
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
 
@@ -1024,7 +1043,14 @@ function cmdCompleteStep(nRaw, flags) {
     if (rojos.length && !enDeuda) {
       appendLog('gates.log', { name: 'red-check', status: 'blocked', story: marker.storyId, checks: rojos.map(([k]) => k) });
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${rojos.map(([k, v]) => `${k}=${v}`).join(', ')} sin una ejecución en deuda.`);
-      console.error('  Dos salidas: arreglarlo y volver a correr el control, o cerrar la historia como deuda (marker.js close-as-debt, con el permiso de la persona en la ventana de permiso).');
+      if (rojos.some(([k]) => k === 'tests')) {
+        const fallas = pruebasQueFallan(marker.repoPath);
+        if (fallas) console.error(`  Fallan: ${fallas}.`);
+        console.error('  Arreglalas (el código o la prueba) y volvé a medir con test-gate.sh <repo> <ruta de la story>.');
+      } else {
+        console.error('  Arreglalo y volvé a correr el control.');
+      }
+      console.error('  Si la historia no se puede terminar, cerrarla como deuda (marker.js close-as-debt) lo decide la persona, en la ventana de permiso.');
       process.exit(1);
     }
     for (const [k, v] of rojos) {
@@ -1338,7 +1364,7 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <story-path>');
       console.error('');
       console.error('  Si el repo no tiene suite completa, o hay que cerrar igual: lo decide la persona, no el agente.');
-      console.error('  Si quiere, lo dice en su mensaje («autorizo force-manual»); queda en gates.log.');
+      console.error('  No le dictes cómo: si pregunta cómo seguir, señalale la guía del freno (guides/safety-guard.md, regla ESC-C3).');
       process.exit(1);
     }
 
@@ -4853,7 +4879,8 @@ function cmdAdhoc(sub, payloadJson) {
     const gate = require('./lib/story-gate.js');
     const lane = io.readLane(STATE_DIR, SID);
     const recentAll = lane && Array.isArray(lane.recentPrompts) ? lane.recentPrompts : [];
-    const gateOn = process.env.TYCON_STORY_GATE !== 'off';
+    // Se lee como los hooks del portón (on-story-gate.js, on-bash-write-gate.js): sin distinguir mayúsculas.
+    const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
 
     // Un ring vacío no cita nada: `quoted=true` ahí sería un fail-open doble (hook de prompt roto +
     // sin modelo = cualquier reason inventado pasaría). Un ring
@@ -4945,7 +4972,10 @@ function cmdAdhoc(sub, payloadJson) {
       cwd: process.cwd(),
     };
     io.writeAdhoc(STATE_DIR, SID, obj);
-    appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null, files: obj.files.length, cwd: process.cwd() });
+    appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null, files: obj.files.length, cwd: process.cwd(),
+      ...(gateOn ? {} : { gate: 'off' }) });
+    // Con el portón apagado no hubo cita ni juez: queda en bypass.log y la revisión de la noche lo cuenta como escape.
+    if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }

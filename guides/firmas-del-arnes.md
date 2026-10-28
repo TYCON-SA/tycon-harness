@@ -84,16 +84,15 @@ abajo), eximir pruebas o un crítico, aceptar un criterio imposible de probar y 
 
 ## Aprobar en nombre del dueño
 
-Tres firmas las puede aprobar la sesión designada en nombre del dueño: `escape:force-manual`, `escape:trust-ran` y
-`extra-round`. Hace falta todo esto:
+La sesión designada corre la firma desde su pestaña, con `--for-session <sesión>`, y el freno la deja correr sin
+ventana sólo si se cumple todo esto:
 
-- el perfil del equipo las pone en `approvals.delegated_signing` y no en `approvals.owner_only`;
-- el dueño escribe a mano «aprobá force-manual», «aprobá trust-ran» o «aprobá una vuelta más» en el chat de la sesión
-  designada. Lo pegado, lo que llega de otra sesión o de una herramienta no cuenta, y «aprobá todo» no nombra ninguna
-  firma;
-- después, la sesión designada le manda a la sesión que trabaja un mensaje que aprueba esa firma («apruebo
-  force-manual»), dentro de los 30 minutos del pedido del dueño.
+- el perfil del equipo pone la firma en `approvals.delegated_signing` (un grupo cuenta por cada firma que nombra) y no en
+  `approvals.owner_only`: si está en las dos, gana «sólo del dueño»;
+- esta máquina está en `approvals.delegated_machines`;
+- la sesión que la corre es la designada, y el dueño confirmó la designación en su terminal;
+- la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
 
-Cada «aprobá» del dueño sirve para una sola firma, y su uso queda anotado. Para la vuelta extra, el pedido del dueño
-tiene que ser posterior al aviso del tope, y la sesión que trabaja corre `pipeline.js smart-reloop --extra-round
---delegated`. Para los dos escapes no hay comando aparte: el freno lo busca solo.
+Si falta algo, sale la ventana en la pestaña de la designada. El guion firma con `via: delegacion`. Un escape es siempre
+de la sesión que lo corre, así que nunca se delega. Refirmar los controles tras traer `main` se delega sólo cuando el
+clasificador comprueba que es eso; si no, es un cambio de control, que es sólo del dueño.

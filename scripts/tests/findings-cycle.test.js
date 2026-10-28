@@ -201,7 +201,7 @@ test('T19 Dependencias_NNoches_NoReabreLasResueltas', () => {
   assert.match(leer('pending/aaaa1111.yaml'), /^noches_sin_aparecer: 1$/m);
   assert.doesNotMatch(leer('pending/aaaa1111.yaml'), /^resuelto:/m);
   assert.deepStrictEqual(r.esperando_resolver, [{ id: 'aaaa1111', noches_sin_aparecer: 1, n: 3 }]);
-  r = noche('2026-10-21');
+  noche('2026-10-21');
   assert.match(leer('pending/aaaa1111.yaml'), /^noches_sin_aparecer: 2$/m);
   r = noche('2026-10-22');
   assert.deepStrictEqual(r.resueltos, ['aaaa1111']);
@@ -727,10 +727,11 @@ test('T14 Resumen_AceptadasNoSeRepiten', () => {
 // T15 Nombres_MudanzaSinCambiarTexto @story-4.11 @ac-12
 // 🔴 Falla con: cambiar una letra de la tabla al mudarla (la huella es la de la tabla de antes), que el resumen use otra
 //    copia, o un nombre de más de 120 caracteres o con un salto de renglón. La huella cambió una vez a propósito, cuando
-//    el freno de stories ganó su nombre (T101).
+//    el freno de stories ganó su nombre (T101), y otra cuando los apagados del chequeo de vida, del de mutantes y del
+//    portón de carril ganaron los suyos.
 test('T15 Nombres_MudanzaSinCambiarTexto', () => {
   const crypto = require('crypto');
-  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), '06231254fbdb3ada7e512ebe4a4b6861aa8ff119');
+  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fe91c8ccd26080a260e652416ddefc34550707e1');
   assert.strictEqual(DS.NOMBRES_CAUSA, NOMBRES.NOMBRES_CAUSA, 'el resumen usa la misma tabla');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-HOOK', categoria: 'Stop/tiempo' }), 'aviso automático que se pasó de tiempo');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria: 'ZZDESCONOCIDA' }), 'otro freno salteado');
@@ -1806,10 +1807,12 @@ test('T102 VistaComun_AnalisisHechosYTareas', () => {
   // dependencias: todas las tareas, con el nombre de quien la tiene (nunca un correo) y el motivo de las que faltan
   const dep = ['id: dep-uno', 'detectado: 2026-09-09', 'veredicto: util', 'paquete: next', 'severidad: critical', 'noches: 3',
     'pedido_motivo: tope', 'repos:', '  - Producto X/FrontEnd', '  - Producto Y/Forms', 'pedidos:', '  - Producto X: 5467', '  - Producto Y: 5445',
-    'asignados:', '  - "5467: Ana Pérez"', '  - "5445: ana@acme.example"', ''].join('\n');
+    '  - Producto Z: 5446', 'asignados:', '  - "5467: Ana Pérez"', '  - "5445: ana@acme.example"', '  - "5446: <nadie>"', ''].join('\n');
   const d = sources.comoFicha('dependencias', dep);
-  assert.deepStrictEqual(d.pedidos, [{ proyecto: 'Producto X', id: '5467', asignado: 'Ana Pérez' }, { proyecto: 'Producto Y', id: '5445', asignado: null }]);
-  assert.deepStrictEqual(d.pedido, { id: '5445', enlace: null }, 'el último sigue siendo el vigente');
+  // «<nadie>» es la tarea que la noche leyó sin nadie; la que no se midió (o con un correo) no dice ninguna de las dos
+  assert.deepStrictEqual(d.pedidos, [{ proyecto: 'Producto X', id: '5467', asignado: 'Ana Pérez', sin_asignar: false },
+    { proyecto: 'Producto Y', id: '5445', asignado: null, sin_asignar: false }, { proyecto: 'Producto Z', id: '5446', asignado: null, sin_asignar: true }]);
+  assert.deepStrictEqual(d.pedido, { id: '5446', enlace: null }, 'el último sigue siendo el vigente');
   assert.strictEqual(d.pedido_motivo, 'tope');
   assert.strictEqual(d.repos, 2);
   assert.strictEqual(d.severidad, 'critical');

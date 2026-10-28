@@ -123,7 +123,7 @@ test('T10 GithubIssues_NoRepeat: anotado no crea; encontrado por etiqueta se ado
   d = mundo({ gh: { issues: { 'acme/web': [issueMarcado(3), issueMarcado(4)] } } });
   ficha(d, 'abc12345');
   snapshot(d, { presencias: [pres('abc12345', 'lodash', 'Web/web')] });
-  r = correr(d);
+  correr(d);
   assert.strictEqual(creaciones(d).length, 0);
   assert.match(JSON.stringify(snap(d).pedidos.fallidos), /issues duplicados en acme\/web: #3, #4/);
   // la consulta falla: «no pude preguntar» no es «no hay»
@@ -236,7 +236,7 @@ test('T12 GithubIssues_FailureModes: borrado y movido son fallos sin tocar nada;
   d = mundo({ gh: { issues: { 'acme/web': [issueMarcado(1)] }, moved: { 'acme/web#1': 'otra/cosa' } } });
   ficha(d, 'abc12345', { extra: ['pedidos:', '  - acme/web: 1'] });
   snapshot(d, { presencias: [] });
-  r = correr(d);
+  correr(d);
   assert.match(JSON.stringify(snap(d).pedidos.fallidos), /está en otro repo/);
   assert.strictEqual(estado(d).issues['acme/web'][0].state, 'open', 'un issue movido no se cierra');
   d = mundo({ gh: { fail: { 'GET user': { status: 401, message: 'Bad credentials' } } } });

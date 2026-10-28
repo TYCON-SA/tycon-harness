@@ -254,9 +254,9 @@ function deltaDeDeuda(repo, base) {
 
   // Que el archivo no exista en la base es legítimo (es la primera vez que se declara deuda):
   // la declaración anterior es vacía. Lo mismo del lado de ahora, si se borró el archivo entero.
-  let antes = new Map();
+  let antes;
   try { antes = declaraciones(git(['show', `${base}:${DEUDA}`])); } catch (_) { antes = new Map(); }
-  let ahora = new Map();
+  let ahora;
   try { ahora = declaraciones(fs.readFileSync(path.join(repo, DEUDA), 'utf8')); } catch (_) { ahora = new Map(); }
   if (antes === null || ahora === null) return { todos: true, motivo: `${DEUDA} no se puede leer como JSON` };
 

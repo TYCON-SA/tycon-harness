@@ -1284,6 +1284,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/controls-off.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/undeclared-changes.test.js",
       "requiere": []
     },
@@ -1524,6 +1529,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/advisor-liveness-on-change.test.js",
       "requiere": []
     },
     {
@@ -2095,6 +2105,18 @@
       "__nota": "el ayudante que da la ventana por pasada en las pruebas por subproceso vive sólo en la carpeta de pruebas: ningún guion de afuera lo nombra, y con la HOME de la cuenta no firma nada.",
       "raiz": "arnes",
       "ruta": "tests/window-passed-guard.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la refirma después de traer main (scripts/lib/refresh-after-main.js): es refirma sólo si cada archivo es lo de main más lo ya firmado en este pedido; modo, tipo, renombres y clon superficial son control-change.",
+      "raiz": "arnes",
+      "ruta": "tests/refresh-after-main.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el paso que el freno no encuentra en el registro de la conversación: los cuatro guiones dicen el motivo real y piden un reintento, sin dictar la frase.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/step-not-found.test.js",
       "requiere": []
     },
     {

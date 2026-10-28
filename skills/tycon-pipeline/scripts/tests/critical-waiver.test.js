@@ -360,11 +360,9 @@ function mostrarCriterio(lab) {
   });
   assert.equal(p.status, 0, p.stderr);
 }
-const FIRMA = 'firmo el AC 1: el servicio externo no tiene ambiente de prueba';
-
 // Sin terminal, el criterio lo firma la persona en la ventana de permiso: la firma queda sin cita, con `via` ventana.
 test('RuntimeWaiver_OkDelDev_FirmaSinTerminal @story-8.63 @ac-7', () => {
-  const lab = laboratorioDeCriterio([delAgente('Hay un criterio para firmar.', new Date().toISOString())]);
+  const lab = laboratorioDeCriterio([delAgente('Hay un criterio para firmar.')]);
   mostrarCriterio(lab);
   const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba']);
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
@@ -404,6 +402,23 @@ test('RuntimeWaiver_FirmasViejasSiguen @story-8.63 @ac-7', () => {
   const vieja = lineas(log)[0];
   assert.equal(vieja.ok, undefined, 'la firma por terminal no cambia de forma');
   assert.equal(lib.verifyChain(log).entries.length, 1);
+});
+
+// 🔴 Falla con: la rama de criterios de okDeUnaPersona de vuelta (leía la conversación y nadie la llamaba).
+test('CriticalWaivers_SinRamaDeCriterios @story-8.139 @ac-39', () => {
+  const fuente = fs.readFileSync(path.join(SCRIPTS, 'lib', 'critical-waivers.js'), 'utf8');
+  const cuerpo = fuente.slice(fuente.indexOf('function okDeUnaPersona'), fuente.indexOf('function sesionActual'));
+  assert.ok(cuerpo.length > 0, 'encuentro okDeUnaPersona');
+  assert.doesNotMatch(cuerpo, /criterios/);
+  assert.doesNotMatch(cuerpo, /waiver-display/);
+  // con `criterios`, ni se carga waiver-display.js ni se lee la conversación: el ok se juzga como uno sin crítico
+  const wd = require.resolve(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  delete require.cache[wd];
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const r = cw.okDeUnaPersona({ approvedBy: 'Dev de Prueba', quote: '', desde: new Date().toISOString(), criterios: { acs: [{ ac: 1, sha: 'x' }] } });
+  assert.equal(r.ok, false);
+  assert.match(r.motivo, /falta la cita/);
+  assert.equal(require.cache[wd], undefined, 'waiver-display.js no se cargó');
 });
 
 // ── el humo dice contra qué corrió ──────────────────────────────────────────────────────────────

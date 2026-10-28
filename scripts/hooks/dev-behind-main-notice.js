@@ -201,7 +201,7 @@ function main() {
   aplica = false;
 
   // la clave es el repo sin usuario ni clave (una URL de origin puede traer credenciales): su resumen, no la URL
-  let ofrecer = true;
+  let ofrecer;
   try {
     const archivo = path.join(stateDirOf(os.homedir()), 'dev-behind-notice.json');
     const estado = cargarEstado(archivo);

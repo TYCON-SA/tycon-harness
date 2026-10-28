@@ -71,6 +71,14 @@ const checkJobs = (code) => {
   return jobs;
 };
 
+test('Portable_SuiteLenta_TopePropioQueEntraEnElPaso', () => {
+  // safety-escape pasó los 15 min de `test` en Windows: su tope propio es mayor, y entra en el del paso «suites»
+  assert.ok(probe.SLOW_TESTS.size > 0, 'hay al menos una suite lenta');
+  for (const name of probe.SLOW_TESTS) assert.ok(probe.TEST_FILES[name], `${name} es una suite de la lista`);
+  assert.ok(probe.CAP['slow-test'] > probe.CAP.test, 'el tope de las lentas es mayor que el común');
+  assert.ok(probe.CAP['slow-test'] < rehearse.PORTABLE_STEPS.suites, 'una lenta sola no se come el paso entero');
+});
+
 test('PortablePipeline_Yaml_TrabajoDeMasODeMenos_Frena', () => {
   // la lista de trabajos es exacta: portable no puede sumar uno sin que se vea
   const toy = (names) => names.map((n) => `  - job: ${n}\n    steps: []`).join('\n');

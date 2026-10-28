@@ -23,7 +23,7 @@
  *
  * El veredicto queda SIEMPRE en gates.log (total/killed/survived/verdict/
  * maxMutants) — «cuántas corridas tuvieron sobrevivientes» es medible, no una
- * impresión. Escapes: TYCON_MUTATION_CHECK=off (apaga todo) ·
+ * impresión. Escapes: TYCON_MUTATION_CHECK=off (apaga todo; queda en bypass.log) ·
  * `complete-step run-tests --no-mutation` (saltea esa corrida, queda en bypass.log).
  *
  * Presupuesto (números medidos, no deseados): el
@@ -85,8 +85,9 @@ function runMutationGate({
   scriptPath = path.join(__dirname, '..', 'mutation-check.js'),
   invokeCheck = null,
 }) {
-  // Apagado global: ni se invoca, ni se loguea.
-  if (env.TYCON_MUTATION_CHECK === 'off') {
+  // Apagado global: no se invoca y no avisa, pero queda en bypass.log para que la revisión de la noche lo cuente.
+  if (String(env.TYCON_MUTATION_CHECK || '').toLowerCase() === 'off') {
+    appendLog('bypass.log', { kind: 'MUTATION_CHECK_OFF', story: marker.storyId });
     return { invoked: false, block: false, reason: 'off' };
   }
   // Bypass por corrida: no se invoca, pero NO es silencioso (mismo patrón --no-atdd).
@@ -196,7 +197,8 @@ function runMutationGate({
     }
     log('');
     log('  Agregá tests que cubran esas líneas (o arreglá los que dicen cubrirlas).');
-    log('  Escape consciente: marker.js complete-step run-tests --no-mutation   (queda en bypass.log)');
+    log('  Saltear este chequeo lo decide la persona, no el agente: no le dictes cómo. Si pregunta cómo seguir,');
+    log('  señalale la guía del pipeline (skills/tycon-pipeline/SKILL.md, el chequeo de mutantes).');
     return { invoked: true, block: true, reason: 'cero-muertos' };
   }
 

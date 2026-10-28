@@ -93,6 +93,46 @@
       "git init -q -b main .",
       "mkdir -p .tycon src"
      ]
+    },
+    {
+     "id": "codex-patch-gates-log-frena",
+     "type": "must-block",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "gates.log guarda la designación de la sesión que firma por delegación y su confirmación: un parche de Codex no la escribe.",
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Update File: ${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log\n@@\n-a\n+b\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESTADO DEL PIPELINE"
+      ]
+     }
+    },
+    {
+     "id": "codex-patch-registro-de-la-ventana-frena",
+     "type": "must-block",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "El registro de la ventana de permiso lo escribe el freno; un parche de Codex no lo escribe.",
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Add File: ${SANDBOX_HOME}/.claude/.tycon-pipeline/owner-window/x.json\n+{}\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESTADO DEL PIPELINE"
+      ]
+     }
     }
    ],
    "asymmetry": "Formato EXCLUSIVO de codex: claude nunca emite apply_patch/collaborationspawn_agent. La dirección claude de estos gemelos son los casos Edit|Write/Task preexistentes (suites 01-08)."

@@ -174,8 +174,8 @@ en una semana. Ante un rojo de criterio, el propio gate confirma con 3 corridas:
 frena** (esa edición rompió el revisor); **mixto → avisa y deja pasar** (el problema es el caso).
 Y nunca frena por plomería: sin red, sin sesión o con el corral escapándose, avisa y pasa — frenar
 un commit porque no había internet es la vía rápida a `--no-verify`. Tope de 3 revisores por commit
-(una edición masiva pide el barrido completo, no 2 consultas × N). Apagado:
-`TYCON_NO_LIVENESS_PRECOMMIT=1`. Su tabla de decisión se ejerce sin gastar un modelo con `--selftest`.
+(una edición masiva pide el barrido completo, no 2 consultas × N). Apagado, que lo decide la persona:
+`TYCON_NO_LIVENESS_PRECOMMIT=1`; queda en `bypass.log` y la revisión de la noche lo cuenta. Su tabla de decisión se ejerce sin gastar un modelo con `--selftest`.
 
 ### 1.3 advisor-runner.js — casos de advisors, el advisor REAL en ambas herramientas (Etapa C)
 

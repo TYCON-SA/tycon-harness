@@ -2,9 +2,10 @@
 /*
  * tabs/findings.js — LA PESTAÑA «MANTENIMIENTO»: LO QUE ENCONTRÓ LA NOCHE, POR QUIÉN TIENE LA PELOTA.
  *
- * Qué resuelve: quien mantiene decide las fichas de la noche sin abrir el repo de operaciones. La pantalla tiene tres
+ * Qué resuelve: quien mantiene decide las fichas de la noche sin abrir el repo de operaciones. La pantalla tiene cuatro
  * bloques. «Te toca decidir»: las fichas del vigilante y de la revisión de las ejecuciones que esperan Archivar o
- * Arreglar. «Esperando aprobación»: lo que ya se envió y otra persona tiene que aprobar, agrupado por pedido. «En
+ * Arreglar. «Esperando aprobación»: lo que ya se envió y otra persona tiene que aprobar, agrupado por pedido. «Ya
+ * decididas»: lo decidido en los últimos 30 días, con quién, cuándo y si la noche ya lo aplicó. «En
  * marcha»: los arreglos con su tarea y las vulnerabilidades de paquetes, que cada equipo sigue en su tarea (acá no se
  * deciden). Lo que la revisión declara «aparte» (cause-names.js `APARTE`) no se pregunta.
  *
@@ -27,6 +28,7 @@ const path = require('path');
 const crypto = require('crypto');
 const ORG = require('../../lib/org-config.js');
 const RP = require('../../lib/repo-proposal.js');
+const OPS = require('../../lib/operations-config.js');
 const SOURCES = require('../../nightly/findings/sources.js');
 const CYCLE = require('../../nightly/findings/cycle.js');
 const { APARTE } = require('../../nightly/findings/cause-names.js');
@@ -38,6 +40,8 @@ const { defensaDeEscritura } = require('./config.js');
 const FUENTES = CYCLE.FUENTES;
 // las que se deciden acá, en el orden de la pantalla: producción primero, porque son clientes reales
 const SE_DECIDEN = ['vigilante', 'ejecuciones'];
+// los motivos sin tarea que la noche vuelve a calcular cada vez que pide
+const RECALCULADOS = ['sin-confirmar', 'sin-configurar'];
 // el id de una ficha va a una ruta del clon y a la rama del pedido: sin barras ni nada que salga de su carpeta. Es más
 // estricto que la CLAVE de cycle.js a propósito: una ficha con `:` o `/` en el id sale como ilegible y no se envía
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
@@ -45,6 +49,14 @@ const ENLACE = /^https:\/\/[^\s"'<>\\]{1,500}$/;
 const VIGENCIA_PEDIDOS_MS = 60 * 1000;
 const CARPETAS_VIVAS = ['pending', 'promoted'];
 const TOPE_ENVIO = 100;
+// lo ya decidido, en el disco del sitio: tapa la foto vieja una semana como mucho, y se muestra 30 días
+const ARCHIVO_DECIDIDAS = 'mantenimiento-decididas.json';
+const VIGENCIA_DECIDIDA_MS = 7 * 24 * 3600 * 1000;
+const VIGENCIA_HISTORIA_MS = 30 * 24 * 3600 * 1000;
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
+// cómo terminó cada envío, por su número: lo pregunta la pantalla cuando la conexión se corta
+const ENVIO = /^[A-Za-z0-9_-]{8,64}$/;
+const VIGENCIA_ENVIO_MS = 15 * 60 * 1000;
 // las ramas de los pedidos de decisiones: las de a una (`decision-…`) y las de varias (`decisiones-…`)
 const RAMA_DE_DECISIONES = 'team-config/decision';
 // lo que el cuerpo del pedido dice de cada ficha: «fuente/id → acción»
@@ -70,6 +82,61 @@ const dia = (f) => (typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) ? `${
 const clave = (f) => `${f.fuente}/${f.id}`;
 const numeroDe = (enlace) => { const m = /\/(?:pull|pullrequest)\/(\d+)$/.exec(String(enlace || '')); return m ? Number(m[1]) : null; };
 const aparte = (f) => typeof f.causa === 'string' && hasOwn(APARTE, f.causa);
+// quién decidió, sin su correo: lo de antes de la arroba
+const alias = (q) => { const m = /^([a-z0-9][a-z0-9._+-]{0,63})@/.exec(norm(q)); return m ? m[1] : null; };
+
+/**
+ * Las fichas ya decididas, con qué se decidió, quién y cuándo. Dos usos: (1) las que el sitio decidió (aplicó él mismo,
+ * o encontró decididas en main al enviar) mientras su foto de operaciones no las trae: sin esto vuelven a «Te toca
+ * decidir» hasta el próximo refresco, y reenviarlas choca con su propia decisión. Eso vale hasta que la foto trae la
+ * decisión (`olvidar`) o una semana. (2) «Ya decididas»: la noche borra el archivo de la decisión al aplicarla y la
+ * ficha no guarda quién decidió, así que quién y cuándo quedan acá, 30 días. Se guardan en el disco del sitio
+ * (sobreviven a un reinicio). Sin disco, en memoria. Un archivo roto o un disco caído no tiran la pestaña: se empieza
+ * vacío.
+ */
+function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {}) {
+  const archivo = dataDir ? path.join(dataDir, ARCHIVO_DECIDIDAS) : null;
+  let memoria = {};
+  if (archivo) {
+    try { const d = JSON.parse(fs.readFileSync(archivo, 'utf8')); if (isObject(d)) memoria = d; } catch (e) {
+      if (!(e && e.code === 'ENOENT')) log(`mantenimiento: la lista de lo ya decidido no se pudo leer (${e.code || 'sin forma'}): se empieza vacía`);
+    }
+  }
+  const enHistoria = (x) => isObject(x) && (x.accion === null || CYCLE.ACCIONES.includes(x.accion)) && Number.isFinite(x.en) && ahora() - x.en < VIGENCIA_HISTORIA_MS;
+  const vigente = (x) => enHistoria(x) && x.accion !== null && !x.visto && ahora() - x.en < VIGENCIA_DECIDIDA_MS;
+  // quién y cuándo, si tienen forma: lo demás no se guarda
+  const datos = (x) => ({ ...(typeof x.quien === 'string' && x.quien ? { quien: norm(x.quien) } : {}), ...(DIA.test(String(x.el || '')) ? { el: x.el } : {}),
+    ...(typeof x.nombre === 'string' && x.nombre ? { nombre: x.nombre.slice(0, 300) } : {}) });
+  function guardar() {
+    for (const k of Object.keys(memoria)) if (!enHistoria(memoria[k])) delete memoria[k];
+    if (!archivo) return;
+    const tmp = `${archivo}.${process.pid}.tmp`;
+    try { fs.writeFileSync(tmp, `${JSON.stringify(memoria)}\n`); fs.renameSync(tmp, archivo); } catch (e) {
+      log(`mantenimiento: la lista de lo ya decidido no se pudo guardar (${(e && e.code) || 'error'}): vale hasta el próximo reinicio`);
+    }
+  }
+  return {
+    /** `[{ clave, accion, quien?, el?, nombre? }]`: decididas recién. */
+    marcar(lista) { for (const x of lista) memoria[x.clave] = { accion: x.accion, en: ahora(), ...datos(x) }; guardar(); },
+    /** La acción decidida, mientras la foto no la trae; o null. */
+    accionDe(k) { return hasOwn(memoria, k) && vigente(memoria[k]) ? memoria[k].accion : null; },
+    /**
+     * La foto ya trae la decisión (`{ accion, quien?, el?, nombre? }`, lo que dice main): ya no hace falta taparla, y
+     * queda en «Ya decididas» con lo que falte. Una decisión que el sitio no vio enviar entra recién acá.
+     */
+    olvidar(k, d = {}) {
+      const x = hasOwn(memoria, k) && enHistoria(memoria[k]) ? memoria[k] : null;
+      const nuevo = { accion: CYCLE.ACCIONES.includes(d.accion) ? d.accion : x ? x.accion : null, en: x ? x.en : ahora(), ...datos(d), ...(x ? datos(x) : {}), visto: true };
+      if (x && JSON.stringify(x) === JSON.stringify(nuevo)) return;
+      memoria[k] = nuevo;
+      guardar();
+    },
+    /** «Ya decididas»: `[{ clave, accion, en, quien?, el?, nombre? }]`, de los últimos 30 días, lo último primero. */
+    historia() {
+      return Object.keys(memoria).filter((k) => enHistoria(memoria[k])).map((k) => ({ clave: k, ...memoria[k] })).sort((a, b) => b.en - a.en || a.clave.localeCompare(b.clave));
+    },
+  };
+}
 
 function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, demo = false }) {
   const T = (idioma, k, v) => TX.t(idioma, k, v);
@@ -78,6 +145,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   const remote = () => remotos.operaciones || ORG.remoteOf(cfg.operationsRepo);
   const carpetaDe = (fuente) => SOURCES.FUENTES[fuente].carpeta;
   const rutaDecision = (fuente, id) => path.posix.join('inbox', carpetaDe(fuente), 'decisions', `${id}.json`);
+  const decididas = crearDecididas({ dataDir: cfg.dataDir, ahora, log });
+  const envios = new Map();
 
   // ── las fichas ──
 
@@ -127,7 +196,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return {};
   }
 
-  /** La decisión de una ficha que ya está en main: `{ accion }`, null si no hay, o 'ilegible'. */
+  /** La decisión de una ficha que ya está en main: `{ accion, quien, el }`, null si no hay, o 'ilegible'. */
   function decisionEnMain(dir, f) {
     let txt;
     try { txt = fs.readFileSync(path.join(dir, rutaDecision(f.fuente, f.id)), 'utf8'); } catch (e) {
@@ -135,7 +204,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     }
     let d = null;
     try { d = JSON.parse(txt); } catch { /* sin forma: igual está decidida, sin acción que mostrar */ }
-    return { accion: isObject(d) && CYCLE.ACCIONES.includes(d.accion) ? d.accion : null };
+    if (!isObject(d)) return { accion: null, quien: null, el: null };
+    return { accion: CYCLE.ACCIONES.includes(d.accion) ? d.accion : null, quien: typeof d.quien === 'string' ? d.quien : null, el: DIA.test(String(d.el || '')) ? d.el : null };
   }
 
   /** ¿Espera que alguien decida? Las del vigilante y ejecuciones pendientes en pending/, que no cuentan aparte. */
@@ -197,7 +267,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     if (l.estado !== 'leido') return 0;
     const dir = dirOps();
     const enPedido = ultimaMembresia ? ultimaMembresia.porFicha : new Map();
-    return l.fichas.filter((f) => porDecidir(f) && decisionEnMain(dir, f) === null && !enPedido.has(clave(f))).length;
+    return l.fichas.filter((f) => porDecidir(f) && decisionEnMain(dir, f) === null && !decididas.accionDe(clave(f)) && !enPedido.has(clave(f))).length;
   }
 
   // ── la tarea de cada arreglo y de cada vulnerabilidad ──
@@ -206,6 +276,17 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   function destinoDeTareas() {
     const c = (typeof fuentes.config === 'function' && fuentes.config()) || {};
     return RP.destinoDeTareas(isObject(c.work_items) ? c.work_items : {}, remote());
+  }
+  /**
+   * Dónde crea la noche las tareas: sólo operations.json (`pedidoDeLaNoche`). `{ leido: false }` si el archivo no se
+   * pudo leer o no valida: la noche tampoco crea ninguna, pero no es que la organización no lo haya configurado.
+   */
+  function destinoDeLaNoche() {
+    const dir = dirOps();
+    if (!dir) return { leido: false, destino: null };
+    const ruta = path.join(dir, 'operations.json');
+    if (!OPS.load(ruta).ok) return { leido: false, destino: null };
+    return { leido: true, destino: CYCLE.pedidoDeLaNoche(ruta).destino };
   }
   const enlaceDeTarea = RP.enlaceDeTarea;
   const nombreDePersona = (x) => (typeof x === 'string' && SOURCES.NOMBRE_DE_PERSONA.test(x.trim()) ? x.trim() : null);
@@ -232,7 +313,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return T(idioma, 'mant.titulo', { producto, donde, que: T(idioma, `mant.titulo.${regla}`), veces });
   }
 
-  function arregloDe(f, destino, idioma) {
+  function arregloDe(f, destino, deLaNoche, idioma) {
     const base = { fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), regla: reglaDe(f) };
     const asignado = nombreDePersona(f.asignado);
     if (f.pedido) {
@@ -240,7 +321,15 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const enlace = f.pedido.enlace || enlaceDeTarea(destino, destino.proyecto, numero);
       return { ...base, estado: enlace ? 'tarea' : 'sin_enlace', tarea: enlace ? { numero, enlace } : null, asignado, motivo: null };
     }
-    if (f.pedido_motivo) return { ...base, estado: 'sin_tarea', tarea: null, asignado: null, motivo: f.pedido_motivo };
+    if (f.historia) return { ...base, estado: 'historia', tarea: null, historia: f.historia, asignado: null, motivo: null };
+    // la noche sólo pide las de promoted/: otra carpeta no tiene tarea hasta que pase
+    if (f.carpeta !== 'promoted') return { ...base, estado: 'sin_tarea', tarea: null, asignado: null, motivo: 'sin-mover' };
+    // la misma condición con la que pide la noche (queHaraLaNoche): «se crea esta noche» sólo si la pide. El motivo que
+    // la noche recalcula cada vez (sin confirmar, sin configurar) se toma de ahora, no de lo que dejó anotado
+    const noche = CYCLE.queHaraLaNoche(f, deLaNoche.destino);
+    const motivo = noche.pide ? (RECALCULADOS.includes(f.pedido_motivo) ? null : f.pedido_motivo)
+      : noche.motivo === 'sin-configurar' && !deLaNoche.leido ? 'configuracion-ilegible' : noche.motivo || f.pedido_motivo || 'sin-mover';
+    if (motivo) return { ...base, estado: 'sin_tarea', tarea: null, asignado: null, motivo };
     return { ...base, estado: 'se_crea', tarea: null, asignado: null, motivo: null };
   }
 
@@ -248,7 +337,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const severidad = String(f.severidad || '').toLowerCase() || null;
     return {
       id: f.id, paquete: f.contexto.paquete || f.nombre, severidad, repos: Number.isInteger(f.repos) ? f.repos : 0, desde: f.primera_vez, volvio: f.reaparecido,
-      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado) })),
+      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado), sinAsignar: t.sin_asignar === true })),
       motivo: f.pedido_motivo || null,
     };
   }
@@ -322,12 +411,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   /** El modelo de la pantalla: lo mismo para la página y para /api/hallazgos. */
   async function modelo(idioma) {
     const l = leerFichas();
-    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'mant.sinClon'), pedidos: null, toca: [], espera: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
-    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'mant.sinFichas'), pedidos: null, toca: [], espera: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, marcha: 0 } };
+    if (l.estado === 'sin_clon') return { estado: 'sin_clon', frase: T(idioma, 'mant.sinClon'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, decididas: 0, marcha: 0 } };
+    if (!l.fichas.length && !l.ilegibles.length) return { estado: 'sin_fichas', frase: T(idioma, 'mant.sinFichas'), pedidos: null, toca: [], espera: [], decididas: [], marcha: { arreglos: [], vulnerabilidades: [] }, cuentas: { toca: 0, espera: 0, decididas: 0, marcha: 0 } };
     const m = await membresia();
     const enPedido = m.estado === 'leido' ? m.porFicha : new Map();
     const dir = dirOps();
     const destino = destinoDeTareas();
+    let deLaNoche = null;
     const ilegibles = new Set(l.ilegibles);
     const toca = [];
     const pedidos = new Map();
@@ -339,11 +429,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino));
         continue;
       }
-      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, idioma)); continue; }
+      if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, deLaNoche || (deLaNoche = destinoDeLaNoche()), idioma)); continue; }
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
-      if (enMain) { aprobadas.push({ fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), accion: enMain.accion }); continue; }
+      if (enMain) decididas.olvidar(clave(f), { ...enMain, nombre: tituloDe(f, LANG.POR_DEFECTO) });
+      const yaDecidida = enMain ? enMain.accion : decididas.accionDe(clave(f));
+      if (enMain || yaDecidida) { aprobadas.push({ clave: clave(f), nombre: tituloDe(f, idioma) }); continue; }
       const p = enPedido.get(clave(f));
       if (p) {
         if (!pedidos.has(p.numero)) pedidos.set(p.numero, { numero: p.numero, enlace: p.enlace, aprobado: false, filas: [] });
@@ -354,25 +446,44 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     }
     toca.sort(ordenParaDecidir);
     const espera = [...pedidos.values()].sort((a, b) => a.numero - b.numero);
-    if (aprobadas.length) espera.push({ numero: null, enlace: null, aprobado: true, filas: aprobadas });
+    // lo ya decidido no espera la aprobación de nadie: sale de la lista y se cuenta en una línea
     for (const g of espera) g.filas.sort(ordenFuente);
+    const yaDecididas = listaDecididas(aprobadas);
     arreglos.sort(ordenFuente);
     vulnerabilidades.sort(ordenVulns);
     const ilegible = ilegibles.size > 0;
+    const c = fuentes.config();
     return {
       estado: ilegible ? 'ilegible' : 'leido',
       frase: ilegible ? T(idioma, 'mant.ilegible', { fuentes: [...ilegibles].map((x) => T(idioma, `mant.fuente.${x}`)).join(', ') }) : null,
       pedidos: m.estado === 'leido' ? { estado: 'leido', frase: null } : { estado: 'no_se_pudo', frase: T(idioma, 'mant.sinPedidos') },
-      toca, espera, marcha: { arreglos, vulnerabilidades },
-      cuentas: { toca: toca.length, espera: espera.reduce((n, g) => n + g.filas.length, 0), marcha: arreglos.length + vulnerabilidades.length },
+      toca, espera, decididas: yaDecididas, marcha: { arreglos, vulnerabilidades },
+      // con auto_apply, lo enviado se guarda sin que nadie más lo apruebe: la pantalla no habla de aprobar
+      aplicaSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
+      cuentas: { toca: toca.length, espera: espera.reduce((n, g) => n + g.filas.length, 0), decididas: yaDecididas.length, marcha: arreglos.length + vulnerabilidades.length },
     };
+  }
+
+  /**
+   * «Ya decididas», de lo anotado: la que la foto muestra decidida y todavía en pending la aplica esta noche; la que ya
+   * no está ahí, la aplicó la noche. `aprobadas`: `[{ clave, nombre }]`, las decididas que siguen en pending.
+   */
+  function listaDecididas(aprobadas) {
+    const pendientes = new Map(aprobadas.map((x) => [x.clave, x.nombre]));
+    return decididas.historia().map((x) => {
+      const i = x.clave.indexOf('/');
+      return { fuente: x.clave.slice(0, i), id: x.clave.slice(i + 1), nombre: pendientes.get(x.clave) || x.nombre || x.clave.slice(i + 1), accion: x.accion,
+        quien: alias(x.quien), el: x.el || null, estado: pendientes.has(x.clave) ? 'esta_noche' : 'aplicada' };
+    });
   }
 
   // ── la página ──
 
   function seccion(m, idioma, tok) {
     const ayudaRegla = (r) => (r ? ` <button type="button" class="m-q" popovertarget="m-ayuda-regla-${r}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, 'mant.ayuda.termino.regla', { que: T(idioma, `mant.titulo.${r}`) }) }))}">?</button>` : '');
-    const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${k}`) }))}">?</button>`;
+    // con auto_apply, la ayuda de enviar no habla de una aprobación que no hay
+    const deAyuda = (k) => (m.aplicaSolo && (k === 'enviar' || k === 'seguir') ? `${k}Solo` : k);
+    const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${deAyuda(k)}`) }))}">?</button>`;
     const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer" target="_blank">${esc(texto)}</a>` : esc(texto));
     const accion = (a) => T(idioma, `mant.accion.${a}`);
     // el análisis está en castellano (se escribe así): `lang` para quien lo lee en voz alta, y la nota en otro idioma
@@ -387,7 +498,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (a) {
         cuerpo = renglon('mant.porQue', a.por_que_pasa) + renglon(`mant.recomienda.${a.recomendacion}`, a.por_que_recomienda)
           + (a.arreglo ? renglon('mant.siSeArregla', a.arreglo) : '') + (a.si_vuelve ? renglon('mant.siVuelve', a.si_vuelve) : '')
-          + `<div class="m-pie"><span class="m-autor">${esc(T(idioma, a.autor === 'persona' ? 'mant.autor.persona' : 'mant.autor.modelo'))}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.analisisEnCastellano'))}`} ${ayuda('analisis')}</span>${acciones}</div>`;
+          + `<div class="m-pie"><span class="m-autor">${a.autor === 'persona' ? '' : `${esc(T(idioma, 'mant.autor.modelo'))} `}${idioma === 'es' ? '' : `${esc(T(idioma, 'mant.analisisEnCastellano'))} `}${ayuda('analisis')}</span>${acciones}</div>`;
       } else {
         const pr = f.propuesta;
         const propuesta = pr ? `<p class="m-propuesta">${esc(T(idioma, 'mant.propuesta', { accion: accion(pr.accion) }))}${pr.razon ? ` ${es(pr.razon)}${idioma === 'es' ? '' : ` ${esc(T(idioma, 'mant.razonEnCastellano'))}`}` : ''}</p>` : '';
@@ -405,17 +516,19 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // te toca decidir
     const subgrupos = SE_DECIDEN.map((fuente) => {
       const filas = m.toca.filter((x) => x.fuente === fuente);
-      return filas.length ? `<h3 class="m-sub">${esc(T(idioma, fuente === 'vigilante' ? 'mant.sub.produccion' : 'mant.sub.ejecuciones', { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
+      const sub = fuente === 'vigilante' ? 'mant.sub.produccion' : 'mant.sub.ejecuciones';
+      // el molde del número va en la página: la pantalla recuenta sola cuando saca una ficha
+      return filas.length ? `<h3 class="m-sub" data-fuente="${esc(fuente)}" data-t="${esc(T(idioma, sub, { n: '{n}' }))}">${esc(T(idioma, sub, { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
     }).join('');
-    const toca = `<div class="m-bloque m-toca"><h2>${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
-      + `<p class="m-intro">${esc(T(idioma, 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
+    const toca = `<div class="m-bloque m-toca" data-t-vacio="${esc(T(idioma, 'mant.vacio'))}"><h2 data-t="${esc(T(idioma, 'mant.toca.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
+      + `<p class="m-intro">${esc(T(idioma, m.aplicaSolo ? 'mant.toca.introSolo' : 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
       + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`) + '</div>';
 
     // esperando aprobación
     const grupo = (g) => {
       // «Pedido 12 · 3 decisiones»: el enlace va sobre la primera parte
       const [nombre, ...resto] = T(idioma, g.filas.length === 1 ? 'mant.espera.pedidoUna' : 'mant.espera.pedido', { numero: g.numero, n: g.filas.length }).split(' · ');
-      const cab = g.aprobado ? esc(T(idioma, 'mant.espera.aprobado')) : [enlace(nombre, g.enlace), ...resto.map(esc)].join(' · ');
+      const cab = [enlace(nombre, g.enlace), ...resto.map(esc)].join(' · ');
       const filas = g.filas.map((x) => `<li>${esc(x.nombre)} → ${esc(x.accion ? accion(x.accion) : '?')}</li>`).join('');
       return `<div class="m-pedido"><p class="m-pedido-cab">${cab}</p><ul>${filas}</ul></div>`;
     };
@@ -423,17 +536,30 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       ? `<div class="m-bloque m-espera"><h2>${esc(T(idioma, 'mant.espera.titulo', { n: m.cuentas.espera }))}</h2><p class="m-intro">${esc(T(idioma, 'mant.espera.intro'))}</p>${m.espera.map(grupo).join('')}</div>`
       : '';
 
+    // ya decididas: va en la página aunque esté vacía, para que lo enviado pase ahí sin recargar
+    const estadoDe = (e) => T(idioma, e === 'aplicada' ? 'mant.decididas.aplicada' : 'mant.decididas.estaNoche');
+    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(x.nombre)}</b> <span class="m-tarea">${esc([x.accion ? accion(x.accion) : '?', dia(x.el), x.quien, estadoDe(x.estado)].filter(Boolean).join(' · '))}</span></li>`;
+    const ya = `<details class="m-bloque m-decididas"${m.decididas.length ? '' : ' hidden'} data-t-esta-noche="${esc(estadoDe('esta_noche'))}">`
+      + `<summary data-t="${esc(T(idioma, 'mant.decididas.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.decididas.titulo', { n: m.decididas.length }))}</summary>`
+      + `<p class="m-intro">${esc(T(idioma, 'mant.decididas.intro'))}</p><ul class="m-lista">${m.decididas.map(decidida).join('')}</ul></details>`;
+
     // en marcha
     const tarea = (numero, url, proyecto) => enlace(T(idioma, proyecto ? 'mant.marcha.tareaProyecto' : 'mant.marcha.tarea', { numero, proyecto }), url);
+    // la story por su nombre, nunca por la ruta; con el número del pedido si lo hay
+    const historia = (h) => (h && h.nombre
+      ? T(idioma, Number.isInteger(h.pedido) ? 'mant.marcha.historiaPedido' : 'mant.marcha.historia', { nombre: h.nombre, pedido: h.pedido })
+      : T(idioma, 'mant.marcha.historiaSinNombre'));
     const arreglo = (x) => {
       const t = x.estado === 'tarea' ? `${tarea(x.tarea.numero, x.tarea.enlace)}${x.asignado ? ` · ${esc(T(idioma, 'mant.marcha.asignada', { quien: x.asignado }))}` : ''}`
         : x.estado === 'sin_enlace' ? esc(T(idioma, 'mant.marcha.sinEnlace'))
           : x.estado === 'sin_tarea' ? esc(T(idioma, 'mant.marcha.sinTarea', { motivo: T(idioma, `mant.sinTarea.${x.motivo}`) }))
-            : esc(T(idioma, 'mant.marcha.seCrea'));
+            : x.estado === 'historia' ? esc(historia(x.historia))
+              : esc(T(idioma, 'mant.marcha.seCrea'));
       return `<li><b>${esc(x.nombre)}</b>${ayudaRegla(x.regla)} <span class="m-tarea">${t}</span></li>`;
     };
     const tareaDeVuln = (t) => (t.enlace ? `${tarea(t.numero, t.enlace, t.proyecto)}` : esc(T(idioma, 'mant.marcha.sinEnlace')))
-      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, 'mant.marcha.sinAsignar'))}`;
+      // «sin asignar» sólo si la noche leyó la tarea y no la tiene nadie; sin medir, lo dice
+      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, t.sinAsignar ? 'mant.marcha.sinAsignar' : 'mant.marcha.asignadoSinMedir'))}`;
     const vuln = (v) => {
       const sev = NOMBRE_SEVERIDAD[v.severidad] || null;
       const meta = [T(idioma, v.repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: v.repos, dia: dia(v.desde) })];
@@ -456,18 +582,18 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
     // la barra y la ayuda: sólo si hay algo para decidir
     const k = m.toca.filter((x) => x.recomendada).length;
-    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', ok: 'mant.envio.ok', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
+    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', lento: 'mant.envio.lento', verificando: 'mant.envio.verificando', yaEnviado: 'mant.envio.yaEnviado', noLlego: 'mant.envio.noLlego', aplicado: 'mant.envio.aplicado', ok: 'mant.envio.ok', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
     const datos = Object.entries(textos).map(([n, kk]) => ` data-t-${n.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(T(idioma, kk))}"`).join('')
       + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}"`;
     const barra = m.toca.length
-      ? `<div class="m-barra"${datos}><span class="m-cuenta" aria-live="polite"></span><button type="button" class="btn prim m-enviar" disabled>${esc(T(idioma, 'mant.barra.enviar'))}</button>`
-        + `<button type="button" class="btn m-seguir"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
+      ? `<div class="m-barra"${datos}><span class="m-cuenta" aria-live="polite"></span><button type="button" class="btn prim m-enviar" disabled>${esc(T(idioma, m.aplicaSolo ? 'mant.barra.enviarSolo' : 'mant.barra.enviar'))}</button>`
+        + `<button type="button" class="btn m-seguir" data-t="${esc(T(idioma, 'mant.barra.seguir', { n: '{n}' }))}"${k ? '' : ' disabled'}>${esc(T(idioma, 'mant.barra.seguir', { n: k }))}</button>${ayuda('seguir')}<button type="button" class="btn m-borrar">${esc(T(idioma, 'mant.barra.borrar'))}</button><span class="m-estado" aria-live="polite"></span></div>`
       : '';
     const negritas = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-    const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${x}`))}</p></div>`).join('')
+    const ayudas = AYUDAS.map((x) => `<div id="m-ayuda-${x}" popover class="m-pop"><p>${negritas(T(idioma, `ayuda.${deAyuda(x)}`))}</p></div>`).join('')
       + REGLAS.map((r) => `<div id="m-ayuda-regla-${r}" popover class="m-pop"><p>${esc(T(idioma, `mant.regla.${r}`))}.</p></div>`).join('');
     const frases = [m.frase, m.pedidos && m.pedidos.frase].filter(Boolean).map((t) => `<p class="q-note">${esc(t)}</p>`).join('');
-    const contenido = m.estado === 'sin_clon' || m.estado === 'sin_fichas' ? '' : toca + espera + marcha + barra + ayudas;
+    const contenido = m.estado === 'sin_clon' || m.estado === 'sin_fichas' ? '' : toca + espera + ya + marcha + barra + ayudas;
     return `<section id="hallazgos" class="m-pantalla" data-token="${esc(tok)}">${frases}${contenido}<script src="/hallazgos/cliente.js" defer></script></section>`;
   }
 
@@ -489,7 +615,10 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     if (m.estado !== 'leido') return json(200, { ok: false, codigo: 'sin_pedidos', message: T(idioma, 'mant.sinPedidos') });
     const enPedido = m.porFicha;
     const omitidas = [];
-    const van = [];
+    // lo que ya está decidido en main: sale de la lista y pasa a «Ya decididas»
+    const previas = [];
+    const nombres = new Map();
+    let van = [];
     for (const x of lista) {
       const reg = SOURCES.FUENTES[x.fuente];
       // 🔴 Sólo «el archivo no está» es «ya no está pendiente»: una ficha o una carpeta que no se pueden leer no abren
@@ -501,17 +630,22 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!f || f.id !== x.id || f.veredicto !== 'pendiente' || f.estado === 'resuelta' || aparte(f)) { omitidas.push(clave(x)); continue; }
       const enMain = decisionEnMain(dir, x);
       if (enMain === 'ilegible') return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
-      if (enMain || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
+      nombres.set(clave(x), tituloDe(f, LANG.POR_DEFECTO));
+      if (enMain) previas.push({ clave: clave(x), ...enMain });
+      if (enMain || decididas.accionDe(clave(x)) || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
       van.push({ fuente: x.fuente, id: x.id, accion: x.accion });
     }
-    if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas });
     const quien = norm((ctx.sesion && ctx.sesion.email) || (ctx.quien && ctx.quien.email));
     const el = new Date(ahora()).toISOString().slice(0, 10);
-    const decisiones = van.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el }));
-    const archivos = decisiones.map((d) => ({ archivo: rutaDecision(d.fuente, d.id), contenido: `${JSON.stringify(d, null, 2)}\n`, oidEsperado: null }));
-    if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivos: archivos.map(({ archivo, contenido }) => ({ archivo, contenido })) }, omitidas });
+    // lo que la pantalla pasa a «Ya decididas» en el momento, sin el correo
+    const paraLaPantalla = (xs) => xs.map((x) => ({ clave: x.clave, accion: x.accion, quien: alias(x.quien), el: x.el || null }));
+    for (const x of previas) decididas.olvidar(x.clave, { ...x, nombre: nombres.get(x.clave) });
+    if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas, decididas: paraLaPantalla(previas) });
+    const conForma = (lista) => lista.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el }));
+    const archivosDe = (decs) => decs.map((d) => ({ archivo: rutaDecision(d.fuente, d.id), contenido: `${JSON.stringify(d, null, 2)}\n`, oidEsperado: null }));
+    if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivos: archivosDe(conForma(van)).map(({ archivo, contenido }) => ({ archivo, contenido })) }, omitidas });
     // la noche sólo aplica una decisión con forma: una que no la tiene (sin correo, por ejemplo) no se propone
-    if (decisiones.some((d) => !CYCLE.decisionConForma(d, d.fuente, d.id))) return json(200, { ok: false, codigo: 'sin_identidad', message: T(idioma, 'hallazgos.sinIdentidad') });
+    if (conForma(van).some((d) => !CYCLE.decisionConForma(d, d.fuente, d.id))) return json(200, { ok: false, codigo: 'sin_identidad', message: T(idioma, 'hallazgos.sinIdentidad') });
     let clon = dir;
     if (clones().operaciones.indice) {
       if (typeof fuentes.clonDeEscritura !== 'function') return json(200, { ok: false, message: TX.t('es', 'config.sinClonEscritura') });
@@ -519,20 +653,65 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!e || !e.dir) return json(200, { ok: false, message: TX.t('es', 'config.clonFallo', { motivo: (e && e.motivo) || TX.t('es', 'config.noSeArmoClon') }) });
       clon = e.dir;
     }
-    const secciones = van.map((x) => `${clave(x)} → ${x.accion}`);
-    // el pedido se nombra por lo que trae: reenviar lo mismo encuentra el abierto y no abre otro
-    const idCorto = `decisiones-${crypto.createHash('sha1').update([...secciones].sort().join('\n')).digest('hex').slice(0, 12)}`;
     const c = fuentes.config();
-    const r = await RP.proponer({
-      clon, archivos, idCorto, secciones, titulo: `Decisiones sobre lo que encontró la noche (${van.length})`, quien,
-      credencial: cfg.escritura && cfg.escritura.operaciones, remote: remote(), urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
-      now: new Date(ahora()), fetch, log, aplicarSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
-    });
+    // 🔴 La foto del sitio puede venir atrasada: main, recién traída, ya puede tener la decisión de una ficha (un envío
+    // anterior que llegó mientras la pantalla esperaba). Esa no es un choque: ya está hecha. Sale de la lista y se
+    // propone el resto; el choque con otra cosa (un archivo que no es su decisión) sigue siendo un error.
+    const yaDecididas = [];
+    let r;
+    for (;;) {
+      const decisiones = conForma(van);
+      const archivos = archivosDe(decisiones);
+      const secciones = van.map((x) => `${clave(x)} → ${x.accion}`);
+      // el pedido se nombra por lo que trae: reenviar lo mismo encuentra el abierto y no abre otro
+      const idCorto = `decisiones-${crypto.createHash('sha1').update([...secciones].sort().join('\n')).digest('hex').slice(0, 12)}`;
+      r = await RP.proponer({
+        clon, archivos, idCorto, secciones, titulo: `Decisiones sobre lo que encontró la noche (${van.length})`, quien,
+        credencial: cfg.escritura && cfg.escritura.operaciones, remote: remote(), urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
+        now: new Date(ahora()), fetch, log, aplicarSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
+      });
+      const hecha = r && r.codigo === 'cambio' ? decisionPropia(r.archivo || archivos[0].archivo, r.textoActual) : null;
+      if (!hecha) break;
+      yaDecididas.push(hecha);
+      van = van.filter((x) => clave(x) !== hecha.clave);
+      if (!van.length) break;
+    }
     // la próxima lectura vuelve a mirar qué espera aprobación
     membresiaGuardada = null;
+    const aplicadas = r && r.codigo === 'aplicado' ? van.map((x) => ({ clave: clave(x), accion: x.accion, quien, el })) : [];
+    // lo decidido queda anotado y sale de la lista ya; no se refresca acá: la foto todavía no lo trae, y un refresco baja
+    // el buzón (un minuto en un sitio real) con la pantalla esperando
+    const hechas = [...yaDecididas, ...aplicadas];
+    if (hechas.length) decididas.marcar(hechas.map((x) => ({ ...x, nombre: nombres.get(x.clave) })));
+    const omitidasTodas = [...omitidas, ...yaDecididas.map((x) => x.clave)];
+    const alaVista = paraLaPantalla([...previas, ...hechas]);
+    if (!van.length) return json(200, { ok: true, codigo: 'ya_decidida', message: T(idioma, 'mant.envio.yaDecidida'), omitidas: omitidasTodas, enviadas: [], decididas: alaVista });
     const { textoActual: _t, oidActual: _o, ...resto } = r || {};
     const numero = numeroDe(resto.enlace);
-    return json(200, { ...resto, ...(numero ? { numero } : {}), omitidas, enviadas: van.map(clave) });
+    return json(200, { ...resto, ...(numero ? { numero } : {}), omitidas: omitidasTodas, enviadas: van.map(clave), decididas: alaVista });
+  }
+
+  /** Si el texto de main en `archivo` es la decisión de esa misma ficha: `{ clave, accion, quien, el }`; si no, null. */
+  function decisionPropia(archivo, texto) {
+    const m = /^inbox\/([^/]+)\/decisions\/([^/]+)\.json$/.exec(String(archivo || ''));
+    if (!m || typeof texto !== 'string') return null;
+    let d = null;
+    try { d = JSON.parse(texto); } catch { return null; }
+    if (!isObject(d) || !SE_DECIDEN.includes(d.fuente) || carpetaDe(d.fuente) !== m[1] || d.id !== m[2] || !CYCLE.ACCIONES.includes(d.accion)) return null;
+    return { clave: `${d.fuente}/${d.id}`, accion: d.accion, quien: typeof d.quien === 'string' ? d.quien : null, el: DIA.test(String(d.el || '')) ? d.el : null };
+  }
+
+  /** Un envío con número: el mismo número no se corre dos veces, y cómo terminó queda para preguntarlo. */
+  function porNumero(id, correr) {
+    const t = ahora();
+    for (const [k, v] of envios) if (t - v.t > VIGENCIA_ENVIO_MS) envios.delete(k);
+    if (!id) return correr();
+    const previo = envios.get(id);
+    if (previo) return previo.promesa;
+    const e = { t, estado: 'en_curso', resultado: null, promesa: null };
+    e.promesa = Promise.resolve().then(correr).then((res) => { e.estado = 'listo'; e.resultado = res; return res; }, (err) => { envios.delete(id); throw err; });
+    envios.set(id, e);
+    return e.promesa;
   }
 
   /** Los mensajes de la casa, en el idioma del pedido (como la Configuración). */
@@ -557,7 +736,22 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         const e = await defensaDeEscritura(cfg, ctx);
         if (e.error) return e.error;
         const idioma = views.idiomaDe(ctx);
-        return enIdioma(await confirmar(e.body, ctx, idioma), idioma);
+        const id = isObject(e.body) && hasOwn(e.body, 'envio') ? e.body.envio : null;
+        if (id !== null && (typeof id !== 'string' || !ENVIO.test(id))) return json(400, { ok: false, message: T(idioma, 'hallazgos.pedidoInvalido') });
+        // la respuesta se arma en el idioma de quien pregunta; lo guardado, en el de la casa
+        return enIdioma(await porNumero(id, () => confirmar(e.body, ctx, idioma)), idioma);
+      },
+    },
+    {
+      method: 'GET', path: '/api/hallazgos/envio', needs: solo, handler: (ctx) => {
+        const id = ctx.url && ctx.url.searchParams.get('id');
+        if (typeof id !== 'string' || !ENVIO.test(id)) return json(400, { ok: false, message: T(views.idiomaDe(ctx), 'hallazgos.pedidoInvalido') });
+        const e = envios.get(id);
+        if (!e || ahora() - e.t > VIGENCIA_ENVIO_MS) return json(200, { estado: 'desconocido' });
+        if (e.estado !== 'listo') return json(200, { estado: 'en_curso' });
+        let resultado = null;
+        try { resultado = JSON.parse(e.resultado.cuerpo); } catch { /* sin cuerpo legible: se dice listo sin detalle */ }
+        return json(200, { estado: 'listo', resultado });
       },
     },
     { method: 'GET', path: '/hallazgos/cliente.js', needs: solo, handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CLIENTE }) },
@@ -565,7 +759,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 }
 
 // El cliente: marcar Archivar o Arreglar en cada tarjeta (se recuerda en el navegador), seguir las recomendaciones y
-// enviar todo junto. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» sin recargar.
+// enviar todo junto. Sin «Enviar para aprobar» no se escribe nada. Lo enviado pasa a «Esperando aprobación» o a «Ya
+// decididas» sin recargar, y cada número de la pantalla se recuenta.
 const CLIENTE = `(function () {
   var s = document.getElementById('hallazgos');
   var barra = s && s.querySelector('.m-barra');
@@ -591,7 +786,8 @@ const CLIENTE = `(function () {
     barra.querySelector('.m-cuenta').textContent = n === 1 ? t('elegida-una') : t('elegidas').replace('{n}', n);
     barra.querySelector('.m-enviar').disabled = n === 0 || enviando;
     // mientras se envía no se cambia nada: otra elección abriría un segundo pedido con las mismas fichas
-    Array.prototype.forEach.call(s.querySelectorAll('button[data-accion], .m-seguir, .m-borrar'), function (b) { b.disabled = enviando; });
+    Array.prototype.forEach.call(s.querySelectorAll('button[data-accion], .m-borrar'), function (b) { b.disabled = enviando; });
+    barra.querySelector('.m-seguir').disabled = enviando || !hayRecomendadas;
     // la barra aparece cuando hay algo que enviar o una recomendación para seguir
     barra.hidden = n === 0 && !hayRecomendadas && !barra.querySelector('.m-estado').textContent;
     guardar();
@@ -615,6 +811,57 @@ const CLIENTE = `(function () {
     if (c) c.parentNode.removeChild(c);
     delete elecciones[k];
     hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
+    recontar();
+  }
+  // los números de la pantalla cuentan lo que sigue esperando: el título, el subtítulo de cada fuente, la pestaña,
+  // «Seguir las recomendaciones» y «Ya decididas»; sin nada por decidir, la frase de la lista vacía
+  function recontar() {
+    var toca = s.querySelector('.m-toca');
+    if (!toca) return;
+    var n = toca.querySelectorAll('article[data-ficha]').length;
+    var h2 = toca.querySelector('h2[data-t]');
+    if (h2) h2.textContent = h2.getAttribute('data-t').replace('{n}', n);
+    if (!n && !toca.querySelector('.q-note')) { var vacio = document.createElement('p'); vacio.className = 'q-note'; vacio.textContent = toca.getAttribute('data-t-vacio') || ''; toca.appendChild(vacio); }
+    var seguir = barra.querySelector('.m-seguir');
+    seguir.textContent = (seguir.getAttribute('data-t') || '').replace('{n}', s.querySelectorAll('article[data-recomendada]').length);
+    var ya = s.querySelector('.m-decididas');
+    if (ya) {
+      var cuantas = ya.querySelectorAll('li').length;
+      var sum = ya.querySelector('summary[data-t]');
+      if (sum) sum.textContent = sum.getAttribute('data-t').replace('{n}', cuantas);
+      ya.hidden = !cuantas;
+    }
+    Array.prototype.forEach.call(toca.querySelectorAll('h3.m-sub[data-fuente]'), function (h3) {
+      var f = h3.getAttribute('data-fuente');
+      var m = toca.querySelectorAll('article[data-ficha^="' + f + '/"]').length;
+      if (m) h3.textContent = h3.getAttribute('data-t').replace('{n}', m);
+      else h3.parentNode.removeChild(h3);
+    });
+    var tab = document.querySelector('nav.tabs a[href="/mantenimiento"]');
+    var txt = tab && tab.lastChild;
+    if (txt && txt.nodeType === 3) txt.nodeValue = txt.nodeValue.replace(/\\s*\\(\\d+\\)$/, '') + (n ? ' (' + n + ')' : '');
+  }
+  // lo decidido pasa a «Ya decididas» con lo que contestó el sitio: qué, cuándo y quién; la noche lo aplica
+  function aDecididas(lista) {
+    var ya = s.querySelector('.m-decididas');
+    var ul = ya && ya.querySelector('ul');
+    (lista || []).forEach(function (x) {
+      var k = String(x.clave || '');
+      var c = s.querySelector('article[data-ficha="' + k.replace(/"/g, '') + '"]');
+      if (!c) return;
+      if (ul) {
+        var viejo = ul.querySelector('li[data-ficha="' + k.replace(/"/g, '') + '"]');
+        if (viejo) ul.removeChild(viejo);
+        var li = document.createElement('li'); li.setAttribute('data-ficha', k);
+        var b = document.createElement('b'); b.textContent = c.querySelector('.m-nombre').textContent; li.appendChild(b);
+        var el = /^\\d{4}-\\d{2}-\\d{2}$/.test(x.el || '') ? x.el.slice(8, 10) + '/' + x.el.slice(5, 7) : '';
+        var sp = document.createElement('span'); sp.className = 'm-tarea';
+        sp.textContent = [t(x.accion) || '?', el, x.quien || '', ya.getAttribute('data-t-esta-noche') || ''].filter(Boolean).join(' · ');
+        li.appendChild(document.createTextNode(' ')); li.appendChild(sp);
+        ul.insertBefore(li, ul.firstChild);
+      }
+      quitar(k);
+    });
   }
   function aEspera(j, enviadas, acciones) {
     var bloque = s.querySelector('.m-espera');
@@ -638,49 +885,103 @@ const CLIENTE = `(function () {
     g.appendChild(ul); bloque.appendChild(g);
     bloque.querySelector('h2').textContent = t('espera-titulo').replace('{n}', bloque.querySelectorAll('li').length);
   }
+  // Un envío lleva su número: si la conexión se corta o tarda de más (el sitio dormido tarda en despertar, y lo que está
+  // delante puede cortar la espera mientras el envío sigue), la pantalla pregunta cómo terminó en vez de quedarse colgada.
+  var LENTO_MS = 15000, TOPE_MS = 150000, CADA_MS = 4000, PREGUNTAS = 45;
+  function terminar(j, ks, acciones) {
+    var estado = barra.querySelector('.m-estado');
+    enviando = false;
+    estado.textContent = '';
+    // primero lo decidido, que se lleva su título; después lo demás que salió de la lista
+    aDecididas(j && j.decididas);
+    // las que el sitio salteó ya no están por decidir (decididas en otro lado, o ya en un pedido): salen de la lista
+    ((j && j.omitidas) || []).forEach(quitar);
+    // nada quedaba por enviar: lo elegido ya estaba decidido o en un pedido; recargar traería la misma foto vieja
+    if (j && j.codigo === 'nada_que_enviar') { ks.forEach(quitar); estado.textContent = t('ya-enviado'); pintar(); return; }
+    if (j && j.ok && j.demo && j.loQuePasaria) {
+      estado.appendChild(document.createTextNode(t('demo') + ' '));
+      (j.loQuePasaria.archivos || []).forEach(function (x) { var c = document.createElement('code'); c.textContent = String(x.archivo || ''); estado.appendChild(c); estado.appendChild(document.createTextNode(' ')); });
+      pintar();
+      return;
+    }
+    // ya estaba hecho: no es un error, la ficha sale y se dice
+    if (j && j.codigo === 'ya_decidida') { estado.textContent = j.message || t('ya-enviado'); pintar(); return; }
+    if (j && j.codigo === 'aplicado') {
+      (j.enviadas || ks).forEach(quitar);
+      estado.textContent = t('aplicado');
+      pintar();
+      return;
+    }
+    // un pedido abierto con lo mismo: ya está esperando aprobación
+    if (j && (j.ok || (j.codigo === 'pedido_abierto' && j.enlace))) {
+      aEspera(j, j.enviadas || ks, acciones);
+      estado.textContent = t('ok').replace('{numero}', j.numero || '');
+      pintar();
+      return;
+    }
+    estado.textContent = t('error').replace('{motivo}', (j && j.message) || '');
+    pintar();
+  }
+  // sin respuesta del envío: el sitio sabe cómo terminó por su número; si no lo sabe (se reinició), la lista dice si las
+  // elegidas ya no esperan decisión
+  function averiguar(id, ks, acciones, n) {
+    var estado = barra.querySelector('.m-estado');
+    estado.textContent = t('verificando');
+    fetch('/api/hallazgos/envio?id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (e) {
+        if (e && e.estado === 'listo' && e.resultado) { terminar(e.resultado, ks, acciones); return; }
+        if (e && e.estado === 'desconocido') { porLaLista(ks); return; }
+        if (n >= PREGUNTAS) { enviando = false; estado.textContent = t('no-llego'); pintar(); return; }
+        setTimeout(function () { averiguar(id, ks, acciones, n + 1); }, CADA_MS);
+      })
+      .catch(function () {
+        if (n >= PREGUNTAS) { enviando = false; estado.textContent = t('no-llego'); pintar(); return; }
+        setTimeout(function () { averiguar(id, ks, acciones, n + 1); }, CADA_MS);
+      });
+  }
+  function porLaLista(ks) {
+    var estado = barra.querySelector('.m-estado');
+    fetch('/api/hallazgos', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) {
+        enviando = false;
+        if (!m || !Array.isArray(m.toca)) { estado.textContent = t('no-llego'); pintar(); return; }
+        var siguen = {};
+        m.toca.forEach(function (x) { siguen[x.fuente + '/' + x.id] = true; });
+        var faltan = ks.filter(function (k) { return siguen[k]; });
+        if (faltan.length) { estado.textContent = t('no-llego'); pintar(); return; }
+        aDecididas((m.decididas || []).filter(function (x) { return ks.indexOf(x.fuente + '/' + x.id) >= 0; }).map(function (x) { return { clave: x.fuente + '/' + x.id, accion: x.accion, quien: x.quien, el: x.el }; }));
+        ks.forEach(quitar);
+        estado.textContent = t('ya-enviado');
+        pintar();
+      })
+      .catch(function () { enviando = false; estado.textContent = t('no-llego'); pintar(); });
+  }
   barra.querySelector('.m-enviar').addEventListener('click', function () {
     var ks = Object.keys(elecciones);
     if (!ks.length) return;
     var estado = barra.querySelector('.m-estado');
-    var boton = barra.querySelector('.m-enviar');
     enviando = true; estado.textContent = t('enviando'); pintar();
     var acciones = {};
     ks.forEach(function (k) { acciones[k] = elecciones[k]; });
     var decisiones = ks.map(function (k) { var i = k.indexOf('/'); return { fuente: k.slice(0, i), id: k.slice(i + 1), accion: acciones[k] }; });
-    fetch('/api/hallazgos/confirmar', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-site-token': s.getAttribute('data-token') || '' }, body: JSON.stringify({ decisiones: decisiones }) })
-      .then(function (r) { return r.json().catch(function () { return { ok: false, message: String(r.status) }; }); })
-      .then(function (j) {
-        enviando = false;
-        estado.textContent = '';
-        // las que el sitio salteó ya no están por decidir (decididas en otro lado, o ya en un pedido): salen de la lista
-        ((j && j.omitidas) || []).forEach(quitar);
-        if (j && j.codigo === 'nada_que_enviar') { location.reload(); return; }
-        if (j && j.ok && j.demo && j.loQuePasaria) {
-          estado.appendChild(document.createTextNode(t('demo') + ' '));
-          (j.loQuePasaria.archivos || []).forEach(function (x) { var c = document.createElement('code'); c.textContent = String(x.archivo || ''); estado.appendChild(c); estado.appendChild(document.createTextNode(' ')); });
-          pintar();
-          return;
-        }
-        if (j && j.codigo === 'aplicado') {
-          (j.enviadas || ks).forEach(quitar);
-          estado.textContent = j.message || '';
-          pintar();
-          return;
-        }
-        // un pedido abierto con lo mismo: ya está esperando aprobación
-        if (j && (j.ok || (j.codigo === 'pedido_abierto' && j.enlace))) {
-          aEspera(j, j.enviadas || ks, acciones);
-          estado.textContent = t('ok').replace('{numero}', j.numero || '');
-          pintar();
-          return;
-        }
-        estado.textContent = t('error').replace('{motivo}', (j && j.message) || '');
-        pintar();
+    var id = 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    var corte = typeof AbortController === 'function' ? new AbortController() : null;
+    var lento = setTimeout(function () { if (enviando) estado.textContent = t('lento'); }, LENTO_MS);
+    var tope = setTimeout(function () { if (corte) corte.abort(); }, TOPE_MS);
+    var listo = function () { clearTimeout(lento); clearTimeout(tope); };
+    fetch('/api/hallazgos/confirmar', { method: 'POST', credentials: 'same-origin', signal: corte ? corte.signal : undefined, headers: { 'content-type': 'application/json', 'x-site-token': s.getAttribute('data-token') || '' }, body: JSON.stringify({ envio: id, decisiones: decisiones }) })
+      .then(function (r) {
+        listo();
+        // lo que está delante del sitio cortó la espera (un 502 o 504, sin el JSON del sitio): el envío puede seguir
+        return r.json().catch(function () { return null; });
       })
-      .catch(function () { enviando = false; estado.textContent = t('error').replace('{motivo}', ''); pintar(); });
+      .then(function (j) { if (j) terminar(j, ks, acciones); else averiguar(id, ks, acciones, 0); })
+      .catch(function () { listo(); averiguar(id, ks, acciones, 0); });
   });
   pintar();
 })();
 `;
 
-module.exports = { crearRutas, CLIENTE, CARPETAS_VIVAS };
+module.exports = { crearRutas, crearDecididas, CLIENTE, CARPETAS_VIVAS };

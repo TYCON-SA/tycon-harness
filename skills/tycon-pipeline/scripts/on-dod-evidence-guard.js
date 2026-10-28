@@ -77,7 +77,7 @@ function handle(event) {
 
   // Override one-shot: el permiso presente Y autorizado por la persona → permitir UNA vez, consumir, loguear. Crear el
   // archivo solo no alcanza (lo puede crear el agente con la herramienta de escribir archivos, que el freno no ve).
-  const via = fs.existsSync(FLAG) ? permisoAutorizado(event) : null;
+  const { via, paso } = fs.existsSync(FLAG) ? permisoAutorizado(event) : { via: null };
   if (via) {
     try { fs.unlinkSync(FLAG); } catch { /* ignore */ }
     appendBypassLog({ type: 'DOD_EVIDENCE_MANUAL_WRITE', file: filePath, sessionId: event.session_id || null, via });
@@ -90,6 +90,9 @@ function handle(event) {
   }
 
   anotar('escritura-manual', 'bloqueo', filePath);
+  if (paso && paso.reintento) {
+    return { block: ['🚨 BLOQUEADO — el permiso de escribir la evidencia DoD a mano no se pudo verificar', '', `  File: ${filePath}`, '', paso.cartel].join('\n') + '\n' };
+  }
   return {
     block: [
       '🚨 BLOQUEADO — el agente no escribe evidencia DoD a mano (provenance, auditoría 2026-06-09)',
@@ -106,6 +109,7 @@ function handle(event) {
       'lo decide la persona, no el agente: crea el permiso de una escritura en su terminal y lo dice en su',
       'mensaje («autorizo ALLOW_DOD_EVIDENCE_WRITE»). El permiso se consume y queda en bypass.log.',
       ...(fs.existsSync(FLAG) ? ['', 'El permiso existe, pero la persona no lo autorizó en esta sesión: no se consume.'] : []),
+      ...(paso && paso.cartel ? [paso.cartel] : []),
     ].join('\n') + '\n',
   };
 }
@@ -115,7 +119,8 @@ const VENTANA_MS = 30 * 60 * 1000;
  * ¿Quién autorizó el permiso? 'freno' si `frenos.jsonl` tiene la constancia que escribe el freno de seguridad al dejar
  * crearlo con la frase (ESC-C5, escape ALLOW_DOD_EVIDENCE_WRITE) de esta misma sesión, dentro de los 30 minutos antes
  * del archivo (se anota antes de que el comando corra); 'persona' si la persona escribió «autorizo
- * ALLOW_DOD_EVIDENCE_WRITE» en esta conversación (lo creó en su terminal); null si ninguna.
+ * ALLOW_DOD_EVIDENCE_WRITE» en esta conversación (lo creó en su terminal); null si ninguna. Vuelve `{ via, paso? }`:
+ * `paso` es lo que la búsqueda de la frase dijo del pedido que se juzga cuando no lo ubicó (escape-ok.js `cartelDelPaso`).
  */
 function permisoAutorizado(event) {
   const sid = event.session_id;
@@ -129,15 +134,19 @@ function permisoAutorizado(event) {
         if (x.sesion !== sid || x.escape !== 'ALLOW_DOD_EVIDENCE_WRITE') continue;
         const t = Date.parse(x.ts);
         // un minuto de margen: la constancia y el archivo se escriben casi juntos
-        if (t <= creado + 60000 && t >= creado - VENTANA_MS) return 'freno';
+        if (t <= creado + 60000 && t >= creado - VENTANA_MS) return { via: 'freno' };
       }
     } catch { /* sin registro, se mira la frase */ }
   }
   try {
-    const { escapeAutorizado } = require('./lib/escape-ok.js');
-    if (escapeAutorizado({ variable: 'ALLOW_DOD_EVIDENCE_WRITE', sesion: sid, pedido: event.tool_use_id }).ok) return 'persona';
-  } catch { /* sin la biblioteca no hay frase que buscar */ }
-  return null;
+    const { escapeAutorizado, cartelDelPaso } = require('./lib/escape-ok.js');
+    const r = escapeAutorizado({ variable: 'ALLOW_DOD_EVIDENCE_WRITE', sesion: sid, pedido: event.tool_use_id });
+    if (r.ok) return { via: 'persona' };
+    return { via: null, paso: { reintento: r.pasoNoUbicado === true, cartel: cartelDelPaso(r) } };
+  } catch (e) {
+    // sin la biblioteca no hay frase que buscar: se dice eso, no «el agente no escribe evidencia»
+    return { via: null, paso: { reintento: true, cartel: `falló la búsqueda de la frase (${e.message}): el permiso no se puede verificar. Avisale a la persona.` } };
+  }
 }
 
 module.exports = { handle };

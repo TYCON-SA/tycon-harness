@@ -199,7 +199,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
       return { status: L.STATUS.measured, reason: null };
     }
     const hooks0 = hookCmds();
-    let cloneHash0 = dirHash(clone);
+    let cloneHash0;
     rec.fact('before', { hooks: hooks0.length, hooks_naming_clone: hooks0.filter((c) => namesDir(c, clone)).length, place: linkKind(placeLink), skills: linkKind(skillsLink) });
     // T43: lo PERSONAL del dev en la carpeta vieja —una skill y un agente que no son del arnés
     // ni de terceros— tiene que seguir activo después de la mudanza. Sólo si la carpeta vieja es una carpeta real (en esta

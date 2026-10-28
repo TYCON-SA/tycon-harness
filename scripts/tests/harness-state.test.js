@@ -3387,7 +3387,7 @@ function optionsHideWindow(call) {
     if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
     if ('([{'.includes(ch)) depth++;
     else if (')]}'.includes(ch)) depth--;
-    else if (ch === ',' && depth === 0) { last = inner.slice(start, i); start = i + 1; }
+    else if (ch === ',' && depth === 0) start = i + 1;
   }
   last = inner.slice(start).trim();
   if (!last.startsWith('{')) return false;

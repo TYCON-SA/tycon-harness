@@ -215,10 +215,11 @@ test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — freno de
     assert.strictEqual(r.status, 2, `${camino}: el npm test del segundo renglón tenía que frenar · ${r.stderr.slice(0, 200)}`);
     r = correr('test-scope-guard-pre.sh', { command: 'ls -la\npwd', bin });
     assert.strictEqual(r.status, 0, `${camino}: un comando de dos renglones no tenía que frenar · ${r.stderr.slice(0, 200)}`);
-    // el consejo de PowerShell sale sólo si tool_name se leyó como PowerShell
-    r = correr('test-scope-guard-pre.sh', { tool: 'PowerShell', command: 'npm test', bin });
-    assert.strictEqual(r.status, 2, `${camino}: npm test tenía que frenar`);
-    assert.match(r.stderr, /En PowerShell/, `${camino}: tool_name no se leyó como PowerShell · ${r.stderr.slice(0, 300)}`);
+    // la regla de los separadores de PowerShell se prende sólo si tool_name se leyó como PowerShell
+    r = correr('test-scope-guard-pre.sh', { tool: 'PowerShell', command: 'Get-ChildItem\fC:\\x', bin });
+    assert.strictEqual(r.status, 2, `${camino}: el \\f en PowerShell tenía que frenar`);
+    assert.match(r.stderr, /CMD-C1/, `${camino}: tool_name no se leyó como PowerShell · ${r.stderr.slice(0, 300)}`);
+    assert.strictEqual(correr('test-scope-guard-pre.sh', { command: 'Get-ChildItem\fC:\\x', bin }).status, 0, `${camino}: en Bash el \\f no frena`);
   }
 });
 

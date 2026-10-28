@@ -45,7 +45,6 @@ const PIPELINE = path.join(ROOT, 'pipelines', 'azure-pipelines-windows.yml');
 const L = require(path.join(DIR, 'lab.js'));
 // el lugar del arnés y el nombre viejo: el instalador de juguete deja lo que deja el de verdad
 const PLACE = require(path.join(__dirname, '..', 'setup', 'harness', 'place.js'));
-const { PLACE_NAME, LEGACY_PLACE_NAME } = PLACE;
 const inventory = require(path.join(DIR, 'inventory.js'));
 const count = require(path.join(DIR, 'count-hooks.js'));
 const run = require(path.join(DIR, 'run.js'));

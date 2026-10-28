@@ -153,7 +153,7 @@ test('T17 AdoMarkActive_TransicionaYMarca @story-8.93 @ac-8 — la capa pasa el 
   assert.notStrictEqual(E.leer('s-t17d').adoMarkedActive, true);
   // una historia que no se puede leer no es «no tiene pedido»: sale 1 diciéndolo, sin llamar a la capa
   if (process.platform !== 'win32' && process.getuid && process.getuid() !== 0) {
-    ({ E, r } = caso('s-t17e', 'New'));
+    ({ E } = caso('s-t17e', 'New'));
     const st = E.leer('s-t17e').storyPath;
     fs.chmodSync(st, 0o000);
     try {

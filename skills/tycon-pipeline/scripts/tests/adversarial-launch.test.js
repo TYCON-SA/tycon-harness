@@ -38,7 +38,6 @@ const MARKER = path.join(SCRIPTS, 'marker.js');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const WFLITE = path.join(SCRIPTS, 'workflow-lite.js');
 const WORKFLOW = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
-const CONFIG = path.join(RAIZ, 'scripts', 'lib', 'tycon-config.js');
 const FOTO = path.join(__dirname, 'fixtures', 'deep-review-gate-snapshot.json');
 const VENTANA = path.join(SCRIPTS, 'lib', 'sliding-window.js');
 
