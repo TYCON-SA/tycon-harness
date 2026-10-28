@@ -32,7 +32,7 @@
         {
           "id": "js-sin-destino-ni-instalado-sale-rojo-nombrandolo",
           "type": "must-run",
-          "__doc": "El atajo .js con el destino borrado y sin arnés instalado: rojo, nombrando el destino.",
+          "__doc": "El atajo .js con el destino borrado y sin arnés instalado: rojo, nombrando el destino. En Windows node lo nombra con barras invertidas (`scripts\\lib\\destino.js`): las dos formas valen.",
           "files": {
             "map.json": "{\n \"__about\": \"mapa de juguete del caso\",\n \"entries\": [\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.js\",\n   \"new\": \"scripts/lib/destino.js\",\n   \"callers\": [\n    \"products\"\n   ]\n  },\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.sh\",\n   \"new\": \"scripts/lib/destino.sh\",\n   \"callers\": [\n    \"products\"\n   ]\n  }\n ]\n}\n",
             "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nexport HOME=\"$FIXTURE/home\" TYCON_GUIDES_DIR=\nnode r/scripts/viejo.js a b\n"
@@ -49,7 +49,7 @@
           "expect": {
             "exit": 1,
             "stderr_re": [
-              "scripts/lib/destino\\.js"
+              "scripts[\\\\/]lib[\\\\/]destino\\.js"
             ],
             "stdout_not_re": [
               "DESTINO-OK"
