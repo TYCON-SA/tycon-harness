@@ -699,7 +699,13 @@ else
   # el piso del instalador: el job installer-floor instala Node 22, una vez y sólo ahí
   altered "el piso del instalador con otro Node" "node-matrix" 'return t.replace(/node-version: 22$/m, "node-version: 20");'
   altered "el piso del instalador fuera de su job" "node-matrix" 'return t.replace(/node-version: \$\{\{ matrix\.node \}\}/, "node-version: 22");'
-  altered "el chequeo final no espera al piso del instalador" "aggregate-job" 'return t.replace("needs: [checks, installer-floor]", "needs: [checks]");'
+  altered "el chequeo final no espera al piso del instalador" "aggregate-job" 'return t.replace("needs: [checks, installer-floor, windows]", "needs: [checks, windows]");'
+  # el ensayo de Windows: el job, en windows-latest, con los cuatro escenarios, y el chequeo final esperándolo
+  altered "sin el job windows" "windows" 'return t.replace(/^  windows:\n(?:(?:    .*)?\n)*/m, "");'
+  altered "el ensayo de Windows sin un escenario" "windows" 'return t.replace("scenario: [all, waiver, old-node, npx]", "scenario: [all, waiver, old-node]");'
+  altered "el ensayo de Windows en otra máquina" "windows" 'return t.replace("runs-on: windows-latest", "runs-on: ubuntu-latest");'
+  altered "el ensayo de Windows que no corre el guion" "windows" 'return t.replace(/node scripts\/ci\/windows-rehearsal\.js /, "node scripts/tests/windows/rehearse.js ");'
+  altered "el chequeo final no espera al ensayo de Windows" "aggregate-job" 'return t.replace("needs: [checks, installer-floor, windows]", "needs: [checks, installer-floor]");'
   altered "una parte fija fuera del piso del instalador" "parts" 'return t.replace(/TYCON_PUBLIC_CI_PART: \$\{\{ matrix\.part \}\}/, "TYCON_PUBLIC_CI_PART: installer-floor");'
   altered "con un Node fijo" "node-matrix" 'return t.replace(/node-version: .*$/m, "node-version: 22");'
   altered "sin --range en el pull request" "range base-controls" 'return t.replace(/ --range "[^"]*"/g, "");'
@@ -714,7 +720,7 @@ else
   altered "con el job public-ci que no mira los resultados" "aggregate-job" 'return t.replace(/needs\.\*\.result/, "needs.*.outputs");'
   altered "con un job que deja pasar su rojo" "aggregate-job" 'return t.replace(/^(    runs-on: .*)$/m, "$1\n    continue-on-error: true");'
   # lo que el control no encuentra es rojo, nunca limpio: una regla cuyo bloque no existe no se da por cumplida
-  altered "sin on ni jobs" "after-queue aggregate-job base-controls clean-machine fetch-depth node-matrix parts permissions range triggers" 'return "name: x\n";'
+  altered "sin on ni jobs" "after-queue aggregate-job base-controls clean-machine fetch-depth node-matrix parts permissions range triggers windows" 'return "name: x\n";'
   altered "sin el bloque de la matriz" "node-matrix parts" 'return t.replace(/^    strategy:\n(?:      .*\n)+/m, "");'
   altered "con la lista de Node fuera de matrix" "node-matrix" 'return t.replace(/^      matrix:$/m, "      versions:");'
   altered "con matrix fuera de strategy" "node-matrix" 'return t.replace(/^    strategy:$/m, "    defaults:");'
@@ -742,7 +748,7 @@ else
   altered "clase 3: un job salteado cuenta como aprobado" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || [ \"${r}\" = \"skipped\" ] || exit 1");'
   altered "clase 4: un exclude en la matriz" "" 'return t.replace(/^(        node: \[24\])$/m, "$1\n        exclude:\n          - node: 24");'
   altered "clase 5: un filtro bajo pull_request" "" 'return t.replace(/^  pull_request:$/m, "  pull_request:\n    types: [closed]");'
-  altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks, installer-floor]", "needs: [checks, installer-floor, extra]");'
+  altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks, installer-floor, windows]", "needs: [checks, installer-floor, windows, extra]");'
   altered "clase 9: un if propio en el paso del job public-ci" "" 'return t.replace(/^(      - name: Todos los jobs terminaron bien)$/m, "$1\n        if: github.event_name == \x27push\x27");'
   altered "clase 10: la llamada escrita de otra forma" "" 'return t.replace(/bash scripts\/ci\/public-ci\.sh --clean-machine$/m, "bash ./scripts/ci/public-ci.sh");'
   altered "clase 11: el rojo de la llamada se pierde con || true" "" 'return t.replace(/(public-ci\.sh --clean-machine)$/m, "$1 || true");'
@@ -757,7 +763,7 @@ else
   altered "clase 17: fetch-depth 0 fuera de with" "" 'return t.replace("        with:\n          fetch-depth: 0\n          persist-credentials: false\n", "        env:\n          fetch-depth: 0\n");'
   altered "clase 20: exit 1 sólo dentro de un echo" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || echo \"exit 1\"");'
   # lo que el pase dejó «a verificar aparte» (otra regla u otro mecanismo que el de su clase)
-  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks, installer-floor]", "needs: [checks, installer-floor, extra]");'
+  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks, installer-floor, windows]", "needs: [checks, installer-floor, windows, extra]");'
   altered "aparte: la condición del pull request invertida" "" 'return t.replace("= \"pull_request\" ]", "!= \"pull_request\" ]");'
   altered "aparte: un if en el paso que corre el guion" "" 'return t.replace(/^(      - name: Los pasos de la CI pública que le tocan a esta parte)$/m, "$1\n        if: ${{ false }}");'
   altered "aparte: sin persist-credentials false en el checkout" "" 'return t.replace(/^          persist-credentials: false\n/m, "");'
@@ -890,6 +896,14 @@ else
   node "${CHECK}" > "${T}/check.out" 2>&1; is "T22 sin archivo sale 2" 2 "$?"
   : > "${T}/alt/empty.yml"; node "${CHECK}" "${T}/alt/empty.yml" > "${T}/check.out" 2>&1; is "T22 un archivo vacío sale 2" 2 "$?"
 fi
+
+# T27 · el guion del ensayo de Windows: un escenario que no es de la lista, o sin carpeta, es un error de uso (2), y no
+#       arma nada. Los cuatro de la lista son los que exige la regla `windows` del control.
+REH="${ROOT}/scripts/ci/windows-rehearsal.js"
+node "${REH}" --scenario portable --work "${T}/reh" > "${T}/reh.out" 2>&1; is "T27 un escenario fuera de la lista sale 2" 2 "$?"
+node "${REH}" --scenario all > "${T}/reh.out" 2>&1; is "T27 sin --work sale 2" 2 "$?"
+if [ -e "${T}/reh" ]; then no "T27 con un error de uso armó la carpeta"; else ok "T27 con un error de uso no armó nada"; fi
+is "T27 los escenarios del guion" "all,waiver,old-node,npx" "$(node -e 'process.stdout.write(require(process.argv[1]).SCENARIOS.join(","))' "${REH}")"
 
 echo ""
 if [ "${FAILS}" -eq 0 ] && [ "${TOTAL}" -gt 0 ]; then echo "✅ public-ci.test: ${TOTAL} verificaciones verdes"; exit 0; fi

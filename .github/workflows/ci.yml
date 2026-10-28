@@ -30,6 +30,8 @@
 #     instante, verdes, con una línea que lo dice. La corrida entera va en la cola (merge_group) y en un push a main que
 #     no hizo la cola: un pedido no la paga dos veces (unos 20 minutos cada una). Lo que entra por la cola la pasó antes;
 #     lo que un administrador mergea salteándola la corre después, en main, sin que nada la corte (ver `concurrency`);
+#   · el ensayo de Windows (`windows`): un trabajo windows-latest por escenario, los cuatro de
+#     scripts/ci/windows-rehearsal.js. Los escenarios y el job los exige la regla `windows` del control;
 #   · el último job se llama `public-ci` y es el ÚNICO chequeo que las reglas de la rama exigen. Tiene nombre estable a
 #     propósito: cambiárselo deja los merges esperando un chequeo que no llega nunca.
 #
@@ -151,6 +153,38 @@ jobs:
             echo "::endgroup::"
           done
 
+  # El ensayo de Windows sobre el árbol del pedido (scripts/ci/windows-rehearsal.js): el bundle de este checkout y
+  # `rehearse.js` encima, en un agente windows-latest, un escenario por trabajo y los cuatro a la vez. `all` es el alta y
+  # la actualización; `waiver`, las firmas del dueño por terminal; `old-node`, un Node más viejo que el piso; `npx`, el
+  # instalador por npx. Sin setup-node a propósito: se ensaya con el Node que trae la máquina, como un dev. Rojo es no
+  # haber podido ensayar, o que ningún paso midiera; lo que el ensayo encuentra va en el resumen de la corrida y no pone
+  # rojo el trabajo. En un pedido sale en verde sin ensayar (unos 12 minutos el más largo): corre en la cola de merge y
+  # en el push a main. El tope es el de Azure: si un paso se cuelga, cada uno corta en el suyo y el reporte llega a salir.
+  # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
+  windows:
+    name: Windows · ${{ matrix.scenario }}
+    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    runs-on: windows-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [all, waiver, old-node, npx]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: El ensayo de Windows de este escenario
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          WORK: ${{ runner.workspace }}\tycon-rehearsal
+        run: |
+          # en un pedido sale en verde sin ensayar: corre en la cola y en el push a main
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { Write-Output 'en un pedido el ensayo de Windows no corre: corre en la cola de merge'; exit 0 }
+          node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"
+          exit $LASTEXITCODE
+
   # El chequeo con nombre estable. Corre SIEMPRE (un job que depende de otro que falló se saltea, y un chequeo salteado
   # cuenta como aprobado): mira el resultado de cada job del que depende y falla si alguno no terminó bien. El resultado
   # de un job con matriz es uno solo para todas sus combinaciones: `success` sólo si TODAS (cada Node, cada parte)
@@ -158,7 +192,7 @@ jobs:
   # el push a main que hace la cola al entrar un pedido: ahí se saltea con los demás (la cola ya probó ese commit).
   public-ci:
     if: always() && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
-    needs: [checks, installer-floor]
+    needs: [checks, installer-floor, windows]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

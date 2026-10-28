@@ -193,9 +193,31 @@ const SHAPE = [
   '            tr \'\\r\' \' \' < "${f}" | sed -e \':a\' -e \'s/::/: :/\' -e \'ta\' -e \':b\' -e \'s/##/# #/\' -e \'tb\'',
   '            echo "::endgroup::"',
   '          done',
+  '  windows:',
+  '    name: Windows · ${{ matrix.scenario }}',
+  `    if: ${AFTER_QUEUE}`,
+  '    runs-on: windows-latest',
+  '    timeout-minutes: 150',
+  '    strategy:',
+  '      fail-fast: false',
+  '      matrix:',
+  '        scenario: [all, waiver, old-node, npx]',
+  '    steps:',
+  pinned('      - uses: ', 'actions/checkout'),
+  '        with:',
+  '          fetch-depth: 0',
+  '          persist-credentials: false',
+  '      - name: El ensayo de Windows de este escenario',
+  '        env:',
+  '          SCENARIO: ${{ matrix.scenario }}',
+  '          WORK: ${{ runner.workspace }}\\tycon-rehearsal',
+  '        run: |',
+  "          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { Write-Output 'en un pedido el ensayo de Windows no corre: corre en la cola de merge'; exit 0 }",
+  '          node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"',
+  '          exit $LASTEXITCODE',
   '  public-ci:',
   `    if: always() && (${AFTER_QUEUE})`,
-  '    needs: [checks, installer-floor]',
+  '    needs: [checks, installer-floor, windows]',
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 5',
   '    steps:',
@@ -670,6 +692,21 @@ const RULES = [
         return !cond || valueOf(cond.body) !== want;
       });
       return bad.length ? `el job ${bad.map((l) => `\`${unquote(l.body.replace(/\s*:.*$/, ''))}\``).join(', ')} no lleva \`if: ${AFTER_QUEUE}\` (en \`public-ci\`, detrás de \`always() && \`): se saltea sólo el push a main de la cola, que ya probó ese commit (línea ${at(bad)})` : null;
+    },
+  },
+  {
+    // el ensayo de Windows: un trabajo windows-latest por escenario, los cuatro que corre scripts/ci/windows-rehearsal.js
+    id: 'windows',
+    check(lines) {
+      const job = jobBlock(lines, 'windows');
+      if (!job.length) return 'falta el job `windows`, el ensayo de Windows sobre el árbol del pedido';
+      if (!job.some((l) => l.body === 'runs-on: windows-latest')) return 'el job `windows` corre en `windows-latest`';
+      const decl = job.filter((l) => /^scenario\s*:/.test(l.body));
+      const want = require('./windows-rehearsal.js').SCENARIOS;
+      const have = decl.length === 1 ? listAt(lines, lines.indexOf(decl[0])) : [];
+      if (have.join(',') !== want.join(',')) return `el job \`windows\` ensaya los escenarios ${want.join(', ')}, todos y una vez (uno que falta queda sin ensayar), y dice: ${have.join(', ') || 'nada'}${decl.length ? ` (línea ${at(decl)})` : ''}`;
+      if (!job.some((l) => /^node scripts\/ci\/windows-rehearsal\.js --scenario "\$env:SCENARIO" /.test(l.body))) return 'el job `windows` corre `node scripts/ci/windows-rehearsal.js` con el escenario de la matriz';
+      return null;
     },
   },
   {

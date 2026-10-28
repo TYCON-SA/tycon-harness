@@ -69,8 +69,9 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   if (fs.existsSync(x.firmas)) rec.finding('waiver:agent-signed', 'waiver', 'con la marca y las respuestas por la entrada, el comando FIRMÓ: el candado no frena al agente');
   else if (a.exit !== 2 || !/BLOQUEADO/.test(String(a.stderr || ''))) rec.finding('waiver:agent-not-blocked-clearly', 'waiver', `no firmó, pero no frenó con el candado (salida ${a.exit}): ${String(a.stderr || '').slice(0, 200)}`);
 
-  // 2 · sin persona: la ventana se abre, nadie escribe, vence
-  const b = L.run(process.execPath, [MARKER, 'runtime-waiver', x.story], {
+  // 2 · sin persona: la ventana se abre, nadie escribe, vence. Va con `--terminal`: sin él, el comando lo toma por una
+  //     sesión y pide el ok en la ventana de permiso, que no abre ninguna consola
+  const b = L.run(process.execPath, [MARKER, 'runtime-waiver', x.story, '--terminal'], {
     env: Object.assign({}, env, { TYCON_WAIVER_TIMEOUT_S: '25' }), timeoutMs: 180000,
   });
   const dice = String(b.stderr || '');
