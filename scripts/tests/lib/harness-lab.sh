@@ -367,6 +367,9 @@ _harness_lab_machine() {
   printf '{\n  "hooks": {}\n}\n' > "$LAB_HOME/.claude/settings.json"
   : > "$LAB_HOME/.claude/CLAUDE.md"
   export REAL_HOME="${REAL_HOME:-$HOME}" HOME="$LAB_HOME" TMPDIR="$LAB_TMP"
+  # el Python de Xcode guarda su caché en ~/Library/Caches/com.apple.python: sin esto, cualquier python3 cambia la HOME
+  # del laboratorio y una prueba de «no escribió nada» da rojo en esa Mac
+  export PYTHONDONTWRITEBYTECODE=1
   harness_lab_no_auto_maintenance
   # en Windows, Node saca la carpeta de la persona de USERPROFILE y no de HOME: sin esto, `harness.js` corrido desde el
   # laboratorio en Git Bash trabajaría sobre la máquina DE VERDAD (la ida y la vuelta se miden en Windows)
