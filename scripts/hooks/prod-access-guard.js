@@ -741,7 +741,11 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
         // los clientes de base porque ESO es lo que vigilan. Leerlas como si fueran un guion ajeno
         // hace que el freno se frene a sí mismo (2026-09-15).
         // (con el nombre de antes del renombre a inglés también: su reemplazo sigue en la carpeta vieja)
-        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|production-notice\.js|produccion-notice\.js)$/.test(abs);
+        // Se reconocen por el nombre Y por dónde viven (la instalación en /opt o el arnés de este mismo freno): un guion
+        // recién hecho en otra carpeta con el nombre de una pieza se lee igual que cualquiera.
+        const raizDelFreno = require('path').resolve(__dirname, '..', '..') + require('path').sep;
+        const esDelFreno = /(?:tycon-prod-sql|prod-access-guard\.js|node-shim\.sh|production-index\.js|indice-produccion\.js|production-notice\.js|produccion-notice\.js)$/.test(abs)
+          && (abs.startsWith('/opt/tycon/') || abs.startsWith(raizDelFreno));
         const esTemporal = !esDelFreno && (
              /^(?:\/tmp\/|\/private\/tmp\/|\/var\/folders\/|\/private\/var\/folders\/)/.test(abs)
           || (process.env.TMPDIR && abs.startsWith(require('path').resolve(process.env.TMPDIR)))
@@ -1931,7 +1935,8 @@ function globDeFind(g, ci) {
     }
     re += c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   }
-  try { return new RegExp(`^${re}$`, ci ? 'i' : ''); } catch { return /^/; }
+  // Un patrón que no se puede leer coincide con todo: el freno frena (por el lado seguro).
+  try { return new RegExp(`^${re}$`, ci ? 'i' : ''); } catch { return { test: () => true }; }
 }
 
 /** Los nombres de las variables que una palabra cruda usa (`$F`, `${F}`, `${F:-…}`). Por el lado seguro: no mira comillas. */

@@ -1172,7 +1172,7 @@ test('writeFollowups + followups-status: idempotente, preserva [x], acepta shape
   assert.equal(st.open, 2); assert.equal(st.has_section, true);
 
   // dev marca SEC-C3 resuelto a mano.
-  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').replace('- [ ] **[CRITICAL]** SEC-C3', '- [x] **[CRITICAL]** SEC-C3'));
+  fs.writeFileSync(story, fs.readFileSync(story, 'utf8').split('- [ ] **[CRITICAL]** SEC-C3').join('- [x] **[CRITICAL]** SEC-C3'));
   // 2da escritura: shape Step6 (rule_id/disposition) + 1 nuevo. Debe preservar SEC-C3 [x].
   const f2 = path.join(dir, 'f2.json');
   fs.writeFileSync(f2, JSON.stringify([

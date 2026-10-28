@@ -4448,9 +4448,9 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
-  if (result && result.skip_request && mostrar && !ej) {
+  if (result.skip_request && mostrar && !ej) {
     result.skip_request.muestra = 'sin corrida abierta: la firma se pide dentro de una corrida de esta story (pipeline.js start)';
-  } else if (result && result.skip_request && mostrar) {
+  } else if (result.skip_request && mostrar) {
     const m = sk.muestra({ story: ej.story, carpeta: ej.carpeta, ejecucion: ej.ejecucion,
       camino: result.skip_request.camino, casa, userInfo });
     texto = m.texto;

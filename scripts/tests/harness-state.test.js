@@ -1367,6 +1367,35 @@ test('T13·módulo · channel.read: con «auto» en el perfil del equipo, ni el 
   assert.deepStrictEqual([r.apply, r.enabled, r.locked], ['ask', false, false], JSON.stringify(r));
 });
 
+test('T13·módulo · channel.read: con «auto» en el perfil del equipo, un valor ilegible (variable, tycon.json roto, TYCON_PROFILE a un archivo que no existe) no frena la actualización: se dice y no se usa; el canal ilegible cae al del perfil', () => {
+  // 🔴 mutación: si los errores de la política siguieran frenando con la actualización fijada, escribir un valor que no
+  // existe bastaría para saltearla
+  const channel = mod('channel');
+  const home = casa('t13-ilegible');
+  const tree = path.join(home, 'tree');
+  fs.mkdirSync(tree);
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), JSON.stringify({ update: { channel: 'latest', apply: 'auto' } }));
+  const machine = path.join(home, '.claude', 'tycon.json');
+  const actualiza = (r) => r.enabled && !r.errors.length && r.apply === 'auto';
+
+  for (const [etiqueta, env, maq] of [
+    ['TYCON_UPDATE_APPLY=nope', { TYCON_UPDATE_APPLY: 'nope' }, null],
+    ['TYCON_UPDATE_CHANNEL=nope', { TYCON_UPDATE_CHANNEL: 'nope' }, null],
+    ['máquina con canal inválido', {}, { update: { channel: 'bogus' } }],
+    ['máquina con apply 5', {}, { update: { apply: 5 } }],
+    ['tycon.json roto', {}, '{roto'],
+    ['TYCON_PROFILE a un archivo que no existe', { TYCON_PROFILE: path.join(home, 'no-existe.json') }, null],
+  ]) {
+    fs.rmSync(machine, { force: true });
+    if (maq !== null) fs.writeFileSync(machine, typeof maq === 'string' ? maq : JSON.stringify(maq));
+    const r = channel.read(home, labEnv(home, env), { tree });
+    assert.ok(actualiza(r), `${etiqueta}: tiene que actualizar — ${JSON.stringify(r)}`);
+    assert.strictEqual(r.channel, 'latest', `${etiqueta}: el canal es el del perfil`);
+    assert.ok(r.overridden.some((o) => o.origin === 'error'), `${etiqueta}: lo ilegible se dice — ${JSON.stringify(r.overridden)}`);
+  }
+  fs.rmSync(machine, { force: true });
+});
+
 test('T13·módulo · channel.holdStands: sin la actualización fijada la retención sigue hasta levantarla; fijada por el equipo, vence cuando sale una versión posterior a la deshecha', () => {
   // 🔴 mutación: con la actualización fijada, una vuelta atrás frenaría para siempre lo que el equipo manda; sin ella,
   //    la retención se levantaría sola.
@@ -1621,12 +1650,12 @@ test('REG-D2 · revert de una fuente que ya reaplicó lo local NO borra los camb
   if (!inTree) assert.match(r.reason || r.note || '', /stash/, 'si quedó en el stash, el resultado lo dice');
 });
 
-test('REG-D3 · un ~/.claude/tycon.json ilegible es un error de la política, no «sin valor»: no cae al perfil', () => {
+test('REG-D3 · un ~/.claude/tycon.json ilegible es un error de la política, no «sin valor»: no cae al perfil (con un perfil que no fija «auto»; con «auto» fijado, lo cubre T13)', () => {
   const channel = mod('channel');
   const home = casa('reg-d3');
   fs.writeFileSync(path.join(home, '.claude', 'tycon.json'), '{ roto');
   const arnes = fs.mkdtempSync(path.join(BASE, 'reg-d3-arnes-'));
-  fs.writeFileSync(path.join(arnes, 'perfil-equipo.json'), JSON.stringify({ update: { channel: 'latest', apply: 'auto' } }));
+  fs.writeFileSync(path.join(arnes, 'perfil-equipo.json'), JSON.stringify({ update: { channel: 'latest', apply: 'ask' } }));
   const env = labEnv(home); delete env.TYCON_PROFILE;
   const p = channel.read(home, env, { tree: arnes });
   assert.ok(p.errors.length > 0, `el archivo roto tiene que ser un error: ${JSON.stringify(p)}`);

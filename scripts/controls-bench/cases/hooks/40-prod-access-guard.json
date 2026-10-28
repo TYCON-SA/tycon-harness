@@ -5063,6 +5063,31 @@
       "codex"
      ],
      "asymmetry": "En Codex no existe la configuración administrada de Claude Code: sin cuadro de aprobación, la puerta tampoco se acepta y la sentencia la corre el dev."
+    },
+    {
+   "id": "guion-con-nombre-de-pieza-del-freno-fuera-del-freno-se-lee",
+   "type": "must-block",
+   "__doc": "🔴 Un guion recién hecho en una carpeta temporal que se llama como una pieza del freno (`production-notice.js`) no es una pieza del freno: se lee por dentro como cualquier otro y lo que nombra frena. Las piezas se reconocen por el nombre Y por dónde viven. ROJO PREVIO: exit 0 (se eximía sólo por cómo terminaba la ruta).",
+   "files": {
+    "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}]}",
+    "otra/production-notice.js": "sqlcmd -S acme-sql.database.windows.net -Q \"select 1\"\n"
+   },
+   "setup": [
+    "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+    "git -C repos/backend-acme init -q ."
+   ],
+   "stdin": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "bash ${FIXTURE}/otra/production-notice.js"
+    }
+   },
+   "expect": {
+    "exit": 2,
+    "stderr_re": [
+     "acme-sql"
+    ]
+   }
     }
    ]
   }

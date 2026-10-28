@@ -1527,7 +1527,8 @@ const busy = (lock) => ({ code: 3, lines: [`harness.js: ${lock.reason || 'otra s
 /** Con la actualización fijada por el perfil del equipo: lo que la máquina o el entorno dicen y no se usa, o null. */
 function fixedLine(policy) {
   if (!policy || !policy.locked || !(policy.overridden || []).length) return null;
-  const what = policy.overridden.map((o) => (o.origin === 'env' ? `${o.name}=${o.value}` : `«${o.value}» en ${o.name}`)).join(', ');
+  const what = policy.overridden.map((o) => (o.origin === 'error' ? `lo ilegible (${o.value})`
+    : o.origin === 'env' ? `${o.name}=${o.value}` : `«${o.value}» en ${o.name}`)).join(', ');
   return `el perfil del equipo fija la actualización automática: ${what} no se usa`;
 }
 function policyOf(ctx, tree) {

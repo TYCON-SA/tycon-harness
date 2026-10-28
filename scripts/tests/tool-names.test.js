@@ -76,17 +76,18 @@ test('T62 ToolNames_CountsOutsideZones_BlocksAboveCeiling @story-7.40 @ac-28', (
   // una ruta con `\` (Windows, o doble en un texto JSON) es la misma dirección; una que no empieza en borde de palabra, o
   // que sale de la integración con `..`, no es una ruta; una palabra que sólo empieza igual no nombra la herramienta; un
   // archivo que se llama como una clave del prototipo es un archivo más; el color forzado de git no cambia nada
-  const edge = toyRepo({
+  // la clave del prototipo como clave propia, sin tocar el prototipo del objeto
+  const conProto = (o, v) => Object.defineProperty(o, '__proto__', { value: v, enumerable: true, writable: true, configurable: true });
+  const edge = toyRepo(conProto({
     'docs/win.md': 'pwsh ~\\.claude\\tycon-harness\\integrations\\acmetime\\scripts\\x.ps1 y "C:\\\\x\\\\integrations\\\\acmetime\\\\y.js"\n',
     'docs/no.md': "const a = 'myintegrations/acmetime-api';\nrequire('../../integrations/../scripts/acmetime.js');\n",
     'docs/words.md': 'acmeclocking no es el nombre; ACMETIME_KEY y acmetimeApi sí lo son\n',
-    // en la raíz: el nombre del archivo es exactamente la clave del prototipo (la clave computada la deja como propia)
-    ['__proto__']: 'acmetime\n',
-  }, { exceptions: [], ceiling: { 'docs/no.md': 2, 'docs/words.md': 2, ['__proto__']: 1 } });
+    // en la raíz: el nombre del archivo es exactamente la clave del prototipo
+  }, 'acmetime\n'), { exceptions: [], ceiling: conProto({ 'docs/no.md': 2, 'docs/words.md': 2 }, 1) });
   const e = TN.check({ repo: edge });
-  assert.deepStrictEqual(e.perFile, { 'docs/no.md': 2, 'docs/words.md': 2, ['__proto__']: 1 }, JSON.stringify(e.perFile));
+  assert.deepStrictEqual(e.perFile, conProto({ 'docs/no.md': 2, 'docs/words.md': 2 }, 1), JSON.stringify(e.perFile));
   // sin su techo, el archivo `__proto__` frena como cualquier otro (no hereda un techo del prototipo)
-  const sinTecho = toyRepo({ ['__proto__']: 'acmetime\n' }, { exceptions: [], ceiling: {} });
+  const sinTecho = toyRepo(conProto({}, 'acmetime\n'), { exceptions: [], ceiling: {} });
   assert.ok(TN.check({ repo: sinTecho }).problems.some((p) => p.startsWith('__proto__:')));
   // reglas con un techo o un mínimo que no son enteros: no pude mirar
   for (const bad of [{ ceiling: { 'a.js': 'dos' } }, { ceiling: [] }, { terms_at_least: -1 }]) {

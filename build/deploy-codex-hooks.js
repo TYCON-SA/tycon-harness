@@ -31,6 +31,9 @@ const TCG = path.resolve(__dirname, '..');
 // La variante «instalada», porque estas rutas quedan ESCRITAS en ~/.codex/hooks.json:
 // con «el propio clon primero» los comandos pasarían a apuntar al clon del arnés.
 const SKILLS = require(path.join(__dirname, '..', 'scripts', 'lib', 'skills-dir.js')).resolveInstalledSkillsDirs().repo;
+// Los marcadores que el fragmento lleva como texto y el despliegue cambia por rutas (no son plantillas de JS).
+const PH_TCG = '$' + '{TCG}';
+const PH_SKILLS = '$' + '{SKILLS}';
 
 /**
  * El fragmento con `${TCG}` y `${SKILLS}` cambiados por las rutas de esta máquina, texto por texto.
@@ -325,30 +328,30 @@ function selftest() {
     ['los eventos ajenos quedan intactos', flat.includes('despedida.js')],
     ['las claves top-level del dev quedan', m1.otra_clave_del_dev === true],
     ['idempotente: merge(merge(x)) === merge(x)', JSON.stringify(merge(m1, frag, tcg, skills)) === flat],
-    ['sustitución de ${TCG}/${SKILLS}', JSON.stringify(substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/a ${SKILLS}/b' }] }] } }, tcg, skills)).includes('/x/tcg/a /x/skills/b')],
+    [`sustitución de ${PH_TCG}/${PH_SKILLS}`, JSON.stringify(substitute({ hooks: { X: [{ hooks: [{ command: `node ${PH_TCG}/a ${PH_SKILLS}/b` }] }] } }, tcg, skills)).includes('/x/tcg/a /x/skills/b')],
     // una ruta de Windows no rompe el fragmento, y lo desplegado se vuelve a leer con la ruta entera
     ['sustitución con una ruta de Windows (barras invertidas): no tira y la ruta queda entera', (() => {
       const win = 'C:\\Users\\dev\\.tycon\\harness';
       let out;
-      try { out = substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/scripts/hooks/a.js' }] }] } }, win, win, { interp: { prefix: 'node' } }); } catch (_) { return false; }
+      try { out = substitute({ hooks: { X: [{ hooks: [{ command: `node ${PH_TCG}/scripts/hooks/a.js` }] }] } }, win, win, { interp: { prefix: 'node' } }); } catch (_) { return false; }
       const cmd = JSON.parse(JSON.stringify(out, null, 1)).hooks.X[0].hooks[0].command;
       return cmd === `node ${win}/scripts/hooks/a.js`;
     })()],
     ['un hook con la ruta de Windows se reconoce como del arnés al re-desplegar (no se acumula)', (() => {
       const win = 'C:\\Users\\dev\\.tycon\\harness';
-      const f = substitute({ hooks: { X: [{ hooks: [{ type: 'command', command: 'node ${TCG}/scripts/hooks/a.js' }] }] } }, win, win);
+      const f = substitute({ hooks: { X: [{ hooks: [{ type: 'command', command: `node ${PH_TCG}/scripts/hooks/a.js` }] }] } }, win, win);
       const once = merge(null, f, win, win);
       return JSON.stringify(merge(once, f, win, win)) === JSON.stringify(once) && once.hooks.X.length === 1;
     })()],
     // con el Node del arnés, el `node` del principio sale con su ruta; lo demás del comando igual
-    ['con el Node del arnés, node ${TCG}/… sale con su ruta y bash ${TCG}/… no cambia', (() => {
+    [`con el Node del arnés, node ${PH_TCG}/… sale con su ruta y bash ${PH_TCG}/… no cambia`, (() => {
       const own = { prefix: '/h/.tycon/node/current/bin/node' };
-      const out = substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/scripts/hooks/a.js' }, { command: 'bash ${TCG}/scripts/hooks/b.sh' }] }] } }, tcg, skills, { interp: own });
+      const out = substitute({ hooks: { X: [{ hooks: [{ command: `node ${PH_TCG}/scripts/hooks/a.js` }, { command: `bash ${PH_TCG}/scripts/hooks/b.sh` }] }] } }, tcg, skills, { interp: own });
       const cmds = out.hooks.X[0].hooks.map((h) => h.command);
       return cmds[0] === `${own.prefix} ${tcg}/scripts/hooks/a.js` && cmds[1] === `bash ${tcg}/scripts/hooks/b.sh`;
     })()],
     ['un hook del arnés en cualquiera de las dos formas, desde otra copia, se reconoce por la forma (no se duplica)', (() => {
-      const crudo = { hooks: { X: [{ hooks: [{ type: 'command', command: 'node ${TCG}/scripts/hooks/a.js' }] }] } };
+      const crudo = { hooks: { X: [{ hooks: [{ type: 'command', command: `node ${PH_TCG}/scripts/hooks/a.js` }] }] } };
       const formas = plantillas(crudo);
       return formas.some((re) => re.test('/h/.tycon/node/current/bin/node /otra/copia/scripts/hooks/a.js'))
         && formas.some((re) => re.test('"/mi casa/.tycon/node/current/bin/node" /otra/copia/scripts/hooks/a.js'))

@@ -126,8 +126,17 @@ function read(home = os.homedir(), env = process.env, { tree } = {}) {
     skillsSource: r.skillsSource || SKILLS_SEPARATE, skillsSourceOrigin: r.skillsSourceOrigin || 'default',
     locked: false, overridden: [],
   };
-  if (!teamFixesAuto(tree || config.RAIZ_ARNES)) return out;
+  const team = teamUpdate(tree || config.RAIZ_ARNES);
+  if (!team || team.apply !== 'auto') return out;
   out.locked = true;
+  // Con la actualización fijada, un valor ilegible no la frena: se dice y no se usa. Sin esto, escribir un valor que no
+  // existe (o un tycon.json roto, o un TYCON_PROFILE a ningún lado) bastaba para saltearla.
+  for (const e of out.errors) out.overridden.push({ origin: 'error', name: 'política', value: e });
+  out.errors = [];
+  if (out.origins.channel === 'default' && CHANNELS.includes(team.channel)) {
+    out.channel = team.channel;
+    out.origins = { ...out.origins, channel: 'perfil' };
+  }
   const applyVar = env[VARS.apply] === undefined ? '' : String(env[VARS.apply]).trim();
   if (applyVar && applyVar !== 'auto') out.overridden.push({ origin: 'env', name: VARS.apply, value: applyVar });
   const machine = readMachine(home);
@@ -140,13 +149,13 @@ function read(home = os.homedir(), env = process.env, { tree } = {}) {
   return out;
 }
 
-/** ¿El perfil del equipo en la raíz del árbol fija `update.apply: auto`? Un perfil ausente o ilegible no fija nada. */
-function teamFixesAuto(tree) {
-  if (!tree || typeof config.perfilDelArbol !== 'function') return false;
+/** La sección `update` del perfil del equipo en la raíz del árbol, o null. Un perfil ausente o ilegible no fija nada. */
+function teamUpdate(tree) {
+  if (!tree || typeof config.perfilDelArbol !== 'function') return null;
   try {
     const data = JSON.parse(fs.readFileSync(config.perfilDelArbol(tree).ruta, 'utf8').replace(/^\uFEFF/, ''));
-    return isObject(data) && isObject(data.update) && data.update.apply === 'auto';
-  } catch (_) { return false; }
+    return isObject(data) && isObject(data.update) ? data.update : null;
+  } catch (_) { return null; }
 }
 
 /**
