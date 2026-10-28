@@ -29,7 +29,11 @@
  *   (el pedido llega por la entrada: en la línea de comandos lo vería `ps`; `--tool-use-id <id>` sigue para quien llama
  *   desde node)
  *   [--since <hora>] [--no-relay]   (la salida de una ejecución perdida: la frase posterior a su apertura, sin reenvío)
- *   imprime `{ ok, via, relevo?, motivo?, sinConversacion? }` y sale 0 si está autorizado, 3 si no.
+ *   imprime `{ ok, via, relevo?, motivo?, sinConversacion?, pasoNoUbicado? }` y sale 0 si está autorizado, 3 si no.
+ *
+ * `pasoNoUbicado`: la conversación no ubicó el pedido que se juzga. `true` cuando el renglón todavía no estaba escrito
+ * (el agente reintenta el mismo comando una vez, sin pedirle nada a la persona: `CARTEL_PASO_NO_UBICADO`); `false`
+ * cuando el pedido está duplicado o en otro archivo, que no se arregla reintentando y dice su motivo.
  */
 const path = require('path');
 
@@ -127,7 +131,7 @@ function autorizadoPorNombre({ variable, sesion, pedido, transcript, home, env =
   if (!propia.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${propia.motivo})` };
   if (propia.encontrada) return { ok: true, via: 'persona', cuando: propia.cuando || null };
   // el pedido que se juzga no apareció en la conversación: sin punta no hay nada que buscar, tampoco el reenvío
-  if (propia.pasoNoUbicado) return { ok: false, motivo: propia.motivo };
+  if (propia.pasoNoUbicado) return { ok: false, motivo: propia.motivo, pasoNoUbicado: propia.motivo === pok.MOTIVO_PASO_NO_UBICADO };
   const relevo = sinReenvio ? {} : cw.sesionQueReenvia({ env: e, home, ...(arnes ? { arnes } : {}) });
   if (relevo.valor) {
     const r = pok.citaReenviada(cita, relevo.valor, { sesion, home, env: e, desde, juzgar, soloCadena: true, pedido, transcript });
@@ -144,7 +148,18 @@ function autorizadoPorNombre({ variable, sesion, pedido, transcript, home, env =
   return { ok: false, motivo };
 }
 
-module.exports = { ESCAPES, NAMED, VENTANA_MIN, frase, juez, escapeAutorizado };
+// lo que dice el cartel de un freno cuando el renglón del pedido todavía no estaba escrito (`pasoNoUbicado: true`); el
+// freno de seguridad (bash) lo repite tal cual en ESC-C5
+const CARTEL_PASO_NO_UBICADO = 'No pude leer el registro de la conversación para este paso: todavía no estaba escrito. Reintentá el mismo comando una vez, sin pedirle nada a la persona; si vuelve a salir esto, decíselo.';
+
+/** El renglón del cartel para un paso no ubicado: el reintento, o el motivo del duplicado; null si la lectura lo ubicó. */
+function cartelDelPaso(r) {
+  if (r && r.pasoNoUbicado === true) return CARTEL_PASO_NO_UBICADO;
+  if (r && r.pasoNoUbicado === false) return `No valió: ${r.motivo}.`;
+  return null;
+}
+
+module.exports = { ESCAPES, NAMED, VENTANA_MIN, CARTEL_PASO_NO_UBICADO, frase, juez, escapeAutorizado, cartelDelPaso };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -160,7 +175,7 @@ if (require.main === module) {
   // `--shell`: un renglón `clave=valor` por campo, para que el freno (bash) lo lea sin jq ni sed
   if (process.argv.includes('--shell')) {
     const una = (v) => String(v == null ? '' : v).replace(/[\r\n]+/g, ' ');
-    process.stdout.write(`via=${una(r.via)}\nrelevo=${una(r.relevo)}\nsinConversacion=${r.sinConversacion ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
+    process.stdout.write(`via=${una(r.via)}\nrelevo=${una(r.relevo)}\nsinConversacion=${r.sinConversacion ? 1 : 0}\npasoNoUbicado=${r.pasoNoUbicado === true ? 1 : 0}\nmotivo=${una(r.motivo)}\n`);
   } else {
     process.stdout.write(JSON.stringify(r));
   }

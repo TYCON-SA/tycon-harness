@@ -41,8 +41,8 @@ const VARIABLES_DE_SESION = /(^|[^\w])(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|C
 const GUIONES = new Set(['marker.js', 'pipeline.js', 'e2e-setup.js', 'run-base-controls.sh']);
 const NODES = new Set(['node', 'nodejs']);
 const SHS = new Set(['bash', 'sh']);
-// los dos escapes que la delegación aprobada por el dueño sigue cubriendo en el freno
-const DELEGABLES_DEL_FRENO = new Set(['escape:force-manual', 'escape:trust-ran']);
+const REFIRMA = 'refresh-after-main';
+const CONTROL = 'control-change';
 
 const firmaDe = (id) => SIGNATURES.find((s) => s.id === id) || null;
 const base = (w) => String(w || '').split(/[\\/]/).pop().toLowerCase();
@@ -176,8 +176,7 @@ function firmaDeLlamado(guion, sub, args) {
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     return null;
   }
-  // con --delegated la vuelta extra la juzga pipeline.js por la delegación, sin ventana
-  if (guion === 'pipeline.js') return ['smart-reloop', 'advisors'].includes(sub) && con('--extra-round') && !a.some((w) => w === '--delegated' || w.startsWith('--delegated=')) ? 'extra-round' : null;
+  if (guion === 'pipeline.js') return ['smart-reloop', 'advisors'].includes(sub) && con('--extra-round') ? 'extra-round' : null;
   if (guion === 'e2e-setup.js') return ['prepare', 'defer'].includes(sub) ? 'browser-test' : null;
   if (guion === 'run-base-controls.sh') return sub === 'approve' ? 'control-change' : null;
   return null;
@@ -322,6 +321,24 @@ function negarCon(motivo, ids, sesion) {
 
 // --- el freno -----------------------------------------------------------------------------------------------------
 
+/**
+ * Vence los pedidos sin consumir que pidió `sesion`: cualquier comando suyo que pasa por el freno después de un pedido
+ * (el «No» del dueño deja el pedido sin consumir) lo vence antes de correr, así el «Sí» que no se dio no lo firma un
+ * guion lanzado desde una consola disfrazada. Devuelve cuántos venció; tira si no puede mover uno.
+ */
+function vencerPedidos(casa, sesion, ahora = Date.now()) {
+  if (!SESION.test(String(sesion || ''))) return 0;
+  const dir = carpeta(casa);
+  let nombres;
+  try { nombres = fs.readdirSync(dir); } catch (e) { if (e.code === 'ENOENT') return 0; throw e; }
+  let n = 0;
+  for (const f of nombres) {
+    if (!f.endsWith(`--${sesion}.json`)) continue;
+    try { fs.renameSync(path.join(dir, f), path.join(dir, `${f}.vencido-${ahora}`)); n++; } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  }
+  return n;
+}
+
 function escribirRegistro(casa, reg) {
   const dir = carpeta(casa);
   fs.mkdirSync(dir, { recursive: true });
@@ -336,11 +353,23 @@ function escribirRegistro(casa, reg) {
 }
 
 /**
+ * La clase de un `run-base-controls.sh approve` con `--base` (`{ clase, refirma_de?, motivo }`), con el clasificador del
+ * guion de este mismo árbol, corrido en la carpeta del evento. null si no contesta.
+ */
+function clasificarConElGuion(palabras, cwd) {
+  const r = require('child_process').spawnSync('bash', [path.join(__dirname, '..', 'ci', 'run-base-controls.sh'), 'classify', ...palabras.slice(2)],
+    { cwd: cwd || process.cwd(), encoding: 'utf8', timeout: 20000 });
+  if (r.status !== 0) return null;
+  try { return JSON.parse(String(r.stdout).trim().split('\n').pop()); } catch (_) { return null; }
+}
+
+/**
  * Lo que decide el freno ante un evento: `{ decision: 'ask' | 'deny' | 'allow' | 'none', texto, firmas, via? }`.
  * `escapes`: las firmas `freno` que el freno de seguridad vio en el comando (los escapes por variable y con nombre).
- * `delegado(opciones)`: la delegación aprobada por el dueño (delegated-ok.js); `arbol` y `casa` se leen si faltan.
+ * `delegacion(opciones)`: si la firma corre sin ventana (delegated-signing.js, las dos listas del perfil);
+ * `clasificar(palabras, cwd)`: la clase de un `approve` con `--base`; `arbol` y `casa` se leen si faltan.
  */
-function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegado, userInfo } = {}) {
+function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, userInfo } = {}) {
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const sesion = evento.session_id == null ? '' : String(evento.session_id);
   const negar = (motivo, ids) => negarCon(motivo, ids, sesion);
@@ -377,20 +406,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (casa === undefined) {
     try { casa = casaDeLaCuenta(userInfo ? { userInfo } : undefined); } catch (e) { return negar(`no se pudo resolver la casa de la cuenta (${e.message})`, pedidas); }
   }
-  // la delegación aprobada por el dueño: force-manual y trust-ran se firman acá; la vuelta extra delegada va con
-  // --delegated y la juzga pipeline.js (firmaDeLlamado no la cuenta como firma)
-  const consultar = delegado || ((o) => require(path.join(LIB, 'delegated-ok.js')).okDelegado(o));
   let pendientes = pedidas;
-  const delegadas = [];
-  try {
-    pendientes = pedidas.filter((id) => {
-      if (!DELEGABLES_DEL_FRENO.has(id)) return true;
-      const r = consultar({ firma: id, sesion, pedido: evento.tool_use_id, home: casa, ahora, consumir: true });
-      if (r && r.ok) { delegadas.push({ id, relevo: r.relevo || null }); return false; }
-      return true;
-    });
-  } catch (e) { return negar(`no se pudo consultar la delegación del dueño (${e.message})`, pedidas); }
-  if (!pendientes.length) return { decision: 'allow', via: 'delegacion', relevo: delegadas[0].relevo, firmas: delegadas.map((d) => d.id), texto: 'firmada por la delegación del dueño' };
   // el árbol: la herramienta, sin otra herramienta ni consola por arriba, con pantalla y sin consolas de fondo
   if (arbol === undefined) arbol = leerArbol();
   if (!arbol) return negar('no pude leer los procesos de la máquina', pendientes);
@@ -403,6 +419,27 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (arbol.some((p) => p.ppid === tool.pid && desenvolver(p.comando, casa) !== null)) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
   const destino = destinoDe(can && can.palabras, sesion);
   if (!SESION.test(destino)) return negar('la sesión de --for-session no se puede leer', pendientes);
+  if (destino !== sesion && guion && firmaDe(guion).otherSession !== 'yes') return negar(`«${firmaDe(guion).approves}» no se corre desde la pestaña de otra sesión`, pendientes);
+  // la refirma tras traer main: la dice el clasificador del guion (decisión 28); si no la comprueba, cambio de control
+  let firmaGuion = guion;
+  let refirmaDe = null;
+  if (guion === CONTROL && can.palabras.includes('--base')) {
+    let c = null;
+    try { c = clasificar(can.palabras, evento.cwd); } catch (_) { c = null; }
+    // pendientes queda sólo con la refirma porque un guion no viaja con escapes (lo niega `guion && escapes.length` arriba)
+    if (c && c.clase === REFIRMA && typeof c.refirma_de === 'string') { firmaGuion = REFIRMA; refirmaDe = c.refirma_de; pendientes = [REFIRMA]; }
+  }
+  // la delegación: cada firma con todas las llaves del perfil corre sin ventana (AC 22-25)
+  let delegada = null;
+  let sinDelegar = null;
+  if (delegacion === undefined) delegacion = (o) => require('./delegated-signing.js').delegaSinVentana(o);
+  try {
+    const estado = stateDir(casa);
+    const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado }));
+    if (rs.every((r) => r && r.ok)) delegada = rs[0];
+    // una firma que el perfil delega y no se delegó lleva su motivo a la ventana; la que no se delega, no (es lo normal)
+    else sinDelegar = rs.map((r) => r && !r.ok && r.motivo).find((m) => m && !/no delega|sólo del dueño|la sesión que implementa/.test(m)) || null;
+  } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
   let detalle = detalleDe(pendientes[0], comando, can && can.palabras);
   if (guion === 'runtime-waiver') {
     const c = criteriosDelPedido(can.palabras, evento.cwd);
@@ -411,12 +448,15 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   }
   if (guion) {
     try {
-      escribirRegistro(casa, { firma: guion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
-        sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString() });
+      escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
+        sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(),
+        ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
     } catch (e) { return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes); }
   }
+  if (delegada) return { decision: 'allow', via: 'delegacion', relevo: sesion, firmas: pendientes, texto: 'firmada por la delegación del perfil' };
   const que = pendientes.map((id) => firmaDe(id).approves).join('; ');
   const texto = `Firma del dueño: ${que}. Story ${storyDe(casa, destino)}, sesión ${destino}. Detalle: ${detalle}. `
+    + (sinDelegar ? `No se firmó por delegación: ${una(sinDelegar, 200)}. ` : '')
     + `Si preferís, firmala en tu terminal: ${terminalDe(pendientes, destino)}.`;
   return { decision: 'ask', firmas: pendientes, texto };
 }
@@ -458,7 +498,8 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
   const tool = m.get(consola.ppid);
   if (!tool || !esHerramienta(tool)) return no('la consola no es de la herramienta');
   const can = canonicaDe(comando);
-  if (!can || can.id !== firma) return no('el comando no tiene la forma canónica de la firma');
+  // la refirma tras traer main es el mismo comando que el cambio de control
+  if (!can || (can.id !== firma && !(firma === REFIRMA && can.id === CONTROL))) return no('el comando no tiene la forma canónica de la firma');
   const esperado = can.palabras;
   // la consola expande `~/` al principio de cada palabra, con su HOME
   const conTilde = (w, a) => w === a || (w.startsWith('~/') && [casa, os.homedir()].some((h) => path.join(h, w.slice(2)) === a));
@@ -472,6 +513,7 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
   try { archivos = fs.readdirSync(dir).filter((f) => f.startsWith(prefijo) && f.endsWith('.json')); } catch (_) { archivos = []; }
   const huella = sha256(comando);
   let ilegibles = 0;
+  let vencido = null;
   const validos = [];
   for (const f of archivos) {
     let reg;
@@ -480,6 +522,7 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     if (reg.firma !== firma || reg.sha256 !== huella || reg.comando !== comando) continue;
     if (destino && reg.destino !== destino) continue;
     if (!reg.herramienta || reg.herramienta.pid !== tool.pid || reg.herramienta.inicio !== tool.inicio) continue;
+    if (edad > VENCE_MIN * 60000 && (vencido === null || edad < vencido)) vencido = edad;
     if (!(edad >= 0 && edad <= VENCE_MIN * 60000)) continue;
     validos.push({ f, reg });
   }
@@ -490,6 +533,10 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     try { fs.renameSync(path.join(dir, ultimo.f), path.join(dir, `${ultimo.f}.consumido-${ahora}`)); } catch (_) { return no('el pedido de la ventana ya se usó'); }
     for (const v of viejos) { try { fs.renameSync(path.join(dir, v.f), path.join(dir, `${v.f}.vencido-${ahora}`)); } catch (_) { /* otro guion ya lo movió */ } }
     return { ok: true, registro: ultimo.reg };
+  }
+  // el «Sí» llegó tarde: el pedido existe y venció. Se repite el comando, que abre otra ventana
+  if (vencido !== null) {
+    return { ok: false, motivo: `esta firma no pasó por la ventana: la ventana se aprobó ${Math.floor(vencido / 60000)} minutos después de pedirla, y el pedido vence a los ${VENCE_MIN}. Repetí el mismo comando: abre otra ventana` };
   }
   return no(`no hay un pedido vigente de la ventana para este comando${ilegibles ? ` (${ilegibles} registro(s) de la ventana no se pudieron leer)` : ''}`);
 }
@@ -548,11 +595,13 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   }
   const v = verificar({ firma, argv, pid, arbol, casa, ahora, destino: propia });
   if (!v.ok) return { codigo: 1, motivo: v.motivo };
-  firmar({ firma, via: 'ventana', sesion: v.registro.sesion, destino: v.registro.destino, resumen: resumen || v.registro.comando, casa, ahora, anotar });
-  return { codigo: 0, via: 'ventana', destino: v.registro.destino, sesion: v.registro.sesion };
+  // el registro que dejó el freno sin ventana (la delegación del perfil) firma con via: delegacion
+  const via = v.registro.via === 'delegacion' ? 'delegacion' : 'ventana';
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: resumen || v.registro.comando, casa, ahora, anotar });
+  return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
 }
 
-module.exports = { VENCE_MIN, carpeta, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir };
+module.exports = { VENCE_MIN, carpeta, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, vencerPedidos };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
@@ -565,11 +614,21 @@ if (require.main === module) {
     let r;
     try {
       const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
+      // antes de decidir, los pedidos anteriores de la sesión vencen: un pedido vive sólo hasta el próximo comando
+      vencerPedidos(casaDeLaCuenta(), evento.session_id);
       r = decidir({ evento, escapes });
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
     const ask = r.decision === 'ask' ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } }) : undefined;
     lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, texto: r.texto, json: ask });
     process.exit(0);
+  }
+  if (sub === 'sweep') {
+    // el freno, ante un comando que no es una firma: vence los pedidos de su sesión. Sale 1 si no pudo
+    try {
+      const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
+      vencerPedidos(casaDeLaCuenta(), evento.session_id);
+      process.exit(0);
+    } catch (e) { process.stderr.write(`no pude vencer los pedidos de la ventana (${e.message})\n`); process.exit(1); }
   }
   if (sub === 'verify') {
     // para los guiones de consola: `verify --signature <id> --process-id <pid del guion> -- <guion> <argumentos…>`
