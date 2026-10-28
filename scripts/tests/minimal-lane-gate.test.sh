@@ -54,8 +54,12 @@ else mal "no se negó o el mensaje no trae la pregunta: rc=$RC $(head -c 300 <<<
 
 echo "T3 · MinimalLab_AdhocWithQuote_Allowed @story-8.74 @ac-3"
 # lo que escribió la persona entra por el control que lo anota en una sesión real (on-prompt.js, también en minimal);
-# sin el clasificador por modelo, decide la cita literal
-printf '{"session_id":"s874b","hook_event_name":"UserPromptSubmit","cwd":"%s","prompt":"es un ajuste chico, sin story: arreglá el formato"}' "$R" \
+# sin el clasificador por modelo, decide la cita literal. Como en una sesión real, el mensaje ya está en la conversación
+# con la marca de quien lo escribió (`human`), que es lo que el control lee para saber que es de la persona
+mkdir -p "$H/.claude/projects/-repo"
+CONV="$H/.claude/projects/-repo/s874b.jsonl"
+printf '{"type":"user","isSidechain":false,"uuid":"u1","origin":{"kind":"human"},"message":{"role":"user","content":[{"type":"text","text":"es un ajuste chico, sin story: arreglá el formato"}]}}\n' >"$CONV"
+printf '{"session_id":"s874b","hook_event_name":"UserPromptSubmit","cwd":"%s","transcript_path":"%s","prompt":"es un ajuste chico, sin story: arreglá el formato"}' "$R" "$CONV" \
   | ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/on-prompt.js" ) >"$T/prompt.out" 2>&1 \
   || mal "on-prompt.js no anotó lo que escribió la persona: $(head -c 300 "$T/prompt.out")"
 AD="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b TYCON_LANE_LLM=0 node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story"}' 2>&1 )" \

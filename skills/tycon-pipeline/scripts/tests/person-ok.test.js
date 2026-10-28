@@ -90,7 +90,9 @@ test('PlanEnLaConversacion_SigueDesdeLaBiblioteca @story-8.63 @ac-2', () => {
 // 🔴 Falla con: una firma que vuelve a salir de la conversación (una cita, un reenvío, la sesión designada): la
 //    biblioteca vuelve a exportar un juez, o la importa un guion de firma.
 test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta sólo la lectura, la cadena y el plan; la importan sólo los que no firman', () => {
-  assert.deepEqual(Object.keys(ok).sort(), ['enLaCadena', 'leerConversacion', 'planEnLaConversacion']);
+  // `mensajesConOrigen` no firma nada: dice de quién es cada mensaje (la marca de Claude Code), para que la cita del
+  // arreglo rápido (`marker.js adhoc set`) lea sólo lo que escribió el dueño
+  assert.deepEqual(Object.keys(ok).sort(), ['enLaCadena', 'leerConversacion', 'mensajesConOrigen', 'planEnLaConversacion']);
   const importan = [];
   const recorrer = (dir) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
