@@ -785,5 +785,5 @@ function revisar({ volcado, lineasHilo, registros }) {
     escapes_autorizados: aut ? aut.cuenta : null };
 }
 
-module.exports = { CODIGOS, ESCAPES, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,
+module.exports = { CODIGOS, ESCAPES, VALOR_QUE_APAGA, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,
   banderasDePartes, segmentos, argsDe, corre, comandos, revisar, claseDeError };
