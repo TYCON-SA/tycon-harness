@@ -773,6 +773,12 @@ else
   altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
   # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
   altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
+  # en un pedido corre sólo `checks` y la corrida entera va en la cola: cada una de estas falla si un ci.yml vuelve a
+  # pagar las suites en el pedido, o si deja el pedido sin `checks`
+  altered "en un pedido corren también las suites" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" != "checks" \]; then\n.*\n *exit 0\n *fi\n/m, "");'
+  altered "en un pedido se saltea también checks" "=shape" 'return t.replace(" && [ \"${TYCON_PUBLIC_CI_PART}\" != \"checks\" ]", "");'
+  altered "en main un push corta la corrida del anterior" "=shape" 'return t.replace("cancel-in-progress: ${{ github.ref != \x27refs/heads/main\x27 }}", "cancel-in-progress: true");'
+  altered "en un pedido corre también el piso del instalador" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \]; then\n *echo "en un pedido corre sólo la parte checks: installer-floor.*\n *exit 0\n *fi\n/m, "");'
   # el push a main que hace la cola al entrar un pedido no corre nada (la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
   altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
@@ -814,10 +820,11 @@ else
     r && /^$/ { print; next }
     r { exit }' "${CI_YML}" > "${T}/wf-step.sh"
   grep -q 'public-ci' "${T}/wf-step.sh" || no "T1 no encuentro el bloque run del paso en ${CI_YML#${ROOT}/}"
-  # wf_case <nombre> <con-guion 0|1> [<evento: pull_request|merge_group>] [<public-ci.sh en la base 1|0>] → arma origin
-  #   (la base) y un pedido encima; corre el bloque; deja .out, .rc y .ran. En la cola la base llega por BASE_SHA.
+  # wf_case <nombre> <con-guion 0|1> [<evento: pull_request|merge_group>] [<public-ci.sh en la base 1|0>] [<parte>]
+  #   → arma origin (la base) y un pedido encima; corre el bloque como la parte dada (checks si no se dice); deja .out,
+  #   .rc y .ran. En la cola la base llega por BASE_SHA.
   wf_case() {
-    local name="$1" with_script="$2" event="${3:-pull_request}" with_ci="${4:-1}" d="${T}/wf-$1" sha=""
+    local name="$1" with_script="$2" event="${3:-pull_request}" with_ci="${4:-1}" part="${5:-checks}" d="${T}/wf-$1" sha=""
     mkdir -p "${d}/origin/scripts/ci" "${d}/rt" "${d}/marks"
     printf '#!/usr/bin/env bash\necho "pedido $*" >> "${WF_MARKS}/ran"\n' > "${d}/origin/scripts/ci/public-ci.sh"
     ( cd "${d}/origin" && lab_git init -q -b main . && lab_git add -A && lab_git commit -qm inicio ) > /dev/null 2>&1
@@ -830,7 +837,7 @@ else
     ( cd "${d}/pr" && lab_git checkout -q -b pedido && lab_git add -A && lab_git commit -qm "el pedido" ) > /dev/null 2>&1
     [ "${event}" = merge_group ] && sha="$(lab_git -C "${d}/pr" rev-parse origin/main)"
     ( cd "${d}/pr" && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
-        GITHUB_EVENT_NAME="${event}" BASE_REF=main BASE_SHA="${sha}" RUNNER_TEMP="${d}/rt" WF_MARKS="${d}/marks" \
+        GITHUB_EVENT_NAME="${event}" TYCON_PUBLIC_CI_PART="${part}" BASE_REF=main BASE_SHA="${sha}" RUNNER_TEMP="${d}/rt" WF_MARKS="${d}/marks" \
         bash -e "${T}/wf-step.sh" ) > "${d}.out" 2>&1
     echo "$?" > "${d}.rc"; touch "${d}/marks/ran"
   }
@@ -855,6 +862,16 @@ else
   RC="$(cat "${T}/wf-no-base-ci.rc")"
   if [ "${RC}" != 0 ] && [ ! -s "${T}/wf-no-base-ci/marks/ran" ]; then ok "T1 base con el guion y sin public-ci.sh: rojo (exit ${RC}) sin correr el del pedido"
   else no "T1 base sin public-ci.sh: esperaba rojo sin correr nada y dio exit ${RC}: $(tr '\n' ' ' < "${T}/wf-no-base-ci/marks/ran")"; fi
+  # en un pedido una parte de las suites sale verde sin correr nada y lo dice; en la cola la misma parte corre la base
+  wf_case pr-suites 1 pull_request 1 suites-2-of-5
+  RC="$(cat "${T}/wf-pr-suites.rc")"
+  if [ "${RC}" = 0 ] && [ ! -s "${T}/wf-pr-suites/marks/ran" ] && grep -qF "corre en la cola de merge" "${T}/wf-pr-suites.out"; then
+    ok "T1 en un pedido la parte suites-2-of-5 sale 0 sin correr nada y dice que corre en la cola"
+  else no "T1 en un pedido la parte suites-2-of-5 esperaba 0 sin correr nada, y dio exit ${RC}: $(tr '\n' ' ' < "${T}/wf-pr-suites/marks/ran")"; fi
+  wf_case queue-suites 1 merge_group 1 suites-2-of-5
+  if [ "$(cat "${T}/wf-queue-suites.rc")" = 0 ] && grep -q '^base .*--base ' "${T}/wf-queue-suites/marks/ran"; then
+    ok "T1 en la cola la parte suites-2-of-5 corre el public-ci.sh de la base"
+  else no "T1 en la cola la parte suites-2-of-5 no corrió la base: $(tr '\n' ' ' < "${T}/wf-queue-suites/marks/ran")"; fi
   # ── T3 · PublicCi_Workflow_RamaDeArranqueDeVuelta_Rojo — la rama que corría los controles del pedido
   #    cuando la base no traía el guion, de vuelta, o el freno quitado: rojo en base-controls ──
   altered "con la rama de arranque de vuelta" "base-controls" 'return t.replace(/^( *)git cat-file -e "\$\{BASE\}:scripts\/ci\/run-base-controls\.sh" \|\| .*\n((?:.*\n){2})/m,
