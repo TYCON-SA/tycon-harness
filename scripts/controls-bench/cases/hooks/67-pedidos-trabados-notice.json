@@ -7,7 +7,7 @@
       "matcher": "*",
       "env": {
         "TYCON_TREE": "${FIXTURE}",
-        "TYCON_ADO_CMD": "${FIXTURE}/az/az",
+        "TYCON_ADO_CMD": "${FIXTURE}/az.js",
         "FIXAZ": "${FIXTURE}/fixaz",
         "TYCON_PROFILE": "0",
         "TYCON_HARNESS_IDENTITIES": "https://dev.azure.com/acme/Harness/_git/harness"
@@ -32,6 +32,9 @@
             "stdout_re": [
               "pedido 5 \\(harness-maintainers\\) en choque hace 1 h · story/5"
             ]
+          },
+          "files": {
+            "az.js": "// el az de mentira lanzado con Node: en Windows un guion de bash sin extensión no se puede lanzar directo\nconst path = require('path');\nconst r = require('child_process').spawnSync(process.env.CLAUDE_CODE_GIT_BASH_PATH || 'bash', [path.join(__dirname, 'az', 'az'), ...process.argv.slice(2)], { stdio: 'inherit' });\nprocess.exit(r.status === null ? 1 : r.status);\n"
           }
         },
         {
@@ -49,7 +52,10 @@
             "session_id": "bench",
             "cwd": "${FIXTURE}/repo"
           },
-          "expect": {}
+          "expect": {},
+          "files": {
+            "az.js": "// el az de mentira lanzado con Node: en Windows un guion de bash sin extensión no se puede lanzar directo\nconst path = require('path');\nconst r = require('child_process').spawnSync(process.env.CLAUDE_CODE_GIT_BASH_PATH || 'bash', [path.join(__dirname, 'az', 'az'), ...process.argv.slice(2)], { stdio: 'inherit' });\nprocess.exit(r.status === null ? 1 : r.status);\n"
+          }
         },
         {
           "id": "grita-no-medido-si-az-falla",
@@ -72,6 +78,9 @@
             "stdout_re": [
               "pedidos trabados: no medido \\(.*harness-maintainers: "
             ]
+          },
+          "files": {
+            "az.js": "// el az de mentira lanzado con Node: en Windows un guion de bash sin extensión no se puede lanzar directo\nconst path = require('path');\nconst r = require('child_process').spawnSync(process.env.CLAUDE_CODE_GIT_BASH_PATH || 'bash', [path.join(__dirname, 'az', 'az'), ...process.argv.slice(2)], { stdio: 'inherit' });\nprocess.exit(r.status === null ? 1 : r.status);\n"
           }
         }
       ]

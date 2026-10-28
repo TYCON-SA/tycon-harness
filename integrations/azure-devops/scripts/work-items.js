@@ -71,7 +71,7 @@ function az(ctx, args) {
   if (call.problem) return { problem: no('rechazado', call.problem) };
   let r;
   try {
-    r = spawnSync(cmd, call.args, { env: ctx.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000, shell: call.shell, windowsHide: true });
+    r = spawnSync(call.file, call.args, { env: ctx.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000, shell: call.shell, windowsHide: true });
   } finally { call.cleanup(); }
   if (r.error) return { problem: no('no_medido', `${cmd} no se pudo ejecutar (${r.error.code || r.error.message})`) };
   if (r.status !== 0) {
