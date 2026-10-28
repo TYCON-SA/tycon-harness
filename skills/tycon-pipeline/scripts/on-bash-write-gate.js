@@ -454,8 +454,17 @@ function scriptsInline(cmd) {
 }
 
 // Quién lee el programa de la entrada lo decide el lector compartido, el mismo del freno de producción: los dos juzgan
-// igual el mismo comando. Sólo se usa esta función; las variables las sigue resolviendo command-vars.js.
-const { programasPorEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'));
+// igual el mismo comando. Sólo se usa esta función; las variables las sigue resolviendo command-vars.js. Sin el lector
+// (una instalación a medias) el portón carga igual, y cada cuerpo de heredoc cuenta como programa: frena de más
+let lectorDeEntrada;
+function programasPorEntrada(raw) {
+  if (lectorDeEntrada === undefined) {
+    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch { lectorDeEntrada = null; }
+  }
+  if (lectorDeEntrada) return lectorDeEntrada(raw);
+  return [...raw.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
+    .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3], comillas: Boolean(m[1]) }));
+}
 
 /**
  * El primer argumento de la llamada que abre en `desde` (el carácter después del paréntesis), respetando comillas y
