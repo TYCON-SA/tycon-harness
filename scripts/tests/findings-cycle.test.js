@@ -728,10 +728,10 @@ test('T14 Resumen_AceptadasNoSeRepiten', () => {
 // 🔴 Falla con: cambiar una letra de la tabla al mudarla (la huella es la de la tabla de antes), que el resumen use otra
 //    copia, o un nombre de más de 120 caracteres o con un salto de renglón. La huella cambió una vez a propósito, cuando
 //    el freno de stories ganó su nombre (T101), y otra cuando los apagados del chequeo de vida, del de mutantes y del
-//    portón de carril ganaron los suyos.
+//    portón de carril ganaron los suyos, y otra cuando las categorías que se cuentan aparte ganaron los suyos (M6).
 test('T15 Nombres_MudanzaSinCambiarTexto', () => {
   const crypto = require('crypto');
-  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fe91c8ccd26080a260e652416ddefc34550707e1');
+  assert.strictEqual(crypto.createHash('sha1').update(JSON.stringify(NOMBRES.NOMBRES_CAUSA)).digest('hex'), 'fad1881298d5d95d3ced3ab8bf8f65e4e58cdc67');
   assert.strictEqual(DS.NOMBRES_CAUSA, NOMBRES.NOMBRES_CAUSA, 'el resumen usa la misma tabla');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-HOOK', categoria: 'Stop/tiempo' }), 'aviso automático que se pasó de tiempo');
   assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla: 'RR-ESCAPE', categoria: 'ZZDESCONOCIDA' }), 'otro freno salteado');
@@ -1849,5 +1849,23 @@ test('M5 VistaComun_ClaseDeError', () => {
   assert.strictEqual(sources.comoFicha('ejecuciones', cycle.serializar(base)).hechos, null);
   for (const mal of [{ ...hechos, error_clase: 'inventada' }, { ...hechos, errores: { inventada: 1 } }, { ...hechos, texto: 'x' }, { ...hechos, error_veces: -1 }]) {
     assert.ok(cycle.problemasDeForma({ ...base, hechos: mal }).some((p) => /hechos/.test(p)), JSON.stringify(mal));
+  }
+});
+
+// M6 Nombres_CategoriasAparteConNombrePropio @mantenimiento
+// 🔴 Falla con: una categoría que la revisión cuenta aparte y que el resumen nombra como la falla de su raíz (un commit
+//    de laboratorio leído como «commit sin controles», una prueba en obra como «guion que no arrancó»).
+test('M6 Nombres_CategoriasAparteConNombrePropio', () => {
+  for (const clave of Object.keys(NOMBRES.APARTE)) {
+    const [regla, categoria] = clave.split(':');
+    const tabla = NOMBRES.NOMBRES_CAUSA[regla];
+    assert.ok(tabla, `${clave}: la regla está en la tabla`);
+    assert.ok(NOMBRES.hasOwnCausa(tabla, categoria), `${clave}: la categoría tiene su nombre en la tabla`);
+    const nombre = NOMBRES.nombreCausa({ regla, categoria });
+    const raiz = categoria.split('/')[0];
+    const deLaRaiz = raiz !== categoria && NOMBRES.hasOwnCausa(tabla, raiz) ? tabla[raiz] : tabla._;
+    assert.notStrictEqual(nombre, deLaRaiz, `${clave}: no se nombra como su raíz`);
+    assert.ok(NOMBRES.NOMBRES_VALIDOS.has(nombre), `${clave}: el resumen lo reconoce`);
+    assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla, categoria }), nombre);
   }
 });
