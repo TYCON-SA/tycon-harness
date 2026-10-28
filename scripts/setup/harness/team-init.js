@@ -44,6 +44,13 @@ const STORIES_LAYOUT = Object.freeze({
   github: [['github/stories-gate.yml', '.github/workflows/stories-gate.yml']],
 });
 const REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/;
+// el perfil local mínimo, cuando el ejemplo publicado no se puede bajar: la declaración (build le pone el nombre y la
+// versión) y un perfil con lo que build fija igual; team-repos.json no se usa en un perfil local
+const LOCAL_MINIMUM = Object.freeze({
+  'team-layer.json': '{ "schema": 1, "name": "local", "requires": {} }\n',
+  'team-profile.json': '{ "__doc": "La configuración de tu perfil local. Las claves son un vocabulario cerrado: una que el arnés no conoce invalida el perfil.", "update": { "channel": "stable", "apply": "ask" }, "install": { "profile": "minimal" } }\n',
+  'team-repos.json': '{}\n',
+});
 // los guiones de entrada NO piden el permiso del repo del equipo (sólo el del arnés): se dice cómo llega, no se promete
 // que se pida. GitHub: la variable, que el guion guarda; Azure: el gestor de credenciales de git
 const teamCredential = (src) => (src.host === 'azure'
@@ -240,8 +247,13 @@ function runLocal({ tree, home, env, opts, state, version, name, T, P, out, dry 
   }
   if (!dry && !hasGit(env)) return fail(1, 'el perfil local vive en un repo git de esta máquina y no encuentro git: instalalo y volvé a correrlo. No escribí nada.');
   const src = { host: 'local', name: path.basename(dir), repo: dir };
-  const ex = fetchExample(tree, env);
-  if (!ex.ok) return fail(1, `${ex.reason}. No escribí nada.`);
+  // sin el ejemplo publicado (sin red, o GitHub no contesta) el perfil local sale del mínimo que trae esta versión: un
+  // perfil de una persona sola no necesita nada de la red, y el lector lo juzga igual
+  let ex = fetchExample(tree, env);
+  if (!ex.ok) {
+    out(`team-init --local: ${ex.reason}; armo el perfil mínimo de esta versión, sin el ejemplo publicado`);
+    ex = { ok: true, files: LOCAL_MINIMUM };
+  }
   const built = build(ex.files, { name, src, version, publicRepo: null });
   if (!built.ok) return fail(1, `${built.reason}. No escribí nada.`);
   const v = validate(T, built.texts, { tree, version, home, env });
