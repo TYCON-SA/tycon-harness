@@ -48,6 +48,12 @@ const ENLACE = /^https:\/\/[^\s"'<>\\]{1,500}$/;
 const VIGENCIA_PEDIDOS_MS = 60 * 1000;
 const CARPETAS_VIVAS = ['pending', 'promoted'];
 const TOPE_ENVIO = 100;
+// lo que el sitio ya decidió y su foto de operaciones todavía no trae: en el disco del sitio, una semana como mucho
+const ARCHIVO_DECIDIDAS = 'mantenimiento-decididas.json';
+const VIGENCIA_DECIDIDA_MS = 7 * 24 * 3600 * 1000;
+// cómo terminó cada envío, por su número: lo pregunta la pantalla cuando la conexión se corta
+const ENVIO = /^[A-Za-z0-9_-]{8,64}$/;
+const VIGENCIA_ENVIO_MS = 15 * 60 * 1000;
 // las ramas de los pedidos de decisiones: las de a una (`decision-…`) y las de varias (`decisiones-…`)
 const RAMA_DE_DECISIONES = 'team-config/decision';
 // lo que el cuerpo del pedido dice de cada ficha: «fuente/id → acción»
@@ -74,6 +80,39 @@ const clave = (f) => `${f.fuente}/${f.id}`;
 const numeroDe = (enlace) => { const m = /\/(?:pull|pullrequest)\/(\d+)$/.exec(String(enlace || '')); return m ? Number(m[1]) : null; };
 const aparte = (f) => typeof f.causa === 'string' && hasOwn(APARTE, f.causa);
 
+/**
+ * Las fichas que el sitio ya decidió (aplicó él mismo, o encontró decididas en main al enviar) mientras su foto de
+ * operaciones no las trae: sin esto vuelven a «Te toca decidir» hasta el próximo refresco, y reenviarlas choca con su
+ * propia decisión. Se guardan en el disco del sitio (sobreviven a un reinicio) y se olvidan cuando la foto ya trae la
+ * decisión o a la semana. Sin disco, en memoria. Un archivo roto o un disco caído no tiran la pestaña: se empieza vacío.
+ */
+function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {}) {
+  const archivo = dataDir ? path.join(dataDir, ARCHIVO_DECIDIDAS) : null;
+  let memoria = {};
+  if (archivo) {
+    try { const d = JSON.parse(fs.readFileSync(archivo, 'utf8')); if (isObject(d)) memoria = d; } catch (e) {
+      if (!(e && e.code === 'ENOENT')) log(`mantenimiento: la lista de lo ya decidido no se pudo leer (${e.code || 'sin forma'}): se empieza vacía`);
+    }
+  }
+  const vigente = (x) => isObject(x) && CYCLE.ACCIONES.includes(x.accion) && Number.isFinite(x.en) && ahora() - x.en < VIGENCIA_DECIDIDA_MS;
+  function guardar() {
+    for (const k of Object.keys(memoria)) if (!vigente(memoria[k])) delete memoria[k];
+    if (!archivo) return;
+    const tmp = `${archivo}.${process.pid}.tmp`;
+    try { fs.writeFileSync(tmp, `${JSON.stringify(memoria)}\n`); fs.renameSync(tmp, archivo); } catch (e) {
+      log(`mantenimiento: la lista de lo ya decidido no se pudo guardar (${(e && e.code) || 'error'}): vale hasta el próximo reinicio`);
+    }
+  }
+  return {
+    /** `[{ clave, accion }]`: decididas recién. */
+    marcar(lista) { for (const x of lista) memoria[x.clave] = { accion: x.accion, en: ahora() }; guardar(); },
+    /** La acción decidida, o null. */
+    accionDe(k) { return hasOwn(memoria, k) && vigente(memoria[k]) ? memoria[k].accion : null; },
+    /** La foto ya la trae: no hace falta recordarla. */
+    olvidar(k) { if (hasOwn(memoria, k)) { delete memoria[k]; guardar(); } },
+  };
+}
+
 function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, demo = false }) {
   const T = (idioma, k, v) => TX.t(idioma, k, v);
   const clones = () => (typeof fuentes.clones === 'function' ? fuentes.clones() : null) || {};
@@ -81,6 +120,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   const remote = () => remotos.operaciones || ORG.remoteOf(cfg.operationsRepo);
   const carpetaDe = (fuente) => SOURCES.FUENTES[fuente].carpeta;
   const rutaDecision = (fuente, id) => path.posix.join('inbox', carpetaDe(fuente), 'decisions', `${id}.json`);
+  const decididas = crearDecididas({ dataDir: cfg.dataDir, ahora, log });
+  const envios = new Map();
 
   // ── las fichas ──
 
@@ -200,7 +241,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     if (l.estado !== 'leido') return 0;
     const dir = dirOps();
     const enPedido = ultimaMembresia ? ultimaMembresia.porFicha : new Map();
-    return l.fichas.filter((f) => porDecidir(f) && decisionEnMain(dir, f) === null && !enPedido.has(clave(f))).length;
+    return l.fichas.filter((f) => porDecidir(f) && decisionEnMain(dir, f) === null && !decididas.accionDe(clave(f)) && !enPedido.has(clave(f))).length;
   }
 
   // ── la tarea de cada arreglo y de cada vulnerabilidad ──
@@ -366,7 +407,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
-      if (enMain) { aprobadas.push({ fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), accion: enMain.accion }); continue; }
+      if (enMain) decididas.olvidar(clave(f));
+      const yaDecidida = enMain ? enMain.accion : decididas.accionDe(clave(f));
+      if (enMain || yaDecidida) { aprobadas.push({ fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), accion: yaDecidida }); continue; }
       const p = enPedido.get(clave(f));
       if (p) {
         if (!pedidos.has(p.numero)) pedidos.set(p.numero, { numero: p.numero, enlace: p.enlace, aprobado: false, filas: [] });
@@ -428,9 +471,11 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // te toca decidir
     const subgrupos = SE_DECIDEN.map((fuente) => {
       const filas = m.toca.filter((x) => x.fuente === fuente);
-      return filas.length ? `<h3 class="m-sub">${esc(T(idioma, fuente === 'vigilante' ? 'mant.sub.produccion' : 'mant.sub.ejecuciones', { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
+      const sub = fuente === 'vigilante' ? 'mant.sub.produccion' : 'mant.sub.ejecuciones';
+      // el molde del número va en la página: la pantalla recuenta sola cuando saca una ficha
+      return filas.length ? `<h3 class="m-sub" data-fuente="${esc(fuente)}" data-t="${esc(T(idioma, sub, { n: '{n}' }))}">${esc(T(idioma, sub, { n: filas.length }))}</h3>${filas.map(carta).join('')}` : '';
     }).join('');
-    const toca = `<div class="m-bloque m-toca"><h2>${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
+    const toca = `<div class="m-bloque m-toca"><h2 data-t="${esc(T(idioma, 'mant.toca.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.toca.titulo', { n: m.toca.length }))}</h2>`
       + `<p class="m-intro">${esc(T(idioma, 'mant.toca.intro'))} ${ayuda('aceptar')} ${ayuda('arreglar')} ${ayuda('enviar')}</p>`
       + (m.toca.length ? subgrupos : `<p class="q-note">${esc(T(idioma, 'mant.vacio'))}</p>`) + '</div>';
 
@@ -485,7 +530,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
 
     // la barra y la ayuda: sólo si hay algo para decidir
     const k = m.toca.filter((x) => x.recomendada).length;
-    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', ok: 'mant.envio.ok', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
+    const textos = { elegidas: 'mant.barra.elegidas', elegidaUna: 'mant.barra.elegidaUna', seguir: 'mant.barra.seguir', enviando: 'mant.envio.enviando', lento: 'mant.envio.lento', verificando: 'mant.envio.verificando', yaEnviado: 'mant.envio.yaEnviado', noLlego: 'mant.envio.noLlego', aplicado: 'mant.envio.aplicado', ok: 'mant.envio.ok', error: 'mant.envio.error', demo: 'mant.envio.demo', esperaTitulo: 'mant.espera.titulo', pedido: 'mant.espera.pedido', pedidoUna: 'mant.espera.pedidoUna' };
     const datos = Object.entries(textos).map(([n, kk]) => ` data-t-${n.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${esc(T(idioma, kk))}"`).join('')
       + ` data-t-aceptar="${esc(accion('aceptar'))}" data-t-arreglar="${esc(accion('arreglar'))}"`;
     const barra = m.toca.length
@@ -518,7 +563,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     if (m.estado !== 'leido') return json(200, { ok: false, codigo: 'sin_pedidos', message: T(idioma, 'mant.sinPedidos') });
     const enPedido = m.porFicha;
     const omitidas = [];
-    const van = [];
+    let van = [];
     for (const x of lista) {
       const reg = SOURCES.FUENTES[x.fuente];
       // 🔴 Sólo «el archivo no está» es «ya no está pendiente»: una ficha o una carpeta que no se pueden leer no abren
@@ -530,17 +575,17 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!f || f.id !== x.id || f.veredicto !== 'pendiente' || f.estado === 'resuelta' || aparte(f)) { omitidas.push(clave(x)); continue; }
       const enMain = decisionEnMain(dir, x);
       if (enMain === 'ilegible') return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
-      if (enMain || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
+      if (enMain || decididas.accionDe(clave(x)) || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
       van.push({ fuente: x.fuente, id: x.id, accion: x.accion });
     }
     if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas });
     const quien = norm((ctx.sesion && ctx.sesion.email) || (ctx.quien && ctx.quien.email));
     const el = new Date(ahora()).toISOString().slice(0, 10);
-    const decisiones = van.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el }));
-    const archivos = decisiones.map((d) => ({ archivo: rutaDecision(d.fuente, d.id), contenido: `${JSON.stringify(d, null, 2)}\n`, oidEsperado: null }));
-    if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivos: archivos.map(({ archivo, contenido }) => ({ archivo, contenido })) }, omitidas });
+    const conForma = (lista) => lista.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el }));
+    const archivosDe = (decs) => decs.map((d) => ({ archivo: rutaDecision(d.fuente, d.id), contenido: `${JSON.stringify(d, null, 2)}\n`, oidEsperado: null }));
+    if (demo) return json(200, { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivos: archivosDe(conForma(van)).map(({ archivo, contenido }) => ({ archivo, contenido })) }, omitidas });
     // la noche sólo aplica una decisión con forma: una que no la tiene (sin correo, por ejemplo) no se propone
-    if (decisiones.some((d) => !CYCLE.decisionConForma(d, d.fuente, d.id))) return json(200, { ok: false, codigo: 'sin_identidad', message: T(idioma, 'hallazgos.sinIdentidad') });
+    if (conForma(van).some((d) => !CYCLE.decisionConForma(d, d.fuente, d.id))) return json(200, { ok: false, codigo: 'sin_identidad', message: T(idioma, 'hallazgos.sinIdentidad') });
     let clon = dir;
     if (clones().operaciones.indice) {
       if (typeof fuentes.clonDeEscritura !== 'function') return json(200, { ok: false, message: TX.t('es', 'config.sinClonEscritura') });
@@ -548,20 +593,66 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!e || !e.dir) return json(200, { ok: false, message: TX.t('es', 'config.clonFallo', { motivo: (e && e.motivo) || TX.t('es', 'config.noSeArmoClon') }) });
       clon = e.dir;
     }
-    const secciones = van.map((x) => `${clave(x)} → ${x.accion}`);
-    // el pedido se nombra por lo que trae: reenviar lo mismo encuentra el abierto y no abre otro
-    const idCorto = `decisiones-${crypto.createHash('sha1').update([...secciones].sort().join('\n')).digest('hex').slice(0, 12)}`;
     const c = fuentes.config();
-    const r = await RP.proponer({
-      clon, archivos, idCorto, secciones, titulo: `Decisiones sobre lo que encontró la noche (${van.length})`, quien,
-      credencial: cfg.escritura && cfg.escritura.operaciones, remote: remote(), urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
-      now: new Date(ahora()), fetch, log, aplicarSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
-    });
+    // 🔴 La foto del sitio puede venir atrasada: main, recién traída, ya puede tener la decisión de una ficha (un envío
+    // anterior que llegó mientras la pantalla esperaba). Esa no es un choque: ya está hecha. Sale de la lista y se
+    // propone el resto; el choque con otra cosa (un archivo que no es su decisión) sigue siendo un error.
+    const yaDecididas = [];
+    let r;
+    for (;;) {
+      const decisiones = conForma(van);
+      const archivos = archivosDe(decisiones);
+      const secciones = van.map((x) => `${clave(x)} → ${x.accion}`);
+      // el pedido se nombra por lo que trae: reenviar lo mismo encuentra el abierto y no abre otro
+      const idCorto = `decisiones-${crypto.createHash('sha1').update([...secciones].sort().join('\n')).digest('hex').slice(0, 12)}`;
+      r = await RP.proponer({
+        clon, archivos, idCorto, secciones, titulo: `Decisiones sobre lo que encontró la noche (${van.length})`, quien,
+        credencial: cfg.escritura && cfg.escritura.operaciones, remote: remote(), urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
+        now: new Date(ahora()), fetch, log, aplicarSolo: Boolean(c && isObject(c.site) && c.site.auto_apply === true),
+      });
+      const hecha = r && r.codigo === 'cambio' ? decisionPropia(r.archivo || archivos[0].archivo, r.textoActual) : null;
+      if (!hecha) break;
+      yaDecididas.push(hecha);
+      van = van.filter((x) => clave(x) !== hecha.clave);
+      if (!van.length) break;
+    }
     // la próxima lectura vuelve a mirar qué espera aprobación
     membresiaGuardada = null;
+    const aplicadas = r && r.codigo === 'aplicado' ? van.map((x) => ({ clave: clave(x), accion: x.accion })) : [];
+    if (yaDecididas.length || aplicadas.length) {
+      decididas.marcar([...yaDecididas, ...aplicadas]);
+      if (typeof fuentes.refrescar === 'function') {
+        try { await fuentes.refrescar(); } catch (e) { log(`mantenimiento: después de decidir, el refresco falló (${(e && e.name) || 'error'}): se ve en el próximo`); }
+      }
+    }
+    const omitidasTodas = [...omitidas, ...yaDecididas.map((x) => x.clave)];
+    if (!van.length) return json(200, { ok: true, codigo: 'ya_decidida', message: T(idioma, 'mant.envio.yaDecidida'), omitidas: omitidasTodas, enviadas: [] });
     const { textoActual: _t, oidActual: _o, ...resto } = r || {};
     const numero = numeroDe(resto.enlace);
-    return json(200, { ...resto, ...(numero ? { numero } : {}), omitidas, enviadas: van.map(clave) });
+    return json(200, { ...resto, ...(numero ? { numero } : {}), omitidas: omitidasTodas, enviadas: van.map(clave) });
+  }
+
+  /** Si el texto de main en `archivo` es la decisión de esa misma ficha: `{ clave, accion }`; si no, null. */
+  function decisionPropia(archivo, texto) {
+    const m = /^inbox\/([^/]+)\/decisions\/([^/]+)\.json$/.exec(String(archivo || ''));
+    if (!m || typeof texto !== 'string') return null;
+    let d = null;
+    try { d = JSON.parse(texto); } catch { return null; }
+    if (!isObject(d) || !SE_DECIDEN.includes(d.fuente) || carpetaDe(d.fuente) !== m[1] || d.id !== m[2] || !CYCLE.ACCIONES.includes(d.accion)) return null;
+    return { clave: `${d.fuente}/${d.id}`, accion: d.accion };
+  }
+
+  /** Un envío con número: el mismo número no se corre dos veces, y cómo terminó queda para preguntarlo. */
+  function porNumero(id, correr) {
+    const t = ahora();
+    for (const [k, v] of envios) if (t - v.t > VIGENCIA_ENVIO_MS) envios.delete(k);
+    if (!id) return correr();
+    const previo = envios.get(id);
+    if (previo) return previo.promesa;
+    const e = { t, estado: 'en_curso', resultado: null, promesa: null };
+    e.promesa = Promise.resolve().then(correr).then((res) => { e.estado = 'listo'; e.resultado = res; return res; }, (err) => { envios.delete(id); throw err; });
+    envios.set(id, e);
+    return e.promesa;
   }
 
   /** Los mensajes de la casa, en el idioma del pedido (como la Configuración). */
@@ -586,7 +677,22 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         const e = await defensaDeEscritura(cfg, ctx);
         if (e.error) return e.error;
         const idioma = views.idiomaDe(ctx);
-        return enIdioma(await confirmar(e.body, ctx, idioma), idioma);
+        const id = isObject(e.body) && hasOwn(e.body, 'envio') ? e.body.envio : null;
+        if (id !== null && (typeof id !== 'string' || !ENVIO.test(id))) return json(400, { ok: false, message: T(idioma, 'hallazgos.pedidoInvalido') });
+        // la respuesta se arma en el idioma de quien pregunta; lo guardado, en el de la casa
+        return enIdioma(await porNumero(id, () => confirmar(e.body, ctx, idioma)), idioma);
+      },
+    },
+    {
+      method: 'GET', path: '/api/hallazgos/envio', needs: solo, handler: (ctx) => {
+        const id = ctx.url && ctx.url.searchParams.get('id');
+        if (typeof id !== 'string' || !ENVIO.test(id)) return json(400, { ok: false, message: T(views.idiomaDe(ctx), 'hallazgos.pedidoInvalido') });
+        const e = envios.get(id);
+        if (!e || ahora() - e.t > VIGENCIA_ENVIO_MS) return json(200, { estado: 'desconocido' });
+        if (e.estado !== 'listo') return json(200, { estado: 'en_curso' });
+        let resultado = null;
+        try { resultado = JSON.parse(e.resultado.cuerpo); } catch { /* sin cuerpo legible: se dice listo sin detalle */ }
+        return json(200, { estado: 'listo', resultado });
       },
     },
     { method: 'GET', path: '/hallazgos/cliente.js', needs: solo, handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CLIENTE }) },
@@ -644,6 +750,24 @@ const CLIENTE = `(function () {
     if (c) c.parentNode.removeChild(c);
     delete elecciones[k];
     hayRecomendadas = Boolean(s.querySelector('article[data-recomendada]'));
+    recontar();
+  }
+  // los números de la pantalla cuentan lo que sigue esperando: el título, el subtítulo de cada fuente y la pestaña
+  function recontar() {
+    var toca = s.querySelector('.m-toca');
+    if (!toca) return;
+    var n = toca.querySelectorAll('article[data-ficha]').length;
+    var h2 = toca.querySelector('h2[data-t]');
+    if (h2) h2.textContent = h2.getAttribute('data-t').replace('{n}', n);
+    Array.prototype.forEach.call(toca.querySelectorAll('h3.m-sub[data-fuente]'), function (h3) {
+      var f = h3.getAttribute('data-fuente');
+      var m = toca.querySelectorAll('article[data-ficha^="' + f + '/"]').length;
+      if (m) h3.textContent = h3.getAttribute('data-t').replace('{n}', m);
+      else h3.parentNode.removeChild(h3);
+    });
+    var tab = document.querySelector('nav.tabs a[href="/mantenimiento"]');
+    var txt = tab && tab.lastChild;
+    if (txt && txt.nodeType === 3) txt.nodeValue = txt.nodeValue.replace(/\\s*\\(\\d+\\)$/, '') + (n ? ' (' + n + ')' : '');
   }
   function aEspera(j, enviadas, acciones) {
     var bloque = s.querySelector('.m-espera');
@@ -667,49 +791,100 @@ const CLIENTE = `(function () {
     g.appendChild(ul); bloque.appendChild(g);
     bloque.querySelector('h2').textContent = t('espera-titulo').replace('{n}', bloque.querySelectorAll('li').length);
   }
+  // Un envío lleva su número: si la conexión se corta o tarda de más (el sitio dormido tarda en despertar, y lo que está
+  // delante puede cortar la espera mientras el envío sigue), la pantalla pregunta cómo terminó en vez de quedarse colgada.
+  var LENTO_MS = 15000, TOPE_MS = 150000, CADA_MS = 4000, PREGUNTAS = 45;
+  function terminar(j, ks, acciones) {
+    var estado = barra.querySelector('.m-estado');
+    enviando = false;
+    estado.textContent = '';
+    // las que el sitio salteó ya no están por decidir (decididas en otro lado, o ya en un pedido): salen de la lista
+    ((j && j.omitidas) || []).forEach(quitar);
+    // nada quedaba por enviar: lo elegido ya estaba decidido o en un pedido; recargar traería la misma foto vieja
+    if (j && j.codigo === 'nada_que_enviar') { ks.forEach(quitar); estado.textContent = t('ya-enviado'); pintar(); return; }
+    if (j && j.ok && j.demo && j.loQuePasaria) {
+      estado.appendChild(document.createTextNode(t('demo') + ' '));
+      (j.loQuePasaria.archivos || []).forEach(function (x) { var c = document.createElement('code'); c.textContent = String(x.archivo || ''); estado.appendChild(c); estado.appendChild(document.createTextNode(' ')); });
+      pintar();
+      return;
+    }
+    // ya estaba hecho: no es un error, la ficha sale y se dice
+    if (j && j.codigo === 'ya_decidida') { estado.textContent = j.message || t('ya-enviado'); pintar(); return; }
+    if (j && j.codigo === 'aplicado') {
+      (j.enviadas || ks).forEach(quitar);
+      estado.textContent = t('aplicado');
+      pintar();
+      return;
+    }
+    // un pedido abierto con lo mismo: ya está esperando aprobación
+    if (j && (j.ok || (j.codigo === 'pedido_abierto' && j.enlace))) {
+      aEspera(j, j.enviadas || ks, acciones);
+      estado.textContent = t('ok').replace('{numero}', j.numero || '');
+      pintar();
+      return;
+    }
+    estado.textContent = t('error').replace('{motivo}', (j && j.message) || '');
+    pintar();
+  }
+  // sin respuesta del envío: el sitio sabe cómo terminó por su número; si no lo sabe (se reinició), la lista dice si las
+  // elegidas ya no esperan decisión
+  function averiguar(id, ks, acciones, n) {
+    var estado = barra.querySelector('.m-estado');
+    estado.textContent = t('verificando');
+    fetch('/api/hallazgos/envio?id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (e) {
+        if (e && e.estado === 'listo' && e.resultado) { terminar(e.resultado, ks, acciones); return; }
+        if (e && e.estado === 'desconocido') { porLaLista(ks); return; }
+        if (n >= PREGUNTAS) { enviando = false; estado.textContent = t('no-llego'); pintar(); return; }
+        setTimeout(function () { averiguar(id, ks, acciones, n + 1); }, CADA_MS);
+      })
+      .catch(function () {
+        if (n >= PREGUNTAS) { enviando = false; estado.textContent = t('no-llego'); pintar(); return; }
+        setTimeout(function () { averiguar(id, ks, acciones, n + 1); }, CADA_MS);
+      });
+  }
+  function porLaLista(ks) {
+    var estado = barra.querySelector('.m-estado');
+    fetch('/api/hallazgos', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) {
+        enviando = false;
+        if (!m || !Array.isArray(m.toca)) { estado.textContent = t('no-llego'); pintar(); return; }
+        var siguen = {};
+        m.toca.forEach(function (x) { siguen[x.fuente + '/' + x.id] = true; });
+        var faltan = ks.filter(function (k) { return siguen[k]; });
+        if (faltan.length) { estado.textContent = t('no-llego'); pintar(); return; }
+        ks.forEach(quitar);
+        estado.textContent = t('ya-enviado');
+        pintar();
+      })
+      .catch(function () { enviando = false; estado.textContent = t('no-llego'); pintar(); });
+  }
   barra.querySelector('.m-enviar').addEventListener('click', function () {
     var ks = Object.keys(elecciones);
     if (!ks.length) return;
     var estado = barra.querySelector('.m-estado');
-    var boton = barra.querySelector('.m-enviar');
     enviando = true; estado.textContent = t('enviando'); pintar();
     var acciones = {};
     ks.forEach(function (k) { acciones[k] = elecciones[k]; });
     var decisiones = ks.map(function (k) { var i = k.indexOf('/'); return { fuente: k.slice(0, i), id: k.slice(i + 1), accion: acciones[k] }; });
-    fetch('/api/hallazgos/confirmar', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-site-token': s.getAttribute('data-token') || '' }, body: JSON.stringify({ decisiones: decisiones }) })
-      .then(function (r) { return r.json().catch(function () { return { ok: false, message: String(r.status) }; }); })
-      .then(function (j) {
-        enviando = false;
-        estado.textContent = '';
-        // las que el sitio salteó ya no están por decidir (decididas en otro lado, o ya en un pedido): salen de la lista
-        ((j && j.omitidas) || []).forEach(quitar);
-        if (j && j.codigo === 'nada_que_enviar') { location.reload(); return; }
-        if (j && j.ok && j.demo && j.loQuePasaria) {
-          estado.appendChild(document.createTextNode(t('demo') + ' '));
-          (j.loQuePasaria.archivos || []).forEach(function (x) { var c = document.createElement('code'); c.textContent = String(x.archivo || ''); estado.appendChild(c); estado.appendChild(document.createTextNode(' ')); });
-          pintar();
-          return;
-        }
-        if (j && j.codigo === 'aplicado') {
-          (j.enviadas || ks).forEach(quitar);
-          estado.textContent = j.message || '';
-          pintar();
-          return;
-        }
-        // un pedido abierto con lo mismo: ya está esperando aprobación
-        if (j && (j.ok || (j.codigo === 'pedido_abierto' && j.enlace))) {
-          aEspera(j, j.enviadas || ks, acciones);
-          estado.textContent = t('ok').replace('{numero}', j.numero || '');
-          pintar();
-          return;
-        }
-        estado.textContent = t('error').replace('{motivo}', (j && j.message) || '');
-        pintar();
+    var id = 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    var corte = typeof AbortController === 'function' ? new AbortController() : null;
+    var lento = setTimeout(function () { if (enviando) estado.textContent = t('lento'); }, LENTO_MS);
+    var tope = setTimeout(function () { if (corte) corte.abort(); }, TOPE_MS);
+    var listo = function () { clearTimeout(lento); clearTimeout(tope); };
+    fetch('/api/hallazgos/confirmar', { method: 'POST', credentials: 'same-origin', signal: corte ? corte.signal : undefined, headers: { 'content-type': 'application/json', 'x-site-token': s.getAttribute('data-token') || '' }, body: JSON.stringify({ envio: id, decisiones: decisiones }) })
+      .then(function (r) {
+        listo();
+        // lo que está delante del sitio cortó la espera (un 502 o 504, sin el JSON del sitio): el envío puede seguir
+        return r.json().catch(function () { return null; });
       })
-      .catch(function () { enviando = false; estado.textContent = t('error').replace('{motivo}', ''); pintar(); });
+      .then(function (j) { if (j) terminar(j, ks, acciones); else averiguar(id, ks, acciones, 0); })
+      .catch(function () { listo(); averiguar(id, ks, acciones, 0); });
   });
   pintar();
 })();
 `;
 
-module.exports = { crearRutas, CLIENTE, CARPETAS_VIVAS };
+module.exports = { crearRutas, crearDecididas, CLIENTE, CARPETAS_VIVAS };

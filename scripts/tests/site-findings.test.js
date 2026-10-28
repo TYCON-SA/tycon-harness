@@ -15,6 +15,9 @@
  *   T37c Sitio_PedidoViejoDeLaNoche_SeDecideIgual        T71 Mantenimiento_QuePasoYMeta
  *   T72 Mantenimiento_Analisis_RecomiendaYOrden          T73 Mantenimiento_AyudaYBarra_EnElIdioma
  *   T74 Mantenimiento_MenuConCuantasEsperan              T75 Mantenimiento_Envio_FormaYTope
+ *   T76 Sitio_DecisionYaEnMain_NoPideRecargar           T77 Sitio_Decididas_NoReaparecen
+ *   T78 Sitio_Envio_SeSigueSuNumero                      T79 Mantenimiento_Envio_DiceQuePasa
+ *   T80 Mantenimiento_Cuentas_BajanConLoDecidido
  *
  * El servidor real del sitio sobre un clon de operaciones de mentira: el repo es un repo git local y la API de GitHub un
  * servidor falso en el proceso (lib/fake-github-api.js). Sin red. Correos y repos inventados.
@@ -102,7 +105,7 @@ function armarOperaciones({ opsDoc, extra = {} }) {
  * El sitio con las pestañas Mantenimiento y Ejecuciones, sobre el clon de operaciones. `fn` recibe los ayudantes.
  * `politica`: la rama principal pide la aprobación de otra persona (por defecto, sí).
  */
-async function conSitio({ politica = true, autoApply = false, extra = {}, clones } = {}, fn) {
+async function conSitio({ politica = true, autoApply = false, extra = {}, clones, dataDir = null } = {}, fn) {
   let api; let emisor; let h;
   try {
     api = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
@@ -117,6 +120,7 @@ async function conSitio({ politica = true, autoApply = false, extra = {}, clones
     emisor = await arrancarEmisor();
     const env = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, SITE_OPERATIONS_REPO: 'https://github.com/acme/ops', SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA });
     const cfg = validarConfiguracion(env).cfg;
+    if (dataDir) cfg.dataDir = dataDir;
     const reloj = { t: AHORA };
     const hallazgos = FINDINGS().crearRutas({ cfg, fuentes, ahora: () => reloj.t, urlBase: { github: api.base } });
     const rutasExtra = [...hallazgos, ...RUNS().crearRutas({ cfg, fuentes, version: '2026.10.25.1' })];
@@ -132,7 +136,7 @@ async function conSitio({ politica = true, autoApply = false, extra = {}, clones
     const enviar = async (...ds) => confirmar({ decisiones: ds.map(([fuente, id, accion]) => ({ fuente, id, accion })) });
     const fila = (j, fuente, id) => (j.toca || []).find((x) => x.fuente === fuente && x.id === id);
     const llamadasPedidos = () => api.llamadas.filter((l) => l.method === 'GET' && /\/pulls$/.test(l.ruta)).length;
-    await fn({ h, api, ops, lead, dev, tok, lista, confirmar, enviar, fila, reloj, llamadasPedidos, entrar });
+    await fn({ h, api, ops, lead, dev, tok, lista, confirmar, enviar, fila, reloj, llamadasPedidos, entrar, fuentes });
   } finally { await Promise.allSettled([h && h.cerrar(), emisor && emisor.cerrar(), api && api.cerrar()].filter(Boolean)); }
 }
 
@@ -617,7 +621,9 @@ test('T72 Mantenimiento_Analisis_RecomiendaYOrden — el análisis dice por qué
     assert.match(a, /Por qué:<\/b> <span lang="es">Su tope es de 2 s/);
     assert.match(a, /Recomienda Arreglar:<\/b> <span lang="es">no es una falla del arnés/);
     assert.match(a, /Si se arregla:<\/b> <span lang="es">separar los avisos/);
-    assert.match(a, /Análisis de una persona/);
+    // lo escribe a mano una persona o una sesión de trabajo, fuera de la noche: el texto vale para las dos
+    assert.match(a, /Análisis escrito a mano, fuera de la noche/);
+    assert.doesNotMatch(p.texto, /Análisis de una persona|hoy lo escribe una persona\./);
     assert.match(a, /<button type="button" class="m-elegir recomendada" data-accion="arreglar" aria-pressed="false">Arreglar<\/button>/);
     assert.doesNotMatch(p.texto.slice(p.texto.indexOf('id="hallazgos"')), /aria-pressed="true"/, 'nada elegido de entrada');
     const b = cartaDe(p.texto, `ejecuciones/${B.id}`);
@@ -819,5 +825,138 @@ test('M8 Mantenimiento_EnMarcha_SeCreaSoloSiLaNocheLaCrea — «se crea esta noc
     const j = (await lista()).json;
     assert.deepStrictEqual(estados(j)['vig-nueva'], ['sin_tarea', 'configuracion-ilegible']);
     assert.ok(!j.marcha.arreglos.some((x) => x.estado === 'se_crea'), JSON.stringify(j.marcha.arreglos));
+  });
+});
+
+// ── T76 · T77 · T78 · T79: un envío que se puede seguir, y lo decidido no vuelve ─────────────────────────────────────
+
+/** main de operaciones ya trae la decisión de `id` (un envío anterior), y el clon del sitio sigue en la foto de antes. */
+function decisionYaEnMain(ops, fuente, carpeta, id, accion = 'aceptar') {
+  g(ops.trabajo, 'pull', '-q', ops.bare, 'main');
+  const rel = `inbox/${carpeta}/decisions/${id}.json`;
+  fs.mkdirSync(path.dirname(path.join(ops.trabajo, rel)), { recursive: true });
+  fs.writeFileSync(path.join(ops.trabajo, rel), `${JSON.stringify({ fuente, id, accion, quien: LEAD, el: '2026-10-25' }, null, 2)}\n`);
+  g(ops.trabajo, 'add', '-A'); g(ops.trabajo, 'commit', '-q', '-m', 'la decisión de antes');
+  g(ops.trabajo, 'push', '-q', ops.bare, 'HEAD:main');
+}
+
+// Sitio_DecisionYaEnMain_NoPideRecargar
+// 🔴 Falla con: pedir «recargá» cuando main ya trae la decisión de esa misma ficha (un envío anterior que llegó mientras
+//    la pantalla esperaba, con el sitio leyendo todavía la foto de antes), abrir un pedido con ella, o no refrescar la
+//    foto después de escribir.
+test('T76 Sitio_DecisionYaEnMain_NoPideRecargar — lo ya decidido en main sale de la lista como hecho, no como error', { timeout: 60000 }, async () => {
+  await conSitio({}, async ({ api, ops, enviar, fuentes }) => {
+    decisionYaEnMain(ops, 'ejecuciones', 'runs-review', EJ1.id);
+    const antes = fuentes.st.refrescos;
+    const sola = await enviar(['ejecuciones', EJ1.id, 'aceptar']);
+    assert.strictEqual(sola.json.codigo, 'ya_decidida', sola.texto);
+    assert.strictEqual(sola.json.ok, true, 'ya estaba hecho: no es un error');
+    assert.deepStrictEqual(sola.json.omitidas, [`ejecuciones/${EJ1.id}`]);
+    assert.doesNotMatch(sola.json.message, /recarg/i, 'recargar no lo arregla: no se pide');
+    assert.strictEqual(api.st.pedidos.length, 0, 'ningún pedido con lo que ya está en main');
+    assert.ok(fuentes.st.refrescos > antes, 'la foto se refresca enseguida');
+    // junto con otra: sale la decidida y la otra va en su pedido
+    const mezcla = await enviar(['ejecuciones', EJ1.id, 'arreglar'], ['vigilante', 'vig-uno', 'aceptar']);
+    assert.strictEqual(mezcla.json.ok, true, mezcla.texto);
+    assert.deepStrictEqual(mezcla.json.omitidas, [`ejecuciones/${EJ1.id}`]);
+    assert.deepStrictEqual(g(ops.bare, 'diff', '--name-only', 'main', api.st.pedidos[0].head.ref).split('\n'), ['inbox/watcher/decisions/vig-uno.json']);
+  });
+});
+
+// Sitio_Decididas_NoReaparecen
+// 🔴 Falla con: una ficha que el sitio ya decidió y vuelve a «Te toca decidir» porque la foto de operaciones todavía no
+//    la trae (el refresco de siempre, o un reinicio con la foto vieja), o una marca que no se olvida nunca.
+test('T77 Sitio_Decididas_NoReaparecen — lo que el sitio ya decidió no vuelve, ni después de reiniciar', { timeout: 60000 }, async () => {
+  const datos = tmp('site-findings-datos-');
+  await conSitio({ dataDir: datos }, async ({ ops, enviar, lista, fila }) => {
+    decisionYaEnMain(ops, 'ejecuciones', 'runs-review', EJ1.id, 'arreglar');
+    assert.strictEqual((await enviar(['ejecuciones', EJ1.id, 'aceptar'])).json.codigo, 'ya_decidida');
+    const j = (await lista()).json;
+    assert.strictEqual(fila(j, 'ejecuciones', EJ1.id), undefined, 'no vuelve a «Te toca decidir» con la foto vieja');
+    const aprobada = j.espera.find((p) => p.aprobado);
+    assert.deepStrictEqual(aprobada && aprobada.filas.map((x) => [x.id, x.accion]), [[EJ1.id, 'arreglar']], 'espera con la decisión que está en main');
+  });
+  // otro arranque del sitio sobre el mismo disco y la misma foto vieja: tampoco vuelve
+  await conSitio({ dataDir: datos }, async ({ lista, fila }) => {
+    assert.strictEqual(fila((await lista()).json, 'ejecuciones', EJ1.id), undefined, 'después de reiniciar, tampoco');
+  });
+  // la marca: se olvida cuando la foto ya trae la decisión, y vence sola
+  const D = FINDINGS().crearDecididas;
+  let t = AHORA;
+  const a = D({ dataDir: datos, ahora: () => t });
+  a.marcar([{ clave: 'vigilante/x1', accion: 'aceptar' }]);
+  assert.strictEqual(D({ dataDir: datos, ahora: () => t }).accionDe('vigilante/x1'), 'aceptar', 'otra instancia la lee del disco');
+  a.olvidar('vigilante/x1');
+  assert.strictEqual(D({ dataDir: datos, ahora: () => t }).accionDe('vigilante/x1'), null);
+  a.marcar([{ clave: 'vigilante/x2', accion: 'arreglar' }]);
+  t += 8 * 24 * 3600 * 1000;
+  assert.strictEqual(D({ dataDir: datos, ahora: () => t }).accionDe('vigilante/x2'), null, 'vence sola');
+  // sin disco, en memoria; un archivo roto no tira al sitio
+  assert.strictEqual(D({ dataDir: null }).accionDe('vigilante/x1'), null);
+  fs.writeFileSync(path.join(datos, 'mantenimiento-decididas.json'), '{roto');
+  assert.strictEqual(D({ dataDir: datos }).accionDe('vigilante/x1'), null);
+});
+
+// Sitio_Envio_SeSigueSuNumero
+// 🔴 Falla con: un envío que no se puede seguir cuando la conexión se corta (la pantalla no sabe si llegó), o un reenvío
+//    con el mismo número que abre un segundo pedido.
+test('T78 Sitio_Envio_SeSigueSuNumero — cómo terminó un envío se pregunta por su número', { timeout: 60000 }, async () => {
+  await conSitio({}, async ({ h, api, lead, confirmar }) => {
+    const estado = async (id) => (await h.pedir(`/api/hallazgos/envio?id=${encodeURIComponent(id)}`, { cookie: lead })).json;
+    assert.deepStrictEqual(await estado('envio-desconocido-1'), { estado: 'desconocido' });
+    const r = await confirmar({ envio: 'envio-de-prueba-1', decisiones: [{ fuente: 'vigilante', id: 'vig-uno', accion: 'aceptar' }] });
+    assert.strictEqual(r.json.ok, true, r.texto);
+    const e = await estado('envio-de-prueba-1');
+    assert.strictEqual(e.estado, 'listo');
+    assert.strictEqual(e.resultado.ok, true);
+    assert.deepStrictEqual(e.resultado.enviadas, ['vigilante/vig-uno']);
+    // el mismo número otra vez: el mismo resultado, sin otro pedido
+    const otra = await confirmar({ envio: 'envio-de-prueba-1', decisiones: [{ fuente: 'vigilante', id: 'vig-uno', accion: 'aceptar' }] });
+    assert.deepStrictEqual(otra.json, r.json);
+    assert.strictEqual(api.st.pedidos.length, 1);
+    // un número sin forma no se acepta
+    assert.strictEqual((await confirmar({ envio: 'a b', decisiones: [{ fuente: 'vigilante', id: 'vig-dos', accion: 'aceptar' }] })).status, 400);
+    assert.strictEqual((await h.pedir('/api/hallazgos/envio?id=a%20b', { cookie: lead })).status, 400);
+  });
+});
+
+// Mantenimiento_Envio_DiceQuePasa
+// 🔴 Falla con: un «Enviando…» mudo, una pantalla que no averigua si llegó cuando la conexión se corta, un reenvío de
+//    algo hecho mostrado como error, o un error que no dice qué hacer.
+test('T79 Mantenimiento_Envio_DiceQuePasa — mientras envía, si tarda, si se corta y si ya estaba hecho', { timeout: 60000 }, async () => {
+  await conSitio({}, async ({ h, lead }) => {
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
+    for (const [k, attr] of [['mant.envio.enviando', 'enviando'], ['mant.envio.lento', 'lento'], ['mant.envio.verificando', 'verificando'], ['mant.envio.yaEnviado', 'ya-enviado'], ['mant.envio.noLlego', 'no-llego']]) {
+      assert.ok(p.texto.includes(`data-t-${attr}="${TX.t('es', k)}"`), `la barra trae «${k}»`);
+    }
+    assert.match(TX.t('es', 'mant.envio.enviando'), /par de minutos/, 'dice cuánto puede tardar');
+    for (const k of ['mant.envio.error', 'mant.envio.noLlego']) assert.match(TX.t('es', k), /probá de nuevo/, `${k} dice qué hacer`);
+    const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
+    assert.match(cli, /\/api\/hallazgos\/envio\?id=/, 'si se corta, pregunta cómo terminó');
+    assert.match(cli, /AbortController/, 'con un tope de espera');
+    assert.match(cli, /'ya_decidida'/, 'lo ya hecho no se muestra como error');
+  });
+});
+
+// Mantenimiento_Cuentas_BajanConLoDecidido
+// 🔴 Falla con: el menú, «Te toca decidir» o el subtítulo de la fuente contando una ficha que el sitio ya decidió
+//    (con la foto todavía vieja), o una pantalla que saca la ficha y deja los números como estaban.
+test('T80 Mantenimiento_Cuentas_BajanConLoDecidido — los tres números cuentan sólo lo que sigue esperando', { timeout: 60000 }, async () => {
+  await conSitio({}, async ({ h, ops, lead, enviar }) => {
+    const antes = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(antes, /Mantenimiento \(3\)<\/a>/);
+    assert.match(antes, /<h2[^>]*>Te toca decidir \(3\)<\/h2>/);
+    // la pantalla recuenta sola al sacar una ficha: cada número trae su molde
+    assert.match(antes, /<h2 data-t="Te toca decidir \(\{n\}\)">/);
+    assert.match(antes, /<h3 class="m-sub" data-fuente="ejecuciones" data-t="Ejecuciones del pipeline · \{n\}">Ejecuciones del pipeline · 1<\/h3>/);
+    const cli = (await h.pedir('/hallazgos/cliente.js', { cookie: lead })).texto;
+    assert.match(cli, /function recontar\(/, 'quitar una ficha recuenta los números');
+    assert.ok(cli.includes(String.raw`replace(/\s*\(\d+\)$/, '')`), 'el número de la pestaña se reemplaza, no se suma');
+    decisionYaEnMain(ops, 'ejecuciones', 'runs-review', EJ1.id);
+    assert.strictEqual((await enviar(['ejecuciones', EJ1.id, 'aceptar'])).json.codigo, 'ya_decidida');
+    const despues = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.match(despues, /Mantenimiento \(2\)<\/a>/, 'el menú no cuenta lo ya decidido');
+    assert.match(despues, /<h2[^>]*>Te toca decidir \(2\)<\/h2>/);
+    assert.doesNotMatch(despues, /data-fuente="ejecuciones"/, 'sin fichas de la fuente, sin su subtítulo');
   });
 });
