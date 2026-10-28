@@ -115,7 +115,7 @@ function wouldSet({ home, env = process.env, profile = null }) {
 
 /** Un aviso de arranque sin los de este módulo (cada arranque los vuelve a decidir: no se arrastran del anterior). */
 function stripNotices(text) {
-  if (!text) return text || null;
+  if (!text) return null;
   const kept = String(text).split(' · ').filter((x) => ![NOTICE_SET, NOTICE_FAILED, NOTICE_ASK].some((n) => x.startsWith(n)));
   return kept.length ? kept.join(' · ') : null;
 }

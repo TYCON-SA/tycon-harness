@@ -21,7 +21,7 @@
 #         `update --yes`; sin el pre-push del arnés en su lugar no la pone; si la persona la sacó, el arranque no la vuelve
 #         a poner.
 #
-# Uso: bash scripts/tests/harness-release.test.sh [--only T9|T11|HP]
+# Uso: bash scripts/tests/harness-release.test.sh [--only T9|T11|HP|VC]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -850,6 +850,23 @@ if corre HP; then
   [ "$(hpv)" = "${TYCON_GIT_HOOKS_DIR}" ] && case "${out}" in *"git usa ahora la carpeta global de hooks del arnés"*) true ;; *) false ;; esac \
     && ok "update --yes la pone y lo dice" || mal "update --yes (rc ${rc}, core.hooksPath=«$(hpv)»): ${out}"
   kill "${LAB_RELEASE_PROCESS}" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── VC ─────────────────────────────────────────────
+# una `~/.tycon/state` vacía —el resto de una instalación cortada— se barre y la instalación sigue. Sin esto, el aviso
+# de que la sacó usaba el registro antes de armarlo y la instalación se caía.
+if corre VC; then
+  echo "VC · una ~/.tycon/state vacía de una instalación cortada: se saca y la instalación termina"
+  harness_lab_create "$BASE/labvc"
+  harness_lab_release_server
+  harness_lab_publish_stable 2026.10.07.1
+  harness_lab_release_fresh_home
+  mkdir -p "$(TYCON_DIR)/state"
+  out="$(harness install --version latest --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && ok "la instalación sale 0" || mal "la instalación salió $rc: $out"
+  case "$out" in *"before initialization"*) mal "se cayó por el registro sin armar: $out" ;; *) ok "no se cae al avisar que sacó el resto" ;; esac
+  [ ! -d "$(TYCON_DIR)/state" ] && ok "el resto vacío ya no está" || mal "la carpeta de estado vacía sigue ahí"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
 # ───────────────────────────────────────────── PF ─────────────────────────────────────────────

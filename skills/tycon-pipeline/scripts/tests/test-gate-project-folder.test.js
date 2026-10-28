@@ -145,7 +145,7 @@ test('T4 Chapter4Shape_BothParts @story-7.45 @ac-4 — back pytest y front Playw
     ['backend/app/precios.py', 'frontend/src/lib/precio.js']);
   const r = correr(d, { bin, story: path.join(d, 'specs', 's.md'), extra: { FAKE_CASES: '3' } });
   assert.equal(r.status, 0, r.out);
-  assert.deepEqual(r.art.parts.map((p) => `${p.scope}:${p.runner && p.runner}`).sort(), ['backend:pytest', 'frontend:playwright']);
+  assert.deepEqual(r.art.parts.map((p) => `${p.scope}:${p.runner}`).sort(), ['backend:pytest', 'frontend:playwright']);
   assert.equal(r.art.totals.total, 6);
   assert.equal(r.art.suite_green, true);
 });
