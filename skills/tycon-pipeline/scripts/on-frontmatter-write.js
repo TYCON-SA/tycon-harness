@@ -22,7 +22,7 @@
  *   4. Detectar transición de status frontmatter o líneas `status: done`/`review`
  *      en bloques `pipelines.X` que NO existían antes.
  *   4b. Una transición a review/done escrita a mano frena antes que todo lo demás: el estado lo cambia
- *      `marker.js update-story-status` (o la persona con «autorizo cambiar el estado»).
+ *      `marker.js update-story-status` (o la persona, con la firma `marker.js sign-file cambiar-el-estado <historia>`).
  *   5. Si la story requiere runtime evidence (markers Playwright/E2E/smoke
  *      detectados en el contenido) y NO existe `.advisors/dod-runtime/<storyId>-*.md`
  *      → BLOQUEAR (exit 2) con mensaje accionable.
@@ -99,50 +99,51 @@ const estadoDe = (c) => { const m = /^status:\s*["']?([\w-]+)/m.exec(fmBlock(c))
 const esHistoria = (c) => /^(?:story|status):/m.test(fmBlock(c));
 
 /**
- * La exención de la prueba en vivo que se agrega a una historia (pasa de ausente o `false` a `true`, también al crearla)
- * la decide la persona, en cualquier estado: sin «autorizo dod_runtime_exempt» en su mensaje, `{ block }`; con la
- * frase, pasa (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo.
+ * La firma de la ventana sobre este archivo (`marker.js sign-file <firma> <archivo>`, scripts/lib/owner-window.js):
+ * `{ ok: true, constancia }` la consume; `{ ok: false, motivo }` si no la hay. `casa`: la de las pruebas.
  */
-function exencionNueva(event, oldContent, newContent) {
+function firmaDeLaVentana(firma, event, filePath, casa) {
+  try {
+    const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+    return { ...ow.consumirArchivo({ firma, sesion: event.session_id, archivo: filePath, cwd: event.cwd, casa }), comando: ow.comoSeFirma(firma, filePath) };
+  } catch (e) {
+    return { ok: false, motivo: `no pude consultar la ventana (${e.message})`, comando: `marker.js sign-file ${firma} ${filePath}` };
+  }
+}
+
+/**
+ * La exención de la prueba en vivo que se agrega a una historia (pasa de ausente o `false` a `true`, también al crearla)
+ * la decide la persona, en cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el
+ * comando; con ella, pasa (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo.
+ */
+function exencionNueva(event, oldContent, newContent, casa) {
   if (!EXENTA.test(newContent) || (oldContent && EXENTA.test(oldContent)) || !esHistoria(newContent)) return null;
   // el estado de antes o el de después, para el mensaje; la historia nueva no tiene estado de antes
   const antes = estadoDe(oldContent || '');
   const estado = EN_IMPLEMENTACION.has(antes) ? antes : (estadoDe(newContent) || antes || 'sin estado');
   const sid = event.session_id;
-  let r;
-  try {
-    r = require('./lib/escape-ok.js').escapeAutorizado({ variable: 'dod_runtime_exempt', sesion: sid, pedido: event.tool_use_id });
-  } catch { r = { ok: false }; }
+  const r = firmaDeLaVentana('dod_runtime_exempt', event, event.tool_input.file_path, casa);
   const ok = r.ok === true;
   const storyId = parseFrontmatter(newContent).story || '';
   try {
     const { rutaDeLaLib } = require('./lib/closing-record.js');
-    // el camino es el que dio la autorización: la persona o el reenvío de la sesión designada
+    // el camino es el de la firma: la ventana, la delegación o la terminal
     require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', veredicto: ok ? 'escape' : 'bloqueo',
-      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.via || 'persona', relevo: r.relevo, sesion: sid, escape: 'dod_runtime_exempt' } : {}) });
+      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.constancia.via, sesion: sid, escape: 'dod_runtime_exempt' } : {}) });
   } catch { /* ayuda, no evidencia */ }
   if (ok) return null;
   const titulo = `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`;
-  const paso = cartelDelPaso(r);
-  if (r.pasoNoUbicado === true) return { block: [titulo, '', paso].join('\n') + '\n' };
   return {
     block: [
       titulo,
       '',
-      'Eximir una historia lo decide la persona, no el agente, también mientras se escribe: si quiere,',
-      'lo dice en su mensaje («autorizo dod_runtime_exempt»).',
+      'Eximir una historia lo decide la persona, no el agente, también mientras se escribe. Si la persona quiere,',
+      `la firma en la ventana de permiso: corré ${r.comando} y, con su «Sí», repetí esta escritura.`,
       'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
       '(marker.js close-as-debt).',
-      ...(paso ? [paso] : []),
+      `(No hay firma: ${r.motivo}.)`,
     ].join('\n') + '\n',
   };
-}
-
-/** El renglón del paso no ubicado de escape-ok.js; sin la biblioteca, el motivo dicho igual si no se ubicó el paso. */
-function cartelDelPaso(r) {
-  try { return require('./lib/escape-ok.js').cartelDelPaso(r); } catch {
-    return r && r.pasoNoUbicado === true ? 'no pude leer el registro de la conversación para este paso. Reintentá el mismo comando una vez, sin pedirle nada a la persona; si vuelve a salir esto, decíselo.' : null;
-  }
 }
 
 // 🔴 Qué es «evidencia de cierre» lo decide UNA función compartida. Un hook que aceptara cualquier
@@ -474,23 +475,18 @@ function transicionAMano(filePath, oldContent, newContent) {
 /**
  * Una historia cuyo estado cambia con la herramienta de edición (ver `transicionAMano`). El estado lo cambia el
  * orquestador, que corre los controles del cierre: `marker.js update-story-status`, `update-pipeline-status` o
- * `/tycon-pipeline close`. A mano lo decide la persona («autorizo cambiar el estado»): con la frase pasa, queda la
- * constancia y siguen las reglas de la evidencia. `TYCON_STATUS_GATE=off` en el ambiente del gancho lo apaga, y queda
+ * `/tycon-pipeline close`. A mano lo decide la persona, con su firma en la ventana sobre esta historia
+ * (`marker.js sign-file cambiar-el-estado <historia>`): con ella pasa, queda la constancia y siguen las reglas de la evidencia. `TYCON_STATUS_GATE=off` en el ambiente del gancho lo apaga, y queda
  * anotado; escrito en un comando, lo frena el freno de seguridad.
  */
-function estadoAMano(event, filePath, oldContent, newContent) {
+function estadoAMano(event, filePath, oldContent, newContent, casa) {
   const apagado = String(process.env.TYCON_STATUS_GATE || '').toLowerCase() === 'off';
   const t = transicionAMano(filePath, oldContent, newContent);
   if (!t) return null;
   const sid = event.session_id;
-  let r = { ok: false };
-  if (!apagado) {
-    try {
-      r = require('./lib/escape-ok.js').escapeAutorizado({ variable: 'cambiar el estado', sesion: sid, pedido: event.tool_use_id });
-    } catch { r = { ok: false }; }
-  }
+  const r = apagado ? { ok: false } : firmaDeLaVentana('cambiar-el-estado', event, filePath, casa);
   const ok = apagado || r.ok === true;
-  const via = apagado ? 'ambiente' : (r.via || 'persona');
+  const via = apagado ? 'ambiente' : (r.constancia && r.constancia.via);
   // La constancia con las reglas de la biblioteca del cierre: apagada con TYCON_CLOSURE_RECORD=off (las suites que
   // llaman al gancho con el HOME real) y callada sin la biblioteca (el gancho decide igual). Con la biblioteca, un escape
   // que no quedó anotado no pasa callado
@@ -502,7 +498,7 @@ function estadoAMano(event, filePath, oldContent, newContent) {
     if (!apagada && fs.existsSync(lib)) {
       const res = require(lib).anotar({ freno: 'on-frontmatter-write', regla: 'estado-a-mano', veredicto: ok ? 'escape' : 'bloqueo',
         cmd: `${t.storyId}\0${t.estado}`,
-        ...(ok ? { via, relevo: r.relevo, sesion: sid, escape: apagado ? 'TYCON_STATUS_GATE' : 'cambiar-el-estado' } : {}) });
+        ...(ok ? { via, sesion: sid, escape: apagado ? 'TYCON_STATUS_GATE' : 'cambiar-el-estado' } : {}) });
       if (ok && res && res.escrito === false) {
         process.stderr.write(`⚠️ on-frontmatter-write: no pude anotar el escape del estado a mano (${res.motivo || 'el registro no se escribió'}).\n`);
       }
@@ -518,8 +514,6 @@ function estadoAMano(event, filePath, oldContent, newContent) {
   const marker = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
   const destino = isCriticalStatus(t.estado) || !/^pipelines\./.test(t.estado) ? t.estado : `done en ${t.estado}`;
   const titulo = `🚨 BLOQUEADO — la story ${t.storyId} pasa a ${destino} escribiendo el archivo a mano.`;
-  const paso = cartelDelPaso(r);
-  if (r.pasoNoUbicado === true) return { block: [titulo, '', paso].join('\n') + '\n' };
   return {
     block: [
       titulo,
@@ -530,8 +524,8 @@ function estadoAMano(event, filePath, oldContent, newContent) {
       '  · /tycon-pipeline close <id> para pasarla a done después del merge',
       'Si el comando frena porque la ejecución está en rojo, cerrarla igual lo decide la persona; si la historia no',
       'se puede terminar, la salida es dejarla como deuda (marker.js close-as-debt).',
-      'Escribirla a mano lo decide la persona («autorizo cambiar el estado»).',
-      ...(paso ? [paso] : []),
+      `Escribirla a mano lo decide la persona: la firma en la ventana de permiso con ${r.comando},`,
+      'y con su «Sí» se repite esta escritura.',
     ].join('\n') + '\n',
   };
 }
@@ -579,7 +573,7 @@ function transicionDeStory(filePath, oldContent, newContent) {
  *   { block: msg }    → BLOQUEAR (el caller escribe msg a stderr + exit 2)
  * Lee el archivo del filesystem (oldContent) — eso es intencional.
  */
-function handle(event) {
+function handle(event, { casa } = {}) {
   if (!event) return null;
 
   const tool = event.tool_name;
@@ -620,11 +614,11 @@ function handle(event) {
   }
 
   // La exención nueva en una historia la decide la persona, en cualquier estado.
-  const exencion = exencionNueva(event, oldContent, newContent);
+  const exencion = exencionNueva(event, oldContent, newContent, casa);
   if (exencion) return exencion;
 
   // Pasar una historia a review o done a mano también: el camino es el comando del orquestador.
-  const aMano = estadoAMano(event, filePath, oldContent, newContent);
+  const aMano = estadoAMano(event, filePath, oldContent, newContent, casa);
   if (aMano) return aMano;
 
   // Exención explícita.
@@ -725,7 +719,7 @@ function handle(event) {
       pl.push('Por default corre los specs SCOPED a la story (two-tier 2026-06-09); la suite');
       pl.push('COMPLETA corre 1 vez en /tycon-merge-to-main. Exit !=0 si hay rojos → fix antes de done.');
       pl.push('');
-      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona («autorizo dod_runtime_exempt»).');
+      pl.push('Única salida sin correrla: eximir la story (sólo si NO tiene UI/E2E reales), que lo decide la persona: lo firma con marker.js sign-file dod_runtime_exempt <historia>.');
       pl.push('');
       pl.push('Caso disparador: Ceibo Stories 4.2 + 4.3.1 (2026-05-20) — E2E declarados "PASS"');
       pl.push('sin correrse / con mocks. Freshness agregada 2026-06-09 (evidencia vieja');
@@ -758,7 +752,7 @@ function handle(event) {
   lines.push('  (a) Invocar tycon-dod-runtime-checker advisor (auto-captura evidencia).');
   lines.push('  (b) Ejecutar E2E specs + capturar log → escribir manualmente el archivo.');
   lines.push('  (c) Si la story NO tiene UI/E2E reales: eximirla de la prueba en vivo lo decide la persona,');
-  lines.push('      no el agente (con «autorizo dod_runtime_exempt» en su mensaje).');
+  lines.push('      no el agente (lo firma con marker.js sign-file dod_runtime_exempt <historia>).');
   lines.push('');
   lines.push('Caso disparador: Ceibo Story 4.2 2026-05-20 — Claude marcó done sin');
   lines.push('ejecutar E2E. Este hook es la infra que lo enforce. Docs:');

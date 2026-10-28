@@ -16,6 +16,8 @@
  * (window-passed-guard.test.js).
  *
  *   conVentana(env)   → una copia de `env` con NODE_OPTIONS que carga este archivo
+ *   conVentana(env, { delegadaPor: '<sesión>' }) → la firma queda como la deja la delegación del perfil: `via: delegacion`,
+ *                       firmada por esa sesión (la coordinadora)
  */
 const fs = require('fs');
 const os = require('os');
@@ -26,9 +28,11 @@ const RAIZ = path.resolve(__dirname, '..', '..', '..');
 const { casaDeLaCuenta } = require(path.join(RAIZ, 'scripts', 'lib', 'real-home.js'));
 const MODULO_DE_LA_VENTANA = /[\\/]scripts[\\/]lib[\\/]owner-window\.js$/;
 
-function conVentana(env = process.env) {
+function conVentana(env = process.env, { delegadaPor } = {}) {
   const previas = String(env.NODE_OPTIONS || '').trim();
-  return { ...env, NODE_OPTIONS: `${previas ? `${previas} ` : ''}--require ${__filename}` };
+  const out = { ...env, NODE_OPTIONS: `${previas ? `${previas} ` : ''}--require ${__filename}` };
+  if (delegadaPor) out.WINDOW_PASSED_DELEGATED_BY = delegadaPor;
+  return out;
 }
 
 // La ruta con los enlaces resueltos, aunque el final todavía no exista.
@@ -74,8 +78,11 @@ function darPorPasada(ow) {
     const pedida = i >= 0 ? argv[i + 1] : null;
     if (pedida && o.propia && pedida !== o.propia) return exigir(o);
     const destino = pedida || o.propia || null;
-    ow.firmar({ firma: o.firma, via: 'ventana', sesion: destino, destino, resumen: o.resumen || '', casa: os.homedir(), anotar: o.anotar });
-    return { codigo: 0, via: 'ventana', destino, sesion: destino };
+    const delegadaPor = process.env.WINDOW_PASSED_DELEGATED_BY || null;
+    const via = delegadaPor ? 'delegacion' : 'ventana';
+    const sesion = delegadaPor || destino;
+    ow.firmar({ firma: o.firma, via, sesion, destino, resumen: o.resumen || '', casa: os.homedir(), anotar: o.anotar });
+    return { codigo: 0, via, destino, sesion };
   };
   porPasada.porPasada = true;
   ow.exigir = porPasada;

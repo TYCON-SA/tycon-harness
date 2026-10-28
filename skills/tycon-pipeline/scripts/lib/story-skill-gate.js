@@ -40,8 +40,9 @@
  *      trabajo. El material de evaluación vive en los repos del arnés (punto 4) o pasa con el escape.
  *   4. Sólo en repos bajo el arnés (`.tycon/` o stories Mary+GOLD descubiertas). Un repo suelto
  *      pasa (medido como `unknown`). Los repos del propio harness pasan siempre (plantillas, casos).
- *   5. Escapes: «autorizo story-skill-bypass» escrita por la persona en un turno suyo (`escape-ok.js`;
- *      auditado en bypass.log; `marker.js story-skill-bypass` ya no deja constancia) · env `TYCON_STORY_SKILL_GATE=off` (el dev; el agente no setea env de hooks) ·
+ *   5. Escapes: la firma de la persona en la ventana sobre ese archivo (`marker.js sign-file story-skill-bypass
+ *      <archivo>`; la consume el Edit o Write siguiente y queda en bypass.log; `marker.js story-skill-bypass` ya no deja
+ *      constancia) · env `TYCON_STORY_SKILL_GATE=off` (el dev; el agente no setea env de hooks) ·
  *      `.tycon/advisors.yaml → pipeline.story_skill_gate: false` COMMITEADO (misma regla que el
  *      portón de carril: leído con `git show HEAD:`, nunca del working tree).
  *
@@ -198,9 +199,8 @@ function computeStorySkillGate({
 }
 
 /** Texto del bloqueo: qué pasó, por qué frena, y la salida concreta. */
-// `paso`: el pedido que se juzga no se ubicó en la conversación (escape-ok.js `cartelDelPaso`). Con `reintento`, el
-// renglón todavía no estaba escrito: el cartel pide reintentar y no la frase; si no, suma el motivo.
-function blockMessage(r, { filePath, via, byName = false, paso = null } = {}) {
+// `firma`: lo que dijo la ventana (`{ comando, motivo }`): el cartel nombra el comando que pide la firma sobre el archivo.
+function blockMessage(r, { filePath, via, byName = false, firma = null } = {}) {
   const rel = path.basename(String(filePath || ''));
   const promote = /^draft-promote/.test(r.kind);
   const terminal = promote && /terminal/.test(r.reason || '');
@@ -227,11 +227,10 @@ function blockMessage(r, { filePath, via, byName = false, paso = null } = {}) {
       : '   (a) Escribila con `status: draft`. Después corré el validador de historias (tycon-story-validator) sobre ese\n' +
         '       archivo y, si pasa, pasala a ready-for-dev. La skill tycon-create-story hace esos pasos en orden.',
     '',
-    ...(paso && paso.reintento ? [`   (b) ${paso.cartel}`] : [
-      '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, tiene que escribir en su mensaje',
-      '       «autorizo story-skill-bypass»; con esa frase suya, este freno la deja pasar solo y lo anota.',
-      paso && paso.cartel ? `   ${paso.cartel}` : '',
-    ]),
+    '   (b) Saltear el validador lo decide la persona, no vos. Si te lo pide, la firma en la ventana de permiso:',
+    `       corré ${(firma && firma.comando) || `marker.js sign-file story-skill-bypass ${filePath}`} y, con su «Sí»,`,
+    '       repetí esta escritura con Edit o Write. La firma vale una vez y queda anotada.',
+    firma && firma.motivo ? `       (No hay firma: ${firma.motivo}.)` : '',
   ].filter((l) => l !== '').join('\n');
 }
 

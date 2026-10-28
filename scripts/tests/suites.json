@@ -2137,33 +2137,21 @@
       "requiere": []
     },
     {
+      "__nota": "la sonda de la ventana de permiso (controls-bench/ask-window-probe.exp): sin expect o sin claude en el camino dice «NO MEDIDO» y sale distinto de 0, nunca verde. La medición con la sesión de verdad se corre a mano.",
+      "raiz": "arnes",
+      "ruta": "tests/ask-window-probe.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la refirma después de traer main (scripts/lib/refresh-after-main.js): es refirma sólo si cada archivo es lo de main más lo ya firmado en este pedido; modo, tipo, renombres y clon superficial son control-change.",
       "raiz": "arnes",
       "ruta": "tests/refresh-after-main.test.js",
       "requiere": []
     },
     {
-      "__nota": "el paso que el freno no encuentra en el registro de la conversación: los cuatro guiones dicen el motivo real y piden un reintento, sin dictar la frase.",
-      "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/step-not-found.test.js",
-      "requiere": []
-    },
-    {
-      "__nota": "la sesión designada aprueba force-manual, trust-ran y una vuelta más en nombre del dueño (skills/tycon-pipeline/scripts/lib/delegated-ok.js): sólo si el perfil las delega y el dueño tipeó «aprobá X» en su chat hace 30 minutos o menos, una firma por pedido.",
-      "raiz": "arnes",
-      "ruta": "tests/delegated-ok.test.js",
-      "requiere": []
-    },
-    {
       "__nota": "story 8.116 (tanda A): la huella de la máquina (scripts/lib/machine-id.js, el id del sistema por ruta fija y con el ambiente vacío, guardado como resumen) y la casa de la cuenta (scripts/lib/real-home.js, de la base de usuarios y no de HOME).",
       "raiz": "arnes",
       "ruta": "tests/machine-id.test.js",
-      "requiere": []
-    },
-    {
-      "__nota": "story 8.116 (tanda B0): la firma de un cambio de control por delegación (scripts/lib/delegated-signing.js): todas las llaves, la ficha del freno de un solo uso y la casa de la cuenta, nunca la de HOME.",
-      "raiz": "arnes",
-      "ruta": "tests/delegated-approve.test.js",
       "requiere": []
     },
     {

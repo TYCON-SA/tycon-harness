@@ -244,6 +244,28 @@ function prepareEvents(rawEvent, platform = process.platform) {
   return events.map((event) => nativeEvent(event, platform));
 }
 
+/**
+ * Las firmas sobre un archivo (scripts/lib/owner-window.js) se gastan sólo si la escritura pasa la cadena entera: con
+ * los consumos abiertos, la regla que valida una firma la reserva, y al terminar se gastan (pasó) o vuelven a su lugar
+ * (frenó otra regla, de este u otro handler). Un gancho de otro proceso que frena después no se entera: ése la gasta igual.
+ * Devuelve las que no se pudieron cerrar; cada una queda en el registro de errores de los ganchos.
+ */
+const CONSUMOS = Symbol.for('tycon.consumos-diferidos');
+function abrirConsumos() { globalThis[CONSUMOS] = []; }
+function cerrarConsumos({ paso }) {
+  const lista = globalThis[CONSUMOS];
+  delete globalThis[CONSUMOS];
+  if (!Array.isArray(lista) || !lista.length) return [];
+  let errores;
+  try {
+    errores = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).confirmarConsumos(lista, { paso: !!paso });
+  } catch (e) {
+    errores = lista.map(({ f }) => ({ f, error: e.message }));
+  }
+  for (const { f, error } of errores) logHookError('consumos-de-firmas', new Error(`la firma ${path.basename(f)} no se pudo ${paso ? 'gastar' : 'devolver'} (${error}): queda reservada, no se reusa`));
+  return errores;
+}
+
 function dispatch(mode) {
   if (AVISO_SIN_ARNES) process.stderr.write(AVISO_SIN_ARNES + '\n');
   const chain = CHAINS[mode];
@@ -251,6 +273,7 @@ function dispatch(mode) {
     // modo desconocido → no-op (nunca romper el tool call por esto)
     process.exit(0);
   }
+  abrirConsumos();
 
   const rawEvent = readEvent();
   // Un block en CUALQUIER archivo de un patch bloquea el patch entero (es un solo tool call
@@ -323,7 +346,8 @@ function dispatch(mode) {
 
     if (result.block) {
       // BLOQUEAR inmediatamente. Los reminders advisory acumulados se descartan
-      // (el tool call va a ser denegado de todas formas).
+      // (el tool call va a ser denegado de todas formas). Las firmas que validaron las reglas anteriores no se gastan.
+      cerrarConsumos({ paso: false });
       process.stderr.write(result.block);
       process.exit(2);
     }
@@ -332,6 +356,8 @@ function dispatch(mode) {
     }
     if (result.systemMessage && mode === 'post-edit') paraLaPersona.push({ texto: String(result.systemMessage), alMostrar: result.alMostrar, name: h.name });
   }
+  // ninguna regla frenó: la escritura pasa y las firmas que la dejaron pasar quedan usadas
+  cerrarConsumos({ paso: true });
 
   if (paraLaPersona.length && !escribioAparte) {
     const contexto = reminders.map((t) => `<system-reminder>\n${String(t).trim()}\n</system-reminder>`).join('\n');
@@ -353,7 +379,7 @@ function dispatch(mode) {
   process.exit(0);
 }
 
-module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries };
+module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos };
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {

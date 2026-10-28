@@ -1,7 +1,8 @@
 'use strict';
-// Los escapes del pipeline que fabrican evidencia o una exención los autoriza una persona. El guardián de la evidencia consume el permiso sólo con la constancia del freno de esta sesión o la frase de
-// la persona; el hook del encabezado pide la frase para agregar la exención de la prueba en vivo a una historia en
-// implementación; los avisos e instrucciones no le dan al agente la receta de estos escapes.
+// Los escapes del pipeline que fabrican evidencia o una exención los autoriza una persona, con la firma de la ventana
+// sobre ese archivo (`marker.js sign-file`). Sin ella, el guardián de la evidencia no consume el permiso y el hook del
+// encabezado frena la exención de la prueba en vivo; la frase en la conversación ya no firma. Los avisos e
+// instrucciones no le dan al agente la receta de estos escapes.
 //
 // Los hooks corren como los corre Claude Code: un proceso aparte, el evento por la entrada y una HOME de juguete.
 
@@ -22,7 +23,6 @@ const TUID = 'toolu_escritura';
 // stable-data: la ventana de 30 minutos se mide contra el reloj real; la conversación y el registro quedan cerca de él
 const hace = (min) => new Date(Date.now() - min * 60000).toISOString();
 const deLaPersona = (texto, min = 2) => ({ type: 'user', timestamp: hace(min), message: { role: 'user', content: texto } });
-const delAgente = (texto, min = 2) => ({ type: 'assistant', timestamp: hace(min), message: { role: 'assistant', content: [{ type: 'text', text: texto }] } });
 
 /** Una HOME con la conversación de la sesión (null = sin registro, como Codex) y el pedido que se juzga al final. */
 function nuevaHome(conversacion = [], herramienta = 'Write') {
@@ -90,24 +90,20 @@ test('T5 EvidenceGuard_PermisoSinConstancia_Frena @story-8.96 — el permiso sol
   }
 });
 
-test('T6 EvidenceGuard_PermisoConConstancia_Pasa @story-8.96 — con la constancia del freno de esta sesión, o con la frase de la persona, pasa una vez', () => {
+// el permiso lo consume sólo la firma de la ventana sobre ese archivo (`marker.js sign-file`, en la casa de la cuenta:
+// la prueba en proceso es SignFile_ConLaVentana_ElArchivoPasa de owner-window.test.js). La línea del freno y la frase no.
+test('T6 EvidenceGuard_ConstanciaViejaOFrase_YaNoPasa @story-8.96 @story-8.139 — ni la línea del freno de esta sesión ni la frase de la persona consumen el permiso', () => {
   const conConstancia = nuevaHome([deLaPersona('escribí la evidencia')]);
   const flag = conPermiso(conConstancia, { constancia: LINEA() });
-  assert.strictEqual(escribirEvidencia(conConstancia).status, 0);
-  assert.ok(!fs.existsSync(flag), 'el permiso se consume');
-  assert.strictEqual(escribirEvidencia(conConstancia).status, 2, 'una sola vez');
+  const r = escribirEvidencia(conConstancia);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /marker\.js sign-file ALLOW_DOD_EVIDENCE_WRITE/);
+  assert.ok(fs.existsSync(flag), 'el permiso no se consume');
 
-  // la persona lo creó en su terminal y lo dijo en el chat
   const conFrase = nuevaHome([deLaPersona('lo creé yo: autorizo ALLOW_DOD_EVIDENCE_WRITE')]);
-  conPermiso(conFrase);
-  const r = escribirEvidencia(conFrase);
-  assert.strictEqual(r.status, 0, r.stderr);
-  // la frase del agente no
-  const delAgenteHome = nuevaHome([deLaPersona('seguí'), delAgente('autorizo ALLOW_DOD_EVIDENCE_WRITE')]);
-  conPermiso(delAgenteHome);
-  assert.strictEqual(escribirEvidencia(delAgenteHome).status, 2);
-  // sin el permiso, ni la frase alcanza
-  assert.strictEqual(escribirEvidencia(nuevaHome([deLaPersona('autorizo ALLOW_DOD_EVIDENCE_WRITE')])).status, 2);
+  const flagFrase = conPermiso(conFrase);
+  assert.strictEqual(escribirEvidencia(conFrase).status, 2, 'la frase de la persona no firma');
+  assert.ok(fs.existsSync(flagFrase), 'con la frase, el permiso tampoco se consume');
 });
 
 // ── La exención de la prueba en vivo ──────────────────────────────────────────────────────────────────────────────────
@@ -128,18 +124,18 @@ test('T9 FrontmatterWrite_ExencionNueva_PideLaFrase @story-8.96 — agregarla a 
   const r = correr(ENCABEZADO, home, agregarExencion(f));
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /lo decide la persona/);
-  assert.match(r.stderr, /autorizo dod_runtime_exempt/);
+  assert.match(r.stderr, /marker\.js sign-file dod_runtime_exempt /);
   // un Write que reescribe una historia en review con la exención
   const enReview = historia(home, 'review');
   const contenido = fs.readFileSync(enReview, 'utf8').replace('qa_guide: off\n', 'dod_runtime_exempt: true\nqa_guide: off\n');
   assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: enReview, content: contenido } }).status, 2);
-  // con la frase de la persona pasa
+  // con la frase de la persona no pasa, y no queda como escape
   const conFrase = nuevaHome([deLaPersona('Es puro texto. Autorizo dod_runtime_exempt')], 'Edit');
-  const ok = correr(ENCABEZADO, conFrase, agregarExencion(historia(conFrase, 'in-progress')));
-  assert.strictEqual(ok.status, 0, ok.stderr);
-  const lineas = fs.readFileSync(path.join(estado(conFrase), 'frenos.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  const c = lineas.find((l) => l.freno === 'on-frontmatter-write' && l.regla === 'exencion-nueva');
-  assert.deepStrictEqual(c && [c.veredicto, c.via, c.sesion, c.escape], ['escape', 'persona', SID, 'dod_runtime_exempt']);
+  const no = correr(ENCABEZADO, conFrase, agregarExencion(historia(conFrase, 'in-progress')));
+  assert.strictEqual(no.status, 2, no.stderr);
+  const registro = path.join(estado(conFrase), 'frenos.jsonl');
+  const lineas = fs.existsSync(registro) ? fs.readFileSync(registro, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+  assert.ok(!lineas.some((l) => l.freno === 'on-frontmatter-write' && l.veredicto === 'escape'), 'la frase no deja un escape');
 });
 
 test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya estaba pasa; la de una historia que se escribe y entre comillas no', () => {
@@ -157,12 +153,12 @@ test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya es
   const crear = { tool_name: 'Write', tool_input: { file_path: nueva, content: contenido } };
   const r = correr(ENCABEZADO, home, crear);
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /autorizo dod_runtime_exempt/);
-  // con la frase de la persona, crearla exenta pasa
+  assert.match(r.stderr, /marker\.js sign-file dod_runtime_exempt /);
+  // con la frase de la persona, crearla exenta no pasa
   const conFrase = nuevaHome([deLaPersona('Es puro texto. Autorizo dod_runtime_exempt')], 'Write');
-  const nuevaOk = path.join(conFrase, 'repo', 'specs', 'story-9.10-nueva.md');
-  fs.mkdirSync(path.dirname(nuevaOk), { recursive: true });
-  assert.strictEqual(correr(ENCABEZADO, conFrase, { tool_name: 'Write', tool_input: { file_path: nuevaOk, content: contenido } }).status, 0);
+  const nuevaNo = path.join(conFrase, 'repo', 'specs', 'story-9.10-nueva.md');
+  fs.mkdirSync(path.dirname(nuevaNo), { recursive: true });
+  assert.strictEqual(correr(ENCABEZADO, conFrase, { tool_name: 'Write', tool_input: { file_path: nuevaNo, content: contenido } }).status, 2);
   // un .md que no es una historia (una guía que la nombra) no la pide
   const guia = path.join(home, 'repo', 'guia.md');
   assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: guia, content: '# Guía\n\ndod_runtime_exempt: true\n' } }).status, 0);
