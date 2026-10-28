@@ -438,6 +438,14 @@ test('T34 GuionPorEntradaQueEscribeSusArgumentos_Frena', () => {
       `F=docs/stories/story-y.md\npython3 - "$F" <<EOF\n${escribePy}\nEOF`,
       `node - docs/stories/story-y.md <<'EOF'\n${escribeNode}\nEOF`,
       `python3 -c "import sys; open(sys.argv[1], 'w').write('x')" specs/story-x.md`,
+      // las otras formas de darle el programa por la entrada
+      `python3 /dev/stdin specs/story-x.md <<'EOF'\n${escribePy}\nEOF`,
+      `python3 - specs/story-x.md <<'END-DOC'\n${escribePy}\nEND-DOC`,
+      `cat <<'EOF' | python3 - specs/story-x.md\n${escribePy}\nEOF`,
+      `python3 - \\\n  specs/story-x.md <<'EOF'\n${escribePy}\nEOF`,
+      `python3 - specs/story-x.md <<< "import sys; open(sys.argv[1],'w').write('x')"`,
+      `/usr/bin/env python3 - specs/story-x.md <<'EOF'\n${escribePy}\nEOF`,
+      `python3 - specs/story-x.md <<'EOF'\nimport os, sys\nopen('/tmp/t', 'w').write('x')\nos.replace('/tmp/t', sys.argv[1])\nEOF`,
     ]) assert.equal(freno(c), HISTORIA, c);
     for (const c of [
       `f=specs/story-x.md; python3 - "$f" <<'EOF'\n${leePy}\nEOF`,

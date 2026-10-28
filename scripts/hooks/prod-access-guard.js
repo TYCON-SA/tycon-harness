@@ -1918,25 +1918,22 @@ function escrituraProtegida(cmd, payload) {
 }
 
 /**
- * El programa de un intérprete (python, node…) que llega por un heredoc se juzga como el de `python3 -c`: si nombra el
- * catálogo, el índice o la memoria, frena. Cuenta cualquier intérprete de la línea del `<<`, también del otro lado de
- * un caño (`cat <<EOF | python3`); lo que va a un archivo (`cat > x.py <<EOF`) no tiene intérprete y sigue siendo
- * contenido.
+ * El programa de un intérprete (python, node…) que llega por su entrada —un heredoc o un here-string— se juzga como el
+ * de `python3 -c`: si nombra el catálogo, el índice o la memoria, frena. Cuenta el intérprete del comando que recibe el
+ * texto y el de las etapas que le siguen en la tubería (`cat <<EOF | python3`); lo que va a un archivo
+ * (`cat > x.py <<EOF`) o a un programa que vive en un archivo (`node tool.js <<EOF`) es dato. Un `bash -c "…"` se mira
+ * por dentro.
  */
-function programaPorHeredoc(cmd, sp) {
+function programaPorHeredoc(cmd, sp, prof = 0) {
   if (!cmd.includes('<<')) return null;
-  for (const h of sp.heredocs(cmd)) {
-    const ini = cmd.lastIndexOf('\n', h.indice) + 1;
-    const fin = cmd.indexOf('\n', h.indice);
-    const linea = cmd.slice(ini, fin < 0 ? cmd.length : fin);
-    const corre = linea.split(/[;&|]/).some((s) => {
-      const t = tokensDeSegmento(s, sp.tokens, sp.PREFIJOS);
-      const i = t.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));             // `F=x python3 -` también
-      return i >= 0 && INTERPRETE_DE_PROGRAMA.test(basename(t[i]).toLowerCase().replace(/\.exe$/, ''));
-    });
-    if (!corre) continue;
-    const m = MENCION_PROTEGIDA.exec(String(h.cuerpo || ''));
-    if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por un heredoc).` };
+  for (const p of sp.programasPorEntrada(cmd)) {
+    const m = MENCION_PROTEGIDA.exec(String(p.cuerpo || ''));
+    if (m) return { motivo: `ese comando ESCRIBE sobre ${m[0]} (lo nombra el programa que el intérprete recibe por su entrada).` };
+  }
+  if (prof >= 6) return null;                                               // el mismo tope de anidamiento de `texto`
+  for (const interno of sp.tokens(cmd).filter((t, i, ts) => i > 0 && ts[i - 1] === '-c' && t.includes('<<'))) {
+    const v = programaPorHeredoc(interno, sp, prof + 1);
+    if (v) return v;
   }
   return null;
 }

@@ -442,17 +442,20 @@ function scriptsInline(cmd) {
   // sin los cuerpos de los heredocs: un `node -e` adentro de un `.md` que se escribe es texto, no un comando
   const sinCuerpos = raw.replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   for (const m of sinCuerpos.matchAll(conFlag)) out.push({ script: m[3], argv: argumentosDe(m[4]) });
-  const porEntrada = new RegExp(`(?:^|[\\s;&|(\`])(?:[^\\s;&|()'"]*[\\\\/])?(${INTERPRETES})(?:\\.exe)?([^\\n<|;&]*)<<-?[ \\t]*(['"]?)([A-Za-z_]\\w*)\\3[^\\n]*\\n([\\s\\S]*?)\\n[ \\t]*\\4[ \\t]*(?=\\n|$)`, 'gi');
-  for (const m of raw.matchAll(porEntrada)) {
-    const antes = palabras(m[2]).filter((x) => x !== '');
-    const i = antes.indexOf('-');
+  // por la entrada: el heredoc o el here-string que llega a un intérprete como su programa, detrás de un envoltorio,
+  // en otra etapa de la tubería o con `/dev/stdin`
+  for (const p of programasPorEntrada(raw)) {
     // `node - a`: process.argv[1] es '-' y el primer argumento es process.argv[2]; en python, sys.argv[1] ya es `a`
-    const desde = i < 0 ? -1 : (/^node/i.test(m[1]) ? i : i + 1);
+    const argv = !p.conGuion ? [] : /^(?:node|nodejs|bun|deno)$/.test(p.interprete) ? ['-', ...p.despues] : p.despues;
     // un heredoc sin comillas (`<<EOF`): el shell expande las variables del cuerpo antes de correrlo
-    out.push({ script: m[5], argv: desde >= 0 ? antes.slice(desde) : antes.filter((x) => !x.startsWith('-')), expande: !m[3] });
+    out.push({ script: p.cuerpo, argv, expande: !p.comillas });
   }
   return out;
 }
+
+// Quién lee el programa de la entrada lo decide el lector compartido, el mismo del freno de producción: los dos juzgan
+// igual el mismo comando. Sólo se usa esta función; las variables las sigue resolviendo command-vars.js.
+const { programasPorEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'));
 
 /**
  * El primer argumento de la llamada que abre en `desde` (el carácter después del paréntesis), respetando comillas y
@@ -625,6 +628,12 @@ function destinosArmados(cmd) {
       }
     };
     llamadas(/\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream)\s*\(/g);
+    // lo que reemplaza, mueve o copia sobre el destino, su segundo argumento: `os.replace(tmp, <destino>)`,
+    // `shutil.move`, `fs.renameSync`, `fs.copyFileSync`
+    for (const m of script.matchAll(/\b(?:os\.(?:replace|rename)|shutil\.(?:move|copy|copy2|copyfile)|renameSync|rename|copyFileSync|copyFile)\s*\(/g)) {
+      const a = primerArgumento(script, m.index + m[0].length);
+      if (script[a.fin] === ',') add(primerArgumento(script, a.fin + 1).arg);
+    }
     // python: open(<destino>, 'w'|'a'|'x'|'+'); sin modo es lectura
     llamadas(/\bopen\s*\(/g, (a) => script[a.fin] === ',' && /^\s*(?:mode\s*=\s*)?[rbt]*['"][^'"]*[wax+]/.test(script.slice(a.fin + 1)));
     // python: Path(<destino>).write_text / write_bytes
@@ -1452,19 +1461,36 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     if (c === 'tar' || c === 'bsdtar' || c === 'unzip' || c === 'cpio') {
       // lo que trae un archivo comprimido no se ve antes de abrirlo: a la carpeta de una constancia, no pasa
       // `tar -xf`, `tar xzf` (el primer argumento sin guion) o `--extract`; `cpio -i` o `--extract`
-      const extrae = c === 'unzip' || (c === 'cpio'
-        ? args.some((w) => /^-[A-Za-z]*i/.test(w) || w === '--extract')
-        : args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get'));
+      // listar (`unzip -l`, `unzip -Z1`, `unzip -t`, `cpio -it`) o mandar a la salida (`unzip -p`) no escribe
+      const extrae = c === 'unzip' ? !args.some((w) => /^-[A-Za-z]*[lZtpv]/.test(w))
+        : c === 'cpio' ? args.some((w) => /^-[A-Za-z]*i/.test(w) || w === '--extract') && !args.some((w) => /^-[A-Za-z]*t/.test(w) || w === '--list')
+          : args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get');
       if (!extrae) continue;
       const dirs = lleva(c === 'unzip' ? ['-d'] : c === 'cpio' ? ['-D', '--directory'] : ['-C', '--directory']);
       const destinos = dirs.length ? dirs.map((d) => abs(d)) : [cwd];
       const enFirma = destinos.find(carpetaDeFirma);
       if (enFirma) { out.push(`${enFirma} (no se puede ver qué trae lo que se descomprime)`); continue; }
+      // con los nombres cambiados al extraer (`tar -s`, `--transform`, `--strip-components`), lo que se lista no es lo
+      // que queda escrito: dentro de un repo, no pasa
+      if (c !== 'unzip' && c !== 'cpio' && args.some((w) => w === '-s' || /^--(?:transform|xform|strip-components)(?:=|$)/.test(w))) {
+        if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (cambia los nombres al extraer: no se puede ver si trae una constancia)`);
+        continue;
+      }
       // a cualquier otra carpeta, lo que trae se mira antes: una constancia adentro, o un archivo que no se puede
       // listar (por la entrada estándar, que todavía no existe) dentro de un repo, no pasa
       const lista = contenidoDelArchivo(c, args, tramo, abs);
       if (lista === null) { if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`); continue; }
       if (lista.some((e) => /control-changes/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
+      continue;
+    }
+    // otros que extraen y que el freno no sabe listar: `pax -r`, `ditto -x`, `python3 -m zipfile|tarfile -e`. A la
+    // carpeta de una constancia o dentro de un repo, no pasan
+    const extractor = (c === 'pax' && args.some((w) => /^-[A-Za-z]*r/.test(w))) ? cwd
+      : (c === 'ditto' && args.some((w) => /^-[A-Za-z]*x/.test(w))) ? abs(args.filter((w) => !w.startsWith('-')).pop() || '.')
+        : (/^python[\d.]*$/.test(c) && args[0] === '-m' && /^(?:zipfile|tarfile)$/.test(args[1] || '') && args.some((w) => w === '-e' || w === '--extract'))
+          ? abs(args[args.length - 1] && !args[args.length - 1].startsWith('-') && args.length > 4 ? args[args.length - 1] : '.') : null;
+    if (extractor) {
+      if (carpetaDeFirma(extractor) || dentroDeUnRepo(extractor)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`);
       continue;
     }
     if (c === 'git') {
@@ -1509,18 +1535,24 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
         }
         if (hallados.some((rel) => esRuta(path.join(lugar, rel)))) { out.push(o); break; }
       }
-    } else if (c === 'git update-index' || (c === 'git checkout' && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2)) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
+    } else if (c === 'git update-index' || (c === 'git checkout' && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2 || (sueltos.length === 1 && args.some((w) => /^--pathspec-from-file(?:=|$)/.test(w))))) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
       out.push(...sueltos.flatMap((w) => w.split(',')).filter(es));
       // una carpeta repuesta desde otra rama (`git checkout otra -- .`) trae las constancias que esa rama tenga distintas:
       // se le pregunta a git cuáles cambiarían; si git no contesta, la carpeta que las puede contener no pasa
       const desdeRef = c === 'git checkout' ? (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).find((w) => !w.startsWith('-')) : sueltos[0])
         : c === 'git restore' ? lleva(['--source', '-s'])[0] : null;
-      if (desdeRef) {
+      // una ref que empieza con guion sería una opción de `git diff` (`--output=<archivo>`): no se le pregunta a git
+      if (desdeRef && desdeRef.startsWith('-')) out.push(`${tramo.trim()} (no pude ver qué constancias trae ${desdeRef})`);
+      else if (desdeRef && args.some((w) => /^--pathspec-from-file(?:=|$)/.test(w))) out.push(`${tramo.trim()} (las rutas vienen de un archivo: no pude ver qué constancias trae ${desdeRef})`);
+      else if (desdeRef) {
         const fuentes = c === 'git restore' ? lleva(['--source', '-s']) : [desdeRef];
         const rutas = (c === 'git checkout' && args.indexOf('--') > 0 ? args.slice(args.indexOf('--') + 1) : sueltos.filter((w) => !fuentes.includes(w)))
           .filter((w) => w && !w.startsWith('-') && !es(w));
         if (rutas.length) {
-          const r = require('child_process').spawnSync('git', ['-C', base, 'diff', '--name-only', desdeRef, '--', ...rutas],
+          // `checkout <ref> -- <rutas>` escribe lo que la ref trae y no borra lo que no tiene (lo que en el diff aparece
+          // como agregado); `restore --source` también borra, así que cuenta todo
+          const filtro = c === 'git checkout' ? ['--diff-filter=a'] : [];
+          const r = require('child_process').spawnSync('git', ['-C', base, 'diff', '--name-only', ...filtro, '--end-of-options', desdeRef, '--', ...rutas],
             { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
           if (r.error || r.status !== 0) {
             const raiz = require('child_process').spawnSync('git', ['-C', base, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
