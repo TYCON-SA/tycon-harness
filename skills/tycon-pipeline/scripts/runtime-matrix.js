@@ -69,7 +69,6 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta 
 const os = require('os');
 const crypto = require('crypto');
 const smokeSecrets = require(path.join(__dirname, 'lib', 'smoke-secrets.js'));
-const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
 const e2eEvidence = require(path.join(__dirname, 'lib', 'e2e-evidence.js'));
 
 // Desde cuándo un AC de pantalla sin imagen bloquea: las stories que arrancaron antes de esta hora no se frenan a mitad
