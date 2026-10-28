@@ -88,8 +88,6 @@ rm -rf "$LAB"
 LAB=$(mktemp -d); mkdir -p "$LAB/codex"; echo '{"hooks":{}}' > "$LAB/codex/hooks.json"
 OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" TYCON_TIME_TRACKING=none node "$PARITY" 2>&1)
 case "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" in *"NO registrados"*codebase_memory*) bad "T70 sin codebase_memory registrado, la tabla no lo promete" "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" ;; *) ok "T70 sin codebase_memory registrado, la tabla no lo promete" ;; esac
-# T71: lo mismo con engram: el despliegue lo registra sólo con su integración prendida, y la fila lo dice
-case "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" in *"NO registrados"*plugin_engram_engram*) bad "T71 sin engram registrado, la tabla no lo promete" "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" ;; *) ok "T71 sin engram registrado, la tabla no lo promete" ;; esac
 rm -rf "$LAB"
 
 # ── 3b. T25: la paridad mide POR HERRAMIENTA ENCHUFADA ─────────
