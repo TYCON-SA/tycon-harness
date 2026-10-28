@@ -281,7 +281,8 @@ ow_vencer() {
   if [[ "$u" =~ ^[A-Za-z0-9._-]+$ ]]; then eval "casa=~$u"; fi
   [[ "$casa" == /* && -d "$casa" ]] || casa=""
   for d in ${casa:+"$casa"} ${HOME:+"$HOME"}; do
-    dirs+=("$d/.tycon/state/owner-window" "$d/.claude/.tycon-pipeline/owner-window")
+    # la carpeta vieja del estado, dentro de la de la herramienta, por patrón: el filtro sólo decide si se consulta
+    dirs+=("$d/.tycon/state/owner-window" "$d/.*/.tycon-pipeline/owner-window")
   done
   [[ -n "${TYCON_HOME:-}" ]] && dirs+=("$TYCON_HOME/state/owner-window")
   if [[ -z "$casa" ]]; then
