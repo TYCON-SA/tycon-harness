@@ -230,7 +230,7 @@ function lectorDeAvisos({ base, env = process.env, fetch = globalThis.fetch, top
       try {
         const r = await fetch(`https://api.github.com/advisories/${id}`, {
           signal: AbortSignal.timeout(CORTE_AVISO_MS),
-          headers: { accept: 'application/vnd.github+json', 'user-agent': 'tycon-harness-nightly', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          headers: { accept: 'application/vnd.github+json', 'user-agent': 'harness-nightly', ...(token ? { authorization: `Bearer ${token}` } : {}) },
         });
         if (r && r.ok) a = avisoDeLaRespuesta(id, await r.json());
       } catch { a = null; }
