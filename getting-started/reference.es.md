@@ -330,7 +330,9 @@ página `harness.js team-config` son el paso siguiente, aparte.
 
 **Si trabajás solo**, `harness.js team-init --local --name <nombre>` arma el perfil de una persona en esta máquina, sin
 dirección ni cuenta: la declaración y el perfil (sin `team-repos.json`), en `~/<nombre>-profile`, con git y un commit en
-`main`. El arnés lo lee de esa carpeta (`harness.js install --team <carpeta>`), sólo lo commiteado en `main`. Ahí van tus
+`main`. El arnés lo lee de esa carpeta (`harness.js install --team <carpeta>`), sólo lo commiteado en `main`. Son dos
+pasos: la primera instalación, la línea del paquete de la portada, no acepta una carpeta en `--team`, sólo un repo de
+GitHub o de Azure DevOps. Instalá primero sin `--team`, armá el perfil y después instalá con `--team <carpeta>`. Ahí van tus
 paquetes de revisores, que así sobreviven a las actualizaciones (`guides/reviewer-packs.md`, «Si trabajás solo»). Mientras
 viva sólo en tu máquina, `doctor` avisa que no tiene copia de respaldo; para tenerla, subilo a GitHub o a Azure DevOps y
 volvé a instalar con `--team <dirección>`.

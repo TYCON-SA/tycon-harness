@@ -337,7 +337,9 @@ processes and the `harness.js team-config` page are the next step, separately.
 **If you work alone**, `harness.js team-init --local --name <name>` builds a one-person profile on this machine, with no
 address and no account: the declaration and the profile (no `team-repos.json`), in `~/<name>-profile`, with git and a
 commit on `main`. The harness reads it from that folder (`harness.js install --team <folder>`), only what is committed
-on `main`. Your reviewer packs go there, so they survive updates (`guides/reviewer-packs.en.md`, "If you work alone").
+on `main`. It takes two steps: the first install, the package line on the front page, does not accept a folder in
+`--team`, only a GitHub or Azure DevOps repo. Install first without `--team`, build the profile, then install with `--team <folder>`.
+Your reviewer packs go there, so they survive updates (`guides/reviewer-packs.en.md`, "If you work alone").
 While it lives only on your machine, `doctor` warns that it has no backup; to get one, push it to GitHub or Azure DevOps
 and install again with `--team <address>`.
 

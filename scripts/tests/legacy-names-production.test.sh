@@ -269,15 +269,22 @@ state_of(){ # $1 = archivo instalado, $2 = ruta nueva en el repo → estado seg�
     process.stdout.write(m.estadoContraPublicado(process.argv[2], process.argv[3]));
   ' "$NOTICE" "$1" "$2" 2>"$TMP/state-err"
 }
-old_copy="$TMP/old-tycon-prod-sql"; git -C "$AQUI" show "$OLD_SHA:$OLD_DIR/tycon-prod-sql" > "$old_copy"
+# Sin la copia vieja (un árbol que trae el commit pero no sus archivos), juzgar un archivo vacío daría «alterada»:
+# eso es no haber medido, no un rojo del aviso.
+old_copy="$TMP/old-tycon-prod-sql"; old_managed="$TMP/old-managed.json"
+if git -C "$AQUI" show "$OLD_SHA:$OLD_DIR/tycon-prod-sql" > "$old_copy" 2>/dev/null \
+  && git -C "$AQUI" show "$OLD_SHA:$OLD_DIR/managed-settings.tycon-$P_OLD.json.template" > "$old_managed" 2>/dev/null; then
 s="$(state_of "$old_copy" scripts/production/tycon-prod-sql)"
 [ "$s" = "vieja" ] && ok "T51a · una copia de la puerta instalada antes del renombre es «vieja», no «alterada»" || no "T51a · la copia de antes del renombre salió «${s}» — $(head -c 160 "$TMP/state-err")"
-old_managed="$TMP/old-managed.json"; git -C "$AQUI" show "$OLD_SHA:$OLD_DIR/managed-settings.tycon-$P_OLD.json.template" > "$old_managed"
 s="$(state_of "$old_managed" scripts/production/managed-settings.tycon-production.json.template)"
 [ "$s" = "vieja" ] && ok "T51b · la configuración administrada de antes del renombre es «vieja»" || no "T51b · la administrada de antes del renombre salió «${s}»"
 printf 'retocada\n' >> "$old_copy"
 s="$(state_of "$old_copy" scripts/production/tycon-prod-sql)"
 [ "$s" = "alterada" ] && ok "T51c · y una copia retocada sigue siendo «alterada» (el control no se afloja)" || no "T51c · una copia retocada salió «${s}»"
+else
+  echo "⏭ legacy-names-production: T51a/b/c NO MEDIDOS — el commit ${OLD_SHA:0:10} está pero no trae la copia vieja de la puerta"
+  sin_medir=1
+fi
 
 # De punta a punta, con la raíz de laboratorio. El aviso la honra sólo si /opt/tycon no existe de verdad (una sesión hija
 # no puede apuntarlo a una raíz falsa en una máquina con el freno): en una máquina autorizada se saltea DICIÉNDOLO y lo
@@ -484,4 +491,5 @@ out="$(node -e '
 
 echo
 echo "legacy-names-production: $pasaron pasaron · $fallos fallaron"
-[ "$fallos" -eq 0 ]
+[ "$fallos" -eq 0 ] || exit 1
+[ -z "${sin_medir:-}" ] || exit 2
