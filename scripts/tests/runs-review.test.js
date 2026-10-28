@@ -1704,3 +1704,23 @@ test('M5 Escapes_ApagadoEnRegistroYComando_CuentaUnaVez @mantenimiento', () => {
   const e = regla(r, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort();
   assert.deepStrictEqual(e, ['LIVENESS_PRECOMMIT_OFF:1', 'MUTATION_CHECK_OFF:1', 'STORY_GATE_OFF_ADHOC:1']);
 });
+
+// 🔴 La revisión de la noche llama a `tieneEscape` por cada pedido de cada comando de cada conversación. Si cada llamada
+// le pregunta al mapa de renombres —que mira el disco y recorre el mapa entero—, la pasada con el buzón de una semana no
+// entra en el tope de 60 minutos del pipeline. Rojo si `tieneEscape` vuelve a preguntarle al mapa por pedido.
+test('P1 Escape_LosNombresSePidenUnaVez_NoPorComando', () => {
+  const LN = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
+  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const original = LN.envNames;
+  let llamadas = 0;
+  LN.envNames = (...a) => { llamadas += 1; return original(...a); };
+  try {
+    const con = AZ.segmentos('TYCON_PR_BY_HAND=1 az repos pr create --target-branch main')[0];
+    const sin = AZ.segmentos('az repos pr create --target-branch main')[0];
+    for (let i = 0; i < 2000; i += 1) {
+      assert.strictEqual(AZ.tieneEscape(con), true);
+      assert.strictEqual(AZ.tieneEscape(sin), false);
+    }
+    assert.ok(llamadas <= 1, `el mapa se consultó ${llamadas} veces para 4000 pedidos`);
+  } finally { LN.envNames = original; }
+});

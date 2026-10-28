@@ -10,6 +10,7 @@
 #   S1 SitioGh_AceptarMergea · S2 SitioGh_RechazarCierraConMotivo · S3 SitioGh_PedidoCambiadoNoSeAplica
 #   S4 SitioGh_SinGuardarNoDecide · S5 SitioAz_AceptarMergea · S6 SitioAz_RechazarCierraConMotivo
 #   S7 SitioAz_NoSePudoMergear · S8 SitioAz_NadaQuedaVarado · S9 SitioGh_VeredictoConNota
+#   S10 Az_FichaCerradaConPedidoQueYaNoExiste
 # Uso: bash dependency-site-decisions.test.sh [S1 S5 …]   (sin argumentos corre todos)
 
 set -uo pipefail
@@ -124,7 +125,9 @@ const punta=(ref)=>{ const r=cp.spawnSync('git',['-C',process.env.AZ_REMOTE,'rev
 const vista=(p)=>({ ...p, repository:{ id:'id-repo', name:'repo', project:{ id:'id-proyecto', name:'proyecto' } } });
 const cmd=a.slice(0,3).join(' ');
 if (cmd==='repos pr show') {
-  const p=st.prs.find((x)=>String(x.pullRequestId)===arg('--id')); if(!p){process.stderr.write('no existe\n');process.exit(1);}
+  // lo que contesta Azure por un pull request que no está (borrado, o de un repo que ya no existe)
+  const p=st.prs.find((x)=>String(x.pullRequestId)===arg('--id')); if(!p){process.stderr.write('ERROR: TF401180: The requested pull request was not found.\n');process.exit(1);}
+  if (p.show_fails) { process.stderr.write(p.show_fails+'\n'); process.exit(1); }
   if (p.status==='active') {
     if (p.lag>0) p.lag--; else { const t=punta(p.sourceRefName); if (t) p.lastMergeSourceCommit={ commitId:t }; }
     save();
@@ -359,6 +362,23 @@ if quiero S9; then
   si "el #14 queda mergeado" [ "$(val_gh '!!st.pulls[R][0].merged_at')" = true ]
   si "en main la ficha está en promoted/ con util y el día de la decisión" bash -c '[[ "$1" =~ (^|$'"'\n'"')veredicto:\ util ]] && [[ "$1" == *"decidido_en_sitio: '"$EL"'"* ]]' _ "$(enmain promoted/gg77.yaml)"
   si "…sin el veredicto pendiente" no_contiene "$(enmain promoted/gg77.yaml)" 'pendiente'
+fi
+
+if quiero S10; then
+  caso "S10 Az_FichaCerradaConPedidoQueYaNoExiste" "el pedido de una ficha cerrada que Azure ya no encuentra se anota cerrado, sin poner roja la noche"
+  # Una ficha archivada con un pedido de un repo que ya no existe: Azure contesta TF401180. Tomado como fallo, pone
+  # roja la noche todas las noches, para siempre.
+  montar
+  ficha archived hh88 "pr: 4160"; ficha archived ii99 "pr: 4161"; sembrar "fichas cerradas"
+  estado_az '[{"pullRequestId":4161,"status":"active","sourceRefName":"refs/heads/dependencias/ii99","creationDate":"2026-10-11T08:00:00Z","show_fails":"ERROR: connection timed out"}]'
+  publicar
+  correr_az --record-only
+  si "un pedido que no se pudo consultar por otra razón sigue poniendo roja la noche" [ "$RC" = 1 ]
+  si "…y se dice cuál" contiene "$(SALIDA)" 'ii99: no se pudo consultar el .* de una ficha cerrada'
+  si "el que ya no existe no es un fallo" no_contiene "$(SALIDA)" 'type=error\].*hh88'
+  si "…se avisa que ya no existe" contiene "$(SALIDA)" 'type=warning\]hh88: su .* ya no existe'
+  si "…y la ficha queda anotada para no volver a mirarla" contiene "$(enmain archived/hh88.yaml)" "^pr_cerrado: $HOY$"
+  si "la otra no se anota" no_contiene "$(enmain archived/ii99.yaml)" '^pr_cerrado:'
 fi
 
 echo
