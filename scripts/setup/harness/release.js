@@ -1788,7 +1788,7 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
  * contestó). Sólo ayuda cuando la versión que instala ya trae esta función: el paso desde una versión anterior sigue
  * curándose en la actualización siguiente.
  */
-function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
+function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null, timeoutMs: timeoutOverride = null } = {}) {
   const say = (l) => { if (log) log(`update: ${l}`); };
   const script = path.join(harnessDir, 'scripts', 'setup', 'harness', 'team-after-swap.js');
   const failed = (why) => {
@@ -1797,7 +1797,8 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
     return { status: 'failed', lines: [text] };
   };
   if (!exists(script)) return failed(`la versión instalada no trae ${path.relative(harnessDir, script)}`);
-  const timeoutMs = (Math.max(budgetS(ctx.env), 60) + TARBALL_BUDGET_S_DEFAULT) * 1000;
+  // el tope cubre la red de refreshTeam (la punta del equipo y su comprimido); `timeoutMs` lo fija quien llama
+  const timeoutMs = timeoutOverride > 0 ? timeoutOverride : (Math.max(budgetS(ctx.env), 60) + TARBALL_BUDGET_S_DEFAULT) * 1000;
   const r = require('child_process').spawnSync(process.execPath, [script], {
     input: JSON.stringify({ home: ctx.home, state }), env: ctx.env, encoding: 'utf8', timeout: timeoutMs, windowsHide: true, maxBuffer: 16 * 1024 * 1024,
   });
