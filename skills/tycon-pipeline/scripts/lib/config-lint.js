@@ -128,7 +128,7 @@ function claves(txt) {
 function lista(txt, bloque, llave) {
   const lineas = String(txt || '').split(/\r?\n/);
   const out = [];
-  let enBloque = false; let indBloque = 0; let juntando = false; let indLista = 0;
+  let enBloque = false; let indBloque = 0; let juntando = false;
   for (const l of lineas) {
     if (!l.trim() || /^\s*#/.test(l)) continue;
     const ind = l.length - l.trimStart().length;
@@ -144,7 +144,7 @@ function lista(txt, bloque, llave) {
     juntando = false;
     if (kv[1] !== llave) continue;
     const v = kv[2].replace(/\s+#.*$/, '').trim();
-    if (v === '') { juntando = true; indLista = ind; continue; }
+    if (v === '') { juntando = true; continue; }
     const flow = v.match(/^\[(.*)\]$/);
     if (flow) { for (const x of flow[1].split(',')) { const t = x.replace(/^['"]|['"]$/g, '').trim(); if (t) out.push(t); } continue; }
     out.push(v.replace(/^['"]|['"]$/g, ''));

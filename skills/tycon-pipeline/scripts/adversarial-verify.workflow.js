@@ -524,9 +524,9 @@ log(`adversarial-verify: ${todos.length} hallazgos → ${grupos.clases.length} c
 // La ventana: como mucho `size` tareas vivas a la vez; apenas termina una, entra la siguiente. Cada carril está
 // aislado: una tarea que tira deja `null` en su lugar y las demás se intentan igual; el motivo va a `onError(k, e)`
 // (sin él, la causa se perdía). El resultado sale en el orden de las tareas, no en el de llegada.
-async function runWindow(tareas, opts) {
-  const size = Math.max(1, Math.floor((opts && opts.size) || 3))
-  const onError = opts && typeof opts.onError === 'function' ? opts.onError : null
+async function runWindow(tareas, opts = {}) {
+  const size = Math.max(1, Math.floor(opts.size || 3))
+  const onError = typeof opts.onError === 'function' ? opts.onError : null
   const lista = Array.isArray(tareas) ? tareas : []
   const resultados = new Array(lista.length).fill(null)
   let siguiente = 0

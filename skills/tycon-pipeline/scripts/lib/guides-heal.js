@@ -149,10 +149,6 @@ function unmergedStages(git, dir) {
   return [...stages].map(([file, s]) => ({ file, inHead: s.has('2') }));
 }
 
-function unmergedFiles(git, dir) {
-  return unmergedStages(git, dir).map((u) => u.file);
-}
-
 /** Una ruta o una carpeta lista para pegar en la shell: tal cual si es `[\w./-]+`; si no, entre comillas simples (la
  *  misma regla que el aviso de arranque del arnés, branch-guard-notice.js, que tiene su copia). */
 function sh(s) {
