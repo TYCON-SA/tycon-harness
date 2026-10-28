@@ -63,8 +63,7 @@ command -v node >/dev/null 2>&1 || { echo "no pude correr: no encuentro node en 
 command -v git >/dev/null 2>&1 || { echo "no pude correr: no encuentro git en el PATH"; exit 9; }
 # la carpeta de este guion, para cargar la ventana de permiso de su mismo árbol (la pone siempre este guion)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || { echo "no pude correr: no encuentro la carpeta del guion"; exit 9; }
-# el bash que corre este guion: en Windows, `approve --terminal` lo vuelve a correr con él en una ventana nueva
-BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" BASE_CONTROLS_BASH="${BASH:-bash}" exec node - "$@" <<'JS'
+BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" exec node - "$@" <<'JS'
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -76,9 +75,12 @@ const INVENTORY = 'scripts/ci/controls-from-base.json';
 const NOT_RUN = 9;
 const SELF = 'scripts/ci/run-base-controls.sh';
 const CODE = /\.(c?js|mjs|sh)$/;
-// en la ventana nueva de Windows los argumentos llegan por el ambiente: la consola no deja pasar las comillas del JSON
-const [cmd, ...rest] = process.env.TYCON_WAIVER_IN_WINDOW === '1' && process.env.BASE_CONTROLS_WINDOW_ARGS
-  ? JSON.parse(process.env.BASE_CONTROLS_WINDOW_ARGS) : process.argv.slice(2);
+// en la ventana nueva de Windows los argumentos llegan por el ambiente: la consola no deja pasar las comillas del JSON.
+// Sólo para `approve` en Windows, y se borran al leerlos: un ambiente heredado no cambia los de otro comando
+const enLaVentana = process.env.TYCON_WAIVER_IN_WINDOW === '1' && !!process.env.BASE_CONTROLS_WINDOW_ARGS
+  && process.argv[2] === 'approve' && (process.platform === 'win32' || process.env.TYCON_WAIVER_PLATFORM === 'win32');
+const [cmd, ...rest] = enLaVentana ? JSON.parse(process.env.BASE_CONTROLS_WINDOW_ARGS) : process.argv.slice(2);
+delete process.env.BASE_CONTROLS_WINDOW_ARGS;
 
 function usage(code) {
   console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json>');
@@ -802,15 +804,20 @@ function approveInNewWindow(rw, root, out, entries) {
   if (process.env[rw.MARCA_VENTANA] !== '1') {
     console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
     process.env.BASE_CONTROLS_WINDOW_ARGS = JSON.stringify([cmd, ...rest]);
-    let bash = process.env.BASE_CONTROLS_BASH || 'bash';
-    if (!path.extname(bash) && fs.existsSync(`${bash}.exe`)) bash = `${bash}.exe`;
-    const v = rw.abrirVentana({ programa: bash, script: path.join(process.env.BASE_CONTROLS_SELF_DIR || '', 'run-base-controls.sh'), args: [cmd], titulo: 'Firma del dueño' });
+    // adentro, node lee el programa de un archivo y no de la entrada, que queda para la consola
+    // el código de la ventana no alcanza: firmó si la constancia está escrita
+    const dest = path.join(root, isApprovalDir(out) ? `${out}${hashOf(entries)}.json` : out);
+    const leer = () => { try { return fs.readFileSync(dest, 'utf8'); } catch (_) { return null; } };
+    const antes = leer();
+    const v = rw.abrirVentana({ script: path.join(process.env.BASE_CONTROLS_SELF_DIR || '', 'run-base-controls-window.js'), args: [cmd], titulo: 'Firma del dueño' });
     if (v.estado !== 'cerrada') { console.error(`🔒 run-base-controls approve: ${v.estado === 'vencida' ? `la ventana venció a los ${v.tope} s sin firmar${v.pid ? ` (la ventana arrancó: pid ${v.pid})` : ''}` : `no pude abrir la ventana (${v.motivo})`}: no se firmó nada.`); process.exit(1); }
+    const despues = leer();
+    const firmo = despues !== null && (isApprovalDir(out) || despues !== antes);
+    if (v.codigo === 0 && !firmo) { console.error('🔒 run-base-controls approve: la ventana se cerró sin escribir la constancia: no se firmó nada.'); process.exit(1); }
     process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
   }
-  rw.anotarVentana();
-  process.on('exit', () => rw.pausaFinal());
   if (!rw.hasTty()) { console.error('🔒 run-base-controls approve --terminal: en Windows firma sólo la ventana nueva que abre este comando: no se firmó nada.'); process.exit(2); }
+  rw.dentroDeLaVentana();
   console.error('Vas a firmar, como dueño, este cambio de control:');
   for (const e of entries) console.error(`   ${safe(e.path)} (blob ${short(e.blob)})`);
   console.error(`La firma va a: ${safe(out)}${isApprovalDir(out) ? `${hashOf(entries)}.json` : ''}`);

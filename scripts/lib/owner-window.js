@@ -561,7 +561,7 @@ function ttyDeVerdad() {
     // Windows: la ventana nueva (la abre el proceso de afuera; el de adentro se anota y espera una tecla al terminar)
     enVentana: () => process.env[rw.MARCA_VENTANA] === '1',
     abrir: (o) => rw.abrirVentana(o),
-    dentro: () => { rw.anotarVentana(); process.on('exit', () => rw.pausaFinal()); },
+    dentro: () => rw.dentroDeLaVentana(),
   };
 }
 
@@ -588,7 +588,8 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
   if (!t.hay()) return { codigo: 2, motivo: 'esta firma se da en la terminal del dueño, y aquí no hay una' };
   const que = `Firma del dueño: ${s ? s.approves : firma}${resumen ? ` (${una(resumen, 200)})` : ''}${destino ? `, sesión ${destino}` : ''}.`;
   let ok;
-  if (t.windows) ok = t.confirmarFrase({});
+  // en Windows también: la ventana dice qué se firma antes de pedir las tres palabras
+  if (t.windows) { console.error(`\n${que}`); ok = t.confirmarFrase({}); }
   else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
   if (!ok) return { codigo: 1, motivo: 'no se firmó' };
   firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar });

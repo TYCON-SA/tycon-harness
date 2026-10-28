@@ -908,6 +908,22 @@ test('OwnerWindow_TerminalEnWindows_AbreLaVentanaNueva', (t) => {
   assert.strictEqual(e.r.codigo, 0, e.r.motivo);
 });
 
+test('OwnerWindow_VentanaDeWindows_DiceQueSeFirmaAntesDeLasTresPalabras', (t) => {
+  const casa = casaNueva(t);
+  const argv = [MARKER, 'complete-step', 'approve-plan', '--terminal', '--for-session', 'ses-a'];
+  const dicho = [];
+  let alPreguntar = null;
+  const original = console.error;
+  console.error = (...a) => { dicho.push(a.join(' ')); };
+  try {
+    ow.exigir({ firma: 'plan-approval', argv, propia: '_nosession', resumen: 'el plan de la story 9.97', casa, ahora: AHORA, salir: () => {},
+      tty: { windows: true, enVentana: () => true, hay: () => true, dentro: () => {}, confirmarFrase: () => { alPreguntar = dicho.join('\n'); return true; } } });
+  } finally { console.error = original; }
+  // sin esto el dueño escribe las tres palabras sin saber qué firma: el agente elige el plan, la vuelta o el salteo
+  assert.ok(alPreguntar !== null, 'preguntó las tres palabras');
+  assert.match(alPreguntar, /Firma del dueño: .*\(el plan de la story 9\.97\), sesión ses-a\./);
+});
+
 /** Un HOME con el marcador de una corrida parada en «Aprobar el plan» (sesión ses-w) y un repo con la story. */
 function laboratorioWindows(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-win-'));
@@ -964,4 +980,22 @@ test('OwnerWindow_MarcaDeLaVentanaPuestaAMano_NoFirma', (t) => {
   assert.strictEqual(ctl.status, 2, `${ctl.stdout}${ctl.stderr}`);
   assert.match(ctl.stderr, /en Windows firma sólo la ventana nueva que abre este comando/);
   assert.strictEqual(fs.existsSync(path.join(repo, '.tycon')), false, 'no escribió ninguna constancia');
+});
+
+test('OwnerWindow_PortonEnLaVentana_LeeElProgramaDeUnArchivoYNoDeLaEntrada', (t) => {
+  if (process.platform === 'win32') return;
+  const { repo } = laboratorioWindows(t);
+  const argv = JSON.stringify(['approve', '--root', repo, '--file', 'specs/story-9.97-ventana.md', '--terminal']);
+  const env = { ...process.env, TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', BASE_CONTROLS_WINDOW_ARGS: argv, BASE_CONTROLS_SELF_DIR: path.dirname(CONTROLES) };
+  // lo que corre la ventana: node con el lanzador, sin programa por la entrada (la entrada queda para la consola)
+  const r = spawnSync(process.execPath, [path.join(path.dirname(CONTROLES), 'run-base-controls-window.js'), 'approve'], { cwd: repo, env, encoding: 'utf8', input: 'gato luna reloj\n', timeout: 60000 });
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /en Windows firma sólo la ventana nueva que abre este comando/, 'corrió el programa del portón');
+  assert.strictEqual(fs.existsSync(path.join(repo, '.tycon')), false);
+  // los argumentos por el ambiente valen sólo para approve en Windows: otro comando, o fuera de Windows, usa los suyos
+  const otro = spawnSync('bash', [CONTROLES, 'nada'], { cwd: repo, env, encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(otro.status, 2);
+  assert.match(otro.stderr, /^uso: /m);
+  const mac = spawnSync('bash', [CONTROLES, 'approve'], { cwd: repo, env: { ...env, TYCON_WAIVER_PLATFORM: '' }, encoding: 'utf8', timeout: 60000 });
+  assert.doesNotMatch(mac.stderr, /ventana nueva/, `${mac.stdout}${mac.stderr}`);
 });
