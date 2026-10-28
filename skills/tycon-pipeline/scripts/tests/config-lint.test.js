@@ -38,6 +38,11 @@ test('una llave de primer nivel que nadie lee se nombra', () => {
   assert.match(h[0].mensaje, /advisors:/);
 });
 
+test('las siglas del rubro para la guía del tester son una llave que se lee', () => {
+  assert.deepEqual(cl.lintEsquema('qa_guide_terms: [ACME, X&Y]\n'), []);
+  assert.deepEqual(cl.lintEsquema('qa_guide_terms:\n  - ACME\n  - X&Y\n'), []);
+});
+
 test('una llave hija mal escrita se nombra con su bloque', () => {
   const h = cl.lintEsquema('e2e:\n  gate: x.sh\n  critical_manifiest: y.txt\n');
   assert.equal(h.length, 1);

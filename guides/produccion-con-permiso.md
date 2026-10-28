@@ -165,7 +165,7 @@ claves — el usuario de la base NO va acá, va junto a la contraseña en el Lla
     { "host": "acme-sql.database.windows.net", "environment": "production", "keychain": "tycon-prod-acme", "base": "acmebase" },
     { "host": "srv.globex.test", "environment": "production", "keychain": "tycon-prod-globex", "base": "GlobexDb", "port": 1435 },
     { "host": "acme-sql-staging.database.windows.net", "environment": "non-production" },
-    { "host": "test.bizuit.example", "environment": "non-production" }
+    { "host": "acme-test.example.com", "environment": "non-production" }
   ]
 }
 ```
@@ -384,7 +384,7 @@ trabajo normal se termina apagando. No imprime ningún comando.
 Medido el 2026-09-15: la primera versión, con todas sus pruebas en verde, frenaba
 **313 de 4.000 (7,8 %)** comandos que no tocaban ninguna base; después del arreglo, **0**. Los que sí
 frena son comandos que nombran servidores que la máquina todavía no tiene declarados — por eso, antes
-de instalar, conviene declarar los servidores de prueba que se usan (por ejemplo `test.bizuit.example`).
+de instalar, conviene declarar los servidores de prueba que se usan (por ejemplo `acme-test.example.com`).
 
 ## Cuando algo se frena y creés que no debería
 

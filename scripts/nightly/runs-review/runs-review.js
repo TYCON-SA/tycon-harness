@@ -323,6 +323,7 @@ const MOTIVOS = [
   /^la carpeta del buzón no se pudo leer$/,
   /^\d{1,9} archivo\(s\) o línea\(s\) ilegible\(s\)$/,
   /^la pasada se cortó por un error \([\p{L}\p{N}_ ]{1,40}\)$/u,
+  /^la lista de integraciones no se leyó entera: la bandera de horas puede contar de más$/,
 ];
 
 async function run(opts) {
@@ -542,6 +543,9 @@ async function run(opts) {
         }
       }
     }
+    // la lista de integraciones que no se leyó entera: la cuenta de la bandera de horas puede sobrar, y se dice
+    const sinHoras = RULES.horasSinMedir();
+    if (sinHoras) { process.stderr.write(`runs-review: ${sinHoras}\n`); if (!estado.motivo) estado.motivo = sinHoras; }
     estado.causas = armarCausas();
     escribirCausas();
     guardarVistas();

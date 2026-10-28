@@ -69,7 +69,7 @@ declara(){ # $1 = json  → deja el archivo en un repo git (CON migraciones) con
 if [ ! -f "$LINT" ]; then
   no "T11 · el lint no existe todavía ($LINT)"
 else
-  BUENO='{"servers":[{"host":"acme-sql.database.windows.net","environment":"produccion","keychain":"tycon-prod-acme"},{"host":"test.bizuit.example","environment":"no-produccion"}]}'
+  BUENO='{"servers":[{"host":"acme-sql.database.windows.net","environment":"produccion","keychain":"tycon-prod-acme"},{"host":"acme-test.example.com","environment":"no-produccion"}]}'
   declara "$BUENO"
   if node "$LINT" --staged --repo "$TMP/r" >/dev/null 2>&1; then ok "T11a · la declaración válida pasa"
   else no "T11a · la declaración válida fue rechazada"; fi
@@ -111,7 +111,7 @@ else
   salida="$(node "$LINT" --staged --repo "$TMP/r" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "sin migraciones" >/dev/null; then ok "T11j · producción declarada en un repo sin migraciones se rechaza"
   else no "T11j · producción en un repo sin database/ ni BD/ pasó (rc=$rc)"; fi
-  declara '{"servers":[{"host":"test.bizuit.example","environment":"no-produccion"}]}'; rm -rf "$TMP/r/database"
+  declara '{"servers":[{"host":"acme-test.example.com","environment":"no-produccion"}]}'; rm -rf "$TMP/r/database"
   if node "$LINT" --staged --repo "$TMP/r" >/dev/null 2>&1; then ok "T11k · un servidor de no-producción se declara en cualquier repo"
   else no "T11k · un no-produccion en un repo sin migraciones fue rechazado"; fi
 fi
@@ -647,6 +647,21 @@ if [ -f "$INSTALADOR" ]; then
     ok "6.2-T34 · con una regla abierta y sin poder cerrarla, el instalador lo dice en rojo con el comando y termina"
   else no "6.2-T34 · rc=$rc34 · $(grep -i firewall "$TMP/inst34" | head -2)"; fi
 
+  # M1 · reinstalar con una regla abierta que la puerta instalada SÍ puede cerrar: la cierra con ella, como el dev,
+  # ANTES de reemplazarla, lo dice en verde y no avisa en rojo
+  # 🔴 Falla con: reemplazar la puerta sin cerrar la regla, cerrarla con la puerta nueva (la regla queda sin quién la
+  #    cierre si la nueva falla), o un cierre que salió bien contado como rojo.
+  PUERTA_INST="$TMP/sys2/opt/tycon/bin/tycon-prod-sql"
+  { printf '#!/usr/bin/env bash\n# doble de la puerta instalada: sabe --close-firewall, anota lo que recibe y cierra bien\n'
+    printf 'printf "%%s\\n" "$*" >> "%s/cierre-vieja.log"\nexit 0\n' "$TMP"; } > "$PUERTA_INST"; chmod 755 "$PUERTA_INST"
+  rm -f "$TMP/cierre-vieja.log"
+  HOME="$CASA34" PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys2" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-m1" 2>&1; rcm1=$?
+  if [ "$rcm1" = 0 ] && [ "$(cat "$TMP/cierre-vieja.log" 2>/dev/null)" = "--close-firewall acme-sql.database.windows.net" ] \
+     && grep -q "regla de firewall de acme-sql.database.windows.net cerrada antes de reinstalar" "$TMP/inst-m1" \
+     && ! grep -i firewall "$TMP/inst-m1" | grep "🔴" >/dev/null && ! grep -q 'cierre-vieja.log' "$PUERTA_INST"; then
+    ok "M1 Reinstall_OpenRuleClosable_ClosesWithInstalledGateFirst · la cerró la puerta vieja, en verde, y después la reemplazó"
+  else no "M1 · rc=$rcm1 · cierre: $(cat "$TMP/cierre-vieja.log" 2>/dev/null) · $(grep -i firewall "$TMP/inst-m1" | head -2)"; fi
+
   # --no-sudo corriendo como root: se niega
   rm -rf "$TMP/sys3"; mkdir -p "$TMP/sys3"
   TYCON_PROD_AS_ROOT=1 TYCON_PROD_ROOT="$TMP/sys3" TYCON_PROD_HARNESS="$AQUI" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >/dev/null 2>&1; rc=$?
@@ -1044,7 +1059,7 @@ PY
       mkdir -p "$INTERNO32/$(dirname "$f")"; cp "$AQUI/$f" "$INTERNO32/$f"; printf '\n# otros bytes: el clon que se mantiene no es la copia que se baja\n' >> "$INTERNO32/$f"
     done
     ( cd "$INTERNO32" && git init -q -b main . && git add -A && git -c user.name=Lab -c user.email=lab@example.com commit -q -m interno && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
-    printf '{"servers":[{"host":"test.bizuit.example","environment":"no-produccion"}]}' > "$REPOS32/backend-acme/.tycon/production.json"
+    printf '{"servers":[{"host":"acme-test.example.com","environment":"no-produccion"}]}' > "$REPOS32/backend-acme/.tycon/production.json"
     git -C "$REPOS32/backend-acme" init -q . >/dev/null 2>&1
     printf '#!/usr/bin/env bash\nexit 44\n' > "$SYS30/usr/bin/security"; chmod +x "$SYS30/usr/bin/security"
     aviso32(){ # $1 = el árbol de la versión que corre
