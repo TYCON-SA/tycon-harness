@@ -139,7 +139,7 @@ function main() {
         try {
           const cat = path.join(tmp, 'advisor-rules-catalog.md');
           fs.writeFileSync(cat, text);
-          const r = catalogCount.check({ root, catalogPath: cat });
+          const r = catalogCount.check({ root, catalogPath: cat, reviewersFrom: path.join(__dirname, '..', '..') });
           if (r.error) throw new Error(`el conteo del catálogo: ${r.error}`);
           if (r.skipped) console.error(`ℹ️  reglas de la CI: conteo del catálogo saltado — ${r.skipped}.`);
           for (const c of r.checks) if (!c.ok) findings.push(`${CATALOG_REL} — conteo del catálogo de reglas: ${c.msg}.`);

@@ -56,14 +56,24 @@ function coreCatalog(text, outside) {
   return out.join('\n');
 }
 
+/** ¿La carpeta tiene al menos un .toml de revisor? */
+function hasReviewers(dir) {
+  try { return fs.readdirSync(dir).some((n) => n.endsWith('.toml')); } catch (_) { return false; }
+}
+
 /**
- * Los controles del conteo, sobre `catalogPath` (por omisión, el del repo) y el padrón de revisores del repo.
+ * Los controles del conteo, sobre `catalogPath` (por omisión, el del repo) y el padrón de revisores del repo. Un repo
+ * que no trae los .toml (el privado adelgazado: son del público) usa el padrón de `reviewersFrom`, el arnés que corre.
  * → { skipped: motivo | null, error: motivo | null, notes: [texto], checks: [{ ok, msg }] }
  */
-function check({ root, catalogPath } = {}) {
+function check({ root, catalogPath, reviewersFrom } = {}) {
   const res = { skipped: null, error: null, notes: [], checks: [] };
   const cat = catalogPath || path.join(root, CATALOG);
-  const rev = path.join(root, REVIEWERS);
+  let rev = path.join(root, REVIEWERS);
+  if (reviewersFrom && !hasReviewers(rev) && hasReviewers(path.join(reviewersFrom, REVIEWERS))) {
+    rev = path.join(reviewersFrom, REVIEWERS);
+    res.notes.push(`el padrón de revisores sale de ${reviewersFrom}: este repo no trae los .toml`);
+  }
   if (!fs.existsSync(cat) || !fs.existsSync(rev)) {
     res.skipped = 'no están el catálogo real o el padrón de revisores (constancia, no verde)';
     return res;

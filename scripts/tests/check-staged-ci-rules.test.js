@@ -157,12 +157,30 @@ test('StagedCiRules_Catalog_OnlyWhenTouched_AndOnTheIndex', () => {
   assert.match(r.out, /guides\/advisor-rules-catalog\.md — conteo del catálogo de reglas: filas=\d+, esperaba \d+ — si el catálogo creció, actualizá el número en scripts\/lib\/rules-catalog-count\.js/);
 });
 
-test('StagedCiRules_Catalog_SkipIsSaid — sin padrón de revisores el conteo se saltea y lo dice, como C5', () => {
+test('StagedCiRules_Catalog_SkipIsSaid — sin padrón de revisores en ningún lado el conteo se saltea y lo dice, como C5', () => {
   const d = lab();
-  stage(d, 'guides/advisor-rules-catalog.md', '# catálogo\n');
+  put(d, 'guides/advisor-rules-catalog.md', '# catálogo\n');
+  const { check } = require('../lib/rules-catalog-count.js');
+  assert.match(String(check({ root: d }).skipped), /padrón de revisores/);
+  assert.match(String(check({ root: d, reviewersFrom: tmpdir('staged-ci-rules-sin-arnes-') }).skipped), /padrón de revisores/);
+});
+
+test('StagedCiRules_Catalog_ThinRepo — un repo sin los .toml cuenta con el padrón del arnés que corre, no frena de más', () => {
+  const d = lab();
+  const real = fs.readFileSync(path.join(RAIZ, 'guides', 'advisor-rules-catalog.md'), 'utf8');
+  const pack = path.join(RAIZ, 'packs', 'clients', 'pack.json');
+  if (fs.existsSync(pack)) put(d, 'packs/clients/pack.json', fs.readFileSync(pack, 'utf8'));
+  stage(d, 'guides/advisor-rules-catalog.md', real);
+  stage(d, 'adapters/codex/agents/MANIFEST.json', '{}\n');
   const r = run(d);
   assert.strictEqual(r.rc, 0, r.out);
-  assert.match(r.out, /conteo del catálogo saltado/);
+  assert.doesNotMatch(r.out, /no pude mirar|saltado/);
+  // y el padrón prestado no tapa un catálogo que no cuadra
+  const rows = real.match(/^\|\s*\*\*[A-Z0-9]+-[CW]\d/m);
+  stage(d, 'guides/advisor-rules-catalog.md', real.replace(rows[0], `| **ZZZQ-C1** | de más | nada |\n${rows[0]}`));
+  const mal = run(d);
+  assert.strictEqual(mal.rc, 1, mal.out);
+  assert.match(mal.out, /conteo del catálogo de reglas: filas=\d+, esperaba \d+/);
 });
 
 test('StagedCiRules_CouldNotLook_IsTwo — fuera de un repo no es verde', () => {
