@@ -114,7 +114,8 @@ function computeAtddPreEdit({ filePath, repoPath, priorPaths, storyHasTests, ste
     return { action: 'pass', reason: 'es un guion de medición del repo que la story no declara' };
   }
 
-  const prev = Array.isArray(priorPaths) ? priorPaths : [];
+  // como en el cierre, lo de un guion de medición que la story no declara no cuenta como prueba previa
+  const prev = (Array.isArray(priorPaths) ? priorPaths : []).filter((p) => !esMedicionNoDeclarada(p, repoPath, declarados));
   if (prev.some((p) => isTestPath(p))) {
     return { action: 'pass', reason: 'ya se tocó al menos un archivo de test en esta corrida' };
   }

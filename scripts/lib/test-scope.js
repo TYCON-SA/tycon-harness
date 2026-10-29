@@ -132,9 +132,16 @@ function revisar(texto, ctx, out) {
       k++;
       continue;
     }
+    // un tramo después de `||` puede no correr, y uno en un `|` corre aparte: su `cd` no se sabe si cambió la carpeta
+    const previo = k > 0 ? segs[k - 1].sep : null;
     // `cd` no corre pruebas: cambia la carpeta de lo que sigue (lo de adentro de sus `$(…)` se revisa abajo igual)
-    if (p.words[0] === 'cd' || p.words[0] === 'pushd' || p.words[0] === 'popd') cambiarCarpeta(ctx.carpeta, p, segs[k].sep);
-    else comando(seg, p, { ...ctx, escape: declarado }, out);
+    if (p.words[0] === 'cd' || p.words[0] === 'pushd' || p.words[0] === 'popd') {
+      if (previo === '||' || previo === '|') ctx.carpeta.valor = null;
+      else cambiarCarpeta(ctx.carpeta, p, segs[k].sep);
+    } else {
+      if (cambiaCarpetaSinDecir(p.words)) ctx.carpeta.valor = null;
+      comando(seg, p, { ...ctx, escape: declarado }, out);
+    }
     // lo de adentro de `$(…)` y de las comillas invertidas corre aunque vaya entre comillas dobles
     for (const sub of sp.substitutions(seg)) revisar(sub, hijo(ctx, declarado), out);
     // un bloque entre llaves después de un programa (`Measure-Command { npm test }`, `try { … }`, `ForEach-Object { … }`)
@@ -168,6 +175,16 @@ const hijo = (ctx, escape) => ({ ...ctx, escape, prof: ctx.prof + 1, carpeta: { 
  * si el `cd` falla el comando corre en la de antes. Una ruta relativa necesita la carpeta de antes. Cualquier otra forma
  * (`cd $X`, `cd -`, `cd` solo, `cd -P x`, `pushd`, `popd`) la deja desconocida.
  */
+/**
+ * ¿El tramo puede cambiar la carpeta por un camino que el lector no sigue? `builtin cd`, `command cd`, `eval`, `source`,
+ * `.` y los de PowerShell (`Set-Location`, `sl`, `Push-Location`, `Pop-Location`, `chdir`).
+ */
+function cambiaCarpetaSinDecir(words) {
+  const w0 = String(words[0] || '').toLowerCase();
+  if (['eval', 'source', '.', 'set-location', 'sl', 'push-location', 'pop-location', 'chdir'].includes(w0)) return true;
+  return (w0 === 'builtin' || w0 === 'command') && ['cd', 'pushd', 'popd'].includes(String(words[1] || ''));
+}
+
 function cambiarCarpeta(carpeta, p, sep) {
   const w = p.words.map(palabra);
   const destino = w.length === 2 && w[0].texto === 'cd' && !w[1].dinamica && !/^[-~]/.test(w[1].texto) ? w[1].texto : null;
@@ -191,12 +208,14 @@ function proyectoPropio(carpeta) {
   }
   if (!raiz || path.resolve(raiz) === path.resolve(carpeta)) return false;
   let pkg;
-  try { pkg = JSON.parse(fs.readFileSync(path.join(carpeta, 'package.json'), 'utf8')); } catch { return false; }
+  try { pkg = JSON.parse(fs.readFileSync(path.join(carpeta, 'package.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { return false; }
   if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return false;
   if (pkg.workspaces || (pkg.jest && pkg.jest.projects)) return false;
   let nombres;
   try { nombres = fs.readdirSync(carpeta); } catch { return false; }
   if (nombres.some((n) => MARCAS_DE_RAIZ.includes(n) || /^vitest\.workspace\./.test(n))) return false;
+  // la configuración de la herramienta también puede declarar varios proyectos (`projects` de jest y de vitest)
+  if (nombres.some((n) => /^(?:jest|vitest|vite)\.config\./.test(n) && VARIOS_PROYECTOS.test(leer(path.join(carpeta, n))))) return false;
   const test = pkg.scripts && pkg.scripts.test;
   return !(typeof test === 'string' && RECORRE_PAQUETES.test(test));
 }
@@ -210,10 +229,13 @@ function enSuProyecto(seg, ctx) {
 const sinCarpeta = (ctx) => ({ ...ctx, carpeta: { valor: null } });
 const AGRUPA = /[(){}]|(?:^|[\s;&|])(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select)(?=[\s;]|$)/;
 // opciones que corren la suite de otra carpeta o de otros proyectos (`npm --prefix ..`, `vitest --root ..`, `pnpm -r`)
-const OTRA_CARPETA = /^(?:--prefix|-C|--dir|--cwd|--root|--rootDir|--config|-c|--project|--projects|--workspace|--workspaces|-w|-ws|--filter|-F|-r|--recursive)(?:=|$)/;
+// (`env --chdir`, `sudo -D` y `jest --roots` también)
+const OTRA_CARPETA = /^(?:--prefix|-C|--dir|--cwd|--chdir|-D|--root|--roots|--rootDir|--config|-c|--project|--projects|--workspace|--workspaces|-w|-ws|--filter|-F|-r|--recursive)(?:=|$)/;
 const MARCAS_DE_RAIZ = ['pnpm-workspace.yaml', 'lerna.json', 'nx.json', 'turbo.json'];
 // un script `test` que corre los de otros paquetes, o que sale de la carpeta
-const RECORRE_PAQUETES = /\b(?:turbo|nx|lerna)\b|--workspaces?\b|\bpnpm\s+(?:-r|--recursive)\b|\.\.(?:[\\/]|\s|$)/;
+const RECORRE_PAQUETES = /\b(?:turbo|nx|lerna)\b|--workspaces?\b|(?:^|\s)--?ws\b|\byarn\s+workspaces\b|\bpnpm\b[^;&|]*\s(?:-r|--recursive|-F|--filter)(?:[\s=]|$)|\.\.(?:[\\/]|\s|$)/;
+const VARIOS_PROYECTOS = /\b(?:projects|workspace)\s*:/;
+const leer = (f) => { try { return require('fs').readFileSync(f, 'utf8'); } catch { return ''; } };
 
 /** `bash`, `sh -s`, sin `-c` ni guion: lee los comandos de la entrada. */
 function esShellSinTexto(seg) {

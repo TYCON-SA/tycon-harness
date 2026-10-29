@@ -104,12 +104,15 @@ function adentroDelRepo(evs, repoPath) {
 function esMedicionNoDeclarada(p, repoPath, declarados) {
   const raices = (Array.isArray(repoPath) ? repoPath : [repoPath]).filter((r) => typeof r === 'string' && r !== '');
   const s = String(p || '').replace(/\\/g, '/');
-  const lista = (Array.isArray(declarados) ? declarados : []).map((d) => String(d).replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase());
+  // la story puede declarar el archivo o su carpeta, con o sin acentos graves
+  const lista = (Array.isArray(declarados) ? declarados : [])
+    .map((d) => String(d).trim().replace(/^`|`$/g, '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '').toLowerCase())
+    .filter(Boolean);
   return raices.some((r) => {
     const raiz = r.replace(/\\/g, '/').replace(/\/+$/, '');
     if (!s.toLowerCase().startsWith(`${raiz.toLowerCase()}/`)) return false;
-    const rel = s.slice(raiz.length + 1);
-    return /^tasks\/measurement-[^/]+\//i.test(rel) && !lista.includes(rel.toLowerCase());
+    const rel = s.slice(raiz.length + 1).toLowerCase();
+    return /^tasks\/measurement-[^/]+\//.test(rel) && !lista.some((d) => rel === d || rel.startsWith(`${d}/`));
   });
 }
 

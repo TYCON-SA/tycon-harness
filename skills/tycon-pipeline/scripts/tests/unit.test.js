@@ -7717,6 +7717,16 @@ test('T9 GuionDeMedicion_NoEsCodigo @story-1.32 @ac-8', () => {
   assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/worker.py' }).action, 'block');
   assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/measurement-x/a.js', declarados: ['tasks/measurement-x/a.js'] }).action, 'block');
   assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/otro/tasks/measurement-x/a.js' }).action, 'block');
+  // (e) declarado como carpeta, o entre acentos graves, también es de la story
+  for (const dec of ['tasks/measurement-x/', 'tasks/measurement-x', '`tasks/measurement-x/a.js`']) {
+    assert.equal(atdd.computeAtddOrder(c, '/r', { declarados: [dec] }).verdict, 'blocked', `declarado como ${dec}`);
+    assert.equal(atdd.esMedicionNoDeclarada('/r/tasks/measurement-x/a.js', '/r', [dec]), false, `declarado como ${dec}`);
+  }
+  // (f) una prueba de un guion de medición no declarado no cuenta como prueba previa, igual que en el cierre
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/scripts/a.js',
+    priorPaths: ['/r/tasks/measurement-x/a.test.js'] }).action, 'block');
+  assert.equal(atdd.computeAtddOrder([{ path: '/r/tasks/measurement-x/a.test.js', ts: ts(1) },
+    { path: '/r/scripts/a.js', ts: ts(2) }], '/r', { declarados: [] }).verdict, 'warn-no-tests');
 });
 
 test('T10 GuionDePruebasDeCi_EsPrueba @story-1.32 @ac-9', () => {

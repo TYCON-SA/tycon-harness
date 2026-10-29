@@ -154,7 +154,9 @@ done
 # raíz, y las carpetas que no cuentan como alcance propio.
 R="$T/repo"
 mkdir -p "$R/.git" "$R/forms/Alta/src" "$R/packages/api" "$R/packages/sube" "$R/packages/ws" "$R/packages/pnpmws" \
-  "$R/packages/vw" "$R/packages/jp" "$R/packages/roto" "$T/fuera/proj"
+  "$R/packages/vw" "$R/packages/jp" "$R/packages/roto" "$T/fuera/proj" \
+  "$R/packages/ws1" "$R/packages/ws2" "$R/packages/ws3" "$R/packages/ws4" "$R/packages/ws5" "$R/packages/ws6" \
+  "$R/packages/jc" "$R/packages/vc" "$R/packages/bom"
 printf '{"name":"raiz","scripts":{"test":"vitest run"}}' > "$R/package.json"
 printf '{"name":"alta","scripts":{"test":"vitest run"}}' > "$R/forms/Alta/package.json"
 printf '{"name":"api","scripts":{"test":"turbo run test"}}' > "$R/packages/api/package.json"
@@ -167,6 +169,18 @@ printf 'export default []\n' > "$R/packages/vw/vitest.workspace.ts"
 printf '{"name":"jp","jest":{"projects":["a"]},"scripts":{"test":"jest"}}' > "$R/packages/jp/package.json"
 printf '{"name":' > "$R/packages/roto/package.json"
 printf '{"name":"fuera","scripts":{"test":"vitest run"}}' > "$T/fuera/proj/package.json"
+# scripts `test` que recorren los paquetes de la raíz, y configuraciones de la herramienta con varios proyectos
+printf '{"name":"ws1","scripts":{"test":"npm test -ws"}}' > "$R/packages/ws1/package.json"
+printf '{"name":"ws2","scripts":{"test":"npm run -ws test"}}' > "$R/packages/ws2/package.json"
+printf '{"name":"ws3","scripts":{"test":"yarn workspaces foreach -A run test"}}' > "$R/packages/ws3/package.json"
+printf '{"name":"ws4","scripts":{"test":"pnpm run -r test"}}' > "$R/packages/ws4/package.json"
+printf '{"name":"ws5","scripts":{"test":"pnpm -F web test"}}' > "$R/packages/ws5/package.json"
+printf '{"name":"ws6","scripts":{"test":"pnpm --filter ./packages/* test"}}' > "$R/packages/ws6/package.json"
+printf '{"name":"jc","scripts":{"test":"jest"}}' > "$R/packages/jc/package.json"
+printf 'module.exports = { projects: ["<rootDir>/a", "<rootDir>/b"] }\n' > "$R/packages/jc/jest.config.js"
+printf '{"name":"vc","scripts":{"test":"vitest run"}}' > "$R/packages/vc/package.json"
+printf 'export default { test: { projects: ["a", "b"] } }\n' > "$R/packages/vc/vitest.config.ts"
+printf '\357\273\277{"name":"bom","scripts":{"test":"vitest run"}}' > "$R/packages/bom/package.json"
 
 # el freno con un comando y la carpeta del evento, con una HOME propia: imprime su salida; el stderr queda en $3.err
 frena_en() { # $1 comando · $2 carpeta (cwd del evento) · $3 HOME
@@ -185,7 +199,8 @@ for caso in \
   "cd forms/Alta && npm test|$R" \
   "cd forms/Alta && npx jest|$R" \
   "cd Alta && vitest run|$R/forms" \
-  "cd $R/forms/Alta && npm test|$T"; do
+  "cd $R/forms/Alta && npm test|$T" \
+  "npx vitest run|$R/packages/bom"; do
   n=$((n + 1)); cmd="${caso%|*}"; dir="${caso##*|}"; casa="$T/casa-t6-$n"
   dio="$(frena_en "$cmd" "$dir" "$casa")"
   if [ "$dio" = "0" ] && grep -q '"veredicto":"paso"' "$casa/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
@@ -234,6 +249,27 @@ for caso in \
   "cd forms/Alta && cd .. && npx vitest run|$R" \
   "cd forms/Alta; npm test|$R" \
   "cd forms/Alta || npm test|$R" \
+  "true || cd forms/Alta && npm test|$R" \
+  "echo | cd forms/Alta && npm test|$R" \
+  "builtin cd .. && npm test|$R/forms/Alta" \
+  "command cd .. && npm test|$R/forms/Alta" \
+  "eval 'cd ..' && npm test|$R/forms/Alta" \
+  "source volver.sh && npm test|$R/forms/Alta" \
+  ". volver.sh && npm test|$R/forms/Alta" \
+  "env -C .. npm test|$R/forms/Alta" \
+  "env --chdir=.. npm test|$R/forms/Alta" \
+  "sudo -D .. npm test|$R/forms/Alta" \
+  "sudo --chdir=.. npm test|$R/forms/Alta" \
+  "npx jest --roots ..|$R/forms/Alta" \
+  "npm test|$R/packages/ws1" \
+  "npm test|$R/packages/ws2" \
+  "npm test|$R/packages/ws3" \
+  "npm test|$R/packages/ws4" \
+  "npm test|$R/packages/ws5" \
+  "npm test|$R/packages/ws6" \
+  "npm test|$R/packages/jc" \
+  "npx jest|$R/packages/jc" \
+  "npx vitest run|$R/packages/vc" \
   "if true; then cd ..; fi; npm test|$R/forms/Alta" \
   "npm --prefix .. test|$R/forms/Alta" \
   "npx vitest run --root ..|$R/forms/Alta" \
