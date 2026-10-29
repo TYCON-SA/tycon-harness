@@ -807,6 +807,23 @@ test('T47 Refresco_BuzonFueraDelCandado — mientras se baja el buzón, el canda
   } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
+test('Fuentes_DiasDeEdadEnEstado_ValidadosComoElTablero — params.edad_en_estado_dias llega al modelo, o null', () => {
+  const raiz = tmp('site-edad-');
+  const clon = path.join(raiz, 'operaciones');
+  const escribir = (rel, c) => { fs.mkdirSync(path.dirname(path.join(clon, rel)), { recursive: true }); fs.writeFileSync(path.join(clon, rel), typeof c === 'string' ? c : JSON.stringify(c)); };
+  try {
+    for (const [rel, c] of Object.entries(H.archivosDeOperaciones())) escribir(rel, c);
+    const conParams = (params) => {
+      escribir('scripts/nightly/dashboard/sources.json', { sources: [], thresholds: {}, ...(params === undefined ? {} : { params }) });
+      return sources.construirDesdeClon(clon, { ahora: T0, log: () => {} }).stateAgeDays;
+    };
+    assert.deepStrictEqual(conParams({ edad_en_estado_dias: [10, 20], _note: 'texto que no viaja' }), [10, 20]);
+    for (const malo of [undefined, {}, { edad_en_estado_dias: [20, 10] }, { edad_en_estado_dias: [0, 10] }, { edad_en_estado_dias: [10] }, { edad_en_estado_dias: ['10', '20'] }, { edad_en_estado_dias: [10, 20, 30] }]) {
+      assert.strictEqual(conParams(malo), null, JSON.stringify(malo));
+    }
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
 test('UltimaFoto_PatronConCaracteresDeExpresion_SeLeeTalCual', () => {
   // el patrón sólo tiene un comodín, `*`: un `+` o un paréntesis del nombre no cambian lo que encuentra
   const dir = tmp('ultima-foto-');

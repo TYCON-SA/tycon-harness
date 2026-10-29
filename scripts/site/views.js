@@ -23,9 +23,10 @@ const { t, TEXTOS } = require('./texts.js');
 const nombreDeFuente = (id, idioma) => (Object.prototype.hasOwnProperty.call(TEXTOS, `fuente.${id}`) ? t(idioma, `fuente.${id}`) : id);
 const { IDIOMAS, POR_DEFECTO, valido } = require('./language.js');
 const { MOTIVOS: MOTIVOS_ULTIMA } = require('./latest-release.js');
+// «parada» y la edad en el estado tienen una sola definición, la del tablero nocturno, con los días de sources.json
+const { ageCounts } = require('../nightly/projects/state-age.js');
 
 const DIA = 86400000;
-const PARADA_DIAS = 30;
 
 const idiomaDe = (x) => valido(x && typeof x === 'object' ? x.idioma : x) || POR_DEFECTO;
 
@@ -179,16 +180,18 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   const vig = m.vigilante;
   const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map((x) => String(x).toLowerCase().replace(/\s+/g, '')) : []);
   const contar = (stories) => {
-    const r = { en_curso: 0, en_revision: 0, paradas: 0, sin_medir: 0, bloqueadas: 0 };
+    const r = { en_curso: 0, en_revision: 0, bloqueadas: 0 };
     for (const s of stories) {
       if (s.grupo === 'en_curso') {
         r.en_curso += 1;
         if (s.canonico === 'review') r.en_revision += 1;
-        if (s.dias_en_estado === null || s.dias_en_estado === undefined || !Number.isFinite(s.dias_en_estado)) r.sin_medir += 1;
-        else if (s.dias_en_estado > PARADA_DIAS) r.paradas += 1;
       } else if (s.grupo === 'bloqueado') r.bloqueadas += 1;
     }
-    return r;
+    // paradas, sin medir y la edad salen de ageCounts; sin días válidos, «no medido», nunca un umbral de respaldo
+    const c = ageCounts(stories, m.stateAgeDays);
+    if (c.estado !== 'medido') return { ...r, paradas: null, sin_medir: null, edad: { estado: 'no_medido', motivo: T('proyectos.sinDiasDeEdad') } };
+    const [d1, d2] = c.dias;
+    return { ...r, paradas: c.paradas, sin_medir: c.sin_medir, edad: { estado: 'medido', motivo: null, d1, d2, mas_de_d1: c[`mas_de_${d1}`], mas_de_d2: c[`mas_de_${d2}`] } };
   };
   /** La paridad de un producto: sus repos en `por_ruta`, sólo cantidades, estados y motivos de lista cerrada. */
   const par = m.paridad;
@@ -236,7 +239,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   });
   const unicos = [...new Set(productos.flatMap((p) => p.proyectos || []))];
   const tot = contar(unicos.flatMap(frescasDe).flatMap((s) => s.stories || []));
-  return { filas, totales: { en_curso_total: tot.en_curso, paradas_total: tot.paradas, sin_medir_total: tot.sin_medir, bloqueadas_total: tot.bloqueadas } };
+  return { filas, totales: { en_curso_total: tot.en_curso, paradas_total: tot.paradas, sin_medir_total: tot.sin_medir, bloqueadas_total: tot.bloqueadas, edad: tot.edad } };
 }
 
 /** Arnés: una línea por pieza. */
@@ -518,11 +521,17 @@ function paginaProyectos(ctx) {
     return `<td>${fecha(d.staging)}</td><td>${prod}</td><td>${apr}${d.main === 'roto' ? ` · <b>${esc(T('proyectos.mainRoto'))}</b>` : ''}</td>`;
   };
   const filasHtml = filas.map((f) => `<tr><th scope="row">${esc(f.producto)}${f.compartido ? ` <span class="nota">${esc(T('proyectos.compartido', { n: f.compartido }))}</span>` : ''}</th>${f.medido
-    ? `<td>${esc(T('proyectos.enCursoCelda', { n: f.en_curso, revision: f.en_revision }))}</td><td>${esc(T('proyectos.paradasCelda', { paradas: f.paradas, sinMedir: f.sin_medir }))}</td><td>${f.bloqueadas}</td>`
-    : `<td class="nm" colspan="3">${f.sin_stories ? esc(f.motivo) : noMedido(f.motivo)}</td>`}${celdaDep(f.despliegues)}<td>${esc(f.vigilado === null ? T('vista.noMedido') : T(f.vigilado ? 'vista.si' : 'vista.no'))}</td><td>${f.vivas === null ? esc(T('vista.noMedido')) : esc(f.vivas)}</td><td${f.paridad.estado === 'no_medido' ? ' class="nm"' : ''}>${esc(f.paridad.texto)}</td></tr>`).join('');
-  const cab = ['producto', 'enCurso', 'paradas', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: PARADA_DIAS }))}</th>`).join('');
+    ? `<td>${esc(T('proyectos.enCursoCelda', { n: f.en_curso, revision: f.en_revision }))}</td>${f.edad.estado === 'medido'
+      ? `<td>${esc(T('proyectos.paradasCelda', { paradas: f.paradas, sinMedir: f.sin_medir }))}</td><td>${esc(T('proyectos.edadCelda', { d1: f.edad.d1, d2: f.edad.d2, n1: f.edad.mas_de_d1, n2: f.edad.mas_de_d2 }))}</td>`
+      : `<td class="nm" colspan="2">${noMedido(f.edad.motivo)}</td>`}<td>${f.bloqueadas}</td>`
+    : `<td class="nm" colspan="4">${f.sin_stories ? esc(f.motivo) : noMedido(f.motivo)}</td>`}${celdaDep(f.despliegues)}<td>${esc(f.vigilado === null ? T('vista.noMedido') : T(f.vigilado ? 'vista.si' : 'vista.no'))}</td><td>${f.vivas === null ? esc(T('vista.noMedido')) : esc(f.vivas)}</td><td${f.paridad.estado === 'no_medido' ? ' class="nm"' : ''}>${esc(f.paridad.texto)}</td></tr>`).join('');
+  // el encabezado nombra los días de la configuración; sin ellos, sin número
+  const d1 = totales.edad.estado === 'medido' ? totales.edad.d1 : null;
+  const cab = ['producto', 'enCurso', d1 === null ? 'paradasSinDias' : 'paradas', 'edad', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: d1 }))}</th>`).join('');
   const tabla = `<label class="filtro">${esc(T('proyectos.filtrar'))} <input type="search" data-filtro="proyectos"></label><div class="card tbl-wrap"><table class="tabla" id="proyectos"><thead><tr>${cab}</tr></thead><tbody>${filasHtml}</tbody></table></div>`;
-  const pie = `<p class="q-note">${esc(T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p>`;
+  const pie = `<p class="q-note">${esc(totales.paradas_total === null
+    ? T('proyectos.totalesSinDias', { enCurso: totales.en_curso_total, motivo: totales.edad.motivo })
+    : T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p>`;
   return layout(ctx, titulo, fichas + seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`) + seccionEstimaciones(m, idioma), T('proyectos.lede'));
 }
 

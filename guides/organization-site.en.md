@@ -235,11 +235,16 @@ explanation.
 
 **What it answers:** how is each product doing?
 
-One row per product: the stories in progress (and how many in review), those stopped for more than 30 days, the blocked
-ones, which version is in test and which in production, whether it is waiting for an approval, whether the watcher looks
-at it, its live vulnerabilities and how it compares with the other products (parity). At the bottom, the total without
-counting shared things twice. A person sees the products they work on. **Parity** compares each product with the
-others: what one does and the rest do not.
+One row per product: the stories in progress (and how many in review), the stalled ones, their age in state («more than
+30 days: 2 · more than 60: 1»), the blocked ones, which version is in test and which in production, whether it is
+waiting for an approval, whether the watcher looks at it, its live vulnerabilities and how it compares with the other
+products (parity). At the bottom, the total without counting shared things twice. A person sees the products they work
+on. **Parity** compares each product with the others: what one does and the rest do not.
+
+A story is **stalled** when it is in progress and has been in its state longer than the first of the two days in
+`params.edad_en_estado_dias` of `sources.json` (for example `[30, 60]`); the age counts what has started, in progress
+and blocked, against both. It is the same count as the night dashboard's age card. Without those days, stalled and age
+say «not measured» with their reason: the site has no number of its own.
 
 ![Projects: one row per product](sitio-de-la-organizacion/capturas/proyectos.png)
 

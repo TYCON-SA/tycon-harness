@@ -55,6 +55,7 @@ const childProcess = require('child_process');
 const OPS = require('../lib/operations-config.js');
 const people = require('../lib/people.js');
 const COPIA = require('./operations-copy.js');
+const { validAgeDays } = require('../nightly/projects/state-age.js');
 
 /** Un proceso sin bloquear: { status, stdout, stderr, error }. Nunca rechaza; con `timeout`, lo corta. */
 function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
@@ -293,6 +294,12 @@ function umbralesProyectados(th) {
   return out;
 }
 
+/** Los dos días de edad en el estado (`params.edad_en_estado_dias`), validados como el tablero; si no valen, null. */
+function stateAgeDaysProjected(params) {
+  const d = isObject(params) ? params.edad_en_estado_dias : undefined;
+  return validAgeDays(d) ? [d[0], d[1]] : null;
+}
+
 const DIR_SEGURO = /^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$/;
 // como mucho dos `*`: muchos comodines encadenados dan una expresión con retroceso catastrófico sobre los nombres
 const PATRON_SEGURO = /^(?!(?:[^*]*\*){3})[A-Za-z0-9._*-]{1,80}$/;
@@ -517,6 +524,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
     return f.ok ? { id: texto(s.id, 60), estado: 'medido', codigo: null, fecha: f.fecha } : { id: texto(s.id, 60), ...f.fuente };
   }) };
   m.umbrales = umbralesProyectados(sourcesCfg.thresholds);
+  m.stateAgeDays = stateAgeDaysProjected(sourcesCfg.params);
   m.corridas = corridas;
   m.carpetas = carpetasProyectadas(carpetas);
   // las fichas del tablero nocturno, ya calculadas aparte (refrescarUnaVez → calcularFichas). `null` = todavía no
@@ -846,7 +854,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   /** Lo que se puede armar sin el repo (la primera lectura sin clon): todo «no medido» con el estado. */
   function modeloVacio(codigo, t, corridas) {
     const n = noMedida(codigo);
-    return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, corridas: corridas || n, carpetas: null };
+    return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, stateAgeDays: null, corridas: corridas || n, carpetas: null };
   }
 
   /**
