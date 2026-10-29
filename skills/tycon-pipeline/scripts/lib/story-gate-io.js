@@ -86,9 +86,14 @@ const FIRMA_ADHOC_MARGEN_MS = 2 * 60 * 1000;
 const GATES_COLA_BYTES = 4 * 1024 * 1024;
 
 function adhocFirmado(stateDir, sessionId, adhoc) {
-  if (!adhoc) return null;
+  return firmaDelAdhoc(stateDir, sessionId, adhoc).ok ? adhoc : null;
+}
+
+/** `{ ok: true }`, o `{ ok: false, motivo }` con lo que le falta a la declaración para abrir el portón. */
+function firmaDelAdhoc(stateDir, sessionId, adhoc) {
+  if (!adhoc) return { ok: false, motivo: null };
   const hasta = Date.parse(adhoc.firmadaEn || '');
-  if (Number.isNaN(hasta)) return null;
+  if (Number.isNaN(hasta)) return { ok: false, motivo: 'no trae la hora de su firma (no la escribió `marker.js adhoc set`)' };
   let txt;
   try {
     const file = path.join(stateDir, 'gates.log');
@@ -100,7 +105,7 @@ function adhocFirmado(stateDir, sessionId, adhoc) {
       fs.readSync(fd, buf, 0, n, size - n);
       txt = buf.toString('utf8');
     } finally { fs.closeSync(fd); }
-  } catch { return null; }
+  } catch (e) { return { ok: false, motivo: `no pude leer el registro de firmas (${e.code || e.message})` }; }
   const sid = String(sessionId);
   for (const linea of txt.split('\n')) {
     if (!linea.includes('adhoc-lane-signed')) continue;
@@ -108,9 +113,9 @@ function adhocFirmado(stateDir, sessionId, adhoc) {
     try { o = JSON.parse(linea); } catch { continue; }
     if (o.name !== 'adhoc-lane-signed' || o.status !== 'ok' || String(o.destino) !== sid) continue;
     const t = Date.parse(o.ts || '');
-    if (!Number.isNaN(t) && t <= hasta && t >= hasta - FIRMA_ADHOC_MARGEN_MS) return adhoc;
+    if (!Number.isNaN(t) && t <= hasta && t >= hasta - FIRMA_ADHOC_MARGEN_MS) return { ok: true };
   }
-  return null;
+  return { ok: false, motivo: 'no está el renglón de su firma (adhoc-lane-signed de esta sesión, a esa hora) en el registro' };
 }
 
 /** Escritura atómica del ad-hoc (tmp + rename). Devuelve el objeto escrito. */
@@ -289,7 +294,11 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   const realFilePath = installedTree.realPath(abs);
   const realStateDir = installedTree.realPath(stateDir);
   const marker = readMarker(stateDir, sessionId);
-  const adhoc = adhocFirmado(stateDir, sessionId, readAdhoc(stateDir, sessionId));
+  const declarado = readAdhoc(stateDir, sessionId);
+  const firma = firmaDelAdhoc(stateDir, sessionId, declarado);
+  const adhoc = firma.ok ? declarado : null;
+  // una declaración sin firma reconocida no abre, y el bloqueo dice por qué (no es lo mismo que no haber declarado)
+  const adhocSinFirma = declarado && !firma.ok ? firma.motivo : null;
 
   // Camino barato primero: state-dir / no-código / marker no necesitan mirar el repo. Se arranca
   // suponiendo que NO es un repo del harness: si así ya pasa, pasa y no se pagó ningún git. Sólo si
@@ -329,9 +338,13 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   appendLog(stateDir, 'gates.log', sessionId, {
     repoPath: repo.repoRoot || null,
     name: 'story-gate', status: 'blocked', kind: verdict.kind, file: abs, via: via || null,
-    story: marker ? marker.storyId : null, reason: verdict.reason,
+    story: marker ? marker.storyId : null, reason: verdict.reason, ...(adhocSinFirma ? { adhocSinFirma } : {}),
   });
-  const message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via });
+  let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via });
+  if (adhocSinFirma && verdict.kind === 'no-lane') {
+    message += `\n\n  ⚠️ Hay una declaración del arreglo rápido para esta sesión, pero sin su firma: ${adhocSinFirma}. No abre el\n`
+      + '     portón. Si el dueño quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que él aprueba en la ventana.';
+  }
   return { verdict, message, ctx: { ...ctx, otherMarkers } };
 }
 

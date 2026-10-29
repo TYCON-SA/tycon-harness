@@ -135,6 +135,12 @@ test('8.141 T18 AdhocSinFirma_NoAbreElPorton', () => {
   sd = tmpState();
   io.writeAdhoc(sd, 's1', { ...base, firmadaEn: ahora });
   assert.equal(veredicto(sd), 'no-lane', 'sin el renglón adhoc-lane-signed');
+  // el bloqueo dice que hay una declaración sin firma reconocida, y por qué; el registro también
+  const sinFirma = io.evaluate({ filePath: f, sessionId: 's1', stateDir: sd });
+  assert.match(sinFirma.message, /declaración del arreglo rápido.*sin su firma/s);
+  assert.match(sinFirma.message, /no está el renglón de su firma/);
+  const bloqueo = fs.readFileSync(path.join(sd, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.name === 'story-gate').pop();
+  assert.match(String(bloqueo.adhocSinFirma), /no está el renglón de su firma/);
   // el renglón es de otra sesión
   sd = tmpState();
   adhocFirmado(sd, 's1', base, { destino: 's2' });
