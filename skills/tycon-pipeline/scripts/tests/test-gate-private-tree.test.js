@@ -214,6 +214,9 @@ test('PrivateTree_OriginMain_IsTheSourceServerBranch', () => {
     git(repo, 'update-ref', 'refs/heads/main', local);   // la rama main local, atrás
     git(repo, 'checkout', '-q', '--detach', servidor[nombre]);
   }
+  // una rama local que es el comienzo de una del servidor no frena el armado
+  git(lab.priv, 'branch', 'story');
+  git(lab.priv, 'update-ref', 'refs/remotes/origin/story/x', servidor.priv);
   const dir = tmp('privado-arbol-');
   const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
     { encoding: 'utf8', env: entorno(lab.home) });

@@ -101,9 +101,10 @@ function cloneWithDisk(src, dest) {
   git(path.dirname(dest), ['clone', '-q', '--shared', '--no-checkout', src, dest]);
   git(dest, ['checkout', '-q', '--detach', head]);
   // El origin/main del clon sería la rama main local del repo de origen, que puede estar atrás del servidor: las suites
-  // que cortan «lo propio de la rama» en `merge-base origin/main HEAD` verían como propio lo que ya entró a main.
+  // que cortan «lo propio de la rama» en `merge-base origin/main HEAD` verían como propio lo que ya entró a main. Con
+  // --prune salen antes las ramas locales copiadas: una `story` local chocaría con una `story/x` del servidor.
   if (git(src, ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin/']).trim()) {
-    git(dest, ['fetch', '-q', src, '+refs/remotes/origin/*:refs/remotes/origin/*']);
+    git(dest, ['fetch', '-q', '--prune', src, '+refs/remotes/origin/*:refs/remotes/origin/*']);
   }
   // modificados y borrados respecto de HEAD (índice o disco), y lo nuevo que el .gitignore no ignora
   const cambiados = lista0(git(src, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']));
