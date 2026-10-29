@@ -348,14 +348,15 @@ test('2.57 · Textos_ElCatalogoEnElIdiomaDeLaPagina @story-2.57 @ac-4', async ()
   const en = await configuracionAcme('en');
   // en inglés: el título, el detalle y dónde se cambia, con la frase del interruptor en inglés
   for (const x of [guarda.en.title, guarda.en.does, frenos.en.title, frenos.en.does]) assert.ok(en.textos.includes(x), `en inglés falta «${x}»`);
-  const donde = T.t('en', 'pantalla.vieneApagado') + T.t('en', 'pantalla.soloEnTuMaquinaCon') + guarda.en.switch + '.';
-  assert.strictEqual(donde, 'Off by default. Only on your machine, with TYCON_SESSION_GUARD=1 (turns it on).', 'la frase se lee entera en inglés');
-  assert.ok(en.textos.some((t) => t.startsWith(donde)), `en inglés: «${donde}» (${en.textos.filter((t) => t.includes('TYCON_SESSION_GUARD')).join(' | ')})`);
+  // el freno de dos sesiones lo enciende la organización desde «Frenos y medidores»: la frase dice dónde, en inglés
+  const donde = T.t('en', 'pantalla.vieneApagado') + T.t('en', 'pantalla.seCambiaEnConfiguracion') + T.t('en', 'pantalla.comoTrabajaClaude') + ' → ' + T.t('en', 'pantalla.interruptoresTitulo') + '.';
+  assert.strictEqual(donde, 'Off by default. Change it in Configuration → How the agent works → Brakes and meters.', 'la frase se lee entera en inglés');
+  assert.ok(en.textos.some((t) => t.startsWith(donde)), `en inglés: «${donde}» (${en.textos.filter((t) => t.includes('Brakes and meters')).join(' | ')})`);
   for (const x of [guarda.title, guarda.does, frenos.title, guarda.switch]) assert.ok(!en.textos.some((t) => t.includes(x)), `en inglés sale el castellano «${x}»`);
-  // en castellano: lo de hoy, igual
+  // en castellano: lo mismo, en castellano
   const es = await configuracionAcme('es');
   for (const x of [guarda.title, guarda.does, frenos.title]) assert.ok(es.textos.includes(x), `en castellano falta «${x}»`);
-  assert.ok(es.textos.some((t) => t.startsWith('Viene apagado. Sólo en tu máquina, con TYCON_SESSION_GUARD=1 lo prende.')), 'en castellano, dónde se cambia como hoy');
+  assert.ok(es.textos.some((t) => t.startsWith('Viene apagado. Se cambia en Configuración → Cómo trabaja el agente → Frenos y medidores.')), 'en castellano, dónde se cambia');
   assert.ok(!es.textos.includes(guarda.en.title), 'en castellano no sale el inglés');
   // una pieza sin su inglés, con la página en inglés: sale en castellano (decisión 7), no vacía
   const api = JSON.parse(JSON.stringify(en.api));
@@ -365,7 +366,7 @@ test('2.57 · Textos_ElCatalogoEnElIdiomaDeLaPagina @story-2.57 @ac-4', async ()
   for (const p of ['minimal', 'full']) for (const f of inst.extras.perfiles[p]) if (f.title === guarda.title) f.en = null;
   const caida = (await pantallaCon(en.codigo, api)).flatMap((t) => String(t).split('\n'));
   assert.ok(caida.includes(guarda.title) && caida.includes(guarda.does), 'sin en: el título y el detalle en castellano');
-  assert.ok(caida.some((t) => t.startsWith(T.t('en', 'pantalla.vieneApagado') + T.t('en', 'pantalla.soloEnTuMaquinaCon') + guarda.switch + '.')), 'sin en: el interruptor tal cual');
+  assert.ok(caida.some((t) => t.startsWith(donde)), 'sin en: dónde se cambia sigue en el idioma de la página');
   assert.ok(!caida.includes(guarda.en.title), 'sin en: no aparece el inglés de otra');
 });
 

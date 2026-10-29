@@ -220,7 +220,9 @@ function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib'),
   const cfg = path.join(libDir, 'tycon-config.js');
   const integ = { state: 'sin-lector', values: {} };
   const profile = { state: 'sin-lector', value: undefined };
-  if (!fs.existsSync(cfg)) return { integ, profile };
+  // los frenos que la organización encendió desde el sitio (`switches` del perfil), como variables de la máquina
+  const switches = { state: 'sin-lector', env: {} };
+  if (!fs.existsSync(cfg)) return { integ, profile, switches };
   const ask = (args) => (runConfig ? runConfig(args) : spawnSync(process.execPath, [cfg, ...args], { encoding: 'utf8', env }));
   const r = ask(['integrations', '--shell']);
   if (r.status === 0) {
@@ -246,7 +248,25 @@ function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib'),
   if (p.status === 3) profile.state = 'ok';
   else if (p.status === 0 && (out === 'minimal' || out === 'full')) { profile.state = 'ok'; profile.value = out; }
   else profile.state = 'rota';
-  return { integ, profile };
+  // sólo `VAR=1` de un freno conocido: otra línea no se usa. Rota: ningún freno se enciende por la organización (cada
+  // control queda como lo dice su variable o su fábrica) y el aplicador lo dice
+  const sw = ask(['switches', '--env']);
+  if (sw.status === 0) {
+    switches.state = 'ok';
+    for (const line of String(sw.stdout || '').split(/\r?\n/)) {
+      const m = /^(TYCON_[A-Z_]+)=1$/.exec(line.trim());
+      if (m) switches.env[m[1]] = '1';
+    }
+  } else switches.state = 'rota';
+  return { integ, profile, switches };
+}
+
+/** El entorno con que se decide qué controles van: el de la máquina, más los frenos que encendió la organización donde
+ *  la máquina no puso su variable (puesta, con cualquier valor, gana la máquina). */
+function envWithOrgSwitches(env, switches) {
+  const out = Object.assign({}, env);
+  for (const [k, v] of Object.entries((switches && switches.env) || {})) if (out[k] === undefined || out[k] === '') out[k] = v;
+  return out;
 }
 
 // ── Qué hooks van (integraciones, perfil, opt-in) ────────────────────────────────────
@@ -833,11 +853,12 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   }
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new ApplyError(`${settingsPath}: settings.json no es un objeto JSON — no lo toco`);
 
-  const { integ, profile } = readConfig({ env, runConfig });
+  const { integ, profile, switches } = readConfig({ env, runConfig });
   if (integ.timeTrackingProblem) process.stderr.write(`apply-hooks: ${integ.timeTrackingProblem}: los hooks de las integraciones de horas quedan como están\n`);
+  if (switches.state === 'rota') process.stderr.write('apply-hooks: no pude leer los frenos de la organización (la configuración está rota): cada freno queda como lo dice su variable o como viene de fábrica\n');
   const minimalIds = loadMinimalIds(a.effects || path.join(SETUP_DIR, 'install-effects.json'), { integrationsDir });
   const has = (need) => need === 'telegram-plugin' && fs.existsSync(path.join(home, '.claude', 'plugins', 'cache', 'claude-plugins-official', 'telegram'));
-  const decision = decide(list, { env, integ, profile, minimalIds, platform, has });
+  const decision = decide(list, { env: envWithOrgSwitches(env, switches), integ, profile, minimalIds, platform, has });
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
   const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp });
@@ -968,6 +989,6 @@ function cli(argv, opts = {}) {
   }
 }
 
-module.exports = { OLD_JUDGE_PREFIXES, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
+module.exports = { OLD_JUDGE_PREFIXES, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, envWithOrgSwitches, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
 
 if (require.main === module) process.exitCode = cli(process.argv.slice(2));

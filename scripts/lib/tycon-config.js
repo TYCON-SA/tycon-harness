@@ -246,7 +246,33 @@ const VOCABULARIO = Object.freeze({
   // donde la coordinadora deja un ejecutable por firma que el dueño hace en su terminal. Es de la máquina: en el perfil
   // del equipo es un error. Sin valor, las firmas van en el aviso del chat y nada se escribe en disco.
   coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta' }),
+  // Los interruptores de la organización (la sección «Frenos y medidores» del sitio). Hoy cada uno se cambia también por
+  // máquina con su variable (SWITCHES dice cuál), y la variable puesta sigue ganando. Los frenos (`freno`) sólo se
+  // ENCIENDEN desde acá: «on» (en cualquier mayúscula) o `true`; un valor que dice apagado se ignora y se nombra
+  // (`ignoradas`), porque apagar un freno para todas las máquinas desde un archivo aflojaría un control sin que nadie lo
+  // firme en su terminal. Los medidores y avisos no frenan: se encienden o se apagan. Sin valor, cada uno como viene de
+  // fábrica. El freno de comandos peligrosos y el de pedidos a main sin completarse solos no están: vienen siempre
+  // encendidos, y encenderlos desde acá no cambiaría nada.
+  switches: Object.freeze({
+    test_scope_guard: 'freno', session_guard: 'freno', pr_one_per_repo: 'freno',
+    response_meter: 'opcion:on|off', blocking_meter: 'opcion:on|off',
+  }),
 });
+// Cada interruptor de la organización: la variable con que cada máquina lo cambia hoy, si es un freno, y cómo viene de
+// fábrica. La variable puesta gana siempre; un freno que viene apagado se enciende con `<variable>=1`, y cualquiera se
+// apaga con `<variable>=0`.
+const SWITCHES = Object.freeze({
+  test_scope_guard: Object.freeze({ variable: 'TYCON_TEST_SCOPE_GUARD', brake: true, factory: 'on' }),
+  session_guard: Object.freeze({ variable: 'TYCON_SESSION_GUARD', brake: true, factory: 'off' }),
+  pr_one_per_repo: Object.freeze({ variable: 'TYCON_PR_ONE_PER_REPO', brake: true, factory: 'off' }),
+  response_meter: Object.freeze({ variable: 'TYCON_RESPONSE_METER', brake: false, factory: 'on' }),
+  blocking_meter: Object.freeze({ variable: 'TYCON_BLOCKING_METER', brake: false, factory: 'on' }),
+});
+// Lo que se lee como «apagado» en un freno: se ignora y se nombra, en vez de romper la configuración entera.
+const SAYS_OFF = Object.freeze(['off', 'false', '0', 'no']);
+const saysOff = (v) => v === false || v === 0 || (typeof v === 'string' && SAYS_OFF.includes(v.trim().toLowerCase()));
+// Lo que se lee como «encendido» en un freno, simétrico con lo de arriba: «on» en cualquier mayúscula, o `true`.
+const saysOn = (v) => v === true || (typeof v === 'string' && v.trim().toLowerCase() === 'on');
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
 const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral: 2000 });
@@ -481,6 +507,7 @@ function resolverRutaDeArchivo(v, home) {
 function esRutaAbsoluta(v) { const s = String(v).trim(); return /^~(?=$|[\\/])/.test(s) || path.isAbsolute(s); }
 function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'secreto') return true;   // sólo «está»: el valor no sale de su archivo
+  if (tipo === 'freno') return 'on';      // validarTipo ya dejó pasar sólo lo que dice encendido
   if (tipo === 'ruta') return resolverRutaDeArchivo(valor, home);
   // una ruta o varias (la carpeta de los repos puede ser más de una): una lista se resuelve ruta por ruta
   if (tipo === 'rutas') return Array.isArray(valor) ? valor.map((v) => resolverRutaDeArchivo(v, home)) : resolverRutaDeArchivo(valor, home);
@@ -729,6 +756,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
   const errores = [];
   const plano = {};
   const retiradas = [];
+  const ignoradas = [];
   const { datos, vista } = seccionesDeArchivo(datos0, archivo, errores, home);
   // los errores nombran la sección como está escrita en ESE archivo (la persona busca lo que escribió)
   const comoVino = (seccion) => vista[seccion] || enArchivo(seccion);
@@ -813,6 +841,11 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         continue;
       }
       if (tipo === 'retirada') { retiradas.push({ archivo, clave: rutaEnArchivo, motivo: RETIRADAS[ruta] || 'ya no hace nada' }); continue; }
+      if (tipo === 'freno' && saysOff(valor)) {
+        const sw = SWITCHES[clave];
+        ignoradas.push({ archivo, clave: rutaEnArchivo, motivo: `${JSON.stringify(valor)} no vale: un freno no se apaga desde la configuración y se ignora (queda como viene de fábrica); se apaga en cada máquina con ${sw ? sw.variable : 'su variable'}=0` });
+        continue;
+      }
       const err = validarTipo(tipo, valor);
       if (err) { errores.push({ archivo, clave: rutaEnArchivo,motivo: err }); continue; }
       if (esPerfil) {
@@ -847,7 +880,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       delete plano['approvals.delegated_signing'];
     }
   }
-  return { errores, plano, retiradas };
+  return { errores, plano, retiradas, ignoradas };
 }
 
 /** null si el valor es del tipo; si no, el motivo. */
@@ -916,6 +949,8 @@ function validarTipo(tipo, valor) {
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
       return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
     }
+    case 'freno':
+      return saysOn(valor) ? null : `tiene que ser "on" (o true): un freno sólo se enciende desde la configuración (sin valor, como viene de fábrica) — no ${JSON.stringify(valor)}`;
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
@@ -1043,6 +1078,7 @@ function cargar(opts = {}) {
   const arnes = opts.arnes || RAIZ_ARNES;
   const errores = [];
   const retiradas = [];
+  const ignoradas = [];
 
   const rm = rutaMaquina(home);
   const lm = leerJson(rm);
@@ -1050,7 +1086,7 @@ function cargar(opts = {}) {
   if (lm.estado === 'roto') errores.push({ archivo: rm, clave: null, motivo: lm.motivo });
   else if (lm.estado === 'leido') {
     const v = validarArchivo(lm.datos, { archivo: rm, esPerfil: false, home });
-    errores.push(...v.errores); planoMaquina = v.plano; retiradas.push(...v.retiradas);
+    errores.push(...v.errores); planoMaquina = v.plano; retiradas.push(...v.retiradas); ignoradas.push(...v.ignoradas);
   }
 
   const rp = rutaPerfil(env, arnes, home);
@@ -1063,7 +1099,7 @@ function cargar(opts = {}) {
     else if (lp.estado === 'leido') {
       estadoPerfil = 'leido';
       const v = validarArchivo(lp.datos, { archivo: rp.ruta, esPerfil: true, home });
-      errores.push(...v.errores); planoPerfil = v.plano; retiradas.push(...v.retiradas);
+      errores.push(...v.errores); planoPerfil = v.plano; retiradas.push(...v.retiradas); ignoradas.push(...v.ignoradas);
     }
   }
 
@@ -1156,7 +1192,7 @@ function cargar(opts = {}) {
   };
 
   return {
-    valores, origenes, variables, errores, retiradas, entorno, shadowed,
+    valores, origenes, variables, errores, retiradas, ignoradas, entorno, shadowed,
     archivos: { maquina: { ruta: rm, estado: lm.estado }, perfil: { ruta: rp.ruta, estado: estadoPerfil, aviso: estadoPerfil === 'ausente' ? null : avisoNombrePerfil(rp) } },
     enlace: estadoEnlace({ home, arnes }),
     buzon: { llave: llaveBuzon, presente: hayLlaveBuzon },
@@ -1420,6 +1456,8 @@ function explicar(opts = {}) {
   L.push(`  models.provider = ${prov.provider ? `${prov.provider} (${prov.origin === 'derivado' ? 'derivado: sin declarar, de la herramienta de esta sesión' : prov.origin})` : `ROTO (${prov.problem})`}`);
   // las claves retiradas que un archivo todavía tiene: no hacen nada, se pueden borrar
   for (const r of c.retiradas || []) L.push(`  ${r.clave} (${r.archivo}): ${r.motivo}`);
+  // un freno que un archivo intenta apagar: no vale, se ignora y se nombra
+  for (const r of c.ignoradas || []) L.push(`  ${r.clave} (${r.archivo}): ignorado — ${r.motivo}`);
   // quién puede reenviar el ok de un dev: sólo del perfil; lo que diga la máquina se nombra y no se usa
   {
     const s = c.shadowed['approvals.relay_session'];
@@ -1606,10 +1644,62 @@ function parse(texto) {
   let datos;
   try { datos = JSON.parse(String(texto)); } catch (e) { return { ok: false, data: null, problems: [{ path: '', message: `no es JSON válido: ${String((e && e.message) || e).split('\n')[0]}` }] }; }
   if (!esObjeto(datos)) return { ok: false, data: null, problems: [{ path: '', message: 'el perfil tiene que ser un objeto JSON' }] };
-  const { errores } = sinAnotar(() => validarArchivo(datos, { archivo: NOMBRE_PERFIL, esPerfil: true, home: os.homedir() }));
-  const problems = errores.map((e) => ({ path: e.clave || '', message: e.motivo }));
+  const { errores, ignoradas } = sinAnotar(() => validarArchivo(datos, { archivo: NOMBRE_PERFIL, esPerfil: true, home: os.homedir() }));
+  // lo que una máquina ignora (un freno «apagado») el sitio no lo propone: es un problema de lo que se escribió
+  const problems = [...errores, ...ignoradas].map((e) => ({ path: e.clave || '', message: e.motivo }));
   return { ok: problems.length === 0, data: problems.length ? null : datos, problems };
 }
+// ── interruptores de la organización ─────────────────────────────────────────────────────────────
+
+/**
+ * Lo que la configuración dice de un interruptor (`switches.<nombre>`): `{ value: 'on'|'off'|null, warning }`. Nunca
+ * tira: una configuración rota da `value: null` y el aviso, y quien pregunta sigue como viene de fábrica —una clave que
+ * no se puede leer no enciende ni apaga nada en silencio—. `opts.config` evita volver a leer.
+ */
+function switchState(name, opts = {}) {
+  if (!tiene(SWITCHES, name)) return { value: null, warning: `interruptor desconocido: ${name}` };
+  let c = opts.config;
+  if (!c) {
+    const r = sinAnotar(() => leerParaHook(opts));
+    if (!r.ok) return { value: null, warning: r.aviso };
+    c = r.config;
+  }
+  const v = c && c.valores && c.valores.switches ? c.valores.switches[name] : undefined;
+  // el freno que un archivo intentó apagar queda como viene de fábrica, y se dice
+  const ign = (c && c.ignoradas || []).find((r) => String(r.clave || '').split('.').pop() === name && /^(switches|interruptores)\./.test(String(r.clave || '')));
+  return { value: v === 'on' || v === 'off' ? v : null, warning: ign ? `${ign.clave} (${ign.archivo}): ${ign.motivo}` : null };
+}
+
+/**
+ * Si el interruptor está encendido en esta máquina. Manda la variable de la máquina cuando está puesta: un freno que
+ * viene apagado se enciende sólo con `=1`; cualquier otro se apaga sólo con `=0`. Sin variable, manda la organización
+ * («on» enciende; «off» apaga un medidor y nunca un freno, que el lector ya ignoró), y si no dice nada, la fábrica. Un
+ * aviso de configuración rota va a `opts.warn` (por defecto, nada: el hook decide si lo dice).
+ */
+function switchOn(name, opts = {}) {
+  const sw = SWITCHES[name];
+  if (!sw) return false;
+  const env = opts.env || process.env;
+  const raw = env[sw.variable];
+  if (raw !== undefined && raw !== '') return sw.factory === 'off' ? raw === '1' : raw !== '0';
+  const st = switchState(name, opts);
+  if (st.warning && typeof opts.warn === 'function') opts.warn(st.warning);
+  if (st.value === 'on') return true;
+  if (st.value === 'off' && !sw.brake) return false;
+  return sw.factory === 'on';
+}
+
+/** Los frenos que la organización encendió, como variables de la máquina (`{ TYCON_SESSION_GUARD: '1' }`): el aplicador
+ *  los suma al entorno con que decide qué controles registra, sólo donde la máquina no puso la variable. */
+function brakeOptIns(config) {
+  const out = {};
+  for (const [name, sw] of Object.entries(SWITCHES)) {
+    if (!sw.brake) continue;
+    if (switchState(name, { config }).value === 'on') out[sw.variable] = '1';
+  }
+  return out;
+}
+
 /** Las secciones del perfil que este lector conoce, con su nombre en el archivo (lo mira `lectorSabe` de org-config.js). */
 const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
@@ -1619,6 +1709,7 @@ module.exports = {
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
   esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  SWITCHES, switchState, switchOn, brakeOptIns,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1629,7 +1720,7 @@ module.exports = {
  */
 function cli(argv) {
   const cmd = argv[0];
-  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | response [--json] | set <clave> <valor>';
+  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | switches --env | response [--json] | set <clave> <valor>';
   // `set <clave> <valor>` (story 8.16, tanda D · AC 34): lo que antes se editaba a mano en ~/.claude/tycon.json, con el
   // escritor único (`setKey`). Una llave acepta true, false, 1 o 0 (y `integrations.codex`, además, detect); una opción,
   // sus valores; un texto o una ruta, un texto no vacío. Nunca escribe sobre un archivo roto.
@@ -1696,6 +1787,14 @@ function cli(argv) {
     if (tool) process.stdout.write(`TYCON_TIME_TOOL=${tool}\n`);
     process.exit(0);
   }
+  // `switches --env`: los frenos que la organización encendió, una asignación `VAR=1` por línea (el aplicador las suma al
+  // entorno con que decide qué controles registra). Rota: nada por stdout y exit 2, como `integrations`.
+  if (cmd === 'switches') {
+    let c;
+    try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
+    for (const [k, v] of Object.entries(brakeOptIns(c))) process.stdout.write(`${k}=${v}\n`);
+    process.exit(0);
+  }
   // `time-tracking`: la integración de horas elegida (`none` o su nombre, con la llave vieja leída), para el instalador.
   // Rota: nada por stdout y exit 2, como `integrations`.
   if (cmd === 'time-tracking') {
@@ -1744,6 +1843,7 @@ function cli(argv) {
     if (c.errores.length) { process.stderr.write(new ConfigError(c.errores).message + '\n'); process.exit(2); }
     process.stdout.write(`✅ configuración válida (máquina: ${c.archivos.maquina.estado} · perfil: ${c.archivos.perfil.estado})\n`);
     for (const r of c.retiradas || []) process.stdout.write(`ojo: ${r.clave} en ${r.archivo}: ${r.motivo}\n`);
+    for (const r of c.ignoradas || []) process.stdout.write(`ojo: ${r.clave} en ${r.archivo}: ${r.motivo}\n`);
     process.exit(0);
   }
   process.stderr.write(`${usage}\n`);

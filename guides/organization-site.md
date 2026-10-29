@@ -507,8 +507,10 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   ninguno); con correo, el remitente y los destinatarios. El chat, la dirección del canal o la contraseña del correo no
   van acá: son secretos de los procesos de la noche. Queda en `operations.json`, en el repo de operaciones. Lo revisa
   quien mantiene.
-- **Aviso de espera**: cuántos minutos espera una ejecución a una persona antes de avisar. Llega a todas las máquinas.
-  Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Aviso de espera**: si el aviso corre y cuántos minutos espera una ejecución a una persona antes de avisar. Llega a
+  todas las máquinas. Sin valor, corre, como de fábrica; «Apagado en todas las máquinas» lo apaga, salvo en la máquina
+  que puso `TYCON_WAIT_NOTICE` (la variable gana). Queda en `team-repos.json` → `wait_notice`, en el repo del perfil. Lo
+  revisa quien mantiene.
 - **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
   amarillo. Queda en `scripts/nightly/dashboard/sources.json`, en el repo de operaciones. Lo revisa quien mantiene.
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
@@ -604,6 +606,17 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
   antes qué va a marcar, y el agente no puede marcarlo ni lo marca un reenvío. Vale sólo desde acá, nunca desde una
   máquina. Queda en `team-profile.json` → `qa.manual_check`, en el repo del perfil.
+- **Frenos y medidores**: qué frenos y medidores corren en todas las máquinas. Los **frenos** paran un comando antes de
+  que corra: el de pruebas sin acotar, el de dos sesiones en la misma carpeta y el de un pedido a la vez por repo. Desde
+  acá sólo se encienden: «Como viene de fábrica» o «Encendido en todas las máquinas»; escrito a mano, vale «on» en
+  cualquier mayúscula o `true`. Apagar un freno no se hace desde el perfil: es de cada máquina, con su variable (por
+  ejemplo, `TYCON_SESSION_GUARD=0`), y un «off» escrito a mano en el perfil se ignora, el lector lo nombra y el sitio no
+  lo propone. El freno de comandos peligrosos y el de pedidos a main sin completarse solos no están acá: vienen siempre
+  encendidos y se apagan sólo en cada máquina. Los **medidores** (el del largo de las respuestas y el de esperas largas)
+  no frenan nada: se encienden o se apagan. En los dos casos, la máquina que puso la variable sigue con lo suyo. Sin
+  valor, cada uno como viene de fábrica. Ojo con otro valor escrito a mano (un número, un texto que no es ninguno de
+  éstos): el lector no lo entiende y da por rota la configuración entera de cada máquina, no sólo este interruptor; el
+  sitio no deja proponerlo. Queda en `team-profile.json` → `switches`, en el repo del perfil.
 - **Cuántas sesiones trabajan a la vez**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
   mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno. Cada máquina puede
   cambiarlo para sí, porque cuánto aguanta depende de ella. La carpeta donde quedan las firmas del dueño es de cada

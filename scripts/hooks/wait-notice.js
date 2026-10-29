@@ -196,6 +196,26 @@ function backgroundPending(tp) {
 }
 
 // ── el plazo ─────────────────────────────────────────────────────────────────────────────────────────────────────
+/** `{ data, problem }`: la sección `wait_notice` de `team-repos.json` de la organización, o `data: null` si no hay. Un
+ *  problema de la sección se devuelve con `data: null`: quien pregunta sigue con lo de fábrica, y lo dice. */
+function orgWaitNotice({ env = process.env, tree, homeDir } = {}) {
+  const none = { data: null, problem: null };
+  try {
+    let dir = tree;
+    if (!dir) {
+      const hp = path.join(SKILL_LIB, 'harness-path.js');
+      dir = fs.existsSync(hp) ? require(hp).rutaArnesHook({ env, home: homeDir || home() }).dir : null;
+    }
+    if (!dir) return none;
+    let text;
+    try { text = fs.readFileSync(path.join(dir, 'team-repos.json'), 'utf8'); } catch { return none; }
+    const r = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js')).parse(String(text).replace(/^\uFEFF/, ''));
+    const sec = r.sectionProblems && r.sectionProblems.wait_notice;
+    if (sec && sec.length) return { data: null, problem: `${sec[0].path}: ${sec[0].message}` };
+    return { data: (r.ok && r.data && r.data.wait_notice) || null, problem: null };
+  } catch { return none; }
+}
+
 /** `{ ms, problem }`: la variable de la máquina, si no `wait_notice.minutes` de la organización, si no 5 minutos. */
 function thresholdMs({ env = process.env, tree, homeDir } = {}) {
   const def = { ms: DEFAULT_MINUTES * 60000, problem: null };
@@ -203,21 +223,21 @@ function thresholdMs({ env = process.env, tree, homeDir } = {}) {
   if (v !== undefined && /^\d+$/.test(String(v)) && Number(v) > 0) return { ms: Number(v), problem: null };
   const envProblem = v !== undefined && String(v) !== '' ? `TYCON_WAIT_NOTICE_MS: tiene que ser un número de milisegundos (es ${JSON.stringify(String(v)).slice(0, 40)})` : null;
   if (envProblem) return { ms: def.ms, problem: envProblem };
-  try {
-    let dir = tree;
-    if (!dir) {
-      const hp = path.join(SKILL_LIB, 'harness-path.js');
-      dir = fs.existsSync(hp) ? require(hp).rutaArnesHook({ env, home: homeDir || home() }).dir : null;
-    }
-    if (!dir) return def;
-    let text;
-    try { text = fs.readFileSync(path.join(dir, 'team-repos.json'), 'utf8'); } catch { return def; }
-    const r = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js')).parse(String(text).replace(/^﻿/, ''));
-    const sec = r.sectionProblems && r.sectionProblems.wait_notice;
-    if (sec && sec.length) return { ms: def.ms, problem: `${sec[0].path}: ${sec[0].message}` };
-    const m = r.ok && r.data && r.data.wait_notice && r.data.wait_notice.minutes;
-    return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
-  } catch { return def; }
+  const org = orgWaitNotice({ env, tree, homeDir });
+  if (org.problem) return { ms: def.ms, problem: org.problem };
+  const m = org.data && org.data.minutes;
+  return Number.isInteger(m) ? { ms: m * 60000, problem: null } : def;
+}
+
+/** `{ on, problem }`: si el aviso corre en esta máquina. La variable TYCON_WAIT_NOTICE, si está puesta, gana (`0` lo
+ *  apaga, otro valor lo deja); si no, `wait_notice.enabled` de la organización; si no, encendido. Una sección que no se
+ *  puede leer no lo apaga: queda encendido y se dice. */
+function noticeEnabled({ env = process.env, tree, homeDir } = {}) {
+  const v = env.TYCON_WAIT_NOTICE;
+  if (v !== undefined && v !== '') return { on: v !== '0', problem: null };
+  const org = orgWaitNotice({ env, tree, homeDir });
+  if (org.problem) return { on: true, problem: org.problem };
+  return { on: !(org.data && org.data.enabled === false), problem: null };
 }
 
 // ── el mensaje ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -491,7 +511,7 @@ function noteFindingsWait(sid, which = 'noteFindingsWait') {
   return true;
 }
 
-module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
+module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, noticeEnabled, orgWaitNotice, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
 
 if (require.main === module) {
   try {
@@ -510,6 +530,9 @@ if (require.main === module) {
       }
     }
     if (process.env.TYCON_WAIT_NOTICE === '0') process.exit(0);
+    // la organización lo puede apagar desde el sitio (`wait_notice.enabled: false`); la variable de la máquina gana
+    const enabled = noticeEnabled({});
+    if (!enabled.on) process.exit(0);
     // sin ningún canal por donde avisar, nada: ni archivos ni procesos
     const tg = channels();
     if (args[0] === '--timer') {
