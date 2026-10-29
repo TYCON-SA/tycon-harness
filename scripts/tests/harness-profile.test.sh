@@ -281,11 +281,50 @@ if corre T40; then
       [ "$RC" = 0 ] || mal "T40 el aplicador ($side) salió ${RC}: $(tail -n 3 "$T/t40/$side.out" | tr '\n' ' ')"
     done
     # los dos settings.json nombran árboles distintos: se comparan por hooks del arnés con la ruta pasada a la de uno
-    python3 - "$T/t40/old/.claude/settings.json" "$OLD" "$TREE" "$T/t40/old-as-new.json" <<'PY'
-import sys
+    # Los hooks que el arnés CAMBIÓ después de ${BASE_REF}, declarados acá y pasados del lado de antes a su forma de hoy:
+    # T40 mide el perfil, no un renombre ni un matcher más ancho. Cada cambio tiene que estar del lado de antes (uno que
+    # ya no aparece sale, como en T40_ADDED).
+    #   produccion-notice.js → production-notice.js — el aviso del freno, con su nombre en inglés
+    #   safety-guard-pre.sh mira también Monitor — el freno de comandos cubre los comandos que vigilan
+    # «ruta-vieja>ruta-nueva»: el hook renombrado · «ruta@matcher»: el matcher de hoy de ese hook.
+    T40_CHANGED=("scripts/hooks/produccion-notice.js>scripts/hooks/production-notice.js"
+      "scripts/hooks/safety-guard-pre.sh@Bash|PowerShell|Monitor")
+    python3 - "$T/t40/old/.claude/settings.json" "$OLD" "$TREE" "$T/t40/old-as-new.json" "$T/t40/changed.out" "${T40_CHANGED[@]}" <<'PY'
+import json, sys
 t = open(sys.argv[1], encoding="utf-8").read().replace(sys.argv[2], sys.argv[3]).replace(sys.argv[1].rsplit("/.claude/", 1)[0], "@HOME@")
-open(sys.argv[4], "w", encoding="utf-8").write(t)
+data, missing = json.loads(t), []
+def hit(h, ruta):
+    return ("/" + ruta + '"') in str(h.get("command", "")) or str(h.get("command", "")).endswith("/" + ruta)
+for change in sys.argv[6:]:
+    if ">" in change:
+        old, new = change.split(">", 1)
+        found = False
+        for groups in data["hooks"].values():
+            for group in groups:
+                for h in group.get("hooks") or []:
+                    cmd = str(h.get("command", ""))
+                    if ("/" + old + '"') in cmd or cmd.endswith("/" + old):
+                        h["command"] = cmd.replace("/" + old, "/" + new); found = True
+    else:
+        # sólo ese hook pasa al matcher de hoy, en un grupo propio: los demás de su grupo quedan donde estaban
+        ruta, matcher = change.split("@", 1)
+        found = False
+        for event, groups in data["hooks"].items():
+            moved = []
+            for group in groups:
+                if group.get("matcher") == matcher:
+                    continue
+                mine = [h for h in group.get("hooks") or [] if hit(h, ruta)]
+                if mine:
+                    group["hooks"] = [h for h in group["hooks"] if not hit(h, ruta)]
+                    moved.append({**group, "matcher": matcher, "hooks": mine}); found = True
+            data["hooks"][event] = [g for g in groups if g.get("hooks")] + moved
+    if not found:
+        missing.append(change)
+json.dump(data, open(sys.argv[4], "w", encoding="utf-8"), indent=2)
+open(sys.argv[5], "w", encoding="utf-8").write("\n".join(missing))
 PY
+    [ -s "$T/t40/changed.out" ] && mal "T40 cambios declarados que ya no están del lado de ${BASE_REF}: $(tr '\n' ' ' < "$T/t40/changed.out")"
     sed "s#$T/t40/new#@HOME@#g" "$T/t40/new/.claude/settings.json" > "$T/t40/new-floor.json"
     # El aplicador de hoy registra cada hook `.js` por el piso de Node: `node "<árbol>/scripts/lib/node-floor.js"
     # [--gate] "<hook>"`; el de ${BASE_REF}, con `node "<hook>"`. Para comparar se saca el envoltorio y queda el hook; que
@@ -320,11 +359,12 @@ PY
     #   scripts/hooks/guard-update-notice.js — el freno de producción quedó viejo y hay que reinstalarlo
     #   scripts/hooks/dev-behind-main-notice.js — la rama dev atrasada frente a main
     #   scripts/hooks/stuck-pr-notice.js — los pedidos trabados en choque o sin entrar
+    #   scripts/hooks/coordination-notice.js — el tope de sesiones, sólo para la coordinadora designada
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js scripts/hooks/deprecated-read-notice.js
       scripts/hooks/deprecated-session-notice.js scripts/hooks/extension-notices.js scripts/hooks/guard-update-notice.js
-      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js)
+      scripts/hooks/dev-behind-main-notice.js scripts/hooks/stuck-pr-notice.js scripts/hooks/coordination-notice.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
