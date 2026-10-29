@@ -68,6 +68,22 @@ jobs:
               scriptLocation: inlineScript
               inlineScript: |
                 set -u
+                # Dónde está el buzón lo dice operations.json → site.mailbox (lo mismo que lee el sitio), sin llave: la
+                # credencial es la de esta conexión. download-runs.js también pide el tenant, y sale de la conexión (no es
+                # una credencial). Sin site.mailbox, la página sale sin buzón, como sin la conexión.
+                MBX="$(Agent.TempDirectory)/mailbox-location.json"
+                TENANT="$(az account show --query tenantId -o tsv 2>/dev/null || true)"
+                node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); require("fs").writeFileSync(process.argv[1], JSON.stringify({ cuenta: m.account, contenedor: m.container, tenant: process.argv[2] }) + "\n");' "$MBX" "$TENANT"
+                LUGAR=$?
+                if [ "$LUGAR" != 0 ]; then
+                  if [ "$LUGAR" = 4 ]; then echo "##vso[task.logissue type=warning]el buzón no está declarado (operations.json → site.mailbox): las fichas del equipo salen sin número"
+                  elif [ "$LUGAR" = 3 ]; then echo "##vso[task.logissue type=warning]operations.json no se pudo leer: no sé dónde está el buzón, y las fichas del equipo salen sin número"
+                  else echo "##vso[task.logissue type=warning]no pude leer site.mailbox (el lector salió $LUGAR, ver arriba): las fichas del equipo salen sin número"; fi
+                  echo "##vso[task.complete result=SucceededWithIssues;]"
+                  exit 0
+                fi
+                [ -n "$TENANT" ] || echo "##vso[task.logissue type=warning]La conexión no dijo su tenant: la bajada lo va a decir"
+                export TYCON_MAILBOX_JSON="$MBX"
                 BUZON="$(Agent.TempDirectory)/buzon/corridas-buzon"
                 RES="$(Agent.TempDirectory)/bajada.json"
                 mkdir -p "$(Agent.TempDirectory)/buzon"
@@ -115,6 +131,28 @@ jobs:
         displayName: 'Lo que deja la noche para el sitio: pull requests y pedidos asignados'
         env:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      # La foto del examen de revisores, para el sitio: si el árbol trae `scripts/controls-bench/ultimo-examen.json` (lo
+      # deja ahí la organización que corre el examen), se copia con la fecha de su `ts` a
+      # `.dashboard/controls-bench/examen-<fecha>.json`, que es lo que lee el sitio. Sin el archivo, o con un `ts` que no
+      # es una fecha, no se escribe nada. Nunca corta la noche.
+      - script: |
+          set -u
+          F="$(Build.SourcesDirectory)/scripts/controls-bench/ultimo-examen.json"
+          if [ ! -f "$F" ]; then echo "sin foto del examen: no se deja nada para el sitio"; exit 0; fi
+          DIA=$(node -e 'try { const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const t = String(d.ts || "").slice(0, 10); process.stdout.write(/^\d{4}-\d{2}-\d{2}$/.test(t) ? t : ""); } catch (e) { process.stdout.write("ILEGIBLE"); }' "$F")
+          if [ "$DIA" = "ILEGIBLE" ]; then
+            echo "##vso[task.logissue type=warning]La foto del examen está ilegible (no es un JSON con ts): no se deja para el sitio"
+            exit 0
+          fi
+          if [ -z "$DIA" ]; then
+            echo "##vso[task.logissue type=warning]La foto del examen no trae una fecha en ts: no se deja para el sitio"
+            exit 0
+          fi
+          mkdir -p "$(Build.SourcesDirectory)/.dashboard/controls-bench"
+          cp "$F" "$(Build.SourcesDirectory)/.dashboard/controls-bench/examen-$DIA.json" || echo "##vso[task.logissue type=warning]No pude copiar la foto del examen para el sitio"
+          exit 0
+        displayName: 'La foto del examen de revisores para el sitio'
 
       # La foto de despliegues: qué llegó a staging y a producción en cada producto, leído del stage de cada
       # corrida, con la aprobación pendiente o vencida y main roto o no. Lo que se lee lo declara `operations.json →
@@ -193,7 +231,7 @@ jobs:
             --require artifacts/tablero-del-arnes.html \
             --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"$DAY\" --run \"$(Build.BuildId)\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
             --verify-export .dashboard \
-            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments .dashboard/applied-config.json .dashboard/merges
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments .dashboard/applied-config.json .dashboard/merges .dashboard/controls-bench
         displayName: 'Guardar la página del día y lo del sitio en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 
@@ -217,6 +255,24 @@ jobs:
           echo "La página publicada pasa la verificación."
         displayName: 'Verificar la página publicada'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+
+      # El ensayo (efectos: false): lo que este nocturno habría guardado, con las mismas rutas que su guardado, como
+      # artefacto de la corrida (`ensayo-datos`). Ver «El ensayo» en pipelines/operations/README.md. Como el guardado,
+      # devuelve antes la marca de esta noche: en main, el sync la pisó con la de main.
+      - script: |
+          set -u
+          mkdir -p .dashboard && cp "$(Agent.TempDirectory)/applied-config.json" .dashboard/applied-config.json \
+            || echo "##vso[task.logissue type=warning]ensayo: falta la marca de esta noche (applied-config.json): el ensayo la cuenta sin ella y el guardado no podría devolverla"
+          node scripts/ci/rehearsal-index.js --out "$(Build.ArtifactStagingDirectory)/ensayo-datos" \
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments .dashboard/applied-config.json .dashboard/merges .dashboard/controls-bench
+        displayName: 'El ensayo: lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+      - task: PublishPipelineArtifact@1
+        displayName: 'El ensayo: publicar lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+        inputs:
+          targetPath: $(Build.ArtifactStagingDirectory)/ensayo-datos
+          artifact: ensayo-datos
 
       - script: rm -rf "$(Agent.TempDirectory)/buzon" "$(Agent.TempDirectory)/bajada.json" "$(Agent.TempDirectory)/publicada.html"
         displayName: 'Borrar la copia del buzón'

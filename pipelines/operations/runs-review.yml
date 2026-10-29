@@ -74,6 +74,26 @@ jobs:
               exit 1
             displayName: 'Sin buzón no hay qué revisar'
 
+      # Dónde está el buzón lo dice operations.json → site.mailbox (lo mismo que lee el sitio). Sin declarar no hay qué
+      # revisar: rojo, como sin la conexión. Va en un paso propio porque la revisión corre con continueOnError (una pasada
+      # parcial deja la ejecución naranja), y ahí un rojo saldría naranja.
+      - script: |
+          set -u
+          node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4);'
+          LUGAR=$?
+          if [ "$LUGAR" = 4 ]; then
+            echo "##vso[task.logissue type=error]el buzón no está declarado (operations.json → site.mailbox): la revisión no corrió"
+            exit 1
+          elif [ "$LUGAR" = 3 ]; then
+            echo "##vso[task.logissue type=error]operations.json no se pudo leer: no sé dónde está el buzón, y la revisión no corrió"
+            exit 1
+          elif [ "$LUGAR" != 0 ]; then
+            echo "##vso[task.logissue type=error]no pude leer site.mailbox (el lector salió $LUGAR, ver arriba): la revisión no corrió"
+            exit 1
+          fi
+        displayName: 'Dónde está el buzón (operations.json → site.mailbox)'
+        workingDirectory: $(Build.SourcesDirectory)
+
       # La pasada baja el buzón ella misma (registros, volcados y las conversaciones de la ventana) y escribe las fichas y
       # last-run.json aunque la bajada no sea entera. Sale 1 si la pasada fue parcial: la ejecución queda naranja y el
       # paso de guardar corre igual, para que el resumen diga «parcial» y no «NO CORRIÓ».
@@ -87,6 +107,24 @@ jobs:
               scriptLocation: inlineScript
               inlineScript: |
                 set -u
+                # El buzón (operations.json → site.mailbox, ya controlado en el paso anterior) va sin llave: la credencial
+                # es la de esta conexión. La bajada también pide el tenant, y sale de la conexión (no es una credencial).
+                MBX="$(Agent.TempDirectory)/mailbox-location.json"
+                TENANT="$(az account show --query tenantId -o tsv 2>/dev/null || true)"
+                node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); require("fs").writeFileSync(process.argv[1], JSON.stringify({ cuenta: m.account, contenedor: m.container, tenant: process.argv[2] }) + "\n");' "$MBX" "$TENANT"
+                LUGAR=$?
+                if [ "$LUGAR" = 4 ]; then
+                  echo "##vso[task.logissue type=error]el buzón no está declarado (operations.json → site.mailbox): la revisión no corrió"
+                  exit 1
+                elif [ "$LUGAR" = 3 ]; then
+                  echo "##vso[task.logissue type=error]operations.json no se pudo leer: no sé dónde está el buzón, y la revisión no corrió"
+                  exit 1
+                elif [ "$LUGAR" != 0 ]; then
+                  echo "##vso[task.logissue type=error]no pude leer site.mailbox (el lector salió $LUGAR, ver arriba): la revisión no corrió"
+                  exit 1
+                fi
+                [ -n "$TENANT" ] || echo "##vso[task.logissue type=warning]La conexión no dijo su tenant: la bajada lo va a decir"
+                export TYCON_MAILBOX_JSON="$MBX"
                 DAY=$(date -u +%Y-%m-%d)
                 mkdir -p "$(Agent.TempDirectory)/buzon/corridas-buzon"
                 node scripts/nightly/runs-review/runs-review.js run --mailbox "$(Agent.TempDirectory)/buzon/corridas-buzon" \
@@ -111,6 +149,21 @@ jobs:
             -- inbox/runs-review
         displayName: 'Guardar las fichas y el estado de la pasada en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+
+      # El ensayo (efectos: false): lo que este nocturno habría guardado, con las mismas rutas que su guardado, como
+      # artefacto de la corrida (`ensayo-datos`). Ver «El ensayo» en pipelines/operations/README.md.
+      - script: |
+          set -u
+          node scripts/ci/rehearsal-index.js --out "$(Build.ArtifactStagingDirectory)/ensayo-datos" \
+            -- inbox/runs-review
+        displayName: 'El ensayo: lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+      - task: PublishPipelineArtifact@1
+        displayName: 'El ensayo: publicar lo que se habría guardado'
+        condition: and(succeededOrFailed(), eq('${{ parameters.efectos }}', 'false'))
+        inputs:
+          targetPath: $(Build.ArtifactStagingDirectory)/ensayo-datos
+          artifact: ensayo-datos
 
       - script: rm -rf "$(Agent.TempDirectory)/buzon"
         displayName: 'Borrar la copia del buzón'

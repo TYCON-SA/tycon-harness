@@ -11,7 +11,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'pipelines', 'operations');
-const MODELS = ['dependency-audit.yml', 'stage-metrics.yml', 'team-dashboard.yml', 'runs-review.yml'];
+const MODELS = ['dependency-audit.yml', 'stage-metrics.yml', 'team-dashboard.yml', 'runs-review.yml', 'production-watch.yml'];
 const TEMPLATES = ['fetch-harness.yml', 'ops-data.yml', 'check-tree.yml', 'site-update-azure.yml'];
 const read = (rel) => fs.readFileSync(path.join(DIR, rel), 'utf8');
 
@@ -49,7 +49,8 @@ test('T2 Models_NoTeamLiterals: lo de la organización no está escrito en los m
     const names = [...text.matchAll(/^\s+name:\s*(\S+)(.*)$/gm)];
     for (const [, , rest] of names) assert.match(rest, /← CAMBIAR/, `${f}: un name: sin la marca de cambiar`);
     for (const [, ref] of text.matchAll(/^\s*- template:\s*\S+@([A-Za-z0-9_-]+)\s*$/gm)) assert.strictEqual(ref, 'harness', `${f}: una plantilla de @${ref}`);
-    assert.doesNotMatch(text, /^\s*- group:/m, `${f}: un grupo de variables`);
+    // un grupo de variables sólo por parámetro (el del vigilante), nunca con su nombre escrito
+    assert.doesNotMatch(text, /^\s*- group:(?!\s*\$\{\{\s*parameters\.)/m, `${f}: un grupo de variables`);
     for (const [, v] of text.matchAll(/^\s*(?:endpoint|azureSubscription):\s*(.+)$/gm)) {
       assert.match(v, /^\$\{\{\s*parameters\./, `${f}: una conexión de servicio escrita (${v})`);
     }
@@ -509,7 +510,7 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
   assert.match(y, /open-prs\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --json "\.dashboard\/open-prs\/open-prs-\$DAY\.json"/);
   assert.match(y, /assigned-items\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --out \.dashboard\/assigned/);
-  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json \.dashboard\/merges\n/, 'se guardan con la página (la marca de la configuración aplicada y las métricas de cada merge)');
+  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json \.dashboard\/merges \.dashboard\/controls-bench\n/, 'se guardan con la página (la marca de la configuración aplicada, las métricas de cada merge y la foto del examen)');
   assert.match(y, /push-nightly-data\.js sync -- \.dashboard /, 'el sync trae .dashboard: guardar sus carpetas no sale 2');
 });
 
@@ -601,7 +602,8 @@ test('T26 DependencyAudit_PruebaSinSesionAntesDelAviso (Azure) @story-2.30 @ac-1
   assert.match(e, /case "\$\{TYCON_NOTIFY_WEBHOOK_URL:-\}" in \*'\$\('\*\) unset TYCON_NOTIFY_WEBHOOK_URL ;; esac/, 'el literal de Azure, como ausente');
   // el webhook, sólo en el paso del aviso, y en ningún otro modelo
   assert.deepStrictEqual(steps(t).map((x, i) => (/TYCON_NOTIFY_WEBHOOK_URL/.test(x) ? i : -1)).filter((i) => i >= 0), [aviso]);
-  for (const m of MODELS.filter((f) => f !== 'dependency-audit.yml')) assert.doesNotMatch(read(m), /TYCON_NOTIFY_WEBHOOK_URL/, `${m} no lleva el webhook`);
+  // el vigilante también avisa y resume: lleva los canales en esos dos pasos (lo mira ProductionWatch_PasosConEfectos)
+  for (const m of MODELS.filter((f) => f !== 'dependency-audit.yml' && f !== 'production-watch.yml')) assert.doesNotMatch(read(m), /TYCON_NOTIFY_WEBHOOK_URL/, `${m} no lleva el webhook`);
 });
 
 test('T37 Nocturnos_NoTocanLasRutasProtegidas (Azure) @story-2.30 @ac-22', () => {
@@ -822,4 +824,454 @@ test('D3 SitioDemo_UnPasoMasConLaMismaPlantilla (Azure) — el demo va por la pl
   assert.match(p, /--app "\$\(\$\{\{ parameters\.prefix \}\}_APP\)"/);
   assert.match(p, /--state-dir \$\{\{ parameters\.stateDir \}\}/);
   assert.match(p, /exit 0\s*$/, 'un sitio que no se actualizó no corta la noche');
+});
+
+// ── el vigilante con modelo, el ensayo sin efectos, y lo que el equipo hacía y el modelo no ───────────────────────────
+// Lo que una organización necesita para correr sus nocturnos con estos modelos sin pasos propios: el vigilante de
+// producción, la foto del examen, la llave literal, la carpeta del vigilante en el resumen, la foto de la copia que ya no
+// se mide, el aviso de team-repos.json distinto del del perfil, el buzón desde operations.json y el perfil opcional. Y el
+// ensayo: con `efectos: false`, cada modelo publica lo que habría guardado.
+
+/** Un paso `- script: |` de un trabajo, por su nombre: el bloque entero (con su condición) y, con `vars`, su guion sin
+ *  macros (para correrlo). */
+function namedStep(model, name, vars = null) {
+  const text = read(model);
+  const block = steps(text)[named(text, name)];
+  assert.ok(block, `${model}: falta el paso «${name}»`);
+  return { block, body: vars ? stepScript(model, name, vars) : null };
+}
+/** El guion de una tarea AzureCLI@2 de un modelo, por su nombre, sin macros. */
+function azureCliScript(model, name, vars) {
+  const text = read(model);
+  const i = text.indexOf(`displayName: '${name}'`);
+  assert.ok(i > 0, `${model}: falta la tarea «${name}»`);
+  const m = text.slice(i).match(/inlineScript: \|\n([\s\S]*?)\n {12}(?:env:|- |$)|inlineScript: \|\n([\s\S]*?)\n {6,10}- /);
+  assert.ok(m, `${model}: «${name}» trae un inlineScript`);
+  const raw = m[1] || m[2];
+  const indent = raw.match(/^ */)[0].length;
+  let body = raw.split('\n').map((l) => l.slice(Math.min(indent, l.match(/^ */)[0].length))).join('\n');
+  for (const [k, v] of Object.entries(vars)) body = body.split(`$(${k})`).join(v);
+  assert.doesNotMatch(body, /\$\([A-Z][A-Za-z]+\.[A-Za-z.]+\)/, 'no quedó ninguna macro de Azure sin reemplazar');
+  return body;
+}
+/** Una carpeta de trabajo con el código del arnés que el paso necesita, y guiones de mentira donde se los pide. */
+function jobDir(fakes = {}) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-models-'));
+  dirs.push(base);
+  const job = path.join(base, 'job');
+  fs.mkdirSync(path.join(job, 'scripts'), { recursive: true });
+  fs.symlinkSync(path.join(ROOT, 'scripts', 'lib'), path.join(job, 'scripts', 'lib'));
+  fs.mkdirSync(path.join(job, 'scripts', 'ci'), { recursive: true });
+  for (const f of ['team-repos-diff.js', 'rehearsal-index.js', 'push-nightly-data.js']) fs.symlinkSync(path.join(ROOT, 'scripts', 'ci', f), path.join(job, 'scripts', 'ci', f));
+  fs.mkdirSync(path.join(job, 'scripts', 'metrics'), { recursive: true });
+  fs.symlinkSync(path.join(ROOT, 'scripts', 'metrics', 'retro-sweep.js'), path.join(job, 'scripts', 'metrics', 'retro-sweep.js'));
+  write(job, fakes);
+  const tmp = path.join(base, 'tmp');
+  const bin = path.join(base, 'bin');
+  fs.mkdirSync(tmp);
+  fs.mkdirSync(bin);
+  return { base, job, tmp, bin };
+}
+const PW = 'production-watch.yml';
+const ALL_MODELS = [...MODELS];
+const condOf = (block) => (block.match(/^\s+condition: (.*)$/m) || [])[1] || '';
+
+test('ProductionWatch_Modelo_SinNombresYConEfectos: a las 08:00, con efectos, los grupos por parámetro y las plantillas públicas', () => {
+  assert.ok(MODELS.includes(PW), 'el vigilante está entre los modelos (T1, T2 y T3 también lo miran)');
+  const y = read(PW);
+  assert.match(y, /schedules:\n\s+- cron: '0 8 \* \* \*'/);
+  assert.match(y, /- name: efectos\n(?:\s+\S.*\n)*?\s+type: boolean\n\s+default: true/);
+  assert.match(y, /- name: hostsVariableGroup\n(?:\s+\S.*\n)*?\s+type: string\n\s+default: ''/);
+  assert.match(y, /- name: hostsSecrets\n(?:\s+\S.*\n)*?\s+type: object\n\s+default: \[\]/);
+  // el grupo, sólo si se nombró; las secretas, mapeadas por nombre sin escribir ninguno
+  assert.match(y, /\$\{\{ if ne\(parameters\.hostsVariableGroup, ''\) \}\}:\n\s+- group: \$\{\{ parameters\.hostsVariableGroup \}\}/);
+  assert.match(y, /\$\{\{ each name in parameters\.hostsSecrets \}\}:\n\s+\$\{\{ name \}\}: \$\(\$\{\{ name \}\}\)/);
+  // ningún nombre de credencial de host escrito (las del canal del aviso son las de siempre, como en dependencias)
+  assert.doesNotMatch(y, /BIZEXT|_PASS:|^\s+(?!TYCON_MAIL_USER:)\w+_USER:/m, 'ningún nombre de credencial escrito');
+  for (const t of ['fetch-harness.yml', 'ops-data.yml', 'check-tree.yml']) assert.match(y, new RegExp(`- template: pipelines/operations/templates/${t.replace('.', '\\.')}@harness`));
+  // el orden de la noche: registrar lo decidido → la guarda → el vigilante
+  const ix = (re) => y.search(re);
+  assert.ok(ix(/--record-only/) > 0 && ix(/templates\/check-tree\.yml/) > ix(/--record-only/) && ix(/vigilante\.js run/) > ix(/templates\/check-tree\.yml/), 'registrar → guarda → vigilante');
+  assert.match(y, /vigilante\.js run \\\n\s+--config "\$\(Build\.SourcesDirectory\)\/scripts\/nightly\/watcher\/hosts\.json"/, 'la configuración de hosts, la que trajo ops-data.yml');
+  assert.match(y, /daily-summary\.js deliver --source vigilante/);
+  assert.match(y, /-- \.dashboard\/vigilante inbox\/watcher\n/, 'guarda el snapshot y la cola');
+  assert.match(y, /reviewers \|\| \{\}\)\.watcher/, 'los revisores, de operations.json → reviewers.watcher');
+  assert.match(y, /scripts\/lib\/notify\.js --operations/, 'el aviso, por notify.js');
+  // sin grupo: el vigilante corre igual y lo dice
+  assert.match(y, /sin hostsVariableGroup/);
+  // que no nombre a nadie lo mira T2 por la forma; los nombres los mira el detector de la publicación, con su lista
+  // privada, antes de exportar (no corre acá: la lista no es pública)
+});
+
+test('ProductionWatch_PasosConEfectos_PidenMain: registrar, guardar, abrir pedidos, resumen y aviso piden efectos y main', () => {
+  const effects = [/open-pr-per-finding\.sh --record-only/, /push-nightly-data\.js save/, /open-pr-per-finding\.sh \\\n\s+--queue/, /daily-summary\.js deliver/, /scripts\/lib\/notify\.js/];
+  const ss = steps(read(PW));
+  for (const re of effects) {
+    const s = ss.find((x) => re.test(x));
+    assert.ok(s, `falta el paso con ${re}`);
+    const cond = condOf(s);
+    assert.match(cond, /eq\('\$\{\{ parameters\.efectos \}\}', 'true'\)/, `${re}: pide efectos (${cond})`);
+    assert.match(cond, /eq\(variables\['Build\.SourceBranch'\], 'refs\/heads\/main'\)/, `${re}: pide main (${cond})`);
+  }
+});
+
+test('OpsData_TraeHostsJson: la configuración del vigilante se trae de operaciones y no se avisa como ajena', () => {
+  assert.match(read('templates/ops-data.yml'), /CONFIG_FILES=\([^)]*scripts\/nightly\/watcher\/hosts\.json/);
+  const w = agent({ 'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n', 'scripts/nightly/watcher/hosts.json': '{"productos":[]}\n' });
+  const r = runOpsData(w);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(fs.readFileSync(path.join(w.s, 'scripts/nightly/watcher/hosts.json'), 'utf8'), '{"productos":[]}\n');
+  assert.doesNotMatch(r.out, /no lee[^\n]*hosts\.json/, 'no se nombra como un archivo que no se lee');
+  assert.ok(appliedMark(w).files['scripts/nightly/watcher/hosts.json'], 'la marca lo nombra');
+});
+
+test('TeamDashboard_FotoDelExamen: copia la foto con la fecha de su ts; sin archivo o con un ts que no es fecha, nada, y nunca rojo', () => {
+  const name = 'La foto del examen de revisores para el sitio';
+  const casos = [
+    ['ts de fecha', '{"ts":"2026-10-28T03:10:00Z","casos":3}\n', ['examen-2026-10-28.json']],
+    ['ts que no es fecha', '{"ts":"ayer"}\n', []],
+    ['no es JSON', 'roto\n', []],
+    ['sin archivo', null, []],
+  ];
+  for (const [caso, contenido, quedan] of casos) {
+    const j = jobDir(contenido === null ? {} : { 'scripts/controls-bench/ultimo-examen.json': contenido });
+    const { block, body } = namedStep('team-dashboard.yml', name, { 'Build.SourcesDirectory': j.job });
+    const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv(), encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, `${caso}: ${r.stdout}${r.stderr}`);
+    const dir = path.join(j.job, '.dashboard', 'controls-bench');
+    assert.deepStrictEqual(fs.existsSync(dir) ? fs.readdirSync(dir) : [], quedan, caso);
+    if (quedan.length) assert.strictEqual(fs.readFileSync(path.join(dir, quedan[0]), 'utf8'), contenido, `${caso}: la foto, tal cual`);
+    if (caso === 'no es JSON') assert.match(r.stdout, /La foto del examen está ilegible/, 'un archivo roto lo dice, no «sin fecha»');
+    if (caso === 'ts que no es fecha') assert.match(r.stdout, /no trae una fecha en ts/);
+    assert.doesNotMatch(block, /condition:/, 'corre con o sin efectos: deja el archivo y guardar decide');
+  }
+  const y = read('team-dashboard.yml');
+  assert.ok(named(y, name) < named(y, 'Generar la página del tablero (modo nocturno)'), 'antes de la página');
+  assert.match(y, /push-nightly-data\.js save[\s\S]*? -- [^\n]*\.dashboard\/controls-bench/, 'el guardado suma .dashboard/controls-bench');
+});
+
+test('DependencyAudit_LlaveLiteral_NoSePasa: una llave que llegó como `$(NOMBRE)` se desarma antes de la propuesta', () => {
+  const fake = 'const fs = require("fs"); fs.writeFileSync(process.env.LAB_OUT, JSON.stringify({ anthropic: process.env.ANTHROPIC_API_KEY === undefined ? "ausente" : (process.env.ANTHROPIC_API_KEY.startsWith("$(") ? "literal" : "puesta"), ollama: process.env.OLLAMA_API_KEY === undefined ? "ausente" : (process.env.OLLAMA_API_KEY.startsWith("$(") ? "literal" : "puesta") }));\n';
+  for (const [caso, env, want] of [
+    ['las dos literales', { ANTHROPIC_API_KEY: '$(ANTHROPIC_API_KEY)', OLLAMA_API_KEY: '$(OLLAMA_API_KEY)' }, { anthropic: 'ausente', ollama: 'ausente' }],
+    ['una puesta', { ANTHROPIC_API_KEY: 'sk-de-prueba', OLLAMA_API_KEY: '$(OLLAMA_API_KEY)' }, { anthropic: 'puesta', ollama: 'ausente' }],
+  ]) {
+    const j = jobDir({ 'scripts/nightly/findings/propose.js': fake });
+    const { body } = namedStep('dependency-audit.yml', 'Pedirle al modelo de la noche una propuesta por ficha', { 'Build.SourcesDirectory': j.job });
+    const out = path.join(j.tmp, 'llaves.json');
+    const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv({ ...env, LAB_OUT: out }), encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, `${caso}: ${r.stdout}${r.stderr}`);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(out, 'utf8')), want, caso);
+  }
+});
+
+test('DependencyAudit_WatcherOut_SoloConDatos: el resumen recibe la carpeta del vigilante sólo si existe', () => {
+  const { block: body } = namedStep('dependency-audit.yml', 'Entregar el resumen');
+  assert.match(body, /WO=\(\); \[ -d "[^"]*\.dashboard\/vigilante" \] && WO=\(--watcher-out "[^"]*\.dashboard\/vigilante"\)/);
+  assert.match(body, /daily-summary\.js deliver [^\n]*\$\{WO\[@\]\+"\$\{WO\[@\]\}"\}/);
+});
+
+test('StageMetrics_CopiaQueSale_BorraSuFoto: la copia del arnés que no se mide pierde su foto por proyecto; la medida la conserva', () => {
+  const lab = labOrg(teamRepos({ maintainers: azRepo('Harness', 'maintainers'), harness_copies: [azRepo('Harness', 'old-harness'), azRepo('Harness', 'maintainers')] }));
+  write(lab.job, { '.dashboard/proyectos/Harness__old-harness.json': '{"viejo":true}\n', '.dashboard/proyectos/Harness__maintainers.json': '{}\n' });
+  const r = runDiscover(lab);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(fs.readdirSync(path.join(lab.job, '.dashboard', 'proyectos')), ['Harness__maintainers.json']);
+  assert.match(r.out, /Harness\/old-harness: se borra su foto por proyecto de antes/);
+  assert.match(read('stage-metrics.yml'), /'\.dashboard\/proyectos\/\*\.json'/, 'el guardado lleva el borrado a main');
+});
+
+// el perfil de la organización: team-repos.json de operaciones contra el del perfil, y el perfil para el aviso
+function profileLab({ profileFiles, opsTeamRepos }) {
+  const j = jobDir();
+  const bare = path.join(j.base, 'profile.git');
+  fs.mkdirSync(bare);
+  git(bare, ['init', '--quiet', '--bare']);
+  git(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+  if (profileFiles) {
+    const seed = path.join(j.base, 'profile-seed');
+    git(j.base, ['clone', '--quiet', bare, seed]);
+    write(seed, profileFiles);
+    git(seed, ['add', '-A']); git(seed, ['commit', '--quiet', '-m', 'perfil']); git(seed, ['branch', '-M', 'main']); git(seed, ['push', '--quiet', 'origin', 'main']);
+  }
+  if (opsTeamRepos !== undefined) write(j.job, { 'team-repos.json': typeof opsTeamRepos === 'string' ? opsTeamRepos : JSON.stringify(opsTeamRepos, null, 2) });
+  // la dirección del perfil en Azure, llevada al repo local: git la reescribe sin que el guion lo sepa
+  const url = 'https://dev.azure.com/acme/Harness/_git/profile';
+  const env = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `url.${bare}.insteadOf`, GIT_CONFIG_VALUE_0: url };
+  return { ...j, env };
+}
+const runDiff = (lab, extra = []) => spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'team-repos-diff.js'), '--team-repos', path.join(lab.job, 'team-repos.json'),
+  '--clone-dir', path.join(lab.tmp, 'clones'), '--profile-out', path.join(lab.tmp, 'perfil'), ...extra], { cwd: lab.job, env: cleanEnv(lab.env), encoding: 'utf8' });
+
+test('TeamRepos_DistintoDelPerfil_Avisa: iguales, nada; distintos, las claves sin valores; perfil ilegible, lo dice; nunca rojo', () => {
+  const tr = teamRepos({ maintainers: azRepo('Harness', 'maintainers') });
+  // iguales (el orden de las claves no cuenta)
+  let lab = profileLab({ opsTeamRepos: tr, profileFiles: { 'team-repos.json': JSON.stringify(Object.fromEntries(Object.entries(tr).reverse())), 'team-profile.json': '{"integrations":{}}\n' } });
+  let r = runDiff(lab);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /difieren/);
+  assert.strictEqual(fs.readFileSync(path.join(lab.tmp, 'perfil', 'team-profile.json'), 'utf8'), '{"integrations":{}}\n', 'deja el perfil para el aviso');
+  // distintos: nombra las claves, nunca sus valores
+  const otro = { ...tr, maintainers: azRepo('Harness', 'secreto-mantenimiento'), harness_copies: [azRepo('Harness', 'copia-oculta')] };
+  lab = profileLab({ opsTeamRepos: tr, profileFiles: { 'team-repos.json': JSON.stringify(otro), 'team-profile.json': '{}\n' } });
+  r = runDiff(lab);
+  assert.strictEqual(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /difieren en: harness_copies, maintainers$/m);
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /secreto-mantenimiento|copia-oculta/, 'sin valores');
+  // el perfil no se puede bajar: lo dice, y no deja perfil
+  lab = profileLab({ opsTeamRepos: tr, profileFiles: null });
+  r = runDiff(lab);
+  assert.strictEqual(r.status, 3, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pude leer el perfil: los canales del aviso no son los de la organización/);
+  assert.ok(!fs.existsSync(path.join(lab.tmp, 'perfil', 'team-profile.json')));
+  // el paso de los modelos que avisan: corre el guion, avisa en naranja con su línea y nunca sale rojo
+  for (const model of ['dependency-audit.yml', PW]) {
+    const { body } = namedStep(model, 'El perfil de la organización y su team-repos.json', { 'Build.SourcesDirectory': lab.job, 'Agent.TempDirectory': lab.tmp, 'System.AccessToken': 'token-de-prueba' });
+    const s = spawnSync('bash', ['-c', body], { cwd: lab.job, env: cleanEnv(lab.env), encoding: 'utf8' });
+    assert.strictEqual(s.status, 0, `${model}: ${s.stdout}${s.stderr}`);
+    assert.match(s.stdout, /##vso\[task\.logissue type=warning\][^\n]*no pude leer el perfil/, `${model}: naranja con la frase`);
+    assert.match(s.stdout, /##vso\[task\.complete result=SucceededWithIssues;\]/, model);
+    assert.doesNotMatch(s.stdout, /variable=TEAM_PROFILE/, `${model}: sin perfil no lo anuncia`);
+  }
+});
+
+test('Perfil_Ilegible_AvisaYSigue: el resumen y el aviso usan el perfil sólo si se leyó; si no, el canal por defecto', () => {
+  const SUMMARY = { 'dependency-audit.yml': 'Entregar el resumen', [PW]: 'Entregar el resumen del arnés' };
+  for (const [model, pasos] of [['dependency-audit.yml', [SUMMARY['dependency-audit.yml']]], [PW, [SUMMARY[PW], 'Avisar (una vez por noche, y sólo si hay algo)']]]) {
+    const y = read(model);
+    const perfil = named(y, 'El perfil de la organización y su team-repos.json');
+    assert.ok(perfil >= 0 && perfil < named(y, SUMMARY[model]), `${model}: el perfil antes del resumen`);
+    for (const p of pasos) {
+      const { block: body } = namedStep(model, p);
+      assert.match(body, /PF=\(\); \[ -n "\$\{TEAM_PROFILE:-\}" \] && \[ -f "\$TEAM_PROFILE" \] && PF=\(--profile "\$TEAM_PROFILE"\)/, `${model} · ${p}: el perfil, sólo si se leyó`);
+      assert.match(body, /\$\{PF\[@\]\+"\$\{PF\[@\]\}"\}/, `${model} · ${p}: lo pasa`);
+      assert.doesNotMatch(body, /\/profile\/team-profile\.json/, `${model} · ${p}: no lee un checkout del perfil`);
+    }
+  }
+  // el resumen corre aunque no haya perfil: no depende del paso del perfil
+  for (const model of ['dependency-audit.yml', PW]) assert.doesNotMatch(condOf(namedStep(model, SUMMARY[model]).block), /TEAM_PROFILE/);
+});
+
+test('Buzon_DesdeOperations_SinLlave: la ubicación de operations.json y el tenant de la conexión, sin sas; sin declarar, el aviso', () => {
+  const fakeDownload = 'require("fs").writeFileSync(process.env.LAB_OUT, process.env.TYCON_MAILBOX_JSON ? require("fs").readFileSync(process.env.TYCON_MAILBOX_JSON, "utf8") : "SIN"); process.stdout.write(JSON.stringify({ completo: true }));\n';
+  const fakeReview = 'require("fs").writeFileSync(process.env.LAB_OUT, process.env.TYCON_MAILBOX_JSON ? require("fs").readFileSync(process.env.TYCON_MAILBOX_JSON, "utf8") : "SIN");\n';
+  const conBuzon = '{"version":1,"owners":{"default":"lider@acme.example"},"site":{"mailbox":{"provider":"azure-blob","account":"acmeruns","container":"runs"}}}\n';
+  const sinBuzon = '{"version":1,"owners":{"default":"lider@acme.example"}}\n';
+  for (const [model, name] of [['team-dashboard.yml', 'Bajar del buzón los registros y los volcados (sin conversaciones)'], ['runs-review.yml', 'Revisar las ejecuciones del buzón']]) {
+    for (const [caso, ops] of [['declarado', conBuzon], ['sin declarar', sinBuzon]]) {
+      const j = jobDir({ 'operations.json': ops, 'scripts/metrics/download-runs.js': fakeDownload, 'scripts/nightly/runs-review/runs-review.js': fakeReview });
+      fs.writeFileSync(path.join(j.bin, 'az'), '#!/usr/bin/env bash\n[ "$1 $2" = "account show" ] && { echo "00000000-1111-2222-3333-444444444444"; exit 0; }\nexit 1\n', { mode: 0o755 });
+      const body = azureCliScript(model, name, { 'Agent.TempDirectory': j.tmp, 'Build.SourcesDirectory': j.job });
+      const out = path.join(j.tmp, 'visto.json');
+      const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv({ LAB_OUT: out, PATH: `${j.bin}${path.delimiter}${process.env.PATH}` }), encoding: 'utf8' });
+      const all = `${r.stdout}${r.stderr}`;
+      if (caso === 'declarado') {
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(out, 'utf8')), { cuenta: 'acmeruns', contenedor: 'runs', tenant: '00000000-1111-2222-3333-444444444444' }, `${model}: la ubicación y el tenant, sin sas`);
+        assert.doesNotMatch(all, /no está declarado/, model);
+      } else {
+        assert.match(all, /##vso\[task\.logissue type=(warning|error)\]el buzón no está declarado/, `${model}: el aviso`);
+        if (model === 'runs-review.yml') assert.notStrictEqual(r.status, 0, 'la revisión sin buzón sale roja, como sin conexión');
+        else {
+          assert.strictEqual(r.status, 0, all);
+          assert.ok(!fs.existsSync(out), 'el tablero sigue sin bajar nada');
+        }
+      }
+    }
+  }
+});
+
+test('Modelos_SinEfectos_PublicanLoQueGuardarian: con efectos false, cada modelo publica ensayo-datos con las rutas de su guardado', () => {
+  for (const m of ALL_MODELS) {
+    const y = read(m);
+    const saves = [...y.matchAll(/push-nightly-data\.js save[\s\S]*?\s--\s+([^\n]+)/g)].map((g) => g[1].trim());
+    assert.ok(saves.length >= 1, `${m}: guarda algo`);
+    const ss = steps(y);
+    const reh = ss.filter((s) => /scripts\/ci\/rehearsal-index\.js/.test(s));
+    assert.strictEqual(reh.length, saves.length, `${m}: un ensayo por guardado`);
+    reh.forEach((s, i) => {
+      assert.match(condOf(s), /eq\('\$\{\{ parameters\.efectos \}\}', 'false'\)/, `${m}: el ensayo, sólo sin efectos`);
+      const paths = (s.match(/rehearsal-index\.js[\s\S]*?\s--\s+([^\n]+)/) || [])[1];
+      assert.strictEqual((paths || '').trim(), saves[i], `${m}: las mismas rutas que su guardado`);
+    });
+    const pub = ss.filter((s) => /- task: PublishPipelineArtifact@1/.test(s));
+    assert.strictEqual(pub.length, 1, `${m}: una publicación`);
+    assert.match(pub[0], /artifact: ensayo-datos/);
+    assert.match(condOf(pub[0]), /eq\('\$\{\{ parameters\.efectos \}\}', 'false'\)/, `${m}: con efectos true no publica nada nuevo`);
+  }
+  const readme = read('README.md');
+  assert.match(readme, /ensayo-datos/);
+  assert.match(readme, /efectos: false|efectos=false/);
+});
+
+test('RehearsalIndex_SoloLoQueEscribio: los archivos nuevos y cambiados de las rutas, con su tamaño; ni los vacíos ni los de antes', () => {
+  const w = agent({ '.dashboard/vigilante/vigilante-2026-10-27.json': '{"ayer":1}\n', '.dashboard/vigilante/cambia.json': 'v1\n', 'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n' });
+  const r0 = runOpsData(w);
+  assert.strictEqual(r0.code, 0, r0.out);
+  write(w.s, { '.dashboard/vigilante/vigilante-2026-10-28.json': '{"hoy":1}\n', '.dashboard/vigilante/cambia.json': 'v2!\n', '.dashboard/vigilante/vacio.json': '', 'inbox/watcher/a1.yaml': 'id: a1\n', '.dashboard/otra/fuera.json': '{}\n', '.dashboard/vigilante/.DS_Store': 'x' });
+  const resumen = path.join(w.build, 'tmp', 'salida.txt');
+  fs.writeFileSync(resumen, 'mirados: 2\n');
+  const out = path.join(w.build, 'tmp', 'ensayo-datos');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'rehearsal-index.js'), '--out', out, '--summary', resumen, '--', '.dashboard/vigilante', 'inbox/watcher'], { cwd: w.s, env: cleanEnv(), encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const idx = JSON.parse(fs.readFileSync(path.join(out, 'index.json'), 'utf8'));
+  assert.deepStrictEqual(idx.files, [
+    { path: '.dashboard/vigilante/cambia.json', size: 4 },
+    { path: '.dashboard/vigilante/vigilante-2026-10-28.json', size: 10 },
+    { path: 'inbox/watcher/a1.yaml', size: 7 },
+  ], 'lo escrito, con su tamaño; ni lo de antes, ni lo de fuera, ni la basura');
+  assert.deepStrictEqual(idx.empty, ['.dashboard/vigilante/vacio.json'], 'los vacíos, aparte: el ensayo los cuenta como falla');
+  assert.strictEqual(fs.readFileSync(path.join(out, 'files', 'inbox/watcher/a1.yaml'), 'utf8'), 'id: a1\n', 'los archivos, copiados');
+  assert.strictEqual(fs.readFileSync(path.join(out, 'summary', 'salida.txt'), 'utf8'), 'mirados: 2\n', 'el resumen de la corrida');
+  assert.match(r.stdout, /3 archivo\(s\)/);
+  // sin nada escrito: un índice vacío, no un error
+  const out2 = path.join(w.build, 'tmp', 'vacio');
+  const r2 = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'rehearsal-index.js'), '--out', out2, '--', 'inbox/nada'], { cwd: w.s, env: cleanEnv(), encoding: 'utf8' });
+  assert.strictEqual(r2.status, 0, `${r2.stdout}${r2.stderr}`);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(out2, 'index.json'), 'utf8')).files, []);
+  assert.match(r2.stdout, /##vso\[task\.logissue type=warning\]ensayo: nada que se habría guardado/, 'sin nada escrito, el aviso: puede ser una ruta mal escrita');
+});
+
+test('RehearsalIndex_DespuesDeSync_LaCuentaDelGuardado: parte de la base que dejó sync y con la marca de esta noche, como el guardado', () => {
+  const PUSH = path.join(ROOT, 'scripts', 'ci', 'push-nightly-data.js');
+  const w = agent({ 'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n', 'scripts/nightly/dashboard/sources.json': '{"thresholds":{}}\n' });
+  const r = runOpsData(w);
+  assert.strictEqual(r.code, 0, r.out);
+  for (const f of ['rehearsal-index.js', 'push-nightly-data.js']) fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', f), path.join(w.s, 'scripts', 'ci', f));
+  // main se mueve después del checkout: otra corrida dejó su foto
+  const otro = path.join(w.base, 'otro');
+  git(w.base, ['clone', '--quiet', w.opsRemote, otro]);
+  write(otro, { '.dashboard/merges/m.json': '{"otra":1}\n' });
+  git(otro, ['add', '-A', '-f']); git(otro, ['commit', '--quiet', '-m', 'otra corrida']); git(otro, ['push', '--quiet', 'origin', 'main']);
+  const tree = (r.out.match(/##vso\[task\.setvariable variable=HARNESS_TREE\](\S+)/) || [])[1];
+  const env = cleanEnv({ HARNESS_TREE: tree, BUILD_BUILDID: 'ensayo-1' });
+  const sync = spawnSync(process.execPath, [PUSH, 'sync', '--', '.dashboard', 'artifacts/tablero-del-arnes.html'], { cwd: w.s, env, encoding: 'utf8' });
+  assert.strictEqual(sync.status, 0, `${sync.stdout}${sync.stderr}`);
+  write(w.s, { 'artifacts/tablero-del-arnes.html': '<p>ensayo</p>\n' });
+  const tmp = path.join(w.build, 'tmp');
+  const stage = path.join(w.build, 'stage');
+  const body = stepScript('team-dashboard.yml', 'El ensayo: lo que se habría guardado', { 'Agent.TempDirectory': tmp, 'Build.ArtifactStagingDirectory': stage });
+  const e = spawnSync('bash', ['-c', body], { cwd: w.s, env, encoding: 'utf8' });
+  assert.strictEqual(e.status, 0, `${e.stdout}${e.stderr}`);
+  const idx = JSON.parse(fs.readFileSync(path.join(stage, 'ensayo-datos', 'index.json'), 'utf8'));
+  assert.deepStrictEqual(idx.files.map((f) => f.path), ['.dashboard/applied-config.json', 'artifacts/tablero-del-arnes.html'], 'ni lo que trajo main');
+  assert.strictEqual(fs.readFileSync(path.join(stage, 'ensayo-datos', 'files', '.dashboard/applied-config.json'), 'utf8'), fs.readFileSync(path.join(tmp, 'applied-config.json'), 'utf8'), 'la marca de esta noche, no la de main');
+  assert.strictEqual(idx.base, git(w.s, ['rev-parse', 'refs/nightly-data/base']), 'la base del guardado');
+});
+
+test('RehearsalIndex_MarcasYEnlaces: los .gitkeep van como marcas, no como vacíos; un enlace no se copia; uso y repo sin HEAD', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-'));
+  dirs.push(base);
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(repo);
+  git(repo, ['init', '--quiet', '-b', 'main']);
+  git(repo, ['commit', '--quiet', '--allow-empty', '-m', 'vacío']);
+  write(base, { 'secreto.txt': 'no viaja\n' });
+  write(repo, { 'inbox/watcher/pending/.gitkeep': '', 'inbox/watcher/archived/.gitkeep': '', '.dashboard/vigilante/vigilante-2026-10-29.json': '{"hoy":1}\n' });
+  fs.symlinkSync(path.join(base, 'secreto.txt'), path.join(repo, '.dashboard', 'vigilante', 'enlace.json'));
+  const run = (args) => spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'rehearsal-index.js'), ...args], { cwd: repo, env: cleanEnv(), encoding: 'utf8' });
+  const out = path.join(base, 'out');
+  const r = run(['--out', out, '--summary', path.join(base, 'no-esta.txt'), '--', '.dashboard/vigilante', 'inbox/watcher', 'inbox/mal-escrita', '.dashboard/vig*']);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const idx = JSON.parse(fs.readFileSync(path.join(out, 'index.json'), 'utf8'));
+  assert.deepStrictEqual(idx.untouched, ['inbox/mal-escrita'], 'la ruta sin nada se nombra aunque las otras tengan datos; el patrón cubre lo suyo');
+  assert.match(r.stdout, /ensayo: sin nada esta noche en inbox\/mal-escrita/);
+  assert.match(r.stdout, /##vso\[task\.logissue type=warning\]ensayo: no está el resumen de la corrida \(no-esta\.txt\)/, 'el resumen que falta se avisa');
+  assert.strictEqual(idx.summary, null);
+  assert.deepStrictEqual(idx.empty, [], 'las marcas de carpeta no son vacíos');
+  assert.deepStrictEqual(idx.markers, ['inbox/watcher/archived/.gitkeep', 'inbox/watcher/pending/.gitkeep']);
+  assert.deepStrictEqual(idx.files.map((f) => f.path), ['.dashboard/vigilante/vigilante-2026-10-29.json'], 'el enlace no es un archivo escrito');
+  assert.match(r.stdout + r.stderr, /no se guardan enlaces simbólicos/, 'el enlace se nombra');
+  assert.ok(!fs.existsSync(path.join(out, 'files', '.dashboard/vigilante/enlace.json')), 'lo de afuera no se copia');
+  // lo que la noche borró, en deleted: un archivo que estaba en la base y ya no está
+  fs.unlinkSync(path.join(repo, '.dashboard', 'vigilante', 'enlace.json'));
+  git(repo, ['add', '-A', '-f']); git(repo, ['commit', '--quiet', '-m', 'la base']);
+  fs.unlinkSync(path.join(repo, '.dashboard', 'vigilante', 'vigilante-2026-10-29.json'));
+  const outD = path.join(base, 'out-borrado');
+  const rd = run(['--out', outD, '--', '.dashboard/vigilante']);
+  assert.strictEqual(rd.status, 0, `${rd.stdout}${rd.stderr}`);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(outD, 'index.json'), 'utf8')).deleted, ['.dashboard/vigilante/vigilante-2026-10-29.json'], 'lo borrado, aparte');
+  assert.match(rd.stdout, /1 borrado\(s\)/);
+  assert.strictEqual(run(['--out', out]).status, 2, 'sin rutas: uso');
+  assert.strictEqual(run(['--out', out, '--bogus', '--', 'x']).status, 2, 'una opción que no existe: uso');
+  const vacio = path.join(base, 'sin-head');
+  fs.mkdirSync(vacio);
+  git(vacio, ['init', '--quiet']);
+  assert.strictEqual(run(['--repo', vacio, '--out', out, '--', 'x']).status, 1, 'repo sin HEAD: rojo');
+});
+
+test('TeamReposDiff_Salidas: uso, operaciones sin perfil declarado y perfil sin team-repos.json', () => {
+  const DIFF = path.join(ROOT, 'scripts', 'ci', 'team-repos-diff.js');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'team-repos-diff-'));
+  dirs.push(base);
+  const run = (args) => spawnSync(process.execPath, [DIFF, ...args], { env: cleanEnv(), encoding: 'utf8' });
+  assert.strictEqual(run([]).status, 2, 'sin argumentos: uso');
+  write(base, { 'team-repos.json': '{"version":1,"operations":{"platform":"azure"}}\n' });
+  const r = run(['--team-repos', path.join(base, 'team-repos.json'), '--clone-dir', path.join(base, 'c'), '--profile-out', path.join(base, 'p')]);
+  assert.strictEqual(r.status, 3, `${r.stdout}${r.stderr}`);
+  assert.match(`${r.stdout}${r.stderr}`, /no pude leer el perfil: los canales del aviso no son los de la organización/);
+});
+
+test('PasoDelPerfil_UnaCaida_DiceElMotivo: si el comparador se cae, el aviso trae el error, no la versión de Node; si no, su última línea', () => {
+  const casos = [
+    ['se cae', 'echo "/x/team-repos-diff.js:10" >&2\necho "TypeError: no se puede leer perfil" >&2\necho "    at main (/x/team-repos-diff.js:10:3)" >&2\necho "" >&2\necho "Node.js v22.0.0" >&2\nexit 1', /##vso\[task\.logissue type=warning\]TypeError: no se puede leer perfil/],
+    ['difieren', 'echo "team-repos.json de operaciones y el del perfil difieren en: notify"\necho ""\nexit 1', /##vso\[task\.logissue type=warning\]team-repos\.json de operaciones y el del perfil difieren en: notify/],
+    ['iguales', 'echo "team-repos.json de operaciones y el del perfil son iguales"\nexit 0', null],
+  ];
+  for (const model of ['dependency-audit.yml', PW]) {
+    for (const [caso, guion, aviso] of casos) {
+      const j = jobDir();
+      fs.writeFileSync(path.join(j.bin, 'node'), `#!/usr/bin/env bash\n${guion}\n`, { mode: 0o755 });
+      const body = stepScript(model, 'El perfil de la organización y su team-repos.json', { 'Build.SourcesDirectory': j.job, 'Agent.TempDirectory': j.tmp });
+      const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv({ PATH: `${j.bin}${path.delimiter}${process.env.PATH}` }), encoding: 'utf8' });
+      assert.strictEqual(r.status, 0, `${model} · ${caso}`);
+      if (aviso) assert.match(r.stdout, aviso, `${model} · ${caso}: el motivo`);
+      else {
+        assert.doesNotMatch(r.stdout, /logissue|SucceededWithIssues/, `${model} · ${caso}: sin aviso`);
+        assert.match(r.stdout, /son iguales/, `${model} · ${caso}: dice lo que vio`);
+      }
+      assert.doesNotMatch(r.stdout, /logissue[^\n]*Node\.js v/, `${model} · ${caso}`);
+    }
+  }
+});
+
+test('ProductionWatch_SecretoQueFalta_SeDesarma: un nombre de hostsSecrets que no está en el grupo llega como `$(NOMBRE)`: se desarma y se avisa', () => {
+  // stable-data: el vigilante falso nombra su salida con la fecha del día, como el real; la prueba no mira esa fecha
+  const fake = 'const fs = require("fs"); fs.writeFileSync(process.env.LAB_OUT, JSON.stringify({ user: process.env.PROD_USER === undefined ? "ausente" : process.env.PROD_USER, pass: process.env.PROD_PASS === undefined ? "ausente" : process.env.PROD_PASS })); const i = process.argv.indexOf("--out"); fs.mkdirSync(process.argv[i + 1], { recursive: true }); fs.writeFileSync(require("path").join(process.argv[i + 1], `vigilante-${new Date().toISOString().slice(0, 10)}.json`), "{}");\n';
+  const j = jobDir({ 'scripts/nightly/watcher/vigilante.js': fake });
+  const { block } = namedStep(PW, 'Correr el vigilante');
+  assert.match(block, /TYCON_WATCHER_SECRET_NAMES: \$\{\{ join\(',', parameters\.hostsSecrets\) \}\}/, 'los nombres llegan al paso');
+  const body = stepScript(PW, 'Correr el vigilante', { 'Build.SourcesDirectory': j.job, 'Agent.TempDirectory': j.tmp }).split('${{ parameters.quiet }}').join('True');
+  const out = path.join(j.tmp, 'visto.json');
+  const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv({ LAB_OUT: out, TYCON_WATCHER_HOSTS_GROUP: 'grupo', TYCON_WATCHER_SECRET_NAMES: 'PROD_USER,PROD_PASS', PROD_USER: 'usuario', PROD_PASS: '$(PROD_PASS)' }), encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(out, 'utf8')), { user: 'usuario', pass: 'ausente' }, 'el literal no se usa como credencial');
+  assert.match(r.stdout, /##vso\[task\.logissue type=warning\]PROD_PASS no está en el grupo/);
+});
+
+test('ProductionWatch_Quiet: por defecto true, y sólo así el vigilante corre callado', () => {
+  const y = read(PW);
+  assert.match(y, /- name: quiet\n(?:\s+displayName: [^\n]*\n)?\s+type: boolean\n\s+default: true/);
+  const { block } = namedStep(PW, 'Correr el vigilante');
+  assert.match(block, /if \[ "\$\{\{ parameters\.quiet \}\}" = "True" \]; then export TYCON_WATCHER_QUIET=1; fi/);
+});
+
+test('RunsReview_BuzonSinDeclarar_Rojo: el control del buzón va en un paso propio, sin continueOnError, antes de la revisión', () => {
+  const y = read('runs-review.yml');
+  const name = 'Dónde está el buzón (operations.json → site.mailbox)';
+  const { block } = namedStep('runs-review.yml', name);
+  assert.doesNotMatch(block.split('\n\n')[0], /continueOnError/, 'un rojo de verdad');
+  // la revisión va dentro de un `${{ if }}`: el orden se mira en el texto, por el nombre de cada uno
+  const revision = y.indexOf("displayName: 'Revisar las ejecuciones del buzón'");
+  assert.ok(revision > 0 && y.indexOf(`displayName: '${name}'`) < revision, 'antes de la revisión');
+  for (const [ops, rc, msg] of [
+    ['{"version":1,"owners":{"default":"lider@acme.example"}}\n', 1, /el buzón no está declarado/],
+    ['{"version":1,"owners":{"default":"lider@acme.example"},"site":{"mailbox":{"provider":"azure-blob","account":"acmeruns","container":"runs"}}}\n', 0, null],
+    ['roto', 1, /operations\.json no se pudo leer/],
+  ]) {
+    const j = jobDir({ 'operations.json': ops });
+    const body = stepScript('runs-review.yml', name, { 'Build.SourcesDirectory': j.job });
+    const r = spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv(), encoding: 'utf8' });
+    assert.strictEqual(r.status, rc, `${r.stdout}${r.stderr}`);
+    if (msg) assert.match(r.stdout, msg);
+  }
 });
