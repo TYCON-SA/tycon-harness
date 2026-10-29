@@ -921,7 +921,9 @@ function teamOrPublic(repo, ref = 'HEAD') {
  */
 function publishedThin(repo, tree, config) {
   const brought = broughtByOverlay(repo) || new Set();
-  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta)), config);
+  // la capa del equipo (`--team-from`) también la trae la superposición, pero no viaja al público: contada como
+  // publicada, una guía que nombra `onboarding/` dejaría de ver esa ruta del equipo
+  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta) && !TEAM_LAYER(e.ruta)), config);
 }
 /**
  * Los registros que la superposición calcula con lo público y lo privado juntos (sus `REGISTRIES`): en el árbol armado
