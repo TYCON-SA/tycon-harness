@@ -342,7 +342,20 @@ test('T12b Barrido_GuardadoIlegible_LoDice @story-1.26 @ac-4: un archivo de .das
   assert.match(r.out, /juguete: .*1 archivo/);
 });
 
-test('T20 Barrido_RepoPorUrl_ClonaYDespuesTrae @story-1.26 @ac-1: el camino de la noche — clona la url sin checkout, corre el latido sobre el clon, y la noche siguiente trae lo nuevo', () => {
+test('T12c Barrido_GuardadoQueNoEsObjeto_LoDice @story-1.26 @ac-4: un archivo de .dashboard/ de main que es null, un número o una lista no se saltea callado', () => {
+  const { dir } = repo([{ subject: 'Merge branch r0' }]);
+  fs.mkdirSync(path.join(dir, '.dashboard'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.dashboard', 'metrics-nulo.json'), 'null');
+  fs.writeFileSync(path.join(dir, '.dashboard', 'metrics-numero.json'), '7');
+  fs.writeFileSync(path.join(dir, '.dashboard', 'metrics-lista.json'), '[]');
+  git(dir, ['add', '-A']); git(dir, ['commit', '--quiet', '-m', 'chore(metricas): guardar [nocturno]'], { GIT_AUTHOR_NAME: 'Azure Pipelines', GIT_COMMITTER_NAME: 'Azure Pipelines' });
+  const rep = path.join(tmp(), 'b.json');
+  const r = sweep(['--repo', `juguete=${dir}`, '--out', path.join(tmp(), 'o'), '--since', '2026-10-05', '--report', rep]);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(report(rep).repos[0].guardado_sin_leer, /3 archivo/);
+});
+
+test('T20Barrido_RepoPorUrl_ClonaYDespuesTrae @story-1.26 @ac-1: el camino de la noche — clona la url sin checkout, corre el latido sobre el clon, y la noche siguiente trae lo nuevo', () => {
   const { dir, shas } = repo([{ subject: 'Merge branch r0' }]);
   const clones = tmp();
   const out = path.join(tmp(), 'retros');

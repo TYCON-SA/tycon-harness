@@ -200,7 +200,8 @@ function dashboardFromGit(dir, ref) {
     i = nl + 1 + size + 1;
     let d;
     try { d = JSON.parse(body); } catch { skipped++; continue; }
-    if (!d || typeof d !== 'object') continue;
+    // un archivo que no es un objeto tampoco se lee: callado, su merge corre otro latido sin que nadie sepa por qué
+    if (!d || typeof d !== 'object' || Array.isArray(d)) { skipped++; continue; }
     const repo = d.repo || d.repo_path || d.repoPath;
     const sha = String(d.merge_commit || d.mergeCommit || d.commit || '');
     if (repo && sha) out.push({ repoStr: String(repo), sha, generatedBy: typeof d.generated_by === 'string' ? d.generated_by : null });
