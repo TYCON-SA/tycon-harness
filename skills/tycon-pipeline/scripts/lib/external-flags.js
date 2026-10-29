@@ -228,7 +228,7 @@ function horasDeLaAccion({ id, env = process.env, home = os.homedir() }) {
   if (!conv.legible) return { ok: false, motivo: `no puedo leer la conversación de esta sesión (${conv.motivo})` };
   const registros = require('./validator-record.js').conRespuestas(conv.registros);
   const resultados = new Map();
-  for (const r of registros) for (const b of contenido(r)) if (b && b.type === 'tool_result') resultados.set(b.tool_use_id, { error: !!b.is_error, texto: texto(b.content) });
+  for (const r of registros) for (const b of contenido(r)) if (b && b.type === 'tool_result') resultados.set(b.tool_use_id, { error: !!b.is_error, texto: texto(b.content), cuando: Date.parse(r.timestamp) });
   const usos = [];
   for (const r of registros) for (const b of contenido(r)) if (b && b.type === 'tool_use') usos.push(b);
   let desde = -1;
@@ -263,6 +263,10 @@ function horasDeLaAccion({ id, env = process.env, home = os.homedir() }) {
     const e = deLaEntrada(b);
     const segundos = segundosDe(e);
     if (segundos === null) { sinIntervalo = b.name; continue; }
+    // el fin no puede ser posterior a la llamada que cerró la entrada (con un minuto de margen por los relojes)
+    if (Number.isFinite(res.cuando) && Date.parse(e.end) > res.cuando + 60000) {
+      return { ok: false, motivo: `la entrada «${limpio}» dice que terminó en ${e.end}, después de la llamada que la cerró: el fin no puede estar adelante` };
+    }
     if (primera && Date.parse(primera.start) !== Date.parse(e.start)) {
       return { ok: false, motivo: `la entrada «${limpio}» se abrió en ${primera.start} y la llamada que la cerró dice ${e.start}: el inicio no se mueve al cerrar` };
     }
