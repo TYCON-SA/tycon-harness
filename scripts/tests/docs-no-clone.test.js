@@ -178,8 +178,10 @@ test('T35e ThinList_DeclaresTheTwoThatWait_AndNotTheNine @story-8.26 @ac-35', (t
   for (const old of ['forms', 'released']) assert.ok(!(old in list), `.tycon/internal-forms.json: trae "${old}", que es de antes de adelgazar`);
   const own = list.own || {};
   const mirror = list.mirror || {};
-  // cada cosa que el privado conserva, con su motivo: sin él, mañana nadie sabe por qué ese archivo no sigue a GitHub
-  for (const [rel, why] of Object.entries({ ...own, ...mirror })) {
+  // cada cosa que el privado conserva, con su motivo: sin él, mañana nadie sabe por qué ese archivo no sigue a GitHub.
+  // Un registro que se compone con el del público se declara con un objeto, y el motivo va en su `reason`.
+  for (const [rel, entry] of Object.entries({ ...own, ...mirror })) {
+    const why = entry && typeof entry === 'object' ? entry.reason : entry;
     assert.ok(typeof why === 'string' && why.trim().length >= 20, `${rel}: declarado sin motivo (o con uno que no dice nada)`);
   }
   // las once: del público. No se declaran (declararlas sería volver a tener dos versiones) y no traen bloques
