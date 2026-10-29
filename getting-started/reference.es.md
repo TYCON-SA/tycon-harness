@@ -470,8 +470,6 @@ vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas de
 - Una vez por día, de fondo: recorre el historial de git de hasta 200 repos de la carpeta madre del clon y deja un
   archivo por día en la carpeta `.dashboard/` del clon (`TYCON_STAGE_METRICS=0`); y junta en un archivo de tu máquina
   los hallazgos que los revisores dejaron en tus repos (`TYCON_NO_COLLECT_FINDINGS=1`).
-- Al declarar un carril «ad-hoc», el portón de edición lanza por su cuenta una consulta corta al modelo de tu
-  asistente, con tus últimos pedidos, para decidir si corresponde (`TYCON_LANE_LLM=0`).
 
 **Qué escribe y qué guarda en disco**:
 

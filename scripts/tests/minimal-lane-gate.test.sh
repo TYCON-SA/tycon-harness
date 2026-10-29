@@ -2,7 +2,7 @@
 # minimal-lane-gate.test.sh — con la instalación mínima, el portón de edición está registrado y hace lo mismo que en la
 # completa, sobre un repo con la forma del laboratorio del capítulo 2 (specs/story-1-1.md, src/, test/):
 #   T2 editar código sin recorrido se niega, con la pregunta en llano para la persona
-#   T3 el ajuste puntual, declarado con la frase literal de la persona, pasa
+#   T3 el ajuste puntual sin la firma del dueño no se declara; firmado en la ventana, pasa
 #   T4 la primera historia: con el recorrido abierto y sin plan aprobado se niega; con el plan aprobado, pasa
 #   T5 la lista de la completa no cambia: el portón sigue ahí, y el resto de full también
 # El hook se corre como lo corre el agente: el comando que la lista de efectos registra antes de Edit|Write, con el
@@ -52,20 +52,18 @@ if negado && grep -q 'CÓDIGO SIN CARRIL' <<<"$OUT" && grep -q 'Este cambio no t
   ok "editar src/formato.js sin recorrido se niega, con la pregunta en llano (arreglo rápido o con historia)"
 else mal "no se negó o el mensaje no trae la pregunta: rc=$RC $(head -c 300 <<<"$OUT")"; fi
 
-echo "T3 · MinimalLab_AdhocWithQuote_Allowed @story-8.74 @ac-3"
-# lo que escribió la persona entra por el control que lo anota en una sesión real (on-prompt.js, también en minimal);
-# sin el clasificador por modelo, decide la cita literal. Como en una sesión real, el mensaje ya está en la conversación
-# con la marca de quien lo escribió (`human`), que es lo que el control lee para saber que es de la persona
-mkdir -p "$H/.claude/projects/-repo"
-CONV="$H/.claude/projects/-repo/s874b.jsonl"
-printf '{"type":"user","isSidechain":false,"uuid":"u1","origin":{"kind":"human"},"message":{"role":"user","content":[{"type":"text","text":"es un ajuste chico, sin story: arreglá el formato"}]}}\n' >"$CONV"
-printf '{"session_id":"s874b","hook_event_name":"UserPromptSubmit","cwd":"%s","transcript_path":"%s","prompt":"es un ajuste chico, sin story: arreglá el formato"}' "$R" "$CONV" \
-  | ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/on-prompt.js" ) >"$T/prompt.out" 2>&1 \
-  || mal "on-prompt.js no anotó lo que escribió la persona: $(head -c 300 "$T/prompt.out")"
-AD="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b TYCON_LANE_LLM=0 node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story"}' 2>&1 )" \
-  || mal "no se pudo declarar el ajuste puntual con la frase de la persona: $(head -c 300 <<<"$AD")"
+echo "T3 · MinimalLab_AdhocSigned_Allowed @story-8.74 @ac-3 @story-8.141 @ac-4"
+# el ajuste puntual es una firma del dueño (adhoc-lane): sin la ventana no se declara; con la ventana dada por pasada
+# (scripts/tests/lib/window-passed.js), como la deja el «Sí» del dueño, se declara y la edición pasa
+if ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story"}' ) >"$T/adhoc-sin.out" 2>&1; then
+  mal "el ajuste puntual se declaró sin la firma del dueño"
+elif [ -f "$H/.claude/.tycon-pipeline/adhoc/s874b.json" ]; then mal "sin la firma quedó escrita la declaración"
+else ok "sin la firma del dueño, el ajuste puntual no se declara"; fi
+AD="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b NODE_OPTIONS="--require $ROOT/scripts/tests/lib/window-passed.js" \
+  node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story"}' 2>&1 )" \
+  || mal "no se pudo declarar el ajuste puntual con la firma: $(head -c 300 <<<"$AD")"
 editar s874b "$R/src/formato.js"
-pasa && ok "con el ajuste puntual declarado, la edición pasa" || mal "el ajuste puntual con la frase de la persona no pasó: rc=$RC $(head -c 300 <<<"$OUT")"
+pasa && ok "con el ajuste puntual firmado, la edición pasa" || mal "el ajuste puntual firmado no pasó: rc=$RC $(head -c 300 <<<"$OUT")"
 
 echo "T4 · MinimalLab_FirstStory_PipelineOpensGate @story-8.74 @ac-4"
 S1="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874c TYCON_PIPELINE_NO_AUTONOMOUS=1 node "$SKILL/pipeline.js" start --story "$R/specs/story-1-1.md" --repo "$R" --brief 2>&1 )"

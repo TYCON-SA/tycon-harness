@@ -7,11 +7,8 @@
  *
  * Fuentes de estado (todas bajo ~/.claude/.tycon-pipeline/):
  *   active/<sid>.json   marker del pipeline (lo escribe marker.js)
- *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch }
- *   lane/<sid>.json     carril FIJADO POR EL PROMPT del user: { lane, laneSetAt, lanePrompt,
- *                       recentPrompts[], lastTouch } — lo escribe on-prompt.js en cada prompt; marker.js
- *                       lo lee para denegar `adhoc set` con carril pipeline y para exigir que el motivo
- *                       sea un fragmento literal de lo que escribió el user.
+ *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch, via, by }
+ *                       (lo escribe `marker.js adhoc set` con la firma del dueño)
  *   gates.log           cada bloqueo queda registrado (status: blocked, kind)
  *
  * Señal "repo bajo el arnés": `<repo>/.tycon/` existe (barato, sin escaneo) — o, si no existe,
@@ -84,44 +81,6 @@ function readAdhoc(stateDir, sessionId) {
 /** Escritura atómica del ad-hoc (tmp + rename). Devuelve el objeto escrito. */
 function writeAdhoc(stateDir, sessionId, obj) {
   const file = adhocPath(stateDir, sessionId);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
-  fs.renameSync(tmp, file);
-  return obj;
-}
-
-// ── lane (carril fijado por el prompt del user) ──────────────────────────────────────────────────
-
-const LANE_RECENT_PROMPTS = 8;
-const LANE_PROMPT_MAX_CHARS = 1500;
-
-function lanePath(stateDir, sessionId) {
-  return path.join(stateDir, 'lane', `${safeSid(sessionId)}.json`);
-}
-
-function readLane(stateDir, sessionId) {
-  const l = readJson(lanePath(stateDir, sessionId));
-  if (!l) return null;
-  if (isStale(l)) return null;
-  return l;
-}
-
-/**
- * Registra el prompt del user (ring de los últimos N). Lo llama on-prompt.js en CADA prompt humano.
- * 🔴 No fija carril: no hay detección por regex (ver el comentario grande en story-gate.js). El ring es la evidencia que consumen
- * reasonInPrompts (cita mecánica) y lane-classifier (el modelo que interpreta castellano); sólo
- * lo escribe este hook desde UserPromptSubmit, así que el agente no puede inyectar texto acá.
- */
-function recordPrompt(stateDir, sessionId, prompt, { now = new Date().toISOString() } = {}) {
-  const text = String(prompt || '').slice(0, LANE_PROMPT_MAX_CHARS);
-  const prev = readLane(stateDir, sessionId) || {};
-  const recent = Array.isArray(prev.recentPrompts) ? prev.recentPrompts.slice() : [];
-  if (text.trim()) recent.push(text);
-  const obj = { ...prev, recentPrompts: recent.slice(-LANE_RECENT_PROMPTS), lastTouch: now };
-  // Estado de una versión que fijaba el carril por regex: ese lane seguiría anulando ad-hocs para siempre.
-  delete obj.lane; delete obj.laneSetAt; delete obj.lanePrompt;
-  const file = lanePath(stateDir, sessionId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
@@ -342,8 +301,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 }
 
 module.exports = {
-  DEFAULT_STATE_DIR, STALE_HOURS, LANE_RECENT_PROMPTS,
+  DEFAULT_STATE_DIR, STALE_HOURS,
   readMarker, readAdhoc, writeAdhoc, recordAdhocFile, adhocPath, listOtherMarkers,
-  lanePath, readLane, recordPrompt,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };

@@ -1,5 +1,5 @@
 {
-  "__doc": "Carril: se declara o se pregunta — la detección por regex se BORRÓ el 2026-08-27 tras tres incidentes en tres días (#carril-sin-salida, #carril-no-detecta, y el 'dale, probá con 2.5 segundos' cazado por revisión adversarial). Contrato vigente: on-prompt.js registra el ring de prompts y NUNCA fija lane (limpia uno heredado); un ad-hoc declarado no se anula por prompts posteriores; el juicio de adhoc set vive en marker.js (cita mecánica + lane-classifier como juez, cubierto por las suites del skill). Mismos scripts en Claude y Codex.",
+  "__doc": "Carril: se declara o se pregunta — la detección por regex se BORRÓ el 2026-08-27 tras tres incidentes en tres días (#carril-sin-salida, #carril-no-detecta, y el 'dale, probá con 2.5 segundos' cazado por revisión adversarial). Contrato vigente: on-prompt.js no guarda el texto de los mensajes y NUNCA fija lane; un ad-hoc declarado no se anula por prompts posteriores; declarar el ad-hoc es la firma del dueño en la ventana de permiso (adhoc-lane, story 8.141), cubierta por las suites del skill y de la ventana. Mismos scripts en Claude y Codex.",
   "hooks": [
     {
       "hook": "on-prompt.js",
@@ -8,7 +8,7 @@
       "matcher": "*",
       "cases": [
         {
-          "id": "prompt-de-story-avisa-intent-pero-NO-fija-carril",
+          "id": "prompt-de-story-avisa-intent-pero-NO-fija-carril-ni-guarda-el-texto",
           "type": "must-emit",
           "stdin": {
             "session_id": "bench-s1",
@@ -18,58 +18,8 @@
             "stdout_re": [
               "INTENT-detect"
             ],
-            "file_contains": [
-              {
-                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
-                "re": "implementemos la story 2\\.3"
-              }
-            ],
-            "file_not_contains": [
-              {
-                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
-                "re": "\"lane\"\\s*:"
-              }
-            ]
-          }
-        },
-        {
-          "id": "la-frase-que-ayer-fijaba-carril-de-mas-hoy-no-fija-nada",
-          "type": "must-run",
-          "stdin": {
-            "session_id": "bench-s1",
-            "prompt": "dale, probá con timeout de 2.5 segundos"
-          },
-          "expect": {
-            "file_contains": [
-              {
-                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
-                "re": "dale, probá con timeout de 2\\.5 segundos"
-              }
-            ],
-            "file_not_contains": [
-              {
-                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
-                "re": "\"lane\"\\s*:"
-              }
-            ]
-          }
-        },
-        {
-          "id": "un-lane-heredado-del-regex-borrado-se-limpia",
-          "type": "must-run",
-          "setup": [
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/lane',{recursive:true});fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'pipeline',laneSetAt:new Date().toISOString(),lanePrompt:'viejo',recentPrompts:['viejo']}))\""
-          ],
-          "stdin": {
-            "session_id": "bench-s1",
-            "prompt": "seguimos con lo que estabas"
-          },
-          "expect": {
-            "file_not_contains": [
-              {
-                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
-                "re": "\"lane\"\\s*:"
-              }
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json"
             ]
           }
         }

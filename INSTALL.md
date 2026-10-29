@@ -243,7 +243,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `unclosed-runs-notice.js` | SessionStart | Dice una vez por día si alguna corrida del pipeline quedó sin cerrar, de qué stories y qué hacer; esas corridas se suben marcadas | No | minimal y full | `TYCON_UNCLOSED_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `production-notice.js` | SessionStart | Regenera el índice de servidores de producción declarados y, en las máquinas autorizadas, avisa si el freno de producción falta | No | full | `TYCON_PRODUCTION_NOTICE=0` |
 | `guard-update-notice.js` | SessionStart | En las máquinas con el freno de producción, compara el permiso de actualizarlo sin contraseña con lo que eligió la organización y da el comando para corregirlo | No | full | `TYCON_GUARD_UPDATE_NOTICE=0` |
-| `lane-llm-notice.js` | SessionStart | Avisa si el desempate por modelo del portón de carril abrió permisos | No | full | `TYCON_LANE_LLM_NOTICE=0` |
+| `lane-llm-notice.js` | SessionStart | Cuenta los arreglos rápidos de los últimos 7 días y cómo se firmaron, si hubo alguno nuevo | No | full | `TYCON_LANE_LLM_NOTICE=0` |
 | `engram-drift-notice.js` | SessionStart | Revisa la memoria de engram una vez por día: proyectos sin nombre fijo, memoria repartida, observaciones sin exportar | No | minimal y full | `TYCON_ENGRAM_DRIFT=0`; integración engram (`TYCON_ENGRAM=0`) |
 | `unpushed-work-notice.js` | SessionStart | Avisa las ramas del repo y de su grupo con commits que no están en el remoto | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `dev-behind-main-notice.js` | SessionStart | En un repo de producto del equipo, avisa si a `dev` le faltan commits de `main` o tiene trabajo trabado hace una semana | No | full | `TYCON_DEV_BEHIND_NOTICE=0` |

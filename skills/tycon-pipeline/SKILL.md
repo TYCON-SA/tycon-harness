@@ -200,7 +200,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **Env**: `TYCON_PIPELINE_NO_AUTONOMOUS` · `STOP_AUTONOMY` · `TYCON_NO_DEEP_REVIEW` · `TYCON_5B_EARLY` ·
   `TYCON_PACKS_DIR` · `TYCON_AGENTS_DIR` (paquetes de revisores y carpeta de agentes) ·
   `TYCON_READ_METER` · `TYCON_READ_MAX_CHARS` ·
-  `TYCON_STORY_GATE` · `TYCON_LANE_LLM` · `TYCON_LANE_LLM_MODEL` · `TYCON_LANE_LLM_MS` · `TYCON_ADVISORS_GATE` · `TYCON_MUTATION_CHECK` ·
+  `TYCON_STORY_GATE` · `TYCON_ADVISORS_GATE` · `TYCON_MUTATION_CHECK` ·
   `TYCON_ATDD_COMMIT_GATE` · `TYCON_ATDD_PREEDIT_GATE` · `TYCON_SPAWN_GOVERNANCE` · `TYCON_ADHOC_SPAWN_WARN` ·
   `DOD_BYPASS` (bypass logueado de gates del commit; NO abre la matriz runtime ni la guía de QA).
 
@@ -276,12 +276,13 @@ Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con
 ## 🔒 Portón de carril
 
 En un repo bajo el arnés, un archivo de CÓDIGO no se edita sin (a) pipeline activo o (b) carril ad-hoc
-declarado: `marker.js adhoc set '{"reason":"<fragmento LITERAL de un prompt del user>"}'` (cupo 8 archivos,
-`adhoc.log`). Con marker y el plan sin aprobar, no se edita código. Escrituras directas a
+declarado: `marker.js adhoc set '{"reason":"<qué y por qué>"}'` (cupo 8 archivos, `adhoc.log`), que el dueño
+aprueba en la ventana de permiso (firma `adhoc-lane`; o `--terminal`). Nada del chat lo abre. La designada de la
+máquina lo declara por otra pestaña con `--for-session <id>` si el perfil lo delega. Con marker y el plan sin
+aprobar, no se edita código. Escrituras directas a
 `~/.claude/.tycon-pipeline/` se deniegan siempre. El carril lo elige el USER: si no lo dijo, preguntar.
-Citar el pedido de la story como motivo de un ad-hoc se deniega; el clasificador por modelo gana sobre la
-cita en ambas direcciones y falla hacia lo mecánico. Kill-switches del dev: `TYCON_STORY_GATE=off`,
-`.tycon/advisors.yaml → pipeline.story_gate: false` (commiteado), `TYCON_LANE_LLM=0`.
+Kill-switches del dev: `TYCON_STORY_GATE=off` (apaga el portón de edición, no la firma),
+`.tycon/advisors.yaml → pipeline.story_gate: false` (commiteado).
 
 ## Terminación y logging
 
