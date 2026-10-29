@@ -149,8 +149,12 @@ function noSeLeyo(ilegibles) {
   if (d) throw new Error(`la carpeta ${path.relative(AMB.dashboard, d.dir) || '.'} no se puede leer (${d.code})`);
 }
 
+// El instante de la pasada: `--now` si vino, si no el reloj. Toda edad del modelo se mide contra él, para que dos
+// pasadas con el mismo `--now` den el mismo modelo aunque el reloj avance entre una y otra.
+const ahoraMs = () => (Number.isFinite(AMB.ahora) ? AMB.ahora : Date.now());
+
 function colectarAhora() {
-  const hoy = Number.isFinite(AMB.ahora) ? AMB.ahora : Date.now();
+  const hoy = ahoraMs();
   const cfg = JSON.parse(fs.readFileSync(AMB.config, 'utf8'));
   // Las fuentes `local: true` son de la vista de corridas: viven fuera de .dashboard y
   // las lee runs.js. Acá se saltean; si no, la de seis preguntas las listaría como «no leída».
@@ -399,7 +403,7 @@ function leerCorridas(archivos, opts = {}) {
   if (!total) { const n = noMedida(opts.vacio || 'no hay ninguna ejecución'); return { corridas: n, agentes: n, vueltas: n, trabajo_espera: n, maquinas: 0 }; }
   const den = etiqueta(grupos.size);
   const rotos = ilegibles ? ` · ${ilegibles} volcado(s) no se pudieron leer (¿subida cortada?): cuentan en el total, no en la mediana` : '';
-  const edad = edadDias(ultima, Date.now());
+  const edad = edadDias(ultima, ahoraMs());
   const nota = edad !== null && edad > 2 ? ` · la última ejecución es de ${edadTexto(edad)}` : '';
   return {
     maquinas: grupos.size,
@@ -826,7 +830,7 @@ function pasosPorCorrida(cfg, buzon = { estado: 'no_aplica' }, opts = {}) {
   if (!r.corridas) return noMedida(`ninguna de las ${N} ejecución(es) del buzón tiene su consumo medido: los pasos no se estiman`);
   // La fecha del número es la de la corrida MEDIDA más nueva (`filas` viene ordenada por inicio).
   const fecha = r.filas[r.filas.length - 1].inicio || null;
-  const edad = edadDias(fecha, opts.hoy || Date.now());
+  const edad = edadDias(fecha, opts.hoy || ahoraMs());
   if (edad === null || edad > fuente.max_age_days) {
     return noMedida(fecha
       ? `sin ejecuciones medidas desde ${fecha} (${edadTexto(edad)}): pasados ${fuente.max_age_days} días el número se calla`
@@ -1050,7 +1054,7 @@ function detalleSinHistoria(m) {
 
 function extra(por, ctx, cfg) {
   const m = {};
-  m.despliegues = desde(por.deployments, (d) => fichaDespliegues(d, new Date().toISOString()));
+  m.despliegues = desde(por.deployments, (d) => fichaDespliegues(d, new Date(ahoraMs()).toISOString()));
   m.edad_estado = fichaEdad(cfg, ctx);
   m.sin_historia = fichaSinHistoria(por['story-reference']);
   const sdlc = por['sdlc-stage'];
@@ -1303,7 +1307,7 @@ function extra(por, ctx, cfg) {
 
   // Declarados: los escribió una persona. Se muestran con marca propia y vencen.
   m.declarados = {};
-  const hoyISO = new Date().toISOString().slice(0, 10);
+  const hoyISO = new Date(ahoraMs()).toISOString().slice(0, 10);
   for (const dcl of ctx.declarados) {
     if (!dcl.review_before) { m.declarados[dcl.id] = noMedida('declaración sin fecha de revisión: no ampara'); continue; }
     if (dcl.review_before < hoyISO) { m.declarados[dcl.id] = noMedida(`declaración vencida el ${dcl.review_before} (fuente: ${dcl.source})`); continue; }
