@@ -569,6 +569,37 @@ function cierreDeCorrida(d) {
   return { estado: d.archivedAt && pendientes.length ? 'incompleta' : 'completa', inferido: true };
 }
 
+// Los resultados de la revisión previa que cuentan como «la historia se revisó antes de programar».
+const REVISION_HECHA = new Set(['limpio', 'corregido', 'preguntado']);
+const NOTA_SIN_REVISION = 'sin revisión previa';
+
+/**
+ * La revisión de la historia antes de programar, de la constancia que el cierre copia al volcado. Sólo un estado de
+ * vocabulario cerrado y números: ni el modelo, ni las reglas, ni el texto de los hallazgos. Un volcado sin el campo es
+ * anterior a la revisión previa (`sin_campo`) y se cuenta aparte, nunca como «sin revisión». Lo no medido es null.
+ */
+function revisionPreviaDe(d) {
+  if (!d || !Object.prototype.hasOwnProperty.call(d, 'revision_previa')) return { estado: 'sin_campo' };
+  const r = d.revision_previa;
+  const vacia = { corregida: null, hallazgos: null, tokens: null, duracion_ms: null };
+  // null con otra nota es una constancia que no se pudo leer: no se sabe si hubo revisión
+  if (r === null) return { estado: d.revision_previa_nota === undefined || d.revision_previa_nota === NOTA_SIN_REVISION ? 'sin_revision' : 'no_medido', ...vacia };
+  if (!r || typeof r !== 'object') return { estado: 'no_medido', ...vacia };
+  const resultado = String(r.resultado || '');
+  if (resultado === 'saltado') return { estado: 'saltada', ...vacia };
+  if (!REVISION_HECHA.has(resultado)) return { estado: 'no_medido', ...vacia };
+  const cuenta = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : null);
+  const h = r.hallazgos && typeof r.hallazgos === 'object' ? r.hallazgos : {};
+  const destinos = h.por_destino && typeof h.por_destino === 'object' ? h.por_destino : {};
+  return {
+    estado: 'revisada',
+    corregida: resultado === 'corregido' || (cuenta(destinos.corregido) || 0) > 0,
+    hallazgos: cuenta(h.total),
+    tokens: cuenta(r.tokens),
+    duracion_ms: cuenta(r.duracion_ms),
+  };
+}
+
 function modeloDeCorrida(d, nombresPasos) {
   const m = d.marker || {};
   const ini = Date.parse(m.startedAt || '');
@@ -791,6 +822,7 @@ function modeloDeCorrida(d, nombresPasos) {
     consumo,
     revisores,
     validador,
+    revision_previa: revisionPreviaDe(d),
   };
 }
 
@@ -1322,6 +1354,8 @@ function paraLista(c) {
     costo: elegir(c.costo, ['agentes', 'vueltas']),
     validador: elegir(c.validador, ['estado', 'por_fase', 're_loops_decididos', 're_loops_sin_relanzar']),
     consumo: elegir(c.consumo, ['estado', 'respuestas', 'tokens', 'por_paso', 'fuera_de_ventana']),
+    // la revisión previa: su estado y números, nunca texto de los hallazgos
+    revision_previa: elegir(c.revision_previa, ['estado', 'corregida', 'hallazgos', 'tokens', 'duracion_ms']),
   };
 }
 
@@ -2397,6 +2431,39 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return s2 + '</svg>' + notas;
   }
 
+  // La revisión de la historia antes de programar. Cuenta HISTORIAS: las corridas de una misma historia comparten su
+  // constancia, y sumarlas contaría dos veces la revisión y su costo; de cada historia vale su corrida más nueva. Una
+  // historia es su número dentro de su producto: dos productos pueden tener cada uno su «2.1». Las
+  // corridas sin el campo son anteriores a la revisión previa y van aparte; las de constancia sin medir (pendiente o
+  // ilegible) tampoco entran en el denominador. Tokens y duración sólo de las que los midieron: un null nunca es 0.
+  function revisionPrevia(F) {
+    var viejas = 0, porHistoria = {};
+    F.forEach(function (c) {
+      var r = c.revision_previa;
+      if (!r || !r.estado || r.estado === 'sin_campo') { viejas += 1; return; }
+      var k = c.story !== null && c.story !== undefined ? 'h:' + JSON.stringify([c.producto || null, c.story]) : 'c:' + c.id;
+      var antes = porHistoria[k];
+      if (!antes || String(c.inicio || '') > String(antes.inicio || '')) porHistoria[k] = { inicio: c.inicio, r: r };
+    });
+    var rs = Object.keys(porHistoria).map(function (k) { return porHistoria[k].r; });
+    var de = function (e) { return rs.filter(function (r) { return r.estado === e; }); };
+    var rev = de('revisada'), salt = de('saltada').length, sinRev = de('sin_revision').length, noMed = de('no_medido').length;
+    var conocidas = rev.length + salt + sinRev;
+    var b = function (n) { return '<b>' + n + '</b> '; };
+    var aparte = (salt ? ' · ' + b(salt) + T('rpSaltadas') : '') + (sinRev ? ' · ' + b(sinRev) + T('rpSinRevision') : '')
+      + (noMed ? ' · ' + b(noMed) + T('rpNoMedidas') : '') + (viejas ? ' · ' + b(viejas) + T('rpAnteriores') : '');
+    if (!conocidas) return gris(T('rpSinDatoFiltro') + aparte.replace(/<\/?b>/g, '').replace(/^ · /, ': '));
+    var seg = function (ms) { return ms < 90000 ? Math.round(ms / 1000) + ' s' : dt(ms / 60000); };
+    var tk = rev.filter(function (r) { return num(r.tokens); }).map(function (r) { return r.tokens; });
+    var du = rev.filter(function (r) { return num(r.duracion_ms); }).map(function (r) { return r.duracion_ms; });
+    var costo = !rev.length ? T('rpSinCosto')
+      : (tk.length ? b(miles(tk.reduce(function (a, x) { return a + x; }, 0))) + T('rpTokens', { m: miles(Math.round(mediana(tk))), n: tk.length, t: rev.length }) : T('rpSinTokens'))
+        + ' · ' + (du.length ? T('rpDuracion') + ' ' + b(seg(mediana(du))).trim() + ' (n=' + du.length + ')' : T('rpSinDuracion'));
+    var corregidas = rev.filter(function (r) { return r.corregida === true; }).length;
+    return med(T('rpRevisadasDe', { n: rev.length, t: conocidas }), T('nEqDeEjecuciones', { n: F.length - viejas, t: F.length }), {
+      detalle: b(corregidas) + T('rpCorregidas') + ' · ' + costo + aparte });
+  }
+
   function resumen(F) {
     var N = F.length;
     // story 2.27 (AC 11): quien todavía no tiene corridas en el buzón no ve «0 corridas» como una medida
@@ -2457,6 +2524,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
         detalle: FASES_VAL.filter(function (p) { return porFaseVal[p[0]].con; }).map(function (p) { return esc(p[1]) + ' ' + T('nDe', { n: porFaseVal[p[0]].hal, t: porFaseVal[p[0]].con }); }).join(' · ')
           + aparte(function (n) { return '<b>' + n + '</b>'; }) })
       : gris(T('sinVeredictoFiltro') + aparte(function (n) { return n; }).replace(/^ · /, ': '));
+    var fichaRevisionPrevia = revisionPrevia(F);
     return [
       ficha(T('fAlFinal'), med(Math.round(pf * 100) + '%', T('nDeEjecuciones', { n: fin.length, t: N }), { est: juzgar('corridas_al_final', pf).est, palabra: juzgar('corridas_al_final', pf).palabra, detalle: '<b>' + (N - fin.length) + '</b> ' + T('aMitad') + (juzgar('corridas_al_final', pf).nota ? ' · <b>' + esc(juzgar('corridas_al_final', pf).nota) + '</b>' : '') })),
       ficha(T('fDuracion'), dur.length ? med(n1(mediana(dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h', T('nEqDeEjecuciones', { n: dur.length, t: N }), { detalle: T('laMasLarga', { d: n1(Math.max.apply(null, dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h' }) }) : gris(T('sinDuracionFiltro'))),
@@ -2464,6 +2532,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       ficha(T('fAgentes'), ag.length ? med(String(mediana(ag)), T('nEqDeEjecuciones', { n: ag.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, ag) }) + ' · ' + T('noLoRegistran', { n: N - ag.length }) }) : gris(T('sinAgentesFiltro'))),
       ficha(T('fVueltas'), vu.length ? med(String(mediana(vu)), T('nEqDeEjecuciones', { n: vu.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, vu) }) + ' · ' + T('vueltasDetalle') }) : gris(T('sinVueltasFiltro'))),
       ficha(T('fValidador'), fichaValidador),
+      ficha(T('fRevisionPrevia'), fichaRevisionPrevia),
       ficha(T('fTrabajo'), tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), T('nEqDeEjecuciones', { n: tMed.length, t: N }), { detalle: T('trabajoDetalle') + (M.sin_hilos ? ' (' + T('incluyeEsperas') + ' ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
       ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDetalle') + pisoEspera }) : gris(sinArranque + pisoEspera)),
       ficha(T('fPasos'), pa.length ? med(String(Math.round(mediana(pa))), T('nEqDeEjecuciones', { n: pa.length, t: N }), { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> ' + T('pasosSinMedir') + ' ' : '') + T('tokensConsecuencia') + (LB ? ' ' + T('lineaBaseDelFicha', { f: esc(LB.fecha) }) + ' <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris(T('sinPasosFiltro'))),
