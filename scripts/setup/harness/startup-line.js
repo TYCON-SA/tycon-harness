@@ -72,7 +72,7 @@ const REPO_RX = /(tycon-claude-guides|agent-skills)/;
 // sólo las redirecciones que DESCARTAN salida (a /dev/null, a otro descriptor, $null): una redirección a un archivo es un
 // paso del dev y hace la forma desconocida
 const REDIR_RX = /\s*(?:\d?>>?\s*(?:\/dev\/null|&\d)|\*>\s*\$null|\|\s*Out-Null)/g;   // >/dev/null · 2>&1 · 2>/dev/null · *> $null
-const PULL_FLAGS_RX = /^((?:\s+--?[\w-]+(?:=\S+)?)*)\s*$/;
+const PULL_FLAGS_RX = /^((?:\s+-[\w-]+(?:=\S+)?)*)\s*$/;
 
 function unquote(s) { return String(s || '').replace(/^["']|["']$/g, ''); }
 function repoOf(p) {

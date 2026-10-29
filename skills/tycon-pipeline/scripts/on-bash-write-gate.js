@@ -863,7 +863,7 @@ function leerArmado(expr, script, argv) {
     }
     // por índice: `B, OUTF = sys.argv[1], sys.argv[2]` · `const f = process.argv[2]` (un nombre por índice, en orden).
     // Sólo si es la única asignación de ese nombre en el script: reasignado después, el destino ya no es el argumento
-    const porIndice = /(?:^|[;\n]|\b(?:const|let|var)\s)[ \t]*([\w, \t]+?)[ \t]*=[ \t]*((?:(?:sys\.argv|process\.argv)\[\d+\][ \t]*,?[ \t]*)+)(?=$|[;\n])/gm;
+    const porIndice = /(?:^|[;\n]|\b(?:const|let|var)\s)[ \t]*([\w, \t]+?)[ \t]*=[ \t]*((?:(?:sys\.argv|process\.argv)\[\d+\][ \t]*(?:,[ \t]*)?)+)(?=$|[;\n])/gm;
     for (const d of script.matchAll(porIndice)) {
       const nombres = d[1].split(',').map((x) => x.trim()).filter(Boolean);
       const indices = [...d[2].matchAll(/\[(\d+)\]/g)].map((x) => Number(x[1]));
@@ -1053,7 +1053,7 @@ const BUSCADOR_EJECUTA = {
 };
 const BUSCADORES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
 // la salida de un comando que la ejecuta otro: ahí lo citado puede terminar corriendo
-const A_UN_SHELL = /\|&?\s*(?:(?:\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;
+const A_UN_SHELL = /\|&?\s*(?:(?:[^\s-]\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;
 
 /**
  * Los textos con blancos de un tramo que se citan y no se ejecutan: el patrón y los argumentos de un buscador (`grep`,
@@ -1321,7 +1321,7 @@ function guionesInternos(cmd) {
       i = fin < 0 ? s.length : fin;
     }
   }
-  const conC = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-]o\s+\S+|[+-]O\s+\S+))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
+  const conC = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-][oO]\s+[^\s+-]\S*))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
   for (const m of s.matchAll(conC)) {
     const i = m.index + m[0].length;
     const fin = s[i] === '"' ? cierreDoble(s, i) : s.indexOf("'", i + 1);
