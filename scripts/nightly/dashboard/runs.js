@@ -59,7 +59,8 @@
  * sobre un DOM mínimo en Node (sin navegador). Sin red: ni tipografías ni bibliotecas externas.
  *
  * EN EL SITIO DE LA ORGANIZACIÓN: la pestaña Corridas (scripts/site/tabs/runs.js) usa ESTE modelo y ESTE
- * cliente, no una copia. Cada corrida lleva un id estable (`idEstable`: máquina + sesión, sin publicar la sesión), y el
+ * cliente, no una copia. Cada corrida lleva un id estable (`idEstable`: máquina + sesión, y el arranque cuando la sesión
+ * tiene varias corridas; sin publicar la sesión), y el
  * modelo se parte en lo que viaja por separado: `paraLista` (lista blanca: la cabecera, las fichas, los gráficos y el
  * filtro), `paraDetalle` (al abrir una corrida) y `textosDe` (al abrir un cambio). La página se arma con `cabecera`,
  * `ejecutiva`, `tabla` y `pie`, que `render` compone; el sitio las usa con `opts.sitio` y lo ya filtrado
@@ -1044,7 +1045,9 @@ function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
 }
 
 /**
- * El registro: una corrida por sesión (el archivo con `archivedAt` mayor); lo ilegible se cuenta.
+ * El registro: cada corrida una vez (la sesión y su arranque; entre copias de la misma, el archivo con `archivedAt` mayor);
+ * lo ilegible se cuenta. Una sesión puede tener varias corridas, y cada una trae sólo el consumo de su tramo: juntarlas
+ * en una perdería el consumo de las demás.
  *
  * Con `opts.buzon` lee además la carpeta bajada del buzón: `<buzon>/<maquina>/*.json`. La
  * máquina de cada corrida sale de la CARPETA que la contiene —nunca del volcado, que no la trae: los
@@ -1111,14 +1114,17 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     }
   }
   out.archivos = copias.length;
-  const porSesion = new Map();   // sid → { d, maquina, motivo }
+  // La misma corrida en varias copias se junta; dos corridas de la misma sesión, no. Un volcado sin arranque se junta por
+  // la sesión sola.
+  const porSesion = new Map();   // sesión + arranque → { d, maquina, motivo }
   for (const cp of copias) {
     let d;
     try { d = JSON.parse(fs.readFileSync(cp.ruta, 'utf8')); } catch (e) { out.ilegibles += 1; continue; }
     const sid = d && d.marker && d.marker.sessionId;
     if (!sid || typeof sid !== 'string') { out.ilegibles += 1; continue; }
-    const prev = porSesion.get(sid);
-    if (!prev) { porSesion.set(sid, { d, maquina: cp.maquina, origen: cp.origen || null, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
+    const clave = runKey(sid, d.marker);
+    const prev = porSesion.get(clave);
+    if (!prev) { porSesion.set(clave, { sid, d, maquina: cp.maquina, origen: cp.origen || null, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
     out.duplicados += 1;
     // Entre la copia de una carpeta vieja —unida, compartida o que siguió recibiendo— y la de
     // una carpeta nueva (o la local), gana la nueva, sea cual sea su fecha de archivo: la máquina volvió a subir ahí lo de
@@ -1133,13 +1139,27 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     if (!prev.maquina && cp.maquina) { prev.maquina = cp.maquina; prev.origen = cp.origen || null; prev.motivo = null; prev.nota = cp.nota || null; }
     else if (misma && cp.deVieja && !prev.nota) prev.nota = cp.nota;   // la sesión también estaba en la vieja: «antes, …»
   }
-  for (const [sid, { d, maquina, origen, motivo, rutas, nota }] of porSesion) {
+  const corridasPorSesion = new Map();
+  for (const { sid } of porSesion.values()) corridasPorSesion.set(sid, (corridasPorSesion.get(sid) || 0) + 1);
+  // Una corrida medida antes del recorte trae el consumo de la sesión entera: en una sesión con varias, lo publica una
+  // sola y las demás salen «no medido» (`wholeSessionDuplicates`). Sin el rescate, ninguna de esas lo publica.
+  const deLaSesion = new Map();
+  for (const x of porSesion.values()) { if (!deLaSesion.has(x.sid)) deLaSesion.set(x.sid, []); deLaSesion.get(x.sid).push(x); }
+  for (const xs of deLaSesion.values()) {
+    if (xs.length < 2) continue;
+    const quitar = rescate
+      ? rescate.wholeSessionDuplicates(xs.map((x) => x.d))
+      : new Map(xs.map((x, i) => [i, x.d.consumo && x.d.consumo.estado === 'medido' && !x.d.consumo.tramo ? motivoSinRescate : null]).filter(([, m]) => m));
+    for (const [i, m] of quitar) xs[i].d = { ...xs[i].d, consumo: { estado: 'no_medido', motivo: m } };
+  }
+  for (const [clave, { sid, d, maquina, origen, motivo, rutas, nota }] of porSesion) {
     const c = modeloDeCorrida(d, nombresPasos);
     // cómo terminó: del lado del servidor (lo que se sirve sigue siendo la lista cerrada de campos)
     const cierre = cierreDeCorrida(d);
     Object.defineProperty(c, 'cierre', { value: cierre.estado, enumerable: false });
     Object.defineProperty(c, 'terminada', { value: cierre.estado === 'completa', enumerable: false });
-    c.id = idEstable(multi ? maquina : null, sid);
+    // Una sesión con una sola corrida conserva el id de siempre (los enlaces ya compartidos siguen andando).
+    c.id = idEstable(multi ? maquina : null, corridasPorSesion.get(sid) > 1 ? clave : sid);
     if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
     c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : cambiosDeLaCorrida(rutas, d.marker, nombresPasos, d.cambio);
     c.sin_pasos_anotados = sinPasosAnotados(c, d.marker);
@@ -1268,6 +1288,12 @@ const SIN_HILOS = 'no medido: este sitio no baja las conversaciones';
  * El id estable de una corrida: 16 hexadecimales del sha256 de «máquina \n sesión». Ni el índice de la lista
  * (cambia con el filtro de cada persona) ni el id de sesión crudo (no se publica). Sin máquina, la máquina es ''.
  */
+/** La corrida dentro de su sesión: la sesión y su arranque, o la sesión sola si el volcado no anotó el arranque. */
+function runKey(sid, marker) {
+  const inicio = marker && typeof marker.startedAt === 'string' && marker.startedAt ? marker.startedAt : null;
+  return inicio ? `${sid}\n${inicio}` : sid;
+}
+
 function idEstable(maquina, sid) {
   return crypto.createHash('sha256').update(`${maquina == null ? '' : maquina}\n${sid}`).digest('hex').slice(0, 16);
 }
@@ -2840,7 +2866,7 @@ function main(opts = {}) {
 // `dentroDelRepoDelEquipo` también la usa dashboard.js: la página de seis preguntas tiene un solo escritor en el repo.
 module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
   // Lo que usa la pestaña Corridas del sitio
-  idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
+  idEstable, runKey, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda
   RESUMEN, resumirEspejo, textosDeUnaCorrida,
   // el pase no medido se pinta como error

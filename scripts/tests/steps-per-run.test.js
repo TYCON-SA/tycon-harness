@@ -114,6 +114,42 @@ t('story 2.28: la misma ejecución en la carpeta vieja y en la nueva de una máq
   assert.strictEqual(r2.sin_medir, 0, 'y ya no cuenta como sin medir');
 });
 
+t('dos ejecuciones de la misma sesión cuentan como dos, y sus copias una vez', () => {
+  // 🔴 rojo: juntar por la sesión sola deja una de las dos afuera; cada una trae sólo las respuestas de su tramo.
+  const { medir } = require(MOD);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pasos-sesion-'));
+  const buzon = path.join(tmp, 'buzon');
+  for (const carpeta of ['maquina-1', 'maquina-1-1a2b3c4d']) {
+    const dir = path.join(buzon, carpeta);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const [nombre, inicio, pasos] of [['a', '2026-09-01T10:00:00.000Z', 100], ['b', '2026-09-01T14:00:00.000Z', 300]]) {
+      fs.writeFileSync(path.join(dir, `${nombre}.json`), JSON.stringify({ archivedAt: inicio,
+        marker: { storyId: nombre, sessionId: 'sesion-compartida', repoPath: '/tmp/repo-falso', startedAt: inicio },
+        consumo: { estado: 'medido', respuestas: pasos, tokens: { in: 1 }, tramo: { desde: inicio, hasta: null } } }));
+    }
+  }
+  const r = medir({ buzon });
+  assert.strictEqual(r.corridas, 2, `las dos ejecuciones, una vez cada una (fueron ${r.corridas})`);
+  assert.strictEqual(r.pasos.mediana, 200);
+});
+
+t('dos ejecuciones viejas de la misma sesión, sin tramo: el consumo de la sesión cuenta una sola vez', () => {
+  // 🔴 rojo: medidas antes del recorte, cada una trae las respuestas de la sesión entera; contar las dos lo suma dos veces.
+  const { medir } = require(MOD);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pasos-vieja-'));
+  const dir = path.join(tmp, 'buzon', 'maquina-1');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [nombre, inicio] of [['a', '2026-09-01T10:00:00.000Z'], ['b', '2026-09-01T14:00:00.000Z']]) {
+    fs.writeFileSync(path.join(dir, `${nombre}.json`), JSON.stringify({ archivedAt: inicio,
+      marker: { storyId: nombre, sessionId: 'sesion-vieja', repoPath: '/tmp/repo-falso', startedAt: inicio },
+      consumo: { estado: 'medido', respuestas: 500, tokens: { in: 1 } } }));
+  }
+  const r = medir({ buzon: path.join(tmp, 'buzon') });
+  assert.strictEqual(r.corridas, 1, `una sola lleva el consumo de la sesión (fueron ${r.corridas})`);
+  assert.strictEqual(r.sin_medir, 1, 'la otra sale sin medir');
+  assert.strictEqual(r.filas[0].story, 'b', 'la archivada más tarde, la que vio más de la sesión');
+});
+
 t('una ejecución sin consumo medido se cuenta aparte y NO se estima', () => {
   // 🔴 La regla que el arnés ya pagó dos veces: un dato que no se pudo leer no vale cero ni se
   // promedia con los demás. Si entrara al cociente, bajaría la mediana y nadie sabría por qué.
