@@ -148,7 +148,7 @@ Nor is `packs.default` set in the machine configuration (`~/.claude/tycon.json`)
    `exam/`. The example `examples/packs/svelte-fastapi/` is the model; change its name, prefixes and rules.
 3. **Activate it.** In the profile's `team-profile.json`, `packs.default` with its name (`["<name>"]`).
 4. **Commit.** `git add -A && git commit` in the profile folder. The harness reads only what is committed on `main`.
-5. **Bring it in.** `npx @tyconsa/harness@latest`, or the first time `harness.js install --team <profile folder>`. Then
+5. **Bring it in.** `harness.js update`, or the first time `harness.js install --team <profile folder>`. Then
    `pipeline.js advisors` (as in "How to validate it") must name the pack in `packs`.
 6. **The exam.** `advisor-runner.js --pack <profile folder>/packs/<name> --tool claude --runs 2`, as in "How to examine a
    reviewer". Each pass costs about two minutes of model time: tell the person first.
