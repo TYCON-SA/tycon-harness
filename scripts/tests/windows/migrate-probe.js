@@ -340,7 +340,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
       rec.fact('undo_with_hard_links', u);
       if (u.exit !== 1) rec.finding('migrate:hard-undo-not-failed', 'personal', `con el fallo de prueba tras «personal» y el enlace de archivo negado, migrate salió ${u.exit} (tenía que salir 1): ${u.out}`, 'W8', { severity: 'breaks' });
       else {
-        if (!u.hard) rec.finding('migrate:hard-undo-no-hard-link', 'personal', 'con el enlace de archivo negado, el registro no dice que algún revisor quedó como enlace duro: el deshacer no se midió con duros', 'W8', { severity: 'noise' });
+        if (!u.hard) rec.finding('migrate:hard-undo-no-hard-link', 'personal', 'con el enlace de archivo negado, el registro no dice que algún revisor quedó como enlace duro: el deshacer no se midió con duros', 'W8', { severity: 'breaks' });
         if (!u.agents_back) rec.finding('migrate:hard-undo-agents-not-back', 'personal', `después de deshacer, ~/.claude/agents no volvió a ser el enlace de antes (${u.agents})`, 'W8', { severity: 'breaks' });
         if (!u.old_agents_same) rec.finding('migrate:hard-undo-old-agents-changed', 'personal', 'después de deshacer, la carpeta vieja de agentes no quedó como estaba (falta lo personal o sobra un enlace duro)', 'W8', { severity: 'loses-control' });
         if (u.kind !== 'tree' || u.journal_left) rec.finding('migrate:hard-undo-not-clean', 'personal', `después de deshacer, la máquina no quedó como antes de mudar (kind ${u.kind}, diario ${u.journal_left ? 'quedó' : 'no'})`, 'W8', { severity: 'breaks' });
