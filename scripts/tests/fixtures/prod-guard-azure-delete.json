@@ -1254,7 +1254,7 @@
   }
  ],
  "message": {
-  "__doc": "T13: un corte de cada familia; el mensaje dice qué, por qué y el único camino, y no nombra la puerta ni el grupo de una variable",
+  "__doc": "T13: un corte de cada familia; el mensaje dice qué, por qué y los dos caminos (la puerta para un grupo que no es de producción, una persona para lo demás), y no nombra el grupo de una variable",
   "cases": [
    {
     "cmd": "az group delete -n \"$GRUPO\" --yes",
@@ -1298,10 +1298,11 @@
    "puede llevarse un servidor de producción",
    "no puedo saber qué contiene",
    "una persona",
-   "su propia terminal"
+   "su propia terminal",
+   "/opt/tycon/bin/tycon-prod-sql --delete-group <grupo>",
+   "la aprobación del dueño"
   ],
   "never": [
-   "tycon-prod-sql",
    "borrado-de-azure",
    "TYCON_SAFETY_OFF"
   ]

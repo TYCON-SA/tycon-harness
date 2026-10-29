@@ -10,7 +10,7 @@
 #
 # Lo que prueba (los nombres de la story):
 #   T1-T12, T20 — cada fila de la tabla sale 2 («block») o 0 («pass»), con su catálogo y su herramienta
-#   T13 — el mensaje dice qué, por qué y el único camino; no nombra la puerta ni el grupo que sale de una variable
+#   T13 — el mensaje dice qué, por qué y los dos caminos (la puerta, una persona); no nombra el grupo que sale de una variable
 #   T14 — el corte deja una línea con la regla `borrado-de-azure`, sin el texto del comando
 #   T15 — el vocabulario de constancias y su copia en el freno instalado conocen la regla
 #   T16 — con el freno sin poder decidir (entrada ilegible), la familia frena y lo demás pasa
@@ -134,7 +134,7 @@ for (const [t, nombre] of Object.entries(NOMBRES)) {
     for (const f of FIX.message.never) if (err.includes(f)) mal.push(`${JSON.stringify(c.cmd)}: el mensaje nombra «${f}»`);
     for (const f of c.not_contains) if (err.includes(f)) mal.push(`${JSON.stringify(c.cmd)}: el mensaje trae «${f}», que salió de una variable`);
   }
-  if (mal.length) no(`T13 Block_MessageSaysWhyAndPathAndNoDoor:\n   ${mal.join('\n   ')}`); else ok('T13 Block_MessageSaysWhyAndPathAndNoDoor');
+  if (mal.length) no(`T13 Block_MessageSaysWhyAndBothPaths:\n   ${mal.join('\n   ')}`); else ok('T13 Block_MessageSaysWhyAndBothPaths');
 }
 
 // ── T14: la constancia, de cada miembro de la familia ────────────────────────────────────────────────────────────

@@ -271,7 +271,8 @@ para confirmarlo (`az group exists`). Un grupo con candado lo rechaza Azure, y l
 
 Un grupo con algo de producción, o que la puerta no puede probar seguro, lo borra
 **una persona, en su propia terminal**, fuera del asistente, después de mirar qué contiene. El mensaje del freno ante un `az group delete` directo
-no nombra la puerta, a propósito. El corte queda anotado con la regla `borrado-de-azure`.
+nombra los dos caminos: la puerta (`--delete-group <grupo>`, que pide la aprobación del dueño en el cuadro) para un grupo
+que no es de producción, y una persona para lo demás. El corte queda anotado con la regla `borrado-de-azure`.
 
 El límite: el freno cubre los comandos del asistente en esta máquina. **No** cubre el portal de Azure, Terraform, un
 despliegue con `az deployment group create --mode Complete` (borra lo que la plantilla no nombra), los SDK ni a otra
