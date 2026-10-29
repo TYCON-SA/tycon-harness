@@ -609,7 +609,7 @@ const FRONT_PAGE_KEYWORDS = [
     en: ['`latest` together with `auto` asks you to confirm'],
     es: ['`latest` junto con `auto` te pide que lo confirmes'],
   }),
-  keywordPoint('cómo se actualiza: update', IN_UPDATES, { both: ['harness.js update --check', 'harness.js update --yes'] }),
+  keywordPoint('cómo se actualiza: update', IN_UPDATES, { both: ['harness.js update --check', 'npx @tyconsa/harness@latest'] }),
   keywordPoint('cómo se actualiza: rollback vuelve a una COPIA', IN_UPDATES, {
     both: ['harness.js rollback --list'],
     en: ['harness.js rollback --to <copy>'],
@@ -842,8 +842,8 @@ function effectsProblems(text, lang, effects) {
 const GUIDED_INSTALL_KEYWORDS = [
   // lo ya dicho sobre el mecanismo de instalación sigue dicho
   keywordPoint('AC 5 · aprobado en la 8.13 D: la consulta cada 6 horas', IN_ON_ITS_OWN, { en: ['at most once every 6 hours'], es: ['como mucho una vez cada 6 horas'] }),
-  keywordPoint('AC 5 · aprobado en la 8.13 D: no aplica sin update --yes desde una terminal', IN_ON_ITS_OWN, {
-    both: ['harness.js update --yes'], en: ['unless you ask for it from a terminal'], es: ['sin que se lo pidas desde una terminal'],
+  keywordPoint('AC 5 · aprobado en la 8.13 D: no aplica sin la línea de npx desde una terminal', IN_ON_ITS_OWN, {
+    both: ['npx @tyconsa/harness@latest'], en: ['unless you ask for it from a terminal'], es: ['sin que se lo pidas desde una terminal'],
   }),
   keywordPoint('AC 5 · aprobado en la 8.13 D: los números de versión', IN_UPDATES, { en: ['`YYYY.MM.DD.N`'], es: ['`AAAA.MM.DD.N`'] }),
   keywordPoint('AC 5 · aprobado en la 8.13 D: latest con auto se confirma', IN_UPDATES, {

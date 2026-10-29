@@ -637,7 +637,7 @@ if [[ -s "$TMP_REPORT" ]]; then
     _state_dir="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$SCRIPT_DIR/setup/harness/tycon-home.js" 2>/dev/null || true)"
     _state_file="${_state_dir:-/nonexistent}/harness-state.json"
     if grep -q '"kind":[[:space:]]*"release"' "$_state_file" 2>/dev/null; then
-      echo "     node $_tcg_root/scripts/setup/harness.js update"
+      echo "     npx @tyconsa/harness@latest"
     else
       echo "     git -C $AGENT_SKILLS_REPO pull --ff-only && git -C $_tcg_root pull --ff-only"
     fi

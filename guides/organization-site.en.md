@@ -729,8 +729,10 @@ What the person sees in the section, and what the agent does when asked for a to
 
 ### Installation and updates (Instalación y actualización)
 
-- **How the machines update** (*Cómo se actualizan las computadoras del equipo*): which version each machine takes and whether it
-  updates itself on start. It lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
+- **How the machines update** (*Cómo se actualizan las computadoras del equipo*): which version each machine takes and how it is
+  applied. "Automatic, notice only": each machine updates itself on startup and tells the dev, who cannot skip it. "Asks
+  each dev" (the default): the machine says a new version is out and each dev decides when to install it, with
+  `npx @tyconsa/harness@latest`. It lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Installation profile** (*Perfil de instalación*): how much the harness installs on each machine (minimal or full),
   with the list of what each one brings. It lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **The organization's packs** (*Paquetes de la organización*): which harness packs (the reviewers and guides of a
