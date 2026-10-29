@@ -2164,6 +2164,12 @@
       "requiere": []
     },
     {
+      "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
+      "raiz": "arnes",
+      "ruta": "tests/private-inventory.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",

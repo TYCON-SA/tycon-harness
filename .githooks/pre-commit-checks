@@ -258,10 +258,22 @@ else
   fi
 fi
 
-# ── Tres reglas de la CI pública, sobre lo que trae el commit ──
+# ── Los pendientes nuevos de la lista, con la aprobación de la coordinadora ──
+# Un renglón `- [ ]` nuevo en tasks/todo.md entra sólo con su aprobación firmada en tasks/pending-approvals.jsonl
+# (scripts/lib/pending-approvals.js). Corre si el commit toca la lista o el registro: en el arnés no hay lista, y el
+# repo privado corre el mismo bloque. Casos: scripts/tests/pending-approvals.test.js
+if grep -qxE 'tasks/(todo\.md|pending-approvals\.jsonl)' <<<"$STAGED_ALL"; then
+  echo "▸ pre-commit: pendientes nuevos de la lista…"
+  if ! node "$REPO_ROOT/scripts/ci/check-pending-approvals.js" --staged --repo "$REPO_ROOT"; then
+    echo "⛔ COMMIT RECHAZADO — la lista de pendientes trae un pendiente sin la aprobación de la coordinadora (motivo arriba)." >&2
+    exit 1
+  fi
+fi
+
+# ── Cuatro reglas que veían la CI pública o la noche, sobre lo que trae el commit ──
 # `| grep -q` con pipefail en un .sh, una prueba que depende de un sha o de una hora que cambian, y el conteo del
-# catálogo de reglas cuando el commit toca agents/ o el catálogo; con la misma lógica que sus pruebas (los módulos de
-# scripts/lib/). Sin nada de eso sale en milisegundos. Sin el guion: en el arnés (trae la lista blanca de publicación)
+# catálogo de reglas cuando el commit toca agents/ o el catálogo, y (aviso, no freno) el inventario de los controles
+# contra el pre-commit del privado; con la misma lógica que sus pruebas (los módulos de scripts/lib/). Sin nada de eso sale en milisegundos. Sin el guion: en el arnés (trae la lista blanca de publicación)
 # frena; en un repo de juguete de las suites del hook, lo dice y sigue.
 # Casos: scripts/tests/check-staged-ci-rules.test.js
 CI_RULES="$REPO_ROOT/scripts/ci/check-staged-ci-rules.js"

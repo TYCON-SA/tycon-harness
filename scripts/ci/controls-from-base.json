@@ -39,6 +39,7 @@
     { "name": "bash32-quoting", "script": "scripts/ci/check-bash32-quoting.sh", "rules": [] },
     { "name": "publishable-tree", "script": "scripts/ci/check-publishable-tree.js", "rules": ["scripts/publishing/allowlist.json"] },
     { "name": "ci-rules", "script": "scripts/ci/check-staged-ci-rules.js", "rules": [] },
+    { "name": "pending-approvals", "script": "scripts/ci/check-pending-approvals.js", "rules": [] },
     { "name": "claude-md-blocks", "script": "scripts/ci/check-claude-md-blocks.js", "rules": ["claude-md-blocks/budget.json"] },
     { "name": "harness-map-census", "script": "scripts/tools/harness-map/census.js", "rules": [
       { "path": "scripts/tools/harness-map/fuera-del-mapa.json", "optional": true }
