@@ -175,6 +175,7 @@ test('StagedCiRules_Catalog_ThinRepo — un repo sin los .toml cuenta con el pad
   const r = run(d);
   assert.strictEqual(r.rc, 0, r.out);
   assert.doesNotMatch(r.out, /no pude mirar|saltado/);
+  assert.match(r.out, /el padrón de revisores sale de .*: este repo no trae los \.toml/);
   // y el padrón prestado no tapa un catálogo que no cuadra
   const rows = real.match(/^\|\s*\*\*[A-Z0-9]+-[CW]\d/m);
   stage(d, 'guides/advisor-rules-catalog.md', real.replace(rows[0], `| **ZZZQ-C1** | de más | nada |\n${rows[0]}`));

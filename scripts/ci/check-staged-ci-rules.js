@@ -130,7 +130,8 @@ function main() {
     // 3. el conteo del catálogo de reglas, sobre el catálogo del índice
     if (catalogTouched) {
       // El padrón de revisores y el paquete de clientes se leen del disco (no del índice): con un staging parcial de esos
-      // archivos puede contar una versión que no es la del commit. La CI lo vuelve a contar sobre lo commiteado.
+      // archivos puede contar una versión que no es la del commit. La CI lo vuelve a contar sobre lo commiteado. Un repo
+      // sin los .toml del padrón cuenta con los del arnés donde corre este guion, y lo avisa.
       const text = index.get(CATALOG_REL);
       if (text == null) {
         console.error(`ℹ️  reglas de la CI: el commit deja sin ${CATALOG_REL}: no hay conteo del catálogo que hacer (la prueba C5 también lo saltea).`);
@@ -142,6 +143,7 @@ function main() {
           const r = catalogCount.check({ root, catalogPath: cat, reviewersFrom: path.join(__dirname, '..', '..') });
           if (r.error) throw new Error(`el conteo del catálogo: ${r.error}`);
           if (r.skipped) console.error(`ℹ️  reglas de la CI: conteo del catálogo saltado — ${r.skipped}.`);
+          for (const n of r.notes.filter((x) => x.startsWith('el padrón de revisores sale de'))) console.error(`ℹ️  reglas de la CI: ${n}.`);
           for (const c of r.checks) if (!c.ok) findings.push(`${CATALOG_REL} — conteo del catálogo de reglas: ${c.msg}.`);
         } finally {
           fs.rmSync(tmp, { recursive: true, force: true });
