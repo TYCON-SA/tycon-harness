@@ -126,6 +126,54 @@ test('T8 2.34-Subir_MismoCommitNoSube @story-2.34 @ac-2 — el índice ya nombra
   assert.ok(!al.ops.some((o) => o[0] === 'put'));
 });
 
+test('Subir_DiceSiCambioOperaciones — sólo una foto con otro operations.json pide despertar al sitio', async () => {
+  // 🔴 rojo: sin la marca, el trabajo que copia no sabe cuándo despertar al sitio; con la marca siempre en true, cada
+  // guardado de un nocturno lo despertaría
+  const repo = repoDeJuguete();
+  const al = almacenDeJuguete();
+  const primera = await COPIA.subir({ repo, almacen: al, log: sinLog });
+  assert.strictEqual(primera.cambioOperaciones, true, 'sin índice anterior, la lista es nueva para el sitio');
+  fs.writeFileSync(path.join(repo, '.dashboard/sdlc-stage-2026-10-17.json'), '{"n":2}\n');
+  git(repo, 'commit', '-qam', 'un nocturno guarda sus datos');
+  const nocturno = await COPIA.subir({ repo, almacen: al, log: sinLog });
+  assert.strictEqual(nocturno.subido, true, nocturno.motivo);
+  assert.strictEqual(nocturno.cambioOperaciones, false, 'los datos de un nocturno no despiertan al sitio');
+  fs.writeFileSync(path.join(repo, 'operations.json'), '{"version":1,"site":{}}\n');
+  git(repo, 'commit', '-qam', 'un pedido de Personas');
+  const pedido = await COPIA.subir({ repo, almacen: al, log: sinLog });
+  assert.strictEqual(pedido.cambioOperaciones, true);
+  const alDia = await COPIA.subir({ repo, almacen: al, log: sinLog });
+  assert.strictEqual(alDia.subido, false);
+  assert.ok(!alDia.cambioOperaciones, 'sin foto nueva no hay nada que despertar');
+});
+
+test('Despertar_PideLivez_NuncaRechaza — 200 despierta; otro código, sin red, demora o dirección mala lo dicen sin fallar', async () => {
+  let pedido = null; let codigo = 200; let demora = 0;
+  const srv = http.createServer((req, res) => { pedido = req.url; setTimeout(() => { res.writeHead(codigo); res.end('{"ok":true}'); }, demora); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${srv.address().port}/algo`;
+  try {
+    const bien = await COPIA.despertar({ url });
+    assert.strictEqual(bien.ok, true, bien.motivo);
+    assert.strictEqual(pedido, '/livez');
+    codigo = 302;
+    assert.strictEqual((await COPIA.despertar({ url })).ok, true, 'una redirección viene de una réplica despierta');
+    codigo = 503;
+    const mal = await COPIA.despertar({ url });
+    assert.strictEqual(mal.ok, false);
+    assert.match(mal.motivo, /503.*cuando alguien entre/);
+    codigo = 200; demora = 500;
+    const lento = await COPIA.despertar({ url, plazoMs: 50 });
+    assert.strictEqual(lento.ok, false);
+    assert.match(lento.motivo, /no contestó/);
+  } finally { srv.closeAllConnections(); await new Promise((r) => srv.close(r)); }
+  const caido = await COPIA.despertar({ url: 'http://127.0.0.1:1' });
+  assert.strictEqual(caido.ok, false);
+  assert.match(caido.motivo, /sin conexión/);
+  assert.match((await COPIA.despertar({ url: 'no es una dirección' })).motivo, /no es válida/);
+  assert.match((await COPIA.despertar({ url: 'file:///etc' })).motivo, /no es web/);
+});
+
 test('T9 2.34-Subir_SinEnlacesNiFuera @story-2.34 @ac-2 — un enlace simbólico no entra a la foto, y lo dice', async () => {
   const repo = repoDeJuguete();
   const afuera = path.join(path.dirname(repo), 'secreto.txt');
