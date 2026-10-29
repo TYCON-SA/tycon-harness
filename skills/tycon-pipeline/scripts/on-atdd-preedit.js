@@ -24,7 +24,7 @@
  * Sin la unión, los tests escritos ANTES de crear el marker (Arranque o «Validar la historia», o el reminder de "seteá el
  * marker AHORA") no contarían y el portón denegaría un ATDD impecable — falso positivo.
  *
- * Escapes: marker flag `atddBypass` (marker.js set-flag atddBypass true — cada edición que el
+ * Escapes: marker flag `atddBypass` (marker.js set-flag atddBypass true --reason "<por qué>" — cada edición que el
  * bypass deja pasar queda en bypass.log, y el MISMO flag satisface el gate del complete-step implement) ·
  * env TYCON_ATDD_PREEDIT_GATE=off (apaga la capa entera, p.ej. para debug del propio harness).
  */
@@ -38,6 +38,7 @@ const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
 const { computeAtddPreEdit, preEditBlockMessage, storyDeclaresTests } = require('./lib/atdd-preedit.js');
 const { readFileEvents } = require('./lib/atdd-commit-gate.js');
+const { declaredFiles } = require('./lib/run-size.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 
 const DEFAULT_STATE_DIR = path.join(stateDirOf(os.homedir()));
@@ -105,6 +106,7 @@ function handle(event, opts = {}) {
     storyHasTests: storyDeclaresTests(storyText),
     stepsCompleted: marker.stepsCompleted,
     stepScheme: marker.stepScheme,
+    declarados: declaredFiles(storyText),
   };
   const r = computeAtddPreEdit({ ...base, bypassed: marker.atddBypass === true });
 
@@ -114,6 +116,7 @@ function handle(event, opts = {}) {
     if (marker.atddBypass === true && computeAtddPreEdit({ ...base, bypassed: false }).action === 'block') {
       appendLog(stateDir, 'bypass.log', sessionId, {
         repoPath: marker.repoPath || null, kind: 'ATDD_PREEDIT_BYPASS', story: marker.storyId, file: filePath,
+        reason: marker.atddBypassReason || null,
       });
     }
     return null;

@@ -51,7 +51,7 @@
 'use strict';
 
 const path = require('path');
-const { isTestPath, isImplPath } = require('./atdd-order.js');
+const { isTestPath, isImplPath, esMedicionNoDeclarada } = require('./atdd-order.js');
 
 /**
  * ¿`file` está dentro de `root`? Comparación por segmento — `/repo-viejo` no cuenta como `/repo`.
@@ -94,9 +94,11 @@ function storyDeclaresTests(storyText) {
  * @param {boolean}  a.storyHasTests   la story declara tabla `### Tests`
  * @param {number[]} a.stepsCompleted  marker.stepsCompleted
  * @param {boolean} [a.bypassed]       bypass explícito (env / .tycon/atdd-gate / flag del marker)
+ * @param {string[]} [a.declarados]    `files_to_create` + `files_to_modify` de la story (un guion de medición no
+ *                                     declarado no es código de la story)
  * @returns {{action:'pass'|'block', reason:string}}
  */
-function computeAtddPreEdit({ filePath, repoPath, priorPaths, storyHasTests, stepsCompleted, stepScheme, bypassed = false }) {
+function computeAtddPreEdit({ filePath, repoPath, priorPaths, storyHasTests, stepsCompleted, stepScheme, bypassed = false, declarados = [] }) {
   if (bypassed) return { action: 'pass', reason: 'bypass declarado' };
   if (!storyHasTests) return { action: 'pass', reason: 'la story no declara tabla ### Tests — sin contrato ATDD que gatear' };
 
@@ -108,6 +110,9 @@ function computeAtddPreEdit({ filePath, repoPath, priorPaths, storyHasTests, ste
 
   if (!isImplPath(filePath)) return { action: 'pass', reason: 'no es código de implementación' };
   if (!isInside(repoPath, filePath)) return { action: 'pass', reason: 'el archivo está fuera del repo de la story' };
+  if (esMedicionNoDeclarada(filePath, repoPath, declarados)) {
+    return { action: 'pass', reason: 'es un guion de medición del repo que la story no declara' };
+  }
 
   const prev = Array.isArray(priorPaths) ? priorPaths : [];
   if (prev.some((p) => isTestPath(p))) {
@@ -143,7 +148,7 @@ function preEditBlockMessage({ filePath, storyId, storyPath }) {
     '   (b) Si el orden invertido es legítimo y lo podés justificar (refactor sobre una red de tests',
     '       que ya existe, spike acordado), declarálo explícitamente:',
     '',
-    '         node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag atddBypass true',
+    '         node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag atddBypass true --reason "<por qué>"',
     '',
     '       Queda en bypass.log con el detalle — no es un skip silencioso, y el cierre de ese paso',
     '       lo va a seguir reportando.',

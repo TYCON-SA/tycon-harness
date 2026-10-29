@@ -150,5 +150,98 @@ for herr in Bash PowerShell; do
   else ok "por $herr, el cartel no dicta el escape y señala la guía"; fi
 done
 
+# Un repo de juguete para el alcance por carpeta: un proyecto con su `package.json` adentro de un repo que no es la
+# raíz, y las carpetas que no cuentan como alcance propio.
+R="$T/repo"
+mkdir -p "$R/.git" "$R/forms/Alta/src" "$R/packages/api" "$R/packages/sube" "$R/packages/ws" "$R/packages/pnpmws" \
+  "$R/packages/vw" "$R/packages/jp" "$R/packages/roto" "$T/fuera/proj"
+printf '{"name":"raiz","scripts":{"test":"vitest run"}}' > "$R/package.json"
+printf '{"name":"alta","scripts":{"test":"vitest run"}}' > "$R/forms/Alta/package.json"
+printf '{"name":"api","scripts":{"test":"turbo run test"}}' > "$R/packages/api/package.json"
+printf '{"name":"sube","scripts":{"test":"cd .. && vitest run"}}' > "$R/packages/sube/package.json"
+printf '{"name":"ws","workspaces":["a"],"scripts":{"test":"vitest run"}}' > "$R/packages/ws/package.json"
+printf '{"name":"pnpmws","scripts":{"test":"vitest run"}}' > "$R/packages/pnpmws/package.json"
+printf 'packages:\n  - a\n' > "$R/packages/pnpmws/pnpm-workspace.yaml"
+printf '{"name":"vw","scripts":{"test":"vitest run"}}' > "$R/packages/vw/package.json"
+printf 'export default []\n' > "$R/packages/vw/vitest.workspace.ts"
+printf '{"name":"jp","jest":{"projects":["a"]},"scripts":{"test":"jest"}}' > "$R/packages/jp/package.json"
+printf '{"name":' > "$R/packages/roto/package.json"
+printf '{"name":"fuera","scripts":{"test":"vitest run"}}' > "$T/fuera/proj/package.json"
+
+# el freno con un comando y la carpeta del evento, con una HOME propia: imprime su salida; el stderr queda en $3.err
+frena_en() { # $1 comando · $2 carpeta (cwd del evento) · $3 HOME
+  mkdir -p "$3"
+  printf '%s' "$(node -e 'process.stdout.write(JSON.stringify({ tool_name: "Bash", tool_input: { command: process.argv[1] }, cwd: process.argv[2] }))' "$1" "$2")" \
+    | env -u TYCON_TEST_SCOPE_GUARD -u TYCON_FULL_SUITE HOME="$3" "$BASH" "$GUARD" >/dev/null 2>"$3.err"
+  echo $?
+}
+anotados() { grep -c '"type":"FULL_SUITE_RUN"' "$1/.claude/.tycon-pipeline/bypass.log" 2>/dev/null || true; }
+
+# ProyectoConSuPackageJson_EsAlcance @story-1.32 @ac-5 — en la carpeta de un proyecto con su `package.json`, que no es la
+# raíz del repo, la suite de ese proyecto pasa (por el `cwd` del evento o por un `cd` literal), con la constancia `paso`
+n=0
+for caso in \
+  "npx vitest run|$R/forms/Alta" \
+  "cd forms/Alta && npm test|$R" \
+  "cd forms/Alta && npx jest|$R" \
+  "cd Alta && vitest run|$R/forms" \
+  "cd $R/forms/Alta && npm test|$T"; do
+  n=$((n + 1)); cmd="${caso%|*}"; dir="${caso##*|}"; casa="$T/casa-t6-$n"
+  dio="$(frena_en "$cmd" "$dir" "$casa")"
+  if [ "$dio" = "0" ] && grep -q '"veredicto":"paso"' "$casa/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+    ok "T6 un proyecto con su package.json es alcance: $cmd (en ${dir#$T/})"
+  else mal "T6 frenó (salió $dio) o no dejó «paso»: $cmd (en ${dir#$T/})"; fi
+done
+
+# PrefijoDeMas_SuiteNoAnota @story-1.32 @ac-6 — el prefijo delante de un comando que pasaría sin él no anota
+# `FULL_SUITE_RUN` y avisa que sobra; el que hace falta anota como siempre; un texto que lo nombra no avisa ni anota; en
+# un comando con varios tramos, uno que lo necesita lo anota una vez y no avisa
+n=0
+for caso in \
+  "TYCON_FULL_SUITE=1 npx vitest run|$R/forms/Alta|0|0|si" \
+  "TYCON_FULL_SUITE=1 npx vitest run a.test.ts|$R|0|0|si" \
+  "TYCON_FULL_SUITE=1 bash $RAIZ/skills/tycon-pipeline/scripts/smoke-run.sh a b|$R|0|0|si" \
+  "TYCON_FULL_SUITE=1 npx vitest run|$R|0|1|no" \
+  "git commit -m 'TYCON_FULL_SUITE=1 sobra'|$R|0|0|no" \
+  "TYCON_FULL_SUITE=1 npx vitest run a.ts && TYCON_FULL_SUITE=1 npx vitest run|$R|0|1|no"; do
+  n=$((n + 1)); IFS='|' read -r cmd dir sale anota avisa <<< "$caso"; casa="$T/casa-t7-$n"
+  dio="$(frena_en "$cmd" "$dir" "$casa")"; hay="$(anotados "$casa")"; hay="${hay:-0}"
+  if grep -q 'sobra' "$casa.err" 2>/dev/null; then aviso=si; else aviso=no; fi
+  if [ "$dio" = "$sale" ] && [ "$hay" = "$anota" ] && [ "$aviso" = "$avisa" ]; then
+    ok "T7 $cmd → sale $dio, $hay FULL_SUITE_RUN, aviso: $aviso"
+  else mal "T7 $cmd → salió $dio (esperaba $sale), $hay FULL_SUITE_RUN (esperaba $anota), aviso: $aviso (esperaba $avisa)"; fi
+done
+
+# LaRaizSigueFrenando @story-1.32 @ac-5 @ac-7 — la raíz, un `cd` que no se resuelve, un envoltorio, una subcarpeta sin
+# su `package.json`, un proyecto que recorre otros o tiene marcas de raíz, un `package.json` roto y una carpeta fuera de
+# todo repo frenan como hoy
+for caso in \
+  "npx vitest run|$R" \
+  "npm test|$R" \
+  "dotnet test X.sln|$R/forms/Alta" \
+  "cd \$X && npx vitest run|$R" \
+  "cd - && npx vitest run|$R/forms/Alta" \
+  "bash -c \"cd forms/Alta && npx vitest run\"|$R" \
+  "npx vitest run|$R/forms/Alta/src" \
+  "npm test|$R/packages/api" \
+  "npm test|$R/packages/sube" \
+  "npx vitest run|$R/packages/ws" \
+  "npx vitest run|$R/packages/pnpmws" \
+  "npx vitest run|$R/packages/vw" \
+  "npx jest|$R/packages/jp" \
+  "npx vitest run|$R/packages/roto" \
+  "npx vitest run|$T/fuera/proj" \
+  "cd forms/Alta && cd .. && npx vitest run|$R" \
+  "cd forms/Alta; npm test|$R" \
+  "cd forms/Alta || npm test|$R" \
+  "if true; then cd ..; fi; npm test|$R/forms/Alta" \
+  "npm --prefix .. test|$R/forms/Alta" \
+  "npx vitest run --root ..|$R/forms/Alta" \
+  "pnpm -r test|$R/forms/Alta"; do
+  cmd="${caso%|*}"; dir="${caso##*|}"
+  dio="$(frena_en "$cmd" "$dir" "$T/casa-t8")"
+  [ "$dio" = "2" ] && ok "T8 sigue frenando: $cmd (en ${dir#$T/})" || mal "T8 dejó pasar (salió $dio): $cmd (en ${dir#$T/})"
+done
+
 echo "test-scope-guard: $PASA ok, $FALLA mal"
 [ "$FALLA" = "0" ]

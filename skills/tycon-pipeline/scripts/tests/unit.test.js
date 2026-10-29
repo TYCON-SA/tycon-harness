@@ -7689,3 +7689,105 @@ test('CierreSinPasos_CuentaLoCambiadoEnGit @story-7.33 @ac-1 @ac-2', () => {
     for (const d of [c.home, repo]) fs.rmSync(d, { recursive: true, force: true });
   }
 });
+
+test('T9 GuionDeMedicion_NoEsCodigo @story-1.32 @ac-8', () => {
+  const ts = (m) => `2026-10-29T12:${String(m).padStart(2, '0')}:00.000Z`;
+  // (a) el guion de medición de la carpeta de medición del repo no es el primer código
+  const a = [{ path: '/r/tasks/measurement-8.44-piezas/measure.js', ts: ts(1) },
+    { path: '/r/scripts/tests/a.test.js', ts: ts(2) }, { path: '/r/scripts/a.js', ts: ts(3) }];
+  const ra = atdd.computeAtddOrder(a, '/r', { declarados: [] });
+  assert.equal(ra.verdict, 'green', ra.reason);
+  assert.equal(ra.firstImpl, '/r/scripts/a.js');
+  // sin lista (el camino del commit, fuera del pipeline) tampoco cuenta
+  assert.equal(atdd.computeAtddOrder(a, '/r').verdict, 'green');
+  // (b) el resto de `tasks/` sigue siendo código
+  const b = [{ path: '/r/tasks/worker.py', ts: ts(1) }, { path: '/r/tests/test_worker.py', ts: ts(2) }];
+  assert.equal(atdd.computeAtddOrder(b, '/r', { declarados: [] }).verdict, 'blocked');
+  // (c) declarado en la story, es código de la story
+  const c = [{ path: '/r/tasks/measurement-x/a.js', ts: ts(1) }, { path: '/r/tests/a.test.js', ts: ts(2) }];
+  const rc = atdd.computeAtddOrder(c, '/r', { declarados: ['tasks/measurement-x/a.js'] });
+  assert.equal(rc.verdict, 'blocked');
+  assert.equal(rc.firstImpl, '/r/tasks/measurement-x/a.js');
+  // (d) una carpeta de medición que no cuelga de la raíz cuenta como código
+  const d = [{ path: '/r/otro/tasks/measurement-x/a.js', ts: ts(1) }, { path: '/r/tests/a.test.js', ts: ts(2) }];
+  assert.equal(atdd.computeAtddOrder(d, '/r', { declarados: [] }).verdict, 'blocked');
+  // el freno previo usa el mismo juicio
+  const base = { repoPath: '/r', priorPaths: [], storyHasTests: true, stepsCompleted: [], declarados: [] };
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/measurement-8.44-piezas/measure.js' }).action, 'pass');
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/worker.py' }).action, 'block');
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/tasks/measurement-x/a.js', declarados: ['tasks/measurement-x/a.js'] }).action, 'block');
+  assert.equal(preedit.computeAtddPreEdit({ ...base, filePath: '/r/otro/tasks/measurement-x/a.js' }).action, 'block');
+});
+
+test('T10 GuionDePruebasDeCi_EsPrueba @story-1.32 @ac-9', () => {
+  for (const p of ['/r/scripts/ci/pruebas/probar-workflow.py', '/r/scripts/ci/pruebas/y.js', '/r/scripts/ci/tests/x.sh']) {
+    assert.equal(atdd.isTestPath(p), true, `${p} es prueba`);
+    assert.equal(atdd.isImplPath(p), false, `${p} no es código`);
+  }
+  assert.equal(atdd.isImplPath('/r/scripts/ci/x.py'), true, 'un guion de CI fuera de pruebas/ sigue siendo código');
+  const r = atdd.computeAtddOrder([{ path: '/r/scripts/ci/pruebas/probar-workflow.py', ts: '2026-10-29T12:01:00.000Z' },
+    { path: '/r/scripts/a.js', ts: '2026-10-29T12:02:00.000Z' }], '/r');
+  assert.equal(r.verdict, 'green');
+  assert.equal(r.firstTest, '/r/scripts/ci/pruebas/probar-workflow.py');
+});
+
+test('T11 EscapeAtdd_PideMotivo @story-1.32 @ac-10', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atdd-motivo-'));
+  const SID = 'atdd-motivo';
+  const stateDir = path.join(home, '.claude', '.tycon-pipeline');
+  const markerPath = path.join(stateDir, 'active', `${SID}.json`);
+  const correr = (args) => require('node:child_process').spawnSync(process.execPath, [MARKER, ...args], markerEnv(SID, home));
+  const repo = path.join(home, 'repo');
+  const storyPath = path.join(repo, 'specs', 's.md');
+  fs.mkdirSync(path.dirname(storyPath), { recursive: true });
+  fs.writeFileSync(storyPath, '---\nstory: "9.9"\nfiles_to_modify:\n  - src/a.cs\n---\n\n### Tests\n\n| T-ID | AC |\n');
+  try {
+    writeFakeMarker(home, SID, { storyId: '9.9', storyPath, repoPath: repo, stepScheme: 2,
+      stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan'], stepsPending: ['implement'],
+      fileEvents: [{ path: path.join(repo, 'src', 'a.cs'), ts: '2026-10-29T12:01:00.000Z' },
+        { path: path.join(repo, 'tests', 'ATests.cs'), ts: '2026-10-29T12:02:00.000Z' }] });
+    // sin motivo, o con uno vacío: se niega, sin tocar el marcador, y dice el camino
+    for (const extra of [[], ['--reason', ''], ['--reason', '   ']]) {
+      const antes = fs.readFileSync(markerPath, 'utf8');
+      const r = correr(['set-flag', 'atddBypass', 'true', ...extra]);
+      assert.notEqual(r.status, 0, `sin motivo (${JSON.stringify(extra)}) tiene que negarse`);
+      assert.match(r.stderr, /--reason/);
+      assert.equal(fs.readFileSync(markerPath, 'utf8'), antes, 'el marcador queda igual');
+    }
+    // con motivo: se guarda, y las dos constancias lo llevan
+    const ok = correr(['set-flag', 'atddBypass', 'true', '--reason', 'migración de 21 .cs']);
+    assert.equal(ok.status, 0, ok.stderr);
+    const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    assert.equal(m.atddBypass, true);
+    assert.equal(m.atddBypassReason, 'migración de 21 .cs');
+    const handler = require(path.join(SCRIPTS, 'on-atdd-preedit.js'));
+    const conPrevio = { ...m, fileEvents: [] };
+    fs.writeFileSync(markerPath, JSON.stringify(conPrevio));
+    const ed = handler.handle({ hook_event_name: 'PreToolUse', tool_name: 'Edit', session_id: SID,
+      tool_input: { file_path: path.join(repo, 'src', 'b.cs') } }, { stateDir });
+    assert.equal(ed, null, 'con el escape, la edición pasa');
+    fs.writeFileSync(markerPath, JSON.stringify(m));
+    const cierre = correr(['complete-step', 'implement']);
+    assert.equal(cierre.status, 0, cierre.stderr);
+    const log = fs.readFileSync(path.join(stateDir, 'bypass.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const pre = log.find((l) => l.kind === 'ATDD_PREEDIT_BYPASS');
+    const imp = log.find((l) => l.kind === 'ATDD_BYPASS');
+    assert.equal(pre && pre.reason, 'migración de 21 .cs');
+    assert.equal(imp && imp.reason, 'migración de 21 .cs');
+    // apagarlo no pide motivo y borra el que había
+    const apaga = correr(['set-flag', 'atddBypass', 'false']);
+    assert.equal(apaga.status, 0, apaga.stderr);
+    const m2 = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    assert.equal(m2.atddBypass, false);
+    assert.equal(m2.atddBypassReason, undefined);
+    // el reinicio de la corrida (otra story) borra los dos
+    correr(['set-flag', 'atddBypass', 'true', '--reason', 'otro']);
+    const set = correr(['set', JSON.stringify({ storyId: '9.10', storyPath, stepsPending: ['implement'] }), '--replace']);
+    assert.equal(set.status, 0, set.stderr);
+    const m3 = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    assert.equal(m3.atddBypass, undefined);
+    assert.equal(m3.atddBypassReason, undefined);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

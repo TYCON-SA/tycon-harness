@@ -70,6 +70,8 @@ function isTestPath(p, { extra } = {}) {
     /^test_.*\.py$/i.test(base) ||                           // test_foo.py
     /Tests?\.cs$/.test(base)                                 // FooTests.cs
   ) return true;
+  // los guiones de pruebas de CI (`scripts/ci/pruebas/`, `scripts/ci/tests/`), `.sh` incluido: no son código
+  if (/(^|\/)scripts\/ci\/(?:pruebas|tests)\/(?:.*\/)?[^/]+\.(?:js|py|sh)$/i.test(s)) return true;
   return (
     (/(^|\/)(tests?|__tests__|spec|specs)\//i.test(s) ||     // vive en un directorio de tests…
       /(^|[/.])Tests?\//.test(s)) &&                         // .NET: MiProyecto.Tests/ Y Tycon.X.API.Tests/
@@ -90,6 +92,24 @@ function adentroDelRepo(evs, repoPath) {
   return evs.filter((e) => {
     const p = String((e && e.path) || '').replace(/\\/g, '/').toLowerCase();
     return raices.some((raiz) => p === raiz || p.startsWith(`${raiz}/`));
+  });
+}
+
+/**
+ * ¿El archivo es un guion de medición del repo que la story no declara? Vive en `tasks/measurement-<algo>/` contado
+ * desde una de las raíces (`tasks/` puede ser código de verdad en un repo: sólo la carpeta de medición se descarta).
+ * Es como un guion del scratchpad: medir antes de implementar no es implementar primero. Declarado en
+ * `files_to_create`/`files_to_modify`, es código de la story.
+ */
+function esMedicionNoDeclarada(p, repoPath, declarados) {
+  const raices = (Array.isArray(repoPath) ? repoPath : [repoPath]).filter((r) => typeof r === 'string' && r !== '');
+  const s = String(p || '').replace(/\\/g, '/');
+  const lista = (Array.isArray(declarados) ? declarados : []).map((d) => String(d).replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase());
+  return raices.some((r) => {
+    const raiz = r.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (!s.toLowerCase().startsWith(`${raiz.toLowerCase()}/`)) return false;
+    const rel = s.slice(raiz.length + 1);
+    return /^tasks\/measurement-[^/]+\//i.test(rel) && !lista.includes(rel.toLowerCase());
   });
 }
 
@@ -122,12 +142,14 @@ function isImplPath(p, { extra } = {}) {
  * @param {Array<{path: string, ts: string}>} fileEvents
  * @param {string|string[]} [repoPath] - raíz del repo de la story (o la lista: la story y sus repos hermanos); los
  *   eventos de afuera se descartan
+ * @param {{declarados?: string[]}} [opciones] - `declarados`: `files_to_create` + `files_to_modify` de la story,
+ *   relativos a la raíz. Un guion de `tasks/measurement-<algo>/` que no está en la lista no cuenta (sin lista, nunca cuenta).
  * @returns {{verdict:'green'|'blocked'|'warn-no-tests'|'warn-unknown', firstTest:?string,
  *            firstImpl:?string, firstTestTs:?string, firstImplTs:?string, reason:string}}
  */
-function computeAtddOrder(fileEvents, repoPath) {
+function computeAtddOrder(fileEvents, repoPath, { declarados } = {}) {
   const todos = Array.isArray(fileEvents) ? fileEvents : [];
-  const evs = adentroDelRepo(todos, repoPath);
+  const evs = adentroDelRepo(todos, repoPath).filter((e) => !(e && esMedicionNoDeclarada(e.path, repoPath, declarados)));
   // Orden por timestamp; ante empate (dos ediciones en el mismo ms), gana el orden de registro, que
   // es el orden real en que el hook las vio.
   const orden = evs
@@ -200,4 +222,4 @@ function atddBlockMessage(r) {
   ].join('\n');
 }
 
-module.exports = { computeAtddOrder, isTestPath, isImplPath, atddBlockMessage, CODE_EXTS };
+module.exports = { computeAtddOrder, isTestPath, isImplPath, esMedicionNoDeclarada, atddBlockMessage, CODE_EXTS };
