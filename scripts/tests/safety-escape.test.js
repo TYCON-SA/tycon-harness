@@ -908,7 +908,11 @@ test('T7 EscC3_ForceManual_Frena @story-8.96 — declarar un verde a mano, con l
 });
 
 test('T8 EscC3_TrustRan_Frena @story-8.96 — la constancia de revisores que el arnés no vio correr', () => {
-  for (const c of [`${PIPELINE} check-count --trust-ran --ran a,b`, `cd x && node pipeline.js check-count --ran a --trust-ran`]) {
+  // también escondida en el subcomando que el shell parte, detrás de una opción que se comió otra como valor, o detrás
+  // de una opción de marker.js que pipeline.js no lee
+  for (const c of [`${PIPELINE} check-count --trust-ran --ran a,b`, `cd x && node pipeline.js check-count --ran a --trust-ran`,
+    `node pipeline.js $(echo check-count --trust-ran)`, `read S; node pipeline.js $S`, `node pipeline.js check-count --repo --story "$F"`,
+    `node pipeline.js check-count --ran a --tests "$(echo --trust-ran)"`, `node pipeline.js check-count --ran a --type "$F"`]) {
     assert.notStrictEqual(veredicto(freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) })), 'allow', c);
     const r = freno(c, { codex: true, home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
@@ -1061,7 +1065,7 @@ test('T18 EscB2_FrenosDeMas_NoFrenan @story-8.96 — una comparación, un -i den
     `[ "$DOD_BYPASS" = 1 ] && echo hay`,
     "sed -n '/dod_runtime_exempt: true/p' specs/story-1.12-las-pruebas-de-integracion.md",
     `N=tests; ${MARKER} set-check "$N" green --manual`,
-    `${PIPELINE} check-count -r $R --story "$S"`,
+    `${PIPELINE} check-count --repo $R --story "$S"`,
   ];
   for (const c of casos) {
     const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
@@ -1474,6 +1478,35 @@ test('T8 FiltroPrevio_NoSubeElCosto @story-8.107 @ac-6 — un comando común no 
     const ahora = nodesDe(HOOK, home, c, contador);
     assert.ok(ahora.length <= antes.length,
       `${c}: el freno arranca ${ahora.length} node y antes arrancaba ${antes.length}\n  antes: ${antes.join(' · ') || '—'}\n  ahora: ${ahora.join(' · ') || '—'}`);
+  }
+});
+
+test('T8c FiltroPrevio_PedidoDeOtraSesion_NoAbreProcesos — un pedido sin vencer de otra sesión no le cuesta un proceso a cada comando', () => {
+  // un jq de mentira adelante en el PATH anota cada vez que lo llaman: así se ven los dos lectores, jq y node
+  const contador = contadorDeNodes();
+  const bin = path.join(contador.dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'jq'), '#!/usr/bin/env bash\necho "jq $*" >> "$TYCON_TEST_NODE_LOG"\nexit 1\n', { mode: 0o755 });
+  const home = homeConMarcador(VERDE, [deLaPersona('seguí')]);
+  const ventana = path.join(home, '.tycon', 'state', 'owner-window');
+  const log = path.join(contador.dir, 'procesos.log');
+  const e = { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  for (const k of Object.keys(e)) if (/^TYCON_/.test(k)) delete e[k];
+  Object.assign(e, { NODE_OPTIONS: `--require "${contador.preload}"`, TYCON_TEST_NODE_LOG: log });
+  const procesosDe = (c) => {
+    if (fs.existsSync(log)) fs.rmSync(log);
+    const r = spawnSync('bash', [HOOK], { input: JSON.stringify({ session_id: SID, tool_use_id: TUID, tool_name: 'Bash', tool_input: { command: c }, cwd: home }), env: e, encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+    return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+  };
+  for (const c of ['ls -la', 'git status']) {
+    fs.rmSync(ventana, { recursive: true, force: true });
+    const sinPedido = procesosDe(c);
+    fs.mkdirSync(ventana, { recursive: true });
+    fs.writeFileSync(path.join(ventana, 'abc123--otra-sesion-0001.json'), '{}');
+    const conPedido = procesosDe(c);
+    assert.deepStrictEqual(conPedido, sinPedido,
+      `${c}: con un pedido de otra sesión, el freno abrió procesos de más para leer la sesión`);
   }
 });
 
@@ -1905,9 +1938,12 @@ exec ${JSON.stringify(process.execPath)} "$@"
 `, { mode: 0o755 });
   const marker = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js').split(path.sep).join('/');
   const evidencia = '/r/.advisors/dod-runtime/9.99-x.md';
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
   for (const firma of ['ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado', 'story-skill-bypass']) {
     const r = freno(`node ${marker} sign-file ${firma} ${evidencia}`, { path: dir });
     assert.strictEqual(veredicto(r), 'ask', `${firma}: ${r.stderr}`);
+    // la ventana pide la firma que se nombró, no la del permiso de la evidencia para todas
+    assert.deepStrictEqual([...ow.firmasDelComando(`node ${marker} sign-file ${firma} ${evidencia}`)], [`escape:${firma}`], firma);
   }
   // el permiso escrito por la consola, solo o detrás de la firma, sigue frenando
   for (const c of [
@@ -1929,10 +1965,17 @@ exec ${JSON.stringify(process.execPath)} "$@"
     `node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE \`/tmp/x.sh\``,
     `node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE x\\\\\n/tmp/x.sh`,
     `node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE x\\\\\r\n/tmp/x.sh`,
+    // un separador o una sustitución pegados a la ruta del archivo: lo de después corre aparte
+    `node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE x;touch .advisors/ALLOW_DOD_EVIDENCE_WRITE`,
+    `node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE x&touch .advisors/ALLOW_DOD_EVIDENCE_WRITE`,
+    `node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE x|tee .advisors/ALLOW_DOD_EVIDENCE_WRITE`,
+    `node ${marker} sign-file ALLOW_DOD_EVIDENCE_WRITE x$(touch .advisors/ALLOW_DOD_EVIDENCE_WRITE)`,
   ]) {
     const r = freno(c, { path: dir });
     assert.strictEqual(r.status, 2, `${c}: ${r.stdout}`);
     assert.match(r.stderr, /ALLOW_DOD_EVIDENCE_WRITE/, c);
+    // el retorno de carro lo frena antes la regla de los caracteres escondidos
+    assert.match(r.stderr, c.includes('\r') ? /CMD-C1/ : /ESC-C5/, c);
   }
   // un marker.js de verdad en otra carpeta, que sólo se llama igual, no es la firma
   const otra = path.join(dir, 'otro', 'tycon-pipeline', 'scripts');
