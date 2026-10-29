@@ -238,6 +238,7 @@ function filtrar(modelo, quien, reglas) {
     if (m.vigilante && Array.isArray(m.vigilante.productos)) out.vigilante = { estado: m.vigilante.estado, fecha: m.vigilante.fecha || null, productos: m.vigilante.productos.filter((p) => formas.has(forma(p))) };
   }
   out.umbrales = copia(m.umbrales);
+  out.stateAgeDays = copia(m.stateAgeDays) || null;
   return out;
 }
 

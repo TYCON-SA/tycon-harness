@@ -5,6 +5,7 @@
  * T28 Inicio_Mantenedor_LeeNoMide            T31 Cabeceras_EnCadaRespuestaConDatos
  * T29 Proyectos_ParadasCompartidosYDespliegues T34 Inicio_Dev_SoloLoSuyo_ConCantidades
  * T30 Arnes_SuitesYSoloMantenedor
+ * T29b Proyectos_DiasDeLaConfiguracion   T29c Proyectos_SinDiasNoMedido   T29d Proyectos_ColumnaDeEdad
  *
  * Las filas se prueban como datos (views.filas*), y el HTML contra el servidor real. Lo que no se midió dice «no
  * medido» con su motivo: nunca 0.
@@ -45,6 +46,7 @@ function modeloCompleto(extra = {}) {
     productos: [{ producto: 'Producto X', proyectos: ['Proyecto X'] }],
     proyectos: leida({ lista: [] }),
     despliegues: noMedida('sin_foto'),
+    stateAgeDays: [30, 60],
     ...extra,
   };
 }
@@ -114,6 +116,57 @@ test('T29 Proyectos_ParadasCompartidosYDespliegues', () => {
   assert.ok(x.despliegues.motivo, 'despliegues «no medido» con motivo');
   const html = views.paginaProyectos({ modelo: access.filtrar(modelo, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
   assert.match(html, /compartido con 2/);
+});
+
+// el modelo de T29, con los días que se quieran: los umbrales de «parada» y de edad salen de ahí
+const stEdad = (grupo, canonico, dias) => ({ grupo, canonico, dias_en_estado: dias });
+const modeloDeEdad = (stateAgeDays) => modeloCompleto({
+  stateAgeDays,
+  productos: [{ producto: 'Producto X', proyectos: ['Proyecto X'] }],
+  proyectos: leida({ lista: [
+    { proyecto: 'Proyecto X', repo: 'Repo X', fecha: HOY, stories: [stEdad('en_curso', 'in-progress', 45), stEdad('en_curso', 'review', 10), stEdad('en_curso', 'in-progress', null), stEdad('bloqueado', 'blocked', 70)] },
+  ] }),
+});
+const vistaDeEdad = (stateAgeDays, idioma) => {
+  const modelo = access.filtrar(modeloDeEdad(stateAgeDays), { rol: 'maintainer' }, access.crearReglas({}));
+  return { ...views.filasProyectos(modelo, { idioma }), html: views.paginaProyectos({ modelo, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA, idioma }) };
+};
+
+test('T29b Proyectos_DiasDeLaConfiguracion — el umbral de «parada» sale de params.edad_en_estado_dias', () => {
+  const con40 = vistaDeEdad([40, 50]);
+  assert.strictEqual(con40.filas[0].paradas, 1, '45 días con umbral 40: parada');
+  assert.strictEqual(con40.totales.paradas_total, 1);
+  assert.match(con40.html, /Paradas \(más de 40 días\)/, 'el encabezado nombra los días de la configuración');
+  assert.doesNotMatch(con40.html, /más de 30 días/);
+  const con50 = vistaDeEdad([50, 100]);
+  assert.strictEqual(con50.filas[0].paradas, 0, '45 días con umbral 50: no parada');
+  assert.strictEqual(con50.filas[0].sin_medir, 1, 'la sin dato sigue sin medir');
+  assert.match(vistaDeEdad([40, 50], 'en').html, /Stalled \(more than 40 days\)/);
+});
+
+test('T29c Proyectos_SinDiasNoMedido — sin días válidos, paradas y edad dicen «no medido», nunca un 30 de respaldo', () => {
+  for (const dias of [null, undefined, [60, 30], [30]]) {
+    const { filas, totales, html } = vistaDeEdad(dias);
+    const x = filas[0];
+    assert.strictEqual(x.medido, true, 'las stories en curso se siguen contando');
+    assert.strictEqual(x.en_curso, 3);
+    assert.strictEqual(x.paradas, null, `${JSON.stringify(dias)}: paradas sin umbral no es 0`);
+    assert.strictEqual(x.sin_medir, null);
+    assert.strictEqual(x.edad.estado, 'no_medido');
+    assert.match(x.edad.motivo, /edad_en_estado_dias/);
+    assert.strictEqual(totales.paradas_total, null);
+    assert.doesNotMatch(html, /más de 30/, 'ningún 30 escrito');
+    assert.match(html, /no medido: sin los días de edad en el estado/);
+  }
+  assert.match(vistaDeEdad(null, 'en').html, /not measured: no state-age days/);
+});
+
+test('T29d Proyectos_ColumnaDeEdad — «más de N días: X · más de M: Y» por producto, de la misma cuenta que el tablero', () => {
+  const { filas, html } = vistaDeEdad([30, 60]);
+  assert.deepStrictEqual(filas[0].edad, { estado: 'medido', motivo: null, d1: 30, d2: 60, mas_de_d1: 2, mas_de_d2: 1 }, 'lo empezado: 45 y la bloqueada de 70');
+  assert.match(html, /más de 30 días: 2 · más de 60: 1/);
+  assert.match(vistaDeEdad([30, 60], 'en').html, /more than 30 days: 2 · more than 60: 1/);
+  assert.match(vistaDeEdad([10, 50]).html, /más de 10 días: 2 · más de 50: 1/);
 });
 
 /** Un sitio con el emisor local, unas fuentes fijas y dos sesiones (mantenedor y persona). */
@@ -255,6 +308,8 @@ test('2.23-R6 Proyectos_CruceConDatosReales', () => {
       { producto: 'Producto Web', ruta: 'web', github: 'acme/web', activo: true },
       { producto: 'Producto Viejo', ruta: 'viejo', ado: 'Proyecto Viejo/Repo', activo: true },
     ] },
+    // los días de «parada» vienen del sources.json de la organización: sin ellos, paradas «no medido»
+    'scripts/nightly/dashboard/sources.json': { ...H.archivosDeOperaciones()['scripts/nightly/dashboard/sources.json'], params: { edad_en_estado_dias: [30, 60] } },
     '.dashboard/proyectos/Proyecto Uno__Stories.json': { proyecto: 'Proyecto Uno', repo: 'Stories', generated_at: `${HOY}T06:00:00Z`, stories: [st('en_curso', 40), st('en_curso', 3)] },
     '.dashboard/proyectos/Proyecto Viejo__Stories.json': { proyecto: 'Proyecto Viejo', repo: 'Stories', generated_at: '2026-10-01T06:00:00Z', stories: [st('en_curso', 3)] },
     [`.dashboard/dependencias/dependencias-${HOY}.json`]: { fecha: HOY, resumen: { rubros: { nuevos: { valor: [] }, vivas_por_proyecto: { valor: [{ proyecto: 'Proyecto Uno', ids: ['a', 'b', 'c'] }] } } } },

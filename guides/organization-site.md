@@ -231,10 +231,16 @@ tiene su «?» con la explicación.
 
 **Qué contesta:** ¿cómo va cada producto?
 
-Una fila por producto: las stories en curso (y cuántas en revisión), las paradas hace más de 30 días, las bloqueadas,
-qué versión está en prueba y cuál en producción, si espera una aprobación, si el vigilante lo mira, sus vulnerabilidades
-vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin contar dos veces lo compartido. Una persona
-ve los productos en los que trabaja. La **paridad** compara cada producto con los otros: lo que uno hace y los demás no.
+Una fila por producto: las stories en curso (y cuántas en revisión), las paradas, su edad en el estado («más de 30 días:
+2 · más de 60: 1»), las bloqueadas, qué versión está en prueba y cuál en producción, si espera una aprobación, si el
+vigilante lo mira, sus vulnerabilidades vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin
+contar dos veces lo compartido. Una persona ve los productos en los que trabaja. La **paridad** compara cada producto
+con los otros: lo que uno hace y los demás no.
+
+Una story está **parada** cuando está en curso y lleva en su estado más del primero de los dos días de
+`params.edad_en_estado_dias` del `sources.json` (por ejemplo `[30, 60]`); la edad cuenta lo empezado, en curso y
+bloqueado, contra los dos. Es la misma cuenta que la ficha de edad del tablero de la noche. Sin esos días, las paradas
+y la edad dicen «no medido» con su motivo: el sitio no tiene un número propio.
 
 ![Proyectos: una fila por producto](sitio-de-la-organizacion/capturas/proyectos.png)
 
