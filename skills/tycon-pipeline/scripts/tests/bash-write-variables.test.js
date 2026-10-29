@@ -554,9 +554,16 @@ test('T36 GuionEnArchivoDetrasDeEnvoltoriosOpcionesYEnlaces_Frena', () => {
     for (const c of ['node lee.js out/r.md', 'python3 -m json.tool specs/story-x.md', 'python3 -I -E lee.py']) assert.equal(freno(c), '', c);
     assert.equal(freno('node lee.js specs/story-x.md'), HISTORIA, 'con la historia de argumento cuenta como escrita');
     guion('lento.js', 'fs.writeFileSync('.repeat(8000) + '\n');
-    const t0 = Date.now();
-    freno('node lento.js specs/story-x.md');
-    assert.ok(Date.now() - t0 < 5000, `miles de llamadas sin cerrar: ${Date.now() - t0} ms`);
+    // el tiempo se mide en un proceso sin el medidor de cobertura: bajo el medidor (el portón de pruebas lo pasa a la
+    // suite) el mismo juicio tarda veinte veces más, y lo que se mide es el freno, no el medidor. Vacía y no borrada: si
+    // falta, Node la vuelve a copiar al proceso hijo
+    const sinMedidor = { ...process.env, NODE_V8_COVERAGE: '' };
+    const medir = `const b = require(${JSON.stringify(path.join(SCRIPTS, 'on-bash-write-gate.js'))}); const t0 = Date.now();`
+      + ` b.handle(${JSON.stringify(ev('node lento.js specs/story-x.md', repo))}, { stateDir: ${JSON.stringify(estado)}, installedRoots: [] });`
+      + ' process.stdout.write(String(Date.now() - t0));';
+    const r = require('child_process').spawnSync(process.execPath, ['-e', medir], { encoding: 'utf8', env: sinMedidor });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(Number(r.stdout) < 5000, `miles de llamadas sin cerrar: ${r.stdout} ms`);
   });
 });
 
