@@ -281,7 +281,10 @@ test('T32 BashWrite_SinResolverQueNoEsCodigoYConstancia', () => {
   const { estado: e2, repo: r2 } = corral();
   fs.rmSync(path.join(e2, 'active', `${SID}.json`));
   const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
-  io.writeAdhoc(e2, SID, { reason: 'prueba', files: [], startedAt: new Date().toISOString() });
+  // la declaración como la deja `marker.js adhoc set`: con la hora de la firma y su renglón en gates.log
+  const firma = new Date(Date.now() - 1000);
+  fs.appendFileSync(path.join(e2, 'gates.log'), `${JSON.stringify({ ts: firma.toISOString(), name: 'adhoc-lane-signed', status: 'ok', via: 'ventana', sesion: SID, destino: SID })}\n`);
+  io.writeAdhoc(e2, SID, { reason: 'prueba', files: [], startedAt: new Date().toISOString(), firmadaEn: new Date(firma.getTime() + 500).toISOString() });
   conEnv(ENV, () => {
     assert.equal(bash.handle(ev('cat > $F <<EOF\nx\nEOF', r2), { stateDir: e2 }), null, 'sin corrida, pasa');
   });

@@ -107,6 +107,57 @@ function mkRepo(withTycon) {
   return r;
 }
 
+// La declaración del arreglo rápido como la deja `marker.js adhoc set`: el archivo con la hora de la firma y el renglón
+// `adhoc-lane-signed` de esa sesión en gates.log.
+function adhocFirmado(stateDir, sid, obj, { firmaTs = new Date(Date.now() - 1000), destino = sid } = {}) {
+  const firmadaEn = new Date(firmaTs.getTime() + 500).toISOString();
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: firmaTs.toISOString(), name: 'adhoc-lane-signed', status: 'ok', via: 'ventana', sesion: sid, destino })}\n`);
+  return io.writeAdhoc(stateDir, sid, { ...obj, firmadaEn });
+}
+
+// 8.141 T18 AdhocSinFirma_NoAbreElPorton @story-8.141 @ac-4 @ac-8
+// El portón abre con la declaración del arreglo rápido sólo si trae su firma en gates.log. Limitación: gates.log vive en
+// la misma carpeta de estado; esto frena el archivo escrito suelto, no a quien esquive el freno de esa carpeta.
+// 🔴 Falla con: un archivo del arreglo rápido escrito a mano (sin la hora de la firma, sin su renglón, con el renglón de
+// otra sesión o de otro momento) que abre el portón.
+test('8.141 T18 AdhocSinFirma_NoAbreElPorton', () => {
+  const ahora = new Date().toISOString();
+  const base = { reason: 'hotfix x', maxFiles: 8, files: [], declaredAt: ahora, lastTouch: ahora };
+  const repo = mkRepo(true);
+  const f = path.join(repo, 'src/a.ts');
+  const veredicto = (stateDir) => io.evaluate({ filePath: f, sessionId: 's1', stateDir }).verdict.kind;
+  // a mano, sin la hora de la firma
+  let sd = tmpState();
+  io.writeAdhoc(sd, 's1', base);
+  assert.equal(veredicto(sd), 'no-lane', 'sin la hora de la firma');
+  // con la hora pero sin renglón
+  sd = tmpState();
+  io.writeAdhoc(sd, 's1', { ...base, firmadaEn: ahora });
+  assert.equal(veredicto(sd), 'no-lane', 'sin el renglón adhoc-lane-signed');
+  // el bloqueo dice que hay una declaración sin firma reconocida, y por qué; el registro también
+  const sinFirma = io.evaluate({ filePath: f, sessionId: 's1', stateDir: sd });
+  assert.match(sinFirma.message, /declaración del arreglo rápido.*sin su firma/s);
+  assert.match(sinFirma.message, /no está el renglón de su firma/);
+  const bloqueo = fs.readFileSync(path.join(sd, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.name === 'story-gate').pop();
+  assert.match(String(bloqueo.adhocSinFirma), /no está el renglón de su firma/);
+  // el renglón es de otra sesión
+  sd = tmpState();
+  adhocFirmado(sd, 's1', base, { destino: 's2' });
+  assert.equal(veredicto(sd), 'no-lane', 'firma de otra sesión');
+  // el renglón es de mucho antes de la declaración
+  sd = tmpState();
+  const vieja = adhocFirmado(sd, 's1', base, { firmaTs: new Date(Date.now() - 3600e3) });
+  io.writeAdhoc(sd, 's1', { ...vieja, firmadaEn: ahora });
+  assert.equal(veredicto(sd), 'no-lane', 'firma de otro momento');
+  // firmada: abre, y sumar un archivo al cupo no le saca la firma
+  sd = tmpState();
+  adhocFirmado(sd, 's1', base);
+  assert.equal(io.evaluate({ filePath: f, sessionId: 's1', stateDir: sd }).verdict.action, 'pass');
+  io.recordAdhocFile(sd, 's1', f);
+  assert.equal(io.evaluate({ filePath: f, sessionId: 's1', stateDir: sd }).verdict.action, 'pass');
+});
+
 test('io.evaluate: repo sin .tycon ni stories → pass; con .tycon → no-lane; con adhoc → pass; marker plan → block', () => {
   const stateDir = tmpState();
   const plain = mkRepo(false);
@@ -123,7 +174,7 @@ test('io.evaluate: repo sin .tycon ni stories → pass; con .tycon → no-lane; 
   assert.ok(sgEntry && sgEntry.repoPath, 'story-gate blocked lleva repoPath');
   assert.equal(fs.realpathSync(sgEntry.repoPath), fs.realpathSync(repo));
 
-  io.writeAdhoc(stateDir, 's1', { reason: 'hotfix x', maxFiles: 8, files: [], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() });
+  adhocFirmado(stateDir, 's1', { reason: 'hotfix x', maxFiles: 8, files: [], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() });
   assert.equal(io.evaluate({ filePath: f, sessionId: 's1', stateDir }).verdict.action, 'pass');
   io.recordAdhocFile(stateDir, 's1', f);
   assert.deepEqual(io.readAdhoc(stateDir, 's1').files, [f]);
@@ -196,7 +247,7 @@ test('on-bash-write-gate.handle: bloquea heredoc a código sin carril; deja pasa
   assert.equal(bash.handle(ev('sed -n 1,5p src/Foo.cs'), { stateDir }), null);
   assert.equal(bash.handle(ev('echo x > notes.md'), { stateDir }), null);
   assert.equal(bash.handle(ev('echo x > /tmp/scratch.ts'), { stateDir }), null); // fuera de repo
-  io.writeAdhoc(stateDir, 's1', { reason: 'hotfix x', files: [], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() });
+  adhocFirmado(stateDir, 's1', { reason: 'hotfix x', files: [], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() });
   assert.equal(bash.handle(ev("cat > src/Foo.cs <<'EOF'\nx\nEOF"), { stateDir }), null);
   // Write al state dir por Bash también se deniega
   const sd = bash.handle(ev(`echo '{}' > ${path.join(stateDir, 'active', 's1.json')}`), { stateDir });
@@ -254,7 +305,7 @@ test('listOtherMarkers: ignora stale, terminados (stepsPending []) y markers de 
 test('un ad-hoc declarado NO se anula por un prompt posterior (el voiding se fue con el regex)', () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'state-'));
   const sid = 's-novoid';
-  io.writeAdhoc(stateDir, sid, { reason: 'arreglá el bug del redirect', maxFiles: 8, files: [], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() });
+  adhocFirmado(stateDir, sid, { reason: 'arreglá el bug del redirect', maxFiles: 8, files: [], declaredAt: new Date().toISOString(), lastTouch: new Date().toISOString() });
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-'));
   fs.mkdirSync(path.join(repo, '.git')); fs.mkdirSync(path.join(repo, '.tycon')); fs.mkdirSync(path.join(repo, 'src'));
   const file = path.join(repo, 'src', 'Foo.cs');
