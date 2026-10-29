@@ -395,7 +395,10 @@ _harness_lab_machine() {
   # elegido pregunta (y sin terminal sale 2); las suites del mecanismo no prueban eso: lo prueba harness-questions.test.sh,
   # que corre con TYCON_PROFILE=0. Un `~/.claude/tycon.json` con `install.profile` le gana, como en cualquier máquina.
   printf '{ "install": { "profile": "full" } }\n' > "$LAB/lab-profile.json"
-  export TYCON_PROFILE="$LAB/lab-profile.json" TYCON_UPDATE_NETWORK_BUDGET_S="${TYCON_UPDATE_NETWORK_BUDGET_S:-5}"
+  # El tope de red del laboratorio es holgado: el «GitHub» y los remotos son locales y contestan, pero con la máquina
+  # cargada (la puerta corre varias suites a la vez) una bajada local pasaba los 5 s de antes y la prueba salía roja al
+  # azar. Las pruebas que miden el tope (un proxy mudo, una IP no ruteable) fijan el suyo en el comando.
+  export TYCON_PROFILE="$LAB/lab-profile.json" TYCON_UPDATE_NETWORK_BUDGET_S="${TYCON_UPDATE_NETWORK_BUDGET_S:-60}"
   # El laboratorio no baja el Node del arnés; una suite que lo prueba pone TYCON_HARNESS_NODE=1
   # después de armar el laboratorio, y una lista de laboratorio con un servidor local, nunca nodejs.org
   export TYCON_HARNESS_NODE=0
@@ -824,20 +827,25 @@ harness_lab_single_tree() { # harness_lab_single_tree <dir>
 # Exporta lo de siempre y LAB_SHAPE. La política de la instalación es `auto` (la del equipo); lo que siga decide la suya.
 harness_lab_shape() { # harness_lab_shape <dir> <two-clones|repointed|single>
   local dir="${1:-}" shape="${2:-}"
+  # el paso que falla se dice, con la cola de su salida: «no pude armar la máquina» sola no deja saber por qué
+  # corre en el shell actual (no en un `$(…)`): el armado de la máquina exporta la HOME y las rutas del laboratorio
+  __paso() { local que="$1" log rc; shift; log="$(mktemp "${TMPDIR:-/tmp}/lab-shape.XXXXXX")"; "$@" > "$log" 2>&1; rc=$?
+    [ "$rc" = 0 ] || echo "harness-lab: harness_lab_shape ${shape}: «${que}» salió ${rc}: $(tail -3 "$log" | tr '\n' '|')" >&2
+    rm -f "$log"; return "$rc"; }
   case "$shape" in
     two-clones|repointed)
-      harness_lab_team_machine "$dir" toy >/dev/null || return 1
-      TYCON_UPDATE_APPLY=auto harness install --yes >/dev/null 2>&1 || return 1
-      harness_lab_cut || return 1
-      TYCON_UPDATE_APPLY=auto harness update >/dev/null 2>&1 || return 1
+      __paso "la máquina del equipo" harness_lab_team_machine "$dir" toy || return 1
+      __paso "install" env TYCON_UPDATE_APPLY=auto node "$LAB_TREE/scripts/setup/harness.js" install --yes || return 1
+      __paso "el corte" harness_lab_cut || return 1
+      __paso "update" env TYCON_UPDATE_APPLY=auto node "$LAB_TREE/scripts/setup/harness.js" update || return 1
       if [ "$shape" = repointed ]; then
         printf '{ "update": { "skills_source": "unified" } }\n' > "$LAB_HOME/.claude/tycon.json"
-        TYCON_UPDATE_APPLY=auto harness update >/dev/null 2>&1 || return 1
+        __paso "update re-apuntado" env TYCON_UPDATE_APPLY=auto node "$LAB_TREE/scripts/setup/harness.js" update || return 1
         [ "$(harness_lab_git "$LAB_SKILLS" remote get-url origin)" = "$LAB_REMOTE_UNIFIED" ] || { echo "harness-lab: la máquina no quedó re-apuntada" >&2; return 1; }
       fi ;;
     single)
-      harness_lab_single_tree "$dir" >/dev/null || return 1
-      TYCON_UPDATE_APPLY=auto harness install --yes >/dev/null 2>&1 || return 1 ;;
+      __paso "el árbol único" harness_lab_single_tree "$dir" || return 1
+      __paso "install" env TYCON_UPDATE_APPLY=auto node "$LAB_TREE/scripts/setup/harness.js" install --yes || return 1 ;;
     *) echo "harness-lab: harness_lab_shape <dir> <two-clones|repointed|single> — «${shape}» no existe" >&2; return 2 ;;
   esac
   export LAB_SHAPE="$shape"
