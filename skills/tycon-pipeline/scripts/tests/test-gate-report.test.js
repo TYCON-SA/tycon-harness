@@ -13,8 +13,7 @@
  *   T70 · smoke-run.sh corre contra un servidor de juguete con un PATH sin `python3` y deja lo mismo que con Python.
  *   T74 · una suite no medida llega al artefacto con su motivo (además de contar como ausente).
  *   T73 · sin el corredor (`npx` o `dotnet` fuera del PATH) test-gate.sh dice «no pude correr las pruebas: falta …» y
- *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado. (La parte del `claude`
- *         que en Windows es un `.cmd` está en lane-classifier.test.js.)
+ *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado.
  *
  * Las esperadas (fixtures/test-gate-report/<caso>/expected.json) se capturaron corriendo el bloque de Python original
  * sobre las mismas entradas:

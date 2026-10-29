@@ -438,6 +438,18 @@
   {
    "id": "--title",
    "motivo": "story 8.85 tanda B1 (2026-10-22): crear el pedido va por `platform.js work-item create` con el título en sus argumentos; las opciones de `az` viven en el conector."
+  },
+  {
+   "id": "TYCON_LANE_LLM",
+   "motivo": "story 8.141 (2026-10-28): el clasificador por modelo del arreglo rápido (lib/lane-classifier.js) se sacó con sus variables; el arreglo rápido es la firma adhoc-lane en la ventana de permiso, y nada del chat lo abre."
+  },
+  {
+   "id": "TYCON_LANE_LLM_MODEL",
+   "motivo": "story 8.141 (2026-10-28): el clasificador por modelo del arreglo rápido (lib/lane-classifier.js) se sacó con sus variables; el arreglo rápido es la firma adhoc-lane en la ventana de permiso, y nada del chat lo abre."
+  },
+  {
+   "id": "TYCON_LANE_LLM_MS",
+   "motivo": "story 8.141 (2026-10-28): el clasificador por modelo del arreglo rápido (lib/lane-classifier.js) se sacó con sus variables; el arreglo rápido es la firma adhoc-lane en la ventana de permiso, y nada del chat lo abre."
   }
  ],
  "parrafos": [

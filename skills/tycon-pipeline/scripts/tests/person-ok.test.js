@@ -90,9 +90,7 @@ test('PlanEnLaConversacion_SigueDesdeLaBiblioteca @story-8.63 @ac-2', () => {
 // 🔴 Falla con: una firma que vuelve a salir de la conversación (una cita, un reenvío, la sesión designada): la
 //    biblioteca vuelve a exportar un juez, o la importa un guion de firma.
 test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta sólo la lectura, la cadena y el plan; la importan sólo los que no firman', () => {
-  // `mensajesConOrigen` no firma nada: dice de quién es cada mensaje (la marca de Claude Code), para que la cita del
-  // arreglo rápido (`marker.js adhoc set`) lea sólo lo que escribió el dueño
-  assert.deepEqual(Object.keys(ok).sort(), ['enLaCadena', 'leerConversacion', 'mensajesConOrigen', 'planEnLaConversacion']);
+  assert.deepEqual(Object.keys(ok).sort(), ['enLaCadena', 'leerConversacion', 'planEnLaConversacion']);
   const importan = [];
   const recorrer = (dir) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -110,4 +108,30 @@ test('T30 PersonOk_SoloLoQueNoEsFirma @story-8.139 @ac-29 @ac-30 — exporta só
     'skills/tycon-pipeline/scripts/lib/validator-record.js',
     'skills/tycon-pipeline/scripts/marker.js',
   ]);
+});
+
+// 8.141 T15 ElChatSale_SinLectoresDelCarril @story-8.141 @ac-5
+// 🔴 Falla con: algo que vuelve a leer la conversación o el registro de mensajes para el arreglo rápido (el origen de cada
+//    mensaje, el clasificador, la cita), o `on-prompt.js` que vuelve a guardar el texto de cada mensaje.
+test('8.141 T15 ElChatSale_SinLectoresDelCarril', () => {
+  const LIB = path.join(__dirname, '..', 'lib');
+  assert.equal(fs.existsSync(path.join(LIB, 'lane-classifier.js')), false, 'el clasificador no existe');
+  const io = require(path.join(LIB, 'story-gate-io.js'));
+  assert.equal(io.recordPrompt, undefined, 'no hay registro de mensajes');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pok-'));
+  const sid = 'sess-t15';
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'on-prompt.js')], {
+    encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'arreglo rápido: el botón de guardar', session_id: sid }),
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const carril = path.join(home, '.claude', '.tycon-pipeline', 'lane', `${sid}.json`);
+  const lane = fs.existsSync(carril) ? JSON.parse(fs.readFileSync(carril, 'utf8')) : {};
+  assert.equal(lane.recentPrompts, undefined, 'el archivo de carril no guarda los mensajes');
+  for (const f of ['marker.js', path.join('lib', 'story-gate.js'), path.join('lib', 'story-gate-io.js'), path.join('lib', 'person-ok.js'), 'on-prompt.js']) {
+    const t = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+    for (const re of [/mensajesConOrigen/, /classifyLane/, /\bTYCON_LANE_LLM\b/, /recentPrompts/, /reasonInPrompts/, /quotedPromptAsksStory/, /soloDelDueno/]) {
+      assert.doesNotMatch(t, re, `${f} nombra ${re.source}`);
+    }
+  }
 });

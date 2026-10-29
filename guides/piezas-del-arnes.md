@@ -1940,13 +1940,13 @@ _guides/ci-gate.md + scripts/ci/tycon-ci-gate.js_
 
 ## scripts/hooks/lane-llm-notice.js
 
-**Qué es:** El medidor del clasificador por modelo del portón de carril, con `--report`.
+**Qué es:** El aviso de arranque de los arreglos rápidos, con `--report`: cuántos hubo y cómo se firmaron.
 
-**Por qué existe:** El clasificador decide solo y deja su rastro en un archivo que nadie leería. Este medidor grita sólo cuando el modelo abrió lo que el freno había cerrado.
+**Por qué existe:** El arreglo rápido abre el portón sin story, y lo puede firmar la coordinadora sin preguntar. Su rastro queda en un archivo que nadie leería; este aviso lo cuenta, sólo cuando hay alguno nuevo.
 
-**Quién la usa:** El hook de arranque y quien decide si el clasificador se queda. Se apaga con `TYCON_LANE_LLM_NOTICE=0`.
+**Quién la usa:** El hook de arranque y el dueño, que mira lo que firmó la coordinadora. Se apaga con `TYCON_LANE_LLM_NOTICE=0`.
 
-**Dónde se prueba:** sin suite propia
+**Dónde se prueba:** `scripts/tests/lane-llm-notice.test.js`
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookslane-llm-noticejs)
 

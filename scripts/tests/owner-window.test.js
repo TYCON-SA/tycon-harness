@@ -1540,3 +1540,119 @@ test('EscapePhrases_SinLasDosFirmas (T17) @story-8.142 @ac-9', (t) => {
   assert.strictEqual(s.ok, false);
   assert.match(s.motivo, /sólo del dueño/);
 });
+
+// --- el arreglo rápido: la firma adhoc-lane -------------------------------------------------------------------------
+
+const ADHOC = `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":3}'`;
+const ADHOC_PARA_A = `node ${MARKER} adhoc set '{"reason":"arreglo del sp","maxFiles":20}' --for-session ses-a`;
+const ADHOC_PARA_A_ARGV = [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":20}', '--for-session', 'ses-a'];
+
+// 8.141 T8 OwnerWindow_AdhocSet_PideLaVentana @story-8.141 @ac-3 @ac-4
+// 🔴 Falla con: `adhoc set` sin pedir la ventana, la ventana sin el motivo o el cupo, `get`/`clear` pidiendo firma, o
+// una forma escondida (`cd … &&`, el subcomando en una variable) que no se niega.
+test('8.141 T8 OwnerWindow_AdhocSet_PideLaVentana', (t) => {
+  const casa = casaNueva(t);
+  const r = pedir(casa, ADHOC);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.deepStrictEqual(r.firmas, ['adhoc-lane']);
+  assert.match(r.texto, /Firma del dueño: abrir el arreglo rápido de una sesión, sin historia\. Story 9\.99, sesión ses-a\./);
+  assert.match(r.texto, /Detalle: el motivo: «arreglo del sp» · hasta 3 archivos/);
+  for (const sub of ['adhoc get', 'adhoc clear', 'adhoc clear-orphan ses-b']) {
+    assert.strictEqual(pedir(casaNueva(t), `node ${MARKER} ${sub}`).decision, 'none', sub);
+  }
+  const conCd = pedir(casaNueva(t), `cd /r && ${ADHOC}`);
+  assert.strictEqual(conCd.decision, 'deny');
+  assert.match(conCd.texto, /forma exacta/);
+  const codex = casaNueva(t);
+  const c = pedir(codex, ADHOC, { evento: { turn_id: 'turn-1' } });
+  assert.strictEqual(c.decision, 'deny');
+  assert.match(c.texto, /en tu terminal: marker\.js adhoc set '<json>' --terminal --for-session <id>/);
+  assert.strictEqual(registros(codex).length, 0);
+  // el subcomando en una variable cuenta como el arreglo rápido, y la forma lo niega
+  const opaca = pedir(casaNueva(t), `S=set; node ${MARKER} adhoc "$S" '{"reason":"arreglo del sp"}'`);
+  assert.deepStrictEqual(opaca.firmas, ['adhoc-lane']);
+  assert.strictEqual(opaca.decision, 'deny');
+  // con el «Sí», el guion firma; sin pedido de la ventana, no
+  const v = ow.exigir({ firma: 'adhoc-lane', argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","maxFiles":3}'], pid: 301, arbol: arbolDelGuion(casa, ADHOC), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  assert.strictEqual(v.codigo, 0, v.motivo);
+  assert.strictEqual(v.via, 'ventana');
+  const sin = casaNueva(t);
+  assert.strictEqual(ow.exigir({ firma: 'adhoc-lane', argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp"}'], pid: 301, arbol: arbolDelGuion(sin, ADHOC), casa: sin, ahora: AHORA + 60000, propia: 'ses-a' }).codigo, 1);
+});
+
+// 8.141 T8b OwnerWindow_AdhocSet_MotivoConFlags_PideLaVentana @story-8.141 @ac-4 @ac-6
+// Prueba que confirmó el pase adversarial (false-positive-edge-1): el freno miraba el texto entero del comando, y un
+// motivo que nombra un flag o una variable de sesión negaba la ventana y la delegación.
+// 🔴 Falla con: un motivo legítimo que nombra `--ok`, `--quote`, `--relayed-by` o CLAUDE_CODE_SESSION_ID negado; o esas
+// formas como argumento de verdad (fuera del motivo) que dejan de negarse.
+test('8.141 T8b OwnerWindow_AdhocSet_MotivoConFlags_PideLaVentana', (t) => {
+  for (const motivo of ['el flag --ok del CLI no anda', 'el parser de --quote rompe con tildes', 'falta --relayed-by en la ayuda', 'on-prompt lee mal CLAUDE_CODE_SESSION_ID']) {
+    const cmd = `node ${MARKER} adhoc set '${JSON.stringify({ reason: motivo })}'`;
+    const r = pedir(casaNueva(t), cmd);
+    assert.strictEqual(r.decision, 'ask', `${motivo}: ${r.texto}`);
+    const d = pedir(casaConDesignada(t), `${cmd} --for-session ses-a`, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['adhoc-lane'] } }) });
+    assert.strictEqual(d.decision, 'allow', `${motivo} (delegada): ${d.texto}`);
+  }
+  // como argumentos de verdad siguen negándose
+  assert.strictEqual(pedir(casaNueva(t), `${ADHOC} --ok`).decision, 'deny');
+  assert.strictEqual(pedir(casaNueva(t), `CLAUDE_CODE_SESSION_ID=ses-z ${ADHOC}`).decision, 'deny');
+  assert.strictEqual(pedir(casaNueva(t), `node ${MARKER} complete-step approve-plan --approved "dale" --quote "x"`).decision, 'deny');
+});
+
+// 8.141 T10 AdhocSet_ElChatNoAutoriza (la ventana de otro motivo) @story-8.141 @ac-8
+// 🔴 Falla con: un motivo copiado del mensaje del dueño que firma con el «Sí» que el dueño dio para otro motivo.
+test('8.141 T10 AdhocSet_ElChatNoAutoriza (la ventana de otro motivo)', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, ADHOC).decision, 'ask');
+  const copiado = `node ${MARKER} adhoc set '{"reason":"arreglo rápido: el botón de guardar"}'`;
+  const e = ow.exigir({ firma: 'adhoc-lane', argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo rápido: el botón de guardar"}'], pid: 301, arbol: arbolDelGuion(casa, copiado), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  assert.strictEqual(e.codigo, 1, 'el «Sí» era para otro motivo');
+  assert.strictEqual(gates(casa).filter((x) => x.name === 'adhoc-lane-signed').length, 0);
+});
+
+// 8.141 T11 AdhocSet_ForSession_Delegada_SinVentana (el freno) @story-8.141 @ac-6
+// 🔴 Falla con: la designada, con todas las llaves, frenada en la ventana; o el guion que no firma con via: delegacion.
+test('8.141 T11 AdhocSet_ForSession_Delegada_SinVentana', (t) => {
+  const casa = casaConDesignada(t);
+  const r = pedir(casa, ADHOC_PARA_A, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['adhoc-lane'] } }) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+  const reg = registroVigente(casa);
+  assert.strictEqual(reg.firma, 'adhoc-lane');
+  assert.strictEqual(reg.sesion, 'ses-coord');
+  assert.strictEqual(reg.destino, 'ses-a');
+  const e = ow.exigir({ firma: 'adhoc-lane', argv: ADHOC_PARA_A_ARGV, pid: 301, arbol: arbolDelGuion(casa, ADHOC_PARA_A), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'delegacion');
+  assert.strictEqual(e.sesion, 'ses-coord');
+});
+
+// 8.141 T12 AdhocSet_ForSession_SinLlaves_AbreLaVentana @story-8.141 @ac-6 @ac-8 @ac-10
+// 🔴 Falla con: una designada sin alguna llave que declara sin ventana (sin la clave en el perfil, con otro grupo, con la
+// firma sólo del dueño, en otra máquina o sin la designación confirmada).
+test('8.141 T12 AdhocSet_ForSession_SinLlaves_AbreLaVentana', (t) => {
+  const conAdhoc = { ...PERFIL, delegated_signing: ['adhoc-lane'] };
+  const casos = [
+    ['sin approvals', casaConDesignada(t), delegacionReal({ perfil: {} }), false],
+    ['con escape-phrases', casaConDesignada(t), delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['escape-phrases'] } }), false],
+    ['sólo del dueño', casaConDesignada(t), delegacionReal({ perfil: { ...conAdhoc, owner_only: ['adhoc-lane'] } }), false],
+    ['máquina fuera de la lista', casaConDesignada(t), delegacionReal({ perfil: conAdhoc, huella: 'ffffffffffffffff' }), true],
+    ['designación sin confirmar', casaConDesignada(t, { confirmada: false }), delegacionReal({ perfil: conAdhoc }), true],
+  ];
+  for (const [nombre, casa, delegacion, motivo] of casos) {
+    const r = pedir(casa, ADHOC_PARA_A, { evento: DE_LA_COORD, delegacion });
+    assert.strictEqual(r.decision, 'ask', `${nombre}: ${r.texto}`);
+    assert.notStrictEqual(registroVigente(casa).via, 'delegacion', nombre);
+    if (motivo) assert.match(r.texto, /No se firmó por delegación: /, nombre);
+  }
+});
+
+// 8.141 T13 AdhocSet_ForSession_ParaSiMisma @story-8.141 @ac-6 @ac-8
+// 🔴 Falla con: la designada que se declara el atajo a sí misma sin ventana.
+test('8.141 T13 AdhocSet_ForSession_ParaSiMisma', (t) => {
+  const casa = casaConDesignada(t);
+  const r = pedir(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp"}' --for-session ses-coord`,
+    { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['adhoc-lane'] } }) });
+  assert.notStrictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.decision, 'ask');
+});

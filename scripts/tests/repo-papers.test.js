@@ -274,8 +274,6 @@ function variableCorpus({ withHooks = false } = {}) {
     'scripts/setup/harness.js',
     // El paso de terceros del instalador: su tope de red (`TYCON_THIRD_PARTY_NETWORK_BUDGET_S`) vive acá.
     'scripts/publishing/install-third-party.js',
-    // La consulta al modelo del portón de edición: su interruptor (`TYCON_LANE_LLM`) vive acá.
-    'skills/tycon-pipeline/scripts/lib/lane-classifier.js',
     // El guion de entrada de la portada: el permiso de lectura le llega por `TYCON_GITHUB_TOKEN`.
     'scripts/setup/get-harness.sh',
   ].map((f) => path.join(RAIZ, f));

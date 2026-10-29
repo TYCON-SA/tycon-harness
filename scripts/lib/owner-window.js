@@ -195,6 +195,8 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'approve-pending') return 'pending-approval';
+    // declarar o cambiar el arreglo rápido; mirarlo o terminarlo, no. El subcomando en una variable cuenta como `set`
+    if (sub === 'adhoc' && (a[0] === 'set' || /[$`]/.test(a[0] || ''))) return 'adhoc-lane';
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
     if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;
@@ -331,6 +333,14 @@ function detalleDe(id, comando, palabras, cwd) {
     const i = palabras.findIndex((w) => w === '--approved' || w === '--mockup-approved');
     if (i >= 0 && palabras[i + 1]) return `la cita: «${una(palabras[i + 1], 200)}»`;
   }
+  if (id === 'adhoc-lane' && palabras && palabras[1] === 'adhoc' && palabras[2] === 'set') {
+    let p = null;
+    try { p = JSON.parse(palabras[3] || ''); } catch (_) { /* un JSON roto lo niega el guion: la ventana muestra el comando */ }
+    if (p && typeof p === 'object') {
+      const cupo = Number.isFinite(Number(p.maxFiles)) && Number(p.maxFiles) > 0 ? `hasta ${Number(p.maxFiles)} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
+      return `el motivo: «${una(String(p.reason || ''), 200)}» · ${cupo}`;
+    }
+  }
   if (palabras && palabras[1] === 'sign-file' && palabras[3]) {
     // la consola expande la tilde antes de correr el guion: la ventana muestra la ruta que se va a firmar
     const tilde = /^~(?=[\\/]|$)/.test(palabras[3]) ? os.homedir() + palabras[3].slice(1) : palabras[3];
@@ -452,10 +462,15 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   const herramientaDelEvento = evento.tool_name == null ? 'Bash' : String(evento.tool_name);
   if (!['Bash', 'PowerShell'].includes(herramientaDelEvento)) return negar(`las firmas se piden por la consola de la herramienta, no por ${una(herramientaDelEvento, 40)}`, pedidas);
   if (evento.turn_id) return negar('Codex no tiene ventana de permiso: pedirla deja correr el comando', pedidas);
-  if (VARIABLES_DE_SESION.test(comando)) return negar('la sesión destino va con --for-session, no con una variable de sesión en el comando', pedidas);
+  // el motivo del arreglo rápido es texto libre y puede nombrar un flag o una variable: en la forma canónica, los dos
+  // controles de abajo miran el comando sin ese argumento (un flag o una variable de verdad siguen a la vista)
+  const canAdhoc = canonicaDe(comando);
+  const mirado = canAdhoc && canAdhoc.id === 'adhoc-lane' && canAdhoc.palabras[1] === 'adhoc' && canAdhoc.palabras[2] === 'set'
+    ? canAdhoc.palabras.filter((_, i) => i !== 3).join(' ') : comando;
+  if (VARIABLES_DE_SESION.test(mirado)) return negar('la sesión destino va con --for-session, no con una variable de sesión en el comando', pedidas);
   if (!SESION.test(sesion)) return negar('el evento no dice de qué sesión es el pedido', pedidas);
   // el guion niega estas formas sin mirar la ventana: pedirla le haría aprobar al dueño algo que no firma
-  if (guiones.length && /(^|\s)--(quote|relayed-by|ok)(\s|=|$)/.test(comando)) return negar('la cita, el reenvío o el --ok ya no firman: el mismo comando sin --quote, --relayed-by ni --ok', pedidas);
+  if (guiones.length && /(^|\s)--(quote|relayed-by|ok)(\s|=|$)/.test(mirado)) return negar('la cita, el reenvío o el --ok ya no firman: el mismo comando sin --quote, --relayed-by ni --ok', pedidas);
   // la forma: una firma `guion` sólo en su forma canónica; un escape, en su forma de siempre
   const can = canonicaDe(comando);
   const guion = guiones.length ? guiones[0] : null;
