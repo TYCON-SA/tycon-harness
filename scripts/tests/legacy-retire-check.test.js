@@ -65,16 +65,23 @@ function lab({ machines = {}, expected, runs = [], fail = null, clone = null, en
     const out = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
     const no = (m) => { process.stderr.write(m); process.exit(1); };
     const runsOf = (id) => fx.runsBy[id] || (id === 7 ? fx.runs : []);
-    if (a.startsWith('pipelines list')) { if (fx.fail === 'list') no('ERROR: TF400813'); if (fx.shape === 'list') out({ message: 'x' }); out(fx.pipelines); }
+    // como el az real: la lista de pipelines no trae el repo; lo dice «pipelines show»
+    if (a.startsWith('pipelines list')) { if (fx.fail === 'list') no('ERROR: TF400813'); if (fx.shape === 'list') out({ message: 'x' }); out(fx.pipelines.map((p) => ({ id: p.id, name: p.name, repository: null }))); }
+    if (a.startsWith('pipelines show')) {
+      if (fx.fail === 'show') no('ERROR: show');
+      const id = Number(/--id (\\d+)/.exec(a)[1]);
+      out(fx.pipelines.find((p) => p.id === id));
+    }
     if (a.startsWith('pipelines runs list')) {
       if (fx.fail === 'runs') no('ERROR: runs'); if (fx.shape === 'runs') out({ message: 'x' });
       const id = Number(/--pipeline-ids (\\d+)/.exec(a)[1]);
-      out(runsOf(id).map((r) => ({ id: r.id, finishTime: r.finishTime })));
+      out(runsOf(id).map((r) => ({ id: r.id, finishTime: r.finishTime, startTime: r.startTime || r.finishTime || '2026-11-12T09:00:00Z', result: r.result || (r.finishTime ? 'succeeded' : null), status: r.finishTime ? 'completed' : 'inProgress' })));
     }
     if (a.startsWith('devops invoke')) {
       if (fx.fail === 'timeline') no('ERROR: timeline'); if (fx.shape === 'timeline') out({ message: 'x' });
       const id = Number(/buildId=(\\d+)/.exec(a)[1]);
       const r = [].concat(fx.runs, ...Object.values(fx.runsBy)).find((x) => x.id === id);
+      if (r.empty) process.exit(0);   // una corrida sin registro: az sale 0 sin escribir nada
       out({ records: [{ type: 'Task', issues: (r.warnings || []).map((m) => ({ type: 'warning', message: m })) }] });
     }
     no('az falso: no sé ' + a);`);
@@ -222,11 +229,26 @@ test('T4 RetireA_CheckSaysReadyOnlyWithPositiveEvidence — un pipeline de un re
   assert.deepStrictEqual(r.json.entries.find((e) => e.old === 'viejo-b').sources, ['no-declarado:Prod/Otro']);
 });
 
-test('T21 RetireE_UsedEntriesGetOwnDate — una corrida en curso de un pipeline fuera de la lista se informa, pero no deja sin medir lo de los productos', () => {
+test('T4 RetireA_CheckSaysReadyOnlyWithPositiveEvidence — el repo de cada pipeline sale de «pipelines show»; una corrida en curso se lee; una cancelada antes de arrancar no tiene registro', () => {
+  const r = run(lab({
+    machines: { 'maq-uno': {} },
+    runs: [
+      // en curso desde hace un mes (producción esperando su aprobación): se lee igual
+      { id: 1, finishTime: null, startTime: '2026-10-15T10:00:00Z', warnings: [aviso('viejo-b', 'key')] },
+      { id: 2, startTime: '2026-11-12T10:00:00Z', finishTime: '2026-11-12T10:00:00Z', result: 'canceled', empty: true },
+    ],
+  }));
+  assert.strictEqual(r.code, 1, r.stdout);
+  assert.deepStrictEqual(r.json.failed_queries, [], 'ni la corrida en curso ni la cancelada son consultas fallidas');
+  assert.deepStrictEqual(r.json.undeclared_pipelines, [], 'el pipeline del producto no sale como no declarado');
+  assert.deepStrictEqual(r.json.entries.find((e) => e.old === 'viejo-b').sources, ['pipeline:Prod/Forms'], 'el aviso de la corrida en curso cuenta, del producto');
+});
+
+test('T21 RetireE_UsedEntriesGetOwnDate — una consulta caída de un pipeline fuera de la lista se informa, pero no deja sin medir lo de los productos', () => {
   const r = run(lab({
     machines: { 'maq-uno': {} },
     pipelines: [{ id: 7, name: 'Forms', repository: { name: 'Forms' } }, { id: 9, name: 'Otro', repository: { name: 'Otro' } }],
-    runsBy: { 9: [{ id: 91, finishTime: null }] },
+    runsBy: { 9: [{ id: 91, finishTime: '2026-11-12T10:00:00Z', empty: true }] },
   }));
   assert.strictEqual(r.code, 2, 'no pude medir ese pipeline: se dice');
   assert.ok(r.json.failed_queries.some((q) => q.repo === 'Prod/Otro' && q.undeclared));
@@ -241,8 +263,13 @@ test('T5 RetireA_CheckNeverTurnsFailureIntoZero — una línea ilegible del regi
     const r = run(lab({ machines: { 'maq-uno': {} }, runs: [{ id: 1, finishTime: '2026-11-12T10:00:00Z' }], shape }));
     assert.strictEqual(r.code, 2, `${shape}: una forma inesperada no es «cero»`);
   }
-  const enCurso = run(lab({ machines: { 'maq-uno': {} }, runs: [{ id: 1, finishTime: null }] }));
-  assert.strictEqual(enCurso.code, 2, 'una corrida en curso (sin terminar) no se mira: no pude medir');
+  const vacio = run(lab({ machines: { 'maq-uno': {} }, runs: [{ id: 1, finishTime: '2026-11-12T10:00:00Z', empty: true }] }));
+  assert.strictEqual(vacio.code, 2, 'un timeline vacío de una corrida que no se canceló: no pude medir');
+  const aMitad = run(lab({ machines: { 'maq-uno': {} }, runs: [{ id: 1, startTime: '2026-11-12T09:00:00Z', finishTime: '2026-11-12T10:00:00Z', result: 'canceled', empty: true }] }));
+  assert.strictEqual(aMitad.code, 2, 'una cancelada a mitad de camino sí corrió: su timeline vacío es no pude medir');
+  const sinRepo = run(lab({ machines: { 'maq-uno': {} }, runs: [{ id: 1, finishTime: '2026-11-12T10:00:00Z' }], fail: 'show' }));
+  assert.strictEqual(sinRepo.code, 2, 'sin saber de qué repo es un pipeline: no pude medir');
+  assert.ok(sinRepo.json.failed_queries.some((q) => q.repo === 'Prod/Forms'), 'y se dice por los repos de la lista de ese proyecto');
   const sinAdo = run(lab({ machines: { 'maq-uno': {} }, parityRepos: [{ ruta: 'Prod/Forms', ado: 'Prod/Forms' }, { ruta: 'Prod/Gh', github: 'acme/gh' }] }));
   assert.strictEqual(sinAdo.code, 2, 'un producto de la lista que no se puede medir no es «limpio»');
   assert.ok(sinAdo.json.failed_queries.some((q) => q.repo === 'Prod/Gh'));
