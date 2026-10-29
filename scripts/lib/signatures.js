@@ -149,7 +149,8 @@ const SENSITIVE = Object.freeze([
   'scripts/tools/coordination.js', 'skills/tycon-pipeline/steps/step-11-prepare-commit.md',
   'guides/coordination.md', 'guides/coordination.en.md',
   // los permisos y el perfil del equipo
-  '**/.claude/settings*.json', '.claude/settings*.json', '**/team-profile.json', 'team-profile.json',
+  '**/.claude/settings.json', '**/.claude/settings.local.json', '.claude/settings.json', '.claude/settings.local.json',
+  '**/team-profile.json', 'team-profile.json',
 ]);
 const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'delegated-signing.js', 'approvals.js', 'notify.js']);
 
