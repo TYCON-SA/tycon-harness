@@ -78,6 +78,10 @@ head_de() { harness_lab_git "$1" rev-parse HEAD; }
 corridas_aplicador() { grep -c '^run check=0' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>/dev/null || echo 0; }
 LOG() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"; }
 export TYCON_UPDATE_APPLY=auto   # la política del equipo, sin perfil en el laboratorio
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide T39L, que lo prende.
+export TYCON_STARTUP_DETACH=0
 ORIG_PATH="$PATH"
 
 # ═══ T3 · Harness_Lock_TwoStartupsWithNewVersion_OneAppliesNoFailed ══════════════════════════════════════════════════
@@ -1074,7 +1078,7 @@ SH
   chmod +x "$BASE/t39l/bin/git"
   : > "$LENTO"
   T0=$(date +%s)
-  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_WAIT_MS=1500 harness startup > "$BASE/t39l/s1.out" 2>&1; RC=$?
+  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_DETACH= TYCON_STARTUP_WAIT_MS=1500 harness startup > "$BASE/t39l/s1.out" 2>&1; RC=$?
   DUR=$(( $(date +%s) - T0 ))
   [ "$RC" = 0 ] && [ "$DUR" -lt 15 ] && ok "T39L con la actualización lenta, el hook vuelve a tiempo (${DUR} s) y sale 0" || mal "T39L hook: rc $RC en ${DUR} s: $(cat "$BASE/t39l/s1.out")"
   HIJO="$(sed -n 's/.*sigue aparte del hook (pid \([0-9]*\)).*/\1/p' "$(LOG)" | tail -1)"
@@ -1086,7 +1090,7 @@ SH
   [ -n "$HIJO" ] && kill -9 "$HIJO" 2>/dev/null; [ -s "$BASE/t39l/git-lento.pid" ] && kill -9 "$(cat "$BASE/t39l/git-lento.pid")" 2>/dev/null; sleep 0.5
   [ -d "$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock" ] && ok "T39L cortada a mitad, quedó el candado del muerto (el caso de la máquina trabada)" || mal "T39L el corte no dejó el candado: la prueba no reproduce el caso"
   rm -f "$LENTO"
-  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_WAIT_MS=60000 harness startup > "$BASE/t39l/s2.out" 2>&1; RC=$?
+  PATH="$BASE/t39l/bin:$PATH" TYCON_STARTUP_DETACH= TYCON_STARTUP_WAIT_MS=60000 harness startup > "$BASE/t39l/s2.out" 2>&1; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$NUEVO" ] && ok "T39L el arranque siguiente actualiza enseguida (no espera los 10 minutos)" || mal "T39L no actualizó: rc $RC, $(head_de "$LAB_TREE") vs $NUEVO: $(tail -4 "$(LOG)")"
   grep -q "era del pid $HIJO, que ya no existe" "$(LOG)" && ok "T39L el registro dice que pisó el candado del pid $HIJO" || mal "T39L el registro no dice qué candado pisó: $(tail -4 "$(LOG)")"
   [ ! -d "$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock" ] && ok "T39L y lo soltó al terminar" || mal "T39L quedó el candado"

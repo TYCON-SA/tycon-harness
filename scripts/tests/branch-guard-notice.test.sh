@@ -609,6 +609,10 @@ grep -q 'TYCON_NO_LAB_OLD' <<<"$out" && ok "T57 el día con el nombre viejo de l
 # quedara la del unificado, el clon viejo saldría «atrasado» en cada sesión). Va al final: el laboratorio cambia la HOME.
 # shellcheck disable=SC1091
 source "$TCG/scripts/tests/lib/harness-lab.sh"
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide harness-update.test.sh (T39L).
+export TYCON_STARTUP_DETACH=0
 export TYCON_UPDATE_APPLY=auto
 shape_notice() { node "$LAB_TREE/scripts/hooks/branch-guard-notice.js"; }   # el aviso del propio clon del arnés, con la HOME del laboratorio
 with_hook() { mkdir -p "$LAB_TREE/scripts/hooks" && cp "$TCG/scripts/hooks/branch-guard-notice.js" "$LAB_TREE/scripts/hooks/"; }
