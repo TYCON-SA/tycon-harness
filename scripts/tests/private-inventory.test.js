@@ -10,6 +10,7 @@
 //   · sin clon declarado no dice nada; un clon declarado que no se lee es «no pude mirar», nunca «cuadra»;
 //   · en el privado (sin inventario en el índice) no aplica;
 //   · en el commit avisa y no frena, y sólo corre si el commit toca el inventario o el pre-commit;
+//   · dentro del hook (con GIT_DIR y GIT_INDEX_FILE del público) igual lee el clon privado;
 //   · no deja nada en las ramas ni en el índice de ninguno de los dos repos.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -172,6 +173,16 @@ test('PrivateInventory_PreCommit_WarnsAndPasses — en el commit avisa y no fren
   put(pub, '.githooks/pre-commit-checks', `${HOOK_CON}# otra línea\n`);
   git(pub, 'add', '-A');
   r = spawnSync(process.execPath, [FRENO, '--repo', pub], { env, encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(`${r.stdout}${r.stderr}`, /no cuadra con el pre-commit del privado[\s\S]*scripts\/ci\/toy\.js/);
+});
+
+test('PrivateInventory_InsideAHook_ReadsThePrivateClone — con las variables que git exporta al hook, igual lee el privado', () => {
+  const pub = publico();
+  const env = { ...casa(privado(HOOK_SIN)), GIT_DIR: path.join(pub, '.git'), GIT_INDEX_FILE: path.join(pub, '.git', 'index') };
+  put(pub, '.githooks/pre-commit-checks', `${HOOK_CON}# otra línea\n`);
+  git(pub, 'add', '-A');
+  const r = spawnSync(process.execPath, [FRENO, '--repo', pub], { env, encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.match(`${r.stdout}${r.stderr}`, /no cuadra con el pre-commit del privado[\s\S]*scripts\/ci\/toy\.js/);
 });

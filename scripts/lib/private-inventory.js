@@ -30,8 +30,17 @@ function toca(rutas, hook = '.githooks/pre-commit-checks') {
   return rutas.some((r) => r === INVENTORY || r === hook);
 }
 
-function git(root, args, { input, env } = {}) {
-  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { input, encoding: 'utf8', env: { ...process.env, ...(env || {}) }, maxBuffer: 256 * 1024 * 1024, windowsHide: true });
+// Dentro de un hook, git exporta a dónde apunta el repo que commitea (GIT_DIR, GIT_INDEX_FILE…). Con ellas, una lectura
+// del clon privado leería el público. Las lecturas del privado van sin ellas; las del público usan el índice del commit.
+const DEL_REPO = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES'];
+function sinRepo() {
+  const e = { ...process.env };
+  for (const k of DEL_REPO) delete e[k];
+  return e;
+}
+
+function git(root, args, { input, env, ajeno = false } = {}) {
+  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { input, encoding: 'utf8', env: { ...(ajeno ? sinRepo() : process.env), ...(env || {}) }, maxBuffer: 256 * 1024 * 1024, windowsHide: true });
   if (r.error) throw new Error(`git ${args[0]}: ${r.error.message}`);
   return r;
 }
@@ -55,7 +64,7 @@ function clonPrivado(privado, env) {
 
 /** Las rutas que el privado guarda como propias (`own` es ruta → motivo), de su `<ref>`. */
 function propias(privado, ref) {
-  const r = git(privado, ['show', `${ref}:${FORMS}`]);
+  const r = git(privado, ['show', `${ref}:${FORMS}`], { ajeno: true });
   if (r.status !== 0) return [];
   const own = JSON.parse(r.stdout).own;
   if (!own || typeof own !== 'object' || Array.isArray(own)) throw new Error(`${FORMS} del privado no trae la lista «own»`);
@@ -69,9 +78,9 @@ function arbolArmado(repo, privado, ref, rutas) {
   try {
     gitOk(repo, ['read-tree', gitOk(repo, ['write-tree'])], { env });
     for (const p of rutas) {
-      const m = /^(\d+) blob [0-9a-f]+\t/.exec(gitOk(privado, ['ls-tree', ref, '--', p]));
+      const m = /^(\d+) blob [0-9a-f]+\t/.exec(gitOk(privado, ['ls-tree', ref, '--', p], { ajeno: true }));
       if (!m) continue;
-      const blob = gitOk(repo, ['hash-object', '-w', '--stdin'], { input: git(privado, ['cat-file', 'blob', `${ref}:${p}`]).stdout });
+      const blob = gitOk(repo, ['hash-object', '-w', '--stdin'], { input: git(privado, ['cat-file', 'blob', `${ref}:${p}`], { ajeno: true }).stdout });
       gitOk(repo, ['update-index', '--add', '--cacheinfo', `${m[1]},${blob},${p}`], { env });
     }
     const tree = gitOk(repo, ['write-tree'], { env });
@@ -99,11 +108,11 @@ function comparar({ repo, privado = null, ref = DEFAULT_REF, env = process.env }
   if (!fs.existsSync(guion)) return { ...base, estado: 'no-pude', motivo: 'este árbol no trae scripts/ci/run-base-controls.sh' };
   let commit; let fecha;
   try {
-    if (git(c.path, ['rev-parse', '--verify', '-q', `${ref}^{commit}`]).status !== 0) return { ...base, estado: 'no-pude', motivo: `${ref} no está en el clon privado ${c.path}` };
-    fecha = gitOk(c.path, ['log', '-1', '--format=%cs', ref]);
+    if (git(c.path, ['rev-parse', '--verify', '-q', `${ref}^{commit}`], { ajeno: true }).status !== 0) return { ...base, estado: 'no-pude', motivo: `${ref} no está en el clon privado ${c.path}` };
+    fecha = gitOk(c.path, ['log', '-1', '--format=%cs', ref], { ajeno: true });
     commit = arbolArmado(repo, c.path, ref, propias(c.path, ref));
   } catch (e) { return { ...base, estado: 'no-pude', motivo: e.message }; }
-  const r = spawnSync('bash', [guion, 'check-inventory', '--root', repo, '--ref', commit], { encoding: 'utf8', windowsHide: true });
+  const r = spawnSync('bash', [guion, 'check-inventory', '--root', repo, '--ref', commit], { encoding: 'utf8', env: sinRepo(), windowsHide: true });
   const salida = `${r.stdout || ''}${r.stderr || ''}`.trim();
   if (r.status === 0) return { ...base, fecha, estado: 'cuadra' };
   if (r.status !== 1) return { ...base, fecha, estado: 'no-pude', motivo: salida.split('\n').pop() || `check-inventory salió ${r.status}` };
