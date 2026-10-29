@@ -186,6 +186,8 @@ const PARA_OTRA_SESION = {
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') },
   'restore': { firma: 'lost-run', nombra: 3 },
+  // el arreglo rápido de otra pestaña: se escribe en adhoc/<destino>.json, no en un marcador
+  'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
 };
 
 const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
@@ -5074,7 +5076,7 @@ function cmdAdhoc(sub, payloadJson) {
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
     const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
     const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: «${reason}» · ${cupoPedido}`,
-      propia: destino, anotar: (renglon) => appendLog('gates.log', renglon) });
+      propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
     if (r.codigo !== 0) {
       const json = String(payloadJson).replace(/'/g, "'\\''");
       console.error(`🔒 marker.js adhoc set: el dueño no lo aprobó — ${r.motivo}`);

@@ -1621,7 +1621,7 @@ test('8.141 T11 AdhocSet_ForSession_Delegada_SinVentana', (t) => {
   assert.strictEqual(reg.firma, 'adhoc-lane');
   assert.strictEqual(reg.sesion, 'ses-coord');
   assert.strictEqual(reg.destino, 'ses-a');
-  const e = ow.exigir({ firma: 'adhoc-lane', argv: ADHOC_PARA_A_ARGV, pid: 301, arbol: arbolDelGuion(casa, ADHOC_PARA_A), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  const e = ow.exigir({ firma: 'adhoc-lane', argv: ADHOC_PARA_A_ARGV, pid: 301, arbol: arbolDelGuion(casa, ADHOC_PARA_A), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'delegacion');
   assert.strictEqual(e.sesion, 'ses-coord');
