@@ -15,6 +15,12 @@ command -v expect >/dev/null 2>&1 || { echo "NO MEDIDO: no hay expect en el cami
 # \
 exec expect "$0" "$@"
 
+# lo que `claude` escribe pasa a la terminal de quien corre la sonda, y la sesión se corta antes de que apague el
+# seguimiento del mouse: al salir, por donde sea, se apaga (los modos del mouse y el pegado entre corchetes) y vuelve el cursor
+exit -onexit { puts -nonewline stdout "\033\[?1000l\033\[?1002l\033\[?1003l\033\[?1006l\033\[?1015l\033\[?2004l\033\[?25h"; flush stdout }
+# cortada con una señal (la persona la interrumpe, o la terminal se cierra), sale por el mismo camino
+trap { exit [expr {128 + [trap -number]}] } {SIGINT SIGTERM SIGHUP SIGQUIT}
+
 proc no_medido {motivo} { puts "\nNO MEDIDO: $motivo"; exit 3 }
 proc rojo {motivo} { puts "\nROJO: $motivo"; exit 1 }
 
