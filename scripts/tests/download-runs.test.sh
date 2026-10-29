@@ -1283,6 +1283,25 @@ print('null' if fp.get('value', 'x') is None and 'num' not in fp else 'num=%s' %
 [ "${RC_SDLC}" -eq 0 ] && [[ "${FP}" == null* ]] && [[ "${FP}" == *"no medido: la bajada de los merges"* ]] \
   && ok "T32 first_pass_ratio null con «no medido: la bajada de los merges…», nunca el número de los versionados" || mal "T32 sdlc rc=${RC_SDLC}: ${FP} · $(head -2 "${T}/sdlc.err")"
 
+# ── Cuenta nueva · la llave pasa a otra cuenta y otro contenedor: la bajada lee el nuevo ─────────────────────────
+# 🔴 Falla con: un índice de bajadas que no mira el destino → lo que sólo está en el buzón nuevo se da por bajado, y
+#    lo idéntico que las máquinas vuelven a subir se baja otra vez entero.
+T="${BASE}/cuenta-nueva"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "equipo-deva/6.1-2026-10-01T0900.json" 800
+TYCON_DOWNLOADS_LOG="${T}/estado/mailbox-downloads.json" bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" bajados)" = "1" ] || mal "Cuenta nueva: la primera bajada no anduvo (rc=${RC}, bajados $(campo "${T}" bajados))"
+mkdir -p "${T}/b/blobs/telemetry/equipo-deva"
+cp "${T}/b/blobs/corridas/equipo-deva/6.1-2026-10-01T0900.json" "${T}/b/blobs/telemetry/equipo-deva/"
+head -c 900 /dev/urandom > "${T}/b/blobs/telemetry/equipo-deva/6.2-2026-10-02T0900.json"
+printf '{"cuenta":"cuentanueva","contenedor":"telemetry","tenant":"11111111-2222-3333-4444-555555555555","politica":"upload-p","vence":"2099-01-01","sas":"si=upload-p&sig=x"}\n' > "${T}/cfg.json"
+ANTES=$(gets "${T}/b")
+TYCON_DOWNLOADS_LOG="${T}/estado/mailbox-downloads.json" bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" bajados)" = "1" ] && [ "$(( $(gets "${T}/b") - ANTES ))" = "1" ] \
+  && cmp -s "${T}/b/blobs/telemetry/equipo-deva/6.2-2026-10-02T0900.json" "${T}/estado/corridas-buzon/equipo-deva/6.2-2026-10-02T0900.json" \
+  && python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['destino']=='cuentanueva/telemetry'" "${T}/estado/mailbox-downloads.json" 2>/dev/null \
+  && ok "Cuenta nueva: con la llave de otra cuenta y otro contenedor, baja sólo lo nuevo (1 GET), no lo idéntico, y el índice anota el destino nuevo" \
+  || mal "Cuenta nueva: rc=${RC} bajados=$(campo "${T}" bajados) GETs $(( $(gets "${T}/b") - ANTES )) · $(head -2 "${T}/err.txt")"
+
 # ── T24 · esta suite NO toca el tablero del repo (ver la cabecera) ───────────────────────────────────────────────
 [ "$(huella "${ENTREGABLE_SEIS}")" = "${HUELLA_SEIS_ANTES}" ] && ok "T24 la suite no tocó artifacts/tablero-del-arnes.html" \
   || mal "T24 la suite ESCRIBIÓ artifacts/tablero-del-arnes.html — algún caso genera la página del equipo sin --output a un temporal"
