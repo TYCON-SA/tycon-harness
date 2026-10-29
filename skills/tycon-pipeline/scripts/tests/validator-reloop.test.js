@@ -25,6 +25,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+// --trust-ran lo firma el dueño en la ventana de permiso; acá se da por pasada
+const { conVentana } = require('../../../../scripts/tests/lib/window-passed.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -125,7 +127,7 @@ function correr(home, repo, args, envExtra = {}, { sinStory = false } = {}) {
     assert.equal(n.status, 0, `no se pudo dejar la nota de la vuelta ${iter}: ${n.stderr}`);
   }
   const r = spawnSync(process.execPath, [PIPELINE, ...args, '--repo', repo, ...story, '--files', 'src/a.js'],
-    { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_GUIDES_DIR: TCG || '', ...envExtra } });
+    { encoding: 'utf8', env: (args.includes('--trust-ran') ? conVentana : (e) => e)({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_GUIDES_DIR: TCG || '', ...envExtra }) });
   let json = null;
   try { json = JSON.parse(r.stdout); } catch { /* se asserta abajo */ }
   return { status: r.status, json, stderr: r.stderr, stdout: r.stdout };

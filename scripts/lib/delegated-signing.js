@@ -105,10 +105,11 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   } catch (e) { return no(`no pude leer el perfil del equipo (${e.message})`); }
   a = a || {};
   const cat = require('./signatures.js');
-  const ids = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []).flatMap((x) => cat.expand(x));
+  // owner_only sólo restringe: ahí escape-phrases cubre también los escapes que el grupo no delega
+  const ids = (v, o) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []).flatMap((x) => cat.expand(x, o));
   const malFormada = ['owner_only', 'delegated_signing', 'delegated_machines'].find((k) => a[k] != null && !Array.isArray(a[k]) && !(k !== 'delegated_machines' && typeof a[k] === 'string'));
   if (malFormada) return no(`no pude leer approvals.${malFormada} del perfil: no es una lista`);
-  if (ids(a.owner_only).includes(firma)) return no(`«${firma}» es sólo del dueño (approvals.owner_only)`);
+  if (ids(a.owner_only, { restringe: true }).includes(firma)) return no(`«${firma}» es sólo del dueño (approvals.owner_only)`);
   if (!ids(a.delegated_signing).includes(firma)) return no(`el perfil del equipo no delega «${firma}» (approvals.delegated_signing)`);
   let fp;
   try { fp = (huella || (() => require('./machine-id.js').huella()))(); } catch (e) { return no(`no pude leer la huella de esta máquina (${e.message})`); }

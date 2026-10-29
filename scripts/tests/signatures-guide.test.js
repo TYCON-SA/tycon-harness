@@ -83,3 +83,33 @@ test('8.139 T2 SignaturesGuide_DiceLoDelegadoNoEstaProtegido', () => {
     assert.ok(seccion.includes(frase), `la sección no dice «${frase}»`);
   }
 });
+
+const TRES = ['escape:force-manual', 'escape:trust-ran', 'runtime-waiver'];
+
+// T14 Catalogo_TresFirmas_OtraSesionSi @story-8.142 @ac-5 @ac-6 @ac-7
+// 🔴 Falla con: una de las tres sin «sí, desde otra sesión», o los dos escapes que siguen pidiéndose por el freno.
+test('8.142 T14 Catalogo_TresFirmas_OtraSesionSi', () => {
+  const cat = require(CATALOGO);
+  const de = (id) => cat.SIGNATURES.find((s) => s.id === id);
+  for (const id of TRES) assert.strictEqual(de(id).otherSession, 'yes', id);
+  for (const id of ['escape:force-manual', 'escape:trust-ran']) {
+    assert.strictEqual(de(id).kind, 'guion', id);
+    assert.match(de(id).command, /--for-session <D>/, `${id}: la forma canónica nombra la sesión destino`);
+    assert.match(de(id).terminal, /--terminal/, `${id}: la terminal`);
+  }
+  assert.match(de('escape:force-manual').command, /^marker\.js set-check <control> <estado> --force-manual/);
+  assert.match(de('escape:trust-ran').command, /^pipeline\.js check-count --repo <r> --story <s> --trust-ran/);
+});
+
+// T15 SignaturesGuide_TresFilas @story-8.142 @ac-10
+// 🔴 Falla con: la guía que todavía dice «no, por la terminal» para alguna de las tres, o sin su forma nueva.
+test('8.142 T15 SignaturesGuide_TresFilas', () => {
+  const cat = require(CATALOGO);
+  const filas = tabla(fs.readFileSync(GUIA, 'utf8'), '## Las firmas');
+  for (const id of TRES) {
+    const f = filas.find((x) => x[0] === `\`${id}\``);
+    assert.ok(f, `${id}: sin fila`);
+    assert.strictEqual(f[3], 'sí', id);
+    assert.strictEqual(f[2], `\`${cat.SIGNATURES.find((s) => s.id === id).command}\``, id);
+  }
+});

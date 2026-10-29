@@ -126,6 +126,14 @@ A phrase in the chat, in a task or in a message between sessions signs nothing: 
 conversation to sign. The owner signs in the permission window or in their terminal, and what the coordinator can sign
 on the owner's behalf is in `guides/firmas-del-arnes.md`.
 
+From her own tab, with `--for-session <D>`, the coordinator requests the signatures the guide marks «sí» under «¿Desde
+otra sesión?». Among them: setting a check by hand (`marker.js set-check <control> <estado> --force-manual
+--for-session <D>`), counting the reviewers without the record that they ran (`pipeline.js check-count --repo <r>
+--story <s> --trust-ran --for-session <D>`) and accepting a criterion that cannot be tested live (`marker.js
+runtime-waiver <historia> --acs <n> --for-session <D>`). The story is the one of `<D>`'s open run: otherwise the script
+exits without writing. The window opens for the owner in the coordinator's tab. None of the three is delegated unless
+the profile names it; that request is prepared by the session and approved by the owner, separately.
+
 ## The notices to the owner
 
 Short and plain: what happened, what is missing and what the owner decides, in that order. One notice per batch of

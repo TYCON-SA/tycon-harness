@@ -11,7 +11,8 @@
  *                 espacios como guiones y sin acentos.
  *   kind          cómo se pide: 'guion' (un guion que firma, y verifica la ventana) o 'freno' (un escape que el freno
  *                 deja pasar con la ventana). Las cuatro que se dan sobre un archivo (FIRMAS_DE_ARCHIVO) son 'guion':
- *                 `marker.js sign-file` las pide en la ventana y deja la constancia que consume el Edit o Write.
+ *                 `marker.js sign-file` las pide en la ventana y deja la constancia que consume el Edit o Write. Las de
+ *                 POR_GUION también: su guion pide la firma y se puede pedir para otra sesión.
  *   approves      qué aprueba, en llano.
  *   command       el comando que la pide.
  *   otherSession  'yes' si el comando se puede correr desde la pestaña de otra sesión, 'no' si no, 'pending' si la firma
@@ -19,7 +20,9 @@
  *   terminal      cómo la firma el dueño en su terminal, o null mientras no tenga comando.
  *
  * GROUPS es la tabla de equivalencias de los 11 valores que la 8.116 aceptaba en `approvals.delegated_signing` (`off`
- * aparte: es «ninguna»): `escape-phrases` son todos los escapes; cada uno de los demás, su propia firma.
+ * aparte: es «ninguna»): `escape-phrases` son los escapes salvo los de POR_GUION, que se delegan sólo nombrándolos;
+ * cada uno de los demás, su propia firma. En `owner_only`, que sólo restringe, `escape-phrases` son todos los escapes:
+ * `expand(v, { restringe: true })`. El lector del perfil no acepta grupos ahí; quien lee la lista sin ese lector, igual.
  */
 
 const POR_VARIABLE = [
@@ -37,8 +40,8 @@ const CON_NOMBRE = [
   ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous'],
   ['cerrar-la-ejecucion', 'cerrar una ejecución con un control en rojo', 'marker.js clear'],
   ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda', 'marker.js close-as-debt'],
-  ['force-manual', 'marcar a mano en verde la prueba de pantalla', 'marker.js set-check dod green --force-manual'],
-  ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --trust-ran'],
+  ['force-manual', 'marcar a mano el estado de un control', 'marker.js set-check <control> <estado> --force-manual [--for-session <D>]'],
+  ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]'],
   ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'file'],
   ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'file'],
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
@@ -69,7 +72,7 @@ const APPROVES_EN = {
   'escape:set-autonomous': "change a run's autonomous mode",
   'escape:cerrar-la-ejecucion': 'close a run with a check in red',
   'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
-  'escape:force-manual': 'mark the screen test green by hand',
+  'escape:force-manual': "set a check's state by hand",
   'escape:trust-ran': 'count the reviewers without the record that they ran',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'write the live test evidence by hand',
   'escape:dod_runtime_exempt': 'exempt a story from the live test',
@@ -80,7 +83,9 @@ const APPROVES_EN = {
 // las firmas que se dan sobre un archivo (`file` en vez del comando, en CON_NOMBRE): `marker.js sign-file` las pide en
 // la ventana, y el Edit o Write que sigue consume la constancia
 const FIRMAS_DE_ARCHIVO = Object.freeze(CON_NOMBRE.filter((f) => f[2] === 'file').map((f) => f[0]));
-const kindDe = (id) => (!id.startsWith('escape:') || FIRMAS_DE_ARCHIVO.includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
+// los escapes que pide su propio guion, con su forma canónica: la terminal es esa forma con --terminal
+const POR_GUION = Object.freeze(['force-manual', 'trust-ran']);
+const kindDe = (id) => (!id.startsWith('escape:') || [...FIRMAS_DE_ARCHIVO, ...POR_GUION].includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
 const sobreArchivo = (nombre) => `marker.js sign-file ${nombre} <archivo>`;
 
 const SIGNATURES = Object.freeze([
@@ -89,7 +94,7 @@ const SIGNATURES = Object.freeze([
   { id: 'refresh-after-main', approves: 'refirmar los controles tras traer main, sin cambio propio', command: 'run-base-controls.sh approve', otherSession: 'yes', terminal: 'run-base-controls.sh approve --terminal' },
   { id: 'control-change', approves: 'aprobar un cambio de los controles del repo', command: 'run-base-controls.sh approve', otherSession: 'yes', terminal: 'run-base-controls.sh approve --terminal' },
   { id: 'critical-waiver', approves: 'eximir un hallazgo crítico de los revisores', command: 'marker.js waive-critical', otherSession: 'yes', terminal: 'marker.js waive-critical --terminal' },
-  { id: 'runtime-waiver', approves: 'aceptar un criterio imposible de probar en vivo', command: 'marker.js runtime-waiver', otherSession: 'no', terminal: 'marker.js runtime-waiver <historia> --terminal' },
+  { id: 'runtime-waiver', approves: 'aceptar un criterio imposible de probar en vivo', command: 'marker.js runtime-waiver', otherSession: 'yes', terminal: 'marker.js runtime-waiver <historia> --terminal' },
   { id: 'manual-test', approves: 'marcar un criterio como probado a mano', command: 'marker.js mark-tested --acs', otherSession: 'yes', terminal: 'marker.js mark-tested --acs --terminal' },
   { id: 'browser-test', approves: 'preparar la prueba con navegador, o decirle que no', command: 'e2e-setup.js prepare (o defer --no)', otherSession: 'yes', terminal: 'e2e-setup.js prepare --terminal (o defer --no --terminal)' },
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
@@ -98,23 +103,30 @@ const SIGNATURES = Object.freeze([
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
-  ...CON_NOMBRE.map(([nombre, approves, command]) => (command === 'file'
-    ? { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: 'no', terminal: `${sobreArchivo(nombre)} --terminal` }
-    : { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' })),
+  ...CON_NOMBRE.map(([nombre, approves, command]) => {
+    if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: 'no', terminal: `${sobreArchivo(nombre)} --terminal` };
+    if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
+    return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
+  }),
 ].map((s) => Object.freeze({ ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id) })));
 
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
+const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => !POR_GUION.includes(id.slice('escape:'.length)));
 
 const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversarial-skip', 'critical-waiver', 'escape-phrases',
   'plan-approval', 'browser-test', 'runtime-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run']
-  .map((g) => [g, Object.freeze(g === 'escape-phrases' ? ESCAPES : [g])])));
+  .map((g) => [g, Object.freeze(g === 'escape-phrases' ? ESCAPES_DEL_GRUPO : [g])])));
 
 function ids() { return SIGNATURES.map((s) => s.id); }
 function groupNames() { return Object.keys(GROUPS); }
 function isId(v) { return SIGNATURES.some((s) => s.id === v); }
 
-/** Los ids que nombra un valor de la lista: un grupo, sus firmas; un id, él mismo; `off` o desconocido, ninguno. */
-function expand(v) {
+/**
+ * Los ids que nombra un valor de la lista: un grupo, sus firmas; un id, él mismo; `off` o desconocido, ninguno. Con
+ * `restringe` (la lista `owner_only`), `escape-phrases` son todos los escapes.
+ */
+function expand(v, { restringe = false } = {}) {
+  if (restringe && v === 'escape-phrases') return [...ESCAPES];
   if (Object.prototype.hasOwnProperty.call(GROUPS, v)) return [...GROUPS[v]];
   return isId(v) ? [v] : [];
 }

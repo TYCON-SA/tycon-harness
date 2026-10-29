@@ -18,8 +18,9 @@
  * código adentro, una copia con otro nombre, y un programa de texto que además ejecuta (`awk` con `system`).
  *
  * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ guion, sub, args: [{ texto, literal }], dudosa, asig }]
- *      escapeDe(llamada, sid) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' | 'force-manual' |
- *      'trust-ran' | 'no-deep-review' | null
+ *      escapeDe(llamada, sid, comando?) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' |
+ *      'force-manual' | 'trust-ran' | 'no-deep-review' | null. Con `comando`, el comando entero en la forma canónica de
+ *      la firma de force-manual o trust-ran no es un escape: lo firma su guion en la ventana.
  */
 
 const PREFIJOS = new Set(['sudo', 'env', 'exec', 'command', 'nohup', 'time', 'nice', 'timeout', 'xargs', 'builtin',
@@ -453,13 +454,35 @@ function lectorDeBanderas(llamada) {
   return pide;
 }
 
-function escapeDe(llamada, sid) {
+/** El id de la firma `guion` del comando entero en su forma canónica, o null (owner-window.js, que lee este archivo). */
+function canonicaDe(comando) {
+  let ow;
+  try {
+    ow = require(require('path').join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  } catch (e) {
+    // sin la ventana, la forma canónica se trata como escape y el freno la niega; el motivo queda en el registro
+    try {
+      const path = require('path');
+      const dir = require('./state-dir.js').stateDir();
+      require('fs').mkdirSync(dir, { recursive: true });
+      require('fs').appendFileSync(path.join(dir, 'hook-errors.log'),
+        `[${new Date().toISOString()}] marker-command: no cargó owner-window.js (${e && e.message}); la forma canónica se lee como escape\n`);
+    } catch (_) { /* el registro es ayuda: el freno sigue negando igual */ }
+    return null;
+  }
+  const c = ow.canonicaDe(String(comando));
+  return c ? c.id : null;
+}
+
+function escapeDe(llamada, sid, comando = null) {
   const { sub, args } = llamada;
   const lit = (a) => a && a.literal;
   const pide = lectorDeBanderas(llamada);
+  // el comando entero en la forma canónica de la firma la pide su guion en la ventana: no es un escape del freno
+  const porSuGuion = (esc) => comando != null && canonicaDe(comando) === `escape:${esc}`;
   if (llamada.guion === 'pipeline') {
     // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
-    if (sub === 'check-count') return pide('--trust-ran') ? 'trust-ran' : null;
+    if (sub === 'check-count') return pide('--trust-ran') && !porSuGuion('trust-ran') ? 'trust-ran' : null;
     // apagar el pase adversarial al arrancar la historia o al consultar el portón; un `--env-file` delante del guion
     // puede traer `TYCON_NO_DEEP_REVIEW` sin que el comando la muestre
     if (sub === 'start' || sub === 'deep-review-gate') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
@@ -468,7 +491,7 @@ function escapeDe(llamada, sid) {
     return null;
   }
   // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
-  if (sub === 'set-check') return pide('--force-manual') ? 'force-manual' : null;
+  if (sub === 'set-check') return pide('--force-manual') && !porSuGuion('force-manual') ? 'force-manual' : null;
   // `mark-adversarial-skipped --no-deep-review`: abandonar el pase aunque el portón diga que corre
   if (sub === 'mark-adversarial-skipped') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
   // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`

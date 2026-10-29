@@ -5519,7 +5519,8 @@ function readSessionMarkerStrict() {
   } catch (e) { return { estado: 'ilegible', marcador: null, motivo: String(e.message).slice(0, 80) }; }
 }
 
-// La firma pedida para otra sesión (`--for-session <D>`): acá sólo la vuelta extra de revisores. Hasta la firma el guion
+// La firma pedida para otra sesión (`--for-session <D>`): acá la vuelta extra de revisores y contar los revisores sin la
+// constancia de que corrieron (`check-count --trust-ran`). Hasta la firma el guion
 // sólo lee la corrida de <D>; la firma la pide la sesión que corre el guion (PROPIA, la de antes de cambiar nada), y
 // recién después `fijarDestino` deja el proceso, y los guiones que lance, trabajando sobre <D>.
 const PROPIA = sessionIdFileKey();
@@ -5530,17 +5531,34 @@ function paraOtraSesion(cmd, args, argv) {
   const pedida = i >= 0 ? argv[i + 1] : null;
   if (!pedida || pedida === PROPIA) return null;
   // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
-  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la vuelta extra para una sesión se firma en la terminal del dueño (--terminal). No escribí nada.\n';
-  if (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound) {
-    return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round): ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal). No escribí nada.\n';
+  const contar = cmd === 'check-count';
+  if (contar && !args.trustRan) return '🛑 --for-session en check-count va sólo con --trust-ran: contar los revisores de otra sesión sin firma no es una firma. No escribí nada.\n';
+  if (!contar && (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound)) {
+    return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round) y para check-count --trust-ran: ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
   }
   if (!/^[\w-]+$/.test(pedida)) return '🛑 La sesión de --for-session no se puede leer. No escribí nada.\n';
+  if (pedida === '_nosession') return '🛑 «_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id. No escribí nada.\n';
   let abierta;
   try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return `🛑 ${e.message}. No escribí nada.\n`; }
   if (!abierta || !abierta.storyId) {
-    return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida para la vuelta extra. No escribí nada.\n`;
+    return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida ${contar ? 'que contar' : 'para la vuelta extra'}. No escribí nada.\n`;
   }
   paraOtra = { pedida, storyId: String(abierta.storyId) };
+  if (contar) {
+    // la historia que se cuenta es la de la corrida de <D>; el registro de sus revisores se lee recién con la firma
+    const repoAbs = path.resolve(args.repo || '.');
+    const storyAbs = args.story ? (path.isAbsolute(args.story) ? args.story : path.join(repoAbs, args.story)) : null;
+    const nombrada = storyAbs ? deriveStoryId(storyAbs) : null;
+    if (!nombrada || String(nombrada) !== paraOtra.storyId) {
+      return `🛑 La corrida de la sesión ${pedida} es de la story ${paraOtra.storyId}, y --story ${args.story ? `nombra la ${nombrada || args.story}` : 'no está'}. No escribí nada.\n`;
+    }
+    // el mismo número no alcanza: tiene que ser el archivo de la corrida, como en runtime-waiver
+    if (!require('./lib/waiver-display.js').esLaDelMarcador(storyAbs, abierta)) {
+      return `🛑 ${path.basename(storyAbs)} no es el archivo de la historia de la corrida de la sesión ${pedida} (${abierta.storyPath || 'sin ruta en su marcador'}). No escribí nada.\n`;
+    }
+    return null;
+  }
   // hasta la firma, sólo para leer su corrida: nada se escribe antes (topeDeVueltas)
   for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) if (k === 'CLAUDE_CODE_SESSION_ID' || process.env[k]) process.env[k] = pedida;
   return null;
@@ -6686,6 +6704,20 @@ function main() {
   }
 
   if (cmd === 'check-count') {
+    // contar sin la constancia de que corrieron lo firma el dueño, siempre y antes de contar: con la firma, el registro
+    // de revisores que se lee es el de la sesión destino (sessionLogPath lee la variable que fija fijarDestino)
+    if (args.trustRan) {
+      const ow = ownerWindow();
+      const stateDir = stateDirOf(os.homedir());
+      const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), ...g })}\n`); };
+      const r = ow.exigir({ firma: 'escape:trust-ran', argv: process.argv.slice(1), propia: PROPIA, anotar,
+        resumen: `contar los revisores de ${args.story ? path.basename(args.story) : 'la corrida'} sin la constancia de que corrieron` });
+      // lo firma la persona: sin su firma no se cuenta
+      const noSeConto = (motivo, codigo) => { process.stderr.write(`🛑 check-count: no se contó sin la firma de la persona — ${motivo}.\n`); process.exit(codigo); };
+      if (r.codigo !== 0) noSeConto(r.motivo, r.codigo);
+      const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
+      if (f.codigo !== 0) noSeConto(f.motivo, f.codigo);
+    }
     const state = advisorsRunSinceStart();
     // Una corrida nueva sin `advisors`: la ronda que hay en el registro es de la anterior. Ni se cuenta (sus
     // revisores no vieron este código) ni se acepta el `--ran` declarado: se frena, como sin ningún spawn.

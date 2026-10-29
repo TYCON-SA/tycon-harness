@@ -123,6 +123,7 @@ function paraOtraSesion(cmd, argv) {
   if (PROPIA === '_nosession') return null;
   if (!['prepare', 'defer'].includes(cmd)) return `--for-session con otra sesión vale sólo para prepare y defer: ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.`;
   if (!/^[\w-]+$/.test(pedida)) return 'la sesión de --for-session no se puede leer. No escribí nada.';
+  if (pedida === '_nosession') return '«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id. No escribí nada.';
   let abierta;
   try { abierta = leerMarcador(pedida); } catch (e) { return `${e.message}. No escribí nada.`; }
   if (!abierta || !abierta.storyId) return `la sesión ${pedida} no tiene una ejecución abierta. No escribí nada.`;

@@ -159,7 +159,7 @@ if (require.main === module) {
       };
       pedidas = todas.map((l) => {
         const s = salidaPerdida(l);
-        if (!s) return { l, esc: escapeDe(l, sid) };
+        if (!s) return { l, esc: escapeDe(l, sid, cmd) };
         const ap = s.sesion ? aperturaDe(s.sesion) : null;
         return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde: (ap && ap.ts) || '-', sinReenvio: !salida.reenvio };
       }).filter((x) => x.esc);

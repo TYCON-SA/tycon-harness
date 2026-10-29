@@ -517,7 +517,7 @@ test('OwnerWindow_FirmaDelFreno_VentanaSinRegistro (T34)', (t) => {
     ['escape:TYCON_PROD_LINT', 'TYCON_PROD_LINT=0 git commit -m x'],
     ['escape:set-autonomous', `node ${MARKER} set-autonomous false`],
     ['escape:cerrar-la-ejecucion', `node ${MARKER} clear`],
-    ['escape:trust-ran', `node ${PIPELINE} check-count --trust-ran`],
+    ['escape:no-deep-review', `node ${PIPELINE} start --story s.md --no-deep-review`],
   ];
   for (const [e, cmd] of forma) {
     const casa = casaNueva(t);
@@ -736,9 +736,9 @@ test('OwnerWindow_SoloDelDueno_GanaAlGrupo + OwnerWindow_SesionPropia_NoSeDelega
   // sobre la propia sesión: sin --for-session, el destino es la del evento
   casa = casaConDesignada(t, { designada: 'ses-a' });
   assert.strictEqual(pedir(casa, `node ${MARKER} complete-step approve-plan --approved "el plan"`, { delegacion: delegacionReal() }).decision, 'ask');
-  // un escape es siempre de la propia sesión: nunca se delega
-  const fm = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['escape-phrases'], owner_only: [] } });
-  assert.strictEqual(pedir(casa, `node ${MARKER} set-check advisors green --force-manual`, { escapes: ['escape:force-manual'], delegacion: fm }).decision, 'ask');
+  // la propia sesión no se delega, tampoco un control declarado a mano aunque el perfil lo nombre
+  const fm = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['escape:force-manual'], owner_only: [] } });
+  assert.strictEqual(pedir(casa, `node ${MARKER} set-check advisors green --force-manual`, { delegacion: fm }).decision, 'ask');
   // sobre otra sesión con la misma story que la ejecución abierta de la designada
   casa = casaConDesignada(t);
   fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '9.99' }));
@@ -765,11 +765,15 @@ test('OwnerWindow_PasosDeOtraSesion_SegunElCatalogo (T27)', (t) => {
   const { SIGNATURES } = require('../lib/signatures.js');
   for (const [firma, cmd] of GUIONES) {
     const s = SIGNATURES.find((x) => x.id === firma);
-    const r = pedir(casaNueva(t), `${cmd} --for-session ses-a`, { evento: DE_LA_COORD });
+    const casa = casaNueva(t);
+    // los criterios que se eximen son los de la historia de la corrida de ses-a
+    if (firma === 'runtime-waiver') tresParaOtra(casa);
+    const r = pedir(casa, `${cmd} --for-session ses-a`, { evento: DE_LA_COORD });
     if (s.otherSession === 'yes') assert.strictEqual(r.decision, 'ask', `${firma}: ${r.texto}`);
     else {
       assert.strictEqual(r.decision, 'deny', `${firma}: ${r.texto}`);
       assert.match(r.texto, /terminal/, firma);
+      assert.match(r.texto, /--for-session ses-a\.$/, `${firma}: la terminal firma para la sesión destino`);
     }
   }
 });
@@ -1464,4 +1468,75 @@ test('OwnerWindow_PortonEnLaVentana_LeeElProgramaDeUnArchivoYNoDeLaEntrada', (t)
   assert.match(otro.stderr, /^uso: /m);
   const mac = spawnSync('bash', [CONTROLES, 'approve'], { cwd: repo, env: { ...env, TYCON_WAIVER_PLATFORM: '' }, encoding: 'utf8', timeout: 60000 });
   assert.doesNotMatch(mac.stderr, /ventana nueva/, `${mac.stdout}${mac.stderr}`);
+});
+
+// ── Las tres firmas pedidas para otra sesión ──────────────────────────────────────────────────────────────────────────
+
+/** Las tres, pedidas por la coordinadora para ses-a; la de los criterios, sobre la historia de la corrida de ses-a. */
+function tresParaOtra(casa) {
+  const { repo, story } = HISTORIA;
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.91', storyPath: story, repoPath: repo }));
+  return [
+    ['escape:force-manual', `node ${MARKER} set-check dod green --force-manual --for-session ses-a`],
+    ['escape:trust-ran', `node ${PIPELINE} check-count --repo ${repo} --story ${story} --trust-ran --ran a --for-session ses-a`],
+    ['runtime-waiver', `node ${MARKER} runtime-waiver ${story} --acs 1 --for-session ses-a`],
+  ];
+}
+
+test('TresFirmas_OwnerOnly_NoSeDelegan (T12) @story-8.142 @ac-9', (t) => {
+  for (const [firma] of tresParaOtra(casaNueva(t))) {
+    const casa = casaConDesignada(t);
+    const [, cmd] = tresParaOtra(casa).find(([f]) => f === firma);
+    // con todas las llaves, salvo que el perfil la deja sólo al dueño
+    const delegacion = delegacionReal({ perfil: { ...PERFIL, delegated_signing: [firma], owner_only: [firma] } });
+    const r = pedir(casa, cmd, { evento: DE_LA_COORD, delegacion });
+    assert.strictEqual(r.decision, 'ask', `${firma}: ${r.texto}`);
+    assert.notStrictEqual(registroVigente(casa).via, 'delegacion', firma);
+    // y con las mismas llaves sin el candado, la delegación la firma: la diferencia es owner_only
+    const casa2 = casaConDesignada(t);
+    const [, cmd2] = tresParaOtra(casa2).find(([f]) => f === firma);
+    const libre = pedir(casa2, cmd2, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: [firma], owner_only: [] } }) });
+    assert.strictEqual(libre.decision, 'allow', `${firma}: ${libre.texto}`);
+  }
+});
+
+test('TresFirmas_SinPerfil_PidenVentana (T13) @story-8.142 @ac-9', (t) => {
+  for (const [firma, cmd] of tresParaOtra(casaNueva(t))) {
+    const casa = casaConDesignada(t);
+    tresParaOtra(casa);
+    const r = pedir(casa, cmd, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: {} }) });
+    assert.strictEqual(r.decision, 'ask', `${firma}: ${r.texto}`);
+    assert.deepStrictEqual(r.firmas, [firma]);
+    assert.match(r.texto, /sesión ses-a/, `${firma}: el texto dice la sesión destino`);
+    const reg = registroVigente(casa);
+    assert.deepStrictEqual([reg.firma, reg.sesion, reg.destino], [firma, 'ses-coord', 'ses-a']);
+    assert.deepStrictEqual(reg.corrida, { storyId: '9.91', startedAt: null });
+  }
+  // la historia de los criterios tiene que ser la de la corrida de ses-a
+  const casa = casaNueva(t);
+  tresParaOtra(casa);
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: '/r/specs/story-9.99.md' }));
+  const r = pedir(casa, `node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1 --for-session ses-a`, { evento: DE_LA_COORD });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /no es la historia de la ejecución de la sesión ses-a/);
+});
+
+test('EscapePhrases_SinLasDosFirmas (T17) @story-8.142 @ac-9', (t) => {
+  const cat = require('../lib/signatures.js');
+  // el grupo de delegated_signing no las trae; el de owner_only, sí
+  const grupo = cat.expand('escape-phrases');
+  assert.ok(!grupo.includes('escape:force-manual') && !grupo.includes('escape:trust-ran'), grupo.join(', '));
+  assert.ok(grupo.includes('escape:TYCON_SAFETY_OFF'));
+  const restringe = cat.expand('escape-phrases', { restringe: true });
+  assert.ok(restringe.includes('escape:force-manual') && restringe.includes('escape:trust-ran'));
+  // un perfil que delega el grupo no delega trust-ran para otra sesión: pide la ventana
+  const casa = casaConDesignada(t);
+  const [, cmd] = tresParaOtra(casa).find(([f]) => f === 'escape:trust-ran');
+  const r = pedir(casa, cmd, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['escape-phrases'] } }) });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  // el grupo en owner_only las sigue dejando al dueño, aunque delegated_signing las nombre
+  const s = DS.delegaSinVentana({ firma: 'escape:trust-ran', sesion: 'ses-coord', destino: 'ses-a', home: casa, estado: path.join(casa, '.claude', '.tycon-pipeline'),
+    perfil: () => ({ ...PERFIL, delegated_signing: ['escape:trust-ran'], owner_only: ['escape-phrases'] }), huella: () => ({ huella: HUELLA }) });
+  assert.strictEqual(s.ok, false);
+  assert.match(s.motivo, /sólo del dueño/);
 });

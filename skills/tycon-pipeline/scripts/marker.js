@@ -181,6 +181,9 @@ const PARA_OTRA_SESION = {
   'approve-mockup': { firma: 'plan-approval', marcador: true },
   'waive-critical': { firma: 'critical-waiver', marcador: true },
   'mark-tested': { firma: 'manual-test', marcador: true },
+  // un control declarado a mano y un criterio que no se prueba en vivo: los firma la persona, en la ventana o la terminal
+  'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
+  'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') },
   'restore': { firma: 'lost-run', nombra: 3 },
 };
@@ -202,6 +205,7 @@ function paraOtraSesion(argv) {
     return;
   }
   if (!/^[\w-]+$/.test(PEDIDA)) no('la sesión no se puede leer');
+  if (PEDIDA === '_nosession') no('«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id');
   const t = PARA_OTRA_SESION[argv[2]];
   const s = t && require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
@@ -2457,9 +2461,22 @@ function cmdSetCheck(name, status, flag) {
     console.error('  Override manual real (ej: no hay build definido): agregá --manual (queda en gates.log).');
     process.exit(2);
   }
-  const marker = readMarker();
-  // Sin marker (sin pipeline) → no-op silencioso. El check solo importa con pipeline activo.
+  let marker = readMarker();
+  // Sin marker (sin pipeline) → no-op silencioso. El check solo importa con pipeline activo. Con --force-manual sale 2:
+  // es una firma, y sin ejecución abierta no hay nada que firmar (el registro de la ventana no se gasta)
+  if (!marker && flag === '--force-manual') {
+    console.error(`🔒 marker.js set-check ${name}: la sesión ${SID} no tiene una ejecución abierta. No se escribió nada.`);
+    process.exit(2);
+  }
   if (!marker) process.exit(0);
+  let firma = null;
+  if (flag === '--force-manual') {
+    // el control declarado a mano lo firma el dueño, en cualquier estado; recién con la firma se escribe, sobre el
+    // marcador que quedó después de firmar
+    firma = firmaDelDueno('escape:force-manual', `${name} → ${status} a mano en ${marker.storyId || 'la ejecución'}`);
+    marker = readMarker();
+    if (!marker) { console.error(`🔒 marker.js set-check ${name}: la ejecución se cerró mientras se firmaba. No se escribió nada.`); process.exit(2); }
+  }
 
   if (name === 'dod') avisarBajaDePantalla(marker);
   // DoD de una story de UI NO se puede marcar manual: exige Playwright real.
@@ -2484,7 +2501,7 @@ function cmdSetCheck(name, status, flag) {
   marker.checksAt[name] = nowIso();
   marker.lastTouch = nowIso();
   writeMarker(marker);
-  appendLog('gates.log', { check: name, status, provenance: prov, storyId: marker.storyId });
+  appendLog('gates.log', { check: name, status, provenance: prov, storyId: marker.storyId, ...porDe(firma) });
   process.stdout.write(`check ${name}: ${status} (${prov})\n`);
 }
 
@@ -4468,7 +4485,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const wd = require('./lib/waiver-display.js');
   // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
   if (!wd.esLaDelMarcador(storyPath, m)) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en esta sesión${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${SID !== PROPIA ? `la sesión ${SID}` : 'esta sesión'}${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
     process.exit(2);
   }
   const matrix = rm.compute({ storyPath });
@@ -5369,7 +5386,8 @@ switch (cmd) {
     cmdSetAutonomous(arg1);
     break;
   case 'set-check':
-    cmdSetCheck(arg1, arg2, process.argv[5]);
+    // la bandera puede ir en cualquier lugar después del estado (`--for-session <D> --force-manual`)
+    cmdSetCheck(arg1, arg2, ['--force-manual', '--manual'].find((f) => process.argv.slice(5).includes(f)) || process.argv[5]);
     break;
   case 'run-check':
     cmdRunCheck(process.argv.slice(3));
