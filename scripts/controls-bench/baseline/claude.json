@@ -1146,8 +1146,6 @@
     "prod-access-guard.js::estado-firewall-borrar-se-frena": true,
     "prod-access-guard.js::estado-firewall-escribir-se-frena": true,
     "prod-access-guard.js::estado-firewall-copiar-encima-se-frena": true,
-    "prod-access-guard.js::archivo-sin-huella-da-la-huella-actual": true,
-    "prod-access-guard.js::archivo-con-huella-vieja-da-la-actual": true,
     "prod-access-guard.js::archivo-enlace-se-frena": true,
     "prod-access-guard.js::archivo-carpeta-se-frena": true,
     "prod-access-guard.js::archivo-grande-se-frena": true,
