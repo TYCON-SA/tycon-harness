@@ -324,6 +324,8 @@ const TEXTOS = {
   'corridas.vacioSinInforme': { es: 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus ejecuciones faltan, no son cero', en: 'not measured: it is not known yet who owns each machine (what the machines report is read with the first full download of the mailbox); your runs are missing, not zero' },
   'corridas.vacioTodavia': { es: 'todavía no hay ejecuciones de tus máquinas en el buzón ({maquinas}): la primera llega sola al terminar un pipeline', en: 'there are no runs from your machines in the mailbox yet ({maquinas}): the first one arrives automatically when a pipeline finishes' },
   'corridas.ningunaConfirmada': { es: 'ninguna confirmada', en: 'none confirmed' },
+  // la misma frase de `vacioTodavia` sin ninguna máquina confirmada: la API la traduce entera por su molde (2.60)
+  'corridas.vacioNingunaConfirmada': { es: 'todavía no hay ejecuciones de tus máquinas en el buzón (ninguna confirmada): la primera llega sola al terminar un pipeline', en: 'there are no runs from your machines in the mailbox yet (none confirmed): the first one arrives automatically when a pipeline finishes' },
   'hallazgos.titulo': { es: 'Lo que encontró la noche', en: 'What the night found' },
   'hallazgos.pedidoInvalido': { es: 'el envío no tiene la forma esperada: una lista de decisiones con fuente, id y acción', en: 'the submission does not have the expected shape: a list of decisions with source, id and action' },
   'hallazgos.fichaIlegible': { es: 'una de las fichas no se pudo leer: no se abrió ningún pedido', en: 'one of the findings could not be read: no pull request was opened' },
