@@ -30,13 +30,15 @@ const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 const DEL_ENTORNO = ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'DOD_BYPASS',
   'TYCON_TEST_SCOPE', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_PART', 'TYCON_EVIDENCE_DIR',
   'TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_COVERAGE_BASE', 'STOP_AUTONOMY', 'TYCON_SKILLS_DIR',
-  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TF_BUILD'];
+  'HARNESS_TEAM_DIR', 'TYCON_PRIVATE_TREE_TMP', 'TF_BUILD', 'TYCON_HOME'];
 
 function entorno(home, extra) {
   const env = { ...process.env };
   for (const k of DEL_ENTORNO) delete env[k];
-  // fechas fijas en los commits del laboratorio: la misma historia en cada corrida
-  return { ...env, HOME: home, GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@lab', GIT_COMMITTER_NAME: 'lab',
+  // fechas fijas en los commits del laboratorio: la misma historia en cada corrida. La casa del arnés es del
+  // laboratorio (y USERPROFILE también): en Windows la carpeta de usuario no sale de HOME, y sin esto se leería la
+  // configuración de quien corre la prueba.
+  return { ...env, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon-del-laboratorio'), GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@lab', GIT_COMMITTER_NAME: 'lab',
     GIT_COMMITTER_EMAIL: 'lab@lab', GIT_AUTHOR_DATE: '2026-10-19T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-19T12:00:00Z',
     ...(extra || {}) };
 }
@@ -253,6 +255,67 @@ test('PrivateTree_TeamLayer_FromEnv_OrSaid @story-7.36 @ac-11 @ac-12', () => {
   assert.match(con.salida, new RegExp(`capa del equipo: ${equipo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), con.salida);
   assert.match(con.salida, /armado en \d+(\.\d+)? s/, con.salida);
   assert.strictEqual(con.code, 0, con.salida);
+});
+
+// ── La capa del equipo que declara la máquina (paths.team) ─────────────────────────────────────────────────────────
+
+/** Un clon de juguete del repo del perfil del equipo: su perfil y el texto del alta, como el de verdad. */
+const cloneDelPerfil = (lab) => repoGit(path.join(lab.raiz, 'Perfil'), {
+  'team-profile.json': '{ "name": "acme" }\n', 'onboarding/step-0.md': '# alta de juguete\n' });
+/** Una casa del arnés de juguete cuya configuración declara `paths` (nada más). */
+function casaQueDeclara(lab, paths) {
+  const casa = path.join(lab.raiz, 'casa');
+  escribir(casa, 'config.json', JSON.stringify({ paths }) + '\n');
+  return casa;
+}
+const re = (t) => new RegExp(esc(t));
+
+test('PrivateTree_TeamLayer_FromMachineDeclaration @story-7.36 @ac-11', () => {
+  const lab = laboratorio();
+  fs.appendFileSync(path.join(lab.pub, 'skills/demo/lib.js'), '// tocado\n');
+  const perfil = cloneDelPerfil(lab);
+  const r = portón(lab, { TYCON_HOME: casaQueDeclara(lab, { team: perfil }) });
+  assert.match(r.salida, re(`capa del equipo: ${perfil} (declarada por la máquina: paths.team)`), r.salida);
+  assert.strictEqual(r.code, 0, r.salida);
+});
+
+test('PrivateTree_TeamLayer_EnvWinsOverDeclaration @story-7.36 @ac-11', () => {
+  const lab = laboratorio();
+  fs.appendFileSync(path.join(lab.pub, 'skills/demo/lib.js'), '// tocado\n');
+  const perfil = cloneDelPerfil(lab);
+  const otro = tmp('privado-equipo-');
+  escribir(otro, 'team-profile.json', '{ "name": "acme" }\n');
+  const r = portón(lab, { TYCON_HOME: casaQueDeclara(lab, { team: perfil }), HARNESS_TEAM_DIR: otro });
+  assert.match(r.salida, re(`capa del equipo: ${otro} (de HARNESS_TEAM_DIR)`), r.salida);
+  assert.doesNotMatch(r.salida, re(`capa del equipo: ${perfil}`), r.salida);
+  assert.strictEqual(r.code, 0, r.salida);
+});
+
+test('PrivateTree_TeamLayer_BadDeclaration_Said_NeverUsed @story-7.36 @ac-12', () => {
+  for (const [nombre, declarar, motivo] of [
+    ['no existe', (lab) => path.join(lab.raiz, 'no-esta'), /paths\.team nombra una carpeta que no está/],
+    ['no es un clon', (lab) => { const d = path.join(lab.raiz, 'suelta'); escribir(d, 'team-profile.json', '{}\n'); escribir(d, 'onboarding/a.md', 'x\n'); return d; }, /no es un clon de git/],
+    ['no es el perfil', (lab) => repoGit(path.join(lab.raiz, 'OtroRepo'), { 'README.md': 'otro\n' }), /no trae team-profile\.json/],
+    ['sin el alta', (lab) => repoGit(path.join(lab.raiz, 'SinAlta'), { 'team-profile.json': '{}\n' }), /no trae el texto del alta/],
+    ['relativa', () => 'Perfil', /paths\.team no es una ruta absoluta/],
+  ]) {
+    const lab = laboratorio();
+    fs.appendFileSync(path.join(lab.pub, 'skills/demo/lib.js'), '// tocado\n');
+    const r = portón(lab, { TYCON_HOME: casaQueDeclara(lab, { team: declarar(lab) }) });
+    assert.match(r.salida, /sin capa del equipo: la máquina declara paths\.team y no sirve/, `${nombre}\n${r.salida}`);
+    assert.match(r.salida, motivo, `${nombre}\n${r.salida}`);
+    assert.doesNotMatch(r.salida, /capa del equipo: (?:\/|[A-Za-z]:[\\/])/, `${nombre}: no se usa otra cosa en silencio\n${r.salida}`);
+    assert.strictEqual(r.code, 0, `${nombre}: no aborta\n${r.salida}`);
+  }
+});
+
+test('PrivateTree_TeamLayer_NothingDeclared_SaysNone @story-7.36 @ac-12', () => {
+  const lab = laboratorio();
+  fs.appendFileSync(path.join(lab.pub, 'skills/demo/lib.js'), '// tocado\n');
+  // una configuración que declara otras claves y no paths.team: igual que sin configuración
+  const r = portón(lab, { TYCON_HOME: casaQueDeclara(lab, { operations: lab.raiz }) });
+  assert.match(r.salida, /sin capa del equipo \(ni HARNESS_TEAM_DIR ni paths\.team en la configuración de la máquina\)/, r.salida);
+  assert.strictEqual(r.code, 0, r.salida);
 });
 
 test('PrivateTree_OnlyTouchedSuitesRun @story-7.36 @ac-13', () => {

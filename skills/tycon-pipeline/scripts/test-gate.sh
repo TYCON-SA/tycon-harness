@@ -828,7 +828,15 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     TG_TREE_PUB_ROOT="$_TG_PUB_ROOT"
     _tg_rama="$(_tg_tree_field base.branch)"
     _tg_equipo="$(_tg_tree_field team)"
-    echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $([[ -n "$_tg_equipo" ]] && echo "capa del equipo: $_tg_equipo" || echo 'sin capa del equipo (HARNESS_TEAM_DIR no está)') · armado en $(_tg_tree_field seconds) s"
+    # de dónde salió la capa del equipo (lib/private-tree.js → teamLayer): la variable, lo que declara la máquina, o
+    # ninguna; lo declarado que no sirve se dice acá y no se usa
+    case "$(_tg_tree_field teamSource)" in
+      env) _tg_capa="capa del equipo: $_tg_equipo (de HARNESS_TEAM_DIR)" ;;
+      machine) if [[ -n "$_tg_equipo" ]]; then _tg_capa="capa del equipo: $_tg_equipo (declarada por la máquina: paths.team)"
+               else _tg_capa="sin capa del equipo: $(_tg_tree_field teamProblem)"; fi ;;
+      *) _tg_capa='sin capa del equipo (ni HARNESS_TEAM_DIR ni paths.team en la configuración de la máquina)' ;;
+    esac
+    echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $_tg_capa · armado en $(_tg_tree_field seconds) s"
     REPO_RUN="$(_tg_tree_field tree)"
     TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
     echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"

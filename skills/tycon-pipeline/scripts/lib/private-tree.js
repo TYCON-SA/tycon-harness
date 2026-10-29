@@ -16,8 +16,10 @@
  *      HEAD, y lo que su disco tiene sin commitear (cambiado, nuevo sin ignorar, borrado) se copia encima y queda en un
  *      commit local: el portón corre antes del commit, y desde HEAD mediría lo viejo. Nunca se superpone sobre el
  *      checkout de la story: el guion de superposición deja un commit en el repo que recibe.
- *   3. `scripts/ci/overlay-harness.js --after-cut --stale warn [--team-from $HARNESS_TEAM_DIR]` del privado pone el
- *      público encima del clon del privado.
+ *   3. `scripts/ci/overlay-harness.js --after-cut --stale warn [--team-from <clon del perfil>]` del privado pone el
+ *      público encima del clon del privado. El clon del perfil del equipo es `HARNESS_TEAM_DIR` si está; si no, el que
+ *      la máquina declara en `paths.team` de su configuración (`harness.js config set paths.team`), si es un clon del
+ *      perfil (ver teamLayer).
  *
  * CLI:
  *   node private-tree.js detect <repo>                       → sale 0 si es el privado adelgazado, 10 si no, 4 si su
@@ -149,6 +151,54 @@ function sinTropiezos(dest, rel) {
   fs.mkdirSync(path.dirname(path.join(dest, rel)), { recursive: true });
 }
 
+/**
+ * El clon del repo del perfil del equipo que va como capa del equipo (`--team-from`). → `{ dir, source, problem }`.
+ * `source`: 'env' (`HARNESS_TEAM_DIR`, que gana siempre y se usa tal cual), 'machine' (`paths.team` de la configuración
+ * de la máquina) o null (nada declarado). Sin esa capa, las suites que leen el perfil o el texto del alta dan rojo en el
+ * árbol armado, y la capa INSTALADA no sirve: no trae el texto del alta. Lo declarado que no sirve no se usa y vuelve en
+ * `problem`, para que el portón lo diga: nunca se pone otra cosa en silencio, y no frena la corrida. La configuración
+ * trae un permiso en texto plano: `problem` nunca cita su contenido. Nunca tira.
+ */
+function teamLayer({ env = process.env } = {}) {
+  const fromEnv = (env.HARNESS_TEAM_DIR || '').trim();
+  if (fromEnv) return { dir: fromEnv, source: 'env', problem: null };
+  const none = (problem = null) => ({ dir: null, source: problem ? 'machine' : null, problem });
+  let file;
+  try { file = machineConfigFile(env); } catch (e) { return none(`no pude ubicar la configuración de la máquina (${e.message}): no sé si declara paths.team`); }
+  let j;
+  try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+    if (e && e.code === 'ENOENT') return none();
+    return none('la configuración de la máquina (config.json del arnés) no se puede leer: no sé si declara paths.team');
+  }
+  const raw = j && typeof j === 'object' && j.paths && typeof j.paths === 'object' ? j.paths.team : undefined;
+  const v = typeof raw === 'string' ? raw.trim() : '';
+  if (!v) return none();
+  const bad = (why) => ({ dir: null, source: 'machine', problem: `la máquina declara paths.team y no sirve: ${why}` });
+  if (!path.isAbsolute(v)) return bad('paths.team no es una ruta absoluta');
+  let st = null;
+  try { st = fs.statSync(v); } catch (_) { st = null; }
+  if (!st || !st.isDirectory()) return bad(`paths.team nombra una carpeta que no está (${v})`);
+  if (!fs.existsSync(path.join(v, '.git'))) return bad(`${v} no es un clon de git`);
+  // lo que el guion de superposición exige al clon del perfil (--team-from): el perfil y el texto del alta
+  if (!['team-profile.json', 'perfil-equipo.json'].some((n) => fs.existsSync(path.join(v, n)))) return bad(`${v} no trae team-profile.json: no es un clon del repo del perfil del equipo`);
+  let alta = [];
+  try { alta = fs.readdirSync(path.join(v, 'onboarding')).filter((n) => n.endsWith('.md')); } catch (_) { alta = []; }
+  if (!alta.length) return bad(`${v} no trae el texto del alta (onboarding/*.md)`);
+  return { dir: v, source: 'machine', problem: null };
+}
+
+/**
+ * La configuración de la máquina: la ruta que da tycon-home.js (`ownPaths().config`) si está al lado, como en el repo
+ * unido; en un clon de skills aparte, `TYCON_HOME` o `~/.tycon`, con su misma regla.
+ */
+function machineConfigFile(env) {
+  const lib = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
+  if (fs.existsSync(lib)) return require(lib).ownPaths({ env }).config;
+  const h = env.TYCON_HOME !== undefined ? String(env.TYCON_HOME).trim() : path.join(require('os').homedir(), '.tycon');
+  if (!h || !path.isAbsolute(h)) throw new Error('TYCON_HOME no es una ruta absoluta');
+  return path.join(h, 'config.json');
+}
+
 function build(repo, story, dir) {
   const t0 = Date.now();
   const pub = findPublic(repo, story);
@@ -156,7 +206,8 @@ function build(repo, story, dir) {
   const publico = path.join(dir, 'publico');
   const priv = cloneWithDisk(repo, arbol);
   const pubFoto = cloneWithDisk(pub.root, publico);
-  const team = process.env.HARNESS_TEAM_DIR || '';
+  const layer = teamLayer();
+  const team = layer.dir || '';
   const report = path.join(dir, 'superpuesto.json');
   const args = [path.join(arbol, OVERLAY), '--after-cut', '--stale', 'warn', ...(team ? ['--team-from', team] : []),
     '--repo', arbol, '--from', publico, '--report', report];
@@ -170,7 +221,7 @@ function build(repo, story, dir) {
     tree: arbol, skills: path.join(arbol, 'skills'),
     base: { ...pub, uncommitted: pubFoto.uncommitted },
     private: { root: repo, commit: priv.head, uncommitted: priv.uncommitted },
-    team: team || null, seconds: Math.round((Date.now() - t0) / 100) / 10,
+    team: team || null, teamSource: layer.source, teamProblem: layer.problem, seconds: Math.round((Date.now() - t0) / 100) / 10,
     overlay: (r.stdout || '').trim().split('\n').pop() || '',
   };
 }
@@ -206,7 +257,7 @@ function touchedBoth(repo, pub, story) {
     bases: [a.base, b.base], reason };
 }
 
-module.exports = { isThinPrivate, detectThin, findPublic, cloneWithDisk, build, touchedBoth, NoPublic };
+module.exports = { isThinPrivate, detectThin, findPublic, cloneWithDisk, teamLayer, build, touchedBoth, NoPublic };
 
 if (require.main === module) {
   const [cmd, ...rest] = process.argv.slice(2);
