@@ -55,6 +55,10 @@ test('TestScope_BrakesReadOnlyTheUsualForm — los frenos leen sólo la forma de
   ].join('\n');
   assert.deepEqual(testScope.parseDeclaredFiles(story), []);
   assert.deepEqual(testScope.parseFilesToDelete(story), []);
+  // la clave con un comentario detrás tampoco llega a los frenos
+  const conNota = ['---', 'files_to_modify:  # nota', '  - mcp/src/c.ts', '---'].join('\n');
+  assert.deepEqual(testScope.parseDeclaredFiles(conNota), []);
+  assert.deepEqual(testScope.parseDeclaredFiles(conNota, { allForms: true }), ['mcp/src/c.ts']);
 });
 
 test('TestScope_JvmRoot_VotesForScalaGroovyKts — un proyecto Maven o Gradle en la raíz es dueño de su Scala, Groovy y .kts', () => {

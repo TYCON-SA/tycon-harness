@@ -57,7 +57,7 @@ function listUnderKey(fm, key, { allForms = false } = {}) {
   for (const line of lines) {
     const indent = line.length - line.trimStart().length;
     if (!inKey) {
-      const km = line.match(new RegExp(`^(\\s*)${key}\\s*:\\s*(?:#.*)?$`));
+      const km = line.match(new RegExp(`^(\\s*)${key}\\s*:\\s*${allForms ? '(?:#.*)?' : ''}$`));
       if (km) { inKey = true; keyIndent = km[1].length; continue; }
       if (!allForms) continue;
       // la lista en línea: `clave: [a, "b", 'c']`
