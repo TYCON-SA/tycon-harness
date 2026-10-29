@@ -127,19 +127,29 @@ const enIdioma = (idioma, frase, moldes = MOLDES_DEL_MODELO) => {
 };
 // Las claves del modelo que llevan una frase de la casa. Todo lo demás es de afuera (la story, el producto, la máquina,
 // el título, el asunto de un commit) y pasa tal cual aunque coincida con un molde, como CLAVES_CON_MENSAJE de texts.js.
-const CLAVES_DE_LA_CASA = new Set(['motivo', 'fuente', 'nombre', 'vueltas_fuente', 'maquina_motivo', 'sin_rescate', 'sin_tiempos', 'sin_hilos', '_comentario', '_nota']);
+const CLAVES_DE_LA_CASA = new Set(['motivo', 'fuente', 'nombre', 'vueltas_fuente', 'maquina_motivo', 'maquina_nota', 'motivo_tramos', 'nota',
+  'commits_motivo', 'otras_motivo', 'sin_rescate', 'sin_tiempos', 'sin_hilos', '_comentario', '_nota']);
 // las que llevan una lista o un mapa de nombres de la casa (los pasos, los controles)
 const LISTAS_DE_LA_CASA = new Set(['nombres', 'controles_nombres']);
 // un archivo tocado es un dato; sólo sus dos frases de la casa se traducen, nunca un nombre que coincida con un molde
 const MOLDES_DE_ARCHIVO = [`${PREFIJO}m.fueraDelRepo`, `${PREFIJO}m.sinResumir`];
+// las claves que son un dato salvo por una frase de la casa, con los únicos moldes que se les prueban: el archivo
+// tocado, el nombre del repo («repo sin nombre») y el motivo de la lista vacía que arma el acceso del sitio (access.js)
+// (un Map y no un objeto: una clave de afuera que se llama `constructor` no encuentra nada)
+const MOLDES_POR_CLAVE = new Map([['f', MOLDES_DE_ARCHIVO], ['n', [`${PREFIJO}m.repoSinNombre`]], ['vacio_motivo', [`${PREFIJO}vacio`]]]);
+// las ramas de afuera dentro de una clave de la casa: `nombre` es de la casa en un paso, y en la lista de máquinas
+// (`maquinas.lista[].nombre`) es el nombre de una máquina
+const RAMAS_DE_AFUERA = new Map([['maquinas', new Set(['lista'])]]);
 /** Una respuesta entera del modelo (la lista, un detalle) con cada frase de la casa en `idioma`; lo de afuera no se toca. */
 function todoEnIdioma(idioma, valor) {
   if (!TX || !idioma || idioma === TX.POR_DEFECTO) return valor;
   const recorrer = (v, clave) => {
-    if (typeof v === 'string') return clave === 'f' ? enIdioma(idioma, v, MOLDES_DE_ARCHIVO) : CLAVES_DE_LA_CASA.has(clave) ? enIdioma(idioma, v) : v;
+    if (typeof v === 'string') return MOLDES_POR_CLAVE.has(clave) ? enIdioma(idioma, v, MOLDES_POR_CLAVE.get(clave)) : CLAVES_DE_LA_CASA.has(clave) ? enIdioma(idioma, v) : v;
     if (Array.isArray(v)) return v.map((x) => recorrer(x, LISTAS_DE_LA_CASA.has(clave) ? 'nombre' : clave));
     if (v && typeof v === 'object') {
-      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, LISTAS_DE_LA_CASA.has(clave) && typeof x === 'string' ? enIdioma(idioma, x) : recorrer(x, k)]));
+      const deAfuera = RAMAS_DE_AFUERA.get(clave);
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deAfuera && deAfuera.has(k) ? x
+        : LISTAS_DE_LA_CASA.has(clave) && typeof x === 'string' ? enIdioma(idioma, x) : recorrer(x, k)]));
     }
     return v;
   };
@@ -1378,7 +1388,8 @@ function textosDe(c) {
 // un color por fila de pasos (las diez de FILAS), del más claro al más oscuro
 const RAMPA = ['#BEE0DE', '#9CD0CE', '#79BFBE', '#57ADAE', '#3D9799', '#348C8E', '#2C8084', '#1E6A70', '#14555C', '#0D4148'];
 // la coma decimal es del castellano: en inglés va el punto
-const decimal = (x, idioma) => (idioma && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
+// (sólo en un idioma que la tabla tiene: uno desconocido sale entero en castellano, y con coma)
+const decimal = (x, idioma) => (TX && TX.IDIOMAS.includes(idioma) && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
 const miles = (n, idioma) => n == null ? '—' : n >= 1e6 ? `${decimal(n / 1e6, idioma)} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n);
 const dur = (ms, idioma) => ms == null ? '—' : ms < 90 * 60000 ? `${Math.round(ms / 60000)} min` : `${decimal(ms / 3600000, idioma)} h`;
 
