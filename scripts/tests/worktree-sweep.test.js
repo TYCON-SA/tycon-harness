@@ -234,3 +234,10 @@ test('BranchNamesStory_MatchesTokenNotPrefix', () => {
   assert.ok(!branchNamesStory('feat/8.410-x', '8.41'));
   assert.ok(!branchNamesStory(null, '8.41'));
 });
+
+test('BranchNamesStory_StoryWithRegexCharacters_IsLiteral', () => {
+  // la story llega por `--story`: sus caracteres se leen tal cual, no como una expresión
+  assert.ok(branchNamesStory('feat/8.1+-x', '8.1+'));
+  assert.ok(!branchNamesStory('feat/8.11-x', '8.1+'));
+  assert.ok(!branchNamesStory('feat/x', '8.1|x'));
+});
