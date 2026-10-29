@@ -318,6 +318,35 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
       } else rec.note(personalArmed ? 'agent-skills tomada: sin PowerShell para abrir el archivo, no medido' : 'agent-skills tomada: lo personal no se armó (agent-skills no es carpeta real), no medido');
     } else rec.note('archivos tomados: no medido fuera de Windows (en posix un rename no se traba)');
 
+    // 3b. el deshacer con los revisores como enlaces DUROS (Windows sin modo desarrollador, que el agente del ensayo no es):
+    // TYCON_TEST_DENY_FILE_LINK=1 niega el enlace de archivo y canonical-path.js cae al duro. Un fallo de prueba justo
+    // después de «personal» tiene que dejar ~/.claude/agents como el enlace de antes y la carpeta vieja de agentes como
+    // estaba, sin duros de más; y la máquina, lista para la mudanza de verdad (el paso 4)
+    if (personalArmed) {
+      const listOf = (d) => { try { return fs.readdirSync(d).sort().join(' '); } catch (_) { return null; } };
+      const oldAgents = path.join(skillsLink, 'agents');
+      const agentsTo0 = realOrNull(agentsDir), oldAgents0 = listOf(oldAgents);
+      const logOf = () => { for (const d of [path.join(own, 'state'), oldStateDir]) { try { return fs.readFileSync(path.join(d, 'harness', 'startup.log'), 'utf8'); } catch (_) { /* el otro */ } } return ''; };
+      const log0 = logOf().length;
+      const r = L.run(process.execPath, [harnessJs(clone), 'migrate', '--to-home', ...repoOption], { env: { ...env, TYCON_MIGRATE_FAIL_AFTER: 'personal', TYCON_TEST_DENY_FILE_LINK: '1' }, timeoutMs: CMD_TIMEOUT_MS, cap: 8000 });
+      const logNow = logOf();
+      const u = {
+        exit: r.exit, error: r.error, out: lastLines(`${r.stdout}\n${r.stderr}`, 3),
+        // el registro puede haber vuelto a la carpeta vieja con el deshacer: se mira lo que se agregó en esta corrida
+        hard: /como enlace\(s\) duro\(s\)/.test(logNow.length >= log0 ? logNow.slice(log0) : logNow),
+        agents: linkKind(agentsDir), agents_back: Boolean(agentsTo0) && realOrNull(agentsDir) === agentsTo0,
+        old_agents_same: listOf(oldAgents) === oldAgents0, kind: kindOf(), journal_left: fs.existsSync(path.join(own, 'migrate.json')),
+      };
+      rec.fact('undo_with_hard_links', u);
+      if (u.exit !== 1) rec.finding('migrate:hard-undo-not-failed', 'personal', `con el fallo de prueba tras «personal» y el enlace de archivo negado, migrate salió ${u.exit} (tenía que salir 1): ${u.out}`, 'W8', { severity: 'breaks' });
+      else {
+        if (!u.hard) rec.finding('migrate:hard-undo-no-hard-link', 'personal', 'con el enlace de archivo negado, el registro no dice que algún revisor quedó como enlace duro: el deshacer no se midió con duros', 'W8', { severity: 'noise' });
+        if (!u.agents_back) rec.finding('migrate:hard-undo-agents-not-back', 'personal', `después de deshacer, ~/.claude/agents no volvió a ser el enlace de antes (${u.agents})`, 'W8', { severity: 'breaks' });
+        if (!u.old_agents_same) rec.finding('migrate:hard-undo-old-agents-changed', 'personal', 'después de deshacer, la carpeta vieja de agentes no quedó como estaba (falta lo personal o sobra un enlace duro)', 'W8', { severity: 'loses-control' });
+        if (u.kind !== 'tree' || u.journal_left) rec.finding('migrate:hard-undo-not-clean', 'personal', `después de deshacer, la máquina no quedó como antes de mudar (kind ${u.kind}, diario ${u.journal_left ? 'quedó' : 'no'})`, 'W8', { severity: 'breaks' });
+      }
+    }
+
     // 4. la mudanza
     const mig = run(clone, ['migrate', '--to-home', ...repoOption], 'migrate', 8000);
     const s2 = stateFile();
