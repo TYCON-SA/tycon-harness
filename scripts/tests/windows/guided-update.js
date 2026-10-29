@@ -269,7 +269,8 @@ function holdOpen({ file, ps, env, scratch }) {
   const done = path.join(scratch, 'hold.done');
   for (const f of [ready, release, done]) fs.rmSync(f, { force: true });
   fs.writeFileSync(script, "param($File, $Ready, $Release, $Done)\n$f = [IO.File]::Open($File, 'Open', 'Read', 'Read')\nNew-Item -ItemType File -Path $Ready -Force | Out-Null\n$n = 0\nwhile (-not (Test-Path $Release) -and $n -lt 1500) { Start-Sleep -Milliseconds 200; $n++ }\n$f.Close()\nNew-Item -ItemType File -Path $Done -Force | Out-Null\n");
-  const child = spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, file, ready, release, done], { env, detached: true, stdio: 'ignore', windowsHide: true });
+  // (sin desprender: en el agente de Windows un pwsh desprendido desde node no llega a arrancar)
+  const child = spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, file, ready, release, done], { env, stdio: 'ignore', windowsHide: true });
   child.unref();
   // stable-data: el reloj sólo mide las esperas (que tome el archivo, que lo suelte), con su tope; ningún dato que se compara
   const t0 = Date.now();

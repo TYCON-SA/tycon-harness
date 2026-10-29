@@ -465,7 +465,8 @@ function judgeUninstallDryRun({ exit, error, output, before, after }) {
 function measureUninstall({ v, home, clone, env, finding }) {
   const harness = path.join(clone, 'scripts', 'setup', 'harness.js');
   const before = uninstallFootprint(home);
-  const d = L.run(process.execPath, [harness, 'uninstall', '--dry-run'], { env, cwd: clone, timeoutMs: 300000 });
+  // (la salida entera: el plan es largo, y el recorte de siempre se come del medio la línea «deja:»)
+  const d = L.run(process.execPath, [harness, 'uninstall', '--dry-run'], { env, cwd: clone, timeoutMs: 300000, cap: 400000 });
   const dryOutput = `${d.stdout}\n${d.stderr}`.trim();
   const dry = judgeUninstallDryRun({ exit: d.exit, error: d.error, output: dryOutput, before, after: uninstallFootprint(home) });
   if (dry.problems.length) finding(`uninstall:${v.id}:dry-run`, 'uninstall', `harness.js uninstall --dry-run: ${dry.problems.join('; ')}`, 'W4');
