@@ -30,6 +30,7 @@ printf '{ "auth": "none" }\n' > "${N}/control.json"
 node "${COPY_DIR}/scripts/tests/fixtures/toy-release-server.js" --repo "${N}/harness.git" --org "${REPO%%/*}" --name "${REPO#*/}" \
   --git "${GIT_BIN}" --control "${N}/control.json" --log "${N}/requests.log" --port-file "${N}/ports.env" > "${OUT_DIR}/${NAME}-server.out" 2>&1 &
 SERVER=$!
+trap 'kill "${SERVER}" 2> /dev/null' EXIT
 for _ in $(seq 1 100); do [ -f "${N}/ports.env" ] && break; sleep 0.1; done
 if [ ! -f "${N}/ports.env" ]; then no "${T} el GitHub de juguete no arrancó: $(tail -n 2 "${OUT_DIR}/${NAME}-server.out" | tr '\n' ' ')"; scenario_end "${NAME}"; exit 0; fi
 export TYCON_RELEASE_API="$(sed -n 's/^API=//p' "${N}/ports.env")" TYCON_RELEASE_GIT="$(sed -n 's/^GIT=//p' "${N}/ports.env")" TYCON_RELEASE_ARCHIVE="$(sed -n 's/^CODELOAD=//p' "${N}/ports.env")"
@@ -62,10 +63,11 @@ else no "${T} el estado enchufa «${TOOLS_SET}» (esperado sólo ${TOOL})"; fi
 if [ "${TOOL}" = codex ]; then
   if [ ! -e "${HOME}/.claude" ] && [ ! -e "${HOME}/.claude.json" ]; then ok "${T} no apareció nada de Claude Code: ni ~/.claude ni ~/.claude.json"
   else no "${T} apareció $( [ -e "${HOME}/.claude" ] && echo "~/.claude ($(ls -A "${HOME}/.claude" | head -n 5 | tr '\n' ' '))" || echo '~/.claude.json') en una máquina sólo con Codex"; fi
-  if grep -q 'tycon' "${HOME}/.codex/AGENTS.md" 2> /dev/null; then ok "${T} Codex recibió sus reglas en ~/.codex/AGENTS.md"
+  if grep -qF '<!-- TYCON_BLOCK:' "${HOME}/.codex/AGENTS.md" 2> /dev/null; then ok "${T} Codex recibió sus reglas en ~/.codex/AGENTS.md"
   else no "${T} ~/.codex/AGENTS.md no trae los bloques del arnés ($( [ -f "${HOME}/.codex/AGENTS.md" ] && echo 'está sin ellos' || echo 'no está'))"; fi
 else
-  if grep -q 'bootstrap' "${HOME}/.claude/settings.json" 2> /dev/null; then ok "${T} ~/.claude/settings.json trae la línea de arranque del arnés"
+  # la marca de la línea de arranque es la que mira health.js; «bootstrap» solo también matchea el hook de reparación
+  if grep -qF '.tycon-pipeline/harness/bootstrap.js' "${HOME}/.claude/settings.json" 2> /dev/null; then ok "${T} ~/.claude/settings.json trae la línea de arranque del arnés"
   else no "${T} ~/.claude/settings.json no trae la línea de arranque ($( [ -f "${HOME}/.claude/settings.json" ] && echo 'está sin ella' || echo 'no está'))"; fi
   if [ ! -e "${HOME}/.codex/AGENTS.md" ]; then ok "${T} Codex no recibió nada: no hay ~/.codex/AGENTS.md"
   else no "${T} apareció ~/.codex/AGENTS.md en una máquina sólo con Claude Code"; fi
