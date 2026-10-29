@@ -36,7 +36,7 @@
           "type": "must-not-block",
           "setup": [
             "git init -q -b main . && mkdir -p .tycon src",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/adhoc',{recursive:true});fs.mkdirSync(d+'/lane',{recursive:true});const t=Date.now();fs.writeFileSync(d+'/adhoc/bench-s1.json',JSON.stringify({reason:'arregla el bug',maxFiles:8,files:[],declaredAt:new Date(t-60000).toISOString(),lastTouch:new Date(t-60000).toISOString()}));fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'pipeline',laneSetAt:new Date(t).toISOString(),lanePrompt:'implementemos la spec spec/x.md',recentPrompts:['arregla el bug','implementemos la spec spec/x.md'],lastTouch:new Date(t).toISOString()}))\""
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/adhoc',{recursive:true});fs.mkdirSync(d+'/lane',{recursive:true});const t=Date.now();fs.appendFileSync(d+'/gates.log',JSON.stringify({ts:new Date(t-61000).toISOString(),name:'adhoc-lane-signed',status:'ok',via:'ventana',sesion:'bench-s1',destino:'bench-s1'})+'\\n');fs.writeFileSync(d+'/adhoc/bench-s1.json',JSON.stringify({firmadaEn:new Date(t-60500).toISOString(),reason:'arregla el bug',maxFiles:8,files:[],declaredAt:new Date(t-60000).toISOString(),lastTouch:new Date(t-60000).toISOString()}));fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'pipeline',laneSetAt:new Date(t).toISOString(),lanePrompt:'implementemos la spec spec/x.md',recentPrompts:['arregla el bug','implementemos la spec spec/x.md'],lastTouch:new Date(t).toISOString()}))\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -51,7 +51,7 @@
           "type": "must-not-block",
           "setup": [
             "git init -q -b main . && mkdir -p .tycon src",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/adhoc',{recursive:true});fs.mkdirSync(d+'/lane',{recursive:true});const t=Date.now();fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'adhoc',laneSetAt:new Date(t-60000).toISOString(),lanePrompt:'hotfix del boton',recentPrompts:['hotfix del boton'],lastTouch:new Date(t).toISOString()}));fs.writeFileSync(d+'/adhoc/bench-s1.json',JSON.stringify({reason:'hotfix del boton',maxFiles:8,files:[],declaredAt:new Date(t).toISOString(),lastTouch:new Date(t).toISOString()}))\""
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/adhoc',{recursive:true});fs.mkdirSync(d+'/lane',{recursive:true});const t=Date.now();fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'adhoc',laneSetAt:new Date(t-60000).toISOString(),lanePrompt:'hotfix del boton',recentPrompts:['hotfix del boton'],lastTouch:new Date(t).toISOString()}));fs.appendFileSync(d+'/gates.log',JSON.stringify({ts:new Date(t-61000).toISOString(),name:'adhoc-lane-signed',status:'ok',via:'ventana',sesion:'bench-s1',destino:'bench-s1'})+'\\n');fs.writeFileSync(d+'/adhoc/bench-s1.json',JSON.stringify({firmadaEn:new Date(t-60500).toISOString(),reason:'hotfix del boton',maxFiles:8,files:[],declaredAt:new Date(t).toISOString(),lastTouch:new Date(t).toISOString()}))\""
           ],
           "stdin": {
             "session_id": "bench-s1",
@@ -81,6 +81,26 @@
             "stderr_re": [
               "CÓDIGO SIN CARRIL",
               "PREGUNTALE"
+            ]
+          }
+        },
+        {
+          "id": "adhoc-escrito-a-mano-sin-firma-no-abre",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/adhoc',{recursive:true});const t=Date.now();fs.writeFileSync(d+'/adhoc/bench-s1.json',JSON.stringify({reason:'escrito a mano',maxFiles:8,files:[],declaredAt:new Date(t).toISOString(),lastTouch:new Date(t).toISOString(),firmadaEn:new Date(t).toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > src/Foo.cs <<'EOF'\nclass Foo {}\nEOF"
+            }
+          },
+          "expect": {
+            "stderr_re": [
+              "CÓDIGO SIN CARRIL"
             ]
           }
         }

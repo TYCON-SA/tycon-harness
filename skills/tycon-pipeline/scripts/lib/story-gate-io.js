@@ -7,8 +7,9 @@
  *
  * Fuentes de estado (todas bajo ~/.claude/.tycon-pipeline/):
  *   active/<sid>.json   marker del pipeline (lo escribe marker.js)
- *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch, via, by }
- *                       (lo escribe `marker.js adhoc set` con la firma del dueño)
+ *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch, via, by,
+ *                       firmadaEn } (lo escribe `marker.js adhoc set` con la firma del dueño; el portón lo acepta sólo
+ *                       con el renglón `adhoc-lane-signed` de esa hora en gates.log)
  *   gates.log           cada bloqueo queda registrado (status: blocked, kind)
  *
  * Señal "repo bajo el arnés": `<repo>/.tycon/` existe (barato, sin escaneo) — o, si no existe,
@@ -76,6 +77,40 @@ function readAdhoc(stateDir, sessionId) {
   if (!a || !a.reason) return null;
   if (isStale(a)) return null;
   return a;
+}
+
+// La declaración del arreglo rápido abre el portón sólo con su firma: el renglón `adhoc-lane-signed` que deja
+// `marker.js adhoc set` en gates.log para esta sesión, de la hora que la declaración anota (`firmadaEn`). Un archivo
+// escrito por otra vía no la trae. Se lee la cola del registro: una firma de las últimas horas está ahí.
+const FIRMA_ADHOC_MARGEN_MS = 2 * 60 * 1000;
+const GATES_COLA_BYTES = 4 * 1024 * 1024;
+
+function adhocFirmado(stateDir, sessionId, adhoc) {
+  if (!adhoc) return null;
+  const hasta = Date.parse(adhoc.firmadaEn || '');
+  if (Number.isNaN(hasta)) return null;
+  let txt;
+  try {
+    const file = path.join(stateDir, 'gates.log');
+    const fd = fs.openSync(file, 'r');
+    try {
+      const size = fs.fstatSync(fd).size;
+      const n = Math.min(size, GATES_COLA_BYTES);
+      const buf = Buffer.alloc(n);
+      fs.readSync(fd, buf, 0, n, size - n);
+      txt = buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch { return null; }
+  const sid = String(sessionId);
+  for (const linea of txt.split('\n')) {
+    if (!linea.includes('adhoc-lane-signed')) continue;
+    let o;
+    try { o = JSON.parse(linea); } catch { continue; }
+    if (o.name !== 'adhoc-lane-signed' || o.status !== 'ok' || String(o.destino) !== sid) continue;
+    const t = Date.parse(o.ts || '');
+    if (!Number.isNaN(t) && t <= hasta && t >= hasta - FIRMA_ADHOC_MARGEN_MS) return adhoc;
+  }
+  return null;
 }
 
 /** Escritura atómica del ad-hoc (tmp + rename). Devuelve el objeto escrito. */
@@ -254,7 +289,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   const realFilePath = installedTree.realPath(abs);
   const realStateDir = installedTree.realPath(stateDir);
   const marker = readMarker(stateDir, sessionId);
-  const adhoc = readAdhoc(stateDir, sessionId);
+  const adhoc = adhocFirmado(stateDir, sessionId, readAdhoc(stateDir, sessionId));
 
   // Camino barato primero: state-dir / no-código / marker no necesitan mirar el repo. Se arranca
   // suponiendo que NO es un repo del harness: si así ya pasa, pasa y no se pagó ningún git. Sólo si
@@ -302,6 +337,6 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
 
 module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS,
-  readMarker, readAdhoc, writeAdhoc, recordAdhocFile, adhocPath, listOtherMarkers,
+  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };

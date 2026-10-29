@@ -5104,6 +5104,8 @@ function cmdAdhoc(sub, payloadJson) {
       lastTouch: nowIso(),
       cwd: process.cwd(),
       via, by,
+      // la hora de la firma: el portón acepta la declaración sólo con el renglón `adhoc-lane-signed` de esta hora
+      firmadaEn: nowIso(),
     };
     io.writeAdhoc(STATE_DIR, destino, obj);
     // el portón de edición apagado no apaga la firma; queda igual en bypass.log, que la revisión de la noche cuenta

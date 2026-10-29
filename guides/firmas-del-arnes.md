@@ -84,6 +84,14 @@ entonces en la terminal. Hay un caso que no ve: una herramienta que el agente ab
 teclas puede contestar su propia ventana. El servidor de `tmux` no tiene padre, y desde los procesos de la máquina no se
 distingue un `tmux` de la persona de uno del agente.
 
+Las constancias de las firmas viven en la carpeta de estado del arnés: el registro `gates.log` y los archivos que deja
+cada firma (el del arreglo rápido, `adhoc/<sesión>.json`, entre ellos). El portón de edición abre el arreglo rápido sólo
+si el archivo trae la hora de su firma y el registro tiene el renglón `adhoc-lane-signed` de esa sesión y esa hora. Eso
+frena los errores y los atajos: un archivo copiado, escrito suelto o dejado por una versión vieja del arnés no abre. No
+frena a un agente que esquive el freno de la carpeta de estado: el agente corre con el mismo usuario que la persona, y
+quien escribe el archivo por una vía que el freno no ve escribe también el renglón. La barrera contra eso es el freno de
+la carpeta de estado, que niega toda escritura ahí que no sea de los guiones del arnés.
+
 ## Lo delegado no está protegido
 
 La sesión de la coordinadora es un agente. Si decide aprobar una firma delegada por su cuenta,
