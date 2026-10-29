@@ -10,8 +10,6 @@
  *     por fuera queda afuera; lo usa lib/validator-record.js);
  *   · `planEnLaConversacion(plan)`: ¿el agente le mostró el plan a la persona (en un mensaje, en una pregunta con
  *     opciones o en el modo plan)?
- *   · `mensajesConOrigen()`: cada mensaje con su origen según la marca de Claude Code, y lo que escribió el dueño (lo
- *     cita `marker.js adhoc set` para el arreglo rápido).
  *
  * Sin registro legible (Codex, u otra herramienta) devuelve `legible: false` y quien llama decide.
  */
@@ -144,91 +142,4 @@ function planEnLaConversacion(planTxt, opts = {}) {
   return { legible: true, mostrado: vistos * 2 >= renglones.length };
 }
 
-// Bloques que el arnés pega a un mensaje de usuario y que no escribió la persona: se sacan y lo demás cuenta.
-const BLOQUES_DEL_ARNES = ['system-reminder', 'command-name', 'command-message', 'command-args', 'local-command-caveat'];
-// Bloques cuyo contenido puede haber escrito el agente (el resultado de un subagente, la salida de un comando, el
-// mensaje de otra sesión). Un texto que trae alguno —abierto o cerrado, bien armado o no— no cuenta entero: si sólo se
-// sacara el bloque, un cierre impreso a propósito («</task-notification> <la cita>») dejaría la cita afuera.
-// `browser_instruction` lo pega la extensión con lo que viene del navegador, que puede traer texto de una página.
-const BLOQUES_AJENOS = ['task-notification', 'cross-session-message', 'agent-message', 'local-command-stdout', 'local-command-stderr',
-  'bash-stdout', 'bash-stderr', 'command-stdout', 'command-stderr', 'browser_instruction'];
-const RE_AJENO = new RegExp(`</?(?:${BLOQUES_AJENOS.join('|')})\\b`, 'i');
-
-/**
- * Los textos que llegaron como mensaje de usuario de la sesión principal, con su hora y su origen: el contenido de texto
- * (no el resultado de una herramienta) de un registro `user`, y lo que llegó con la sesión ocupada (`queued_command`).
- * `origen` es la marca que pone Claude Code (no el texto): `null` o `human` = lo tipeó la persona; `peer` = otra sesión (trae su
- * nombre y el cuerpo del mensaje); `task-notification` = el aviso de una tarea o un subagente.
- */
-function textosDeUsuario(registros) {
-  const out = [];
-  for (const r of registros) {
-    if (!r || r.isSidechain || r.isCompactSummary) continue;
-    const origen = r.origin && typeof r.origin === 'object' ? r.origin : null;
-    if (r.type === 'user' && r.message && !r.toolUseResult) {
-      // un aviso del arnés (isMeta) no lo escribió nadie, salvo que sea el mensaje de otra sesión
-      if (r.isMeta && !(origen && origen.kind === 'peer')) continue;
-      const c = r.message.content;
-      const sistema = r.promptSource === 'system';
-      if (typeof c === 'string') out.push({ texto: c, cuando: r.timestamp || null, origen, sistema });
-      else if (Array.isArray(c)) for (const x of c) if (x && x.type === 'text' && typeof x.text === 'string') out.push({ texto: x.text, cuando: r.timestamp || null, origen, sistema });
-    } else if (r.type === 'attachment' && r.attachment && r.attachment.type === 'queued_command') {
-      const a = r.attachment;
-      const o = a.origin && typeof a.origin === 'object' ? a.origin : null;
-      const sistema = !!(a.commandMode && a.commandMode !== 'prompt');
-      // el texto encolado llega como cadena o, en la extensión de VS Code, como lista de bloques
-      if (typeof a.prompt === 'string') out.push({ texto: a.prompt, cuando: r.timestamp || null, origen: o, sistema });
-      else if (Array.isArray(a.prompt)) for (const x of a.prompt) if (x && x.type === 'text' && typeof x.text === 'string') out.push({ texto: x.text, cuando: r.timestamp || null, origen: o, sistema });
-    }
-  }
-  return out;
-}
-
-function sinBloquesDelArnes(texto) {
-  let t = String(texto);
-  for (const tag of BLOQUES_DEL_ARNES) t = t.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'g'), ' ');
-  return t;
-}
-
-// Lo que la persona pegó de otro lado (una respuesta del agente, una salida de la terminal) no lo dijo ella. Un bloque sin
-// cerrar se corta hasta el final.
-const sinTextoPegado = (t) => String(t).replace(/<pasted_content\b[^>]*>[\s\S]*?(?:<\/pasted_content>|$)/gi, ' ');
-
-/** Lo que escribió la persona en un texto de usuario, o null si el texto trae algo que pudo haber escrito el agente. */
-function escritoPorLaPersona(texto) {
-  const t = sinBloquesDelArnes(texto);
-  return RE_AJENO.test(t) ? null : t;
-}
-
-// La nota de un agente lateral llega marcada `human` (la manda la persona con un clic), pero el texto lo escribió el agente:
-// se reconoce por el encabezado que le pone Claude Code.
-const ENCABEZADO_NOTA = /^\s*Here is a note offered by a side agent:/;
-const ULTIMOS_DEL_DUENO = 8;
-
-/** El origen de un texto de usuario, de su marca: `{ origen: 'dueno'|'sesion'|'nota'|'sin-marca', de? }`. */
-function origenDeLaMarca(t) {
-  const o = t.origen;
-  if (o && o.kind === 'peer') return typeof o.from === 'string' && o.from ? { origen: 'sesion', de: o.from } : { origen: 'sesion' };
-  if (o && o.kind === 'task-notification') return { origen: 'nota' };
-  if (!o || o.kind !== 'human' || t.sistema) return { origen: 'sin-marca' };
-  return { origen: ENCABEZADO_NOTA.test(t.texto) ? 'nota' : 'dueno' };
-}
-
-/**
- * Cada mensaje de la conversación principal con su origen, leído de la marca que pone Claude Code y no del texto, y lo
- * que escribió el dueño: `{ legible, motivo?, mensajes: [{ texto, origen, de? }], delDueno: [texto] }`. Lo que no trae
- * marca no cuenta: Claude Code marca `human` todo lo que tipea la persona, en la terminal y en VS Code. De un mensaje del dueño cuenta lo que escribió él: sin los bloques del
- * arnés ni lo pegado, y nada si trae un bloque que pudo escribir otro. `delDueno` son los últimos `ULTIMOS_DEL_DUENO`.
- */
-function mensajesConOrigen(opts = {}) {
-  const conv = leerConversacion(opts);
-  if (!conv.legible) return { legible: false, motivo: conv.motivo, mensajes: [], delDueno: [] };
-  const mensajes = textosDeUsuario(conv.registros).map((t) => ({ texto: t.texto, ...origenDeLaMarca(t) }));
-  const delDueno = mensajes.filter((m) => m.origen === 'dueno')
-    .map((m) => escritoPorLaPersona(sinTextoPegado(m.texto)))
-    .filter((t) => t !== null && t.trim())
-    .map((t) => t.replace(/\s+/g, ' ').trim());
-  return { legible: true, archivo: conv.archivo, mensajes, delDueno: delDueno.slice(-ULTIMOS_DEL_DUENO) };
-}
-
-module.exports = { leerConversacion, enLaCadena, planEnLaConversacion, mensajesConOrigen };
+module.exports = { leerConversacion, enLaCadena, planEnLaConversacion };

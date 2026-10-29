@@ -32,8 +32,8 @@
 # EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
 # condiciones: (a) `az` se busca en una lista fija de rutas absolutas, nunca en el PATH; (b) nunca recibe la clave de
-# la base ni nada del Llavero (corre con un entorno limpio); (c) sólo se le piden `account list`, `sql server list`
-# y `sql server firewall-rule show|create|update|delete`, siempre con el nombre fijo `tycon-gate-<id de la máquina>`.
+# la base ni nada del Llavero (corre con un entorno limpio); (c) sólo se le piden `account list`, `sql server list`,
+# `sql server show` y `sql server firewall-rule show|create|update|delete`, siempre con el nombre fijo `tycon-gate-<id de la máquina>`.
 # La regla es de UNA sola IP, la que el propio Azure SQL informa al rechazar la conexión (error 40615): no se llama a
 # ningún servicio externo para saberla.
 #
@@ -353,8 +353,10 @@ SUBS_ACTIVAS="[?state=='Enabled' || state=='Warned' || state=='PastDue'].id"
 correr_az(){ env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$AZ_TOPE" "$AZ" "$@"; }
 # Deja SUB y RG del servidor CORTO. Ante una falla llama a $FALLA_AZ con el motivo y devuelve 1: el firewall sale ahí
 # (fallo_fw); los candados anotan «no sé» y siguen con el próximo servidor. $TOPE_DICE completa el motivo del tope.
+# Con `cero-vale`, un servidor que no aparece en ninguna suscripción devuelve 2 sin llamar a $FALLA_AZ, pero sólo si az
+# pudo listar todas: una suscripción que no contestó puede ser justo la que lo tiene.
 ubicar_servidor(){
-  local subs salida rc s rg encontrados=0; SUB=""; RG=""
+  local subs salida rc s rg encontrados=0 fallidas=0; SUB=""; RG=""
   # las suscripciones activas: Enabled, y también Warned y PastDue, que siguen operando y tienen recursos
   subs="$(correr_az account list --query "$SUBS_ACTIVAS" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
   salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
@@ -364,8 +366,13 @@ ubicar_servidor(){
     printf '%s' "$s" | grep -qE '^[A-Za-z0-9-]+$' || continue
     rg="$(correr_az sql server list --subscription "$s" --query "[?name=='$CORTO'].resourceGroup" -o tsv 2>/dev/null)"; rc=$?
     [ "$rc" = 142 ] && { "$FALLA_AZ" "az no contestó en ${AZ_TOPE} s (tope) al buscar el servidor. Reintentá."; return 1; }
+    [ "$rc" = 0 ] || fallidas=$((fallidas+1))
     for g in $rg; do encontrados=$((encontrados+1)); SUB="$s"; RG="$g"; done
   done
+  if [ "$encontrados" = 0 ] && [ "${1:-}" = cero-vale ]; then
+    [ "$fallidas" = 0 ] && return 2
+    "$FALLA_AZ" "el servidor «${CORTO}» no aparece, pero az no pudo listar $fallidas suscripción(es): no sé si sigue existiendo."; return 1
+  fi
   [ "$encontrados" = 1 ] || { "$FALLA_AZ" "el servidor «${CORTO}» aparece en $encontrados lugar(es) entre tus suscripciones: necesito exactamente uno, no elijo a ciegas."; return 1; }
   printf '%s' "$RG" | grep -qE '^[A-Za-z0-9._()-]+$' || { "$FALLA_AZ" "el grupo de recursos que devolvió az («${RG}») no tiene forma de nombre."; return 1; }
 }
@@ -560,13 +567,13 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   HOST="$("$NODE" -e 'const m = require(process.argv[1]); process.stdout.write(m.normalizar(process.argv[2]) || "")' "$INDICE_JS" "$HOST" 2>/dev/null)"
   [[ "$HOST" =~ $HOST_VALIDO ]] || muere "el host no tiene forma de nombre de host."
 
-  # El estado de las reglas abiertas: host, regla, IP, desde cuándo, qué sesiones la usan y una versión (`rev`) que
-  # sube con cada apertura. Lo escriben sólo la puerta y su hook, de a uno (un candado): dos puertas a la vez se
+  # El estado de las reglas abiertas: host, regla, IP, suscripción del servidor, desde cuándo, qué sesiones la usan y
+  # una versión (`rev`) que sube con cada apertura. Lo escriben sólo la puerta y su hook, de a uno (un candado): dos puertas a la vez se
   # pisaban la lista de sesiones. Ilegible es «no sé» (sale 3) y no se pisa.
   estado_fw(){ # $1 = operación, resto = argumentos
     TYCON_FW_LOG="$REGISTRO" "$NODE" -e '
       const fs = require("fs"), path = require("path");
-      const [archivo, op, host, a, b, c] = process.argv.slice(1);
+      const [archivo, op, host, a, b, c, d, g] = process.argv.slice(1);
       const candado = `${archivo}.lock`;
       const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
       fs.mkdirSync(path.dirname(archivo), { recursive: true });
@@ -598,9 +605,16 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
       const r = e.reglas.find((x) => x.host === host);
       if (op === "has") process.exit(r || abiertaEnElRegistro() ? 0 : 1);
       if (op === "rev") { process.stdout.write(String(r ? r.rev || 0 : "")); process.exit(0); }
-      if (op === "open") { // a = regla, b = ip, c = sesión. Se escribe ANTES de pedirle la regla a Azure: un tope deja rastro
-        if (r) { r.regla = a; r.ip = b; r.rev = (r.rev || 0) + 1; if (c && !r.sesiones.includes(c)) r.sesiones.push(c); }
-        else e.reglas.push({ host, regla: a, ip: b, abierta: new Date().toISOString(), sesiones: c ? [c] : [], rev: 1 });
+      if (op === "location") { // «suscripción|grupo» donde se abrió: los del estado o, sin estado, los de la última apertura del registro
+        let l0 = r && r.sub && r.rg ? r : null;
+        if (!l0) try { for (const l of fs.readFileSync(process.env.TYCON_FW_LOG, "utf8").split("\n")) { let j; try { j = JSON.parse(l); } catch (_) { continue; }
+          if (j && j.host === host && j.accion === "open-firewall") l0 = j; } } catch (_) {}
+        const ok = l0 && typeof l0.sub === "string" && typeof l0.rg === "string" && l0.sub && l0.rg;
+        process.stdout.write(ok ? `${l0.sub}|${l0.rg}` : ""); process.exit(0);
+      }
+      if (op === "open") { // a = regla, b = ip, c = sesión, d = suscripción, g = grupo. Se escribe ANTES de pedirle la regla a Azure: un tope deja rastro
+        if (r) { r.regla = a; r.ip = b; if (d && g) { r.sub = d; r.rg = g; } r.rev = (r.rev || 0) + 1; if (c && !r.sesiones.includes(c)) r.sesiones.push(c); }
+        else e.reglas.push({ host, regla: a, ip: b, sub: d || undefined, rg: g || undefined, abierta: new Date().toISOString(), sesiones: c ? [c] : [], rev: 1 });
         guardar();
       } else if (op === "use") { if (r && a && !r.sesiones.includes(a)) { r.sesiones.push(a); guardar(); } }
       else if (op === "release") { // saca la sesión; imprime «sesiones vivas que siguen|versión»
@@ -656,7 +670,32 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
     else
       REV="$(estado_fw rev "$HOST" 2>/dev/null)" || REV=""
     fi
-    ubicar_servidor
+    # Un servidor borrado se lleva sus reglas. Eso se da por cerrado sólo con el lugar anotado al abrir (suscripción y
+    # grupo): az pregunta por ese servidor puntual y tiene que contestar «no existe». Un listado vacío no alcanza: Azure
+    # no muestra lo que la cuenta ya no puede ver, y un permiso vencido se leería como un servidor borrado. Si dice que
+    # no existe, se busca en las demás suscripciones por si se movió. Sin lugar anotado (una regla abierta antes de
+    # anotarlo), un servidor que no aparece sigue siendo «no sé».
+    LUGAR="$(estado_fw location "$HOST" 2>/dev/null)" || LUGAR=""
+    SUB_ANOTADA="${LUGAR%%|*}"; RG_ANOTADO="${LUGAR#*|}"
+    [[ "$SUB_ANOTADA" =~ ^[A-Za-z0-9-]+$ ]] && [[ "$RG_ANOTADO" =~ ^[A-Za-z0-9._()-]+$ ]] || { SUB_ANOTADA=""; RG_ANOTADO=""; }
+    BORRADO=0; UBICADO=0
+    if [ -n "$SUB_ANOTADA" ]; then
+      salida="$(correr_az sql server show --subscription "$SUB_ANOTADA" -g "$RG_ANOTADO" -n "$CORTO" --query name -o tsv 2>&1)"; rc=$?
+      [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): la regla queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+      if [ "$rc" = 0 ]; then SUB="$SUB_ANOTADA"; RG="$RG_ANOTADO"; UBICADO=1
+      elif printf '%s' "$salida" | grep -qE '\((ResourceNotFound|ResourceGroupNotFound)\)'; then
+        ubicar_servidor cero-vale; rc=$?; [ "$rc" = 2 ] && BORRADO=1; [ "$rc" = 0 ] && UBICADO=1
+      else
+        fallo_fw "az no pudo mirar el servidor donde se abrió la regla (${SUB_ANOTADA}/${RG_ANOTADO}, código $rc): $(printf '%s' "$salida" | head -1). Queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+      fi
+    fi
+    if [ "$BORRADO" = 1 ]; then
+      echo "el servidor $CORTO ya no existe donde se abrió la regla (${SUB_ANOTADA}/${RG_ANOTADO}) y no lo encuentro en tus suscripciones: la doy por cerrada (la regla $REGLA se borra con el servidor)"
+      estado_fw remove "$HOST" "$REV" >/dev/null || true
+      anotar "\"host\":\"$HOST\",\"accion\":\"close-firewall\",\"regla\":\"$REGLA\",\"sesion\":\"$SESION\"$POR,\"servidor\":\"borrado\",\"exit\":0"
+      exit 0
+    fi
+    [ "$UBICADO" = 1 ] || ubicar_servidor
     salida="$(regla_az show 2>&1)"; rc=$?
     [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): la regla queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
     if [ "$rc" = 0 ]; then
@@ -707,11 +746,11 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   if [ "$rc" = 0 ]; then OP=update; else OP=create; fi
   # 🔴 Se anota ANTES de pedirla: si az llega al tope o falla después de crearla, la regla puede existir en Azure, y
   # el fin de sesión o el barrido la tienen que encontrar. Sin poder anotarla, no se abre.
-  estado_fw open "$HOST" "$REGLA" "$IP" "$SESION" || fallo_fw "no pude anotar la regla en el estado del firewall: no la abro sin poder cerrarla después."
+  estado_fw open "$HOST" "$REGLA" "$IP" "$SESION" "$SUB" "$RG" || fallo_fw "no pude anotar la regla en el estado del firewall: no la abro sin poder cerrarla después."
   salida="$(regla_az "$OP" --start-ip-address "$IP" --end-ip-address "$IP" 2>&1)"; rc=$?
   [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): no sé si la regla quedó. Queda anotada: se cierra al terminar la sesión, o ya: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
   [ "$rc" = 0 ] || fallo_fw "az no pudo $([ "$OP" = create ] && echo crear || echo actualizar) la regla (código $rc): $(printf '%s' "$salida" | head -1). Queda anotada por si quedó a medias: se cierra al terminar la sesión."
-  anotar "\"host\":\"$HOST\",\"accion\":\"open-firewall\",\"regla\":\"$REGLA\",\"ip\":\"$IP\",\"sesion\":\"$SESION\",\"exit\":0"
+  anotar "\"host\":\"$HOST\",\"accion\":\"open-firewall\",\"regla\":\"$REGLA\",\"ip\":\"$IP\",\"sub\":\"$SUB\",\"rg\":\"$RG\",\"sesion\":\"$SESION\",\"exit\":0"
   echo "regla $REGLA abierta para $IP en $CORTO — se cierra sola al terminar esta sesión"
   exit 0
 fi

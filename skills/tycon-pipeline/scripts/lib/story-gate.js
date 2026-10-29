@@ -48,9 +48,9 @@
  *     siempre — crear la story, tocar `plugin.json`, escribir la evidencia del DoD, todo eso es
  *     trabajo legítimo sin carril. (Explícito: implementación hecha 100% en config
  *     —`plugin.json`, `appsettings`, `.csproj`, `.bpmn`— no dispara el carril.)
- *   · El carril ad-hoc es UN comando (`marker.js adhoc set '{"reason":"…"}'`) — pero el mensaje de
- *     bloqueo exige que el USER lo decida, y reconoce que si el user ya pidió "Barry"/quick-dev/un
- *     hotfix con esas palabras, ESO es la decisión (no se re-pregunta). Queda en `adhoc.log`.
+ *   · El carril ad-hoc es UN comando (`marker.js adhoc set '{"reason":"…"}'`), y lo aprueba el dueño en la ventana
+ *     de permiso (la firma `adhoc-lane`): el agente lo pide, la ventana le muestra el motivo y el cupo. Queda en
+ *     `adhoc.log`.
  *   · Resume cross-session: antes de decir "no hay carril", el handler busca markers de OTRAS
  *     sesiones cuyo repo contenga el archivo y ofrece `adopt-session`.
  *   · Kill-switch del dev: env `TYCON_STORY_GATE=off` (el agente no puede setearlo: las env de los
@@ -388,8 +388,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '   (a) Story + pipeline → `Skill(skill="tycon-create-story", …)` (si no existe) y después',
       '       `Skill(skill="tycon-pipeline", args="implementemos la story X.Y")`.',
       '   (b) El user confirma que sigue siendo un ajuste acotado → re-declará con cupo mayor y motivo:',
-      `        node ${MARKER_JS} adhoc set '{"reason":"<motivo del user>","maxFiles":<N>}'`,
-      '       (queda en adhoc.log con el cupo anterior y el nuevo).',
+      `        node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>","maxFiles":<N>}'`,
+      '       El dueño lo aprueba en la ventana de permiso (queda en adhoc.log con el cupo anterior y el nuevo).',
     ].join('\n');
   }
   // no-lane
@@ -416,14 +416,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '       El pipeline setea el marker en el «Arranque» y este portón se abre solo.',
     '',
     '   (b) HOTFIX / AJUSTE CHICO SIN STORY (bug puntual, refactor acotado, cleanup) → carril ad-hoc:',
-    `         node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué, en palabras del user>"}'`,
-    `       Cupo por default: ${DEFAULT_ADHOC_MAX_FILES} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
+    `         node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué>"}'`,
+    '       Lo aprueba el dueño en la ventana de permiso, que le muestra el motivo y el cupo: corré el comando solo, en',
+    `       su forma exacta. Cupo por default: ${DEFAULT_ADHOC_MAX_FILES} archivos de implementación distintos (ajustable con "maxFiles"). Queda en adhoc.log.`,
     ...resume,
     '',
     '  🔴 QUIÉN ELIGE: el USER. Si YA lo dijo —"hablar con Barry"/quick-dev, "un hotfix", "arreglá esto',
-    '     rápido", o "implementemos la story X"— ESO es la decisión: declará el carril citándolo, sin',
-    '     re-preguntar. Elegir (b) por tu cuenta para una feature es el anti-pattern que motivó este',
-    '     portón (2026-08-19: el agente anunció "story + pipeline" y se largó a codear).',
+    '     rápido", o "implementemos la story X"— seguí por ese carril sin re-preguntar: el (b) igual lo',
+    '     aprueba él en la ventana. Elegir (b) por tu cuenta para una feature es el anti-pattern que motivó',
+    '     este portón (2026-08-19: el agente anunció "story + pipeline" y se largó a codear).',
     '',
     '  🔴 SI NO LO DIJO — PREGUNTALE, y prohibido cerrar el turno pegándole este texto:',
     '     esta salida está escrita para VOS, no para él. "carril", "marker", "ad-hoc", "story Mary+GOLD",',
@@ -434,8 +435,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '',
     ...PREGUNTA_SIN_CARRIL.map((l) => `       ${l}`),
     '',
-    '     Su respuesta destraba: cualquier frase clara suya vale —"arreglo rápido: …", "es un hotfix",',
-    '     "sin story"— para declarar (b) citándolo; "con historia" es (a).',
+    '     Su respuesta decide el carril: "arreglo rápido: …", "es un hotfix" o "sin story" es (b), que él',
+    '     aprueba después en la ventana de permiso; "con historia" es (a).',
     '   · SUBAGENTE (sin AskUserQuestion): no elijas vos. Cerrá tu reporte pidiéndole al orquestador',
     '     que le pregunte al user cuál de las dos va, y no toques el archivo.',
     '',
@@ -464,21 +465,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
 //
 // El diseño no adivina:
 //   · Carril PIPELINE = hay marker (el pipeline CORRIÓ su Arranque — estado real, no una frase).
-//   · Carril AD-HOC   = `marker.js adhoc set` citando palabras del user (reasonInPrompts, mecánico)
-//                       o, si la cita no alcanza, el clasificador por modelo leyendo los prompts
-//                       REALES del user decide — castellano lo interpreta un modelo, no un regex
-//                       (lib/lane-classifier.js; sin modelo, se deniega y se le pregunta al user).
+//   · Carril AD-HOC   = `marker.js adhoc set`, que el dueño aprueba en la ventana de permiso (la firma
+//                       `adhoc-lane`). Nada del chat lo abre: la conversación guardada la puede escribir
+//                       la sesión.
 //   · Sin carril       = el portón bloquea el primer toque de código y el agente PREGUNTA en
 //                       castellano llano. Una pregunta por sesión: ése es el costo total de no
 //                       adivinar, y es más barato que cualquiera de esos casos.
 
-// Pedido explícito de implementar una STORY (id N.M o pipeline nombrado). Fuente ÚNICA: los usa
-// el reminder de on-prompt.js (avisar "esto va por pipeline") y el veto mecánico de marker.js
-// (sin modelo disponible, el agente puede citar
-// "implementemos la story X" como motivo de un AD-HOC y pasar — el texto citado ES un pedido de
-// story, y eso se detecta sin adivinar nada: el user lo escribió con id y todo).
-// 🔴 Esto NO es detectLane volviendo: no corre en cada prompt ni fija carril — juzga UNA
-// declaración explícita, mirando sólo el prompt que la declaración cita como su autorización.
+// Pedido explícito de implementar una STORY (id N.M o pipeline nombrado). Lo usa el aviso de
+// on-prompt.js ("esto va por pipeline").
+// 🔴 Esto NO es detectLane volviendo: no fija carril, sólo avisa.
 const STORY_INTENT_PATTERNS = [
   /\bimplement(emos|ar|á|alos?|emos)\b.*\b\d+\.\d+(\.\d+)?\b/i,
   /\b(arranqu|empez|hag|trabajemos|codeemos)\w*\b.*\b(story|historia|tarea)\s*\d+\.\d+(\.\d+)?\b/i,
@@ -486,56 +482,6 @@ const STORY_INTENT_PATTERNS = [
   /^\s*(implementemos|implementar|implementá)\s+(la\s+)?\d+\.\d+(\.\d+)?\b/i,
   /\b(apply|run|correr|ejecutar)\b.*\btycon[- ]pipeline\b/i,
 ];
-
-// El registro de una versión anterior guarda textos sueltos, sin origen. Lo que llegó de otra sesión, de un agente o como
-// nota lateral empieza con lo que le pone Claude Code; eso no cuenta, y el resto se lee como antes hasta que vence la
-// sesión.
-const AJENO_EN_REGISTRO_VIEJO = /^\s*(?:Another Claude session sent a message:|<cross-session-message\b|<agent-message\b|Here is a note offered by a side agent)/;
-
-/**
- * Los textos que escribió el dueño, en orden. Cada entrada del registro es `{ texto, origen, de? }` (cuenta sólo
- * `origen: 'dueno'`, que sale de la marca de Claude Code, no del texto) o un texto de la forma vieja.
- */
-function soloDelDueno(entradas) {
-  const out = [];
-  for (const e of Array.isArray(entradas) ? entradas : []) {
-    if (typeof e === 'string') { if (!AJENO_EN_REGISTRO_VIEJO.test(e)) out.push(e); continue; }
-    if (e && e.origen === 'dueno' && typeof e.texto === 'string') out.push(e.texto);
-  }
-  return out;
-}
-
-/** ¿Alguno de los prompts del dueño que CONTIENEN la cita es un pedido explícito de story? */
-function quotedPromptAsksStory(reason, prompts) {
-  const r = normalizeWords(reason);
-  if (!r) return false;
-  return soloDelDueno(prompts)
-    .filter((p) => normalizeWords(p).includes(r))
-    .some((p) => STORY_INTENT_PATTERNS.some((re) => re.test(String(p))));
-}
-
-/** Normaliza texto para comparar "palabras del user": minúsculas, sin acentos, sin comillas, espacios colapsados. */
-function normalizeWords(s) {
-  return String(s || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[`"'“”‘’]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-const ADHOC_REASON_MIN_CHARS = 8;
-
-/**
- * ¿El motivo del ad-hoc es un fragmento LITERAL de algo que escribió el user? (≥8 caracteres
- * normalizados). Cierra el agujero de "reason en palabras del user" que nadie verificaba: una
- * paráfrasis del agente no pasa; citarlo, sí. Lo de otra sesión, de un agente o sin marca no se cita.
- */
-function reasonInPrompts(reason, prompts) {
-  const r = normalizeWords(reason);
-  if (r.length < ADHOC_REASON_MIN_CHARS) return false;
-  return soloDelDueno(prompts).some((p) => normalizeWords(p).includes(r));
-}
 
 /** El cartel de borrar o mover un marcador de ejecución por consola: qué se tocó y qué comando usar en su lugar. */
 function markerDeleteMessage(rutas, via) {
@@ -569,7 +515,6 @@ function storyByConsoleMessage(rutas, via) {
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
   computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
-  reasonInPrompts, soloDelDueno, normalizeWords, ADHOC_REASON_MIN_CHARS,
-  STORY_INTENT_PATTERNS, quotedPromptAsksStory,
+  STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
 };

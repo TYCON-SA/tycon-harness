@@ -232,15 +232,6 @@ if (NON_HUMAN_RE.test(prompt)) process.exit(0);
 // de config global + race cross-sesión. El bootstrap del SessionStart lo hace SOLO
 // install-tycon-hooks.sh|.ps1 en SessionStart (one-time), no per-prompt.
 
-// Ring de prompts del user (evidencia para reasonInPrompts y lane-classifier). Se registra en
-// CADA prompt humano, antes de cualquier salida temprana. NO fija carril: no hay
-// detección por regex — ver el comentario grande en lib/story-gate.js.
-// Fail-open: si el registro falla, el hook sigue igual.
-try {
-  const io = require('./lib/story-gate-io.js');
-  io.recordPrompt(STATE_DIR, sessionId, prompt);
-} catch { /* fail-open */ }
-
 // Constancia del skill creador de stories cuando el USER lo invoca por SLASH (freno de story-a-mano):
 // `/tycon-create-story <id>` tipeado por el dev
 // NO pasa por la tool Skill —Claude Code expande el skill en el propio mensaje como
@@ -383,11 +374,10 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
       `🔒 Portón de carril (2026-08-19): en un repo bajo el arnés, el primer Edit/Write de CÓDIGO sin marker ` +
       `(ni ad-hoc declarado) se DENIEGA — y con marker, se deniega hasta que «Aprobar el plan» esté cerrado. ` +
       `No es un aviso: es un portón.\n\n` +
-      `🔒 Este prompt es un pedido de STORY (2026-08-27): declarar un ad-hoc CITÁNDOLO se deniega ` +
-      `(veto mecánico ADHOC_DENIED_STORY_QUOTE — citar el pedido de la story como autorización del atajo es el ` +
-      `anti-pattern del 2026-08-24), y con modelo disponible el juez lee los prompts reales. Las instrucciones ` +
-      `operativas del pedido (tasks en orden, tests scoped) NO son un procedimiento manual: se pasan al pipeline ` +
-      `como restricciones. El atajo sólo lo habilita el USER pidiéndolo en un prompt propio.\n\n` +
+      `🔒 Este prompt es un pedido de STORY: no lo conviertas en un ad-hoc (el anti-pattern del 2026-08-24). ` +
+      `Las instrucciones operativas del pedido (tasks en orden, tests scoped) NO son un procedimiento manual: se ` +
+      `pasan al pipeline como restricciones. El atajo (\`marker.js adhoc set\`) lo aprueba el dueño en la ventana ` +
+      `de permiso, y sólo si él lo pide.\n\n` +
       `Ver SKILL.md sección "ANTI-PATTERN — NO bypass del orchestrator".` +
       freshSessionBlock,
   );

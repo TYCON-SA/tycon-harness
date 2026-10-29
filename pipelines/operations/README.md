@@ -282,6 +282,9 @@ cada una: la guía del sitio (`guides/organization-site.md`, «De dónde lee ope
 3. **El pipeline**: copiá `site-copy.yml` a `pipelines/` del repo de operaciones, cambiá las dos líneas marcadas (el
    recurso `harness` y `azureSubscription` con el nombre de la conexión) y cargá las variables `SITE_COPY_ACCOUNT` y
    `SITE_COPY_CONTAINER`. Corre en cada push a `main` (también el que hacen los nocturnos al guardar) y una vez por día.
+   Optativa, `SITE_URL` con la dirección del sitio: si el cambio trae otro `operations.json` (un pedido de Configuración
+   aprobado, como una invitación de Personas), el trabajo despierta al sitio para que lo lea en el momento. Sin ella, un
+   sitio que escala a cero lo lee recién cuando alguien entra.
 4. **La primera ejecución** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
    `SITE_OPERATIONS_SOURCE=copy`.
 

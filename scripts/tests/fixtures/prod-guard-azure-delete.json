@@ -1338,7 +1338,28 @@
    "az group list",
    "az lock list",
    "az rest --method get --url u"
-  ]
+  ],
+  "edges": {
+   "__doc": "T18: bordes donde el lanzador y la caída del freno decidían distinto. Pasan: un salto de línea corta el comando; detrás de un = no es el programa; delete-x no es delete. Frenan: un tabulador separa palabras; el freno frena de más --method con espacios y un = suelto, y el lanzador lo iguala.",
+   "block": [
+    "az rest\t--method delete --url u",
+    "az rest --method  =  delete --url u",
+    "az\tgroup\tdelete -n x",
+    "(az group delete -n x)",
+    "azd \"down\"",
+    "bash -c \"az rest --method \\\"delete\\\" --url u\"",
+    "az rest --method $'delete' --url u"
+   ],
+   "pass": [
+    "az\ngroup delete -n x",
+    "azd\r\ndown",
+    "=az group delete -n x",
+    "x=az group delete -n x",
+    "az rest -Method delete-x --url u",
+    "=azd down",
+    "az rest\n--method delete --url u"
+   ]
+  }
  },
  "guide": {
   "__doc": "T26: las frases del AC 18 en guides/produccion-con-permiso.md",

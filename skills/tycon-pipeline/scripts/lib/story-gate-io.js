@@ -7,11 +7,9 @@
  *
  * Fuentes de estado (todas bajo ~/.claude/.tycon-pipeline/):
  *   active/<sid>.json   marker del pipeline (lo escribe marker.js)
- *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch }
- *   lane/<sid>.json     carril FIJADO POR EL PROMPT del user: { lane, laneSetAt, lanePrompt,
- *                       recentPrompts[], lastTouch } — lo escribe on-prompt.js en cada prompt; marker.js
- *                       lo lee para denegar `adhoc set` con carril pipeline y para exigir que el motivo
- *                       sea un fragmento literal de lo que escribió el user.
+ *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch, via, by,
+ *                       firmadaEn } (lo escribe `marker.js adhoc set` con la firma del dueño; el portón lo acepta sólo
+ *                       con el renglón `adhoc-lane-signed` de esa hora en gates.log)
  *   gates.log           cada bloqueo queda registrado (status: blocked, kind)
  *
  * Señal "repo bajo el arnés": `<repo>/.tycon/` existe (barato, sin escaneo) — o, si no existe,
@@ -81,47 +79,48 @@ function readAdhoc(stateDir, sessionId) {
   return a;
 }
 
+// La declaración del arreglo rápido abre el portón sólo con su firma: el renglón `adhoc-lane-signed` que deja
+// `marker.js adhoc set` en gates.log para esta sesión, de la hora que la declaración anota (`firmadaEn`). Un archivo
+// escrito por otra vía no la trae. Se lee la cola del registro: una firma de las últimas horas está ahí.
+const FIRMA_ADHOC_MARGEN_MS = 2 * 60 * 1000;
+const GATES_COLA_BYTES = 4 * 1024 * 1024;
+
+function adhocFirmado(stateDir, sessionId, adhoc) {
+  return firmaDelAdhoc(stateDir, sessionId, adhoc).ok ? adhoc : null;
+}
+
+/** `{ ok: true }`, o `{ ok: false, motivo }` con lo que le falta a la declaración para abrir el portón. */
+function firmaDelAdhoc(stateDir, sessionId, adhoc) {
+  if (!adhoc) return { ok: false, motivo: null };
+  const hasta = Date.parse(adhoc.firmadaEn || '');
+  if (Number.isNaN(hasta)) return { ok: false, motivo: 'no trae la hora de su firma (no la escribió `marker.js adhoc set`)' };
+  let txt;
+  try {
+    const file = path.join(stateDir, 'gates.log');
+    const fd = fs.openSync(file, 'r');
+    try {
+      const size = fs.fstatSync(fd).size;
+      const n = Math.min(size, GATES_COLA_BYTES);
+      const buf = Buffer.alloc(n);
+      fs.readSync(fd, buf, 0, n, size - n);
+      txt = buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch (e) { return { ok: false, motivo: `no pude leer el registro de firmas (${e.code || e.message})` }; }
+  const sid = String(sessionId);
+  for (const linea of txt.split('\n')) {
+    if (!linea.includes('adhoc-lane-signed')) continue;
+    let o;
+    try { o = JSON.parse(linea); } catch { continue; }
+    if (o.name !== 'adhoc-lane-signed' || o.status !== 'ok' || String(o.destino) !== sid) continue;
+    const t = Date.parse(o.ts || '');
+    if (!Number.isNaN(t) && t <= hasta && t >= hasta - FIRMA_ADHOC_MARGEN_MS) return { ok: true };
+  }
+  return { ok: false, motivo: 'no está el renglón de su firma (adhoc-lane-signed de esta sesión, a esa hora) en el registro' };
+}
+
 /** Escritura atómica del ad-hoc (tmp + rename). Devuelve el objeto escrito. */
 function writeAdhoc(stateDir, sessionId, obj) {
   const file = adhocPath(stateDir, sessionId);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
-  fs.renameSync(tmp, file);
-  return obj;
-}
-
-// ── lane (carril fijado por el prompt del user) ──────────────────────────────────────────────────
-
-const LANE_RECENT_PROMPTS = 8;
-const LANE_PROMPT_MAX_CHARS = 1500;
-
-function lanePath(stateDir, sessionId) {
-  return path.join(stateDir, 'lane', `${safeSid(sessionId)}.json`);
-}
-
-function readLane(stateDir, sessionId) {
-  const l = readJson(lanePath(stateDir, sessionId));
-  if (!l) return null;
-  if (isStale(l)) return null;
-  return l;
-}
-
-/**
- * Registra el prompt del user (ring de los últimos N). Lo llama on-prompt.js en CADA prompt humano.
- * 🔴 No fija carril: no hay detección por regex (ver el comentario grande en story-gate.js). El ring es la evidencia que consumen
- * reasonInPrompts (cita mecánica) y lane-classifier (el modelo que interpreta castellano); sólo
- * lo escribe este hook desde UserPromptSubmit, así que el agente no puede inyectar texto acá.
- */
-function recordPrompt(stateDir, sessionId, prompt, { now = new Date().toISOString() } = {}) {
-  const text = String(prompt || '').slice(0, LANE_PROMPT_MAX_CHARS);
-  const prev = readLane(stateDir, sessionId) || {};
-  const recent = Array.isArray(prev.recentPrompts) ? prev.recentPrompts.slice() : [];
-  if (text.trim()) recent.push(text);
-  const obj = { ...prev, recentPrompts: recent.slice(-LANE_RECENT_PROMPTS), lastTouch: now };
-  // Estado de una versión que fijaba el carril por regex: ese lane seguiría anulando ad-hocs para siempre.
-  delete obj.lane; delete obj.laneSetAt; delete obj.lanePrompt;
-  const file = lanePath(stateDir, sessionId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
@@ -295,7 +294,11 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   const realFilePath = installedTree.realPath(abs);
   const realStateDir = installedTree.realPath(stateDir);
   const marker = readMarker(stateDir, sessionId);
-  const adhoc = readAdhoc(stateDir, sessionId);
+  const declarado = readAdhoc(stateDir, sessionId);
+  const firma = firmaDelAdhoc(stateDir, sessionId, declarado);
+  const adhoc = firma.ok ? declarado : null;
+  // una declaración sin firma reconocida no abre, y el bloqueo dice por qué (no es lo mismo que no haber declarado)
+  const adhocSinFirma = declarado && !firma.ok ? firma.motivo : null;
 
   // Camino barato primero: state-dir / no-código / marker no necesitan mirar el repo. Se arranca
   // suponiendo que NO es un repo del harness: si así ya pasa, pasa y no se pagó ningún git. Sólo si
@@ -335,15 +338,18 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   appendLog(stateDir, 'gates.log', sessionId, {
     repoPath: repo.repoRoot || null,
     name: 'story-gate', status: 'blocked', kind: verdict.kind, file: abs, via: via || null,
-    story: marker ? marker.storyId : null, reason: verdict.reason,
+    story: marker ? marker.storyId : null, reason: verdict.reason, ...(adhocSinFirma ? { adhocSinFirma } : {}),
   });
-  const message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via });
+  let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via });
+  if (adhocSinFirma && verdict.kind === 'no-lane') {
+    message += `\n\n  ⚠️ Hay una declaración del arreglo rápido para esta sesión, pero sin su firma: ${adhocSinFirma}. No abre el\n`
+      + '     portón. Si el dueño quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que él aprueba en la ventana.';
+  }
   return { verdict, message, ctx: { ...ctx, otherMarkers } };
 }
 
 module.exports = {
-  DEFAULT_STATE_DIR, STALE_HOURS, LANE_RECENT_PROMPTS,
-  readMarker, readAdhoc, writeAdhoc, recordAdhocFile, adhocPath, listOtherMarkers,
-  lanePath, readLane, recordPrompt,
+  DEFAULT_STATE_DIR, STALE_HOURS,
+  readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };

@@ -34,6 +34,7 @@ mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana venc
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, por la terminal | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
+| `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set '<json>' --terminal --for-session <id>` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, por la terminal | `TYCON_SAFETY_OFF=1 <comando>` |
 | `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, por la terminal | `TYCON_PROD_LINT=0 <comando>` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, por la terminal | `TYCON_NEW_NAMES=0 <comando>` |
@@ -83,6 +84,14 @@ entonces en la terminal. Hay un caso que no ve: una herramienta que el agente ab
 teclas puede contestar su propia ventana. El servidor de `tmux` no tiene padre, y desde los procesos de la máquina no se
 distingue un `tmux` de la persona de uno del agente.
 
+Las constancias de las firmas viven en la carpeta de estado del arnés: el registro `gates.log` y los archivos que deja
+cada firma (el del arreglo rápido, `adhoc/<sesión>.json`, entre ellos). El portón de edición abre el arreglo rápido sólo
+si el archivo trae la hora de su firma y el registro tiene el renglón `adhoc-lane-signed` de esa sesión y esa hora. Eso
+frena los errores y los atajos: un archivo copiado, escrito suelto o dejado por una versión vieja del arnés no abre. No
+frena a un agente que esquive el freno de la carpeta de estado: el agente corre con el mismo usuario que la persona, y
+quien escribe el archivo por una vía que el freno no ve escribe también el renglón. La barrera contra eso es el freno de
+la carpeta de estado, que niega toda escritura ahí que no sea de los guiones del arnés.
+
 ## Lo delegado no está protegido
 
 La sesión de la coordinadora es un agente. Si decide aprobar una firma delegada por su cuenta,
@@ -102,6 +111,11 @@ ventana sólo si se cumple todo esto:
 - esta máquina está en `approvals.delegated_machines`;
 - la sesión que la corre es la designada, y el dueño confirmó la designación en su terminal;
 - la sesión destino no es la propia, ni trabaja la misma story que una ejecución abierta de la sesión designada.
+
+El arreglo rápido de otra pestaña (`adhoc-lane`) se declara así desde la sesión designada de la misma máquina, con
+`marker.js adhoc set '<json>' --for-session <sesión>`; por esta vía el cupo queda en 8 archivos como mucho. La
+coordinadora de otra máquina no lo declara: se lo pide a la designada de la máquina destino (`guides/coordination.md`).
+No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nombra.
 
 Si falta algo, sale la ventana en la pestaña de la designada. El guion firma con `via: delegacion`. Un escape es siempre
 de la sesión que lo corre, así que nunca se delega. Refirmar los controles tras traer `main` se delega sólo cuando el
