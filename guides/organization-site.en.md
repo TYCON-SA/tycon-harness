@@ -297,6 +297,7 @@ their tabs as before.
 - **Rules that are candidates for retirement: tested, never found anything** (`reglas_candidatas`). Rules that can turn red but never found anything, despite plenty of mileage.
 - **Rules the test bench actually tested** (`reglas_probadas`). A rule without a test that forces it to fire is not judged: it shows as "not tested", never as a candidate.
 - **Commits per lane: pipeline, declared shortcut or none** (`carriles`). How many commits went through the pipeline, how many through a declared shortcut and how many through none.
+- **Machines with an active rollback: they do not update on their own** (`vueltas_atras`). How many machines undid an update and hold it back until a later version comes out.
 
 **In Projects (Proyectos):**
 

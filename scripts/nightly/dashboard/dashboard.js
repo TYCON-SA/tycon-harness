@@ -554,7 +554,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   // en el nocturno, sin el buzón entero no hay fichas del equipo — nunca «ninguna máquina reportó».
   if (AMB.nocturno && buzon.estado !== 'leido') {
     const n = noLeido(buzon);
-    return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, cobertura_maquinas: n.motivo, maquinas_equipo: null };
+    return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, vueltas_atras: n, cobertura_maquinas: n.motivo, maquinas_equipo: null };
   }
   const reductor = require('./reducer');
   let j;
@@ -570,7 +570,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
     j = { estado: 'no_medido', motivo: `la cuenta de los registros falló (${e.code || e.name || 'error'})` };
   }
   const cobertura_maquinas = reductor.textoCobertura(j);
-  if (j.estado !== 'medido') { const n = noMedida(j.motivo); return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, cobertura_maquinas, maquinas_equipo: null }; }
+  if (j.estado !== 'medido') { const n = noMedida(j.motivo); return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, vueltas_atras: n, cobertura_maquinas, maquinas_equipo: null }; }
   // Cuántas máquinas entraron a la cuenta (las esperadas que reportaron y las no declaradas): lo lleva el sello.
   const maquinas_equipo = j.cobertura.reportaron + j.cobertura.sin_declarar.length;
   const piso = j.piso;
@@ -782,7 +782,25 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
       detalle: `${ventana} · máximo ${num1(maximo / 60)} minutos · midieron ${sd.midieron} de ${sd.maquinas} máquina${sd.maquinas === 1 ? '' : 's'}`,
     });
   }
-  return { bloqueos, escapes, escapes_dom, frenos, evidencia_cierre, carriles, cobertura_tocada, mutacion, qa_guia, suite_duracion, cobertura_maquinas, maquinas_equipo };
+  const vueltas_atras = fichaVueltasAtras(j.retenciones);
+  return { bloqueos, escapes, escapes_dom, frenos, evidencia_cierre, carriles, cobertura_tocada, mutacion, qa_guia, suite_duracion, vueltas_atras, cobertura_maquinas, maquinas_equipo };
+}
+
+/**
+ * Las máquinas con una vuelta atrás vigente: con la actualización fijada por el equipo, `harness.js rollback` deja
+ * retenida la actualización de ESA máquina hasta que sale una versión posterior a la deshecha. El número es cuántas la
+ * tienen, sobre las que la declararon; el detalle, cuáles, qué versión deshicieron y desde cuándo, o «ninguna». Las que
+ * no la declararon (un arnés anterior, o un estado ilegible) se nombran aparte: no son «sin retención».
+ */
+function fichaVueltasAtras(r) {
+  if (!r) return noMedida('la cuenta de los registros no trae las retenciones');
+  const medidas = r.vigentes.length + r.sin_retencion;
+  const sinMedir = r.no_medidas.length ? `sin medir: ${r.no_medidas.join(', ')}` : null;
+  if (!medidas) return noMedida(r.no_medidas.length ? `ninguna máquina declaró si tiene una vuelta atrás (las que suben con un arnés anterior no lo dicen) · ${sinMedir}` : 'ninguna máquina reportó sus registros');
+  const momento = (iso) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : 'momento sin forma');
+  const lista = r.vigentes.map((v) => `${v.alias}: deshizo ${v.deshizo || 'una versión sin forma'}, desde ${momento(v.desde)}`);
+  const detalle = [lista.length ? lista.join(' · ') : 'ninguna', sinMedir].filter(Boolean).join(' · ');
+  return medida(r.vigentes.length, medidas, medidas + r.no_medidas.length, { unidad: 'conteo', den_etiqueta: 'máquinas que lo declararon', detalle });
 }
 
 // ─────────────── el criterio de poda: hallazgos por regla, con su denominador ───────────────
@@ -1661,6 +1679,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('', 'Una ejecución del pipeline, de punta a punta (mediana, horas)', L.corridas, num1, {}, [L.vueltas && L.vueltas.estado === 'medido' ? `<b>${L.vueltas.valor} vueltas de revisión de mediana</b>${L.agentes && L.agentes.estado === 'medido' ? ` y ${L.agentes.valor} agentes por ejecución` : ''}: si los revisores piden en la vuelta 2 y 3 algo que se sabía antes, eso se mueve a la spec.` : null, pieTiempos].filter(Boolean).join(' ') || null)}
     ${F('', 'Pasos de una ejecución del pipeline (mediana): la variable que explica lo que consume', L.pasos, redondo, {}, 'Una ejecución consume según cuántos pasos da, porque en cada paso el modelo relee todo lo anterior: <b>los tokens son la consecuencia, esto es la palanca</b>. Sale de las ejecuciones de todas las máquinas que las suben. <b>No tiene tope ni color a propósito</b>: primero la serie, y recién si alguna palanca la mueve se discute un umbral.')}
     ${F('', 'Commits por carril: pipeline, atajo declarado o ninguno', L.carriles, entero, {}, 'Sale del hook que ya registra cada commit de una sesión. <b>Los commits hechos fuera de una sesión no se ven</b> (desde la terminal o el editor), ni los que toman el mensaje de un archivo o de una variable: no están en este número, y eso es «no medido», no cero. Un commit hasta 3 h después de cerrar una ejecución cuenta como de esa ejecución; un atajo vencido no es un carril.')}
+    ${F('', 'Máquinas con una vuelta atrás vigente: no se actualizan solas', L.vueltas_atras, entero, {}, 'Con la actualización fijada por el equipo, <code>harness.js rollback</code> deja retenida la actualización de <b>esa</b> máquina hasta que sale una versión posterior a la que deshizo. El detalle dice cuál, qué versión deshizo y desde cuándo. Cada máquina lo declara una vez por día, con sus registros; la que sube con un arnés anterior sale «sin medir».')}
     ${F('', 'Despliegues: productos con producción al día', E.despliegues, entero, {}, 'Sale de la foto de despliegues de cada noche, leída del <b>stage</b> de cada ejecución: una ejecución «succeeded» con la aprobación vencida no cuenta como desplegada. Sobre los productos medidos; el detalle dice cuáles tienen producción atrasada y cuántas aprobaciones vencieron. Duración, cola y frecuencia de despliegues: story 2.11.')}
   </div>
   ${tablaPoda(P)}
@@ -1769,4 +1788,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues };
+module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras };

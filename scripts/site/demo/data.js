@@ -258,7 +258,9 @@ function registrosDeMaquina(maq, ahora, volcados) {
     [`${maq}/registros/carriles.jsonl.gz`]: comprimido([...[1, 2, 3, 4].map((i) => ({ ts: ts(i, 18), carril: 'pipeline' })), { ts: ts(5, 18), carril: 'adhoc' }]),
     [`${maq}/registros/hallazgos.jsonl.gz`]: comprimido(serie),
     [`${maq}/registros/cobertura.json`]: JSON.stringify({ esquema: 1, fecha: hoy, fuentes: { gates: medido, bypass: medido, frenos: medido, carriles: medido,
-      hallazgos: { estado: 'medido', fecha: hoy, resumen: { hallazgos: hallazgos.length, volcados: { medidos: previas.length } } } } }),
+      hallazgos: { estado: 'medido', fecha: hoy, resumen: { hallazgos: hallazgos.length, volcados: { medidos: previas.length } } } },
+      // sin una vuelta atrás vigente: la tarjeta de vueltas atrás sale medida, en 0
+      hold: null }),
   };
 }
 

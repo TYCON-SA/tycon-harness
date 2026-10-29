@@ -41,6 +41,8 @@
  *    cuenta la hace `scripts/nightly/dashboard/reducer.js`, donde el buzón está bajado; lo que llega a la página del
  *    equipo es sólo la cuenta. Entre esos registros va también `legacy-names.jsonl` (los usos de nombres
  *    viejos, con los que se decide su retiro), proyectado a sus campos y con sus conteos en la cobertura.
+ *    La cobertura trae además `hold`: la retención de una vuelta atrás de la máquina (`holdForMailbox`), con sólo la
+ *    versión deshecha y desde cuándo, o null si no hay; lo que no se pudo leer va `no_medido`, nunca null.
  *
  * 🔴 Y LOS DÍAS DE INSTINTOS: con la integración `instincts` prendida, la preparación del día arma también, con
  *    `scripts/instincts/instinct-upload.js`, un archivo por día UTC cerrado desde el aviso de la grabadora, con sólo lo de
@@ -686,6 +688,10 @@ function prepararRegistros(opts = {}) {
   const instincts = prepararInstintos({ destino, dia, maquina: opts.maquina, folder: opts.folder, registro: opts.registro, destinoBuzon: opts.destinoBuzon });
   const cobertura = { esquema: 1, fecha: dia, preparado, fuentes };
   if (instincts) cobertura.instincts = instincts;
+  // la retención de una vuelta atrás, para el tablero del equipo (que lee la cobertura y nunca place.json)
+  let hold;
+  try { hold = holdForMailbox(); } catch (e) { hold = { status: 'no_medido', reason: `no se pudo mirar (${(e && e.code) || 'error'})` }; }
+  cobertura.hold = hold;
   escribirAtomico(coberturaArchivo, `${JSON.stringify(cobertura, null, 1)}\n`);
   return { estado: 'preparado', fuentes, version: preparado };
 }
@@ -859,6 +865,37 @@ function harnessNodeFacts() {
     const m = /^v(\d+)\./.exec(String(v || ''));
     return { own: Boolean(i.own), major: m ? Number(m[1]) : null };
   } catch (_) { return { own: null, major: null }; }
+}
+// La versión deshecha como la nombra el estado («2026.10.27.3», «2026.10.27.3 · capa 1a2b3c4»): letras, números,
+// puntos, guiones, espacios y el punto medio. Una barra no entra, así que una ruta no viaja.
+const FORMA_DESHECHA = /^[0-9A-Za-z][0-9A-Za-z._ ·-]{0,79}$/;
+const FORMA_MOMENTO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
+/**
+ * La retención de una vuelta atrás de esta máquina, para la cobertura del buzón: con ella el tablero del equipo dice qué
+ * máquina no se actualiza sola, desde cuándo y qué versión deshizo. Sale del mismo estado que lee `doctor`
+ * (`harness-state.json`, campo `hold`, que escribe `harness.js rollback`) y viaja con sólo dos datos:
+ *   · null → la máquina leyó su estado y no tiene retención;
+ *   · `{ undone, since }` → la tiene: la versión deshecha y desde cuándo (un dato con otra forma va null, no se adivina);
+ *   · `{ status: 'no_aplica', reason }` → sin estado: la máquina no tiene el mecanismo de instalación, que es lo único
+ *     que retiene;
+ *   · `{ status: 'no_medido', reason }` → el estado está y no se pudo leer. Nunca se escribe null por no haber leído.
+ * `file` es para las pruebas y para el reductor, que lee el estado de la máquina donde corre.
+ */
+function holdForMailbox(file = path.join(stateDirOf(os.homedir()), 'harness-state.json')) {
+  let state;
+  try { state = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (e) {
+    if (e && e.code === 'ENOENT') return { status: 'no_aplica', reason: 'sin el mecanismo de instalación' };
+    // sólo el código del error: el mensaje trae la ruta
+    return { status: 'no_medido', reason: e instanceof SyntaxError ? 'harness-state.json ilegible' : `harness-state.json no se pudo leer (${(e && e.code) || 'error'})` };
+  }
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return { status: 'no_medido', reason: 'harness-state.json no es un objeto' };
+  const h = state.hold;
+  if (h === undefined || h === null) return null;
+  if (typeof h !== 'object' || Array.isArray(h)) return { status: 'no_medido', reason: 'la retención del estado tiene otra forma' };
+  return {
+    undone: typeof h.commit === 'string' && FORMA_DESHECHA.test(h.commit) ? h.commit : null,
+    since: typeof h.at === 'string' && FORMA_MOMENTO.test(h.at) ? h.at : null,
+  };
 }
 /**
  * El commit de HEAD de un clon, LEYENDO .git (sin invocar git: este guion no usa git para nada, T18). Sigue `gitdir:` de
@@ -1404,7 +1441,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { placeFactsForMailbox, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

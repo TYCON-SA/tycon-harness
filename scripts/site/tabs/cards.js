@@ -51,6 +51,7 @@ const DEFINICIONES = [
   { id: 'corridas', pregunta: 4, pestana: 'corridas', de: ['local', 'corridas'], formato: 'num1', clave: '' },
   { id: 'pasos', pregunta: 4, pestana: 'corridas', de: ['local', 'pasos'], formato: 'redondo', clave: '' },
   { id: 'carriles', pregunta: 4, pestana: 'arnes', de: ['local', 'carriles'], formato: 'entero', clave: '' },
+  { id: 'vueltas_atras', pregunta: 4, pestana: 'arnes', de: ['local', 'vueltas_atras'], formato: 'entero', clave: '' },
   { id: 'bus_factor', pregunta: 5, pestana: 'proyectos', de: ['local', 'bus_factor'], formato: 'entero', clave: 'bus_factor_productos_en_riesgo' },
   { id: 'sin_pipeline_de_prod', pregunta: 5, pestana: 'proyectos', de: ['extra', 'sin_prod'], formato: 'entero', clave: '' },
 ];

@@ -2,6 +2,7 @@
 # 🔴 AISLAMIENTO PRIMERO: HOME falso antes de cualquier otra línea que ejecute algo — ninguna
 #    versión del reductor puede leer un registro de esta máquina ni la carpeta bajada real.
 HOME="$(mktemp -d)"; export HOME
+# stable-data: «commit» aparece sólo como clave del estado de la máquina (la retención); esta prueba no crea commits.
 #
 # reducer.test.sh — el reductor del tablero: cuenta los registros de frenos y escapes
 # de esta máquina y de las bajadas del buzón, por lista blanca. Lista cerrada o se niega, «no medido» nunca
@@ -1160,6 +1161,59 @@ A_LOCAL="$(TYCON_MACHINE=maquina-local node "${REDUCTOR}" --alias)"; A_B="$(node
   && printf '%s' "${TXT}" | grep "${A_LOCAL}" >/dev/null && printf '%s' "${TXT}" | grep 'reducer.expected_machines' >/dev/null; } \
   && ok "2.21-T15 las tres sin declarar, por alias, y el texto dice que se declaran en reducer.expected_machines" \
   || mal "2.21-T15 rc=${RC} texto=«${TXT}»"
+
+# ── Retenciones_VueltaAtrasVigente_PorMaquina_SinDeclararEsNoMedida ───────────────────────────────
+# 🔴 falla si: una vuelta atrás vigente no llega a la cuenta con su versión y su momento; si una máquina que no la
+#    declaró (arnés anterior) o la declaró no_medido se cuenta como «sin retención»; si un valor con otra forma (una
+#    ruta) pasa a la página; o si la de esta máquina no sale de su propio estado.
+C="$(nuevo_caso ret)"; gates_basicos "${C}/local"
+printf '{"schema":1,"hold":{"commit":"2026.10.20.1","at":"2026-10-21T08:30:00.000Z","sources":{"harness":"abc"}}}\n' > "${C}/local/harness-state.json"
+con_hold() {  # <buzon> <nombre> <json del hold, o «falta»>
+  maquina_bajada "$1" "$2" "${D1}" medido no_medido
+  [ "$3" = "falta" ] && return 0
+  python3 - "$1/$2/registros/cobertura.json" "$3" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1])); c["hold"] = json.loads(sys.argv[2]); json.dump(c, open(sys.argv[1], "w"))
+PY
+}
+con_hold "${C}/buzon" maq-vigente '{"undone":"2026.10.27.3 · capa 1a2b3c4","since":"2026-10-27T14:05:09.123Z"}'
+con_hold "${C}/buzon" maq-ninguna 'null'
+con_hold "${C}/buzon" maq-sin-mecanismo '{"status":"no_aplica","reason":"sin el mecanismo de instalación"}'
+con_hold "${C}/buzon" maq-vieja falta
+con_hold "${C}/buzon" maq-ilegible '{"status":"no_medido","reason":"harness-state.json ilegible"}'
+con_hold "${C}/buzon" maq-rara '{"undone":"otra/carpeta/arnes","since":"ayer"}'
+RC="$(contar "${C}" --json)"
+python3 - "${C}/out" \
+  "$(TYCON_MACHINE=maquina-local node "${REDUCTOR}" --alias)" \
+  "$(node "${REDUCTOR}" --alias-of maq-vigente)" "$(node "${REDUCTOR}" --alias-of maq-rara)" \
+  "$(node "${REDUCTOR}" --alias-of maq-vieja)" "$(node "${REDUCTOR}" --alias-of maq-ilegible)" <<'PY' 2> "${C}/py.err" \
+  && [ "${RC}" = "0" ] && ok "retenciones: las vigentes por alias con versión y momento (la local, de su estado); sin el campo o no_medido, «sin medir»; una ruta no pasa" \
+  || mal "retenciones rc=${RC}: $(head -c 300 "${C}/py.err") $(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('retenciones'))" "${C}/out" 2>&1 | head -c 400)"
+import json, sys
+f, local, vig, rara, vieja, ileg = sys.argv[1:7]
+texto = open(f, encoding="utf-8").read()
+assert "alguien" not in texto, "una ruta llegó a la cuenta"
+r = json.loads(texto)["retenciones"]
+assert r["vigentes"] == sorted([
+    {"alias": local, "deshizo": "2026.10.20.1", "desde": "2026-10-21T08:30:00.000Z"},
+    {"alias": vig, "deshizo": "2026.10.27.3 · capa 1a2b3c4", "desde": "2026-10-27T14:05:09.123Z"},
+    {"alias": rara, "deshizo": None, "desde": None},
+], key=lambda x: x["alias"]), r["vigentes"]
+assert r["sin_retencion"] == 2, r
+assert r["no_medidas"] == sorted([vieja, ileg]), r
+PY
+# Con los registros de otra carpeta, que falte el estado no prueba nada: sale «sin medir», no «sin retención».
+rm -f "${C}/local/harness-state.json"
+RC="$(contar "${C}" --json)"
+python3 -c "import json,sys; r=json.load(open(sys.argv[1]))['retenciones']; assert r['sin_retencion']==2 and sys.argv[2] in r['no_medidas'], r" "${C}/out" "$(TYCON_MACHINE=maquina-local node "${REDUCTOR}" --alias)" 2>/dev/null \
+  && ok "retenciones: con los registros de otra carpeta y sin estado, esta máquina sale sin medir" || mal "retenciones sin estado, otra carpeta: $(head -c 400 "${C}/out")"
+# En su carpeta propia (sin --logs), que falte el estado sí es «sin el mecanismo»: cuenta como sin retención.
+CASA="${C}/casa"; PROPIA="$(HOME="${CASA}" node -e "const p=require('path');const l=p.join(process.argv[1],'scripts','setup','harness','tycon-home.js');console.log(require('fs').existsSync(l)?require(l).stateDir(process.argv[2]):p.join(process.argv[2],'.claude','.tycon-pipeline'))" "${RAIZ}" "${CASA}")"
+mkdir -p "${PROPIA}" && cp -R "${C}/local/." "${PROPIA}/"
+env -u TYCON_LOGS_SOURCE -u TYCON_HOME HOME="${CASA}" TYCON_MAILBOX_DIR="${C}/buzon" TYCON_SOURCES_JSON="${C}/sources.json" TYCON_TODAY="${HOY}" TYCON_MACHINE=maquina-local \
+  node "${REDUCTOR}" --json > "${C}/out" 2> "${C}/err"
+python3 -c "import json,sys; r=json.load(open(sys.argv[1]))['retenciones']; assert r['sin_retencion']==3 and sys.argv[2] not in r['no_medidas'], r" "${C}/out" "$(TYCON_MACHINE=maquina-local node "${REDUCTOR}" --alias)" 2>/dev/null \
+  && ok "retenciones: en su carpeta propia, esta máquina sin estado del mecanismo cuenta como sin retención" || mal "retenciones sin estado, carpeta propia: $(head -c 400 "${C}/out") $(head -c 300 "${C}/err")"
 
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "todo verde"; exit 0; }

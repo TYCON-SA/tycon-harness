@@ -24,6 +24,10 @@
  *    · Toda palabra que sale es un alias validado, una fecha validada o un valor de la lista. Ningún motivo trae
  *      una ruta ni un mensaje del sistema: sólo texto nuestro y el `code` del error.
  *
+ * Además de contar, junta la RETENCIÓN de una vuelta atrás que declara cada máquina (`hold` de su cobertura; la de esta
+ * máquina, de su `harness-state.json`): qué máquina no se actualiza sola, la versión que deshizo y desde cuándo. Sólo
+ * esos dos datos, validados por su forma; una máquina que no la declaró es «no medida», nunca «sin retención».
+ *
  * 🔴 RECALCULA DESDE EL DISCO, NUNCA ACUMULA: nada se guarda. Las máquinas se suman por numerador y
  *    denominador, jamás promediando; la misma máquina en el disco local y en la carpeta bajada cuenta una vez.
  *
@@ -63,7 +67,7 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup'
 const os = require('os');
 const crypto = require('crypto');
 const zlib = require('zlib');
-const { nombreDeMaquina, normalizarNombreDeMaquina, FORMA_MAQUINA, REGISTROS } = require('../../metrics/upload-runs.js');
+const { nombreDeMaquina, normalizarNombreDeMaquina, FORMA_MAQUINA, REGISTROS, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO } = require('../../metrics/upload-runs.js');
 const { readEnv } = require('../../lib/legacy-names.js');
 /** Una variable renombrada a inglés: el nombre viejo sigue valiendo hasta el retiro. */
 const variable = (nombre) => readEnv(nombre, { where: 'scripts/nightly/dashboard/reducer.js' });
@@ -351,7 +355,25 @@ function coberturaValida(c) {
   const fuentes = {};
   for (const id of Object.keys(FUENTES)) fuentes[id] = c.fuentes[id] && c.fuentes[id].estado === 'medido' ? 'medido' : 'no_medido';
   // `detalle` es lo que la máquina declaró de cada fuente, tal cual: sólo lo leen los chequeos de `remota`.
-  return { fecha: c.fecha, fuentes, detalle: c.fuentes };
+  return { fecha: c.fecha, fuentes, detalle: c.fuentes, retencion: retencionValida(c.hold) };
+}
+
+/**
+ * La retención de una vuelta atrás que declaró una máquina (`hold` de su cobertura, `holdForMailbox` de upload-runs.js),
+ * validada otra vez: a la página llegan sólo la versión deshecha y el momento, con su forma. Una cobertura sin el campo
+ * (una máquina con un arnés anterior) o que dice `no_medido` es «no medida», nunca «sin retención».
+ */
+function retencionValida(h) {
+  if (h === null) return { estado: 'ninguna' };
+  if (!h || typeof h !== 'object' || Array.isArray(h)) return { estado: 'no_medido' };
+  // sin el mecanismo de instalación no hay nada que retenga la actualización
+  if (h.status === 'no_aplica') return { estado: 'ninguna' };
+  if (h.status !== undefined) return { estado: 'no_medido' };
+  return {
+    estado: 'vigente',
+    deshizo: typeof h.undone === 'string' && FORMA_DESHECHA.test(h.undone) ? h.undone : null,
+    desde: typeof h.since === 'string' && FORMA_MOMENTO.test(h.since) ? h.since : null,
+  };
 }
 
 /**
@@ -403,7 +425,16 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
           textos[id] = fs.readFileSync(archivo, 'utf8'); fuentes[id] = 'medido';
         } catch (_) { fuentes[id] = 'no_medido'; }
       }
-      maquinas.set(aliasLocal, { fecha: dia, fuentes, leer: (id) => textos[id] });
+      // la retención de esta máquina sale de su estado, al lado de sus registros (la misma lectura que sube al buzón). Con
+      // los registros de otra carpeta (--logs, TYCON_LOGS_SOURCE), que falte el estado no prueba que la máquina no tenga
+      // el mecanismo de instalación: sale «sin medir», nunca «ninguna».
+      let retencion;
+      try {
+        const hold = holdForMailbox(path.join(registros, 'harness-state.json'));
+        const propia = path.resolve(registros) === path.resolve(casaPipeline());
+        retencion = retencionValida(!propia && hold && hold.status === 'no_aplica' ? { status: 'no_medido', reason: 'el estado no está junto a los registros leídos' } : hold);
+      } catch (_) { retencion = { estado: 'no_medido' }; }
+      maquinas.set(aliasLocal, { fecha: dia, fuentes, retencion, leer: (id) => textos[id] });
     }
   }
   // las carpetas viejas del buzón. Una `unida` no se cuenta aparte (sus registros están enteros en la nueva);
@@ -453,6 +484,7 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
       maquinas.set(alias, {
         fecha: c.fecha,
         fuentes: c.fuentes,
+        retencion: c.retencion,
         remota: true,
         detalle: c.detalle,
         leer: (id) => {
@@ -569,7 +601,15 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
     no_leidos: noLeidos,
     lineas_ilegibles: lineasIlegibles,
   };
-  return { estado: 'medido', ventana, piso: r.floor, cobertura, metricas };
+  // 4 · las vueltas atrás vigentes: qué máquina no se actualiza sola, desde cuándo y qué deshizo
+  const retenciones = { vigentes: [], sin_retencion: 0, no_medidas: [] };
+  for (const a of vistos) {
+    const t = maquinas.get(a).retencion || { estado: 'no_medido' };
+    if (t.estado === 'vigente') retenciones.vigentes.push({ alias: a, deshizo: t.deshizo, desde: t.desde });
+    else if (t.estado === 'ninguna') retenciones.sin_retencion += 1;
+    else retenciones.no_medidas.push(a);
+  }
+  return { estado: 'medido', ventana, piso: r.floor, cobertura, metricas, retenciones };
 }
 
 /** El texto de cobertura de máquinas para la página. Sólo alias y fechas validados. */
@@ -592,7 +632,7 @@ function textoCobertura(j) {
   return `${partes.join(' · ')} — ventana ${j.ventana.desde} → ${j.ventana.hasta}`;
 }
 
-module.exports = { juntar, textoCobertura, validarConfig, aliasDe, aliasDeNombre, leerUnionesDeCarpetas, duracionSuite, FUENTES, BALDES_GENERICOS, ESQUEMA };
+module.exports = { juntar, textoCobertura, retencionValida, validarConfig, aliasDe, aliasDeNombre, leerUnionesDeCarpetas, duracionSuite, FUENTES, BALDES_GENERICOS, ESQUEMA };
 
 if (require.main === module) {
   // El nombre viejo de --alias-of sigue andando hasta el retiro

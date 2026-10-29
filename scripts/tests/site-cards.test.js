@@ -102,7 +102,7 @@ test('2.36-Lista_ConSuIdentificador: cada ficha tiene identificador fijo, pregun
     assert.ok(f.titulo && f.paraQue && Array.isArray(f.de) && f.de.length === 2, `${f.id}: título, para qué y de dónde`);
     assert.ok(['pct', 'num1', 'entero', 'redondo'].includes(f.formato), `${f.id}: formato`);
   }
-  assert.strictEqual(fichas.FICHAS.length, 26);
+  assert.strictEqual(fichas.FICHAS.length, 27);
 });
 
 test('2.36-Lista_IgualAlTablero: cada ficha del tablero está en la lista o declarada «ya estaba», y al revés', () => {
@@ -186,15 +186,15 @@ test('2.36-UnaSolaCuenta_TableroYSitio: sobre la misma foto, cada ficha da en el
 test('2.36-Oculta_NoSeCalculaNiLlega: una ficha oculta no entra al modelo, y el modelo dice cuántas hay ocultas', () => {
   const paneles = { extra: { backlog: { estado: 'medido', valor: 3, medidos: 3, total: 3 }, estados_sin_diccionario: { estado: 'medido', valor: 1, medidos: 1, total: 1 } }, local: {}, mejora: {}, poda: {} };
   const todas = fichas.modeloDeFichas(paneles, {});
-  assert.strictEqual(todas.lista.length, 26);
+  assert.strictEqual(todas.lista.length, 27);
   assert.strictEqual(todas.ocultas, 0);
   const algunas = fichas.modeloDeFichas(paneles, { ocultas: ['backlog', 'estados_sin_diccionario'] });
-  assert.strictEqual(algunas.lista.length, 24);
+  assert.strictEqual(algunas.lista.length, 25);
   assert.strictEqual(algunas.ocultas, 2);
   assert.ok(!algunas.lista.some((f) => f.id === 'backlog' || f.id === 'estados_sin_diccionario'));
   assert.ok(!/backlog|estados_sin_diccionario/.test(JSON.stringify(algunas)), 'el nombre de una ficha oculta viajó al modelo');
   // sin la clave se muestran todas, también con algo que no es una lista
-  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 26);
+  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 27);
 });
 
 // ── el sitio: Arnés con sus fichas ───────────────────────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ test('2.36-Oculta_NoSeCalculaNiLlega (sitio): las ocultas por site.hidden_cards 
   assert.doesNotMatch(views.paginaArnes({ modelo: todas, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: 0 }), /fichas? ocultas?/);
   // el cálculo roto no tira el sitio: cada ficha sale no medida
   const sinClon = fichas.fichasDelClon({ clon: path.join(clon, 'no-existe'), ahora: AHORA, ocultas: [] });
-  assert.strictEqual(sinClon.lista.length, 26);
+  assert.strictEqual(sinClon.lista.length, 27);
   assert.ok(sinClon.lista.every((f) => f.estado === 'no_medido'));
 });
 
@@ -450,7 +450,7 @@ test('2.36-Sello_CompletoComoElAviso: el sello de Arnés dice «completa» con l
 test('2.36-Guia_ListaYComoOcultar: la guía, en los dos idiomas, trae las 26 con su para qué, cómo se oculta una y lo que todavía no se mide', () => {
   const { t } = require(path.join(H.SITE, 'texts.js'));
   const guias = { es: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.md'), 'utf8'), en: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.en.md'), 'utf8') };
-  assert.strictEqual(fichas.FICHAS.length, 26);
+  assert.strictEqual(fichas.FICHAS.length, 27);
   for (const [idioma, guia] of Object.entries(guias)) {
     for (const f of fichas.FICHAS) {
       assert.ok(guia.includes(t(idioma, `ficha.${f.id}.titulo`)), `${idioma}: falta el título de ${f.id}`);

@@ -1005,6 +1005,44 @@ python3 -c "import json,sys; e,b,ct=[json.loads(x) for x in sys.argv[1:4]]; asse
   && ok "C-36 escapes de 1 de 2 máquinas dicen «midieron 1 de 2» (los bloqueos, medidos por las dos, no); y la línea ilegible se dice en la cobertura" || mal "C-36 escapes=$E bloqueos=$B cobertura=$CT"
 rm -rf "$T"
 
+# ── C-37 · las vueltas atrás vigentes, en la página del equipo ────────────────────────────────────
+# 🔴 rojo previo: sin la ficha, una máquina retenida por `harness.js rollback` se ve sólo en su `doctor`; y una máquina
+#    que no lo declaró (arnés anterior) no puede publicarse como «ninguna».
+T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/local" "$T/remota"
+reg_gates "$T/remota/gates.log" "$AYER25" tests 4 1
+maq_buzon "$T/buzon" maq-retenida "$AYER25" "$T/remota"; maq_buzon "$T/buzon" maq-al-dia "$AYER25" "$T/remota"; maq_buzon "$T/buzon" maq-anterior "$AYER25" "$T/remota"
+python3 - "$T/buzon" <<'PY'
+import json, sys, os
+for maq, hold in (("maq-retenida", {"undone": "2026.10.27.3", "since": "2026-10-27T14:05:09.123Z"}), ("maq-al-dia", None)):
+    f = os.path.join(sys.argv[1], maq, "registros", "cobertura.json")
+    c = json.load(open(f)); c["hold"] = hold; json.dump(c, open(f, "w"))
+PY
+TYCON_MACHINE=maquina-c37 node "$TABLERO" --dir "$T" --logs "$T/sin-local" --mailbox "$T/buzon" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+V="$(json_local "$T/j.out" vueltas_atras)"
+A_RET="$(node "$REDUCTOR" --alias-of maq-retenida)"; A_ANT="$(node "$REDUCTOR" --alias-of maq-anterior)"
+python3 -c "
+import json, sys
+v = json.loads(sys.argv[1]); ret, ant = sys.argv[2:4]
+assert v['estado'] == 'medido' and v['valor'] == 1 and v['medidos'] == 2 and v['total'] == 3, v
+assert f'{ret}: deshizo 2026.10.27.3, desde 2026-10-27 14:05 UTC' in v['detalle'], v
+assert f'sin medir: {ant}' in v['detalle'], v
+" "$V" "$A_RET" "$A_ANT" 2>/dev/null && grep -q 'Máquinas con una vuelta atrás vigente' "$T/o.html" && grep -q "deshizo 2026.10.27.3" "$T/o.html" \
+  && ok "C-37 la ficha dice cuántas máquinas tienen una vuelta atrás vigente, cuál, qué deshizo y desde cuándo; la que no lo declaró sale «sin medir»" || mal "C-37 vueltas_atras=$V"
+mkdir -p "$T/casa-vacia"
+HOME="$T/casa-vacia" node -e '
+const t = require(process.argv[1]);
+const ninguna = t.fichaVueltasAtras({ vigentes: [], sin_retencion: 2, no_medidas: [] });
+const nadie = t.fichaVueltasAtras({ vigentes: [], sin_retencion: 0, no_medidas: ["maq-aaaaaa"] });
+console.log(JSON.stringify({ ninguna, nadie }));
+' "$TABLERO" > "$T/f.json" 2> "$T/f.err"
+python3 - "$T/f.json" <<'PY' && ok "C-37 sin retenciones dice «ninguna» con su denominador; si ninguna máquina lo declaró, no medido (nunca «ninguna»)" || mal "C-37 fichaVueltasAtras: $(cat "$T/f.json" "$T/f.err" | head -c 400)"
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["ninguna"]["estado"] == "medido" and d["ninguna"]["valor"] == 0 and d["ninguna"]["detalle"] == "ninguna" and d["ninguna"]["medidos"] == 2, d["ninguna"]
+assert d["nadie"]["estado"] == "no_medido" and "maq-aaaaaa" in d["nadie"]["motivo"], d["nadie"]
+PY
+rm -rf "$T"
+
 # ── C-27 · esta suite NO toca el entregable commiteado (2026-09-06) ───────────────────────────
 # 🔴 rojo previo: devolverle a C-11 el `--output "$RAIZ/artifacts/tablero-del-arnes.html"` que
 #    tenía. Verificado: con esa línea el caso se pone rojo y `git status` muestra la M.
