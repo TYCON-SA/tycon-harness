@@ -174,7 +174,7 @@ perfil). Qué puede pisar cada máquina sobre lo del equipo, en
 | Registro de horas | `integrations.timeTracking` (`none` o el nombre de una integración de horas; sin ella, la llave vieja de cada herramienta, en `guides/integrations/`) | no se registra ningún hook de horas; el despachador de ediciones sigue, sin el control de la integración. Cada integración trae los suyos en `integrations/<nombre>/` |
 | engram | `integrations.engram` | no se registran el sync de commit ni el aviso diario; los chequeos de versión/proyecto no corren; cada comando de engram lo dice y sale 0 |
 | CodeGraph | `integrations.codegraph` (informativa) | la instala cada dev con `install-codegraph.sh`; el arnés no registra nada de CodeGraph por sí mismo |
-| Buzón de corridas | la llave scripts/metrics/corridas-buzon.json del arnés interno (o `integrations.mailbox`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
+| Buzón de corridas | `integrations.mailbox`; la llave es `scripts/metrics/corridas-buzon.json`, que llega con el perfil de tu equipo (o la ruta de `TYCON_MAILBOX_JSON`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
 | Instintos | `integrations.instincts` del perfil del equipo (para apagarla en una máquina: `TYCON_INSTINCTS=0`) | no se registra la grabadora (`instinct-observe.js`) ni se graba nada; el aviso de arranque sólo dice, una vez, si las variables viejas siguen puestas |
 | Codex | `integrations.codex`: `true` · `false` · `"detect"` (`TYCON_CODEX` manda) | no se despliega el lado Codex |
 | Nocturnos del equipo | `integrations.nightly` | no se registran los avisos de tablero, dependencias y retro; `bench-notice` calla lo nocturno y sigue con el banco local |
