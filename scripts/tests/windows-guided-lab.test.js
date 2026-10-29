@@ -358,6 +358,28 @@ test('PacksUpdate_LabRun_KeepsEveryPiece_NoPackRemovesOnlyPackPieces', { skip: S
   assert.ok(!s.findings.some((f) => /^update:no-pack:pieces:/.test(f.id)), s.findings.map((f) => f.id).join(', '));
 });
 
+// dos sesiones a la vez con settings.json tomado por otro programa: la máquina llega a la versión nueva, a lo sumo en
+// la sesión siguiente, y settings.json queda legible y con su línea de arranque. En la Mac el archivo tomado no frena
+// el reemplazo (eso sólo pasa en Windows): acá se prueba el recorrido; en el 182, lo que hace Windows
+test('GuidedUpdate_LabRun_TwoSessions_HeldSettings_EndsOnTheNewVersion', { skip: SKIP }, () => {
+  const l = labOn(base, toy, 'two-sessions', 'update');
+  const s = step(l, 'update', ['--only', 'two-sessions']);
+  assert.strictEqual(s.status, 'measured', s.reason);
+  const v = s.facts.variants['two-sessions'];
+  assert.ok(v && !v.not_run && !v.threw, `la variante two-sessions corrió (${v && (v.not_run || v.threw)}${v && v.threw_at ? ` en ${v.threw_at}` : ''})`);
+  assert.deepStrictEqual(v.while_held.pair.map((p) => [p.label, p.exit]), [['una', 0], ['otra', 0]]);
+  assert.strictEqual(v.hold.released, true, 'el programa que tomó settings.json lo soltó');
+  assert.strictEqual(v.updated, true, `quedó en ${v.version_after}`);
+  assert.deepStrictEqual([v.end.settings.readable, v.end.settings.startup, v.end.leftovers], [true, true, []]);
+  // la versión nueva tiene que reescribir settings.json: si no, el archivo tomado no frenó nada y el reporte lo dice
+  assert.strictEqual(v.end.settings.rewritten, true, 'la actualización reescribió settings.json');
+  assert.ok(!s.findings.some((f) => /^update:two-sessions:two-sessions:/.test(f.id)), s.findings.map((f) => f.id).join(', '));
+  const finished = node([path.join(DIR, 'rehearse.js'), 'finish', '--out', l.out]);
+  assert.strictEqual(finished.status, 0, finished.stderr || finished.stdout);
+  const md = fs.readFileSync(path.join(l.out, 'windows-report.md'), 'utf8');
+  assert.match(md, /Con settings\.json tomado por otro programa .*dos sesiones a la vez/);
+});
+
 test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, () => {
   const update = labOn(base, toy, 'update', 'update');
   const s = step(update, 'update', ['--only', 'auto,ask']);

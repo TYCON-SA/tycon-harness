@@ -95,6 +95,21 @@ test('GuidedPage_RealPage_BlockIsReadByItsMark', { skip: !fs.existsSync(PAGE) &&
 
 // ═══ T2 · la ficha ═════════════════════════════════════════════════════════════════════════════════════════════
 
+// dos sesiones a la vez con settings.json tomado por otro programa: qué rompe, qué pierde un control y qué es ruido
+test('GuidedUpdate_TwoSessions_JudgesStartupSettingsFailedAndTemps', () => {
+  const ok = { label: 'una', exit: 0, error: null, err: '' };
+  const clean = { readable: true, startup: true };
+  assert.deepStrictEqual(GU.judgeTwoSessions({ pair: [ok, Object.assign({}, ok, { label: 'otra' })], settings: clean, leftovers: [], failed: null }), []);
+  // «interrumpido» se reintenta solo en la sesión siguiente: no es un hallazgo
+  assert.deepStrictEqual(GU.judgeTwoSessions({ pair: [ok], settings: clean, failed: { reason: 'interrupted' } }), []);
+  const bad = GU.judgeTwoSessions({ pair: [ok, { label: 'otra', exit: 1, error: null, err: 'EPERM: operation not permitted, rename\n' }], settings: { readable: true, startup: false }, leftovers: ['.settings.12.34.tmp'], failed: { reason: 'apply-failed' } });
+  assert.deepStrictEqual(bySeverity(bad), { 'two-sessions:startup-failed:otra': 'breaks', 'two-sessions:settings-broken': 'breaks', 'two-sessions:failed-not-retried': 'loses-control', 'two-sessions:temp-left': 'noise' });
+  assert.match(bad[0].detail, /otra salió 1 .*EPERM/);
+  assert.match(GU.judgeTwoSessions({ pair: [], settings: { readable: false, startup: false } })[0].detail, /no se deja leer/);
+  // los temporales que se buscan: los de la línea de arranque y los del aplicador; las copias de respaldo no
+  assert.deepStrictEqual(['.settings.12.1700000000000.tmp', 'settings.json.tmp.4242', 'settings.json.bak.20261028-1', 'settings.json'].filter((n) => GU.SETTINGS_TEMP.test(n)), ['.settings.12.1700000000000.tmp', 'settings.json.tmp.4242']);
+});
+
 test('GuidedSteps_Manifest_HasItsShape', () => {
   const m = G.loadManifest();
   assert.deepStrictEqual(G.manifestProblems(m), []);
@@ -1094,8 +1109,9 @@ test('GuidedUpdate_PwshMissing_ReportsNotUpdatedAndSilence', () => {
   // cada hook de arranque, con lo que devolvió
   assert.deepStrictEqual(silent.startup_hooks.map((h) => [h.form, h.exit]), [['bash-c', 127]]);
   // «sólo PowerShell 5.1» no es una variante de la actualización: es esta misma máquina, y el reporte lo dice en una línea
-  // (`no-pack` es la máquina sin la capa ni paquetes activos de la prueba de actualización de los paquetes)
-  assert.deepStrictEqual(GU.VARIANTS.map((v) => v.id), ['auto', 'ask', 'pwsh-missing', 'no-pack']);
+  // (`no-pack` es la máquina sin la capa ni paquetes activos de la prueba de actualización de los paquetes;
+  // `two-sessions`, la de dos sesiones a la vez con settings.json tomado)
+  assert.deepStrictEqual(GU.VARIANTS.map((v) => v.id), ['auto', 'ask', 'pwsh-missing', 'no-pack', 'two-sessions']);
   assert.match(GU.SAME_MACHINE_NOTE, /5\.1/);
   assert.match(GU.SAME_MACHINE_NOTE, /pwsh-missing/);
   const md = rehearse.renderMarkdown({ run: { scenario: 'update', expected_steps: ['inventory', 'update'] }, steps: [{ name: 'update', status: 'measured', findings: [], facts: { guided: true, same_machine_note: GU.SAME_MACHINE_NOTE, variants: {} } }], verdict: { color: 'green', errors: [], missing_steps: [], not_measured: [], by_severity: { breaks: 0, 'loses-control': 0, noise: 0, unrated: 0 } } });

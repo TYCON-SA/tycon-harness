@@ -1,0 +1,1 @@
+{"hash":"df712591309f992340e9525243c9664269ed43d0f0c7f047ab8145215ca511bd","rules":[{"path":"scripts/ci/check-staged-ci-rules.js","blob":"fd410c839aac1ac51df997f5a76c1147fad23346"},{"path":"scripts/lib/rules-catalog-count.js","blob":"5bc104840aeaf051a252aff406d4fdfc909b5cc3"}],"at":"2026-10-29","by":"dueño"}
