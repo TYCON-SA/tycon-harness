@@ -520,3 +520,18 @@ test('T46 Examen_ControlesBaratos_LoNeto: lo que el archivo ya traía en HEAD no
   const r = run(dir, ['run', '--agent', AGENT], { TYCON_REVIEWER_EXAM_RUNNER: runner({ [`${AGENT}::a`]: true, [`${AGENT}::b`]: true, [`${AGENT}::c`]: false }) });
   assert.strictEqual(r.code, 0, r.out);
 });
+
+test('T47 Porton_LineaDeBaseDeLaBaseIlegible_Frena: si la línea de base de la base no se lee, no se compara contra la del cambio', () => {
+  const dir = harness();
+  fs.writeFileSync(blPath(dir), '{ rota');
+  commit(dir, 'línea de base rota en main');
+  const base = change(dir);
+  const doc = { fixed_at: '2026-10-01', tool: 'claude', runs: 3, cases: { [`${AGENT}::a`]: false, [`${AGENT}::b`]: false, [`${AGENT}::c`]: false } };
+  fs.writeFileSync(blPath(dir), JSON.stringify(doc, null, 2));
+  handResult(dir, { cases: { [`${AGENT}::a`]: false, [`${AGENT}::b`]: false, [`${AGENT}::c`]: false } });
+  commit(dir);
+  const r = run(dir, ['check', '--base', base]);
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /la línea de base de la base no se puede leer/);
+  assert.doesNotMatch(r.out, /revisor nuevo/);
+});
