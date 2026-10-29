@@ -12,6 +12,10 @@
 //      lista que ya cumple pide salir de la lista.
 //   3. El conteo del catálogo de reglas, cuando el commit toca agents/ o el catálogo (scripts/lib/rules-catalog-count.js;
 //      la prueba: el caso C5 de rules-catalog.test.sh).
+//   4. Ésta la veía sólo la revisión de la noche: el inventario de los controles contra el pre-commit del repo privado,
+//      cuando el commit toca el inventario o el pre-commit, en la máquina que declara el clon privado
+//      (scripts/lib/private-inventory.js; la prueba: private-inventory.test.js). Avisa y no frena: el privado sólo puede
+//      sumar un control nuevo después de que éste entra.
 // La lógica de cada regla vive en su módulo y la usan la prueba y este freno: no hay una segunda copia que se separe.
 //
 // Rápido a propósito, porque corre en cada commit: una sola lectura del índice (`git cat-file --batch`) para todos los
@@ -24,11 +28,12 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 // Sin sus módulos no hay reglas que aplicar: «no pude mirar» (2), no un hallazgo (1) ni un error de programa a secas.
-let grepQ, stable, catalogCount;
+let grepQ, stable, catalogCount, privateInventory;
 try {
   grepQ = require('../lib/grep-q-pipefail.js');
   stable = require('../lib/stable-test-data.js');
   catalogCount = require('../lib/rules-catalog-count.js');
+  privateInventory = require('../lib/private-inventory.js');
 } catch (e) {
   console.error(`⛔ reglas de la CI antes del commit: no pude mirar (falta un módulo: ${e.message.split('\n')[0]}). Si el checkout está incompleto: git checkout scripts/lib/`);
   process.exit(2);
@@ -86,7 +91,8 @@ function main() {
     // agents/ y el catálogo (el pedido), más lo que también mueve el conteo: el padrón de revisores y el paquete de clientes.
     const catalogTouched = touched.some((r) => r === CATALOG_REL || r.startsWith('agents/')
       || r.startsWith('adapters/codex/agents/') || r === 'packs/clients/pack.json');
-    if (!shs.length && !tests.length && !gone.length && !catalogTouched) return 0;
+    const inventoryTouched = privateInventory.toca(touched);
+    if (!shs.length && !tests.length && !gone.length && !catalogTouched && !inventoryTouched) return 0;
 
     const wanted = [...new Set([...shs, ...tests, ...(tests.length || gone.length ? stable.BASELINES : []), ...(catalogTouched ? [CATALOG_REL] : [])])];
     const index = readIndex(root, wanted);
@@ -147,6 +153,13 @@ function main() {
           fs.rmSync(tmp, { recursive: true, force: true });
         }
       }
+    }
+
+    // 4. el inventario contra el pre-commit del privado: un aviso, nunca un hallazgo que frene
+    if (inventoryTouched) {
+      console.error('▸ reglas de la CI: el inventario de los controles contra el pre-commit del privado…');
+      const msg = privateInventory.aviso(privateInventory.comparar({ repo: root }));
+      if (msg) console.error(msg);
     }
   } catch (e) {
     console.error(`⛔ reglas de la CI antes del commit: no pude mirar (${e.message}). No medido no es verde.`);
