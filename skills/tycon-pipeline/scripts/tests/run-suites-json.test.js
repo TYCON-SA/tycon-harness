@@ -1039,7 +1039,8 @@ const SUITE_LARGA = [
   "console.log('  otra sesión está actualizando (candado de prueba)');",
   "console.log('not ok 3 - el segundo caso roto');",
   'for (let i = 400; i < 800; i++) console.log(`ruido ${i}`);',
-  'process.exit(1);',
+  // sin process.exit: cortaría lo que todavía no se escribió a la tubería, y la salida llegaría sin su cola
+  'process.exitCode = 1;',
 ].join('\n');
 
 test('RunSuites_RedSuite_KeepsFailedCasesAndFullOutput — el caso roto fuera de la cola queda en el resumen, con la ruta de la salida entera', () => {
