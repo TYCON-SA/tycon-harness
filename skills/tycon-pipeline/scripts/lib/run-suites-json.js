@@ -82,6 +82,14 @@ const { touches, isValidPattern } = require('./touched-files');
 const { joinLcov } = require('./node-coverage');
 
 const MAX_BUFFER = 64 * 1024 * 1024;
+// Tope en bytes del archivo con la salida entera de una suite roja (se guardan la primera y la última mitad) y de lo que
+// se guarda entre todas las de una corrida: pasado éste, de las que siguen queda sólo el resumen de sus casos.
+const FULL_OUTPUT_MAX = 8 * 1024 * 1024;
+const RUN_OUTPUT_MAX = 64 * 1024 * 1024;
+// Cuántos casos fallidos y cuántos renglones de explicación por caso van al resumen.
+const MAX_CASES = 40;
+const MAX_CASE_CONTEXT = 6;
+const MAX_LINE = 300;
 const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
 
 /**
@@ -110,6 +118,93 @@ function launch(p, covDir, env0) {
   const excluir = process.allowedNodeEnvironmentFlags.has('--test-coverage-exclude') ? [`--test-coverage-exclude=${WRAPPER}`] : [];
   return [process.execPath, ['--experimental-test-coverage', ...excluir, '--test-reporter=lcov',
     `--test-reporter-destination=${path.join(covDir, `${String(p.idx).padStart(4, '0')}.lcov`)}`, WRAPPER, ej, p.ruta], e];
+}
+
+// Las variables con que la puerta marca su corrida (test-gate.sh las exporta) y las que cambian cómo corre una suite:
+// de éstas se anota el valor. De las demás TYCON_* sólo el nombre, porque alguna puede llevar una credencial.
+const GATE_MARKS = ['TYCON_TEST_GATE', 'TYCON_MAILBOX', 'TYCON_NO_UPLOAD_RUNS', 'TYCON_MAILBOX_JSON', 'TYCON_SUITE_RUNNER',
+  'TYCON_FULL_SUITE', 'TYCON_HARNESS_LOCK_HELD', 'TYCON_SUITES_MAX_WORKERS', 'TYCON_GATE_ALL_SUITES', 'TYCON_SKILLS_DIR',
+  'TYCON_TEST_GATE_PART', 'TYCON_TEST_GATE_MARK', 'NODE_TEST_CONTEXT'];
+
+/** Lo que la puerta hace distinto al correr las suites: sus marcas, las variables que les quita, run-check y W. */
+function gateEnvironment(env, runCheck, workers) {
+  const childEnv = launch({ ruta: 'x.js' }, null, env)[2];
+  const marks = {};
+  for (const k of GATE_MARKS) if (k in childEnv) marks[k] = String(childEnv[k]);
+  const removed = DEL_PORTON.filter((k) => k in env);
+  const otherNames = Object.keys(childEnv).filter((k) => k.startsWith('TYCON_') && !GATE_MARKS.includes(k)).sort();
+  return { run_check: runCheck, workers, marks, removed, other_names: otherNames };
+}
+
+function describeEnvironment(a) {
+  const marks = Object.entries(a.marks).map(([k, v]) => `${k}=${v}`).join(' ');
+  return `${a.run_check ? `run-check ${a.run_check}` : 'sin run-check'} · ${a.workers} a la vez`
+    + ` · marcas: ${marks || 'ninguna'}${a.removed.length ? ` · quitadas a las suites: ${a.removed.join(' ')}` : ''}`;
+}
+
+const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
+// Los renglones con que las suites del arnés anuncian un caso que falló: el reportero de Node (✖), TAP (not ok), las de
+// bash propias (MAL, ❌, FAIL). La línea de título del resumen de Node («✖ failing tests:») no es un caso.
+const FAIL_LINE = /^\s*(?:✖|✗|❌|not ok\b|MAL\b|FAIL\b)/;
+const FAIL_TITLE = /^\s*✖\s+failing tests:?\s*$/;
+const indentOf = (l) => l.length - l.trimStart().length;
+const clip = (l) => (l.length > MAX_LINE ? `${l.slice(0, MAX_LINE)}…` : l);
+
+/**
+ * Los casos que fallaron en la salida de una suite: cada renglón de falla con los renglones más sangrados que lo siguen
+ * (el error que lo explica), sin repetidos —el reportero de Node repite cada caso en su resumen final—.
+ */
+function failedCases(salida) {
+  const lines = String(salida).replace(ANSI, '').split(/\r?\n/);
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < lines.length && out.length < MAX_CASES; i++) {
+    const l = lines[i];
+    if (!FAIL_LINE.test(l) || FAIL_TITLE.test(l)) continue;
+    const head = l.trim();
+    if (seen.has(head)) continue;
+    seen.add(head);
+    const base = indentOf(l);
+    const ctx = [];
+    for (let j = i + 1; j < lines.length && ctx.length < MAX_CASE_CONTEXT; j++) {
+      const n = lines[j];
+      if (!n.trim() || indentOf(n) <= base || FAIL_LINE.test(n)) break;
+      ctx.push(clip(n.trimEnd()));
+    }
+    out.push([clip(head), ...ctx].join('\n'));
+  }
+  return out;
+}
+
+/** La salida recortada a `max` bytes: el principio y el final, con un aviso en el medio. */
+function capOutput(text, max = FULL_OUTPUT_MAX) {
+  const buf = Buffer.from(text, 'utf8');
+  if (buf.length <= max) return { text, truncated: false };
+  const half = Math.floor(max / 2);
+  const note = `\n\n[… recortada: ${buf.length - 2 * half} bytes del medio quedaron afuera …]\n\n`;
+  return { text: buf.subarray(0, half).toString('utf8') + note + buf.subarray(buf.length - half).toString('utf8'), truncated: true };
+}
+
+/**
+ * Escribe la salida entera de una suite roja al lado del resumen, con el tope por suite y lo que le queda a la corrida
+ * (`budget.left`, en bytes, se descuenta). Devuelve `{ file, truncated, skipped? }`; `file` es null si no se guardó.
+ */
+function saveFullOutput(out, r, ambiente, budget = { left: RUN_OUTPUT_MAX }, perSuite = FULL_OUTPUT_MAX) {
+  if (budget.left <= 0) return { file: null, truncated: false, skipped: `se pasó el tope de ${RUN_OUTPUT_MAX / 1048576} MB de salidas de la corrida: quedan sólo sus casos` };
+  try {
+    const dir = path.join(path.dirname(out), 'salidas');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${String(r.idx).padStart(4, '0')}-${path.basename(r.ruta)}.log`);
+    const { text, truncated } = capOutput(r.salida, Math.min(perSuite, budget.left));
+    const head = `# ${r.ruta}\n# salió ${r.exit} en ${r.ms} ms · ${describeEnvironment(ambiente)}\n\n`;
+    const body = head + text;
+    fs.writeFileSync(file, body);
+    budget.left -= Buffer.byteLength(body, 'utf8');
+    return { file, truncated };
+  } catch (e) {
+    console.error(`[suites.json] ⚠️  no pude guardar la salida entera de ${path.basename(r.ruta)}: ${e.message}`);
+    return { file: null, truncated: false };
+  }
 }
 
 function defaultWorkers() {
@@ -252,9 +347,11 @@ function main(argv, env = process.env) {
   const iCov = argv.indexOf('--coverage');
   const iSu = argv.indexOf('--suite');
   const iBy = argv.indexOf('--scoped-by-repo');
+  const iRc = argv.indexOf('--run-check');
+  const runCheck = iRc >= 0 ? String(argv[iRc + 1] || '').trim() : null;
   const fullSuiteBy = iBy >= 0 ? String(argv[iBy + 1] || '').trim() : null;
-  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1]) || (iSu >= 0 && !argv[iSu + 1]) || (iBy >= 0 && (!fullSuiteBy || fullSuiteBy.startsWith('--')))) {
-    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light] [--only-touched] [--scoped-by-repo <quién corre la completa>] [--suite <ruta>]');
+  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1]) || (iSu >= 0 && !argv[iSu + 1]) || (iBy >= 0 && (!fullSuiteBy || fullSuiteBy.startsWith('--'))) || (iRc >= 0 && (!runCheck || runCheck.startsWith('--')))) {
+    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light] [--only-touched] [--scoped-by-repo <quién corre la completa>] [--suite <ruta>] [--run-check <check que la envuelve>]');
     return Promise.resolve(2);
   }
   const covDir = iCov >= 0 ? path.resolve(argv[iCov + 1]) : null;
@@ -477,7 +574,7 @@ function main(argv, env = process.env) {
       const ms = Date.now() - t0;
       const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
       const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');
-      results[p.idx] = { ruta: p.ruta, entrada: p.entrada, exit, ms, salida };
+      results[p.idx] = { idx: p.idx, ruta: p.ruta, entrada: p.entrada, exit, ms, salida };
       console.log(exit === 0 ? `ok       ${p.name} (${ms} ms)` : `ROJO(${exit}) ${p.ruta}`);
       resolve();
     };
@@ -500,14 +597,23 @@ function main(argv, env = process.env) {
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
     resumen.wall_ms = Date.now() - t0;
+    resumen.ambiente = gateEnvironment(env, runCheck, workers);
+    const outputBudget = { left: RUN_OUTPUT_MAX };
 
     for (const r of results) {
       if (!r) continue;
       resumen.corridas += 1;
       resumen.suites.push({ ruta: r.ruta, exit: r.exit, ms: r.ms });
       if (r.exit === 0) resumen.verdes += 1;
-      // La cola de la salida viaja en el resumen para que el rojo se pueda leer sin re-correr.
-      else resumen.fallas.push({ ruta: r.ruta, exit: r.exit, cola: r.salida.split('\n').slice(-25).join('\n'), entrada: r.entrada });
+      else {
+        // El rojo se lee sin re-correr: los casos que fallaron (estén donde estén en la salida), la salida entera en un
+        // archivo y la cola, para quien ya la leía.
+        const full = saveFullOutput(out, r, resumen.ambiente, outputBudget);
+        resumen.fallas.push({
+          ruta: r.ruta, exit: r.exit, ms: r.ms, casos: failedCases(r.salida), salida_completa: full.file,
+          ...(full.truncated ? { salida_recortada: true } : {}), ...(full.skipped ? { salida_no_guardada: full.skipped } : {}), cola: r.salida.split('\n').slice(-25).join('\n'), entrada: r.entrada,
+        });
+      }
     }
     if (covDir) {
       const lcov = path.join(covDir, 'lcov.info');
@@ -531,6 +637,15 @@ function main(argv, env = process.env) {
       return interrupted === 'SIGINT' ? 130 : 143;
     }
     escribir(out, resumen);
+    // Lo último que se imprime es lo que guarda la cola de run-check: el ambiente y los casos van justo antes del total.
+    if (resumen.fallas.length) {
+      console.log(`[suites.json] ambiente: ${describeEnvironment(resumen.ambiente)}`);
+      for (const f of resumen.fallas) {
+        console.log(`ROJO ${path.basename(f.ruta)} (salió ${f.exit} en ${f.ms} ms) — salida completa: ${f.salida_completa || f.salida_no_guardada || 'no se pudo guardar'}`);
+        if (!f.casos.length) console.log('  no encontré renglones de casos fallidos (✖, not ok, MAL, ❌, FAIL): mirá la salida completa');
+        for (const c of f.casos) console.log(c.split('\n').map((l) => `  ${l}`).join('\n'));
+      }
+    }
     const rojas = resumen.fallas.length;
     const ausentes = resumen.ausentes.length;
     const unmeasured = resumen.unmeasured_suites.length;
@@ -554,4 +669,4 @@ if (require.main === module) {
     process.exit(3);
   });
 }
-module.exports = { main, resolveWorkers, defaultWorkers };
+module.exports = { main, resolveWorkers, defaultWorkers, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX };
