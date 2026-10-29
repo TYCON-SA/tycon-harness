@@ -1617,6 +1617,10 @@
     {
       "words": ["nvm"],
       "reason": "nombre propio de la herramienta nvm (y nvm-windows): el respaldo del arranque lee sus variables NVM_DIR y NVM_HOME para buscar un Node de 22 o más. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-27."
+    },
+    {
+      "words": ["refmap", "mainline"],
+      "reason": "nombres de opciones de git (`git pull --refmap`, `git cherry-pick --mainline`) que el freno de constancias reconoce para saber qué trae el comando: son de git, no se traducen. Aprobada por la coordinadora, por autorización del dueño, el 2026-10-28."
     }
   ],
   "schemaFiles": [
