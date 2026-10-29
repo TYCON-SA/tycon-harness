@@ -945,6 +945,51 @@ import json, sys
 i = json.load(open(sys.argv[1]))["install"]
 assert i.get("status") == "no_medido" and i.get("reason"), i
 PY
+# ── Cobertura_Hold_VersionDeshechaYDesde_NoMedidoNuncaNull ─────────────────────────────────
+# La cobertura trae `hold`: la retención de una vuelta atrás de la máquina, con sólo la versión deshecha y desde
+# cuándo (ni las puntas, ni el motivo, ni una ruta); null si el estado se leyó y no hay; `no_medido` si el estado está y
+# no se pudo leer; `no_aplica` sin estado. 🔴 Atrapa: que el tablero del equipo no se entere de qué máquina quedó
+# retenida, o que un estado ilegible viaje como «sin retención».
+estado_con() {  # <casa> <clon> <json del hold>
+  printf '{"schema":1,"mode":"managed","tree":"%s","sources":[],"hold":%s}\n' "$2" "$3" > "$1/.claude/.tycon-pipeline/harness-state.json"
+}
+T="${BASE}/thold"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+estado_con "${T}/casa" "${T}/clon" '{"commit":"2026.10.27.3 · capa 1a2b3c4","sources":{"harness":"9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"},"at":"2026-10-27T14:05:09.123Z","reason":"rollback"}'
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-28 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/cobertura.json" <<'PY' && ok "hold: la cobertura dice la versión deshecha y desde cuándo, sin las puntas ni el motivo" || mal "hold vigente (rc=${RC}): $(cat "${T}/estado/registros-buzon/cobertura.json" 2>&1 | head -c 400)"
+import json, sys
+texto = open(sys.argv[1], encoding="utf-8").read()
+assert "9f8e7d6c" not in texto and "rollback" not in texto, texto
+assert json.loads(texto)["hold"] == {"undone": "2026.10.27.3 · capa 1a2b3c4", "since": "2026-10-27T14:05:09.123Z"}, texto
+PY
+estado_con "${T}/casa" "${T}/clon" '{"commit":"otra/carpeta/arnes","at":"ayer"}'
+rm -rf "${T}/estado/registros-buzon"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-28 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/cobertura.json" <<'PY' && ok "hold: un dato con otra forma va null (una ruta no viaja), y la retención igual se declara" || mal "hold con formas raras: $(cat "${T}/estado/registros-buzon/cobertura.json" 2>&1 | head -c 400)"
+import json, sys
+texto = open(sys.argv[1], encoding="utf-8").read()
+assert "alguien" not in texto, texto
+assert json.loads(texto)["hold"] == {"undone": None, "since": None}, texto
+PY
+estado_con "${T}/casa" "${T}/clon" 'null'
+rm -rf "${T}/estado/registros-buzon"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-28 "maq-a" --dry-run
+python3 -c "import json,sys; c=json.load(open(sys.argv[1])); assert 'hold' in c and c['hold'] is None, c" "${T}/estado/registros-buzon/cobertura.json" 2>/dev/null \
+  && ok "hold: el estado leído sin retención → null" || mal "hold sin retención: $(cat "${T}/estado/registros-buzon/cobertura.json" 2>&1 | head -c 300)"
+echo '{ esto no es json' > "${T}/casa/.claude/.tycon-pipeline/harness-state.json"
+rm -rf "${T}/estado/registros-buzon"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-28 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/cobertura.json" "${T}" <<'PY' && ok "hold: el estado ilegible → no_medido con motivo y sin la ruta, nunca null" || mal "hold con estado ilegible: $(cat "${T}/estado/registros-buzon/cobertura.json" 2>&1 | head -c 300)"
+import json, sys
+texto = open(sys.argv[1], encoding="utf-8").read()
+assert sys.argv[2] not in texto, texto
+h = json.loads(texto)["hold"]
+assert h is not None and h.get("status") == "no_medido" and h.get("reason"), h
+PY
+rm -f "${T}/casa/.claude/.tycon-pipeline/harness-state.json"; rm -rf "${T}/estado/registros-buzon"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-28 "maq-a" --dry-run
+python3 -c "import json,sys; h=json.load(open(sys.argv[1]))['hold']; assert h is not None and h.get('status')=='no_aplica' and h.get('reason'), h" "${T}/estado/registros-buzon/cobertura.json" 2>/dev/null \
+  && ok "hold: sin el estado del mecanismo → no_aplica, no null" || mal "hold sin estado: $(cat "${T}/estado/registros-buzon/cobertura.json" 2>&1 | head -c 300)"
 # ── T32 · PlaceJson_NodeDelArnes_SinRutas ──────────────────────────────────────────────────
 # @story-8.39 @ac-24  `install.harness_node` dice `{ own, major }`: con el Node propio del arnés, sin él, y nunca una ruta
 # (ni la casa, ni `.tycon/node`). El Node de juguete es un GUION que dice la versión de la lista y si no llama al node
