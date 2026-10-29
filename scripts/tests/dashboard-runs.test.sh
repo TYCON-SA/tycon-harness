@@ -2031,6 +2031,74 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 ! grep -q 'CLAVE_SEMBRADA' <<< "${J}" && ! grep -q 'CLAVE_SEMBRADA' "${T}/o.html" && ok "7.23-T15 una clave de paso desconocida no sale cruda (ni en el modelo ni en la página)" || mal "7.23-T15 la clave cruda del volcado se publicó"
 rm -rf "${T}"
 
+# ═══════════════════════ la revisión de la historia antes de programar ═══════════════════════
+# El cierre de cada corrida copia al volcado la constancia de la revisión previa (`revision_previa`, o null con su nota).
+# La ficha cuenta historias, no corridas: dos corridas de la misma historia comparten su constancia.
+# pon_null <archivo>: escribe `revision_previa: null` con su nota (el parche del fabricante borra las claves en null).
+pon_null() { node -e "const f=process.argv[1],fs=require('fs');const d=JSON.parse(fs.readFileSync(f,'utf8'));d.revision_previa=null;d.revision_previa_nota=process.argv[2];fs.writeFileSync(f,JSON.stringify(d))" "$1" "$2"; }
+# ficha_rp: sólo la ficha de la revisión previa, desde su apertura hasta la ficha siguiente.
+ficha_rp() { python3 -c "
+import sys
+h=sys.stdin.read(); i=h.find('La historia revisada antes de programar')
+fin=h.find('<div class=\"tile',i)
+print(h[max(0,h.rfind('<div class=\"tile',0,i)):fin if fin>=0 else len(h)] if i>=0 else 'AUSENTE')"; }
+RP_CORR='"revision_previa":{"resultado":"corregido","modelo":"MODELO_SEMBRADO","hallazgos":{"total":2,"por_regla":{"REGLA_SEMBRADA":2},"por_destino":{"corregido":2}},"duracion_ms":40000,"tokens":8000,"medido":true}'
+RP_LIMPIO='"revision_previa":{"resultado":"limpio","modelo":"MODELO_SEMBRADO","hallazgos":{"total":0,"por_regla":{},"por_destino":{}},"duracion_ms":20000,"tokens":2000,"medido":true}'
+
+# ── RP1 · con datos: cuántas historias se revisaron, cuántas se corrigieron y cuánto costó ──
+# 🔴 Falla con: sin la ficha; contar la corrida vieja (sin el campo) como «sin revisión» (diría «de 4»); sumar el
+#    costo de las dos corridas de la misma historia (diría 18 k); publicar el modelo o las reglas de los hallazgos.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T05:53:47Z" "{\"marker\":{\"storyId\":\"2.1\"},${RP_CORR}}" a.json
+volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" "{\"marker\":{\"storyId\":\"2.1\"},${RP_CORR}}" b.json
+volcado "${T}/r" "${S3}" "2026-08-17T05:53:47Z" "{\"marker\":{\"storyId\":\"3.1\"},${RP_LIMPIO}}" c.json
+volcado "${T}/r" "44444444-4444-4444-8444-444444444444" "2026-08-18T05:53:47Z" '{"marker":{"storyId":"4.1"}}' d.json
+pon_null "${T}/r/d.json" "sin revisión previa"
+volcado "${T}/r" "55555555-5555-4555-8555-555555555555" "2026-08-19T05:53:47Z" '{"marker":{"storyId":"5.1"}}' e.json
+generar "${T}/r" "${T}/o.html" "${T}/log"
+TILE="$(cliente "${T}/o.html" container fichas | ficha_rp)"
+grep -q 'tile blind' <<< "${TILE}" && mal "RP1 con constancias la ficha salió gris: $(echo "${TILE}" | head -c 300)" || ok "RP1 con constancias la ficha sale medida"
+grep -q '2 de 3 historias revisadas' <<< "${TILE}" && ok "RP1 2 de 3 historias revisadas (la vieja no entra en el denominador)" || mal "RP1 no dice «2 de 3 historias revisadas»: $(echo "${TILE}" | head -c 400)"
+grep -q '<b>1</b> corregida(s) por la revisión' <<< "${TILE}" && ok "RP1 una historia corregida por la revisión" || mal "RP1 no cuenta la corregida"
+grep -q '<b>10 k</b> tokens en total' <<< "${TILE}" && ok "RP1 el costo en tokens, una vez por historia (10 k)" || mal "RP1 el costo en tokens no es 10 k: $(echo "${TILE}" | head -c 600)"
+grep -q 'duración mediana <b>30 s</b>' <<< "${TILE}" && ok "RP1 la duración mediana de la revisión" || mal "RP1 falta la duración mediana"
+grep -q '<b>1</b> sin revisión previa' <<< "${TILE}" && ok "RP1 la que no tuvo revisión se cuenta" || mal "RP1 no cuenta la que no tuvo revisión"
+grep -q '<b>1</b> ejecución(es) anterior(es) a la revisión previa, contadas aparte' <<< "${TILE}" && ok "RP1 la corrida vieja se cuenta aparte" || mal "RP1 la corrida vieja no se cuenta aparte"
+! grep -q 'MODELO_SEMBRADO\|REGLA_SEMBRADA' "${T}/o.html" && ok "RP1 ni el modelo ni las reglas de los hallazgos llegan a la página" || mal "RP1 la página publica texto de la constancia"
+python3 -c "
+import json,sys
+cs={c['story']:c['revision_previa'] for c in json.loads(sys.argv[1])['corridas']}
+assert cs['5.1']=={'estado':'sin_campo'}, cs['5.1']
+assert cs['4.1']['estado']=='sin_revision', cs['4.1']
+assert cs['3.1']=={'estado':'revisada','corregida':False,'hallazgos':0,'tokens':2000,'duracion_ms':20000}, cs['3.1']
+" "$(modelo_json "${T}/r")" && ok "RP1 el modelo: la vieja «sin_campo», la sin revisión, y la revisada sólo con números" || mal "RP1 el modelo de la revisión previa no es el esperado"
+rm -rf "${T}"
+
+# ── RP2 · sin datos: sólo corridas viejas → gris con su motivo, nunca un cero ──
+# 🔴 Falla con: tratar «sin el campo» como «sin revisión» (diría «0 de 2 historias revisadas»).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}"; volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"marker":{"storyId":"3.1"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+TILE="$(cliente "${T}/o.html" container fichas | ficha_rp)"
+grep -q 'tile blind' <<< "${TILE}" && grep -q 'ninguna ejecución del filtro registra la revisión previa de su historia' <<< "${TILE}" && ok "RP2 sin constancias la ficha sale gris con el motivo" || mal "RP2 sin constancias la ficha no sale gris con su motivo: $(echo "${TILE}" | head -c 300)"
+grep -q '2 ejecución(es) anterior(es) a la revisión previa' <<< "${TILE}" && ok "RP2 el motivo cuenta las viejas" || mal "RP2 el motivo no cuenta las viejas"
+grep -q '0 de \|t-val">0' <<< "${TILE}" && mal "RP2 dibujó un cero donde no hay dato" || ok "RP2 ningún cero dibujado"
+rm -rf "${T}"
+
+# ── RP3 · revisada sin tokens ni duración medidos → «no medido», nunca 0; pendiente y saltada no son «revisada» ──
+# 🔴 Falla con: sumar los null como 0 («0 tokens»); contar la pendiente como revisada o como sin revisión.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"revision_previa":{"resultado":"limpio","modelo":"m","hallazgos":{"total":0,"por_regla":{},"por_destino":{}},"medido":false}}'
+volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"marker":{"storyId":"3.1"},"revision_previa":{"resultado":"pendiente","modelo":"m","hallazgos":{"total":0,"por_regla":{},"por_destino":{}},"medido":false}}'
+volcado "${T}/r" "${S3}" "2026-08-17T05:53:47Z" '{"marker":{"storyId":"4.1"},"revision_previa":{"resultado":"saltado","modelo":"m","hallazgos":{"total":0,"por_regla":{},"por_destino":{}},"medido":false}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+TILE="$(cliente "${T}/o.html" container fichas | ficha_rp)"
+grep -q '1 de 2 historias revisadas' <<< "${TILE}" && ok "RP3 la pendiente queda fuera del denominador; la saltada adentro" || mal "RP3 no dice «1 de 2 historias revisadas»: $(echo "${TILE}" | head -c 400)"
+grep -q 'tokens: no medidos' <<< "${TILE}" && grep -q 'duración: no medida' <<< "${TILE}" && ok "RP3 tokens y duración sin medir lo dicen" || mal "RP3 tokens o duración sin medir no lo dicen"
+grep -q '>0</b> tokens\|0 tokens' <<< "${TILE}" && mal "RP3 dibujó 0 tokens" || ok "RP3 ningún «0 tokens»"
+grep -q '<b>1</b> saltada(s)' <<< "${TILE}" && grep -q '<b>1</b> con la revisión sin medir' <<< "${TILE}" && ok "RP3 la saltada y la pendiente se cuentan aparte" || mal "RP3 la saltada o la pendiente no se cuentan"
+rm -rf "${T}"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
 # 🔴 sale rojo si un caso genera sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"
