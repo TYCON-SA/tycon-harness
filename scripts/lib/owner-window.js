@@ -168,11 +168,18 @@ function canonica(comando) {
   return w.slice(desde).map((x) => x.texto);
 }
 
-/** La firma `guion` que piden las palabras de un llamado (el guion, el subcomando y sus argumentos), o null. */
-function firmaDeLlamado(guion, sub, args) {
-  const a = args.map(String);
+/**
+ * La firma `guion` que piden las palabras de un llamado (el guion, el subcomando y sus argumentos), o null. Las palabras
+ * llegan como texto, o como las lee marker-command.js (`{ texto, literal }`); un texto con `$` o una comilla invertida
+ * cuenta como armado. Con `llamada` (la de marker-command.js), una bandera de pipeline.js se busca con su lector: un
+ * argumento armado donde el guion espera un valor no la esconde.
+ */
+function firmaDeLlamado(guion, sub, args, llamada = null) {
+  const pal = args.map((w) => (w && typeof w === 'object' ? { texto: String(w.texto), literal: !!w.literal }
+    : { texto: String(w), literal: !/[$`]/.test(String(w)) }));
+  const a = pal.map((w) => w.texto);
   // una palabra que no se lee hasta correr (`$F`, una sustitución) puede ser cualquier bandera: cuenta como puesta
-  const opaca = a.some((w) => /[$`]/.test(w));
+  const opaca = pal.some((w) => !w.literal);
   const con = (b) => opaca || a.some((w) => w === b || w.startsWith(`${b}=`));
   if (guion === 'marker.js') {
     // la firma la piden la cita del plan o la de la maqueta, como en marker.js; el plan que se aprueba solo, no
@@ -187,7 +194,12 @@ function firmaDeLlamado(guion, sub, args) {
     if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;
     return null;
   }
-  if (guion === 'pipeline.js') return ['smart-reloop', 'advisors'].includes(sub) && con('--extra-round') ? 'extra-round' : null;
+  if (guion === 'pipeline.js') {
+    const pide = llamada ? markerCommand().lectorDeBanderas(llamada) : con;
+    // un subcomando que no se lee hasta correr puede ser `smart-reloop`
+    if (sub == null) return llamada && llamada.dudosa && pide('--extra-round') ? 'extra-round' : null;
+    return ['smart-reloop', 'advisors'].includes(sub) && pide('--extra-round') ? 'extra-round' : null;
+  }
   if (guion === 'e2e-setup.js') return ['prepare', 'defer'].includes(sub) ? 'browser-test' : null;
   if (guion === 'run-base-controls.sh') return sub === 'approve' ? 'control-change' : null;
   return null;
@@ -227,7 +239,7 @@ function firmasDelComando(comando) {
   const ids = [];
   try {
     for (const l of markerCommand().llamadas(String(comando))) {
-      const id = firmaDeLlamado(`${l.guion}.js`, l.sub, (l.args || []).map((x) => x.texto));
+      const id = firmaDeLlamado(`${l.guion}.js`, l.sub, l.args || [], l);
       if (id) ids.push(id);
     }
     for (const l of llamadosSueltos(comando)) {
@@ -662,12 +674,19 @@ function consumirArchivo({ firma, sesion, archivo, cwd, casa, ahora = Date.now()
 
 /**
  * Cierra las firmas que reservó `consumirArchivo` dentro del despachador: con `paso` se gastan, sin `paso` vuelven a su
- * lugar. Devuelve los errores (`[{ f, error }]`): una firma que no se pudo cerrar no se da por cerrada en silencio.
+ * lugar, salvo que ya haya ahí una firma nueva. Devuelve los errores (`[{ f, error }]`): una firma que no se pudo cerrar no se da por cerrada en silencio.
  */
 function confirmarConsumos(lista, { paso = true } = {}) {
   const errores = [];
   for (const { f, reservado, ahora } of lista || []) {
-    try { fs.renameSync(reservado, paso ? `${f}.consumido-${ahora}` : f); } catch (e) { errores.push({ f, error: e.code || e.message }); }
+    try {
+      if (paso) fs.renameSync(reservado, `${f}.consumido-${ahora}`);
+      else {
+        // vuelve sin pisar: si la persona firmó otra vez mientras tanto, queda la nueva y la vieja se descarta
+        try { fs.linkSync(reservado, f); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+        fs.unlinkSync(reservado);
+      }
+    } catch (e) { errores.push({ f, error: e.code || e.message }); }
   }
   return errores;
 }
@@ -782,11 +801,11 @@ function fijarDestino({ r, propia, necesitaMarcador = false, leerMarcador, casa,
 
 /**
  * Quién firmó, para la constancia del guion, a partir de lo que devolvió `exigir`: por la delegación del perfil firmó
- * la coordinadora (la sesión del evento) en nombre de `persona`; por la ventana, la persona.
+ * la coordinadora (la sesión del evento) en nombre de `persona`; por la ventana o por la terminal, la persona.
  */
 function quienFirmo({ via, sesion } = {}, persona) {
   if (via === 'delegacion') return { tipo: 'automatica', quien: `coordinadora (sesión ${sesion})`, delegacion: persona, via: 'delegada · coordinadora' };
-  return { tipo: 'manual', quien: persona, via: 'ventana' };
+  return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
 module.exports = { VENCE_MIN, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
