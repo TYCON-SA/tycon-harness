@@ -980,6 +980,13 @@ function pruebasQueFallan(repo) {
     return lista.slice(0, 10).join(', ') + (lista.length > 10 ? ` y ${lista.length - 10} más` : '');
   } catch { return null; }
 }
+// Quién corre la suite completa cuando el repo acota el portón (`scoped_by_repo` del informe del gate), o null.
+function portonAcotadoPorElRepo(repo) {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(repo || process.cwd(), '.advisors', 'tests-result.json'), 'utf8'));
+    return j.scoped_by_repo && j.scoped_by_repo.full_suite_by ? String(j.scoped_by_repo.full_suite_by) : null;
+  } catch { return null; }
+}
 // El orden del marcador viejo (cadena: 3 ← {1,2} · 4 ← {3} · 5 ← {4} · 8 ← {5}); el nuevo es STEPS_LIB.ORDER_REQUIRES.
 const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 
@@ -1395,6 +1402,12 @@ function cmdCompleteStep(nRaw, flags) {
       });
       console.error('⚠️  la suite no se acotó (sin acotar: no se supo qué se tocó en el repo hermano, o ninguna suite lo lee):');
       console.error('   la cubre la CI del pedido, y el merge exige la CI completa en verde. El motivo está en .advisors/tests-result.json.');
+    }
+
+    // ── Acotada por el repo: el verde es el de las suites que leen lo tocado, y se dice quién corre la completa ──
+    if (testsCheck === 'green') {
+      const acotada = portonAcotadoPorElRepo(marker.repoPath);
+      if (acotada) console.error(`ℹ️  la suite completa la corre la CI del pedido (${acotada}): el portón de esta máquina corrió sólo las suites que leen lo tocado.`);
     }
 
     // ── «Sin medir»: se acepta diciéndolo, nunca callado ─────────────────────────────────

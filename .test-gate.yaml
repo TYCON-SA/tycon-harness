@@ -1,0 +1,9 @@
+# El alcance del portón de pruebas para este repo (lo lee lib/test-gate-scope.js, de lo commiteado).
+#
+# El portón de cierre corre en la máquina sólo las suites que leen lo que el cambio toca. La suite completa la corre
+# la CI de cada pedido (`public-ci`, .github/workflows/ci.yml), que es el control obligatorio de la cola de merge y
+# frena el merge en rojo. Las que no corren en la CI (red, modelo, docker) las corre el banco nocturno.
+# Cambiar este archivo pide la constancia del dueño (scripts/ci/controls-from-base.json, «sign_on_change»).
+test_gate:
+  scope: touched
+  full_suite_by: "la CI del pedido (public-ci, control obligatorio de la cola de merge)"

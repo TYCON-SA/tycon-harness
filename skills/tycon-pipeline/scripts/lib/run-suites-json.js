@@ -45,6 +45,13 @@
  * test-gate-report.js. Una suite sin datos (una de bash que no lanza `node`, una que no arrancó) se nombra en
  * `coverage.without_data` y no rompe nada. Sin `--coverage`: ni envoltorio ni carpeta.
  *
+ * ACOTADA POR EL REPO (`--scoped-by-repo <quién corre la completa>`): el mismo criterio que la corrida cruzada, en el
+ * propio repo, porque el repo lo declara (`test_gate` de `.test-gate.yaml`, leído por lib/test-gate-scope.js) y una
+ * CI corre la suite entera antes del merge. Lo que cambia respecto de la cruzada: si ninguna suite lee lo tocado sale 0
+ * («ninguna suite lee lo tocado; la suite completa la corre la CI del pedido»), porque esa CI es el control obligatorio;
+ * si no se sabe qué se tocó no acota y corre todo, como sin la clave. El resumen lleva `scoped` con quién corre la
+ * completa sólo cuando acotó.
+ *
  * UNA SOLA SUITE (`--suite <ruta>`, la `ruta` de su entrada en suites.json): el plan queda con esa entrada sola y corre
  * aunque la difiera lo tocado o la corrida liviana, con el mismo envoltorio de cobertura. Una ruta que no está sale 2.
  * Cada falla del resumen trae `entrada: {raiz, ruta}`, la de suites.json, que es la que recibe `--suite`.
@@ -244,8 +251,10 @@ function main(argv, env = process.env) {
   const iSk = argv.indexOf('--skills');
   const iCov = argv.indexOf('--coverage');
   const iSu = argv.indexOf('--suite');
-  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1]) || (iSu >= 0 && !argv[iSu + 1])) {
-    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light] [--only-touched] [--suite <ruta>]');
+  const iBy = argv.indexOf('--scoped-by-repo');
+  const fullSuiteBy = iBy >= 0 ? String(argv[iBy + 1] || '').trim() : null;
+  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1]) || (iSu >= 0 && !argv[iSu + 1]) || (iBy >= 0 && (!fullSuiteBy || fullSuiteBy.startsWith('--')))) {
+    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light] [--only-touched] [--scoped-by-repo <quién corre la completa>] [--suite <ruta>]');
     return Promise.resolve(2);
   }
   const covDir = iCov >= 0 ? path.resolve(argv[iCov + 1]) : null;
@@ -291,7 +300,12 @@ function main(argv, env = process.env) {
   const allSuites = env.TYCON_GATE_ALL_SUITES === '1' || Boolean(suiteOnly);
   const touched = readTouched(touchedFile);
   let light = argv.includes('--light');
-  const onlyTouched = argv.includes('--only-touched') && !allSuites;
+  // acotar sin saber qué se tocó sería no correr nada: el acotado por el repo sólo vale con lo tocado conocido
+  const byRepo = Boolean(fullSuiteBy) && !allSuites && touched.known;
+  if (fullSuiteBy && !allSuites && !touched.known) {
+    console.log(`[suites.json] el repo acota el portón, pero no sé qué se tocó (${touched.reason || 'sin motivo'}): corren todas las suites`);
+  }
+  const onlyTouched = (argv.includes('--only-touched') || byRepo) && !allSuites;
   // el tamaño se fija al arrancar: si el cambio real toca código, la corrida deja de ser liviana y corre lo de siempre
   if (light && touched.known) {
     const code = touched.files.find((f) => require('./run-size.js').classifyFile(f).kind === 'code');
@@ -378,7 +392,7 @@ function main(argv, env = process.env) {
       continue;
     }
     if (onlyTouched && touched.known && !namesTouched(repo, p.ruta, touched.files)) {
-      const reason = 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';
+      const reason = byRepo ? `no lee lo tocado; la suite completa la corre la CI del pedido (${fullSuiteBy})` : 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';
       resumen.deferred_suites.push({ suite: p.ruta, reason });
       console.log(`DIFERIDA ${p.name} — ${reason}`);
       continue;
@@ -392,6 +406,14 @@ function main(argv, env = process.env) {
     (p.exclusive ? exclusives : parallel).push(p);
   }
 
+  if (byRepo) resumen.scoped = { by: 'repo', full_suite_by: fullSuiteBy, none_touched: false };
+  // Acotada por el repo y ninguna suite lee lo tocado: verde, dicho. La CI del pedido corre la completa antes del merge.
+  if (byRepo && touched.known && !parallel.length && !exclusives.length && !resumen.ausentes.length) {
+    resumen.scoped.none_touched = true;
+    console.log(`[suites.json] ninguna suite lee lo tocado; la suite completa la corre la CI del pedido (${fullSuiteBy})`);
+    escribir(out, resumen);
+    return Promise.resolve(0);
+  }
   // Sin acotar (salida 7): no se sabe qué se tocó, o ninguna suite lo lee. No se corre nada y no es verde ni rojo.
   if (onlyTouched && (!touched.known || (!parallel.length && !exclusives.length && !resumen.ausentes.length))) {
     const reason = !touched.known

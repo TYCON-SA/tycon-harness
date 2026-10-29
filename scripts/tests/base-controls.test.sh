@@ -46,6 +46,9 @@
 #   T26 (8.139) BaseControls_ApproveConCita_YaNoVale — la clase de approve --base: refirma real, sin --base, otro cambio
 #   T54 BaseControls_NewFileOfLoosenedControl_EntersTheSignature — el archivo nuevo que carga un control que se afloja
 #       entra en lo que se firma, y cambiarlo después deja la firma sin valer; un control nuevo sigue sin trámite
+#   T55 BaseControls_SignOnChangeRule_NoPassReadsIt_AsksForSignature — una regla que ninguna pasada lee (el alcance del
+#       portón) con «sign_on_change»: cambiarla es rojo sin la constancia aunque la base y el pedido pasen, verde con
+#       ella; sin la marca, el mismo cambio entraba sin constancia
 #
 # T12, T13 y T14 están en public-ci.test.sh (el workflow y el guion de la CI) y en la prueba de la 170 del repo de
 # mantenimiento (el yml que sólo existe ahí).
@@ -1044,6 +1047,32 @@ printf 'limpio\n' > "${R}/docs/otro.txt"; commit "${R}"
 run "${R}" "${T}/t54c.out"
 is "T54 un control nuevo que endurece: verde" "0" "${RC}"
 has "T54 …sin constancia" "${T}/t54c.out" "la base y el pedido pasan: entra sin constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T55 · una regla que ninguna pasada lee, con «sign_on_change»: su cambio pide la constancia
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 mutación: sin la marca, el pedido que acota el portón sale «entra sin constancia» (el gemelo de abajo lo muestra)
+t55_base() {
+  make_base "$1"
+  printf 'scope: all\n' > "$1/docs/modo.yaml"
+  node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));const c=j.controls.find(x=>x.name==="base-controls");c.rules.push(Object.assign({path:"docs/modo.yaml",optional:true},process.argv[2]==="1"?{sign_on_change:true}:{}));require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "$1/scripts/ci/controls-from-base.json" "$2"
+  commit "$1" "regla sin pasada"
+  pr "$1"; printf 'scope: touched\n' > "$1/docs/modo.yaml"; commit "$1"
+}
+R="${T}/t55"; t55_base "${R}" 1
+run "${R}" "${T}/t55a.out"
+is "T55 cambiar la regla con «sign_on_change» sin constancia: rojo" "1" "${RC}"
+has "T55 …pide la firma del dueño" "${T}/t55a.out" "afloja un control sin la constancia del dueño: docs/modo.yaml"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t55-pending.out" 2>&1
+ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t55-pending.out" | head -n 1)"
+mkdir -p "${R}/.tycon"; firma "${ENTRIES}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "constancia"
+run "${R}" "${T}/t55b.out"
+is "T55 con la constancia del dueño: verde" "0" "${RC}"
+has "T55 …y lo dice" "${T}/t55b.out" "cambio de control aprobado: docs/modo.yaml"
+R="${T}/t55c"; t55_base "${R}" 0
+run "${R}" "${T}/t55c.out"
+is "T55 sin la marca, el mismo cambio: verde" "0" "${RC}"
+has "T55 …entra sin constancia" "${T}/t55c.out" "la base y el pedido pasan: entra sin constancia"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
