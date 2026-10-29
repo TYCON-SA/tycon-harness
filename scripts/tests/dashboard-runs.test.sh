@@ -2099,6 +2099,17 @@ grep -q '>0</b> tokens\|0 tokens' <<< "${TILE}" && mal "RP3 dibujó 0 tokens" ||
 grep -q '<b>1</b> saltada(s)' <<< "${TILE}" && grep -q '<b>1</b> con la revisión sin medir' <<< "${TILE}" && ok "RP3 la saltada y la pendiente se cuentan aparte" || mal "RP3 la saltada o la pendiente no se cuentan"
 rm -rf "${T}"
 
+# ── RP4 · la misma historia en dos productos son dos historias ──
+# 🔴 Falla con: agrupar sólo por el número de la historia (diría «1 de 1» y sumaría un solo costo).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T05:53:47Z" "{\"marker\":{\"storyId\":\"2.1\",\"repoPath\":\"/Users/dev/SourceCode/Totora/FrontEnd\"},${RP_CORR}}" a.json
+volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" "{\"marker\":{\"storyId\":\"2.1\",\"repoPath\":\"/Users/dev/SourceCode/HostApi\"},${RP_LIMPIO}}" b.json
+generar "${T}/r" "${T}/o.html" "${T}/log"
+TILE="$(cliente "${T}/o.html" container fichas | ficha_rp)"
+grep -q '2 de 2 historias revisadas' <<< "${TILE}" && ok "RP4 la misma historia en dos productos cuenta dos veces" || mal "RP4 no dice «2 de 2 historias revisadas»: $(echo "${TILE}" | head -c 400)"
+grep -q '<b>10 k</b> tokens en total' <<< "${TILE}" && ok "RP4 el costo suma las dos" || mal "RP4 el costo no suma las dos (10 k)"
+rm -rf "${T}"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
 # 🔴 sale rojo si un caso genera sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"

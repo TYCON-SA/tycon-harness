@@ -2432,7 +2432,8 @@ const CLIENTE_FUENTE = String.raw`(function () {
   }
 
   // La revisión de la historia antes de programar. Cuenta HISTORIAS: las corridas de una misma historia comparten su
-  // constancia, y sumarlas contaría dos veces la revisión y su costo; de cada historia vale su corrida más nueva. Las
+  // constancia, y sumarlas contaría dos veces la revisión y su costo; de cada historia vale su corrida más nueva. Una
+  // historia es su número dentro de su producto: dos productos pueden tener cada uno su «2.1». Las
   // corridas sin el campo son anteriores a la revisión previa y van aparte; las de constancia sin medir (pendiente o
   // ilegible) tampoco entran en el denominador. Tokens y duración sólo de las que los midieron: un null nunca es 0.
   function revisionPrevia(F) {
@@ -2440,7 +2441,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     F.forEach(function (c) {
       var r = c.revision_previa;
       if (!r || !r.estado || r.estado === 'sin_campo') { viejas += 1; return; }
-      var k = c.story !== null && c.story !== undefined ? 'h:' + c.story : 'c:' + c.id;
+      var k = c.story !== null && c.story !== undefined ? 'h:' + JSON.stringify([c.producto || null, c.story]) : 'c:' + c.id;
       var antes = porHistoria[k];
       if (!antes || String(c.inicio || '') > String(antes.inicio || '')) porHistoria[k] = { inicio: c.inicio, r: r };
     });
