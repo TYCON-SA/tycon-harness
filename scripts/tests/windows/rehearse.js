@@ -402,6 +402,7 @@ function renderGuided(report) {
         }
         M.push('');
       }
+      if (x.while_held) M.push(`Con settings.json tomado por otro programa (lo tomó en ${cell(x.hold && x.hold.took_ms)} ms; ${x.hold && x.hold.released ? 'lo soltó al terminar' : 'NO se confirmó que lo soltara'}), dos sesiones a la vez: las líneas de arranque salieron ${x.while_held.pair.map((p) => `${p.label} ${cell(p.error || p.exit)}`).join(' · ')}; la máquina quedó en ${cell(x.while_held.version)}${x.while_held.failed ? ` con un intento fallido («${cell(x.while_held.failed.reason)}»)` : ''}. Soltado el archivo, la sesión siguiente la dejó en ${cell(x.version_after)}: settings.json ${x.end && x.end.settings.readable ? 'legible' : 'ILEGIBLE'}, ${x.end && x.end.settings.startup ? 'con' : 'SIN'} la línea de arranque, intento fallido en el estado: ${x.end && x.end.failed ? cell(x.end.failed.reason) : 'ninguno'}.`, '');
       if (x.something_tells) M.push(`¿Algo le avisa a la persona? Un hook de la sesión: ${x.something_tells.hook ? cell(x.something_tells.hook) : 'no'} · el diagnóstico: ${x.something_tells.doctor ? cell(x.something_tells.doctor) : 'no'}.`, '');
       if (x.before) M.push(`Antes: ${guidedPhotoLine(x.before)}`, '');
       if (x.after) M.push(`Después: ${guidedPhotoLine(x.after)}`, '');

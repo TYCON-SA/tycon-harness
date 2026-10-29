@@ -565,7 +565,18 @@ function ignoreSyncedSkills({ dir, check = false, git = 'git' } = {}) {
 // archivo: como está anotado (ver «LOS ENLACES DUROS QUE CREÓ EL ARNÉS»), la corrida siguiente lo rehace, no lo nombra
 // como entrada que choca.
 // `links` se inyecta en las pruebas (canonical-path.test.sh): en Linux y Mac el enlace de archivo no falla nunca.
-const DEFAULT_LINKS = { symlink: (t, w, type) => fs.symlinkSync(t, w, type), link: (t, w) => fs.linkSync(t, w), platform: process.platform };
+// `TYCON_TEST_DENY_FILE_LINK=1` (sólo pruebas) hace fallar el enlace de archivo con EPERM, como en un Windows sin modo
+// desarrollador: la prueba de la mudanza y el ensayo de Windows corren en máquinas que sí lo crean, y sin esto el camino
+// del enlace duro no se ejercita fuera de las pruebas de esta biblioteca.
+const denyFileLink = () => process.env.TYCON_TEST_DENY_FILE_LINK === '1';
+const DEFAULT_LINKS = {
+  symlink: (t, w, type) => {
+    if (type === 'file' && denyFileLink()) { const e = new Error(`EPERM: enlace de archivo negado (TYCON_TEST_DENY_FILE_LINK) '${w}'`); e.code = 'EPERM'; throw e; }
+    fs.symlinkSync(t, w, type);
+  },
+  link: (t, w) => fs.linkSync(t, w),
+  platform: process.platform,
+};
 // `{ bigint: true }`: en Windows el ID de archivo de NTFS pasa de 2^53 y como Number pierde los bits bajos: dos archivos
 // distintos darían el mismo `ino`. Igual que apply-hooks.js.
 const sameFile = (a, b) => {

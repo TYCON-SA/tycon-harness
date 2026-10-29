@@ -471,3 +471,52 @@ test('T43 Porton_SoloDescripcion_ConStaged @story-7.53: el control del pre-commi
   write(dir, { [`agents/${AGENT}.md`]: CON_DESC(CORTA, 'Revisá TOY-C2.\n') }); git(dir, ['add', '-A']);
   assert.strictEqual(run(dir, ['check', '--staged']).code, 1);
 });
+
+/** El arnés de juguete con los controles baratos del árbol de verdad (enlazados, sin versionar). */
+function harnessWithCheapChecks() {
+  const dir = harness();
+  fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+  // en Windows, una unión: un enlace simbólico a carpeta pide permisos de administrador
+  for (const d of ['publishing', 'lib']) fs.symlinkSync(path.join(ROOT, 'scripts', d), path.join(dir, 'scripts', d), process.platform === 'win32' ? 'junction' : 'dir');
+  return dir;
+}
+/** Un corredor que deja una marca si lo llamaron. */
+function markingRunner(mark) {
+  const f = path.join(tmp(), 'runner.js');
+  fs.writeFileSync(f, `require('fs').writeFileSync(${JSON.stringify(mark)}, 'corrió');\n${fs.readFileSync(runner({ [`${AGENT}::a`]: true, [`${AGENT}::b`]: true, [`${AGENT}::c`]: false }), 'utf8')}`);
+  return f;
+}
+const HISTORIA = 'Esta regla salió de la story 8.63 y de su tanda B.\n';
+
+test('T44 Examen_ControlesBaratosAntes: si el pre-commit rechazaría el archivo del revisor, lo dice y no examina', () => {
+  const dir = harnessWithCheapChecks();
+  const mark = path.join(tmp(), 'corrio');
+  fs.appendFileSync(path.join(dir, 'agents', `${AGENT}.md`), HISTORIA);
+  const r = run(dir, ['run', '--agent', AGENT], { TYCON_REVIEWER_EXAM_RUNNER: markingRunner(mark) });
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /story-number/, 'nombra la forma que frena');
+  assert.match(r.out, /el control de historia interna frena agents\/tycon-juguete\.md[\s\S]*no examiné/);
+  assert.ok(!fs.existsSync(mark), 'el corredor no corrió');
+  assert.ok(!fs.existsSync(path.join(dir, 'scripts', 'controls-bench', 'reviewer-exams', `${AGENT}.json`)), 'sin resultado');
+  assert.strictEqual(git(dir, ['status', '--porcelain', '--', 'agents']), `M agents/${AGENT}.md`, 'el índice del repo queda como estaba');
+  assert.strictEqual(git(dir, ['diff', '--cached', '--name-only']), '', 'no deja nada en el índice');
+});
+
+test('T45 Examen_ControlesBaratosLimpios_Examina: con el archivo limpio, examina como siempre', () => {
+  const dir = harnessWithCheapChecks();
+  const mark = path.join(tmp(), 'corrio');
+  fs.appendFileSync(path.join(dir, 'agents', `${AGENT}.md`), 'Revisá también TOY-W1.\n');
+  const r = run(dir, ['run', '--agent', AGENT], { TYCON_REVIEWER_EXAM_RUNNER: markingRunner(mark) });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(fs.existsSync(mark), 'el corredor corrió');
+  assert.strictEqual(resultOf(dir).hash, git(dir, ['hash-object', `agents/${AGENT}.md`]));
+});
+
+test('T46 Examen_ControlesBaratos_LoNeto: lo que el archivo ya traía en HEAD no frena, como en el pre-commit', () => {
+  const dir = harnessWithCheapChecks();
+  fs.appendFileSync(path.join(dir, 'agents', `${AGENT}.md`), HISTORIA);
+  git(dir, ['add', '--', `agents/${AGENT}.md`]); git(dir, ['commit', '--quiet', '-m', 'ya estaba']);
+  fs.appendFileSync(path.join(dir, 'agents', `${AGENT}.md`), 'Revisá también TOY-W1.\n');
+  const r = run(dir, ['run', '--agent', AGENT], { TYCON_REVIEWER_EXAM_RUNNER: runner({ [`${AGENT}::a`]: true, [`${AGENT}::b`]: true, [`${AGENT}::c`]: false }) });
+  assert.strictEqual(r.code, 0, r.out);
+});

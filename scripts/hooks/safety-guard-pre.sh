@@ -253,7 +253,17 @@ ow_vencer() {
     for d in "${dirs[@]}"; do compgen -G "$d/*.json" >/dev/null 2>&1 && hay=1; done
   fi
   [[ "$hay" == "1" ]] || return 0
-  sid="$(read_field session_id 2>/dev/null)" || sid=""
+  # la sesión se lee del texto de la entrada sin abrir un proceso: un pedido sin vencer de OTRA sesión deja `hay` en 1
+  # para todas, y este freno corre en cada comando. Una cadena del comando trae sus comillas escapadas (`\"`), así que
+  # la clave sin escapar es la de afuera; si aparece más de una vez, o con otra forma, se lee con jq o node
+  sid=""
+  local re_sid='"session_id"[[:space:]]*:[[:space:]]*"([A-Za-z0-9_-]+)"' resto="$INPUT"
+  if [[ "$resto" =~ $re_sid ]]; then
+    sid="${BASH_REMATCH[1]}"
+    resto="${resto#*\"session_id\"}"
+    [[ "$resto" == *'"session_id"'* ]] && sid=""
+  fi
+  [[ -n "$sid" ]] || { sid="$(read_field session_id 2>/dev/null)" || sid=""; }
   [[ "$sid" =~ ^[A-Za-z0-9_-]+$ ]] || return 0
   if [[ -n "$casa" ]]; then
     hay=0

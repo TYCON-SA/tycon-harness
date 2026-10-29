@@ -113,7 +113,7 @@ function leerFuente(f) {
   const dir = path.join(AMB.dashboard, f.dir === '.' ? '' : f.dir);
   let archivos = [];
   try {
-    const rx = new RegExp('^' + f.pattern.replace(/[.]/g, '\\.').replace(/\*/g, '.*') + '$');
+    const rx = new RegExp('^' + f.pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
     archivos = fs.readdirSync(dir).filter((n) => rx.test(n)).sort();
   } catch (e) {
     // 🔴 El error se DICE —tapar el error convierte "no pude preguntar" en "pregunté y no hay", la mentira más barata

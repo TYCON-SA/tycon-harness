@@ -823,3 +823,12 @@ test('Fuentes_DiasDeEdadEnEstado_ValidadosComoElTablero — params.edad_en_estad
     }
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });
+
+test('UltimaFoto_PatronConCaracteresDeExpresion_SeLeeTalCual', () => {
+  // el patrón sólo tiene un comodín, `*`: un `+` o un paréntesis del nombre no cambian lo que encuentra
+  const dir = tmp('ultima-foto-');
+  fs.writeFileSync(path.join(dir, 'a+b-2026-10-28.json'), '{"ok":1}');
+  fs.writeFileSync(path.join(dir, 'aab-2026-10-29.json'), '{"ok":2}');
+  const r = sources.ultimaFoto(dir, 'a+b-*.json');
+  assert.deepStrictEqual(r.doc, { ok: 1 });
+});
