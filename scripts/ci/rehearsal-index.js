@@ -91,7 +91,7 @@ function index(o, say) {
     fs.mkdirSync(path.join(out, 'summary'), { recursive: true });
     fs.copyFileSync(o.summary, path.join(out, 'summary', result.summary));
   } else if (o.summary) {
-    say(`##vso[task.logissue type=warning]ensayo: no está el resumen de la corrida (${path.basename(o.summary)}): ¿el paso que lo escribe no llegó a correr?`);
+    say(`##vso[task.logissue type=warning]ensayo: no está el resumen de la noche (${path.basename(o.summary)}): ¿el paso que lo escribe no llegó a correr?`);
   }
   fs.writeFileSync(path.join(out, 'index.json'), `${JSON.stringify(result, null, 2)}\n`);
   // una ruta sin nada no es un error (hay noches sin hallazgos), pero una ruta mal escrita se ve igual: se nombra

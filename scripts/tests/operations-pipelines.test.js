@@ -1175,7 +1175,7 @@ test('RehearsalIndex_MarcasYEnlaces: los .gitkeep van como marcas, no como vací
   const idx = JSON.parse(fs.readFileSync(path.join(out, 'index.json'), 'utf8'));
   assert.deepStrictEqual(idx.untouched, ['inbox/mal-escrita'], 'la ruta sin nada se nombra aunque las otras tengan datos; el patrón cubre lo suyo');
   assert.match(r.stdout, /ensayo: sin nada esta noche en inbox\/mal-escrita/);
-  assert.match(r.stdout, /##vso\[task\.logissue type=warning\]ensayo: no está el resumen de la corrida \(no-esta\.txt\)/, 'el resumen que falta se avisa');
+  assert.match(r.stdout, /##vso\[task\.logissue type=warning\]ensayo: no está el resumen de la noche \(no-esta\.txt\)/, 'el resumen que falta se avisa');
   assert.strictEqual(idx.summary, null);
   assert.deepStrictEqual(idx.empty, [], 'las marcas de carpeta no son vacíos');
   assert.deepStrictEqual(idx.markers, ['inbox/watcher/archived/.gitkeep', 'inbox/watcher/pending/.gitkeep']);

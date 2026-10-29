@@ -60,11 +60,9 @@
   "guides/workflow-orchestration.md": [
     "`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN"
   ],
-  "integrations/azure-devops/scripts/change-requests.js": [
-    "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>"
-  ],
   "pipelines/operations/README.md": [
-    "az pipelines create --name stage-metrics --repository operations --repository-type tfsgit --branch main \\"
+    "az pipelines create --name stage-metrics --repository operations --repository-type tfsgit --branch main \\",
+    "mano con el parámetro **efectos** destildado (*Run pipeline → efectos*, o `az pipelines run --id <N> --branch <rama>"
   ],
   "pipelines/operations/stage-metrics.yml": [
     "# - SIN LISTA A MANO: los repos se descubren preguntándole a la organización (`az repos list` por proyecto). Una lista",
@@ -160,6 +158,9 @@
     "Ej: con `ado_iteration_root=\"Ceibo\"` (o `ado_project=\"Ceibo\"`) y `sprint: 5` → `Ceibo\\Sprint 5`. Asume convención TYCON `Sprint <N>` como nombre del iteration (verificable con `az boards iteration project list --project <p>`).",
     "falta enumerarlos: `az devops invoke --area wit --resource workitemtypes --route-parameters",
     "process=$(az devops project show \\"
+  ],
+  "integrations/azure-devops/scripts/change-requests.js": [
+    "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>"
   ],
   "integrations/azure-devops/scripts/work-items.js": [
     "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",
