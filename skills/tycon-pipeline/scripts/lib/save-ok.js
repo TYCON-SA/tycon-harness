@@ -208,9 +208,12 @@ function cambiados(repo) {
   return { archivos: [...out] };
 }
 
-/** ¿El texto hace `require` (o `import … from`) literal de uno de los archivos que definen firmas o avisos, con o sin `.js`? */
-function requiereSensible(texto) {
-  const nombres = catalogo().REQUIERE_SENSIBLE.map((n) => n.replace(/\.js$/, '').replace(/[.]/g, '\\.')).join('|');
+/**
+ * ¿El texto hace `require` (o `import … from`) literal de uno de los archivos que definen firmas o avisos, con o sin
+ * `.js`? Cada nombre entra a la expresión con todos sus caracteres especiales escapados.
+ */
+function requiereSensible(texto, lista = catalogo().REQUIERE_SENSIBLE) {
+  const nombres = lista.map((n) => n.replace(/\.js$/, '').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|');
   return new RegExp(`(?:require\\s*\\(\\s*|from\\s+)['"\`](?:[^'"\`]*/)?(?:${nombres})(?:\\.js)?['"\`]`, 'i').test(texto);
 }
 
@@ -407,4 +410,4 @@ function constancia({ marker, via, por = null, previo, ahora }) {
   };
 }
 
-module.exports = { FIRMA: 'save', raizDe, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
+module.exports = { FIRMA: 'save', raizDe, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
