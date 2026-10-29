@@ -178,9 +178,9 @@ function readProject(bin, project, listed, windowFrom, today) {
       }
     }
     const ruta = listed.get(repoName) || null;
-    const label = ruta || `${project}/${repoName || p.name}`;
+    const label = ruta || `${project}/${repoName}`;
     const extra = ruta ? {} : { undeclared: true };
-    const source = ruta ? `pipeline:${ruta}` : `no-declarado:${project}/${repoName || p.name}`;
+    const source = ruta ? `pipeline:${ruta}` : `no-declarado:${project}/${repoName}`;
     const runs = az(bin, ['pipelines', 'runs', 'list', '-p', project, '--pipeline-ids', String(p.id), '--top', String(RUNS_TOP), '-o', 'json']);
     if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }
     // una corrida en curso (la de producción que espera su aprobación, a veces por semanas) se lee siempre, arranque
@@ -211,7 +211,7 @@ function readProject(bin, project, listed, windowFrom, today) {
         }
       }
     }
-    if (!ruta && called) undeclared.push({ project, repo: repoName || null, pipeline: p.name });
+    if (!ruta && called) undeclared.push({ project, repo: repoName, pipeline: p.name });
   }
   return { failed, uses, undeclared };
 }
