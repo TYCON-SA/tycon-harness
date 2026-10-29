@@ -16,7 +16,7 @@ política, deja estado, y arranca desde una copia fija que no vive en el árbol 
 | `apply` | corre el aplicador | sí |
 | `version [--json]` | versión instalada, canal, modo, fuentes, shas | no |
 | `doctor [--json] [--fetch]` | diagnóstico de sólo lectura (`--fetch` es la única excepción: escribe `FETCH_HEAD`) | no |
-| `channel [latest\|stable]` | muestra o fija el canal en `~/.claude/tycon.json` | sólo `tycon.json` |
+| `channel [latest\|stable]` | muestra o fija el canal en la configuración de la máquina (`~/.tycon/config.json`; en una máquina sin mudar, `~/.claude/tycon.json`) | sólo ese archivo |
 | `rollback …` · `uninstall …` | la vuelta atrás que se queda y la desinstalación de sólo lo registrado | sí |
 | `link --local <clon> [--allow-temporary]` / `link --managed` | modo desarrollador: el enlace apunta a un clon propio y `update` no toca su git | enlace y estado |
 

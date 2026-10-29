@@ -560,8 +560,12 @@ test('AdoList_Windows_AzThroughConsole @story-8.131 @ac-12', () => {
   const win = llamadaAz('az', args, 'win32');
   assert.strictEqual(win.shell, true);
   assert.deepStrictEqual(win.args, args.map((a) => `"${a}"`));
-  assert.deepStrictEqual(llamadaAz('az', args, 'darwin'), { args, shell: false });
-  assert.deepStrictEqual(llamadaAz('/x/fake-az', args, 'win32'), { args, shell: false }, 'un doble con ruta no pasa por la consola');
+  assert.deepStrictEqual(llamadaAz('az', args, 'darwin'), { file: 'az', args, shell: false });
+  assert.deepStrictEqual(llamadaAz('/x/fake-az', args, 'win32'), { file: '/x/fake-az', args, shell: false }, 'un doble con ruta no pasa por la consola');
+  // un doble `.js` corre con Node en cualquier sistema: en Windows un guion sin extensión no se puede lanzar directo
+  for (const so of ['win32', 'darwin']) {
+    assert.deepStrictEqual(llamadaAz('/x/az.js', args, so), { file: process.execPath, args: ['/x/az.js', ...args], shell: false }, `doble .js en ${so}`);
+  }
   assert.match(llamadaAz('az', ['project=a&b'], 'win32').problem, /no seguros/);
   assert.strictEqual(Object.keys(require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'change-requests.js'))).includes('llamadaAz'), false,
     'no es una operación del conector');

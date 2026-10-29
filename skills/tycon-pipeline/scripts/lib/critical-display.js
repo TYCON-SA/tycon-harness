@@ -1,9 +1,9 @@
 'use strict';
 /**
- * critical-display — el crítico que se quiere eximir se lo muestra el arnés a la persona, y el ok vale si responde a eso.
+ * critical-display — el crítico que se quiere eximir se lo muestra el arnés a la persona antes de la ventana de permiso.
  *
- * Una cita de la persona, de esta corrida, no dice a qué le dijo que sí: un «apruebo, seguí» escrito por otra cosa
- * eximiría un crítico que nunca vio. Por eso el crítico lo muestra el arnés en pantalla (`systemMessage`, como el plan en
+ * La ventana muestra el comando, no el crítico: sin el aviso, la persona aprobaría un crítico que nunca vio. Por eso el
+ * crítico lo muestra el arnés en pantalla (`systemMessage`, como el plan en
  * lib/plan-display.js), y queda la constancia `critical-shown` en `gates.log`, donde el agente no escribe.
  *
  *   · `paraMostrar({ command, sessionId, stateDir, home })`: la puerta Bash, antes de `marker.js waive-critical` sin
@@ -11,10 +11,10 @@
  *   · `handle(event, opts)`: el despachador de ediciones (la instalación mínima no trae la puerta Bash). Un Write o Edit
  *     de `exencion-pedida.json` ({ rule, file, reason }) en la carpeta de la corrida abierta de la sesión.
  *   · `mostrado(...)`: la constancia más nueva de ese crítico con ese motivo, o null. La lee `waive-critical`.
- *   · `primeraMuestra(...)`: la primera constancia de ese crítico en la corrida, con cualquier motivo. Desde ahí vale el ok.
- *   · `juez({ rule, file, archivos, arnes })`: `(texto) => null | motivo`. ¿El mensaje nombra ese crítico y no lo niega?
+ *   · `primeraMuestra(...)`: la primera constancia de ese crítico en la corrida, con cualquier motivo.
  *
- * Sin la conversación legible (otra herramienta) no se muestra ni se anota: no se sabe si el aviso se ve.
+ * Se muestra siempre, con la conversación legible o sin ella: la firma no sale de la conversación sino de la ventana de
+ * permiso o de la terminal.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -82,7 +82,7 @@ function mostrado({ stateDir, sessionId, storyId, rule, file, reason }) {
 
 /**
  * La primera muestra de ese crítico (sesión, historia, regla y archivo) desde `desde`, con cualquier motivo, null, o
- * `{ error }`. Un motivo reescrito vuelve a mostrar el crítico, pero el ok que respondió a la primera muestra sigue valiendo.
+ * `{ error }`. Un motivo reescrito vuelve a mostrar el crítico.
  */
 function primeraMuestra({ stateDir, sessionId, storyId, rule, file, desde }) {
   const t0 = Date.parse(desde || '');
@@ -121,117 +121,15 @@ function criticosDe(runDir) {
   return { lista: arr.filter((f) => f && String(f.severity || '').trim().toUpperCase() === 'CRITICAL') };
 }
 
-// un código de regla entero, con sufijo si lo tiene (TEST-C1b, ACCOV-C1-EXT); «TEST-C10» no es «TEST-C1»
-const RE_CODIGO = /(?<![\w-])([A-Z][A-Z0-9]*-[CW]\d(?:[\w.-]*[A-Za-z0-9])?)(?![\w-])/gi;
-// una negación en cualquier parte del mensaje: «no», «ni», «nunca», «jamás», «tampoco», «sin eximir», «nada de eximir»
-const RE_NIEGA_ALGO = /(?<![\p{L}\p{N}])(?:(?:no|ni|nunca|jam[aá]s|tampoco)(?![\p{L}\p{N}])|sin\s+exim|nada\s+de\s+exim)/iu;
-// una excepción, una condición o un rechazo dicho con otras palabras: cualquiera descarta el ok
-const RE_EXCEPCION = /(?<![\p{L}\p{N}])(?:menos|salvo|excepto|rechaz\p{L}*|evit\p{L}*|cuando|hasta\s+que|antes\s+de|a\s+menos|quiz[aá]s?|podr\p{L}*|mantengo|despu[eé]s|[uú]nicamente|s[oó]lo\s+si|siempre\s+que|mientras|con\s+la\s+condici[oó]n)(?![\p{L}\p{N}])/iu;
-// una condición: «si» seguido de una palabra («si lo arreglás, …»); «si, eximo» (un «sí» sin tilde) no lo es
-const RE_CONDICION = /(?<![\p{L}\p{N}])si\s+\p{L}/iu;
-// las partes de un mensaje: cortan el punto (seguido de espacio o al final), ; ! ? el renglón, la coma y «pero»; cada
-// parte sabe si es una pregunta (termina en «?» o abre con «¿»)
-function partes(t) {
-  const out = [];
-  for (const m of String(t).matchAll(/[^.;!?\n]+(?:[.!?](?=\s|$)|[;\n?])?/g)) {
-    const pregunta = /\?\s*$/.test(m[0]) || m[0].includes('¿');
-    for (const s of m[0].split(/[,:]|(?<![\p{L}])pero(?![\p{L}])/u)) if (s.trim()) out.push({ texto: s.trim(), pregunta });
-  }
-  return out;
-}
-const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-// ¿el texto nombra `x` entero? (no dentro de otro nombre: «barfoo.js» no nombra «foo.js»)
-const nombraEntero = (texto, x) => new RegExp(`(?<![\\w./\\\\-])${escRe(String(x).toLowerCase())}(?![\\w-])`).test(String(texto).toLowerCase());
-const norm = (s) => String(s).toLowerCase().replace(/[«»"“”'‘’]/g, ' ').replace(/\s+/g, ' ').trim();
-
-/** `(texto) => null | motivo`: el mensaje de la persona nombra ese crítico (código o nombre en llano) y no lo niega. */
-function juez({ rule, file, archivos = [], arnes }) {
-  const r = String(rule || '').trim().toUpperCase();
-  const llano = nombreEnLlano(r, { arnes });
-  const nombre = `${r}${llano ? `, «${llano}»` : ''}`;
-  const archivo = String(file || '').trim();
-  const base = path.basename(archivo);
-  const varios = archivos.length > 1;
-  // si otro archivo abierto comparte el nombre, el nombre solo no alcanza: va la ruta
-  const comoNombrar = varios && archivos.filter((a) => path.basename(a) === base).length > 1 ? archivo : base;
-  const codigosDe = (s) => [...String(s).matchAll(RE_CODIGO)].map((m) => m[1].toUpperCase());
-  // un código sin la forma `XXX-C1` (los del pase adversarial: ADV-false-negative-classification) se nombra entero
-  const nombraEsta = (s) => codigosDe(s).includes(r) || nombraEntero(s, r) || (!!llano && norm(s).includes(norm(llano)));
-  const RE_EXIM = /(?<![\p{L}\p{N}])exim\p{L}*|exenci[oó]n/iu;
-  // un freno sin «no» («Esperá.», «Pará.», «Frená») también se echa atrás
-  // Con tilde frena en cualquier lugar. Sin tilde frena salvo en un solo caso: va después de una palabra que no es un
-  // conector y antes de otra palabra, como la preposición en «vale para todos» o «queda en espera de la CI». Abriendo el
-  // mensaje, tras un signo, un guion, un paréntesis, unas comillas o un conector («y espera», «pero para»), al final
-  // («Eximo X para.») o en un mensaje de hasta tres palabras, frena: ante la duda, no exime.
-  const RE_FRENO_TILDE = /(?<![\p{L}\p{N}])(?:esperá|pará|frená|aguantá)(?![\p{L}\p{N}])/iu;
-  const RE_SIN_TILDE = /(?<![\p{L}\p{N}])(?:espera|para|frena|aguanta)(?![\p{L}\p{N}])/giu;
-  const CONECTORES = new Set(['y', 'e', 'o', 'u', 'ni', 'pero', 'sino', 'aunque', 'ahora', 'mejor', 'bueno', 'ok', 'dale', 'che', 'porfa', 'favor', 'entonces', 'mientras', 'igual', 'antes']);
-  const frenaSinTilde = (t) => {
-    if (t.split(/[\s,.;:!?¿¡]+/).filter(Boolean).length <= 3 && RE_SIN_TILDE.test(t)) { RE_SIN_TILDE.lastIndex = 0; return true; }
-    RE_SIN_TILDE.lastIndex = 0;
-    for (const m of t.matchAll(RE_SIN_TILDE)) {
-      const antes = t.slice(0, m.index).replace(/[ \t]+$/, '');
-      const despues = t.slice(m.index + m[0].length);
-      if (!antes || !/[\p{L}\p{N}]$/u.test(antes)) return true;
-      const previa = antes.match(/[\p{L}\p{N}]+$/u)[0].toLowerCase();
-      if (CONECTORES.has(previa)) return true;
-      if (!/^[ \t]+[\p{L}\p{N}]/u.test(despues)) return true;
-    }
-    return false;
-  };
-  const RE_FRENO = { test: (texto) => { const t = String(texto).normalize('NFC'); return RE_FRENO_TILDE.test(t) || frenaSinTilde(t); } };
-  // lo que enseñan los rechazos: el mensaje del ok trae sólo el ok; una aclaración va en otro mensaje
-  const SOLO = `contestá sólo «eximo ${r}»${llano ? ` (o «eximo ${llano}»)` : ''}, con su motivo si querés; cualquier otra cosa, en otro mensaje`;
-  const juzgar = (texto) => {
-    const t = String(texto || '');
-    const codigos = codigosDe(t);
-    const otros = [...new Set(codigos)].filter((c) => c !== r);
-    // el nombre en llano no alcanza si el mensaje nombra otro código y no éste
-    if (!codigos.includes(r) && !nombraEntero(t, r) && otros.length) return `el ok nombra ${otros.join(', ')}, no ${r}`;
-    if (!nombraEsta(t)) return `el ok no nombra este crítico (${nombre}): un ok genérico no exime`;
-    // El ok tiene que DECIR que lo exime, sin vueltas: leer bien todas las formas de negar en texto libre no cierra, así
-    // que ante la duda no exime. Cualquier negación, freno, excepción o condición en el mensaje lo descarta, aunque esté
-    // en una aclaración de otra cosa: juzgar sólo la oración que exime dejaba pasar formas de echarse atrás sin nombrar el
-    // crítico, y una aclaración con su propio «no» tiene la misma forma que una retractación. Un rechazo de más se arregla
-    // contestando de nuevo (el motivo dice cómo); un ok de más eximiría lo que la persona no aprobó.
-    if (RE_NIEGA_ALGO.test(t)) return `el ok trae una negación («no», «nunca», «sin eximir»…): no exime. Para eximirlo, ${SOLO}`;
-    if (RE_FRENO.test(t)) return `el ok pide esperar («esperá», «pará»…): no exime. Para eximirlo, ${SOLO}`;
-    if (RE_EXCEPCION.test(t)) return `el ok pone una excepción o una condición («menos», «salvo», «cuando», «hasta que»…): no exime. Para eximirlo, ${SOLO}`;
-    if (RE_CONDICION.test(t)) return `el ok pone una condición («si …»): no exime. Para eximirlo, ${SOLO}`;
-    // una parte de la frase arranca con «exim… <regla o nombre en llano>»: así el crítico es lo que se exime, y no
-    // «eximo todo menos TEST-C1» ni «eximo TEST-C2 y mantengo TEST-C1». Lo que sigue puede ser una explicación: una
-    // negación, una excepción o una condición ya descartaron el ok más arriba.
-    const objetos = [r, ...(llano ? [llano] : [])].map((x) => escRe(norm(x)));
-    // «apruebo eximir R» es una aprobación igual de clara que «eximo R», con las mismas reglas
-    const RE_FORMA = new RegExp(`^(?:ok|dale|s[ií]|listo)?\\s*(?:yo\\s+)?(?:exim[oíe]|exim[ií]lo|exim[ií]la|eximimos|exim[ií]los|apruebo\\s+(?:que\\s+se\\s+)?exim(?:ir|a)|apruebo\\s+la\\s+exenci[oó]n\\s+de)\\s+(?:el\\s+|la\\s+)?(?:cr[ií]tico\\s+)?(?:${objetos.join('|')})(?![\\p{L}\\p{N}-])(?:\\s.*)?$`, 'iu');
-    const afirma = partes(t).some((p) => !p.pregunta && RE_FORMA.test(norm(p.texto.replace(/[.:!;]+\s*$/, ''))));
-    if (!afirma) return `el ok nombra ${r} pero no dice que lo exime: tiene que decirlo («eximo ${r}»${llano ? ` o «eximo ${llano}»` : ''}), sin preguntar`;
-    if (varios && comoNombrar && !nombraEntero(t, comoNombrar)) return `${r} está abierta en ${archivos.length} archivos: el ok tiene que nombrar ${comoNombrar}`;
-    return null;
-  };
-  // ¿un mensaje POSTERIOR al ok se echa atrás? Sí, si trae una negación, un freno, una excepción o una condición y además
-  // nombra este crítico o habla de eximir, o es corto (hasta tres palabras: «No.», «Mejor no.», «Esperá.»). Una aclaración
-  // de otra cosa en su propio mensaje («Sobre la Mac: no hay otro ensayo.») no tumba el ok: es lo que enseña el rechazo.
-  juzgar.retracta = (texto) => {
-    const t = String(texto || '');
-    if (!(RE_NIEGA_ALGO.test(t) || RE_FRENO.test(t) || RE_EXCEPCION.test(t) || RE_CONDICION.test(t))) return false;
-    const corto = t.split(/[\s,.;:!?¿¡]+/).filter(Boolean).length <= 3;
-    return nombraEsta(t) || RE_EXIM.test(t) || corto;
-  };
-  return juzgar;
-}
-
 /** El bloque que ve la persona. */
-function bloque({ storyId, rule, file, reason, summary, archivos = [], arnes }) {
+function bloque({ storyId, rule, file, reason, summary, arnes }) {
   const r = String(rule).trim();
   const llano = nombreEnLlano(r, { arnes });
-  const base = path.basename(String(file || ''));
-  const formas = [`«eximo ${r}»`, ...(llano ? [`«eximo ${llano}»`] : [])].join(' o ');
   // tres renglones: Claude Code antepone su rótulo a cada renglón del aviso
   return [
     `Te piden eximir un crítico de la historia ${storyId} (te lo muestra el arnés): regla ${r}${llano ? ` (${llano})` : ''}${file ? `, archivo ${file}` : ''}.`,
     `${summary ? `Qué dijo el revisor: ${summary}. ` : ''}Por qué lo quieren eximir: ${reason}. Un crítico eximido va al commit sin arreglar.`,
-    `Si estás de acuerdo, contestá ${formas}${archivos.length > 1 && base ? `, nombrando el archivo (${base})` : ''}. Un «dale» o un «apruebo» suelto no lo exime. Contestá sólo eso, con su motivo si querés; cualquier otra cosa, en otro mensaje.`,
+    'Si estás de acuerdo, aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No». Una respuesta en el chat no lo exime.',
   ].join('\n');
 }
 
@@ -252,12 +150,10 @@ function carpetaDeLaCorrida(marker) {
 }
 
 // Arma la muestra de un crítico, si corresponde. La constancia la escribe quien muestra, después de mostrar (`anotar`).
-function preparar({ sessionId, stateDir, home = os.homedir(), rule, file, reason, arnes }) {
+function preparar({ sessionId, stateDir, rule, file, reason, arnes }) {
   if (!rule || !reason || !sessionId) return null;
   const marker = leerMarcador(stateDir, sessionId);
   if (!marker || !marker.storyId) return null;
-  const legible = require('./person-ok.js').leerConversacion({ sesion: sessionId, home }).legible;
-  if (!legible) return null;
   const storyId = String(marker.storyId);
   const ya = mostrado({ stateDir, sessionId, storyId, rule, file, reason });
   if (ya && !ya.error) return null;
@@ -375,10 +271,7 @@ function mostrarJuntos({ pedidos, sessionId, stateDir, home = os.homedir(), arne
   if (!listos.length) return null;
   const partes = listos.map((x) => x.r.systemMessage);
   if (otros.aviso) partes[partes.length - 1] += ` (Aviso del arnés: ${otros.aviso}.)`;
-  if (listos.length > 1) {
-    const todas = listos.map((x) => `eximo ${String(x.p.rule).trim()}`).join('. ');
-    partes.push(`Son ${listos.length} críticos: podés contestar uno por mensaje, o todos en uno («${todas}»).`);
-  }
+  if (listos.length > 1) partes.push(`Son ${listos.length} críticos: se aprueban en la ventana de permiso, no en el chat.`);
   return { systemMessage: partes.join('\n'), anotar: () => { for (const x of listos) x.r.anotar(); } };
 }
 
@@ -412,4 +305,4 @@ function handle(event, opts = {}) {
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, primeraMuestra, archivosDeLaRegla, juez, bloque, palabras, pedidosDelComando, otrosAbiertos, paraMostrar, handle };
+module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, primeraMuestra, archivosDeLaRegla, bloque, palabras, pedidosDelComando, otrosAbiertos, paraMostrar, handle };

@@ -136,12 +136,12 @@ test('isCreatorSkill / ttlMsFrom / markState', () => {
   assert.equal(gate.markState({ at: new Date(NOW - TTL - 1000).toISOString() }, NOW, TTL), 'expired');
 });
 
-test('blockMessage: nombra el archivo, pide draft y el validador; saltearlo lo decide la persona, sin darle al agente cómo apagarlo', () => {
+test('blockMessage: nombra el archivo, pide draft y el validador; saltearlo lo firma la persona en la ventana, sin darle al agente cómo apagarlo @story-8.139 @ac-43', () => {
   const m = gate.blockMessage({ kind: 'new-not-draft', reason: 'x' }, { filePath: '/r/specs/story-as1.md', via: 'Write' });
   assert.match(m, /story-as1\.md/); assert.match(m, /status: draft/); assert.match(m, /tycon-story-validator/);
-  assert.match(m, /lo decide la persona/); assert.match(m, /«autorizo story-skill-bypass»/);
-  // ni el comando que dejaba la constancia ni la variable que apaga el freno: los dos los usó un modelo para saltearlo solo
-  assert.doesNotMatch(m, /marker\.js/); assert.doesNotMatch(m, /TYCON_STORY_SKILL_GATE/);
+  assert.match(m, /lo decide la persona/); assert.match(m, /marker\.js sign-file story-skill-bypass \/r\/specs\/story-as1\.md/);
+  // ni una frase que dictar ni la variable que apaga el freno: la firma la da la persona en la ventana, no el agente
+  assert.doesNotMatch(m, /«autorizo/); assert.doesNotMatch(m, /TYCON_STORY_SKILL_GATE/);
   assert.match(gate.blockMessage({ kind: 'draft-promote', reason: 'desde la terminal' }, { filePath: '/r/x.md' }), /tool Edit/);
 });
 
@@ -388,13 +388,14 @@ const escribir = (repo, sid, extra = {}) => sio.evaluate({
   event: { session_id: sid, tool_use_id: 'toolu_write', tool_name: 'Write' }, stateDir: extra.stateDir || mkState(),
 });
 
-test('T25 Bypass_FraseDeLaPersona_Pasa: con «autorizo story-skill-bypass» escrita por la persona, la historia sin la skill pasa y queda anotada', () => {
+test('T25 Bypass_FraseDeLaPersona_YaNoPasa @story-8.139 @ac-43: «autorizo story-skill-bypass» escrita por la persona no abre el freno; el cartel nombra la firma de la ventana', () => {
+  // con la firma de la ventana sí pasa: SignFile_ConLaVentana_ElArchivoPasa (T45, owner-window.test.js)
   const st = mkState();
   conversacion('s-ok', [persona('escribila a mano, autorizo story-skill-bypass')]);
   const r = escribir(mkRepo({ yaml: TOTORA_PATTERN }), 's-ok', { stateDir: st });
-  assert.equal(r.verdict.action, 'pass');
-  assert.equal(r.verdict.kind, 'persona');
-  assert.match(fs.readFileSync(path.join(st, 'bypass.log'), 'utf8'), /STORY_SKILL_BYPASS_USED.*"via":"persona"/);
+  assert.equal(r.verdict.action, 'block');
+  assert.match(r.message, /marker\.js sign-file story-skill-bypass/);
+  assert.ok(!fs.existsSync(path.join(st, 'bypass.log')), 'anotó un salteo sin firma');
 });
 
 test('T26 Bypass_FraseDelAgente_Frena: la frase escrita por el agente, preguntada o negada no abre el freno', () => {
@@ -455,7 +456,7 @@ test('T7 Gate_NuevaListaSinConstancia_Frena: con la marca de la llamada a la ski
   assert.equal(gate.markState(sio.readMark(st, 's7'), Date.now(), TTL), 'valid');
 });
 
-test('T8 Gate_PasoAReadySinConstancia_Frena: de draft a ready-for-dev sin constancia frena; con el validador o la frase de la persona pasa; sed -i frena', () => {
+test('T8 Gate_PasoAReadySinConstancia_Frena: de draft a ready-for-dev sin constancia frena; con el validador pasa; con la frase de la persona frena (8.139); sed -i frena', () => {
   const repo = mkRepo({ yaml: TOTORA_PATTERN });
   const p = borrador(repo);
   conversacion('s8a', [persona('creá una historia para esto')], 'toolu_edit');
@@ -465,8 +466,9 @@ test('T8 Gate_PasoAReadySinConstancia_Frena: de draft a ready-for-dev sin consta
   const st = mkState();
   assert.equal(editar(p, 's8b', 'status: draft', 'status: ready-for-dev', st), null);
   assert.match(gatesLog(st), /"status":"validated"/);
+  // @story-8.139: la frase ya no firma; lo firma la persona en la ventana (T45)
   conversacion('s8c', [persona('pasala vos, autorizo story-skill-bypass')], 'toolu_edit');
-  assert.equal(editar(p, 's8c', 'status: draft', 'status: ready-for-dev', mkState()), null);
+  assert.ok((editar(p, 's8c', 'status: draft', 'status: ready-for-dev', mkState()) || {}).block, 'la frase abrió el freno');
   // la constancia es de ESTA historia: el validador sobre otra no abre ésta
   conversacion('s8d', [...validado(path.join(repo, 'specs', 'otra.md'))], 'toolu_edit');
   assert.ok(editar(p, 's8d', 'status: draft', 'status: ready-for-dev', mkState()).block);

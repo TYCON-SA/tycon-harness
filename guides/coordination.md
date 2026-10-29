@@ -45,11 +45,10 @@ El nombre de una sesión es el de su archivo de sesión: el mismo que usan los m
 
 La coordinadora abre una sesión nueva con `coordination.js open --name <nombre> --cwd <carpeta> -- <encargo>`. Abre una
 sesión de verdad, de fondo, nunca un subagente, y devuelve cómo entrar a mirarla (`claude attach <nombre>`). Antes de
-abrir, mira tres cosas, en orden, y si una falla no abre y dice por qué:
+abrir, mira dos cosas, en orden, y si una falla no abre y dice por qué:
 
 1. El nombre: sólo letras, números, guion y guion bajo, y que no lo use otra sesión viva.
-2. El encargo: si trae una frase de permiso del dueño, no abre (ver «La frase del dueño»).
-3. El tope: si ya trabajan tantas como el tope, no abre.
+2. El tope: si ya trabajan tantas como el tope, no abre.
 
 `open` nunca reintenta. Si la herramienta se niega porque nadie aprobó la carpeta, dice en una línea qué carpeta tiene
 que abrir el dueño una vez; mientras tanto, la sesión la abre el dueño y la coordinadora le da el encargo. La
@@ -118,13 +117,11 @@ que no falta firmar nada.
 Los pedidos al repo público entran por su cola. Los del repo privado nacen en borrador, y la coordinadora los publica
 en orden, cuando su par público ya entró.
 
-## La frase del dueño
+## Las firmas del dueño
 
-Una frase de permiso del dueño («autorizo …») la escribe él, en su chat. Si otra sesión la escribe o la reenvía, el
-permiso deja de probar que lo dio una persona. Por eso la coordinadora nunca la pone en un mensaje a otra sesión, y
-`open` no abre una sesión cuyo encargo la trae, ni siquiera citada: la frase la escribe el dueño en la sesión nueva.
-
-El reenvío del ok de un dev con su cita no es una frase de permiso y sigue como siempre.
+Una frase en el chat, en un encargo o en un mensaje entre sesiones no firma nada: el arnés no lee la conversación para
+firmar. El dueño firma en la ventana de permiso o en su terminal, y lo que puede firmar la coordinadora en su nombre
+lo dice `guides/firmas-del-arnes.md`.
 
 ## Los avisos al dueño
 
@@ -144,6 +141,5 @@ Lo mide el medidor de estilo que ya existe; esta receta no agrega otro.
 | Confirmar que una firma falta antes de pedirla | nadie | Cómo se confirma depende de cada firma; `signature` sólo evita dos archivos con el mismo comando. |
 | Un archivo por firma, borrado al firmar | aviso | `status` cuenta las firmas pendientes; `signature` no escribe un segundo archivo con el mismo comando. |
 | Pedidos en orden | nadie | Ningún dato de la máquina dice qué pedido es par de cuál sin preguntarle a la red en cada turno. |
-| La frase del dueño no la escribe otra sesión | freno | `open` no abre una sesión cuyo encargo la trae. Un mensaje entre sesiones todavía no lo mira nada. |
 | Avisos cortos y llanos | aviso | El medidor de estilo que ya existe. |
-| Codex no coordina | aviso | `/coordinate` lo dice en Codex y no sigue. Codex sí manda mensajes con codex queue, pero ese comando no pasa por una herramienta que el freno de la frase pueda mirar. |
+| Codex no coordina | aviso | `/coordinate` lo dice en Codex y no sigue. Codex sí manda mensajes con codex queue, pero ese comando no pasa por una herramienta que el arnés pueda mirar. |

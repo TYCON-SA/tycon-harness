@@ -2,8 +2,7 @@
 /**
  * waiver-display.test.js — firmar un criterio que no se puede probar en vivo: el arnés le muestra el criterio a la
  * persona, la firma la da en la ventana de permiso (la cita del chat ya no firma), no se acepta el reenvío de otra
- * sesión, y el bloqueo sin terminal dice en llano las dos vías. El juez de la respuesta se prueba en la librería mientras
- * siga ahí.
+ * sesión, y el bloqueo sin terminal dice en llano las dos vías.
  *
  * Todo corre los comandos de verdad contra un HOME y un repo de juguete. 0 deps (node:test).
  */
@@ -20,6 +19,7 @@ const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const { conVentana } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const TEXTO = 'el aviso queda registrado en el servicio externo del cliente';
 const RAZON = 'el servicio externo no tiene ambiente de prueba';
+const VENTANA = /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo firma\./;
 // stable-data: las horas de la conversación van después de la muestra, que se anota con el reloj real
 const T = (seg) => new Date(Date.now() + 60000 + seg * 1000).toISOString();
 const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-20T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-20T12:00:00Z' };
@@ -93,7 +93,8 @@ test('WaiverShown_BashGate_ShowsCriterion @story-8.78 @ac-1', () => {
   assert.match(msg, /servicio externo del cliente/, 'el texto del criterio');
   assert.match(msg, /no tiene ambiente de prueba/, 'por qué no se puede probar en vivo');
   assert.match(msg, /T1/, 'la prueba que lo cubre');
-  assert.match(msg, /«firmo el AC 1»/);
+  assert.match(msg, VENTANA);
+  assert.doesNotMatch(msg, /«firmo /, 'no enseña a contestar en el chat');
   const g = gates(lab).filter((x) => x.name === 'ac-shown');
   assert.equal(g.length, 1);
   assert.deepEqual([g[0].story, g[0].ac], ['9.94', 1]);
@@ -107,7 +108,7 @@ test('WaiverShown_Minimal_RequestFile @story-8.78 @ac-2', () => {
   assert.equal(r.status, 0, r.stderr);
   const out = r.stdout.trim() ? JSON.parse(r.stdout) : {};
   assert.match(String(out.systemMessage || ''), /servicio externo del cliente/, r.stdout);
-  assert.match(String(out.systemMessage || ''), /«firmo el AC 1»/);
+  assert.match(String(out.systemMessage || ''), VENTANA);
   assert.equal(gates(lab).filter((x) => x.name === 'ac-shown').length, 1);
 });
 
@@ -183,38 +184,20 @@ test('WaiverShown_OtherCopy_NotSigned @story-8.78 @ac-4', () => {
   assert.equal(firmados(lab).length, 0);
 });
 
-test('WaiverJudge_OnlyAPlainYesSigns @story-8.78 @ac-4', () => {
-  const juez = require(path.join(SCRIPTS, 'lib', 'waiver-display.js')).juez([1]);
-  for (const t of ['¿firmo el AC 1?', 'no quiero firmar el AC 1', 'revisá el AC 1', 'apruebo, seguí', 'no lo firmo, el AC 1 está mal']) {
-    assert.ok(juez(t), `«${t}» no es un sí`);
-  }
-  for (const t of ['firmo el AC 1', 'Firmo el criterio 1: no hay ambiente de prueba', 'sí, lo firmo, AC 1']) {
-    assert.equal(juez(t), null, `«${t}» es un sí`);
-  }
-});
-
-test('WaiverJudge_ListaDeCriterios: «firmo los AC 3, 5 y 7» firma los tres, y una lista incompleta no', () => {
-  const juez = require(path.join(SCRIPTS, 'lib', 'waiver-display.js')).juez([3, 5, 7]);
-  for (const t of ['firmo los AC 3, 5 y 7', 'firmo los criterios 3, 5 y 7', 'Firmo ACs 3, 5 e 7', 'firmo el AC 3, el AC 5 y el AC 7', 'firmo #3, #5 y #7']) {
-    assert.equal(juez(t), null, `«${t}» firma los tres`);
-  }
-  for (const t of ['firmo los AC 3 y 5', 'firmo los AC 3, 5 y 17', 'firmo los AC 35 y 7', 'no firmo los AC 3, 5 y 7', '¿firmo los AC 3, 5 y 7?']) {
-    assert.ok(juez(t), `«${t}» no firma los tres`);
-  }
-});
-
-test('WaiverShown_VariosCriterios: el aviso propone la firma de todos en una sola frase', () => {
+test('WaiverShown_VariosCriterios: el aviso muestra cada criterio y dice que se firman en la ventana', () => {
   const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  assert.equal(wd.juez, undefined, 'el juez de la respuesta en el chat ya no existe');
   const msg = wd.bloque({ storyId: '9.94', criterios: [{ ac: 3, text: 'a' }, { ac: 5, text: 'b' }, { ac: 7, text: 'c' }] });
-  assert.ok(msg.includes('«firmo los AC 3, 5 y 7»'), msg);
-  assert.equal(wd.juez([3, 5, 7])('firmo los AC 3, 5 y 7'), null, 'la frase que propone el aviso firma');
+  for (const n of [3, 5, 7]) assert.match(msg, new RegExp(`^AC ${n}: `, 'm'), msg);
+  assert.match(msg, /3 criterios/);
+  assert.match(msg, VENTANA);
 });
 
-test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y cómo contestar', () => {
+test('WaiverShown_AvisoCorto: un renglón por criterio, más el encabezado y dónde se firma', () => {
   // Claude Code antepone su propio rótulo a cada renglón del aviso: cada renglón de más es un aviso repetido en pantalla
   const msg = mostrar(laboratorio());
   assert.ok(msg.split('\n').length <= 3, msg);
-  for (const t of ['historia 9.94', 'servicio externo del cliente', 'no tiene ambiente de prueba', 'T1', '«firmo el AC 1»', 'cuenta como probado']) {
+  for (const t of ['historia 9.94', 'servicio externo del cliente', 'no tiene ambiente de prueba', 'T1', 'ventana de permiso', 'cuenta como probado']) {
     assert.ok(msg.includes(t), `falta «${t}»:\n${msg}`);
   }
 });

@@ -198,47 +198,6 @@ if ps_match '^[[:space:]]*\$env:TYCON_SAFETY_OFF[[:space:]]*=[[:space:]]*["'"'"'
   SAFETY_OFF_PEDIDO=1
 fi
 
-# escape_ok <VARIABLE> — ¿la persona autorizó ese escape en esta conversación? Deja en ESC_VIA el camino
-# (`persona` o `reenvio`), en ESC_RELEVO la sesión que lo reenvió y, si no, en ESC_MOTIVO el porqué y en
-# ESC_SIN_CONV=1 si la conversación no se puede leer (Codex), y ESC_PASO=1 si el renglón del pedido todavía no estaba
-# escrito (se reintenta el comando). Cuesta un proceso de node: se llama sólo cuando el comando trae un escape y una
-# regla lo frenaría.
-ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0; ESC_PASO=0
-escape_ok() {
-  ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0; ESC_PASO=0
-  local lib sid tuid out rc
-  # en una lista con `||`: si el `cd` fallara, una asignación suelta dispararía el `trap 'exit 0' ERR`
-  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/escape-ok.js" || lib=""
-  if [[ -z "$lib" || ! -f "$lib" ]] || ! command -v "$HNODE" >/dev/null 2>&1; then
-    ESC_MOTIVO="este arnés no trae con qué buscar la autorización"; return 1
-  fi
-  sid="$(read_field session_id 2>/dev/null)" || sid=""
-  # el pedido que se juzga: la punta de la cadena de la conversación
-  tuid="$(read_field tool_use_id 2>/dev/null)" || tuid=""
-  # el registro de la conversación que dice la herramienta: se lee ése, no el primero con ese nombre
-  local tp
-  tp="$(read_field transcript_path 2>/dev/null)" || tp=""
-  # en una lista con `||`: un `out=$(…)` suelto que sale ≠ 0 dispararía el `trap 'exit 0' ERR` y dejaría pasar el comando
-  # $2 y $3 sólo en la salida de una ejecución perdida: la frase vale desde su apertura y, con 1, sin reenvío
-  local extra=()
-  [[ -n "${2:-}" && "${2:-}" != "-" ]] && extra+=(--since "$2")
-  [[ "${3:-}" == "1" ]] && extra+=(--no-relay)
-  [[ -n "$tp" ]] && extra+=(--transcript "$tp")
-  # el pedido va por la entrada, nunca en la línea de comandos: ahí lo ve `ps`, y con él se arma un pedido forjado
-  out="$(printf '%s' "$tuid" | "$HNODE" "$lib" --shell --variable "$1" --session "$sid" --tool-use-id-stdin ${extra[@]+"${extra[@]}"} 2>/dev/null)" && rc=0 || rc=$?
-  local k v
-  while IFS='=' read -r k v; do
-    case "$k" in
-      via) ESC_VIA="$v" ;;
-      relevo) ESC_RELEVO="$v" ;;
-      motivo) ESC_MOTIVO="$v" ;;
-      sinConversacion) [[ "$v" == "1" ]] && ESC_SIN_CONV=1 ;;
-      pasoNoUbicado) [[ "$v" == "1" ]] && ESC_PASO=1 ;;
-    esac
-  done <<< "$out"
-  [[ "$rc" == "0" && -n "$ESC_VIA" ]]
-}
-
 # ow_gate <firma>… — la ventana de permiso (lib/owner-window.js gate): el evento va por la entrada y las firmas `freno`
 # que vio este freno, con `--escape`; las firmas de los guiones las lee el propio módulo del comando. Deja OW_DECISION
 # (ask, deny, allow o none), OW_TEXTO, OW_FIRMA, OW_VIA, OW_RELEVO y OW_JSON (lo que se emite para pedir la ventana).
@@ -284,7 +243,10 @@ ow_vencer() {
     # la carpeta vieja del estado, dentro de la de la herramienta, por patrón: el filtro sólo decide si se consulta
     dirs+=("$d/.tycon/state/owner-window" "$d/.*/.tycon-pipeline/owner-window")
   done
-  [[ -n "${TYCON_HOME:-}" ]] && dirs+=("$TYCON_HOME/state/owner-window")
+  # una casa escrita a la Windows (`C:\…`) va con barras: en el patrón, una barra invertida escapa la letra siguiente
+  local th="${TYCON_HOME:-}"
+  case "$th" in [A-Za-z]:*) th="${th//\\//}" ;; esac
+  [[ -n "$th" ]] && dirs+=("$th/state/owner-window")
   if [[ -z "$casa" ]]; then
     hay=1
   else
@@ -553,7 +515,7 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_
     fi
   fi
 done
-ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+ESC_VARIABLE=""; ESC_VALOR=""
 
 # esc_c1_negar <VARIABLE> — la ventana negó un escape por variable: frena con el motivo de esa variable. El cartel es
 # lo que dijo la ventana (por qué no, y cómo se firma en la terminal), quién lo decide y, en las del pipeline, la salida
@@ -661,10 +623,7 @@ ESC_CARTEL=""
 # comando.
 #
 # ESC-C6: aprobar el plan (`marker.js complete-step approve-plan|3 --approved "<cita>"`, `--mockup-approved`,
-# `approve-mockup --approved`) con una cita que no está en un mensaje de la persona, ni es la respuesta que eligió en
-# una pregunta con opciones (leída del resultado de esa herramienta), ni la reenvió la sesión designada (con
-# `--delegated-by`, sólo ésta) frena. No tiene frase para saltearlo: la salida es pedirle a la persona que apruebe.
-# Sin conversación legible (Codex) no mira y queda la constancia `sin-conversacion`. Lo decide lib/run-close.js.
+# `approve-mockup --approved`) es una firma del guion: la pide la ventana siempre; la cita no se busca en la conversación.
 # El filtro mira el comando sin comillas ni barras invertidas (`_esc_cmd`, de ESC-C1): `pipe''line.js` es `pipeline.js`
 # para el shell, y sin esto no llegaba al lector. Un comando que corre `node` o `bun` también va al lector: el nombre del
 # guion puede venir armado por el shell (`pipelin?.js`, `mar$'k'er.js`), y el lector lo trata como cualquiera de los dos.
@@ -675,15 +634,12 @@ shopt -s nocasematch
 shopt -u nocasematch
 if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee]* || "$_c3_node" == "1" ]]; then
   _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""
-  _c3_tuid="$(read_field tool_use_id 2>/dev/null)" || _c3_tuid=""
-  _c3_tp="$(read_field transcript_path 2>/dev/null)" || _c3_tp=""
-  _c3_extra=(); [[ -n "$_c3_tp" ]] && _c3_extra+=(--transcript "$_c3_tp")
   _c3_shell="bash"; tool_is_ps && _c3_shell="powershell"
   _c3_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/run-close.js" || _c3_lib=""
   _c3_out=""; _c3_leido=0
   if [[ -n "$_c3_lib" && -f "$_c3_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
-    # el pedido va por la entrada, en el primer renglón y antes del comando: en la línea de comandos lo ve `ps`
-    if _c3_out="$({ printf '%s\n' "$_c3_tuid"; printf '%s' "$CMD"; } | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" ${_c3_extra[@]+"${_c3_extra[@]}"} --tool-use-id-stdin --command-stdin --shell "$_c3_shell" 2>/dev/null)"; then
+    # el comando va por la entrada
+    if _c3_out="$(printf '%s' "$CMD" | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" --command-stdin --shell "$_c3_shell" 2>/dev/null)"; then
       _c3_leido=1
     else
       _c3_out=""
@@ -697,14 +653,11 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
       "No pude leer el comando: el intérprete del arnés no está o el lector de comandos se cayó. Un comando que corre los guiones del pipeline puede traer un escape que lo decide la persona." \
       "Revisá el intérprete del arnés (el comando del arnés que muestra su versión dice si está bien instalado). Si el comando no corre el pipeline, escribilo sin nombrar marker ni pipeline."
   fi
-  _c3_motivo=""; _c3_frenos=(); _c3_cubre=(); _c3_aprob=(); _c3_sinconv=0
+  _c3_motivo=""; _c3_frenos=()
   while IFS= read -r _c3_l; do
     case "$_c3_l" in
       motivo=*) _c3_motivo="${_c3_l#motivo=}" ;;
       frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
-      cubre=*) _c3_cubre+=("${_c3_l#cubre=}") ;;
-      aprobacion=*) _c3_aprob+=("${_c3_l#aprobacion=}") ;;
-      sinconversacion=1) _c3_sinconv=1 ;;
     esac
   done <<< "$_c3_out"
   # Cada escape va a la ventana de permiso (más abajo, después de ESC-C7), con lo que hace falta para frenar con su
@@ -739,20 +692,9 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
     OW_ESCAPES+=("escape:${_c3_clave}")
     _c3_negables+=("${_c3_clave}"$'\t'"${_c3_esc}"$'\t'"${_c3_sub}"$'\t'"${_c3_a1}")
   done
-  # una decisión, una frase: el paso que cubre la frase ya dada pasa, con su constancia y la vía de esa frase
-  for _c3_f in ${_c3_cubre[@]+"${_c3_cubre[@]}"}; do
-    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_por _c3_via _c3_rel <<< "$_c3_f" || true
-    [[ "$_c3_rel" == "-" ]] && _c3_rel=""
-    case "$_c3_esc" in
-      "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
-      *) _c3_clave="$_c3_esc" ;;
-    esac
-    constancia ESC-C3 escape "$_c3_via" "$_c3_rel" "$_c3_sid" "$_c3_clave"
-  done
-  # ESC-C6: aprobar el plan es una firma del guion; la pide la ventana siempre, con la cita o sin ella (más abajo). Lo
-  # que el lector dice de la cita (`aprobacion=`) ya no frena.
+  # ESC-C6: aprobar el plan es una firma del guion; la pide la ventana siempre (más abajo).
 fi
-ESC_CARTEL=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+ESC_CARTEL=""
 
 # --- La ventana de permiso: las firmas del dueño -----------------------------
 # Una sola consulta a lib/owner-window.js con las firmas `freno` que juntaron ESC-C1, ESC-C3 y ESC-C4; las de los
@@ -849,8 +791,8 @@ fi
 ESC_CARTEL=""
 
 # ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y la exención de
-# esa prueba (`dod_runtime_exempt: true`) escritos por la terminal los decide la persona («autorizo
-# ALLOW_DOD_EVIDENCE_WRITE», «autorizo dod_runtime_exempt»). Frena un comando que crea, toca o copia un archivo con ese
+# esa prueba (`dod_runtime_exempt: true`) escritos por la terminal los decide la persona, que los firma con
+# `marker.js sign-file` y deja la escritura al Edit o Write. Frena un comando que crea, toca o copia un archivo con ese
 # nombre (`touch`, `cp`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …) y uno que escribe la
 # exención en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`); mirarlo, buscarlo, borrarlo o sacar la exención no frena.
 # Mira el comando sin comillas y en minúsculas; lo que no ve: el nombre armado en una variable o un guion que lo escribe.
@@ -865,6 +807,22 @@ if [[ -n "$_c5_esc" ]]; then
   _c5_min="$(printf '%s' "$_esc_cmd" | tr '[:upper:]' '[:lower:]')" || _c5_min=""
   if [[ -z "$_c5_min" ]]; then _c5_min="$(printf '%s' "$_esc_cmd" | awk '{ print tolower($0) }')" || _c5_min=""; fi
   if [[ -z "$_c5_min" ]]; then _c5_min="touch allow_dod_evidence_write"; fi
+  # pedir la firma no crea el permiso: el comando entero y solo, `node <marker.js de este arnés> sign-file
+  # allow_dod_evidence_write <archivo>`, sin ningún otro carácter de la consola, no se mira como creación; la ruta tiene
+  # que llevar al marker.js de este arnés, no a uno que sólo se llama igual
+  # entre las palabras, sólo espacios: un salto de línea o un tab parte el comando en dos para la consola
+  # se mira el comando tal como llega, no el limpio: la limpieza borra acentos graves y barras que la consola sí ejecuta
+  _c5_firma="^ *node +([A-Za-z0-9_./~:-]+) +sign-file +allow_dod_evidence_write +[A-Za-z0-9_./~:@%+=,-]+ *\$"
+  shopt -s nocasematch
+  if [[ "$CMD" =~ $_c5_firma ]]; then
+    shopt -u nocasematch
+    _c5_m="${BASH_REMATCH[1]}"
+    [[ "$_c5_m" == "~/"* ]] && _c5_m="$HOME/${_c5_m#\~/}"
+    _c5_propio="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../skills/tycon-pipeline/scripts" 2>/dev/null && pwd -P)" || _c5_propio=""
+    _c5_suyo="$(cd "$(dirname "$_c5_m")" 2>/dev/null && pwd -P)" || _c5_suyo=""
+    if [[ -n "$_c5_propio" && "$_c5_suyo" == "$_c5_propio" && "${_c5_m##*/}" == "marker.js" ]]; then _c5_min="node marker.js sign-file"; fi
+  fi
+  shopt -u nocasematch
   _c5_crea="(^|[^a-z0-9_-])(touch|cp|mv|install|ln|tee|node|python3?|perl|ruby|deno|bun|new-item|ni|set-content|sc|add-content|ac|out-file|copy-item|move-item)([[:space:]][^;&|]*)?allow_dod_evidence_write|>[[:space:]]*[^;&|[:space:]]*allow_dod_evidence_write"
   # sacar una línea con sed (`/…dod_runtime_exempt…/d`) no la agrega
   _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*dod_runtime_exempt[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
@@ -882,16 +840,12 @@ if [[ -n "$_c5_esc" ]]; then
   fi
   if [[ -n "$_c5_esc" ]]; then
     _c5_sid="$(read_field session_id 2>/dev/null)" || _c5_sid=""
-    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c5_esc"; then
-      constancia ESC-C5 escape "$ESC_VIA" "$ESC_RELEVO" "$_c5_sid" "$_c5_esc"
+    # por la consola frena siempre: la firma de la ventana (marker.js sign-file) la consume sólo el Edit o Write, porque
+    # de un comando de consola no se sabe con certeza a qué archivo escribe
+    if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
+      constancia ESC-C5 escape ambiente "" "$_c5_sid" "$_c5_esc"
     else
-      # el cartel no dicta la frase: lo que la persona hace para darlo está en la guía. El motivo que la nombra tampoco va
-      _c5_motivo="$ESC_MOTIVO"; [[ "$_c5_motivo" == *autoriz* ]] && _c5_motivo=""
-      if [[ "$ESC_PASO" == "1" ]]; then
-        ESC_CARTEL="No pude leer el registro de la conversación para este paso: todavía no estaba escrito. Reintentá el mismo comando una vez, sin pedirle nada a la persona; si vuelve a salir esto, decíselo."
-      else
-        ESC_CARTEL="Esto lo decide la persona, no el agente: explicale qué falta y por qué. Cómo lo da ella está en guides/safety-guard.md.${_c5_motivo:+ (No valió: ${_c5_motivo}.)}"
-      fi
+      ESC_CARTEL="Esto lo decide la persona, no el agente: explicale qué falta y por qué. Si quiere darlo, lo firma en la ventana de permiso con marker.js sign-file ${_c5_esc} <archivo>, y la escritura va después con Edit o Write, nunca por la consola. Cómo lo da ella está en guides/safety-guard.md."
       if [[ "$_c5_esc" == "ALLOW_DOD_EVIDENCE_WRITE" ]]; then
         block "ESC-C5" \
           "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \
@@ -904,11 +858,12 @@ if [[ -n "$_c5_esc" ]]; then
     fi
   fi
 fi
-ESC_CARTEL=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+ESC_CARTEL=""
 
-# ESC-C2: escribir en las conversaciones guardadas (`~/.claude/projects/`). La autorización de un escape se lee de ahí;
-# un renglón agregado a mano no está en la cadena de la conversación (escape-ok.js lo descarta), y además se frena el
-# camino directo. Sólo mira un comando que nombra la ruta `.claude/projects/` (sin contar la memoria del agente,
+# ESC-C2: escribir en las conversaciones guardadas (`~/.claude/projects/`). Ninguna firma sale de ahí, pero sí la
+# constancia de que el validador corrió sobre una historia, la del plan que vio la persona y lo que una historia dice
+# haber hecho: un renglón agregado a mano no está en la cadena de la conversación (lib/person-ok.js lo descarta), y
+# además se frena el camino directo. Sólo mira un comando que nombra la ruta `.claude/projects/` (sin contar la memoria del agente,
 # `projects/<proyecto>/memory/`, que vive ahí y se escribe legítimamente), y frena si una forma de escribir apunta a
 # ella dentro del mismo tramo del comando (entre `;`, `&` o `|`):
 #   · una redirección con destino en la ruta, o a un `.jsonl` por su nombre relativo después de entrar a ella con `cd`;
@@ -945,7 +900,7 @@ if [[ "$_esc_hit" == "0" ]] && tool_is_ps && ps_match "(>|out-file|set-content|a
 fi
 if [[ "$_esc_hit" == "1" ]]; then
   block "ESC-C2" \
-    "Escribe en las conversaciones guardadas (~/.claude/projects/). La autorización de un escape («autorizo …») se lee de ahí: escribirlas es fabricar lo que dijo la persona." \
+    "Escribe en las conversaciones guardadas (~/.claude/projects/). De ahí se lee que el validador corrió y qué plan vio la persona: escribirlas es fabricar lo que pasó en la conversación." \
     "Las conversaciones se leen, no se escriben. Para leer, tail, grep o un guion que sólo lee; para guardar lo leído, la salida a otra carpeta desde un guion en un archivo. ¿Sólo nombrabas la ruta en un texto? Este freno mira el comando entero: escribí ese texto en un archivo."
 fi
 
@@ -1295,9 +1250,9 @@ GIT_C4_SHELL_STRING="(^|[^A-Za-z0-9_.-])((bash|sh|zsh|dash|ksh)[[:blank:]]+(-[-A
 # coincidencia, sin tramo en el medio: el recorrido avanza de a una (ver el punto b). Tras `cd` o `-C`
 # van espacios o tabulaciones, no un salto de línea: un `cd` solo en su renglón no nombra nada.
 GIT_C4_NAV="(^|[^A-Za-z0-9_./-])(cd|pushd)[[:blank:]]+|(^|[[:space:]])-C[[:blank:]]+"
-# De una ruta absoluta, el tramo que se lee entero: desde la raíz hasta la última `/` anterior a la primera
-# variable, sustitución o comodín.
-GIT_C4_KNOWN_HEAD='^/[^$`*?[]*/'
+# De una ruta absoluta, el tramo que se lee entero: desde la raíz (`/` o, en Windows, `C:/`) hasta la última
+# `/` anterior a la primera variable, sustitución o comodín.
+GIT_C4_KNOWN_HEAD='^(/|[A-Za-z]:/)[^$`*?[]*/'
 # Cuándo un `cd`/`pushd` ARRANCA un comando (y entonces puede mover al shell): lo que tiene delante termina
 # en el principio, un separador, un salto de línea, o una palabra que abre un bloque. Una comilla no abre
 # un comando (`echo "cd <otro>"` es texto); `$(` tampoco cuenta: es un subshell, el shell de afuera no se mueve.
@@ -1782,7 +1737,9 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     # otro lado, valga lo que valga lo que falta. No vale si el comando trae un `..` en cualquier parte (lo
     # que no se lee podría salir de esa carpeta) ni si la ruta se armó con una variable asignada más de una vez.
     GIT_C4_HEAD_PROOF=0
-    if [[ "$GIT_C4_KNOWN" == "0" && "$GIT_C4_AMBIGUOUS" == "0" && "$CMD" != *..* && "$GIT_C4_DIR" =~ $GIT_C4_KNOWN_HEAD ]]; then
+    GIT_C4_SLASHED="$GIT_C4_DIR"
+    case "$GIT_C4_SLASHED" in [A-Za-z]:*) GIT_C4_SLASHED="${GIT_C4_SLASHED//\\//}" ;; esac
+    if [[ "$GIT_C4_KNOWN" == "0" && "$GIT_C4_AMBIGUOUS" == "0" && "$CMD" != *..* && "$GIT_C4_SLASHED" =~ $GIT_C4_KNOWN_HEAD ]]; then
       GIT_C4_HEAD="${BASH_REMATCH[0]%/}"
       if [[ -d "$GIT_C4_HEAD" ]] && ! git_c4_in_tree "$GIT_C4_HEAD" && ! git_c4_holds_tree "$GIT_C4_HEAD"; then GIT_C4_HEAD_PROOF=1; fi
     fi

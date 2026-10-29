@@ -60,18 +60,25 @@ function sinComillas(v) {
 function analizarHeredocs(cmd) {
   const lineas = String(cmd || '').split('\n');
   const pendientes = [];          // delimitadores de los heredocs abiertos, en orden
+  let dudoso = false;
   for (let i = 0; i < lineas.length; i++) {
     if (pendientes.length) {
       if (lineas[i].trim() === pendientes[0]) pendientes.shift();
       else lineas[i] = ' '.repeat(lineas[i].length);
       continue;
     }
-    const re = /<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\1/g;
+    const re = /<<-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\]+)\1/g;
+    // el que el shell no abre como heredoc (entre comillas, `<<<`, `$((`, la palabra pegada a una comilla)
+    const abre = /(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)/g;
+    const abiertos = new Set([...lineas[i].matchAll(abre)].map((x) => x.index));
     let m;
-    while ((m = re.exec(lineas[i]))) pendientes.push(m[2]);
+    while ((m = re.exec(lineas[i]))) {
+      pendientes.push(m[2]);
+      if (!abiertos.has(m.index)) dudoso = true;
+    }
   }
   // un heredoc sin cierre (o un `<<` que no era uno: entre comillas, `<<<`) deja el resto en blanco: «no sé»
-  return { texto: lineas.join('\n'), sinCierre: pendientes.length > 0 };
+  return { texto: lineas.join('\n'), sinCierre: pendientes.length > 0 || dudoso };
 }
 function sinCuerposDeHeredoc(cmd) { return analizarHeredocs(cmd).texto; }
 

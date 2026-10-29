@@ -16,6 +16,7 @@ const path = require('path');
 
 const SCRIPTS = path.join(__dirname, '..');
 const tree = require(path.join(SCRIPTS, 'lib', 'installed-tree.js'));
+const { conCarpetaPersonal } = require(path.join(__dirname, 'lib', 'fake-home.js'));
 const REPO_ROOT = path.join(SCRIPTS, '..', '..', '..');
 
 delete process.env.TYCON_HOME;
@@ -49,7 +50,8 @@ test('T1 Roots_ReleaseMachine', () => {
 });
 
 test('T1b Roots_OwnHomeElsewhereAndMissingSibling', () => {
-  // la casa del arnés en otra carpeta (TYCON_HOME) y una vecina que no está: se niega lo que hay, sin tirar
+  // la casa del arnés en otra carpeta (TYCON_HOME) y una vecina que no está: se niega lo que hay, sin tirar.
+  // TYCON_HOME vale sólo para el HOME de quien corre: la prueba se pone la carpeta personal de juguete
   const { home, own } = mkHome();
   const otra = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'casa-')));
   fs.renameSync(own, path.join(otra, 'casa'));
@@ -60,7 +62,7 @@ test('T1b Roots_OwnHomeElsewhereAndMissingSibling', () => {
   }
   process.env.TYCON_HOME = path.join(otra, 'casa');
   try {
-    const r = tree.roots({ home });
+    const r = conCarpetaPersonal(home, () => tree.roots({ home }));
     assert.deepEqual(r.sort(), ['harness', 'team', 'third-party'].map((d) => path.join(otra, 'casa', d)).sort());
   } finally { delete process.env.TYCON_HOME; }
 });

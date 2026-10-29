@@ -182,6 +182,7 @@ OWN_NODE_DIR="$LAB_HOME/.tycon/node/current/bin"; mkdir -p "$OWN_NODE_DIR"
 printf '#!/usr/bin/env bash\necho x >> "%s"\nexec "%s" "$@"\n' "$BASE/own-node.uses" "$(command -v node)" > "$OWN_NODE_DIR/node"; chmod +x "$OWN_NODE_DIR/node"
 harness_lab_fake_node 12.11.1
 for respaldo in sh ps1; do
+  if [ "$respaldo" = ps1 ] && ! command -v pwsh >/dev/null 2>&1; then echo "⏭ harness-bootstrap: NO MEDIDO — T14c (ps1) por ejecución: no hay pwsh en esta máquina"; continue; fi
   : > "$FAKE_LOG"; : > "$BASE/own-node.uses"; A0="$(applier_runs)"
   if [ "$respaldo" = sh ]; then PATH="$LAB_BIN:$PATH" bash -c "$NEW_LINE" >"$BASE/line.out" 2>"$BASE/line.err"; rc=$?
   else PATH="$LAB_BIN:$PATH" POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off pwsh -NoProfile -NonInteractive -File "$HDIR/bootstrap-fallback.ps1" >"$BASE/line.out" 2>&1; rc=$?; fi
@@ -196,6 +197,7 @@ NVM22="$NVM_DIR/versions/node/v22.0.0/bin"; NVMW="$LAB/nvm-windows/v22.0.0"; mkd
 printf '#!/usr/bin/env bash\necho x >> "%s"\nexec "%s" "$@"\n' "$BASE/own-node.uses" "$(command -v node)" > "$NVM22/node"; chmod +x "$NVM22/node"
 cp "$NVM22/node" "$NVMW/node.exe"
 for respaldo in sh ps1; do
+  if [ "$respaldo" = ps1 ] && ! command -v pwsh >/dev/null 2>&1; then echo "⏭ harness-bootstrap: NO MEDIDO — T14c (ps1) por ejecución: no hay pwsh en esta máquina"; continue; fi
   : > "$FAKE_LOG"; : > "$BASE/own-node.uses"
   if [ "$respaldo" = sh ]; then PATH="$LAB_BIN:$PATH" bash -c "$NEW_LINE" >/dev/null 2>&1
   else PATH="$LAB_BIN:$PATH" NVM_HOME="$LAB/nvm-windows" POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off pwsh -NoProfile -NonInteractive -File "$HDIR/bootstrap-fallback.ps1" >/dev/null 2>&1; fi
@@ -204,6 +206,7 @@ done
 rm -rf "$NVM_DIR" "$LAB/nvm-windows"
 # el espejo: sin otro Node de 22 o más, la línea del respaldo dice qué hacer (y el respaldo hace su trabajo, como siempre)
 for respaldo in sh ps1; do
+  if [ "$respaldo" = ps1 ] && ! command -v pwsh >/dev/null 2>&1; then echo "⏭ harness-bootstrap: NO MEDIDO — T14c (ps1) por ejecución: no hay pwsh en esta máquina"; continue; fi
   A0="$(applier_runs)"
   if [ "$respaldo" = sh ]; then PATH="$LAB_BIN:$PATH" bash -c "$NEW_LINE" >/dev/null 2>&1
   else PATH="$LAB_BIN:$PATH" POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off pwsh -NoProfile -NonInteractive -File "$HDIR/bootstrap-fallback.ps1" >/dev/null 2>&1; fi

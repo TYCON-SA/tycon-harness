@@ -288,7 +288,7 @@ Integración Azure DevOps: al crear una story Mary+GOLD se crea automáticamente
 
 ## guides/safety-guard.md
 
-Freno de mano del harness: hook `PreToolUse` matcher `Bash|PowerShell` que bloquea comandos destructivos irreversibles (`rm -rf /`, `git push --force` a main, `curl|bash`, `DROP DATABASE`, `npm publish`, lectura de `.ssh`/`.aws`/`.env`, etc.). **Prendido por default**, opt-out vía `TYCON_SAFETY_GUARD=0`. El escape por comando (`TYCON_SAFETY_OFF=1 <cmd>`) vale sólo con la frase de la persona, «autorizo TYCON_SAFETY_OFF», en el chat. Inspirado en ECC safety-guard, adaptado al stack TYCON.
+Freno de mano del harness: hook `PreToolUse` matcher `Bash|PowerShell` que bloquea comandos destructivos irreversibles (`rm -rf /`, `git push --force` a main, `curl|bash`, `DROP DATABASE`, `npm publish`, lectura de `.ssh`/`.aws`/`.env`, etc.). **Prendido por default**, opt-out vía `TYCON_SAFETY_GUARD=0`. El escape por comando (`TYCON_SAFETY_OFF=1 <cmd>`) lo firma la persona en la ventana de permiso o en su terminal. Inspirado en ECC safety-guard, adaptado al stack TYCON.
 
 ## guides/maintaining/context-budget.md
 

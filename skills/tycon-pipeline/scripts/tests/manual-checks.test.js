@@ -4,8 +4,9 @@
  *
  * Con la opción de la organización prendida (`qa.manual_check: required`, sólo desde el perfil del equipo), el arnés le
  * muestra a la persona qué criterios va a marcar (la puerta Bash antes de `marker.js mark-tested`, o el despachador de
- * ediciones al escribir `marca-pedida.json`) y deja la constancia `manual-check-shown`. La marca vale si la persona
- * contesta después nombrando cada criterio; un reenvío de otra sesión no marca. El cierre frena con lo que falta.
+ * ediciones al escribir `marca-pedida.json`) y deja la constancia `manual-check-shown`. La marca la aprueba la persona en
+ * la ventana de permiso, o la firma en su terminal: ni la cita ni el reenvío de otra sesión marcan. El cierre frena con
+ * lo que falta.
  *
  * El arnés se copia a una carpeta propia con su perfil del equipo: la opción se lee del perfil del árbol, nunca de una
  * variable. 0 deps (node:test).
@@ -127,7 +128,8 @@ test('ManualChecks_PuertaBashLaMuestra @story-7.46 @ac-9', () => {
   const msg = mostrar(lab, '2');
   assert.match(msg, /Vas a marcar como probado a mano, en la historia 9\.94:/);
   assert.match(msg, /Criterio 2 — Un pedido ya despachado no muestra el botón «Cancelar»\./);
-  assert.match(msg, /contestá nombrándolo: «probé a mano el criterio 2»/);
+  assert.match(msg, /aprobalo en la ventana de permiso que sale a continuación; si no, elegí «No»\. Una respuesta en el chat no lo marca\./);
+  assert.doesNotMatch(msg, /contestá|«probé /, 'no enseña a contestar en el chat');
   const g = gates(lab).filter((x) => x.name === 'manual-check-shown');
   assert.equal(g.length, 1);
   assert.deepEqual([g[0].story, g[0].acs, g[0].sessionId], ['9.94', [2], lab.sid]);
@@ -135,11 +137,11 @@ test('ManualChecks_PuertaBashLaMuestra @story-7.46 @ac-9', () => {
   assert.equal(mostrar(lab, '2'), '');
   // con --terminal: no se muestra (la persona lo ve en su terminal)
   assert.equal(puertaBash(lab, comando('3', ' --terminal')).stdout.trim(), '');
-  // sin conversación legible: ni muestra ni constancia
+  // sin conversación legible también se muestra: la marca no sale de la conversación
   const sin = laboratorio({ sid: 's-mc-sin' });
   fs.rmSync(path.join(sin.home, '.claude', 'projects'), { recursive: true, force: true });
-  assert.equal(mostrar(sin, '2'), '');
-  assert.equal(gates(sin).filter((x) => x.name === 'manual-check-shown').length, 0);
+  assert.match(mostrar(sin, '2'), /Criterio 2 — /);
+  assert.equal(gates(sin).filter((x) => x.name === 'manual-check-shown').length, 1);
 });
 
 test('ManualChecks_InstalacionMinima_AlEscribirElPedido @story-7.46 @ac-9', () => {
@@ -208,21 +210,8 @@ test('ManualChecks_Rechazos @story-7.46 @ac-11', () => {
   assert.equal(marcas(lab).length, 0);
 });
 
-test('ManualChecks_JuezLeeRespuestasDeVerdad @story-7.46 @ac-10 @ac-11 — lo que escribe una persona, no sólo la frase del bloque', () => {
-  const marca = (acs, t) => MC().juez(acs)(t) === null;
-  // nombra todos los criterios, con la puntuación de verdad
-  assert.ok(marca([2, 3, 4], 'probé a mano los criterios 2, 3, y 4'));
-  assert.ok(marca([2, 3], 'probé a mano el criterio 2 y el 3'));
-  assert.ok(marca([1, 2, 3], 'probé a mano los criterios 1, 2 y 3'));
-  // una negación que no es de la prueba no la tumba
-  assert.ok(marca([2], 'probé a mano el criterio 2 sin problemas'));
-  assert.ok(marca([2], 'probé a mano el criterio 2, no hubo problemas'));
-  assert.ok(marca([2], 'probé a mano el criterio 2; nunca falló'));
-  assert.ok(marca([2], 'probé a mano el criterio 2, tampoco tuve dudas'));
-  // lo que sigue sin marcar: no lo probó, falló, falta, genérico, otro criterio
-  for (const t of ['no lo probé, el criterio 2', 'el criterio 2 no lo probé a mano', 'probé a mano el criterio 2 y falló', 'falta probar a mano el criterio 2', 'sin probar el criterio 2', 'dale, seguí adelante', 'probé a mano el criterio 3', 'el criterio 2 no anda, lo probé a mano', 'no marques el criterio 2 a mano', 'el criterio 2 a mano, después vemos']) {
-    assert.equal(marca([2], t), false, t);
-  }
+test('ManualChecks_SinJuezDeLaRespuesta — la marca no sale de una respuesta en el chat', () => {
+  assert.equal(MC().juez, undefined);
 });
 
 test('ManualChecks_Apagada_NoAnota @story-7.46 @ac-11', () => {

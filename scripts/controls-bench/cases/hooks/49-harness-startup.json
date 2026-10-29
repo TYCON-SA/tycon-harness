@@ -28,12 +28,13 @@
     {
      "id": "copia-fija-que-no-arranca-cae-al-respaldo-y-sale-0",
      "type": "must-emit",
-     "__doc": "La copia fija sale distinto de 0 (el árbol no arranca): el hook lanza el respaldo en shell que vive a su lado, desprendido de la sesión, y sale 0 igual. El respaldo de juguete deja un marcador; el verificador espera un segundo y lo busca.",
+     "__doc": "La copia fija sale distinto de 0 (el árbol no arranca): el hook lanza el respaldo en shell que vive a su lado, desprendido de la sesión, y sale 0 igual. El respaldo es `bootstrap-fallback.sh` y, en Windows, `bootstrap-fallback.ps1` con pwsh: el caso trae los dos de juguete, y cada uno deja el mismo marcador. El verificador lo busca hasta 15 segundos (en Windows, pwsh tarda en arrancar).",
      "setup": [
       "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/harness-startup.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
       "mkdir -p casa/state/harness && printf 'process.exit(1);\\n' > casa/state/harness/bootstrap.js",
       "printf '#!/bin/bash\\necho corrido > \"$(dirname \"$0\")/respaldo.txt\"\\n' > casa/state/harness/bootstrap-fallback.sh",
-      "printf '#!/bin/bash\\nTYCON_HOME=\"$PWD/casa\" node tcg/scripts/hooks/harness-startup.js; rc=$?\\nsleep 1\\n[ \"$rc\" = 0 ] && [ -f casa/state/harness/respaldo.txt ] && echo RESPALDO-CORRIDO-Y-SALE-0\\n' > verificador.sh && chmod +x verificador.sh"
+      "printf 'Set-Content -Path (Join-Path $PSScriptRoot \"respaldo.txt\") -Value corrido\\n' > casa/state/harness/bootstrap-fallback.ps1",
+      "printf '#!/bin/bash\\nTYCON_HOME=\"$PWD/casa\" node tcg/scripts/hooks/harness-startup.js; rc=$?\\nfor i in $(seq 1 30); do [ -f casa/state/harness/respaldo.txt ] && break; sleep 0.5; done\\n[ \"$rc\" = 0 ] && [ -f casa/state/harness/respaldo.txt ] && echo RESPALDO-CORRIDO-Y-SALE-0\\n' > verificador.sh && chmod +x verificador.sh"
      ],
      "stdin": {
       "source": "startup"

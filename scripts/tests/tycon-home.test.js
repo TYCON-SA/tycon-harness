@@ -583,6 +583,38 @@ it('T37 Retirement_CeilingZero_DatesSet_StoryWritten', () => {
   }
 });
 
+// ── T79 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// La casa propia sale del contexto, nunca del ambiente de quien corre: con `TYCON_HOME` exportada en la terminal, una
+// prueba con una casa de juguete no escribe ni borra en la casa real.
+it('T79 CasaPropia_DelContexto_NoDeQuienCorre', () => {
+  const home = fs.realpathSync(tmp('tycon-home-t79-'));
+  const real = fs.realpathSync(tmp('tycon-home-t79-real-'));
+  const toy = path.join(home, 'juguete');
+  const got = inChild(`const H = require(${JSON.stringify(HOME_JS)});
+    console.log(JSON.stringify({
+      ctxVacio: H.ownPathsOf({ home: ${JSON.stringify(toy)}, env: {} }).root,
+      ctxSinEnv: H.ownPathsOf({ home: ${JSON.stringify(toy)} }).root,
+      ctxPide: H.ownPathsOf({ home: ${JSON.stringify(toy)}, env: { TYCON_HOME: ${JSON.stringify(path.join(home, 'pedida'))} } }).root,
+      sinHome: H.ownPathsOf({ env: {} }).root,
+      rootOtra: H.ownRootOf(${JSON.stringify(toy)}),
+      rootPropia: H.ownRootOf(${JSON.stringify(home)}),
+      rootSin: H.ownRootOf(),
+    }));`, { home, env: { TYCON_HOME: real } });
+  assert.strictEqual(got.ctxVacio, path.join(toy, '.tycon'), 'un contexto con su casa y el ambiente vacío cayó en otra casa');
+  assert.strictEqual(got.ctxSinEnv, path.join(toy, '.tycon'), 'un contexto sin ambiente leyó el de quien corre');
+  assert.strictEqual(got.ctxPide, path.join(home, 'pedida'), 'la TYCON_HOME del contexto no se honró');
+  assert.strictEqual(got.sinHome, path.join(home, '.tycon'), 'sin casa en el contexto tiene que ser la de quien corre');
+  assert.strictEqual(got.rootOtra, path.join(toy, '.tycon'), 'ownRootOf de otra casa leyó la TYCON_HOME de quien corre');
+  assert.strictEqual(got.rootPropia, real, 'ownRootOf de la casa de quien corre no honró su TYCON_HOME');
+  assert.strictEqual(got.rootSin, real);
+
+  // ningún módulo del mecanismo vuelve a armar la casa propia con el ambiente del contexto al lado de su `home`
+  const setup = path.join(ROOT, 'scripts', 'setup');
+  const files = [path.join(setup, 'harness.js'), ...fs.readdirSync(path.join(setup, 'harness')).filter((f) => f.endsWith('.js')).map((f) => path.join(setup, 'harness', f))];
+  const mixed = files.filter((f) => /ownPaths\(\{\s*env:\s*ctx\.env\s*\}\)/.test(fs.readFileSync(f, 'utf8').replace(/^\s*(\*|\/\/).*$/gm, '')));
+  assert.deepStrictEqual(mixed.map((f) => path.relative(ROOT, f)), [], 'usan ownPaths({ env: ctx.env }) en vez de ownPathsOf(ctx)');
+});
+
 if (require.main === module && process.argv.includes('--measure')) {
   const L = legacy();
   const m = measure(ROOT, exemptSet(L));

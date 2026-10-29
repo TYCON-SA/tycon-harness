@@ -30,6 +30,10 @@ const EN_EL_REPO = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'repla
 
 function publicados() {
   if (!EN_EL_REPO) {
+    // en un clon de la copia, lo que viaja es lo que git conoce: las carpetas que otras pruebas escriben mientras ésta
+    // recorre (las carpetas personales de juguete bajo `.advisors/`) no son de la copia, y un archivo puede irse a mitad
+    const git = spawnSync('git', ['-C', RAIZ, 'ls-files', '-z'], { encoding: 'utf8' });
+    if (fs.existsSync(path.join(RAIZ, '.git')) && git.status === 0) return git.stdout.split('\0').filter((r) => r && fs.existsSync(path.join(RAIZ, r)));
     const out = [];
     (function walk(dir, base) {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
