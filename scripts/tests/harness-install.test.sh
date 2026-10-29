@@ -73,6 +73,10 @@
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El desprendido lo mide harness-state.test.js.
+export TYCON_STARTUP_DETACH=0
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 # los dos nombres del lugar del arnés, de su constante
 PLACE_NAME="$(node -e 'process.stdout.write(require(process.argv[1]).PLACE_NAME)' "$RAIZ/scripts/setup/harness/place.js")"
