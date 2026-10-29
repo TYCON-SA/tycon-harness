@@ -436,14 +436,16 @@ function lex(texto, opciones) {
   // 🔴 Salvo una TUBERÍA: `ls x |⏎ xargs rm`, `ls x | { xargs rm; }` y `ls x | ( xargs rm )` siguen siendo tubería, y el
   // salto de línea, la apertura del grupo o de la subshell no le pisan el `|` al lector (8.14 #2: el freno vaciaba la
   // tubería antes de llegar al `xargs`). Contrato: el segmento que alimenta una tubería termina en `|` aunque entre él y
-  // el comando siguiente haya saltos de línea, un `{` o un `(`.
+  // el comando siguiente haya saltos de línea, un `{` o un `(`. Lo mismo para el salto de línea detrás de `&&`, `||` o
+  // `&`: no los vuelve `;` (`a &&⏎ b` sigue siendo «b si a anduvo»).
   const limpio = [];
   for (const seg of out) {
     const t = seg.texto.trim();
     if (t) limpio.push({ texto: t, sep: seg.sep });
     else if (limpio.length && seg.sep) {
       const previo = limpio[limpio.length - 1];
-      if (!(previo.sep === '|' && (seg.sep === ';' || seg.sep === '(' || seg.sep === ')'))) previo.sep = seg.sep;
+      const tuberia = previo.sep === '|' && (seg.sep === ';' || seg.sep === '(' || seg.sep === ')');
+      if (!tuberia && !(seg.sep === ';' && ['&&', '||', '&'].includes(previo.sep))) previo.sep = seg.sep;
     }
   }
   return limpio;
@@ -1268,8 +1270,11 @@ function applyAssignments(ctx, parsed, opts) {
   if (CLOSES_BRANCH.has(w0[0])) ctx.branchDepth = Math.max(0, (ctx.branchDepth || 0) - 1);
   const opens = parsed.reserved.some((r) => OPENS_BRANCH.has(r)) || OPENS_BRANCH.has(w0[0]);
   const replaces = !!opts && (opts.previousSep === '' || opts.previousSep === ';') && !(ctx.branchDepth > 0) && !opens;
-  // `X=a cmd` sólo vale para ese comando: no reemplaza la X del shell (`export`/`typeset`… sí)
-  const setterFor = (a) => (replaces && (!parsed.words.length || a.builtin) ? (mapa, nombre, valores) => { mapa[nombre] = [...new Set(valores)]; } : sumar);
+  // `X=a cmd` sólo vale para ese comando: no reemplaza la X del shell (`export`/`typeset`… sí). `ctx.replaced` dice qué
+  // nombres reemplazó ESTE comando, para que quien lleva datos propios de cada variable los olvide también
+  ctx.replaced = new Set();
+  const reemplazar = (mapa, nombre, valores) => { mapa[nombre] = [...new Set(valores)]; ctx.replaced.add(nombre); };
+  const setterFor = (a) => (replaces && (!parsed.words.length || a.builtin) ? reemplazar : sumar);
   // un valor que es SÓLO algo sin resolver (`F=$(ls …)`, `F=$X`) se guarda como DESCONOCIDO, no como el comodín `*`: al
   // usarla, quien juzga tiene que poder distinguir «no sé qué vale» de «el shell expande un comodín» (8.14, T30)
   const patrones = (r) => r.patterns.map((p) => (r.unknown && p === '*' ? DESCONOCIDO : p));
