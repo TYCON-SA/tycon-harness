@@ -149,25 +149,22 @@ Fuera del pipeline, armar nombres no frena. Lo que no asigna no cuenta: el nombr
 de esos comandos (`readability` no es `read`), unas llaves de código entre comillas, o una cuenta `$((…))` que calcula
 (`$((L-60))`); una cuenta que asigna (`$(( $V = 1 ))`) sí frena.
 
-**Freno aceptado por duda: el código de `node -e`.** `node -e '<código con llaves>' "$a" "$b"` frena `ESC-C3`, igual con
-`-p`, `--eval` y `--print`. El código se lee como el guion: puede correr lo que recibe en sus argumentos (`node -e
-'spawnSync(process.argv[1],…)' "$S" start --no-deep-review` corre el pipeline con el nombre escondido), y distinguirlo
-del de una sonda pide leer JavaScript. La salida, para una sonda que no corre nada: pasar los valores por el ambiente
-(`C="$c" L="$L" node -e '…process.env.C…'`) o un solo argumento. Las dos pasan. Además, un comando que nombra `node`,
-`nodejs` o `bun`, nombra `pipeline` o `marker` (con o sin `.js`) y dice `--no-deep-review` en cualquier lugar (un
-argumento, una variable, un `export`, el cuerpo de cualquier heredoc, un texto) frena `ESC-C3`, aunque el lector no vea
-cómo los une el código. Del lado seguro: también frena un mensaje de commit o unas notas por heredoc con esas tres
-palabras; las notas se escriben con la herramienta de edición. Sin `node` (un `grep` de la bandera) no frena.
+**El código de `node -e` no es un guion.** Con `-e`, `-p`, `-pe`, `--eval` o `--print`, node no corre ningún archivo:
+lo que sigue son argumentos del código, y pasa (`node -e '<código>' "$a" "$b"`, `C="$c" node -e '…process.env.C…'`).
+Un `marker.js` o un `pipeline.js` escrito en el mismo comando se lee igual, palabra por palabra
+(`node -e '…' && node pipeline.js start --no-deep-review` frena), también entre los argumentos del código y armado por
+el shell con el nombre a la vista (`node -e '…' pipelin?.js check-count --trust-ran`, `$(echo …/marker.js) clear`). Lo que el código arme por su cuenta no se lee: ni el
+nombre del pipeline ni la bandera escondidos en sus argumentos, en variables, en el cuerpo de un heredoc o en un texto.
+Tampoco hace falta: apagar el pase pide la constancia que firma el dueño, y sin ella el pipeline lo corre igual, se
+escriba la bandera como se escriba. Unas notas por heredoc que nombran el pipeline con la bandera pasan.
 
 Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e` que lo carga o que corre otro
-programa con lo que recibe sin que el comando nombre el pipeline y la bandera juntos (residuos conocidos: la bandera
-partida en dos variables, `S=… A=--no-deep B=-review node -e '…spawnSync("node",[process.env.S,"start",process.env.A+process.env.B])…'`,
-`node` en una variable o en una sustitución, `N=node; $N -e '…'` o `$(which node) -e '…'`, y otro intérprete,
-`S=pipeline.js python3 -c '…os.system(…--no-deep-review)…'`, pasan; sacarle a la regla la condición de que corra
-`node` los cerraba, pero frenaba un `grep`, un mensaje de commit o un `echo` que sólo nombran el pipeline con la
-bandera), una copia con otro nombre, o un programa de texto que además ejecuta (`awk` con `system`). Estos residuos
-los borra de raíz que apagar el pase pida la firma del dueño (la story que sigue a la 8.111): sin la firma, el pipeline
-no apaga el pase, se escriba como se escriba. Mientras tanto sigue el lazo del
+programa con lo que recibe, `node` en una variable o en una sustitución (`N=node; $N -e '…'`), otro intérprete
+(`python3 -c '…os.system(…)…'`), una copia con otro nombre, o un programa de texto que además ejecuta (`awk` con
+`system`). Por ahí puede correr, sin que el freno lo vea (también con el guion en una variable entre los argumentos del código,
+`node -e '…' "$M" clear`), un `marker.js clear`, `set-autonomous false`, `update-story-status … done`,
+`close-as-debt`, `set-check … --force-manual` o un `check-count --trust-ran`. El pase
+no queda expuesto: lo cuida la constancia firmada. Para lo demás sigue el lazo del
 modo autónomo, que no deja cerrar el turno con un control en rojo, y el `cierre` del volcado: `marker.js set` no lo
 escribe, no pisa los controles (`checks`, `checksProvenance`), el pase ni el modo autónomo de la misma historia, no vacía sus pasos pendientes, y al
 pasar a otra historia deja la anterior anotada como abortada si no había terminado.
