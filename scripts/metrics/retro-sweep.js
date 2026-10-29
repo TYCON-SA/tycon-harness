@@ -180,9 +180,10 @@ function clean(t) {
 function dashboardFromGit(dir, ref) {
   // sin .dashboard/ en main no hay nada guardado (no es una falla); cualquier otra falla se dice
   if (git(dir, ['rev-parse', '--verify', '--quiet', `${ref}:.dashboard`]).status !== 0) return { records: [], motivo: null };
-  const ls = git(dir, ['ls-tree', '-r', '--name-only', ref, '--', '.dashboard']);
+  // -z: sin él git entrecomilla los nombres con acento y el filtro de .json los perdería callado
+  const ls = git(dir, ['ls-tree', '-r', '-z', '--name-only', ref, '--', '.dashboard']);
   if (ls.status !== 0) return { records: [], motivo: `no se pudo listar .dashboard/ de main: ${clean(firstLine(ls.stderr))}` };
-  const names = ls.stdout.split('\n').filter((f) => /\.json$/.test(f));
+  const names = ls.stdout.split('\0').filter((f) => /\.json$/.test(f));
   if (!names.length) return { records: [], motivo: null };
   const cat = spawnSync('git', ['-C', dir, 'cat-file', '--batch'], { input: names.map((f) => `${ref}:${f}`).join('\n') + '\n', maxBuffer: 256 * 1024 * 1024 });
   if (cat.status !== 0) return { records: [], motivo: `no se pudo leer .dashboard/ de main: ${clean(firstLine(cat.stderr))}` };
