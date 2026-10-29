@@ -486,11 +486,27 @@ const CODE_EXT_RE = { test: (f) => isCodeFile(f) };
 
 // Walk recursivo acotado (skip node_modules/bin/obj/.git). Cap de archivos para
 // repos gigantes — los checks son sobre el delta de la story, no un sweep total.
-/** Raíces de los repos compañeros declarados (absolutas, existentes). Fail-open: sin config, []. */
-function companionRoots(repo) {
+/**
+ * Raíces de los repos compañeros (absolutas, existentes). Con la story en un repo git, la búsqueda de la evidencia
+ * (lib/companion-repos.js): el worktree del compañero en la rama de la story, y si no hay, el declarado con su aviso.
+ * Desde un worktree, la ruta declarada puede caer en un checkout de otra tarea y el control leería sus pruebas. Con la
+ * story fuera de un repo git, los declarados tal cual: esa búsqueda tomaría la rama de `--repo`. Un declarado que no
+ * está en disco se avisa: si no, el crítico por la prueba que no encuentra parece real. Fail-open: sin config, o con la
+ * config rota, [].
+ */
+function companionRoots(repo, storyPath) {
   try {
-    const ev = require('./evidence-config.js').parseEvidenceConfig(repo);
-    return (ev && Array.isArray(ev.roots)) ? ev.roots.filter((r) => path.resolve(r) !== path.resolve(repo)) : [];
+    const faltante = (nombre, quien) => process.stderr.write(
+      `[hermanos] el repo hermano «${nombre}» que declara ${quien}/.tycon/advisors.yaml no está en disco: sus pruebas NO se leen\n`);
+    let roots;
+    if (storyPath && repoDeLaStory(storyPath)) {
+      roots = require('./companion-repos.js').companionRoots(repo, storyPath, { onMissing: faltante });
+    } else {
+      const ev = require('./evidence-config.js').parseEvidenceConfig(repo);
+      for (const m of ev.missing || []) faltante(m, repo);
+      roots = ev.roots;
+    }
+    return Array.isArray(roots) ? roots.filter((r) => path.resolve(r) !== path.resolve(repo)) : [];
   } catch { return []; }
 }
 
@@ -607,7 +623,8 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   // la ruta relativa a la raíz: `tests/api/helpers.py` es prueba de pytest por la carpeta, no por el nombre
   const esPrueba = (raiz) => (n, abs) => TEST_FILE_RE.test(abs ? path.relative(raiz, abs) : n);
   const testFiles = walkFiles(repo, esPrueba(repo));
-  for (const raiz of companionRoots(repo)) {
+  const companeros = companionRoots(repo, storyPath);
+  for (const raiz of companeros) {
     for (const f of walkFiles(raiz, esPrueba(raiz))) if (!testFiles.includes(f)) testFiles.push(f);
   }
   const contentsCache = new Map();
@@ -770,6 +787,7 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
       table_rows: table.rows.length,
       table_has_ac_column: table.hasAcColumn,
       test_files_scanned: testFiles.length,
+      companion_roots: companeros,
       story_id: fmStoryId,
     },
   };
