@@ -7,7 +7,7 @@
  * código va abierto una sola vez. Las líneas son de dos clases:
  *   · de base (`via: "base"`): los pendientes que ya estaban abiertos cuando nació el registro. La base sólo se achica:
  *     el commit frena una línea de base nueva, salvo en el commit que crea el registro, y ahí sólo para un pendiente
- *     que ya estaba abierto antes de ese commit.
+ *     que ya estaba abierto antes de ese commit. La base la arma `check-pending-approvals.js --create-base`.
  *   · firmadas: las escribe `marker.js approve-pending --id <CÓDIGO>` después de la firma `pending-approval` (la
  *     coordinadora por la delegación del perfil, o la persona en la ventana de permiso o en su terminal). La huella de
  *     la línea va en el renglón `pending-approval-signed` del registro del arnés de la cuenta.
@@ -162,13 +162,31 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
   return malas;
 }
 
-/** Los comandos que piden la firma de un pendiente: el de la coordinadora (delegación) o la ventana, y el de la terminal. */
-function comandos(id, repo, sesion) {
+/**
+ * El registro con el que nace: una línea de base por cada pendiente abierto en `todoAntes` (la lista del último commit),
+ * más las líneas firmadas que `registro` ya traía para los pendientes que se abrieron después. Lo demás se descarta: la
+ * base vieja (una de un pendiente que ya se cerró el pre-commit la frena), la firma de un pendiente que ya va de base, y
+ * una línea que no vale. `{ texto, base, firmadas, descartadas }`, o `{ error }` si el registro ya nació en `antes` (el
+ * último commit) o tiene renglones que no se leen.
+ */
+function registroDelNacimiento({ antes = '', registro = '', todoAntes = '' }) {
+  if (leerRegistro(antes).lineas.length) return { error: 'el registro ya nació en el último commit: la base sólo se achica, no se rehace' };
+  const r = leerRegistro(registro);
+  if (r.ilegibles.length) return { error: `el registro tiene renglones que no se leen (${r.ilegibles.join(', ')})` };
+  const ids = [];
+  for (const p of pendientesAbiertos(todoAntes)) if (!ids.includes(p.clave)) ids.push(p.clave);
+  const firmadas = r.lineas.filter((x) => !motivoDe(x.valor) && x.valor.via !== 'base' && !ids.includes(x.valor.id));
+  const lineas = [...ids.map((id) => JSON.stringify({ id, via: 'base' })), ...firmadas.map((x) => x.texto)];
+  return { texto: lineas.length ? `${lineas.join('\n')}\n` : '', base: ids.length, firmadas: firmadas.length, descartadas: r.lineas.length - firmadas.length };
+}
+
+/** Los comandos que piden la firma de un pendiente: el de la coordinadora desde su pestaña (o la ventana), y el de la terminal. */
+function comandos(id, repo) {
   const base = `marker.js approve-pending --id ${id}${repo ? ` --repo ${repo}` : ''}`;
-  return [`${base} --for-session ${sesion || '<tu sesión>'}`, `${base} --terminal`];
+  return [base, `${base} --terminal`];
 }
 
 module.exports = {
   TODO, RECORD, FIRMA, FIRMADA, VIAS, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
-  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, comandos,
+  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos,
 };

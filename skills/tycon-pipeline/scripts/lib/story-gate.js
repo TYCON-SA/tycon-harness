@@ -350,7 +350,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  Un pendiente nuevo lo aprueba la coordinadora desde su pestaña: `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`',
+      '  Un pendiente nuevo lo aprueba la coordinadora desde su pestaña: `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>`',
       '  (o la persona en la ventana de permiso, o en su terminal con `--terminal`). Esa firma escribe la línea.',
     ].filter((l) => l !== '').join('\n');
   }

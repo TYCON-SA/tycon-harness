@@ -266,3 +266,56 @@ test('T20 el control del commit: crear el registro con la base pasa; reabrir con
   assert.match(r.stderr, /la base sólo se achica/);
   assert.match(r.stderr, /no trae su aprobación firmada en este commit/);
 });
+
+test('T21 el registro con el que nace: todo lo abierto en el último commit va de base; se quedan las firmas de lo abierto después', () => {
+  const despues = JSON.stringify(firmada('DEF-despues'));
+  const rota = JSON.stringify({ ...firmada('DEF-roto'), huella: '0000000000000000' });
+  const viejo = `${base('DEF-cerrado')}\n${JSON.stringify(firmada('DEF-viejo'))}\n${despues}\n${rota}\n`;
+  const r = PA.registroDelNacimiento({ antes: '', registro: viejo, todoAntes: LISTA });
+  assert.ok(!r.error, r.error);
+  // DEF-viejo va de base aunque traiga firma (la de otra máquina no pasaría el commit); DEF-cerrado y la rota salen
+  assert.deepStrictEqual(PA.leerRegistro(r.texto).lineas.map((x) => [x.valor.id, x.valor.via]),
+    [['DEF-viejo', 'base'], [PA.claveSinCodigo(SIN_CODIGO), 'base'], ['DEF-despues', 'delegacion']]);
+  assert.deepStrictEqual([r.base, r.firmadas, r.descartadas], [2, 1, 3]);
+  assert.ok(PA.revisar({ todo: LISTA, registro: r.texto }).ok, 'lo que arma cubre la lista');
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: '', despues: r.texto, renglones: [renglonDe(firmada('DEF-despues'))], todoAntes: LISTA, todoDespues: `${LISTA}- [ ] [DEF-despues] x\n` }), [], 'el commit que crea el registro lo acepta');
+  // sin registro en el disco: toda la lista va de base
+  assert.strictEqual(PA.registroDelNacimiento({ todoAntes: LISTA }).texto, `${JSON.stringify({ id: 'DEF-viejo', via: 'base' })}\n${JSON.stringify({ id: PA.claveSinCodigo(SIN_CODIGO), via: 'base' })}\n`);
+  // ya nacido, o con un renglón que no se lee: no arma nada
+  assert.match(PA.registroDelNacimiento({ antes: BASE, registro: BASE, todoAntes: LISTA }).error, /ya nació/);
+  assert.match(PA.registroDelNacimiento({ registro: 'no es json\n', todoAntes: LISTA }).error, /no se leen/);
+});
+
+test('T22 --create-base: arma lo que el commit que crea el registro acepta, y con el registro ya commiteado no escribe', (t) => {
+  const { d, git } = repo(`${LISTA}- [ ] [DEF-commiteado] abierto en el commit\n`, null);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  // en el disco, una base vieja con un pendiente que ya se cerró y la lista con uno que no está commiteado
+  fs.writeFileSync(path.join(d, PA.RECORD), `${base('DEF-cerrado')}\n`);
+  fs.appendFileSync(path.join(d, PA.TODO), '- [ ] [DEF-del-disco] escrito después del commit\n');
+  const r = check(d, '--create-base');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /3 línea\(s\) de base y 0 aprobación\(es\) firmada\(s\)\. Descarté 1 línea/);
+  const ids = PA.leerRegistro(fs.readFileSync(path.join(d, PA.RECORD), 'utf8')).lineas.map((x) => x.valor.id);
+  assert.deepStrictEqual(ids, ['DEF-viejo', PA.claveSinCodigo(SIN_CODIGO), 'DEF-commiteado'], 'sale de la lista commiteada, sin la base vieja');
+  git('add', PA.RECORD);
+  const nace = check(d, '--staged');
+  assert.strictEqual(nace.status, 0, nace.stderr);
+  git('commit', '-q', '-m', 'registro');
+  const antes = fs.readFileSync(path.join(d, PA.RECORD), 'utf8');
+  const otra = check(d, '--create-base');
+  assert.strictEqual(otra.status, 1);
+  assert.match(otra.stderr, /ya nació.*No escribí nada/);
+  assert.strictEqual(fs.readFileSync(path.join(d, PA.RECORD), 'utf8'), antes);
+  assert.strictEqual(check(d, '--create-base', '--staged').status, 2, 'las dos opciones juntas no van');
+});
+
+test('T23 el comando que se sugiere para aprobar es el que approve-pending acepta: sin --for-session', (t) => {
+  const { d } = repo(`${LISTA}- [ ] [DEF-nuevo] algo\n`, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const r = check(d);
+  assert.strictEqual(r.status, 1);
+  assert.match(r.stderr, /approve-pending --id DEF-nuevo --repo \S+\n/);
+  assert.doesNotMatch(r.stderr, /--for-session/);
+  assert.doesNotMatch(SIGNATURES.find((x) => x.id === PA.FIRMA).command, /--for-session/);
+  assert.doesNotMatch(sg.blockMessage({ action: 'block', kind: 'pending-approvals', reason: 'x' }, { filePath: '/r/tasks/pending-approvals.jsonl' }), /--for-session/);
+});

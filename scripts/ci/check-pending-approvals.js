@@ -12,9 +12,14 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * Uso:
  *   node scripts/ci/check-pending-approvals.js [--repo <carpeta>]            el árbol (la revisión de la noche)
  *   node scripts/ci/check-pending-approvals.js --staged [--repo <carpeta>]   lo que se va a commitear (el pre-commit)
+ *   node scripts/ci/check-pending-approvals.js --create-base [--repo <carpeta>]  arma el registro con el que nace
  *
  * Con `--staged` lee la lista y el registro del índice, y las líneas que el commit agrega al registro tienen que tener
  * su renglón firmado en el registro del arnés de esta cuenta. Un repo sin lista no tiene nada que revisar.
+ *
+ * `--create-base` escribe en el disco el registro de un repo que adopta el freno: una línea de base por cada pendiente
+ * abierto en la lista del último commit, y las aprobaciones firmadas que el registro ya tuviera. Sólo arma lo que el
+ * pre-commit acepta en el commit que crea el registro; si el registro ya está en el último commit, no escribe nada.
  *
  * Sale 0 sin pendientes sin aprobar, 1 si hay alguno (los nombra, con el comando de la firma), 2 si no pudo leer lo que
  * necesita: un control que no leyó no es un verde.
@@ -26,14 +31,16 @@ const { execFileSync } = require('child_process');
 const PA = require('../lib/pending-approvals.js');
 
 function opciones(argv) {
-  const o = { repo: process.cwd(), staged: false };
+  const o = { repo: process.cwd(), staged: false, crearBase: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--staged') o.staged = true;
+    else if (argv[i] === '--create-base') o.crearBase = true;
     else if (argv[i] === '--repo') o.repo = argv[++i];
     else if (argv[i] === '-h' || argv[i] === '--help') o.ayuda = true;
     else throw new Error(`no conozco la opción ${argv[i]}`);
   }
   if (!o.repo) throw new Error('--repo necesita una carpeta');
+  if (o.staged && o.crearBase) throw new Error('--staged y --create-base no van juntas');
   return o;
 }
 
@@ -69,8 +76,7 @@ function renglonesDeLaCuenta() {
 
 /** Cómo se pide la aprobación de un código: la coordinadora desde su pestaña, o la persona. */
 function comoSePide(codigo, repo) {
-  const sesion = process.env.CLAUDE_CODE_SESSION_ID || process.env.TYCON_SESSION_ID || process.env.CODEX_SESSION_ID || null;
-  const [delegado, terminal] = PA.comandos(codigo, repo, sesion);
+  const [delegado, terminal] = PA.comandos(codigo, repo);
   return [
     '   Abrir un pendiente lo decide la coordinadora. Pedile que lo apruebe desde su pestaña:',
     `     node <arnés>/skills/tycon-pipeline/scripts/${delegado}`,
@@ -79,10 +85,30 @@ function comoSePide(codigo, repo) {
   ];
 }
 
+/** `--create-base`: escribe el registro con el que nace (ver la cabecera). */
+function crearBase(repo) {
+  let r;
+  try {
+    const todoAntes = deGit(repo, `HEAD:${PA.TODO}`);
+    if (todoAntes == null) { console.error(`⛔ check-pending-approvals: no hay ${PA.TODO} commiteado (o el repo no tiene commits): la base sale de la lista commiteada.`); return 1; }
+    r = PA.registroDelNacimiento({ antes: deGit(repo, `HEAD:${PA.RECORD}`) || '', registro: delDisco(repo, PA.RECORD) || '', todoAntes });
+    if (r.error) { console.error(`⛔ check-pending-approvals: ${r.error}. No escribí nada.`); return 1; }
+    fs.mkdirSync(path.dirname(path.join(repo, PA.RECORD)), { recursive: true });
+    fs.writeFileSync(path.join(repo, PA.RECORD), r.texto);
+  } catch (e) {
+    console.error(`⛔ check-pending-approvals: ${e.message}. No escribí el registro.`);
+    return 2;
+  }
+  const fuera = r.descartadas ? ` Descarté ${r.descartadas} línea(s) que traía: base vieja, firmas de pendientes que ya van de base o líneas que no valen.` : '';
+  console.log(`check-pending-approvals: ${PA.RECORD} armado con ${r.base} línea(s) de base y ${r.firmadas} aprobación(es) firmada(s).${fuera} Commitealo junto con el freno.`);
+  return 0;
+}
+
 function main(argv) {
   let o;
   try { o = opciones(argv); } catch (e) { console.error(`check-pending-approvals: ${e.message}`); return 2; }
-  if (o.ayuda) { console.log('uso: check-pending-approvals.js [--staged] [--repo <carpeta>]'); return 0; }
+  if (o.ayuda) { console.log('uso: check-pending-approvals.js [--staged | --create-base] [--repo <carpeta>]'); return 0; }
+  if (o.crearBase) return crearBase(o.repo);
   let todo; let registro; let nuevas = [];
   try {
     todo = o.staged ? deGit(o.repo, `:${PA.TODO}`) : delDisco(o.repo, PA.TODO);
