@@ -1037,6 +1037,9 @@ def old_startup_line(text):
     return [l.strip()[:80] for l in text.split("\n") if '"command"' in l and re.search(r"git\s+(-C\s+\S+\s+)?pull", l)]
 
 install = internal_view(read("INSTALL.md"))
+# en el repo del equipo, lo de INSTALL.md que no viaja (el clon de quien mantiene, las máquinas de dos clones) vive aparte
+TEAM_INSTALL = os.path.join("onboarding", "interno", "INSTALL.md")
+if os.path.isfile(os.path.join(root, TEAM_INSTALL)): install += "\n" + read(TEAM_INSTALL)
 papers = {"INSTALL.md": install}
 for name in ("step-0-mac.md", "step-0-windows.md", "new-dev-harness-setup.md", "datos-del-equipo.md"):
     papers["onboarding/" + name] = read(os.path.join("onboarding", name))
