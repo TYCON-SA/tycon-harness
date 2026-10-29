@@ -141,4 +141,9 @@ test('TestScope_StoryDeOtroRepo_MezclaYCopiaDeTrabajo — lo sin prefijo de este
   fs.rmSync(path.join(copia, 'oldmod'), { recursive: true });
   declara('FrontEnd/shared/src/a.ts', 'oldmod/gone.ts');
   assert.strictEqual(testScope.resolveScope(copia, story).files_considered, 2, JSON.stringify(testScope.resolveScope(copia, story)));
+  // una carpeta que la story declara y no existe en ningún lado de este repo cuenta como en main, aunque al lado haya un
+  // repo de git con ese nombre: descartarla dejaría correr menos
+  fs.mkdirSync(path.join(raiz, 'nuevo', '.git'), { recursive: true });
+  declara('FrontEnd/shared/src/a.ts', 'nuevo/x.ts');
+  assert.strictEqual(testScope.resolveScope(copia, story).files_considered, 2, JSON.stringify(testScope.resolveScope(copia, story)));
 });
