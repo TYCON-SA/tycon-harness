@@ -120,3 +120,16 @@ No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nomb
 Si falta algo, sale la ventana en la pestaña de la designada. El guion firma con `via: delegacion`. Un escape es siempre
 de la sesión que lo corre, así que nunca se delega. Refirmar los controles tras traer `main` se delega sólo cuando el
 clasificador comprueba que es eso; si no, es un cambio de control, que es sólo del dueño.
+
+### La ejecución trabada de otra sesión
+
+Una ejecución que quedó abierta en otra sesión le impide a esa sesión arrancar la siguiente. La designada la cierra
+desde su pestaña:
+
+- si la ejecución no está perdida, `marker.js clear-session <sesión>` la cierra sin firma;
+- si quedó perdida (le falta el marcador o la copia de su apertura), `marker.js clear-session <sesión> --lost
+  --for-session <sesión>` pide la firma `lost-run`. Corre sin ventana si el perfil la delega, y si no, sale la ventana.
+
+La ventana muestra la story y la sesión que se cierran, que son las que nombra el comando. Si `--for-session` nombra
+otra sesión, no se pide. `marker.js clear` cierra sólo la ejecución propia: con `--for-session` sale 2.
+`marker.js restore <sesión>` rearma la ejecución perdida en la sesión que corre el comando, y firma para ésa.
