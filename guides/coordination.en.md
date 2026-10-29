@@ -65,8 +65,8 @@ folder still needs approving.
 **Not measured yet, left as the owner's test:** how long a session opened in the background takes to show up, and what
 title the editor tab shows after `/rename`. The guide takes neither for granted.
 
-`open` looks at the task before passing it to the launcher. A program that launches another session straight from the
-console is outside that check: the brake looks at the agent's tools, not at what one program passes to another.
+`open` passes the task to the launcher as is, without reviewing it: nothing it says signs anything (see «The owner's
+signatures»).
 
 With Codex, the owner opens the sessions: Codex has no launcher for named background sessions.
 

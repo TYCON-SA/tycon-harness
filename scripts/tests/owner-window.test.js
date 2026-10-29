@@ -958,6 +958,25 @@ test('OwnerWindow_FirmaNombradaEnUnTexto_NoSePide', () => {
   }
 });
 
+test('OwnerWindow_PipelineConArgumentosArmados_SoloPideLaVueltaSiPuedeEsconderla', () => {
+  // un valor armado donde el guion lo toma sí o sí (`--repo`, `--story`), no puede ser la bandera: entre comillas, o una
+  // variable del ambiente que el comando no escribe; ni un subcomando armado sin nada que pueda traerla
+  for (const c of [`node ${PIPELINE} advisors --repo "$(pwd)" --story s.md`, `node ${PIPELINE} smart-reloop --repo "$R" --story "$S" --iter 2`,
+    `node ${PIPELINE} advisors --repo x$R --story s.md`, `node ${PIPELINE} mech-check --repo $(pwd) --story s.md`, `node ${PIPELINE} "$S" --repo x`,
+    `node ${PIPELINE} $S`, `cd /r && node ${PIPELINE} advisors --repo "$PWD" --story s.md --files a.js`]) {
+    assert.deepStrictEqual(ow.firmasDelComando(c), [], c);
+  }
+  // sin comillas el shell parte un `$(…)`; tras `--files`, o tras un `--story` que se comió la opción siguiente, queda
+  // suelto; la bandera entre comillas de una sustitución, también detrás de una opción de marker.js que pipeline.js no
+  // lee; y un subcomando armado que el shell parte o con la bandera
+  for (const c of [`node ${PIPELINE} advisors --repo $(pwd) --story s.md`, `node ${PIPELINE} advisors --story s.md "$(echo --extra-round)"`,
+    `node ${PIPELINE} smart-reloop --story s.md --in "$(echo --extra-round)"`, `node ${PIPELINE} advisors --story s.md --type "$F"`,
+    `node ${PIPELINE} advisors --story s.md "$F"`, `node ${PIPELINE} advisors --files "$F"`, `node ${PIPELINE} advisors --story --repo "$F"`,
+    `node ${PIPELINE} $S --extra-round`, `node ${PIPELINE} $(echo smart-reloop --extra-round)`, `read S; node ${PIPELINE} $S`]) {
+    assert.deepStrictEqual(ow.firmasDelComando(c), ['extra-round'], c);
+  }
+});
+
 test('OwnerWindow_Envoltura_SeDesenvuelveTalCual', (t) => {
   const casa = casaNueva(t);
   for (const cmd of [GUIONES[0][1], "echo 'a' \"b\" '\"'", 'x']) assert.strictEqual(ow.desenvolver(envolver(casa, cmd), casa), cmd);
@@ -1130,6 +1149,10 @@ test('Constancias_DicenViaQuienYDestino_SinCita (T46) @story-8.139 @ac-30', (t) 
   const cw = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
   assert.strictEqual(cw.constanciaInvalida({ rule_id: 'X-C1', ts: 't', ...quien }), null, 'la exención delegada vale');
   assert.deepStrictEqual(ow.quienFirmo({ via: 'ventana', sesion: 'ses-a' }, 'el-dueno'), { tipo: 'manual', quien: 'el-dueno', via: 'ventana' });
+  // la firma por `--terminal` queda como terminal, no como ventana, y la exención sigue valiendo
+  const term = ow.quienFirmo({ codigo: 0, via: 'terminal' }, 'el-dueno');
+  assert.deepStrictEqual(term, { tipo: 'manual', quien: 'el-dueno', via: 'terminal' });
+  assert.strictEqual(cw.constanciaInvalida({ rule_id: 'X-C1', ts: 't', ...term }), null, 'la exención por la terminal vale');
   // el cierre de la corrida reconoce la vía de la delegación
   const rc = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-close.js'));
   assert.ok(rc.VIAS_DE_CIERRE.includes('delegacion'), 'un cierre firmado por delegación no queda «sin registro»');
@@ -1208,6 +1231,24 @@ test('ConfirmarConsumos_NoSePuedeGastar_LoDice (pase adversarial) @story-8.139 @
   const errores = ow.confirmarConsumos([{ f, reservado: `${f}.reservado-1-1`, ahora: 1 }], { paso: true });
   assert.strictEqual(errores.length, 1, 'una firma que no se pudo gastar no se da por gastada');
   assert.strictEqual(errores[0].error, 'ENOENT');
+});
+
+test('ConfirmarConsumos_SinPaso_NoSePuedeDevolver_LoDiceYNoPisaUnaFirmaNueva @story-8.139 @ac-43', (t) => {
+  const casa = casaNueva(t);
+  const dir = path.join(ow.carpeta(casa), 'files');
+  fs.mkdirSync(dir, { recursive: true });
+  // la reservada desapareció: devolverla falla y se dice
+  const f = path.join(dir, 'a.json');
+  const errores = ow.confirmarConsumos([{ f, reservado: `${f}.reservado-1-1`, ahora: 1 }], { paso: false });
+  assert.strictEqual(errores.length, 1, 'una firma que no se pudo devolver no se da por devuelta');
+  assert.strictEqual(errores[0].error, 'ENOENT');
+  // mientras la escritura frenaba, la persona firmó otra vez: la nueva queda, la vieja se descarta
+  const g = path.join(dir, 'b.json');
+  fs.writeFileSync(g, '{"ts":"nueva"}');
+  fs.writeFileSync(`${g}.reservado-1-1`, '{"ts":"vieja"}');
+  assert.deepStrictEqual(ow.confirmarConsumos([{ f: g, reservado: `${g}.reservado-1-1`, ahora: 1 }], { paso: false }), []);
+  assert.strictEqual(fs.readFileSync(g, 'utf8'), '{"ts":"nueva"}', 'la firma nueva no se pisa');
+  assert.ok(!fs.existsSync(`${g}.reservado-1-1`), 'la vieja no queda reservada');
 });
 
 test('SignFile_FirmaReservadaYPerdida_LoDice (pase adversarial) @story-8.139 @ac-43', (t) => {
