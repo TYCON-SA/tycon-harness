@@ -140,7 +140,7 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
   'scripts/lib/test-scope.js', 'scripts/lib/test-scope-options.json', '.test-gate.yaml',
   // lo que decide si el dueño se entera
-  'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-telegram-notify.sh',
+  'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-*-notify.sh',
   'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',
   // lo que registra los ganchos y las plantillas de permisos que instala el arnés
   '**/hooks.json', 'scripts/setup/hooks-list.json', 'scripts/setup/harness/managed.js',
