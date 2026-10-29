@@ -1856,6 +1856,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['browser-test', ['node', E, 'prepare', '--repo', '/r', '--story', 's.md']],
     ['lost-run', ['node', M, 'clear-session', 'ses-b', '--lost']],
     ['adversarial-skip', ['node', M, 'sign-adversarial-skip', '--story', '9.99', '--reason', 'la cubre otra corrida']],
+    ['pending-approval', ['node', M, 'approve-pending', '--id', 'DEF-9.99-algo', '--repo', '/r']],
     ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];

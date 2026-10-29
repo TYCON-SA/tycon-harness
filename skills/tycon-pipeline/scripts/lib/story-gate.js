@@ -176,9 +176,13 @@ function isControlApproval(p) {
 // La constancia del salteo del pase adversarial: la escribe sólo `marker.js sign-adversarial-skip`, con la firma del dueño.
 const ADVERSARIAL_SKIP_FILE = /(^|\/)adversarial-skips\.jsonl$/i;
 function isAdversarialSkipRecord(p) { return ADVERSARIAL_SKIP_FILE.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record` o null. */
+// El registro de aprobaciones de la lista de pendientes: lo escribe sólo `marker.js approve-pending`, con la firma.
+const PENDING_APPROVALS_FILE = /(^|\/)tasks\/pending-approvals\.jsonl$/i;
+function isPendingApprovalsRecord(p) { return PENDING_APPROVALS_FILE.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals` o null. */
 function signedRecordKind(p) {
   if (isControlApproval(p)) return 'control-approvals';
+  if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
 
@@ -209,6 +213,9 @@ function computeStoryGate({
   }
   if (isAdversarialSkipRecord(filePath) || isAdversarialSkipRecord(real)) {
     return { action: 'block', kind: 'adversarial-skip-record', reason: 'escritura a mano de la constancia del salteo del pase adversarial' };
+  }
+  if (isPendingApprovalsRecord(filePath) || isPendingApprovalsRecord(real)) {
+    return { action: 'block', kind: 'pending-approvals', reason: 'escritura a mano del registro de aprobaciones de pendientes' };
   }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
@@ -336,6 +343,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       `  ${f}`,
       '  La escribe `marker.js sign-adversarial-skip --story <S> --reason "<motivo>"`, con la firma del dueño en la',
       '  ventana de permiso o en su terminal (`--terminal`). Sin ella, el pase corre.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'pending-approvals') {
+    return [
+      '⛔ el registro de aprobaciones de pendientes no se escribe a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Un pendiente nuevo lo aprueba la coordinadora desde su pestaña: `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>`',
+      '  (o la persona en la ventana de permiso, o en su terminal con `--terminal`). Esa firma escribe la línea.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'plan') {
@@ -552,7 +568,7 @@ function storyByConsoleMessage(rutas, via) {
 
 module.exports = {
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   reasonInPrompts, soloDelDueno, normalizeWords, ADHOC_REASON_MIN_CHARS,
   STORY_INTENT_PATTERNS, quotedPromptAsksStory,
   DEFAULT_ADHOC_MAX_FILES, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS,
