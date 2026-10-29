@@ -12,6 +12,8 @@
  *   T20 · sin `stop` previo, un `stop` sin segundos y uno con una acción: `sin_horas`, salida 0, nada escrito.
  *   T38 · dos llamadas con la misma `--run`: una sola línea y `ya_anotado`; sin `--run`, salida 2.
  *   T42 · `--hours` sale 2 sin escribir; un `stop` posterior sin segundos deja sin horas (vale la última constancia).
+ *   AccionConConstancia · una herramienta que informa por una acción: `work-signal stop --action-done <id>` lee las horas
+ *     del resultado de la llamada que cerró esa entrada; sin esa llamada, con otro id, sin intervalo o en Codex, no anota.
  *
  * Correr:   node --test skills/tycon-pipeline/scripts/tests/estimate-real.test.js
  */
@@ -38,7 +40,8 @@ function herramienta() {
   fs.writeFileSync(path.join(own, 'scripts', 'on-work.js'), [
     "let raw = ''; process.stdin.on('data', (c) => { raw += c; }); process.stdin.on('end', () => {",
     "  const ev = JSON.parse(raw); const modo = process.env.FAKE_STOP || 'none';",
-    "  const out = ev.event !== 'stop' ? {} : modo === 'action' ? { action: 'cerrá la entrada y sumá las de la historia' } : modo === 'none' ? {} : { seconds: Number(modo) };",
+    "  const out = ev.event !== 'stop' ? {} : modo === 'action' ? { action: 'cerrá la entrada y sumá las de la historia' }",
+    "    : modo === 'action-id' ? { action: 'cerrá la entrada entry-4242 con mcp__fake__cerrar', entryId: 'entry-4242' } : modo === 'none' ? {} : { seconds: Number(modo) };",
     "  process.stdout.write(JSON.stringify(out) + '\\n');",
     "});",
   ].join('\n'));
@@ -59,12 +62,13 @@ function lab() {
   return { home, repo, spec };
 }
 
-function correr(l, args, fakeStop) {
+function correr(l, args, fakeStop, extra) {
   const env = Object.assign({}, process.env, {
     HOME: l.home, USERPROFILE: l.home, TYCON_HOME: path.join(l.home, '.tycon'), TYCON_PROFILE: '0', TYCON_GUIDES_DIR: RAIZ,
     TYCON_INTEGRATIONS_DIR: INTEGRACIONES, TYCON_TIME_TRACKING: 'fake', FAKE_STOP: fakeStop || 'none',
     GIT_CONFIG_GLOBAL: path.join(l.home, 'gitconfig'), GIT_CONFIG_NOSYSTEM: '1', CLAUDE_CODE_SESSION_ID: 'ses-estimate-real',
   });
+  Object.assign(env, extra || {});
   for (const k of ['TCG', 'TYCON_CLOCKIFY']) delete env[k];
   const r = spawnSync(process.execPath, [PIPELINE, ...args], { cwd: l.repo, env, encoding: 'utf8', timeout: 60000 });
   let json = null;
@@ -212,4 +216,62 @@ test('T42 EstimateReal_HorasDelRegistro @story-2.75 @ac-15 @ac-16', () => {
   const r = real(l, ['--run', 'r2']);
   assert.deepStrictEqual([r.status, r.json.ok, r.json.reason], [0, false, 'sin_horas'], r.stdout);
   assert.deepStrictEqual(lineas(l.repo), []);
+});
+
+/** La conversación de la sesión del laboratorio: el `stop` con su salida real y las llamadas que se le pasen. */
+function conversacion(l, salidaStop, llamadas, { emision = `node ${PIPELINE} work-signal stop --story ${l.spec} --repo ${l.repo}` } = {}) {
+  const dir = path.join(l.home, '.claude', 'projects', 'repo');
+  fs.mkdirSync(dir, { recursive: true });
+  let padre = null;
+  let n = 0;
+  const regs = [];
+  const poner = (r) => { const uuid = `u${++n}`; regs.push({ ...r, uuid, parentUuid: padre, sessionId: 'ses-estimate-real' }); padre = uuid; };
+  const pasos = [['Bash', { command: emision }, salidaStop], ...llamadas];
+  pasos.forEach(([name, input, resultado, err], i) => {
+    poner({ type: 'assistant', message: { content: [{ type: 'tool_use', id: `p${i}`, name, input }] } });
+    poner({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `p${i}`, content: resultado, ...(err ? { is_error: true } : {}) }] } });
+  });
+  fs.writeFileSync(path.join(dir, 'ses-estimate-real.jsonl'), regs.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+test('EstimateReal_AccionConConstancia @story-2.75 @ac-15 @ac-16', () => {
+  const CERRADA = JSON.stringify({ id: 'entry-4242', start: '2026-10-29T10:00:00Z', end: '2026-10-29T12:30:00Z' });
+  const accion = (l) => {
+    const s = stop(l, 'action-id');
+    assert.strictEqual(s.status, 0, s.stderr);
+    assert.match(s.stderr, /--action-done/, 'el stop con acción dice cómo dejar las horas');
+    return s.stdout.trim();
+  };
+  const cerrar = (l, extra) => correr(l, ['work-signal', 'stop', '--story', l.spec, '--action-done', 'entry-4242'], 'action-id', extra);
+
+  // la llamada que cerró la entrada trae su intervalo: 2,5 h con constancia, y estimate-real las anota
+  let l = lab();
+  conversacion(l, accion(l), [['mcp__fake__cerrar', { id: 'entry-4242' }, CERRADA]]);
+  let r = cerrar(l);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual([r.json.recorded, r.json.seconds, r.json.herramienta], [true, 9000, 'mcp__fake__cerrar']);
+  const e = real(l, ['--run', 'r1']);
+  assert.strictEqual(e.json.ok, true, e.stdout + e.stderr);
+  assert.deepStrictEqual(lineas(l.repo).map((x) => [x.nivel, x.valor]), [['real', 2.5]]);
+
+  // lo que no es constancia: no anota, sale 1 y estimate-real sigue sin horas
+  const casos = [
+    ['sin la llamada', (x) => conversacion(x, accion(x), [])],
+    ['otra entrada, más larga', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, JSON.stringify({ id: 'entry-9999', start: '2026-10-01T00:00:00Z', end: '2026-10-29T00:00:00Z' })]]), 'entry-9999'],
+    ['sin el intervalo', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, '{"id":"entry-4242"}']])],
+    ['un resultado con error', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, CERRADA, true]])],
+    ['otra herramienta', (x) => conversacion(x, accion(x), [['mcp__memoria__guardar', {}, CERRADA]])],
+    ['un stop que sólo se nombra', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, CERRADA]], { emision: `echo "node pipeline.js work-signal stop"` })],
+    ['Codex', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, CERRADA]]), null, { CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: 'ses-estimate-real' }],
+  ];
+  for (const [caso, armar, id, extra] of casos) {
+    l = lab();
+    armar(l);
+    r = id ? correr(l, ['work-signal', 'stop', '--story', l.spec, '--action-done', id], 'action-id') : cerrar(l, extra);
+    assert.strictEqual(r.status, 1, `${caso}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /no anoto horas/, caso);
+    const x = real(l, ['--run', 'r1']);
+    assert.deepStrictEqual([x.json.ok, x.json.reason], [false, 'sin_horas'], caso);
+    assert.deepStrictEqual(lineas(l.repo), [], `${caso}: nada escrito`);
+  }
 });
