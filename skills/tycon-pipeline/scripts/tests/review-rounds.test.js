@@ -301,3 +301,84 @@ test('Cap_ExtraRound_Judge: «tercera vuelta» y los ordinales autorizan; negarl
     assert.ok(juez(t), `«${t}» no autoriza otra vuelta`);
   }
 });
+
+// ── La vuelta extra pedida para otra sesión ───────────────────────────────────────────────────────────────────────────
+//
+// La coordinadora corre `smart-reloop --extra-round --for-session <D>`: el pedido lo arma `decidir` de verdad con el
+// evento de la coordinadora, y el guion lo verifica de verdad con el árbol de procesos de la prueba (window-passed.js).
+
+const ow = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+const { arbolDelFreno, arbolDelGuion } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
+const COORD = 'ses-coord';
+// stable-data: el pedido se registra con esta hora y el guion lo verifica un minuto después
+const AHORA = Date.now();
+
+/** La vuelta `iter` pedida por la coordinadora para la sesión del laboratorio; `pedir`: que el freno arme el pedido antes. */
+function vueltaParaOtra(lab, iter, extra, { pedir = true, sesion = COORD } = {}) {
+  const args = [PIPELINE, 'smart-reloop', '--iter', String(iter), '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', ...extra];
+  const cmd = `node ${args.join(' ')}`;
+  if (pedir) {
+    const p = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+      escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+    assert.equal(p.decision, 'ask', p.texto);
+  }
+  return spawnSync(process.execPath, args, { encoding: 'utf8',
+    env: conVentana({ ...lab.env, CLAUDE_CODE_SESSION_ID: sesion }, { arbol: { arbol: arbolDelGuion(lab.home, cmd), pid: 301, ahora: AHORA + 60000 } }) });
+}
+const vigentes = (lab) => { try { return fs.readdirSync(ow.carpeta(lab.home)).filter((f) => f.endsWith('.json')); } catch (_) { return []; } };
+
+test('VueltaExtra_ForSession_SeAnotaEnLaCorridaDestino @story-8.142 @ac-2 @ac-3', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
+  // la sesión de la corrida llega al tope y deja su nota de la tercera vuelta
+  assert.equal(lab.reloop(3).status, 3);
+  const nota = lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
+    '--change', 'Cambia el enfoque: la validación pasa a la entrada del endpoint, antes de tocar la base', '--repo', lab.repo, '--story', lab.story]);
+  assert.equal(nota.status, 0, nota.stderr);
+  const marcador = fs.readFileSync(lab.markerFile, 'utf8');
+  // sin --extra-round, otra sesión no puede pedir el set: sale 2 sin escribir
+  const sinExtra = vueltaParaOtra(lab, 3, ['--for-session', SID], { pedir: false });
+  assert.equal(sinExtra.status, 2, sinExtra.stdout + sinExtra.stderr);
+  assert.ok(!gates(lab).some((g) => g.name === 'extra-round'));
+  // la vuelta extra aprobada en la ventana de la coordinadora queda anotada para la corrida de la sesión destino
+  const r = vueltaParaOtra(lab, 3, ['--extra-round', '--for-session', SID]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const linea = gates(lab).find((g) => g.name === 'extra-round');
+  assert.ok(linea, 'la vuelta extra quedó anotada');
+  assert.deepEqual([linea.story, linea.iter, linea.via, linea.por], ['9.8', 3, 'ventana', COORD]);
+  assert.ok(gates(lab).some((g) => g.name === 'extra-round-signed' && g.sesion === COORD && g.destino === SID));
+  assert.equal(fs.readFileSync(lab.markerFile, 'utf8'), marcador, 'el marcador destino no se tocó');
+  assert.ok(!fs.existsSync(path.join(lab.state, 'active', `${COORD}.json`)), 'no le nació marcador a la coordinadora');
+  assert.equal(vigentes(lab).length, 0, 'el pedido se gastó');
+});
+
+test('VueltaExtra_ForSession_SinFirmaPendiente_NoSirve @story-8.142 @ac-2', () => {
+  // dentro del tope no hay firma que dar: otra sesión no saca el set de la corrida ajena por este camino
+  const lab = laboratorio({ fotos: [1], servidas: [1] });
+  const r = vueltaParaOtra(lab, 2, ['--extra-round', '--for-session', SID]);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /no necesita firma/);
+  assert.deepEqual(lab.servidas(), [1], 'no anotó una vuelta servida');
+  assert.equal(vigentes(lab).length, 1, 'el pedido sigue sin gastar');
+  // una sesión sin marcador abierto: sale 2 antes de la firma
+  const otra = vueltaParaOtra(laboratorio({ fotos: [1, 2], servidas: [1, 2] }), 3, ['--extra-round', '--for-session', 'ses-z'], { pedir: false });
+  assert.equal(otra.status, 2, otra.stdout + otra.stderr);
+  assert.match(otra.stderr, /ses-z/);
+  // sin variable de sesión y sin --terminal: sale 2 sin pasar por la firma
+  const tope = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  const sinSesion = vueltaParaOtra(tope, 3, ['--extra-round', '--for-session', SID], { pedir: false, sesion: '' });
+  assert.equal(sinSesion.status, 2, sinSesion.stdout + sinSesion.stderr);
+  assert.match(sinSesion.stderr, /--terminal/);
+  // un marcador que no se puede leer no es «sin ejecución abierta», y el registro no se gasta
+  fs.writeFileSync(path.join(tope.state, 'active', 'ses-rota.json'), '{ no es json');
+  const rota = vueltaParaOtra(tope, 3, ['--extra-round', '--for-session', 'ses-rota']);
+  assert.equal(rota.status, 2, rota.stdout + rota.stderr);
+  assert.match(rota.stderr, /no pude leer/);
+  assert.equal(vigentes(tope).length, 1, 'el pedido sigue sin gastar');
+  // la corrida de la sesión destino es de otra historia que --story: sale 2 sin gastar el registro
+  fs.writeFileSync(path.join(tope.state, 'active', 'ses-otra.json'), JSON.stringify({ storyId: '7.7', sessionId: 'ses-otra', startedAt: new Date().toISOString() }));
+  const ajena = vueltaParaOtra(tope, 3, ['--extra-round', '--for-session', 'ses-otra']);
+  assert.equal(ajena.status, 2, ajena.stdout + ajena.stderr);
+  assert.match(ajena.stderr, /7\.7/);
+  assert.equal(vigentes(tope).length, 2, 'ningún pedido gastado');
+  assert.ok(!gates(tope).some((g) => g.name === 'extra-round'));
+});

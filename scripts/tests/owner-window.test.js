@@ -568,7 +568,8 @@ test('OwnerWindow_Coordinadora_VentanaEnSuPestana (T22)', (t) => {
   assert.strictEqual(r.decision, 'ask', r.texto);
   assert.match(r.texto, /sesión ses-a/);
   assert.match(r.texto, /9\.99/);
-  const e = ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  // el guion lo corre la coordinadora: su sesión propia es la de ella
+  const e = ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'ventana');
   const g = gates(casa).filter((x) => x.name === 'plan-approval-signed');
@@ -592,10 +593,101 @@ test('OwnerWindow_Delegado_SinVentana (T23)', (t) => {
     assert.strictEqual(reg.via, 'delegacion');
     assert.strictEqual(reg.maquina, HUELLA);
     assert.strictEqual(reg.sesion, 'ses-coord');
-    const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+    const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
     assert.strictEqual(e.codigo, 0, e.motivo);
     assert.strictEqual(e.via, 'delegacion', 'el guion firma con via: delegacion');
     assert.strictEqual(gates(casa).filter((x) => x.name === `${firma}-signed`)[0].via, 'delegacion');
+  }
+});
+
+// --- el guion que corre la coordinadora firma para la sesión destino -----------------------------------------------
+
+const exigirDe = (casa, argv, cmd, propia) => ow.exigir({ firma: 'plan-approval', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia });
+
+test('Exigir_OtraSesion_ConRegistro_Firma (T1) @story-8.142 @ac-1', (t) => {
+  const casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, PLAN, { evento: DE_LA_COORD }).decision, 'ask');
+  const e = exigirDe(casa, PLAN_ARGV, PLAN, 'ses-coord');
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.destino, 'ses-a');
+  assert.strictEqual(e.sesion, 'ses-coord');
+  assert.strictEqual(vigentes(casa).length, 0, 'el registro quedó gastado');
+  // un uso: el mismo guion otra vez no firma
+  assert.strictEqual(exigirDe(casa, PLAN_ARGV, PLAN, 'ses-coord').codigo, 1);
+  assert.strictEqual(gates(casa).filter((g) => g.name === 'plan-approval-signed').length, 1);
+  // un marcador del destino que no se puede leer no es «sin ejecución»: sale 2 sin tocar la variable de sesión,
+  // también para una firma que no exige el marcador
+  const env = {};
+  const fd = ow.fijarDestino({ r: e, propia: 'ses-coord', leerMarcador: () => { throw new Error('no pude leer el marcador de la sesión ses-a'); }, env });
+  assert.strictEqual(fd.codigo, 2);
+  assert.match(fd.motivo, /no pude leer/);
+  assert.deepStrictEqual(env, {});
+  const activos = path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(casa), 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), '{ no es json');
+  assert.strictEqual(ow.fijarDestino({ r: e, propia: 'ses-coord', casa, env }).codigo, 2);
+  // en la terminal del dueño sin variable de sesión, nadie la pidió para otra: la constancia no lleva `por`
+  const terminal = ow.fijarDestino({ r: { via: 'terminal', sesion: null, destino: 'ses-a' }, propia: '_nosession', leerMarcador: () => null, env: {} });
+  assert.strictEqual(terminal.codigo, 0);
+  assert.deepStrictEqual(terminal.constancia, { via: 'terminal' });
+});
+
+test('Exigir_OtraSesion_SinRegistro_Sale1 (T2) @story-8.142 @ac-1 @ac-4', (t) => {
+  // sin registro
+  let casa = casaNueva(t);
+  let e = exigirDe(casa, PLAN_ARGV, PLAN, 'ses-coord');
+  assert.strictEqual(e.codigo, 1);
+  assert.strictEqual(gates(casa).length, 0, 'nada escrito');
+  // un registro para otra sesión destino (ses-e) no firma el pedido para ses-a
+  casa = casaNueva(t);
+  pedir(casa, PLAN, { evento: DE_LA_COORD });
+  const f = path.join(ow.carpeta(casa), vigentes(casa)[0]);
+  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), destino: 'ses-e' }));
+  e = exigirDe(casa, PLAN_ARGV, PLAN, 'ses-coord');
+  assert.strictEqual(e.codigo, 1);
+  assert.strictEqual(vigentes(casa).length, 1, 'el registro para ses-e sigue sin gastar');
+  assert.strictEqual(gates(casa).length, 0);
+  // el registro de la sesión ses-x, con el mismo comando y la misma herramienta, no lo usa ses-coord
+  casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, PLAN, { evento: { session_id: 'ses-x' } }).decision, 'ask');
+  e = exigirDe(casa, PLAN_ARGV, PLAN, 'ses-coord');
+  assert.strictEqual(e.codigo, 1, 'un registro de ses-x no firma lo que corre ses-coord');
+  assert.strictEqual(vigentes(casa).length, 1, 'el registro de ses-x quedó intacto');
+  assert.strictEqual(registroVigente(casa).sesion, 'ses-x');
+  assert.strictEqual(gates(casa).length, 0);
+});
+
+test('Exigir_SinForSession_ComoHoy (T3) @story-8.142 @ac-1', (t) => {
+  // red de no regresión: sin --for-session, la sesión propia firma con su registro y sin él no
+  const [, cmd, argv] = GUIONES[0];
+  let casa = casaNueva(t);
+  assert.strictEqual(pedir(casa, cmd).decision, 'ask');
+  const e = exigirDe(casa, argv, cmd, 'ses-a');
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.destino, 'ses-a');
+  assert.strictEqual(e.sesion, 'ses-a');
+  casa = casaNueva(t);
+  assert.strictEqual(exigirDe(casa, argv, cmd, 'ses-a').codigo, 1);
+  assert.strictEqual(gates(casa).length, 0);
+});
+
+test('Exigir_Terminal_DestinoPedido (T4) @story-8.142 @ac-1', (t) => {
+  const tty = { windows: false, hay: () => true, preguntar: () => 'firmo' };
+  let casa = casaNueva(t);
+  const e = ow.exigir({ firma: 'manual-test', argv: [MARKER, 'mark-tested', '--acs', '1', '--terminal', '--for-session', 'ses-a'], propia: 'ses-coord', casa, tty, ahora: AHORA });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.destino, 'ses-a');
+  const g = gates(casa).find((x) => x.name === 'manual-test-signed');
+  assert.strictEqual(g.via, 'terminal');
+  assert.strictEqual(g.sesion, 'ses-coord', 'el renglón dice quién la pidió');
+  assert.strictEqual(g.destino, 'ses-a');
+  // una firma que no se corre desde otra sesión sigue saliendo 1, con o sin terminal
+  for (const extra of [['--terminal'], []]) {
+    casa = casaNueva(t);
+    const r = ow.exigir({ firma: 'adversarial-skip', argv: [MARKER, 'sign-adversarial-skip', '--story', 's.md', '--reason', 'x', ...extra, '--for-session', 'ses-a'], propia: 'ses-coord', casa, tty, ahora: AHORA });
+    assert.strictEqual(r.codigo, 1, extra.join(' '));
+    assert.match(r.motivo, /se corre desde la sesión destino/);
+    assert.strictEqual(gates(casa).length, 0);
   }
 });
 
@@ -700,7 +792,8 @@ test('OwnerWindow_Refirma_DelegadaSinVentana + OwnerWindow_RefirmaNoComprobada_P
   assert.strictEqual(reg.refirma_de, 'h'.repeat(64));
   // el guion de la refirma consume ese registro; el de un cambio de control, no
   assert.strictEqual(ow.verificar({ firma: 'control-change', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000 }).ok, false);
-  const e = ow.exigir({ firma: 'refresh-after-main', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  // el guion lo corre la coordinadora, la sesión que pidió
+  const e = ow.exigir({ firma: 'refresh-after-main', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: DE_LA_COORD.session_id });
   assert.strictEqual(e.codigo, 0, e.motivo);
   assert.strictEqual(e.via, 'delegacion');
   assert.strictEqual(e.registro.refirma_de, 'h'.repeat(64));
@@ -1023,7 +1116,7 @@ test('Constancias_DicenViaQuienYDestino_SinCita (T46) @story-8.139 @ac-30', (t) 
   // por la delegación
   const casa = casaConDesignada(t);
   pedir(casa, PLAN, { evento: DE_LA_COORD, delegacion: delegacionReal() });
-  assert.strictEqual(ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: 'ses-a' }).codigo, 0);
+  assert.strictEqual(ow.exigir({ firma: 'plan-approval', argv: PLAN_ARGV, pid: 301, arbol: arbolDelGuion(casa, PLAN), casa, ahora: AHORA + 60000, propia: DE_LA_COORD.session_id }).codigo, 0);
   const d = gates(casa).find((x) => x.name === 'plan-approval-signed');
   mira(d, 'delegación');
   assert.strictEqual(d.via, 'delegacion');

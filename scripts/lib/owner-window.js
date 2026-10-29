@@ -280,10 +280,31 @@ function nombreALaVista(comando) {
 // --- los textos ---------------------------------------------------------------------------------------------------
 
 function storyDe(casa, destino) {
-  try {
-    const m = JSON.parse(fs.readFileSync(path.join(stateDir(casa), 'active', `${destino}.json`), 'utf8'));
-    return m.storyId || (m.storyPath ? path.basename(m.storyPath) : null) || 'sin story en su ejecución';
-  } catch (_) { return 'sin ejecución abierta'; }
+  let m;
+  try { m = marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (_) { return 'su marcador no se puede leer'; }
+  if (!m) return 'sin ejecución abierta';
+  return m.storyId || (m.storyPath ? path.basename(m.storyPath) : null) || 'sin story en su ejecución';
+}
+
+/** La corrida abierta de la sesión `destino` (`{ storyId, startedAt }`), o null sin marcador: la que vio el dueño. */
+function corridaDelMarcador(m) {
+  return m && m.storyId ? { storyId: String(m.storyId), startedAt: m.startedAt || null } : null;
+}
+/**
+ * El marcador de una sesión leído de `ruta`: null si no existe; si existe y no se puede leer, lanza (un marcador roto no
+ * es «sin ejecución abierta»).
+ */
+function marcadorEn(ruta) {
+  let texto;
+  try { texto = fs.readFileSync(ruta, 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw new Error(`no pude leer el marcador ${path.basename(ruta)} (${e.code || e.message})`);
+  }
+  try { return JSON.parse(texto); } catch (_) { throw new Error(`no pude leer el marcador ${path.basename(ruta)} (no es JSON)`); }
+}
+// ilegible, la corrida queda anotada como tal: después no coincide con ninguna y la firma no pasa
+function corridaDe(casa, destino) {
+  try { return corridaDelMarcador(marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`))); } catch (_) { return { ilegible: true }; }
 }
 
 function detalleDe(id, comando, palabras, cwd) {
@@ -467,7 +488,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (guion) {
     try {
       escribirRegistro(casa, { firma: firmaGuion, sesion, destino, tool_use_id: evento.tool_use_id == null ? null : String(evento.tool_use_id),
-        sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(),
+        sha256: sha256(comando), comando, herramienta: { pid: tool.pid, inicio: tool.inicio }, ts: new Date(ahora).toISOString(), corrida: corridaDe(casa, destino),
         ...(delegada ? { via: 'delegacion', maquina: delegada.maquina } : {}), ...(refirmaDe ? { refirma_de: refirmaDe } : {}) });
     } catch (e) { return negar(`no se pudo escribir el registro de la ventana (${e.code || e.message})`, pendientes); }
   }
@@ -490,7 +511,7 @@ function mismoArchivo(a, b) {
  * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
  * consume el registro; `{ ok: false, motivo }` no escribe nada.
  */
-function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, destino } = {}) {
+function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino } = {}) {
   const s = firmaDe(firma);
   const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Firmala en tu terminal: ${(s && s.terminal) || 'el mismo comando con --terminal'}` });
   if (!s || s.kind !== 'guion') return no(`«${firma}» no es una firma de guion`);
@@ -538,6 +559,8 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     try { reg = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { ilegibles++; continue; }
     const edad = ahora - Date.parse(reg.ts);
     if (reg.firma !== firma || reg.sha256 !== huella || reg.comando !== comando) continue;
+    // el registro es de la sesión que pidió y para su destino: el de otra sesión no lo usa nadie más
+    if (sesion && reg.sesion !== sesion) continue;
     if (destino && reg.destino !== destino) continue;
     if (!reg.herramienta || reg.herramienta.pid !== tool.pid || reg.herramienta.inicio !== tool.inicio) continue;
     if (edad > VENCE_MIN * 60000 && (vencido === null || edad < vencido)) vencido = edad;
@@ -708,22 +731,53 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
   const pedida = i >= 0 ? argv[i + 1] : null;
-  if (pedida && propia && pedida !== propia) {
+  // otra sesión, sólo para las firmas que el catálogo marca así: la firma la pide la sesión propia para la pedida
+  const s = firmaDe(firma);
+  if (pedida && propia && pedida !== propia && !(s && s.otherSession === 'yes')) {
     return { codigo: 1, motivo: `este guion actúa sobre la sesión ${propia}: firmar para otra sesión (--for-session ${pedida}) se corre desde la sesión destino` };
   }
+  const destino = pedida || propia || null;
   if (argv.includes('--terminal')) {
     const t = tty || ttyDeVerdad();
-    if (t.windows && t.enVentana && !t.enVentana()) return { ...porLaVentana({ argv, t, salir }), destino: pedida || propia || null };
+    if (t.windows && t.enVentana && !t.enVentana()) return { ...porLaVentana({ argv, t, salir }), destino };
     if (t.windows && t.enVentana && t.dentro) t.dentro();
-    const r = porTerminal({ firma, destino: pedida || propia || null, resumen, casa, ahora, tty: t, anotar });
-    return { ...r, destino: pedida || propia || null };
+    const r = porTerminal({ firma, sesion: propia || null, destino, resumen, casa, ahora, tty: t, anotar });
+    return { ...r, destino, sesion: propia || null };
   }
-  const v = verificar({ firma, argv, pid, arbol, casa, ahora, destino: propia });
+  const v = verificar({ firma, argv, pid, arbol, casa, ahora, sesion: propia || undefined, destino: destino || undefined });
   if (!v.ok) return { codigo: 1, motivo: v.motivo };
   // el registro que dejó el freno sin ventana (la delegación del perfil) firma con via: delegacion
   const via = v.registro.via === 'delegacion' ? 'delegacion' : 'ventana';
   firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: resumen || v.registro.comando, casa, ahora, anotar });
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
+}
+
+/**
+ * Después de la firma, el guion pasa a trabajar sobre la sesión destino de `r` (lo que devolvió `exigir`), con esta
+ * única llamada: compara la corrida que vio el dueño (la del registro; la terminal no deja registro) con la del
+ * marcador de ahora, exige el marcador abierto si la firma trabaja sobre la ejecución, y fija la variable de sesión del
+ * proceso (las bibliotecas y los procesos hijos). `{ codigo: 0, destino, constancia: { via, por? } }`, o
+ * `{ codigo: 2, motivo }` sin tocar nada. `leerMarcador(sesion)`: el marcador como lo lee el guion (null si no existe;
+ * lanza si existe y no se puede leer, como `marcadorEn`); sin él, el de `casa`.
+ */
+function fijarDestino({ r, propia, necesitaMarcador = false, leerMarcador, casa, env = process.env } = {}) {
+  const destino = r && r.destino;
+  // sin sesión (ni propia ni pedida) el guion sigue como estaba: no hay a qué sesión pasar
+  if (!destino || destino === '_nosession') return { codigo: 0, destino: null, constancia: { via: r && r.via } };
+  if (!SESION.test(destino)) return { codigo: 2, motivo: 'la sesión destino de la firma no se puede leer' };
+  const leer = leerMarcador || ((sid) => marcadorEn(path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'active', `${sid}.json`)));
+  let hoy;
+  try { hoy = corridaDelMarcador(leer(destino)); } catch (e) { return { codigo: 2, motivo: e.message }; }
+  if (necesitaMarcador && !hoy) return { codigo: 2, motivo: `la sesión ${destino} no tiene una ejecución abierta` };
+  const vio = r.registro ? r.registro.corrida : undefined;
+  if (vio !== undefined && JSON.stringify(vio) !== JSON.stringify(hoy)) {
+    return { codigo: 2, motivo: `la ejecución de la sesión ${destino} cambió desde que se pidió la firma (se pidió para ${vio && vio.ilegible ? 'un marcador que no se podía leer' : vio ? `la story ${vio.storyId}` : 'ninguna ejecución'}; ahora ${hoy ? `es la story ${hoy.storyId}` : 'no hay ninguna'}): pedila de nuevo` };
+  }
+  // la variable que gana en la resolución de la sesión, y las otras dos si están, para que la cadena no se parta
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) if (k === 'CLAUDE_CODE_SESSION_ID' || env[k]) env[k] = destino;
+  // la terminal del dueño sin variable de sesión no es una sesión que pida: no deja `por`
+  const pidio = r.sesion || (propia && propia !== '_nosession' ? propia : null);
+  return { codigo: 0, destino, constancia: { via: r.via, ...(pidio && pidio !== destino ? { por: pidio } : {}) } };
 }
 
 /**
@@ -735,7 +789,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: 'ventana' };
 }
 
-module.exports = { VENCE_MIN, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, vencerPedidos,
+module.exports = { VENCE_MIN, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma };
 
 if (require.main === module) {

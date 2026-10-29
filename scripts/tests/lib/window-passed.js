@@ -18,6 +18,12 @@
  *   conVentana(env)   → una copia de `env` con NODE_OPTIONS que carga este archivo
  *   conVentana(env, { delegadaPor: '<sesión>' }) → la firma queda como la deja la delegación del perfil: `via: delegacion`,
  *                       firmada por esa sesión (la coordinadora)
+ *   conVentana(env, { arbol: { arbol, pid, ahora } }) → la firma NO se da por pasada: va por la verificación de verdad
+ *                       (el registro que dejó el freno de la prueba) con el árbol de procesos y la hora que dice la
+ *                       prueba, y la casa de juguete
+ *   conVentana(env, { sesionEn: '<archivo>' }) → al salir, el guion deja en ese archivo su variable de sesión
+ *   arbolDelFreno() / arbolDelGuion(casa, cmd) → los árboles de procesos de la prueba: el del freno, para `decidir`
+ *                       (pid 201), y el del guion que corre `cmd` (pid 301)
  */
 const fs = require('fs');
 const os = require('os');
@@ -28,12 +34,30 @@ const RAIZ = path.resolve(__dirname, '..', '..', '..');
 const { casaDeLaCuenta } = require(path.join(RAIZ, 'scripts', 'lib', 'real-home.js'));
 const MODULO_DE_LA_VENTANA = /[\\/]scripts[\\/]lib[\\/]owner-window\.js$/;
 
-function conVentana(env = process.env, { delegadaPor } = {}) {
+function conVentana(env = process.env, { delegadaPor, arbol, sesionEn } = {}) {
   const previas = String(env.NODE_OPTIONS || '').trim();
   const out = { ...env, NODE_OPTIONS: `${previas ? `${previas} ` : ''}--require ${__filename}` };
   if (delegadaPor) out.WINDOW_PASSED_DELEGATED_BY = delegadaPor;
+  if (arbol) out.WINDOW_PASSED_TREE = JSON.stringify(arbol);
+  if (sesionEn) out.WINDOW_PASSED_SESSION_OUT = sesionEn;
   return out;
 }
+
+// El árbol de procesos de la prueba, para `conVentana(env, { arbol })`: la herramienta (pid 100) y, debajo, el freno
+// (pid 201, el que arma el pedido con `decidir`) o el guion (pid 301) envuelto como lo corre la herramienta.
+const INICIO = 'Tue Oct 27 10:00:00 2026';
+const BASE_DEL_ARBOL = [{ pid: 1, ppid: 0, inicio: 'Mon Oct 26 08:00:00 2026', comando: '/sbin/launchd' },
+  { pid: 100, ppid: 1, inicio: INICIO, comando: '/Applications/x/native-binary/claude --output-format stream-json --verbose' }];
+const envolver = (casa, cmd) => `/bin/zsh -c source ${casa}/.claude/shell-snapshots/snapshot-zsh-1793030721191-z5n7vi.sh 2>/dev/null || true`
+  + ' && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true'
+  + " && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true"
+  + ` && eval '${cmd.replace(/'/g, `'"'"'`)}' < /dev/null && pwd -P >| /tmp/claude-b725-cwd`;
+const arbolDelFreno = () => [...BASE_DEL_ARBOL,
+  { pid: 200, ppid: 100, inicio: INICIO, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' },
+  { pid: 201, ppid: 200, inicio: INICIO, comando: 'node /h/scripts/lib/owner-window.js gate' }];
+const arbolDelGuion = (casa, cmd) => [...BASE_DEL_ARBOL,
+  { pid: 300, ppid: 100, inicio: INICIO, comando: envolver(casa, cmd) },
+  { pid: 301, ppid: 300, inicio: INICIO, comando: cmd }];
 
 // La ruta con los enlaces resueltos, aunque el final todavía no exista.
 function sinEnlaces(p) {
@@ -71,6 +95,14 @@ function tocaLaCasaReal({ home = os.homedir(), env = process.env, real } = {}) {
 function darPorPasada(ow) {
   if (!ow || typeof ow.exigir !== 'function' || ow.exigir.porPasada) return;
   const exigir = ow.exigir;
+  // con el árbol de la prueba, nada pasa solo: la verificación de verdad, con ese árbol y la casa de juguete
+  if (process.env.WINDOW_PASSED_TREE) {
+    const deLaPrueba = JSON.parse(process.env.WINDOW_PASSED_TREE);
+    const conArbol = (o = {}) => exigir({ ...o, arbol: deLaPrueba.arbol, pid: deLaPrueba.pid, ahora: deLaPrueba.ahora, casa: os.homedir() });
+    conArbol.porPasada = true;
+    ow.exigir = conArbol;
+    return;
+  }
   const porPasada = (o = {}) => {
     const argv = o.argv || process.argv.slice(1);
     if (argv.includes('--terminal')) return exigir(o);
@@ -95,6 +127,8 @@ if (!require.main) {
     process.stderr.write('window-passed.js: sólo con una HOME de prueba; con el estado en la casa de la cuenta (HOME o TYCON_HOME) no firma nada.\n');
     process.exit(3);
   }
+  const sesionEn = process.env.WINDOW_PASSED_SESSION_OUT;
+  if (sesionEn) process.on('exit', () => { try { fs.writeFileSync(sesionEn, String(process.env.CLAUDE_CODE_SESSION_ID || '')); } catch (_) { /* la prueba lo nota */ } });
   const cargar = Module._load;
   Module._load = function cargarConVentana(pedido, padre, esPrincipal) {
     const exportado = cargar.apply(this, arguments);
@@ -106,4 +140,4 @@ if (!require.main) {
   };
 }
 
-module.exports = { conVentana, tocaLaCasaReal };
+module.exports = { conVentana, tocaLaCasaReal, arbolDelFreno, arbolDelGuion };
