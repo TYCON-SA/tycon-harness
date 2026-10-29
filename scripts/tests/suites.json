@@ -2934,6 +2934,12 @@
       "requiere": []
     },
     {
+      "__nota": "el partidor de scripts/lib/shell-parse.js con un heredoc SIN comillas: sus $(…) y comillas invertidas (que el shell corre al armar el cuerpo) quedan a la vista como comandos, también con un intérprete, una comilla suelta del texto o un $((…)); con comillas en la palabra o el $ escapado no se lee nada. Sólo lee texto.",
+      "raiz": "arnes",
+      "ruta": "tests/shell-parse-heredoc.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 6.3, tanda A (T1-T20, T26): el freno corta el borrado del grupo, del candado, del recurso que no se puede probar que no es SQL y `az rest` con delete, más los `Remove-Az…` de PowerShell; las formas vienen de fixtures/prod-guard-azure-delete.json. Corre en un HOME de laboratorio.",
       "raiz": "arnes",
       "ruta": "tests/prod-guard-azure-delete.test.sh",
