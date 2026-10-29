@@ -298,12 +298,28 @@ test('8.141 T9 AdhocSet_SinFirma_NoEscribe', () => {
   // en la terminal del dueño, con «firmo»
   const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const t = markerEnTerminal(home2, [...SET, '--terminal', '--for-session', 'sess-t9b'], 'firmo');
-  if (!t) { console.log('⏭ T9 la firma en la terminal: NO MEDIDO — sin `script` para abrir una terminal'); return; }
+  if (!t) { console.log('⏭ T9 la firma en la terminal: NO MEDIDO — sin Python (o en Windows) para abrir una terminal'); return; }
   assert.equal(t.status, 0, `${t.stdout}${t.stderr}`);
+  assert.match(t.stdout, /hasta 3 archivos/, 'la terminal muestra el cupo que se firma');
   assert.equal(declaracion(home2, 'sess-t9b').via, 'terminal');
   assert.equal(adhocLog(home2).filter((e) => e.kind === 'ADHOC_SET')[0].via, 'terminal');
   const no = markerEnTerminal(fs.mkdtempSync(path.join(os.tmpdir(), 'home-')), [...SET, '--terminal', '--for-session', 'sess-t9c'], 'no');
   assert.equal(no.status, 1, `${no.stdout}${no.stderr}`);
+});
+
+// 8.141 T9b AdhocSet_LoQueSeFirmaSeVeEntero @story-8.141 @ac-4
+// De la revisión de seguridad: la ventana y la terminal muestran el motivo hasta 200 caracteres y el cupo. Un motivo
+// más largo o un cupo que no es un entero de 1 a 50 se niegan antes de pedir la firma, así el dueño firma lo que se guarda.
+// 🔴 Falla con: un motivo de más de 200 caracteres o un cupo raro que llegan a escribirse.
+test('8.141 T9b AdhocSet_LoQueSeFirmaSeVeEntero', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const sid = 'sess-t9b';
+  for (const payload of [{ reason: 'x'.repeat(201) }, { reason: 'arreglo del sp', maxFiles: 2.5 }, { reason: 'arreglo del sp', maxFiles: 51 }, { reason: 'arreglo del sp', maxFiles: '8' }]) {
+    const r = markerCli(home, sid, ['adhoc', 'set', JSON.stringify(payload)]);
+    assert.equal(r.status, 2, `${JSON.stringify(payload)}: ${r.stderr}`);
+    assert.equal(declaracion(home, sid), null);
+  }
+  assert.equal(markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason: 'x'.repeat(200), maxFiles: 50 })]).status, 0);
 });
 
 // 8.141 T10 AdhocSet_ElChatNoAutoriza @story-8.141 @ac-5 @ac-8

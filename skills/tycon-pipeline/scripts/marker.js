@@ -5016,6 +5016,8 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // ============================================================
 // el cupo más grande que declara la designada por otra pestaña: uno mayor lo aprueba el dueño en su ventana
 const ADHOC_TOPE_DELEGADO = 8;
+const ADHOC_MOTIVO_MAX = 200;
+const ADHOC_CUPO_MAX = 50;
 
 function cmdAdhoc(sub, payloadJson) {
   if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
@@ -5027,7 +5029,10 @@ function cmdAdhoc(sub, payloadJson) {
   }
   if (sub === 'clear') {
     const existing = io.readAdhoc(STATE_DIR, SID);
-    try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (_e) { /* el archivo no existe */ }
+    try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
+      // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
+      if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
+    }
     appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0 });
     process.stdout.write('adhoc: cleared\n');
     process.exit(0);
@@ -5044,6 +5049,15 @@ function cmdAdhoc(sub, payloadJson) {
       console.error('marker.js adhoc set: "reason" requerido (≥8 caracteres): qué se arregla y por qué, para que el dueño lo lea en la ventana.');
       process.exit(2);
     }
+    // la ventana y la terminal muestran el motivo hasta 200 caracteres y el cupo: lo que se guarda es lo que el dueño ve
+    if (reason.length > ADHOC_MOTIVO_MAX) {
+      console.error(`marker.js adhoc set: "reason" de hasta ${ADHOC_MOTIVO_MAX} caracteres: la ventana no muestra más, y el dueño firmaría un recorte.`);
+      process.exit(2);
+    }
+    if (payload.maxFiles !== undefined && !(Number.isInteger(payload.maxFiles) && payload.maxFiles >= 1 && payload.maxFiles <= ADHOC_CUPO_MAX)) {
+      console.error(`marker.js adhoc set: "maxFiles" es un número entero de 1 a ${ADHOC_CUPO_MAX}.`);
+      process.exit(2);
+    }
     // la sesión destino: la de --for-session (la designada declara por otra pestaña, o el dueño desde su terminal), o la propia
     const k = process.argv.indexOf('--for-session');
     const pedida = k >= 0 ? process.argv[k + 1] : null;
@@ -5057,7 +5071,9 @@ function cmdAdhoc(sub, payloadJson) {
       process.exit(2);
     }
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-    const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: ${reason}`,
+    // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
+    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
+    const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: «${reason}» · ${cupoPedido}`,
       propia: destino, anotar: (renglon) => appendLog('gates.log', renglon) });
     if (r.codigo !== 0) {
       const json = String(payloadJson).replace(/'/g, "'\\''");
@@ -5068,11 +5084,15 @@ function cmdAdhoc(sub, payloadJson) {
       console.error('   Si el dueño no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
       process.exit(r.codigo === 2 ? 2 : 1);
     }
-    const via = r.via === 'delegacion' ? 'delegacion' : r.via === 'terminal' ? 'terminal' : 'ventana';
+    // una vía que este guion no conoce no se cuenta como ventana: no se declara
+    if (!['delegacion', 'terminal', 'ventana'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
+      process.exit(1);
+    }
+    const via = r.via;
     const by = r.sesion || SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
-    let maxFiles = Number.isFinite(Number(payload.maxFiles)) && Number(payload.maxFiles) > 0
-      ? Number(payload.maxFiles) : (existing ? existing.maxFiles : 8);
+    let maxFiles = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
     const pedido = maxFiles;
     if (via === 'delegacion' && maxFiles > ADHOC_TOPE_DELEGADO) maxFiles = ADHOC_TOPE_DELEGADO;
     const obj = {

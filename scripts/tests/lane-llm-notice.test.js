@@ -67,4 +67,12 @@ test('8.141 T16 LaneLlmNotice_CuentaPorVia', (t) => {
   assert.match(rep.stdout, /por la coordinadora:\s+1/);
   assert.match(rep.stdout, /sin dato:\s+1/);
   assert.doesNotMatch(rep.stdout, /modelo|desempate|juez/i);
+  // --all cuenta todo el log, sin ventana de días
+  const todo = estado(t, [{ ts: hace(400 * DIA), kind: 'ADHOC_SET', via: 'terminal', reason: 'viejísimo' }]);
+  assert.match(correr(todo, ['--report']).stdout, /declarados o cambiados: 0/);
+  assert.match(correr(todo, ['--report', '--all']).stdout, /en la terminal:\s+1/);
+  // apagado, el aviso de arranque no dice nada
+  const apagado = estado(t, [eventos[0]]);
+  const off = spawnSync(process.execPath, [AVISO], { encoding: 'utf8', env: { ...process.env, TYCON_PIPELINE_STATE_DIR: apagado, TYCON_LANE_LLM_NOTICE: '0', TYCON_EVAL_SANDBOX: '' } });
+  assert.strictEqual(off.stdout, '');
 });
