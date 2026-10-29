@@ -3329,6 +3329,12 @@
       "requiere": []
     },
     {
+      "__nota": "el reloj propio del freno de seguridad: con un jq que se queda esperando (y un nieto que deja la salida abierta), el freno frena a su tope en vez de dejar que venza el de la herramienta, que correría el comando sin mirar; un comando común no espera y un tope fuera de rango usa el de fábrica. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-guard-clock.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.115 (T7): ningún salteo de Windows sin su motivo escrito en las siete suites que corre el ensayo de Windows (apply-hooks, safety-escape, story-gate, ledger-visible, run-close, pipeline-unit; harness-node mide su propia lista fija). Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/windows-skips.test.js",

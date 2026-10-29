@@ -73,6 +73,31 @@
 
 set -u
 
+# ── El reloj propio del freno ─────────────────────────────────────────────────────────────────────────
+# Si algo deja esperando al freno (un lector colgado, un nieto con la salida abierta) y vence el tope de la herramienta,
+# el comando corre sin mirar: medido con Claude Code, un freno que dormía más que su tope dejó correr el comando y con
+# tope holgado frenó. Por eso el freno tiene un tope propio, más corto, y al vencer frena: un vigía separado del
+# freno (no es su hijo, y no tiene la salida del freno abierta) le manda TERM y corta todo lo que el freno lanzó; la
+# trampa de TERM sale 2. TYCON_SAFETY_TIMEOUT_S, de 1 a 50 segundos; fuera de eso, 20.
+# Límite conocido: el corte de lo lanzado usa `pgrep`; donde no está (el Git Bash de Windows), el freno sale 2 recién
+# cuando termina lo que espera.
+SG_CLOCK_S="${TYCON_SAFETY_TIMEOUT_S:-20}"
+if ! [[ "$SG_CLOCK_S" =~ ^[0-9]+$ ]] || (( SG_CLOCK_S < 1 || SG_CLOCK_S > 50 )); then SG_CLOCK_S=20; fi
+sg_clock_fired() {
+  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar. Si se repite, decíselo a la persona: algo deja esperando al freno." >&2
+  exit 2
+}
+trap 'sg_clock_fired' TERM
+_sg_pid=$$
+( (
+  sleep "$SG_CLOCK_S"
+  # el número del proceso pudo pasar a otro: sólo se corta si sigue siendo este freno
+  case "$(ps -p "$_sg_pid" -o command= 2>/dev/null)" in *safety-guard-pre.sh*) ;; *) exit 0 ;; esac
+  kill -TERM "$_sg_pid" 2>/dev/null
+  _sg_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do _sg_tree "$c"; kill -KILL "$c" 2>/dev/null; done; }
+  _sg_tree "$_sg_pid"
+) </dev/null >/dev/null 2>&1 & ) </dev/null >/dev/null 2>&1
+
 # Fail-open: cualquier error inesperado → exit 0 (no bloquear). Si una firma ya pidió la ventana de permiso, la salida
 # 0 la emite igual: sin ella el comando correría sin que la persona lo apruebe.
 OW_ASK_JSON=""
