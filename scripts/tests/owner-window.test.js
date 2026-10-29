@@ -1518,7 +1518,7 @@ test('TresFirmas_SinPerfil_PidenVentana (T13) @story-8.142 @ac-9', (t) => {
   fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', storyPath: '/r/specs/story-9.99.md' }));
   const r = pedir(casa, `node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1 --for-session ses-a`, { evento: DE_LA_COORD });
   assert.strictEqual(r.decision, 'deny');
-  assert.match(r.texto, /no es la historia de la corrida de la sesión ses-a/);
+  assert.match(r.texto, /no es la historia de la ejecución de la sesión ses-a/);
 });
 
 test('EscapePhrases_SinLasDosFirmas (T17) @story-8.142 @ac-9', (t) => {

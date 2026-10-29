@@ -468,7 +468,7 @@ function canonicaDe(comando) {
     // sin la ventana, la forma canónica se trata como escape y el freno la niega; el motivo queda en el registro
     try {
       const path = require('path');
-      const dir = path.join(require('os').homedir(), '.claude', '.tycon-pipeline');
+      const dir = require('./state-dir.js').stateDir();
       require('fs').mkdirSync(dir, { recursive: true });
       require('fs').appendFileSync(path.join(dir, 'hook-errors.log'),
         `[${new Date().toISOString()}] marker-command: no cargó owner-window.js (${e && e.message}); la forma canónica se lee como escape\n`);
