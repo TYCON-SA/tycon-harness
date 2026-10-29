@@ -210,7 +210,7 @@ function cambiados(repo) {
 
 /** ¿El texto hace `require` (o `import … from`) literal de uno de los archivos que definen firmas o avisos, con o sin `.js`? */
 function requiereSensible(texto) {
-  const nombres = catalogo().REQUIERE_SENSIBLE.map((n) => n.replace(/\.js$/, '').replace(/[.]/g, '\\.')).join('|');
+  const nombres = catalogo().REQUIERE_SENSIBLE.map((n) => n.replace(/\.js$/, '').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|');
   return new RegExp(`(?:require\\s*\\(\\s*|from\\s+)['"\`](?:[^'"\`]*/)?(?:${nombres})(?:\\.js)?['"\`]`, 'i').test(texto);
 }
 
