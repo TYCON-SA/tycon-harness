@@ -52,6 +52,218 @@
           }
         },
         {
+          "id": "historia-por-guion-modo-en-variable-frena",
+          "type": "must-block",
+          "_por_que": "Un guion en archivo con la historia de argumento que escribe sin nombrar su destino (el modo en una variable, en el lugar, un programa que lanza): desde la consola no se ve si es la historia, y cuenta como escritura de ella.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'import sys\nm = '\\''w'\\''\nopen(sys.argv[1], m).write('\\''x'\\'')\n' > a.py"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 a.py specs/story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-guion-ruby-file-write-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'File.write(ARGV[0], File.read(ARGV[0]).sub('\\''in-progress'\\'', '\\''done'\\''))\n' > w.rb"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ruby w.rb specs/story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-guion-perl-en-el-lugar-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' '#!/usr/bin/perl -pi\ns/in-progress/done/;\n' > pi.pl"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "perl pi.pl specs/story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-guion-que-lanza-sed-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'require('\\''child_process'\\'').execFileSync('\\''sed'\\'', ['\\''-i'\\'', '\\''s/a/b/'\\'', process.argv[2]]);\n' > l.js"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "node l.js specs/story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-guion-que-solo-lee-frena",
+          "type": "must-block",
+          "_por_que": "Aunque el guion sólo la lea: con la historia de argumento cuenta como escrita, y el motivo dice que para leerla está la herramienta de lectura.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'import sys\nprint(open(sys.argv[1]).read())\n' > lee.py"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 lee.py specs/story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA",
+              "recibe la historia por argumento"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-guion-ruby-que-solo-lee-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'puts File.read(ARGV[0])\n' > lee.rb"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ruby lee.rb specs/story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA",
+              "recibe la historia por argumento"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-guion-destino-literal-frena",
+          "type": "must-block",
+          "_por_que": "Aunque el guion sólo la lea: con la historia de argumento cuenta como escrita, y el motivo dice que para leerla está la herramienta de lectura.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'const fs = require('\\''fs'\\'');\nfs.writeFileSync('\\''out/r.md'\\'', fs.readFileSync(process.argv[2], '\\''utf8'\\''));\n' > fijo.js"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "node fijo.js specs/story-1.1-resta.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA",
+              "recibe la historia por argumento"
+            ]
+          }
+        },
+        {
+          "id": "historia-por-guion-sin-historia-de-argumento-pasa",
+          "type": "must-not-block",
+          "_por_que": "Gemelo: el mismo guion sin una historia entre los argumentos no es asunto de este freno.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'import sys\nm = '\\''w'\\''\nopen(sys.argv[1], m).write('\\''x'\\'')\n' > a.py"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 a.py out/r.md"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "historia-por-guion-comodin-frena",
+          "type": "must-block",
+          "_por_que": "El comodín del shell se expande antes de mirar si trae una historia.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs out",
+            "printf -- '---\\nepic: 1\\nstory: \"1.1\"\\ntitle: \"Resta\"\\nstatus: in-progress\\n---\\n# Story 1.1\\n' > specs/story-1.1-resta.md",
+            "printf '%s' 'import sys\nm = '\\''w'\\''\nopen(sys.argv[1], m).write('\\''x'\\'')\n' > a.py"
+          ],
+          "stdin": {
+            "session_id": "bench-sb",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python3 a.py specs/*.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HISTORIA ESCRITA POR CONSOLA"
+            ]
+          }
+        },
+        {
           "id": "cd-antes-del-editor-pasa",
           "type": "must-not-block",
           "_por_que": "8.113: la carpeta de un `cd <carpeta> && ` al principio es la base del editor, no algo que escribe; sin esto, frenaba por una plantilla con `story:` de una carpeta que el comando no toca.",

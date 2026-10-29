@@ -2309,7 +2309,8 @@ function expandirComodin(patron, base, aviso) {
   const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
   const partes = absoluto.split(/[\\/]+/);
   let actuales = [partes[0] === '' ? path.sep : `${partes[0]}${path.sep}`];
-  const aRegex = (g) => new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
+  // `[!a]` es la negación del shell: en la expresión, `[^a]`
+  const aRegex = (g) => new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^')}$`);
   for (const parte of partes.slice(1)) {
     if (!parte) continue;
     const sig = [];
@@ -3002,8 +3003,42 @@ function handleCarrilEHistoria(event, opts = {}) {
         const sg = require('./lib/story-gate.js');
         return { block: sg.blockMessage({ kind: sg.signedRecordKind(constancia) || 'control-approvals' }, { filePath: constancia, via }) + '\n' };
       }
-      const historias = skillOff ? [] : abs.filter((p) => /\.md$/i.test(p) && fs.existsSync(p) && estadoDeHistoria(p) !== null);
-      if (historias.length) return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, via) + '\n' };
+      if (skillOff) continue;
+      // una historia entre los argumentos cuenta como escrita: lo que el guion hace con ella no se termina de ver desde acá
+      // (un modo en una variable, en el lugar, un programa que lanza). También pegada a una opción (`--file=<historia>`,
+      // `file:<historia>`, `-o<historia>`), con variables, llaves y comodines del shell, y por un enlace, aunque no
+      // termine en `.md`; un comodín que puede traer una historia y tiene más archivos de los que se miran, frena
+      let recortado = false;
+      const argumentos = g.argv.flatMap((a) => {
+        const v = String(a);
+        const formas = [v, v.replace(/^[^=:]*[=:]/, '')];
+        if (/^-[A-Za-z]./.test(v)) formas.push(v.slice(2));
+        return [...new Set(formas)];
+      }).flatMap((v) => {
+        // `$PWD` es la carpeta desde donde corre el comando
+        const valor = String(expandirRuta(cmd, v.replace(/^\$\{?PWD\}?(?=[\\/]|$)/, cwd)).valor ?? v);
+        return expandirLlaves(valor).flatMap((x) => {
+          if (!/[*?[]/.test(x)) return [x];
+          const aviso = {};
+          const halladas = expandirComodin(x, cwd, aviso);
+          if (aviso.recortado && !/\.(?!md$)[A-Za-z0-9]+$/i.test(x)) recortado = true;
+          return halladas;
+        });
+      });
+      const esHistoria = (p) => {
+        const real = installedTree.realPath(p) || p;
+        let st;
+        try { st = fs.statSync(real); } catch { return false; }
+        // un archivo grande que no termina en `.md` no se abre para ver si es una historia
+        if (!st.isFile() || (st.size > 1024 * 1024 && !/\.md$/i.test(p) && !/\.md$/i.test(real))) return false;
+        return estadoDeHistoria(real) !== null;
+      };
+      const historias = [...new Set([...abs, ...argumentos.map(resolver)])].filter(esHistoria);
+      if (recortado) historias.push('(un comodín entre los argumentos con más archivos de los que se miran)');
+      if (historias.length) {
+        const recibe = historias.some((h) => !abs.includes(h)) ? ' — recibe la historia por argumento: para leerla, la herramienta de lectura' : '';
+        return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, via + recibe) + '\n' };
+      }
     }
   }
   if (!laneOff) {
