@@ -228,7 +228,7 @@ const CONTROLES = {
   'adversarial-pass': 'pase adversarial (resultado)',
   // El 5b sin pase lo anota el portón, y el paso 8 no cierra sin el pase atendido.
   'adversarial-skip': 'pase adversarial (salteado por el portón)',
-  'adversarial-result-gate': 'pase adversarial con su resultado (paso 8)',
+  'adversarial-result-gate': 'pase adversarial con su resultado (paso «Pase adversarial»)',
 };
 
 // La línea `adversarial-pass` (marker.js mark-adversarial-result) no trae `status`: trae
@@ -959,9 +959,12 @@ function leerResumen(volcado) {
 }
 
 /** Los cambios de una corrida: de su conversación si está en el disco; si no, de su resumen; si no, sin cambios. */
+// El cambio de git solo, sin la conversación, no alcanza para leer la corrida: la bajada trae el cambio antes que la
+// conversación, y una pasada que corta entre los dos dejaría la corrida sin título ni esperas hasta la siguiente (la
+// misma ejecución cambiaba de una recarga a otra). Con resumen, vale el resumen hasta que llegue la conversación.
 function cambiosDeLaCorrida(rutas, marker, nombresPasos, cambioDelVolcado) {
-  const hayCrudo = cambios && rutas.some((r) => fs.existsSync(cambios.rutaDeHilo(r)) || fs.existsSync(cambios.rutaDeCambio(r)));
-  if (!hayCrudo) {
+  const hayHilo = cambios && rutas.some((r) => fs.existsSync(cambios.rutaDeHilo(r)));
+  if (!hayHilo) {
     for (const r of rutas) {
       const s = leerResumen(r);
       // las esperas viajan en el resumen con su nombre de siempre: aplicarEsperasDelHilo las consume igual
@@ -1405,7 +1408,7 @@ function barraTramos(c, escala, idioma, nombres) {
   const ancho = Math.max(2, Math.min(100, (total / escala) * 100));
   const segs = c.tramos.map((t) => (t.tipo === 'entre'
     ? `<i class="entre" style="width:${((t.ms / total) * 100).toFixed(2)}%" title="${esc(L(idioma, 'v.entrePasos', { dur: dur(t.ms, idioma) }))}"></i>`
-    : `<i style="width:${((t.ms / total) * 100).toFixed(2)}%;background:${RAMPA[t.pasos[0]] || RAMPA[RAMPA.length - 1]}" title="${esc(t.paso)} · ${esc(enIdioma(idioma, t.nombre))} — ${dur(t.ms, idioma)}${t.pasos.length > 1 ? ` (${esc(L(idioma, 'v.fusionados'))})` : ''}${t.medida === false ? ` (${esc(L(idioma, 'v.estimadaPorDiferencia'))})` : ''}"></i>`)).join('');
+    : `<i style="width:${((t.ms / total) * 100).toFixed(2)}%;background:${RAMPA[t.pasos[0]] || RAMPA[RAMPA.length - 1]}" title="${esc(enIdioma(idioma, t.nombre))} — ${dur(t.ms, idioma)}${t.pasos.length > 1 ? ` (${esc(L(idioma, 'v.fusionados'))})` : ''}${t.medida === false ? ` (${esc(L(idioma, 'v.estimadaPorDiferencia'))})` : ''}"></i>`)).join('');
   const faltan = c.sin_marca.length;
   return `<span class="bar" style="width:${ancho.toFixed(1)}%">${segs}${faltan ? `<i class="falta" style="width:6px" title="${esc(textoSinMarca(c, nombres || [], idioma, 'v.'))}"></i>` : ''}</span>`;
 }
@@ -1918,10 +1921,10 @@ const CLIENTE_FUENTE = String.raw`(function () {
         return;
       }
       if (p.ms < 60000) {
-        s += '<line x1="' + a.toFixed(1) + '" y1="' + (ys.pasos - 3) + '" x2="' + a.toFixed(1) + '" y2="' + (ys.pasos + 29) + '" stroke="var(--ink-3)" stroke-width="1.2"><title>' + T('paso') + ' ' + esc(p.paso) + ' · ' + esc(p.nombre) + ' — ' + T('marcadoJunto') + '</title></line>';
+        s += '<line x1="' + a.toFixed(1) + '" y1="' + (ys.pasos - 3) + '" x2="' + a.toFixed(1) + '" y2="' + (ys.pasos + 29) + '" stroke="var(--ink-3)" stroke-width="1.2"><title>' + esc(p.nombre) + ' — ' + T('marcadoJunto') + '</title></line>';
         return;
       }
-      s += '<rect x="' + a.toFixed(1) + '" y="' + ys.pasos + '" width="' + w.toFixed(1) + '" height="26" fill="' + (RAMPA[i] || RAMPA[RAMPA.length - 1]) + '" rx="1.5"><title>' + T('paso') + ' ' + esc(p.paso) + ' · ' + esc(p.nombre) + ' — ' + dt(p.ms / 60000) + (p.pasos.length > 1 ? ' (' + T('fusionados') + ')' : '') + (p.medida === false ? ' (' + T('estimada') + ')' : '') + '</title></rect>';
+      s += '<rect x="' + a.toFixed(1) + '" y="' + ys.pasos + '" width="' + w.toFixed(1) + '" height="26" fill="' + (RAMPA[i] || RAMPA[RAMPA.length - 1]) + '" rx="1.5"><title>' + esc(p.nombre) + ' — ' + dt(p.ms / 60000) + (p.pasos.length > 1 ? ' (' + T('fusionados') + ')' : '') + (p.medida === false ? ' (' + T('estimada') + ')' : '') + '</title></rect>';
       if (w > 26) s += '<text x="' + (a + w / 2).toFixed(1) + '" y="' + (ys.pasos + 17) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" font-weight="600" fill="' + (i > 4 ? '#fff' : '#0D4148') + '">' + esc(p.paso) + '</text>';
     });
     // La espera por una persona que salió del hilo: una banda rayada sobre los pasos, con su duración.
@@ -2525,10 +2528,12 @@ const CLIENTE_FUENTE = String.raw`(function () {
           + aparte(function (n) { return '<b>' + n + '</b>'; }) })
       : gris(T('sinVeredictoFiltro') + aparte(function (n) { return n; }).replace(/^ · /, ': '));
     var fichaRevisionPrevia = revisionPrevia(F);
+    // «encontró un error» es el control funcionando (lo dice la misma ficha): se informa sin semáforo, que la pintaría de
+    // rojo justo cuando los controles más trabajan
     return [
       ficha(T('fAlFinal'), med(Math.round(pf * 100) + '%', T('nDeEjecuciones', { n: fin.length, t: N }), { est: juzgar('corridas_al_final', pf).est, palabra: juzgar('corridas_al_final', pf).palabra, detalle: '<b>' + (N - fin.length) + '</b> ' + T('aMitad') + (juzgar('corridas_al_final', pf).nota ? ' · <b>' + esc(juzgar('corridas_al_final', pf).nota) + '</b>' : '') })),
       ficha(T('fDuracion'), dur.length ? med(n1(mediana(dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h', T('nEqDeEjecuciones', { n: dur.length, t: N }), { detalle: T('laMasLarga', { d: n1(Math.max.apply(null, dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h' }) }) : gris(T('sinDuracionFiltro'))),
-      ficha(T('fConError'), gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', T('nDeConControles', { n: roj.length, t: gz.length }), { est: juzgar('corridas_con_error', roj.length / gz.length).est, palabra: juzgar('corridas_con_error', roj.length / gz.length).palabra, detalle: T('errorDetalle1') + ' <b>' + fre.length + '</b> ' + T('errorDetalle2') + (N - gz.length ? ' ' + T('noRegistraronControles', { n: N - gz.length }) : '') + (juzgar('corridas_con_error', roj.length / gz.length).nota ? ' <b>' + esc(juzgar('corridas_con_error', roj.length / gz.length).nota) + '</b>' : '') }) : gris(T('sinControlesFiltro'))),
+      ficha(T('fConError'), gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', T('nDeConControles', { n: roj.length, t: gz.length }), { est: 'neutro', palabra: T('medido'), detalle: T('errorDetalle1') + ' <b>' + fre.length + '</b> ' + T('errorDetalle2') + (N - gz.length ? ' ' + T('noRegistraronControles', { n: N - gz.length }) : '') }) : gris(T('sinControlesFiltro'))),
       ficha(T('fAgentes'), ag.length ? med(String(mediana(ag)), T('nEqDeEjecuciones', { n: ag.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, ag) }) + ' · ' + T('noLoRegistran', { n: N - ag.length }) }) : gris(T('sinAgentesFiltro'))),
       ficha(T('fVueltas'), vu.length ? med(String(mediana(vu)), T('nEqDeEjecuciones', { n: vu.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, vu) }) + ' · ' + T('vueltasDetalle') }) : gris(T('sinVueltasFiltro'))),
       ficha(T('fValidador'), fichaValidador),
@@ -2597,6 +2602,12 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var diaLocal = function (iso) { if (!iso) return ''; var d = new Date(iso); return isNaN(d.getTime()) ? '' : ymd(d); };
   var fechas = C.map(function (c) { return diaLocal(c.inicio); }).filter(Boolean).sort();
   var RANGO = [fechas[0] || '', fechas[fechas.length - 1] || ''];
+  // la columna de la fecha, también en la del navegador: la tabla y el filtro dicen el mismo día (llega en UTC)
+  for (var fi = 0; fi < cuerpo.rows.length; fi++) {
+    var fr = cuerpo.rows[fi], fk = fr.classList.contains('fila-det') ? null : enC(fr);
+    var fd = fk !== null && C[fk] ? diaLocal(C[fk].inicio) : '', ftd = fd ? fr.querySelector('td.fecha') : null;
+    if (ftd && ftd.firstChild && ftd.firstChild.nodeType === 3) ftd.firstChild.nodeValue = fd;
+  }
   var cuentaRepo = {};
   // Los combos van en orden alfabético (sin distinguir mayúsculas): se busca un nombre, no un ranking. Lo «sin…», al final.
   var alfabetico = function (a, b) { var sa = a.charAt(0) === '(' || a.indexOf('sin ') === 0, sb = b.charAt(0) === '(' || b.indexOf('sin ') === 0; return (sa - sb) || a.localeCompare(b, 'es', { sensitivity: 'base' }); };

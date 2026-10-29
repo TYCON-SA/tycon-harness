@@ -869,7 +869,7 @@ test('2.76-Demo_Proponer_MuestraYNoEscribe', async () => {
     // clase 14: «Cómo trabaja» muestra la respuesta del modo demo (no «Pedido abierto…»)
     const pagina = (await pedir('/static/como-trabaja.js?l=es')).texto;
     const iDemo = pagina.indexOf("r.codigo === 'demo'");
-    assert.ok(iDemo > 0 && iDemo < pagina.indexOf("T('comoTrabaja.propuesto'") && /r\.codigo === 'demo'\) estado\.appendChild\(el\('p', \{[^}]*text: r\.message/.test(pagina), 'el navegador escribe el mensaje del servidor con codigo demo');
+    assert.ok(iDemo > 0 && iDemo < pagina.indexOf("'comoTrabaja.propuesto'") && /r\.codigo === 'demo'\) estado\.appendChild\(el\('p', \{[^}]*text: r\.message/.test(pagina), 'el navegador escribe el mensaje del servidor con codigo demo');
     // y nada intentó salir ni escribir: el freno no anotó un solo intento
     assert.deepStrictEqual(vistas(), []);
   });

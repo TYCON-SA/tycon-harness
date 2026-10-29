@@ -894,11 +894,22 @@ function loadConfig(args) {
  * publica nada: lo que sale es lo que trae el público, que en un árbol armado (el privado con el público encima, como
  * lo arma `overlay-harness.js --after-cut`) está mezclado con lo privado.
  */
+function thinList(repo) {
+  // sin la lista, no es el adelgazado. Rota no es lo mismo: leída como vacía, lo propio contaría como lo que viaja
+  let text;
+  try { text = fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw new CouldNot(`no pude leer ${THIN_LIST_PATH} (${e.code || 'no se pudo leer'})`);
+  }
+  return parseJson(text, THIN_LIST_PATH);
+}
 function thinOwnPaths(repo) {
-  try { return new Set(Object.keys(JSON.parse(fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8')).own || {})); } catch { return new Set(); }
+  const list = thinList(repo);
+  return new Set(Object.keys((list && list.own) || {}));
 }
 function isThin(repo) {
-  try { return JSON.parse(fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8')).layout === 'thin'; } catch { return false; }
+  const list = thinList(repo);
+  return !!list && list.layout === 'thin';
 }
 /**
  * ¿Es el repo del equipo, el público, o el adelgazado? Las señales: la lista del adelgazado y el perfil, leídos en el
@@ -921,7 +932,9 @@ function teamOrPublic(repo, ref = 'HEAD') {
  */
 function publishedThin(repo, tree, config) {
   const brought = broughtByOverlay(repo) || new Set();
-  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta)), config);
+  // la capa del equipo (`--team-from`) también la trae la superposición, pero no viaja al público: contada como
+  // publicada, una guía que nombra `onboarding/` dejaría de ver esa ruta del equipo
+  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta) && !TEAM_LAYER(e.ruta)), config);
 }
 /**
  * Los registros que la superposición calcula con lo público y lo privado juntos (sus `REGISTRIES`): en el árbol armado
@@ -939,8 +952,11 @@ function broughtByOverlay(repo) {
   const subject = git(repo, ['log', '-1', '--format=%s', head]).stdout;
   if (!subject.includes(OVERLAY_MARK)) return null;
   const brought = new Set();
+  // una versión propia («own») no es de lo traído aunque cambie: la superposición puede componerla con la del público, y
+  // entonces lleva lo del privado. Lo que viaja es la del público, que se mide en su CI
+  const own = thinOwnPaths(repo);
   const privateBlobs = new Map(treeOf(repo, commitOf(repo, `${head}^`)).filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
-  for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
+  for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && !own.has(e.ruta) && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
   return brought;
 }
 /**

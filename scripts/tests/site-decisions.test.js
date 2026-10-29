@@ -66,6 +66,23 @@ test('Decisiones_FichaSinPr_ApareceConElPorQue', () => {
   assert.match(decisions.fraseSinLugar('sin_pedido', 'es'), /pedido/);
 });
 
+// una aceptada ya se decidió y la noche no le abre otro pedido: no dice «la noche lo abre», lleva a su tarea
+test('Decisiones_AceptadaSinPr_SeSigueEnSuTarea', () => {
+  const m = modelo();
+  m.dependencias.rubros.aceptadas_sin_resolver = 1;
+  m.decisiones.items.push({ fuente: 'dependencias', rubro: 'aceptadas_sin_resolver', id: '9abc1234', titulo: 'paquete-c', pr: null });
+  const d = decisions.decisiones(m, { operationsRepo: ADO }).find((x) => x.id === '9abc1234');
+  assert.deepStrictEqual([d.enlace, d.sinLugar], [null, 'en_su_tarea']);
+  // sin repo navegable también: el lugar es Mantenimiento, no el repo de operaciones
+  assert.strictEqual(decisions.decisiones(m, { operationsRepo: null }).find((x) => x.id === '9abc1234').sinLugar, 'en_su_tarea');
+  // una nueva sin pedido sigue esperando a la noche
+  assert.strictEqual(decisions.decisiones(m, { operationsRepo: ADO }).find((x) => x.id === '171bed99').sinLugar, 'sin_pedido');
+  const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
+  const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
+  assert.match(seccion, /9abc1234 · paquete-c · <a href="\/mantenimiento">ya decidida: se sigue en su tarea, en Mantenimiento<\/a>/);
+  assert.doesNotMatch(seccion, /la noche lo abre/);
+});
+
 test('Decisiones_FuenteAbierta_SeListaIgual', () => {
   const m = modelo();
   m.decisiones.items.push({ fuente: 'ejecuciones', rubro: 'pendientes', id: 'e-1', titulo: 'una ejecución', pr: 77 });

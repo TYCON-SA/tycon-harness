@@ -1513,6 +1513,9 @@ function engramOn(ctx, tree) {
 }
 
 const applyHint = `node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js update --yes`;
+// una versión bajada se actualiza con la línea de npx; un clon, no (npx sólo le dice que use harness.js)
+const releaseApplyHint = `npx @tyconsa/harness@latest`;
+const applyHintFor = (state) => (mod('state').isRelease(state) ? releaseApplyHint : applyHint);
 const isTemporary = (ctx, dir) => {
   const d = real(dir) || path.resolve(dir);
   const roots = ['/tmp', '/private/tmp', ctx.env.TMPDIR, ctx.env.TEMP, ctx.env.TMP].filter(Boolean).map((r) => real(r) || path.resolve(r));
@@ -1668,7 +1671,7 @@ const REEVALUATED_NOTICE = /^(el aplicador falló|la instalación quedó a media
  *  deja `startup` y también un `update` sin `--yes` en `ask` (el hook síncrono lo imprime en la sesión siguiente). */
 function availableText(state, policy, u) {
   const a = u.available || { label: u.lines[0].replace(/^hay versión nueva: /, ''), changes: '' };
-  return `arnés ${a.label} disponible (instalada ${state.version.number}, canal ${policy.channel}) · aplicar: ${applyHint}${a.changes ? ` · cambios: ${a.changes}` : ''}`;
+  return `arnés ${a.label} disponible (instalada ${state.version.number}, canal ${policy.channel}) · aplicar: ${applyHintFor(state)}${a.changes ? ` · cambios: ${a.changes}` : ''}`;
 }
 
 /** «instalada X, estable Y: no se baja; para volver, rollback»: lo traído es más viejo que lo instalado. */
@@ -1801,7 +1804,7 @@ function releaseHelpers(ctx) {
   return {
     takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, fixedLine, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
-    applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
+    applyHint, releaseApplyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, installNodeProblem, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
       if (!findInPath('engram', c.env)) return;
@@ -2284,7 +2287,7 @@ function cmdInstall(ctx) {
 /** El texto de la retención que dejó un `rollback` (el aviso de cada arranque y lo que dice `update`). */
 function holdText(state) {
   const h = state.hold || {};
-  return `retención: deshiciste la versión ${h.commit || '—'} (${h.at || '—'}); el arnés no se actualiza solo hasta levantarla: harness.js rollback --release (o ${applyHint})`;
+  return `retención: deshiciste la versión ${h.commit || '—'} (${h.at || '—'}); el arnés no se actualiza solo hasta levantarla: harness.js rollback --release (o ${releaseApplyHint})`;
 }
 /** El nombre de una versión para los mensajes, `failed` y `hold`: el número (que sale del arnés) más el agent-skills,
  *  así una actualización sólo de agent-skills no se lee «X → X». */

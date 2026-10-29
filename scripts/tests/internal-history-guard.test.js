@@ -613,6 +613,21 @@ test('InternalHistoryGuard_All_TeamPathDeclaration_OnlyStaleWhereItCanBeSeen —
   assert.deepStrictEqual(stale(t), ['guides/plan.md', 'guides/borrada.md'], 'en el del equipo no sobra la carpeta local; sí la que tiene versionada y la que ya no ve nadie');
 });
 
+test('InternalHistoryGuard_Thin_TeamLayerIsNotPublished_DeclarationNotStale — en el árbol armado con la capa del equipo, la capa no cuenta como publicada', (t) => {
+  const { overlayLab } = require('./lib/overlay-lab.js');
+  const allowed = { allowed: [{ file: 'guides/g.md', form: 'team-path', value: 'onboarding', reason: 'prueba' }] };
+  const lab = overlayLab({
+    privado: { '.tycon/internal-forms.json': JSON.stringify({ layout: 'thin' }), 'onboarding/charla/x.md': 'x\n' },
+    // la superposición trae lo público y, con `--team-from`, la capa del equipo: el perfil y el texto del alta
+    publico: { 'guides/g.md': 'El texto del alta vive en `onboarding/`.\n', [ALLOWED]: JSON.stringify(allowed), 'perfil-equipo.json': '{}\n', 'onboarding/alta.md': 'alta\n' },
+  });
+  t.after(lab.cleanup);
+  const d = ih.run({ mode: 'all', repo: lab.root, ref: 'HEAD', config: null });
+  assert.strictEqual(d.mode, 'thin');
+  assert.ok(!d.paths.includes('onboarding/alta.md'), 'el texto del alta de la capa no se mira como publicado');
+  assert.deepStrictEqual(d.stale, [], 'la ruta del equipo que nombra la guía sigue siendo del equipo: su declaración no sobra');
+});
+
 // ══ T27 · casos límite del control ═════════════════════════════════════════════════════════════════════════════
 
 test('InternalHistoryGuard_Scan_FormSplitByTheLineWrap_IsSeen — un párrafo cortado a lo ancho es un solo renglón', () => {

@@ -734,11 +734,11 @@ function pedir(ruta, cuerpo) {
 // el editor de un revisor del perfil
 // firmadas: las versiones de los archivos cuando se abrió el editor, firmadas por el servidor ({ versions, firma }); un
 // revisor nuevo las toma de la primera revisión. No se pisan: el aviso de «otro lo cambió» se mide desde la apertura
-function editor(boton, draft, firmadas, modelos) {
+function editor(boton, draft, firmadas, modelos, aplicaSolo) {
   var versiones = firmadas && firmadas.firma ? firmadas : null;
   var cab = draft.cabecera || {};
   var estado = el('div', { class: 'ct-estado', 'aria-live': 'polite' });
-  var motivo = el('p', { class: 'ct-nota ct-motivo', 'data-motivo': 'antes', text: T('comoTrabaja.motivoAntesDeRevisar') });
+  var motivo = el('p', { class: 'ct-nota ct-motivo', 'data-motivo': 'antes', text: T(aplicaSolo ? 'comoTrabaja.motivoAntesDeRevisarSolo' : 'comoTrabaja.motivoAntesDeRevisar') });
   var proponer = el('button', { type: 'button', class: 'btn prim', disabled: 'disabled', 'data-action': 'propose', text: T('comoTrabaja.proponer') });
   var revisado = false;
   // cualquier cambio apaga «Proponer»; si ya se había revisado, la línea pide volver a revisar
@@ -855,7 +855,7 @@ function editor(boton, draft, firmadas, modelos) {
       if (r.ok) {
         if (!versiones && r.firma) versiones = { versions: r.versions, firma: r.firma };
         revisado = true; proponer.removeAttribute('disabled');
-        motivo.textContent = T('comoTrabaja.motivoRevisado'); motivo.setAttribute('data-motivo', 'revisado');
+        motivo.textContent = T(aplicaSolo ? 'comoTrabaja.motivoRevisadoSolo' : 'comoTrabaja.motivoRevisado'); motivo.setAttribute('data-motivo', 'revisado');
         estado.appendChild(el('p', { class: 'ct-ok', text: T('comoTrabaja.seLeeBien') }));
       } else (r.problems || [r.message]).forEach(function (p) { estado.appendChild(el('p', { class: 'ct-error', text: p })); });
     });
@@ -866,7 +866,7 @@ function editor(boton, draft, firmadas, modelos) {
       estado.textContent = '';
       // el sitio demo no abre ningún pedido: dice lo que pasaría, igual que Configuración
       if (r.ok && r.codigo === 'demo') estado.appendChild(el('p', { class: 'ct-ok', 'data-demo': 'si', text: r.message }));
-      else if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T('comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
+      else if (r.ok) { var p = el('p', { class: 'ct-ok' }, document.createTextNode(T(r.codigo === 'aplicado' ? 'comoTrabaja.aplicado' : 'comoTrabaja.propuesto', { enlace: '' }))); if (r.enlace) p.appendChild(el('a', { href: r.enlace, target: '_blank', rel: 'noopener', text: r.enlace })); estado.appendChild(p); }
       else estado.appendChild(el('p', { class: 'ct-error', text: r.codigo === 'cambio' ? T('comoTrabaja.cambioEnMain') : T('comoTrabaja.noSePudo', { motivo: (r.problems || [r.message]).join(' · ') }) }));
     });
   };
@@ -901,7 +901,7 @@ raiz.addEventListener('click', function (ev) {
   var nuevo = accion === 'add';
   fetch('/api/como-trabaja/revisor?pack=' + encodeURIComponent(b.getAttribute('data-pack')) + (nuevo ? '' : '&agent=' + encodeURIComponent(b.getAttribute('data-agent'))), { credentials: 'same-origin' })
     .then(function (r) { return r.json().catch(function () { return { message: String(r.status) }; }); })
-    .then(function (r) { if (r && r.draft) { r.draft.avisoModelos = r.avisoModelos || null; editor(b, r.draft, nuevo ? null : { versions: r.versions, firma: r.firma }, r.modelos); } else noSeAbrio((r && r.message) || '?'); }, function (e) { noSeAbrio(String(e && e.message || e)); });
+    .then(function (r) { if (r && r.draft) { r.draft.avisoModelos = r.avisoModelos || null; editor(b, r.draft, nuevo ? null : { versions: r.versions, firma: r.firma }, r.modelos, r.aplicaSolo === true); } else noSeAbrio((r && r.message) || '?'); }, function (e) { noSeAbrio(String(e && e.message || e)); });
 });
 })();
 `;
@@ -992,14 +992,14 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
       if (!p.dir || !NAME_RE.test(pack || '')) return json(404, { ok: false, message: TX.t(idioma, 'comoTrabaja.err.sinPaquete') });
       // sin «agent»: un revisor nuevo, con los modelos que se pueden elegir y las tres herramientas de lectura
       if (!agent) return json(200, { draft: { pack, original: null, agent: '', group: 'condicional', detection: 'codeModified', paths: [], prefix: '', cuerpo: '',
-        cabecera: { nombre: '', descripcion: '', modelo: '', modeloTalCual: false, herramientas: ['Read', 'Grep', 'Glob'], otrasHerramientas: [], otras: [] } }, modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma) });
+        cabecera: { nombre: '', descripcion: '', modelo: '', modeloTalCual: false, herramientas: ['Read', 'Grep', 'Glob'], otrasHerramientas: [], otras: [] } }, modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma), aplicaSolo: aplicarSolo() });
       if (!NAME_RE.test(agent)) return json(404, { ok: false, message: TX.t(idioma, 'comoTrabaja.err.sinPaquete') });
       const d = draftOf(p.dir, pack, agent);
       if (d.error) { log(`cómo trabaja: el revisor ${pack}/${agent} no se pudo abrir (${d.error})`); return json(404, { ok: false, message: d.error }); }
       // las versiones de hoy de los dos archivos, firmadas: el aviso de «otro lo cambió» se mide desde que se abrió
       const v = await versionesDe(p.dir, [`packs/${pack}/pack.json`, d.md], oidDe);
       if (v.error) { log(`cómo trabaja: no pude leer las versiones del clon del perfil (${v.error})`); return json(404, { ok: false, message: TX.t(views.idiomaDe(ctx), 'comoTrabaja.err.clon', { motivo: v.error }) }); }
-      return json(200, { draft: d.draft, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions), modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma) });
+      return json(200, { draft: d.draft, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions), modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma), aplicaSolo: aplicarSolo() });
     } },
     { method: 'POST', path: '/api/como-trabaja/revisar', needs: solo, handler: revisar },
     { method: 'POST', path: '/api/como-trabaja/proponer', needs: solo, handler: proponer },

@@ -7005,6 +7005,29 @@ function main() {
       process.stdout.write(JSON.stringify({ marked: true, verificado: v.verificado, herramienta: nn(v.herramienta, null) }) + '\n');
       process.exit(0);
     }
+    // la entrada que cerró el agente: sus horas, leídas del resultado de la llamada, son la constancia de lo real
+    if (event === 'stop' && !isNil(args.actionDone)) {
+      const marker = args.story ? null : readSessionMarker();
+      const spec = args.story ? path.resolve(args.story)
+        : marker && marker.storyPath ? path.resolve(marker.repoPath || process.cwd(), marker.storyPath) : null;
+      if (!spec) { process.stderr.write('work-signal stop --action-done: sin marker activo en esta sesión — pasá --story <spec>\n'); process.exit(2); }
+      const v = require('./lib/external-flags.js').horasDeLaAccion({ id: args.actionDone });
+      if (!v.ok) { process.stderr.write(`work-signal stop --action-done: no anoto horas — ${v.motivo}\n`); process.exit(1); }
+      // las horas son de la historia de ese stop (la que nombró, o la del marcador si no nombró ninguna): el cierre de una no
+      // se anota en otra
+      const delMarcador = () => { const m = readSessionMarker(); return m && m.storyPath ? path.resolve(m.repoPath || process.cwd(), m.storyPath) : null; };
+      const delStop = v.storyDelStop ? path.resolve(v.storyDelStop.replace(/^~(?=$|[\\/])/, os.homedir())) : delMarcador();
+      if (!delStop || delStop !== spec) {
+        process.stderr.write(`work-signal stop --action-done: no anoto horas — el work-signal stop fue de ${delStop || 'una historia que no sé'}, no de ${spec}\n`);
+        process.exit(1);
+      }
+      try { require('./lib/real-hours.js').record(os.homedir(), spec, { seconds: v.segundos, action: true }, { herramienta: v.herramienta }); } catch (e) {
+        process.stderr.write(`work-signal stop --action-done: no pude dejar la constancia (${e.code || e.message})\n`);
+        process.exit(1);
+      }
+      process.stdout.write(JSON.stringify({ recorded: true, seconds: v.segundos, hours: Math.round(v.segundos / 36) / 100, herramienta: v.herramienta }) + '\n');
+      process.exit(0);
+    }
     let r;
     try { r = workSignalForRun(event, args.story ? { storyPath: path.resolve(args.story), repo: args.repo ? path.resolve(args.repo) : null } : {}); } catch (e) { r = { ran: false, warnings: [`aviso de trabajo: falló (${e.code || e.message}); sigo sin registrar`] }; }
     if (r.error) { process.stderr.write(`work-signal: ${r.error}\n`); process.exit(1); }
@@ -7018,6 +7041,7 @@ function main() {
         if (!m.ok) process.stderr.write(`work-signal start: el aviso salió pero no marqué la parte — ${m.motivo}\n`);
       }
     }
+    if (event === 'stop' && r.ran && r.action) process.stderr.write('work-signal stop: hacé la acción y dejá las horas con pipeline.js work-signal stop --action-done "<id de la entrada que cerraste>" (con --story si lo pasaste acá)\n');
     process.stdout.write(JSON.stringify(r) + '\n');
     process.exit(0);
   }

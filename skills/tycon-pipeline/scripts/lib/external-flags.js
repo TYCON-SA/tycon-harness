@@ -12,7 +12,8 @@
  * respuesta marca. `actionDone` busca, en
  * la conversación de la sesión, la llamada a la herramienta de horas que hizo el agente después del aviso de trabajo:
  * marca sólo si el resultado de esa llamada trae el id que se le pasa. Sin conversación que leer (Codex), marca, lo
- * avisa y deja la constancia sin verificar.
+ * avisa y deja la constancia sin verificar. `horasDeLaAccion` hace lo mismo al cerrar: lee las horas del resultado de la
+ * llamada que cerró la entrada.
  */
 const fs = require('fs');
 const os = require('os');
@@ -73,9 +74,13 @@ const texto = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) =
 // operador de llamada de PowerShell (`&`), rutas entre comillas (una carpeta con espacio o acento), redirecciones al final y
 // otro comando atrás (`; echo rc=$?`, `&& …`). Un tubo (`| …`) no: lo que sale ya no es lo que dijo el aviso.
 const PALABRA = String.raw`(?:"[^"]*"|'[^']*'|\S+)`;
-const EMISION = new RegExp(String.raw`^\s*(?:cd\s+[^;&|]+&&\s*)?(?:&\s*)?(?:"[^"]*node[^"]*"|'[^']*node[^']*'|\S*node(?:\.exe)?)\s+` +
-  String.raw`(?:"[^"]*pipeline\.js"|'[^']*pipeline\.js'|\S*pipeline\.js)\s+work-signal\s+start` +
+// El `stop` lleva sus opciones (`--story`, `--repo`) antes de las redirecciones.
+const emision = (evento) => new RegExp(String.raw`^\s*(?:cd\s+[^;&|]+&&\s*)?(?:&\s*)?(?:"[^"]*node[^"]*"|'[^']*node[^']*'|\S*node(?:\.exe)?)\s+` +
+  String.raw`(?:"[^"]*pipeline\.js"|'[^']*pipeline\.js'|\S*pipeline\.js)\s+work-signal\s+${evento}` +
+  (evento === 'stop' ? String.raw`(?:\s+--(?:story|repo)\s+${PALABRA})*` : '') +
   String.raw`(?:\s+(?:\d?>&\d|\d?>>?\s*${PALABRA}|\*>\s*${PALABRA}))*(?:\s*(?:;|&&|\|\|).*)?\s*$`);
+const EMISION = emision('start');
+const EMISION_STOP = emision('stop');
 // Las herramientas que corren comandos de la terminal: Claude Code usa PowerShell en Windows.
 const TERMINAL = ['Bash', 'PowerShell'];
 // Un id más corto que esto coincide con casi cualquier resultado.
@@ -86,7 +91,7 @@ const escapar = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Salió bien: la herramienta no dio error, la salida trae la del aviso (`"ran":true`) y, si un comando de atrás muestra
 // el código de salida (`rc=…`), es 0. Con otro comando atrás la herramienta queda en verde aunque el aviso haya fallado.
 const salioBien = (res) => !!res && !res.error && /"ran"\s*:\s*true/.test(res.texto) && !/(^|\n)\s*rc=["']?[1-9]\d*["']?\s*($|\n)/.test(res.texto);
-const esAviso = (b, res) => TERMINAL.includes(b.name) && EMISION.test(String((b.input || {}).command || '')) && salioBien(res);
+const esAviso = (b, res, re = EMISION) => TERMINAL.includes(b.name) && re.test(String((b.input || {}).command || '')) && salioBien(res);
 const palabraEntera = (id) => new RegExp(`(^|[^\\w-])${escapar(id)}($|[^\\w-])`);
 
 /**
@@ -183,7 +188,95 @@ function actionDone({ id, env = process.env, home = os.homedir(), abierta = null
   return Object.assign({ verificado: r.ok }, r);
 }
 
+/**
+ * La entrada que trae el resultado de la herramienta: `{ id, start, end }` (el intervalo suelto o en `timeInterval`), o
+ * null si el resultado no es un objeto con su id y su intervalo.
+ */
+function entradaDelResultado(t) {
+  let o = null;
+  try { o = JSON.parse(t); } catch (_) {
+    const m = /\{[\s\S]*\}/.exec(t);
+    if (m) try { o = JSON.parse(m[0]); } catch (_) { o = null; }
+  }
+  if (!o || typeof o !== 'object' || typeof o.id !== 'string') return null;
+  const iv = o.timeInterval && typeof o.timeInterval === 'object' ? o.timeInterval : o;
+  if (typeof iv.start !== 'string') return null;
+  return { id: o.id.trim(), start: iv.start, end: typeof iv.end === 'string' ? iv.end : null };
+}
+
+/** Los segundos entre el inicio y el fin de una entrada, o null si no se leen o el fin es anterior. */
+function segundosDe(e) {
+  const desde = e ? Date.parse(e.start) : NaN;
+  const hasta = e && e.end ? Date.parse(e.end) : NaN;
+  return Number.isFinite(desde) && Number.isFinite(hasta) && hasta >= desde ? Math.round((hasta - desde) / 1000) : null;
+}
+
+/**
+ * Las horas de una herramienta que informa por una acción, con constancia: después del último `work-signal stop` que
+ * salió bien, cuya acción nombra la entrada `id`, una llamada a una herramienta del servidor MCP que esa acción nombra,
+ * con un resultado sin error que trae `id` como palabra entera y el intervalo de la entrada. El id que se pasa tiene que
+ * ser el que nombró el arnés: una entrada vieja y más larga no cuenta. Sin conversación que leer (Codex) no hay
+ * constancia. El intervalo tiene que ser de esa entrada, y su inicio el mismo con que se abrió si se abrió en esta
+ * conversación. → `{ ok, segundos?, herramienta?, storyDelStop?, motivo? }` (`storyDelStop`: el `--story` de ese stop).
+ */
+function horasDeLaAccion({ id, env = process.env, home = os.homedir() }) {
+  const limpio = String(isNil(id) ? '' : id).trim();
+  if (!limpio) return { ok: false, motivo: 'falta el id de la entrada que cerró la herramienta: --action-done "<id>"' };
+  if (limpio.length < ID_MIN) return { ok: false, motivo: `el id «${limpio}» es demasiado corto para buscarlo (mínimo ${ID_MIN} caracteres)` };
+  if (esCodex(env)) return { ok: false, motivo: 'Codex no guarda una conversación que el arnés pueda leer: sin constancia, esas horas no se anotan como real' };
+  const conv = require('./person-ok.js').leerConversacion({ env, home, sesion: env.CLAUDE_CODE_SESSION_ID });
+  if (!conv.legible) return { ok: false, motivo: `no puedo leer la conversación de esta sesión (${conv.motivo})` };
+  const registros = require('./validator-record.js').conRespuestas(conv.registros);
+  const resultados = new Map();
+  for (const r of registros) for (const b of contenido(r)) if (b && b.type === 'tool_result') resultados.set(b.tool_use_id, { error: !!b.is_error, texto: texto(b.content), cuando: Date.parse(r.timestamp) });
+  const usos = [];
+  for (const r of registros) for (const b of contenido(r)) if (b && b.type === 'tool_use') usos.push(b);
+  let desde = -1;
+  let accion = '';
+  let storyDelStop = null;
+  usos.forEach((b, i) => {
+    const res = resultados.get(b.id);
+    if (!esAviso(b, res, EMISION_STOP)) return;
+    desde = i;
+    accion = res.texto;
+    const m = new RegExp(String.raw`\s--story\s+(${PALABRA})`).exec(String(b.input.command));
+    storyDelStop = m ? m[1].replace(/^(["'])(.*)\1$/, '$2') : null;
+  });
+  if (desde < 0) return { ok: false, motivo: 'no encuentro en esta sesión un `pipeline.js work-signal stop` que haya salido bien' };
+  const palabra = palabraEntera(limpio);
+  if (!palabra.test(accion)) return { ok: false, motivo: `la acción del último work-signal stop no nombra la entrada «${limpio}»: pasá el id de la entrada que te pidió cerrar` };
+  const servidores = [...new Set((accion.match(/mcp__[\w-]+?__[\w-]+/g) || []).map((t) => t.replace(/^(mcp__[\w-]+?__).*$/, '$1')))];
+  if (!servidores.length) return { ok: false, motivo: 'la acción del work-signal stop no nombra la herramienta MCP que había que usar: no hay contra qué comparar' };
+  // el inicio con el que se abrió la entrada en esta conversación, si se abrió acá: el cierre no lo puede mover
+  const deLaEntrada = (b) => {
+    const res = resultados.get(b.id);
+    if (!res || res.error || !servidores.some((s) => String(b.name || '').startsWith(s))) return null;
+    const e = entradaDelResultado(res.texto);
+    return e && e.id === limpio ? e : null;
+  };
+  const primera = usos.slice(0, desde).map(deLaEntrada).find(Boolean) || null;
+  let sinIntervalo = null;
+  for (const b of usos.slice(desde + 1).reverse()) {
+    const res = resultados.get(b.id);
+    if (!servidores.some((s) => String(b.name || '').startsWith(s)) || !res || res.error || !palabra.test(res.texto)) continue;
+    // el intervalo es el de la entrada que se cerró: un resultado de otra entrada que sólo nombra el id no cuenta
+    const e = deLaEntrada(b);
+    const segundos = segundosDe(e);
+    if (segundos === null) { sinIntervalo = b.name; continue; }
+    // el fin no puede ser posterior a la llamada que cerró la entrada (con un minuto de margen por los relojes)
+    if (Number.isFinite(res.cuando) && Date.parse(e.end) > res.cuando + 60000) {
+      return { ok: false, motivo: `la entrada «${limpio}» dice que terminó en ${e.end}, después de la llamada que la cerró: el fin no puede estar adelante` };
+    }
+    if (primera && Date.parse(primera.start) !== Date.parse(e.start)) {
+      return { ok: false, motivo: `la entrada «${limpio}» se abrió en ${primera.start} y la llamada que la cerró dice ${e.start}: el inicio no se mueve al cerrar` };
+    }
+    return { ok: true, segundos, herramienta: b.name, storyDelStop };
+  }
+  if (sinIntervalo) return { ok: false, motivo: `ningún resultado de la herramienta trae la entrada «${limpio}» con su inicio y su fin: no hay de dónde sacar las horas` };
+  return { ok: false, motivo: `ninguna llamada a ${servidores.map((s) => `${s}*`).join(' o ')} después del work-signal stop devolvió «${limpio}»: cerrá la entrada y pasá su id` };
+}
+
 module.exports = {
   EXTERNAL_FLAGS, RUN_FLAGS, VALID_FLAGS, HARNESS_COMMAND, PART_OF,
-  adoMarkActive, actionDone, enRegistros, entradaAbierta, esCodex,
+  adoMarkActive, actionDone, enRegistros, entradaAbierta, esCodex, horasDeLaAccion, entradaDelResultado,
 };

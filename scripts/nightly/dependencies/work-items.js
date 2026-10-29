@@ -1235,6 +1235,8 @@ function anotarSeguimiento(ctx, res, rutaOperations) {
         const nombre = v && typeof v.asignado === 'string' ? nombreDeAsignado(v.asignado) : null;
         // leída y sin nadie: se anota, para que el sitio diga «sin asignar» sólo cuando se midió
         if (!nombre && v && v.leido === true && v.sin_asignar === true) return `${id}: ${fuentes.SIN_ASIGNAR}`;
+        // leída, con alguien que no tiene un nombre que se pueda mostrar (un correo): tiene dueño, no «no se sabe»
+        if (!nombre && v && v.leido === true && v.sin_asignar === false) return `${id}: ${fuentes.ASIGNADA_SIN_NOMBRE}`;
         return nombre ? `${id}: ${nombre}` : null;
       }).filter(Boolean);
       const falta = res.sin_pedido.find((x) => x.ficha === f.idFicha);

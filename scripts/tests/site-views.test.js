@@ -90,6 +90,26 @@ test('T28 Inicio_Mantenedor_LeeNoMide', () => {
   assert.match(html, /no medido/);
 });
 
+// el enlace de cada tarjeta dice adónde lleva, también en las «no medido»; las máquinas, a donde se confirman
+test('Inicio_EnlaceDeTarjeta_DiceAdondeLleva', () => {
+  const filas = filasDe(modeloCompleto({ vigilante: noMedida('sin_foto') }));
+  assert.strictEqual(fila(filas, 'maquinas_sin_confirmar').enlace, '/configuracion', 'una máquina se confirma en Configuración');
+  const html = views.paginaInicio({ modelo: access.filtrar(modeloCompleto({ vigilante: noMedida('sin_foto') }), { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  const tarjetas = html.split('<div class="tile ').slice(1).map((x) => x.split('<div class="tile ')[0]);
+  const deFila = (clave) => {
+    const f = fila(filas, clave);
+    return tarjetas.find((x) => x.includes(`<div class="t-label">${f.titulo}</div>`));
+  };
+  const pie = (clave) => (/<div class="t-foot"><a href="([^"]+)">([^<]+)<\/a><\/div>/.exec(deFila(clave) || '') || []).slice(1);
+  assert.deepStrictEqual(pie('prs_trabados'), ['#prs-trabados', 'ver cuáles (cada una lleva a donde se decide)'], 'una lista de esta página');
+  assert.deepStrictEqual(pie('suites_rojas_nuevas'), ['/arnes', 'ver en Arnés'], 'Arnés sólo se mira');
+  assert.deepStrictEqual(pie('dependencias_por_decidir'), ['/mantenimiento', 'dónde se decide'], 'la pestaña donde se decide');
+  assert.deepStrictEqual(pie('maquinas_sin_confirmar'), ['/configuracion', 'dónde se decide']);
+  // la «no medido» también lleva su enlace
+  assert.ok(deFila('vigilante_pendientes').startsWith('blind'), 'sin la foto del vigilante, no medido');
+  assert.deepStrictEqual(pie('vigilante_pendientes'), ['#decidir-vigilante_pendientes', 'ver cuáles (cada una lleva a donde se decide)']);
+});
+
 test('T29 Proyectos_ParadasCompartidosYDespliegues', () => {
   const st = (grupo, canonico, dias) => ({ grupo, canonico, dias_en_estado: dias });
   const modelo = modeloCompleto({
@@ -422,7 +442,7 @@ test('T28b Inicio_Mantenedor_PrsTrabados_LlevaASuLista — la ficha dice dónde 
     { numero: 9, proyecto: 'Proyecto Y', repo: 'Repo Y', dias: null, autor: B, enlace: 'javascript:alert(1)' },
   ] }) });
   const html = views.paginaInicio({ modelo: access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
-  assert.match(html, /<a href="#prs-trabados">dónde se decide<\/a>/);
+  assert.match(html, /<a href="#prs-trabados">ver cuáles \(cada una lleva a donde se decide\)<\/a>/, 'lleva a una lista de esta página, no a donde se decide');
   assert.match(html, /<section class="q" id="prs-trabados">/);
   assert.match(html, /<a href="https:\/\/dev\.example\/pr\/7">#7<\/a> · Proyecto X \/ Repo X · 5 días/);
   assert.doesNotMatch(html, /pr\/8/, 'el de un día no está trabado');

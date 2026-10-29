@@ -169,9 +169,11 @@ del tablero de la noche: la duración y los pasos de una ejecución (medianas) y
 ![Ejecuciones: el alcance, «Lo que se mira primero» y las fichas del filtro](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
 Más abajo está **«Ejecución por ejecución»**: una fila por ejecución, de la más nueva a la más vieja. La barra de cada fila
-reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: 0 Arranque, 1 Validar la historia, 2 Armar
-el plan, 3 Aprobar el plan, 4 Implementar y correr las pruebas, 5 Revisores, 6 Hallazgos: el informe, 7 Hallazgos: la
-decisión y 8 Preparar el commit. «Sin marca» es un tramo que la ejecución no anotó.
+reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: Arranque, Validar la historia, Armar el
+plan, Aprobar el plan, Implementar, Correr las pruebas, Implementar + pruebas (las ejecuciones viejas, que los tenían
+juntos), Revisores, Hallazgos y Preparar el commit. Son los pasos de Cómo trabaja, por nombre y sin número: el Pase
+adversarial va dentro de Revisores y Probar en vivo dentro de Hallazgos. «Sin marca» es un tramo que la ejecución no
+anotó.
 
 ![La leyenda de los pasos y la tabla «Ejecución por ejecución»](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
 
@@ -204,7 +206,8 @@ tiene tres bloques:
   vulnerabilidades de paquetes pendientes. Primero lo de producción, porque son clientes reales. Dentro de cada grupo,
   primero lo que el análisis recomienda arreglar, después lo que recomienda archivar y al final lo que no tiene
   análisis; los paquetes, la más grave primero.
-- **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace.
+- **Esperando aprobación**: lo que ya enviaste y otra persona tiene que aprobar, agrupado por pedido, con su enlace
+  (con `site.auto_apply` prendida, sólo aparece si la política del repo no dejó que el sitio lo apruebe solo).
   Aprobado, se aplica esa noche. Si la plataforma no contesta, lo dice una frase y las fichas quedan para decidir,
   pero no se envía nada hasta que conteste: así no se abre un pedido repetido.
 - **En marcha** (cerrado de entrada): lo ya decidido que alguien está haciendo, con el número de su tarea y a quién
@@ -224,7 +227,8 @@ noche o una persona. Sin análisis, dice por qué no lo tiene y los botones qued
 **Archivar** quiere decir «es normal, no hay que tocar nada». **Arreglar** quiere decir que la noche crea una tarea para
 corregirlo. Marcás una opción en cada tarjeta (o «Seguir las recomendaciones» para todas las que tienen análisis) y al
 final **Enviar para aprobar**: abre un solo pedido al repo de operaciones con todas tus elecciones. Nada cambia hasta
-que otra persona lo aprueba. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
+que otra persona lo aprueba. Si la organización prendió «Los cambios de un mantenedor» (`site.auto_apply`), el botón
+dice **Enviar** y lo enviado se guarda sin esperar a nadie: la revisión de esa noche lo aplica. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
 tiene su «?» con la explicación.
 
 ### Proyectos
@@ -309,7 +313,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 
 - **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
 - **Una ejecución del pipeline, de punta a punta (mediana, horas)** (`corridas`). Cuánto dura una ejecución completa.
-- **Pasos de una ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
+- **Respuestas del modelo por ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
 
 **Cómo se oculta una.** En Configuración, sección «Avisos y la noche», «Fichas que muestra el sitio» tiene una casilla
 por ficha. Destildá las que no uses y proponé el cambio: queda en `operations.json` del repo de operaciones
@@ -445,7 +449,8 @@ Las secciones, en el orden de la pantalla:
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
   sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
   «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
-  Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene. **«Cada cuánto se
+  Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene, salvo que la organización
+  haya prendido «Los cambios de un mantenedor»: entonces el sitio lo aprueba solo. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
   vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
   la nube, que en una instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y
@@ -704,8 +709,10 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 ### Instalación y actualización
 
-- **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y si se actualiza sola al arrancar. Queda en
-  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y cómo se aplica. «Automática, sólo
+  avisa»: cada máquina se actualiza sola al arrancar y le avisa al dev, que no la puede saltear. «Pregunta a cada dev»
+  (la de fábrica): la máquina avisa que hay una versión nueva y cada dev decide cuándo instalarla, con
+  `npx @tyconsa/harness@latest`. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Perfil de instalación**: cuánto instala el arnés en cada máquina (mínimo o completo), con la lista de lo que trae
   cada uno. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Paquetes de la organización**: qué paquetes del arnés (los revisores y las guías de un producto o de un cliente)

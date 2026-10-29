@@ -79,7 +79,7 @@ nombra. (En Windows, el enlace a un archivo suelto pide el modo desarrollador: s
 `harness.js install` escribe las dos piezas (el import y la línea de arranque) y registra en `~/.claude/settings.json` el
 set de hooks del instalador (la tabla de «Los hooks que instala», más abajo), con una copia de seguridad antes de cada
 cambio. En cada sesión, la línea de arranque mira si hay una versión nueva del canal «estable» y, si la hay, avisa y
-pregunta: no la aplica sin que lo pidas (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
+pregunta: no la aplica sin que lo pidas (`npx @tyconsa/harness@latest`, que pregunta antes de actualizar).
 `TYCON_UPDATE=0` la apaga; `harness.js doctor` dice cómo quedó todo y `harness.js uninstall` quita sólo lo que registró.
 
 **En Windows, `~/.tycon/versions`.** Cada versión vive en su carpeta, `~/.tycon/versions/<versión>/`, y `~/.tycon/harness`
@@ -294,8 +294,8 @@ hay `git pull` que hacer. Al arrancar cada sesión, el arnés mira si su canal t
 depende de la política, `update.apply`:
 
 - **`ask`** (la de fábrica): deja un aviso en la sesión y no toca nada; mira como mucho una vez cada 6 horas. La versión
-  nueva se aplica a mano, desde una terminal:
-  `node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`.
+  nueva se aplica a mano, desde una terminal: `npx @tyconsa/harness@latest` (la misma línea que instala; con el arnés
+  instalado, pregunta «¿Actualizo?» y actualiza).
 - **`auto`**: la instala sola al arrancar la sesión.
 
 La política se fija con `update.apply` en `~/.claude/tycon.json` o con la variable `TYCON_UPDATE_APPLY`; `TYCON_UPDATE=0`
@@ -445,7 +445,7 @@ Asimetrías declaradas: `guides/maintaining/codex-divergence-inventory.md`.
    ```
 4. Commit + push.
 
-Los devs reciben la guía con la próxima actualización del arnés (sola, o con `harness.js update --yes`). Nadie toca su
+Los devs reciben la guía con la próxima actualización del arnés (sola, o con `npx @tyconsa/harness@latest`). Nadie toca su
 CLAUDE.md personal.
 
 ### Modificar una guía existente

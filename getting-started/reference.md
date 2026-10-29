@@ -400,7 +400,7 @@ el repo declara el paquete «<nombre>» en `packs:` y no está instalado en …
 ```
 
 If you see it, the pack did not arrive with what your team brings: update with
-`node ~/.claude/tycon-harness/scripts/setup/harness.js update`, and if it persists, ask your team's admin.
+`npx @tyconsa/harness@latest`, and if it persists, ask your team's admin.
 
 ## What is optional
 
@@ -468,7 +468,7 @@ The full table, with what each hook does, whether it blocks and its switch, is i
 
 **What it does on its own**: when a session starts, the startup line checks whether your channel has a new version,
 at most once every 6 hours. If it does, it tells you and waits: it does not apply it unless you ask for it from a
-terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`). Then it runs the installer.
+terminal (`npx @tyconsa/harness@latest`, which asks before updating). Then it runs the installer.
 `TYCON_UPDATE=0` turns the check off; `TYCON_UPDATE_CHANNEL` and `TYCON_UPDATE_APPLY` set the channel and the policy.
 
 - At every startup, in the background: it runs a few quick tests of the harness itself, and re-reads the workflow
@@ -623,7 +623,7 @@ of yours stay untouched. `--tool claude` or `--tool codex` unplugs only that too
   `update.apply` in `~/.claude/tycon.json`. Choosing `latest` together with `auto` asks you to confirm: you get every
   change that lands on `main`, within minutes, with no review of yours. If your team profile sets `auto`, the profile
   wins: neither the machine, the variable nor `TYCON_UPDATE=0` changes it, and `doctor` says which value went unused.
-- **By hand**: `harness.js update --check` says whether there is a new version; `harness.js update --yes` applies it;
+- **By hand**: `harness.js update --check` says whether there is a new version; `npx @tyconsa/harness@latest` applies it (it asks first);
   `harness.js version` shows what is installed; `harness.js doctor` diagnoses without changing anything.
 - **Going back**: `harness.js rollback --list` shows the copies it can go back to, and
   `harness.js rollback --to <copy>` goes back to the one you choose. After going back, the harness stops updating on
