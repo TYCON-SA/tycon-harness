@@ -8832,14 +8832,14 @@
           "id": "control-approvals-consola-otros-extractores-frenan",
           "type": "must-block",
           "_por_que": "pax, ditto y `python3 -m zipfile` extraen sin que el freno pueda listar lo que traen: dentro de un repo, no pasan.",
-          "setup": ["git init -q . && mkdir -p empaque/.github/control-changes && echo '{}' > empaque/.github/control-changes/abc.json && (cd empaque && zip -qr ../firma.zip .)"],
+          "setup": ["git init -q . && mkdir -p empaque/.github/control-changes && echo '{}' > empaque/.github/control-changes/abc.json && node \"$TCG/scripts/controls-bench/make-zip.js\" firma.zip empaque"],
           "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "python3 -m zipfile -e firma.zip ." }, "cwd": "${FIXTURE}" },
           "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
         },
         {
           "id": "control-approvals-consola-ditto-frena",
           "type": "must-block",
-          "setup": ["git init -q . && mkdir -p empaque/.github/control-changes && echo '{}' > empaque/.github/control-changes/abc.json && (cd empaque && zip -qr ../firma.zip .)"],
+          "setup": ["git init -q . && mkdir -p empaque/.github/control-changes && echo '{}' > empaque/.github/control-changes/abc.json && node \"$TCG/scripts/controls-bench/make-zip.js\" firma.zip empaque"],
           "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "ditto -xk firma.zip ." }, "cwd": "${FIXTURE}" },
           "expect": { "exit": 2, "stderr_re": ["constancia de cambio de control no se escribe a mano"] }
         },
@@ -8847,7 +8847,7 @@
           "id": "control-approvals-consola-listar-zip-o-cpio-pasa",
           "type": "must-not-block",
           "_por_que": "`unzip -l`, `unzip -Z1` y `cpio -it` sólo listan: no escriben nada.",
-          "setup": ["git init -q . && mkdir -p empaque/.github/control-changes && echo '{}' > empaque/.github/control-changes/abc.json && (cd empaque && zip -qr ../firma.zip . && find . | cpio -o --quiet > ../f.cpio 2>/dev/null)"],
+          "setup": ["git init -q . && mkdir -p empaque/.github/control-changes && echo '{}' > empaque/.github/control-changes/abc.json && node \"$TCG/scripts/controls-bench/make-zip.js\" firma.zip empaque && (cd empaque && find . | cpio -o --quiet > ../f.cpio 2>/dev/null || : > ../f.cpio)"],
           "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "unzip -l firma.zip && unzip -Z1 firma.zip && cpio -it < f.cpio" }, "cwd": "${FIXTURE}" },
           "expect": { "exit": 0 }
         },

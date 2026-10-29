@@ -90,7 +90,7 @@ function dentroDeVerdad(repo, p) {
  * La aprobación de la persona en la ventana de permiso (o con --terminal, en su terminal). La cita y el reenvío ya no
  * firman. `{ codigo: 0, via }` o `{ codigo, motivo }`.
  */
-function firmaDeLaPersona(argv, resumen, propia = require('./lib/session-id.js').sessionIdFileKey()) {
+function firmaDeLaPersona(argv, resumen, propia = PROPIA) {
   if (argv.includes('--relayed-by') || argv.includes('--ok')) {
     return { codigo: 2, motivo: 'la cita o el reenvío ya no firman: la persona lo aprueba en la ventana de permiso (este comando sin --ok ni --relayed-by) o en su terminal (--terminal)' };
   }
@@ -98,7 +98,40 @@ function firmaDeLaPersona(argv, resumen, propia = require('./lib/session-id.js')
   const r = ow.exigir({ firma: 'browser-test', argv: process.argv.slice(1), resumen,
     propia,
     anotar: (renglon) => bt.anotar(stateDir(), { ts: new Date().toISOString(), ...renglon }) });
-  return r.codigo === 0 ? r : { codigo: 2, motivo: r.motivo };
+  if (r.codigo !== 0) return { codigo: 2, motivo: r.motivo };
+  // recién con la firma dada, el proceso pasa a trabajar sobre la sesión destino
+  const f = ow.fijarDestino({ r, propia, necesitaMarcador: !!paraOtra, leerMarcador: leerMarcador });
+  return f.codigo === 0 ? { ...r, constancia: f.constancia } : { codigo: 2, motivo: f.motivo };
+}
+const porDe = (firma) => (firma && firma.constancia && firma.constancia.por ? { por: firma.constancia.por } : {});
+// null sin marcador; lanza si existe y no se puede leer
+function leerMarcador(sid) {
+  return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js')).marcadorEn(path.join(stateDir(), 'active', `${sid}.json`));
+}
+
+// La firma pedida para otra sesión (`--for-session <D>`): sólo `prepare` y `defer`, y sólo si <D> tiene una ejecución
+// abierta. Hasta la firma no se escribe nada; la firma la pide la sesión que corre el guion (PROPIA).
+const PROPIA = require('./lib/session-id.js').sessionIdFileKey();
+let paraOtra = null;   // { pedida, storyId } mientras el guion trabaja para otra sesión
+function paraOtraSesion(cmd, argv) {
+  const pedida = opcion(argv, '--for-session');
+  if (!pedida || pedida === PROPIA) return null;
+  // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return 'sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal). No escribí nada.';
+  // en la terminal del dueño, --for-session dice la sesión de su agente, que puede preparar fuera de una corrida: no
+  // la pide otra sesión, así que no se exige la ejecución abierta
+  if (PROPIA === '_nosession') return null;
+  if (!['prepare', 'defer'].includes(cmd)) return `--for-session con otra sesión vale sólo para prepare y defer: ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.`;
+  if (!/^[\w-]+$/.test(pedida)) return 'la sesión de --for-session no se puede leer. No escribí nada.';
+  let abierta;
+  try { abierta = leerMarcador(pedida); } catch (e) { return `${e.message}. No escribí nada.`; }
+  if (!abierta || !abierta.storyId) return `la sesión ${pedida} no tiene una ejecución abierta. No escribí nada.`;
+  paraOtra = { pedida, storyId: String(abierta.storyId) };
+  return null;
+}
+/** Para otra sesión, la historia es la de su corrida: el motivo si --story nombra otra, o null. */
+function historiaAjena(id) {
+  return paraOtra && paraOtra.storyId !== String(id) ? `la corrida de la sesión ${paraOtra.pedida} es de la historia ${paraOtra.storyId}, y --story nombra la ${id}. No escribí nada.` : null;
 }
 
 /** La historia, resuelta y dentro del repo; o el motivo. */
@@ -214,6 +247,8 @@ function cmdPrepare(argv) {
   if (h.motivo) { process.stderr.write(`e2e-setup.js prepare: ${h.motivo}\n`); return 2; }
   const content = fs.readFileSync(h.path, 'utf8');
   const id = bt.storyIdDe(content, h.path);
+  const ajena = historiaAjena(id);
+  if (ajena) { process.stderr.write(`e2e-setup.js prepare: ${ajena}\n`); return 2; }
   const ok = firmaDeLaPersona(argv, `preparar la prueba con navegador de la historia ${id} en ${repo}`);
   if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js prepare: no preparo nada — ${ok.motivo}\n`); return 2; }
   if (fs.existsSync(path.join(repo, MANIFEST))) { process.stderr.write('e2e-setup.js prepare: este repo ya tiene una preparación anotada (.tycon/e2e-setup.json)\n'); return 1; }
@@ -270,7 +305,7 @@ function cmdPrepare(argv) {
     process.stderr.write(`e2e-setup.js prepare: terminé, pero el repo todavía no tiene la prueba con navegador (falta: ${listo.missing.join(', ')}).${saltados.length ? ` No toqué lo que ya existía: ${saltados.join(', ')}.` : ''}\n  Lo hecho quedó anotado en ${MANIFEST}: «e2e-setup.js undo» lo deshace.\n`);
     return 1;
   }
-  bt.anotar(stateDir(), { ts: new Date().toISOString(), sessionId: process.env.CLAUDE_CODE_SESSION_ID || null, repoPath: repo, name: bt.PREPARED, status: 'ok', story: id, via: ok.via });
+  bt.anotar(stateDir(), { ts: new Date().toISOString(), sessionId: process.env.CLAUDE_CODE_SESSION_ID || null, repoPath: repo, name: bt.PREPARED, status: 'ok', story: id, via: ok.via, ...porDe(ok) });
   process.stdout.write([
     'Listo: la prueba con navegador está preparada en el repo.',
     `  Playwright quedó en ${rel(repo, path.join(pkg, 'package.json'))} (herramienta de desarrollo) y Chromium en ${browserDir()}.`,
@@ -333,6 +368,8 @@ function cmdDefer(argv) {
   if (h.motivo) { process.stderr.write(`e2e-setup.js defer: ${h.motivo}\n`); return 2; }
   const txt = fs.readFileSync(h.path, 'utf8');
   const id = bt.storyIdDe(txt, h.path);
+  const ajena = historiaAjena(id);
+  if (ajena) { process.stderr.write(`e2e-setup.js defer: ${ajena}\n`); return 2; }
   if (bt.repoReady(repo).ready) { process.stderr.write('e2e-setup.js defer: el repo ya tiene prueba con navegador: se corre, no se deja pendiente.\n'); return 2; }
   const oferta = bt.lastOffer(stateDir(), id, repo);
   if (!oferta) { process.stderr.write(`e2e-setup.js defer: no hay constancia de que el arnés le haya mostrado la oferta a la persona para la historia ${id}: sin la oferta, el «no» no vale.\n`); return 2; }
@@ -341,9 +378,8 @@ function cmdDefer(argv) {
   // tiene que ser un no: el ok de otra cosa («aprobado el plan») no declara que la prueba queda pendiente
   if (!/\bno\b/i.test(cita)) { process.stderr.write(`e2e-setup.js defer: «${cita}» no dice que no: poné en --no la respuesta de la persona a la oferta.\n`); return 2; }
   // en la terminal del dueño no hay variable de sesión: el «no» contesta la oferta, y la firma es para su sesión
-  const propia = require('./lib/session-id.js').sessionIdFileKey();
-  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`,
-    propia === '_nosession' && oferta.sessionId ? oferta.sessionId : propia);
+  const propia = PROPIA === '_nosession' && oferta.sessionId ? oferta.sessionId : PROPIA;
+  const ok = firmaDeLaPersona(argv, `dejar pendiente la prueba con navegador de la historia ${id}: «${cita}»`, propia);
   if (ok.codigo !== 0) { process.stderr.write(`e2e-setup.js defer: no anoto nada — ${ok.motivo}\n`); return 2; }
   const m = txt.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) { process.stderr.write('e2e-setup.js defer: la historia no tiene frontmatter\n'); return 2; }
@@ -355,7 +391,7 @@ function cmdDefer(argv) {
   bt.anotar(stateDir(), {
     ts: new Date().toISOString(), sessionId: ok.destino || propia, repoPath: repo, storyPath: fs.realpathSync(h.path),
     name: bt.DEFERRED, status: 'ok', story: id, cita, quoteSha: bt.huella(cita), offerTs: oferta.ts,
-    approvedBy: opcion(argv, '--approved-by') || process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona', via: ok.via,
+    approvedBy: opcion(argv, '--approved-by') || process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona', via: ok.via, ...porDe(ok),
   });
   // con función: una respuesta con `$&` o `$$` no se interpreta como patrón de reemplazo
   fs.writeFileSync(h.path, txt.replace(m[0], () => `---\n${fm.join('\n')}\n---`));
@@ -367,6 +403,8 @@ function cmdDefer(argv) {
 
 function main(argv) {
   const cmd = argv[0];
+  const otra = paraOtraSesion(cmd, argv);
+  if (otra) { process.stderr.write(`e2e-setup.js: ${otra}\n`); return 2; }
   if (cmd === 'status') return cmdStatus(argv);
   if (cmd === 'prepare') return cmdPrepare(argv);
   if (cmd === 'undo') return cmdUndo(argv);

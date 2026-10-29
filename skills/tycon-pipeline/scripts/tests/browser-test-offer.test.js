@@ -396,6 +396,68 @@ test('Defer_FirmadoEnLaTerminalSinSesion_QuedaDeclarado (pase adversarial)', (t)
   }
 });
 
+// La coordinadora anota el «no» de la persona para la corrida de otra sesión: el pedido lo arma `decidir` de verdad con
+// el evento de la coordinadora, y el guion lo verifica de verdad con el árbol de procesos de la prueba.
+test('Defer_ForSession_SeAnotaParaLaSesionDestino @story-8.142 @ac-2 @ac-3', () => {
+  const ow = require(path.join(HARNESS, 'scripts', 'lib', 'owner-window.js'));
+  const { arbolDelFreno, arbolDelGuion } = require(path.join(HARNESS, 'scripts', 'tests', 'lib', 'window-passed.js'));
+  const home = tmp('bt-home-');
+  const { bin } = binariosSimulados();
+  // stable-data: el pedido se registra con esta hora y el guion lo verifica un minuto después
+  const ahora = Date.now();
+  const c = tienda();
+  hasta3(home, 's-dest', c.repo, c.story);
+  conversacion(home, 's-dest');
+  puertaBash(home, 's-dest', c.repo, cierre3);
+  const pedirYCorrer = (args, { pedir = true, sesion = 's-coord' } = {}) => {
+    const argv = [path.join(SCRIPTS, 'e2e-setup.js'), ...args];
+    const cmd = `node ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
+    if (pedir) {
+      const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+        escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+      assert.equal(p.decision, 'ask', p.texto);
+    }
+    return spawnSync('node', argv, { cwd: c.repo, encoding: 'utf8',
+      env: conVentana({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sesion, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+        { arbol: { arbol: arbolDelGuion(home, cmd), pid: 301, ahora: ahora + 60000 } }) });
+  };
+  // una sesión sin ejecución abierta: sale 2 antes de la firma, sin tocar la historia
+  const sinMarcador = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-z'], { pedir: false });
+  assert.equal(sinMarcador.status, 2, sinMarcador.stdout + sinMarcador.stderr);
+  assert.match(sinMarcador.stderr, /s-z/);
+  assert.doesNotMatch(fs.readFileSync(c.story, 'utf8'), /browser_test/);
+  // `undo` no es una firma: para otra sesión sale 2
+  assert.equal(pedirYCorrer(['undo', '--repo', c.repo, '--for-session', 's-dest'], { pedir: false }).status, 2);
+  // sin variable de sesión y sin --terminal: sale 2 sin pasar por la firma
+  const sinSesion = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-dest'], { pedir: false, sesion: '' });
+  assert.equal(sinSesion.status, 2, sinSesion.stdout + sinSesion.stderr);
+  assert.match(sinSesion.stderr, /--terminal/);
+  // en la terminal del dueño, --for-session nombra la sesión de su agente: no se le exige una ejecución abierta
+  const enTerminal = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--terminal', '--for-session', 's-z'], { pedir: false, sesion: '' });
+  assert.doesNotMatch(enTerminal.stderr, /no tiene una ejecución abierta/);
+  // la corrida de la sesión destino es de otra historia: sale 2 sin gastar el registro
+  fs.writeFileSync(path.join(stateOf(home), 'active', 's-otra.json'), JSON.stringify({ storyId: '7.7', sessionId: 's-otra', startedAt: new Date(ahora).toISOString() }));
+  const ajena = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-otra']);
+  assert.equal(ajena.status, 2, ajena.stdout + ajena.stderr);
+  assert.match(ajena.stderr, /7\.7/);
+  assert.equal(fs.readdirSync(ow.carpeta(home)).filter((f) => f.endsWith('.json')).length, 1, 'el registro sigue sin gastar');
+  // un marcador que no se puede leer no es «sin ejecución abierta»
+  fs.writeFileSync(path.join(stateOf(home), 'active', 's-rota.json'), '{ no es json');
+  const rota = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-rota'], { pedir: false });
+  assert.equal(rota.status, 2, rota.stdout + rota.stderr);
+  assert.match(rota.stderr, /no pude leer/);
+  assert.doesNotMatch(fs.readFileSync(c.story, 'utf8'), /browser_test/);
+  // el «no» firmado en la ventana de la coordinadora queda para la sesión destino, con quién lo pidió
+  const r = pedirYCorrer(['defer', '--repo', c.repo, '--story', c.story, '--no', 'no, por ahora no', '--for-session', 's-dest']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(fs.readFileSync(c.story, 'utf8'), /^browser_test: deferred$/m);
+  const lineas = gatesDe(home).split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const anotado = lineas.find((g) => g.name === bt.DEFERRED);
+  assert.deepEqual([anotado.sessionId, anotado.por, anotado.via], ['s-dest', 's-coord', 'ventana']);
+  assert.ok(lineas.some((g) => g.name === 'browser-test-signed' && g.sesion === 's-coord' && g.destino === 's-dest'));
+  assert.ok(!fs.existsSync(path.join(stateOf(home), 'active', 's-coord.json')), 'no le nació marcador a la coordinadora');
+});
+
 test('Defer_ConElNoDespuesDeLaOferta_DeudaConNombre @story-8.67 @ac-5', () => {
   const home = tmp('bt-home-');
   const { bin } = binariosSimulados();

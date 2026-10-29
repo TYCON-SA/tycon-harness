@@ -5493,6 +5493,33 @@ function readSessionMarkerStrict() {
   } catch (e) { return { estado: 'ilegible', marcador: null, motivo: String(e.message).slice(0, 80) }; }
 }
 
+// La firma pedida para otra sesión (`--for-session <D>`): acá sólo la vuelta extra de revisores. Hasta la firma el guion
+// sólo lee la corrida de <D>; la firma la pide la sesión que corre el guion (PROPIA, la de antes de cambiar nada), y
+// recién después `fijarDestino` deja el proceso, y los guiones que lance, trabajando sobre <D>.
+const PROPIA = sessionIdFileKey();
+let paraOtra = null;   // { pedida, storyId } mientras el guion trabaja para otra sesión
+const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+function paraOtraSesion(cmd, args, argv) {
+  const i = argv.indexOf('--for-session');
+  const pedida = i >= 0 ? argv[i + 1] : null;
+  if (!pedida || pedida === PROPIA) return null;
+  // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la vuelta extra para una sesión se firma en la terminal del dueño (--terminal). No escribí nada.\n';
+  if (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound) {
+    return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round): ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
+  }
+  if (!/^[\w-]+$/.test(pedida)) return '🛑 La sesión de --for-session no se puede leer. No escribí nada.\n';
+  let abierta;
+  try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return `🛑 ${e.message}. No escribí nada.\n`; }
+  if (!abierta || !abierta.storyId) {
+    return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida para la vuelta extra. No escribí nada.\n`;
+  }
+  paraOtra = { pedida, storyId: String(abierta.storyId) };
+  // hasta la firma, sólo para leer su corrida: nada se escribe antes (topeDeVueltas)
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) if (k === 'CLAUDE_CODE_SESSION_ID' || process.env[k]) process.env[k] = pedida;
+  return null;
+}
+
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
 // por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
 // ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
@@ -5500,7 +5527,14 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
   const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
+  const sinFirmaPendiente = `🛑 La vuelta ${iter} no necesita firma: no se pide para otra sesión (--for-session). La pide la sesión de la corrida.\n`;
+  // la vuelta extra para otra sesión es de la historia de su corrida, no de la que diga --story
+  if (paraOtra && paraOtra.storyId !== String(storyId)) {
+    process.stderr.write(`🛑 La corrida de la sesión ${paraOtra.pedida} es de la story ${paraOtra.storyId}, y --story nombra la ${storyId}. No escribí nada.\n`);
+    process.exit(2);
+  }
   if (iter <= tope.value) {
+    if (paraOtra) return sinFirmaPendiente;
     // la variable de la máquina puede subir el tope por encima del de la organización y el repo: pasa, pero queda anotado
     if (tope.source === 'maquina') {
       const sinMaquina = rr.tope({ repo: repoAbs, sinMaquina: true });
@@ -5511,7 +5545,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
     }
     return null;
   }
-  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) return null;
+  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) return paraOtra ? sinFirmaPendiente : null;
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
   const ab = rr.abiertos(h.lista, { prefijos: pre });
@@ -5531,9 +5565,11 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
     if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
     const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
     const r = ow.exigir({ firma: 'extra-round', argv: process.argv.slice(1), resumen: `vuelta extra ${iter} de revisores de la story ${storyId}`,
-      propia: sessionIdFileKey(), anotar: (g) => anotar(g) });
+      propia: PROPIA, anotar: (g) => anotar(g) });
     if (r.codigo !== 0) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}.\n`;
-    anotar({ name: 'extra-round', status: 'ok', quien: args.approvedBy || process.env.USER || 'persona', via: r.via });
+    const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
+    if (f.codigo !== 0) { process.stderr.write(`🛑 No se sirvió la vuelta extra ${iter}: ${f.motivo}. No escribí nada.\n`); process.exit(f.codigo); }
+    anotar({ name: 'extra-round', status: 'ok', quien: args.approvedBy || process.env.USER || 'persona', via: r.via, ...(f.constancia.por ? { por: f.constancia.por } : {}) });
     return null;
   }
   const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
@@ -6389,6 +6425,8 @@ function parseArgs(argv) {
 function main() {
   const cmd = process.argv[2];
   const args = parseArgs(process.argv.slice(3));
+  const otra = paraOtraSesion(cmd, args, process.argv.slice(3));
+  if (otra) { process.stderr.write(otra); process.exit(2); }
 
   // La línea del cierre: cuántas vueltas de revisores hubo, el tope y qué quedó abierto (lib/review-rounds.js).
   if (cmd === 'review-rounds') {

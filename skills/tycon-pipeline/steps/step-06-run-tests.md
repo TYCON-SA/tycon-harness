@@ -46,8 +46,11 @@ copia sellada de evidencia es sólo la del repo de la story.
 `TYCON_SUITES_MAX_WORKERS=N` lo cambia, `=1` es la serie de antes), las `exclusive` corren solas al final, y las que
 declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas (hoy export-real: sólo corre si la
 story toca `scripts/publishing/**`). Lo diferido queda en `tests-result.json` → `totals.deferred_suites`, con el motivo.
-Si el gate no puede saber qué toca la story, corre todo. `TYCON_GATE_ALL_SUITES=1` corre todo como antes. El nocturno y
-el control del PR no cambian.
+Si el repo declara `test_gate` en `.test-gate.yaml`, en su raíz (commiteado), corren sólo las suites que leen lo tocado y la
+completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si el gate no puede saber qué toca la story,
+corre todo, también con esa clave (sólo la corrida del repo hermano sale 7 sin correr nada; en el árbol armado del
+privado lo tocado sale de los dos repos y, si no se puede saber, también sale 7).
+`TYCON_GATE_ALL_SUITES=1` corre todo como antes. El nocturno y el control del PR no cambian.
 
 ### 🔴 El verde de `tests` tiene que venir de ACÁ, y de la suite COMPLETA
 
@@ -74,7 +77,7 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 | `4` | **FRENO**: el repo tiene más de un proyecto testeable y no se pudo deducir cuál | pasar el alcance a mano: `test-gate.sh <repo> <story> <subdir>` |
 | `5` | **no pude correr las pruebas**: falta el corredor (`npx`, `dotnet`, `npm`), o el shell lo ve pero no se puede lanzar. No se corrió nada (`halted: true`, `missing_tool`) | NO tocar las pruebas: instalar la herramienta o abrir la sesión con un PATH que la vea, y re-correr el gate |
 | `6` | la suite salió 0 pero **no corrió ninguna prueba** (o no dejó un resumen que las cuente): no es verde | mirar `no_tests_run` en `tests-result.json`: alcance vacío, todas saltadas o `todo`, o un resumen ilegible; corregir eso y re-correr |
-| `7` | **sin acotar**: la corrida del repo hermano no pudo acotarse a lo tocado (no se supo qué se tocó, o ninguna suite lo lee) y no corrió nada. No es verde ni rojo (`unscoped: true` con el motivo, `merge_requires_ci: true`; el check `tests` queda `sin-acotar`) | seguir anunciándolo: la cubre la CI del pedido, y el merge exige la CI completa en verde. No forzar la completa en la máquina (`TYCON_GATE_ALL_SUITES=1`) salvo pedido del dev |
+| `7` | **sin acotar**: la corrida del repo hermano no pudo acotarse a lo tocado (no se supo qué se tocó, o ninguna suite lo lee) y no corrió nada. El portón acotado por el repo (`test_gate`) no sale 7: sin saber qué se tocó corre todo, y si ninguna suite lee lo tocado sale 0. No es verde ni rojo (`unscoped: true` con el motivo, `merge_requires_ci: true`; el check `tests` queda `sin-acotar`) | seguir anunciándolo: la cubre la CI del pedido, y el merge exige la CI completa en verde. No forzar la completa en la máquina (`TYCON_GATE_ALL_SUITES=1`) salvo pedido del dev |
 | `75` | **no corrió nada**: otra corrida de las pruebas ya está en marcha en este repo (`run-check tests` lo dice con la hora de inicio, su pid y su sesión). No es verde ni rojo: no escribe `tests-result.json` ni corre los repos hermanos | esperar el resultado de esa corrida, no relanzar. Si quedó colgada, la negativa nombra la carpeta del candado para sacarlo a mano |
 | `76` | **no corrió nada**: en la última corrida completa fallaron suites que todavía no salieron verdes solas (la lista vive en el marcador, `testsFailed`). No escribe `tests-result.json` ni toca el check `tests` | después de un rojo, repetir primero la suite que falló: `bash …/test-gate.sh <repo> <story> --suite <ruta>` (la negativa da el comando de cada una). En verde sale de la lista; con la lista vacía, la completa arranca. Una suite sola nunca cierra este paso |
 | `129` | la corrida se cortó (la terminal se cerró) mientras medía el repo privado adelgazado: la carpeta del árbol armado se borró y la corrida de las suites se cortó. No es verde | re-correr el gate |
