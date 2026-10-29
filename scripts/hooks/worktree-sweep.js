@@ -130,7 +130,7 @@ function lastUsedMs(wt) {
 /** El token de la story en una rama: `N.M` casa con `feat/N.M-a-x` y `story/N-M`, no con `1N.M` ni con `N.M0`. */
 function branchNamesStory(branch, story) {
   if (!branch || !story) return false;
-  const alt = story.replace(/\./g, '[.-]');
+  const alt = story.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\./g, '[.-]');
   return new RegExp(`(^|[^0-9.])${alt}($|[^0-9])`).test(branch);
 }
 

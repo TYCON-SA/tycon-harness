@@ -214,7 +214,7 @@ function escribirAtomico(archivo, contenido) {
 function ultimaFoto(dir, patron, raiz = dir) {
   let nombres;
   try {
-    const rx = new RegExp(`^${patron.replace(/[.]/g, '\\.').replace(/\*/g, '.*')}$`);
+    const rx = new RegExp(`^${patron.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
     nombres = fs.readdirSync(dir).filter((n) => rx.test(n) && fechaDe(n)).sort();
   } catch (e) { return { codigo: e.code === 'ENOENT' ? 'sin_foto' : 'ilegible' }; }
   if (!nombres.length) return { codigo: 'sin_foto' };
