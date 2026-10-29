@@ -2362,6 +2362,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/regex-backtracking.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/harness-install.test.sh",
       "requiere": []
     },
