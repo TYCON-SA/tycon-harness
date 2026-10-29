@@ -56,7 +56,7 @@ const { resolveSessionId } = require('./lib/session-id.js');
 // Con respaldo, como en dispatch.js y on-write-collision.js: sin la lib (un skill instalado a medias) el portón no puede
 // morir al cargar —saldría 1, que no frena, y sin dejar constancia—: resuelve las rutas como antes.
 let nativePath = (p) => p;
-try { ({ nativePath } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: conducta previa */ }
+try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookError(e); /* sin normalización de rutas: conducta previa */ }
 
 // ── extracción de targets de escritura ────────────────────────────────────────────────────────────
 
@@ -462,7 +462,7 @@ function scriptsInline(cmd) {
 let lectorDeEntrada;
 function programasPorEntrada(raw) {
   if (lectorDeEntrada === undefined) {
-    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch { lectorDeEntrada = null; }
+    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch (e) { logHookError(e); lectorDeEntrada = null; }
   }
   if (lectorDeEntrada) return lectorDeEntrada(raw);
   return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
@@ -610,7 +610,9 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
             const leido = leer(real);
             if (leido) agregar(interprete, real, leido, argumentos(words.slice(k + 1)), 0, instalado(real));
           }
-        } catch { /* no se lee: no es un guion */ }
+        } catch (e) {   // no se lee: no es un guion. Lo que no es «no existe» o «es una carpeta» queda dicho
+          if (!['ENOENT', 'ENOTDIR', 'EISDIR'].includes(e && e.code)) logHookError(e);
+        }
         break;
       }
     }
@@ -2335,7 +2337,7 @@ function estadoDeHistoria(abs) {
   let texto = '';
   try { texto = fs.readFileSync(abs, 'utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n'); } catch (e) { logHookError(e); return '?'; }
   let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);
-  try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* la forma de siempre */ }
+  try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch (e) { logHookError(e); /* la forma de siempre */ }
   if (!declares(texto)) return null;
   const fm = /^---\n([\s\S]*?)\n---/.exec(texto);
   const estado = fm && /^["']?status["']?\s*:\s*["']?([\w-]+)/m.exec(fm[1]);
@@ -2600,7 +2602,7 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
     if (declarados) return declarados;
     declarados = new Set();
     let texto = '';
-    try { texto = marker.storyPath ? fs.readFileSync(marker.storyPath, 'utf8') : ''; } catch (_) { return declarados; }
+    try { texto = marker.storyPath ? fs.readFileSync(marker.storyPath, 'utf8') : ''; } catch (e) { logHookError(e); return declarados; }
     const ts = require('./lib/test-scope.js');
     const finales = [...ts.parseDeclaredFiles(texto), ...ts.parseFilesToDelete(texto)]
       .map((f) => String(f).replace(/\\/g, '/').replace(/^\.\//, '')).filter((f) => f.includes('/') && !f.split('/').includes('..'));
@@ -2749,7 +2751,7 @@ function renameOrCopyOfExistingStory(cmd, cwd) {
   try {
     const { probeStoryFile } = require('./lib/story-discovery.js');
     return fs.existsSync(src) && probeStoryFile(src) ? { src, dest } : null;
-  } catch { return null; }
+  } catch (e) { logHookError(e); return null; }   // sin mirarla, la copia se juzga como historia nueva
 }
 
 /** El nombre sugiere story cuando no hay contenido legible (cp / mv / tee desde un pipe). */
@@ -3123,7 +3125,7 @@ function handleCarrilEHistoria(event, opts = {}) {
             repoPath: (marker && marker.repoPath) || null, name: 'ledger-visible', status: 'blocked',
             storyId: (marker && marker.storyId) || null, files: vis.files.length, via,
           }) + '\n', 'utf8');
-        } catch { /* el freno no depende del log */ }
+        } catch (e) { logHookError(e); /* el freno no depende del log */ }
         const sinResolver = vis.files.filter((f) => sinResolverDe.has(f))
           .map((f) => ({ file: f, vars: sinResolverDe.get(f).sinResolver }));
         return { block: lv.mensaje(vis.files, marker && marker.storyId, { sinResolver, codex: require('./lib/story-skill-gate-io.js').isCodexEvent(event) }) + '\n' };
@@ -3146,7 +3148,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     // Cupo ad-hoc: Bash no tiene PostToolUse nuestro, así que el registro va acá (best-effort: el
     // comando puede fallar después, pero sin esto un hotfix hecho con heredocs nunca suma al cupo).
     for (const abs of passedCode.filter((f) => isCodeFile(f))) {   // un destino sin resolver no suma al cupo: no se sabe cuál es
-      try { io.recordAdhocFile(stateDir, sessionId, abs); } catch { /* best-effort */ }
+      try { io.recordAdhocFile(stateDir, sessionId, abs); } catch (e) { logHookError(e); }
     }
   }
 
@@ -3170,7 +3172,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     if (mdNew.length) {
       const sio = require('./lib/story-skill-gate-io.js');
       let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);
-      try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* fallback regex */ }
+      try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch (e) { logHookError(e); /* fallback regex */ }
       const hds = heredocs(cmdDestinos);
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
       // el mismo destino que se juzgó arriba, con las variables del comando expandidas
