@@ -1527,6 +1527,12 @@
       "requiere": []
     },
     {
+      "__nota": "un proyecto Maven o Gradle en la raíz vota por su Scala, Groovy y .kts al deducir el alcance de la puerta de pruebas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-scope-build-tools.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la tabla de casos del freno de pruebas sin alcance, con el bash con el que el arnés corre sus guiones (en Windows, el de Git): es la que corre el ensayo de Windows.",
       "raiz": "arnes",
       "ruta": "tests/test-scope-table.test.js",
