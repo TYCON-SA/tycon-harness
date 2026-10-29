@@ -173,9 +173,10 @@ dashboard: how long a run takes and how many steps it has (medians), and how man
 ![Runs: the scope, "What to look at first" and the filter cards](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
 Further down is **"Run by run"** (*Corrida por corrida*): one row per run, newest first. Each row's bar splits the time
-among the pipeline steps, with the legend's colors: 0 Start, 1 Validate the story, 2 Build the plan, 3 Approve the plan,
-4 Implement and run the tests, 5 Reviewers, 6 Findings: the report, 7 Findings: the decision and 8 Prepare the commit.
-"No mark" (*sin marca*) is a stretch the run did not record.
+among the pipeline steps, with the legend's colors: Start, Validate the story, Build the plan, Approve the plan,
+Implement, Run the tests, Implement + tests (older runs, which had them together), Reviewers, Findings and Prepare the
+commit. They are the steps of How it works, by name and without a number: the Adversarial pass goes inside Reviewers and
+Live check inside Findings. "No mark" (*sin marca*) is a stretch the run did not record.
 
 ![The step legend and the "Run by run" table](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
 
@@ -208,7 +209,7 @@ blocks:
   vulnerabilities. Production first, because those are real customers. Within each group, first what the analysis
   recommends fixing, then what it recommends archiving, and last what has no analysis; packages, the most severe first.
 - **Waiting for approval**: what you already sent and someone else has to approve, grouped by pull request, with its
-  link. Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
+  link (with `site.auto_apply` on, it only shows up when the repo policy did not let the site approve it itself). Once approved, it is applied that night. If the platform does not answer, a sentence says so and the findings
   stay to decide, but nothing is sent until it answers: that way no duplicate pull request is opened.
 - **In progress** (closed at first): what was already decided and someone is doing, with its work item number and who
   it is assigned to, and the package vulnerabilities. Each team follows its own in its work item and, if it cannot
@@ -228,7 +229,8 @@ analysis".
 **Archive** means "this is normal, nothing to touch". **Fix** means the night creates a work item to correct it. You
 mark an option on each card (or "Follow the recommendations" for all the analyzed ones) and then **Send for approval**:
 it opens a single pull request to the operations repo with all your choices. Nothing changes until someone else
-approves it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
+approves it. If the organization turned on "A maintainer's changes" (`site.auto_apply`), the button says **Send** and
+what you send is saved without waiting for anyone: that night's review applies it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
 explanation.
 
 ### Projects (Proyectos)
@@ -313,7 +315,7 @@ their tabs as before.
 
 - **Times a pipeline control blocked an action** (`bloqueos`). How many times a control actually stopped something.
 - **A pipeline run, end to end (median, hours)** (`corridas`). How long a full run lasts.
-- **Steps of a pipeline run (median)** (`pasos`). A run's cost depends on how many steps it takes: that is the variable that explains it.
+- **Model responses per pipeline run (median)** (`pasos`). A run's cost depends on how many steps it takes: that is the variable that explains it.
 
 **How to hide one.** In Configuration, section «Notices and night runs», «Cards the site shows» has one checkbox per
 card. Uncheck the ones you do not use and propose the change: it goes to `operations.json` in the operations repo
@@ -443,7 +445,8 @@ The sections, in the order of the screen:
 ### People (Personas)
 
 - **The organization** (*La organización*): the name and logo shown in the top bar and the footer. It lives in
-  `operations.json`, in the operations repo. A maintainer reviews it.
+  `operations.json`, in the operations repo. A maintainer reviews it, unless the organization turned on "A
+  maintainer's changes": then the site approves it itself.
 - **Who gets into the site** (*Quién entra al sitio*): the list of who gets in and what they see, one row per person,
   with their role ("Maintains the site", *Mantiene el sitio*, or "Dev") and one or more emails. Nobody gets in if they
   are not here, with any sign-in. Maintainers see the Configuration tab and propose changes; devs see their own things.

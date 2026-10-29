@@ -131,6 +131,8 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   for (const clave of Object.keys(LISTAS_DE_DECISION)) DONDE[clave] = `#decidir-${clave}`;
   // las dependencias se deciden en Mantenimiento: una fila por ficha, con Aceptar o Rechazar
   DONDE.dependencias_por_decidir = '/mantenimiento';
+  // una máquina se confirma en Configuración (Personas: de quién es y qué productos ve)
+  DONDE.maquinas_sin_confirmar = '/configuracion';
   void enlaceOperaciones;
   for (const f of filas) f.enlace = DONDE[f.clave] || null;
   return filas;
@@ -277,9 +279,11 @@ function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idio
 // ── HTML ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 function tile(f, idioma) {
   const T = (k, v) => t(idioma, k, v);
-  if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div></div>`;
+  // el enlace dice adónde lleva: una lista de esta página (cada renglón con su enlace), Arnés (sólo se mira) o la pestaña donde se decide
+  const pie = f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T(f.enlace.startsWith('#') ? 'vista.verLaLista' : f.enlace === '/arnes' ? 'vista.verEnArnes' : 'vista.dondeSeDecide'))}</a></div>` : '';
+  if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div>${pie}</div>`;
   const est = f.valor > 0 ? 'warn' : 'ok';
-  return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${f.fecha ? `<div class="t-den">${esc(T('vista.fuenteDel', { fecha: f.fecha }))}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T('vista.dondeSeDecide'))}</a></div>` : ''}</div>`;
+  return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${f.fecha ? `<div class="t-den">${esc(T('vista.fuenteDel', { fecha: f.fecha }))}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${pie}</div>`;
 }
 
 function banda(texto) { return `<div class="banda">${esc(texto)}</div>`; }
@@ -404,7 +408,8 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
       const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null].filter(Boolean).join(' · ');
       return d.enlace && enlace(d.enlace)
         ? `<li><a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a> · ${nombre}</li>`
-        : `<li>${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</li>`;
+        : d.sinLugar === 'en_su_tarea' ? `<li>${nombre} · <a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a></li>`
+          : `<li>${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</li>`;
     };
     out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.fuenteDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
   }

@@ -124,6 +124,12 @@ global.history = { replaceState(s, t, u) { global.__url = u; } };
 if (process.env.CL_NOW) { const R = Date, ahora = R.parse(process.env.CL_NOW); global.Date = class extends R { constructor(...a) { super(...(a.length ? a : [ahora])); } static now() { return ahora; } }; }
 global.document = { addEventListener() {}, querySelectorAll: () => [], createElement: () => el(),
   getElementById: (id) => id === 'modelo' ? { textContent: modelo } : (nodos[id] = nodos[id] || el()) };
+// table-dates: la tabla viene con la página; una fila por corrida, con su celda de fecha como la dibuja el servidor (UTC)
+if (op === 'table-dates') {
+  nodos.cuerpo = el();
+  nodos.cuerpo.rows = JSON.parse(modelo).corridas.map((c) => { const td = { firstChild: { nodeType: 3, nodeValue: (c.inicio || '').slice(0, 10) } };
+    return { dataset: { id: c.id }, hidden: false, classList: { contains: () => false }, querySelector: (q) => (q === 'td.fecha' ? td : el()), _td: td }; });
+}
 eval(cliente);
 const M = JSON.parse(modelo);
 if (op === 'container') console.log(nodos[arg] ? nodos[arg].innerHTML : '');
@@ -133,6 +139,7 @@ else if (op === 'impossible-filter') { nodos['f-desde'].value = '2030-01-01'; no
 else if (op === 'usage-filter') { nodos['fc'].checked = true; window.__aplicar(); console.log(nodos['fichas'].innerHTML); }
 else if (op === 'machine-filter') { nodos['f-maquina'].value = arg; window.__aplicar(); console.log(nodos['fichas'].innerHTML + '\n' + nodos['cuenta'].textContent); }
 else if (op === 'link') console.log(JSON.stringify(window.__enlace()));
+else if (op === 'table-dates') { window.__atajo('hoy'); console.log(nodos.cuerpo.rows.map((r) => r._td.firstChild.nodeValue + (r.hidden ? ':oculta' : ':visible')).join(',')); }
 else if (['state', 'set', 'change', 'preset', 'clear'].includes(op)) {
   // set «campo=valor;campo=valor» cambia campos y aplica; preset «hoy|semana|mes»; clear «limpiar»; state sólo lo lee.
   if (op === 'set') { for (const par of arg.split(';')) { const [k, ...v] = par.split('='); nodos[k].value = v.join('='); } window.__aplicar(); }
@@ -1382,7 +1389,7 @@ J="$(modelo_json "${T}/r")"
 python3 -c "
 import json,sys; m=json.loads(sys.argv[1]); c=m['corridas'][0]; n=m['controles_nombres']
 assert n['adversarial-skip']=='pase adversarial (salteado por el portón)', n.get('adversarial-skip')
-assert n['adversarial-result-gate']=='pase adversarial con su resultado (paso 8)', n.get('adversarial-result-gate')
+assert n['adversarial-result-gate']=='pase adversarial con su resultado (paso «Pase adversarial»)', n.get('adversarial-result-gate')
 ev={e['control']:e for e in c['eventos']}
 assert ev['adversarial-skip']['cls']=='paso' and 'forzado' in (ev['adversarial-skip']['nota'] or ''), ev['adversarial-skip']
 assert ev['adversarial-result-gate']['cls']=='freno', ev['adversarial-result-gate']
@@ -1627,12 +1634,12 @@ F="$(cliente "${T}/o.html" container fichas)"
 P="$(echo "${F}" | python3 -c "
 import sys
 for x in sys.stdin.read().split('<div class=\"tile')[1:]:
-    if 'Pasos de una ejecución' in x: print(x)")"
+    if 'Respuestas del modelo por ejecución' in x: print(x)")"
 grep -q 't-val">400<' <<< "${P}" && ok "7.12-T1 la vista trae la mediana de pasos (400 de 100/300/500/700)" || mal "7.12-T1 la mediana de pasos no está: ${P:0:200}"
 grep -q 'n=4 de 4 ejecuciones' <<< "${P}" && ok "7.12-T1 con su denominador al lado (n=4 de 4)" || mal "7.12-T1 falta el denominador: ${P:0:300}"
-[ "$(echo "${F}" | distancia_fichas 'Pasos de una ejecución' 'Tokens de una ejecución')" = "1" ] && ok "7.12-T1 la ficha de pasos está PEGADA a la de tokens" || mal "7.12-T1 la ficha de pasos no está al lado del consumo"
+[ "$(echo "${F}" | distancia_fichas 'Respuestas del modelo por ejecución' 'Tokens de una ejecución')" = "1" ] && ok "7.12-T1 la ficha de pasos está PEGADA a la de tokens" || mal "7.12-T1 la ficha de pasos no está al lado del consumo"
 # …y la recalcula el filtro: con «sólo con consumo medido» sigue ahí, con un rango imposible desaparece.
-cliente "${T}/o.html" impossible-filter | grep 'Pasos de una ejecución' >/dev/null && mal "7.12-T1 con el filtro imposible la ficha siguió mostrando un número" || ok "7.12-T1 el filtro la recalcula (rango imposible → sin número)"
+cliente "${T}/o.html" impossible-filter | grep 'Respuestas del modelo por ejecución' >/dev/null && mal "7.12-T1 con el filtro imposible la ficha siguió mostrando un número" || ok "7.12-T1 el filtro la recalcula (rango imposible → sin número)"
 
 # ── 7.12-T4 · la serie por mes, en el cliente (AC 4) @story-7.12 @ac-4 ──
 # 🔴 Falla con: publicar sólo la mediana global → no hay contra qué comparar la línea base.
@@ -1656,7 +1663,7 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 P="$(cliente "${T}/o.html" container fichas | python3 -c "
 import sys
 for x in sys.stdin.read().split('<div class=\"tile')[1:]:
-    if 'Pasos de una ejecución' in x: print(x)")"
+    if 'Respuestas del modelo por ejecución' in x: print(x)")"
 grep -q 't-val">400<' <<< "${P}" && ok "7.12-T2 las no medidas NO entran en la mediana (sigue en 400)" || mal "7.12-T2 la mediana se movió con las no medidas: ${P:0:200}"
 grep -q 'n=4 de 6 ejecuciones' <<< "${P}" && ok "7.12-T2 siguen en el denominador (n=4 de 6)" || mal "7.12-T2 las no medidas desaparecieron del denominador: ${P:0:300}"
 grep -q '<b>2</b> no tienen sus pasos medidos' <<< "${P}" && ok "7.12-T2 y se dicen, aparte" || mal "7.12-T2 no dice cuántas quedaron sin medir"
@@ -1670,7 +1677,7 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 P="$(cliente "${T}/o.html" container fichas | python3 -c "
 import sys
 for x in sys.stdin.read().split('<div class=\"tile')[1:]:
-    if 'Pasos de una ejecución' in x: print(x)")"
+    if 'Respuestas del modelo por ejecución' in x: print(x)")"
 grep -q 'blind' <<< "${P}" && grep -q 'ninguna ejecución del filtro' <<< "${P}" && ok "7.12-T5 sin ninguna medida: trama y motivo" || mal "7.12-T5 sin medidas no salió «no medido»: ${P:0:200}"
 grep -q 't-val">0' <<< "${P}" && mal "7.12-T5 publicó un cero" || ok "7.12-T5 ningún cero publicado"
 G="$(cliente "${T}/o.html" container gpasos)"
@@ -2108,6 +2115,25 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 TILE="$(cliente "${T}/o.html" container fichas | ficha_rp)"
 grep -q '2 de 2 historias revisadas' <<< "${TILE}" && ok "RP4 la misma historia en dos productos cuenta dos veces" || mal "RP4 no dice «2 de 2 historias revisadas»: $(echo "${TILE}" | head -c 400)"
 grep -q '<b>10 k</b> tokens en total' <<< "${TILE}" && ok "RP4 el costo suma las dos" || mal "RP4 el costo no suma las dos (10 k)"
+rm -rf "${T}"
+
+# ── ConErrorSinSemaforo · «encontró un error» es el control funcionando: la ficha informa, no se pinta ──
+# 🔴 Falla con: juzgarla con el umbral de «menor es mejor» (el 100 % salía ROJO al lado de «es el control haciendo su trabajo»).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"gates":[{"ts":"2026-08-15T06:10:00.000Z","check":"tests","status":"red:exit=1","cmd":"x","exit":1}]}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+TILE="$(cliente "${T}/o.html" container fichas | python3 -c "import re,sys; h=sys.stdin.read(); m=[t for t in re.findall(r'<div class=\"tile[^\"]*\">.*?</div></div>', h, re.S) if 'Ejecuciones donde un control' in t]; print(m[0] if m else 'SIN-FICHA')")"
+grep -q '100%' <<< "${TILE}" && grep -q 'chip neutro' <<< "${TILE}" && ! grep -q 'chip bad\|chip warn\|>rojo<' <<< "${TILE}" && ok "ConErrorSinSemaforo el 100 % con error sale informativo, sin rojo" || mal "ConErrorSinSemaforo la ficha sigue con semáforo: $(head -c 400 <<< "${TILE}")"
+rm -rf "${T}"
+
+# ── FechaLocal · la columna de la fecha dice el mismo día que el filtro «hoy» ──
+# 🔴 Falla con: la tabla en UTC y el filtro en la hora del navegador (una corrida de las 22 h de Argentina figuraba con el
+# día siguiente y no aparecía en «hoy»).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-20T01:30:00Z" '{"marker":{"storyId":"F1"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+R="$(CL_NOW="2026-08-19T23:00:00Z" TZ="America/Argentina/Buenos_Aires" cliente "${T}/o.html" table-dates)"
+[ "${R}" = "2026-08-19:visible" ] && ok "FechaLocal la fila dice el día local (19/08) y entra en «hoy»" || mal "FechaLocal la tabla y el filtro no dicen el mismo día: ${R}"
 rm -rf "${T}"
 
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────

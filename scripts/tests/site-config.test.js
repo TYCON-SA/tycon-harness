@@ -3715,6 +3715,17 @@ test('8.116 T36 SiteConfig_SelectorDe888_LeeLaLista', async () => {
   }
 });
 
+// una firma que no se corre desde otra sesión: delegada, dice que no rinde; a la ventana, que no se puede delegar
+test('SiteConfig_Firma_DelegadaSinOtraSesion_DiceQueNoRinde', async () => {
+  const nota = (p) => (p.textoDe('aprobaciones').split(' | ').find((x) => x.startsWith(' · adversarial-skip')) || '');
+  const delegada = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['adversarial-skip'] } })]);
+  assert.strictEqual(delegada.error, null);
+  assert.match(nota(delegada), /está delegada, pero no se firma desde la pestaña de otra sesión: la coordinadora no puede firmarla/);
+  assert.doesNotMatch(nota(delegada), /no se puede delegar/);
+  const ventana = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
+  assert.match(nota(ventana), /no se firma desde la pestaña de otra sesión: no se puede delegar/);
+});
+
 // T44 SiteConfig_SelectorDe888_ConservaLaLista @story-8.116 @ac-43
 // 🔴 Falla con: el selector que, al tocarlo, pisa la lista con el valor suelto y borra lo que no muestra.
 test('8.116 T44 SiteConfig_SelectorDe888_ConservaLaLista', async () => {
@@ -5329,4 +5340,20 @@ test('T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43', { skip: SIN_NAVEGA
       } finally { await navegador.close(); }
     });
   } finally { await cerrarTodos(r, gh); }
+});
+
+// con `site.auto_apply`, el encabezado y «¿Cómo funciona?» no prometen la aprobación de otra persona; sin ella, la dicen
+test('Configuracion_AplicaSolo_EncabezadoSinOtraPersona', async () => {
+  // con la opción, el sitio aprueba solo cuando la política del repo lo deja; sin ella, siempre otra persona
+  for (const [autoApply, dice, noDice] of [[true, /el sitio los aprueba solo, con registro de quién los pidió, cuando la política del repo lo permite/, /antes de llegar al equipo/], [false, /los aprueba otra persona antes de llegar al equipo/, /el sitio los aprueba solo/]]) {
+    await conPestana({ fuentes: fuentesCon({ ops: null, config: opsBase({ site: { maintainers: [LEAD], auto_apply: autoApply } }) }) }, async ({ h, entrar }) => {
+      const p = (await h.pedir('/configuracion', { cookie: await entrar(LEAD) })).texto;
+      assert.match(p, dice, `auto_apply ${autoApply}: el encabezado`);
+      assert.doesNotMatch(p, noDice, `auto_apply ${autoApply}`);
+      const como = (/<details class="mas-info como-funciona">[\s\S]*?<\/details>/.exec(p) || [''])[0];
+      assert.ok(como, '«¿Cómo funciona?» está');
+      if (autoApply) assert.match(como, /un pedido que el sitio aprueba solo/);
+      else assert.doesNotMatch(como, /aprueba solo/);
+    });
+  }
 });

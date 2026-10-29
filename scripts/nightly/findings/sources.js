@@ -131,19 +131,24 @@ const NOMBRE_DE_PERSONA = /^[^\s@"<>`\u0000-\u001f][^@"<>`\u0000-\u001f]{0,79}$/
 // Lo que anota la noche en `asignados:` cuando leyó la tarea y no la tiene nadie. No tiene forma de nombre: un lector
 // que no la conoce no la muestra como persona.
 const SIN_ASIGNAR = '<nadie>';
+// La leída que tiene a alguien, pero su nombre en la plataforma es un correo (una cuenta externa): tiene dueño y el
+// sitio no muestra el correo
+const ASIGNADA_SIN_NOMBRE = '<alguien>';
 
 /** Las tareas de una vulnerabilidad: `[{ proyecto, id, asignado }]`, de `pedidos:` («Proyecto: id») y `asignados:` («id: Nombre»). */
 function tareasDe(txt, listaDe) {
   const sinComillas = (l) => l.replace(/^"([\s\S]*)"$/, '$1');
   const nombres = new Map();
   const nadie = new Set();
+  const sinNombre = new Set();
   for (const l of listaDe(txt, 'asignados').map(sinComillas)) {
     const m = /^(\d{1,12}):\s*(.+)$/.exec(l);
     if (m && m[2].trim() === SIN_ASIGNAR) nadie.add(m[1]);
+    else if (m && m[2].trim() === ASIGNADA_SIN_NOMBRE) sinNombre.add(m[1]);
     else if (m && NOMBRE_DE_PERSONA.test(m[2].trim())) nombres.set(m[1], m[2].trim());
   }
   return listaDe(txt, 'pedidos').map(sinComillas).map((l) => /^(.{1,120}?):\s*(\d{1,12})$/.exec(l)).filter(Boolean)
-    .map((m) => ({ proyecto: m[1].trim(), id: m[2], asignado: nombres.get(m[2]) || null, sin_asignar: nadie.has(m[2]) }));
+    .map((m) => ({ proyecto: m[1].trim(), id: m[2], asignado: nombres.get(m[2]) || null, sin_asignar: nadie.has(m[2]), asignada_sin_nombre: sinNombre.has(m[2]) }));
 }
 
 // Las claves de la propuesta del modelo en el formato por secciones (dependencias y el vigilante). La ficha común las
@@ -308,4 +313,4 @@ function comoFicha(fuente, txt) {
     hechos: hechosDelVigilante(e, txt, reg.formato.listaDe) };
 }
 
-module.exports = { SIN_FORMA, CLAVES_DEL_AVISO, bloqueDe, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, SIN_ASIGNAR, esVieja, comoFicha, pedidoDeLaNocheDe };
+module.exports = { SIN_FORMA, CLAVES_DEL_AVISO, bloqueDe, FUENTES, ORDEN_FICHA, ORDEN_VIGILANTE, CLAVES_LISTA, CLAVES_DE_PROPUESTA, VEREDICTO_COMUN, MOTIVOS_SIN_TAREA, NOMBRE_DE_PERSONA, SIN_ASIGNAR, ASIGNADA_SIN_NOMBRE, esVieja, comoFicha, pedidoDeLaNocheDe };

@@ -88,7 +88,7 @@ function repoNavegable(operationsRepo, remoto = null) {
 /**
  * Lo que hay que decidir, con su lugar: [{ fuente, rubro, id, titulo, pr, enlace, sinLugar }]. `enlace` es el pedido
  * exacto de la ficha o null; con null, `sinLugar` dice por qué ('sin_repo_https', 'plataforma_desconocida',
- * 'sin_pedido'). Sin la lista medida, [] (nunca un renglón inventado).
+ * 'sin_pedido', 'en_su_tarea'). Sin la lista medida, [] (nunca un renglón inventado).
  */
 function decisiones(m, { operationsRepo = null, remoto = null } = {}) {
   const d = m && m.decisiones;
@@ -98,7 +98,9 @@ function decisiones(m, { operationsRepo = null, remoto = null } = {}) {
     const pr = Number.isInteger(x.pr) && x.pr > 0 ? x.pr : null;
     let enlace = null;
     let sinLugar = null;
-    if (!repo) sinLugar = 'sin_repo_https';
+    // una aceptada ya se decidió: sin pull request, se sigue en su tarea, en Mantenimiento (la noche no le abre otro)
+    if (!pr && x.rubro === 'aceptadas_sin_resolver') sinLugar = 'en_su_tarea';
+    else if (!repo) sinLugar = 'sin_repo_https';
     else if (!repo.plataforma) sinLugar = 'plataforma_desconocida';
     else if (!pr) sinLugar = 'sin_pedido';
     else enlace = repo.plataforma === 'github' ? `${repo.base}/pull/${pr}` : `${repo.base}/pullrequest/${pr}`;

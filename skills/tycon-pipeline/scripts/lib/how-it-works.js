@@ -317,6 +317,11 @@ function readOrg({ treeDir, profileDir }) {
     integrations = TC.integraciones(cfg);
     // la herramienta de horas elegida (con la llave vieja leída): los controles de las otras no se muestran
     if (typeof TC.timeTracking === 'function') timeTracking = TC.timeTracking(cfg).value;
+    // en la franja, la de horas es la elegida: la llave vieja de una herramienta de horas en false no la tacha
+    if (typeof timeTracking === 'string' && timeTracking !== 'none') {
+      for (const k of Object.keys((treeDir && integrationPieces(treeDir).timeLabels) || {})) delete integrations[k];
+      integrations[timeTracking] = true;
+    }
     // Telegram es de cada máquina (el perfil rechaza un chat): no es una integración de la organización
     delete integrations.telegram;
     // un error del archivo entero (sin clave: ilegible) es no haberlo leído; uno de una clave deja leído el resto

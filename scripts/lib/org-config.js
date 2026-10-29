@@ -2274,7 +2274,8 @@ function pantalla(idioma = 'es') {
           if ((x === 'dueno') !== (estado === 'dueno')) ponerSoloDueno(f.id, x === 'dueno');
           render();
         }, 'approvals.firma.' + f.id, pr);
-        var nota = estado === 'dueno' ? T('pantalla.firmaSoloDuenoNoSeDelega') : (f.otherSession !== 'yes' ? T('pantalla.firmaNoDesdeOtraSesion') : '');
+        // una delegada que no se corre desde otra sesión no dice «no se puede delegar» al lado de «Delegada»: dice que no rinde
+        var nota = estado === 'dueno' ? T('pantalla.firmaSoloDuenoNoSeDelega') : (f.otherSession !== 'yes' ? T(estado === 'delegada' ? 'pantalla.firmaDelegadaNoDesdeOtraSesion' : 'pantalla.firmaNoDesdeOtraSesion') : '');
         t.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('b', { text: que }), el('span', { class: 'muted', text: ' · ' + f.id + (nota ? ' · ' + nota : '') })), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
       });
       box.appendChild(t);
