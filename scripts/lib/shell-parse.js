@@ -39,8 +39,8 @@
  *  - Las rarezas de zsh con `..` que no es un rango (`{1..}` → `1..`) se leen como las dos cosas.
  *  - Los patrones de un `case` no salen en ningún segmento: se comparan contra un valor, no se
  *    ejecutan ni nombran archivos.
- *  - El cuerpo de un heredoc SIN comillas que no alimenta a un shell se quita entero: sus `$(…)` y comillas invertidas
- *    (que zsh y bash sí ejecutan) no se ven acá. Venía de antes de la 8.14 (pase adversarial #7).
+ *  - El cuerpo de un heredoc que no alimenta a un shell es texto y se quita; si la palabra no lleva comillas, sus `$(…)`
+ *    y comillas invertidas (que zsh y bash sí ejecutan) quedan como comandos, cada uno en su línea.
  *  - El relleno de ceros de un rango sigue a bash y al caso común de zsh; las rarezas de zsh (`{-0..3}`, `{2..5..02}`,
  *    `{01..001}`) no. Ningún nombre protegido lleva dígitos (pase adversarial #38).
  *  - Un carácter de control 0x01 o 0x02 dentro de `$'…'` se lee como «desconocido» (`*`): son las marcas internas.
@@ -150,10 +150,36 @@ function sinHeredocs(cmd, opciones) {
       continue;
     }
     out += s.slice(desde, h.indice);
-    out += alimentaShell ? s.slice(h.indice, h.fin) : ` __HEREDOC__${h.resto}`;
+    out += alimentaShell ? s.slice(h.indice, h.fin) : ` __HEREDOC__${h.comillas ? '' : sustitucionesDelCuerpo(h.cuerpo)}${h.resto}`;
     desde = h.fin;
   }
   return out + s.slice(desde);
+}
+
+/**
+ * Los comandos que el shell corre al armar el cuerpo de un heredoc sin comillas: cada `$(…)` y comilla invertida, como
+ * palabras ` $(…)` que siguen a la marca en la línea del `<<` (la línea no cambia de forma: lo que la sigue, una tubería
+ * o un `&&`, se lee igual). El texto alrededor es texto: sus comillas no abren nada, así que cada sustitución se mide
+ * desde donde empieza. `\$(` y `` \` `` son literales; una sustitución sin cierre se lleva el resto del cuerpo, que es el
+ * lado que frena.
+ */
+function sustitucionesDelCuerpo(cuerpo) {
+  let out = '';
+  for (let i = 0; i < cuerpo.length; i++) {
+    if (cuerpo[i] === '\\') { i++; continue; }
+    if (cuerpo[i] === '`') {
+      const fin = finDeSustitucion(cuerpo, i);
+      out += ` $(${cuerpo.slice(i + 1, fin - 1).replace(/\\([`\\$])/g, '$1')})`;
+      i = fin - 1;
+    } else if (cuerpo[i] === '$' && cuerpo[i + 1] === '(') {
+      // `$((…))` también: si no es una cuenta, bash lo corre como comando; y una cuenta puede traer su `$(…)`
+      const resto = cuerpo.slice(i);
+      const fin = finDeSustitucion(resto, 0);
+      out += ` $(${resto.slice(2, fin - 1)})`;
+      i += fin - 1;
+    }
+  }
+  return out;
 }
 
 /**
