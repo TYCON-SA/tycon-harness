@@ -269,8 +269,31 @@ function canonicaDe(comando) {
   return id ? { id, palabras } : null;
 }
 
-/** La sesión destino: `--for-session <id>` en el comando canónico, o la del pedido. */
-function destinoDe(palabras, sesion) {
+/**
+ * La sesión que nombra el comando de `firma` (palabras desde el guion) cuando el guion actúa sobre ella, o null.
+ * Sólo `clear-session <sesión> --lost`: cierra la ejecución de esa sesión. `restore <sesión>` rearma esa ejecución en
+ * la sesión que corre el comando, que es su destino.
+ */
+function sesionNombrada(firma, palabras) {
+  return firma === 'lost-run' && palabras && palabras[1] === 'clear-session' ? String(palabras[2] || '') : null;
+}
+
+/** El valor de `--for-session`, separado o con `=`; null si no está. */
+function forSessionDe(palabras) {
+  if (!palabras) return null;
+  const i = palabras.indexOf('--for-session');
+  if (i >= 0) return palabras[i + 1] || '';
+  const conIgual = palabras.find((w) => String(w).startsWith('--for-session='));
+  return conIgual ? conIgual.slice('--for-session='.length) : null;
+}
+
+/**
+ * La sesión destino: la que nombra el comando si la firma actúa sobre ella; si no, `--for-session <id>` en el comando
+ * canónico, o la del pedido. `--for-session=<id>` no la elige (el guion no lo lee así), sólo tiene que coincidir.
+ */
+function destinoDe(palabras, sesion, firma) {
+  const nombrada = sesionNombrada(firma, palabras);
+  if (nombrada !== null) return nombrada;
   const i = palabras ? palabras.indexOf('--for-session') : -1;
   return i >= 0 ? palabras[i + 1] || '' : sesion;
 }
@@ -500,8 +523,12 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (arriba.slice(i + 1).some((p) => esHerramienta(p) || desenvolver(p.comando, casa) !== null)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
   if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
   if (arbol.some((p) => p.ppid === tool.pid && desenvolver(p.comando, casa) !== null)) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
-  const destino = destinoDe(can && can.palabras, sesion);
-  if (!SESION.test(destino)) return negar('la sesión de --for-session no se puede leer', pendientes);
+  const destino = destinoDe(can && can.palabras, sesion, guion);
+  if (!SESION.test(destino)) return negar(sesionNombrada(guion, can && can.palabras) !== null ? 'la sesión que nombra el comando no se puede leer' : 'la sesión de --for-session no se puede leer', pendientes);
+  const pedida = forSessionDe(can && can.palabras);
+  if (sesionNombrada(guion, can && can.palabras) !== null && pedida !== null && pedida !== destino) {
+    return negar(`el comando nombra la sesión ${una(destino, 80)} y --for-session ${una(pedida, 80)}: van con la misma sesión`, pendientes);
+  }
   if (destino === SIN_SESION && destino !== sesion) return negar(NO_ES_SESION, pendientes);
   paraTerminal = destino;
   if (destino !== sesion && guion && firmaDe(guion).otherSession !== 'yes') return negar(`«${firmaDe(guion).approves}» no se corre desde la pestaña de otra sesión`, pendientes);
@@ -790,7 +817,7 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   if (pedida && propia && pedida !== propia && !(s && s.otherSession === 'yes')) {
     return { codigo: 1, motivo: `este guion actúa sobre la sesión ${propia}: firmar para otra sesión (--for-session ${pedida}) se corre desde la sesión destino` };
   }
-  const destino = pedida || propia || null;
+  const destino = sesionNombrada(firma, argv) || pedida || propia || null;
   if (argv.includes('--terminal')) {
     const t = tty || ttyDeVerdad();
     if (t.windows && t.enVentana && !t.enVentana()) return { ...porLaVentana({ argv, t, salir }), destino };

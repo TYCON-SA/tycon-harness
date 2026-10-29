@@ -712,8 +712,8 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
   # (con `desde`: lib/open-runs.js) es la firma `lost-run`, que la ventana lee del comando; se anota aparte.
   _c3_negables=(); _c3_perdida=""
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
-    _c3_desde=""; _c3_sinr=""
-    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde _c3_sinr <<< "$_c3_f" || true
+    _c3_desde=""
+    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde <<< "$_c3_f" || true
     _c3_regla="ESC-C3"
     case "$_c3_esc" in
       "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;

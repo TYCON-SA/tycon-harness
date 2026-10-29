@@ -83,7 +83,7 @@ const GUIONES = [
   ['critical-waiver', `node ${MARKER} waive-critical --rule SEC-C1 --reason "lo cubre otra capa"`, [MARKER, 'waive-critical', '--rule', 'SEC-C1', '--reason', 'lo cubre otra capa']],
   ['manual-test', `node ${MARKER} mark-tested --acs 3`, [MARKER, 'mark-tested', '--acs', '3']],
   ['runtime-waiver', `node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1`, [MARKER, 'runtime-waiver', HISTORIA.story, '--acs', '1']],
-  ['lost-run', `node ${MARKER} clear-session ses-b --lost`, [MARKER, 'clear-session', 'ses-b', '--lost']],
+  ['lost-run', `node ${MARKER} clear-session ses-a --lost`, [MARKER, 'clear-session', 'ses-a', '--lost']],
   ['lost-run', `node ${MARKER} restore ses-b`, [MARKER, 'restore', 'ses-b']],
   ['extra-round', `node ${PIPELINE} smart-reloop --iter 3 --extra-round`, [PIPELINE, 'smart-reloop', '--iter', '3', '--extra-round']],
   ['browser-test', `node ${E2E} prepare --repo /r --story s.md`, [E2E, 'prepare', '--repo', '/r', '--story', 's.md']],
@@ -1655,4 +1655,57 @@ test('8.141 T13 AdhocSet_ForSession_ParaSiMisma', (t) => {
     { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['adhoc-lane'] } }) });
   assert.notStrictEqual(r.decision, 'allow', r.texto);
   assert.strictEqual(r.decision, 'ask');
+});
+
+// --- la salida de una ejecución perdida: la sesión que se cierra es la que nombra el comando ------------------------
+
+/** La salida de ses-a pedida por ses-coord, cuya ejecución es otra story: el dueño lee y firma la de ses-a. */
+function salidaDeOtraSesion(t, cmd, argv) {
+  const casa = casaNueva(t);
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '9.92', storyPath: '/r/specs/story-9.92.md' }));
+  const r = pedir(casa, cmd, { evento: DE_LA_COORD });
+  assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
+  assert.match(r.texto, /Story 9\.99, sesión ses-a\./, `${cmd}: la story y la sesión que se cierran`);
+  assert.doesNotMatch(r.texto, /9\.92/, `${cmd}: no la de quien pide`);
+  const reg = registroVigente(casa);
+  assert.strictEqual(reg.sesion, 'ses-coord', cmd);
+  assert.strictEqual(reg.destino, 'ses-a', cmd);
+  const e = ow.exigir({ firma: 'lost-run', argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
+  assert.strictEqual(e.codigo, 0, `${cmd}: ${e.motivo}`);
+  assert.strictEqual(e.destino, 'ses-a', cmd);
+  const g = gates(casa).filter((x) => x.name === 'lost-run-signed');
+  assert.strictEqual(g.length, 1, cmd);
+  assert.strictEqual(g[0].sesion, 'ses-coord', cmd);
+  assert.strictEqual(g[0].destino, 'ses-a', cmd);
+}
+
+test('OwnerWindow_SalidaPerdidaSinForSession_MuestraLaSesionQueCierra', (t) => {
+  salidaDeOtraSesion(t, `node ${MARKER} clear-session ses-a --lost`, [MARKER, 'clear-session', 'ses-a', '--lost']);
+});
+
+test('OwnerWindow_SalidaPerdidaConForSessionIgual_MuestraLaSesionQueCierra', (t) => {
+  salidaDeOtraSesion(t, `node ${MARKER} clear-session ses-a --lost --for-session=ses-a`, [MARKER, 'clear-session', 'ses-a', '--lost', '--for-session=ses-a']);
+});
+
+test('OwnerWindow_SalidaPerdidaConDosSesiones_NoSePide', (t) => {
+  const casa = casaNueva(t);
+  for (const cmd of [`node ${MARKER} clear-session ses-a --lost --for-session ses-b`, `node ${MARKER} clear-session ses-a --lost --for-session=ses-b`]) {
+    const r = pedir(casa, cmd, { evento: DE_LA_COORD });
+    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+    assert.match(r.texto, /nombra la sesión ses-a/, cmd);
+  }
+  assert.strictEqual(vigentes(casa).length, 0, 'no quedó ningún pedido');
+});
+
+test('OwnerWindow_RestoreDeOtraSesion_FirmaParaQuienLoTrae', (t) => {
+  // restore rearma la ejecución perdida de ses-b en la sesión que corre el comando: ése es el destino que se firma
+  const casa = casaNueva(t);
+  const cmd = `node ${MARKER} restore ses-b`;
+  const r = pedir(casa, cmd);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /sesión ses-a\./);
+  assert.strictEqual(registroVigente(casa).destino, 'ses-a');
+  const e = ow.exigir({ firma: 'lost-run', argv: [MARKER, 'restore', 'ses-b'], pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-a' });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.destino, 'ses-a');
 });
