@@ -13,9 +13,14 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   node scripts/ci/check-pending-approvals.js [--repo <carpeta>]            el árbol (la revisión de la noche)
  *   node scripts/ci/check-pending-approvals.js --staged [--repo <carpeta>]   lo que se va a commitear (el pre-commit)
  *   node scripts/ci/check-pending-approvals.js --create-base [--repo <carpeta>]  arma el registro con el que nace
+ *   node scripts/ci/check-pending-approvals.js --staged --no-local-signature [--repo <carpeta>]  la validación de pedidos
  *
  * Con `--staged` lee la lista y el registro del índice, y las líneas que el commit agrega al registro tienen que tener
  * su renglón firmado en el registro del arnés de esta cuenta. Un repo sin lista no tiene nada que revisar.
+ *
+ * `--no-local-signature` es para el servidor, que corre el pre-commit sobre un pedido entero y no tiene el registro del
+ * arnés de la máquina que firmó: ahí una aprobación vale con su forma y su huella. Es un límite conocido: una línea
+ * escrita a mano con la forma justa no se distingue de una firmada. La firma la exige el pre-commit de cada máquina.
  *
  * `--create-base` escribe en el disco el registro de un repo que adopta el freno: una línea de base por cada pendiente
  * abierto en la lista del último commit, y las aprobaciones firmadas que el registro ya tuviera. Sólo arma lo que el
@@ -31,16 +36,18 @@ const { execFileSync } = require('child_process');
 const PA = require('../lib/pending-approvals.js');
 
 function opciones(argv) {
-  const o = { repo: process.cwd(), staged: false, crearBase: false };
+  const o = { repo: process.cwd(), staged: false, crearBase: false, sinFirmaLocal: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--staged') o.staged = true;
     else if (argv[i] === '--create-base') o.crearBase = true;
+    else if (argv[i] === '--no-local-signature') o.sinFirmaLocal = true;
     else if (argv[i] === '--repo') o.repo = argv[++i];
     else if (argv[i] === '-h' || argv[i] === '--help') o.ayuda = true;
     else throw new Error(`no conozco la opción ${argv[i]}`);
   }
   if (!o.repo) throw new Error('--repo necesita una carpeta');
   if (o.staged && o.crearBase) throw new Error('--staged y --create-base no van juntas');
+  if (o.sinFirmaLocal && !o.staged) throw new Error('--no-local-signature va sólo con --staged');
   return o;
 }
 
@@ -107,7 +114,7 @@ function crearBase(repo) {
 function main(argv) {
   let o;
   try { o = opciones(argv); } catch (e) { console.error(`check-pending-approvals: ${e.message}`); return 2; }
-  if (o.ayuda) { console.log('uso: check-pending-approvals.js [--staged | --create-base] [--repo <carpeta>]'); return 0; }
+  if (o.ayuda) { console.log('uso: check-pending-approvals.js [--staged [--no-local-signature] | --create-base] [--repo <carpeta>]'); return 0; }
   if (o.crearBase) return crearBase(o.repo);
   let todo; let registro; let nuevas = [];
   try {
@@ -117,8 +124,9 @@ function main(argv) {
     if (o.staged) {
       const antes = deGit(o.repo, `HEAD:${PA.RECORD}`) || '';
       const todoAntes = deGit(o.repo, `HEAD:${PA.TODO}`) || '';
-      // sólo se lee el registro del arnés si el commit agrega líneas: sin líneas nuevas no hay firma que buscar
-      nuevas = PA.revisarNuevas({ antes, despues: registro, renglones: registro !== antes ? renglonesDeLaCuenta() : [], todoAntes, todoDespues: todo });
+      // sólo se lee el registro del arnés si el commit agrega líneas y la firma se busca: sin eso no hay qué leer
+      const leer = registro !== antes && !o.sinFirmaLocal;
+      nuevas = PA.revisarNuevas({ antes, despues: registro, renglones: leer ? renglonesDeLaCuenta() : [], todoAntes, todoDespues: todo, sinFirmaLocal: o.sinFirmaLocal });
     }
   } catch (e) {
     console.error(`⛔ check-pending-approvals: ${e.message}. Sin leerlo no sé si hay pendientes nuevos sin aprobar.`);

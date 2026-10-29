@@ -452,7 +452,11 @@ T15_BIN="$NDIR/current/bin/node"
 printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s \\"%s\\""}]}]}}\n' "$(nat "$T15_BIN")" "$(nat "$T15H/s.js")" > "$BASE/t15/home/.claude/settings.json"
 TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$T15H" --skills "$BASE/t15/skills" \
   --list "$BASE/t15/list.json" --effects "$RAIZ/scripts/setup/install-effects.json" >/dev/null 2>&1
-[ "$(node -e 'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command).join("|"))' "$BASE/t15/home/.claude/settings.json")" = "node \"$(nat "$RAIZ/scripts/lib/node-floor.js")\" \"$(nat "$T15H/s.js")\"" ] \
+# las rutas se comparan resueltas: en macOS la carpeta temporal es un enlace (/var → /private/var) y el aplicador escribe
+# la ruta resuelta del piso
+REAL='const fs=require("fs");const r=(p)=>{try{return fs.realpathSync(p)}catch(e){return p}};'
+[ "$(node -e "${REAL}"'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command.replace(/"([^"]+)"/g,(_,p)=>`"${r(p)}"`)).join("|"))' "$BASE/t15/home/.claude/settings.json")" \
+  = "node \"$(node -e "${REAL}"'process.stdout.write(r(process.argv[1]))' "$(nat "$RAIZ/scripts/lib/node-floor.js")")\" \"$(node -e "${REAL}"'process.stdout.write(r(process.argv[1]))' "$(nat "$T15H/s.js")")\"" ] \
   && ok "T15 con current roto el aplicador vuelve el hook a node por el piso, en su lugar y sin duplicar" || bad "T15 el aplicador dejó: $(cat "$BASE/t15/home/.claude/settings.json")"
 rm -rf "$NDIR"
 
