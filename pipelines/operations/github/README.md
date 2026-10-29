@@ -212,7 +212,7 @@ revisión en Azure DevOps.
 - **Cerrarlo sin mergear** quiere decir «no aplica», y **el último comentario o la última revisión de una persona es el
   motivo**. La noche siguiente lo anota en la ficha (`rechazado:` y `motivo_rechazo:`); sin texto de una persona, anota
   «sin motivo escrito». La ficha sigue viva: rechazar el aviso no saca la vulnerabilidad de `main`. La salida sin
-  arreglo es declarar la deuda en el `vulnerabilidades-pendientes.json` del repo.
+  arreglo es declarar la deuda en el `pending-vulnerabilities.json` del repo.
 - **Reabrirlo** borra el rechazo, igual que reactivarlo en Azure.
 
 **Un solo pull request por hallazgo.** La ficha recuerda su número (`pr:`) y el repo donde vive (`pr_repo:`). Si el
@@ -315,7 +315,7 @@ que esperaba.
   administra la noche, y el issue del producto sigue lo que se decida.
 - **Los issues** de la revisión de dependencias, en cada repo de producto, con la etiqueta `arnes-hallazgo`. Ahí el
   equipo del producto ve el aviso y decide: **arreglarlo** (subir el paquete: cuando la noche deja de verlo en `main`, cierra el issue sola), **declararlo
-  como deuda** (en el `vulnerabilidades-pendientes.json` del repo; el issue queda abierto), o **cerrarlo como «not
+  como deuda** (en el `pending-vulnerabilities.json` del repo; el issue queda abierto), o **cerrarlo como «not
   planned»** si no aplica (la noche lo va a decir una vez mientras la vulnerabilidad siga en `main`: la salida sin
   arreglo es declarar la deuda). La noche reabre un issue que cerró ella si la vulnerabilidad vuelve; uno que cerró una
   persona, no.

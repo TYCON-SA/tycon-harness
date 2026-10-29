@@ -414,7 +414,7 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 ## packs/bizuit/guides/deuda-de-pruebas-formularios.md
 
-**Qué es:** La guía para dejar un formulario sin pruebas sin que el pipeline falle: se declara en `pruebas-pendientes.json` con motivo y fecha de revisión. Es del paquete bizuit.
+**Qué es:** La guía para dejar un formulario sin pruebas sin que el pipeline falle: se declara en `pending-tests.json` con motivo y fecha de revisión. Es del paquete bizuit.
 
 **Por qué existe:** Borrar la entrada sin agregar pruebas deja `main` rojo, por eso se borra en el mismo pull request.
 

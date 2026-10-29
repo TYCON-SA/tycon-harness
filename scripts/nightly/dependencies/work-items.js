@@ -1270,10 +1270,10 @@ function textoCerradoVivo(x, paquete, respaldo, hoy) {
   const L = [`<p>${mencionesDelArnes(respaldo)} — revisión nocturna de dependencias del arnés (ficha <code>arnes:${escHtml(x.ficha)}</code>).</p>`];
   if (x.clase === 'no-aplica') {
     L.push(`<p>Este pedido está cerrado como no aplica (${est}, ${mot}) desde el ${desde}, y la vulnerabilidad ${escHtml(paquete)} sigue apareciendo en ${repos}, medido el ${escHtml(hoy)}.</p>`,
-      '<p>No lo reabro: decidilo vos. La única salida sin arreglo es declarar la deuda en <code>vulnerabilidades-pendientes.json</code>, con motivo y fecha de revisión: si no, va a seguir apareciendo todas las noches.</p>');
+      '<p>No lo reabro: decidilo vos. La única salida sin arreglo es declarar la deuda en <code>pending-vulnerabilities.json</code>, con motivo y fecha de revisión: si no, va a seguir apareciendo todas las noches.</p>');
   } else {
     L.push(`<p>Este pedido está cerrado como ${est} (${mot}) desde el ${desde}, y la vulnerabilidad ${escHtml(paquete)} sigue apareciendo en ${repos}, medido el ${escHtml(hoy)}.</p>`,
-      '<p>No lo reabro: decidilo vos — se arregla (subir el paquete) o se declara la deuda en <code>vulnerabilidades-pendientes.json</code>, con motivo y fecha de revisión.</p>');
+      '<p>No lo reabro: decidilo vos — se arregla (subir el paquete) o se declara la deuda en <code>pending-vulnerabilities.json</code>, con motivo y fecha de revisión.</p>');
   }
   return L.join('\n');
 }

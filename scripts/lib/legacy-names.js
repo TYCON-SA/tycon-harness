@@ -1553,6 +1553,105 @@ function migrateBench(opts = {}) {
 }
 
 // ── la línea de comandos ────────────────────────────────────────────────────────────────────────────────────────
+// ── lo que un repo de producto nombra con nombre viejo (--product-report) ─────────────────────────────────────────
+// Qué hay que cambiar en cada producto antes del retiro de los nombres viejos. No escribe nada.
+// Mira lo que un producto le pide al arnés —sus pipelines, sus ganchos, sus guías, sus guiones y comentarios— y salta
+// la historia (stories, tasks/, .advisors/, .dashboard/) y los homónimos que el mapa declara para cada entrada.
+const PRODUCT_SKIP_DIRS = new Set(['.git', 'node_modules', 'bin', 'obj', 'dist', 'build', '.next', 'coverage']);
+const PRODUCT_HISTORY = /^(specs|stories|tasks|\.advisors|\.dashboard)(\/|$)|(^|\/)stories\//;
+const PRODUCT_TEXT = /\.(ya?ml|sh|ps1|cmd|bat|js|mjs|cjs|ts|tsx|jsx|cs|json|md|txt)$|^\.githooks\//;
+// lo que se genera y no nombra al arnés: se salta por nombre, nunca por tamaño (un archivo grande sin leer sería un 0 falso)
+const PRODUCT_GENERATED = /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|packages\.lock\.json)$|\.min\.js$|\.map$/;
+const escapeRx = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// un nombre suelto: ni pegado a otro nombre de archivo ni a otra palabra
+const tokenRx = (s) => new RegExp(`(^|[^\\w.-])${escapeRx(s)}(?![\\w-]|\\.\\w)`);
+const globRx = (g) => new RegExp(`^${String(g).split('**').map((p) => p.split('*').map(escapeRx).join('[^/]*')).join('.*')}$`);
+
+/**
+ * Los archivos del repo fuera de la historia: `all` (para los que existen con su nombre viejo) y `text` (los que se leen).
+ * Una carpeta que no se deja leer, en cualquier nivel, es «no pude leer» (lanza): saltearla daría un 0 sin haber mirado.
+ */
+function productFiles(repo) {
+  const all = [];
+  const walk = (rel) => {
+    let items;
+    try { items = fs.readdirSync(path.join(repo, rel), { withFileTypes: true }); } catch (e) {
+      throw new LegacyNamesError(`no pude leer ${rel ? `la carpeta ${rel} de` : 'el repo'} ${repo} (${(e && e.code) || (e && e.message) || e})`);
+    }
+    for (const it of items) {
+      const r = rel ? `${rel}/${it.name}` : it.name;
+      if (it.isDirectory()) { if (!PRODUCT_SKIP_DIRS.has(it.name) && !PRODUCT_HISTORY.test(r)) walk(r); } else if (it.isFile() && !PRODUCT_HISTORY.test(r)) all.push(r);
+    }
+  };
+  walk('');
+  all.sort();
+  return { all, text: all.filter((r) => PRODUCT_TEXT.test(r) && !PRODUCT_GENERATED.test(r)) };
+}
+
+/**
+ * Lo que `repo` nombra con nombre viejo: `[{ file, line, kind, old, new }]` (`line` 0 = el archivo mismo existe con su
+ * nombre viejo). Lanza LegacyNamesError si no puede leer el repo.
+ */
+function productReport(repo, opts = {}) {
+  const entries = usableEntries(loadMap(opts));
+  const { all, text: files } = productFiles(repo);
+  const findings = [];
+  const homonym = (e, rel) => Array.isArray(e.homonyms) && e.homonyms.some((h) => h && h.glob && globRx(h.glob).test(rel));
+  const ci = (p) => typeof p === 'string' && p.startsWith('scripts/ci/');
+  const scriptNames = (where) => {
+    const names = new Set([path.basename(String(where))]);
+    for (const x of entries) if (x.kind === 'file' && (x.old === where || x.new === where)) { names.add(path.basename(x.old)); names.add(path.basename(x.new)); }
+    return [...names];
+  };
+  const checks = [];
+  for (const e of entries) {
+    if (e.kind === 'file' && typeof e.old === 'string' && e.old.startsWith('scripts/')) {
+      const rx = [new RegExp(`(^|[^\\w.-])(\\S*/)?${escapeRx(e.old)}(?![\\w-])`)];
+      if (ci(e.old)) rx.push(tokenRx(path.basename(e.old)));
+      checks.push({ e, test: (line) => rx.some((r) => r.test(line)) });
+    } else if (e.kind === 'option' && ci(e.where)) {
+      const opt = new RegExp(`(^|\\s)--${escapeRx(e.old)}(?=[\\s=]|$)`);
+      const scripts = scriptNames(e.where).map(tokenRx);
+      checks.push({ e, test: (line, near) => opt.test(line) && scripts.some((s) => s.test(near)) });
+    } else if (e.kind === 'value' && ci(e.where) && e.option) {
+      const names = [e.option, ...entries.filter((x) => x.kind === 'option' && x.new === e.option && x.where === e.where).map((x) => x.old)];
+      const rx = new RegExp(`(^|\\s)--(${names.map(escapeRx).join('|')})(\\s+|=)${escapeRx(e.old)}(?![\\w-])`);
+      checks.push({ e, test: (line) => rx.test(line) });
+    } else if (e.kind === 'config-file' && typeof e.old === 'string' && !e.old.startsWith('~')) {
+      // con carpeta, en ese lugar; sin carpeta, en cualquiera (el de un formulario vive en su subcarpeta)
+      const here = e.old.includes('/') ? all.filter((r) => r === e.old) : all.filter((r) => path.posix.basename(r) === e.old);
+      for (const r of here) findings.push({ file: r, line: 0, kind: e.kind, old: e.old, new: e.new });
+      const rx = tokenRx(e.old);
+      checks.push({ e, test: (line) => rx.test(line) });
+    } else if (e.kind === 'env') {
+      // una variable que el pipeline del producto define o pasa, y que lee un guion del arnés
+      const rx = new RegExp(`(^|[^\\w])${escapeRx(e.old)}(?!\\w)`);
+      checks.push({ e, test: (line) => rx.test(line) });
+    } else if (e.kind === 'key' && typeof e.where === 'string' && !e.where.startsWith('~')) {
+      // una clave, sólo como clave de JSON y sólo en su archivo (por su nombre nuevo o el de antes)
+      const names = new Set([e.where]);
+      for (const x of entries) if ((x.kind === 'config-file' || x.kind === 'file') && (x.new === e.where || x.old === e.where)) { names.add(x.new); names.add(x.old); }
+      const rx = new RegExp(`"${escapeRx(e.old)}"\\s*:`);
+      checks.push({ e, only: names, test: (line) => rx.test(line) });
+    }
+  }
+  for (const rel of files) {
+    let text;
+    try { text = fs.readFileSync(path.join(repo, rel), 'utf8'); } catch (e) {
+      throw new LegacyNamesError(`no pude leer ${rel} de ${repo} (${(e && e.code) || (e && e.message) || e})`);
+    }
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, i) => {
+      const near = lines.slice(Math.max(0, i - 3), i + 1).join('\n');
+      for (const c of checks) {
+        if ((c.only && !c.only.has(rel)) || homonym(c.e, rel) || !c.test(line, near)) continue;
+        findings.push({ file: rel, line: i + 1, kind: c.e.kind, old: c.e.old, new: c.e.new });
+      }
+    });
+  }
+  return findings;
+}
+
 function main(argv) {
   const a = { flags: new Set(), val: {} };
   const need = (i, flag) => {
@@ -1574,10 +1673,17 @@ function main(argv) {
     else if (x === '--prepare-state') { mode = 'prepare-state'; while (i + 1 < argv.length && !String(argv[i + 1]).startsWith('--')) rest.push(argv[++i]); } else if (x === '--where') a.val.where = need(++i, x);
     else if (x === '--shell') { mode = 'shell'; a.val.where = need(++i, x); } else if (x === '--log-use') { mode = 'log-use'; rest.push(...argv.slice(i + 1, i + 5)); i += 4; } else if (x === '--check') a.flags.add('check');
     else if (x === '--conflict') a.flags.add('conflict');
-    else if (['--map', '--root', '--skills-root', '--guides', '--skills', '--home'].includes(x)) a.val[x.slice(2)] = need(++i, x);
+    else if (x === '--product-report') { mode = 'product-report'; a.val.repo = need(++i, x); } else if (['--map', '--root', '--skills-root', '--guides', '--skills', '--home'].includes(x)) a.val[x.slice(2)] = need(++i, x);
     else throw new LegacyNamesError(`opción desconocida: ${x}`);
   }
   const opts = { mapFile: a.val.map, root: a.val.root, skillsRoot: a.val['skills-root'], home: a.val.home };
+  if (mode === 'product-report') {
+    // 0 sin nada · 1 con algo · 2 no pudo leer (lo dice cli)
+    const findings = productReport(path.resolve(a.val.repo), opts);
+    if (a.flags.has('json')) process.stdout.write(`${JSON.stringify({ repo: path.resolve(a.val.repo), findings }, null, 1)}\n`);
+    else for (const f of findings) process.stdout.write(`${f.file}${f.line ? `:${f.line}` : ''}  «${f.old}» → «${f.new}» (${f.kind})\n`);
+    return findings.length ? 1 : 0;
+  }
   if ((a.reroot || a.flags.has('json') || a.flags.has('only-existing')) && mode !== 'migrate-machine') throw new LegacyNamesError(`--reroot, --json y --only-existing van con --migrate-machine\n${REROOT_USAGE}`);
   if (mode === 'migrate-machine' && a.reroot) {
     // antes de la salida «sin mapa no hay nada que hacer» de migrateMachine: anda sin el mapa
@@ -1639,7 +1745,7 @@ function main(argv) {
     if (KINDS.includes(kind) && old && nu) recordUse({ kind, old, new: nu, script, conflict: a.flags.has('conflict') }, { ...opts, env: { ...process.env, TF_BUILD: '' } });   // el warning de CI ya lo dio el guion
     return 0;
   }
-  throw new LegacyNamesError('falta qué hacer: --write-shims, --migrate-machine, --migrate-bench, --shell <where>, --prepare-state <ruta>… o --log-use <kind> <old> <new> <script>');
+  throw new LegacyNamesError('falta qué hacer: --write-shims, --migrate-machine, --migrate-bench, --shell <where>, --prepare-state <ruta>…, --product-report <repo> o --log-use <kind> <old> <new> <script>');
 }
 
 module.exports = {
@@ -1647,7 +1753,7 @@ module.exports = {
   LegacyNamesError, KINDS, CALLERS, NO_SHIM_CALLERS, SHIM_MARK, DEFAULT_MAP, loadMap, entriesOf, usableEntries, chainEnd, chainProblem, expand, needsShim,
   supportsShim, pathProblem, within, readEnv, envNames, aliasOptions, aliasArgv, resolveFile, prepareStateWrite, oldPathOf, readKeys, readKeysDeep, recordUse,
   isShim, shimTarget, resolveShimsInCommand, writeShims, migrateMachine, machineRewrites, relativePermissionRewrites, shellLines, oldStillReal, isMoved, gitAt,
-  repoForms, placeForms, rerootText, rerootMachine, countRegistered, rerootFiles, cli,
+  repoForms, placeForms, rerootText, rerootMachine, countRegistered, rerootFiles, cli, productReport,
 };
 
 /**
