@@ -856,7 +856,7 @@ function informe(argv) {
       const objetivo = rutaReal(path.join(repoRun, base)).split('\\').join('/');
       if (perFile.has(objetivo)) hit = perFile.get(objetivo);
     } else {
-      for (const [f, pct] of perFile) { if (f.endsWith(base) || base.endsWith(f)) { hit = pct; break; } }
+      for (const [f, pct] of perFile) { if (calzaPorTerminacion(f, base)) { hit = pct; break; } }
     }
     matched[nf] = hit !== null ? redondear1(hit) : null;
   }
@@ -874,7 +874,8 @@ function informe(argv) {
   } else if (!newFiles.length) {
     result.coverage.no_cross_check = 'sin cruce de cobertura: git no reporta archivos nuevos'
       + (declaredNew.length ? ' y la story no declara `files_to_create` existentes'
-        : ' y no se pasó la ruta de la story (\\$2) para caer a `files_to_create`');
+        : storyId && storyId !== 'unknown' ? ' y la story no declara `files_to_create`'
+          : ' y no se pasó la ruta de la story (\\$2) para caer a `files_to_create`');
   } else {
     result.coverage.no_cross_check = 'sin cruce de cobertura: hay archivos nuevos pero ninguno aparece en el reporte de cobertura';
   }
@@ -928,8 +929,9 @@ function informe(argv) {
     let r = git(repoDir, ['rev-parse', '--show-toplevel']);
     if (r.returncode !== 0) throw new Error('la carpeta medida no es un repo git');
     const top = pyStrip(r.stdout);
-    // Con detección de renombres (-M): un archivo movido aporta sólo lo que cambió.
-    r = git(top, ['diff', '--no-color', '--no-ext-diff', '-M', '-U0', ref, '--']);
+    // Con detección de renombres (-M): un archivo movido aporta sólo lo que cambió. Los prefijos `a/` y `b/` de siempre,
+    // aunque la máquina diga otra cosa (`diff.noprefix`, `diff.mnemonicPrefix`).
+    r = git(top, ['-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false', 'diff', '--no-color', '--no-ext-diff', '-M', '-U0', ref, '--']);
     if (r.returncode !== 0) throw new Error(`git diff contra ${ref.slice(0, 12)} falló: ${pyStrip(r.stderr || '').slice(0, 200)}`);
     const out = new Map();
     let actual = null;
@@ -1196,7 +1198,12 @@ function informe(argv) {
 }
 
 // OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció.
-module.exports = { informe, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile };
+/** Una ruta termina en la otra en un límite de carpeta: `web/src/a.js` calza con `src/a.js`, `mysrc/a.js` no. */
+function calzaPorTerminacion(a, b) {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile };
 
 if (require.main === module) {
   try {

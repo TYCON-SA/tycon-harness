@@ -990,6 +990,12 @@
       "requiere": []
     },
     {
+      "__nota": "las listas de archivos de la story se leen en todas las formas de YAML para el alcance de la puerta de pruebas; los frenos siguen con la forma de siempre.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-scope-lists.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/e2e-gate-bundle.test.sh",
       "requiere": []

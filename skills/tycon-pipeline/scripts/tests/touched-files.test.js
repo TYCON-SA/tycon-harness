@@ -180,3 +180,39 @@ test('touches — sólo entiende «<carpeta>/**»; otra forma no se interpreta',
   assert.equal(touches(['scripts/lab-pub-old/x.js'], ['scripts/lab-pub']), false);
   assert.equal(touches(['scripts/lab-pub/a/b.js'], ['scripts/lab-pub/**']), true);
 });
+
+test('T27 TouchedFiles_EmptyWithBranchCommits_Unknown — nada tocado desde la base, pero la rama ya trae commits propios: no se sabe', () => {
+  // 🔴 rojo si: con la base del marcador en la punta y lo de la story ya commiteado, el diff sale vacío y se lee como
+  //    «conocido y vacío» → el portón acotado sale verde sin correr ninguna suite.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  L.write('scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'commit', '-q', '-am', 'lo de la story');
+  const head = git(L.repo, 'rev-parse', 'HEAD');
+  const r = touchedFiles({ repo: L.repo, storyPath: L.story(['scripts/hooks/x.js']), baseRef: head, baseSource: 'marker' });
+  assert.equal(r.known, false, `vacío con commits propios de la rama = no se sabe: ${JSON.stringify(r)}`);
+  assert.match(r.reason, /1 commit/);
+});
+
+test('T28 TouchedFiles_EmptyOnMain_Known — nada tocado y nada propio de la rama: se sabe que no hay nada', () => {
+  // 🔴 rojo si: tratar todo vacío como «no sé» → una corrida sin cambios corre la suite entera.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker' });
+  assert.equal(r.known, true, JSON.stringify(r));
+  assert.deepEqual(r.files, []);
+});
+
+test('T29 TouchedFiles_EmptyWithoutMainBranch_Unknown — vacío y sin rama principal contra la que contar: no se sabe', () => {
+  // 🔴 rojo si: sin main ni master el conteo de commits propios falla y se sigue como «conocido y vacío».
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'trabajo');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker' });
+  assert.equal(r.known, false, JSON.stringify(r));
+  assert.match(r.reason, /rama principal/);
+});

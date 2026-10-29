@@ -47,7 +47,9 @@ function frontmatterOf(content) {
   return m ? m[1] : '';
 }
 
-function listUnderKey(fm, key) {
+// `allForms`: también la lista en línea y la de ítems a la misma sangría que la clave. Sólo la pide el alcance de la
+// puerta de pruebas: los frenos leen la forma de siempre, porque leer más declarado ahí aflojaría lo que dejan pasar.
+function listUnderKey(fm, key, { allForms = false } = {}) {
   const lines = fm.split(/\r?\n/);
   const out = [];
   let inKey = false;
@@ -55,12 +57,17 @@ function listUnderKey(fm, key) {
   for (const line of lines) {
     const indent = line.length - line.trimStart().length;
     if (!inKey) {
-      const km = line.match(new RegExp(`^(\\s*)${key}\\s*:\\s*$`));
-      if (km) { inKey = true; keyIndent = km[1].length; }
+      const km = line.match(new RegExp(`^(\\s*)${key}\\s*:\\s*(?:#.*)?$`));
+      if (km) { inKey = true; keyIndent = km[1].length; continue; }
+      if (!allForms) continue;
+      // la lista en línea: `clave: [a, "b", 'c']`
+      const enLinea = line.match(new RegExp(`^\\s*${key}\\s*:\\s*\\[([^\\]]*)\\]\\s*(?:#.*)?$`));
+      if (enLinea) return enLinea[1].split(',').map(cleanItem).filter(Boolean);
       continue;
     }
     if (line.trim() === '') continue;
-    if (indent <= keyIndent) break;
+    // YAML deja los ítems a la misma sangría que la clave; lo que corta es otra cosa a esa sangría
+    if (indent < keyIndent || (indent === keyIndent && !(allForms && /^\s*-(?:\s|$)/.test(line)))) break;
     const im = line.match(/^\s*-\s*(.+?)\s*$/);
     if (im) {
       const v = cleanItem(im[1]);
@@ -70,20 +77,20 @@ function listUnderKey(fm, key) {
   return out;
 }
 
-function parseDeclaredFiles(content) {
+function parseDeclaredFiles(content, opts) {
   const fm = frontmatterOf(content);
   if (!fm) return [];
-  return [...listUnderKey(fm, 'files_to_create'), ...listUnderKey(fm, 'files_to_modify')];
+  return [...listUnderKey(fm, 'files_to_create', opts), ...listUnderKey(fm, 'files_to_modify', opts)];
 }
 
 // Sólo los que la story declara CREAR. Los usa test-gate.sh como respaldo del cruce de
 // cobertura cuando git no reporta archivos "added" (típico: iteración de fix POSTERIOR
 // al commit). Vive acá y no en el bloque Python del gate a propósito: el parseo del
 // frontmatter es una sola verdad — si cambia el formato, cambia en UN lugar.
-function parseFilesToCreate(content) {
+function parseFilesToCreate(content, opts) {
   const fm = frontmatterOf(content);
   if (!fm) return [];
-  return listUnderKey(fm, 'files_to_create');
+  return listUnderKey(fm, 'files_to_create', opts);
 }
 
 // Los que la story declara BORRAR. Los lee el freno de la terminal: un `git rm` de un archivo declarado pasa y se anota.
@@ -282,7 +289,10 @@ function deduceScope({ files, candidates }) {
   // la raíz es de una herramienta de lib/test-runners.js (no .NET ni node, que siguen con su regla propia)
   const raiz = cands.find((c) => c.dir === '.');
   const raizGenerica = Boolean(raiz && !['dotnet', 'vitest', 'node-test', 'jest', 'suites-json'].includes(raiz.runner));
-  const esCodigo = (f) => require('./code-files.js').isSource(f);
+  // Un proyecto Maven o Gradle también es dueño de su Scala, Groovy y Kotlin de guion. Sólo para este voto: sumarlas a
+  // la lista general haría que el portón ATDD pida una prueba antes de tocar un `build.gradle.kts`.
+  const jvm = raiz && ['maven', 'gradle'].includes(raiz.runner) ? ['.scala', '.groovy', '.kts'] : [];
+  const esCodigo = (f) => require('./code-files.js').isSource(f) || jvm.includes(path.extname(f).toLowerCase());
   // Territorio: los dirs que el .sln de un candidato declara como suyos —
   // ver discoverCandidates. Prefijo más largo primero, igual que los candidatos. Un candidato
   // explícito SIEMPRE gana sobre un territorio (el `owner` de arriba se evalúa antes).
@@ -374,7 +384,7 @@ function resolveScope(repoDir, storyArg) {
     storyPath = path.resolve(storyArg);
     const content = fs.readFileSync(storyPath, 'utf8');
     storyId = storyIdOf(content);
-    files = parseDeclaredFiles(content);
+    files = parseDeclaredFiles(content, { allForms: true });
     if (files.length) source = 'story';
   }
   if (!files.length) {
@@ -415,7 +425,7 @@ if (require.main === module) {
     let out = [];
     try {
       if (sp && fs.existsSync(sp) && fs.statSync(sp).isFile()) {
-        out = parseFilesToCreate(fs.readFileSync(sp, 'utf8'));
+        out = parseFilesToCreate(fs.readFileSync(sp, 'utf8'), { allForms: true });
       }
     } catch { out = []; }
     process.stdout.write(out.join('\n') + (out.length ? '\n' : ''));
