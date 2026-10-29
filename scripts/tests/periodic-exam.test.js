@@ -2278,3 +2278,54 @@ test('T78 ToolsPath_ShellQueryBranches_SayTheirCause', () => {
   assert.strictEqual(r.ok, false);
   assert.match(String(r.causa), /no se pudo anotar la carpeta/, JSON.stringify(r));
 });
+
+/**
+ * El clon de mantenimiento ya no trae su copia de `scripts/controls-bench/exam-config.json`: trae SÓLO la clave del
+ * equipo, `designated_machine`, en `.tycon/exam-config.json`. La frecuencia sigue saliendo del árbol instalado.
+ */
+function maquinaConClaveDelEquipo() {
+  const b = banco();
+  escribir(path.join(b.repo, '.tycon', 'exam-config.json'), { designated_machine: 'Devas-Mac-mini' });
+  b.git('add', '-f', '--', '.tycon/exam-config.json');
+  b.git('commit', '-q', '-m', 'la clave del equipo');
+  b.git('push', '-q', 'origin', 'main');
+  const tycon = path.join(b.casa, '.tycon');
+  escribir(path.join(tycon, 'state', 'harness-state.json'), { schema: 1, sources: [{ kind: 'release', version: '0.0.0' }] });
+  escribir(path.join(tycon, 'config.json'), { paths: { maintainers: b.repo } });
+  b.arbol = arbolInstalado(b.raiz);
+  return b;
+}
+
+test('T79 exam_reads_team_key_from_maintainers_clone: la máquina designada sale de .tycon/exam-config.json del clon; la frecuencia, del árbol instalado', () => {
+  const b = maquinaConClaveDelEquipo();
+  // el árbol instalado declara su frecuencia: tiene que seguir mandando sobre ella
+  fs.writeFileSync(path.join(b.arbol, 'scripts', 'controls-bench', 'exam-config.json'),
+    JSON.stringify({ designated_machine: '', days_between_runs: 2, scheduled_days: ['monday', 'thursday'], hour: '03:00' }));
+  const r = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
+    { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /máquina designada: Devas-Mac-mini/, `la máquina designada sale del clon — «${r.stdout}»`);
+  assert.match(r.stdout, /HOY LE TOCA/, 'y le toca correr');
+  assert.match(r.stdout, /monday, thursday 03:00/, `la frecuencia sale del árbol instalado — «${r.stdout}»`);
+  assert.ok(r.stdout.includes(path.join(b.repo, '.tycon', 'exam-config.json')), `y dice de dónde salió la máquina — «${r.stdout}»`);
+  assert.ok(r.stdout.includes(path.join(b.repo, E.RUTA_REPORTE_QUE_VIAJA)), 'el reporte que viaja va al clon');
+  // control: sin la clave del equipo en el clon, nadie designado
+  fs.rmSync(path.join(b.repo, '.tycon', 'exam-config.json'));
+  const sin = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
+    { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
+  assert.strictEqual(sin.status, 0, sin.stderr);
+  assert.match(sin.stdout, /máquina designada: \(ninguna/, `control: sin la clave, nadie corre — «${sin.stdout}»`);
+});
+
+test('T80 notice_reads_team_key_from_maintainers_clone: con la máquina designada en el clon, el aviso no calla sobre un examen que no corrió', () => {
+  const b = maquinaConClaveDelEquipo();
+  const r = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'hooks', 'bench-notice.js')], {
+    encoding: 'utf8', input: '{"source":"startup"}',
+    env: ambienteDeLaMaquina(b, {
+      TYCON_BENCH_DIR: path.join(b.repo, 'scripts', 'controls-bench', '.bench'),
+      TYCON_SUITES_REPORT: b.reporteSuites, TYCON_BENCH_REPORT: b.reporteBanco, TYCON_EVAL_SANDBOX: '',
+    }),
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /examen de los revisores NO ESTÁ CORRIENDO/, `el aviso denuncia el examen que falta — «${r.stdout}»`);
+});
