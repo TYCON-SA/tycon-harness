@@ -119,7 +119,10 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signa
 
 1. **`hours`** (los `seconds` que informó la herramienta, en horas) → es el tiempo a sumar a `CompletedWork`.
 2. **`action`** → una herramienta que maneja el agente (con su servidor de MCP) dice qué hacer: cerrar su entrada
-   abierta y sumar las de la story, con su skill. El total que da es el tiempo a sumar.
+   abierta y sumar las de la story, con su skill. El total que da es el tiempo a sumar. Cerrada la entrada, dejar sus
+   horas como constancia de lo real: `pipeline.js work-signal stop --story <abs spec.md> --action-done "<id de la
+   entrada que cerraste>"`. El arnés las lee del resultado de esa llamada en la conversación; si no las encuentra, lo
+   dice y lo real queda sin horas. Lo real es sólo esa entrada: las de otras sesiones de la story no entran.
 3. **Ninguno de los dos** (sin herramienta elegida, o nada registrado) → no hay tiempo: el comment va sin el campo.
 
 Si vienen los dos, se suman: lo informado más lo que da la acción. Mostrarle al dev el total y lo que lo compone antes

@@ -7,9 +7,11 @@
  * (o que no devolvió ninguno), y `estimate-real` lee sólo eso: no acepta horas a mano. Vale la última constancia de la
  * historia: un `stop` posterior sin segundos deja la historia sin horas, no con las de antes.
  *
- * Una herramienta que informa por una acción (la maneja el agente con su servidor de MCP) no deja segundos: su total lo
- * suma el modelo y no tiene constancia, así que no se anota como real. Limitación: con una herramienta así no hay horas
- * reales hasta que la acción deje su propia evidencia (el id de la llamada real a la herramienta).
+ * Una herramienta que informa por una acción (la maneja el agente con su servidor de MCP) no deja segundos en el `stop`:
+ * el agente cierra la entrada y `work-signal stop --action-done "<id>"` anota otra línea con los segundos que trae el
+ * resultado de esa llamada, leída de la conversación (`horasDeLaAccion` de external-flags.js). Un total que sume el
+ * modelo no tiene constancia y no se anota como real. Limitación: la constancia es la de la entrada que cerró la sesión
+ * del cierre; las entradas de otras sesiones de la misma historia viven en otras conversaciones y no se suman.
  *
  * La constancia vive en el estado de la máquina (`<estado>/horas-reales/<clave>.jsonl`, una línea por `stop`), con la
  * ruta del spec como clave: el mismo id de historia puede repetirse en dos productos.
@@ -43,13 +45,17 @@ function archivo(home, storyPath) {
   return path.join(stateDir(home), 'horas-reales', `${clave}.jsonl`);
 }
 
-/** Anota un `stop`: los segundos que informó la herramienta (o null) y si contestó con una acción. */
-function record(home, storyPath, stopResult) {
+/**
+ * Anota un `stop`: los segundos que informó la herramienta (o null) y si contestó con una acción. `herramienta` es la
+ * llamada de la conversación de la que salieron los segundos de una acción.
+ */
+function record(home, storyPath, stopResult, { herramienta = null } = {}) {
   const s = stopResult && stopResult.seconds;
   const linea = {
     spec: path.resolve(storyPath),
     seconds: Number.isInteger(s) && s >= 0 ? s : null,
     accion: !!(stopResult && stopResult.action),
+    ...(herramienta ? { herramienta } : {}),
     cuando: new Date().toISOString(),
   };
   const f = archivo(home, storyPath);
@@ -113,7 +119,7 @@ function anotar({ storyPath, run, repo, home, hoursGiven, env }) {
   if (!ultima) return sinHoras('no hay constancia de horas: work-signal stop no corrió para esta historia, o no pudo dejarla (lo dijo en su aviso)');
   if (ultima.seconds === null) {
     return sinHoras(ultima.accion
-      ? 'la herramienta de horas informa por una acción, sin segundos: esas horas no tienen constancia del arnés y no se anotan como real'
+      ? 'la herramienta de horas informa por una acción y no hay constancia de la entrada cerrada: cerrala y corré pipeline.js work-signal stop --action-done "<id>"'
       : 'la herramienta de horas no informó tiempo (o no hay una elegida)');
   }
   const horas = Math.round(ultima.seconds / 36) / 100;
