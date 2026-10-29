@@ -72,9 +72,9 @@ function parseArgs(argv) {
   return a;
 }
 
+// la carpeta del estado la sabe tycon-home.js, que siempre viaja con el arnés
 function stateDir() {
-  const lib = path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir(os.homedir()) : path.join(os.homedir(), '.claude', '.tycon-pipeline');
+  return require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
 }
 
 function defaults(a) {
@@ -188,7 +188,7 @@ function readProject(bin, project, listed, windowFrom, today) {
     const ended = (r) => String((r && r.finishTime) || '').slice(0, 10);
     const inWindow = runs.json.filter((r) => r && (!r.finishTime || (isDay(ended(r)) && ended(r) >= windowFrom)));
     if (runs.json.length >= RUNS_TOP && runs.json.every((r) => !r.finishTime || ended(r) >= windowFrom)) {
-      fail(label, `runs list ${p.id}`, `más de ${RUNS_TOP} corridas en la ventana: se pasó el tope y no se miraron todas`, extra);
+      fail(label, `runs list ${p.id}`, `más de ${RUNS_TOP} ejecuciones en la ventana: se pasó el tope y no se miraron todas`, extra);
       continue;
     }
     let called = false;
@@ -279,7 +279,7 @@ function check(o) {
   else { try { repos = productRepos(parity.file); } catch (e) { failed.push({ source: 'productos', query: 'product-parity.json', error: e.message }); } }
   // una lista vacía no mide nada; un producto sin `ado` no tiene corridas que leer: los dos son «no pude medir»
   if (!parity.error && !failed.some((f) => f.source === 'productos') && !repos.length) failed.push({ source: 'productos', query: 'product-parity.json', error: 'la lista de productos no tiene ningún repo' });
-  for (const r of repos.filter((x) => !x.ado)) failed.push({ repo: r.ruta, query: 'ado', error: 'el repo no dice dónde vive en Azure DevOps (`ado`): sus corridas no se miran' });
+  for (const r of repos.filter((x) => !x.ado)) failed.push({ repo: r.ruta, query: 'ado', error: 'el repo no dice dónde vive en Azure DevOps (`ado`): sus ejecuciones no se miran' });
   // por proyecto, todos sus pipelines: los de la lista y los que no lo están
   const projects = new Map();
   for (const repo of repos.filter((r) => r.ado)) {

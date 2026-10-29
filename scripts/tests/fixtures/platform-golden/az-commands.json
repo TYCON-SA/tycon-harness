@@ -60,9 +60,6 @@
   "guides/workflow-orchestration.md": [
     "`shared/` entra sin CI; se verifica con `az pipelines runs show` (el commit no aparece en NINGÚN"
   ],
-  "integrations/azure-devops/scripts/change-requests.js": [
-    "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>"
-  ],
   "pipelines/operations/README.md": [
     "az pipelines create --name stage-metrics --repository operations --repository-type tfsgit --branch main \\"
   ],
@@ -135,6 +132,10 @@
   "scripts/setup/hooks-list.json": [
     "{\"event\": \"PostToolUse\", \"matcher\": \"Bash|PowerShell\", \"spec\": \"@tcg:failed-query-notice.js\", \"when\": \"always\", \"platforms\": {\"windows\": true}, \"steps\": [\"all\"], \"effect\": \"warns\", \"label\": \"Consulta vacía con el código de salida ENMASCARADO (2026-09-06, SALIDA-VACIA-DE-COMANDO-FALLADO): avisa cuando una consulta a un servicio (az, gh, curl, npm view…) devolvió VACÍO y el código de salida no se podía ver (filtro sin pipefail, || true, $(…), otro comando después). 2>/dev/null solo NO cuenta (esconde el mensaje, no el fallo). Segunda mirada: --project inexistente en az repos/pipelines/boards/devops, contra la lista cacheada por --refresh. Medido con --measure sobre las transcripciones reales, leyendo toolUseResult (lo que el hook ve): 54.615 comandos Bash con resultado; 2.699 en segundo plano y 1.372 fallidos a la vista no se juzgan; el aviso habría hablado 119 veces (0,22 %), contra los 33 (0,06 %) que contaba la primera versión sobre el texto renderizado. Off: TYCON_FAILED_QUERY_NOTICE=0\"},"
   ],
+  "scripts/tools/legacy-retire-check.js": [
+    "const bad = list.ok && !Array.isArray(list.json) ? 'az pipelines list no devolvió una lista' : null;",
+    "if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }"
+  ],
   "skills/tycon-merge-to-main/steps/step-09b-create-pr.md": [
     "`$BORRAR_SOURCE` en `true`, `az repos pr show` devolvió `autoCompleteSetBy` con el usuario,",
     "`az repos pr list --project totora --repository backend` contesta igual que con `Totora`/`Backend`",
@@ -160,6 +161,9 @@
     "Ej: con `ado_iteration_root=\"Ceibo\"` (o `ado_project=\"Ceibo\"`) y `sprint: 5` → `Ceibo\\Sprint 5`. Asume convención TYCON `Sprint <N>` como nombre del iteration (verificable con `az boards iteration project list --project <p>`).",
     "falta enumerarlos: `az devops invoke --area wit --resource workitemtypes --route-parameters",
     "process=$(az devops project show \\"
+  ],
+  "integrations/azure-devops/scripts/change-requests.js": [
+    "//   az devops invoke --area git --resource pullRequests --route-parameters project=<proyecto>"
   ],
   "integrations/azure-devops/scripts/work-items.js": [
     "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",
