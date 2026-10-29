@@ -361,6 +361,24 @@ if runs T28x; then
     bad "el fallo de prueba tras «personal» no hizo fallar la mudanza (rc $RC): $OUT"
   fi
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+  # (e2) lo mismo con los revisores del arnés como enlaces DUROS (Windows sin modo desarrollador: el enlace de archivo se
+  # niega y canonical-path.js cae al duro, que es un archivo común). TYCON_TEST_DENY_FILE_LINK=1 niega el enlace de archivo
+  # acá: el deshacer tiene que sacar los duros que puso la mudanza y devolver ~/.claude/agents al enlace de antes
+  clone_machine_f "$BASE/lab28x4h"
+  L_AG="$(link_to "$LAB_HOME/.claude/agents")"
+  AG_BEFORE="$(ls -A "$OLD_SKILLS/agents" | sort | tr '\n' ' ')"
+  OUT="$(TYCON_TEST_DENY_FILE_LINK=1 TYCON_MIGRATE_FAIL_AFTER=personal harness migrate --to-home 2>&1)"; RC=$?
+  if [ "$RC" = 1 ]; then
+    ok "con los revisores como enlaces duros y un fallo justo después de mover lo personal, la mudanza sale 1"
+    grep -q "como enlace(s) duro(s) (.*lab-revisor\.md" "$(LOG)" && ok "…el revisor del arnés quedó como enlace duro antes del fallo (el camino de Windows sin modo desarrollador)" || bad "el revisor no pasó por el enlace duro: $(grep -i "duro\|lab-revisor" "$(LOG)" | head -3)"
+    [ -L "$LAB_HOME/.claude/agents" ] && [ "$(link_to "$LAB_HOME/.claude/agents")" = "$L_AG" ] && ok "…y ~/.claude/agents volvió a ser el enlace de antes" || bad "agents no volvió a ser el enlace: $(ls -ld "$LAB_HOME/.claude/agents")"
+    [ "$(ls -A "$OLD_SKILLS/agents" | sort | tr '\n' ' ')" = "$AG_BEFORE" ] && [ -f "$OLD_SKILLS/agents/mi-agente.md" ] && ok "…la carpeta vieja de agentes quedó como estaba: lo personal volvió y no quedó ningún duro de más" || bad "la carpeta vieja de agentes cambió: antes «${AG_BEFORE}», ahora «$(ls -A "$OLD_SKILLS/agents" | sort | tr '\n' ' ')»"
+  else
+    bad "con TYCON_TEST_DENY_FILE_LINK el fallo de prueba tras «personal» no hizo fallar la mudanza (rc $RC): $OUT"
+  fi
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(state "d['sources'][0]['kind']")" = release ] && ok "…y después del deshacer la mudanza de verdad sale 0 y deja la máquina en la versión" || bad "después del deshacer con duros, la mudanza de verdad no anduvo (rc $RC): $(printf '%s' "$OUT" | tail -3 | tr '\n' ' ')"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
   # (f) deshacer con una carpeta real PREVIA en ~/.claude/skills: lo suyo queda como estaba y los enlaces por entrada que
   # puso la mudanza se sacan (apuntarían a una versión que ya no está); los que no puso ella no se tocan
   clone_machine_f "$BASE/lab28x5"
