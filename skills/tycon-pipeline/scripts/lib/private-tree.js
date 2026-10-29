@@ -16,6 +16,7 @@
  *      HEAD, y lo que su disco tiene sin commitear (cambiado, nuevo sin ignorar, borrado) se copia encima y queda en un
  *      commit local: el portón corre antes del commit, y desde HEAD mediría lo viejo. Nunca se superpone sobre el
  *      checkout de la story: el guion de superposición deja un commit en el repo que recibe.
+ *      Su `origin/*` es el `origin/*` del repo de origen, si lo tiene: el de lo que está en el servidor.
  *   3. `scripts/ci/overlay-harness.js --after-cut --stale warn [--team-from <clon del perfil>]` del privado pone el
  *      público encima del clon del privado. El clon del perfil del equipo es `HARNESS_TEAM_DIR` si está; si no, el que
  *      la máquina declara en `paths.team` de su configuración (`harness.js config set paths.team`), si es un clon del
@@ -99,6 +100,11 @@ function cloneWithDisk(src, dest) {
   const head = git(src, ['rev-parse', 'HEAD']).trim();
   git(path.dirname(dest), ['clone', '-q', '--shared', '--no-checkout', src, dest]);
   git(dest, ['checkout', '-q', '--detach', head]);
+  // El origin/main del clon sería la rama main local del repo de origen, que puede estar atrás del servidor: las suites
+  // que cortan «lo propio de la rama» en `merge-base origin/main HEAD` verían como propio lo que ya entró a main.
+  if (git(src, ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin/']).trim()) {
+    git(dest, ['fetch', '-q', src, '+refs/remotes/origin/*:refs/remotes/origin/*']);
+  }
   // modificados y borrados respecto de HEAD (índice o disco), y lo nuevo que el .gitignore no ignora
   const cambiados = lista0(git(src, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']));
   const nuevos = lista0(git(src, ['ls-files', '--others', '--exclude-standard', '-z']));

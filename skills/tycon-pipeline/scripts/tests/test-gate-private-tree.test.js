@@ -197,6 +197,36 @@ test('PrivateTree_PublicTip_IsAServerBranch', () => {
     git(arbol, 'rev-parse', 'HEAD:scripts/lib/otra.js'), 'lo sin commit, distinto');
 });
 
+// Las suites que miden «lo propio de la rama» lo cortan con `merge-base origin/main HEAD`. Un clon de un repo local toma
+// como origin/main la rama main LOCAL de ese repo, que en un checkout que nadie pone al día queda atrás: lo que ya entró
+// a main se veía como propio de la rama. El árbol trae el origin/main del repo de origen; sin él, el de siempre.
+// 🔴 Falla con: el árbol y su público con origin/main igual a la rama main local de su repo de origen.
+test('PrivateTree_OriginMain_IsTheSourceServerBranch', () => {
+  const lab = laboratorio();
+  const servidor = {};
+  for (const [repo, nombre] of [[lab.priv, 'priv'], [lab.pub, 'pub']]) {
+    const local = git(repo, 'rev-parse', 'main');
+    escribir(repo, 'ya-en-main.txt', `${nombre}\n`);
+    git(repo, 'add', 'ya-en-main.txt');
+    git(repo, 'commit', '-q', '-m', 'entró a main en el servidor');
+    servidor[nombre] = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'update-ref', 'refs/remotes/origin/main', servidor[nombre]);
+    git(repo, 'update-ref', 'refs/heads/main', local);   // la rama main local, atrás
+    git(repo, 'checkout', '-q', '--detach', servidor[nombre]);
+  }
+  const dir = tmp('privado-arbol-');
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(git(JSON.parse(r.stdout).tree, 'rev-parse', 'refs/remotes/origin/main'), servidor.priv, 'el árbol: el origin/main del privado');
+  assert.strictEqual(git(path.join(dir, 'publico'), 'rev-parse', 'refs/remotes/origin/main'), servidor.pub, 'el público: su origin/main');
+  // sin origin/main en el repo de origen, el clon se queda con lo que git le da (su main)
+  const solo = repoGit(tmp('sin-servidor-'), { 'a.txt': 'a\n' });
+  const dest = path.join(tmp('sin-servidor-clon-'), 'c');
+  require(path.join(SCRIPTS, 'lib', 'private-tree.js')).cloneWithDisk(solo, dest);
+  assert.strictEqual(git(dest, 'rev-parse', 'refs/remotes/origin/main'), git(solo, 'rev-parse', 'main'));
+});
+
 // ── Lo que se mide ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('PrivateTree_SkillsFromTree_NeverInstalled @story-7.36 @ac-3', () => {
