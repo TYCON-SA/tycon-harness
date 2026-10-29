@@ -1190,6 +1190,9 @@ Con ese secreto el sitio sólo crea ramas `team-config/...` y abre pedidos. Nunc
 aunque «Los cambios de un mantenedor» esté prendida: esa opción vale para el perfil y para operaciones, no para los
 repos de producto.
 
+Una organización puede elegir no pedir ese revisor en sus repos de producto, por ejemplo porque cada dev mergea solo a
+`main`. Entonces «Proponer» queda apagado en esos repos: se revisa el cambio, se descarga y el pedido se abre a mano.
+
 ### Invitar a alguien
 
 Con Microsoft en «sólo la organización», alguien de afuera del directorio (una cuenta personal, alguien de otra

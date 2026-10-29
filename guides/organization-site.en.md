@@ -1222,6 +1222,9 @@ With that secret the site only creates `team-config/...` branches and opens requ
 completes the request, even with "A maintainer's changes" on: that option applies to the profile and to operations, not
 to the product repos.
 
+An organization can choose not to require that reviewer on its product repos, for example because each dev merges to
+`main` alone. Then "Propose" stays off on those repos: you review the change, download it and open the request by hand.
+
 ### Inviting someone
 
 With Microsoft in "organization only", someone from outside the directory (a personal account, someone from another
