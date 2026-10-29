@@ -219,6 +219,13 @@ el comando de Azure que crearía la regla, aunque lo autorices en el chat. El ca
   administrada (`prod-firewall-close.js`) la cierra, salvo que otra sesión viva la siga usando. Si el
   fin de sesión no corrió (ventana cerrada de golpe, sesión caída), el mismo hook la cierra al arrancar
   la próxima sesión y lo dice en una línea. Cerrar no pide cuadro.
+- **Si el servidor se borró** con la regla abierta, la regla se fue con él. Al abrir, la puerta anota la
+  suscripción y el grupo del servidor. Al cerrar, pregunta por ese servidor ahí: si Azure contesta que
+  no existe, y tampoco está en otra suscripción, lo da por cerrado y lo dice. Si se movió, la cierra
+  donde está. Un «sin permiso» no cuenta como borrado (Azure esconde lo que tu cuenta ya no ve). Una regla
+  de antes de anotar el lugar queda como abierta: «no sé» no cuenta como cerrada. El caso que queda: un
+  servidor movido a una suscripción que tu cuenta no puede leer se da por cerrado, aunque la regla viajó
+  con él; tu cuenta tampoco podría cerrarla.
 - **Qué quedó abierto** vive en `production-firewall.json` (en la carpeta del estado, al lado de
   `production.log`), protegido como la memoria de producción; cada apertura y cada cierre quedan en
   `production.log`.
@@ -312,7 +319,7 @@ poné el candado primero en un servidor de prueba y no en uno real.
 - **`az` es del usuario** (Homebrew o el instalador de Microsoft), no un binario de root con huella:
   rompe la regla de la puerta y se acepta con tres condiciones: se busca en rutas fijas, nunca en el
   `PATH`; nunca recibe la clave de la base ni nada del Llavero; y sólo se le piden `account list`,
-  `sql server list` y `sql server firewall-rule show|create|update|delete` sobre `tycon-gate-<id>`. Un
+  `sql server list`, `sql server show` y `sql server firewall-rule show|create|update|delete` sobre `tycon-gate-<id>`. Un
   `az` reemplazado en una de esas rutas no ve la clave, pero sí puede crear otra regla con tu cuenta:
   tu cuenta de Azure ya podía hacerlo a mano.
 - **El fin de sesión puede no correr** (ventana cerrada de golpe, sesión caída): la regla queda abierta
