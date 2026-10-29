@@ -377,7 +377,7 @@ correr_partes() {
     fi
     # un 7 de una parte sin la constancia de «sin acotar» es un rojo de verdad
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
-    filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${out}"$'\n'
+    filas+="${scope}"$'\x1f'"${hrc}"$'\n'
     # un rojo de verdad gana sobre «sin acotar» (7), y éste sobre verde y sobre «sin pruebas» (3)
     if [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then
       [[ "$final" == "0" || "$final" == "7" ]] && final="$hrc"
@@ -385,9 +385,12 @@ correr_partes() {
   done
   node -e '
     const fs = require("fs"), p = require("path");
-    const [out, ts, storyId, final, filas] = process.argv.slice(1);
+    const [out, ts, storyId, final, filas, dir] = process.argv.slice(1);
+    // la carpeta viaja como argumento propio, no dentro de las filas: el bash de Git en Windows convierte una ruta
+    // suelta a la forma que lee node, y una ruta pegada a otros campos no
     const parts = filas.split("\n").filter(Boolean).map((l) => {
-      const [scope, exit, file] = l.split("\x1f");
+      const [scope, exit] = l.split("\x1f");
+      const file = p.join(dir, `tests-result.part-${scope.replace(/\//g, "_")}.json`);
       let a = null; try { a = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_e) { a = null; }
       return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file };
     });
@@ -417,7 +420,7 @@ correr_partes() {
         ts, runner: art.runner, suite_exit: art.suite_exit, suite_green: art.suite_green, halted: null, totals: art.totals,
         coverage: art.coverage, provenance: art.provenance }, null, 2));
     }
-  ' "$OUT_FILE" "$TS" "$STORY_ID" "$final" "$filas" || {
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$final" "$filas" "$OUT_DIR" || {
     echo "[test-gate] 🔴 no pude juntar las partes en $OUT_FILE: sin artefacto, esto no es verde" >&2
     [[ "$final" == "0" ]] && final=1
   }

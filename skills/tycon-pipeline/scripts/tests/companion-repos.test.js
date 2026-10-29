@@ -681,7 +681,8 @@ test('T18 8.55-TestGate_Salida7DeOtroCorredor_EsRojo @story-8.55 @ac-5 @ac-7 —
   const archivoMarker = markerFalso(home, 't855f', repo, path.join(repo, 'no-hay.md'));
   const r = spawnSync('bash', [TEST_GATE, repo, '9.26'], { encoding: 'utf8', env: entorno(home, 't855f'), cwd: repo });
   assert.equal(r.status, 1, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stderr, /salió 7 y no es «sin acotar»/);
+  // la herramienta que sale 7 cuenta como falla apenas termina, antes de que nadie lo lea como «sin acotar»
+  assert.match(r.stderr, /node-test salió 7: cuenta como falla \(1\)/);
   const m = JSON.parse(fs.readFileSync(archivoMarker, 'utf8'));
   assert.match(String(m.checks.tests), /^red/, `checks.tests=${m.checks.tests}`);
 });

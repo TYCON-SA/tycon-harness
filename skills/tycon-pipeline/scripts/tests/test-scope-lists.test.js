@@ -70,3 +70,28 @@ test('TestScope_Cli_UsesAllForms — el comando que llama la puerta de pruebas l
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /mcp\/src\/a\.ts/);
 });
+
+test('TestScope_StoryDeOtroRepo_SacaElPrefijoDelRepo — `FrontEnd/shared/x.ts` declarado desde otro repo cae en `shared`', () => {
+  // 🔴 rojo si: la ruta se lee con el nombre del repo delante → ningún archivo cae en un proyecto y frena «no sé qué
+  //    suite correr» (salida 4), o un archivo de otro repo vota por un proyecto de éste.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'test-scope-prefijo-')));
+  const repo = path.join(raiz, 'FrontEnd');
+  for (const p of ['shared', 'web']) {
+    fs.mkdirSync(path.join(repo, p, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(repo, p, 'package.json'), '{"devDependencies":{"vitest":"^2.0.0"}}\n');
+  }
+  fs.mkdirSync(path.join(raiz, 'Project', 'specs'), { recursive: true });
+  const story = path.join(raiz, 'Project', 'specs', 'story-11.2.md');
+  fs.writeFileSync(story, ['---', 'story: "11.2"', 'files_to_modify:', '  - FrontEnd/shared/src/a.ts',
+    '  - Backend/src/Api/Algo.cs', '---', ''].join('\n'));
+  const r = testScope.resolveScope(repo, story);
+  assert.strictEqual(r.multi, true, JSON.stringify(r));
+  assert.strictEqual(r.scope, 'shared', JSON.stringify(r));
+  // en la caja que escribió la story, aunque la carpeta tenga otra
+  fs.writeFileSync(story, ['---', 'story: "11.2"', 'files_to_modify:', '  - frontend/web/src/b.ts', '---', ''].join('\n'));
+  assert.strictEqual(testScope.resolveScope(repo, story).scope, 'web');
+  // una story del propio repo no se toca: `FrontEnd/` ahí sería una carpeta de verdad
+  const propia = path.join(repo, 'story.md');
+  fs.writeFileSync(propia, ['---', 'story: "11.3"', 'files_to_modify:', '  - shared/src/a.ts', '---', ''].join('\n'));
+  assert.strictEqual(testScope.resolveScope(repo, propia).scope, 'shared');
+});

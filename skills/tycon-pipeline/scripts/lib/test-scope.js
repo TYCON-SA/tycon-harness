@@ -367,6 +367,20 @@ function changedFiles(repoDir) {
 }
 
 /**
+ * Una story que vive en otro repo nombra los archivos de éste con su carpeta delante (`FrontEnd/shared/a.ts`): son
+ * los de este repo, sin ese prefijo, y los de otros repos no votan acá. Si ninguno lo trae, quedan como están. En la
+ * story del propio repo un `FrontEnd/` es una carpeta de verdad, y no se toca.
+ */
+function delRepo(files, repoDir, storyPath) {
+  const rel = path.relative(path.resolve(repoDir), storyPath);
+  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return files;
+  const prefijo = `${path.basename(path.resolve(repoDir)).toLowerCase()}/`;
+  const propios = files.map((f) => f.replace(/\\/g, '/').replace(/^\.\//, ''))
+    .filter((f) => f.toLowerCase().startsWith(prefijo)).map((f) => f.slice(prefijo.length));
+  return propios.length ? propios : files;
+}
+
+/**
  * `storyArg` puede ser un id ("4.30") o una ruta a la story. Si es ruta, los
  * archivos salen de lo que la story DECLARA (la fuente que pidió la decisión).
  * Si no hay ruta o la story no declara nada, se cae al diff real del repo —
@@ -384,7 +398,7 @@ function resolveScope(repoDir, storyArg) {
     storyPath = path.resolve(storyArg);
     const content = fs.readFileSync(storyPath, 'utf8');
     storyId = storyIdOf(content);
-    files = parseDeclaredFiles(content, { allForms: true });
+    files = delRepo(parseDeclaredFiles(content, { allForms: true }), repoDir, storyPath);
     if (files.length) source = 'story';
   }
   if (!files.length) {
