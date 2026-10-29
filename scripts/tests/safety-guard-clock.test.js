@@ -63,3 +63,10 @@ test('SafetyGuardClock_BadValue_UsesDefault — un tope fuera de rango usa el de
     assert.strictEqual(r.status, 0, `${v}: ${r.stderr}`);
   }
 });
+
+test('SafetyGuardClock_LeadingZero_UsesDefault — «02» o «060» no se leen como segundos', { skip: SKIP }, () => {
+  // 🔴 rojo si: un cero adelante pasa el rango → la cuenta falla o lee base 8 y el vigía espera otra cosa que la pedida.
+  const r = correr('ls', { bin: binConJqLento(), env: { TYCON_SAFETY_TIMEOUT_S: '02' } });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no terminó de mirar el comando en 20 s/);
+});

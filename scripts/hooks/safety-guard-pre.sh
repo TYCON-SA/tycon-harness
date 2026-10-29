@@ -79,10 +79,21 @@ set -u
 # tope holgado frenó. Por eso el freno tiene un tope propio, más corto, y al vencer frena: un vigía separado del
 # freno (no es su hijo, y no tiene la salida del freno abierta) le manda TERM y corta todo lo que el freno lanzó; la
 # trampa de TERM sale 2. TYCON_SAFETY_TIMEOUT_S, de 1 a 50 segundos; fuera de eso, 20.
-# Límite conocido: el corte de lo lanzado usa `pgrep`; donde no está (el Git Bash de Windows), el freno sale 2 recién
-# cuando termina lo que espera.
+# El vigía reconoce al freno por su hora de arranque y su línea de comando, tomadas al empezar: si el número del proceso
+# pasó a otro, no lo toca.
+# Límites conocidos: el corte de lo lanzado usa `pgrep`; donde no está (el Git Bash de Windows), el freno sale 2 recién
+# cuando termina lo que espera. Sin `ps -o` el freno se reconoce sólo por /proc/<pid>/cmdline, y sin ninguno de los
+# dos el reloj no actúa.
 SG_CLOCK_S="${TYCON_SAFETY_TIMEOUT_S:-20}"
-if ! [[ "$SG_CLOCK_S" =~ ^[0-9]+$ ]] || (( SG_CLOCK_S < 1 || SG_CLOCK_S > 50 )); then SG_CLOCK_S=20; fi
+# sin ceros adelante: «09» o «060» no son un número de segundos para la cuenta de bash
+if ! [[ "$SG_CLOCK_S" =~ ^[1-9][0-9]?$ ]] || (( SG_CLOCK_S > 50 )); then SG_CLOCK_S=20; fi
+sg_identity() {
+  local s
+  s="$(ps -p "$1" -o lstart=,command= 2>/dev/null)"
+  if [[ -z "$s" && -r "/proc/$1/cmdline" ]]; then s="$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null)"; fi
+  printf '%s' "$s"
+}
+_sg_id="$(sg_identity $$)"
 sg_clock_fired() {
   echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar. Si se repite, decíselo a la persona: algo deja esperando al freno." >&2
   exit 2
@@ -92,7 +103,8 @@ _sg_pid=$$
 ( (
   sleep "$SG_CLOCK_S"
   # el número del proceso pudo pasar a otro: sólo se corta si sigue siendo este freno
-  case "$(ps -p "$_sg_pid" -o command= 2>/dev/null)" in *safety-guard-pre.sh*) ;; *) exit 0 ;; esac
+  _sg_now="$(sg_identity "$_sg_pid")"
+  [[ -n "$_sg_now" && "$_sg_now" == "$_sg_id" && "$_sg_now" == *safety-guard-pre.sh* ]] || exit 0
   kill -TERM "$_sg_pid" 2>/dev/null
   _sg_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do _sg_tree "$c"; kill -KILL "$c" 2>/dev/null; done; }
   _sg_tree "$_sg_pid"
