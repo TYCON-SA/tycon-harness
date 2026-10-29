@@ -31,6 +31,7 @@ mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana venc
 | `browser-test` | preparar la prueba con navegador, o decirle que no | `e2e-setup.js prepare (o defer --no)` | sí | `e2e-setup.js prepare --terminal (o defer --no --terminal)` |
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, por la terminal | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
+| `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --for-session <sesión>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, por la terminal | `TYCON_SAFETY_OFF=1 <comando>` |
 | `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, por la terminal | `TYCON_PROD_LINT=0 <comando>` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, por la terminal | `TYCON_NEW_NAMES=0 <comando>` |

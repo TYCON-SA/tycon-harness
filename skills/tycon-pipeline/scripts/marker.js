@@ -4557,6 +4557,54 @@ function cmdSignAdversarialSkip(argv) {
   process.exit(0);
 }
 
+// `approve-pending --id <CÓDIGO> [--repo <carpeta>] [--for-session <sesión> | --terminal]`: la aprobación de un
+// pendiente nuevo de la lista de pendientes (scripts/lib/pending-approvals.js). El pendiente tiene que estar abierto en
+// la lista del repo; la firma va por la delegación del perfil (la coordinadora, desde su pestaña, con --for-session de la
+// sesión que lo pide), la ventana de permiso o la terminal del dueño, y recién con ella se escribe la línea del registro.
+// El guion no actúa sobre una sesión sino sobre el repo: --for-session sólo dice para quién es la firma.
+function cmdApprovePending(argv) {
+  const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
+  const { val, tiene } = opcionesDe(argv);
+  const id = (val('--id') || '').trim();
+  if (!id) { console.error('uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--for-session <sesión> | --terminal]'); process.exit(2); }
+  if (tiene('--quote') || tiene('--relayed-by') || tiene('--ok')) {
+    console.error('🚫 marker.js approve-pending: la cita, el reenvío y --ok no aprueban: la aprobación es una firma (la delegación, la ventana o --terminal).');
+    process.exit(1);
+  }
+  let repo = val('--repo');
+  try {
+    repo = require('child_process').execFileSync('git', ['-C', path.resolve(repo || process.cwd()), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch (_) { console.error(`marker.js approve-pending: ${repo || process.cwd()} no es un repo de git.`); process.exit(2); }
+  let todo; let registro;
+  try { todo = fs.readFileSync(path.join(repo, PA.TODO), 'utf8'); } catch (e) { console.error(`marker.js approve-pending: no pude leer ${PA.TODO} de ${repo} (${e.code || e.message}).`); process.exit(2); }
+  try { registro = fs.readFileSync(path.join(repo, PA.RECORD), 'utf8'); } catch (e) {
+    if (e.code !== 'ENOENT') { console.error(`marker.js approve-pending: no pude leer ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
+    registro = '';
+  }
+  const pendiente = PA.pendientesAbiertos(todo).find((p) => p.codigo === id);
+  if (!pendiente) { console.error(`marker.js approve-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(repo, PA.TODO)}: se aprueba lo que está escrito.`); process.exit(1); }
+  const leido = PA.leerRegistro(registro);
+  if (leido.ilegibles.length) { console.error(`marker.js approve-pending: ${PA.RECORD} tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un archivo roto.`); process.exit(1); }
+  if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(0); }
+  let maquina = null;
+  try { maquina = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella().huella || null; } catch (_) { /* va sin máquina */ }
+  const linea = PA.lineaNueva({ id, maquina });
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const { casaDeLaCuenta } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'real-home.js'));
+  // la firma va al registro de la casa de la cuenta: es el que lee el pre-commit
+  const r = ow.exigir({ firma: PA.FIRMA, argv: process.argv.slice(1), resumen: `huella ${linea.huella} · ${id} · ${pendiente.linea.slice(0, 140)}`, casa: casaDeLaCuenta(), propia: undefined });
+  if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
+  const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
+  const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
+  const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  try {
+    fs.mkdirSync(path.dirname(path.join(repo, PA.RECORD)), { recursive: true });
+    fs.appendFileSync(path.join(repo, PA.RECORD), `${JSON.stringify(escrita)}\n`);
+  } catch (e) { console.error(`🔒 marker.js approve-pending: la firma se dio, pero no pude escribir ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
+  console.error(`✅ ${id} aprobado (${r.via}, ${escrita.quien}). Queda en ${PA.RECORD}: commitealo junto con la lista.`);
+  process.exit(0);
+}
+
 // `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
 // firma en nombre del dueño (el rol de `approvals.relay_session`). La frase nombra el rol («Esta sesión es la
 // coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a la anterior. La designación vale
@@ -5276,6 +5324,9 @@ switch (cmd) {
     break;
   case 'sign-adversarial-skip':
     cmdSignAdversarialSkip(process.argv.slice(3));
+    break;
+  case 'approve-pending':
+    cmdApprovePending(process.argv.slice(3));
     break;
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));

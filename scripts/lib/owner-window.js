@@ -182,6 +182,7 @@ function firmaDeLlamado(guion, sub, args) {
     if (sub === 'mark-tested') return 'manual-test';
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
+    if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
     if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;

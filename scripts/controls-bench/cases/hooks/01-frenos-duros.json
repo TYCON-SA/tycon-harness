@@ -7857,6 +7857,26 @@
           "expect": { "exit": 2, "stderr_re": ["ESTADO DEL PIPELINE"] }
         },
         {
+          "id": "pending-approvals-write-frena",
+          "type": "must-block",
+          "_por_que": "El registro de aprobaciones de la lista de pendientes lo escribe sólo `marker.js approve-pending`, con la firma de la coordinadora o de la persona. Escrito a mano, una sesión abriría pendientes sin que nadie lo apruebe.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/tasks/pending-approvals.jsonl", "content": "{}" } },
+          "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano", "approve-pending"] }
+        },
+        {
+          "id": "pending-approvals-edit-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/tasks/pending-approvals.jsonl", "old_string": "a", "new_string": "b" } },
+          "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
+        },
+        {
+          "id": "pending-approvals-pasa-la-lista",
+          "type": "must-not-block",
+          "_por_que": "La lista de pendientes se edita a mano: lo que frena es abrir un pendiente sin aprobación, y eso lo mira el commit.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/tasks/todo.md", "content": "- [ ] [DEF-x] algo" } },
+          "expect": { "exit": 0 }
+        },
+        {
           "id": "adversarial-skip-pasa-otro-jsonl-de-la-corrida",
           "type": "must-not-block",
           "stdin": { "session_id": "bench-constancia", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.advisors/pipeline-runs/9.99-20261027120000/notas-adversarial-skips.md", "content": "x" } },
@@ -8035,6 +8055,19 @@
           "type": "must-block",
           "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cp /tmp/firma.jsonl .advisors/pipeline-runs/9.99-20261027120000/adversarial-skips.jsonl" }, "cwd": "${FIXTURE}" },
           "expect": { "exit": 2, "stderr_re": ["constancia del salteo del pase adversarial no se escribe a mano"] }
+        },
+        {
+          "id": "pending-approvals-consola-redireccion-frena",
+          "type": "must-block",
+          "_por_que": "El registro de aprobaciones de pendientes por la consola, con una redirección.",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "echo '{}' >> tasks/pending-approvals.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
+        },
+        {
+          "id": "pending-approvals-consola-cp-frena",
+          "type": "must-block",
+          "stdin": { "session_id": "bench-constancia", "tool_name": "Bash", "tool_input": { "command": "cp /tmp/a.jsonl tasks/pending-approvals.jsonl" }, "cwd": "${FIXTURE}" },
+          "expect": { "exit": 2, "stderr_re": ["registro de aprobaciones de pendientes no se escribe a mano"] }
         },
         {
           "id": "adversarial-skip-registro-consola-frena",
