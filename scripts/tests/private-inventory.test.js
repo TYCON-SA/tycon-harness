@@ -54,7 +54,7 @@ const INVENTARIO = JSON.stringify({
 /** El público de juguete: el guion real de la comparación, un inventario con un control y su pre-commit que lo llama. */
 function publico() {
   const d = tmpdir('pinv-pub-');
-  git(d, 'init', '-q');
+  git(d, 'init', '-q', '-b', 'main');
   put(d, 'scripts/ci/run-base-controls.sh', fs.readFileSync(path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh'), 'utf8'));
   put(d, 'scripts/ci/toy.js', "'use strict';\nprocess.exit(0);\n");
   put(d, '.githooks/pre-commit-checks', HOOK_CON);
@@ -66,7 +66,7 @@ function publico() {
 /** El privado de juguete: su pre-commit propio declarado en `own`, en `origin/main` (y otro distinto en el disco). */
 function privado(hook, { propio = true } = {}) {
   const origen = tmpdir('pinv-origen-');
-  git(origen, 'init', '-q');
+  git(origen, 'init', '-q', '-b', 'main');
   put(origen, '.githooks/pre-commit-checks', hook);
   put(origen, '.tycon/internal-forms.json', JSON.stringify({ layout: 'thin', own: propio ? { '.githooks/pre-commit-checks': 'el suyo' } : {}, mirror: {} }));
   git(origen, 'add', '-A');
