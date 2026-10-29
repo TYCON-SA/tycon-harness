@@ -53,7 +53,13 @@ const CASOS = [
     nombre: 'Gate_ShellWithC_DashOptions — el shell con -c después de opciones -O',
     archivo: 'skills/tycon-pipeline/scripts/on-bash-write-gate.js', ancla: 'const conC = /',
     armado: `'sh' + ' -O -A'.repeat(${REPETICIONES}) + ' x'`,
-    normales: ['bash -c "x"', "bash -O extglob -c 'x'", 'sh +o posix -e -c "y"', 'zsh --norc -xc "z"', 'ls; /bin/bash -c "q"'],
+    normales: ['bash -c "x"', "bash -O extglob -c 'x'", 'sh +o posix -e -c "y"', 'zsh --norc -xc "z"', 'ls; /bin/bash -c "q"', "bash -o +x -c 'x'", "bash -o +o -c 'x'", "sh +o posix +O x -c 'y'"],
+  },
+  {
+    nombre: 'Gate_ShellWithC_PlusValues — el shell con valores que empiezan con +',
+    archivo: 'skills/tycon-pipeline/scripts/on-bash-write-gate.js', ancla: 'const conC = /',
+    armado: `'sh' + ' -o +o +o -o +x'.repeat(${REPETICIONES}) + ' x'`,
+    normales: ["bash -o +x -c 'x'", "sh -o - -e -c 'x'", "bash +O - -c 'x'", "sh -O -- -c 'x'"],
   },
   {
     nombre: 'Gate_PipeToShell_EnvWithDashSlash — un pipe a env con opciones que parecen rutas',
