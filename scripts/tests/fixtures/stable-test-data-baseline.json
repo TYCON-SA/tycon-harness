@@ -171,7 +171,6 @@
     "scripts/tests/clean-machine/scenarios/no-network.sh",
     "scripts/tests/context-budget.test.sh",
     "scripts/tests/deploy-plugin.test.sh",
-    "scripts/tests/download-runs.test.sh",
     "scripts/tests/engram-rescue.test.js",
     "scripts/tests/fixtures/bootstrap-legacy-place.js",
     "scripts/tests/fixtures/toy-release-server.js",

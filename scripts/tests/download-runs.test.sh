@@ -698,15 +698,18 @@ t = sys.stdin.read()
 i = 0 if t.startswith('{') else t.find('\n{') + 1
 print(json.dumps(f(json.JSONDecoder().raw_decode(t[i:])[0]), sort_keys=True, indent=1))" 2>/dev/null; }
   TYCON_MACHINE=maq-otra node "${TABLERO}" --view runs --runs-dir "${T}/vacio" --mailbox "${E}" --json --dry-run 2>/dev/null | sed "s#${E}#ESPEJO#g" | sin_hora > "${T}/${B}-runs.json"
-  TYCON_MACHINE=maq-otra node "${TABLERO}" --nightly --mailbox "${E}" --mailbox-state "${T}/${B}-estado.json" --output "${T}/${B}-noche.html" --json > "${T}/${B}-noche.crudo" 2>/dev/null
+  # lo único distinto entre las dos pasadas es el buzón: el mismo día y el mismo instante (no el reloj, que avanza entre
+  # una y otra), una casa vacía propia y una carpeta del tablero vacía (no la del árbol, que otra prueba puede tocar)
+  mkdir -p "${T}/casa-${B}" "${T}/tablero-vacio"
+  HOME="${T}/casa-${B}" TYCON_TODAY=2026-10-21 TYCON_MACHINE=maq-otra node "${TABLERO}" --nightly --mailbox "${E}" --mailbox-state "${T}/${B}-estado.json" --dir "${T}/tablero-vacio" --now 1792584000000 --output "${T}/${B}-noche.html" --json > "${T}/${B}-noche.crudo" 2>/dev/null
   # el nocturno imprime su resumen de fuentes y después el modelo en JSON: se toma el JSON
-  sed "s#${E}#ESPEJO#g; s#${T}/${B}#CASO#g" "${T}/${B}-noche.crudo" | sin_hora > "${T}/${B}-noche.json"
+  sed "s#${E}#ESPEJO#g; s#${T}/casa-${B}#CASA#g; s#${T}/${B}#CASO#g" "${T}/${B}-noche.crudo" | sin_hora > "${T}/${B}-noche.json"
 done
 if [ "$(campo "${T}/plano" completo)" = "true" ] && [ "$(campo "${T}/versionado" completo)" = "true" ] && diff -r "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" >/dev/null \
    && [ -s "${T}/plano-runs.json" ] && cmp -s "${T}/plano-runs.json" "${T}/versionado-runs.json" && [ -s "${T}/plano-noche.json" ] && cmp -s "${T}/plano-noche.json" "${T}/versionado-noche.json"; then
   ok "2.24-T20 un buzón versionado y uno plano con el mismo contenido dan el mismo espejo, la misma vista de ejecuciones y la misma página del equipo (completo en los dos)"
 else
-  mal "2.24-T20 completo plano=$(campo "${T}/plano" completo) versionado=$(campo "${T}/versionado" completo) · espejos: $(diff -rq "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" 2>&1 | head -3) · runs $(cmp "${T}/plano-runs.json" "${T}/versionado-runs.json" 2>&1) · noche $(cmp "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1) $(wc -c < "${T}/plano-noche.json") · $(head -c 300 "${T}/plano-noche.crudo")"
+  mal "2.24-T20 completo plano=$(campo "${T}/plano" completo) versionado=$(campo "${T}/versionado" completo) · espejos: $(diff -rq "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" 2>&1 | head -3) · runs $(cmp "${T}/plano-runs.json" "${T}/versionado-runs.json" 2>&1) · noche $(cmp "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1) $(wc -c < "${T}/plano-noche.json") · $(diff "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1 | head -12 | tr '\n' ' ') · $(head -c 300 "${T}/plano-noche.crudo")"
 fi
 
 # ── T18 · OverwritesReport_SoloListaYCuentaSinNombres ──────────────────────────────
