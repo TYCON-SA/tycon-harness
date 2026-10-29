@@ -579,6 +579,12 @@
       "requiere": []
     },
     {
+      "__nota": "el ok de guardar una story es la firma «save»: las huellas de cada repo, si el ok sigue valiendo, la story limpia, lo sensible y el aviso al dueño antes de la constancia.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-ok.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.46: una persona marca cada criterio de la guía como probado a mano — la opción de la organización, la muestra, la marca con el ok de la persona y el freno del cierre.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/manual-checks.test.js",
