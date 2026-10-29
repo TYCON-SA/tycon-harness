@@ -83,8 +83,8 @@ function defaults(a) {
   const d = new Date();
   out.today = a.today || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   out.map = a.map || LN.DEFAULT_MAP;
-  out.sources = a.sources || process.env.TYCON_SOURCES_JSON || path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'sources.json');
-  out.mirror = a.mirror || process.env.TYCON_MAILBOX_DIR || path.join(stateDir(), 'corridas-buzon');
+  out.sources = a.sources || LN.readEnv('TYCON_SOURCES_JSON', { where: 'legacy-retire-check.js' }) || path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'sources.json');
+  out.mirror = a.mirror || LN.readEnv('TYCON_MAILBOX_DIR', { where: 'legacy-retire-check.js' }) || path.join(stateDir(), 'corridas-buzon');
   out.az = a.az || 'az';
   return out;
 }
