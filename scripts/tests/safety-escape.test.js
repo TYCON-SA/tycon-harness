@@ -22,7 +22,6 @@ const { spawnSync } = require('child_process');
 const RAIZ = path.join(__dirname, '..', '..');
 const HOOK = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
 const LIB = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib');
-const { fakeHomeEnv } = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'tests', 'lib', 'fake-home.js'));
 const SID = 's-escape';
 
 // stable-data: es el texto que se le pasa al freno, que nunca lo corre: no crea ningún commit
