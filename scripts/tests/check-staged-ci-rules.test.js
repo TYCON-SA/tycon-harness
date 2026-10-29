@@ -184,6 +184,29 @@ test('StagedCiRules_Catalog_ThinRepo — un repo sin los .toml cuenta con el pad
   assert.match(mal.out, /conteo del catálogo de reglas: filas=\d+, esperaba \d+/);
 });
 
+test('StagedCiRules_Catalog_ComposedInThinRepo — el catálogo que el adelgazado compone se cuenta compuesto con el del arnés', () => {
+  const d = lab();
+  const pack = path.join(RAIZ, 'packs', 'clients', 'pack.json');
+  if (fs.existsSync(pack)) put(d, 'packs/clients/pack.json', fs.readFileSync(pack, 'utf8'));
+  const forms = { layout: 'thin', own: { 'guides/advisor-rules-catalog.md': { reason: 'registro', merge: 'sections' } } };
+  stage(d, '.tycon/internal-forms.json', `${JSON.stringify(forms, null, 2)}\n`);
+  // la copia del adelgazado trae sólo su sección propia, sin filas de reglas
+  stage(d, 'guides/advisor-rules-catalog.md', '## Lo propio del equipo\n\nUna sección que el público no trae.\n');
+  const r = run(d);
+  assert.strictEqual(r.rc, 0, r.out);
+  assert.doesNotMatch(r.out, /no pude mirar|saltado/);
+  assert.match(r.out, /el catálogo se compone: el del arnés que corre más las secciones propias de este repo/);
+  // compuesto, una fila de más en la sección propia sigue frenando
+  stage(d, 'guides/advisor-rules-catalog.md', '## Lo propio del equipo\n\n| **ZZZQ-C1** | de más | nada |\n');
+  const mal = run(d);
+  assert.strictEqual(mal.rc, 1, mal.out);
+  assert.match(mal.out, /conteo del catálogo de reglas: filas=\d+, esperaba \d+/);
+  // sin la declaración, la copia sola se cuenta como antes: no se compone por su cuenta
+  stage(d, '.tycon/internal-forms.json', '{}\n');
+  stage(d, 'guides/advisor-rules-catalog.md', '## Lo propio del equipo\n\nUna sección que el público no trae.\n');
+  assert.strictEqual(run(d).rc, 2);
+});
+
 test('StagedCiRules_CouldNotLook_IsTwo — fuera de un repo no es verde', () => {
   const d = tmpdir('staged-ci-rules-sin-git-');
   const r = spawnSync(process.execPath, [FRENO, '--repo', d], { env: { ...ENV, GIT_CEILING_DIRECTORIES: path.dirname(d) }, encoding: 'utf8' });

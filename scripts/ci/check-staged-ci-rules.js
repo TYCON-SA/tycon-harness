@@ -40,6 +40,25 @@ try {
 }
 
 const CATALOG_REL = 'guides/advisor-rules-catalog.md';
+// La lista del repo privado adelgazado: si declara el catálogo como registro que se compone por secciones, su copia
+// trae sólo lo propio y el conteo se hace sobre el catálogo compuesto, el que miden su CI y los nocturnos.
+const THIN_LIST_REL = '.tycon/internal-forms.json';
+
+function composesCatalog(listText) {
+  if (listText == null) return false;
+  try {
+    const data = JSON.parse(listText);
+    const own = data && data.layout === 'thin' && data.own && data.own[CATALOG_REL];
+    return Boolean(own && typeof own === 'object' && own.merge === 'sections');
+  } catch (_) { return false; }
+}
+
+/** Lo público más las secciones «## » propias cuyo título el público no trae (las que sí, ya están). */
+function composeSections(publicText, ownText) {
+  const titles = new Set(publicText.split('\n').filter((l) => /^## /.test(l)).map((l) => l.trim()));
+  const own = ownText.split(/^(?=## )/m).filter((s) => /^## /.test(s) && !titles.has(s.split('\n')[0].trim()));
+  return own.length ? `${publicText.trimEnd()}\n\n${own.map((s) => s.trimEnd()).join('\n\n')}\n` : publicText;
+}
 
 function git(root, args, input) {
   const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { input, maxBuffer: 256 * 1024 * 1024, windowsHide: true });
@@ -94,7 +113,7 @@ function main() {
     const inventoryTouched = privateInventory.toca(touched);
     if (!shs.length && !tests.length && !gone.length && !catalogTouched && !inventoryTouched) return 0;
 
-    const wanted = [...new Set([...shs, ...tests, ...(tests.length || gone.length ? stable.BASELINES : []), ...(catalogTouched ? [CATALOG_REL] : [])])];
+    const wanted = [...new Set([...shs, ...tests, ...(tests.length || gone.length ? stable.BASELINES : []), ...(catalogTouched ? [CATALOG_REL, THIN_LIST_REL] : [])])];
     const index = readIndex(root, wanted);
 
     // 1. `| grep -q` con pipefail
@@ -138,7 +157,11 @@ function main() {
       // El padrón de revisores y el paquete de clientes se leen del disco (no del índice): con un staging parcial de esos
       // archivos puede contar una versión que no es la del commit. La CI lo vuelve a contar sobre lo commiteado. Un repo
       // sin los .toml del padrón cuenta con los del arnés donde corre este guion, y lo avisa.
-      const text = index.get(CATALOG_REL);
+      let text = index.get(CATALOG_REL);
+      if (text != null && composesCatalog(index.get(THIN_LIST_REL))) {
+        text = composeSections(fs.readFileSync(path.join(__dirname, '..', '..', CATALOG_REL), 'utf8'), text);
+        console.error('ℹ️  reglas de la CI: el catálogo se compone: el del arnés que corre más las secciones propias de este repo, como lo arma la superposición.');
+      }
       if (text == null) {
         console.error(`ℹ️  reglas de la CI: el commit deja sin ${CATALOG_REL}: no hay conteo del catálogo que hacer (la prueba C5 también lo saltea).`);
       } else {
