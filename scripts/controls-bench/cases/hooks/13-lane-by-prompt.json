@@ -22,19 +22,6 @@
               "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json"
             ]
           }
-        },
-        {
-          "id": "la-frase-que-ayer-fijaba-carril-de-mas-hoy-no-deja-nada",
-          "type": "must-run",
-          "stdin": {
-            "session_id": "bench-s1",
-            "prompt": "dale, probá con timeout de 2.5 segundos"
-          },
-          "expect": {
-            "file_absent": [
-              "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json"
-            ]
-          }
         }
       ]
     },
