@@ -54,6 +54,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const digest = require('./tokens-digest.js');
 
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
@@ -118,23 +119,35 @@ function medir(opts) {
   let sinMedir = 0;
   let ilegibles = 0;
   // Una máquina vuelve a subir lo de su disco a su carpeta nueva `<nombre>-<código>`, así que la
-  // misma corrida puede estar en la carpeta vieja y en la nueva: cuenta UNA vez (la sesión; sin sesión, el archivo y su fecha).
+  // misma corrida puede estar en la carpeta vieja y en la nueva: cuenta UNA vez (la sesión y su arranque; sin sesión, el
+  // archivo y su fecha). Dos corridas de la misma sesión son dos: cada una trae sólo las respuestas de su tramo.
   // Entre una copia sin medir y una medida de la misma corrida, vale la medida.
-  const vistas = new Map();   // clave → 'medida' | 'sin'
+  // «Medida» es un ENTERO POSITIVO, el mismo criterio que el cliente de runs.js (`pasosMedidos`). Con
+  // `if (!pasos)` pasaría un negativo (en JS es «verdadero»), un texto o un decimal: un volcado
+  // con un valor absurdo entraría a la mediana y a la línea base como si fuera un dato.
+  const pasosDe = (d) => { const c = d.consumo || {}; return c.estado === 'medido' && Number.isInteger(c.respuestas) && c.respuestas > 0 ? c.respuestas : null; };
+  const vistas = new Map();   // clave → { d, sesion }
   for (const f of caminar(buzon, [], malas)) {
     let d = null;
     try { d = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_e) { ilegibles++; continue; }
     if (!d || typeof d !== 'object' || !d.marker) continue;
-    const clave = typeof d.marker.sessionId === 'string' && d.marker.sessionId ? `s:${d.marker.sessionId}` : `a:${path.basename(f)}|${d.archivedAt || ''}`;
-    if (vistas.get(clave) === 'medida') continue;
-    const m = d.marker, c = d.consumo || {};
-    // «Medida» es un ENTERO POSITIVO, el mismo criterio que el cliente de runs.js (`pasosMedidos`). Con
-    // `if (!pasos)` pasaría un negativo (en JS es «verdadero»), un texto o un decimal: un volcado
-    // con un valor absurdo entraría a la mediana y a la línea base como si fuera un dato.
-    const pasos = c.estado === 'medido' && Number.isInteger(c.respuestas) && c.respuestas > 0 ? c.respuestas : null;
-    if (pasos === null) { if (!vistas.has(clave)) { vistas.set(clave, 'sin'); sinMedir++; } continue; }
-    if (vistas.get(clave) === 'sin') sinMedir--;
-    vistas.set(clave, 'medida');
+    const sesion = typeof d.marker.sessionId === 'string' && d.marker.sessionId ? d.marker.sessionId : null;
+    const inicio = typeof d.marker.startedAt === 'string' ? d.marker.startedAt : '';
+    const clave = sesion ? `s:${sesion}|${inicio}` : `a:${path.basename(f)}|${d.archivedAt || ''}`;
+    const previa = vistas.get(clave);
+    if (!previa || (pasosDe(previa.d) === null && pasosDe(d) !== null)) vistas.set(clave, { d, sesion });
+  }
+  // Una corrida medida antes del recorte trae el consumo de la sesión entera: en una sesión con varias, cuenta una sola
+  // y las demás salen sin medir (la misma regla que la vista de corridas).
+  const porSesion = new Map();
+  for (const x of vistas.values()) if (x.sesion) { if (!porSesion.has(x.sesion)) porSesion.set(x.sesion, []); porSesion.get(x.sesion).push(x); }
+  for (const xs of porSesion.values()) {
+    for (const i of digest.wholeSessionDuplicates(xs.map((x) => x.d)).keys()) xs[i].sinMedir = true;
+  }
+  for (const x of vistas.values()) {
+    const d = x.d, m = d.marker, c = d.consumo || {};
+    const pasos = x.sinMedir ? null : pasosDe(d);
+    if (pasos === null) { sinMedir++; continue; }
     const t = c.tokens || {};
     const tokens = (t.in || 0) + (t.out || 0) + (t.cache_new || 0) + (t.cache_read || 0);
     filas.push({

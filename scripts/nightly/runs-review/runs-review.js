@@ -453,12 +453,12 @@ async function run(opts) {
     migrar({ ops: opsDir, today });
     const lista = espejo.lista;
     estado.ilegibles += espejo.ilegibles;
-    // id y máquina de cada sesión, como los arma la pestaña Corridas
+    // id y máquina de cada ejecución (su sesión y su arranque), como los arma la pestaña Corridas
     const reg = RUNS.leerRegistro(null, RUNS.nombresDePasos().nombres, { buzon: mailbox, soloBuzon: true });
     const porSesion = new Map();
     for (const c of reg.corridas) {
-      const sid = c._volcado ? (() => { try { return JSON.parse(fs.readFileSync(c._volcado, 'utf8')).marker.sessionId; } catch { return null; } })() : null;
-      if (sid) porSesion.set(sid, { id: c.id, maquina: c.maquina });
+      const marker = c._volcado ? (() => { try { return JSON.parse(fs.readFileSync(c._volcado, 'utf8')).marker; } catch { return null; } })() : null;
+      if (marker && marker.sessionId) porSesion.set(RUNS.runKey(marker.sessionId, marker), { id: c.id, maquina: c.maquina });
     }
     previas = fichasPrevias(raiz);
     estado.ilegibles += previas.ilegibles;
@@ -499,7 +499,7 @@ async function run(opts) {
       const base = path.basename(ruta, '.json');
       const dia = diaDelNombre(base) || String(volcado.archivedAt || volcado.marker.startedAt || '').slice(0, 10);
       if (!DIA.test(dia) || dia < desde) continue;
-      const sesion = porSesion.get(volcado.marker.sessionId) || { id: RUNS.idEstable(carpeta, volcado.marker.sessionId), maquina: carpeta };
+      const sesion = porSesion.get(RUNS.runKey(volcado.marker.sessionId, volcado.marker)) || { id: RUNS.idEstable(carpeta, volcado.marker.sessionId), maquina: carpeta };
       const unaVez = `${sesion.id}|${comoId(base)}`;
       const grupo = `${unaVez}|${maquinaDe(carpeta)}`;
       if (!gruposDe.has(unaVez)) gruposDe.set(unaVez, new Set());

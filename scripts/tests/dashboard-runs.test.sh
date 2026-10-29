@@ -209,6 +209,43 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 grep -q '1 ejecución' "${T}/log" && grep -q '2 archivos' "${T}/log" && ok "T3 el resumen dice «1 ejecución … 2 archivos»" || mal "T3 el resumen no dice ejecuciones vs archivos: $(cat "${T}/log")"
 rm -rf "${T}"
 
+# ── T3c · dos corridas de la MISMA sesión (arranques distintos) → dos filas, cada una con su consumo ──
+# Cada corrida trae sólo el consumo de su tramo de la sesión: juntarlas en una perdería el de la otra.
+# 🔴 Falla con: deduplicar por la sesión sola (queda una fila), o darles el mismo id (el enlace abre la otra).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T08:00:00Z" '{"marker":{"storyId":"PRIMERA"},"consumo":{"tokens":{"in":111},"tramo":{"desde":"2026-08-15T07:50:00.000Z","hasta":null}}}' primera.json
+volcado "${T}/r" "${S1}" "2026-08-15T14:00:00Z" '{"marker":{"storyId":"SEGUNDA"},"consumo":{"tokens":{"in":222},"tramo":{"desde":"2026-08-15T13:50:00.000Z","hasta":null}}}' segunda.json
+volcado "${T}/r" "${S2}" "2026-08-15T16:00:00Z" '{"marker":{"storyId":"SOLA"}}' sola.json
+J="$(modelo_json "${T}/r")"
+python3 - "${J}" "${RAIZ}" <<'PY2' && ok "T3c dos corridas de la misma sesión → dos filas con su consumo e ids distintos; la sesión de una sola conserva su id" || mal "T3c juntó dos corridas de la misma sesión (ver detalle arriba)"
+import json, sys, subprocess
+m = json.loads(sys.argv[1]); c = {x['story']: x for x in m['corridas']}
+assert set(c) == {'PRIMERA', 'SEGUNDA', 'SOLA'}, sorted(c)
+assert m['duplicados'] == 0, m['duplicados']
+assert c['PRIMERA']['consumo']['tokens']['in'] == 111 and c['SEGUNDA']['consumo']['tokens']['in'] == 222
+assert c['PRIMERA']['id'] != c['SEGUNDA']['id']
+viejo = subprocess.run(['node', '-e', "process.stdout.write(require(process.argv[1]).idEstable(null, process.argv[2]))",
+                        sys.argv[2] + '/scripts/nightly/dashboard/runs.js', '22222222-2222-4222-8222-222222222222'], capture_output=True, text=True).stdout
+assert c['SOLA']['id'] == viejo, (c['SOLA']['id'], viejo)
+PY2
+rm -rf "${T}"
+
+# ── T3d · dos corridas VIEJAS de la misma sesión (sin tramo) → el consumo de la sesión una sola vez ──
+# Medidas antes del recorte, cada una trae el consumo de la sesión entera, y sin la conversación no se recalculan.
+# 🔴 Falla con: publicar el consumo de las dos (se suma dos veces la sesión).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T08:00:00Z" '{"archivedAt":"2026-08-15T10:00:00.000Z","marker":{"storyId":"VIEJA-A"},"consumo":{"tokens":{"in":900}}}' vieja-a.json
+volcado "${T}/r" "${S1}" "2026-08-15T14:00:00Z" '{"archivedAt":"2026-08-15T16:00:00.000Z","marker":{"storyId":"VIEJA-B"},"consumo":{"tokens":{"in":900}}}' vieja-b.json
+J="$(modelo_json "${T}/r")"
+python3 - "${J}" <<'PY2' && ok "T3d dos corridas viejas de la misma sesión → la archivada más tarde lleva el consumo, la otra sale «no medido»" || mal "T3d sumó dos veces el consumo de la sesión (ver detalle arriba)"
+import json, sys
+m = json.loads(sys.argv[1]); c = {x['story']: x for x in m['corridas']}
+assert c['VIEJA-B']['consumo']['estado'] == 'medido' and c['VIEJA-B']['consumo']['tokens']['in'] == 900, c['VIEJA-B']['consumo']
+assert c['VIEJA-A']['consumo']['estado'] == 'no_medido', c['VIEJA-A']['consumo']
+assert 'sesión entera' in c['VIEJA-A']['consumo']['motivo'], c['VIEJA-A']['consumo']
+PY2
+rm -rf "${T}"
+
 # ── T3b · un JSON roto y uno sin sessionId se CUENTAN y se dicen ───────────────────────────────
 # 🔴 Falla con: `continue` mudo → el universo achica sin que nadie lo vea.
 T=$(mktemp -d); mkdir -p "${T}/r"

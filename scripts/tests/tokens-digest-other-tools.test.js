@@ -525,3 +525,124 @@ test('T27 Digest_Price_NightBandAndBadHour', () => {
     assert.strictEqual(TD.precioEn(franjas(mal), Date.parse('2026-10-26T13:00:00Z')), null, JSON.stringify(mal));
   }
 });
+
+// ── Dos corridas en la misma sesión ─────────────────────────────────────────────────────────────────────────────
+
+/** Un volcado con su arranque, su cierre y sus pasos: el tramo de la sesión que le toca sale de ahí. */
+function volcadoConTramo(dir, nombre, { startedAt, archivedAt, stepTimings }) {
+  const ruta = path.join(dir, 'timing-history', `${nombre}.json`);
+  fs.mkdirSync(path.dirname(ruta), { recursive: true });
+  fs.writeFileSync(ruta, JSON.stringify({ archivedAt, marker: { storyId: '9.9', sessionId: SID, startedAt, lastTouch: startedAt, stepTimings }, gates: [] }));
+  return ruta;
+}
+
+// Una sesión larga con dos corridas cargaba en cada una el consumo de la sesión entera: el tablero contaba el mismo gasto
+// dos veces y le cobraba a cada corrida el de la otra. Cada corrida cuenta sólo su tramo (el mismo que su hilo); entre
+// las dos suman lo de sus dos tramos, y lo de afuera de los dos no es de ninguna. Una respuesta sin hora no es de
+// ninguna corrida: con dos tramos en la misma sesión, darle la hora de su vecina la podría cobrar en la equivocada.
+// Sin esto, cada corrida sale con las 8 respuestas e in=14000, la sesión entera, con la respuesta sin hora y lo de
+// afuera de los dos tramos; juntas cuentan la sesión dos veces.
+// Mutación: medir el consumo sobre todas las líneas de la sesión, o recortar el costo y no los tokens (o al revés).
+test('T28 Digest_TwoRunsSameSession_EachCountsItsOwnWindow', () => {
+  const home = tmp('t28-home-');
+  conversacionClaude(path.join(home, '.claude'), [
+    respuesta('fuera-antes', 'gemma4:31b-cloud', uso(1000, 1000), '2026-10-25T08:00:00.000Z'),
+    respuesta('a1', 'gemma4:31b-cloud', uso(10, 1), '2026-10-25T09:55:00.000Z'),
+    respuesta('a2', 'gemma4:31b-cloud', uso(20, 2), '2026-10-25T10:15:00.000Z'),
+    respuesta('sin-hora', 'gemma4:31b-cloud', uso(900, 90)),
+    respuesta('fuera-entre', 'gemma4:31b-cloud', uso(5000, 500), '2026-10-25T12:45:00.000Z'),
+    respuesta('b1', 'gemma4:31b-cloud', uso(30, 3), '2026-10-25T14:05:00.000Z'),
+    respuesta('b2', 'gemma4:31b-cloud', uso(40, 4), '2026-10-25T15:00:00.000Z'),
+    respuesta('fuera-despues', 'gemma4:31b-cloud', uso(7000, 700), '2026-10-25T17:00:00.000Z'),
+  ]);
+  // Tramos: la primera de 09:50 a 11:30; la segunda de 13:50 a 15:20.
+  const a = volcadoConTramo(home, 'corrida-a', { startedAt: '2026-10-25T10:00:00.000Z', archivedAt: '2026-10-25T10:30:00.000Z',
+    stepTimings: { 0: { completedAt: '2026-10-25T10:05:00.000Z' }, 1: { completedAt: '2026-10-25T10:30:00.000Z' } } });
+  const b = volcadoConTramo(home, 'corrida-b', { startedAt: '2026-10-25T14:00:00.000Z', archivedAt: '2026-10-25T14:20:00.000Z',
+    stepTimings: { 0: { completedAt: '2026-10-25T14:10:00.000Z' }, 1: { completedAt: '2026-10-25T15:10:00.000Z' } } });
+  const opciones = { projectsDir: path.join(home, '.claude', 'projects'), codexDir: path.join(home, '.codex', 'sessions'), home,
+    preciosPath: tabla(home), ahora: AHORA, proveedor: { provider: 'ollama', origin: 'env' }, env: {} };
+  for (const v of [a, b]) assert.ok(!TD.rescatarCorrida(v, opciones).error);
+  const ca = leer(a).consumo;
+  const cb = leer(b).consumo;
+
+  assert.deepStrictEqual([ca.respuestas, ca.tokens], [2, { in: 30, out: 3, cache_new: 0, cache_read: 0 }], JSON.stringify(ca));
+  assert.deepStrictEqual([cb.respuestas, cb.tokens], [2, { in: 70, out: 7, cache_new: 0, cache_read: 0 }], JSON.stringify(cb));
+  assert.deepStrictEqual(ca.por_paso, { 0: 11, 1: 22 });
+  assert.deepStrictEqual(cb.por_paso, { 0: 33, 1: 44 });
+  assert.strictEqual(ca.por_modelo['gemma4:31b-cloud'].in, 30);
+  // Entre las dos, lo de sus dos tramos y nada más: 100 de entrada y 10 de salida.
+  assert.strictEqual(ca.tokens.in + cb.tokens.in, 100);
+  assert.strictEqual(ca.tokens.out + cb.tokens.out, 10);
+  // El costo, del mismo tramo: (30·1 + 3·2) y (70·1 + 7·2) por millón.
+  assert.strictEqual(ca.costo.estado, 'medido', JSON.stringify(ca.costo));
+  assert.strictEqual(ca.costo.total, 0.000036);
+  assert.strictEqual(cb.costo.total, 0.000084);
+  // La respuesta sin hora no se cobra en ninguna, pero se dice.
+  assert.deepStrictEqual([ca.sin_hora, cb.sin_hora], [1, 1]);
+  // El tramo con que se midió queda anotado: el barrido sabe que este consumo ya es el de la corrida.
+  assert.deepStrictEqual(ca.tramo, { desde: '2026-10-25T09:50:00.000Z', hasta: '2026-10-25T11:30:00.000Z' });
+});
+
+// Una corrida medida antes del recorte guarda el consumo de la sesión entera y su ventana ya cerró: sin volver una vez,
+// el barrido no la tocaría nunca más y seguiría cargando lo de las otras corridas.
+// Mutación: no mirar `tramo` en el barrido → la corrida vieja no vuelve; o mirarlo siempre → vuelve en cada arranque.
+test('T29 Digest_Sweep_RunMeasuredBeforeWindow_ComesBackOnce', () => {
+  const home = tmp('t29-home-');
+  conversacionClaude(path.join(home, '.claude'), [
+    respuesta('a1', 'gemma4:31b-cloud', uso(10, 1), '2026-10-25T10:15:00.000Z'),
+    respuesta('fuera', 'gemma4:31b-cloud', uso(5000, 500), '2026-10-25T17:00:00.000Z'),
+  ]);
+  const ruta = volcadoConTramo(home, 'vieja', { startedAt: '2026-10-25T10:00:00.000Z', archivedAt: '2026-10-25T10:30:00.000Z', stepTimings: {} });
+  const d = leer(ruta);
+  d.consumo = { estado: 'medido', respuestas: 2, tokens: { in: 5010, out: 501, cache_new: 0, cache_read: 0 }, hilo_hasta: '2026-10-25T10:15:00.000Z', hilo_guardado_en: '2026-10-25T18:00:00.000Z' };
+  d.revisores = { estado: 'no_medido', motivo: 'de prueba' };
+  fs.writeFileSync(ruta, JSON.stringify(d));
+  const projectsDir = path.join(home, '.claude', 'projects');
+  assert.strictEqual(TD.estaPendiente(ruta, projectsDir, { ahora: AHORA, env: {} }), true);
+  assert.ok(!TD.rescatarCorrida(ruta, { projectsDir, home, preciosPath: tabla(home), ahora: AHORA, proveedor: { provider: 'ollama', origin: 'env' }, env: {} }).error);
+  assert.strictEqual(leer(ruta).consumo.tokens.in, 10);
+  assert.strictEqual(TD.estaPendiente(ruta, projectsDir, { ahora: AHORA, env: {} }), false);
+});
+
+// Una corrida vieja sin tramo cuya conversación no se puede leer hoy (un permiso) no vuelve al barrido, y si el rescate
+// corre igual no pisa lo que ya estaba medido: se reintenta otro día. Sólo un recálculo que sale bien lo reemplaza.
+// Sin esto, el barrido la da por pendiente y el rescate deja `no_medido` en lugar de los 5010 tokens.
+// Mutación: volver sin mirar si la conversación se lee, o reemplazar el consumo cuando la lectura falla.
+test('T30 Digest_OldRunUnreadableConversation_KeepsMeasured', { skip: process.platform === 'win32' || (process.getuid && process.getuid() === 0) }, () => {
+  const home = tmp('t30-home-');
+  conversacionClaude(path.join(home, '.claude'), [respuesta('a1', 'gemma4:31b-cloud', uso(10, 1), '2026-10-25T10:15:00.000Z')]);
+  const conversacion = path.join(home, '.claude', 'projects', '-opt-acme-repo', `${SID}.jsonl`);
+  const ruta = volcadoConTramo(home, 'vieja', { startedAt: '2026-10-25T10:00:00.000Z', archivedAt: '2026-10-25T10:30:00.000Z', stepTimings: {} });
+  const d = leer(ruta);
+  d.consumo = { estado: 'medido', respuestas: 2, tokens: { in: 5010, out: 501, cache_new: 0, cache_read: 0 }, hilo_hasta: '2026-10-25T10:15:00.000Z', hilo_guardado_en: '2026-10-25T18:00:00.000Z' };
+  d.revisores = { estado: 'no_medido', motivo: 'de prueba' };
+  fs.writeFileSync(ruta, JSON.stringify(d));
+  const projectsDir = path.join(home, '.claude', 'projects');
+  fs.chmodSync(conversacion, 0o000);
+  try {
+    assert.strictEqual(TD.estaPendiente(ruta, projectsDir, { ahora: AHORA, env: {} }), false);
+    assert.ok(!TD.rescatarCorrida(ruta, { projectsDir, home, preciosPath: tabla(home), ahora: AHORA, proveedor: { provider: 'ollama', origin: 'env' }, env: {} }).error);
+    const c = leer(ruta).consumo;
+    assert.deepStrictEqual([c.estado, c.tokens.in, c.tramo], ['medido', 5010, undefined], JSON.stringify(c));
+    assert.strictEqual(c.conversacion.estado, 'no_medido');
+  } finally {
+    fs.chmodSync(conversacion, 0o600);
+  }
+  // Con la conversación legible otra vez, vuelve y se recorta.
+  assert.strictEqual(TD.estaPendiente(ruta, projectsDir, { ahora: AHORA, env: {} }), true);
+});
+
+// Un tramo sin ninguna respuesta no es «consumió cero»: sale «no medido», sin la clave `tokens` y sin costo.
+// Sin esto, sale `medido` con todos los tokens en cero.
+// Mutación: publicar el consumo de un tramo vacío como medido.
+test('T31 Digest_EmptyWindow_NotMeasured', () => {
+  const home = tmp('t31-home-');
+  conversacionClaude(path.join(home, '.claude'), [respuesta('fuera', 'gemma4:31b-cloud', uso(5000, 500), '2026-10-25T17:00:00.000Z')]);
+  const ruta = volcadoConTramo(home, 'vacia', { startedAt: '2026-10-25T10:00:00.000Z', archivedAt: '2026-10-25T10:30:00.000Z', stepTimings: {} });
+  assert.ok(!TD.rescatarCorrida(ruta, { projectsDir: path.join(home, '.claude', 'projects'), home, preciosPath: tabla(home), ahora: AHORA, proveedor: { provider: 'ollama', origin: 'env' }, env: {} }).error);
+  const c = leer(ruta).consumo;
+  assert.strictEqual(c.estado, 'no_medido', JSON.stringify(c));
+  assert.ok(!('tokens' in c) && !('costo' in c), JSON.stringify(c));
+  assert.match(c.motivo, /tramo/);
+});

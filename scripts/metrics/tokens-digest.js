@@ -10,7 +10,8 @@
  * sólo 67 tienen su conversación viva, y cada semana se pierden las de esa semana.
  *
  * Tres cosas, entonces:
- *   1. El RESUMEN de consumo (tokens por modelo y por paso) → adentro del volcado, bajo `consumo`.
+ *   1. El RESUMEN de consumo (tokens por modelo y por paso) → adentro del volcado, bajo `consumo`. Con la misma ventana
+ *      que el hilo (`linesInWindow`): sólo el tramo de ESTA corrida, también para `por_paso` y `costo`.
  *   2. El HILO de la conversación, comprimido → `<volcado sin .json>.hilo.jsonl.gz`, al lado. Sin adjuntos, salvo
  *      el aviso de un hook que falló o se pasó de tiempo, reducido a nombre, evento, salida, categoría y el texto
  *      del error saneado y recortado (`reducirErrorDeHook`). Sólo el tramo de ESTA corrida (`ventanaDelHilo`): una
@@ -799,6 +800,62 @@ function ventanaDelHilo(dump) {
   return { desde: inicio - THREAD_WINDOW_BEFORE_MS, hasta: ultimo === null ? null : ultimo + THREAD_WINDOW_AFTER_MS };
 }
 
+/** ¿El instante (en ms) cae dentro de la ventana? Una ventana sin fin queda abierta hacia adelante. */
+function isInWindow(t, ventana) {
+  return t !== null && t >= ventana.desde && (ventana.hasta === null || t <= ventana.hasta);
+}
+
+/**
+ * Las líneas de la conversación que cuentan para el consumo y el costo de la corrida: las de su ventana, la MISMA del
+ * hilo. Sin ventana (un volcado viejo, sin hora de arranque) cuentan todas, como siempre.
+ * Una línea con consumo y sin hora propia no es de ninguna corrida: en una sesión con varias, prestarle la hora de su
+ * vecina (lo que hace el hilo) la podría cobrar en la corrida equivocada, o en dos. Se cuentan aparte, en `sinHora`
+ * (una vez por respuesta), para que no se pierdan callados.
+ */
+function linesInWindow(lineas, ventana) {
+  if (!ventana) return { lineas, sinHora: 0 };
+  const sinHoraVistas = new Set();
+  let sinHora = 0;
+  const dentro = lineas.filter((o) => {
+    const t = ms(o && o.timestamp);
+    if (t === null && o && o.message && o.message.usage) {
+      const id = o.message.id || null;
+      if (!id || !sinHoraVistas.has(id)) sinHora += 1;
+      if (id) sinHoraVistas.add(id);
+    }
+    return isInWindow(t, ventana);
+  });
+  return { lineas: dentro, sinHora };
+}
+
+/** La ventana con sus horas escritas, como se anota en el volcado. */
+function windowAsIso(ventana) {
+  return { desde: new Date(ventana.desde).toISOString(), hasta: ventana.hasta === null ? null : new Date(ventana.hasta).toISOString() };
+}
+
+const WHOLE_SESSION_REASON = 'medida antes de que el consumo se recortara al tramo de cada ejecución: trae el de la sesión entera, que ya publica otra ejecución de la misma sesión';
+
+/**
+ * De las corridas de UNA sesión, cuáles no pueden publicar su consumo. Una corrida medida antes del recorte (`medido` sin
+ * `tramo`) trae el consumo de la sesión entera; si su conversación ya se borró, o la copia es de otra máquina, no se
+ * puede recalcular. Para no sumarlo dos veces, lo publica una sola: la archivada más tarde, la que vio más de la sesión
+ * (la misma que publicaba el tablero cuando juntaba una fila por sesión). Las demás sin tramo salen «no medido». Si
+ * alguna corrida de la sesión ya tiene su tramo, ninguna sin tramo publica: su total incluye el de esa.
+ * `dumps` son los volcados de la sesión; devuelve un Map índice → motivo de las que salen «no medido».
+ */
+function wholeSessionDuplicates(dumps) {
+  const out = new Map();
+  if (!Array.isArray(dumps) || dumps.length < 2) return out;
+  const medido = (d) => d && d.consumo && d.consumo.estado === 'medido';
+  const sinTramo = dumps.map((_, i) => i).filter((i) => medido(dumps[i]) && !dumps[i].consumo.tramo);
+  if (!sinTramo.length) return out;
+  const conTramo = dumps.some((d) => medido(d) && d.consumo.tramo);
+  const archivo = (i) => String(dumps[i].archivedAt || (dumps[i].marker && dumps[i].marker.startedAt) || '');
+  const queda = conTramo ? null : sinTramo.reduce((a, i) => (archivo(i) > archivo(a) ? i : a));
+  for (const i of sinTramo) if (i !== queda) out.set(i, WHOLE_SESSION_REASON);
+  return out;
+}
+
 /** Los mensajes dentro de la ventana. Uno sin hora toma la del anterior (o la del siguiente, si va primero). */
 function recortarAVentana(mensajes, ventana) {
   if (!ventana) return mensajes;
@@ -813,8 +870,7 @@ function recortarAVentana(mensajes, ventana) {
     if (horas[i] === null) horas[i] = siguiente;
     else siguiente = horas[i];
   }
-  return mensajes.filter((_, i) => horas[i] !== null && horas[i] >= ventana.desde
-    && (ventana.hasta === null || horas[i] <= ventana.hasta));
+  return mensajes.filter((_, i) => isInWindow(horas[i], ventana));
 }
 
 function rutaHilo(volcado) {
@@ -992,24 +1048,47 @@ function rescatarCorrida(volcado, opciones) {
 
   const leido = leerTranscripcion(ubi.ruta);
   if (leido.error) {
+    // Lo ya medido se conserva, igual que sin conversación: una lectura que falla hoy (un permiso, un archivo a medio
+    // escribir) no borra el consumo. Se anota y el barrido lo reintenta.
+    if (dump.consumo && dump.consumo.estado === 'medido') {
+      dump.consumo.conversacion = { estado: 'no_medido', motivo: leido.error, desde: new Date().toISOString() };
+      res.consumo = dump.consumo;
+      res.no_persistido = escribirVolcado(volcado, dump);
+      return res;
+    }
     dump.consumo = { estado: 'no_medido', motivo: leido.error, proveedor, medido_en: new Date().toISOString() };
     res.consumo = dump.consumo;
     res.no_persistido = escribirVolcado(volcado, dump);
     return res;
   }
 
+  // El consumo y el costo, sólo del tramo de la sesión que es de esta corrida: con varias corridas en la misma sesión,
+  // cada una cargaba el consumo de las demás y el tablero lo contaba varias veces.
+  const ventana = ventanaDelHilo(dump);
+  const delTramo = linesInWindow(leido.lineas, ventana);
   const cortes = cortesDePaso(marker.stepTimings);
-  const c = consumo(leido.lineas, cortes);
-  c.lineas_ilegibles = leido.ilegibles;
+  let c = consumo(delTramo.lineas, cortes);
+  // Un tramo sin ninguna respuesta no es «consumió cero»: la conversación no tiene nada de esta corrida (se partió en
+  // otra sesión, o las respuestas no traen hora). Sale sin la clave `tokens`, con su motivo.
+  if (ventana && c.respuestas === 0) {
+    c = { estado: 'no_medido', motivo: 'la conversación no tiene ninguna respuesta con consumo dentro del tramo de esta ejecución' };
+  } else {
+    c.lineas_ilegibles = leido.ilegibles;
+  }
+  if (ventana) {
+    c.tramo = windowAsIso(ventana);
+    c.sin_hora = delTramo.sinHora;
+  }
   c.medido_en = new Date().toISOString();
   c.proveedor = proveedor;
-  const k = costo(c.paraCosto, precios(), { ahora, proveedor });
-  if (k) c.costo = k;
+  if (c.estado === 'medido') {
+    const k = costo(c.paraCosto, precios(), { ahora, proveedor });
+    if (k) c.costo = k;
+  }
   dump.consumo = c;
   res.consumo = c;
 
   // El hilo. Se reescribe entero: idempotente sobre la misma entrada, actualizado si creció. Sólo el tramo de la corrida.
-  const ventana = ventanaDelHilo(dump);
   const mensajes = recortarAVentana(hilo(leido.lineas), ventana);
   const destino = rutaHilo(volcado);
   try {
@@ -1021,12 +1100,7 @@ function rescatarCorrida(volcado, opciones) {
       mensajes: mensajes.length,
       descartadas: leido.lineas.length - mensajes.length,
     };
-    if (ventana) {
-      res.hilo.ventana = {
-        desde: new Date(ventana.desde).toISOString(),
-        hasta: ventana.hasta === null ? null : new Date(ventana.hasta).toISOString(),
-      };
-    }
+    if (ventana) res.hilo.ventana = windowAsIso(ventana);
     // 🔴 `hilo_hasta` SÓLO avanza si el archivo llegó a escribirse. Si se fijara con lo leído de la
     // transcripción, sin mirar el resultado de la escritura, con el disco lleno o un permiso mal ese
     // tramo de conversación se perdería PARA SIEMPRE —`estaPendiente` lo daría por resuelto— y el barrido lo
@@ -1108,13 +1182,18 @@ function estaPendiente(volcado, projectsDir, opciones = {}) {
   // con motivo), así que esto pasa una sola vez por corrida — no se reprocesa para siempre.
   if (!dump.revisores) return true;
   if (c.estado === 'borrada') return false;
-  if (c.estado === 'no_medido') return true;
+  // Un tramo leído sin ninguna respuesta (`no_medido` con `tramo`) sigue la vara de abajo, como uno medido: vuelve sólo si
+  // la conversación creció adentro de su tramo. Sin eso se releería en cada arranque sin cambiar nada.
+  if (c.estado === 'no_medido' && !c.tramo) return true;
   const sid = (dump.marker || {}).sessionId;
   if (c.herramienta === 'codex') return codexCrecio(sid, c, opciones);
   const ubi = ubicarTranscripcion(sid, projectsDir);
   if (!ubi.ruta) return false;
-  // Guardada después de que cerró su ventana: lo que la conversación crezca ya no es de esta corrida.
   const ventana = ventanaDelHilo(dump);
+  // Medida antes de que el consumo se recortara a la ventana (sin `tramo`): vuelve para que deje de cargar el consumo de
+  // las otras corridas de su sesión, pero sólo si la conversación se puede leer; si no, se reintenta otro día.
+  if (ventana && !c.tramo) return !leerTranscripcion(ubi.ruta).error;
+  // Guardada después de que cerró su ventana: lo que la conversación crezca ya no es de esta corrida.
   if (ventana && ventana.hasta !== null && c.hilo_guardado_en && ms(c.hilo_guardado_en) > ventana.hasta) return false;
   if (grandeYaGuardadaHoy(ubi.ruta, c, opciones)) return false;
   const leido = leerTranscripcion(ubi.ruta);
@@ -1265,7 +1344,7 @@ function resumenBarrido(s) {
 
 module.exports = {
   esRojo, normalizar, sanear, colaDeSalida, mensajesDeSalida, LARGO_MENSAJE, cortesDePaso, consumo, hilo, mensajesDeError,
-  ventanaDelHilo, recortarAVentana, ubicarTranscripcion, carpetasDeConversaciones, leerTranscripcion, costo, leerPrecios, precioEn, indexarComandos, procesarCorrida, rescatarCorrida, encadenarMedidor, estaPendiente,
+  ventanaDelHilo, recortarAVentana, wholeSessionDuplicates, ubicarTranscripcion, carpetasDeConversaciones, leerTranscripcion, costo, leerPrecios, precioEn, indexarComandos, procesarCorrida, rescatarCorrida, encadenarMedidor, estaPendiente,
   esNotificacionEncolada, reducirErrorDeHook, CATEGORIAS_HOOK, TIPOS_DESCARTADOS,
 };
 
