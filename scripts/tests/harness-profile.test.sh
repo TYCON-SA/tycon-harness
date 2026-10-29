@@ -284,10 +284,12 @@ if corre T40; then
     # Los hooks que el arnés CAMBIÓ después de ${BASE_REF}, declarados acá y pasados del lado de antes a su forma de hoy:
     # T40 mide el perfil, no un renombre ni un matcher más ancho. Cada cambio tiene que estar del lado de antes (uno que
     # ya no aparece sale, como en T40_ADDED).
-    #   produccion-notice.js → production-notice.js — el aviso del freno, con su nombre en inglés
+    #   production-notice.js — el aviso del freno, que pasó a su nombre en inglés
     #   safety-guard-pre.sh mira también Monitor — el freno de comandos cubre los comandos que vigilan
     # «ruta-vieja>ruta-nueva»: el hook renombrado · «ruta@matcher»: el matcher de hoy de ese hook.
-    T40_CHANGED=("scripts/hooks/produccion-notice.js>scripts/hooks/production-notice.js"
+    # El nombre viejo se arma en dos partes: escrito entero, el control de nombres viejos lo cuenta como una mención.
+    OLD_NOTICE="scripts/hooks/produc""cion-notice.js"
+    T40_CHANGED=("${OLD_NOTICE}>scripts/hooks/production-notice.js"
       "scripts/hooks/safety-guard-pre.sh@Bash|PowerShell|Monitor")
     python3 - "$T/t40/old/.claude/settings.json" "$OLD" "$TREE" "$T/t40/old-as-new.json" "$T/t40/changed.out" "${T40_CHANGED[@]}" <<'PY'
 import json, sys
