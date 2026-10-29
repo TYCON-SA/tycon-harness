@@ -15,7 +15,8 @@
 #   T30 — sin snapshot (Claude Code 2.1.272 ya no lo escribe) se le pregunta al shell de login en vivo:
 #         limpio pasa; secuestrado, mudo, colgado o de un shell que no sé leer frena
 #   T31 — se mira el snapshot de ESTA sesión, no el más nuevo
-#   T35 — la consulta de un archivo cerca del tope llega entera por una tubería
+#   6.6 T1-T8, T13 — el cuadro muestra la consulta: --file se frena (con el comando en línea listo), la consulta en
+#         línea tiene un tope de 20 renglones de pantalla y una lista de caracteres que engañan
 #   T32 — la guía declara que la regla de firewall es de cortesía
 #
 # 🔴 HOME falso siempre: el hook lee ~/.claude (snapshots, índice, registros).
@@ -1008,23 +1009,159 @@ pasa  "G1 CarpetaDeEstado_BorrarUnaCosa_Pasa" "rm -rf ~/.tycon/state/active/viej
 pasa  "G1 CarpetaDeEstado_ListarConComodin_Pasa" "ls ~/.tycon/state/*"
 pasa  "G1 CarpetaDeEstado_CopiarConComodin_Pasa" "cp -r ~/.tycon/state/* /tmp/estado-copia/"
 
-# ── T35 · la consulta de un archivo cerca del tope llega ENTERA por una tubería ─────────────
-# El anfitrión lee el mensaje por una tubería: si el freno sale antes de terminar de escribirlo, llegan los primeros
-# 64 KB y el resto de la consulta no se muestra.
+# ── 6.6 · el cuadro muestra la consulta: el archivo ya no pasa, la consulta en línea tiene tope ─────────────────────────
+# El cuadro de aprobación muestra el comando y nada más: lo que el freno escribe aparece después.
+# Por eso `--file` se frena, con el comando en línea listo cuando se puede armar, y la consulta en línea tiene un tope de
+# renglones (el cuadro corta el principio sin aviso) y una lista de caracteres que engañan.
 mundo
 snapshot "" ""
-# 1920 renglones: el archivo queda justo bajo los 64 KB y el mensaje, con sus saltos escapados, pasa el búfer de la
-# tubería; el lector espera antes de leer, como un anfitrión ocupado.
-{ echo 'select 1'; for _ in $(seq 1920); do echo '-- relleno para acercarse al tope'; done; echo '-- FIN-DE-LA-CONSULTA'; } > "$TMP/cerca.sql"
-huella="$(shasum -a 256 "$TMP/cerca.sql" | cut -d' ' -f1)"
-payload="$(CMD="$PUERTA $PROD --file $TMP/cerca.sql --sha256 $huella" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
-printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" 2>"$TMP/err" | { sleep 1; cat; } > "$TMP/out"
-rc="${PIPESTATUS[1]}"
-if [ "$rc" = 0 ] && node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).systemMessage; process.exit(/FIN-DE-LA-CONSULTA/.test(m)?0:1)' "$TMP/out" 2>/dev/null; then
-  ok "6.2 T35 · la consulta de un archivo de $(wc -c < "$TMP/cerca.sql" | tr -d ' ') bytes llega entera por una tubería"
-else
-  no "6.2 T35 · el mensaje llegó cortado o no salió (rc=$rc, $(wc -c < "$TMP/out" | tr -d ' ') bytes) — err: $(head -c 120 "$TMP/err")"
-fi
+mkdir -p "$TMP/q"
+printf 'select top 3 Id,\n       Nombre\nfrom Articulos\n' > "$TMP/q/consulta.sql"
+H66="$(shasum -a 256 "$TMP/q/consulta.sql" | cut -d' ' -f1)"
+mkdir -p "$TMP/q/con espacio"; cp "$TMP/q/consulta.sql" "$TMP/q/con espacio/c.sql"
+
+# T1 · toda invocación con --file sale 2, sin systemMessage; las formas raras, sin comando listo
+t1(){ local etiqueta="$1" cmd="$2" listo="$3" rc; rc="$(corre "$cmd")"
+  if [ "$rc" = 2 ] && ! grep -q systemMessage "$TMP/out" && grep -q "no muestra el contenido de un archivo" "$TMP/err" \
+     && { [ "$listo" = si ] && grep -qF "$PUERTA $PROD 'select top 3" "$TMP/err" || { [ "$listo" = no ] && ! grep -qF "$PUERTA $PROD '" "$TMP/err"; }; }; then
+    ok "6.6 T1 Guard_File_AlwaysBlocks · $etiqueta"
+  else no "6.6 T1 Guard_File_AlwaysBlocks · $etiqueta (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi; }
+t1 "huella buena" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66" si
+t1 "huella vieja" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 0000000000000000000000000000000000000000000000000000000000000000" si
+t1 "sin huella" "$PUERTA $PROD --file $TMP/q/consulta.sql" si
+t1 "con --max-filas" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66 --max-filas 7" si
+grep -qF -- "--max-filas 7" "$TMP/err" && ok "6.6 T1 Guard_File_AlwaysBlocks · el comando listo conserva --max-filas" || no "6.6 T1 · el comando listo perdió --max-filas — err: $(head -c 200 "$TMP/err")"
+t1 "ruta con espacios" "$PUERTA $PROD --file '$TMP/q/con espacio/c.sql' --sha256 $H66" no
+t1 "--file antes del host" "$PUERTA --file $TMP/q/consulta.sql $PROD" no
+t1 "--file=<ruta>" "$PUERTA $PROD --file=$TMP/q/consulta.sql" no
+
+# T2 · el comando listo, con lo que el shell interpreta, es canónico para el freno
+printf "select 'a''b' as x,\t\"c\" -- \$(id) \\\\ # ; | fin\nfrom T where n = 'it''s'\n-- tercera\n" > "$TMP/q/raro.sql"
+rc="$(corre "$PUERTA $PROD --file $TMP/q/raro.sql")"
+LISTO="$(grep -F "$PUERTA $PROD '" "$TMP/err" | head -1 | sed 's/^ *//')"
+# el comando puede ocupar varios renglones del mensaje: se toma desde su primera línea hasta la comilla de cierre
+LISTO="$(node -e '
+  const t = require("fs").readFileSync(process.argv[1], "utf8"); const i = t.indexOf(process.argv[2]);
+  if (i < 0) process.exit(1);
+  const resto = t.slice(i); const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)(?: --max-filas \d+)?/.exec(resto);
+  if (!m) process.exit(1); process.stdout.write(m[0]);' "$TMP/err" "$PUERTA $PROD '")" || LISTO=""
+if [ "$rc" = 2 ] && [ -n "$LISTO" ]; then
+  rc2="$(corre "$LISTO")"
+  if [ "$rc2" = 0 ]; then ok "6.6 T2 Guard_File_GivesInlineCommand · el comando listo pasa al cuadro como forma canónica"
+  else no "6.6 T2 Guard_File_GivesInlineCommand · el comando listo no es canónico (rc=$rc2) — err: $(head -c 200 "$TMP/err")"; fi
+  printf '%s' "$LISTO" > "$TMP/q/listo.cmd"
+else no "6.6 T2 Guard_File_GivesInlineCommand · no trajo el comando (rc=$rc) — err: $(head -c 300 "$TMP/err")"; fi
+
+# T4 · el archivo que no pasa las reglas no trae comando: el motivo, y nunca el contenido del protegido
+mkdir -p "$TMP/q/carpeta"; ln -sf "$TMP/q/consulta.sql" "$TMP/q/enlace.sql"
+head -c 66560 /dev/zero | tr '\0' 'a' > "$TMP/q/grande.sql"
+printf 'select \377\376 1\n' > "$TMP/q/binario.sql"
+printf 'select 1 \033[2J\n' > "$TMP/q/ansi.sql"
+printf 'select 1 \302\233 x\n' > "$TMP/q/c1.sql"
+printf 'select 1 \342\200\213 x\n' > "$TMP/q/invisible.sql"
+for _ in $(seq 21); do echo 'select 1'; done > "$TMP/q/largo.sql"
+: > "$TMP/q/vacio.sql"
+printf -- '-i /tmp/x.sql\n' > "$TMP/q/guion.sql"
+printf 'select 1\nGO\nselect 2\n' > "$TMP/q/go.sql"
+printf 'select 1\n:r /etc/passwd\n' > "$TMP/q/r.sql"
+printf '{"servers":[{"host":"SECRETO-DEL-CATALOGO"}]}' > "$TMP/q/production.json"
+# lo que no es una consulta no se lee para el asistente: otra extensión, o una carpeta oculta en el camino
+printf 'SECRETO-DEL-CATALOGO\n' > "$TMP/q/credenciales"; printf 'SECRETO-DEL-CATALOGO\n' > "$TMP/q/clave.txt"
+mkdir -p "$TMP/q/.oculta"; printf 'select 1 -- SECRETO-DEL-CATALOGO\n' > "$TMP/q/.oculta/c.sql"
+for caso in "carpeta:archivo común" "enlace.sql:enlace" "grande.sql:mide" "binario.sql:UTF-8" "ansi.sql:control" "c1.sql:control" \
+            "invisible.sql:invisible" "largo.sql:partila" "vacio.sql:vacía" "guion.sql:«-»" "go.sql:GO" "r.sql:comando del cliente" \
+            "production.json:protegido" "credenciales:.sql" "clave.txt:.sql" ".oculta/c.sql:carpeta oculta"; do
+  f="${caso%%:*}"; motivo="${caso#*:}"
+  rc="$(corre "$PUERTA $PROD --file $TMP/q/$f --sha256 $H66")"
+  if [ "$rc" = 2 ] && grep -qF -- "$motivo" "$TMP/err" && ! grep -qF "$PUERTA $PROD '" "$TMP/err" && ! grep -q "SECRETO-DEL-CATALOGO" "$TMP/err"; then
+    ok "6.6 T4 Guard_File_BadFile_NoCommandWithReason · $f"
+  else no "6.6 T4 Guard_File_BadFile_NoCommandWithReason · $f (rc=$rc, esperaba «${motivo}») — err: $(head -c 200 "$TMP/err")"; fi
+done
+
+# T5 · justo 20 renglones de pantalla, contando el prefijo, pasa al cuadro (también con tabuladores)
+veinte="$(for i in $(seq 19); do echo "select $i"; done)"
+pasa "6.6 T5 Guard_Inline_UnderCap_Asks · 20 renglones" "$PUERTA $PROD '$veinte
+fin'"
+# el primer renglón lleva el prefijo de la puerta (62 columnas): ahí 8 tabuladores ocuparían dos
+tabs="$(for i in $(seq 19); do printf 'a\t\t\t\t\t\t\t\tb\n'; done)"   # 8 tabuladores: 65 columnas, un renglón cada uno
+pasa "6.6 T5 Guard_Inline_UnderCap_Asks · 20 renglones con tabuladores" "$PUERTA $PROD 'select 1
+${tabs}fin'"
+
+# T6 · más de 20 renglones de pantalla sale 2 y dice cuántos
+sobre(){ local etiqueta="$1" cmd="$2" rc; rc="$(corre "$cmd")"
+  if [ "$rc" = 2 ] && grep -qE "ocupa [0-9]+" "$TMP/err" && grep -q "partí la consulta" "$TMP/err"; then ok "6.6 T6 Guard_Inline_OverCap_Blocks · $etiqueta"
+  else no "6.6 T6 Guard_Inline_OverCap_Blocks · $etiqueta (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi; }
+sobre "21 renglones" "$PUERTA $PROD '$veinte
+x
+fin'"
+sobre "un renglón de 1600 caracteres" "$PUERTA $PROD 'select $(head -c 1600 /dev/zero | tr '\0' 'a')'"
+sobre "20 renglones con 10 tabuladores" "$PUERTA $PROD '$(for i in $(seq 20); do printf 'a\t\t\t\t\t\t\t\t\t\tb\n'; done)'"
+sobre "20 renglones de 40 anchos" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '漢'; done; echo; done)'"
+# los anchos que no están en las tablas de siempre (Tangut, kana suplementaria) también cuentan 2
+sobre "20 renglones de 40 Tangut" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '\360\227\200\200'; done; echo; done)'"
+sobre "20 renglones de 40 kana suplementaria" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf '\360\233\200\200'; done; echo; done)'"
+# un ancho que no entra en la última columna baja entero al renglón siguiente: ese hueco también cuenta
+diecisiete="$(for i in $(seq 16); do echo "select $i"; done)"
+corte="$(head -c 75 /dev/zero | tr '\0' 'a')漢$(head -c 75 /dev/zero | tr '\0' 'a')"
+sobre "un ancho en la última columna" "$PUERTA $PROD 'select 1
+$diecisiete
+$corte
+fin'"
+# lo que el shell ignora al final también llega al cuadro: se cuenta
+cola="$(for i in $(seq 40); do echo; done; echo x)"; cola="${cola%x}"
+sobre "20 renglones y 40 saltos al final" "$PUERTA $PROD '$veinte
+fin'$cola"
+sobre "20 renglones de 40 letras con acento combinante" "$PUERTA $PROD '$(for i in $(seq 20); do for j in $(seq 40); do printf 'e\314\201'; done; echo; done)'"
+
+# T7 · caracteres que engañan en la consulta en línea: sale 2 con el motivo, sin el carácter en el mensaje
+for raro in '\033[2J' '\r' '\302\233' '\302\255' '\330\234' '\342\200\256' '\342\200\213' '\357\270\217' '\363\240\201\201'; do
+  c="$(printf "$raro")"
+  rc="$(corre "$PUERTA $PROD 'select 1 ${c} x'")"
+  if [ "$rc" = 2 ] && grep -qE "control|invisible" "$TMP/err" && ! grep -qF "$c" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro"
+  else no "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+done
+# los de formato que también se ven como nada (Mongolia, jemer, U+2065, U+206A-206F, relleno de media anchura, objeto)
+for raro in '\341\240\213' '\341\236\264' '\342\201\245' '\342\201\252' '\357\276\240' '\357\277\274'; do
+  c="$(printf "$raro")"
+  rc="$(corre "$PUERTA $PROD 'select 1 ${c} x'")"
+  if [ "$rc" = 2 ] && grep -q "invisible" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro"
+  else no "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+done
+# en las puntas del comando, fuera de las comillas: el freno no las recorta antes de mirar
+for raro in '\r' '\013' '\014' '\357\273\277' '\342\200\250'; do
+  rc="$(corre "$PUERTA $PROD 'select 1'$(printf "$raro")")"
+  if [ "$rc" = 2 ] && grep -qE "control|invisible" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro al final del comando"
+  else no "6.6 T7 Guard_Inline_DeceivingChars_Block · $raro al final del comando (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+done
+# un sustituto suelto: UTF-16 roto en el JSON, que no llega como carácter de reemplazo
+payload="$(CMD="$PUERTA $PROD 'select 1 @@ x'" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}).replace("@@","\\ud800"))')"
+printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >"$TMP/out" 2>"$TMP/err"; rc=$?
+if [ "$rc" = 2 ] && grep -q "UTF-8" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · sustituto suelto"
+else no "6.6 T7 Guard_Inline_DeceivingChars_Block · sustituto suelto (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+# UTF-8 inválido: llega al freno como un carácter de reemplazo (los bytes malos no sobreviven al JSON)
+rc="$(corre "$PUERTA $PROD 'select 1 $(printf '\357\277\275') x'")"
+if [ "$rc" = 2 ] && grep -q "UTF-8" "$TMP/err"; then ok "6.6 T7 Guard_Inline_DeceivingChars_Block · UTF-8 inválido"
+else no "6.6 T7 Guard_Inline_DeceivingChars_Block · UTF-8 inválido (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+
+# T8 · las otras formas no cambian; Codex sigue cortado, con o sin --file
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --reclasificar" "$PUERTA --reclasificar $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --verificar" "$PUERTA --verificar"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --cargar-clave" "$PUERTA --cargar-clave $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --open-firewall" "$PUERTA --open-firewall $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --close-firewall" "$PUERTA --close-firewall $PROD"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --locks" "$PUERTA --locks"
+pasa "6.6 T8 Guard_OtherForms_Unchanged · --delete-group" "$PUERTA --delete-group acme-prueba-rg"
+codex(){ local cmd="$1" payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",turn_id:"t1",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
+  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >"$TMP/out" 2>"$TMP/err"; echo $?; }
+for cmd in "$PUERTA $PROD 'select 1'" "$PUERTA $PROD --file $TMP/q/consulta.sql --sha256 $H66" "$PUERTA $PROD --file $TMP/q/consulta.sql" "$PUERTA --file $TMP/q/consulta.sql $PROD"; do
+  rc="$(codex "$cmd")"
+  if [ "$rc" = 2 ]; then ok "6.6 T8 Guard_OtherForms_Unchanged · Codex sale 2 («${cmd#* * }»)"
+  else no "6.6 T8 Guard_OtherForms_Unchanged · Codex no se cortó (rc=$rc)"; fi
+done
+
+# T13 · la guía no ofrece --file y dice el tope
+if [ -f "$GUIA" ] && ! grep -qF -- "--file" "$GUIA" && grep -q "20 renglones" "$GUIA"; then ok "6.6 T13 Guide_NoFileForm · la guía no ofrece --file y dice el tope"
+else no "6.6 T13 Guide_NoFileForm · la guía todavía ofrece --file o no dice el tope de 20 renglones"; fi
 
 # ── T32 · la guía declara la cortesía de la regla de firewall ─────────────────────────
 if [ -f "$GUIA" ] && grep -qi "cortes" "$GUIA" && grep -qi "firewall" "$GUIA"; then
