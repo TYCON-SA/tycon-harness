@@ -2600,20 +2600,46 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     const grupos = companionLib.groupByRepo(files, repo);
     const propios = grupos.filter((g) => g.propio).flatMap((g) => g.files.map((x) => x.original));
     const hermanos = grupos.filter((g) => !g.propio);
+    // El diff no se mide contra HEAD: lo que la story ya commiteó también lo revisa el revisor, y lo sin commitear viene
+    // encima. La base es el commit en que arrancó la corrida (`baseSha` del marcador, si es de este repo y ancestro de
+    // HEAD, y de esta story); si no, la bifurcación con la rama principal; sin ninguna de las dos, HEAD. El encabezado
+    // dice cuál fue y por qué se descartó cada una de las anteriores.
+    const { resolver, bifurcacion } = require('./lib/coverage-base.js');
+    let marcadorDeLaCorrida = null;
+    let sinMarcador = null;
+    try {
+      const lm = leerMarcadorDeLaCorrida();
+      marcadorDeLaCorrida = lm.marker;
+      sinMarcador = lm.error;
+    } catch (e) { sinMarcador = e.message; }
+    const deEstaStory = story ? deriveStoryId(story) : null;
+    if (marcadorDeLaCorrida && marcadorDeLaCorrida.baseSha && deEstaStory && String(marcadorDeLaCorrida.storyId || '') !== String(deEstaStory)) {
+      sinMarcador = `el marcador es de la story ${marcadorDeLaCorrida.storyId || '(sin id)'}, no de la ${deEstaStory}`;
+      marcadorDeLaCorrida = null;
+    }
+    const baseDe = (cwd) => {
+      const r = resolver({ repo: cwd, env: {}, marker: marcadorDeLaCorrida, markerError: sinMarcador });
+      if (r.source === 'marcador') return { ref: r.ref, nombre: `el arranque de la corrida (${r.ref.slice(0, 12)})` };
+      const porQue = [...(r.descartadas || []).map((d) => d.motivo), ...(sinMarcador && !(r.descartadas || []).length ? [sinMarcador] : [])];
+      const b = bifurcacion(cwd);
+      if (b.sha) return { ref: b.sha, nombre: `la bifurcación con ${b.rama}${porQue.length ? ` (sin el arranque de la corrida: ${porQue.join('; ')})` : ''}` };
+      return { ref: 'HEAD', nombre: `HEAD — respaldo: lo ya commiteado en la rama NO está en este diff (${[...porQue, b.motivo].join('; ')})` };
+    };
     const gitDiff = (cwd, rutas) => {
-      const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', 'HEAD', '--', ...rutas], {
+      const base = baseDe(cwd);
+      const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', base.ref, '--', ...rutas], {
         encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
       });
       if (r.error || r.status !== 0) {
         const motivo = String((r.stderr || '').split('\n').find((l) => l.trim()) || (r.error && r.error.message) || `salió ${r.status}`).trim();
-        return { text: '', error: motivo };
+        return { text: '', error: motivo, base: base.nombre };
       }
-      return { text: r.stdout || '', error: null };
+      return { text: r.stdout || '', error: null, base: base.nombre };
     };
     // Con `--files` vacío el alcance es el working tree entero del repo (como siempre). Con `--files` sólo del
-    // hermano, el repo no aporta diff: un `git diff HEAD --` sin rutas traería todo el working tree, que nadie pidió.
+    // hermano, el repo no aporta diff: un `git diff <base> --` sin rutas traería todo el working tree, que nadie pidió.
     const principal = files.length && !propios.length
-      ? { text: '', error: null, sinArchivos: true }
+      ? { text: '', error: null, sinArchivos: true, base: 'HEAD' }
       : gitDiff(repo, propios.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f))));
     const rawDiff = principal.text;
 
@@ -2646,7 +2672,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       if (!g.root) return { etiqueta: null, root: null, error: 'no están dentro de ningún repo git', files: g.files, diff: '' };
       const d = gitDiff(g.root, g.files.map((x) => x.abs));
       diffChunks.push(...trocear(d.text, etiqueta).map((c) => ({ ...c, grupo: i })));
-      return { etiqueta, root: g.root, error: d.error, files: g.files, diff: '' };
+      return { etiqueta, root: g.root, error: d.error, files: g.files, diff: '', base: d.base };
     });
     const truncatedFiles = [];   // recortados a PER_FILE_CAP
     const droppedFiles = [];     // no pegados por cap global
@@ -2740,7 +2766,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // Una sección por hermano, después del diff del repo.
     const bloquesHermanos = seccionesHermanos.flatMap((s) => [
       '',
-      s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff HEAD en ${s.root})` : '## Archivos fuera de todo repo git',
+      s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff contra ${s.base} en ${s.root})` : '## Archivos fuera de todo repo git',
       '',
       '```diff',
       s.diff || (!s.root ? `(${s.files.map((x) => x.original).join(', ')}: ${s.error})`
@@ -2781,7 +2807,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '',
       digest || '(sin story)',
       '',
-      '## Diff unificado (git diff HEAD)',
+      `## Diff unificado (git diff contra ${principal.base})`,
       '',
       '```diff',
       diff || '(vacío)',
