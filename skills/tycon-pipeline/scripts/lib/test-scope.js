@@ -367,17 +367,50 @@ function changedFiles(repoDir) {
 }
 
 /**
- * Una story que vive en otro repo nombra los archivos de éste con su carpeta delante (`FrontEnd/shared/a.ts`): son
- * los de este repo, sin ese prefijo, y los de otros repos no votan acá. Si ninguno lo trae, quedan como están. En la
- * story del propio repo un `FrontEnd/` es una carpeta de verdad, y no se toca.
+ * Una story que vive en otro repo nombra los archivos de éste con su carpeta delante (`FrontEnd/shared/a.ts`, o
+ * `../FrontEnd/shared/a.ts`): son los de este repo, sin ese prefijo. La carpeta es la del checkout o la del repo
+ * principal, si éste es una copia de trabajo con otro nombre. Los que no lo traen siguen votando acá, aunque la story los
+ * borre; sólo se descartan los que empiezan con un repo hermano (un repo de git al lado de éste) que este repo no
+ * tiene ni en el disco ni en su último commit. Si ninguno trae el prefijo, quedan como están. En la story del propio repo un `FrontEnd/` es una carpeta de
+ * verdad, y no se toca.
  */
 function delRepo(files, repoDir, storyPath) {
-  const rel = path.relative(path.resolve(repoDir), storyPath);
+  const raiz = path.resolve(repoDir);
+  const rel = path.relative(raiz, storyPath);
   if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return files;
-  const prefijo = `${path.basename(path.resolve(repoDir)).toLowerCase()}/`;
-  const propios = files.map((f) => f.replace(/\\/g, '/').replace(/^\.\//, ''))
-    .filter((f) => f.toLowerCase().startsWith(prefijo)).map((f) => f.slice(prefijo.length));
-  return propios.length ? propios : files;
+  const nombres = new Set([path.basename(raiz).toLowerCase()]);
+  const vecinos = new Set([path.dirname(raiz)]);
+  try {
+    const comun = require('child_process').execFileSync('git', ['-C', raiz, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      encoding: 'utf8', timeout: 20000, stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (path.basename(comun) === '.git') {
+      nombres.add(path.basename(path.dirname(comun)).toLowerCase());
+      vecinos.add(path.dirname(path.dirname(comun)));
+    }
+  } catch (_e) { /* sin git: sólo la carpeta del checkout */ }
+  const sinPrefijo = (f) => {
+    const partes = f.split('/');
+    const i = partes[0] === '..' ? 1 : 0;
+    return partes.length > i + 1 && nombres.has(partes[i].toLowerCase()) ? partes.slice(i + 1).join('/') : null;
+  };
+  const limpias = files.map((f) => f.replace(/\\/g, '/').replace(/^\.\//, ''));
+  const propios = limpias.map(sinPrefijo).filter(Boolean);
+  if (!propios.length) return files;
+  // lo del último commit también es de acá: la story pudo borrarlo
+  let delCommit = new Set();
+  try {
+    delCommit = new Set(require('child_process').execFileSync('git', ['-C', raiz, 'ls-tree', '--name-only', 'HEAD'], {
+      encoding: 'utf8', timeout: 20000, stdio: ['pipe', 'pipe', 'pipe'],
+    }).split(/\r?\n/).filter(Boolean).map((n) => n.toLowerCase()));
+  } catch (_e) { /* sin git: sólo el disco */ }
+  const deOtroRepo = (f) => {
+    const primera = f.split('/')[0];
+    if (fs.existsSync(path.join(raiz, primera)) || delCommit.has(primera.toLowerCase())) return false;
+    return [...vecinos].some((v) => fs.existsSync(path.join(v, primera, '.git')));
+  };
+  const deAca = limpias.filter((f) => sinPrefijo(f) === null && !f.startsWith('../') && !deOtroRepo(f));
+  return [...propios, ...deAca];
 }
 
 /**
