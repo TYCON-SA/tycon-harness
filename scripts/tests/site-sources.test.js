@@ -832,3 +832,96 @@ test('UltimaFoto_PatronConCaracteresDeExpresion_SeLeeTalCual', () => {
   const r = sources.ultimaFoto(dir, 'a+b-*.json');
   assert.deepStrictEqual(r.doc, { ok: 1 });
 });
+
+// ── La memoria del espejo: el disco montado se abre sólo cuando el espejo cambió, o en la verificación ──────────────
+/**
+ * Fuentes sin red sobre un disco del sitio (`dataDir`): la bajada (`res` de cada pasada, en orden), el resumen, la
+ * lectura del espejo y las fichas son de mentira y cuentan sus llamadas. La bajada guarda las opciones que recibió; una
+ * pasada `'falla'` se cae a mitad, sin contar lo que escribió.
+ */
+function fuentesConMemoria({ raiz, dataDir, pasadas, ahora, version = 'v1' }) {
+  const cuenta = { bajadas: [], resumir: 0, leerEspejo: 0, fichas: 0 };
+  let i = 0;
+  const nube = { PROVEEDORES_DE_BUZON: ['azure-blob'], bajarBuzon: async (o) => { cuenta.bajadas.push(o); const p = pasadas[Math.min(i, pasadas.length - 1)]; i += 1; if (p === 'falla') throw new Error('el hilo se quedó sin memoria'); return { codigo: 0, res: { estado: 'bajado', completo: true, sin_tiempo: 0, ...p } }; } };
+  const v = validarConfiguracion(H.envBase({ SITE_MAILBOX_SAS: H.sas() }));
+  const f = crearFuentes({
+    cfg: { ...v.cfg, operationsRepo: path.join(raiz, 'ops.git'), dataDir }, dataDir, log: () => {}, nubes: [nube], ahora, version,
+    resumir: async () => { cuenta.resumir += 1; return { resumidas: 0, fallidas: 0 }; },
+    leerEspejo: async () => { cuenta.leerEspejo += 1; return { corridas: { estado: 'medido', codigo: null, fecha: null, lista: [{ maquina: 'maq-a', carpeta: 'maq-a', inicio: '2026-10-15T10:00:00Z', producto: 'p' }] }, informados: { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {} } } }; },
+    calcularFichasEn: async () => { cuenta.fichas += 1; return { lista: [], ocultas: 0 }; },
+  });
+  return { f, cuenta };
+}
+const repoConHilos = (raiz) => repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs', threads: true } } } }), path.join(raiz, 'trabajo'));
+
+// rojo si: un refresco sin nada nuevo en el buzón vuelve a resumir, a leer el espejo o a calcular las fichas; uno que
+// trae algo no las rehace; o la bajada confía en su índice en la primera pasada.
+test('Memoria_SinCambiosNoReleeElEspejo_YConCambiosSi — el espejo se abre sólo cuando cambió', async () => {
+  const raiz = tmp('site-mem-repo-');
+  const dataDir = tmp('site-mem-');
+  try {
+    repoConHilos(raiz);
+    const { f, cuenta } = fuentesConMemoria({ raiz, dataDir, pasadas: [{ bajados: 3 }, { bajados: 0 }, { bajados: 0, podados: 1 }], ahora: () => T0 });
+    await f.refrescar();
+    assert.deepStrictEqual([cuenta.resumir, cuenta.leerEspejo, cuenta.fichas], [1, 1, 1], 'la primera pasada lee todo');
+    assert.strictEqual(cuenta.bajadas[0].confiarIndice, false, 'la primera pasada verifica el disco entero');
+    const g1 = f.espejoGeneracion();
+    await f.refrescar();
+    assert.deepStrictEqual([cuenta.resumir, cuenta.leerEspejo, cuenta.fichas], [1, 1, 1], 'nada nuevo: nada se relee');
+    assert.strictEqual(cuenta.bajadas[1].confiarIndice, true, 'entre verificaciones, la bajada confía en su índice');
+    assert.strictEqual(f.espejoGeneracion(), g1, 'misma generación');
+    assert.strictEqual(f.modelo().corridas.estado, 'medido', 'las corridas siguen medidas con lo recordado');
+    assert.strictEqual(f.modelo().corridas.lista.length, 1);
+    await f.refrescar();
+    assert.ok(f.espejoGeneracion() > g1, 'lo podado cambia el espejo: otra generación');
+    assert.deepStrictEqual([cuenta.resumir, cuenta.leerEspejo, cuenta.fichas], [2, 2, 2], 'con un cambio, se relee');
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// rojo si: al despertar (otras fuentes sobre el mismo disco) se relee un espejo que no cambió; con otra versión del
+// sitio se usa lo recordado por la vieja; o pasadas las seis horas no se vuelve a mirar el disco entero.
+test('Memoria_DespertarOtraVersionYVerificacion — lo recordado sobrevive al despertar, no a otra versión ni a las seis horas', async () => {
+  const raiz = tmp('site-mem2-repo-');
+  const dataDir = tmp('site-mem2-');
+  try {
+    repoConHilos(raiz);
+    const a = fuentesConMemoria({ raiz, dataDir, pasadas: [{ bajados: 2 }], ahora: () => T0 });
+    await a.f.refrescar();
+    const g = a.f.espejoGeneracion();
+    // despertar una hora después, la misma versión, nada nuevo en el buzón
+    const b = fuentesConMemoria({ raiz, dataDir, pasadas: [{ bajados: 0 }], ahora: () => T0 + HORA });
+    assert.strictEqual(b.f.espejoGeneracion(), g, 'la generación se recuerda');
+    await b.f.refrescar();
+    assert.deepStrictEqual([b.cuenta.resumir, b.cuenta.leerEspejo], [0, 0], 'al despertar no se relee');
+    assert.strictEqual(b.cuenta.bajadas[0].confiarIndice, true);
+    assert.strictEqual(b.f.modelo().corridas.estado, 'medido');
+    // seis horas después de la verificación: la bajada mira el disco entero y lo leído se relee
+    const c = fuentesConMemoria({ raiz, dataDir, pasadas: [{ bajados: 0 }], ahora: () => T0 + 6 * HORA });
+    await c.f.refrescar();
+    assert.strictEqual(c.cuenta.bajadas[0].confiarIndice, false, 'a las seis horas se verifica');
+    assert.deepStrictEqual([c.cuenta.resumir, c.cuenta.leerEspejo], [1, 1], 'la verificación relee');
+    // otra versión del sitio: todo se relee, con una generación nueva
+    const d = fuentesConMemoria({ raiz, dataDir, pasadas: [{ bajados: 0 }], ahora: () => T0 + 7 * HORA, version: 'v2' });
+    assert.notStrictEqual(d.f.espejoGeneracion(), g, 'otra versión: otra generación');
+    await d.f.refrescar();
+    assert.deepStrictEqual([d.cuenta.resumir, d.cuenta.leerEspejo, d.cuenta.fichas], [1, 1, 1], 'otra versión relee todo');
+    assert.strictEqual(d.cuenta.bajadas[0].confiarIndice, false);
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// rojo si: una bajada que se cae a mitad (pudo escribir y podar sin contarlo) deja la misma generación, o la pasada
+// siguiente confía en el índice en vez de mirar el disco entero.
+test('Memoria_BajadaQueSeCae_CambiaElEspejoYLaSiguienteVerifica', async () => {
+  const raiz = tmp('site-mem3-repo-');
+  const dataDir = tmp('site-mem3-');
+  try {
+    repoConHilos(raiz);
+    const { f, cuenta } = fuentesConMemoria({ raiz, dataDir, pasadas: [{ bajados: 1 }, 'falla', { bajados: 0 }], ahora: () => T0 });
+    await f.refrescar();
+    const g = f.espejoGeneracion();
+    await f.refrescar();
+    assert.ok(f.espejoGeneracion() > g, 'la bajada caída da el espejo por cambiado');
+    await f.refrescar();
+    assert.strictEqual(cuenta.bajadas[2].confiarIndice, false, 'la siguiente verifica el disco entero');
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
+});

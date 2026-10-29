@@ -78,6 +78,11 @@ const PLAZO_COPIA_MS = 24 * 3600000;
 const REFRESCO_POR_DEFECTO = 15;
 const EDAD_MAXIMA_SIN_DECLARAR = 2;
 const ARCHIVO_ESTADO = 'configuracion-estado.json';
+// lo que el sitio recuerda del espejo del buzón entre refrescos y entre despertares (ver «La memoria del espejo»)
+const ARCHIVO_MEMORIA = 'espejo-memoria.json';
+const FORMATO_MEMORIA = 1;
+// cada cuánto la bajada vuelve a mirar el disco entero aunque nada haya cambiado
+const VERIFICAR_CADA_MS = 6 * 3600000;
 // cuánto bajan de conversaciones (y cambios de git) una pasada del buzón, antes de resumirlas y borrarlas del disco: el
 // disco del sitio guarda a lo sumo esto más los resúmenes y los volcados
 const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
@@ -551,7 +556,7 @@ function estadoDeGit(stderr) {
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, topeConversacionBytes = TOPE_CONVERSACION_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
-  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {} }) {
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {}, version = null }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -591,6 +596,39 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (Number.isFinite(g.fallaDesde)) { st.fallaDesde = g.fallaDesde; st.fallaMotivo = texto(g.fallaMotivo, 2000); st.fallaRutas = texto(g.fallaRutas, 500); }
     if (conCopia && Number.isFinite(g.copiaHora)) st.copiaHora = g.copiaHora;
   } else if (guardado.codigo !== 'sin_foto') log('el estado de la configuración guardado en SITE_DATA_DIR no se pudo leer: se arranca sin último bueno');
+
+  // ── La memoria del espejo ──────────────────────────────────────────────────────────────────────────────────────
+  // El espejo vive en el disco montado, donde cada apertura de archivo se cobra, y SÓLO lo cambia este sitio: la bajada
+  // (lo que trae y lo que poda) y el resumen de las conversaciones. `generacion` sube cuando alguno de los dos cambió algo;
+  // con la misma generación, lo leído del espejo (las corridas, lo informado, las fichas) sigue valiendo y no se vuelve
+  // a abrir. Un cambio real en el buzón llega por el listado, que es por la red y se pide en cada refresco: si trae
+  // algo, la bajada lo escribe y la generación sube. Cada `VERIFICAR_CADA_MS` la bajada mira el disco entero (sin
+  // confiar en su índice) y lo leído se relee. Vive en SITE_DATA_DIR: un despertar no vuelve a leer todo. Otra versión
+  // del sitio puede leer distinto: la memoria de otra versión se descarta entera.
+  const rutaMemoria = path.join(dataDir, ARCHIVO_MEMORIA);
+  // una memoria nueva arranca su generación en la hora: nunca repite la de una memoria anterior que se perdió
+  const memoria = { formato: FORMATO_MEMORIA, version, generacion: Math.floor(ahora()), verificado: null, resumido: null, lectura: null, fichas: null };
+  const memoriaGuardada = leerJsonDe(rutaMemoria);
+  if (memoriaGuardada.doc && isObject(memoriaGuardada.doc) && memoriaGuardada.doc.formato === FORMATO_MEMORIA && memoriaGuardada.doc.version === version && Number.isInteger(memoriaGuardada.doc.generacion)) {
+    const g = memoriaGuardada.doc;
+    memoria.generacion = g.generacion;
+    memoria.verificado = Number.isFinite(g.verificado) ? g.verificado : null;
+    memoria.resumido = Number.isInteger(g.resumido) ? g.resumido : null;
+    memoria.lectura = isObject(g.lectura) && g.lectura.generacion === g.generacion && isObject(g.lectura.leido) ? g.lectura : null;
+    memoria.fichas = isObject(g.fichas) && typeof g.fichas.clave === 'string' ? g.fichas : null;
+  } else if (memoriaGuardada.doc && isObject(memoriaGuardada.doc) && memoriaGuardada.doc.version !== version) log('la memoria del espejo es de otra versión del sitio: se relee el espejo');
+  else if (memoriaGuardada.codigo !== 'sin_foto') log('la memoria del espejo guardada en SITE_DATA_DIR no se pudo usar: se relee el espejo');
+
+  function guardarMemoria() {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      const tmp = `${rutaMemoria}.tmp-${process.pid}`;
+      fs.writeFileSync(tmp, `${JSON.stringify(memoria)}\n`, { mode: 0o600 });
+      fs.renameSync(tmp, rutaMemoria);
+    } catch (e) { log(`no se pudo guardar la memoria del espejo en SITE_DATA_DIR (${e.code || e.message}): el próximo despertar relee el espejo`); }
+  }
+  /** El espejo cambió: lo leído de él ya no vale. */
+  function espejoCambio() { memoria.generacion += 1; memoria.lectura = null; memoria.fichas = null; }
 
   function guardarEstado() {
     try { escribirAtomico(rutaEstado, `${JSON.stringify({ ultimoBueno: st.ultimoBueno, fallaDesde: st.fallaDesde, fallaMotivo: st.fallaMotivo, fallaRutas: st.fallaRutas, ...(conCopia ? { copiaHora: st.copiaHora } : {}) })}\n`); }
@@ -766,6 +804,9 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // un disco del sitio (SITE_DATA_DIR): pesan casi un giga, y sin disco se volverían a bajar enteros en cada despertar
     const conHilos = mb.threads === true && Boolean(cfg.dataDir);
     if (mb.threads === true && !cfg.dataDir) log('site.mailbox.threads está en true pero SITE_DATA_DIR no está puesta: no se bajan las conversaciones (sin un disco del sitio se bajarían enteras en cada despertar)');
+    // la verificación entera: la primera vez y cada VERIFICAR_CADA_MS; entre una y otra, la bajada confía en su índice
+    const verificar = !Number.isFinite(memoria.verificado) || t - memoria.verificado >= VERIFICAR_CADA_MS;
+    const generacionAntes = memoria.generacion;
     let r;
     try {
       // con conversaciones: por tandas de `topeConversacionesBytes`, cada una resumida y borrada antes de la siguiente (el
@@ -773,17 +814,31 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
       // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
       const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
-        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) };
+        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, confiarIndice: !verificar, log: (l) => log(`buzón: ${l}`) };
       r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
-    if (conHilos) {
+    // lo que trajo, lo que podó y los resúmenes de conversaciones grandes cambian el espejo (también en una pasada a medias)
+    const res = r.res || {};
+    if ((res.bajados || 0) + (res.podados || 0) + (res.hilos_grandes || 0) > 0) espejoCambio();
+    // una bajada que falló pudo escribir y podar antes de caerse sin contarlo: se da el espejo por cambiado y la
+    // pasada siguiente verifica entera, sin confiar en el índice
+    if (r.codigo !== 0) { espejoCambio(); memoria.verificado = null; }
+    // el resumen recorre el espejo entero: sólo si cambió desde el último resumen entero, o en la verificación
+    if (conHilos && (verificar || memoria.resumido !== memoria.generacion)) {
       // pase lo que pase con la bajada: lo que llegó a bajar se resume y se borra (un disco lleno no se espera a la pasada entera)
       try {
         const s = await resumir({ buzon: dirBuzon });
         if (s.resumidas) log(`buzón: ${s.resumidas} ejecución(es) resumida(s); sus conversaciones ya no ocupan el disco`);
         if (s.fallidas) log(`buzón: ${s.fallidas} ejecución(es) no se pudieron resumir y siguen en el disco: ${(s.motivos || []).join(', ')}`);
-      } catch (e) { log(`buzón: no se pudieron resumir las conversaciones bajadas (${e.code || e.message}): siguen en el disco`); }
+        if (s.resumidas) espejoCambio();
+        if (!s.fallidas) memoria.resumido = memoria.generacion;
+      } catch (e) {
+        log(`buzón: no se pudieron resumir las conversaciones bajadas (${e.code || e.message}): siguen en el disco`);
+        // pudo resumir y borrar una parte antes de caerse
+        espejoCambio();
+      }
     }
+    if (verificar && r.codigo === 0 && res.completo === true) memoria.verificado = t;
     const est = r.res.estado;
     // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
     // la pestaña Corridas arma con una bajada entera, la misma que fija lo informado por las máquinas; con una a medias,
@@ -804,12 +859,19 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       st.hilos = conHilos;
       // lo informado se lee del mismo espejo, entero: con una bajada a medias queda el de la última entera. Las dos
       // lecturas recorren el espejo en el disco montado: en un hilo aparte, para que el principal siga contestando
+      // con la misma generación y fuera de la verificación, lo leído la última vez sigue valiendo
       let leido;
-      try { leido = await leerEspejo({ buzon: dirBuzon }); }
-      catch (e) {
-        const motivo = `la lectura del espejo falló (${e.code || e.message})`;
-        leido = { corridas: { ...noMedida('ilegible'), _motivo: motivo }, informados: { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {}, no_medido: motivo }, no_medido: motivo } };
+      if (!verificar && memoria.lectura && memoria.lectura.generacion === memoria.generacion) leido = JSON.parse(JSON.stringify(memoria.lectura.leido));
+      else {
+        try { leido = await leerEspejo({ buzon: dirBuzon }); }
+        catch (e) {
+          const motivo = `la lectura del espejo falló (${e.code || e.message})`;
+          leido = { corridas: { ...noMedida('ilegible'), _motivo: motivo }, informados: { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {}, no_medido: motivo }, no_medido: motivo } };
+        }
+        // sólo una lectura buena se recuerda: una que falló se vuelve a intentar en el próximo refresco
+        memoria.lectura = leido.corridas && leido.corridas.estado === 'medido' && !leido.informados.no_medido ? { generacion: memoria.generacion, leido: JSON.parse(JSON.stringify(leido)) } : null;
       }
+      guardarMemoria();
       const c = leido.corridas;
       st.personas.informados = leido.informados;
       if (st.personas.informados.no_medido) log(`lo informado por las máquinas no se pudo leer: ${st.personas.informados.no_medido}`);
@@ -817,6 +879,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       delete c._motivo;
       return { ...c, fecha: diaUtc(t) };
     }
+    if (memoria.generacion !== generacionAntes || verificar) guardarMemoria();
     const codigo = ESTADO_BUZON[est] || 'sin_red';
     log(`el buzón no se leyó entero (${est}${r.res.sin_tiempo ? `, ${r.res.sin_tiempo} sin tiempo` : ''}): ${r.res.motivo || 'sin motivo'}`);
     st.fallas.buzon = st.fallas.buzon || { desde: t, estado: codigo };
@@ -842,13 +905,29 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
    */
   async function calcularFichas(corridas, t) {
     const ocultas = st.ultimoBueno && st.ultimoBueno.site && Array.isArray(st.ultimoBueno.site.hidden_cards) ? st.ultimoBueno.site.hidden_cards : [];
+    const buzonLeido = Boolean(corridas && corridas.estado === 'medido');
+    // las fichas recorren el espejo: con la misma generación, la misma foto de operaciones, las mismas ocultas y la misma
+    // hora (las fichas cuentan edades), valen las de la última vez
+    const foto = await fotoDeOperaciones();
+    const clave = foto ? JSON.stringify([memoria.generacion, foto, ocultas, buzonLeido, new Date(t).toISOString().slice(0, 13)]) : null;
+    if (clave && memoria.fichas && memoria.fichas.clave === clave) return memoria.fichas.valor;
     try {
-      return await calcularFichasEn({ clon, dirBuzon, buzonLeido: Boolean(corridas && corridas.estado === 'medido'), ocultas, ahora: t, log: (l) => log(`fichas: ${l}`) });
+      const valor = await calcularFichasEn({ clon, dirBuzon, buzonLeido, ocultas, ahora: t, log: (l) => log(`fichas: ${l}`) });
+      if (clave) { memoria.fichas = { clave, valor }; guardarMemoria(); }
+      return valor;
     } catch (e) {
       log(`las fichas del tablero no se pudieron calcular (${(e && e.code) || (e && e.name) || 'error'}): ${st.fichas ? 'queda la última lista buena' : 'salen no medidas'}`);
       // la última lista buena no se presenta como de hoy: cada ficha lleva la fecha de su fuente y la pantalla la muestra
       return st.fichas || require('./tabs/cards.js').fichasNoMedidas(ocultas);
     }
+  }
+
+  /** Qué foto de operaciones se lee: el commit (y la huella) de la copia, o el commit del clon. null = no se sabe. */
+  async function fotoDeOperaciones() {
+    if (conCopia) return st.copia && st.copia.indice ? `${st.copia.indice.commit}:${st.copia.indice.huella}` : null;
+    const r = await correrGit(['-C', clon, 'rev-parse', 'HEAD'], null, undefined);
+    const commit = String(r.stdout || '').trim();
+    return r.status === 0 && /^[0-9a-f]{40,64}$/.test(commit) ? commit : null;
   }
 
   /** Lo que se puede armar sin el repo (la primera lectura sin clon): todo «no medido» con el estado. */
@@ -978,6 +1057,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // conversaciones que esa pasada dejó para la siguiente
     // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
     buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0 }),
+    /** La generación del espejo (ver «La memoria del espejo»): igual número, mismo contenido. La pestaña Corridas no lo recorre para saberlo. */
+    espejoGeneracion: () => memoria.generacion,
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
     proximoRefrescoMs,
     /** `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
