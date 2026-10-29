@@ -115,6 +115,10 @@ lineas() { printf '%s' "$1" | grep -c . ; }
 copias_de() { harness rollback --list 2>/dev/null | grep -c " · $1 · " ; }
 visibles() { sk ls-files -t | grep -v '^S ' | cut -c3- | grep '/' | cut -d/ -f1 | LC_ALL=C sort -u | tr '\n' ' '; }   # las carpetas de la raíz que el clon muestra
 export TYCON_UPDATE_APPLY=auto   # la política del equipo, sin perfil en el laboratorio
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide harness-update.test.sh (T39L).
+export TYCON_STARTUP_DETACH=0
 con_llave() { TYCON_UPDATE_SKILLS_SOURCE=unified "$@"; }
 
 # la máquina del equipo DESPUÉS del corte y con la llave apagada: dos clones, el del arnés ya en la unión

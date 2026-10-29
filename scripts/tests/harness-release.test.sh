@@ -28,6 +28,10 @@ source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 # la política de la máquina de juguete: aplicar sin preguntar (`update --yes` sin terminal exige `auto`); lo de `ask`
 # —la pregunta, el aviso de «disponible»— lo miden otras suites y vale igual para la versión bajada
 export TYCON_UPDATE_APPLY=auto
+# El arranque corre en el lugar: desprendido, con la máquina cargada (la puerta de pruebas corre varias suites a la vez)
+# pasa sus 20 s de espera, sale 0 y sigue aparte con el candado tomado, y el comando siguiente de la prueba sale 3
+# «otra sesión está actualizando». El arranque desprendido con su candado lo mide harness-update.test.sh (T39L).
+export TYCON_STARTUP_DETACH=0
 # el respaldo busca un Node de nvm cuando el del PATH no alcanza: que no encuentre el de la máquina que corre la suite
 export NVM_DIR="${TMPDIR:-/tmp}/harness-release-without-nvm"; unset NVM_HOME
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
