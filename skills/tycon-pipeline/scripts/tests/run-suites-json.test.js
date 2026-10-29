@@ -1158,6 +1158,6 @@ test('TestGate_OldResultFolders_Pruned — al arrancar, la puerta borra sus carp
   for (const d of [nueva, otroNombre, ajena]) assert.ok(fs.existsSync(d), `${path.basename(d)} queda`);
   assert.ok(fs.existsSync(path.join(afuera, 'f')), 'un enlace no se sigue');
   const gate = fs.readFileSync(path.join(__dirname, '..', 'test-gate.sh'), 'utf8');
-  const llamada = gate.indexOf('lib/old-gate-results.js" /tmp');
-  assert.ok(llamada >= 0 && llamada < gate.indexOf('mktemp -d /tmp/test-gate-XXXXXX'), 'la puerta limpia el mismo temporal donde crea su carpeta, antes de crearla');
+  const llamada = gate.indexOf('lib/old-gate-results.js" "$TG_TMP"');
+  assert.ok(llamada >= 0 && llamada < gate.indexOf('mktemp -d "$TG_TMP/test-gate-XXXXXX"'), 'la puerta limpia el mismo temporal donde crea su carpeta, antes de crearla');
 });
