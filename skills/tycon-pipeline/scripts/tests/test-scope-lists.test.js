@@ -61,19 +61,6 @@ test('TestScope_BrakesReadOnlyTheUsualForm — los frenos leen sólo la forma de
   assert.deepEqual(testScope.parseDeclaredFiles(conNota, { allForms: true }), ['mcp/src/c.ts']);
 });
 
-test('TestScope_JvmRoot_VotesForScalaGroovyKts — un proyecto Maven o Gradle en la raíz es dueño de su Scala, Groovy y .kts', () => {
-  // 🔴 rojo si: la raíz Maven/Gradle no vota por esas terminaciones → nadie vota y la puerta de pruebas frena con 4.
-  for (const runner of ['maven', 'gradle']) {
-    const r = testScope.deduceScope({ files: ['src/main/scala/A.scala', 'src/test/groovy/BSpec.groovy', 'buildSrc/x.kts'],
-      candidates: [{ dir: '.', runner }, { dir: 'web', runner: 'vitest' }] });
-    assert.equal(r.scope, '.', `${runner}: ${JSON.stringify(r)}`);
-    assert.equal(r.votes['.'], 3);
-  }
-  // con otra herramienta en la raíz, esas terminaciones no votan
-  const otro = testScope.deduceScope({ files: ['src/A.scala'], candidates: [{ dir: '.', runner: 'pytest' }, { dir: 'web', runner: 'vitest' }] });
-  assert.notEqual(otro.scope, '.');
-});
-
 test('TestScope_Cli_UsesAllForms — el comando que llama la puerta de pruebas lee la lista en línea', () => {
   // 🔴 rojo si: el comando no pide todas las formas → los archivos a crear salen vacíos.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-scope-lists-'));

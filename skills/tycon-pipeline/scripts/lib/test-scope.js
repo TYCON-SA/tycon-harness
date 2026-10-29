@@ -289,10 +289,7 @@ function deduceScope({ files, candidates }) {
   // la raíz es de una herramienta de lib/test-runners.js (no .NET ni node, que siguen con su regla propia)
   const raiz = cands.find((c) => c.dir === '.');
   const raizGenerica = Boolean(raiz && !['dotnet', 'vitest', 'node-test', 'jest', 'suites-json'].includes(raiz.runner));
-  // Un proyecto Maven o Gradle también es dueño de su Scala, Groovy y Kotlin de guion. Sólo para este voto: sumarlas a
-  // la lista general haría que el portón ATDD pida una prueba antes de tocar un `build.gradle.kts`.
-  const jvm = raiz && ['maven', 'gradle'].includes(raiz.runner) ? ['.scala', '.groovy', '.kts'] : [];
-  const esCodigo = (f) => require('./code-files.js').isSource(f) || jvm.includes(path.extname(f).toLowerCase());
+  const esCodigo = (f) => require('./code-files.js').isSource(f);
   // Territorio: los dirs que el .sln de un candidato declara como suyos —
   // ver discoverCandidates. Prefijo más largo primero, igual que los candidatos. Un candidato
   // explícito SIEMPRE gana sobre un territorio (el `owner` de arriba se evalúa antes).
