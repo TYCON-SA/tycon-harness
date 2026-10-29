@@ -29,6 +29,9 @@
 #         mal formadas; y lo que el escenario del núcleo hace con la copia servida y con el estado («T26
 #         (laboratorio)»): leer la versión estampada, servir una versión nueva y soltar el sello de la última mirada,
 #         sobre copias y un estado de juguete.
+#   T36 · la portada SIN git, en Linux: el bloque `install:unattended`, tal cual salvo la dirección de raw, contra un
+#         GitHub de juguete dentro del contenedor, con un PATH sin git y una sola herramienta (sólo Claude Code, sólo
+#         Codex): instala la versión publicada, enchufa sólo esa herramienta y `doctor` sin rojos (scenarios/release.sh).
 #   T37 y T39 (`NewMachine_OneClone_OneSource_ThreeLinks_ThirdPartyOffline` y
 #         `Docs_InstallAndOnboarding_SayOneRepo`) · la máquina NUEVA del equipo con el repo unido:
 #         el contenedor del núcleo, SIN RED, con un clon del repo unido interno (no pasa por el
@@ -39,12 +42,12 @@
 #         («T39 (papeles)»): el bloque de INSTALL.md se lee y es un `git clone` y `harness.js install`.
 #
 # CÓMO ESTÁ ARMADA: acá (en el anfitrión) se arman las copias, las imágenes y los contenedores; las verificaciones
-#   corren ADENTRO, en `clean-machine/scenarios/*.sh` (core, folders, no-network, npx, missing-tool, union, unified), que
+#   corren ADENTRO, en `clean-machine/scenarios/*.sh` (core, folders, no-network, npx, release, missing-tool, union, unified), que
 #   imprimen las líneas con `clean-machine/lib.sh`; esta prueba las pasa a su salida y las cuenta. Los dos `Dockerfile`
 #   son la lista de requisitos de la portada hecha ejecutable. Pasos (cada uno bajo tope, con su nombre en el rojo):
 #   docker-probe, index-core, index-bizuit, export-core, export-union, build-core, build-src-core, build-nopython,
 #   build-nonode, build-bizuit, build-src-union, clone-unified, build-src-unified, y una corrida por escenario: run-core,
-#   run-folders, run-no-network, run-nopython, run-nonode, run-union, run-unified.
+#   run-folders, run-no-network, run-npx, run-release-claude, run-release-codex, run-nopython, run-nonode, run-union, run-unified.
 #
 # USO:  bash scripts/tests/clean-machine.test.sh [--keep] [--only unified]          (otro argumento: salida 2)
 #   --keep   no mide: deja un contenedor vivo, instalado y con el repo de ejemplo, para la corrida con modelo
@@ -188,6 +191,16 @@ cover_url() {
   [[ "${BASH_REMATCH[1]}" =~ ${URL_RE} ]] || return 1
   echo "${BASH_REMATCH[0]}"
 }
+# release_repo <bloque install:unattended> → «org/repo» de la dirección de raw con que el bloque baja get-harness.sh. 1 si
+# no está o no tiene esa forma (en el repo interno la portada trae {{public-org}}: se lee de la copia exportada)
+RAW_HOST="https://raw.githubusercontent.com"
+RELEASE_RE='^curl [^[:space:]]+ -o get-harness\.sh https://raw\.githubusercontent\.com/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/main/scripts/setup/get-harness\.sh$'
+release_repo() {
+  local line
+  line="$(grep -m 1 -E '^curl ' "$1")" || return 1
+  [[ "${line}" =~ ${RELEASE_RE} ]] || return 1
+  echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+}
 # read_cover <portada> <carpeta> → deja install-core.sh, install-bizuit.sh, install-unattended.sh, requirements.txt y public-url.txt en la
 # carpeta. Si algo no se puede leer, dice qué (stdout) y devuelve 1.
 read_cover() {
@@ -201,6 +214,10 @@ read_cover() {
   # (no hay bloque install:bizuit: los paquetes llegan con el perfil del equipo)
   # la misma línea más --yes, para una máquina sin terminal (la corre folders.sh)
   cover_block "${readme}" install:clone-unattended bash > "${out}/install-unattended.sh" || { echo 'falta el bloque <!-- install:clone-unattended --> con su valla ```bash y su cierre'; return 1; }
+  # la portada SIN git, desatendida: la corre release.sh contra el «GitHub» de juguete del contenedor. Del primer
+  # renglón sale el repo que ese GitHub tiene que servir (org y nombre de la dirección de raw)
+  cover_block "${readme}" install:unattended bash > "${out}/install-release.sh" || { echo 'falta el bloque <!-- install:unattended --> con su valla ```bash y su cierre'; return 1; }
+  release_repo "${out}/install-release.sh" > "${out}/release-repo.txt" || { echo "el bloque install:unattended no baja el guion de ${RAW_HOST}/<org>/<repo>/main/scripts/setup/get-harness.sh: $(head -n 1 "${out}/install-release.sh")"; return 1; }
   why="$(req_check_file "${out}/requirements.txt" "${KNOWN_PACKS}")" || { echo "requisitos: $(echo "${why}" | tr '\n' ';')"; return 1; }
   url="$(cover_url "${out}/install-core.sh")" || { echo "el bloque install:clone no trae, después de «git clone», la URL completa y resuelta del repo público: $(head -n 1 "${out}/install-core.sh")"; return 1; }
   printf '%s\n' "${url}" > "${out}/public-url.txt"
@@ -684,6 +701,9 @@ main() {
   run_scenario run-no-network 600 "${IMG_CORE}" no no-network no-network
   # el instalador del paquete de npm (T46), sin red: el GitHub de juguete corre adentro
   run_scenario run-npx 600 "${IMG_CORE}" no npx npx
+  # la portada sin git (T36, la parte Linux), con una sola herramienta: el GitHub de juguete corre adentro
+  run_scenario run-release-claude 600 "${IMG_CORE}" no release release-claude claude
+  run_scenario run-release-codex 600 "${IMG_CORE}" no release release-codex codex
 
   # las dos derivadas del caso anterior: la del núcleo con la copia, menos una herramienta (un Dockerfile en línea, no un archivo)
   printf 'ARG BASE\nFROM ${BASE}\nUSER root\nRUN rm -f /usr/bin/python3*\nUSER node\n' > "${T}/nopython.Dockerfile"
