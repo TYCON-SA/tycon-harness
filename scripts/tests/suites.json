@@ -854,6 +854,12 @@
       "requiere": []
     },
     {
+      "__nota": "Un guion en archivo con una historia entre sus argumentos que escribe sin nombrar su destino (modo en una variable, en el lugar, un programa que lanza) cuenta como escritura de la historia; el que sólo la lee pasa.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-interpreter-args.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []
