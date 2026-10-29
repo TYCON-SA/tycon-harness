@@ -1253,7 +1253,9 @@ the site" → **Invite someone** (*Invitar a alguien*): their email and their pr
 them to the list as a dev, with their products and a mark (`site.invitations`: who invited and when). Once the request
 is approved and the site reads the new list, the site sends them the Microsoft invitation, which brings them to the
 site. The invitation goes out in the site's first cycle after the request is approved; if nobody is using the site, it
-may wait until someone signs in. Next to their email you see the status: "invitation sent, has not signed in yet", "accepted" (signed in),
+may wait until someone signs in. Microsoft does not resend the email to an address invited shortly before (measured:
+a second invitation to the same address, 36 minutes later, was created with no email). In that case whoever runs the
+directory can get the invitation's redeem link and pass it on. Next to their email you see the status: "invitation sent, has not signed in yet", "accepted" (signed in),
 "waiting for tomorrow's limit" or "could not be sent" with the reason; a failure is retried on the next refresh (if
 Microsoft never answered, the person may get a second email). Up to 10
 invitations a day (`SITE_INVITATIONS_PER_DAY`); the rest wait for the next day.
