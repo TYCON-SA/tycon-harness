@@ -28,11 +28,15 @@ const EXIMEN = ['critical-waiver', 'runtime-waiver', 'escape:force-manual'];
 
 function git(repo, args, env) {
   const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: env ? { ...process.env, ...env } : process.env, maxBuffer: 64 * 1024 * 1024 });
-  return { ok: r.status === 0, out: String(r.stdout || '').trim(), err: String(r.stderr || '').trim() };
+  // `crudo` sin recortar: en `status --porcelain` el primer espacio es parte de la columna del estado
+  return { ok: r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
 
-/** La raíz del repo de git que contiene `p` (un archivo que puede no existir, o una carpeta), o null. */
+/**
+ * La raíz del repo de git que contiene `p` (un archivo que puede no existir, o una carpeta), o null si no está en
+ * ningún repo. Cualquier otro fallo de git tira: no poder preguntar no es «no hay repo».
+ */
 function raizDe(p) {
   let d = path.resolve(String(p));
   for (;;) {
@@ -42,7 +46,9 @@ function raizDe(p) {
     d = arriba;
   }
   const r = git(d, ['rev-parse', '--show-toplevel']);
-  return r.ok && r.out ? real(r.out) : null;
+  if (r.ok && r.out) return real(r.out);
+  if (/not a git repository/i.test(r.err)) return null;
+  throw new Error(`no pude preguntarle a git por ${d} (${r.err || 'sin salida'})`);
 }
 
 /** ¿El repo tiene cambios: algo en `git status`, o commits propios contra su base? */
@@ -59,7 +65,13 @@ function tieneCambios(repo) {
  * cambio hecho por consola entra por el hermano que lo tiene.
  */
 function reposDeLaCorrida({ marker = {}, hermanos = [] } = {}) {
-  const fijos = [marker.storyPath, marker.repoPath].filter(Boolean).map(raizDe).filter(Boolean);
+  const fijos = [];
+  for (const p of [marker.storyPath, marker.repoPath].filter(Boolean)) {
+    const r = raizDe(p);
+    if (!r) throw new Error(`${p} no está en un repo de git`);
+    fijos.push(r);
+  }
+  // un evento o un hermano fuera de todo repo (una carpeta temporal) no tiene qué guardar
   const posibles = [
     ...(Array.isArray(marker.fileEvents) ? marker.fileEvents : []).map((e) => e && e.path).filter(Boolean).map(raizDe),
     ...hermanos.map(raizDe),
@@ -108,9 +120,16 @@ function vigente({ saveOk, push = null, repoActual = null } = {}) {
     // el árbol del disco (HEAD más todo lo que no está commiteado): commitear lo mismo no lo cambia, tocar algo sí
     if (ahora.arbol !== h.arbol) return no(`${h.repo}: cambió después del ok: hay que pedir otro ok`);
   }
+  if (repoActual && !push) {
+    let raiz;
+    try { raiz = raizDe(repoActual); } catch (e) { return no(e.message); }
+    if (!raiz) return no(`${repoActual} no está en un repo de git: no sé qué repo guarda`);
+    if (!saveOk.huellas.some((x) => x.repo === raiz)) return no(`${raiz} no está en el ok de guardar`);
+  }
   if (push) {
     if (push.rama === 'main' || push.rama === 'master') return no(`el ok no cubre empujar a ${push.rama}`);
-    const raiz = repoActual ? raizDe(repoActual) : null;
+    let raiz = null;
+    try { raiz = repoActual ? raizDe(repoActual) : null; } catch (e) { return no(e.message); }
     const h = saveOk.huellas.find((x) => x.repo === raiz);
     if (!h) return no(`${repoActual || 'este repo'} no está en el ok de guardar`);
     if (push.rama !== h.rama) return no(`el ok es para la rama ${h.rama}, no para ${push.rama}`);
@@ -139,10 +158,10 @@ function cambiados(repo) {
   return { archivos: [...out] };
 }
 
-/** ¿El texto hace `require` (o `import … from`) literal de uno de los archivos que definen firmas o avisos? */
+/** ¿El texto hace `require` (o `import … from`) literal de uno de los archivos que definen firmas o avisos, con o sin `.js`? */
 function requiereSensible(texto) {
-  const nombres = catalogo().REQUIERE_SENSIBLE.map((n) => n.replace(/[.]/g, '\\.')).join('|');
-  return new RegExp(`(?:require\\s*\\(\\s*|from\\s+)['"\`](?:[^'"\`]*/)?(?:${nombres})['"\`]`, 'i').test(texto);
+  const nombres = catalogo().REQUIERE_SENSIBLE.map((n) => n.replace(/\.js$/, '').replace(/[.]/g, '\\.')).join('|');
+  return new RegExp(`(?:require\\s*\\(\\s*|from\\s+)['"\`](?:[^'"\`]*/)?(?:${nombres})(?:\\.js)?['"\`]`, 'i').test(texto);
 }
 
 /**
@@ -162,7 +181,10 @@ function sensibles({ repos = [] } = {}) {
       const relReal = path.relative(raizReal, real(abs));
       if (es(rel) || (!relReal.startsWith('..') && es(relReal))) { out.push({ repo, archivo: rel, motivo: 'está en la lista de lo sensible' }); continue; }
       let texto = null;
-      try { texto = fs.readFileSync(abs, 'utf8'); } catch (_) { texto = null; }   // borrado o no se lee: sin texto
+      try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) {
+        // borrado: no carga nada; no poder leerlo (permisos, una carpeta, un submódulo) no prueba que no cargue nada
+        if (e.code !== 'ENOENT') { out.push({ repo, archivo: rel, motivo: `no pude leerlo (${e.code || e.message}): no sé qué carga` }); continue; }
+      }
       if (texto && requiereSensible(texto)) out.push({ repo, archivo: rel, motivo: 'carga un archivo de firmas o de avisos' });
     }
   }
@@ -173,16 +195,26 @@ function sensibles({ repos = [] } = {}) {
 
 const ms = (t) => { const n = Date.parse(t); return Number.isFinite(n) ? n : NaN; };
 
-/** La hora del último cambio de código: el último `fileEvent` y los archivos que `git status` ve cambiados. */
+/**
+ * La hora del último cambio de código: el último `fileEvent`, el último commit propio de cada repo y los archivos que
+ * `git status` ve cambiados, uno por uno. Lo que no se puede fechar (un git que falla, un borrado sin commitear) cuenta
+ * como recién cambiado.
+ */
 function ultimoCambio(marker, repos) {
   let max = 0;
   for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) { const t = ms(e && e.ts); if (t > max) max = t; }
   for (const repo of repos) {
-    const st = git(repo, ['status', '--porcelain', '-z']);
-    if (!st.ok) continue;
-    for (const ent of st.out.split('\0').filter(Boolean)) {
-      const rel = ent.slice(3);
-      try { const t = fs.statSync(path.join(repo, rel)).mtimeMs; if (t > max) max = t; } catch (_) { /* borrado */ }
+    // un cambio por consola ya commiteado no deja archivo cambiado: lo fecha su commit
+    const c = git(repo, ['log', '-1', '--format=%ct', `${BASE}..HEAD`]);
+    if (!c.ok) return Infinity;
+    if (c.out && Number(c.out) * 1000 > max) max = Number(c.out) * 1000;
+    const st = git(repo, ['status', '--porcelain', '-z', '--untracked-files=all']);
+    if (!st.ok) return Infinity;
+    const ents = st.crudo.split('\0').filter(Boolean);
+    for (let i = 0; i < ents.length; i++) {
+      const rel = ents[i].slice(3);
+      if (/^[RC]/.test(ents[i])) i++;   // un renombre trae después su ruta de origen, que ya no está en el disco
+      try { const t = fs.statSync(path.join(repo, rel)).mtimeMs; if (t > max) max = t; } catch (_) { return Infinity; }
     }
   }
   return max;

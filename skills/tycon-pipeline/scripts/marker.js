@@ -3001,12 +3001,11 @@ function cmdSetSize(args) {
   process.stdout.write(`size: ${size} (${reason})\n`);
 }
 
-// Los repos hermanos de la corrida (`evidence.companion_repos`): el ok de guardar los mide si tienen cambios.
+// Los repos hermanos de la corrida (`evidence.companion_repos`): el ok de guardar los mide si tienen cambios. No poder
+// leerlos tira: un hermano sin medir no es un hermano sin cambios.
 function hermanosDeLaCorrida(marker) {
-  try {
-    const story = resolveStoryPath(marker.storyPath, marker) || undefined;
-    return require('./lib/companion-repos.js').companionRoots(path.resolve(marker.repoPath || process.cwd()), story);
-  } catch (_) { return []; }
+  const story = resolveStoryPath(marker.storyPath, marker) || undefined;
+  return require('./lib/companion-repos.js').companionRoots(path.resolve(marker.repoPath || process.cwd()), story);
 }
 
 // La carpeta de la ejecución del marcador, o null. No poder calcularla se dice: no es «no hay ejecución».
@@ -4734,25 +4733,21 @@ function cmdApprovePending(argv) {
   process.exit(0);
 }
 
-// Las firmas `-signed` del gates.log para la sesión de la corrida (las últimas 8 MB): el ok por delegación mira si hubo
-// una exención.
+// Las firmas `-signed` del gates.log para la sesión de la corrida: el ok por delegación mira si hubo una exención. El
+// log no se lee a medias: si no se puede leer entero, tira, y el ok por delegación no se da.
 function firmasDeLaSesion(sid) {
   const p = path.join(STATE_DIR, 'gates.log');
-  let texto = '';
-  try {
-    const fd = fs.openSync(p, 'r');
-    try {
-      const tam = fs.fstatSync(fd).size;
-      const largo = Math.min(tam, 8 * 1024 * 1024);
-      const b = Buffer.alloc(largo);
-      fs.readSync(fd, b, 0, largo, tam - largo);
-      texto = b.toString('utf8');
-    } finally { fs.closeSync(fd); }
-  } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  // sin el registro no se sabe si hubo exenciones: tira, como un registro grande o un renglón de firma que no se lee
+  // se lee entero: el registro de una máquina ya ronda los 6 MB y nada lo rota; el tope sólo frena uno desmedido
+  const tam = fs.statSync(p).size;
+  if (tam > 128 * 1024 * 1024) throw new Error(`${p} pasa de 128 MB: no lo leo entero, y una exención vieja quedaría afuera`);
+  const texto = fs.readFileSync(p, 'utf8');
   const out = [];
   for (const l of texto.split('\n')) {
     if (!l.includes('-signed')) continue;
-    try { const j = JSON.parse(l); if (j && /-signed$/.test(String(j.name)) && j.destino === sid) out.push(j); } catch (_) { /* un renglón cortado */ }
+    let j;
+    try { j = JSON.parse(l); } catch (_) { throw new Error(`${p} tiene un renglón de firma que no se lee: podría ser una exención`); }
+    if (j && /-signed$/.test(String(j.name)) && j.destino === sid) out.push(j);
   }
   return out;
 }
@@ -4771,7 +4766,11 @@ function cmdApproveSave(argv) {
   const m = readMarker();
   if (!m) { console.error(`marker.js approve-save: la sesión ${SID} no tiene una ejecución abierta: el ok de guardar es de una corrida.`); process.exit(2); }
   const so = require('./lib/save-ok.js');
-  const repos = so.reposDeLaCorrida({ marker: m, hermanos: hermanosDeLaCorrida(m) });
+  let repos;
+  try { repos = so.reposDeLaCorrida({ marker: m, hermanos: hermanosDeLaCorrida(m) }); } catch (e) {
+    console.error(`🔒 marker.js approve-save: no pude saber qué repos guarda la corrida (${e.message}): sin eso no hay ok de guardar.`);
+    process.exit(2);
+  }
   let previo = null;
   let ok = null;
   const antes = (via) => {

@@ -132,6 +132,10 @@ test('ApproveSave_Ventana_EscribeHuellas (T3) @story-8.143 @ac-2', (t) => {
   // el árbol trae el archivo nuevo: es el árbol del commit que guardaría todo
   sh(a, 'add', '-A');
   assert.strictEqual(ha.arbol, sh(a, 'write-tree'));
+  // la story o el código fuera de todo repo: no se sabe qué guardar, y no se firma a medias
+  const fuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-fuera-')));
+  t.after(() => fs.rmSync(fuera, { recursive: true, force: true }));
+  assert.throws(() => SO.reposDeLaCorrida({ marker: { ...marker, repoPath: fuera } }), /no está en un repo/);
 });
 
 test('SaveCheck_Vigente_Commiteado_Cambiado (T4) @story-8.143 @ac-3', (t) => {
@@ -146,6 +150,11 @@ test('SaveCheck_Vigente_Commiteado_Cambiado (T4) @story-8.143 @ac-3', (t) => {
   assert.strictEqual(conPush.ok, true, conPush.motivo);
   assert.strictEqual(SO.vigente({ saveOk, push: { remoto: 'origin', rama: 'main' }, repoActual: a }).ok, false, 'a main no');
   assert.strictEqual(SO.vigente({ saveOk, push: { remoto: 'origin', rama: 'otra' }, repoActual: a }).ok, false, 'a otra rama no');
+  const ajeno = repo(t);
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: ajeno }).ok, false, 'desde un repo que el ok no mide, tampoco sin push');
+  const sinRepo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-sin-repo-')));
+  t.after(() => fs.rmSync(sinRepo, { recursive: true, force: true }));
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: sinRepo }).ok, false, 'desde fuera de todo repo, tampoco');
   escribir(a, 'LEEME.md', 'después del ok\n');
   const cambiado = SO.vigente({ saveOk });
   assert.strictEqual(cambiado.ok, false);
@@ -201,9 +210,18 @@ test('Delegada_NoLimpia_Sale2 (T6) @story-8.143 @ac-4', (t) => {
     ['el pase abandonado', corridaLimpia([a], { adversarialSkip: { abandonado: true, runId: 'r1', at: DESPUES } }), /pase/],
     ['tests manual-forced', corridaLimpia([a], { checksProvenance: { tests: 'manual-forced' } }), /test-gate/],
   ];
+  // un cambio que ningún fileEvent nombra, hecho después de las pruebas: lo fecha el disco
+  const porConsola = repo(t);
+  fs.writeFileSync(path.join(porConsola, 'LEEME.md'), 'por consola, después\n');
+  casos.push(['un cambio por consola después de las pruebas', corridaLimpia([porConsola], { checksAt: { tests: ANTES } }), /pruebas/]);
+  // y uno ya commiteado, que no deja archivo cambiado: lo fecha su commit (la hora de ahora, después de las pruebas)
+  const commiteado = repo(t);
+  escribir(commiteado, 'LEEME.md', 'commiteado por consola\n');
+  sh(commiteado, 'commit', '-qam', 'por consola');
+  casos.push(['un commit por consola después de las pruebas', corridaLimpia([commiteado]), /pruebas/]);
   for (const [nombre, m, re] of casos) {
     const orden = [];
-    const r = porDelegacion(m, { repos: [a], orden });
+    const r = porDelegacion(m, { repos: [m.repoPath], orden });
     assert.strictEqual(r.codigo, 2, nombre);
     assert.match(r.motivo, re, `${nombre}: ${r.motivo}`);
     assert.strictEqual(orden.length, 0, `${nombre}: no avisa`);
@@ -232,7 +250,10 @@ test('Delegada_Sensible_Sale2 (T7) @story-8.143 @ac-5', (t) => {
     ['scripts/lib/OWNER-WINDOW.js', (d) => escribir(d, 'scripts/lib/OWNER-WINDOW.js', 'a\n')],
     ['scripts/lib/signatures.js', (d) => sh(d, 'mv', 'scripts/lib/signatures.js', 'scripts/lib/firmas.js')],
     ['scripts/lib/usa.js', (d) => escribir(d, 'scripts/lib/usa.js', "const s = require('./signatures.js');\n")],
+    ['scripts/lib/usa-sin-ext.js', (d) => escribir(d, 'scripts/lib/usa-sin-ext.js', "const s = require('../lib/notify');\n")],
+    ['scripts/lib/atajo.js', (d) => fs.symlinkSync('signatures.js', path.join(d, 'scripts/lib/atajo.js'))],
     ['team-profile.json', (d) => escribir(d, 'team-profile.json', '{}\n')],
+    ['.claude/settings.managed.json', (d) => escribir(d, '.claude/settings.managed.json', '{}\n')],
   ];
   for (const [archivo, cambiar] of casos) {
     const d = repo(t, base);
