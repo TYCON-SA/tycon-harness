@@ -59,7 +59,7 @@ const CASOS = [
     nombre: 'Gate_PipeToShell_EnvWithDashSlash — un pipe a env con opciones que parecen rutas',
     archivo: 'skills/tycon-pipeline/scripts/on-bash-write-gate.js', ancla: 'const A_UN_SHELL = /',
     armado: `'|env' + ' -/env'.repeat(${REPETICIONES}) + ' !'`,
-    normales: ['x | bash', 'x |& /usr/bin/env -i sudo -E python3', 'x | nohup node', 'x | /bin/sh', 'x | env -S node'],
+    normales: ['x | bash', 'x |& /usr/bin/env -i sudo -E python3', 'x | nohup node', 'x | /bin/sh', 'x | env -S node', 'x | /env bash'],
   },
   {
     nombre: 'Gate_ArgvByIndex_TabsBetween — la lectura de argv por índice con tabuladores entre medio',
@@ -83,7 +83,7 @@ const CASOS = [
     nombre: 'CollisionGuard_GitWrite_DashCDoubleDash — git con -C y guiones repetidos',
     archivo: 'scripts/hooks/session-collision-guard.js', ancla: 'const GIT_ESCRIBE = /',
     armado: `'git' + ' -C --'.repeat(${REPETICIONES}) + ' x'`,
-    normales: ['git commit -m x', 'git -C /tmp/r -c user.name=x commit', 'git --no-pager checkout x', 'git -c core.x=1 merge y', 'git stash pop'],
+    normales: ['git commit -m x', 'git -C /tmp/r -c user.name=x commit', 'git --no-pager checkout x', 'git -c core.x=1 merge y', 'git stash pop', 'git -C - commit'],
   },
   {
     nombre: 'CollisionGuard_GitWrite_DoubleDashDash — git con «-- -» repetido',
