@@ -1004,6 +1004,10 @@
   ],
   "allowed": [
     {
+      "words": ["pythondontwritebytecode"],
+      "reason": "variable de entorno del propio Python (PYTHONDONTWRITEBYTECODE): no se puede renombrar; decidido por el dueño el 2026-10-28"
+    },
+    {
       "words": [
         "abbrev",
         "ac",
