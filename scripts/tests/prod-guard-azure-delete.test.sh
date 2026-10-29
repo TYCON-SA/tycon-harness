@@ -197,7 +197,8 @@ const herramienta = (c) => (/^(Remove|Invoke)-/.test(c) ? 'PowerShell' : 'Bash')
 }
 
 // ── T18: el lanzador y la caída del freno dicen lo mismo ─────────────────────────────────────────────────────────
-// el lanzador, con una raíz sin intérprete, decide sólo con su criterio crudo; la caída del freno, con el suyo
+// el lanzador, con una raíz sin intérprete, decide sólo con su criterio crudo; la caída del freno, con el suyo. Los dos leen
+// el mismo JSON crudo del evento, como en la máquina: ahí un salto de línea o un tabulador llegan escritos (`\n`, `\t`)
 {
   const mal = [];
   const raiz = path.join(TMP, 'raiz-sin-node');
@@ -205,10 +206,11 @@ const herramienta = (c) => (/^(Remove|Invoke)-/.test(c) ? 'PowerShell' : 'Bash')
   mundo('prod');
   const lanzador = (texto) => spawnSync('bash', [SHIM], { input: texto, encoding: 'utf8',
     env: { ...process.env, HOME: CASA, TYCON_PROD_ROOT: raiz } }).status;
-  for (const [lista, rc] of [[FIX.family.block, 2], [FIX.family.pass, 0]]) {
+  const { edges } = FIX.family;
+  for (const [lista, rc] of [[[...FIX.family.block, ...edges.block], 2], [[...FIX.family.pass, ...edges.pass], 0]]) {
     for (const c of lista) {
       const sh = lanzador(payload(c));
-      const js = corre(`{no es json ${c}`).rc;
+      const js = corre(`{no es json ${payload(c)}`).rc;
       if (sh !== rc || js !== rc) mal.push(`${JSON.stringify(c)}: lanzador ${sh}, caída del freno ${js}, esperaba ${rc} en los dos`);
     }
   }
