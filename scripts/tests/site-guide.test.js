@@ -37,7 +37,8 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma «Invitar a alguien» y «El permiso de
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma que una organización puede no pedir el
+// revisor en sus repos de producto, y entonces «Proponer» queda apagado ahí; antes sumaba «Invitar a alguien» y «El permiso de
 // invitar» (el botón, sus estados, revocar, el permiso User.Invite.All con su riesgo, cómo se da y se saca);
 // antes sumaba la regla «todo automático» de la rama de operaciones (la política de Azure DevOps con el voto del autor, lo que se resigna y cómo volver a pedir aprobación); antes sumaba que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
@@ -52,8 +53,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer»; y la
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone.
 const HUELLA_INSTALACION = {
-  es: '098d3645d3efd25ee5e955189fd40c0b0733fd63f5291675ab58ee3d7576e56d',
-  en: 'd756324d881d16071d74eb74e077e374a8fde5bc6a7c28e8e9aa3ec1646de842',
+  es: '56b7d9d4c0a6e0f555fd120d0f7d85119e7d6f3981f3c650a86dd30402ddef00',
+  en: '704f9c72caad1c9fc3d54aaee0f774565f758d2ddbef0d7c065f523be1808265',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
