@@ -698,7 +698,19 @@ function versionadoEnElArbolPropio(real) {
   // un commit que sólo está en este clon y toca el guion no cuenta: lo pudo escribir quien llama. Los que tocan otros
   // archivos no cambian este guion
   const locales = git(['rev-list', '-n1', '--full-history', 'HEAD', '--not', '--remotes', '--', rel]);
-  return locales.status === 0 && locales.stdout.trim() === '';
+  if (locales.status !== 0) return false;
+  if (locales.stdout.trim() === '') return true;
+  // salvo que lo deje igual a la punta de una rama del servidor: el árbol que arma el portón pone el público en un commit
+  // local (lib/private-tree.js) y declara su punta. Igual a una versión vieja no cuenta
+  const relGit = rel.split(path.sep).join('/');
+  if (/[\n\r]/.test(relGit)) return false;
+  const propio = git(['rev-parse', '--verify', '-q', `HEAD:${relGit}`]);
+  const puntas = git(['for-each-ref', '--format=%(objectname)', 'refs/remotes']);
+  if (propio.status !== 0 || puntas.status !== 0) return false;
+  const pedido = puntas.stdout.split('\n').filter(Boolean).map((sha) => `${sha}:${relGit}\n`).join('');
+  if (!pedido) return false;
+  const enPuntas = spawnSync('git', ['-C', arbol, 'cat-file', '--batch-check=%(objectname)'], { encoding: 'utf8', timeout: 3000, env, input: pedido });
+  return enPuntas.status === 0 && enPuntas.stdout.split('\n').includes(propio.stdout.trim());
 }
 
 /** ¿`p` (ya resuelta) cae adentro de la carpeta `dir`, comparadas por su ruta real? */
