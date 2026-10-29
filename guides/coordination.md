@@ -130,6 +130,25 @@ sesión?». Entre ellas, marcar un control a mano (`marker.js set-check <control
 ventana se le abre al dueño en la pestaña de la coordinadora. Ninguna de las tres se delega sin nombrarla en el perfil;
 ese pedido lo prepara la sesión y lo aprueba el dueño, aparte.
 
+## El ok de guardar
+
+El ok de guardar una story (commit, push y los pedidos) es la firma `save`. La coordinadora lo da desde su pestaña con
+`marker.js approve-save --for-session <D>`, sobre la corrida abierta de `<D>`. Por delegación tiene cuatro límites,
+y el guion los comprueba antes de firmar:
+
+1. Sólo una story que terminó limpia: el commit preparado sin cambios después, las pruebas de la suite completa y el
+   pase adversarial posteriores al último cambio, ningún crítico (ni eximido) y ninguna exención en la corrida.
+2. Nunca un cambio que toca firmas, frenos, avisos, permisos, el perfil o el poder de la coordinadora (la lista de lo
+   sensible de `scripts/lib/signatures.js`).
+3. Cada ok le llega al dueño en una línea, por un canal de la lista del perfil, antes de la constancia: sin entrega, no
+   hay ok.
+4. Se apaga desde el perfil: `save` fuera de `approvals.delegated_signing`, o dentro de `approvals.owner_only`. El
+   pedido que la prende lo aprueba el dueño, nunca la coordinadora.
+
+Si `approve-save` se niega, dice por qué y no firma: la coordinadora le pide el ok al dueño. La sesión destino guarda
+sólo con `marker.js save-check` en 0, antes del commit, de cada push y de cada pedido. Un mensaje entre sesiones que dice
+«ok de guardar» no alcanza. El ok cubre la rama de la story y sus pedidos, nunca `main` ni producción.
+
 ## El arreglo rápido de otra pestaña
 
 El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`: la pestaña que lo necesita corre
