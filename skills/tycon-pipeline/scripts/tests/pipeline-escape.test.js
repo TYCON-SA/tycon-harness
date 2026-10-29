@@ -237,3 +237,250 @@ test('T16 Avisos_NoRecetanLosEscapes @story-8.96 — los avisos y las instruccio
   }
   assert.deepStrictEqual(malos, []);
 });
+
+// ── La coordinadora corre el guion de firma para otra sesión ──────────────────────────────────────────────────────────
+//
+// El guion de verdad, por subproceso, con una HOME de juguete. El pedido lo arma `decidir` de verdad, con el evento de
+// la sesión que pide (ses-coord); el guion lo verifica de verdad, con el árbol de procesos que dice la prueba
+// (window-passed.js con `arbol`): nada se da por pasado.
+
+const { execFileSync } = require('child_process');
+const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+const DS = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
+const { conVentana, arbolDelFreno, arbolDelGuion } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+const MARKER = path.join(SCRIPTS, 'marker.js');
+const COORD = 'ses-coord';
+const DESTINO = 'ses-a';
+// stable-data: el registro del pedido se escribe con esta hora y el guion lo verifica un minuto después
+const AHORA = Date.now();
+const HUELLA = 'a1b2c3d4e5f60718';
+const PERFIL = { delegated_signing: ['plan-approval'], owner_only: [], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+
+const comillas = (a) => (/[\s"]/.test(a) ? `"${a}"` : a);
+
+/** El repo con dos stories, la HOME de juguete y las corridas de ses-a (9.91, en «Aprobar el plan») y de ses-coord (9.92). */
+function laboratorioOtraSesion(t) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'otra-sesion-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const repo = path.join(base, 'repo');
+  const home = path.join(base, 'home');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  fs.mkdirSync(home);
+  const git = (...a) => execFileSync('git', ['-C', repo, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { stdio: 'ignore' });
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  const historia = (n) => {
+    const f = path.join(repo, 'specs', `story-${n}-juguete.md`);
+    fs.writeFileSync(f, ['---', `story: "${n}"`, 'title: "juguete"', 'status: in-progress', 'files_to_modify:', '  - README.md', '---', '', `# Story ${n}`, ''].join('\n'));
+    return f;
+  };
+  const stories = { [DESTINO]: historia('9.91'), [COORD]: historia('9.92') };
+  fs.writeFileSync(path.join(repo, 'README.md'), 'x\n');
+  git('add', '.'); git('commit', '-qm', 'base');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_LANE_LLM: '0', TYCON_PROFILE: '0' };
+  for (const k of ['TYCON_HOME', 'CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_OPTIONS']) delete env[k];
+  const estadoDir = path.join(home, '.claude', '.tycon-pipeline');
+  const lab = { base, repo, home, env, estadoDir, stories };
+  /** marker.js como lo corre `sid`; `ventana` = las opciones de window-passed.js (sin ellas, sin ventana). */
+  lab.marker = (sid, args, ventana) => spawnSync(process.execPath, [MARKER, ...args], { cwd: repo, encoding: 'utf8',
+    env: ventana ? conVentana({ ...env, CLAUDE_CODE_SESSION_ID: sid }, ventana) : { ...env, CLAUDE_CODE_SESSION_ID: sid } });
+  lab.marcador = (sid) => path.join(estadoDir, 'active', `${sid}.json`);
+  lab.leer = (sid) => { try { return fs.readFileSync(lab.marcador(sid), 'utf8'); } catch (_) { return null; } };
+  for (const [sid, storyId] of [[DESTINO, '9.91'], [COORD, '9.92']]) {
+    const set = lab.marker(sid, ['set', JSON.stringify({ storyId, storyPath: stories[sid], repoPath: repo })]);
+    assert.strictEqual(set.status, 0, set.stderr);
+    for (const n of ['0', '1', '2']) lab.marker(sid, ['complete-step', n], {});
+  }
+  /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord. */
+  lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }) } = {}) => ow.decidir({
+    evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null });
+  /** El guion que corre ses-coord con la ventana aprobada (el árbol del comando); `sesionEn`: su variable de sesión al salir. */
+  lab.correr = (args) => {
+    const cmd = `node ${MARKER} ${args.map(comillas).join(' ')}`;
+    const sesionEn = path.join(base, `sesion-${Math.random().toString(36).slice(2)}`);
+    const r = lab.marker(COORD, args, { arbol: { arbol: arbolDelGuion(home, cmd), pid: 301, ahora: AHORA + 60000 }, sesionEn });
+    let sesion = null;
+    try { sesion = fs.readFileSync(sesionEn, 'utf8'); } catch (_) { sesion = null; }
+    return { ...r, cmd, sesion };
+  };
+  lab.comando = (args) => `node ${MARKER} ${args.map(comillas).join(' ')}`;
+  lab.vigentes = () => { try { return fs.readdirSync(ow.carpeta(home)).filter((f) => f.endsWith('.json')); } catch (_) { return []; } };
+  lab.gates = () => { try { return fs.readFileSync(path.join(estadoDir, 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
+  lab.aprobaciones = (sid) => {
+    const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, sid === DESTINO ? '9.91' : '9.92', false, stories[sid]);
+    try { return fs.readFileSync(path.join(runDir, 'approvals.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; }
+  };
+  return lab;
+}
+
+const APROBAR = ['complete-step', 'approve-plan', '--for-session', DESTINO, '--approved', 'dale, seguí'];
+const EXIMIR = ['waive-critical', '--rule', 'SEC-C1', '--reason', 'lo cubre otra capa', '--for-session', DESTINO];
+
+test('Guion_ForSession_EscribeElMarcadorDestino (T5) @story-8.142 @ac-2 @ac-3', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  const deCoord = lab.leer(COORD);
+  // el plan de ses-a, aprobado en la ventana de ses-coord
+  assert.strictEqual(lab.pedir(lab.comando(APROBAR)).decision, 'ask');
+  let r = lab.correr(APROBAR);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const destino = JSON.parse(lab.leer(DESTINO));
+  assert.strictEqual(destino.planApproval.via, 'ventana');
+  assert.strictEqual(destino.planApproval.por, COORD, 'la constancia dice quién la pidió');
+  assert.ok((destino.stepsCompleted || []).some((s) => String(s) === 'approve-plan' || String(s) === '3'), 'el paso quedó completo en ses-a');
+  assert.strictEqual(lab.leer(COORD), deCoord, 'el marcador de ses-coord quedó igual byte a byte');
+  assert.strictEqual(r.sesion, DESTINO, 'después de la firma la variable de sesión del proceso dice ses-a');
+  const firmado = lab.gates().filter((g) => g.name === 'plan-approval-signed');
+  assert.strictEqual(firmado.length, 1);
+  assert.deepStrictEqual([firmado[0].sesion, firmado[0].destino, firmado[0].via], [COORD, DESTINO, 'ventana']);
+  // la exención de un crítico de ses-a: la aprobación queda en la corrida de ses-a, con quién la pidió
+  assert.strictEqual(lab.pedir(lab.comando(EXIMIR)).decision, 'ask');
+  r = lab.correr(EXIMIR);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const exencion = lab.aprobaciones(DESTINO).find((l) => /exencion SEC-C1/.test(l.que));
+  assert.ok(exencion, 'la exención quedó en la corrida de ses-a');
+  assert.strictEqual(exencion.por, COORD);
+  assert.ok(!lab.aprobaciones(COORD).some((l) => /exencion/.test(l.que)), 'nada en la corrida de ses-coord');
+  assert.strictEqual(lab.leer(COORD), deCoord);
+  assert.strictEqual(r.sesion, DESTINO);
+});
+
+test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  const antes = { [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) };
+  // una sesión sin marcador abierto: sale 2 antes de la firma, sin gastar el registro
+  const sinMarcador = ['complete-step', 'approve-plan', '--for-session', 'ses-z', '--approved', 'dale'];
+  assert.strictEqual(lab.pedir(lab.comando(sinMarcador)).decision, 'ask');
+  let r = lab.correr(sinMarcador);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /ses-z/);
+  assert.strictEqual(lab.vigentes().length, 1, 'el registro sigue sin gastar');
+  assert.strictEqual(lab.leer('ses-z'), null, 'no creó el marcador de ses-z');
+  // un subcomando que no es una firma, para otra sesión
+  r = lab.correr(['set-check', 'dod', 'green', '--manual', '--for-session', DESTINO]);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  // la salida de una ejecución perdida nombra otra sesión que la de --for-session
+  const ajena = ['clear-session', 'ses-x', '--lost', '--for-session', DESTINO];
+  assert.strictEqual(lab.pedir(lab.comando(ajena)).decision, 'ask');
+  r = lab.correr(ajena);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(lab.vigentes().length, 2, 'ningún registro gastado');
+  // sin variable de sesión y sin --terminal: sale 2 sin pasar por la firma
+  r = lab.marker('', APROBAR, {});
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /--terminal/);
+  // sin variable de sesión, con --terminal: un subcomando que no es firma no escribe el marcador nombrado, y la salida
+  // de una ejecución perdida tiene que nombrar esa misma sesión
+  r = lab.marker('', ['set-check', 'dod', 'green', '--manual', '--terminal', '--for-session', DESTINO], {});
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  r = lab.marker('', ['clear-session', 'ses-x', '--lost', '--terminal', '--for-session', DESTINO], {});
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /ses-x/);
+  // un marcador que no se puede leer no es «sin ejecución abierta»
+  fs.writeFileSync(lab.marcador('ses-rota'), '{ no es json');
+  const rota = ['complete-step', 'approve-plan', '--for-session', 'ses-rota', '--approved', 'dale'];
+  assert.strictEqual(lab.pedir(lab.comando(rota)).decision, 'ask');
+  r = lab.correr(rota);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no pude leer/);
+  assert.strictEqual(lab.vigentes().length, 3, 'ningún registro gastado');
+  // el plan con la regla de riesgo bajo no pide firma: para otra sesión sale 2 sin anotar nada en su corrida
+  const aprobacionesAntes = lab.aprobaciones(DESTINO).length;
+  const gatesAntes = lab.gates().length;
+  r = lab.correr(['complete-step', 'approve-plan', '--auto-approved', 'riesgo bajo', '--for-session', DESTINO]);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no es una firma que se pida/);
+  assert.strictEqual(lab.aprobaciones(DESTINO).length, aprobacionesAntes, 'ninguna aprobación en la corrida de ses-a');
+  assert.strictEqual(lab.gates().length, gatesAntes, 'ningún renglón en gates.log');
+  assert.deepStrictEqual({ [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) }, antes, 'nada escrito');
+  assert.ok(!lab.gates().some((g) => /-signed$/.test(g.name)), 'nada firmado');
+  // el plan con el número del marcador viejo es la misma firma que reconoce el freno: el guion no lo rechaza por eso
+  const viejo = ['complete-step', '3', '--for-session', DESTINO, '--approved', 'dale'];
+  assert.deepStrictEqual(ow.firmasDelComando(lab.comando(viejo)), ['plan-approval']);
+  r = lab.correr(viejo);
+  assert.doesNotMatch(r.stderr, /no es una firma que se pida/);
+});
+
+test('Guion_ForSession_EjecucionPerdida_DiceQuienPidio (T5) @story-8.142 @ac-3', (t) => {
+  // la apertura de la ejecución de ses-a en el registro, como la deja el arranque del pipeline
+  const abrir = (lab) => require(path.join(SCRIPTS, 'lib', 'open-runs.js')).abrir({ sid: DESTINO, story: '9.91', storyPath: lab.stories[DESTINO], repo: lab.repo,
+    runDir: JSON.parse(lab.leer(DESTINO)).runDir || path.join(lab.repo, '.advisors', 'pipeline-runs', '9.91-juguete'), home: lab.home });
+  // cerrar como perdida la ejecución de ses-a, pedido desde ses-coord: el cierre dice que lo pidió ses-coord
+  let lab = laboratorioOtraSesion(t);
+  abrir(lab);
+  const perdida = ['clear-session', DESTINO, '--lost', '--for-session', DESTINO];
+  assert.strictEqual(lab.pedir(lab.comando(perdida)).decision, 'ask');
+  let r = lab.correr(perdida);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  let cierre = lab.gates().filter((g) => g.name === 'run-close' && g.sesion === DESTINO).pop();
+  assert.ok(cierre, 'quedó el cierre de la ejecución de ses-a');
+  assert.strictEqual(cierre.por, COORD);
+  assert.match(cierre.motivo, new RegExp(COORD));
+  // rearmarla: el marcador de ses-a y el cierre dicen quién lo pidió
+  lab = laboratorioOtraSesion(t);
+  abrir(lab);
+  const rearmar = ['restore', DESTINO, '--for-session', DESTINO];
+  assert.strictEqual(lab.pedir(lab.comando(rearmar)).decision, 'ask');
+  r = lab.correr(rearmar);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(JSON.parse(lab.leer(DESTINO)).por, COORD);
+  // cada cierre que deja el rearmado (la perdida y, si la había, la propia reemplazada) dice quién lo pidió
+  const cierres = lab.gates().filter((g) => g.name === 'run-close' && g.sesion === DESTINO);
+  assert.ok(cierres.length >= 1);
+  for (const c of cierres) assert.strictEqual(c.por, COORD, c.motivo);
+});
+
+test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
+  const designar = (lab, { sesion = COORD, confirmada = true } = {}) => {
+    const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+    const lineas = [d, ...(confirmada ? [DS.confirmationRecord(d, new Date(AHORA - 3500000).toISOString())] : [])];
+    fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${lineas.map((l) => JSON.stringify(l)).join('\n')}\n`);
+  };
+  const delegacion = ({ perfil = PERFIL, huella = HUELLA } = {}) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella }) });
+  // con las seis llaves: firma sin ventana, con via: delegacion, sobre el marcador de ses-a
+  let lab = laboratorioOtraSesion(t);
+  designar(lab);
+  const p = lab.pedir(lab.comando(APROBAR), { delegacion: delegacion() });
+  assert.strictEqual(p.decision, 'allow', p.texto);
+  const r = lab.correr(APROBAR);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const destino = JSON.parse(lab.leer(DESTINO));
+  assert.strictEqual(destino.planApproval.via, 'delegacion');
+  assert.strictEqual(destino.planApproval.por, COORD);
+  // sin cada llave, por vez: pide la ventana y el registro no dice delegación
+  const sinUna = [
+    ['la designada es otra sesión', { sesion: 'ses-otra' }, {}],
+    ['la designación sin confirmar', { confirmada: false }, {}],
+    ['la máquina fuera de la lista', {}, { huella: 'ffffffffffffffff' }],
+    ['el perfil no la delega', {}, { perfil: { ...PERFIL, delegated_signing: [] } }],
+    ['la firma es sólo del dueño', {}, { perfil: { ...PERFIL, owner_only: ['plan-approval'] } }],
+  ];
+  for (const [que, designacion, llaves] of sinUna) {
+    lab = laboratorioOtraSesion(t);
+    designar(lab, designacion);
+    const q = lab.pedir(lab.comando(APROBAR), { delegacion: delegacion(llaves) });
+    assert.strictEqual(q.decision, 'ask', que);
+    const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(lab.home), lab.vigentes()[0]), 'utf8'));
+    assert.notStrictEqual(reg.via, 'delegacion', que);
+  }
+  // la misma story en las dos sesiones: no se delega
+  lab = laboratorioOtraSesion(t);
+  designar(lab);
+  const misma = JSON.parse(lab.leer(COORD));
+  fs.writeFileSync(lab.marcador(COORD), JSON.stringify({ ...misma, storyId: '9.91', storyPath: lab.stories[DESTINO] }));
+  assert.strictEqual(lab.pedir(lab.comando(APROBAR), { delegacion: delegacion() }).decision, 'ask', 'la misma story');
+});
+
+test('Guion_ForSession_OtraCorridaEnElMedio_Sale2 (T16) @story-8.142 @ac-2', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  assert.strictEqual(lab.pedir(lab.comando(APROBAR)).decision, 'ask');
+  const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(lab.home), lab.vigentes()[0]), 'utf8'));
+  assert.strictEqual(reg.corrida && reg.corrida.storyId, '9.91', 'el registro guarda la corrida que vio el dueño');
+  // ses-a pasa a otra story antes de que corra el guion
+  const m = JSON.parse(lab.leer(DESTINO));
+  fs.writeFileSync(lab.marcador(DESTINO), JSON.stringify({ ...m, storyId: '9.93' }, null, 2));
+  const antes = lab.leer(DESTINO);
+  const r = lab.correr(APROBAR);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /9\.93|otra corrida|cambi/);
+  assert.strictEqual(lab.leer(DESTINO), antes, 'no escribió el marcador de ses-a');
+});

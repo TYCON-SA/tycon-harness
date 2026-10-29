@@ -175,6 +175,29 @@ test('ManualChecks_OkQueNombra_Marca @story-7.46 @ac-10', () => {
   assert.deepEqual([firma[0].via, firma[0].destino], ['ventana', lab.sid]);
 });
 
+// La firma de la prueba a mano pedida por la coordinadora para la sesión de la corrida (el resto de T5 vive en
+// pipeline-escape.test.js; ésta necesita el perfil del equipo de este arnés copiado).
+test('MarcaAMano_ForSession_EscribeLaCorridaDestino (T5) @story-8.142 @ac-2 @ac-3', () => {
+  const ow = require(path.join(ARNES, 'scripts', 'lib', 'owner-window.js'));
+  const { arbolDelFreno, arbolDelGuion } = require(path.join(REAL, 'scripts', 'tests', 'lib', 'window-passed.js'));
+  const lab = laboratorio({ sid: 's-dest' });
+  const args = ['mark-tested', '--acs', '1,2', '--approved-by', 'Dev de Prueba', '--for-session', 's-dest'];
+  const cmd = `node ${MARKER} ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
+  const ahora = Date.now();
+  const p = ow.decidir({ evento: { session_id: 's-coord', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd } },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+  assert.equal(p.decision, 'ask', p.texto);
+  const r = spawnSync(process.execPath, [MARKER, ...args], { cwd: lab.repo, encoding: 'utf8',
+    env: conVentana({ ...lab.env, CLAUDE_CODE_SESSION_ID: 's-coord' }, { arbol: { arbol: arbolDelGuion(lab.home, cmd), pid: 301, ahora: ahora + 60000 } }) });
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.deepEqual(marcas(lab).map((x) => [x.ac, x.story]), [[1, '9.94'], [2, '9.94']], 'las marcas quedaron en la corrida de s-dest');
+  const firma = gates(lab).filter((x) => x.name === 'manual-test-signed');
+  assert.deepEqual([firma.length, firma[0].sesion, firma[0].destino], [1, 's-coord', 's-dest']);
+  const aprobacion = lineas(path.join(lab.runDir, 'approvals.jsonl')).find((l) => /prueba a mano/.test(l.que));
+  assert.equal(aprobacion.por, 's-coord', 'la constancia dice quién la pidió');
+  assert.ok(!fs.existsSync(path.join(lab.stateDir, 'active', 's-coord.json')), 'no le nació marcador a la coordinadora');
+});
+
 test('ManualChecks_Rechazos @story-7.46 @ac-11', () => {
   // sin la ventana: no marca, aunque la persona lo haya escrito en el chat
   let lab = laboratorio();

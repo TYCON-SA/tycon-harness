@@ -103,6 +103,9 @@ function normalizar(e) {
     via: texto(e && e.via) || null,
   };
   if (delegacion) out.delegacion = delegacion;
+  // la firma pedida desde otra sesión: la sesión que la pidió
+  const por = texto(e && e.por);
+  if (por) out.por = por;
   const cita = texto(e && e.cita);
   if (cita) {
     out.cita = cita;

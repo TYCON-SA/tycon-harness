@@ -162,12 +162,59 @@ const STALE_HOURS = 24;
 
 // sessionId de ESTA invocación — Claude Code lo expone a todo subproceso Bash.
 // En la terminal del dueño no hay variable de sesión: la firma por `--terminal` dice su sesión con `--for-session`.
-const SID = (() => {
-  const s = resolveSessionId();
-  const i = process.argv.indexOf('--for-session');
-  const pedida = i >= 0 ? process.argv[i + 1] : null;
-  return s === '_nosession' && process.argv.includes('--terminal') && pedida && /^[\w-]+$/.test(pedida) ? pedida : s;
-})();
+// PROPIA es la sesión de quien corre el guion; SID, la sesión sobre la que trabaja: con una firma pedida para otra
+// sesión (`--for-session <D>`), pasa a ser <D> al arrancar, sólo para leer hasta que la firma la fija (firmaDelDueno).
+const PROPIA = resolveSessionId();
+const PEDIDA = (() => { const i = process.argv.indexOf('--for-session'); return i >= 0 ? process.argv[i + 1] : null; })();
+let SID = PROPIA === '_nosession' && process.argv.includes('--terminal') && PEDIDA && /^[\w-]+$/.test(PEDIDA) ? PEDIDA : PROPIA;
+// sin firma todavía, el marcador de otra sesión no se escribe
+let SOLO_LECTURA = false;
+let NECESITA_MARCADOR = false;
+
+// Los subcomandos que firman para otra sesión: la firma del catálogo, si trabajan sobre la ejecución del destino
+// (su marcador abierto) o, los de la ejecución perdida, qué argumento nombra la sesión (tiene que ser la del destino).
+const PARA_OTRA_SESION = {
+  // el plan con su nombre o con el número del marcador viejo, y sólo si lo aprueba una persona (con la regla de riesgo
+  // bajo no hay firma, y sin firma no se escribe en la ejecución de otra sesión)
+  'complete-step': { firma: 'plan-approval', marcador: true,
+    si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)) },
+  'approve-mockup': { firma: 'plan-approval', marcador: true },
+  'waive-critical': { firma: 'critical-waiver', marcador: true },
+  'mark-tested': { firma: 'manual-test', marcador: true },
+  'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') },
+  'restore': { firma: 'lost-run', nombra: 3 },
+};
+
+const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+
+/** Con `--for-session` a otra sesión: el subcomando tiene que ser una firma que se corre así; si no, sale 2 sin escribir. */
+function paraOtraSesion(argv) {
+  if (!PEDIDA || PEDIDA === PROPIA) return;
+  const no = (m) => { console.error(`🔒 marker.js: --for-session ${PEDIDA}: ${m}. No se escribió nada.`); process.exit(2); };
+  // en la terminal del dueño --for-session dice su sesión; sin variable de sesión y sin terminal no hay quién la pida
+  if (PROPIA === '_nosession') {
+    if (!process.argv.includes('--terminal')) no('sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal)');
+    // en la terminal, el marcador de la sesión nombrada se escribe sólo con la firma dada, y la salida de una ejecución
+    // perdida nombra esa misma sesión
+    const t = PARA_OTRA_SESION[argv[2]];
+    if (t && t.nombra && (!t.si || t.si(argv)) && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
+    SOLO_LECTURA = true;
+    return;
+  }
+  if (!/^[\w-]+$/.test(PEDIDA)) no('la sesión no se puede leer');
+  const t = PARA_OTRA_SESION[argv[2]];
+  const s = t && require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
+  if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
+  if (t.nombra && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
+  SID = PEDIDA;
+  SOLO_LECTURA = true;
+  NECESITA_MARCADOR = !!t.marcador;
+  // antes de la firma, sólo se lee: sin la ejecución abierta del destino no hay nada que firmar (y el registro no se gasta)
+  if (!NECESITA_MARCADOR) return;
+  let abierta;
+  try { abierta = ownerWindow().marcadorEn(markerFilePath(PEDIDA)); } catch (e) { no(e.message); }
+  if (!abierta) no(`la sesión ${PEDIDA} no tiene una ejecución abierta`);
+}
 
 function ensureActiveDir() {
   if (!fs.existsSync(ACTIVE_DIR)) {
@@ -304,7 +351,14 @@ function readMarker() {
   return null;
 }
 
+function sinFirmaNoSeEscribe() {
+  if (!SOLO_LECTURA) return;
+  console.error(`🔒 marker.js: el marcador de la sesión ${SID} se escribe sólo después de la firma. No se escribió nada.`);
+  process.exit(2);
+}
+
 function writeMarker(marker) {
+  sinFirmaNoSeEscribe();
   ensureActiveDir();
   pruneStale();
   const p = markerFilePath(SID);
@@ -314,6 +368,7 @@ function writeMarker(marker) {
 }
 
 function clearMarker() {
+  sinFirmaNoSeEscribe();
   const own = markerFilePath(SID);
   if (fs.existsSync(own)) {
     try { fs.unlinkSync(own); } catch (_e) { /* ignore */ }
@@ -988,13 +1043,29 @@ const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 // terminal). Con eso, el renglón `<firma>-signed` queda en gates.log antes de la constancia de siempre.
 function firmaDelDueno(firma, resumen) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: SID || undefined, anotar: (renglon) => appendLog('gates.log', renglon) });
+  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js: ${r.motivo}`);
     process.exit(r.codigo);
   }
-  return r;
+  return trabajarSobreElDestino(ow, r);
 }
+
+// Con la firma, el guion trabaja sobre la sesión destino (la corrida que vio el dueño, su marcador abierto): lo fija
+// owner-window.js, también para las bibliotecas y los procesos hijos. Sale 2 sin escribir si la corrida cambió.
+function trabajarSobreElDestino(ow, r) {
+  const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: NECESITA_MARCADOR, leerMarcador: (sid) => ow.marcadorEn(markerFilePath(sid)) });
+  if (f.codigo !== 0) {
+    console.error(`🔒 marker.js: ${f.motivo}. No se escribió nada.`);
+    process.exit(f.codigo);
+  }
+  SID = f.destino || SID;
+  SOLO_LECTURA = false;
+  return { ...r, constancia: f.constancia };
+}
+
+// La sesión que pidió la firma para otra, para las constancias: `{ por }`, o nada si es la propia.
+const porDe = (firma) => (firma && firma.constancia && firma.constancia.por ? { por: firma.constancia.por } : {});
 
 // Quién firmó, para la constancia: la coordinadora por delegación o la persona en la ventana (owner-window.js).
 function quienFirmo(firma, persona) {
@@ -1004,7 +1075,9 @@ function quienFirmo(firma, persona) {
 // El renglón `<firma>-signed` de una firma que el guion ya confirmó en la terminal con su propia pregunta.
 function firmadoEnLaTerminal(firma, resumen) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-  ow.firmar({ firma, via: 'terminal', sesion: SID || null, destino: SID || null, resumen, anotar: (renglon) => appendLog('gates.log', renglon) });
+  const sesion = PROPIA !== '_nosession' ? PROPIA : SID || null;
+  ow.firmar({ firma, via: 'terminal', sesion, destino: SID || null, resumen, anotar: (renglon) => appendLog('gates.log', renglon) });
+  return trabajarSobreElDestino(ow, { via: 'terminal', sesion, destino: SID || null });
 }
 
 function cmdCompleteStep(nRaw, flags) {
@@ -1246,19 +1319,19 @@ function cmdCompleteStep(nRaw, flags) {
       } catch (e) { bloquear3(`no pude escribir la aprobación de la maqueta (${mockupPlan.p.approval}): ${e.code || e.message}`); }
     }
     const delUser = !!(approved || enTerminal);
-    marker.planApproval = { mode: delUser ? 'user' : 'auto-low-risk', text: approved || (enTerminal ? 'firmado en la terminal' : auto), at: at3, ...(firmaPlan ? { via: firmaPlan.via } : {}) };
-    appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...(firmaPlan ? { via: firmaPlan.via } : {}) });
+    marker.planApproval = { mode: delUser ? 'user' : 'auto-low-risk', text: approved || (enTerminal ? 'firmado en la terminal' : auto), at: at3, ...(firmaPlan ? firmaPlan.constancia : {}) };
+    appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...(firmaPlan ? firmaPlan.constancia : {}) });
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; `--auto-approved`
     // es la regla de riesgo bajo. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
     const quienPlan = approved ? quienDeLasOpciones(optVal) : quienDeLasOpciones(() => null, { regla: 'risk-class LOW' });
-    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${approved ? '--approved' : '--auto-approved'}`, ...quienPlan });
+    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${approved ? '--approved' : '--auto-approved'}`, ...quienPlan, ...porDe(firmaPlan) });
     if (mockupPlan) {
-      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLasOpciones(optVal) });
+      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLasOpciones(optVal), ...porDe(firmaPlan) });
     }
     // La decisión se anota SIEMPRE, para que «Preparar el commit» vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
     if (mockupPlan) {
-      marker.mockupApproval = { file: mockupPlan.p.mockup, sha256: mockupPlan.sha, mode: 'user', text: mockupCita, at: at3 };
+      marker.mockupApproval = { file: mockupPlan.p.mockup, sha256: mockupPlan.sha, mode: 'user', text: mockupCita, at: at3, ...porDe(firmaPlan) };
       appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: mockupPlan.sha.slice(0, 12), reapproval: false });
     } else {
       if (mockupCita) console.error('ℹ️  la story no tiene pantalla: no hay maqueta que aprobar (--mockup-approved no se usa).');
@@ -2123,12 +2196,12 @@ function cmdApproveMockup(flags) {
   try { mk.writeApproval({ approvalPath: p.approval, mockupPath: p.mockup, story: marker.storyId, sha256: sha, approvedAt: at }); } catch (e) {
     no(`no pude escribir la aprobación de la maqueta (${p.approval}): ${e.code || e.message}`);
   }
-  marker.mockupApproval = { file: p.mockup, sha256: sha, mode: 'user', text: cita, at, via: firma.via };
+  marker.mockupApproval = { file: p.mockup, sha256: sha, mode: 'user', text: cita, at, ...firma.constancia };
   if (!marker.mockupDecision || marker.mockupDecision.screen !== true) marker.mockupDecision = { screen: true, signal: sc.signal || null, at };
   appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}) });
   {
     const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? nn(opts[k + 1], '') : null; };
-    anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: 'approve-mockup', ...quienDeLasOpciones(optVal) });
+    anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: 'approve-mockup', ...quienDeLasOpciones(optVal), ...porDe(firma) });
   }
   writeMarker(marker);
   console.log(JSON.stringify({ ok: true, file: p.mockup, approval: p.approval, sha256: sha, reapproval: !!prev }, null, 2));
@@ -4017,12 +4090,15 @@ function cmdSalidaPerdida(modo, sesion) {
     process.exit(3);
   }
   // el dueño lo aprueba en la ventana de permiso (o lo corre con --terminal): sin eso, el guion no cierra ni rearma nada
-  const { via } = firmaDelDueno('lost-run', `${modo === 'lost' ? 'cerrar como perdida' : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`);
+  const firma = firmaDelDueno('lost-run', `${modo === 'lost' ? 'cerrar como perdida' : 'restaurar'} la ejecución de la story ${apertura.story} (sesión ${sesion})`);
+  const { via } = firma;
   const cita = null;
+  // pedida para otra sesión, la constancia dice cuál la pidió (SID ya es la destino)
+  const desde = (firma.constancia && firma.constancia.por) || SID;
   if (modo === 'lost') {
     try { fs.unlinkSync(markerFilePath(sesion)); } catch (_e) { /* ya no estaba: es lo perdido */ }
-    or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via, cita,
-      motivo: `cerrada como perdida desde la sesión ${SID}` });
+    or.cerrar({ sid: SID, sesion, runDir: apertura.runDir, story: apertura.story, estado: 'perdida', via, cita, extra: porDe(firma),
+      motivo: `cerrada como perdida desde la sesión ${desde}` });
     process.stdout.write(`cerrada como perdida: la ejecución de la story ${apertura.story} (sesión ${sesion})\n`);
     return;
   }
@@ -4030,18 +4106,18 @@ function cmdSalidaPerdida(modo, sesion) {
   let copia = null;
   try { copia = JSON.parse(fs.readFileSync(path.join(apertura.runDir, 'run-open.json'), 'utf8')); } catch (_e) { copia = null; }
   const base = copia && copia.sesion === sesion ? copia : apertura;
-  or.cerrar({ sid: SID, sesion, runDir: base.runDir, story: base.story, estado: 'perdida', via, cita, motivo: `restaurada en la sesión ${SID}` });
+  or.cerrar({ sid: SID, sesion, runDir: base.runDir, story: base.story, estado: 'perdida', via, cita, extra: porDe(firma), motivo: `restaurada en la sesión ${SID}${desde !== SID ? ` (pedido desde la sesión ${desde})` : ''}` });
   // la ejecución propia de otra carpeta no se pisa callada: se cierra como reemplazada, como en `set`
   let previo = readMarker();
   if (previo && previo.storyId && !(previo.runDir && or.mismaRuta(previo.runDir, base.runDir))) {
-    cerrarEjecucion(SID, previo, { estado: 'abortada', motivo: `reemplazada por restore ${sesion} (story ${base.story})` });
+    cerrarEjecucion(SID, previo, { estado: 'abortada', motivo: `reemplazada por restore ${sesion} (story ${base.story})`, extra: porDe(firma) });
     previo = null;
   }
   const sigue = previo && String(previo.storyId) === String(base.story);
   writeMarker({
     ...(sigue ? previo : {}),
     storyId: String(base.story), storyPath: base.storyPath || null, repoPath: base.repo || null, runDir: base.runDir,
-    sessionId: SID, lastTouch: nowIso(), restoredFrom: sesion, restoredAt: nowIso(),
+    sessionId: SID, lastTouch: nowIso(), restoredFrom: sesion, restoredAt: nowIso(), ...porDe(firma),
     ...(sigue ? {} : { startedAt: nowIso(), stepScheme: STEPS_LIB.SCHEME, stepsCompleted: [], stepsPending: STEPS_LIB.STEPS.filter((s) => !s.flag).map((s) => s.id) }),
   });
   or.abrir({ sid: SID, story: base.story, storyPath: base.storyPath, repo: base.repo, runDir: base.runDir, motivo: 'restaurada' });
@@ -4456,6 +4532,7 @@ function cmdWaiveCritical(argv) {
   } catch (e) { console.error(`marker.js waive-critical: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2); }
   if (!runDir) { console.error('marker.js waive-critical: la story no da una clave para su carpeta de corrida'); process.exit(2); }
   let entrada;
+  let firmaDada = null;
   if (tiene('--terminal')) {
     const waiver = require('./lib/runtime-waiver.js');
     if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
@@ -4480,7 +4557,7 @@ function cmdWaiveCritical(argv) {
     if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js waive-critical: no lo eximiste — el crítico sigue abierto.'); process.exit(1); }
     if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js waive-critical: la frase no coincide — no se eximió nada.'); process.exit(1); }
     const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user';
-    firmadoEnLaTerminal('critical-waiver', `${rule}${file ? ` en ${file}` : ''}: ${reason}`);
+    firmaDada = firmadoEnLaTerminal('critical-waiver', `${rule}${file ? ` en ${file}` : ''}: ${reason}`);
     entrada = { tipo: 'manual', quien, via: 'waive-critical (terminal)' };
   } else {
     // eximir un crítico lo aprueba la persona en la ventana de permiso; la cita en la conversación ya no alcanza
@@ -4489,6 +4566,7 @@ function cmdWaiveCritical(argv) {
       process.exit(1);
     }
     const firma = firmaDelDueno('critical-waiver', `${rule}${file ? ` en ${file}` : ''}: ${reason}`);
+    firmaDada = firma;
     const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
     const q = quienFirmo(firma, quien);
     entrada = { ...q, via: `waive-critical (${q.via})` };
@@ -4503,7 +4581,7 @@ function cmdWaiveCritical(argv) {
     process.exit(2);
   }
   const linea = cw.anotar(runDir, constancia);
-  anotarAprobacion(m, { que: `exencion ${rule}${file ? ` en ${file}` : ''}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien,
+  anotarAprobacion(m, { que: `exencion ${rule}${file ? ` en ${file}` : ''}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien, ...porDe(firmaDada),
     ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
   console.error(`✅ ${rule}${file ? ` en ${file}` : ''} eximido (${linea.tipo === 'manual' ? 'manual' : 'automático, por delegación'}, ${linea.quien}${linea.delegacion ? ` por ${linea.delegacion}` : ''}). Ahora sí se puede anotar como waived en findings.json.`);
   process.exit(0);
@@ -4612,6 +4690,7 @@ function cmdMarkTested(argv) {
     process.exit(1);
   }
   let entrada;
+  let firmaDada = null;
   if (tiene('--terminal')) {
     const waiver = require('./lib/runtime-waiver.js');
     if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
@@ -4632,7 +4711,7 @@ function cmdMarkTested(argv) {
     } catch (e) { console.error(`🔒 ${e.message}`); process.exit(2); }
     if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js mark-tested: no se marcó nada.'); process.exit(1); }
     if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js mark-tested: la frase no coincide — no se marcó nada.'); process.exit(1); }
-    firmadoEnLaTerminal('manual-test', `criterios ${acs.join(', ')} de ${m.storyId}`);
+    firmaDada = firmadoEnLaTerminal('manual-test', `criterios ${acs.join(', ')} de ${m.storyId}`);
     entrada = { quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user', via: 'terminal' };
   } else {
     // la persona que probó lo aprueba en la ventana de permiso; la cita en la conversación ya no alcanza
@@ -4644,6 +4723,7 @@ function cmdMarkTested(argv) {
       process.exit(1);
     }
     const firma = firmaDelDueno('manual-test', `criterios ${acs.join(', ')} de ${m.storyId}`);
+    firmaDada = firma;
     const quien = String(val('--approved-by') || process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona').trim();
     const q = quienFirmo(firma, quien);
     entrada = { quien: q.quien, via: q.via, ...(q.delegacion ? { delegacion: q.delegacion } : {}) };
@@ -4653,7 +4733,7 @@ function cmdMarkTested(argv) {
   // primero el par en el registro del arnés (que el agente no escribe): sin él la marca no cuenta al cerrar
   for (const r of renglones) appendLog('gates.log', { name: 'manual-check', status: 'ok', story: String(m.storyId), ac: r.ac, ts, quien: r.quien, via: r.via, huella: mc.huellaMarca(r) });
   mc.anotar(runDir, renglones);
-  anotarAprobacion(m, { que: `prueba a mano de ${acs.length > 1 ? 'los criterios' : 'el criterio'} ${acs.join(', ')}`, via: entrada.via, tipo: 'manual', quien: entrada.quien, ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
+  anotarAprobacion(m, { que: `prueba a mano de ${acs.length > 1 ? 'los criterios' : 'el criterio'} ${acs.join(', ')}`, via: entrada.via, tipo: 'manual', quien: entrada.quien, ...porDe(firmaDada), ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
   console.error(`✅ ${acs.length > 1 ? 'Criterios' : 'Criterio'} ${acs.join(', ')} marcado${acs.length > 1 ? 's' : ''} como probado${acs.length > 1 ? 's' : ''} a mano por ${entrada.quien}.`);
   process.exit(0);
 }
@@ -5110,6 +5190,7 @@ require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/marker
 const cmd = process.argv[2];
 const arg1 = process.argv[3];
 const arg2 = process.argv[4];
+paraOtraSesion(process.argv);
 
 switch (cmd) {
   case 'set':
