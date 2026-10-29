@@ -537,14 +537,14 @@ const ESCRITURA = `w-${crypto.randomBytes(6).toString('hex')}`;
 const CAB = `Basic ${Buffer.from(`x-access-token:${ESCRITURA}`).toString('base64')}`;
 
 /** El sitio con la pestaña; `perfil` es la carpeta del clon del perfil (o null). */
-async function conSitio({ perfil = null, env = {}, opciones = {} }, fn) {
+async function conSitio({ perfil = null, env = {}, opciones = {}, site = {} }, fn) {
   let emisor = null; let h = null;
   try {
     emisor = await arrancarEmisor();
     const { validarConfiguracion } = require(path.join(H.SITE, 'server.js'));
     const envSitio = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, ...env });
     const cfg = validarConfiguracion(envSitio).cfg;
-    const fuentes = H.fuentesFijas({ config: { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } } });
+    const fuentes = H.fuentesFijas({ config: { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD], ...site }, people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } } });
     fuentes.clones = () => ({ operaciones: null, perfil: perfil ? { dir: perfil } : null });
     fuentes.exclusivo = (f) => f();
     const rutasExtra = TAB().crearRutas({ cfg, fuentes, versionImagen: '2026.10.19.3', ...opciones });
@@ -555,6 +555,26 @@ async function conSitio({ perfil = null, env = {}, opciones = {} }, fn) {
     await fn({ h, entrar, token, escribir });
   } finally { await Promise.allSettled([h, emisor].filter(Boolean).map((s) => s.cerrar())); }
 }
+
+// con `site.auto_apply`, el editor no dice que otra persona aprueba: el servidor le pasa la opción con el borrador
+test('ComoTrabaja_Editor_AplicaSolo_NoHablaDeOtraPersona', async () => {
+  for (const autoApply of [true, false]) {
+    await conSitio({ perfil: carpeta(perfilCon(), { repo: true }), site: { auto_apply: autoApply } }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD);
+      const hoy = await h.pedir('/api/como-trabaja/revisor?pack=acme-pagos&agent=acme-pagos-reviewer', { cookie: lead });
+      assert.strictEqual(hoy.json.aplicaSolo, autoApply, `el revisor de hoy, auto_apply ${autoApply}`);
+      const nuevo = await h.pedir('/api/como-trabaja/revisor?pack=acme-pagos', { cookie: lead });
+      assert.strictEqual(nuevo.json.aplicaSolo, autoApply, `un revisor nuevo, auto_apply ${autoApply}`);
+    });
+  }
+  // con la opción, el editor dice que el sitio aprueba solo si la política del repo lo deja; sin ella, que aprueba otra persona
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['motivoAntesDeRevisarSolo', 'motivoRevisadoSolo']) assert.match(TX().t(idioma, `comoTrabaja.${k}`), /aprueba solo si la política del repo|approves itself if the repo's policy/, `${k} en ${idioma}`);
+    assert.doesNotMatch(TX().t(idioma, 'comoTrabaja.aplicado'), /otra persona|someone else/i, `aplicado en ${idioma}`);
+  }
+  assert.match(TX().t('es', 'comoTrabaja.motivoRevisado'), /aprueba otra persona/);
+  assert.doesNotMatch(TX().t('es', 'comoTrabaja.motivoRevisado'), /aprueba solo/);
+});
 
 test('T1 ComoTrabaja_SoloMantenedores @story-2.61 @ac-1 — el mantenedor la ve; el dev, 403 en la página y en las rutas', async () => {
   // el clon del perfil es un repo git (el editor lee de ahí las versiones de los archivos)
@@ -917,6 +937,22 @@ test('HowItWorks_TimeControls_OnlyWhenChosen @story-7.40 @ac-11 — los de horas
   assert.ok(!TAB().renderPage(sin, { idioma: 'es', publicRepo: PUBLICO, version: 'v' }).includes('ct-chip horas"'));
 }));
 
+test('HowItWorks_Strip_ChosenTimeToolNotStruck — la de horas elegida no sale tachada aunque la llave vieja diga false', () => conCasa(() => {
+  const H2 = HIW();
+  const tachada = (k) => `class="ct-ap" title="${TX().t('es', 'comoTrabaja.apagadoEnTuOrganizacion')}">${k}<`;
+  const m = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'clockify', clockify: false, engram: true }) });
+  assert.strictEqual(m.org.integrations.clockify, true, 'la elegida, prendida en la franja');
+  const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  assert.ok(!html.includes(tachada('clockify')), 'no sale tachada');
+  // otra elegida: aparece con su nombre y la vieja no se muestra
+  const otra = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'solidtime', clockify: false, engram: true }) });
+  assert.strictEqual(otra.org.integrations.solidtime, true);
+  assert.ok(!('clockify' in otra.org.integrations), 'la llave vieja no queda en la franja');
+  // ninguna: la llave vieja apagada sigue tachada
+  const ninguna = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ clockify: false, engram: true }) });
+  assert.ok(TAB().renderPage(ninguna, { idioma: 'es', publicRepo: PUBLICO, version: 'v' }).includes(tachada('clockify')));
+}));
+
 test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada no aparece; prendida o sin perfil, «según tu organización»', () => conCasa(() => {
   const H2 = HIW();
   const marca = `ct-chip segun">${TX().t('es', 'comoTrabaja.segunTuOrganizacionMarca')}<`;
@@ -1145,7 +1181,9 @@ test('T8 RevisarYProponer_ElOrdenSeDice @story-2.63 @ac-7 — los botones numera
   const g = TAB().guion ? TAB().guion('es') : '';
   assert.ok(g, 'el guion del navegador se puede leer');
   // el guion lleva todos los textos en TXT: lo que se mira es que el editor los pida
-  for (const k of ['motivoAntesDeRevisar', 'motivoRevisado', 'motivoCambiaste']) assert.match(g, new RegExp(`T\\('comoTrabaja\\.${k}'\\)`), `el editor usa ${k}`);
+  // con la opción de que el sitio apruebe solo, el editor elige entre las dos variantes de las dos primeras
+  for (const k of ['motivoAntesDeRevisar', 'motivoRevisado', 'motivoAntesDeRevisarSolo', 'motivoRevisadoSolo']) assert.match(g, new RegExp(`'comoTrabaja\\.${k}'`), `el editor usa ${k}`);
+  assert.match(g, /T\('comoTrabaja\.motivoCambiaste'\)/, 'el editor usa motivoCambiaste');
 });
 
 test('T9 Proponer_ElRevisorEntero @story-2.63 @ac-8 — el pedido trae el pack.json y el .md armado con los campos y el cuerpo', () => {

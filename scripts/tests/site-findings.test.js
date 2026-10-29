@@ -167,7 +167,7 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
       tarea: { numero: '77', enlace: 'https://dev.acme.example/acme/_workitems/edit/77' }, asignado: null, motivo: null }]);
     // y la vulnerabilidad, con la tarea de su proyecto armada con la organización de operations.json
     assert.deepStrictEqual(j.marcha.vulnerabilidades, [{ id: 'dep-uno', paquete: 'pkg-uno', severidad: 'high', repos: 1, desde: '2026-10-19', volvio: null,
-      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null, sinAsignar: false }], motivo: null }]);
+      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null, sinAsignar: false, sinNombre: false }], motivo: null }]);
     // la página: tarjetas, no tabla; los números son enlaces; nada de lo que no se muestra
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.strictEqual(p.status, 200);
@@ -473,7 +473,7 @@ test('T58 Sitio_DecisionEnMain_AprobadoSeAplicaEstaNoche — con la decisión en
 // en una tarea que la noche no midió, o la frase de la deuda repetida por fila.
 test('T66 Mantenimiento_Vulnerabilidades_Seguimiento — paquetes: severidad, repos, desde, la tarea de cada proyecto y quién la tiene', { timeout: 60000 }, async () => {
   const extra = {
-    'inbox/dependencies/pending/dep-uno.yaml': `${FICHAS['inbox/dependencies/pending/dep-uno.yaml']}  - Producto Y: 5003\n  - Producto Z: 5004\n  - Producto W: 5005\nasignados:\n  - "5002: Ana Pérez"\n  - "5003: <nadie>"\n  - "5004: dev.a@acme.example"\nreaparecido: 2026-10-22\n`,
+    'inbox/dependencies/pending/dep-uno.yaml': `${FICHAS['inbox/dependencies/pending/dep-uno.yaml']}  - Producto Y: 5003\n  - Producto Z: 5004\n  - Producto W: 5005\n  - Producto V: 5006\nasignados:\n  - "5002: Ana Pérez"\n  - "5003: <nadie>"\n  - "5004: dev.a@acme.example"\n  - "5006: <alguien>"\nreaparecido: 2026-10-22\n`,
     'inbox/dependencies/pending/dep-sin.yaml': 'id: dep-sin\ndetectado: 2026-09-09\nveredicto: pendiente\npaquete: pkg-sin\nseveridad: high\nnoches: 9\npedido_motivo: sin-proyecto\nrepos:\n  - A/x\n  - B/y\n',
   };
   await conSitio({ extra }, async ({ h, lead, lista }) => {
@@ -481,7 +481,8 @@ test('T66 Mantenimiento_Vulnerabilidades_Seguimiento — paquetes: severidad, re
     // críticas primero; después, la más vieja
     assert.deepStrictEqual(v.map((x) => x.id), ['dep-sin', 'dep-uno']);
     assert.deepStrictEqual(v[1].tareas.map((t) => [t.proyecto, t.numero, t.asignado, t.sinAsignar]),
-      [['Producto X', '5002', 'Ana Pérez', false], ['Producto Y', '5003', null, true], ['Producto Z', '5004', null, false], ['Producto W', '5005', null, false]]);
+      [['Producto X', '5002', 'Ana Pérez', false], ['Producto Y', '5003', null, true], ['Producto Z', '5004', null, false], ['Producto W', '5005', null, false], ['Producto V', '5006', null, false]]);
+    assert.deepStrictEqual(v[1].tareas.map((t) => t.sinNombre), [false, false, false, false, true], 'sólo la anotada «<alguien>»');
     assert.strictEqual(v[1].volvio, '2026-10-22');
     assert.strictEqual(v[0].motivo, 'sin-proyecto');
     const p = await h.pedir('/mantenimiento', { cookie: lead });
@@ -490,13 +491,15 @@ test('T66 Mantenimiento_Vulnerabilidades_Seguimiento — paquetes: severidad, re
     assert.match(p.texto, /Vulnerabilidades de paquetes: 2 \(0 críticas, 2 altas\)\. Cada equipo ya tiene su tarea\. La más vieja, desde el 09\/09\./);
     assert.match(bloque, /en 2 repos · desde 09\/09/);
     assert.match(bloque, /en 1 repo · desde 19\/10 · volvió el 22\/10/);
-    assert.match(bloque, /<summary>4 tareas<\/summary>/);
+    assert.match(bloque, /<summary>5 tareas<\/summary>/);
     assert.match(bloque, /Tarea 5002 \(Producto X\)<\/a> · asignada a Ana Pérez/);
     // la tarea que la noche leyó sin nadie dice «sin asignar»; la que no se midió (o con un correo), que no se sabe
     assert.match(bloque, /Tarea 5003 \(Producto Y\)<\/a> · sin asignar/);
     assert.match(bloque, /Tarea 5004 \(Producto Z\)<\/a> · asignada a: no se sabe todavía/);
     assert.match(bloque, /Tarea 5005 \(Producto W\)<\/a> · asignada a: no se sabe todavía/);
-    assert.doesNotMatch(bloque, /&lt;nadie&gt;|<nadie>/);
+    // la que tiene a alguien cuyo nombre es un correo: tiene dueño, y el correo no se muestra
+    assert.match(bloque, /Tarea 5006 \(Producto V\)<\/a> · asignada: su nombre en la plataforma es un correo y acá no se muestra/);
+    assert.doesNotMatch(bloque, /&lt;nadie&gt;|<nadie>|&lt;alguien&gt;|<alguien>/);
     assert.match(bloque, /Todavía sin tarea: sus repos no tienen un proyecto conocido/);
     assert.doesNotMatch(bloque, /data-accion|dev\.a@acme/);
     assert.strictEqual(p.texto.split('Declara la deuda en su repo, con plazo.').length - 1, 1, 'la frase de la deuda, una vez');
@@ -976,11 +979,16 @@ test('T80 Mantenimiento_AplicaSolo_NoHablaDeAprobar — con auto_apply la pantal
     assert.doesNotMatch(p, /Enviar para aprobar|otra persona lo apruebe/);
     assert.match(p, /<button type="button" class="btn prim m-enviar" disabled>Enviar<\/button>/);
     assert.match(p, /la revisión de esta noche lo aplica/);
+    // las ayudas de archivar y arreglar tampoco esperan a otra persona
+    assert.doesNotMatch(p, /otra persona aprueba tu envío/);
+    assert.match(p, /<b>Archivar<\/b> quiere decir «esto es normal, no hay que tocar nada»\. Cuando lo enviás,/);
+    assert.match(p, /<b>Arreglar<\/b> quiere decir «hay que corregirlo»\. Cuando lo enviás,/);
   });
   await conSitio({}, async ({ h, lead }) => {
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
     assert.match(p, /<button type="button" class="btn prim m-enviar" disabled>Enviar para aprobar<\/button>/);
     assert.match(p, /Nada cambia hasta que otra persona lo apruebe/);
+    assert.match(p, /<b>Archivar<\/b> quiere decir «esto es normal, no hay que tocar nada»\. Cuando otra persona aprueba tu envío,/);
   });
 });
 
@@ -1015,7 +1023,7 @@ test('T81 Mantenimiento_YaDecididas_QueQuienCuandoYSiSeAplico — qué se decidi
     const despues = (await lista()).json;
     assert.deepStrictEqual(despues.decididas, [{ fuente: 'vigilante', id: 'vig-uno', nombre: 'Acme: un error que la noche marcó', accion: 'aceptar', quien: 'lead', el: '2026-10-25', estado: 'aplicada' }], 'quién y cuándo siguen aunque el archivo ya no esté');
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
-    assert.match(p, /<span class="m-tarea">Archivar · 25\/10 · lead · ya la aplicó la noche<\/span>/);
+    assert.match(p, /<span class="m-tarea">Archivar · 25\/10 · lead · la noche ya guardó la decisión<\/span>/);
     // el correo de la sesión está en la cabecera de la página; en la sección y en la lista, no
     const seccion = p.slice(p.indexOf('<details class="m-bloque m-decididas"'), p.indexOf('</details>', p.indexOf('<details class="m-bloque m-decididas"')));
     assert.ok(!seccion.includes(LEAD) && !JSON.stringify(despues).includes(LEAD), 'sin el correo entero');

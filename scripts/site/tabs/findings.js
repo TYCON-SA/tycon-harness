@@ -381,7 +381,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const severidad = String(f.severidad || '').toLowerCase() || null;
     return {
       id: f.id, paquete: f.contexto.paquete || f.nombre, severidad, repos: Number.isInteger(f.repos) ? f.repos : 0, desde: f.primera_vez, volvio: f.reaparecido,
-      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado), sinAsignar: t.sin_asignar === true })),
+      tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado), sinAsignar: t.sin_asignar === true, sinNombre: t.asignada_sin_nombre === true })),
       motivo: f.pedido_motivo || null,
     };
   }
@@ -559,8 +559,10 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
   function seccion(m, idioma, tok) {
     const ayudaRegla = (r) => (r ? ` <button type="button" class="m-q" popovertarget="m-ayuda-regla-${r}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, 'mant.ayuda.termino.regla', { que: T(idioma, `mant.titulo.${r}`) }) }))}">?</button>` : '');
     // con auto_apply, la ayuda de enviar no habla de una aprobación que no hay
-    const deAyuda = (k) => (m.aplicaSolo && (k === 'enviar' || k === 'seguir') ? `${k}Solo` : k);
-    const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${deAyuda(k)}`) }))}">?</button>`;
+    const deAyuda = (k) => (m.aplicaSolo && ['enviar', 'seguir', 'aceptar', 'arreglar'].includes(k) ? `${k}Solo` : k);
+    // el nombre del botón sólo cambia en los que dicen «aprobar»; archivar y arreglar se llaman igual
+    const deTermino = (k) => (m.aplicaSolo && (k === 'enviar' || k === 'seguir') ? `${k}Solo` : k);
+    const ayuda = (k) => `<button type="button" class="m-q" popovertarget="m-ayuda-${k}" aria-label="${esc(T(idioma, 'mant.ayuda.que', { termino: T(idioma, `mant.ayuda.termino.${deTermino(k)}`) }))}">?</button>`;
     const enlace = (texto, url) => (url && ENLACE.test(url) ? `<a href="${esc(url)}" rel="noopener noreferrer" target="_blank">${esc(texto)}</a>` : esc(texto));
     // en dependencias, aceptar es aceptar su pull request; en las demás, archivar la ficha
     const accion = (a, fuente) => T(idioma, fuente === 'dependencias' && a === 'aceptar' ? 'mant.accionDep.aceptar' : `mant.accion.${a}`);
@@ -649,7 +651,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     };
     const tareaDeVuln = (t) => (t.enlace ? `${tarea(t.numero, t.enlace, t.proyecto)}` : esc(T(idioma, 'mant.marcha.sinEnlace')))
       // «sin asignar» sólo si la noche leyó la tarea y no la tiene nadie; sin medir, lo dice
-      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, t.sinAsignar ? 'mant.marcha.sinAsignar' : 'mant.marcha.asignadoSinMedir'))}`;
+      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, t.sinAsignar ? 'mant.marcha.sinAsignar' : t.sinNombre ? 'mant.marcha.asignadaSinNombre' : 'mant.marcha.asignadoSinMedir'))}`;
     const vuln = (v) => {
       const sev = NOMBRE_SEVERIDAD[v.severidad] || null;
       const meta = [T(idioma, v.repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: v.repos, dia: dia(v.desde) })];

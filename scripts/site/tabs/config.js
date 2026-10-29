@@ -1244,9 +1244,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok : '';
     const idioma = views.idiomaDe(ctx);
     // el encabezado en un renglón; cómo se revisa, se propone y se lee la pantalla, en un desplegable cerrado de entrada
-    const como = ['revisar', 'sinCambios', 'anteLaDuda', 'palabras'].map((k) => `<li>${esc(TX.t(idioma, `config.comoFunciona.${k}`))}</li>`).join('');
+    // con `site.auto_apply`, el encabezado y «¿Cómo funciona?» no hablan de una aprobación de otra persona que no hay
+    const solo = aplicarSolo();
+    const como = [solo ? 'revisarSolo' : 'revisar', 'sinCambios', 'anteLaDuda', 'palabras'].map((k) => `<li>${esc(TX.t(idioma, `config.comoFunciona.${k}`))}</li>`).join('');
     const ayuda = `<details class="mas-info como-funciona"><summary>${esc(TX.t(idioma, 'config.comoFunciona'))}</summary><ul>${como}</ul></details>`;
-    const html = views.layout(ctx, TX.t(idioma, 'pestana.configuracion'), `${ayuda}<div id="config-app"><p class="q-note">${TX.t(idioma, 'config.cargando')}</p></div>`, TX.t(idioma, 'config.lede'));
+    const html = views.layout(ctx, TX.t(idioma, 'pestana.configuracion'), `${ayuda}<div id="config-app"><p class="q-note">${TX.t(idioma, 'config.cargando')}</p></div>`, TX.t(idioma, solo ? 'config.ledeSolo' : 'config.lede'));
     // el token de doble envío y el código de la pestaña en el idioma de la página, sin nada en línea (la CSP
     // del sitio no lo admite)
     return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/long-text-editor.js" defer></script><script src="/static/config.js?l=${idioma}" defer></script></head>`);

@@ -1480,7 +1480,7 @@ PY2
 # 🔴 rojo previo: no conectar el medidor → la ficha no existe; o conectarlo sin denominador ni fecha.
 T=$(mktemp -d); montar_sano "$T"; buzon_de_mentira "$T/buzon"
 node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1
-F="$(ficha_html "$T/o.html" 'Pasos de una ejecución')"
+F="$(ficha_html "$T/o.html" 'Respuestas del modelo por ejecución')"
 [ -n "$F" ] && ok "C-59 la ficha de pasos por ejecución existe" || mal "C-59 la ficha de pasos por ejecución no está en la página"
 echo "$F" | grep '<div class="t-val">400</div>' >/dev/null && ok "C-59 con la mediana de las medidas (400)" || mal "C-59 la mediana no es 400: ${F:0:200}"
 echo "$F" | grep 'n=4 de 5 ejecuciones' >/dev/null && ok "C-59 con su denominador al lado (n=4 de 5: la sin medir sigue contando)" || mal "C-59 falta el denominador n=4 de 5"
@@ -1490,7 +1490,7 @@ echo "$F" | grep '1 sin consumo medido' >/dev/null && ok "C-59 y dice la que que
 python3 - "$T/o.html" <<'PY2' && ok "C-59 la ficha vive en la pregunta 4, pegada a la duración de una ejecución" || mal "C-59 la ficha no está al lado de «Una ejecución del pipeline, de punta a punta»"
 import sys
 t = open(sys.argv[1], encoding='utf8').read().split('<div class="tile ')[1:]
-i = [k for k, x in enumerate(t) if 'Pasos de una ejecución' in x[:600]]
+i = [k for k, x in enumerate(t) if 'Respuestas del modelo por ejecución' in x[:600]]
 j = [k for k, x in enumerate(t) if 'Una ejecución del pipeline, de punta a punta' in x[:600]]
 assert i and j and abs(i[0] - j[0]) == 1, (i, j)
 PY2
@@ -1501,8 +1501,8 @@ rm -rf "$T"
 T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/buzon"
 node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1; RC=$?
 [ "$RC" -eq 0 ] && ok "C-59b con el buzón vacío el tablero mide igual (exit 0): la fuente no es obligatoria" || mal "C-59b el buzón vacío rompió el tablero (exit $RC)"
-[ "$(ficha_estado "$T/o.html" 'Pasos de una ejecución')" = "blind" ] && ok "C-59b buzón vacío → la ficha sale con trama" || mal "C-59b buzón vacío y la ficha no salió «no medido»"
-F="$(ficha_html "$T/o.html" 'Pasos de una ejecución')"
+[ "$(ficha_estado "$T/o.html" 'Respuestas del modelo por ejecución')" = "blind" ] && ok "C-59b buzón vacío → la ficha sale con trama" || mal "C-59b buzón vacío y la ficha no salió «no medido»"
+F="$(ficha_html "$T/o.html" 'Respuestas del modelo por ejecución')"
 echo "$F" | grep 'buzón' >/dev/null && ok "C-59b con su motivo" || mal "C-59b sin motivo: ${F:0:200}"
 echo "$F" | grep '<div class="t-val">0' >/dev/null && mal "C-59b publicó un cero" || ok "C-59b ningún cero publicado"
 rm -rf "$T"

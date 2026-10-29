@@ -1088,6 +1088,21 @@ test('2.30-T49 Detalle_ResumidaBajaSusTextosADemanda_ConCacheConTope @story-2.30
   } finally { await buzon.cerrar(); }
 });
 
+test('Resumida_ConSoloElCambioDeVuelta_NoPierdeTituloNiEsperas — una pasada que corta entre el cambio y la conversación no cambia la ejecución', () => {
+  // la bajada trae el cambio de git antes que la conversación: con el corte en el medio, el armado veía el cambio solo y
+  // dejaba la ejecución sin título ni esperas; a la pasada siguiente volvían (los valores iban y venían entre recargas)
+  const espejo = mundo({ marcadores: false });
+  const de = (M) => M.corridas.find((c) => c.story === '3.1');
+  const antes = de(runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true }));
+  assert.strictEqual(antes.cambios.estado, 'leido');
+  assert.strictEqual(runs.resumirEspejo(espejo, { skillsDir: path.join(ROOT, 'skills') }).resumidas, 2);
+  fs.copyFileSync(path.join(mundo({ marcadores: false }), 'maq-a', 'a1.cambio.json.gz'), path.join(espejo, 'maq-a', 'a1.cambio.json.gz'));
+  const corte = de(runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true }));
+  assert.strictEqual(corte.cambios.estado, 'leido', 'con el resumen al lado, el cambio solo no deja la ejecución sin leer');
+  assert.deepStrictEqual(corte.descripcion, antes.descripcion, 'el mismo título');
+  assert.deepStrictEqual(corte.tiempos, antes.tiempos, 'el mismo trabajo y la misma espera');
+});
+
 test('2.27-A6 Arranque_BorraLosTextosDeArmadosAnteriores @story-2.27 @ac-20', () => {
   const datos = tmp('site-runs-arranque-');
   const viejo = path.join(datos, 'corridas-textos', '1700000000000-abcd1234');
