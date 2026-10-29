@@ -4648,16 +4648,15 @@ function cmdSignAdversarialSkip(argv) {
   process.exit(0);
 }
 
-// `approve-pending --id <CÓDIGO> [--repo <carpeta>] [--for-session <sesión> | --terminal]`: la aprobación de un
-// pendiente nuevo de la lista de pendientes (scripts/lib/pending-approvals.js). El pendiente tiene que estar abierto en
-// la lista del repo; la firma va por la delegación del perfil (la coordinadora, desde su pestaña, con --for-session de la
-// sesión que lo pide), la ventana de permiso o la terminal del dueño, y recién con ella se escribe la línea del registro.
-// El guion no actúa sobre una sesión sino sobre el repo: --for-session sólo dice para quién es la firma.
+// `approve-pending --id <CÓDIGO> [--repo <carpeta>] [--terminal]`: la aprobación de un pendiente nuevo de la lista de
+// pendientes (scripts/lib/pending-approvals.js). El pendiente tiene que estar abierto en la lista del repo; la firma va
+// por la delegación del perfil (la coordinadora, desde su pestaña), la ventana de permiso o la terminal del dueño, y
+// recién con ella se escribe la línea del registro. Actúa sobre el repo, no sobre una sesión: no lleva --for-session.
 function cmdApprovePending(argv) {
   const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
   const { val, tiene } = opcionesDe(argv);
   const id = (val('--id') || '').trim();
-  if (!id) { console.error('uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--for-session <sesión> | --terminal]'); process.exit(2); }
+  if (!id) { console.error('uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--terminal]'); process.exit(2); }
   if (tiene('--quote') || tiene('--relayed-by') || tiene('--ok')) {
     console.error('🚫 marker.js approve-pending: la cita, el reenvío y --ok no aprueban: la aprobación es una firma (la delegación, la ventana o --terminal).');
     process.exit(1);
