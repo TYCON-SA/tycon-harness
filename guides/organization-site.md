@@ -1219,7 +1219,8 @@ Con Microsoft en «sólo la organización», alguien de afuera del directorio (u
 empresa) entra recién cuando está en el directorio y en la lista del sitio. En Configuración → Personas, «Quién entra al
 sitio» → **Invitar a alguien**: su correo y sus productos. «Invitar» abre un pedido que lo suma a la lista como dev, con
 sus productos y una marca (`site.invitations`: quién invitó y cuándo). Cuando el pedido se aprueba y el sitio lee la
-lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. Al lado de su correo se ve el estado:
+lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. La invitación sale en el primer ciclo
+del sitio después de aprobado el pedido; si nadie lo usa, puede tardar hasta que alguien entre. Al lado de su correo se ve el estado:
 «invitación enviada, todavía no entró», «aceptada» (ya entró), «esperando el tope de mañana» o «no se pudo enviar» con
 el motivo; una falla se reintenta sola en el próximo refresco (si Microsoft no llegó a contestar, la persona puede
 recibir un segundo correo). Hasta 10 invitaciones por día
