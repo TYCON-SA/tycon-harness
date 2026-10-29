@@ -10,8 +10,17 @@
  *   · `git ls-files --others --exclude-standard` — lo nuevo sin agregar al índice;
  *   · lo que la story DECLARA (`files_to_create` + `files_to_modify`) sólo como dato en `sources.declared`:
  *     no cuenta como tocado: el corte es el cambio real (ver `touchedFiles`).
- * Sin base, o con git fallando, `known: false` con el motivo: el que llama corre todo. Lo mismo si lo tocado sale vacío
- * y la rama trae commits que la principal no tiene: pueden ser de la story, commiteados antes de la base.
+ * Sin base, o con git fallando, `known: false` con el motivo: el que llama corre todo. Lo mismo si el diff no trae
+ * ningún archivo con seguimiento que no sea documentación (vacío, sólo sin seguimiento, sólo `.md`) y la rama trae
+ * commits que la principal no tiene: pueden ser de la story, commiteados antes de la base.
+ * Límites conocidos:
+ *   · en un repo sin remoto, con los commits de la story sobre la propia `main` local, `main..HEAD` da 0 y no se ven
+ *     como propios. Pedir el remoto haría correr todo en cualquier repo sin él; un clon real tiene `origin/main`;
+ *   · con commits propios, una tanda que sólo crea archivos nuevos (sin agregarlos ni cambiar nada con seguimiento)
+ *     corre todo: frena de más, aceptado, porque un archivo suelto no prueba que la story esté a la vista;
+ *   · con lo de la story commiteado antes de la base, un cambio ajeno a ella que no sea documentación (un `.json`, un
+ *     lockfile, un borrado) se toma como lo tocado y las suites de la story no corren. Cerrarlo pide saber si hubo
+ *     commits de la story antes de la base, y eso lo sabe la corrida, no git.
  * 🔴 No se reusa `changedFiles` de test-scope.js: traga los errores de git y devuelve [], así que
  *    «git falló» y «no hay cambios» se ven igual — justo lo que este corte no puede confundir.
  *
@@ -27,6 +36,8 @@ const { parseDeclaredFiles } = require('./test-scope');
 // Cada segmento excluye «/» (una barra doble no calza) y no puede ser «.» ni «..»: «scripts//<carpeta>/**»
 // dejaría la suite diferida para siempre.
 const PATTERN_RE = /^(?!(?:.*\/)?\.{1,2}\/)(?:[^*?[\]{}\s/]+\/)*[^*?[\]{}\s/]+\/\*\*$/;
+// Documentación: un cambio sólo de esto no muestra el código de la story.
+const DOCS_RE = /\.(md|markdown)$/i;
 
 function isValidPattern(p) {
   return typeof p === 'string' && PATTERN_RE.test(p);
@@ -94,13 +105,15 @@ function touchedFiles({ repo, storyPath, baseRef, baseSource } = {}) {
   // archivos de las que vienen, y sumarlos correría suites de 10+ min en tandas que no las tocan. Queda en
   // `sources.declared` como dato. Lo commiteado antes de la base es de una tanda anterior con su control hecho.
   const files = [...new Set([...sources.diff, ...sources.untracked])];
-  // Vacío no es «nada que probar» si la rama ya trae commits propios: con la base en la punta y lo de la story
-  // commiteado, el diff no ve nada. Sin una rama principal contra la que contarlos, tampoco se sabe.
-  if (!files.length) {
+  // Con lo de la story commiteado antes de la base, el diff no ve nada de ella: lo que muestre (un archivo sin
+  // seguimiento, un .md) no es la story. Sin un cambio de código con seguimiento, si la rama trae commits propios no se
+  // sabe; tampoco si no hay rama principal contra la que contarlos.
+  if (!sources.diff.some((f) => !DOCS_RE.test(f))) {
+    const que = files.length ? 'lo tocado no trae código con seguimiento' : 'lo tocado sale vacío';
     const propios = branchCommits(repo);
-    if (propios.error) return unknown(`lo tocado sale vacío y ${propios.error}`);
+    if (propios.error) return unknown(`${que} y ${propios.error}`);
     if (propios.count > 0) {
-      return unknown(`lo tocado sale vacío pero la rama trae ${propios.count} commit(s) que ${propios.main} no tiene: pueden ser de la story`);
+      return unknown(`${que} pero la rama trae ${propios.count} commit(s) que ${propios.main} no tiene: pueden ser de la story`);
     }
   }
   // Una story ilegible con git sano: lo tocado de verdad sí se vio; se deja dicho igual.
