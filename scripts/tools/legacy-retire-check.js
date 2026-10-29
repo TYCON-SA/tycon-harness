@@ -95,6 +95,8 @@ function az(bin, args) {
   const r = spawnSync(cmd, [...pre, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (r.error) return { ok: false, error: `${bin} no corrió (${r.error.code || r.error.message})` };
   if (r.status !== 0) return { ok: false, error: `az ${args.slice(0, 3).join(' ')} salió ${r.status}: ${String(r.stderr || '').trim().slice(0, 200)}` };
+  // salió 0 sin escribir nada: lo decide quien pregunta (el timeline de una corrida cancelada antes de arrancar)
+  if (!String(r.stdout || '').trim()) return { ok: true, json: null, empty: true };
   try { return { ok: true, json: JSON.parse(r.stdout) }; } catch (_) { return { ok: false, error: `az ${args.slice(0, 3).join(' ')} no devolvió JSON` }; }
 }
 
@@ -152,7 +154,7 @@ function readMailbox(mirror, windowFrom, today) {
  * lista (`listed`: nombre del repo → ruta) y los demás, que salen «no declarados» si llaman al arnés (un aviso «nombre
  * viejo» sólo lo escribe el arnés). Una respuesta de az con otra forma es una consulta que falló, nunca «cero».
  */
-function readProject(bin, project, listed, windowFrom) {
+function readProject(bin, project, listed, windowFrom, today) {
   const failed = [];
   const uses = [];
   const undeclared = [];
@@ -164,27 +166,43 @@ function readProject(bin, project, listed, windowFrom) {
     return { failed, uses, undeclared };
   }
   for (const p of list.json) {
-    const repoName = p && p.repository && p.repository.name;
+    // la lista no trae el repo de cada pipeline: lo dice «pipelines show». Sin saberlo, los repos de la lista de ese
+    // proyecto quedan sin medir (puede ser de cualquiera de ellos)
+    let repoName = p && p.repository && p.repository.name;
+    if (!repoName) {
+      const show = az(bin, ['pipelines', 'show', '-p', project, '--id', String(p.id), '-o', 'json']);
+      repoName = show.ok && show.json && show.json.repository && show.json.repository.name;
+      if (!repoName) {
+        for (const r of listed.values()) fail(r, `pipelines show ${p.id}`, show.error || `no sé de qué repo es el pipeline ${p.name}`);
+        continue;
+      }
+    }
     const ruta = listed.get(repoName) || null;
     const label = ruta || `${project}/${repoName || p.name}`;
     const extra = ruta ? {} : { undeclared: true };
     const source = ruta ? `pipeline:${ruta}` : `no-declarado:${project}/${repoName || p.name}`;
     const runs = az(bin, ['pipelines', 'runs', 'list', '-p', project, '--pipeline-ids', String(p.id), '--top', String(RUNS_TOP), '-o', 'json']);
     if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }
-    // una corrida sin terminar todavía no tiene todos sus avisos: no se mira, y se dice
-    const running = runs.json.filter((r) => r && !r.finishTime);
-    if (running.length) fail(label, `runs list ${p.id}`, `${running.length} ejecución(es) en curso: sus avisos todavía no están`, extra);
-    const inWindow = runs.json.filter((r) => { const d = String((r && r.finishTime) || '').slice(0, 10); return isDay(d) && d >= windowFrom; });
-    if (runs.json.length >= RUNS_TOP && inWindow.length === runs.json.length) {
+    // una corrida en curso (la de producción que espera su aprobación, a veces por semanas) se lee siempre, arranque
+    // cuando arranque: lo que ya corrió tiene sus avisos, y los pasos que faltan todavía no usaron ningún nombre
+    const ended = (r) => String((r && r.finishTime) || '').slice(0, 10);
+    const inWindow = runs.json.filter((r) => r && (!r.finishTime || (isDay(ended(r)) && ended(r) >= windowFrom)));
+    if (runs.json.length >= RUNS_TOP && runs.json.every((r) => !r.finishTime || ended(r) >= windowFrom)) {
       fail(label, `runs list ${p.id}`, `más de ${RUNS_TOP} ejecuciones en la ventana: se pasó el tope y no se miraron todas`, extra);
       continue;
     }
     let called = false;
     for (const run of inWindow) {
-      const day = String(run.finishTime).slice(0, 10);
       const tl = az(bin, ['devops', 'invoke', '--area', 'build', '--resource', 'timeline', '--route-parameters', `project=${project}`, `buildId=${run.id}`, '--api-version', '7.1', '-o', 'json']);
-      if (!tl.ok || !tl.json || !Array.isArray(tl.json.records)) { fail(label, `timeline ${run.id}`, tl.error || 'el timeline no trae «records»', extra); continue; }
+      // una corrida cancelada antes de arrancar (empieza y termina en el mismo instante) no tiene registro: az sale 0 sin
+      // escribir nada, y no usó ningún nombre. Cualquier otro vacío no se sabe qué fue: consulta que falló
+      const neverRan = run.result === 'canceled' && run.startTime && run.startTime === run.finishTime;
+      if (tl.ok && tl.empty && neverRan) continue;
+      if (!tl.ok || !tl.json || !Array.isArray(tl.json.records)) { fail(label, `timeline ${run.id}`, tl.error || (tl.empty ? 'el timeline vino vacío' : 'el timeline no trae «records»'), extra); continue; }
       for (const rec of tl.json.records) {
+        // cada aviso con el día de su paso; sin él, el de la corrida, y una en curso, hoy
+        const recDay = String((rec && (rec.finishTime || rec.startTime)) || '').slice(0, 10);
+        const day = isDay(recDay) ? recDay : (run.finishTime ? ended(run) : today);
         for (const is of (rec && rec.issues) || []) {
           const m = is && is.type === 'warning' && WARNING.exec(String(is.message || ''));
           if (!m) continue;
@@ -272,7 +290,7 @@ function check(o) {
   }
   const undeclared = [];
   for (const [project, listed] of projects) {
-    const r = readProject(o.az, project, listed, windowFrom);
+    const r = readProject(o.az, project, listed, windowFrom, today);
     uses.push(...r.uses);
     failed.push(...r.failed);
     undeclared.push(...r.undeclared);
