@@ -91,6 +91,13 @@ case "$1 $2" in
   "account list") case "${FAKE_AZ:-ok}" in dos) printf 'sub-1\nsub-2\n' ;; *) printf 'sub-1\nsub-2\n' ;; esac; exit 0 ;;
 esac
 case "$1 $2 $3" in
+  # un servidor puntual: sin permiso, Azure dice AuthorizationFailed (y su listado sale vacío, sin error)
+  "sql server show")
+    case "${FAKE_AZ:-ok}" in
+      ninguna|movido) echo "ERROR: (ResourceNotFound) The Resource 'Microsoft.Sql/servers/$(arg -n "$@")' under resource group '$(arg -g "$@")' was not found." >&2; exit 3 ;;
+      sin-permiso-servidor) echo "ERROR: (AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Sql/servers/read'." >&2; exit 1 ;;
+    esac
+    arg -n "$@"; exit 0 ;;
   "sql server list")
     s="$(arg --subscription "$@")"
     # con -g: los servidores de un grupo de mentira (fake-groups/<suscripción>/<grupo>/servers)
@@ -100,7 +107,9 @@ case "$1 $2 $3" in
       f="$TMPLOG/fake-groups/$s/$g/servers"; [ -f "$f" ] && cat "$f"; exit 0
     fi
     case "${FAKE_AZ:-ok}:$s" in
-      ninguna:*) : ;;
+      ninguna:*|sin-permiso-servidor:*) : ;;
+      movido:sub-1) : ;;
+      movido:sub-2) echo "rg-otro" ;;
       dos:*) echo "rg-acme" ;;
       # cada servidor en su grupo (para los candados); el de siempre, en rg-acme
       *:sub-1) n="$(printf '%s' "$(arg --query "$@")" | sed -n "s/.*name=='\([^']*\)'.*/\1/p")"
@@ -282,6 +291,54 @@ SES=""; rc="$(puerta --close-firewall "$PROD")"
 if [ "$rc" = 0 ] && ! estado | grep "$PROD" >/dev/null; then ok "T11 CloseFirewall_RuleAlreadyGone_Exit0Cleared"
 else no "T11 · rc=$rc · $(cat "$TMP/err") · estado: $(estado)"; fi
 
+# ── B1-B6 · el servidor se borró en Azure con la regla abierta ─────────────────────────────────────────────────
+# Un servidor borrado se lleva sus reglas: con la suscripción anotada al abrir, cerrar lo da por cerrado.
+# 🔴 Falla con: el cierre que sale «0 lugares entre tus suscripciones» y deja la regla anotada como abierta para siempre.
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+if estado | grep '"sub": "sub-1"' >/dev/null && estado | grep '"rg": "rg-acme"' >/dev/null \
+   && registro | grep '"accion":"open-firewall"' | grep '"sub":"sub-1","rg":"rg-acme"' >/dev/null; then
+  ok "B1 OpenFirewall_RecordsSubscription · el estado y el registro anotan la suscripción y el grupo del servidor"
+else no "B1 · estado: $(estado) · registro: $(registro)"; fi
+SES=""; FAKE_AZ=ninguna; rc="$(puerta --close-firewall "$PROD")"; unset FAKE_AZ
+if [ "$rc" = 0 ] && ! estado | grep "$PROD" >/dev/null && grep -q "ya no existe" "$TMP/out" \
+   && registro | grep '"accion":"close-firewall"' | grep '"servidor":"borrado"' | grep '"exit":0' >/dev/null; then
+  ok "B2 CloseFirewall_ServerDeleted_CountsAsClosed · sale 0, lo dice y saca la regla del estado"
+else no "B2 · rc=$rc · $(cat "$TMP/out" "$TMP/err") · estado: $(estado)"; fi
+# sin la suscripción anotada (una regla abierta antes de este cambio), como antes: «no sé» y queda anotada
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+f="$CASA/.claude/.tycon-pipeline/production-firewall.json"
+node -e 'const fs=require("fs"),f=process.argv[1],e=JSON.parse(fs.readFileSync(f,"utf8"));e.reglas.forEach(r=>{delete r.sub;delete r.rg});fs.writeFileSync(f,JSON.stringify(e))' "$f"
+sed -i.bak 's/"sub":"sub-1","rg":"rg-acme",//' "$CASA/.claude/.tycon-pipeline/production.log"
+SES=""; FAKE_AZ=ninguna; rc="$(puerta --close-firewall "$PROD")"; unset FAKE_AZ
+if [ "$rc" = 2 ] && estado | grep "$PROD" >/dev/null && grep -q "0 lugar" "$TMP/err"; then
+  ok "B3 CloseFirewall_NoSubscriptionRecorded_StaysOpen · sin suscripción anotada sale 2 y la regla sigue anotada"
+else no "B3 · rc=$rc · $(cat "$TMP/out" "$TMP/err") · estado: $(estado)"; fi
+# la cuenta perdió el permiso sobre el servidor: el listado sale vacío sin error, pero eso no dice que no exista
+# 🔴 Falla con: el cierre que lee un listado vacío como «borrado» (un rol vencido dejaría la regla viva y sin rastro).
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+SES=""; FAKE_AZ=sin-permiso-servidor; rc="$(puerta --close-firewall "$PROD")"; unset FAKE_AZ
+if [ "$rc" = 2 ] && estado | grep "$PROD" >/dev/null && grep -q "AuthorizationFailed" "$TMP/err" && grep -q "sub-1" "$TMP/err"; then
+  ok "B4 CloseFirewall_PermissionLost_StaysOpen · sale 2 con el motivo y la regla sigue anotada"
+else no "B4 · rc=$rc · $(cat "$TMP/out" "$TMP/err") · estado: $(estado)"; fi
+# el servidor se movió a otra suscripción: la regla se fue con él y se cierra allá
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+SES=""; FAKE_AZ=movido; rc="$(puerta --close-firewall "$PROD")"; unset FAKE_AZ
+if [ "$rc" = 0 ] && ! grep -q "^$REGLA " "$TMP/az-reglas" && grep "firewall-rule delete" "$TMP/az.log" | grep -- "--subscription sub-2 -g rg-otro" >/dev/null; then
+  ok "B7 CloseFirewall_ServerMoved_ClosesWhereItIs · la busca en las demás suscripciones y la cierra allá"
+else no "B7 · rc=$rc · $(cat "$TMP/out" "$TMP/err") · az: $(grep firewall-rule "$TMP/az.log")"; fi
+# sin el estado, la suscripción sale del registro de la apertura
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; rm -f "$CASA/.claude/.tycon-pipeline/production-firewall.json"
+SES=""; FAKE_AZ=ninguna; rc="$(puerta --close-firewall "$PROD")"; unset FAKE_AZ
+if [ "$rc" = 0 ] && grep -q "ya no existe" "$TMP/out"; then
+  ok "B5 CloseFirewall_StateLost_SubscriptionFromLog · sin el estado, el registro alcanza para darlo por cerrado"
+else no "B5 · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+# el fin de sesión pasa por el mismo camino
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+FAKE_AZ=ninguna; rc="$(gancho SessionEnd "$SES_A")"; unset FAKE_AZ
+if [ "$rc" = 0 ] && ! estado | grep "$PROD" >/dev/null && registro | grep '"servidor":"borrado"' | grep '"por":"fin-de-sesion"' >/dev/null; then
+  ok "B6 SessionEnd_ServerDeleted_CountsAsClosed · el fin de sesión también lo da por cerrado"
+else no "B6 · rc=$rc · $(cat "$TMP/hook.out" "$TMP/hook.err") · estado: $(estado)"; fi
+
 # ── T12-T14 · el fin de sesión ─────────────────────────────────────────────────────────────────────────────────
 [ -f "$HOOK" ] || no "el hook no existe ($HOOK)"
 mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
@@ -376,7 +433,7 @@ else no "T29 · rc=$rc · $(cat "$TMP/err") · estado: $(estado)"; fi
 
 # ── T30 · az de la ruta fija, sólo las operaciones permitidas ──────────────────────────────────────────────────
 mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; SES=""; puerta --close-firewall "$PROD" >/dev/null
-fuera="$(grep -vE '^(account list|sql server list|sql server firewall-rule (show|create|update|delete)) ' "$TMP/az.log")"
+fuera="$(grep -vE '^(account list|sql server (list|show)|sql server firewall-rule (show|create|update|delete)) ' "$TMP/az.log")"
 if [ -z "$fuera" ] && [ ! -s "$TMP/impostor.log" ] && ! grep -q "firewall-rule \(create\|update\|delete\)" "$TMP/az.log" | grep -v -- "-n $REGLA"; then
   ok "T30 Gate_AzFromFixedPathsOnlyListedOps_NoSecretPassed · la ruta fija y sólo las operaciones de la lista"
 else no "T30 · fuera de la lista: «${fuera}» · impostor: $(cat "$TMP/impostor.log" 2>/dev/null)"; fi
