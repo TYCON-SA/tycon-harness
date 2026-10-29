@@ -2195,6 +2195,12 @@
       "requiere": []
     },
     {
+      "__nota": "El hook que cierra la regla de firewall al terminar la sesión no lo registra ningún instalador del arnés (ni el de Claude Code, en todo perfil, plataforma e integración, ni el de Codex): sólo install-guard.sh y la configuración administrada, en las máquinas autorizadas.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-firewall-only-authorized.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La clave de la herramienta de horas (con la llave vieja de Clockify) y los secretos de las integraciones: aparte de config.json, carpeta 700 y archivo 600, nunca por argumento ni impresos.",
       "raiz": "arnes",
       "ruta": "tests/time-tracking-config.test.js",
