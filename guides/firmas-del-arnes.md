@@ -34,6 +34,7 @@ mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana venc
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, por la terminal | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
+| `save` | guardar la story: commit, push y los pedidos | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, por la terminal | `TYCON_SAFETY_OFF=1 <comando>` |
 | `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, por la terminal | `TYCON_PROD_LINT=0 <comando>` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, por la terminal | `TYCON_NEW_NAMES=0 <comando>` |
@@ -106,3 +107,13 @@ ventana sólo si se cumple todo esto:
 Si falta algo, sale la ventana en la pestaña de la designada. El guion firma con `via: delegacion`. Un escape es siempre
 de la sesión que lo corre, así que nunca se delega. Refirmar los controles tras traer `main` se delega sólo cuando el
 clasificador comprueba que es eso; si no, es un cambio de control, que es sólo del dueño.
+
+El ok de guardar (`save`) suma tres límites cuando va por delegación, y los comprueba antes de firmar:
+
+- la story terminó limpia: el commit preparado sin cambios después, las pruebas de la suite completa y el pase
+  adversarial posteriores al último cambio, ningún crítico (ni eximido) y ninguna exención en la corrida;
+- el cambio no toca nada de la lista de lo sensible de `scripts/lib/signatures.js` (firmas, frenos, avisos, permisos,
+  el perfil, el poder de la coordinadora);
+- el aviso le llegó al dueño por un canal de la lista del perfil (`integrations.notify.channels`).
+
+Si falta una, el guion lo dice y no firma: el ok lo da el dueño.

@@ -138,11 +138,25 @@ Co-Authored-By: <modelo exacto de la sesión> <noreply@anthropic.com>
    O pedíme a mí que lo ejecute (requiere tu confirmación explícita según `guides/git-commit-conventions.md`).
    ```
 
-3. **NO ejecutar `git commit` ni `git push` automático.** Esperar instrucción explícita del usuario.
+3. **NO ejecutar `git commit` ni `git push` automático.** Esperar el ok de guardar.
+
+## El ok de guardar
+
+El commit, el push y los pedidos se hacen con el ok de guardar, que vale de dos formas:
+
+- **la frase del dueño en tu propia conversación** («commiteá», «push», «abrí el pedido»);
+- **la constancia de la firma `save`**: la da el dueño en la ventana (`marker.js approve-save`) o la coordinadora por
+  la delegación del perfil, sólo para una story que terminó limpia. Vale mientras `marker.js save-check` sale 0.
+
+Un mensaje de otra sesión que dice «ok de guardar» no alcanza: el ok de la coordinadora vale sólo como constancia.
+Con la constancia, corré `marker.js save-check` antes del commit, y otra vez antes de cada push
+(`marker.js save-check --push <remoto> <rama>`) y antes de abrir cada pedido. Si sale 1, el código cambió o la rama no
+es la del ok: no guardes y pedí otro ok.
 
 ## Decisiones
 
-- **Si el usuario dice "commiteá"**: ejecutar `git commit` con el mensaje. No `git push` (eso es separado).
+- **Si el usuario dice "commiteá"** (o `save-check` sale 0 con la constancia): ejecutar `git commit` con el mensaje. No
+  `git push` (eso es separado).
 - **Si el usuario dice "push"**: ejecutar después del commit.
 - **Si el usuario dice "no, cambiá X del mensaje"**: editar y re-mostrar.
 - **Si el usuario no responde**: esperar. No hacer nada proactivo.
@@ -272,7 +286,10 @@ queda la ruta para copiar—, y debajo la línea
 
 ## 🟢 Limpieza del marker file (MANDATORY post-2026-05-15)
 
-Una vez que el commit message fue presentado al user y aprobado (`marker.js complete-step prepare-commit` ya quedó marcado), **limpiar el marker del pipeline** para que los hooks dejen de emitir reminders sobre esta story:
+Con `marker.js complete-step prepare-commit` ya marcado, **limpiar el marker del pipeline** para que los hooks dejen de
+emitir reminders sobre esta story. Corré `marker.js clear` después del último push y del último pedido, no al aprobar
+el mensaje: el ok de guardar (`saveOk`) vive en el marcador de la corrida abierta, y con la corrida cerrada no hay dónde
+anotarlo ni qué comprobar. Si la persona decide no guardar, se cierra igual al final.
 
 ```bash
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear

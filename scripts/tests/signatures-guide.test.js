@@ -28,7 +28,7 @@ const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'cont
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
   'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt',
-  'escape:no-deep-review', 'escape:cambiar-el-estado'];
+  'escape:no-deep-review', 'escape:cambiar-el-estado', 'save'];
 
 const OTRA_SESION = { yes: 'sí', no: 'no, por la terminal', pending: 'todavía sin comando' };
 
@@ -112,4 +112,14 @@ test('8.142 T15 SignaturesGuide_TresFilas', () => {
     assert.strictEqual(f[3], 'sí', id);
     assert.strictEqual(f[2], `\`${cat.SIGNATURES.find((s) => s.id === id).command}\``, id);
   }
+});
+
+// T14 SignaturesGuide_FilaSave @story-8.143 @ac-10
+// 🔴 Falla con: el ok de guardar en el catálogo sin su fila en la guía, o con la fila que dice que no se da desde otra sesión.
+test('8.143 T14 SignaturesGuide_FilaSave', () => {
+  const cat = require(CATALOGO);
+  const f = tabla(fs.readFileSync(GUIA, 'utf8'), '## Las firmas').find((x) => x[0] === '`save`');
+  assert.ok(f, 'la guía trae la fila de «save»');
+  assert.strictEqual(f[3], 'sí');
+  assert.strictEqual(f[2], `\`${cat.SIGNATURES.find((s) => s.id === 'save').command}\``);
 });

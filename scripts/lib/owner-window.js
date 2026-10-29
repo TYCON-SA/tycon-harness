@@ -195,6 +195,7 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'approve-pending') return 'pending-approval';
+    if (sub === 'approve-save') return 'save';
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
     if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;
@@ -542,7 +543,7 @@ function mismoArchivo(a, b) {
  * ¿El guion de `firma` (proceso `pid`, argumentos `argv` desde el guion) viene del «Sí» de una ventana? `{ ok, registro }`
  * consume el registro; `{ ok: false, motivo }` no escribe nada.
  */
-function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino } = {}) {
+function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = Date.now(), userInfo, sesion, destino, antes } = {}) {
   const s = firmaDe(firma);
   const no = (m) => ({ ok: false, motivo: `esta firma no pasó por la ventana: ${m}. Firmala en tu terminal: ${(s && s.terminal) || 'el mismo comando con --terminal'}` });
   if (!s || s.kind !== 'guion') return no(`«${firma}» no es una firma de guion`);
@@ -602,6 +603,11 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
     // sólo vale el último pedido: el más nuevo se consume y los anteriores vencen
     validos.sort((a, b) => Date.parse(b.reg.ts) - Date.parse(a.reg.ts));
     const [ultimo, ...viejos] = validos;
+    // lo que el guion comprueba con el pedido a la vista y sin gastarlo (la vía la escribió el freno en el registro)
+    if (antes) {
+      const n = antes(ultimo.reg.via === 'delegacion' ? 'delegacion' : 'ventana', ultimo.reg);
+      if (n && n.codigo) return { ok: false, codigo: n.codigo, motivo: n.motivo };
+    }
     try { fs.renameSync(path.join(dir, ultimo.f), path.join(dir, `${ultimo.f}.consumido-${ahora}`)); } catch (_) { return no('el pedido de la ventana ya se usó'); }
     for (const v of viejos) { try { fs.renameSync(path.join(dir, v.f), path.join(dir, `${v.f}.vencido-${ahora}`)); } catch (_) { /* otro guion ya lo movió */ } }
     return { ok: true, registro: ultimo.reg };
@@ -617,8 +623,9 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
  * El renglón `<firma>-signed` del gates.log: cómo se firmó, quién y para quién. Va antes de la constancia del guion.
  * `anotar(renglon)`: el guion que lo escribe en su propio registro (marker.js, con su carpeta de estado).
  */
-function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), anotar } = {}) {
-  const renglon = { name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), anotar, extra } = {}) {
+  // lo que el guion suma al renglón (el ok de guardar, sus huellas) va primero: no pisa quién ni cómo se firmó
+  const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
   if (anotar) { anotar(renglon); return; }
   const dir = stateDir(casa === undefined ? casaDeLaCuenta() : casa);
   fs.mkdirSync(dir, { recursive: true });
@@ -745,7 +752,7 @@ function porLaVentana({ argv, t, salir = process.exit }) {
  * La firma en la terminal del dueño (`--terminal`): `/dev/tty` y «firmo»; en Windows, la ventana nueva y tres palabras.
  * `{ codigo: 0 }` firmó (con `via: terminal`), 1 no firmó, 2 no hay terminal (nada escrito).
  */
-function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), tty, anotar } = {}) {
+function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), tty, anotar, extra } = {}) {
   const s = firmaDe(firma);
   const t = tty || ttyDeVerdad();
   if (!t.hay()) return { codigo: 2, motivo: 'esta firma se da en la terminal del dueño, y aquí no hay una' };
@@ -755,7 +762,7 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
   if (t.windows) { console.error(`\n${que}`); ok = t.confirmarFrase({}); }
   else ok = String(t.preguntar(`\n${que}\nPara firmar, escribí «firmo»: `) || '').trim().toLowerCase() === 'firmo';
   if (!ok) return { codigo: 1, motivo: 'no se firmó' };
-  firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar });
+  firmar({ firma, via: 'terminal', sesion, destino, resumen, casa, ahora, anotar, extra });
   return { codigo: 0, via: 'terminal' };
 }
 
@@ -763,8 +770,11 @@ function porTerminal({ firma, sesion = null, destino = null, resumen = '', casa,
  * Lo que llama cada guion de firma antes de actuar: con `--terminal`, la terminal; si no, la ventana. Devuelve
  * `{ codigo, motivo?, via?, destino? }`; con 0, el renglón `-signed` ya está escrito. `propia`: la sesión sobre la que
  * actúa el guion; un registro para otra sesión destino no la firma.
+ * `antes(via, registro)`: lo que el guion comprueba antes de la firma, con la vía ya sabida y el pedido sin gastar
+ * (`{ codigo, motivo }` para no firmar; null para seguir). `extra`: campos más para el renglón `-signed` (o una función
+ * que los da, llamada al firmar con `{ via, sesion, destino }`).
  */
-function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir } = {}) {
+function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = process.pid, arbol, casa, ahora, tty, anotar, propia, salir, antes, extra } = {}) {
   // sin variable de sesión (la terminal del dueño) el guion no tiene sesión propia: la dice --for-session
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
@@ -780,14 +790,18 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
     const t = tty || ttyDeVerdad();
     if (t.windows && t.enVentana && !t.enVentana()) return { ...porLaVentana({ argv, t, salir }), destino };
     if (t.windows && t.enVentana && t.dentro) t.dentro();
-    const r = porTerminal({ firma, sesion: propia || null, destino, resumen, casa, ahora, tty: t, anotar });
+    if (antes) {
+      const n = antes('terminal', null);
+      if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo, destino, sesion: propia || null };
+    }
+    const r = porTerminal({ firma, sesion: propia || null, destino, resumen, casa, ahora, tty: t, anotar, extra });
     return { ...r, destino, sesion: propia || null };
   }
-  const v = verificar({ firma, argv, pid, arbol, casa, ahora, sesion: propia || undefined, destino: destino || undefined });
-  if (!v.ok) return { codigo: 1, motivo: v.motivo };
+  const v = verificar({ firma, argv, pid, arbol, casa, ahora, sesion: propia || undefined, destino: destino || undefined, antes });
+  if (!v.ok) return { codigo: v.codigo || 1, motivo: v.motivo };
   // el registro que dejó el freno sin ventana (la delegación del perfil) firma con via: delegacion
   const via = v.registro.via === 'delegacion' ? 'delegacion' : 'ventana';
-  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: resumen || v.registro.comando, casa, ahora, anotar });
+  firmar({ firma, via, sesion: v.registro.sesion, destino: v.registro.destino, resumen: resumen || v.registro.comando, casa, ahora, anotar, extra });
   return { codigo: 0, via, destino: v.registro.destino, sesion: v.registro.sesion, registro: v.registro };
 }
 

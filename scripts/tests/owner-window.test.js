@@ -1540,3 +1540,48 @@ test('EscapePhrases_SinLasDosFirmas (T17) @story-8.142 @ac-9', (t) => {
   assert.strictEqual(s.ok, false);
   assert.match(s.motivo, /sólo del dueño/);
 });
+
+// ── el ok de guardar: «save» (@story-8.143) ───────────────────────────────────────────────────────────────────────
+const SAVE = `node ${MARKER} approve-save --for-session ses-a`;
+const SAVE_ARGV = [MARKER, 'approve-save', '--for-session', 'ses-a'];
+
+test('Freno_ApproveSave_FormaCanonica (T12) @story-8.143 @ac-1', (t) => {
+  const casa = casaNueva(t);
+  assert.deepStrictEqual(ow.firmasDelComando(SAVE), ['save']);
+  const r = pedir(casa, SAVE, { evento: DE_LA_COORD });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /sesión ses-a/, 'el destino en el texto');
+  for (const cmd of [`CLAUDE_CODE_SESSION_ID=ses-a node ${MARKER} approve-save`, `cd /tmp && node ${MARKER} approve-save --for-session ses-a`]) {
+    const otra = casaNueva(t);
+    assert.strictEqual(pedir(otra, cmd, { evento: DE_LA_COORD }).decision, 'deny', cmd);
+    assert.strictEqual(registros(otra).length, 0, `${cmd}: sin registro`);
+  }
+});
+
+test('ApproveSave_SeisLlaves (T13) @story-8.143 @ac-8', (t) => {
+  const conSave = { ...PERFIL, delegated_signing: ['save'] };
+  const casa = casaConDesignada(t);
+  const r = pedir(casa, SAVE, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: conSave }) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'delegacion');
+  const e = ow.exigir({ firma: 'save', argv: SAVE_ARGV, pid: 301, arbol: arbolDelGuion(casa, SAVE), casa, ahora: AHORA + 60000, propia: 'ses-coord' });
+  assert.strictEqual(e.codigo, 0, e.motivo);
+  assert.strictEqual(e.via, 'delegacion');
+  // sin cada llave, por vez: la ventana (o la negación), nunca la delegación
+  const sinLlave = [
+    ['la firma no está delegada', () => [casaConDesignada(t), PERFIL, DE_LA_COORD, HUELLA]],
+    ['la máquina no está', () => [casaConDesignada(t), conSave, DE_LA_COORD, 'otra-huella']],
+    ['la designación sin confirmar', () => [casaConDesignada(t, { confirmada: false }), conSave, DE_LA_COORD, HUELLA]],
+    ['la sesión no es la designada', () => [casaConDesignada(t), conSave, { session_id: 'ses-otra' }, HUELLA]],
+    ['la designada es la destino', () => [casaConDesignada(t, { designada: 'ses-a' }), conSave, { session_id: 'ses-a' }, HUELLA]],
+  ];
+  for (const [nombre, armar] of sinLlave) {
+    const [c, perfil, ev, huella] = armar();
+    const x = pedir(c, SAVE, { evento: ev, delegacion: delegacionReal({ perfil, huella }) });
+    assert.notStrictEqual(x.via, 'delegacion', nombre);
+  }
+  // la misma story en la ejecución abierta de la coordinadora
+  const misma = casaConDesignada(t);
+  fs.writeFileSync(path.join(misma, '.claude', '.tycon-pipeline', 'active', 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '9.99' }));
+  assert.notStrictEqual(pedir(misma, SAVE, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: conSave }) }).via, 'delegacion', 'la misma story');
+});

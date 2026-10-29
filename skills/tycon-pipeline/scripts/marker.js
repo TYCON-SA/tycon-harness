@@ -185,6 +185,8 @@ const PARA_OTRA_SESION = {
   'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') },
+  // el ok de guardar: sobre la corrida abierta del destino, la que vio el dueño
+  'approve-save': { firma: 'save', marcador: true },
   'restore': { firma: 'lost-run', nombra: 3 },
 };
 
@@ -1052,9 +1054,10 @@ const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
 // Una firma del dueño (scripts/lib/owner-window.js): la aprobó en la ventana de permiso de la herramienta (el registro
 // que escribió el freno, consumido acá) o la da en su terminal (`--terminal`). Sin eso sale 1 sin escribir nada (2 sin
 // terminal). Con eso, el renglón `<firma>-signed` queda en gates.log antes de la constancia de siempre.
-function firmaDelDueno(firma, resumen) {
+// `opciones`: lo que el guion comprueba con el pedido sin gastar (`antes`) y los campos más del renglón (`extra`).
+function firmaDelDueno(firma, resumen, opciones = {}) {
   const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
-  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+  const r = ow.exigir({ firma, argv: process.argv.slice(1), resumen, propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon), ...opciones });
   if (r.codigo !== 0) {
     console.error(`🔒 marker.js: ${r.motivo}`);
     process.exit(r.codigo);
@@ -1921,6 +1924,14 @@ function cmdCompleteStep(nRaw, flags) {
         cwd: process.cwd(),
       });
     }
+  }
+
+  // La foto del código al preparar el commit: el ok de guardar por delegación exige que nada cambie después.
+  if (ids.includes('prepare-commit')) {
+    try {
+      const so = require('./lib/save-ok.js');
+      marker.prepareCommitHuellas = so.huellas(so.reposDeLaCorrida({ marker, hermanos: hermanosDeLaCorrida(marker) }));
+    } catch (e) { console.error(`⚠️  complete-step prepare-commit: no pude tomar la foto del código para el ok de guardar (${e.message}).`); }
   }
 
   // El marcador viejo guarda sus pasos principales como números; el nuevo, por nombre.
@@ -2985,6 +2996,14 @@ function cmdSetSize(args) {
     console.error(`⚠️  liviana con código, con la constancia firmada por el ${firmado.quien} (huella ${firmado.huella}) — queda en bypass.log`);
   }
   process.stdout.write(`size: ${size} (${reason})\n`);
+}
+
+// Los repos hermanos de la corrida (`evidence.companion_repos`): el ok de guardar los mide si tienen cambios.
+function hermanosDeLaCorrida(marker) {
+  try {
+    const story = resolveStoryPath(marker.storyPath, marker) || undefined;
+    return require('./lib/companion-repos.js').companionRoots(path.resolve(marker.repoPath || process.cwd()), story);
+  } catch (_) { return []; }
 }
 
 // La carpeta de la ejecución del marcador, o null. No poder calcularla se dice: no es «no hay ejecución».
@@ -4712,6 +4731,97 @@ function cmdApprovePending(argv) {
   process.exit(0);
 }
 
+// Las firmas `-signed` del gates.log para la sesión de la corrida (las últimas 8 MB): el ok por delegación mira si hubo
+// una exención.
+function firmasDeLaSesion(sid) {
+  const p = path.join(STATE_DIR, 'gates.log');
+  let texto = '';
+  try {
+    const fd = fs.openSync(p, 'r');
+    try {
+      const tam = fs.fstatSync(fd).size;
+      const largo = Math.min(tam, 8 * 1024 * 1024);
+      const b = Buffer.alloc(largo);
+      fs.readSync(fd, b, 0, largo, tam - largo);
+      texto = b.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  const out = [];
+  for (const l of texto.split('\n')) {
+    if (!l.includes('-signed')) continue;
+    try { const j = JSON.parse(l); if (j && /-signed$/.test(String(j.name)) && j.destino === sid) out.push(j); } catch (_) { /* un renglón cortado */ }
+  }
+  return out;
+}
+
+// `approve-save [--for-session <D>] [--terminal]`: el ok de guardar la story (commit, push y los pedidos) es la firma
+// `save` (lib/save-ok.js). La da el dueño en la ventana o en su terminal, o la coordinadora por la delegación del
+// perfil: por delegación, antes de gastar el pedido, la corrida tiene que estar limpia, el cambio no tocar nada sensible
+// y el aviso tiene que haberle llegado al dueño. La constancia `saveOk` (las huellas de cada repo) queda en el marcador
+// de la corrida y en el renglón `save-signed`; `save-check` dice si sigue valiendo.
+function cmdApproveSave(argv) {
+  const { tiene } = opcionesDe(argv);
+  if (tiene('--quote') || tiene('--relayed-by') || tiene('--ok')) {
+    console.error('🚫 marker.js approve-save: la cita, el reenvío y --ok no dan el ok de guardar: es una firma (la delegación, la ventana o --terminal).');
+    process.exit(1);
+  }
+  const m = readMarker();
+  if (!m) { console.error(`marker.js approve-save: la sesión ${SID} no tiene una ejecución abierta: el ok de guardar es de una corrida.`); process.exit(2); }
+  const so = require('./lib/save-ok.js');
+  const repos = so.reposDeLaCorrida({ marker: m, hermanos: hermanosDeLaCorrida(m) });
+  let previo = null;
+  let ok = null;
+  const antes = (via) => {
+    let datos = {};
+    if (via === 'delegacion') {
+      const rd = carpetaDeLaCorrida(m);
+      let findings;
+      try { findings = rd ? JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8')) : null; } catch (e) { findings = null; }
+      if (!Array.isArray(findings)) return { codigo: 2, motivo: 'la coordinadora no puede dar el ok: no pude leer el findings.json de la corrida. Lo firma el dueño' };
+      let firmas;
+      try { firmas = firmasDeLaSesion(SID); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma el dueño` }; }
+      const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
+      datos = { findings, firmasDeLaCorrida: firmas, canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) };
+    }
+    const r = so.antesDeFirmar({ via, marker: m, repos, ...datos });
+    if (r.codigo) return r;
+    previo = r;
+    return null;
+  };
+  const extra = ({ via, sesion, destino }) => {
+    ok = so.constancia({ marker: m, via, por: sesion && sesion !== destino ? sesion : null, previo, ahora: nowIso() });
+    return { storyId: ok.storyId, startedAt: ok.startedAt, huellas: ok.huellas, ...(ok.canales ? { canales: ok.canales } : {}) };
+  };
+  const firma = firmaDelDueno('save', `guardar la story ${m.storyId} (${repos.map((r) => path.basename(r)).join(', ')})`, { antes, extra });
+  // con la firma, el destino quedó fijo y la corrida comparada: se relee para no pisar lo que cambió en el medio
+  const fresco = readMarker() || m;
+  fresco.saveOk = ok;
+  fresco.lastTouch = nowIso();
+  writeMarker(fresco);
+  const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
+  const q = quienFirmo(firma, persona);
+  anotarAprobacion(fresco, { que: 'el ok de guardar la story (commit, push y los pedidos)', via: q.via, tipo: q.tipo, quien: q.quien, ...porDe(firma), ...(q.delegacion ? { delegacion: q.delegacion } : {}) });
+  console.error(`✅ ok de guardar la story ${fresco.storyId} (${q.via}${ok.canales ? `, avisado por ${ok.canales.join(', ')}` : ''}). Antes de cada commit, push y pedido: marker.js save-check.`);
+  process.exit(0);
+}
+
+// `save-check [--push <remoto> <rama>]` (sólo lee): sale 0 si el ok de guardar de la corrida abierta sigue valiendo para
+// el código de ahora; 1 con qué repo y qué cambió. Con --push, además, la rama de destino es la del ok y no es main.
+function cmdSaveCheck(argv) {
+  const i = argv.indexOf('--push');
+  const push = i >= 0 ? { remoto: argv[i + 1], rama: argv[i + 2] } : null;
+  if (push && (!push.remoto || !push.rama)) { console.error('uso: marker.js save-check [--push <remoto> <rama>]'); process.exit(2); }
+  const m = readMarker();
+  const so = require('./lib/save-ok.js');
+  const no = (motivo) => { console.error(`🔒 save-check: ${motivo}`); process.exit(1); };
+  if (!m) no('no hay una ejecución abierta: el ok de guardar es de una corrida');
+  if (m.saveOk && (m.saveOk.storyId !== m.storyId || m.saveOk.startedAt !== (m.startedAt || null))) no('el ok de guardar es de otra corrida: hay que pedir otro');
+  const r = so.vigente({ saveOk: m.saveOk, push, repoActual: process.cwd() });
+  if (!r.ok) no(r.motivo);
+  console.error(`✅ save-check: el ok de guardar de ${m.storyId} sigue valiendo${push ? ` para empujar ${push.rama}` : ''}.`);
+  process.exit(0);
+}
+
 // `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
 // firma en nombre del dueño (el rol de `approvals.relay_session`). La frase nombra el rol («Esta sesión es la
 // coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a la anterior. La designación vale
@@ -5438,6 +5548,12 @@ switch (cmd) {
     break;
   case 'approve-pending':
     cmdApprovePending(process.argv.slice(3));
+    break;
+  case 'approve-save':
+    cmdApproveSave(process.argv.slice(3));
+    break;
+  case 'save-check':
+    cmdSaveCheck(process.argv.slice(3));
     break;
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));

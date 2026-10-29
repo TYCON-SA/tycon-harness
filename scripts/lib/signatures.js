@@ -61,6 +61,7 @@ const APPROVES_EN = {
   'lost-run': 'give up a run as lost and close it',
   'adversarial-skip': 'skip the adversarial pass with a signed record',
   'pending-approval': 'open a new item in the pending list',
+  save: 'save the story: commit, push and the pull requests',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
   'escape:TYCON_PROD_LINT': 'turn off the production query check for one command',
   'escape:TYCON_NEW_NAMES': 'turn off the new names check on what is published',
@@ -100,6 +101,7 @@ const SIGNATURES = Object.freeze([
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
+  { id: 'save', approves: 'guardar la story: commit, push y los pedidos', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
@@ -117,6 +119,38 @@ const GROUPS = Object.freeze(Object.fromEntries(['refresh-after-main', 'adversar
   'plan-approval', 'browser-test', 'runtime-waiver', 'manual-test', 'extra-round', 'control-change', 'lost-run']
   .map((g) => [g, Object.freeze(g === 'escape-phrases' ? ESCAPES_DEL_GRUPO : [g])])));
 
+/**
+ * Lo que el ok de guardar por delegación (`save`) no cubre: un cambio que toca algo de esta lista lo firma el dueño.
+ * Rutas relativas a la raíz de cada repo, en minúsculas; `*` es un tramo sin `/` y `**` cualquier cosa. Además cuenta
+ * todo archivo que hace `require` de uno de REQUIERE_SENSIBLE (save-ok.js lo mira en el texto, un nivel).
+ */
+const SENSITIVE = Object.freeze([
+  // los que definen o verifican firmas
+  'scripts/lib/signatures.js', 'scripts/lib/owner-window.js', 'scripts/lib/delegated-signing.js',
+  'skills/tycon-pipeline/scripts/lib/approvals.js', 'skills/tycon-pipeline/scripts/lib/adversarial-skip.js',
+  'skills/tycon-pipeline/scripts/lib/save-ok.js',
+  // los frenos
+  'scripts/hooks/safety-guard*', 'skills/tycon-pipeline/scripts/lib/marker-command.js', 'scripts/production/**',
+  // lo que decide si la story está limpia: el pase, los hallazgos, las exenciones y el portón de pruebas
+  'skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js',
+  'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
+  'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
+  'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
+  'scripts/lib/test-scope.js', 'scripts/lib/test-scope-options.json', '.test-gate.yaml',
+  // lo que decide si el dueño se entera
+  'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-telegram-notify.sh',
+  'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',
+  // lo que registra los ganchos y las plantillas de permisos que instala el arnés
+  '**/hooks.json', 'scripts/setup/hooks-list.json', 'scripts/setup/harness/managed.js',
+  'scripts/setup/harness/read-permissions.js', 'scripts/production/managed-settings*',
+  // el poder de la coordinadora y cómo se usa el ok
+  'scripts/tools/coordination.js', 'skills/tycon-pipeline/steps/step-11-prepare-commit.md',
+  'guides/coordination.md', 'guides/coordination.en.md',
+  // los permisos y el perfil del equipo
+  '**/.claude/settings*.json', '.claude/settings*.json', '**/team-profile.json', 'team-profile.json',
+]);
+const REQUIERE_SENSIBLE = Object.freeze(['signatures.js', 'owner-window.js', 'delegated-signing.js', 'approvals.js', 'notify.js']);
+
 function ids() { return SIGNATURES.map((s) => s.id); }
 function groupNames() { return Object.keys(GROUPS); }
 function isId(v) { return SIGNATURES.some((s) => s.id === v); }
@@ -131,4 +165,4 @@ function expand(v, { restringe = false } = {}) {
   return isId(v) ? [v] : [];
 }
 
-module.exports = { SIGNATURES, GROUPS, FIRMAS_DE_ARCHIVO, ids, groupNames, isId, expand };
+module.exports = { SIGNATURES, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, ids, groupNames, isId, expand };
