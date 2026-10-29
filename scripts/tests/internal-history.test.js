@@ -276,13 +276,14 @@ test('PublicHistory_StagedProse_PublicReferencesPass_InternalOnesBlock', (t) => 
 // versión propia del privado («own») tampoco: la del público la mide su CI.
 const DEUDA = n('DEF-', '9.9-de-juguete');   // una forma que el control reconoce, armada por partes
 const MARCA_SUPERPOSICION = '[superposición local, no se empuja]';
-function thinLab(t, { thinList = true, profile = false } = {}) {
+function thinLab(t, { thinList = true, profile = false, composed = false } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ih-adelgazado-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
   gitIn(root, ['init', '--quiet', '--initial-branch=main']);
   put('scripts/publishing/internal-history.json', fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.json'), 'utf8'));
-  if (thinList) put('.tycon/internal-forms.json', `${JSON.stringify({ layout: 'thin', own: { 'guides/propia.md': 'la versión del privado' } })}\n`);
+  if (thinList === 'broken') put('.tycon/internal-forms.json', '{ "layout": "thin", roto');
+  else if (thinList) put('.tycon/internal-forms.json', `${JSON.stringify({ layout: 'thin', own: { 'guides/propia.md': 'la versión del privado' } })}\n`);
   if (profile) { put('perfil-equipo.json', '{}\n'); put('scripts/publishing/replacements.json', '{}\n'); }
   put('guides/privada.md', `# Sólo del privado\n\nLa deuda ${DEUDA} sigue abierta.\n`);
   put('guides/propia.md', `# La versión propia\n\nLa deuda ${DEUDA} sigue abierta.\n`);
@@ -290,6 +291,8 @@ function thinLab(t, { thinList = true, profile = false } = {}) {
   gitIn(root, ['commit', '--quiet', '-m', 'la punta del privado']);
   const tip = gitIn(root, ['rev-parse', 'HEAD']);
   put('guides/publica.md', `# Del público\n\nLa deuda ${DEUDA} sigue abierta.\n`);
+  // una versión propia que la superposición compone con la del público: queda distinta de la punta, con lo del privado
+  if (composed) put('guides/propia.md', `# La del público\n\n## La sección del privado\n\nLa deuda ${DEUDA} sigue abierta.\n`);
   gitIn(root, ['add', '-A']);
   gitIn(root, ['commit', '--quiet', '-m', `arnés de GitHub ${'a'.repeat(40)} sobre la punta ${tip} del privado, adelgazado ${MARCA_SUPERPOSICION}`]);
   return { root, tip };
@@ -319,6 +322,24 @@ test('ThinOverlay_BroughtByOverlay_SameAsPublished @story-8.112 @ac-1', (t) => {
   t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
   gitIn(empty, ['init', '--quiet']);
   assert.strictEqual(broughtByOverlay(empty), null, 'sin commits: null, no un error');
+});
+
+test('ThinOverlay_ComposedOwnFile_NotBroughtNorPublished', (t) => {
+  // una versión propia compuesta (lo del público más lo del privado) cambia en el commit de la superposición, pero no
+  // viaja: lo que sale es la del público, que se mide en su CI. Contarla haría leer lo privado como publicado
+  const { broughtByOverlay } = require('../publishing/internal-history.js');
+  const lab = thinLab(t, { composed: true });
+  assert.deepStrictEqual([...broughtByOverlay(lab.root)], ['guides/publica.md'], 'la propia compuesta no es de lo traído');
+  assert.deepStrictEqual(Object.keys(allOf(lab.root).files), ['guides/publica.md'], 'ni se cuenta como publicada');
+});
+
+test('ThinOverlay_UnreadableThinList_CouldNotMeasure', (t) => {
+  // la lista del adelgazado rota no es «no hay lista»: leída como vacía, lo propio compuesto contaría como publicado
+  const { broughtByOverlay } = require('../publishing/internal-history.js');
+  const lab = thinLab(t, { thinList: 'broken', composed: true });
+  assert.throws(() => broughtByOverlay(lab.root), /internal-forms\.json no es JSON válido/);
+  // la clasificación, en cambio, la toma por pública: se mide todo lo versionado, lo más estricto
+  assert.strictEqual(allOf(lab.root).mode, 'public');
 });
 
 test('ThinOverlay_PublicAndTeamClassificationUnchanged', (t) => {
