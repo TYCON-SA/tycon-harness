@@ -112,6 +112,7 @@ test('ApproveSave_Ventana_EscribeHuellas (T3) @story-8.143 @ac-2', (t) => {
   escribir(a, 'LEEME.md', 'cambiado\n');
   escribir(a, 'nuevo.js', 'module.exports = 1;\n');      // sin seguimiento
   escribir(b, 'LEEME.md', 'por consola\n');              // ningún fileEvent lo nombra
+  escribir(a, 'specs/story-9.99.md', '---\nstory_id: "9.99"\n---\n');
   const sinCambios = repo(t);
   const indiceA = fs.readFileSync(path.join(a, '.git', 'index'));
   const marker = corridaLimpia([a]);
@@ -392,6 +393,11 @@ test('Repos_LosDeFilesToModify_Entran (T17) @story-8.143 @ac-2', (t) => {
   const repos = SO.reposDeLaCorrida({ marker, hermanos: [] });
   assert.ok(repos.includes(b), `el repo que nombra files_to_modify entra: ${JSON.stringify(repos)}`);
   assert.ok(SO.sensibles({ repos }).some((x) => x.repo === b), 'y su cambio sensible se ve');
+  // las otras formas de la lista: sin sangría, en línea, entre comillas con espacios; y la story que no está, tira
+  const st = path.join(a, 'specs', 'story-9.99.md');
+  fs.writeFileSync(st, `---\nfiles_to_modify:\n- ${b}/uno.js\nfiles_to_create: [${b}/dos.js, "${b}/con espacio/tres.js"]\n---\n`);
+  assert.deepStrictEqual(SO.rutasDeclaradas(st), [`${b}/uno.js`, `${b}/dos.js`, `${b}/con espacio/tres.js`]);
+  assert.throws(() => SO.rutasDeclaradas(path.join(a, 'specs', 'no-esta.md')), /ENOENT/);
 });
 
 test('Exenciones_SesionAdoptada_SeVen (T18) @story-8.143 @ac-4', () => {

@@ -67,22 +67,35 @@ function tieneCambios(repo) {
 
 /**
  * Las rutas absolutas (o desde `~/`) que la story declara en `files_to_modify` y `files_to_create`: nombran archivos de
- * otro repo. Una story que no está en el disco no declara nada; una que no se puede leer, tira.
+ * otro repo. Lee la lista con o sin sangría, y la lista en línea (`[a, b]`); una ruta entre comillas puede tener
+ * espacios. Una story que no se puede leer, o que no está en el disco, tira: sin ella no se sabe qué repos declara.
  */
 function rutasDeclaradas(storyPath) {
   if (!storyPath) return [];
-  let texto;
-  try { texto = fs.readFileSync(storyPath, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+  const texto = fs.readFileSync(storyPath, 'utf8');
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(texto);
   if (!fm) return [];
-  const out = [];
+  const crudas = [];
   let enLista = false;
   for (const l of fm[1].split(/\r?\n/)) {
-    if (/^\S/.test(l)) { enLista = /^files_to_(modify|create)\s*:/.test(l); continue; }
-    const m = enLista && /^\s+-\s+['"]?([^'"#\s]+)/.exec(l);
-    if (!m) continue;
-    if (m[1].startsWith('~/')) out.push(path.join(os.homedir(), m[1].slice(2)));
-    else if (path.isAbsolute(m[1])) out.push(m[1]);
+    const clave = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(l);
+    if (clave) {
+      enLista = /^files_to_(modify|create)$/.test(clave[1]);
+      const enLinea = enLista && /^\[(.*)\]/.exec(clave[2].trim());
+      if (enLinea) crudas.push(...enLinea[1].split(','));
+      continue;
+    }
+    const item = enLista && /^\s*-\s+(.*)$/.exec(l);
+    if (item) crudas.push(item[1]);
+  }
+  const out = [];
+  for (const c of crudas) {
+    const s = c.trim();
+    const q = /^(['"])(.*?)\1/.exec(s);
+    const ruta = q ? q[2] : s.replace(/\s+#.*$/, '').trim();
+    if (!ruta) continue;
+    if (ruta.startsWith('~/')) out.push(path.join(os.homedir(), ruta.slice(2)));
+    else if (path.isAbsolute(ruta)) out.push(ruta);
   }
   return out;
 }
