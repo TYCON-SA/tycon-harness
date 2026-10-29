@@ -533,7 +533,6 @@
     "harness-maintain.sh::dispara-el-mantenimiento-en-background": true,
     "harness-maintain.sh::quiet-y-exit-0-sin-instalador": true,
     "on-prompt.js::prompt-de-story-avisa-intent-pero-NO-fija-carril-ni-guarda-el-texto": true,
-    "on-prompt.js::la-frase-que-ayer-fijaba-carril-de-mas-hoy-no-deja-nada": true,
     "on-bash-write-gate.js::adhoc-declarado-cubre-aunque-un-lane-viejo-diga-pipeline": true,
     "on-bash-write-gate.js::pasa-codigo-con-adhoc-posterior-al-carril-adhoc": true,
     "on-bash-write-gate.js::sin-marker-y-sin-adhoc-bloquea-y-manda-a-preguntar": true,
