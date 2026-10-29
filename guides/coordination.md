@@ -63,8 +63,7 @@ que falta aprobar la carpeta.
 **Sin medir todavía, queda como prueba del dueño:** cuánto tarda en aparecer una sesión abierta de fondo, y qué título
 muestra la pestaña del editor después de `/rename`. La guía no da por hecho ninguna de las dos.
 
-`open` mira el encargo antes de pasarlo al lanzador. Un programa que lanza otra sesión directo desde la consola queda
-fuera de esa mirada: el freno mira las herramientas del agente, no lo que un programa le pasa a otro.
+`open` pasa el encargo tal cual al lanzador, sin revisarlo: lo que diga no firma nada (ver «Las firmas del dueño»).
 
 Con Codex, las sesiones las abre el dueño: Codex no tiene un lanzador de sesiones de fondo con nombre.
 

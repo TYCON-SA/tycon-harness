@@ -344,7 +344,9 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
         const sub = args.length && args[0].literal ? args[0].texto : null;
         // `node --env-file=<archivo> pipeline.js …`: el archivo puede traer variables que el comando no muestra
         const envFile = pal.slice(0, m).some((x) => /^--env-file(-if-exists)?(=|$)/.test(x.texto));
-        for (const g of guiones) fuera.push({ guion: g, sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0), asig, envFile, porXargs: p.porXargs });
+        // `subPalabra`: el subcomando que no se ve, para saber si el shell lo parte y trae una bandera consigo
+        const subPalabra = sub === null && args.length ? args[0] : undefined;
+        for (const g of guiones) fuera.push({ guion: g, sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0), asig, envFile, porXargs: p.porXargs, ...(subPalabra ? { subPalabra } : {}) });
         // lo que va después de `--` es otro comando que el guion corre (`marker.js run-check <x> -- marker.js …`)
         const corte = args.findIndex((a) => a.literal && a.texto === '--');
         if (corte >= 0 && corte + 1 < args.length) {
@@ -369,18 +371,20 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
  * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran',
  * 'no-deep-review' o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
  */
-// Las opciones que llevan valor: lo que va después de una de ellas es su valor (`--repo $PWD`). Las de `pipeline.js` se
-// leen de su propio lector de opciones (las que consumen `argv[++i]`), así una opción nueva no queda afuera; las de
-// `marker.js`, que lee sus opciones por subcomando, van en una lista. Lo que sigue a cualquier otra opción, o a una que
-// no se conoce, puede ser la bandera. Sin el guion a la vista, sólo la lista.
+// Las opciones que llevan valor, por guion: lo que va después de una de ellas es su valor (`--repo $PWD`). Las de
+// `pipeline.js` se leen de su propio lector de opciones (las que consumen `argv[++i]`), así una opción nueva no queda
+// afuera; las de `marker.js`, que lee sus opciones por subcomando, van en una lista. Cada guion usa sólo las suyas: una
+// opción del otro (`pipeline.js … --tests "$(…)"`) el guion la ignora y lee lo que sigue como bandera. Lo que sigue a
+// cualquier otra opción, o a una que no se conoce, puede ser la bandera.
 const CON_VALOR_MARKER = ['--files', '--reason', '--run', '--result', '--model', '--classes', '--tests', '--own', '--in',
   '--deferred', '--type', '--approved', '--approved-by', '--delegated-by', '--agent', '--relayed-by', '--quote', '--debt',
   '--rule', '--file', '--iter', '--story', '--repo', '--mockup-approved', '--evidence-dir', '--max-mutants', '--cost-tier',
   '--session-model', '-r'];
-let conValorCache = null;
-function opcionesConValor() {
-  if (conValorCache) return conValorCache;
-  const set = new Set(CON_VALOR_MARKER);
+const conValorCache = {};
+function opcionesConValor(guion) {
+  if (guion !== 'pipeline') return conValorCache.marker || (conValorCache.marker = new Set(CON_VALOR_MARKER));
+  if (conValorCache.pipeline) return conValorCache.pipeline;
+  const set = new Set();
   try {
     const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'pipeline.js'), 'utf8');
     const i = src.indexOf('function parseArgs');
@@ -389,12 +393,16 @@ function opcionesConValor() {
       if (!/argv\[\+\+i\]|argv\[i \+ 1\]/.test(linea)) continue;
       for (const m of linea.matchAll(/t === '(-{1,2}[\w-]+)'/g)) set.add(m[1]);
     }
-  } catch { /* sin el lector de pipeline.js queda la lista: lo demás se lee del lado que frena */ }
-  conValorCache = set;
+  } catch { /* sin el lector de pipeline.js ninguna opción lleva valor: todo se lee del lado que frena */ }
+  conValorCache.pipeline = set;
   return set;
 }
 
-function escapeDe(llamada, sid) {
+/**
+ * `pide(bandera)`: si los argumentos de la llamada pueden llevar `bandera`, a la vista o escondida en un argumento que
+ * no se ve. La usa escapeDe y la ventana de permiso (owner-window.js), con la misma lectura.
+ */
+function lectorDeBanderas(llamada) {
   const { sub, args } = llamada;
   const asig = llamada.asig || {};
   const lit = (a) => a && a.literal;
@@ -410,7 +418,7 @@ function escapeDe(llamada, sid) {
   // (`$W/a.sh`, `${D}x.md`). Cualquier otra forma (una variable sola sin valor conocido, un `$(…)`, comillas que lo
   // esconden) puede ser la bandera
   const archivoConVariables = (a) => /^(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)+[^$`]*[/.][^$`]*$/.test(a.texto);
-  const conValor = opcionesConValor();
+  const conValor = opcionesConValor(llamada.guion);
   // ¿el shell puede partir este argumento en varias palabras, una de ellas la bandera? Sin comillas, la salida de un
   // `$(…)` sí; una variable, sólo si tomó en este mismo comando un valor que no se ve (`read F`, `for F in`). Una
   // variable que viene del ambiente de la sesión (`$PWD`, `$S` sin asignar acá) no la escribe el comando
@@ -427,18 +435,33 @@ function escapeDe(llamada, sid) {
   const pide = (bandera) => {
     // con los argumentos por `xargs`, vienen de un tubo y no se ven
     if (llamada.porXargs) return true;
+    // el subcomando que no se ve y que el shell parte (`$(echo check-count --trust-ran)`, `read S; … $S`) trae lo que quiera
+    if (sub === null && llamada.subPalabra && puedeTraerOtra(llamada.subPalabra)) return true;
     const fin = llamada.guion === 'marker' && sub === 'run-check' ? args.findIndex((a) => a.literal && a.texto === '--') : -1;
     const propios = fin >= 0 ? args.slice(0, fin) : args;
     let enFiles = false;
+    // la palabra que una opción con valor se come; una opción comida como valor (`--story --repo "$F"`) no se come la
+    // siguiente, y lo que sigue queda suelto
+    let comida = -1;
     return propios.some((a, i) => {
-      if (lit(a) && /^-/.test(a.texto)) { enFiles = a.texto === '--files'; return a.texto === bandera; }
+      if (lit(a) && /^-/.test(a.texto) && i !== comida) {
+        enFiles = a.texto === '--files';
+        if (!enFiles && conValor.has(a.texto)) comida = i + 1;
+        return a.texto === bandera;
+      }
       const v = valorDe(a);
       if (enFiles) return v !== undefined ? v.some((w) => w === bandera || w.startsWith('--')) : !archivoConVariables(a) || puedeTraerOtra(a);
       if (v !== undefined) return v.includes(bandera);
-      const previa = i > 0 && lit(propios[i - 1]) && /^-/.test(propios[i - 1].texto) ? propios[i - 1].texto : null;
-      return i >= posicionales && !(previa && conValor.has(previa) && !puedeTraerOtra(a));
+      return i >= posicionales && !(i === comida && !puedeTraerOtra(a));
     });
   };
+  return pide;
+}
+
+function escapeDe(llamada, sid) {
+  const { sub, args } = llamada;
+  const lit = (a) => a && a.literal;
+  const pide = lectorDeBanderas(llamada);
   if (llamada.guion === 'pipeline') {
     // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
     if (sub === 'check-count') return pide('--trust-ran') ? 'trust-ran' : null;
@@ -491,4 +514,4 @@ function salidaPerdida(llamada) {
   return null;
 }
 
-module.exports = { llamadas, escapeDe, salidaPerdida, tramos };
+module.exports = { llamadas, escapeDe, lectorDeBanderas, salidaPerdida, tramos };

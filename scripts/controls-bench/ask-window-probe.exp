@@ -37,16 +37,25 @@ puts $f "{\"hooks\":{\"PreToolUse\":\[{\"matcher\":\"Bash\",\"hooks\":\[{\"type\
 close $f
 
 # Una sesión: pide el comando, espera la ventana y la contesta. `respuesta` es lo que se teclea en la ventana.
+# entre palabras, la pantalla puede traer espacios o saltos del cursor (`ESC[17G`) en lugar de espacios
+set S {(?:\s|\x1b\[[0-9;]*[A-Za-z])+}
+
+# la pantalla termina de dibujar el menú antes de leer teclas: sin la pausa, la flecha se pierde y queda «No»
+proc elegirLaDeAbajo {} { after 1500; send "\033\[B"; after 500; send "\r" }
+
 proc sesion {nombre respuesta archivo} {
-  global dir ajustes marca
+  global dir ajustes marca S
   set pedido "Corré con la herramienta Bash exactamente este comando, una sola vez y sin cambiarlo: touch $archivo # $marca"
   set timeout 120
   spawn claude --dangerously-skip-permissions --settings $ajustes $pedido
   set vio 0
+  # la confianza en la carpeta se da sólo para la carpeta temporal de la sonda; la opción marcada es «No», va la de abajo
+  # la sesión le pregunta a la terminal quién es (`ESC[c`) y no lee teclas hasta tener respuesta: se contesta como una VT220
   expect {
-    -re {Yes, I accept} { send "\033\[B\r"; exp_continue }
-    -re {trust (the files in )?this folder} { send "\r"; exp_continue }
-    -re {Do you want to proceed\?} { set vio 1 }
+    -re "\x1b\\\[c" { send "\033\[?62;22c"; exp_continue }
+    -re "Yes,${S}I${S}accept" { elegirLaDeAbajo; exp_continue }
+    -re "trust${S}(?:the${S}files${S}in${S})?this${S}folder" { elegirLaDeAbajo; exp_continue }
+    -re "Do${S}you${S}want${S}to${S}proceed\\?" { set vio 1 }
     timeout { }
     eof { }
   }
