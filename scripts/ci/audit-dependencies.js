@@ -25,8 +25,8 @@
  * exactamente el agujero de FRESNO. Sale 2 y lo dice, con el motivo.
  *
  * ── DEUDA DECLARADA ─────────────────────────────────────────────────────────────────────────────
- * Un repo puede declarar vulnerabilidades preexistentes en un `vulnerabilidades-pendientes.json`
- * (formato de `FRESNO/FRESNOBZExtForms`, el que ya existe). Lo declarado no despierta a nadie; **lo que
+ * Un repo puede declarar vulnerabilidades preexistentes en un `pending-vulnerabilities.json`
+ * (formato de `FRESNO/FRESNOBZExtForms`, el que ya existe; también con su nombre de antes, ver legacy-files.js). Lo declarado no despierta a nadie; **lo que
  * NO está declarado cuenta igual**, y una declaración VENCIDA vuelve a contar todo como nuevo. La
  * declaración registra lo que ya estaba, con nombre y fecha, para que no se vuelva permanente en
  * silencio — no apaga el control.
@@ -49,6 +49,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { resolveDebtFile, LegacyFilesError } = require('./legacy-files.js');
 // Las variables renombradas a inglés: el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
 // lado (una copia suelta de este archivo, como la semilla de las pruebas de la noche), paso directo con el nombre nuevo.
 const { readEnv } = (() => {
@@ -108,7 +109,7 @@ const AYUDA = `audit-dependencies.js — el criterio del análisis de dependenci
   --type npm|nuget|pip  qué gestor de paquetes (obligatorio)
   --project <rel>       nuget: el .sln/.csproj a analizar (por defecto, el .sln de la raíz);
                         pip: el archivo de requisitos fijado (por defecto, requirements.txt)
-  --declared <rel>      archivo de deuda declarada (por defecto vulnerabilidades-pendientes.json)
+  --declared <rel>      archivo de deuda declarada (por defecto pending-vulnerabilities.json)
   --json                emite el informe completo en JSON por stdout
   --block               sale 1 si hay altas/críticas NO declaradas (el modo del pull request)
 
@@ -119,11 +120,22 @@ Exit: 0 midió · 1 midió y frena · 2 NO PUDO MEDIR (nunca se confunde con "li
 /**
  * Lee la declaración de deuda. Devuelve siempre un objeto con forma conocida.
  * 🔴 Un archivo presente pero ILEGIBLE no se trata como "sin declaración": se reporta como
- * ilegible y NO ampara a nadie. Dato malo es peor que dato ausente.
+ * ilegible y NO ampara a nadie. Dato malo es peor que dato ausente. Con el nombre nuevo y el de
+ * antes de contenido distinto, `conflicto`: el informe sale «no pude medir».
  */
 function leerDeclaracion(repo, rel, hoy) {
-  const nombre = rel || 'vulnerabilidades-pendientes.json';
-  const p = path.join(repo, nombre);
+  // con el nombre nuevo o el de antes, también el que llega con --declared (el de los formularios, `../<archivo>`)
+  const pedido = rel || 'pending-vulnerabilities.json';
+  let nombre;
+  let p;
+  try {
+    const r = resolveDebtFile(repo, pedido, 'scripts/ci/audit-dependencies.js');
+    nombre = r.name;
+    p = r.abs;
+  } catch (e) {
+    if (!(e instanceof LegacyFilesError)) throw e;
+    return { existe: true, archivo: pedido, paquetes: {}, vence: null, vencida: true, ilegible: true, conflicto: true, error: e.message };
+  }
   if (!fs.existsSync(p)) return { existe: false, archivo: nombre, paquetes: {}, vence: null, vencida: false, ilegible: false };
   let j;
   try { j = JSON.parse(fs.readFileSync(p, 'utf8')); }
@@ -383,6 +395,7 @@ function auditar({ repo, tipo, proyecto, declaradas, hoy }) {
   if (!bruto.medido) return { ...base, motivo_no_medido: bruto.motivo };
 
   const decl = leerDeclaracion(repo, declaradas, hoy);
+  if (decl.conflicto) return { ...base, motivo_no_medido: decl.error };
   const hallazgos = bruto.hallazgos.map((h) => {
     const d = decl.paquetes[h.paquete.toLowerCase()];
     // Una declaración vencida (o ilegible, o sin fecha) NO ampara: vuelve a contar como nuevo.

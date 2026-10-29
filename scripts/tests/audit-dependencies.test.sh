@@ -69,7 +69,7 @@ rc=$(corre --type npm)
 # nombre ampararía el paquete entero para todo aviso futuro. El caso de abajo, con los avisos
 # puestos, es la conducta correcta; el caso "sin avisos no ampara" está más abajo.
 repo; echo "$conAltas" > "$TMP/npm.json"
-cat > "$TMP/repo/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-12-31", "paquetes": [ {"paquete":"browserslist","advisories":["GHSA-73wf"]}, {"paquete":"handlebars","advisories":["GHSA-2qvq"]} ] }
 D
 rc=$(corre --type npm --block)
@@ -79,7 +79,7 @@ rc=$(corre --type npm --block)
 # Sin esto, declarar la deuda una vez la volvería permanente en silencio — que es exactamente lo
 # que el archivo de deuda existe para impedir.
 repo; echo "$conAltas" > "$TMP/npm.json"
-cat > "$TMP/repo/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-01-01", "paquetes": [ {"paquete":"browserslist"}, {"paquete":"handlebars"} ] }
 D
 rc=$(corre --type npm --block)
@@ -88,13 +88,13 @@ rc=$(corre --type npm --block)
 
 # ── 7. 🔴 una declaración SIN FECHA no vale ──────────────────────────────────────────────────
 repo; echo "$conAltas" > "$TMP/npm.json"
-echo '{ "paquetes": [ {"paquete":"browserslist"}, {"paquete":"handlebars"} ] }' > "$TMP/repo/vulnerabilidades-pendientes.json"
+echo '{ "paquetes": [ {"paquete":"browserslist"}, {"paquete":"handlebars"} ] }' > "$TMP/repo/pending-vulnerabilities.json"
 rc=$(corre --type npm --block)
 [ "$rc" -eq 1 ] && ok "una deuda sin fecha de revisión no ampara (sería permanente)" || no "deuda sin fecha salió $rc"
 
 # ── 8. 🔴 una declaración ILEGIBLE no ampara: dato malo es peor que dato ausente ─────────────
 repo; echo "$conAltas" > "$TMP/npm.json"
-echo '{ esto no es json' > "$TMP/repo/vulnerabilidades-pendientes.json"
+echo '{ esto no es json' > "$TMP/repo/pending-vulnerabilities.json"
 rc=$(corre --type npm --block)
 { [ "$rc" -eq 1 ] && grep -qi "ilegible" "$TMP/out.txt"; } \
   && ok "una deuda ilegible no ampara, y se dice" || no "deuda ilegible salió $rc: $(cat "$TMP/out.txt")"
@@ -149,7 +149,7 @@ echo
 # Si bastara con que el NOMBRE del paquete figurara, eso ampararía el paquete entero, en todo el
 # repo y para todo aviso FUTURO. Un formulario nuevo que agregara un paquete ya declarado pasaría sin
 # que nadie lo mirara, y un aviso nuevo sobre un paquete declarado no despertaría a nadie.
-decl(){ printf '%s' "$1" > "$TMP/repo/vulnerabilidades-pendientes.json"; }
+decl(){ printf '%s' "$1" > "$TMP/repo/pending-vulnerabilities.json"; }
 
 repo; echo "$conAltas" > "$TMP/npm.json"
 decl '{"revision":"2026-12-31","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]},{"paquete":"handlebars","advisories":["GHSA-2qvq"]}]}'
@@ -264,22 +264,22 @@ rc=$(FIX="$TMP" FALLAR_HASTA=99 TYCON_DEP_CMD="$TMP/npm-flaky.sh" TYCON_DEP_TODA
 
 # ── la declaración se lee RELATIVA a --repo: una subcarpeta trae la suya, no la de la raíz ──────
 # El nocturno audita subcarpetas (`subruta`: el gateway de mensajería de un producto del equipo,
-# tools/chat-gateway, con su propio lockfile y su propio vulnerabilidades-pendientes.json). Este
+# tools/chat-gateway, con su propio lockfile y su propio pending-vulnerabilities.json). Este
 # guion resuelve la declaración relativa a --repo: el caso es la red
 # que impide que alguien "arregle" la lectura anclándola a la raíz del repo git, que dejaría al
 # gateway sin su deuda declarada y despertando a todo el mundo la primera noche.
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/sub"; : > "$TMP/repo/sub/package-lock.json"; : > "$TMP/repo/package-lock.json"
 echo "$conAltas" > "$TMP/npm.json"
-cat > "$TMP/repo/sub/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/sub/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-12-31", "paquetes": [ {"paquete":"browserslist","advisories":["GHSA-73wf"]}, {"paquete":"handlebars","advisories":["GHSA-2qvq"]} ] }
 D
 ( cd "$TMP/repo" && git init -q . && git add -A >/dev/null 2>&1 && git -c user.email=t@t -c user.name=t commit -qm x ) >/dev/null 2>&1   # la raíz ES un repo git: la declaración igual se busca en --repo
 rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" TYCON_DEP_TODAY=2026-09-01 node "$GUION" --repo "$TMP/repo/sub" --type npm --block >"$TMP/out.txt" 2>&1; echo $?)
 [ "$rc" -eq 0 ] && ok "con --repo en una subcarpeta la deuda declarada se lee AHÍ (el gateway entra en silencio)" \
   || no "subcarpeta: no leyó la declaración de la subcarpeta — rc=$rc: $(head -3 "$TMP/out.txt" | tr '\n' ' ')"
-rm -f "$TMP/repo/sub/vulnerabilidades-pendientes.json"
+rm -f "$TMP/repo/sub/pending-vulnerabilities.json"
 cp "$TMP/repo/sub/../package-lock.json" /dev/null 2>&1 || true
-cat > "$TMP/repo/vulnerabilidades-pendientes.json" <<'D'
+cat > "$TMP/repo/pending-vulnerabilities.json" <<'D'
 { "revision": "2026-12-31", "paquetes": [ {"paquete":"browserslist","advisories":["GHSA-73wf"]}, {"paquete":"handlebars","advisories":["GHSA-2qvq"]} ] }
 D
 rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" TYCON_DEP_TODAY=2026-09-01 node "$GUION" --repo "$TMP/repo/sub" --type npm --block >"$TMP/out.txt" 2>&1; echo $?)

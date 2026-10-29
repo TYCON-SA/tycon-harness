@@ -119,7 +119,7 @@ test('Inicio_Declarados_DicenDondeSeDecidenSinEnlace', () => {
   assert.strictEqual(dec.enlace, '#decidir-declarados_por_vencer');
   const html = views.listasDeDecision(modelo(), { enlaceOperaciones: ADO, ahora: AHORA });
   const seccion = html.split('id="decidir-declarados_por_vencer"')[1].split('</section>')[0];
-  assert.match(seccion, /vulnerabilidades-pendientes\.json/, 'dice dónde se decide');
+  assert.match(seccion, /pending-vulnerabilities\.json/, 'dice dónde se decide');
   assert.match(seccion, /GHSA-xxxx · vence el 2026-10-25/, 'y lista lo que vence');
   assert.doesNotMatch(seccion, /href=/, 'sin enlace: no hay un pedido');
 });

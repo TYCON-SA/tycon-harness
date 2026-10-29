@@ -55,7 +55,7 @@ la fila aplica.
 | Cerrar una story (transición a `review`/`done`) — protocolo ACCOV-C7..C10 | `guides/accov-governance-protocol.md` |
 | Configurar hooks `.claude/settings.json` en un proyecto .NET TYCON (migraciones inmutables, dotnet format) (paquete bizuit) | `packs/bizuit/guides/dotnet-hooks.md` |
 | Pasar una story de `review` → `done` (sign-off post-implementación) | `guides/definition-of-done.md` |
-| Un formulario queda sin pruebas y el pipeline lo frena · declarar o pagar una deuda de pruebas en `pruebas-pendientes.json` | `packs/bizuit/guides/deuda-de-pruebas-formularios.md` (paquete bizuit) |
+| Un formulario queda sin pruebas y el pipeline lo frena · declarar o pagar una deuda de pruebas en `pending-tests.json` | `packs/bizuit/guides/deuda-de-pruebas-formularios.md` (paquete bizuit) |
 | Se versionaron y redesplegaron TODOS los formularios de un repo sin motivo · por qué el detector de cambios no cuenta los merges | cabecera y bucle de `scripts/ci/forms-to-version.sh` |
 | Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/piezas-del-arnes.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |

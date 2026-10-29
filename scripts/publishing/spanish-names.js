@@ -841,7 +841,7 @@ function count(args) {
  * `old` o un `new` repetido en el mismo kind y where, un `new` en castellano, un `new` que choca, un valor o una clave sin
  * su `where`, y un archivo que llaman de afuera sin su reemplazo. Sin mapa no hay nada que validar.
  */
-const ENTRY_KEYS = ['kind', 'old', 'new', 'where', 'batch', 'callers', 'repo', 'repeatable', 'option', 'assigned_to', 'role', 'role_waiver', 'homonyms'];
+const ENTRY_KEYS = ['kind', 'old', 'new', 'where', 'batch', 'callers', 'repo', 'repeatable', 'option', 'assigned_to', 'role', 'role_waiver', 'homonyms', 'retire_after'];
 // `homonyms` los archivos del repo de la entrada donde su nombre viejo es OTRO archivo que se llama
 // igual (el pipeline de cada producto se llama como el nocturno de métricas del arnés, que se mudó a `pipelines/`). Cada uno, un
 // glob relativo a la raíz de ese repo (`**` cruza carpetas, `*` y `?` no) y el motivo. --stale-mentions no cuenta esa
@@ -963,6 +963,8 @@ function checkMap(args) {
     for (const k of ['old', 'new', 'batch']) if (typeof e[k] !== 'string' || !e[k]) problems.push(`${at}: falta «${k}»`);
     if (typeof e.old !== 'string' || typeof e.new !== 'string') return;
     if (e.old === e.new) problems.push(`${at}: old y new son iguales`);
+    // la fecha de retiro propia de una entrada: la que quedó con uso, o la que nació tarde
+    if (e.retire_after !== undefined && !realDate(String(e.retire_after))) problems.push(`${at}: retire_after tiene que ser una fecha AAAA-MM-DD que exista (es ${JSON.stringify(e.retire_after)})`);
     if (['option', 'subcommand', 'value', 'key'].includes(e.kind) && (typeof e.where !== 'string' || !e.where)) problems.push(`${at}: un ${e.kind} tiene que nombrar su where (el script o archivo que lo lee)`);
     if (e.repo !== undefined && !['arnes', 'agent-skills'].includes(e.repo)) problems.push(`${at}: repo es arnes o agent-skills (no «${e.repo}»)`);
     if (e.repeatable !== undefined && (e.kind !== 'option' || typeof e.repeatable !== 'boolean')) problems.push(`${at}: repeatable es true/false y sólo en una opción`);
@@ -1328,6 +1330,10 @@ const SCRIPT_NAME = /[A-Za-z0-9_.-]+\.(?:sh|js|mjs|cjs|ps1|py)\b/g;
 const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^scripts\/publishing\/denylist\.json$/, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
   /^scripts\/tests\/fixtures\/product-pipeline\//, /^\.dashboard\//, /^guides\/guide-update-proposals\.md$/, /^guides\/(?:decisions\/)?revision-adversarial-[^/]*\.md$/,
   /^scripts\/publishing\/names-ceiling\.json$/,
+  // Los archivos de deuda de los productos: el lector de scripts/ci lleva los pares escritos a mano porque
+  // corre también desde el artefacto arnes-ci, sin el mapa (como legacy-options.*), y sus pruebas de compatibilidad
+  // arman productos de laboratorio con su propio pipeline. Salen con el retiro.
+  /^scripts\/ci\/legacy-files\.js$/, /^scripts\/tests\/legacy-retire[^/]*$/,
   /^skills\/[^/]+\/CHANGELOG\.md$/, /^skills\/tycon-pipeline\/HISTORIA\.md$/,
   // Más historia: la guía de prueba de cada story (qa/, como specs/) y los instintos ya archivados (viven en `inbox/`).
   // Y las traducciones a Codex de los agentes de agent-skills: son texto de agent-skills, que nombra al arnés con el

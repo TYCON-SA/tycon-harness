@@ -3001,6 +3001,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.15 (tanda A): los archivos de deuda de los productos con su nombre nuevo —se leen con el nuevo o con el de antes, desde el arnés y desde el artefacto arnes-ci, y con los dos distintos cada lector dice «no puedo»— y el reporte de lo que un repo de producto nombra con nombre viejo (T2, T3, T6). Repos y mapas de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/legacy-retire.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.15 (tanda A): el chequeo que dice qué nombres viejos se pueden retirar el 17/11 — el estado de cada entrada, las máquinas que no reportaron aparte, una consulta que falla nunca es «sin usos», la fecha propia de una entrada (T4, T5, T21). Buzón, máquinas, lista de productos y az de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/legacy-retire-check.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Parte 1 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p1.test.js",

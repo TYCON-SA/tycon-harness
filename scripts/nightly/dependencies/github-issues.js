@@ -504,8 +504,8 @@ function avisarCerradosVivos(ctx, res, comentar, respaldoDe, textos) {
     const repos = (Array.isArray(x.repos) && x.repos.length ? x.repos : ['(sin repos)']).map((r) => `\`${r}\``).join(', ');
     const paquete = `\`${f.fi.escalares.paquete || '(paquete desconocido)'}\``;
     const cuerpo = x.clase === 'no-aplica'
-      ? `@${respaldo.login} — este issue está cerrado como no aplica desde el ${x.visto_cerrado || '?'}, y la vulnerabilidad ${paquete} sigue apareciendo en ${repos}, medido el ${hoy}.\n\nNo lo reabro: decidilo vos. La única salida sin arreglo es declarar la deuda en \`vulnerabilidades-pendientes.json\`, con motivo y fecha de revisión: si no, va a seguir apareciendo todas las noches.`
-      : `@${respaldo.login} — este issue está cerrado como arreglado desde el ${x.visto_cerrado || '?'}, y la vulnerabilidad ${paquete} sigue apareciendo en ${repos}, medido el ${hoy}.\n\nNo lo reabro: decidilo vos — se arregla (subir el paquete) o se declara la deuda en \`vulnerabilidades-pendientes.json\`, con motivo y fecha de revisión.`;
+      ? `@${respaldo.login} — este issue está cerrado como no aplica desde el ${x.visto_cerrado || '?'}, y la vulnerabilidad ${paquete} sigue apareciendo en ${repos}, medido el ${hoy}.\n\nNo lo reabro: decidilo vos. La única salida sin arreglo es declarar la deuda en \`pending-vulnerabilities.json\`, con motivo y fecha de revisión: si no, va a seguir apareciendo todas las noches.`
+      : `@${respaldo.login} — este issue está cerrado como arreglado desde el ${x.visto_cerrado || '?'}, y la vulnerabilidad ${paquete} sigue apareciendo en ${repos}, medido el ${hoy}.\n\nNo lo reabro: decidilo vos — se arregla (subir el paquete) o se declara la deuda en \`pending-vulnerabilities.json\`, con motivo y fecha de revisión.`;
     if (simulado) {
       textos.push({ tipo: 'aviso', proyecto: x.proyecto, ficha: x.ficha, id: n, comentario: cuerpo });
       res.cerrados_vivos_avisados.push({ ficha: x.ficha, proyecto: x.proyecto, id: n });

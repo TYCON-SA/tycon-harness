@@ -39,6 +39,19 @@ const casa = (name) => {
   if (d.startsWith(ROOT) || /agent-skills|\.claude\/|\.tycon\//.test(d)) throw new Error(`el laboratorio cayó en ${d}`);
   return d;
 };
+// Un manifiesto con las claves de antes anota su uso en el registro de la HOME (lo que decide el retiro de los nombres
+// viejos): se lee con una HOME de laboratorio, nunca la de la máquina. Devuelve lo que dio `fn` y esa HOME.
+const enCasaDeLaboratorio = (fn) => {
+  const home = casa('home');
+  const prev = { HOME: process.env.HOME, TYCON_HOME: process.env.TYCON_HOME };
+  process.env.HOME = home;
+  delete process.env.TYCON_HOME;
+  try {
+    return { r: fn(), home };
+  } finally {
+    for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+};
 const SHA = (n) => String(n).padStart(40, '0');
 const blob = (p, size = 10, mode = '100644') => ({ path: p, mode, type: 'blob', sha: SHA(p.length), size });
 const dir = (p) => ({ path: p, mode: '040000', type: 'tree', sha: SHA(1) });
@@ -1039,7 +1052,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   // (a verificar aparte) un manifiesto de paquete con su clave vieja `nombre` vale, como lo acepta el cargador
   fs.mkdirSync(path.join(lab, 'packs', 'viejo'), { recursive: true });
   fs.writeFileSync(path.join(lab, 'packs', 'viejo', 'pack.json'), JSON.stringify({ nombre: 'viejo', descripcion: 'x', revisores: [] }));
-  assert.deepEqual(TEAM.contentProblems(lab, [{ path: 'packs/viejo/pack.json' }]), []);
+  assert.deepEqual(enCasaDeLaboratorio(() => TEAM.contentProblems(lab, [{ path: 'packs/viejo/pack.json' }])).r, []);
   // el revisor del paquete y su agente con distinta caja: rechazado igual en cualquier disco
   const vv = toyVersion(path.join(lab, 'vv'), { agents: ['tycon-core'] });
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
@@ -1056,7 +1069,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   fs.writeFileSync(path.join(vOld, '.tycon-release.json'), JSON.stringify(relmOld));
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
   const saneL = toyLayer(lab, [['packs/eq/pack.json', packJson('eq', [['rev-a', 'base']])], ['packs/eq/agents/rev-a.md', agentMd('rev-a')]]);
-  const ro = TEAM.checkAgainstVersion(saneL.dir, saneL.files, vOld, { env: {} });
+  const ro = enCasaDeLaboratorio(() => TEAM.checkAgainstVersion(saneL.dir, saneL.files, vOld, { env: {} })).r;
   assert.equal(ro.ok, true, `un paquete público con claves viejas no vuelve núcleo a su agente: ${JSON.stringify(ro.problems)}`);
   // un tramo con punto final o un nombre reservado de Windows pisaría otro archivo en ese disco
   for (const p of ['packs/clients./pack.json', 'agents/con.md', 'skills/aux/SKILL.md', 'skills/x./SKILL.md']) assert.notEqual(TEAM.layerPathProblem(p), null, `${p} no entra`);

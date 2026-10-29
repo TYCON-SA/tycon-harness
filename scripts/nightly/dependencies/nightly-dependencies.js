@@ -26,7 +26,7 @@
  *    tenerla: se cree que hay vigilancia y no la hay. El snapshot lleva la fecha y lo INCOMPLETO se
  *    marca; `scripts/hooks/dependencies-notice.js` denuncia al arranque cuando el último es viejo.
  *    Mismo patrón que `scripts/controls-bench/periodic-exam.js`.
- * 4. **HONRA LA DEUDA DECLARADA.** Lo que está en el `vulnerabilidades-pendientes.json` del repo,
+ * 4. **HONRA LA DEUDA DECLARADA.** Lo que está en el `pending-vulnerabilities.json` del repo,
  *    vigente, no despierta a nadie. Lo que NO está declarado, sí. Una declaración VENCIDA vuelve a
  *    contar como nueva. (Lo resuelve el guión; acá sólo se respeta el veredicto.)
  * 5. **PRESUPUESTO DE RUIDO, ESCRITO** (`repos.json`). Tope de avisos por noche, y la expectativa
@@ -60,6 +60,20 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+// El archivo de deuda con su nombre nuevo o el de antes lo sabe scripts/ci/legacy-files.js. Se carga SI ESTÁ, por su
+// ruta: los laboratorios copian este guion sin scripts/ci. Ahí lo resuelve la biblioteca de nombres con el mapa (los dos
+// nombres y el choque, igual); sin la biblioteca tampoco, vale el nombre nuevo solo, que es el de siempre afuera.
+const { resolveDebtFile, LegacyFilesError } = (() => {
+  const f = path.join(__dirname, '..', '..', 'ci', 'legacy-files.js');
+  if (fs.existsSync(f)) return require(f);
+  let lib = null;
+  try { lib = require('../../lib/legacy-names.js'); } catch { /* sin la biblioteca */ }
+  const resolve = (repo, nu, where) => {
+    const abs = lib ? lib.resolveFile(path.join(repo, nu), { root: repo, where }) : path.join(repo, nu);
+    return { name: path.relative(repo, abs), abs, exists: fs.existsSync(abs) };
+  };
+  return { resolveDebtFile: resolve, LegacyFilesError: lib ? lib.LegacyNamesError : class extends Error {} };
+})();
 const { spawnSync } = require('child_process');
 const cycle = require('../findings/cycle.js');
 const sources = require('../findings/sources.js');
@@ -75,7 +89,7 @@ const OPERATIONS_DEF = path.join(RAIZ_REPO, 'operations.json');
 const GUION = path.join(RAIZ_REPO, 'scripts', 'ci', 'audit-dependencies.js');
 const DIAS_PARA_IGNORADO = 7;
 // el archivo de la deuda declarada de un repo (el mismo nombre que lee audit-dependencies.js por defecto)
-const ARCHIVO_DEUDA = 'vulnerabilidades-pendientes.json';
+const ARCHIVO_DEUDA = 'pending-vulnerabilities.json';
 
 // ── utilidades ─────────────────────────────────────────────────────────────────────────────────
 
@@ -293,9 +307,17 @@ function auditarEn(base, pub, entrada, guion, hoy) {
   // en cada uno —y las fichas archivadas por esa deuda se reactivan solas. Si el formulario declara la suya, manda.
   let declaradaEn = null;
   if (entrada.heredaDeuda && dirAuditado !== pub.dir) {
-    const propia = path.join(dirAuditado, ARCHIVO_DEUDA);
-    const deLaRaiz = path.join(pub.dir, ARCHIVO_DEUDA);
-    if (!fs.existsSync(propia) && fs.existsSync(deLaRaiz)) declaradaEn = path.relative(dirAuditado, deLaRaiz);
+    // con su nombre nuevo o con el de antes; los dos distintos es «no pude medir», nunca una deuda elegida en silencio
+    let propia;
+    let deLaRaiz;
+    try {
+      propia = resolveDebtFile(dirAuditado, ARCHIVO_DEUDA, 'scripts/nightly/dependencies/nightly-dependencies.js');
+      deLaRaiz = resolveDebtFile(pub.dir, ARCHIVO_DEUDA, 'scripts/nightly/dependencies/nightly-dependencies.js');
+    } catch (e) {
+      if (!(e instanceof LegacyFilesError)) throw e;
+      return { ...base, medido: false, motivo_no_medido: e.message };
+    }
+    if (!propia.exists && deLaRaiz.exists) declaradaEn = path.relative(dirAuditado, deLaRaiz.abs);
   }
   return auditarArbol({ ...base, dirAuditado, declaradaEn }, entrada, guion, hoy);
 }
@@ -866,7 +888,7 @@ function escribirBorradores(pendingDir, aAnunciar, snapshot) {
       `avisos:`,
       ...((h.avisosJuntos || h.advisories).length ? (h.avisosJuntos || h.advisories).map((u) => `  - ${u}`) : ['  - (el informe no trajo enlace)']),
       `# Qué decidir: se arregla (subir el paquete) o se declara como deuda en el`,
-      `# vulnerabilidades-pendientes.json del repo, con motivo y fecha de revisión.`,
+      `# pending-vulnerabilities.json del repo, con motivo y fecha de revisión.`,
       `# Lo que NO se decide vuelve a aparecer todas las noches, y a los ${DIAS_PARA_IGNORADO} días`,
       `# se archiva como 'ignorado' — que cuenta PEOR que descartado con motivo.`,
       '',
@@ -1802,7 +1824,7 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
     L.push(
       '**Qué hacer**',
       '- **Arreglarlo** = subir el paquete en este repo hasta una versión que el aviso dé por corregida. Cuando la revisión nocturna deje de verlo en `main`, este issue se cierra solo, con un comentario: cuándo llega a producción lo decide el equipo.',
-      '- **Declararlo como deuda** = si no viaja al navegador ni al servidor, anotarlo en el `vulnerabilidades-pendientes.json` del repo, con motivo y fecha de revisión (el issue queda abierto: la deuda no es un arreglo):',
+      '- **Declararlo como deuda** = si no viaja al navegador ni al servidor, anotarlo en el `pending-vulnerabilities.json` del repo, con motivo y fecha de revisión (el issue queda abierto: la deuda no es un arreglo):',
       '```',
       JSON.stringify({ revision: 'AAAA-MM-DD', paquetes: [{ paquete: d.paquete, advisories: ids, motivo: 'por qué no aplica' }] }, null, 2),
       '```',
@@ -1813,13 +1835,13 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
     return L;
   }
   if (destino === 'pedido') {
-    // El formato de la deuda es el REAL de `vulnerabilidades-pendientes.json` (revision, paquetes[],
+    // El formato de la deuda es el REAL de `pending-vulnerabilities.json` (revision, paquetes[],
     // advisories por identificador, motivo): una declaración que no nombra los avisos no ampara nada.
     const ids = avisos.map((u) => String(u).split('/').pop()).filter((x) => /^GHSA-/i.test(x));
     L.push(
       '**Qué hacer**',
       '- **Arreglarlo** = subir el paquete en los repos de arriba hasta una versión que el aviso dé por corregida. Cuando la revisión nocturna deje de verlo en `main` en este proyecto, este Bug se cierra solo, con un comentario: cuándo llega a producción lo decide el equipo.',
-      '- **Declararlo como deuda** = si no viaja al navegador ni al servidor, anotarlo en el `vulnerabilidades-pendientes.json` del repo, con motivo y fecha de revisión (el Bug queda abierto: la deuda no es un arreglo):',
+      '- **Declararlo como deuda** = si no viaja al navegador ni al servidor, anotarlo en el `pending-vulnerabilities.json` del repo, con motivo y fecha de revisión (el Bug queda abierto: la deuda no es un arreglo):',
       '```',
       JSON.stringify({ revision: 'AAAA-MM-DD', paquetes: [{ paquete: d.paquete, advisories: ids, motivo: 'por qué no aplica' }] }, null, 2),
       '```',
@@ -1847,7 +1869,7 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
     '**Qué decidir acá**',
     '- **Mergear** = es trabajo real: hay que subir el paquete. El borrador pasa a `promoted/`.',
     '- **Rechazar** = no aplica, y el comentario es el motivo. Si la razón es que no viaja al',
-    '  navegador ni al servidor, lo correcto es **declararlo** en el `vulnerabilidades-pendientes.json`',
+    '  navegador ni al servidor, lo correcto es **declararlo** en el `pending-vulnerabilities.json`',
     '  del repo, con motivo y fecha de revisión — así deja de despertar a nadie sin volverse',
     '  permanente en silencio.',
     '',
@@ -2040,7 +2062,7 @@ const AYUDA = `nightly-dependencies.js — la revisión nocturna de dependencias
 
 Una entrada de repos.json puede llevar "subruta" (2026-09-05): "ruta" sigue siendo la raíz del repo
 —de ahí se prepara el árbol de origin/main— y se audita la subcarpeta adentro de ese árbol, con su
-propio lockfile y su propio vulnerabilidades-pendientes.json (caso: el gateway de mensajería de
+propio lockfile y su propio pending-vulnerabilities.json (caso: el gateway de mensajería de
 Acme, tools/chat-gateway). Si la subcarpeta no está en lo publicado: NO MEDIDO, nunca la raíz.
 
 En un repo cuya raíz es una entrada npm, la noche audita además cada carpeta con package-lock.json
