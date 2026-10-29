@@ -1360,7 +1360,9 @@ rm -rf "${T}"
 #    los escapes ADVERSARIAL_SKIP_FORZADO y ADVERSARIAL_ABANDONADO: el tablero los publica como «otro». Un tipo
 #    nuevo de marker.js puede llegar sin su entrada, así que se prueba la CLASE: todo kind/type que marker.js
 #    escribe en bypass.log tiene que estar en los escapes. Mutación: sacar uno de los dos escapes → rojo.
-SKILLS_T51="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
+#    marker.js sale del mismo árbol que sources.json; el instalado sólo en un árbol sin skills (el privado adelgazado).
+SKILLS_T51="${RAIZ}/skills"
+[ -f "${SKILLS_T51}/tycon-pipeline/scripts/marker.js" ] || SKILLS_T51="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
 R="$(node -e '
 const fs=require("fs"); const f=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 const busca=(o,k)=>{ if(o&&typeof o==="object"){ for(const [kk,v] of Object.entries(o)){ if(kk===k) return v; const r=busca(v,k); if(r!==undefined) return r; } } };
