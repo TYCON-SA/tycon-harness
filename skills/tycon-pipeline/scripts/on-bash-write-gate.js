@@ -37,6 +37,9 @@
  * con escape auditado. Kill-switch propio: TYCON_STORY_SKILL_GATE=off (independiente del carril).
  * Una historia que existe y no está en borrador no se escribe desde acá: desde un comando no se ve qué queda escrito, y
  * su estado lo cambia marker.js. Frena con o sin ejecución abierta.
+ * Un guion en archivo (python, node, perl, ruby) con una historia entre sus argumentos cuenta como que la escribe, aunque
+ * sólo la lea. Límite conocido: no ve la historia que el guion recibe por otro camino — por `xargs`, `find -exec`,
+ * `$(cat lista)`, una variable de entorno, la entrada estándar o una carpeta entera que recorre.
  *
  * ── TERCERA: los marcadores de la ejecución ───────────────────────────────────────────────
  * Borrar o mover un marcador (`<estado>/active/`, `<estado>/active.json`, o una carpeta que los contiene), de esta
