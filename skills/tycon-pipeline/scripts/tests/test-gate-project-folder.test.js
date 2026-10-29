@@ -79,7 +79,7 @@ function repo(archivos, tocar = []) {
 function entorno(home, sid, bin, extra = {}) {
   const env = { ...process.env };
   for (const k of DEL_ENTORNO) delete env[k];
-  return { ...env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, PATH: `${bin}:${process.env.PATH}`, ...extra };
+  return { ...env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, PATH: `${bin}:${process.env.PATH}`, ...extra };
 }
 const casa = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tgs-home-')));
 
