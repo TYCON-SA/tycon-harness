@@ -196,6 +196,8 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'approve-save') return 'save';
+    // declarar o cambiar el arreglo rápido; mirarlo o terminarlo, no. El subcomando en una variable cuenta como `set`
+    if (sub === 'adhoc' && (a[0] === 'set' || /[$`]/.test(a[0] || ''))) return 'adhoc-lane';
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
     if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;
@@ -268,8 +270,31 @@ function canonicaDe(comando) {
   return id ? { id, palabras } : null;
 }
 
-/** La sesión destino: `--for-session <id>` en el comando canónico, o la del pedido. */
-function destinoDe(palabras, sesion) {
+/**
+ * La sesión que nombra el comando de `firma` (palabras desde el guion) cuando el guion actúa sobre ella, o null.
+ * Sólo `clear-session <sesión> --lost`: cierra la ejecución de esa sesión. `restore <sesión>` rearma esa ejecución en
+ * la sesión que corre el comando, que es su destino.
+ */
+function sesionNombrada(firma, palabras) {
+  return firma === 'lost-run' && palabras && palabras[1] === 'clear-session' ? String(palabras[2] || '') : null;
+}
+
+/** El valor de `--for-session`, separado o con `=`; null si no está. */
+function forSessionDe(palabras) {
+  if (!palabras) return null;
+  const i = palabras.indexOf('--for-session');
+  if (i >= 0) return palabras[i + 1] || '';
+  const conIgual = palabras.find((w) => String(w).startsWith('--for-session='));
+  return conIgual ? conIgual.slice('--for-session='.length) : null;
+}
+
+/**
+ * La sesión destino: la que nombra el comando si la firma actúa sobre ella; si no, `--for-session <id>` en el comando
+ * canónico, o la del pedido. `--for-session=<id>` no la elige (el guion no lo lee así), sólo tiene que coincidir.
+ */
+function destinoDe(palabras, sesion, firma) {
+  const nombrada = sesionNombrada(firma, palabras);
+  if (nombrada !== null) return nombrada;
   const i = palabras ? palabras.indexOf('--for-session') : -1;
   return i >= 0 ? palabras[i + 1] || '' : sesion;
 }
@@ -331,6 +356,14 @@ function detalleDe(id, comando, palabras, cwd) {
   if (id === 'plan-approval' && palabras) {
     const i = palabras.findIndex((w) => w === '--approved' || w === '--mockup-approved');
     if (i >= 0 && palabras[i + 1]) return `la cita: «${una(palabras[i + 1], 200)}»`;
+  }
+  if (id === 'adhoc-lane' && palabras && palabras[1] === 'adhoc' && palabras[2] === 'set') {
+    let p = null;
+    try { p = JSON.parse(palabras[3] || ''); } catch (_) { /* un JSON roto lo niega el guion: la ventana muestra el comando */ }
+    if (p && typeof p === 'object') {
+      const cupo = Number.isFinite(Number(p.maxFiles)) && Number(p.maxFiles) > 0 ? `hasta ${Number(p.maxFiles)} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
+      return `el motivo: «${una(String(p.reason || ''), 200)}» · ${cupo}`;
+    }
   }
   if (palabras && palabras[1] === 'sign-file' && palabras[3]) {
     // la consola expande la tilde antes de correr el guion: la ventana muestra la ruta que se va a firmar
@@ -453,10 +486,15 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   const herramientaDelEvento = evento.tool_name == null ? 'Bash' : String(evento.tool_name);
   if (!['Bash', 'PowerShell'].includes(herramientaDelEvento)) return negar(`las firmas se piden por la consola de la herramienta, no por ${una(herramientaDelEvento, 40)}`, pedidas);
   if (evento.turn_id) return negar('Codex no tiene ventana de permiso: pedirla deja correr el comando', pedidas);
-  if (VARIABLES_DE_SESION.test(comando)) return negar('la sesión destino va con --for-session, no con una variable de sesión en el comando', pedidas);
+  // el motivo del arreglo rápido es texto libre y puede nombrar un flag o una variable: en la forma canónica, los dos
+  // controles de abajo miran el comando sin ese argumento (un flag o una variable de verdad siguen a la vista)
+  const canAdhoc = canonicaDe(comando);
+  const mirado = canAdhoc && canAdhoc.id === 'adhoc-lane' && canAdhoc.palabras[1] === 'adhoc' && canAdhoc.palabras[2] === 'set'
+    ? canAdhoc.palabras.filter((_, i) => i !== 3).join(' ') : comando;
+  if (VARIABLES_DE_SESION.test(mirado)) return negar('la sesión destino va con --for-session, no con una variable de sesión en el comando', pedidas);
   if (!SESION.test(sesion)) return negar('el evento no dice de qué sesión es el pedido', pedidas);
   // el guion niega estas formas sin mirar la ventana: pedirla le haría aprobar al dueño algo que no firma
-  if (guiones.length && /(^|\s)--(quote|relayed-by|ok)(\s|=|$)/.test(comando)) return negar('la cita, el reenvío o el --ok ya no firman: el mismo comando sin --quote, --relayed-by ni --ok', pedidas);
+  if (guiones.length && /(^|\s)--(quote|relayed-by|ok)(\s|=|$)/.test(mirado)) return negar('la cita, el reenvío o el --ok ya no firman: el mismo comando sin --quote, --relayed-by ni --ok', pedidas);
   // la forma: una firma `guion` sólo en su forma canónica; un escape, en su forma de siempre
   const can = canonicaDe(comando);
   const guion = guiones.length ? guiones[0] : null;
@@ -486,8 +524,12 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (arriba.slice(i + 1).some((p) => esHerramienta(p) || desenvolver(p.comando, casa) !== null)) return negar('la herramienta la lanzó otra herramienta o su consola', pendientes);
   if (sinPantalla(tool)) return negar('la sesión no tiene pantalla (-p o --print): no hay ventana', pendientes);
   if (arbol.some((p) => p.ppid === tool.pid && desenvolver(p.comando, casa) !== null)) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
-  const destino = destinoDe(can && can.palabras, sesion);
-  if (!SESION.test(destino)) return negar('la sesión de --for-session no se puede leer', pendientes);
+  const destino = destinoDe(can && can.palabras, sesion, guion);
+  if (!SESION.test(destino)) return negar(sesionNombrada(guion, can && can.palabras) !== null ? 'la sesión que nombra el comando no se puede leer' : 'la sesión de --for-session no se puede leer', pendientes);
+  const pedida = forSessionDe(can && can.palabras);
+  if (sesionNombrada(guion, can && can.palabras) !== null && pedida !== null && pedida !== destino) {
+    return negar(`el comando nombra la sesión ${una(destino, 80)} y --for-session ${una(pedida, 80)}: van con la misma sesión`, pendientes);
+  }
   if (destino === SIN_SESION && destino !== sesion) return negar(NO_ES_SESION, pendientes);
   paraTerminal = destino;
   if (destino !== sesion && guion && firmaDe(guion).otherSession !== 'yes') return negar(`«${firmaDe(guion).approves}» no se corre desde la pestaña de otra sesión`, pendientes);
@@ -785,7 +827,7 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   if (pedida && propia && pedida !== propia && !(s && s.otherSession === 'yes')) {
     return { codigo: 1, motivo: `este guion actúa sobre la sesión ${propia}: firmar para otra sesión (--for-session ${pedida}) se corre desde la sesión destino` };
   }
-  const destino = pedida || propia || null;
+  const destino = sesionNombrada(firma, argv) || pedida || propia || null;
   if (argv.includes('--terminal')) {
     const t = tty || ttyDeVerdad();
     if (t.windows && t.enVentana && !t.enVentana()) return { ...porLaVentana({ argv, t, salir }), destino };

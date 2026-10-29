@@ -134,9 +134,11 @@ function renglonesDeFirma(texto) {
  * Lo que trae un commit que no vale: `[{ id, motivo }]`. `antes`/`despues` son el registro en el último commit y en el
  * que se arma; `todoAntes`/`todoDespues`, la lista. Una línea nueva del registro vale firmada con su renglón en
  * `renglones`, o de base sólo en el commit que crea el registro y para un pendiente abierto en `todoAntes`. Cada
- * pendiente que se abre en el commit necesita una línea firmada nueva, válida, con su código.
+ * pendiente que se abre en el commit necesita una línea firmada nueva, válida, con su código. Con `sinFirmaLocal` (la
+ * validación de pedidos del servidor, que no tiene el registro del arnés de la máquina que firmó) la línea firmada vale
+ * con su forma y su huella, sin buscar su renglón: lo demás se mira igual.
  */
-function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '' }) {
+function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues = '', sinFirmaLocal = false }) {
   const previas = new Set(leerRegistro(antes).lineas.map((x) => x.texto));
   const nacimiento = !leerRegistro(antes).lineas.length;
   const abiertosAntes = new Set(pendientesAbiertos(todoAntes).map((p) => p.clave));
@@ -151,7 +153,7 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
     else if (l.via === 'base') {
       if (!nacimiento) malas.push({ id, motivo: 'es una línea de base nueva, y la base sólo se achica' });
       else if (!abiertosAntes.has(id)) malas.push({ id, motivo: 'es una línea de base para un pendiente que no estaba abierto antes de este commit' });
-    } else if (!firmadaEnElRegistro(l, renglones)) malas.push({ id, motivo: `no tiene su renglón ${FIRMADA} en el registro del arnés de esta cuenta (no se firmó en esta máquina)` });
+    } else if (!sinFirmaLocal && !firmadaEnElRegistro(l, renglones)) malas.push({ id, motivo: `no tiene su renglón ${FIRMADA} en el registro del arnés de esta cuenta (no se firmó en esta máquina)` });
     else firmadasNuevas.add(id);
   }
   for (const p of pendientesAbiertos(todoDespues)) {

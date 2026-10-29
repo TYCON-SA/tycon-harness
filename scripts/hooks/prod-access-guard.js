@@ -108,11 +108,11 @@ function nombraBorradoAzure(texto) {
     if (REMOVE_AZ_RE.test(tramo) || INVOKE_REST_RE.test(tramo)) return true;
     const pal = tramo.split(/(?:\s|\\t)+/).map((x) => x.replace(/^[\\"'`({$]+|[\\"'`)}]+$/g, '').toLowerCase()).filter(Boolean);
     for (let k = 0; k < pal.length; k++) {
-      if (/(?:^|[\\/:])azd(?:\.exe)?$/.test(pal[k]) && pal[k + 1] === 'down') return true;
+      if (/(?:^|[\\/:"'`({])azd(?:\.exe)?$/.test(pal[k]) && pal[k + 1] === 'down') return true;
       if (!esPalabraAz(pal[k])) continue;
       const resto = pal.slice(k + 1);
       for (const g of ['group', 'lock', 'resource']) { const x = resto.indexOf(g); if (x >= 0 && resto.indexOf('delete', x + 1) > x) return true; }
-      if (resto.includes('rest') && /(?:^|\s)(?:--m[a-z]*|-m)(?:[\s=]+)?\\?["']?delete(?![A-Za-z0-9_-])/i.test(tramo)) return true;
+      if (resto.includes('rest') && /(?:^|\s|\\t)(?:--m[a-z]*|-m)(?:\s|\\t|=)*[\\"'$]*delete(?![A-Za-z0-9_-])/i.test(tramo)) return true;
     }
   }
   return false;

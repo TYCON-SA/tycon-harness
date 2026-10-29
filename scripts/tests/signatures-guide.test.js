@@ -10,6 +10,9 @@
  *   T1 · una fila de la guía por entrada del catálogo, con todas sus columnas iguales; están todas las firmas de la
  *        tabla de «Origen» de la story; la tabla de grupos de la guía es la del catálogo.
  *   T2 · la guía dice en voz alta que lo delegado no está protegido contra un agente tramposo (decisión 10).
+ *   8.141 T7 · `adhoc-lane` (abrir el arreglo rápido) está en el catálogo y en ningún grupo de la 8.116.
+ *   8.141 T17 · la guía de firmas, la de coordinación y el «Portón de carril» dicen la firma y el relevo local; nada
+ *        nombra el clasificador, sus variables ni una vía remota.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -23,7 +26,7 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval',
+  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'adhoc-lane',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
@@ -122,4 +125,69 @@ test('8.143 T14 SignaturesGuide_FilaSave', () => {
   assert.ok(f, 'la guía trae la fila de «save»');
   assert.strictEqual(f[3], 'sí');
   assert.strictEqual(f[2], `\`${cat.SIGNATURES.find((s) => s.id === 'save').command}\``);
+});
+
+// 8.141 T7 Signatures_AdhocLane_FueraDeLosGrupos @story-8.141 @ac-3 @ac-10
+// 🔴 Falla con: la firma ausente, con otra forma, o traída por algún grupo (un perfil que delega un grupo la delegaría
+// sin nombrarla).
+test('8.141 T7 Signatures_AdhocLane_FueraDeLosGrupos', () => {
+  const cat = require(CATALOGO);
+  const s = cat.SIGNATURES.find((x) => x.id === 'adhoc-lane');
+  assert.ok(s, 'adhoc-lane está en el catálogo');
+  assert.strictEqual(s.kind, 'guion');
+  assert.strictEqual(s.otherSession, 'yes');
+  assert.strictEqual(s.approves, 'abrir el arreglo rápido de una sesión, sin historia');
+  assert.strictEqual(s.approvesEn, "open a session's quick fix, with no story");
+  assert.strictEqual(s.command, "marker.js adhoc set '<json>'");
+  assert.strictEqual(s.terminal, "marker.js adhoc set '<json>' --terminal --for-session <id>");
+  for (const g of cat.groupNames()) assert.ok(!cat.expand(g).includes('adhoc-lane'), `el grupo ${g} no la trae`);
+  assert.deepStrictEqual(cat.expand('adhoc-lane'), ['adhoc-lane'], 'por su nombre sí');
+});
+
+// Los archivos de texto del repo (sin node_modules, .git ni lo local de cada máquina), con su ruta relativa.
+function archivosDelRepo(dir = RAIZ, rel = '') {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (['node_modules', '.git', '.advisors', '.codegraph'].includes(e.name)) continue;
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...archivosDelRepo(path.join(dir, e.name), r));
+    else if (/\.(js|sh|ps1|json|md|yaml|yml|html)$/.test(e.name)) out.push(r);
+  }
+  return out;
+}
+
+// 8.141 T17 SignaturesGuide_TraeAdhocLane @story-8.141 @ac-7 @ac-11
+// 🔴 Falla con: la guía de coordinación sin el relevo local, el portón pidiendo la cita, o un archivo que todavía nombra
+// el clasificador, sus variables o la vía remota que el dueño descartó.
+test('8.141 T17 SignaturesGuide_TraeAdhocLane', () => {
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  assert.match(guia, /\| `adhoc-lane` \|/, 'la fila de adhoc-lane (T1 compara sus columnas)');
+  for (const g of ['guides/coordination.md', 'guides/coordination.en.md']) {
+    const t = fs.readFileSync(path.join(RAIZ, g), 'utf8');
+    assert.match(t, /adhoc-lane/, `${g} nombra la firma`);
+    assert.match(t, /adhoc set '<json>' --for-session/, `${g} dice cómo la declara la designada`);
+  }
+  assert.match(fs.readFileSync(path.join(RAIZ, 'guides', 'coordination.md'), 'utf8'), /coordinadora de otra máquina[^\n]*designada de la máquina destino/,
+    'coordination.md: la coordinadora de otra máquina se la pide a la designada de la máquina destino');
+  assert.match(fs.readFileSync(path.join(RAIZ, 'guides', 'coordination.en.md'), 'utf8'), /coordinator on another machine[^\n]*designated session of the target machine/,
+    'coordination.en.md: lo mismo en inglés');
+  const skill = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'SKILL.md'), 'utf8');
+  const i = skill.indexOf('## 🔒 Portón de carril');
+  assert.ok(i >= 0, 'SKILL.md tiene la sección «Portón de carril»');
+  const porton = skill.slice(i).split('\n## ')[0];
+  assert.doesNotMatch(porton, /fragmento LITERAL/i);
+  assert.match(porton, /ventana de permiso/);
+  // el código y las guías: ni el clasificador, ni sus variables (palabra entera: el apagado del aviso sigue), ni la vía
+  // remota. Afuera: las pruebas y los casos del banco que sólo ponen la variable, las constancias y las capturas.
+  const afuera = (r) => /(^|\/)tests\//.test(r) || r.startsWith('scripts/controls-bench/') || r.startsWith('.github/control-changes/')
+    || r.startsWith('guides/sitio-de-la-organizacion/capturas/');
+  const prohibidos = [/\bTYCON_LANE_LLM\b/, /\bTYCON_LANE_LLM_MODEL\b/, /\bTYCON_LANE_LLM_MS\b/, /lane-classifier/, /classifyLane/,
+    /designate-remote-relay/, /adhoc set --remote/, /arreglo rápido delegado:/];
+  const malos = [];
+  for (const r of archivosDelRepo()) {
+    if (afuera(r)) continue;
+    const t = fs.readFileSync(path.join(RAIZ, r), 'utf8');
+    for (const re of prohibidos) if (re.test(t)) malos.push(`${r}: ${re.source}`);
+  }
+  assert.deepStrictEqual(malos, [], 'nadie nombra el clasificador, sus variables ni la vía remota');
 });

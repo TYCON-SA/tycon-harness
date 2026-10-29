@@ -476,8 +476,6 @@ terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
 - Once a day, in the background: it walks the git history of up to 200 repos in the parent folder of the clone and
   leaves one file per day in the `.dashboard/` folder of the clone (`TYCON_STAGE_METRICS=0`); and it gathers, into a
   file on your machine, the findings the reviewers left in your repos (`TYCON_NO_COLLECT_FINDINGS=1`).
-- When an "ad-hoc" lane is declared, the edit gate launches, on its own, one short query to your assistant's model, with
-  your last requests, to decide whether it applies (`TYCON_LANE_LLM=0`).
 
 **What it writes and keeps on disk**:
 

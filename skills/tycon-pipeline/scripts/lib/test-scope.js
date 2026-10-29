@@ -47,7 +47,9 @@ function frontmatterOf(content) {
   return m ? m[1] : '';
 }
 
-function listUnderKey(fm, key) {
+// `allForms`: también la lista en línea y la de ítems a la misma sangría que la clave. Sólo la pide el alcance de la
+// puerta de pruebas: los frenos leen la forma de siempre, porque leer más declarado ahí aflojaría lo que dejan pasar.
+function listUnderKey(fm, key, { allForms = false } = {}) {
   const lines = fm.split(/\r?\n/);
   const out = [];
   let inKey = false;
@@ -55,12 +57,17 @@ function listUnderKey(fm, key) {
   for (const line of lines) {
     const indent = line.length - line.trimStart().length;
     if (!inKey) {
-      const km = line.match(new RegExp(`^(\\s*)${key}\\s*:\\s*$`));
-      if (km) { inKey = true; keyIndent = km[1].length; }
+      const km = line.match(new RegExp(`^(\\s*)${key}\\s*:\\s*${allForms ? '(?:#.*)?' : ''}$`));
+      if (km) { inKey = true; keyIndent = km[1].length; continue; }
+      if (!allForms) continue;
+      // la lista en línea: `clave: [a, "b", 'c']`
+      const enLinea = line.match(new RegExp(`^\\s*${key}\\s*:\\s*\\[([^\\]]*)\\]\\s*(?:#.*)?$`));
+      if (enLinea) return enLinea[1].split(',').map(cleanItem).filter(Boolean);
       continue;
     }
     if (line.trim() === '') continue;
-    if (indent <= keyIndent) break;
+    // YAML deja los ítems a la misma sangría que la clave; lo que corta es otra cosa a esa sangría
+    if (indent < keyIndent || (indent === keyIndent && !(allForms && /^\s*-(?:\s|$)/.test(line)))) break;
     const im = line.match(/^\s*-\s*(.+?)\s*$/);
     if (im) {
       const v = cleanItem(im[1]);
@@ -70,20 +77,20 @@ function listUnderKey(fm, key) {
   return out;
 }
 
-function parseDeclaredFiles(content) {
+function parseDeclaredFiles(content, opts) {
   const fm = frontmatterOf(content);
   if (!fm) return [];
-  return [...listUnderKey(fm, 'files_to_create'), ...listUnderKey(fm, 'files_to_modify')];
+  return [...listUnderKey(fm, 'files_to_create', opts), ...listUnderKey(fm, 'files_to_modify', opts)];
 }
 
 // Sólo los que la story declara CREAR. Los usa test-gate.sh como respaldo del cruce de
 // cobertura cuando git no reporta archivos "added" (típico: iteración de fix POSTERIOR
 // al commit). Vive acá y no en el bloque Python del gate a propósito: el parseo del
 // frontmatter es una sola verdad — si cambia el formato, cambia en UN lugar.
-function parseFilesToCreate(content) {
+function parseFilesToCreate(content, opts) {
   const fm = frontmatterOf(content);
   if (!fm) return [];
-  return listUnderKey(fm, 'files_to_create');
+  return listUnderKey(fm, 'files_to_create', opts);
 }
 
 // Los que la story declara BORRAR. Los lee el freno de la terminal: un `git rm` de un archivo declarado pasa y se anota.
@@ -360,6 +367,37 @@ function changedFiles(repoDir) {
 }
 
 /**
+ * Una story que vive en otro repo nombra los archivos de éste con su carpeta delante (`FrontEnd/shared/a.ts`, o
+ * `../FrontEnd/shared/a.ts`): son los de este repo, sin ese prefijo. La carpeta es la del checkout o la del repo
+ * principal, si éste es una copia de trabajo con otro nombre. Los que no lo traen se cuentan igual que sin este paso: un
+ * archivo que no cae en ningún proyecto no vota, y descartarlo podría dejar sin correr el proyecto al que sí pertenece.
+ * Si ninguno trae el prefijo, quedan como están. En la story del propio repo un `FrontEnd/` es una carpeta de
+ * verdad, y no se toca.
+ */
+function delRepo(files, repoDir, storyPath) {
+  const raiz = path.resolve(repoDir);
+  const rel = path.relative(raiz, storyPath);
+  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return files;
+  const nombres = new Set([path.basename(raiz).toLowerCase()]);
+  try {
+    const comun = require('child_process').execFileSync('git', ['-C', raiz, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      encoding: 'utf8', timeout: 20000, stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (path.basename(comun) === '.git') nombres.add(path.basename(path.dirname(comun)).toLowerCase());
+  } catch (_e) { /* sin git: sólo la carpeta del checkout */ }
+  const sinPrefijo = (f) => {
+    const partes = f.split('/');
+    const i = partes[0] === '..' ? 1 : 0;
+    return partes.length > i + 1 && nombres.has(partes[i].toLowerCase()) ? partes.slice(i + 1).join('/') : null;
+  };
+  const limpias = files.map((f) => f.replace(/\\/g, '/').replace(/^\.\//, ''));
+  const propios = limpias.map(sinPrefijo).filter(Boolean);
+  if (!propios.length) return files;
+  const deAca = limpias.filter((f) => sinPrefijo(f) === null && !f.startsWith('../'));
+  return [...propios, ...deAca];
+}
+
+/**
  * `storyArg` puede ser un id ("4.30") o una ruta a la story. Si es ruta, los
  * archivos salen de lo que la story DECLARA (la fuente que pidió la decisión).
  * Si no hay ruta o la story no declara nada, se cae al diff real del repo —
@@ -377,7 +415,7 @@ function resolveScope(repoDir, storyArg) {
     storyPath = path.resolve(storyArg);
     const content = fs.readFileSync(storyPath, 'utf8');
     storyId = storyIdOf(content);
-    files = parseDeclaredFiles(content);
+    files = delRepo(parseDeclaredFiles(content, { allForms: true }), repoDir, storyPath);
     if (files.length) source = 'story';
   }
   if (!files.length) {
@@ -418,7 +456,7 @@ if (require.main === module) {
     let out = [];
     try {
       if (sp && fs.existsSync(sp) && fs.statSync(sp).isFile()) {
-        out = parseFilesToCreate(fs.readFileSync(sp, 'utf8'));
+        out = parseFilesToCreate(fs.readFileSync(sp, 'utf8'), { allForms: true });
       }
     } catch { out = []; }
     process.stdout.write(out.join('\n') + (out.length ? '\n' : ''));

@@ -18,9 +18,9 @@
  *   - ilegible: el registro existe y no se puede leer, con un marcador o una copia de la sesión a la vista.
  * Sin ninguna de las tres piezas de la sesión, no hay ejecución y nada cambia.
  *
- * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, firmados en la
- * ventana de permiso o en su terminal. `delegacionDeLaSalida` es el único lugar que decide si la salida admite
- * reenvío por la sesión designada.
+ * La salida es del dueño: `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, la firma `lost-run`
+ * en la ventana de permiso o en su terminal. Desde la sesión designada, para otra sesión (`--for-session <sesión>`),
+ * corre sin ventana si el perfil la delega: lo decide la ventana con `approvals.delegated_signing`.
  */
 const fs = require('fs');
 const os = require('os');
@@ -237,12 +237,4 @@ function cartel(r, { markerJs = 'marker.js' } = {}) {
   ].join('\n');
 }
 
-/**
- * Si la salida admite reenvío por la sesión designada, y desde cuándo vale. Es el único punto de decisión: sin
- * reenvío y desde la apertura. La firma delegada de `lost-run` la resuelve `approvals.delegated_signing`, no este punto.
- */
-function delegacionDeLaSalida() {
-  return { reenvio: false, desde: 'apertura' };
-}
-
-module.exports = { CAMPOS_DE_CIERRE, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, cartel, delegacionDeLaSalida, gatesPath, markerPath };
+module.exports = { CAMPOS_DE_CIERRE, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, cartel, gatesPath, markerPath };

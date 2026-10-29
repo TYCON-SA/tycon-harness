@@ -33,7 +33,13 @@
  * de esa nube), `{ managed: true }` (la identidad administrada del sitio) o `{ sas }` (una SAS de servicio de sólo leer y
  * listar). Nunca se escribe en el registro.
  *
- * Uso:  node operations-copy.js subir --repo <clon de main> --account <c> --container <k> [--dry-run]
+ * Despertar al sitio: con `--wake <dirección del sitio>`, si la foto subida trae otro `operations.json` que la anterior,
+ * el trabajo que copia le pide `/livez` al sitio. Un sitio que escala a cero no lee operaciones hasta que alguien entra,
+ * y con él esperan lo que dispara un cambio de la lista (las invitaciones de Personas). El pedido despierta una réplica,
+ * que al arrancar lee operaciones (de la copia o del repo, según `SITE_OPERATIONS_SOURCE`). Si el sitio no contesta, la corrida no falla: lo dice, y el cambio se aplica cuando alguien
+ * entre. Los guardados de los nocturnos no cambian `operations.json` y no lo despiertan.
+ *
+ * Uso:  node operations-copy.js subir --repo <clon de main> --account <c> --container <k> [--wake <url>] [--dry-run]
  */
 const fs = require('fs');
 const path = require('path');
@@ -283,7 +289,10 @@ function mismaLista(a, b) {
   return ka.length === Object.keys(b).length && ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && a[k] === b[k]);
 }
 
-/** `{ ok, subido, motivo, commit, bytes }`. Nunca deja un índice que nombre una foto que no se subió. */
+/**
+ * `{ ok, subido, motivo, commit, bytes, cambioOperaciones }`. Nunca deja un índice que nombre una foto que no se subió.
+ * `cambioOperaciones`: se subió una foto y su `operations.json` no es el del índice anterior (o no había uno legible).
+ */
 async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun = false }) {
   let j;
   try { j = juntar(repo, log); } catch (e) { return { ok: false, motivo: e.message }; }
@@ -296,9 +305,11 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
   const indice = { version: 1, commit: j.commit, hora: new Date(ahora()).toISOString(), huella, bytes: foto.length, archivos: Object.fromEntries(j.archivos.map((a) => [a.rel, a.oid])), foto: `${CARPETA_FOTOS}${j.commit}.tar.gz` };
   if (dryRun) return { ok: true, subido: false, motivo: `prueba: ${j.archivos.length} archivo(s), ${foto.length} bytes, commit ${j.commit.slice(0, 12)}`, commit: j.commit, bytes: foto.length, indice };
   const previo = await almacen.get(INDICE);
+  let anterior = null;
   if (previo.error || (previo.status !== 200 && previo.status !== 404)) return { ok: false, motivo: `no se pudo leer el índice de la copia (${codigoDe(previo)}${previo.status ? ` ${previo.status}` : ''})` };
   if (previo.status === 200) {
     let p = null; try { p = JSON.parse(previo.cuerpo); } catch { /* ilegible: se reemplaza */ }
+    anterior = p;
     if (p && p.commit === j.commit && !mismaLista(p.archivos, indice.archivos)) {
       // con otro nombre: la foto que nombra el índice viejo queda entera por si el índice nuevo no llega a escribirse
       indice.foto = `${CARPETA_FOTOS}${j.commit}-${huella.slice(0, 16)}.tar.gz`;
@@ -323,7 +334,25 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
   if (i.error || (i.status !== 201 && i.status !== 200)) return { ok: false, motivo: `la foto se subió y el índice no (${i.error ? i.error.code || i.error.message : i.status}): el sitio sigue con la anterior` };
   const b = await borrarViejas({ almacen, ahora, log });
   if (b.borradas.length) log(`borradas ${b.borradas.length} foto(s) de más de 7 días`);
-  return { ok: true, subido: true, motivo: `subida la foto de ${j.commit.slice(0, 12)}: ${j.archivos.length} archivo(s), ${foto.length} bytes`, commit: j.commit, bytes: foto.length };
+  const opsAntes = anterior && anterior.archivos && typeof anterior.archivos === 'object' ? anterior.archivos['operations.json'] : undefined;
+  return { ok: true, subido: true, motivo: `subida la foto de ${j.commit.slice(0, 12)}: ${j.archivos.length} archivo(s), ${foto.length} bytes`, commit: j.commit, bytes: foto.length, cambioOperaciones: opsAntes !== indice.archivos['operations.json'] };
+}
+
+const DESPERTAR_MS = 90 * 1000;  // un sitio dormido tarda alrededor de un minuto en contestar
+/** Le pide `/livez` al sitio para despertarlo. Nunca rechaza: `{ ok, motivo }`. */
+async function despertar({ url, pedir = fetch, plazoMs = DESPERTAR_MS }) {
+  let destino;
+  try { destino = new URL('/livez', url); } catch { return { ok: false, motivo: `la dirección del sitio no es válida: ${url}` }; }
+  if (destino.protocol !== 'https:' && destino.protocol !== 'http:') return { ok: false, motivo: `la dirección del sitio no es web: ${url}` };
+  try {
+    const r = await pedir(destino, { signal: AbortSignal.timeout(plazoMs), redirect: 'manual' });
+    // cualquier respuesta por debajo de 400 viene de una réplica que ya arrancó (una redirección, también)
+    if (r.status >= 200 && r.status < 400) return { ok: true, motivo: `el sitio despertó (${destino.origin}): lee operaciones al arrancar` };
+    return { ok: false, motivo: `el sitio contestó ${r.status} a /livez: el cambio se aplica cuando alguien entre` };
+  } catch (e) {
+    const porque = e && e.name === 'TimeoutError' ? `no contestó en ${Math.round(plazoMs / 1000)} s` : 'sin conexión con el sitio';
+    return { ok: false, motivo: `${porque}: el cambio se aplica cuando alguien entre` };
+  }
 }
 
 // ── bajar ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -460,7 +489,7 @@ async function main(argv) {
   const [orden, ...resto] = argv;
   const op = (k) => { const i = resto.indexOf(k); return i >= 0 ? resto[i + 1] : null; };
   if (orden !== 'subir' || !op('--repo') || (!resto.includes('--dry-run') && (!op('--account') || !op('--container')))) {
-    process.stderr.write('uso: operations-copy.js subir --repo <clon de main> --account <c> --container <k> [--dry-run]\n');
+    process.stderr.write('uso: operations-copy.js subir --repo <clon de main> --account <c> --container <k> [--wake <url>] [--dry-run]\n');
     return 2;
   }
   const log = (l) => process.stdout.write(`[copia] ${l}\n`);
@@ -474,10 +503,14 @@ async function main(argv) {
   catch (e) { process.stderr.write(`[copia] ${e.message}\n`); return 1; }
   const r = await subir({ repo: op('--repo'), almacen, log });
   (r.ok ? process.stdout : process.stderr).write(`[copia] ${r.motivo}\n`);
+  if (r.ok && op('--wake')) {
+    if (r.cambioOperaciones) log((await despertar({ url: op('--wake') })).motivo);
+    else log('operations.json no cambió: el sitio no hace falta despertarlo');
+  }
   return r.ok ? 0 : 1;
 }
 
-module.exports = { RUTAS, INDICE, rutaSana, rutaSegura, logoDe, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas, podarCopias, programarPoda, podaPendiente };
+module.exports = { RUTAS, INDICE, rutaSana, rutaSegura, logoDe, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, despertar, bajar, borrarViejas, podarCopias, programarPoda, podaPendiente };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`[copia] falló: ${e && e.stack ? e.stack : e}\n`); process.exit(1); });

@@ -188,6 +188,8 @@ const PARA_OTRA_SESION = {
   // el ok de guardar: sobre la corrida abierta del destino, la que vio el dueño
   'approve-save': { firma: 'save', marcador: true },
   'restore': { firma: 'lost-run', nombra: 3 },
+  // el arreglo rápido de otra pestaña: se escribe en adhoc/<destino>.json, no en un marcador
+  'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
 };
 
 const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
@@ -208,6 +210,7 @@ function paraOtraSesion(argv) {
   }
   if (!/^[\w-]+$/.test(PEDIDA)) no('la sesión no se puede leer');
   if (PEDIDA === '_nosession') no('«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id');
+  if (argv[2] === 'clear') no(`clear cierra la ejecución de la propia sesión; la de otra sesión se cierra con marker.js clear-session ${PEDIDA} (y si quedó perdida, clear-session ${PEDIDA} --lost --for-session ${PEDIDA})`);
   const t = PARA_OTRA_SESION[argv[2]];
   const s = t && require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
@@ -5114,48 +5117,35 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 // Carril AD-HOC — hotfix / ajuste chico SIN story, declarado por sesión.
 // Es la salida (b) del portón de carril (lib/story-gate.js): un repo bajo el arnés no acepta
 // código sin pipeline activo ni esta declaración. Archivo: adhoc/<sid>.json
-//   { reason, maxFiles, files[], declaredAt, lastTouch }
+//   { reason, maxFiles, files[], declaredAt, lastTouch, via, by }
+// Declararlo o cambiarle el cupo es una firma del dueño (`adhoc-lane`, scripts/lib/owner-window.js): la aprueba en la
+// ventana de permiso, la da en su terminal (`--terminal`), o la da la sesión designada de esta máquina por la delegación
+// del perfil (`--for-session <destino>`). Nada de la conversación la abre: lo que dice el chat lo puede escribir la
+// sesión, y la ventana muestra sólo lo que hace el comando.
 // El cupo lo cuentan los archivos de IMPLEMENTACIÓN distintos (on-edit.js los registra en
 // PostToolUse); al pasarse, el portón vuelve a cerrar (→ story + pipeline, o re-declarar con cupo
 // mayor y motivo). Todo queda en adhoc.log. `adhoc clear` lo termina; `marker.js set` (pipeline)
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
-/**
- * ¿Hay una conversación de Claude Code guardada para la sesión `sid`, aunque no se pueda leer? Un `sid` que no
- * se puede buscar cuenta como sí: falla hacia cerrar.
- */
-function tieneConversacion(sid) {
-  if (!/^[\w-]+$/.test(String(sid || ''))) return true;
-  const casas = [os.homedir()];
-  let realHome = null;
-  try { realHome = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'real-home.js')); } catch (_e) { /* una copia sin la biblioteca (Codex): la casa de HOME */ }
-  if (realHome) {
-    // la casa de la cuenta que no se puede resolver no es «no hay conversación»: falla hacia cerrar
-    try { casas.push(realHome.casaDeLaCuenta()); } catch (_e) { return true; }
-  }
-  // sólo «no existe» es ausencia: cualquier otro error (un permiso sacado con chmod) cierra
-  const noEsta = (e) => e && (e.code === 'ENOENT' || e.code === 'ENOTDIR');
-  for (const casa of casas) {
-    const raiz = path.join(casa, '.claude', 'projects');
-    let carpetas = [];
-    try { carpetas = fs.readdirSync(raiz); } catch (e) { if (noEsta(e)) continue; return true; }
-    for (const d of carpetas) {
-      try { fs.lstatSync(path.join(raiz, d, `${sid}.jsonl`)); return true; } catch (e) { if (!noEsta(e)) return true; }
-    }
-  }
-  return false;
-}
+// el cupo más grande que declara la designada por otra pestaña: uno mayor lo aprueba el dueño en su ventana
+const ADHOC_TOPE_DELEGADO = 8;
+const ADHOC_MOTIVO_MAX = 200;
+const ADHOC_CUPO_MAX = 50;
 
 function cmdAdhoc(sub, payloadJson) {
   if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
   const io = require('./lib/story-gate-io.js');
-  const existing = io.readAdhoc(STATE_DIR, SID);
   if (sub === 'get') {
+    const existing = io.readAdhoc(STATE_DIR, SID);
     process.stdout.write(JSON.stringify(existing, null, 2) + '\n');
     process.exit(existing ? 0 : 1);
   }
   if (sub === 'clear') {
-    try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (_e) { /* el archivo no existe */ }
+    const existing = io.readAdhoc(STATE_DIR, SID);
+    try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (e) {
+      // sólo «no existe» es estar cerrado: otro error deja el atajo abierto, y eso se dice
+      if (e.code !== 'ENOENT') { console.error(`marker.js adhoc clear: no pude borrar la declaración (${e.code || e.message}); el arreglo rápido sigue abierto.`); process.exit(1); }
+    }
     appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0 });
     process.stdout.write('adhoc: cleared\n');
     process.exit(0);
@@ -5164,167 +5154,85 @@ function cmdAdhoc(sub, payloadJson) {
     let payload;
     try { payload = JSON.parse(payloadJson || ''); } catch (err) {
       console.error('marker.js adhoc set: payload JSON inválido —', err.message);
-      console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué, en palabras del user>","maxFiles":8}\'');
+      console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué>","maxFiles":8}\'');
       process.exit(2);
     }
-    const reason = String(payload.reason || '').trim();
+    const reason = String((payload && payload.reason) || '').trim();
     if (reason.length < 8) {
-      console.error('marker.js adhoc set: "reason" requerido (≥8 caracteres) — en palabras del USER, no tuyas.');
+      console.error('marker.js adhoc set: "reason" requerido (≥8 caracteres): qué se arregla y por qué, para que el dueño lo lea en la ventana.');
       process.exit(2);
     }
-    // El carril NO se adivina por regex (ver el
-    // comentario grande en lib/story-gate.js). El juicio de `adhoc set` queda en DOS capas:
-    //   1. MECÁNICA: el reason tiene que ser un fragmento literal de lo que escribió el user
-    //      (reasonInPrompts sobre el ring que sólo escribe on-prompt.js — el agente no puede
-    //      inyectar ahí).
-    //   2. MODELO: el clasificador (lib/lane-classifier.js) lee los prompts REALES y contesta qué
-    //      autorizó el humano. Castellano lo interpreta un modelo, no un regex. Corre SIEMPRE que
-    //      esté disponible — `adhoc set` pasa una vez por sesión, el costo es marginal — y su
-    //      veredicto GANA sobre la cita: si dice 'pipeline' (el user pidió una story), citar al
-    //      user no alcanza para el atajo; si dice 'adhoc', una cita fallida no traba.
-    //   Sin modelo (tests, sin binario, timeout): decide la capa mecánica sola, como siempre.
-    // Kill-switch del dev: TYCON_STORY_GATE=off.
-    const gate = require('./lib/story-gate.js');
-    const lane = io.readLane(STATE_DIR, SID);
-    const ring = lane && Array.isArray(lane.recentPrompts) ? lane.recentPrompts : [];
-    // Se lee como los hooks del portón (on-story-gate.js, on-bash-write-gate.js): sin distinguir mayúsculas.
-    const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
-    // Lo que cuenta como palabra del dueño sale de la marca que pone Claude Code en la conversación, leída ahora:
-    // en el aviso de cada mensaje no se puede, porque Claude Code escribe el mensaje en la conversación después. Un
-    // mensaje de otra sesión, una nota de un agente o uno sin marca no se cita ni lo lee el modelo. Sin la conversación,
-    // con Claude Code se niega (abajo); en otra herramienta, que no la guarda, decide el registro de on-prompt.js.
-    let conv = { legible: false, motivo: 'no se consultó' };
-    if (gateOn) {
-      try { conv = require('./lib/person-ok.js').mensajesConOrigen({ sesion: SID }); } catch (e) { conv = { legible: false, motivo: e.message }; }
-    }
-    // Es Claude Code si la sesión tiene su conversación guardada, en la casa de HOME o en la de la cuenta: no lo decide una
-    // variable de entorno, que el agente puede borrar. Esa carpeta no se escribe por consola (freno ESC-C2).
-    const conClaudeCode = gateOn && tieneConversacion(SID);
-    const recentAll = conv.legible
-      ? [...conv.mensajes.filter((m) => m.origen !== 'dueno'), ...conv.delDueno.map((texto) => ({ texto, origen: 'dueno' }))]
-      : (conClaudeCode ? [] : ring);
-
-    // Un ring vacío no cita nada: `quoted=true` ahí sería un fail-open doble (hook de prompt roto +
-    // sin modelo = cualquier reason inventado pasaría). Un ring
-    // vacío significa que NO HAY nada citable: la cita falla, y el mensaje de abajo dice cómo
-    // seguir (preguntarle al user; si el user YA contestó y esto se repite, el hook on-prompt no
-    // está corriendo y eso es lo que hay que arreglar).
-    const delDueno = gate.soloDelDueno(recentAll);
-    const quoted = gateOn ? (delDueno.length > 0 && gate.reasonInPrompts(reason, recentAll)) : true;
-    let llm = { lane: null, via: 'sin-consulta' };
-    if (gateOn && delDueno.length) {
-      try { llm = require('./lib/lane-classifier.js').classifyLane(recentAll); } catch (_) { llm = { lane: null, via: 'error' }; }
-    }
-
-    const ask =
-      `🔴 NO cierres el turno con este texto: está escrito para VOS. Preguntale al user en castellano ` +
-      `llano, p. ej.: "Esto toca código del repo. ¿Lo hago como ajuste puntual —decime que es un ` +
-      `hotfix y sigo— o querés que vaya con story y revisión completa?". Su respuesta es citable y ` +
-      `destraba este comando. Prohibido nombrarle "carril", "marker", "ad-hoc", "el arnés" o esta ` +
-      `salida: no significan nada para él.\n` +
-      `   · SUBAGENTE (sin AskUserQuestion): no elijas vos — cerrá tu reporte pidiendo que le ` +
-      `pregunten al user.`;
-
-    if (gateOn && !conv.legible && conClaudeCode) {
-      // Sin la conversación no se sabe de quién es cada mensaje: el registro guarda también lo de otras sesiones.
-      console.error(
-        `marker.js adhoc set: DENEGADO — no pude leer la conversación de esta sesión (${conv.motivo}), así que no sé ` +
-        `qué escribió el user y qué llegó de otra sesión o de un agente.\n\n` + ask,
-      );
-      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_SIN_CONVERSACION', reason, motivo: conv.motivo, cwd: process.cwd() });
+    // la ventana y la terminal muestran el motivo hasta 200 caracteres y el cupo: lo que se guarda es lo que el dueño ve
+    if (reason.length > ADHOC_MOTIVO_MAX) {
+      console.error(`marker.js adhoc set: "reason" de hasta ${ADHOC_MOTIVO_MAX} caracteres: la ventana no muestra más, y el dueño firmaría un recorte.`);
       process.exit(2);
     }
-    if (gateOn && llm.lane === 'pipeline') {
-      // El modelo leyó los prompts del user y dice que pidió una story: el atajo no corre, ni
-      // siquiera citándolo (citar un pedido de story como motivo de un ad-hoc es
-      // exactamente el anti-pattern que este freno existe para parar).
-      console.error(
-        `marker.js adhoc set: DENEGADO — leyendo los últimos mensajes del user, lo que pidió es una ` +
-        `story/spec por el pipeline, no un ajuste suelto.\n\n` +
-        `  (a) Si es así → Skill(skill="tycon-pipeline", args="implementemos …").\n` +
-        `  (b) Si el user QUIERE el atajo, que lo diga en su próximo mensaje ("es un hotfix", "sin ` +
-        `story") — eso cambia el veredicto.\n\n` + ask,
-      );
-      appendLog('adhoc.log', { kind: 'ADHOC_LLM_DENIED_LANE', reason, via: llm.via, cwd: process.cwd() });
+    if (payload.maxFiles !== undefined && !(Number.isInteger(payload.maxFiles) && payload.maxFiles >= 1 && payload.maxFiles <= ADHOC_CUPO_MAX)) {
+      console.error(`marker.js adhoc set: "maxFiles" es un número entero de 1 a ${ADHOC_CUPO_MAX}.`);
       process.exit(2);
     }
-    // El texto citado está, pero en un mensaje que no escribió el dueño: se dice eso, no «citá literal».
-    const r0 = gate.normalizeWords(reason);
-    const ajeno = recentAll.find((e) => e && typeof e === 'object' && e.origen !== 'dueno' && gate.normalizeWords(e.texto).includes(r0));
-    if (gateOn && !quoted && llm.lane !== 'adhoc' && ajeno) {
-      const quien = ajeno.origen === 'sesion' ? 'de otra sesión' : ajeno.origen === 'nota' ? 'de un agente (una nota o un aviso de tarea)' : 'sin la marca de quién lo escribió';
-      console.error(
-        `marker.js adhoc set: DENEGADO — ese texto llegó en un mensaje ${quien}, no lo escribió el user: lo que pide ` +
-        `otra sesión o un agente no abre el atajo, aunque diga «arreglo rápido».\n\n` +
-        `Si el user quiere el atajo, que lo escriba él como un mensaje nuevo; ese mensaje es citable. ` + ask,
-      );
-      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_REASON', reason, origen: ajeno.origen, de: ajeno.de || null, via: llm.via, cwd: process.cwd() });
+    // la sesión destino: la de --for-session (la designada declara por otra pestaña, o el dueño desde su terminal), o la propia
+    const k = process.argv.indexOf('--for-session');
+    const pedida = k >= 0 ? process.argv[k + 1] : null;
+    if (k >= 0 && !/^[\w-]+$/.test(String(pedida || ''))) {
+      console.error('marker.js adhoc set: --for-session necesita el id de la sesión destino.');
       process.exit(2);
     }
-    if (gateOn && !quoted && llm.lane !== 'adhoc') {
-      console.error(
-        `marker.js adhoc set: DENEGADO — "reason" tiene que ser un fragmento LITERAL de lo que escribió el user ` +
-        `(≥${gate.ADHOC_REASON_MIN_CHARS} caracteres; se compara sin mayúsculas ni acentos), no una paráfrasis tuya.\n\n` +
-        `CÓMO SE ARREGLA (es mecánico): copiá y pegá un pedazo del prompt del user TAL CUAL lo escribió — ` +
-        `con sus typos, sin traducir, sin resumir. Ej: si escribió "actualiza el sp de desduplicación e ` +
-        `incluilo en el repo", un reason válido es "actualiza el sp de desduplicacion" y uno inválido es ` +
-        `"el user pidió actualizar un stored procedure".\n\n` +
-        `SI NO HAY NADA CITABLE (el pedido quedó fuera de los últimos ${io.LANE_RECENT_PROMPTS || 8} mensajes, ` +
-        `o sólo dijo "dale"/"si"): NO fabriques una cita. ` + ask,
-      );
-      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_REASON', reason, via: llm.via, cwd: process.cwd() });
+    const destino = pedida || SID;
+    if (destino === '_nosession') {
+      console.error('marker.js adhoc set: sin sesión no sé a qué pestaña abrirle el arreglo rápido: --terminal --for-session <id de la sesión>.');
       process.exit(2);
     }
-    // Sin modelo, citar el PROPIO pedido de story como motivo del atajo
-    // pasaría la capa mecánica: es el anti-pattern que este freno existe para parar.
-    // El veto no adivina nada: mira SOLO el prompt
-    // que la declaración cita como su autorización, y si ese prompt es un pedido explícito de
-    // story (STORY_INTENT_PATTERNS, fuente única con el reminder), el atajo no corre. El modelo
-    // (ADHOC) puede abrirlo igual — el user pudo cambiar de idea en otro prompt.
-    if (gateOn && quoted && llm.lane !== 'adhoc' && gate.quotedPromptAsksStory(reason, recentAll)) {
-      console.error(
-        `marker.js adhoc set: DENEGADO — el texto que citás como motivo ES un pedido de implementar ` +
-        `una story ("${reason.slice(0, 80)}"). Citar el pedido de la story como autorización del atajo ` +
-        `es exactamente el anti-pattern que este freno existe para parar.\n\n` +
-        `  (a) Si es una story → Skill(skill="tycon-pipeline", args="implementemos …").\n` +
-        `  (b) Si el user QUIERE el atajo, que lo diga: su próximo mensaje es citable.\n\n` + ask,
-      );
-      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_STORY_QUOTE', reason, via: llm.via, cwd: process.cwd() });
-      process.exit(2);
+    const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+    // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
+    const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos` : 'el cupo de siempre (8 archivos, o el que ya tenía)';
+    const r = ow.exigir({ firma: 'adhoc-lane', argv: process.argv.slice(1), resumen: `arreglo rápido de la sesión ${destino}: «${reason}» · ${cupoPedido}`,
+      propia: PROPIA, anotar: (renglon) => appendLog('gates.log', renglon) });
+    if (r.codigo !== 0) {
+      const json = String(payloadJson).replace(/'/g, "'\\''");
+      console.error(`🔒 marker.js adhoc set: el dueño no lo aprobó — ${r.motivo}`);
+      console.error('   El arreglo rápido lo aprueba el dueño: en la ventana de permiso, corriendo este comando solo y en su forma');
+      console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
+      console.error(`     node ${__filename} adhoc set '${json}' --terminal --for-session ${destino}`);
+      console.error('   Si el dueño no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.');
+      process.exit(r.codigo === 2 ? 2 : 1);
     }
-    if (gateOn && quoted && llm.lane === null && llm.via !== 'sin-consulta') {
-      // El atajo se abre por la cita SOLA, sin juez (modelo apagado/ausente/tímido). Es legal —
-      // falla hacia lo mecánico— pero NO silencioso: queda su propia constancia para el --report
-      // del medidor (¿cuántos atajos pasan sin juez? si son muchos, el juez no está juzgando).
-      appendLog('adhoc.log', { kind: 'ADHOC_SET_UNJUDGED', reason, via: llm.via, cwd: process.cwd() });
+    // una vía que este guion no conoce no se cuenta como ventana: no se declara
+    if (!['delegacion', 'terminal', 'ventana'].includes(r.via)) {
+      console.error(`🔒 marker.js adhoc set: la firma volvió por una vía que no conozco (${r.via}); no declaré nada.`);
+      process.exit(1);
     }
-    if (gateOn && !quoted && llm.lane === 'adhoc') {
-      // El modelo abrió lo que la capa mecánica había cerrado: constancia propia — es el único
-      // evento del clasificador que merece revisión humana (lo grita lane-llm-notice al arranque).
-      appendLog('adhoc.log', {
-        kind: 'ADHOC_LLM_OVERRIDE_LANE', reason,
-        lanePrompt: String(delDueno[delDueno.length - 1] || '').replace(/\s+/g, ' ').slice(0, 160),
-        via: llm.via, cwd: process.cwd(),
-      });
-    }
-    const maxFiles = Number.isFinite(Number(payload.maxFiles)) && Number(payload.maxFiles) > 0
-      ? Number(payload.maxFiles) : (existing ? existing.maxFiles : 8);
+    const via = r.via;
+    const by = r.sesion || SID;
+    const existing = io.readAdhoc(STATE_DIR, destino);
+    let maxFiles = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : 8);
+    const pedido = maxFiles;
+    if (via === 'delegacion' && maxFiles > ADHOC_TOPE_DELEGADO) maxFiles = ADHOC_TOPE_DELEGADO;
     const obj = {
       reason, maxFiles,
       files: existing ? (existing.files || []) : [],
       declaredAt: existing ? existing.declaredAt : nowIso(),
       lastTouch: nowIso(),
       cwd: process.cwd(),
+      via, by,
+      // la hora de la firma: el portón acepta la declaración sólo con el renglón `adhoc-lane-signed` de esta hora
+      firmadaEn: nowIso(),
     };
-    io.writeAdhoc(STATE_DIR, SID, obj);
-    appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null, files: obj.files.length, cwd: process.cwd(),
-      ...(gateOn ? {} : { gate: 'off' }) });
-    // Con el portón apagado no hubo cita ni juez: queda en bypass.log y la revisión de la noche lo cuenta como escape.
+    io.writeAdhoc(STATE_DIR, destino, obj);
+    // el portón de edición apagado no apaga la firma; queda igual en bypass.log, que la revisión de la noche cuenta
+    const gateOn = String(process.env.TYCON_STORY_GATE || '').toLowerCase() !== 'off';
+    const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
+    appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
+      files: obj.files.length, cwd: process.cwd(), via, by, destino, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }) });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
+    if (maxFiles < pedido) {
+      const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
+      console.error(`⚠ marker.js adhoc set: por la delegación el cupo queda en hasta ${ADHOC_TOPE_DELEGADO} archivos (${antes}); uno mayor lo aprueba el dueño en su ventana.`);
+    }
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }
-  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' [--for-session <id>] [--terminal] | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
   process.exit(2);
 }
 

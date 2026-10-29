@@ -71,6 +71,8 @@ set -- ${_TG_ARGS[@]+"${_TG_ARGS[@]}"}
 REPO="$(cd "${1:?Falta <repo-dir>}" && pwd)"
 STORY_ARG="${2:-}"
 STORY_ID="${STORY_ARG:-unknown}"
+# Los archivos de trabajo de la corrida van a la carpeta temporal del sistema (TMPDIR), no a /tmp fijo.
+TG_TMP="${TMPDIR:-/tmp}"; TG_TMP="${TG_TMP%/}"
 # La CLAVE con que se nombra la copia sellada del resultado: el número solo si es único en el
 # repo de la story, `<tema>__<número>` si se repite. La calcula lib/evidence-key.js desde la RUTA de la
 # story; si no puede decidirla, la copia no se escribe (lo dice el informe) — las pruebas corren igual.
@@ -210,7 +212,7 @@ correr_hermanos_al_salir() {
   fi
   local story_abs blancos err
   story_abs="$(cd "$(dirname "$STORY_ARG")" && pwd)/$(basename "$STORY_ARG")"
-  err="$(mktemp /tmp/test-gate-hermanos-XXXXXX)"
+  err="$(mktemp "$TG_TMP/test-gate-hermanos-XXXXXX")"
   if ! blancos="$(node "$SCRIPT_DIR/lib/companion-repos.js" targets "$REPO_STORY" "$story_abs" 2>"$err")"; then
     # «No pude averiguar» no es «no hay hermanos»: con el repo en verde, salir 0 dejaría sin correr la suite de un
     # hermano que la story toca. Sale 4 (el «no sé qué correr» del gate) y el check `tests` queda en rojo.
@@ -375,7 +377,7 @@ correr_partes() {
     fi
     # un 7 de una parte sin la constancia de «sin acotar» es un rojo de verdad
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
-    filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${out}"$'\n'
+    filas+="${scope}"$'\x1f'"${hrc}"$'\n'
     # un rojo de verdad gana sobre «sin acotar» (7), y éste sobre verde y sobre «sin pruebas» (3)
     if [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then
       [[ "$final" == "0" || "$final" == "7" ]] && final="$hrc"
@@ -383,9 +385,12 @@ correr_partes() {
   done
   node -e '
     const fs = require("fs"), p = require("path");
-    const [out, ts, storyId, final, filas] = process.argv.slice(1);
+    const [out, ts, storyId, final, filas, dir] = process.argv.slice(1);
+    // la carpeta viaja como argumento propio, no dentro de las filas: el bash de Git en Windows convierte una ruta
+    // suelta a la forma que lee node, y una ruta pegada a otros campos no
     const parts = filas.split("\n").filter(Boolean).map((l) => {
-      const [scope, exit, file] = l.split("\x1f");
+      const [scope, exit] = l.split("\x1f");
+      const file = p.join(dir, `tests-result.part-${scope.replace(/\//g, "_")}.json`);
       let a = null; try { a = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_e) { a = null; }
       return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file };
     });
@@ -415,7 +420,7 @@ correr_partes() {
         ts, runner: art.runner, suite_exit: art.suite_exit, suite_green: art.suite_green, halted: null, totals: art.totals,
         coverage: art.coverage, provenance: art.provenance }, null, 2));
     }
-  ' "$OUT_FILE" "$TS" "$STORY_ID" "$final" "$filas" || {
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$final" "$filas" "$OUT_DIR" || {
     echo "[test-gate] 🔴 no pude juntar las partes en $OUT_FILE: sin artefacto, esto no es verde" >&2
     [[ "$final" == "0" ]] && final=1
   }
@@ -698,8 +703,8 @@ fi
 # --- Correr la suite (UNA vez) vía run-check → exit code real + gates.log ----
 # Las carpetas de resultados de más de 7 días que dejó la puerta (resumen y salida entera de cada suite roja) se borran
 # acá: nadie más las limpia. Sólo las de este usuario con el nombre de mktemp de abajo.
-node "$SCRIPT_DIR/lib/old-gate-results.js" /tmp || true
-RESULTS_DIR="$(mktemp -d /tmp/test-gate-XXXXXX)"
+node "$SCRIPT_DIR/lib/old-gate-results.js" "$TG_TMP" || true
+RESULTS_DIR="$(mktemp -d "$TG_TMP/test-gate-XXXXXX")"
 SUITE_EXIT=0
 TEST_PROJECTS=()  # declarado arriba: la rama vitest también lo expande (set -u safe)
 
@@ -972,6 +977,13 @@ else
       bash -c "set -o pipefail; npx vitest run --coverage --reporter=json --outputFile $(printf %q "$RESULTS_DIR/vitest.json") 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
 fi
 
+# De 3 a 7 son salidas del propio gate («sin suite», «no sé el alcance»…): una herramienta de pruebas que sale así
+# es un rojo, y se pasa a 1 como ya hace el corredor genérico.
+if [[ "$RUNNER" =~ ^(dotnet|node-test|jest|vitest)$ && "$SUITE_EXIT" =~ ^[3-7]$ ]]; then
+  echo "[test-gate] $RUNNER salió $SUITE_EXIT: cuenta como falla (1), para no confundirlo con una salida del gate" >&2
+  SUITE_EXIT=1
+fi
+
 # 75: `run-check tests` no lanzó nada porque otra corrida de las pruebas está en marcha en este repo (ya dijo desde
 # cuándo y de quién). No es un rojo: no se escribe tests-result.json, no se toca el check y no se corren los hermanos.
 if [[ "$SUITE_EXIT" == "75" ]]; then
@@ -1021,7 +1033,7 @@ if [[ -z "${BASE_JSON:-}" ]]; then
 fi
 # La sesión con la cadena canónica del arnés (lib/session-id.js: Claude, Codex, banco) — la línea de
 # gates.log no puede quedar con sesión null bajo otra herramienta (revisor de fallos silenciosos).
-_SID_ERR="$(mktemp /tmp/test-gate-sid-XXXXXX)"
+_SID_ERR="$(mktemp "$TG_TMP/test-gate-sid-XXXXXX")"
 GATE_SESSION_ID="$(node -e 'process.stdout.write(String(require(process.argv[1]).resolveSessionId()))' "$SCRIPT_DIR/lib/session-id.js" 2>"$_SID_ERR")" \
   || { echo "[test-gate] ⚠️  no pude resolver la sesión con lib/session-id.js ($(head -1 "$_SID_ERR")); el parser usa la misma cadena de variables" >&2; GATE_SESSION_ID=""; }
 rm -f "$_SID_ERR"

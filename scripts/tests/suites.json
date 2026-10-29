@@ -1007,6 +1007,12 @@
       "requiere": []
     },
     {
+      "__nota": "las listas de archivos de la story se leen en todas las formas de YAML para el alcance de la puerta de pruebas; los frenos siguen con la forma de siempre.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-scope-lists.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/e2e-gate-bundle.test.sh",
       "requiere": []
@@ -1254,11 +1260,6 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/findings-disposition.test.js",
-      "requiere": []
-    },
-    {
-      "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/lane-classifier.test.js",
       "requiere": []
     },
     {
@@ -2179,6 +2180,12 @@
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.141 (tanda B): el aviso de arranque cuenta los arreglos rápidos de los últimos 7 días por cómo se firmaron, sólo cuando hay alguno nuevo, y --report da la misma cuenta.",
+      "raiz": "arnes",
+      "ruta": "tests/lane-llm-notice.test.js",
       "requiere": []
     },
     {

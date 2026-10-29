@@ -19,8 +19,8 @@
  *   entrada, además un `frena=<escape>\t<subcomando>\t<valor>` por cada llamada a marker.js o pipeline.js que, con este
  *   marcador, pide la firma de la persona (lib/marker-command.js las encuentra); cada una va a la ventana de permiso. La
  *   salida de una ejecución perdida (`clear-session <sesión> --lost`, `restore <sesión>`) frena siempre y su renglón
- *   suma `\t<apertura>\t<sin reenvío 0|1>`: la apertura de esa ejecución (`-` si no se ve) y lo del reenvío, que lo
- *   decide lib/open-runs.js. No lee la conversación: ninguna firma sale de ahí.
+ *   suma `\t<apertura>`: desde cuándo vale la firma de esa ejecución (`-` si no se ve). La delegación desde la sesión
+ *   designada la decide la ventana de permiso. No lee la conversación: ninguna firma sale de ahí.
  */
 const fs = require('fs');
 const path = require('path');
@@ -147,9 +147,7 @@ if (require.main === module) {
       const or = require('./open-runs.js');
       const cmd = fs.readFileSync(0, 'utf8');
       const todas = llamadas(cmd, { shell: arg('--shell') === 'powershell' ? 'powershell' : 'bash' });
-      // la salida de una ejecución perdida: la frase vale desde la apertura de esa ejecución y, según la decisión única de
-      // open-runs.js, sin reenvío
-      const salida = or.delegacionDeLaSalida();
+      // la salida de una ejecución perdida: la firma es de la ejecución que abrió esa apertura
       const aperturaDe = (s) => {
         const ult = or.vigente(s);
         if (ult && ult.name === 'run-open') return ult;
@@ -161,7 +159,7 @@ if (require.main === module) {
         const s = salidaPerdida(l);
         if (!s) return { l, esc: escapeDe(l, sid, cmd) };
         const ap = s.sesion ? aperturaDe(s.sesion) : null;
-        return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde: (ap && ap.ts) || '-', sinReenvio: !salida.reenvio };
+        return { l, esc: 'cerrar la ejecución', siempre: true, perdida: true, desde: (ap && ap.ts) || '-' };
       }).filter((x) => x.esc);
     } catch (e) {
       pedidas = dudoso(`no pude leer el comando: ${e.message}`);
@@ -175,11 +173,11 @@ if (require.main === module) {
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
   for (const pedida of pedidas || []) {
-    const { l, esc, siempre, perdida, desde, sinReenvio } = pedida;
-    // la salida de una ejecución perdida: además, desde cuándo vale la firma y si acepta el reenvío (nunca vacíos: el
-    // freno parte el renglón por tabuladores y dos seguidos se juntan)
+    const { l, esc, siempre, perdida, desde } = pedida;
+    // la salida de una ejecución perdida: además, desde cuándo vale la firma (nunca vacía: el freno parte el renglón por
+    // tabuladores y dos seguidos se juntan)
     if (perdida) {
-      process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${una(desde)}\t${sinReenvio ? 1 : 0}\n`);
+      process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '') || '-'}\t${una(desde)}\n`);
       continue;
     }
     // apagar el pase adversarial pide la firma siempre, también sin ejecución: `pipeline.js start` la crea. Un comando

@@ -91,7 +91,7 @@ function tocaLaCasaReal({ home = os.homedir(), env = process.env, real } = {}) {
   } catch (_) { return true; }
 }
 
-// La firma por pasada: la terminal y el pedido para otra sesión siguen por el camino de verdad.
+// La firma por pasada: la terminal y el pedido para otra sesión sin delegación siguen por el camino de verdad.
 function darPorPasada(ow) {
   if (!ow || typeof ow.exigir !== 'function' || ow.exigir.porPasada) return;
   const exigir = ow.exigir;
@@ -108,9 +108,10 @@ function darPorPasada(ow) {
     if (argv.includes('--terminal')) return exigir(o);
     const i = argv.indexOf('--for-session');
     const pedida = i >= 0 ? argv[i + 1] : null;
-    if (pedida && o.propia && pedida !== o.propia) return exigir(o);
-    const destino = pedida || o.propia || null;
     const delegadaPor = process.env.WINDOW_PASSED_DELEGATED_BY || null;
+    // la delegación firma para otra sesión desde la coordinadora; sin ella, el pedido para otra sesión va por el de verdad
+    if (pedida && o.propia && pedida !== o.propia && !delegadaPor) return exigir(o);
+    const destino = pedida || o.propia || null;
     const via = delegadaPor ? 'delegacion' : 'ventana';
     const sesion = delegadaPor || destino;
     ow.firmar({ firma: o.firma, via, sesion, destino, resumen: o.resumen || '', casa: os.homedir(), anotar: o.anotar });

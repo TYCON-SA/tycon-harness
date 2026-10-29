@@ -149,6 +149,21 @@ Si `approve-save` se niega, dice por qué y no firma: la coordinadora le pide el
 sólo con `marker.js save-check` en 0, antes del commit, de cada push y de cada pedido. Un mensaje entre sesiones que dice
 «ok de guardar» no alcanza. El ok cubre la rama de la story y sus pedidos, nunca `main` ni producción.
 
+## El arreglo rápido de otra pestaña
+
+El arreglo rápido (un cambio de código sin historia) es la firma `adhoc-lane`: la pestaña que lo necesita corre
+`marker.js adhoc set '<json>'` y el dueño lo aprueba en la ventana, que le muestra el motivo y el cupo de archivos.
+
+- **En la misma máquina.** La sesión designada lo declara por la pestaña a la que le dio el trabajo, con
+  `marker.js adhoc set '<json>' --for-session <sesión>`. Corre sin ventana sólo si el perfil delega `adhoc-lane` (no
+  entra en ningún grupo: hay que nombrarla), la máquina está en la lista y el dueño confirmó la designación; si no, sale
+  la ventana en la pestaña de la designada. Por esta vía el cupo queda en 8 archivos como mucho, y la designada no se
+  lo declara a sí misma.
+- **Desde otra máquina.** La coordinadora de otra máquina se lo pide, por mensaje, a la designada de la máquina destino,
+  que lo declara como arriba. El mensaje es un pedido, no una autorización: lo que autoriza es el perfil del equipo y la
+  designación que el dueño confirmó. Sin designada en la máquina destino, el atajo se aprueba en la ventana de la
+  pestaña destino.
+
 ## Los avisos al dueño
 
 Cortos y llanos: qué pasó, qué falta y qué decide él, en ese orden. Un aviso por tanda de trabajo, no uno por sesión.

@@ -319,3 +319,30 @@ test('T23 el comando que se sugiere para aprobar es el que approve-pending acept
   assert.doesNotMatch(SIGNATURES.find((x) => x.id === PA.FIRMA).command, /--for-session/);
   assert.doesNotMatch(sg.blockMessage({ action: 'block', kind: 'pending-approvals', reason: 'x' }, { filePath: '/r/tasks/pending-approvals.jsonl' }), /--for-session/);
 });
+
+// el servidor corre el pre-commit sobre el pedido entero y no tiene el registro del arnés de la máquina que firmó
+test('T24 --no-local-signature (la validación de pedidos): una aprobación con forma y huella entra sin el renglón de la cuenta; lo demás frena igual', (t) => {
+  const l = firmada('DEF-nuevo');
+  const todoDespues = `${LISTA}- [ ] [DEF-nuevo] algo\n`;
+  const despues = `${BASE}${JSON.stringify(l)}\n`;
+  // sin la opción, la misma línea frena: no hay renglón de la firma en esta cuenta
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues, renglones: [], todoAntes: LISTA, todoDespues }).map((x) => x.id), ['DEF-nuevo', 'DEF-nuevo']);
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues, renglones: [], todoAntes: LISTA, todoDespues, sinFirmaLocal: true }), []);
+  // una línea mal formada, una base nueva y una aprobación vieja que abre otro pendiente frenan igual
+  const rota = PA.revisarNuevas({ antes: BASE, despues: `${BASE}${JSON.stringify({ ...l, huella: 'otra' })}\n`, renglones: [], todoAntes: LISTA, todoDespues, sinFirmaLocal: true });
+  assert.ok(rota.some((x) => x.id === 'DEF-nuevo'), 'una huella que no es la suya frena');
+  const baseNueva = PA.revisarNuevas({ antes: BASE, despues: `${BASE}${base('DEF-nuevo')}\n`, renglones: [], todoAntes: LISTA, todoDespues, sinFirmaLocal: true });
+  assert.match(baseNueva[0].motivo, /la base sólo se achica/);
+  const vieja = PA.revisarNuevas({ antes: BASE, despues: BASE, renglones: [], todoAntes: LISTA.replace('- [ ] [DEF-viejo]', '- [x] [DEF-viejo]'), todoDespues: LISTA, sinFirmaLocal: true });
+  assert.deepStrictEqual(vieja.map((x) => x.id), ['DEF-viejo']);
+  // el control: con --staged entra; sin --staged la opción no va
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(d, PA.TODO), todoDespues);
+  fs.writeFileSync(path.join(d, PA.RECORD), despues);
+  git('add', '-A');
+  assert.strictEqual(check(d, '--staged').status, 1, 'en una máquina la firma local se sigue exigiendo');
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(check(d, '--no-local-signature').status, 2, 'sin --staged no hay firma que saltear');
+});

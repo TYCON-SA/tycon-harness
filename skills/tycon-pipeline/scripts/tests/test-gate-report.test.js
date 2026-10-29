@@ -13,8 +13,7 @@
  *   T70 · smoke-run.sh corre contra un servidor de juguete con un PATH sin `python3` y deja lo mismo que con Python.
  *   T74 · una suite no medida llega al artefacto con su motivo (además de contar como ausente).
  *   T73 · sin el corredor (`npx` o `dotnet` fuera del PATH) test-gate.sh dice «no pude correr las pruebas: falta …» y
- *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado. (La parte del `claude`
- *         que en Windows es un `.cmd` está en lane-classifier.test.js.)
+ *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado.
  *
  * Las esperadas (fixtures/test-gate-report/<caso>/expected.json) se capturaron corriendo el bloque de Python original
  * sobre las mismas entradas:
@@ -834,4 +833,50 @@ test('T74 TestGate_SuitesJson_UnmeasuredReasonReachesArtifact — la suite no me
   assert.strictEqual(art.totals.unmeasured, 1);
   assert.deepStrictEqual(art.totals.unmeasured_suites, [noMedida]);
   assert.strictEqual(art.suite_green, false, 'nunca verde');
+});
+
+test('T76 TestGate_TouchedLines_GitPrefixConfig — con diff.mnemonicPrefix o diff.noprefix en la máquina, las líneas tocadas salen igual', () => {
+  // 🔴 rojo si: el diff de las líneas tocadas usa los prefijos que configura la máquina → las rutas salen «w/…» o sin
+  //    prefijo, no calzan con la cobertura y el número queda en null con un motivo que no es el de verdad.
+  for (const [clave, valor] of [['diff.mnemonicPrefix', 'true'], ['diff.noprefix', 'true']]) {
+    const caso = armarCaso('suites-json-coverage');
+    const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-'),
+      GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: clave, GIT_CONFIG_VALUE_0: valor });
+    assert.strictEqual(rc, 0, stderr);
+    assert.strictEqual(got.tests_result.coverage.touched_lines_pct, 50, `${clave}: ${JSON.stringify(got.tests_result.coverage, null, 1)}`);
+  }
+});
+
+test('T77 TestGate_NewFileCoverage_MatchesOnFolderBoundary — el archivo nuevo de un proyecto en subcarpeta calza con su cobertura, y un homónimo de otra carpeta no', () => {
+  // 🔴 rojo si: la búsqueda por terminación no exige el límite de carpeta → `mysrc/a.js` presta su cobertura a `src/a.js`;
+  //    o si exige la ruta entera → el proyecto en subcarpeta (rutas desde la raíz del repo o desde la carpeta) no calza.
+  const { calzaPorTerminacion } = require(REPORT);
+  assert.strictEqual(calzaPorTerminacion('/tmp/r/web/src/price.ts', 'web/src/price.ts'), true);
+  assert.strictEqual(calzaPorTerminacion('src/price.ts', 'web/src/price.ts'), true);
+  assert.strictEqual(calzaPorTerminacion('web/src/price.ts', 'web/src/price.ts'), true);
+  assert.strictEqual(calzaPorTerminacion('/tmp/r/mysrc/price.ts', 'src/price.ts'), false);
+  assert.strictEqual(calzaPorTerminacion('/tmp/r/web/src/xprice.ts', 'price.ts'), false);
+});
+
+test('T78 TestGate_ToolExits3_IsRed — una herramienta de pruebas que sale 3 es un rojo, no «sin suite»', () => {
+  // 🔴 rojo si: sólo el corredor genérico convierte sus salidas 3 a 7 → un vitest que sale 3 se lee como el 3 del gate
+  //    («no hay suite») y quien llama lo cuenta como «sin pruebas» y no como rojo.
+  const bin = tmpReal('tgr-fakebin3-');
+  fs.writeFileSync(path.join(bin, 'npx'), '#!/usr/bin/env bash\n# npx de juguete (test-gate-report.test.js): vitest que sale 3\nexit 3\n', { mode: 0o755 });
+  const repo = repoDeJuguete('vitest');
+  const r = correrGate(repo, '9.12', bin + path.delimiter + process.env.PATH, tmpReal('tgr-home-'));
+  assert.strictEqual(r.status, 1, `salió ${r.status}\n${r.stderr}`);
+  assert.match(r.stderr, /vitest salió 3: cuenta como falla/);
+});
+
+test('T79 TestGate_WorkFiles_GoToTmpdir — los archivos de trabajo de la puerta van a TMPDIR, no a /tmp fijo', () => {
+  // 🔴 rojo si: la carpeta de resultados y los errores intermedios se crean en /tmp aunque TMPDIR diga otra cosa.
+  const tmpdir = tmpReal('tgr-tmpdir-');
+  const repo = repoDeJuguete('vitest');
+  const env = { ...process.env, PATH: binDeJuguete() + path.delimiter + process.env.PATH, HOME: tmpReal('tgr-home-'),
+    CLAUDE_CODE_SESSION_ID: SESION, TYCON_COVERAGE_BASE: '', TMPDIR: tmpdir + '/' };
+  delete env.TYCON_TEST_SCOPE; delete env.TYCON_EVIDENCE_DIR;
+  const r = spawnSync('bash', [GATE, repo, '9.12'], { encoding: 'utf8', env, timeout: 180000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(fs.readdirSync(tmpdir).some((n) => /^test-gate-/.test(n)), `nada de la puerta en TMPDIR: ${fs.readdirSync(tmpdir)}`);
 });

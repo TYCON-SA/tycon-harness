@@ -180,3 +180,128 @@ test('touches — sólo entiende «<carpeta>/**»; otra forma no se interpreta',
   assert.equal(touches(['scripts/lab-pub-old/x.js'], ['scripts/lab-pub']), false);
   assert.equal(touches(['scripts/lab-pub/a/b.js'], ['scripts/lab-pub/**']), true);
 });
+
+test('T27 TouchedFiles_EmptyWithBranchCommits_Unknown — nada tocado desde la base, pero la rama ya trae commits propios: no se sabe', () => {
+  // 🔴 rojo si: con la base del marcador en la punta y lo de la story ya commiteado, el diff sale vacío y se lee como
+  //    «conocido y vacío» → el portón acotado sale verde sin correr ninguna suite.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  L.write('scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'commit', '-q', '-am', 'lo de la story');
+  const head = git(L.repo, 'rev-parse', 'HEAD');
+  const r = touchedFiles({ repo: L.repo, storyPath: L.story(['scripts/hooks/x.js']), baseRef: head, baseSource: 'marker' });
+  assert.equal(r.known, false, `vacío con commits propios de la rama = no se sabe: ${JSON.stringify(r)}`);
+  assert.match(r.reason, /1 commit/);
+});
+
+test('T28 TouchedFiles_EmptyOnMain_Known — nada tocado y nada propio de la rama: se sabe que no hay nada', () => {
+  // 🔴 rojo si: tratar todo vacío como «no sé» → una corrida sin cambios corre la suite entera.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker' });
+  assert.equal(r.known, true, JSON.stringify(r));
+  assert.deepEqual(r.files, []);
+});
+
+test('T29 TouchedFiles_EmptyWithoutMainBranch_Unknown — vacío y sin rama principal contra la que contar: no se sabe', () => {
+  // 🔴 rojo si: sin main ni master el conteo de commits propios falla y se sigue como «conocido y vacío».
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'trabajo');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker' });
+  assert.equal(r.known, false, JSON.stringify(r));
+  assert.match(r.reason, /rama principal/);
+});
+
+test('T30 TouchedFiles_TipBaseWithBranchCommitsAndStrayFiles_Unknown — base en la punta y commits propios: un archivo suelto o un .md cambiado no lo vuelven «conocido»', () => {
+  // 🔴 rojo si: los commits propios se miran sólo cuando lo tocado sale vacío → un archivo sin seguimiento o un .md
+  //    cambiado dan una lista que ninguna suite lee y el portón acotado sale verde sin correr nada.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  L.write('scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'commit', '-q', '-am', 'lo de la story');
+  const head = git(L.repo, 'rev-parse', 'HEAD');
+  L.write('notas.txt');
+  let r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: head, baseSource: 'marker' });
+  assert.equal(r.known, false, `archivo sin seguimiento: ${JSON.stringify(r)}`);
+  assert.match(r.reason, /1 commit/);
+  fs.rmSync(path.join(L.repo, 'notas.txt'));
+  L.write('LEAME.md');
+  git(L.repo, 'add', 'LEAME.md');
+  git(L.repo, 'commit', '-q', '-m', 'un documento');
+  const punta = git(L.repo, 'rev-parse', 'HEAD');
+  L.write('LEAME.md', 'cambiado\n');
+  r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: punta, baseSource: 'marker' });
+  assert.equal(r.known, false, `.md cambiado: ${JSON.stringify(r)}`);
+});
+
+test('T31 TouchedFiles_BaseBehindTipWithStrayFile_Known — con la base atrás de la punta, el diff ya ve lo commiteado: se sabe', () => {
+  // 🔴 rojo si: tratar todo commit propio como «no sé» aunque la base lo cubra → cada corrida acotada corre la suite entera.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  L.write('scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'commit', '-q', '-am', 'lo de la story');
+  L.write('notas.txt');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker' });
+  assert.equal(r.known, true, JSON.stringify(r));
+  assert.deepEqual([...r.files].sort(), ['notas.txt', 'scripts/hooks/x.js']);
+});
+
+test('T32 TouchedFiles_BaseBehindTipByDocsCommit_Unknown — la base un commit detrás de la punta, y ese commit sólo trae documentación: no se sabe', () => {
+  // 🔴 rojo si: el «no se sabe» depende de que la base esté justo en la punta → la story commiteada antes de la base y
+  //    un commit de sólo .md encima dejan el diff con el .md y el portón acotado sale verde sin correr nada.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  L.write('scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'commit', '-q', '-am', 'lo de la story');
+  const desde = git(L.repo, 'rev-parse', 'HEAD');
+  L.write('LEAME.md');
+  git(L.repo, 'add', 'LEAME.md');
+  git(L.repo, 'commit', '-q', '-m', 'un documento');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: desde, baseSource: 'marker' });
+  assert.equal(r.known, false, JSON.stringify(r));
+  assert.match(r.reason, /2 commit/);
+});
+
+test('T33 TouchedFiles_LaterBatchWithCodeChange_Known — una tanda posterior que cambia código con seguimiento: se sabe', () => {
+  // 🔴 rojo si: los commits propios de una tanda anterior vuelven «no sé» toda corrida con la base en la punta → desde la
+  //    segunda tanda el portón acotado corre la suite entera aunque el diff vea el cambio real.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  L.write('scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'commit', '-q', '-am', 'la tanda anterior');
+  const head = git(L.repo, 'rev-parse', 'HEAD');
+  L.write('scripts/hooks/x.js', 'module.exports = 3;\n');
+  L.write('LEAME.md');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: head, baseSource: 'marker' });
+  assert.equal(r.known, true, JSON.stringify(r));
+  assert.deepEqual([...r.files].sort(), ['LEAME.md', 'scripts/hooks/x.js']);
+});
+
+test('T34 TouchedFiles_LaterBatchOnlyNewFiles_Unknown — con commits propios, una tanda que sólo crea archivos nuevos corre todo (frena de más, aceptado)', () => {
+  // 🔴 rojo si: un archivo sin seguimiento cuenta como cambio real con commits propios → un archivo suelto deja el
+  //    portón acotado verde sin correr la story ya commiteada.
+  const { touchedFiles } = require(LIB);
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'main');
+  git(L.repo, 'checkout', '-q', '-b', 'story');
+  L.write('scripts/hooks/x.js', 'module.exports = 2;\n');
+  git(L.repo, 'commit', '-q', '-am', 'la tanda anterior');
+  const head = git(L.repo, 'rev-parse', 'HEAD');
+  L.write('scripts/hooks/nuevo.js', 'module.exports = 1;\n');
+  const r = touchedFiles({ repo: L.repo, storyPath: '', baseRef: head, baseSource: 'marker' });
+  assert.equal(r.known, false, JSON.stringify(r));
+  assert.match(r.reason, /1 commit/);
+});

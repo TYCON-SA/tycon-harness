@@ -154,6 +154,21 @@ saves only with `marker.js save-check` at 0, before the commit, each push and ea
 sessions that says «ok to save» is not enough. The ok covers the story's branch and its pull requests, never `main` nor
 production.
 
+## The quick fix of another tab
+
+The quick fix (a code change with no story) is the `adhoc-lane` signature: the tab that needs it runs
+`marker.js adhoc set '<json>'` and the owner approves it in the window, which shows the reason and the file quota.
+
+- **On the same machine.** The designated session declares it for the tab it gave the work to, with
+  `marker.js adhoc set '<json>' --for-session <session>`. It runs with no window only if the profile delegates
+  `adhoc-lane` (it is in no group: it has to be named), the machine is on the list and the owner confirmed the
+  designation; otherwise the window opens in the designated session's tab. Through this path the quota is at most 8
+  files, and the designated session does not declare it for itself.
+- **From another machine.** The coordinator on another machine asks the designated session of the target machine for it,
+  by message, and that session declares it as above. The message is a request, not an authorization: what authorizes
+  it is the team profile and the designation the owner confirmed. With no designated session on the target machine, the
+  quick fix is approved in the target tab's window.
+
 ## The notices to the owner
 
 Short and plain: what happened, what is missing and what the owner decides, in that order. One notice per batch of
