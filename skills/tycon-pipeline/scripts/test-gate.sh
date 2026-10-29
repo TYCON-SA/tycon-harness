@@ -696,6 +696,9 @@ if [[ -n "$_NO_LANZA" ]]; then
 fi
 
 # --- Correr la suite (UNA vez) vía run-check → exit code real + gates.log ----
+# Las carpetas de resultados de más de 7 días que dejó la puerta (resumen y salida entera de cada suite roja) se borran
+# acá: nadie más las limpia. Sólo las de este usuario con el nombre de mktemp de abajo.
+node "$SCRIPT_DIR/lib/old-gate-results.js" /tmp || true
 RESULTS_DIR="$(mktemp -d /tmp/test-gate-XXXXXX)"
 SUITE_EXIT=0
 TEST_PROJECTS=()  # declarado arriba: la rama vitest también lo expande (set -u safe)
@@ -852,8 +855,10 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]] && _TG_ONE_ARGS=(--skills "$(_tg_tree_field skills)")
     echo "[test-gate] una sola suite: $SUITE_ONLY (mismo ambiente que la corrida completa; no escribe el check tests ni tests-result.json)"
     _tg_rc=0
+    # --run-check: el corredor lo anota en el resumen con las marcas de la puerta; en rojo guarda además los casos que
+    # fallaron y la salida entera de cada suite (la cola de run-check sola deja afuera el caso del medio).
     ( cd "$REPO" && node "$MARKER_JS" run-check tests-suite -- \
-        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || _tg_rc=$?
+        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" --suite "$SUITE_ONLY" ${_TG_ONE_ARGS[@]+"${_TG_ONE_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" --run-check tests-suite ) || _tg_rc=$?
     if [[ "$_tg_rc" == "0" ]]; then
       ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" tests-failed clear --path "$SUITE_ONLY" --repo "$REPO_STORY" ) \
         || echo "[test-gate] ⚠️  $SUITE_ONLY salió verde pero no pude sacarla de la lista de las que fallaron: la corrida completa la va a seguir pidiendo" >&2
@@ -936,14 +941,14 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
     # El marcador es el del privado: run-check corre desde él; el corredor mide el árbol.
     set -m
     ( cd "$REPO" && node "$MARKER_JS" run-check tests -- \
-        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} "${TG_TREE_ARGS[@]}" --coverage "$RESULTS_DIR/coverage" ) &
+        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} "${TG_TREE_ARGS[@]}" --coverage "$RESULTS_DIR/coverage" --run-check tests ) &
     TG_SUITES_PID=$!
     set +m
     wait "$TG_SUITES_PID" || SUITE_EXIT=$?
     TG_SUITES_PID=""
   else
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
-      node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} ${LIGHT_ARGS[@]+"${LIGHT_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
+      node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} ${LIGHT_ARGS[@]+"${LIGHT_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" --run-check tests ) || SUITE_EXIT=$?
   fi
 elif [[ "$RUNNER" == "jest" ]]; then
   # `--maxWorkers` capado por default: jest paraleliza en ~cores-1 y cada worker carga jsdom + el
