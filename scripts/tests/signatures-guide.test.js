@@ -168,9 +168,12 @@ test('8.141 T17 SignaturesGuide_TraeAdhocLane', () => {
   assert.doesNotMatch(porton, /fragmento LITERAL/i);
   assert.match(porton, /ventana de permiso/);
   // el código y las guías: ni el clasificador, ni sus variables (palabra entera: el apagado del aviso sigue), ni la vía
-  // remota. Afuera: las pruebas y los casos del banco que sólo ponen la variable, las constancias y las capturas.
+  // remota. Afuera: las pruebas y los casos del banco que sólo ponen la variable, las constancias y las capturas. Con el
+  // repo del equipo debajo, también su historia, que no se publica: cuenta cómo era antes, no lo nombra como vigente.
+  const historia = ['specs/', 'tasks/', '.dashboard/', 'artifacts/', 'inbox/', 'onboarding/mini-class/'];
   const afuera = (r) => /(^|\/)tests\//.test(r) || r.startsWith('scripts/controls-bench/') || r.startsWith('.github/control-changes/')
-    || r.startsWith('guides/sitio-de-la-organizacion/capturas/');
+    || r.startsWith('guides/sitio-de-la-organizacion/capturas/') || historia.some((d) => r.startsWith(d))
+    || r === 'guides/maintaining/incident-log.md' || r === 'skills/tycon-pipeline/HISTORIA.md';
   const prohibidos = [/\bTYCON_LANE_LLM\b/, /\bTYCON_LANE_LLM_MODEL\b/, /\bTYCON_LANE_LLM_MS\b/, /lane-classifier/, /classifyLane/,
     /designate-remote-relay/, /adhoc set --remote/, /arreglo rápido delegado:/];
   const malos = [];
