@@ -8140,7 +8140,7 @@
           "type": "must-not-block",
           "_por_que": "Las constancias que ya están en la rama principal del remoto entraron por un pedido.",
           "setup": [
-            "git init -q . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q - && git update-ref refs/remotes/origin/main otra && git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main"
+            "git init -q . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q - && git fetch -q . otra:refs/remotes/origin/main"
           ],
           "stdin": {
             "session_id": "bench-constancia",
@@ -8158,7 +8158,7 @@
           "id": "control-approvals-consola-reset-hard-a-la-rama-principal-pasa",
           "type": "must-not-block",
           "setup": [
-            "git init -q . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q - && git update-ref refs/remotes/origin/main otra && git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main"
+            "git init -q . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q - && git fetch -q . otra:refs/remotes/origin/main"
           ],
           "stdin": {
             "session_id": "bench-constancia",
@@ -8202,6 +8202,589 @@
             "tool_name": "Bash",
             "tool_input": {
               "command": "git pull -q"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "control-approvals-consola-merge-con-la-principal-escrita-a-mano-frena",
+          "type": "must-block",
+          "_por_que": "La copia de la rama principal escrita a mano no prueba que la constancia entró por un pedido.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && git update-ref refs/remotes/origin/main otra"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b merge -q --no-edit otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-update-ref-de-la-copia-del-remoto-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git update-ref refs/remotes/origin/main otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-symbolic-ref-de-la-copia-del-remoto-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git symbolic-ref refs/remotes/origin/HEAD refs/heads/otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-fetch-de-este-repo-a-la-copia-del-remoto-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git fetch -q . otra:refs/remotes/origin/main"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-remote-set-url-de-origin-frena",
+          "type": "must-block",
+          "_por_que": "Cambiar a dónde apunta origin deja de probar qué está en la rama principal.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && git remote add origin \"$PWD\" && git fetch -q origin"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git remote set-url origin /tmp/otro"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-merge-con-guiones-antes-de-la-rama-frena",
+          "type": "must-block",
+          "_por_que": "Lo que sigue a `--` en un merge sigue siendo la rama.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && git branch -q -u destino"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b merge -q --no-edit -- otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-rebase-con-guiones-antes-de-la-rama-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && git branch -q -u destino"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b rebase -q -- otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-read-tree-con-guiones-antes-de-la-rama-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git read-tree -m -u -- otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-cherry-pick-con-guiones-antes-del-commit-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b cherry-pick -- otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-revert-de-un-rango-que-devuelve-una-constancia-frena",
+          "type": "must-block",
+          "_por_que": "Revertir un rango vuelve de B a A: trae lo que A tenía.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git rm -q -r .github && git -c user.email=b@acme.test -c user.name=b commit -q -m saca"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b revert --no-edit HEAD~1..HEAD"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-cherry-pick-por-la-entrada-estandar-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b cherry-pick --stdin"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-cherry-pick-del-segundo-padre-frena",
+          "type": "must-block",
+          "_por_que": "Con -m 2 lo que se aplica es el lado del segundo padre, que trae la constancia.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b limpia && echo b > src/b.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m l && git checkout -q main && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git -c user.email=b@acme.test -c user.name=b merge -q --no-edit limpia && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b cherry-pick -m 2 otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-read-tree-con-prefijo-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git read-tree --prefix=.github/control-changes/ -u otra:src"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-rebase-con-exec-que-trae-una-constancia-frena",
+          "type": "must-block",
+          "_por_que": "Lo que corre con -x es un comando más.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b rebase -q -x 'git checkout otra -- .github' HEAD"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-rebase-interactivo-con-editor-de-la-lista-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "GIT_SEQUENCE_EDITOR=./ed.sh git -c user.email=b@acme.test -c user.name=b rebase -q -i HEAD"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-rebase-continue-con-la-lista-editada-frena",
+          "type": "must-block",
+          "_por_que": "La lista de tareas que queda se mira como si se corriera ahora.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && echo c > src/c.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m c && GIT_SEQUENCE_EDITOR='sed -i.bak 1s/^pick/edit/' git -c user.email=b@acme.test -c user.name=b rebase -q -i HEAD~1 && echo \"pick $(git rev-parse otra)\" >> \"$(git rev-parse --git-path rebase-merge/git-rebase-todo)\""
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b rebase --continue"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-pull-de-otra-rama-de-un-remoto-frena",
+          "type": "must-block",
+          "_por_que": "De un remoto, lo que trae se baja al correr y la copia puede estar vieja: sólo su rama principal pasa.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q otra && git remote add origin \"$PWD\" && git fetch -q origin && git checkout -q otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b pull -q --no-edit origin otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-branch-f-a-otra-rama-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git branch -f destino otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-update-ref-de-una-rama-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git update-ref refs/heads/destino otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-fetch-de-este-repo-a-una-rama-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git fetch -q . otra:destino"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-push-a-este-repo-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push -q . otra:destino"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-stash-apply-que-trae-una-constancia-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && git checkout -q otra && echo x >> src/a.txt && git stash -q && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash apply"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-switch-con-una-constancia-sin-commitear-frena",
+          "type": "must-block",
+          "_por_que": "Cambiar de rama lleva lo que no está commiteado.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b destino && echo d > src/d.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m d && git checkout -q main && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git switch -q destino"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "constancia de cambio de control no se escribe a mano"
+            ]
+          }
+        },
+        {
+          "id": "control-approvals-consola-pull-de-la-rama-principal-confirmada-pasa",
+          "type": "must-not-block",
+          "_por_que": "La rama principal que bajó git tiene la constancia igual: entró por un pedido.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && git -c user.email=b@acme.test -c user.name=b merge -q --no-edit otra && git remote add origin \"$PWD\" && git fetch -q origin && git checkout -q -b feat main~1"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b pull -q --no-edit origin main"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "control-approvals-consola-cherry-pick-del-primer-padre-pasa",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git checkout -q -b limpia && echo b > src/b.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m l && git checkout -q main && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git -c user.email=b@acme.test -c user.name=b merge -q --no-edit limpia && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c user.email=b@acme.test -c user.name=b cherry-pick -m 1 otra"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "control-approvals-consola-switch-sin-nada-pendiente-pasa",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git switch -q destino"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "control-approvals-consola-stash-apply-propio-pasa",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && echo x >> src/a.txt && git stash -q"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git stash apply"
+            },
+            "cwd": "${FIXTURE}"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "control-approvals-consola-fetch-del-remoto-pasa",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo a > src/a.txt && git add src && git -c user.email=b@acme.test -c user.name=b commit -q -m base && git branch -q destino && git checkout -q -b otra && mkdir -p .github/control-changes && echo '{}' > .github/control-changes/abc.json && git add .github && git -c user.email=b@acme.test -c user.name=b commit -q -m firma && git checkout -q main && git remote add origin \"$PWD\" && git fetch -q origin"
+          ],
+          "stdin": {
+            "session_id": "bench-constancia",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git fetch -q origin"
             },
             "cwd": "${FIXTURE}"
           },
