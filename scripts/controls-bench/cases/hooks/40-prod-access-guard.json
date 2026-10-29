@@ -2167,6 +2167,363 @@
      }
     },
     {
+     "id": "heredoc-sin-comillas-con-guion-y-tabulaciones-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con `<<-` y tabulaciones: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<-EOF\n\tx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\n\tEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-segundo-de-la-linea-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en el segundo de dos heredocs de una línea: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat <<A > /tmp/a; cat > /tmp/b <<B\nhola\nA\nx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nB"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-segundo-del-mismo-comando-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en el segundo de dos heredocs del mismo comando: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat <<A <<B > /tmp/b\nhola\nA\nx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nB"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-dentro-de-una-sustitucion-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con el heredoc dentro de un `$(…)`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "X=$(cat <<EOF\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF\n); echo \"$X\" > /tmp/n"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-dolar-partido-por-barra-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con el `$` y el `(` en dos líneas unidas por una barra: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\nx $\\\n(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-ruta-partida-por-barra-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con la ruta partida por una barra al final de la línea: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\nx $(rm -f ~/.claude/.tycon-pipeline/production-mem\\\nory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-valor-por-defecto-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en el valor por defecto de `${X:-…}`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n${X:-$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)}\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-cuenta-vieja-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción dentro de una cuenta `$[…]`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n$[ $(rm -f ~/.claude/.tycon-pipeline/production-memory.json) 0 ]\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-cuenta-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción dentro de una cuenta `$((…))`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n$(( $(rm -f ~/.claude/.tycon-pipeline/production-memory.json) 0 ))\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-comilla-invertida-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción entre comillas invertidas: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n`rm -f \\~/.claude/.tycon-pipeline/production-memory.json`\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-comillas-invertidas-anidadas-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en comillas invertidas anidadas: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n`echo \\`rm -f ~/.claude/.tycon-pipeline/production-memory.json\\``\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-cierre-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en un heredoc sin línea de cierre: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\nx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-barra-escapada-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción detrás de una barra escapada (`\\\\$(…)` sí corre): el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n\\\\$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-redireccion-adentro-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción que escribe con una redirección: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n$(echo x > ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-en-una-funcion-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción dentro de una función: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "f(){ cat <<EOF\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF\n}; f > /tmp/n"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-con-tee-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con `tee`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "tee /tmp/n <<EOF >/dev/null\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-cierre-con-blanco-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción después de un cierre con un blanco adelante (que no cierra): el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n EOF\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
      "id": "heredoc-con-comillas-que-nombra-una-sustitucion-pasa",
      "type": "must-not-block",
      "__doc": "El espejo: con la palabra entre comillas (`<<'EOF'`) el shell no corre nada del cuerpo; el `$(rm …)` es texto del archivo y pasa.",

@@ -34,6 +34,28 @@ test('ShellParseHeredoc_QuotedOrEscaped_StaysText — con comillas en la palabra
   assert.match(P.sinHeredocs('cat <<EOF\n\\\\$(rm -f /y)\nEOF'), /rm -f \/y/, 'una barra escapada no escapa el $');
 });
 
+test('ShellParseHeredoc_TwoOnOneLine_BothBodiesSeen — con dos heredocs en una línea se ven las sustituciones de los dos', () => {
+  // 🔴 rojo si: sólo se rescata el primer cuerpo → el `$(rm y)` del segundo pasa.
+  const s = P.sinHeredocs('cat <<A; cat <<B\n$(touch /a)\nA\n$(rm /y)\nB');
+  assert.match(s, /touch \/a/);
+  assert.match(s, /rm \/y/);
+});
+
+test('ShellParseHeredoc_Unclosed_KeepsTheWholeText — una sustitución sin cierre se lleva el texto entero', () => {
+  // 🔴 rojo si: se corta un carácter de más → el destino que juzgan los frenos queda otro.
+  assert.match(P.sinHeredocs('cat <<EOF\n$(rm /prod/x\nEOF'), /rm \/prod\/x/);
+});
+
+test('ShellParseHeredoc_LineShape_Unchanged — la redirección y la tubería del `<<` siguen con su comando', () => {
+  // 🔴 rojo si: el texto de la sustitución parte la línea del `<<` → `> out.txt` o `| python3` quedan en otro segmento.
+  const segs = P.segmentos('cat <<EOF > /tmp/out.txt\n$(rm x\n y)\nEOF').map((x) => x.texto.trim());
+  assert.ok(segs.includes('cat  __HEREDOC__ > /tmp/out.txt') || segs.some((t) => /^cat\s+__HEREDOC__\s+> \/tmp\/out\.txt$/.test(t)), JSON.stringify(segs));
+  assert.ok(segs.includes('rm x'), JSON.stringify(segs));
+  const tubo = P.segmentos('echo a |\ncat <<EOF | python3\n$(rm z)\nEOF').map((x) => [x.texto.trim(), x.sep]);
+  assert.ok(tubo.some(([t, sep]) => t === 'echo a' && sep === '|'), JSON.stringify(tubo));
+  assert.ok(tubo.some(([t]) => /^cat\s+__HEREDOC__$/.test(t)), JSON.stringify(tubo));
+});
+
 test('ShellParseHeredoc_Segments_SeeTheCommand — el comando del cuerpo sale como un segmento propio', () => {
   // 🔴 rojo si: sale pegado al marcador del heredoc y las reglas no lo leen como comando.
   const segs = P.segmentos('cat > /tmp/n.txt <<EOF\n$(rm -f /protegido)\nEOF').map((x) => x.texto.trim());

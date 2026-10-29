@@ -140,43 +140,68 @@ function sinHeredocs(cmd, opciones) {
   // un shell. Sólo el cuerpo es texto; la línea del operador no.
   let out = '';
   let desde = 0;
+  let inicioDeLinea = 0;                                  // en `out`, dónde van las líneas de lo que corre del cuerpo
   for (const h of heredocs(s)) {
     const antes = s.slice(s.lastIndexOf('\n', h.indice - 1) + 1, h.indice);
     const alimentaShell = opciones && opciones.salvoShell && (SHELL_ANTES.test(antes) || SHELL_DESPUES.test(h.resto));
+    const corre = alimentaShell || h.comillas ? [] : comandosDelCuerpo(h.cuerpo);
     if (h.indice < desde) {
       // otro heredoc de la misma línea: su marca ya quedó en el resto del anterior y su cuerpo sigue al de aquél
       if (alimentaShell) out += s.slice(desde, h.fin);
+      else if (corre.length) {
+        const lineas = `${corre.join('\n')}\n`;
+        out = out.slice(0, inicioDeLinea) + lineas + out.slice(inicioDeLinea);
+        inicioDeLinea += lineas.length;
+      }
       desde = h.fin;
       continue;
     }
-    out += s.slice(desde, h.indice);
-    out += alimentaShell ? s.slice(h.indice, h.fin) : ` __HEREDOC__${h.comillas ? '' : sustitucionesDelCuerpo(h.cuerpo)}${h.resto}`;
+    // lo que corre del cuerpo va en sus propias líneas, antes del comando del `<<` (el shell lo corre antes de dárselo):
+    // la línea del `<<` no cambia de forma, y un comando que viene de líneas anteriores (`a |`, `a &&`, `a \`) se toma entero
+    let ini = s.lastIndexOf('\n', h.indice - 1) + 1;
+    while (ini > desde && SIGUE_EN_LA_LINEA.test(s.slice(desde, ini))) ini = s.lastIndexOf('\n', ini - 2) + 1;
+    if (ini < desde) ini = desde;
+    out += s.slice(desde, ini);
+    if (corre.length) out += `${corre.join('\n')}\n`;
+    inicioDeLinea = out.length;
+    out += s.slice(ini, h.indice);
+    out += alimentaShell ? s.slice(h.indice, h.fin) : ` __HEREDOC__${h.resto}`;
     desde = h.fin;
   }
   return out + s.slice(desde);
 }
 
+// una línea que no termina el comando: sigue con `\`, con una tubería o con `&&`/`||`
+const SIGUE_EN_LA_LINEA = /(?:\\|\|\|?|&&)[ \t]*\n$/;
+
 /**
- * Los comandos que el shell corre al armar el cuerpo de un heredoc sin comillas: cada `$(…)` y comilla invertida, como
- * palabras ` $(…)` que siguen a la marca en la línea del `<<` (la línea no cambia de forma: lo que la sigue, una tubería
- * o un `&&`, se lee igual). El texto alrededor es texto: sus comillas no abren nada, así que cada sustitución se mide
- * desde donde empieza. `\$(` y `` \` `` son literales; una sustitución sin cierre se lleva el resto del cuerpo, que es el
- * lado que frena.
+ * Los comandos que el shell corre al armar el cuerpo de un heredoc sin comillas: el texto de cada `$(…)` y comilla
+ * invertida, con sus saltos de línea. El texto alrededor es texto: sus comillas no abren nada, así que cada sustitución
+ * se mide desde donde empieza. `\$(` y `` \` `` son literales; una sustitución sin cierre se lleva el resto del cuerpo,
+ * que es el lado que frena. Una barra al final de una línea la junta con la siguiente, como hace el shell en el cuerpo
+ * (`$\` y en la otra línea `(rm …)` es un `$(rm …)`).
  */
-function sustitucionesDelCuerpo(cuerpo) {
-  let out = '';
+function comandosDelCuerpo(crudo) {
+  let cuerpo = '';
+  for (let i = 0; i < crudo.length; i++) {
+    if (crudo[i] === '\\' && crudo[i + 1] === '\n') { i++; continue; }
+    cuerpo += crudo[i];
+    if (crudo[i] === '\\' && i + 1 < crudo.length) cuerpo += crudo[++i];
+  }
+  const out = [];
   for (let i = 0; i < cuerpo.length; i++) {
     if (cuerpo[i] === '\\') { i++; continue; }
     if (cuerpo[i] === '`') {
       const fin = finDeSustitucion(cuerpo, i);
-      out += ` $(${cuerpo.slice(i + 1, fin - 1).replace(/\\([`\\$])/g, '$1')})`;
+      const cerro = fin <= cuerpo.length && cuerpo[fin - 1] === '`' && fin - 1 > i;
+      out.push(cuerpo.slice(i + 1, cerro ? fin - 1 : fin).replace(/\\([`\\$])/g, '$1'));
       i = fin - 1;
     } else if (cuerpo[i] === '$' && cuerpo[i + 1] === '(') {
       // `$((…))` también: si no es una cuenta, bash lo corre como comando; y una cuenta puede traer su `$(…)`
       const resto = cuerpo.slice(i);
-      const fin = finDeSustitucion(resto, 0);
-      out += ` $(${resto.slice(2, fin - 1)})`;
-      i += fin - 1;
+      const k = cierreDe(resto, 1);
+      out.push(k < 0 ? resto.slice(2) : resto.slice(2, k));
+      i += k < 0 ? resto.length : k;
     }
   }
   return out;
