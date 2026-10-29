@@ -685,7 +685,9 @@ function versionadoEnElArbolPropio(real) {
   // es un patrón que encuentre a `orq-x.js`
   const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1' };
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) delete env[k];
-  const git = (args) => spawnSync('git', ['-C', arbol, ...args], { encoding: 'utf8', timeout: 3000, env });
+  // sin el programa que el clon configure para vigilar archivos: lo correría el freno, y puede mostrar limpio un guion
+  // editado. Sin el índice de archivos tocados por commit: si lo reescriben, esconde el commit local que tocó el guion
+  const git = (args) => spawnSync('git', ['-C', arbol, '-c', 'core.fsmonitor=false', '-c', 'commitGraph.readChangedPaths=false', ...args], { encoding: 'utf8', timeout: 3000, env });
   // `-v` marca con minúscula o con `S` lo que git dejó de mirar (`--assume-unchanged`, `--skip-worktree`)
   const versionado = git(['ls-files', '-v', '--error-unmatch', '--', rel]);
   if (versionado.status !== 0) return false;
@@ -693,8 +695,9 @@ function versionadoEnElArbolPropio(real) {
   if (lineas.length !== 1 || lineas[0] !== `H ${rel.split(path.sep).join('/')}`) return false;
   const cambios = git(['status', '--porcelain', '--', rel]);
   if (cambios.status !== 0 || cambios.stdout.trim() !== '') return false;
-  // versionado en un commit que sólo está en este clon no cuenta: lo pudo escribir quien llama
-  const locales = git(['rev-list', '-n1', 'HEAD', '--not', '--remotes']);
+  // un commit que sólo está en este clon y toca el guion no cuenta: lo pudo escribir quien llama. Los que tocan otros
+  // archivos no cambian este guion
+  const locales = git(['rev-list', '-n1', '--full-history', 'HEAD', '--not', '--remotes', '--', rel]);
   return locales.status === 0 && locales.stdout.trim() === '';
 }
 

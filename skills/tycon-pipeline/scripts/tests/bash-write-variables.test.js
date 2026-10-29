@@ -608,6 +608,45 @@ test('T37 GuionDelArbolPropio_SoloLoVersionadoSinCambios_Pasa', () => {
   });
 });
 
+// T37b GuionDelArbolPropio_CommitLocalDeOtroArchivo_Pasa
+// Un commit que sólo está en el clon cuenta para los guiones que toca: el que no tocó sigue siendo el del servidor, y lo
+// que importa un guion se mira igual.
+// 🔴 Falla con: mirar los commits locales del clon entero (cualquier commit sin empujar frena a todos los guiones), o
+//    no mirarlos (un guion commiteado sólo en el clon escribe cualquier historia).
+test('T37b GuionDelArbolPropio_CommitLocalDeOtroArchivo_Pasa', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const clon = path.join(raiz, 'clon');
+  fs.cpSync(SCRIPTS, path.join(clon, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+  fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(clon, 'scripts', 'lib'), { recursive: true });
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+  fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
+  fs.writeFileSync(path.join(guiones, 'orq-y.js'), "require('./mod-y');\n");
+  fs.writeFileSync(path.join(guiones, 'mod-y.js'), ESCRIBE);
+  fs.writeFileSync(path.join(clon, 'LEAME.md'), 'a\n');
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  conEnv(ENV, () => {
+    const freno = (archivo) => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(guiones, archivo)}`, repo), { stateDir: estado, installedRoots: [] }));
+    fs.appendFileSync(path.join(clon, 'LEAME.md'), 'b\n');
+    git('commit', '-q', '-am', 'otro archivo');
+    assert.equal(freno('orq-x.js'), '', 'un commit sin empujar de otro archivo no lo toca');
+    assert.equal(freno('orq-y.js'), '', 'ni a lo que importa');
+    fs.appendFileSync(path.join(guiones, 'mod-y.js'), '// local\n');
+    git('commit', '-q', '-am', 'el módulo');
+    assert.equal(freno('orq-y.js'), HISTORIA, 'el módulo que importa, commiteado sólo acá, frena');
+    assert.equal(freno('orq-x.js'), '', 'y al otro guion no');
+    fs.appendFileSync(path.join(guiones, 'orq-x.js'), '// local\n');
+    git('commit', '-q', '-am', 'el guion');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'el guion commiteado sólo en este clon frena');
+  });
+});
+
 // T38 HeredocQueElShellNoAbre_NoEscondeLoQueSigue
 // Un `<<` dentro de comillas, de `$((` o de `<<<`, o con la palabra pegada a una comilla, no abre un heredoc: el shell
 // corre las líneas siguientes, y el freno también las mira. Un heredoc de verdad sigue sin contar su cuerpo.
