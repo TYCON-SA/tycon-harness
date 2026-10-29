@@ -10,7 +10,8 @@
  *   · una story con `followup_of` a las dos stories padres (la del corte de nombres y la que dejó su lista de retiro);
  *   · que nombre cada pieza que hay que retirar: reemplazos, alias y lecturas dobles, la carpeta de marcas `legacy-names.d/`, los
  *     pipelines y los cuatro archivos de los productos, el control de paridad, la escritura doble del freno de
- *     producción, la condición (14 días sin usos en el buzón, sin avisos `##vso`, si hay se corre 30) y `retire_after`;
+ *     producción, la condición (14 días sin usos en el buzón, sin avisos `##vso`; lo que tuvo uso, con su
+ *     fecha propia una semana después) y `retire_after`;
  *   · las dos padres con su `followed_up_by` de vuelta;
  *   · la fila de la story en `epics.md` y la fila de la story padre con los números del termómetro de antes y de ahora.
  *
@@ -57,7 +58,11 @@ function findRetirementStory(dir) {
 }
 /** `.tycon/production.json` o el nombre de antes que el mapa de renombres le da (sin mapa, sólo el nuevo). */
 function productionConfigPattern() {
-  const names = ['.tycon/production.json'];
+  return configPattern('.tycon/production.json');
+}
+/** Un archivo de configuración de los productos por su nombre nuevo o por el de antes que da el mapa (sin mapa, el nuevo). */
+function configPattern(nuevo) {
+  const names = [nuevo];
   try {
     const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'renames.json'), 'utf8'));
     for (const e of map.entries || []) if (e && e.kind === 'config-file' && e.new === names[0]) names.push(e.old);
@@ -72,16 +77,17 @@ const REQUIRED = [
   ['la carpeta de marcas legacy-names.d', /legacy-names\.d/],
   ['los pipelines de los productos', /pipeline/i],
   ['el control de paridad', /paridad/i],
-  // los cuatro archivos de los productos, uno por uno (un /pipeline/ no los cubre)
-  ['vulnerabilidades-pendientes.json', /vulnerabilidades-pendientes\.json/],
-  ['opciones-pendientes.json', /opciones-pendientes\.json/],
-  ['pruebas-pendientes.json', /pruebas-pendientes\.json/],
+  // los cuatro archivos de los productos, uno por uno (un /pipeline/ no los cubre), por su nombre nuevo o por el viejo
+  ['el archivo de deuda de vulnerabilidades', configPattern('pending-vulnerabilities.json')],
+  ['el archivo de deuda de opciones', configPattern('pending-options.json')],
+  ['el archivo de deuda de pruebas', configPattern('pending-tests.json')],
   // el de producción, por su nombre nuevo o por el viejo que da el mapa (nunca escrito acá: la copia no lleva nombres viejos)
   ['la configuración de producción del producto', productionConfigPattern()],
   ['la escritura doble del freno de producción', /escritura doble/i],
   ['los 14 días sin usos', /14 días/],
   ['los avisos ##vso', /##vso/],
-  ['los 30 días si hay usos', /30 días/],
+  // con usos, lo que los tuvo queda con su propia fecha una semana después
+  ['la fecha propia si hay usos', /una semana después/],
   ['la fecha retire_after', /retire_after/],
   ['la lista de la 8.12', /8\.12/],
 ];
@@ -109,8 +115,8 @@ test('T58 Close_FollowupStoryAndRows — la story de retiro sigue a la 8.9 y a l
 
 test('T58 Close_FollowupStoryAndRows — laboratorio: la comprobación sabe fallar', () => {
   const good = REQUIRED.map(([what]) => what).join(' ') +
-    ' reemplazo alias lectura doble legacy-names.d pipeline paridad escritura doble 14 días ##vso 30 días retire_after 8.12' +
-    ' .tycon/production.json';
+    ' reemplazo alias lectura doble legacy-names.d pipeline paridad escritura doble 14 días ##vso una semana después retire_after 8.12' +
+    ' .tycon/production.json pending-vulnerabilities.json pending-options.json pending-tests.json';
   assert.deepStrictEqual(missingPieces(good), [], 'con todo, no falta nada');
   assert.deepStrictEqual(missingPieces(good.replace(/##vso/g, '')), ['los avisos ##vso'], 'sin ##vso, lo nombra');
   const fm = 'story: "9.99"\nfollowup_of:\n  - id: "8.9"\n    type: "extension"\n  - id: "8.12"\nfollowup_reason: x\n';

@@ -271,7 +271,8 @@ para confirmarlo (`az group exists`). Un grupo con candado lo rechaza Azure, y l
 
 Un grupo con algo de producción, o que la puerta no puede probar seguro, lo borra
 **una persona, en su propia terminal**, fuera del asistente, después de mirar qué contiene. El mensaje del freno ante un `az group delete` directo
-no nombra la puerta, a propósito. El corte queda anotado con la regla `borrado-de-azure`.
+nombra los dos caminos: la puerta (`--delete-group <grupo>`, que pide la aprobación del dueño en el cuadro) para un grupo
+que no es de producción, y una persona para lo demás. El corte queda anotado con la regla `borrado-de-azure`.
 
 El límite: el freno cubre los comandos del asistente en esta máquina. **No** cubre el portal de Azure, Terraform, un
 despliegue con `az deployment group create --mode Complete` (borra lo que la plantilla no nombra), los SDK ni a otra
@@ -307,8 +308,11 @@ servidor. Un candado tarda unos segundos en irse: borrar el grupo justo después
 que hay que esperar o reintentar. Los límites: un candado lo puede quitar cualquiera con permiso de locks (el asistente
 no, porque el freno corta `az lock delete`); la puerta no ve los candados de suscripción, y un servidor con uno de esos
 puede salir `sin candado`. Sale 2 si algún servidor quedó en `no sé`.
-Todavía no está medido si un candado sobre el servidor impide cerrar la regla de firewall de la puerta: hasta medirlo,
-poné el candado primero en un servidor de prueba y no en uno real.
+Medido en Azure con un servidor de prueba: con el candado `CanNotDelete` sobre el servidor, `--locks` dice
+`con candado`, el borrado del servidor lo rechaza Azure con `ScopeLocked`, y **`--close-firewall` también falla con
+`ScopeLocked`**: la regla de firewall es un recurso hijo del servidor y el candado la alcanza, así que la regla que abrió
+la puerta queda abierta. Por eso no pongas el candado sobre un servidor real al que la puerta le abre el firewall: el
+cierre seguro deja de funcionar. Cómo combinar los dos lo decide el dueño.
 
 ## Los límites, dichos antes
 

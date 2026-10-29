@@ -263,8 +263,11 @@ done
 git -C "$H" add -A >/dev/null && git -C "$H" commit -qm "el renombre" >/dev/null
 git -C "$H" update-ref refs/remotes/origin/main HEAD
 
+# Con una HOME vacía: con la de la máquina, el aviso compara contra el clon que ella declara mantener (`paths.maintained`)
+# y no contra el repo de juguete, y la copia de antes del renombre sale «alterada». Sin TYCON_HOME, que lleva al mismo clon.
+STATE_HOME="$TMP/casa-estado"; mkdir -p "$STATE_HOME"
 state_of(){ # $1 = archivo instalado, $2 = ruta nueva en el repo → estado según el aviso
-  TYCON_GUIDES_DIR="$H" node -e '
+  env -u TYCON_HOME HOME="$STATE_HOME" TYCON_GUIDES_DIR="$H" node -e '
     const m = require(process.argv[1]);
     process.stdout.write(m.estadoContraPublicado(process.argv[2], process.argv[3]));
   ' "$NOTICE" "$1" "$2" 2>"$TMP/state-err"

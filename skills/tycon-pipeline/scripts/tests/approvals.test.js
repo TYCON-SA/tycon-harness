@@ -839,6 +839,28 @@ test('Cierre_CorridaAnteriorAlControl_NoFrena', () => {
   assert.deepEqual(porton.hallazgos.map((h) => h.regla), ['sin-registro-de-aprobaciones']);
 });
 
+test('AnteriorAlControl_DentroDeUnGancho_IgualQueFuera', () => {
+  // Un gancho de git (pre-commit) exporta GIT_DIR: git toma la carpeta actual como raíz del árbol y la ruta del roster,
+  // relativa a la carpeta de la corrida, no coincide con nada. La corrida vieja tiene que seguir siendo anterior ahí.
+  const ANTES = '9.95-20261025120000';
+  const { storyRepo } = dosRepos();
+  const vieja = corridaEn(storyRepo, ANTES);
+  const git = gitEn(storyRepo);
+  git('add', '.'); git('commit', '-qm', 'corrida vieja');
+  assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true);
+  const antes = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE };
+  try {
+    process.env.GIT_DIR = '.git'; // como lo exporta el gancho: relativo a la raíz del repo que commitea
+    assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true, 'con GIT_DIR relativo exportado');
+    process.env.GIT_DIR = path.join(storyRepo, '.git');
+    assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true, 'con GIT_DIR exportado');
+    process.env.GIT_WORK_TREE = storyRepo;
+    assert.equal(approvals.anteriorAlControl(vieja, ANTES, 'HEAD'), true, 'con GIT_DIR y GIT_WORK_TREE exportados');
+  } finally {
+    for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
 test('Cierre_NombreViejoSinRastro_Frena', () => {
   // La fecha del nombre la elige quien crea la carpeta: sin el rastro en la historia, una corrida con nombre viejo se
   // exige igual. Tampoco alcanza un roster que entró a la historia desde el día del control, ni una ref que no existe.

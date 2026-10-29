@@ -178,6 +178,25 @@ test('PrivateTree_UsesStoryBranchPublic @story-7.36 @ac-2', () => {
   assert.notStrictEqual(r.code, 0, `midió el worktree de la rama (con la skill rota): rojo\n${r.salida}`);
 });
 
+// La superposición deja el público en un commit local del árbol: sin una rama del servidor con su punta, el freno de
+// guiones toma el orquestador del árbol por uno escrito por quien llama y frena las suites que lo corren. La punta es la
+// de lo commiteado, no la foto de lo que el disco tiene sin commit.
+// 🔴 Falla con: no declarar la punta (el freno frena al orquestador del árbol), o declarar la foto con lo sin commit.
+test('PrivateTree_PublicTip_IsAServerBranch', () => {
+  const lab = laboratorio();
+  fs.appendFileSync(path.join(lab.pub, 'scripts/lib/otra.js'), '// sin commit\n');
+  const dir = tmp('privado-arbol-');
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'private-tree.js'), 'build', lab.priv, lab.story, dir],
+    { encoding: 'utf8', env: entorno(lab.home) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const arbol = JSON.parse(r.stdout).tree;
+  assert.strictEqual(git(arbol, 'rev-parse', 'refs/remotes/publico/punta'), git(lab.pub, 'rev-parse', 'HEAD'));
+  assert.strictEqual(git(arbol, 'rev-parse', 'refs/remotes/publico/punta:scripts/lib/pub-lib.js'),
+    git(arbol, 'rev-parse', 'HEAD:scripts/lib/pub-lib.js'), 'lo commiteado del público, igual a la punta');
+  assert.notStrictEqual(git(arbol, 'rev-parse', 'refs/remotes/publico/punta:scripts/lib/otra.js'),
+    git(arbol, 'rev-parse', 'HEAD:scripts/lib/otra.js'), 'lo sin commit, distinto');
+});
+
 // ── Lo que se mide ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('PrivateTree_SkillsFromTree_NeverInstalled @story-7.36 @ac-3', () => {

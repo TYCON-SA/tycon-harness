@@ -92,7 +92,7 @@ bash "$TMP/solo/forms-to-version.sh" --repo "$R" >"$TMP/o7.txt" 2>"$TMP/e7.txt";
 # ---------------------------------------------------------------- T25 (7b). sin la base compartida tampoco
 # La base la decide scripts/ci/run-base.sh, compartido con label-prs.sh.
 # Si no está al lado, el guion no puede decidir y tiene que salir 1 diciéndolo — no vacío + 0.
-mkdir -p "$TMP/sinbase" && cp "$SH_V" "$AQUI/scripts/ci/affected-forms.js" "$TMP/sinbase/"
+mkdir -p "$TMP/sinbase" && cp "$SH_V" "$AQUI/scripts/ci/affected-forms.js" "$AQUI/scripts/ci/legacy-files.js" "$TMP/sinbase/"
 mundo
 bash "$TMP/sinbase/forms-to-version.sh" --repo "$R" >"$TMP/o7b.txt" 2>"$TMP/e7b.txt"; rc=$?
 [ "$rc" -eq 1 ] && grep -q "run-base.sh" "$TMP/e7b.txt" && ok "sin run-base.sh al lado, sale 1 y lo dice" || no "🔴 sin la base compartida salió $rc: $(cat "$TMP/e7b.txt")"

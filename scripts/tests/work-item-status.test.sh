@@ -299,7 +299,7 @@ ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
 snapshot "$(presente abc12345 browserslist)" "$(cv arreglado)"
 rc=$(correr)
 a_ok=0; { [ "$rc" -eq 0 ] && [ "$(cuenta comentario)" -eq 1 ] \
-  && llamada comentario 0 'arg("--id") === "101" && ["browserslist", "A/A", "No lo reabro", "data-vss-mention", "vulnerabilidades-pendientes.json", "2026-09-08", "Closed", "Verified"].every((t) => b.includes(t))' \
+  && llamada comentario 0 'arg("--id") === "101" && ["browserslist", "A/A", "No lo reabro", "data-vss-mention", "pending-vulnerabilities.json", "2026-09-08", "Closed", "Verified"].every((t) => b.includes(t))' \
   && grep -qx 'avisado_cerrado_vivo:' "$TMP/pend/pending/abc12345.yaml" && grep -qx '  - Proy A (2026-09-10)' "$TMP/pend/pending/abc12345.yaml" \
   && ped 'JSON.stringify(p.cerrados_vivos_avisados) === JSON.stringify([{ ficha: "abc12345", proyecto: "Proy A", id: 101 }])'; } && a_ok=1
 mundo

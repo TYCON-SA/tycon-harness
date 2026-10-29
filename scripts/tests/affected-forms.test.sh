@@ -29,13 +29,13 @@ mundo(){
   ( cd "$R" \
     && git init -q 2>/dev/null \
     && git config user.email t@t && git config user.name t \
-    && printf '%s\n' "$DEUDA_BASE" > pruebas-pendientes.json \
+    && printf '%s\n' "$DEUDA_BASE" > pending-tests.json \
     && git add -A && git commit -qm base \
     && git commit -q --allow-empty -m segunda ) >/dev/null 2>&1
 }
 # La deuda que existe en la base del mundo: form-c declarado sin pruebas, form-a con 3 en rojo.
 DEUDA_BASE='{"sin_pruebas":[{"formulario":"form-c","motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"}],"con_pruebas_en_rojo":[{"formulario":"form-a","fallan":3,"de":10,"motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"}]}'
-deuda(){ printf '%s\n' "$1" > "$R/pruebas-pendientes.json"; }
+deuda(){ printf '%s\n' "$1" > "$R/pending-tests.json"; }
 corre_flags(){ local extra="$1"; shift; printf '%s\n' "$@" | node "$SH_JS" --repo "$R" --changed - $extra 2>"$TMP/err.txt"; }
 corre(){ printf '%s\n' "$@" | node "$SH_JS" --repo "$R" --changed - 2>"$TMP/err.txt"; }
 
@@ -156,8 +156,8 @@ R15=$(corre "shared-vieja/s.ts")
 # más cambia de todas. Sin esa entrada, un `findings.json` de una corrida vieja
 # mandaría a versionar y redesplegar los CUATRO formularios.
 mundo
-for inerte in pruebas-pendientes.json vulnerabilidades-pendientes.json \
-              vulnerabilidades-formularios-pendientes.json .tycon/advisors.yaml \
+for inerte in pending-tests.json pending-vulnerabilities.json \
+              pending-form-vulnerabilities.json .tycon/advisors.yaml \
               .gitleaks.toml .gitleaksignore .gitignore \
               .advisors/pipeline-runs/CO-3-20260822-0918/findings.json \
               .advisors/pipeline-runs/SP-1-2026-09-22/review-roster.json \
@@ -185,7 +185,7 @@ for peligroso in scripts/build-form.js .npmrc package-lock.json; do
 done
 
 # 🔴 Un archivo inerte JUNTO a un cambio real no puede tapar el cambio real.
-RM=$(corre "pruebas-pendientes.json" "form-c/src/z.ts")
+RM=$(corre "pending-tests.json" "form-c/src/z.ts")
 [ "$(echo "$RM" | tr '\n' ' ')" = "form-c " ] && ok "…y un inerte junto a un cambio real no tapa el cambio real" || no "🔴 el inerte alteró el conjunto: [$(echo $RM)]"
 
 
@@ -193,7 +193,7 @@ RM=$(corre "pruebas-pendientes.json" "form-c/src/z.ts")
 # LA DECLARACIÓN DE DEUDA DE PRUEBAS: no afecta al paquete, pero sí a quién se JUZGA
 #
 # Caso: un pull request de los formularios de un producto dice "<formulario> pagó su deuda de
-# pruebas" y lo único que hace es BORRAR su entrada de pruebas-pendientes.json, sin agregar una
+# pruebas" y lo único que hace es BORRAR su entrada de pending-tests.json, sin agregar una
 # sola prueba. Sin el control, sale VERDE —el archivo está en NO_AFECTAN, así que no se juzga a
 # nadie— y el rojo llega recién en main, con el merge ya hecho.
 # ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -201,7 +201,7 @@ RM=$(corre "pruebas-pendientes.json" "form-c/src/z.ts")
 # ---- 12. sale una entrada → ese formulario tiene que probarse
 mundo
 deuda '{"sin_pruebas":[],"con_pruebas_en_rojo":[{"formulario":"form-a","fallan":3,"de":10,"motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"}]}'
-RD=$(corre "pruebas-pendientes.json")
+RD=$(corre "pending-tests.json")
 [ "$(echo "$RD" | tr '\n' ' ')" = "form-c " ] \
   && ok "🔴 borrar la deuda de un formulario lo manda a probarse (el caso que lo motivó)" \
   || no "🔴 borrar la deuda no mandó a probar a form-c: [$(echo $RD)] — verde sin haber probado nada"
@@ -212,7 +212,7 @@ grep -q "cambió la declaración de deuda de: form-c" "$TMP/err.txt" && ok "…y
 #  sobrevivir a la deuda que declara, así que declarar también hay que verificarlo)
 mundo
 deuda '{"sin_pruebas":[{"formulario":"form-c","motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"},{"formulario":"form-a","motivo":"m","fecha":"2026-09-05","revision":"2026-12-01"}],"con_pruebas_en_rojo":[]}'
-RE=$(corre "pruebas-pendientes.json")
+RE=$(corre "pending-tests.json")
 [ "$(echo "$RE" | sort | tr '\n' ' ')" = "form-a form-b " ] \
   && ok "declarar una deuda nueva también manda a probar (y arrastra a quien lo importa)" \
   || no "🔴 declarar deuda no se juzgó bien: [$(echo $RE)]"
@@ -220,7 +220,7 @@ RE=$(corre "pruebas-pendientes.json")
 # ---- 14. mover el tope de las que fallan tampoco puede pasar sin que nadie mire
 mundo
 deuda '{"sin_pruebas":[{"formulario":"form-c","motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"}],"con_pruebas_en_rojo":[{"formulario":"form-a","fallan":9,"de":10,"motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"}]}'
-RF=$(corre "pruebas-pendientes.json")
+RF=$(corre "pending-tests.json")
 [ "$(echo "$RF" | sort | tr '\n' ' ')" = "form-a form-b " ] \
   && ok "subir el tope de pruebas en rojo manda a probar ese formulario" \
   || no "🔴 el tope se movió sin que nadie lo verificara: [$(echo $RF)]"
@@ -230,7 +230,7 @@ RF=$(corre "pruebas-pendientes.json")
 # el archivo se toca — y un control que hace trabajo de más por nada es el que alguien apaga.
 mundo
 deuda "$(node -e 'const d=JSON.parse(process.argv[1]); d._lea_esto_primero=["texto nuevo"]; console.log(JSON.stringify(d))' "$DEUDA_BASE")"
-RG=$(corre "pruebas-pendientes.json"); rc=$?
+RG=$(corre "pending-tests.json"); rc=$?
 if [ "$rc" -eq 0 ] && [ -z "$(echo "$RG" | tr -d '[:space:]')" ]; then
   ok "editar sólo la prosa del archivo de deuda no manda a probar a nadie"
 else
@@ -242,7 +242,7 @@ fi
 # formularios idénticos, que es justo lo que NO_AFECTAN evita.
 mundo
 deuda '{"sin_pruebas":[],"con_pruebas_en_rojo":[]}'
-RH=$(corre_flags "--no-debt" "pruebas-pendientes.json"); rc=$?
+RH=$(corre_flags "--no-debt" "pending-tests.json"); rc=$?
 if [ "$rc" -eq 0 ] && [ -z "$(echo "$RH" | tr -d '[:space:]')" ]; then
   ok "🔴 con --no-debt (el bump de versión) la declaración sigue sin afectar a nadie"
 else
@@ -252,7 +252,7 @@ fi
 # ---- 17. no poder saber qué decía antes = TODOS, nunca "nada"
 mundo
 rm -rf "$R/.git"
-RI2=$(corre "pruebas-pendientes.json")
+RI2=$(corre "pending-tests.json")
 [ "$(echo "$RI2" | sort | tr '\n' ' ')" = "form-a form-b form-c " ] \
   && ok "sin git no se puede saber qué decía la deuda antes → TODOS, el lado seguro" \
   || no "🔴 sin git devolvió [$(echo $RI2)] — 'no sé' no puede leerse como 'nada'"
@@ -260,7 +260,7 @@ RI2=$(corre "pruebas-pendientes.json")
 # ---- 18. archivo de deuda ilegible = TODOS
 mundo
 deuda '{ esto no es json'
-RJ=$(corre "pruebas-pendientes.json")
+RJ=$(corre "pending-tests.json")
 [ "$(echo "$RJ" | sort | tr '\n' ' ')" = "form-a form-b form-c " ] \
   && ok "una deuda ilegible devuelve TODOS en vez de vaciar el conjunto" \
   || no "🔴 deuda ilegible devolvió [$(echo $RJ)]"
@@ -268,7 +268,7 @@ RJ=$(corre "pruebas-pendientes.json")
 # ---- 19. una deuda sobre un formulario que no existe no rompe ni ensucia el conjunto
 mundo
 deuda '{"sin_pruebas":[{"formulario":"form-c","motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"},{"formulario":"form-fantasma","motivo":"m","fecha":"2026-09-05","revision":"2026-12-01"}],"con_pruebas_en_rojo":[{"formulario":"form-a","fallan":3,"de":10,"motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"}]}'
-RK=$(corre "pruebas-pendientes.json"); rc=$?
+RK=$(corre "pending-tests.json"); rc=$?
 if [ "$rc" -eq 0 ] && [ -z "$(echo "$RK" | tr -d '[:space:]')" ]; then
   ok "un formulario fantasma en la deuda se ignora acá (lo juzga la validación de la deuda)"
 else

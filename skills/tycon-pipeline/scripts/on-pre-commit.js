@@ -1645,7 +1645,7 @@ function main() {
   if (avisos.length) {
     // 🔴 La ventana de medición VENCE SOLA. Una fecha de revisión que viviera sólo en una ficha,
     // sin que nada la mirara, dejaría el aviso avisando para siempre sin que nadie lea el número
-    // que juntó — un aviso que suena y no se acciona es el que se aprende a ignorar. Mismo patrón que `pruebas-pendientes.json`: la fecha se declara
+    // que juntó — un aviso que suena y no se acciona es el que se aprende a ignorar. Mismo patrón que `pending-tests.json`: la fecha se declara
     // donde el arnés la mira, y pasado el día el propio aviso trae el número y exige la decisión.
     // `TYCON_TODAY` existe sólo para que la suite pueda pararse en «después del 20» sin esperar.
     const REVIEW_A_DONE_VENCE = '2026-09-20';

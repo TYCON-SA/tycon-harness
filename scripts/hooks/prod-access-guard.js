@@ -583,8 +583,10 @@ function decidir(entrada) {
       frenar(`ese comando borra ${borrado.que} en Azure, y eso puede llevarse un servidor de producción con sus bases: no puedo saber qué contiene.`, [
         'El freno no le pregunta a Azure qué hay adentro: frena todo borrado de grupo, de candado y de recurso del que no',
         'pueda probar que no es una base de datos.',
-        'Si de verdad hay que borrarlo, lo corre una persona en su propia terminal, fuera del asistente, después de mirar',
-        'qué contiene. Detalle: guides/produccion-con-permiso.md',
+        'Un grupo de recursos que no es de producción se pide por la puerta, que pide la aprobación del dueño en el cuadro',
+        'y comprueba en Azure qué contiene antes de borrar: /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>',
+        'Lo demás (un grupo con algo de producción, un candado, otro recurso) lo corre una persona en su propia terminal,',
+        'fuera del asistente, después de mirar qué contiene. Detalle: guides/produccion-con-permiso.md',
       ], { cmd }, 'borrado-de-azure', { sinPuerta: true });
     }
   }

@@ -249,8 +249,13 @@ function checkReviewerChange({ repo, base, staged }) {
   const baseRef = staged ? 'HEAD' : base;
   let baseCases = null;
   let treeCases = null;
+  let baseUnreadable = false;
   if (ch.agents.length) {
-    baseCases = baselineFrom(gitOrNull(repo, ['show', `${baseRef}:${BASELINE_REL}`]));
+    // sin el archivo en la base, el revisor es nuevo; con el archivo ilegible no se sabe, y comparar contra la del
+    // cambio dejaría que el mismo cambio baje la vara
+    const baseText = gitOrNull(repo, ['show', `${baseRef}:${BASELINE_REL}`]);
+    baseCases = baselineFrom(baseText);
+    baseUnreadable = baseText !== null && baseCases === null;
     treeCases = baselineFrom(treeBlob(BASELINE_REL));
   }
 
@@ -280,6 +285,7 @@ function checkReviewerChange({ repo, base, staged }) {
       continue;
     }
 
+    if (baseUnreadable) { add('reviewer-baseline-unreadable', `la línea de base de la base no se puede leer (${BASELINE_REL} en ${baseRef}), así que no puedo comparar el puntaje.`); continue; }
     let ref = baseCases === null ? {} : baselineOf(baseCases, agent);
     if (!Object.keys(ref).length) {
       ref = treeCases === null ? {} : baselineOf(treeCases, agent);

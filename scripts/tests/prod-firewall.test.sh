@@ -634,7 +634,8 @@ else no "6.4 T8 · registro: $(registro | tail -2)"; fi
 # ── T9 · la guía ────────────────────────────────────────────────────────────────────────────────────────────────
 GUIA="$AQUI/guides/produccion-con-permiso.md"
 faltan=""
-for f in "CanNotDelete" "--locks" "lo pone una persona" "permiso de locks" "az lock create" "ScopeLocked" "suscripción"; do
+for f in "CanNotDelete" "--locks" "lo pone una persona" "permiso de locks" "az lock create" "ScopeLocked" "suscripción" \
+         "--close-firewall\` también falla con" "queda abierta. Por eso no pongas el candado"; do
   grep -q -- "$f" "$GUIA" || faltan="${faltan} «${f}»"
 done
 [ -z "$faltan" ] && ok "6.4 T9 Guide_DeclaresCandadoAndLimits" || no "6.4 T9 · la guía no dice:$faltan"

@@ -1431,6 +1431,195 @@ test('2.60-T8 FrasesDelModelo_TodasCalzanConSuMolde @story-2.60 @ac-3 — si alg
   assert.deepStrictEqual([...sinMolde], [], `frases del modelo sin molde en texts.js (el inglés quedaría en castellano):\n${[...sinMolde].join('\n')}`);
 });
 
+/**
+ * El mundo de todas las ramas de una ejecución: los resultados del pase adversarial y sus salteos, los pasos de los dos
+ * esquemas sin el arranque de la espera, los repos sin nombre y sin historial de git, y las uniones de carpetas.
+ */
+function mundoDeTodasLasRamas() {
+  const espejo = mundo({ marcadores: false });
+  const A = path.join(espejo, 'maq-a');
+  const t0 = '2026-08-25T09:00:00.000Z';
+  const pase = (min, extra) => ({ ts: iso(t0, min), check: 'adversarial-pass', ...extra });
+  escribir(A, 'r1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e1', t0, { gates: [
+    pase(40, { veredicto: 'no-listo', confirmados: 3, pruebas: 2, diferidos: 1 }),
+    pase(41, { veredicto: 'no-listo', confirmados: 1, pruebas: 0, diferidos: 0, propias: 1 }),
+    pase(42, { veredicto: 'no-listo', confirmados: 2 }),
+    pase(43, { veredicto: 'no-medido', lentes_sin_medir: ['a', 'b'], hallazgos_sin_veredicto: 1 }),
+    pase(44, { veredicto: 'no-medido', lentes_sin_medir: ['a'], hallazgos_sin_veredicto: 3 }),
+    pase(45, { veredicto: 'listo', confirmados: 0 }),
+    { ts: iso(t0, 46), check: 'adversarial-skip', status: 'green', forzado: true },
+    { ts: iso(t0, 47), check: 'adversarial-skip', status: 'green', abandonado: true },
+  ] }));
+  // los pasos sin la espera: por nombre (esquema 2) sin «Aprobar el plan» o sin su arranque, y por número sin el 3 y el 7
+  const m2 = (n) => iso('2026-08-26T09:00:00.000Z', n);
+  const sinLosViejos = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null, 6: null, 7: null, 8: null };
+  escribir(A, 'r2.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e2', '2026-08-26T09:00:00.000Z', { marker: { stepsCompleted: ['start', 'plan', 'implement'],
+    stepTimings: { ...sinLosViejos, start: { startedAt: m2(0), completedAt: m2(1) }, plan: { startedAt: m2(2), completedAt: m2(9) }, implement: { startedAt: m2(13), completedAt: m2(40) } } } }));
+  escribir(A, 'r4.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e7', '2026-08-26T09:00:00.000Z', { marker: { storyId: '3.11', stepsCompleted: ['start', 'plan', 'approve-plan', 'implement'],
+    stepTimings: { ...sinLosViejos, start: { startedAt: m2(0), completedAt: m2(1) }, plan: { startedAt: m2(2), completedAt: m2(9) }, 'approve-plan': { completedAt: m2(12) }, implement: { startedAt: m2(13), completedAt: m2(40) } } } }));
+  escribir(A, 'r5.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e8', '2026-08-26T09:00:00.000Z', { marker: { storyId: '3.12', stepsCompleted: [0, 1, 4],
+    stepTimings: { ...sinLosViejos, 0: { startedAt: m2(0), completedAt: m2(1) }, 1: { startedAt: m2(2), completedAt: m2(5) }, 4: { startedAt: m2(6), completedAt: m2(30) } } } }));
+  // los repos de un cambio de git: sin nombre, sin historial, con el historial ilegible, sin sesión
+  const cambio = cambioGit('2026-08-27T09:00:00.000Z', 'src/Uno.ts', ['+const uno = 1;']);
+  const sinCommits = (commits_motivo, extra = {}) => ({ principal: false, por: ['hilo'], otras_sesiones: null, sin_commitear_previo: 0, estado: 'medido', commits: null, commits_motivo, commits_de_otras_sesiones: [], sin_commitear: [], ...extra });
+  cambio.repos.push(
+    sinCommits('no se pudo ubicar el historial local de git (ENOENT)', { otras_sesiones_motivo: 'el volcado no trae sesión: no se puede saber si otra sesión escribió en esta copia' }),
+    sinCommits('esta copia no tiene historial local de git (reflog): no se puede saber qué commits hizo la ejecución', { nombre: 'Beta' }),
+    sinCommits('no se pudo leer el historial local de git (EACCES)', { nombre: 'Gama' }),
+    { nombre: 'Delta', principal: false, por: ['hilo'], estado: 'no_medido', motivo: 'la carpeta del repo de la ejecución ya no existe en esta máquina', otras_sesiones: null,
+      otras_sesiones_motivo: 'no se pudo mirar este repo: no se puede saber si otra sesión escribió en él' });
+  escribir(A, 'r3.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e3', '2026-08-27T09:00:00.000Z', { marker: { storyId: '3.7' } }));
+  escribir(A, 'r3.cambio.json.gz', gz(JSON.stringify(cambio)));
+  // las carpetas viejas: una unida a maq-a, una compartida, una que siguió recibiendo
+  escribir(path.join(espejo, 'maq-v'), 'v1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e4', '2026-08-28T09:00:00.000Z', { marker: { storyId: '3.8' } }));
+  escribir(path.join(espejo, 'maq-w'), 'w1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e5', '2026-08-29T09:00:00.000Z', { marker: { storyId: '3.9' } }));
+  escribir(path.join(espejo, 'maq-z'), 'z1.json', volcado('aaaaaaaa-0000-4000-8000-0000000000e6', '2026-08-30T09:00:00.000Z', { marker: { storyId: '3.10' } }));
+  escribir(espejo, '.carpetas-de-maquina.json', { schema: 1, carpetas: {
+    'maq-v': { estado: 'unida', nueva: 'maq-a', declarantes: 1, desde: '2026-08-01' },
+    'maq-w': { estado: 'compartida', declarantes: 2, desde: '2026-08-01' },
+    'maq-z': { estado: 'siguio_recibiendo', declarantes: 1, desde: '2026-08-01' } } });
+  return espejo;
+}
+
+/**
+ * Las frases en castellano de un valor ya pintado en inglés, con su ruta. Lo de afuera (lo que vino en el volcado: la
+ * story, el producto, la máquina, el mensaje de una prueba) se nombra en `deAfuera` y no cuenta, ni entero ni dentro
+ * de una frase de la casa.
+ */
+function castellanoEn(valor, raiz, deAfuera) {
+  const quedan = [];
+  const recorrer = (v, ruta) => {
+    if (typeof v === 'string') {
+      if (!/^[\w./:@-]*$/.test(v) && enCastellano([v], deAfuera).length) quedan.push(`${ruta}: «${v}»`);
+      return;
+    }
+    if (Array.isArray(v)) v.forEach((x, i) => recorrer(x, `${ruta}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (k !== '_texto' && k !== '_textoGit') recorrer(x, `${ruta}.${k}`);
+  };
+  recorrer(valor, raiz);
+  return quedan;
+}
+// una frase de cada rama de mundoDeTodasLasRamas(), tal como la escribe el tablero en castellano
+const RAMAS_260 = ['con prueba promovida', 'con prueba en la suite', 'sin constancia de sus pruebas', 'lentes sin medir', 'forzado con el interruptor', 'abandonado con el pase',
+  'Aprobar el plan no tiene arranque', 'los pasos de espera (3 y 7)', 'no tiene arranque medido', 'repo sin nombre', 'historial local de git', 'el volcado no trae sesión', 'antes, maq-v', 'compartida por 2',
+  'siguió recibiendo después de la mudanza', 'ya no existe en esta máquina', 'historial local de git (EACCES)'];
+const DE_AFUERA_260 = ['sin hilo', 'zqx-prohibido-prompt aprobado', 'esperaba 2, salió 3', 'caso 3', 'feat: un commit', 'Sin Forma.local', 'otra-cosa', 'otra cosa'];
+
+test('2.60-T13 DetalleEnIngles_SinCastellanoEnNingunaRama @story-2.60 @ac-1 @ac-3 — la lista y el detalle de cada ejecución, por la API, sin una frase en castellano', async () => {
+  // La familia entera, no los casos sueltos: todo lo que la API devuelve en inglés se recorre, y cualquier frase en
+  // castellano que no sea un dato de afuera es un rojo, esté o no en un campo que hoy se traduce.
+  const espejo = mundoDeTodasLasRamas();
+  const quedan = [];
+  for (const sinHilos of [false, true]) {
+    const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true, sinHilos });
+    quedan.push(...castellanoEn(runs.todoEnIdioma('en', M), `M${sinHilos ? '(sin hilos)' : ''}`, DE_AFUERA_260));
+    for (const c of M.corridas) quedan.push(...castellanoEn(runs.todoEnIdioma('en', runs.paraDetalle(c)), `D(${c.story})`, DE_AFUERA_260));
+  }
+  // la tabla de pasos que carga pero no nombra ninguno
+  const tablaSinNombres = path.join(tmp('site-runs-tabla-'), 'steps.js');
+  fs.writeFileSync(tablaSinNombres, 'module.exports = { stepName: () => null };\n');
+  const sinNombres = runs.nombresDePasos(tablaSinNombres);
+  assert.strictEqual(sinNombres.fuente, 'numeros');
+  quedan.push(...castellanoEn(runs.todoEnIdioma('en', { pasos: sinNombres }), 'pasos', DE_AFUERA_260));
+  // el mundo toca de verdad cada rama (si una deja de existir, la prueba no la está mirando)
+  const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true });
+  const crudo = JSON.stringify([M, ...M.corridas.map((c) => runs.paraDetalle(c))]);
+  for (const rama of RAMAS_260) {
+    assert.ok(crudo.includes(rama), `el mundo no toca la rama «${rama}»`);
+  }
+  // y por el sitio: la lista, el detalle de cada una y la ficha gris de quien todavía no tiene ejecuciones
+  const machines = { ...MAQUINAS, 'maq-d': { person: DEV_D, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  await conPestana({ fuentes: fuentesCon({ espejo, config: opsCon(machines) }) }, async ({ h, entrar }) => {
+    const lead = `${await entrar(LEAD)}; sitio-idioma=en`;
+    const l = (await h.pedir('/api/corridas', { cookie: lead })).json;
+    quedan.push(...castellanoEn(l, 'API', DE_AFUERA_260));
+    for (const c of l.corridas) {
+      const d = await h.pedir(`/api/corridas/${c.id}`, { cookie: lead });
+      assert.strictEqual(d.status, 200, `el detalle de ${c.id}`);
+      quedan.push(...castellanoEn(d.json, `API(${c.story})`, DE_AFUERA_260));
+    }
+    const vacia = (await h.pedir('/api/corridas', { cookie: `${await entrar(DEV_D)}; sitio-idioma=en` })).json;
+    assert.ok(vacia.vacio_motivo, 'la dev sin ejecuciones tiene su motivo');
+    quedan.push(...castellanoEn(vacia, 'API(dev-d)', DE_AFUERA_260));
+  });
+  // sin saber de quién es cada máquina: «no medido», también en inglés
+  await conPestana({ fuentes: fuentesCon({ espejo, informados: null }) }, async ({ h, entrar }) => {
+    const l = (await h.pedir('/api/corridas', { cookie: `${await entrar(DEV_A)}; sitio-idioma=en` })).json;
+    assert.ok(l.vacio_motivo, 'la dev sin medir tiene su motivo');
+    quedan.push(...castellanoEn(l, 'API(no medido)', DE_AFUERA_260));
+  });
+  assert.deepStrictEqual([...new Set(quedan)], [], `castellano en la ejecución en inglés:\n${[...new Set(quedan)].join('\n')}`);
+});
+
+test('2.60-T17 DetalleEnCastellano_CadaRamaIntacta @story-2.60 @ac-6 — en castellano, cada frase de la casa sale tal cual en la API y en lo que dibuja el cliente', async () => {
+  // La contracara de T13: sobre el mismo buzón, la pestaña en castellano no traduce nada por error. El servidor y el
+  // cliente se miran por separado, así una traducción de un lado no la tapa el otro.
+  const espejo = mundoDeTodasLasRamas();
+  const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true });
+  const conEscape = (r) => r.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const esta = (texto, r) => texto.includes(r) || texto.includes(conEscape(r));
+  const machines = { ...MAQUINAS, 'maq-d': { person: DEV_D, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  await conPestana({ fuentes: fuentesCon({ espejo, config: opsCon(machines) }) }, async ({ h, entrar }) => {
+    const es = `${await entrar(LEAD)}; sitio-idioma=es`;
+    const l = (await h.pedir('/api/corridas', { cookie: es })).json;
+    const c = await clienteDelSitio(h, es);
+    const servidor = [JSON.stringify(l)];
+    const cliente = [(await h.pedir('/corridas', { cookie: es })).texto];
+    const faltanEnElDibujo = [];
+    for (const x of l.corridas) {
+      const d = (await h.pedir(`/api/corridas/${x.id}`, { cookie: es })).json;
+      const delModelo = M.corridas.find((m) => m.id === x.id);
+      assert.ok(delModelo, `la ejecución ${x.story} está en el modelo`);
+      assert.deepStrictEqual(d, JSON.parse(JSON.stringify(runs.paraDetalle(delModelo))), `el detalle de ${x.story} en castellano es el del modelo, sin tocar`);
+      const json = JSON.stringify(d);
+      const dibujo = c.w.__detalle(d);
+      servidor.push(json);
+      cliente.push(dibujo);
+      // lo que el detalle trae del servidor, el cliente lo dibuja tal cual (el motivo de los tiempos no va en el
+      // detalle: lo dibuja la tabla, que la página ya trae)
+      const delDetalle = JSON.stringify({ ...d, tiempos: undefined });
+      for (const r of RAMAS_260) if (delDetalle.includes(r) && !esta(dibujo, r)) faltanEnElDibujo.push(`${x.story}: «${r}»`);
+    }
+    const faltan = (partes) => RAMAS_260.filter((r) => !esta(partes.join('\n'), r));
+    assert.deepStrictEqual(faltan(servidor), [], 'en castellano la API no trae tal cual estas frases');
+    assert.deepStrictEqual(faltan(cliente), [], 'en castellano la página y el detalle dibujado no traen tal cual estas frases');
+    assert.deepStrictEqual(faltanEnElDibujo, [], 'el detalle dibujado en castellano no trae lo que le dio la API');
+    const vacia = (await h.pedir('/api/corridas', { cookie: `${await entrar(DEV_D)}; sitio-idioma=es` })).json;
+    assert.match(vacia.vacio_motivo || '', /^todavía no hay ejecuciones de tus máquinas en el buzón/, 'la lista vacía, en castellano');
+  });
+});
+
+test('2.60-T14 VacioSinMaquinaConfirmada_EnIngles @story-2.60 @ac-1 — «ninguna confirmada» también se traduce', () => {
+  const frase = 'todavía no hay ejecuciones de tus máquinas en el buzón (ninguna confirmada): la primera llega sola al terminar un pipeline';
+  const en = runs.todoEnIdioma('en', { vacio_motivo: frase }).vacio_motivo;
+  assert.notStrictEqual(en, frase);
+  assert.deepStrictEqual(enCastellano([en]), [], `queda castellano: «${en}»`);
+  const conMaquinas = runs.todoEnIdioma('en', { vacio_motivo: frase.replace('ninguna confirmada', 'maq-d, maq-e') }).vacio_motivo;
+  assert.match(conMaquinas, /\(maq-d, maq-e\)/, 'las máquinas, tal cual');
+});
+
+test('2.60-T15 NombresDeMaquina_NoSeTraducen @story-2.60 @ac-1 — `nombre` es de la casa en un paso, y de afuera en la lista de máquinas', () => {
+  const frase = 'Revisores';
+  const en = runs.todoEnIdioma('en', { maquinas: { lista: [{ nombre: frase, corridas: 2 }] }, tramos: [{ nombre: frase }] });
+  assert.strictEqual(en.maquinas.lista[0].nombre, frase, 'una máquina que se llama como un paso queda igual');
+  assert.notStrictEqual(en.tramos[0].nombre, frase, 'el paso sí se traduce');
+  // un repo se traduce sólo si es el «repo sin nombre» de la casa
+  const r = runs.todoEnIdioma('en', { cambios: { repos: [{ n: 'repo sin nombre' }, { n: 'Revisores' }] } }).cambios.repos;
+  assert.notStrictEqual(r[0].n, 'repo sin nombre');
+  assert.strictEqual(r[1].n, 'Revisores');
+  // una clave de afuera que se llama como una propiedad de cualquier objeto no tumba la API ni se traduce
+  const raras = { constructor: 'Revisores', toString: 'Revisores', __proto__x: 'Revisores', por_control: { constructor: { n: 1 } } };
+  assert.deepStrictEqual(runs.todoEnIdioma('en', raras), raras);
+});
+
+test('2.60-T16 Decimal_IdiomaDesconocido_ComaComoElCastellano @story-2.60 @ac-6 — un idioma que la tabla no tiene sale entero en castellano, coma incluida', () => {
+  const M = runs.modelo(tmp('vacia-'), { buzon: mundo({ marcadores: false }), soloBuzon: true });
+  const es = runs.tabla(M, { idioma: 'es' });
+  assert.match(sinTags(es), /\d,\d\s?h\b/, 'el castellano lleva coma');
+  assert.strictEqual(runs.tabla(M, { idioma: 'fr' }), es, 'un idioma desconocido: igual al castellano');
+  assert.strictEqual(runs.cabecera(M, { idioma: 'fr' }), runs.cabecera(M, { idioma: 'es' }));
+});
+
 test('Cambios_RenglonesDelHilo_SinElTextoEntero — los renglones de la conversación salen de a uno, iguales a partir el texto', () => {
   // 🔴 rojo: resumir una conversación grande arma el texto entero y su lista de renglones; con una de 110 MB
   //    comprimidos el sitio pasaba de 1 GiB y el contenedor moría.
@@ -1921,3 +2110,4 @@ test('T15 2.77-Guardada_CambioDeDueno_HastaLaBajadaEntera @story-2.77 @ac-15', a
     assert.strictEqual(await verMaqA(h, await entrar(DEV_A)), false);
   });
 });
+

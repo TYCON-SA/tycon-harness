@@ -1623,6 +1623,13 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-checks-companions.test.js",
+      "requiere": [
+        "agent-skills"
+      ]
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/check-count-docs-only.test.js",
       "requiere": [
         "agent-skills"
@@ -2997,6 +3004,18 @@
       "__nota": "story 8.9 (tanda F): las carpetas internas a su destino — el buzón de dependencias y el del vigilante a inbox/, la mini-clase a onboarding/ y los dos .json del nocturno de dependencias junto a sus guiones. Cambian las rutas y no los valores: cada aparición como dice la clasificación de la tanda, con las rutas armadas por pedazos listadas una por una (T59); los yml nocturnos parsean y nombran rutas que existen, y cada guion con sus valores por defecto encuentra las fichas y repos.json en la carpeta nueva (T60); y el aviso de dependencias cuenta los pendientes con las fichas en la carpeta nueva o todavía en la vieja (T61). Lo que lee el mapa se saltea en la copia pública.",
       "raiz": "arnes",
       "ruta": "tests/legacy-names-f.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.15 (tanda A): los archivos de deuda de los productos con su nombre nuevo —se leen con el nuevo o con el de antes, desde el arnés y desde el artefacto arnes-ci, y con los dos distintos cada lector dice «no puedo»— y el reporte de lo que un repo de producto nombra con nombre viejo (T2, T3, T6). Repos y mapas de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/legacy-retire.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.15 (tanda A): el chequeo que dice qué nombres viejos se pueden retirar el 17/11 — el estado de cada entrada, las máquinas que no reportaron aparte, una consulta que falla nunca es «sin usos», la fecha propia de una entrada (T4, T5, T21). Buzón, máquinas, lista de productos y az de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/legacy-retire-check.test.js",
       "requiere": []
     },
     {

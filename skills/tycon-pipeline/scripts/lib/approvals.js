@@ -187,10 +187,15 @@ function selloDeCorrida(nombre) {
 function anteriorAlControl(dir, nombre, ref = 'origin/main') {
   const sello = selloDeCorrida(nombre);
   if (!sello || sello >= DESDE_EN_LA_STORY || !ref) return false;
+  // Dentro de un gancho de git llegan GIT_DIR, GIT_WORK_TREE y compañía del repo que commitea: con ellos `-C` no elige
+  // el repo y la ruta del roster no coincide con nada. Se sacan (la misma lista que private-tree.js) para que git
+  // encuentre el repo desde la carpeta de la corrida.
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_PREFIX']) delete env[k];
   let salida;
   try {
     salida = require('child_process').execFileSync('git', ['-C', dir, 'log', ref, '--diff-filter=A', '--format=%cs', '--', 'review-roster.json'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env });
   } catch (_e) { return false; }
   const fechas = salida.split('\n').map((l) => l.trim().replace(/-/g, '')).filter((l) => /^\d{8}$/.test(l));
   return fechas.length > 0 && fechas[fechas.length - 1] < DESDE_EN_LA_STORY;

@@ -54,6 +54,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { PAIRS, resolveDebtFile, readDebtAtRevision, LegacyFilesError } = require('./legacy-files.js');
 // Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas
 // hasta el retiro. El traductor vive al lado y viaja con este archivo en el artefacto arnes-ci.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
@@ -165,10 +166,9 @@ const NO_AFECTAN = [
   // línea de código nueva.
   //
   // Las tres declaraciones de deuda: las lee el paso de pruebas y el de dependencias para decidir
-  // qué está amparado. No entran en ningún paquete.
-  /^pruebas-pendientes\.json$/i,
-  /^vulnerabilidades-pendientes\.json$/i,
-  /^vulnerabilidades-formularios-pendientes\.json$/i,
+  // qué está amparado. No entran en ningún paquete. Con su nombre nuevo y con el de antes (legacy-files.js).
+  ...['pending-tests.json', 'pending-vulnerabilities.json', 'pending-form-vulnerabilities.json'].flatMap((nu) => [nu, PAIRS[nu]])
+    .map((n) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')),
   // Configuración del arnés para el repo (advisors, e2e, evidencia). La leen los controles.
   /^\.tycon\//,
   // 🔴 LA EVIDENCIA DE LAS CORRIDAS. `.advisors/` guarda lo que dejan el pipeline y
@@ -204,7 +204,7 @@ function esCompartido(rel, forms) {
 /**
  * 🔴 LA DECLARACIÓN DE DEUDA DE PRUEBAS NO AFECTA AL PAQUETE, PERO SÍ AL VEREDICTO.
  *
- * `pruebas-pendientes.json` está arriba en NO_AFECTAN: cambiarlo no cambia una línea de lo que se
+ * `pending-tests.json` está arriba en NO_AFECTAN: cambiarlo no cambia una línea de lo que se
  * construye, y sin esa entrada tocarlo redesplegaría los 33 formularios de FRESNO por nada. Eso sigue
  * siendo cierto para CONSTRUIR y para VERSIONAR.
  *
@@ -225,9 +225,12 @@ function esCompartido(rel, forms) {
  * comportamiento no cambia, así que tocar la declaración sigue sin redesplegar nada.
  *
  * Falla hacia más trabajo, igual que todo el resto del guion: si no puede saber qué decía la
- * declaración antes —base irresoluble, JSON ilegible— devuelve TODOS.
+ * declaración antes —base irresoluble, JSON ilegible, el nombre nuevo y el de antes con contenido
+ * distinto— devuelve TODOS. El archivo se lee con su nombre nuevo o con el de antes (legacy-files.js),
+ * en la base y hoy: el commit que lo renombra compara contenidos, no nombres.
  */
-const DEUDA = 'pruebas-pendientes.json';
+const DEUDA = 'pending-tests.json';
+const DEUDA_NOMBRES = [DEUDA, PAIRS[DEUDA]];
 
 /** formulario -> texto de su declaración (las dos listas). `null` si el archivo no es JSON válido. */
 function declaraciones(txt) {
@@ -255,9 +258,24 @@ function deltaDeDeuda(repo, base) {
   // Que el archivo no exista en la base es legítimo (es la primera vez que se declara deuda):
   // la declaración anterior es vacía. Lo mismo del lado de ahora, si se borró el archivo entero.
   let antes;
-  try { antes = declaraciones(git(['show', `${base}:${DEUDA}`])); } catch (_) { antes = new Map(); }
   let ahora;
-  try { ahora = declaraciones(fs.readFileSync(path.join(repo, DEUDA), 'utf8')); } catch (_) { ahora = new Map(); }
+  // en la base: «no está» lo dice ls-tree (sale 0 sin nada); cualquier otra falla de git es «no pude mirar»
+  const enLaBase = (rel) => (git(['ls-tree', '--name-only', base, '--', rel]).trim() ? git(['show', `${base}:${rel}`]) : null);
+  try {
+    const enBase = readDebtAtRevision(enLaBase, DEUDA, 'scripts/ci/affected-forms.js');
+    antes = enBase ? declaraciones(enBase.text) : new Map();
+    const hoy = resolveDebtFile(repo, DEUDA, 'scripts/ci/affected-forms.js');
+    if (hoy.exists) {
+      let txt;
+      try { txt = fs.readFileSync(hoy.abs, 'utf8'); } catch (e) {
+        return { todos: true, motivo: `no pude leer ${hoy.name} (${(e && e.code) || (e && e.message) || e})` };
+      }
+      ahora = declaraciones(txt);
+    } else ahora = new Map();
+  } catch (e) {
+    if (!(e instanceof LegacyFilesError)) throw e;
+    return { todos: true, motivo: e.message };
+  }
   if (antes === null || ahora === null) return { todos: true, motivo: `${DEUDA} no se puede leer como JSON` };
 
   const forms = new Set();
@@ -316,7 +334,7 @@ function main(argv0) {
   // La declaración de deuda no cambia lo que se construye, pero sí a quién hay que JUZGAR
   // (el porqué, largo, está arriba de deltaDeDeuda). Sólo suma al conjunto a probar.
   const porDeuda = [];
-  if (!argv.includes('--no-debt') && cambiados.includes(DEUDA)) {
+  if (!argv.includes('--no-debt') && DEUDA_NOMBRES.some((n) => cambiados.includes(n))) {
     const base = arg('--base') || 'HEAD~1';
     const d = deltaDeDeuda(repo, base);
     if (d.todos) {

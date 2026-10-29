@@ -56,7 +56,7 @@
   "pipeline.js",
   "pipelines/azure-pipelines-banco.yml",
   "pipelines/azure-pipelines-tablero.yml",
-  "pruebas-pendientes.json",
+  "pending-tests.json",
   "release-notes.sh",
   "scripts/setup/check-engram-project.sh",
   "scripts/setup/check-engram-version.ps1",
