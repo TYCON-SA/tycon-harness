@@ -430,6 +430,31 @@ test('ApplyAssignments_SequentialReassignment_Replaces', () => {
   assert.deepEqual(lits('$a', commandVariables('a=(p q); a=(r)')), ['r'], 'un arreglo también');
 });
 
+// Un salto de línea después de `&&`, `||` o `&` no cambia el separador: `a &&⏎ b` sigue siendo «b si a anduvo», y
+// `a &⏎` sigue corriendo `a` en segundo plano. Leído como `;`, una asignación de ahí reemplazaba como si corriera seguro.
+test('Segments_NewlineAfterOperator_KeepsTheOperator', () => {
+  for (const op of ['&&', '||', '&']) {
+    assert.deepEqual(segmentos(`a ${op}\nb`).map((x) => x.sep), [op, ''], op);
+    assert.deepEqual(segmentos(`a ${op}\n\nb`).map((x) => x.sep), [op, ''], `${op} con dos saltos`);
+  }
+  assert.deepEqual(segmentos('a;\nb').map((x) => x.sep), [';', '']);
+});
+
+// Quien lleva datos propios de cada variable (de qué sustitución salió) tiene que saber cuáles se reemplazaron, para
+// olvidar también lo suyo. Sólo cuentan las que el shell reemplaza seguro: no la unión ni el `X=a cmd` de un comando.
+test('ApplyAssignments_Replaced_NamesWhatWasReplaced', () => {
+  const ctx = { vars: {}, arrays: {} };
+  sp.applyAssignments(ctx, parseSimpleCommand('F=a G=b'), { previousSep: '' });
+  assert.deepEqual([...ctx.replaced].sort(), ['F', 'G']);
+  sp.applyAssignments(ctx, parseSimpleCommand('F=c'), { previousSep: '&&' });
+  assert.deepEqual([...ctx.replaced], [], 'detrás de && es la unión');
+  sp.applyAssignments(ctx, parseSimpleCommand('F=c cmd'), { previousSep: ';' });
+  assert.deepEqual([...ctx.replaced], [], 'sólo vale para ese comando');
+  // `unset` puede fallar (una variable de sólo lectura) o borrar otra cosa (`-f`): no cuenta como reemplazo
+  sp.applyAssignments(ctx, parseSimpleCommand('unset G'), { previousSep: ';' });
+  assert.deepEqual([...ctx.replaced], []);
+});
+
 // Una comilla `'` después de un `\$` escapado o de `$$` no es `$'…'`: ahí `\'` no escapa. Si el partidor
 // abriera una comilla que el shell no abre, escondería los comandos de después.
 test('Segments_EscapedDollarBeforeQuote_IsNotAnsiC', () => {
