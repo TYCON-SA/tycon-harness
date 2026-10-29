@@ -287,6 +287,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Reglas candidatas a retiro: probadas, que nunca encontraron nada** (`reglas_candidatas`). Reglas que saben ponerse rojas y nunca encontraron nada con recorrido de sobra.
 - **Reglas que el banco de pruebas probó de verdad** (`reglas_probadas`). Una regla sin prueba que la obligue a marcar no se juzga: sale «sin probar», nunca candidata.
 - **Commits por carril: pipeline, atajo declarado o ninguno** (`carriles`). Cuántos commits pasaron por el pipeline, cuántos por un atajo declarado y cuántos por ninguno.
+- **Máquinas con una vuelta atrás vigente: no se actualizan solas** (`vueltas_atras`). Cuántas máquinas deshicieron una actualización y la retienen hasta que sale una versión posterior.
 
 **En Proyectos:**
 

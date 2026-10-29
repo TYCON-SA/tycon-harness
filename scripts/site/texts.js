@@ -579,6 +579,8 @@ const TEXTOS = {
   'ficha.pasos.paraQue': { es: 'Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.', en: "A run's cost depends on how many steps it takes: that is the variable that explains it." },
   'ficha.carriles.titulo': { es: 'Commits por carril: pipeline, atajo declarado o ninguno', en: 'Commits per lane: pipeline, declared shortcut or none' },
   'ficha.carriles.paraQue': { es: 'Cuántos commits pasaron por el pipeline, cuántos por un atajo declarado y cuántos por ninguno.', en: 'How many commits went through the pipeline, how many through a declared shortcut and how many through none.' },
+  'ficha.vueltas_atras.titulo': { es: 'Máquinas con una vuelta atrás vigente: no se actualizan solas', en: 'Machines with an active rollback: they do not update on their own' },
+  'ficha.vueltas_atras.paraQue': { es: 'Cuántas máquinas deshicieron una actualización y la retienen hasta que sale una versión posterior.', en: 'How many machines undid an update and hold it back until a later version comes out.' },
   'ficha.bus_factor.titulo': { es: 'Productos donde una sola persona hizo el 75 % o más de los commits del último año', en: 'Products where a single person made 75% or more of last year\'s commits' },
   'ficha.bus_factor.paraQue': { es: 'El riesgo de ingeniería no es el código: es quién es la única persona que sabe tocarlo.', en: 'The engineering risk is not the code: it is the only person who knows how to change it.' },
   'ficha.sin_pipeline_de_prod.titulo': { es: 'Productos sin pipeline de producción', en: 'Products without a production pipeline' },
