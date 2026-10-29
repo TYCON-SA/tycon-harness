@@ -54,7 +54,8 @@ function cadenas(src) {
     }
     if (c === '/' && d === '/') { const j = src.indexOf('\n', i); i = j < 0 ? src.length : j; continue; }
     if (c === '/' && d === '*') { const j = src.indexOf('*/', i + 2); i = j < 0 ? src.length : j + 2; continue; }
-    if (c === '/' && (prev === '' || /[(,=:[!&|?{};]/.test(prev))) {
+    // una expresión regular viene después de un operador; también después de `=>` (`(w) => /[$`]/.test(w)`)
+    if (c === '/' && (prev === '' || /[(,=:[!&|?{};>]/.test(prev))) {
       let j = i + 1, clase = false;
       while (j < src.length && src[j] !== '\n') {
         if (src[j] === '\\') { j += 2; continue; }
