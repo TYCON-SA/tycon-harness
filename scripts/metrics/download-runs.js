@@ -109,6 +109,7 @@ const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
 
 const CASA_PIPELINE = path.join(stateDirOf(os.homedir()));
 const DONDE = 'scripts/metrics/download-runs.js';
+const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 function hoy() { return new Date().toISOString().slice(0, 10); }
 
@@ -789,6 +790,15 @@ async function bajar(opts = {}) {
     const i = JSON.parse(fs.readFileSync(resolveFile(rutaIndice, { where }), 'utf8'));
     if (i && i.destino === indice.destino && i.blobs && typeof i.blobs === 'object') indice = i;
   } catch (_) { /* sin índice: se compara por MD5, y lo que no traiga MD5 se baja una vez */ }
+  // `confiarIndice` (el sitio, entre una verificación entera y la siguiente): un blob cuyo MD5 y tamaño son los que el
+  // índice anotó al bajarlo no se mira en el disco. En el disco montado del sitio cada mirada es una apertura que se
+  // cobra; el espejo sólo lo escribe esta bajada, así que lo anotado es lo que hay. Lo que el buzón ya no lista sale del
+  // índice: si vuelve, se mira de nuevo
+  const confiar = opts.confiarIndice === true;
+  let indiceSucio = false;
+  const listados = new Set(listado.map((b) => b.nombre));
+  for (const n of Object.keys(indice.blobs)) if (!listados.has(n)) { delete indice.blobs[n]; indiceSucio = true; }
+  if (!isObject(indice.resumenes)) indice.resumenes = {};
 
   // 2 · qué falta o cambió
   const md5Local = (ruta, st, previo) => {
@@ -910,9 +920,21 @@ async function bajar(opts = {}) {
     }
   }
   const resumidas = new Map();
+  // las huellas de cada resumen (`hilo_md5`, `cambio_md5`) quedan en el índice: con `confiarIndice` no se vuelve a abrir
+  // el resumen para leerlas. Las de corridas que el buzón ya no trae salen
+  for (const k of Object.keys(indice.resumenes)) if (!partesDe.has(k)) { delete indice.resumenes[k]; indiceSucio = true; }
+  const huellasDelResumen = (k) => {
+    const anotadas = indice.resumenes[k];
+    if (confiar && isObject(anotadas)) return anotadas;
+    const doc = leerResumenDe(path.join(dirBuzon, ...k.split('/')) + '.json');
+    const h = doc ? { hilo_md5: doc.hilo_md5 || null, cambio_md5: doc.cambio_md5 || null } : null;
+    if (h && (!isObject(anotadas) || anotadas.hilo_md5 !== h.hilo_md5 || anotadas.cambio_md5 !== h.cambio_md5)) { indice.resumenes[k] = h; indiceSucio = true; }
+    if (!h && anotadas) { delete indice.resumenes[k]; indiceSucio = true; }
+    return h;
+  };
   const estaResumida = (k) => {
     if (!resumidas.has(k)) {
-      const doc = leerResumenDe(path.join(dirBuzon, ...k.split('/')) + '.json');
+      const doc = huellasDelResumen(k);
       resumidas.set(k, Boolean(doc) && partesDe.get(k).every(({ b, forma }) => (b.md5
         ? doc[/\.hilo\.jsonl\.gz$/.test(forma.archivo) ? 'hilo_md5' : 'cambio_md5'] === b.md5
         : Boolean(b.etag && indice.blobs[b.nombre] && indice.blobs[b.nombre].etag === b.etag))));
@@ -952,6 +974,7 @@ async function bajar(opts = {}) {
     if (base && estaResumida(base)) { res.resumidos += 1; continue; }
     if (base && topeHilo && grandeSinBajar(base)) continue;
     const previo = indice.blobs[b.nombre];
+    if (confiar && previo && b.md5 && previo.md5 === b.md5 && previo.size === b.largo) { res.al_dia += 1; continue; }
     let st = null;
     try { st = fs.statSync(local); } catch (e) { if (e.code !== 'ENOENT') { noLeidos.push(`${b.nombre} (${e.code})`); continue; } }
     if (st && st.size === b.largo) {
@@ -976,6 +999,7 @@ async function bajar(opts = {}) {
   // 3 · bajar, archivo por archivo, dentro del presupuesto
   // el viejo (de antes del renombre) pasa al nuevo antes de la primera escritura: el que se escribe ya lo trae en `indice`
   const guardarIndice = () => { prepareStateWrite(rutaIndice, { where }); escribirAtomico(rutaIndice, JSON.stringify(indice, null, 1) + '\n'); };
+  if (indiceSucio) { try { guardarIndice(); } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ } }
   const malos = [];
   // La cobertura de una máquina se escribe sólo si ninguno de SUS registros falló en esta pasada.
   // 🔴 `.jsonl.gz` también: sin eso, una falla de hallazgos.jsonl.gz no retendría la cobertura.

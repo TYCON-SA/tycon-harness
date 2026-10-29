@@ -756,7 +756,7 @@ async function main() {
   }
   let sitio;
   try {
-    const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log });
+    const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log, version: VERSION });
     // invitar desde Personas (con un proveedor que sabe invitar y el disco del sitio): lo que falta enviar se recalcula
     // al terminar cada ciclo de fuentes
     const invitaciones = require('./invitations.js').crearInvitaciones({ cfg: v.cfg, env, dataDir: v.cfg.dataDir, llave: v.cfg.sessionKey, log });

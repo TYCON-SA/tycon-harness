@@ -328,6 +328,14 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     const umbralesArchivo = umbralesDeLaOrganizacion();
     // las conversaciones sólo cuentan con un disco del sitio: sin SITE_DATA_DIR, lo del hilo es «no medido»
     const sinHilos = !(typeof fuentes.hilos === 'function' && fuentes.hilos() && cfg.dataDir);
+    // con la generación del espejo (sources.js) no hace falta recorrerlo: igual generación, mismo espejo. La clave suma
+    // los umbrales de la organización (un archivo del clon, no del disco montado)
+    if (typeof fuentes.espejoGeneracion === 'function') {
+      let umbrales = '';
+      if (umbralesArchivo) { try { umbrales = crypto.createHash('sha256').update(fs.readFileSync(umbralesArchivo)).digest('hex'); } catch (e) { umbrales = codigoDe(e); } }
+      armarSiCambio(`gen:${fuentes.espejoGeneracion()}:${umbrales}${sinHilos ? ':sin-hilos' : ''}`, { sinHilos, umbralesArchivo });
+      return;
+    }
     // la huella recorre el espejo en el disco montado: en un hilo aparte (el principal contesta las sondas), una a la vez
     if (st.huellaEnCurso) return;
     st.huellaEnCurso = Promise.resolve()

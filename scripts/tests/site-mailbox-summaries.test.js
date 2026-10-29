@@ -440,3 +440,24 @@ test('T56 Sitio_ConversacionesPendientes_LaVistaSeArmaYLoDice', { skip: SIN_BACK
   M.buzon = { estado: 'leido', pendientes: 3 };
   assert.match(runs.cabecera(M, { sitio: { rol: 'maintainer' } }), /3 archivo/, 'la banda nombra lo que falta');
 });
+
+// rojo si: confiando en el índice la bajada mira el disco igual (re-baja lo que el índice da por bajado), o sin
+// confiar no repone lo que falta en el disco.
+test('Bajada_ConfiandoEnElIndice_NoMiraElDisco_YSinConfiarRepone', async () => {
+  const buzon = await H.arrancarBuzon({ blobs: blobsDe(2) });
+  try {
+    const dir = path.join(tmp('mbx-confiar-'), 'buzon');
+    const r = await bajada(buzon, dir);
+    assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
+    const pedidas = () => buzon.pedidos.filter((p) => !p.query.includes('comp=list')).length;
+    fs.rmSync(path.join(dir, 'maq-a', 'r1.json'));
+    const antes = pedidas();
+    const r2 = await bajada(buzon, dir, { confiarIndice: true });
+    assert.strictEqual(r2.codigo, 0, JSON.stringify(r2.res));
+    assert.strictEqual(pedidas(), antes, 'confiando en el índice no pide nada: el buzón no cambió');
+    assert.ok(!fs.existsSync(path.join(dir, 'maq-a', 'r1.json')), 'y no miró el disco');
+    const r3 = await bajada(buzon, dir);
+    assert.strictEqual(r3.codigo, 0, JSON.stringify(r3.res));
+    assert.ok(fs.existsSync(path.join(dir, 'maq-a', 'r1.json')), 'sin confiar, lo que faltaba en el disco vuelve');
+  } finally { await buzon.cerrar(); }
+});

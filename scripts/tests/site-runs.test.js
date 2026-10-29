@@ -925,6 +925,34 @@ test('2.27-A2 Huella_UnionesReescritasSinCambios_NoRearma @story-2.27 @ac-20', a
   });
 });
 
+// rojo si: con la generación del espejo, la pestaña lo recorre igual (rearma por un archivo que la generación no
+// anunció) o no rearma cuando la generación sube.
+test('Generacion_SinCambiosNoRecorreElEspejo_YSubeRearma — igual generación, mismo espejo', async () => {
+  const espejo = mundo({ marcadores: false });
+  const datos = tmp('site-runs-gen-');
+  const armarReal = TAB().armarEnElHilo;
+  let armados = 0;
+  const armar = (o) => { armados += 1; return armarReal(o); };
+  let gen = 7;
+  const fuentes = fuentesCon({ espejo });
+  fuentes.espejoGeneracion = () => gen;
+  await conPestana({ fuentes, datos, opciones: { armar } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const n0 = (await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length;
+    assert.strictEqual(armados, 1, 'el arranque arma una vez');
+    // un archivo nuevo en el espejo sin que suba la generación: la pestaña no lo mira (sólo el sitio escribe el espejo,
+    // y cuando escribe sube la generación)
+    escribir(path.join(espejo, 'maq-a'), 'a8.json', volcado('aaaaaaaa-0000-4000-8000-000000000008', '2026-08-24T09:00:00.000Z', { marker: { storyId: '3.8' } }));
+    fuentes.avisar(); await vista.listo();
+    await h.pedir('/api/corridas', { cookie: lead }); await vista.listo();
+    assert.strictEqual(armados, 1, 'misma generación: no rearma');
+    gen = 8;
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual(armados, 2, 'la generación subió: rearma');
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, n0 + 1, 'con la corrida nueva');
+  });
+});
+
 test('2.27-A3 BajadaAMedias_NoRearma_YDiceQuePuedeFaltar @story-2.27 @ac-19 @ac-20', async () => {
   // con la última bajada a medias no se rearma (el espejo sería más nuevo que lo informado por las máquinas: una que
   // cambió de dueño mostraría corridas al anterior); se sirve el último armado entero y la respuesta lo dice
