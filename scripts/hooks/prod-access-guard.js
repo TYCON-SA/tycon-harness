@@ -316,26 +316,69 @@ const CANONICA_CANDADOS = new RegExp(`^${RUTA_PUERTA} --locks$`);
 // El corte de `az group delete` directo (paso 3b) no cambia.
 // Un nombre con paréntesis (Azure los permite) va entre comillas simples: sin ellas el shell los lee como sintaxis.
 const CANONICA_BORRAR_GRUPO = new RegExp(`^${RUTA_PUERTA} --delete-group (?:[A-Za-z0-9._][A-Za-z0-9._-]{0,89}|'[A-Za-z0-9._()][A-Za-z0-9._()-]{0,89}')$`);
-// `<host> --file <ruta> --sha256 <sha256>`: la consulta desde un archivo. Una consulta larga en una línea, con cada
-// comilla escapada, no se puede leer en el cuadro; desde un archivo, el freno la muestra entera antes del cuadro y la
-// huella ata lo que la persona vio a lo que corre la puerta. La ruta sin comillas, espacios ni nada que el shell expanda.
-// sin «-» al principio: en la puerta, una ruta así se tomaría como una opción del intérprete
+// `<host> --file <ruta>`: la consulta desde un archivo no pasa, porque el cuadro de aprobación muestra el comando y no el
+// contenido del archivo. Cuando el archivo se puede pasar a una consulta en línea, el freno da ese comando listo. La ruta
+// sin comillas, espacios ni nada que el shell expanda, y sin «-» al principio.
 const RUTA_ARCHIVO = '[A-Za-z0-9._/~@+][A-Za-z0-9._/~@+-]*';
-// lo que haría ver en pantalla otra cosa que los bytes que corren: controles (salvo salto de línea y tabulador) y
-// caracteres invisibles o de dirección. Los mismos que rechaza la puerta.
-const CONTROL_ARCHIVO = /[\x00-\x08\x0b-\x1f\x7f]/;
-const INVISIBLE_ARCHIVO = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u2028\u2029]/;
-const CANONICA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO}) --sha256 ([0-9a-f]{64})(?: --max-filas \\d+)?$`);
-// la misma forma con la huella ausente o mal escrita: no es canónica, pero merece un mensaje con la huella actual
-const FORMA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO})(?: --sha256 (\\S*))?(?: --max-filas \\d+)?$`);
+const FORMA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO})(?: --sha256 (\\S*))?(?: --max-filas (\\d+))?$`);
 const TOPE_ARCHIVO = 64 * 1024;
 
+// lo que haría ver en el cuadro otra cosa que los bytes que corren: controles C0 (salvo salto de línea y tabulador), DEL
+// y C1; invisibles, rellenos y marcas de dirección; selectores de variación y caracteres de etiqueta. La lista es cerrada
+// a propósito: lo que no está pasa, y lo cuenta el tope de renglones. La misma lista en la puerta.
+const CONTROL_QUE_ENGANA = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/u;
+const INVISIBLE_QUE_ENGANA = /[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180b}-\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2028}\u{2029}\u{2060}-\u{206f}\u{2800}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{fff9}-\u{fffc}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u;
+/** El motivo por el que el texto engañaría en el cuadro, o null. Un carácter de reemplazo es lo que llega de bytes que
+ * no son UTF-8: la entrada del freno ya viene decodificada. */
+function caracterQueEngana(texto) {
+  if (!texto.isWellFormed() || texto.includes('\u{fffd}')) return 'no es texto UTF-8 válido';
+  if (CONTROL_QUE_ENGANA.test(texto)) return 'tiene caracteres de control (como un retorno de carro o una secuencia de la terminal): en el cuadro se vería otra cosa que lo que corre';
+  if (INVISIBLE_QUE_ENGANA.test(texto)) return 'tiene caracteres invisibles o de dirección: en el cuadro se leería otra cosa que lo que corre';
+  return null;
+}
+
+// el cuadro muestra unos 20 renglones de una terminal de 80 columnas (76 sin su margen) y corta el principio sin aviso
+const TOPE_RENGLONES = 20;
+const COLUMNAS_CUADRO = 76;
+// Todo lo que está desde U+1100 (donde empiezan los anchos) cuenta 2, y un emoji también: así no hace falta la tabla
+// entera de anchos de Unicode, y lo que en verdad es angosto se cuenta de más, nunca de menos.
+const ANCHO_DOBLE = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
+/** Cuántos renglones de pantalla ocupa el texto: un tabulador avanza a la siguiente columna múltiplo de 8, un carácter
+ * ancho o un emoji cuenta 2 y todo lo demás 1 (un combinante también: el conteo nunca queda por debajo de lo que se ve).
+ * Lo que no entra en lo que queda del renglón baja entero al siguiente, como lo corta la pantalla. */
+function renglonesDePantalla(texto) {
+  let total = 0;
+  for (const renglon of texto.split('\n')) {
+    let filas = 1; let col = 0;
+    for (const c of renglon) {
+      const ancho = c === '\t' ? 8 - (col % 8) : ANCHO_DOBLE.test(c) ? 2 : 1;
+      if (col + ancho > COLUMNAS_CUADRO) { filas++; col = 0; }
+      col += c === '\t' ? 8 - (col % 8) : ancho;
+    }
+    total += filas;
+  }
+  return total;
+}
+
+/** Las reglas de la sentencia de la puerta (`validar_sentencia`), renglón por renglón como su grep: el motivo por el que
+ * la rechazaría, o null. */
+function sentenciaQueLaPuertaRechaza(texto) {
+  const renglones = texto.split('\n');
+  if (!texto.trim()) return 'la consulta está vacía';
+  if (texto.startsWith('-')) return 'la consulta empieza con «-»: la puerta la tomaría como una opción';
+  if (renglones.some((r) => /(?:^|\s)go(?:\s*$|\s*;)/i.test(r))) return 'la consulta tiene un separador de lote (GO)';
+  if (renglones.some((r) => /^\s*(?::|!!)/.test(r))) return 'la consulta tiene un renglón que el cliente toma como un comando del cliente («:» o «!!»)';
+  return null;
+}
+
 /**
- * El archivo de una consulta: común (no un enlace, una carpeta ni un dispositivo), de 64 KB o menos, texto UTF-8 y no
- * un archivo protegido por el freno. Devuelve `{ sha, texto }` o `{ error }`.
+ * El archivo de una consulta: común (no un enlace, una carpeta ni un dispositivo), de 64 KB o menos, texto UTF-8, no
+ * protegido por el freno, terminado en `.sql` y fuera de una carpeta oculta. Lo que el freno lee le llega al asistente en
+ * el mensaje, así que no lee otra cosa que una consulta: una credencial o un `.env` no se vuelven texto de la
+ * conversación. Devuelve `{ texto }` o `{ error }`.
  */
 function leerArchivoDeConsulta(ruta) {
-  const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
+  const fs = require('fs'); const path = require('path');
   const casa = process.env.HOME || require('os').homedir();
   const abs = ruta.startsWith('~/') ? path.join(casa, ruta.slice(2)) : path.resolve(carpetaDelComando || process.cwd(), ruta);
   let st;
@@ -347,13 +390,17 @@ function leerArchivoDeConsulta(ruta) {
   if (NOMBRES_PROTEGIDOS.includes(base) || /^(?:production|produccion)\.log$/.test(base)) {
     return { error: `${ruta} es un archivo protegido por el freno, no una consulta` };
   }
+  if (!/\.sql$/i.test(base)) return { error: `${ruta} no termina en .sql: el freno sólo lee consultas` };
+  if (abs.split(path.sep).some((p) => p.startsWith('.') && p !== '.' && p !== '..')) {
+    return { error: `${ruta} está dentro de una carpeta oculta: el freno sólo lee consultas, no lo que vive ahí` };
+  }
   let buf;
   try { buf = fs.readFileSync(abs); } catch (e) { return { error: `no pude leer ${ruta} (${e.code || e.message})` }; }
   let texto;
   try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (_) { return { error: `${ruta} no es texto UTF-8` }; }
-  if (CONTROL_ARCHIVO.test(texto)) return { error: `${ruta} tiene caracteres de control (como un retorno de carro o una secuencia de la terminal): en pantalla se vería otra cosa que lo que corre` };
-  if (INVISIBLE_ARCHIVO.test(texto)) return { error: `${ruta} tiene caracteres invisibles o de dirección: en pantalla se leería otra cosa que lo que corre` };
-  return { sha: crypto.createHash('sha256').update(buf).digest('hex'), texto };
+  const engano = caracterQueEngana(texto);
+  if (engano) return { error: `${ruta} ${engano}` };
+  return { texto };
 }
 
 function decidir(entrada) {
@@ -454,24 +501,34 @@ function decidir(entrada) {
     // y `` ` `` — el shell parte ahí y la segunda mitad corría SIN pasar por la puerta (ejecución
     // arbitraria aprobada por el freno; pase adversarial 2026-09-15, el hallazgo más grave).
     const unSoloSegmento = partes.length === 1;
-    // La consulta desde un archivo: antes del cuadro se lee el archivo y se compara su huella. Sin huella, o con una que
-    // no coincide, no hay cuadro: nunca se aprueba algo que la persona no vio en pantalla. En Codex se corta abajo.
-    const fa = unSoloSegmento && !esCodex ? FORMA_ARCHIVO.exec(limpio) : null;
-    let mensajeArchivo = null;
-    if (fa) {
+    // La consulta desde un archivo no pasa: el cuadro muestra el comando, no lo que trae el archivo. Si el archivo se puede
+    // pasar a una consulta en línea, el mensaje trae ese comando listo para pegar. En Codex no: ahí la puerta no se acepta.
+    const pideArchivo = partes.some(({ texto }) => tokensDeSegmento(texto, tokens, PREFIJOS).some((x) => x === '--file' || x.startsWith('--file=')));
+    if (pideArchivo) {
+      const motivo = 'el cuadro de aprobación no muestra el contenido de un archivo: la consulta va en línea.';
+      const enLinea = `Escribí la consulta entre comillas simples, en el mismo comando: ${PUERTA} <host> 'select …'`;
+      if (esCodex) frenar(motivo, ['Y en Codex la puerta no puede abrir el cuadro: pasale la sentencia al dev para que la corra él por la puerta.'], { cmd }, 'puerta-no-canonica');
+      const fa = unSoloSegmento ? FORMA_ARCHIVO.exec(limpio) : null;
+      if (!fa) frenar(motivo, [enLinea], { cmd }, 'puerta-no-canonica');
       const v = leerArchivoDeConsulta(fa[2]);
-      if (v.error) frenar(`la consulta desde un archivo no se puede mostrar: ${v.error}.`, [
-        'El archivo tiene que ser un archivo común (no un enlace ni una carpeta), de 64 KB o menos, en UTF-8,',
-        'y no un archivo protegido por el freno.',
-      ], { cmd });
-      if (fa[3] !== v.sha) frenar(fa[3] ? 'la huella no coincide con el archivo: cambió después de que lo leíste.' : 'falta la huella del archivo (--sha256).', [
-        `La huella actual de ${fa[2]} es: ${v.sha}`,
-        'Leé el archivo de nuevo y, si es lo que querés correr, reintentá con:',
-        `  ${PUERTA} ${fa[1]} --file ${fa[2]} --sha256 ${v.sha}`,
-      ], { cmd });
-      mensajeArchivo = `Consulta a ${fa[1]} desde ${fa[2]} (huella ${v.sha}):\n${v.texto}`;
+      const listo = v.error ? null : `${PUERTA} ${fa[1]} '${v.texto.replace(/'/g, "'\\''")}'${fa[4] ? ` --max-filas ${fa[4]}` : ''}`;
+      const renglones = listo ? renglonesDePantalla(listo) : 0;
+      const problema = v.error || sentenciaQueLaPuertaRechaza(v.texto)
+        || (renglones > TOPE_RENGLONES ? `la consulta ocupa ${renglones} renglones de pantalla y el cuadro muestra unos ${TOPE_RENGLONES}: partila en consultas más cortas` : null);
+      if (problema) frenar(motivo, [`Y ${fa[2]} no se puede pasar a una consulta en línea: ${problema}.`, enLinea], { cmd }, 'puerta-no-canonica');
+      frenar(motivo, ['El comando con la consulta del archivo en línea, listo para correr:', listo], { cmd }, 'puerta-no-canonica');
     }
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio) || CANONICA_ARCHIVO.test(limpio));
+    // lo que engañaría en el cuadro, en cualquier parte del comando: también en las puntas, que trim() recortaría
+    const engano = caracterQueEngana(cmd);
+    if (engano) frenar(`el comando ${engano}.`, ['Escribí la consulta sin esos caracteres y volvé a intentar.'], { cmd }, 'puerta-no-canonica');
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio));
+    // el cuadro corta sin aviso el principio de un comando largo: la consulta en línea tiene un tope de renglones
+    if (canonica && CANONICA.test(limpio)) {
+      const n = renglonesDePantalla(cmd);   // el cuadro recibe también lo que el shell ignora al final
+      if (n > TOPE_RENGLONES) frenar(`el cuadro muestra unos ${TOPE_RENGLONES} renglones; este comando ocupa ${n}: partí la consulta en consultas más cortas.`, [
+        'Lo que no entra se corta por arriba, sin aviso: aprobarías un comando sin haber visto su principio.',
+      ], { cmd }, 'puerta-no-canonica');
+    }
     if (!canonica) {
       frenar('la puerta se invocó de una forma que no es la canónica.', [
         'Sólo se acepta la ruta absoluta, sin nada antes ni después, y la sentencia en UN argumento',
@@ -494,9 +551,6 @@ function decidir(entrada) {
       'Sacalo de tu configuración del shell (o de este comando) y volvé a intentar.',
     ], { cmd });
     recordDecision({ freno: 'prod-access-guard', regla: 'puerta-no-canonica', veredicto: 'paso', cmd });
-    // la consulta del archivo, tal cual y con sus saltos de línea, en la pantalla de la persona antes del cuadro. Se sale
-    // recién cuando terminó de escribirse: por una tubería, salir enseguida cortaba el mensaje (y el cuadro aparecía igual)
-    if (mensajeArchivo) { process.stdout.write(JSON.stringify({ systemMessage: mensajeArchivo }), () => process.exit(0)); return; }
     process.exit(0);                                    // forma canónica y limpia: que decida el cuadro
   }
 
