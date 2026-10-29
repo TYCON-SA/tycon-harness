@@ -134,6 +134,26 @@ runtime-waiver <historia> --acs <n> --for-session <D>`). The story is the one of
 exits without writing. The window opens for the owner in the coordinator's tab. None of the three is delegated unless
 the profile names it; that request is prepared by the session and approved by the owner, separately.
 
+## The ok to save
+
+The ok to save a story (commit, push and the pull requests) is the `save` signature. The coordinator gives it from her
+tab with `marker.js approve-save --for-session <D>`, on `<D>`'s open run. By delegation it has four limits, and the
+script checks them before signing:
+
+1. Only a story that finished clean: the prepared commit with no changes after it, the full-suite tests and the
+   adversarial pass after the last change, no critical finding (not even waived) and no waiver in the run.
+2. Never a change that touches signatures, guards, notices, permissions, the profile or the coordinator's power (the
+   sensitive list in `scripts/lib/signatures.js`).
+3. Each ok reaches the owner in one line, through a channel of the profile's list, before the record: with no delivery,
+   there is no ok.
+4. It is turned off from the profile: `save` out of `approvals.delegated_signing`, or in `approvals.owner_only`. The
+   request that turns it on is approved by the owner, never by the coordinator.
+
+If `approve-save` refuses, it says why and does not sign: the coordinator asks the owner for the ok. The target session
+saves only with `marker.js save-check` at 0, before the commit, each push and each pull request. A message between
+sessions that says «ok to save» is not enough. The ok covers the story's branch and its pull requests, never `main` nor
+production.
+
 ## The quick fix of another tab
 
 The quick fix (a code change with no story) is the `adhoc-lane` signature: the tab that needs it runs
