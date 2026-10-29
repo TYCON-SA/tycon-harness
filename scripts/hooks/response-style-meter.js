@@ -18,7 +18,7 @@
  *   node response-style-meter.js --report        # estadística de cumplimiento
  *   node response-style-meter.js --report --all  # incluye el detalle por turno
  *
- * Opt-out: TYCON_RESPONSE_METER=0
+ * Opt-out: TYCON_RESPONSE_METER=0 en la máquina, o `switches.response_meter: "off"` en el perfil (la variable gana).
  * Umbrales:  TYCON_RESPONSE_MAX_PROSE_CHARS (el que importa; sin la variable, `response.max_chars` de la configuración
  *            o el tope del estilo elegido, y 1300 si no se pudo leer) · TYCON_RESPONSE_MAX_LINES (15)
  *            · TYCON_RESPONSE_MAX_HEADERS (1) · TYCON_RESPONSE_MAX_SENTENCE_WORDS (35)
@@ -266,11 +266,22 @@ function report(showAll) {
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
+// La organización puede apagar o encender este medidor desde el sitio (`switches.response_meter` del perfil); la variable
+// TYCON_RESPONSE_METER de la máquina, si está puesta, gana. Sin lector, o con la configuración rota, sigue encendido: una clave
+// que no se puede leer no lo apaga, y el aviso va a stderr.
+function orgSwitchOn(name) {
+  try {
+    const C = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    return C.switchOn(name, { warn: (w) => process.stderr.write(`${w}\n`) });
+  } catch { return true; }
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.includes('--report')) { resolverTope(); return report(args.includes('--all')); }
 
   if (process.env.TYCON_RESPONSE_METER === '0') return;
+  if (!orgSwitchOn('response_meter')) return;
   resolverTope();
 
   let event = {};

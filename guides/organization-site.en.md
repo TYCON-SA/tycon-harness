@@ -524,8 +524,10 @@ be, to copy it and open the request by hand.
   list (Telegram, Slack, Teams, email or none); with email, the sender and the recipients. The chat, the channel address
   or the email password do not go here: they are secrets of the nightly processes. It lives in `operations.json`, in the
   operations repo. A maintainer reviews it.
-- **Waiting notice** (*Aviso de espera*): how many minutes a run waits for a person before giving notice. It reaches
-  every machine. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
+- **Waiting notice** (*Aviso de espera*): whether the notice runs and how many minutes a run waits for a person before
+  giving notice. It reaches every machine. Empty, it runs, as by default; "Off for every machine" turns it off, except
+  on a machine that set `TYCON_WAIT_NOTICE` (the variable wins). It lives in `team-repos.json` → `wait_notice`, in the
+  profile repo. A maintainer reviews it.
 - **Thresholds: when something is painted green or red** (*Umbrales: cuándo algo se pinta verde o rojo*): the limits
   the dashboard uses to color each number; in between, yellow. It lives in `scripts/nightly/dashboard/sources.json`, in
   the operations repo. A maintainer reviews it.
@@ -629,6 +631,15 @@ be, to copy it and open the request by hand.
   naming it; the harness first shows them what they are about to mark, and neither the agent nor a relayed message can
   mark it. It only counts from here, never from a machine. It lives in `team-profile.json` → `qa.manual_check`, in the
   profile repo.
+- **Brakes and meters** (*Frenos y medidores*): which brakes and meters run on every machine. **Brakes** stop a command
+  before it runs: the dangerous-command brake, the unscoped-tests brake, the two-sessions-in-one-folder brake, the
+  one-pull-request-per-repo brake and the brake on pull requests to main that do not complete on their own. From here
+  they can only be turned on: "As it comes by default" or "On for every machine". Turning a brake off is not done from
+  the profile: it belongs to each machine, with its variable (for example, `TYCON_SAFETY_GUARD=0`), and an "off" written
+  by hand in the profile is ignored, the reader names it and the site does not propose it. **Meters** (response length
+  and long waits) do not stop anything: they can be turned on or off. Either way, a machine that set the variable keeps
+  its own setting. Empty, each one as it comes by default, and a key that cannot be read turns nothing on or off: the
+  default stays, with a warning. It lives in `team-profile.json` → `switches`, in the profile repo.
 - **How many sessions work at once** (*Cuántas sesiones trabajan a la vez*): when one session coordinates the others,
   how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn.
   Each machine can change it for itself, because how much it can take depends on the machine. The folder where the
