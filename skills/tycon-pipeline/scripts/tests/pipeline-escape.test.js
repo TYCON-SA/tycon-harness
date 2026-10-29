@@ -358,12 +358,13 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   // un subcomando que no es una firma, para otra sesión
   r = lab.correr(['set-check', 'dod', 'green', '--manual', '--for-session', DESTINO]);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
-  // la salida de una ejecución perdida nombra otra sesión que la de --for-session
+  // la salida de una ejecución perdida nombra otra sesión que la de --for-session: la ventana no la pide, y el guion
+  // sale 2
   const ajena = ['clear-session', 'ses-x', '--lost', '--for-session', DESTINO];
-  assert.strictEqual(lab.pedir(lab.comando(ajena)).decision, 'ask');
+  assert.strictEqual(lab.pedir(lab.comando(ajena)).decision, 'deny');
   r = lab.correr(ajena);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
-  assert.strictEqual(lab.vigentes().length, 2, 'ningún registro gastado');
+  assert.strictEqual(lab.vigentes().length, 1, 'ningún registro gastado ni pedido');
   // sin variable de sesión y sin --terminal: sale 2 sin pasar por la firma
   r = lab.marker('', APROBAR, {});
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
@@ -382,7 +383,7 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   r = lab.correr(rota);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /no pude leer/);
-  assert.strictEqual(lab.vigentes().length, 3, 'ningún registro gastado');
+  assert.strictEqual(lab.vigentes().length, 2, 'ningún registro gastado');
   // el plan con la regla de riesgo bajo no pide firma: para otra sesión sale 2 sin anotar nada en su corrida
   const aprobacionesAntes = lab.aprobaciones(DESTINO).length;
   const gatesAntes = lab.gates().length;
@@ -427,6 +428,51 @@ test('Guion_ForSession_EjecucionPerdida_DiceQuienPidio (T5) @story-8.142 @ac-3',
   const cierres = lab.gates().filter((g) => g.name === 'run-close' && g.sesion === DESTINO);
   assert.ok(cierres.length >= 1);
   for (const c of cierres) assert.strictEqual(c.por, COORD, c.motivo);
+});
+
+test('Guion_ForSession_SalidaDeOtraSesion_PorDelegacionYSinFirma', (t) => {
+  const abrir = (lab) => require(path.join(SCRIPTS, 'lib', 'open-runs.js')).abrir({ sid: DESTINO, story: '9.91', storyPath: lab.stories[DESTINO], repo: lab.repo,
+    runDir: JSON.parse(lab.leer(DESTINO)).runDir || path.join(lab.repo, '.advisors', 'pipeline-runs', '9.91-juguete'), home: lab.home });
+  const designar = (lab) => {
+    const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion: COORD, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+    fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${[d, DS.confirmationRecord(d, new Date(AHORA - 3500000).toISOString())].map((l) => JSON.stringify(l)).join('\n')}\n`);
+  };
+  const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
+  const DELEGA = { ...PERFIL, delegated_signing: ['lost-run'] };
+  // la ejecución perdida de ses-a, cerrada o rearmada desde la designada: con lost-run delegada, sin ventana
+  for (const args of [['clear-session', DESTINO, '--lost', '--for-session', DESTINO], ['restore', DESTINO, '--for-session', DESTINO]]) {
+    const lab = laboratorioOtraSesion(t);
+    designar(lab);
+    abrir(lab);
+    const p = lab.pedir(lab.comando(args), { delegacion: delegacion(DELEGA) });
+    assert.strictEqual(p.decision, 'allow', `${args[0]}: ${p.texto}`);
+    const r = lab.correr(args);
+    assert.strictEqual(r.status, 0, `${args[0]}: ${r.stdout}${r.stderr}`);
+    const firmada = lab.gates().filter((g) => g.name === 'lost-run-signed');
+    assert.strictEqual(firmada.length, 1, args[0]);
+    assert.deepStrictEqual([firmada[0].sesion, firmada[0].destino, firmada[0].via], [COORD, DESTINO, 'delegacion'], args[0]);
+    assert.ok(lab.gates().some((g) => g.name === 'run-close' && g.sesion === DESTINO && g.por === COORD), `${args[0]}: el cierre dice quién lo pidió`);
+    // sin lost-run en el perfil, la misma salida pide la ventana del dueño
+    const otro = laboratorioOtraSesion(t);
+    designar(otro);
+    abrir(otro);
+    const q = otro.pedir(otro.comando(args), { delegacion: delegacion(PERFIL) });
+    assert.strictEqual(q.decision, 'ask', `${args[0]} sin delegar`);
+    assert.match(q.texto, new RegExp(`sesión ${DESTINO}`));
+  }
+  // la ejecución vieja que no está perdida (el marcador está): la designada la cierra sin firma, y el cierre lo dice
+  const lab = laboratorioOtraSesion(t);
+  const r = lab.marker(COORD, ['clear-session', DESTINO]);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(lab.leer(DESTINO), null, 'el marcador de ses-a ya no está');
+  assert.strictEqual(lab.pedir(lab.comando(['clear-session', DESTINO])).decision, 'none', 'no es una firma');
+  // `clear` es de la propia sesión: para otra sesión sale 2 y nombra el comando que sí la cierra
+  const otra = laboratorioOtraSesion(t);
+  const antes = otra.leer(DESTINO);
+  const c = otra.marker(COORD, ['clear', '--for-session', DESTINO]);
+  assert.strictEqual(c.status, 2, `${c.stdout}${c.stderr}`);
+  assert.match(c.stderr, new RegExp(`clear-session ${DESTINO}`));
+  assert.strictEqual(otra.leer(DESTINO), antes, 'no tocó el marcador de ses-a');
 });
 
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {

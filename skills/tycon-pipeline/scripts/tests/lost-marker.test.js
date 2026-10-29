@@ -544,9 +544,6 @@ test('T11 EjecucionPerdida_SinVentana_NoSeCierra @story-8.121 @ac-11 — sin la 
   const fv = V.freno('s-t11v', `node ${MARKER} clear-session $SID --lost`);
   assert.strictEqual(fv.status, 2, fv.out);
   assert.match(fv.out, /literal/);
-  // la salida no acepta el reenvío (decisión 7c): ya no hay frase que reenviar, y la regla sigue escrita
-  const or = require(path.join(SCRIPTS, 'lib', 'open-runs.js'));
-  assert.deepStrictEqual(or.delegacionDeLaSalida(), { reenvio: false, desde: 'apertura' });
 });
 
 test('T17 Restore_ConFrase_ReabreSinFraseFrena @story-8.121 @ac-19 — restore con la frase reabre desde la copia', () => {

@@ -208,6 +208,7 @@ function paraOtraSesion(argv) {
   }
   if (!/^[\w-]+$/.test(PEDIDA)) no('la sesión no se puede leer');
   if (PEDIDA === '_nosession') no('«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id');
+  if (argv[2] === 'clear') no(`clear cierra la ejecución de la propia sesión; la de otra sesión se cierra con marker.js clear-session ${PEDIDA} (y si quedó perdida, clear-session ${PEDIDA} --lost --for-session ${PEDIDA})`);
   const t = PARA_OTRA_SESION[argv[2]];
   const s = t && require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
