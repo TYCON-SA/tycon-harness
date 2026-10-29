@@ -206,7 +206,7 @@ function pasaCodigoAUnInterprete(seg) {
   const nombre = /(^|\/|\\)(ba|z|k|da)?sh(\.exe)?$|(^|\/|\\)python3?(\.exe)?$|^eval$|^source$/i;
   for (let i = 0; i < seg.length; i++) {
     if (!seg[i].esBandera || !nombre.test(seg[i].texto)) continue;
-    if (seg.slice(i + 1).some((f) => !f.esBandera && /\baz(?:\.cmd|\.exe)?\s+(?:-\S+\s+\S*\s+)*repos\s+pr\s+(?:create|update)\b/i.test(f.texto))) return true;
+    if (seg.slice(i + 1).some((f) => !f.esBandera && /\baz(?:\.cmd|\.exe)?\s+(?:-\S+(?:\s+[^\s-]\S*)?\s+)*repos\s+pr\s+(?:create|update)\b/i.test(f.texto))) return true;
   }
   return false;
 }
