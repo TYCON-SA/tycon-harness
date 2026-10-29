@@ -370,7 +370,9 @@ test('GuidedUpdate_LabRun_TwoSessions_HeldSettings_EndsOnTheNewVersion', { skip:
   assert.deepStrictEqual(v.while_held.pair.map((p) => [p.label, p.exit]), [['una', 0], ['otra', 0]]);
   assert.strictEqual(v.hold.released, true, 'el programa que tomó settings.json lo soltó');
   assert.strictEqual(v.updated, true, `quedó en ${v.version_after}`);
-  assert.deepStrictEqual([v.end.settings, v.end.leftovers], [{ readable: true, startup: true }, []]);
+  assert.deepStrictEqual([v.end.settings.readable, v.end.settings.startup, v.end.leftovers], [true, true, []]);
+  // la versión nueva tiene que reescribir settings.json: si no, el archivo tomado no frenó nada y el reporte lo dice
+  assert.strictEqual(v.end.settings.rewritten, true, 'la actualización reescribió settings.json');
   assert.ok(!s.findings.some((f) => /^update:two-sessions:two-sessions:/.test(f.id)), s.findings.map((f) => f.id).join(', '));
   const finished = node([path.join(DIR, 'rehearse.js'), 'finish', '--out', l.out]);
   assert.strictEqual(finished.status, 0, finished.stderr || finished.stdout);

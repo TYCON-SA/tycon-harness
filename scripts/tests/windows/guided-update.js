@@ -27,6 +27,7 @@
  * CÓMO FALLA. Una máquina que no se actualiza o que no avisa es un HECHO del reporte, con su gravedad; no se arregla
  * acá. «Error» es no haber podido ensayar.
  */
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -432,7 +433,10 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   if (!facts.out_of_window.done) throw new Error(`no pude sacar al arranque de su ventana de red: ${facts.out_of_window.why}`);
 
   if (v.together) {
-    // otro programa toma settings.json, y dos sesiones se abren a la vez: las dos ven la versión nueva
+    // otro programa toma settings.json, y dos sesiones se abren a la vez: las dos ven la versión nueva. La huella de
+    // antes dice después si alguien llegó a reescribirlo: si nadie lo hizo, el reemplazo con el archivo tomado no se midió
+    const settingsSha = () => { try { return crypto.createHash('sha256').update(fs.readFileSync(settings)).digest('hex'); } catch (_) { return null; } };
+    const shaBefore = settingsSha();
     const held = holdOpen({ file: settings, ps, env: sessionEnv, scratch: path.join(scratch, 'hold') });
     const marks = TL.detachedMarks(paths.harnessDir);
     let pair;
@@ -459,7 +463,7 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
     let readable = true;
     try { T.readJsonLoose(settings); } catch (_) { readable = false; }
     const leftovers = fs.readdirSync(path.dirname(settings)).filter((n) => SETTINGS_TEMP.test(n));
-    facts.end = { settings: { readable, startup: Boolean(T.registeredStartup(settings)) }, leftovers, failed: st && st.failed ? { reason: st.failed.reason || null } : null };
+    facts.end = { settings: { readable, startup: Boolean(T.registeredStartup(settings)), rewritten: settingsSha() !== shaBefore }, leftovers, failed: st && st.failed ? { reason: st.failed.reason || null } : null };
     for (const f of judgeTwoSessions({ pair, settings: facts.end.settings, leftovers, failed: facts.end.failed })) add(f);
     facts.answers = { by_severity: bySeverity() };
     say(`update: ${v.id} — quedó en ${facts.version_after || 'una versión que no se pudo leer'}${facts.updated ? ' (la nueva)' : ' (NO la nueva)'}; settings.json ${readable ? 'legible' : 'ILEGIBLE'}; intento fallido en el estado: ${facts.end.failed ? facts.end.failed.reason : 'ninguno'}`);

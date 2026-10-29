@@ -944,6 +944,7 @@ if (cmd === 'install') {
 } else if (cmd === 'version') console.log('0.0.1 · stable · managed');
 else if (cmd === 'doctor') console.log(JSON.stringify({ mode: 'managed', fail: [], warn: ['de juguete'], ok: ['Node'] }));
 else if (cmd === 'startup') fs.appendFileSync(path.join(fixed, 'startup.log'), 'x startup: TYCON_UPDATE=' + (process.env.TYCON_UPDATE || '') + '\\n');
+else if (cmd === 'uninstall' && process.argv.includes('--dry-run')) console.log('quita (sólo lo registrado):\\n' + Object.keys(LINKS).map((n) => '  - ~/.claude/' + n).join('\\n') + '\\n  - el estado\\ndeja:\\n  - el clon');
 else if (cmd === 'uninstall') { for (const name of Object.keys(LINKS)) fs.rmSync(path.join(dot, name), { recursive: true, force: true }); fs.rmSync(path.join(pipe, 'harness-state.json'), { force: true }); console.log('desinstalado'); }
 else process.exit(2);
 `,
@@ -1198,7 +1199,8 @@ test('Probe_LabRun_PowershellBlockOfTheCover_RunsUnderPwsh', { skip: (process.pl
     const probe = require(path.join(DIR, 'install-probe.js'));
     // `uninstall --dry-run`: sale 0, dice qué quita y qué deja, y no cambia nada (en la última variante con acento)
     const accent = step.facts.variants.accent;
-    if (accent.uninstall) assert.deepStrictEqual([accent.uninstall.dry_run.exit, accent.uninstall.dry_run.problems, accent.uninstall.dry_run.changed], [0, [], 0], accent.uninstall.dry_run.output);
+    assert.ok(accent.uninstall && accent.uninstall.dry_run, 'la variante con acento se desinstala, y antes corre el ensayo en seco');
+    assert.deepStrictEqual([accent.uninstall.dry_run.exit, accent.uninstall.dry_run.problems, accent.uninstall.dry_run.changed], [0, [], 0], accent.uninstall.dry_run.output);
     const failed = probe.runBlock({ block: 'node -e "process.exit(7)"', fence: 'powershell', work: path.join(base, 'work con espacio y ñ'), scratch: path.join(base, 'scratch'), env: process.env, id: 'x', pwsh: L.scanPath('pwsh')[0] });
     assert.strictEqual(failed.exit, 7);
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
