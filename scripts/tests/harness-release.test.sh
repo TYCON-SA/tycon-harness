@@ -379,7 +379,7 @@ if corre T12; then
   [ -z "$out" ] && ok "la verificación del aplicador, por la CACHÉ de la bajada: con la skill entera, calla" || mal "con la skill entera dijo: «${out}»"
   printf 'contenido mal\n' >> "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md"
   out="$(node "$TP" --repo "$REPO12" --manifest "$M12" --check 2>&1)"
-  case "$out" in *"lab-third"*"no da el árbol declarado"*"harness.js update"*) ok "con el contenido mal, lo nombra por la caché y manda a harness.js update" ;; *) mal "con el contenido mal: «${out}»" ;; esac
+  case "$out" in *"lab-third"*"no da el árbol declarado"*"npx @tyconsa/harness@latest"*) ok "con el contenido mal, lo nombra por la caché y manda a la línea de npx" ;; *) mal "con el contenido mal: «${out}»" ;; esac
   : > "$LAB_RELEASE_LOG"
   out="$(harness_release update --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ! grep -q "contenido mal" "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" && ok "update AL DÍA repone la skill con el contenido mal (desde la caché)" || mal "update al día no la repuso: rc $rc: $out · $(tail -2 "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md")"
@@ -809,7 +809,7 @@ if corre T47; then
   rm -rf "$T/harness/skills/lab-third"
   out="$(node "$TP" --repo "$REPO" --manifest "$M" 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c .)" = 1 ] && ok "con una que falta: una sola línea, exit 0" || mal "con una que falta: rc $rc: $out"
-  case "$out" in *"lab-third"*"harness.js update"*) ok "…que la nombra y dice la acción (harness.js update)" ;; *) mal "la línea no nombra lo que falta o la acción: $out" ;; esac
+  case "$out" in *"lab-third"*"npx @tyconsa/harness@latest"*) ok "…que la nombra y dice la acción (la línea de npx)" ;; *) mal "la línea no nombra lo que falta o la acción: $out" ;; esac
   case "$out" in *"no es un clon"*) mal "sigue diciendo «no es un clon»: $out" ;; *) ok "…y no dice «no es un clon»" ;; esac
   [ ! -e "$T/harness/skills/lab-third" ] && ok "…y no escribió nada (la que repone es la bajada), ni con la casa versionada" || mal "el paso escribió en el árbol bajado"
   case "$out" in *"ya está al día, igual vuelve a restituir"*) ok "…y la acción dice que update repone aunque la versión esté al día" ;; *) mal "la acción no dice que update repone al día: $out" ;; esac

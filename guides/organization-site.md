@@ -704,8 +704,10 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 ### Instalación y actualización
 
-- **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y si se actualiza sola al arrancar. Queda en
-  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y cómo se aplica. «Automática, sólo
+  avisa»: cada máquina se actualiza sola al arrancar y le avisa al dev, que no la puede saltear. «Pregunta a cada dev»
+  (la de fábrica): la máquina avisa que hay una versión nueva y cada dev decide cuándo instalarla, con
+  `npx @tyconsa/harness@latest`. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Perfil de instalación**: cuánto instala el arnés en cada máquina (mínimo o completo), con la lista de lo que trae
   cada uno. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Paquetes de la organización**: qué paquetes del arnés (los revisores y las guías de un producto o de un cliente)

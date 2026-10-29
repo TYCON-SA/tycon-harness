@@ -36,9 +36,8 @@ Arrancá con la conclusión, en tres renglones como mucho:
 3. **Versión nueva**: si `update --check` salió 3, el número que hay y cómo se aplica:
    - Si `doctor` dice `aplicación auto`, se aplica sola en el próximo arranque de una sesión.
    - Si dice `aplicación ask`, o si el usuario la quiere ya: que corra **él** en su terminal
-     `node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes` (en Windows, PowerShell:
-     `node "$env:USERPROFILE\.claude\tycon-harness\scripts\setup\harness.js" update --yes`). Desde Claude Code se puede
-     escribir con `!` adelante.
+     `npx @tyconsa/harness@latest` (la misma línea en Mac, Linux y Windows): con el arnés instalado pregunta «¿Actualizo?» y
+     actualiza. Desde Claude Code se puede escribir con `!` adelante.
    - Si algo sale mal después, `harness.js rollback` vuelve a la versión anterior sin red (lo dice `doctor` cuando hay
      una guardada).
 

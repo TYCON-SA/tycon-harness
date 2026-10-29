@@ -393,7 +393,7 @@ el repo declara el paquete «<nombre>» en `packs:` y no está instalado en …
 ```
 
 Si lo ves, el paquete no llegó con lo de tu equipo: actualizá con
-`node ~/.claude/tycon-harness/scripts/setup/harness.js update`, y si sigue, preguntale al admin de tu equipo.
+`npx @tyconsa/harness@latest`, y si sigue, preguntale al admin de tu equipo.
 
 ## Qué es opcional
 
@@ -462,7 +462,7 @@ La tabla completa, con qué hace cada hook, si frena y su interruptor, está en
 
 **Qué hace solo**: al abrir una sesión, la línea de arranque mira si tu canal tiene una versión nueva, como mucho una
 vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas desde una terminal
-(`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`). Después corre el instalador.
+(`npx @tyconsa/harness@latest`, que pregunta antes de actualizar). Después corre el instalador.
 `TYCON_UPDATE=0` apaga la consulta; `TYCON_UPDATE_CHANNEL` y `TYCON_UPDATE_APPLY` fijan el canal y la política.
 
 - En cada arranque, de fondo: corre unas pruebas rápidas del propio arnés, y relee las conversaciones del recorrido que
@@ -616,7 +616,7 @@ bloques, tareas de fondo) y dice lo que deja: tu `~/.claude/tycon.json`, tus rep
   `update.apply` en `~/.claude/tycon.json`. Elegir `latest` junto con `auto` te pide que lo confirmes: recibís cada
   cambio que entra a `main`, en minutos, sin revisión tuya. Si el perfil de tu equipo fija `auto`, manda el perfil: ni
   la máquina, ni la variable, ni `TYCON_UPDATE=0` lo cambian, y `doctor` dice qué valor no se usó.
-- **A mano**: `harness.js update --check` dice si hay versión nueva; `harness.js update --yes` la aplica;
+- **A mano**: `harness.js update --check` dice si hay versión nueva; `npx @tyconsa/harness@latest` la aplica (pregunta antes);
   `harness.js version` muestra lo instalado; `harness.js doctor` diagnostica sin cambiar nada.
 - **Volver atrás**: `harness.js rollback --list` muestra las copias a las que se puede volver, y
   `harness.js rollback --to <copia>` vuelve a la que elijas. Después de volver atrás, el arnés deja de actualizarse

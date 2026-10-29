@@ -271,7 +271,7 @@ function checkReleaseTree(repo, manifest, { home = os.homedir(), env = process.e
     if (!variants.some((v) => treeSha(v) === e.tree)) problems.push(`${e.target} (su contenido no da el árbol declarado)`);
   }
   if (!problems.length) return;
-  say(`⚠ ${TAG}: en la versión bajada ${repo} ${plural(problems.length, 'skill de terceros no está como la declara su manifiesto', 'skills de terceros no están como las declara su manifiesto')}: ${problems.slice(0, 5).join(', ')}${problems.length > 5 ? ` y ${problems.length - 5} más` : ''} — las repone harness.js update (si la versión ya está al día, igual vuelve a restituir lo que falta); este paso no escribe en una versión bajada`);
+  say(`⚠ ${TAG}: en la versión bajada ${repo} ${plural(problems.length, 'skill de terceros no está como la declara su manifiesto', 'skills de terceros no están como las declara su manifiesto')}: ${problems.slice(0, 5).join(', ')}${problems.length > 5 ? ` y ${problems.length - 5} más` : ''} — las repone npx @tyconsa/harness@latest (si la versión ya está al día, igual vuelve a restituir lo que falta); este paso no escribe en una versión bajada`);
 }
 
 // ── el paso ────────────────────────────────────────────────────────────────────────────────────────────────────

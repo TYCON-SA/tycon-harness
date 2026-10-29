@@ -148,7 +148,7 @@ se pone `packs.default` en la configuración de la máquina (`~/.claude/tycon.js
    `exam/`. El ejemplo `examples/packs/svelte-fastapi/` es el modelo; cambiale el nombre, los prefijos y las reglas.
 3. **Activarlo.** En `team-profile.json` del perfil, `packs.default` con su nombre (`["<nombre>"]`).
 4. **Commit.** `git add -A && git commit` en la carpeta del perfil. El arnés lee sólo lo commiteado en `main`.
-5. **Traerlo.** `harness.js update`, o la primera vez `harness.js install --team <carpeta del perfil>`. Después,
+5. **Traerlo.** `npx @tyconsa/harness@latest`, o la primera vez `harness.js install --team <carpeta del perfil>`. Después,
    `pipeline.js advisors` (como en «Cómo se valida») tiene que nombrar el paquete en `packs`.
 6. **El examen.** `advisor-runner.js --pack <carpeta del perfil>/packs/<nombre> --tool claude --runs 2`, como en «Cómo
    se examina un revisor». Cuesta unos dos minutos de modelo por pasada: avisale antes a la persona.

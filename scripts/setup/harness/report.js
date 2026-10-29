@@ -138,7 +138,7 @@ function versionLine(state, opts = {}) {
   let line = parts.join(' · ');
   if (state.mode === 'developer') line += ` · modo desarrollador: la versión es la del clon ${state.tree}, no una publicada`;
   // la retención que dejó un rollback: update no avanza hasta levantarla
-  if (isObject(state.hold)) line += ` · retención: deshiciste ${state.hold.commit || '—'} el ${state.hold.at || '—'}; update no avanza (harness.js rollback --release, o update --yes)`;
+  if (isObject(state.hold)) line += ` · retención: deshiciste ${state.hold.commit || '—'} el ${state.hold.at || '—'}; update no avanza (harness.js rollback --release, o npx @tyconsa/harness@latest)`;
   return line;
 }
 

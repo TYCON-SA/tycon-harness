@@ -458,7 +458,7 @@ try {
     const since = typeof hold.at === 'string' && hold.at ? ` desde el ${hold.at.slice(0, 16).replace('T', ' ')} (UTC)` : '';
     harnessLines.push(
       `🔔 TYCON — retención del arnés — decile a la persona: se deshizo la versión ${hold.commit || '(sin número)'}${since}; el arnés no se actualiza solo mientras siga la retención.`,
-      '   Para volver a actualizar: node ~/.claude/tycon-harness/scripts/setup/harness.js rollback --release (o update --yes). No lo hagas sin que te lo pida.',
+      '   Para volver a actualizar: node ~/.claude/tycon-harness/scripts/setup/harness.js rollback --release (o npx @tyconsa/harness@latest). No lo hagas sin que te lo pida.',
     );
   }
   // ¿el atraso se grita? Sólo sin estado (lo de hoy), con estado roto, o en managed con apply: auto y sin retención
