@@ -146,6 +146,8 @@ test('T4 Chapter4Shape_BothParts @story-7.45 @ac-4 — back pytest y front Playw
   const r = correr(d, { bin, story: path.join(d, 'specs', 's.md'), extra: { FAKE_CASES: '3' } });
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(r.art.parts.map((p) => `${p.scope}:${p.runner}`).sort(), ['backend:pytest', 'frontend:playwright']);
+  // el artefacto de cada parte, en la forma de ruta que lee node (en Windows, no la del bash de Git)
+  for (const p of r.art.parts) assert.ok(fs.existsSync(p.artifact), p.artifact);
   assert.equal(r.art.totals.total, 6);
   assert.equal(r.art.suite_green, true);
 });
