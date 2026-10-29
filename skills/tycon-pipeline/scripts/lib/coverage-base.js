@@ -132,4 +132,4 @@ if (require.main === module) {
   process.stdout.write(JSON.stringify(out) + '\n');
 }
 
-module.exports = { resolver };
+module.exports = { resolver, bifurcacion };
