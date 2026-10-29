@@ -156,7 +156,7 @@ R="$T/repo"
 mkdir -p "$R/.git" "$R/forms/Alta/src" "$R/packages/api" "$R/packages/sube" "$R/packages/ws" "$R/packages/pnpmws" \
   "$R/packages/vw" "$R/packages/jp" "$R/packages/roto" "$T/fuera/proj" \
   "$R/packages/ws1" "$R/packages/ws2" "$R/packages/ws3" "$R/packages/ws4" "$R/packages/ws5" "$R/packages/ws6" \
-  "$R/packages/jc" "$R/packages/vc" "$R/packages/bom"
+  "$R/packages/jc" "$R/packages/vc" "$R/packages/bom" "$R/packages/jr"
 printf '{"name":"raiz","scripts":{"test":"vitest run"}}' > "$R/package.json"
 printf '{"name":"alta","scripts":{"test":"vitest run"}}' > "$R/forms/Alta/package.json"
 printf '{"name":"api","scripts":{"test":"turbo run test"}}' > "$R/packages/api/package.json"
@@ -181,6 +181,9 @@ printf 'module.exports = { projects: ["<rootDir>/a", "<rootDir>/b"] }\n' > "$R/p
 printf '{"name":"vc","scripts":{"test":"vitest run"}}' > "$R/packages/vc/package.json"
 printf 'export default { test: { projects: ["a", "b"] } }\n' > "$R/packages/vc/vitest.config.ts"
 printf '\357\273\277{"name":"bom","scripts":{"test":"vitest run"}}' > "$R/packages/bom/package.json"
+# una configuración que no se puede leer cuenta como de varios proyectos
+printf '{"name":"jr","scripts":{"test":"jest"}}' > "$R/packages/jr/package.json"
+printf 'module.exports = {}\n' > "$R/packages/jr/jest.config.js"; chmod 000 "$R/packages/jr/jest.config.js"
 
 # el freno con un comando y la carpeta del evento, con una HOME propia: imprime su salida; el stderr queda en $3.err
 frena_en() { # $1 comando · $2 carpeta (cwd del evento) · $3 HOME
@@ -252,6 +255,13 @@ for caso in \
   "true || cd forms/Alta && npm test|$R" \
   "echo | cd forms/Alta && npm test|$R" \
   "builtin cd .. && npm test|$R/forms/Alta" \
+  "command -- cd .. && npm test|$R/forms/Alta" \
+  "command -p cd .. && npm test|$R/forms/Alta" \
+  "noglob cd .. && npm test|$R/forms/Alta" \
+  "nocorrect cd .. && npm test|$R/forms/Alta" \
+  "sl .. && npm test|$R/forms/Alta" \
+  "Set-Location .. && npm test|$R/forms/Alta" \
+  "chdir .. && npm test|$R/forms/Alta" \
   "command cd .. && npm test|$R/forms/Alta" \
   "eval 'cd ..' && npm test|$R/forms/Alta" \
   "source volver.sh && npm test|$R/forms/Alta" \
@@ -270,6 +280,7 @@ for caso in \
   "npm test|$R/packages/jc" \
   "npx jest|$R/packages/jc" \
   "npx vitest run|$R/packages/vc" \
+  "npx jest|$R/packages/jr" \
   "if true; then cd ..; fi; npm test|$R/forms/Alta" \
   "npm --prefix .. test|$R/forms/Alta" \
   "npx vitest run --root ..|$R/forms/Alta" \

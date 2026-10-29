@@ -7727,6 +7727,28 @@ test('T9 GuionDeMedicion_NoEsCodigo @story-1.32 @ac-8', () => {
     priorPaths: ['/r/tasks/measurement-x/a.test.js'] }).action, 'block');
   assert.equal(atdd.computeAtddOrder([{ path: '/r/tasks/measurement-x/a.test.js', ts: ts(1) },
     { path: '/r/scripts/a.js', ts: ts(2) }], '/r', { declarados: [] }).verdict, 'warn-no-tests');
+  // (g) el freno previo lee la lista del frontmatter de la story del marcador
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atdd-medicion-'));
+  try {
+    const stateDir = path.join(tmp, 'state');
+    const repo = path.join(tmp, 'repo');
+    fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(stateDir, 'active'), { recursive: true });
+    const storyPath = path.join(repo, 'specs', 's.md');
+    const marcador = { storyId: '9.9', storyPath, repoPath: repo, sessionId: 'S1', stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5],
+      fileEvents: [{ path: storyPath, ts: ts(1) }] };
+    fs.writeFileSync(path.join(stateDir, 'active', 'S1.json'), JSON.stringify(marcador));
+    const handler = require(path.join(SCRIPTS, 'on-atdd-preedit.js'));
+    const guion = path.join(repo, 'tasks', 'measurement-x', 'a.js');
+    const ev = { hook_event_name: 'PreToolUse', tool_name: 'Write', session_id: 'S1', tool_input: { file_path: guion } };
+    fs.writeFileSync(storyPath, '---\nstory: "9.9"\nfiles_to_modify:\n  - src/b.js\n---\n\n### Tests\n\n| T-ID | AC |\n');
+    assert.equal(handler.handle(ev, { stateDir }), null, 'no declarado: el guion de medición pasa');
+    fs.writeFileSync(storyPath, '---\nstory: "9.9"\nfiles_to_modify:\n  - tasks/measurement-x/a.js\n---\n\n### Tests\n\n| T-ID | AC |\n');
+    const r = handler.handle(ev, { stateDir });
+    assert.ok(r && r.block, 'declarado en la story: es su primer código y frena');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('T10 GuionDePruebasDeCi_EsPrueba @story-1.32 @ac-9', () => {

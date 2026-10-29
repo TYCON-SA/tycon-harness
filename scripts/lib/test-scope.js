@@ -180,9 +180,13 @@ const hijo = (ctx, escape) => ({ ...ctx, escape, prof: ctx.prof + 1, carpeta: { 
  * `.` y los de PowerShell (`Set-Location`, `sl`, `Push-Location`, `Pop-Location`, `chdir`).
  */
 function cambiaCarpetaSinDecir(words) {
-  const w0 = String(words[0] || '').toLowerCase();
-  if (['eval', 'source', '.', 'set-location', 'sl', 'push-location', 'pop-location', 'chdir'].includes(w0)) return true;
-  return (w0 === 'builtin' || w0 === 'command') && ['cd', 'pushd', 'popd'].includes(String(words[1] || ''));
+  const w = words.map((x) => String(x || ''));
+  // los prefijos (`builtin`, `command`, `noglob`, `nocorrect`) y sus opciones no cambian qué programa corre
+  let i = 0;
+  while (i < w.length && (/^(?:builtin|command|noglob|nocorrect)$/.test(w[i]) || (i > 0 && /^-/.test(w[i])))) i++;
+  const prog = (w[i] || '').toLowerCase();
+  if (i > 0 && ['cd', 'pushd', 'popd'].includes(prog)) return true;
+  return ['eval', 'source', '.', 'set-location', 'sl', 'push-location', 'pop-location', 'chdir'].includes(prog);
 }
 
 function cambiarCarpeta(carpeta, p, sep) {
@@ -215,7 +219,8 @@ function proyectoPropio(carpeta) {
   try { nombres = fs.readdirSync(carpeta); } catch { return false; }
   if (nombres.some((n) => MARCAS_DE_RAIZ.includes(n) || /^vitest\.workspace\./.test(n))) return false;
   // la configuración de la herramienta también puede declarar varios proyectos (`projects` de jest y de vitest)
-  if (nombres.some((n) => /^(?:jest|vitest|vite)\.config\./.test(n) && VARIOS_PROYECTOS.test(leer(path.join(carpeta, n))))) return false;
+  // una que no se puede leer cuenta como de varios proyectos: frena
+  if (nombres.some((n) => /^(?:jest|vitest|vite)\.config\./.test(n) && (leer(path.join(carpeta, n)) ?? 'projects:').match(VARIOS_PROYECTOS))) return false;
   const test = pkg.scripts && pkg.scripts.test;
   return !(typeof test === 'string' && RECORRE_PAQUETES.test(test));
 }
@@ -235,7 +240,7 @@ const MARCAS_DE_RAIZ = ['pnpm-workspace.yaml', 'lerna.json', 'nx.json', 'turbo.j
 // un script `test` que corre los de otros paquetes, o que sale de la carpeta
 const RECORRE_PAQUETES = /\b(?:turbo|nx|lerna)\b|--workspaces?\b|(?:^|\s)--?ws\b|\byarn\s+workspaces\b|\bpnpm\b[^;&|]*\s(?:-r|--recursive|-F|--filter)(?:[\s=]|$)|\.\.(?:[\\/]|\s|$)/;
 const VARIOS_PROYECTOS = /\b(?:projects|workspace)\s*:/;
-const leer = (f) => { try { return require('fs').readFileSync(f, 'utf8'); } catch { return ''; } };
+const leer = (f) => { try { return require('fs').readFileSync(f, 'utf8'); } catch { return null; } };
 
 /** `bash`, `sh -s`, sin `-c` ni guion: lee los comandos de la entrada. */
 function esShellSinTexto(seg) {
