@@ -639,3 +639,56 @@ test('RuntimeWaiver_ForSession_HistoriaDelDestino (T11) @story-8.142 @ac-7', (t)
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /no es la historia de la corrida/);
 });
+
+test('OtraSesion_SinSesion_NoEsDestino (T21) @story-8.142 @ac-5 @ac-6', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  // un marcador guardado bajo el nombre de «sin sesión», con su corrida
+  fs.writeFileSync(lab.marcador('_nosession'), lab.leer(DESTINO));
+  vueltaSinRevisores(lab, '_nosession');
+  const antes = lab.leer('_nosession');
+  const fm = ['set-check', 'dod', 'green', '--force-manual', '--for-session', '_nosession'];
+  const p = lab.pedir(lab.comando(fm));
+  assert.strictEqual(p.decision, 'deny', p.texto);
+  assert.match(p.texto, /sin sesión/);
+  let r = correrGuion(lab, MARKER, fm);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sin sesión/);
+  assert.strictEqual(lab.leer('_nosession'), antes, 'no escribió el marcador');
+  const cc = ['check-count', '--repo', lab.repo, '--story', lab.stories[DESTINO], '--ran', 'rev-a', '--trust-ran', '--for-session', '_nosession'];
+  assert.strictEqual(pedirDe(lab, PIPELINE, cc).decision, 'deny');
+  r = correrGuion(lab, PIPELINE, cc);
+  assert.notStrictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /check-count OK/);
+  // los dos pasos de la ventana que leen el destino tampoco lo toman como sesión
+  const ex = ow.exigir({ firma: 'escape:force-manual', argv: ['marker.js', ...fm], propia: COORD, casa: lab.home });
+  assert.strictEqual(ex.codigo, 1);
+  assert.match(ex.motivo, /sin sesión/);
+  assert.strictEqual(ow.fijarDestino({ r: { destino: '_nosession', via: 'ventana' }, casa: lab.home }).codigo, 2);
+  assert.strictEqual(lab.gates().filter((g) => /-signed$/.test(g.name)).length, 0, 'ninguna firma');
+});
+
+test('OtraSesion_HistoriaDelDestino_PorSuRepoYSuArchivo (T22) @story-8.142 @ac-6 @ac-7', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  conCriterio(lab);
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  // la ruta relativa se lee desde el repo de la sesión destino, no desde la carpeta de quien pide
+  const relativa = path.relative(lab.repo, lab.stories[DESTINO]);
+  const paraD = ['runtime-waiver', relativa, '--acs', '1', '--for-session', DESTINO];
+  const muestra = wd.paraMostrar({ command: lab.comando(paraD), sessionId: COORD, stateDir: lab.estadoDir });
+  assert.ok(muestra && /AC 1/.test(muestra.systemMessage), 'se muestra el criterio de ses-a');
+  muestra.anotar();
+  assert.notStrictEqual(path.resolve(relativa), lab.stories[DESTINO], 'la prueba corre fuera del repo de ses-a');
+  const p = lab.pedir(lab.comando(paraD));
+  assert.strictEqual(p.decision, 'ask', p.texto);
+  assert.match(p.texto, /AC 1: Given un pedido/);
+  // check-count: otra historia con el mismo número, en otro archivo, no es la de la corrida
+  vueltaSinRevisores(lab, DESTINO);
+  const copia = path.join(lab.repo, 'specs', 'story-9.91-copia.md');
+  fs.writeFileSync(copia, fs.readFileSync(lab.stories[DESTINO], 'utf8'));
+  const cc = ['check-count', '--repo', lab.repo, '--story', copia, '--ran', 'rev-a', '--trust-ran', '--for-session', DESTINO];
+  pedirDe(lab, PIPELINE, cc);
+  const r = correrGuion(lab, PIPELINE, cc);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout + r.stderr, /no es el archivo de la historia de la corrida/);
+  assert.strictEqual(lab.gates().filter((g) => g.name === 'escape:trust-ran-signed').length, 0, 'ninguna firma');
+});

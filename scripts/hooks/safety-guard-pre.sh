@@ -712,7 +712,8 @@ ESC_CARTEL=""
 # módulo del comando. Contesta una de cuatro:
 #   · deny: frena con la regla de la firma y el motivo de la ventana, que trae cómo firmarla en la terminal;
 #   · ask: se guarda y se emite al salir 0 (salida_ok), así una regla posterior que frena sigue frenando;
-#   · allow: la delegación aprobada por el dueño (force-manual, trust-ran) la firmó, con su constancia;
+#   · allow: una firma que el dueño delegó nombrándola en `approvals.delegated_signing` la dio quien coordina, con su
+#     constancia;
 #   · none: no hay firma que pedir (o la vuelta extra delegada, que la consume pipeline.js).
 # Aprobar un control con `--relayed-by` ya no vale: la ventana lo niega (ESC-C7). Con el freno apagado por el ambiente
 # no se consulta: los escapes ya dejaron su constancia, y los guiones sin registro de la ventana sólo firman en la

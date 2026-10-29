@@ -462,7 +462,19 @@ function lectorDeBanderas(llamada) {
 /** El id de la firma `guion` del comando entero en su forma canónica, o null (owner-window.js, que lee este archivo). */
 function canonicaDe(comando) {
   let ow;
-  try { ow = require(require('path').join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js')); } catch (_) { return null; }
+  try {
+    ow = require(require('path').join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  } catch (e) {
+    // sin la ventana, la forma canónica se trata como escape y el freno la niega; el motivo queda en el registro
+    try {
+      const path = require('path');
+      const dir = path.join(require('os').homedir(), '.claude', '.tycon-pipeline');
+      require('fs').mkdirSync(dir, { recursive: true });
+      require('fs').appendFileSync(path.join(dir, 'hook-errors.log'),
+        `[${new Date().toISOString()}] marker-command: no cargó owner-window.js (${e && e.message}); la forma canónica se lee como escape\n`);
+    } catch (_) { /* el registro es ayuda: el freno sigue negando igual */ }
+    return null;
+  }
   const c = ow.canonicaDe(String(comando));
   return c ? c.id : null;
 }

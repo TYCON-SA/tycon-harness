@@ -5512,6 +5512,7 @@ function paraOtraSesion(cmd, args, argv) {
     return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round) y para check-count --trust-ran: ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
   }
   if (!/^[\w-]+$/.test(pedida)) return '🛑 La sesión de --for-session no se puede leer. No escribí nada.\n';
+  if (pedida === '_nosession') return '🛑 «_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id. No escribí nada.\n';
   let abierta;
   try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return `🛑 ${e.message}. No escribí nada.\n`; }
   if (!abierta || !abierta.storyId) {
@@ -5525,6 +5526,10 @@ function paraOtraSesion(cmd, args, argv) {
     const nombrada = storyAbs ? deriveStoryId(storyAbs) : null;
     if (!nombrada || String(nombrada) !== paraOtra.storyId) {
       return `🛑 La corrida de la sesión ${pedida} es de la story ${paraOtra.storyId}, y --story ${args.story ? `nombra la ${nombrada || args.story}` : 'no está'}. No escribí nada.\n`;
+    }
+    // el mismo número no alcanza: tiene que ser el archivo de la corrida, como en runtime-waiver
+    if (!require('./lib/waiver-display.js').esLaDelMarcador(storyAbs, abierta)) {
+      return `🛑 ${path.basename(storyAbs)} no es el archivo de la historia de la corrida de la sesión ${pedida} (${abierta.storyPath || 'sin ruta en su marcador'}). No escribí nada.\n`;
     }
     return null;
   }
