@@ -3611,9 +3611,9 @@ test('Config_Switches_SectionOnlyTurnsBrakesOn', async () => {
   const ok = rev({ switches: { session_guard: 'on', response_meter: 'off' } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
   assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, switches: { session_guard: 'on', response_meter: 'off' } }));
-  const apagar = rev({ switches: { safety_guard: 'off' } });
+  const apagar = rev({ switches: { test_scope_guard: 'off' } });
   assert.strictEqual(apagar.ok, false, 'un freno apagado no se propone');
-  assert.ok(apagar.problems.some((x) => x.path === 'switches.safety_guard' && /TYCON_SAFETY_GUARD=0/.test(x.message)), JSON.stringify(apagar.problems));
+  assert.ok(apagar.problems.some((x) => x.path === 'switches.test_scope_guard' && /TYCON_TEST_SCOPE_GUARD=0/.test(x.message)), JSON.stringify(apagar.problems));
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const claves = ['pantalla.interruptoresTitulo', 'pantalla.interruptoresDescripcion', 'pantalla.para.interruptores', 'org.capaSinSwitches', 'pantalla.esperaEncendido'];
   for (const k of Object.keys(TC.SWITCHES)) claves.push(`pantalla.interruptor.${k}`, `pantalla.interruptorAyuda.${k}`);

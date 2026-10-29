@@ -167,9 +167,11 @@ molesta a nadie. Sólo evita disparar dos construcciones del mismo pipeline al m
 
 ${encendidoPorLaOrganizacion
     ? `Este freno está encendido para toda la organización (perfil del equipo, switches.pr_one_per_repo) por una
-tanda de cambios en varios repos. Para saltearlo en un caso puntual, corré el comando con TYCON_PR_ONE_PER_REPO=0.`
-    : `Este freno está encendido porque alguien puso TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
-varios repos. Para saltearlo en un caso puntual, corré el comando sin esa variable.`}`);
+tanda de cambios en varios repos. Para apagarlo en esta máquina, poné TYCON_PR_ONE_PER_REPO=0 en su entorno
+ANTES de abrir la sesión: pegada al comando no sirve, porque el freno lee el entorno de la sesión.`
+    : `Este freno está encendido porque esta máquina tiene TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
+varios repos. Para apagarlo, sacá esa variable del entorno (o ponela en 0) ANTES de abrir la sesión: pegada al
+comando no sirve, porque el freno lee el entorno de la sesión.`}`);
 constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'bloqueo', cmd });
 process.exit(2);
 }

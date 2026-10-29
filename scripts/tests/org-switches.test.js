@@ -67,14 +67,14 @@ test('T2 org enciende: los frenos que vienen apagados se encienden sin variable 
 
 test('T3 org intenta apagar un freno = ignorado: queda como de fábrica, se nombra y la configuración no se rompe', () => {
   for (const off of ['off', false, 'false', '0', 0, 'no']) {
-    const c = casa({ switches: { safety_guard: off, session_guard: off } });
+    const c = casa({ switches: { test_scope_guard: off, session_guard: off } });
     const r = C.leerParaHook(opts(c));
     assert.strictEqual(r.ok, true, `con ${JSON.stringify(off)} la configuración no tendría que romperse`);
-    assert.strictEqual(C.switchOn('safety_guard', opts(c)), true, 'el freno de fábrica encendido sigue encendido');
+    assert.strictEqual(C.switchOn('test_scope_guard', opts(c)), true, 'el freno de fábrica encendido sigue encendido');
     assert.strictEqual(C.switchOn('session_guard', opts(c)), false, 'el freno de fábrica apagado sigue apagado');
-    const st = C.switchState('safety_guard', opts(c));
-    assert.match(String(st.warning), /switches\.safety_guard/, 'el aviso nombra la clave');
-    assert.match(String(st.warning), /TYCON_SAFETY_GUARD=0/, 'y dice cómo se apaga en la máquina');
+    const st = C.switchState('test_scope_guard', opts(c));
+    assert.match(String(st.warning), /switches\.test_scope_guard/, 'el aviso nombra la clave');
+    assert.match(String(st.warning), /TYCON_TEST_SCOPE_GUARD=0/, 'y dice cómo se apaga en la máquina');
   }
 });
 
@@ -85,7 +85,7 @@ test('T4 el sitio rechaza un freno apagado y un valor que no se entiende, nombra
   const raro = C.parse(JSON.stringify({ switches: { response_meter: 'tal vez' } }));
   assert.strictEqual(raro.ok, false);
   assert.strictEqual(raro.problems[0].path, 'switches.response_meter');
-  assert.strictEqual(C.parse(JSON.stringify({ switches: { safety_guard: 'on', blocking_meter: 'off' } })).ok, true);
+  assert.strictEqual(C.parse(JSON.stringify({ switches: { test_scope_guard: 'on', blocking_meter: 'off' } })).ok, true);
 });
 
 test('T5 un medidor: la org lo apaga o lo enciende, y la variable de la máquina gana', () => {
@@ -114,6 +114,26 @@ test('T6 clave ilegible: la configuración rota no enciende ni apaga nada, y avi
   assert.strictEqual(r.stdout, '');
 });
 
+test('T14 un freno se enciende con «on» en cualquier mayúscula o con true, como «off» se reconoce en cualquiera', () => {
+  for (const on of ['ON', 'On', ' on ', true]) {
+    const c = casa({ switches: { session_guard: on, pr_one_per_repo: on } });
+    assert.strictEqual(C.leerParaHook(opts(c)).ok, true, `con ${JSON.stringify(on)} la configuración no tendría que romperse`);
+    assert.deepStrictEqual(C.switchState('session_guard', opts(c)), { value: 'on', warning: null }, JSON.stringify(on));
+    assert.strictEqual(C.switchOn('session_guard', opts(c)), true, JSON.stringify(on));
+    assert.deepStrictEqual(C.brakeOptIns(C.leer(opts(c))), { TYCON_SESSION_GUARD: '1', TYCON_PR_ONE_PER_REPO: '1' });
+    assert.strictEqual(C.parse(JSON.stringify({ switches: { session_guard: on } })).ok, true, `el sitio acepta ${JSON.stringify(on)}`);
+  }
+});
+
+test('T15 sólo quedan los frenos que encenderlos cambia algo: los que vienen siempre encendidos no son claves', () => {
+  assert.deepStrictEqual(Object.keys(C.SWITCHES).filter((k) => C.SWITCHES[k].brake).sort(), ['pr_one_per_repo', 'session_guard', 'test_scope_guard']);
+  for (const k of ['safety_guard', 'pr_auto_complete_guard']) {
+    const r = C.parse(JSON.stringify({ switches: { [k]: 'on' } }));
+    assert.strictEqual(r.ok, false, `${k} ya no es una clave`);
+    assert.strictEqual(r.problems[0].path, `switches.${k}`);
+  }
+});
+
 // ── el aplicador: qué controles se registran ───────────────────────────────────────────────────────────────────────
 
 function registrados(c) {
@@ -138,11 +158,23 @@ test('T8 aplicador con la org encendiendo: el freno de dos sesiones se registra 
 });
 
 test('T9 aplicador: un freno apagado por la org se ignora, y la variable de la máquina sigue ganando', () => {
-  const c = casa({ switches: { safety_guard: 'off' } });
-  assert.ok(registrados(c).specs.some((s) => s.includes('safety-guard-pre.sh')), 'el «off» del perfil no lo saca');
+  const c = casa({ switches: { test_scope_guard: 'off' } });
+  assert.ok(registrados(c).specs.some((s) => s.includes('test-scope-guard-pre.sh')), 'el «off» del perfil no lo saca');
   const c2 = casa({ switches: { session_guard: 'on' } });
   c2.env.TYCON_SESSION_GUARD = '0';
   assert.ok(!registrados(c2).specs.some((s) => s.includes('session-collision-guard.js')), 'la máquina que lo apagó lo deja apagado');
+});
+
+test('T16 aplicador en el perfil mínimo: encender el freno de pruebas sin acotar lo registra, y sin clave no está', () => {
+  const minimo = (c) => {
+    const list = AH.loadList(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), { integrationsDir: path.join(ROOT, 'integrations') });
+    const cfg = AH.readConfig({ env: c.env });
+    const minimalIds = AH.loadMinimalIds(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), { integrationsDir: path.join(ROOT, 'integrations') });
+    const d = AH.decide(list, { env: AH.envWithOrgSwitches(c.env, cfg.switches), integ: { state: 'ok', values: {} }, profile: { state: 'ok', value: 'minimal' }, minimalIds, platform: 'posix', has: () => false });
+    return d.active.map((h) => h.spec);
+  };
+  assert.ok(!minimo(casa({})).includes('@tcg:test-scope-guard-pre.sh'), 'sin clave, el mínimo no lo trae');
+  assert.ok(minimo(casa({ switches: { test_scope_guard: 'on' } })).includes('@tcg:test-scope-guard-pre.sh'), 'la org lo enciende en el mínimo');
 });
 
 // ── los hooks ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -191,6 +223,8 @@ test('T11 el freno de un pedido por repo: sin clave apagado; la org lo enciende;
   const enc = corre(casa({ switches: { pr_one_per_repo: 'on' } }));
   assert.strictEqual(enc.status, 2, 'la org lo enciende');
   assert.match(enc.stderr, /toda la organización/, 'y dice que lo encendió la organización');
+  assert.match(enc.stderr, /ANTES de abrir la sesión/, 'y que se apaga en el entorno de la sesión, no pegado al comando');
+  assert.doesNotMatch(enc.stderr, /corré el comando con/, 'sin el escape que no funciona');
   const c = casa({ switches: { pr_one_per_repo: 'on' } });
   c.env.TYCON_PR_ONE_PER_REPO = '0';
   assert.strictEqual(corre(c).status, 0, 'la máquina lo apaga con su variable');

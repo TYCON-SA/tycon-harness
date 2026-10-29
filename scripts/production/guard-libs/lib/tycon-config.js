@@ -220,8 +220,8 @@ const VOCABULARIO = Object.freeze({
   // la receta de la coordinadora (el tope de sesiones y la carpeta de firmas): el freno no las usa, pero las acepta
   coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada' }),
   switches: Object.freeze({
-    safety_guard: 'aceptada', test_scope_guard: 'aceptada', session_guard: 'aceptada', pr_one_per_repo: 'aceptada',
-    pr_auto_complete_guard: 'aceptada', response_meter: 'aceptada', blocking_meter: 'aceptada',
+    test_scope_guard: 'aceptada', session_guard: 'aceptada', pr_one_per_repo: 'aceptada',
+    response_meter: 'aceptada', blocking_meter: 'aceptada',
   }),
 });
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de

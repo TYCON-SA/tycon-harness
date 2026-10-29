@@ -248,11 +248,13 @@ const VOCABULARIO = Object.freeze({
   coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta' }),
   // Los interruptores de la organización (la sección «Frenos y medidores» del sitio). Hoy cada uno se cambia también por
   // máquina con su variable (SWITCHES dice cuál), y la variable puesta sigue ganando. Los frenos (`freno`) sólo se
-  // ENCIENDEN desde acá: «on» y nada más; un valor que dice apagado se ignora y se nombra (`ignoradas`), porque apagar un
-  // freno para todas las máquinas desde un archivo aflojaría un control sin que nadie lo firme en su terminal. Los
-  // medidores y avisos no frenan: se encienden o se apagan. Sin valor, cada uno como viene de fábrica.
+  // ENCIENDEN desde acá: «on» (en cualquier mayúscula) o `true`; un valor que dice apagado se ignora y se nombra
+  // (`ignoradas`), porque apagar un freno para todas las máquinas desde un archivo aflojaría un control sin que nadie lo
+  // firme en su terminal. Los medidores y avisos no frenan: se encienden o se apagan. Sin valor, cada uno como viene de
+  // fábrica. El freno de comandos peligrosos y el de pedidos a main sin completarse solos no están: vienen siempre
+  // encendidos, y encenderlos desde acá no cambiaría nada.
   switches: Object.freeze({
-    safety_guard: 'freno', test_scope_guard: 'freno', session_guard: 'freno', pr_one_per_repo: 'freno', pr_auto_complete_guard: 'freno',
+    test_scope_guard: 'freno', session_guard: 'freno', pr_one_per_repo: 'freno',
     response_meter: 'opcion:on|off', blocking_meter: 'opcion:on|off',
   }),
 });
@@ -260,17 +262,17 @@ const VOCABULARIO = Object.freeze({
 // fábrica. La variable puesta gana siempre; un freno que viene apagado se enciende con `<variable>=1`, y cualquiera se
 // apaga con `<variable>=0`.
 const SWITCHES = Object.freeze({
-  safety_guard: Object.freeze({ variable: 'TYCON_SAFETY_GUARD', brake: true, factory: 'on' }),
   test_scope_guard: Object.freeze({ variable: 'TYCON_TEST_SCOPE_GUARD', brake: true, factory: 'on' }),
   session_guard: Object.freeze({ variable: 'TYCON_SESSION_GUARD', brake: true, factory: 'off' }),
   pr_one_per_repo: Object.freeze({ variable: 'TYCON_PR_ONE_PER_REPO', brake: true, factory: 'off' }),
-  pr_auto_complete_guard: Object.freeze({ variable: 'TYCON_PR_AUTO_COMPLETE_GUARD', brake: true, factory: 'on' }),
   response_meter: Object.freeze({ variable: 'TYCON_RESPONSE_METER', brake: false, factory: 'on' }),
   blocking_meter: Object.freeze({ variable: 'TYCON_BLOCKING_METER', brake: false, factory: 'on' }),
 });
 // Lo que se lee como «apagado» en un freno: se ignora y se nombra, en vez de romper la configuración entera.
 const SAYS_OFF = Object.freeze(['off', 'false', '0', 'no']);
 const saysOff = (v) => v === false || v === 0 || (typeof v === 'string' && SAYS_OFF.includes(v.trim().toLowerCase()));
+// Lo que se lee como «encendido» en un freno, simétrico con lo de arriba: «on» en cualquier mayúscula, o `true`.
+const saysOn = (v) => v === true || (typeof v === 'string' && v.trim().toLowerCase() === 'on');
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
 const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral: 2000 });
@@ -505,6 +507,7 @@ function resolverRutaDeArchivo(v, home) {
 function esRutaAbsoluta(v) { const s = String(v).trim(); return /^~(?=$|[\\/])/.test(s) || path.isAbsolute(s); }
 function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'secreto') return true;   // sólo «está»: el valor no sale de su archivo
+  if (tipo === 'freno') return 'on';      // validarTipo ya dejó pasar sólo lo que dice encendido
   if (tipo === 'ruta') return resolverRutaDeArchivo(valor, home);
   // una ruta o varias (la carpeta de los repos puede ser más de una): una lista se resuelve ruta por ruta
   if (tipo === 'rutas') return Array.isArray(valor) ? valor.map((v) => resolverRutaDeArchivo(v, home)) : resolverRutaDeArchivo(valor, home);
@@ -947,7 +950,7 @@ function validarTipo(tipo, valor) {
       return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
     }
     case 'freno':
-      return (typeof valor === 'string' && valor.trim() === 'on') ? null : `tiene que ser "on": un freno sólo se enciende desde la configuración (sin valor, como viene de fábrica) — no ${JSON.stringify(valor)}`;
+      return saysOn(valor) ? null : `tiene que ser "on" (o true): un freno sólo se enciende desde la configuración (sin valor, como viene de fábrica) — no ${JSON.stringify(valor)}`;
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;

@@ -632,14 +632,17 @@ be, to copy it and open the request by hand.
   mark it. It only counts from here, never from a machine. It lives in `team-profile.json` → `qa.manual_check`, in the
   profile repo.
 - **Brakes and meters** (*Frenos y medidores*): which brakes and meters run on every machine. **Brakes** stop a command
-  before it runs: the dangerous-command brake, the unscoped-tests brake, the two-sessions-in-one-folder brake, the
-  one-pull-request-per-repo brake and the brake on pull requests to main that do not complete on their own. From here
-  they can only be turned on: "As it comes by default" or "On for every machine". Turning a brake off is not done from
-  the profile: it belongs to each machine, with its variable (for example, `TYCON_SAFETY_GUARD=0`), and an "off" written
-  by hand in the profile is ignored, the reader names it and the site does not propose it. **Meters** (response length
-  and long waits) do not stop anything: they can be turned on or off. Either way, a machine that set the variable keeps
-  its own setting. Empty, each one as it comes by default, and a key that cannot be read turns nothing on or off: the
-  default stays, with a warning. It lives in `team-profile.json` → `switches`, in the profile repo.
+  before it runs: the unscoped-tests brake, the two-sessions-in-one-folder brake and the one-pull-request-per-repo
+  brake. From here they can only be turned on: "As it comes by default" or "On for every machine"; written by hand,
+  "on" in any case or `true` is accepted. Turning a brake off is not done from the profile: it belongs to each machine,
+  with its variable (for example, `TYCON_SESSION_GUARD=0`), and an "off" written by hand in the profile is ignored, the
+  reader names it and the site does not propose it. The dangerous-command brake and the brake on pull requests to main
+  that do not complete on their own are not here: they are always on and can only be turned off on each machine.
+  **Meters** (response length and long waits) do not stop anything: they can be turned on or off. Either way, a
+  machine that set the variable keeps its own setting. Empty, each one as it comes by default. Beware of any other value
+  written by hand (a number, a text that is none of these): the reader does not understand it and treats the whole
+  configuration of every machine as broken, not just this switch; the site does not let you propose it. It lives in
+  `team-profile.json` → `switches`, in the profile repo.
 - **How many sessions work at once** (*Cuántas sesiones trabajan a la vez*): when one session coordinates the others,
   how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn.
   Each machine can change it for itself, because how much it can take depends on the machine. The folder where the
