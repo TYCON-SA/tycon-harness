@@ -2153,7 +2153,9 @@ test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
     assert.equal(c.valores.approvals.relay_session, 'coordinadora');
   }
   // la tabla de equivalencias: escape-phrases son todos los escapes; los demás grupos, su propia firma
-  assert.deepEqual(catalogo().expand('escape-phrases'), catalogo().ids().filter((id) => id.startsWith('escape:')));
+  // escape-phrases son los escapes que se piden con la frase: los que tienen su guion se delegan sólo nombrándolos
+  const porSuGuion = ['escape:force-manual', 'escape:trust-ran'];
+  assert.deepEqual(catalogo().expand('escape-phrases'), catalogo().ids().filter((id) => id.startsWith('escape:') && !porSuGuion.includes(id)));
   assert.deepEqual(catalogo().expand('lost-run'), ['lost-run']);
   assert.deepEqual(catalogo().expand('escape:trust-ran'), ['escape:trust-ran']);
   assert.deepEqual(catalogo().expand('off'), []);
@@ -2165,7 +2167,8 @@ test('8.139 T4 TyconConfig_DelegatedSigning_IdsYGrupos', () => {
 test('8.139 T5 TyconConfig_FirmaEnLasDosListas_EsError', () => {
   const casos = [
     [['control-change'], ['control-change', 'plan-approval'], 'control-change'],
-    [['escape:trust-ran'], ['escape-phrases'], 'escape:trust-ran'],
+    [['escape:TYCON_TEST_GATE'], ['escape-phrases'], 'escape:TYCON_TEST_GATE'],
+    [['escape:trust-ran'], ['escape:trust-ran', 'escape-phrases'], 'escape:trust-ran'],
     [['plan-approval'], 'plan-approval', 'plan-approval'],
   ];
   for (const [soloDueno, delegada, id] of casos) {
@@ -2188,7 +2191,7 @@ test('8.139 T5 TyconConfig_FirmaEnLasDosListas_EsError', () => {
   }
   // 🔴 el lector del sitio (parse) aplica la misma regla: si no, el sitio propone un perfil que todas las máquinas leen roto
   for (const approvals of [{ owner_only: ['control-change'], delegated_signing: ['control-change'] },
-    { owner_only: ['escape:trust-ran'], delegated_signing: ['escape-phrases'] },
+    { owner_only: ['escape:TYCON_TEST_GATE'], delegated_signing: ['escape-phrases'] },
     { owner_only: ['critcal-waiver'], delegated_signing: ['plan-approval'] }]) {
     const p = lib().parse(JSON.stringify({ approvals }));
     assert.equal(p.ok, false, JSON.stringify(approvals));

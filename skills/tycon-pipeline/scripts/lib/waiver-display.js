@@ -128,13 +128,17 @@ function pedidosDelComando(command) {
     const acsTxt = k >= 0 ? String(args[k + 1] || '') : '';
     if (!storyPath || !acsTxt || /[$`]/.test(storyPath + acsTxt)) continue;
     const acs = [...new Set(acsTxt.split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
-    if (acs.length) out.push({ storyPath, acs });
+    // pedida para otra sesión, la muestra es la de esa sesión: su marcador y su constancia
+    const f = args.indexOf('--for-session');
+    const paraSesion = f >= 0 ? String(args[f + 1] || '') : null;
+    if (paraSesion !== null && !/^[\w-]+$/.test(paraSesion)) continue;
+    if (acs.length) out.push({ storyPath, acs, ...(paraSesion ? { paraSesion } : {}) });
   }
   return out;
 }
 
 function paraMostrar({ command, sessionId, stateDir, home = os.homedir() }) {
-  const listos = pedidosDelComando(command).map((p) => preparar({ sessionId, stateDir, home, ...p })).filter((r) => r && r.systemMessage);
+  const listos = pedidosDelComando(command).map(({ paraSesion, ...p }) => preparar({ sessionId: paraSesion || sessionId, stateDir, home, ...p })).filter((r) => r && r.systemMessage);
   if (!listos.length) return null;
   return { systemMessage: listos.map((r) => r.systemMessage).join('\n'), anotar: () => { for (const r of listos) r.anotar(); } };
 }

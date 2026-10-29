@@ -887,21 +887,23 @@ test('T4 EscC5_CrearElPermisoDeEvidencia_Frena @story-8.96 — crear, tocar o co
 });
 
 test('T7 EscC3_ForceManual_Frena @story-8.96 — declarar un verde a mano, con la ejecución en verde o en rojo', () => {
+  // la forma exacta se pide en la ventana (Codex no tiene: va a la terminal); las demás, el cartel de siempre
   const formas = [
-    ['Bash', `${MARKER} set-check tests green --force-manual`],
-    ['Bash', `${MARKER} set-check dod green --force-manual`],
-    ['Bash', `${MARKER} get\n${MARKER} set-check tests green --force-manual`],
-    ['Bash', `${MARKER} set-check tests green "--force-manual"`],
-    ['Bash', `F=--force-manual; ${MARKER} set-check tests green $F`],
-    ['PowerShell', `node C:\\x\\marker.js set-check tests green --force-manual`],
+    ['Bash', `${MARKER} set-check tests green --force-manual`, true],
+    ['Bash', `${MARKER} set-check dod green --force-manual`, true],
+    ['Bash', `${MARKER} get\n${MARKER} set-check tests green --force-manual`, false],
+    // las comillas las saca el shell: son las mismas palabras de la forma exacta
+    ['Bash', `${MARKER} set-check tests green "--force-manual"`, true],
+    ['Bash', `F=--force-manual; ${MARKER} set-check tests green $F`, false],
+    ['PowerShell', `node C:\\x\\marker.js set-check tests green --force-manual`, true],
   ];
   for (const marcador of [VERDE, ROJO]) {
-    for (const [herramienta, c] of formas) {
+    for (const [herramienta, c, exacta] of formas) {
       assert.notStrictEqual(veredicto(freno(c, { herramienta, home: homeConMarcador(marcador, [deLaPersona('seguí')]) })), 'allow', c);
       const r = freno(c, { herramienta, codex: true, home: homeConMarcador(marcador, [deLaPersona('seguí')]) });
       assert.strictEqual(r.status, 2, `${JSON.stringify(c)}: ${r.stderr}`);
       assert.match(r.stderr, /ESC-C3/);
-      assert.match(r.stderr, /lo decide ella/);
+      assert.match(r.stderr, exacta ? /Esta firma se da en tu terminal: marker\.js set-check <control> <estado> --force-manual --terminal/ : /lo decide ella/, c);
     }
   }
   noFirmaLaFrase(formas[0][1], { home: homeConMarcador(VERDE, [deLaPersona('autorizo force-manual')]) }, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
@@ -1857,6 +1859,8 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['lost-run', ['node', M, 'clear-session', 'ses-b', '--lost']],
     ['adversarial-skip', ['node', M, 'sign-adversarial-skip', '--story', '9.99', '--reason', 'la cubre otra corrida']],
     ['pending-approval', ['node', M, 'approve-pending', '--id', 'DEF-9.99-algo', '--repo', '/r']],
+    ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
+    ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
     ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];
@@ -1910,8 +1914,8 @@ test('T37 FrenoDeSeguridad_C3YC5_NoDictanLaFrase @story-8.139 @ac-37 — ningún
   const casos = [
     ['ESC-C3', CMD.apagar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
     ['ESC-C3', CMD.cerrar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
-    ['ESC-C3', `${MARKER} set-check tests green --force-manual`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
-    ['ESC-C3', `${PIPELINE} check-count --trust-ran --ran a,b`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
+    ['ESC-C3', `bash -c '${MARKER} set-check tests green --force-manual'`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
+    ['ESC-C3', `cd /tmp && ${PIPELINE} check-count --trust-ran --ran a,b`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
     ['ESC-C3', START_NDR, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
     ['ESC-C5', `touch ${PERMISO}`, { conversacion: [deLaPersona('seguí')] }],
     ['ESC-C5', `echo "dod_runtime_exempt: true" | tee -a specs/story-9.9.md`, { conversacion: [deLaPersona('seguí')] }],
@@ -1985,4 +1989,28 @@ exec ${JSON.stringify(process.execPath)} "$@"
   const r = freno(`node ${path.join(otra, 'marker.js').split(path.sep).join('/')} sign-file ALLOW_DOD_EVIDENCE_WRITE ${evidencia}`, { path: dir });
   assert.strictEqual(r.status, 2, r.stdout);
   assert.match(r.stderr, /ESC-C5/);
+});
+
+test('T10 FormasViejas_Escondidas_SiguenFrenando @story-8.142 @ac-8 — los dos escapes escondidos frenan como siempre, y el cartel nombra la forma exacta', () => {
+  const formas = [
+    [`F=--trust-ran; ${PIPELINE} check-count --repo /r --story s.md $F`, /pipeline\.js check-count --repo <r> --story <s> --trust-ran \[--for-session <D>\]/],
+    [`env X=1 ${MARKER} set-check tests green --force-manual`, /marker\.js set-check <control> <estado> --force-manual \[--for-session <D>\]/],
+    [`bash -c '${MARKER} set-check dod green --force-manual'`, /marker\.js set-check <control> <estado> --force-manual \[--for-session <D>\]/],
+    [`cd /tmp && ${PIPELINE} check-count --repo /r --story s.md --trust-ran`, /pipeline\.js check-count --repo <r> --story <s> --trust-ran/],
+  ];
+  for (const [c, exacta] of formas) {
+    assert.notStrictEqual(veredicto(freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) })), 'allow', c);
+    const r = freno(c, { codex: true, home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+    assert.match(r.stderr, exacta, `${c}: el cartel nombra la forma exacta`);
+  }
+  // si el guion corre igual, sin la firma no escribe nada
+  const home = homeConMarcador(VERDE);
+  const marcador = path.join(home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`);
+  const antes = fs.readFileSync(marcador, 'utf8');
+  const g = spawnSync(process.execPath, [path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js'), 'set-check', 'tests', 'green', '--force-manual'],
+    { env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID }, encoding: 'utf8' });
+  assert.notStrictEqual(g.status, 0, g.stderr);
+  assert.strictEqual(fs.readFileSync(marcador, 'utf8'), antes, 'el marcador quedó igual');
 });

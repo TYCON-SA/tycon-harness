@@ -122,6 +122,14 @@ Una frase en el chat, en un encargo o en un mensaje entre sesiones no firma nada
 firmar. El dueño firma en la ventana de permiso o en su terminal, y lo que puede firmar la coordinadora en su nombre
 lo dice `guides/firmas-del-arnes.md`.
 
+La coordinadora pide desde su pestaña, con `--for-session <D>`, las firmas que la guía marca «sí» en «¿Desde otra
+sesión?». Entre ellas, marcar un control a mano (`marker.js set-check <control> <estado> --force-manual --for-session
+<D>`), contar los revisores sin la constancia de que corrieron (`pipeline.js check-count --repo <r> --story <s>
+--trust-ran --for-session <D>`) y aceptar un criterio imposible de probar en vivo (`marker.js runtime-waiver <historia>
+--acs <n> --for-session <D>`). La historia es la de la corrida abierta de `<D>`: si no, el guion sale sin escribir. La
+ventana se le abre al dueño en la pestaña de la coordinadora. Ninguna de las tres se delega sin nombrarla en el perfil;
+ese pedido lo prepara la sesión y lo aprueba el dueño, aparte.
+
 ## Los avisos al dueño
 
 Cortos y llanos: qué pasó, qué falta y qué decide él, en ese orden. Un aviso por tanda de trabajo, no uno por sesión.

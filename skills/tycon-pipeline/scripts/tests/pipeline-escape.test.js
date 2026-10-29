@@ -484,3 +484,158 @@ test('Guion_ForSession_OtraCorridaEnElMedio_Sale2 (T16) @story-8.142 @ac-2', (t)
   assert.match(r.stderr, /9\.93|otra corrida|cambi/);
   assert.strictEqual(lab.leer(DESTINO), antes, 'no escribió el marcador de ses-a');
 });
+
+// ── Las tres firmas que la coordinadora pide para otra sesión ─────────────────────────────────────────────────────────
+
+const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+
+/** `guion` (marker.js o pipeline.js) como lo corre ses-coord con la ventana aprobada, sobre el pedido que armó `decidir`. */
+function correrGuion(lab, guion, args, sid = COORD) {
+  const cmd = `node ${guion} ${args.map(comillas).join(' ')}`;
+  const sesionEn = path.join(lab.base, `sesion-${Math.random().toString(36).slice(2)}`);
+  const r = spawnSync(process.execPath, [guion, ...args], { cwd: lab.repo, encoding: 'utf8',
+    env: conVentana({ ...lab.env, CLAUDE_CODE_SESSION_ID: sid }, { arbol: { arbol: arbolDelGuion(lab.home, cmd), pid: 301, ahora: AHORA + 60000 }, sesionEn }) });
+  return { ...r, cmd };
+}
+const comandoDe = (guion, args) => `node ${guion} ${args.map(comillas).join(' ')}`;
+const pedirDe = (lab, guion, args, sid = COORD) => ow.decidir({
+  evento: { session_id: sid, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: comandoDe(guion, args) }, cwd: lab.repo },
+  escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.home, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null });
+
+test('ForceManual_Canonica_PideFirma (T8) @story-8.142 @ac-5 @ac-8', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  const deCoord = lab.leer(COORD);
+  const paraD = ['set-check', 'dod', 'green', '--force-manual', '--for-session', DESTINO];
+  // la forma canónica la pide la ventana: no la niega como «una firma y un escape»
+  const p = lab.pedir(lab.comando(paraD));
+  assert.strictEqual(p.decision, 'ask', p.texto);
+  assert.deepStrictEqual(p.firmas, ['escape:force-manual']);
+  assert.match(p.texto, new RegExp(DESTINO));
+  // sin la ventana no escribe, tampoco en la propia sesión
+  let r = lab.marker(COORD, ['set-check', 'tests', 'red:x', '--force-manual']);
+  assert.notStrictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(lab.leer(COORD), deCoord, 'sin firma no se escribe el marcador propio');
+  // con la ventana, el control queda declarado a mano en el marcador de ses-a, y el de ses-coord igual
+  r = correrGuion(lab, MARKER, paraD);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const d = JSON.parse(lab.leer(DESTINO));
+  assert.deepStrictEqual([d.checks.dod, d.checksProvenance.dod], ['green', 'manual-forced']);
+  assert.strictEqual(lab.leer(COORD), deCoord, 'el marcador de ses-coord quedó igual byte a byte');
+  const firmado = lab.gates().filter((g) => g.name === 'escape:force-manual-signed');
+  assert.deepStrictEqual(firmado.map((g) => [g.sesion, g.destino]), [[COORD, DESTINO]]);
+  // en la propia sesión, con cualquier estado
+  const propio = ['set-check', 'tests', 'red:x', '--force-manual'];
+  assert.strictEqual(lab.pedir(lab.comando(propio)).decision, 'ask');
+  r = correrGuion(lab, MARKER, propio);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const c = JSON.parse(lab.leer(COORD));
+  assert.deepStrictEqual([c.checks.tests, c.checksProvenance.tests], ['red:x', 'manual-forced']);
+  // otra sesión sin ejecución abierta: sale 2 sin gastar el registro
+  const sinMarcador = ['set-check', 'dod', 'green', '--force-manual', '--for-session', 'ses-z'];
+  assert.strictEqual(lab.pedir(lab.comando(sinMarcador)).decision, 'ask');
+  r = correrGuion(lab, MARKER, sinMarcador);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /ses-z/);
+  assert.strictEqual(lab.vigentes().length, 1, 'el registro sigue sin gastar');
+  // la propia sesión sin ejecución abierta: sale 2 (no 0 callado) y no firma
+  r = correrGuion(lab, MARKER, ['set-check', 'dod', 'green', '--force-manual'], 'ses-sin');
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /ejecución abierta/);
+  assert.strictEqual(lab.leer('ses-sin'), null);
+  // --manual sigue como siempre: sin firma
+  r = lab.marker(COORD, ['set-check', 'build', 'green', '--manual']);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+});
+
+/** El registro de revisores de `sid`: la vuelta que abrió `advisors`, sin ningún revisor lanzado. */
+function vueltaSinRevisores(lab, sid) {
+  const dir = path.join(lab.estadoDir, 'advisor-runs');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(path.join(dir, `${sid}.jsonl`), `${JSON.stringify({ ts: new Date(AHORA - 120000).toISOString(), event: 'step5-start', expected: ['rev-a'] })}\n`);
+}
+
+test('TrustRan_Canonica_PideFirma (T9) @story-8.142 @ac-6 @ac-8', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  vueltaSinRevisores(lab, DESTINO);
+  const contar = (extra) => ['check-count', '--repo', lab.repo, '--story', lab.stories[DESTINO], '--ran', 'rev-a', ...extra];
+  const paraD = contar(['--trust-ran', '--for-session', DESTINO]);
+  const p = pedirDe(lab, PIPELINE, paraD);
+  assert.strictEqual(p.decision, 'ask', p.texto);
+  assert.deepStrictEqual(p.firmas, ['escape:trust-ran']);
+  // sin la ventana no cuenta
+  let r = spawnSync(process.execPath, [PIPELINE, ...contar(['--trust-ran'])], { cwd: lab.repo, encoding: 'utf8', env: { ...lab.env, CLAUDE_CODE_SESSION_ID: DESTINO } });
+  assert.notStrictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /check-count OK/);
+  // con la ventana, cuenta con el registro de revisores de ses-a (ses-coord no tiene ninguno)
+  r = correrGuion(lab, PIPELINE, paraD);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /check-count OK/);
+  assert.match(r.stdout, /no registró spawns/, 'contó con la vuelta de ses-a');
+  assert.ok(lab.gates().some((g) => g.name === 'escape:trust-ran-signed' && g.sesion === COORD && g.destino === DESTINO));
+  assert.strictEqual(lab.vigentes().length, 0, 'el pedido se gastó');
+  // los casos que salen 2 antes de la firma, sin contar ni gastar el registro
+  const antes = lab.vigentes().length;
+  for (const [que, args] of [
+    ['sesión sin marcador', contar(['--trust-ran', '--for-session', 'ses-z'])],
+    ['--story de otra historia', ['check-count', '--repo', lab.repo, '--story', lab.stories[COORD], '--ran', 'rev-a', '--trust-ran', '--for-session', DESTINO]],
+    ['--for-session sin --trust-ran', contar(['--for-session', DESTINO])],
+  ]) {
+    pedirDe(lab, PIPELINE, args);
+    r = correrGuion(lab, PIPELINE, args);
+    assert.strictEqual(r.status, 2, `${que}: ${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stdout, /check-count OK/, que);
+  }
+  assert.strictEqual(lab.vigentes().length, antes + 2, "ningún registro gastado: los dos pedidos siguen");
+  assert.strictEqual(lab.gates().filter((g) => g.name === 'escape:trust-ran-signed').length, 1, 'ninguna firma nueva');
+  // la corrida de ses-a cambia entre el pedido y el guion: sale 2 sin contar
+  const otra = laboratorioOtraSesion(t);
+  vueltaSinRevisores(otra, DESTINO);
+  const args = ['check-count', '--repo', otra.repo, '--story', otra.stories[DESTINO], '--ran', 'rev-a', '--trust-ran', '--for-session', DESTINO];
+  assert.strictEqual(pedirDe(otra, PIPELINE, args).decision, 'ask');
+  const m = JSON.parse(otra.leer(DESTINO));
+  fs.writeFileSync(otra.marcador(DESTINO), JSON.stringify({ ...m, startedAt: new Date(AHORA + 1000).toISOString() }));
+  r = correrGuion(otra, PIPELINE, args);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /check-count OK/);
+});
+
+/** La historia de ses-a con un criterio declarado imposible de probar en vivo, cuya prueba corrió en verde. */
+function conCriterio(lab) {
+  fs.writeFileSync(lab.stories[DESTINO], ['---', 'story: "9.91"', 'title: "juguete"', 'status: in-progress', 'files_to_modify:', '  - README.md',
+    'runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1', '---', '', '# Story 9.91', '',
+    '## Acceptance Criteria', '', '1. **Given** un pedido **Then** el aviso queda en el servicio externo.', '',
+    '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|', '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |', ''].join('\n'));
+  fs.mkdirSync(path.join(lab.repo, '.advisors'), { recursive: true });
+  fs.writeFileSync(path.join(lab.repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.91', suite_green: true }));
+  lab.env.TYCON_WAIVER_LOG = path.join(lab.base, 'home-waivers.jsonl');
+}
+
+test('RuntimeWaiver_ForSession_HistoriaDelDestino (T11) @story-8.142 @ac-7', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  conCriterio(lab);
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  const paraD = ['runtime-waiver', lab.stories[DESTINO], '--acs', '1', '--for-session', DESTINO];
+  // la muestra de criterios es la de ses-a: una registrada para ses-coord no vale
+  const { sha } = wd.criteriosDe(lab.stories[DESTINO], [1]).lista[0];
+  fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: COORD, name: 'ac-shown', status: 'ok', story: '9.91', ac: 1, sha })}\n`);
+  const muestra = wd.paraMostrar({ command: lab.comando(paraD), sessionId: COORD, stateDir: lab.estadoDir });
+  assert.ok(muestra && /AC 1/.test(muestra.systemMessage), 'se muestra el criterio de ses-a');
+  muestra.anotar();
+  const anotada = lab.gates().filter((g) => g.name === 'ac-shown').pop();
+  assert.strictEqual(anotada.sessionId, DESTINO);
+  assert.strictEqual(wd.paraMostrar({ command: lab.comando(paraD), sessionId: COORD, stateDir: lab.estadoDir }), null, 'ya mostrado para ses-a');
+  // el cartel trae los criterios de la historia de ses-a, y el guion la firma sobre su corrida
+  const p = lab.pedir(lab.comando(paraD));
+  assert.strictEqual(p.decision, 'ask', p.texto);
+  assert.match(p.texto, /AC 1: Given un pedido/);
+  let r = lab.correr(paraD);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.ok(lab.aprobaciones(DESTINO).some((l) => /AC 1 imposible/.test(l.que)), 'la aprobación quedó en la corrida de ses-a');
+  assert.ok(!lab.aprobaciones(COORD).some((l) => /AC 1 imposible/.test(l.que)));
+  // la historia de ses-coord pedida para ses-a: el cartel la niega y el guion sale 2
+  const ajena = ['runtime-waiver', lab.stories[COORD], '--acs', '1', '--for-session', DESTINO];
+  assert.strictEqual(lab.pedir(lab.comando(ajena)).decision, 'deny');
+  r = lab.correr(ajena);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no es la historia de la corrida/);
+});
