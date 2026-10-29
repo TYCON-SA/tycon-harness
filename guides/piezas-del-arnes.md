@@ -1274,7 +1274,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 ## scripts/nightly/dashboard/reducer.js
 
-**Qué es:** Cuenta los frenos y los escapes de todas las máquinas desde el buzón de corridas y publica sólo las cuentas.
+**Qué es:** Cuenta los frenos y los escapes de todas las máquinas desde el buzón de corridas y publica sólo las cuentas. También junta qué máquina tiene una vuelta atrás vigente (no se actualiza sola), qué versión deshizo y desde cuándo.
 
 **Por qué existe:** El tablero contaba una sola máquina. Como lo publicado lo ve todo el equipo, el reductor usa una lista blanca de campos y de valores (en `sources.json`), un piso mínimo y alias sin persona.
 

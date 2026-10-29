@@ -24,7 +24,8 @@
  * mirar, lo dice.
  *
  * Salida: exit 2 bloquea (el comando no corre) · exit 0 deja pasar.
- * Encender (para una tanda de cambios en varios repos): TYCON_PR_ONE_PER_REPO=1
+ * Encender (para una tanda de cambios en varios repos): TYCON_PR_ONE_PER_REPO=1 en una máquina, o
+ * `switches.pr_one_per_repo: "on"` en el perfil del equipo para todas (la variable puesta gana).
  * Por default está APAGADO: en el día a día de un dev no tiene que estorbar.
  */
 const { execFileSync } = require('child_process');
@@ -42,9 +43,21 @@ let payload; try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(
 // toca los cinco productos, una tanda de arreglos de CI— donde abrir tandas encima de tandas llena
 // la cola de Azure de la organización entera.
 //
-// Entonces: se enciende a propósito para ese tipo de trabajo, con TYCON_PR_ONE_PER_REPO=1, y para
-// todos los demás no existe. Prendido por defecto bloquearía ante CUALQUIER pull request abierto.
-if (require('../lib/legacy-names.js').readEnv('TYCON_PR_ONE_PER_REPO', { where: 'scripts/hooks/pr-one-per-repo-guard.js' }) !== '1') process.exit(0);
+// Entonces: se enciende a propósito para ese tipo de trabajo, con TYCON_PR_ONE_PER_REPO=1 en una máquina,
+// o para toda la organización mientras dure esa tanda (`switches.pr_one_per_repo: "on"` del perfil, desde
+// el sitio). Para todos los demás no existe. Prendido por defecto bloquearía ante CUALQUIER pull request.
+// La variable de la máquina, puesta con cualquier valor, gana: `1` lo enciende y otro valor lo apaga en esa
+// máquina. Sin variable, manda el perfil; con la configuración rota, queda apagado como de fábrica y se avisa.
+const varOnePerRepo = require('../lib/legacy-names.js').readEnv('TYCON_PR_ONE_PER_REPO', { where: 'scripts/hooks/pr-one-per-repo-guard.js' });
+let encendidoPorLaOrganizacion = false;
+if (varOnePerRepo === undefined || varOnePerRepo === '') {
+  try {
+    const st = require('../lib/tycon-config.js').switchState('pr_one_per_repo');
+    if (st.warning) process.stderr.write(`${st.warning}\n`);
+    encendidoPorLaOrganizacion = st.value === 'on';
+  } catch { encendidoPorLaOrganizacion = false; }
+}
+if (varOnePerRepo !== '1' && !encendidoPorLaOrganizacion) process.exit(0);
 let cmd = '';
 try { cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || ''; } catch { process.exit(0); }
 
@@ -152,8 +165,13 @@ de Azure — pasó cuatro veces el 2026-09-03. Dos salidas:
 Este freno NO te impide tener dos pull requests abiertos en el mismo repo — eso es normal y no
 molesta a nadie. Sólo evita disparar dos construcciones del mismo pipeline al mismo tiempo.
 
-Este freno está encendido porque alguien puso TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
-varios repos. Para saltearlo en un caso puntual, corré el comando sin esa variable.`);
+${encendidoPorLaOrganizacion
+    ? `Este freno está encendido para toda la organización (perfil del equipo, switches.pr_one_per_repo) por una
+tanda de cambios en varios repos. Para apagarlo en esta máquina, poné TYCON_PR_ONE_PER_REPO=0 en su entorno
+ANTES de abrir la sesión: pegada al comando no sirve, porque el freno lee el entorno de la sesión.`
+    : `Este freno está encendido porque esta máquina tiene TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
+varios repos. Para apagarlo, sacá esa variable del entorno (o ponela en 0) ANTES de abrir la sesión: pegada al
+comando no sirve, porque el freno lee el entorno de la sesión.`}`);
 constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'bloqueo', cmd });
 process.exit(2);
 }

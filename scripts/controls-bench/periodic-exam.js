@@ -185,6 +185,9 @@ function diasProgramados(scheduled_days) {
 // Funciones puras — lo que decide, separado de lo que ejecuta
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
+/** Dónde trae el clon de mantenimiento las claves del equipo que van encima de `exam-config.json`. */
+const RUTA_CLAVES_DEL_EQUIPO = path.join('.tycon', 'exam-config.json');
+
 /**
  * 🔴 DE QUÉ REPO SE LEE LA MÁQUINA DESIGNADA, Y ADÓNDE VA EL RESULTADO.
  *
@@ -195,8 +198,11 @@ function diasProgramados(scheduled_days) {
  * los avisos leen la noche: scripts/lib/night-data.js). Por eso, en orden:
  *   · TYCON_EXAM_REPO / TYCON_EXAM_CONFIG, si vienen (cada una por su lado);
  *   · si no, la configuración de este árbol cuando designa una máquina (un clon completo del arnés): este árbol;
- *   · si no, y la máquina usa la versión bajada con su clon de mantenimiento sano: la configuración y el resultado de
- *     ese clon. El código sigue siendo el de este árbol, el instalado;
+ *   · si no, y la máquina usa la versión bajada con su clon de mantenimiento sano: el resultado va a ese clon, y la
+ *     configuración es la de este árbol con las claves del equipo encima, las que el clon trae en
+ *     `.tycon/exam-config.json` (`teamConfig`; hoy, sólo `designated_machine`). Así el clon no guarda una copia
+ *     entera del archivo público que se quede atrás. Un clon que todavía no tiene ese archivo se lee como antes: su
+ *     `scripts/controls-bench/exam-config.json` entero. El código sigue siendo el de este árbol, el instalado;
  *   · si no, este árbol (la copia pública de alguien de afuera: nadie designado, nadie corre).
  * Lo usan las tres preguntas —el instalador del disparador, la corrida y el aviso de arranque (bench-notice.js)—, para
  * que las tres miren el MISMO lugar.
@@ -216,6 +222,8 @@ function lugarDelExamen() {
     return Object.assign({}, lugarPropio, { problema: `no pude saber cuál es el clon de mantenimiento (${(e && e.message) || e})` });
   }
   if (r && r.source === 'maintainers' && r.dir) {
+    const teamConfig = path.join(r.dir, RUTA_CLAVES_DEL_EQUIPO);
+    if (fs.existsSync(teamConfig)) return { repo: r.dir, config: configPropia, teamConfig, origen: 'mantenimiento' };
     return { repo: r.dir, config: path.join(r.dir, 'scripts', 'controls-bench', 'exam-config.json'), origen: 'mantenimiento' };
   }
   return r && r.problem ? Object.assign({}, lugarPropio, { problema: r.problem }) : lugarPropio;
@@ -230,8 +238,21 @@ function designaMaquina(cfg) {
     && String(cfg.designated_machine == null ? '' : cfg.designated_machine).trim());
 }
 
-function leerConfig(ruta) {
-  return leerJson(ruta || lugarDelExamen().config) || {};
+function objeto(x) {
+  return Boolean(x && typeof x === 'object' && !Array.isArray(x));
+}
+
+/**
+ * La configuración del examen. Recibe un lugar (`lugarDelExamen()`), una ruta o nada (el lugar de esta máquina). Con
+ * `teamConfig`, sus claves van encima de las del archivo de este árbol; ilegible, se lee sin ellas (nadie designado:
+ * fail-closed, como un archivo vacío).
+ */
+function leerConfig(lugar) {
+  const l = typeof lugar === 'string' ? { config: lugar } : (lugar || lugarDelExamen());
+  const base = leerJson(l.config);
+  const cfg = objeto(base) ? base : {};
+  const equipo = l.teamConfig ? leerJson(l.teamConfig) : null;
+  return objeto(equipo) ? Object.assign({}, cfg, equipo) : cfg;
 }
 
 /** Cómo se llama esta máquina, en todas las formas en que se la puede nombrar (minúsculas). */
@@ -845,7 +866,7 @@ async function main(argv) {
   const lugar = lugarDelExamen();
   const repo = lugar.repo;
   const benchDir = path.join(repo, 'scripts', 'controls-bench', '.bench');
-  const cfg = leerConfig(lugar.config);
+  const cfg = leerConfig(lugar);
   const ctx = {
     cfg, identidades: identidadesDeMaquina(), sello: leerSello(), ahora: new Date(),
     rutaCandado: path.join(benchDir, 'examen.lock'),
@@ -858,7 +879,8 @@ async function main(argv) {
     console.log(`  motivo:            ${d.motivo}${d.detalle ? ` (${d.detalle})` : ''}`);
     console.log(`  esta máquina es:   ${ctx.identidades.join(' / ') || '(sin nombre)'}`);
     console.log(`  máquina designada: ${cfg.designated_machine || '(ninguna — así NADIE corre)'}`);
-    console.log(`  configuración:     ${lugar.config}${lugar.origen === 'mantenimiento' ? ' (del clon de mantenimiento)' : ''}`);
+    console.log(`  configuración:     ${lugar.config}${lugar.origen === 'mantenimiento' && !lugar.teamConfig ? ' (del clon de mantenimiento)' : ''}`);
+    if (lugar.teamConfig) console.log(`  claves del equipo: ${lugar.teamConfig} (del clon de mantenimiento)`);
     if (lugar.problema) console.log(`  ⚠ ${lugar.problema}`);
     const dias = diasProgramados(cfg.scheduled_days);
     console.log(`  cada:              ${cfg.days_between_runs || 3} días · ${dias.numeros.map((n) => Object.keys(DIAS).find((k) => DIAS[k] === n)).join(', ')} ${cfg.hour || ''}`);
@@ -1050,7 +1072,7 @@ async function main(argv) {
  */
 function revisionSemanal(argv, deps = {}) {
   if (['--help', '-h', '--dry-run', '--install-task'].some((f) => argv.includes(f))) return { corrio: false, motivo: 'no en este modo' };
-  const designada = deps.designada !== undefined ? deps.designada : esMaquinaDesignada(leerConfig(lugarDelExamen().config), identidadesDeMaquina());
+  const designada = deps.designada !== undefined ? deps.designada : esMaquinaDesignada(leerConfig(lugarDelExamen()), identidadesDeMaquina());
   if (!designada && !argv.includes('--force')) return { corrio: false, motivo: 'no-designada' };
   const repo = deps.repo || lugarDelExamen().repo;
   const guion = path.join(__dirname, '..', 'nightly', 'weekly-review', 'weekly-review.js');

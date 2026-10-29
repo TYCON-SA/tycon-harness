@@ -1031,3 +1031,133 @@ test('RunSuites_InstallerGroup_RunsWhenInDoubt — tocar el instalador, la suite
   const broken = runWith(installerLab({ selector: false }), { touched: { known: true, files: ['guides/x.md'] } });
   assert.match(broken.stdout + broken.stderr, /no pude leer el criterio del instalador/, 'y lo dice');
 });
+
+// Una suite de juguete con el caso roto en el medio de una salida larga: queda fuera de las últimas 25 líneas.
+const SUITE_LARGA = [
+  'for (let i = 0; i < 400; i++) console.log(`ruido ${i}`);',
+  "console.log('✖ el candado choca con otra sesión (12ms)');",
+  "console.log('  otra sesión está actualizando (candado de prueba)');",
+  "console.log('not ok 3 - el segundo caso roto');",
+  'for (let i = 400; i < 800; i++) console.log(`ruido ${i}`);',
+  // sin process.exit: cortaría lo que todavía no se escribió a la tubería, y la salida llegaría sin su cola
+  'process.exitCode = 1;',
+].join('\n');
+
+test('RunSuites_RedSuite_KeepsFailedCasesAndFullOutput — el caso roto fuera de la cola queda en el resumen, con la ruta de la salida entera', () => {
+  // 🔴 mutación: guardar sólo la cola (las últimas 25 líneas) → el caso del medio se pierde y el rojo no se puede leer.
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/larga.test.js' }] }, { conSkills: false });
+  f.escribir('arnes', 'tests/larga.test.js', SUITE_LARGA);
+  const out = path.join(f.root, 'out.json');
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8' });
+  assert.equal(r.status, 1, r.stderr);
+  const resumen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  const falla = resumen.fallas[0];
+  assert.doesNotMatch(falla.cola, /el candado choca/, 'el juguete pone el caso fuera de la cola');
+  const casos = (falla.casos || []).join('\n');
+  assert.match(casos, /✖ el candado choca con otra sesión/, 'el caso con «✖» llega al resumen');
+  assert.match(casos, /otra sesión está actualizando/, 'con el texto que lo explica');
+  assert.match(casos, /not ok 3 - el segundo caso roto/, 'y el de TAP también');
+  assert.doesNotMatch(casos, /ruido/, 'sin el ruido de alrededor');
+  assert.ok(falla.salida_completa && fs.existsSync(falla.salida_completa), `la salida entera queda en un archivo: ${falla.salida_completa}`);
+  const entera = fs.readFileSync(falla.salida_completa, 'utf8');
+  assert.match(entera, /ruido 0\n/);
+  assert.match(entera, /ruido 799\n/);
+  assert.equal(typeof falla.ms, 'number', 'con el tiempo de la suite');
+  assert.match(r.stdout, /✖ el candado choca con otra sesión/, 'el resumen de la consola nombra el caso');
+  assert.ok(r.stdout.includes(falla.salida_completa), 'y la ruta del archivo entero');
+});
+
+test('RunSuites_RedSuite_RecordsTheGateEnvironment — el resumen dice con qué marcas corrió, si fue con run-check y qué variables se quitaron', () => {
+  // 🔴 mutación: no anotar el ambiente → un rojo que sólo pasa dentro de la puerta no deja rastro de qué cambia.
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/larga.test.js' }] }, { conSkills: false });
+  f.escribir('arnes', 'tests/larga.test.js', SUITE_LARGA);
+  const out = path.join(f.root, 'out.json');
+  const env = { ...process.env, TYCON_TEST_GATE: '1', TYCON_SUITE_RUNNER: 'test-gate', TYCON_MAILBOX: '0', TYCON_TEST_SECRET: 'no-se-imprime' };
+  const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--run-check', 'tests-suite'], { encoding: 'utf8', env });
+  assert.equal(r.status, 1, r.stderr);
+  const amb = JSON.parse(fs.readFileSync(out, 'utf8')).ambiente || {};
+  assert.equal(amb.run_check, 'tests-suite');
+  assert.equal(amb.marks.TYCON_SUITE_RUNNER, 'test-gate');
+  assert.equal(amb.marks.TYCON_MAILBOX, '0');
+  assert.ok(amb.removed.includes('TYCON_TEST_GATE'), 'la marca que la suite no ve también se anota');
+  assert.ok(amb.other_names.includes('TYCON_TEST_SECRET'), 'de las demás variables del arnés va el nombre');
+  assert.doesNotMatch(JSON.stringify(amb) + r.stdout, /no-se-imprime/, 'pero nunca su valor');
+  assert.equal(typeof amb.workers, 'number');
+  assert.match(r.stdout, /run-check tests-suite/, 'la consola lo dice');
+  const sin = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8' });
+  assert.equal(sin.status, 1);
+  assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).ambiente.run_check, null, 'sin la marca, sin run-check');
+  const sinValor = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, '--run-check'], { encoding: 'utf8' });
+  assert.equal(sinValor.status, 2, '--run-check sin nombre es un error de uso');
+});
+
+test('RunSuites_FullOutput_CappedKeepsHeadAndTail — la salida entera tiene un tope en bytes por suite y guarda el principio y el final', () => {
+  // 🔴 mutación: escribir la salida sin tope en saveFullOutput (una suite que escupe megas llena el disco), recortar sólo
+  //    por la cola, o contar caracteres en vez de bytes.
+  const { capOutput, saveFullOutput, failedCases } = require(RUNNER);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-cap-'));
+  const out = path.join(root, 'suites.json');
+  const amb = { run_check: null, workers: 1, marks: {}, removed: [], other_names: [] };
+  const r = { idx: 3, ruta: '/x/tests/larga.test.js', exit: 1, ms: 5, salida: `${'a'.repeat(5000)}MEDIO${'z'.repeat(5000)}` };
+  const g = saveFullOutput(out, r, amb, { left: 1e9 }, 1000);
+  assert.equal(g.truncated, true);
+  const texto = fs.readFileSync(g.file, 'utf8');
+  assert.ok(fs.statSync(g.file).size < 1500, `el archivo quedó de ${fs.statSync(g.file).size} bytes con tope de 1000`);
+  assert.match(texto, /a{400}/);
+  assert.match(texto, /z{400}$/);
+  assert.doesNotMatch(texto, /MEDIO/);
+  assert.match(texto, /recortad/);
+  // en bytes: 1000 «ñ» son 2000 bytes; con tope de 1000 no entran enteras
+  const multi = capOutput('ñ'.repeat(1000), 1000);
+  assert.equal(multi.truncated, true, 'el tope cuenta bytes, no caracteres');
+  assert.ok(Buffer.byteLength(multi.text) < 1200);
+  assert.deepEqual(capOutput('corto', 200), { text: 'corto', truncated: false });
+  // los formatos de falla de las suites del arnés, con colores y sin la línea de título del reportero de Node
+  const casos = failedCases(['\u001b[31m✖ uno\u001b[39m', 'ok 1 - bien', 'MAL dos', '❌ tres', 'FAIL cuatro', '✖ failing tests:', '  ✖ uno', 'bien'].join('\n'));
+  assert.deepEqual(casos, ['✖ uno', 'MAL dos', '❌ tres', 'FAIL cuatro']);
+});
+
+test('RunSuites_FullOutput_RunBudget — pasado el tope de la corrida, de las suites que siguen queda sólo el resumen de sus casos, y se dice', () => {
+  // 🔴 mutación: no descontar lo escrito del tope de la corrida → muchas suites rojas escriben cada una sus 8 MB.
+  const { saveFullOutput } = require(RUNNER);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-budget-'));
+  const out = path.join(root, 'suites.json');
+  const amb = { run_check: null, workers: 1, marks: {}, removed: [], other_names: [] };
+  const budget = { left: 3000 };
+  const una = (idx) => ({ idx, ruta: `/x/tests/s${idx}.test.js`, exit: 1, ms: 1, salida: 'x'.repeat(2500) });
+  const a = saveFullOutput(out, una(1), amb, budget, 1e6);
+  const b = saveFullOutput(out, una(2), amb, budget, 1e6);
+  const c = saveFullOutput(out, una(3), amb, budget, 1e6);
+  assert.ok(a.file && fs.existsSync(a.file), 'la primera entra entera');
+  assert.ok(b.file && b.truncated, 'la segunda entra recortada a lo que le queda a la corrida');
+  assert.equal(c.file, null, 'la tercera ya no se escribe');
+  assert.match(c.skipped, /tope .*corrida.*casos/);
+  const total = [a.file, b.file].reduce((n, f) => n + fs.statSync(f).size, 0);
+  assert.ok(total < 3000 + 600, `entre todas escribieron ${total} bytes con tope de 3000`);
+});
+
+test('TestGate_OldResultFolders_Pruned — al arrancar, la puerta borra sus carpetas de más de 7 días, sólo las suyas y sólo en el temporal', () => {
+  // 🔴 mutación: borrar por prefijo sin mirar el nombre exacto, la edad o si es un enlace; o no llamarlo desde la puerta.
+  const { pruneOldResults } = require(path.join(__dirname, '..', 'lib', 'old-gate-results.js'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-prune-'));
+  const afuera = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-prune-afuera-'));
+  const viejo = (Date.now() - 8 * 86400000) / 1000;
+  const mk = (name, old) => { const d = path.join(root, name); fs.mkdirSync(d); fs.writeFileSync(path.join(d, 'f'), 'x'); if (old) fs.utimesSync(d, viejo, viejo); return d; };
+  const vieja = mk('test-gate-Ab12Cd', true);
+  const nueva = mk('test-gate-Zz99Yy', false);
+  const otroNombre = mk('test-gate-mia-de-otro', true);
+  const ajena = mk('otra-cosa-Ab12Cd', true);
+  fs.writeFileSync(path.join(afuera, 'f'), 'x');
+  fs.symlinkSync(afuera, path.join(root, 'test-gate-Enlace'));
+  fs.lutimesSync(path.join(root, 'test-gate-Enlace'), viejo, viejo);
+  const deOtro = mk('test-gate-Otro01', true);
+  pruneOldResults(root, { uid: process.getuid() + 1, now: Date.now() });
+  assert.ok(fs.existsSync(deOtro), 'la de otro usuario no se toca');
+  const borradas = pruneOldResults(root);
+  assert.deepEqual(borradas.sort(), [deOtro, vieja].sort());
+  for (const d of [nueva, otroNombre, ajena]) assert.ok(fs.existsSync(d), `${path.basename(d)} queda`);
+  assert.ok(fs.existsSync(path.join(afuera, 'f')), 'un enlace no se sigue');
+  const gate = fs.readFileSync(path.join(__dirname, '..', 'test-gate.sh'), 'utf8');
+  const llamada = gate.indexOf('lib/old-gate-results.js" /tmp');
+  assert.ok(llamada >= 0 && llamada < gate.indexOf('mktemp -d /tmp/test-gate-XXXXXX'), 'la puerta limpia el mismo temporal donde crea su carpeta, antes de crearla');
+});

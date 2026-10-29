@@ -40,6 +40,9 @@ const stateDir = (casa) => require(path.join(LIB, 'state-dir.js')).stateDir(casa
 
 const VENCE_MIN = 30;
 const SESION = /^[\w-]+$/;
+// el nombre con que los guiones dicen «sin variable de sesión»: no es una sesión a la que pedirle una firma
+const SIN_SESION = '_nosession';
+const NO_ES_SESION = '«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id';
 const VARIABLES_DE_SESION = /(^|[^\w])(CLAUDE_CODE_SESSION_ID|TYCON_SESSION_ID|CODEX_SESSION_ID)(?![\w])/;
 // los guiones de las firmas `guion`, por su nombre de archivo
 const GUIONES = new Set(['marker.js', 'pipeline.js', 'e2e-setup.js', 'run-base-controls.sh']);
@@ -182,6 +185,8 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
   const opaca = pal.some((w) => !w.literal);
   const con = (b) => opaca || a.some((w) => w === b || w.startsWith(`${b}=`));
   if (guion === 'marker.js') {
+    const pide = llamada ? markerCommand().lectorDeBanderas(llamada) : con;
+    if (sub === 'set-check' && pide('--force-manual')) return 'escape:force-manual';
     // la firma la piden la cita del plan o la de la maqueta, como en marker.js; el plan que se aprueba solo, no
     if (sub === 'complete-step' && ['approve-plan', '3'].includes(String(a[0] || '').trim()) && (con('--approved') || con('--mockup-approved'))) return 'plan-approval';
     if (sub === 'approve-mockup') return 'plan-approval';
@@ -189,6 +194,7 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
     if (sub === 'mark-tested') return 'manual-test';
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
+    if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'restore' || (sub === 'clear-session' && a.includes('--lost'))) return 'lost-run';
     // la firma en una variable puede ser cualquiera de las cuatro: cuenta como una, y la forma canónica la niega
     if (sub === 'sign-file' && (opaca || FIRMAS_DE_ARCHIVO.includes(a[0]))) return `escape:${FIRMAS_DE_ARCHIVO.includes(a[0]) ? a[0] : FIRMAS_DE_ARCHIVO[0]}`;
@@ -198,6 +204,7 @@ function firmaDeLlamado(guion, sub, args, llamada = null) {
     const pide = llamada ? markerCommand().lectorDeBanderas(llamada) : con;
     // un subcomando que no se lee hasta correr puede ser `smart-reloop`
     if (sub == null) return llamada && llamada.dudosa && pide('--extra-round') ? 'extra-round' : null;
+    if (sub === 'check-count') return pide('--trust-ran') ? 'escape:trust-ran' : null;
     return ['smart-reloop', 'advisors'].includes(sub) && pide('--extra-round') ? 'extra-round' : null;
   }
   if (guion === 'e2e-setup.js') return ['prepare', 'defer'].includes(sub) ? 'browser-test' : null;
@@ -338,15 +345,23 @@ function detalleDe(id, comando, palabras, cwd) {
  * prueba en vivo y qué lo cubre. Sin `--acs`, todos los pendientes de firma. `{ texto }`, o `{ error }` si no se pueden
  * mostrar: sin ellos el dueño firmaría a ciegas.
  */
-function criteriosDelPedido(palabras, cwd) {
+function criteriosDelPedido(palabras, cwd, { casa, destino, sesion } = {}) {
   const story = palabras[2] && !palabras[2].startsWith('-') ? palabras[2] : '';
   if (!story) return { error: 'el comando no nombra la historia: sin sus criterios a la vista no se firma' };
-  const abs = path.isAbsolute(story) ? story : path.resolve(cwd || process.cwd(), story);
+  const wd = require(path.join(LIB, 'waiver-display.js'));
+  // pedida para otra sesión, la historia es la de la corrida de esa sesión: el guion firma sobre ella, y una ruta
+  // relativa se lee desde su repo, como la leen marker.js y la muestra de criterios
+  let m = null;
+  if (destino && destino !== sesion) {
+    try { m = marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (e) { return { error: e.message }; }
+    if (!m) return { error: `la sesión ${destino} no tiene una ejecución abierta` };
+  }
+  const abs = path.isAbsolute(story) ? story : path.resolve((m && m.repoPath) || cwd || process.cwd(), story);
   if (!fs.existsSync(abs)) return { error: `no encuentro la historia ${una(abs, 200)}: sin sus criterios a la vista no se firma` };
+  if (m && !wd.esLaDelMarcador(abs, m)) return { error: `${path.basename(abs)} no es la historia de la ejecución de la sesión ${destino}` };
   const i = palabras.indexOf('--acs');
   const pedidos = i >= 0 ? [...new Set(String(palabras[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))] : null;
   if (pedidos && !pedidos.length) return { error: '--acs no dice qué criterios: sin ellos a la vista no se firma' };
-  const wd = require(path.join(LIB, 'waiver-display.js'));
   let c;
   try {
     c = wd.criteriosDe(abs, pedidos || []);
@@ -423,7 +438,9 @@ function clasificarConElGuion(palabras, cwd) {
 function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, clasificar = clasificarConElGuion, userInfo } = {}) {
   const comando = String((evento.tool_input && evento.tool_input.command) || '');
   const sesion = evento.session_id == null ? '' : String(evento.session_id);
-  const negar = (motivo, ids) => negarCon(motivo, ids, sesion);
+  // la terminal firma para la sesión destino en cuanto se conoce: antes, para la del evento
+  let paraTerminal = sesion;
+  const negar = (motivo, ids) => negarCon(motivo, ids, paraTerminal);
   const guiones = firmasDelComando(comando);
   const pedidas = [...new Set([...guiones, ...escapes])];
   if (guiones.ilegible) return negar('no se pudo leer el comando, y nombra un guion de firma', pedidas);
@@ -470,6 +487,8 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   if (arbol.some((p) => p.ppid === tool.pid && desenvolver(p.comando, casa) !== null)) return negar('cerrá los procesos de fondo o firmá desde tu terminal: hay una consola de fondo viva', pendientes);
   const destino = destinoDe(can && can.palabras, sesion);
   if (!SESION.test(destino)) return negar('la sesión de --for-session no se puede leer', pendientes);
+  if (destino === SIN_SESION && destino !== sesion) return negar(NO_ES_SESION, pendientes);
+  paraTerminal = destino;
   if (destino !== sesion && guion && firmaDe(guion).otherSession !== 'yes') return negar(`«${firmaDe(guion).approves}» no se corre desde la pestaña de otra sesión`, pendientes);
   // la refirma tras traer main: la dice el clasificador del guion (decisión 28); si no la comprueba, cambio de control
   let firmaGuion = guion;
@@ -493,7 +512,7 @@ function decidir({ evento = {}, escapes = [], arbol, pid = process.pid, casa, ah
   } catch (e) { return negar(`no se pudo consultar la delegación del perfil (${e.message})`, pendientes); }
   let detalle = detalleDe(pendientes[0], comando, can && can.palabras, evento.cwd);
   if (guion === 'runtime-waiver') {
-    const c = criteriosDelPedido(can.palabras, evento.cwd);
+    const c = criteriosDelPedido(can.palabras, evento.cwd, { casa, destino, sesion });
     if (c.error) return negar(c.error, pendientes);
     detalle = c.texto;
   }
@@ -750,6 +769,7 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
   if (propia === '_nosession') propia = null;
   const i = argv.indexOf('--for-session');
   const pedida = i >= 0 ? argv[i + 1] : null;
+  if (pedida === SIN_SESION) return { codigo: 1, motivo: NO_ES_SESION };
   // otra sesión, sólo para las firmas que el catálogo marca así: la firma la pide la sesión propia para la pedida
   const s = firmaDe(firma);
   if (pedida && propia && pedida !== propia && !(s && s.otherSession === 'yes')) {
@@ -782,7 +802,9 @@ function exigir({ firma, argv = process.argv.slice(1), resumen = '', pid = proce
 function fijarDestino({ r, propia, necesitaMarcador = false, leerMarcador, casa, env = process.env } = {}) {
   const destino = r && r.destino;
   // sin sesión (ni propia ni pedida) el guion sigue como estaba: no hay a qué sesión pasar
-  if (!destino || destino === '_nosession') return { codigo: 0, destino: null, constancia: { via: r && r.via } };
+  if (!destino) return { codigo: 0, destino: null, constancia: { via: r && r.via } };
+  // «sin sesión» como destino pasaría sin comparar la corrida que vio el dueño
+  if (destino === SIN_SESION) return { codigo: 2, motivo: NO_ES_SESION };
   if (!SESION.test(destino)) return { codigo: 2, motivo: 'la sesión destino de la firma no se puede leer' };
   const leer = leerMarcador || ((sid) => marcadorEn(path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'active', `${sid}.json`)));
   let hoy;
@@ -808,7 +830,7 @@ function quienFirmo({ via, sesion } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { VENCE_MIN, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { VENCE_MIN, carpeta, quienFirmo, leerArbol, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma };
 
 if (require.main === module) {

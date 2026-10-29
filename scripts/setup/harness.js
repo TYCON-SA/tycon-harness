@@ -3937,10 +3937,14 @@ function cmdDoctor(ctx) {
   // los controles ESPERADOS contra la máquina: la lista del aplicador de esta plataforma para esta
   // configuración. Lo que el aplicador nunca registró no está en `managed`, y lo de arriba no lo ve. Siempre un AVISO,
   // nunca un rojo: la comprobación de salud llama a doctor, y un rojo acá haría volver atrás una actualización sana
+  // los frenos que la organización encendió (`switches` del perfil) cuentan como si la máquina hubiera puesto su
+  // variable: el aplicador los registra así, y doctor espera lo mismo. Con la configuración rota, ninguno
+  let orgBrakes = {};
   const integrations = (() => {
     try {
       const cfg = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js'));
       const c = cfg.leer({ env, home: ctx.home, arnes: tree });
+      if (typeof cfg.brakeOptIns === 'function') orgBrakes = cfg.brakeOptIns(c);
       // con la integración de horas elegida (los hooks `time:<integración>`), si el lector la conoce
       return Object.assign(cfg.integraciones(c), typeof cfg.timeTracking === 'function' ? { timeTracking: cfg.timeTracking(c).value } : {});
     } catch (_) { return null; }
@@ -3957,7 +3961,9 @@ function cmdDoctor(ctx) {
   doctorDeclaredReposItems(ctx, tree, add, extra);
   // el Node propio del arnés: dato o aviso, nunca rojo
   doctorHarnessNodeItems(ctx, tree, add, extra);
-  const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env, home: ctx.home, profile: prof.ok ? prof.value : null });
+  const controlsEnv = Object.assign({}, env);
+  for (const [k, v] of Object.entries(orgBrakes)) if (controlsEnv[k] === undefined || controlsEnv[k] === '') controlsEnv[k] = v;
+  const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env: controlsEnv, home: ctx.home, profile: prof.ok ? prof.value : null });
   for (const t of controls.problems) add('warn', `controles esperados: ${t}`);
   for (const x of controls.excluded) add('ok', `fuera en Windows: ${x.id} — ${x.reason}`);
   if (controls.missing.length) add('warn', `${controls.missing.length === 1 ? 'falta' : 'faltan'} ${controls.missing.length} de ${controls.expected.length} controles esperados en ${settingsPath(ctx)} (la lista de scripts/${controls.source}): ${controls.missing.map((c) => c.label || `${c.event} ${c.relpath}`).join(', ')} — harness.js apply los registra; si alguno sigue faltando, la salida del aplicador dice por qué${controls.caveat ? ` · ${controls.caveat}` : ''}`);

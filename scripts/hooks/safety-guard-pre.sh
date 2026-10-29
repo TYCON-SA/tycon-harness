@@ -73,6 +73,43 @@
 
 set -u
 
+# ── El reloj propio del freno ─────────────────────────────────────────────────────────────────────────
+# Si algo deja esperando al freno (un lector colgado, un nieto con la salida abierta) y vence el tope de la herramienta,
+# el comando corre sin mirar: medido con Claude Code, un freno que dormía más que su tope dejó correr el comando y con
+# tope holgado frenó. Por eso el freno tiene un tope propio, más corto, y al vencer frena: un vigía separado del
+# freno (no es su hijo, y no tiene la salida del freno abierta) le manda TERM y corta todo lo que el freno lanzó; la
+# trampa de TERM sale 2. TYCON_SAFETY_TIMEOUT_S, de 1 a 50 segundos; fuera de eso, 20.
+# El vigía reconoce al freno por su hora de arranque y su línea de comando, tomadas al empezar: si el número del proceso
+# pasó a otro, no lo toca.
+# Límites conocidos: el corte de lo lanzado usa `pgrep`; donde no está (el Git Bash de Windows), el freno sale 2 recién
+# cuando termina lo que espera. Sin `ps -o` el freno se reconoce sólo por /proc/<pid>/cmdline, y sin ninguno de los
+# dos el reloj no actúa.
+SG_CLOCK_S="${TYCON_SAFETY_TIMEOUT_S:-20}"
+# sin ceros adelante: «09» o «060» no son un número de segundos para la cuenta de bash
+if ! [[ "$SG_CLOCK_S" =~ ^[1-9][0-9]?$ ]] || (( SG_CLOCK_S > 50 )); then SG_CLOCK_S=20; fi
+sg_identity() {
+  local s
+  s="$(ps -p "$1" -o lstart=,command= 2>/dev/null)"
+  if [[ -z "$s" && -r "/proc/$1/cmdline" ]]; then s="$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null)"; fi
+  printf '%s' "$s"
+}
+_sg_id="$(sg_identity $$)"
+sg_clock_fired() {
+  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar. Si se repite, decíselo a la persona: algo deja esperando al freno." >&2
+  exit 2
+}
+trap 'sg_clock_fired' TERM
+_sg_pid=$$
+( (
+  sleep "$SG_CLOCK_S"
+  # el número del proceso pudo pasar a otro: sólo se corta si sigue siendo este freno
+  _sg_now="$(sg_identity "$_sg_pid")"
+  [[ -n "$_sg_now" && "$_sg_now" == "$_sg_id" && "$_sg_now" == *safety-guard-pre.sh* ]] || exit 0
+  kill -TERM "$_sg_pid" 2>/dev/null
+  _sg_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do _sg_tree "$c"; kill -KILL "$c" 2>/dev/null; done; }
+  _sg_tree "$_sg_pid"
+) </dev/null >/dev/null 2>&1 & ) </dev/null >/dev/null 2>&1
+
 # Fail-open: cualquier error inesperado → exit 0 (no bloquear). Si una firma ya pidió la ventana de permiso, la salida
 # 0 la emite igual: sin ella el comando correría sin que la persona lo apruebe.
 OW_ASK_JSON=""
@@ -712,7 +749,8 @@ ESC_CARTEL=""
 # módulo del comando. Contesta una de cuatro:
 #   · deny: frena con la regla de la firma y el motivo de la ventana, que trae cómo firmarla en la terminal;
 #   · ask: se guarda y se emite al salir 0 (salida_ok), así una regla posterior que frena sigue frenando;
-#   · allow: la delegación aprobada por el dueño (force-manual, trust-ran) la firmó, con su constancia;
+#   · allow: una firma que el dueño delegó nombrándola en `approvals.delegated_signing` la dio quien coordina, con su
+#     constancia;
 #   · none: no hay firma que pedir (o la vuelta extra delegada, que la consume pipeline.js).
 # Aprobar un control con `--relayed-by` ya no vale: la ventana lo niega (ESC-C7). Con el freno apagado por el ambiente
 # no se consulta: los escapes ya dejaron su constancia, y los guiones sin registro de la ventana sólo firman en la
@@ -741,11 +779,11 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
           "Cerrar la historia como deuda (marker.js ${sub}) deja lo que no se pudo hacer como el final de la ejecución, con su deuda anotada." \
           "Si se puede terminar, terminá. Si no, explicale a la persona qué quedó pendiente y por qué." ;;
       force-manual) block "ESC-C3" \
-          "Declarar un control en verde a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo." \
-          "Corré el control de verdad: marker.js run-check <nombre> -- <comando>. Si no se puede, decíselo a la persona." ;;
+          "Declarar un control a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo; así escrito (escondido, en una variable o en una envoltura) no se firma." \
+          "Corré el control de verdad: marker.js run-check <nombre> -- <comando>. Si no se puede, decíselo a la persona: si lo decide ella, la firma va en su forma exacta, sola: marker.js set-check <control> <estado> --force-manual [--for-session <D>]." ;;
       trust-ran) block "ESC-C3" \
-          "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr." \
-          "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona." ;;
+          "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr; así escrito (escondido, en una variable o en una envoltura) no se firma." \
+          "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona: si lo decide ella, la firma va en su forma exacta, sola: pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]." ;;
       no-deep-review) block "ESC-C3" \
           "--no-deep-review en ${sub} apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
           "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;

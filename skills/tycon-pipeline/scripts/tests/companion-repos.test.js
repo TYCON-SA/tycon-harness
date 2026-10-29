@@ -396,7 +396,7 @@ test('una story de un solo repo da el mismo set, contexto y delta que antes', ()
   const lab = laboratorio({ declarar: false });
   const out = advisors(lab, casa(), 't15', ['src/A.cs']);
   const ctx = fs.readFileSync(out.context_file, 'utf8');
-  assert.match(ctx, /## Diff unificado \(git diff HEAD\)\n\n```diff\ndiff --git a\/src\/A\.cs b\/src\/A\.cs/);
+  assert.match(ctx, /## Diff unificado \(git diff contra [^\n]*\)\n\n```diff\ndiff --git a\/src\/A\.cs b\/src\/A\.cs/);
   assert.doesNotMatch(ctx, /repo hermano/);
   assert.match(ctx, /## Archivos del diff \(1\)\n\n- src\/A\.cs\n/);
   assert.deepEqual(out.all.filter((a) => /feature-wiring|react/.test(a)), [], 'un diff sólo .cs sin endpoints no trae ni cableado ni React');

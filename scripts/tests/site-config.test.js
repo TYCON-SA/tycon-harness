@@ -3600,6 +3600,45 @@ test('8.122 T9 · Config_CoordinationCap_SectionAndRequest @story-8.122 @ac-9', 
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
 });
 
+// ── Frenos y medidores (switches) ─────────────────────────────────────────────────────────────────────────────────────
+// Un freno sólo se enciende desde el sitio (sus opciones: de fábrica o encendido); un medidor, además, se apaga. Un freno
+// «apagado» escrito a mano no se propone: el lector lo nombra. Y el aviso de espera se apaga desde su propia sección.
+test('Config_Switches_SectionOnlyTurnsBrakesOn', async () => {
+  const s = ORG.seccionPorId('interruptores');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['switches'], ['switches']]);
+  const rev = (borrador) => ORG.revisar({ seccion: 'interruptores', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ switches: { session_guard: 'on', response_meter: 'off' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, switches: { session_guard: 'on', response_meter: 'off' } }));
+  const apagar = rev({ switches: { test_scope_guard: 'off' } });
+  assert.strictEqual(apagar.ok, false, 'un freno apagado no se propone');
+  assert.ok(apagar.problems.some((x) => x.path === 'switches.test_scope_guard' && /TYCON_TEST_SCOPE_GUARD=0/.test(x.message)), JSON.stringify(apagar.problems));
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = ['pantalla.interruptoresTitulo', 'pantalla.interruptoresDescripcion', 'pantalla.para.interruptores', 'org.capaSinSwitches', 'pantalla.esperaEncendido'];
+  for (const k of Object.keys(TC.SWITCHES)) claves.push(`pantalla.interruptor.${k}`, `pantalla.interruptorAyuda.${k}`);
+  for (const idioma of ['es', 'en']) {
+    for (const k of claves) assert.ok(textos.t(idioma, k) && textos.t(idioma, k) !== k, `${idioma} ${k}`);
+    assert.match(ORG.pantalla(idioma), /interruptores: editorInterruptores/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('interruptores', {})]);
+  assert.strictEqual(p.error, null);
+  const sels = p.todo(p.sec('interruptores')).filter((n) => n.tag === 'select');
+  assert.strictEqual(sels.length, Object.keys(TC.SWITCHES).length, 'un selector por interruptor');
+  const valores = (sel) => p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value);
+  const porRuta = Object.fromEntries(sels.map((sel) => [sel.attrs['data-path'], valores(sel)]));
+  for (const [k, sw] of Object.entries(TC.SWITCHES)) {
+    assert.deepStrictEqual(porRuta[`switches.${k}`], sw.brake ? ['', 'on'] : ['', 'on', 'off'], k);
+  }
+  const CON = { ...PERFIL_TYCON, switches: { session_guard: 'on' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.COORDINATION_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.SWITCHES_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.SWITCHES_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  // el aviso de espera apagado por la organización pide la versión que lee la clave
+  assert.strictEqual(ORG.versionQuePide({ wait_notice: { enabled: false } }).version, ORG.WAIT_NOTICE_ENABLED_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ wait_notice: { minutes: 7 } }).version, ORG.WAIT_NOTICE_SINCE);
+});
+
 // ── Cómo se actualiza el freno de producción (guard.update) y la firma delegada (approvals.delegated_signing) ──────
 // Cada organización elige cuánto riesgo toma; lo de fábrica es lo más seguro, y cada valor se explica con su costo donde
 // la persona elige.

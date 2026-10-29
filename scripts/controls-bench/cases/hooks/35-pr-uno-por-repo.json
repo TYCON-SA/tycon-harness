@@ -50,6 +50,10 @@
           "id": "sin-poder-consultar-no-bloquea-pero-lo-dice",
           "_por_que": "Sin `az` en el PATH del sandbox no puede preguntar. Un freno que corta el trabajo cuando no pudo mirar se apaga en una tarde; lo que no puede hacer es callarse.",
           "type": "must-not-block",
+          "__az": "Un `az` de prueba que falla al instante va primero en el PATH. Sin él, el caso llama al `az` de verdad de la máquina —los runners de la CI lo traen, en /usr/bin— contra una organización que no existe, y a veces pasa los 20 s del banco: queda NO MEDIDO y rompe la paridad entre herramientas sin decir nada del control.",
+          "setup": [
+            "mkdir -p bin && printf '#!/bin/sh\\necho \"az de prueba: no consulta\" >&2\\nexit 1\\n' > bin/az && chmod +x bin/az"
+          ],
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -63,7 +67,8 @@
             ]
           },
           "env": {
-            "TYCON_PR_ONE_PER_REPO": "1"
+            "TYCON_PR_ONE_PER_REPO": "1",
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
           }
         },
         {
@@ -84,6 +89,10 @@
           "id": "con-forma-igual-no-se-calla",
           "type": "must-not-block",
           "_por_que": "AZ-PR-PARSER-UNICO-1 (2026-09-03): con `--org=https://x` (forma `=`) el lector casero no encontraba el org y caía en la rama «sin datos»: exit 0 y ni una palabra. Sin `az` en el sandbox tiene que decir que NO pudo consultar, igual que con la forma `--org https://x`.",
+          "__az": "Un `az` de prueba que falla al instante va primero en el PATH. Sin él, el caso llama al `az` de verdad de la máquina —los runners de la CI lo traen, en /usr/bin— contra una organización que no existe, y a veces pasa los 20 s del banco: queda NO MEDIDO y rompe la paridad entre herramientas sin decir nada del control.",
+          "setup": [
+            "mkdir -p bin && printf '#!/bin/sh\\necho \"az de prueba: no consulta\" >&2\\nexit 1\\n' > bin/az && chmod +x bin/az"
+          ],
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -97,12 +106,17 @@
             ]
           },
           "env": {
-            "TYCON_PR_ONE_PER_REPO": "1"
+            "TYCON_PR_ONE_PER_REPO": "1",
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
           }
         },
         {
           "id": "con-organization-y-comillas-no-se-calla",
           "type": "must-not-block",
+          "__az": "Un `az` de prueba que falla al instante va primero en el PATH. Sin él, el caso llama al `az` de verdad de la máquina —los runners de la CI lo traen, en /usr/bin— contra una organización que no existe, y a veces pasa los 20 s del banco: queda NO MEDIDO y rompe la paridad entre herramientas sin decir nada del control.",
+          "setup": [
+            "mkdir -p bin && printf '#!/bin/sh\\necho \"az de prueba: no consulta\" >&2\\nexit 1\\n' > bin/az && chmod +x bin/az"
+          ],
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -116,7 +130,8 @@
             ]
           },
           "env": {
-            "TYCON_PR_ONE_PER_REPO": "1"
+            "TYCON_PR_ONE_PER_REPO": "1",
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
           },
           "_por_que": "Revisión adversarial 2026-09-06: el comando original (`--organization \"…\" --project \"Acme Logistica\"`) era verde con el lector VIEJO también — ese regex ya leía comillas con espacios. Lo que el viejo se comía en silencio (rc 0, stderr vacío) era la forma CORTA `-p/-r/-s/-t`: ésta. Sin org en el comando, el hook ya no renuncia: pregunta con las banderas que hay y deja que `az` resuelva (28 de 52 PR reales van sin --org). (El runner no tiene `stderr_not_re`: se exige «no pude consultar», que sólo sale si PREGUNTÓ; el viejo decía «NO verifiqué… no pude leer».)"
         },
@@ -124,6 +139,10 @@
           "id": "encadenado-consulta-los-dos-repos",
           "type": "must-not-block",
           "_por_que": "Revisión adversarial 2026-09-06 (hallazgo #3): sólo se juzgaba el PRIMER `pr create` de la cadena; R2 nunca se miraba. Sin az válido en el sandbox, tiene que decir que no pudo consultar los DOS.",
+          "__az": "Un `az` de prueba que falla al instante va primero en el PATH. Sin él, el caso llama al `az` de verdad de la máquina —los runners de la CI lo traen, en /usr/bin— contra una organización que no existe, y a veces pasa los 20 s del banco: queda NO MEDIDO y rompe la paridad entre herramientas sin decir nada del control.",
+          "setup": [
+            "mkdir -p bin && printf '#!/bin/sh\\necho \"az de prueba: no consulta\" >&2\\nexit 1\\n' > bin/az && chmod +x bin/az"
+          ],
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -138,13 +157,18 @@
             ]
           },
           "env": {
-            "TYCON_PR_ONE_PER_REPO": "1"
+            "TYCON_PR_ONE_PER_REPO": "1",
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
           }
         },
         {
           "id": "sin-org-ni-proyecto-igual-pregunta",
           "type": "must-not-block",
           "_por_que": "Revisión adversarial 2026-09-06 (hallazgo #14): con org/proyecto en `az devops configure --defaults` (lo que recomienda el CLAUDE.md) el hook avisaba «no pude leer org/proyecto/repo» y nunca preguntaba. Ahora pasa las banderas que hay y `az` resuelve por sus defaults — y si no puede, lo dice. (El runner no tiene `stderr_not_re`: se exige «no pude consultar», que sólo sale si PREGUNTÓ; el viejo decía «NO verifiqué… no pude leer».)",
+          "__az": "Un `az` de prueba que falla al instante va primero en el PATH. Sin él, el caso llama al `az` de verdad de la máquina —los runners de la CI lo traen, en /usr/bin— contra una organización que no existe, y a veces pasa los 20 s del banco: queda NO MEDIDO y rompe la paridad entre herramientas sin decir nada del control.",
+          "setup": [
+            "mkdir -p bin && printf '#!/bin/sh\\necho \"az de prueba: no consulta\" >&2\\nexit 1\\n' > bin/az && chmod +x bin/az"
+          ],
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -158,7 +182,8 @@
             ]
           },
           "env": {
-            "TYCON_PR_ONE_PER_REPO": "1"
+            "TYCON_PR_ONE_PER_REPO": "1",
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
           }
         },
         {
@@ -218,13 +243,15 @@
           "id": "constancia-2.6-sin-poder-preguntar-no-se-anota",
           "type": "must-not-block",
           "__doc": "story 2.6 · 🔴 el espejo del anterior, y el que de verdad importa: si la consulta FALLA, el freno no bloquea —correcto— pero tampoco puede anotar «paso». «No miré» y «miré y está bien» no pueden terminar en el mismo número: es la distinción que esta story existe para no perder.",
-          "setup": [
-            "git init -q -b main . && git config user.email b@b && git config user.name b"
-          ],
           "env": {
             "TYCON_PR_ONE_PER_REPO": "1",
-            "PATH": "/usr/bin:/bin"
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
           },
+          "__az": "Un `az` de prueba que falla al instante va primero en el PATH. Sin él, el caso llama al `az` de verdad de la máquina —los runners de la CI lo traen, en /usr/bin— contra una organización que no existe, y a veces pasa los 20 s del banco: queda NO MEDIDO y rompe la paridad entre herramientas sin decir nada del control.",
+          "setup": [
+            "mkdir -p bin && printf '#!/bin/sh\\necho \"az de prueba: no consulta\" >&2\\nexit 1\\n' > bin/az && chmod +x bin/az",
+            "git init -q -b main . && git config user.email b@b && git config user.name b"
+          ],
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {

@@ -2143,6 +2143,409 @@
      }
     },
     {
+     "id": "heredoc-sin-comillas-con-sustitucion-que-borra-la-memoria-se-frena",
+     "type": "must-block",
+     "__doc": "El cuerpo de un heredoc SIN comillas es texto, pero el shell corre sus `$(…)` al armarlo: `cat > /tmp/n.txt <<EOF` con `$(rm -f …/production-memory.json)` en el cuerpo borra la memoria. El partidor quitaba el cuerpo entero y el freno no lo veía (pase adversarial de la 8.14, #7). ROJO PREVIO: exit 0.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/notas.txt <<EOF\nlimpio: $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-con-guion-y-tabulaciones-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con `<<-` y tabulaciones: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<-EOF\n\tx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\n\tEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-segundo-de-la-linea-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en el segundo de dos heredocs de una línea: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat <<A > /tmp/a; cat > /tmp/b <<B\nhola\nA\nx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nB"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-segundo-del-mismo-comando-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en el segundo de dos heredocs del mismo comando: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat <<A <<B > /tmp/b\nhola\nA\nx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nB"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-dentro-de-una-sustitucion-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con el heredoc dentro de un `$(…)`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "X=$(cat <<EOF\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF\n); echo \"$X\" > /tmp/n"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-dolar-partido-por-barra-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con el `$` y el `(` en dos líneas unidas por una barra: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\nx $\\\n(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-ruta-partida-por-barra-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con la ruta partida por una barra al final de la línea: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\nx $(rm -f ~/.claude/.tycon-pipeline/production-mem\\\nory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-valor-por-defecto-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en el valor por defecto de `${X:-…}`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n${X:-$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)}\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-cuenta-vieja-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción dentro de una cuenta `$[…]`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n$[ $(rm -f ~/.claude/.tycon-pipeline/production-memory.json) 0 ]\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-cuenta-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción dentro de una cuenta `$((…))`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n$(( $(rm -f ~/.claude/.tycon-pipeline/production-memory.json) 0 ))\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-comilla-invertida-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción entre comillas invertidas: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n`rm -f \\~/.claude/.tycon-pipeline/production-memory.json`\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-comillas-invertidas-anidadas-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en comillas invertidas anidadas: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n`echo \\`rm -f ~/.claude/.tycon-pipeline/production-memory.json\\``\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-cierre-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción en un heredoc sin línea de cierre: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\nx $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-barra-escapada-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción detrás de una barra escapada (`\\\\$(…)` sí corre): el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n\\\\$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-redireccion-adentro-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción que escribe con una redirección: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n$(echo x > ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-en-una-funcion-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción dentro de una función: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "f(){ cat <<EOF\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF\n}; f > /tmp/n"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-con-tee-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción con `tee`: el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "tee /tmp/n <<EOF >/dev/null\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-sin-comillas-cierre-con-blanco-se-frena",
+     "type": "must-block",
+     "__doc": "Un `$(rm …)` sobre la memoria de producción después de un cierre con un blanco adelante (que no cierra): el shell lo corre al armar el cuerpo. Encontrado por el pase de seguridad del arreglo del heredoc sin comillas; bash y zsh lo ejecutan.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/n <<EOF\n EOF\n$(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "heredoc-con-comillas-que-nombra-una-sustitucion-pasa",
+     "type": "must-not-block",
+     "__doc": "El espejo: con la palabra entre comillas (`<<'EOF'`) el shell no corre nada del cuerpo; el `$(rm …)` es texto del archivo y pasa.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > /tmp/notas.txt <<'EOF'\nlimpio: $(rm -f ~/.claude/.tycon-pipeline/production-memory.json)\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
      "id": "heredoc-con-redireccion-despues-del-operador-se-frena",
      "type": "must-block",
      "__doc": "🔴 Agujero preexistente que destapó el arreglo (2026-09-16): `cat <<EOF > <memoria>` —la redirección DESPUÉS del `<<`— pasaba, porque `sinHeredocs` borraba el RESTO de la línea del operador junto con el cuerpo, y el freno nunca veía el `> destino`. Ahora `sinHeredocs` conserva la línea (sólo el cuerpo es texto). ROJO PREVIO: exit 0 — se pisaba la memoria de producción sin frenar.",
@@ -3482,6 +3885,403 @@
       "tool_name": "Bash",
       "tool_input": {
        "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassigned-variable-forgets-its-substitution-passes",
+     "type": "must-not-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · una variable que salió de una sustitución que nombra la memoria y después se reasigna con `;` ya no vale lo de antes: el shell la reemplaza, y el `rm` borra el valor nuevo. ROJO PREVIO: el freno seguía viendo la sustitución vieja y frenaba (rc=2).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); F=/tmp/scratch-a; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "unset-keeps-the-substitution",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · control: `unset` no cuenta como reemplazo, porque puede fallar (una variable de sólo lectura) o borrar otra cosa (`-f`). ROJO PREVIO: sin el freno, el comando corre.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); unset F; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-pipe",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · detrás de `|` corre en una subshell: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); F=/tmp/a | true; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-background-newline",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · con `&` y un salto de línea corre en segundo plano, en otra subshell: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); F=/tmp/a &\nrm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-background",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · con `&` corre en segundo plano, en otra subshell: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); F=/tmp/a & rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-command-substitution",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · dentro de `$(…)` corre en una subshell: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); echo $(F=/tmp/a); rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-backticks",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · entre comillas invertidas corre en una subshell: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); echo `F=/tmp/a`; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-process-substitution",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · dentro de `<(…)` corre en una subshell: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); cat <(F=/tmp/a); rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-bash-c",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · en `bash -c` corre en otro proceso: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); bash -c 'F=/tmp/a'; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-heredoc-to-sh",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · en un heredoc que lee `sh` corre en otro proceso: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); sh <<EOF\nF=/tmp/a\nEOF\nrm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-unset-function",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · `unset -f` borra la función, no la variable: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); unset -f F; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-readonly-then-unset",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · el `unset` de una variable de sólo lectura falla y el comando sigue: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); readonly F; unset F; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-readonly-then-assign",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · la asignación a una variable de sólo lectura falla y el comando sigue: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); readonly F; F=/tmp/a; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-local-outside-function",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · `local` fuera de una función da error y no asigna: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); local F=/tmp/a; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-that-may-not-replace-blocks-failing-redirection",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · en zsh, si falla la redirección no asigna: la variable puede seguir valiendo lo de la sustitución. Encontrado por el pase de seguridad del arreglo; bash y zsh lo confirman. ROJO PREVIO: con el primer arreglo, sin el criterio de «pisa seguro», pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); F=/tmp/a >/nonexistent/x; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassigned-array-keeps-its-substitution",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · sobre un arreglo, bash pisa sólo el primer elemento: el segundo sigue saliendo de la sustitución. ROJO PREVIO: con el primer arreglo pasaba (rc=0).",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=(x $(echo ~/.claude/.tycon-pipeline/production-index.json)); F=/tmp/a; rm -f \"${F[@]}\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-after-and-keeps-the-substitution",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · control de `reassigned-variable-forgets-its-substitution-passes`: detrás de `&&` la reasignación puede no correr, así que la variable puede valer todavía lo de la sustitución. ROJO PREVIO: sin el freno, el comando corre.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); true && F=/tmp/scratch-a; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "append-keeps-the-substitution",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · control: `+=` agrega al valor de antes, no lo reemplaza; lo que sale de la sustitución sigue en la variable. ROJO PREVIO: sin el freno, el comando corre.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); F+=.bak; rm -f \"$F\" \"${F%.bak}\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "self-copy-keeps-the-substitution",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · control: una reasignación que copia la misma variable sigue saliendo de su sustitución. ROJO PREVIO: sin el freno, el comando corre.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=$(echo ~/.claude/.tycon-pipeline/production-index.json); F=$F; rm -f \"$F\""
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
+    },
+    {
+     "id": "reassignment-to-another-substitution-that-names-it-blocks",
+     "type": "must-block",
+     "__doc": "Una variable reasignada olvida de qué sustitución salía · control: el reemplazo vale para el valor nuevo también: si la sustitución nueva nombra la memoria, frena. ROJO PREVIO: sin el freno, el comando corre.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/"
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "F=/tmp/scratch-a; F=$(echo ~/.claude/.tycon-pipeline/production-index.json); rm -f \"$F\""
       }
      },
      "expect": {

@@ -854,6 +854,17 @@
       "requiere": []
     },
     {
+      "__nota": "Un guion en archivo con una historia entre sus argumentos que escribe sin nombrar su destino (modo en una variable, en el lugar, un programa que lanza) cuenta como escritura de la historia; el que sólo la lee pasa.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-interpreter-args.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-gate-failures-logged.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []
@@ -1533,6 +1544,12 @@
       "requiere": []
     },
     {
+      "__nota": "un proyecto Maven o Gradle en la raíz vota por su Scala, Groovy y .kts al deducir el alcance de la puerta de pruebas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-scope-build-tools.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la tabla de casos del freno de pruebas sin alcance, con el bash con el que el arnés corre sus guiones (en Windows, el de Git): es la que corre el ensayo de Windows.",
       "raiz": "arnes",
       "ruta": "tests/test-scope-table.test.js",
@@ -2135,9 +2152,27 @@
       "requiere": []
     },
     {
+      "__nota": "los frenos y medidores que la organización cambia desde el sitio (switches del perfil, wait_notice.enabled): sin clave como hoy, la organización los enciende, un freno no se apaga desde el perfil, una clave ilegible no cambia nada.",
+      "raiz": "arnes",
+      "ruta": "tests/org-switches.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.139 (tanda A): el catálogo de las firmas del dueño (scripts/lib/signatures.js) y su guía (guides/firmas-del-arnes.md) dicen lo mismo, y la guía dice que lo delegado no está protegido.",
       "raiz": "arnes",
       "ruta": "tests/signatures-guide.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un pendiente nuevo en la lista de pendientes no entra sin su aprobación firmada: la biblioteca, el control del árbol y del commit, el comando de la firma antes de pedirla, la firma en el catálogo y el freno de escritura del registro.",
+      "raiz": "arnes",
+      "ruta": "tests/pending-approvals.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "al commitear en el público, el inventario de los controles se compara con el pre-commit propio del repo privado (de su origin/main): avisa el mismo día lo que antes salía rojo de noche, y en el privado no aplica.",
+      "raiz": "arnes",
+      "ruta": "tests/private-inventory.test.js",
       "requiere": []
     },
     {
@@ -2192,6 +2227,12 @@
       "__nota": "La integración de Solidtime de punta a punta por el evento neutro, contra un servidor de mentira que contesta como la API medida (404 sin entrada abierta, 400 con otra abierta, 401, 422, red caída, tiempo agotado). El token se arma por partes y se busca en todo lo escrito.",
       "raiz": "arnes",
       "ruta": "tests/solidtime-integration.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El hook que cierra la regla de firewall al terminar la sesión no lo registra ningún instalador del arnés (ni el de Claude Code, en todo perfil, plataforma e integración, ni el de Codex): sólo install-guard.sh y la configuración administrada, en las máquinas autorizadas.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-firewall-only-authorized.test.js",
       "requiere": []
     },
     {
@@ -2364,6 +2405,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/harness-startup-line.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/regex-backtracking.test.js",
       "requiere": []
     },
     {
@@ -2558,7 +2604,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 2.27: la pestaña Corridas del sitio de la organización — todo lo de la vista de corridas (cabecera, diez fichas, gráficos, tabla de trece columnas, detalle con parches y mensaje rescatado, enlaces por id estable), filtrado por persona en el servidor: el dev ve sólo sus máquinas confirmadas, sin conteos globales; ajena, suelta e inexistente contestan el mismo 404; la prueba de fuga recorre todas las respuestas con marcadores sembrados en lo ajeno; la lista es lista blanca; el armado corre en un worker y sirve el anterior entero mientras rearma o si falla; sin disco, lo del hilo sale «no medido»; la página no trae nada en línea. Levanta el servidor del sitio con sesiones reales del emisor local y un espejo fabricado; sin red.",
+      "__nota": "story 2.27: la pestaña Corridas del sitio de la organización — todo lo de la vista de corridas (cabecera, once fichas, gráficos, tabla de trece columnas, detalle con parches y mensaje rescatado, enlaces por id estable), filtrado por persona en el servidor: el dev ve sólo sus máquinas confirmadas, sin conteos globales; ajena, suelta e inexistente contestan el mismo 404; la prueba de fuga recorre todas las respuestas con marcadores sembrados en lo ajeno; la lista es lista blanca; el armado corre en un worker y sirve el anterior entero mientras rearma o si falla; sin disco, lo del hilo sale «no medido»; la página no trae nada en línea. Levanta el servidor del sitio con sesiones reales del emisor local y un espejo fabricado; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-runs.test.js",
       "requiere": []
@@ -2914,6 +2960,12 @@
       "__nota": "story 8.14, tanda A (T1-T6): el expansor y el partidor de scripts/lib/shell-parse.js — las llaves contra zsh y bash de verdad (un shell que falta sale NO MEDIDO), lo literal queda literal, los agrupamientos cortan por profundidad y las palabras quedan enteras, formas de zsh, $'…', variables y arreglos (lo desconocido vale *), y el presupuesto global calculado antes de generar.",
       "raiz": "arnes",
       "ruta": "tests/shell-parse-expand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el partidor de scripts/lib/shell-parse.js con un heredoc SIN comillas: sus $(…) y comillas invertidas (que el shell corre al armar el cuerpo) quedan a la vista como comandos, también con un intérprete, una comilla suelta del texto o un $((…)); con comillas en la palabra o el $ escapado no se lee nada. Sólo lee texto.",
+      "raiz": "arnes",
+      "ruta": "tests/shell-parse-heredoc.test.js",
       "requiere": []
     },
     {
@@ -3332,6 +3384,12 @@
       "__nota": "story 8.115 (T12): los tres frenos de shell que leen la entrada (safety-guard-pre.sh, test-scope-guard-pre.sh, engram-pre-commit.sh) con un jq que imita al de Windows (escribe \\r\\n salvo con -b), uno que no conoce -b y el respaldo con node: los comandos de varios renglones frenan como en la Mac, todo \\r en el comando (y en PowerShell los separadores raros) frena por CMD-C1 en los tres, también con el freno de seguridad apagado, y el freno no se relanza a sí mismo. Cada llamada con tope de 60 s.",
       "raiz": "arnes",
       "ruta": "tests/jq-carriage-return.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el reloj propio del freno de seguridad: con un jq que se queda esperando (y un nieto que deja la salida abierta), el freno frena a su tope en vez de dejar que venza el de la herramienta, que correría el comando sin mirar; un comando común no espera y un tope fuera de rango usa el de fábrica. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-guard-clock.test.js",
       "requiere": []
     },
     {

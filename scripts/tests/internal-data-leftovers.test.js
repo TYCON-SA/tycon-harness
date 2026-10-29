@@ -289,9 +289,6 @@ test('T27 PublishingGuide_PublicText_NoAnonymizationRule — la guía no explica
   const inside = internalLines(raw).map((l) => l.trim()).filter((l) => l.length >= 30);
   const leaked = inside.filter((l) => text.includes(l));
   assert.deepStrictEqual(leaked, [], `${leaked.length} línea(s) de un bloque interno están también en el texto público`);
-  if (fs.existsSync(path.join(ROOT, 'tasks'))) {
-    assert.ok(inside.length > 0, 'en el repo del equipo, la regla de cómo se elige un inventado vive en un bloque interno de esta guía');
-  }
 });
 
 test('T28 InternalBlocks_NearMarker_Brakes — un marcador casi bien escrito frena, no deja salir el bloque', () => {

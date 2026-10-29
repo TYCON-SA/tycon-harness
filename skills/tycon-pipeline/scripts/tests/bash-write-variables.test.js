@@ -459,8 +459,9 @@ test('T34 GuionPorEntradaQueEscribeSusArgumentos_Frena', () => {
 // T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena
 // `python3 p.py`, `node p.js <historia>`: el programa no está en el comando, está en un archivo. El freno lo lee y mira
 // lo que escribe, como si llegara por la entrada. `ruby -e` es un guion en línea más.
-// 🔴 Falla con: mirar sólo el texto del comando, contar como destino todo texto entre comillas del guion (un guion que
-//    sólo lee la historia frenaría), o eximir un guion por el nombre de su carpeta en vez de por la instalación real.
+// Una historia entre los argumentos cuenta como escrita aunque el guion sólo la lea (T1 de bash-write-interpreter-args).
+// 🔴 Falla con: mirar sólo el texto del comando, contar como destino todo texto entre comillas del guion (uno que sólo
+//    lee una historia que nombra frenaría), o eximir un guion por el nombre de su carpeta en vez de por la instalación.
 test('T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena', () => {
   const { estado, repo, raiz } = corralConHistorias();
   conEnv(ENV, () => {
@@ -491,6 +492,7 @@ test('T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena', () => {
       'node skills/tycon-pipeline/scripts/marker.js',
       `cat > nuevo.py <<'EOF'\nopen('specs/story-x.md', 'w').write('x')\nEOF\npython3 nuevo.py`,
       `cd specs && python3 ../arg.py story-x.md`,
+      'python3 lee.py specs/story-x.md',
     ]) assert.equal(freno(c), HISTORIA, c);
     for (const c of [
       'python3 c.py',
@@ -498,7 +500,7 @@ test('T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena', () => {
       `ruby -e "File.write('.github/control-changes/abc.json', '{}')"`,
     ]) assert.match(freno(c), CONSTANCIA, c);
     for (const c of [
-      'python3 lee.py specs/story-x.md',
+      'python3 lee.py',
       'node lee.js',
       'python3 arg.py out/r.md',
       'python3 no-existe.py specs/story-x.md',
@@ -546,7 +548,8 @@ test('T36 GuionEnArchivoDetrasDeEnvoltoriosOpcionesYEnlaces_Frena', () => {
     ]) assert.notEqual(freno(c), '', c);
     assert.equal(freno('python3 M/../evil2.py', [instalado]), HISTORIA, 'el enlace no exime lo que corre afuera de la instalación');
     assert.equal(freno('node evil2.py', [instalado]), '', 'el enlace a la instalación, sin `..`, sí');
-    for (const c of ['node lee.js specs/story-x.md', 'python3 -m json.tool specs/story-x.md', 'python3 -I -E lee.py']) assert.equal(freno(c), '', c);
+    for (const c of ['node lee.js out/r.md', 'python3 -m json.tool specs/story-x.md', 'python3 -I -E lee.py']) assert.equal(freno(c), '', c);
+    assert.equal(freno('node lee.js specs/story-x.md'), HISTORIA, 'con la historia de argumento cuenta como escrita');
     guion('lento.js', 'fs.writeFileSync('.repeat(8000) + '\n');
     const t0 = Date.now();
     freno('node lento.js specs/story-x.md');

@@ -10,7 +10,9 @@
  * El control de CI exige ese resultado: sin él, con el de otra versión del archivo o con un puntaje menor que el de la
  * línea de base, el cambio no entra. «No pude correr el examen» nunca cuenta como «pasó».
  *
- * run    corre el examen del revisor y escribe `scripts/controls-bench/reviewer-exams/<revisor>.json`. El examen es
+ * run    pasa primero los controles baratos del pre-commit sobre el archivo del revisor (historia interna, nombres en
+ *        castellano, nombres reales) y, si alguno lo frena, lo dice y no examina. Después corre el examen del revisor y
+ *        escribe `scripts/controls-bench/reviewer-exams/<revisor>.json`. El examen es
  *        completo o nada: tienen que correr todos los casos que la línea de base tiene para ese revisor. Si el puntaje
  *        supera a la línea de base, pisa en ella sólo las claves que corrieron (y agrega las nuevas); nunca borra.
  * check  mira los `agents/*.md` que cambia el diff y valida el resultado de cada uno, tal como queda en el commit (o en
@@ -20,7 +22,8 @@
  * Uso:
  *   node scripts/controls-bench/reviewer-change-check.js run --agent <revisor> [--runs N] [--repo <dir>] [--no-baseline-update]
  *   node scripts/controls-bench/reviewer-change-check.js check [--repo <dir>] [--base <ref>] [--staged] [--json]
- * Salida: run 0 si dejó el resultado · 2 si no pudo correr el examen. check 0 al día · 1 hay cambios sin examen válido.
+ * Salida: run 0 si dejó el resultado · 1 si un control barato frena el archivo (no examinó) · 2 si no pudo correr el
+ * examen. check 0 al día · 1 hay cambios sin examen válido.
  * Ambiente: TYCON_REVIEWER_EXAM_RUNNER (otro guion en lugar de advisor-runner.js, para pruebas).
  */
 
@@ -61,12 +64,59 @@ function scoreOf(cases) {
   return { passed, total: vals.length, score: ratio(passed, vals.length) };
 }
 
+// ── los controles baratos, antes del examen ────────────────────────────────────────────────────────────────────
+// Los frenos del pre-commit que miran la prosa de un revisor tardan un segundo, y el examen, minutos. Si el pre-commit va
+// a rechazar el archivo, el examen queda atado a un texto que hay que cambiar y se repite: por eso corren antes, sobre
+// el archivo tal como está en el disco y como lo vería el pre-commit (lo de HEAD más ese archivo, en un índice aparte).
+// No se afloja nada: el examen sigue atado al texto exacto.
+const CHEAP_CHECKS = [
+  { name: 'historia interna', script: 'scripts/publishing/internal-history.js' },
+  { name: 'nombres en castellano', script: 'scripts/publishing/spanish-names.js' },
+  { name: 'nombres reales', script: 'scripts/publishing/new-names.js' },
+];
+
+/** `{ stop: [renglones] }` si un control barato frena el archivo del revisor (o no pudo mirarlo); si no, `{ ran, absent }`. */
+function cheapChecks(repo, agent) {
+  const rel = `agents/${agent}.md`;
+  const present = CHEAP_CHECKS.filter((c) => fs.existsSync(path.join(repo, c.script)));
+  const absent = CHEAP_CHECKS.filter((c) => !present.includes(c)).map((c) => c.name);
+  if (!present.length) return { ran: [], absent };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reviewer-cheap-'));
+  try {
+    const env = { ...process.env, GIT_INDEX_FILE: path.join(tmp, 'index') };
+    const g = (args, input) => {
+      const r = spawnSync('git', ['-C', repo, ...args], { env, input, encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(`git ${args[0]}: ${(r.stderr || '').trim().split('\n')[0]}`);
+      return r.stdout.trim();
+    };
+    try {
+      if (gitOrNull(repo, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'])) g(['read-tree', 'HEAD']);
+      g(['update-index', '--add', '--cacheinfo', `100644,${g(['hash-object', '-w', '--', rel])},${rel}`]);
+    } catch (e) { return { stop: [`no pude preparar los controles baratos de ${rel} (${e.message}): no examiné.`] }; }
+    for (const c of present) {
+      const r = spawnSync(process.execPath, [path.join(repo, c.script), '--repo', repo], { cwd: repo, env, encoding: 'utf8' });
+      if (r.status === 0) continue;
+      const out = `${r.stdout || ''}${r.stderr || ''}`.trim();
+      return { stop: [
+        out,
+        `⛔ el control de ${c.name} frena ${rel} (o no pudo mirarlo): el pre-commit lo rechazaría y el examen quedaría viejo.`,
+        'Arreglalo y volvé a correr el examen: no examiné.',
+      ] };
+    }
+    return { ran: present.map((c) => c.name), absent };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 // ── run ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function runExam({ repo, agent, runs, updateBaseline = true }) {
   if (!validAgentName(agent)) return { code: 2, lines: [`nombre de revisor inválido: ${JSON.stringify(agent)}`] };
   const fail = (msg) => ({ code: 2, lines: [`no pude correr el examen de ${agent}: ${msg}`] });
   const agentFile = path.join(repo, 'agents', `${agent}.md`);
   if (!fs.existsSync(agentFile)) return fail(`no existe agents/${agent}.md`);
+  const cheap = cheapChecks(repo, agent);
+  if (cheap.stop) return { code: 1, lines: cheap.stop };
   const baselinePath = path.join(repo, BASELINE_REL);
   let baselineDoc;
   try { baselineDoc = JSON.parse(fs.readFileSync(baselinePath, 'utf8')); }

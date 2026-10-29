@@ -152,8 +152,23 @@ const stripSlash = (s) => (typeof s === 'string' ? s.replace(/\/+$/, '') : s);
  * El final de la cadena de un `file`: una entrada guarda el destino que se midió y una mudanza posterior va en otra
  * entrada cuyo `old` es ese destino. Se sigue de `new` en `new` dentro del mismo repo. Una cadena que vuelve sobre sí
  * misma, o un paso del que salen dos entradas, no tiene final: devuelve `{ end: null, problem }`.
+ * `index` (de `fileIndex`) evita recorrer todas las entradas en cada paso: sin él, armar las entradas de un mapa grande
+ * cuesta el cuadrado de su tamaño, y cada lectura de una variable lo paga.
  */
-function chainWalk(entry, entries) {
+// Por repo y por nombre viejo, sin pasarlos a texto: se compara igual que `===`.
+function fileIndex(entries) {
+  const index = new Map();
+  for (const x of entries) {
+    if (!x || x.kind !== 'file' || typeof x.new !== 'string') continue;
+    const repo = x.repo || 'arnes';
+    if (!index.has(repo)) index.set(repo, new Map());
+    const porViejo = index.get(repo);
+    if (!porViejo.has(x.old)) porViejo.set(x.old, []);
+    porViejo.get(x.old).push(x);
+  }
+  return index;
+}
+function chainWalk(entry, entries, index = fileIndex(entries)) {
   if (!entry || entry.kind !== 'file' || typeof entry.new !== 'string') return { end: entry && entry.new, problem: null };
   const repo = entry.repo || 'arnes';
   const seen = new Set([entry.old]);
@@ -161,7 +176,7 @@ function chainWalk(entry, entries) {
   for (;;) {
     if (seen.has(end)) return { end: null, problem: `la cadena de ${entry.old} vuelve sobre sí misma en ${end}: no tiene final` };
     seen.add(end);
-    const next = entries.filter((x) => x && x !== entry && x.kind === 'file' && (x.repo || 'arnes') === repo && x.old === end && typeof x.new === 'string');
+    const next = ((index.get(repo) || new Map()).get(end) || []).filter((x) => x !== entry);
     if (next.length > 1) return { end: null, problem: `la cadena de ${entry.old} sigue por dos entradas desde ${end} (${next.map((x) => x.new).join(', ')}): no tiene final` };
     if (!next.length) return { end, problem: null };
     end = next[0].new;
@@ -171,8 +186,9 @@ const chainEnd = (entry, entries) => chainWalk(entry, entries).end;
 const chainProblem = (entry, entries) => chainWalk(entry, entries).problem;
 const usableEntries = (map) => {
   const all = entriesOf(map);
+  const index = fileIndex(all);
   return all.map((e) => (e.kind === 'folder' ? { ...e, old: stripSlash(e.old), new: stripSlash(e.new) }
-    : e.kind === 'file' ? { ...e, new: chainEnd(e, all) } : e)).filter(entryUsable);
+    : e.kind === 'file' ? { ...e, new: chainWalk(e, all, index).end } : e)).filter(entryUsable);
 };
 
 // ── rutas ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -654,10 +670,11 @@ function writeShims(opts = {}) {
   const written = [];
   const pending = [];
   const all = entriesOf(map);
+  const index = fileIndex(all);
   for (const raw of all.filter(needsShim)) {
-    const chainWhy = chainProblem(raw, all);
+    const { problem: chainWhy, end } = chainWalk(raw, all, index);
     if (chainWhy) throw new LegacyNamesError(`${chainWhy} — no genero reemplazos con ella`);
-    const e = { ...raw, new: chainEnd(raw, all) };
+    const e = { ...raw, new: end };
     for (const side of ['old', 'new']) {
       const why = pathProblem(e[side], e.kind);
       if (why) throw new LegacyNamesError(`${e[side]}: la ruta ${why} — no genero reemplazos con ella`);

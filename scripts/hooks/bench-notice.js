@@ -129,7 +129,10 @@ try { const { clean } = require(path.join(__dirname, '..', 'lib', 'maintainers-s
 function examenSinMaquinaDesignada() {
   const ruta = leerVariable('TYCON_EXAM_CONFIG') || (LUGAR_EXAMEN && LUGAR_EXAMEN.config)
     || path.join(__dirname, '..', 'controls-bench', 'exam-config.json');
-  const cfg = readJson(ruta);
+  // las claves del equipo que el clon de mantenimiento trae encima (`teamConfig`): las compone el examen, para leer
+  // la misma máquina designada que el disparador y la corrida
+  const cfg = !leerVariable('TYCON_EXAM_CONFIG') && LUGAR_EXAMEN && LUGAR_EXAMEN.teamConfig && typeof EXAMEN.leerConfig === 'function'
+    ? EXAMEN.leerConfig(LUGAR_EXAMEN) : readJson(ruta);
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false;
   return !String(cfg.designated_machine == null ? '' : cfg.designated_machine).trim();
 }

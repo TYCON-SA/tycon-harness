@@ -59,7 +59,8 @@
  * sobre un DOM mínimo en Node (sin navegador). Sin red: ni tipografías ni bibliotecas externas.
  *
  * EN EL SITIO DE LA ORGANIZACIÓN: la pestaña Corridas (scripts/site/tabs/runs.js) usa ESTE modelo y ESTE
- * cliente, no una copia. Cada corrida lleva un id estable (`idEstable`: máquina + sesión, sin publicar la sesión), y el
+ * cliente, no una copia. Cada corrida lleva un id estable (`idEstable`: máquina + sesión, y el arranque cuando la sesión
+ * tiene varias corridas; sin publicar la sesión), y el
  * modelo se parte en lo que viaja por separado: `paraLista` (lista blanca: la cabecera, las fichas, los gráficos y el
  * filtro), `paraDetalle` (al abrir una corrida) y `textosDe` (al abrir un cambio). La página se arma con `cabecera`,
  * `ejecutiva`, `tabla` y `pie`, que `render` compone; el sitio las usa con `opts.sitio` y lo ya filtrado
@@ -568,6 +569,37 @@ function cierreDeCorrida(d) {
   return { estado: d.archivedAt && pendientes.length ? 'incompleta' : 'completa', inferido: true };
 }
 
+// Los resultados de la revisión previa que cuentan como «la historia se revisó antes de programar».
+const REVISION_HECHA = new Set(['limpio', 'corregido', 'preguntado']);
+const NOTA_SIN_REVISION = 'sin revisión previa';
+
+/**
+ * La revisión de la historia antes de programar, de la constancia que el cierre copia al volcado. Sólo un estado de
+ * vocabulario cerrado y números: ni el modelo, ni las reglas, ni el texto de los hallazgos. Un volcado sin el campo es
+ * anterior a la revisión previa (`sin_campo`) y se cuenta aparte, nunca como «sin revisión». Lo no medido es null.
+ */
+function revisionPreviaDe(d) {
+  if (!d || !Object.prototype.hasOwnProperty.call(d, 'revision_previa')) return { estado: 'sin_campo' };
+  const r = d.revision_previa;
+  const vacia = { corregida: null, hallazgos: null, tokens: null, duracion_ms: null };
+  // null con otra nota es una constancia que no se pudo leer: no se sabe si hubo revisión
+  if (r === null) return { estado: d.revision_previa_nota === undefined || d.revision_previa_nota === NOTA_SIN_REVISION ? 'sin_revision' : 'no_medido', ...vacia };
+  if (!r || typeof r !== 'object') return { estado: 'no_medido', ...vacia };
+  const resultado = String(r.resultado || '');
+  if (resultado === 'saltado') return { estado: 'saltada', ...vacia };
+  if (!REVISION_HECHA.has(resultado)) return { estado: 'no_medido', ...vacia };
+  const cuenta = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : null);
+  const h = r.hallazgos && typeof r.hallazgos === 'object' ? r.hallazgos : {};
+  const destinos = h.por_destino && typeof h.por_destino === 'object' ? h.por_destino : {};
+  return {
+    estado: 'revisada',
+    corregida: resultado === 'corregido' || (cuenta(destinos.corregido) || 0) > 0,
+    hallazgos: cuenta(h.total),
+    tokens: cuenta(r.tokens),
+    duracion_ms: cuenta(r.duracion_ms),
+  };
+}
+
 function modeloDeCorrida(d, nombresPasos) {
   const m = d.marker || {};
   const ini = Date.parse(m.startedAt || '');
@@ -790,6 +822,7 @@ function modeloDeCorrida(d, nombresPasos) {
     consumo,
     revisores,
     validador,
+    revision_previa: revisionPreviaDe(d),
   };
 }
 
@@ -1044,7 +1077,9 @@ function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
 }
 
 /**
- * El registro: una corrida por sesión (el archivo con `archivedAt` mayor); lo ilegible se cuenta.
+ * El registro: cada corrida una vez (la sesión y su arranque; entre copias de la misma, el archivo con `archivedAt` mayor);
+ * lo ilegible se cuenta. Una sesión puede tener varias corridas, y cada una trae sólo el consumo de su tramo: juntarlas
+ * en una perdería el consumo de las demás.
  *
  * Con `opts.buzon` lee además la carpeta bajada del buzón: `<buzon>/<maquina>/*.json`. La
  * máquina de cada corrida sale de la CARPETA que la contiene —nunca del volcado, que no la trae: los
@@ -1111,14 +1146,17 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     }
   }
   out.archivos = copias.length;
-  const porSesion = new Map();   // sid → { d, maquina, motivo }
+  // La misma corrida en varias copias se junta; dos corridas de la misma sesión, no. Un volcado sin arranque se junta por
+  // la sesión sola.
+  const porSesion = new Map();   // sesión + arranque → { d, maquina, motivo }
   for (const cp of copias) {
     let d;
     try { d = JSON.parse(fs.readFileSync(cp.ruta, 'utf8')); } catch (e) { out.ilegibles += 1; continue; }
     const sid = d && d.marker && d.marker.sessionId;
     if (!sid || typeof sid !== 'string') { out.ilegibles += 1; continue; }
-    const prev = porSesion.get(sid);
-    if (!prev) { porSesion.set(sid, { d, maquina: cp.maquina, origen: cp.origen || null, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
+    const clave = runKey(sid, d.marker);
+    const prev = porSesion.get(clave);
+    if (!prev) { porSesion.set(clave, { sid, d, maquina: cp.maquina, origen: cp.origen || null, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
     out.duplicados += 1;
     // Entre la copia de una carpeta vieja —unida, compartida o que siguió recibiendo— y la de
     // una carpeta nueva (o la local), gana la nueva, sea cual sea su fecha de archivo: la máquina volvió a subir ahí lo de
@@ -1133,13 +1171,27 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     if (!prev.maquina && cp.maquina) { prev.maquina = cp.maquina; prev.origen = cp.origen || null; prev.motivo = null; prev.nota = cp.nota || null; }
     else if (misma && cp.deVieja && !prev.nota) prev.nota = cp.nota;   // la sesión también estaba en la vieja: «antes, …»
   }
-  for (const [sid, { d, maquina, origen, motivo, rutas, nota }] of porSesion) {
+  const corridasPorSesion = new Map();
+  for (const { sid } of porSesion.values()) corridasPorSesion.set(sid, (corridasPorSesion.get(sid) || 0) + 1);
+  // Una corrida medida antes del recorte trae el consumo de la sesión entera: en una sesión con varias, lo publica una
+  // sola y las demás salen «no medido» (`wholeSessionDuplicates`). Sin el rescate, ninguna de esas lo publica.
+  const deLaSesion = new Map();
+  for (const x of porSesion.values()) { if (!deLaSesion.has(x.sid)) deLaSesion.set(x.sid, []); deLaSesion.get(x.sid).push(x); }
+  for (const xs of deLaSesion.values()) {
+    if (xs.length < 2) continue;
+    const quitar = rescate
+      ? rescate.wholeSessionDuplicates(xs.map((x) => x.d))
+      : new Map(xs.map((x, i) => [i, x.d.consumo && x.d.consumo.estado === 'medido' && !x.d.consumo.tramo ? motivoSinRescate : null]).filter(([, m]) => m));
+    for (const [i, m] of quitar) xs[i].d = { ...xs[i].d, consumo: { estado: 'no_medido', motivo: m } };
+  }
+  for (const [clave, { sid, d, maquina, origen, motivo, rutas, nota }] of porSesion) {
     const c = modeloDeCorrida(d, nombresPasos);
     // cómo terminó: del lado del servidor (lo que se sirve sigue siendo la lista cerrada de campos)
     const cierre = cierreDeCorrida(d);
     Object.defineProperty(c, 'cierre', { value: cierre.estado, enumerable: false });
     Object.defineProperty(c, 'terminada', { value: cierre.estado === 'completa', enumerable: false });
-    c.id = idEstable(multi ? maquina : null, sid);
+    // Una sesión con una sola corrida conserva el id de siempre (los enlaces ya compartidos siguen andando).
+    c.id = idEstable(multi ? maquina : null, corridasPorSesion.get(sid) > 1 ? clave : sid);
     if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
     c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : cambiosDeLaCorrida(rutas, d.marker, nombresPasos, d.cambio);
     c.sin_pasos_anotados = sinPasosAnotados(c, d.marker);
@@ -1268,6 +1320,12 @@ const SIN_HILOS = 'no medido: este sitio no baja las conversaciones';
  * El id estable de una corrida: 16 hexadecimales del sha256 de «máquina \n sesión». Ni el índice de la lista
  * (cambia con el filtro de cada persona) ni el id de sesión crudo (no se publica). Sin máquina, la máquina es ''.
  */
+/** La corrida dentro de su sesión: la sesión y su arranque, o la sesión sola si el volcado no anotó el arranque. */
+function runKey(sid, marker) {
+  const inicio = marker && typeof marker.startedAt === 'string' && marker.startedAt ? marker.startedAt : null;
+  return inicio ? `${sid}\n${inicio}` : sid;
+}
+
 function idEstable(maquina, sid) {
   return crypto.createHash('sha256').update(`${maquina == null ? '' : maquina}\n${sid}`).digest('hex').slice(0, 16);
 }
@@ -1296,6 +1354,8 @@ function paraLista(c) {
     costo: elegir(c.costo, ['agentes', 'vueltas']),
     validador: elegir(c.validador, ['estado', 'por_fase', 're_loops_decididos', 're_loops_sin_relanzar']),
     consumo: elegir(c.consumo, ['estado', 'respuestas', 'tokens', 'por_paso', 'fuera_de_ventana']),
+    // la revisión previa: su estado y números, nunca texto de los hallazgos
+    revision_previa: elegir(c.revision_previa, ['estado', 'corregida', 'hallazgos', 'tokens', 'duracion_ms']),
   };
 }
 
@@ -2371,6 +2431,39 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return s2 + '</svg>' + notas;
   }
 
+  // La revisión de la historia antes de programar. Cuenta HISTORIAS: las corridas de una misma historia comparten su
+  // constancia, y sumarlas contaría dos veces la revisión y su costo; de cada historia vale su corrida más nueva. Una
+  // historia es su número dentro de su producto: dos productos pueden tener cada uno su «2.1». Las
+  // corridas sin el campo son anteriores a la revisión previa y van aparte; las de constancia sin medir (pendiente o
+  // ilegible) tampoco entran en el denominador. Tokens y duración sólo de las que los midieron: un null nunca es 0.
+  function revisionPrevia(F) {
+    var viejas = 0, porHistoria = {};
+    F.forEach(function (c) {
+      var r = c.revision_previa;
+      if (!r || !r.estado || r.estado === 'sin_campo') { viejas += 1; return; }
+      var k = c.story !== null && c.story !== undefined ? 'h:' + JSON.stringify([c.producto || null, c.story]) : 'c:' + c.id;
+      var antes = porHistoria[k];
+      if (!antes || String(c.inicio || '') > String(antes.inicio || '')) porHistoria[k] = { inicio: c.inicio, r: r };
+    });
+    var rs = Object.keys(porHistoria).map(function (k) { return porHistoria[k].r; });
+    var de = function (e) { return rs.filter(function (r) { return r.estado === e; }); };
+    var rev = de('revisada'), salt = de('saltada').length, sinRev = de('sin_revision').length, noMed = de('no_medido').length;
+    var conocidas = rev.length + salt + sinRev;
+    var b = function (n) { return '<b>' + n + '</b> '; };
+    var aparte = (salt ? ' · ' + b(salt) + T('rpSaltadas') : '') + (sinRev ? ' · ' + b(sinRev) + T('rpSinRevision') : '')
+      + (noMed ? ' · ' + b(noMed) + T('rpNoMedidas') : '') + (viejas ? ' · ' + b(viejas) + T('rpAnteriores') : '');
+    if (!conocidas) return gris(T('rpSinDatoFiltro') + aparte.replace(/<\/?b>/g, '').replace(/^ · /, ': '));
+    var seg = function (ms) { return ms < 90000 ? Math.round(ms / 1000) + ' s' : dt(ms / 60000); };
+    var tk = rev.filter(function (r) { return num(r.tokens); }).map(function (r) { return r.tokens; });
+    var du = rev.filter(function (r) { return num(r.duracion_ms); }).map(function (r) { return r.duracion_ms; });
+    var costo = !rev.length ? T('rpSinCosto')
+      : (tk.length ? b(miles(tk.reduce(function (a, x) { return a + x; }, 0))) + T('rpTokens', { m: miles(Math.round(mediana(tk))), n: tk.length, t: rev.length }) : T('rpSinTokens'))
+        + ' · ' + (du.length ? T('rpDuracion') + ' ' + b(seg(mediana(du))).trim() + ' (n=' + du.length + ')' : T('rpSinDuracion'));
+    var corregidas = rev.filter(function (r) { return r.corregida === true; }).length;
+    return med(T('rpRevisadasDe', { n: rev.length, t: conocidas }), T('nEqDeEjecuciones', { n: F.length - viejas, t: F.length }), {
+      detalle: b(corregidas) + T('rpCorregidas') + ' · ' + costo + aparte });
+  }
+
   function resumen(F) {
     var N = F.length;
     // story 2.27 (AC 11): quien todavía no tiene corridas en el buzón no ve «0 corridas» como una medida
@@ -2431,6 +2524,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
         detalle: FASES_VAL.filter(function (p) { return porFaseVal[p[0]].con; }).map(function (p) { return esc(p[1]) + ' ' + T('nDe', { n: porFaseVal[p[0]].hal, t: porFaseVal[p[0]].con }); }).join(' · ')
           + aparte(function (n) { return '<b>' + n + '</b>'; }) })
       : gris(T('sinVeredictoFiltro') + aparte(function (n) { return n; }).replace(/^ · /, ': '));
+    var fichaRevisionPrevia = revisionPrevia(F);
     return [
       ficha(T('fAlFinal'), med(Math.round(pf * 100) + '%', T('nDeEjecuciones', { n: fin.length, t: N }), { est: juzgar('corridas_al_final', pf).est, palabra: juzgar('corridas_al_final', pf).palabra, detalle: '<b>' + (N - fin.length) + '</b> ' + T('aMitad') + (juzgar('corridas_al_final', pf).nota ? ' · <b>' + esc(juzgar('corridas_al_final', pf).nota) + '</b>' : '') })),
       ficha(T('fDuracion'), dur.length ? med(n1(mediana(dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h', T('nEqDeEjecuciones', { n: dur.length, t: N }), { detalle: T('laMasLarga', { d: n1(Math.max.apply(null, dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h' }) }) : gris(T('sinDuracionFiltro'))),
@@ -2438,6 +2532,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       ficha(T('fAgentes'), ag.length ? med(String(mediana(ag)), T('nEqDeEjecuciones', { n: ag.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, ag) }) + ' · ' + T('noLoRegistran', { n: N - ag.length }) }) : gris(T('sinAgentesFiltro'))),
       ficha(T('fVueltas'), vu.length ? med(String(mediana(vu)), T('nEqDeEjecuciones', { n: vu.length, t: N }), { detalle: T('maximo', { n: Math.max.apply(null, vu) }) + ' · ' + T('vueltasDetalle') }) : gris(T('sinVueltasFiltro'))),
       ficha(T('fValidador'), fichaValidador),
+      ficha(T('fRevisionPrevia'), fichaRevisionPrevia),
       ficha(T('fTrabajo'), tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), T('nEqDeEjecuciones', { n: tMed.length, t: N }), { detalle: T('trabajoDetalle') + (M.sin_hilos ? ' (' + T('incluyeEsperas') + ' ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
       ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDetalle') + pisoEspera }) : gris(sinArranque + pisoEspera)),
       ficha(T('fPasos'), pa.length ? med(String(Math.round(mediana(pa))), T('nEqDeEjecuciones', { n: pa.length, t: N }), { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> ' + T('pasosSinMedir') + ' ' : '') + T('tokensConsecuencia') + (LB ? ' ' + T('lineaBaseDelFicha', { f: esc(LB.fecha) }) + ' <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris(T('sinPasosFiltro'))),
@@ -2840,7 +2935,7 @@ function main(opts = {}) {
 // `dentroDelRepoDelEquipo` también la usa dashboard.js: la página de seis preguntas tiene un solo escritor en el repo.
 module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
   // Lo que usa la pestaña Corridas del sitio
-  idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
+  idEstable, runKey, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda
   RESUMEN, resumirEspejo, textosDeUnaCorrida,
   // el pase no medido se pinta como error

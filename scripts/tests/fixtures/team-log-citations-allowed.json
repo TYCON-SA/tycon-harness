@@ -3,6 +3,11 @@
   "allowed": [
     {
       "file": "guides/maintaining/publicacion-espejo.md",
+      "text": "| arnes | `guides/maintaining/incident-log.md` `guides/guide-update-proposals.md`",
+      "reason": "la tabla de lo que nunca sale: tiene que coincidir con las exclusiones fijas del exportador (EXCLUIDOS_SIEMPRE en scripts/publishing/export.js), y el registro es una de ellas"
+    },
+    {
+      "file": "guides/maintaining/publicacion-espejo.md",
       "text": "| `incident-log` | un enlace o un ancla al registro d",
       "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
     },

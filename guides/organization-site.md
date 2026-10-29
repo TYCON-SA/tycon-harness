@@ -231,10 +231,16 @@ tiene su «?» con la explicación.
 
 **Qué contesta:** ¿cómo va cada producto?
 
-Una fila por producto: las stories en curso (y cuántas en revisión), las paradas hace más de 30 días, las bloqueadas,
-qué versión está en prueba y cuál en producción, si espera una aprobación, si el vigilante lo mira, sus vulnerabilidades
-vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin contar dos veces lo compartido. Una persona
-ve los productos en los que trabaja. La **paridad** compara cada producto con los otros: lo que uno hace y los demás no.
+Una fila por producto: las stories en curso (y cuántas en revisión), las paradas, su edad en el estado («más de 30 días:
+2 · más de 60: 1»), las bloqueadas, qué versión está en prueba y cuál en producción, si espera una aprobación, si el
+vigilante lo mira, sus vulnerabilidades vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin
+contar dos veces lo compartido. Una persona ve los productos en los que trabaja. La **paridad** compara cada producto
+con los otros: lo que uno hace y los demás no.
+
+Una story está **parada** cuando está en curso y lleva en su estado más del primero de los dos días de
+`params.edad_en_estado_dias` del `sources.json` (por ejemplo `[30, 60]`); la edad cuenta lo empezado, en curso y
+bloqueado, contra los dos. Es la misma cuenta que la ficha de edad del tablero de la noche. Sin esos días, las paradas
+y la edad dicen «no medido» con su motivo: el sitio no tiene un número propio.
 
 ![Proyectos: una fila por producto](sitio-de-la-organizacion/capturas/proyectos.png)
 
@@ -287,6 +293,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Reglas candidatas a retiro: probadas, que nunca encontraron nada** (`reglas_candidatas`). Reglas que saben ponerse rojas y nunca encontraron nada con recorrido de sobra.
 - **Reglas que el banco de pruebas probó de verdad** (`reglas_probadas`). Una regla sin prueba que la obligue a marcar no se juzga: sale «sin probar», nunca candidata.
 - **Commits por carril: pipeline, atajo declarado o ninguno** (`carriles`). Cuántos commits pasaron por el pipeline, cuántos por un atajo declarado y cuántos por ninguno.
+- **Máquinas con una vuelta atrás vigente: no se actualizan solas** (`vueltas_atras`). Cuántas máquinas deshicieron una actualización y la retienen hasta que sale una versión posterior.
 
 **En Proyectos:**
 
@@ -507,8 +514,10 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   ninguno); con correo, el remitente y los destinatarios. El chat, la dirección del canal o la contraseña del correo no
   van acá: son secretos de los procesos de la noche. Queda en `operations.json`, en el repo de operaciones. Lo revisa
   quien mantiene.
-- **Aviso de espera**: cuántos minutos espera una ejecución a una persona antes de avisar. Llega a todas las máquinas.
-  Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Aviso de espera**: si el aviso corre y cuántos minutos espera una ejecución a una persona antes de avisar. Llega a
+  todas las máquinas. Sin valor, corre, como de fábrica; «Apagado en todas las máquinas» lo apaga, salvo en la máquina
+  que puso `TYCON_WAIT_NOTICE` (la variable gana). Queda en `team-repos.json` → `wait_notice`, en el repo del perfil. Lo
+  revisa quien mantiene.
 - **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
   amarillo. Queda en `scripts/nightly/dashboard/sources.json`, en el repo de operaciones. Lo revisa quien mantiene.
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
@@ -604,6 +613,17 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
   antes qué va a marcar, y el agente no puede marcarlo ni lo marca un reenvío. Vale sólo desde acá, nunca desde una
   máquina. Queda en `team-profile.json` → `qa.manual_check`, en el repo del perfil.
+- **Frenos y medidores**: qué frenos y medidores corren en todas las máquinas. Los **frenos** paran un comando antes de
+  que corra: el de pruebas sin acotar, el de dos sesiones en la misma carpeta y el de un pedido a la vez por repo. Desde
+  acá sólo se encienden: «Como viene de fábrica» o «Encendido en todas las máquinas»; escrito a mano, vale «on» en
+  cualquier mayúscula o `true`. Apagar un freno no se hace desde el perfil: es de cada máquina, con su variable (por
+  ejemplo, `TYCON_SESSION_GUARD=0`), y un «off» escrito a mano en el perfil se ignora, el lector lo nombra y el sitio no
+  lo propone. El freno de comandos peligrosos y el de pedidos a main sin completarse solos no están acá: vienen siempre
+  encendidos y se apagan sólo en cada máquina. Los **medidores** (el del largo de las respuestas y el de esperas largas)
+  no frenan nada: se encienden o se apagan. En los dos casos, la máquina que puso la variable sigue con lo suyo. Sin
+  valor, cada uno como viene de fábrica. Ojo con otro valor escrito a mano (un número, un texto que no es ninguno de
+  éstos): el lector no lo entiende y da por rota la configuración entera de cada máquina, no sólo este interruptor; el
+  sitio no deja proponerlo. Queda en `team-profile.json` → `switches`, en el repo del perfil.
 - **Cuántas sesiones trabajan a la vez**: cuando una sesión coordina a las demás, cuántas pueden estar trabajando al
   mismo tiempo en una máquina (de 1 a 20; sin valor, 3) antes de que la próxima espere su turno. Cada máquina puede
   cambiarlo para sí, porque cuánto aguanta depende de ella. La carpeta donde quedan las firmas del dueño es de cada
@@ -1189,6 +1209,9 @@ Los repos de producto llevan su propio secreto, `SITE_PRODUCTS_WRITE_TOKEN`. Par
 Con ese secreto el sitio sólo crea ramas `team-config/...` y abre pedidos. Nunca escribe `main` ni completa el pedido,
 aunque «Los cambios de un mantenedor» esté prendida: esa opción vale para el perfil y para operaciones, no para los
 repos de producto.
+
+Una organización puede elegir no pedir ese revisor en sus repos de producto, por ejemplo porque cada dev mergea solo a
+`main`. Entonces «Proponer» queda apagado en esos repos: se revisa el cambio, se descarga y el pedido se abre a mano.
 
 ### Invitar a alguien
 

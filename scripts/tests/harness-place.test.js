@@ -360,8 +360,9 @@ test('T14 LinkOps_NodeOnly_WholeFileOperators_NoRecursiveRemoval_NoNewDollar', (
 // `project:` de engram) no es la ruta del lugar y no cuenta.
 const LEGACY_PATH_RX = new RegExp(`\\.claude[/\\\\]+${PLACE.LEGACY_PLACE_NAME}(?![A-Za-z0-9_-])|['"]\\.claude['"],\\s*['"]${PLACE.LEGACY_PLACE_NAME}['"]`);
 const PLACE_PATH_RX = new RegExp(`\\.claude[/\\\\]+${PLACE.PLACE_NAME}(?![A-Za-z0-9_-])`);
-// El alcance del barrido, por expresión: lo versionado menos la historia.
-const HISTORY_RX = /^(specs|tasks|inbox|instincts|\.advisors|\.engram|\.dashboard)\/|^guides\/((maintaining\/)?incident-log\.md|decisions\/|codex-migration\.md)|^scripts\/tests\/fixtures\/startup-lines\.json$/;
+// El alcance del barrido, por expresión: lo versionado menos la historia. `onboarding/interno/` es del repo privado: lo
+// que las guías decían sólo para el equipo, tal como estaba (las máquinas de antes, con el nombre viejo); no viaja.
+const HISTORY_RX = /^(specs|tasks|inbox|instincts|\.advisors|\.engram|\.dashboard|onboarding\/interno)\/|^guides\/((maintaining\/)?incident-log\.md|decisions\/|codex-migration\.md)|^scripts\/tests\/fixtures\/startup-lines\.json$/;
 function sweepScope(root) {
   const r = spawnSync('git', ['-C', root, 'ls-files'], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `git ls-files: ${r.stderr}`);
@@ -397,17 +398,6 @@ function sweepOffenders(root, files) {
   }
   return out;
 }
-/** Las líneas de un .md que quedan DENTRO de un bloque `tycon:internal-start` … `internal-end`. */
-function insideInternal(text) {
-  const start = '<!-- ' + 'tycon:internal-start -->'; const end = '<!-- ' + 'tycon:internal-end -->';
-  let inside = false; const out = [];
-  for (const l of text.split('\n')) {
-    if (l.trim() === start) { inside = true; continue; }
-    if (l.trim() === end) { inside = false; continue; }
-    out.push(inside);
-  }
-  return out;
-}
 
 // ── T35 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const TEAM_PAPERS = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'onboarding/step-0-mac.md', 'onboarding/step-0-windows.md',
@@ -421,38 +411,14 @@ test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', ()
     const oneName = read(f).split('\n').filter((l) => l.includes('CLAUDE.md') && l.includes(PLACE.LEGACY_PLACE_NAME) && !l.includes(PLACE.PLACE_NAME) && !LEGACY_PATH_RX.test(l));
     assert.deepStrictEqual(oneName, [], `${f}: un chequeo del import en CLAUDE.md que sólo acepta el nombre viejo`);
   }
-  const declared = LIST.legacy_only.find((e) => e.path === 'INSTALL.md');
-  assert.ok(declared && Array.isArray(declared.lines) && declared.why, 'INSTALL.md: las líneas viejas declaradas en legacy_only, con motivo');
+  // el INSTALL.md es uno solo, el público: no nombra la ruta vieja en ninguna línea. El párrafo de los dos nombres y los
+  // ejemplos de una máquina con la línea de arranque vieja viven con quien mantiene, fuera del arnés.
   for (const f of shipped(TEAM_PAPERS, 'T35')) {
     const text = read(f);
-    const only = f === 'INSTALL.md' ? declared.lines : [];
-    const bad = legacyPathLines(text).filter((l) => !only.some((s) => l.includes(s)));
-    assert.deepStrictEqual(bad, [], `${f}: nombra la ruta del lugar por el nombre viejo`);
+    assert.deepStrictEqual(legacyPathLines(text), [], `${f}: nombra la ruta del lugar por el nombre viejo`);
     if (NAMES_THE_PLACE.includes(f)) assert.ok(PLACE_PATH_RX.test(text), `${f}: no nombra el lugar`);
   }
-  // en la copia el párrafo interno ya salió por sus marcas: lo de abajo se mide en el repo interno
-  if (IN_COPY) { console.log('⏭ T35: NO MEDIDO en la copia — el párrafo de los dos nombres y las líneas declaradas (salen por las marcas)'); return; }
-  // cada línea declarada sigue estando (si no, sacala de la lista)
-  const install = read('INSTALL.md');
-  for (const s of declared.lines) assert.ok(install.includes(s), `INSTALL.md: la línea declarada ya no está: ${s}`);
-  // el párrafo de los dos nombres: adentro de las marcas de sólo interno, con los dos nombres y relocate
-  const lines = install.split('\n'); const inside = insideInternal(install);
-  const marks = ['<!-- ' + 'tycon:internal-start -->', '<!-- ' + 'tycon:internal-end -->'];   // armadas por partes: no son marcadores
-  const content = lines.filter((l) => !marks.includes(l.trim()));
-  const at = content.findIndex((l) => l.includes('harness.js relocate'));
-  assert.ok(at >= 0, 'INSTALL.md: falta el párrafo de los dos nombres (harness.js relocate)');
-  assert.strictEqual(inside[at], true, 'INSTALL.md: el párrafo de los dos nombres está fuera de las marcas de sólo interno');
-  let a = at; while (a > 0 && content[a - 1].trim()) a -= 1;
-  let b = at; while (b < content.length - 1 && content[b + 1].trim()) b += 1;
-  const para = content.slice(a, b + 1).join(' ');
-  assert.ok(PLACE_PATH_RX.test(para) && LEGACY_PATH_RX.test(para), `INSTALL.md: el párrafo no nombra los dos: ${para}`);
-  // la copia que arma public-copy.js: sin el párrafo y sin la ruta vieja
-  const { internalBlocks } = require(path.join(ROOT, 'scripts', 'publishing', 'public-copy.js'));
-  const pub = internalBlocks(install, 'INSTALL.md');
-  assert.deepStrictEqual(pub.errors, [], 'INSTALL.md: marcas mal puestas');
-  assert.ok(!pub.text.includes('harness.js relocate'), 'la copia pública de INSTALL.md trae el párrafo de los dos nombres');
-  assert.deepStrictEqual(legacyPathLines(pub.text), [], 'la copia pública de INSTALL.md nombra la ruta vieja');
-  assert.ok(PLACE_PATH_RX.test(pub.text), 'la copia pública de INSTALL.md no nombra el lugar');
+  assert.ok(!LIST.legacy_only.some((e) => e.path === 'INSTALL.md'), 'INSTALL.md no nombra la ruta vieja: no va en legacy_only');
 });
 
 // ── T36 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────

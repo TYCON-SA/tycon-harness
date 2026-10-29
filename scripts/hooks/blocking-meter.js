@@ -26,7 +26,7 @@
  *   node blocking-meter.js --report --all  # detalle por turno
  *   node blocking-meter.js --selftest      # corre la medición sobre un transcript sintético
  *
- * Opt-out: TYCON_BLOCKING_METER=0
+ * Opt-out: TYCON_BLOCKING_METER=0 en la máquina, o `switches.blocking_meter: "off"` en el perfil (la variable gana).
  * Umbral:  TYCON_BLOCKING_MAX_MS (default 120000 = 2 min, el mismo corte de la regla)
  */
 
@@ -251,11 +251,22 @@ function selftest() {
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
+// La organización puede apagar o encender este medidor desde el sitio (`switches.blocking_meter` del perfil); la variable
+// TYCON_BLOCKING_METER de la máquina, si está puesta, gana. Sin lector, o con la configuración rota, sigue encendido: una clave
+// que no se puede leer no lo apaga, y el aviso va a stderr.
+function orgSwitchOn(name) {
+  try {
+    const C = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    return C.switchOn(name, { warn: (w) => process.stderr.write(`${w}\n`) });
+  } catch { return true; }
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.includes('--selftest')) return selftest();
   if (args.includes('--report')) return report(args.includes('--all'));
   if (process.env.TYCON_BLOCKING_METER === '0') return;
+  if (!orgSwitchOn('blocking_meter')) return;
 
   let event = {};
   try {

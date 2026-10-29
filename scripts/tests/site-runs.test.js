@@ -297,7 +297,12 @@ test('T2 CapaEjecutiva_FiltrosYDiezFichas @story-2.27 @ac-2', async () => {
   await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
     const c = await clienteDelSitio(h, await entrar(LEAD));
     const fichas = c.nodos.fichas.innerHTML;
-    assert.strictEqual((fichas.match(/class="tile/g) || []).length, 10, 'diez fichas');
+    assert.strictEqual((fichas.match(/class="tile/g) || []).length, 11, 'once fichas');
+    // la de la revisión previa sale en el sitio por compartir el cliente; los volcados del mundo no traen el campo: gris
+    // con las corridas viejas contadas, nunca un cero
+    const rp = fichas.slice(fichas.lastIndexOf('<div class="tile', fichas.indexOf('La historia revisada antes de programar')));
+    assert.match(rp, /^<div class="tile blind"/, 'la ficha de la revisión previa sale gris sin constancias');
+    assert.match(rp, /anterior\(es\) a la revisión previa/, 'y cuenta las viejas aparte');
     assert.match(fichas, /n=\d+ de \d+/, 'las medianas llevan n=');
     assert.match(c.pagina.texto, /id="f-maquina"/, 'el filtro por máquina para quien ve varias');
     c.nodos.fc.checked = true; c.w.__aplicar();
@@ -566,7 +571,7 @@ test('T14 Fuga_NingunMarcadorDeOtroLlegaAlDev @story-2.27 @ac-14', async () => {
 
 // ── lo que viaja y cuándo ─────────────────────────────────────────────────────────────────────────────────────────
 
-const LISTA_BLANCA = ['id', 'story', 'producto', 'grupo', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'paso_en_curso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema'];
+const LISTA_BLANCA = ['id', 'story', 'producto', 'grupo', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'paso_en_curso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema', 'revision_previa'];
 
 test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   const espejo = mundo({ marcadores: false });
@@ -579,6 +584,7 @@ test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   assert.deepStrictEqual(Object.keys(l.tiempos).sort(), ['espera_del_hilo_ms', 'espera_humana_ms', 'trabajo_medido', 'trabajo_ms']);
   assert.deepStrictEqual(Object.keys(l.controles).sort(), ['error', 'freno', 'por_control', 'total']);
   assert.deepStrictEqual(Object.keys(l.consumo).sort().filter((k) => !['motivo'].includes(k)), ['estado', 'fuera_de_ventana', 'por_paso', 'respuestas', 'tokens']);
+  assert.deepStrictEqual(Object.keys(l.revision_previa).sort(), ['corregida', 'duracion_ms', 'estado', 'hallazgos', 'tokens'], 'de la revisión previa viajan su estado y números');
   const t = JSON.stringify(l);
   for (const k of ['_texto', '_textoGit', 'eventos', 'vueltas_ts', 'revisores', 'por_modelo', 'cambios', 'src/Pago.ts']) assert.ok(!t.includes(k), `sin «${k}»`);
 });
@@ -916,6 +922,34 @@ test('2.27-A2 Huella_UnionesReescritasSinCambios_NoRearma @story-2.27 @ac-20', a
     fs.writeFileSync(`${uniones}.tmp`, fs.readFileSync(uniones)); fs.renameSync(`${uniones}.tmp`, uniones);
     fuentes.avisar(); await vista.listo();
     assert.strictEqual(armados, 1, 'un solo armado');
+  });
+});
+
+// rojo si: con la generación del espejo, la pestaña lo recorre igual (rearma por un archivo que la generación no
+// anunció) o no rearma cuando la generación sube.
+test('Generacion_SinCambiosNoRecorreElEspejo_YSubeRearma — igual generación, mismo espejo', async () => {
+  const espejo = mundo({ marcadores: false });
+  const datos = tmp('site-runs-gen-');
+  const armarReal = TAB().armarEnElHilo;
+  let armados = 0;
+  const armar = (o) => { armados += 1; return armarReal(o); };
+  let gen = 7;
+  const fuentes = fuentesCon({ espejo });
+  fuentes.espejoGeneracion = () => gen;
+  await conPestana({ fuentes, datos, opciones: { armar } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    const n0 = (await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length;
+    assert.strictEqual(armados, 1, 'el arranque arma una vez');
+    // un archivo nuevo en el espejo sin que suba la generación: la pestaña no lo mira (sólo el sitio escribe el espejo,
+    // y cuando escribe sube la generación)
+    escribir(path.join(espejo, 'maq-a'), 'a8.json', volcado('aaaaaaaa-0000-4000-8000-000000000008', '2026-08-24T09:00:00.000Z', { marker: { storyId: '3.8' } }));
+    fuentes.avisar(); await vista.listo();
+    await h.pedir('/api/corridas', { cookie: lead }); await vista.listo();
+    assert.strictEqual(armados, 1, 'misma generación: no rearma');
+    gen = 8;
+    fuentes.avisar(); await vista.listo();
+    assert.strictEqual(armados, 2, 'la generación subió: rearma');
+    assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).json.corridas.length, n0 + 1, 'con la corrida nueva');
   });
 });
 

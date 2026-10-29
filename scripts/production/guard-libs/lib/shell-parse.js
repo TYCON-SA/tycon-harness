@@ -39,8 +39,8 @@
  *  - Las rarezas de zsh con `..` que no es un rango (`{1..}` → `1..`) se leen como las dos cosas.
  *  - Los patrones de un `case` no salen en ningún segmento: se comparan contra un valor, no se
  *    ejecutan ni nombran archivos.
- *  - El cuerpo de un heredoc SIN comillas que no alimenta a un shell se quita entero: sus `$(…)` y comillas invertidas
- *    (que zsh y bash sí ejecutan) no se ven acá. Venía de antes de la 8.14 (pase adversarial #7).
+ *  - El cuerpo de un heredoc que no alimenta a un shell es texto y se quita; si la palabra no lleva comillas, sus `$(…)`
+ *    y comillas invertidas (que zsh y bash sí ejecutan) quedan como comandos, cada uno en su línea.
  *  - El relleno de ceros de un rango sigue a bash y al caso común de zsh; las rarezas de zsh (`{-0..3}`, `{2..5..02}`,
  *    `{01..001}`) no. Ningún nombre protegido lleva dígitos (pase adversarial #38).
  *  - Un carácter de control 0x01 o 0x02 dentro de `$'…'` se lee como «desconocido» (`*`): son las marcas internas.
@@ -140,20 +140,71 @@ function sinHeredocs(cmd, opciones) {
   // un shell. Sólo el cuerpo es texto; la línea del operador no.
   let out = '';
   let desde = 0;
+  let inicioDeLinea = 0;                                  // en `out`, dónde van las líneas de lo que corre del cuerpo
   for (const h of heredocs(s)) {
     const antes = s.slice(s.lastIndexOf('\n', h.indice - 1) + 1, h.indice);
     const alimentaShell = opciones && opciones.salvoShell && (SHELL_ANTES.test(antes) || SHELL_DESPUES.test(h.resto));
+    const corre = alimentaShell || h.comillas ? [] : comandosDelCuerpo(h.cuerpo);
     if (h.indice < desde) {
       // otro heredoc de la misma línea: su marca ya quedó en el resto del anterior y su cuerpo sigue al de aquél
       if (alimentaShell) out += s.slice(desde, h.fin);
+      else if (corre.length) {
+        const lineas = `${corre.join('\n')}\n`;
+        out = out.slice(0, inicioDeLinea) + lineas + out.slice(inicioDeLinea);
+        inicioDeLinea += lineas.length;
+      }
       desde = h.fin;
       continue;
     }
-    out += s.slice(desde, h.indice);
+    // lo que corre del cuerpo va en sus propias líneas, antes del comando del `<<` (el shell lo corre antes de dárselo):
+    // la línea del `<<` no cambia de forma, y un comando que viene de líneas anteriores (`a |`, `a &&`, `a \`) se toma entero
+    let ini = s.lastIndexOf('\n', h.indice - 1) + 1;
+    while (ini > desde && SIGUE_EN_LA_LINEA.test(s.slice(desde, ini))) ini = s.lastIndexOf('\n', ini - 2) + 1;
+    if (ini < desde) ini = desde;
+    out += s.slice(desde, ini);
+    if (corre.length) out += `${corre.join('\n')}\n`;
+    inicioDeLinea = out.length;
+    out += s.slice(ini, h.indice);
     out += alimentaShell ? s.slice(h.indice, h.fin) : ` __HEREDOC__${h.resto}`;
     desde = h.fin;
   }
   return out + s.slice(desde);
+}
+
+// una línea que no termina el comando: sigue con `\`, con una tubería o con `&&`/`||`
+const SIGUE_EN_LA_LINEA = /(?:\\|\|\|?|&&)[ \t]*\n$/;
+
+/**
+ * Los comandos que el shell corre al armar el cuerpo de un heredoc sin comillas: el texto de cada `$(…)` y comilla
+ * invertida, con sus saltos de línea. El texto alrededor es texto: sus comillas no abren nada, así que cada sustitución
+ * se mide desde donde empieza. `\$(` y `` \` `` son literales; una sustitución sin cierre se lleva el resto del cuerpo,
+ * que es el lado que frena. Una barra al final de una línea la junta con la siguiente, como hace el shell en el cuerpo
+ * (`$\` y en la otra línea `(rm …)` es un `$(rm …)`).
+ */
+function comandosDelCuerpo(crudo) {
+  let cuerpo = '';
+  for (let i = 0; i < crudo.length; i++) {
+    if (crudo[i] === '\\' && crudo[i + 1] === '\n') { i++; continue; }
+    cuerpo += crudo[i];
+    if (crudo[i] === '\\' && i + 1 < crudo.length) cuerpo += crudo[++i];
+  }
+  const out = [];
+  for (let i = 0; i < cuerpo.length; i++) {
+    if (cuerpo[i] === '\\') { i++; continue; }
+    if (cuerpo[i] === '`') {
+      const fin = finDeSustitucion(cuerpo, i);
+      const cerro = fin <= cuerpo.length && cuerpo[fin - 1] === '`' && fin - 1 > i;
+      out.push(cuerpo.slice(i + 1, cerro ? fin - 1 : fin).replace(/\\([`\\$])/g, '$1'));
+      i = fin - 1;
+    } else if (cuerpo[i] === '$' && cuerpo[i + 1] === '(') {
+      // `$((…))` también: si no es una cuenta, bash lo corre como comando; y una cuenta puede traer su `$(…)`
+      const resto = cuerpo.slice(i);
+      const k = cierreDe(resto, 1);
+      out.push(k < 0 ? resto.slice(2) : resto.slice(2, k));
+      i += k < 0 ? resto.length : k;
+    }
+  }
+  return out;
 }
 
 /**
@@ -436,14 +487,16 @@ function lex(texto, opciones) {
   // 🔴 Salvo una TUBERÍA: `ls x |⏎ xargs rm`, `ls x | { xargs rm; }` y `ls x | ( xargs rm )` siguen siendo tubería, y el
   // salto de línea, la apertura del grupo o de la subshell no le pisan el `|` al lector (8.14 #2: el freno vaciaba la
   // tubería antes de llegar al `xargs`). Contrato: el segmento que alimenta una tubería termina en `|` aunque entre él y
-  // el comando siguiente haya saltos de línea, un `{` o un `(`.
+  // el comando siguiente haya saltos de línea, un `{` o un `(`. Lo mismo para el salto de línea detrás de `&&`, `||` o
+  // `&`: no los vuelve `;` (`a &&⏎ b` sigue siendo «b si a anduvo»).
   const limpio = [];
   for (const seg of out) {
     const t = seg.texto.trim();
     if (t) limpio.push({ texto: t, sep: seg.sep });
     else if (limpio.length && seg.sep) {
       const previo = limpio[limpio.length - 1];
-      if (!(previo.sep === '|' && (seg.sep === ';' || seg.sep === '(' || seg.sep === ')'))) previo.sep = seg.sep;
+      const tuberia = previo.sep === '|' && (seg.sep === ';' || seg.sep === '(' || seg.sep === ')');
+      if (!tuberia && !(seg.sep === ';' && ['&&', '||', '&'].includes(previo.sep))) previo.sep = seg.sep;
     }
   }
   return limpio;
@@ -1268,8 +1321,11 @@ function applyAssignments(ctx, parsed, opts) {
   if (CLOSES_BRANCH.has(w0[0])) ctx.branchDepth = Math.max(0, (ctx.branchDepth || 0) - 1);
   const opens = parsed.reserved.some((r) => OPENS_BRANCH.has(r)) || OPENS_BRANCH.has(w0[0]);
   const replaces = !!opts && (opts.previousSep === '' || opts.previousSep === ';') && !(ctx.branchDepth > 0) && !opens;
-  // `X=a cmd` sólo vale para ese comando: no reemplaza la X del shell (`export`/`typeset`… sí)
-  const setterFor = (a) => (replaces && (!parsed.words.length || a.builtin) ? (mapa, nombre, valores) => { mapa[nombre] = [...new Set(valores)]; } : sumar);
+  // `X=a cmd` sólo vale para ese comando: no reemplaza la X del shell (`export`/`typeset`… sí). `ctx.replaced` dice qué
+  // nombres reemplazó ESTE comando, para que quien lleva datos propios de cada variable los olvide también
+  ctx.replaced = new Set();
+  const reemplazar = (mapa, nombre, valores) => { mapa[nombre] = [...new Set(valores)]; ctx.replaced.add(nombre); };
+  const setterFor = (a) => (replaces && (!parsed.words.length || a.builtin) ? reemplazar : sumar);
   // un valor que es SÓLO algo sin resolver (`F=$(ls …)`, `F=$X`) se guarda como DESCONOCIDO, no como el comodín `*`: al
   // usarla, quien juzga tiene que poder distinguir «no sé qué vale» de «el shell expande un comodín» (8.14, T30)
   const patrones = (r) => r.patterns.map((p) => (r.unknown && p === '*' ? DESCONOCIDO : p));

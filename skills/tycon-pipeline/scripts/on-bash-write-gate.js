@@ -37,6 +37,9 @@
  * con escape auditado. Kill-switch propio: TYCON_STORY_SKILL_GATE=off (independiente del carril).
  * Una historia que existe y no está en borrador no se escribe desde acá: desde un comando no se ve qué queda escrito, y
  * su estado lo cambia marker.js. Frena con o sin ejecución abierta.
+ * Un guion en archivo (python, node, perl, ruby) con una historia entre sus argumentos cuenta como que la escribe, aunque
+ * sólo la lea. Límite conocido: no ve la historia que el guion recibe por otro camino — por `xargs`, `find -exec`,
+ * `$(cat lista)`, una variable de entorno, la entrada estándar o una carpeta entera que recorre.
  *
  * ── TERCERA: los marcadores de la ejecución ───────────────────────────────────────────────
  * Borrar o mover un marcador (`<estado>/active/`, `<estado>/active.json`, o una carpeta que los contiene), de esta
@@ -56,7 +59,7 @@ const { resolveSessionId } = require('./lib/session-id.js');
 // Con respaldo, como en dispatch.js y on-write-collision.js: sin la lib (un skill instalado a medias) el portón no puede
 // morir al cargar —saldría 1, que no frena, y sin dejar constancia—: resuelve las rutas como antes.
 let nativePath = (p) => p;
-try { ({ nativePath } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: conducta previa */ }
+try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookError(e); /* sin normalización de rutas: conducta previa */ }
 
 // ── extracción de targets de escritura ────────────────────────────────────────────────────────────
 
@@ -462,7 +465,7 @@ function scriptsInline(cmd) {
 let lectorDeEntrada;
 function programasPorEntrada(raw) {
   if (lectorDeEntrada === undefined) {
-    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch { lectorDeEntrada = null; }
+    try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch (e) { logHookError(e); lectorDeEntrada = null; }
   }
   if (lectorDeEntrada) return lectorDeEntrada(raw);
   return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g)]
@@ -610,7 +613,9 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
             const leido = leer(real);
             if (leido) agregar(interprete, real, leido, argumentos(words.slice(k + 1)), 0, instalado(real));
           }
-        } catch { /* no se lee: no es un guion */ }
+        } catch (e) {   // no se lee: no es un guion. Lo que no es «no existe» o «es una carpeta» queda dicho
+          if (!['ENOENT', 'ENOTDIR', 'EISDIR'].includes(e && e.code)) logHookError(e);
+        }
         break;
       }
     }
@@ -863,7 +868,7 @@ function leerArmado(expr, script, argv) {
     }
     // por índice: `B, OUTF = sys.argv[1], sys.argv[2]` · `const f = process.argv[2]` (un nombre por índice, en orden).
     // Sólo si es la única asignación de ese nombre en el script: reasignado después, el destino ya no es el argumento
-    const porIndice = /(?:^|[;\n]|\b(?:const|let|var)\s)[ \t]*([\w, \t]+?)[ \t]*=[ \t]*((?:(?:sys\.argv|process\.argv)\[\d+\][ \t]*,?[ \t]*)+)(?=$|[;\n])/gm;
+    const porIndice = /(?:^|[;\n]|\b(?:const|let|var)\s)[ \t]*([\w, \t]+?)[ \t]*=[ \t]*((?:(?:sys\.argv|process\.argv)\[\d+\][ \t]*(?:,[ \t]*)?)+)(?=$|[;\n])/gm;
     for (const d of script.matchAll(porIndice)) {
       const nombres = d[1].split(',').map((x) => x.trim()).filter(Boolean);
       const indices = [...d[2].matchAll(/\[(\d+)\]/g)].map((x) => Number(x[1]));
@@ -1053,7 +1058,7 @@ const BUSCADOR_EJECUTA = {
 };
 const BUSCADORES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
 // la salida de un comando que la ejecuta otro: ahí lo citado puede terminar corriendo
-const A_UN_SHELL = /\|&?\s*(?:(?:\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;
+const A_UN_SHELL = /\|&?\s*(?:(?:\/|[^\s-]\S*\/)?(?:sudo|env|busybox|command|exec|nohup|nice|time)(?:\s+-\S+)*\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|xargs|eval|source|python\d*(?:\.\d+)?|node|perl|ruby|php|pwsh|powershell)\b/;
 
 /**
  * Los textos con blancos de un tramo que se citan y no se ejecutan: el patrón y los argumentos de un buscador (`grep`,
@@ -1321,7 +1326,7 @@ function guionesInternos(cmd) {
       i = fin < 0 ? s.length : fin;
     }
   }
-  const conC = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-]o\s+\S+|[+-]O\s+\S+))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
+  const conC = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-][oO]\s+(?:[^\s+-]|\+(?![oO](?:\s|$))|-(?![-A-Za-z])|--(?![A-Za-z]))\S*|\+[oO](?=\s)))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
   for (const m of s.matchAll(conC)) {
     const i = m.index + m[0].length;
     const fin = s[i] === '"' ? cierreDoble(s, i) : s.indexOf("'", i + 1);
@@ -1803,7 +1808,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
         }
         if (hallados.some((rel) => esRuta(path.join(lugar, rel)))) { out.push(o); break; }
       }
-    } else if (c === 'git update-index' || (c === 'git checkout' && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2 || (sueltos.length === 1 && args.some((w) => /^--pathspec-from-file(?:=|$)/.test(w))))) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
+    } else if (c === 'git update-index' || (c === 'git checkout' && !args.some((w) => /^(?:-b|-B|--orphan)$/.test(w)) && (args.indexOf('--') > 0 ? args.slice(0, args.indexOf('--')).some((w) => !w.startsWith('-')) : sueltos.length >= 2 || (sueltos.length === 1 && args.some((w) => /^--pathspec-from-file(?:=|$)/.test(w))))) || (c === 'git restore' && args.some((w) => /^(?:--source|-s)/.test(w)))) {
       out.push(...sueltos.flatMap((w) => w.split(',')).filter(es));
       // una carpeta repuesta desde otra rama (`git checkout otra -- .`) trae las constancias que esa rama tenga distintas:
       // se le pregunta a git cuáles cambiarían; si git no contesta, la carpeta que las puede contener no pasa
@@ -1839,6 +1844,9 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
           }
         }
       }
+    } else if (['git merge', 'git reset', 'git cherry-pick', 'git revert', 'git read-tree', 'git rebase', 'git pull', 'git stash', 'git switch', 'git checkout', 'git branch', 'git update-ref', 'git symbolic-ref', 'git fetch', 'git push', 'git remote', 'git config'].includes(c)) {
+      const desde = base;
+      out.push(...constanciasDeOtraRama(c, args, base, isControlApproval, { tramo, anidado: (sub) => constanciasTocadas(sub, desde, stateDir) }).map((p) => `${tramo.trim()} (${p})`));
     } else if (c === 'git apply' || c === 'git am' || c === 'patch') {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);
@@ -1914,6 +1922,250 @@ function parcheNombraConstancia(texto, isControlApproval) {
     if (m) rutas.push(m[1].trim());
   }
   return rutas.some((r) => isControlApproval(r));
+}
+
+/**
+ * Las constancias que un comando de git trae de otra ref al árbol, al índice o a la historia de una rama, con el motivo:
+ * `merge`, `reset`, `cherry-pick`, `revert`, `read-tree`, `rebase` (también lo que corre con `-x` y la lista de tareas
+ * de un `--continue`), `pull`, `stash apply|pop|branch`, el cambio de rama con constancias sin commitear, y lo que mueve
+ * una rama por fuera (`branch -f|-M|-C`, `update-ref`, `fetch . a:b`, `push . a:b`). Las que la rama principal del
+ * remoto ya tiene iguales pasan, porque llegaron por un pedido; esa rama vale sólo si su copia la escribió git al bajarla
+ * (su registro), y por eso escribir a mano las copias del remoto o cambiar a dónde apunta `origin` no pasa. Si git no
+ * contesta, la ref no se pudo mirar y no pasa. Fuera de alcance: editar a mano los archivos de `.git`.
+ * `extra.tramo`: el tramo entero, con lo de antes del comando · `extra.anidado(cmd)`: lo mismo para un comando adentro.
+ */
+function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
+  const { spawnSync } = require('child_process');
+  const git = (argv) => {
+    const r = spawnSync('git', ['-C', base, ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    return r.error || r.status !== 0 ? null : String(r.stdout);
+  };
+  const tramo = String(extra.tramo || '');
+  const anidado = extra.anidado || (() => []);
+  const commit = (ref) => (git(['rev-parse', '--verify', '-q', '--end-of-options', `${ref}^{commit}`]) || '').trim() || null;
+  const out = [];
+  // la rama principal del remoto, si su copia la escribió git al bajarla (fetch, pull o push); una copia sin registro
+  // (recién clonada, o escrita a mano) no prueba nada hasta el próximo `git fetch`
+  const principal = (() => {
+    for (const r of ['refs/remotes/origin/main', 'refs/remotes/origin/master']) {
+      const sha = commit(r);
+      if (!sha) continue;
+      const ultimo = (git(['reflog', 'show', '-n1', '--format=%H%x09%gs', r]) || '').trim().split('\t');
+      return ultimo[0] === sha && /^(?:fetch|pull|update by push)\b/.test(ultimo[1] || '') ? sha : null;
+    }
+    return null;
+  })();
+  const blob = (ref, p) => (git(['rev-parse', '--verify', '-q', `${ref}:${p}`]) || '').trim() || null;
+  // las rutas de constancias que quedan distintas al pasar de `desde` a `hasta`, salvo las que se borran
+  const comparar = (desde, hasta, nombre, rutas = []) => {
+    if (/^-/.test(desde) || /^-/.test(hasta)) { out.push(`no pude ver qué constancias trae ${nombre}`); return; }
+    const r = git(['diff', '--name-only', '--no-renames', '--diff-filter=d', '--end-of-options', desde, hasta, ...(rutas.length ? ['--', ...rutas] : [])]);
+    if (r === null) { out.push(`no pude ver qué constancias trae ${nombre}${principal ? '' : ' (la rama principal no está confirmada: git fetch)'}`); return; }
+    for (const p of r.split(/\r?\n/).filter(Boolean).filter((x) => isControlApproval(x))) {
+      const traida = blob(hasta, p);
+      if (principal && traida && blob(principal, p) === traida) continue;
+      out.push(`${p} desde ${nombre}${principal ? '' : ' (la rama principal no está confirmada: corré git fetch)'}`);
+    }
+  };
+  const fusion = (ref, desde = 'HEAD') => {
+    const mb = (git(['merge-base', '--end-of-options', desde, ref]) || '').trim() || null;
+    if (!mb) { out.push(`no pude ver qué constancias trae ${ref}`); return; }
+    comparar(mb, ref, ref);
+  };
+  // mover la rama `nombre` (o crearla) a `ref`: lo que trae es lo que cambia en su historia
+  const mover = (nombre, ref) => {
+    if (/^refs\/remotes\//.test(nombre)) { out.push(`${nombre}: la copia del remoto la escribe git fetch, no a mano`); return; }
+    if (!commit(ref)) { out.push(`no pude ver qué constancias trae ${ref}`); return; }
+    const antes = commit(nombre) || commit(/^refs\//.test(nombre) ? nombre : `refs/heads/${nombre}`);
+    if (antes) comparar(antes, ref, ref); else fusion(ref);
+  };
+  // `-c remote.origin.url=…` o `GIT_CONFIG_*` en el tramo: lo que se baja ya no es del remoto
+  if (/\bremote\.origin\.(?:url|fetch|pushurl)\b|\bGIT_CONFIG_(?:PARAMETERS|COUNT|KEY_\d+)=/i.test(tramo) && ['git fetch', 'git pull', 'git remote', 'git config'].includes(c)) {
+    out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
+    return out;
+  }
+  if (c === 'git config') {
+    const sueltos = args.filter((w) => !w.startsWith('-'));
+    if (!args.some((w) => /^--(?:get|get-all|get-regexp|list|unset|unset-all)$|^-l$/.test(w)) && sueltos.length >= 2 && /^remote\.origin\./i.test(sueltos[0])) out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
+    return out;
+  }
+  if (c === 'git remote') {
+    const sub = args.find((w) => !w.startsWith('-'));
+    const resto = args.slice(args.indexOf(sub) + 1).filter((w) => !w.startsWith('-'));
+    const automatico = args.some((w) => /^(?:-a|--auto|-d|--delete)$/.test(w));
+    if ((/^(?:set-url|add|remove|rm)$/.test(sub || '') && resto[0] === 'origin') || (sub === 'rename' && resto[1] === 'origin') || (sub === 'set-head' && resto[0] === 'origin' && !automatico)) {
+      out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
+    }
+    return out;
+  }
+  // retomar: la lista de tareas que queda se mira como si se corriera ahora; abandonar o saltear no trae nada
+  if (args.some((w) => /^--(?:abort|quit|skip|edit-todo|show-current-patch)$/.test(w))) return out;
+  if (args.includes('--continue')) {
+    if (c === 'git rebase') {
+      const dir = ['rebase-merge', 'rebase-apply'].map((d) => (git(['rev-parse', '--git-path', d]) || '').trim()).map((d) => (d && !path.isAbsolute(d) ? path.join(base, d) : d)).find((d) => d && fs.existsSync(d));
+      if (!dir) return out;
+      let lista = '';
+      try { lista = fs.readFileSync(path.join(dir, 'git-rebase-todo'), 'utf8'); } catch (_) { return out; }
+      let propia = '';
+      try { propia = fs.readFileSync(path.join(dir, 'orig-head'), 'utf8').trim(); } catch (_) { /* sin la punta de antes, todo commit se mira */ }
+      for (const linea of lista.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))) {
+        const m = /^(?:p|pick|r|reword|e|edit|s|squash|f|fixup)\s+(?:-[Cc]\s+)?(\S+)/.exec(linea);
+        const x = /^(?:x|exec)\s+(.+)$/.exec(linea);
+        if (x) { out.push(...anidado(x[1])); continue; }
+        if (m) {
+          // los commits de la rama que se rebasa ya están en ella; uno de afuera, agregado a la lista, se mira
+          if (propia && git(['merge-base', '--is-ancestor', '--end-of-options', m[1], propia]) !== null) continue;
+          comparar(`${m[1]}^`, m[1], m[1]);
+        } else if (!/^(?:d|drop|b|break|l|label|t|reset|u|update-ref|noop)\b/.test(linea)) out.push(`la lista de tareas tiene «${linea.slice(0, 60)}»: no pude ver qué trae`);
+      }
+    } else if (c === 'git cherry-pick' || c === 'git revert') {
+      let lista = '';
+      try { lista = fs.readFileSync((p => (path.isAbsolute(p) ? p : path.join(base, p)))((git(['rev-parse', '--git-path', 'sequencer/todo']) || '').trim()), 'utf8'); } catch (_) { return out; }
+      for (const linea of lista.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))) {
+        const m = /^(pick|revert|p)\s+(\S+)/.exec(linea);
+        if (!m) { out.push(`la lista de tareas tiene «${linea.slice(0, 60)}»: no pude ver qué trae`); continue; }
+        if (m[1] === 'revert') comparar(m[2], `${m[2]}^`, m[2]); else comparar(`${m[2]}^`, m[2], m[2]);
+      }
+    }
+    return out;
+  }
+  // las opciones que llevan su valor en la palabra siguiente, para no tomarlo por una ref; una que no está acá y se lleva
+  // el valor deja una palabra de más, que se mira como ref y, si no lo es, no pasa: frena de más, nunca de menos
+  const conValor = {
+    'git merge': /^(?:-m|-F|-s|-X|--message|--file|--strategy|--strategy-option|--into-name)$/,
+    'git cherry-pick': /^(?:-X|--strategy|--strategy-option)$/,
+    'git revert': /^(?:-X|--strategy|--strategy-option)$/,
+    'git rebase': /^(?:-s|-X|--strategy|--strategy-option)$/,
+    'git pull': /^(?:-s|-X|--strategy|--strategy-option|--depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs|-o|--server-option|--upload-pack|--negotiation-tip|--refmap|--recurse-submodules)$/,
+    'git fetch': /^(?:--depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs|-o|--server-option|--upload-pack|--negotiation-tip|--refmap|--recurse-submodules)$/,
+    'git push': /^(?:-o|--push-option|--receive-pack|--exec|--repo)$/,
+    'git switch': /^(?:-c|-C|--create|--force-create|--orphan)$/,
+    'git checkout': /^(?:-b|-B|--orphan)$/,
+    'git branch': /^(?:-u|--set-upstream-to|--contains|--no-contains|--merged|--no-merged|--points-at|--sort|--format)$/,
+    'git update-ref': /^-m$/,
+    'git symbolic-ref': /^-m$/,
+  }[c] || /^$/;
+  const sueltas = [];
+  const rutas = [];
+  let onto = null;
+  let padre = 1;
+  const execs = [];
+  const creada = [];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--') {
+      // en reset lo de después son rutas; en los otros, todavía refs
+      if (c === 'git reset' || c === 'git checkout') { rutas.push(...args.slice(i + 1)); break; }
+      sueltas.push(...args.slice(i + 1)); break;
+    }
+    if (c === 'git rebase' && w === '--onto') { onto = args[++i]; continue; }
+    if (c === 'git rebase' && /^--onto=/.test(w)) { onto = w.slice(7); continue; }
+    if (c === 'git rebase' && /^(?:-x|--exec)$/.test(w)) { execs.push(args[++i] || ''); continue; }
+    if (c === 'git rebase' && /^(?:--exec=|-x.)/.test(w)) { execs.push(w.replace(/^(?:--exec=|-x)/, '')); continue; }
+    if ((c === 'git cherry-pick' || c === 'git revert') && /^(?:-m|--mainline)$/.test(w)) { padre = Number(args[++i]) || 0; continue; }
+    if ((c === 'git cherry-pick' || c === 'git revert') && /^(?:-m\d+|--mainline=\d+)$/.test(w)) { padre = Number(w.replace(/\D/g, '')); continue; }
+    if ((c === 'git switch' && /^(?:-c|-C|--create|--force-create|--orphan)$/.test(w)) || (c === 'git checkout' && /^(?:-b|-B|--orphan)$/.test(w))) { creada.push(args[++i]); continue; }
+    if (conValor.test(w)) { i++; continue; }
+    // `-` es la rama de antes
+    if (w === '-' && c !== 'git stash') { sueltas.push('@{-1}'); continue; }
+    if (!w.startsWith('-')) sueltas.push(w);
+  }
+  // lo que no se ve en la línea: las refs por la entrada estándar, o rutas puestas bajo otro prefijo
+  if ((c === 'git cherry-pick' || c === 'git revert' || c === 'git update-ref') && args.includes('--stdin')) { out.push('las refs vienen por la entrada estándar: no pude ver qué trae'); return out; }
+  if (c === 'git read-tree' && args.some((w) => /^--prefix(?:=|$)/.test(w))) { out.push('con --prefix las rutas quedan en otra carpeta: no pude ver qué constancias trae'); return out; }
+  for (const e of execs) out.push(...anidado(e));
+  if (c === 'git merge') {
+    for (const ref of sueltas.length ? sueltas : ['@{upstream}']) fusion(ref);
+  } else if (c === 'git rebase') {
+    // la rama queda encima de la de arriba y trae todo lo que esa tiene; con `<arriba> <rama>`, se rebasa esa rama
+    if (args.some((w) => /^(?:-i|--interactive)$/.test(w) || /^-[A-Za-z]*i[A-Za-z]*$/.test(w))) {
+      const editor = /(?:\bGIT_SEQUENCE_EDITOR=|\bsequence\.editor=)(['"]?)([^'"\s]*)\1/.exec(tramo);
+      const configurado = (git(['config', '--get', 'sequence.editor']) || '').trim();
+      const quieto = (v) => /^(?::|true|cat)$/.test(v);
+      if ((editor && !quieto(editor[2])) || (!editor && configurado && !quieto(configurado))) out.push('el editor de la lista de tareas puede agregar cualquier commit: no pude ver qué trae');
+    }
+    fusion(onto || sueltas[0] || '@{upstream}', sueltas[1] || 'HEAD');
+  } else if (c === 'git pull') {
+    // `.` es este repo y se mira la rama tal cual; de un remoto, lo que trae se baja recién al correr: sólo pasa su rama
+    // principal (entró por un pedido), mirada en la copia; cualquier otra, primero `git fetch` y después `git merge`
+    const remotos = (git(['remote']) || '').split(/\r?\n/).filter(Boolean);
+    const remoto = sueltas.length && (sueltas[0] === '.' || remotos.includes(sueltas[0])) ? sueltas[0] : sueltas.length ? '?' : null;
+    const refs = (remoto ? sueltas.slice(1) : sueltas).map((r) => r.replace(/^\+/, '').replace(/:.*$/, '').replace(/^refs\/heads\//, ''));
+    const arriba = refs.length ? null : (git(['rev-parse', '--symbolic-full-name', '@{upstream}']) || '').trim();
+    const destino = remoto === '.' ? refs : refs.length ? refs.map((r) => `refs/remotes/${remoto}/${r}`) : remoto === '?' ? [`refs/remotes/?/${sueltas[0]}`] : [arriba || '@{upstream}'];
+    for (const ref of destino) {
+      const local = /^refs\/heads\//.test(ref) || remoto === '.';
+      const esPrincipal = /^refs\/remotes\/origin\/(?:main|master)$/.test(ref) && remoto !== '?';
+      if (!local && !esPrincipal) { out.push(`${ref.replace(/^refs\/remotes\//, '')} se baja recién al correr: traela con git fetch y git merge, que el freno puede mirar`); continue; }
+      if (!commit(ref)) { out.push(`no pude ver qué constancias trae ${ref}: traela con git fetch y git merge, que el freno puede mirar`); continue; }
+      fusion(ref);
+    }
+  } else if (c === 'git reset') {
+    // cualquier forma mueve la rama, el índice o el árbol a lo de la ref; con rutas, sólo esas
+    const ref = sueltas[0];
+    if (ref && commit(ref)) comparar('HEAD', ref, ref, rutas);
+    else if (ref && args.includes('--')) out.push(`no pude ver qué constancias trae ${ref}`);
+  } else if (c === 'git cherry-pick' || c === 'git revert') {
+    for (const s of sueltas) {
+      const rango = /^(.+?)\.\.\.?(.+)$/.exec(s);
+      // un rango: lo que agrega de A a B (cherry-pick), o lo que deshace, que vuelve (revert: de B a A)
+      if (rango) { if (c === 'git cherry-pick') comparar(rango[1], rango[2], s); else comparar(rango[2], rango[1], s); continue; }
+      // un commit contra el padre que se elige (`-m N`, el primero si no se dice)
+      const p = `${s}^${padre || 1}`;
+      if (c === 'git cherry-pick') comparar(p, s, s); else comparar(s, p, s);
+    }
+  } else if (c === 'git read-tree') {
+    for (const s of sueltas) comparar('HEAD', s, s);
+  } else if (c === 'git stash') {
+    // lo guardado vuelve al árbol de la rama de ahora
+    const sub = sueltas[0] || 'push';
+    if (sub === 'apply' || sub === 'pop') comparar('HEAD', sueltas[1] || 'stash@{0}', sueltas[1] || 'stash@{0}');
+    else if (sub === 'branch') comparar('HEAD', sueltas[2] || 'stash@{0}', sueltas[2] || 'stash@{0}');
+  } else if (c === 'git switch' || c === 'git checkout') {
+    // cambiar de rama lleva lo que no está commiteado: una constancia suelta pasaría a la otra rama
+    if (rutas.length || (c === 'git checkout' && args.includes('--'))) return out;
+    const destino = creada.length ? (sueltas[0] || 'HEAD') : sueltas[0];
+    const sha = destino ? commit(destino) : null;
+    if (!sha || sha === commit('HEAD')) return out;
+    const sueltasDelArbol = [...(git(['diff', '--name-only', '--no-renames', 'HEAD']) || '').split(/\r?\n/), ...(git(['ls-files', '--others', '--exclude-standard']) || '').split(/\r?\n/)]
+      .filter(Boolean).filter((p) => isControlApproval(p));
+    for (const p of [...new Set(sueltasDelArbol)]) {
+      const ahora = (git(['hash-object', '--', p]) || '').trim() || null;
+      if (ahora && (blob(sha, p) === ahora || (principal && blob(principal, p) === ahora))) continue;
+      if (!ahora && !blob(sha, p)) continue;
+      out.push(`${p} sin commitear pasa a ${destino}`);
+    }
+  } else if (c === 'git branch') {
+    // `-f <rama> <ref>` la mueve; `-M|-C <vieja> <nueva>` pone la vieja en el lugar de la nueva
+    if (args.some((w) => /^(?:-f|--force)$/.test(w) || /^-[A-Za-z]*f[A-Za-z]*$/.test(w)) && !args.some((w) => /^(?:-[dDmMcC]|--delete|--move|--copy)$/.test(w)) && sueltas.length >= 2) mover(sueltas[0], sueltas[1]);
+    else if (args.some((w) => /^(?:-M|-C)$/.test(w) || (/^(?:-m|-c|--move|--copy)$/.test(w) && args.some((x) => /^(?:-f|--force)$/.test(x)))) && sueltas.length >= 2) mover(sueltas[1], sueltas[0]);
+  } else if (c === 'git update-ref') {
+    if (args.some((w) => /^(?:-d|--delete)$/.test(w))) return out;
+    if (sueltas.length >= 2) mover(sueltas[0], sueltas[1]);
+  } else if (c === 'git symbolic-ref') {
+    if (args.some((w) => /^(?:-d|--delete)$/.test(w)) || sueltas.length < 2) return out;
+    if (/^refs\/remotes\//.test(sueltas[0])) out.push(`${sueltas[0]}: la copia del remoto la escribe git fetch, no a mano`);
+  } else if (c === 'git fetch' || c === 'git push') {
+    // con un destino explícito (`a:b`): de este repo (`.`) se mira como mover b a a; a la copia del remoto sólo llega lo
+    // que el mismo remoto tiene con ese nombre; a una rama local, desde un remoto, no se ve antes de bajar
+    const remotos = (git(['remote']) || '').split(/\r?\n/).filter(Boolean);
+    const remoto = sueltas[0] || null;
+    for (const spec of sueltas.slice(1).filter((s) => s.includes(':')).map((s) => s.replace(/^\+/, ''))) {
+      const [src, dst] = spec.split(':');
+      if (!dst) continue;
+      if (c === 'git push' && remoto !== '.') continue;
+      const dstRef = /^refs\//.test(dst) ? dst : `refs/heads/${dst}`;
+      if (remoto === '.') { mover(dstRef, src); continue; }
+      const enCopia = /^refs\/remotes\/([^/]+)\/(.+)$/.exec(dstRef);
+      if (enCopia) {
+        const mismo = enCopia[1] === remoto && remotos.includes(remoto) && (src.replace(/^refs\/heads\//, '') === enCopia[2]);
+        if (!mismo) out.push(`${dstRef}: la copia del remoto la escribe git fetch desde ese remoto y con ese nombre`);
+        continue;
+      }
+      out.push(`${dstRef} se baja recién al correr: traela con git fetch y git merge, que el freno puede mirar`);
+    }
+  }
+  return out;
 }
 
 /** El archivo que lee un `tar` (`-f x`, `-xzf x`, `-fx`, `--file=x`, `xzf x`), o null si lee la entrada estándar. */
@@ -2062,7 +2314,8 @@ function expandirComodin(patron, base, aviso) {
   const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
   const partes = absoluto.split(/[\\/]+/);
   let actuales = [partes[0] === '' ? path.sep : `${partes[0]}${path.sep}`];
-  const aRegex = (g) => new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
+  // `[!a]` es la negación del shell: en la expresión, `[^a]`
+  const aRegex = (g) => new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^')}$`);
   for (const parte of partes.slice(1)) {
     if (!parte) continue;
     const sig = [];
@@ -2088,7 +2341,7 @@ function estadoDeHistoria(abs) {
   let texto = '';
   try { texto = fs.readFileSync(abs, 'utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n'); } catch (e) { logHookError(e); return '?'; }
   let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);
-  try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* la forma de siempre */ }
+  try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch (e) { logHookError(e); /* la forma de siempre */ }
   if (!declares(texto)) return null;
   const fm = /^---\n([\s\S]*?)\n---/.exec(texto);
   const estado = fm && /^["']?status["']?\s*:\s*["']?([\w-]+)/m.exec(fm[1]);
@@ -2353,7 +2606,7 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
     if (declarados) return declarados;
     declarados = new Set();
     let texto = '';
-    try { texto = marker.storyPath ? fs.readFileSync(marker.storyPath, 'utf8') : ''; } catch (_) { return declarados; }
+    try { texto = marker.storyPath ? fs.readFileSync(marker.storyPath, 'utf8') : ''; } catch (e) { logHookError(e); return declarados; }
     const ts = require('./lib/test-scope.js');
     const finales = [...ts.parseDeclaredFiles(texto), ...ts.parseFilesToDelete(texto)]
       .map((f) => String(f).replace(/\\/g, '/').replace(/^\.\//, '')).filter((f) => f.includes('/') && !f.split('/').includes('..'));
@@ -2502,7 +2755,7 @@ function renameOrCopyOfExistingStory(cmd, cwd) {
   try {
     const { probeStoryFile } = require('./lib/story-discovery.js');
     return fs.existsSync(src) && probeStoryFile(src) ? { src, dest } : null;
-  } catch { return null; }
+  } catch (e) { logHookError(e); return null; }   // sin mirarla, la copia se juzga como historia nueva
 }
 
 /** El nombre sugiere story cuando no hay contenido legible (cp / mv / tee desde un pipe). */
@@ -2755,8 +3008,42 @@ function handleCarrilEHistoria(event, opts = {}) {
         const sg = require('./lib/story-gate.js');
         return { block: sg.blockMessage({ kind: sg.signedRecordKind(constancia) || 'control-approvals' }, { filePath: constancia, via }) + '\n' };
       }
-      const historias = skillOff ? [] : abs.filter((p) => /\.md$/i.test(p) && fs.existsSync(p) && estadoDeHistoria(p) !== null);
-      if (historias.length) return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, via) + '\n' };
+      if (skillOff) continue;
+      // una historia entre los argumentos cuenta como escrita: lo que el guion hace con ella no se termina de ver desde acá
+      // (un modo en una variable, en el lugar, un programa que lanza). También pegada a una opción (`--file=<historia>`,
+      // `file:<historia>`, `-o<historia>`), con variables, llaves y comodines del shell, y por un enlace, aunque no
+      // termine en `.md`; un comodín que puede traer una historia y tiene más archivos de los que se miran, frena
+      let recortado = false;
+      const argumentos = g.argv.flatMap((a) => {
+        const v = String(a);
+        const formas = [v, v.replace(/^[^=:]*[=:]/, '')];
+        if (/^-[A-Za-z]./.test(v)) formas.push(v.slice(2));
+        return [...new Set(formas)];
+      }).flatMap((v) => {
+        // `$PWD` es la carpeta desde donde corre el comando
+        const valor = String(expandirRuta(cmd, v.replace(/^\$\{?PWD\}?(?=[\\/]|$)/, cwd)).valor ?? v);
+        return expandirLlaves(valor).flatMap((x) => {
+          if (!/[*?[]/.test(x)) return [x];
+          const aviso = {};
+          const halladas = expandirComodin(x, cwd, aviso);
+          if (aviso.recortado && !/\.(?!md$)[A-Za-z0-9]+$/i.test(x)) recortado = true;
+          return halladas;
+        });
+      });
+      const esHistoria = (p) => {
+        const real = installedTree.realPath(p) || p;
+        let st;
+        try { st = fs.statSync(real); } catch { return false; }
+        // un archivo grande que no termina en `.md` no se abre para ver si es una historia
+        if (!st.isFile() || (st.size > 1024 * 1024 && !/\.md$/i.test(p) && !/\.md$/i.test(real))) return false;
+        return estadoDeHistoria(real) !== null;
+      };
+      const historias = [...new Set([...abs, ...argumentos.map(resolver)])].filter(esHistoria);
+      if (recortado) historias.push('(un comodín entre los argumentos con más archivos de los que se miran)');
+      if (historias.length) {
+        const recibe = historias.some((h) => !abs.includes(h)) ? ' — recibe la historia por argumento: para leerla, la herramienta de lectura' : '';
+        return { block: require('./lib/story-gate.js').storyByConsoleMessage(historias, via + recibe) + '\n' };
+      }
     }
   }
   if (!laneOff) {
@@ -2876,7 +3163,7 @@ function handleCarrilEHistoria(event, opts = {}) {
             repoPath: (marker && marker.repoPath) || null, name: 'ledger-visible', status: 'blocked',
             storyId: (marker && marker.storyId) || null, files: vis.files.length, via,
           }) + '\n', 'utf8');
-        } catch { /* el freno no depende del log */ }
+        } catch (e) { logHookError(e); /* el freno no depende del log */ }
         const sinResolver = vis.files.filter((f) => sinResolverDe.has(f))
           .map((f) => ({ file: f, vars: sinResolverDe.get(f).sinResolver }));
         return { block: lv.mensaje(vis.files, marker && marker.storyId, { sinResolver, codex: require('./lib/story-skill-gate-io.js').isCodexEvent(event) }) + '\n' };
@@ -2899,7 +3186,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     // Cupo ad-hoc: Bash no tiene PostToolUse nuestro, así que el registro va acá (best-effort: el
     // comando puede fallar después, pero sin esto un hotfix hecho con heredocs nunca suma al cupo).
     for (const abs of passedCode.filter((f) => isCodeFile(f))) {   // un destino sin resolver no suma al cupo: no se sabe cuál es
-      try { io.recordAdhocFile(stateDir, sessionId, abs); } catch { /* best-effort */ }
+      try { io.recordAdhocFile(stateDir, sessionId, abs); } catch (e) { logHookError(e); }
     }
   }
 
@@ -2923,7 +3210,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     if (mdNew.length) {
       const sio = require('./lib/story-skill-gate-io.js');
       let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);
-      try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* fallback regex */ }
+      try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch (e) { logHookError(e); /* fallback regex */ }
       const hds = heredocs(cmdDestinos);
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
       // el mismo destino que se juzgó arriba, con las variables del comando expandidas

@@ -2600,20 +2600,46 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     const grupos = companionLib.groupByRepo(files, repo);
     const propios = grupos.filter((g) => g.propio).flatMap((g) => g.files.map((x) => x.original));
     const hermanos = grupos.filter((g) => !g.propio);
+    // El diff no se mide contra HEAD: lo que la story ya commiteó también lo revisa el revisor, y lo sin commitear viene
+    // encima. La base es el commit en que arrancó la corrida (`baseSha` del marcador, si es de este repo y ancestro de
+    // HEAD, y de esta story); si no, la bifurcación con la rama principal; sin ninguna de las dos, HEAD. El encabezado
+    // dice cuál fue y por qué se descartó cada una de las anteriores.
+    const { resolver, bifurcacion } = require('./lib/coverage-base.js');
+    let marcadorDeLaCorrida = null;
+    let sinMarcador = null;
+    try {
+      const lm = leerMarcadorDeLaCorrida();
+      marcadorDeLaCorrida = lm.marker;
+      sinMarcador = lm.error;
+    } catch (e) { sinMarcador = e.message; }
+    const deEstaStory = story ? deriveStoryId(story) : null;
+    if (marcadorDeLaCorrida && marcadorDeLaCorrida.baseSha && deEstaStory && String(marcadorDeLaCorrida.storyId || '') !== String(deEstaStory)) {
+      sinMarcador = `el marcador es de la story ${marcadorDeLaCorrida.storyId || '(sin id)'}, no de la ${deEstaStory}`;
+      marcadorDeLaCorrida = null;
+    }
+    const baseDe = (cwd) => {
+      const r = resolver({ repo: cwd, env: {}, marker: marcadorDeLaCorrida, markerError: sinMarcador });
+      if (r.source === 'marcador') return { ref: r.ref, nombre: `el arranque de la corrida (${r.ref.slice(0, 12)})` };
+      const porQue = [...(r.descartadas || []).map((d) => d.motivo), ...(sinMarcador && !(r.descartadas || []).length ? [sinMarcador] : [])];
+      const b = bifurcacion(cwd);
+      if (b.sha) return { ref: b.sha, nombre: `la bifurcación con ${b.rama}${porQue.length ? ` (sin el arranque de la corrida: ${porQue.join('; ')})` : ''}` };
+      return { ref: 'HEAD', nombre: `HEAD — respaldo: lo ya commiteado en la rama NO está en este diff (${[...porQue, b.motivo].join('; ')})` };
+    };
     const gitDiff = (cwd, rutas) => {
-      const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', 'HEAD', '--', ...rutas], {
+      const base = baseDe(cwd);
+      const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', base.ref, '--', ...rutas], {
         encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
       });
       if (r.error || r.status !== 0) {
         const motivo = String((r.stderr || '').split('\n').find((l) => l.trim()) || (r.error && r.error.message) || `salió ${r.status}`).trim();
-        return { text: '', error: motivo };
+        return { text: '', error: motivo, base: base.nombre };
       }
-      return { text: r.stdout || '', error: null };
+      return { text: r.stdout || '', error: null, base: base.nombre };
     };
     // Con `--files` vacío el alcance es el working tree entero del repo (como siempre). Con `--files` sólo del
-    // hermano, el repo no aporta diff: un `git diff HEAD --` sin rutas traería todo el working tree, que nadie pidió.
+    // hermano, el repo no aporta diff: un `git diff <base> --` sin rutas traería todo el working tree, que nadie pidió.
     const principal = files.length && !propios.length
-      ? { text: '', error: null, sinArchivos: true }
+      ? { text: '', error: null, sinArchivos: true, base: 'HEAD' }
       : gitDiff(repo, propios.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f))));
     const rawDiff = principal.text;
 
@@ -2646,7 +2672,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       if (!g.root) return { etiqueta: null, root: null, error: 'no están dentro de ningún repo git', files: g.files, diff: '' };
       const d = gitDiff(g.root, g.files.map((x) => x.abs));
       diffChunks.push(...trocear(d.text, etiqueta).map((c) => ({ ...c, grupo: i })));
-      return { etiqueta, root: g.root, error: d.error, files: g.files, diff: '' };
+      return { etiqueta, root: g.root, error: d.error, files: g.files, diff: '', base: d.base };
     });
     const truncatedFiles = [];   // recortados a PER_FILE_CAP
     const droppedFiles = [];     // no pegados por cap global
@@ -2740,7 +2766,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // Una sección por hermano, después del diff del repo.
     const bloquesHermanos = seccionesHermanos.flatMap((s) => [
       '',
-      s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff HEAD en ${s.root})` : '## Archivos fuera de todo repo git',
+      s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff contra ${s.base} en ${s.root})` : '## Archivos fuera de todo repo git',
       '',
       '```diff',
       s.diff || (!s.root ? `(${s.files.map((x) => x.original).join(', ')}: ${s.error})`
@@ -2781,7 +2807,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '',
       digest || '(sin story)',
       '',
-      '## Diff unificado (git diff HEAD)',
+      `## Diff unificado (git diff contra ${principal.base})`,
       '',
       '```diff',
       diff || '(vacío)',
@@ -5493,7 +5519,8 @@ function readSessionMarkerStrict() {
   } catch (e) { return { estado: 'ilegible', marcador: null, motivo: String(e.message).slice(0, 80) }; }
 }
 
-// La firma pedida para otra sesión (`--for-session <D>`): acá sólo la vuelta extra de revisores. Hasta la firma el guion
+// La firma pedida para otra sesión (`--for-session <D>`): acá la vuelta extra de revisores y contar los revisores sin la
+// constancia de que corrieron (`check-count --trust-ran`). Hasta la firma el guion
 // sólo lee la corrida de <D>; la firma la pide la sesión que corre el guion (PROPIA, la de antes de cambiar nada), y
 // recién después `fijarDestino` deja el proceso, y los guiones que lance, trabajando sobre <D>.
 const PROPIA = sessionIdFileKey();
@@ -5504,17 +5531,34 @@ function paraOtraSesion(cmd, args, argv) {
   const pedida = i >= 0 ? argv[i + 1] : null;
   if (!pedida || pedida === PROPIA) return null;
   // sin variable de sesión y sin terminal no hay quién pida la firma para otra sesión
-  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la vuelta extra para una sesión se firma en la terminal del dueño (--terminal). No escribí nada.\n';
-  if (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound) {
-    return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round): ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
+  if (PROPIA === '_nosession' && !argv.includes('--terminal')) return '🛑 Sin variable de sesión, la firma para una sesión se da en la terminal del dueño (--terminal). No escribí nada.\n';
+  const contar = cmd === 'check-count';
+  if (contar && !args.trustRan) return '🛑 --for-session en check-count va sólo con --trust-ran: contar los revisores de otra sesión sin firma no es una firma. No escribí nada.\n';
+  if (!contar && (!['smart-reloop', 'advisors'].includes(cmd) || !args.extraRound)) {
+    return `🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round) y para check-count --trust-ran: ${cmd || '(sin subcomando)'} se corre desde la sesión destino. No escribí nada.\n`;
   }
   if (!/^[\w-]+$/.test(pedida)) return '🛑 La sesión de --for-session no se puede leer. No escribí nada.\n';
+  if (pedida === '_nosession') return '🛑 «_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id. No escribí nada.\n';
   let abierta;
   try { abierta = ownerWindow().marcadorEn(path.join(stateDirOf(os.homedir()), 'active', `${pedida}.json`)); } catch (e) { return `🛑 ${e.message}. No escribí nada.\n`; }
   if (!abierta || !abierta.storyId) {
-    return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida para la vuelta extra. No escribí nada.\n`;
+    return `🛑 La sesión ${pedida} no tiene una ejecución abierta: no hay corrida ${contar ? 'que contar' : 'para la vuelta extra'}. No escribí nada.\n`;
   }
   paraOtra = { pedida, storyId: String(abierta.storyId) };
+  if (contar) {
+    // la historia que se cuenta es la de la corrida de <D>; el registro de sus revisores se lee recién con la firma
+    const repoAbs = path.resolve(args.repo || '.');
+    const storyAbs = args.story ? (path.isAbsolute(args.story) ? args.story : path.join(repoAbs, args.story)) : null;
+    const nombrada = storyAbs ? deriveStoryId(storyAbs) : null;
+    if (!nombrada || String(nombrada) !== paraOtra.storyId) {
+      return `🛑 La corrida de la sesión ${pedida} es de la story ${paraOtra.storyId}, y --story ${args.story ? `nombra la ${nombrada || args.story}` : 'no está'}. No escribí nada.\n`;
+    }
+    // el mismo número no alcanza: tiene que ser el archivo de la corrida, como en runtime-waiver
+    if (!require('./lib/waiver-display.js').esLaDelMarcador(storyAbs, abierta)) {
+      return `🛑 ${path.basename(storyAbs)} no es el archivo de la historia de la corrida de la sesión ${pedida} (${abierta.storyPath || 'sin ruta en su marcador'}). No escribí nada.\n`;
+    }
+    return null;
+  }
   // hasta la firma, sólo para leer su corrida: nada se escribe antes (topeDeVueltas)
   for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) if (k === 'CLAUDE_CODE_SESSION_ID' || process.env[k]) process.env[k] = pedida;
   return null;
@@ -6660,6 +6704,20 @@ function main() {
   }
 
   if (cmd === 'check-count') {
+    // contar sin la constancia de que corrieron lo firma el dueño, siempre y antes de contar: con la firma, el registro
+    // de revisores que se lee es el de la sesión destino (sessionLogPath lee la variable que fija fijarDestino)
+    if (args.trustRan) {
+      const ow = ownerWindow();
+      const stateDir = stateDirOf(os.homedir());
+      const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), ...g })}\n`); };
+      const r = ow.exigir({ firma: 'escape:trust-ran', argv: process.argv.slice(1), propia: PROPIA, anotar,
+        resumen: `contar los revisores de ${args.story ? path.basename(args.story) : 'la corrida'} sin la constancia de que corrieron` });
+      // lo firma la persona: sin su firma no se cuenta
+      const noSeConto = (motivo, codigo) => { process.stderr.write(`🛑 check-count: no se contó sin la firma de la persona — ${motivo}.\n`); process.exit(codigo); };
+      if (r.codigo !== 0) noSeConto(r.motivo, r.codigo);
+      const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
+      if (f.codigo !== 0) noSeConto(f.motivo, f.codigo);
+    }
     const state = advisorsRunSinceStart();
     // Una corrida nueva sin `advisors`: la ronda que hay en el registro es de la anterior. Ni se cuenta (sus
     // revisores no vieron este código) ni se acepta el `--ran` declarado: se frena, como sin ningún spawn.

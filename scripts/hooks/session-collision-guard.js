@@ -56,7 +56,7 @@ const VENTANA_MS = (Number(process.env.TYCON_SESSION_GUARD_MIN) || 3) * 60 * 100
 // copia este hook suelto a un árbol de juguete — reconocedor declarado en scripts/tests/fixtures/harness-place-names.json)
 const SIN_WORKTREE = /(^|\/)(tycon-claude-guides|tycon-harness|agent-skills)$/;
 // git que cambia índice / árbol / rama. `merge-base`, `stash list`, `commit-tree` no cuentan.
-const GIT_ESCRIBE = /\bgit\b(?:\s+(?:-C\s+\S+|-c\s+\S+|--?[\w-]+(?:=\S*)?))*\s+(commit|checkout|switch|rebase|stash(?!\s+(?:list|show))|reset|merge(?!-)|cherry-pick|pull|revert)(?!-)\b/;
+const GIT_ESCRIBE = /\bgit\b(?:\s+(?:-[Cc]\s+(?:[^\s-]\S*|-(?=\s))|-[\w-]+(?:=\S*)?))*\s+(commit|checkout|switch|rebase|stash(?!\s+(?:list|show))|reset|merge(?!-)|cherry-pick|pull|revert)(?!-)\b/;
 
 if (process.env.TYCON_SESSION_GUARD === '0') process.exit(0);
 

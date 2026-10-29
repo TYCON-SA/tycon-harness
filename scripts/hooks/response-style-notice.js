@@ -9,7 +9,7 @@
  * Consume el pending (lo borra al emitirlo) → un aviso por infracción, nunca repetido.
  * Fail-open total: cualquier error → exit 0 sin output.
  *
- * Opt-out: TYCON_RESPONSE_METER=0
+ * Opt-out: TYCON_RESPONSE_METER=0 en la máquina, o `switches.response_meter: "off"` en el perfil (la variable gana).
  */
 
 'use strict';
@@ -30,8 +30,19 @@ function emitReminder(text) {
 // El arnés setea TYCON_EVAL_SANDBOX=1 al spawnear; acá nos callamos.
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
+// La organización puede apagar o encender este medidor desde el sitio (`switches.response_meter` del perfil); la variable
+// TYCON_RESPONSE_METER de la máquina, si está puesta, gana. Sin lector, o con la configuración rota, sigue encendido: una clave
+// que no se puede leer no lo apaga, y el aviso va a stderr.
+function orgSwitchOn(name) {
+  try {
+    const C = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    return C.switchOn(name, { warn: (w) => process.stderr.write(`${w}\n`) });
+  } catch { return true; }
+}
+
 function main() {
   if (process.env.TYCON_RESPONSE_METER === '0') return;
+  if (!orgSwitchOn('response_meter')) return;
 
   let event = {};
   try {

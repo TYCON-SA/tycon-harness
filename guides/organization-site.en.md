@@ -235,11 +235,16 @@ explanation.
 
 **What it answers:** how is each product doing?
 
-One row per product: the stories in progress (and how many in review), those stopped for more than 30 days, the blocked
-ones, which version is in test and which in production, whether it is waiting for an approval, whether the watcher looks
-at it, its live vulnerabilities and how it compares with the other products (parity). At the bottom, the total without
-counting shared things twice. A person sees the products they work on. **Parity** compares each product with the
-others: what one does and the rest do not.
+One row per product: the stories in progress (and how many in review), the stalled ones, their age in state («more than
+30 days: 2 · more than 60: 1»), the blocked ones, which version is in test and which in production, whether it is
+waiting for an approval, whether the watcher looks at it, its live vulnerabilities and how it compares with the other
+products (parity). At the bottom, the total without counting shared things twice. A person sees the products they work
+on. **Parity** compares each product with the others: what one does and the rest do not.
+
+A story is **stalled** when it is in progress and has been in its state longer than the first of the two days in
+`params.edad_en_estado_dias` of `sources.json` (for example `[30, 60]`); the age counts what has started, in progress
+and blocked, against both. It is the same count as the night dashboard's age card. Without those days, stalled and age
+say «not measured» with their reason: the site has no number of its own.
 
 ![Projects: one row per product](sitio-de-la-organizacion/capturas/proyectos.png)
 
@@ -292,6 +297,7 @@ their tabs as before.
 - **Rules that are candidates for retirement: tested, never found anything** (`reglas_candidatas`). Rules that can turn red but never found anything, despite plenty of mileage.
 - **Rules the test bench actually tested** (`reglas_probadas`). A rule without a test that forces it to fire is not judged: it shows as "not tested", never as a candidate.
 - **Commits per lane: pipeline, declared shortcut or none** (`carriles`). How many commits went through the pipeline, how many through a declared shortcut and how many through none.
+- **Machines with an active rollback: they do not update on their own** (`vueltas_atras`). How many machines undid an update and hold it back until a later version comes out.
 
 **In Projects (Proyectos):**
 
@@ -524,8 +530,10 @@ be, to copy it and open the request by hand.
   list (Telegram, Slack, Teams, email or none); with email, the sender and the recipients. The chat, the channel address
   or the email password do not go here: they are secrets of the nightly processes. It lives in `operations.json`, in the
   operations repo. A maintainer reviews it.
-- **Waiting notice** (*Aviso de espera*): how many minutes a run waits for a person before giving notice. It reaches
-  every machine. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
+- **Waiting notice** (*Aviso de espera*): whether the notice runs and how many minutes a run waits for a person before
+  giving notice. It reaches every machine. Empty, it runs, as by default; "Off for every machine" turns it off, except
+  on a machine that set `TYCON_WAIT_NOTICE` (the variable wins). It lives in `team-repos.json` → `wait_notice`, in the
+  profile repo. A maintainer reviews it.
 - **Thresholds: when something is painted green or red** (*Umbrales: cuándo algo se pinta verde o rojo*): the limits
   the dashboard uses to color each number; in between, yellow. It lives in `scripts/nightly/dashboard/sources.json`, in
   the operations repo. A maintainer reviews it.
@@ -629,6 +637,18 @@ be, to copy it and open the request by hand.
   naming it; the harness first shows them what they are about to mark, and neither the agent nor a relayed message can
   mark it. It only counts from here, never from a machine. It lives in `team-profile.json` → `qa.manual_check`, in the
   profile repo.
+- **Brakes and meters** (*Frenos y medidores*): which brakes and meters run on every machine. **Brakes** stop a command
+  before it runs: the unscoped-tests brake, the two-sessions-in-one-folder brake and the one-pull-request-per-repo
+  brake. From here they can only be turned on: "As it comes by default" or "On for every machine"; written by hand,
+  "on" in any case or `true` is accepted. Turning a brake off is not done from the profile: it belongs to each machine,
+  with its variable (for example, `TYCON_SESSION_GUARD=0`), and an "off" written by hand in the profile is ignored, the
+  reader names it and the site does not propose it. The dangerous-command brake and the brake on pull requests to main
+  that do not complete on their own are not here: they are always on and can only be turned off on each machine.
+  **Meters** (response length and long waits) do not stop anything: they can be turned on or off. Either way, a
+  machine that set the variable keeps its own setting. Empty, each one as it comes by default. Beware of any other value
+  written by hand (a number, a text that is none of these): the reader does not understand it and treats the whole
+  configuration of every machine as broken, not just this switch; the site does not let you propose it. It lives in
+  `team-profile.json` → `switches`, in the profile repo.
 - **How many sessions work at once** (*Cuántas sesiones trabajan a la vez*): when one session coordinates the others,
   how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn.
   Each machine can change it for itself, because how much it can take depends on the machine. The folder where the
@@ -1221,6 +1241,9 @@ The product repos have their own secret, `SITE_PRODUCTS_WRITE_TOKEN`. To set it 
 With that secret the site only creates `team-config/...` branches and opens requests. It never writes `main` or
 completes the request, even with "A maintainer's changes" on: that option applies to the profile and to operations, not
 to the product repos.
+
+An organization can choose not to require that reviewer on its product repos, for example because each dev merges to
+`main` alone. Then "Propose" stays off on those repos: you review the change, download it and open the request by hand.
 
 ### Inviting someone
 

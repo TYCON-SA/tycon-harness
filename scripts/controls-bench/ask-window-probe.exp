@@ -15,6 +15,12 @@ command -v expect >/dev/null 2>&1 || { echo "NO MEDIDO: no hay expect en el cami
 # \
 exec expect "$0" "$@"
 
+# lo que `claude` escribe pasa a la terminal de quien corre la sonda, y la sesión se corta antes de que apague el
+# seguimiento del mouse: al salir, por donde sea, se apaga (los modos del mouse y el pegado entre corchetes) y vuelve el cursor
+exit -onexit { puts -nonewline stdout "\033\[?1000l\033\[?1002l\033\[?1003l\033\[?1006l\033\[?1015l\033\[?2004l\033\[?25h"; flush stdout }
+# cortada con una señal (la persona la interrumpe, o la terminal se cierra), sale por el mismo camino
+trap { exit [expr {128 + [trap -number]}] } {SIGINT SIGTERM SIGHUP SIGQUIT}
+
 proc no_medido {motivo} { puts "\nNO MEDIDO: $motivo"; exit 3 }
 proc rojo {motivo} { puts "\nROJO: $motivo"; exit 1 }
 
@@ -41,7 +47,8 @@ close $f
 set S {(?:\s|\x1b\[[0-9;]*[A-Za-z])+}
 
 # la pantalla termina de dibujar el menú antes de leer teclas: sin la pausa, la flecha se pierde y queda «No»
-proc elegirLaDeAbajo {} { after 1500; send "\033\[B"; after 500; send "\r" }
+# dentro de un proc, `send` sin `-i` le escribe a la terminal de quien corre la sonda, no a `claude`
+proc elegirLaDeAbajo {sesion} { after 1500; send -i $sesion "\033\[B"; after 500; send -i $sesion "\r" }
 
 proc sesion {nombre respuesta archivo} {
   global dir ajustes marca S
@@ -50,12 +57,24 @@ proc sesion {nombre respuesta archivo} {
   spawn claude --dangerously-skip-permissions --settings $ajustes $pedido
   set vio 0
   # la confianza en la carpeta se da sólo para la carpeta temporal de la sonda; la opción marcada es «No», va la de abajo
-  # la sesión le pregunta a la terminal quién es (`ESC[c`) y no lee teclas hasta tener respuesta: se contesta como una VT220
+  # la sesión le pregunta a la terminal quién es (`ESC[c`) y no lee teclas hasta tener respuesta: se contesta como una VT220.
+  # La pregunta llega DESPUÉS de dibujar el menú, en la misma tanda: contestarla descarta lo leído, así que el menú se
+  # busca también en lo que traía esa tanda, no sólo en lo que llega después.
+  set confianza "trust${S}(?:the${S}files${S}in${S})?this${S}folder"
+  set bypass "Yes,${S}I${S}accept"
+  set ventana "Do${S}you${S}want${S}to${S}proceed\\?"
   expect {
-    -re "\x1b\\\[c" { send "\033\[?62;22c"; exp_continue }
-    -re "Yes,${S}I${S}accept" { elegirLaDeAbajo; exp_continue }
-    -re "trust${S}(?:the${S}files${S}in${S})?this${S}folder" { elegirLaDeAbajo; exp_continue }
-    -re "Do${S}you${S}want${S}to${S}proceed\\?" { set vio 1 }
+    -re "\x1b\\\[c" {
+      send "\033\[?62;22c"
+      set leido $expect_out(buffer)
+      if {[regexp $ventana $leido]} { set vio 1 } else {
+        if {[regexp $confianza $leido] || [regexp $bypass $leido]} { elegirLaDeAbajo $spawn_id }
+        exp_continue
+      }
+    }
+    -re $bypass { elegirLaDeAbajo $spawn_id; exp_continue }
+    -re $confianza { elegirLaDeAbajo $spawn_id; exp_continue }
+    -re $ventana { set vio 1 }
     timeout { }
     eof { }
   }
@@ -65,8 +84,10 @@ proc sesion {nombre respuesta archivo} {
     no_medido "($nombre) la sesión no mostró la ventana de permiso en 120 s"
   }
   send -- $respuesta
-  # el comando, si corre, termina en segundos
-  set limite [expr {[clock seconds] + 60}]
+  # el comando, si corre, termina en segundos; ASK_WINDOW_PROBE_WAIT acorta la espera en las pruebas de la sonda
+  set espera 60
+  if {[info exists ::env(ASK_WINDOW_PROBE_WAIT)]} { set espera $::env(ASK_WINDOW_PROBE_WAIT) }
+  set limite [expr {[clock seconds] + $espera}]
   while {[clock seconds] < $limite && ![file exists $archivo]} { after 500 }
   send "\003"; after 300; send "\003"
   catch {close}

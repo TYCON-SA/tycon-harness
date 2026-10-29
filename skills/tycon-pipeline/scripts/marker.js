@@ -181,6 +181,9 @@ const PARA_OTRA_SESION = {
   'approve-mockup': { firma: 'plan-approval', marcador: true },
   'waive-critical': { firma: 'critical-waiver', marcador: true },
   'mark-tested': { firma: 'manual-test', marcador: true },
+  // un control declarado a mano y un criterio que no se prueba en vivo: los firma la persona, en la ventana o la terminal
+  'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
+  'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') },
   'restore': { firma: 'lost-run', nombra: 3 },
 };
@@ -202,6 +205,7 @@ function paraOtraSesion(argv) {
     return;
   }
   if (!/^[\w-]+$/.test(PEDIDA)) no('la sesión no se puede leer');
+  if (PEDIDA === '_nosession') no('«_nosession» es el nombre de «sin sesión», no una sesión: la firma se pide para la sesión destino por su id');
   const t = PARA_OTRA_SESION[argv[2]];
   const s = t && require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
@@ -2457,9 +2461,22 @@ function cmdSetCheck(name, status, flag) {
     console.error('  Override manual real (ej: no hay build definido): agregá --manual (queda en gates.log).');
     process.exit(2);
   }
-  const marker = readMarker();
-  // Sin marker (sin pipeline) → no-op silencioso. El check solo importa con pipeline activo.
+  let marker = readMarker();
+  // Sin marker (sin pipeline) → no-op silencioso. El check solo importa con pipeline activo. Con --force-manual sale 2:
+  // es una firma, y sin ejecución abierta no hay nada que firmar (el registro de la ventana no se gasta)
+  if (!marker && flag === '--force-manual') {
+    console.error(`🔒 marker.js set-check ${name}: la sesión ${SID} no tiene una ejecución abierta. No se escribió nada.`);
+    process.exit(2);
+  }
   if (!marker) process.exit(0);
+  let firma = null;
+  if (flag === '--force-manual') {
+    // el control declarado a mano lo firma el dueño, en cualquier estado; recién con la firma se escribe, sobre el
+    // marcador que quedó después de firmar
+    firma = firmaDelDueno('escape:force-manual', `${name} → ${status} a mano en ${marker.storyId || 'la ejecución'}`);
+    marker = readMarker();
+    if (!marker) { console.error(`🔒 marker.js set-check ${name}: la ejecución se cerró mientras se firmaba. No se escribió nada.`); process.exit(2); }
+  }
 
   if (name === 'dod') avisarBajaDePantalla(marker);
   // DoD de una story de UI NO se puede marcar manual: exige Playwright real.
@@ -2484,7 +2501,7 @@ function cmdSetCheck(name, status, flag) {
   marker.checksAt[name] = nowIso();
   marker.lastTouch = nowIso();
   writeMarker(marker);
-  appendLog('gates.log', { check: name, status, provenance: prov, storyId: marker.storyId });
+  appendLog('gates.log', { check: name, status, provenance: prov, storyId: marker.storyId, ...porDe(firma) });
   process.stdout.write(`check ${name}: ${status} (${prov})\n`);
 }
 
@@ -4468,7 +4485,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const wd = require('./lib/waiver-display.js');
   // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
   if (!wd.esLaDelMarcador(storyPath, m)) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en esta sesión${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${SID !== PROPIA ? `la sesión ${SID}` : 'esta sesión'}${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
     process.exit(2);
   }
   const matrix = rm.compute({ storyPath });
@@ -4645,6 +4662,53 @@ function cmdSignAdversarialSkip(argv) {
   if (r.aviso) console.error(`⚠️  ${r.aviso}`);
   appendLog('gates.log', { name: 'adversarial-skip-recorded', status: 'ok', story: r.linea.story, camino: r.linea.camino, via: r.linea.via, huella: r.linea.huella });
   console.error(`✅ salteo del pase adversarial firmado (story ${r.linea.story}, ${r.linea.camino}, vía ${r.linea.via}, huella ${r.linea.huella}). El portón lo saltea en esta ejecución.`);
+  process.exit(0);
+}
+
+// `approve-pending --id <CÓDIGO> [--repo <carpeta>] [--terminal]`: la aprobación de un pendiente nuevo de la lista de
+// pendientes (scripts/lib/pending-approvals.js). El pendiente tiene que estar abierto en la lista del repo; la firma va
+// por la delegación del perfil (la coordinadora, desde su pestaña), la ventana de permiso o la terminal del dueño, y
+// recién con ella se escribe la línea del registro. Actúa sobre el repo, no sobre una sesión: no lleva --for-session.
+function cmdApprovePending(argv) {
+  const PA = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'pending-approvals.js'));
+  const { val, tiene } = opcionesDe(argv);
+  const id = (val('--id') || '').trim();
+  if (!id) { console.error('uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--terminal]'); process.exit(2); }
+  if (tiene('--quote') || tiene('--relayed-by') || tiene('--ok')) {
+    console.error('🚫 marker.js approve-pending: la cita, el reenvío y --ok no aprueban: la aprobación es una firma (la delegación, la ventana o --terminal).');
+    process.exit(1);
+  }
+  let repo = val('--repo');
+  try {
+    repo = require('child_process').execFileSync('git', ['-C', path.resolve(repo || process.cwd()), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch (_) { console.error(`marker.js approve-pending: ${repo || process.cwd()} no es un repo de git.`); process.exit(2); }
+  let todo; let registro;
+  try { todo = fs.readFileSync(path.join(repo, PA.TODO), 'utf8'); } catch (e) { console.error(`marker.js approve-pending: no pude leer ${PA.TODO} de ${repo} (${e.code || e.message}).`); process.exit(2); }
+  try { registro = fs.readFileSync(path.join(repo, PA.RECORD), 'utf8'); } catch (e) {
+    if (e.code !== 'ENOENT') { console.error(`marker.js approve-pending: no pude leer ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
+    registro = '';
+  }
+  const pendiente = PA.pendientesAbiertos(todo).find((p) => p.codigo === id);
+  if (!pendiente) { console.error(`marker.js approve-pending: ${id} no es un pendiente abierto (\`- [ ] [${id}] …\`) en ${path.join(repo, PA.TODO)}: se aprueba lo que está escrito.`); process.exit(1); }
+  const leido = PA.leerRegistro(registro);
+  if (leido.ilegibles.length) { console.error(`marker.js approve-pending: ${PA.RECORD} tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un archivo roto.`); process.exit(1); }
+  if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(0); }
+  let maquina = null;
+  try { maquina = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella().huella || null; } catch (_) { /* va sin máquina */ }
+  const linea = PA.lineaNueva({ id, maquina });
+  const ow = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const { casaDeLaCuenta } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'real-home.js'));
+  // la firma va al registro de la casa de la cuenta: es el que lee el pre-commit
+  const r = ow.exigir({ firma: PA.FIRMA, argv: process.argv.slice(1), resumen: `huella ${linea.huella} · ${id} · ${pendiente.linea.slice(0, 140)}`, casa: casaDeLaCuenta(), propia: undefined });
+  if (r.codigo !== 0) { console.error(`🔒 marker.js approve-pending: no se aprobó ${id} — ${r.motivo}`); process.exit(r.codigo); }
+  const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
+  const q = r.via === 'terminal' ? { tipo: 'manual', quien: persona } : quienFirmo(r, persona);
+  const escrita = { ...linea, via: r.via, quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}), ...(r.sesion ? { sesion: r.sesion } : {}) };
+  try {
+    fs.mkdirSync(path.dirname(path.join(repo, PA.RECORD)), { recursive: true });
+    fs.appendFileSync(path.join(repo, PA.RECORD), `${JSON.stringify(escrita)}\n`);
+  } catch (e) { console.error(`🔒 marker.js approve-pending: la firma se dio, pero no pude escribir ${PA.RECORD} (${e.code || e.message}).`); process.exit(2); }
+  console.error(`✅ ${id} aprobado (${r.via}, ${escrita.quien}). Queda en ${PA.RECORD}: commitealo junto con la lista.`);
   process.exit(0);
 }
 
@@ -5322,7 +5386,8 @@ switch (cmd) {
     cmdSetAutonomous(arg1);
     break;
   case 'set-check':
-    cmdSetCheck(arg1, arg2, process.argv[5]);
+    // la bandera puede ir en cualquier lugar después del estado (`--for-session <D> --force-manual`)
+    cmdSetCheck(arg1, arg2, ['--force-manual', '--manual'].find((f) => process.argv.slice(5).includes(f)) || process.argv[5]);
     break;
   case 'run-check':
     cmdRunCheck(process.argv.slice(3));
@@ -5370,6 +5435,9 @@ switch (cmd) {
     break;
   case 'sign-adversarial-skip':
     cmdSignAdversarialSkip(process.argv.slice(3));
+    break;
+  case 'approve-pending':
+    cmdApprovePending(process.argv.slice(3));
     break;
   case 'designate-relay':
     cmdDesignateRelay(process.argv.slice(3));

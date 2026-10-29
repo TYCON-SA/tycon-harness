@@ -19,10 +19,15 @@
  *     grupo `cerrado` y `sin_entrega` no cuentan; las `desconocido`, sólo en `desconocido`. Una story con
  *     `dias_en_estado: null` va a `sin_dato`, nunca a «menos de N»: «no medido» no es cero.
  *   - `paradas` (en curso con más del primer umbral) y `sin_medir` (en curso sin dato): la definición de «parada» que
- *     usa el sitio de la organización, en un solo lugar.
+ *     usa el sitio de la organización, en un solo lugar: `ageCounts`.
  *   - El titular suma sólo lo empezado (grupos `en_curso` y `bloqueado`): una story de backlog vieja no está parada.
  *   - Una foto de más de 2 días antes de `today`, o ilegible, es «no medido» para ese repo, con su motivo.
  *   - Sólo conteos: ningún id, título ni ruta de story sale de acá.
+ *
+ *   ageCounts(stories, dias) → la cuenta de una lista de stories, sin disco: la usan `stateAge` (por foto) y la
+ *     pestaña Proyectos del sitio (por producto). Devuelve `{ estado, motivo, dias, paradas, sin_medir, mas_de_<d1>,
+ *     mas_de_<d2>, con_dato, sin_dato, por_estado, desconocido }`; los «más de», `con_dato` y `sin_dato` suman sólo lo
+ *     empezado, como el titular. Sin días válidos, `{ estado: 'no_medido', motivo, dias: null }` y ninguna cuenta.
  *
  * CLI (sólo lee): node state-age.js --photos <dir> [--products <repos.json>] [--sources <sources.json>] [--today AAAA-MM-DD]
  */
@@ -54,10 +59,35 @@ function listaDeRepos(products) {
   return Array.isArray(products.repos) ? products.repos : null;
 }
 
+const MOTIVO_SIN_DIAS = 'sin params.edad_en_estado_dias válido en sources.json (dos enteros crecientes, por ejemplo [30, 60])';
+
+function ageCounts(stories, dias) {
+  if (!diasValidos(dias)) return { estado: 'no_medido', motivo: MOTIVO_SIN_DIAS, dias: null };
+  const [d1, d2] = dias;
+  const k1 = `mas_de_${d1}`; const k2 = `mas_de_${d2}`;
+  const r = { estado: 'medido', motivo: null, dias: [d1, d2], paradas: 0, sin_medir: 0, [k1]: 0, [k2]: 0, con_dato: 0, sin_dato: 0, por_estado: {}, desconocido: 0 };
+  for (const s of Array.isArray(stories) ? stories : []) {
+    if (!s || NO_CUENTAN.has(s.grupo)) continue;
+    if (s.grupo === 'desconocido' || !s.canonico) { r.desconocido++; continue; }
+    const d = Number.isInteger(s.dias_en_estado) ? s.dias_en_estado : null;
+    const c = r.por_estado[s.canonico] || (r.por_estado[s.canonico] = { total: 0, [k1]: 0, [k2]: 0, sin_dato: 0 });
+    c.total++;
+    if (d === null) c.sin_dato++;
+    else { if (d > d1) c[k1]++; if (d > d2) c[k2]++; }
+    if (s.grupo === 'en_curso') { if (d === null) r.sin_medir++; else if (d > d1) r.paradas++; }
+    // una story de backlog vieja no está parada: los «más de» cuentan sólo lo empezado
+    if (EMPEZADO.has(s.grupo)) {
+      if (d === null) r.sin_dato++;
+      else { r.con_dato++; if (d > d1) r[k1]++; if (d > d2) r[k2]++; }
+    }
+  }
+  return r;
+}
+
 function stateAge({ photosDir, products, today, dias } = {}) {
   const base = { dias: diasValidos(dias) ? dias : null, productos: [], titular: null, no_medidos: [] };
   if (!diasValidos(dias)) {
-    return { ...base, estado: 'no_medido', motivo: 'sin params.edad_en_estado_dias válido en sources.json (dos enteros crecientes, por ejemplo [30, 60])' };
+    return { ...base, estado: 'no_medido', motivo: MOTIVO_SIN_DIAS };
   }
   const [d1, d2] = dias;
   const k1 = `mas_de_${d1}`; const k2 = `mas_de_${d2}`;
@@ -121,23 +151,16 @@ function stateAge({ photosDir, products, today, dias } = {}) {
       continue;
     }
     for (const p of destinos) p.fotos++;
-    for (const s of doc.stories) {
-      if (!s || NO_CUENTAN.has(s.grupo)) continue;
-      const d = Number.isInteger(s.dias_en_estado) ? s.dias_en_estado : null;
-      if (s.grupo === 'desconocido' || !s.canonico) { for (const p of destinos) p.desconocido++; continue; }
-      for (const p of destinos) {
-        const c = p.por_estado[s.canonico] || (p.por_estado[s.canonico] = { total: 0, [k1]: 0, [k2]: 0, sin_dato: 0 });
-        c.total++;
-        if (d === null) c.sin_dato++;
-        else { if (d > d1) c[k1]++; if (d > d2) c[k2]++; }
-        if (s.grupo === 'en_curso') { if (d === null) p.sin_medir++; else if (d > d1) p.paradas++; }
-      }
-      // el titular cuenta cada story una vez, aunque su proyecto sea de dos productos
-      if (EMPEZADO.has(s.grupo)) {
-        if (d === null) titular.sin_dato++;
-        else { titular.con_dato++; if (d > d1) titular[k1]++; if (d > d2) titular[k2]++; }
+    const c = ageCounts(doc.stories, dias);
+    for (const p of destinos) {
+      p.desconocido += c.desconocido; p.paradas += c.paradas; p.sin_medir += c.sin_medir;
+      for (const [estado, x] of Object.entries(c.por_estado)) {
+        const acc = p.por_estado[estado] || (p.por_estado[estado] = { total: 0, [k1]: 0, [k2]: 0, sin_dato: 0 });
+        for (const k of Object.keys(acc)) acc[k] += x[k];
       }
     }
+    // el titular cuenta cada story una vez, aunque su proyecto sea de dos productos
+    for (const k of [k1, k2, 'con_dato', 'sin_dato']) titular[k] += c[k];
   }
   const lista = [...productos.values()].map((p) => {
     const { fotos, ...resto } = p;
@@ -157,7 +180,7 @@ function stateAge({ photosDir, products, today, dias } = {}) {
   };
 }
 
-module.exports = { stateAge, MAX_EDAD_FOTO_DIAS };
+module.exports = { stateAge, ageCounts, validAgeDays: diasValidos, MAX_EDAD_FOTO_DIAS };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

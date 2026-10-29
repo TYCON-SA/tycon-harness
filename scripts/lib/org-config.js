@@ -65,6 +65,9 @@ const SECCIONES = Object.freeze([
   // cuál sesión es, se designa en cada máquina)
   Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
+  // los frenos y medidores de todas las máquinas (switches): un freno sólo se enciende desde acá (apagarlo es de cada
+  // máquina, con su variable); un medidor se enciende o se apaga. La variable puesta en una máquina gana
+  Object.freeze({ id: 'interruptores', titulo: 'Frenos y medidores', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['switches'], idCorto: 'profile', necesita: ['switches'] }),
   Object.freeze({ id: 'coordinacion', titulo: 'Cuántas sesiones trabajan a la vez', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['coordination'], rutas: Object.freeze(['coordination.max_working']), idCorto: 'profile', necesita: ['coordination'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
   // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
@@ -169,6 +172,9 @@ const MERGE_SUITES_SINCE = '2026.10.16.3';
 const MODELS_SINCE = '2026.10.16.10';
 // `wait_notice`: la etiqueta del merge que lo trajo al lector
 const WAIT_NOTICE_SINCE = '2026.10.17.8';
+// `wait_notice.enabled` (la organización apaga el aviso de espera): un lector anterior la ve como clave desconocida y
+// descarta la sección. Provisoria hasta la etiqueta del merge que la trae al lector: frena de más, no de menos
+const WAIT_NOTICE_ENABLED_SINCE = '2026.10.30.1';
 // `coverage`: la etiqueta del merge que lo trajo al lector
 const COVERAGE_SINCE = '2026.10.17.45';
 // `review`: la etiqueta del merge que lo trajo al lector
@@ -203,6 +209,7 @@ function versionQuePide(doc) {
   if (isObject(doc) && conNivelDeModelo(doc.models) && !versionAtLeast(version, MODEL_LEVELS_SINCE)) version = MODEL_LEVELS_SINCE;
   if (isObject(doc) && isObject(doc.models) && doc.models.codex_reviewers !== undefined && !versionAtLeast(version, CODEX_REVIEWERS_SINCE)) version = CODEX_REVIEWERS_SINCE;
   if (isObject(doc) && isObject(doc.models) && CLAVES_DE_PROVEEDORES.some((k) => doc.models[k] !== undefined) && !versionAtLeast(version, MODEL_PROVIDERS_SINCE)) version = MODEL_PROVIDERS_SINCE;
+  if (isObject(doc) && isObject(doc.wait_notice) && doc.wait_notice.enabled !== undefined && !versionAtLeast(version, WAIT_NOTICE_ENABLED_SINCE)) version = WAIT_NOTICE_ENABLED_SINCE;
   return { version, claves };
 }
 /** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
@@ -322,6 +329,12 @@ const GUARD_SINCE = '2026.10.22.46';
  */
 const COORDINATION_SINCE = '2026.10.25.25';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `switches` (los frenos y medidores de la organización).
+ * Provisoria hasta la etiqueta del merge que la trae: una versión que todavía no existe, para que el sitio frene de más
+ * (no deje proponer la clave) en vez de dejar que una máquina anterior rechace el perfil entero.
+ */
+const SWITCHES_SINCE = '2026.10.30.1';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.delegated_signing` en lista y
  * `approvals.delegated_machines`: la etiqueta del merge que las trae, como GUARD_SINCE. El sitio no deja proponer una
  * lista a una capa que pide menos: una máquina con un lector anterior la leería como un valor roto y perdería la firma
@@ -402,7 +415,7 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
   if (paquetes) return paquetes;
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
@@ -1250,6 +1263,10 @@ function pantalla(idioma = 'es') {
   const textos = JSON.stringify(textosCon(idioma, 'pantalla.')).replace(/</g, '\\u003c');
   // los campos que fija el pedido (título, etiquetas, asignación, gravedad…): el lector los rechaza, así que no se ofrecen
   const reservados = JSON.stringify([...require('./operations-config.js').WORK_ITEM_RESERVED]);
+  // los frenos y medidores, con la variable con que cada máquina los cambia: del lector del perfil (el mismo que ubica
+  // loadReader), para no repetirlos acá. Un lector sin ellos deja la sección sin selectores
+  const lectorPerfil = require('./pack-pieces.js').configReader();
+  const interruptores = JSON.stringify(Object.entries((lectorPerfil && lectorPerfil.SWITCHES) || {}).map(([k, sw]) => [k, sw.variable, sw.factory, sw.brake]));
   return String.raw`'use strict';
 // config.js — la pestaña Configuración del sitio de la organización (story 2.29). Lo sirve scripts/lib/org-config.js.
 // Sólo usa setAttribute, appendChild, addEventListener, textContent y replaceChildren: las pruebas lo corren sobre un
@@ -1383,6 +1400,7 @@ function pantalla(idioma = 'es') {
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
     aprobaciones: { t: T('pantalla.quienReenviaElOkTitulo'), d: T('pantalla.quienReenviaElOkDescripcion'), corto: T('pantalla.quienReenviaElOkTitulo') },
     pruebaAMano: { t: T('pantalla.pruebaAManoTitulo'), d: T('pantalla.pruebaAManoDescripcion'), corto: T('pantalla.pruebaAManoTitulo') },
+    interruptores: { t: T('pantalla.interruptoresTitulo'), d: T('pantalla.interruptoresDescripcion'), corto: T('pantalla.interruptoresTitulo') },
     coordinacion: { t: T('pantalla.coordinacionTitulo'), d: T('pantalla.coordinacionDescripcion'), corto: T('pantalla.coordinacionTitulo') },
     frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
@@ -1397,7 +1415,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'coordinacion', 'integraciones', 'hilos', 'estimaciones'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'integraciones', 'hilos', 'estimaciones'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -2319,6 +2337,35 @@ function pantalla(idioma = 'es') {
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.pruebaAManoAyuda') }));
     return box;
   }
+  // los frenos y medidores (switches): un freno se deja como viene de fábrica o se enciende para todas las máquinas
+  // —apagarlo no se ofrece: es de cada máquina, con su variable—; un medidor, además, se apaga. Debajo, qué hace cada uno
+  // [clave, variable, fábrica, es freno], del lector
+  var INTERRUPTORES = ${interruptores};
+  var FRENOS = INTERRUPTORES.filter(function (x) { return x[3]; });
+  var MEDIDORES = INTERRUPTORES.filter(function (x) { return !x[3]; });
+  function editorInterruptores(s, d, pr) {
+    var w = esObjeto(d.switches) ? d.switches : {};
+    var box = el('div', { class: 'pila' });
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.interruptoresFrenos') }));
+    FRENOS.forEach(function (f) {
+      var v = w[f[0]];
+      var fabrica = f[2] === 'on' ? T('pantalla.interruptoresDeFabricaEncendido') : T('pantalla.interruptoresDeFabricaApagado');
+      // un valor escrito a mano que no es «on» (un «off») se muestra tal cual, y el revisor lo nombra
+      var ops = [['', fabrica], ['on', T('pantalla.interruptoresEncendidoParaTodas')]];
+      if (v !== undefined && v !== 'on') ops.push([String(v), String(v)]);
+      box.appendChild(selector(T('pantalla.interruptor.' + f[0]), v === undefined ? '' : v, ops, function (x) { hoja(d, 'switches', f[0], x); }, 'switches.' + f[0], pr));
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.interruptorAyuda.' + f[0]) + ' ' + T('pantalla.interruptoresApagarEnLaMaquina', { variable: f[1] }) }));
+    });
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.interruptoresMedidores') }));
+    MEDIDORES.forEach(function (m) {
+      var v = w[m[0]];
+      var ops = [['', T('pantalla.interruptoresDeFabricaEncendido')], ['on', T('pantalla.interruptoresEncendidoParaTodas')], ['off', T('pantalla.interruptoresApagadoParaTodas')]];
+      if (v !== undefined && v !== 'on' && v !== 'off') ops.push([String(v), String(v)]);
+      box.appendChild(selector(T('pantalla.interruptor.' + m[0]), v === undefined ? '' : v, ops, function (x) { hoja(d, 'switches', m[0], x); }, 'switches.' + m[0], pr));
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.interruptorAyuda.' + m[0]) + ' ' + T('pantalla.interruptoresLaMaquinaGana', { variable: m[1] }) }));
+    });
+    return box;
+  }
   function editorCoordinacion(s, d, pr) {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.coordinacionTope'), (d.coordination || {}).max_working, function (v) { hoja(d, 'coordination', 'max_working', v === '' ? '' : numOTexto(v)); }, 'coordination.max_working', pr, { inputmode: 'numeric' }));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.coordinacionAyuda') }));
@@ -2881,13 +2928,25 @@ function pantalla(idioma = 'es') {
     return box;
   }
   // el plazo del aviso de espera (story 7.20): minutos enteros de 1 a 120; vacío, el de siempre (5)
+  // y si el aviso corre (enabled): vacío, como de fábrica (sí); «apagado» lo apaga en todas las máquinas, salvo donde
+  // la máquina puso su variable (la variable gana)
   function editorEspera(s, d, pr) {
     var w = esObjeto(d.wait_notice) ? d.wait_notice : {};
-    return el('div', { class: 'pila' }, campo(T('pantalla.minutosQueEsperaUnaCorrida'), w.minutes, function (v) {
+    var box = el('div', { class: 'pila' });
+    var en = w.enabled === false ? 'false' : w.enabled === true ? 'true' : '';
+    var ops = [['', T('pantalla.interruptoresDeFabricaEncendido')], ['true', T('pantalla.interruptoresEncendidoParaTodas')], ['false', T('pantalla.interruptoresApagadoParaTodas')]];
+    box.appendChild(selector(T('pantalla.esperaEncendido'), en, ops, function (x) {
+      if (x === '') { if (esObjeto(d.wait_notice)) { delete d.wait_notice.enabled; if (!Object.keys(d.wait_notice).length) delete d.wait_notice; } return; }
+      if (!esObjeto(d.wait_notice)) d.wait_notice = {};
+      d.wait_notice.enabled = x === 'true';
+    }, 'wait_notice.enabled', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.esperaLaMaquinaGana') }));
+    box.appendChild(campo(T('pantalla.minutosQueEsperaUnaCorrida'), w.minutes, function (v) {
       if (v === '') { if (esObjeto(d.wait_notice)) { delete d.wait_notice.minutes; if (!Object.keys(d.wait_notice).length) delete d.wait_notice; } return; }
       if (!esObjeto(d.wait_notice)) d.wait_notice = {};
       d.wait_notice.minutes = numOTexto(v);
     }, 'wait_notice.minutes', pr, { inputmode: 'numeric', placeholder: T('pantalla.esperaDeFabrica') }));
+    return box;
   }
   // los pedidos de vulnerabilidades, según la maqueta que aprobó el dueño: arriba el tipo y los campos fijos, abajo una
   // sola tabla con una fila por campo y una columna por gravedad. Con las listas que leyó el sitio, cada campo se ve con
@@ -3305,7 +3364,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, coordinacion: editorCoordinacion, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -3815,7 +3874,7 @@ function pantalla(idioma = 'es') {
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, WAIT_NOTICE_ENABLED_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

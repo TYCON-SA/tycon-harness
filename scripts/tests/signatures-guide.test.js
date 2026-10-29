@@ -23,7 +23,7 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip',
+  'runtime-waiver', 'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
   'escape:DOD_BYPASS', 'escape:TYCON_NO_DEEP_REVIEW', 'escape:TYCON_STATUS_GATE',
   'escape:story-skill-bypass', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
@@ -81,5 +81,35 @@ test('8.139 T2 SignaturesGuide_DiceLoDelegadoNoEstaProtegido', () => {
   for (const frase of ['La sesión de la coordinadora es un agente', 'el arnés no lo distingue de un ok del dueño',
     'sólo va lo de bajo riesgo']) {
     assert.ok(seccion.includes(frase), `la sección no dice «${frase}»`);
+  }
+});
+
+const TRES = ['escape:force-manual', 'escape:trust-ran', 'runtime-waiver'];
+
+// T14 Catalogo_TresFirmas_OtraSesionSi @story-8.142 @ac-5 @ac-6 @ac-7
+// 🔴 Falla con: una de las tres sin «sí, desde otra sesión», o los dos escapes que siguen pidiéndose por el freno.
+test('8.142 T14 Catalogo_TresFirmas_OtraSesionSi', () => {
+  const cat = require(CATALOGO);
+  const de = (id) => cat.SIGNATURES.find((s) => s.id === id);
+  for (const id of TRES) assert.strictEqual(de(id).otherSession, 'yes', id);
+  for (const id of ['escape:force-manual', 'escape:trust-ran']) {
+    assert.strictEqual(de(id).kind, 'guion', id);
+    assert.match(de(id).command, /--for-session <D>/, `${id}: la forma canónica nombra la sesión destino`);
+    assert.match(de(id).terminal, /--terminal/, `${id}: la terminal`);
+  }
+  assert.match(de('escape:force-manual').command, /^marker\.js set-check <control> <estado> --force-manual/);
+  assert.match(de('escape:trust-ran').command, /^pipeline\.js check-count --repo <r> --story <s> --trust-ran/);
+});
+
+// T15 SignaturesGuide_TresFilas @story-8.142 @ac-10
+// 🔴 Falla con: la guía que todavía dice «no, por la terminal» para alguna de las tres, o sin su forma nueva.
+test('8.142 T15 SignaturesGuide_TresFilas', () => {
+  const cat = require(CATALOGO);
+  const filas = tabla(fs.readFileSync(GUIA, 'utf8'), '## Las firmas');
+  for (const id of TRES) {
+    const f = filas.find((x) => x[0] === `\`${id}\``);
+    assert.ok(f, `${id}: sin fila`);
+    assert.strictEqual(f[3], 'sí', id);
+    assert.strictEqual(f[2], `\`${cat.SIGNATURES.find((s) => s.id === id).command}\``, id);
   }
 });

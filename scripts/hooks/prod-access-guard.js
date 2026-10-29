@@ -1111,7 +1111,7 @@ function escrituraProtegida(cmd, payload) {
   // el presupuesto es GLOBAL: todas las palabras de todos los textos del comando (AC 15)
   // `substitutionsOf`: el texto de las sustituciones de las que salió el valor de cada variable (`F=$(…)`): el AC 13c vale también
   // cuando la sustitución llega por una variable (pase adversarial de la 8.14 A, #5)
-  const ctx = { vars: {}, arrays: {}, env: { HOME: home }, home, budget: new sp.ExpansionBudget(), expired: vencido, substitutionsOf: {} };
+  const ctx = { vars: {}, arrays: {}, env: { HOME: home }, home, budget: new sp.ExpansionBudget(), expired: vencido, substitutionsOf: {}, readonlyVars: new Set() };
 
   const pal = (raw) => desescapar(sp.tokens(String(raw)).join(' '));
   const progDe = (raw) => (raw === undefined ? '' : basename(pal(raw)).toLowerCase());
@@ -1895,14 +1895,27 @@ function escrituraProtegida(cmd, payload) {
       }
       if (CAMBIAN_CARPETA.has(prog)) cwd = nuevaCarpeta(prog, args, cwd);
       else { const v = segmento(pp, i0, prog, args, cwd, tuberia, prof); if (v) return { veredicto: v }; }
-      // de qué sustituciones sale cada variable (#5): las suyas y las de las variables que copia
-      for (const a of pp.assignments) {
-        const subs = [...sp.substitutions(a.raw), ...variablesUsedIn(a.raw).flatMap((n) => ctx.substitutionsOf[n] || [])];
-        if (subs.length) ctx.substitutionsOf[a.name] = [...new Set([...(ctx.substitutionsOf[a.name] || []), ...subs])].slice(0, 16);
+      // de qué sustituciones sale cada variable (#5): las suyas y las de las variables que copia, leídas antes de asignar
+      const subsDe = pp.assignments.map((a) => [...sp.substitutions(a.raw), ...variablesUsedIn(a.raw).flatMap((n) => ctx.substitutionsOf[n] || [])]);
+      // una variable de sólo lectura no se reasigna: la asignación falla y el comando sigue
+      if (prog === 'readonly' || (/^(declare|typeset|local|export)$/.test(prog) && args.some((a) => /^-[A-Za-z]*r/.test(pal(a))))) {
+        for (const a of args) if (!/^[-+]/.test(pal(a))) ctx.readonlyVars.add(pal(a).split(/\+?=/)[0]);
       }
+      // la asignación pisa el valor entero sólo si es el comando entero, en el shell de arriba y sin redirecciones (una que
+      // falla, en zsh, no asigna); no detrás de `|` ni de `&` (subshell), ni sobre un arreglo (bash pisa el primero)
+      const pisaSeguro = prof === 0 && !pp.words.length && !pp.redirections.length && !/^(\||&)/.test(segs[k].sep || '');
+      const eraArreglo = new Set(pp.assignments.filter((a) => Object.prototype.hasOwnProperty.call(ctx.arrays || {}, a.name)).map((a) => a.name));
       // las asignaciones, DESPUÉS de las palabras: `X=a cmd $X` usa la X de antes. Detrás de `;` (o al principio) y fuera
       // de ramas, una reasignación REEMPLAZA el valor, como el shell; detrás de `&&`, `|`… la unión (#28, contrato del carril G)
       sp.applyAssignments(ctx, pp, { previousSep: k ? segs[k - 1].sep : '' });
+      // lo que el shell pisó seguro olvida también de qué sustitución salía (`F=$(…); F=/tmp/a; rm $F`); si no, la unión
+      pp.assignments.forEach((a, j) => {
+        const olvida = pisaSeguro && ctx.replaced.has(a.name) && a.op !== '+=' && !a.element && !a.array
+          && !eraArreglo.has(a.name) && !ctx.readonlyVars.has(a.name);
+        const subs = olvida ? subsDe[j] : [...(ctx.substitutionsOf[a.name] || []), ...subsDe[j]];
+        if (subs.length) ctx.substitutionsOf[a.name] = [...new Set(subs)].slice(0, 16);
+        else if (olvida) delete ctx.substitutionsOf[a.name];
+      });
       tuberia = segs[k].sep === '|' ? [...tuberia, pipeEntry(pp, cwd)] : [];
     }
     // un heredoc de shell cuya marca no apareció (una forma rara del partidor): se juzga igual, con la carpeta del final

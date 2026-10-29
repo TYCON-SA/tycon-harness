@@ -33,7 +33,7 @@ const path = require('path');
 // resuelve ese módulo (prueba: scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const os = require('os');
-const { execSync, execFileSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const HOME = os.homedir();
 const JSON_OUT = process.argv.includes('--json');
@@ -803,7 +803,7 @@ function checkMemoryPersistence() {
 function checkCatalogIntegrity() {
   const checks = [];
   try {
-    const out = execSync(`node ${path.join(TCG_SCRIPTS, 'tools', 'rules-distill.js')} --json`, { encoding: 'utf8' });
+    const out = execFileSync(process.execPath, [path.join(TCG_SCRIPTS, 'tools', 'rules-distill.js'), '--json'], { encoding: 'utf8' });
     const data = JSON.parse(out);
     checks.push({
       name: 'Catalog: 0 BROKEN-REFS',

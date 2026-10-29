@@ -550,7 +550,8 @@ node "${TABLERO}" --nightly --dir "${C26}/.dashboard" --output "${C26}/pagina.ht
 FUGA26=0
 for M in "${M_AUTOR}" "${M_AUTOR_CORREO}" "Zqx" "zqx-sembrada"; do
   for f in "${C26}/.dashboard/author-concentration-${HOY26}.json" "${C26}/conc.out" "${C26}/pagina.html" "${C26}/tablero.out"; do
-    if grep -qiF -- "${M}" "${f}" 2>/dev/null; then mal "2.26 fuga: «${M}» aparece en ${f#${C26}/}"; FUGA26=1; fi
+    # Sin la carpeta de la prueba: el tablero imprime la ruta de la página, y el nombre al azar de `mktemp` puede traer «zqx».
+    if sed "s#${C26}##g" "${f}" 2>/dev/null | grep -iF -- "${M}" >/dev/null; then mal "2.26 fuga: «${M}» aparece en ${f#${C26}/}"; FUGA26=1; fi
   done
 done
 [ "${FUGA26}" -eq 0 ] && ok "2.26 el autor sembrado no llega ni al archivo de concentración ni a la página"

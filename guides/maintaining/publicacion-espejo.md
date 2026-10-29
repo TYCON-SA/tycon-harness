@@ -74,11 +74,12 @@ queda afuera dentro de ella:
 | arnes | `.engram-project` | afuera: prende la memoria del equipo; sin él, apagada es el default documentado |
 | arnes | `.tycon/` | afuera: la configuración del equipo para este repo (revisores, portones, servidores de producción) |
 | arnes | `CLAUDE.md` _(del repo del equipo; no está en esta copia)_ | afuera: la portada interna del repo del equipo; el público no la trae |
+| arnes | `AGENTS.md` | afuera: el puntero a `CLAUDE.md` para las otras herramientas; el público no la trae |
 | arnes | `.github/` | entra (núcleo): `.github/control-changes.jsonl` `.github/control-changes/**` (el registro de cambios de controles) `.github/ISSUE_TEMPLATE/**` `.github/pull_request_template.md` (los formularios de GitHub); la comunidad y los flujos de GitHub llegan como papeles |
 | arnes | `artifacts/` _(del repo del equipo; no está en esta copia)_ `onboarding/` _(del repo del equipo; no está en esta copia)_ | afuera: páginas, charlas y onboarding del equipo |
 | agent-skills | `agents/` | entra: en el núcleo `agents/*.md` (los revisores de un stack viven en su paquete, que llega con la capa del equipo) |
 | agent-skills | `skills/` | entra: en el núcleo `skills/tycon-*/`, `skills/check-story-drift/` y `skills/tycon-create-story/` (las de un stack viven en su paquete, que llega con la capa del equipo). Afuera: `skills/bizuit-sdd/` _(del repo del equipo; no está en esta copia)_ (deprecada, no se publica), `skills/core/signalr-realtime/` _(del repo del equipo; no está en esta copia)_ (describe el producto de un cliente; sólo serviría reescrita) y `skills/tycon-pipeline/HISTORIA.md` _(del repo del equipo; no está en esta copia)_ (la historia de la skill, con casos del equipo) |
-| agent-skills | `packs/` | afuera en el núcleo y en bizuit: los paquetes viajan con el perfil de cada equipo; el de clientes no sale nunca |
+| agent-skills | `packs/` | entra: en el núcleo `packs/README.md` (la carpeta sin paquetes: los de un equipo llegan con su capa). Afuera: `packs/*/**` (cada paquete) |
 | agent-skills | `.tycon/` | afuera: la configuración del equipo para este repo |
 
 «Repo» es la fuente: las dos son partes de un mismo repo, partido por ruta (§«Un solo repo
@@ -110,7 +111,7 @@ Viven en el código (`EXCLUIDOS_SIEMPRE`), por repo y con su motivo, y **nunca s
 | Repo | Nunca sale | Por qué |
 |---|---|---|
 | arnes | `.engram/` `.dashboard/` `.advisors/` `inbox/` _(del repo del equipo; no está en esta copia)_ `tasks/` `specs/` `qa/` `_bmad/` | memoria, series, evidencia, hallazgos y planes del equipo |
-| arnes | `guides/guide-update-proposals.md` _(del repo del equipo; no está en esta copia)_ `guides/decisions/telemetria-produccion-inventario-*.md` | casos nominados, propuestas internas, inventario de producción |
+| arnes | `guides/maintaining/incident-log.md` `guides/guide-update-proposals.md` _(del repo del equipo; no está en esta copia)_ `guides/decisions/telemetria-produccion-inventario-*.md` | casos nominados, propuestas internas, inventario de producción |
 | arnes | `scripts/metrics/censo-*.json` `scripts/ci/product-parity.json` `scripts/ci/pipeline-debt.json` `scripts/metrics/corridas-buzon.json` _(del repo del equipo; no está en esta copia)_ | censos, productos y deuda por repo de cliente, la llave del buzón |
 | arnes | `team-profile.json` _(del repo del equipo; no está en esta copia)_ `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ (de «clase»: el clon tiene uno de los dos, o los dos en la transición) | el perfil del equipo, con su nombre de hoy y el de antes, que sigue valiendo |
 | arnes | `pipelines/**` | los pipelines del equipo (los nocturnos, el de pull request y sus pedazos compartidos) |

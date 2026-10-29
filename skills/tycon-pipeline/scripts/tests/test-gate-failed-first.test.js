@@ -347,3 +347,27 @@ test('T19 FailedFirst_HandWrites_Refused @story-8.125 @ac-16 — `record` y `cle
   }
   assert.deepEqual(lista(l), [A, B]);
 });
+
+test('T20 SuiteAlone_Red_KeepsFailedCase — una suite roja por la puerta guarda su caso fallido aunque quede fuera de la cola', () => {
+  // 🔴 mutación: guardar sólo la cola de la salida → el caso del medio no llega ni al resumen ni a la consola.
+  const larga = suite('b', [
+    'for i in $(seq 1 300); do echo "ruido $i"; done',
+    'echo "✖ la carpeta global de hooks de git: otra sesión está actualizando"',
+    'for i in $(seq 301 600); do echo "ruido $i"; done',
+    'exit 1',
+  ].join('\n'));
+  const l = lab({ suiteB: larga });
+  const r = puerta(l, ['--suite', B]);
+  assert.notEqual(r.status, 0, r.out);
+  assert.match(r.out, /✖ la carpeta global de hooks de git: otra sesión está actualizando/, r.out);
+  const m = /salida completa: (\S+)/.exec(r.out);
+  assert.ok(m && fs.existsSync(m[1]), `nombra el archivo con la salida entera:\n${r.out}`);
+  const entera = fs.readFileSync(m[1], 'utf8');
+  assert.match(entera, /ruido 1\n/);
+  assert.match(entera, /ruido 600\n/);
+  assert.match(r.out, /run-check tests-suite/, 'dice que corrió bajo run-check');
+  assert.match(r.out, /TYCON_SUITE_RUNNER=test-gate/, 'y con la marca de la puerta');
+  const resumen = JSON.parse(fs.readFileSync(path.join(path.dirname(path.dirname(m[1])), 'suites.json'), 'utf8'));
+  assert.match(resumen.fallas[0].casos.join('\n'), /carpeta global de hooks/);
+  assert.equal(resumen.ambiente.run_check, 'tests-suite');
+});
