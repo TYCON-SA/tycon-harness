@@ -188,21 +188,27 @@ function actionDone({ id, env = process.env, home = os.homedir(), abierta = null
   return Object.assign({ verificado: r.ok }, r);
 }
 
-/** El intervalo que trae el resultado de la herramienta (`start`/`end`, sueltos o en `timeInterval`) → segundos, o null. */
-function segundosDelResultado(t) {
-  const candidatos = [];
-  try { candidatos.push(JSON.parse(t)); } catch (_) {
+/**
+ * La entrada que trae el resultado de la herramienta: `{ id, start, end }` (el intervalo suelto o en `timeInterval`), o
+ * null si el resultado no es un objeto con su id y su intervalo.
+ */
+function entradaDelResultado(t) {
+  let o = null;
+  try { o = JSON.parse(t); } catch (_) {
     const m = /\{[\s\S]*\}/.exec(t);
-    if (m) try { candidatos.push(JSON.parse(m[0])); } catch (_) { /* sin un objeto que leer */ }
+    if (m) try { o = JSON.parse(m[0]); } catch (_) { o = null; }
   }
-  for (const o of candidatos) {
-    const iv = o && typeof o === 'object' ? (o.timeInterval && typeof o.timeInterval === 'object' ? o.timeInterval : o) : null;
-    if (!iv || typeof iv.start !== 'string' || typeof iv.end !== 'string') continue;
-    const desde = Date.parse(iv.start);
-    const hasta = Date.parse(iv.end);
-    if (Number.isFinite(desde) && Number.isFinite(hasta) && hasta >= desde) return Math.round((hasta - desde) / 1000);
-  }
-  return null;
+  if (!o || typeof o !== 'object' || typeof o.id !== 'string') return null;
+  const iv = o.timeInterval && typeof o.timeInterval === 'object' ? o.timeInterval : o;
+  if (typeof iv.start !== 'string') return null;
+  return { id: o.id.trim(), start: iv.start, end: typeof iv.end === 'string' ? iv.end : null };
+}
+
+/** Los segundos entre el inicio y el fin de una entrada, o null si no se leen o el fin es anterior. */
+function segundosDe(e) {
+  const desde = e ? Date.parse(e.start) : NaN;
+  const hasta = e && e.end ? Date.parse(e.end) : NaN;
+  return Number.isFinite(desde) && Number.isFinite(hasta) && hasta >= desde ? Math.round((hasta - desde) / 1000) : null;
 }
 
 /**
@@ -210,7 +216,8 @@ function segundosDelResultado(t) {
  * salió bien, cuya acción nombra la entrada `id`, una llamada a una herramienta del servidor MCP que esa acción nombra,
  * con un resultado sin error que trae `id` como palabra entera y el intervalo de la entrada. El id que se pasa tiene que
  * ser el que nombró el arnés: una entrada vieja y más larga no cuenta. Sin conversación que leer (Codex) no hay
- * constancia. → `{ ok, segundos?, herramienta?, motivo? }`.
+ * constancia. El intervalo tiene que ser de esa entrada, y su inicio el mismo con que se abrió si se abrió en esta
+ * conversación. → `{ ok, segundos?, herramienta?, storyDelStop?, motivo? }` (`storyDelStop`: el `--story` de ese stop).
  */
 function horasDeLaAccion({ id, env = process.env, home = os.homedir() }) {
   const limpio = String(isNil(id) ? '' : id).trim();
@@ -226,31 +233,46 @@ function horasDeLaAccion({ id, env = process.env, home = os.homedir() }) {
   for (const r of registros) for (const b of contenido(r)) if (b && b.type === 'tool_use') usos.push(b);
   let desde = -1;
   let accion = '';
+  let storyDelStop = null;
   usos.forEach((b, i) => {
     const res = resultados.get(b.id);
     if (!esAviso(b, res, EMISION_STOP)) return;
     desde = i;
     accion = res.texto;
+    const m = new RegExp(String.raw`\s--story\s+(${PALABRA})`).exec(String(b.input.command));
+    storyDelStop = m ? m[1].replace(/^(["'])(.*)\1$/, '$2') : null;
   });
   if (desde < 0) return { ok: false, motivo: 'no encuentro en esta sesión un `pipeline.js work-signal stop` que haya salido bien' };
   const palabra = palabraEntera(limpio);
   if (!palabra.test(accion)) return { ok: false, motivo: `la acción del último work-signal stop no nombra la entrada «${limpio}»: pasá el id de la entrada que te pidió cerrar` };
   const servidores = [...new Set((accion.match(/mcp__[\w-]+?__[\w-]+/g) || []).map((t) => t.replace(/^(mcp__[\w-]+?__).*$/, '$1')))];
   if (!servidores.length) return { ok: false, motivo: 'la acción del work-signal stop no nombra la herramienta MCP que había que usar: no hay contra qué comparar' };
+  // el inicio con el que se abrió la entrada en esta conversación, si se abrió acá: el cierre no lo puede mover
+  const deLaEntrada = (b) => {
+    const res = resultados.get(b.id);
+    if (!res || res.error || !servidores.some((s) => String(b.name || '').startsWith(s))) return null;
+    const e = entradaDelResultado(res.texto);
+    return e && e.id === limpio ? e : null;
+  };
+  const primera = usos.slice(0, desde).map(deLaEntrada).find(Boolean) || null;
   let sinIntervalo = null;
   for (const b of usos.slice(desde + 1).reverse()) {
-    if (!servidores.some((s) => String(b.name || '').startsWith(s))) continue;
     const res = resultados.get(b.id);
-    if (!res || res.error || !palabra.test(res.texto)) continue;
-    const segundos = segundosDelResultado(res.texto);
-    if (segundos !== null) return { ok: true, segundos, herramienta: b.name };
-    sinIntervalo = b.name;
+    if (!servidores.some((s) => String(b.name || '').startsWith(s)) || !res || res.error || !palabra.test(res.texto)) continue;
+    // el intervalo es el de la entrada que se cerró: un resultado de otra entrada que sólo nombra el id no cuenta
+    const e = deLaEntrada(b);
+    const segundos = segundosDe(e);
+    if (segundos === null) { sinIntervalo = b.name; continue; }
+    if (primera && Date.parse(primera.start) !== Date.parse(e.start)) {
+      return { ok: false, motivo: `la entrada «${limpio}» se abrió en ${primera.start} y la llamada que la cerró dice ${e.start}: el inicio no se mueve al cerrar` };
+    }
+    return { ok: true, segundos, herramienta: b.name, storyDelStop };
   }
-  if (sinIntervalo) return { ok: false, motivo: `el resultado de ${sinIntervalo} trae «${limpio}» pero no el inicio y el fin de la entrada: no hay de dónde sacar las horas` };
+  if (sinIntervalo) return { ok: false, motivo: `ningún resultado de la herramienta trae la entrada «${limpio}» con su inicio y su fin: no hay de dónde sacar las horas` };
   return { ok: false, motivo: `ninguna llamada a ${servidores.map((s) => `${s}*`).join(' o ')} después del work-signal stop devolvió «${limpio}»: cerrá la entrada y pasá su id` };
 }
 
 module.exports = {
   EXTERNAL_FLAGS, RUN_FLAGS, VALID_FLAGS, HARNESS_COMMAND, PART_OF,
-  adoMarkActive, actionDone, enRegistros, entradaAbierta, esCodex, horasDeLaAccion, segundosDelResultado,
+  adoMarkActive, actionDone, enRegistros, entradaAbierta, esCodex, horasDeLaAccion, entradaDelResultado,
 };

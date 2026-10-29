@@ -219,14 +219,14 @@ test('T42 EstimateReal_HorasDelRegistro @story-2.75 @ac-15 @ac-16', () => {
 });
 
 /** La conversación de la sesión del laboratorio: el `stop` con su salida real y las llamadas que se le pasen. */
-function conversacion(l, salidaStop, llamadas, { emision = `node ${PIPELINE} work-signal stop --story ${l.spec} --repo ${l.repo}` } = {}) {
+function conversacion(l, salidaStop, llamadas, { emision = `node ${PIPELINE} work-signal stop --story ${l.spec} --repo ${l.repo}`, antes = [] } = {}) {
   const dir = path.join(l.home, '.claude', 'projects', 'repo');
   fs.mkdirSync(dir, { recursive: true });
   let padre = null;
   let n = 0;
   const regs = [];
   const poner = (r) => { const uuid = `u${++n}`; regs.push({ ...r, uuid, parentUuid: padre, sessionId: 'ses-estimate-real' }); padre = uuid; };
-  const pasos = [['Bash', { command: emision }, salidaStop], ...llamadas];
+  const pasos = [...antes, ['Bash', { command: emision }, salidaStop], ...llamadas];
   pasos.forEach(([name, input, resultado, err], i) => {
     poner({ type: 'assistant', message: { content: [{ type: 'tool_use', id: `p${i}`, name, input }] } });
     poner({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `p${i}`, content: resultado, ...(err ? { is_error: true } : {}) }] } });
@@ -246,7 +246,8 @@ test('EstimateReal_AccionConConstancia @story-2.75 @ac-15 @ac-16', () => {
 
   // la llamada que cerró la entrada trae su intervalo: 2,5 h con constancia, y estimate-real las anota
   let l = lab();
-  conversacion(l, accion(l), [['mcp__fake__cerrar', { id: 'entry-4242' }, CERRADA]]);
+  conversacion(l, accion(l), [['mcp__fake__cerrar', { id: 'entry-4242' }, CERRADA]],
+    { antes: [['mcp__fake__abrir', {}, JSON.stringify({ id: 'entry-4242', start: '2026-10-29T07:00:00-03:00', end: '2026-10-29T07:00:00-03:00' })]] });
   let r = cerrar(l);
   assert.strictEqual(r.status, 0, r.stderr);
   assert.deepStrictEqual([r.json.recorded, r.json.seconds, r.json.herramienta], [true, 9000, 'mcp__fake__cerrar']);
@@ -263,6 +264,16 @@ test('EstimateReal_AccionConConstancia @story-2.75 @ac-15 @ac-16', () => {
     ['otra herramienta', (x) => conversacion(x, accion(x), [['mcp__memoria__guardar', {}, CERRADA]])],
     ['un stop que sólo se nombra', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, CERRADA]], { emision: `echo "node pipeline.js work-signal stop"` })],
     ['Codex', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, CERRADA]]), null, { CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: 'ses-estimate-real' }],
+    // otra entrada de una semana que sólo nombra el id en su descripción
+    ['otra entrada que nombra el id', (x) => conversacion(x, accion(x), [['mcp__fake__crear', {}, JSON.stringify({ id: 'entry-1111', description: 'entry-4242', start: '2026-10-22T10:00:00Z', end: '2026-10-29T10:00:00Z' })]])],
+    // el inicio con que se abrió en esta conversación no se mueve al cerrar
+    ['el inicio movido al cerrar', (x) => {
+      const abrir = ['mcp__fake__abrir', {}, JSON.stringify({ id: 'entry-4242', start: '2026-10-29T10:00:00Z', end: '2026-10-29T10:00:00Z' })];
+      const s = accion(x);
+      conversacion(x, s, [['mcp__fake__cerrar', {}, JSON.stringify({ id: 'entry-4242', start: '2026-10-20T10:00:00Z', end: '2026-10-29T12:30:00Z' })]], { antes: [abrir] });
+    }],
+    // el stop fue de otra historia
+    ['el stop de otra historia', (x) => conversacion(x, accion(x), [['mcp__fake__cerrar', {}, CERRADA]], { emision: `node ${PIPELINE} work-signal stop --story ${path.join(x.repo, 'specs', 'otra.md')} --repo ${x.repo}` })],
   ];
   for (const [caso, armar, id, extra] of casos) {
     l = lab();

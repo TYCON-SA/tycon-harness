@@ -7013,6 +7013,11 @@ function main() {
       if (!spec) { process.stderr.write('work-signal stop --action-done: sin marker activo en esta sesión — pasá --story <spec>\n'); process.exit(2); }
       const v = require('./lib/external-flags.js').horasDeLaAccion({ id: args.actionDone });
       if (!v.ok) { process.stderr.write(`work-signal stop --action-done: no anoto horas — ${v.motivo}\n`); process.exit(1); }
+      // las horas son de la historia de ese stop: el cierre de una no se anota en otra
+      if (v.storyDelStop && path.resolve(v.storyDelStop) !== spec) {
+        process.stderr.write(`work-signal stop --action-done: no anoto horas — el work-signal stop fue de ${v.storyDelStop}, no de ${spec}\n`);
+        process.exit(1);
+      }
       try { require('./lib/real-hours.js').record(os.homedir(), spec, { seconds: v.segundos, action: true }, { herramienta: v.herramienta }); } catch (e) {
         process.stderr.write(`work-signal stop --action-done: no pude dejar la constancia (${e.code || e.message})\n`);
         process.exit(1);
