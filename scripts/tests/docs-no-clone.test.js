@@ -16,16 +16,17 @@
  *   T35e · las guías sin dos versiones. Una guía con versión propia en este repo, con bloques internos,
  *          obliga a un segundo pedido por cada cambio hecho en GitHub. Nueve de las once no viven en este repo: son
  *          del público, y lo que decían sólo para el equipo vive en `onboarding/interno/`.
- *          Las otras dos esperan, declaradas en la lista del repo adelgazado (`.tycon/internal-forms.json`, `own`).
- *          Se mide: ningún `.md` de lo que viaja trae un marcador de bloque, salvo esas dos; la lista es la de un repo
- *          adelgazado, con las dos declaradas y las nueve sin declarar; y lo mudado está enlazado en su portada, dice
+ *          El INSTALL.md espera, declarado en la lista del repo adelgazado (`.tycon/internal-forms.json`, `own`); la
+ *          guía de publicación se está yendo (vale declarada con sus bloques, o fuera de la lista sin ninguno).
+ *          Se mide: ningún `.md` de lo que viaja trae un marcador de bloque, salvo las que esperan; la lista es la de un
+ *          repo adelgazado, con las que esperan declaradas y las nueve sin declarar; y lo mudado está enlazado en su portada, dice
  *          de qué guía salió y queda fuera de la capa del equipo.
  *
  * DÓNDE CORRE: en el público solo, y sobre el árbol ARMADO de los nocturnos (lo privado del equipo con el público
  * encima). Qué mide en cada uno:
  *   · en los dos: la guía del mecanismo y la sección de uso de INSTALL.md (`~/.tycon/harness`, sin `git clone`), el
  *     espejo, y que ningún .md de lo que viaja traiga un marcador de bloque (en el público solo, ninguno; en el árbol
- *     armado, salvo las dos que esperan);
+ *     armado, salvo las que esperan);
  *   · sólo en el árbol armado (se reconoce por `.tycon/internal-forms.json`, la lista del repo privado): las tres guías
  *     del alta del equipo (onboarding/), lo que dice la versión del equipo de INSTALL.md («usar no es mantener», el modo
  *     desarrollador y la sección §1b de quien mantiene, que el INSTALL.md del público no trae), la lista del repo
@@ -150,13 +151,16 @@ const PUBLIC_ONLY_GUIDES = [
   'guides/maintaining/mecanismo-de-instalacion.md', 'guides/reglas-para-revisores.md',
   'guides/decisions/codex-etapa-d-retro-red.md', 'guides/decisions/controles-apagables-por-config-2026-08-25.md',
 ];
-/** Las dos que esperan: el privado tiene la suya, con sus bloques internos, declarada en `own`. Tres casos de prueba
- *  que viven en el público exigen, cuando corren con lo privado, el texto interno de cada una: harness-place.test.js
- *  (T13 y T35: las líneas viejas declaradas y el párrafo de los dos nombres, adentro de las marcas del INSTALL) e
- *  internal-data-leftovers.test.js (T27: la regla de los inventados, en un bloque de la guía de publicación). Mientras
- *  estén acá, un cambio de GitHub a cualquiera de las dos no llega solo: hay que traerlo a mano. La que deje de
- *  esperar sale de `own`, pasa a la lista de arriba, y sus bloques, a `onboarding/interno/`. */
-const STILL_WITH_AN_INTERNAL_FORM = ['INSTALL.md', 'guides/maintaining/publicacion-espejo.md'];
+/** La que espera: el privado tiene la suya, con sus bloques internos, declarada en `own`. Dos casos de prueba que viven
+ *  en el público exigen, cuando corren con lo privado, su texto interno: harness-place.test.js T13 y T35 (las líneas
+ *  viejas declaradas y el párrafo de los dos nombres, adentro de las marcas del INSTALL). Mientras esté acá, un cambio
+ *  de GitHub no llega solo: hay que traerlo a mano. El día que deje de esperar sale de `own`, pasa a la lista de
+ *  arriba, y sus bloques, a `onboarding/interno/`. */
+const STILL_WITH_AN_INTERNAL_FORM = ['INSTALL.md'];
+/** Las que se están yendo del privado: ningún caso del público exige ya su texto interno, y el pedido del privado que
+ *  saca su versión entra después que éste. Mientras tanto vale cualquiera de los dos estados, entero: declarada en
+ *  `own` y con sus bloques, o fuera de `own` y sin ningún bloque. Cuando el privado la saca, pasa a PUBLIC_ONLY_GUIDES. */
+const LEAVING = ['guides/maintaining/publicacion-espejo.md'];
 /** Las carpetas que no viajan: ahí un marcador de bloque no publica nada (una story o una medición que lo cita como
  *  ejemplo). De onboarding/ quedan afuera sólo las SUBCARPETAS: los `.md` de su raíz son el texto del alta, que viaja a
  *  cada máquina del equipo, y nadie le saca un bloque por el camino. */
@@ -191,8 +195,10 @@ test('T35e Guides_NoBlockMarkers_InWhatTravels @story-8.26 @ac-35', () => {
   const mds = tracked('*.md').filter((f) => !NOT_TRAVELLING.test(f));
   assert.ok(mds.length > 100, `control: miré ${mds.length} .md; con tan pocos la cuenta de abajo no dice nada (${ARMED_TREE})`);
   const withMarkers = mds.filter((f) => publicCopy.markerLines(read(f)).length);
-  // en el público solo no espera ninguna: las versiones con bloques son del repo privado
-  const waiting = ARMED ? STILL_WITH_AN_INTERNAL_FORM : [];
+  // en el público solo no espera ninguna: las versiones con bloques son del repo privado. Una que se está yendo espera
+  // sólo mientras el privado todavía la declara
+  const ownNow = ARMED ? (JSON.parse(read('.tycon/internal-forms.json')).own || {}) : {};
+  const waiting = ARMED ? [...STILL_WITH_AN_INTERNAL_FORM, ...LEAVING.filter((rel) => rel in ownNow)] : [];
   assert.deepStrictEqual(withMarkers.filter((f) => !waiting.includes(f)), [],
     'un .md de lo que viaja trae marcadores de bloque: lo sólo-interno va a onboarding/interno/ del repo privado, no a un bloque');
   // las que esperan siguen trayendo los suyos: el día que una los pierda, sale de esa lista (y se libera)
@@ -201,7 +207,7 @@ test('T35e Guides_NoBlockMarkers_InWhatTravels @story-8.26 @ac-35', () => {
   assert.strictEqual(publicCopy.markerLines(`uno\n${publicCopy.INTERNAL_START}\ndos\n${publicCopy.INTERNAL_END}\n`).length, 2, 'control: el lector de marcadores no ve un bloque de juguete');
 });
 
-test('T35e ThinList_DeclaresTheTwoThatWait_AndNotTheNine @story-8.26 @ac-35', (t) => {
+test('T35e ThinList_DeclaresTheOnesThatWait_AndNotTheNine @story-8.26 @ac-35', (t) => {
   if (!ARMED) { t.skip(NOT_ARMED); return; }
   const list = JSON.parse(read('.tycon/internal-forms.json'));
   // la lista de un repo adelgazado: sin formas firmadas ni liberadas, con lo que el privado conserva
@@ -219,15 +225,21 @@ test('T35e ThinList_DeclaresTheTwoThatWait_AndNotTheNine @story-8.26 @ac-35', (t
     assert.ok(rel in own, `${rel}: tiene su versión en el privado y la lista no la declara en "own"`);
     assert.ok(publicCopy.markerLines(read(rel)).length > 0, `${rel}: declarada en "own" y ya no trae bloques internos: si es igual a la del público, sale de "own" y se borra de acá`);
   }
+  // las que se están yendo: un estado o el otro, entero (declarada con bloques, o fuera de `own` sin ninguno)
+  for (const rel of LEAVING) {
+    const marks = publicCopy.markerLines(read(rel)).length;
+    if (rel in own) assert.ok(marks > 0, `${rel}: declarada en "own" y sin bloques internos: si es igual a la del público, sale de "own" y se borra de acá`);
+    else assert.strictEqual(marks, 0, `${rel}: ya no está en "own" y trae marcadores de bloque`);
+  }
   // las nueve: del público. No se declaran (declararlas sería volver a tener dos versiones) y no traen bloques
   for (const rel of PUBLIC_ONLY_GUIDES) {
     assert.ok(!(rel in own) && !(rel in mirror), `${rel}: es sólo del público y la lista la declara: volvió a tener una versión acá`);
     assert.ok(fs.existsSync(path.join(ROOT, rel)), `${rel}: no está. ${ARMED_TREE}`);
     assert.strictEqual(publicCopy.markerLines(read(rel)).length, 0, `${rel}: es la del público y trae marcadores de bloque`);
   }
-  // ninguna guía con bloques que la lista no declare: un .md declarado que no es de los dos de arriba tampoco los trae
-  for (const rel of Object.keys(own).filter((r) => r.toLowerCase().endsWith('.md') && !STILL_WITH_AN_INTERNAL_FORM.includes(r))) {
-    assert.strictEqual(publicCopy.markerLines(read(rel)).length, 0, `${rel}: declarado en "own" y con marcadores de bloque; si espera como las otras dos, va en STILL_WITH_AN_INTERNAL_FORM con su motivo`);
+  // ninguna guía con bloques que la lista no declare: un .md declarado que no es de los de arriba tampoco los trae
+  for (const rel of Object.keys(own).filter((r) => r.toLowerCase().endsWith('.md') && !STILL_WITH_AN_INTERNAL_FORM.includes(r) && !LEAVING.includes(r))) {
+    assert.strictEqual(publicCopy.markerLines(read(rel)).length, 0, `${rel}: declarado en "own" y con marcadores de bloque; si espera como el INSTALL, va en STILL_WITH_AN_INTERNAL_FORM con su motivo`);
   }
 });
 
