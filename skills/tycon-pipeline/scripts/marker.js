@@ -4733,23 +4733,24 @@ function cmdApprovePending(argv) {
   process.exit(0);
 }
 
-// Las firmas `-signed` del gates.log para la sesión de la corrida: el ok por delegación mira si hubo una exención. El
-// log no se lee a medias: si no se puede leer entero, tira, y el ok por delegación no se da.
-function firmasDeLaSesion(sid) {
+// Las firmas `-signed` del gates.log de la corrida `m` (save-ok.js exencionesDeLaCorrida: su sesión, la que adoptó o
+// su story): el ok por delegación mira si hubo una exención. El log no se lee a medias: si no se puede leer entero,
+// tira, y el ok por delegación no se da.
+function firmasDeLaCorrida(m) {
   const p = path.join(STATE_DIR, 'gates.log');
   // sin el registro no se sabe si hubo exenciones: tira, como un registro grande o un renglón de firma que no se lee
   // se lee entero: el registro de una máquina ya ronda los 6 MB y nada lo rota; el tope sólo frena uno desmedido
   const tam = fs.statSync(p).size;
   if (tam > 128 * 1024 * 1024) throw new Error(`${p} pasa de 128 MB: no lo leo entero, y una exención vieja quedaría afuera`);
   const texto = fs.readFileSync(p, 'utf8');
-  const out = [];
+  const firmadas = [];
   for (const l of texto.split('\n')) {
     if (!l.includes('-signed')) continue;
     let j;
     try { j = JSON.parse(l); } catch (_) { throw new Error(`${p} tiene un renglón de firma que no se lee: podría ser una exención`); }
-    if (j && /-signed$/.test(String(j.name)) && j.destino === sid) out.push(j);
+    if (j && /-signed$/.test(String(j.name))) firmadas.push(j);
   }
-  return out;
+  return require('./lib/save-ok.js').exencionesDeLaCorrida(firmadas, m);
 }
 
 // `approve-save [--for-session <D>] [--terminal]`: el ok de guardar la story (commit, push y los pedidos) es la firma
@@ -4781,7 +4782,7 @@ function cmdApproveSave(argv) {
       try { findings = rd ? JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8')) : null; } catch (e) { findings = null; }
       if (!Array.isArray(findings)) return { codigo: 2, motivo: 'la coordinadora no puede dar el ok: no pude leer el findings.json de la corrida. Lo firma el dueño' };
       let firmas;
-      try { firmas = firmasDeLaSesion(SID); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma el dueño` }; }
+      try { firmas = firmasDeLaCorrida(m); } catch (e) { return { codigo: 2, motivo: `la coordinadora no puede dar el ok: no pude leer el registro de firmas (${e.code || e.message}). Lo firma el dueño` }; }
       const notify = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'notify.js'));
       datos = { findings, firmasDeLaCorrida: firmas, canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) };
     }

@@ -131,6 +131,9 @@ const SENSITIVE = Object.freeze([
   'scripts/lib/signatures.js', 'scripts/lib/owner-window.js', 'scripts/lib/delegated-signing.js',
   'skills/tycon-pipeline/scripts/lib/approvals.js', 'skills/tycon-pipeline/scripts/lib/adversarial-skip.js',
   'skills/tycon-pipeline/scripts/lib/save-ok.js',
+  // los que consumen o exigen una firma por un camino armado (`require(path.join(...))`, que la clausura no ve)
+  'skills/tycon-pipeline/scripts/dispatch.js', 'skills/tycon-pipeline/scripts/on-*.js',
+  'skills/tycon-pipeline/scripts/lib/story-skill-gate*.js', 'skills/tycon-pipeline/scripts/e2e-setup.js',
   // los frenos
   'scripts/hooks/safety-guard*', 'skills/tycon-pipeline/scripts/lib/marker-command.js', 'scripts/production/**',
   // lo que decide si la story está limpia: el pase, los hallazgos, las exenciones y el portón de pruebas

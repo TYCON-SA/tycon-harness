@@ -16,6 +16,7 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -23,6 +24,11 @@ const RAIZ = path.join(__dirname, '..', '..', '..', '..');
 const catalogo = () => require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
 
 const BASE = 'origin/main';
+// la evidencia que escribe el pipeline (hallazgos, aprobaciones, la ronda de revisores): no es código de la story. Sólo
+// sus datos y sus informes; cualquier otro archivo bajo `.advisors/` es código, y además sensible (ver `sensibles`)
+const EVIDENCIA = '.advisors';
+const PATRONES_EVIDENCIA = [`${EVIDENCIA}/**/*.json`, `${EVIDENCIA}/**/*.jsonl`, `${EVIDENCIA}/**/*.md`];
+const esEvidencia = (rel) => rel.startsWith(`${EVIDENCIA}/`) && /\.(json|jsonl|md)$/i.test(rel);
 // las firmas que eximen algo en la corrida: con una de ellas la story no terminó limpia
 const EXIMEN = ['critical-waiver', 'runtime-waiver', 'escape:force-manual'];
 
@@ -60,9 +66,31 @@ function tieneCambios(repo) {
 }
 
 /**
- * Los repos de la corrida: el de la story y el del código siempre; los de `fileEvents` y los `hermanos` (declarados en
- * `evidence.companion_repos` o por `files_to_modify`), sólo con cambios reales. `fileEvents` suma, nunca define: un
- * cambio hecho por consola entra por el hermano que lo tiene.
+ * Las rutas absolutas (o desde `~/`) que la story declara en `files_to_modify` y `files_to_create`: nombran archivos de
+ * otro repo. Una story que no está en el disco no declara nada; una que no se puede leer, tira.
+ */
+function rutasDeclaradas(storyPath) {
+  if (!storyPath) return [];
+  let texto;
+  try { texto = fs.readFileSync(storyPath, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(texto);
+  if (!fm) return [];
+  const out = [];
+  let enLista = false;
+  for (const l of fm[1].split(/\r?\n/)) {
+    if (/^\S/.test(l)) { enLista = /^files_to_(modify|create)\s*:/.test(l); continue; }
+    const m = enLista && /^\s+-\s+['"]?([^'"#\s]+)/.exec(l);
+    if (!m) continue;
+    if (m[1].startsWith('~/')) out.push(path.join(os.homedir(), m[1].slice(2)));
+    else if (path.isAbsolute(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+/**
+ * Los repos de la corrida: el de la story y el del código siempre; los de `fileEvents`, los `hermanos` (de
+ * `evidence.companion_repos`) y los que nombra la story en `files_to_modify`, sólo con cambios reales. `fileEvents`
+ * suma, nunca define: un cambio hecho por consola entra por el repo que lo tiene.
  */
 function reposDeLaCorrida({ marker = {}, hermanos = [] } = {}) {
   const fijos = [];
@@ -75,6 +103,7 @@ function reposDeLaCorrida({ marker = {}, hermanos = [] } = {}) {
   const posibles = [
     ...(Array.isArray(marker.fileEvents) ? marker.fileEvents : []).map((e) => e && e.path).filter(Boolean).map(raizDe),
     ...hermanos.map(raizDe),
+    ...rutasDeclaradas(marker.storyPath).map(raizDe),
   ].filter(Boolean);
   const out = [...new Set(fijos)];
   for (const r of new Set(posibles)) if (!out.includes(r) && tieneCambios(r)) out.push(r);
@@ -87,12 +116,14 @@ function huella(repo) {
   const base = git(repo, ['rev-parse', '--verify', '--quiet', `${BASE}^{commit}`]);
   const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
   if (!rama.ok || !gitDir.ok) return { repo, rama: null, base: null, arbol: null, error: rama.err || gitDir.err || 'no es un repo de git' };
-  // el árbol que produciría el commit de todo: un índice aparte, desde HEAD, con todo lo del disco (respeta .gitignore)
+  // el árbol que produciría el commit de todo: un índice aparte, desde HEAD, con todo lo del disco (respeta .gitignore).
+  // Sin la carpeta de evidencia del pipeline: approve-save escribe ahí su propia aprobación después de tomar la huella
   const indice = path.join(gitDir.out, `save-ok-index-${process.pid}-${Date.now()}`);
   try {
     const env = { GIT_INDEX_FILE: indice };
     const tieneHead = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).ok;
-    const pasos = [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A'], ['write-tree']];
+    const pasos = [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A'],
+      ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...PATRONES_EVIDENCIA.map((g) => `:(glob)${g}`)], ['write-tree']];
     let ultimo = null;
     for (const p of pasos) {
       ultimo = git(repo, p, env);
@@ -146,15 +177,21 @@ function patron(p) {
   return new RegExp(`^${re}$`);
 }
 
-/** Los archivos que cambia un repo contra su base: el diff sin renombres (origen y destino) y los sin seguimiento. */
+/**
+ * Los archivos que cambia un repo: el diff contra el punto donde la rama salió de su base (lo que `main` hizo después
+ * no es de la story), sin renombres (origen y destino), y los sin seguimiento. Con `-z`: una ruta con acentos llega
+ * tal cual, no entre comillas.
+ */
 function cambiados(repo) {
   const out = new Set();
-  const d = git(repo, ['diff', '--name-status', '--no-renames', BASE]);
+  const mb = git(repo, ['merge-base', BASE, 'HEAD']);
+  if (!mb.ok || !mb.out) return { error: `no pude ubicar dónde salió la rama de ${BASE} (${mb.err || 'sin salida'})` };
+  const d = git(repo, ['diff', '--name-only', '-z', '--no-renames', mb.out]);
   if (!d.ok) return { error: `no pude leer el cambio contra ${BASE} (${d.err})` };
-  for (const l of d.out.split('\n').filter(Boolean)) out.add(l.split('\t').slice(1).join('\t'));
-  const sin = git(repo, ['ls-files', '--others', '--exclude-standard']);
+  for (const f of d.crudo.split('\0').filter(Boolean)) out.add(f);
+  const sin = git(repo, ['ls-files', '-z', '--others', '--exclude-standard']);
   if (!sin.ok) return { error: `no pude listar los archivos sin seguimiento (${sin.err})` };
-  for (const l of sin.out.split('\n').filter(Boolean)) out.add(l);
+  for (const f of sin.crudo.split('\0').filter(Boolean)) out.add(f);
   return { archivos: [...out] };
 }
 
@@ -174,12 +211,14 @@ function sensibles({ repos = [] } = {}) {
   const out = [];
   for (const repo of repos) {
     const c = cambiados(repo);
-    if (c.error) { out.push({ repo, archivo: '(el cambio)', motivo: c.error }); continue; }
+    if (c.error) { out.push({ repo, archivo: '(el cambio)', motivo: `${repo}: ${c.error}` }); continue; }
     const raizReal = real(repo);
     for (const rel of c.archivos) {
       const abs = path.join(repo, rel);
       const relReal = path.relative(raizReal, real(abs));
       if (es(rel) || (!relReal.startsWith('..') && es(relReal))) { out.push({ repo, archivo: rel, motivo: 'está en la lista de lo sensible' }); continue; }
+      // la huella y «el último cambio» no miran la evidencia: lo que no es evidencia ahí adentro no pasa sin verse
+      if (rel.startsWith(`${EVIDENCIA}/`) && !esEvidencia(rel)) { out.push({ repo, archivo: rel, motivo: 'no es evidencia y está en la carpeta de la evidencia' }); continue; }
       let texto = null;
       try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) {
         // borrado: no carga nada; no poder leerlo (permisos, una carpeta, un submódulo) no prueba que no cargue nada
@@ -196,28 +235,66 @@ function sensibles({ repos = [] } = {}) {
 const ms = (t) => { const n = Date.parse(t); return Number.isFinite(n) ? n : NaN; };
 
 /**
- * La hora del último cambio de código: el último `fileEvent`, el último commit propio de cada repo y los archivos que
- * `git status` ve cambiados, uno por uno. Lo que no se puede fechar (un git que falla, un borrado sin commitear) cuenta
- * como recién cambiado.
+ * Lo que en `repo` es papeleo del pipeline y no código: la evidencia (`esEvidencia`), la story y, en el repo de la
+ * story cuando el código vive en otro (los dos declarados), sus `.md` y el estado del sprint. `rutas` para `git`;
+ * `es(rel)` para un archivo. Un `.yaml` de CI o de configuración no es papeleo.
+ */
+function papeleo(marker, repo) {
+  const story = marker.storyPath ? raizDe(marker.storyPath) : null;
+  const codigo = marker.repoPath ? raizDe(marker.repoPath) : null;
+  const relStory = story === repo ? path.relative(repo, real(marker.storyPath)).split(path.sep).join('/') : null;
+  const soloPapeles = !!story && !!codigo && story === repo && codigo !== repo;
+  const es = (rel) => esEvidencia(rel) || rel === relStory
+    || (soloPapeles && (/\.md$/i.test(rel) || path.posix.basename(rel) === 'sprint-status.yaml'));
+  const rutas = [...PATRONES_EVIDENCIA.map((g) => `:(exclude,glob)${g}`), ...(relStory ? [`:(exclude,literal)${relStory}`] : []),
+    ...(soloPapeles ? [':(exclude,glob)**/*.md', ':(exclude,glob)**/sprint-status.yaml'] : [])];
+  return { es, rutas };
+}
+
+/**
+ * La hora del último cambio de código: el último `fileEvent` de código, el último commit propio de cada repo y los
+ * archivos que `git status` ve cambiados, uno por uno; sin el papeleo del pipeline. Lo que no se puede fechar (un git
+ * que falla, un borrado, un renombre o un archivo sacado del índice, que conservan la hora vieja del disco) cuenta como
+ * recién cambiado.
  */
 function ultimoCambio(marker, repos) {
   let max = 0;
-  for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) { const t = ms(e && e.ts); if (t > max) max = t; }
+  for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
+    if (!e || e.code === false) continue;
+    const t = ms(e.ts); if (t > max) max = t;
+  }
   for (const repo of repos) {
+    const p = papeleo(marker, repo);
     // un cambio por consola ya commiteado no deja archivo cambiado: lo fecha su commit
-    const c = git(repo, ['log', '-1', '--format=%ct', `${BASE}..HEAD`]);
+    const mb = git(repo, ['merge-base', BASE, 'HEAD']);
+    if (!mb.ok || !mb.out) return Infinity;
+    const c = git(repo, ['log', '-1', '--format=%ct', `${mb.out}..HEAD`, '--', '.', ...p.rutas]);
     if (!c.ok) return Infinity;
     if (c.out && Number(c.out) * 1000 > max) max = Number(c.out) * 1000;
     const st = git(repo, ['status', '--porcelain', '-z', '--untracked-files=all']);
     if (!st.ok) return Infinity;
     const ents = st.crudo.split('\0').filter(Boolean);
     for (let i = 0; i < ents.length; i++) {
+      const x = ents[i][0];
       const rel = ents[i].slice(3);
-      if (/^[RC]/.test(ents[i])) i++;   // un renombre trae después su ruta de origen, que ya no está en el disco
+      if (/[RC]/.test(x)) i++;   // un renombre trae después su ruta de origen
+      if (p.es(rel)) continue;
+      if (/[RCD]/.test(x)) return Infinity;
       try { const t = fs.statSync(path.join(repo, rel)).mtimeMs; if (t > max) max = t; } catch (_) { return Infinity; }
     }
   }
   return max;
+}
+
+/**
+ * De los renglones `-signed` del registro, los de esta corrida: firmados para su sesión, para la que adoptó
+ * (`adoptedFrom`, después de un /clear), o para su story. La hora la mira `limpia`.
+ */
+function exencionesDeLaCorrida(lineas, marker = {}) {
+  const sesiones = new Set([marker.sessionId, marker.adoptedFrom].filter(Boolean));
+  const story = marker.storyPath ? path.resolve(marker.storyPath) : null;
+  // un renglón sin destino no se sabe de quién es: cuenta
+  return (lineas || []).filter((g) => g && (!g.destino || sesiones.has(g.destino) || (story && g.storyPath && path.resolve(g.storyPath) === story)));
 }
 
 /** Lo que le falta a la corrida para estar limpia (AC 4), o null; con el resumen para el aviso. */
@@ -299,10 +376,11 @@ function avisar({ texto, canales, mandar }) {
 function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = [], canales, mandar }) {
   const hs = huellas(repos);
   if (via !== 'delegacion') return { codigo: 0, huellas: hs };
-  const l = limpia({ marker, repos, ahora: hs, findings, firmasDeLaCorrida });
-  if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma el dueño` };
+  // lo sensible primero: el motivo nombra el archivo aunque además falte algo para estar limpia
   const s = sensibles({ repos });
   if (s.length) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: el cambio toca ${s.map((x) => `${x.archivo} (${path.basename(x.repo)}: ${x.motivo})`).join(', ')}. Lo firma el dueño` };
+  const l = limpia({ marker, repos, ahora: hs, findings, firmasDeLaCorrida });
+  if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma el dueño` };
   const a = avisar({ texto: lineaDelAviso({ marker, repos, resumen: l.resumen }), canales, mandar });
   if (!a.ok) return { codigo: 1, motivo: `sin aviso al dueño no hay ok: ${a.motivo}` };
   return { codigo: 0, huellas: hs, canales: a.canales };
@@ -316,4 +394,4 @@ function constancia({ marker, via, por = null, previo, ahora }) {
   };
 }
 
-module.exports = { FIRMA: 'save', raizDe, reposDeLaCorrida, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };
+module.exports = { FIRMA: 'save', raizDe, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, huella, huellas, vigente, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia };

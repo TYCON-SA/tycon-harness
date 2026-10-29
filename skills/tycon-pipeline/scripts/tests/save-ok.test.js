@@ -347,3 +347,135 @@ test('PrepareCommit_OkDeGuardar_PorConstancia (T15) @story-8.143 @ac-9', () => {
   assert.match(texto, /otra sesión[^\n]*no alcanza/i);
   assert.match(texto, /marker\.js clear[^\n]*después del último push/i);
 });
+
+test('Guiones_SaveCheckYApproveSave_SusSalidas (T24) @story-8.143 @ac-1 @ac-3', (t) => {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-guion-'));
+  t.after(() => fs.rmSync(casa, { recursive: true, force: true }));
+  const activos = path.join(casa, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  const env = { ...process.env, HOME: casa, CLAUDE_CODE_SESSION_ID: 'ses-a' };
+  for (const k of ['TYCON_HOME', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_TEST_CONTEXT']) delete env[k];
+  const correr = (...args) => spawnSync(process.execPath, [MARKER, ...args], { encoding: 'utf8', env });
+  assert.strictEqual(correr('save-check').status, 1, 'sin ejecución abierta');
+  assert.strictEqual(correr('save-check', '--push', 'origin').status, 2, '--push sin rama');
+  const corrida = { sessionId: 'ses-a', storyId: '9.99', startedAt: ANTES, lastTouch: new Date().toISOString() };
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ ...corrida, saveOk: { storyId: '9.98', startedAt: ANTES, huellas: [] } }));
+  const otra = correr('save-check');
+  assert.strictEqual(otra.status, 1);
+  assert.match(otra.stderr, /otra corrida/);
+  for (const op of ['--quote', '--relayed-by', '--ok']) {
+    const r = correr('approve-save', op, 'ok de guardar');
+    assert.strictEqual(r.status, 1, op);
+    assert.match(r.stderr, /no dan el ok de guardar/, op);
+  }
+});
+
+// ── lo que confirmó el pase adversarial (una prueba por clase; las de dejar pasar algo sensible, primero) ──────────
+
+test('Sensible_RutaConAcentos_SeVe (T16) @story-8.143 @ac-5', (t) => {
+  const a = repo(t, { 'LEEME.md': 'z\n', 'scripts/production/config.json': '{}\n' });
+  escribir(a, 'señales.js', "const s = require('./scripts/lib/signatures.js');\n");
+  escribir(a, 'scripts/production/configuración.json', '{}\n');
+  const ver = () => SO.sensibles({ repos: [a] }).map((x) => x.archivo).sort();
+  assert.deepStrictEqual(ver(), ['scripts/production/configuración.json', 'señales.js'], 'sin seguimiento');
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-qm', 'con acentos');
+  assert.deepStrictEqual(ver(), ['scripts/production/configuración.json', 'señales.js'], 'commiteados');
+});
+
+test('Repos_LosDeFilesToModify_Entran (T17) @story-8.143 @ac-2', (t) => {
+  const a = repo(t);
+  const b = repo(t, { 'skills/tycon-pipeline/scripts/marker.js': 'x\n' });
+  escribir(b, 'skills/tycon-pipeline/scripts/marker.js', 'cambiado por consola\n');
+  escribir(a, 'specs/story-9.99.md', `---\nstory_id: "9.99"\nfiles_to_modify:\n  - ${b}/skills/tycon-pipeline/scripts/marker.js   # el guion\n  - specs/story-9.99.md\n---\n\n# 9.99\n`);
+  const marker = corridaLimpia([a], { fileEvents: [] });
+  const repos = SO.reposDeLaCorrida({ marker, hermanos: [] });
+  assert.ok(repos.includes(b), `el repo que nombra files_to_modify entra: ${JSON.stringify(repos)}`);
+  assert.ok(SO.sensibles({ repos }).some((x) => x.repo === b), 'y su cambio sensible se ve');
+});
+
+test('Exenciones_SesionAdoptada_SeVen (T18) @story-8.143 @ac-4', () => {
+  const story = '/repos/hm/specs/story-9.99.md';
+  const marker = { sessionId: 'NUEVA', adoptedFrom: 'VIEJA', storyId: '9.99', startedAt: ANTES, storyPath: story };
+  const lineas = [
+    { name: 'runtime-waiver-signed', destino: 'VIEJA', ts: DESPUES },
+    { name: 'escape:force-manual-signed', destino: 'OTRA', storyPath: story, ts: DESPUES },
+    { name: 'critical-waiver-signed', destino: 'OTRA', storyPath: '/repos/hm/specs/story-1.1.md', ts: DESPUES },
+    { name: 'critical-waiver-signed', ts: DESPUES, resumen: 'sin destino' },
+  ];
+  const vistas = SO.exencionesDeLaCorrida(lineas, marker).map((g) => g.resumen || g.name).sort();
+  assert.deepStrictEqual(vistas, ['escape:force-manual-signed', 'runtime-waiver-signed', 'sin destino'], 'la de la sesión vieja, la de la story y la sin destino; la de otra story, no');
+});
+
+test('UltimoCambio_RenombreYSacarDelIndice_NoSeFechanPorElDisco (T19) @story-8.143 @ac-4', (t) => {
+  for (const [nombre, mover] of [
+    ['git mv', (d) => sh(d, 'mv', 'a.js', 'c.js')],
+    ['git rm --cached', (d) => sh(d, 'rm', '-q', '--cached', 'a.js')],
+  ]) {
+    const a = repo(t, { 'a.js': 'module.exports = 1;\n', 'b.js': "require('./a.js');\n" });
+    mover(a);
+    const r = porDelegacion(corridaLimpia([a]), { repos: [a] });
+    assert.strictEqual(r.codigo, 2, nombre);
+    assert.match(r.motivo, /pruebas/, `${nombre}: ${r.motivo}`);
+  }
+});
+
+test('Sensible_LosQueVerificanFirmas_EnLaLista (T20) @story-8.143 @ac-5', (t) => {
+  const archivos = ['skills/tycon-pipeline/scripts/dispatch.js', 'skills/tycon-pipeline/scripts/on-frontmatter-write.js',
+    'skills/tycon-pipeline/scripts/on-dod-evidence-guard.js', 'skills/tycon-pipeline/scripts/lib/story-skill-gate-io.js',
+    'skills/tycon-pipeline/scripts/e2e-setup.js'];
+  for (const f of archivos) {
+    const a = repo(t, { [f]: 'x\n' });
+    escribir(a, f, 'sin el control de la firma\n');
+    assert.ok(SO.sensibles({ repos: [a] }).some((x) => x.archivo === f), f);
+  }
+});
+
+test('Sensible_MainAdelantado_NoCuentaLoDeMain (T21) @story-8.143 @ac-5', (t) => {
+  const a = repo(t, { 'scripts/lib/signatures.js': 'x\n', 'app.js': '1\n' });
+  sh(a, 'checkout', '-q', 'main');
+  escribir(a, 'scripts/lib/signatures.js', 'cambio de main\n');
+  sh(a, 'commit', '-qam', 'main avanza');
+  sh(a, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  sh(a, 'checkout', '-q', 'story/la-prueba');
+  escribir(a, 'app.js', '2\n');
+  assert.deepStrictEqual(SO.sensibles({ repos: [a] }), [], 'la story sólo toca app.js');
+});
+
+test('ApproveSave_SuConstancia_NoInvalidaElOk (T22) @story-8.143 @ac-2 @ac-3', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  // lo que approve-save escribe después de la firma: la aprobación y los hallazgos de la corrida en el repo de la story
+  escribir(a, '.advisors/pipeline-runs/9.99-x/approvals.jsonl', '{"que":"el ok de guardar"}\n');
+  escribir(a, '.advisors/pipeline-runs/9.99-x/findings.json', '[]\n');
+  const r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, r.motivo);
+  // pero un guion puesto en la carpeta de la evidencia sí cambia la huella, y es sensible
+  escribir(a, '.advisors/pipeline-runs/9.99-x/atajo.js', 'module.exports = 1;\n');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'un .js en .advisors no es evidencia');
+  assert.ok(SO.sensibles({ repos: [a] }).some((x) => x.archivo === '.advisors/pipeline-runs/9.99-x/atajo.js'));
+});
+
+test('Delegada_LoQueEscribeElPipeline_NoEsCambioDeCodigo (T23) @story-8.143 @ac-4', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  // después de las pruebas y del pase: los hallazgos, la story en review (y commiteada), y la evidencia proyectada
+  fs.mkdirSync(path.join(a, '.advisors', 'pipeline-runs', '9.99-x'), { recursive: true });
+  fs.writeFileSync(path.join(a, '.advisors', 'pipeline-runs', '9.99-x', 'findings.json'), '[]\n');
+  fs.mkdirSync(path.join(a, 'specs'), { recursive: true });
+  fs.writeFileSync(path.join(a, 'specs', 'story-9.99.md'), '---\nstatus: review\n---\n');
+  sh(a, 'add', 'specs/story-9.99.md');
+  sh(a, 'commit', '-qm', 'la story en review');
+  const r = porDelegacion(corridaLimpia([a]), { repos: [a] });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  // un yaml de CI cambiado después de las pruebas sí es cambio de código, también sin repoPath en el marcador
+  const ci = repo(t);
+  fs.mkdirSync(path.join(ci, '.github', 'workflows'), { recursive: true });
+  fs.writeFileSync(path.join(ci, '.github', 'workflows', 'ci.yml'), 'on: push\n');
+  for (const m of [corridaLimpia([ci]), corridaLimpia([ci], { repoPath: undefined })]) {
+    const r2 = porDelegacion(m, { repos: [ci] });
+    assert.strictEqual(r2.codigo, 2, r2.motivo);
+    assert.match(r2.motivo, /pruebas/);
+  }
+});
