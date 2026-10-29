@@ -155,14 +155,16 @@ const stripSlash = (s) => (typeof s === 'string' ? s.replace(/\/+$/, '') : s);
  * `index` (de `fileIndex`) evita recorrer todas las entradas en cada paso: sin él, armar las entradas de un mapa grande
  * cuesta el cuadrado de su tamaño, y cada lectura de una variable lo paga.
  */
-const fileKey = (repo, old) => `${repo}\u0000${old}`;
+// Por repo y por nombre viejo, sin pasarlos a texto: se compara igual que `===`.
 function fileIndex(entries) {
   const index = new Map();
   for (const x of entries) {
     if (!x || x.kind !== 'file' || typeof x.new !== 'string') continue;
-    const k = fileKey(x.repo || 'arnes', x.old);
-    if (!index.has(k)) index.set(k, []);
-    index.get(k).push(x);
+    const repo = x.repo || 'arnes';
+    if (!index.has(repo)) index.set(repo, new Map());
+    const porViejo = index.get(repo);
+    if (!porViejo.has(x.old)) porViejo.set(x.old, []);
+    porViejo.get(x.old).push(x);
   }
   return index;
 }
@@ -174,7 +176,7 @@ function chainWalk(entry, entries, index = fileIndex(entries)) {
   for (;;) {
     if (seen.has(end)) return { end: null, problem: `la cadena de ${entry.old} vuelve sobre sí misma en ${end}: no tiene final` };
     seen.add(end);
-    const next = (index.get(fileKey(repo, end)) || []).filter((x) => x !== entry);
+    const next = ((index.get(repo) || new Map()).get(end) || []).filter((x) => x !== entry);
     if (next.length > 1) return { end: null, problem: `la cadena de ${entry.old} sigue por dos entradas desde ${end} (${next.map((x) => x.new).join(', ')}): no tiene final` };
     if (!next.length) return { end, problem: null };
     end = next[0].new;
