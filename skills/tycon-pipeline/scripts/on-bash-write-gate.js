@@ -1839,6 +1839,8 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
           }
         }
       }
+    } else if (['git merge', 'git reset', 'git cherry-pick', 'git revert', 'git read-tree', 'git rebase', 'git pull'].includes(c)) {
+      out.push(...constanciasDeOtraRama(c, args, base, isControlApproval).map((p) => `${tramo.trim()} (${p})`));
     } else if (c === 'git apply' || c === 'git am' || c === 'patch') {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);
@@ -1914,6 +1916,102 @@ function parcheNombraConstancia(texto, isControlApproval) {
     if (m) rutas.push(m[1].trim());
   }
   return rutas.some((r) => isControlApproval(r));
+}
+
+/**
+ * Las constancias que `git merge`, `reset`, `cherry-pick`, `revert`, `read-tree`, `rebase` o `pull` traen de otra ref al
+ * árbol, al índice o a la historia de la rama, con el motivo; las que la rama principal del remoto ya tiene iguales
+ * pasan, porque llegaron por un pedido. Si git no contesta, la ref no se pudo mirar y no pasa.
+ */
+function constanciasDeOtraRama(c, args, base, isControlApproval) {
+  const { spawnSync } = require('child_process');
+  const git = (argv) => {
+    const r = spawnSync('git', ['-C', base, ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    return r.error || r.status !== 0 ? null : String(r.stdout);
+  };
+  // retomar, saltear o abandonar lo empezado no trae nada nuevo
+  if (args.some((w) => /^--(?:abort|quit|skip|continue|edit-todo|show-current-patch)$/.test(w))) return [];
+  // las opciones que llevan su valor en la palabra siguiente, para no tomarlo por una ref; una que no está acá y se lleva
+  // el valor deja una palabra de más, que se mira como ref y, si no lo es, no pasa: frena de más, nunca de menos
+  const conValor = {
+    'git merge': /^(?:-m|-F|-s|-X|--message|--file|--strategy|--strategy-option|--into-name)$/,
+    'git cherry-pick': /^(?:-m|-X|--strategy|--strategy-option)$/,
+    'git revert': /^(?:-m|-X|--strategy|--strategy-option)$/,
+    'git read-tree': /^$/,
+    'git rebase': /^(?:--onto|-s|-X|--strategy|--strategy-option|-x|--exec)$/,
+    'git pull': /^(?:-s|-X|--strategy|--strategy-option|--depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs|-o|--server-option|--upload-pack)$/,
+    'git reset': /^$/,
+  }[c];
+  const sueltas = [];
+  let onto = null;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--') break;
+    if (c === 'git rebase' && w === '--onto') { onto = args[i + 1]; i++; continue; }
+    if (/^--onto=/.test(w) && c === 'git rebase') { onto = w.slice(7); continue; }
+    if (conValor.test(w)) { i++; continue; }
+    // el número del padre que elige cherry-pick o revert con su opción larga (`-m 1` ya se salteó arriba)
+    if ((c === 'git cherry-pick' || c === 'git revert') && /^\d{1,2}$/.test(w) && /^--m[a-z]+$/.test(args[i - 1] || '')) continue;
+    if (!w.startsWith('-')) sueltas.push(w);
+  }
+  // la rama principal del remoto: lo que ya está ahí entró por un pedido
+  const principal = ['refs/remotes/origin/HEAD', 'refs/remotes/origin/main', 'refs/remotes/origin/master']
+    .map((r) => (git(['rev-parse', '--verify', '-q', `${r}^{commit}`]) || '').trim()).find(Boolean) || null;
+  const blob = (ref, p) => (git(['rev-parse', '--verify', '-q', `${ref}:${p}`]) || '').trim() || null;
+  const out = [];
+  // las rutas de constancias que quedan distintas al pasar de `desde` a `hasta`, salvo las que se borran
+  const comparar = (desde, hasta, nombre) => {
+    if (/^-/.test(desde) || /^-/.test(hasta)) { out.push(`no pude ver qué constancias trae ${nombre}`); return; }
+    const r = git(['diff', '--name-only', '--no-renames', '--diff-filter=d', '--end-of-options', desde, hasta]);
+    if (r === null) { out.push(`no pude ver qué constancias trae ${nombre}`); return; }
+    for (const p of r.split(/\r?\n/).filter(Boolean).filter((x) => isControlApproval(x))) {
+      const traida = blob(hasta, p);
+      if (principal && traida && blob(principal, p) === traida) continue;
+      out.push(`${p} desde ${nombre}`);
+    }
+  };
+  const base3 = (ref) => (git(['merge-base', 'HEAD', ref]) || '').trim() || null;
+  const fusion = (ref) => {
+    const mb = base3(ref);
+    if (!mb) { out.push(`no pude ver qué constancias trae ${ref}`); return; }
+    comparar(mb, ref, ref);
+  };
+  if (c === 'git merge') {
+    for (const ref of sueltas.length ? sueltas : ['@{upstream}']) fusion(ref);
+  } else if (c === 'git rebase') {
+    // la rama queda encima de la de arriba: trae todo lo que esa tiene
+    const arriba = onto || sueltas[0] || '@{upstream}';
+    fusion(arriba);
+  } else if (c === 'git pull') {
+    // lo que trae se baja recién al correr: se mira la copia que ya está a mano de esa rama (`.` es este repo); sin
+    // copia, no pasa
+    const remotos = (git(['remote']) || '').split(/\r?\n/).filter(Boolean);
+    const remoto = sueltas.length && (sueltas[0] === '.' || remotos.includes(sueltas[0])) ? sueltas[0] : null;
+    const refs = (remoto ? sueltas.slice(1) : sueltas).map((r) => r.replace(/^\+/, '').replace(/:.*$/, '').replace(/^refs\/heads\//, ''));
+    const destino = refs.length ? refs.map((r) => (remoto === '.' ? r : `refs/remotes/${remoto || 'origin'}/${r}`)) : ['@{upstream}'];
+    for (const ref of destino) {
+      if (git(['rev-parse', '--verify', '-q', `${ref}^{commit}`]) === null) {
+        out.push(`no pude ver qué constancias trae ${ref}: traela con git fetch y git merge, que el freno puede mirar`);
+        continue;
+      }
+      fusion(ref);
+    }
+  } else if (c === 'git reset') {
+    // cualquier forma mueve la rama, el índice o el árbol a lo de la ref
+    const ref = sueltas[0];
+    if (ref && git(['rev-parse', '--verify', '-q', `${ref}^{commit}`]) !== null) comparar('HEAD', ref, ref);
+    else if (ref && args.includes('--')) out.push(`no pude ver qué constancias trae ${ref}`);
+  } else if (c === 'git cherry-pick' || c === 'git revert') {
+    for (const s of sueltas) {
+      const rango = /^(.+?)\.\.\.?(.+)$/.exec(s);
+      if (rango) { comparar(rango[1], rango[2], s); continue; }
+      // un commit: lo que agrega (cherry-pick) o lo que deshace, que vuelve (revert)
+      if (c === 'git cherry-pick') comparar(`${s}^`, s, s); else comparar(s, `${s}^`, s);
+    }
+  } else if (c === 'git read-tree') {
+    for (const s of sueltas) comparar('HEAD', s, s);
+  }
+  return out;
 }
 
 /** El archivo que lee un `tar` (`-f x`, `-xzf x`, `-fx`, `--file=x`, `xzf x`), o null si lee la entrada estándar. */
