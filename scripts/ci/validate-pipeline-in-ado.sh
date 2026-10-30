@@ -50,6 +50,23 @@ while [ $# -gt 0 ]; do
     *) echo "[validar] argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
+# La cola de la organización en otra plataforma (azure-only.js): no hay pipeline de Azure DevOps que validar. Frena con
+# no_soportado (sale 2: «no lo validé» nunca es «válido»); sale 0 sólo si quien llama lo pide con TYCON_ALLOW_UNSUPPORTED=1.
+# Una salida que no es 0, 2 ni 3 (node que no arranca, azure-only.js roto) es «no pude preguntar»: frena igual. Sin node
+# en el PATH tampoco se preguntó.
+if [ -f "${_AQUI_LO}/azure-only.js" ]; then
+  if command -v node >/dev/null 2>&1; then
+    NO_SOPORTADO="$(node "${_AQUI_LO}/azure-only.js" validate-pipeline-in-ado.sh)"; RC_NS=$?; POR_QUE="azure-only.js salió $RC_NS"
+  else
+    RC_NS=127; POR_QUE="no hay node en el PATH"
+  fi
+  case "$RC_NS" in
+    0) ;;
+    2) echo "[validar] $NO_SOPORTADO" >&2; exit 2 ;;
+    3) echo "[validar] $NO_SOPORTADO"; exit 0 ;;
+    *) echo "[validar] no_medido: validate-pipeline-in-ado.sh: no pude preguntar la plataforma de la organización ($POR_QUE)" >&2; exit 2 ;;
+  esac
+fi
 # La organización sale de la configuración del arnés: --org › ADO_ORG / TYCON_ADO_ORG › `ado.org`
 # (perfil del equipo o ~/.claude/tycon.json). Sin organización, Azure DevOps está APAGADA en esta máquina: se dice en
 # una línea y sale 0 sin consultar nada. Nunca «válido».

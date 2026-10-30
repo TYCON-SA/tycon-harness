@@ -85,6 +85,16 @@ const flag = (n, d = null) => {
   const i = args.indexOf(n);
   return i === -1 ? d : (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true);
 };
+// La cola de la organización en otra plataforma (azure-only.js): no hay permisos de Azure DevOps que dar. Frena con
+// no_soportado (sale 2); sale 0 sólo si quien llama lo pide con TYCON_ALLOW_UNSUPPORTED=1.
+(() => {
+  let r = null;
+  try { r = require('./azure-only.js').check('grant-new-product-permissions.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; }
+  if (!r) return;
+  if (r.code === 3) { console.log(r.line); process.exit(0); }
+  console.error(r.line);
+  process.exit(2);
+})();
 // La organización: `--org`, o `ado.org` de la configuración del arnés, como open-prs.js. Una organización
 // escrita acá sirve en un equipo y miente en el siguiente: la misma regla que los identificadores de arriba.
 const ORG = (() => {

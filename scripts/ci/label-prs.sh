@@ -22,6 +22,9 @@
 # 🔴 NO ES UN CONTROL: ES TRAZABILIDAD. Nunca frena la corrida — sale 0 siempre. Pero «no etiqueté»
 # se DICE (`##vso[task.logissue type=warning]` con el motivo): un verde mudo se lee igual que «no
 # trae PR».
+#   Por eso es la ÚNICA excepción escrita a «no_soportado frena»: con la organización en otra plataforma,
+#   azure-only.js pide salir 2 y este guion dice `no_soportado: …` como aviso y sale 0. No copiarla en un
+#   control: un control que sale 0 con algo que no miró se lee como verde.
 #
 # 🔴 UN TÍTULO DE PR ES TEXTO DE AFUERA. Azure interpreta `##vso[…]` en stdout y en stderr: un PR
 # titulado `##vso[task.setvariable …]` podría fijar variables de la corrida. Los títulos van SÓLO al
@@ -65,6 +68,25 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# La cola de la organización en otra plataforma (azure-only.js): no hay corrida de Azure DevOps que etiquetar. Se dice
+# como aviso y sale 0 aunque azure-only.js diga «frená» (ver «NO ES UN CONTROL» arriba). Si no pudo preguntar (otra
+# salida, sin node en el PATH, o un no_medido: la plataforma no se sabe), lo avisa y etiqueta como siempre.
+if [ -f "$AQUI/azure-only.js" ]; then
+  if command -v node >/dev/null 2>&1; then
+    NO_SOPORTADO="$(node "$AQUI/azure-only.js" label-prs.sh)"; RC_NS=$?; POR_QUE="azure-only.js salió $RC_NS"
+  else
+    RC_NS=127; POR_QUE="no hay node en el PATH"
+  fi
+  if [ "$RC_NS" = "2" ] && [ "${NO_SOPORTADO#no_medido:}" != "$NO_SOPORTADO" ]; then
+    echo "##vso[task.logissue type=warning]etiquetar-prs: $NO_SOPORTADO"
+  elif [ "$RC_NS" = "2" ] || [ "$RC_NS" = "3" ]; then
+    echo "##vso[task.logissue type=warning]etiquetar-prs: $NO_SOPORTADO"
+    exit 0
+  elif [ "$RC_NS" != "0" ]; then
+    echo "##vso[task.logissue type=warning]etiquetar-prs: no pude preguntar la plataforma de la organización ($POR_QUE)"
+  fi
+fi
 
 [ -f "$AQUI/run-base.sh" ] || avisar "no está run-base.sh al lado del guion (¿el artefacto arnes-ci llegó incompleto?)"
 # shellcheck source=run-base.sh

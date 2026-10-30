@@ -38,6 +38,20 @@ function shapeProblem(r) {
   return typeof r.detail === 'string' && r.detail.trim() ? null : 'dice que no sin «detail»';
 }
 
+const VEREDICTO = Object.freeze({ succeeded: 'verde', failed: 'rojo', running: 'corriendo', none: 'ninguna' });
+
+/**
+ * Lo que un control puede concluir de una lectura de `ci.read` o `queue.read`: `verde`, `rojo`, `corriendo` o `ninguna`
+ * (la CI), `medido` (la cola), y `no_medido` para todo lo demás. Cualquier «no» (también `no_soportado`: la plataforma
+ * no lo atiende) y cualquier respuesta sin forma es `no_medido`: verde sólo con una corrida que terminó bien.
+ */
+function verdictOf(r) {
+  if (!r || r.ok !== true || !Object.prototype.hasOwnProperty.call(r, 'value')) return 'no_medido';
+  if (Array.isArray(r.value)) return 'medido';
+  const state = r.value && typeof r.value === 'object' ? r.value.state : undefined;
+  return Object.prototype.hasOwnProperty.call(VEREDICTO, state) ? VEREDICTO[state] : 'no_medido';
+}
+
 // Las operaciones que llevan la estimación vigente de la historia (`estimate`); las demás la ignoran.
 const ESTIMATE_OPERATIONS = Object.freeze(['work-item.create', 'work-item.update']);
 const ESTIMATE_UNITS = Object.freeze(['hours', 'days', 'points']);
@@ -89,4 +103,4 @@ function openProblem(a) {
   return null;
 }
 
-module.exports = { OPERATIONS, REASONS, REPO_OPERATIONS, AREAS, AREA_OF, ESTIMATE_OPERATIONS, ESTIMATE_UNITS, areaOf, shapeProblem, estimateProblem, openProblem };
+module.exports = { OPERATIONS, REASONS, REPO_OPERATIONS, AREAS, AREA_OF, ESTIMATE_OPERATIONS, ESTIMATE_UNITS, areaOf, shapeProblem, verdictOf, estimateProblem, openProblem };

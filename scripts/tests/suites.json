@@ -2338,6 +2338,12 @@
       "requiere": []
     },
     {
+      "__nota": "La CI de un commit y la cola de la organización por la capa de plataforma, contra el az y el gh de mentira: las etapas de la corrida, la cola de los dos lados con quién y desde cuándo, la validación con el pipeline declarado, y los guiones sólo de Azure DevOps que en GitHub dicen no_soportado (o no_medido si no pudieron preguntar).",
+      "raiz": "arnes",
+      "ruta": "tests/platform-ci-queue.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La foto de cómo habla hoy el arnés con Azure DevOps (scripts/tests/lib/record-platform-golden.js): la normalización, qué cuenta como núcleo y que la foto grabada siga valiendo para el árbol, sin escribir nada.",
       "raiz": "arnes",
       "ruta": "tests/platform-golden.test.js",

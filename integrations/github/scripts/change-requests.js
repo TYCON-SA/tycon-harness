@@ -25,7 +25,11 @@ const ESTADO = { dirty: 'conflict', clean: 'clean', unstable: 'clean', has_hooks
 const MALOS = new Set(['failure', 'error', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale']);
 // los marcadores con que una CI saltea un commit: en el asunto de un merge dejan a la destino sin construir
 const SALTEOS = [/\[(skip ci|ci skip|no ci|skip actions|actions skip|skip azurepipelines|azurepipelines skip|skip azpipelines|azpipelines skip|skip azp|azp skip)\]/gi, /skip-checks: ?true/gi, /\*\*\*NO_CI\*\*\*/gi];
-const sinSalteos = (t) => SALTEOS.reduce((x, re) => x.replace(re, ''), t);
+// hasta que no quede ninguno: sacar uno puede armar otro con lo que lo rodeaba («[sk[skip ci]ip ci]»)
+function sinSalteos(t) {
+  for (let antes = null; antes !== t;) { antes = t; t = SALTEOS.reduce((x, re) => x.replace(re, ''), t); }
+  return t;
+}
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** `dueño/nombre` del repo de la identidad, o null. */
@@ -52,17 +56,25 @@ function todas(ctx, ruta, de = (v) => v) {
 /**
  * Los controles de una punta, de las dos APIs de GitHub: los check-runs y los estados de commit (una CI que informa por
  * estados —Azure Pipelines por OAuth, Jenkins— no aparece en los check-runs). De cada contexto vale su estado más nuevo
- * (GitHub los devuelve del más nuevo al más viejo), visto como un check-run: `{ name, status, conclusion }`. Si alguna
- * de las dos no se pudo leer es un «no»: lo que no se leyó nunca es verde.
+ * por fecha (y por id, a igual fecha) cuando todos la traen; si no, el orden en que GitHub los da, del más nuevo al más viejo. Los
+ * check-runs ya vienen de a uno por nombre, el último (`filter=latest`, lo de fábrica de la API). Cada estado se ve como
+ * un check-run: `{ name, status, conclusion }`. Si alguna de las dos no se pudo leer es un «no»: lo que no se leyó nunca
+ * es verde.
  */
 function controles(ctx, repo, sha) {
   const runs = todas(ctx, `repos/${repo}/commits/${sha}/check-runs`, (v) => v && v.check_runs);
   if (runs.problem) return runs;
   const estados = todas(ctx, `repos/${repo}/commits/${sha}/statuses`);
   if (estados.problem) return estados;
+  const cuando = (s) => { const t = Date.parse((s && (s.updated_at || s.created_at)) || ''); return Number.isNaN(t) ? null : t; };
+  const conFecha = estados.value.every((s) => cuando(s) !== null);
+  const id = (s) => (Number.isFinite(Number(s && s.id)) ? Number(s.id) : 0);
+  const ordenados = conFecha
+    ? estados.value.map((s, i) => ({ s, i })).sort((a, b) => (cuando(b.s) - cuando(a.s)) || (id(b.s) - id(a.s)) || (a.i - b.i)).map((x) => x.s)
+    : estados.value;
   const vistos = new Set();
   const comoRun = [];
-  for (const s of estados.value) {
+  for (const s of ordenados) {
     if (!s || typeof s.context !== 'string' || vistos.has(s.context)) continue;
     vistos.add(s.context);
     comoRun.push(s.state === 'pending'
@@ -221,3 +233,5 @@ function asignados(args, ctx) {
 }
 
 module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'assigned.list': asignados };
+// los ayudantes que reusa la lectura de la CI y de la cola (y la limpieza, para las pruebas), fuera del mapa de operaciones
+for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });

@@ -132,8 +132,16 @@ test('ChangeRequest_Open_Azure_SubjectWithoutSkipMarks @story-8.85 @ac-13', () =
     ['chore: a [AZP SKIP]  skip-checks:true b', 'chore: a b'],
     ['docs: z [skip azurepipelines] [ci skip] [azpipelines skip]', 'docs: z'],
     ['feat: con skip-checks: TRUE al final', 'feat: con al final'],
+    // un marcador que se arma al sacar otro (anidado, o de otra familia) tampoco queda
+    ['[sk[skip ci]ip ci] fix', 'fix'],
+    ['[skip ***NO_CI***ci] fix', 'fix'],
+    ['[sk[sk[skip ci]ip ci]ip ci] fix', 'fix'],
   ];
   for (const [texto, esperado] of casos) assert.strictEqual(asunto(texto), esperado, texto);
+  // el título del merge de GitHub sale de la misma limpieza
+  const sinSalteos = require(path.join(ROOT, 'integrations', 'github', 'scripts', 'change-requests.js')).sinSalteos;
+  assert.strictEqual(typeof sinSalteos, 'function', 'la limpieza de GitHub se exporta para las pruebas');
+  for (const t of ['[sk[skip ci]ip ci] fix', '[skip ***NO_CI***ci] fix', '[no [skip actions]ci] fix']) assert.doesNotMatch(sinSalteos(t), /\[(skip ci|no ci)\]/i, t);
 });
 
 test('ChangeRequest_Open_Azure_TextAsFileOnWindows @story-8.85 @ac-13', () => {

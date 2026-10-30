@@ -56,8 +56,11 @@ function llamadaAz(cmd, args, plataforma = process.platform) {
   return { file: cmd, args: args.map((a) => `"${a}"`), shell: true };
 }
 
-/** Corre az y deja su salida en JSON: `{value}` o `{problem}` con el motivo de la capa. */
-function correrAz(ctx, args, { timeout = 120000, cwd } = {}) {
+/**
+ * Corre az y deja su salida en JSON: `{value}` o `{problem}` con el motivo de la capa. `vacio`: lo que vale una salida
+ * vacía con salida 0 (la línea de tiempo de una corrida cancelada antes de correr nada vuelve así); sin él, es «no JSON».
+ */
+function correrAz(ctx, args, { timeout = 120000, cwd, vacio } = {}) {
   const cmd = ctx.env.TYCON_ADO_CMD || 'az';
   const llamada = llamadaAz(cmd, args);
   if (llamada.problem) return { problem: no('no_medido', llamada.problem) };
@@ -70,6 +73,7 @@ function correrAz(ctx, args, { timeout = 120000, cwd } = {}) {
     if (/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|getaddrinfo|Failed to establish a new connection|Max retries exceeded|timed out/i.test(t)) return { problem: no('red', t) };
     return { problem: no('no_medido', `az salió ${r.status}: ${t || 'sin salida'}`) };
   }
+  if (vacio !== undefined && !String(r.stdout || '').trim()) return { value: vacio };
   try { return { value: JSON.parse(r.stdout) }; } catch (_) { return { problem: no('no_medido', 'az contestó algo que no es JSON') }; }
 }
 
@@ -159,7 +163,8 @@ const SALTEOS = [/\[(skip ci|ci skip|skip azurepipelines|azurepipelines skip|ski
 /** El asunto del commit de merge: la primera línea, sin el prefijo de un merge entre ramas y sin marcadores de salteo. */
 function asunto(texto) {
   let l = String(texto || '').split('\n', 1)[0].replace(/^merge: \S+ -> \S+ — /, '');
-  for (const re of SALTEOS) l = l.replace(re, '');
+  // hasta que no quede ninguno: sacar uno puede armar otro con lo que lo rodeaba («[sk[skip ci]ip ci]»)
+  for (let antes = null; antes !== l;) { antes = l; for (const re of SALTEOS) l = l.replace(re, ''); }
   return l.replace(/ {2,}/g, ' ').trim();
 }
 
@@ -226,4 +231,4 @@ function abrirPedido(args, ctx) {
 
 module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos };
 // para las pruebas; no enumerables, así el conector no las toma por operaciones
-for (const [k, v] of Object.entries({ llamadaAz, asunto, textoParaAz })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });
+for (const [k, v] of Object.entries({ llamadaAz, asunto, textoParaAz, correrAz, orgDe })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });
