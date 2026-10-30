@@ -666,3 +666,27 @@ test('T35 2.79-Grises_CadaMotivoDiceQueFaltaYQueHacer @story-2.79 @ac-32 — mot
   const arnes = sinEtiquetas(views.paginaArnes({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA }));
   assert.match(arnes, /más vieja que su antigüedad máxima[^·]*· la deja el proceso de la noche del tablero/, 'la fuente vieja nombra el proceso');
 });
+
+// T59 2.79-Proyectos_FechasSinPartir @story-2.79 @ac-48
+// 🔴 Falla con: las fechas de prueba y producción en celdas que pueden partir renglón, o una entrada que no nombra
+//    alguna de las diez columnas de datos.
+test('T59 2.79-Proyectos_FechasSinPartir @story-2.79 @ac-48 — las fechas no parten renglón y la entrada nombra las diez columnas', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  const modelo = modeloCompleto({
+    productos: [{ producto: 'Producto X', proyectos: ['Proyecto X'] }],
+    proyectos: leida({ lista: [{ proyecto: 'Proyecto X', repo: 'Repo X', fecha: HOY, stories: [] }] }),
+    despliegues: leida({ productos: { 'Producto X': { estado: 'medido', motivo: 'ok', staging: { fecha: '2026-10-14' }, produccion: { fecha: '2026-10-12' }, produccion_atrasada: false, aprobacion: null, main: 'ok' } } }),
+  });
+  const html = views.paginaProyectos({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(html, /<span class="fecha">2026-10-14<\/span>/, 'la fecha de prueba lleva la clase de fecha');
+  assert.match(html, /<span class="fecha">2026-10-12<\/span>/, 'y la de producción');
+  const css = fs.readFileSync(path.join(H.SITE, 'static', 'site.css'), 'utf8');
+  assert.match(css, /table\.tabla \.fecha\{[^}]*white-space:nowrap/, 'una fecha no parte renglón');
+  for (const idioma of ['es', 'en']) {
+    const lede = t(idioma, 'proyectos.lede').toLowerCase();
+    for (const k of ['enCurso', 'paradasSinDias', 'edad', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad']) {
+      const col = t(idioma, `proyectos.col.${k}`).toLowerCase();
+      assert.ok(lede.includes(col), `${idioma}: la entrada nombra «${col}»: ${lede}`);
+    }
+  }
+});

@@ -1532,6 +1532,12 @@ function pantalla(idioma = 'es') {
     mios.forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
+  /** Un valor que no se edita en su renglón, como texto y con los problemas de su ruta debajo. */
+  function nombreFijo(texto, p, problemas) {
+    var box = el('div', { class: 'campo' }, el('span', { class: 'nombre-fijo', text: texto }));
+    problemasEn(problemas, p).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+    return box;
+  }
   function quitar(onclick) { return el('button', { class: 'sec', type: 'button', text: '✕', title: T('pantalla.quitar'), 'aria-label': T('pantalla.quitar'), onclick: onclick }); }
   // «vacio»: qué dice la lista sin nada (de fábrica, «Nadie todavía»)
   function listaDeTextos(titulo, ayuda, lista, set, p, problemas, nombre, agregar, vacio) {
@@ -1567,7 +1573,8 @@ function pantalla(idioma = 'es') {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.responsablePorDefectoSuUsuario'), d.owners.default, function (v) { d.owners.default = v; }, 'owners.default', pr));
     var byp = d.owners.by_project || {};
     var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.responsablePorProyecto') }), el('p', { class: 'sub-d', text: T('pantalla.opcionalUnProyectoQueNo') }));
-    Object.keys(byp).forEach(function (name) { sub.appendChild(el('div', { class: 'fila quitar3' }, campo('', name, function () {}, 'owners.by_project', pr, { disabled: 'disabled' }), campo('', byp[name], function (v) { byp[name] = v; }, 'owners.by_project.' + name, pr, { placeholder: T('pantalla.usuario') }), quitar(function () { delete byp[name]; if (!Object.keys(byp).length) delete d.owners.by_project; render(); }))); });
+    // el nombre del proyecto no se edita: se ve como texto, no como un campo apagado que no se lee
+    Object.keys(byp).forEach(function (name) { sub.appendChild(el('div', { class: 'fila quitar3' }, nombreFijo(name, 'owners.by_project', pr), campo('', byp[name], function (v) { byp[name] = v; }, 'owners.by_project.' + name, pr, { placeholder: T('pantalla.usuario') }), quitar(function () { delete byp[name]; if (!Object.keys(byp).length) delete d.owners.by_project; render(); }))); });
     var np = el('input', { placeholder: T('pantalla.nombreDelProyecto'), 'aria-label': T('pantalla.proyectoNuevo') });
     sub.appendChild(el('div', { class: 'fila quitar' }, np, el('button', { class: 'sec', type: 'button', text: T('pantalla.agregarProyecto'), onclick: function () { var v = np.value.trim(); if (!v) return; d.owners.by_project = d.owners.by_project || {}; d.owners.by_project[v] = ''; render(); } })));
     box.appendChild(sub);
@@ -3476,6 +3483,8 @@ function pantalla(idioma = 'es') {
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   }
   /** Por qué no se puede proponer, en llano; el motivo exacto del sitio queda en el detalle. */
+  // un repo sin una política que pida revisión: la identidad del sitio podría escribir main. Es un aviso de seguridad
+  function sinPolitica(prop) { return !!(prop && !prop.habilitado && prop.codigo === 'sin_politica'); }
   function motivoProponer(m) {
     if (!m || /identidad de escritura|write identity/.test(m)) return T('pantalla.paraProponerDesdeAcaEl');
     if (/plataforma|platform/.test(m)) return T('pantalla.elSitioNoReconoceDonde');
@@ -3687,7 +3696,8 @@ function pantalla(idioma = 'es') {
       var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { if (s.id === 'personas') S.fila = null; revisarSeccion(s); } }));
       bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', title: S.textos[s.id] ? undefined : T('pantalla.descargarSePrende'), onclick: function () { descargar(s); } }));
       if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { empezarAProponer(s); } }));
-      bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));
+      if (sinPolitica(prop)) sec.appendChild(aviso('warn', motivoProponer(prop.motivo)));
+      else bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));
       if (!confirmando) sec.appendChild(bar);
     }
     if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.proponerElCambio'), onclick: function () { empezarAProponer(s); } })));
@@ -3804,7 +3814,8 @@ function pantalla(idioma = 'es') {
       if (prop.habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: r.proponiendo ? 'disabled' : undefined, onclick: function () { proponerRepo(id, c); } }));
       else caja.appendChild(el('textarea', { class: 'repo-texto', readonly: 'readonly', rows: '8', 'aria-label': T('pantalla.repoElArchivo'), text: rev.texto || '' }));
     }
-    bar.appendChild(el('span', { class: 'por-que', text: !prop.habilitado ? (prop.motivo || '') : (rev && rev.ok ? T('pantalla.miraLaDiferenciaAntesDe') : T('pantalla.primeroRevisaAsiSabesSi')) }));
+    if (sinPolitica(prop)) caja.appendChild(aviso('warn', motivoProponer(prop.motivo)));
+    else bar.appendChild(el('span', { class: 'por-que', text: !prop.habilitado ? (prop.motivo || '') : (rev && rev.ok ? T('pantalla.miraLaDiferenciaAntesDe') : T('pantalla.primeroRevisaAsiSabesSi')) }));
     caja.appendChild(bar);
     var n = r.notas[c.clave];
     if (n && n.text) {

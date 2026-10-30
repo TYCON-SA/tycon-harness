@@ -584,7 +584,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       try {
         const solo = aplicarSolo();
         const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch, archivo, aplicarSolo: solo });
-        if (!p.ok) return { habilitado: false, motivo: p.message };
+        // el código viaja: un repo sin política que pida revisión es un aviso de seguridad, no una frase al costado
+        if (!p.ok) return { habilitado: false, motivo: p.message, codigo: p.codigo || null };
         return solo ? { habilitado: true, motivo: null, aplicaSolo: p.aplicaSolo === true, motivoAplicar: p.motivoAplicar || null } : { habilitado: true, motivo: null };
       } catch (e) { return { habilitado: false, motivo: M('config.sinPolitica', { codigo: (e && e.name) || 'error' }) }; }
     };

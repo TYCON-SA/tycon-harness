@@ -1,7 +1,7 @@
 /* site.css — lo propio del sitio de la organización (story 2.23; estilo del panel del mantenedor). El servidor antepone el
    tema, la grilla y las fichas de scripts/nightly/dashboard/common.js; esta hoja va después y los redefine con la
    paleta del sitio (claro, oscuro y el elegido a mano con data-theme), sin tocar la página de la noche. */
-:root{color-scheme:light;--page:#f3f1eb;--bg:var(--page);--surface:#fcfcfb;--surface-2:#f7f6f2;--ink:#0b0b0b;--ink-2:#52514e;--ink-3:#7d7b75;--muted:#7d7b75;--grid:#e4e2da;--line:rgba(11,11,11,.10);--line-strong:rgba(11,11,11,.22);--accent:#0b0b0b;--good:#0ca30c;--good-ink:#006300;--warn:#fab219;--warn-ink:#8a5a00;--bad:#d03b3b;--bad-ink:#a32424;--crit:#d03b3b;--nm:#9a988f;--nm-ink:#5d5b55;--good-soft:color-mix(in srgb,#0ca30c 13%,transparent);--warn-soft:color-mix(in srgb,#fab219 20%,transparent);--crit-soft:color-mix(in srgb,#d03b3b 12%,transparent);--hatch:rgba(11,11,11,.13);--wash:rgba(42,120,214,.08);--shadow:0 1px 0 rgba(11,11,11,.04),0 8px 24px -16px rgba(11,11,11,.18);--serif:"Iowan Old Style","Charter","Palatino Linotype","Book Antiqua",Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+:root{color-scheme:light;--page:#f3f1eb;--bg:var(--page);--surface:#fcfcfb;--surface-2:#f7f6f2;--ink:#0b0b0b;--ink-2:#52514e;--ink-3:#7d7b75;--muted:#67655f;--grid:#e4e2da;--line:rgba(11,11,11,.10);--line-strong:rgba(11,11,11,.22);--accent:#0b0b0b;--good:#0ca30c;--good-ink:#006300;--warn:#fab219;--warn-ink:#8a5a00;--bad:#d03b3b;--bad-ink:#a32424;--crit:#d03b3b;--nm:#9a988f;--nm-ink:#4a4843;--good-soft:color-mix(in srgb,#0ca30c 13%,transparent);--warn-soft:color-mix(in srgb,#fab219 20%,transparent);--crit-soft:color-mix(in srgb,#d03b3b 12%,transparent);--hatch:rgba(11,11,11,.13);--wash:rgba(42,120,214,.08);--shadow:0 1px 0 rgba(11,11,11,.04),0 8px 24px -16px rgba(11,11,11,.18);--serif:"Iowan Old Style","Charter","Palatino Linotype","Book Antiqua",Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--page:#0d0d0c;--surface:#1a1a19;--surface-2:#151514;--ink:#f0efec;--ink-2:#c3c2b7;--ink-3:#8f8d86;--muted:#8f8d86;--grid:#2c2c2a;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.2);--accent:#f0efec;--good-ink:#2fc42f;--warn-ink:#fab219;--bad-ink:#f06a6a;--crit:#f06a6a;--nm-ink:#a9a79f;--hatch:rgba(255,255,255,.14);--wash:rgba(57,135,229,.12);--shadow:0 1px 0 rgba(0,0,0,.4),0 10px 30px -18px rgba(0,0,0,.8)}}
 :root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0c;--surface:#1a1a19;--surface-2:#151514;--ink:#f0efec;--ink-2:#c3c2b7;--ink-3:#8f8d86;--muted:#8f8d86;--grid:#2c2c2a;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.2);--accent:#f0efec;--good-ink:#2fc42f;--warn-ink:#fab219;--bad-ink:#f06a6a;--crit:#f06a6a;--nm-ink:#a9a79f;--hatch:rgba(255,255,255,.14);--wash:rgba(57,135,229,.12);--shadow:0 1px 0 rgba(0,0,0,.4),0 10px 30px -18px rgba(0,0,0,.8)}
 :root[data-theme="light"]{color-scheme:light}
@@ -86,6 +86,8 @@ h3.block{margin:34px 0 12px;display:flex;gap:10px;align-items:baseline;flex-wrap
 .tile.blind{border:1px dashed var(--line-strong);background-color:var(--surface-2);background-image:repeating-linear-gradient(135deg,transparent 0 7px,var(--hatch) 7px 8px);box-shadow:none}
 .tile.blind::before{background:transparent;border-left:3px dashed var(--nm)}
 .tile.blind .t-val{color:var(--nm-ink);font-size:22px;font-weight:400}
+/* el motivo de NO MEDIDO va sobre la trama: en --nm-ink, que se lee sobre ella en los dos temas */
+.tile.blind .t-den{color:var(--nm-ink)}
 .chip{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;font:600 11px/1 var(--sans);letter-spacing:.04em;text-transform:uppercase;padding:4px 9px;border-radius:99px;border:0}
 .chip.ok{color:var(--good-ink);background:var(--good-soft)}.chip.warn{color:var(--warn-ink);background:var(--warn-soft)}.chip.bad{color:var(--bad-ink);background:var(--crit-soft)}
 .chip.blind,.chip.decl{color:var(--nm-ink);background:repeating-linear-gradient(135deg,transparent 0 4px,var(--hatch) 4px 5px);border:1px dashed var(--line-strong)}
@@ -106,6 +108,7 @@ table.tabla thead th{font-size:11.5px;font-weight:600;color:var(--muted);text-tr
 table.tabla tbody th{font-weight:600}
 table.tabla tbody tr:last-child th,table.tabla tbody tr:last-child td{border-bottom:0}
 table.tabla tbody tr:hover{background:var(--wash)}
+table.tabla .fecha{white-space:nowrap}
 table.tabla td.nm{color:var(--nm-ink);font-style:italic;background-image:repeating-linear-gradient(135deg,transparent 0 7px,var(--hatch) 7px 8px)}
 .nota{font-size:12px;color:var(--muted);font-weight:400}
 .filtro{display:inline-flex;gap:8px;align-items:center;margin:0 0 12px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
@@ -122,7 +125,7 @@ table.tabla td.nm{color:var(--nm-ink);font-style:italic;background-image:repeati
 .kpi .lab{font-size:13px;color:var(--ink-2)}.kpi .val{font:300 34px/1.05 var(--sans);letter-spacing:-.02em}
 .kpi .val small{font-size:14px;color:var(--ink-2);letter-spacing:0;margin-left:4px}.kpi .den{font-size:12.5px;color:var(--muted)}
 a.kpi:hover{background:var(--wash)}
-.pestanas{display:flex;gap:2px;margin:26px 0 18px;border-bottom:1px solid var(--line-strong);overflow-x:auto;scrollbar-width:thin}
+.pestanas{display:flex;gap:2px;margin:26px 0 18px;border-bottom:1px solid var(--line-strong);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
 .pestanas a{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;font-size:14px;color:var(--ink-2);text-decoration:none;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
 .pestanas a:hover{color:var(--ink);background:var(--wash)}
 .pestanas a.activa{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
@@ -147,6 +150,7 @@ a.kpi:hover{background:var(--wash)}
 .sub-t{font-size:14.5px;font-weight:600;margin:0}
 .sub-d{font-size:12.5px;color:var(--muted);margin:-6px 0 0}
 .campo{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.campo .nombre-fijo{align-self:center;padding:7px 0;font-size:14px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
 .campo label{font-size:12px;color:var(--muted)}
 .campo input,.campo select,.fila input,.fila select,.form-block textarea,.thr input,.thr select{width:100%;min-width:0;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);font-size:14px;color:var(--ink)}
 .campo input:disabled,.form-block input:disabled,.form-block select:disabled,.form-block textarea:disabled{opacity:.5;cursor:not-allowed;background:transparent}
@@ -334,7 +338,8 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .side-foot .salir span,.side-foot .lab-tema{display:none}
   .theme button{padding:4px 8px;font-size:11.5px}
   form.idioma button{padding:4px 8px;font-size:11.5px}
-  .tabs{grid-column:1/-1;flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:2px}
+  /* el menú parte renglón en vez de desplazarse: así ninguna pestaña queda cortada en el borde («Con…») */
+  .tabs{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;gap:4px;padding-bottom:2px}
   .tabs a{padding:6px 10px;white-space:nowrap;font-size:14px}.tabs a .ix{display:none}
   main{padding:20px 16px 60px}
   .s-head h1{font-size:28px}
@@ -342,6 +347,8 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .form-block,.pestanas,.tbl-wrap,section[id]{scroll-margin-top:140px}
 }
 @media (max-width:640px){
+  /* en el teléfono sólo queda fija la barra de arriba: el menú, el tema y el idioma se van con la página */
+  .side{position:static}
   .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .t-val,.kpi .val{font-size:28px}
   .antes-despues,.despliegue,.conflicto .dos{grid-template-columns:minmax(0,1fr)}
@@ -439,7 +446,7 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .ct .btn.prim{background:var(--ink);color:var(--page);border-color:var(--ink)}
 .ct .btn[disabled],.ct .btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed;pointer-events:none}
 .ct .btn.mas{margin-top:6px;border-style:dashed;background:transparent;color:var(--ink-2)}
-.ct-nota{margin:0;font-size:12px;color:var(--muted)}
+.ct-nota{margin:0;font-size:13px;color:var(--ink-2)}
 .ct-error{margin:0;color:var(--bad-ink);font-size:12.5px}
 .ct-ok{margin:0;color:var(--good-ink);font-size:12.5px}
 .ct-panel{margin:6px 0 10px;padding:14px;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface-2);display:grid;gap:10px;list-style:none}
