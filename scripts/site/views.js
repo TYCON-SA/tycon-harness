@@ -551,7 +551,8 @@ function paginaProyectos(ctx) {
   const noMedido = (motivo) => esc(T('vista.noMedidoCon', { motivo }));
   const celdaDep = (d) => {
     if (d.estado === 'no_medido') return `<td class="nm" colspan="3">${noMedido(d.motivo)}</td>`;
-    const fecha = (x) => (x && x.fecha ? esc(String(x.fecha).slice(0, 10)) : '—');
+    // la fecha no parte renglón: en una columna angosta se partiría en dos
+    const fecha = (x) => (x && x.fecha ? `<span class="fecha">${esc(String(x.fecha).slice(0, 10))}</span>` : '—');
     const atraso = d.produccion ? T('proyectos.atrasoSinComparar') : T('proyectos.atrasoSinProduccion');
     const prod = `${fecha(d.produccion)}${d.produccion_atrasada === true ? ` · <b>${esc(T('proyectos.atrasada'))}</b>` : (d.produccion_atrasada === null ? ` · ${esc(atraso)}` : '')}`;
     const ea = d.aprobacion && typeof d.aprobacion === 'object' ? d.aprobacion.estado : d.aprobacion;

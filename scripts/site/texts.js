@@ -224,7 +224,7 @@ const TEXTOS = {
   'proyectos.comoVa': { es: 'Cómo va cada producto', en: 'How each product is doing' },
   'proyectos.fichas': { es: 'Cómo va la organización', en: 'How the organization is doing' },
   'proyectos.ninguno': { es: 'Ningún producto declarado.', en: 'No product declared.' },
-  'proyectos.lede': { es: 'Por producto: lo que está en curso, lo trabado, qué versión está en prueba y en producción, y si algo lo vigila.', en: 'Per product: what is in progress, what is stuck, which version is in staging and in production, and whether anything watches it.' },
+  'proyectos.lede': { es: 'En curso, paradas, edad en el estado, bloqueadas; en prueba, en producción, aprobación; vigilado, vulnerabilidades vivas, paridad.', en: 'In progress, stalled, age in state, blocked; in staging, in production, approval; watched, live vulnerabilities, parity.' },
 
   // ── Arnés ──────────────────────────────────────────────────────────────────────────────────────────────────────
   'arnes.fuente': { es: 'Fuente {id}', en: 'Source {id}' },

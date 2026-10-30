@@ -5578,3 +5578,135 @@ test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
     assert.ok(es && en && es !== k && en !== k && es !== en, `${k} existe y está traducida`);
   }
 });
+
+// ── Lo que se lee en gris y en celular ──────────────────────────────────────────────────────────────
+
+/** Las variables de los tres bloques de `site.css`: el claro, el oscuro por preferencia y el oscuro elegido a mano. */
+function variablesDelCss() {
+  const css = texto('scripts/site/static/site.css');
+  const leer = (bloque) => { const v = {}; for (const m of bloque.matchAll(/--([\w-]+):([^;}]+)/g)) v[m[1]] = m[2].trim(); return v; };
+  const claro = leer((/^:root\{color-scheme:light;([^}]*)\}/m.exec(css) || [])[1] || '');
+  const oscuroMedia = leer((/@media \(prefers-color-scheme:dark\)\{:root:not\(\[data-theme="light"\]\)\{([^}]*)\}/.exec(css) || [])[1] || '');
+  const oscuroMano = leer((/^:root\[data-theme="dark"\]\{([^}]*)\}/m.exec(css) || [])[1] || '');
+  return { css, temas: { claro, oscuroMedia: { ...claro, ...oscuroMedia }, oscuroMano: { ...claro, ...oscuroMano } } };
+}
+/** Un color de CSS (#rgb, #rrggbb, rgba(…)) como [r, g, b, alfa]. */
+function rgba(c) {
+  let m = /^#([0-9a-f]{6})$/i.exec(c);
+  if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)).concat(1);
+  m = /^#([0-9a-f]{3})$/i.exec(c);
+  if (m) return [...m[1]].map((x) => parseInt(x + x, 16)).concat(1);
+  m = /^rgba?\(([^)]+)\)$/.exec(c);
+  if (m) { const p = m[1].split(',').map((x) => Number(x.trim())); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; }
+  throw new Error(`color que la prueba no sabe leer: ${c}`);
+}
+/** `arriba` (con su alfa) puesto sobre `abajo` (opaco). */
+const componer = (arriba, abajo) => [0, 1, 2].map((i) => arriba[i] * arriba[3] + abajo[i] * (1 - arriba[3])).concat(1);
+/** El contraste de WCAG 2 entre dos colores opacos. */
+function contraste(a, b) {
+  const lum = (c) => { const [r, g, bb] = c.slice(0, 3).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * bb; };
+  const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+
+// T53 2.79-Css_Contraste @story-2.79 @ac-43
+// 🔴 Falla con: `--muted` del claro en #7d7b75 (3,75 sobre `--page`), o el motivo de la ficha gris en `--muted` sobre la
+//    trama (2,94).
+test('T53 2.79-Css_Contraste @story-2.79 @ac-43 — el gris de los textos y el del motivo de NO MEDIDO se leen en los dos temas', () => {
+  const { css, temas } = variablesDelCss();
+  const col = (v, nombre) => { assert.ok(v[nombre], `--${nombre} está definida`); return rgba(v[nombre]); };
+  for (const [tema, v] of Object.entries(temas)) {
+    const muted = col(v, 'muted');
+    for (const fondo of ['page', 'surface']) {
+      const c = contraste(muted, col(v, fondo));
+      assert.ok(c >= 4.5, `${tema}: --muted sobre --${fondo} da ${c.toFixed(2)}`);
+    }
+    // la trama es un color con alfa: se mide compuesta sobre cada fondo donde va
+    for (const fondo of ['page', 'surface', 'surface-2']) {
+      const c = contraste(col(v, 'nm-ink'), componer(col(v, 'hatch'), col(v, fondo)));
+      assert.ok(c >= 4.5, `${tema}: --nm-ink sobre la trama encima de --${fondo} da ${c.toFixed(2)}`);
+    }
+  }
+  assert.match(css, /\.tile\.blind \.t-den\{[^}]*color:var\(--nm-ink\)/, 'el motivo de la ficha gris va en --nm-ink, no en --muted');
+});
+
+// T54 2.79-Grises_LasCincoUbicaciones @story-2.79 @ac-43
+// 🔴 Falla con: el repo sin política como frase gris al lado del botón, el nombre del proyecto como campo apagado, o la
+//    nota de la integración tachada en letra de 12 px y --muted.
+test('T54 2.79-Grises_LasCincoUbicaciones @story-2.79 @ac-43 — el aviso de seguridad, los proyectos, el examen y la nota tachada', async () => {
+  const dentro = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
+  const dice = (n) => n.textContent || n.attrs.text || '';
+  // (4) el repo sin política: un aviso con la clase de advertencia, no una frase gris al lado del botón
+  const motivo = 'el repo no tiene una política que pida revisión en main: sin ella, la identidad del sitio podría escribir main';
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id)), extras: { proponer: { operaciones: { habilitado: false, codigo: 'sin_politica', motivo } } } });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-canal').pop();
+  const avisos = dentro(caja).filter((n) => /\bmsg warn\b/.test(n.attrs.class || ''));
+  assert.ok(avisos.some((a) => dentro(a).some((x) => dice(x).includes(motivo))), 'el repo sin política sale como advertencia, con su motivo');
+  assert.ok(!dentro(caja).some((n) => /por-que/.test(n.attrs.class || '') && dice(n).includes(motivo)), 'no como frase gris al lado del botón');
+  // (5) Responsable por proyecto: el nombre del proyecto es texto
+  const resp = SEC('responsables', { borrador: { owners: { default: LEAD, by_project: { 'Proyecto Uno': 'u@acme.example' } } } });
+  const p = await pantallaConPestanas({ secciones: [resp, ...TODAS.filter((id) => id !== 'responsables').map((id) => SEC(id))] });
+  const cajaR = p.creados.filter((n) => n.attrs.id === 'seccion-responsables').pop();
+  const apagados = dentro(cajaR).filter((n) => ['input', 'select'].includes(n.tag) && n.attrs.disabled);
+  assert.deepStrictEqual(apagados.map((n) => n.attrs.value || n.attrs['data-path']), [], 'ningún campo apagado para el nombre');
+  assert.ok(dentro(cajaR).some((n) => !['input', 'select', 'textarea'].includes(n.tag) && dice(n) === 'Proyecto Uno'), 'el nombre se ve como texto');
+  // (2) y (3): el examen de revisores y la nota de la integración tachada no van en letra chica gris
+  const { css } = variablesDelCss();
+  const regla = (sel) => { const m = new RegExp(`(?:^|\\})${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\{([^}]*)\\}`, 'm').exec(css); assert.ok(m, `${sel} está en site.css`); return m[1]; };
+  for (const sel of ['.ct-nota', '.lista .estado']) {
+    const r1 = regla(sel);
+    const px = Number((/font-size:([\d.]+)px/.exec(r1) || [])[1]);
+    assert.ok(px >= 13, `${sel}: letra de ${px} px`);
+    assert.doesNotMatch(r1, /color:var\(--(muted|ink-3)\)/, `${sel}: no en el gris claro`);
+  }
+  assert.match(texto('scripts/site/tabs/how-it-works.js'), /class="ct-nota">\$\{esc\(T\('comoTrabaja\.orgIntegracionesAyuda'\)\)/, 'la nota tachada usa esa clase');
+  assert.match(regla('.pill.nm'), /color:var\(--nm-ink\)/, 'la marca de NO MEDIDO del examen va en --nm-ink, sobre la trama');
+});
+
+/** Un navegador del arnés contra el sitio, al ancho dado; `fn(page)` mide. */
+async function enNavegador({ ancho, ruta, alto = 800 }, fn) {
+  await conPestana({ fuentes: fuentesCon({ ops: null, config: opsBase() }) }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const navegador = await PLAYWRIGHT.chromium.launch();
+    try {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: alto } });
+      await ctx.setExtraHTTPHeaders({ cookie: lead });
+      const page = await ctx.newPage();
+      await page.goto(`${h.base}${ruta}`);
+      await page.waitForLoadState('networkidle');
+      await fn(page, { alto });
+    } finally { await navegador.close(); }
+  });
+}
+const SIN_PLAYWRIGHT = process.env.E2E_REQUIRED === '1' ? false : (!PLAYWRIGHT && PINNED_PW.locate().why);
+
+// T60 2.79-Configuracion_PestanasSinBarraSuelta @story-2.79 @ac-49
+// 🔴 Falla con: `.pestanas` con desplazamiento vertical (la barra suelta) o el menú que corta «Configuración» a «Con…».
+test('T60 2.79-Configuracion_PestanasSinBarraSuelta @story-2.79 @ac-49 — a 600 px, sin barra suelta y el menú entero', { skip: SIN_PLAYWRIGHT, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  await enNavegador({ ancho: 600, ruta: '/configuracion' }, async (page) => {
+    await page.locator('.pestanas').first().waitFor({ timeout: 20000 });
+    const m = await page.evaluate(() => {
+      const p = document.querySelector('.pestanas');
+      const vista = document.documentElement.clientWidth;
+      const enlaces = [...document.querySelectorAll('.tabs a')].map((a) => { const r = a.getBoundingClientRect(); return { t: a.textContent.trim(), izq: r.left, der: r.right, corta: a.scrollWidth > a.clientWidth + 1 }; });
+      return { scrollH: p.scrollHeight, clientH: p.clientHeight, overflowY: getComputedStyle(p).overflowY, vista, enlaces };
+    });
+    assert.ok(m.scrollH <= m.clientH || m.overflowY === 'hidden', `.pestanas: alto ${m.scrollH} contra ${m.clientH} visible, overflow-y ${m.overflowY}`);
+    for (const e of m.enlaces) assert.ok(!e.corta && e.izq >= 0 && e.der <= m.vista + 0.5, `el menú corta «${e.t}» (${e.izq}–${e.der} de ${m.vista})`);
+    assert.ok(m.enlaces.some((e) => /Configuración/.test(e.t)), `«Configuración» está en el menú: ${m.enlaces.map((e) => e.t)}`);
+  });
+});
+
+// T61 2.79-Celular_SoloLaBarraFija @story-2.79 @ac-50
+// 🔴 Falla con: el menú con el tema y el idioma pegados arriba, debajo de la barra, a 390 px.
+test('T61 2.79-Celular_SoloLaBarraFija @story-2.79 @ac-50 — a 390 px sólo queda fija la barra de arriba', { skip: SIN_PLAYWRIGHT, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  await enNavegador({ ancho: 390, alto: 844, ruta: '/' }, async (page, { alto }) => {
+    await page.locator('header.barra').waitFor({ timeout: 20000 });
+    const fijos = await page.evaluate(() => [...document.querySelectorAll('body *')].filter((n) => ['fixed', 'sticky'].includes(getComputedStyle(n).position) && n.getBoundingClientRect().height > 0)
+      .map((n) => ({ que: n.tagName.toLowerCase() + (n.className ? '.' + String(n.className).split(' ')[0] : ''), alto: n.getBoundingClientRect().height })));
+    assert.deepStrictEqual(fijos.map((f) => f.que), ['header.barra'], `lo fijo arriba: ${JSON.stringify(fijos)}`);
+    assert.ok(fijos[0].alto < alto / 4, `la barra mide ${fijos[0].alto} de ${alto}`);
+  });
+});
