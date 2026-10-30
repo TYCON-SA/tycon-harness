@@ -196,3 +196,83 @@ test('8.141 T17 SignaturesGuide_TraeAdhocLane', () => {
   }
   assert.deepStrictEqual(malos, [], 'nadie nombra el clasificador, sus variables ni la vía remota');
 });
+
+// La tabla de niveles del esquema de firmas, escrita a mano para que un cambio de nivel en el catálogo se note:
+// id, nivel, perfiles. 7 de rutina, 15 de excepción, 4 irreversibles.
+const TABLA_DE_NIVELES = [
+  ['plan-approval', 1, ['dev', 'mant']], ['extra-round', 1, ['dev', 'mant']], ['pending-approval', 1, ['dev', 'mant']],
+  ['save', 1, ['dev', 'mant']], ['browser-test:prepare', 1, ['dev', 'mant']], ['adhoc-lane', 1, ['dev', 'mant']],
+  ['refresh-after-main', 1, ['mant']],
+  ['save:sensible', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
+  ['critical-waiver', 2, ['dev', 'mant']], ['runtime-waiver', 2, ['dev', 'mant']], ['manual-test', 2, ['dev', 'mant']],
+  ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
+  ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
+  ['escape:TYCON_TEST_GATE', 2, ['dev', 'mant']], ['escape:TYCON_STATUS_GATE', 2, ['dev', 'mant']],
+  ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
+  ['control-change', 3, ['mant']], ['escape:TYCON_SAFETY_OFF', 3, ['dev', 'mant']], ['escape:TYCON_PROD_LINT', 3, ['dev', 'mant']],
+  ['escape:TYCON_NEW_NAMES', 3, ['mant']],
+];
+
+// Lo que cubre cada firma de hoy que no es su propio id de la tabla: las tres que se parten y los siete escapes que se
+// unen a otra firma. Las demás cubren el id de la tabla con su mismo nombre.
+const CUBRE = {
+  'save': ['save', 'save:sensible'],
+  'browser-test': ['browser-test:prepare', 'browser-test:no'],
+  'escape:dod_runtime_exempt': ['runtime-waiver'],
+  'escape:ALLOW_DOD_EVIDENCE_WRITE': ['manual-test'],
+  'escape:TYCON_NO_DEEP_REVIEW': ['adversarial-skip'],
+  'escape:no-deep-review': ['adversarial-skip'],
+  'escape:cerrar-la-ejecucion': ['lost-run'],
+  'escape:cerrar-como-deuda': ['lost-run'],
+  'escape:cambiar-el-estado': ['escape:TYCON_STATUS_GATE'],
+};
+
+// niveles T1 Catalogo_TablaDeNiveles
+// 🔴 Falla con: un id de la tabla que falta, sobra, o cambió de nivel o de perfil.
+test('niveles T1 Catalogo_TablaDeNiveles', () => {
+  const cat = require(CATALOGO);
+  assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
+  const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
+  assert.deepStrictEqual(cuenta, [7, 15, 4], '7 de rutina, 15 de excepción, 4 irreversibles');
+  for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
+});
+
+// niveles T2 Catalogo_CadaFirmaApuntaASuNivel
+// 🔴 Falla con: una firma de hoy sin su id de la tabla, con otro, o con un nivel o perfil que no es el que sale de él.
+test('niveles T2 Catalogo_CadaFirmaApuntaASuNivel', () => {
+  const cat = require(CATALOGO);
+  const nivel = Object.fromEntries(TABLA_DE_NIVELES.map(([id, n, p]) => [id, { n, p }]));
+  for (const s of cat.SIGNATURES) {
+    const cubre = CUBRE[s.id] || [s.id];
+    assert.deepStrictEqual([...s.covers], cubre, `${s.id}: lo que cubre`);
+    assert.strictEqual(s.level, Math.max(...cubre.map((id) => nivel[id].n)), `${s.id}: su nivel es el mayor de lo que cubre`);
+    assert.deepStrictEqual([...s.profiles], ['dev', 'mant'].filter((p) => cubre.some((id) => nivel[id].p.includes(p))), `${s.id}: perfiles`);
+  }
+  // cada id de la tabla lo pide alguna firma de hoy, salvo pasarse del cupo diario, que todavía no existe
+  const pedidos = new Set(cat.SIGNATURES.flatMap((s) => s.covers));
+  assert.deepStrictEqual(TABLA_DE_NIVELES.map(([id]) => id).filter((id) => !pedidos.has(id)), ['adhoc-lane:sobre-cupo']);
+});
+
+// niveles T3 Catalogo_NivelPorDelegacion
+// 🔴 Falla con: el ok de guardar contado como excepción (la delegación ya no firma un cambio sensible), o una firma que
+// cubre una excepción contada como rutina.
+test('niveles T3 Catalogo_NivelPorDelegacion', () => {
+  const cat = require(CATALOGO);
+  const esperado = { 'save': 1, 'adhoc-lane': 1, 'plan-approval': 1, 'refresh-after-main': 1, 'pending-approval': 1,
+    'extra-round': 1, 'browser-test': 2, 'runtime-waiver': 2, 'escape:force-manual': 2, 'escape:trust-ran': 2,
+    'escape:no-deep-review': 2, 'control-change': 3, 'escape:TYCON_SAFETY_OFF': 3 };
+  for (const [id, n] of Object.entries(esperado)) assert.strictEqual(cat.delegatedLevel(id), n, id);
+  assert.strictEqual(cat.delegatedLevel('no-existe'), null);
+});
+
+// niveles T4 SignaturesGuide_GeneradaDelCatalogo
+// 🔴 Falla con: la guía con una tabla escrita a mano que ya no es la que sale del catálogo.
+test('niveles T4 SignaturesGuide_GeneradaDelCatalogo', () => {
+  const gen = require(path.join(RAIZ, 'scripts', 'tools', 'signatures-guide.js'));
+  const texto = fs.readFileSync(GUIA, 'utf8');
+  assert.strictEqual(gen.render(texto), texto, 'la guía no es la que genera el catálogo: correr node scripts/tools/signatures-guide.js --write');
+  const filas = tabla(texto, '## Los niveles');
+  assert.deepStrictEqual(filas.map((f) => f[0]), TABLA_DE_NIVELES.map(([id]) => `\`${id}\``), 'una fila por id de la tabla');
+  // la tabla generada se corta si se borra un marcador: no se genera a ciegas
+  assert.throws(() => gen.render(texto.replace(/<!-- generado: niveles -->/, '')), /marcador/);
+});
