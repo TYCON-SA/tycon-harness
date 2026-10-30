@@ -11,11 +11,15 @@
  *
  * Cómo se arma, en una carpeta que da quien llama (y que borra él, también si la corrida se corta):
  *   1. El público: el repo hermano declarado en `.tycon/advisors.yaml → evidence.companion_repos`, en el worktree de la
- *      rama de la story si existe (el criterio de lib/companion-repos.js), que traiga `version.json` y `scripts/`.
+ *      rama de la story si existe (el criterio de lib/companion-repos.js), que traiga `version.json` y `scripts/`. Si la
+ *      carpeta encontrada no está en la rama de la story (la que está al lado: el main local de un clon que nadie pone al
+ *      día, la rama de otra sesión), debajo va la versión del servidor, su `origin/main`, sin su disco, y la story no
+ *      tocó nada del público (`source: server`). Sin `origin/main` en esa carpeta, lo que hay (`source: disk`).
  *   2. Cada repo se clona ahí (`git clone --shared`, con su historia: varias suites comparan contra commits viejos) en su
  *      HEAD, y lo que su disco tiene sin commitear (cambiado, nuevo sin ignorar, borrado) se copia encima y queda en un
  *      commit local: el portón corre antes del commit, y desde HEAD mediría lo viejo. Nunca se superpone sobre el
  *      checkout de la story: el guion de superposición deja un commit en el repo que recibe.
+ *      Su `origin/*` es el `origin/*` del repo de origen, si lo tiene: el de lo que está en el servidor.
  *   3. `scripts/ci/overlay-harness.js --after-cut --stale warn [--team-from <clon del perfil>]` del privado pone el
  *      público encima del clon del privado. El clon del perfil del equipo es `HARNESS_TEAM_DIR` si está; si no, el que
  *      la máquina declara en `paths.team` de su configuración (`harness.js config set paths.team`), si es un clon del
@@ -26,7 +30,7 @@
  *                                                              lista no se deja leer o le falta el guion (el motivo)
  *   node private-tree.js build <repo> <story|-> <carpeta>    → imprime el JSON del árbol; sale 4 sin público (no se
  *                                                              corre nada), 1 si no se pudo armar (el motivo en stderr)
- *   node private-tree.js touched <repo> <público> <story|-> <salida.json>
+ *   node private-tree.js touched <repo> <público|-> <story|-> <salida.json>   (`-`: debajo fue la versión del servidor)
  *        → lo tocado en los dos repos, en las rutas del árbol (el formato de touched-files.js, más `bases`: la base de
  *          cada repo para contar las líneas tocadas); siempre sale 0
  */
@@ -91,14 +95,44 @@ function findPublic(repo, story) {
   }
   let rama = null;
   try { rama = git(base, ['symbolic-ref', '-q', '--short', 'HEAD']).trim() || null; } catch (_e) { rama = null; }
-  return { root: base, branch: rama, commit: git(base, ['rev-parse', 'HEAD']).trim() };
+  // Del público vale la rama de la story; si no la tiene, lo que está en el servidor, no la carpeta que haya al lado.
+  const { ramaDe, ramaNombraLaStory, numeroDeLaStory } = require('./companion-repos.js');
+  const ramaPrivada = ramaDe(repo);
+  const deLaStory = !!rama && rama !== 'main' && (rama === ramaPrivada || ramaNombraLaStory(rama, numeroDeLaStory(story || null)));
+  let servidor = null;
+  if (!deLaStory) {
+    const leer = () => { try { return git(base, ['rev-parse', '-q', '--verify', 'refs/remotes/origin/main^{commit}']).trim() || null; } catch (_e) { return null; } };
+    // El origin/main de un clon que nadie pone al día está tan atrás como su main: se trae antes, con un tope y sin
+    // pedir credenciales. Sin red, el que había (el renglón del portón dice su fecha).
+    if (leer()) {
+      spawnSync('git', ['-C', base, 'fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main'], { stdio: 'ignore',
+        timeout: 30000, env: { ...SIN_GIT_DEL_LLAMADOR, GIT_TERMINAL_PROMPT: '0' } });
+    }
+    servidor = leer();
+  }
+  if (servidor) {
+    let fecha = null;
+    try { fecha = git(base, ['log', '-1', '--format=%cI', servidor]).trim() || null; } catch (_e) { fecha = null; }
+    return { root: base, branch: rama, commit: servidor, date: fecha, source: 'server' };
+  }
+  return { root: base, branch: rama, commit: git(base, ['rev-parse', 'HEAD']).trim(), source: deLaStory ? 'story' : 'disk' };
 }
 
-/** Clona `src` en `dest` en su HEAD y le pone encima lo que su disco tiene sin commitear (en un commit local). */
-function cloneWithDisk(src, dest) {
-  const head = git(src, ['rev-parse', 'HEAD']).trim();
+/**
+ * Clona `src` en `dest` en su HEAD y le pone encima lo que su disco tiene sin commitear (en un commit local). Con `at`,
+ * en ese commit y sin el disco: la versión del servidor.
+ */
+function cloneWithDisk(src, dest, { at = null } = {}) {
+  const head = at || git(src, ['rev-parse', 'HEAD']).trim();
   git(path.dirname(dest), ['clone', '-q', '--shared', '--no-checkout', src, dest]);
   git(dest, ['checkout', '-q', '--detach', head]);
+  // El origin/main del clon sería la rama main local del repo de origen, que puede estar atrás del servidor: las suites
+  // que cortan «lo propio de la rama» en `merge-base origin/main HEAD` verían como propio lo que ya entró a main. Con
+  // --prune salen antes las ramas locales copiadas: una `story` local chocaría con una `story/x` del servidor.
+  if (git(src, ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin/']).trim()) {
+    git(dest, ['fetch', '-q', '--prune', src, '+refs/remotes/origin/*:refs/remotes/origin/*']);
+  }
+  if (at) return { head, uncommitted: false };
   // modificados y borrados respecto de HEAD (índice o disco), y lo nuevo que el .gitignore no ignora
   const cambiados = lista0(git(src, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']));
   const nuevos = lista0(git(src, ['ls-files', '--others', '--exclude-standard', '-z']));
@@ -205,7 +239,7 @@ function build(repo, story, dir) {
   const arbol = path.join(dir, 'arbol');
   const publico = path.join(dir, 'publico');
   const priv = cloneWithDisk(repo, arbol);
-  const pubFoto = cloneWithDisk(pub.root, publico);
+  const pubFoto = cloneWithDisk(pub.root, publico, { at: pub.source === 'server' ? pub.commit : null });
   const layer = teamLayer();
   const team = layer.dir || '';
   const report = path.join(dir, 'superpuesto.json');
@@ -252,13 +286,14 @@ function touchedIn(repo, story) {
 
 function touchedBoth(repo, pub, story) {
   const a = touchedIn(repo, story);
-  const b = touchedIn(pub, story);
+  // `pub` nulo: debajo fue la versión del servidor, y la story no tocó nada del público
+  const b = pub ? touchedIn(pub, story) : { known: true, files: [], sources: {}, base: null };
   const known = a.known && b.known;
   const reason = known ? null : [!a.known && `en el privado: ${a.reason}`, !b.known && `en el público: ${b.reason}`].filter(Boolean).join('; ');
   // `bases`: contra qué commit de cada repo se cuentan las líneas tocadas (test-gate-report.js): en el árbol armado, la
   // base del privado sola contaba todo el público como tocado
   return { known, files: [...new Set([...(a.files || []), ...(b.files || [])])], sources: { private: a.sources, public: b.sources },
-    bases: [a.base, b.base], reason };
+    bases: [a.base, b.base].filter(Boolean), reason };
 }
 
 module.exports = { isThinPrivate, detectThin, findPublic, cloneWithDisk, teamLayer, build, touchedBoth, NoPublic };
@@ -278,10 +313,10 @@ if (require.main === module) {
       process.exit(0);
     }
     if (cmd === 'touched' && rest.length === 4) {
-      fs.writeFileSync(rest[3], `${JSON.stringify(touchedBoth(path.resolve(rest[0]), path.resolve(rest[1]), sinStory(rest[2])))}\n`);
+      fs.writeFileSync(rest[3], `${JSON.stringify(touchedBoth(path.resolve(rest[0]), rest[1] === '-' ? null : path.resolve(rest[1]), sinStory(rest[2])))}\n`);
       process.exit(0);
     }
-    process.stderr.write('uso: private-tree.js detect <repo> · build <repo> <story|-> <carpeta> · touched <repo> <público> <story|-> <salida.json>\n');
+    process.stderr.write('uso: private-tree.js detect <repo> · build <repo> <story|-> <carpeta> · touched <repo> <público|-> <story|-> <salida.json>\n');
     process.exit(2);
   } catch (e) {
     process.stderr.write(`[test-gate] 🔴 ${e.message}\n`);
