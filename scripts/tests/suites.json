@@ -2200,6 +2200,12 @@
       "requiere": []
     },
     {
+      "__nota": "quién aprueba una firma: el dueño en los repos del arnés, el dev en cualquier otro repo (scripts/lib/approver.js, por el remoto del repo).",
+      "raiz": "arnes",
+      "ruta": "tests/approver.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un pendiente nuevo en la lista de pendientes no entra sin su aprobación firmada: la biblioteca, el control del árbol y del commit, el comando de la firma antes de pedirla, la firma en el catálogo y el freno de escritura del registro.",
       "raiz": "arnes",
       "ruta": "tests/pending-approvals.test.js",
