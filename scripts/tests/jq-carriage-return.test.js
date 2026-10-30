@@ -161,15 +161,15 @@ test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — CMD-C1: 
   }
 });
 
-test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — CMD-C1: con el freno de seguridad apagado, los otros dos frenan', (t) => {
+// El freno de seguridad ya no se apaga con una variable: sin él quiere decir sin el hook instalado. Los otros dos se
+// corren solos, sin pasar por él.
+test('T12 LectoresDeLosFrenos_SinRetornoDeCarro @story-8.115 @ac-11 — CMD-C1: sin el freno de seguridad, los otros dos frenan', (t) => {
   avisarSinJq(t);
   const casos = [['Bash', 'echo a \r# ; npm test'], ['Bash', 'git com\rmit -m x'], ['PowerShell', 'Get-ChildItem\rRemove-Item -Recurse -Force ~'],
     ['PowerShell', 'Remove-Item -Recurse -Force ~']];
   for (const [camino, bin] of CAMINOS) for (const [tool, command] of casos) {
-    const apagado = correr('safety-guard-pre.sh', { tool, command, bin, env: { TYCON_SAFETY_OFF: '1' } });
-    assert.strictEqual(apagado.status, 0, `${camino}: el freno de seguridad apagado tenía que dejar pasar (si no, la prueba no mide nada)`);
     for (const hook of ['test-scope-guard-pre.sh', 'engram-pre-commit.sh']) {
-      const r = correr(hook, { tool, command, bin, env: { TYCON_SAFETY_OFF: '1' } });
+      const r = correr(hook, { tool, command, bin });
       assert.strictEqual(r.status, 2, `${hook} · ${camino} · ${tool}: ${JSON.stringify(command)} tenía que frenar · ${r.stderr.slice(0, 200)}`);
       assert.match(r.stderr, /CMD-C1/, `${hook} · ${camino}: frenó sin decir CMD-C1`);
     }

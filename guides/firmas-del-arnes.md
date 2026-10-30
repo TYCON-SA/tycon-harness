@@ -68,7 +68,13 @@ en dos. Los nombres de esta tabla todavía no se escriben en el perfil: llegan c
 | `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando | `escape:TYCON_SAFETY_OFF` |
 | `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
+| `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
 <!-- fin: niveles -->
+
+`emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
+--request <número>` (el número lo da el cartel del freno) o `--commit`, en la terminal de la persona
+(guides/safety-guard.md, «Saltear el freno»). `escape:TYCON_SAFETY_OFF` y
+`escape:TYCON_PROD_LINT` siguen en la tabla, pero ya nada las pide: se retiran en una tanda aparte.
 
 ## Las firmas
 
