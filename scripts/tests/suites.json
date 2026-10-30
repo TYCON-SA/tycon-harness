@@ -1532,6 +1532,12 @@
       "requiere": []
     },
     {
+      "__nota": "quién firmó un cambio de control: «coordinadora» sólo si la sesión que lo aprobó es la designada vigente; si no, el dueño.",
+      "raiz": "arnes",
+      "ruta": "tests/control-signer.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el examen de revisores encuentra los revisores donde el arnés los instala, también en una máquina sólo con Codex.",
       "raiz": "arnes",
       "ruta": "tests/advisor-runner-agents-dir.test.js",

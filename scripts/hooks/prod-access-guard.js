@@ -231,7 +231,8 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
   const regla = reglaFija || reglaDelMotivo(motivo);
   try { registrar(ctx, { bloqueo: true, motivo }); } catch { /* el registro es ayuda, no evidencia */ }
   // la línea canónica que lee la cuenta del tablero (story 2.6): sin host, sin sentencia
-  recordDecision({ freno: 'prod-access-guard', regla, veredicto: 'bloqueo', cmd: ctx && ctx.cmd });
+  // `causa`: el motivo de un bloqueo de `produccion`, que frena por causas distintas (lista de guard-record.js)
+  recordDecision({ freno: 'prod-access-guard', regla, veredicto: 'bloqueo', cmd: ctx && ctx.cmd, motivo: (ctx && ctx.causa) || undefined });
   // lo que se frena por NO PODER MIRAR (snapshot, índice, reloj) va también a hook-errors.log, que es lo
   // que el aviso de arranque cuenta — si no, esas fallas no las veía nadie (revisores)
   if (regla === 'no-pude-mirar' && /no pude|no encontré|sin tiempo|no parece/.test(motivo)) {
@@ -454,7 +455,7 @@ function decidir(entrada) {
       if (veredicto) frenar(veredicto, [
         'La contraseña de producción vive en el Llavero y NO pasa por la conversación.',
         'Si necesitás cargarla o cambiarla, la puerta deja un `.command` en el Escritorio y lo abrís vos.',
-      ], { cmd }, 'produccion');                        // el motivo cita el servicio tal como lo escribió el comando
+      ], { cmd, causa: 'llavero' }, 'produccion');      // el motivo cita el servicio tal como lo escribió el comando
     }
   }
 
@@ -473,7 +474,8 @@ function decidir(entrada) {
     ] : [
       'El catálogo se edita con el editor (y eso abre un cuadro de aprobación); el índice lo regenera el arnés.',
       'Reescribir el catálogo o borrar el índice NO destraba un host de producción: la memoria es pegajosa.',
-    ], { cmd }, destino.indecidible ? 'nombre-indecidible' : 'produccion');
+    ], { cmd, causa: destino.indecidible ? undefined : (/sale de la variable|arma una sustituci/.test(destino.motivo) ? 'nombre-armado' : 'escritura-protegida') },
+    destino.indecidible ? 'nombre-indecidible' : 'produccion');
   }
 
   // ── 3. la puerta, sólo en su forma canónica (AC 11 y 12) ────────────────────────────────────
@@ -642,7 +644,7 @@ function decidir(entrada) {
       frenar(`ese comando nombra un servidor de base que no es un literal (${n.crudo}).`, [
         'Un valor que sale de una variable no se puede clasificar: se trata como producción.',
         'Escribí el host tal cual, o declaralo en el .tycon/production.json del repo de ese proyecto.',
-      ], { cmd, crudo: n.crudo }, 'produccion');       // el motivo cita el texto del comando
+      ], { cmd, crudo: n.crudo, causa: 'servidor-no-literal' }, 'produccion');   // el motivo cita el texto del comando
     }
     const c = clasificar(n.host, indice);
     // 🔴 story 2.6 · ESTO es un `paso` y hay que anotarlo: se miró un servidor y NO era producción.
@@ -657,7 +659,7 @@ function decidir(entrada) {
           : 'Toda consulta a producción pasa por la puerta y la aprobás vos, sentencia por sentencia.',
         `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclasificar ${n.host}`,
         ...caminoFirewall(n.host),
-      ], { cmd, host: n.host, repos: c.repos }, 'produccion');
+      ], { cmd, host: n.host, repos: c.repos, causa: 'base-de-produccion' }, 'produccion');
     }
     // desconocido
     frenar(`«${n.host}» no está declarado en ningún proyecto de esta máquina.`, [

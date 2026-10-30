@@ -62,3 +62,32 @@ test('T6 PreCommitAnotaLaAbreviada @story-4.12 @ac-2', (t) => {
   assert.strictEqual(correr(t, `git commit -m a ${OPCION.slice(0, -1)}`).length, 1);
   assert.strictEqual(correr(t, `git commit -m a ${OPCION.slice(0, -2)}; ls`).length, 1);
 });
+
+// T7 PreCommitAnotaSoloElArgumentoDeGit
+// 🔴 Falla con: buscar la opción en todo el texto: un mensaje, un heredoc o un grep que sólo la nombran saltean el
+// freno del commit y dejan una línea de bypass que no fue tal.
+test('T7 PreCommitAnotaSoloElArgumentoDeGit', (t) => {
+  // stable-data: los `git commit …` de esta prueba son el texto del evento que lee el freno; no se corre ningún commit
+  for (const cmd of [`git commit -m "no usar ${OPCION}"`, `grep -n -- ${OPCION} f.md && git commit -m a`,
+    `git commit -F - <<'X'\nno usar ${OPCION}\nX`, `git commit -m ${OPCION}`]) {
+    assert.strictEqual(correr(t, cmd).length, 0, cmd);
+  }
+  for (const cmd of [`git commit "${OPCION}" -m a`, `bash -c "git commit ${OPCION} -m a"`, `git -C . commit -q ${OPCION} -m a`]) {
+    assert.strictEqual(correr(t, cmd).length, 1, cmd);
+  }
+});
+
+// T8 PreCommitLeeLasComillasYLasCortas
+// 🔴 Falla con: cortar el comando en `;`, `|` o el salto de línea antes de mirar las comillas, no leer `$'…'`, `-n` ni
+// las opciones con valor abreviadas: un salteo real queda sin línea, o una mención cuenta como salteo.
+test('T8 PreCommitLeeLasComillasYLasCortas', (t) => {
+  // stable-data: los `git commit …` de esta prueba son el texto del evento que lee el freno; no se corre ningún commit
+  for (const cmd of [`git commit -m "a; b" ${OPCION}`, `git commit -m "a | b" ${OPCION}`, `git commit -m "a\nb" ${OPCION}`,
+    `git commit $'${OPCION}' -m a`, 'git commit -n -m a', 'git commit -an -m a', `git commit --trailer x ${OPCION}`]) {
+    assert.strictEqual(correr(t, cmd).length, 1, cmd);
+  }
+  for (const cmd of [`git commit --trailer ${OPCION} -m a`, `git commit --mess ${OPCION}`, `git commit -nm${OPCION}`.replace('-nm', '-m'),
+    `echo "x; git commit ${OPCION}"`]) {
+    assert.strictEqual(correr(t, cmd).length, 0, cmd);
+  }
+});
