@@ -1161,3 +1161,103 @@ test('TestGate_OldResultFolders_Pruned — al arrancar, la puerta borra sus carp
   const llamada = gate.indexOf('lib/old-gate-results.js" "$TG_TMP"');
   assert.ok(llamada >= 0 && llamada < gate.indexOf('mktemp -d "$TG_TMP/test-gate-XXXXXX"'), 'la puerta limpia el mismo temporal donde crea su carpeta, antes de crearla');
 });
+
+// Una suite portable (`requiere: []`) corre en la CI con una HOME vacía, suya, con sólo los dos enlaces de instalación.
+// En la máquina corría con la HOME real: pasaba acá y fallaba allá (o al revés) por lo que hay en la carpeta personal.
+// Las que piden herramientas siguen con la real: la sesión de `az` y compañía vive ahí.
+// 🔴 mutación: lanzar todas con el ambiente de quien llama → la portable ve la HOME real.
+test('T18 RunSuites_PortableSuite_EmptyHome — la portable corre con su HOME vacía, como en la CI; la que pide herramientas, con la real', () => {
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/portable-a.test.js', requiere: [] },
+    { raiz: 'arnes', ruta: 'tests/portable-b.test.js', requiere: [] },
+    { raiz: 'arnes', ruta: 'tests/con-az.test.js', requiere: ['az'] },
+  ] });
+  const casaReal = fs.mkdtempSync(path.join(os.tmpdir(), 'casa-real-'));
+  fs.writeFileSync(path.join(casaReal, 'de-la-maquina.txt'), 'x');
+  const informe = (nombre) => `const fs=require('fs'),path=require('path');fs.writeFileSync(${JSON.stringify(path.join(f.root, nombre))},JSON.stringify({home:process.env.HOME,up:process.env.USERPROFILE,ve:fs.existsSync(path.join(process.env.HOME,'de-la-maquina.txt')),skills:fs.existsSync(path.join(process.env.HOME,'.claude','agent-skills'))?fs.realpathSync(path.join(process.env.HOME,'.claude','agent-skills')):null}));`;
+  f.escribir('arnes', 'tests/portable-a.test.js', informe('a.json'));
+  f.escribir('arnes', 'tests/portable-b.test.js', informe('b.json'));
+  f.escribir('arnes', 'tests/con-az.test.js', informe('az.json'));
+  const r = runWith(f, { env: { HOME: casaReal, USERPROFILE: casaReal } });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const leer = (n) => JSON.parse(fs.readFileSync(path.join(f.root, n), 'utf8'));
+  const a = leer('a.json'), b = leer('b.json'), az = leer('az.json');
+  assert.notStrictEqual(a.home, casaReal);
+  assert.strictEqual(a.ve, false, 'la portable no ve la carpeta personal real');
+  assert.strictEqual(a.up, a.home, 'USERPROFILE también');
+  assert.notStrictEqual(a.home, b.home, 'cada portable con la suya');
+  assert.strictEqual(a.skills, fs.realpathSync(path.dirname(f.skills)), 'con el enlace a las skills que se miden');
+  assert.strictEqual(az.home, casaReal, 'la que pide herramientas, con la real');
+  assert.ok(!fs.existsSync(a.home), 'la HOME vacía se borra al terminar');
+  assert.match(r.stdout, /2 portables con su HOME vacía/, 'la corrida lo dice');
+  assert.strictEqual(r.resumen.ambiente.empty_home, 2, 'y el resumen lo anota');
+});
+
+// Un gancho de git global de la máquina (core.hooksPath en su configuración global) que rechaza los merges sin mensaje
+// propio frena a una suite que hace `git merge --no-edit` en sus repos de juguete, y en la CI esa suite pasa.
+// La portable no ve la configuración global de git de quien corre: ni la de la HOME, ni GIT_CONFIG_GLOBAL, ni la de
+// XDG_CONFIG_HOME, ni la que viaja en variables.
+// 🔴 mutación: dejarle a la suite cualquiera de esas cuatro → el gancho rechaza el merge y la suite sale roja.
+test('T19 RunSuites_PortableSuite_NoGlobalGitConfig — un gancho global de la máquina no frena el merge de una portable', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/merge.test.js', requiere: [] }] });
+  const casaReal = fs.mkdtempSync(path.join(os.tmpdir(), 'casa-real-'));
+  const ganchos = path.join(casaReal, 'ganchos');
+  fs.mkdirSync(ganchos);
+  const rechazo = path.join(ganchos, 'commit-msg');
+  fs.writeFileSync(rechazo, '#!/bin/sh\ngrep -q "^Merge branch" "$1" && { echo "Merge commit requires a descriptive message" >&2; exit 1; }\nexit 0\n');
+  fs.chmodSync(rechazo, 0o755);
+  const conf = `[core]\n\thooksPath = ${ganchos}\n`;
+  fs.writeFileSync(path.join(casaReal, '.gitconfig'), conf);
+  const xdg = path.join(casaReal, 'xdg');
+  fs.mkdirSync(path.join(xdg, 'git'), { recursive: true });
+  fs.writeFileSync(path.join(xdg, 'git', 'config'), conf);
+  const global = path.join(casaReal, 'global.gitconfig');
+  fs.writeFileSync(global, conf);
+  f.escribir('arnes', 'tests/merge.test.js', [
+    "const { execFileSync } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');",
+    "const d = fs.mkdtempSync(path.join(os.tmpdir(), 'juguete-'));",
+    "const fecha = { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };",
+    "const g = (...a) => execFileSync('git', ['-C', d, '-c', 'user.name=p', '-c', 'user.email=p@ejemplo.invalid', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { stdio: 'pipe', env: fecha });",
+    "g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(d, 'a'), '1'); g('add', '-A'); g('commit', '-q', '-m', 'a');",
+    "g('checkout', '-q', '-b', 'otra'); fs.writeFileSync(path.join(d, 'b'), '1'); g('add', '-A'); g('commit', '-q', '-m', 'b');",
+    "g('checkout', '-q', 'main'); fs.writeFileSync(path.join(d, 'c'), '1'); g('add', '-A'); g('commit', '-q', '-m', 'c');",
+    "g('merge', '--no-edit', 'otra'); console.log('merge ok');",
+  ].join('\n'));
+  for (const env of [
+    { HOME: casaReal },
+    { GIT_CONFIG_GLOBAL: global },
+    { XDG_CONFIG_HOME: xdg },
+    { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: ganchos },
+    { GIT_CONFIG_PARAMETERS: `'core.hooksPath'='${ganchos}'` },
+  ]) {
+    const r = runWith(f, { env: { HOME: casaReal, USERPROFILE: casaReal, ...env } });
+    assert.strictEqual(r.status, 0, `${JSON.stringify(Object.keys(env))}\n${r.stdout}${r.stderr}${JSON.stringify(r.resumen && r.resumen.fallas)}`);
+  }
+});
+
+// La portable recibe además lo que la CI le pone a cada una: sin navegador (Chrome sin perfil se cuelga), sin el perfil
+// del equipo, su propia carpeta temporal y las guías del árbol que se mide. Y si su HOME vacía no se puede armar, corre
+// con la real y lo dice: la corrida no se cae. Las carpetas que dejó una corrida muerta se borran al arrancar.
+// 🔴 mutación: no ponerle esas variables → TYCON_CHROME llega vacío; dejar que la falla al armar la HOME tumbe la corrida → exit 3.
+test('T20 RunSuites_PortableSuite_CiEnvironment — el resto del ambiente de la CI, y una HOME que no se arma no tumba la corrida', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/ambiente.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/ambiente.test.js', `const fs=require('fs'),os=require('os'),path=require('path');fs.writeFileSync(${JSON.stringify(path.join(f.root, 'amb.json'))},JSON.stringify({home:process.env.HOME,chrome:process.env.TYCON_CHROME,profile:process.env.TYCON_PROFILE,guides:process.env.TYCON_GUIDES_DIR,tmp:os.tmpdir()}));`);
+  const muerta = path.join(f.repo, '.advisors', 'suite-homes-999999');
+  fs.mkdirSync(muerta, { recursive: true });
+  const r = runWith(f);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const a = JSON.parse(fs.readFileSync(path.join(f.root, 'amb.json'), 'utf8'));
+  assert.strictEqual(a.chrome, '0', 'sin navegador');
+  assert.strictEqual(a.profile, '0', 'sin el perfil del equipo');
+  assert.strictEqual(a.guides, path.resolve(f.repo), 'las guías del árbol que se mide');
+  assert.ok(a.tmp.startsWith(a.home), `la carpeta temporal es suya: ${a.tmp}`);
+  assert.ok(!fs.existsSync(muerta), 'la carpeta de una corrida muerta se borra');
+  // Un archivo donde tiene que ir la carpeta de las HOME: no se puede armar ninguna.
+  fs.rmSync(path.join(f.root, 'amb.json'));
+  fs.rmSync(path.join(f.repo, '.advisors'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(f.repo, '.advisors'), 'x');
+  const r2 = runWith(f);
+  assert.strictEqual(r2.status, 0, r2.stdout + r2.stderr);
+  assert.match(r2.stdout, /no pude armarle la HOME vacía/, 'lo dice');
+  assert.ok(fs.existsSync(path.join(f.root, 'amb.json')), 'y la suite corrió igual');
+});
