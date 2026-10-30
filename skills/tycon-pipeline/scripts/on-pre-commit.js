@@ -312,6 +312,28 @@ function storyIsUiStory(specContent, repoRoot, changed) {
   return require('./lib/ui-signal.js').screenScope(specContent, repoRoot, { changed }).active;
 }
 
+// ¿Alguna evidencia de la story, posterior al último cambio de código, trae el bloque «## Playwright Run» con veredicto
+// PASS y ningún fallo? Sin la hora del código (la matriz no corrió) no se acepta nada.
+function playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, codeMtime) {
+  // Sin hora de código (la historia no declara archivos) no hay contra qué fechar la corrida: no se acepta ninguna.
+  if (!Number.isFinite(codeMtime) || codeMtime <= 0) return false;
+  const k = require('./lib/evidence-key.js').keyOr(specAbs, storyId);
+  const prefijo = `${k.key || storyId}-`;
+  return dodEvidenceDirsFor(cwd).some((dir) => {
+    let nombres = [];
+    try { nombres = fs.readdirSync(dir); } catch { return false; }
+    return nombres.filter((f) => f.startsWith(prefijo) && f.endsWith('.md')).some((f) => {
+      try {
+        const full = path.join(dir, f);
+        if (fs.statSync(full).mtimeMs < codeMtime) return false;
+        // El veredicto y los fallidos se leen DENTRO del bloque de Playwright, hasta el próximo título `## `.
+        const bloques = fs.readFileSync(full, 'utf8').split(/^(?=##\s)/m).filter((b) => /^##\s*Playwright Run/i.test(b));
+        return bloques.some((b) => /verdict(?:=|:\s*)PASS\b/.test(b) && /failed(?:=|:\s*)0\b/.test(b));
+      } catch { return false; }
+    });
+  });
+}
+
 // La baja de pantalla se dice al cerrar: una línea por stderr y por story, sin
 // bloquear. El texto lo arma lib/ui-signal.js.
 function avisoBajaDePantalla(specContent, repoRoot, changed) {
@@ -1522,8 +1544,11 @@ function main() {
     // DODRT-C5.1 — para una story de UI, la evidencia DoD debe venir de un E2E
     // Playwright REAL (no curl/unit). Cierra el agujero de "probada en runtime" con solo curl al
     // backend (una story de UI puede declararse probada sin correr el Playwright de sus ACs).
+    // Cuenta también un bloque «## Playwright Run» en verde de CUALQUIER evidencia de la story posterior al último cambio
+    // de código: un `-cierre.md` más nuevo que el gate E2E no lo tapa.
     // La prueba con navegador que la persona dejó pendiente, con sus dos marcas (lib/browser-test.js): no frena, se dice.
     const deudaNavegador = storyIsUiStory(staged, cwd, diffFiles) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
+      && !playwrightVerdeDespuesDelCodigo(cwd, specAbs, storyId, (matrizDe(specRel, staged).matrix || {}).codeMtime)
       ? require('./lib/browser-test.js').debtDeclared({ stateDir: stateDirOf(os.homedir()), storyPath: path.resolve(cwd, specRel), content: staged })
       : null;
     if (deudaNavegador && deudaNavegador.declared) {
