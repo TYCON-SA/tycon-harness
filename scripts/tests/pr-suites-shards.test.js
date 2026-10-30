@@ -41,6 +41,7 @@ const VERDICT_STEP = 'Veredicto: ¿algún rojo NUEVO?';
 const MAX_EXPR = '${{ parameters.suiteShards }}';
 const MATRIX_OUTPUT = "dependencies.Validar.outputs['suites.matrix']";
 const HAS_CODE = "eq(dependencies.Validar.outputs['change.hayCodigo'], 'si')";
+const LONG_OUTPUT = "dependencies.Validar.outputs['suites.largo']";
 
 // Los pasos que corren las suites viven en una plantilla que usan dos trabajos, el de suites y el del banco.
 // Los jobs se leen del pipeline; un paso se busca en los dos archivos, y «el código» es el de los dos.
@@ -359,6 +360,9 @@ test('PrShards_MatrixAndEveryOfFromSameOutput', () => {
   assert.ok(plan.includes('echo "##vso[task.setvariable variable=matrix;isOutput=true]$MATRIX"'), 'el plan publica la matriz como salida del job');
   assert.match(plan, /node scripts\/ci\/suites-shard\.js jobs --max "\$\{\{ parameters\.suiteShards \}\}" --only "\$OUT\/run\.txt" --weight-set pr /,
     'calcula cuántos con el peso de lo que corre, los pesos de la 170 y el máximo del parámetro');
+  assert.ok(shardCall('long').includes('long --of "$OF" --minutes 40 --long-minutes 100 --only "$OUT/run.txt" --weight-set pr --exclusive-apart '),
+    `si el plan no entra en 40 min por trabajo, los largos, con los topes de los dos jobs: ${shardCall('long')}`);
+  assert.ok(plan.includes('echo "##vso[task.setvariable variable=largo;isOutput=true]$LONG"'), 'y lo publica para los dos jobs');
   assert.match(plan, /MATRIX="\$\(node scripts\/ci\/suites-shard\.js matrix --of "\$JOBS_NEEDED"\)"/, 'arma la matriz con ese número');
   assert.match(plan, /OF="\$\(node scripts\/ci\/suites-shard\.js of --matrix "\$MATRIX"\)"/, 'y su --of sale de la matriz, no del número');
 
@@ -459,23 +463,29 @@ test('T48 PrShards_JobCountUnknownWithExclusiveSuites_CountsOnlyTheOnesTheSuites
 
 test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () => {
   const all = jobs();
-  assert.deepStrictEqual(Object.keys(all), ['Validar', 'Bench', 'Suites', 'Verdict'], 'los cuatro jobs, en orden');
-  const { Validar: validate, Bench: bench, Suites: suites, Verdict: verdict } = all;
+  assert.deepStrictEqual(Object.keys(all), ['Validar', 'Bench', 'Suites', 'SuitesLargo', 'Verdict'], 'los cinco jobs, en orden');
+  const { Validar: validate, Bench: bench, Suites: suites, SuitesLargo: longSuites, Verdict: verdict } = all;
 
   // La decisión «¿trae código?» sale del paso del cambio hacia los otros jobs.
   assert.match(validate, /\n {8}displayName: 'Qué trae este cambio'\n {8}name: change\n/, 'el paso del cambio tiene nombre: los otros jobs lo leen por él');
   assert.ok(stepBody('Qué trae este cambio').includes('echo "##vso[task.setvariable variable=hayCodigo;isOutput=true]$HAY_CODIGO"'),
     'y publica hayCodigo como salida del job');
-  for (const [name, body] of [['Bench', bench], ['Suites', suites]]) {
+  for (const [name, body] of [['Bench', bench], ['Suites', suites], ['SuitesLargo', longSuites]]) {
     assert.match(body, /\n {4}dependsOn: Validar\n/, `${name} espera a Validar`);
-    assert.ok(body.includes(`\n    condition: and(succeeded(), ${HAS_CODE})\n`), `${name} corre sólo si el cambio trae código`);
   }
-  assert.match(verdict, /\n {4}dependsOn: \[Validar, Bench, Suites\]\n/, 'el veredicto espera a todos');
+  assert.ok(bench.includes(`\n    condition: and(succeeded(), ${HAS_CODE})\n`), 'Bench corre sólo si el cambio trae código');
+  // Suites o SuitesLargo, nunca los dos: lo decide `suites.largo`; sin esa salida, Suites
+  assert.ok(suites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, ne(${LONG_OUTPUT}, 'si'))\n`), 'Suites corre si el plan entra en 40 min');
+  assert.ok(longSuites.includes(`\n    condition: and(succeeded(), ${HAS_CODE}, eq(${LONG_OUTPUT}, 'si'))\n`), 'SuitesLargo, sólo si no entra');
+  assert.match(verdict, /\n {4}dependsOn: \[Validar, Bench, Suites, SuitesLargo\]\n/, 'el veredicto espera a todos');
   assert.ok(verdict.includes(`\n    condition: and(always(), ${HAS_CODE})\n`),
     'y corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope — salvo un cambio sin código');
 
   // Los topes: 40 por trabajo de suites (de dónde sale el número, en T33), 10 el veredicto.
   assert.match(suites, /\n {4}timeoutInMinutes: 40\n/, 'cada trabajo de suites tiene 40 minutos de tope');
+  assert.match(longSuites, /\n {4}timeoutInMinutes: 100\n/, 'el largo, 100: el tope que decidió el dueño (2026-10-30)');
+  const stepsOf = (job) => job.slice(job.indexOf('\n    strategy:\n')).split('\n').filter((l) => l.trim() && !/^\s*#/.test(l) && !/^ {4}timeoutInMinutes:/.test(l)).join('\n');
+  assert.strictEqual(stepsOf(longSuites), stepsOf(suites), 'el largo corre los mismos pasos, con la misma matriz');
   assert.ok(suites.endsWith(`${TEMPLATE_USE}`) || suites.includes(`${TEMPLATE_USE}\n`), 'los pasos del trabajo de suites son los de la plantilla');
   assert.match(verdict, /\n {4}timeoutInMinutes: 10\n/, 'el veredicto, 10');
 

@@ -77,6 +77,13 @@
  * cae al máximo si esto sale 2: nunca menos trabajos por no saber. El número viaja como la matriz misma (`matrix`) y
  * cada paso que necesita la cuenta la saca de ella (`of`): así la matriz y los `--of` no pueden quedar distintos.
  *
+ * EL TRABAJO LARGO (`long`): los trabajos no suben del máximo (los carriles son de toda la organización), pero un plan
+ * que no entra en el tope del trabajo se corta sin medir lo que falta (medido: ~10300 s de peso en 2 trabajos, los dos
+ * cortados a los 40 min). `long --of <n>` dice `si` cuando cada trabajo llevaría más que `job_deadline` (el peso que
+ * entra en un trabajo de `--minutes`, 40, del juego pedido) y `no` si entra. Con `si` corre la variante larga del
+ * trabajo (`--long-minutes`, 100); el porqué y los minutos que harían falta van por `complain`. Un juego sin
+ * `job_deadline` es un pedido negado.
+ *
  * EL TOPE DE CADA SUITE (`caps`): en la validación de cada rama una suite colgada se come el
  * trabajo entero (1185 s contra ~161). Cada trabajo pide los topes de su lista una vez y corre
  * cada suite con `scripts/ci/run-capped.js`. El tope es el peso de la suite en el juego pedido por `suite_cap.factor`,
@@ -130,6 +137,7 @@ const USAGE = 'uso: suites-shard.js list --shard <i> --of <n> --skills <dir> --s
   + '     suites-shard.js plan --of <n>\n'
   + '     suites-shard.js merge --of <n> --artifacts <dir> --out <dir>\n'
   + '     suites-shard.js jobs --max <n> [--budget <segundos>]\n'
+  + '     suites-shard.js long --of <n> [--minutes <40>] [--long-minutes <100>]\n'
   + '     suites-shard.js caps [--weight-set <nombre>]\n'
   + '     suites-shard.js matrix --of <n>\n'
   + '     suites-shard.js of --matrix <la matriz>\n'
@@ -209,17 +217,21 @@ function readWeights(file, set = null) {
   const base = checkWeights(data, `el archivo de pesos (${file})`);
   // El juego del nocturno no trae `job_budget`: el nocturno corre siempre todos sus trabajos. Su `suite_cap` (el de
   // arriba) es el tope de cada suite del banco nocturno.
-  if (set === null) return { ...base, budget: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`) };
+  if (set === null) return { ...base, budget: null, deadline: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`) };
   const chosen = data[set];
   if (!chosen || typeof chosen !== 'object' || Array.isArray(chosen)) throw new Refused(`el archivo de pesos (${file}) no trae el juego «${set}» que pide --weight-set`);
   const own = checkWeights(chosen, `el juego de pesos «${set}» (${file})`);
   if (chosen.job_budget !== undefined && !(typeof chosen.job_budget === 'number' && Number.isFinite(chosen.job_budget) && chosen.job_budget > 0)) {
     throw new Refused(`el juego de pesos «${set}» (${file}) trae «job_budget» y no es un número mayor que 0: ${JSON.stringify(chosen.job_budget)}`);
   }
+  if (chosen.job_deadline !== undefined && !(typeof chosen.job_deadline === 'number' && Number.isFinite(chosen.job_deadline) && chosen.job_deadline > 0)) {
+    throw new Refused(`el juego de pesos «${set}» (${file}) trae «job_deadline» y no es un número mayor que 0: ${JSON.stringify(chosen.job_deadline)}`);
+  }
   return {
     fallback: own.fallback,
     weights: { ...base.weights, ...own.weights },
     budget: chosen.job_budget === undefined ? null : chosen.job_budget,
+    deadline: chosen.job_deadline === undefined ? null : chosen.job_deadline,
     cap: readCapRule(chosen.suite_cap, `el juego de pesos «${set}» (${file})`),
   };
 }
@@ -383,6 +395,32 @@ function commandJobs(argv, write, complain) {
   const aside = bench.length ? ` · ${bench.length} suite(s) que corren solas van al trabajo del banco (~${Math.round(benchLoad)} s)` : '';
   complain(`suites: ${count} trabajo(s) de un máximo de ${max} · ~${Math.round(total)} s de peso · ${budget} s por trabajo${aside}\n`);
   write(`${count}\n`);
+}
+
+/**
+ * Si los trabajos de suites tienen que ser los largos: `si` o `no`, solo en la salida; el porqué va por `complain`.
+ */
+function commandLong(argv, write, complain) {
+  const of = positiveInteger(option(argv, '--of'));
+  if (of === null) throw new Refused(`--of tiene que ser un entero mayor que 0 (vino ${JSON.stringify(option(argv, '--of'))})`);
+  const minutes = argv.includes('--minutes') ? positiveInteger(option(argv, '--minutes')) : 40;
+  const longMinutes = argv.includes('--long-minutes') ? positiveInteger(option(argv, '--long-minutes')) : 100;
+  if (minutes === null || longMinutes === null || longMinutes <= minutes) {
+    throw new Refused(`--minutes y --long-minutes tienen que ser enteros mayores que 0, el largo mayor (vinieron ${JSON.stringify(option(argv, '--minutes'))} y ${JSON.stringify(option(argv, '--long-minutes'))})`);
+  }
+  const { weights, regular } = load(argv);
+  if (weights.deadline === null) throw new Refused(`el juego de pesos no trae «job_deadline» (lo que entra en un trabajo de ${minutes} min): si hace falta el trabajo largo no se adivina`);
+  const perJob = regular.reduce((sum, suite) => sum + weightOf(suite, weights), 0) / Math.min(of, regular.length || 1);
+  const head = `suites: ~${Math.round(perJob)} s de peso por trabajo y en uno de ${minutes} min entran ~${weights.deadline}`;
+  if (perJob <= weights.deadline) {
+    complain(`${head}: los trabajos de siempre\n`);
+    write('no\n');
+    return;
+  }
+  const needed = Math.ceil((minutes * perJob) / weights.deadline);
+  const beyond = needed > longMinutes ? `: más que los ${longMinutes} del trabajo largo, lo que no entre sale no medido` : '';
+  complain(`${head}: van los trabajos largos (hacen falta ~${needed} min${beyond})\n`);
+  write('si\n');
 }
 
 /**
@@ -612,7 +650,7 @@ function commandMerge(argv, write) {
   write(`${lines.join('\n')}\n`);
 }
 
-const COMMANDS = { list: commandList, plan: commandPlan, merge: commandMerge, jobs: commandJobs, caps: commandCaps, matrix: commandMatrix, of: commandOf };
+const COMMANDS = { list: commandList, plan: commandPlan, merge: commandMerge, jobs: commandJobs, long: commandLong, caps: commandCaps, matrix: commandMatrix, of: commandOf };
 
 function main(argv, write = (text) => process.stdout.write(text), complain = (text) => process.stderr.write(text)) {
   const command = COMMANDS[argv[0]];
