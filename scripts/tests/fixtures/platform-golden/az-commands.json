@@ -170,6 +170,7 @@
     "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",
     "//            az boards work-item show --organization <org> --id <id> --output json   (por cada resultado: la etiqueta exacta)",
     "//            az boards work-item update --organization <org> --id <id> --assigned-to <correo> --output json   (con auto_assign)",
+    "//            az boards work-item update --organization <org> --id <id> --fields <campo>=<valor> --output json",
     "//            az boards work-item update --organization <org> --id <id> --state <activo> --output json",
     "//            az boards work-item update --organization <org> --id <id> --state <cerrado> --fields Microsoft.VSTS.Scheduling.CompletedWork=<horas> --output json",
     "//            az devops invoke --organization <org> --area wit --resource workItemTypeStates --route-parameters project=<proyecto> type=<tipo> --api-version 7.1 --output json",
