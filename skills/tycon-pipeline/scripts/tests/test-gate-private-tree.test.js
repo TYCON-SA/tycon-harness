@@ -333,6 +333,19 @@ test('PrivateTree_NoPublic_Exit4 @story-7.36 @ac-6', () => {
   assert.strictEqual(r.code, 4, r.salida);
   assert.match(r.salida, /no encontré el público/, r.salida);
   assert.ok(!nombra(r, 'demo.test.js') && !nombra(r, 'pub-lib.test.js') && !/corriendo scripts\/tests\/suites\.json/.test(r.salida), `no corrió nada\n${r.salida}`);
+  // sin un público al lado en la rama de la story, el comando de la corrida cruzada va con el hueco a llenar
+  assert.ok(r.salida.includes(`test-gate.sh' '<clon o worktree del público>' '${fs.realpathSync(lab.story)}'`), `nombra la corrida cruzada\n${r.salida}`);
+});
+
+test('PrivateTree_NoPublic_FromWorktree_NamesCrossRunReady', () => {
+  // el worktree del privado no trae el hermano declarado; el del público está al lado, en la misma rama
+  const lab = laboratorio({ declarar: false });
+  git(lab.priv, 'checkout', '-q', '-b', 'story/x-arreglo');
+  git(lab.pub, 'checkout', '-q', '-b', 'story/x-arreglo');
+  const r = portón(lab);
+  assert.strictEqual(r.code, 4, r.salida);
+  assert.ok(r.salida.includes(`test-gate.sh' '${fs.realpathSync(lab.pub)}' '${fs.realpathSync(lab.story)}'`), `el comando va listo, con el público de la rama\n${r.salida}`);
+  assert.ok(!nombra(r, 'demo.test.js') && !nombra(r, 'pub-lib.test.js'), `no corrió nada\n${r.salida}`);
 });
 
 test('PrivateTree_BrokenBranch_Red_EvenIfInstalledGreen @story-7.36 @ac-9', () => {
