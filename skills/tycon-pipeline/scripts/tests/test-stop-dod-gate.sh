@@ -50,9 +50,81 @@ run | grep -q '"decision":"block"' && grep -q '"iter": 1' "$MK" && echo "✓ C r
 echo '{"storyId":"X","autonomous":true,"iter":5,"checks":{"tests":"red:x"}}' > "$MK"
 run | grep -q 'AUTONOMÍA DETENIDA' && grep -q '"autonomous": false' "$MK" && echo "✓ D cap → escala" || { echo "✗ D"; fail=1; }
 
-# E) no-progreso (mismos fallos, streak 2→3) → escala
-echo '{"storyId":"X","autonomous":true,"iter":1,"noProgressStreak":2,"lastFailures":["tests → red:x"],"checks":{"tests":"red:x"}}' > "$MK"
-run | grep -q 'thrashing' && grep -q '"autonomous": false' "$MK" && echo "✓ E no-progreso → escala" || { echo "✗ E"; fail=1; }
+# E) la primera vuelta sin progreso (los mismos fallos que la anterior) → escala. Tres intentos iguales no aprenden nada.
+# 🔴 rojo: con el freno en tres vueltas, este caso sigue iterando.
+echo '{"storyId":"X","autonomous":true,"iter":1,"noProgressStreak":0,"lastFailures":["tests → red:x"],"checks":{"tests":"red:x"}}' > "$MK"
+run | grep -q 'ninguno de los fallos' && grep -q '"autonomous": false' "$MK" && echo "✓ E primera vuelta sin progreso → escala" || { echo "✗ E"; fail=1; }
+
+# E1) el primer rojo NO es una vuelta sin progreso: no hay vuelta anterior con qué comparar → block, sin escalar.
+# 🔴 rojo: contar el primer rojo como «sin progreso» escala antes de que el agente intente nada.
+echo '{"storyId":"X","autonomous":true,"iter":0,"lastFailures":[],"checks":{"tests":"red:x"}}' > "$MK"
+OUTE1="$(run)"
+if printf '%s' "$OUTE1" | grep -q 'AUTONOMÍA DETENIDA'; then
+  echo "✗ E1 — escaló en el primer rojo, sin dejar intentar"; fail=1
+elif printf '%s' "$OUTE1" | grep -q '"decision":"block"' && grep -q '"noProgressStreak": 0' "$MK" && grep -q '"autonomous": true' "$MK"; then
+  echo "✓ E1 primer rojo → block, sigue la autonomía"
+else
+  echo "✗ E1"; fail=1
+fi
+
+# E2) al escalar, la persona ve el rojo crudo (systemMessage), no sólo el agente.
+# 🔴 rojo: sin systemMessage, el rojo llega a la persona sólo si el agente lo transcribe.
+echo '{"storyId":"X","autonomous":true,"iter":1,"lastFailures":["tests → red:exit=1 suite foo.test.js"],"checks":{"tests":"red:exit=1 suite foo.test.js"}}' > "$MK"
+run_strict
+if printf '%s' "$OUT" | node -e '
+  const o = JSON.parse(require("fs").readFileSync(0, "utf8").trim());
+  if (o.decision !== "block") process.exit(3);
+  if (!/tests → red:exit=1 suite foo\.test\.js/.test(o.systemMessage || "")) process.exit(4);
+' 2>/dev/null; then
+  echo "✓ E2 escalada → la persona ve el rojo tal cual (systemMessage)"
+else
+  echo "✗ E2 — la escalada no le muestra el rojo a la persona (OUT=$OUT)"; fail=1
+fi
+
+# P) el rótulo de las pruebas no dice cuántas fallan: que BAJE la cantidad en rojo (la escribe el portón en
+# .advisors/tests-result.json del repo) también es avance. Sin la cantidad, vale la regla del rótulo.
+REPO_P="$(mktemp -d)"; mkdir -p "$REPO_P/.advisors"
+tr_p() { printf '{"suite_green":false,"totals":{"total":20,"passed":%s,"failed":%s}}' "$((20-$1))" "$1" > "$REPO_P/.advisors/tests-result.json"; }
+mk_p() { printf '{"storyId":"X","repoPath":"%s","autonomous":true,"iter":1,"lastFailures":["tests → red:exit=1"],%s"checks":{"tests":"red:exit=1"}}' "$REPO_P" "$1" > "$MK"; }
+
+# P1) de 10 pruebas en rojo a 1, mismo rótulo → avance: block, sin escalar, y anota la cantidad nueva.
+# 🔴 rojo: comparando sólo el rótulo, arreglar 9 de 10 escala como «sin avance».
+tr_p 1; mk_p '"lastTestsFailed":10,'
+OUTP1="$(run)"
+if ! printf '%s' "$OUTP1" | grep -q 'AUTONOMÍA DETENIDA' && printf '%s' "$OUTP1" | grep -q '"decision":"block"' && grep -q '"lastTestsFailed": 1' "$MK"; then
+  echo "✓ P1 baja la cantidad de pruebas en rojo → avance"
+else
+  echo "✗ P1 — arreglar 9 de 10 pruebas contó como sin avance"; fail=1
+fi
+
+# P2) la misma cantidad y el mismo rótulo → sin avance: escala.
+tr_p 10; mk_p '"lastTestsFailed":10,'
+run | grep -q 'AUTONOMÍA DETENIDA' && echo "✓ P2 misma cantidad en rojo → escala" || { echo "✗ P2 — no escaló con la misma cantidad"; fail=1; }
+
+# P3) el archivo no trae la cantidad (otra herramienta) → cae a la regla del rótulo, que con el mismo rótulo escala.
+# 🔴 rojo: tomar la falta de cantidad como cero (o como avance) dejaría iterar sin fin.
+printf '{"suite_green":false}' > "$REPO_P/.advisors/tests-result.json"; mk_p '"lastTestsFailed":10,'
+run | grep -q 'AUTONOMÍA DETENIDA' && echo "✓ P3 sin cantidad → regla del rótulo" || { echo "✗ P3 — sin cantidad no cayó a la regla del rótulo"; fail=1; }
+
+# P4) sin cantidad, pero el rótulo cambió → avance por el rótulo.
+mk_p '"lastTestsFailed":10,'
+node -e 'const fs=require("fs"),f=process.argv[1];const m=JSON.parse(fs.readFileSync(f,"utf8"));m.checks={tests:"red:exit=4"};fs.writeFileSync(f,JSON.stringify(m))' "$MK"
+OUTP4="$(run)"
+! printf '%s' "$OUTP4" | grep -q 'AUTONOMÍA DETENIDA' && printf '%s' "$OUTP4" | grep -q '"decision":"block"' \
+  && echo "✓ P4 sin cantidad y rótulo distinto → avance" || { echo "✗ P4"; fail=1; }
+rm -rf "$REPO_P"
+
+# E3) un verde en el medio olvida los fallos de antes: el rojo siguiente es un primer rojo, aunque sea el mismo.
+# 🔴 rojo: con lastFailures viejos, volver a romper la misma prueba más tarde escalaría sin dejar intentar.
+echo '{"storyId":"X","autonomous":true,"iter":1,"lastFailures":["tests → red:x"],"checks":{"tests":"green"}}' > "$MK"
+run >/dev/null
+node -e 'const fs=require("fs"),f=process.argv[1];const m=JSON.parse(fs.readFileSync(f,"utf8"));m.checks={tests:"red:x"};fs.writeFileSync(f,JSON.stringify(m))' "$MK"
+OUTE3="$(run)"
+if printf '%s' "$OUTE3" | grep -q '"decision":"block"' && ! printf '%s' "$OUTE3" | grep -q 'AUTONOMÍA DETENIDA'; then
+  echo "✓ E3 verde en el medio → el rojo siguiente no escala"
+else
+  echo "✗ E3 — escaló con fallos de antes de un verde"; fail=1
+fi
 
 # F) hard-escape (variable de entorno) → escala
 echo '{"storyId":"X","autonomous":true,"checks":{"tests":"red:x"}}' > "$MK"
@@ -103,7 +175,7 @@ rm -f "$MK"
 #    si queda 1 (resolvió uno) → progressed → noProgressStreak vuelve a 0, sigue iterando.
 echo '{"storyId":"X","autonomous":true,"iter":1,"noProgressStreak":2,"lastFailures":["tests → red:x","build → red:y"],"checks":{"tests":"red:x"}}' > "$MK"
 OUT="$(run)"
-if printf '%s' "$OUT" | grep -q 'thrashing'; then
+if printf '%s' "$OUT" | grep -q 'AUTONOMÍA DETENIDA'; then
   echo "✗ K — escaló pese a haber PROGRESO (escalado prematuro)"; fail=1
 elif printf '%s' "$OUT" | grep -q '"decision":"block"' && grep -q '"noProgressStreak": 0' "$MK"; then
   echo "✓ K progreso → streak reset (0), sigue iterando sin escalar"
