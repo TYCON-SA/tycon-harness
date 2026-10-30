@@ -29,11 +29,24 @@ const BASE = 'origin/main';
 const EVIDENCIA = '.advisors';
 const PATRONES_EVIDENCIA = [`${EVIDENCIA}/**/*.json`, `${EVIDENCIA}/**/*.jsonl`, `${EVIDENCIA}/**/*.md`];
 const esEvidencia = (rel) => rel.startsWith(`${EVIDENCIA}/`) && /\.(json|jsonl|md)$/i.test(rel);
+// el papeleo que no vence el ok de guardar: la evidencia, más las stories y su estado (`specs/`) y las tareas (`tasks/`),
+// sólo en sus datos y sus informes. Nunca una carpeta oculta, un enlace, lo de la lista sensible ni la configuración de
+// una herramienta (`package.json`, `tsconfig.json`): ésos cargan o deciden algo, y cambiarlos pide otro ok
+const PAPELEO_DE_LA_HUELLA = ['specs', 'tasks'];
+const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
+function esPapeleoDeLaHuella(rel, modo) {
+  if (modo === '120000') return false;
+  if (rel.startsWith(`${EVIDENCIA}/`)) return /\.(json|jsonl|md)$/.test(rel);
+  if (!PAPELEO_DE_LA_HUELLA.some((d) => rel.startsWith(`${d}/`)) || !/\.(json|jsonl|md)$/.test(rel)) return false;
+  if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
+  const pats = catalogo().SENSITIVE.map(patron);
+  return !pats.some((re) => re.test(rel.toLowerCase()));
+}
 // las firmas que eximen algo en la corrida: con una de ellas la story no terminó limpia
 const EXIMEN = ['critical-waiver', 'runtime-waiver', 'escape:force-manual'];
 
-function git(repo, args, env) {
-  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: env ? { ...process.env, ...env } : process.env, maxBuffer: 64 * 1024 * 1024 });
+function git(repo, args, env, input) {
+  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', input, env: env ? { ...process.env, ...env } : process.env, maxBuffer: 64 * 1024 * 1024 });
   // `crudo` sin recortar: en `status --porcelain` el primer espacio es parte de la columna del estado
   return { ok: r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
@@ -130,19 +143,29 @@ function huella(repo) {
   const gitDir = git(repo, ['rev-parse', '--absolute-git-dir']);
   if (!rama.ok || !gitDir.ok) return { repo, rama: null, base: null, arbol: null, error: rama.err || gitDir.err || 'no es un repo de git' };
   // el árbol que produciría el commit de todo: un índice aparte, desde HEAD, con todo lo del disco (respeta .gitignore).
-  // Sin la carpeta de evidencia del pipeline: approve-save escribe ahí su propia aprobación después de tomar la huella
+  // Sin el papeleo (esPapeleoDeLaHuella): approve-save escribe su propia aprobación en la evidencia después de tomar la
+  // huella, y la story cambia de estado después del ok
   const indice = path.join(gitDir.out, `save-ok-index-${process.pid}-${Date.now()}`);
   try {
     const env = { GIT_INDEX_FILE: indice };
     const tieneHead = git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).ok;
-    const pasos = [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A'],
-      ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...PATRONES_EVIDENCIA.map((g) => `:(glob)${g}`)], ['write-tree']];
-    let ultimo = null;
-    for (const p of pasos) {
-      ultimo = git(repo, p, env);
-      if (!ultimo.ok) return { repo, rama: rama.out, base: base.ok ? base.out : null, arbol: null, error: `git ${p[0]}: ${ultimo.err}` };
+    const falla = (p, r) => ({ repo, rama: rama.out, base: base.ok ? base.out : null, arbol: null, error: `git ${p}: ${r.err}` });
+    for (const p of [tieneHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], ['add', '-A']]) {
+      const r = git(repo, p, env);
+      if (!r.ok) return falla(p[0], r);
     }
-    return { repo, rama: rama.out, base: base.ok && base.out ? base.out : null, arbol: ultimo.out };
+    const ls = git(repo, ['ls-files', '-s', '-z', '--', EVIDENCIA, ...PAPELEO_DE_LA_HUELLA], env);
+    if (!ls.ok) return falla('ls-files', ls);
+    // cada entrada: «<modo> <blob> <etapa>\t<ruta>»
+    const fuera = ls.crudo.split('\0').filter(Boolean).map((e) => { const t = e.indexOf('\t'); return [e.slice(0, 6), e.slice(t + 1)]; })
+      .filter(([modo, rel]) => esPapeleoDeLaHuella(rel, modo)).map(([, rel]) => rel);
+    if (fuera.length) {
+      const rm = git(repo, ['update-index', '--force-remove', '-z', '--stdin'], env, fuera.map((f) => `${f}\0`).join(''));
+      if (!rm.ok) return falla('update-index', rm);
+    }
+    const arbol = git(repo, ['write-tree'], env);
+    if (!arbol.ok) return falla('write-tree', arbol);
+    return { repo, rama: rama.out, base: base.ok && base.out ? base.out : null, arbol: arbol.out };
   } finally {
     try { fs.unlinkSync(indice); } catch (_) { /* no llegó a existir */ }
   }
