@@ -106,7 +106,7 @@ test('T58 Close_FollowupStoryAndRows — la story de retiro sigue a la 8.9 y a l
     assert.ok(listIds(fm, 'followed_up_by').includes(id), `${parent}: tiene el followed_up_by de vuelta a la ${id}`);
   }
   const epics = fs.readFileSync(path.join(SPECS, 'epics.md'), 'utf8');
-  assert.ok(new RegExp(`^\\| ${id.replace('.', '\\.')} \\|`, 'm').test(epics), `epics.md tiene la fila de la ${id}`);
+  assert.ok(new RegExp(`^\\| ${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\|`, 'm').test(epics), `epics.md tiene la fila de la ${id}`);
   const row89 = epics.split('\n').find((l) => l.startsWith('| 8.9 |')) || '';
   // la fila escribe los números en negrita con texto entre medio («**225** → **70** → **N** …)
   assert.match(row89, /\*\*225\*\*[^→]*→\s*\*\*70\*\*[^→]*→\s*\*\*\d+\*\*/,

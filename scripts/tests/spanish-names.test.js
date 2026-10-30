@@ -1328,9 +1328,9 @@ test('Unified_StartsShippingAndModified_PathJudged — lo que empieza a salir se
     git(dir, ['add', '-A']);
     const check = (label, h, s) => {
       assert.equal(s.status, 1, `${label}, agent-skills: ${s.out}`);
-      assert.match(s.out, new RegExp(`${inSkills.replace(/[.]/g, '\\.')}.*\\[ruta\\]`), `${label}: la ruta de skills/ se juzga`);
+      assert.match(s.out, new RegExp(`${inSkills.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*\\[ruta\\]`), `${label}: la ruta de skills/ se juzga`);
       assert.equal(h.status, 1, `${label}, arnes: ${h.out}`);
-      assert.match(h.out, new RegExp(`${inHarness.replace(/[.]/g, '\\.')}.*\\[ruta\\]`), `${label}: la ruta del arnés se juzga`);
+      assert.match(h.out, new RegExp(`${inHarness.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*\\[ruta\\]`), `${label}: la ruta del arnés se juzga`);
       assert.doesNotMatch(h.out, new RegExp(name), `${label}: cada hallazgo, de su parte (sin doble aviso)`);
     };
     check('lo stageado', part('arnes'), part('agent-skills'));

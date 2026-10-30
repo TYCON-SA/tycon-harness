@@ -1186,7 +1186,7 @@ test('8.101-Demo_Configuracion_TodoConDato', async () => {
       assert.strictEqual(cfg.proponer.perfil.habilitado, true, '«Proponer» del perfil sigue habilitado');
       // «Versión del sitio» en Arnés: la de la imagen, o la de ejemplo sin ella (la misma contra la que se comparan las máquinas)
       const propia = version || DATOS().VERSION_DE_EJEMPLO;
-      assert.match((await h.pedir('/arnes')).texto, new RegExp(`${propia.replace(/\./g, '\\.')}`), `versión ${version}: Arnés dice ${propia}`);
+      assert.match((await h.pedir('/arnes')).texto, new RegExp(`${propia.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), `versión ${version}: Arnés dice ${propia}`);
     } finally { await h.cerrar(); }
   }
 });

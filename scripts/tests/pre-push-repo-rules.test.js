@@ -146,7 +146,7 @@ test('T6 PrePushRules_SuiteMissing_SkippedAndSaid — corre la que viaja y salte
   assert.strictEqual(r.code, 0, r.err);
   assert.match(r.err, /1 de 1 en verde/);
   for (const s of SUITES.filter((x) => !x.includes('suites-coverage'))) {
-    assert.match(r.err, new RegExp(`${s.replace(/[./]/g, '\\$&')}.*no viaja`), `no dijo que salteó ${s}`);
+    assert.match(r.err, new RegExp(`${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*no viaja`), `no dijo que salteó ${s}`);
   }
 });
 

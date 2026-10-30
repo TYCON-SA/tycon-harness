@@ -64,7 +64,7 @@ test('PinnedPlaywright_HomeModule_Ignored — el de la carpeta personal no se to
   moduloFalso(path.join(casa, 'node_modules', 'playwright'), '1.39.0', 'casa');
   const r = pw.locate({ env: {}, home: casa });
   assert.strictEqual(r.dir, null);
-  assert.match(r.why, new RegExp(pw.PINNED_VERSION.replace(/\./g, '\\.')), 'el motivo nombra la versión fija');
+  assert.match(r.why, new RegExp(pw.PINNED_VERSION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'el motivo nombra la versión fija');
   assert.match(r.why, /pinned-playwright\.js install/, 'el motivo dice cómo instalarla');
   assert.strictEqual(pw.load({ env: {}, home: casa }), null);
 });

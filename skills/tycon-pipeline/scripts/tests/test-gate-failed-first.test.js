@@ -191,7 +191,7 @@ test('T7 FailedFirst_RouteGone_Dropped @story-8.125 @ac-5 — una ruta que ya no
   fs.writeFileSync(sj, JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: A }], semanales: [] }));
   const r = puerta(l);
   assert.equal(r.status, 76, r.out);
-  assert.match(r.out, new RegExp(`${B.replace(/\./g, '\\.')}.*ya no está en suites\\.json`), r.out);
+  assert.match(r.out, new RegExp(`${B.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*ya no está en suites\\.json`), r.out);
   assert.deepEqual(lista(l), [A]);
 });
 

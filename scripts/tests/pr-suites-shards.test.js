@@ -362,9 +362,9 @@ test('PrShards_MatrixAndEveryOfFromSameOutput', () => {
   assert.match(plan, /MATRIX="\$\(node scripts\/ci\/suites-shard\.js matrix --of "\$JOBS_NEEDED"\)"/, 'arma la matriz con ese número');
   assert.match(plan, /OF="\$\(node scripts\/ci\/suites-shard\.js of --matrix "\$MATRIX"\)"/, 'y su --of sale de la matriz, no del número');
 
-  assert.match(suites, new RegExp(`\\n {4}strategy:\\n {6}matrix: \\$\\[ ${MATRIX_OUTPUT.replace(/[.[\]'$]/g, (c) => `\\${c}`)} \\]\\n`),
+  assert.match(suites, new RegExp(`\\n {4}strategy:\\n {6}matrix: \\$\\[ ${MATRIX_OUTPUT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\]\\n`),
     'la matriz del job Suites es la salida de Validar');
-  assert.match(verdict, new RegExp(`\\n {4}variables:\\n {6}SUITES_MATRIX: \\$\\[ ${MATRIX_OUTPUT.replace(/[.[\]'$]/g, (c) => `\\${c}`)} \\]\\n`),
+  assert.match(verdict, new RegExp(`\\n {4}variables:\\n {6}SUITES_MATRIX: \\$\\[ ${MATRIX_OUTPUT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\]\\n`),
     'el veredicto lee la misma salida');
   assert.match(stepBody(JOIN_STEP), /OF="\$\(node scripts\/ci\/suites-shard\.js of --matrix "\$\{SUITES_MATRIX:-\}"\)"/, 'y saca su --of de ella');
 
@@ -628,7 +628,7 @@ test('PrShards_ShardThatPublishedNothing_TheVerdictDeclaresItsSuitesNotMeasured'
   assert.match(v.join.out, new RegExp(`##vso\\[task\\.logissue type=error\\].*trabajo ${missing} de ${shards}`), 'la ejecución lo denuncia como error');
   assert.deepStrictEqual([...v.report.unmeasured].sort(), lost.map((n) => `${n}(no-medida)`).sort());
   assert.match(v.verdict.out, new RegExp(`${lost.length} suite\\(s\\) NO SE MIDIERON`), 'el veredicto las declara no medidas');
-  for (const name of lost) assert.doesNotMatch(v.verdict.out, new RegExp(`ROJO NUEVO[^\\n]*${name.replace(/\./g, '\\.')}`), `${name} no es un rojo nuevo`);
+  for (const name of lost) assert.doesNotMatch(v.verdict.out, new RegExp(`ROJO NUEVO[^\\n]*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), `${name} no es un rojo nuevo`);
   assert.strictEqual(v.verdict.code, 2, `no medido no es verde: el veredicto sale 2\n${v.verdict.out}`);
   assert.match(v.verdict.out, /No se pudo dar el veredicto: no medido no es verde/);
 });
