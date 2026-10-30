@@ -276,3 +276,19 @@ test('niveles T4 SignaturesGuide_GeneradaDelCatalogo', () => {
   // la tabla generada se corta si se borra un marcador: no se genera a ciegas
   assert.throws(() => gen.render(texto.replace(/<!-- generado: niveles -->/, '')), /marcador/);
 });
+
+// niveles T5 Catalogo_ElPerfilSoloSube
+// 🔴 Falla con: un nivel del perfil que baja el de la tabla, o una firma delegada que no mira el nivel que el perfil subió.
+test('niveles T5 Catalogo_ElPerfilSoloSube', () => {
+  const cat = require(CATALOGO);
+  assert.strictEqual(cat.effectiveLevel('plan-approval'), 1);
+  assert.strictEqual(cat.effectiveLevel('plan-approval', { 'plan-approval': 2 }), 2, 'el perfil sube');
+  assert.strictEqual(cat.effectiveLevel('control-change', { 'control-change': 1 }), 3, 'el perfil no baja: gana la tabla');
+  assert.strictEqual(cat.effectiveLevel('extra-round', { 'plan-approval': 3 }), 1, 'subir uno no toca otro');
+  assert.strictEqual(cat.effectiveLevel('no-existe', { 'no-existe': 2 }), null);
+  assert.strictEqual(cat.delegatedLevel('plan-approval', { 'plan-approval': 2 }), 2);
+  assert.strictEqual(cat.delegatedLevel('save', { 'save:sensible': 3 }), 1, 'lo que la delegación no firma sigue afuera');
+  assert.strictEqual(cat.delegatedLevel('save', { 'save': 2 }), 2);
+  assert.strictEqual(cat.delegatedLevel('escape:no-deep-review', { 'adversarial-skip': 3 }), 3, 'el escape sube con la firma que cubre');
+  assert.strictEqual(cat.delegatedLevel('extra-round', null), 1, 'sin perfil, la tabla');
+});
