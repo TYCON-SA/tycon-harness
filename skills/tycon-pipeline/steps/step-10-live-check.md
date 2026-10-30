@@ -525,18 +525,22 @@ de TODOS los casos como si se hubieran verificado, y racionalizar el gate Playwr
 agente sobre esos `.advisors/dod-runtime/*.md`; la escriben SOLO los scripts (el gate E2E del
 proyecto / `step-7c-macro.js`). **EXCEPCIÓN PERMANENTE: el self-audit (`*-self-audit*.md`, ACCOV-C8) SÍ lo
 escribe el agente** — es su auto-revisión estructurada (no un verdict de test fakeable), su
-honestidad la cierra la convergencia C10 (el meta-audit C9 se retiró el 2026-09-16). NO requiere `touch` (fix
-2026-06-14). El permiso de una escritura a mano de evidencia de run (el archivo `ALLOW_DOD_EVIDENCE_WRITE`,
-consumido + logueado en `bypass.log`) queda SOLO para el caso raro (ej: evidencia vacua de E2E diferidos a un
-pipeline pending) y lo decide la persona: lo crea ella y lo dice en su mensaje («autorizo
-ALLOW_DOD_EVIDENCE_WRITE»). Sin esa autorización el guardián no lo consume.
+honestidad la cierra la convergencia C10 (el meta-audit C9 se retiró el 2026-09-16).
+
+**No hace falta un resumen de cierre escrito a mano** (un `<storyId>-cierre.md` que nombre cada AC): el commit cuenta
+los criterios con la unión de lo que escribe la máquina —el registro de `smoke-run.sh`, los gates E2E sellados y las
+firmas del dev—. Escribir a mano un archivo de evidencia de run queda SOLO para el caso raro (ej: evidencia vacua de
+E2E diferidos a un pipeline pending) y lo decide la persona con la firma por archivo, en la ventana de permiso:
+`marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <ruta absoluta del archivo>` (vale para ese archivo y una sola
+escritura, y queda en `bypass.log`). Nada de `touch` ni de «autorizo» en el chat: el guardián no los lee. Con una
+consola de fondo viva la ventana no se abre: cerrá antes los procesos de fondo propios.
 
 **⏱ Freshness**: evidencia Playwright verde con mtime ANTERIOR al último cambio de
 código de la corrida = **STALE** → el hook `on-frontmatter-write.js` la rechaza.
 Tras aplicar fixes, re-correr el gate — la evidencia vieja no satisface.
 
-El archivo `<evidence-dir>/<storyId>-<UTC-timestamp>.md` (generado
-por los scripts) contiene:
+El archivo `<evidence-dir>/<storyId>-<UTC-timestamp>.md` lo **generan los scripts** (no se copia esta forma a
+mano); contiene:
 
 ```markdown
 # DoD Runtime Evidence — Story <id>
@@ -583,7 +587,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js \
 ```
 
 Esto setea `marker.dodRuntimeChecked = true` y registra la evidencia. «Preparar el commit»
-chequea este flag antes de proceder.
+chequea este flag antes de proceder. El `evidencePath` es la ruta de una evidencia que ya escribió un script: el
+`<storyId>-e2e-gate-*.md` del gate E2E o el `<storyId>-smoke-ledger.jsonl` de `smoke-run.sh` (con una story exenta,
+`"exenta: <la razón del frontmatter>"`). No hace falta escribir un archivo nuevo para dárselo.
 
 **Registrar el check `dod` — SIEMPRE, independientemente del modo autónomo**: es lo que
 `complete-step prepare-commit` exige para toda story de UI (el candado mira `checks.dod` verde con
@@ -655,7 +661,8 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
        `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m> --approved-by "<el dev>"`, sin
        `--quote`: la herramienta le abre al dev la ventana de permiso con el comando, y lo aprueba ahí. Lo que escriba
        en el chat ya no firma, y el ok reenviado por otra sesión (`--relayed-by`) no se acepta: lo firma la persona que
-       vio el criterio.
+       vio el criterio. Con una consola de fondo viva (un `Bash` en segundo plano que sigue corriendo) la ventana no
+       se abre y el freno pide cerrarla o firmar desde la terminal: cerrá antes los procesos de fondo propios.
     2. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --terminal`
        (pide confirmación criterio por criterio; en Windows abre una ventana para firmar).
 
