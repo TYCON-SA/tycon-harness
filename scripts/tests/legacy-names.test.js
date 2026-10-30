@@ -1683,3 +1683,31 @@ test('T11 Shims_TemplatesPlaceOnly_VersionedEqualGenerated (story 8.19)', () => 
   assert.deepStrictEqual(['a.js', 'b.sh', 'c.ps1'].map((e) => fs.readFileSync(path.join(repo, 'scripts', 'lab', `${W.viejo}-${e}`), 'utf8')), before);
   fs.rmSync(repo, { recursive: true, force: true });
 });
+
+// El árbol que arma el portón con el privado adelgazado y el público encima trae las dos fuentes (el arnés y
+// agent-skills) en la misma raíz aunque no traiga el perfil del equipo. --check-map mira ahí las entradas de
+// agent-skills; si las buscara afuera, sin TYCON_SKILLS_DIR ni ~/.claude/agent-skills cada una sale «no pude mirar».
+// 🔴 mutación: exigir el perfil para tomar la raíz como repo unido → «no encontré agent-skills» y sale distinto de 0.
+test('T-thin CheckMap_ThinTreeWithoutProfile_LooksHere — el árbol adelgazado sin perfil mira agent-skills en su raíz', () => {
+  const repo = tmp('thin');
+  const home = tmp('thin-home');
+  write(repo, {
+    '.tycon/internal-forms.json': { layout: 'thin', forms: [] },
+    'skills/tycon-pipeline/SKILL.md': '# lab\n',
+    'agents/lab-agent.md': '# lab\n',
+    'packs/clients/pack.json': { name: 'lab' },
+  });
+  const f = path.join(repo, 'map.json');
+  fs.writeFileSync(f, JSON.stringify(mapOf([{ kind: 'folder', old: 'packs/lab-viejo', new: 'packs/clients', batch: 'lab', repo: 'agent-skills', callers: ['docs'] }])));
+  const r = spawnSync(process.execPath, [SPANISH, '--check-map', '--map', f, '--repo', repo], { encoding: 'utf8', env: envWith({ HOME: home, USERPROFILE: home }) });
+  assert.doesNotMatch(r.stderr + r.stdout, /no encontré agent-skills/);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  // y mirar ahí no esconde una entrada que falta: con el destino ausente, el mapa no pasa
+  fs.rmSync(path.join(repo, 'packs', 'clients'), { recursive: true, force: true });
+  const falta = spawnSync(process.execPath, [SPANISH, '--check-map', '--map', f, '--repo', repo], { encoding: 'utf8', env: envWith({ HOME: home, USERPROFILE: home }) });
+  assert.notStrictEqual(falta.status, 0, falta.stderr + falta.stdout);
+  assert.match(falta.stderr + falta.stdout, /packs\/lab-viejo/);
+  assert.doesNotMatch(falta.stderr + falta.stdout, /no encontré agent-skills/);
+  fs.rmSync(repo, { recursive: true, force: true });
+  fs.rmSync(home, { recursive: true, force: true });
+});
