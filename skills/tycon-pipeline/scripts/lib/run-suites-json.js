@@ -561,9 +561,13 @@ function main(argv, env = process.env) {
   // instalación a las skills que se miden. Con la HOME real pasaban acá y fallaban allá, o al revés. Las que piden
   // herramientas siguen con la real: la sesión de esas herramientas vive ahí. Las HOME van bajo `.advisors/` del repo
   // (git la ignora) y no bajo la carpeta temporal, como en la CI: hay suites que tratan esa carpeta como «de prueba».
+  // La carpeta temporal de cada una, al revés, va fuera del repo, también como en la CI: hay suites que arman ahí un
+  // repo de juguete o suponen estar fuera de todo repo, y dentro del árbol git les contesta la raíz de ese árbol.
   const homesRoot = path.join(repo, '.advisors');
   const homesDir = path.join(homesRoot, `suite-homes-${process.pid}`);
-  // Las de una corrida anterior que murió sin limpiar (un kill -9): las de un proceso que ya no vive.
+  let tmpsDir = null;
+  // Las HOME y las carpetas temporales de una corrida anterior que murió sin limpiar (un kill -9): las de un proceso
+  // que ya no vive.
   try {
     for (const d of fs.readdirSync(homesRoot)) {
       const m = /^suite-homes-(\d+)$/.exec(d);
@@ -571,29 +575,40 @@ function main(argv, env = process.env) {
       try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') fs.rmSync(path.join(homesRoot, d), { recursive: true, force: true }); }
     }
   } catch (_) { /* sin .advisors todavía: no hay nada viejo */ }
+  try {
+    for (const d of fs.readdirSync(os.tmpdir())) {
+      const m = /^suite-tmps-(\d+)-/.exec(d);
+      if (!m || Number(m[1]) === process.pid) continue;
+      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') fs.rmSync(path.join(os.tmpdir(), d), { recursive: true, force: true }); }
+    }
+  } catch (_) { /* la carpeta temporal no se deja leer: queda lo viejo, no frena la corrida */ }
   const skillsAbs = path.resolve(skills);
   const emptyHome = (p) => {
     const h = path.join(homesDir, `h${p.idx}`);
     const installed = installedSkillsIn(h);
     fs.mkdirSync(path.dirname(installed), { recursive: true });
-    fs.mkdirSync(path.join(h, 'tmp'), { recursive: true });
+    if (!tmpsDir) tmpsDir = fs.mkdtempSync(path.join(os.tmpdir(), `suite-tmps-${process.pid}-`));
+    fs.mkdirSync(path.join(tmpsDir, `t${p.idx}`), { recursive: true });
     const agentSkills = path.dirname(skillsAbs);
     const tipo = process.platform === 'win32' ? 'junction' : 'dir';
     if (isDir(skillsAbs)) fs.symlinkSync(agentSkills, installed, tipo);
     if (isDir(path.join(agentSkills, 'agents'))) fs.symlinkSync(path.join(agentSkills, 'agents'), path.join(path.dirname(installed), 'agents'), tipo);
     return h;
   };
-  const removeHomes = () => fs.rmSync(homesDir, { recursive: true, force: true });
+  const removeHomes = () => {
+    fs.rmSync(homesDir, { recursive: true, force: true });
+    if (tmpsDir) fs.rmSync(tmpsDir, { recursive: true, force: true });
+  };
   // El resto de lo que la CI le pone a cada portable (`casaVacia` de scripts/tests/portable-suites.test.sh), salvo el
   // PATH: acá las herramientas de la máquina siguen a mano. Y la configuración de git de quien corre tampoco llega: un
   // gancho global de la máquina (rechazar un merge sin mensaje propio) frenaba acá lo que en la CI pasa. Git la lee de
   // la HOME, pero también de estas variables.
-  const isolatedEnv = (home) => {
+  const isolatedEnv = (home, p) => {
     const e = { ...env };
     for (const k of Object.keys(e)) {
       if (k === 'GIT_CONFIG_GLOBAL' || k === 'XDG_CONFIG_HOME' || k === 'GIT_CONFIG_PARAMETERS' || /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(k)) delete e[k];
     }
-    const tmp = path.join(home, 'tmp');
+    const tmp = path.join(tmpsDir, `t${p.idx}`);
     return Object.assign(e, {
       HOME: home, USERPROFILE: home, TMPDIR: tmp, GIT_CONFIG_NOSYSTEM: '1',
       TYCON_PROFILE: '0', TYCON_CHROME: '0', TYCON_GUIDES_DIR: path.resolve(repo), TYCON_SKILLS_DIR: skillsAbs,
@@ -608,7 +623,7 @@ function main(argv, env = process.env) {
       // Sin su HOME vacía la suite corre igual, con la real, y lo dice: una falla al armarla no tumba la corrida.
       try { home = emptyHome(p); } catch (e) { console.log(`[suites.json] ${p.ruta}: no pude armarle la HOME vacía (${e.code || e.message}); corre con la real`); }
     }
-    const [ej, args, childEnv] = launch(p, covDir, home ? isolatedEnv(home) : env);
+    const [ej, args, childEnv] = launch(p, covDir, home ? isolatedEnv(home, p) : env);
     const t0 = Date.now();
     // detached = grupo de proceso propio: al cortar se mata el grupo entero (la suite y sus hijos).
     const c = spawn(ej, args, { cwd: repo, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
