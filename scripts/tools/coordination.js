@@ -64,7 +64,8 @@ function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
-  fs.renameSync(tmp, file);
+  // Si el reemplazo falla, el temporal se borra: cada corrida del gancho tiene otro pid y se juntarían.
+  try { fs.renameSync(tmp, file); } catch (e) { try { fs.unlinkSync(tmp); } catch { /* ya no está */ } throw e; }
 }
 
 // La configuración de esta máquina: el tope y la carpeta de las firmas, con su origen. Un error del lector no tumba el
@@ -262,16 +263,42 @@ function coordinatorRole(opts, sid) {
 }
 const sessionOf = (opts) => opts.sessionId || (opts.env || process.env).CLAUDE_CODE_SESSION_ID || null;
 
+const OLD_SIGNATURE_MS = 24 * 3600000;
+const oldSignaturesFile = (home) => path.join(coordinationDir(home), 'old-signatures-notice.json');
+const ddmm = (ms) => { const d = new Date(ms); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
+
+// Las firmas por la terminal que esperan hace más de un día, con su archivo todavía en la carpeta: una línea por día de
+// calendario. Sin carpeta de firmas no hay pendientes. Si no puede anotar el día, avisa igual y lo dice en `problems`:
+// del lado seguro, el aviso se repite.
+function oldSignatures(opts, now, problems) {
+  const home = opts.home || require('os').homedir();
+  if (!recipe({ home, arnes: opts.arnes, env: opts.env || process.env }).owner_folder.value) return null;
+  let list;
+  // Un registro roto ya lo dijo `status`.
+  try { list = readPending(home); } catch { return null; }
+  const valid = list.filter((p) => p && Number.isFinite(p.at) && typeof p.file === 'string');
+  if (valid.length < list.length) problems.push(`${list.length - valid.length} firma(s) pendiente(s) sin fecha o sin archivo en el registro`);
+  const old = valid.filter((p) => now - p.at > OLD_SIGNATURE_MS && fs.existsSync(p.file)).sort((a, b) => a.at - b.at);
+  if (!old.length) return null;
+  const today = localDate(now);
+  let seen = null;
+  try { seen = readJson(oldSignaturesFile(home), null); } catch (e) { problems.push(e.message); }
+  if (seen && seen.day === today) return null;
+  try { writeJson(oldSignaturesFile(home), { day: today }); } catch (e) { problems.push(`no pude anotar el día del aviso de firmas: ${e.code || e.message}`); }
+  return `Coordinación: ${old.length} firma(s) del dueño esperan hace más de un día; la más vieja, «${label(old[0].title)}», desde el ${ddmm(old[0].at)} a las ${hhmm(old[0].at)}.`;
+}
+
 /**
  * El aviso del tope para la sesión coordinadora: en el tope, quiénes trabajan; pasado el tope, por cuánto y cuál trabaja
- * hace menos. Debajo del tope, null. Lo que no pudo leer va en una línea. No abre ninguna conversación.
+ * hace menos. Debajo del tope, null. Después, las firmas del dueño que esperan hace más de un día. Lo que no pudo leer
+ * va en una línea. No abre ninguna conversación.
  */
 function capNotice(opts = {}) {
   const sid = sessionOf(opts);
   const who = coordinatorRole(opts, sid);
   if (!who) return null;
   const s = status({ ...opts, noTranscripts: true });
-  const problems = who.problem ? [who.problem, ...s.problems] : s.problems;
+  const problems = who.problem ? [who.problem, ...s.problems] : [...s.problems];
   const working = s.working.filter((w) => w.sid !== sid);
   const cap = s.cap.value;
   const lines = [];
@@ -283,6 +310,8 @@ function capNotice(opts = {}) {
       lines.push(`Coordinación: la máquina pasó el tope por ${working.length - cap} (${working.length} de ${cap} trabajando: ${names})${newest ? `; la que trabaja hace menos: ${newest.session}` : ''}.`);
     }
   }
+  const signatures = oldSignatures(opts, opts.now == null ? Date.now() : Number(opts.now), problems);
+  if (signatures) lines.push(signatures);
   if (problems.length) lines.push(`Coordinación: No pude leer ${oneLine(problems.join(' · ')).slice(0, 300)}.`);
   return lines.length ? lines.join('\n') : null;
 }

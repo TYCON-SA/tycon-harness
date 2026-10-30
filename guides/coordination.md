@@ -103,13 +103,18 @@ Después la pide con `coordination.js signature --kind <tema> --title <qué se f
   (en Windows, `.cmd`). El dueño lo abre con doble clic: dice qué es en una línea, entra a la carpeta, corre el comando
   y espera una tecla. Si ya hay un archivo con el mismo comando, no escribe otro y lo dice. Sin carpeta, no escribe
   nada: imprime el comando para el aviso del chat.
-- **Por delegación.** Una firma que la organización deja firmar por delegación se pide en el chat, sin archivo: el
-  dueño da su ok con su cita y la firma queda hecha con las reglas de la firma delegada. Hoy `signature` todavía no
-  toma esta vía: toda firma va por la terminal.
+- **Por delegación.** Una firma que la organización deja firmar por delegación no pasa por `signature`: se da desde la
+  pestaña de la coordinadora, en la ventana de permiso, con las reglas de la firma delegada. Se firma en el momento y
+  no deja pendiente.
 
 Lo que pide contraseña va siempre por la terminal: la contraseña la escribe sólo el dueño. Cuando el dueño firmó,
 `coordination.js signature-done <id>` borra el archivo y el pendiente. Carpeta vacía y ningún pendiente quiere decir
 que no falta firmar nada.
+
+Una firma por la terminal que espera hace más de un día se le recuerda a la coordinadora: el primer turno del día con
+algo que decir, una línea dice cuántas esperan y cuál es la más vieja, con su fecha. Una vez por día, aunque el conteo
+cambie. Un pendiente cuyo archivo ya no está no cuenta: el dueño lo firmó y lo borró. Sin carpeta de firmas, no hay
+pendientes y el aviso no sale.
 
 ## El orden de los pedidos
 
@@ -180,7 +185,7 @@ Lo mide el medidor de estilo que ya existe; esta receta no agrega otro.
 | No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, en el tope, el aviso de cada turno de la coordinadora. |
 | Pases adversariales de a uno | aviso | El turno lo da la coordinadora. El portón del pase le dice a la sesión que hay otro en vuelo y que pida turno; no la frena. |
 | Confirmar que una firma falta antes de pedirla | nadie | Cómo se confirma depende de cada firma; `signature` sólo evita dos archivos con el mismo comando. |
-| Un archivo por firma, borrado al firmar | aviso | `status` cuenta las firmas pendientes; `signature` no escribe un segundo archivo con el mismo comando. |
+| Un archivo por firma, borrado al firmar | aviso | `status` cuenta las firmas pendientes; `signature` no escribe un segundo archivo con el mismo comando. Una que espera hace más de un día se le recuerda a la coordinadora, una vez por día. |
 | Pedidos en orden | nadie | Ningún dato de la máquina dice qué pedido es par de cuál sin preguntarle a la red en cada turno. |
 | Avisos cortos y llanos | aviso | El medidor de estilo que ya existe. |
 | Codex no coordina | aviso | `/coordinate` lo dice en Codex y no sigue. Codex sí manda mensajes con codex queue, pero ese comando no pasa por una herramienta que el arnés pueda mirar. |

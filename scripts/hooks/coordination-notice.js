@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
- * coordination-notice.js — hook `UserPromptSubmit`: el aviso del tope de sesiones, sólo para la coordinadora.
+ * coordination-notice.js — hook `UserPromptSubmit`: el aviso del tope de sesiones y de las firmas viejas, sólo para la
+ * coordinadora.
  *
  * En cada turno de la sesión designada como coordinadora (guides/coordination.md) cuenta las sesiones que trabajan.
- * En el tope dice quiénes son; pasado el tope, por cuánto y cuál trabaja hace menos. Debajo del tope, nada. Cualquier
+ * En el tope dice quiénes son; pasado el tope, por cuánto y cuál trabaja hace menos. Debajo del tope, nada. Las firmas
+ * por la terminal que esperan hace más de un día salen en una línea, una vez por día. Cualquier
  * otra sesión no ve nada: sin coordinadora designada, o en otra sesión, el hook calla. No abre conversaciones.
  * Un error propio nunca frena el turno. Opt-out: TYCON_COORDINATION_NOTICE=0
  */
@@ -21,7 +23,10 @@ function main() {
   try {
     const stdin = fs.readFileSync(0, 'utf8');
     event = stdin ? JSON.parse(stdin) : {};
-  } catch { return; }
+  } catch {
+    // Sin el evento no se sabe qué sesión es, y el aviso es sólo para la coordinadora: no hay a quién decírselo.
+    return;
+  }
   const sessionId = event.session_id || event.sessionId || null;
   if (!sessionId) return;
   const { capNotice } = require(path.join(__dirname, '..', 'tools', 'coordination.js'));

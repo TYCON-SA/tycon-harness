@@ -232,3 +232,112 @@ test('T11c Notice_NamesCannotCloseTheBlock @story-8.122 @ac-11: un nombre o una 
   assert.ok(!/[<>]/.test(r.turn));
   assert.ok(!/[<>]/.test(JSON.stringify(r.other_in_flight)));
 });
+
+// ── Signatures that have waited more than a day (AC 14) ──────────────────────────────────────────────────────────
+
+const hours = (n) => NOW - n * 3600000;
+// This machine's signatures folder, and a pending terminal signature with its file there (unless `gone`).
+function ownerFolder(t) {
+  const folder = path.join(t.root, 'firmas');
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(t.home, '.claude', 'tycon.json'), JSON.stringify({ coordination: { owner_folder: folder } }));
+  return folder;
+}
+function pending(t, list) {
+  const folder = ownerFolder(t);
+  const entries = list.map(({ title, hoursAgo, gone }, i) => {
+    const file = path.join(folder, `firma-${i}.command`);
+    if (!gone) fs.writeFileSync(file, '#!/bin/bash\n');
+    return { id: `id-${i}`, key: `k-${i}`, file, kind: 'prueba', title, at: hours(hoursAgo) };
+  });
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'signatures.json'), JSON.stringify(entries));
+}
+const dayFile = (t) => path.join(t.state, 'coordination', 'old-signatures-notice.json');
+const oldLine = (n) => (n || '').split('\n').filter((l) => /firma\(s\) del dueño esperan/.test(l));
+
+test('T14 Notice_OldSignatures_OncePerDay @story-8.122 @ac-14: dos de más de un día salen una vez por día, con la más vieja y su fecha', () => {
+  const t = toy();
+  pending(t, [{ title: 'La de 25', hoursAgo: 25 }, { title: 'La de 30', hoursAgo: 30 }, { title: 'La de 2', hoursAgo: 2 }]);
+  const first = oldLine(C.capNotice(t.opts));
+  assert.strictEqual(first.length, 1, 'una línea');
+  assert.match(first[0], /\b2 firma\(s\)/);
+  assert.match(first[0], /«La de 30»/);
+  const d = new Date(hours(30));
+  assert.ok(first[0].includes(`${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`), first[0]);
+  const today = new Date(NOW);
+  const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(dayFile(t), 'utf8')), { day });
+  // same day, another count: quiet
+  pending(t, [{ title: 'La de 30', hoursAgo: 30 }]);
+  assert.deepStrictEqual(oldLine(C.capNotice({ ...t.opts, now: NOW + 60000 })), []);
+  // the next day: again
+  const next = oldLine(C.capNotice({ ...t.opts, now: NOW + 24 * 3600000 }));
+  assert.strictEqual(next.length, 1);
+  assert.match(next[0], /\b1 firma\(s\)/);
+});
+
+test('T14b Notice_FreshSignatures_Silent @story-8.122 @ac-14: sólo nuevas no dicen nada ni anotan la fecha; en otra sesión, tampoco una vieja', () => {
+  const t = toy();
+  pending(t, [{ title: 'Nueva', hoursAgo: 2 }, { title: 'Casi', hoursAgo: 23 }]);
+  assert.strictEqual(C.capNotice(t.opts), null);
+  assert.ok(!fs.existsSync(dayFile(t)), 'la fecha no se anota');
+  pending(t, [{ title: 'Vieja', hoursAgo: 25 }]);
+  assert.strictEqual(C.capNotice({ ...t.opts, sessionId: 'otra-sesion' }), null, 'otra sesión no la oye');
+  assert.ok(!fs.existsSync(dayFile(t)));
+  // a machine without a signatures folder never says it, even with an old entry left in the record
+  const sin = toy();
+  pending(sin, [{ title: 'Vieja', hoursAgo: 25 }]);
+  fs.writeFileSync(path.join(sin.home, '.claude', 'tycon.json'), '{}');
+  assert.strictEqual(C.capNotice(sin.opts), null);
+});
+
+test('T14c Notice_SignedFileGone_NotCounted @story-8.122 @ac-14: una de 25 h cuyo archivo ya no está no cuenta', () => {
+  const t = toy();
+  pending(t, [{ title: 'Firmada', hoursAgo: 25, gone: true }]);
+  assert.strictEqual(C.capNotice(t.opts), null);
+  assert.ok(!fs.existsSync(dayFile(t)));
+});
+
+test('T14d Notice_DayNotWritable_SaysSoAndRepeats @story-8.122 @ac-14: sin poder anotar el día, avisa, lo dice y avisa otra vez', POSIX_PERMS, () => {
+  const t = toy();
+  pending(t, [{ title: 'Vieja', hoursAgo: 25 }]);
+  const dir = path.join(t.state, 'coordination');
+  fs.chmodSync(dir, 0o500);
+  try {
+    for (const now of [NOW, NOW + 60000]) {
+      const n = C.capNotice({ ...t.opts, now });
+      assert.strictEqual(oldLine(n).length, 1, `avisa: ${n}`);
+      assert.match(n, /No pude leer.*no pude anotar el día del aviso de firmas/);
+    }
+  } finally { fs.chmodSync(dir, 0o755); }
+});
+
+test('T14e Notice_DayRenameFails_NoTempLeft @story-8.122 @ac-14: si el archivo del día no se puede reemplazar, avisa y no deja temporales', () => {
+  const t = toy();
+  pending(t, [{ title: 'Vieja', hoursAgo: 25 }]);
+  fs.mkdirSync(dayFile(t));
+  const n = C.capNotice(t.opts);
+  assert.strictEqual(oldLine(n).length, 1, `avisa: ${n}`);
+  assert.match(n, /No pude leer.*no pude anotar el día del aviso de firmas/);
+  assert.deepStrictEqual(fs.readdirSync(path.join(t.state, 'coordination')).filter((f) => f.endsWith('.tmp')), []);
+});
+
+test('T14f Notice_BadEntryOrDayFile_SaysSo @story-8.122 @ac-14: una pendiente sin fecha o sin archivo y el archivo del día roto se dicen', () => {
+  const t = toy();
+  pending(t, [{ title: 'Vieja', hoursAgo: 25 }]);
+  const reg = path.join(t.state, 'coordination', 'signatures.json');
+  const entries = JSON.parse(fs.readFileSync(reg, 'utf8'));
+  entries.push({ id: 'sin-fecha', file: entries[0].file, title: 'Sin fecha' }, { id: 'sin-archivo', at: hours(30), title: 'Sin archivo' });
+  fs.writeFileSync(reg, JSON.stringify(entries));
+  fs.writeFileSync(dayFile(t), '{roto');
+  const n = C.capNotice(t.opts);
+  assert.strictEqual(oldLine(n).length, 1, `avisa por la buena: ${n}`);
+  assert.match(oldLine(n)[0], /\b1 firma\(s\)/);
+  assert.match(n, /No pude leer.*2 firma\(s\) pendiente\(s\) sin fecha o sin archivo/);
+  assert.match(n, /No pude leer.*old-signatures-notice\.json no se puede leer/);
+  // exactly one day: not yet old
+  const borde = toy();
+  pending(borde, [{ title: 'Justo', hoursAgo: 24 }]);
+  assert.strictEqual(C.capNotice(borde.opts), null);
+});
