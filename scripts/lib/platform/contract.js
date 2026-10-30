@@ -38,4 +38,27 @@ function shapeProblem(r) {
   return typeof r.detail === 'string' && r.detail.trim() ? null : 'dice que no sin «detail»';
 }
 
-module.exports = { OPERATIONS, REASONS, REPO_OPERATIONS, AREAS, AREA_OF, areaOf, shapeProblem };
+// Las operaciones que llevan la estimación vigente de la historia (`estimate`); las demás la ignoran.
+const ESTIMATE_OPERATIONS = Object.freeze(['work-item.create', 'work-item.update']);
+const ESTIMATE_UNITS = Object.freeze(['hours', 'days', 'points']);
+
+const positivo = (n) => typeof n === 'number' && Number.isFinite(n) && n > 0;
+const presente = (x) => x !== undefined && x !== null;
+
+/**
+ * Si una estimación tiene la forma del contrato: `{ value, unit, hours?, level?, version? }`, con `value` mayor que 0 y
+ * `unit` en horas, días o puntos. Devuelve el problema en texto, o null. Qué campo de la plataforma la recibe lo decide
+ * cada conector.
+ */
+function estimateProblem(e) {
+  if (e === null || typeof e !== 'object' || Array.isArray(e)) return 'la estimación no es un objeto { value, unit }';
+  if (!positivo(e.value)) return `la estimación tiene que traer value, un número mayor que 0 (es ${JSON.stringify(e.value)})`;
+  if (!ESTIMATE_UNITS.includes(e.unit)) return `la unidad de la estimación tiene que ser ${ESTIMATE_UNITS.join(', ')} (es ${JSON.stringify(e.unit)})`;
+  if (presente(e.hours) && !positivo(e.hours)) return `las horas de la estimación tienen que ser un número mayor que 0 (son ${JSON.stringify(e.hours)})`;
+  // el nivel y la versión llegan al texto de un comentario: una palabra y un entero, nada más
+  if (presente(e.level) && !(typeof e.level === 'string' && /^\p{L}{1,20}$/u.test(e.level))) return `el nivel de la estimación tiene que ser una palabra (es ${JSON.stringify(e.level)})`;
+  if (presente(e.version) && !(Number.isInteger(e.version) && e.version > 0)) return `la versión de la estimación tiene que ser un entero mayor que 0 (es ${JSON.stringify(e.version)})`;
+  return null;
+}
+
+module.exports = { OPERATIONS, REASONS, REPO_OPERATIONS, AREAS, AREA_OF, ESTIMATE_OPERATIONS, ESTIMATE_UNITS, areaOf, shapeProblem, estimateProblem };

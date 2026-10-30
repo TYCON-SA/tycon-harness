@@ -206,14 +206,28 @@ La skill no arma comandos de la plataforma: le pide a la capa de plataforma, que
 del equipo (`integrations.platform`), con el destino de la configuración del repo (`.tycon/work-items.yaml`, o
 `.tycon/ado-config.yaml` con el nombre viejo).
 
+Primero, la estimación vigente de la historia (la última que se escribió al estimarla, o la del plan):
+
+```bash
+node ~/.claude/tycon-harness/scripts/lib/estimates.js work-item --repo <repo> --story <story> --json
+# → {"ok": true, "estimate": {"value", "unit", "hours", "level", "version"}}  ·  {"ok": true, "estimate": null}
+#   (con "motivo" si no pudo leer la configuración o el registro: decirlo en una línea y crear igual, sin estimación)
+```
+
 ```bash
 node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item create --args @<archivo>.json
 # <archivo>.json:
 #   {"repoDir": "<repo>", "title": "Story <story>: <title>", "description": "<html>", "acceptance": "<html>",
 #    "priority": <1..4>, "epic": "<epic del frontmatter>", "sprint": <sprint>, "tags": [<etiquetas de la story>]}
 #   (+ "assignTo": "<git config user.email>" si la configuración dice auto_assign: true)
-# → {"ok": true, "value": {"id", "url", "warnings", "unsupported"}, "summary": "…"}
+#   (+ "estimate": {…} tal como lo devolvió estimates.js, sólo si no es null)
+# → {"ok": true, "value": {"id", "url", "warnings", "unsupported", "estimateAs", "estimateFallback"}, "summary": "…"}
 ```
+
+La estimación va donde la plataforma la puede guardar, y `estimateAs` dice dónde quedó: en Azure DevOps, en el campo
+(`OriginalEstimate` con las horas, `StoryPoints` con los puntos, o el que declare `fields.estimate`); en GitHub, en el
+campo numérico del proyecto que declare `github.project`, o como comentario. Si el proyecto no se pudo usar,
+`estimateFallback` trae el motivo y el `summary` lo dice: mostrárselo al dev, el pedido igual quedó creado.
 
 En Azure DevOps crea el work item con el tipo, el área, la iteración y las etiquetas de la configuración y lo cuelga
 del Epic mapeado en `epic_links` (los mismos comandos `az` que escribía esta skill); en GitHub abre un issue con la

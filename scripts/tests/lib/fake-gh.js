@@ -27,6 +27,11 @@
 //   "review_comments": { "<o>/<r>#<n>": [ { body, created_at, user:{login,type} } ] }   (GET pulls/N/comments: comentarios sobre una línea del diff)
 //   "no_pr_create": true   POST pulls responde el 403 «GitHub Actions is not permitted to create or approve pull requests»
 //   "remotes": { "<o>/<r>": "<ruta del repo bare>" }   POST pulls exige que la rama `head` exista allá (422 si no), como GitHub
+//   "projects": { "<dueño>#<número>": { id, fields: [ { id, name, dataType } ], items: { "<nodo del issue>": { id, values: { <id del campo>: n } } } } }
+//   "graphql_error": { type, message }   toda consulta GraphQL contesta ese error (un token sin permiso de proyectos)
+// POST graphql (Projects v2): la consulta del proyecto de un dueño (organización o usuario) con sus campos, agregar un
+// issue (idempotente, como GitHub) y cargar el número de un campo. Un proyecto que no existe contesta NOT_FOUND.
+// Los issues traen `node_id` (`I_<o>/<r>#<n>`), el nodo con que GraphQL los nombra.
 // GET pulls?head=<dueño>:<rama>&state=&per_page=&page= filtra y pagina de verdad (state por defecto: open). GET pulls/N sobre un
 // número que es un issue da 404. PATCH pulls/N cambia `state` (uno mergeado no se puede reabrir). POST pulls/N/requested_reviewers
 // pide revisores (422 si el repo declara `collaborators` y alguno no está). PUT pulls/N/merge junta la rama en la base del
@@ -66,7 +71,7 @@ const q = Object.fromEntries(qs.split('&').filter(Boolean).map((x) => x.split('=
 const page = Number(q.page || 1), per = Number(q.per_page || 30);
 const pag = (arr) => arr.slice((page - 1) * per, page * per);
 const issueApi = (repo, i) => ({
-  ...i, repository_url: `https://api.github.com/repos/${(st.moved || {})[`${repo}#${i.number}`] || repo}`,
+  ...i, node_id: i.node_id || `I_${repo}#${i.number}`, repository_url: `https://api.github.com/repos/${(st.moved || {})[`${repo}#${i.number}`] || repo}`,
   labels: (i.labels || []).map((name) => ({ name })), assignees: (i.assignees || []).map((login) => ({ login })),
   user: { login: i.user || st.user, type: /\[bot\]$/.test(i.user || '') ? 'Bot' : 'User' },
   closed_by: i.closed_by ? { login: i.closed_by } : null,
@@ -252,5 +257,41 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues\/(\d+)(\/comments|\/timeline
     if (Array.isArray(cuerpo.labels)) i.labels = cuerpo.labels.map(String);
     save(); out(issueApi(repo, i));
   }
+}
+// ── GraphQL de proyectos ──
+if (method === 'POST' && base === 'graphql') {
+  const qy = String((cuerpo || {}).query || '');
+  const vars = (cuerpo || {}).variables || {};
+  const gqlErr = (type, message) => {
+    process.stdout.write(`${JSON.stringify({ data: null, errors: [{ type, message }] })}\n`);
+    process.stderr.write(`gh: ${message}\n`);
+    process.exit(1);
+  };
+  if (st.graphql_error) gqlErr(st.graphql_error.type, st.graphql_error.message);
+  const projs = st.projects || {};
+  const porId = (pid) => Object.values(projs).find((x) => x.id === pid);
+  if (/projectV2\(number/.test(qy)) {
+    const p = projs[`${vars.owner}#${vars.number}`];
+    if (!p) {
+      if (!Object.keys(projs).some((k) => k.startsWith(`${vars.owner}#`))) out({ data: { repositoryOwner: null } });
+      gqlErr('NOT_FOUND', `Could not resolve to a ProjectV2 with the number ${vars.number}.`);
+    }
+    out({ data: { repositoryOwner: { projectV2: { id: p.id, fields: { nodes: p.fields || [] } } } } });
+  }
+  if (/addProjectV2ItemById/.test(qy)) {
+    const p = porId(vars.project);
+    if (!p) gqlErr('NOT_FOUND', `Could not resolve to a node with the global id of '${vars.project}'`);
+    p.items = p.items || {};
+    if (!p.items[vars.content]) p.items[vars.content] = { id: `PVTI_${Object.keys(p.items).length + 1}`, values: {} };
+    save(); out({ data: { addProjectV2ItemById: { item: { id: p.items[vars.content].id } } } });
+  }
+  if (/updateProjectV2ItemFieldValue/.test(qy)) {
+    const p = porId(vars.project);
+    const item = p && Object.values(p.items || {}).find((x) => x.id === vars.item);
+    if (!item) gqlErr('NOT_FOUND', 'Could not resolve the item');
+    item.values[vars.field] = vars.value;
+    save(); out({ data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: item.id } } } });
+  }
+  gqlErr('UNKNOWN', 'consulta GraphQL de prueba desconocida');
 }
 err(404, `ruta de prueba desconocida: ${method} ${ruta}`);

@@ -4,6 +4,12 @@
 // porque un issue no tiene esos campos. Lo que GitHub no tiene (la prioridad, un campo propio, el Epic padre) no se
 // carga en silencio: vuelve en `unsupported` con su nombre y el motivo `no_soportado`.
 //
+// La estimación vigente (`estimate`, en create y update) va al campo numérico del proyecto que declara
+// `github.project: { owner, number, field }`, por la API GraphQL (el proyecto del dueño con sus campos, agregar el issue,
+// cargar el número). Sin proyecto, o si el proyecto no se puede usar (sin permiso, o el proyecto o el campo no existe),
+// va un comentario de formato fijo («Estimación: 16 h (historia, versión 2)») y, en el segundo caso, `estimateFallback`
+// dice por qué. En update, una estimación igual a la del último comentario no se comenta otra vez.
+//
 // Dónde: `repo: dueño/nombre` en la configuración del repo de historias (scripts/lib/platform/work-items-config.js).
 // Habla por `gh api` (TYCON_GH_CMD lo reemplaza: un ejecutable, o un `.js` que corre con node).
 
@@ -60,6 +66,97 @@ function destino(args, ctx) {
   return { c, repo, warnings };
 }
 
+// ── la estimación ──
+const CONSULTA_PROYECTO = 'query($owner: String!, $number: Int!) { repositoryOwner(login: $owner) { ... on ProjectV2Owner { projectV2(number: $number) '
+  + '{ id fields(first: 100) { nodes { ... on ProjectV2FieldCommon { id name dataType } } } } } } }';
+const AGREGAR_AL_PROYECTO = 'mutation($project: ID!, $content: ID!) { addProjectV2ItemById(input: { projectId: $project, contentId: $content }) { item { id } } }';
+const CARGAR_NUMERO = 'mutation($project: ID!, $item: ID!, $field: ID!, $value: Float!) { updateProjectV2ItemFieldValue(input: '
+  + '{ projectId: $project, itemId: $item, fieldId: $field, value: { number: $value } }) { projectV2Item { id } } }';
+const EN_UNIDAD = {
+  hours: (v) => `${v} h`,
+  days: (v) => `${v} ${v === 1 ? 'día' : 'días'}`,
+  points: (v) => `${v} ${v === 1 ? 'punto' : 'puntos'}`,
+};
+const ES_ESTIMACION = /^Estimación: /;
+
+/** El comentario de formato fijo: «Estimación: 16 h (historia, versión 2)». */
+function comentarioDeEstimacion(e) {
+  const de = e.level ? ` (${e.level}${e.version ? `, versión ${e.version}` : ''})` : '';
+  return `Estimación: ${EN_UNIDAD[e.unit](e.value)}${de}`;
+}
+
+/** Por qué no se pudo usar el proyecto: sin permiso, no encontrado, o el motivo del contrato que trajo gh (red, no_medido). */
+function porQue(problem) {
+  if (problem.reason === 'sin_credencial' || /INSUFFICIENT_SCOPES|required scopes|read:project|FORBIDDEN/i.test(problem.detail)) return 'sin_credencial';
+  if (problem.reason === 'no_encontrado' || /NOT_FOUND|Could not resolve/i.test(problem.detail)) return 'no_encontrado';
+  return problem.reason === 'red' ? 'red' : 'no_medido';
+}
+
+/** El número en el campo del proyecto: `{ ok: true }` o `{ fallback: { reason, detail } }`. */
+function alProyecto(ctx, proyecto, nodo, e) {
+  const aparte = (reason, detail) => ({ fallback: { reason, detail } });
+  const consulta = (query, variables) => {
+    const r = gh(ctx, 'POST', 'graphql', { query, variables });
+    return r.problem ? { problem: r.problem } : { data: (r.value && r.value.data) || null };
+  };
+  const donde = `el proyecto ${proyecto.number} de ${proyecto.owner}`;
+  // el issue no se pudo leer: el motivo es el de gh, no la falta del nodo
+  if (nodo && typeof nodo === 'object' && nodo.problem) return aparte(porQue(nodo.problem), `no pude leer el issue: ${nodo.problem.detail}`);
+  if (!nodo) return aparte('no_encontrado', 'el issue no trae el nodo con que GraphQL lo nombra');
+  const q = consulta(CONSULTA_PROYECTO, { owner: proyecto.owner, number: proyecto.number });
+  if (q.problem) return aparte(porQue(q.problem), q.problem.detail);
+  const p = q.data && q.data.repositoryOwner && q.data.repositoryOwner.projectV2;
+  if (!p || !p.id) return aparte('no_encontrado', `${donde} no existe o esta credencial no lo ve`);
+  const nodos = (p.fields && Array.isArray(p.fields.nodes)) ? p.fields.nodes : [];
+  const campo = nodos.find((n) => n && n.name === proyecto.field);
+  if (!campo) return aparte('no_encontrado', `${donde} no tiene el campo «${proyecto.field}»`);
+  if (campo.dataType !== 'NUMBER') return aparte('no_encontrado', `el campo «${proyecto.field}» de ${donde} no es numérico`);
+  // agregar es idempotente en GitHub: un issue que ya está devuelve su elemento
+  const a = consulta(AGREGAR_AL_PROYECTO, { project: p.id, content: nodo });
+  if (a.problem) return aparte(porQue(a.problem), a.problem.detail);
+  const item = a.data && a.data.addProjectV2ItemById && a.data.addProjectV2ItemById.item;
+  if (!item || !item.id) return aparte('no_encontrado', `GitHub no devolvió el elemento del issue en ${donde}`);
+  const u = consulta(CARGAR_NUMERO, { project: p.id, item: item.id, field: campo.id, value: e.value });
+  if (u.problem) return aparte(porQue(u.problem), u.problem.detail);
+  return { ok: true };
+}
+
+/** El último comentario de estimación del issue, o null; undefined si no se pudo leer. */
+function ultimaEstimacion(ctx, repo, id) {
+  let ultima = null;
+  for (let pagina = 1; pagina <= 20; pagina++) {
+    const g = gh(ctx, 'GET', `repos/${repo}/issues/${id}/comments?per_page=100&page=${pagina}`);
+    if (g.problem || !Array.isArray(g.value)) return undefined;
+    for (const k of g.value) if (k && typeof k.body === 'string' && ES_ESTIMACION.test(k.body)) ultima = k.body;
+    if (g.value.length < 100) return ultima;
+  }
+  return undefined;
+}
+
+/**
+ * La estimación vigente al issue: el campo del proyecto, o el comentario. Lo anota en `value`; un comentario que no se
+ * pudo publicar es un aviso, no un «no»: el pedido ya quedó creado o actualizado.
+ */
+function estimar(ctx, c, repo, id, nodo, e, value, enUpdate) {
+  if (!e) return;
+  const proyecto = c.github && typeof c.github === 'object' ? c.github.project : undefined;
+  if (proyecto) {
+    const r = alProyecto(ctx, proyecto, nodo, e);
+    if (r.ok) { Object.assign(value, { estimateAs: 'project', estimateField: proyecto.field }); return; }
+    value.estimateFallback = r.fallback;
+  }
+  const texto = comentarioDeEstimacion(e);
+  if (enUpdate) {
+    const ultima = ultimaEstimacion(ctx, repo, id);
+    if (ultima === texto) { Object.assign(value, { estimateAs: 'comment', estimateUnchanged: true }); return; }
+    if (ultima === undefined) value.warnings.push(`no pude leer los comentarios del issue #${id}: la estimación se comenta sin comprobar si ya estaba`);
+  }
+  const k = gh(ctx, 'POST', `repos/${repo}/issues/${id}/comments`, { body: texto });
+  if (k.problem) { value.warnings.push(`la estimación no se comentó en el issue #${id}: ${k.problem.detail}`); return; }
+  value.estimateAs = 'comment';
+}
+const conProyecto = (c, e) => Boolean(e && c.github && typeof c.github === 'object' && c.github.project);
+
 const etiquetas = (issue) => ((issue && issue.labels) || []).map((l) => (typeof l === 'string' ? l : l && l.name)).filter(Boolean);
 const sinEstado = (ls) => ls.filter((l) => !/^estado:/.test(l));
 const camposPropios = (fields) => Object.keys(fields && typeof fields === 'object' ? fields : {}).map((k) => noSoportado(k, `GitHub no tiene el campo ${k} en un issue`));
@@ -98,6 +195,7 @@ function create(args, ctx) {
   // una etiqueta que no quedó (la cuenta no puede crearlas) hace que el issue no se encuentre después por ella
   const quedaron = etiquetas(r.value).map((l) => l.toLowerCase());
   value.missingTags = pedido.labels.filter((l) => !quedaron.includes(l.toLowerCase()));
+  estimar(ctx, c, repo, id, r.value && r.value.node_id, args.estimate, value, false);
   return { ok: true, value };
 }
 
@@ -111,7 +209,15 @@ function update(args, ctx) {
   if (typeof args.comment === 'string' && args.comment.trim() && !args.state) {
     const k = gh(ctx, 'POST', `repos/${repo}/issues/${id}/comments`, { body: args.comment });
     if (k.problem) return k.problem;
-    return { ok: true, value: { id, changed: false, commented: true, warnings: [...d.warnings] } };
+    const value = { id, changed: false, commented: true, warnings: [...d.warnings] };
+    // el nodo del issue sólo hace falta para el proyecto: sin él, no se lee el issue; si la lectura falla, va el motivo
+    let nodo = null;
+    if (conProyecto(c, args.estimate)) {
+      const g = gh(ctx, 'GET', `repos/${repo}/issues/${id}`);
+      nodo = g.problem ? { problem: g.problem } : g.value && g.value.node_id;
+    }
+    estimar(ctx, c, repo, id, nodo, args.estimate, value, true);
+    return { ok: true, value };
   }
   const g = gh(ctx, 'GET', `repos/${repo}/issues/${id}`);
   if (g.problem) return g.problem;
@@ -122,15 +228,22 @@ function update(args, ctx) {
   const warnings = [...d.warnings];
   if (g.value.state === 'closed' && args.reopen !== true) {
     warnings.push(`el issue #${id} está cerrado: reabrirlo lo decide una persona (puede romper la trazabilidad)`);
+    if (args.estimate) warnings.push('la estimación no se cargó: el issue está cerrado');
     // el aviso lo dice en texto; el campo es para el núcleo, que pide la confirmación
     return { ok: true, value: { id, estado: previo, previo, changed: false, pideReabrir: true, warnings } };
   }
-  if (previa === estado && g.value.state !== 'closed') return { ok: true, value: { id, estado, previo, changed: false, warnings } };
+  if (previa === estado && g.value.state !== 'closed') {
+    const value = { id, estado, previo, changed: false, warnings };
+    estimar(ctx, c, repo, id, g.value.node_id, args.estimate, value, true);
+    return { ok: true, value };
+  }
   const cuerpo = { labels: [...sinEstado(ls), `estado:${estado}`] };
   if (g.value.state === 'closed') cuerpo.state = 'open';
   const p = gh(ctx, 'PATCH', `repos/${repo}/issues/${id}`, cuerpo);
   if (p.problem) return p.problem;
-  return { ok: true, value: { id, estado, previo, changed: true, warnings } };
+  const value = { id, estado, previo, changed: true, warnings };
+  estimar(ctx, c, repo, id, g.value.node_id, args.estimate, value, true);
+  return { ok: true, value };
 }
 
 function close(args, ctx) {

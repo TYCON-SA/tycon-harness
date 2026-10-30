@@ -7067,7 +7067,8 @@ function main() {
     process.exit(0);
   }
 
-  // El pedido de Azure DevOps de la historia, a su estado activo: el arnés lo transiciona y recién ahí marca.
+  // El pedido de Azure DevOps de la historia, a su estado activo, con la estimación vigente de la historia: el arnés lo
+  // transiciona y recién ahí marca.
   if (cmd === 'ado-mark-active') {
     const marker = readSessionMarker();
     const storyPath = args.story ? path.resolve(args.story) : (marker && marker.storyPath) || null;
@@ -7075,16 +7076,29 @@ function main() {
     // el id con el lector común (`work_item:` y su nombre viejo), y la capa de plataforma del árbol que corre
     const raiz = path.join(__dirname, '..', '..', '..');
     let wi = null;
+    let storyId = null;
+    let contenidoStory = '';
     // directo del archivo: `readText` devuelve '' cuando no puede leer, y eso se vería como «no tiene pedido»
-    try { wi = require(path.join(raiz, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fs.readFileSync(storyPath, 'utf8')); } catch (e) {
+    try {
+      contenidoStory = fs.readFileSync(storyPath, 'utf8');
+      wi = require(path.join(raiz, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(contenidoStory);
+    } catch (e) {
       // no poder leerlo no es «no tiene pedido»: se dice
       process.stderr.write(`ado-mark-active: no pude leer el pedido de trabajo de la historia (${(e && (e.code || e.message)) || 'error'}); si no se puede, marker.js start-warning ado "<motivo>"\n`);
       process.exit(1);
     }
+    // la estimación nunca frena el paso: sin el número de la historia, el pedido se marca igual y la línea lo dice
+    let estimateMotivo = null;
+    try {
+      storyId = require('./lib/test-scope.js').storyIdOf(contenidoStory);
+      if (!storyId) estimateMotivo = 'la historia no trae `story:` en su frontmatter';
+    } catch (e) {
+      estimateMotivo = `no pude leer el número de la historia (${(e && (e.code || e.message)) || 'error'})`;
+    }
     let repoDir = path.dirname(path.dirname(storyPath));
     try { repoDir = require('child_process').execFileSync('git', ['-C', path.dirname(storyPath), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || repoDir; } catch (_) { /* sin git: la carpeta de arriba */ }
     const r = require('./lib/external-flags.js').adoMarkActive({ workItem: wi, repoDir, reopen: !!args.reopen, assignTo: args.assignTo || null,
-      platformJs: path.join(raiz, 'scripts', 'lib', 'platform', 'platform.js') });
+      platformJs: path.join(raiz, 'scripts', 'lib', 'platform', 'platform.js'), storyId, estimateMotivo });
     if (r.marked) {
       const m = marcarHechoExterno('adoMarkedActive', { via: 'ado-mark-active', workItem: wi });
       if (!m.ok) { process.stderr.write(`ado-mark-active: el pedido quedó activo pero no marqué la parte — ${m.motivo}\n`); process.exit(1); }

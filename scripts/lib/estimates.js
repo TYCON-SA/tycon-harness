@@ -23,6 +23,10 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  *   node scripts/lib/estimates.js story  --repo <ruta> --story <id> --value <n> [--proposed <n>] [--base <id,id>] [--confirmed-by <persona>]
  *   node scripts/lib/estimates.js real   --repo <ruta> --story <id> --hours <n> --run <ejecución>
  *   node scripts/lib/estimates.js report --repo <ruta> --epic <id> | --story <id>
+ *   node scripts/lib/estimates.js work-item --repo <ruta> --story <id>
+ *   `work-item` devuelve la estimación vigente de la historia en la forma que recibe la plataforma (`estimate`: valor,
+ *   unidad, horas, nivel y versión), o null; no escribe nada y sale 0 aunque no pueda leer la configuración (lo dice en
+ *   `motivo`): lo llaman los pasos que crean o marcan el pedido de trabajo, y la estimación nunca los frena.
  *   `real` lo llama `pipeline.js estimate-real`, en su mismo proceso, con las horas de la constancia de `work-signal stop`
  *   (por la línea de comandos se niega con salida 2: lo real no se escribe a mano): siempre en horas, y
  *   la misma ejecución no se anota dos veces; sin horas (o 0) no escribe y devuelve `sin_horas`. `report --story` trae el
@@ -418,10 +422,52 @@ function epicaDe(repo, id, D = require(DISCOVERY), spec) {
   return epica;
 }
 
+/**
+ * La estimación vigente de una historia en la forma que recibe la plataforma (`estimate` de work-item.create/update): la
+ * última versión de la historia o, si no tiene, la del plan, con su número de versión dentro de su nivel. Las horas sólo
+ * si la unidad pasa a horas con las tasas de la organización. Sin líneas, null.
+ */
+function vigente(registro, historia) {
+  for (const nivel of ['historia', 'plan']) {
+    const h = history(registro.lines, { nivel, historia });
+    if (h.length) return { linea: h[h.length - 1], nivel, version: h.length };
+  }
+  return null;
+}
+function paraLaPlataforma(repo, historia, orgConfig) {
+  if (!historia) throw new Problema('falta --story');
+  if (!ID_HISTORIA.test(String(historia))) throw new Problema(`--story tiene que ser un id de historia (es ${JSON.stringify(historia)})`);
+  // lo que mira el pedido de trabajo nunca frena su paso: sin configuración o sin registro legible, null con el motivo
+  try {
+    const org = orgEstimates(orgConfig);
+    const registro = read(repo);
+    // una línea ilegible puede ser la última versión: se manda lo que se lee, y se dice
+    const motivo = registro.unreadable.length
+      ? `el registro tiene ${registro.unreadable.length} línea(s) ilegible(s) (${registro.unreadable.join(', ')}): la vigente puede ser otra`
+      : null;
+    const v = vigente(registro, historia);
+    if (!v) return motivo ? { ok: true, estimate: null, motivo } : { ok: true, estimate: null };
+    const horas = aHoras(v.linea.valor, v.linea.unidad, org);
+    const estimate = { value: v.linea.valor, unit: v.linea.unidad };
+    if (horas !== null) estimate.hours = redondo(horas);
+    const r = { ok: true, estimate: { ...estimate, level: v.nivel, version: v.version } };
+    return motivo ? { ...r, motivo } : r;
+  } catch (e) {
+    if (!(e instanceof Problema)) throw e;
+    return { ok: true, estimate: null, motivo: e.message };
+  }
+}
+
 function run(argv) {
   const o = opciones(argv);
   const cmd = o._[0];
-  if (!['epic', 'plan', 'story', 'real', 'report'].includes(cmd)) throw new Problema(`nivel desconocido: ${cmd === undefined ? '(ninguno)' : cmd} (válidos: epic, plan, story, real, report)`);
+  if (cmd === 'work-item') {
+    if (!o.repo) throw new Problema('falta --repo');
+    const repo = path.resolve(o.repo);
+    if (!fs.existsSync(repo)) throw new Problema(`no existe ${repo}`);
+    return paraLaPlataforma(repo, o.story, o['org-config']);
+  }
+  if (!['epic', 'plan', 'story', 'real', 'report'].includes(cmd)) throw new Problema(`nivel desconocido: ${cmd === undefined ? '(ninguno)' : cmd} (válidos: epic, plan, story, real, report, work-item)`);
   if (!o.repo) throw new Problema('falta --repo');
   const repo = path.resolve(o.repo);
   if (!fs.existsSync(repo)) throw new Problema(`no existe ${repo}`);
@@ -468,6 +514,11 @@ function run(argv) {
 
 function texto(r) {
   if (!r.ok) return `estimates: ${r.reason}${r.motivo ? ` (${r.motivo})` : ''}`;
+  if ('estimate' in r) {
+    if (!r.estimate) return `estimates: sin estimación vigente${r.motivo ? ` (${r.motivo})` : ''}`;
+    const e = r.estimate;
+    return `estimates: vigente ${e.value} ${e.unit}${e.hours !== undefined && e.unit !== 'hours' ? ` (${e.hours} h)` : ''} · ${e.level}, versión ${e.version}${r.motivo ? ` · ${r.motivo}` : ''}`;
+  }
   if (r.reason === 'ya_anotado') return 'estimates: lo real de esa ejecución ya estaba anotado; no se escribe de nuevo';
   if (r.niveles) {
     const pct = (n) => (n.error === null ? n.motivo : `${Math.round(n.error * 100)} %`);

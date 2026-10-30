@@ -28,7 +28,7 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
-const { OPERATIONS, REASONS, REPO_OPERATIONS, areaOf, shapeProblem } = require('./contract.js');
+const { OPERATIONS, REASONS, REPO_OPERATIONS, ESTIMATE_OPERATIONS, areaOf, shapeProblem, estimateProblem } = require('./contract.js');
 const INT = require('../integrations.js');
 const TEAM_REPOS = require('../team-repos.js');
 
@@ -210,6 +210,11 @@ function context(manifest, opts) {
 /** Le pasa la operación a un conector ya elegido y deja la respuesta dentro del contrato. */
 async function call(manifest, operation, args, opts) {
   if (!manifest.operations.includes(operation)) return no('no_soportado', `${manifest.label} no declara ${operation}`);
+  // una estimación sin forma no llega al conector: cargaría un número que nadie escribió
+  if (ESTIMATE_OPERATIONS.includes(operation) && args && args.estimate !== undefined && args.estimate !== null) {
+    const mala = estimateProblem(args.estimate);
+    if (mala) return no('rechazado', `estimación sin forma: ${mala}`);
+  }
   let mod;
   try { mod = require(path.join(manifest.dir, manifest.connector)); } catch (e) {
     return no('no_medido', `el conector ${manifest.name} no carga (${(e && e.code) || String((e && e.message) || e).split('\n')[0]})`);
@@ -248,6 +253,15 @@ function summary(operation, r, label) {
     else if (v.hoursAs === 'comment') t += ` · ${v.hours} h como comentario (${label || 'la plataforma'} no tiene un campo de horas)`;
     else t += ` · ${v.hours} h en ${v.hoursField || 'el campo de horas'}`;
   }
+  if (v.estimateFallback && typeof v.estimateFallback === 'object') {
+    const porque = v.estimateFallback.reason === 'sin_credencial' ? 'sin permiso para el proyecto' : v.estimateFallback.reason === 'no_encontrado' ? 'el proyecto o el campo no se encontró' : v.estimateFallback.reason;
+    // si el comentario tampoco salió, decir «como comentario» contradiría el aviso que lo cuenta
+    t += v.estimateAs === 'comment'
+      ? ` · estimación como comentario: ${porque} (${v.estimateFallback.detail})`
+      : ` · estimación sin cargar: ${porque} (${v.estimateFallback.detail})`;
+  } else if (v.estimateAs === 'field') t += ` · estimación en ${v.estimateField}`;
+  else if (v.estimateAs === 'project') t += ` · estimación en el campo ${v.estimateField} del proyecto`;
+  else if (v.estimateAs === 'comment') t += v.estimateUnchanged ? ' · estimación sin cambios (ya estaba comentada)' : ' · estimación como comentario';
   const faltan = (Array.isArray(v.unsupported) ? v.unsupported : []).map((u) => u && u.field).filter(Boolean).sort();
   if (faltan.length) t += ` · no soportado${en}: ${faltan.join(', ')}`;
   for (const w of Array.isArray(v.warnings) ? v.warnings : []) t += ` · ${w}`;
@@ -263,7 +277,11 @@ async function run(operation, args = {}, opts = {}) {
   const r = c.ok ? await call(manifest, operation, args, opts) : c;
   if (!operation.startsWith('work-item.')) return r;
   // los avisos del conector pueden traer el texto de un error de la plataforma: pasan por la misma limpieza que un «no»
-  const v = r.ok && r.value && Array.isArray(r.value.warnings) ? { ...r, value: { ...r.value, warnings: r.value.warnings.map(limpiar) } } : r;
+  let v = r.ok && r.value && Array.isArray(r.value.warnings) ? { ...r, value: { ...r.value, warnings: r.value.warnings.map(limpiar) } } : r;
+  // el detalle de por qué la estimación no fue al proyecto también es texto de la plataforma
+  if (v.ok && v.value && v.value.estimateFallback && typeof v.value.estimateFallback === 'object') {
+    v = { ...v, value: { ...v.value, estimateFallback: { ...v.value.estimateFallback, detail: limpiar(v.value.estimateFallback.detail) } } };
+  }
   return { ...v, summary: summary(operation, v, manifest && manifest.label) };
 }
 
