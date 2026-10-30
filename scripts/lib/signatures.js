@@ -18,12 +18,74 @@
  *   otherSession  'yes' si el comando se puede correr desde la pestaña de otra sesión, 'no' si no, 'pending' si la firma
  *                 todavía no tiene comando.
  *   terminal      cómo la firma el dueño en su terminal, o null mientras no tenga comando.
+ *   covers        los ids de LEVELS que aprueba: el suyo, o dos si la firma de hoy junta dos cosas de distinto peso,
+ *                 u otro si es un escape que hace lo mismo que otra firma.
+ *   level         el mayor nivel de lo que cubre.
+ *   profiles      a quién se le pide: 'dev' (el dev de producto) y 'mant' (quien mantiene el arnés).
+ *
+ * LEVELS es la tabla de niveles del esquema de firmas, un nivel por id: 1 rutina, 2 excepción (da por bueno
+ * algo sin verificarlo y deja deuda), 3 irreversible o afloja un freno. Sus ids todavía no se piden por su nombre: los
+ * frenos piden las firmas de SIGNATURES, y cada una dice qué ids de la tabla cubre. Los renombres llegan cuando cambie
+ * cómo se pide una firma.
  *
  * GROUPS es la tabla de equivalencias de los 11 valores que la 8.116 aceptaba en `approvals.delegated_signing` (`off`
  * aparte: es «ninguna»): `escape-phrases` son los escapes salvo los de POR_GUION, que se delegan sólo nombrándolos;
  * cada uno de los demás, su propia firma. En `owner_only`, que sólo restringe, `escape-phrases` son todos los escapes:
  * `expand(v, { restringe: true })`. El lector del perfil no acepta grupos ahí; quien lee la lista sin ese lector, igual.
  */
+
+const AMBOS = Object.freeze(['dev', 'mant']);
+const MANT = Object.freeze(['mant']);
+
+// id, nivel, perfiles, qué aprueba
+const LEVELS = Object.freeze([
+  ['plan-approval', 1, AMBOS, 'aprobar el plan (sube a 2 si la historia es delicada)'],
+  ['extra-round', 1, AMBOS, 'una vuelta más de revisores'],
+  ['pending-approval', 1, AMBOS, 'abrir un pendiente nuevo en la lista'],
+  ['save', 1, AMBOS, 'guardar: commit, push y pedidos, si ningún commit toca algo de lo sensible'],
+  ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
+  ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
+  ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
+  ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
+  ['adhoc-lane:sobre-cupo', 2, AMBOS, 'abrir un arreglo rápido cuando ya se pasó el cupo'],
+  ['escape:DOD_BYPASS', 2, AMBOS, 'saltear todos los controles del commit'],
+  ['critical-waiver', 2, AMBOS, 'eximir un hallazgo crítico'],
+  ['runtime-waiver', 2, AMBOS, 'aceptar un criterio imposible de probar en vivo, o eximir la historia entera'],
+  ['manual-test', 2, AMBOS, 'marcar un criterio como probado a mano'],
+  ['browser-test:no', 2, AMBOS, 'decir que no a la prueba con navegador'],
+  ['adversarial-skip', 2, AMBOS, 'saltear el pase adversarial'],
+  ['lost-run', 2, AMBOS, 'dar por perdida una ejecución y cerrarla'],
+  ['escape:force-manual', 2, AMBOS, 'marcar a mano el estado de un control'],
+  ['escape:trust-ran', 2, AMBOS, 'contar revisores sin constancia de que corrieron'],
+  ['escape:TYCON_TEST_GATE', 2, AMBOS, 'saltear sólo el portón de pruebas del commit'],
+  ['escape:TYCON_STATUS_GATE', 2, AMBOS, 'cambiar a mano el estado de una historia'],
+  ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
+  ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
+  ['control-change', 3, MANT, 'cualquier cambio de control'],
+  ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
+  ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
+  ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
+].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves })));
+
+// lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
+// los siete escapes que hacen lo mismo que otra firma
+const COVERS = Object.freeze({
+  'save': ['save', 'save:sensible'],
+  'browser-test': ['browser-test:prepare', 'browser-test:no'],
+  'escape:dod_runtime_exempt': ['runtime-waiver'],
+  'escape:ALLOW_DOD_EVIDENCE_WRITE': ['manual-test'],
+  'escape:TYCON_NO_DEEP_REVIEW': ['adversarial-skip'],
+  'escape:no-deep-review': ['adversarial-skip'],
+  'escape:cerrar-la-ejecucion': ['lost-run'],
+  'escape:cerrar-como-deuda': ['lost-run'],
+  'escape:cambiar-el-estado': ['escape:TYCON_STATUS_GATE'],
+});
+// lo que una firma cubre pero no se firma por delegación: el ok de guardar delegado no firma un cambio que toca algo de
+// SENSITIVE (skills/tycon-pipeline/scripts/lib/save-ok.js)
+const NOT_DELEGATED = Object.freeze(['save:sensible']);
+
+const levelOf = (id) => LEVELS.find((l) => l.id === id);
+const coversOf = (id) => COVERS[id] || [id];
 
 const POR_VARIABLE = [
   ['TYCON_SAFETY_OFF', '1', 'apagar el freno de seguridad para un comando'],
@@ -112,7 +174,15 @@ const SIGNATURES = Object.freeze([
     if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
     return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
   }),
-].map((s) => Object.freeze({ ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id) })));
+].map((s) => {
+  const covers = coversOf(s.id).map(levelOf);
+  return Object.freeze({
+    ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id),
+    covers: Object.freeze(covers.map((l) => l.id)),
+    level: Math.max(...covers.map((l) => l.level)),
+    profiles: Object.freeze(AMBOS.filter((p) => covers.some((l) => l.profiles.includes(p)))),
+  });
+}));
 
 const ESCAPES = SIGNATURES.filter((s) => s.id.startsWith('escape:')).map((s) => s.id);
 const ESCAPES_DEL_GRUPO = ESCAPES.filter((id) => !POR_GUION.includes(id.slice('escape:'.length)));
@@ -172,4 +242,14 @@ function expand(v, { restringe = false } = {}) {
   return isId(v) ? [v] : [];
 }
 
-module.exports = { SIGNATURES, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, ids, groupNames, isId, expand };
+/**
+ * El nivel que alcanza una firma de SIGNATURES cuando la da la coordinadora por delegación: el mayor de lo que cubre,
+ * sin lo que la delegación no firma (NOT_DELEGATED). null si el id no es una firma.
+ */
+function delegatedLevel(id) {
+  const s = SIGNATURES.find((x) => x.id === id);
+  if (!s) return null;
+  return Math.max(...s.covers.filter((c) => !NOT_DELEGATED.includes(c)).map((c) => levelOf(c).level));
+}
+
+module.exports = { SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, ids, groupNames, isId, expand, delegatedLevel };

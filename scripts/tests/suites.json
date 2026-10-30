@@ -2194,6 +2194,12 @@
       "requiere": []
     },
     {
+      "__nota": "tabla de niveles de las firmas: el perfil del equipo no delega una firma de nivel 2 o más (scripts/ci/check-profile-levels.js); con la capa del equipo encima, mide también el perfil real.",
+      "raiz": "arnes",
+      "ruta": "tests/profile-levels.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un pendiente nuevo en la lista de pendientes no entra sin su aprobación firmada: la biblioteca, el control del árbol y del commit, el comando de la firma antes de pedirla, la firma en el catálogo y el freno de escritura del registro.",
       "raiz": "arnes",
       "ruta": "tests/pending-approvals.test.js",
