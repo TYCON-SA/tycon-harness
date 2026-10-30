@@ -88,6 +88,8 @@ firmar, y en la columna tu situación:
 | 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* |
 | 1 · rutina | **Aprobar el plan** (`plan-approval`). Es rutina porque decide qué se construye antes de construirlo, y se cambia. | vos \*\* | espera \*\* | la coordinadora \* | la coordinadora \* |
 | 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos | espera |
+| 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos | espera |
+| 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos | espera |
 | 3 · irreversible | **La emergencia** (`emergency`): pasar por encima del freno de seguridad | vos, en tu terminal | espera | vos, en tu terminal | espera |
 
 - **Vos**: te aparece la ventana de permiso y aprobás. **La coordinadora**: la firma ella, sin molestarte. **Espera**:

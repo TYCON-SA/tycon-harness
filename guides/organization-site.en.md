@@ -655,6 +655,8 @@ be, to copy it and open the request by hand.
   | Ask for another review · 1 | you | waits | the coordinator \* | the coordinator \* |
   | Approve the plan · 1 | you \*\* | waits \*\* | the coordinator \* | the coordinator \* |
   | Skip a control · 2 | you | waits | you | waits |
+  | Accept a criterion that cannot be tested live · 2 | you | waits | you | waits |
+  | Mark a criterion as tested by hand · 2 | you | waits | you | waits |
   | The emergency · 3 | you, at your terminal | waits | you, at your terminal | waits |
 
   \* Only if that signature is "Delegated to the coordinator" and your machine is in "On which machines delegation

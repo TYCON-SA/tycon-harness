@@ -639,6 +639,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* |
   | Aprobar el plan · 1 | vos \*\* | espera \*\* | la coordinadora \* | la coordinadora \* |
   | Saltear un control · 2 | vos | espera | vos | espera |
+  | Aceptar un criterio imposible de probar en vivo · 2 | vos | espera | vos | espera |
+  | Marcar un criterio como probado a mano · 2 | vos | espera | vos | espera |
   | La emergencia · 3 | vos, en tu terminal | espera | vos, en tu terminal | espera |
 
   \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
