@@ -640,8 +640,9 @@ be, to copy it and open the request by hand.
   delegated. Going back to the default level removes the signature from `approvals.levels`. Proposing levels requires
   the team layer to ask for a harness version that can read them.
   Who signs each level: 1, the coordinator on its own if the profile delegates it, otherwise the dev in the window; 2,
-  always a person in the window; 3, a person, and the emergency at their terminal. At night, with nobody to answer,
-  anything not delegated waits. With Codex, which has no window, everything is signed at the terminal. The full matrix
+  always a person in the window; 3, a person, and the emergency at their terminal. With nobody to answer, anything not
+  delegated waits: the system does not look at the time, it asks for the signature anyway and, if nobody answers, the
+  session stays stopped at that step. With Codex, which has no window, everything is signed at the terminal. The full matrix
   is in `guides/firmas-del-arnes.md`.
 - **Hand-testing each criterion**: whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the

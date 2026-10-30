@@ -624,8 +624,9 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
   `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.
   Quién firma cada nivel: el 1, la coordinadora sola si el perfil se lo delega, y si no el dev en la ventana; el 2,
-  siempre una persona en la ventana; el 3, una persona, y la emergencia en su terminal. De noche, sin nadie que conteste,
-  todo lo que no está delegado espera. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
+  siempre una persona en la ventana; el 3, una persona, y la emergencia en su terminal. Sin nadie que conteste, todo lo
+  que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
+  frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
   está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre

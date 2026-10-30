@@ -75,7 +75,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 El nivel que rige es el mayor entre la tabla de arriba y lo que suba el perfil (`approvals.levels`). Quién lo firma
 depende de si la sesión trabaja sola o con una coordinadora, y de si hay alguien para contestar:
 
-| Nivel | Sesión sola, con el dev | Con coordinadora | De noche, sesión sola | De noche, con coordinadora |
+| Nivel | Con alguien que conteste, sesión sola | Con alguien que conteste, con coordinadora | Sin nadie que conteste, sesión sola | Sin nadie que conteste, con coordinadora |
 |---|---|---|---|---|
 | 1 · rutina | el dev, en la ventana | la coordinadora sola, si el perfil la delega; si no, la ventana | espera | la coordinadora sola, si el perfil la delega |
 | 2 · excepción | el dev, en la ventana | el dev: la coordinadora puede pedir algunas, pero las contesta una persona | espera | espera |
@@ -83,7 +83,8 @@ depende de si la sesión trabaja sola o con una coordinadora, y de si hay alguie
 
 - **La coordinadora sola** firma sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
   `approvals.delegated_machines` (ver «Aprobar en nombre del dueño»). Lo que queda en 2 o más sale de esa lista.
-- **Espera** quiere decir que nadie firma: la sesión queda frenada en ese paso hasta que una persona conteste.
+- **Espera** quiere decir que nadie firma. El sistema no mira la hora: pide la firma igual y, si nadie contesta, la
+  sesión queda frenada en ese paso.
 - **La emergencia** (`emergency`) es la única salida para pasar por encima del freno de seguridad: la persona la firma en
   su terminal con `harness.js sign emergency`, con su motivo. El agente no la puede correr.
 - En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
