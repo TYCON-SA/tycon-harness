@@ -127,14 +127,16 @@ function reposDeLaCorrida({ marker = {}, hermanos = [] } = {}) {
     if (!r) throw new Error(`${p} no está en un repo de git`);
     fijos.push(r);
   }
-  // un evento o un hermano fuera de todo repo no tiene qué guardar. Un repo que entra sólo por una edición y vive en una
-  // carpeta temporal (el `git init` de juguete con que la corrida midió algo) tampoco: el ok no lo cubre, y un commit o
-  // un push ahí pide su propio ok (`vigente`). Los hermanos y lo que declara la story entran aunque estén ahí
+  // un evento o un hermano fuera de todo repo no tiene qué guardar. Un repo que entra sólo por una edición, vive en una
+  // carpeta temporal y no tiene `origin` (el `git init` de juguete con que la corrida midió algo) tampoco: el ok no lo
+  // cubre, y un commit o un push ahí pide su propio ok (`vigente`). Un clon o un worktree de un repo real (con `origin`)
+  // entra aunque esté ahí, y los hermanos y lo que declara la story, siempre
   const temporales = CARPETAS_TEMPORALES.map(real);
   const enTemporal = (r) => temporales.some((d) => r === d || r.startsWith(`${d}${path.sep}`));
+  const deJuguete = (r) => enTemporal(r) && !git(r, ['remote', 'get-url', 'origin']).ok;
   const posibles = [
     ...(Array.isArray(marker.fileEvents) ? marker.fileEvents : []).map((e) => e && e.path).filter(Boolean).map(raizDe)
-      .filter((r) => r && !enTemporal(r)),
+      .filter((r) => r && !deJuguete(r)),
     ...hermanos.map(raizDe),
     ...rutasDeclaradas(marker.storyPath).map(raizDe),
   ].filter(Boolean);

@@ -592,6 +592,13 @@ test('Repos_GitInitEnCarpetaTemporal_NoEntra (T31)', (t) => {
   const toy = juguete(t);
   const marker = corridaLimpia([a], { fileEvents: [{ path: path.join(a, 'LEEME.md'), ts: ANTES, code: true }, { path: path.join(toy, 'medir.js'), ts: ANTES, code: true }] });
   assert.deepStrictEqual(SO.reposDeLaCorrida({ marker, hermanos: [] }), [a], 'el de la story sí; el de juguete no');
+  // un clon o un worktree de un repo real (con `origin`) en una carpeta temporal sí entra: si no, trabajar ahí lo
+  // sacaría del control de lo sensible
+  const clon = repo(t);
+  sh(clon, 'remote', 'add', 'origin', 'https://example.com/acme/harness.git');
+  escribir(clon, 'trabajo.js', 'module.exports = 3;\n');
+  const conClon = corridaLimpia([a], { fileEvents: [...marker.fileEvents, { path: path.join(clon, 'trabajo.js'), ts: ANTES, code: true }] });
+  assert.deepStrictEqual(SO.reposDeLaCorrida({ marker: conClon, hermanos: [] }).sort(), [a, clon].sort(), 'el clon con origin entra');
   // declarado como hermano, entra aunque viva en una carpeta temporal
   const hermano = repo(t);
   escribir(hermano, 'LEEME.md', 'cambiado\n');
