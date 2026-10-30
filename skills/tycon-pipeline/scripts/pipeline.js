@@ -2946,7 +2946,7 @@ function notaCierre3(marker) {
   const maqueta = storyNeedsMockup(abs)
     ? ` + --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>" (story con pantalla: la maqueta la ve una persona, también con LOW — steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta)`
     : '';
-  return `marker.js complete-step approve-plan --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>")${maqueta}. Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
+  return `marker.js complete-step approve-plan --approved "<cita textual de la aprobación del user>"${maqueta}. Ningún plan se aprueba solo: lo aprueba una persona, o la coordinadora con la revisión automática (steps/${STEPS_TABLE.byId('approve-plan').file}). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
 }
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
@@ -3601,7 +3601,6 @@ function recortarStart(result) {
   }
   if (result.risk) {
     breve.riesgo = result.risk.risk;
-    breve.auto_approve_plan = result.risk.auto_approve_plan === true;
     if (result.risk.risk === 'NORMAL') {
       breve.riesgo_por = (result.risk.criteria || []).filter((c) => !c.pass).map((c) => c.name);
     }
@@ -3639,13 +3638,10 @@ function recortarStart(result) {
   return breve;
 }
 
-// ── pipeline.js risk-class — Autonomía Nivel 2 ───
-// Clasifica la story para el auto-approve CONDICIONAL del plan (paso «Aprobar el plan»):
-// LOW-risk → ese paso se auto-aprueba y el plan se muestra igual; cualquier criterio
-// fallido → NORMAL → checkpoint HITL como siempre. Reglas de oro intactas:
-// git push y cambios de scope firmado SIEMPRE human-gate (regla #0).
-// Criterios del diseño pipeline-autonomy-design.md §9 (validator verde es
-// pre-requisito del flujo — «Validar la historia» corre antes que «Aprobar el plan», no se re-evalúa acá).
+// ── pipeline.js risk-class ───
+// Clasifica la story en LOW o NORMAL: lo usan la revisión adversarial de la story y el tamaño de la corrida. Ningún
+// plan se aprueba solo por ser LOW: lo aprueba una persona, o la coordinadora con la revisión automática.
+// Además dice si la story es delicada (`computeDelicate`): el plan de una delicada lo aprueba siempre el dev.
 // ── El tamaño de la corrida: liviana (sólo documentación) o completa. Lo clasifica lib/run-size.js por
 // lo que la story DECLARA; `args.runSize` (el forzado del marcador, que sólo leen las ramas de línea de comandos)
 // manda. Sin story legible, completa. El repo aporta sus superficies del pase adversarial.
@@ -3688,7 +3684,7 @@ function runSizeDelMarcador(storyPath) {
 function computeRiskClass(args) {
   const storyPath = args.story;
   if (!storyPath || !fs.existsSync(storyPath)) {
-    return { risk: 'NORMAL', error: `--story inválido: ${storyPath}`, auto_approve_plan: false };
+    return { risk: 'NORMAL', error: `--story inválido: ${storyPath}`, delicate: computeDelicate(args) };
   }
   const content = readText(storyPath);
   const fm = parseFrontmatterPipeline(content);
@@ -3721,12 +3717,176 @@ function computeRiskClass(args) {
   return {
     risk: allPass ? 'LOW' : 'NORMAL',
     run_size: runSize.size,
-    auto_approve_plan: allPass,
     criteria,
+    delicate: computeDelicate(args),
     note: allPass
-      ? 'LOW-risk: «Aprobar el plan» puede auto-aprobarse (Nivel 2), pero el plan se muestra siempre: primero un mensaje con el plan tal cual, después complete-step approve-plan --auto-approved (lee la conversación; sin poder leerla, se le pregunta a la persona). Push y scope firmado siguen human-gate SIEMPRE.'
-      : 'NORMAL: «Aprobar el plan» con la persona, como siempre.',
+      ? 'LOW-risk: la revisión adversarial de la story se saltea. El plan lo aprueba una persona, o la coordinadora con la revisión automática.'
+      : 'NORMAL: «Aprobar el plan» con la persona, o la coordinadora con la revisión automática si la story no es delicada.',
   };
+}
+
+// ── ¿La story es delicada? ──
+// Su plan es nivel 2: lo aprueba siempre el dev, nunca la coordinadora con la revisión automática. Seis reglas sobre los
+// archivos de la story y las rutas que nombra el plan (`args.planText`); la primera que se cumple da el motivo. En duda,
+// delicada: lo que no se puede leer cuenta como delicado, con «no pude saber».
+const RE_RUTA_SENSIBLE = /auth|security|payment|crypto|secret|credential/i;
+// el portón de CI (también por su nombre suelto), el instalador y los ganchos de git (también la carpeta), una migración
+const RE_PORTON = /(^|\/)(tycon-ci-gate\.js|guides\/ci-gate(\.en)?\.md|install-tycon-hooks\.[^/]+)$|(^|\/)(scripts\/setup|\.githooks)(\/|$)|\.sql$|(^|\/)drizzle(\/|$)/i;
+const RE_PRODUCCION = /(^|\/)\.tycon\/production\.json$|(^|\/)scripts\/production(\/|$)/i;
+const RE_PIPELINE_YML = /(^|\/)(azure-pipelines[^/]*|pipelines\/.+)\.ya?ml$/i;
+// un paso a producción: `stage|environment|deployment: …prod…` en el mismo renglón, o el entorno en su forma de objeto
+// (`environment:` y abajo `name: production`)
+const RE_STAGE_PROD = /^\s*-?\s*(stage|environment|deployment)\s*:\s*['"]?[\w.-]*prod|^\s*environment\s*:\s*\r?\n\s+(name\s*:\s*)?['"]?[\w.-]*prod/im;
+// rutas que nombra un plan: absolutas o relativas, con `/` o con `\` (Windows), una carpeta, o un nombre suelto con una
+// extensión conocida
+const RE_RUTA_DEL_PLAN = /(?:[A-Za-z]:)?[\\/]?(?:[\w.@-]+[\\/])+[\w.@-]*|[\w@-]+\.(?:c?js|mjs|ts|tsx|jsx|sh|ps1|ya?ml|json|sql|cs|csproj|md|py)\b/g;
+
+function rutasDelPlan(texto) {
+  const out = new Set();
+  for (const m of String(texto || '').matchAll(RE_RUTA_DEL_PLAN)) {
+    const r = m[0].replace(/[.,;:)]+$/, '');
+    if (r.replace(/[\\/]/g, '')) out.add(r);
+  }
+  return [...out];
+}
+
+/**
+ * Una ruta de la story o del plan, en la forma en que se compara: sin el comentario del renglón (`- ruta   # nota`), sin
+ * comillas, con `/`, y relativa a la raíz que la contiene cuando es absoluta. `{ rel, abs, base }`.
+ */
+function rutaComparable(f, raices) {
+  let s = String(f).replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/');
+  const absoluta = path.isAbsolute(s) || /^[A-Za-z]:\//.test(s);
+  let rel = s.replace(/^\.\//, '');
+  if (absoluta) {
+    for (const r of raices) {
+      const x = path.relative(r, s).replace(/\\/g, '/');
+      if (x && !x.startsWith('..') && !path.isAbsolute(x)) { rel = x; break; }
+    }
+  }
+  return { rel, abs: absoluta ? s : null, base: path.posix.basename(rel.replace(/\/$/, '')) };
+}
+
+/** El repo de la story: el `--repo`, o la carpeta con `.git` más cercana hacia arriba. null si no hay. */
+function repoDeLaStory(storyPath, repo) {
+  if (repo) return repo;
+  let d = path.dirname(path.resolve(storyPath));
+  for (;;) {
+    if (fs.existsSync(path.join(d, '.git'))) return d;
+    const arriba = path.dirname(d);
+    if (arriba === d) return null;
+    d = arriba;
+  }
+}
+
+/**
+ * Los archivos de la constancia de controles de un repo (scripts/ci/controls-from-base.json), o null si no la tiene: lo
+ * que la lista nombra, los guiones que nombra el pre-commit y el código que cargan los guiones de control (sus `require`
+ * relativos y sus `path.join(__dirname, …)`, sin las pruebas), como el cierre de `run-base-controls.sh`.
+ */
+function archivosDeControles(raiz) {
+  const f = path.join(raiz, 'scripts', 'ci', 'controls-from-base.json');
+  if (!fs.existsSync(f)) return null;
+  const inv = JSON.parse(fs.readFileSync(f, 'utf8'));
+  if (!inv || !Array.isArray(inv.controls)) throw new Error(`${path.relative(raiz, f)} no tiene «controls»`);
+  const ruta = (r) => (typeof r === 'string' ? r : r && r.path) || null;
+  const todo = new Set(['scripts/ci/controls-from-base.json', inv.hook, ...inv.controls.flatMap((c) => [c.script, ...(c.rules || []).map(ruta)]),
+    ...(inv.workflows || []).map(ruta)].filter(Boolean));
+  const leer = (rel) => { try { return fs.readFileSync(path.join(raiz, rel), 'utf8'); } catch (_) { return null; } };
+  const existe = (rel) => { try { return fs.statSync(path.join(raiz, rel)).isFile(); } catch (_) { return false; } };
+  const cola = inv.controls.map((c) => c.script).filter(Boolean);
+  const hook = inv.hook ? leer(inv.hook) : null;
+  if (hook) for (const m of hook.matchAll(/\$\{?(?:REPO_ROOT|TCG)\}?\/([\w.@/-]+?\.(?:c?js|mjs|sh))(?![\w.])/g)) { todo.add(m[1]); cola.push(m[1]); }
+  const vistos = new Set();
+  while (cola.length && vistos.size < 2000) {
+    const g = cola.shift();
+    if (vistos.has(g)) continue;
+    vistos.add(g);
+    const texto = leer(g);
+    if (texto === null) continue;
+    const dir = path.posix.dirname(g);
+    const nombrados = [...texto.matchAll(/require\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g)].map((m) => m[1]);
+    for (const m of texto.matchAll(/path\.(?:join|resolve)\(\s*__dirname\s*,([^()]*)\)/g)) {
+      const lits = [...m[1].matchAll(/(['"`])([^'"`\n$]*)\1/g)].map((x) => x[2]).filter(Boolean);
+      if (lits.length) nombrados.push(lits.join('/'));
+    }
+    for (const n of nombrados) {
+      let c = path.posix.normalize(path.posix.join(dir, n));
+      if (c.startsWith('..') || /(^|\/)tests?\//.test(c)) continue;
+      if (!/\.\w+$/.test(c) && existe(`${c}.js`)) c = `${c}.js`;
+      if (!/\.(c?js|mjs|sh)$/.test(c) || !existe(c)) continue;
+      todo.add(c);
+      cola.push(c);
+    }
+  }
+  return todo;
+}
+
+function computeDelicate(args) {
+  const si = (rule, detalle) => ({ value: true, rule, reason: `${rule}: ${detalle}` });
+  const noPude = (motivo) => ({ value: true, rule: 'no-pude-saber', reason: `no pude saber: ${motivo}` });
+  const storyPath = args && args.story;
+  let content;
+  try { content = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return noPude(`no pude leer la story (${storyPath}: ${e.code || e.message})`); }
+  const repo = repoDeLaStory(storyPath, args.repo);
+  let raices = repo ? [repo] : [];
+  if (repo) {
+    const faltan = [];
+    try { raices = [repo, ...companionLib.companionRoots(repo, storyPath, { onMissing: (m) => faltan.push(m) })]; } catch (e) { return noPude(`no pude leer los repos compañeros (${e.message})`); }
+    // un compañero declarado que no está en disco: sus controles no se pueden mirar
+    if (faltan.length) return noPude(`el repo declara ${faltan.join(', ')} y no está en disco`);
+  }
+  const files = [...new Map([
+    ...(args.files && args.files.length ? args.files : [...parseFrontmatterList(content, 'files_to_create'), ...parseFrontmatterList(content, 'files_to_modify')]),
+    ...rutasDelPlan(args.planText),
+  ].map((f) => rutaComparable(f, raices)).filter((x) => x.rel).map((x) => [x.rel, x])).values()];
+  const sensible = files.find((f) => RE_RUTA_SENSIBLE.test(f.rel));
+  if (sensible) return si('rutas-sensibles', sensible.rel);
+  if (repo) {
+    const cfg = path.join(repo, '.tycon', 'advisors.yaml');
+    try { if (fs.existsSync(cfg)) fs.readFileSync(cfg, 'utf8'); } catch (e) { return noPude(`no pude leer ${cfg} (${e.code || e.message})`); }
+    let sup;
+    try { sup = tocaSuperficieCompartida(repo, files.map((f) => f.abs || f.rel)); } catch (e) { return noPude(`no pude leer la superficie compartida (${e.message})`); }
+    if (sup) return si('superficie-compartida', `${sup.file} (${sup.pattern})`);
+  }
+  const prod = files.find((f) => RE_PRODUCCION.test(f.rel));
+  if (prod) return si('produccion', prod.rel);
+  for (const f of files.filter((x) => RE_PIPELINE_YML.test(x.rel))) {
+    let txt = null;
+    try { txt = repo ? fs.readFileSync(f.abs || path.join(repo, f.rel), 'utf8') : null; } catch (_) { txt = null; }
+    if (txt === null) return si('produccion', `${f.rel}: un pipeline que no pude leer`);
+    if (RE_STAGE_PROD.test(txt)) return si('produccion', `${f.rel}: tiene un paso a producción`);
+  }
+  const porton = files.find((f) => RE_PORTON.test(f.rel));
+  if (porton) return si('porton-instalador-migracion', porton.rel);
+  // `sensible:` con cualquier valor no vacío: en el renglón, o como lista de YAML en los renglones de abajo
+  const fmTexto = ((content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const decl = fmTexto.match(/^sensible[ \t]*:[ \t]*(.*)$/m);
+  if (decl) {
+    const valor = decl[1].replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').trim();
+    const lista = fmTexto.slice(decl.index + decl[0].length).match(/^\r?\n[ \t]+-[ \t]*(\S.*)$/m);
+    if ((valor && valor !== '[]') || (!valor && lista)) return si('sensible', `la story declara sensible: ${valor || lista[1]}`);
+  }
+  // lo sensible del ok de guardar (SENSITIVE de signatures.js): las firmas, los frenos y el perfil, que un plan
+  // delicado no puede tocar sin una persona. `**` cualquier cosa, `*` un tramo sin `/`, en minúsculas, como en save-ok.js
+  let sensibles;
+  try {
+    sensibles = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SENSITIVE.map((p) => new RegExp(`^${String(p).toLowerCase()
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*\*\//g, '\u0001').replace(/\*\*/g, '\u0002').replace(/\*/g, '[^/]*')
+      .replace(/\u0001/g, '(?:.*/)?').replace(/\u0002/g, '.*')}$`));
+  } catch (e) { return noPude(`no pude leer la lista de lo sensible (${e.message})`); }
+  const firmaOFreno = files.find((f) => sensibles.some((re) => re.test(f.rel.toLowerCase())));
+  if (firmaOFreno) return si('controles', `${firmaOFreno.rel} (firmas, frenos o perfil)`);
+  for (const raiz of raices) {
+    let ctl;
+    try { ctl = archivosDeControles(raiz); } catch (e) { return noPude(`no pude leer la constancia de controles de ${path.basename(raiz)} (${e.message})`); }
+    if (!ctl) continue;
+    const bases = new Set([...ctl].map((c) => path.posix.basename(c)));
+    // un nombre suelto (sin carpeta) cuenta si coincide con el de un archivo de control: en duda, delicado
+    const toca = files.find((f) => ctl.has(f.rel) || (!f.rel.includes('/') && bases.has(f.base)));
+    if (toca) return si('controles', toca.rel);
+  }
+  return { value: false, rule: null, reason: 'ninguna' };
 }
 
 // ── pipeline.js story-review-gate — la revisión adversarial de la historia, antes de programar ──
@@ -4828,7 +4988,7 @@ function detectarWordSplit(args) {
     `  partido por espacios: ${pedazos.length} paths, ${existen.length} existen en disco.\n` +
     'Causa: zsh NO word-splitea $VAR sin comillas — usá ${=VAR} o pasá los paths explícitos.\n' +
     'Por qué ABORTA y no sigue: con 1 archivo contado, risk-class da LOW y eso apaga DOS frenos\n' +
-    'a la vez — el checkpoint HITL del plan (auto_approve_plan) y el pase adversarial\n' +
+    'a la vez — la revisión adversarial de la story y el pase adversarial\n' +
     '(deep-review-gate) — sin dejar rastro de que se apagaron por un error de parseo.\n'
     );
   }
@@ -6979,6 +7139,20 @@ function main() {
       }
     }
     const result = computeNext();
+    // La revisión automática del plan que rechazó el plan de esta corrida (la más nueva, de cualquier sesión que la haya
+    // lanzado): se muestra mientras el plan siga igual. Best-effort: leerla nunca rompe la consulta.
+    try {
+      const m = readSessionMarker();
+      const pr = require('./lib/plan-review.js');
+      const c = m && pr.ultimaDelDestino({ estado: stateDirOf(os.homedir()), destino: sessionIdFileKey() });
+      const plan = c && c.veredicto === 'rechazado' ? pr.planDe(m) : null;
+      if (plan && plan.texto && require('crypto').createHash('sha256').update(plan.texto).digest('hex') === c.huellas.plan
+        && c.corrida && c.corrida.startedAt === (m.startedAt || null)) {
+        result.plan_review = { veredicto: c.veredicto, lanzo: c.lanzo, hora: c.hora, hallazgos: c.hallazgos };
+        result.note = `${result.note ? `${result.note} ` : ''}La revisión automática rechazó el plan (${c.hallazgos.length} hallazgo(s), plan_review): corregilo antes de que lo apruebe alguien.`;
+      }
+      if (c && c.aviso) result.plan_review_aviso = c.aviso;
+    } catch { /* sin la revisión, next sale igual */ }
     // Consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
     // anotado ni arrancar un paso completo. Las partes del arranque, el pase adversarial y la prueba en vivo también: su trabajo no puede
@@ -7147,7 +7321,7 @@ function main() {
   }
   if (cmd === 'risk-class') {
     // Guarda de aridad/existencia: sin esto un --files mal expandido cuenta 1
-    // archivo → LOW → `auto_approve_plan: true` (se saltea el checkpoint del plan) Y skip del
+    // archivo → LOW → se saltea la revisión adversarial de la story Y skip del
     // pase adversarial, los dos en silencio. Sólo si vino --files: sin el flag, risk-class cae legítimamente
     // al frontmatter de la story (files_to_create/files_to_modify) y no hay nada que validar.
     // SÓLO la guarda de aridad, no la validación de existencia completa.
@@ -7162,11 +7336,11 @@ function main() {
     const fantasmaErr = archivosFantasma(args);
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
     const result = computeRiskClass({ ...args, runSize: runSizeDelMarcador(args.story) });
-    // Una story con pantalla pide aprobar la maqueta aunque el plan se apruebe
-    // solo. `computeRiskClass` es pura (no sabe la raíz del repo): la maqueta se suma acá, sin tocar el riesgo.
+    // Una story con pantalla pide aprobar la maqueta con el plan. `computeRiskClass` es pura (no sabe la raíz del
+    // repo): la maqueta se suma acá, sin tocar el riesgo.
     if (storyNeedsMockup(args.story)) {
       result.mockup_required = true;
-      if (result.risk === 'LOW') result.note = `${result.note} Story con pantalla: el plan se aprueba solo; la maqueta no (--mockup-approved, steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta).`;
+      result.note = `${result.note} Story con pantalla: la maqueta la aprueba quien aprueba el plan (--mockup-approved, steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta).`;
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
@@ -7637,9 +7811,9 @@ function main() {
     '  node pipeline.js next\n' +
     '       (próximo step + step_file + skips MECÁNICOS evaluados + checks del marker.\n' +
     '       El LLM sigue siendo el loop (H17): lee SOLO el step file que esto indica.)\n' +
-    '  node pipeline.js risk-class     --story <spec.md> [--files ...]\n' +
-    '       (Nivel 2 autonomía: LOW → plan auto-aprobado con anuncio; cualquier\n' +
-    '       criterio fallido → NORMAL → HITL. Push/scope firmado SIEMPRE human-gate.)\n' +
+    '  node pipeline.js risk-class     --story <spec.md> [--files ...] [--repo <dir>]\n' +
+    '       (LOW o NORMAL, y `delicate`: el plan de una story delicada lo aprueba siempre el dev.\n' +
+    '       Ningún plan se aprueba solo. Push/scope firmado SIEMPRE human-gate.)\n' +
     '  node pipeline.js tooling-expected --repo <dir>\n' +
     '       (PIPE-C9: qué tooling ESPERA el pipeline acá — codegraph si hay .codegraph/, engram,\n' +
     '       tool Workflow p/ el pase adversarial. El orquestador cruza contra su harness y AVISA al user si algo\n' +
@@ -7760,6 +7934,7 @@ module.exports = {
   buildAdvisorContext,
   parseFrontmatterList,
   computeRiskClass,
+  computeDelicate,
   computeRunSize,
   aplicarTamanoALosRevisores,
   notaDelTamano,

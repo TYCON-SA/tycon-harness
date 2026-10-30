@@ -3,8 +3,8 @@
  * signature-log.js — el registro común de las firmas: `signatures.jsonl`, en la carpeta de estado de la casa de la
  * cuenta (al lado de `gates.log`), un renglón por firma dada.
  *
- * Cada renglón dice quién firmó (`signer`), por qué vía (`via`: window, terminal, delegation o command, la de un
- * comando de emergencia), si fue delegada, quién la pidió (`ordered_by`), sobre qué sesión (`target`), su id y su nivel
+ * Cada renglón dice quién firmó (`signer`), por qué vía (`via`: window, terminal, delegation, command, la de un
+ * comando de emergencia, o review, la coordinadora con la revisión automática del plan), si fue delegada, quién la pidió (`ordered_by`), sobre qué sesión (`target`), su id y su nivel
  * en el catálogo (signatures.js: una firma de hoy o un id de la tabla de niveles), la huella de la máquina
  * (machine-id.js), la hora, el motivo y el guion que la escribió (`source`).
  *
@@ -23,7 +23,10 @@ const { casaDeLaCuenta } = require('./real-home.js');
 const stateDir = (casa) => require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(casa);
 
 const FILE = 'signatures.jsonl';
-const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command']);
+// `review`: la coordinadora por delegación, respaldada por el veredicto aprobado de la revisión automática que ella lanzó
+// (la aprobación de un plan de rutina): nivel 1, delegada
+const VIAS = Object.freeze(['window', 'terminal', 'delegation', 'command', 'review']);
+const DELEGADAS = Object.freeze(['delegation', 'review']);
 const MOTIVO_MAX = 500;
 
 const una = (s, n) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
@@ -55,10 +58,10 @@ function maquina(huella) {
 function appendSignature({ signature, via, signer = null, orderedBy = null, target = null, reason = '', source = null, home, now = Date.now(), huella } = {}) {
   try {
     if (!VIAS.includes(via)) return { ok: false, error: `la vía «${via}» no es una de ${VIAS.join(', ')}` };
-    const n = nivelDe(signature, via === 'delegation');
+    const n = nivelDe(signature, DELEGADAS.includes(via));
     if (!n) return { ok: false, error: `«${signature}» no es un id del catálogo de firmas` };
     const renglon = {
-      ts: new Date(now).toISOString(), signature, level: n.level, covers: n.covers, via, delegated: via === 'delegation',
+      ts: new Date(now).toISOString(), signature, level: n.level, covers: n.covers, via, delegated: DELEGADAS.includes(via),
       signer, ordered_by: orderedBy, target, machine: maquina(huella), reason: una(reason, MOTIVO_MAX), source,
     };
     const p = logPath(home);

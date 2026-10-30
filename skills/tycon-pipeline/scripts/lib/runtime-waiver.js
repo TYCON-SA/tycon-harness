@@ -242,6 +242,15 @@ function pausaFinal() {
   } catch { /* sin consola: nada que esperar */ }
 }
 
+/**
+ * ¿Corre en la CI, donde no hay persona que firme? `CI`, `TF_BUILD` o `GITHUB_ACTIONS` en `true` o `1` (sin distinguir
+ * mayúsculas). Otro valor (`false`, `0`, vacío) no es la CI. Sólo sirve para negar una firma: que hay una persona lo
+ * dicen la ventana o la terminal de verdad, nunca una variable.
+ */
+function enLaCI(env = process.env) {
+  return ['CI', 'TF_BUILD', 'GITHUB_ACTIONS'].some((k) => env && /^(true|1)$/i.test(String(env[k] == null ? '' : env[k]).trim()));
+}
+
 /** El tope de la ventana en segundos: 300, o menos si `TYCON_WAIVER_TIMEOUT_S` lo baja (nunca lo sube). */
 function topeVentanaS() {
   const env = Number(process.env.TYCON_WAIVER_TIMEOUT_S);
@@ -254,7 +263,9 @@ function topeVentanaS() {
  * `{ estado: 'cerrada', codigo }`, `{ estado: 'vencida' }` (pasó el tope: se la cerró, no se firmó nada) o
  * `{ estado: 'no-abrio', motivo }`. `opts.spawn` y `opts.kill` sólo para las pruebas.
  */
-function abrirVentana({ script, args = [], titulo = 'Firma del waiver', programa = process.execPath, spawn, kill } = {}) {
+function abrirVentana({ script, args = [], titulo = 'Firma del waiver', programa = process.execPath, spawn, kill, env } = {}) {
+  // en la CI no hay quién firme: no se abre ni se espera (con la consola inyectada, el ambiente es el que se pasa)
+  if (enLaCI(env !== undefined ? env : (spawn ? {} : process.env))) return { estado: 'no-abrio', motivo: 'esta firma la da una persona: no sigo (es la CI)' };
   const cp = require('child_process');
   const todo = [programa, script, ...args];
   // una barra al final escapa la comilla de cierre y junta ese argumento con el siguiente
@@ -536,6 +547,6 @@ function discardedFor(story, arg2) {
 
 module.exports = {
   hasTty, promptTty, appendWaiver, waivedAcs, verifyChain, waiverLogPath, repoWaiverLogPath, declHashFor, discardedFor,
-  esWindows, enVentana, consolaNueva, abrirVentana, anotarVentana, dentroDeLaVentana, confirmarFrase, fraseAlAzar, pausaFinal, topeVentanaS,
+  esWindows, enVentana, enLaCI, consolaNueva, abrirVentana, anotarVentana, dentroDeLaVentana, confirmarFrase, fraseAlAzar, pausaFinal, topeVentanaS,
   MARCA_VENTANA, VENTANA_TOPE_S, PALABRAS,
 };

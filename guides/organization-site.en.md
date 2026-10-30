@@ -641,7 +641,8 @@ be, to copy it and open the request by hand.
   the profile delegates it anyway, the harness removes it when reading and reports it as ignored; the rest stays
   delegated. Going back to the default level removes the signature from `approvals.levels`. Proposing levels requires
   the team layer to ask for a harness version that can read them.
-  Who signs each level: 1, the coordinator on its own if the profile delegates it, otherwise the dev in the window; 2,
+  Who signs each level: 1, the coordinator if the profile delegates it (the plan, only with the approved verdict of the
+  automatic review she launches), otherwise the dev in the window; 2,
   always a person in the window; 3, a person, and the emergency at their terminal. With nobody to answer, anything not
   delegated waits: the system does not look at the time, it asks for the signature anyway and, if nobody answers, the
   session stays stopped at that step. With Codex, which has no window, everything is signed at the terminal. The full matrix
@@ -649,19 +650,21 @@ be, to copy it and open the request by hand.
 
   **Who signs? In short.** To know who signs something on your machine, look here:
 
-  | What has to be signed | No coordinator, you are there | No coordinator, you are away | Coordinator, you are there | Coordinator, you are away |
-  |---|---|---|---|---|
-  | Save the work · 1 | you | waits | the coordinator \* | the coordinator \* |
-  | Ask for another review · 1 | you | waits | the coordinator \* | the coordinator \* |
-  | Approve the plan · 1 | you \*\* | waits \*\* | the coordinator \* | the coordinator \* |
-  | Skip a control · 2 | you | waits | you | waits |
-  | Accept a criterion that cannot be tested live · 2 | you | waits | you | waits |
-  | Mark a criterion as tested by hand · 2 | you | waits | you | waits |
-  | The emergency · 3 | you, at your terminal | waits | you, at your terminal | waits |
+  | What has to be signed | No coordinator, you are there | No coordinator, you are away | Coordinator, you are there | Coordinator, you are away | The automatic review |
+  |---|---|---|---|---|---|
+  | Save the work · 1 | you | waits | the coordinator \* | the coordinator \* | does not apply |
+  | Ask for another review · 1 | you | waits | the coordinator \* | the coordinator \* | does not apply |
+  | Approve the plan · 1 | you | waits | the coordinator, only with the approved verdict of the review she launches \*\* | the coordinator, only with the approved verdict of the review she launches \*\* | required for the coordinator |
+  | Approve the plan of a sensitive story · 2 | you | waits | you | waits | attacks and warns, never approves |
+  | Skip a control · 2 | you | waits | you | waits | does not apply |
+  | Accept a criterion that cannot be tested live · 2 | you | waits | you | waits | does not apply |
+  | Mark a criterion as tested by hand · 2 | you | waits | you | waits | does not apply |
+  | The emergency · 3 | you, at your terminal | waits | you, at your terminal | waits | does not apply |
 
   \* Only if that signature is "Delegated to the coordinator" and your machine is in "On which machines delegation
-  applies"; otherwise it is the same as without a coordinator. \*\* Today the plan of a low-risk story can be approved
-  without a signature, from the same session. Why each routine is routine, and the notes, in
+  applies"; otherwise it is the same as without a coordinator. \*\* The coordinator launches the automatic review of the
+  plan and approves only if it says "approved"; no plan approves itself, and the plan of a sensitive story is always
+  approved by the dev. Why each routine is routine, and the notes, in
   `guides/firmas-del-arnes.md`.
 
   **Where it is configured**, all in this section:

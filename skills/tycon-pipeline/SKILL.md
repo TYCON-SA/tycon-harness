@@ -135,8 +135,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
   reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
   `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
-- **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → auto-aprobado, con el plan en tus
-  mensajes; NORMAL → HITL. Push y scope firmado: human-gate.
+- **G.i**: ningún plan se aprueba solo: una persona, o la coordinadora con el «aprobado» de la revisión que ella lanza
+  (`plan-review`); uno delicado (`risk-class`), siempre el dev. Push y scope firmado: human-gate.
 - **G.ii**: con `visual_plan: true` (o `--visual-plan`) y risk NORMAL, plan visual offline con
   `scripts/visual-plan.js render`. Default OFF.
 - **H.i — sesión fresca**: el pipeline corre en sesión nueva o tras `/clear`; si la conversación ya lleva
@@ -260,7 +260,7 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
 `bypass.log` como `MARKER_SKIPS_PLAN`.
 
 - Cerrar pasos EN ORDEN y POR NOMBRE: `marker.js complete-step <nombre>` (un número se niega: es ambiguo);
-  `approve-plan` con `--approved "<cita del user>"` o `--auto-approved "<criterios>"` (sólo LOW). Freno de orden
+  `approve-plan` con `--approved "<cita del user>"`. Freno de orden
   `lib/steps.js` ORDER_REQUIRES (`--out-of-order` queda logueado). `reviewers` exige `checks.advisors` verde por
   run-check de esta vuelta. Parte del Arranque que falla: `marker.js start-warning <time-tracking|ado> "<motivo>"`.
 - `pipeline.js next` anota el arranque del paso: cerrar el anterior → `next` → trabajar.

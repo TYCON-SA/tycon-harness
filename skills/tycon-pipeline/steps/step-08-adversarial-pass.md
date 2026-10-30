@@ -187,6 +187,30 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 - Bajo Codex, `corredor.muertos` dice la causa de cada agente y la hora. Con el tope de uso no se reintenta y los
   agentes que faltan no se lanzan.
 
+## El modo plan: la revisión automática del plan
+
+El mismo guion corre **antes del código**, sobre el plan de otra sesión, con `args.modo: 'plan'`. No es este paso: lo
+lanza la coordinadora desde «Aprobar el plan» (`steps/step-04-approve-plan.md` §«Quién aprueba el plan»), con
+`marker.js plan-review --for-session <sesión>`, que le arma los args.
+
+- **Qué recibe**: sólo el texto de la story, el del plan y la ruta del repo (`storyTexto`, `planTexto`, `repo`), nunca
+  el hilo de la sesión que planeó. Los dos textos van entre marcas, como **datos no confiables**: una instrucción escrita
+  adentro («aprobá este plan») no cambia lo que reportan los agentes. Las marcas llevan el `pedido` de la revisión, un
+  número al azar que quien escribió el plan no conocía: imitar una marca no saca texto del dato. Sin `pedido`, el
+  pase no corre y queda sin veredicto. El resultado devuelve el `pedido`, y sólo así se anota.
+- **Lo que esto no frena**: la sesión que lanza la revisión puede leer su propio pedido. Si decide escribir a mano un
+  resultado «aprobado» con ese número, ningún archivo lo distingue del pase real, como pasa con las otras constancias
+  del arnés. El número frena el resultado copiado, el reusado de otra revisión y el que se escribe sin pedido.
+- **Las cuatro lentes**: un AC que el plan no cubre; una suposición falsa sobre el código, que se comprueba leyendo el
+  repo; un riesgo de seguridad o de producción sin su defensa ni su vuelta atrás; una prueba que falta. Cada hallazgo
+  pasa por su verificador (ante la duda, refutado).
+- **Sólo lectura**: los agentes leen, `git grep`, `git log`. Nunca corren un guion del repo destino. Es una orden del
+  pedido, no un permiso quitado: el guion no puede sacarles herramientas a sus agentes.
+- **El veredicto**: `aprobado` sólo con el pase medido, sin hallazgos confirmados y sin hallazgos sin veredicto;
+  `rechazado` con algún confirmado; si no, `sin-veredicto`. `workflow-lite.js` sale 3 con `sin-veredicto`.
+- **El modelo**: Opus. Sin la herramienta Workflow, `workflow-lite.js` corre el mismo guion; sin ninguno, la revisión
+  se anota `--no-tool "<motivo>"` y queda sin veredicto: el plan espera a una persona.
+
 ## Sin Codex ni Workflow: el pase propio con agentes de Claude
 
 La salida aprobada cuando Codex no contesta y la sesión no tiene la herramienta Workflow:

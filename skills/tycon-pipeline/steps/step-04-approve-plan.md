@@ -8,24 +8,42 @@
 > arranque de «Aprobar el plan»). Si se presenta primero y se cierra el anterior después, la espera queda
 > contada como trabajo del paso anterior.
 
-## Política Nivel 2 — auto-aprobación de planes LOW-risk
+## Quién aprueba el plan
 
-ANTES de pausar, correr:
+**Ningún plan se aprueba solo**: ni el de riesgo bajo, ni por la misma sesión que lo escribió.
+La opción vieja de aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 
-```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class --story <story_path>
-```
+- **una persona**, en la ventana de permiso o en su terminal (`--approved "<su respuesta>"`, o `--terminal`); o
+- **la coordinadora, por delegación, sólo con la revisión automática.** La revisión es el pase adversarial en **modo
+  plan**: cuatro lentes (un AC sin cubrir, una suposición falsa sobre el código, un riesgo sin defensa, una prueba que
+  falta) con su verificador, sobre la story, el plan y el repo, nunca sobre el hilo de la sesión que planeó.
+  **La lanza la coordinadora**, nunca la sesión que hizo el plan:
+  1. `marker.js plan-review --for-session <sesión>` prepara la revisión y devuelve los args del pase (`modo: 'plan'`),
+     con su `pedido`: un número al azar de esta revisión. Los args se pasan tal cual, sin tocarlos.
+  2. Ella corre el pase con la herramienta Workflow (o `workflow-lite.js`) y anota el resultado:
+     `marker.js plan-review --for-session <sesión> --result <resultado.json> --model opus`. Un resultado sin ese número,
+     o con el de otra revisión, queda sin veredicto; uno que no se puede leer, también, y el comando sale 3. Sin
+     herramienta para correrlo: `--no-tool "<motivo>"`.
+  3. Con «aprobado», firma `complete-step approve-plan --for-session <sesión> --approved "<la revisión>"`: queda con la
+     vía `review` en el registro de firmas.
 
-- **risk=LOW** (criterios: sin `.sql`/drizzle en scope, sin `signed_for_sprint` ni `signed_ac_ref`, ≤6 archivos en scope, sin paths auth/security/payment, sin bloque `pipelines:`) → el plan se **AUTO-APRUEBA** y continúa a «Implementar» **sin esperar respuesta**. El gate adicional de backend "patrón de referencia verificado" (abajo) aplica igual antes de auto-aprobar.
-- 📋 **El plan se muestra siempre, aunque se apruebe solo.** Es lo único que la persona ve de qué se va a hacer. Con
-  LOW, el orden es: (1) el plan escrito en `step-02-bmad-plan.md` de la carpeta de la corrida; (2) **un mensaje de texto
-  tuyo** con una línea «El plan se aprobó solo (riesgo bajo: <criterios en llano>)» y debajo ese plan tal cual, sin
-  resumirlo — la persona no ve el archivo, ni la salida de los comandos, ni tu razonamiento: sólo tus mensajes;
-  (3) recién después, `complete-step approve-plan --auto-approved`. El comando lee la conversación de la sesión y no cierra si el
-  plan no está en tus mensajes. Si no puede leer la conversación (Codex, u otra herramienta que no la guarda), falla
-  cerrado: el plan no se aprueba solo, se le muestra a la persona, se le pregunta y se cierra con `--approved`. Por
-  qué: medido en la primera historia de un dev nuevo, con riesgo bajo el plan se aprobaba y no aparecía, aunque el
-  cierre del paso lo imprimiera; el dev no veía qué se iba a hacer.
+  Una sesión sola no tiene quién lance la revisión: su plan espera a una persona.
+
+**Un plan delicado espera al dev.** `pipeline.js risk-class --story <story_path>` dice si la story es **delicada**
+(`delicate`): rutas sensibles en la story o en el plan, la superficie compartida, producción, el portón de CI, el
+instalador, una migración, la constancia de controles, o `sensible:` en el frontmatter; en duda, delicada. Su plan es
+nivel 2: lo aprueba siempre el dev, también de noche. La revisión puede correr sobre él, pero sólo ataca y avisa.
+
+**Sin veredicto o rechazado, espera a una persona.** Si el pase no midió todo («sin veredicto»), si no hay con qué
+correrlo, o si la revisión rechazó el plan, la coordinadora no firma. Con un rechazo, `pipeline.js next` de la sesión
+muestra los hallazgos (`plan_review`) hasta que el plan cambie: corregí el plan y que vuelva a correr la revisión.
+
+Al firmar, el guion vuelve a calcular la huella del plan y de la story, y si es delicada: una revisión de otro plan, de
+otra corrida o de otra sesión no cuenta.
+
+- 📋 **El plan se muestra siempre.** Es lo único que la persona ve de qué se va a hacer: (1) el plan escrito en
+  `step-02-bmad-plan.md` de la carpeta de la corrida; (2) **un mensaje de texto tuyo** con ese plan tal cual, sin
+  resumirlo — la persona no ve el archivo, ni la salida de los comandos, ni tu razonamiento: sólo tus mensajes.
 - 🗣️ **La pregunta a la persona trae el plan entero**: en tu mensaje o dentro de la pregunta con opciones (en su texto
   o en la vista previa de una opción). Nunca un «¿lo apruebo?» a secas. Cuando el comando frena, su salida normal trae
   el bloque «Mostrale esto a la persona» con el plan: copialo tal cual. Si creés que ya lo mostraste y el comando dice
@@ -49,12 +67,11 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
   terminal con `--terminal`. Lo escrito en el chat o reenviado por otra sesión no firma; el no, además, va después de
   la oferta, con su respuesta en `--no`, que queda en la historia. Por qué: medido en un repo nuevo, el agente instaló Playwright fuera del repo sin preguntar, y sin eso
   el cierre frenaba sin salida.
-- **risk=NORMAL** → checkpoint HITL exactamente como se describe abajo.
+- **Con la persona** → checkpoint HITL exactamente como se describe abajo (con riesgo bajo o normal).
 - El user puede forzar HITL siempre con `warnings_pause: true` en `.tycon/advisors.yaml` del repo.
-- 🔴 `git push` y cambios de scope firmado NUNCA se auto-aprueban — siguen human-gate sin excepción.
-- 🖼️ **Excepción de pantalla**: si la story tiene pantalla (`risk-class` trae `mockup_required: true`),
-  con LOW se anuncia el plan auto-aprobado pero **se espera la respuesta sobre la maqueta** (§La maqueta, abajo):
-  una pantalla la ve una persona antes de construirla.
+- 🔴 `git push` y cambios de scope firmado NUNCA se aprueban solos — siguen human-gate sin excepción.
+- 🖼️ **Pantalla**: si la story tiene pantalla (`risk-class` trae `mockup_required: true`), **se espera además la
+  respuesta sobre la maqueta** (§La maqueta, abajo): una pantalla la ve una persona antes de construirla.
 
 ## Acción
 
@@ -102,13 +119,12 @@ compara lo construido contra ella.
    navegador puede no abrirse (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: la lista
    en el chat es lo que se aprueba seguro.
 4. **La pregunta**: va en el mismo momento que la del plan. Con `AskUserQuestion` si está; sin ella (Codex), en texto
-   con opciones numeradas: «1. Apruebo la maqueta · 2. Cambiá esto: … · 3. Cancelar». Con LOW el plan se anuncia
-   auto-aprobado, pero la respuesta sobre la maqueta se espera igual.
+   con opciones numeradas: «1. Apruebo la maqueta · 2. Cambiá esto: … · 3. Cancelar». Aunque el riesgo sea LOW,
+   la respuesta sobre la maqueta se espera igual.
 5. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
    **delegación** (la coordinadora). La cita dice quién aprobó y por qué vía, por ejemplo «aprobada por la
    coordinadora, por delegación del dueño». El guion no valida quién es: la cita es la constancia.
-6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"` (o
-   `--auto-approved "<criterios>" --mockup-approved "<cita>"` con LOW). Sin la maqueta, con una maqueta que no pasa
+6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"`. Sin la maqueta, con una maqueta que no pasa
    `mockup.js check`, o sin `--mockup-approved`, «Aprobar el plan» no cierra. Queda la huella en el marcador y en
    `<clave>-mockup-approval.json` (sin la cita), que va en el commit con la maqueta.
 
@@ -128,8 +144,7 @@ sin mandar nada a `plan.agent-native.com` — el plan del cliente NUNCA sale de 
 
 1. **Opt-in**: el repo tiene `visual_plan: true` en `.tycon/advisors.yaml`, **o** el pipeline se
    invocó con el flag `--visual-plan`. Sin esto, presentar el plan en texto como siempre (default).
-2. **Hay pausa HITL real**: `risk-class` dio **NORMAL** (con LOW el plan se auto-aprueba por G.i/Nivel 2
-   y no hay nada que revisar visualmente → NO generar el HTML aunque el opt-in esté prendido).
+2. **Hay pausa HITL real**: el plan lo aprueba una persona (no la coordinadora con la revisión automática).
 
 **Flujo cuando aplica:**
 
@@ -196,13 +211,13 @@ Antes de presentar el plan, con cualquier stack:
 ```bash
 # HITL — el user aprobó con palabras claras de proceder:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --approved "<cita textual de la aprobación>"
-# Nivel 2 — auto-aprobación: SOLO si risk-class = LOW (se verifica en proceso; si no es LOW, bloquea):
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --auto-approved "<criterios LOW cumplidos>"
-# Story con pantalla (con cualquiera de los dos): además la aprobación de la maqueta (§La maqueta):
+# La coordinadora, para otra sesión, sólo con el «aprobado» de su revisión automática (§Quién aprueba el plan):
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --for-session <sesión> --approved "<la revisión>"
+# Story con pantalla: además la aprobación de la maqueta (§La maqueta):
 #   … --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"
 ```
 
-Sin `--approved`/`--auto-approved` el comando bloquea; en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
+Sin `--approved` (o `--terminal`) el comando bloquea: ningún plan se aprueba solo; en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
 
 ### Quién aprobó: manual o automática
 
@@ -212,7 +227,8 @@ el tipo y quién. Hay dos tipos:
 - **manual**: la dio una persona con nombre. Se nombra con `--approved-by <correo o usuario>`.
 - **automática**: la dio un agente (con cuál y su modelo) o una regla. Lo que aprueba un agente **por delegación** de
   una persona es automático: se anota con `--delegated-by <persona> --agent "<nombre> (<modelo>)"`, y la línea nombra
-  de quién es la delegación. `--auto-approved` es la regla de riesgo bajo.
+  de quién es la delegación. Por la revisión automática de la coordinadora, la línea queda automática a nombre de
+  «revisión automática (<modelo>)», con la sesión de la coordinadora.
 
 ```bash
 # la aprobó el dueño:
@@ -239,6 +255,6 @@ manuales, a nombre del usuario de la terminal.
 - `approved: true|false`
 - Feedback del usuario si pidió cambios
 - Path al plan aprobado (para referencia en «Implementar»)
-- `marker.planApproval` seteado (`complete-step approve-plan --approved|--auto-approved`) y la línea `plan` en `approvals.jsonl`
+- `marker.planApproval` seteado (`complete-step approve-plan --approved`) y la línea `plan` en `approvals.jsonl`
 
 Pasar a «Implementar» solo si `approved: true`.

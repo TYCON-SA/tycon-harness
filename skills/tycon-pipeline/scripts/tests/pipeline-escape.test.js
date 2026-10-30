@@ -482,15 +482,25 @@ test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
     fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${lineas.map((l) => JSON.stringify(l)).join('\n')}\n`);
   };
   const delegacion = ({ perfil = PERFIL, huella = HUELLA } = {}) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella }) });
-  // con las seis llaves: firma sin ventana, con via: delegacion, sobre el marcador de ses-a
+  // con las seis llaves el freno no pide ventana; el plan, además, sólo con el «aprobado» de la revisión automática que
+  // lanzó la coordinadora: sin ella sale 2 y el pedido no se gasta
   let lab = laboratorioOtraSesion(t);
   designar(lab);
   const p = lab.pedir(lab.comando(APROBAR), { delegacion: delegacion() });
   assert.strictEqual(p.decision, 'allow', p.texto);
-  const r = lab.correr(APROBAR);
+  let r = lab.correr(APROBAR);
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /revisión automática/);
+  assert.strictEqual(lab.vigentes().length, 1, 'el pedido sigue sin gastar');
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(lab.repo, '9.91', true, lab.stories[DESTINO]);
+  fs.writeFileSync(path.join(runDir, 'step-02-bmad-plan.md'), '1. Cambiar el README.\n');
+  assert.strictEqual(PR.preparar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, home: lab.home, delegacion: delegacion() }).codigo, 0);
+  PR.anotar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, resultado: { modo: 'plan', medido: true, confirmed: [], hallazgos_sin_veredicto: 0, a_verificar_aparte: 0, lentes_sin_medir: [] } });
+  r = lab.correr(APROBAR);
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   const destino = JSON.parse(lab.leer(DESTINO));
-  assert.strictEqual(destino.planApproval.via, 'delegacion');
+  assert.strictEqual(destino.planApproval.via, 'revision');
   assert.strictEqual(destino.planApproval.por, COORD);
   // sin cada llave, por vez: pide la ventana y el registro no dice delegación
   const sinUna = [

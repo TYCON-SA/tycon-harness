@@ -368,8 +368,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '   2. Si el user YA aprobó el plan (palabras claras de proceder, sin condiciones) →',
       // el paso como lo acepta el marcador de esta ejecución: por nombre en el nuevo, por número en el viejo
       `        node ${MARKER_JS} complete-step ${require('./steps.js').schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita textual de la aprobación>"`,
-      ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona, también con LOW)'] : []),
-      '      (auto-aprobación Nivel 2, SOLO story LOW-risk — se verifica: `--auto-approved "<criterios>"`).',
+      ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona)'] : []),
+      '      (ningún plan se aprueba solo: lo aprueba el user, o la coordinadora con la revisión automática).',
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',
       '      `marker.js get` y cerrá los pasos que efectivamente ya pasaron, con su evidencia.',
       '',

@@ -42,7 +42,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 <!-- generado: niveles -->
 | Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
 | --- | --- | --- | --- | --- |
-| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (sube a 2 si la historia es delicada) | `plan-approval` |
+| `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class; la coordinadora aprueba el nivel 1 sólo con el veredicto aprobado de la revisión automática) | `plan-approval` |
 | `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
 | `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
 | `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
@@ -82,24 +82,27 @@ El nivel que rige es el mayor entre la tabla de arriba y lo que suba el perfil (
 depende de dos cosas: si tu máquina tiene coordinadora, y si estás para contestar. Buscá en la fila lo que hay que
 firmar, y en la columna tu situación:
 
-| Nivel | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás |
-|---|---|---|---|---|---|
-| 1 · rutina | **Guardar el trabajo** (`save`): commit y push a tu rama, y los pull requests. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* |
-| 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* |
-| 1 · rutina | **Aprobar el plan** (`plan-approval`). Es rutina porque decide qué se construye antes de construirlo, y se cambia. | vos \*\* | espera \*\* | la coordinadora \* | la coordinadora \* |
-| 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos | espera |
-| 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos | espera |
-| 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos | espera |
-| 3 · irreversible | **La emergencia** (`emergency`): pasar por encima del freno de seguridad | vos, en tu terminal | espera | vos, en tu terminal | espera |
+| Nivel | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás | La revisión automática |
+|---|---|---|---|---|---|---|
+| 1 · rutina | **Guardar el trabajo** (`save`): commit y push a tu rama, y los pull requests. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+| 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+| 1 · rutina | **Aprobar el plan** (`plan-approval`) de una story que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | vos | espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria para la coordinadora: la lanza ella y su «aprobado» es lo único con que firma |
+| 2 · excepción | **Aprobar el plan de una story delicada** (`plan-approval` cuando `risk-class` dice `delicate`) | vos | espera | vos | espera | puede correr: ataca el plan y avisa, nunca aprueba |
+| 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos | espera | no aplica |
+| 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos | espera | no aplica |
+| 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos | espera | no aplica |
+| 3 · irreversible | **La emergencia** (`emergency`): pasar por encima del freno de seguridad | vos, en tu terminal | espera | vos, en tu terminal | espera | no aplica |
 
 - **Vos**: te aparece la ventana de permiso y aprobás. **La coordinadora**: la firma ella, sin molestarte. **Espera**:
   nadie firma; el trabajo queda frenado en ese paso hasta que alguien firme, y no se rompe nada.
-- \* **La coordinadora sola** firma sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
+- \* **La coordinadora** firma sin ventana sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
   `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño en su terminal (ver «Aprobar en
   nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
   fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista.
-- \*\* **El plan de una story de riesgo bajo** se puede aprobar hoy sin firma: la misma sesión lo da por aprobado con
-  `--auto-approved`, si la clase de riesgo da LOW y el plan se mostró en la conversación (`steps/step-04-approve-plan.md`).
+- \*\* **El plan, con coordinadora**: ella lanza la revisión automática (`marker.js plan-review --for-session <sesión>`,
+  el pase adversarial en modo plan) y aprueba sólo si dice «aprobado» sobre ese mismo plan. Sin veredicto o rechazado, el
+  plan espera a una persona. Ningún plan se aprueba solo, tampoco el de riesgo bajo, y la sesión que hizo el plan no
+  puede lanzar su propia revisión (`steps/step-04-approve-plan.md`).
 - Con coordinadora, ella puede pedir algunas de nivel 2 (eximir un crítico, un criterio que no se prueba en vivo), pero
   las contesta una persona.
 - **Si tu push ya despliega algo** (en tu equipo, subir a una rama dispara un despliegue), quien administra puede subir

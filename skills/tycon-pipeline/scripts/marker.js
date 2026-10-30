@@ -174,8 +174,8 @@ let NECESITA_MARCADOR = false;
 // Los subcomandos que firman para otra sesión: la firma del catálogo, si trabajan sobre la ejecución del destino
 // (su marcador abierto) o, los de la ejecución perdida, qué argumento nombra la sesión (tiene que ser la del destino).
 const PARA_OTRA_SESION = {
-  // el plan con su nombre o con el número del marcador viejo, y sólo si lo aprueba una persona (con la regla de riesgo
-  // bajo no hay firma, y sin firma no se escribe en la ejecución de otra sesión)
+  // el plan con su nombre o con el número del marcador viejo, con la firma: la persona, o la coordinadora por delegación
+  // con la revisión automática (sin firma no se escribe en la ejecución de otra sesión)
   'complete-step': { firma: 'plan-approval', marcador: true,
     si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)) },
   'approve-mockup': { firma: 'plan-approval', marcador: true },
@@ -196,6 +196,16 @@ const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', 'script
 
 /** Con `--for-session` a otra sesión: el subcomando tiene que ser una firma que se corre así; si no, sale 2 sin escribir. */
 function paraOtraSesion(argv) {
+  // la revisión automática del plan no es una firma: entra por su camino (cmdPlanReview), sólo desde otra sesión, y no
+  // escribe el marcador destino (sólo su constancia, en la carpeta de la sesión que la lanza)
+  if (argv[2] === 'plan-review') {
+    if (!PEDIDA || PEDIDA === PROPIA || PROPIA === '_nosession') {
+      console.error('🔒 marker.js plan-review: la revisión automática la lanza la coordinadora, para otra sesión (--for-session <sesión destino>). No se escribió nada.');
+      process.exit(2);
+    }
+    SOLO_LECTURA = true;
+    return;
+  }
   if (!PEDIDA || PEDIDA === PROPIA) return;
   const no = (m) => { console.error(`🔒 marker.js: --for-session ${PEDIDA}: ${m}. No se escribió nada.`); process.exit(2); };
   // en la terminal del dueño --for-session dice su sesión; sin variable de sesión y sin terminal no hay quién la pida
@@ -1188,20 +1198,24 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── «Aprobar el plan» — la aprobación es del USER y queda citada ──────────────────────────
-  // `--approved "<cita>"` (HITL) o `--auto-approved "<criterios>"` (Nivel 2, SOLO LOW-risk — se verifica
-  // con risk-class, no se declara). Sin esto, cerrar el 3 sería un comando vacío y el
-  // portón de carril (código antes del plan) se abría sin que nadie hubiera aprobado nada.
-  let planParaMostrar = null;
+  // ── «Aprobar el plan» — lo aprueba una persona, o la coordinadora con la revisión automática ──
+  // `--approved "<cita>"` en la ventana o `--terminal`. Por la delegación del perfil (la coordinadora, para otra
+  // sesión), sólo con el veredicto «aprobado» de la revisión que ella lanzó sobre este mismo plan, y nunca el de una
+  // story delicada (lib/plan-review.js). Ningún plan se aprueba solo: sin esto, cerrar el paso sería un
+  // comando vacío y el portón de carril (código antes del plan) se abría sin que nadie hubiera aprobado nada.
   if (controles.has('plan')) {
     const approved = optVal('--approved');
-    const auto = optVal('--auto-approved');
     // el dueño lo aprueba en su terminal: la cita es esa firma
     const enTerminal = opts.includes('--terminal');
-    if (!approved && !auto && !enTerminal) {
+    if (opts.includes('--auto-approved')) {
+      appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'ya no existe' });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — el plan no se aprueba solo: lo aprueba una persona, o la coordinadora con la revisión automática.`);
+      console.error(`  Mostrale el plan a la persona y cerrá con --approved "<su respuesta>". Ver steps/${STEPS_LIB.byId('approve-plan').file}.`);
+      process.exit(2);
+    }
+    if (!approved && !enTerminal) {
       console.error(`marker.js complete-step ${n} BLOQUEADO — falta la aprobación del plan.`);
-      console.error(`  HITL:     marker.js complete-step ${n} --approved "<cita textual de la aprobación del user>"`);
-      console.error(`  Nivel 2:  marker.js complete-step ${n} --auto-approved "<criterios LOW-risk>"  (sólo si risk-class = LOW)`);
+      console.error(`  marker.js complete-step ${n} --approved "<cita textual de la aprobación del user>"`);
       console.error(`  No se aprueba el plan sin decir QUIÉN aprobó. Ver steps/${STEPS_LIB.byId('approve-plan').file}.`);
       process.exit(1);
     }
@@ -1235,70 +1249,17 @@ function cmdCompleteStep(nRaw, flags) {
       const v = mk.validateMockupHtml(html);
       if (!v.ok) bloquear3(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
       if (!mockupCita) {
-        bloquear3(auto && !approved
-          ? 'el plan se aprueba solo; la maqueta no: una pantalla la ve una persona antes (decisión 8).'
-          : `story con pantalla: mostrale la maqueta (${p.mockup}) y pasá su aprobación con --mockup-approved`, [
+        bloquear3(`story con pantalla: mostrale la maqueta (${p.mockup}) y pasá su aprobación con --mockup-approved`, [
           `Mostrale la maqueta (${p.mockup}) a la persona que aprueba —o a quien tenga su delegación— y cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
         ]);
       }
       mockupPlan = { p, sha: mk.mockupHash(html) };
     }
-    if (auto && !approved && !enTerminal) {
-      let rc = null;
-      try {
-        const { computeRiskClass } = require('./pipeline.js');
-        rc = computeRiskClass({ story: resolveStoryPath(marker.storyPath, marker) });
-      } catch (e) { rc = { risk: 'NORMAL', error: e.message }; }
-      if (!rc || rc.risk !== 'LOW') {
-        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, risk: rc && rc.risk, error: rc && rc.error });
-        console.error(`marker.js complete-step ${n} BLOQUEADO — --auto-approved pero risk-class = ${(rc && rc.risk) || '?'}${rc && rc.error ? ` (${rc.error})` : ''}.`);
-        console.error('  La auto-aprobación Nivel 2 es SOLO para stories LOW-risk. Esta necesita aprobación del user:');
-        console.error(`    marker.js complete-step ${n} --approved "<cita textual>"`);
-        process.exit(1);
-      }
-      // Aprobado solo no es aprobado a escondidas: el plan tiene que estar escrito y la persona lo tiene que haber visto
-      // en la respuesta del agente. Imprimirlo no alcanzó (medido: el agente siguió sin mostrarlo),
-      // así que se lee la conversación; si no se puede leer, falla cerrado y se le pregunta a la persona.
-      const plan = planDeLaCorrida(marker);
-      if (plan.error) {
-        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'sin carpeta de corrida' });
-        console.error(`marker.js complete-step ${n} BLOQUEADO — el plan se aprueba solo, pero se muestra igual, y no pude calcular la carpeta de la corrida donde va (${plan.error}).`);
-        console.error('  Revisá la story del marcador (storyId y storyPath) o aprobá el plan con --approved "<cita>".');
-        process.exit(1);
-      }
-      let planTxt = '';
-      try { planTxt = fs.readFileSync(plan.file, 'utf8'); } catch (_e) { /* falta: se dice abajo */ }
-      if (!planTxt.trim()) {
-        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'plan sin escribir' });
-        console.error(`marker.js complete-step ${n} BLOQUEADO — el plan se aprueba solo, pero se muestra igual: falta escribirlo en ${plan.file}.`);
-        console.error('  Escribí ahí el plan del paso «Armar el plan», mostráselo a la persona en tu respuesta y volvé a correr este comando.');
-        process.exit(1);
-      }
-      const visto = planVisto(marker, planTxt);
-      if (!visto.legible || !visto.mostrado) {
-        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: visto.legible ? 'plan sin mostrar' : 'conversación ilegible' });
-        // lo que la persona ve son tus mensajes de texto; la salida de un comando, un archivo o tu razonamiento, no
-        // (medido: el agente creyó haberlo mostrado porque el plan estaba en esos lugares)
-        const queVe = '  La persona sólo ve tus mensajes de texto (y lo que trae una pregunta con opciones): no ve la salida de este comando, ni el archivo del plan, ni lo que pensaste.';
-        if (visto.legible) {
-          console.error(`marker.js complete-step ${n} BLOQUEADO — el plan se aprueba solo, pero la persona tiene que verlo: ninguno de tus mensajes de texto lo trae.`);
-          console.error(queVe);
-          console.error('  Escribí ahora un mensaje con el plan TAL CUAL (éste, entero, no un resumen) y después volvé a correr este comando:');
-        } else {
-          console.error(`marker.js complete-step ${n} BLOQUEADO — no puedo leer la conversación de esta sesión (${visto.motivo}), así que no sé si la persona vio el plan: no se aprueba solo.`);
-          console.error(queVe);
-          console.error('  Escribí un mensaje con el plan TAL CUAL (éste, entero, no un resumen), preguntale si lo aprueba y cerrá con --approved "<su respuesta>":');
-        }
-        console.error(`\n${planTxt.trim()}\n`);
-        planParaLaPersona(planTxt);
-        process.exit(1);
-      }
-      planParaMostrar = planTxt.trim();
-    }
     // Con riesgo bajo el plan queda escrito en la corrida: un ok a una pregunta que no lo traía no aprueba (medido: el
     // agente preguntó «¿lo apruebo?» a secas y la persona aprobó sin verlo). Sin conversación legible no hay cómo saber:
-    // la cita alcanza, como antes. Con riesgo normal no cambia.
-    if (approved) {
+    // la cita alcanza, como antes. Con riesgo normal no cambia. Devuelve el motivo para no firmar, o null.
+    const sinVerElPlan = () => {
+      if (!approved) return null;
       const plan = planDeLaCorrida(marker);
       let planTxt = '';
       if (!plan.error) {
@@ -1308,26 +1269,39 @@ function cmdCompleteStep(nRaw, flags) {
         }
       }
       const visto = planTxt.trim() ? planVisto(marker, planTxt) : null;
-      if (visto && visto.legible && !visto.mostrado) {
-        let rc = null;
-        try { rc = require('./pipeline.js').computeRiskClass({ story: resolveStoryPath(marker.storyPath, marker) }); } catch (e) { rc = { error: e.message }; }
-        if (!rc || !rc.risk || rc.error) {
-          // sin el riesgo no se sabe si este control aplica: no frena, pero queda anotado y se dice
-          appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'no pude calcular el riesgo', error: String((rc && rc.error) || 'sin riesgo').slice(0, 200) });
-          console.error(`⚠️  no pude calcular el riesgo de la story (${(rc && rc.error) || 'sin riesgo'}): no comprobé que la persona haya visto el plan.`);
-        }
-        if (rc && rc.risk === 'LOW') {
-          appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ok sin plan a la vista' });
-          console.error(`marker.js complete-step ${n} BLOQUEADO — la persona aprobó sin ver el plan: ninguno de tus mensajes ni tus preguntas lo trae.`);
-          console.error('  Mostráselo entero (en un mensaje o dentro de la pregunta), preguntale de nuevo y cerrá con --approved "<su respuesta>".');
-          planParaLaPersona(planTxt);
-          process.exit(1);
-        }
+      if (!visto || !visto.legible || visto.mostrado) return null;
+      let rc = null;
+      try { rc = require('./pipeline.js').computeRiskClass({ story: resolveStoryPath(marker.storyPath, marker) }); } catch (e) { rc = { error: e.message }; }
+      if (!rc || !rc.risk || rc.error) {
+        // sin el riesgo no se sabe si este control aplica: no frena, pero queda anotado y se dice
+        appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'no pude calcular el riesgo', error: String((rc && rc.error) || 'sin riesgo').slice(0, 200) });
+        console.error(`⚠️  no pude calcular el riesgo de la story (${(rc && rc.error) || 'sin riesgo'}): no comprobé que la persona haya visto el plan.`);
       }
+      if (!rc || rc.risk !== 'LOW') return null;
+      appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ok sin plan a la vista' });
+      planParaLaPersona(planTxt);
+      return `complete-step ${n} BLOQUEADO — la persona aprobó sin ver el plan: ninguno de tus mensajes ni tus preguntas lo trae. Mostráselo entero (en un mensaje o dentro de la pregunta), preguntale de nuevo y cerrá con --approved "<su respuesta>".`;
+    };
+    // en la propia sesión, antes de pedir nada (como siempre); para otra sesión, con el pedido a la vista: por la
+    // delegación no hay persona que mire, y lo que cuenta es la revisión automática
+    const paraOtra = !!(PEDIDA && PEDIDA !== PROPIA);
+    if (!paraOtra) {
+      const m = sinVerElPlan();
+      if (m) { console.error(`marker.js ${m}`); process.exit(1); }
     }
-    // lo que aprueba una persona (el plan, o la maqueta aunque el plan se apruebe solo) es una firma del dueño
-    const firmaPlan = (approved || enTerminal || optVal('--mockup-approved'))
-      ? firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`) : null;
+    let revision = null;
+    const antesDelPlan = (via) => {
+      if (via === 'delegacion') {
+        const r = require('./lib/plan-review.js').antesDeAprobar({ estado: STATE_DIR, firmante: PROPIA, destino: SID, marker });
+        if (r.codigo) return r;
+        revision = r.constancia;
+        return { via: 'revision', resumen: `plan de ${marker.storyId}: revisión ${revision.id} ${revision.veredicto} (${revision.modelo})` };
+      }
+      const m = paraOtra ? sinVerElPlan() : null;
+      return m ? { codigo: 1, motivo: m } : null;
+    };
+    // lo que aprueba una persona (el plan y la maqueta) es una firma del dueño; por delegación, con la revisión
+    const firmaPlan = firmaDelDueno('plan-approval', `plan de ${marker.storyId}${approved ? `: ${approved}` : ''}`, { antes: antesDelPlan });
     const at3 = nowIso();
     if (mockupPlan) {
       // El archivo de aprobación viaja con la story (va en el commit); la cita queda sólo en el marcador.
@@ -1335,13 +1309,16 @@ function cmdCompleteStep(nRaw, flags) {
         mk.writeApproval({ approvalPath: mockupPlan.p.approval, mockupPath: mockupPlan.p.mockup, story: marker.storyId, sha256: mockupPlan.sha, approvedAt: at3 });
       } catch (e) { bloquear3(`no pude escribir la aprobación de la maqueta (${mockupPlan.p.approval}): ${e.code || e.message}`); }
     }
-    const delUser = !!(approved || enTerminal);
-    marker.planApproval = { mode: delUser ? 'user' : 'auto-low-risk', text: approved || (enTerminal ? 'firmado en la terminal' : auto), at: at3, ...(firmaPlan ? firmaPlan.constancia : {}) };
-    appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...(firmaPlan ? firmaPlan.constancia : {}) });
-    // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; `--auto-approved`
-    // es la regla de riesgo bajo. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
-    const quienPlan = approved ? quienDeLasOpciones(optVal) : quienDeLasOpciones(() => null, { regla: 'risk-class LOW' });
-    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${approved ? '--approved' : '--auto-approved'}`, ...quienPlan, ...porDe(firmaPlan) });
+    const porRevision = !!revision;
+    marker.planApproval = { mode: porRevision ? 'revision' : 'user', text: approved || 'firmado en la terminal', at: at3,
+      ...(porRevision ? { revision: { id: revision.id, veredicto: revision.veredicto, modelo: revision.modelo, lanzo: revision.lanzo } } : {}), ...firmaPlan.constancia };
+    appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text, ...firmaPlan.constancia });
+    // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; por la revisión, automática a
+    // nombre de la revisión. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
+    const quienPlan = porRevision
+      ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
+      : quienDeLasOpciones(optVal);
+    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${porRevision ? '· revisión automática' : '--approved'}`, ...quienPlan, ...porDe(firmaPlan) });
     if (mockupPlan) {
       anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLasOpciones(optVal), ...porDe(firmaPlan) });
     }
@@ -1975,10 +1952,6 @@ function cmdCompleteStep(nRaw, flags) {
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(JSON.stringify(marker, null, 2));
-  if (planParaMostrar) {
-    // por la salida de errores: la estándar es el JSON del marcador, que otros leen
-    console.error('\n📋 El plan se aprobó solo (riesgo bajo) y ya está en tu respuesta: la persona lo vio.');
-  }
 }
 
 /**
@@ -4594,6 +4567,45 @@ function opcionesDe(argv) {
   return { val, tiene: (n) => argv.includes(n) };
 }
 
+// `plan-review --for-session <D>`: la revisión automática del plan de otra sesión (lib/plan-review.js). La lanza la
+// sesión designada, con la delegación del perfil para la aprobación del plan; no es una firma y no escribe el marcador
+// destino. Sin `--result`, prepara y devuelve los args del pase en modo plan; con `--result <json del pase>` (o
+// `--no-tool "<motivo>"`), anota el veredicto en la constancia de la sesión que la lanzó.
+function cmdPlanReview(argv) {
+  const pr = require('./lib/plan-review.js');
+  const { val } = opcionesDe(argv);
+  const destino = PEDIDA;
+  const resultado = val('--result');
+  const sinHerramienta = val('--no-tool');
+  if (resultado === null && sinHerramienta === null) {
+    const p = pr.preparar({ lanza: PROPIA, destino, estado: STATE_DIR, home: os.homedir() });
+    if (p.codigo) { console.error(`🔒 marker.js plan-review: ${p.motivo}. No se escribió nada.`); process.exit(p.codigo); }
+    const lite = pr.comandoLite(p.argsFile, path.join(path.dirname(p.argsFile), `${destino}.resultado.json`));
+    process.stdout.write(`${JSON.stringify({ scriptPath: path.join(__dirname, 'adversarial-verify.workflow.js'), args: p.args, argsFile: p.argsFile, delicate: p.delicate, lite,
+      despues: `marker.js plan-review --for-session ${destino} --result <resultado.json> --model ${p.args.model}` }, null, 2)}\n`);
+    if (p.delicate && p.delicate.value) console.error(`⚠️  la story es delicada (${p.delicate.reason}): la revisión ataca y avisa, pero el plan lo aprueba el dev.`);
+    process.exit(0);
+  }
+  let res = null;
+  let ilegible = false;
+  if (resultado !== null) {
+    try { res = JSON.parse(fs.readFileSync(resultado, 'utf8')); } catch (e) {
+      console.error(`🔒 marker.js plan-review: no pude leer el resultado del pase (${resultado}: ${e.code || e.message}): queda sin veredicto.`);
+      res = null;
+      ilegible = true;
+    }
+  }
+  const c = pr.anotar({ lanza: PROPIA, destino, estado: STATE_DIR, resultado: res, sinHerramienta: sinHerramienta !== null ? (sinHerramienta || 'sin motivo') : null,
+    modelo: val('--model') || 'opus', proveedor: val('--provider') || 'anthropic' });
+  if (c.codigo) { console.error(`🔒 marker.js plan-review: ${c.motivo}`); process.exit(c.codigo); }
+  const lineas = [`revisión automática del plan de ${c.storyId} (sesión ${destino}): ${c.veredicto}${c.motivo ? ` — ${c.motivo}` : ''}`];
+  for (const h of c.hallazgos) lineas.push(`- [${h.lente || '?'}] ${h.resumen}${h.archivo && h.archivo !== 'plan' ? ` (${h.archivo}${h.linea ? `:${h.linea}` : ''})` : ''}`);
+  if (c.veredicto !== 'aprobado') lineas.push('El plan espera a una persona: la coordinadora no lo puede aprobar con esta revisión.');
+  if (ilegible) lineas.push('El resultado del pase no se pudo leer: este comando sale 3.');
+  process.stdout.write(`${lineas.join('\n')}\n`);
+  process.exit(ilegible ? 3 : 0);
+}
+
 function cmdWaiveCritical(argv) {
   const cw = require('./lib/critical-waivers.js');
   const { val, tiene } = opcionesDe(argv);
@@ -5489,6 +5501,9 @@ switch (cmd) {
     break;
   case 'approve-save':
     cmdApproveSave(process.argv.slice(3));
+    break;
+  case 'plan-review':
+    cmdPlanReview(process.argv.slice(3));
     break;
   case 'save-check':
     cmdSaveCheck(process.argv.slice(3));

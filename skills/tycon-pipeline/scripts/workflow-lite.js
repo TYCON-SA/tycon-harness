@@ -411,8 +411,9 @@ async function main() {
   const json = JSON.stringify(result, null, 1);
   if (oi >= 0) { fs.writeFileSync(argv[oi + 1], json + '\n'); console.log(`wflite: resultado → ${argv[oi + 1]}`); }
   else console.log(json);
-  // Un pase no medido no sale 0: el archivo se escribió, pero nadie lo lee verde por el código de salida.
-  if (result && result.medido === false) {
+  // Un pase no medido no sale 0: el archivo se escribió, pero nadie lo lee verde por el código de salida. En el modo
+  // plan (`args.modo: 'plan'`) es el veredicto `sin-veredicto`: la revisión no dio aprobado.
+  if (result && (result.medido === false || result.veredicto === 'sin-veredicto')) {
     const c = result.corredor || {};
     if (c.tope) process.stderr.write(`wflite: Codex en su tope de uso desde las ${c.tope.hora} (${c.tope.causa}).\n`);
     if (c.pedidos_pendientes) process.stderr.write(`wflite: quedan ${c.pedidos_pendientes} pedido(s) para agentes de Claude en ${c.pedidos}\n`);
