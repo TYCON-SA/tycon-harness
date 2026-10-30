@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * ¿Este cambio toca sólo comentarios? Compara cada archivo tocado sin sus comentarios, con el mismo lector de la zona
- * `comment` del freno de historia interna (`codeOf` de internal-history.js), y sale 0 sólo si todos dan igual.
+ * ¿Este cambio toca sólo comentarios? Compara cada archivo tocado sin sus comentarios, con la versión estricta del lector
+ * del freno de historia interna (`codeOfStrict` de internal-history.js: los blancos de los datos, las directivas y el
+ * fin de línea cuentan), y sale 0 sólo si todos dan igual. Un cambio de permisos también cuenta.
  *
  * Uso:   node scripts/publishing/comment-only-diff.js --range <base>...<punta> [--json] [--repo <dir>]
  *        node scripts/publishing/comment-only-diff.js --against <ref> [--json] [--repo <dir>]   (contra el árbol de trabajo)
@@ -12,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-const { codeOf } = require('./internal-history.js');
+const { codeOfStrict } = require('./internal-history.js');
 
 function parseArgs(argv) {
   const args = { json: false, repo: process.cwd(), range: null, against: null };
@@ -79,18 +80,21 @@ function compare(args) {
     base = git(args.repo, ['rev-parse', '--verify', `${args.against}^{commit}`]).trim();
     tip = null;
   }
-  const diffArgs = ['diff', '--name-status', '-z', '--no-renames', base];
+  // `--raw` trae los permisos de los dos lados: un archivo que pasa a ejecutable cambia aunque el texto sea igual
+  const diffArgs = ['diff', '--raw', '-z', '--no-renames', base];
   if (tip) diffArgs.push(tip);
   const parts = git(args.repo, diffArgs).split('\0').filter(Boolean);
   const guard = guardCopies(args.repo, base);
   const files = [];
   for (let i = 0; i < parts.length; i += 2) {
-    const status = parts[i][0];
+    const [modeA, modeB, , , statusField] = parts[i].replace(/^:/, '').split(' ');
+    const status = statusField[0];
     const file = parts[i + 1];
     if (guard.has(file)) { files.push({ file, result: 'differs', reason: 'se copia al freno de producción: cambiarlo, aunque sea un comentario, pide reinstalar el freno en cada máquina' }); continue; }
     if (status !== 'M') { files.push({ file, result: 'differs', reason: status === 'A' ? 'archivo nuevo' : status === 'D' ? 'archivo borrado' : `cambio ${status}` }); continue; }
-    const before = codeOf(contentAt(args.repo, base, file), file);
-    const after = codeOf(contentAt(args.repo, tip, file), file);
+    if (modeA !== modeB) { files.push({ file, result: 'differs', reason: `cambian los permisos (${modeA} → ${modeB})` }); continue; }
+    const before = codeOfStrict(contentAt(args.repo, base, file), file);
+    const after = codeOfStrict(contentAt(args.repo, tip, file), file);
     if (before === null || after === null) { files.push({ file, result: 'differs', reason: 'no es código que este lector sepa leer: no se puede comparar sin comentarios' }); continue; }
     if (before === after) files.push({ file, result: 'same' });
     else files.push({ file, result: 'differs', reason: `el código cambia (línea ${firstDifference(before, after)} del código sin comentarios)` });
