@@ -616,6 +616,13 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   la lista de abajo (`approvals.delegated_machines`), nombradas por su huella: las que el buzón de ejecuciones vio se
   agregan con un botón, y otra escribiendo su huella. De fábrica, en ninguna. Todo vale sólo desde acá, nunca desde
   una máquina.
+  Más abajo está **el nivel de cada firma**: una fila por cada firma de la tabla de niveles (`guides/firmas-del-arnes.md`,
+  «Los niveles»), con su nivel de fábrica: 1 rutina, 2 excepción, 3 irreversible. El selector empieza en ese nivel, así
+  que la organización puede subirlo y nunca bajarlo (`approvals.levels`). Rige el mayor entre la tabla y el perfil.
+  La coordinadora firma sola sólo la rutina: una firma que queda en 2 o más no se ofrece para delegar. Si estaba
+  delegada, subirla la saca de la delegación en el mismo cambio. Si el perfil la trae delegada igual, el arnés la saca al
+  leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
+  `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra

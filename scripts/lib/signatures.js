@@ -243,13 +243,26 @@ function expand(v, { restringe = false } = {}) {
 }
 
 /**
- * El nivel que alcanza una firma de SIGNATURES cuando la da la coordinadora por delegación: el mayor de lo que cubre,
- * sin lo que la delegación no firma (NOT_DELEGATED). null si el id no es una firma.
+ * El nivel que rige para un id de LEVELS: el mayor entre el de la tabla y el que pone el perfil del equipo
+ * (`approvals.levels`, `{ id: nivel }`). El perfil sólo sube: un nivel menor que el de la tabla no cuenta. null si el id
+ * no está en la tabla.
  */
-function delegatedLevel(id) {
-  const s = SIGNATURES.find((x) => x.id === id);
-  if (!s) return null;
-  return Math.max(...s.covers.filter((c) => !NOT_DELEGATED.includes(c)).map((c) => levelOf(c).level));
+function effectiveLevel(id, raised) {
+  const l = levelOf(id);
+  if (!l) return null;
+  const n = raised && typeof raised === 'object' && Number.isInteger(raised[id]) ? raised[id] : 0;
+  return Math.max(l.level, n);
 }
 
-module.exports = { SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, ids, groupNames, isId, expand, delegatedLevel };
+/**
+ * El nivel que alcanza una firma de SIGNATURES cuando la da la coordinadora por delegación: el mayor de lo que cubre,
+ * sin lo que la delegación no firma (NOT_DELEGATED), con lo que suba el perfil (`raised`, como en effectiveLevel). null
+ * si el id no es una firma.
+ */
+function delegatedLevel(id, raised) {
+  const s = SIGNATURES.find((x) => x.id === id);
+  if (!s) return null;
+  return Math.max(...s.covers.filter((c) => !NOT_DELEGATED.includes(c)).map((c) => effectiveLevel(c, raised)));
+}
+
+module.exports = { SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, ids, groupNames, isId, expand, effectiveLevel, delegatedLevel };
