@@ -2230,6 +2230,12 @@
       "requiere": []
     },
     {
+      "__nota": "etapa D de las firmas: harness.js sign firma un id del catálogo en la terminal y lo anota en el registro común; la emergencia, por número de pedido o --commit, deja pasar una vez lo que frenó un freno; el agente no la corre ni se la firma solo.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-sign.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.141 (tanda B): el aviso de arranque cuenta los arreglos rápidos de los últimos 7 días por cómo se firmaron, sólo cuando hay alguno nuevo, y --report da la misma cuenta.",
       "raiz": "arnes",
       "ruta": "tests/lane-llm-notice.test.js",
