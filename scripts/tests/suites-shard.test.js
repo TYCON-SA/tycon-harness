@@ -377,6 +377,32 @@ test('SuitesShard_JobCountFromPlanWeight', () => {
   }
 });
 
+test('SuitesShard_LongJobWhenThePlanDoesNotFit', () => {
+  // Los trabajos no suben: el tiempo sí. Con `job_deadline` 80 (lo que entra en un trabajo de 40 min), los 196 s del plan
+  // entero en 2 trabajos son 98 por trabajo: no entran, y va el trabajo largo. Lo que entra sigue en el de 40.
+  const set = { runs: [12181], default: 2, job_budget: 60, job_deadline: 80, weights: {} };
+  const dir = lab({ weights: { ...LAB_WEIGHTS, pr: set } });
+  const long = (names, of, d = dir) => run(['long', '--of', String(of), ...(names ? ['--only', onlyFile(d, names)] : []), '--weight-set', 'pr',
+    '--suites', path.join(d, 'suites.json'), '--weights', path.join(d, 'weights.json')]);
+  const big = long(null, 2);
+  assert.strictEqual(big.code, 0, big.err);
+  assert.deepStrictEqual(big.lines, ['si'], 'el plan entero no entra en 2 trabajos de 40 min');
+  assert.match(big.err, /suites: ~98 s de peso por trabajo y en uno de 40 min entran ~80: van los trabajos largos \(hacen falta ~49 min\)/, 'y dice por qué y cuánto');
+  const fits = long(['a-slow.test.sh', 'b-fast.test.js'], 2);
+  assert.deepStrictEqual(fits.lines, ['no'], 'lo que entra sigue con 40 min');
+  assert.match(fits.err, /suites: ~51 s de peso por trabajo y en uno de 40 min entran ~80: los trabajos de siempre/);
+  assert.deepStrictEqual(long(null, 3).lines, ['no'], 'con más trabajos, cada uno lleva menos');
+  // hace falta más de lo que da el largo: igual va el largo, y lo dice
+  const tiny = lab({ weights: { ...LAB_WEIGHTS, pr: { ...set, job_deadline: 20 } } });
+  assert.match(long(null, 2, tiny).err, /hacen falta ~196 min: más que los 100 del trabajo largo, lo que no entre sale no medido/);
+
+  refuses(long(null, 0), /--of/, 'una cuenta de 0 trabajos');
+  const noDeadline = lab({ weights: { ...LAB_WEIGHTS, pr: { ...set, job_deadline: undefined } } });
+  refuses(long(null, 2, noDeadline), /job_deadline/, 'sin lo que entra en 40 min: no se adivina');
+  const brokenDeadline = lab({ weights: { ...LAB_WEIGHTS, pr: { ...set, job_deadline: 'mucho' } } });
+  refuses(long(null, 2, brokenDeadline), /job_deadline/, 'un job_deadline roto frena');
+});
+
 // ── el tope de cada suite ───────────────────────────────────────────────────────────────────
 test('SuitesShard_CapsFromWeightWithFloor', () => {
   // El tope es el doble del peso del juego pedido, con un piso. a-slow pesa 100 → 200; d-medium (sólo en el nocturno,
