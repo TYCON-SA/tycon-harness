@@ -574,10 +574,14 @@ function runCase(tool, hookDef, caseDef, ctx) {
     failures.push(`ERROR: ${e.message}`);
   } finally {
     // un caso que arma su situación con `chmod 000` deja carpetas a las que no se puede entrar: sin devolverles los
-    // permisos el borrado falla y la carpeta del caso queda. Si igual no se puede borrar, el caso lo dice
+    // permisos el borrado falla y la carpeta del caso queda. Un archivo todavía abierto (Windows) se reintenta. Si igual
+    // no se puede borrar, se dice por stderr (los caminos que ya devolvieron su resultado no ven este `failures`) y el
+    // caso sale rojo
     restorePermissions(sandbox);
-    try { fs.rmSync(sandbox, { recursive: true, force: true }); } catch (e) {
-      failures.push(`no pude borrar la carpeta del caso (${sandbox}): ${(e && (e.code || e.message)) || e}`);
+    try { fs.rmSync(sandbox, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch (e) {
+      const why = `no pude borrar la carpeta del caso (${sandbox}): ${(e && (e.code || e.message)) || e}`;
+      process.stderr.write(`⚠ banco: ${why}\n`);
+      failures.push(why);
     }
   }
   return { pass: failures.length === 0, failures, exit: res.status };
