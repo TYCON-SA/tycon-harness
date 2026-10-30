@@ -427,6 +427,33 @@ test('T12 SuiteDeps_RunsOnlyWhatTheChangeTouches — lo que carga, lo que nombra
   assert.strictEqual(depsPlan(dir, ['scripts/lib/util.js'], { deps: false }).run.length, 5, 'sin --deps, como siempre: corren todas');
 });
 
+// Un pedazo suelto de un `path.join` (`'ci'` en `path.join(__dirname, '..', 'ci', 'x.sh')`) o un valor de una palabra
+// (`'ci'` como nombre de modo) no nombra una carpeta: sólo la encuentra el intento con `scripts/` o `skills/` delante.
+// Contarlo hacía depender a la suite de toda esa carpeta: cualquier cambio en scripts/ci/ corría las del instalador.
+// Lo que sí se nombra, la ruta armada entera y la carpeta escrita como ruta, sigue contando.
+// 🔴 mutación: contar la palabra suelta como carpeta → el cambio en scripts/ci/otro.js la toca.
+test('T12b SuiteDeps_LoosePathPiece_NotTheWholeFolder — la palabra suelta que sólo es carpeta con scripts/ delante no cuenta como carpeta', () => {
+  const { suiteDeps, touchedBy } = require(path.join(path.dirname(SCRIPT), 'suite-deps.js'));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'suite-deps-suelta-')));
+  clones.push(dir);
+  const put = (rel, body) => { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); };
+  put('scripts/ci/run.sh', 'echo corre\n');
+  put('scripts/ci/otro.js', 'module.exports = 1;\n');
+  put('guides/g.md', '# g\n');
+  put('scripts/lib/w.js', "const s = path.join(__dirname, '..', 'ci', 'run.sh'); const modo = 'ci';\n");
+  put('scripts/tests/s.test.js', "require('../lib/w.js');\n");
+  const d = suiteDeps(dir, 'scripts/tests/s.test.js');
+  assert.ok(d.files.has('scripts/ci/run.sh'), 'la ruta armada entera cuenta como el archivo que nombra');
+  assert.ok(!d.dirs.has('scripts/ci'), `la palabra suelta no cuenta como la carpeta (${[...d.dirs]})`);
+  assert.strictEqual(touchedBy(d, ['scripts/ci/otro.js']), false, 'otro archivo de esa carpeta no la toca');
+  assert.strictEqual(touchedBy(d, ['scripts/ci/run.sh']), true, 'el archivo que usa sí');
+  // la carpeta nombrada como ruta, entera o armada, sigue contando; y la palabra que es carpeta tal como está escrita
+  put('scripts/lib/w.js', "const a = path.join(ROOT, 'scripts', 'ci'); const b = 'guides';\n");
+  const d2 = suiteDeps(dir, 'scripts/tests/s.test.js');
+  assert.ok(d2.dirs.has('scripts/ci'), 'la carpeta armada con path.join cuenta');
+  assert.ok(d2.dirs.has('guides'), 'la palabra que es carpeta desde la raíz cuenta');
+});
+
 test('T13 SuiteDeps_WhenInDoubtRuns — cómo se elige, un borrado, una suite ausente, la que lista el repo, sin lista y sin ninguna', { skip: NO_RULE }, () => {
   const dir = depsRepo();
   const all = ['a.test.js', 'b.test.sh', 'c.test.js', 'd.test.js'];
