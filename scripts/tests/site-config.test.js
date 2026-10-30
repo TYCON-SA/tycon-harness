@@ -5544,7 +5544,11 @@ test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
   assert.ok(String(gate(ORG.OWNER_ONLY_SINCE)).includes(`>= ${ORG.LEVELS_SINCE}`));
   assert.strictEqual(gate(ORG.LEVELS_SINCE), null, 'con la capa al día pasa');
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
-  for (const k of ['pantalla.nivelesTitulo', 'pantalla.nivelesAyuda', 'pantalla.nivel1', 'pantalla.nivel2', 'pantalla.nivel3']) {
+  assert.match(p.textoDe('aprobaciones'), /Quién firma cada nivel/, 'la sección dice quién firma cada nivel');
+  // lo que se lee en cada opción, no sólo que la clave exista: una clave repetida en la tabla de textos se pisa con otra
+  const rotulos = (sel) => sel.hijos.map((o) => o.textContent || o.attrs.text || '');
+  assert.deepStrictEqual(rotulos(nivel(p, 'extra-round')), ['1 · rutina', '2 · excepción', '3 · irreversible']);
+  for (const k of ['pantalla.nivelesTitulo', 'pantalla.nivelesAyuda', 'pantalla.nivelesQuienFirma', 'pantalla.nivel1', 'pantalla.nivel2', 'pantalla.nivel3']) {
     const es = textos.t('es', k); const en = textos.t('en', k);
     assert.ok(es && en && es !== k && en !== k && es !== en, `${k} existe y está traducida`);
   }

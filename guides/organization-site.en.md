@@ -637,6 +637,18 @@ be, to copy it and open the request by hand.
   in the list below (`approvals.delegated_machines`), named by their fingerprint: the ones the runs mailbox saw are
   added with a button, and another one by typing its fingerprint. By default, on none. All of it counts only from
   here, never from a machine.
+  Further down is **the level of each signature** (*El nivel de cada firma*): one row for each signature in the levels
+  table (`guides/firmas-del-arnes.md`, «Los niveles»), with its default level: 1 routine, 2 exception, 3 irreversible.
+  The selector starts at that level, so the organization can raise it and never lower it (`approvals.levels`). The
+  higher of the table and the profile applies. The coordinator signs on its own only routine: a signature at 2 or more
+  is not offered for delegation. If it was delegated, raising it removes it from the delegation in the same change. If
+  the profile delegates it anyway, the harness removes it when reading and reports it as ignored; the rest stays
+  delegated. Going back to the default level removes the signature from `approvals.levels`. Proposing levels requires
+  the team layer to ask for a harness version that can read them.
+  Who signs each level: 1, the coordinator on its own if the profile delegates it, otherwise the dev in the window; 2,
+  always a person in the window; 3, a person, and the emergency at their terminal. At night, with nobody to answer,
+  anything not delegated waits. With Codex, which has no window, everything is signed at the terminal. The full matrix
+  is in `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
 - **Hand-testing each criterion** (*Prueba a mano de cada punto*): whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,
