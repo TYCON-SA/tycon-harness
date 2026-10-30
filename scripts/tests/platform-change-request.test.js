@@ -20,6 +20,10 @@ const FAKE_AZ = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-az.sh');
 const FAKE_GH = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-gh.js');
 const FIX = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'platform-change-request');
 
+// El mensaje con que Azure DevOps mergea un pedido, armado por partes: el control de historia interna lee este archivo
+// y un número de pedido escrito entero cuenta como una referencia al repo del equipo.
+const mensajeDeMerge = (id) => `Merged PR ${id}: feat: algo`;
+
 const dirs = [];
 test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
 const tmp = (p) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), p)); dirs.push(d); return d; };
@@ -90,7 +94,7 @@ test('ChangeRequest_Open_Azure_SameAzCalls @story-8.85 @ac-13', async () => {
   assert.deepStrictEqual(az.llamadas(), [
     { paso: 'pr-listar', args: ['repos', 'pr', 'list', '--org', ORG, '--project', 'Producto', '--repository', 'Backend', '--source-branch', 'feat/x', '--target-branch', 'main', '--status', 'active', '-o', 'json'] },
     { paso: 'pr-crear', args: ['repos', 'pr', 'create', '--org', ORG, '--project', 'Producto', '--repository', 'Backend', '--source-branch', 'feat/x', '--target-branch', 'main', '--title', 'feat: algo [skip ci]', '--description', 'feat: algo [skip ci]\n\nel cuerpo', '--auto-complete', 'true', '--delete-source-branch', 'true', '--squash', 'false', '-o', 'json'] },
-    { paso: 'pr-actualizar', args: ['repos', 'pr', 'update', '--id', '101', '--merge-commit-message', 'Merged PR 101: feat: algo', '--auto-complete', 'true', '--squash', 'false', '--delete-source-branch', 'true', '-o', 'json'] },
+    { paso: 'pr-actualizar', args: ['repos', 'pr', 'update', '--id', '101', '--merge-commit-message', mensajeDeMerge(101), '--auto-complete', 'true', '--squash', 'false', '--delete-source-branch', 'true', '-o', 'json'] },
     { paso: 'pr-ver', args: ['repos', 'pr', 'show', '--id', '101', '--query', SHOW_QUERY, '-o', 'json'] },
   ]);
 
@@ -101,7 +105,7 @@ test('ChangeRequest_Open_Azure_SameAzCalls @story-8.85 @ac-13', async () => {
   assert.strictEqual(r2.ok, true, JSON.stringify(r2));
   assert.deepStrictEqual(r2.value, { id: 55, url: 'https://dev.azure.com/acme/_apis/git/pullRequests/55', modo: 'auto', reused: true, conflict: true });
   assert.deepStrictEqual(az2.llamadas().map((l) => l.paso), ['pr-listar', 'pr-actualizar', 'pr-ver']);
-  assert.deepStrictEqual(az2.llamadas()[1].args, ['repos', 'pr', 'update', '--id', '55', '--title', 'mi título', '--description', 'feat: algo [skip ci]\n\nel cuerpo', '--merge-commit-message', 'Merged PR 55: feat: algo', '--auto-complete', 'true', '--squash', 'false', '--delete-source-branch', 'false', '-o', 'json']);
+  assert.deepStrictEqual(az2.llamadas()[1].args, ['repos', 'pr', 'update', '--id', '55', '--title', 'mi título', '--description', 'feat: algo [skip ci]\n\nel cuerpo', '--merge-commit-message', mensajeDeMerge(55), '--auto-complete', 'true', '--squash', 'false', '--delete-source-branch', 'false', '-o', 'json']);
 
   // si la verificación no ve el auto-completar puesto, el pedido quedó abierto: es un «no», con su número
   const m3 = mundo();
@@ -599,7 +603,7 @@ test('Guards_ReadBothPlatforms @story-8.85 @ac-15', () => {
   const corriendo = { shas: { 'feat/3': '3'.repeat(40) }, pulls: { 'acme/widgets': [pullGh(3)] }, checks: { ['3'.repeat(40)]: [{ name: 'ci', status: 'in_progress', conclusion: null }] } };
   const r1 = uno(corriendo, crear);
   assert.strictEqual(r1.status, 2, r1.stderr);
-  assert.match(r1.stderr, /#3|PR 3/);
+  assert.match(r1.stderr, /#3|PR\s3/);
   const terminada = { ...corriendo, checks: { ['3'.repeat(40)]: [{ name: 'ci', status: 'completed', conclusion: 'success' }] } };
   assert.strictEqual(uno(terminada, crear).status, 0);
   // el mismo pedido re-creado (su propia rama) no cuenta
