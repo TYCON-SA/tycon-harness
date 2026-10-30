@@ -797,6 +797,45 @@ function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   return { problems, notes };
 }
 
+// ── Capa 12 de la PANTALLA ──────────────────────────────────────────────────────────────────────────────
+// Una pantalla que la maqueta aprobada marca como capa (`presentation: "layer"`) se abre ENCIMA de la suya. Construida en
+// la página pasa la capa 10, porque los textos están, y se ve distinta de lo aprobado. La prueba es la línea
+// `layer-check` de lib/layer-probe.js en la salida de un humo de smoke-run.sh, la misma evidencia que cuenta en la matriz:
+// con su espejo, salida sin cambiar y exit 0. Sin maqueta aprobada e intacta no se mira acá: la capa 9 ya lo dice.
+function layerEvidence({ qaDir, qk, evidenceDirs, key }) {
+  const mk = require(path.join(__dirname, 'mockup.js'));
+  const lp = require(path.join(__dirname, 'lib', 'layer-probe.js'));
+  const problems = [];
+  const ap = mk.readApproval(path.join(qaDir, `${qk}-mockup-approval.json`));
+  if (ap.state === 'absent' || ap.state === 'bad') return { problems };
+  let html;
+  try { html = fs.readFileSync(path.join(qaDir, `${qk}-mockup.html`), 'utf8'); } catch { return { problems }; }
+  if (mk.mockupHash(html) !== ap.data.sha256) return { problems };
+  const capas = mk.mockupLayers(html) || [];
+  if (!capas.length) return { problems };
+  const rm = require(path.join(__dirname, 'runtime-matrix.js'));
+  const lecturas = [];
+  for (const e of rm.readSmokeLedger(evidenceDirs, key, rm.defaultGatesLog())) {
+    if (!e.mirrored || !e.v2 || e.salidaProblema || e.exit !== 0 || typeof e.output !== 'string') continue;
+    try { lecturas.push(...lp.leer(fs.readFileSync(path.join(path.dirname(e.path), e.output), 'utf8'))); } catch { /* salida que no se lee: no cuenta */ }
+  }
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const lpRel = path.join(__dirname, 'lib', 'layer-probe.js');
+  for (const c of capas) {
+    const mias = lecturas.filter((l) => norm(l.screen) === norm(c.name));
+    const encima = mias.filter((l) => l.dialog);
+    if (!mias.length) {
+      problems.push(`(12) la maqueta marca «${c.name}» como capa sobre «${c.over}» y ninguna prueba en vivo muestra que se abra encima. Con navegador: un humo que toque «${c.trigger}» con probeLayer(page, { screen: '${c.name}', trigger: '${c.trigger}', texts }) de ${lpRel} y escriba su línea layer-check. Sin navegador (sin Playwright, o si el humo no puede tocar el botón): la prueba de componente (jsdom o testing-library) toca «${c.trigger}» y escribe la misma línea con probeDocument(document, …). Las dos van con smoke-run.sh <evidence-dir> <story> --acs <N> --pass-if 'la capa se abre encima' -- <comando>.`);
+    } else if (!encima.length) {
+      problems.push(`(12) «${c.name}» se abrió en la página, no encima de «${c.over}»: la maqueta aprobada la marca como capa (una ventana con role="dialog" o aria-modal="true"). Construila como capa; sólo una story que diga «en la página» o «no modal» la contradice, y entonces se cambia la maqueta y se aprueba de nuevo.`);
+    } else {
+      const mejor = encima.map((l) => ({ l, faltan: c.texts.filter((t) => !l.texts.some((x) => norm(x) === norm(t))) })).sort((a, b) => a.faltan.length - b.faltan.length)[0];
+      if (mejor.faltan.length) problems.push(`(12) la capa «${c.name}» se abrió encima, pero sin ${mejor.faltan.map((t) => `«${t}»`).join(', ')} adentro: lo que la maqueta pone en la ventana va dentro de la ventana.`);
+    }
+  }
+  return { problems };
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const opt = (n) => { const i = argv.indexOf(n); return i !== -1 ? argv[i + 1] : null; };
@@ -995,6 +1034,7 @@ function main() {
       const maqueta = mockupLayers({ qaDir, qk, mockupSha: opt('--mockup-sha'), screens: pantalla.screens });
       problems.push(...maqueta.problems);
       for (const nota of maqueta.notes) console.log(`   · ${nota}`);
+      problems.push(...layerEvidence({ qaDir, qk, evidenceDirs, key: matrix.key || sid }).problems);
     } else {
       if (alcance.note) console.log(`   · ${alcance.note}`);
       if (opt('--mockup-sha') || isFile(path.join(qaDir, `${qk}-mockup-approval.json`))) {
