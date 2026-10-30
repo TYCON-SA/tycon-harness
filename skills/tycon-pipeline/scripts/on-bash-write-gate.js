@@ -666,8 +666,9 @@ function importsLocales(familia, texto, dir) {
 
 /**
  * ¿`real` es un guion del árbol de este freno, y ese árbol es el arnés y no un repo donde se trabaja? Sin git (una
- * versión bajada) es el arnés. En un clon de trabajo, el de quien lo mantiene, cuenta sólo lo versionado y sin
- * cambios: un guion nuevo o cambiado ahí no es del arnés. Si git no responde, tampoco.
+ * versión bajada) es el arnés. En un clon de trabajo, el de quien lo mantiene, cuenta sólo lo versionado, sin cambios
+ * y como está en main del servidor: un guion nuevo, cambiado ahí o que sólo trae otra rama no es del arnés. Si git no
+ * responde, tampoco.
  */
 function versionadoEnElArbolPropio(real) {
   const arbol = (() => { try { return fs.realpathSync.native(path.resolve(__dirname, '..', '..', '..')); } catch { return null; } })();
@@ -682,8 +683,9 @@ function versionadoEnElArbolPropio(real) {
   const rel = path.relative(arbol, real);
   const { spawnSync } = require('child_process');
   // sin el repo de quien llama: un GIT_DIR heredado haría contestar a otro repo; la ruta, literal: `orq-[x].js` no
-  // es un patrón que encuentre a `orq-x.js`
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1' };
+  // es un patrón que encuentre a `orq-x.js`. Sin los reemplazos de objetos: `refs/replace/<punta de main>` haría pasar
+  // otro commit por main
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1', GIT_NO_REPLACE_OBJECTS: '1' };
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) delete env[k];
   // sin el programa que el clon configure para vigilar archivos: lo correría el freno, y puede mostrar limpio un guion
   // editado. Sin el índice de archivos tocados por commit: si lo reescriben, esconde el commit local que tocó el guion
@@ -695,22 +697,20 @@ function versionadoEnElArbolPropio(real) {
   if (lineas.length !== 1 || lineas[0] !== `H ${rel.split(path.sep).join('/')}`) return false;
   const cambios = git(['status', '--porcelain', '--', rel]);
   if (cambios.status !== 0 || cambios.stdout.trim() !== '') return false;
-  // un commit que sólo está en este clon y toca el guion no cuenta: lo pudo escribir quien llama. Los que tocan otros
-  // archivos no cambian este guion
-  const locales = git(['rev-list', '-n1', '--full-history', 'HEAD', '--not', '--remotes', '--', rel]);
+  // un commit que no está en main del servidor y toca el guion no cuenta: lo pudo escribir quien llama, y empujarlo a
+  // otra rama del servidor no lo hace revisado. Los que tocan otros archivos no cambian este guion. Sin main, no cuenta
+  const main = ['refs/remotes/origin/main', 'refs/remotes/origin/master']
+    .find((ref) => git(['rev-parse', '--verify', '-q', `${ref}^{commit}`]).status === 0);
+  if (!main) return false;
+  const locales = git(['rev-list', '-n1', '--full-history', 'HEAD', '--not', main, '--', rel]);
   if (locales.status !== 0) return false;
   if (locales.stdout.trim() === '') return true;
-  // salvo que lo deje igual a la punta de una rama del servidor: el árbol que arma el portón pone el público en un commit
-  // local (lib/private-tree.js) y declara su punta. Igual a una versión vieja no cuenta
+  // salvo que lo deje igual a la punta de main. Igual a una versión vieja o a otra rama no cuenta
   const relGit = rel.split(path.sep).join('/');
   if (/[\n\r]/.test(relGit)) return false;
   const propio = git(['rev-parse', '--verify', '-q', `HEAD:${relGit}`]);
-  const puntas = git(['for-each-ref', '--format=%(objectname)', 'refs/remotes']);
-  if (propio.status !== 0 || puntas.status !== 0) return false;
-  const pedido = puntas.stdout.split('\n').filter(Boolean).map((sha) => `${sha}:${relGit}\n`).join('');
-  if (!pedido) return false;
-  const enPuntas = spawnSync('git', ['-C', arbol, 'cat-file', '--batch-check=%(objectname)'], { encoding: 'utf8', timeout: 3000, env, input: pedido });
-  return enPuntas.status === 0 && enPuntas.stdout.split('\n').includes(propio.stdout.trim());
+  const enMain = git(['rev-parse', '--verify', '-q', `${main}:${relGit}`]);
+  return propio.status === 0 && enMain.status === 0 && propio.stdout.trim() === enMain.stdout.trim();
 }
 
 /** ¿`p` (ya resuelta) cae adentro de la carpeta `dir`, comparadas por su ruta real? */

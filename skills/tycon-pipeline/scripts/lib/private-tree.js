@@ -251,10 +251,6 @@ function build(repo, story, dir) {
     const motivo = r.error ? r.error.message : `${(r.stderr || r.stdout || '').trim().split('\n').pop() || `salió ${r.status}`}`;
     throw new Error(`no pude poner el público (${pub.root}) debajo del privado: ${motivo}`);
   }
-  // la superposición deja el público en un commit local: su punta commiteada queda como rama del servidor, así el freno
-  // de guiones (on-bash-write-gate.js) reconoce como publicado lo que llegó igual a ella, y no lo sin commit
-  fs.appendFileSync(path.join(arbol, '.git', 'objects', 'info', 'alternates'), `${path.join(publico, '.git', 'objects')}\n`);
-  git(arbol, ['update-ref', 'refs/remotes/publico/punta', pubFoto.head]);
   return {
     tree: arbol, skills: path.join(arbol, 'skills'),
     base: { ...pub, uncommitted: pubFoto.uncommitted },
