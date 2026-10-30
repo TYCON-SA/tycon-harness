@@ -463,6 +463,7 @@ const TEXTOS = {
   'corridas.c.sinEjecucionesMedidas': { es: 'sin ejecuciones medidas', en: 'no measured runs' },
   'corridas.c.medianaN': { es: 'mediana {v} · n={n}', en: 'median {v} · n={n}' },
   'corridas.c.sinMedir': { es: 'sin medir', en: 'not measured' },
+  'corridas.c.mesesSinMedir': { es: 'Meses sin medir: {meses}. No hay ejecuciones con sus pasos medidos en esos meses; el hueco no es cero.', en: 'Months not measured: {meses}. No run has its steps measured in those months; the gap is not zero.' },
   'corridas.c.todaviaNo': { es: 'Todavía no hay ejecuciones', en: 'There are no runs yet' },
   'corridas.c.filtroVacio': { es: 'El filtro no deja ninguna ejecución', en: 'The filter leaves no run' },
   'corridas.c.filtroVacioMotivo': { es: 'sin ejecuciones en el filtro: ampliá el rango o cambiá de producto', en: 'no runs in the filter: widen the range or change the product' },

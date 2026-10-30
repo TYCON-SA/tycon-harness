@@ -1415,8 +1415,10 @@ function textosDe(c) {
 
 // ───────────────────────────── la página ─────────────────────────────
 
-// un color por fila de pasos (las diez de FILAS), del más claro al más oscuro
-const RAMPA = ['#BEE0DE', '#9CD0CE', '#79BFBE', '#57ADAE', '#3D9799', '#348C8E', '#2C8084', '#1E6A70', '#14555C', '#0D4148'];
+// un color por fila de pasos (las diez de FILAS), en cuatro familias por etapa: preparar (0-3, azul), construir (4-6,
+// verde azulado), revisar (7-8, ámbar) y cerrar (9, violeta). Dos vecinos quedan a 15 o más de distancia de color (ΔE
+// de CIELAB): con una sola tonalidad, dos pasos seguidos no se distinguían. La copia del navegador es la misma.
+const RAMPA = ['#C9D6EA', '#9DB3D6', '#6E8DBF', '#3F64A0', '#9CD0CE', '#3D9799', '#14555C', '#F2C46D', '#B07A12', '#6B4C9A'];
 // la coma decimal es del castellano: en inglés va el punto
 // (sólo en un idioma que la tabla tiene: uno desconocido sale entero en castellano, y con coma)
 const decimal = (x, idioma) => (TX && TX.IDIOMAS.includes(idioma) && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
@@ -1640,9 +1642,9 @@ function tabla(M, opts = {}) {
   <div class="q-head"><span class="q-n">02</span><h2>${x('v.porEjecucion')}</h2></div>
   <p class="note">${x('v.porEjecucionNota1')} <b>${x('v.porEjecucionNota2')}</b> ${x('v.porEjecucionNota3')}</p>
   <div class="leyenda">${leyenda}<span class="lg"><i class="falta"></i>${x('v.sinMarca')}</span></div>
-  <div class="tabla"><table>
+  <div class="tabla-caja"><div class="tabla"><table>
     <thead><tr>${th('v.thFecha', 'v.thFechaChico')}${th('v.thStory', 'v.thStoryChico')}${M.varias_maquinas ? th('v.thMaquina', 'v.thMaquinaChico') : ''}${th('v.thTiempo')}${th('v.thDuro')}${th('v.thTrabajo', 'v.thTrabajoChico')}${th('v.thEspera', 'v.thEsperaChico')}${th('v.thPasos')}${th('v.thAgentes')}${th('v.thVueltas')}${th('v.thTokens')}${th('v.thArchivos', 'v.thArchivosChico')}${th('v.thControles', 'v.thControlesChico')}</tr></thead>
-    <tbody id="cuerpo">${filas}</tbody></table></div>
+    <tbody id="cuerpo">${filas}</tbody></table></div></div>
 </section>
 `;
 }
@@ -1715,6 +1717,8 @@ section{margin-top:40px}h2{font-size:clamp(18px,2.3vw,24px);letter-spacing:-.018
 .lg{display:inline-flex;align-items:center;gap:5px}.lg i{width:11px;height:11px;display:inline-block;border-radius:2px}
 .lg i.falta{background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 4px)}
 .tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+/* entre 641 y 1439 px la tabla se desplaza de costado: la sombra del borde derecho avisa que sigue */
+.tabla-caja{position:relative}.tabla-caja::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,color-mix(in srgb,var(--ink) 18%,transparent));opacity:0}.tabla-caja.sigue::after{opacity:1}
 table{border-collapse:collapse;width:100%;font-size:13px;min-width:940px}
 th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--line-strong);z-index:2;font-family:"IBM Plex Mono",monospace}
 .tabla th{padding:8px 7px;letter-spacing:.03em}.tabla td{padding:7px 7px}
@@ -1736,6 +1740,13 @@ tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)
 .fila-det td{padding:0;background:var(--surface-2);position:relative}
 .det{position:sticky;left:0;width:min(1124px,calc(100vw - 60px));box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
 .det>*{max-width:100%}
+/* a 640 px o menos cada ejecución es una tarjeta: cada dato con su nombre de columna y Controles a la vista */
+@media (max-width:640px){.tabla{overflow-x:visible}.tabla table{display:block;min-width:0}.tabla thead{display:none}.tabla tbody{display:block}
+.tabla tbody tr[data-i]{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line-strong)}
+.tabla tbody tr[data-i] td{display:block;border:0;padding:0;min-width:0;width:auto;text-align:left;white-space:normal}
+.tabla tbody tr[data-i] td[data-col]::before{content:attr(data-col);display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+.tabla tbody tr[data-i] td.story,.tabla tbody tr[data-i] td.barra,.tabla tbody tr[data-i] td.frenos{grid-column:1/-1}
+.tabla .fila-det{display:block}.tabla .fila-det td{display:block}.tabla tbody tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
 .det-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
 .det-head b{font-size:16px}.det-head .mono{font-size:12.5px;color:var(--ink-2)}.det-head .sub{color:var(--ink-3);font-size:11.5px;margin-top:3px}
 .det-chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -1890,13 +1901,19 @@ const CLIENTE_FUENTE = String.raw`(function () {
     if (antes) partes.push(T('pasosSinMarca', { n: antes }));
     return partes.join('; ');
   };
-  var RAMPA = ['#BEE0DE','#9CD0CE','#79BFBE','#57ADAE','#3D9799','#348C8E','#2C8084','#1E6A70','#14555C','#0D4148'];
+  var RAMPA = ['#C9D6EA','#9DB3D6','#6E8DBF','#3F64A0','#9CD0CE','#3D9799','#14555C','#F2C46D','#B07A12','#6B4C9A'];
+  // el rótulo de cada barra, oscuro o blanco según su color: se lee sobre los diez
+  var TINTA = ['#0b0b0b','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
   var rotulo = function (p) { return String(p).replace('/', ' · '); };
   var n1 = function (x) { return (Math.round(x * 10) / 10).toString().replace('.', T('sepDecimal')); };
   var miles = function (n) { return n == null ? '—' : n >= 1e6 ? n1(n / 1e6) + ' M' : n >= 1e3 ? Math.round(n / 1e3) + ' k' : String(n); };
   var dt = function (min) { return min < 90 ? Math.round(min) + ' min' : n1(min / 60) + ' h'; };
   var nombreCtl = function (k) { return CTL[k] ? CTL[k] + ' (' + k + ')' : k; };
+  // La etiqueta de un carril va anclada a la derecha en una columna de ~290 px: un nombre más largo se cortaba por la
+  // izquierda. Se recorta con «…» y el nombre entero queda en su <title>.
+  var ETIQUETA_MAX = 46;
+  var recortada = function (s, max) { s = String(s); return s.length <= max ? esc(s) : '<title>' + esc(s) + '</title>' + esc(s.slice(0, max - 1)) + '…'; };
   var ctlEs = function (k) { return CTL[k] || k; };
   var ctlTec = function (k) { return CTL[k] ? k : ''; };
   var mediana = function (v) { if (!v.length) return null; var x = v.slice().sort(function (a, b) { return a - b; }); return x.length % 2 ? x[(x.length - 1) / 2] : (x[x.length / 2 - 1] + x[x.length / 2]) / 2; };
@@ -1951,7 +1968,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     }
     lanes.forEach(function (l) {
       var f = l.ctl;
-      s += '<text x="' + (x0 - 8) + '" y="' + (ys[l.k] + l.h / 2 + (f ? 3.5 : 4)) + '" text-anchor="end" font-family="' + (f ? 'IBM Plex Mono,monospace' : 'IBM Plex Sans,sans-serif') + '" font-size="' + (f ? 10 : 11) + '" fill="var(--ink-' + (f ? '3' : '2') + ')">' + esc(f ? nombreCtl(l.t) : l.t) + '</text>';
+      s += '<text x="' + (x0 - 8) + '" y="' + (ys[l.k] + l.h / 2 + (f ? 3.5 : 4)) + '" text-anchor="end" font-family="' + (f ? 'IBM Plex Mono,monospace' : 'IBM Plex Sans,sans-serif') + '" font-size="' + (f ? 10 : 11) + '" fill="var(--ink-' + (f ? '3' : '2') + ')">' + recortada(f ? nombreCtl(l.t) : l.t, ETIQUETA_MAX) + '</text>';
       if (f) s += '<line x1="' + x0 + '" y1="' + (ys[l.k] + l.h / 2) + '" x2="' + x1 + '" y2="' + (ys[l.k] + l.h / 2) + '" stroke="var(--line)" stroke-dasharray="2 4"></line>';
     });
     // pasos (tramos)
@@ -1968,7 +1985,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
         return;
       }
       s += '<rect x="' + a.toFixed(1) + '" y="' + ys.pasos + '" width="' + w.toFixed(1) + '" height="26" fill="' + (RAMPA[i] || RAMPA[RAMPA.length - 1]) + '" rx="1.5"><title>' + esc(p.nombre) + ' — ' + dt(p.ms / 60000) + (p.pasos.length > 1 ? ' (' + T('fusionados') + ')' : '') + (p.medida === false ? ' (' + T('estimada') + ')' : '') + '</title></rect>';
-      if (w > 26) s += '<text x="' + (a + w / 2).toFixed(1) + '" y="' + (ys.pasos + 17) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" font-weight="600" fill="' + (i > 4 ? '#fff' : '#0D4148') + '">' + esc(p.paso) + '</text>';
+      if (w > 26) s += '<text x="' + (a + w / 2).toFixed(1) + '" y="' + (ys.pasos + 17) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" font-weight="600" fill="' + (TINTA[i] || '#fff') + '">' + esc(p.paso) + '</text>';
     });
     // La espera por una persona que salió del hilo: una banda rayada sobre los pasos, con su duración.
     ((c.cambios && c.cambios.esperas_min) || []).forEach(function (w) {
@@ -2090,7 +2107,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   }
 
   // El validador de stories por fase (story 7.3): qué dijo en cada momento de la corrida, con la palabra
-  // «sin veredicto» cuando no dejó el renglón, y en cuántos vueltas de revisores el pipeline no lo relanzó.
+  // «sin veredicto» cuando no dejó el renglón, y en cuántas vueltas de revisores el pipeline no lo relanzó.
   var FASES_VAL = [['antes-de-implementar', T('faseAntes')], ['vuelta-1', T('faseVuelta1')], ['re-loop', T('faseReLoops')], ['otra-story', T('faseOtras')], ['sin-vuelta', T('faseSinVuelta')]];
   function delValidador(c) {
     var v = c.validador;
@@ -2452,15 +2469,17 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var pts = ks.map(function (k) { return porMes[k] ? { k: k, v: mediana(porMes[k]), n: porMes[k].length } : { k: k, v: null, n: 0 }; });
     // El techo del eje se redondea a la centena de arriba, con aire: los números de los puntos van encima.
     var max = Math.max(100, Math.ceil(Math.max.apply(null, [1].concat(pts.map(function (p) { return p.v || 0; })).concat(LB ? [LB.mediana] : [])) * 1.2 / 100) * 100);
-    var W = 720, H = 190, x0 = 40, x1 = 706, base = 148, top = 16, paso = (x1 - x0) / ks.length;
+    // Ningún texto del gráfico mide menos de 11 px.
+    var W = 720, H = 196, x0 = 40, x1 = 706, base = 148, top = 16, paso = (x1 - x0) / ks.length;
     var Y = function (v) { return base - (v / max) * (base - top); };
     var X = function (i) { return x0 + paso * i + paso / 2; };
     var s2 = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;min-width:520px;display:block" role="img" aria-label="' + T('ariaPasos') + '">';
     [0, max / 2, max].forEach(function (t) {
-      s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">' + t + '</text>';
+      s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink-3)">' + t + '</text>';
     });
-    if (LB) s2 += '<line x1="' + x0 + '" y1="' + Y(LB.mediana).toFixed(1) + '" x2="' + x1 + '" y2="' + Y(LB.mediana).toFixed(1) + '" stroke="var(--ink-3)" stroke-dasharray="4 4"><title>' + T('lineaBaseDel', { f: esc(LB.fecha), m: LB.mediana }) + '</title></line>'
-      + '<text x="' + (x0 + 4) + '" y="' + (Y(LB.mediana) + 13).toFixed(1) + '" text-anchor="start" font-family="IBM Plex Mono,monospace" font-size="10" fill="var(--ink-3)">' + T('lineaBase', { m: LB.mediana, f: esc(LB.fecha) }) + '</text>';
+    // El rótulo de la línea base va en la leyenda, debajo: dentro del área se encimaba con los valores, que caen cerca
+    // de ella (es lo esperable).
+    if (LB) s2 += '<line x1="' + x0 + '" y1="' + Y(LB.mediana).toFixed(1) + '" x2="' + x1 + '" y2="' + Y(LB.mediana).toFixed(1) + '" stroke="var(--ink-3)" stroke-dasharray="4 4"><title>' + T('lineaBaseDel', { f: esc(LB.fecha), m: LB.mediana }) + '</title></line>';
     // La línea une sólo meses CONSECUTIVOS medidos: cruzar un hueco dibujaría una tendencia que nadie midió.
     pts.forEach(function (p, i) {
       if (i && p.v !== null && pts[i - 1].v !== null) s2 += '<line x1="' + X(i - 1).toFixed(1) + '" y1="' + Y(pts[i - 1].v).toFixed(1) + '" x2="' + X(i).toFixed(1) + '" y2="' + Y(p.v).toFixed(1) + '" stroke="var(--accent)" stroke-width="2"></line>';
@@ -2470,11 +2489,15 @@ const CLIENTE_FUENTE = String.raw`(function () {
       s2 += p.v === null
         ? '<rect x="' + (cx - Math.min(15, paso * 0.31)).toFixed(1) + '" y="' + top + '" width="' + Math.min(30, paso * 0.62).toFixed(1) + '" height="' + (base - top) + '" fill="var(--hatch)" opacity=".18" rx="2"><title>' + p.k + ': ' + T('sinEjecucionesMedidas') + '</title></rect>'
         : '<circle cx="' + cx.toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="4.5" fill="var(--accent)"><title>' + p.k + ': ' + T('medianaN', { v: Math.round(p.v), n: p.n }) + '</title></circle>'
-          + '<text x="' + cx.toFixed(1) + '" y="' + (Y(p.v) - 9).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink)">' + Math.round(p.v) + '</text>';
-      s2 += '<text x="' + cx.toFixed(1) + '" y="164" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + p.k + '</text>'
-        + '<text x="' + cx.toFixed(1) + '" y="176" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + (p.v === null ? T('sinMedir') : 'n=' + p.n) + '</text>';
+          + '<text x="' + cx.toFixed(1) + '" y="' + (Y(p.v) - 9).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink)">' + Math.round(p.v) + '</text>';
+      s2 += '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink-3)">' + p.k + '</text>'
+        + '<text x="' + cx.toFixed(1) + '" y="181" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink-3)">' + (p.v === null ? T('sinMedir') : 'n=' + p.n) + '</text>';
     });
-    return s2 + '</svg>' + notas;
+    var leyenda = LB ? '<p class="tlnota leyenda"><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--ink-3)" stroke-dasharray="4 4"></line></svg> ' + T('lineaBase', { m: LB.mediana, f: esc(LB.fecha) }) + '</p>' : '';
+    // los meses del rango sin ejecuciones medidas se nombran: el hueco con trama sólo, en un rango largo, no se ve
+    var sinMedir = pts.filter(function (p) { return p.v === null; }).map(function (p) { return p.k; });
+    var aviso = sinMedir.length ? '<p class="tlnota">' + T('mesesSinMedir', { meses: sinMedir.join(', ') }) + '</p>' : '';
+    return s2 + '</svg>' + leyenda + aviso + notas;
   }
 
   // La revisión de la historia antes de programar. Cuenta HISTORIAS: las corridas de una misma historia comparten su
@@ -2859,6 +2882,21 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var tr = ev.target.closest('tr'); if (!tr || !tr.dataset.i) return;
     abrir(tr, function (fila) { fila.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   });
+  // la tarjeta del celular nombra cada dato con su columna; la sombra de la derecha avisa que la tabla sigue
+  var cajaTabla = document.querySelectorAll('.tabla')[0];
+  if (cajaTabla) {
+    var cabeceras = cajaTabla.querySelectorAll('thead th');
+    cajaTabla.querySelectorAll('tbody tr[data-i]').forEach(function (tr) {
+      Array.prototype.forEach.call(tr.cells, function (td, k) { if (cabeceras[k]) td.setAttribute('data-col', cabeceras[k].childNodes[0].textContent.trim()); });
+    });
+    var marcarSigue = function () { cajaTabla.parentElement.classList.toggle('sigue', cajaTabla.scrollLeft + cajaTabla.clientWidth < cajaTabla.scrollWidth - 1); };
+    marcarSigue();
+    cajaTabla.addEventListener('scroll', marcarSigue);
+    window.addEventListener('resize', marcarSigue);
+    // la tabla se ensancha después (las letras llegan tarde, el filtro muestra filas): se vuelve a mirar
+    window.addEventListener('load', marcarSigue);
+    if (typeof ResizeObserver === 'function') { var mira = new ResizeObserver(marcarSigue); mira.observe(cajaTabla); mira.observe(cajaTabla.querySelector('table')); }
+  }
   // '?abrir=<id>' abre el detalle de esa corrida al cargar: es lo que permite fotografiarlo sin un clic (con '?solo=<id>'
   // queda arriba de todo). En la página local vale también el índice de la fila.
   if (ENLACE.abrir !== null && cuerpo.rows && cuerpo.rows.length) {

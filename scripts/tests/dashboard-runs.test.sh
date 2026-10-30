@@ -1709,18 +1709,17 @@ cliente "${T}/o.html" container fichas | grep 'n=3 de 3 ejecuciones' >/dev/null 
 G="$(cliente "${T}/o.html" container gpasos)"
 grep -q '1 ejecución medida no trae su fecha de arranque' <<< "${G}" && ok "7.12-T4c la serie dice la que quedó afuera por no tener fecha" || mal "7.12-T4c la serie descarta una ejecución medida sin decirlo"
 
-# ── T4d · la etiqueta de la línea base no se pisa con el número del último mes ──
-# 🔴 Falla con: la etiqueta anclada a la derecha y ARRIBA de la línea — con la serie pegada a la línea base (lo
-#    esperable) queda encima del número del último punto.
+# ── T4d · la etiqueta de la línea base no se pisa con el número de ningún mes ──
+# 🔴 Falla con: la etiqueta dentro del área de los valores — con la serie pegada a la línea base (lo esperable) queda
+#    encima del número de un punto. Va en la leyenda, debajo del gráfico (story 2.79, AC 47).
 echo "${G}" | python3 -c "
 import re, sys
 g = sys.stdin.read()
-t = re.search(r'<text x=\"([\d.]+)\" y=\"([\d.]+)\" text-anchor=\"(\w+)\"[^>]*>línea base', g)
-l = re.search(r'<line x1=\"[\d.]+\" y1=\"([\d.]+)\"[^>]*stroke-dasharray', g)
-assert t and l, 'no encontré la etiqueta o la línea punteada'
-assert t.group(3) == 'start' and float(t.group(1)) < 100, 'la etiqueta tiene que ir a la IZQUIERDA (los números de los puntos nuevos caen a la derecha)'
-assert float(t.group(2)) > float(l.group(1)), 'y DEBAJO de la línea (los números de los puntos van arriba)'
-" && ok "7.12-T4d la etiqueta de la línea base va a la izquierda y debajo de la línea" || mal "7.12-T4d la etiqueta de la línea base puede pisarse con los números"
+s = re.search(r'<svg[\s\S]*?</svg>', g)
+assert s and re.search(r'<line [^>]*stroke-dasharray', s.group(0)), 'no encontré la línea punteada'
+assert 'línea base' not in re.sub(r'<title>.*?</title>', '', s.group(0)), 'la etiqueta está dentro del gráfico'
+assert re.search(r'<p class=\"tlnota leyenda\">.*?línea base', g.replace(s.group(0), ''), re.S), 'la etiqueta va en la leyenda, debajo'
+" && ok "7.12-T4d la etiqueta de la línea base va en la leyenda, fuera del área de los valores" || mal "7.12-T4d la etiqueta de la línea base puede pisarse con los números"
 rm -rf "${T}"
 
 # ── T4e · sin línea base, la página lo DICE con su motivo (ficha y serie) ──
@@ -2270,6 +2269,142 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 D="$(cliente "${T}/o.html" all)"
 grep -qE 'DoD|\bPASS\b' <<< "$(sed -E 's/<[^>]+>/ /g' <<< "${D}")" && mal "2.79-T48 el detalle muestra el veredicto crudo: $(grep -oE '[^>]{0,20}(DoD|PASS)[^<]{0,20}' <<< "${D}" | head -2 | tr '\n' ' ')" || ok "2.79-T48 sin «DoD PASS» ni «DoD FAIL» en el detalle"
 grep -q 'terminado de verdad: pasó' <<< "${D}" && grep -q 'terminado de verdad: no pasó' <<< "${D}" && ok "2.79-T48 el veredicto se dice en llano, el que pasó y el que no" || mal "2.79-T48 falta el veredicto en llano"
+rm -rf "${T}"
+
+# ── 2.79-T55 · 2.79-Corridas_ControlesSinDesplazar @story-2.79 @ac-44 ──
+# 🔴 Falla con: la tabla sin la señal de «sigue» a 900 px, o sin tarjetas a 640 px o menos (Controles detrás del
+#    desplazamiento lateral). Mismo navegador que ANCHO-T1; sin Chrome, NO MEDIDO — nunca «ok».
+if [ -z "${CHROME_BIN}" ]; then
+  echo "  NO MEDIDO — 2.79-T55 no hay Chrome en esta máquina (TYCON_CHROME lo apunta; TYCON_CHROME=0 lo apaga a propósito): la tabla en sus anchos no se verificó"
+else
+  T=$(mktemp -d)
+  volcado "${T}/r" "${S1}" "2026-09-10T10:00:00Z" '{"gates":[{"ts":"2026-09-10T10:20:00.000Z","check":"atdd-preedit","status":"red:exit=1"}]}'
+  volcado "${T}/r" "${S2}" "2026-09-11T10:00:00Z"
+  generar "${T}/r" "${T}/o.html" "${T}/log"
+  cat >> "${T}/o.html" <<'MEDIR'
+<script>window.addEventListener('load',function(){setTimeout(function(){var caja=document.querySelector('.tabla'),t=caja.querySelector('table'),vista=document.documentElement.clientWidth,ths=t.querySelectorAll('thead th'),ctl=ths[ths.length-1],fila=t.querySelector('tbody tr[data-i]'),fr=fila.querySelector('td.frenos').getBoundingClientRect(),envoltorio=caja.parentElement,despues=envoltorio?getComputedStyle(envoltorio,'::after'):null;
+var r={vista:vista,desplaza:t.scrollWidth>caja.clientWidth+1,ctlDentro:ctl.getBoundingClientRect().right<=caja.getBoundingClientRect().right+1,tarjeta:getComputedStyle(fila).display!=='table-row'&&getComputedStyle(t.querySelector('thead')).display==='none',frenosDentro:fr.left>=0&&fr.right<=vista+1&&fr.width>0,senal:!!(despues&&despues.content!=='none'&&Number(despues.opacity)>0&&/sigue/.test(envoltorio.className))};
+document.body.setAttribute('data-medida',JSON.stringify(r));},300);});</script>
+MEDIR
+  for ANCHO in 1440 900 600 390; do
+    R="$(perl -e 'alarm shift; exec @ARGV' 60 "${CHROME_BIN}" --headless=new --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check --window-size=${ANCHO},1000 --virtual-time-budget=4000 --dump-dom "file://${T}/o.html?abrir=0" 2>/dev/null | python3 -c "
+import re,sys,html; m=re.search(r'data-medida=\"([^\"]*)\"', sys.stdin.read()); print(html.unescape(m.group(1)) if m else 'sin-medida')")"
+    if [ "${R}" = "sin-medida" ]; then mal "2.79-T55 a ${ANCHO} px Chrome no devolvió la medida: $(head -c 300 "${T}/log")"; continue; fi
+    python3 -c "
+import json,sys; r=json.loads(sys.argv[1]); a=int(sys.argv[2])
+if a>=1440: assert not r['desplaza'] and r['ctlDentro'], ('entera y Controles a la vista', r)
+elif a>640: assert r['desplaza'] and r['senal'], ('se desplaza y la señal de que sigue se ve', r)
+else: assert r['tarjeta'] and r['frenosDentro'] and not r['desplaza'], ('tarjetas con Controles dentro del ancho', r)
+" "${R}" "${ANCHO}" 2>"${T}/err" && ok "2.79-T55 a ${ANCHO} px la tabla se lee con Controles a la vista" || mal "2.79-T55 a ${ANCHO} px: $(tail -1 "${T}/err")"
+  done
+  rm -rf "${T}"
+fi
+
+# ── 2.79-T56 · 2.79-Corridas_RampaDistinguible @story-2.79 @ac-45 ──
+# 🔴 Falla con: la rampa de un solo tono (dos vecinos a menos de 15 de distancia), las dos copias distintas, o un
+#    rótulo de barra que no se lee sobre su color.
+python3 - "${RAIZ}/scripts/nightly/dashboard/runs.js" <<'PY' 2>"${FX}.err" && ok "2.79-T56 la rampa: diez colores en cuatro familias, vecinos distinguibles, las dos copias iguales y el rótulo legible" || mal "2.79-T56 $(tail -1 "${FX}.err")"
+import re, sys, math
+src = open(sys.argv[1]).read()
+rampas = [re.findall(r"#[0-9A-Fa-f]{6}", m) for m in re.findall(r"(?:const|var) RAMPA = \[([^\]]*)\]", src)]
+assert len(rampas) == 2, 'hay dos rampas: la del servidor y la del navegador (%d)' % len(rampas)
+assert [c.upper() for c in rampas[0]] == [c.upper() for c in rampas[1]], 'las dos rampas son la misma'
+R = [c.upper() for c in rampas[0]]
+assert len(R) == 10 and len(set(R)) == 10, 'diez colores sin repetidos: %s' % R
+def lab(h):
+    rgb = [int(h[i:i+2], 16) / 255 for i in (1, 3, 5)]
+    lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+    x = (lin[0]*0.4124 + lin[1]*0.3576 + lin[2]*0.1805) / 0.95047
+    y = (lin[0]*0.2126 + lin[1]*0.7152 + lin[2]*0.0722)
+    z = (lin[0]*0.0193 + lin[1]*0.1192 + lin[2]*0.9505) / 1.08883
+    f = lambda t: t ** (1/3) if t > 0.008856 else 7.787 * t + 16/116
+    return (116*f(y) - 16, 500*(f(x) - f(y)), 200*(f(y) - f(z)))
+L = [lab(c) for c in R]
+for i in range(9):
+    d = math.dist(L[i], L[i+1])
+    assert d >= 15, 'los pasos %d y %d están a %.1f (menos de 15)' % (i, i+1, d)
+tono = lambda l: math.degrees(math.atan2(l[2], l[1])) % 360
+dif = lambda a, b: min(abs(a - b), 360 - abs(a - b))
+FAM = [[0, 1, 2, 3], [4, 5, 6], [7, 8], [9]]
+medio = []
+for f in FAM:
+    t = [tono(L[i]) for i in f]
+    assert all(dif(a, t[0]) <= 25 for a in t), 'la familia %s no es una sola tonalidad: %s' % (f, [round(x) for x in t])
+    medio.append(t[0])
+for i in range(4):
+    for j in range(i + 1, 4):
+        assert dif(medio[i], medio[j]) >= 30, 'las familias %s y %s tienen casi el mismo tono' % (FAM[i], FAM[j])
+tinta = re.search(r"var TINTA = \[([^\]]*)\]", src)
+assert tinta, 'el color del rótulo de cada barra está declarado (TINTA)'
+T = re.findall(r"#[0-9A-Fa-f]{3,6}", tinta.group(1))
+assert len(T) == 10, 'un color de rótulo por paso'
+def lum(h):
+    h = h if len(h) == 7 else '#' + ''.join(c * 2 for c in h[1:])
+    v = [int(h[i:i+2], 16) / 255 for i in (1, 3, 5)]
+    v = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in v]
+    return 0.2126*v[0] + 0.7152*v[1] + 0.0722*v[2]
+for i, (b, t) in enumerate(zip(R, T)):
+    a, c = sorted([lum(b), lum(t)], reverse=True)
+    assert (a + 0.05) / (c + 0.05) >= 4.5, 'el rótulo del paso %d no se lee sobre su barra' % i
+PY
+
+# ── 2.79-T57 · 2.79-Corridas_EtiquetaLargaConTitle @story-2.79 @ac-46 ──
+# 🔴 Falla con: la etiqueta del control entera, anclada a la derecha: un nombre largo se corta por la izquierda.
+T=$(mktemp -d)
+LARGO='un-control-de-nombre-larguisimo-que-no-entra-en-la-columna-de-las-etiquetas-del-detalle'
+volcado "${T}/r" "${S1}" "2026-09-10T10:00:00Z" "{\"gates\":[{\"ts\":\"2026-09-10T10:20:00.000Z\",\"check\":\"${LARGO}\",\"status\":\"red:exit=1\"}]}"
+generar "${T}/r" "${T}/o.html" "${T}/log"
+cliente "${T}/o.html" detail 0 > "${T}/d"
+python3 - "${T}/d" "${LARGO}" <<'PY' 2>"${T}/err" && ok "2.79-T57 la etiqueta larga se recorta con «…» y el nombre entero va en su <title>" || mal "2.79-T57 $(tail -1 "${T}/err")"
+import re, sys
+d = open(sys.argv[1]).read(); largo = sys.argv[2]
+etiquetas = [m for m in re.findall(r'<text [^>]*text-anchor="end"[^>]*>(.*?)</text>', d, re.S) if largo[:20] in m]
+assert etiquetas, 'no encontré la etiqueta del control en la línea de tiempo'
+e = etiquetas[0]
+assert '<title>' in e and largo in re.search(r'<title>(.*?)</title>', e, re.S).group(1), 'el nombre entero va en el <title>'
+visible = re.sub(r'<title>.*?</title>', '', e, flags=re.S)
+assert visible.rstrip().endswith('…') and len(visible) < len(largo), 'lo visible se recorta con «…»: %r' % visible
+PY
+rm -rf "${T}"
+
+# ── 2.79-T58 · 2.79-Corridas_GraficoPasos_AvisaMesesSinMedir @story-2.79 @ac-47 ──
+# 🔴 Falla con: el gráfico mes a mes con textos de 9,5 px, el rótulo de la línea base dentro del área de los valores, o
+#    sin el aviso de los meses que no se midieron.
+T=$(mktemp -d)
+volcado "${T}/hueco" "${S1}" "2026-06-10T05:00:00Z" '{"consumo":{"respuestas":100}}'
+volcado "${T}/hueco" "${S2}" "2026-08-10T05:00:00Z" '{"consumo":{"respuestas":104}}'
+volcado "${T}/todos" "${S1}" "2026-06-10T05:00:00Z" '{"consumo":{"respuestas":100}}'
+volcado "${T}/todos" "${S2}" "2026-07-10T05:00:00Z" '{"consumo":{"respuestas":120}}'
+volcado "${T}/nada" "${S1}" "2026-06-10T05:00:00Z" '{"consumo":null}'
+for caso in hueco todos nada; do
+  node -e "
+const c = require('${RAIZ}/scripts/nightly/dashboard/runs.js');
+const M = c.modelo('${T}/${caso}');
+M.linea_base_pasos = { estado: 'medida', mediana: 102, fecha: '2026-05-01' };
+require('fs').writeFileSync('${T}/${caso}.html', c.render(M));"
+done
+for caso in hueco todos nada; do cliente "${T}/${caso}.html" container gpasos > "${T}/${caso}.g"; done
+python3 - "${T}/hueco.g" <<'PY' 2>"${T}/err" && ok "2.79-T58 con un mes sin medir: el aviso lo nombra, ningún texto chico y la línea base en la leyenda" || mal "2.79-T58 $(tail -1 "${T}/err")"
+import re, sys
+g = open(sys.argv[1]).read()
+svg = re.search(r'<svg[\s\S]*?</svg>', g)
+assert svg, 'el gráfico se dibuja'
+s = svg.group(0); fuera = g.replace(s, '')
+chicos = [float(x) for x in re.findall(r'font-size="([\d.]+)"', s) if float(x) < 11]
+assert not chicos, 'textos de menos de 11 px en el gráfico: %s' % chicos
+textos = re.sub(r'<title>.*?</title>', '', s)
+assert 'línea base' not in re.sub(r'<[^>]+>', ' ', textos), 'el rótulo de la línea base no va dentro del área de los valores'
+assert 'línea base' in fuera, 'la línea base se nombra en la leyenda, debajo'
+assert re.search(r'sin medir[^<]*2026-07', fuera), 'el aviso nombra el mes sin medir: %s' % re.sub(r'<[^>]+>', ' ', fuera)[:300]
+PY
+python3 - "${T}/todos.g" <<'PY' 2>"${T}/err" && ok "2.79-T58 con todos los meses medidos no hay aviso" || mal "2.79-T58 con todos medidos: $(tail -1 "${T}/err")"
+import re, sys
+g = open(sys.argv[1]).read()
+assert '<svg' in g, 'el gráfico se dibuja'
+fuera = re.sub(r'<svg[\s\S]*?</svg>', '', g)
+assert not re.search(r'sin medir[^<]*2026-', fuera), 'un aviso de meses sin medir con todos medidos: %s' % re.sub(r'<[^>]+>', ' ', fuera)[:300]
+PY
+grep -q 'no hay serie que dibujar' "${T}/nada.g" && ! grep -q '<svg' "${T}/nada.g" && ok "2.79-T58 sin ningún mes medido: el texto de «sin serie» y ningún gráfico" || mal "2.79-T58 sin ninguno: $(head -c 300 "${T}/nada.g")"
 rm -rf "${T}"
 
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
