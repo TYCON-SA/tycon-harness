@@ -59,8 +59,11 @@ function registro({ falla = null } = {}) {
   return { renglones, append };
 }
 
+// la persona en su terminal: nada de la herramienta entre los padres del proceso (T19 prueba ese control)
+const DE_LA_PERSONA = () => ({ ok: true });
+
 function firmar(casa, extra = {}) {
-  return sign.sign({ casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {}, ...extra });
+  return sign.sign({ casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {}, origen: DE_LA_PERSONA, ...extra });
 }
 
 // el pedido que deja el freno al frenar: el texto exacto que leyó, con su número
@@ -286,7 +289,7 @@ test('T13 · el freno de seguridad deja pasar el comando firmado, tal cual y una
   assert.ok(m, `el cartel no da el número: ${r.stderr}`);
   assert.strictEqual(freno(firmado).stderr.includes(`--request ${m[1]}`), true, 'repetirlo reusa el mismo número');
   const tty = terminal();
-  assert.strictEqual(sign.sign({ id: 'emergency', reason: 'limpiar la carpeta de la prueba', request: m[1], tty, append: reg.append, signer: 'prueba', levels: {} }).code, 0);
+  assert.strictEqual(sign.sign({ id: 'emergency', reason: 'limpiar la carpeta de la prueba', request: m[1], tty, append: reg.append, signer: 'prueba', levels: {}, origen: DE_LA_PERSONA }).code, 0);
   assert.ok(tty.preguntas[0].includes(`Comando: ${firmado}`), 'la terminal muestra lo que leyó el freno');
   // otro texto no la consume
   r = freno(`${firmado} `);
@@ -306,7 +309,8 @@ test('T14 · los frenos de escritura cuidan el permiso igual que los registros d
   const estado = path.dirname(sign.carpeta());
   const ventana = path.join(estado, 'owner-window', 'x.json');
   const permiso = path.join(sign.carpeta(), 'x.json');
-  for (const archivo of [ventana, permiso]) {
+  const pedidoEscrito = path.join(sign.carpeta(), 'pedidos', 'abcd1234.json');
+  for (const archivo of [ventana, permiso, pedidoEscrito]) {
     // Edit y Write
     const r = gate.computeStoryGate({ filePath: archivo, stateDir: estado, homeDir: os.homedir(), repoRoot: null });
     assert.deepStrictEqual([r.action, r.kind], ['block', 'state-dir'], archivo);
@@ -324,7 +328,7 @@ test('T14 · los frenos de escritura cuidan el permiso igual que los registros d
 // renglón dice el nivel, la vía y el motivo.
 test('T15 · la emergencia queda en el registro común de firmas de verdad', (t) => {
   const casa = casaNueva(t);
-  const r = sign.sign({ id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {} });
+  const r = sign.sign({ id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {}, origen: DE_LA_PERSONA });
   assert.strictEqual(r.code, 0, r.lines.join('\n'));
   const log = require('../lib/signature-log.js');
   const renglones = fs.readFileSync(log.logPath(casa), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -351,6 +355,9 @@ test('T16 · el freno de seguridad no deja que el agente corra sign ni la biblio
       "python3 -c 'import pty; pty.spawn([\"node\", \"harness.js\", \"sign\", \"critical-waiver\"])'",
       "node ~/.tycon/harness/scripts/lib/harness-sign.js consume <<< 'ls'",
       "node scripts/setup/harness.js 'si''gn' emergency --reason x -- 'ls'",
+      // seguido de cualquier signo, no sólo de un espacio
+      'node scripts/setup/harness.js sign;true', 'node scripts/setup/harness.js sign&& echo listo',
+      'node scripts/setup/harness.js sign|cat', 'node scripts/setup/harness.js sign>salida.txt',
     ]) {
       const r = freno(comando);
       assert.strictEqual(r.status, 2, `${comando}: ${r.stderr}`);
@@ -386,6 +393,49 @@ test('T18 · en Windows la firma se da en una ventana nueva, con tres palabras',
   r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: adentro(true) });
   assert.strictEqual(r.code, 0, r.lines.join('\n'));
   assert.ok(sign.consumir({ casa, comando: 'Remove-Item -Recurse -Force C:\\proj\\bin', ahora: AHORA + MIN }).ok);
+});
+
+// El freno mira el texto del comando; una copia del guion con otro nombre o un comodín no lo nombran. Por eso `sign`
+// mira además quién lo lanzó: con la herramienta del agente entre sus padres, no firma, se llame como se llame.
+// 🔴 rojo: sin este control, `cp harness.js /tmp/x.js; node /tmp/x.js sign …` dentro de un pty firma.
+test('T19 · sign no firma si lo lanzó la herramienta del agente, ni sin poder mirar', (t) => {
+  const casa = casaNueva(t);
+  const reg = registro();
+  const n = pedido(casa, 'rm -rf /tmp/x');
+  const yo = process.pid;
+  const arbol = (herramienta) => [
+    { pid: 1, ppid: 0, inicio: 'x', comando: '/sbin/launchd' },
+    { pid: 50, ppid: 1, inicio: 'x', comando: herramienta },
+    { pid: 60, ppid: 50, inicio: 'x', comando: '/bin/zsh -c python3 -c pty.spawn' },
+    { pid: yo, ppid: 60, inicio: 'x', comando: 'node /tmp/copia.js sign emergency' },
+  ];
+  const conArbol = (a) => firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, origen: undefined, arbol: a });
+  let r = conArbol(arbol('claude --dangerously-skip-permissions'));
+  assert.strictEqual(r.code, 2);
+  assert.match(r.lines.join('\n'), /herramienta del agente/);
+  r = conArbol(null);
+  assert.strictEqual(r.code, 2, 'sin árbol no se sabe: no firma');
+  assert.strictEqual(reg.renglones.length, 0);
+  r = conArbol(arbol('/Applications/iTerm.app/Contents/MacOS/iTerm2'));
+  assert.strictEqual(r.code, 0, 'desde una terminal de la persona, firma');
+});
+
+// El comando del pedido lo elige el agente: con saltos de línea, retornos o códigos de pantalla podría tapar parte de
+// lo que la persona lee antes de «firmo». Se muestra entero, con lo invisible escrito, y con un aviso.
+// 🔴 rojo: mostrarlo crudo deja que un \r o un código de pantalla esconda el principio del comando.
+test('T20 · la terminal muestra el comando entero, con lo que no se ve escrito y un aviso', (t) => {
+  const casa = casaNueva(t);
+  const reg = registro();
+  const escondido = 'rm -rf ~/proyecto\r\u001b[2Kls -la';
+  const tty = terminal();
+  const r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: pedido(casa, escondido), append: reg.append, tty });
+  assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.ok(!/[\r\u001b]/.test(tty.preguntas[0]), 'ni el \\r ni el código de pantalla llegan a la terminal');
+  assert.match(tty.preguntas[0], /rm -rf ~\/proyecto\\u\{d\}\\u\{1b\}\[2Kls -la/);
+  assert.match(tty.preguntas[0], /caracteres que no se ven/);
+  // y el permiso es del texto real, no del que se mostró
+  assert.ok(sign.consumir({ casa, comando: escondido, ahora: AHORA + MIN }).ok);
+  assert.deepStrictEqual(sign.aLaVista('git push'), { visto: 'git push', raro: false });
 });
 
 test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', () => {

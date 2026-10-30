@@ -147,7 +147,8 @@ function emergencia({ dir, env, rec }) {
   const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety-guard-pre.sh');
   const bash = L.scanPath('bash', { env })[0];
   const marca = `sonda_${Date.now()}`;
-  const nadie = { append: () => ({ ok: true, path: '(sonda)' }), signer: 'sonda', levels: {} };
+  // la sonda hace de persona: el registro de mentira y el origen dado por bueno (en Windows el árbol no se mira)
+  const nadie = { append: () => ({ ok: true, path: '(sonda)' }), signer: 'sonda', levels: {}, origen: () => ({ ok: true }) };
   const firmo = (opts) => S.sign({ ...nadie, ...opts, tty: { hay: () => true, preguntar: () => 'firmo' } });
   const limpiar = () => {
     for (const d of [S.carpeta(), path.join(S.carpeta(), 'pedidos')]) {

@@ -84,6 +84,41 @@ function ttyDeVerdad() {
   };
 }
 
+/**
+ * ¿Lo lanzó la herramienta del agente, con cualquier envoltura (una terminal propia, `script`, un pty, una copia del
+ * guion con otro nombre)? Mira los padres del proceso en el árbol de la máquina (owner-window.js). Sin árbol no se sabe:
+ * no firma. En Windows el árbol no se lee; ahí cuida la ventana nueva, que una consola del agente no pasa.
+ */
+function origenDeVerdad({ pid = process.pid, arbol } = {}) {
+  const ow = require('./owner-window.js');
+  const a = arbol === undefined ? ow.leerArbol() : arbol;
+  if (!a) return { ok: false, motivo: 'no pude ver qué procesos lanzaron este comando, y sin eso no firmo: probá de nuevo en tu terminal' };
+  const m = new Map(a.map((p) => [p.pid, p]));
+  const vistos = new Set();
+  for (let p = m.get(pid); p && !vistos.has(p.pid); p = m.get(p.ppid)) {
+    vistos.add(p.pid);
+    if (ow.esHerramienta(p)) return { ok: false, motivo: 'lo lanzó la herramienta del agente: se firma en una terminal tuya, fuera de la herramienta' };
+  }
+  return { ok: true };
+}
+
+/**
+ * El comando como se lee en la terminal: los caracteres que no se ven (saltos de línea, retornos, códigos de pantalla,
+ * los que dan vuelta el texto) quedan escritos como `\u{…}`. Así lo que la persona lee es el texto entero que firma.
+ */
+// armada con códigos y no con los caracteres: dos de ellos cortan la línea del fuente
+const INVISIBLES = new RegExp(`[${['0000-001f', '007f-009f', '200e', '200f', '2028', '2029', '202a-202e', '2066-2069']
+  .map((r) => r.split('-').map((h) => `\\u${h}`).join('-')).join('')}]`, 'g');
+
+function aLaVista(texto) {
+  let raro = false;
+  const visto = String(texto).replace(INVISIBLES, (c) => {
+    raro = true;
+    return `\\u{${c.codePointAt(0).toString(16)}}`;
+  });
+  return { visto, raro };
+}
+
 function appendDeVerdad(renglon) {
   let log;
   try { log = require('./signature-log.js'); } catch (e) { return { ok: false, error: `no está el registro común de firmas (signature-log.js: ${e.code || e.message})` }; }
@@ -161,8 +196,9 @@ function pedidoVigente({ casa, numero, ahora }) {
  * `levels`: lo que sube el perfil (`approvals.levels`); null si el perfil no se pudo leer (se pide motivo igual).
  * `via`: por dónde llega el pedido; en esta etapa, sólo `terminal` firma.
  * `argv`: el comando entero (el guion y sus argumentos), para correrlo otra vez en la ventana nueva de Windows.
+ * `origen` (o `arbol`, el de los procesos): quién lanzó el comando; las pruebas lo pasan.
  */
-function sign({ id, reason = '', request = null, commit = false, target = null, orderedBy = null, signer, via = 'terminal', tty, append, levels = {}, casa, cwd = process.cwd(), ahora = Date.now(), argv = process.argv.slice(1) } = {}) {
+function sign({ id, reason = '', request = null, commit = false, target = null, orderedBy = null, signer, via = 'terminal', tty, append, levels = {}, casa, cwd = process.cwd(), ahora = Date.now(), argv = process.argv.slice(1), origen, arbol } = {}) {
   const no = (code, ...lines) => ({ code, lines });
   const e = entrada(id);
   if (!e) return no(2, `harness sign: «${id}» no es un id del catálogo de firmas (guides/firmas-del-arnes.md)`);
@@ -199,8 +235,14 @@ function sign({ id, reason = '', request = null, commit = false, target = null, 
   }
   if (t.windows && t.dentro) t.dentro();
   if (!t.hay()) return no(2, 'harness sign: esta firma se da en tu terminal, y aquí no hay una: corré el comando vos, en tu terminal');
-  const sobre = !comando ? '' : commit ? `.\nPara: el próximo commit en ${repoDe(cwd)}` : `.\nComando: ${comando}`;
-  const que = `Firma: ${e.approves} (nivel ${nivel})${motivo ? `. Motivo: ${una(motivo, 300)}` : ''}${sobre}.`;
+  if (!t.windows) {
+    const o = (origen || (() => origenDeVerdad({ arbol })))();
+    if (!o.ok) return no(2, `harness sign: ${o.motivo}`);
+  }
+  const vista = aLaVista(comando);
+  const sobre = !comando ? '' : commit ? `.\nPara: el próximo commit en ${repoDe(cwd)}` : `.\nComando: ${vista.visto}`;
+  const aviso = vista.raro ? '\n⚠️ El comando trae caracteres que no se ven (saltos de línea, retornos o códigos de pantalla): están escritos como \\u{…}. Firmá sólo si sabés por qué están.' : '';
+  const que = `Firma: ${e.approves} (nivel ${nivel})${motivo ? `. Motivo: ${una(motivo, 300)}` : ''}${sobre}.${aviso}`;
   let ok;
   try {
     // en Windows la ventana dice qué se firma antes de pedir las tres palabras
@@ -270,7 +312,7 @@ function permisos(casa) {
   try { return fs.readdirSync(carpeta(casa)).filter((f) => f.endsWith('.json')).map((f) => leer(path.join(carpeta(casa), f))).filter(Boolean); } catch (_) { return []; }
 }
 
-module.exports = { EMERGENCIA, VENCE_MIN, carpeta, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, permisos, esCommit };
+module.exports = { EMERGENCIA, VENCE_MIN, carpeta, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, permisos, esCommit, origenDeVerdad, aLaVista };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

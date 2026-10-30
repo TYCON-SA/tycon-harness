@@ -507,9 +507,11 @@ fi
 # ESC-C3, `harness.js sign`: la firma en la terminal mira que haya una terminal y que alguien escriba «firmo», y un agente
 # que se abre una terminal propia (`script`, un pty, `expect`) pasaría. La corre sólo la persona en su terminal, donde
 # no hay freno: acá se niega siempre, sin ventana (la emergencia nunca va por la ventana), igual que la biblioteca de la
-# emergencia (lib/harness-sign.js), que la consumiría. Mira el comando sin comillas (`si''gn` es `sign`). Lo que no ve:
-# el nombre armado en una variable.
-_sign_re='harness(\.js)?[^;&|]*[][[:space:],(]sign([][[:space:],)]|$)'
+# emergencia (lib/harness-sign.js), que la consumiría. Mira el comando sin comillas (`si''gn` es `sign`), con `sign`
+# como palabra suelta seguida de cualquier signo (`sign;true`, `sign|…`, `sign>x`). Lo que no ve: el nombre armado en
+# una variable, una copia con otro nombre o un comodín; para eso `sign` mira además quién lo lanzó y no firma si viene
+# de la herramienta.
+_sign_re='harness(\.js)?[^;&|]*[^[:alnum:]_-]sign([^[:alnum:]_-]|$)'
 if [[ "$_esc_cmd" == *harness-sign* || "$_esc_cmd" =~ $_sign_re ]]; then
   ESC_CARTEL="Esto lo corre la persona en su terminal, no el agente: explicale qué hay que firmar y por qué, y el comando exacto."
   block "ESC-C3" \
