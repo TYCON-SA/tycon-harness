@@ -63,7 +63,7 @@ const CAPTURAS = [
   { nombre: 'configuracion-instalacion', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-instalacion', pasos: 'config', espera: 'Perfil de instalación' },
   { nombre: 'configuracion-revisado', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'revisar', espera: 'Revisado: está bien escrito' },
   { nombre: 'configuracion-diferencia', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'proponer', espera: 'Mirá la diferencia antes de confirmar' },
-  { nombre: 'configuracion-propuesto', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'confirmar', espera: 'Pedido abierto' },
+  { nombre: 'configuracion-propuesto', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'confirmar', espera: 'Pull request abierto' },
   { nombre: 'sin-rol', sitio: 'normal', quien: BRUNO, ruta: '/', espera: 'Tu cuenta no está en la lista' },
   { nombre: 'no-se-pudo-actualizar', sitio: 'falla', quien: LEAD, ruta: '/', espera: 'no se pudo actualizar' },
   { nombre: 'sitio-frenado', sitio: 'frenado', quien: LEAD, ruta: '/', espera: 'Sitio frenado' },
@@ -251,7 +251,7 @@ const PASOS = {
     await PASOS.proponer(page);
     const sec = page.locator('#seccion-respuesta');
     await sec.getByRole('button', { name: /Confirmar y proponer/ }).click();
-    await sec.getByText(/Pedido abierto/).waitFor({ timeout: 30000 });
+    await sec.getByText(/Pull request abierto/).waitFor({ timeout: 30000 });
     // la sección se vuelve a dibujar con el enlace: se busca de nuevo por su id
     await page.evaluate(() => { const s = document.getElementById('seccion-respuesta'); if (s) s.scrollIntoView({ block: 'start' }); });
     await page.waitForTimeout(300);

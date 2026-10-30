@@ -533,7 +533,7 @@ const INV_OK = (estados = {}) => ({ boton: true, motivo: 'microsoft_organizacion
 test('2.74-Pantalla_Invitar_EstadosYRevocar @story-2.74 @ac-1 @ac-5 @ac-8 @ac-10', async () => {
   const enlace = 'https://github.example/acme/ops/pull/3';
   const p = await pantallaDelSitio(INV_OK({ 'ana@otra.example': { estado: 'enviada', texto: 'invitación enviada, todavía no entró' }, 'bea@otra.example': { estado: 'falla', texto: 'no se pudo enviar: Microsoft contestó 503' } }), {
-    'POST /api/config/invitar': () => ({ ok: true, message: 'Pedido abierto: la invitación sale cuando se apruebe y el sitio lea la lista nueva.', enlace, aviso: 'Ese correo no es una cuenta de Microsoft' }),
+    'POST /api/config/invitar': () => ({ ok: true, message: 'Pull request abierto: la invitación sale cuando se apruebe y el sitio lea la lista nueva.', enlace, aviso: 'Ese correo no es una cuenta de Microsoft' }),
     'POST /api/config/revocar': () => ({ ok: true, message: 'Pedido de baja abierto. Esto no la saca del directorio: para eso, borrala en el portal de Entra.', portal: 'https://entra.example/u-1' }),
   });
   assert.ok(p.textoDe(p.sec()).includes('Invitar a alguien'), 'el bloque de invitar');

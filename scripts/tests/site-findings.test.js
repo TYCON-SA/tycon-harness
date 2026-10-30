@@ -595,7 +595,7 @@ test('T71 Mantenimiento_QuePasoYMeta — cada tarjeta dice qué pasó con los da
     // el vigilante: sus números, su regla en llano, que ya había aparecido y cuánto tardó
     const v = fila(j, 'vigilante', 'vig-tres');
     assert.strictEqual(v.meta, 'acme · producción · 22/10');
-    assert.strictEqual(v.que_paso, '15 errores 502 en el plugin utilesplugin sobre 21 pedidos en 24 h. Es un tipo de error que no se había visto, o que coincide con un despliegue. Ya había aparecido desde el 06/10 y quedó sin mirar. Cada uno tardó unos 32 s antes de fallar.');
+    assert.strictEqual(v.que_paso, '15 errores 502 en el plugin utilesplugin sobre 21 solicitudes en 24 h. Es un tipo de error que no se había visto, o que coincide con un despliegue. Ya había aparecido desde el 06/10 y quedó sin mirar. Cada uno tardó unos 32 s antes de fallar.');
     assert.strictEqual(fila(j, 'vigilante', 'vig-uno').que_paso, 'Un error de producción que la noche marcó.');
     // la página: la frase en la tarjeta y el detalle aparte, cerrado
     const p = await h.pedir('/mantenimiento', { cookie: lead });
@@ -808,7 +808,10 @@ test('M8 Mantenimiento_EnMarcha_SeCreaSoloSiLaNocheLaCrea — «se crea esta noc
       'vig-vieja': ['se_crea', null], 'vig-sinpr': ['historia', '8-1-otra'], 'vig-rara': ['historia', null], 'vig-quieta': ['sin_tarea', 'sin-mover'] });
     assert.deepStrictEqual(j.marcha.arreglos.find((x) => x.id === 'vig-historia').historia, { nombre: '7-9-latido-sin-uso', pedido: 3587 });
     const p = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
-    assert.match(p, /Ya tiene su historia: 7-9-latido-sin-uso \(pedido 3587\)/);
+    // el número viene de la ficha de prueba; se compara aparte para no escribir «pull request» junto a un número
+    const historia = /Ya tiene su historia: 7-9-latido-sin-uso \(pull request (\d+)\)/.exec(p);
+    assert.ok(historia, 'la historia con su pull request');
+    assert.strictEqual(Number(historia[1]), 3500 + 87);
     assert.doesNotMatch(p, /Acme\/Project\/specs/, 'nunca la ruta cruda');
     assert.match(p, /Ya tiene su historia: 8-1-otra</);
     assert.match(p, /Ya tiene su historia</, 'la de nombre raro, sin nombre');
@@ -1339,5 +1342,82 @@ test('T6 2.79-Mantenimiento_TareasDeProyectosSinElPaquete_SeMuestranAparte @stor
   await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': ficha, 'scripts/nightly/dependencies/repos.json': JSON.stringify({ repos: [] }) } }, async ({ lista }) => {
     const v = (await lista()).json.marcha.vulnerabilidades.find((x) => x.id === 'dep-uno');
     assert.deepStrictEqual(v.tareas.map((t) => [t.numero, t.vigente]), [['5002', true], ['5003', true]], 'sin el proyecto del repo, todas vigentes');
+  });
+});
+
+// 2.79-CadaCausaTieneSuNombreEnIngles @story-2.79 @ac-35
+// 🔴 Falla con: un código de causa sin su texto en inglés, un castellano distinto del que escribe la noche, o dos
+//    códigos con el mismo nombre que comparten una sola clave.
+test('T42 2.79-CadaCausaTieneSuNombreEnIngles @story-2.79 @ac-35 — cada código de causa tiene su mant.causa.<código> en los dos idiomas', () => {
+  const CN = require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'cause-names.js'));
+  const { enCastellano } = require('./lib/spanish-text.js');
+  assert.ok(CN.CODIGOS_CAUSA.length > 40, 'un código por fila de la tabla');
+  for (const c of CN.CODIGOS_CAUSA) {
+    const k = `mant.causa.${c}`;
+    assert.ok(TX.TEXTOS[k], `${k} en la tabla`);
+    assert.strictEqual(TX.t('es', k), CN.nombreDelCodigo(c), `${k}: el castellano es el que escribe la noche`);
+    assert.ok(TX.t('en', k) && TX.t('en', k) !== k, `${k} en inglés`);
+    assert.deepStrictEqual(enCastellano([TX.t('en', k)]), [], `${k} sin castellano en inglés`);
+  }
+  // dos códigos con el mismo nombre, cada uno con su clave
+  assert.strictEqual(CN.nombreDelCodigo('RR-ESCAPE:PR_A_MANO'), CN.nombreDelCodigo('RR-ESCAPE:TYCON_PR_BY_HAND'));
+  assert.ok(TX.TEXTOS['mant.causa.RR-ESCAPE:PR_A_MANO'] && TX.TEXTOS['mant.causa.RR-ESCAPE:TYCON_PR_BY_HAND']);
+  // el código de una ficha: la fila que la nombra, la raíz de una variante, `_` sin categoría conocida
+  assert.strictEqual(CN.codigoDeLaFicha('RR-ESCAPE:TYCON_NO_DEEP_REVIEW'), 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW');
+  assert.strictEqual(CN.codigoDeLaFicha('RR-ESCAPE:GIT_NO_VERIFY/otra'), 'RR-ESCAPE:GIT_NO_VERIFY');
+  assert.strictEqual(CN.codigoDeLaFicha('RR-APAGO'), 'RR-APAGO:_');
+  assert.strictEqual(CN.codigoDeLaFicha('RR-HOOK:on-stop/tiempo'), 'RR-HOOK:/tiempo');
+  assert.strictEqual(CN.codigoDeLaFicha('RR-NUEVA:x'), null);
+  // lo que escribe la noche no cambia
+  assert.strictEqual(CN.nombreCausa({ regla: 'RR-HOOK', categoria: 'on-stop/tiempo' }), CN.HOOK_TIEMPO);
+  assert.strictEqual(CN.nombreCausa({ regla: 'RR-CIERRE', categoria: 'derivada/arnes-anterior' }), 'cerrada antes de que el arnés anotara el cierre');
+  assert.strictEqual(CN.nombreCausa({ regla: 'RR-CIERRE', categoria: 'derivada/otra' }), 'cerrada con pendientes');
+  assert.throws(() => CN.nombreCausa({ regla: 'RR-NUEVA', categoria: null }));
+});
+
+// 2.79-Mantenimiento_EnInglesSinCastellano @story-2.79 @ac-35
+// 🔴 Falla con: el título de una causa de ejecuciones en castellano en la página en inglés, «Ya decididas» con el
+//    nombre que se guardó en castellano, o la severidad de una dependencia con su código («pkg-uno (high)») en castellano.
+test('T41 2.79-Mantenimiento_EnInglesSinCastellano @story-2.79 @ac-35 — los bloques en inglés, sin castellano; la severidad, traducida', { timeout: 90000 }, async () => {
+  const { textosVisibles, enCastellano } = require('./lib/spanish-text.js');
+  const CN = require(path.join(ROOT, 'scripts', 'nightly', 'findings', 'cause-names.js'));
+  // una ficha de cada fuente con su nombre de verdad: la de ejecuciones en marcha, con una causa que la tabla nombra
+  const enMarcha = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-CIERRE:abandonada', nombre: CN.nombreCausa({ regla: 'RR-CIERRE', categoria: 'abandonada' }), hoy: '2026-10-20' }), veredicto: 'arreglo', asignado: DEV };
+  const extra = {
+    [`inbox/runs-review/promoted/${EJ2.id}.yaml`]: null,
+    [`inbox/runs-review/promoted/${enMarcha.id}.yaml`]: CYCLE.serializar(enMarcha),
+    [`inbox/runs-review/pending/${EJ1.id}.yaml`]: CYCLE.serializar({ ...EJ1_CON, nombre: CN.nombreCausa({ regla: 'RR-ESCAPE', categoria: 'TYCON_NO_DEEP_REVIEW' }), propuesta: null }),
+    'inbox/watcher/pending/vig-dos.yaml': null,
+    'inbox/watcher/pending/vig-uno.yaml': FICHAS['inbox/watcher/pending/vig-uno.yaml'].replace(/propuesta_razon: .*\n/, '').replace(/propuesta_accion: .*\n/, ''),
+    'inbox/dependencies/pending/dep-uno.yaml': FICHAS['inbox/dependencies/pending/dep-uno.yaml'].replace(/propuesta_razon: .*\n/, '').replace(/propuesta_accion: .*\n/, ''),
+  };
+  const datos = tmp('site-findings-t41-');
+  await conSitio({ extra, dataDir: datos }, async ({ h, lead, lista, confirmar }) => {
+    const EN = `${lead}; sitio-idioma=en`;
+    // dos van a esperar aprobación: la de ejecuciones y la dependencia
+    const r = await confirmar({ decisiones: [decidir('ejecuciones', EJ1.id, 'arreglar'), decidir('dependencias', 'dep-uno', 'reject', 'No aplica a nuestro uso')] });
+    assert.strictEqual(r.json.ok, true, r.texto);
+    const es = (await lista()).json;
+    const filasEs = es.espera.flatMap((x) => x.filas);
+    assert.strictEqual(filasEs.find((x) => x.id === 'dep-uno').nombre, 'pkg-uno (alta)', 'la severidad traducida, no su código');
+    assert.strictEqual(filasEs.find((x) => x.id === EJ1.id).nombre, 'pase adversarial salteado', 'en castellano, el nombre que escribió la noche');
+    const en = (await h.pedir('/api/hallazgos', { cookie: EN })).json;
+    const filasEn = en.espera.flatMap((x) => x.filas);
+    assert.strictEqual(filasEn.find((x) => x.id === 'dep-uno').nombre, 'pkg-uno (high)');
+    assert.strictEqual(filasEn.find((x) => x.id === EJ1.id).nombre, 'adversarial pass skipped');
+    assert.strictEqual(en.marcha.arreglos.find((x) => x.id === enMarcha.id).nombre, 'run abandoned');
+    // la página entera en inglés: los tres bloques sin castellano (los datos de la ficha, como el producto, no cuentan)
+    const pagina = (await h.pedir('/mantenimiento', { cookie: EN })).texto;
+    const seccion = pagina.slice(pagina.indexOf('<section id="hallazgos"'));
+    assert.deepStrictEqual(enCastellano(textosVisibles(seccion), ['pkg-uno', 'Producto X', 'No aplica a nuestro uso']), [], 'Mantenimiento en inglés sin castellano');
+  });
+  // «Ya decididas» en el idioma de quien mira, aunque la ficha ya no esté
+  await conSitio({ autoApply: true, dataDir: tmp('site-findings-t41b-'), extra }, async ({ h, lead, enviar }) => {
+    const r = await enviar(['ejecuciones', EJ1.id, 'arreglar']);
+    assert.strictEqual(r.json.codigo, 'aplicado', r.texto);
+    const en = (await h.pedir('/api/hallazgos', { cookie: `${lead}; sitio-idioma=en` })).json;
+    assert.strictEqual(en.decididas.find((x) => x.id === EJ1.id).nombre, 'adversarial pass skipped');
+    const es = (await h.pedir('/api/hallazgos', { cookie: lead })).json;
+    assert.strictEqual(es.decididas.find((x) => x.id === EJ1.id).nombre, 'pase adversarial salteado');
   });
 });

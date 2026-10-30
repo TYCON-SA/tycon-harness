@@ -458,16 +458,16 @@ function noMedido(motivo, extra) {
 function armar({ volcado, estado }) {
   let d;
   try { d = JSON.parse(fs.readFileSync(volcado, 'utf8')); } catch (e) {
-    return noMedido(`el volcado de la ejecución no se pudo leer (${e.code || 'no es JSON'}): no se sabe qué repo mirar`);
+    return noMedido(`el registro de la ejecución no se pudo leer (${e.code || 'no es JSON'}): no se sabe qué repo mirar`);
   }
   const m = (d && d.marker) || {};
   if (!sanear) return { version: VERSION, estado: 'no_publicado', motivo: motivoSinSaneado, medido_en: new Date().toISOString() };
-  if (!m.repoPath) return noMedido('el volcado no dice en qué repo corrió (sin repoPath): no se sabe qué mirar');
+  if (!m.repoPath) return noMedido('el registro no dice en qué repo corrió (sin repoPath): no se sabe qué mirar');
   // Una ruta relativa se resolvería contra el cwd de ESTE proceso y se mediría otro repo, publicándolo como el
   // de la corrida. No se adivina.
-  if (!path.isAbsolute(String(m.repoPath))) return noMedido(`el volcado trae una ruta relativa del repo («${sanear(String(m.repoPath))}»): resolverla contra otra carpeta mediría un repo que no es el de la ejecución`);
+  if (!path.isAbsolute(String(m.repoPath))) return noMedido(`el registro trae una ruta relativa del repo («${sanear(String(m.repoPath))}»): resolverla contra otra carpeta mediría un repo que no es el de la ejecución`);
   const ini = Date.parse(m.startedAt || '');
-  if (!Number.isFinite(ini)) return noMedido('el volcado no dice cuándo arrancó la ejecución (sin startedAt): no se puede saber qué commits son suyos');
+  if (!Number.isFinite(ini)) return noMedido('el registro no dice cuándo arrancó la ejecución (sin startedAt): no se puede saber qué commits son suyos');
   const finRaw = Date.parse(d.archivedAt || '');
   const v = { desde: ini - MARGEN_MS, hasta: (Number.isFinite(finRaw) ? finRaw : Date.now()) + MARGEN_MS };
   const ventana = { desde: new Date(v.desde).toISOString(), hasta: new Date(v.hasta).toISOString() };
@@ -498,7 +498,7 @@ function armar({ volcado, estado }) {
   // Otras sesiones que escribieron en estas copias dentro de la ventana. Sin sesión propia no se puede
   // distinguir la de la corrida de las demás: se declara y no se cuenta (contarlas daría un aviso falso).
   const otras = new Map();
-  const otrasMotivo = sid ? null : 'el volcado no trae sesión: no se puede saber si otra sesión escribió en esta copia';
+  const otrasMotivo = sid ? null : 'el registro no trae sesión: no se puede saber si otra sesión escribió en esta copia';
   for (const dirs of [[path.join(estadoDir, 'file-events')], consola]) {
     const fs2 = new Set();
     for (const dir of dirs) {

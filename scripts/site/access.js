@@ -276,12 +276,12 @@ function filtrarCorridas(M, quien, reglas) {
   // medido». Pasa hasta la primera bajada entera del buzón, o si lo informado no se pudo leer.
   if (reglas.quienEsQuienMedido === false) {
     out.buzon = { estado: buzon ? buzon.estado : 'no_medido', parcial: true };
-    out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus ejecuciones faltan, no son cero';
+    out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del depósito); tus ejecuciones faltan, no son cero';
     return out;
   }
   if (!corridas.length) {
     const suyas = reglas.maquinasDe ? reglas.maquinasDe(quien.email) : [];
-    out.vacio_motivo = `todavía no hay ejecuciones de tus máquinas en el buzón (${suyas.join(', ') || 'ninguna confirmada'}): la primera llega sola al terminar un pipeline`;
+    out.vacio_motivo = `todavía no hay ejecuciones de tus máquinas en el depósito (${suyas.join(', ') || 'ninguna confirmada'}): la primera llega sola al terminar un pipeline`;
   }
   return out;
 }

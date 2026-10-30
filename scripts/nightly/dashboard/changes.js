@@ -47,7 +47,7 @@ function rutaDeCambio(volcado) { return String(volcado).replace(/\.json$/, '') +
 /** El cambio de git de una corrida tal cual quedó en disco; `sin_cambio` o `ilegible` con motivo si no se puede. */
 function leerCambioDeGit(volcado) {
   const r = rutaDeCambio(volcado);
-  if (!fs.existsSync(r)) return { estado: 'sin_cambio', motivo: 'esta ejecución no tiene el cambio de git guardado (anterior a la story 2.19, o el archivador no lo pudo armar)' };
+  if (!fs.existsSync(r)) return { estado: 'sin_cambio', motivo: 'esta ejecución no tiene el cambio de git guardado (es de antes de que se guardara, o el archivador no lo pudo armar)' };
   try {
     const x = JSON.parse(zlib.gunzipSync(fs.readFileSync(r)).toString('utf8'));
     if (!x || typeof x !== 'object' || !x.estado) throw new Error('no trae estado');
@@ -176,11 +176,11 @@ function cortar(x, tope) {
  */
 function cambiosDeCorrida(volcado, marker, deps = {}) {
   const hiloRuta = rutaDeHilo(volcado);
-  if (!fs.existsSync(hiloRuta)) return { estado: 'sin_hilo', motivo: 'esta ejecución no tiene hilo guardado (anterior a la story 2.13, o la conversación ya se había borrado): no se sabe qué archivos tocó' };
+  if (!fs.existsSync(hiloRuta)) return { estado: 'sin_hilo', motivo: 'esta ejecución no tiene su conversación guardada (es de antes de que se guardara, o la conversación ya se había borrado): no se sabe qué archivos tocó' };
   if (!deps.sanear) return { estado: 'no_publicado', motivo: 'el saneado (scripts/metrics/tokens-digest.js) no está en esta máquina: los cambios no se publican sin sanear' };
   let crudo;
   try { crudo = zlib.gunzipSync(fs.readFileSync(hiloRuta)); }
-  catch (e) { return { estado: 'ilegible', motivo: `el hilo no se pudo leer (${e.code || e.message})` }; }
+  catch (e) { return { estado: 'ilegible', motivo: `la conversación no se pudo leer (${e.code || e.message})` }; }
 
   const m = marker || {};
   const ini = Date.parse(m.startedAt || '');

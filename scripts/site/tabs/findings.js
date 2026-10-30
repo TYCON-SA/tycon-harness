@@ -36,7 +36,8 @@ const SOURCES = require('../../nightly/findings/sources.js');
 // el proyecto declarado de un repo, con la misma regla que la noche usa para pedir las tareas
 const DEP_PROJECT = require('../../lib/dependency-project.js');
 const CYCLE = require('../../nightly/findings/cycle.js');
-const { APARTE } = require('../../nightly/findings/cause-names.js');
+const CN = require('../../nightly/findings/cause-names.js');
+const { APARTE } = CN;
 const views = require('../views.js');
 const TX = require('../texts.js');
 const LANG = require('../language.js');
@@ -119,7 +120,15 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
   const vigente = (x) => enHistoria(x) && x.accion !== null && !x.visto && ahora() - x.en < VIGENCIA_DECIDIDA_MS;
   // quién y cuándo, si tienen forma: lo demás no se guarda
   const datos = (x) => ({ ...(typeof x.quien === 'string' && x.quien ? { quien: norm(x.quien) } : {}), ...(DIA.test(String(x.el || '')) ? { el: x.el } : {}),
-    ...(typeof x.nombre === 'string' && x.nombre ? { nombre: x.nombre.slice(0, 300) } : {}), ...(DIA.test(String(x.vio || '')) ? { vio: x.vio } : {}) });
+    ...(typeof x.nombre === 'string' && x.nombre ? { nombre: x.nombre.slice(0, 300) } : {}), ...(DIA.test(String(x.vio || '')) ? { vio: x.vio } : {}),
+    ...(nombresDe(x.nombres) ? { nombres: nombresDe(x.nombres) } : {}) });
+  // el título en cada idioma del sitio, para que «Ya decididas» salga en el de quien mira
+  const nombresDe = (n) => {
+    if (!isObject(n)) return null;
+    const o = {};
+    for (const i of LANG.IDIOMAS) if (typeof n[i] === 'string' && n[i]) o[i] = n[i].slice(0, 300);
+    return Object.keys(o).length ? o : null;
+  };
   // la noche anotó que no pudo aplicar ESTA decisión: una falla del día de la decisión o posterior, que no es la que la
   // persona tenía a la vista al decidir (`vio`; decidir otra vez después de leer la falla vale aunque sea el mismo día)
   const superada = (x, fallida) => Boolean(fallida) && fallida !== x.vio && !(fallida < diaDe(x));
@@ -346,7 +355,17 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
    * qué pasó según la regla y cuántas veces. Nunca la clave de la regla ni el diagnóstico.
    */
   function tituloDe(f, idioma) {
-    if (f.fuente !== 'vigilante') return f.nombre;
+    if (f.fuente === 'dependencias') {
+      // el paquete y su severidad en el idioma de quien mira: la noche escribe el código de la severidad («high»)
+      const sev = NOMBRE_SEVERIDAD[f.severidad] || null;
+      const paquete = (f.contexto && f.contexto.paquete) || f.nombre;
+      return sev ? `${paquete} (${T(idioma, `mant.vuln.${sev}`).toLowerCase()})` : paquete;
+    }
+    if (f.fuente !== 'vigilante') {
+      // ejecuciones: el castellano es el que escribió la noche; los otros idiomas salen del código de la causa
+      const codigo = idioma === LANG.POR_DEFECTO ? null : CN.codigoDeLaFicha(f.causa);
+      return codigo ? T(idioma, `mant.causa.${codigo}`) : f.nombre;
+    }
     const h = f.hechos || {};
     // el producto ya viene validado por la noche (hechosDelVigilante)
     const p = typeof h.producto === 'string' && h.producto ? h.producto : null;
@@ -358,6 +377,9 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const veces = regla === 'latido' || !Number.isInteger(h.errores) || h.errores < 1 ? '' : h.errores === 1 ? T(idioma, 'mant.titulo.vez') : T(idioma, 'mant.titulo.veces', { n: h.errores });
     return T(idioma, 'mant.titulo', { producto, donde, que: T(idioma, `mant.titulo.${regla}`), veces });
   }
+
+  /** El título en cada idioma del sitio: lo que «Ya decididas» guarda de una ficha que después deja de estar. */
+  const titulosDe = (f) => Object.fromEntries(LANG.IDIOMAS.map((i) => [i, tituloDe(f, i)]));
 
   function arregloDe(f, destino, deLaNoche, idioma) {
     const base = { fuente: f.fuente, id: f.id, nombre: tituloDe(f, idioma), regla: reglaDe(f) };
@@ -530,7 +552,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const enMain = decisionEnMain(dir, f);
       if (enMain === 'ilegible') { ilegibles.add(f.fuente); continue; }
       if (fallidaDe(f)) fallidas.set(clave(f), fallidaDe(f));
-      if (enMain) decididas.olvidar(clave(f), { ...enMain, nombre: tituloDe(f, LANG.POR_DEFECTO) });
+      if (enMain) decididas.olvidar(clave(f), { ...enMain, nombre: tituloDe(f, LANG.POR_DEFECTO), nombres: titulosDe(f) });
       const yaDecidida = enMain ? enMain.accion : decididas.accionDe(clave(f), fallidaDe(f));
       if (enMain || yaDecidida) { aprobadas.push({ clave: clave(f), nombre: tituloDe(f, idioma) }); continue; }
       const p = enPedido.get(clave(f));
@@ -545,7 +567,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const espera = [...pedidos.values()].sort((a, b) => a.numero - b.numero);
     // lo ya decidido no espera la aprobación de nadie: sale de la lista y se cuenta en una línea
     for (const g of espera) g.filas.sort(ordenFuente);
-    const yaDecididas = listaDecididas(aprobadas, fallidas);
+    const yaDecididas = listaDecididas(aprobadas, fallidas, idioma);
     arreglos.sort(ordenFuente);
     vulnerabilidades.sort(ordenVulns);
     const ilegible = ilegibles.size > 0;
@@ -566,12 +588,13 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
    * no está ahí, la aplicó la noche; la que la noche anotó que no pudo aplicar, no se aplicó. `aprobadas`: `[{ clave,
    * nombre }]`, las decididas que siguen en pending; `fallidas`: clave → el día de la anotación.
    */
-  function listaDecididas(aprobadas, fallidas = new Map()) {
+  function listaDecididas(aprobadas, fallidas = new Map(), idioma = LANG.POR_DEFECTO) {
     const pendientes = new Map(aprobadas.map((x) => [x.clave, x.nombre]));
     return decididas.historia().map((x) => {
       const i = x.clave.indexOf('/');
       const estado = decididas.noAplicada(x, fallidas.get(x.clave)) ? 'no_aplicada' : pendientes.has(x.clave) ? 'esta_noche' : 'aplicada';
-      return { fuente: x.clave.slice(0, i), id: x.clave.slice(i + 1), nombre: pendientes.get(x.clave) || x.nombre || x.clave.slice(i + 1), accion: x.accion,
+      const guardado = (x.nombres && x.nombres[idioma]) || x.nombre;
+      return { fuente: x.clave.slice(0, i), id: x.clave.slice(i + 1), nombre: pendientes.get(x.clave) || guardado || x.clave.slice(i + 1), accion: x.accion,
         quien: alias(x.quien), el: x.el || null, estado };
     });
   }
@@ -758,7 +781,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       if (!f || f.id !== x.id || f.estado === 'resuelta' || !porDecidir(f)) { omitidas.push(clave(x)); continue; }
       const enMain = decisionEnMain(dir, x);
       if (enMain === 'ilegible') return json(200, { ok: false, codigo: 'decision_ilegible', message: T(idioma, 'hallazgos.decisionIlegible') });
-      nombres.set(clave(x), tituloDe(f, LANG.POR_DEFECTO));
+      nombres.set(clave(x), { nombre: tituloDe(f, LANG.POR_DEFECTO), nombres: titulosDe(f) });
       vistas.set(clave(x), fallidaDe(f));
       if (enMain) previas.push({ clave: clave(x), ...enMain });
       if (enMain || decididas.accionDe(clave(x), fallidaDe(f)) || enPedido.has(clave(x))) { omitidas.push(clave(x)); continue; }
@@ -771,7 +794,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const el = new Date(ahora()).toISOString().slice(0, 10);
     // lo que la pantalla pasa a «Ya decididas» en el momento, sin el correo
     const paraLaPantalla = (xs) => xs.map((x) => ({ clave: x.clave, accion: x.accion, quien: alias(x.quien), el: x.el || null }));
-    for (const x of previas) decididas.olvidar(x.clave, { ...x, nombre: nombres.get(x.clave) });
+    for (const x of previas) decididas.olvidar(x.clave, { ...x, ...nombres.get(x.clave) });
     if (!van.length) return json(200, { ok: false, codigo: 'nada_que_enviar', message: T(idioma, 'mant.envio.nadaQueEnviar'), omitidas, decididas: paraLaPantalla(previas) });
     const conForma = (lista) => lista.map((x) => ({ fuente: x.fuente, id: x.id, accion: x.accion, quien, el,
       ...(x.fuente === 'dependencias' ? { pr: x.pr, pr_repo: x.pr_repo } : {}), ...(x.accion === 'reject' ? { motivo: x.motivo } : {}) }));
@@ -815,7 +838,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     // lo decidido queda anotado y sale de la lista ya; no se refresca acá: la foto todavía no lo trae, y un refresco baja
     // el buzón (un minuto en un sitio real) con la pantalla esperando
     const hechas = [...yaDecididas, ...aplicadas];
-    if (hechas.length) decididas.marcar(hechas.map((x) => ({ ...x, nombre: nombres.get(x.clave), vio: vistas.get(x.clave) })));
+    if (hechas.length) decididas.marcar(hechas.map((x) => ({ ...x, ...nombres.get(x.clave), vio: vistas.get(x.clave) })));
     const omitidasTodas = [...omitidas, ...yaDecididas.map((x) => x.clave)];
     const alaVista = paraLaPantalla([...previas, ...hechas]);
     if (!van.length) return json(200, { ok: true, codigo: 'ya_decidida', message: T(idioma, 'mant.envio.yaDecidida'), omitidas: omitidasTodas, enviadas: [], decididas: alaVista });

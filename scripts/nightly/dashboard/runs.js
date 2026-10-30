@@ -239,6 +239,12 @@ const CONTROLES = {
   // El 5b sin pase lo anota el portón, y el paso 8 no cierra sin el pase atendido.
   'adversarial-skip': 'pase adversarial (salteado por el portón)',
   'adversarial-result-gate': 'pase adversarial con su resultado (paso «Pase adversarial»)',
+  'deep-review-gate': 'si corre el pase adversarial', 'story-gate': 'la story antes de programar',
+  'story-evidence': 'la evidencia de la story', 'qa-guide': 'la guía para probar a mano',
+  'advisors-complete': 'todos los revisores corrieron', 'step-order': 'el orden de los pasos',
+  'smart-reloop': 'la vuelta de revisores recortada', 'plan-auto-approve': 'el plan aprobado solo',
+  'review-a-done': 'de revisión a terminada', 'sin-nombre': 'un control sin nombre', 'smoke-run': 'la prueba de humo',
+  RUNTIME_WAIVER: 'un criterio firmado sin correr', 'ac-shown': 'el criterio mostrado a la persona', approval: 'la aprobación',
 };
 
 // La línea `adversarial-pass` (marker.js mark-adversarial-result) no trae `status`: trae
@@ -558,6 +564,8 @@ function semanaIso(iso) {
   const a0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
   return `${t.getUTCFullYear()}-S${String(Math.ceil(((t - a0) / 86400000 + 1) / 7)).padStart(2, '0')}`;
 }
+/** La semana como se ve, con la letra del idioma («2026-W44»); la clave guardada («2026-S44») no cambia. */
+const semanaVisible = (s, idioma) => (typeof s === 'string' && /^\d{4}-S\d{2}$/.test(s) ? `${s.slice(0, 5)}${L(idioma, 'v.letraSemana')}${s.slice(6)}` : '');
 
 /**
  * Los rebotes IDÉNTICOS y CONSECUTIVOS se agrupan (`×5`, con el rango de minutos): el registro
@@ -723,16 +731,16 @@ function modeloDeCorrida(d, nombresPasos) {
   const vueltaMedida = cuentaVueltas ? cuentaVueltas(d) : null;
   const costo = co && Number.isFinite(co.spawns)
     ? { agentes: co.spawns, vueltas: vueltaMedida ? vueltaMedida.value : null,
-        vueltas_fuente: vueltaMedida ? vueltaMedida.fuente : (motivoSinVueltas || 'el volcado no registra vueltas: sin revisores por vuelta ni fotos de iteración'),
+        vueltas_fuente: vueltaMedida ? vueltaMedida.fuente : (motivoSinVueltas || 'el registro no anota vueltas: sin revisores por vuelta ni lecturas de iteración'),
         calculos_del_set: Number.isFinite(co.iteraciones) ? co.iteraciones : null,
         por_tipo: Object.fromEntries(Object.entries(co.por_tipo || {}).filter(([, v]) => Number.isFinite(v)).map(([k, v]) => [String(k), v])) }
     : null;
 
   const c = d.consumo && typeof d.consumo === 'object' ? d.consumo : null;
   let consumo;
-  if (!c) consumo = { estado: 'no_medido', motivo: 'esta ejecución es anterior al rescate del consumo (story 2.13): no se registró' };
+  if (!c) consumo = { estado: 'no_medido', motivo: 'esta ejecución es anterior al rescate del consumo: no se registró' };
   // los volcados viejos nombran el ajuste de Claude Code que borra las conversaciones: la página dice lo que pasó, sin el nombre
-  else if (c.estado !== 'medido' || !c.tokens) consumo = { estado: String(c.estado || 'no_medido'), motivo: limpio(c.motivo, 'el volcado no trae el consumo medido').replace(/ \(Claude Code las borra según cleanupPeriodDays\)/, ' (Claude Code borra las conversaciones viejas)') };
+  else if (c.estado !== 'medido' || !c.tokens) consumo = { estado: String(c.estado || 'no_medido'), motivo: limpio(c.motivo, 'el registro no trae el consumo medido').replace(/ \(Claude Code las borra según cleanupPeriodDays\)/, ' (Claude Code borra las conversaciones viejas)') };
   else {
     const tk = c.tokens;
     consumo = {
@@ -780,7 +788,7 @@ function modeloDeCorrida(d, nombresPasos) {
         ? { total: rv.tokens_medidos.total, n: num(rv.tokens_medidos.n) }
         : { estado: 'no_medido', motivo: limpio(rv.tokens_medidos && rv.tokens_medidos.motivo, 'los tokens de los revisores no se midieron') },
       estimado: !est
-        ? { estado: 'no_medido', motivo: 'el volcado no trae el campo estimado' }
+        ? { estado: 'no_medido', motivo: 'el registro no trae el campo estimado' }
         : est.estado === 'estimado'
           ? { estado: 'estimado', lanzamientos_cubiertos: num(est.lanzamientos_cubiertos), tokens_min: num(est.tokens_min), tokens_max: num(est.tokens_max),
               medido_el: est.supuesto && est.supuesto.medido_el ? String(est.supuesto.medido_el) : null,
@@ -790,7 +798,7 @@ function modeloDeCorrida(d, nombresPasos) {
   }
 
   // El VALIDADOR DE STORIES por fase: sólo los conteos de las fases conocidas —lista blanca: ni
-  // el `detalle`, ni campos que el volcado traiga de más— y las decisiones de los re-loops, contadas de las
+  // el `detalle`, ni campos que el volcado traiga de más— y las decisiones de las vueltas de revisores, contadas de las
   // líneas `validador-reloop` del registro de controles. Sin veredicto medido no es «0 hallazgos»: se dice.
   const FASES_VAL = ['antes-de-implementar', 'vuelta-1', 're-loop', 'sin-vuelta', 'otra-story'];
   const ESTADOS_VAL = ['limpio', 'hallazgos', 'inconsistente', 'sin_veredicto', 'no_medido'];
@@ -809,9 +817,9 @@ function modeloDeCorrida(d, nombresPasos) {
     validador = {
       estado: 'no_medido',
       motivo: !rv
-        ? 'sin medir los revisores de esta ejecución; el veredicto del validador existe desde la story 7.3'
-        : !vr ? 'la ejecución es anterior a la story 7.3: el validador no dejaba veredicto'
-          : limpio(vr.motivo, 'el volcado no trae el veredicto del validador medido'),
+        ? 'sin medir los revisores de esta ejecución; el veredicto del validador sólo lo tienen las más nuevas'
+        : !vr ? 'la ejecución es de antes de que el validador dejara su veredicto'
+          : limpio(vr.motivo, 'el registro no trae el veredicto del validador medido'),
     };
   }
   validador.re_loops_sin_relanzar = decisiones.filter((g) => g.invoca === false).length;
@@ -1145,7 +1153,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     let entradas = [];
     // 🔴 Ordenado: «la primera copia que declara la máquina» no puede depender del orden del disco.
     try { entradas = fs.readdirSync(opts.buzon, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)); }
-    catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del buzón de ejecuciones no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
+    catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del depósito de ejecuciones no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
     // La corrida de una carpeta vieja `unida` es de su nueva («antes, <vieja>»); una `compartida` o
     // `siguio_recibiendo` queda en su carpeta, marcada. Sin el archivo del bajador no se une nada, y se dice.
     const uniones = out.buzon.estado === 'leido' ? leerUniones(opts.buzon) : null;
@@ -1162,7 +1170,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
         catch (e) { out.buzon.carpetas_ilegibles += 1; continue; }
       }
       if (esArchivo && en.name.endsWith('.json')) {
-        copias.push({ ruta, maquina: null, motivo: 'volcado suelto en la raíz de la carpeta bajada del buzón: no está bajo la carpeta de ninguna máquina' });
+        copias.push({ ruta, maquina: null, motivo: 'registro suelto en la raíz de la carpeta bajada del depósito: no está bajo la carpeta de ninguna máquina' });
       } else if (esCarpeta) {
         const declarada = FORMA_MAQUINA.test(en.name);
         let archivos;
@@ -1173,7 +1181,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
           // `origen`: la carpeta real del volcado. El sitio se la da a people.js, que vuelve a juzgar la unión (la vieja
           // que informa otro correo, o está confirmada para otra persona, no se une): `maquina` ya viene resuelta
           copias.push({ ruta: path.join(ruta, f), origen: declarada ? en.name : null, maquina: !declarada ? null : u && u.estado === 'unida' ? u.nueva : en.name,
-            motivo: declarada ? null : `la carpeta «${en.name}» del buzón no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)`,
+            motivo: declarada ? null : `la carpeta «${en.name}» del depósito no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)`,
             deVieja: Boolean(u), nota: u ? notaDeCarpeta(en.name, u) : null });
         }
       }
@@ -1499,7 +1507,7 @@ function filaControles(c, idioma) {
     const marca = v.error ? ` <b>${esc(L(idioma, 'v.conError', { n: v.error }))}</b>` : v.freno ? ` <b>${esc(L(idioma, 'v.freno', { n: v.freno }))}</b>` : (v.paso === 0 && v.sin_estado) ? ` <b>${esc(L(idioma, 'v.sinEstado'))}</b>` : '';
     const t = `${k} — ${L(idioma, v.n === 1 ? 'v.controlUnaVez' : 'v.controlVeces', { n: v.n, p: v.paso, e: v.error, f: v.freno })}${v.sin_estado ? L(idioma, 'v.controlSinEstado', { n: v.sin_estado }) : ''}`;
     return `<span class="f ${cls}" title="${esc(t)}">${esc(enIdioma(idioma, CONTROLES[k] || k))}${marca}</span>`;
-  }).join('');
+  }).join(' · ');
 }
 
 /**
@@ -1610,7 +1618,7 @@ function tabla(M, opts = {}) {
       // el motivo se ve en la celda, sin pasar el mouse; el completo queda en el título
       : `<span class="nd" title="${esc(enIdioma(I, c.consumo.motivo))}">${x(c.consumo.estado === 'borrada' ? 'v.borrada' : 'v.noMedido')}</span><small>${c.consumo.estado === 'borrada' ? x('v.borradaMotivo') : esc(enIdioma(I, c.consumo.motivo))}</small>`;
     return `<tr data-i="${idx}" data-id="${esc(c.id || '')}" id="c-${idx}">
-      <td class="fecha">${esc((c.inicio || '').slice(0, 10) || L(I, 'v.sinFecha'))}<small>${esc(c.semana || '')}</small></td>
+      <td class="fecha">${esc((c.inicio || '').slice(0, 10) || L(I, 'v.sinFecha'))}<small>${esc(semanaVisible(c.semana, I))}</small></td>
       <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto ? rotuloProducto(c.producto) : L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
       <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>${c.maquina_nota ? `<small>${esc(enIdioma(I, c.maquina_nota))}</small>` : ''}` : `<span class="nd" title="${esc(enIdioma(I, c.maquina_motivo || ''))}">${x('v.sinDeclarar')}</span>`}</td>` : ''}
       <td class="barra">${barraTramos(c, escala, I, M.pasos.nombres)}</td>
@@ -2034,7 +2042,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var f = c.controles.por_control;
     var peso = function (v) { return v.error * 1000 + v.freno * 10 + v.n / 1000; };
     var filas = Object.keys(f).sort(function (a, b) { return peso(f[b]) - peso(f[a]); }).map(function (k) {
-      return '<tr><td class="ctl"><span class="ctl-es">' + esc(ctlEs(k)) + '</span>' + (ctlTec(k) ? '<span class="ctl-tec">' + esc(ctlTec(k)) + '</span>' : '') + '</td>'
+      return '<tr><td class="ctl"><span class="ctl-es">' + esc(ctlEs(k)) + '</span>' + (ctlTec(k) ? ' <span class="ctl-tec">' + esc(ctlTec(k)) + '</span>' : '') + '</td>'
         + '<td class="num">' + f[k].n + '</td><td class="num ' + (f[k].error ? 'rojo' : '') + '">' + (f[k].error || '·') + '</td>'
         + '<td class="num">' + (f[k].freno || '·') + '</td><td class="num">' + (f[k].sin_estado || '·') + '</td>'
         + '<td class="num">' + (f[k].ms ? n1(f[k].ms / 1000) + ' s' : '—') + '</td></tr>';
@@ -2082,7 +2090,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   }
 
   // El validador de stories por fase (story 7.3): qué dijo en cada momento de la corrida, con la palabra
-  // «sin veredicto» cuando no dejó el renglón, y en cuántos re-loops el pipeline no lo relanzó.
+  // «sin veredicto» cuando no dejó el renglón, y en cuántos vueltas de revisores el pipeline no lo relanzó.
   var FASES_VAL = [['antes-de-implementar', T('faseAntes')], ['vuelta-1', T('faseVuelta1')], ['re-loop', T('faseReLoops')], ['otra-story', T('faseOtras')], ['sin-vuelta', T('faseSinVuelta')]];
   function delValidador(c) {
     var v = c.validador;
@@ -2361,7 +2369,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + T('conErrorN', { n: c.controles.error }) + '</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>' + T('frenoN', { n: c.controles.freno }) + '</span>' : '')
       + (c.costo && c.costo.vueltas !== null ? '<span class="chip neutro"><span class="g">○</span>' + T('vueltasN', { n: c.costo.vueltas }) + '</span>' : '')
-      + (c.dod ? '<span class="chip ' + (c.dod === 'PASS' ? 'ok' : 'bad') + '"><span class="g">' + (c.dod === 'PASS' ? '●' : '▲') + '</span>DoD ' + esc(c.dod) + '</span>' : '');
+      + (c.dod ? '<span class="chip ' + (c.dod === 'PASS' ? 'ok' : 'bad') + '"><span class="g">' + (c.dod === 'PASS' ? '●' : '▲') + '</span>' + T(c.dod === 'PASS' ? 'terminadoPaso' : 'terminadoNoPaso') + '</span>' : '');
     var tl = timeline(c);
     return '<div class="det">'
       + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto ? rotulo(c.producto) : T('productoSinRegistrar')) + '</span>'
@@ -2588,6 +2596,8 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var lunesDe = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() - dn + 1); return x; };
   var semanaDe = function (t) { var x = new Date(t.getTime()); var dn = x.getUTCDay() || 7; x.setUTCDate(x.getUTCDate() + 4 - dn); var a0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1)); return x.getUTCFullYear() + '-S' + String(Math.ceil(((x - a0) / 86400000 + 1) / 7)).padStart(2, '0'); };
   var semanaLocal = function (c) { var t = c.inicio ? diaComoUtc(c.inicio) : null; return t ? semanaDe(t) : null; };
+  // la semana como se ve, con la letra del idioma; la clave («2026-S44») no cambia
+  var semanaVisible = function (k) { return k.slice(0, 5) + T('letraSemana') + k.slice(6); };
   // Todas las semanas del rango, aunque valgan 0: una barra ausente y una en cero no son lo mismo.
   function semanasDelRango(F) {
     var dias = F.map(function (c) { return c.inicio ? diaComoUtc(c.inicio) : null; }).filter(Boolean).sort(function (a, b) { return a - b; });
@@ -2610,9 +2620,9 @@ const CLIENTE_FUENTE = String.raw`(function () {
     });
     ks.forEach(function (k, i) {
       var n = porSem[k] || 0, cx = x0 + paso * i + paso / 2, bw = Math.min(30, paso * 0.62);
-      s2 += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(n).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, base - Y(n)).toFixed(1) + '" fill="' + (n ? 'var(--accent)' : 'var(--line-strong)') + '" rx="2"><title>' + k + ': ' + T('nEjecuciones', { n: n }) + '</title></rect>'
+      s2 += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(n).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, base - Y(n)).toFixed(1) + '" fill="' + (n ? 'var(--accent)' : 'var(--line-strong)') + '" rx="2"><title>' + semanaVisible(k) + ': ' + T('nEjecuciones', { n: n }) + '</title></rect>'
         + '<text x="' + cx.toFixed(1) + '" y="' + (Y(n) - 5).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink)">' + n + '</text>'
-        + (ks.length <= 26 || i % 2 === 0 ? '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + k.slice(5) + '</text>' : '');
+        + (ks.length <= 26 || i % 2 === 0 ? '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + semanaVisible(k).slice(5) + '</text>' : '');
     });
     return s2 + '<text x="' + x0 + '" y="182" font-family="IBM Plex Sans,sans-serif" font-size="11" fill="var(--ink-3)">' + T('semanaIso') + ' · ' + ks[0].slice(0, 4) + ' → ' + ks[ks.length - 1].slice(0, 4) + '</text></svg>';
   }
@@ -3012,7 +3022,7 @@ function main(opts = {}) {
 }
 
 // `dentroDelRepoDelEquipo` también la usa dashboard.js: la página de seis preguntas tiene un solo escritor en el repo.
-module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
+module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, filaControles, semanaVisible, dentroDelRepoDelEquipo,
   // Lo que usa la pestaña Corridas del sitio
   idEstable, runKey, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda
