@@ -26,7 +26,8 @@
  * Uso:
  *   node scripts/lib/manifest-engram.js cross   [--repo <dir>] [--against <ref>] [--staged] [--json]
  *   node scripts/lib/manifest-engram.js repair  [--repo <dir>] [--apply] [--json]
- * Códigos de salida: 0 sano · 1 deriva (o algo que reparar) · 3 no se pudo medir.
+ *   node scripts/lib/manifest-engram.js rebuild [--repo <dir>] [--json]   (sólo en «índice local», ver `rehacer`)
+ * Códigos de salida: 0 sano · 1 deriva (o algo que reparar, o que quedó afuera) · 3 no se pudo medir (o no aplica).
  * 🔴 Nunca sale 2: ése es el código con el que los hooks BLOQUEAN, y confundirlos haría que un
  * «no pude medir» del criterio se leyera como un bloqueo del hook.
  */
@@ -266,6 +267,39 @@ function contarChunk(f) {
   } catch { return null; }
 }
 
+// La fecha que engram escribe adentro de un registro («AAAA-MM-DD hh:mm:ss», en UTC y sin zona) como ISO, o null si
+// no se puede leer. Sin zona se lee como UTC: `new Date` la tomaría en la hora local de la máquina.
+function fechaDeAdentro(v) {
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.exec(String(v || '').trim());
+  if (!m) return null;
+  return fechaUtc(`${m[1]}T${m[2]}${m[3] || ''}${m[4] || 'Z'}`);
+}
+
+// Lee un chunk una vez: lo que cuenta `contarChunk` y la fecha más nueva de sus registros, que es el orden en que
+// engram los exportó. Las observaciones y los prompts traen `updated_at`/`created_at`; las sesiones, `started_at` y
+// `ended_at` (en el privado hay chunks de sólo sesiones). `fecha: null` si ningún registro trae una legible.
+function leerChunk(f) {
+  try {
+    let obs = 0, ses = 0, prompts = 0, fecha = null;
+    for (const linea of zlib.gunzipSync(fs.readFileSync(f)).toString('utf8').split('\n')) {
+      if (!linea.trim()) continue;
+      const d = JSON.parse(linea);
+      obs += (d.observations || []).length;
+      ses += (d.sessions || []).length;
+      prompts += (d.prompts || []).length;
+      for (const k of ['observations', 'sessions', 'prompts']) {
+        for (const x of (Array.isArray(d[k]) ? d[k] : [])) {
+          for (const campo of ['updated_at', 'created_at', 'ended_at', 'started_at']) {
+            const iso = x && fechaDeAdentro(x[campo]);
+            if (iso && (!fecha || iso > fecha)) fecha = iso;
+          }
+        }
+      }
+    }
+    return { obs, ses, prompts, fecha };
+  } catch { return null; }
+}
+
 // Las entradas de engram tienen sus claves en este orden. Se respeta al reconstruir para que el
 // diff de una reparación no sea un baile de líneas.
 function entradaEngram({ id, created_by, created_at, sessions, memories, prompts }) {
@@ -443,6 +477,116 @@ function reparar(dir, opciones) {
   };
 }
 
+/**
+ * indiceLocal(dir) — ¿el repo está en «índice local»? Lo declara el propio repo: `.engram/manifest.json` ignorado
+ * por su `.gitignore` y fuera de `git ls-files`. Entonces el índice no viaja por git y cada clon lo rehace desde sus
+ * chunks (`rehacer`). Sin git que conteste, `false`: se sigue como un repo con el índice versionado, que es lo de
+ * siempre.
+ */
+function indiceLocal(dir) {
+  if (!gitOk(dir, ['check-ignore', '-q', '--', REL_INDICE]).ok) return false;
+  return !gitOk(dir, ['ls-files', '--error-unmatch', '--', REL_INDICE]).ok;
+}
+
+// Autor y fecha de cada chunk en UNA pasada de `git log` (la última vez que un commit lo tocó, como
+// `reconstruirDelChunk`). Un chunk que ningún commit trajo todavía no aparece: lo completa quien llama.
+function autoresDeLosChunks(dir) {
+  const r = gitOk(dir, ['log', '--format=%x00%an|%aI', '--name-only', '--', ':/' + REL_CHUNKS]);
+  const mapa = new Map();
+  if (!r.ok) return { mapa, motivo: r.motivo };
+  let actual = null;
+  for (const linea of r.out.split('\n')) {
+    if (linea.startsWith('\0')) {
+      const s = linea.slice(1);
+      const i = s.lastIndexOf('|');   // por el último separador: un autor puede traer `|`
+      actual = { autor: s.slice(0, i), fecha: s.slice(i + 1) };
+      continue;
+    }
+    const f = linea.trim();
+    if (!actual || !f.endsWith(SUFIJO)) continue;
+    const id = path.basename(f).slice(0, -SUFIJO.length);
+    if (!mapa.has(id)) mapa.set(id, actual);   // el log va del más nuevo al más viejo
+  }
+  return { mapa, motivo: null };
+}
+
+/**
+ * rehacer(dir) — el índice local, al día con la carpeta de chunks. Quien llama ya decidió que el repo está en índice
+ * local (`indiceLocal`).
+ *
+ * Agrega una entrada por cada chunk que el índice no declara y nunca borra: las que estaban quedan en su orden y las
+ * nuevas entran por fecha (`insertarPorFecha`). Escribe con `serializar` y no stagea (el índice no viaja). Sin chunks
+ * nuevos no lee ningún chunk, no llama a git y no toca el archivo: es el caso de todos los arranques. Un chunk
+ * ilegible no se inventa: queda en `noAgregadas` con su motivo. Un índice local ilegible se rehace entero desde los
+ * chunks y se dice en `avisos`: a diferencia del versionado, romperlo no pierde nada que no esté en la carpeta.
+ */
+function rehacer(dir) {
+  const base = { repo: dir, estado: 'no-medido', motivo: null, archivos: null, declarados: null, agregadas: [], noAgregadas: [], sinFecha: [], fantasmas: [], avisos: [] };
+  const dis = leerChunksDeDisco(dir);
+  if (dis.error) {
+    if (dis.error.codigo === 'sin-carpeta-chunks') return { ...base, estado: 'sano', archivos: 0, declarados: 0 };
+    return { ...base, motivo: dis.error.motivo };
+  }
+  const fIndice = path.join(dir, REL_INDICE);
+  let manifest;
+  if (!fs.existsSync(fIndice)) {
+    manifest = { version: 1, chunks: [] };
+  } else {
+    const leido = leerIndiceDeDisco(dir);
+    if (leido.error) {
+      base.avisos.push(`el índice local no se podía leer (${leido.error.motivo}): se rehace entero desde los chunks`);
+      manifest = { version: 1, chunks: [] };
+    } else {
+      manifest = leido.manifest;
+    }
+  }
+  const declarados = new Set(manifest.chunks.map((c) => c.id));
+  const enDisco = new Set(dis.ids);
+  const faltantes = dis.ids.filter((id) => !declarados.has(id)).sort();
+  const fantasmas = [...declarados].filter((id) => !enDisco.has(id)).sort();
+  const res = { ...base, archivos: dis.ids.length, declarados: declarados.size, fantasmas };
+  if (!faltantes.length && !base.avisos.length) return { ...res, estado: 'sano' };
+
+  const { mapa, motivo } = faltantes.length ? autoresDeLosChunks(dir) : { mapa: new Map(), motivo: null };
+  if (motivo) res.avisos.push(`no pude leer de git el autor de los chunks (${motivo}): va el del clon`);
+  let autorDelClon = null;
+  // 🔴 El orden del índice ES el orden en que el importador aplica los chunks, y gana la última escritura. Por eso cada
+  // entrada nueva va por la fecha más nueva de ADENTRO del chunk y no por la del commit: medido sobre el privado
+  // con el importador real, la del commit dejaba 3 observaciones con una versión vieja. Un chunk sin fecha adentro no
+  // tiene lugar que respetar: va al final, y se dice.
+  const sinFecha = [];
+  for (const id of faltantes) {
+    const f = path.join(dir, REL_CHUNKS, id + SUFIJO);
+    const c = leerChunk(f);
+    if (!c) { res.noAgregadas.push({ id, motivo: 'el chunk no se puede leer (¿no es gzip, o está truncado?): no se inventa una entrada' }); continue; }
+    let { autor, fecha: fechaCommit } = mapa.get(id) || {};
+    if (!autor) {
+      if (autorDelClon === null) { const cfg = gitOk(dir, ['config', 'user.name']); autorDelClon = (cfg.ok && cfg.out.trim()) || 'desconocido'; }
+      autor = autorDelClon;
+    }
+    let fecha = c.fecha;
+    if (!fecha) {
+      fecha = fechaUtc(fechaCommit);
+      if (!fecha) { try { fecha = fechaUtc(new Date(fs.statSync(f).mtime).toISOString()); } catch { fecha = null; } }
+    }
+    const entrada = entradaEngram({
+      id, created_by: autor, created_at: fecha || new Date(0).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      sessions: c.ses, memories: c.obs, prompts: c.prompts,
+    });
+    if (c.fecha) insertarPorFecha(manifest.chunks, entrada);
+    else sinFecha.push(entrada);
+    res.agregadas.push(id);
+  }
+  for (const e of sinFecha) manifest.chunks.push(e);
+  res.sinFecha = sinFecha.map((e) => e.id);
+  if (sinFecha.length) res.avisos.push(`${sinFecha.length} chunk(s) sin una fecha legible adentro van al final del índice: ${res.sinFecha.join(', ')}`);
+  if (res.agregadas.length || base.avisos.length) {
+    try { fs.writeFileSync(fIndice, serializar(manifest)); }
+    catch (e) { return { ...res, estado: 'no-medido', motivo: `no pude escribir ${REL_INDICE}: ${e.message}` }; }
+  }
+  return { ...res, estado: res.noAgregadas.length ? 'deriva' : 'sano', declarados: manifest.chunks.length };
+}
+
 // Importa sobre una base DESCARTABLE (ENGRAM_DATA_DIR) y compara cuántos chunks vio contra los
 // archivos que hay. Si engram no está, se DICE — callarlo haría pasar «no verifiqué» por «verifiqué».
 function verificarConImportador(dir, archivos) {
@@ -502,7 +646,7 @@ function imprimirCruce(r) {
   if (r.fantasmas.length) console.log(`   entradas cuyo archivo no está: ${r.fantasmas.join(', ')}`);
   if (r.duplicados.length) console.log(`   entradas declaradas más de una vez: ${r.duplicados.join(', ')}`);
   if (!r.contra.legible && r.contra.ref !== null) console.log(`   (no se pudo comparar contra ${r.contra.ref}: ${r.contra.motivo} — todo se cuenta como heredado)`);
-  console.log(`   Reparación: ${comandoDeReparacion(r.repo)}`);
+  console.log(`   Reparación: ${comandoDeArreglo(r.repo)}`);
 }
 
 function imprimirReparacion(r) {
@@ -531,17 +675,39 @@ function imprimirReparacion(r) {
   if (r.reparado) console.log('✅ reparado.');
 }
 
+function imprimirRehecho(r) {
+  if (r.estado === 'no-medido') { console.error(`⚠️  no pude rehacer el índice de memoria de ${r.repo}: ${r.motivo}`); return; }
+  for (const a of r.avisos) console.error(`   ⚠️  ${a}`);
+  for (const x of r.noAgregadas) console.error(`   🔴 ${x.id}: ${x.motivo}`);
+  if (r.fantasmas.length) console.log(`   (no se borra nada) entradas cuyo archivo no está: ${r.fantasmas.join(', ')}`);
+  console.log(r.agregadas.length
+    ? `✅ ${r.repo}: índice local rehecho (${r.agregadas.length} entrada(s) agregada(s); ninguna borrada; no viaja por git).`
+    : `✅ ${r.repo}: el índice local declara sus ${r.archivos} archivo(s).`);
+}
+
 function main(argv) {
   const cmd = argv[0];
   const val = (bandera) => { const i = argv.indexOf(bandera); return i >= 0 ? argv[i + 1] : undefined; };
   const tiene = (bandera) => argv.includes(bandera);
-  if (!['cross', 'repair'].includes(cmd)) {
-    console.error('uso: manifest-engram.js cross|repair [--repo <dir>] [--against <ref>] [--staged] [--apply] [--json]');
+  if (!['cross', 'repair', 'rebuild'].includes(cmd)) {
+    console.error('uso: manifest-engram.js cross|repair|rebuild [--repo <dir>] [--against <ref>] [--staged] [--apply] [--json]');
     return SALIDA.NO_MEDIDO;
   }
   const dir = repoDe(val('--repo') || process.cwd());
   const contraCrudo = val('--against');
   const json = tiene('--json');
+
+  if (cmd === 'rebuild') {
+    if (!indiceLocal(dir)) {
+      const r = { repo: dir, estado: 'no-aplica', motivo: `no aplica: el índice viaja por git en ${dir}, usar repair` };
+      if (json) console.log(JSON.stringify(r, null, 2)); else console.error(`ℹ️  ${r.motivo} (${comandoDeReparacion(dir)})`);
+      return SALIDA.NO_MEDIDO;
+    }
+    const r = rehacer(dir);
+    if (json) console.log(JSON.stringify(r, null, 2)); else imprimirRehecho(r);
+    if (r.estado === 'no-medido') return SALIDA.NO_MEDIDO;
+    return r.noAgregadas.length ? SALIDA.DERIVA : SALIDA.SANO;
+  }
 
   if (cmd === 'cross') {
     // `--staged`: «lo nuevo» es el ÍNDICE de git — lo que el commit va a llevar — y no el disco.
@@ -562,7 +728,33 @@ function main(argv) {
   return r.aplicado && r.reparado ? SALIDA.SANO : SALIDA.DERIVA;  // en seco, «hay algo que reparar» = 1
 }
 
-module.exports = { cruzar, serializar, reparar, contarChunk, parsearIndice, insertarPorFecha, comandoDeReparacion, REL_INDICE, REL_CHUNKS };
+/**
+ * rehacerSiLocal(dir) — lo que corre el arranque antes de `engram sync --import`: si `dir` está en un repo en índice
+ * local, `rehacer` en su raíz. `{ aplica: false }` fuera de un repo o con el índice versionado (no se toca nada); si
+ * aplica, el resultado de `rehacer` más `problema`: el texto de lo que no se pudo (null si quedó entero).
+ */
+function rehacerSiLocal(dir) {
+  const top = gitOk(dir, ['rev-parse', '--show-toplevel']);
+  if (!top.ok) return { aplica: false };
+  const raiz = top.out.trim();
+  if (!indiceLocal(raiz)) return { aplica: false };
+  const r = rehacer(raiz);
+  const problema = r.estado === 'no-medido' ? r.motivo
+    : r.noAgregadas.length ? `${r.noAgregadas.length} chunk(s) ilegible(s) quedaron afuera: ${r.noAgregadas.map((x) => x.id).join(', ')}`
+      : null;
+  return { aplica: true, ...r, problema };
+}
+
+function comandoDeRehacer(dir) {
+  return `node ${JSON.stringify(path.resolve(__filename))} rebuild --repo ${JSON.stringify(path.resolve(dir))}`;
+}
+
+// El arreglo que corresponde a un repo: en índice local se rehace (`rebuild`); con el índice versionado se repara.
+function comandoDeArreglo(dir) {
+  return indiceLocal(dir) ? comandoDeRehacer(dir) : comandoDeReparacion(dir);
+}
+
+module.exports = { cruzar, serializar, reparar, contarChunk, parsearIndice, insertarPorFecha, comandoDeReparacion, indiceLocal, rehacer, rehacerSiLocal, comandoDeRehacer, comandoDeArreglo, REL_INDICE, REL_CHUNKS };
 
 if (require.main === module) {
   // El subcomando y la opción viejos siguen andando. Viejo y nuevo juntos: 3, el «no se pudo

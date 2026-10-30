@@ -27,6 +27,9 @@ export HOME="$TMP/home"; mkdir -p "$HOME"
 # La integración engram se declara por variable — esta HOME no tiene perfil del equipo, y sin la llave los
 # comandos de engram dicen «apagado» y salen 0 en vez de hacer lo que esta suite mide (con dobles, sin red).
 export TYCON_ENGRAM=1
+# El engram de verdad, si la máquina lo tiene, sólo para 8.131 T8 (importar con el índice rehecho); el resto de la
+# suite corre sin él.
+ENGRAM_REAL="$(command -v engram 2>/dev/null || true)"
 # PATH sin engram: node va por symlink (con nvm vive fuera de /usr/bin); git, gzip y cmp salen de
 # /usr/bin y /bin en macOS y en Linux. La rama «no hay importador» se prueba por el camino REAL.
 mkdir -p "$TMP/bin"; ln -s "$(command -v node)" "$TMP/bin/node"
@@ -631,6 +634,257 @@ hook39 "$PUB39" "cd \"$MAINT39\" && git commit -m \"la memoria viaja con este co
   && [ ! -e "$PUB39/.engram" ] \
   && ok "Memory_NotInPublicRepo (T39): el commit siguiente en el clon de mantenimiento exporta ahí lo pendiente y lo deja preparado; el público sigue sin memoria" \
   || no "Memory_NotInPublicRepo (T39) la otra mitad: rc=$RC39 · engram corrió en [$(tr '\n' ' ' < "$M39/calls.log")] · preparado=[$(git -C "$MAINT39" diff --cached --name-only | tr '\n' ' ')] · $(head -c 300 "$M39/err")"
+
+# ════════════════════════════════════════════════════════ EL ÍNDICE LOCAL
+# Un repo en índice local no versiona `.engram/manifest.json`: lo ignora y cada clon lo rehace desde sus chunks. Así
+# dos pedidos que suman memoria no chocan por la misma lista. Los ids de abajo (8.131 Tn) son los de la story.
+repo_local(){  # deja $R: repo en índice local, con los chunks pedidos commiteados y SIN índice
+  nuevo_repo; printf '.engram/manifest.json\n' > "$R/.gitignore"
+  for c in "$@"; do chunk "$c"; done
+  commitear "chunks"
+}
+rebuild(){  # corre `rebuild` sobre $R; deja $OUT, $ERR, $RC
+  OUT="$TMP/out-$N.json"
+  (cd "$R" && node "$LIB" rebuild --repo "$R" --json "$@") >"$OUT" 2>"$TMP/err"; RC=$?
+  ERR="$(cat "$TMP/err")"
+}
+# Un `git` que cuenta sus llamadas y después hace lo de siempre (T6, T7).
+mkdir -p "$TMP/gitcount"; GITREAL="$(command -v git)"
+printf '#!/bin/sh\necho x >> "%s"\nexec "%s" "$@"\n' "$TMP/gitcount/calls" "$GITREAL" > "$TMP/gitcount/git"; chmod +x "$TMP/gitcount/git"
+# Cuenta cada lectura de un chunk desde node (T7): envuelve readFileSync.
+cat > "$TMP/cuenta-lecturas.js" <<'EOF'
+const fs = require('fs'); const orig = fs.readFileSync;
+fs.readFileSync = function (f, ...r) { if (String(f).includes('.engram/chunks/')) fs.appendFileSync(process.env.CHUNK_READS_LOG, 'x\n'); return orig.call(this, f, ...r); };
+EOF
+
+# ---------------------------------------------------------------- 8.131 T1. Rebuild_NoIndex_DeclaresEveryChunk
+repo_local c1aa c2bb c3cc c4dd c5ee
+rebuild
+[ "$RC" -eq 0 ] && [ "$(ids_indice | tr ',' '\n' | sort | tr '\n' ' ')" = "c1aa c2bb c3cc c4dd c5ee " ] \
+  && [ "$(node -e 'const f=process.argv[1];const t=require("fs").readFileSync(f,"utf8");process.stdout.write(String(t===JSON.stringify(JSON.parse(t),null,2)))' "$R/.engram/manifest.json")" = "true" ] \
+  && ! termina_en_salto "$R/.engram/manifest.json" && [ -z "$(git -C "$R" diff --cached --name-only)" ] \
+  && ok "8.131 T1 Rebuild_NoIndex_DeclaresEveryChunk: 5 entradas, escrito como engram (sin salto final) y nada stageado" \
+  || no "8.131 T1 Rebuild_NoIndex_DeclaresEveryChunk: rc=$RC · ids=[$(ids_indice 2>/dev/null)] · stageado=[$(git -C "$R" diff --cached --name-only)] · $ERR"
+
+chunk_fechado(){  # $1 id · $2 updated_at de su observación (texto tal cual) · $3 sync_id — un chunk con fecha adentro
+  node -e 'process.stdout.write(JSON.stringify({sessions:null,observations:[{sync_id:process.argv[2],title:"t",content:"c "+process.argv[1],created_at:process.argv[1],updated_at:process.argv[1]}],prompts:null})+"\n")' \
+    "$2" "${3:-obs-$1}" | gzip -c > "$R/.engram/chunks/$1.jsonl.gz"
+}
+
+# ---------------------------------------------------------------- 8.131 T2. Rebuild_PartialIndex_AddsOnlyMissing
+# Índice con 3 de 5 y dos inversiones de fecha: las 3 quedan en su línea. Las 2 nuevas traen la MISMA observación
+# (el caso medido en el privado): p4dd la versión vieja, p5ee la nueva, pero el commit de p5ee es el más viejo. El
+# importador aplica en el orden del índice y gana la última: por la fecha del commit quedaría la versión vieja.
+repo_local p1aa p2bb p3cc
+indice 'p2bb|t|2026-03-01T00:00:00Z' 'p1aa|t|2026-01-01T00:00:00Z' 'p3cc|t|2026-02-01T00:00:00Z'
+chunk_fechado p5ee '2026-04-20 10:00:00' obs-misma
+GIT_AUTHOR_DATE='2026-05-01T00:00:00Z' GIT_COMMITTER_DATE='2026-05-01T00:00:00Z' commitear "p5 primero"
+chunk_fechado p4dd '2026-04-10 10:00:00' obs-misma
+GIT_AUTHOR_DATE='2026-06-01T00:00:00Z' GIT_COMMITTER_DATE='2026-06-01T00:00:00Z' commitear "p4 después"
+ANTES_T2="$(ids_indice)"
+rebuild
+DESPUES_T2="$(ids_indice)"
+[ "$RC" -eq 0 ] && [ "$DESPUES_T2" = "$ANTES_T2,p4dd,p5ee" ] \
+  && [ "$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(m.chunks.find((c)=>c.id==="p4dd").created_at)' "$R/.engram/manifest.json")" = "2026-04-10T10:00:00Z" ] \
+  && ok "8.131 T2 Rebuild_PartialIndex_AddsOnlyMissing: las 3 siguen en su orden y las 2 nuevas entran por la fecha de adentro (la versión nueva de la observación queda última)" \
+  || no "8.131 T2 Rebuild_PartialIndex_AddsOnlyMissing: antes=[$ANTES_T2] después=[$DESPUES_T2] (esperado $ANTES_T2,p4dd,p5ee) rc=$RC · $ERR"
+
+# ---------------------------------------------------------------- 8.131 T8b. Rebuild_SessionTwoEnds_NewestWins
+# La misma sesión cerrada dos veces (el caso de las 5 sesiones del privado): la que trae el cierre más nuevo tiene el
+# commit más viejo. Las sesiones traen `started_at`/`ended_at`, no `created_at`: el orden sale de ahí.
+sesion_cerrada(){  # $1 id del chunk · $2 ended_at
+  node -e 'process.stdout.write(JSON.stringify({sessions:[{id:"ses-misma",project:"p",directory:"/x",started_at:"2026-10-21 22:00:00",ended_at:process.argv[1]}],observations:null,prompts:null})+"\n")' \
+    "$2" | gzip -c > "$R/.engram/chunks/$1.jsonl.gz"
+}
+repo_local
+sesion_cerrada cierreNuevo '2026-10-22 00:53:54'
+GIT_AUTHOR_DATE='2026-10-22T01:00:00Z' GIT_COMMITTER_DATE='2026-10-22T01:00:00Z' commitear "el cierre nuevo, primero"
+sesion_cerrada cierreViejo '2026-10-21 23:02:31'
+GIT_AUTHOR_DATE='2026-10-23T01:00:00Z' GIT_COMMITTER_DATE='2026-10-23T01:00:00Z' commitear "el cierre viejo, después"
+rebuild
+[ "$RC" -eq 0 ] && [ "$(ids_indice)" = "cierreViejo,cierreNuevo" ] \
+  && ok "8.131 T8b Rebuild_SessionTwoEnds_NewestWins: el chunk del cierre más nuevo queda último (el importador lo aplica último)" \
+  || no "8.131 T8b Rebuild_SessionTwoEnds_NewestWins: rc=$RC · orden=[$(ids_indice)] (esperado cierreViejo,cierreNuevo) · $ERR"
+
+# ---------------------------------------------------------------- 8.131 T2b. Rebuild_ChunkWithoutDate_GoesLastAndSays
+t2b_repo(){  # un chunk sin fecha, uno con fecha ilegible y uno fechado; el índice ya declara v0
+  repo_local
+  chunk s1sin                                  # sin fecha adentro
+  chunk_fechado s2mal 'ayer a la tarde'       # fecha ilegible
+  chunk_fechado s0bien '2026-04-01 00:00:00'
+  chunk v0; commitear "cuatro"
+  indice 'v0|t|2026-09-01T00:00:00Z'
+}
+t2b_repo; (cd "$R" && node "$LIB" rebuild --repo "$R") >"$TMP/o2b" 2>&1; RC_TXT=$?; IDS_TXT="$(ids_indice)"
+t2b_repo; rebuild
+[ "$RC_TXT" -eq 0 ] && [ "$RC" -eq 0 ] && [ "$IDS_TXT" = "s0bien,v0,s1sin,s2mal" ] && [ "$(j sinFecha)" = "s1sin,s2mal" ] \
+  && grep -q "s1sin" "$TMP/o2b" && grep -q "s2mal" "$TMP/o2b" && grep -q "al final" "$TMP/o2b" \
+  && ok "8.131 T2b Rebuild_ChunkWithoutDate_GoesLastAndSays: sin fecha o con una ilegible van al final y se nombran; el fechado, en su lugar" \
+  || no "8.131 T2b Rebuild_ChunkWithoutDate_GoesLastAndSays: rc=$RC_TXT/$RC · ids=[$IDS_TXT] · sinFecha=[$(j sinFecha)] · $(head -c 300 "$TMP/o2b")"
+
+# ---------------------------------------------------------------- 8.131 T3. Rebuild_NeverRemoves
+repo_local n1aa
+indice 'n1aa' 'fantasma9'
+rebuild
+[ "$RC" -eq 0 ] && [ "$(entrada fantasma9)" != "(no está)" ] && [ "$(j fantasmas)" = "fantasma9" ] \
+  && ok "8.131 T3 Rebuild_NeverRemoves: la entrada sin chunk sigue y --json la lista como fantasma" \
+  || no "8.131 T3 Rebuild_NeverRemoves: rc=$RC · fantasma=$(entrada fantasma9) · fantasmas=$(j fantasmas)"
+
+# ---------------------------------------------------------------- 8.131 T4. Rebuild_UnreadableChunk_NotInvented
+repo_local u1aa
+printf 'esto no es gzip' > "$R/.engram/chunks/roto77.jsonl.gz"; commitear "roto"
+rebuild
+[ "$RC" -eq 1 ] && [ "$(entrada roto77)" = "(no está)" ] && [ "$(entrada u1aa)" != "(no está)" ] && j noAgregadas | grep "roto77" >/dev/null \
+  && node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(r.noAgregadas[0].motivo&&r.noAgregadas[0].motivo.length>10?0:1)' "$OUT" \
+  && ok "8.131 T4 Rebuild_UnreadableChunk_NotInvented: el chunk roto no entra, se nombra con su motivo y sale 1" \
+  || no "8.131 T4 Rebuild_UnreadableChunk_NotInvented: rc=$RC · roto=$(entrada roto77) · noAgregadas=$(j noAgregadas)"
+
+# ---------------------------------------------------------------- 8.131 T5. Rebuild_TrackedIndex_NotApplicable
+nuevo_repo; chunk v1aa; chunk v2bb; indice 'v1aa'; commitear "versionado"
+SUMA_T5="$(cksum < "$R/.engram/manifest.json")"
+(cd "$R" && node "$LIB" rebuild --repo "$R") >"$TMP/o5" 2>&1; RC=$?
+[ "$RC" -eq 3 ] && grep -q "no aplica" "$TMP/o5" && grep -q "repair" "$TMP/o5" && [ "$(cksum < "$R/.engram/manifest.json")" = "$SUMA_T5" ] \
+  && ok "8.131 T5 Rebuild_TrackedIndex_NotApplicable: con el índice versionado sale 3, nombra repair y no toca el archivo" \
+  || no "8.131 T5 Rebuild_TrackedIndex_NotApplicable: rc=$RC · $(head -c 300 "$TMP/o5")"
+
+# ---------------------------------------------------------------- 8.131 T6. Rebuild_OneGitLogPass
+nuevo_repo; printf '.engram/manifest.json\n' > "$R/.gitignore"
+for i in $(seq 1 300); do chunk "$(printf 'g%05d' "$i")"; done; commitear "300 chunks"
+: > "$TMP/gitcount/calls"
+(cd "$R" && PATH="$TMP/gitcount:$PATH" node -e 'const r=require(process.argv[1]).rehacer(process.argv[2]);process.stdout.write(String(r.agregadas.length))' "$LIB" "$R") >"$TMP/o6" 2>&1
+LLAMADAS_T6="$(wc -l < "$TMP/gitcount/calls" | tr -d ' ')"
+[ "$(cat "$TMP/o6")" = "300" ] && [ "$LLAMADAS_T6" -le 2 ] \
+  && ok "8.131 T6 Rebuild_OneGitLogPass: 300 chunks rehechos con $LLAMADAS_T6 llamada(s) a git" \
+  || no "8.131 T6 Rebuild_OneGitLogPass: agregadas=$(head -c 200 "$TMP/o6") · llamadas a git=$LLAMADAS_T6"
+
+# ---------------------------------------------------------------- 8.131 T7. Rebuild_NothingNew_Fast
+# Con el índice completo (el que dejó T6), `rehacer` no llama a git, no lee chunks y no reescribe el archivo.
+MTIME_T7="$(node -e 'process.stdout.write(String(require("fs").statSync(process.argv[1]).mtimeMs))' "$R/.engram/manifest.json")"
+: > "$TMP/gitcount/calls"; : > "$TMP/lecturas"
+(cd "$R" && PATH="$TMP/gitcount:$PATH" CHUNK_READS_LOG="$TMP/lecturas" node -r "$TMP/cuenta-lecturas.js" -e 'const t=Date.now();const r=require(process.argv[1]).rehacer(process.argv[2]);process.stdout.write(r.estado+" "+r.agregadas.length+" "+(Date.now()-t))' "$LIB" "$R") >"$TMP/o7" 2>&1
+read -r EST_T7 AGR_T7 MS_T7 < "$TMP/o7"
+[ "$EST_T7" = "sano" ] && [ "$AGR_T7" = "0" ] && [ "$(wc -l < "$TMP/gitcount/calls" | tr -d ' ')" = "0" ] && [ "$(wc -l < "$TMP/lecturas" | tr -d ' ')" = "0" ] \
+  && [ "$(node -e 'process.stdout.write(String(require("fs").statSync(process.argv[1]).mtimeMs))' "$R/.engram/manifest.json")" = "$MTIME_T7" ] \
+  && ok "8.131 T7 Rebuild_NothingNew_Fast: nada nuevo → cero git, ningún chunk leído, el archivo sin tocar (${MS_T7} ms con 300)" \
+  || no "8.131 T7 Rebuild_NothingNew_Fast: $(cat "$TMP/o7") · git=$(wc -l < "$TMP/gitcount/calls" | tr -d ' ') · lecturas=$(wc -l < "$TMP/lecturas" | tr -d ' ')"
+
+# ---------------------------------------------------------------- 8.131 T8. Import_RebuiltIndex_SameAsOriginal
+# Con el engram de verdad: dos memorias exportadas por engram (una actualizada después) a un repo en índice local; se
+# importa con el índice que escribió engram y con el rehecho desde los chunks, cada uno en una base aislada. Tienen que
+# dar lo mismo. Sin engram en la máquina no se mide, y se dice: no es verde.
+if [ -n "$ENGRAM_REAL" ]; then
+  repo_local; printf 'p8\n' > "$R/.engram-project"
+  BASE8="$TMP/t8"; mkdir -p "$BASE8/origen" "$BASE8/a" "$BASE8/b"
+  ( cd "$R" && export ENGRAM_DATA_DIR="$BASE8/origen"
+    "$ENGRAM_REAL" save "uno" "primera versión" --project p8 >/dev/null 2>&1
+    "$ENGRAM_REAL" sync --project p8 >/dev/null 2>&1
+    sleep 1
+    "$ENGRAM_REAL" save "dos" "otra memoria" --project p8 >/dev/null 2>&1
+    "$ENGRAM_REAL" sync --project p8 >/dev/null 2>&1 )
+  N8="$(ls "$R/.engram/chunks" 2>/dev/null | grep -c '\.jsonl\.gz$')"
+  cp "$R/.engram/manifest.json" "$BASE8/original.json" 2>/dev/null
+  (cd "$R" && ENGRAM_DATA_DIR="$BASE8/a" "$ENGRAM_REAL" sync --import >/dev/null 2>&1)
+  OBS_A="$(cd "$R" && ENGRAM_DATA_DIR="$BASE8/a" "$ENGRAM_REAL" stats 2>/dev/null | awk '/Observations:/{print $2}')"
+  rm -f "$R/.engram/manifest.json"; (cd "$R" && node "$LIB" rebuild --repo "$R" >/dev/null 2>&1)
+  (cd "$R" && ENGRAM_DATA_DIR="$BASE8/b" "$ENGRAM_REAL" sync --import >/dev/null 2>&1)
+  OBS_B="$(cd "$R" && ENGRAM_DATA_DIR="$BASE8/b" "$ENGRAM_REAL" stats 2>/dev/null | awk '/Observations:/{print $2}')"
+  [ "${N8:-0}" -ge 2 ] && [ -n "$OBS_A" ] && [ "$OBS_A" = "$OBS_B" ] && [ "$OBS_A" -ge 2 ] \
+    && ok "8.131 T8 Import_RebuiltIndex_SameAsOriginal: con el engram de verdad, el índice rehecho importa lo mismo ($OBS_A observaciones de $N8 chunks)" \
+    || no "8.131 T8 Import_RebuiltIndex_SameAsOriginal: chunks=$N8 · observaciones con el original=$OBS_A · con el rehecho=$OBS_B"
+else
+  echo "⚠️  manifest-engram: 8.131 T8 Import_RebuiltIndex_SameAsOriginal: no medido (sin engram en esta máquina) — no es verde"
+fi
+
+# ---------------------------------------------------------------- 8.131 T9. PreCommit_LocalIndex_StagesChunksOnly
+# El hook del commit en un repo en índice local y SIN índice: rehace antes de exportar (el exportador ve el índice
+# entero, no uno de una entrada), prepara el chunk nuevo y nunca el índice, y no frena por «PERDIÓ entradas».
+HOOK_PC="$AQUI/scripts/hooks/engram-pre-commit.sh"
+mkdir -p "$TMP/bin-t9"
+cat > "$TMP/bin-t9/engram" <<'EOF_ENGRAM'
+#!/bin/sh
+# engram de mentira: anota cuántas entradas tiene el índice al exportar, y exporta un chunk nuevo como el real
+n=$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(".engram/manifest.json","utf8")).chunks.length))}catch(e){process.stdout.write("sin-indice")}')
+echo "$* entradas=$n" >> "$ENGRAM_CALLS"
+node -e 'const fs=require("fs"),z=require("zlib");fs.writeFileSync(".engram/chunks/nuevo9.jsonl.gz",z.gzipSync(JSON.stringify({sessions:null,observations:[{sync_id:"obs-n9",updated_at:"2026-10-29 10:00:00"}],prompts:null})+"\n"));const f=".engram/manifest.json";const m=fs.existsSync(f)?JSON.parse(fs.readFileSync(f,"utf8")):{version:1,chunks:[]};m.chunks.push({id:"nuevo9",created_by:"t",created_at:"2026-10-29T10:00:00Z",sessions:0,memories:1,prompts:0});fs.writeFileSync(f,JSON.stringify(m,null,2));'
+exit 0
+EOF_ENGRAM
+chmod +x "$TMP/bin-t9/engram"
+repo_local k1aa k2bb k3cc; printf 'p9\n' > "$R/.engram-project"; commitear "proyecto"
+: > "$TMP/t9.calls"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' \
+  | (cd "$R" && TYCON_ENGRAM_HOOK=1 ENGRAM_BIN="$TMP/bin-t9/engram" ENGRAM_CALLS="$TMP/t9.calls" bash "$HOOK_PC") >"$TMP/t9.out" 2>"$TMP/t9.err"; RC=$?
+STAGED_T9="$(git -C "$R" diff --cached --name-only | tr '\n' ' ')"
+[ "$RC" -eq 0 ] && grep -q 'entradas=3' "$TMP/t9.calls" && [ "$STAGED_T9" = ".engram/chunks/nuevo9.jsonl.gz " ] \
+  && ! grep -q 'PERDIÓ' "$TMP/t9.err" && ! grep -q 'manifest.json' "$TMP/t9.err" \
+  && ok "8.131 T9 PreCommit_LocalIndex_StagesChunksOnly: el exportador ve las 3 entradas, se prepara sólo el chunk nuevo y nada se queja del índice" \
+  || no "8.131 T9 PreCommit_LocalIndex_StagesChunksOnly: rc=$RC · engram vio [$(cat "$TMP/t9.calls")] · preparado=[$STAGED_T9] · $(head -c 400 "$TMP/t9.err")"
+
+# ---------------------------------------------------------------- 8.131 T10. PreCommit_TrackedIndex_StillBlocks
+# Con el índice versionado nada cambia: un commit que pierde una entrada frena como hoy.
+nuevo_repo; chunk m1aa; chunk m2bb; indice 'm1aa' 'm2bb'; printf 'p10\n' > "$R/.engram-project"; commitear "base"
+indice 'm1aa'; git -C "$R" add .engram/manifest.json
+printf '#!/bin/sh\nexit 0\n' > "$TMP/bin-t9/engram-quieto"; chmod +x "$TMP/bin-t9/engram-quieto"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' \
+  | (cd "$R" && TYCON_ENGRAM_HOOK=1 ENGRAM_BIN="$TMP/bin-t9/engram-quieto" bash "$HOOK_PC") >"$TMP/t10.out" 2>"$TMP/t10.err"; RC=$?
+[ "$RC" -eq 2 ] && grep -q 'PERDIÓ entradas' "$TMP/t10.err" \
+  && ok "8.131 T10 PreCommit_TrackedIndex_StillBlocks: con el índice versionado, perder una entrada frena como hoy" \
+  || no "8.131 T10 PreCommit_TrackedIndex_StillBlocks: rc=$RC · $(head -c 300 "$TMP/t10.err")"
+
+# ---------------------------------------------------------------- 8.131 T11. CiGate_LocalIndex_SaysLocal
+# El portón de CI sobre un pull request que suma un chunk en un repo en índice local: no compara (no hay índice en el
+# árbol), no avisa `indice-de-memoria-*` y dice «índice local».
+GATE="$AQUI/scripts/ci/tycon-ci-gate.js"
+repo_local g1aa
+git -C "$R" checkout -q -b pedido; chunk g2bb; commitear "suma memoria"
+(cd "$R" && node "$GATE" --repo "$R" --base main --json) >"$TMP/t11.json" 2>"$TMP/t11.err"; RC_J=$?
+(cd "$R" && node "$GATE" --repo "$R" --base main) >"$TMP/t11.txt" 2>&1; RC_T=$?
+OUT="$TMP/t11.json"
+[ "$RC_J" -eq 0 ] && [ "$RC_T" -eq 0 ] && [ "$(j engram.estado)" = "indice-local" ] \
+  && ! grep -q 'indice-de-memoria' "$TMP/t11.json" && grep -q 'índice local' "$TMP/t11.txt" \
+  && ok "8.131 T11 CiGate_LocalIndex_SaysLocal: el portón no compara, no avisa y dice «índice local»" \
+  || no "8.131 T11 CiGate_LocalIndex_SaysLocal: rc=$RC_J/$RC_T · engram.estado=$(j engram.estado) · $(head -c 300 "$TMP/t11.txt") $(head -c 200 "$TMP/t11.err")"
+
+# ---------------------------------------------------------------- 8.131 T12. Audit_LocalIndex_DriftNamesRebuild
+# La auditoría (y el aviso de deriva, que la usa) con un chunk no declarado en índice local: la fila lo marca como
+# índice local y el arreglo que se nombra es `rebuild`, no `repair --apply`.
+raiz_falsa 812
+repo_en loc; printf '.engram/manifest.json\n' > "$R/.gitignore"; chunk l1aa; chunk l2bb; commitear "chunks"; indice 'l1aa'
+DIR_T12="$R"
+node -e 'const a=require(process.argv[1]);const r=a.engramChunksSinIndexar(process.argv[2]);process.stdout.write(JSON.stringify(r.map(({dir,...x})=>x)));' "$AUDIT" "$RAIZ" >"$TMP/t12.json" 2>"$TMP/err"
+ARREGLO_T12="$(node -e 'process.stdout.write(require(process.argv[1]).comandoDeArreglo(process.argv[2]))' "$LIB" "$DIR_T12")"
+[ "$(cat "$TMP/t12.json")" = '[{"repo":"loc","sinIndexar":["l2bb"],"fantasma":[],"indiceLocal":true}]' ] \
+  && printf '%s' "$ARREGLO_T12" | grep ' rebuild ' >/dev/null && ! printf '%s' "$ARREGLO_T12" | grep 'repair' >/dev/null \
+  && grep -q 'comandoDeArreglo' "$AQUI/scripts/hooks/engram-drift-notice.js" \
+  && ok "8.131 T12 Audit_LocalIndex_DriftNamesRebuild: la fila dice índice local y el arreglo es rebuild (también en el aviso de deriva)" \
+  || no "8.131 T12 Audit_LocalIndex_DriftNamesRebuild: audit=$(cat "$TMP/t12.json") · arreglo=[$ARREGLO_T12] · $(cat "$TMP/err")"
+unset TYCON_REPOS_ROOT
+
+# ---------------------------------------------------------------- 8.131 T13. TwoBranches_AddChunks_MergeClean
+repo_local base0
+git -C "$R" checkout -q -b rama-a; chunk ramaA1; commitear "a"
+git -C "$R" checkout -q main; git -C "$R" checkout -q -b rama-b; chunk ramaB1; commitear "b"
+git -C "$R" merge-tree --write-tree rama-a rama-b >/dev/null 2>&1; RC=$?
+[ "$RC" -eq 0 ] \
+  && ok "8.131 T13 TwoBranches_AddChunks_MergeClean: dos ramas que suman un chunk cada una se unen sin choque" \
+  || no "8.131 T13 TwoBranches_AddChunks_MergeClean: merge-tree salió $RC"
+
+# ---------------------------------------------------------------- 8.131 T17. PrivateRepo_IndexIgnoredAndUntracked
+# Sobre el árbol del privado (con el público debajo): el índice ignorado y fuera de git, los chunks adentro. En el
+# público solo no hay memoria: no aplica, y se dice.
+if [ -d "$AQUI/.engram/chunks" ]; then
+  git -C "$AQUI" check-ignore -q .engram/manifest.json && ! git -C "$AQUI" ls-files --error-unmatch .engram/manifest.json >/dev/null 2>&1 \
+    && [ -n "$(git -C "$AQUI" ls-files .engram/chunks | head -1)" ] \
+    && ok "8.131 T17 PrivateRepo_IndexIgnoredAndUntracked: el índice del privado está ignorado y fuera de git; los chunks, adentro" \
+    || no "8.131 T17 PrivateRepo_IndexIgnoredAndUntracked: el índice del privado sigue en git o no está ignorado"
+else
+  ok "8.131 T17 PrivateRepo_IndexIgnoredAndUntracked: no aplica en este árbol (sin .engram/: es el público solo)"
+fi
+
+# ---------------------------------------------------------------- 8.131 T32. EngramGuide_LocalIndexTransition
+GUIA="$AQUI/guides/integrations/engram-workflow.md"
+grep -q "Índice local" "$GUIA" && grep -q "git rm --cached .engram/manifest.json" "$GUIA" && grep -q "git merge-tree --write-tree" "$GUIA" \
+  && ok "8.131 T32 EngramGuide_LocalIndexTransition: la guía trae la sección «Índice local» y la resolución de la transición" \
+  || no "8.131 T32 EngramGuide_LocalIndexTransition: falta la sección o la resolución en $GUIA"
 
 # ════════════════════════════════════════════════════════ LA RED ESTÁ ENCHUFADA
 # ---------------------------------------------------------------- T39. SuiteRegistrada_YPortable

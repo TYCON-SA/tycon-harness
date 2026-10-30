@@ -573,6 +573,9 @@ function revisarIndiceDeMemoria(repo, base, staged) {
   try { criterio = require(path.join(__dirname, '..', 'lib', 'manifest-engram.js')); }
   catch (e) { return { avisos: [{ archivo: '.engram/manifest.json', regla: 'indice-de-memoria-no-comparable', mensaje: `no pude comparar el índice de memoria: falta el criterio (${e.message})` }] }; }
 
+  // En «índice local» el índice no está en el árbol: no hay nada que comparar, y se dice.
+  if (criterio.indiceLocal && criterio.indiceLocal(repo)) return { engram: { estado: 'indice-local', motivo: 'índice local: no viaja por git' } };
+
   // 🔴 «Lo de antes» es la BASE DE MERGE, no la punta de `--base`.
   // `tocaEngram` y `mdDelDiff` ya usan `base...HEAD` (tres puntos = desde donde se separó la rama);
   // cruzar contra la punta de main sería otra noción de «antes» en el mismo control, y frenaría pull
@@ -1235,6 +1238,7 @@ function main() {
   // antes del bloque de avisos, todo aviso del chequeo 5 —«no pude comparar el índice de
   // memoria», «deriva heredada»— se tragaría y el portón imprimiría ✅. Nunca se da por bueno
   // lo que no se pudo medir.
+  if (r.engram && r.engram.estado === 'indice-local') console.log(`ℹ️  índice de memoria: ${r.engram.motivo} (no se compara).`);
   if (!r.revisadas.length && !r.hallazgos.length && !(r.avisos || []).length) {
     console.log(`✅ tycon-ci-gate: ninguna story pasa a review/done en ${dondeMira} (${r.archivos} .md mirados).`);
     return 0;

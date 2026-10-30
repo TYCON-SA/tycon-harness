@@ -202,6 +202,17 @@ function reindexar(apply) {
     const dirChunks = path.join(base, 'chunks');
     const fMan = path.join(base, 'manifest.json');
     if (!fs.existsSync(dirChunks)) continue;
+    // En «índice local» el índice no viaja por git: chunks sin índice es lo normal en un clon nuevo. Se
+    // rehace desde los chunks (con --apply), en vez de tratarlo como un repo roto.
+    if (criterio.indiceLocal(path.dirname(base))) {
+      if (!apply) { console.log(`   · ${repo}: índice local — con --apply se rehace desde los chunks (${criterio.comandoDeRehacer(path.dirname(base))})`); continue; }
+      const rh = criterio.rehacer(path.dirname(base));
+      if (rh.estado === 'no-medido') { rotos.push(`${repo}: no pude rehacer el índice local — ${rh.motivo}`); continue; }
+      for (const x of rh.noAgregadas) rotos.push(`${repo}: ${x.id} — ${x.motivo}`);
+      for (const a of rh.avisos) console.log(`   ⚠️  ${repo}: ${a}`);
+      if (rh.agregadas.length) console.log(`   + ${repo}: índice local rehecho (${rh.agregadas.length} entrada(s) agregada(s); no viaja por git)`);
+      continue;
+    }
     const hayChunks = (() => { try { return fs.readdirSync(dirChunks).some((f) => f.endsWith('.jsonl.gz')); } catch { return false; } })();
     if (!fs.existsSync(fMan)) {
       if (hayChunks) rotos.push(`${repo}: hay chunks y NO hay manifest.json — esa memoria viajó por git y nadie la puede importar`);

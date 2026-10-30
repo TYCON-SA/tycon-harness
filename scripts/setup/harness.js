@@ -1512,6 +1512,21 @@ function engramOn(ctx, tree) {
   } catch (_) { return false; }
 }
 
+/**
+ * Antes de cada `engram sync --import`: en un repo en «índice local» el índice no viaja por git y el
+ * importador lee el índice, no la carpeta. Se rehace desde los chunks (`manifest-engram.js`). Nunca frena la
+ * importación: lo que no se pudo vuelve como texto para el registro y la línea de la sesión; null si quedó entero o no
+ * aplica.
+ */
+function rebuildLocalEngramIndex(cwd) {
+  try {
+    const r = require(path.join(__dirname, '..', 'lib', 'manifest-engram.js')).rehacerSiLocal(cwd);
+    return r.aplica && r.problema ? `no pude rehacer el índice de memoria: ${r.problema}` : null;
+  } catch (e) {
+    return `no pude rehacer el índice de memoria: ${String((e && e.message) || e).split('\n')[0]}`;
+  }
+}
+
 const applyHint = `node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js update --yes`;
 // una versión bajada se actualiza con la línea de npx; un clon, no (npx sólo le dice que use harness.js)
 const releaseApplyHint = `npx @tyconsa/harness@latest`;
@@ -1808,6 +1823,8 @@ function releaseHelpers(ctx) {
     harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
       if (!findInPath('engram', c.env)) return;
+      const rehecho = rebuildLocalEngramIndex(process.cwd());
+      if (rehecho) mod('report').log(c.home, `startup: ${rehecho}`);
       const e = spawnSync('engram', ['sync', '--import'], { windowsHide: true, encoding: 'utf8', env: c.env, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
       if (e.status !== 0) mod('report').log(c.home, `startup: engram sync --import salió ${e.status === null ? 'matado' : e.status}`);
     },
@@ -3109,6 +3126,8 @@ function cmdStartup(ctx) {
 
     // 1. engram, sólo con la integración prendida
     if (engramOn(ctx, tree) && findInPath('engram', ctx.env)) {
+      const rehecho = rebuildLocalEngramIndex(process.cwd());
+      if (rehecho) { log(`startup: ${rehecho}`); line = line || rehecho; }
       const e = spawnSync('engram', ['sync', '--import'], { windowsHide: true, encoding: 'utf8', env: ctx.env, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
       if (e.status !== 0) log(`startup: engram sync --import salió ${e.status === null ? 'matado' : e.status}`);
     }

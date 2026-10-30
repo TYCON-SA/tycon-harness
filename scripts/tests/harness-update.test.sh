@@ -173,6 +173,54 @@ if corre T6; then
   export PATH="$ORIG_PATH"
 fi
 
+# ═══ T131 · el índice local de memoria se rehace antes de importar ═══════════════════════════════════════════════
+# En un repo en «índice local» (`.engram/manifest.json` ignorado y fuera de git), el arranque rehace el índice desde los
+# chunks ANTES de `engram sync --import`: el importador lee el índice, y un chunk sin entrada no existe para él. Un engram
+# de mentira anota cuántas entradas tiene el índice cuando lo llaman.
+if corre T131; then
+  harness_lab_create "$BASE/t131" >/dev/null
+  printf '#!/bin/sh\nn=$(node -e '"'"'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(".engram/manifest.json","utf8")).chunks.length))}catch(e){process.stdout.write("sin-indice")}'"'"')\necho "$* entradas=$n" >> "%s/engram-calls.log"\nexit 0\n' "$LAB" > "$LAB_BIN/engram"; chmod +x "$LAB_BIN/engram"
+  export PATH="$LAB_BIN:$PATH"
+  harness install --yes >/dev/null 2>&1 || mal "T131 install previo falló"
+  chunk131(){  # $1 repo · $2 id · el chunk como lo escribe engram
+    node -e 'process.stdout.write(JSON.stringify({sessions:null,observations:[{sync_id:"obs-"+process.argv[1],updated_at:"2026-10-01 00:00:00"}],prompts:null})+"\n")' "$2" | gzip -c > "$1/.engram/chunks/$2.jsonl.gz"
+  }
+  repo131(){  # $1 carpeta · $2 local|versionado · ids…
+    local d="$1" modo="$2"; shift 2
+    mkdir -p "$d/.engram/chunks"; git -C "$d" init -q; git -C "$d" checkout -q -b main
+    for c in "$@"; do chunk131 "$d" "$c"; done
+    if [ "$modo" = local ]; then printf '.engram/manifest.json\n' > "$d/.gitignore"
+    else printf '{\n  "version": 1,\n  "chunks": []\n}' > "$d/.engram/manifest.json"; fi
+    git -C "$d" add -A && git -C "$d" commit -qm base
+  }
+  # T14 · Startup_LocalIndex_RebuildsBeforeImport
+  repo131 "$LAB/r-local" local a1 a2 a3
+  rm -f "$LAB/engram-calls.log"
+  (cd "$LAB/r-local" && TYCON_ENGRAM=1 harness startup >/dev/null 2>&1)
+  grep -q 'sync --import entradas=3' "$LAB/engram-calls.log" 2>/dev/null \
+    && [ -z "$(git -C "$LAB/r-local" status --porcelain)" ] \
+    && ok "T14 Startup_LocalIndex_RebuildsBeforeImport: el importador ve las 3 entradas y el repo queda limpio" \
+    || mal "T14 Startup_LocalIndex_RebuildsBeforeImport: $(cat "$LAB/engram-calls.log" 2>&1) · status=[$(git -C "$LAB/r-local" status --porcelain)]"
+  # T15 · Startup_TrackedIndex_Untouched
+  repo131 "$LAB/r-versionado" versionado b1 b2
+  SUMA15="$(cksum < "$LAB/r-versionado/.engram/manifest.json")"
+  rm -f "$LAB/engram-calls.log"
+  (cd "$LAB/r-versionado" && TYCON_ENGRAM=1 harness startup >/dev/null 2>&1)
+  grep -q 'sync --import entradas=0' "$LAB/engram-calls.log" 2>/dev/null && [ "$(cksum < "$LAB/r-versionado/.engram/manifest.json")" = "$SUMA15" ] \
+    && ok "T15 Startup_TrackedIndex_Untouched: con el índice versionado no se toca, byte a byte, y la importación corre" \
+    || mal "T15 Startup_TrackedIndex_Untouched: $(cat "$LAB/engram-calls.log" 2>&1) · índice cambiado=$([ "$(cksum < "$LAB/r-versionado/.engram/manifest.json")" = "$SUMA15" ] && echo no || echo sí)"
+  # T16 · Startup_RebuildFails_ImportsAndSays
+  repo131 "$LAB/r-roto" local c1
+  printf 'esto no es gzip' > "$LAB/r-roto/.engram/chunks/roto.jsonl.gz"
+  rm -f "$LAB/engram-calls.log"
+  SALIDA16="$(cd "$LAB/r-roto" && TYCON_ENGRAM=1 harness startup 2>&1)"; RC16=$?
+  [ "$RC16" = 0 ] && grep -q 'sync --import' "$LAB/engram-calls.log" 2>/dev/null \
+    && printf '%s' "$SALIDA16" | grep 'no pude rehacer el índice de memoria' >/dev/null && grep -q 'no pude rehacer el índice de memoria' "$(LOG)" \
+    && ok "T16 Startup_RebuildFails_ImportsAndSays: con un chunk roto la importación corre igual, y la línea y el registro lo dicen" \
+    || mal "T16 Startup_RebuildFails_ImportsAndSays: rc=$RC16 · llamadas=[$(cat "$LAB/engram-calls.log" 2>&1)] · salida=[$SALIDA16] · registro=[$(tail -2 "$(LOG)" 2>&1)]"
+  export PATH="$ORIG_PATH"
+fi
+
 # ═══ GBH · Harness_LaunchesApplier_WithGitBashHealthNotice ═══════════════════════════
 # La actualización la juzga la salud de la versión anterior, que en Windows puede revisar un .sh con el primer
 # `bash` del PATH (puede ser el lanzador de WSL). harness.js le avisa al aplicador, con

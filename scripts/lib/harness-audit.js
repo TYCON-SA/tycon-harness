@@ -647,6 +647,9 @@ function engramChunksSinIndexar(rootOverride) {
     }
     if (r.huerfanos.length || r.fantasmas.length) out.push({ repo, dir, sinIndexar: r.huerfanos, fantasma: r.fantasmas });
   }
+  // En «índice local» el índice no viaja por git y el arreglo es rehacerlo, no repararlo: la fila lo dice
+  // para que el aviso nombre el comando que corresponde.
+  for (const fila of out) if (criterio && criterio.indiceLocal(fila.dir)) fila.indiceLocal = true;
   return out;
 }
 

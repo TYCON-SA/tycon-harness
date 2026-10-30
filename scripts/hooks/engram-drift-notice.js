@@ -125,8 +125,9 @@ try {
   // en el clon del arnés: desde cualquier otra carpeta —que es donde estás cuando leés este aviso
   // al abrir una sesión— el comando no corre. Y sin `--repo` tocaría todos los repos, no el que
   // está roto. `__dirname` lo resuelve para cualquier clon, en cualquier máquina.
-  const arregloDe = (r) => `node ${JSON.stringify(path.join(__dirname, '..', 'lib', 'manifest-engram.js'))}`
-    + ` repair --apply --repo ${JSON.stringify(r.dir || path.join(escaneo.root, r.repo))}`;   // con varias carpetas de repos, la del propio repo
+  // En índice local el arreglo es rehacer el índice: lo decide `comandoDeArreglo`.
+  const arregloDe = (r) => require(path.join(__dirname, '..', 'lib', 'manifest-engram.js'))
+    .comandoDeArreglo(r.dir || path.join(escaneo.root, r.repo));   // con varias carpetas de repos, la del propio repo
   const { unpinned } = escaneo;
   // 🔴 SIN RAÍZ DE REPOS: el arnés no sabe dónde están los repos de esta máquina. Eso deja sin correr los
   // chequeos que miran repos —y el de la memoria nunca exportada devuelve null por eso, que este aviso leería como «¿base
