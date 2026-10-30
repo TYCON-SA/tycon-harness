@@ -10,12 +10,17 @@
  *   T4 · la rutina firmada queda en el registro, por la vía `command`, con quién, quién la pidió, sobre qué y el motivo.
  *   T5 · una excepción (nivel 2) pide motivo; y la organización puede subir el nivel, nunca bajarlo.
  *   T6 · si el registro no escribe, el comando lo dice y sale con error; la emergencia no queda vigente.
- *   T7 · la emergencia pide motivo y el comando exacto; deja un permiso de un solo uso.
+ *   T7 · la emergencia pide motivo y el número del pedido que dejó el freno; deja un permiso de un solo uso.
  *   T8 · un comando distinto no consume el permiso, y el permiso sigue vigente para el suyo.
  *   T9 · vencido (más de 30 minutos), no sirve.
- *   T10 · la emergencia de `git commit` la consume el próximo commit de ese repo, y no el de otro repo.
+ *   T10 · `--commit` vale para el próximo commit de ese repo, y no el de otro repo; vence a los 30 minutos.
  *   T11 · la emergencia nunca va por la ventana ni por la delegación: la firma sólo la terminal.
- *   T12 · por la consola: un id desconocido sale 2 y la ayuda de harness.js nombra `sign`.
+ *   T12 · por la consola: un id desconocido sale 2, la ayuda nombra `sign` y queda una sola forma.
+ *   T13 · el freno real da el número, y deja pasar el comando firmado tal cual y una sola vez.
+ *   T14 · los frenos de escritura cuidan el permiso igual que los registros de la ventana.
+ *   T15 · la emergencia queda en el registro común de verdad.
+ *   T16 · el agente no corre `sign` ni la biblioteca de la emergencia.
+ *   T17 · un número de pedido usado o vencido no sirve.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -56,6 +61,13 @@ function registro({ falla = null } = {}) {
 
 function firmar(casa, extra = {}) {
   return sign.sign({ casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {}, ...extra });
+}
+
+// el pedido que deja el freno al frenar: el texto exacto que leyó, con su número
+function pedido(casa, comando, ahora = AHORA) {
+  const p = sign.pedir({ casa, comando, ahora });
+  assert.ok(p.ok, p.error);
+  return p.numero;
 }
 
 test('T1 · un id que no está en el catálogo se rechaza, sin registro ni permiso', (t) => {
@@ -130,26 +142,37 @@ test('T6 · si el registro no escribe, el comando lo dice y sale con error; la e
   let r = firmar(casa, { id: 'plan-approval', append: reg.append });
   assert.strictEqual(r.code, 1);
   assert.match(r.lines.join('\n'), /EACCES/);
-  r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', command: 'rm -rf /tmp/x', append: reg.append });
+  r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', request: pedido(casa, 'rm -rf /tmp/x'), append: reg.append });
   assert.strictEqual(r.code, 1);
   assert.deepStrictEqual(sign.permisos(casa), []);
   assert.strictEqual(sign.consumir({ casa, comando: 'rm -rf /tmp/x', ahora: AHORA }), null);
 });
 
-test('T7 · la emergencia pide motivo y el comando exacto; deja un permiso de un solo uso', (t) => {
+test('T7 · la emergencia pide motivo y el número del pedido; deja un permiso de un solo uso para el texto del pedido', (t) => {
   const casa = casaNueva(t);
   const reg = registro();
-  let r = firmar(casa, { id: 'emergency', command: 'rm -rf /tmp/x', append: reg.append });
+  const n = pedido(casa, 'rm -rf /tmp/x');
+  assert.match(n, /^[0-9a-f]{8}$/);
+  assert.strictEqual(pedido(casa, 'rm -rf /tmp/x'), n, 'el mismo texto reusa su pedido vigente');
+  let r = firmar(casa, { id: 'emergency', request: n, append: reg.append });
   assert.strictEqual(r.code, 2, 'sin motivo');
-  r = firmar(casa, { id: 'emergency', reason: '   ', command: 'rm -rf /tmp/x', append: reg.append });
+  r = firmar(casa, { id: 'emergency', reason: '   ', request: n, append: reg.append });
   assert.strictEqual(r.code, 2, 'un motivo en blanco no es motivo');
   r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', append: reg.append });
-  assert.strictEqual(r.code, 2, 'sin el comando');
-  assert.match(r.lines.join('\n'), /--/);
+  assert.strictEqual(r.code, 2, 'sin número ni --commit');
+  assert.match(r.lines.join('\n'), /--request/);
+  r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', request: n, commit: true, append: reg.append });
+  assert.strictEqual(r.code, 2, 'los dos a la vez no');
+  for (const malo of ['00000000', '../x', 'ZZZZZZZZ']) {
+    r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', request: malo, append: reg.append });
+    assert.strictEqual(r.code, 2, `«${malo}» no es un pedido`);
+  }
   assert.strictEqual(reg.renglones.length, 0);
 
-  r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', command: 'rm -rf /tmp/x', append: reg.append });
+  const tty = terminal();
+  r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta de pruebas colgada', request: n, append: reg.append, tty });
   assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.match(tty.preguntas[0], /Comando: rm -rf \/tmp\/x/, 'la terminal muestra el comando antes del «firmo»');
   assert.deepStrictEqual([reg.renglones[0].signature, reg.renglones[0].via, reg.renglones[0].target, reg.renglones[0].reason],
     ['emergency', 'command', 'rm -rf /tmp/x', 'borrar la carpeta de pruebas colgada']);
   const usado = sign.consumir({ casa, comando: 'rm -rf /tmp/x', ahora: AHORA + MIN });
@@ -158,10 +181,30 @@ test('T7 · la emergencia pide motivo y el comando exacto; deja un permiso de un
   assert.strictEqual(sign.consumir({ casa, comando: 'rm -rf /tmp/x', ahora: AHORA + 2 * MIN }), null, 'una sola vez');
 });
 
+// 🔴 rojo: un número usado que se pudiera firmar otra vez daría dos permisos para un pedido.
+test('T17 · un número de pedido usado o vencido no sirve', (t) => {
+  const casa = casaNueva(t);
+  const reg = registro();
+  const n = pedido(casa, 'rm -rf /tmp/x');
+  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: n, append: reg.append }).code, 0);
+  let r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: n, append: reg.append });
+  assert.strictEqual(r.code, 2, 'usado');
+  assert.match(r.lines.join('\n'), /ya se usó/);
+  const viejo = pedido(casa, 'rm -rf /tmp/y');
+  r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: viejo, append: reg.append, ahora: AHORA + 31 * MIN });
+  assert.strictEqual(r.code, 2, 'vencido');
+  assert.match(r.lines.join('\n'), /venció/);
+  r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: viejo, append: reg.append });
+  assert.strictEqual(r.code, 2, 'y vencido no vuelve');
+  assert.strictEqual(reg.renglones.length, 1, 'sólo la primera firma quedó anotada');
+  // un pedido vencido no se reusa: el mismo texto da otro número
+  assert.notStrictEqual(sign.pedir({ casa, comando: 'rm -rf /tmp/y', ahora: AHORA + 40 * MIN }).numero, viejo);
+});
+
 test('T8 · un comando distinto no consume el permiso, y el permiso sigue vigente para el suyo', (t) => {
   const casa = casaNueva(t);
   const reg = registro();
-  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', command: 'rm -rf /tmp/x', append: reg.append }).code, 0);
+  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), append: reg.append }).code, 0);
   for (const otro of ['rm -rf /tmp/y', 'rm -rf /tmp/x ', ' rm -rf /tmp/x', 'rm -rf /tmp/x; rm -rf ~', 'RM -rf /tmp/x']) {
     assert.strictEqual(sign.consumir({ casa, comando: otro, ahora: AHORA + MIN }), null, `«${otro}» no es el comando firmado`);
   }
@@ -172,34 +215,41 @@ test('T8 · un comando distinto no consume el permiso, y el permiso sigue vigent
 test('T9 · vencido, no sirve', (t) => {
   const casa = casaNueva(t);
   const reg = registro();
-  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', command: 'rm -rf /tmp/x', append: reg.append }).code, 0);
+  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), append: reg.append }).code, 0);
   const r = sign.consumir({ casa, comando: 'rm -rf /tmp/x', ahora: AHORA + 31 * MIN });
   assert.ok(r && r.ok === false, 'vencido no vale');
   assert.match(r.motivo, /venci/);
   assert.strictEqual(sign.consumir({ casa, comando: 'rm -rf /tmp/x', ahora: AHORA + 2 * MIN }), null, 'y no queda para después');
 });
 
-test('T10 · la emergencia de git commit la consume el próximo commit de ese repo, no el de otro', (t) => {
+test('T10 · --commit vale para el próximo commit de ese repo, no el de otro, una vez y por 30 minutos', (t) => {
   const casa = casaNueva(t);
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sign-repo-'));
   const otro = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sign-otro-'));
   t.after(() => { fs.rmSync(repo, { recursive: true, force: true }); fs.rmSync(otro, { recursive: true, force: true }); });
   const reg = registro();
-  const r = firmar(casa, { id: 'emergency', reason: 'el catálogo de producción tiene un servidor de baja', command: 'git commit -m "x"', cwd: repo, append: reg.append });
+  const tty = terminal();
+  const r = firmar(casa, { id: 'emergency', reason: 'el catálogo de producción tiene un servidor de baja', commit: true, cwd: repo, append: reg.append, tty });
   assert.strictEqual(r.code, 0, r.lines.join('\n'));
+  assert.match(tty.preguntas[0], /próximo commit/, 'la terminal dice para qué es');
   assert.strictEqual(sign.consumirCommit({ casa, repo: otro, ahora: AHORA + MIN }), null, 'otro repo no');
+  // el permiso de un commit no deja pasar un comando que se llame igual
+  assert.strictEqual(sign.consumir({ casa, comando: 'git commit', ahora: AHORA + MIN }), null);
   assert.ok(sign.consumirCommit({ casa, repo, ahora: AHORA + MIN }).ok, 'ese repo sí');
   assert.strictEqual(sign.consumirCommit({ casa, repo, ahora: AHORA + 2 * MIN }), null, 'una sola vez');
   // vencido tampoco
-  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'el catálogo de producción tiene un servidor de baja', command: 'git commit -m "y"', cwd: repo, append: reg.append }).code, 0);
+  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'el catálogo de producción tiene un servidor de baja', commit: true, cwd: repo, append: reg.append }).code, 0);
   assert.strictEqual(sign.consumirCommit({ casa, repo, ahora: AHORA + 31 * MIN }).ok, false);
+  // y un pedido del freno de un `git commit` no es el permiso del control de producción
+  assert.strictEqual(firmar(casa, { id: 'emergency', reason: 'commitear igual', request: pedido(casa, 'git commit -m x'), cwd: repo, append: reg.append }).code, 0);
+  assert.strictEqual(sign.consumirCommit({ casa, repo, ahora: AHORA + MIN }), null);
 });
 
 test('T11 · la emergencia la firma sólo la terminal, nunca la ventana ni la delegación', (t) => {
   const casa = casaNueva(t);
   const reg = registro();
   for (const via of ['window', 'delegation']) {
-    const r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', command: 'rm -rf /tmp/x', append: reg.append, via });
+    const r = firmar(casa, { id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), append: reg.append, via });
     assert.strictEqual(r.code, 2, via);
     assert.match(r.lines.join('\n'), /terminal/);
   }
@@ -216,10 +266,11 @@ test('T13 · el freno de seguridad deja pasar el comando firmado, tal cual y una
   const firmado = `sqlcmd -Q "DROP DATABASE prueba_${marca.replace(/-/g, '_')}"`;
   const reg = registro();
   t.after(() => {
-    const dir = sign.carpeta();
-    for (const f of fs.readdirSync(dir)) {
-      const p = path.join(dir, f);
-      try { if (fs.readFileSync(p, 'utf8').includes(marca.replace(/-/g, '_'))) fs.rmSync(p); } catch (_) { /* ya no está */ }
+    for (const dir of [sign.carpeta(), path.join(sign.carpeta(), 'pedidos')]) {
+      for (const f of fs.readdirSync(dir)) {
+        const p = path.join(dir, f);
+        try { if (fs.statSync(p).isFile() && fs.readFileSync(p, 'utf8').includes(marca.replace(/-/g, '_'))) fs.rmSync(p); } catch (_) { /* ya no está */ }
+      }
     }
   });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sign-freno-'));
@@ -228,11 +279,15 @@ test('T13 · el freno de seguridad deja pasar el comando firmado, tal cual y una
     input: JSON.stringify({ session_id: 's-sign', tool_name: 'Bash', tool_input: { command: comando }, cwd: home }),
     env: { ...process.env, HOME: home, TYCON_SAFETY_OFF: '' }, encoding: 'utf8',
   });
-  // sin la emergencia, frena y el cartel dice cómo se firma
+  // sin la emergencia, frena y el cartel da el número del pedido con el texto exacto que leyó
   let r = freno(firmado);
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /harness\.js sign emergency --reason/);
-  assert.strictEqual(sign.sign({ id: 'emergency', reason: 'limpiar la carpeta de la prueba', command: firmado, tty: terminal(), append: reg.append, signer: 'prueba', levels: {} }).code, 0);
+  const m = /harness\.js sign emergency --reason "<por qué>" --request ([0-9a-f]{8})/.exec(r.stderr);
+  assert.ok(m, `el cartel no da el número: ${r.stderr}`);
+  assert.strictEqual(freno(firmado).stderr.includes(`--request ${m[1]}`), true, 'repetirlo reusa el mismo número');
+  const tty = terminal();
+  assert.strictEqual(sign.sign({ id: 'emergency', reason: 'limpiar la carpeta de la prueba', request: m[1], tty, append: reg.append, signer: 'prueba', levels: {} }).code, 0);
+  assert.ok(tty.preguntas[0].includes(`Comando: ${firmado}`), 'la terminal muestra lo que leyó el freno');
   // otro texto no la consume
   r = freno(`${firmado} `);
   assert.strictEqual(r.status, 2, 'un espacio de más no es el comando firmado');
@@ -269,7 +324,7 @@ test('T14 · los frenos de escritura cuidan el permiso igual que los registros d
 // renglón dice el nivel, la vía y el motivo.
 test('T15 · la emergencia queda en el registro común de firmas de verdad', (t) => {
   const casa = casaNueva(t);
-  const r = sign.sign({ id: 'emergency', reason: 'borrar la carpeta colgada', command: 'rm -rf /tmp/x', casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {} });
+  const r = sign.sign({ id: 'emergency', reason: 'borrar la carpeta colgada', request: pedido(casa, 'rm -rf /tmp/x'), casa, ahora: AHORA, signer: 'el-dev', cwd: casa, tty: terminal(), levels: {} });
   assert.strictEqual(r.code, 0, r.lines.join('\n'));
   const log = require('../lib/signature-log.js');
   const renglones = fs.readFileSync(log.logPath(casa), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -314,11 +369,10 @@ test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', (
   assert.match(r.stderr, /no-existe/);
   const h = spawnSync(process.execPath, [HARNESS, '--help'], { encoding: 'utf8' });
   assert.match(h.stdout, /\bsign\b/);
-  // lo que sigue a `--` es el comando, un solo argumento entre comillas, aunque empiece con guiones: partido en
-  // palabras se pierden las comillas de adentro y nunca sería el texto exacto que corre el agente
+  // una sola forma: el número del pedido o --commit; el comando nunca se retipea
   const { parse } = require(HARNESS);
-  const p = parse(['sign', 'emergency', '--reason', 'motivo', '--', 'git commit -m "x"']);
-  assert.deepStrictEqual([p.cmd, p.args, p.opts.reason, p.opts.command], ['sign', ['emergency'], 'motivo', 'git commit -m "x"']);
-  const partido = parse(['sign', 'emergency', '--reason', 'motivo', '--', 'git', 'commit', '-m', 'x']);
-  assert.match(partido.error, /comillas/);
+  const p = parse(['sign', 'emergency', '--reason', 'motivo', '--request', 'ab12cd34']);
+  assert.deepStrictEqual([p.cmd, p.args, p.opts.reason, p.opts.request], ['sign', ['emergency'], 'motivo', 'ab12cd34']);
+  assert.strictEqual(parse(['sign', 'emergency', '--reason', 'motivo', '--commit']).opts.commit, true);
+  assert.match(parse(['sign', 'emergency', '--reason', 'motivo', '--', 'git commit']).error, /opción desconocida/);
 });

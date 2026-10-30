@@ -17,10 +17,10 @@
 #   - Solo BLOCK (exit 2) — no hay WARN para evitar ruido.
 #   - Denylist explícita y corta. v1 cubre los desastres irreversibles.
 #   - Opt-in vía hook registrado (la guía explica cómo activarlo).
-#   - Una sola salida, la emergencia: la persona la firma en su terminal para un comando, tal cual
-#     (`harness.js sign emergency --reason "<por qué>" -- '<comando>'`, lib/harness-sign.js), y el freno la consume
-#     cuando el agente corre ese texto exacto: un solo uso, 30 minutos. `TYCON_SAFETY_OFF=1`, en el ambiente o como
-#     prefijo del comando, ya no apaga nada: el cartel lo dice.
+#   - Una sola salida, la emergencia: al frenar, este freno guarda el texto exacto que leyó como un pedido con número;
+#     la persona lo firma en su terminal (`harness.js sign emergency --reason "<por qué>" --request <número>`,
+#     lib/harness-sign.js) y el freno deja pasar ese texto exacto una vez, por 30 minutos. `TYCON_SAFETY_OFF=1`, en el
+#     ambiente o como prefijo del comando, ya no apaga nada: el cartel lo dice.
 #   - Off completo: remové el hook de settings.json.
 #   - Log de bloqueos en ~/.claude/safety-guard.log para retro/audit.
 #   - Fail-open: si el script crashea por cualquier motivo, NO bloquea
@@ -310,25 +310,33 @@ ow_vencer() {
 
 ESC_MOTIVO_VAR=""
 
-# cartel_emergencia — cómo se saltea el freno: la emergencia, que la persona firma en su terminal para este comando.
+# cartel_emergencia — cómo se saltea el freno: la emergencia, que la persona firma en su terminal con el número del
+# pedido que dejó este freno (el texto exacto que leyó; nadie lo retipea).
 cartel_emergencia() {
-  echo "Saltear este freno lo decide la persona, no el agente: firma la emergencia en su terminal, para este comando tal cual,"
-  echo "  node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" -- '<el comando de arriba>'"
+  echo "Saltear este freno lo decide la persona, no el agente: firma la emergencia en su terminal, con el número de este pedido,"
+  echo "  node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" --request ${EMERGENCIA_PEDIDO:-<número>}"
   echo "y después se repite el mismo comando, sin cambiarle nada. Vale una vez, por 30 minutos."
+  if [[ -z "$EMERGENCIA_PEDIDO" ]]; then echo "(No pude dejar el pedido: sin número, la emergencia no se puede firmar para este comando.)"; fi
 }
 
-# emergencia_vale — ¿la persona firmó la emergencia para ESTE comando, tal como llegó? La consume: un solo uso. Una
-# vencida deja su motivo en EMERGENCIA_AVISO. Sin con qué mirar, no vale. Las salidas distintas de 0 van en una lista
-# con `||`: así no disparan el `trap … ERR`, que dejaría pasar el comando.
-EMERGENCIA_AVISO=""
+# emergencia_vale — ¿la persona firmó la emergencia para ESTE comando, tal como llegó? La consume: un solo uso. Si no,
+# lib/harness-sign.js deja (o reusa) el pedido con su número en EMERGENCIA_PEDIDO, y una vencida deja su motivo en
+# EMERGENCIA_AVISO. Sin con qué mirar, no vale. Las salidas distintas de 0 van en una lista con `||`: así no disparan el
+# `trap … ERR`, que dejaría pasar el comando.
+EMERGENCIA_AVISO=""; EMERGENCIA_PEDIDO=""
 emergencia_vale() {
-  local lib out rc
+  local lib out rc k
   lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-sign.js" || return 1
   [[ -f "$lib" ]] || return 1
   command -v "$HNODE" >/dev/null 2>&1 || return 1
   out="$(printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" consume 2>/dev/null)" && rc=0 || rc=$?
   [[ "$rc" == "0" ]] && return 0
-  [[ "$rc" == "3" ]] && EMERGENCIA_AVISO="$out"
+  while IFS= read -r k; do
+    case "$k" in
+      pedido=*) [[ "${k#pedido=}" =~ ^[0-9a-f]{8}$ ]] && EMERGENCIA_PEDIDO="${k#pedido=}" ;;
+      motivo=*) EMERGENCIA_AVISO="${k#motivo=}" ;;
+    esac
+  done <<< "$out"
   return 1
 }
 

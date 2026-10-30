@@ -149,8 +149,8 @@ fi
 # usuario de la base NO va (vive junto a la contraseña, en el Llavero). A diferencia del bloque
 # 1b, acá el veredicto MANDA: una declaración mal formada deja el freno decidiendo con basura.
 # Con su nombre anterior (`.tycon/produccion.json`) también, hasta que los productos migren.
-# La única salida es la emergencia de un `git commit` que la persona firmó en su terminal en este repo
-# (lib/harness-sign.js): se gasta sólo si el catálogo rechaza. `TYCON_PROD_LINT=0` ya no apaga nada; se dice.
+# La única salida es la emergencia del próximo commit que la persona firmó en su terminal en este repo
+# (`harness.js sign emergency --commit`, lib/harness-sign.js): se gasta sólo si el catálogo rechaza. `TYCON_PROD_LINT=0` ya no apaga nada; se dice.
 LINT_PROD="$_TCG_DIR/scripts/production/lint-production-json.js"
 SIGN_LIB="$_TCG_DIR/scripts/lib/harness-sign.js"
 if [ "${TYCON_PROD_LINT:-1}" = "0" ]; then
@@ -163,7 +163,8 @@ if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
     else
       echo "⛔ el catálogo de producción rechazó el commit (.tycon/production.json)" >&2
       echo "   Arreglá el catálogo. Si hay que commitear igual, lo decide la persona: firma en su terminal, en este repo," >&2
-      echo "   node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" -- 'git commit …'" >&2
+      echo "   node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" --commit" >&2
+      echo "   (vale para el próximo commit de este repo, por 30 minutos)" >&2
       exit 1
     fi
   fi

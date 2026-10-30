@@ -85,7 +85,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **SEC-C1** | `cat ~/.ssh/...` / `cat .../aws/credentials` | Secretos al contexto del LLM |
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |
 | **CMD-C1** | Un comando que trae un `\r` (retorno de carro); en PowerShell, también `\f`, `\v`, el espacio duro, NEL o un espacio de Unicode | Bash lee el `\r` como una letra y PowerShell como un salto de línea: con él, una parte del comando se le esconde al freno. Un comando escrito a mano no lo trae. Frena también si el carácter va dentro de un texto entre comillas (un mensaje de commit con un espacio duro pegado de una página, un heredoc con saltos de Windows): el freno no puede saber si las comillas son de verdad. La misma regla la aplican el freno de alcance de pruebas y el aviso de memoria: con este freno apagado, un `\r` sigue frenado |
-| **ESC-C1** | `TYCON_NEW_NAMES` asignada en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE`, `DOD_BYPASS` o `TYCON_NO_DEEP_REVIEW` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | La primera apaga, al commitear, el freno de nombres reales. `TYCON_PROD_LINT=0` ya no apaga la revisión del catálogo de producción: su salida es la emergencia de un `git commit`, que consume el próximo commit en ese repo. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo; `TYCON_NO_DEEP_REVIEW` apaga el pase adversarial, que el agente apagaba después de preguntar si lo corría. Lo firma la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
+| **ESC-C1** | `TYCON_NEW_NAMES` asignada en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell); `TYCON_TEST_GATE`, `DOD_BYPASS` o `TYCON_NO_DEEP_REVIEW` asignadas con cualquier valor salvo `0` o vacío (nombre exacto: `TYCON_TEST_GATE_PART` no es ella) | La primera apaga, al commitear, el freno de nombres reales. `TYCON_PROD_LINT=0` ya no apaga la revisión del catálogo de producción: su salida es la emergencia `--commit`, que vale para el próximo commit en ese repo, una vez y por 30 minutos. `TYCON_TEST_GATE` la pone `test-gate.sh` dentro de su proceso: escrita por el agente da un verde de pruebas (o un «sin medir») que no corrió; `DOD_BYPASS` cierra un paso sin la evidencia de la prueba en vivo; `TYCON_NO_DEEP_REVIEW` apaga el pase adversarial, que el agente apagaba después de preguntar si lo corría. Lo firma la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
 | **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar; `marker.js set-check … --force-manual` o `pipeline.js check-count … --trust-ran` con la ejecución en verde o en rojo; `--no-deep-review` en `pipeline.js start` o `deep-review-gate` o en `marker.js mark-adversarial-skipped`, siempre, también antes de que exista la ejecución; `marker.js clear-session <sesión> --lost` o `marker.js restore <sesión>`, siempre (abajo, «La ejecución perdida»). Los archivos que siguen a `--files` no son la bandera, salvo una variable sola sin valor conocido o una que vale una bandera | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
 | **ESC-C4** | `marker.js close-as-debt` o `marker.js expect-red`, con una ejecución en la sesión | Dejan una salida prevista por la historia como el final de la ejecución, o un control en rojo como esperado. Lo autoriza la persona, siempre (abajo); un texto que sólo nombra el comando no frena |
 | **ESC-C5** | Un comando que crea, toca o copia un archivo `ALLOW_DOD_EVIDENCE_WRITE` (`touch`, `cp`, `mv`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …), o que escribe `dod_runtime_exempt: true` en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`) | El permiso de escribir a mano la evidencia de la prueba en vivo y la exención de esa prueba los firma la persona, con `marker.js sign-file <firma> <archivo>`, y la escritura va después con Edit o Write: por la consola frena siempre. Mirarlo, buscarlo, borrarlo o sacar la exención no frena. Por la herramienta de escribir archivos lo miran el guardián de la evidencia (consume el permiso sólo con la constancia de esa firma, de la misma sesión y sobre ese archivo, dentro de los 30 minutos) y el hook del encabezado (pide la misma firma para agregar la exención a una historia en implementación) |
@@ -108,16 +108,20 @@ Ninguna frase escrita en el chat abre el freno: el arnés no lee la conversació
 de la persona, con su comando; la lista entera está en [las firmas del dueño](firmas-del-arnes.md). Se da de una de
 dos formas, y ninguna la puede usar el agente solo:
 
-**La emergencia: la única salida de una regla de este freno.** La firma la persona en su terminal, nunca la ventana ni
-la delegación, con su motivo y el texto exacto del comando que frenó:
+**La emergencia: la única salida de una regla de este freno.** Cuando el freno frena, guarda el texto exacto que leyó
+como un pedido con número, y el cartel lo da. La persona la firma en su terminal, nunca la ventana ni la delegación, con
+su motivo y ese número:
 
 ```bash
-node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason "<por qué>" -- '<el comando, tal cual>'
+node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason "<por qué>" --request <número>
 ```
 
-Deja un permiso de un solo uso que vence a los 30 minutos. El freno lo consume cuando el agente corre ese texto exacto;
-otro texto, aunque difiera en un espacio, sigue frenado. La firma queda en el registro común de firmas, con quién la
-dio y por qué. `TYCON_SAFETY_OFF=1`, en el ambiente o delante del comando, ya no apaga nada: el cartel lo dice.
+La terminal muestra el comando antes de pedir «firmo». Nadie lo retipea: sus comillas y sus barras no llegan iguales
+desde PowerShell, cmd o bash. Deja un permiso de un solo uso que vence a los 30 minutos; el agente repite el comando
+tal cual y el freno lo deja pasar una vez. Otro texto, aunque difiera en un espacio, sigue frenado. El número también
+vence a los 30 minutos, y uno usado o vencido no sirve. La firma queda en el registro común de firmas, con quién la dio
+y por qué. `TYCON_SAFETY_OFF=1`, en el ambiente o delante del comando, ya no apaga nada: el cartel lo dice. El agente
+no corre `harness.js sign`: lo frena este freno, también si se abre una terminal propia.
 
 **En la ventana de permiso (Claude Code)**, las demás firmas. El agente corre el comando de la firma en su forma exacta,
 solo: `marker.js close-as-debt …`, `marker.js sign-file dod_runtime_exempt <archivo>`. El
@@ -334,7 +338,7 @@ Cada bloqueo se loggea en `~/.claude/safety-guard.log`:
 
 **El hook bloquea algo legítimo (false positive):**
 
-1. Que la persona firme la emergencia en su terminal para ese comando (`harness.js sign emergency --reason "<por qué>" -- '<comando>'`) y repetirlo tal cual.
+1. Que la persona firme la emergencia en su terminal con el número del cartel (`harness.js sign emergency --reason "<por qué>" --request <número>`) y repetir el comando tal cual.
 2. Si la regla está mal calibrada (bloquea muchos legítimos), abrí un issue en el arnés con el caso. La regla puede refinarse o exceptarse.
 
 **Quiero probar reglas nuevas sin afectar el real:**
