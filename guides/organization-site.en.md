@@ -675,6 +675,7 @@ be, to copy it and open the request by hand.
 - **Estimates** (*Estimaciones*): the unit your organization estimates in (hours, days or points), the hours in a
   working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
   calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
+  Each story's current estimate also reaches its work item, in Azure DevOps or GitHub.
   It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
   reads the key. A maintainer reviews it.
 

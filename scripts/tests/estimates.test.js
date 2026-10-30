@@ -635,3 +635,164 @@ test('Adversarial_HistoriaQueCambiaDeEpica_LoRealCuentaEnLaSuya @story-2.75 @ac-
   const dos = correr(['report', '--repo', repo, '--epic', '2']).json.real;
   assert.deepStrictEqual([dos.historias, dos.cerrada, dos.suma], [1, true, 7]);
 });
+
+/**
+ * Las claves y líneas que nombran una estimación en lo que una organización sin `estimates` ya ve hoy, o que las
+ * estimaciones suman a propósito. Una clave o una línea con «estim» fuera de esta lista es una salida que cambió sin que nadie
+ * lo pidiera.
+ */
+const ESTIM_PERMITIDAS = {
+  // el tamaño de la corrida y su tiempo estimado, del arranque del pipeline: no dependen de `estimates`
+  claves: new Set(['estimado_min', 'estimado_de', 'estimate_min', 'estimate_source', 'estimates',
+    // la foto de Proyectos (AC 24): el estado del registro y la estimación de cada épica, null sin registro
+    'estimaciones', 'estimacion']),
+  // la línea entera de la corrida, de punta a punta: lo que se le pegue después no queda tapado
+  lineas: [/^TAMAÑO: corrida \w+ \([^)\n]*\) · estimado \d+ min( \([^\n]*\))?$/],
+};
+// las carpetas de la máquina (el clon del arnés, la temporal, el laboratorio) viajan en la salida y pueden llamarse
+// como la historia: se tapan antes de buscar, para que el nombre de una carpeta no ponga la prueba roja
+function sinRutas(texto, rutas) {
+  return rutas.reduce((t, r) => t.split(r).join('<ruta>'), texto);
+}
+
+function rutasDeLaMaquina(...extra) {
+  const todas = [ROOT, os.tmpdir(), ...extra].flatMap((r) => { try { return [r, fs.realpathSync(r)]; } catch { return [r]; } });
+  return [...new Set(todas)].sort((a, b) => b.length - a.length);
+}
+
+/** Las rutas de clave o de texto con «estim» que la lista cerrada no conoce, con las carpetas de `rutas` tapadas. */
+function estimFueraDeLista(valor, ruta = '$', rutas = []) {
+  const fuera = [];
+  if (typeof valor === 'string') {
+    valor = sinRutas(valor, rutas);
+    // la línea permitida se saca entera; lo que siga después de ella se mira igual
+    const resto = ESTIM_PERMITIDAS.lineas.reduce((t, rx) => t.replace(rx, ''), valor);
+    if (/estim/i.test(resto)) fuera.push(`${ruta}: ${valor.slice(0, 120)}`);
+  } else if (Array.isArray(valor)) {
+    valor.forEach((v, i) => fuera.push(...estimFueraDeLista(v, `${ruta}[${i}]`, rutas)));
+  } else if (valor && typeof valor === 'object') {
+    for (const [k, v] of Object.entries(valor)) {
+      if (/estim/i.test(k) && !ESTIM_PERMITIDAS.claves.has(k)) fuera.push(`${ruta}.${k}`);
+      // el texto de una clave permitida es suyo (el tiempo estimado de la corrida dice de dónde sale)
+      if (!(typeof v === 'string' && ESTIM_PERMITIDAS.claves.has(k))) fuera.push(...estimFueraDeLista(v, `${ruta}.${k}`, rutas));
+    }
+  }
+  return fuera;
+}
+
+test('T35 SinNada_IgualQueHoy @story-2.75 @ac-32', () => {
+  // 🔴 rojo: una organización sin `estimates` y un repo sin registro ven algo de estimaciones que AC 32 no lista
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 't35-sin-nada-'));
+  const rutas = rutasDeLaMaquina(base);
+  try {
+    const home = path.join(base, 'home');
+    const repo = path.join(base, 'repo');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.symlinkSync(ROOT, path.join(home, '.claude', 'agent-skills'));
+    fs.symlinkSync(ROOT, path.join(home, '.claude', 'tycon-harness'));
+    fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'src'));
+    const git = (...a) => {
+      const fecha = '2026-01-01T00:00:00Z';
+      const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a],
+        { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha } });
+      assert.strictEqual(r.status, 0, `git ${a[0]}: ${r.stderr}`);
+    };
+    git('init', '-q', '-b', 'feat/x');
+    git('config', 'user.email', 'acme@example.com');
+    git('config', 'user.name', 'acme');
+    const story = path.join(repo, 'specs', 'story-3.2-algo.md');
+    fs.writeFileSync(story, ['---', 'epic: 3', 'story: "3.2"', 'title: "La historia 3.2"', 'status: ready-for-dev',
+      'files_to_modify:', '  - src/a.js', '---', '# Story 3.2', '', '### Tests', '', '| # | Test |', '|---|---|', '| T1 | a |', ''].join('\n'));
+    fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'module.exports = 1;\n');
+    git('add', '.');
+    git('commit', '-qm', 'inicio');
+    const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 't35-sin-nada', TYCON_LANE_LLM: '0',
+      TYCON_HOME: '', TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off', TYCON_WAIT_NOTICE: '' };
+    const pipeline = (args) => {
+      const r = spawnSync(process.execPath, [path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'), ...args],
+        { encoding: 'utf8', env, input: '', cwd: repo });
+      assert.strictEqual(r.status, 0, `${args[0]}: ${r.stderr}${r.stdout}`);
+      return JSON.parse(r.stdout);
+    };
+
+    // el pipeline: el arranque (lo breve y lo completo) y el set de revisores
+    const breve = pipeline(['start', '--story', story, '--repo', repo, '--brief']);
+    const completo = JSON.parse(fs.readFileSync(breve.completo, 'utf8'));
+    const revisores = pipeline(['advisors', '--repo', repo, '--story', story, '--files', path.join(repo, 'src', 'a.js')]);
+    for (const [nombre, salida] of [['start --brief', breve], ['start', completo], ['advisors', revisores]]) {
+      assert.deepStrictEqual(estimFueraDeLista(salida, '$', rutas), [], `${nombre}: nombra estimaciones que AC 32 no lista`);
+    }
+
+    // la noche: la foto de Proyectos dice «sin estimaciones» y ninguna épica trae una
+    const SNAP = require(path.join(ROOT, 'scripts', 'nightly', 'projects', 'snapshot.js'));
+    const foto = SNAP.fotoDeRepo(repo, { budgetMs: 20000, sdlc: null, sdlcError: 'sin métricas en la prueba', orgConfig: SIN_CLAVE });
+    assert.strictEqual(foto.cobertura.estimaciones.estado, 'sin_registro');
+    assert.ok(foto.epicas.every((e) => e.estimacion === null), JSON.stringify(foto.epicas));
+    assert.deepStrictEqual(estimFueraDeLista(foto, '$', rutas), [], 'la foto de Proyectos');
+
+    // el sitio: la sección de estimaciones muestra el valor por defecto, sin motivo
+    const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
+    const E = require(CLI);
+    assert.deepStrictEqual(ORG.estimacionesDeHoy(path.dirname(SIN_CLAVE)), { hoy: { ...E.DEFAULTS }, motivo: null });
+
+    // el cierre: sin constancia de horas, estimate-real dice sin_horas y no escribe
+    const real = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'real-hours.js'))
+      .estimateReal({ storyPath: story, run: 'abc123', repo, home, env });
+    assert.deepStrictEqual([real.code, real.result.reason], [0, 'sin_horas']);
+    assert.strictEqual(fs.existsSync(path.join(repo, REGISTRO)), false, 'sin horas no se crea el registro');
+
+    // el pedido de trabajo: sin registro, la línea del paso que lo marca activo no nombra la estimación
+    const capa = path.join(base, 'platform.js');
+    fs.writeFileSync(capa, "process.stdout.write(JSON.stringify({ ok: true, value: { id: 7, estado: 'Active', previo: 'New', changed: true }, summary: 'pedido de trabajo #7: New → Active' }) + '\\n');");
+    const FLAGS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'external-flags.js'));
+    const marcado = FLAGS.adoMarkActive({ workItem: 7, repoDir: repo, storyId: '3.2', platformJs: capa, estimatesJs: CLI, orgConfig: SIN_CLAVE });
+    assert.strictEqual(marcado.marked, true);
+    assert.doesNotMatch(marcado.line, /estim/i);
+
+    // la lista es cerrada: una clave con «estim» inventada la pone roja
+    assert.deepStrictEqual(estimFueraDeLista({ ...breve, estimacion_inventada: 1 }, '$', rutas), ['$.estimacion_inventada']);
+    assert.deepStrictEqual(estimFueraDeLista({ acciones: ['estimado a ojo: 3 días'] }), ['$.acciones[0]: estimado a ojo: 3 días']);
+    const tam = 'TAMAÑO: corrida liviana (sin código) · estimado 12 min';
+    assert.deepStrictEqual(estimFueraDeLista({ t: tam }), []);
+    assert.deepStrictEqual(estimFueraDeLista({ t: `${tam} · estimación del pedido: 8 h` }).length, 1);
+    // una carpeta con el nombre de la historia no cuenta; lo que dice el texto fuera de la carpeta, sí
+    const clon = '/x/wt-2.75-estimaciones';
+    assert.deepStrictEqual(estimFueraDeLista({ packs_dir: `${clon}/packs` }, '$', [clon]), []);
+    assert.deepStrictEqual(estimFueraDeLista({ nota: `${clon}/packs: estimado a ojo` }, '$', [clon]), ['$.nota: <ruta>/packs: estimado a ojo']);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('T35 CarpetaConElNombre_NoDaRojo @story-2.75 @ac-32', () => {
+  // 🔴 rojo: con la carpeta temporal llamada como la historia, T35 sale roja sin que el código cambie
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 't35-carpeta-'));
+  try {
+    const conNombre = path.join(tmp, 'estimaciones-tmp');
+    fs.mkdirSync(conNombre);
+    const env = { ...process.env, TMPDIR: conNombre, TMP: conNombre, TEMP: conNombre };
+    delete env.NODE_TEST_CONTEXT; // dentro de otra corrida de node --test, el hijo le reportaría al padre y no a su salida
+    const r = spawnSync(process.execPath, ['--test', '--test-name-pattern=SinNada_IgualQueHoy', __filename], { encoding: 'utf8', env });
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /pass 1/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('T36 Censo @story-2.75 @ac-33', () => {
+  // 🔴 rojo: una pieza nueva sin ficha ni suite, o con un shell que el arnés no usa
+  const piezas = ['scripts/lib/estimates.js', 'scripts/lib/similar-stories.js', 'skills/tycon-pipeline/scripts/lib/real-hours.js'];
+  for (const p of piezas) {
+    const codigo = fs.readFileSync(path.join(ROOT, p), 'utf8');
+    assert.doesNotMatch(codigo, /execSync|shell\s*:\s*true/, p);
+  }
+  for (const p of piezas.slice(0, 2)) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, p), 'utf8'), /azure|github|clockify|solidtime/i, p);
+  const guia = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  const detalle = fs.readFileSync(path.join(ROOT, 'guides', 'maintaining', 'piezas-en-detalle.md'), 'utf8');
+  for (const p of piezas) {
+    assert.match(guia, new RegExp(`^## ${p.replace(/[.]/g, '\\.')}$`, 'm'), `${p}: sin ficha en piezas-del-arnes.md`);
+    assert.match(detalle, new RegExp(`^## ${p.replace(/[.]/g, '\\.')}$`, 'm'), `${p}: sin detalle en piezas-en-detalle.md`);
+  }
+  const suites = JSON.stringify(JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8')));
+  for (const ruta of ['tests/estimates.test.js', 'tests/similar-stories.test.js', 'tycon-pipeline/scripts/tests/estimate-real.test.js', 'tests/platform-estimate.test.js']) {
+    assert.ok(suites.includes(`"${ruta}"`), `${ruta}: sin su suite en suites.json`);
+  }
+});
