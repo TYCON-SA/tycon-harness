@@ -111,7 +111,7 @@ function noFirmaLaFrase(comando, conFrase, sinFrase = { conversacion: [deLaPerso
   assert.notStrictEqual(veredicto(con), 'allow', `${comando}: la frase dejó pasar: ${con.stderr}`);
   assert.strictEqual(veredicto(con), veredicto(sin), `${comando}: con la frase decide distinto que sin ella`);
   assert.ok(!constancias(con.home).some((c) => c.via === 'persona'), `${comando}: anotó a la persona`);
-  if (veredicto(con) === 'deny') assert.match(con.stderr, /Esta firma se da en tu terminal/, comando);
+  if (veredicto(con) === 'deny') assert.match(con.stderr, /Esta firma se da en tu terminal|firma la emergencia en su terminal/, comando);
   return con;
 }
 
@@ -137,10 +137,10 @@ test('T3 SafetyEscape_FraseDeLaPersona_NoFirma — con «autorizo TYCON_SAFETY_O
   for (const [comando, herramienta] of [[PREFIJO, 'Bash'], [PREFIJO_PS, 'PowerShell']]) {
     noFirmaLaFrase(comando, { herramienta, conversacion: [deLaPersona(`ok, ${FRASE} para este commit`, 5)] }, { herramienta, conversacion: [deLaPersona('commiteá')] });
   }
-  // en Codex frena siempre, y el cartel dice cómo se firma en la terminal
+  // en Codex también frena, y el cartel dice que el prefijo ya no apaga nada y cuál es la salida
   const r = freno(PREFIJO, { codex: true, conversacion: [deLaPersona(FRASE, 5)] });
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /Codex no tiene ventana de permiso[^\n]*Esta firma se da en tu terminal: TYCON_SAFETY_OFF=1 <comando>\./);
+  assert.match(r.stderr, /TYCON_SAFETY_OFF ya no apaga este freno[^]*harness\.js sign emergency/);
   assert.ok(!constancias(r.home).some((c) => c.veredicto === 'escape'), 'frenado, no deja constancia de escape');
 });
 
@@ -193,47 +193,52 @@ test('T9 SafetyEscape_SinConversacion_DiceElCamino — sin conversación legible
   assert.notStrictEqual(veredicto(r), 'allow', r.stderr);
   const codex = freno(PREFIJO, { conversacion: null, codex: true });
   assert.strictEqual(codex.status, 2, codex.stderr);
-  assert.match(codex.stderr, /Esta firma se da en tu terminal: TYCON_SAFETY_OFF=1 <comando>\./);
-  assert.match(codex.stderr, /ventana de permiso de la herramienta, o lo corre ella en su terminal/);
+  assert.match(codex.stderr, /lo decide la persona, no el agente: firma la emergencia en su terminal/);
 });
 
-test('T10 SafetyEscape_AmbienteDelDev_SigueValiendo — la variable en el ambiente del proceso apaga el freno sin la frase', () => {
+// 🔴 rojo: con la variable en el ambiente, el freno se apagaba para toda la sesión. Ahora la única salida es la emergencia.
+test('T10 SafetyEscape_AmbienteDelDev_YaNoApaga — la variable en el ambiente del proceso ya no apaga el freno, y el cartel lo dice', () => {
   const r = freno(COMMIT_SIN_HOOKS, { env: { TYCON_SAFETY_OFF: '1' } });
-  assert.strictEqual(r.status, 0, r.stderr);
-  const c = constancias(r.home);
-  assert.deepStrictEqual(c.map((x) => [x.regla, x.veredicto, x.via]), [['GIT-C2', 'escape', 'ambiente']]);
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /TYCON_SAFETY_OFF ya no apaga este freno/);
+  assert.match(r.stderr, /harness\.js sign emergency --reason/);
+  assert.ok(!constancias(r.home).some((c) => c.veredicto === 'escape'), 'frenado, no deja constancia de escape');
 });
 
 // ESC-C1: los escapes de los hooks de git, escritos en el comando. Como GIT-C2, mira el comando crudo: la asignación
 // dentro de un `bash -c`, un `eval`, un bloque o un texto también frena (de más, nunca de menos)
 const ESC_FRENA = [
-  ['Bash', 'TYCON_PROD_LINT=0 git commit -m x'],
+  ['Bash', 'TYCON_NEW_NAMES=0 git commit -m x'],
   ['Bash', 'export TYCON_NEW_NAMES=0; git commit -m x'],
-  ['Bash', 'env TYCON_PROD_LINT=0 git commit -m x'],
+  ['Bash', 'env TYCON_NEW_NAMES=0 git commit -m x'],
   ['Bash', 'git add . && TYCON_NEW_NAMES=0 git commit -m x'],
-  ['Bash', 'GIT_AUTHOR_NAME=a TYCON_PROD_LINT=0 git commit -m x'],
-  ['Bash', "TYCON_PROD_LINT='0' git commit -m x"],
-  ['Bash', 'bash -c "TYCON_PROD_LINT=0 git commit -m x"'],
+  ['Bash', 'GIT_AUTHOR_NAME=a TYCON_NEW_NAMES=0 git commit -m x'],
+  ['Bash', "TYCON_NEW_NAMES='0' git commit -m x"],
+  ['Bash', 'bash -c "TYCON_NEW_NAMES=0 git commit -m x"'],
   ['Bash', "sh -c 'TYCON_NEW_NAMES=0 git commit -m x'"],
-  ['Bash', 'eval "TYCON_PROD_LINT=0 git commit -m x"'],
+  ['Bash', 'eval "TYCON_NEW_NAMES=0 git commit -m x"'],
   ['Bash', 'env "TYCON_NEW_NAMES=0" git commit -m x'],
-  ['Bash', 'env -u HOME TYCON_PROD_LINT=0 git commit -m x'],
-  ['Bash', 'if true; then TYCON_PROD_LINT=0 git commit -m x; fi'],
+  ['Bash', 'env -u HOME TYCON_NEW_NAMES=0 git commit -m x'],
+  ['Bash', 'if true; then TYCON_NEW_NAMES=0 git commit -m x; fi'],
   ['Bash', '{ TYCON_NEW_NAMES=0 git commit -m x; }'],
-  ['Bash', 'echo TYCON_PROD_LINT=0'],
-  ['PowerShell', '$env:TYCON_PROD_LINT=0; git commit -m x'],
+  ['Bash', 'echo TYCON_NEW_NAMES=0'],
+  ['PowerShell', '$env:TYCON_NEW_NAMES=0; git commit -m x'],
   ['PowerShell', "$Env:TYCON_NEW_NAMES = '0'; git commit -m x"],
-  ['PowerShell', "$Env:Tycon_Prod_Lint='0'; git commit -m x"],
+  ['PowerShell', "$Env:Tycon_New_Names='0'; git commit -m x"],
 ];
+// `TYCON_PROD_LINT=0` ya no apaga la revisión del catálogo de producción (la salida es la emergencia del commit):
+// escrita no hace nada, y el freno no la mira
 const ESC_PASA = [
   ['Bash', 'grep -rn TYCON_NEW_NAMES scripts'],
-  ['Bash', 'TYCON_PROD_LINT=1 git commit -m x'],
-  ['Bash', 'TYCON_PROD_LINT_X=0 git commit -m x'],
-  ['Bash', 'MY_TYCON_PROD_LINT=0 git commit -m x'],
-  ['PowerShell', 'Write-Host $env:TYCON_PROD_LINT'],
+  ['Bash', 'TYCON_NEW_NAMES=1 git commit -m x'],
+  ['Bash', 'TYCON_NEW_NAMES_X=0 git commit -m x'],
+  ['Bash', 'MY_TYCON_NEW_NAMES=0 git commit -m x'],
+  ['PowerShell', 'Write-Host $env:TYCON_NEW_NAMES'],
+  ['Bash', 'TYCON_PROD_LINT=0 git commit -m x'],
+  ['PowerShell', '$env:TYCON_PROD_LINT=0; git commit -m x'],
 ];
 
-test('T11 EscC1_ProdLintYNewNamesEnLaLinea_SinFrase_Frena — el agente no se apaga solo la revisión de producción ni la de nombres', () => {
+test('T11 EscC1_NewNamesEnLaLinea_SinFrase_Frena — el agente no se apaga solo la revisión de nombres', () => {
   for (const [herramienta, comando] of ESC_FRENA) {
     const r = freno(comando, { herramienta, conversacion: [deLaPersona('commiteá')] });
     assert.strictEqual(r.status, 2, `${comando}: ${r.stderr}`);
@@ -242,10 +247,9 @@ test('T11 EscC1_ProdLintYNewNamesEnLaLinea_SinFrase_Frena — el agente no se ap
 });
 
 test('T12 EscC1_ConFrase_NoFirma — «autorizo <variable>» en la conversación no deja pasar: la firma va a la ventana', () => {
-  noFirmaLaFrase('TYCON_PROD_LINT=0 git commit -m x', { conversacion: [deLaPersona('autorizo TYCON_PROD_LINT, el catálogo nuevo lo reviso yo')] });
-  noFirmaLaFrase('TYCON_NEW_NAMES=0 git commit -m x', { conversacion: [deLaPersona('autorizo TYCON_PROD_LINT')] });
+  noFirmaLaFrase('TYCON_NEW_NAMES=0 git commit -m x', { conversacion: [deLaPersona('autorizo TYCON_NEW_NAMES, el nombre lo reviso yo')] });
   // con el escape a la ventana, las demás reglas siguen mirando: con otra regla que frena, nunca pide la ventana
-  const otra = freno('TYCON_PROD_LINT=0 git commit --no-verify -m x', { conversacion: [deLaPersona('autorizo TYCON_PROD_LINT')] });
+  const otra = freno('TYCON_NEW_NAMES=0 git commit --no-verify -m x', { conversacion: [deLaPersona('autorizo TYCON_NEW_NAMES')] });
   assert.strictEqual(veredicto(otra), 'deny', otra.stderr);
   assert.match(otra.stderr, /GIT-C2|ESC-C1/);
 });
@@ -258,11 +262,11 @@ test('T13 EscC1_SoloNombrarLaVariable_NoFrena — nombrarla sin asignarle 0, o d
 });
 
 test('T14 SafetyEscape_Cartel_DiceLaVentanaYNoLaFrase — el cartel dice que lo decide la persona en la ventana o en su terminal', () => {
-  const casos = [COMMIT_SIN_HOOKS, 'npm publish', 'dotnet nuget push x.nupkg', 'sqlcmd -Q "DROP DATABASE acme_dev"', 'sqlcmd -Q "DROP TABLE t"', 'TYCON_PROD_LINT=0 git commit -m x'];
+  const casos = [COMMIT_SIN_HOOKS, 'npm publish', 'dotnet nuget push x.nupkg', 'sqlcmd -Q "DROP DATABASE acme_dev"', 'sqlcmd -Q "DROP TABLE t"', 'TYCON_NEW_NAMES=0 git commit -m x'];
   for (const comando of casos) {
     const r = freno(comando, { codex: true });
     assert.strictEqual(r.status, 2, comando);
-    assert.match(r.stderr, /lo decide la persona, no el agente[^]*ventana de permiso de la herramienta, o lo corre ella en su terminal/, `${comando}: el cartel no dice quién lo decide`);
+    assert.match(r.stderr, /lo decide la persona, no el agente[^]*(ventana de permiso de la herramienta, o lo corre ella en su terminal|firma la emergencia en su terminal)/, `${comando}: el cartel no dice quién lo decide`);
     assert.doesNotMatch(r.stderr, /autorizo TYCON_/, `${comando}: el cartel todavía pide la frase`);
     assert.doesNotMatch(r.stderr, /Override por comando|TYCON_SAFETY_OFF=1 (npm publish|<cmd>)/, `${comando}: el cartel enseña la receta`);
   }
@@ -297,10 +301,10 @@ test('T18 EscC2_EscribirLaConversacion_Frena — el agente no puede escribir en 
 });
 
 test('T19 EscC1_MotivoEnElCartel — el cartel de ESC-C1 dice por qué la ventana no lo dejó pasar y cómo se firma', () => {
-  const r = freno('TYCON_PROD_LINT=0 git commit -m x', { codex: true, conversacion: [deLaPersona('autorizo TYCON_PROD_LINT', 45)] });
+  const r = freno('TYCON_NEW_NAMES=0 git commit -m x', { codex: true, conversacion: [deLaPersona('autorizo TYCON_NEW_NAMES', 45)] });
   assert.strictEqual(r.status, 2);
-  assert.match(r.stderr, /\[ESC-C1\][^]*\nCodex no tiene ventana de permiso: pedirla deja correr el comando\. Esta firma se da en tu terminal: TYCON_PROD_LINT=0 <comando>\.\n/);
-  assert.match(r.stderr, /lo decide la persona, no el agente: se repite el comando con TYCON_PROD_LINT=0 adelante/, 'dice quién lo decide, con el valor de la variable');
+  assert.match(r.stderr, /\[ESC-C1\][^]*\nCodex no tiene ventana de permiso: pedirla deja correr el comando\. Esta firma se da en tu terminal: TYCON_NEW_NAMES=0 <comando>\.\n/);
+  assert.match(r.stderr, /lo decide la persona, no el agente: se repite el comando con TYCON_NEW_NAMES=0 adelante/, 'dice quién lo decide, con el valor de la variable');
   assert.doesNotMatch(r.stderr, /\.\.$/m, 'el motivo no cierra con dos puntos');
 });
 
@@ -331,7 +335,7 @@ test('T21 SafetyEscape_SinSesion_NoAutoriza — el freno sin la sesión en la en
     env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_SAFETY_OFF: '' }, encoding: 'utf8' });
   const v = veredicto({ status: sin.status, stdout: sin.stdout || '' });
   assert.notStrictEqual(v, 'allow', sin.stderr);
-  if (v === 'deny') assert.match(sin.stderr, /Esta firma se da en tu terminal/);
+  if (v === 'deny') assert.match(sin.stderr, /Esta firma se da en tu terminal|firma la emergencia en su terminal/);
 });
 
 test('T22 SafetyEscape_ReenvioPorElFreno_NoFirma — el freno entero, con un árbol que declara la sesión que reenvía', () => {
@@ -431,9 +435,9 @@ test('T26 SafetyEscape_RenglonDespuesDelPedido_NoAutoriza — la punta es el ped
 
 test('T27 EscC1_AnyValueButOne_Blocks — cualquier valor menos 1, también con comillas en el nombre', () => {
   for (const comando of [
-    "TYCON_PROD_LINT=''0 git commit -m x", 'TYCON_PROD_LINT+=0 git commit -m x', "TYCON_PROD_LINT=$'0' git commit -m x",
-    'TYCON_PROD_LINT=${Z:-0} git commit -m x', "export TYCON_PROD_LIN''T=0; git commit -m x",
-    'printf -v TYCON_PROD_LINT 0; export TYCON_PROD_LINT; git commit -m x', 'TYCON_NEW_NAMES=""0 git commit -m x',
+    "TYCON_NEW_NAMES=''0 git commit -m x", 'TYCON_NEW_NAMES+=0 git commit -m x', "TYCON_NEW_NAMES=$'0' git commit -m x",
+    'TYCON_NEW_NAMES=${Z:-0} git commit -m x', "export TYCON_NEW_NAM''ES=0; git commit -m x",
+    'printf -v TYCON_NEW_NAMES 0; export TYCON_NEW_NAMES; git commit -m x', 'TYCON_NEW_NAMES=""0 git commit -m x',
     'declare -x TYCON_NEW_NAMES=0; git commit -m x', 'TYCON_PROD_LINT=1 TYCON_NEW_NAMES=0 git commit -m x',
   ]) {
     const r = freno(comando);
@@ -515,7 +519,7 @@ test('T15 SafetyEscape_SinEscape_NoLlamaANode — la ventana sólo se consulta c
   const llamadas = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '');
   freno(COMMIT_SIN_HOOKS, { path: dir });
   assert.doesNotMatch(llamadas(), /owner-window|escape-ok/, 'consultó la ventana sin escape');
-  freno(PREFIJO, { path: dir, conversacion: [deLaPersona(FRASE)] });
+  freno('TYCON_NEW_NAMES=0 git commit -m x', { path: dir, conversacion: [deLaPersona('seguí')] });
   assert.match(llamadas(), /owner-window/, 'con el escape sí la consulta (el node de mentira se usa)');
 });
 

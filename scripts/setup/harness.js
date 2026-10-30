@@ -129,6 +129,8 @@ const COMMANDS = {
   // pasa a `install` tal cual, que es quien las valida (`passthrough`: `parse` entrega los argumentos sin mirarlos)
   npx:       { opts: {}, passthrough: true, help: 'lo que sigue a la bajada de `npx @tyconsa/harness@latest` (el paquete baja este árbol y lo corre con el commit en TYCON_NPX_COMMIT): revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y que haya Claude Code o Codex, y dice lo que falta sin instalar nada; sin preguntas, es para mí (--team <repo> para sumarte a un equipo, --audience team|org para elegir, org da de alta tu organización), con la instalación mínima, ninguna conexión opcional y sin paquete; después corre install --version latest --defaults de este árbol: muestra un plan de cinco renglones y pregunta una sola vez «¿Instalo? [s/N]». Con el arnés ya instalado no lo reinstala: dice si está al día, o pregunta «¿Actualizo? [s/N]» y corre el update de este árbol. Sin nadie delante, --yes acepta el plan. Sale 0 bien o nada que hacer, 1 si falta algo, 2 por un uso mal hecho o una confirmación pendiente' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
+  // `extraPositional`: el id de la firma lo valida el catálogo, no la tabla; `rest`: lo que sigue a `--` es el comando
+  sign:      { opts: { '--reason': 'value', '--target': 'value', '--ordered-by': 'value' }, extraPositional: () => true, rest: true, help: 'firma un id del catálogo (guides/firmas-del-arnes.md) en tu terminal y lo anota en el registro común de firmas; una excepción (nivel 2) o más pide --reason, y el nivel es el mayor entre el catálogo y lo que sube el perfil del equipo (approvals.levels). La emergencia, la única salida de un freno: `sign emergency --reason "<por qué>" -- \'<comando exacto>\'` deja un permiso para ese comando, tal cual, de un solo uso y por 30 minutos (un `git commit` lo consume el próximo commit en ese repo). --target dice sobre qué, --ordered-by quién la pidió. Sale 0 firmó, 1 no firmó o el registro no escribió, 2 uso mal hecho o sin terminal' },
 };
 
 function usage() {
@@ -155,6 +157,14 @@ function parse(argv) {
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') return { help: true, cmd };
+    // `rest`: lo que sigue a `--` es un comando, un solo argumento entre comillas: partido en palabras se pierden sus
+    // comillas y ya no es el texto exacto
+    if (a === '--' && spec.rest) {
+      const resto = argv.slice(i + 1);
+      if (resto.length !== 1) return { error: `después de -- va el comando exacto entre comillas, como un solo argumento (llegaron ${resto.length})` };
+      opts.command = resto[0];
+      break;
+    }
     if (a.startsWith('-')) {
       const kind = spec.opts[a];
       // en `config`, lo que empieza con guion puede ser un secreto pegado en el lugar equivocado: no se repite
@@ -5033,7 +5043,25 @@ function cmdTeamInit(ctx) {
 /** `npx`: lo que sigue a la bajada del paquete de npm (scripts/setup/harness/npx.js), siempre con el código de ESTE árbol. */
 function cmdNpx(ctx) { return mod('npx').run(ctx); }
 
+/** `sign <firma>`: la firma en la terminal y su renglón en el registro común (lib/harness-sign.js). */
+function cmdSign(ctx) {
+  const [id, ...sobra] = ctx.args;
+  if (!id) return { code: 2, lines: ['harness.js sign: falta el id de la firma (guides/firmas-del-arnes.md)'] };
+  if (sobra.length) return { code: 2, lines: [`harness.js sign: una firma por vez (sobra «${sobra[0]}»); el comando de la emergencia va después de --`] };
+  // lo que sube la organización; sin poder leerlo, null: se pide motivo también para la rutina
+  let levels = null;
+  try {
+    const r = require('../lib/tycon-config.js').cargar({ env: ctx.env, home: ctx.home });
+    const roto = (r.errores || []).some((e) => e.clave == null || /^approvals(\.|$)/.test(String(e.clave)));
+    if (!roto) levels = (r.valores && r.valores.approvals && r.valores.approvals.levels) || {};
+  } catch (_) { levels = null; }
+  return require('../lib/harness-sign.js').sign({
+    id, reason: ctx.opts.reason, command: ctx.opts.command, target: ctx.opts.target, orderedBy: ctx.opts['ordered-by'], levels,
+  });
+}
+
 const HANDLERS = {
+  sign: cmdSign,
   install: cmdInstall,
   startup: cmdStartup,
   config: cmdConfig,

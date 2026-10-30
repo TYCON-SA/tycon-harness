@@ -149,17 +149,27 @@ fi
 # usuario de la base NO va (vive junto a la contraseña, en el Llavero). A diferencia del bloque
 # 1b, acá el veredicto MANDA: una declaración mal formada deja el freno decidiendo con basura.
 # Con su nombre anterior (`.tycon/produccion.json`) también, hasta que los productos migren.
+# La única salida es la emergencia de un `git commit` que la persona firmó en su terminal en este repo
+# (lib/harness-sign.js): se gasta sólo si el catálogo rechaza. `TYCON_PROD_LINT=0` ya no apaga nada; se dice.
 LINT_PROD="$_TCG_DIR/scripts/production/lint-production-json.js"
-if [ "${TYCON_PROD_LINT:-1}" != "0" ]; then
-  if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
-    if ! "$HNODE" "$LINT_PROD" --staged --repo "$REPO_ROOT"; then
+SIGN_LIB="$_TCG_DIR/scripts/lib/harness-sign.js"
+if [ "${TYCON_PROD_LINT:-1}" = "0" ]; then
+  echo "ℹ TYCON_PROD_LINT=0 ya no apaga la revisión del catálogo de producción: la salida es la emergencia (harness.js sign emergency)" >&2
+fi
+if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
+  if ! "$HNODE" "$LINT_PROD" --staged --repo "$REPO_ROOT"; then
+    if [ -f "$SIGN_LIB" ] && _emerg="$("$HNODE" "$SIGN_LIB" consume-commit --repo "$REPO_ROOT" 2>/dev/null)"; then
+      echo "⚠ el catálogo de producción rechazó el commit y pasa por la emergencia firmada: ${_emerg}" >&2
+    else
       echo "⛔ el catálogo de producción rechazó el commit (.tycon/production.json)" >&2
+      echo "   Arreglá el catálogo. Si hay que commitear igual, lo decide la persona: firma en su terminal, en este repo," >&2
+      echo "   node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" -- 'git commit …'" >&2
       exit 1
     fi
-  elif git -C "$REPO_ROOT" diff --cached --name-only 2>/dev/null | grep -E '\.tycon/(production|produccion)\.json$' >/dev/null; then
-    # sin el lint o sin node NO se saltea en silencio cuando el commit toca el catálogo: se dice
-    echo "⚠ el commit toca el catálogo de producción (.tycon/production.json) y no pude verificarlo (falta $LINT_PROD o node)" >&2
   fi
+elif git -C "$REPO_ROOT" diff --cached --name-only 2>/dev/null | grep -E '\.tycon/(production|produccion)\.json$' >/dev/null; then
+  # sin el lint o sin node NO se saltea en silencio cuando el commit toca el catálogo: se dice
+  echo "⚠ el commit toca el catálogo de producción (.tycon/production.json) y no pude verificarlo (falta $LINT_PROD o node)" >&2
 fi
 
 # ── 2. Sync de engram ──────────────────────────────────────────────────────────────────────────

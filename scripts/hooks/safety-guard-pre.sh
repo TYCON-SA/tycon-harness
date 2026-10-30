@@ -17,10 +17,10 @@
 #   - Solo BLOCK (exit 2) — no hay WARN para evitar ruido.
 #   - Denylist explícita y corta. v1 cubre los desastres irreversibles.
 #   - Opt-in vía hook registrado (la guía explica cómo activarlo).
-#   - Escape por comando: `TYCON_SAFETY_OFF=1 <cmd>`, que vale sólo si la persona lo aprueba en la ventana de
-#     permiso de la herramienta (lib/owner-window.js) o lo corre ella en su terminal: el agente lo puede escribir,
-#     la aprobación no.
-#   - Escape de sesión: `TYCON_SAFETY_OFF=1` en el ambiente, puesto por el dev antes de abrir la sesión.
+#   - Una sola salida, la emergencia: la persona la firma en su terminal para un comando, tal cual
+#     (`harness.js sign emergency --reason "<por qué>" -- '<comando>'`, lib/harness-sign.js), y el freno la consume
+#     cuando el agente corre ese texto exacto: un solo uso, 30 minutos. `TYCON_SAFETY_OFF=1`, en el ambiente o como
+#     prefijo del comando, ya no apaga nada: el cartel lo dice.
 #   - Off completo: remové el hook de settings.json.
 #   - Log de bloqueos en ~/.claude/safety-guard.log para retro/audit.
 #   - Fail-open: si el script crashea por cualquier motivo, NO bloquea
@@ -119,12 +119,11 @@ salida_ok() {
 }
 trap 'salida_ok' ERR
 
-# Override de emergencia. NO se sale acá: se marca y se sigue evaluando, para que la
-# constancia pueda anotar QUÉ regla se esquivó. El comportamiento no cambia:
-# con el override puesto, block() sale 0 en vez de 2.
-SAFETY_OFF=0
+# `TYCON_SAFETY_OFF=1` en el ambiente ya no apaga el freno: quedó una sola salida, la emergencia. Se anota para que el
+# cartel lo diga.
+SAFETY_OFF_VIEJO=0
 if [[ "${TYCON_SAFETY_OFF:-0}" == "1" ]]; then
-  SAFETY_OFF=1
+  SAFETY_OFF_VIEJO=1
 fi
 
 # ============================================================
@@ -184,8 +183,6 @@ read_field() {
 # No se pudo leer la entrada: el comando pasa SIN revisar, y se DICE (decisión a confirmar: ver el
 # encabezado). Una sola línea: la herramienta le muestra a la persona la primera de stderr.
 cannot_read() {
-  # Con el freno apagado por el dev (TYCON_SAFETY_OFF=1 en el ambiente) no hay nada que avisar.
-  if [[ "${SAFETY_OFF:-0}" == "1" ]]; then exit 0; fi
   local reason="la entrada no se pudo leer como UN documento JSON"
   if [[ -z "$INPUT" ]]; then reason="la entrada llegó vacía o no se pudo leer"
   elif [[ "$HAS_JQ" == "0" && "$HAS_NODE" == "0" ]]; then reason="no hay ni jq ni node en el PATH de este hook"; fi
@@ -200,9 +197,8 @@ CMD_SHOWN="$CMD"
 CWD="$(read_field cwd)" || cannot_read
 if [[ -z "$CMD" ]]; then exit 0; fi
 
-# `TYCON_SAFETY_OFF=1 <cmd>` pegado al principio del comando es un PEDIDO de escape, no un escape: el agente lo
-# puede escribir solo. Vale si la persona lo aprueba en la ventana de permiso (lo pide `block()` con ow_gate, y sólo
-# cuando una regla frena).
+# `TYCON_SAFETY_OFF=1 <cmd>` pegado al principio del comando ya no es un escape: no pide la ventana ni apaga nada. Se
+# anota para que el cartel diga cuál es la salida ahora.
 SAFETY_OFF_PEDIDO=0
 if [[ "$CMD" =~ ^[[:space:]]*TYCON_SAFETY_OFF=1[[:space:]] ]]; then
   SAFETY_OFF_PEDIDO=1
@@ -228,9 +224,7 @@ tool_is_ps() {
   [[ "$TOOL_NAME" == "PowerShell" ]]
 }
 
-# La forma de PowerShell del override: `$env:TYCON_SAFETY_OFF=1; <cmd>` (el prefijo de bash ahí no es
-# sintaxis válida). Igual que el de bash, sólo pegado al PRINCIPIO del comando. Y sólo por la herramienta
-# PowerShell: por Bash ese prefijo no asigna nada y no puede apagar el freno.
+# La forma de PowerShell del prefijo viejo: `$env:TYCON_SAFETY_OFF=1; <cmd>`. Tampoco apaga nada; se anota igual.
 if ps_match '^[[:space:]]*\$env:TYCON_SAFETY_OFF[[:space:]]*=[[:space:]]*["'"'"']?1["'"'"']?[[:space:]]*;' && tool_is_ps; then
   SAFETY_OFF_PEDIDO=1
 fi
@@ -239,7 +233,7 @@ fi
 # que vio este freno, con `--escape`; las firmas de los guiones las lee el propio módulo del comando. Deja OW_DECISION
 # (ask, deny, allow o none), OW_TEXTO, OW_FIRMA, OW_VIA, OW_RELEVO y OW_JSON (lo que se emite para pedir la ventana).
 # Sin con qué consultar, o si la consulta se cae, niega: lo que no se pudo decidir lo firma la persona en su terminal.
-OW_ESCAPES=(); OW_NEGANDO=0
+OW_ESCAPES=()
 OW_DECISION=""; OW_TEXTO=""; OW_FIRMA=""; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
 ow_gate() {
   OW_DECISION=""; OW_FIRMA="${1:-}"; OW_VIA=""; OW_RELEVO=""; OW_JSON=""
@@ -314,17 +308,28 @@ ow_vencer() {
     "Avisale a la persona: el pedido se vence solo a los 30 minutos, o lo firma ella en su terminal."
 }
 
-# El prefijo `TYCON_SAFETY_OFF=1` que pidió el comando no valió: el porqué, para el cartel de block().
-SAFETY_MOTIVO=""; ESC_MOTIVO_VAR=""
+ESC_MOTIVO_VAR=""
 
-# cartel_escape <VARIABLE> <valor> — lo que dice el cartel de cómo se saltea el freno: lo decide la persona.
-cartel_escape() {
-  if tool_is_ps; then
-    echo "Saltear este freno lo decide la persona, no el agente: se repite el comando con \$env:$1=$2; adelante y la"
-  else
-    echo "Saltear este freno lo decide la persona, no el agente: se repite el comando con $1=$2 adelante y la"
-  fi
-  echo "persona lo aprueba en la ventana de permiso de la herramienta, o lo corre ella en su terminal."
+# cartel_emergencia — cómo se saltea el freno: la emergencia, que la persona firma en su terminal para este comando.
+cartel_emergencia() {
+  echo "Saltear este freno lo decide la persona, no el agente: firma la emergencia en su terminal, para este comando tal cual,"
+  echo "  node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" -- '<el comando de arriba>'"
+  echo "y después se repite el mismo comando, sin cambiarle nada. Vale una vez, por 30 minutos."
+}
+
+# emergencia_vale — ¿la persona firmó la emergencia para ESTE comando, tal como llegó? La consume: un solo uso. Una
+# vencida deja su motivo en EMERGENCIA_AVISO. Sin con qué mirar, no vale. Las salidas distintas de 0 van en una lista
+# con `||`: así no disparan el `trap … ERR`, que dejaría pasar el comando.
+EMERGENCIA_AVISO=""
+emergencia_vale() {
+  local lib out rc
+  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-sign.js" || return 1
+  [[ -f "$lib" ]] || return 1
+  command -v "$HNODE" >/dev/null 2>&1 || return 1
+  out="$(printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" consume 2>/dev/null)" && rc=0 || rc=$?
+  [[ "$rc" == "0" ]] && return 0
+  [[ "$rc" == "3" ]] && EMERGENCIA_AVISO="$out"
+  return 1
 }
 
 # El `cwd` como lo escribe Windows (`C:\Users\…`), con barras hacia adelante: así lo leen las reglas que lo
@@ -378,21 +383,11 @@ block() {
   local reason="$2"
   local alt="${3:-}"
 
-  # Freno apagado: se sale 0 SIN mensaje y SIN escribir el registro propio, pero dejando constancia de QUÉ regla se
-  # esquivó y por qué camino. La variable del ambiente la puso el dev antes de abrir la sesión; el prefijo pide la
-  # ventana de permiso, y el comando corre sólo si la persona dice que sí.
-  if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
-    constancia "$rule" escape ambiente
+  # La emergencia firmada para este comando: pasa, con la constancia de QUÉ regla se esquivó. La firma de la persona,
+  # con su motivo, ya está en el registro común de firmas.
+  if emergencia_vale; then
+    constancia "$rule" escape persona
     exit 0
-  fi
-  if [[ "$SAFETY_OFF_PEDIDO" == "1" && "$OW_NEGANDO" != "1" ]]; then
-    ow_gate escape:TYCON_SAFETY_OFF ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}
-    if [[ "$OW_DECISION" == "ask" ]]; then
-      constancia "$rule" escape ventana
-      OW_ASK_JSON="$OW_JSON"
-      salida_ok
-    fi
-    SAFETY_MOTIVO="$OW_TEXTO"
   fi
   local ts
   ts="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -421,12 +416,11 @@ block() {
       if [[ -n "$ESC_VARIABLE" ]]; then
         _m="${ESC_MOTIVO_VAR:-la persona no lo autorizó}"
         echo "El comando trae $ESC_VARIABLE=$ESC_VALOR y no vale: ${_m%.}."
-      elif [[ "$SAFETY_OFF_PEDIDO" == "1" ]]; then
-        _m="${SAFETY_MOTIVO:-la persona no lo autorizó}"
-        echo "El comando pidió el escape (TYCON_SAFETY_OFF=1) y no vale: ${_m%.}."
+      elif [[ "$SAFETY_OFF_PEDIDO" == "1" || "$SAFETY_OFF_VIEJO" == "1" ]]; then
+        echo "TYCON_SAFETY_OFF ya no apaga este freno: quedó una sola salida, la emergencia."
       fi
-      # la regla ESC-C1 nombra su propia variable en el motivo; las demás, la del freno
-      cartel_escape "${ESC_VARIABLE:-TYCON_SAFETY_OFF}" "${ESC_VALOR:-1}"
+      if [[ -n "$EMERGENCIA_AVISO" ]]; then echo "Había una emergencia firmada para este comando y no vale: ${EMERGENCIA_AVISO%.}."; fi
+      cartel_emergencia
     fi
     echo ""
     echo "Apagar este hook del todo lo decide el dev (guides/safety-guard.md)."
@@ -473,9 +467,8 @@ fi
 
 # --- Escapes de los hooks de git escritos en la línea del comando ------------
 
-# ESC-C1: `TYCON_PROD_LINT` (la revisión del catálogo de servidores de producción) y `TYCON_NEW_NAMES` (el freno de
-# nombres reales en lo que se publica) los lee el hook de git del `git commit`, que hereda el ambiente del comando, y se
-# apagan con el valor 0. Bash da 0 de muchas formas (`=0`, `=''0`, `+=0`, `=$'0'`, `=${X:-0}`, `printf -v`, el nombre
+# ESC-C1: `TYCON_NEW_NAMES` (el freno de nombres reales en lo que se publica) lo lee el hook de git del `git commit`,
+# que hereda el ambiente del comando, y se apaga con el valor 0. Bash da 0 de muchas formas (`=0`, `=''0`, `+=0`, `=$'0'`, `=${X:-0}`, `printf -v`, el nombre
 # partido con comillas), así que se frena CUALQUIER asignación a esas variables salvo `=1` literal, en cualquier parte
 # del comando y con las comillas y barras invertidas sacadas; también `export`, `declare`, `typeset`, `local`,
 # `readonly`, `read` y `printf -v` sobre ellas, y `$env:` en PowerShell (sin distinguir mayúsculas). Nombrarlas sin
@@ -502,7 +495,9 @@ if command -v tr >/dev/null 2>&1; then
 else
   _esc_cmd="${_esc_fuente//[\"\'\\\`]/}"
 fi
-for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE; do
+# `TYCON_PROD_LINT=0` ya no apaga la revisión del catálogo de producción (la salida es la emergencia del commit): no se
+# mira, porque escrita no hace nada.
+for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE; do
   # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
   # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
   shopt -s nocasematch
@@ -556,13 +551,9 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_
   fi
   fi
   # la firma se da en la ventana de permiso: la decide owner-window.js junto con las demás firmas del comando (más
-  # abajo, después de ESC-C7). Con el freno apagado por el ambiente, pasa con su constancia (como en block()).
+  # abajo, después de ESC-C7)
   if [[ "$_esc_hit" == "1" ]]; then
-    if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
-      constancia ESC-C1 escape ambiente "" "$(read_field session_id 2>/dev/null || true)" "$_esc"
-    else
-      OW_ESCAPES+=("escape:$_esc")
-    fi
+    OW_ESCAPES+=("escape:$_esc")
   fi
 done
 ESC_VARIABLE=""; ESC_VALOR=""
@@ -576,8 +567,8 @@ esc_c1_negar() {
     TYCON_TEST_GATE|DOD_BYPASS|TYCON_NO_DEEP_REVIEW|TYCON_STATUS_GATE) ESC_CARTEL="$OW_TEXTO
 Esto lo decide la persona, no el agente: lo aprueba ella en la ventana de permiso de la herramienta, o lo corre ella en su terminal.
 Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>." ;;
-    TYCON_PROD_LINT|TYCON_NEW_NAMES) ESC_CARTEL="$OW_TEXTO
-$(cartel_escape "$1" 0)" ;;
+    TYCON_NEW_NAMES) ESC_CARTEL="$OW_TEXTO
+Saltear este freno lo decide la persona, no el agente: se repite el comando con $1=0 adelante y la persona lo aprueba en la ventana de permiso de la herramienta, o lo corre ella en su terminal." ;;
     *) ESC_CARTEL="$OW_TEXTO" ;;
   esac
   case "$1" in
@@ -593,9 +584,6 @@ $(cartel_escape "$1" 0)" ;;
     TYCON_STATUS_GATE) block "ESC-C1" \
         "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
         "El estado lo cambia el orquestador, que corre los controles del cierre: node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso." ;;
-    TYCON_PROD_LINT) block "ESC-C1" \
-        "TYCON_PROD_LINT=0 apaga, al commitear, la revisión del catálogo de servidores de producción (.tycon/production.json). Un catálogo roto deja al freno de producción decidiendo con datos malos." \
-        "Arreglá el catálogo para que la revisión pase. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo." ;;
     TYCON_NEW_NAMES) block "ESC-C1" \
         "TYCON_NEW_NAMES=0 apaga, al commitear, el freno de nombres reales (clientes, personas, servidores) en lo que se publica." \
         "Reemplazá el nombre por uno inventado, o pedí su excepción en la lista. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo." ;;
@@ -732,10 +720,6 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
         "Sacar una ejecución perdida (marker.js ${_c3_sub} ${_c3_a1}) sin que se vea de qué sesión es ni cuándo se abrió." \
         "Repetí el comando con la sesión escrita literal."
     fi
-    if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
-      constancia "$_c3_regla" escape ambiente "" "$_c3_sid" "$_c3_clave"
-      continue
-    fi
     if [[ -n "$_c3_desde" ]]; then
       _c3_perdida="${_c3_sub}"$'\t'"${_c3_a1}"
       continue
@@ -769,7 +753,6 @@ ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
   esac
 }
 ow_negar() { # la ventana negó: frena con el motivo de la firma
-  OW_NEGANDO=1
   local regla f clave esc sub a1
   regla="$(ow_regla "$OW_FIRMA")" || regla="ESC-C3"
   if [[ "$regla" == "ESC-C1" ]]; then esc_c1_negar "${OW_FIRMA#escape:}"; fi
@@ -816,9 +799,9 @@ _ow_mira=0
 shopt -s nocasematch
 if [[ ${#OW_ESCAPES[@]} -gt 0 || -n "$_c3_perdida" || "$_esc_cmd" == *marker* || "$_esc_cmd" == *pipeline* || "$_esc_cmd" == *e2e-setup* || "$_esc_cmd" == *run-base-controls* ]]; then _ow_mira=1; fi
 shopt -u nocasematch
-# lo que no consulta la ventana (no es una firma, o el freno está apagado) vence igual los pedidos de su sesión
-if [[ "$_ow_mira" != "1" || "${SAFETY_OFF:-0}" == "1" ]]; then ow_vencer; fi
-if [[ "$_ow_mira" == "1" && "${SAFETY_OFF:-0}" != "1" ]]; then
+# lo que no consulta la ventana (no es una firma) vence igual los pedidos de su sesión
+if [[ "$_ow_mira" != "1" ]]; then ow_vencer; fi
+if [[ "$_ow_mira" == "1" ]]; then
   [[ -n "$_c3_sid" ]] || { _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""; }
   ow_gate ${OW_ESCAPES[@]+"${OW_ESCAPES[@]}"}
   case "$OW_DECISION" in
@@ -895,19 +878,15 @@ if [[ -n "$_c5_esc" ]]; then
     _c5_sid="$(read_field session_id 2>/dev/null)" || _c5_sid=""
     # por la consola frena siempre: la firma de la ventana (marker.js sign-file) la consume sólo el Edit o Write, porque
     # de un comando de consola no se sabe con certeza a qué archivo escribe
-    if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
-      constancia ESC-C5 escape ambiente "" "$_c5_sid" "$_c5_esc"
+    ESC_CARTEL="Esto lo decide la persona, no el agente: explicale qué falta y por qué. Si quiere darlo, lo firma en la ventana de permiso con marker.js sign-file ${_c5_esc} <archivo>, y la escritura va después con Edit o Write, nunca por la consola. Cómo lo da ella está en guides/safety-guard.md."
+    if [[ "$_c5_esc" == "ALLOW_DOD_EVIDENCE_WRITE" ]]; then
+      block "ESC-C5" \
+        "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \
+        "Corré la prueba en vivo con su guion (el gate E2E del proyecto o el macro del humo): la evidencia la escribe él."
     else
-      ESC_CARTEL="Esto lo decide la persona, no el agente: explicale qué falta y por qué. Si quiere darlo, lo firma en la ventana de permiso con marker.js sign-file ${_c5_esc} <archivo>, y la escritura va después con Edit o Write, nunca por la consola. Cómo lo da ella está en guides/safety-guard.md."
-      if [[ "$_c5_esc" == "ALLOW_DOD_EVIDENCE_WRITE" ]]; then
-        block "ESC-C5" \
-          "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \
-          "Corré la prueba en vivo con su guion (el gate E2E del proyecto o el macro del humo): la evidencia la escribe él."
-      else
-        block "ESC-C5" \
-          "Agregar dod_runtime_exempt: true a una historia la exime de la prueba en vivo." \
-          "Corré la prueba en vivo. Si la historia de verdad no tiene nada que correr, decíselo a la persona. ¿Sólo la nombrabas en un texto (un heredoc)? Este freno mira el comando entero: escribí ese texto en un archivo."
-      fi
+      block "ESC-C5" \
+        "Agregar dod_runtime_exempt: true a una historia la exime de la prueba en vivo." \
+        "Corré la prueba en vivo. Si la historia de verdad no tiene nada que correr, decíselo a la persona. ¿Sólo la nombrabas en un texto (un heredoc)? Este freno mira el comando entero: escribí ese texto en un archivo."
     fi
   fi
 fi
@@ -1040,8 +1019,7 @@ _GIT_OPTS="(-[-A-Za-z]+(=|[[:space:]]+)${_GIT_WORD}[[:space:]]+|-[-A-Za-z]+[[:sp
 # 🔴 Por POSICIÓN, no por substring. Un segmentador `git[[:space:]]+push[^;&|]*` haría que cualquier
 # MENCIÓN de un push —en un echo, en el cuerpo de un heredoc, en un grep— abriera un segmento que se
 # come párrafos enteros hasta el próximo `;`, y ahí alcanzaría un `-f` de un `[ -f ]` y la palabra
-# `main` para bloquear. Y este freno BLOQUEA: cada falsa alarma enseña `TYCON_SAFETY_OFF=1`, que
-# apaga también el `rm -rf /`.
+# `main` para bloquear. Y este freno BLOQUEA: cada falsa alarma enseña a pedir la emergencia.
 # Un `git push` cuenta sólo si ARRANCA un comando: al principio, o después de `;`, `&&`,
 # `||`, `|`, `(`, con o sin `command`/ruta. Es el mismo criterio que engram-pre-commit.sh (`_GIT`).
 # Un push real tras `&&`, `;` o `(` sigue frenando
@@ -1856,9 +1834,9 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     block "GIT-C4"     "Este comando trae un git add -A / git add . y nombra más de ${GIT_C4_MAX} carpetas distintas con cd, pushd o -C (o tantas, encadenadas, que dan más de ${GIT_C4_MAX_TRIES} combinaciones): el freno no las puede seguir a todas, y no pudo saber si el git add cae en el árbol del que salen las skills instaladas. Lo que no se pudo mirar no pasa callado."     "Partí el comando en dos, o stageá por nombre (git add <archivo>)."
   fi
   # No frenó, y no pudo mirar el árbol: se dice al terminar el guion (ver el punto 2 de arriba).
-  # Con el freno apagado por el dev no hay nada que avisar. Con una firma esperando la ventana de permiso tampoco: el
-  # aviso sale con código 1, que haría correr el comando sin la ventana, y la persona ya mira el comando en ella.
-  if [[ -n "$GIT_C4_BLIND" && "${SAFETY_OFF:-0}" != "1" && -z "$OW_ASK_JSON" ]]; then
+  # Con una firma esperando la ventana de permiso no hay nada que avisar: el aviso sale con código 1, que haría correr
+  # el comando sin la ventana, y la persona ya mira el comando en ella.
+  if [[ -n "$GIT_C4_BLIND" && -z "$OW_ASK_JSON" ]]; then
     trap 'git_c4_blind_notice "$?"' EXIT
   fi
 fi
