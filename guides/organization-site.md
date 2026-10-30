@@ -295,7 +295,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Cierres que necesitaban guía para probar a mano, y la tenían** (`qa_guia`). El puente entre las pruebas automáticas y una persona que prueba.
 - **Cuánto tarda verificar: duración de la suite de pruebas** (`gates_dur`). Una suite que tarda horas no se corre antes de commitear: se saltea.
 - **Los frenos previos a la herramienta: cuántas veces frenaron y cuántas los saltearon** (`frenos`). Los dos números de la misma regla juntos: sin el primero, un freno que funcionó parece que no sirvió.
-- **Los hooks del cierre: decisiones sobre una evidencia que la rechazaron** (`evidencia_cierre`). Cuántas veces los frenos que impiden cerrar sin evidencia la rechazaron.
+- **Los controles automáticos del cierre: decisiones sobre una evidencia que la rechazaron** (`evidencia_cierre`). Cuántas veces los frenos que impiden cerrar sin evidencia la rechazaron.
 - **Escapes concentrados en una sola regla** (`escapes_regla_dominante`). Si lo que se escapa de los controles viene casi todo de una sola regla.
 - **Reglas candidatas a retiro: probadas, que nunca encontraron nada** (`reglas_candidatas`). Reglas que saben ponerse rojas y nunca encontraron nada con recorrido de sobra.
 - **Reglas que el banco de pruebas probó de verdad** (`reglas_probadas`). Una regla sin prueba que la obligue a marcar no se juzga: sale «sin probar», nunca candidata.
@@ -315,7 +315,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 **En Ejecuciones:**
 
 - **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
-- **Una ejecución del pipeline, de punta a punta (mediana, horas)** (`corridas`). Cuánto dura una ejecución completa.
+- **Una ejecución del pipeline, de punta a punta (mediana, horas)**. Cuánto dura una ejecución completa.
 - **Respuestas del modelo por ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
 
 **Cómo se oculta una.** En Configuración, sección «Avisos y la noche», «Fichas que muestra el sitio» tiene una casilla
@@ -481,7 +481,7 @@ Las secciones, en el orden de la pantalla:
 - **Personas y máquinas**: de quién es cada máquina que manda ejecuciones, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
-- **A quién le llegan los avisos y los pedidos**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
+- **A quién le llegan los avisos y las tareas**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
   un hallazgo del vigilante). Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
 
 ![Personas y máquinas: una máquina por confirmar y las confirmadas](sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.png)
@@ -531,7 +531,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
   Proyectos y Ejecuciones. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
-- **Pedidos de trabajo**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
+- **Tareas**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
   los pedidos de la revisión de las ejecuciones y del vigilante; si falta alguno, la sección dice cuál y que la noche no
   va a pedir trabajo. Después, en un recuadro, el **tipo** (vacío, cada proyecto usa su elemento de backlog) y los
   **campos fijos**. Abajo, **según la gravedad**, una tabla con una fila por campo y una columna por gravedad (crítica,

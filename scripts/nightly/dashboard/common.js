@@ -125,4 +125,20 @@ const CSS_CHIPS = `.tile.blind{border:1px dashed var(--line-strong);border-left:
 .chip.ok{color:var(--good);border-color:var(--good);background:var(--good-soft)}.chip.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}.chip.bad{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
 .chip.blind{color:var(--ink-3);border-color:var(--line-strong);border-style:dashed;background:transparent}.chip.decl{color:var(--ink-2);border-color:var(--ink-2);border-style:dashed;background:transparent}.chip.neutro{color:var(--ink-2);border-color:var(--line-strong)}.chip .g{font-size:11px;line-height:1}`;
 
-module.exports = { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, GLIFO, juzgar, umbralValido, motivoUmbral, chip, ficha, CSS_BASE, CSS_CHIPS };
+/**
+ * Los denominadores fijos que escribe el tablero, por código: el sitio manda el código y lo traduce (`den.<código>`).
+ * Uno que no está acá (los que llevan un número adentro) no viaja al sitio.
+ */
+const DENOMINADORES = Object.freeze({
+  casos: 'casos', suites: 'suites', repos: 'repos', productosVigilados: 'productos vigilados', storiesCerradas: 'stories cerradas',
+  stories: 'stories', registros: 'registros', ejecucionesDeLaSuite: 'ejecuciones de la suite', reglasDistintas: 'reglas distintas',
+  respuestas: 'respuestas', turnos: 'turnos', evaluacionesRegistradas: 'evaluaciones registradas', escapes: 'escapes',
+  vecesQueFreno: 'veces que un freno frenó', decisionesSobreEvidencia: 'decisiones sobre una evidencia',
+  commitsDesdeSesion: 'commits hechos desde una sesión', ejecucionesDeTestGate: 'ejecuciones de test-gate',
+  chequeosConPuntaje: 'chequeos con puntaje', cierresConGuia: 'cierres que necesitaban guía (registro completo)',
+  maquinasQueDeclararon: 'máquinas que lo declararon', ejecuciones: 'ejecuciones', reglasDelCatalogo: 'reglas del catálogo',
+  reglasConRevisor: 'reglas con revisor', productosMedidos: 'productos medidos', storiesEmpezadas: 'stories empezadas con dato',
+  entradasDeCodigo: 'entradas de código', reposConCierres: 'repos con cierres', productosDeclarados: 'productos declarados',
+});
+
+module.exports = { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, GLIFO, juzgar, umbralValido, motivoUmbral, chip, ficha, CSS_BASE, CSS_CHIPS, DENOMINADORES };

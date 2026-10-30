@@ -58,14 +58,16 @@ function modeloAcme() {
     corridas: noMedida('sin_buzon'),
     productos: [{ producto: 'Acme Web', proyectos: ['Acme Ops'], rutas: ['web-repo'] }],
     proyectos: leida({ lista: [] }),
-    despliegues: noMedida('sin_foto'),
+    // un despliegue con aprobación pendiente: su estado sale de la tabla, no tal cual
+    despliegues: leida({ productos: { 'Acme Web': { estado: 'medido', motivo: 'ok', staging: { fecha: '2026-10-14' }, produccion: null, produccion_atrasada: null, aprobacion: { estado: 'pendiente' }, main: 'ok' } } }),
     paridad: noMedida('sin_paridad'),
     sources: leida({ lista: [{ id: 'web-repo', estado: 'medido', fecha: HOY }, { id: 'ops-repo', estado: 'no_medido', codigo: 'fuente_vieja', fecha: '2026-10-01' }] }),
     // las fichas del tablero: una medida y las demás no medidas, con una oculta
     fichas: (() => {
       const C = require(path.join(H.SITE, 'tabs', 'cards.js'));
       const m = C.fichasNoMedidas(['backlog'], 'sin_foto');
-      m.lista[0] = { ...m.lista[0], estado: 'medido', valor: 0.5, medidos: 5, total: 10, unidad: 'ratio', nivel: 'warn', fecha: HOY };
+      // la medida lleva su denominador como clave: en inglés sale traducido
+      m.lista[0] = { ...m.lista[0], estado: 'medido', valor: 0.5, medidos: 5, total: 10, unidad: 'ratio', nivel: 'warn', fecha: HOY, den: 'registros' };
       return m;
     })(),
   };
@@ -118,7 +120,65 @@ async function conLaboratorio(fn) {
   } finally { await h.cerrar(); await emisor.cerrar(); }
 }
 
-test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-9 @story-2.60 @ac-2', async () => {
+// T37 2.79-Textos_CadaDenominadorTieneSuTraduccion @story-2.79 @ac-33
+// 🔴 Falla con: un denominador del tablero («casos», «registros») que viaja tal cual y sale en castellano en inglés.
+test('T37 2.79-Textos_CadaDenominadorTieneSuTraduccion @story-2.79 @ac-33', () => {
+  const D = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'dashboard.js'));
+  const C = require(path.join(H.SITE, 'tabs', 'cards.js'));
+  const lista = D.DENOMINADORES;
+  assert.ok(lista && Object.keys(lista).length >= 20, 'el tablero exporta su lista de denominadores');
+  const T = TEXTS().TEXTOS;
+  for (const codigo of Object.keys(lista)) {
+    assert.ok(T[`den.${codigo}`] && T[`den.${codigo}`].es && T[`den.${codigo}`].en, `den.${codigo} en los dos idiomas`);
+    assert.deepStrictEqual(enCastellano([T[`den.${codigo}`].en]), [], `den.${codigo} en inglés sin castellano`);
+  }
+  // cada denominador fijo que escribe el tablero está en la lista
+  const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'dashboard.js'), 'utf8');
+  const fijos = [...fuente.matchAll(/den_etiqueta: '([^']+)'/g)].map((m) => m[1]);
+  const valores = new Set(Object.values(lista));
+  assert.deepStrictEqual([...new Set(fijos)].filter((x) => !valores.has(x)), [], 'denominadores del tablero fuera de la lista');
+  // el sitio manda la clave, no el texto, y la ficha la traduce
+  const def = C.FICHAS[0];
+  const p = C.proyectar(def, { estado: 'medido', valor: 3, medidos: 3, total: 9, unidad: 'conteo', den_etiqueta: 'casos', fecha: HOY }, {});
+  assert.strictEqual(p.den, 'casos');
+  assert.ok(!('den_etiqueta' in p), 'el texto del tablero no viaja');
+  assert.match(C.tile(p, 'en'), new RegExp(` ${T['den.casos'].en}<`));
+  assert.match(C.tile(p, 'es'), new RegExp(` ${T['den.casos'].es}<`));
+  // un denominador que no está en la lista no se dibuja
+  assert.strictEqual(C.proyectar(def, { estado: 'medido', valor: 3, medidos: 3, total: 9, den_etiqueta: 'cosas raras', fecha: HOY }, {}).den, null);
+});
+
+// T39 2.79-Detector_ConoceLasPalabrasSinTilde @story-2.79 @ac-33
+// 🔴 Falla con: «3 registros» o «semana» en una página en inglés que el detector no ve porque no llevan tilde.
+test('T39 2.79-Detector_ConoceLasPalabrasSinTilde @story-2.79 @ac-33', () => {
+  const ONCE = ['registros', 'chequeos', 'entradas', 'veces', 'decisiones', 'salteadas', 'aceptada', 'vencida', 'pendiente', 'tarea', 'semana'];
+  for (const w of ONCE) assert.deepStrictEqual(enCastellano([`3 ${w} today`]), [`3 ${w} today`], `el detector marca «${w}»`);
+  // y no marca inglés llano
+  assert.deepStrictEqual(enCastellano(['3 records today', 'pending task this week']), []);
+});
+
+// T44 2.79-Textos_LaAyudaEnInglesSinCastellano @story-2.79 @ac-37
+// 🔴 Falla con: «Runs (Corridas)» en la guía inglesa, o un enlace interno a un ancla que ya no existe.
+test('T44 2.79-Textos_LaAyudaEnInglesSinCastellano @story-2.79 @ac-37', () => {
+  const md = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8');
+  const titulos = [...md.matchAll(/^#{1,6} (.+)$/gm)].map((m) => m[1]);
+  // ningún título con un nombre castellano entre paréntesis
+  const conParentesis = titulos.filter((t) => /\(([^)]*)\)/.test(t) && enCastellano([t.match(/\(([^)]*)\)/)[1]]).length);
+  assert.deepStrictEqual(conParentesis, [], 'títulos con el nombre castellano entre paréntesis');
+  assert.doesNotMatch(md, /Runs \(Corridas\)/);
+  // cada enlace interno llega a un título
+  const ancla = (t) => t.toLowerCase().replace(/[^\p{L}\p{N} -]/gu, '').trim().replace(/ /g, '-');
+  const anclas = new Set(titulos.map(ancla));
+  const rotos = [...md.matchAll(/\]\(#([^)]+)\)/g)].map((m) => decodeURIComponent(m[1])).filter((a) => !anclas.has(a));
+  assert.deepStrictEqual(rotos, [], 'enlaces internos que no llegan a su título');
+  // y el cuerpo de la guía, armado, no trae castellano fuera de lo citado entre comillas o como código (el destino de un
+  // enlace o de una captura es un nombre de archivo, no texto)
+  const prosa = md.replace(/```[\s\S]*?```/g, ' ').replace(/\]\([^)]*\)/g, '] ').replace(/`[^`]*`/g, ' ').replace(/«[^»]*»|"[^"]*"/g, ' ');
+  const restos = enCastellano(prosa.split('\n'), [...DATOS, 'Español']);
+  assert.deepStrictEqual(restos, [], `castellano en la guía inglesa:\n${restos.join('\n')}`);
+});
+
+test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-9 @story-2.60 @ac-2 @story-2.79 @ac-33', async () => {
   // el detector, contra un texto escrito en una vista: rojo con la página y el texto
   assert.deepStrictEqual(enCastellano(textosVisibles('<main><p>Esa página no existe.</p><p>Nothing here.</p></main>')), ['Esa página no existe.']);
   assert.deepStrictEqual(enCastellano(['Acme Web: 3 items'], DATOS), [], 'los datos de afuera no cuentan');
@@ -151,6 +211,9 @@ test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-
     fuentes.st.bandaConfig = { desde: AHORA - 600000, motivo: 'x' };
     for (const t of enCastellano(textosVisibles((await h.pedir('/', { cookie: `${lead}; ${en}` })).texto), [...DATOS, ': x'])) hallazgos.push(`bandas: «${t}»`);
     assert.deepStrictEqual(hallazgos, [], `texto en castellano en páginas en inglés:\n${hallazgos.join('\n')}`);
+    // el laboratorio ampliado se ve: el denominador traducido y la aprobación por su estado
+    const inicioEn = (await h.pedir('/arnes', { cookie: `${lead}; ${en}` })).texto + (await h.pedir('/', { cookie: `${lead}; ${en}` })).texto;
+    assert.ok(inicioEn.includes(TEXTS().t('en', 'den.registros')), 'el denominador de la ficha medida, en inglés');
     // y en castellano siguen en castellano
     const es = await h.pedir('/', { cookie: lead });
     assert.strictEqual(es.status, 200);
@@ -300,11 +363,11 @@ test('T8b Textos_ElAvisoDeCorridasSigueElIdioma @story-2.42 @ac-4', async () => 
   try {
     const c = (await H.ingresar(h, emisor, { sub: 's-lead', email: MANTIENE, email_verified: true })).sesion;
     const en = await h.pedir('/corridas', { cookie: `${c}; sitio-idioma=en` });
-    // sin buzón configurado: el aviso del sitio, en el idioma de la página
-    assert.match(en.texto, /no mailbox set up: not measured/);
+    // sin depósito configurado: el aviso del sitio, en el idioma de la página
+    assert.match(en.texto, /no run storage set up: not measured/);
     assert.deepStrictEqual(enCastellano(textosVisibles(en.texto), DATOS), []);
     const es = await h.pedir('/corridas', { cookie: c });
-    assert.match(es.texto, /sin buzón configurado: no medido/);
+    assert.match(es.texto, /sin depósito configurado: no medido/);
   } finally { await h.cerrar(); await emisor.cerrar(); }
 });
 
@@ -370,7 +433,20 @@ test('2.57 · Textos_ElCatalogoEnElIdiomaDeLaPagina @story-2.57 @ac-4', async ()
   assert.ok(!caida.includes(guarda.en.title), 'sin en: no aparece el inglés de otra');
 });
 
-test('2.57 · Textos_TodasLasSeccionesDeConfiguracionEnIngles @story-2.57 @ac-6', async () => {
+test('2.57 · Textos_TodasLasSeccionesDeConfiguracionEnIngles @story-2.57 @ac-6 @story-2.79 @ac-36', async () => {
+  // (2.79, T43) lo que manda el servidor en castellano sale en inglés: la invitación enviada y aceptada, la firma que el
+  // lector rechaza y la ficha de versiones («out of N that report», no «owned by»)
+  const TX = TEXTS();
+  const delServidor = {
+    invitaciones: { 'ana@acme.example': { estado: 'enviada', texto: TX.t('es', 'invitaciones.enviada') }, 'lead@acme.example': { estado: 'aceptada', texto: TX.t('es', 'invitaciones.aceptada') } },
+    errores: [{ archivo: 'team-profile.json', clave: 'approvals.delegated_signing', motivo: 'save está también en approvals.owner_only: una firma no puede ser delegada y sólo del dueño a la vez — sacala de una de las dos listas' }],
+  };
+  const traducido = TX.traducirRespuesta('en', delServidor);
+  assert.strictEqual(traducido.invitaciones['ana@acme.example'].texto, TX.t('en', 'invitaciones.enviada'));
+  assert.strictEqual(traducido.invitaciones['lead@acme.example'].texto, TX.t('en', 'invitaciones.aceptada'));
+  assert.deepStrictEqual(enCastellano([traducido.errores[0].motivo], ['save', 'approvals.owner_only']), [], `la firma rechazada en inglés: ${traducido.errores[0].motivo}`);
+  assert.match(TX.t('en', 'pantalla.deN'), /^out of $/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8'), /T\('pantalla\.deN'\) \+ \(ex\.versiones \|\| \[\]\)\.length \+ T\('pantalla\.queInforman'\)/);
   const { textos, ids, api } = await configuracionAcme('en');
   // la pantalla dibujó cada sección que mandó el servidor, en sus cinco pestañas
   const secciones = api.secciones.map((s) => s.id);
@@ -392,7 +468,7 @@ test('2.57 · Textos_TodasLasSeccionesDeConfiguracionEnIngles @story-2.57 @ac-6'
   assert.deepStrictEqual(conFrase, [], `interruptores en castellano en la página en inglés:\n${conFrase.join('\n')}`);
 });
 
-test('2.57 · Textos_LasFuentesConSuNombreEnIngles @story-2.57 @ac-7 @ac-8', () => {
+test('2.57 · Textos_LasFuentesConSuNombreEnIngles @story-2.57 @ac-7 @ac-8 @story-2.79 @ac-38', () => {
   const V = require(path.join(H.SITE, 'views.js'));
   // las fuentes de la noche se llaman por su id, en castellano («dependencias», «vigilante»): en inglés, con su nombre
   const ids = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'sources.json')).sources.map((s) => s.id);
@@ -411,9 +487,11 @@ test('2.57 · Textos_LasFuentesConSuNombreEnIngles @story-2.57 @ac-7 @ac-8', () 
   for (const id of ['dependencias', 'vigilante', 'banco', 'suites', 'paridad', 'corridas', 'pasos-corrida', 'concentracion']) {
     assert.ok(!en.includes(`Source ${id}`), `«Source ${id}» en inglés`);
   }
-  // en castellano: «Fuente <su nombre>», que es el id salvo donde la tabla le da otro (corridas → ejecuciones)
+  // en castellano: «Fuente <su nombre llano>»; ninguna fuente conocida sale con su id (sdlc-stage, capturer…)
   const nombreEs = (id) => (TEXTS().TEXTOS[`fuente.${id}`] || {}).es || id;
   assert.deepStrictEqual(titulos('es'), [...ids, 'propia-de-acme'].map((id) => `Fuente ${nombreEs(id)}`));
+  const conSuId = ids.filter((id) => nombreEs(id) === id || /[-_]/.test(nombreEs(id)));
+  assert.deepStrictEqual(conSuId, [], 'fuentes que en castellano salen con su id');
 });
 
 test('Textos_EncabezadosEnUnRenglon_ConfiguracionConSuComoFunciona', () => {
@@ -448,4 +526,23 @@ test('T21 2.79-Textos_Hilos_NoPrometeLeerLaConversacion @story-2.79 @ac-18 — C
       assert.doesNotMatch(t(idioma, k), /leer (esas|las|la) conversaci|revisarlo después|texto de lo que hablaron|read (those|the) conversations?|review it later|text of what the agents said/i, `${k} (${idioma}) no promete leerla`);
     }
   }
+});
+
+test('2.79-Textos_SinClavesRepetidas @story-2.79 @ac-40 — una clave escrita dos veces en un archivo de textos pisa a la primera sin aviso', () => {
+  // 🔴 rojo: la misma clave dos veces en el mismo archivo («pantalla.repo3» con « repo» y con «Repo »): la segunda gana
+  // en silencio y donde se usaba la primera sale la otra. Entre archivos, texts.js ya frena al juntarlos.
+  const prov = path.join(H.SITE, 'auth-providers');
+  const archivos = [path.join(H.SITE, 'texts.js'), path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'runs-texts.js'), path.join(ROOT, 'scripts', 'lib', 'repo-proposal.js'),
+    ...fs.readdirSync(prov).filter((x) => /\.js$/.test(x)).map((x) => path.join(prov, x))];
+  const repetidas = [];
+  for (const f of archivos) {
+    const vistas = new Set();
+    for (const [, k] of fs.readFileSync(f, 'utf8').matchAll(/^\s*'([a-z][\w-]*\.[\w.-]+)':\s*\{/gm)) {
+      if (vistas.has(k)) repetidas.push(`${path.basename(f)}: ${k}`); else vistas.add(k);
+    }
+  }
+  assert.deepStrictEqual(repetidas, [], 'claves escritas dos veces');
+  // la que estaba repetida: cada uso con su texto
+  assert.strictEqual(TEXTS().t('es', 'pantalla.repo3'), ' repo');
+  assert.strictEqual(TEXTS().t('es', 'pantalla.repoNumero'), 'Repo ');
 });

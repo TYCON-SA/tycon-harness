@@ -7,6 +7,10 @@
  * T2 HumanWords_SiteNamesTheAgentNotClaude       T6 HumanWords_GenericClaudePhrasesGone
  * T3 HumanWords_ToolExceptionsStay               T7 HumanWords_SiteGuideAnchorFollowsTitle
  * T4 HumanWords_ProgramTextsWithoutCorrida
+ * T49 2.79-HumanWords_SinJerga · T50 2.79-HumanWords_PedidoSoloNoAparece · T51 2.79-HumanWords_UnaPalabraPorConcepto
+ *
+ * T49 y T50 leen la tabla de textos y las cadenas de los programas que arman las páginas; lo que queda a propósito va
+ * en EXCEPCIONES, una por clave y con su motivo.
  *
  * Los nombres que lee la máquina (claves, rutas, ids, archivos) siguen diciendo «corrida»: T5 lo cuida. T4 y T6 leen
  * las cadenas de los programas sin sus comentarios, que quedan como están.
@@ -206,13 +210,97 @@ test('T6 HumanWords_GenericClaudePhrasesGone @story-8.87 @ac-5', () => {
   assert.deepStrictEqual(malas, [], 'frases que hablan del agente en general con el nombre de una herramienta');
 });
 
-test('T7 HumanWords_SiteGuideAnchorFollowsTitle @story-8.87 @ac-6', () => {
+test('T7 HumanWords_SiteGuideAnchorFollowsTitle @story-8.87 @ac-6 @story-2.79 @ac-37', () => {
   const es = leer('guides/organization-site.md');
   const en = leer('guides/organization-site.en.md');
   assert.match(es, /^### Cómo trabaja el agente$/m);
-  assert.match(en, /^### How the agent works \(Cómo trabaja el agente\)$/m);
+  // el título inglés va sin el nombre castellano entre paréntesis
+  assert.match(en, /^### How the agent works$/m);
   for (const [g, t] of [['es', es], ['en', en]]) {
     assert.doesNotMatch(t, /Cómo trabaja Claude|How Claude works|Cómo contesta Claude|How Claude answers/, `${g}: el nombre viejo`);
     assert.doesNotMatch(t, /#c(ó|%C3%B3|o)mo-trabaja-claude|#how-claude-works/i, `${g}: un enlace al ancla vieja`);
   }
+});
+
+// ── la jerga y «pedido» en lo que se ve (decisiones 5 y 8) ─────────────────────────────────────────────────────────
+// La jerga de cada idioma: palabras de quien programa el arnés que una persona no tiene por qué conocer.
+const JERGA = {
+  es: [/buz[oó]n/i, /\bvolcados?\b/i, /\bhilos?\b/i, /\bfotos?\b/i, /\bcach[eé]\b/i, /\bre-?loops?\b/i, /\bset de revisores\b/i,
+    /\bhooks?\b/i, /\bmerge[óo]\b/i, /cleanupPeriodDays/, /\bstory \d+\.\d+/i, /\bwarn\b/i, /\bexecutive\b/i],
+  en: [/\bmailbox(es)?\b/i, /\bdumps?\b/i, /\bre-?loops?\b/i, /\breviewer set\b/i, /\bhooks?\b/i, /cleanupPeriodDays/,
+    /\bstory \d+\.\d+/i, /\bS\d{2}\b/],
+};
+const PEDIDO = /\bpedidos?\b/i;
+// Las apariciones que quedan, una por clave (de la tabla, o «archivo: comienzo de la cadena»), cada una con su motivo
+const EXCEPCIONES = {
+  'pantalla.respuestasDentroDelLargoPedido': '«el largo pedido» es el participio (el largo que se pidió), no el sustantivo',
+  'pantalla.queLasPruebasCubranLo': '«lo pedido» es el participio, no el sustantivo',
+  'pantalla.queNoSeHagaMas': '«lo pedido» es el participio, no el sustantivo',
+  // el nombre castellano de una causa lo escribe la noche y lo valida su lista cerrada: el sitio lo traduce, no lo cambia
+  'mant.causa.RR-ESCAPE:TYCON_PR_BY_HAND': 'nombre de causa que escribe la noche; su texto no cambia desde el sitio',
+  'mant.causa.RR-ESCAPE:PR_A_MANO': 'nombre de causa que escribe la noche; su texto no cambia desde el sitio',
+  'mant.causa.RR-ESCAPE:PR_A_MANO/sobra': 'nombre de causa que escribe la noche; su texto no cambia desde el sitio',
+};
+
+// Los programas que arman lo que se ve en una página del sitio
+function programasDePagina() {
+  const tabs = fs.readdirSync(path.join(ROOT, 'scripts/site/tabs')).filter((f) => f.endsWith('.js')).map((f) => `scripts/site/tabs/${f}`);
+  return [...tabs, 'scripts/site/static/site.js', 'scripts/site/views.js', 'scripts/nightly/dashboard/runs.js'];
+}
+// El texto visible de las cadenas de un programa: sin los renglones que escriben en el registro ni lanzan un error (los
+// lee quien opera el sitio, no la página), sin etiquetas, atributos ni estilos, y sólo lo que tiene más de una palabra
+function textosDePrograma(f) {
+  const src = leer(f).split('\n').filter((l) => !/\b(log|console\.\w+)\(|throw new Error\(|process\.std(err|out)\.write\(/.test(l)).join('\n');
+  return cadenas(src)
+    .filter((s) => !/[{;]\s*[a-z-]+\s*:[^}]*[;}]/.test(s)) // una hoja de estilos
+    .map((s) => s.replace(/<[^>]*>?/g, ' ').replace(/\b[\w-]+="[^"]*"/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter((s) => /\s/.test(s));
+}
+// Lo que no está en la lista de excepciones: `{ clave, texto }` de la tabla en un idioma y de los programas de página.
+// Los valores con nombre (`{pedido}`) los llena el programa y no se ven: no cuentan
+function hallar(rx, idiomas) {
+  const malas = [];
+  for (const [k, v] of Object.entries(TABLA)) {
+    if (!v || typeof v !== 'object') continue;
+    for (const idioma of idiomas) {
+      const visible = typeof v[idioma] === 'string' ? v[idioma].replace(/\{[A-Za-z][A-Za-z0-9_]*\}/g, ' ') : null;
+      if (visible !== null && rx.some((r) => r.test(visible)) && !EXCEPCIONES[k]) malas.push(`${k} [${idioma}]: ${v[idioma].slice(0, 90)}`);
+    }
+  }
+  for (const f of programasDePagina()) {
+    for (const s of textosDePrograma(f)) {
+      const clave = `${f}: ${s.slice(0, 40)}`;
+      if (rx.some((r) => r.test(s)) && !EXCEPCIONES[clave]) malas.push(`${clave}`);
+    }
+  }
+  return malas;
+}
+
+test('T49 2.79-HumanWords_SinJerga @story-2.79 @ac-40', () => {
+  for (const motivo of Object.values(EXCEPCIONES)) assert.ok(motivo.length > 20, 'cada excepción dice su motivo');
+  const malas = [...hallar(JERGA.es, ['es']), ...hallar(JERGA.en, ['en'])];
+  assert.deepStrictEqual(malas, [], 'jerga en el texto visible del sitio');
+});
+
+test('T50 2.79-HumanWords_PedidoSoloNoAparece @story-2.79 @ac-41', () => {
+  assert.deepStrictEqual(hallar([PEDIDO], ['es']), [], '«pedido» en el texto en castellano: pull request, tarea, solicitud o una frase sin sustantivo');
+  // la excepción de un participio sigue siendo un participio
+  for (const k of Object.keys(EXCEPCIONES).filter((c) => TABLA[c] && /participio/.test(EXCEPCIONES[c]))) {
+    assert.match(TABLA[k].es, /\b(lo|largo) pedido\b/, k);
+  }
+  // la de una causa es una causa de verdad: su clave sale del código que escribe la noche
+  for (const k of Object.keys(EXCEPCIONES).filter((c) => /escribe la noche/.test(EXCEPCIONES[c]))) assert.match(k, /^mant\.causa\./, k);
+});
+
+test('T51 2.79-HumanWords_UnaPalabraPorConcepto @story-2.79 @ac-41', () => {
+  const malas = [];
+  for (const [k, v] of Object.entries(TABLA)) {
+    if (!v || typeof v.es !== 'string' || typeof v.en !== 'string') continue;
+    if (/change request/i.test(v.en)) malas.push(`${k}: «change request» por «pull request»`);
+    // «check» como sustantivo donde el castellano dice «control»; el verbo («check that…», «checks that…») queda
+    if (/\bcontrol(es)?\b/i.test(v.es) && /\b(a|the|this|its|one|no|any|every|required|test|new names|query) checks?\b|\bchecks\b(?! (that|whether|if|the|it|its|what|which|first))/i.test(v.en)) {
+      malas.push(`${k}: «check» como sustantivo por «control»`);
+    }
+  }
+  assert.deepStrictEqual(malas, [], 'una palabra por concepto (decisión 5)');
 });

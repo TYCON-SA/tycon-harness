@@ -312,7 +312,7 @@ function metricaDeVueltas({ repo, repoReal, merge, story }) {
 
   const desde = elegido.cuando ? ` — ejecución archivada el ${elegido.cuando.slice(0, 16)}Z` : '';
   const v = vueltaDeVolcado(elegido.d);
-  if (!v) return nulo('el volcado no registra vueltas: sin revisores por vuelta ni fotos de iteración');
+  if (!v) return nulo('el registro no anota vueltas: sin revisores por vuelta ni lecturas de iteración');
   const como = v.fuente === 'revisores.por_vuelta'
     ? `según los revisores por vuelta (vueltas ${v.vueltas.join(', ')})`
     : `según las fotos de iteración, marker.iterations (vueltas ${v.vueltas.join(', ')}; sin revisores por vuelta)`;

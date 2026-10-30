@@ -419,7 +419,7 @@ T=$(mktemp -d)
 volcado "${T}/r" "${S1}" "" '{"gates":[{"ts":"2026-08-15T06:10:00.000Z","check":"build","status":"red:exit=2","cmd":"x","exit":2},{"ts":"2026-08-15T06:20:00.000Z","check":"tests","status":"red:exit=1","cmd":"x","exit":1,"mensaje":"MENSAJE_RESCATADO expected 2 got 3"}]}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 D="$(cliente "${T}/o.html" detail 0)"
-grep -q 'story 2.13' <<< "${D}" && ok "T12 el rojo sin mensaje remite al rescate de la 2.13" || mal "T12 el rojo sin mensaje queda mudo"
+grep -q 'se rescata de la conversación' <<< "${D}" && ok "T12 el rojo sin mensaje remite al rescate de la conversación" || mal "T12 el rojo sin mensaje queda mudo"
 grep -q 'MENSAJE_RESCATADO' <<< "${D}" && ok "T12 el rojo con mensaje lo muestra" || mal "T12 el mensaje rescatado no se muestra"
 # ── T12b · un control que no está en el diccionario sale con su nombre técnico, no se descarta ──
 # 🔴 Falla con: filtrar por diccionario → un freno nuevo desaparece de la tabla.
@@ -793,14 +793,14 @@ M8="$(TYCON_MACHINE=otra node "${TABLERO}" --view runs --runs-dir "${TA}/local" 
 rm -rf "${TA}"
 # T12c · la carpeta pedida con --mailbox que no se puede leer se DICE (banda gris), nunca «cero corridas de otras máquinas»
 TYCON_MACHINE=maq-a node "${TABLERO}" --view runs --runs-dir "${R}" --mailbox "${T}/no-hay-buzon" --output "${T}/sinbuzon.html" > "${T}/log" 2>&1; RC=$?
-[ "${RC}" -eq 0 ] && grep -q 'No se leyó la carpeta bajada del buzón' "${T}/sinbuzon.html" && grep -q 'buzón NO LEÍDO' "${T}/log" && ok "2.16-T12c carpeta del buzón ilegible → banda gris en la página y aviso en el resumen" || mal "2.16-T12c carpeta ilegible: rc=${RC}, la página no lo dice: $(tail -2 "${T}/log")"
+[ "${RC}" -eq 0 ] && grep -q 'No se leyó la carpeta bajada del depósito' "${T}/sinbuzon.html" && grep -q 'buzón NO LEÍDO' "${T}/log" && ok "2.16-T12c carpeta del buzón ilegible → banda gris en la página y aviso en el resumen" || mal "2.16-T12c carpeta ilegible: rc=${RC}, la página no lo dice: $(tail -2 "${T}/log")"
 
 # T12d · la carpeta por defecto que EXISTE pero no se puede mirar se dice; sólo «no existe» es «no participa»
 # 🔴 Falla con: que el catch de statSync trate EACCES igual que ENOENT → la página sale de una sola máquina, sin banda.
 TD=$(mktemp -d); mkdir -p "${TD}/casa/.claude/.tycon-pipeline"; cp -R "${R}" "${TD}/casa/.claude/.tycon-pipeline/timing-history"; mkdir -p "${TD}/cerrada/corridas-buzon"; chmod 000 "${TD}/cerrada"
 HOME="${TD}/casa" TYCON_MAILBOX_DIR="${TD}/cerrada/corridas-buzon" TYCON_MACHINE=maq-a node "${TABLERO}" --view runs --output "${TD}/o.html" > "${TD}/log" 2>&1; RC=$?
 chmod 755 "${TD}/cerrada"
-[ "${RC}" -eq 0 ] && grep -q 'No se leyó la carpeta bajada del buzón' "${TD}/o.html" && grep -q 'buzón NO LEÍDO' "${TD}/log" && ok "2.16-T12d carpeta por defecto sin permiso para mirarla → banda gris y aviso, no «una sola máquina»" || mal "2.16-T12d rc=${RC}: la página no lo dice: $(tail -2 "${TD}/log")"
+[ "${RC}" -eq 0 ] && grep -q 'No se leyó la carpeta bajada del depósito' "${TD}/o.html" && grep -q 'buzón NO LEÍDO' "${TD}/log" && ok "2.16-T12d carpeta por defecto sin permiso para mirarla → banda gris y aviso, no «una sola máquina»" || mal "2.16-T12d rc=${RC}: la página no lo dice: $(tail -2 "${TD}/log")"
 rm -rf "${TD}"
 
 # T12e (adversarial) · un symlink dentro de la carpeta bajada se sigue; uno roto se cuenta, nunca desaparece en silencio
@@ -822,7 +822,7 @@ rm -rf "${TE}"
 # 🔴 Falla con: que, con corridas del buzón, la banda diga que las fichas salen sin medir mientras muestran números.
 TF=$(mktemp -d); volcado "${TF}/buzon/maq-a" "${S2}"; volcado "${TF}/buzon/maq-b" "${S3}"
 TYCON_MACHINE=maq-z node "${TABLERO}" --view runs --runs-dir "${TF}/no-hay-registro" --mailbox "${TF}/buzon" --output "${TF}/o.html" > "${TF}/log" 2>&1; RC=$?
-[ "${RC}" -eq 0 ] && ! grep -q 'Las fichas salen con trama' "${TF}/o.html" && grep -q 'sólo con lo bajado del buzón' "${TF}/o.html" && ok "2.16-T12f sin registro propio y con buzón → la banda dice que la página sale sólo con lo bajado, no «con trama»" || mal "2.16-T12f rc=${RC}: $(grep -o '<div class="banda gris">[^/]*' "${TF}/o.html" | head -2)"
+[ "${RC}" -eq 0 ] && ! grep -q 'Las fichas salen con trama' "${TF}/o.html" && grep -q 'sólo con lo bajado del depósito' "${TF}/o.html" && ok "2.16-T12f sin registro propio y con buzón → la banda dice que la página sale sólo con lo bajado, no «con trama»" || mal "2.16-T12f rc=${RC}: $(grep -o '<div class="banda gris">[^/]*' "${TF}/o.html" | head -2)"
 rm -rf "${TF}"
 # T12g · un symlink de salida con «..» que atraviesa una carpeta enlazada tampoco esquiva la negativa
 # 🔴 Falla con: que path.resolve pliegue «lnk/..» como texto (afuera del repo) mientras el kernel sigue el enlace (adentro).
@@ -963,7 +963,7 @@ assert c['calculos_del_set']==3, c
 " "${J}" && ok "7.1-T1 vueltas = 2 (revisores por vuelta) y el conteo viejo queda aparte como «cálculos del set» = 3" || mal "7.1-T1 la vista no usa la cuenta del latido: $(echo "${J}" | head -c 300)"
 D="$(cliente "${T}/o.html" detail 0)"
 grep -q 'en 2 vuelta' <<< "${D}" && ok "7.1-T1 el detalle dice «en 2 vuelta(s)»" || mal "7.1-T1 el detalle no dice 2 vueltas"
-grep -q 'set de revisores calculado 3 veces' <<< "${D}" && ok "7.1-T1 el detalle dice que el set se calculó 3 veces" || mal "7.1-T1 el detalle calla los cálculos del set"
+grep -q 'lista de revisores calculada 3 veces' <<< "${D}" && ok "7.1-T1 el detalle dice que el set se calculó 3 veces" || mal "7.1-T1 el detalle calla los cálculos del set"
 F="$(cliente "${T}/o.html" container fichas)"
 grep -q 'Vueltas de revisión por ejecución' <<< "${F}" && grep -q 'misma cuenta que el latido' <<< "${F}" && ok "7.1-T1 la ficha nombra la fuente (misma cuenta que el latido)" || mal "7.1-T1 la ficha no nombra la fuente"
 rm -rf "${T}"
@@ -981,7 +981,7 @@ rm -rf "${T}"
 # ── T6 · Corridas_Validador_ListaBlancaYFicha ──────────────────────────────────────────
 # 🔴 Falla con: la vista no publica el resumen del validador ni tiene la ficha. Mutaciones que lo ponen
 #    en rojo: copiar `revisores.validador` entero (se filtran una fase desconocida y un campo extra),
-#    publicar el `detalle` (informe y prompt), o contar los re-loops sin relanzar sobre los que sí se relanzó.
+#    publicar el `detalle` (informe y prompt), o contar las vueltas de revisores sin relanzar sobre las que sí se relanzó.
 T=$(mktemp -d)
 FASE_CERO='{"lanzamientos":0,"limpio":0,"hallazgos":0,"inconsistente":0,"sin_veredicto":0,"no_medido":0}'
 volcado "${T}/r" "${S1}" "" "{\"revisores\":{\"estado\":\"medido\",\"lanzamientos\":5,\"por_vuelta\":{\"0\":1,\"1\":1,\"2\":3},\"duracion_ms\":{\"mediana\":90000,\"n\":5},\"devuelto_bytes\":{\"mediana\":1000,\"n\":5},\"tokens_medidos\":{\"total\":600000,\"n\":5},\"estimado\":{\"estado\":\"vacio\"},
@@ -1006,7 +1006,7 @@ esp={'estado':'medido','lanzamientos':5,'por_fase':{
   're-loop':dict(cero,lanzamientos=2,limpio=2),'sin-vuelta':cero,'otra-story':dict(cero,lanzamientos=1,hallazgos=1)},
   're_loops_sin_relanzar':1,'re_loops_decididos':2}
 assert v==esp, v
-" "${J}" && ok "7.3-T6 el modelo publica el resumen del validador por lista blanca (fases conocidas, conteos, re-loops sin relanzar 1 de 2)" || mal "7.3-T6 resumen del validador: $(echo "${J}" | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin)["corridas"][0].get("validador")))' 2>&1 | head -c 400)"
+" "${J}" && ok "7.3-T6 el modelo publica el resumen del validador por lista blanca (fases conocidas, conteos, vueltas de revisores sin relanzar 1 de 2)" || mal "7.3-T6 resumen del validador: $(echo "${J}" | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin)["corridas"][0].get("validador")))' 2>&1 | head -c 400)"
 for marca in FUGA_INFORME_VALIDADOR FUGA_PROMPT_VALIDADOR FUGA_EXTRA_VALIDADOR FUGA_FASE FUGA_MOTIVO_GATE; do
   n="$(grep -c -F -- "${marca}" "${T}/o.html")"
   [ "${n}" -eq 0 ] && ok "7.3-T6 no se filtra ${marca}" || mal "7.3-T6 SE FILTRA ${marca} (${n} veces)"
@@ -1014,8 +1014,8 @@ done
 F="$(cliente "${T}/o.html" container fichas)"
 grep -q 'El validador de stories, por fase' <<< "${F}" && ok "7.3-T6 la ficha existe" || mal "7.3-T6 falta la ficha del validador"
 grep -q '2 de 5 con hallazgos' <<< "${F}" && ok "7.3-T6 la ficha dice «2 de 5 con hallazgos» (denominador: los que dejaron veredicto)" || mal "7.3-T6 la ficha no trae el total con denominador"
-grep -q 'otras stories 1 de 1' <<< "${F}" && grep -q 're-loops 0 de 2' <<< "${F}" && ok "7.3-T6 la ficha desglosa por fase" || mal "7.3-T6 la ficha no desglosa por fase: $(echo "${F}" | grep -o 'validador de stories[^<]*<[^§]\{0,600\}' | head -c 600)"
-grep -q 'no se relanzó en 1 de 2 re-loops' <<< "${F}" && ok "7.3-T6 la ficha cuenta los re-loops sin relanzar" || mal "7.3-T6 la ficha no cuenta los re-loops sin relanzar"
+grep -q 'otras stories 1 de 1' <<< "${F}" && grep -q 'vueltas de revisores 0 de 2' <<< "${F}" && ok "7.3-T6 la ficha desglosa por fase" || mal "7.3-T6 la ficha no desglosa por fase: $(echo "${F}" | grep -o 'validador de stories[^<]*<[^§]\{0,600\}' | head -c 600)"
+grep -q 'no se relanzó en 1 de 2 vueltas de revisores' <<< "${F}" && ok "7.3-T6 la ficha cuenta las vueltas de revisores sin relanzar" || mal "7.3-T6 la ficha no cuenta las vueltas de revisores sin relanzar"
 D="$(cliente "${T}/o.html" detail 0)"
 grep -q 'validador de stories' <<< "${D}" && ok "7.3-T6 el detalle de la ejecución dice qué dijo el validador por fase" || mal "7.3-T6 el detalle de la ejecución no nombra al validador"
 rm -rf "${T}"
@@ -1056,7 +1056,7 @@ python3 -c "
 import json,sys
 cs=json.loads(sys.argv[1])['corridas']
 vieja=[c for c in cs if c['story']=='2.1' and c['validador']['estado']=='no_medido']
-assert len(vieja)==1 and '7.3' in vieja[0]['validador']['motivo'], [c['validador'] for c in cs]
+assert len(vieja)==1 and all(p in vieja[0]['validador']['motivo'] for p in ('validador', 'veredicto')), [c['validador'] for c in cs]
 " "${J}" && ok "7.3-T7 una corrida anterior a la 7.3 publica el validador como no medido, con el motivo" || mal "7.3-T7 corrida vieja: $(echo "${J}" | head -c 300)"
 F="$(cliente "${T}/o.html" container fichas)"
 TILE="$(echo "${F}" | python3 -c "
@@ -1157,7 +1157,7 @@ l=c['leido']; fs=[a['f'] for a in l['archivos']]
 assert fs==['src/Pago.ts','src/Nuevo.ts'], fs
 assert l['anteriores_al_inicio']==1 and len(l['lista'])==2 and l['lista'][0]['p']=='6', l
 assert [x['h'] for x in l['commits']]==['abc1234'], l['commits']
-assert 'sin hilo' in c['sin_hilo']['motivo'] or 'no tiene hilo' in c['sin_hilo']['motivo'], c['sin_hilo']
+assert 'no tiene su conversación guardada' in c['sin_hilo']['motivo'], c['sin_hilo']
 assert '_texto' not in json.dumps(m) and 'CODIGO_SEMBRADO' not in json.dumps(m)
 # la descripción: el título de la story con hilo; sin hilo, nada inventado (el archivo se llama story-2.1.md)
 d={x['cambios']['estado']: x.get('descripcion') for x in m['corridas']}
@@ -1186,7 +1186,7 @@ PYC
 )"
 [ "${R}" = "codigo|clave-tapada|sin-ruta-abs|comprimido" ] && ok "CAMBIOS-T1 la página trae el cambio comprimido aparte, con la clave tapada y sin rutas absolutas" || mal "CAMBIOS-T1 página: ${R}"
 D0="$(cliente "${T}/o.html" all)"
-grep -q 'Archivos que tocó' <<< "${D0}" && grep -q 'src/Pago.ts' <<< "${D0}" && grep -q 'sin hilo' <<< "${D0}" && grep -q 'se muestra <b>entero</b>' <<< "${D0}" && grep -q 'class="balde"' <<< "${D0}" && grep -q 'class="tokbar"' <<< "${D0}" && grep -q 'TITULO SEMBRADO de la story' <<< "${D0}" && grep -q 'sin hilo: no hay consumo minuto a minuto' <<< "${D0}" && grep -q 'a.cs</span> <span class="nd">por consola' <<< "${D0}" && grep -q 'Sus commits llevaron <b>8 archivos</b>' <<< "${D0}" && grep -q 'sin hilo: no se sabe qué archivos tocó' <<< "${D0}" \
+grep -q 'Archivos que tocó' <<< "${D0}" && grep -q 'src/Pago.ts' <<< "${D0}" && grep -q 'sin conversación' <<< "${D0}" && grep -q 'se muestra <b>entero</b>' <<< "${D0}" && grep -q 'class="balde"' <<< "${D0}" && grep -q 'class="tokbar"' <<< "${D0}" && grep -q 'TITULO SEMBRADO de la story' <<< "${D0}" && grep -q 'sin conversación: no hay consumo minuto a minuto' <<< "${D0}" && grep -q 'a.cs</span> <span class="nd">por consola' <<< "${D0}" && grep -q 'Sus commits llevaron <b>8 archivos</b>' <<< "${D0}" && grep -q 'sin conversación: no se sabe qué archivos tocó' <<< "${D0}" \
   && ok "CAMBIOS-T1 el detalle dice de qué fue la ejecución, lista los archivos enteros, dibuja archivos y consumo en el gráfico y marca «sin hilo» donde no hay" || mal "CAMBIOS-T1 detalle: $(echo "${D0}" | grep -o 'Archivos que tocó.\{0,300\}' | head -2)"
 rm -rf "${T}"
 
@@ -1572,7 +1572,7 @@ cambio = {"version": 1, "estado": "medido", "motivo": None, "medido_en": "2026-0
           "repos": [{"nombre": "FrontEnd", "principal": True, "por": ["story"], "otras_sesiones": 0,
                      "estado": "no_medido", "motivo": "la carpeta del repo de la corrida ya no existe en esta máquina"},
                     {"nombre": "OtroRepo", "principal": False, "por": ["consola"], "otras_sesiones": None,
-                     "otras_sesiones_motivo": "el volcado no trae sesión: no se puede saber si otra sesión escribió en esta copia",
+                     "otras_sesiones_motivo": "el registro no trae sesión: no se puede saber si otra sesión escribió en esta copia",
                      "estado": "medido", "commits": [], "sin_commitear": [], "sin_commitear_previo": 0}],
           "totales": {"repos": 1, "archivos": 0, "partes": 0, "cortados": 0, "sin_parche_por_tope": 0}}
 with open(os.path.join(d, "nomedido.cambio.json.gz"), "wb") as f: f.write(gzip.compress(json.dumps(cambio).encode()))
@@ -2258,6 +2258,18 @@ VISIBLE="$(sed -E 's/title="[^"]*"//g; s/<[^>]+>/ /g' <<< "${CELDA}")"
 grep -q 'ya no está' <<< "${VISIBLE}" && ok "2.79-T36 el motivo se ve en la celda, sin pasar el mouse" || mal "2.79-T36 la celda muestra: ${VISIBLE}"
 grep -q 'cleanupPeriodDays' "${T}/o.html" && mal "2.79-T36 la página nombra cleanupPeriodDays" || ok "2.79-T36 sin cleanupPeriodDays"
 grep -q 'cleanupPeriodDays' "${RAIZ}/scripts/metrics/tokens-digest.js" && mal "2.79-T36 el medidor sigue escribiendo cleanupPeriodDays en el motivo" || ok "2.79-T36 el medidor ya no lo escribe"
+rm -rf "${T}"
+
+# ── 2.79-T48 · 2.79-Corridas_DatosCrudosEnLlano @story-2.79 @ac-39 ──
+# 🔴 Falla con: el chip del detalle armado con `'DoD ' + c.dod` («DoD PASS», «DoD FAIL»). La otra mitad (estilo,
+# opción con valor técnico y campo sin nombre, en Configuración) está en site-config.test.js con el mismo nombre.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}"
+volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"marker":{"dodRuntime":{"verdict":"FAIL","evidencePath":"x.md"}}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+D="$(cliente "${T}/o.html" all)"
+grep -qE 'DoD|\bPASS\b' <<< "$(sed -E 's/<[^>]+>/ /g' <<< "${D}")" && mal "2.79-T48 el detalle muestra el veredicto crudo: $(grep -oE '[^>]{0,20}(DoD|PASS)[^<]{0,20}' <<< "${D}" | head -2 | tr '\n' ' ')" || ok "2.79-T48 sin «DoD PASS» ni «DoD FAIL» en el detalle"
+grep -q 'terminado de verdad: pasó' <<< "${D}" && grep -q 'terminado de verdad: no pasó' <<< "${D}" && ok "2.79-T48 el veredicto se dice en llano, el que pasó y el que no" || mal "2.79-T48 falta el veredicto en llano"
 rm -rf "${T}"
 
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────

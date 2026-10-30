@@ -1816,4 +1816,5 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras };
+module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
+  DENOMINADORES: require('./common').DENOMINADORES };
