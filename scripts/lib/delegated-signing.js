@@ -130,6 +130,19 @@ function delegaSinVentana({ firma, sesion, destino, home, estado, env, arnes, pe
   return { ok: true, maquina: fp.huella };
 }
 
+/**
+ * Quién firmó un cambio de control, para su constancia: la sesión designada por su ventana es la coordinadora; la
+ * ventana de otra sesión o la terminal, el dueño. Sólo nombra al firmante: nunca decide si la firma vale.
+ */
+function signerOf({ via, sesion } = {}, { home } = {}) {
+  if (via !== 'ventana' || !sesion) return 'dueño';
+  try {
+    const p = accountPaths(accountHome({ home }));
+    const d = require(path.join(PIPELINE_LIB, 'critical-waivers.js')).designacionVigente({ dir: p.state });
+    return d && !d.error && d.sesion === sesion ? 'coordinadora' : 'dueño';
+  } catch (_) { return 'dueño'; }
+}
+
 function cli(argv) {
   const [cmd] = argv;
   if (cmd === 'confirm-designation') {
@@ -150,6 +163,6 @@ function cli(argv) {
   return 2;
 }
 
-module.exports = { accountPaths, confirmationRecord, delegaSinVentana };
+module.exports = { accountPaths, confirmationRecord, delegaSinVentana, signerOf };
 
 if (require.main === module) process.exit(cli(process.argv.slice(2)));

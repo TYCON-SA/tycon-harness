@@ -433,6 +433,37 @@ else
   fi
 fi
 
+# ── T14 — el bloqueo anota su motivo, un código de la lista de su regla ────────────────────────
+# Una regla que frena por varias causas distintas no se puede medir junta: ESC-C3 son cinco frenos y `produccion` de
+# producción son cuatro. El motivo va como código cerrado; uno libre no se escribe y la línea sale igual.
+mundo
+printf '%s' 'x' | HOME="$CASA" node "$LIB" --guard safety-guard --rule ESC-C3 --verdict bloqueo --reason trust-ran --cmd-stdin
+printf '%s' 'x' | HOME="$CASA" node "$LIB" --guard safety-guard --rule ESC-C3 --verdict bloqueo --reason 'cerrar con /ruta/secreta' --cmd-stdin
+printf '%s' 'x' | HOME="$CASA" node "$LIB" --guard safety-guard --rule GIT-C1 --verdict bloqueo --reason trust-ran --cmd-stdin
+reg="$(cat "$(REG)" 2>/dev/null || true)"
+l1="$(sed -n 1p "$(REG)")"; l2="$(sed -n 2p "$(REG)")"; l3="$(sed -n 3p "$(REG)")"
+if [ "$(lineas)" = "3" ] && echo "$l1" | grep '"motivo":"trust-ran"' >/dev/null && ! echo "$l2" | grep '"motivo"' >/dev/null \
+   && ! echo "$reg" | grep 'secreta' >/dev/null && ! echo "$l3" | grep '"motivo"' >/dev/null; then
+  ok "T14 el motivo de la lista se anota; uno libre o de otra regla no, y la línea sale igual"
+else
+  no "T14 reg=[$reg]"
+fi
+
+# T14b — el freno de producción separa sus motivos con el freno REAL
+mundo
+pg_motivo(){ # $1 comando → el motivo de la última línea (vacío si no tiene)
+  node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",tool_input:{command:process.argv[1]}}))' "$1" \
+    | HOME="$CASA" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1
+  tail -n 1 "$(REG)" 2>/dev/null | sed -n 's/.*"motivo":"\([^"]*\)".*/\1/p'
+}
+m_estado="$(pg_motivo "rm -f $CASA/.claude/.tycon-pipeline/production""-index.json")"
+m_variable="$(pg_motivo 'sqlcmd -S "$SRV" -Q "select 1"')"
+if [ "$m_estado" = "escritura-protegida" ] && [ "$m_variable" = "servidor-no-literal" ]; then
+  ok "T14b producción: la escritura protegida y el servidor que no es literal se anotan con su motivo"
+else
+  no "T14b escritura=[$m_estado] servidor=[$m_variable] reg=[$(cat "$(REG)" 2>/dev/null)]"
+fi
+
 echo "─────────────────────────────"
 echo "constancia-freno: $pasaron ok · $fallos fallos"
 [ "$fallos" = "0" ] || exit 1
