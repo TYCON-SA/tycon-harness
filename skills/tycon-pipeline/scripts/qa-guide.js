@@ -976,6 +976,9 @@ function main() {
       }
       if (!openApp) problems.push(`(7) Modo primera vez: falta la línea «Abrir la app: <dónde se levanta> · <qué dirección se abre>» al tope de ${pasosPath || pasosEsperado}. La persona trabaja sola: la guía le dice cómo abrir la app.`);
     }
+    // (11) la guía HTML que abre el tester: el chequeo no la genera, dice con qué comando se genera
+    const guiaHtml = opt('--out') || path.join(qaDirStory, path.basename(abs, '.md') + '-guia-qa.html');
+    if (!isFile(guiaHtml)) problems.push(`(11) Falta la guía HTML del tester: ${guiaHtml}. Se genera con: node ${__filename} --story ${abs}`);
     if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
     // La pantalla de una tanda bloqueada no se revisa en esta corrida: puede estar a medias en el disco, y su
     // maqueta es de esa tanda. La guía de los criterios de backend, sí. Si lo que cambió en el repo toca pantalla, se

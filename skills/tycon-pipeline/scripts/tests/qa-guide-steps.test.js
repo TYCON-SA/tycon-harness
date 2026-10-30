@@ -97,3 +97,17 @@ test('SoloUsuario_AvisaYCheckRechaza @story-7.34 @ac-11 — un «Usuario:» suel
   assert.equal(chk.rc, 2, chk.out);
   assert.match(chk.out, /\(2\) ACs verificados corriendo SIN pasos-tester: #1/, chk.out);
 });
+
+test('Check_SinGuiaHtml_FrenaYDiceElComando — sin la guía HTML el chequeo da rojo y dice cómo generarla, sin generarla', () => {
+  const f = storyCorrida(NUMERADOS);
+  const html = path.join(f.repo, 'specs', 'qa', '9-9-fixture-guia-qa.html');
+  const sin = qa(f, '--check');
+  assert.equal(sin.rc, 2, sin.out);
+  assert.match(sin.out, /Falta la guía HTML/, sin.out);
+  assert.ok(sin.out.includes(html), sin.out);
+  assert.ok(sin.out.includes(`${QA} --story ${f.storyPath}`), `dice el comando que la genera: ${sin.out}`);
+  assert.ok(!fs.existsSync(html), 'el chequeo no la genera');
+  assert.equal(qa(f).rc, 0);
+  const con = qa(f, '--check');
+  assert.doesNotMatch(con.out, /Falta la guía HTML/, con.out);
+});
