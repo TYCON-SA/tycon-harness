@@ -141,6 +141,8 @@ printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el r
 printf 'veredicto: OK\n' > "$QA4/epic-07__1.1-legibilidad.md"
 # Una story de pantalla también necesita la revisión de su pantalla, con la misma clave.
 printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$QA4/epic-07__1.1-legibilidad-ui.md"
+# y la guía HTML que abre el tester (va por el nombre del archivo de la story, no por la clave)
+printf '<html></html>\n' > "$QA4/1-1-y-guia-qa.html"
 mkdir -p "$M4/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M4/src/Pantalla.tsx"
 ca="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-05/1-1-x.md" --check 2>&1)"; rca=$?
 cb="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-07/1-1-y.md" --check 2>&1)"; rcb=$?
@@ -229,6 +231,7 @@ files_to_modify:
 mkdir -p "$M8/qa"; printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el resultado.\n' > "$M8/qa/1.9-pasos.md"
 printf 'veredicto: OK\n' > "$M8/qa/1.9-legibilidad.md"
 printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$M8/qa/1.9-legibilidad-ui.md"
+printf '<html></html>\n' > "$M8/qa/story-1-9-x-guia-qa.html"
 # Una pantalla declarada que no está en el disco frena (no se puede revisar lo que no se ve).
 mkdir -p "$M8/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M8/src/Pantalla.tsx"
 node -e '

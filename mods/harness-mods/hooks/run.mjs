@@ -149,10 +149,12 @@ export function readRun(text, now) {
 
   // otra vuelta de revisores: con Hallazgos cerrado, una edición de código o prueba posterior al ÚLTIMO cierre de los
   // revisores, como `pipeline.js next`. Decide la marca `code` que on-edit pone en cada edición; un evento sin la marca
-  // (de una versión anterior) cuenta si no es un .md
+  // (de una versión anterior) cuenta si no es un .md. Lo que el arnés escribe en .advisors no cuenta nunca: un marcador
+  // de antes lo marcaba como código
   const tRev = timings.reviewers || {};
   const revEnd = ms(tRev.lastCompletedAt) !== null ? ms(tRev.lastCompletedAt) : endOf('reviewers');
-  const esCodigo = (e) => (typeof e.code === 'boolean' ? e.code : !/\.md$/i.test(String(e.path || '')));
+  const esCodigo = (e) => !/(^|[\\/])\.advisors[\\/]/.test(String(e.path || ''))
+    && (typeof e.code === 'boolean' ? e.code : !/\.md$/i.test(String(e.path || '')));
   const reloop = scheme === 2 && completed.has('findings') && revEnd !== null
     && (Array.isArray(m.fileEvents) ? m.fileEvents : []).some((e) => e && ms(e.ts) !== null && ms(e.ts) > revEnd && esCodigo(e));
   const round = reloop ? (Number((timings.reviewers || {}).rounds) || 1) + 1 : null;
