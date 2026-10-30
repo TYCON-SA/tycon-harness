@@ -140,7 +140,7 @@ test('T3 SafetyEscape_FraseDeLaPersona_NoFirma — con «autorizo TYCON_SAFETY_O
   // en Codex también frena, y el cartel dice que el prefijo ya no apaga nada y cuál es la salida
   const r = freno(PREFIJO, { codex: true, conversacion: [deLaPersona(FRASE, 5)] });
   assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /TYCON_SAFETY_OFF ya no apaga este freno[^]*harness\.js sign emergency/);
+  assert.match(r.stderr, /TYCON_SAFETY_OFF ya no apaga este freno[^]*harness\.js" sign emergency/);
   assert.ok(!constancias(r.home).some((c) => c.veredicto === 'escape'), 'frenado, no deja constancia de escape');
 });
 
@@ -201,7 +201,7 @@ test('T10 SafetyEscape_AmbienteDelDev_YaNoApaga — la variable en el ambiente d
   const r = freno(COMMIT_SIN_HOOKS, { env: { TYCON_SAFETY_OFF: '1' } });
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /TYCON_SAFETY_OFF ya no apaga este freno/);
-  assert.match(r.stderr, /harness\.js sign emergency --reason/);
+  assert.match(r.stderr, /harness\.js" sign emergency --reason/);
   assert.ok(!constancias(r.home).some((c) => c.veredicto === 'escape'), 'frenado, no deja constancia de escape');
 });
 

@@ -285,7 +285,7 @@ test('T13 · el freno de seguridad deja pasar el comando firmado, tal cual y una
   // sin la emergencia, frena y el cartel da el número del pedido con el texto exacto que leyó
   let r = freno(firmado);
   assert.strictEqual(r.status, 2, r.stderr);
-  const m = /harness\.js sign emergency --reason "<por qué>" --request ([0-9a-f]{8})/.exec(r.stderr);
+  const m = /harness\.js" sign emergency --reason "<por qué>" --request ([0-9a-f]{8})/.exec(r.stderr);
   assert.ok(m, `el cartel no da el número: ${r.stderr}`);
   assert.strictEqual(freno(firmado).stderr.includes(`--request ${m[1]}`), true, 'repetirlo reusa el mismo número');
   const tty = terminal();
@@ -451,10 +451,12 @@ test('T20 · la terminal muestra el comando entero, con lo que no se ve escrito 
 });
 
 test('T12 · por la consola: un id desconocido sale 2 y la ayuda nombra sign', () => {
-  const r = spawnSync(process.execPath, [HARNESS, 'sign', 'no-existe', '--reason', 'x'], { encoding: 'utf8', env: { ...process.env, HOME: os.tmpdir() } });
+  // TYCON_HARNESS_NODE=0: el harness.js de la prueba no se relanza con el Node propio del arnés (harness-node.test.sh, T34)
+  const env = { ...process.env, HOME: os.tmpdir(), TYCON_HARNESS_NODE: '0' };
+  const r = spawnSync(process.execPath, [HARNESS, 'sign', 'no-existe', '--reason', 'x'], { encoding: 'utf8', env });
   assert.strictEqual(r.status, 2, r.stdout + r.stderr);
   assert.match(r.stderr, /no-existe/);
-  const h = spawnSync(process.execPath, [HARNESS, '--help'], { encoding: 'utf8' });
+  const h = spawnSync(process.execPath, [HARNESS, '--help'], { encoding: 'utf8', env });
   assert.match(h.stdout, /\bsign\b/);
   // una sola forma: el número del pedido o --commit; el comando nunca se retipea
   const { parse } = require(HARNESS);

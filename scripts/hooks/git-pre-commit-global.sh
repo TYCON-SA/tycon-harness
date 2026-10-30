@@ -163,7 +163,7 @@ if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
     else
       echo "⛔ el catálogo de producción rechazó el commit (.tycon/production.json)" >&2
       echo "   Arreglá el catálogo. Si hay que commitear igual, lo decide la persona: firma en su terminal, en este repo," >&2
-      echo "   node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" --commit" >&2
+      echo "   node \"$_TCG_DIR/scripts/setup/harness.js\" sign emergency --reason \"<por qué>\" --commit" >&2
       echo "   (vale para el próximo commit de este repo, por 30 minutos)" >&2
       exit 1
     fi

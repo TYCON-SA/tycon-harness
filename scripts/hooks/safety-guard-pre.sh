@@ -313,8 +313,11 @@ ESC_MOTIVO_VAR=""
 # cartel_emergencia — cómo se saltea el freno: la emergencia, que la persona firma en su terminal con el número del
 # pedido que dejó este freno (el texto exacto que leyó; nadie lo retipea).
 cartel_emergencia() {
+  # la ruta del harness.js de este mismo árbol (el lugar del arnés no se escribe a mano: harness-place-names.json)
+  local hjs
+  hjs="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/setup/harness.js" || hjs="harness.js"
   echo "Saltear este freno lo decide la persona, no el agente: firma la emergencia en su terminal, con el número de este pedido,"
-  echo "  node ~/.claude/tycon-harness/scripts/setup/harness.js sign emergency --reason \"<por qué>\" --request ${EMERGENCIA_PEDIDO:-<número>}"
+  echo "  node \"$hjs\" sign emergency --reason \"<por qué>\" --request ${EMERGENCIA_PEDIDO:-<número>}"
   echo "y después se repite el mismo comando, sin cambiarle nada. Vale una vez, por 30 minutos."
   if [[ -z "$EMERGENCIA_PEDIDO" ]]; then echo "(No pude dejar el pedido: sin número, la emergencia no se puede firmar para este comando.)"; fi
 }
