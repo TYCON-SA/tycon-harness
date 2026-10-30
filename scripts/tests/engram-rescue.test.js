@@ -548,3 +548,53 @@ test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — el rescate resuelve harnes
   assert.match(enLab.stderr, /nada que hacer/);
   fs.rmSync(L.raiz, { recursive: true, force: true });
 });
+
+// ── índice local: chunks sin índice se rehacen ──────────────────────────────────────────────────
+
+/** Un repo git DE VERDAD (el índice local se decide con `git check-ignore` y `git ls-files`), sin índice. */
+function repoGit(L, nombre, { local }) {
+  const d = path.join(L.repos, nombre);
+  fs.mkdirSync(path.join(d, '.engram', 'chunks'), { recursive: true });
+  fs.writeFileSync(path.join(d, '.engram', 'config.json'), JSON.stringify({ project_name: 'p' }));
+  escribirChunk(d, 'c1', ['s1']); escribirChunk(d, 'c2', ['s2']);
+  if (local) fs.writeFileSync(path.join(d, '.gitignore'), '.engram/manifest.json\n');
+  const g = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-C', d, ...a], { stdio: 'ignore', env: {
+    ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t',
+    GIT_AUTHOR_DATE: '2026-10-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-10-01T00:00:00Z',
+  } });
+  g('init', '-q'); g('add', '-A'); g('commit', '-qm', 'chunks');
+  return d;
+}
+
+test('8.131 T33 Rescue_LocalIndex_NoIndexIsNormal: en índice local, chunks sin índice se rehacen y sale 0; versionado, error como hoy', SKIP, () => {
+  const L = lab();
+  db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
+  const d = repoGit(L, 'Local', { local: true });
+  const api = fakeApi(L, 'ok'); fakeEngram(L, 'exports', []);
+  const r = correr(L, api, ['--reindex', '--apply', '--repo', 'Local']); api.close();
+  assert.equal(r.status, 0, `en índice local, chunks sin índice es normal (stderr: ${r.stderr.slice(0, 300)})`);
+  const man = JSON.parse(fs.readFileSync(path.join(d, '.engram', 'manifest.json'), 'utf8'));
+  assert.deepEqual(man.chunks.map((c) => c.id).sort(), ['c1', 'c2']);
+  fs.rmSync(L.raiz, { recursive: true, force: true });
+
+  const L2 = lab();
+  db(L2, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
+  repoGit(L2, 'Versionado', { local: false });
+  const api2 = fakeApi(L2, 'ok'); fakeEngram(L2, 'exports', []);
+  const r2 = correr(L2, api2, ['--reindex', '--apply', '--repo', 'Versionado']); api2.close();
+  assert.notEqual(r2.status, 0, 'con el índice versionado, chunks sin índice sigue siendo un error');
+  assert.match(`${r2.stdout}${r2.stderr}`, /NO hay manifest\.json/);
+  fs.rmSync(L2.raiz, { recursive: true, force: true });
+});
+
+test('8.131 T33b Rescue_LocalIndexDryRun_NotGreen: en seco, un índice local al que le faltan chunks no se da por bueno', SKIP, () => {
+  const L = lab();
+  db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
+  const d = repoGit(L, 'Local', { local: true });
+  const api = fakeApi(L, 'ok'); fakeEngram(L, 'exports', []);
+  const r = correr(L, api, ['--reindex', '--repo', 'Local']); api.close();
+  assert.doesNotMatch(r.stdout, /Todo chunk en disco está en el índice/, 'el verde no puede salir con chunks sin índice');
+  assert.match(r.stdout, /2 chunk\(s\) fuera del índice/);
+  assert.equal(fs.existsSync(path.join(d, '.engram', 'manifest.json')), false, 'en seco no se escribe nada');
+  fs.rmSync(L.raiz, { recursive: true, force: true });
+});

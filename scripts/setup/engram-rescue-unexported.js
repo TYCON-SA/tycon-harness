@@ -202,6 +202,27 @@ function reindexar(apply) {
     const dirChunks = path.join(base, 'chunks');
     const fMan = path.join(base, 'manifest.json');
     if (!fs.existsSync(dirChunks)) continue;
+    // En «índice local» el índice no viaja por git: chunks sin índice es lo normal en un clon nuevo. Se
+    // rehace desde los chunks (con --apply), en vez de tratarlo como un repo roto.
+    const modo = criterio.modoDelIndice(path.dirname(base));
+    if (modo.problema) { rotos.push(`${repo}: no pude saber si el índice es local — ${modo.problema}; NO se toca`); continue; }
+    if (modo.modo === 'local') {
+      if (!apply) {
+        // en seco no se escribe nada, pero lo que falta se cuenta: si no, el cierre diría que todo está en el índice
+        let declarados = new Set();
+        try { declarados = new Set(JSON.parse(fs.readFileSync(path.join(base, 'manifest.json'), 'utf8')).chunks.map((c) => c && c.id)); } catch { /* sin índice: falta todo */ }
+        const faltan = fs.readdirSync(dirChunks).filter((f) => f.endsWith('.jsonl.gz')).map((f) => f.slice(0, -'.jsonl.gz'.length)).filter((id) => !declarados.has(id));
+        total += faltan.length;
+        console.log(`   · ${repo}: índice local${faltan.length ? `, ${faltan.length} chunk(s) sin entrada` : ''} — con --apply se rehace desde los chunks (${criterio.comandoDeRehacer(path.dirname(base))})`);
+        continue;
+      }
+      const rh = criterio.rehacer(path.dirname(base));
+      if (rh.estado === 'no-medido') { rotos.push(`${repo}: no pude rehacer el índice local — ${rh.motivo}`); continue; }
+      for (const x of rh.noAgregadas) rotos.push(`${repo}: ${x.id} — ${x.motivo}`);
+      for (const a of rh.avisos) console.log(`   ⚠️  ${repo}: ${a}`);
+      if (rh.agregadas.length) console.log(`   + ${repo}: índice local rehecho (${rh.agregadas.length} entrada(s) agregada(s); no viaja por git)`);
+      continue;
+    }
     const hayChunks = (() => { try { return fs.readdirSync(dirChunks).some((f) => f.endsWith('.jsonl.gz')); } catch { return false; } })();
     if (!fs.existsSync(fMan)) {
       if (hayChunks) rotos.push(`${repo}: hay chunks y NO hay manifest.json — esa memoria viajó por git y nadie la puede importar`);
