@@ -46,6 +46,8 @@
 #   T26 (8.139) BaseControls_ApproveConCita_YaNoVale — la clase de approve --base: refirma real, sin --base, otro cambio
 #   T54 BaseControls_NewFileOfLoosenedControl_EntersTheSignature — el archivo nuevo que carga un control que se afloja
 #       entra en lo que se firma, y cambiarlo después deja la firma sin valer; un control nuevo sigue sin trámite
+#   T56 BaseControls_Passes_RunInPullRequestMode — el pre-commit de las pasadas corre con TYCON_CHECKS_ON_PR aunque el
+#       ambiente no lo traiga (el freno de pendientes acepta la aprobación del commit), y un control frena igual
 #   T55 BaseControls_SignOnChangeRule_NoPassReadsIt_AsksForSignature — una regla que ninguna pasada lee (el alcance del
 #       portón) con «sign_on_change»: cambiarla es rojo sin la constancia aunque la base y el pedido pasen, verde con
 #       ella; sin la marca, el mismo cambio entraba sin constancia
@@ -1073,6 +1075,26 @@ R="${T}/t55c"; t55_base "${R}" 0
 run "${R}" "${T}/t55c.out"
 is "T55 sin la marca, el mismo cambio: verde" "0" "${RC}"
 has "T55 …entra sin constancia" "${T}/t55c.out" "la base y el pedido pasan: entra sin constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T56 · las pasadas corren en modo pedido: el pre-commit lo sabe por TYCON_CHECKS_ON_PR, y los controles frenan igual
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# El freno de pendientes del pre-commit pide, fuera de un pedido, el renglón firmado en la máquina; en el servidor no hay
+# esa máquina y vale la aprobación del commit con su forma y su huella (pending-approvals.test.js T24). Sin el modo, todo
+# pedido que abre un pendiente aprobado frena.
+R="${T}/t56"; make_base "${R}"
+cat >> "${R}/.githooks/pre-commit-checks" <<'SH'
+[ "${TYCON_CHECKS_ON_PR:-}" = 1 ] || { echo "toy: el pre-commit no corre en modo pedido"; exit 1; }
+SH
+commit "${R}" "base que mira el modo"; pr "${R}"
+printf 'otra cosa\n' > "${R}/docs/bien.txt"; commit "${R}"
+env -u TYCON_CHECKS_ON_PR bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t56.out" 2>&1; RC=$?
+is "T56 el pre-commit de la pasada corre en modo pedido aunque el ambiente no lo traiga: verde" "0" "${RC}"
+lacks "T56 …y no avisa que falta el modo" "${T}/t56.out" "no corre en modo pedido"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+env -u TYCON_CHECKS_ON_PR bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/t56b.out" 2>&1; RC=$?
+is "T56 en modo pedido el control frena igual: rojo" "1" "${RC}"
+has "T56 …con el motivo del control" "${T}/t56b.out" "toy: PROHIBIDO en docs/malo.txt"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
