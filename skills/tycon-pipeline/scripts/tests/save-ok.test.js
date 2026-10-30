@@ -130,8 +130,9 @@ test('ApproveSave_Ventana_EscribeHuellas (T3) @story-8.143 @ac-2', (t) => {
   const ha = ok.huellas.find((h) => h.repo === a);
   assert.strictEqual(ha.rama, 'story/la-prueba');
   assert.strictEqual(ha.base, sh(a, 'rev-parse', 'origin/main'));
-  // el árbol trae el archivo nuevo: es el árbol del commit que guardaría todo
+  // el árbol trae el archivo nuevo: es el árbol del commit que guardaría todo, sin el papeleo (la story)
   sh(a, 'add', '-A');
+  sh(a, 'rm', '-q', '--cached', 'specs/story-9.99.md');
   assert.strictEqual(ha.arbol, sh(a, 'write-tree'));
   // la story o el código fuera de todo repo: no se sabe qué guardar, y no se firma a medias
   const fuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'save-ok-fuera-')));
@@ -494,4 +495,69 @@ test('Delegada_LoQueEscribeElPipeline_NoEsCambioDeCodigo (T23) @story-8.143 @ac-
     assert.strictEqual(r2.codigo, 2, r2.motivo);
     assert.match(r2.motivo, /pruebas/);
   }
+});
+
+test('ApproveSave_SpecsYTasks_NoVencenElOk (T26)', (t) => {
+  const a = repo(t, { 'LEEME.md': 'hola\n', 'specs/story-9.99.md': '---\nstatus: in-progress\n---\n', 'app.js': '1\n' });
+  escribir(a, 'app.js', '2\n');
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  // el papeleo de la story después del ok: su estado, una tabla de tareas, un dato
+  escribir(a, 'specs/story-9.99.md', '---\nstatus: review\n---\n');
+  escribir(a, 'tasks/todo.md', '- [x] hecho\n');
+  escribir(a, 'specs/qa/9.99-pasos.json', '{}\n');
+  escribir(a, 'tasks/medicion.jsonl', '{}\n');
+  sh(a, 'add', '-A');
+  sh(a, 'commit', '-qm', 'la story y el papeleo');
+  let r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, true, r.motivo);
+  // un guion en specs/ o en tasks/ es código: vence el ok
+  escribir(a, 'specs/atajo.js', 'module.exports = 1;\n');
+  r = SO.vigente({ saveOk, repoActual: a });
+  assert.strictEqual(r.ok, false, 'un .js en specs/ es código');
+  fs.rmSync(path.join(a, 'specs', 'atajo.js'));
+  escribir(a, 'tasks/x.sh', 'echo\n');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'un .sh en tasks/ es código');
+  fs.rmSync(path.join(a, 'tasks', 'x.sh'));
+  // y el código, como siempre
+  escribir(a, 'app.js', '3\n');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'cambiar el código vence el ok');
+});
+
+test('Papeleo_SpecsYTasks_NoEsCambioDeCodigo_NiSensible (T27)', (t) => {
+  const a = repo(t);
+  escribir(a, 'specs/story-9.99.md', 'x\n');
+  escribir(a, 'tasks/todo.md', 'x\n');
+  assert.deepStrictEqual(SO.sensibles({ repos: [a] }), []);
+  // un archivo de la lista sensible sigue pidiendo su propio ok aunque esté al lado del papeleo
+  escribir(a, 'scripts/lib/signatures.js', 'x\n');
+  assert.ok(SO.sensibles({ repos: [a] }).some((x) => x.archivo === 'scripts/lib/signatures.js'));
+});
+
+test('ApproveSave_PapeleoQueCargaAlgo_VenceElOk (T28)', (t) => {
+  // lo que una herramienta carga o lo que está en la lista sensible, aunque viva en specs/ o tasks/ y sea .json o .md
+  const casos = ['specs/.claude/settings.json', 'tasks/hooks.json', 'specs/team-profile.json', 'specs/package.json',
+    'tasks/tsconfig.build.json', 'specs/.claude/commands/atajo.md', 'specs/X.MD'];
+  for (const f of casos) {
+    const a = repo(t);
+    const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+    escribir(a, f, '{"x":1}\n');
+    assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, `${f} vence el ok`);
+  }
+  // un enlace en specs/ que se reapunta después del ok
+  const a = repo(t);
+  escribir(a, 'specs/dato.md', 'a\n');
+  escribir(a, 'specs/otro.md', 'b\n');
+  fs.symlinkSync('dato.md', path.join(a, 'specs', 'enlace.md'));
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  fs.unlinkSync(path.join(a, 'specs', 'enlace.md'));
+  fs.symlinkSync('otro.md', path.join(a, 'specs', 'enlace.md'));
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false, 'reapuntar un enlace vence el ok');
+});
+
+test('ApproveSave_PapeleoAnidado_NoEsPapeleo (T29)', (t) => {
+  // sólo specs/ y tasks/ de la raíz del repo: una carpeta specs/ de otro lado es código
+  const a = repo(t);
+  const saveOk = { storyId: '9.99', startedAt: ANTES, huellas: SO.huellas([a]) };
+  escribir(a, 'app/specs/datos.json', '{}\n');
+  assert.strictEqual(SO.vigente({ saveOk, repoActual: a }).ok, false);
 });

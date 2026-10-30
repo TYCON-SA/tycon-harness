@@ -2224,6 +2224,12 @@
       "requiere": []
     },
     {
+      "__nota": "el registro común de las firmas (scripts/lib/signature-log.js): cada firma de guion deja un renglón con quién firmó, la vía, si fue delegada, quién la pidió, su id y su nivel del catálogo, la máquina, la hora y el motivo; si no se puede escribir, la firma sigue y avisa.",
+      "raiz": "arnes",
+      "ruta": "tests/signature-log.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.141 (tanda B): el aviso de arranque cuenta los arreglos rápidos de los últimos 7 días por cómo se firmaron, sólo cuando hay alguno nuevo, y --report da la misma cuenta.",
       "raiz": "arnes",
       "ruta": "tests/lane-llm-notice.test.js",

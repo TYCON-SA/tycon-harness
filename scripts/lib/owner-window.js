@@ -662,17 +662,35 @@ function verificar({ firma, argv = [], pid = process.pid, arbol, casa, ahora = D
   return no(`no hay un pedido vigente de la ventana para este comando${ilegibles ? ` (${ilegibles} registro(s) de la ventana no se pudieron leer)` : ''}`);
 }
 
+// la vía de la firma en el registro común (signature-log.js)
+const VIA_COMUN = { ventana: 'window', terminal: 'terminal', delegacion: 'delegation' };
+
 /**
  * El renglón `<firma>-signed` del gates.log: cómo se firmó, quién y para quién. Va antes de la constancia del guion.
  * `anotar(renglon)`: el guion que lo escribe en su propio registro (marker.js, con su carpeta de estado).
+ * Después, el renglón del registro común de las firmas; si no se puede escribir, avisa y la firma sigue.
+ * `persona`, `huella`, `appendSignature` y `avisar` se pasan en las pruebas.
  */
-function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), anotar, extra } = {}) {
+function firmar({ firma, via, sesion = null, destino = null, resumen = '', casa, ahora = Date.now(), anotar, extra, persona, huella, appendSignature, avisar } = {}) {
   // lo que el guion suma al renglón (el ok de guardar, sus huellas) va primero: no pisa quién ni cómo se firmó
   const renglon = { ...(typeof extra === 'function' ? extra({ via, sesion, destino }) : extra || {}), name: `${firma}-signed`, status: 'ok', via, sesion, destino, resumen: una(resumen, 200) };
-  if (anotar) { anotar(renglon); return; }
-  const dir = stateDir(casa === undefined ? casaDeLaCuenta() : casa);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date(ahora).toISOString(), ...renglon })}\n`);
+  if (anotar) anotar(renglon);
+  else {
+    const dir = stateDir(casa === undefined ? casaDeLaCuenta() : casa);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'gates.log'), `${JSON.stringify({ ts: new Date(ahora).toISOString(), ...renglon })}\n`);
+  }
+  let quien = via === 'delegacion' ? `coordinadora (sesión ${sesion})` : persona;
+  if (quien === undefined) { try { quien = os.userInfo().username; } catch (_) { quien = null; } }
+  const escribir = appendSignature || require('./signature-log.js').appendSignature;
+  // al lado del gates.log que recibió el renglón -signed: el guion que anota lo escribe en la carpeta de estado de su HOME
+  const home = casa !== undefined ? casa : anotar ? os.homedir() : undefined;
+  let r;
+  try {
+    r = escribir({ signature: firma, via: VIA_COMUN[via] || via, signer: quien, orderedBy: sesion, target: destino, reason: resumen,
+      source: path.basename(process.argv[1] || '') || null, home, now: ahora, huella });
+  } catch (e) { r = { ok: false, error: e.message }; }
+  if (!r || !r.ok) (avisar || ((m) => console.error(m)))(`⚠️ la firma se dio, pero no quedó en el registro común de firmas: ${(r && r.error) || 'sin respuesta'}`);
 }
 
 // --- las firmas sobre un archivo ------------------------------------------------------------------------------------
