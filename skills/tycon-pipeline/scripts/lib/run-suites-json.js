@@ -258,6 +258,20 @@ function resolveSkillsRoot(repo, given, env) {
 const installedSkillsIn = (home) => path.join(home, '.claude', 'agent-skills');
 
 const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
+// Borra una carpeta aunque una suite le haya sacado los permisos a algo de adentro (el banco de controles prueba así un
+// ~/.claude/skills al que no se puede entrar, y no los devuelve). Si igual no se puede, devuelve el error: quien llama
+// lo avisa con la ruta y sigue, porque una carpeta que queda no cambia el resultado de ninguna suite.
+function removeTree(dir) {
+  try { fs.rmSync(dir, { recursive: true, force: true }); return null; } catch (_) { /* se reabre y se reintenta */ }
+  const reopen = (d) => {
+    try { fs.chmodSync(d, 0o700); } catch (_) { return; }
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) if (e.isDirectory()) reopen(path.join(d, e.name));
+  };
+  reopen(dir);
+  try { fs.rmSync(dir, { recursive: true, force: true }); return null; } catch (e) { return e; }
+}
 const realOf = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
 
 /**
@@ -551,8 +565,10 @@ function main(argv, env = process.env) {
   process.on('SIGTERM', onSignal);
 
   if (covDir) {
-    // la carpeta es de esta corrida: un lcov de una corrida anterior no puede sumarse a éste
-    fs.rmSync(covDir, { recursive: true, force: true });
+    // la carpeta es de esta corrida: un lcov de una corrida anterior no puede sumarse a éste (por eso, si igual no se
+    // borra, la corrida no sigue)
+    const e = removeTree(covDir);
+    if (e) throw e;
     fs.mkdirSync(covDir, { recursive: true });
     console.log(`[suites.json] con cobertura: cada suite bajo el medidor de Node, lcov en ${covDir}`);
   }
@@ -572,14 +588,14 @@ function main(argv, env = process.env) {
     for (const d of fs.readdirSync(homesRoot)) {
       const m = /^suite-homes-(\d+)$/.exec(d);
       if (!m || Number(m[1]) === process.pid) continue;
-      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') fs.rmSync(path.join(homesRoot, d), { recursive: true, force: true }); }
+      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') removeTree(path.join(homesRoot, d)); }
     }
   } catch (_) { /* sin .advisors todavía: no hay nada viejo */ }
   try {
     for (const d of fs.readdirSync(os.tmpdir())) {
       const m = /^suite-tmps-(\d+)-/.exec(d);
       if (!m || Number(m[1]) === process.pid) continue;
-      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') fs.rmSync(path.join(os.tmpdir(), d), { recursive: true, force: true }); }
+      try { process.kill(Number(m[1]), 0); } catch (e) { if (e.code === 'ESRCH') removeTree(path.join(os.tmpdir(), d)); }
     }
   } catch (_) { /* la carpeta temporal no se deja leer: queda lo viejo, no frena la corrida */ }
   const skillsAbs = path.resolve(skills);
@@ -596,8 +612,13 @@ function main(argv, env = process.env) {
     return h;
   };
   const removeHomes = () => {
-    fs.rmSync(homesDir, { recursive: true, force: true });
-    if (tmpsDir) fs.rmSync(tmpsDir, { recursive: true, force: true });
+    for (const dir of [homesDir, tmpsDir]) {
+      if (!dir) continue;
+      const e = removeTree(dir);
+      if (!e) continue;
+      console.error(`[suites.json] ⚠️  no pude borrar ${dir}: ${e.message} — queda en el disco; el resultado de las suites no cambia`);
+      (resumen.not_removed = resumen.not_removed || []).push(dir);
+    }
   };
   // El resto de lo que la CI le pone a cada portable (`casaVacia` de scripts/tests/portable-suites.test.sh), salvo el
   // PATH: acá las herramientas de la máquina siguen a mano. Y la configuración de git de quien corre tampoco llega: un
@@ -642,7 +663,7 @@ function main(argv, env = process.env) {
       if (settled) return;
       settled = true;
       live.delete(c);
-      if (home) fs.rmSync(home, { recursive: true, force: true });
+      if (home) removeTree(home);   // lo que quede, lo vuelve a intentar removeHomes al final
       const ms = Date.now() - t0;
       const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
       const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');

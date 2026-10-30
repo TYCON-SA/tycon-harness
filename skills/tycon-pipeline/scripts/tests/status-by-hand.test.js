@@ -74,7 +74,12 @@ function correr(gancho, h, evento, env = {}) {
   });
   return { status: r.status, stderr: r.stderr || '' };
 }
-const consola = (h, command, tool_name = 'Bash', env) => correr(PUERTA, h, { tool_name, tool_input: { command } }, env);
+// la puerta de la consola corre desde una copia propia del arnés, igual que el guion que nombra el comando: el freno
+// reconoce un guion del arnés según el estado de git del clon
+const consola = (h, command, tool_name = 'Bash', env) => {
+  const { inHarnessCopy } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'harness-copy.js'));
+  return correr(inHarnessCopy(PUERTA), h, { tool_name, tool_input: { command: inHarnessCopy(command) } }, env);
+};
 const POR_CONSOLA = /se edita con la herramienta de edición/;
 const BORRADO = /BORRADO DEL ESTADO DEL PIPELINE/;
 const A_MANO = /update-story-status/;

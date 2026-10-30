@@ -1558,6 +1558,25 @@ if corre HP; then
   hp_forget() { python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop("git_hooks_path", None); json.dump(d, open(f, "w"), indent=2)' "${LAB_HOME}/.claude/.tycon-pipeline/harness-state.json"; }
   hp_notice() { estado "d.get('notice') or ''"; }
   hp_forget
+  # El laboratorio «real» copia el perfil del equipo del árbol medido. Si ese perfil fija `update.apply: auto` (el del
+  # equipo lo hace), ninguna variable lo pisa y «ask» no se puede medir: para estos dos casos el árbol del laboratorio
+  # usa una copia del perfil sin esa fijación, y después vuelve el original (el caso «auto» de abajo lo mide igual)
+  hp_unpin() {
+    local f
+    for f in team-profile.json perfil-equipo.json; do
+      [ -f "${LAB_TREE}/${f}" ] || continue
+      cp "${LAB_TREE}/${f}" "${LAB}/hp-original-${f}" || return 1
+      python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); u=d.get("update"); u.pop("apply", None) if isinstance(u, dict) else None; json.dump(d, open(f, "w"), indent=2)' "${LAB_TREE}/${f}" || return 1
+    done
+  }
+  hp_repin() {
+    local f
+    for f in team-profile.json perfil-equipo.json; do
+      [ -f "${LAB}/hp-original-${f}" ] && mv "${LAB}/hp-original-${f}" "${LAB_TREE}/${f}"
+    done
+    true
+  }
+  hp_unpin || mal "HP no pude sacarle al perfil del laboratorio la actualización fijada"
   # con la política ask: el arranque no la pone, y el aviso la pide; update --yes (con terminal, como pide ask) la pone
   TYCON_UPDATE_APPLY=ask hp startup --force
   [ -z "$(hp_value)" ] && case "$(hp_notice)" in *"falta la carpeta global de hooks de git"*"update --yes la pone"*) true ;; *) false ;; esac \
@@ -1565,6 +1584,7 @@ if corre HP; then
   SALIDA="$(harness_lab_pty - env GIT_CONFIG_GLOBAL="${HP_CFG}" TYCON_UPDATE_APPLY=ask TYCON_THIRD_PARTY=0 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1 node "${LAB_TREE}/scripts/setup/harness.js" update --yes 2>&1)"; RC=$?
   [ "$(hp_value)" = "${HP_OURS}" ] && [ "$(hp_said_set)" = 1 ] && case "$(hp_notice)" in *"falta la carpeta global"*) false ;; *) true ;; esac \
     && ok "HP con ask, update --yes la pone, lo dice, y el aviso deja de pedirla" || mal "HP ask update --yes (rc ${RC}, core.hooksPath=«$(hp_value)», aviso «$(hp_notice)»): ${SALIDA}"
+  hp_repin
   # con la política auto (la del perfil del equipo): la pone el arranque y lo dice UNA vez en el aviso
   hp_unset; hp_forget
   TYCON_UPDATE_APPLY=auto hp startup --force

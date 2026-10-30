@@ -61,10 +61,12 @@ function ramaSinTrabajo() {
 }
 
 const HOME = tmp('ewg-home-');
+// el arnés es el árbol de esta prueba: con la HOME vacía, sin decírselo el set de revisores no sabe qué paquetes activa
+const RAIZ = path.join(__dirname, '..', '..', '..', '..');
 function run(cmd, repo, extra = []) {
   return spawnSync(process.execPath,
     [PIPELINE, cmd, '--repo', repo, '--story', path.join(repo, 'story.md'), '--files', 'src/a.cs', ...extra],
-    { encoding: 'utf8', env: { ...process.env, HOME, USERPROFILE: HOME, CLAUDE_CODE_SESSION_ID: 'ewg-sin-marcador' } });
+    { encoding: 'utf8', env: { ...process.env, HOME, USERPROFILE: HOME, TYCON_GUIDES_DIR: RAIZ, CLAUDE_CODE_SESSION_ID: 'ewg-sin-marcador' } });
 }
 
 test('T1 Advisors_FolderEqualsMain_Blocks', () => {

@@ -19,6 +19,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+const { inHarnessCopy } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js'));
 const REGLA = 'TEST-C1';
 const ARCHIVO = '.advisors/tests-result.json';
 const MOTIVO = 'test-gate.sh no reconoce pytest; la suite se corrió a mano: 12 pasaron';
@@ -53,11 +54,14 @@ function laboratorio({ sid = 's-cs', criticos = [{ rule_id: REGLA, file: ARCHIVO
 const sh = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 const comando = (rule = REGLA, file = ARCHIVO, reason = MOTIVO, extra = '') => `node ${MARKER} waive-critical --rule ${rule} --file ${sh(file)} --reason ${sh(reason)}${extra}`;
 
-/** La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. */
+/**
+ * La puerta Bash del portón de carril, como la corre Claude Code antes de un comando. Corre desde una copia propia del
+ * arnés, igual que el guion que nombra el comando: el freno reconoce un guion del arnés según el estado de git del clon.
+ */
 function puertaBash(lab, command) {
-  return spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+  return spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
     cwd: lab.repo, encoding: 'utf8',
-    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command } }),
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(command) } }),
     env: lab.env,
   });
 }

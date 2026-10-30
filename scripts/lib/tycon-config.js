@@ -222,11 +222,16 @@ const VOCABULARIO = Object.freeze({
   // `delegated_signing` (no delega nada). Sólo del perfil: si la máquina pudiera decirlo, el agente se sacaría firmas.
   // `delegated_machines`: en qué máquinas vale esa delegación, por la huella de `machine-id.js` (16 hex) y un nombre para
   // la persona. Sin valor, en ninguna. Sólo del perfil: si la máquina pudiera decirlo, el agente se elegiría solo.
+  // `levels`: el nivel de cada firma de la tabla (`signatures.js`, LEVELS) que la organización sube, `{ id: nivel }`.
+  // Sólo sube: rige el mayor entre la tabla y el perfil, y un nivel menor que el de la tabla es la clave rota. Lo que
+  // queda en 2 o más sale de `delegated_signing`. Sólo del perfil: si la máquina pudiera decirlo, el agente se bajaría
+  // las firmas.
   approvals: Object.freeze({
     relay_session: 'texto',
     delegated_signing: 'firmas',
     delegated_machines: 'maquinas',
     owner_only: 'firmas-ids',
+    levels: 'niveles',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -304,7 +309,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
@@ -517,6 +522,7 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
   if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
   if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
+  if (tipo === 'niveles') return { ...valor };
   // una lista de opciones sigue siendo lista y un valor solo sigue solo: quien lo lee pregunta con `delegaFirma`
   if (subsetOf(tipo) || tipo === 'firmas' || tipo === 'firmas-ids') return Array.isArray(valor) ? valor.map((v) => v.trim()) : String(valor).trim();
   if (Array.isArray(valor)) return valor.slice();
@@ -850,7 +856,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       if (err) { errores.push({ archivo, clave: rutaEnArchivo,motivo: err }); continue; }
       if (esPerfil) {
         // en una lista de máquinas, el texto libre es el nombre de cada una: pasa por la misma regla
-        const forma = tipo === 'maquinas' ? valor.map((m) => formaPersonal(m.label)).find(Boolean) : formaPersonal(valor);
+        const forma = tipo === 'niveles' ? null : tipo === 'maquinas' ? valor.map((m) => formaPersonal(m.label)).find(Boolean) : formaPersonal(valor);
         if (forma) { errores.push({ archivo, clave: rutaEnArchivo,motivo: `valor personal (${forma}): va en ~/.claude/tycon.json o en su variable, nunca en un archivo versionado` }); continue; }
       }
       if (tipo === 'llave-o-detectar' && valor !== DETECT && esDetect(valor)) anotarViejo('value', valor, DETECT, home);
@@ -880,7 +886,38 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       delete plano['approvals.delegated_signing'];
     }
   }
+  if (esPerfil && tiene(plano, 'approvals.delegated_signing')) soloRutinaDelegada(plano, datos, archivo, ignoradas, comoVino('approvals'));
   return { errores, plano, retiradas, ignoradas };
+}
+
+/**
+ * La coordinadora firma sola sólo la rutina: de `delegated_signing` sale toda firma que llega a nivel 2 o más con lo que
+ * sube `approvals.levels` (`signatures.js`, delegatedLevel). No es un error: lo demás se sigue delegando, y la salida se
+ * dice como ignorada. Con `levels` escrito y roto no se sabe qué subió el dueño: no se delega nada (su error ya está).
+ * Un grupo de antes que trae alguna se abre en sus ids.
+ */
+function soloRutinaDelegada(plano, datos, archivo, ignoradas, seccion) {
+  const v = plano['approvals.delegated_signing'];
+  const lista = (Array.isArray(v) ? v : [v]).filter((x) => x !== 'off');
+  if (!lista.length) return;
+  const cat = catalogoDeFirmas();
+  if (!cat) return;
+  if (esObjeto(datos.approvals) && tiene(datos.approvals, 'levels') && !tiene(plano, 'approvals.levels')) {
+    plano['approvals.delegated_signing'] = 'off';
+    return;
+  }
+  const subidos = plano['approvals.levels'] || null;
+  const salen = [];
+  const quedan = [];
+  for (const valor of lista) {
+    for (const id of cat.expand(valor)) {
+      const n = cat.delegatedLevel(id, subidos);
+      if (n >= 2) { if (!salen.some((x) => x.id === id)) salen.push({ id, n }); } else if (!quedan.includes(id)) quedan.push(id);
+    }
+  }
+  if (!salen.length) return;
+  plano['approvals.delegated_signing'] = quedan.length ? quedan : 'off';
+  ignoradas.push({ archivo, clave: `${seccion}.delegated_signing`, motivo: `${salen.map((x) => `${x.id} (nivel ${x.n})`).join(', ')} no se delega: la coordinadora firma sola sólo la rutina (nivel 1); una excepción o algo irreversible lo firma una persona (guides/firmas-del-arnes.md)` });
 }
 
 /** null si el valor es del tipo; si no, el motivo. */
@@ -948,6 +985,19 @@ function validarTipo(tipo, valor) {
       const malo = valor.find((v) => typeof v !== 'string' || !cat.isId(v.trim()));
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un id de firma (guides/firmas-del-arnes.md; un grupo no vale acá)`;
       return new Set(valor.map((v) => v.trim())).size === valor.length ? null : `la lista repite una firma: ${JSON.stringify(valor)}`;
+    }
+    case 'niveles': {
+      // un nivel por id de la tabla de niveles (signatures.js, LEVELS), entero de 1 a 3, nunca menor que el de la tabla
+      const cat = catalogoDeFirmas();
+      if (!cat) return `no se pudo leer el catálogo de firmas (scripts/lib/signatures.js: ${fallaDelCatalogo}): la clave no se puede validar`;
+      if (!esObjeto(valor) || !Object.keys(valor).length) return `tiene que ser un objeto no vacío { "<id de firma>": <nivel> } (guides/firmas-del-arnes.md, «Los niveles»), no ${JSON.stringify(valor)}`;
+      for (const [id, n] of Object.entries(valor)) {
+        const base = cat.effectiveLevel(id);
+        if (base === null) return `«${id}» no está en la tabla de niveles (guides/firmas-del-arnes.md, «Los niveles»)`;
+        if (!Number.isInteger(n) || n < 1 || n > 3) return `el nivel de «${id}» tiene que ser un entero de 1 a 3, no ${JSON.stringify(n)}`;
+        if (n < base) return `«${id}» es de nivel ${base} en la tabla: el perfil sólo puede subir un nivel, no bajarlo a ${n}`;
+      }
+      return null;
     }
     case 'freno':
       return saysOn(valor) ? null : `tiene que ser "on" (o true): un freno sólo se enciende desde la configuración (sin valor, como viene de fábrica) — no ${JSON.stringify(valor)}`;
