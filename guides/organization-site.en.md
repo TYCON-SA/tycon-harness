@@ -1206,8 +1206,11 @@ With that the night pushes directly, and the site opens its request, approves it
 (the section says "Applied", *Aplicado*). A person cannot push to `main` (it bounces with `TF402455`): they go in through
 a request, which they can approve themselves.
 
-**On GitHub** the night goes in by itself; the site, not yet: whoever opens a pull request cannot approve it. The rule
-is the push rule by path in the GitHub README: the site validates and downloads `operations.json`, and a maintainer
+**On GitHub** the night goes in by itself. Whoever opens a pull request cannot approve it, so the site does not vote: it
+merges its pull request directly when its identity can bypass review; if the repo asks for another person's approval,
+it turns on **auto-merge** (*Allow auto-merge*) and the request goes in when someone approves it; and if GitHub does not
+allow auto-merge, the request stays open for someone to approve and merge by hand. With the push rule by path in the
+GitHub README, the site does not propose changes to `operations.json`: it validates and downloads them, and a maintainer
 opens the pull request by hand.
 
 **What you give up.** Nobody reviews those changes before they go in. A record remains: each change from the site is a

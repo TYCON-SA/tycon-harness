@@ -172,8 +172,12 @@ sesión, el enlace al sitio.
 **La protección de `operations.json` y de los workflows.** La regla de la organización es **«todo automático»**: lo que
 guarda la noche y lo que propone el sitio entra a `main` sin que lo apruebe una persona. Es la misma que dicen la guía
 del sitio (`guides/organization-site.md`, «La política de rama del repo de operaciones») y el README de Azure DevOps.
-En GitHub se cumple a medias: **la noche entra sola; el sitio, todavía no**, porque quien abre un pull request no puede
-aprobarlo y el sitio no completa pedidos en GitHub. Ponela **antes** de publicar el sitio de la organización: sin
+En GitHub **la noche entra sola**. Lo que propone el sitio entra solo si el repo lo deja, porque quien abre un pull
+request no puede aprobarlo: el sitio une su pedido directo cuando su identidad puede saltear la revisión; si el repo
+pide la aprobación de otra persona, le prende la **unión automática** y entra cuando alguien lo apruebe; y si GitHub no
+deja la unión automática, el pedido queda abierto para que alguien lo apruebe y lo una a mano. Para el segundo camino,
+prendé *Allow auto-merge* en *Settings → General*. Ninguno saltea una regla del repo. Ponela **antes** de publicar el
+sitio de la organización: sin
 ella, cualquiera que pueda empujar a `main` se hace mantenedor del sitio o cambia un workflow y se lleva sus secretos. En
 *Settings → Rules → Rulesets → New push ruleset* (repos privados o internos), la regla **Restrict file paths** sobre
 `operations.json` y `.github/workflows/**`, con el equipo de quienes mantienen como única excepción (*Bypass list*). Los
@@ -188,8 +192,8 @@ los nocturnos; ponerle de excepción a GitHub Actions dejaría a cualquiera con 
 `operations.json` y los workflows sin que otro lo mire. Queda la constancia: cada cambio es un commit con su autor.
 **Volver a pedir aprobación:** cambiar la regla por ruta por un *branch ruleset* sobre `main` con *Require a pull
 request before merging* y una aprobación. Como frena también los guardados de la noche, lleva a GitHub Actions en su
-*Bypass list*, con el riesgo del paréntesis de arriba. Con esa regla el sitio propone, y el pull request queda para que
-lo apruebe otra persona.
+*Bypass list*, con el riesgo del paréntesis de arriba. Con esa regla el sitio propone y le prende la unión automática
+al pull request, que entra cuando lo apruebe otra persona.
 
 Y en *Settings → Actions → General*: *Workflow permissions* puede quedar en «Read repository contents»; cada workflow
 pide para sí `contents: write` (para guardar en este repo) y nada más. Si `main` del repo de operaciones tiene reglas de
