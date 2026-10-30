@@ -2200,6 +2200,12 @@
       "requiere": []
     },
     {
+      "__nota": "quién aprueba una firma: el dueño en los repos del arnés, el dev en cualquier otro repo (scripts/lib/approver.js, por el remoto del repo).",
+      "raiz": "arnes",
+      "ruta": "tests/approver.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un pendiente nuevo en la lista de pendientes no entra sin su aprobación firmada: la biblioteca, el control del árbol y del commit, el comando de la firma antes de pedirla, la firma en el catálogo y el freno de escritura del registro.",
       "raiz": "arnes",
       "ruta": "tests/pending-approvals.test.js",
@@ -2221,6 +2227,12 @@
       "__nota": "el registro común de las firmas (scripts/lib/signature-log.js): cada firma de guion deja un renglón con quién firmó, la vía, si fue delegada, quién la pidió, su id y su nivel del catálogo, la máquina, la hora y el motivo; si no se puede escribir, la firma sigue y avisa.",
       "raiz": "arnes",
       "ruta": "tests/signature-log.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "etapa D de las firmas: harness.js sign firma un id del catálogo en la terminal y lo anota en el registro común; la emergencia, por número de pedido o --commit, deja pasar una vez lo que frenó un freno; el agente no la corre ni se la firma solo.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-sign.test.js",
       "requiere": []
     },
     {

@@ -210,7 +210,7 @@ const TABLA_DE_NIVELES = [
   ['escape:TYCON_TEST_GATE', 2, ['dev', 'mant']], ['escape:TYCON_STATUS_GATE', 2, ['dev', 'mant']],
   ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
   ['control-change', 3, ['mant']], ['escape:TYCON_SAFETY_OFF', 3, ['dev', 'mant']], ['escape:TYCON_PROD_LINT', 3, ['dev', 'mant']],
-  ['escape:TYCON_NEW_NAMES', 3, ['mant']],
+  ['escape:TYCON_NEW_NAMES', 3, ['mant']], ['emergency', 3, ['dev', 'mant']],
 ];
 
 // Lo que cubre cada firma de hoy que no es su propio id de la tabla: las tres que se parten y los siete escapes que se
@@ -233,7 +233,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [7, 15, 4], '7 de rutina, 15 de excepción, 4 irreversibles');
+  assert.deepStrictEqual(cuenta, [7, 15, 5], '7 de rutina, 15 de excepción, 5 irreversibles');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -248,9 +248,10 @@ test('niveles T2 Catalogo_CadaFirmaApuntaASuNivel', () => {
     assert.strictEqual(s.level, Math.max(...cubre.map((id) => nivel[id].n)), `${s.id}: su nivel es el mayor de lo que cubre`);
     assert.deepStrictEqual([...s.profiles], ['dev', 'mant'].filter((p) => cubre.some((id) => nivel[id].p.includes(p))), `${s.id}: perfiles`);
   }
-  // cada id de la tabla lo pide alguna firma de hoy, salvo pasarse del cupo diario, que todavía no existe
+  // cada id de la tabla lo pide alguna firma de hoy, salvo pasarse del cupo diario, que todavía no existe, y la
+  // emergencia, que se da con `harness.js sign` y no con una firma de hoy
   const pedidos = new Set(cat.SIGNATURES.flatMap((s) => s.covers));
-  assert.deepStrictEqual(TABLA_DE_NIVELES.map(([id]) => id).filter((id) => !pedidos.has(id)), ['adhoc-lane:sobre-cupo']);
+  assert.deepStrictEqual(TABLA_DE_NIVELES.map(([id]) => id).filter((id) => !pedidos.has(id)), ['adhoc-lane:sobre-cupo', 'emergency']);
 });
 
 // niveles T3 Catalogo_NivelPorDelegacion

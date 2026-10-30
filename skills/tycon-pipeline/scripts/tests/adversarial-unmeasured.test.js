@@ -573,6 +573,6 @@ test('T8 AvisosDelMarcador_NoRecetanElApagado @story-8.104 @ac-2', () => {
   // abandonarlo lo firma el dueño: ni la receta de la variable ni la frase de la persona
   for (const l of avisos) {
     assert.doesNotMatch(l, /TYCON_NO_DEEP_REVIEW/, `sin la receta ni la frase: ${l.trim()}`);
-    assert.match(l, /lo firma el dueño/, `con la firma del dueño: ${l.trim()}`);
+    assert.match(l, /lo firma una persona/, `con la firma del dueño: ${l.trim()}`);
   }
 });

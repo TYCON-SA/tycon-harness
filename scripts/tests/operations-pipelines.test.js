@@ -945,7 +945,7 @@ test('ProductionWatch_Modelo_SinNombresYConEfectos: a las 08:00, con efectos, lo
   assert.match(y, /\$\{\{ each name in parameters\.hostsSecrets \}\}:\n\s+\$\{\{ name \}\}: \$\(\$\{\{ name \}\}\)/);
   // ningún nombre de credencial de host escrito (las del canal del aviso son las de siempre, como en dependencias)
   assert.doesNotMatch(y, /BIZEXT|_PASS:|^\s+(?!TYCON_MAIL_USER:)\w+_USER:/m, 'ningún nombre de credencial escrito');
-  for (const t of ['fetch-harness.yml', 'ops-data.yml', 'check-tree.yml']) assert.match(y, new RegExp(`- template: pipelines/operations/templates/${t.replace('.', '\\.')}@harness`));
+  for (const t of ['fetch-harness.yml', 'ops-data.yml', 'check-tree.yml']) assert.match(y, new RegExp(`- template: pipelines/operations/templates/${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}@harness`));
   // el orden de la noche: registrar lo decidido → la guarda → el vigilante
   const ix = (re) => y.search(re);
   assert.ok(ix(/--record-only/) > 0 && ix(/templates\/check-tree\.yml/) > ix(/--record-only/) && ix(/vigilante\.js run/) > ix(/templates\/check-tree\.yml/), 'registrar → guarda → vigilante');

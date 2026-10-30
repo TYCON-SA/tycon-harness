@@ -589,7 +589,7 @@ if (/REFUTAR/i.test(prompt)) {
 test('T9 Skill_NoOfreceSaltearElPase @story-8.104 @ac-1', () => {
   const skill = fs.readFileSync(path.join(SCRIPTS, '..', 'SKILL.md'), 'utf8');
   const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-08-adversarial-pass.md'), 'utf8');
-  const regla = (id) => { const m = new RegExp(`^- \\*\\*${id.replace(/\./g, '\\.')}[^\\n]*(?:\\n  [^\\n]*)*`, 'm').exec(skill); return m ? m[0] : ''; };
+  const regla = (id) => { const m = new RegExp(`^- \\*\\*${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*(?:\\n  [^\\n]*)*`, 'm').exec(skill); return m ? m[0] : ''; };
   const comm = regla('COMM.iii');
   const hii = regla('H.ii');
   const tooli = regla('TOOL.i');

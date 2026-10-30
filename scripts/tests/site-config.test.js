@@ -70,7 +70,7 @@ test('T6 Revisar_MismoLector_ProblemasConRuta @story-2.29 @ac-6 — el lector de
 test('T17 Perfil_SinVersionMinima_NoPropone @story-2.29 @ac-17 — la parte común del texto, sin la cola del clon', () => {
   const bajo = ORG.profileGateProblem(JSON.stringify({ requires: { harness: '>= 2026.10.01.1' } }));
   assert.match(bajo, /todavía no se puede proponer/);
-  assert.match(bajo, new RegExp(ORG.TEAM_REPOS_SINCE.replace(/\./g, '\\.')));
+  assert.match(bajo, new RegExp(ORG.TEAM_REPOS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(bajo, /quedó guardado en tu clon/);
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify({ requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } })), null);
   assert.match(ORG.profileGateProblem('no es json'), /no pude leer team-layer\.json/);
@@ -413,8 +413,8 @@ test('T3 Escritura_SinOrigenSinTokenNoJsonGrande_NadaCreado @story-2.29 @ac-3', 
     assert.notStrictEqual(tok, otro, 'cada sesión, su token');
     const cuerpo = JSON.stringify({ seccion: 'responsables', borrador: { owners: { default: LEAD } } });
     const casos = [
-      [{ 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /falta el origen del pedido/],
-      [{ origin: 'https://otro.example', 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /el pedido viene de otro origen/],
+      [{ 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /falta el origen de la solicitud/],
+      [{ origin: 'https://otro.example', 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /la solicitud viene de otro origen/],
       [{ origin: 'http://127.0.0.1', 'content-type': 'application/json' }, cuerpo, 403, /falta el token del sitio/],
       [{ origin: 'http://127.0.0.1', 'content-type': 'application/json', 'x-site-token': otro }, cuerpo, 403, /el token no es el de tu sesión/],
       [{ origin: 'http://127.0.0.1', 'content-type': 'text/plain', 'x-site-token': tok }, cuerpo, 415, null],
@@ -1057,13 +1057,13 @@ test('Pantalla_RechazoEnLlano_NuncaRespuestaN @story-2.38 @ac-4 — un rechazo d
   const casos = [
     [vacio(401), /la sesión venció o se cerró: recargá la página/],
     // el sitio manda su motivo en cada 403: uno vacío lo dio lo que está delante (el candado de la nube)
-    [vacio(403), /lo rechazó lo que está delante del sitio, no el sitio: recargá la página.*quien mantiene/],
+    [vacio(403), /la rechazó lo que está delante del sitio, no el sitio: recargá la página.*quien mantiene/],
     [vacio(503), /el sitio está cargando o frenado: probá de nuevo en unos segundos/],
     [vacio(418), /el sitio contestó con un error \(418\)/],
     // con el mensaje del servidor, ése (aunque el JSON no traiga `ok`)
     [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false, codigo: 'sin_rol', message: 'tu cuenta ana@acme.example no está entre los que mantienen el sitio' }) }), /tu cuenta ana@acme\.example no está entre los que mantienen el sitio/],
     // un JSON sin `message`: el llano de su estado
-    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false }) }), /lo rechazó lo que está delante del sitio/],
+    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false }) }), /la rechazó lo que está delante del sitio/],
   ];
   for (const [f, rx] of casos) {
     const t = await correrPantalla(f);
@@ -1328,7 +1328,7 @@ test('7.29-T23 Config_Modelos_PortonDeVersion @story-7.29 @ac-5 — con varias c
   assert.strictEqual(g(ORG.MODELS_SINCE, { ...conModelos, ...SUITES_OK }), null);
   await conPerfil({ layer: capa(ORG.MERGE_SUITES_SINCE) }, async ({ revisar, proponer }) => {
     const r = await revisar('modelos', { models: { reviewers: 'opus' } });
-    assert.match((await proponer('modelos', r.texto)).message, new RegExp(`todavía no se puede proponer.*>= ${ORG.MODELS_SINCE.replace(/\./g, '\\.')}`));
+    assert.match((await proponer('modelos', r.texto)).message, new RegExp(`todavía no se puede proponer.*>= ${ORG.MODELS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 });
 
@@ -1457,7 +1457,7 @@ test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — i
   assert.strictEqual(p.error, null);
   const opciones = p.todo(p.sec('respuesta')).filter((n) => n.tag === 'option').map((n) => n.attrs.value);
   for (const o of ['executive', 'detailed', 'neutral', 'es', 'en']) assert.ok(opciones.includes(o), `opción ${o}: ${opciones}`);
-  assert.match(p.textoDe('respuesta'), /Hoy: executive · es · 1300 caracteres \(del perfil\)/);
+  assert.match(p.textoDe('respuesta'), /Hoy: ejecutivo · castellano · 1300 caracteres \(del perfil\)/);
 });
 
 test('2.31-T2 ResponseSection_ProposesOnlyResponseKey_RestByteIdentical @story-2.31 @ac-2 — sólo cambia response; el archivo entero pasa el lector del perfil', async () => {
@@ -1557,7 +1557,7 @@ test('2.31-T12 ThreadsToggle_ProposesOnlySiteMailboxThreads @story-2.31 @ac-14 @
   await conEquipo({}, async ({ seccion }) => {
     const v = await seccion('hilos');
     assert.strictEqual(v.soloLectura, true);
-    assert.match(v.motivo, /buzón/);
+    assert.match(v.motivo, /depósito/);
   });
 });
 
@@ -2137,7 +2137,7 @@ test('T8 Interruptor_ElQueCuentaEsElDeMain @story-2.39 @ac-8', { skip: SIN_BACKE
     const antes = r.ref('refs/heads/main');
     const p = await proponer('aplicar', rev.texto);
     assert.strictEqual(p.ok, true, JSON.stringify(p));
-    assert.match(p.message, /^Pedido abierto: /);
+    assert.match(p.message, /^Pull request abierto: /);
     assert.deepStrictEqual(parches(ado), [], 'prenderla nunca se aplica sola');
     assert.strictEqual(r.ref('refs/heads/main'), antes);
   });
@@ -2196,7 +2196,7 @@ test('T11 EstadoProponer_DiceSiSeAplicaSolo @story-2.39 @ac-10', { skip: SIN_BAC
   });
   // la pantalla dice qué va a pasar antes de tocar «Proponer»
   const codigo = ORG.pantalla();
-  assert.ok(codigo.includes('Se aplica solo: el sitio aprueba y completa el pedido'), 'el texto de «se aplica solo»');
+  assert.ok(codigo.includes('Se aplica solo: el sitio aprueba y completa el pull request'), 'el texto de «se aplica solo»');
 });
 
 test('Aplicado_RefrescoLento_ContestaAlTope @story-2.68 @ac-1', { skip: SIN_BACKEND }, async () => {
@@ -2499,7 +2499,7 @@ test('T27 TeamRepos_StackKey_SinceVersion @story-8.48 @ac-27 @ac-33 — `stack` 
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['team-repos.json', 'perfil', 'team-repos.js', ['stack'], 'repos']);
   assert.ok(ORG.versionAtLeast(ORG.STACK_SINCE, ORG.COVERAGE_SINCE) && ORG.STACK_SINCE !== ORG.COVERAGE_SINCE, 'la versión de `stack` es posterior a la de cobertura');
   const borrador = { stack: { code_extensions: ['.ex'], rules: { test_names: 'snake' } } };
-  for (const [v, espera] of [[ORG.COVERAGE_SINCE, new RegExp(`todavía no se puede proponer.*stack.*${ORG.STACK_SINCE.replace(/\./g, '\\.')}`)], [ORG.STACK_SINCE, PASO_EL_PORTON]]) {
+  for (const [v, espera] of [[ORG.COVERAGE_SINCE, new RegExp(`todavía no se puede proponer.*stack.*${ORG.STACK_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)], [ORG.STACK_SINCE, PASO_EL_PORTON]]) {
     await conPerfil({ layer: capa(v) }, async ({ seccion, revisar, proponer }) => {
       const sec = await seccion('tecnologia');
       assert.strictEqual(sec.estado, 'cargado');
@@ -2806,7 +2806,7 @@ test('T30d SiteConfig_ReplaceBuiltIn_CopiesPhraseForThatTool — «Reemplazar» 
   try {
     for (const [idioma, frase, despues] of [
       ['es', 'quiero reemplazar la herramienta de pruebas Node (node --test) de mi proyecto por una receta propia en la configuración del arnés, detectada por package.json (la receta está en la sección «Tu tecnología» de guides/organization-site.md del arnés)',
-        'El agente arma el pedido, lo aprueba un admin y desde la próxima ejecución se usa la tuya.'],
+        'El agente arma el pull request, lo aprueba un admin y desde la próxima ejecución se usa la tuya.'],
       ['en', 'I want to replace the Node (node --test) test tool in my project with our own recipe in the harness configuration, detected by package.json (the recipe is in the «Your technology» section of the harness guides/organization-site.en.md)',
         'The agent builds the request, an admin approves it, and from the next execution on yours is used.'],
     ]) {
@@ -2872,7 +2872,7 @@ test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 
   // revisado y bien escrito: la pantalla dice que no se aplica solo, que se abre un pedido que alguien aprueba
   const q = await pantallaTec({ stack: { code_extensions: ['.ex'] } }, 'es', { texto: '{}\n', proponer: { perfil: { habilitado: true } } });
   await q.revisado();
-  assert.match(q.texto(), /Se abre un pedido de cambio en .*Entra cuando alguien lo aprueba/);
+  assert.match(q.texto(), /Se abre un pull request en .*Entra cuando alguien lo aprueba/);
 });
 
 // ── Personas: un renglón por persona ─────────────────────────────────────────────────────────────────────────────────
@@ -3690,7 +3690,7 @@ test('8.88 T51 · Site_Approvals_DelegatedSigningSelector_DefaultOff @story-8.88
   const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } }, lectores: { 'harness-config': TC } });
   assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
   const prendida = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } })]);
-  assert.match(prendida.textoDe('aprobaciones'), /vuelve a firmar en nombre del dueño un pedido que él ya firmó, cuando lo único nuevo es que se trajo main/);
+  assert.match(prendida.textoDe('aprobaciones'), /vuelve a firmar en nombre del dueño un pull request que él ya firmó, cuando lo único nuevo es que se trajo main/);
   assert.match(prendida.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona/);
 });
 
@@ -3711,7 +3711,7 @@ test('8.116 T36 SiteConfig_SelectorDe888_LeeLaLista', async () => {
     const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', ...(firma === undefined ? {} : { delegated_signing: firma }) } })]);
     assert.strictEqual(p.error, null);
     assert.strictEqual(selectorDeFirma(p).value || '', prendida ? 'delegada' : '', JSON.stringify(firma));
-    assert.strictEqual(/vuelve a firmar en nombre del dueño un pedido que él ya firmó/.test(p.textoDe('aprobaciones')), prendida, JSON.stringify(firma));
+    assert.strictEqual(/vuelve a firmar en nombre del dueño un pull request que él ya firmó/.test(p.textoDe('aprobaciones')), prendida, JSON.stringify(firma));
   }
 });
 
@@ -3993,7 +3993,7 @@ test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 �
     for (const p of ['work_items.type', 'work_items.fixed_fields.Custom.Categoria', 'work_items.fixed_fields.Custom.Probabilidad']) assert.ok(rutas.includes(p), `${idioma}: el campo ${p}`);
     for (const g of OPS.SEVERITIES) assert.ok(rutas.includes(`work_items.by_severity.${g}.Custom.Impacto`), `${idioma}: la fila de ${g}`);
     const texto = nodos.map((n) => n.textContent || '').join(' | ');
-    assert.match(texto, idioma === 'es' ? /Pedidos de trabajo/ : /Work items/);
+    assert.match(texto, idioma === 'es' ? /Tareas/ : /Work items/);
     assert.match(texto, idioma === 'es' ? /Crítica/ : /Critical/, `${idioma}: la gravedad dicha en el idioma`);
   }
   // el editor cambia el borrador con la forma del lector: renombrar una fila la mueve en las cuatro gravedades, un número va como número
@@ -4199,7 +4199,7 @@ test('T16g Tabla_CampoSinValores_CampoDeTexto @story-4.9 @ac-10 — un campo sin
 
 test('T16h Tabla_SinLista_TextoAvisoYGuardadoIntacto @story-4.9 @ac-10 — sin las listas, campos de texto, el aviso con el motivo y lo guardado sin cambios', async () => {
   // 🔴 rojo: sin permiso desaparecen los campos o la tabla, no dice por qué, o revisar sin tocar nada cambia lo guardado.
-  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo' };
+  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de tarea: falta su permiso de lectura de tareas (work items)' };
   const t = await tablaDePedidos(WI_TABLA, { '/api/config/tipos-de-pedido': () => sinPermiso });
   assert.strictEqual(t.error, null);
   assert.ok(!t.nodos().some((n) => n.tag === 'select' || n.tag === 'datalist'), 'sin listas, todo se escribe');
@@ -4209,7 +4209,7 @@ test('T16h Tabla_SinLista_TextoAvisoYGuardadoIntacto @story-4.9 @ac-10 — sin l
   for (const g of GRAVEDADES_4) assert.strictEqual(t.en(`work_items.by_severity.${g}.Custom.Impacto`).tag, 'input');
   const aviso = t.nodos().find((n) => n.attrs.class === 'aviso-listas');
   assert.ok(aviso, 'el aviso de arriba');
-  assert.match(t.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo\. Podés escribir los nombres y los valores; se validan al revisar\./);
+  assert.match(t.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de tarea: falta su permiso de lectura de tareas \(work items\)\. Podés escribir los nombres y los valores; se validan al revisar\./);
   assert.ok(t.nodos().some((n) => n.tag === 'button' && n.textContent === '+ campo'), '«+ campo» también sin lista');
   assert.deepStrictEqual(await t.revisado(), WI_TABLA, 'lo guardado, intacto');
 });
@@ -4324,7 +4324,7 @@ test('T18 Pedidos_LecturaDeTiposYCampos_ConPermisoSinPermisoYCaidas @story-4.9 @
   assert.deepStrictEqual((await RP.tiposDePedido({ ...base, fetch: conOcultos })).tipos, ['Bug']);
   const sin = await RP.tiposDePedido({ ...base, fetch: resp(401) });
   assert.deepStrictEqual([sin.ok, sin.codigo], [false, 'sin_permiso']);
-  assert.match(sin.message, /lectura de pedidos de trabajo/);
+  assert.match(sin.message, /necesita poder leer las tareas/);
   assert.strictEqual((await RP.tiposDePedido({ ...base, token: null, fetch: resp(200) })).codigo, 'sin_permiso', 'sin credencial no pregunta');
   assert.strictEqual((await RP.tiposDePedido({ ...base, fetch: async () => { throw new Error('red'); } })).codigo, 'sin_respuesta');
   assert.strictEqual((await RP.tiposDePedido({ ...base, fetch: resp(200, 'no es json') })).codigo, 'sin_respuesta');
@@ -4333,7 +4333,7 @@ test('T18 Pedidos_LecturaDeTiposYCampos_ConPermisoSinPermisoYCaidas @story-4.9 @
   assert.deepStrictEqual(campos, { ok: true, campos: [{ referencia: 'Custom.Impacto', nombre: 'Impacto', valores: ['1', '2', '3'] }, { referencia: 'System.Title', nombre: 'Title', valores: [] }] });
   assert.match(urls[urls.length - 1], /\/workitemtypes\/Riesgo\/fields\?\$expand=allowedValues&api-version=7\.1$/);
   const noEsta = await RP.camposDelTipo({ ...base, tipo: 'Nada', fetch: resp(404) });
-  assert.deepStrictEqual([noEsta.codigo, /no tiene el tipo de pedido Nada/.test(noEsta.message)], ['no_reconozco', true]);
+  assert.deepStrictEqual([noEsta.codigo, /no tiene el tipo de tarea Nada/.test(noEsta.message)], ['no_reconozco', true]);
   for (const tipo of ['', '..', 'a/b', 'a?b']) assert.strictEqual((await RP.camposDelTipo({ ...base, tipo, fetch: resp(200) })).codigo, 'no_reconozco', JSON.stringify(tipo));
 });
 
@@ -4351,14 +4351,14 @@ test('T19 Pedidos_PantallaOfreceLasListas_YSinPermisoDejaEscribirConAviso @story
   assert.deepStrictEqual(valores('work_items.fixed_fields.Custom.Impacto'), ['1', '2', '3'], 'los valores permitidos del campo');
   assert.match(con.textoDe('pedidos'), /no incluye los de Compras/);
   assert.deepStrictEqual(con.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido').map((x) => x.cuerpo), [{ tipo: 'Riesgo' }], 'los campos, una vez por tipo');
-  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo. Mientras tanto, escribí el nombre' };
+  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de tarea: falta su permiso de lectura de tareas (work items). Mientras tanto, escribí el nombre' };
   const sin = await pantallaFalsa([sec()], { '/api/config/tipos-de-pedido': () => sinPermiso });
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   const n2 = sin.todo(sin.sec('pedidos'));
   const t2 = n2.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.type');
   assert.ok(t2 && t2.attrs.value === 'Riesgo' && !t2.attrs.list, 'el campo de siempre, con lo guardado');
   assert.ok(!n2.some((n) => n.tag === 'datalist'), 'sin listas');
-  assert.match(sin.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de pedido/);
+  assert.match(sin.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de tarea/);
   assert.deepStrictEqual(sin.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido'), [], 'sin tipos no pide campos');
 });
 
@@ -4390,7 +4390,7 @@ test('T20 Pedidos_ElSitioLeeDeLosProyectosDeLosProductos_ConElTokenDeSoloLectura
       const c = (await escribir('/api/config/campos-de-pedido', lead, tok, { tipo: 'Riesgo' })).json;
       assert.deepStrictEqual([c.ok, c.proyecto, c.campos[0].valores], [true, 'Ventas', ['1', '2']]);
       const nada = (await escribir('/api/config/campos-de-pedido', lead, tok, { tipo: 'Inexistente' })).json;
-      assert.match(nada.message, /ningún proyecto de los productos tiene el tipo de pedido Inexistente/);
+      assert.match(nada.message, /ningún proyecto de los productos tiene el tipo de tarea Inexistente/);
     });
     vistos.length = 0;
     const soloCompras = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': JSON.stringify({ azure: { org: 'acme' }, repos: [{ producto: 'C', ado: 'Compras/app' }] }) });
@@ -4398,7 +4398,7 @@ test('T20 Pedidos_ElSitioLeeDeLosProyectosDeLosProductos_ConElTokenDeSoloLectura
       const lead = await entrar(LEAD); const tok = await token(lead);
       const t = (await escribir('/api/config/tipos-de-pedido', lead, tok, {})).json;
       assert.deepStrictEqual([t.ok, t.codigo], [false, 'sin_permiso']);
-      assert.match(t.message, /necesita lectura de pedidos de trabajo/);
+      assert.match(t.message, /necesita poder leer las tareas/);
     });
   } finally { await new Promise((r) => az.close(r)); }
 });
@@ -4546,7 +4546,7 @@ test('T13b Modelos_CodexReviewersInherit_PideSuVersion · se revisa con el lecto
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced', codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE, 'con niveles, la mayor');
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE, 'sin la clave, como hoy');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const ok = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { codex_reviewers: 'inherit' } }, lectores: { 'team-repos.js': TEAM } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
   assert.match(ok.texto, /"codex_reviewers": "inherit"/);
@@ -4580,7 +4580,7 @@ test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE, 'con nombres, la de siempre');
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { session: { heavy: 'max' } } }).version, ORG.MODEL_LEVELS_SINCE, 'un nivel adentro de un objeto');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } }), null);
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'sonnet' } }), null);
   // un comentario cuyo texto es un nivel no es un nivel: ni pide la versión ni se traduce
@@ -4711,7 +4711,7 @@ test('T40 Proveedores_PidenSuVersion @story-2.73 @ac-32', () => {
   assert.notStrictEqual(ORG.MODEL_PROVIDERS_SINCE, ORG.CODEX_REVIEWERS_SINCE);
   for (const models of [{ providers: { ollama: { economy: 'x' } } }, { allowed: { ollama: ['x'] } }, { nightly: { provider: 'anthropic' } }]) {
     assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models }).version, ORG.MODEL_PROVIDERS_SINCE, JSON.stringify(models));
-    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/\./g, '\\.')));
+    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE);
@@ -4721,7 +4721,7 @@ test('T41 Textos_ProveedoresEnEsYEn @story-2.73 @ac-33', () => {
   const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   const claves = ['pantalla.porProveedor', 'pantalla.porProveedorAyuda', 'pantalla.proveedor.anthropic', 'pantalla.proveedor.openai', 'pantalla.proveedor.ollama',
-    'pantalla.proveedor.cursor', 'pantalla.nivel2', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
+    'pantalla.proveedor.cursor', 'pantalla.columnaNivel', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
     'pantalla.permitidosAyuda', 'pantalla.elProcesoDeLaNoche', 'pantalla.nocheProveedor', 'pantalla.nocheSinConfigurar', 'pantalla.nocheHoy',
     'pantalla.nocheSinModelo', 'pantalla.nocheLlave', 'pantalla.equivalenciaDelNivel', 'org.nocheSinModelo'];
   for (const k of claves) {
@@ -5107,7 +5107,7 @@ test('2.75-T25 Estimates_PideSuVersion @story-2.75 @ac-22 — con la clave, el p
   assert.strictEqual(con.version, ORG.ESTIMATES_SINCE);
   assert.ok(con.claves.includes('estimates'));
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE }).version, ORG.TEAM_REPOS_SINCE, 'sin la clave, la de siempre');
-  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/\./g, '\\.')));
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_PROVIDERS_SINCE)), { ...TR_BASE, estimates: { unit: 'days' } })), new RegExp(ORG.ESTIMATES_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('2.75-T26 Textos_EnEsYEn @story-2.75 @ac-26 — los textos de la sección y de la vista existen en castellano y en inglés', () => {
@@ -5335,7 +5335,7 @@ test('T76 Config_Pedidos_EnNavegadorReal @story-4.11 @ac-43', { skip: SIN_NAVEGA
         await sec.getByRole('button', { name: 'Revisar cambios' }).click();
         await sec.getByRole('button', { name: 'Proponer el cambio' }).click();
         await sec.getByRole('button', { name: 'Confirmar y proponer' }).click();
-        await sec.getByRole('link', { name: 'Ver el pedido de cambio' }).waitFor({ timeout: 20000 })
+        await sec.getByRole('link', { name: 'Ver el pull request' }).waitFor({ timeout: 20000 })
           .catch(async (e) => { throw new Error(`${e.message}\nla sección dice: ${await sec.innerText()}`); });
         assert.strictEqual(gh.st.pedidos.length, 1, 'se abrió un pedido');
         const rama = r.empujes.at(-1).ref.replace('refs/heads/', '');
@@ -5355,7 +5355,7 @@ test('Configuracion_AplicaSolo_EncabezadoSinOtraPersona', async () => {
       assert.doesNotMatch(p, noDice, `auto_apply ${autoApply}`);
       const como = (/<details class="mas-info como-funciona">[\s\S]*?<\/details>/.exec(p) || [''])[0];
       assert.ok(como, '«¿Cómo funciona?» está');
-      if (autoApply) assert.match(como, /un pedido que el sitio aprueba solo/);
+      if (autoApply) assert.match(como, /un pull request que el sitio aprueba solo/);
       else assert.doesNotMatch(como, /aprueba solo/);
     });
   }
@@ -5509,6 +5509,31 @@ test('T34 2.79-Umbrales_SinCorridasConError_EnElArbol @story-2.79 @ac-31 — ni 
   });
 });
 
+test('T48 2.79-Corridas_DatosCrudosEnLlano @story-2.79 @ac-39 — en Configuración: el estilo y el idioma vigentes, la opción y el campo sin lista, en llano', async () => {
+  // 🔴 rojo: «Hoy: executive · es», «avisa (warn)» o un campo fijo rotulado «Custom.Categoria». La mitad del detalle de
+  // las ejecuciones («DoD PASS») está en dashboard-runs.test.sh con el mismo nombre.
+  const vigente = { language: 'en', style: 'detailed', max_chars: 1300 };
+  const origen = { language: 'perfil', style: 'perfil', max_chars: 'perfil' };
+  for (const [idioma, hoy] of [['es', /Hoy: detallado · inglés · 1300/], ['en', /detailed · English · 1300/]]) {
+    const sec = SEC('respuesta', { borrador: { response: vigente }, extras: { vigente, origen } });
+    const r = await pantallaConPestanas({ secciones: [...TODAS.filter((id) => id !== 'respuesta').map((id) => SEC(id)), sec], idioma, hash: '#seccion-respuesta' });
+    const caja = r.creados.filter((n) => n.attrs.id === 'seccion-respuesta').pop();
+    const nodos = []; const walk = (x) => { nodos.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+    const texto = nodos.map((n) => n.textContent || '').join(' | ');
+    assert.match(texto, hoy, `${idioma}: lo vigente dicho en llano`);
+    if (idioma === 'en') assert.doesNotMatch(texto, /Today: detailed · en\b/, 'el idioma no sale como «en»');
+    const pedidos = SEC('pedidos', { borrador: { work_items: WI_RIESGO } });
+    const p = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), pedidos], idioma, hash: '#seccion-pedidos' });
+    const cajaP = p.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop();
+    const nodosP = []; const walkP = (x) => { nodosP.push(x); (x.hijos || []).forEach(walkP); }; walkP(cajaP);
+    const rotulos = nodosP.filter((n) => n.tag === 'label').map((n) => n.textContent || n.attrs.text || '');
+    assert.ok(rotulos.includes('Categoria') && rotulos.includes('Probabilidad'), `${idioma}: el campo sin lista se nombra por su última parte: ${rotulos}`);
+    assert.ok(!rotulos.some((t) => /^Custom\./.test(t)), `${idioma}: ningún rótulo «Custom.…»: ${rotulos}`);
+  }
+  // la opción con texto propio se ve sólo con su texto: el valor técnico entre paréntesis («avisa (warn)») no vuelve
+  assert.doesNotMatch(ORG.pantalla(), /TX\['repoOpcion_' \+ o\] \+ ' \('/, 'la opción no lleva su valor técnico al lado');
+});
+
 // niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido
 // 🔴 Falla con: un selector que deja bajar el nivel de la tabla, un nivel en la base escrito igual en el perfil, una
 // firma que queda en 2 o más y se sigue ofreciendo para delegar, o un pedido que el lector rechazaría.
@@ -5544,7 +5569,11 @@ test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
   assert.ok(String(gate(ORG.OWNER_ONLY_SINCE)).includes(`>= ${ORG.LEVELS_SINCE}`));
   assert.strictEqual(gate(ORG.LEVELS_SINCE), null, 'con la capa al día pasa');
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
-  for (const k of ['pantalla.nivelesTitulo', 'pantalla.nivelesAyuda', 'pantalla.nivel1', 'pantalla.nivel2', 'pantalla.nivel3']) {
+  assert.match(p.textoDe('aprobaciones'), /Quién firma cada nivel/, 'la sección dice quién firma cada nivel');
+  // lo que se lee en cada opción, no sólo que la clave exista: una clave repetida en la tabla de textos se pisa con otra
+  const rotulos = (sel) => sel.hijos.map((o) => o.textContent || o.attrs.text || '');
+  assert.deepStrictEqual(rotulos(nivel(p, 'extra-round')), ['1 · rutina', '2 · excepción', '3 · irreversible']);
+  for (const k of ['pantalla.nivelesTitulo', 'pantalla.nivelesAyuda', 'pantalla.nivelesQuienFirma', 'pantalla.nivel1', 'pantalla.nivel2', 'pantalla.nivel3']) {
     const es = textos.t('es', k); const en = textos.t('en', k);
     assert.ok(es && en && es !== k && en !== k && es !== en, `${k} existe y está traducida`);
   }

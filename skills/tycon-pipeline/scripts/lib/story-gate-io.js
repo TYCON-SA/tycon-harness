@@ -343,7 +343,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   let message = gate.blockMessage(verdict, { filePath: abs, repoRoot: repo.repoRoot, marker, otherMarkers, via });
   if (adhocSinFirma && verdict.kind === 'no-lane') {
     message += `\n\n  ⚠️ Hay una declaración del arreglo rápido para esta sesión, pero sin su firma: ${adhocSinFirma}. No abre el\n`
-      + '     portón. Si el dueño quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que él aprueba en la ventana.';
+      + '     portón. Si la persona quiere el arreglo rápido, se vuelve a declarar con `marker.js adhoc set`, que ella aprueba en la ventana.';
   }
   return { verdict, message, ctx: { ...ctx, otherMarkers } };
 }

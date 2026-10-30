@@ -16,6 +16,8 @@
  *   5. las firmas del dueño por terminal (`complete-step approve-plan --terminal`, `run-base-controls.sh approve
  *      --terminal`), corridas como en su terminal: abren la ventana nueva, nadie escribe, vence y no firman. Sin la
  *      ventana contestaban «aquí no hay una terminal del dueño» y en Windows ninguna story pasaba de «Aprobar el plan».
+ *   6. la emergencia (`harness.js sign emergency`): el número del pedido ata el texto que leyó el freno con las comillas y
+ *      barras de PowerShell, Bash y cmd; el agente no la firma; sin persona vence; `--commit` coincide con la carpeta.
  * Si la ventana ni siquiera arranca el comando en este agente, el paso 2 lo dice como hallazgo (no se probó la espera).
  *
  * Fuera de Windows no mide nada (no medido). Uso: node scripts/tests/windows/waiver-probe.js --lab <laboratorio> --out <carpeta del reporte>
@@ -123,7 +125,99 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   // 5 · las firmas del dueño por terminal: abren la ventana nueva y, sin persona, vencen sin firmar
   firmasPorTerminal({ dir, x, env, rec });
 
+  // 6 · la emergencia: el número del pedido ata el texto que leyó el freno, con las comillas y barras de PowerShell y cmd
+  emergencia({ dir, env, rec });
+
   return { status: L.STATUS.measured, reason: null };
+}
+
+/**
+ * La emergencia en Windows (lib/harness-sign.js). El freno lee el comando de la herramienta (PowerShell o Bash) y guarda
+ * ese texto exacto como un pedido con número; la persona firma el número, nadie retipea el comando. Mide:
+ *   a. por cada comando —con barras invertidas, comillas dobles y la forma de cmd—: frena y da un número; firmado ese
+ *      número, el mismo comando pasa UNA vez; un espacio de más no;
+ *   b. como el agente (la marca de la ventana y las tres palabras por la entrada): no firma;
+ *   c. sin persona: la ventana nueva se abre, vence y no firma;
+ *   d. `--commit` en una carpeta de Windows: lo consume el próximo commit de ese repo.
+ * Los permisos y pedidos viven en la casa de la cuenta del agente: la sonda borra lo suyo al terminar.
+ */
+function emergencia({ dir, env, rec }) {
+  const S = require(path.join(__dirname, '..', '..', 'lib', 'harness-sign.js'));
+  const HARNESS = path.join(__dirname, '..', '..', 'setup', 'harness.js');
+  const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety-guard-pre.sh');
+  const bash = L.scanPath('bash', { env })[0];
+  const marca = `sonda_${Date.now()}`;
+  // la sonda hace de persona: el registro de mentira y el origen dado por bueno (en Windows el árbol no se mira)
+  const nadie = { append: () => ({ ok: true, path: '(sonda)' }), signer: 'sonda', levels: {}, origen: () => ({ ok: true }) };
+  const firmo = (opts) => S.sign({ ...nadie, ...opts, tty: { hay: () => true, preguntar: () => 'firmo' } });
+  const limpiar = () => {
+    for (const d of [S.carpeta(), path.join(S.carpeta(), 'pedidos')]) {
+      let fs0 = [];
+      try { fs0 = fs.readdirSync(d); } catch { continue; }
+      for (const f of fs0) { const p = path.join(d, f); try { if (fs.statSync(p).isFile() && leer(p).includes(marca)) fs.rmSync(p); } catch { /* ya no está */ } }
+    }
+  };
+  try {
+    if (!bash) { rec.finding('waiver:emergency-not-measured', 'waiver', 'no encuentro bash en este agente: el freno de seguridad no se pudo correr'); return; }
+    const freno = (herramienta, comando) => L.run(bash, [HOOK], {
+      env, input: JSON.stringify({ session_id: 'waiver-emergencia', tool_name: herramienta, tool_input: { command: comando }, cwd: dir }), timeoutMs: 120000,
+    });
+    // stable-data: son textos que se le pasan al freno, que nunca los corre
+    const casos = [
+      ['PowerShell', `sqlcmd -S .\\SQLEXPRESS -Q "DROP DATABASE ${marca}_a"`],
+      ['PowerShell', `git push --force origin main; Write-Output "${marca}"`],
+      ['Bash', `sqlcmd -S .\\\\SQLEXPRESS -Q "DROP DATABASE ${marca}_b"`],
+      ['PowerShell', `cmd /c "sqlcmd -S .\\SQLEXPRESS -Q ""DROP DATABASE ${marca}_c"""`],
+    ];
+    const vistos = [];
+    for (const [herramienta, comando] of casos) {
+      const a = freno(herramienta, comando);
+      const n = /--request ([0-9a-f]{8})/.exec(String(a.stderr || ''));
+      const caso = { herramienta, comando, frena: a.exit, numero: n ? n[1] : null };
+      vistos.push(caso);
+      if (a.exit !== 2 || !n) { rec.finding('waiver:emergency-no-request', 'waiver', `${herramienta}: el freno no frenó con número (salida ${a.exit}): ${String(a.stderr || '').slice(0, 200)}`); continue; }
+      const f = firmo({ id: 'emergency', reason: 'sonda de Windows', request: n[1] });
+      caso.firma = f.code;
+      if (f.code !== 0) { rec.finding('waiver:emergency-not-signed', 'waiver', `${herramienta}: el número del freno no se pudo firmar: ${f.lines.join(' ')}`); continue; }
+      caso.otro_texto = freno(herramienta, `${comando} `).exit;
+      caso.pasa = freno(herramienta, comando).exit;
+      caso.otra_vez = freno(herramienta, comando).exit;
+      if (caso.otro_texto !== 2) rec.finding('waiver:emergency-other-text-passed', 'waiver', `${herramienta}: con un espacio de más el comando pasó: el permiso no está atado al texto`);
+      if (caso.pasa !== 0) rec.finding('waiver:emergency-text-mismatch', 'waiver', `${herramienta}: firmado el número, el mismo comando sigue frenado: el texto que leyó el freno al frenar y al volver no coincide (${comando})`);
+      if (caso.otra_vez !== 2) rec.finding('waiver:emergency-reused', 'waiver', `${herramienta}: el permiso dejó pasar el comando dos veces`);
+    }
+    rec.fact('emergency_texts', vistos);
+
+    // b · como el agente: la marca de la ventana y las tres palabras por la entrada
+    const pedidoB = S.pedir({ comando: `sqlcmd -Q "DROP DATABASE ${marca}_agente"` });
+    const b = L.run(process.execPath, [HARNESS, 'sign', 'emergency', '--reason', 'sonda', '--request', pedidoB.numero], {
+      env: Object.assign({}, env, { TYCON_WAIVER_IN_WINDOW: '1' }), input: 'gato luna reloj\nfirmo\n', timeoutMs: 120000,
+    });
+    const firmoB = S.consumir({ comando: `sqlcmd -Q "DROP DATABASE ${marca}_agente"` });
+    rec.fact('emergency_agent_like', { exit: b.exit, signed: Boolean(firmoB && firmoB.ok) });
+    if (firmoB && firmoB.ok) rec.finding('waiver:emergency-agent-signed', 'waiver', 'con la marca y las palabras por la entrada, la emergencia SE FIRMÓ: el candado no frena al agente');
+
+    // c · sin persona: la ventana se abre, vence y no firma
+    const pedidoC = S.pedir({ comando: `sqlcmd -Q "DROP DATABASE ${marca}_nadie"` });
+    const c = L.run(process.execPath, [HARNESS, 'sign', 'emergency', '--reason', 'sonda', '--request', pedidoC.numero], {
+      env: Object.assign({}, env, { TYCON_WAIVER_TIMEOUT_S: '25' }), timeoutMs: 180000,
+    });
+    const firmoC = S.consumir({ comando: `sqlcmd -Q "DROP DATABASE ${marca}_nadie"` });
+    const diceC = `${c.stdout || ''}${c.stderr || ''}`;
+    rec.fact('emergency_no_person', { exit: c.exit, signed: Boolean(firmoC && firmoC.ok), says: diceC.split(/\r?\n/).filter(Boolean).slice(0, 3) });
+    if (firmoC && firmoC.ok) rec.finding('waiver:emergency-signed-without-person', 'waiver', 'sin nadie que escriba, la emergencia SE FIRMÓ');
+    else if (/aquí no hay una/.test(diceC)) rec.finding('waiver:emergency-no-window', 'waiver', `la emergencia no abrió la ventana nueva: ${diceC.slice(0, 300)}`);
+    else if (!/venció/.test(diceC)) rec.finding('waiver:emergency-no-timeout', 'waiver', `la emergencia no venció el plazo como se espera: ${diceC.slice(0, 300)}`);
+
+    // d · --commit en una carpeta de Windows
+    const repo = path.join(dir, `repo ${marca}`);
+    fs.mkdirSync(repo, { recursive: true });
+    L.run('git', ['-C', repo, 'init', '-q'], { env, timeoutMs: 60000 });
+    const d = firmo({ id: 'emergency', reason: `sonda de Windows ${marca}`, commit: true, cwd: repo });
+    const consumo = L.run(process.execPath, [path.join(__dirname, '..', '..', 'lib', 'harness-sign.js'), 'consume-commit', '--repo', repo], { env, timeoutMs: 60000 });
+    rec.fact('emergency_commit', { firma: d.code, consumo: consumo.exit });
+    if (d.code !== 0 || consumo.exit !== 0) rec.finding('waiver:emergency-commit-mismatch', 'waiver', `--commit en ${repo}: firma ${d.code}, consumo ${consumo.exit}: el repo del commit no coincide con el de la firma`);
+  } finally { limpiar(); }
 }
 
 /** Una corrida parada en «Aprobar el plan» (sesión waiver-owner) y su story commiteada, para las firmas por terminal. */
@@ -179,4 +273,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, measure };
+module.exports = { NAME, measure, emergencia };

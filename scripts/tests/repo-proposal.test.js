@@ -103,7 +103,7 @@ test('T15 Proponer_RamaCommitEmpujeYPedido_AzureYGithub @story-2.29 @ac-14 @ac-1
       const res = await proponer(m.base());
       assert.strictEqual(res.ok, true, textoDe(res));
       assert.strictEqual(res.rama, `team-config/operations-${SELLO}`);
-      assert.ok(res.message.startsWith('Pedido abierto: '), res.message);
+      assert.ok(res.message.startsWith('Pull request abierto: '), res.message);
       assert.ok(res.enlace && res.message.includes(res.enlace), 'el mensaje trae el enlace del pedido');
       // la rama, desde la punta de main, con UN commit de UN archivo y el autor del sitio
       const sha = m.r.ref(`refs/heads/${res.rama}`);
@@ -174,7 +174,7 @@ test('T18 FallaAMitad_DiceLoQueQuedo @story-2.29 @ac-18', { skip: SIN_BACKEND },
     assert.strictEqual(res.ok, false);
     assert.strictEqual(res.codigo, 'sin_permiso');
     assert.ok(res.message.includes('no tiene permiso en ops'), res.message);
-    assert.ok(!res.message.includes('Pedido abierto'));
+    assert.ok(!res.message.includes('Pull request abierto'));
     assert.deepStrictEqual(m.r.empujes, []);
     assert.strictEqual(m.api.llamadas.filter((l) => l.method === 'POST').length, 0, 'sin rama no se abre pedido');
     clonLimpio(m.clon);
@@ -189,10 +189,10 @@ test('T18 FallaAMitad_DiceLoQueQuedo @story-2.29 @ac-18', { skip: SIN_BACKEND },
       assert.strictEqual(res.codigo, 'pedido_no_abierto');
       assert.strictEqual(res.rama, `team-config/operations-${SELLO}`);
       assert.ok(m.r.ref(`refs/heads/${res.rama}`), 'la rama sí quedó en el repo');
-      assert.ok(res.message.includes(`subió a la rama ${res.rama}`) && res.message.includes('no pude abrir el pedido'), res.message);
+      assert.ok(res.message.includes(`subió a la rama ${res.rama}`) && res.message.includes('no pude abrir el pull request'), res.message);
       assert.ok(res.manual && res.message.includes(`Abrilo desde: ${res.manual}`), res.message);
       assert.ok(res.manual.includes(plataforma === 'azure' ? 'pullrequestcreate' : '/compare/'), res.manual);
-      assert.ok(!/pedido abierto/i.test(res.message), 'nunca «pedido abierto» si no se abrió');
+      assert.ok(!/pull request abierto/i.test(res.message), 'nunca «pull request abierto» si no se abrió');
       clonLimpio(m.clon);
     } finally { await m.cerrar(); }
   }
@@ -208,7 +208,7 @@ test('T26 Proponer_PedidoAbiertoSobreElArchivo_MuestraElEnlace @story-2.29 @ac-1
       assert.strictEqual(segunda.ok, false);
       assert.strictEqual(segunda.codigo, 'pedido_abierto');
       assert.strictEqual(segunda.enlace, primera.enlace);
-      assert.ok(segunda.message.includes(`ya hay un pedido abierto sobre este archivo: ${primera.enlace}`), segunda.message);
+      assert.ok(segunda.message.includes(`ya hay un pull request abierto sobre este archivo: ${primera.enlace}`), segunda.message);
       assert.strictEqual(m.r.empujes.length, 1, 'la segunda no empuja nada');
       assert.strictEqual(m.api.llamadas.filter((l) => l.method === 'POST').length, 1, 'un solo pedido abierto');
       assert.strictEqual(await pedidoAbierto({ remote: m.base().remote, credencial: m.base().credencial, idCorto: 'repos', urlBase: m.base().urlBase }), null, 'otro archivo no lo ve');
@@ -285,7 +285,7 @@ test('T16b Proponer_ArchivoCambio_NoCreaNada @story-2.29 @ac-16', { skip: SIN_BA
     // una plataforma que no se reconoce: nada, y lo dice
     const otra = await proponer({ ...m.base(), remote: remoteOf('https://git.acme.example/ops.git'), now: DESPUES });
     assert.strictEqual(otra.codigo, 'plataforma_desconocida');
-    assert.ok(otra.message.includes('abrí el pedido a mano'));
+    assert.ok(otra.message.includes('abrí el pull request a mano'));
     assert.strictEqual(m.r.empujes.length, 1);
     clonLimpio(m.clon);
   } finally { await m.cerrar(); }
@@ -301,7 +301,7 @@ test('T26b Proponer_SinPoderMirarLosPedidosAbiertos_NoCreaNada @story-2.29 @ac-1
       const res = await proponer({ ...m.base(), fetch: caida });
       assert.strictEqual(res.ok, false, textoDe(res));
       assert.strictEqual(res.codigo, 'no_se_pudo_leer');
-      assert.match(res.message, /no pude verificar si ya hay un pedido abierto sobre este archivo/);
+      assert.match(res.message, /no pude verificar si ya hay un pull request abierto sobre este archivo/);
       assert.strictEqual(m.r.empujes.length, 0, 'cero ramas');
       clonLimpio(m.clon);
     } finally { await m.cerrar(); }
@@ -542,7 +542,7 @@ test('T3 Proponer_ApagadoPorDefecto_DejaElPedido @story-2.39 @ac-3', { skip: SIN
     const puntaAntes = m.r.ref('refs/heads/main');
     const res = await proponer(m.base());
     assert.deepStrictEqual([res.ok, res.codigo], [true, undefined], textoDe(res));
-    assert.ok(res.message.startsWith('Pedido abierto: '), res.message);
+    assert.ok(res.message.startsWith('Pull request abierto: '), res.message);
     assert.deepStrictEqual(llamadasA(m, 'PUT', /reviewers/), [], 'ningún voto');
     assert.deepStrictEqual(llamadasA(m, 'GET', /policy\/evaluations/), [], 'ninguna evaluación');
     assert.deepStrictEqual(m.api.llamadas.filter((l) => l.method === 'PATCH'), [], 'ningún cambio del pedido');
@@ -691,7 +691,7 @@ test('T7 Proponer_GitHubEncendido_MergeDirectoOAutoMerge @story-2.39 @ac-5 — e
       m.api.st.autoMerge = 'Auto merge is not allowed for this repository';
       const res = await proponer(aplicando(m));
       assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], textoDe(res));
-      assert.match(res.message, /^No se pudo aplicar solo: .*Auto merge is not allowed for this repository.*El pedido queda para aprobar/);
+      assert.match(res.message, /^No se pudo aplicar solo: .*Auto merge is not allowed for this repository.*El pull request queda para aprobar/);
       assert.ok(res.enlace && res.message.includes(res.enlace), res.message);
       assert.ok(!m.registro.join('\n').includes(QUIEN), 'lo que queda para aprobar no lleva el correo al registro');
     } finally { await m.cerrar(); }

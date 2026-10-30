@@ -75,8 +75,8 @@ test('T44 Arranque_PasosDeOtraCarpeta_Frena @story-8.93 @ac-23 — pasos de una 
   const n = E.correr(['next'], 's-t44-vieja');
   assert.strictEqual(n.status, 2, n.stderr + n.stdout);
   assert.match(n.stderr, /arnés viejo/);
-  assert.match(n.stderr, new RegExp(path.join('.claude', 'agent-skills').replace(/[.\\/]/g, '\\$&')));
-  assert.match(n.stderr, new RegExp(fs.realpathSync(path.join(SCRIPTS, '..', 'steps')).replace(/[.\\/]/g, '\\$&')));
+  assert.match(n.stderr, new RegExp(path.join('.claude', 'agent-skills').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(n.stderr, new RegExp(fs.realpathSync(path.join(SCRIPTS, '..', 'steps')).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(n.stderr, /harness\.js install/);
   // la carpeta correcta sin el paso que toca: frena igual
   const r = F().revisar({ stepsDir: path.join(SCRIPTS, '..', 'steps'), nextFile: path.join(SCRIPTS, '..', 'steps', 'step-00b-clocki-start.md'),

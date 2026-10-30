@@ -295,7 +295,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Cierres que necesitaban guía para probar a mano, y la tenían** (`qa_guia`). El puente entre las pruebas automáticas y una persona que prueba.
 - **Cuánto tarda verificar: duración de la suite de pruebas** (`gates_dur`). Una suite que tarda horas no se corre antes de commitear: se saltea.
 - **Los frenos previos a la herramienta: cuántas veces frenaron y cuántas los saltearon** (`frenos`). Los dos números de la misma regla juntos: sin el primero, un freno que funcionó parece que no sirvió.
-- **Los hooks del cierre: decisiones sobre una evidencia que la rechazaron** (`evidencia_cierre`). Cuántas veces los frenos que impiden cerrar sin evidencia la rechazaron.
+- **Los controles automáticos del cierre: decisiones sobre una evidencia que la rechazaron** (`evidencia_cierre`). Cuántas veces los frenos que impiden cerrar sin evidencia la rechazaron.
 - **Escapes concentrados en una sola regla** (`escapes_regla_dominante`). Si lo que se escapa de los controles viene casi todo de una sola regla.
 - **Reglas candidatas a retiro: probadas, que nunca encontraron nada** (`reglas_candidatas`). Reglas que saben ponerse rojas y nunca encontraron nada con recorrido de sobra.
 - **Reglas que el banco de pruebas probó de verdad** (`reglas_probadas`). Una regla sin prueba que la obligue a marcar no se juzga: sale «sin probar», nunca candidata.
@@ -315,7 +315,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 **En Ejecuciones:**
 
 - **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
-- **Una ejecución del pipeline, de punta a punta (mediana, horas)** (`corridas`). Cuánto dura una ejecución completa.
+- **Una ejecución del pipeline, de punta a punta (mediana, horas)**. Cuánto dura una ejecución completa.
 - **Respuestas del modelo por ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
 
 **Cómo se oculta una.** En Configuración, sección «Avisos y la noche», «Fichas que muestra el sitio» tiene una casilla
@@ -481,7 +481,7 @@ Las secciones, en el orden de la pantalla:
 - **Personas y máquinas**: de quién es cada máquina que manda ejecuciones, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
-- **A quién le llegan los avisos y los pedidos**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
+- **A quién le llegan los avisos y las tareas**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
   un hallazgo del vigilante). Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
 
 ![Personas y máquinas: una máquina por confirmar y las confirmadas](sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.png)
@@ -531,7 +531,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
   Proyectos y Ejecuciones. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
-- **Pedidos de trabajo**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
+- **Tareas**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
   los pedidos de la revisión de las ejecuciones y del vigilante; si falta alguno, la sección dice cuál y que la noche no
   va a pedir trabajo. Después, en un recuadro, el **tipo** (vacío, cada proyecto usa su elemento de backlog) y los
   **campos fijos**. Abajo, **según la gravedad**, una tabla con una fila por campo y una columna por gravedad (crítica,
@@ -599,9 +599,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   mantiene. Una herramienta que no está en la lista se pide con «Pedíselo a tu agente» (abajo, §Tu tecnología).
 - **Quién autoriza saltarse un control**: si la organización trabaja con una sesión coordinadora que le pasa el ok de un dev
   a la sesión que implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en
-  vivo. «No» (de fábrica): el ok lo escribe el dev en el chat de su sesión. Acá se dice sólo sí o no, y vale sólo desde
-  acá, nunca desde una máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de
-  esa sesión «Esta sesión es la coordinadora», y la sesión lo anota con
+  vivo. La pregunta es «¿Quién pasa la autorización para saltarse un control grave?»: «Cada programador (de fábrica)»
+  quiere decir que el ok lo escribe el dev en el chat de su sesión; con «Una sesión coordinadora» aparece «¿Cómo la
+  llaman?» (se guarda en `approvals.relay_session`, de fábrica «coordinadora»). Vale sólo desde acá, nunca desde una
+  máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta
+  sesión es la <nombre>», con el nombre de arriba, y la sesión lo anota con
   `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
@@ -623,6 +625,39 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   delegada, subirla la saca de la delegación en el mismo cambio. Si el perfil la trae delegada igual, el arnés la saca al
   leerlo y lo avisa como ignorada; lo demás se sigue delegando. Volver al nivel de fábrica saca la firma de
   `approvals.levels`. Proponer niveles pide que la capa del equipo exija una versión del arnés que ya sepa leerlos.
+  Quién firma cada nivel: el 1, la coordinadora sola si el perfil se lo delega, y si no el dev en la ventana; el 2,
+  siempre una persona en la ventana; el 3, una persona, y la emergencia en su terminal. Sin nadie que conteste, todo lo
+  que no está delegado espera: el sistema no mira la hora, pide la firma igual y, si nadie contesta, la sesión queda
+  frenada en ese paso. Con Codex, que no tiene ventana, todo se firma en la terminal. La matriz completa
+  está en `guides/firmas-del-arnes.md`, «Quién firma cada nivel».
+
+  **¿Quién firma? En corto.** Para saber quién firma algo en tu máquina, se mira esto:
+
+  | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás |
+  |---|---|---|---|---|
+  | Guardar el trabajo · 1 | vos | espera | la coordinadora \* | la coordinadora \* |
+  | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* |
+  | Aprobar el plan · 1 | vos \*\* | espera \*\* | la coordinadora \* | la coordinadora \* |
+  | Saltear un control · 2 | vos | espera | vos | espera |
+  | Aceptar un criterio imposible de probar en vivo · 2 | vos | espera | vos | espera |
+  | Marcar un criterio como probado a mano · 2 | vos | espera | vos | espera |
+  | La emergencia · 3 | vos, en tu terminal | espera | vos, en tu terminal | espera |
+
+  \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
+  si no, es igual que sin coordinadora. \*\* El plan de una story de riesgo bajo hoy se puede aprobar sin firma, desde
+  la misma sesión. Por qué cada rutina es rutina, y las notas, en `guides/firmas-del-arnes.md`.
+
+  **Dónde se configura**, todo en esta sección:
+  - **A · si hay coordinadora**: «¿Quién pasa la autorización para saltarse un control grave?», con «¿Cómo la llaman?»
+    si es «Una sesión coordinadora».
+  - **B · en qué máquinas**: «En qué máquinas vale lo delegado», cada una por su huella.
+  - **C · quién firma cada cosa y su nivel**: «Quién firma cada cosa» (la lista la trae el arnés, igual para todos;
+    el equipo no agrega ni saca filas) y «El nivel de cada firma» (se sube, nunca se baja; sólo la rutina se delega).
+  - **En cada máquina**, la designación: «Esta sesión es la <nombre>» en el chat de la sesión elegida. Para que firme
+    lo delegado, además, el dueño la confirma en su terminal con `node scripts/lib/delegated-signing.js
+    confirm-designation` (ver `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Se la reconoce por su
+    conversación, sigue valiendo si se reinicia, y hay que repetirla tras un chat nuevo o un `/clear`. Si nadie la
+    designó, nadie confirmó la designación, o la sesión está cerrada, no hay coordinadora: todo le llega al dev.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra

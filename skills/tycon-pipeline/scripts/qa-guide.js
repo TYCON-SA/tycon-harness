@@ -759,7 +759,7 @@ function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   }
   const hoy = mk.mockupHash(html);
   if (hoy !== ap.data.sha256) {
-    problems.push(`(9) la maqueta cambió después de aprobada (aprobada ${h12(ap.data.sha256)}, hoy ${h12(hoy)}): mostrásela al dueño y aprobala de nuevo: marker.js approve-mockup --approved "<cita>"`);
+    problems.push(`(9) la maqueta cambió después de aprobada (aprobada ${h12(ap.data.sha256)}, hoy ${h12(hoy)}): mostrásela a la persona que aprueba y aprobala de nuevo: marker.js approve-mockup --approved "<cita>"`);
     return { problems, notes };
   }
   const v = mk.validateMockupHtml(html);

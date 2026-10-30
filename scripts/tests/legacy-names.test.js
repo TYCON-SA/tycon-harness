@@ -1416,7 +1416,7 @@ test('T21 R2_StepCommands_OldAndNewPath_SameOutput', { skip: !TEAM_812 && 'NO ME
     const readLog = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '');
     const deadline = Date.now() + 5000;
     while (!entries.every((e) => readLog().includes(`"old":"${e.old}"`)) && Date.now() < deadline) spawnSync('sleep', ['0.2']);
-    for (const e of entries) assert.match(readLog(), new RegExp(`"old":"${e.old.replace(/[.]/g, '\\.')}"`), `${e.old} deja su línea en legacy-names.jsonl`);
+    for (const e of entries) assert.match(readLog(), new RegExp(`"old":"${e.old.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`), `${e.old} deja su línea en legacy-names.jsonl`);
     assert.ok(!entries.some((e) => readLog().includes(`"old":"${e.new}"`)), 'la ruta nueva no anota nada');
   } finally {
     for (const d of [lab, home, ...parents]) fs.rmSync(d, { recursive: true, force: true });

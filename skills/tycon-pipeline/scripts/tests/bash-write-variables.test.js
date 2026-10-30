@@ -657,13 +657,13 @@ test('T37b GuionDelArbolPropio_CommitLocalDeOtroArchivo_Pasa', () => {
   });
 });
 
-// T37c GuionDelArbolPropio_CommitLocalIgualAUnaPunta_Pasa
-// El árbol que arma el portón (lib/private-tree.js) pone el público en un commit local y declara su punta como rama del
-// servidor: un guion que un commit local dejó igual a la punta de una rama del servidor es el publicado. Igual a una
-// versión vieja, o distinto de todas las puntas, sigue frenando.
-// 🔴 Falla con: mirar sólo si un commit local lo tocó (el orquestador del árbol armado frena), o comparar contra
-//    cualquier versión de la historia del servidor (vuelve una versión vieja del guion).
-test('T37c GuionDelArbolPropio_CommitLocalIgualAUnaPunta_Pasa', () => {
+// T37c GuionDelArbolPropio_CommitLocalIgualAMain_Pasa
+// Un guion que un commit local dejó igual a la punta de main del servidor es el publicado. Igual a la punta de otra rama
+// del servidor, a una versión vieja, o distinto de main, sigue frenando: otra rama la empuja quien llama.
+// 🔴 Falla con: mirar sólo si un commit local lo tocó (un guion vuelto a la versión de main frena), comparar contra
+//    cualquier versión de la historia del servidor (vuelve una versión vieja del guion), o contra la punta de cualquier
+//    rama del servidor (un agente empuja su propia rama con el guion reescrito).
+test('T37c GuionDelArbolPropio_CommitLocalIgualAMain_Pasa', () => {
   const { estado, repo, raiz } = corralConHistorias();
   const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
   const clon = path.join(raiz, 'clon');
@@ -674,29 +674,86 @@ test('T37c GuionDelArbolPropio_CommitLocalIgualAUnaPunta_Pasa', () => {
   const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
   const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: GIT_ENV }).trim();
-  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
-  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  // otra historia (el público): su punta trae el guion, la vieja una versión anterior
-  git('checkout', '-q', '--orphan', 'publico');
+  // main del servidor: la vieja trae una versión anterior del guion, la punta el guion
   fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// vieja\n`);
-  git('add', '-A'); git('commit', '-q', '-m', 'pub vieja');
+  git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'main vieja');
   fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
-  git('add', '-A'); git('commit', '-q', '-m', 'pub punta');
+  git('add', '-A'); git('commit', '-q', '-m', 'main punta');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  // otra rama del servidor, con el guion reescrito en su punta
+  git('checkout', '-q', '-b', 'otra');
+  fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// de la otra rama\n`);
+  git('commit', '-q', '-am', 'otra rama');
+  git('update-ref', 'refs/remotes/origin/story/otra', 'HEAD');
   git('update-ref', 'refs/remotes/publico/punta', 'HEAD');
-  git('checkout', '-q', 'refs/remotes/origin/main');
+  git('checkout', '-q', '-b', 'trabajo', 'refs/remotes/origin/main');
   conEnv(ENV, () => {
     const freno = (archivo) => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
       .handle(ev(`node ${path.join(guiones, archivo)}`, repo), { stateDir: estado, installedRoots: [] }));
-    // la superposición: un commit local que trae el guion de la punta del público
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// local\n`);
+    git('commit', '-q', '-am', 'cambiado');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'distinto de main: frena');
     fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
-    git('add', '-A'); git('commit', '-q', '-m', 'superposición');
-    assert.equal(freno('orq-x.js'), '', 'igual a la punta de una rama del servidor: es el publicado');
+    git('commit', '-q', '-am', 'de vuelta');
+    assert.equal(freno('orq-x.js'), '', 'un commit local que lo deja igual a la punta de main: es el publicado');
     fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// vieja\n`);
     git('commit', '-q', '-am', 'la vieja');
-    assert.equal(freno('orq-x.js'), HISTORIA, 'igual a una versión vieja del servidor: frena');
-    fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// local\n`);
-    git('commit', '-q', '-am', 'otra');
-    assert.equal(freno('orq-x.js'), HISTORIA, 'distinto de todas las puntas: frena');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'igual a una versión vieja de main: frena');
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), `${ESCRIBE}// de la otra rama\n`);
+    git('commit', '-q', '-am', 'como la otra rama');
+    assert.equal(freno('orq-x.js'), HISTORIA, 'igual a la punta de otra rama del servidor: frena');
+  });
+});
+
+// T37d GuionDelArbolPropio_EnUnaRamaDelServidorQueNoEsMain_Frena
+// Caso: un agente reescribe un guion del arnés en el clon de quien lo mantiene, lo commitea y empuja su propia rama. El
+// commit queda en una rama del servidor, pero no en main: nadie lo revisó. Recién cuando entra a main es del arnés. Un
+// clon cuya rama principal se llama master se mira contra master.
+// 🔴 Falla con: eximir el commit que está en cualquier rama del servidor (`--not --remotes`), o en una rama que declara
+//    el árbol armado del portón: esa rama es la del pedido, y la controla quien llama.
+test('T37d GuionDelArbolPropio_EnUnaRamaDelServidorQueNoEsMain_Frena', () => {
+  const { estado, repo, raiz } = corralConHistorias();
+  const ORIGEN = path.join(SCRIPTS, '..', '..', '..');
+  const ESCRIBE = `require('fs').writeFileSync(${JSON.stringify(path.join(repo, 'specs', 'story-x.md'))}, 'x');\n`;
+  const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'b', GIT_AUTHOR_EMAIL: 'b@acme.test', GIT_COMMITTER_NAME: 'b', GIT_COMMITTER_EMAIL: 'b@acme.test' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete GIT_ENV[k];
+  const armar = (nombre, principal) => {
+    const clon = path.join(raiz, nombre);
+    fs.cpSync(SCRIPTS, path.join(clon, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: (s) => !/[\\/](?:tests|node_modules)$/.test(s) });
+    fs.cpSync(path.join(ORIGEN, 'scripts', 'lib'), path.join(clon, 'scripts', 'lib'), { recursive: true });
+    const guiones = path.join(clon, 'skills', 'tycon-pipeline', 'scripts');
+    fs.writeFileSync(path.join(guiones, 'orq-x.js'), ESCRIBE);
+    const git = (...a) => require('child_process').execFileSync('git', ['-C', clon, '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: GIT_ENV });
+    git('init', '-q', '.'); git('add', '-A'); git('commit', '-q', '-m', 'base');
+    git('update-ref', `refs/remotes/origin/${principal}`, 'HEAD');
+    const freno = () => tituloDe(require(path.join(guiones, 'on-bash-write-gate.js'))
+      .handle(ev(`node ${path.join(guiones, 'orq-x.js')}`, repo), { stateDir: estado, installedRoots: [] }));
+    return { guiones, git, freno };
+  };
+  conEnv(ENV, () => {
+    const c = armar('clon', 'main');
+    assert.equal(c.freno(), '', 'el de main: es el orquestador');
+    fs.appendFileSync(path.join(c.guiones, 'orq-x.js'), '// reescrito\n');
+    c.git('commit', '-q', '-am', 'reescrito');
+    c.git('update-ref', 'refs/remotes/origin/story/propia', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'empujado a una rama propia del servidor: frena');
+    c.git('update-ref', 'refs/remotes/publico/punta', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'declarado como punta de otro remoto: frena');
+    c.git('update-ref', 'refs/remotes/otro/main', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'en el main de otro remoto: frena');
+    c.git('replace', 'refs/remotes/origin/main', 'HEAD');
+    assert.equal(c.freno(), HISTORIA, 'con un reemplazo de objetos que hace pasar su commit por la punta de main: frena');
+    c.git('replace', '-d', 'refs/remotes/origin/main');
+    c.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    assert.equal(c.freno(), '', 'cuando entra a main: es del arnés');
+
+    const m = armar('clon-master', 'master');
+    fs.appendFileSync(path.join(m.guiones, 'orq-x.js'), '// reescrito\n');
+    m.git('commit', '-q', '-am', 'reescrito');
+    m.git('update-ref', 'refs/remotes/origin/story/propia', 'HEAD');
+    assert.equal(m.freno(), HISTORIA, 'con master como principal, una rama propia: frena');
+    m.git('update-ref', 'refs/remotes/origin/master', 'HEAD');
+    assert.equal(m.freno(), '', 'cuando entra a master: es del arnés');
   });
 });
 

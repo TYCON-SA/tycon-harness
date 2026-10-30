@@ -43,7 +43,7 @@ const RUNS = path.join(__dirname, '..', '..', 'nightly', 'dashboard', 'runs.js')
 const FRASE_FALLA = 'no se pudo armar la vista de ejecuciones';
 // el caché de los textos bajados a demanda (los cambios de una corrida resumida): al pasarlo, se borran los más viejos
 const TOPE_CACHE_BYTES = 200 * 1024 * 1024;
-const FRASE_SIN_BUZON = 'sin buzón configurado: no medido';
+const FRASE_SIN_BUZON = 'sin depósito configurado: no medido';
 // la vista guardada en el disco del sitio, y el número de su forma: cambia cuando cambia lo que se guarda
 const ARCHIVO_VISTA = 'runs-view.json';
 const FORMATO_VISTA = 1;

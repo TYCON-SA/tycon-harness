@@ -12,6 +12,16 @@ Las dos listas se escriben sólo en el perfil del equipo: ni el archivo de la m�
 tablas de esta guía salen de `scripts/lib/signatures.js` con `node scripts/tools/signatures-guide.js --write`, y una
 prueba falla si no coinciden.
 
+## Quién aprueba
+
+Depende del repo, no de la máquina:
+
+- En los repos del arnés, las firmas son del dueño, y la ventana dice «Firma del dueño».
+- En cualquier otro repo, las aprueba el dev, y la ventana dice «Lo aprobás vos». Vale también en la máquina del dueño.
+
+El repo se reconoce por su remoto (`scripts/lib/harness-repo.js`), no por el nombre de la carpeta. La firma se pide igual
+en los dos casos: lo que cambia es quién la da.
+
 ## Los niveles
 
 Cada firma tiene un nivel, según cuánto pesa lo que aprueba:
@@ -27,7 +37,7 @@ algo de lo sensible, así que por delegación vale 1.
 
 La columna «Quién la ve» dice si la firma le llega al dev de producto o sólo a quien mantiene el arnés. La columna «Se
 pide hoy con» dice con qué firma de la tabla siguiente se pide hoy. Varias de hoy se juntan en una sola, y una se parte
-en dos. Los nombres de esta tabla todavía no se escriben en el perfil: llegan cuando cambie cómo se pide una firma.
+en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.levels`, para subir el nivel de una firma.
 
 <!-- generado: niveles -->
 | Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
@@ -35,7 +45,7 @@ en dos. Los nombres de esta tabla todavía no se escriben en el perfil: llegan c
 | `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (sube a 2 si la historia es delicada) | `plan-approval` |
 | `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
 | `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
-| `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pedidos, si ningún commit toca algo de lo sensible | `save` |
+| `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
 | `browser-test:prepare` | 1 · rutina | dev y mantenimiento | preparar la prueba con navegador | `browser-test` |
 | `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
@@ -58,7 +68,50 @@ en dos. Los nombres de esta tabla todavía no se escriben en el perfil: llegan c
 | `escape:TYCON_SAFETY_OFF` | 3 · irreversible | dev y mantenimiento | apagar el freno de seguridad para un comando | `escape:TYCON_SAFETY_OFF` |
 | `escape:TYCON_PROD_LINT` | 3 · irreversible | dev y mantenimiento | apagar el control de consultas a producción | `escape:TYCON_PROD_LINT` |
 | `escape:TYCON_NEW_NAMES` | 3 · irreversible | sólo mantenimiento | apagar el control de nombres en lo que se publica | `escape:TYCON_NEW_NAMES` |
+| `emergency` | 3 · irreversible | dev y mantenimiento | la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo | todavía no se pide |
 <!-- fin: niveles -->
+
+`emergency` todavía no tiene una firma de hoy que la pida: se da con `harness.js sign emergency --reason "<por qué>"
+--request <número>` (el número lo da el cartel del freno) o `--commit`, en la terminal de la persona
+(guides/safety-guard.md, «Saltear el freno»). `escape:TYCON_SAFETY_OFF` y
+`escape:TYCON_PROD_LINT` siguen en la tabla, pero ya nada las pide: se retiran en una tanda aparte.
+
+## Quién firma cada nivel
+
+El nivel que rige es el mayor entre la tabla de arriba y lo que suba el perfil (`approvals.levels`). Quién lo firma
+depende de dos cosas: si tu máquina tiene coordinadora, y si estás para contestar. Buscá en la fila lo que hay que
+firmar, y en la columna tu situación:
+
+| Nivel | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás |
+|---|---|---|---|---|---|
+| 1 · rutina | **Guardar el trabajo** (`save`): commit y push a tu rama, y los pull requests. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* |
+| 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* |
+| 1 · rutina | **Aprobar el plan** (`plan-approval`). Es rutina porque decide qué se construye antes de construirlo, y se cambia. | vos \*\* | espera \*\* | la coordinadora \* | la coordinadora \* |
+| 2 · excepción | **Saltear un control** o aceptar un problema grave sin arreglarlo (`critical-waiver`, `escape:…` y las demás de nivel 2) | vos | espera | vos | espera |
+| 2 · excepción | **Aceptar un criterio imposible de probar en vivo** (`runtime-waiver`). Antes de la ventana, el arnés te muestra el criterio en pantalla: su texto, por qué no se puede probar en vivo y qué prueba lo cubre. | vos | espera | vos | espera |
+| 2 · excepción | **Marcar un criterio como probado a mano** (`manual-test`) | vos | espera | vos | espera |
+| 3 · irreversible | **La emergencia** (`emergency`): pasar por encima del freno de seguridad | vos, en tu terminal | espera | vos, en tu terminal | espera |
+
+- **Vos**: te aparece la ventana de permiso y aprobás. **La coordinadora**: la firma ella, sin molestarte. **Espera**:
+  nadie firma; el trabajo queda frenado en ese paso hasta que alguien firme, y no se rompe nada.
+- \* **La coordinadora sola** firma sólo lo que el perfil pone en `approvals.delegated_signing`, en las máquinas de
+  `approvals.delegated_machines`, y sólo con la designación confirmada por el dueño en su terminal (ver «Aprobar en
+  nombre del dueño»). Si la firma no está delegada, tu máquina no está en la lista o nadie confirmó la designación, la
+  fila es igual que sin coordinadora. Lo que queda en 2 o más sale de esa lista.
+- \*\* **El plan de una story de riesgo bajo** se puede aprobar hoy sin firma: la misma sesión lo da por aprobado con
+  `--auto-approved`, si la clase de riesgo da LOW y el plan se mostró en la conversación (`steps/step-04-approve-plan.md`).
+- Con coordinadora, ella puede pedir algunas de nivel 2 (eximir un crítico, un criterio que no se prueba en vivo), pero
+  las contesta una persona.
+- **Si tu push ya despliega algo** (en tu equipo, subir a una rama dispara un despliegue), quien administra puede subir
+  «Guardar el trabajo» a nivel 2 desde el sitio: entonces lo firma siempre una persona.
+- **Espera** quiere decir que nadie firma. El sistema no mira la hora: pide la firma igual y, si nadie contesta, la
+  sesión queda frenada en ese paso.
+- **La emergencia** (`emergency`) es la única salida para pasar por encima del freno de seguridad: la persona la firma en
+  su terminal con `harness.js sign emergency`, con su motivo (cómo, en el párrafo de arriba). El agente no la puede
+  correr.
+- En los repos del arnés, el dueño ocupa el lugar del dev (ver «Quién aprueba»).
+- «En la ventana» vale para Claude Code. Codex no tiene ventana de permiso: ahí todo se firma en la terminal
+  (`guides/safety-guard.md`).
 
 ## Las firmas
 
@@ -85,7 +138,7 @@ mismo comando, y ahí firmás escribiendo tres palabras al azar. La ventana venc
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, por la terminal | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set '<json>' --terminal --for-session <id>` |
-| `save` | guardar la story: commit, push y los pedidos | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
+| `save` | guardar la story: commit, push y los pull requests | `marker.js approve-save [--for-session <D>]` | sí | `marker.js approve-save --terminal --for-session <D>` |
 | `escape:TYCON_SAFETY_OFF` | apagar el freno de seguridad para un comando | `TYCON_SAFETY_OFF=1 <comando>` | no, por la terminal | `TYCON_SAFETY_OFF=1 <comando>` |
 | `escape:TYCON_PROD_LINT` | apagar el control de consultas a producción para un comando | `TYCON_PROD_LINT=0 <comando>` | no, por la terminal | `TYCON_PROD_LINT=0 <comando>` |
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, por la terminal | `TYCON_NEW_NAMES=0 <comando>` |

@@ -2083,7 +2083,7 @@ function pantalla(idioma = 'es') {
   function editorRespuesta(s, d, pr) {
     var r = d.response || {}; var ex = s.extras || {}; var vg = ex.vigente || {}; var og = ex.origen || {};
     var box = el('div', { class: 'pila' });
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.hoy') + vg.style + ' · ' + vg.language + ' · ' + vg.max_chars + T('pantalla.caracteres') + (og.style === 'perfil' ? T('pantalla.delPerfil') : T('pantalla.porDefecto')) + ')' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.hoy') + (hayTexto('estiloCorto_' + vg.style) ? TX['estiloCorto_' + vg.style] : vg.style) + ' · ' + ({ es: T('pantalla.castellano'), en: T('pantalla.ingles') }[vg.language] || vg.language) + ' · ' + vg.max_chars + T('pantalla.caracteres') + (og.style === 'perfil' ? T('pantalla.delPerfil') : T('pantalla.porDefecto')) + ')' }));
     box.appendChild(selector(T('pantalla.idioma'), r.language, [['', T('pantalla.sinDeclararCastellano')], ['es', T('pantalla.castellano')], ['en', T('pantalla.ingles')]], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
     box.appendChild(selector(T('pantalla.estilo'), r.style, [['', T('pantalla.sinDeclararNeutro')]].concat(ESTILOS), function (v) { hoja(d, 'response', 'style', v); }, 'response.style', pr));
     box.appendChild(campo(T('pantalla.largoMaximoDeProsaEn'), r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
@@ -2316,7 +2316,7 @@ function pantalla(idioma = 'es') {
   // tabla, así que sólo deja subir. Volver al de la tabla saca el id del perfil. Subir una firma a 2 o más la saca de lo
   // delegado en el mismo cambio, como hace el lector al leerlo
   function editorNiveles(NIVELES, subidos, efectivo, nivelDelegado, CAT, firmas, abre, d, pr) {
-    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nivelesTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nivelesAyuda') }));
+    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.nivelesTitulo') }), el('p', { class: 'sub-d', text: T('pantalla.nivelesAyuda') }), el('p', { class: 'muted', text: T('pantalla.nivelesQuienFirma') }));
     problemasEn(pr, 'approvals.levels').forEach(function (x) { box.appendChild(el('p', { class: 'err', text: x.message })); });
     if (!NIVELES.length) return box;
     var t = tabla('niveles', T('pantalla.nivelesTitulo'), [T('pantalla.firmasColFirma'), T('pantalla.nivelesColNivel')]);
@@ -2706,7 +2706,7 @@ function pantalla(idioma = 'es') {
           ? el('div', { class: 'pc', role: 'cell', title: pc.texto + ' · ' + T('pantalla.noSeUsaConEstaRegla') }, el('span', { class: 'ignorado', text: pc.texto }), el('span', { class: 'nota', text: T('pantalla.noSeUsaConEstaRegla') }))
           : el('div', { class: 'pc' + (pc.declarado ? '' : ' vacio'), role: 'cell', title: pc.texto, text: pc.texto }), el('div', { class: 'acc', role: 'cell' }, editar, sacar)];
       // los campos se arman antes que los mensajes del renglón: los que se dibujan junto a su campo no se repiten abajo
-      if (abierto) celdas.push(el('div', { class: 'edit' }, repoFila(T('pantalla.repo3') + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr),
+      if (abierto) celdas.push(el('div', { class: 'edit' }, repoFila(T('pantalla.repoNumero') + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr),
         campoPipeline(e, at + '.full_tests_pipeline', pr), el('div', { class: 'listo' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.listo'), onclick: function () { ABIERTOS[i] = false; render(); } }))));
       var resto = suyos.filter(function (x) { return MOSTRADOS.indexOf(x) < 0 || regla.mios.indexOf(x) >= 0; });
       MOSTRADOS = MOSTRADOS.concat(resto);
@@ -2923,7 +2923,7 @@ function pantalla(idioma = 'es') {
     box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.porProveedorAyuda') }));
     PROVEEDORES.forEach(function (p) {
       var nombreP = T('pantalla.proveedor.' + p);
-      var t = tabla('modelos proveedores', nombreP, [T('pantalla.nivel2'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
+      var t = tabla('modelos proveedores', nombreP, [T('pantalla.columnaNivel'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
       t.setAttribute('data-proveedor', p);
       var permitidos = permitidosDe(p);
       var listaId = 'permitidos-' + p;
@@ -2958,7 +2958,7 @@ function pantalla(idioma = 'es') {
     // el proceso de la noche: su proveedor y su nivel; el modelo sale de la misma tabla. Sin modelo para ese nivel, el
     // servidor no deja proponer (en la noche «inherit» no vale)
     var secretos = prov.secretos || {};
-    var tn = tabla('modelos noche', T('pantalla.elProcesoDeLaNoche'), [T('pantalla.trabajo'), T('pantalla.nocheProveedor'), T('pantalla.nivel2')]);
+    var tn = tabla('modelos noche', T('pantalla.elProcesoDeLaNoche'), [T('pantalla.trabajo'), T('pantalla.nocheProveedor'), T('pantalla.columnaNivel')]);
     var lineaNoche = el('small', { class: 'glosa noche-hoy' });
     function pintarNoche() {
       var n0 = esObjeto(m.nightly) ? m.nightly : null;
@@ -2978,7 +2978,7 @@ function pantalla(idioma = 'es') {
       else { m.nightly = esObjeto(m.nightly) ? m.nightly : {}; m.nightly.provider = v; if (!m.nightly.level) m.nightly.level = 'economy'; }
       pintarNoche();
     }, 'models.nightly.provider', pr);
-    var selN = corto(T('pantalla.nivel2'), noche && noche.level ? noche.level : 'economy', NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }), function (v) { if (esObjeto(m.nightly)) m.nightly.level = v; pintarNoche(); }, 'models.nightly.level', pr);
+    var selN = corto(T('pantalla.columnaNivel'), noche && noche.level ? noche.level : 'economy', NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }), function (v) { if (esObjeto(m.nightly)) m.nightly.level = v; pintarNoche(); }, 'models.nightly.level', pr);
     pintarNoche();
     tn.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('span', { text: T('pantalla.elProcesoDeLaNoche') }), lineaNoche),
       el('div', { class: 'acc', role: 'cell' }, selP.sel), el('div', { class: 'acc', role: 'cell' }, selN.sel)], problemasEn(pr, 'models.nightly').concat(selP.mios, selN.mios)));
@@ -3077,13 +3077,15 @@ function pantalla(idioma = 'es') {
   function renombrado(m, viejo, nuevo) { var out = {}; Object.keys(m).forEach(function (k) { out[k === viejo ? nuevo : k] = m[k]; }); return out; }
   // un nombre que todavía no está en el mapa, para el campo recién agregado: se escribe después
   function nombreLibre(usado) { var n = ''; while (usado(n)) n += ' '; return n; }
+  // sin la lista de la organización, un campo se nombra por la última parte de su referencia («Custom.Impacto» → «Impacto»)
+  function nombreDeCampo(c, k) { return c ? c.nombre : (k.split('.').pop() || k); }
   function camposFijos(d, w, limpiar, porRef, catalogo, pr) {
     var m = esObjeto(d.work_items) && esObjeto(d.work_items.fixed_fields) ? d.work_items.fixed_fields : {};
     var fijos = function () { var x = w(); if (!esObjeto(x.fixed_fields)) x.fixed_fields = {}; return x.fixed_fields; };
     var out = [];
     Object.keys(m).filter(function (k) { return !esComentarioDePedido(k); }).forEach(function (k) {
       var c = porRef[k];
-      var nombre = c ? c.nombre : k;
+      var nombre = nombreDeCampo(c, k);
       var set = function (v) { fijos()[k] = v; limpiar(); };
       var aviso = el('div', { class: 'err', 'data-path': 'work_items.fijos.' + k + '.repetido' });
       // un campo recién agregado, sin lista, todavía no tiene nombre: se escribe la referencia
@@ -3112,7 +3114,7 @@ function pantalla(idioma = 'es') {
     var t = tabla('pedidos', T('pantalla.pedidosPorGravedad'), [T('pantalla.pedidosCampo')].concat(GRAVEDADES.map(function (g) { return g[1]; })).concat(['']));
     filas.forEach(function (k) {
       var c = porRef[k];
-      var nombre = c ? c.nombre : k;
+      var nombre = nombreDeCampo(c, k);
       var ref = { k: k };
       var aviso = el('div', { class: 'err', 'data-path': 'work_items.campos.' + k + '.repetido' });
       // sin la lista, el campo es su referencia y se escribe; renombrarlo lo cambia en las cuatro gravedades, y un nombre
@@ -3753,7 +3755,7 @@ function pantalla(idioma = 'es') {
     var etiqueta = etiquetaDe(col.campo);
     if (col.tipo === 'opcion') {
       var sel = el('select', { 'aria-label': etiqueta, onchange: function (ev) { alCambiar(ev.target.value); } });
-      [''].concat(col.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: o === '' ? '—' : (hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] + ' (' + o + ')' : o), selected: o === v ? 'selected' : undefined })); });
+      [''].concat(col.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: o === '' ? '—' : (hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] : o), selected: o === v ? 'selected' : undefined })); });
       return sel;
     }
     return el('input', { type: col.tipo === 'fecha' ? 'date' : 'text', value: v, 'aria-label': etiqueta, placeholder: col.opcional ? T('pantalla.repoOpcional') : etiqueta, oninput: function (ev) { alCambiar(ev.target.value); } });
@@ -3769,7 +3771,7 @@ function pantalla(idioma = 'es') {
     if (forma.modo) {
       var m = forma.modo;
       var sel = el('select', { 'aria-label': etiquetaDe(m.campo), onchange: function (ev) { v[m.campo] = ev.target.value; tocar(); render(); } });
-      (m.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] + ' (' + o + ')' : o, selected: o === v[m.campo] ? 'selected' : undefined })); });
+      (m.opciones || []).forEach(function (o) { sel.appendChild(el('option', { value: o, text: hayTexto('repoOpcion_' + o) ? TX['repoOpcion_' + o] : o, selected: o === v[m.campo] ? 'selected' : undefined })); });
       caja.appendChild(el('label', { class: 'campo' }, el('span', { text: etiquetaDe(m.campo) }), sel));
     }
     if (forma.lista) {
@@ -3847,7 +3849,7 @@ function pantalla(idioma = 'es') {
       kpi(porConfirmar ? 'st-warn' : 'st-good', '#seccion-personas', T('pantalla.maquinasPorConfirmar'), porConfirmar, porConfirmar ? T('pantalla.pidenQueDigasDeQuienSon') : T('pantalla.todasANombreDeAlguien')),
       kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, T('pantalla.seccionesConAlgoParaArreglar'), aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : T('pantalla.ninguna2')),
       kpi('st-good', null, T('pantalla.seccionesAlDia'), alDia + T('pantalla.de2') + S.secciones.length, T('pantalla.sinNadaPendiente')),
-      kpi(viejas ? 'st-warn' : '', '#versiones', T('pantalla.maquinasConUnaVersionVieja'), viejas, T('pantalla.de') + (ex.versiones || []).length + T('pantalla.queInforman'))));
+      kpi(viejas ? 'st-warn' : '', '#versiones', T('pantalla.maquinasConUnaVersionVieja'), viejas, T('pantalla.deN') + (ex.versiones || []).length + T('pantalla.queInforman'))));
     var prod = tablaDeMirar(T('pantalla.productos'), T('pantalla.losQueRevisaLaNoche'), (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? T('pantalla.despliegues') : T('pantalla.revisionDeDependencias'), ruta: p.ruta || '—', repo: p.repo ? (p.producto ? p.producto + ' · ' : '') + String(p.repo).split('/').pop() : p.ruta, estado: (p.activo === false ? T('pantalla.apagado') + (p.motivo ? ' (' + p.motivo + ')' : '') : T('pantalla.activo')) + (p.repetida ? ' · ' + T('pantalla.entradaRepetida') : ''), edita: p.origen === 'deployments' ? T('pantalla.siEnDespliegues') : T('pantalla.no') }; }), [['producto', T('pantalla.producto')], ['origen', T('pantalla.deDondeSale')], ['ruta', T('pantalla.rutaDeLaEntrada')], ['repo', T('pantalla.repo2')], ['estado', T('pantalla.estado')], ['edita', T('pantalla.seCambiaAca')]], 'productos');
     if (ex.productosMotivo) prod.appendChild(aviso('bad', T('pantalla.laListaDeProductosNo'), ex.productosMotivo));
     if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: ex.productosEnlace, text: T('pantalla.abrirLaListaDeLa') })));

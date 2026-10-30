@@ -51,6 +51,8 @@ function git(repo, args, env, input) {
   return { ok: r.status === 0, out: String(r.stdout || '').trim(), crudo: String(r.stdout || ''), err: String(r.stderr || '').trim() };
 }
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+// las carpetas temporales de la máquina: la del sistema y las de siempre de Unix
+const CARPETAS_TEMPORALES = [os.tmpdir(), '/tmp', '/var/tmp'];
 
 /**
  * La raíz del repo de git que contiene `p` (un archivo que puede no existir, o una carpeta), o null si no está en
@@ -125,9 +127,16 @@ function reposDeLaCorrida({ marker = {}, hermanos = [] } = {}) {
     if (!r) throw new Error(`${p} no está en un repo de git`);
     fijos.push(r);
   }
-  // un evento o un hermano fuera de todo repo (una carpeta temporal) no tiene qué guardar
+  // un evento o un hermano fuera de todo repo no tiene qué guardar. Un repo que entra sólo por una edición, vive en una
+  // carpeta temporal y no tiene `origin` (el `git init` de juguete con que la corrida midió algo) tampoco: el ok no lo
+  // cubre, y un commit o un push ahí pide su propio ok (`vigente`). Un clon o un worktree de un repo real (con `origin`)
+  // entra aunque esté ahí, y los hermanos y lo que declara la story, siempre
+  const temporales = CARPETAS_TEMPORALES.map(real);
+  const enTemporal = (r) => temporales.some((d) => r === d || r.startsWith(`${d}${path.sep}`));
+  const deJuguete = (r) => enTemporal(r) && !git(r, ['remote', 'get-url', 'origin']).ok;
   const posibles = [
-    ...(Array.isArray(marker.fileEvents) ? marker.fileEvents : []).map((e) => e && e.path).filter(Boolean).map(raizDe),
+    ...(Array.isArray(marker.fileEvents) ? marker.fileEvents : []).map((e) => e && e.path).filter(Boolean).map(raizDe)
+      .filter((r) => r && !deJuguete(r)),
     ...hermanos.map(raizDe),
     ...rutasDeclaradas(marker.storyPath).map(raizDe),
   ].filter(Boolean);
@@ -414,14 +423,17 @@ function avisar({ texto, canales, mandar }) {
  */
 function antesDeFirmar({ via, marker, repos, findings = [], firmasDeLaCorrida = [], canales, mandar }) {
   const hs = huellas(repos);
+  // en toda vía: un ok con un repo que no se puede medir no valida nunca después (`vigente` no lo puede comparar)
+  const sinMedir = hs.find((h) => h.error);
+  if (sinMedir) return { codigo: 2, motivo: `${sinMedir.repo}: no pude medirlo (${sinMedir.error}): no se firma un ok que después no se puede comprobar` };
   if (via !== 'delegacion') return { codigo: 0, huellas: hs };
   // lo sensible primero: el motivo nombra el archivo aunque además falte algo para estar limpia
   const s = sensibles({ repos });
-  if (s.length) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: el cambio toca ${s.map((x) => `${x.archivo} (${path.basename(x.repo)}: ${x.motivo})`).join(', ')}. Lo firma el dueño` };
+  if (s.length) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: el cambio toca ${s.map((x) => `${x.archivo} (${path.basename(x.repo)}: ${x.motivo})`).join(', ')}. Lo firma una persona: ni el agente ni la coordinadora` };
   const l = limpia({ marker, repos, ahora: hs, findings, firmasDeLaCorrida });
-  if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma el dueño` };
+  if (l.falta) return { codigo: 2, motivo: `la coordinadora no puede dar el ok: ${l.falta}. Lo firma una persona: ni el agente ni la coordinadora` };
   const a = avisar({ texto: lineaDelAviso({ marker, repos, resumen: l.resumen }), canales, mandar });
-  if (!a.ok) return { codigo: 1, motivo: `sin aviso al dueño no hay ok: ${a.motivo}` };
+  if (!a.ok) return { codigo: 1, motivo: `sin aviso a la persona no hay ok: ${a.motivo}` };
   return { codigo: 0, huellas: hs, canales: a.canales };
 }
 

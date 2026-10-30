@@ -340,7 +340,7 @@ test('Layer_PlatformChange_RaisesRequiresHarness @story-8.85 @ac-33', () => {
   const doc = { version: 1, integrations: { platform: { default: 'github' } } };
   const vieja = ORG.timeTrackingLayer({ layerText: JSON.stringify({ requires: { harness: '>= 2026.01.01.1' } }), actual, doc });
   assert.ok(vieja && vieja.archivo === 'team-layer.json', JSON.stringify(vieja));
-  assert.match(JSON.parse(vieja.contenido).requires.harness, new RegExp(`>= ${ORG.PLATFORM_SINCE.replace(/\./g, '\\.')}`));
+  assert.match(JSON.parse(vieja.contenido).requires.harness, new RegExp(`>= ${ORG.PLATFORM_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   const nueva = ORG.timeTrackingLayer({ layerText: JSON.stringify({ requires: { harness: `>= ${ORG.PLATFORM_SINCE}` } }), actual, doc });
   assert.strictEqual(nueva, null, 'la capa ya pide esa versión: no se toca');
   assert.strictEqual(ORG.timeTrackingLayer({ layerText: JSON.stringify({ requires: { harness: '>= 2026.01.01.1' } }), actual, doc: actual }), null, 'sin cambiar la plataforma, nada');

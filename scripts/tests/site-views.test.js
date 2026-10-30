@@ -476,7 +476,7 @@ test('T10 Producto_SinFotoDeAnoche_SigueNoMedido', () => {
   const viejas = modeloSinStories({ estado: 'medido', fecha: HOY, lista: [{ proyecto: 'Alfa', repo: 'Stories', fecha: '2026-10-01', vieja: true, stories: [] }] });
   const zeta = views.filasProyectos(viejas).filas.find((f) => f.producto === 'Zeta');
   assert.strictEqual(zeta.sin_stories, undefined);
-  assert.strictEqual(zeta.motivo, 'sin foto de sus proyectos');
+  assert.strictEqual(zeta.motivo, 'sin lectura de sus proyectos');
   // sin ninguna foto (la fuente no medida): la frase de la fuente, sin cambios
   const nada = views.filasProyectos(modeloSinStories({ estado: 'no_medido', codigo: 'sin_foto', motivo: null, fecha: null, lista: [] })).filas.find((f) => f.producto === 'Zeta');
   assert.ok(!nada.sin_stories);

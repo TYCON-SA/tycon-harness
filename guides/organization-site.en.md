@@ -19,7 +19,7 @@ same, with your names.
 
 It is a web page for the whole organization. Each person signs in with the organization's account and sees their own
 things: their tasks, their change requests, their runs. Whoever maintains the harness sees everything, and also gets
-the **Configuration** tab (*Configuración*), where the organization is customized (who is responsible for what, the
+the **Configuration** tab, where the organization is customized (who is responsible for what, the
 notice channel, the thresholds).
 
 **The words the site uses**, for whoever does not program:
@@ -31,12 +31,12 @@ notice channel, the thresholds).
   (validate it, plan, program, test, review). A **run** is one time someone went through that path.
 - **A repo:** the shared folder where the code or the configuration lives, with its history of changes. Its **main
   branch** is the version that counts.
-- **A change request** (*pull request*; in Spanish, *pedido de cambio*): a proposal to change a repo. Another person
+- **A change request** (*pull request*): a proposal to change a repo. Another person
   looks at it and, if it is fine, **merges** it: adds it to the main branch.
 - **The reviewers** (also "agents"): automatic helpers that review the work of each run.
 - **Tokens:** the measure of how much text the model read and wrote; it is what a run costs.
 - **The night snapshot:** what the night processes measured and saved. On the cards it shows as "source of"
-  (*fuente del*) and a date.
+  and a date.
 - **The refresh:** how often the site reads everything again (15 minutes, unless the organization picks another
   interval).
 - **The median:** the middle value; half of the runs are below it and half above.
@@ -47,9 +47,9 @@ the organization's **operations repo**. The site reads those two places and show
 
 **A day of whoever maintains it.** At 4 in the morning the night processes run and leave their snapshot in the
 operations repo. A while later the morning notice arrives (Telegram, Slack or Teams), with counts and the link to the
-site. The maintainer opens the link and lands on **Home** (*Inicio*), in "What to decide today" (*Qué decidir hoy*): a
+site. The maintainer opens the link and lands on **Home**, in "What to decide today": a
 yellow card is something waiting for a decision (a new dependency, a test that turned red last night) and it says where
-it is decided. If someone's run got stuck, they look it up in **Runs** (*Corridas*) and open its detail: there they see
+it is decided. If someone's run got stuck, they look it up in **Runs** and open its detail: there they see
 which step the time went to and what a control found. If a new machine started sending runs, Home counts it and
 **Configuration** asks to confirm whose it is: they confirm it, the change is proposed as a request to the operations
 repo, and when the request goes in (by itself, with the organization's rule; otherwise, when someone approves it), that
@@ -57,7 +57,7 @@ person starts seeing their own things.
 
 **A day of a developer.** They come in from the same link, or from the site address they saved. In **Home** they see
 their own things: how many runs they did this week, their open pull requests and what is assigned to them. In **Runs**
-they see only their runs, and in **Projects** (*Proyectos*), the products they work on. Nobody has to clone or run
+they see only their runs, and in **Projects**, the products they work on. Nobody has to clone or run
 anything on their machine to see it.
 
 **Who uses it:**
@@ -83,14 +83,14 @@ with or without the site), where each setting lives and what each machine can ov
 ## Signing in for the first time
 
 **The address.** Whoever installed the site gives it out: it comes in the morning notice, and maintainers have it in the
-site's configuration (for maintainers: `site.url`, in the "Who gets into the site" section, *Quién entra al sitio*).
+site's configuration (for maintainers: `site.url`, in the "Who gets into the site" section).
 If you do not have it, ask whoever sent you the link or whoever installed the harness on your machine.
 
 **Signing in.** The site asks for the account your organization chose when installing it: Microsoft, Google or GitHub.
 If your organization installed it on Azure, the first screen is Microsoft's. With "any Microsoft account", the first
 screen has two buttons: one for your Microsoft account and one for guests of the organization's directory. Getting past
-the sign-in is not enough: you get in only if you are in the site's list. After you sign in, the site shows you Home. At the top right are your email and the **Sign out** button (*Salir*); at
-the bottom left, the **Theme** (*Tema*: automatic, light or dark).
+the sign-in is not enough: you get in only if you are in the site's list. After you sign in, the site shows you Home. At the top right are your email and the **Sign out** button; at
+the bottom left, the **Theme** (automatic, light or dark).
 
 **The language.** At the bottom left, next to the Theme, there is the **Español / English** selector, on every page
 (also on the page for someone who is not in the list). The first time, the site comes up in your browser's language:
@@ -108,7 +108,7 @@ the language you chose.
 - **Someone who is not in the list** sees only a page saying which account they signed in with, that the account is
   not in the list, whom to ask and how to sign in with another one. They see neither the menu on the left nor any data.
 
-![The page for someone who is not in the list: "Your account is not in the list" (*Tu cuenta no está en la lista*)](sitio-de-la-organizacion/capturas/sin-rol.png)
+![The page for someone who is not in the list: "Your account is not in the list"](sitio-de-la-organizacion/capturas/sin-rol.png)
 
 **Your machine, not confirmed yet.** Each team machine uploads its runs with the git email of whoever uses it. A
 maintainer has to confirm that the machine is yours. Until they do, only maintainers see your runs; you still get in,
@@ -121,20 +121,20 @@ things.
 
 On the left is the menu, with the numbered tabs. Each tab answers a question.
 
-**"Not measured"** (*no medido*). A gray, striped card says **not measured** and the reason, for example "there is no
+**"Not measured"**. A gray, striped card says **not measured** and the reason, for example "there is no
 snapshot of this source". "Not measured" is not zero and not green: it means that today that piece of data could not be
 known. If a card stays like that for more than a day, tell a maintainer: the reason says what is missing. Some cannot
 be measured from the site and always say so (for example, "Pending retrospectives": they live on the machine of whoever
 merged); those do not need a notice.
 
-### Home (Inicio)
+### Home
 
 **What it answers:** what is waiting for a decision of mine today?
 
 For **a maintainer** it is "What to decide today": one card for each thing the night can bring. Each has a label
-(**Decide**, *Decidir*, in yellow if there is something; **Nothing**, *Nada*, in green if there is not; **Not measured**
+(**Decide**, in yellow if there is something; **Nothing**, in green if there is not; **Not measured**
 if it could not be known), a count and the date of the snapshot it came from ("source of"). Some carry the "where it is
-decided" link (*dónde se decide*); the others are decided in the operations repo, where the night left its snapshot.
+decided" link; the others are decided in the operations repo, where the night left its snapshot.
 The cards are:
 
 - **Dependencies:** the new ones with a vulnerability, the accepted ones not fixed yet, and the rejected ones without a
@@ -149,7 +149,7 @@ The cards are:
 
 ![A maintainer's Home: "What to decide today", with cards in Decide, Nothing and Not measured](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 
-For **a person** it is "Your things" (*Lo tuyo*): their runs of the last 7 days (with a link to Runs), their open change
+For **a person** it is "Your things": their runs of the last 7 days (with a link to Runs), their open change
 requests, what is assigned to them (up to a day behind, since it comes from the night snapshot) and their projects.
 
 ![A person's Home: your runs, your open pull requests, what is assigned to you and your projects](sitio-de-la-organizacion/capturas/inicio-persona.png)
@@ -157,13 +157,12 @@ requests, what is assigned to them (up to a day behind, since it comes from the 
 **What to do:** a card in Decide is resolved where its link says, not on the site. Once it is resolved, the card turns to
 Nothing with the next night's snapshot.
 
-### Runs (Corridas)
+### Runs
 
 **What it answers:** how are the pipeline runs going? Where did the time go, and what did the controls find?
 
-At the top, the scope: how many runs were read and from which machines. Then "What to look at first" (*Lo que se mira
-primero*) explains the two outcomes of a control: **found an error** (*encontró un error*: a test or the build did not
-pass and was fixed right there) and **stopped** (*frenó*: the control did not let something through). Both are the
+At the top, the scope: how many runs were read and from which machines. Then "What to look at first" explains the two outcomes of a control: **found an error** (a test or the build did not
+pass and was fixed right there) and **stopped** (the control did not let something through). Both are the
 control doing its job, not a problem. Next to each median, **n=** says how many runs the number comes from.
 
 Below there is a **filter** (dates, product, machine, only runs with measured usage, only runs that reached the last
@@ -173,11 +172,11 @@ dashboard: how long a run takes and how many steps it has (medians), and how man
 
 ![Runs: the scope, "What to look at first" and the filter cards](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
-Further down is **"Run by run"** (*Corrida por corrida*): one row per run, newest first. Each row's bar splits the time
+Further down is **"Run by run"**: one row per run, newest first. Each row's bar splits the time
 among the pipeline steps, with the legend's colors: Start, Validate the story, Build the plan, Approve the plan,
 Implement, Run the tests, Implement + tests (older runs, which had them together), Reviewers, Findings and Prepare the
 commit. They are the steps of How it works, by name and without a number: the Adversarial pass goes inside Reviewers and
-Live check inside Findings. "No mark" (*sin marca*) is a stretch the run did not record.
+Live check inside Findings. "No mark" is a stretch the run did not record.
 
 ![The step legend and the "Run by run" table](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
 
@@ -188,11 +187,11 @@ let it through; a **dotted circle**, that how it came out was not recorded; an *
 reviewers starts; a **vertical bar**, a step marked together with the previous one; the **gray**, the time between
 steps; and an **orange box**, the time waiting for a person (an unanswered question). If the detail shows a command to
 run, it is for whoever maintains the harness. The files show only if the
-organization chose to download the conversations ("Run conversations" section, *Conversaciones de las corridas*).
+organization chose to download the conversations ("Run conversations" section).
 
 ![A run's detail: the timeline, the controls, the reviewers and the usage](sitio-de-la-organizacion/capturas/corridas-detalle.png)
 
-**What to do:** a run that "stayed at 4" (*quedó en el 4*) may be in progress or abandoned; its detail says how far it
+**What to do:** a run that "stayed at 4" may be in progress or abandoned; its detail says how far it
 got. A person sees only the runs of their confirmed machines; a maintainer sees them all.
 
 **After a restart** (a deployment, or the site that switched itself off for lack of use), the tab shows the last saved
@@ -200,7 +199,7 @@ view, with the date it is from, while the mailbox is downloaded in full again; a
 its own. Each run's changes come back when the new view finishes building. The saved view lives on the site's disk
 (`SITE_DATA_DIR`): **with no disk**, after a restart the tab waits for the first full download.
 
-### Maintenance (Mantenimiento)
+### Maintenance
 
 Only for **maintainers**: what the night found, ordered by who has the ball. Next to the name, in the menu, goes how
 many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has four
@@ -236,7 +235,7 @@ approves it. If the organization turned on "A maintainer's changes" (`site.auto_
 what you send is saved without waiting for anyone: that night's review applies it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
 explanation.
 
-### Projects (Proyectos)
+### Projects
 
 **What it answers:** how is each product doing?
 
@@ -256,7 +255,7 @@ say «not measured» with their reason: the site has no number of its own.
 Maintainers also see, above the table, «How the organization is doing»: the night dashboard cards that are about the
 whole organization (see «The dashboard cards»).
 
-Further down, **Estimates** (*Estimaciones*): per product, one row per story repo and epic, with the range the epic was
+Further down, **Estimates**: per product, one row per story repo and epic, with the range the epic was
 given, the plan total, the current total (each story's adjustment, or its plan) and the actual hours of what was
 closed; at the end, the product total. An epic whose current total falls outside its range is marked with how much
 («above by 25 h»). A repo without a log says «no estimates»; an old snapshot, or one from before estimates, says «not
@@ -264,7 +263,7 @@ measured». How to estimate: `guides/estimates.en.md`.
 
 **What to do:** a stopped or blocked story gets unstuck in its repo, with its team; the site only shows it.
 
-### Harness (Arnés)
+### Harness
 
 **What it answers:** do the harness controls work? Only maintainers see it.
 
@@ -284,7 +283,7 @@ with the same number as the dashboard: Harness groups them by question, and Proj
 their table. There are 26, all of them about the organization: only maintainers see them. A person sees
 their tabs as before.
 
-**In Harness (Arnés):**
+**In Harness:**
 
 - **Per-merge records that meet the format contract** (`contrato_v2`). Whether the records written when each merge closes are machine-readable.
 - **Per-merge records with a date declared inside** (`fechas_declaradas`). A date inferred from the file name sorts, but it can't be used to draw a trend.
@@ -297,14 +296,14 @@ their tabs as before.
 - **Closed stories that needed a manual testing guide, and had one** (`qa_guia`). The bridge between automated tests and a person who tests.
 - **How long verifying takes: duration of the test suite** (`gates_dur`). A suite that takes hours is not run before committing: it gets skipped.
 - **Pre-tool brakes: how many times they stopped something and how many times they were skipped** (`frenos`). The two numbers of the same rule together: without the first, a brake that worked looks useless.
-- **Closing hooks: decisions that rejected a piece of evidence** (`evidencia_cierre`). How many times the brakes that prevent closing without evidence rejected it.
+- **Closing automatic controls: decisions that rejected a piece of evidence** (`evidencia_cierre`). How many times the brakes that prevent closing without evidence rejected it.
 - **Escapes concentrated in a single rule** (`escapes_regla_dominante`). Whether what escapes the controls comes almost entirely from a single rule.
 - **Rules that are candidates for retirement: tested, never found anything** (`reglas_candidatas`). Rules that can turn red but never found anything, despite plenty of mileage.
 - **Rules the test bench actually tested** (`reglas_probadas`). A rule without a test that forces it to fire is not judged: it shows as "not tested", never as a candidate.
 - **Commits per lane: pipeline, declared shortcut or none** (`carriles`). How many commits went through the pipeline, how many through a declared shortcut and how many through none.
 - **Machines with an active rollback: they do not update on their own** (`vueltas_atras`). How many machines undid an update and hold it back until a later version comes out.
 
-**In Projects (Proyectos):**
+**In Projects:**
 
 - **In the backlog: written and not started yet** (`backlog`). How many stories are written and not started.
 - **With a status the dictionary does not recognize** (`estados_sin_diccionario`). The statuses nobody translated: they are the work list for the next dictionary.
@@ -314,10 +313,10 @@ their tabs as before.
 - **Products where a single person made 75% or more of last year's commits** (`bus_factor`). The engineering risk is not the code: it is the only person who knows how to change it.
 - **Products without a production pipeline** (`sin_pipeline_de_prod`). It is not quality: it is exposure. For them "deployments" is zero because there is nowhere to look.
 
-**In Runs (Corridas):**
+**In Runs:**
 
 - **Times a pipeline control blocked an action** (`bloqueos`). How many times a control actually stopped something.
-- **A pipeline run, end to end (median, hours)** (`corridas`). How long a full run lasts.
+- **A pipeline run, end to end (median, hours)**. How long a full run lasts.
 - **Model responses per pipeline run (median)** (`pasos`). A run's cost depends on how many steps it takes: that is the variable that explains it.
 
 **How to hide one.** In Configuration, section «Notices and night runs», «Cards the site shows» has one checkbox per
@@ -339,7 +338,7 @@ they depend on sources that are not always there:
 
 If the card calculation fails, every card says so with its own reason: «the card calculation failed».
 
-### How it works (Cómo trabaja)
+### How it works
 
 **What it answers:** what does the agent do with a story, step by step, in this organization? Only maintainers see it.
 
@@ -379,16 +378,16 @@ done by hand in the profile repo.
 **What to do:** if a piece is unclear or something is missing, "Suggest an improvement". If a pack of your organization
 says it cannot be used, it is fixed by hand in the profile repo: until then the harness does not load it either.
 
-### Configuration (Configuración)
+### Configuration
 
 **What it answers:** how is the organization configured, and how is it changed? Only maintainers see it. The next part
 goes through it section by section.
 
 At the top there are four cards: machines to confirm, sections with something to fix, sections up to date, and machines
-with an old harness version or "no news" (*sin noticias*: they have not sent runs for a while, so their version is not
-known). Below, five tabs: **People** (*Personas*), **Repos and products** (*Repos y productos*),
-**Notices and night runs** (*Avisos y la noche*), **How the agent works** (*Cómo trabaja el agente*) and **Installation and
-updates** (*Instalación y actualización*). A number next to a tab says how many things are waiting there.
+with an old harness version or "no news" (they have not sent runs for a while, so their version is not
+known). Below, five tabs: **People**, **Repos and products**,
+**Notices and night runs**, **How the agent works** and **Installation and
+updates**. A number next to a tab says how many things are waiting there.
 
 ![Configuration: the four cards at the top and the People tab](sitio-de-la-organizacion/capturas/configuracion-personas.png)
 
@@ -396,19 +395,17 @@ updates** (*Instalación y actualización*). A number next to a tab says how man
 
 Each section is a part of a configuration file that lives in an organization repo: the **operations repo** (the night's
 and the site's things) or the **team profile repo** (what reaches each machine). Each one says at the top right how it
-is: **up to date** (*al día*), **to confirm** (*por confirmar*), **not configured** (*sin configurar*), **view only**
-(*sólo para mirar*), or **reviewed** (*revisada*) while you have a reviewed change not proposed yet.
+is: **up to date**, **to confirm**, **not configured**, **view only**
+, or **reviewed** while you have a reviewed change not proposed yet.
 
 **The cycle of a change.** Nothing is written directly. You change a section's fields and press **Review changes**
-(*Revisar cambios*): the site validates the change with the same rules the harness uses and says "Reviewed: it is well
-written" (*Revisado: está bien escrito*) or what is wrong. Then **Propose the change** (*Proponer el cambio*) shows,
+: the site validates the change with the same rules the harness uses and says "Reviewed: it is well
+written" or what is wrong. Then **Propose the change** shows,
 at the top, a plain-language summary of what changes ("You add x@acme.example as dev in Who gets into the site",
 "You change "Character limit" from 1300 to 1500") and, below it, only the lines that change, with three lines of
 context: what goes out is red with a `−`, what comes in is green with a `+` (the sign is there so it reads without
-relying on color), and the unchanged stretches are folded into "… N unchanged lines". **See the full files** (*Ver los
-archivos enteros*) opens both files in full. The file is written in a format with braces and quotes; you do not need to
-understand it: check that the only thing that changes is what you changed. **Confirm and propose** (*Confirmar y
-proponer*) opens a change request (a pull request) in that section's repo, and the section shows the link to the request.
+relying on color), and the unchanged stretches are folded into "… N unchanged lines". **See the full files** opens both files in full. The file is written in a format with braces and quotes; you do not need to
+understand it: check that the only thing that changes is what you changed. **Confirm and propose** opens a change request (a pull request) in that section's repo, and the section shows the link to the request.
 It is sent only once: while the site works, the section's buttons and fields are switched off, and each proposal
 carries its own mark, so a double click does not create two requests. If the response is cut off (the network, a site
 restart in the middle of the request), the page does not show the error right away: it checks up to three times, after
@@ -422,14 +419,13 @@ up to 10 minutes; with the tab hidden it stops asking and resumes when you come 
 closed, the site rereads the repo and the page takes the new version. If, while you were editing, someone changed
 **another part** of the same file, your change is put on top of the new version and the difference shows it before you
 confirm again. If they changed **the same thing** as you, the section shows each value with both versions: **Keep
-mine** (*Quedarme con el mío*) or **Take the current one** (*Tomar el de ahora*), and what you entered is not lost. A
+mine** or **Take the current one**, and what you entered is not lost. A
 list counts as a single value: if you both touched the same list, you choose the whole list. If you reload the page with
-something not yet proposed, the section offers **Recover what you were entering** (*Recuperar lo que estabas
-cargando*). What you entered lives in your browser while the tab is open and never goes to the site. In a browser that
+something not yet proposed, the section offers **Recover what you were entering**. What you entered lives in your browser while the tab is open and never goes to the site. In a browser that
 does not allow storing it (a private window, for example) the page works the same, without that offer. The accepted
 differences between products are not merged: if their file changed, they ask you to reload as before.
 
-**Download** (*Descargar*) downloads the changed file, for when the
+**Download** downloads the changed file, for when the
 site cannot propose: you hand it to whoever has access to that repo, who uploads it with a change request.
 
 ![A section changed and reviewed: "Reviewed: it is well written"](sitio-de-la-organizacion/capturas/configuracion-revisado.png)
@@ -445,24 +441,23 @@ yet. To change them, first do what they say.
 
 The sections, in the order of the screen:
 
-### People (Personas)
+### People
 
-- **The organization** (*La organización*): the name and logo shown in the top bar and the footer. It lives in
+- **The organization**: the name and logo shown in the top bar and the footer. It lives in
   `operations.json`, in the operations repo. A maintainer reviews it, unless the organization turned on "A
   maintainer's changes": then the site approves it itself.
-- **Who gets into the site** (*Quién entra al sitio*): the list of who gets in and what they see, one row per person,
-  with their role ("Maintains the site", *Mantiene el sitio*, or "Dev") and one or more emails. Nobody gets in if they
+- **Who gets into the site**: the list of who gets in and what they see, one row per person,
+  with their role ("Maintains the site" or "Dev") and one or more emails. Nobody gets in if they
   are not here, with any sign-in. Maintainers see the Configuration tab and propose changes; devs see their own things.
   A person gets in with any of their emails and sees the same. To add someone: Configuration, in People, "Who gets into
-  the site" → **+ Add person** (*+ Agregar persona*), their email and their role; it is done here, without the Microsoft
+  the site" → **+ Add person**, their email and their role; it is done here, without the Microsoft
   portal. For someone from outside the organization's directory, **Invite** (below, "Inviting someone") adds them and
   sends them the Microsoft invitation. The first time, the section brings the list built from what there was before (the maintainers and each person
   with a confirmed machine) and warns that it is not saved yet: it is saved when you propose it. If someone leaves the
   list, as soon as the request is approved and the site refreshes (at most 15 minutes), their next page is "Your
   account is not in the list", with no data. Above the list you see how people sign in to the site; that is changed at
   installation. The runs mailbox, the refresh and the site's address go here too. It lives in `operations.json`, in the
-  operations repo. Another maintainer reviews it. **"How often the site updates"** (*Cada cuánto se actualiza el
-  sitio*) takes 5 to 120 minutes; undeclared, 15. Shorter, a change shows sooner, but the site reads the operations
+  operations repo. Another maintainer reviews it. **"How often the site updates"** takes 5 to 120 minutes; undeclared, 15. Shorter, a change shows sooner, but the site reads the operations
   repo, the profile repo and the mailbox again more often while it is awake: more reads to the cloud, which cost a bit
   more on an installation billed by use. It does not keep it awake: asleep it reads nothing, and on waking it reads
   everything.
@@ -470,11 +465,11 @@ The sections, in the order of the screen:
   pass before the site reads again the configuration (this operations repo), the runs mailbox and the team profile. It
   goes from 5 to 120 minutes; if you do not declare it, it is 15. It does not install versions: that is "How the site
   updates", in Installation and updating.
-- **"A maintainer's changes"** (*Los cambios de un mantenedor*): whether a change proposed by a site maintainer goes in
+- **"A maintainer's changes"**: whether a change proposed by a site maintainer goes in
   by itself, or stays as a request for another person to approve. It is off by default: undeclared, the request stays.
   The organization's rule turns it on ("The branch policy of the operations repo", below).
   On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
-  and completes it; right after, the site reads the repo again and the section says "Applied" (*Aplicado*). It only
+  and completes it; right after, the site reads the repo again and the section says "Applied". It only
   happens if the main branch's policies are met with that vote: if they ask for more (another reviewer, a named
   reviewer, a build), the site says what is missing and leaves the request to be approved. On GitHub, where whoever
   opens a request cannot approve it, the site does not vote: it merges directly if the repository lets its identity
@@ -485,38 +480,37 @@ The sections, in the order of the screen:
   `cambio aplicado: <file>, pedido <link>`. What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
   `operations.json`, in the operations repo.
-- **"How the site is updated"** (*Cómo se actualiza el sitio*): whether the site brings itself up to date with the new
+- **"How the site is updated"**: whether the site brings itself up to date with the new
   harness version or only notifies (`site.update` in `operations.json`). Undeclared, notice only. Automatic needs the
   update nightly and its permission: the recipe, in "How it keeps itself up to date".
-- **People and machines** (*Personas y máquinas*): whose each machine that sends runs is, and which projects each
-  person works on. A new machine shows up in "To confirm" (*Por confirmar*) with the email it claims; **Confirm**
-  (*Confirmar*) puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
+- **People and machines**: whose each machine that sends runs is, and which projects each
+  person works on. A new machine shows up in "To confirm" with the email it claims; **Confirm**
+  puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
   reviews it.
-- **Who gets the notices and the requests** (*A quién le llegan los avisos y los pedidos*): who gets assigned what the
+- **Who gets the notices and the requests**: who gets assigned what the
   night finds (an old dependency, a watcher finding). It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
 
 ![People and machines: one machine to confirm and the confirmed ones](sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.png)
 
-### Repos and products (Repos y productos)
+### Repos and products
 
-- **Where each repo lives** (*Dónde vive cada repo*): where the harness, the team profile and the operations repo are.
+- **Where each repo lives**: where the harness, the team profile and the operations repo are.
   It reaches every machine. It lives in `team-repos.json`, in the profile repo. Whoever maintains the harness reviews
   it.
-- **Each product's deployments** (*Despliegues de cada producto*): which step of each pipeline is test and which is
+- **Each product's deployments**: which step of each pipeline is test and which is
   production, so that Projects says which version is out. It lives in `operations.json`, in the operations repo.
   Whoever knows the product's pipelines reviews it.
-- **Accepted differences between products** (*Diferencias aceptadas entre productos*): what a product does differently
+- **Accepted differences between products**: what a product does differently
   on purpose, with a date to look at it again; the night does not count it as a difference. It lives in
   `scripts/ci/product-parity.json`, in the operations repo. Whoever maintains the harness reviews it.
 - **Azure DevOps**: the team's Azure DevOps organization. It reaches each machine. It lives in `team-profile.json`, in
   the profile repo. Whoever maintains the harness reviews it.
 
-Below are **Products** (*Productos*: the ones the night checks) and **What the organization provides** (*Lo que trae la
-organización*: the skills, reviewers, onboarding guides and packs of the profile repo, each with its link). They are view
+Below are **Products** (the ones the night checks) and **What the organization provides** (the skills, reviewers, onboarding guides and packs of the profile repo, each with its link). They are view
 only: they are changed with a request in their repo.
 
-**The configuration of each repo** (*La configuración de cada repo*) shows, for each product repo, what the
+**The configuration of each repo** shows, for each product repo, what the
 `.tycon/advisors.yaml` of its main branch says. The repos are those of the dependency review and of `team-repos.json`,
 without the public one, the profile repo or the operations repo. Each repo is read only when you open it. Today it edits
 the **deprecated code** (`deprecated`): the old folders or files the agent must not copy or touch without a reason. It
@@ -530,24 +524,24 @@ be, to copy it and open the request by hand.
 
 ![Repos and products](sitio-de-la-organizacion/capturas/configuracion-repos.png)
 
-### Notices and night runs (Avisos y la noche)
+### Notices and night runs
 
-- **Where the morning summary is sent** (*Dónde llega el resumen de cada mañana*): the notice channel, chosen from a
+- **Where the morning summary is sent**: the notice channel, chosen from a
   list (Telegram, Slack, Teams, email or none); with email, the sender and the recipients. The chat, the channel address
   or the email password do not go here: they are secrets of the nightly processes. It lives in `operations.json`, in the
   operations repo. A maintainer reviews it.
-- **Waiting notice** (*Aviso de espera*): whether the notice runs and how many minutes a run waits for a person before
+- **Waiting notice**: whether the notice runs and how many minutes a run waits for a person before
   giving notice. It reaches every machine. Empty, it runs, as by default; "Off for every machine" turns it off, except
   on a machine that set `TYCON_WAIT_NOTICE` (the variable wins). It lives in `team-repos.json` → `wait_notice`, in the
   profile repo. A maintainer reviews it.
-- **Thresholds: when something is painted green or red** (*Umbrales: cuándo algo se pinta verde o rojo*): the limits
+- **Thresholds: when something is painted green or red**: the limits
   the dashboard uses to color each number; in between, yellow. It lives in `scripts/nightly/dashboard/sources.json`, in
   the operations repo. A maintainer reviews it.
-- **Cards the site shows** (*Fichas que muestra el sitio*): one checkbox per card of the night dashboard that the site
-  shows in Arnés, Proyectos and Corridas. Untick the ones you do not use: they stop being built and shown, and Arnés
+- **Cards the site shows**: one checkbox per card of the night dashboard that the site
+  shows in Harness, Projects and Runs. Untick the ones you do not use: they stop being built and shown, and Harness
   says how many are hidden. It lives in `operations.json`, in the operations repo (`site.hidden_cards`). A maintainer
   reviews it.
-- **Work items** (*Pedidos de trabajo*): where and how the night requests work. At the top, the **organization** and
+- **Work items**: where and how the night requests work. At the top, the **organization** and
   the **project** that receive the work items of the run review and the watcher; if one is missing, the section says
   which one and that the night will not request work. Then, in a box, the **type** (empty, each project uses its
   backlog item) and the **fixed fields**. Below, **by severity**, a table with one row per field and one column per
@@ -569,14 +563,14 @@ be, to copy it and open the request by hand.
 
 ![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
-### How the agent works (Cómo trabaja el agente)
+### How the agent works
 
-- **How the agent answers** (*Cómo contesta el agente*): the language, style and length of the answers on every machine. It
+- **How the agent answers**: the language, style and length of the answers on every machine. It
   lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
-- **Which model each pipeline job uses** (*Qué modelo usa cada trabajo del pipeline*): the model of the reviewers, the
+- **Which model each pipeline job uses**: the model of the reviewers, the
   adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
   «the default» keeps the one the installed version comes with. There are four levels, written in the file as
-  `economy`, `balanced`, `strong` and `max` (the Spanish page shows económico, equilibrado, potente, máximo). Each provider translates them to its own models,
+  `economy`, `balanced`, `strong` and `max`. Each provider translates them to its own models,
   and a small line next to each selector says which: «Anthropic: sonnet · OpenAI: gpt-5.6-luna · Ollama: the dev’s · Cursor: the dev’s». A configuration saved with
   Claude's names (sonnet, opus) still works: it shows as levels and the next change to the section saves it as levels.
   With levels, the profile has to require the harness version that reads them; otherwise the site does not let you
@@ -586,7 +580,7 @@ be, to copy it and open the request by hand.
   «like the first round» lets it follow the general level. The list comes folded and opens by itself if the
   organization changed any. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it, looking at the
   cost.
-- **Which model each level is, by provider** (*Qué modelo es cada nivel, por proveedor*): below the job tables, one
+- **Which model each level is, by provider**: below the job tables, one
   table per provider (Anthropic, OpenAI, Ollama, Cursor) with one row per level (`models.providers.<provider>.<level>`).
   Jobs still choose a level; this table says which model that level is in each provider, and each machine uses its
   provider's table (`models.provider` in `~/.claude/tycon.json`, or `TYCON_MODEL_PROVIDER`; undeclared, Codex is OpenAI
@@ -596,36 +590,38 @@ be, to copy it and open the request by hand.
   comma-separated): with a list, the site does not let you propose a model outside it, and a machine that still gets
   one uses the dev's and warns. With tables, allowed lists or the nightly row, the profile has to require the harness
   version that reads them.
-- **The nightly process** (*El proceso de la noche*): one row with its provider (Anthropic or Ollama) and its level
+- **The nightly process**: one row with its provider (Anthropic or Ollama) and its level
   (`models.nightly`). The model comes from the same table: «today: gemma4:31b-cloud», or «no model loaded for this
   level», which blocks proposing (at night there is no dev, so «the dev's» does not apply). Switching from Ollama to
   Haiku is choosing Anthropic in that row. The row also names the secret variable the nightly pipeline needs
   (`OLLAMA_API_KEY` or `ANTHROPIC_API_KEY`); the key is created in the pipeline and never goes through the profile.
   Without the row, the nightly run does not run.
-- **Where the full tests run on merge** (*Dónde corren las pruebas completas antes de sumar un cambio*): on the machine or on the
+- **Where the full tests run on merge**: on the machine or on the
   server, repo by repo, one row per repo (✎ opens its details). A repo without a full tests pipeline says what happens
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
-- **Test coverage** (*Cobertura de las pruebas*): the percentage of covered new lines below which the test control gives
+- **Test coverage**: the percentage of covered new lines below which the test control gives
   notice (it warns, it does not stop). It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
-- **Reviewer rounds** (*Vueltas de revisores*): how many reviewer rounds a story gets before it stops (1 to 6; empty,
+- **Reviewer rounds**: how many reviewer rounds a story gets before it stops (1 to 6; empty,
   2). At the cap, a security or data critical is decided by a person and the rest stays as visible debt. You can also add
   rules that count as security or data. A repo can adjust the cap in its `.tycon/advisors.yaml`. It lives in
   `team-repos.json` → `review`, in the profile repo. A maintainer reviews it.
-- **Your technology** (*Tu tecnología*): what the harness already recognizes, the file endings your team adds as code,
+- **Your technology**: what the harness already recognizes, the file endings your team adds as code,
   the test tools (the built-in ones, and the ones your organization changed or added) and three rules: the test name
   style, which screens need a browser test and the application's language. Without saying anything, the harness does
   not impose any team's style. It lives in `team-repos.json` → `stack`, in the profile repo. A maintainer reviews it. A
   tool that is not on the list is requested with «Ask your agent» (below, §Your technology).
-- **Who relays a developer's OK** (*Quién autoriza saltarse un control*): whether the organization works with a
+- **Who relays a developer's OK**: whether the organization works with a
   coordinating session that passes a developer's OK on to the session doing the work, to waive a reviewer's critical
   finding or sign off a criterion that cannot be tested live. «No» (the default): the developer writes the OK in their
-  own session's chat. Here you only say yes or no, and it only counts from here, never from a machine. Which session is
-  the coordinator is designated on each machine: in that session's chat, the developer writes a sentence that names the
-  role and says it is this session, and the session records it with
+  own session's chat. The question is "Who passes on the authorization to skip a serious check?": "Each developer
+  (default)" means the developer writes the OK in their own session's chat; with "A coordinating session", "What do you
+  call it?" appears (stored in `approvals.relay_session`, by default «coordinadora»). It only counts from here, never from
+  a machine. Which session is the coordinator is designated on each machine: in that session's chat, the developer
+  writes a sentence that names the role (the name above) and says it is this session, and the session records it with
   `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
-  Below it is **who signs each thing** (*Quién firma cada cosa*): one row for each signature in the catalog
+  Below it is **who signs each thing**: one row for each signature in the catalog
   (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
   permission window or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) lets that
   session sign it on the owner's behalf, and its sentence is recorded; what is delegated is not protected against an
@@ -637,13 +633,56 @@ be, to copy it and open the request by hand.
   in the list below (`approvals.delegated_machines`), named by their fingerprint: the ones the runs mailbox saw are
   added with a button, and another one by typing its fingerprint. By default, on none. All of it counts only from
   here, never from a machine.
-- **Hand-testing each criterion** (*Prueba a mano de cada punto*): whether, besides what the harness tests, a person
+  Further down is **the level of each signature**: one row for each signature in the levels table
+  (`guides/firmas-del-arnes.md`), with its default level: 1 routine, 2 exception, 3 irreversible.
+  The selector starts at that level, so the organization can raise it and never lower it (`approvals.levels`). The
+  higher of the table and the profile applies. The coordinator signs on its own only routine: a signature at 2 or more
+  is not offered for delegation. If it was delegated, raising it removes it from the delegation in the same change. If
+  the profile delegates it anyway, the harness removes it when reading and reports it as ignored; the rest stays
+  delegated. Going back to the default level removes the signature from `approvals.levels`. Proposing levels requires
+  the team layer to ask for a harness version that can read them.
+  Who signs each level: 1, the coordinator on its own if the profile delegates it, otherwise the dev in the window; 2,
+  always a person in the window; 3, a person, and the emergency at their terminal. With nobody to answer, anything not
+  delegated waits: the system does not look at the time, it asks for the signature anyway and, if nobody answers, the
+  session stays stopped at that step. With Codex, which has no window, everything is signed at the terminal. The full matrix
+  is in `guides/firmas-del-arnes.md`.
+
+  **Who signs? In short.** To know who signs something on your machine, look here:
+
+  | What has to be signed | No coordinator, you are there | No coordinator, you are away | Coordinator, you are there | Coordinator, you are away |
+  |---|---|---|---|---|
+  | Save the work · 1 | you | waits | the coordinator \* | the coordinator \* |
+  | Ask for another review · 1 | you | waits | the coordinator \* | the coordinator \* |
+  | Approve the plan · 1 | you \*\* | waits \*\* | the coordinator \* | the coordinator \* |
+  | Skip a control · 2 | you | waits | you | waits |
+  | Accept a criterion that cannot be tested live · 2 | you | waits | you | waits |
+  | Mark a criterion as tested by hand · 2 | you | waits | you | waits |
+  | The emergency · 3 | you, at your terminal | waits | you, at your terminal | waits |
+
+  \* Only if that signature is "Delegated to the coordinator" and your machine is in "On which machines delegation
+  applies"; otherwise it is the same as without a coordinator. \*\* Today the plan of a low-risk story can be approved
+  without a signature, from the same session. Why each routine is routine, and the notes, in
+  `guides/firmas-del-arnes.md`.
+
+  **Where it is configured**, all in this section:
+  - **A · whether there is a coordinator**: "Who passes on the authorization to skip a serious check?", with "What do
+    you call it?" when it is "A coordinating session".
+  - **B · on which machines**: "On which machines delegation applies", each one by its fingerprint.
+  - **C · who signs each thing and its level**: "Who signs each thing" (the harness brings the list, the same for
+    everyone; the team does not add or remove rows) and "The level of each signature" (it goes up, never down; only
+    routine is delegated).
+  - **On each machine**, the designation: the sentence in the chosen session's chat. For it to sign what is delegated,
+    the owner also confirms it at their terminal with `node scripts/lib/delegated-signing.js confirm-designation` (see
+    `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). It is recognized by its conversation, keeps counting
+    after a restart, and has to be repeated after a new chat or a `/clear`. If nobody designated it, nobody confirmed
+    the designation, or the session is closed, there is no coordinator: everything goes to the developer.
+- **Hand-testing each criterion**: whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,
   naming it; the harness first shows them what they are about to mark, and neither the agent nor a relayed message can
   mark it. It only counts from here, never from a machine. It lives in `team-profile.json` → `qa.manual_check`, in the
   profile repo.
-- **Brakes and meters** (*Frenos y medidores*): which brakes and meters run on every machine. **Brakes** stop a command
+- **Brakes and meters**: which brakes and meters run on every machine. **Brakes** stop a command
   before it runs: the unscoped-tests brake, the two-sessions-in-one-folder brake and the one-pull-request-per-repo
   brake. From here they can only be turned on: "As it comes by default" or "On for every machine"; written by hand,
   "on" in any case or `true` is accepted. Turning a brake off is not done from the profile: it belongs to each machine,
@@ -655,12 +694,12 @@ be, to copy it and open the request by hand.
   written by hand (a number, a text that is none of these): the reader does not understand it and treats the whole
   configuration of every machine as broken, not just this switch; the site does not let you propose it. It lives in
   `team-profile.json` → `switches`, in the profile repo.
-- **How many sessions work at once** (*Cuántas sesiones trabajan a la vez*): when one session coordinates the others,
+- **How many sessions work at once**: when one session coordinates the others,
   how many can be working at the same time on one machine (1 to 20; empty means 3) before the next one waits its turn.
   Each machine can change it for itself, because how much it can take depends on the machine. The folder where the
   owner's signatures are left belongs to each machine and is not set here. It lives in `team-profile.json` →
   `coordination.max_working`; the whole recipe is in `guides/coordination.en.md`.
-- **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
+- **Integrations**: which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
   for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A
   maintainer reviews it. The **«Avisos»** (notices) row chooses where the harness notifies (a run waiting for a person,
@@ -669,10 +708,10 @@ be, to copy it and open the request by hand.
   their own (`harness.js config set notify.<key>`, on their machine; Telegram, the machine's bot) and the night ones,
   the server's secret variables (`pipelines/operations/README.md`). Saving the channels also raises the profile's
   `requires.harness` to the first version that reads them.
-- **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
+- **Run conversations**: whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
-- **Estimates** (*Estimaciones*): the unit your organization estimates in (hours, days or points), the hours in a
+- **Estimates**: the unit your organization estimates in (hours, days or points), the hours in a
   working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
   calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
   Each story's current estimate also reaches its work item, in Azure DevOps or GitHub.
@@ -734,18 +773,18 @@ What the person sees in the section, and what the agent does when asked for a to
   `paths.team` key). If there is none, clone the `profile` repo from `team-repos.json` into a folder of your own.
 - **The request** goes to the profile repo's main branch, **without auto-complete**: an admin reads and approves it.
 
-### Installation and updates (Instalación y actualización)
+### Installation and updates
 
-- **How the machines update** (*Cómo se actualizan las computadoras del equipo*): which version each machine takes and how it is
+- **How the machines update**: which version each machine takes and how it is
   applied. "Automatic, notice only": each machine updates itself on startup and tells the dev, who cannot skip it. "Asks
   each dev" (the default): the machine says a new version is out and each dev decides when to install it, with
   `npx @tyconsa/harness@latest`. It lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
-- **Installation profile** (*Perfil de instalación*): how much the harness installs on each machine (minimal or full),
+- **Installation profile**: how much the harness installs on each machine (minimal or full),
   with the list of what each one brings. It lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
-- **The organization's packs** (*Paquetes de la organización*): which harness packs (the reviewers and guides of a
+- **The organization's packs**: which harness packs (the reviewers and guides of a
   product or a client) are turned on on every machine. It lives in `team-profile.json`, in the profile repo. A
   maintainer reviews it.
-- **How the production guard updates** (*Cómo se actualiza el freno de producción*, `guard.update`): how the guard that
+- **How the production guard updates** (`guard.update`): how the guard that
   protects the production databases gets up to date on the authorized machines. The two options, each with its cost:
   - "With the person's password" (the default, the safest): each update is done by that machine's person, typing their
     password. Until someone does it, the machine keeps the old guard.
@@ -761,7 +800,7 @@ What the person sees in the section, and what the agent does when asked for a to
 
 By default, both new options are at the safest setting: delegated signing off and the guard with the password.
 
-Below is **Which harness version each machine has** (*Qué versión del arnés tiene cada máquina*), the one each machine
+Below is **Which harness version each machine has**, the one each machine
 reported in its latest daily upload, with or without runs. It is view only: the machines update themselves on start.
 
 ![Installation and updates](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
@@ -787,7 +826,7 @@ approves the request:
   puts the first person, while the list has nobody who maintains.
 - To stop seeing, the email is removed from the list.
 
-**The help, inside.** This guide is also inside the site, in the "Help" tab (*Ayuda*), and each role sees its part: a dev
+**The help, inside.** This guide is also inside the site, in the "Help" tab, and each role sees its part: a dev
 sees how the site is used and its common problems; whoever maintains also sees the configuration section by section and
 how it is installed. It comes from this same guide, in the site's language.
 
@@ -795,7 +834,7 @@ how it is installed. It comes from this same guide, in the site's language.
 
 ### I cannot sign in
 
-**What you see:** "Could not sign in" (*No se pudo entrar*), with the reason; or the Microsoft, Google or GitHub page
+**What you see:** "Could not sign in", with the reason; or the Microsoft, Google or GitHub page
 does not let you through.
 
 **Why it happens:** the site asks for an email your provider vouches for. Common cases: your account has no email in its
@@ -829,7 +868,7 @@ one as yours in the organization's configuration.
 
 ### The site is stopped
 
-**What you see:** the "Site stopped" page (*Sitio frenado*), which says since when.
+**What you see:** the "Site stopped" page, which says since when.
 
 **Why it happens:** the organization's configuration (`operations.json`, in the operations repo) has not validated for
 more than 24 hours. During those 24 hours the site keeps the last good configuration and maintainers see a notice; past
@@ -842,7 +881,7 @@ refresh.
 
 ### Loading the runs
 
-**What you see:** "loading the sources" (*cargando las fuentes*) or "loading the runs" (*cargando las corridas*), and
+**What you see:** "loading the sources" or "loading the runs", and
 the page reloads by itself.
 
 **Why it happens:** the site has just started and is still reading the operations repo or downloading the runs mailbox.
@@ -854,7 +893,7 @@ The first mailbox download can take a few minutes.
 
 ### Could not update
 
-**What you see:** a red band at the top, "could not update since" (*no se pudo actualizar desde*) a time, with the
+**What you see:** a red band at the top, "could not update since" a time, with the
 reason.
 
 **Why it happens:** the last refresh could not read a source (the operations repo or the mailbox). The site keeps showing
@@ -887,9 +926,8 @@ until it is merged or closed.
 ### Configuration says the site rejected the request
 
 **What you see:** when reviewing or proposing, a red box with the reason: "the session expired or was closed: reload
-the page" (*la sesión venció o se cerró: recargá la página*), "your account … is not among those who maintain the
-site", "the site is loading…", or "the request was rejected by what stands in front of the site, not the site" (*el
-pedido lo rechazó lo que está delante del sitio*).
+the page", "your account … is not among those who maintain the
+site", "the site is loading…", or "the request was rejected by what stands in front of the site, not the site".
 
 **Why it happens:** the session expired; or you signed in with another account (the message says which one); or the
 site was restarting; or the cloud's sign-in, in front of the site, stopped the request.
@@ -1238,7 +1276,7 @@ request approve it ("Allow requestors to approve their own changes", the organiz
 with "A maintainer's changes" on (below): off, the author would approve it without the organization having asked for
 it. Without the permission, each section says
 "To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
-hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
+hand".
 
 The product repos have their own secret, `SITE_PRODUCTS_WRITE_TOKEN`. To set it up:
 
@@ -1261,7 +1299,7 @@ An organization can choose not to require that reviewer on its product repos, fo
 
 With Microsoft in "organization only", someone from outside the directory (a personal account, someone from another
 company) gets in only once they are in the directory and on the site's list. In Configuration → People, "Who gets into
-the site" → **Invite someone** (*Invitar a alguien*): their email and their products. "Invite" opens a request that adds
+the site" → **Invite someone**: their email and their products. "Invite" opens a request that adds
 them to the list as a dev, with their products and a mark (`site.invitations`: who invited and when). Once the request
 is approved and the site reads the new list, the site sends them the Microsoft invitation, which brings them to the
 site. Next to their email you see the status: "invitation sent, has not signed in yet", "accepted" (signed in),
@@ -1274,7 +1312,7 @@ invitations a day (`SITE_INVITATIONS_PER_DAY`); the rest wait for the next day.
 - An email that is not a Microsoft account accepts with a **one-time passcode** Microsoft emails to them, if the
   directory has it on. The installer reads it and leaves it in `SITE_INVITE_EMAIL_CODE`; if it is off or unknown, the
   screen warns when inviting and says where to turn it on.
-- **Revoke** (*Revocar*) opens a request that removes them from the list and deletes their mark; if the invitation has
+- **Revoke** opens a request that removes them from the list and deletes their mark; if the invitation has
   not gone out yet, it no longer does. It does not delete them from the directory: for that, the Entra portal, with the
   link the screen gives.
 - With another sign-in there is no button: with "any account" from Microsoft no invitation is needed (add them to the

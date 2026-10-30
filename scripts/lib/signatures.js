@@ -63,8 +63,9 @@ const LEVELS_EN = Object.freeze({
   'escape:set-autonomous': 'change the autonomous mode of a run',
   'control-change': 'any change to a control',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
-  'escape:TYCON_PROD_LINT': 'turn off the production query check',
+  'escape:TYCON_PROD_LINT': 'turn off the production query control',
   'escape:TYCON_NEW_NAMES': 'turn off the names check on what is published',
+  emergency: 'the emergency exit: let one command that a brake stops go through, with a reason and for that command only',
 });
 
 // id, nivel, perfiles, qué aprueba
@@ -72,7 +73,7 @@ const LEVELS = Object.freeze([
   ['plan-approval', 1, AMBOS, 'aprobar el plan (sube a 2 si la historia es delicada)'],
   ['extra-round', 1, AMBOS, 'una vuelta más de revisores'],
   ['pending-approval', 1, AMBOS, 'abrir un pendiente nuevo en la lista'],
-  ['save', 1, AMBOS, 'guardar: commit, push y pedidos, si ningún commit toca algo de lo sensible'],
+  ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
   ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
@@ -95,6 +96,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
   ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
+  ['emergency', 3, AMBOS, 'la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo'],
 ].map(([id, level, profiles, approves]) => Object.freeze({ id, level, profiles, approves, approvesEn: LEVELS_EN[id] || null })));
 
 // lo que cubre cada firma de hoy que no es su propio id de la tabla: las dos que juntan dos cosas de distinto peso y
@@ -156,17 +158,17 @@ const APPROVES_EN = {
   'adhoc-lane': "open a session's quick fix, with no story",
   save: 'save the story: commit, push and the pull requests',
   'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
-  'escape:TYCON_PROD_LINT': 'turn off the production query check for one command',
-  'escape:TYCON_NEW_NAMES': 'turn off the new names check on what is published',
+  'escape:TYCON_PROD_LINT': 'turn off the production query control for one command',
+  'escape:TYCON_NEW_NAMES': 'turn off the new names control on what is published',
   'escape:TYCON_TEST_GATE': "skip the commit's test gate",
-  'escape:DOD_BYPASS': "skip the commit's checks (it is logged)",
+  'escape:DOD_BYPASS': "skip the commit's controls (it is logged)",
   'escape:TYCON_NO_DEEP_REVIEW': "turn off a run's adversarial pass",
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
   'escape:story-skill-bypass': 'write a story without the story skill',
   'escape:set-autonomous': "change a run's autonomous mode",
-  'escape:cerrar-la-ejecucion': 'close a run with a check in red',
+  'escape:cerrar-la-ejecucion': 'close a run with a control in red',
   'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
-  'escape:force-manual': "set a check's state by hand",
+  'escape:force-manual': "set a control's state by hand",
   'escape:trust-ran': 'count the reviewers without the record that they ran',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'write the live test evidence by hand',
   'escape:dod_runtime_exempt': 'exempt a story from the live test',
@@ -195,7 +197,7 @@ const SIGNATURES = Object.freeze([
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
   { id: 'pending-approval', approves: 'abrir un pendiente nuevo en la lista de pendientes', command: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta>', otherSession: 'yes', terminal: 'marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal' },
   { id: 'adhoc-lane', approves: 'abrir el arreglo rápido de una sesión, sin historia', command: "marker.js adhoc set '<json>'", otherSession: 'yes', terminal: "marker.js adhoc set '<json>' --terminal --for-session <id>" },
-  { id: 'save', approves: 'guardar la story: commit, push y los pedidos', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
+  { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
     id: `escape:${nombre}`, approves, command: `${nombre}=${valor} <comando>`, otherSession: 'no', terminal: `${nombre}=${valor} <comando>`,
   })),
